@@ -33,7 +33,7 @@ createCalculatorWidget({ button: openCalcBtn, floating: true });
     (isDarkMode() ? "#e5e7eb" : "#111827");
 
     // Popup UI
-    const colorMoreBtn = document.getElementById("colorMore");
+    const colorChipBtn = document.getElementById("colorChip");
     const colorPopup = document.getElementById("colorPopup");
     const colorPopupClose = document.getElementById("colorPopupClose");
 
@@ -87,7 +87,7 @@ createCalculatorWidget({ button: openCalcBtn, floating: true });
     if (colorPopup) colorPopup.hidden = true;
     }
 
-    colorMoreBtn?.addEventListener("click", openColorPopup);
+    colorChipBtn?.addEventListener("click", openColorPopup);
     colorPopupClose?.addEventListener("click", closeColorPopup);
     colorPopup?.addEventListener("click", (e) => {
     if (e.target === colorPopup) closeColorPopup();
@@ -106,10 +106,10 @@ createCalculatorWidget({ button: openCalcBtn, floating: true });
     });
 
     // Show "More" if popup UI exists
-    if (colorMoreBtn && colorPopup && hexInput && iroPickerEl) {
-      colorMoreBtn.hidden = false;
-    } else if (colorMoreBtn) {
-      colorMoreBtn.hidden = true;
+    if (colorChipBtn && colorPopup && hexInput && iroPickerEl) {
+      colorChipBtn.hidden = false;
+    } else if (colorChipBtn) {
+      colorChipBtn.hidden = true;
     }
 
 
@@ -270,6 +270,18 @@ createCalculatorWidget({ button: openCalcBtn, floating: true });
     } catch {}
     }
 
+    function syncColorChip(){
+      if (!colorChipBtn) return;
+
+      // show the *raw* selected color as the chip fill
+      const raw = normalizeHex(inkRaw) || "#111827";
+      colorChipBtn.style.background = raw;
+
+      // nice tooltip + accessibility
+      colorChipBtn.title = `More colors (${raw})`;
+      colorChipBtn.setAttribute("aria-label", `More colors. Current: ${raw}`);
+    }
+
     // Presets tuned for Tesla-ish minimal look (different per theme)
     const PRESETS = [
       { id: "graphite",  name: "Graphite", light: "#111827", dark: "#e5e7eb" },
@@ -308,6 +320,7 @@ createCalculatorWidget({ button: openCalcBtn, floating: true });
       }
 
       syncColorUI();
+      syncColorChip();
     }
 
     function syncColorUI(){
@@ -323,6 +336,7 @@ createCalculatorWidget({ button: openCalcBtn, floating: true });
       const applied = appliedInkFromRaw();
       setCssInk(applied);
       syncColorUI();
+      syncColorChip();
     }
 
     function setInkRaw(hex){
