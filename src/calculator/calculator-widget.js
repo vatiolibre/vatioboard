@@ -1,5 +1,6 @@
 import { el } from "./dom.js";
 import { CalcCore } from "./calc-core.js";
+import { t } from "../i18n.js";
 
 /**
  * createCalculatorWidget(options)
@@ -100,13 +101,13 @@ export function createCalculatorWidget(options = {}) {
 
   const panel = el(
     "section",
-    { class: "calc-panel", hidden: true, role: "dialog", "aria-label": "Calculator" },
+    { class: "calc-panel", hidden: true, role: "dialog", "aria-label": t("calcTitle") },
     el(
       "div",
       { class: "calc-header" },
-      el("div", { class: "calc-title" }, "Calculator"),
+      el("div", { class: "calc-title" }, t("calcTitle")),
       el("div", { class: "calc-spacer" }),
-      el("button", { class: "calc-close", type: "button" }, "Close")
+      el("button", { class: "calc-close", type: "button" }, t("close"))
     ),
     el(
       "div",
@@ -439,7 +440,7 @@ export function createCalculatorWidget(options = {}) {
     { t: "√", cls: "op", on: () => act(() => core.sqrtTrailingNumber()) },
     { t: "(", cls: "op", on: () => pushToken("(") },
     { t: ")", cls: "op", on: () => pushToken(")") },
-    { t: "Close", cls: "", on: () => close() },
+    { t: t("close"), cls: "", on: () => close() },
   ];
 
   // build keys
@@ -610,7 +611,7 @@ export function createCalculatorWidget(options = {}) {
     launcher = el("button", {
       type: "button",
       class: "calc-fab",
-      "aria-label": "Open calculator",
+      "aria-label": t("openCalculator"),
       html: iconSvg,
     });
 
