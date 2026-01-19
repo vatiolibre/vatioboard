@@ -76,7 +76,7 @@ const translations = {
     colorUpdated: 'Color actualizado',
     themeUpdated: 'Tema actualizado',
     downloadedPng: 'PNG descargado',
-    savedLocally: 'Guardado localmente (no persistente)',
+    savedLocally: 'Guardado no persistente',
 
     // Color names
     graphite: 'Grafito',
