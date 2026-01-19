@@ -2,9 +2,10 @@ import "../styles/board.less";
 import "../styles/calculator.less";
 
 import { createCalculatorWidget } from "../calculator/calculator-widget.js";
+import iro from "@jaames/iro";
 
 const openCalcBtn = document.getElementById("openCalc");
-createCalculatorWidget({ button: openCalcBtn, floating: false });
+createCalculatorWidget({ button: openCalcBtn, floating: true });
 
   (function(){
     const canvas = document.getElementById("pad");
@@ -20,9 +21,97 @@ createCalculatorWidget({ button: openCalcBtn, floating: false });
 
     // NEW: color UI
     const swatchesEl = document.getElementById("swatches");
-    const colorPickerEl = document.getElementById("colorPicker");
 
     const LS_INK_RAW = "vatio_board_ink_raw";
+
+    function isDarkMode(){
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+
+    let inkRaw =
+    normalizeHex(localStorage.getItem(LS_INK_RAW)) ||
+    (isDarkMode() ? "#e5e7eb" : "#111827");
+
+    // Popup UI
+    const colorMoreBtn = document.getElementById("colorMore");
+    const colorPopup = document.getElementById("colorPopup");
+    const colorPopupClose = document.getElementById("colorPopupClose");
+
+    const hexInput = document.getElementById("hexInput");
+    const rRange = document.getElementById("rRange");
+    const gRange = document.getElementById("gRange");
+    const bRange = document.getElementById("bRange");
+    const rVal = document.getElementById("rVal");
+    const gVal = document.getElementById("gVal");
+    const bVal = document.getElementById("bVal");
+
+    const iroPickerEl = document.getElementById("iroPicker");
+
+    let iroPicker = null;
+    let syncingFromIro = false;
+
+
+    function setPopupFromInkRaw(){
+    const rgb = hexToRgb(inkRaw) || { r: 17, g: 24, b: 39 };
+    if (rRange) rRange.value = String(rgb.r);
+    if (gRange) gRange.value = String(rgb.g);
+    if (bRange) bRange.value = String(rgb.b);
+    if (rVal) rVal.textContent = String(rgb.r);
+    if (gVal) gVal.textContent = String(rgb.g);
+    if (bVal) bVal.textContent = String(rgb.b);
+    if (hexInput) hexInput.value = inkRaw;
+    }
+
+    function setInkFromSliders(){
+    const r = parseInt(rRange?.value || "0", 10);
+    const g = parseInt(gRange?.value || "0", 10);
+    const b = parseInt(bRange?.value || "0", 10);
+
+    if (rVal) rVal.textContent = String(r);
+    if (gVal) gVal.textContent = String(g);
+    if (bVal) bVal.textContent = String(b);
+
+    const hex = rgbToHex({ r, g, b });
+    if (hexInput) hexInput.value = hex;
+      setInkRaw(hex);
+    }
+
+    function openColorPopup(){
+      setPopupFromInkRaw();
+      ensureIroPicker();
+      syncIroFromInk();
+      if (colorPopup) colorPopup.hidden = false;
+    }
+
+    function closeColorPopup(){
+    if (colorPopup) colorPopup.hidden = true;
+    }
+
+    colorMoreBtn?.addEventListener("click", openColorPopup);
+    colorPopupClose?.addEventListener("click", closeColorPopup);
+    colorPopup?.addEventListener("click", (e) => {
+    if (e.target === colorPopup) closeColorPopup();
+    });
+
+    [rRange, gRange, bRange].forEach((el) => el?.addEventListener("input", setInkFromSliders));
+
+    hexInput?.addEventListener("change", () => {
+      const h = normalizeHex(hexInput.value);
+      if (h) {
+        setInkRaw(h);
+        syncIroFromInk();
+      } else {
+        setPopupFromInkRaw();
+      }
+    });
+
+    // Show "More" if popup UI exists
+    if (colorMoreBtn && colorPopup && hexInput && iroPickerEl) {
+      colorMoreBtn.hidden = false;
+    } else if (colorMoreBtn) {
+      colorMoreBtn.hidden = true;
+    }
+
 
     let tool = "pen"; // "pen" | "eraser"
     let drawing = false;
@@ -138,8 +227,47 @@ createCalculatorWidget({ button: openCalcBtn, floating: false });
       document.documentElement.style.setProperty("--ink", hex);
     }
 
-    function isDarkMode(){
-      return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    function ensureIroPicker(){
+      if (!iroPickerEl || iroPicker) return;
+
+      try {
+        iroPicker = new iro.ColorPicker(iroPickerEl, {
+        width: 260,
+        color: inkRaw,
+        layout: [
+            { component: iro.ui.Box },
+            { component: iro.ui.Slider, options: { sliderType: "hue" } },
+          ],
+        });
+
+        document.documentElement.classList.add("has-iro");
+
+        // When user drags the picker: update inkRaw via your pipeline
+        iroPicker.on("color:change", (c) => {
+        const hex = normalizeHex(c?.hexString);
+        if (!hex) return;
+
+        syncingFromIro = true;
+        try {
+            setInkRaw(hex); // preserves your contrast enforcement + persistence
+            // Keep hex input in sync while dragging
+            if (hexInput) hexInput.value = hex;
+        } finally {
+            syncingFromIro = false;
+        }
+      });
+    } catch (e) {
+        // If anything goes wrong, keep your fallback UI
+        iroPicker = null;
+        document.documentElement.classList.remove("has-iro");
+      }
+    }
+
+    function syncIroFromInk(){
+    if (!iroPicker || syncingFromIro) return;
+    try {
+        iroPicker.color.hexString = inkRaw;
+    } catch {}
     }
 
     // Presets tuned for Tesla-ish minimal look (different per theme)
@@ -151,8 +279,6 @@ createCalculatorWidget({ button: openCalcBtn, floating: false });
       { id: "amber",     name: "Amber",    light: "#f59e0b", dark: "#fbbf24" },
       { id: "rose",      name: "Rose",     light: "#e11d48", dark: "#fb7185" }
     ];
-
-    let inkRaw = normalizeHex(localStorage.getItem(LS_INK_RAW)) || (isDarkMode() ? "#e5e7eb" : "#111827");
 
     function appliedInkFromRaw(){
       return ensureInkContrast(inkRaw);
@@ -185,13 +311,6 @@ createCalculatorWidget({ button: openCalcBtn, floating: false });
     }
 
     function syncColorUI(){
-      // Color input shows the user's raw selection (not the adjusted one)
-      if(colorPickerEl){
-        colorPickerEl.value = normalizeHex(inkRaw) || "#111827";
-      }
-
-      // Mark active swatch (match against theme-specific preset hex)
-      const dark = isDarkMode();
       const raw = normalizeHex(inkRaw);
 
       [...swatchesEl.querySelectorAll(".swatch")].forEach(btn => {
@@ -212,16 +331,12 @@ createCalculatorWidget({ button: openCalcBtn, floating: false });
       inkRaw = h;
       localStorage.setItem(LS_INK_RAW, inkRaw);
       applyInk();
+
+      // NEW: keep popup controls aligned
+      setPopupFromInkRaw();
+      syncIroFromInk();
+
       setStatus("Color updated");
-    }
-
-    if(colorPickerEl){
-      // Set initial value
-      colorPickerEl.value = inkRaw;
-
-      colorPickerEl.addEventListener("input", (e) => {
-        setInkRaw(e.target.value);
-      });
     }
 
     // Preserve drawings across resize by snapshotting pixels

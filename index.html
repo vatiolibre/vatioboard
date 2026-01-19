@@ -100,8 +100,25 @@
           <label class="color-label" aria-label="Ink color">
             Color
             <div id="swatches" class="swatches" aria-label="Preset colors"></div>
-            <input id="colorPicker" class="color-picker" type="color" aria-label="Pick any color" />
+
+            <button id="colorMore" type="button" class="color-more" aria-label="More colors" hidden>
+              More
+            </button>
           </label>
+
+          <div id="colorPopup" class="color-popup" hidden>
+            <div class="color-popup-card">
+              <!-- NEW: iro.js mount point -->
+              <div id="iroPicker" class="iro-picker" aria-label="Color picker"></div>
+
+              <div class="color-popup-row">
+                <span>Hex</span>
+                <input id="hexInput" class="hex-input" type="text" inputmode="text" autocomplete="off" spellcheck="false" />
+                <button id="colorPopupClose" type="button">Close</button>
+              </div>
+            </div>
+          </div>
+
 
           <button id="clear" type="button" class="btn-danger">Clear</button>
           <button id="save" type="button" class="btn-success">Save PNG</button>

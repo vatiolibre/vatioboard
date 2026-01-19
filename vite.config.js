@@ -3,10 +3,13 @@ import { resolve } from "path";
 
 export default defineConfig({
   base: "/",
+  server: {
+    host: true,
+    allowedHosts: ["debug.vatiolibre.com", "vatioboard.com", ".vatiolibre.com"],
+  },
   build: {
     rollupOptions: {
       input: {
-        // optional landing page
         index: resolve(__dirname, "index.html"),
         calculator: resolve(__dirname, "calculator.html"),
       },

@@ -248,29 +248,6 @@ label{
       inset 0 0 0 1px color-mix(in srgb, var(--inner-ring) 65%, transparent);
 }
 
-/* Color input: small, flush with label container */
-.color-picker{
-    width: 24px;
-    height: 24px;
-    padding: 0;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: transparent;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-}
-
-/* Make the native color well look clean */
-.color-picker::-webkit-color-swatch-wrapper{ padding: 2px; }
-.color-picker::-webkit-color-swatch{
-    border: 0;
-    border-radius: 8px;
-}
-.color-picker::-moz-color-swatch{
-    border: 0;
-    border-radius: 8px;
-}
-
 input[type="range"]{
     width: 200px;
     accent-color: color-mix(in srgb, var(--ink) 80%, var(--success-bg));
@@ -422,4 +399,71 @@ canvas{
     align-items:flex-start;
     margin-left: 0;
   }
+}
+
+/* Color picker popup */
+.color-more{
+  padding: 10px 12px;
+  border-radius: 10px;
+}
+
+.color-popup{
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0,0,0,.35);
+  z-index: 9999;
+}
+
+.color-popup[hidden]{ display: none; }
+
+.color-popup-card{
+  width: min(300px, calc(100vw - 24px));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+
+.color-popup-row{
+  display: grid;
+  grid-template-columns: 26px 1fr 70px;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.hex-input{
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  color: var(--btn-fg);
+  font-weight: 800;
+}
+
+.rgb-val{
+  text-align: right;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+/* iro.js picker mount */
+.iro-picker{
+  display: grid;
+  place-items: center;
+  padding: 10px 0 2px;
+}
+
+/* Hide RGB fallback rows when iro is active */
+html.has-iro .rgb-fallback{
+  display: none;
+}
+
+/* Optional: make the popup a bit more compact when iro is active */
+html.has-iro .color-popup-card{
+  padding-top: 10px;
 }
