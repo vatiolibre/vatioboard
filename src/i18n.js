@@ -103,8 +103,10 @@ const translations = {
   }
 };
 
-// Use pre-detected language from inline script, or detect now
-const detectedLang = window.__lang || (navigator.language?.startsWith('es') ? 'es' : 'en');
+const LANG_KEY = 'vatio_board_lang';
+
+const storedLang = localStorage.getItem(LANG_KEY);
+const detectedLang = storedLang || window.__lang || (navigator.language?.startsWith('es') ? 'es' : 'en');
 
 // Current language (can be changed later for manual switching)
 let currentLang = detectedLang;
@@ -127,13 +129,26 @@ export function getLang() {
 }
 
 /**
- * Set language manually
+ * Set language manually and persist to localStorage
  * @param {string} lang - Language code ('en' or 'es')
  */
 export function setLang(lang) {
   if (translations[lang]) {
     currentLang = lang;
+    localStorage.setItem(LANG_KEY, lang);
+    document.documentElement.lang = lang;
   }
+}
+
+/**
+ * Toggle between 'en' and 'es', persist, and re-apply translations
+ * @returns {string} - New language code
+ */
+export function toggleLang() {
+  const newLang = currentLang === 'en' ? 'es' : 'en';
+  setLang(newLang);
+  applyTranslations();
+  return newLang;
 }
 
 /**

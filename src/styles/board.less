@@ -98,7 +98,7 @@ header{
 }
 
 .header-inner{
-    max-width: 1430px;
+    max-width: 1400px;
     margin: 0 auto;
 
     /* Slightly taller header (more automotive UI) */
@@ -108,6 +108,10 @@ header{
     gap:12px;
     align-items:center;
     flex-wrap:wrap;
+}
+
+html[lang="es"] .header-inner{
+    max-width: 1470px;
 }
 
 .brand{
@@ -123,6 +127,24 @@ header{
     border-radius:50%;
     background: var(--success-bg);
     box-shadow: 0 0 0 4px color-mix(in srgb, var(--success-bg) 22%, transparent);
+}
+
+.lang-toggle{
+    appearance: none;
+    border: 1px solid var(--border);
+    background: var(--btn-bg);
+    color: var(--btn-fg);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.15s;
+
+    &:hover{
+        opacity: 1;
+    }
 }
 
 .toolbar{

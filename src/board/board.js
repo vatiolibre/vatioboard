@@ -3,10 +3,17 @@ import "../styles/calculator.less";
 
 import { createCalculatorWidget } from "../calculator/calculator-widget.js";
 import iro from "@jaames/iro";
-import { t, applyTranslations } from "../i18n.js";
+import { t, applyTranslations, toggleLang, getLang } from "../i18n.js";
 
 // Apply translations immediately
 applyTranslations();
+
+const langToggleBtn = document.getElementById("langToggle");
+langToggleBtn.textContent = getLang().toUpperCase();
+langToggleBtn.addEventListener("click", () => {
+  const newLang = toggleLang();
+  langToggleBtn.textContent = newLang.toUpperCase();
+});
 
 const openCalcBtn = document.getElementById("openCalc");
 createCalculatorWidget({ button: openCalcBtn, floating: true });
