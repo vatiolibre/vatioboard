@@ -66,9 +66,6 @@
   user-select: none;
   font-family: var(--calc-font);
   -webkit-tap-highlight-color: transparent;
-
-  /* IMPORTANT: smooth pointer dragging on touch */
-  touch-action: none;
 }
 .calc-fab:active{ transform: translateY(1px); }
 .calc-fab svg{ width: 22px; height: 22px; opacity: .9; }
@@ -197,9 +194,6 @@
   cursor: grab;
   user-select: none;
   -webkit-user-select: none;
-
-  /* Improves pointer dragging behavior (especially on mobile/touch) */
-  touch-action: none;
 }
 
 .calc-header:active{
