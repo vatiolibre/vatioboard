@@ -3,6 +3,17 @@ import "../styles/calculator.less";
 
 import { createCalculatorWidget } from "../calculator/calculator-widget.js";
 import iro from "@jaames/iro";
+import { t, applyTranslations, toggleLang, getLang } from "../i18n.js";
+
+// Apply translations immediately
+applyTranslations();
+
+const langToggleBtn = document.getElementById("langToggle");
+langToggleBtn.textContent = getLang().toUpperCase();
+langToggleBtn.addEventListener("click", () => {
+  const newLang = toggleLang();
+  langToggleBtn.textContent = newLang.toUpperCase();
+});
 
 const openCalcBtn = document.getElementById("openCalc");
 createCalculatorWidget({ button: openCalcBtn, floating: true });
@@ -129,7 +140,7 @@ createCalculatorWidget({ button: openCalcBtn, floating: true });
     function setActive(){
       penBtn.setAttribute("aria-pressed", tool === "pen" ? "true" : "false");
       eraseBtn.setAttribute("aria-pressed", tool === "eraser" ? "true" : "false");
-      setStatus(tool === "pen" ? "Pen" : "Eraser");
+      setStatus(tool === "pen" ? t("pen") : t("eraser"));
     }
 
     // ---- Color utilities (contrast-safe ink) ----
@@ -278,18 +289,18 @@ createCalculatorWidget({ button: openCalcBtn, floating: true });
       colorChipBtn.style.background = raw;
 
       // nice tooltip + accessibility
-      colorChipBtn.title = `More colors (${raw})`;
-      colorChipBtn.setAttribute("aria-label", `More colors. Current: ${raw}`);
+      colorChipBtn.title = `${t("moreColors")} (${raw})`;
+      colorChipBtn.setAttribute("aria-label", `${t("moreColors")}. Current: ${raw}`);
     }
 
     // Presets tuned for Tesla-ish minimal look (different per theme)
     const PRESETS = [
-      { id: "graphite",  name: "Graphite", light: "#111827", dark: "#e5e7eb" },
-      { id: "slate",     name: "Slate",    light: "#334155", dark: "#cbd5e1" },
-      { id: "blue",      name: "Blue",     light: "#2563eb", dark: "#60a5fa" },
-      { id: "green",     name: "Green",    light: "#10b981", dark: "#34d399" },
-      { id: "amber",     name: "Amber",    light: "#f59e0b", dark: "#fbbf24" },
-      { id: "rose",      name: "Rose",     light: "#e11d48", dark: "#fb7185" }
+      { id: "graphite", light: "#111827", dark: "#e5e7eb" },
+      { id: "slate",    light: "#334155", dark: "#cbd5e1" },
+      { id: "blue",     light: "#2563eb", dark: "#60a5fa" },
+      { id: "green",    light: "#10b981", dark: "#34d399" },
+      { id: "amber",    light: "#f59e0b", dark: "#fbbf24" },
+      { id: "rose",     light: "#e11d48", dark: "#fb7185" }
     ];
 
     function appliedInkFromRaw(){
@@ -306,8 +317,8 @@ createCalculatorWidget({ button: openCalcBtn, floating: true });
         const b = document.createElement("button");
         b.type = "button";
         b.className = "swatch";
-        b.setAttribute("aria-label", p.name);
-        b.setAttribute("title", p.name);
+        b.setAttribute("aria-label", t(p.id));
+        b.setAttribute("title", t(p.id));
         b.dataset.hex = hex;
 
         b.style.background = hex;
@@ -350,7 +361,7 @@ createCalculatorWidget({ button: openCalcBtn, floating: true });
       setPopupFromInkRaw();
       syncIroFromInk();
 
-      setStatus("Color updated");
+      setStatus(t("colorUpdated"));
     }
 
     // Preserve drawings across resize by snapshotting pixels
@@ -436,7 +447,7 @@ createCalculatorWidget({ button: openCalcBtn, floating: true });
     function end(){
       drawing = false;
       last = null;
-      setStatus("Saved locally (not persisted)");
+      setStatus(t("savedLocally"));
     }
 
     function clear(){
@@ -446,7 +457,7 @@ createCalculatorWidget({ button: openCalcBtn, floating: true });
       ctx.fillStyle = currentCanvasBg();
       ctx.fillRect(0,0,r.width,r.height);
       ctx.restore();
-      setStatus("Cleared");
+      setStatus(t("cleared"));
     }
 
     function savePNG(){
@@ -467,11 +478,11 @@ createCalculatorWidget({ button: openCalcBtn, floating: true });
 
       const a = document.createElement("a");
       a.href = out.toDataURL("image/png");
-      a.download = "drawing.png";
+      a.download = t("drawingFilename");
       document.body.appendChild(a);
       a.click();
       a.remove();
-      setStatus("Downloaded PNG");
+      setStatus(t("downloadedPng"));
     }
 
     // Events
@@ -496,7 +507,7 @@ createCalculatorWidget({ button: openCalcBtn, floating: true });
         renderSwatches();
         applyInk();
         resize();
-        setStatus("Theme updated");
+        setStatus(t("themeUpdated"));
       });
     }
 
@@ -510,5 +521,5 @@ createCalculatorWidget({ button: openCalcBtn, floating: true });
     applyInk();
 
     resize();
-    setStatus("Ready");
+    setStatus(t("ready"));
   })();

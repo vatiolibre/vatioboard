@@ -2,6 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <script>
+    (function(){
+      var l = navigator.language && navigator.language.startsWith('es') ? 'es' : 'en';
+      document.documentElement.lang = l;
+      window.__lang = l;
+    })();
+  </script>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
 
   <!-- Favicon -->
@@ -81,27 +88,28 @@
   <div class="app">
     <header>
       <div class="header-inner">
-        <div class="brand" title="Simple full-page drawing board by Vatio Libre">
+        <div class="brand" data-i18n-title="tagline" title="Simple full-page drawing board by Vatio Libre">
           <span class="dot" aria-hidden="true"></span>
-          <span>Vatio Board</span>
+          <span data-i18n="brand">Vatio Board</span>
+          <button id="langToggle" type="button" class="lang-toggle" aria-label="Change language">EN</button>
         </div>
 
         <div class="toolbar" role="toolbar" aria-label="Drawing tools">
-          <button id="pen" type="button" aria-pressed="true">Pen</button>
-          <button id="erase" type="button" aria-pressed="false">Eraser</button>
+          <button id="pen" type="button" aria-pressed="true" data-i18n="pen">Pen</button>
+          <button id="erase" type="button" aria-pressed="false" data-i18n="eraser">Eraser</button>
 
           <label class="size-label">
-            Size
+            <span data-i18n="size">Size</span>
             <input id="size" type="range" min="2" max="22" value="6" />
             <span id="sizeVal" style="min-width:28px;display:inline-block;text-align:right;">6</span>
           </label>
 
           <!-- Color (matches "Size" label style) -->
           <label class="color-label" aria-label="Ink color">
-            Color
-            <div id="swatches" class="swatches" aria-label="Preset colors"></div>
+            <span data-i18n="color">Color</span>
+            <div id="swatches" class="swatches" data-i18n-aria="presetColors" aria-label="Preset colors"></div>
 
-            <button id="colorChip" type="button" class="color-chip" aria-label="More colors" hidden></button>
+            <button id="colorChip" type="button" class="color-chip" data-i18n-aria="moreColors" aria-label="More colors" hidden></button>
           </label>
 
           <div id="colorPopup" class="color-popup" hidden>
@@ -110,21 +118,21 @@
               <div id="iroPicker" class="iro-picker" aria-label="Color picker"></div>
 
               <div class="color-popup-row">
-                <span>Hex</span>
+                <span data-i18n="hex">Hex</span>
                 <input id="hexInput" class="hex-input" type="text" inputmode="text" autocomplete="off" spellcheck="false" />
-                <button id="colorPopupClose" type="button">Close</button>
+                <button id="colorPopupClose" type="button" data-i18n="close">Close</button>
               </div>
             </div>
           </div>
 
 
-          <button id="clear" type="button" class="btn-danger">Clear</button>
-          <button id="save" type="button" class="btn-success">Save PNG</button>
-          <button id="openCalc" type="button">Calculator</button>
+          <button id="clear" type="button" class="btn-danger" data-i18n="clear">Clear</button>
+          <button id="save" type="button" class="btn-success" data-i18n="savePng">Save PNG</button>
+          <button id="openCalc" type="button" data-i18n="calculator">Calculator</button>
           <div class="right-stack" aria-label="Status and attribution">
-            <span id="status" class="status">Ready</span>
+            <span id="status" class="status" data-i18n="ready">Ready</span>
             <span class="attribution" aria-label="Creator attribution">
-              Powered by <strong><a href="https://vatioboard.com">VatioLibre.com</a></strong>
+              <span data-i18n="poweredBy">Powered by</span> <strong><a href="https://vatioboard.com">VatioLibre.com</a></strong>
             </span>
           </div>
         </div>

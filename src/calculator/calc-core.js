@@ -1,5 +1,6 @@
 import { loadState, saveState } from "./storage.js";
 import { create, all } from "mathjs";
+import { t } from "../i18n.js";
 const math = create(all);
 
 function normalizeExpr(expr) {
@@ -138,7 +139,7 @@ export class CalcCore {
       const raw = normalizeExpr(this.expr || "");
       const safe = sanitize(raw);
       if (safe == null) {
-        this.status = "Blocked: unsupported characters in expression.";
+        this.status = t("blockedChars");
         this._persist();
         return { ok: false, error: this.status };
       }
@@ -154,7 +155,7 @@ export class CalcCore {
       this._persist();
       return { ok: true, result };
     } catch (e) {
-      this.status = "Error";
+      this.status = t("error");
       this._persist();
       return { ok: false, error: String(e?.message || e) };
     }
