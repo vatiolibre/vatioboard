@@ -1,10 +1,10 @@
 import { el } from "../dom.js";
-import { formatNumber } from "./number-format.js";
+import { toDisplay } from "./number-format.js";
 
 const HISTORY_RESULT_MAX_LEN = 10;
 
 function formatHistoryResult(value, settings, maxLen = HISTORY_RESULT_MAX_LEN) {
-  const formatted = formatNumber(value, settings);
+  const formatted = toDisplay(value, settings);
   if (formatted.length <= maxLen) return formatted;
   return formatted.slice(0, maxLen);
 }

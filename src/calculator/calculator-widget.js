@@ -7,7 +7,7 @@ import { initHistorySheet } from "./widget/history-sheet.js";
 import { buildKeypad } from "./widget/keypad.js";
 import { clampElementToViewport, makePanelDraggable, makeLauncherDraggable } from "./widget/drag.js";
 import { initSettingsSheet } from "./widget/settings-sheet.js";
-import { formatNumber, normalizeInput } from "./widget/number-format.js";
+import { toRaw, toDisplay, mapCursorPosition } from "./widget/number-format.js";
 
 /**
  * createCalculatorWidget(options)
@@ -154,22 +154,33 @@ export function createCalculatorWidget(options = {}) {
     saveSettings,
     onOpen: () => historyApi?.setHistorySheetOpen(false),
     onChange: () => {
-      render({ keepEnd: true, force: !isEditing });
+      render({ keepEnd: true, force: true });
       historyApi?.refreshHistoryList();
     },
   });
 
   function render({ keepEnd = false, force = false } = {}) {
     const rawExpr = core.expr ?? "";
-    const numericExpr = /^[+\-]?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?$/.test(rawExpr);
-    const displayExpr = !isEditing && numericExpr ? formatNumber(rawExpr, settings) : rawExpr;
 
-    if (!isEditing || force) {
-      if (exprInput.value !== displayExpr) exprInput.value = displayExpr;
+    const displayExpr = toDisplay(rawExpr, settings);
+
+    if (exprInput.value !== displayExpr) {
+      const oldCursorPos = exprInput.selectionStart ?? 0;
+      const oldValue = exprInput.value;
+
+      exprInput.value = displayExpr;
+
+      if (isEditing && settings.thousandSeparator) {
+        const newCursorPos = mapCursorPosition(oldValue, displayExpr, oldCursorPos);
+        try {
+          exprInput.setSelectionRange(newCursorPos, newCursorPos);
+        } catch {}
+      }
     }
+
     historyEl.textContent = core.status ?? "";
 
-    if (keepEnd && (!isEditing || force)) keepInputEndVisible(exprInput);
+    if (keepEnd) keepInputEndVisible(exprInput);
   }
 
   function open() {
@@ -213,12 +224,9 @@ export function createCalculatorWidget(options = {}) {
   exprInput.addEventListener("focus", () => {
     if (isTouchLike) return;
     isEditing = true;
-    const normalized = normalizeInput(exprInput.value, settings);
-    if (normalized !== exprInput.value) {
-      exprInput.value = normalized;
-      keepInputEndVisible(exprInput);
-    }
-    core.setExpr(exprInput.value);
+    // Sync core with normalized value but keep formatted display
+    const normalized = toRaw(exprInput.value, settings);
+    core.setExpr(normalized);
   });
 
   exprInput.addEventListener("blur", () => {
@@ -229,7 +237,7 @@ export function createCalculatorWidget(options = {}) {
 
   exprInput.addEventListener("input", () => {
     if (isTouchLike) return;
-    core.setExpr(normalizeInput(exprInput.value, settings));
+    core.setExpr(toRaw(exprInput.value, settings));
     // If caret is at end, keep end visible (don’t fight user editing mid-string)
     const atEnd = exprInput.selectionStart === exprInput.value.length;
     render({ keepEnd: atEnd });
@@ -241,7 +249,7 @@ export function createCalculatorWidget(options = {}) {
     if (evaluating) return;
     evaluating = true;
     try {
-      core.setExpr(normalizeInput(exprInput.value, settings));
+      core.setExpr(toRaw(exprInput.value, settings));
 
       const res = await core.evaluate();
       isEditing = false;
@@ -254,7 +262,7 @@ export function createCalculatorWidget(options = {}) {
   }
 
   function pushToken(tokenOrFn) {
-    core.setExpr(normalizeInput(exprInput.value, settings));
+    core.setExpr(toRaw(exprInput.value, settings));
     const tok = typeof tokenOrFn === "function" ? tokenOrFn(core) : tokenOrFn;
     core.append(tok);
     isEditing = false;
@@ -263,7 +271,7 @@ export function createCalculatorWidget(options = {}) {
   }
 
   function act(fn) {
-    core.setExpr(normalizeInput(exprInput.value, settings));
+    core.setExpr(toRaw(exprInput.value, settings));
     if (typeof fn === "function") fn(core);
     isEditing = false;
     render({ keepEnd: true, force: true });
