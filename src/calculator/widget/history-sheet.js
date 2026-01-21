@@ -16,6 +16,7 @@ export function initHistorySheet({
   historyBtn,
   historyList,
   historyClearBtn,
+  historyCloseBtn,
   render,
   settings,
   onOpen,
@@ -84,6 +85,10 @@ export function initHistorySheet({
   historyClearBtn.addEventListener("click", () => {
     clearHistory();
     renderHistoryList();
+  });
+
+  historyCloseBtn.addEventListener("click", () => {
+    setHistorySheetOpen(false);
   });
 
   panel.addEventListener("click", (e) => {

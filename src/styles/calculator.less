@@ -188,6 +188,11 @@
   font-weight: 700;
   font-size: 14px;
 }
+.calc-history-sheet-actions{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .calc-history-clear{
   background: transparent;
   border: 1px solid var(--calc-border);
@@ -200,6 +205,24 @@
 .calc-history-clear:hover{
   color: var(--calc-text);
   background: var(--calc-btn-hover);
+}
+.calc-history-close{
+  background: transparent;
+  border: 1px solid var(--calc-border);
+  color: var(--calc-muted);
+  border-radius: 8px;
+  padding: 4px 10px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+.calc-history-close:hover{
+  color: var(--calc-text);
+  background: var(--calc-btn-hover);
+}
+.calc-history-close svg{
+  width: 16px;
+  height: 16px;
 }
 .calc-history-list{
   flex: 1;

@@ -1,5 +1,5 @@
 import { el } from "../dom.js";
-import { IconHistory, IconSettings } from "../../icons.js";
+import { IconHistory, IconSettings, IconClose } from "../../icons.js";
 
 export function buildPanel({ t, isTouchLike }) {
   const panel = el(
@@ -45,7 +45,15 @@ export function buildPanel({ t, isTouchLike }) {
       { class: "calc-history-sheet", hidden: true, "aria-hidden": "true" },
       el("div", { class: "calc-history-sheet-header" },
         el("span", {}, t("history")),
-        el("button", { class: "calc-history-clear", type: "button" }, t("clear"))
+        el("div", { class: "calc-history-sheet-actions" },
+          el("button", { class: "calc-history-clear", type: "button" }, t("clear")),
+          el("button", {
+            class: "calc-history-close",
+            type: "button",
+            "aria-label": t("close"),
+            html: IconClose,
+          })
+        )
       ),
       el("div", { class: "calc-history-list" })
     ),
@@ -54,7 +62,12 @@ export function buildPanel({ t, isTouchLike }) {
       { class: "calc-settings-sheet", hidden: true, "aria-hidden": "true" },
       el("div", { class: "calc-settings-sheet-header" },
         el("span", {}, t("settings")),
-        el("button", { class: "calc-settings-close", type: "button" }, t("close"))
+        el("button", {
+          class: "calc-icon-btn calc-settings-close",
+          type: "button",
+          "aria-label": t("close"),
+          html: IconClose,
+        })
       ),
       el("div", { class: "calc-settings-body" },
         el(
@@ -116,6 +129,7 @@ export function buildPanel({ t, isTouchLike }) {
     historySheet: panel.querySelector(".calc-history-sheet"),
     historyList: panel.querySelector(".calc-history-list"),
     historyClearBtn: panel.querySelector(".calc-history-clear"),
+    historyCloseBtn: panel.querySelector(".calc-history-close"),
     settingsBtn: panel.querySelector(".calc-settings-btn"),
     settingsSheet: panel.querySelector(".calc-settings-sheet"),
     settingsCloseBtn: panel.querySelector(".calc-settings-close"),
