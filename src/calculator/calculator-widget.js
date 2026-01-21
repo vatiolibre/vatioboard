@@ -137,7 +137,7 @@ export function createCalculatorWidget(options = {}) {
     ),
     el(
       "div",
-      { class: "calc-history-sheet", hidden: true },
+      { class: "calc-history-sheet", hidden: true, "aria-hidden": "true" },
       el("div", { class: "calc-history-sheet-header" },
         el("span", {}, t("history")),
         el("button", { class: "calc-history-clear", type: "button" }, t("clear"))
@@ -176,6 +176,26 @@ export function createCalculatorWidget(options = {}) {
   const keys = panel.querySelector(".calc-keys");
   const header = panel.querySelector(".calc-header");
 
+  const setHistorySheetOpen = (isOpen) => {
+    if (isOpen) {
+      renderHistoryList();
+      historySheet.hidden = false;
+      historySheet.setAttribute("aria-hidden", "false");
+      requestAnimationFrame(() => historySheet.classList.add("is-open"));
+      return;
+    }
+
+    historySheet.classList.remove("is-open");
+    historySheet.setAttribute("aria-hidden", "true");
+  };
+
+  historySheet.addEventListener("transitionend", (e) => {
+    if (e.propertyName !== "transform") return;
+    if (!historySheet.classList.contains("is-open")) {
+      historySheet.hidden = true;
+    }
+  });
+
   function renderHistoryList() {
     const history = loadHistory();
     historyList.innerHTML = "";
@@ -194,15 +214,14 @@ export function createCalculatorWidget(options = {}) {
         core.setExpr(item.result);
         core.status = item.expr;
         render();
-        historySheet.hidden = true;
+        setHistorySheetOpen(false);
       });
       historyList.appendChild(row);
     }
   }
 
   historyBtn.addEventListener("click", () => {
-    renderHistoryList();
-    historySheet.hidden = !historySheet.hidden;
+    setHistorySheetOpen(!historySheet.classList.contains("is-open"));
   });
 
   historyClearBtn.addEventListener("click", () => {
@@ -211,9 +230,9 @@ export function createCalculatorWidget(options = {}) {
   });
 
   panel.addEventListener("click", (e) => {
-    if (historySheet.hidden) return;
+    if (!historySheet.classList.contains("is-open")) return;
     if (!historySheet.contains(e.target) && !historyBtn.contains(e.target)) {
-      historySheet.hidden = true;
+      setHistorySheetOpen(false);
     }
   });
 
