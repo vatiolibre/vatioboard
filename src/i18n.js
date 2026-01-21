@@ -39,6 +39,13 @@ const translations = {
 
     // Calculator
     calcTitle: 'Calculator',
+    history: 'History',
+    noHistory: 'No history yet',
+    settings: 'Settings',
+    decimalPlaces: 'Decimal places',
+    thousandSeparator: 'Thousands separator',
+    separatorDot: 'Dot (.)',
+    separatorNone: 'None',
 
     // Errors
     error: 'Error',
@@ -88,6 +95,13 @@ const translations = {
 
     // Calculator
     calcTitle: 'Calculadora',
+    history: 'Historial',
+    noHistory: 'Sin historial',
+    settings: 'Configuración',
+    decimalPlaces: 'Decimales',
+    thousandSeparator: 'Separador de miles',
+    separatorDot: 'Punto (.)',
+    separatorNone: 'Ninguno',
 
     // Errors
     error: 'Error',

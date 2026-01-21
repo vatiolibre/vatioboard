@@ -1,4 +1,4 @@
-import { loadState, saveState } from "./storage.js";
+import { loadState, saveState, addToHistory } from "./storage.js";
 import { create, all } from "mathjs";
 import { t } from "../i18n.js";
 const math = create(all);
@@ -55,9 +55,9 @@ function sanitize(expr) {
   // We also allow commas because some locales paste them; we convert commas to dots.
   const normalized = expr.replaceAll(",", ".");
 
-  // Allow digits, operators, parentheses, dot, percent, whitespace, and the letters in "sqrt"
+  // Allow digits, operators, parentheses, dot, percent, whitespace, power (^), and the letters in "sqrt"
   // (and only those letters).
-  const ok = /^[0-9+\-*/().%\s×÷–−sqrt]*$/.test(normalized);
+  const ok = /^[0-9+\-*/().%\s×÷–−sqrt^]*$/.test(normalized);
   if (!ok) return null;
 
   // Extra safety: if letters appear, they must form only "sqrt" tokens.
@@ -75,12 +75,13 @@ export class CalcCore {
     const state = loadState();
     this.expr = state?.expr ?? "";
     this.lastResult = state?.lastResult ?? "";
+    this.lastExpr = state?.lastExpr ?? "";
     this.status = state?.status ?? "";
     this._persist();
   }
 
   _persist() {
-    saveState({ expr: this.expr, lastResult: this.lastResult, status: this.status });
+    saveState({ expr: this.expr, lastResult: this.lastResult, lastExpr: this.lastExpr, status: this.status });
   }
 
   setExpr(v) {
@@ -97,6 +98,7 @@ export class CalcCore {
     this.expr = "";
     this.status = "";
     this.lastResult = "";
+    this.lastExpr = "";
     this._persist();
   }
 
@@ -134,7 +136,33 @@ export class CalcCore {
     this._persist();
   }
 
+  squareTrailingNumber() {
+    const s = this.expr ?? "";
+    const m = s.match(/(.*?)(\d+(?:\.\d+)?)\s*$/);
+    if (!m) return;
+    this.expr = `${m[1]}(${m[2]})^2`;
+    this._persist();
+  }
+
+  smartParen() {
+    const s = this.expr ?? "";
+    let open = 0;
+    let close = 0;
+    for (const c of s) {
+      if (c === "(") open++;
+      else if (c === ")") close++;
+    }
+    return open > close ? ")" : "(";
+  }
+
   async evaluate() {
+    if (this.expr === this.lastResult && this.lastExpr) {
+      this.expr = this.lastExpr;
+      this.status = "";
+      this._persist();
+      return { ok: true, result: this.expr, toggled: true };
+    }
+
     try {
       const raw = normalizeExpr(this.expr || "");
       const safe = sanitize(raw);
@@ -149,9 +177,11 @@ export class CalcCore {
       // Use bundled mathjs instance (already configured at module scope)
       const result = math.evaluate(prepared).toString();
 
-      this.status = `${raw} =`;
+      this.lastExpr = this.expr;
+      this.status = raw;
       this.lastResult = result;
       this.expr = result;
+      addToHistory(this.lastExpr, result);
       this._persist();
       return { ok: true, result };
     } catch (e) {
