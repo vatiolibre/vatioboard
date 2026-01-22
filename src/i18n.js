@@ -25,6 +25,17 @@ const translations = {
 
     // Energy Calculator
     energyTitle: 'EV Trip Cost',
+    distanceKm: 'Distance (km)',
+    distanceMi: 'Distance (mi)',
+    consumptionKm: 'Avg consumption (kWh/100km)',
+    consumptionMi: 'Avg consumption (kWh/100mi)',
+    electricityPrice: 'Electricity price ($/kWh)',
+    energyUsed: 'Energy used',
+    estimatedCost: 'Estimated cost',
+    units: 'Units',
+    distanceUnit: 'Distance unit',
+    invalidNumber: 'Invalid number',
+    mustBePositive: 'Must be positive',
 
     // Status messages
     ready: 'Ready',
@@ -86,6 +97,17 @@ const translations = {
 
     // Energy Calculator
     energyTitle: 'Costo de Viaje EV',
+    distanceKm: 'Distancia (km)',
+    distanceMi: 'Distancia (mi)',
+    consumptionKm: 'Consumo promedio (kWh/100km)',
+    consumptionMi: 'Consumo promedio (kWh/100mi)',
+    electricityPrice: 'Precio electricidad ($/kWh)',
+    energyUsed: 'Energía usada',
+    estimatedCost: 'Costo estimado',
+    units: 'Unidades',
+    distanceUnit: 'Unidad de distancia',
+    invalidNumber: 'Número inválido',
+    mustBePositive: 'Debe ser positivo',
 
     // Status messages
     ready: 'Listo',
