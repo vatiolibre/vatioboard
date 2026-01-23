@@ -4,19 +4,26 @@ import { IconHistory, IconSettings, IconClose } from "../../icons.js";
 export function buildPanel({ t, isTouchLike }) {
   const panel = el(
     "section",
-    { class: "calc-panel", hidden: true, role: "dialog", "aria-label": t("calcTitle") },
+    {
+      class: "calc-panel",
+      hidden: true,
+      role: "dialog",
+      "aria-label": t("calcTitle"),
+      "data-i18n-aria": "calcTitle",
+    },
     el(
       "div",
       { class: "calc-header" },
-      el("div", { class: "calc-title" }, t("calcTitle")),
+      el("div", { class: "calc-title", "data-i18n": "calcTitle" }, t("calcTitle")),
       el("button", {
         class: "calc-icon-btn calc-settings-btn",
         type: "button",
         "aria-label": t("settings"),
+        "data-i18n-aria": "settings",
         html: IconSettings,
       }),
       el("div", { class: "calc-spacer" }),
-      el("button", { class: "calc-close", type: "button" }, t("close"))
+      el("button", { class: "calc-close", type: "button", "data-i18n": "close" }, t("close"))
     ),
     el(
       "div",
@@ -28,6 +35,7 @@ export function buildPanel({ t, isTouchLike }) {
           class: "calc-icon-btn calc-history-btn",
           type: "button",
           "aria-label": t("history"),
+          "data-i18n-aria": "history",
           html: IconHistory,
         }),
         el("div", { class: "calc-history-text" })
@@ -44,13 +52,14 @@ export function buildPanel({ t, isTouchLike }) {
       "div",
       { class: "calc-history-sheet", hidden: true, "aria-hidden": "true" },
       el("div", { class: "calc-history-sheet-header" },
-        el("span", {}, t("history")),
+        el("span", { "data-i18n": "history" }, t("history")),
         el("div", { class: "calc-history-sheet-actions" },
-          el("button", { class: "calc-history-clear", type: "button" }, t("clear")),
+          el("button", { class: "calc-history-clear", type: "button", "data-i18n": "clear" }, t("clear")),
           el("button", {
             class: "calc-history-close",
             type: "button",
             "aria-label": t("close"),
+            "data-i18n-aria": "close",
             html: IconClose,
           })
         )
@@ -61,11 +70,12 @@ export function buildPanel({ t, isTouchLike }) {
       "div",
       { class: "calc-settings-sheet", hidden: true, "aria-hidden": "true" },
       el("div", { class: "calc-settings-sheet-header" },
-        el("span", {}, t("settings")),
+        el("span", { "data-i18n": "settings" }, t("settings")),
         el("button", {
           class: "calc-icon-btn calc-settings-close",
           type: "button",
           "aria-label": t("close"),
+          "data-i18n-aria": "close",
           html: IconClose,
         })
       ),
@@ -73,7 +83,7 @@ export function buildPanel({ t, isTouchLike }) {
         el(
           "div",
           { class: "calc-settings-row calc-settings-row-inline calc-settings-row-box" },
-          el("span", { class: "calc-settings-label" }, t("decimalPlaces")),
+          el("span", { class: "calc-settings-label", "data-i18n": "decimalPlaces" }, t("decimalPlaces")),
           el(
             "div",
             { class: "calc-settings-stepper" },
@@ -85,7 +95,7 @@ export function buildPanel({ t, isTouchLike }) {
         el(
           "label",
           { class: "calc-settings-row calc-settings-row-inline" },
-          el("span", { class: "calc-settings-label" }, t("thousandSeparator")),
+          el("span", { class: "calc-settings-label", "data-i18n": "thousandSeparator" }, t("thousandSeparator")),
           el(
             "span",
             { class: "calc-settings-switch" },

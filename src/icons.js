@@ -27,3 +27,9 @@ export const IconClose = `
     <path d="M6 6l12 12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>
 `;
+
+export const IconEnergy = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`;

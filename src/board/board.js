@@ -1,7 +1,11 @@
 import "../styles/board.less";
 import "../styles/calculator.less";
+import "../styles/energy.less";
+import "../styles/dock.less";
 
 import { createCalculatorWidget } from "../calculator/calculator-widget.js";
+import { createEnergyCalculatorWidget } from "../energy/energy-calculator-widget.js";
+import { createFloatingDock } from "../dock/floating-dock.js";
 import iro from "@jaames/iro";
 import { t, applyTranslations, toggleLang, getLang } from "../i18n.js";
 
@@ -15,8 +19,19 @@ langToggleBtn.addEventListener("click", () => {
   langToggleBtn.textContent = newLang.toUpperCase();
 });
 
+// Toolbar buttons
 const openCalcBtn = document.getElementById("openCalc");
-createCalculatorWidget({ button: openCalcBtn, floating: true });
+const openEnergyBtn = document.getElementById("openEnergy");
+
+// Floating dock with tool buttons
+const { calcBtn, energyBtn } = createFloatingDock();
+
+// Create widgets - both toolbar and dock buttons toggle the same instance
+const calcWidget = createCalculatorWidget({ button: openCalcBtn, floating: false });
+calcBtn.addEventListener("click", () => calcWidget.toggle());
+
+const energyWidget = createEnergyCalculatorWidget({ button: openEnergyBtn, floating: false });
+energyBtn.addEventListener("click", () => energyWidget.toggle());
 
   (function(){
     const canvas = document.getElementById("pad");

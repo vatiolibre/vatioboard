@@ -1,0 +1,102 @@
+/* Floating Dock - Container for tool buttons */
+
+.floating-dock {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2147483647;
+
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  padding: 8px;
+  border-radius: 32px;
+  border: 1px solid var(--calc-border);
+  background: var(--calc-surface);
+  box-shadow: var(--calc-shadow);
+
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.floating-dock:active,
+.floating-dock.is-dragging {
+  cursor: grabbing;
+}
+
+.floating-dock.is-dragging {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.dock-btn {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--calc-border);
+  background: var(--calc-btn);
+  color: var(--calc-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+  font-family: var(--calc-font);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.dock-btn:hover {
+  background: var(--calc-btn-hover);
+}
+
+.dock-btn:active {
+  transform: scale(0.95);
+}
+
+.dock-btn svg {
+  width: 20px;
+  height: 20px;
+  opacity: 0.9;
+  display: block;
+  flex-shrink: 0;
+}
+
+/* Accent colors for different tools */
+.dock-btn-calc {
+  background: color-mix(in srgb, var(--calc-accent) 15%, var(--calc-btn));
+}
+
+.dock-btn-calc:hover {
+  background: color-mix(in srgb, var(--calc-accent) 25%, var(--calc-btn-hover));
+}
+
+.dock-btn-energy {
+  background: color-mix(in srgb, #f59e0b 15%, var(--calc-btn));
+}
+
+.dock-btn-energy:hover {
+  background: color-mix(in srgb, #f59e0b 25%, var(--calc-btn-hover));
+}
+
+@media (max-width: 420px) {
+  .floating-dock {
+    right: 12px;
+    bottom: 12px;
+    padding: 6px;
+    gap: 6px;
+  }
+
+  .dock-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .dock-btn svg {
+    width: 18px;
+    height: 18px;
+  }
+}

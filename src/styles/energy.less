@@ -1,0 +1,830 @@
+/* Energy Calculator Widget - Trip Cost Calculator */
+/* Uses same CSS variables as calculator for consistency */
+
+/* Panel */
+.energy-panel {
+  position: fixed;
+  right: 16px;
+  bottom: 76px;
+  z-index: 2147483646;
+  width: 320px;
+  border-radius: var(--calc-radius);
+  border: 1px solid var(--calc-border);
+  background: var(--calc-surface);
+  color: var(--calc-text);
+  box-shadow: var(--calc-shadow);
+  overflow: hidden;
+  font-family: var(--calc-font);
+  -webkit-tap-highlight-color: transparent;
+  transition: width 0.3s ease;
+}
+
+.energy-panel.is-multi-mode {
+  width: 640px;
+}
+
+.energy-panel[hidden] {
+  display: none;
+}
+
+/* Header */
+.energy-header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--calc-border);
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.energy-header:active {
+  cursor: grabbing;
+}
+
+.energy-title {
+  font-weight: 800;
+  letter-spacing: 0.2px;
+}
+
+.energy-spacer {
+  flex: 1;
+}
+
+
+/* Icon button (settings) - same as calc-icon-btn */
+.energy-icon-btn {
+  background: transparent;
+  border: none;
+  color: var(--calc-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.energy-icon-btn:hover {
+  background: var(--calc-btn-hover);
+  color: var(--calc-text);
+}
+
+.energy-icon-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Mode switch (Segmented Control) */
+.energy-mode-switch {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--calc-surface);
+  border-bottom: 1px solid var(--calc-border);
+}
+
+.energy-mode-btn {
+  flex: 1;
+  padding: 6px 12px;
+  border: 1.5px solid var(--calc-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--calc-muted);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--calc-font);
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.energy-mode-btn:hover {
+  border-color: var(--calc-accent);
+  color: var(--calc-text);
+}
+
+.energy-mode-btn.is-active {
+  background: var(--calc-accent);
+  border-color: var(--calc-accent);
+  color: #062018;
+}
+
+/* Subheader */
+.energy-subheader {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--calc-muted);
+  border-bottom: 1px solid var(--calc-border);
+  text-align: center;
+  letter-spacing: 0.5px;
+}
+
+/* Body */
+.energy-body {
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Input groups */
+.energy-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.energy-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--calc-muted);
+  padding-left: 4px;
+}
+
+.energy-input {
+  width: 100%;
+  border: 1px solid var(--calc-border);
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--calc-display-bg);
+  color: var(--calc-text);
+  font-size: 16px;
+  font-weight: 600;
+  font-family: var(--calc-font);
+  outline: none;
+  box-sizing: border-box;
+  min-height: 44px;
+  transition: border-color 0.15s ease;
+}
+
+.energy-input::placeholder {
+  color: var(--calc-muted);
+  opacity: 0.5;
+}
+
+.energy-input:focus {
+  border-color: var(--calc-accent);
+}
+
+.energy-input.is-invalid {
+  border-color: #ef4444;
+}
+
+.energy-input-error {
+  display: none;
+}
+
+/* Sliders */
+.energy-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;  
+  height: 6px;
+  border-radius: 3px;
+  background: var(--calc-display-bg);
+  border: 1px solid var(--calc-border);
+  outline: none;
+  margin: 8px 0 0 0;
+  padding: 0;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+/* Override global range width from board.less */
+.energy-panel input.energy-slider {
+  width: calc(100% - 12px);
+  max-width: none;
+  margin-left: 6px;
+  margin-right: 6px;
+}
+
+.energy-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--calc-accent);
+  border: 2px solid var(--calc-surface);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  cursor: grab;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.energy-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.25);
+}
+
+.energy-slider::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.05);
+}
+
+.energy-slider::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--calc-accent);
+  border: 2px solid var(--calc-surface);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  cursor: grab;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.energy-slider::-moz-range-thumb:hover {
+  transform: scale(1.1);
+}
+
+.energy-slider::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--calc-display-bg);
+  border: 1px solid var(--calc-border);
+}
+
+/* Results */
+.energy-results {
+  margin-top: 8px;
+  padding: 12px;
+  background: var(--calc-surface);
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--calc-border) 70%, var(--calc-text));
+}
+
+.energy-result-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.energy-result-row:first-child {
+  padding-top: 0;
+}
+
+.energy-result-row:last-child {
+  padding-bottom: 0;
+}
+
+.energy-result-row + .energy-result-row {
+  border-top: 1px solid var(--calc-border);
+}
+
+.energy-result-label {
+  font-size: 13px;
+  color: color-mix(in srgb, var(--calc-text) 70%, var(--calc-muted));
+}
+
+.energy-result-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--calc-text);
+}
+
+.energy-result-total .energy-result-value {
+  color: var(--calc-accent);
+  font-size: 18px;
+}
+
+/* Settings Sheet */
+.energy-settings-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--calc-surface);
+  border-top: 1px solid var(--calc-border);
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+  z-index: 11;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+
+  transform: translateY(100%);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    visibility 0.25s;
+}
+
+.energy-settings-sheet.is-open {
+  transform: translateY(0);
+  opacity: 1;
+  visibility: visible;
+}
+
+.energy-settings-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--calc-border);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.energy-settings-close svg {
+  width: 16px;
+  height: 16px;
+}
+
+.energy-settings-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.energy-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.energy-settings-row-box {
+  border: 1px solid var(--calc-border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: var(--calc-surface);
+}
+
+.energy-settings-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--calc-text);
+}
+
+/* Unit toggle buttons */
+.energy-unit-toggle {
+  display: flex;
+  gap: 2px;
+  background: var(--calc-display-bg);
+  border-radius: 8px;
+  padding: 3px;
+  border: 1px solid var(--calc-border);
+}
+
+.energy-unit-btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--calc-muted);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--calc-font);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.energy-unit-btn:hover {
+  color: var(--calc-text);
+}
+
+.energy-unit-btn.is-active {
+  background: var(--calc-accent);
+  color: #062018;
+}
+
+/* Thousands separator switch (same as calculator) */
+.energy-settings-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 44px;
+  height: 24px;
+}
+
+.energy-settings-thousands {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 44px;
+  height: 24px;
+  margin: 0;
+  border: 1px solid var(--calc-border);
+  border-radius: 999px;
+  background: var(--calc-display-bg);
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.energy-settings-slider {
+  position: absolute;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--calc-text);
+  pointer-events: none;
+  transition: transform 0.2s ease;
+}
+
+.energy-settings-thousands:checked {
+  background: color-mix(in srgb, var(--calc-accent) 15%, var(--calc-display-bg));
+  border-color: color-mix(in srgb, var(--calc-accent) 30%, var(--calc-border));
+}
+
+.energy-settings-thousands:checked + .energy-settings-slider {
+  transform: translateX(20px);
+}
+
+/* Dragging state */
+.energy-panel.is-dragging {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Multi-trip view */
+.energy-multi-view {
+  display: grid;
+  grid-template-columns: 320px 320px;
+  height: 480px;
+}
+
+.energy-multi-view[hidden] {
+  display: none;
+}
+
+.energy-simple-view[hidden] {
+  display: none;
+}
+
+/* Left sidebar (Editor) */
+.energy-multi-sidebar {
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  gap: 8px;
+  border-right: 1px solid var(--calc-border);
+  background: var(--calc-surface);
+}
+
+.energy-multi-sidebar .energy-input-group {
+  gap: 4px;
+}
+
+.energy-multi-sidebar .energy-input-group:first-of-type .energy-input {
+  /* Nombre del tramo - tamaño normal */
+  padding: 12px;
+  font-size: 16px;
+  min-height: 44px;
+  border-radius: 12px;
+}
+
+.energy-multi-sidebar .energy-input {
+  padding: 8px;
+  font-size: 14px;
+  min-height: 36px;
+  border-radius: 8px;
+}
+
+.energy-multi-sidebar .energy-slider {
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+.energy-multi-form-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--calc-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 0;
+}
+
+.energy-multi-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: auto;
+}
+
+.energy-multi-save-btn {
+  flex: 1;
+  padding: 8px;
+  border: none;
+  border-radius: 8px;
+  background: var(--calc-accent);
+  color: #062018;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--calc-font);
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.energy-multi-save-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.energy-multi-save-btn:disabled {
+  background: var(--calc-border);
+  color: var(--calc-muted);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.energy-multi-cancel-btn {
+  padding: 8px 12px;
+  border: 1px solid var(--calc-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--calc-muted);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--calc-font);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.energy-multi-cancel-btn:hover {
+  background: var(--calc-display-bg);
+  color: var(--calc-text);
+}
+
+.energy-multi-cancel-btn[hidden] {
+  display: none;
+}
+
+/* Right side: trips list + footer */
+.energy-multi-right {
+  display: flex;
+  flex-direction: column;
+  background: var(--calc-display-bg);
+}
+
+.energy-trips-container {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+}
+
+.energy-multi-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--calc-border);
+  background: var(--calc-surface);
+}
+
+/* Trip item (card) */
+.energy-trip-item {
+  border: 1px solid var(--calc-border);
+  border-radius: 10px;
+  background: var(--calc-surface);
+  overflow: hidden;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.energy-trip-item.is-active {
+  border-color: var(--calc-accent);
+  background: color-mix(in srgb, var(--calc-accent) 5%, var(--calc-surface));
+}
+
+.energy-trip-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background 0.15s ease;
+}
+
+.energy-trip-card:hover {
+  background: var(--calc-display-bg);
+}
+
+.energy-trip-card-name {
+  flex: 1;
+  color: var(--calc-text);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--calc-font);
+}
+
+.energy-trip-card-subtotal {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--calc-accent);
+  margin-right: 4px;
+}
+
+.energy-trip-delete {
+  background: transparent;
+  border: none;
+  color: var(--calc-muted);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.energy-trip-delete:hover {
+  background: color-mix(in srgb, #ef4444 10%, transparent);
+  color: #ef4444;
+}
+
+/* Multi-trip total */
+.energy-multi-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--calc-display-bg);
+  border-radius: 10px;
+  border: 1px solid var(--calc-border);
+}
+
+.energy-multi-total-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--calc-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.energy-multi-total-value {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--calc-accent);
+}
+
+/* Reset all button */
+.energy-reset-all-btn {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--calc-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--calc-muted);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--calc-font);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.energy-reset-all-btn:hover {
+  background: color-mix(in srgb, #ef4444 5%, transparent);
+  color: #ef4444;
+  border-color: #ef4444;
+}
+
+/* Confirm Modal */
+.energy-modal {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.energy-modal[hidden] {
+  display: none;
+}
+
+.energy-modal-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: var(--calc-radius);
+}
+
+.energy-modal-content {
+  position: relative;
+  background: var(--calc-surface);
+  border: 1px solid var(--calc-border);
+  border-radius: 12px;
+  padding: 20px;
+  min-width: 320px;
+  max-width: 92%;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.energy-modal-message {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--calc-text);
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.energy-modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.energy-modal-btn {
+  flex: 1;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--calc-font);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.energy-modal-cancel {
+  background: transparent;
+  border: 1px solid var(--calc-border);
+  color: var(--calc-muted);
+}
+
+.energy-modal-cancel:hover {
+  background: var(--calc-display-bg);
+  color: var(--calc-text);
+}
+
+.energy-modal-confirm {
+  background: #ef4444;
+  border: none;
+  color: #fff;
+}
+
+.energy-modal-confirm:hover {
+  background: #dc2626;
+}
+
+/* Responsive */
+@media (max-width: 700px) {
+  .energy-panel.is-multi-mode {
+    width: calc(100vw - 24px);
+    right: 12px;
+  }
+
+  .energy-multi-view {
+    grid-template-columns: 1fr;
+    height: auto;
+    max-height: 80vh;
+  }
+
+  .energy-multi-sidebar {
+    border-right: none;
+    border-bottom: 1px solid var(--calc-border);
+  }
+
+  .energy-multi-right {
+    max-height: 400px;
+  }
+}
+
+@media (max-width: 599px) {
+  .energy-mode-switch {
+    display: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .energy-panel {
+    width: calc(100vw - 24px);
+    right: 12px;
+  }
+
+  .energy-input {
+    font-size: 16px; /* Prevent zoom on iOS */
+  }
+}
