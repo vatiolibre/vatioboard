@@ -7,6 +7,10 @@ import {
   saveTripCostSettings,
   loadTripCostValues,
   saveTripCostValues,
+  loadMultiTrips,
+  saveMultiTrips,
+  createNewTrip,
+  clearAllTrips,
 } from "./trip-cost-storage.js";
 // Shared formatting utilities from calculator
 import {
@@ -49,8 +53,12 @@ export function createEnergyCalculatorWidget(options = {}) {
   // Load persisted state
   const tripSettings = loadTripCostSettings();
   const values = loadTripCostValues();
+  let multiTrips = loadMultiTrips();
   // Shared format settings (from calculator)
   let formatSettings = loadCalcSettings();
+
+  // Multi-trip editing state
+  let editingTripId = null;
 
   function loadPos() {
     try {
@@ -72,16 +80,23 @@ export function createEnergyCalculatorWidget(options = {}) {
   // Build panel
   const panel = el(
     "section",
-    { class: "energy-panel", hidden: true, role: "dialog", "aria-label": t("energyTitle") },
+    {
+      class: "energy-panel",
+      hidden: true,
+      role: "dialog",
+      "aria-label": t("energyTitle"),
+      "data-i18n-aria": "energyTitle",
+    },
     // Header
     el(
       "div",
       { class: "energy-header" },
-      el("div", { class: "energy-title" }, t("energyTitle")),
+      el("div", { class: "energy-title", "data-i18n": "energyTitle" }, t("energyTitle")),
       el("button", {
         class: "energy-icon-btn energy-settings-btn",
         type: "button",
         "aria-label": t("settings"),
+        "data-i18n-aria": "settings",
         html: IconSettings,
       }),
       el("div", { class: "energy-spacer" }),
@@ -89,15 +104,33 @@ export function createEnergyCalculatorWidget(options = {}) {
         class: "energy-icon-btn energy-close",
         type: "button",
         "aria-label": t("close"),
+        "data-i18n-aria": "close",
         html: IconClose,
       })
     ),
-    // Subheader
-    el("div", { class: "energy-subheader" }, "Trip A → Trip B"),
-    // Body with inputs
+    // Mode switch
     el(
       "div",
-      { class: "energy-body" },
+      { class: "energy-mode-switch" },
+      el("button", {
+        class: "energy-mode-btn",
+        type: "button",
+        "data-mode": "simple",
+        "data-i18n": "simple",
+      }, t("simple") || "Simple"),
+      el("button", {
+        class: "energy-mode-btn",
+        type: "button",
+        "data-mode": "multi",
+        "data-i18n": "multiTrip",
+      }, t("multiTrip") || "Multi-tramo")
+    ),
+    // Simple mode view
+    el("div", { class: "energy-simple-view" },
+      // Body with inputs (for simple mode)
+      el(
+        "div",
+        { class: "energy-body" },
       // Distance input
       el(
         "div",
@@ -144,7 +177,7 @@ export function createEnergyCalculatorWidget(options = {}) {
       el(
         "div",
         { class: "energy-input-group" },
-        el("label", { class: "energy-label", for: "energy-price" }, t("electricityPrice")),
+        el("label", { class: "energy-label", for: "energy-price", "data-i18n": "electricityPrice" }, t("electricityPrice")),
         el("input", {
           class: "energy-input",
           id: "energy-price",
@@ -166,16 +199,125 @@ export function createEnergyCalculatorWidget(options = {}) {
         "div",
         { class: "energy-results" },
         el(
-          "div",
-          { class: "energy-result-row" },
-          el("span", { class: "energy-result-label" }, t("energyUsed")),
-          el("span", { class: "energy-result-value", id: "energy-kwh-result" }, "—")
-        ),
+        "div",
+        { class: "energy-result-row" },
+        el("span", { class: "energy-result-label", "data-i18n": "energyUsed" }, t("energyUsed")),
+        el("span", { class: "energy-result-value", id: "energy-kwh-result" }, "—")
+      ),
+      el(
+        "div",
+        { class: "energy-result-row energy-result-total" },
+        el("span", { class: "energy-result-label", "data-i18n": "estimatedCost" }, t("estimatedCost")),
+        el("span", { class: "energy-result-value", id: "energy-cost-result" }, "—")
+      )
+      )
+      )
+    ),
+    // Multi-trip mode view
+    el("div", { class: "energy-multi-view", hidden: true },
+      // Left sidebar (Editor)
+      el("div", { class: "energy-multi-sidebar" },
+        el("div", { class: "energy-multi-form-title", "data-i18n": "tripEditor" }, t("tripEditor") || "Trip Editor"),
+        // Trip name input
         el(
           "div",
-          { class: "energy-result-row energy-result-total" },
-          el("span", { class: "energy-result-label" }, t("estimatedCost")),
-          el("span", { class: "energy-result-value", id: "energy-cost-result" }, "—")
+          { class: "energy-input-group" },
+          el("label", { class: "energy-label", "data-i18n": "tripName" }, t("tripName") || "Trip name"),
+          el("input", {
+            class: "energy-input",
+            id: "energy-multi-trip-name",
+            type: "text",
+            placeholder: t("tripPlaceholder"),
+            spellcheck: "false",
+          })
+        ),
+        // Distance input
+        el(
+          "div",
+          { class: "energy-input-group" },
+          el("label", { class: "energy-label", id: "energy-multi-distance-label" }),
+          el("input", {
+            class: "energy-input",
+            id: "energy-multi-distance",
+            type: "text",
+            inputmode: "decimal",
+            autocomplete: "off",
+            spellcheck: "false",
+            placeholder: "0",
+          }),
+          el("input", {
+            class: "energy-slider",
+            id: "energy-multi-distance-slider",
+            type: "range",
+          })
+        ),
+        // Consumption input
+        el(
+          "div",
+          { class: "energy-input-group" },
+          el("label", { class: "energy-label", id: "energy-multi-consumption-label" }),
+          el("input", {
+            class: "energy-input",
+            id: "energy-multi-consumption",
+            type: "text",
+            inputmode: "decimal",
+            autocomplete: "off",
+            spellcheck: "false",
+            placeholder: "0",
+          }),
+          el("input", {
+            class: "energy-slider",
+            id: "energy-multi-consumption-slider",
+            type: "range",
+          })
+        ),
+        // Price input
+        el(
+          "div",
+          { class: "energy-input-group" },
+          el("label", { class: "energy-label", "data-i18n": "electricityPrice" }, t("electricityPrice")),
+          el("input", {
+            class: "energy-input",
+            id: "energy-multi-price",
+            type: "text",
+            inputmode: "decimal",
+            autocomplete: "off",
+            spellcheck: "false",
+            placeholder: "0",
+          }),
+          el("input", {
+            class: "energy-slider",
+            id: "energy-multi-price-slider",
+            type: "range",
+          })
+        ),
+        // Action buttons
+        el("div", { class: "energy-multi-actions" },
+          el("button", {
+            class: "energy-multi-save-btn",
+            type: "button",
+          }, t("addTrip") || "Add Trip"),
+          el("button", {
+            class: "energy-multi-cancel-btn",
+            type: "button",
+            hidden: true,
+            "data-i18n": "cancel",
+          }, t("cancel"))
+        )
+      ),
+      // Right side: trips list + footer
+      el("div", { class: "energy-multi-right" },
+        el("div", { class: "energy-trips-container" }),
+        el("div", { class: "energy-multi-footer" },
+          el("div", { class: "energy-multi-total" },
+            el("div", { class: "energy-multi-total-label", "data-i18n": "total" }, t("total") || "Total"),
+            el("div", { class: "energy-multi-total-value", id: "energy-multi-total" }, "—")
+          ),
+          el("button", {
+            class: "energy-reset-all-btn",
+            type: "button",
+            "data-i18n": "resetAll",
+          }, t("resetAll") || "Reiniciar todo")
         )
       )
     ),
@@ -186,11 +328,12 @@ export function createEnergyCalculatorWidget(options = {}) {
       el(
         "div",
         { class: "energy-settings-sheet-header" },
-        el("span", {}, t("settings")),
+        el("span", { "data-i18n": "settings" }, t("settings")),
         el("button", {
           class: "energy-icon-btn energy-settings-close",
           type: "button",
           "aria-label": t("close"),
+          "data-i18n-aria": "close",
           html: IconClose,
         })
       ),
@@ -201,7 +344,7 @@ export function createEnergyCalculatorWidget(options = {}) {
         el(
           "div",
           { class: "energy-settings-row energy-settings-row-box" },
-          el("span", { class: "energy-settings-label" }, t("distanceUnit")),
+          el("span", { class: "energy-settings-label", "data-i18n": "distanceUnit" }, t("distanceUnit")),
           el(
             "div",
             { class: "energy-unit-toggle" },
@@ -221,7 +364,7 @@ export function createEnergyCalculatorWidget(options = {}) {
         el(
           "label",
           { class: "energy-settings-row" },
-          el("span", { class: "energy-settings-label" }, t("thousandSeparator")),
+          el("span", { class: "energy-settings-label", "data-i18n": "thousandSeparator" }, t("thousandSeparator")),
           el(
             "span",
             { class: "energy-settings-switch" },
@@ -231,6 +374,24 @@ export function createEnergyCalculatorWidget(options = {}) {
             }),
             el("span", { class: "energy-settings-slider", "aria-hidden": "true" })
           )
+        )
+      )
+    ),
+    // Confirm modal
+    el("div", { class: "energy-modal", hidden: true },
+      el("div", { class: "energy-modal-overlay" }),
+      el("div", { class: "energy-modal-content" },
+        el("div", { class: "energy-modal-message", id: "energy-modal-message" }),
+        el("div", { class: "energy-modal-actions" },
+          el("button", {
+            class: "energy-modal-btn energy-modal-cancel",
+            type: "button",
+            "data-i18n": "cancel",
+          }, t("cancel")),
+          el("button", {
+            class: "energy-modal-btn energy-modal-confirm",
+            type: "button",
+          }, t("delete"))
         )
       )
     )
@@ -259,6 +420,64 @@ export function createEnergyCalculatorWidget(options = {}) {
 
   const kwhResult = panel.querySelector("#energy-kwh-result");
   const costResult = panel.querySelector("#energy-cost-result");
+
+  // Multi-trip elements
+  const modeBtns = panel.querySelectorAll(".energy-mode-btn");
+  const simpleView = panel.querySelector(".energy-simple-view");
+  const multiView = panel.querySelector(".energy-multi-view");
+  const tripsContainer = panel.querySelector(".energy-trips-container");
+  const resetAllBtn = panel.querySelector(".energy-reset-all-btn");
+  const multiTotalValue = panel.querySelector("#energy-multi-total");
+
+  // Multi-trip form elements
+  const multiTripNameInput = panel.querySelector("#energy-multi-trip-name");
+  const multiDistanceInput = panel.querySelector("#energy-multi-distance");
+  const multiConsumptionInput = panel.querySelector("#energy-multi-consumption");
+  const multiPriceInput = panel.querySelector("#energy-multi-price");
+  const multiDistanceSlider = panel.querySelector("#energy-multi-distance-slider");
+  const multiConsumptionSlider = panel.querySelector("#energy-multi-consumption-slider");
+  const multiPriceSlider = panel.querySelector("#energy-multi-price-slider");
+  const multiDistanceLabel = panel.querySelector("#energy-multi-distance-label");
+  const multiConsumptionLabel = panel.querySelector("#energy-multi-consumption-label");
+  const multiSaveBtn = panel.querySelector(".energy-multi-save-btn");
+  const multiCancelBtn = panel.querySelector(".energy-multi-cancel-btn");
+
+  // Modal elements
+  const modal = panel.querySelector(".energy-modal");
+  const modalMessage = panel.querySelector("#energy-modal-message");
+  const modalCancelBtn = panel.querySelector(".energy-modal-cancel");
+  const modalConfirmBtn = panel.querySelector(".energy-modal-confirm");
+
+  // Modal functions
+  let modalCallback = null;
+
+  function showModal(message, confirmText, onConfirm) {
+    modalMessage.textContent = message;
+    modalConfirmBtn.textContent = confirmText;
+    modalCallback = onConfirm;
+    modal.hidden = false;
+  }
+
+  function hideModal() {
+    modal.hidden = true;
+    modalCallback = null;
+  }
+
+  modalCancelBtn.addEventListener("click", () => {
+    hideModal();
+  });
+
+  modalConfirmBtn.addEventListener("click", () => {
+    if (modalCallback) {
+      modalCallback();
+    }
+    hideModal();
+  });
+
+  // Close modal on overlay click
+  modal.querySelector(".energy-modal-overlay").addEventListener("click", () => {
+    hideModal();
+  });
 
   // Apply stored panel position
   {
@@ -310,6 +529,302 @@ export function createEnergyCalculatorWidget(options = {}) {
     consumptionSlider.value = Math.min(Math.max(consVal, config.consumption.min), config.consumption.max);
     priceSlider.value = Math.min(Math.max(priceVal, config.price.min), config.price.max);
   }
+
+  // --- Multi-Trip Mode ---
+  function createTripElement(trip) {
+    const tripEl = el(
+      "div",
+      { class: "energy-trip-item", "data-trip-id": trip.id },
+      el(
+        "div",
+        { class: "energy-trip-card" },
+        el("div", { class: "energy-trip-card-name" }, trip.name),
+        el("div", { class: "energy-trip-card-subtotal" }, "—"),
+        el("button", {
+          class: "energy-trip-delete",
+          type: "button",
+          "aria-label": t("delete"),
+          "data-i18n-aria": "delete",
+        }, "✕")
+      )
+    );
+
+    // Event listeners
+    const card = tripEl.querySelector(".energy-trip-card");
+    const deleteBtn = tripEl.querySelector(".energy-trip-delete");
+
+    // Click to edit
+    card.addEventListener("click", (e) => {
+      if (e.target === deleteBtn) return;
+      loadTripToForm(trip.id);
+    });
+
+    // Delete
+    deleteBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      showModal(t("deleteTripConfirm").replace("{name}", trip.name), t("delete"), () => {
+        const index = multiTrips.findIndex(t => t.id === trip.id);
+        if (index !== -1) {
+          multiTrips.splice(index, 1);
+          saveMultiTrips(multiTrips);
+          if (editingTripId === trip.id) {
+            clearMultiForm();
+          }
+          renderTrips();
+        }
+      });
+    });
+
+    return tripEl;
+  }
+
+  function renderTrips() {
+    tripsContainer.innerHTML = "";
+    multiTrips.forEach((trip) => {
+      const tripEl = createTripElement(trip);
+      // Mark as active if editing
+      if (editingTripId === trip.id) {
+        tripEl.classList.add("is-active");
+      }
+      tripsContainer.appendChild(tripEl);
+    });
+    calculateMultiTotal();
+  }
+
+  // Setup multi-trip form sliders
+  function updateMultiSliderRanges() {
+    const config = SLIDER_CONFIG[tripSettings.unit];
+
+    multiDistanceSlider.min = config.distance.min;
+    multiDistanceSlider.max = config.distance.max;
+    multiDistanceSlider.step = config.distance.step;
+
+    multiConsumptionSlider.min = config.consumption.min;
+    multiConsumptionSlider.max = config.consumption.max;
+    multiConsumptionSlider.step = config.consumption.step;
+
+    multiPriceSlider.min = config.price.min;
+    multiPriceSlider.max = config.price.max;
+    multiPriceSlider.step = config.price.step;
+
+    // Update labels
+    multiDistanceLabel.textContent = tripSettings.unit === "km" ? t("distanceKm") : t("distanceMi");
+    multiConsumptionLabel.textContent = tripSettings.unit === "km" ? t("consumptionKm") : t("consumptionMi");
+  }
+
+  // Clear multi-trip form
+  function clearMultiForm() {
+    editingTripId = null;
+    multiTripNameInput.value = "";
+    multiDistanceInput.value = "";
+    multiConsumptionInput.value = "";
+    multiPriceInput.value = "";
+    multiDistanceSlider.value = 0;
+    multiConsumptionSlider.value = SLIDER_CONFIG[tripSettings.unit].consumption.min;
+    multiPriceSlider.value = SLIDER_CONFIG[tripSettings.unit].price.min;
+    multiSaveBtn.textContent = t("addTrip") || "Add Trip";
+    multiSaveBtn.disabled = true;
+    multiCancelBtn.hidden = true;
+    renderTrips();
+  }
+
+  // Load trip to form for editing
+  function loadTripToForm(tripId) {
+    const trip = multiTrips.find(t => t.id === tripId);
+    if (!trip) return;
+
+    editingTripId = tripId;
+    multiTripNameInput.value = trip.name;
+    multiDistanceInput.value = formatInputValue(multiDistanceInput, trip.distance);
+    multiConsumptionInput.value = formatInputValue(multiConsumptionInput, trip.consumption);
+    multiPriceInput.value = formatInputValue(multiPriceInput, trip.price);
+
+    const config = SLIDER_CONFIG[tripSettings.unit];
+    multiDistanceSlider.value = Math.min(Math.max(parseFloat(trip.distance) || 0, config.distance.min), config.distance.max);
+    multiConsumptionSlider.value = Math.min(Math.max(parseFloat(trip.consumption) || config.consumption.min, config.consumption.min), config.consumption.max);
+    multiPriceSlider.value = Math.min(Math.max(parseFloat(trip.price) || config.price.min, config.price.min), config.price.max);
+
+    multiSaveBtn.textContent = t("updateTrip");
+    multiCancelBtn.hidden = false;
+    validateMultiForm();
+
+    renderTrips();
+  }
+
+  // Save/update trip from form
+  function saveMultiForm() {
+    const name = multiTripNameInput.value.trim() ||
+      t("tripDefaultName").replace("{n}", multiTrips.length + 1);
+    const distance = parseInputValue(multiDistanceInput);
+    const consumption = parseInputValue(multiConsumptionInput);
+    const price = parseInputValue(multiPriceInput);
+
+    if (editingTripId) {
+      // Update existing trip
+      const trip = multiTrips.find(t => t.id === editingTripId);
+      if (trip) {
+        trip.name = name;
+        trip.distance = distance;
+        trip.consumption = consumption;
+        trip.price = price;
+      }
+    } else {
+      // Create new trip
+      if (multiTrips.length >= 5) {
+        alert(t("maxTrips"));
+        return;
+      }
+      const newTrip = createNewTrip(multiTrips.length + 1);
+      newTrip.name = name;
+      newTrip.distance = distance;
+      newTrip.consumption = consumption;
+      newTrip.price = price;
+      multiTrips.push(newTrip);
+    }
+
+    saveMultiTrips(multiTrips);
+    clearMultiForm();
+    renderTrips();
+  }
+
+  // Validate multi-form fields
+  function validateMultiForm() {
+    const distance = parseInputValue(multiDistanceInput);
+    const consumption = parseInputValue(multiConsumptionInput);
+    const price = parseInputValue(multiPriceInput);
+
+    const distanceNum = parseFloat(distance) || 0;
+    const consumptionNum = parseFloat(consumption) || 0;
+    const priceNum = parseFloat(price) || 0;
+
+    const isValid = distanceNum > 0 && consumptionNum > 0 && priceNum > 0;
+
+    multiSaveBtn.disabled = !isValid;
+
+    return isValid;
+  }
+
+  // Multi-form input handlers
+  function handleMultiInput(input, slider) {
+    input.addEventListener("input", () => {
+      const rawValue = parseInputValue(input);
+      const numVal = parseFloat(rawValue) || 0;
+      slider.value = numVal;
+      validateMultiForm();
+    });
+    input.addEventListener("blur", () => {
+      const rawValue = parseInputValue(input);
+      if (rawValue && rawValue.trim() !== "") {
+        input.value = formatInputValue(input, rawValue);
+      }
+    });
+  }
+
+  function handleMultiSlider(slider, input) {
+    slider.addEventListener("input", () => {
+      const rawValue = slider.value;
+      input.value = formatInputValue(input, rawValue);
+      validateMultiForm();
+    });
+  }
+
+  handleMultiInput(multiDistanceInput, multiDistanceSlider);
+  handleMultiInput(multiConsumptionInput, multiConsumptionSlider);
+  handleMultiInput(multiPriceInput, multiPriceSlider);
+  handleMultiSlider(multiDistanceSlider, multiDistanceInput);
+  handleMultiSlider(multiConsumptionSlider, multiConsumptionInput);
+  handleMultiSlider(multiPriceSlider, multiPriceInput);
+
+  // Save button
+  multiSaveBtn.addEventListener("click", () => {
+    saveMultiForm();
+  });
+
+  // Cancel button
+  multiCancelBtn.addEventListener("click", () => {
+    clearMultiForm();
+  });
+
+  function calculateMultiTotal() {
+    let total = 0;
+    multiTrips.forEach((trip) => {
+      const distance = parseNumber(trip.distance);
+      const consumption = parseNumber(trip.consumption);
+      const price = parseNumber(trip.price);
+
+      if (distance !== null && consumption !== null && price !== null &&
+          !Number.isNaN(distance) && !Number.isNaN(consumption) && !Number.isNaN(price)) {
+        const kwhUsed = distance * (consumption / 100);
+        const cost = kwhUsed * price;
+
+        // Update trip subtotal in UI
+        const tripEl = tripsContainer.querySelector(`[data-trip-id="${trip.id}"]`);
+        if (tripEl) {
+          const subtotalEl = tripEl.querySelector(".energy-trip-card-subtotal");
+          subtotalEl.textContent = formatCost(cost);
+        }
+
+        total += cost;
+      } else {
+        // Update trip subtotal to show dash if incomplete
+        const tripEl = tripsContainer.querySelector(`[data-trip-id="${trip.id}"]`);
+        if (tripEl) {
+          const subtotalEl = tripEl.querySelector(".energy-trip-card-subtotal");
+          subtotalEl.textContent = "—";
+        }
+      }
+    });
+
+    multiTotalValue.textContent = total > 0 ? formatCost(total) : "—";
+  }
+
+  // Mode switch
+  function setMode(mode) {
+    tripSettings.mode = mode;
+    saveTripCostSettings(tripSettings);
+
+    // Update button states
+    modeBtns.forEach(btn => {
+      btn.classList.toggle("is-active", btn.dataset.mode === mode);
+    });
+
+    if (mode === "simple") {
+      simpleView.hidden = false;
+      multiView.hidden = true;
+      panel.classList.remove("is-multi-mode");
+    } else {
+      simpleView.hidden = true;
+      multiView.hidden = false;
+      panel.classList.add("is-multi-mode");
+      // Initialize form
+      updateMultiSliderRanges();
+      clearMultiForm();
+      renderTrips();
+    }
+
+    // Reposition panel to keep it in viewport after width change
+    setTimeout(() => {
+      if (panel.style.left && panel.style.top) {
+        clampElementToViewport(panel);
+      }
+    }, 50);
+  }
+
+  modeBtns.forEach(btn => {
+    btn.addEventListener("click", () => {
+      setMode(btn.dataset.mode);
+    });
+  });
+
+  // Reset all
+  resetAllBtn.addEventListener("click", () => {
+    showModal(t("deleteAllTripsConfirm"), t("deleteAll"), () => {
+      clearAllTrips();
+      multiTrips = [];
+      clearMultiForm();
+      renderTrips();
+    });
+  });
 
   // --- Settings Sheet ---
   function setSettingsSheetOpen(isOpen) {
@@ -380,6 +895,19 @@ export function createEnergyCalculatorWidget(options = {}) {
     // Update slider ranges
     updateSliderRanges();
     syncSlidersFromValues();
+
+    // If in multi-trip mode, update form and re-render trips
+    if (tripSettings.mode === "multi") {
+      updateMultiSliderRanges();
+      renderTrips();
+    }
+  }
+
+  function refreshI18n() {
+    updateUnitUI();
+    multiSaveBtn.textContent = editingTripId ? t("updateTrip") : t("addTrip");
+    multiTripNameInput.placeholder = t("tripPlaceholder");
+    calculate();
   }
 
   unitBtns.forEach((btn) => {
@@ -387,9 +915,15 @@ export function createEnergyCalculatorWidget(options = {}) {
       tripSettings.unit = btn.dataset.unit;
       saveTripCostSettings(tripSettings);
 
-      // Reset price to 0 when switching units
+      // Reset price to 0 when switching units (simple mode)
       values.price = "0";
       saveTripCostValues(values);
+
+      // Reset prices in multi-trip mode
+      multiTrips.forEach(trip => {
+        trip.price = "0";
+      });
+      saveMultiTrips(multiTrips);
 
       updateUnitUI();
       syncSettingsForm();
@@ -581,6 +1115,9 @@ export function createEnergyCalculatorWidget(options = {}) {
     updateUnitUI();
     restoreValues();
     calculate();
+
+    // Restore mode
+    setMode(tripSettings.mode);
   }
 
   function close() {
@@ -612,6 +1149,10 @@ export function createEnergyCalculatorWidget(options = {}) {
   updateUnitUI();
   restoreValues();
   calculate();
+  setMode(tripSettings.mode);
+  refreshI18n();
+
+  document.addEventListener("i18n:change", refreshI18n);
 
   return {
     open,

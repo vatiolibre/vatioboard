@@ -154,6 +154,10 @@ export function createCalculatorWidget(options = {}) {
     },
   });
 
+  document.addEventListener("i18n:change", () => {
+    historyApi?.refreshHistoryList();
+  });
+
   function render({ keepEnd = false, force = false } = {}) {
     const rawExpr = core.expr ?? "";
 

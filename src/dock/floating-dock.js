@@ -36,12 +36,14 @@ export function createFloatingDock({ mount = document.body } = {}) {
       type: "button",
       class: "dock-btn dock-btn-calc",
       "aria-label": t("openCalculator"),
+      "data-i18n-aria": "openCalculator",
       html: IconCalculator,
     }),
     el("button", {
       type: "button",
       class: "dock-btn dock-btn-energy",
       "aria-label": t("openEnergy"),
+      "data-i18n-aria": "openEnergy",
       html: IconEnergy,
     })
   );

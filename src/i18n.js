@@ -36,6 +36,22 @@ const translations = {
     distanceUnit: 'Distance unit',
     invalidNumber: 'Invalid number',
     mustBePositive: 'Must be positive',
+    simple: 'Simple',
+    multiTrip: 'Multi-trip',
+    addTrip: 'Add Trip',
+    resetAll: 'Reset all',
+    total: 'Total',
+    tripEditor: 'Trip Editor',
+    tripName: 'Trip name',
+    cancel: 'Cancel',
+    delete: 'Delete',
+    deleteAll: 'Delete all',
+    deleteTripConfirm: 'Delete "{name}"?',
+    deleteAllTripsConfirm: 'Delete all trips?',
+    updateTrip: 'Update trip',
+    maxTrips: 'Maximum 5 trips allowed',
+    tripPlaceholder: 'e.g. Bogota -> Medellin',
+    tripDefaultName: 'Trip {n}',
 
     // Status messages
     ready: 'Ready',
@@ -108,6 +124,22 @@ const translations = {
     distanceUnit: 'Unidad de distancia',
     invalidNumber: 'Número inválido',
     mustBePositive: 'Debe ser positivo',
+    simple: 'Simple',
+    multiTrip: 'Multi-trip',
+    addTrip: 'Agregar Trip',
+    resetAll: 'Reiniciar todo',
+    total: 'Total',
+    tripEditor: 'Editor de Trip',
+    tripName: 'Nombre del trip',
+    cancel: 'Cancelar',
+    delete: 'Eliminar',
+    deleteAll: 'Eliminar todo',
+    deleteTripConfirm: '¿Eliminar "{name}"?',
+    deleteAllTripsConfirm: '¿Eliminar todos los trips?',
+    updateTrip: 'Actualizar trip',
+    maxTrips: 'Máximo 5 trips permitidos',
+    tripPlaceholder: 'ej: Bogotá -> Medellín',
+    tripDefaultName: 'Trip {n}',
 
     // Status messages
     ready: 'Listo',
@@ -194,6 +226,7 @@ export function toggleLang() {
   const newLang = currentLang === 'en' ? 'es' : 'en';
   setLang(newLang);
   applyTranslations();
+  document.dispatchEvent(new CustomEvent('i18n:change', { detail: { lang: newLang } }));
   return newLang;
 }
 
