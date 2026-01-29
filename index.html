@@ -48,23 +48,164 @@
   <meta name="twitter:image" content="https://vatioboard.com/img/vatio-board-og-1200x630.jpg" />
 
   <!-- Structured data (JSON-LD) -->
+  
+  <!-- Organization -->
   <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "WebApplication",
-    "name": "Vatio Board",
-    "url": "https://vatioboard.com",
-    "applicationCategory": "DesignApplication",
-    "operatingSystem": "Web",
-    "browserRequirements": "Requires JavaScript. Works on modern mobile/desktop browsers including in-car browsers.",
-    "description": "A fast, full-screen drawing board with pen/eraser, brush size control, and PNG export. Includes a built-in calculator and is optimized for Tesla’s browser.",
-    "publisher": {
-      "@type": "Organization",
-      "name": "VatioLibre",
-      "url": "https://vatioboard.com"
-    }
-  }
+      {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "VatioLibre",
+        "url": "https://vatiolibre.com",
+        "logo": "https://vatioboard.com/favicon.ico",
+        "sameAs": [
+          "https://vatioboard.com",
+          "https://github.com/vatiolibre"
+        ]
+      }
   </script>
+  
+  <!-- WebApp -->
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Vatio Board",
+      "url": "https://vatioboard.com",
+      "applicationCategory": "DesignApplication",
+      "operatingSystem": "Web",
+      "browserRequirements": "Requires JavaScript. Works on modern mobile/desktop browsers including in-car browsers.",
+      "description": "A fast, full-screen drawing board with pen/eraser, brush size control, and PNG export. Includes a built-in calculator and is optimized for Tesla’s browser.",
+      "publisher": {
+        "@type": "Organization",
+        "name": "VatioLibre",
+        "url": "https://vatioboard.com"
+      },
+      "codeRepository": "https://github.com/vatiolibre/vatioboard",
+      "sameAs": [
+        "https://www.vatioboard.com",
+        "https://vatiolibre.com",
+        "https://github.com/vatiolibre/vatioboard"
+      ],
+      "programmingLanguage": [
+        "JavaScript",
+        "HTML",
+        "Less"
+      ],
+      "keywords": [
+        "drawing board",
+        "full screen canvas",
+        "pen and eraser",
+        "brush size control",
+        "color picker",
+        "PNG export",
+        "built-in calculator",
+        "touch optimized",
+        "whiteboard app",   
+        "whiteboard",
+        "canvas",
+        "calculator",
+        "interactive sketch",
+        "web drawing tool",
+        "mobile friendly",
+        "in-car browsers",
+        "Tesla browser",
+        "Vite",
+        "open source",
+        "JavaScript",
+        "HTML",
+        "LESS"
+      ],
+      "author": [
+        {
+          "@type": "Person",
+          "name": "Oscar Perez",
+          "url": "https://github.com/oscarperezt"
+        }
+      ],
+      "contributor": [
+        {
+          "@type": "Person",
+          "name": "vatiolibre",
+          "url": "https://github.com/vatiolibre"
+        },
+        {
+          "@type": "Person",
+          "name": "ssantss",
+          "url": "https://github.com/ssantss"
+        },
+        {
+          "@type": "Person",
+          "name": "oscarperezt",
+          "url": "https://github.com/oscarperezt"
+        },
+        {
+          "@type": "Person",
+          "name": "JECaballeroR",
+          "url": "https://github.com/JECaballeroR"
+        }
+      ]
+    }
+  </script>
+  
+  <!-- FAQs -->
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is VatioBoard?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "VatioBoard is a fast, full-screen web drawing board with pen and eraser tools, brush size control, and PNG export. It also includes a built-in calculator."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is VatioBoard free to use?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. VatioBoard is free and open source, and you can use it directly from your browser without installing anything."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does VatioBoard work on mobile devices and tablets?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. VatioBoard is optimized for touch input and works on modern mobile phones, tablets, and desktop browsers."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I export my drawings?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. You can export your drawings as PNG images directly from the application."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does VatioBoard work on the Tesla in-car browser?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. VatioBoard is designed to work on modern in-car browsers, including Tesla’s browser, making it usable directly from the vehicle screen."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Where can I find the source code for VatioBoard?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The source code for VatioBoard is available on GitHub at https://github.com/vatiolibre/vatioboard."
+          }
+        }
+      ]
+    }
+  </script>
+
+
 
   <style>
     .sr-only{
