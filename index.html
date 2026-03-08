@@ -12,13 +12,33 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
 
   <!-- Favicon -->
-  <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="shortcut icon" href="/favicon.ico" />
+  <link rel="icon" type="image/svg+xml" href="/favicon_dark.svg?v=2" media="(prefers-color-scheme: dark)" />
+  <link rel="icon" type="image/svg+xml" href="/favicon_ligth.svg?v=2" media="(prefers-color-scheme: light)" />
+  <link id="favicon-fallback" rel="icon" type="image/svg+xml" href="/favicon_ligth.svg?v=2" />
+  <link id="shortcut-favicon" rel="shortcut icon" href="/favicon_ligth.svg?v=2" />
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
   <link rel="manifest" href="/site.webmanifest">
+  <script>
+    (function () {
+      var query = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+      var icons = [
+        document.getElementById("favicon-fallback"),
+        document.getElementById("shortcut-favicon")
+      ];
+
+      function applyThemeFavicon() {
+        var href = (query && query.matches ? "/favicon_dark.svg" : "/favicon_ligth.svg") + "?v=2";
+        icons.forEach(function (icon) {
+          if (icon) icon.href = href;
+        });
+      }
+
+      applyThemeFavicon();
+      if (!query) return;
+      if (query.addEventListener) query.addEventListener("change", applyThemeFavicon);
+      else if (query.addListener) query.addListener(applyThemeFavicon);
+    })();
+  </script>
 
   <!-- Primary SEO -->
   <title>Vatio Board – Free Drawing Board + Calculator (Tesla-Friendly)</title>
