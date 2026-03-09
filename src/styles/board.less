@@ -98,35 +98,51 @@ header{
 }
 
 .header-inner{
-    max-width: 1400px;
-    margin: 0 auto;
-
-    /* Slightly taller header (more automotive UI) */
-    padding: 16px 16px;
+    width: 100%;
+    margin: 0;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    padding-left: max(8px, env(safe-area-inset-left));
+    padding-right: max(8px, env(safe-area-inset-right));
 
     display:flex;
-    gap:12px;
+    gap:8px;
     align-items:center;
-    flex-wrap:wrap;
-}
-
-html[lang="es"] .header-inner{
-    max-width: 1480px;
+    flex-wrap:nowrap;
 }
 
 .brand{
     display:flex;
     align-items:center;
-    gap:10px;
-    font-weight:900;
-    letter-spacing:.2px;
+    gap:8px;
+    min-width: 0;
+    flex: 0 1 auto;
 }
+
 .dot{
-    width:10px;
-    height:10px;
-    border-radius:50%;
+    width: 9px;
+    height: 9px;
+    border-radius: 999px;
     background: var(--success-bg);
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--success-bg) 22%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--success-bg) 22%, transparent);
+    flex: 0 0 auto;
+}
+
+.brand-logo{
+    display: block;
+    width: clamp(128px, 14vw, 210px);
+    max-width: 38vw;
+    flex: 0 1 auto;
+}
+
+.brand-logo img{
+    display:block;
+    width: 100%;
+    height: auto;
+}
+
+.brand .lang-toggle{
+    flex: 0 0 auto;
 }
 
 .lang-toggle{
@@ -149,12 +165,52 @@ html[lang="es"] .header-inner{
 
 .toolbar{
     display:flex;
-    gap:10px;
+    gap:8px;
     align-items:center;
-    flex-wrap:wrap;
-    margin-left: 10px;
+    flex-wrap:nowrap;
+    margin-left: 4px;
     flex: 1;
     min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x;
+    padding-right: max(4px, env(safe-area-inset-right));
+}
+
+.toolbar::-webkit-scrollbar{
+    display:none;
+}
+
+.toolbar > *{
+    flex: 0 0 auto;
+}
+
+@media (max-width: 1600px){
+  .header-inner{
+    flex-wrap: wrap;
+  }
+
+  .toolbar{
+    width: 100%;
+    margin-left: 0;
+    flex-wrap: wrap;
+    overflow-x: visible;
+    overflow-y: visible;
+    touch-action: none;
+    padding-right: 0;
+  }
+
+  .right-stack{
+    margin-left: auto;
+    align-items: flex-end;
+    max-width: 160px;
+  }
+
+  input[type="range"]{
+    width: clamp(130px, 20vw, 200px);
+  }
 }
 
 .tool-buttons{
@@ -345,24 +401,30 @@ input[type="range"]{
     gap: 2px;
     line-height: 1.05;
     min-width: 0;
-    flex: 0 0 auto;
+    flex: 0 1 auto;
+    max-width: clamp(120px, 14vw, 180px);
 }
 
 .status{
     margin-left: 0;
-    font-size: 14px;
+    font-size: 12px;
     color: var(--muted);
     font-weight: 800;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    max-width: 100%;
 }
 
 .attribution{
-    font-size: 12px;
+    font-size: 10px;
     color: var(--muted);
     font-weight: 800;
     opacity: .9;
     white-space: nowrap;
     margin-left: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .attribution a{
@@ -435,32 +497,41 @@ canvas{
 /* Small screens: extra polish
    - Brand goes on top
    - Tools go below (no "two columns")
-   - Tighter header padding + dot size for more canvas space
+   - Tighter header padding + smaller logo for more canvas space
 */
 @media (max-width: 720px){
   .header-inner{
     flex-direction: column;
     align-items: stretch;   /* brand + toolbar full width */
-    padding: 12px 14px;     /* tighter than desktop */
-    gap: 10px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    padding-left: max(8px, env(safe-area-inset-left));
+    padding-right: max(8px, env(safe-area-inset-right));
+    gap: 8px;
   }
 
   .brand{
     width: 100%;
-    justify-content: flex-start;
-    font-size: 16px;
-    line-height: 1.1;
+    justify-content: space-between;
+    gap: 8px;
   }
 
   .dot{
     width: 8px;
     height: 8px;
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--success-bg) 22%, transparent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--success-bg) 22%, transparent);
+  }
+
+  .brand-logo{
+    width: clamp(128px, 48vw, 200px);
+    max-width: calc(100% - 56px);
   }
 
   .toolbar{
     width: 100%;
     margin-left: 0;         /* remove desktop offset */
+    flex-wrap: wrap;
+    overflow-x: visible;
   }
 
   .size-label,
@@ -477,9 +548,9 @@ canvas{
   }
 
   .right-stack{
-    width:100%;
-    align-items:flex-start;
-    margin-left: 0;
+    margin-left: auto;
+    align-items:flex-end;
+    max-width: 150px;
   }
 }
 
