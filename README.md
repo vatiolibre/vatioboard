@@ -118,3 +118,5 @@ Contributions are welcome—especially bug fixes, UI improvements, and Tesla/in-
 
 Created by **Oscar Perez**.
 Part of the **VatioLibre.com** community.
+Logos and branding contribution by **Mauricio Pradilla**: https://mauriciopradilla.com/
+Contributions to **vatioboard.com** and **vatiolibre.com** by **Santiago Jimenez Moncada**: https://github.com/ssantss

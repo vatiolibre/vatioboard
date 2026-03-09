@@ -251,7 +251,12 @@
       <div class="header-inner">
         <div class="brand" data-i18n-title="tagline" title="Simple full-page drawing board by Vatio Libre">
           <span class="dot" aria-hidden="true"></span>
-          <span data-i18n="brand">Vatio Board</span>
+          <picture class="brand-logo" aria-hidden="true">
+            <source srcset="/img/vb_logo_dark.svg" media="(prefers-color-scheme: dark)" />
+            <source srcset="/img/vb_logo_light.svg" media="(prefers-color-scheme: light)" />
+            <img src="/img/vb_logo_light.svg" alt="" width="757" height="107" decoding="async" />
+          </picture>
+          <span class="sr-only" data-i18n="brand">Vatio Board</span>
           <button id="langToggle" type="button" class="lang-toggle" aria-label="Change language">EN</button>
         </div>
 
