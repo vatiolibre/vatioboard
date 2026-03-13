@@ -12,7 +12,7 @@ export default defineConfig({
       input: {
         index: resolve(__dirname, "index.html"),
         calculator: resolve(__dirname, "calculator.html"),
-        speed: resolve(__dirname, "speed/index.html"),
+        speed: resolve(__dirname, "speed.html"),
       },
     },
   },
