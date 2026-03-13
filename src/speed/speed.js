@@ -388,7 +388,10 @@ function drawGauge() {
 
   const needleLength = radius * 0.72;
   const needleBack = radius * 0.12;
-  const needleAngle = startAngle + progress * angleRange - Math.PI / 2;
+  // The needle shape is authored pointing straight up (-Y), while the gauge
+  // angles are expressed in canvas space from +X. Align the long end of the
+  // needle with the gauge angle instead of the short counterweight.
+  const needleAngle = startAngle + progress * angleRange + Math.PI / 2;
 
   canvasContext.save();
   canvasContext.translate(center, center);
