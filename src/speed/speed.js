@@ -325,7 +325,10 @@ function drawGauge() {
   const mutedColor = getCssColor("--speed-tick", "rgba(17,24,39,0.4)");
   const trackColor = getCssColor("--speed-track", "rgba(17,24,39,0.12)");
   const accentColor = getCssColor("--speed-accent", "#10b981");
-  const needleColor = getCssColor("--speed-needle", "#111827");
+  const needleBaseColor = getCssColor("--speed-needle-base", "#8f1622");
+  const needleTipColor = getCssColor("--speed-needle-tip", "#ff5a36");
+  const pivotOuterColor = getCssColor("--speed-pivot-outer", "#202633");
+  const pivotInnerColor = getCssColor("--speed-pivot-inner", accentColor);
 
   canvasContext.clearRect(0, 0, size, size);
 
@@ -396,7 +399,13 @@ function drawGauge() {
   canvasContext.save();
   canvasContext.translate(center, center);
   canvasContext.rotate(needleAngle);
-  canvasContext.fillStyle = needleColor;
+  const needleGradient = canvasContext.createLinearGradient(0, needleBack, 0, -needleLength);
+  needleGradient.addColorStop(0, needleBaseColor);
+  needleGradient.addColorStop(1, needleTipColor);
+  canvasContext.shadowColor = "rgba(0, 0, 0, 0.24)";
+  canvasContext.shadowBlur = Math.max(8, size * 0.016);
+  canvasContext.shadowOffsetY = 2;
+  canvasContext.fillStyle = needleGradient;
   canvasContext.beginPath();
   canvasContext.moveTo(-4, needleBack);
   canvasContext.lineTo(-2, -needleLength);
@@ -404,14 +413,18 @@ function drawGauge() {
   canvasContext.lineTo(4, needleBack);
   canvasContext.closePath();
   canvasContext.fill();
+
+  canvasContext.shadowColor = "transparent";
+  canvasContext.fillStyle = "rgba(255, 255, 255, 0.32)";
+  canvasContext.fillRect(-1, -needleLength * 0.92, 1.2, needleLength * 0.95);
   canvasContext.restore();
 
-  canvasContext.fillStyle = textColor;
+  canvasContext.fillStyle = pivotOuterColor;
   canvasContext.beginPath();
   canvasContext.arc(center, center, Math.max(10, size * 0.018), 0, Math.PI * 2);
   canvasContext.fill();
 
-  canvasContext.fillStyle = accentColor;
+  canvasContext.fillStyle = pivotInnerColor;
   canvasContext.beginPath();
   canvasContext.arc(center, center, Math.max(4, size * 0.008), 0, Math.PI * 2);
   canvasContext.fill();
