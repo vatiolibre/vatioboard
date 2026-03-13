@@ -30,15 +30,31 @@
     }
 }
 
+html.speed-page,
+html.speed-page *,
 body.speed-page,
 body.speed-page *{
     touch-action: auto;
+}
+
+html.speed-page,
+body.speed-page{
+    height: auto;
+    min-height: 100%;
 }
 
 body.speed-page{
     background:
       radial-gradient(circle at top center, color-mix(in srgb, var(--speed-accent-soft) 85%, transparent), transparent 42%),
       linear-gradient(180deg, color-mix(in srgb, var(--surface) 55%, var(--bg)) 0%, var(--bg) 100%);
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.speed-app{
+    min-height: 100vh;
+    min-height: 100dvh;
 }
 
 .speed-page header{
@@ -109,9 +125,12 @@ body.speed-page{
 }
 
 .speed-main{
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
     padding: clamp(12px, 2vw, 20px);
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 .speed-shell{
