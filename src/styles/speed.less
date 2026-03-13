@@ -1,0 +1,331 @@
+@import "./board.less";
+
+:root{
+    --speed-accent: #10b981;
+    --speed-accent-soft: rgba(16, 185, 129, 0.22);
+    --speed-track: rgba(17, 24, 39, 0.12);
+    --speed-tick: rgba(17, 24, 39, 0.46);
+    --speed-surface: rgba(255, 255, 255, 0.72);
+    --speed-surface-strong: rgba(255, 255, 255, 0.9);
+    --speed-overlay: rgba(17, 24, 39, 0.72);
+    --speed-needle: #111827;
+}
+
+@media (prefers-color-scheme: dark){
+    :root{
+        --speed-accent: #34d399;
+        --speed-accent-soft: rgba(52, 211, 153, 0.2);
+        --speed-track: rgba(255, 255, 255, 0.1);
+        --speed-tick: rgba(255, 255, 255, 0.42);
+        --speed-surface: rgba(31, 31, 31, 0.76);
+        --speed-surface-strong: rgba(25, 25, 25, 0.92);
+        --speed-overlay: rgba(255, 255, 255, 0.8);
+        --speed-needle: rgba(255, 255, 255, 0.92);
+    }
+}
+
+body.speed-page,
+body.speed-page *{
+    touch-action: auto;
+}
+
+body.speed-page{
+    background:
+      radial-gradient(circle at top center, color-mix(in srgb, var(--speed-accent-soft) 85%, transparent), transparent 42%),
+      linear-gradient(180deg, color-mix(in srgb, var(--surface) 55%, var(--bg)) 0%, var(--bg) 100%);
+}
+
+.speed-page header{
+    background: color-mix(in srgb, var(--bg) 84%, transparent);
+}
+
+.speed-header-inner{
+    gap: 14px;
+}
+
+.brand-home{
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: inherit;
+    text-decoration: none;
+}
+
+.route-chip{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 30px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 70%, transparent);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.16em;
+}
+
+.speed-toolbar{
+    justify-content: flex-end;
+    gap: 10px;
+    overflow: visible;
+    padding-right: max(4px, env(safe-area-inset-right));
+}
+
+.unit-switch{
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+    padding: 4px;
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius-sm) + 4px);
+    background: color-mix(in srgb, var(--surface) 72%, transparent);
+    box-shadow: inset 0 0 0 1px var(--inner-ring);
+}
+
+.unit-switch .unit-btn{
+    min-width: 72px;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    box-shadow: none;
+}
+
+.unit-switch .unit-btn:hover{
+    background: var(--btn-hover-bg);
+    color: var(--btn-fg);
+}
+
+.unit-switch .unit-btn[aria-pressed="true"]{
+    background: var(--btn-active-bg);
+    color: var(--btn-active-fg);
+}
+
+.speed-main{
+    align-items: center;
+    justify-content: center;
+    padding: clamp(12px, 2vw, 20px);
+}
+
+.speed-shell{
+    width: min(100%, 980px);
+}
+
+.speed-stage{
+    display: grid;
+    gap: 14px;
+}
+
+.gauge-card{
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) + 8px);
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--speed-surface-strong) 96%, transparent), color-mix(in srgb, var(--speed-surface) 96%, transparent));
+    box-shadow:
+      var(--shadow),
+      inset 0 0 0 1px var(--inner-ring);
+    overflow: hidden;
+}
+
+.gauge-card::before{
+    content:"";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--inner-highlight) 90%, transparent),
+        transparent 24%
+      );
+}
+
+.gauge-stage{
+    position: relative;
+    width: min(100%, 760px);
+    margin: 0 auto;
+    aspect-ratio: 1 / 1;
+}
+
+.speed-gauge{
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+}
+
+.gauge-overlay{
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+
+.gauge-kicker{
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--muted);
+}
+
+.gauge-reading{
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    margin-top: 8px;
+    line-height: 0.9;
+}
+
+.gauge-reading #speedValue{
+    font-size: clamp(72px, 18vw, 132px);
+    font-weight: 900;
+    letter-spacing: -0.06em;
+    color: var(--btn-fg);
+}
+
+.gauge-reading #speedUnit{
+    font-size: clamp(18px, 3vw, 26px);
+    font-weight: 800;
+    color: var(--muted);
+    transform: translateY(-0.18em);
+}
+
+.gauge-substatus{
+    min-height: 1.25em;
+    margin: 14px 0 0;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--muted);
+}
+
+.stats-grid{
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.metric-card{
+    display: grid;
+    gap: 6px;
+    align-items: end;
+    min-height: 110px;
+    padding: 16px 18px;
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius-sm) + 2px);
+    background: color-mix(in srgb, var(--surface) 84%, transparent);
+    box-shadow:
+      0 10px 24px rgba(0, 0, 0, 0.08),
+      inset 0 0 0 1px var(--inner-ring);
+}
+
+.metric-label{
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.metric-card strong{
+    font-size: clamp(28px, 4vw, 42px);
+    line-height: 1;
+    letter-spacing: -0.04em;
+    color: var(--btn-fg);
+}
+
+.metric-unit{
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--muted);
+}
+
+.notice{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    border: 1px solid color-mix(in srgb, var(--speed-accent) 40%, var(--border));
+    border-radius: calc(var(--radius-sm) + 2px);
+    background: color-mix(in srgb, var(--speed-accent) 10%, var(--surface));
+}
+
+.notice p{
+    margin: 0;
+    color: var(--btn-fg);
+    font-weight: 700;
+}
+
+@media (max-width: 960px){
+    .speed-toolbar{
+        justify-content: flex-start;
+    }
+
+    .speed-toolbar .right-stack{
+        margin-left: 0;
+        align-items: flex-start;
+    }
+
+    .stats-grid{
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 720px){
+    .speed-main{
+        padding: 10px;
+    }
+
+    .speed-toolbar{
+        width: 100%;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .unit-switch{
+        width: 100%;
+    }
+
+    .unit-switch .unit-btn{
+        flex: 1 1 0;
+    }
+
+    .stats-grid{
+        gap: 10px;
+    }
+
+    .metric-card{
+        min-height: 96px;
+        padding: 14px 16px;
+    }
+
+    .notice{
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .notice button{
+        width: 100%;
+    }
+}
+
+@media (max-width: 520px), (max-height: 760px){
+    .gauge-stage{
+        width: min(100%, 560px);
+    }
+
+    .gauge-substatus{
+        margin-top: 10px;
+    }
+
+    .metric-card strong{
+        font-size: clamp(24px, 8vw, 34px);
+    }
+}

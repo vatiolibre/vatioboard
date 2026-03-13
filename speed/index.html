@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+
+  <link rel="icon" type="image/svg+xml" href="/favicon_dark.svg?v=2" media="(prefers-color-scheme: dark)" />
+  <link rel="icon" type="image/svg+xml" href="/favicon_ligth.svg?v=2" media="(prefers-color-scheme: light)" />
+  <link id="favicon-fallback" rel="icon" type="image/svg+xml" href="/favicon_ligth.svg?v=2" />
+  <link id="shortcut-favicon" rel="shortcut icon" href="/favicon_ligth.svg?v=2" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+  <link rel="manifest" href="/site.webmanifest" />
+
+  <script>
+    (function () {
+      var query = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+      var icons = [
+        document.getElementById("favicon-fallback"),
+        document.getElementById("shortcut-favicon"),
+      ];
+
+      function applyThemeFavicon() {
+        var href = (query && query.matches ? "/favicon_dark.svg" : "/favicon_ligth.svg") + "?v=2";
+        icons.forEach(function (icon) {
+          if (icon) icon.href = href;
+        });
+      }
+
+      applyThemeFavicon();
+      if (!query) return;
+      if (query.addEventListener) query.addEventListener("change", applyThemeFavicon);
+      else if (query.addListener) query.addListener(applyThemeFavicon);
+    })();
+  </script>
+
+  <title>Vatio Speed - Minimal Live Speedometer</title>
+  <meta
+    name="description"
+    content="Minimal live GPS speedometer built with the Vatio Board Tesla-style interface. Opens directly in the browser and starts tracking as soon as the page loads."
+  />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="theme-color" content="#181818" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+  <link rel="canonical" href="https://vatioboard.com/speed" />
+
+  <style>
+    .sr-only{
+      position:absolute !important;
+      width:1px;
+      height:1px;
+      padding:0;
+      margin:-1px;
+      overflow:hidden;
+      clip:rect(0,0,0,0);
+      white-space:nowrap;
+      border:0;
+    }
+  </style>
+</head>
+
+<body class="speed-page">
+  <h1 class="sr-only">Vatio Speed live speedometer</h1>
+
+  <div class="app speed-app">
+    <header>
+      <div class="header-inner speed-header-inner">
+        <div class="brand" title="Minimal live speedometer by Vatio Libre">
+          <a class="brand-home" href="/" aria-label="Open Vatio Board">
+            <span class="dot" aria-hidden="true"></span>
+            <picture class="brand-logo" aria-hidden="true">
+              <source srcset="/img/vb_logo_dark.svg" media="(prefers-color-scheme: dark)" />
+              <source srcset="/img/vb_logo_light.svg" media="(prefers-color-scheme: light)" />
+              <img src="/img/vb_logo_light.svg" alt="" width="757" height="107" decoding="async" />
+            </picture>
+            <span class="sr-only">Vatio Board</span>
+          </a>
+          <span class="route-chip" aria-hidden="true">SPEED</span>
+        </div>
+
+        <div class="toolbar speed-toolbar" role="toolbar" aria-label="Speedometer controls">
+          <div class="unit-switch" role="group" aria-label="Speed unit">
+            <button type="button" class="unit-btn" data-unit="mph">mph</button>
+            <button type="button" class="unit-btn" data-unit="kmh">km/h</button>
+          </div>
+
+          <button id="resetTrip" type="button">Reset trip</button>
+
+          <div class="right-stack" aria-label="Connection status">
+            <span id="status" class="status" aria-live="polite">Requesting GPS...</span>
+            <span class="attribution">
+              <a href="/">Open board</a>
+            </span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="speed-main">
+      <section class="speed-shell" aria-label="Live analog speedometer">
+        <div class="speed-stage">
+          <div class="gauge-card">
+            <div class="gauge-stage">
+              <canvas id="speedGauge" class="speed-gauge" aria-label="Analog speedometer"></canvas>
+              <div class="gauge-overlay">
+                <span class="gauge-kicker">Live speed</span>
+                <div class="gauge-reading">
+                  <span id="speedValue">0</span>
+                  <span id="speedUnit">mph</span>
+                </div>
+                <p id="subStatus" class="gauge-substatus">Looking for your first GPS fix</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="stats-grid" aria-label="Trip stats">
+            <article class="metric-card">
+              <span class="metric-label">Max</span>
+              <strong id="maxSpeed">0</strong>
+              <span id="maxSpeedUnit" class="metric-unit">mph</span>
+            </article>
+
+            <article class="metric-card">
+              <span class="metric-label">Average</span>
+              <strong id="avgSpeed">0</strong>
+              <span id="avgSpeedUnit" class="metric-unit">mph</span>
+            </article>
+
+            <article class="metric-card">
+              <span class="metric-label">Distance</span>
+              <strong id="distanceValue">0.0</strong>
+              <span id="distanceUnit" class="metric-unit">mi</span>
+            </article>
+
+            <article class="metric-card">
+              <span class="metric-label">Duration</span>
+              <strong id="durationValue">00:00</strong>
+              <span class="metric-unit">trip</span>
+            </article>
+          </div>
+
+          <div id="notice" class="notice" hidden aria-live="polite">
+            <p id="noticeText">Allow location access to measure speed.</p>
+            <button id="retryGps" type="button">Retry GPS</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="/src/speed/speed.js"></script>
+</body>
+</html>
