@@ -15,7 +15,8 @@ const GEO_ERROR_CODE = {
 };
 
 const elements = {
-  canvas: document.getElementById("speedGauge"),
+  dialCanvas: document.getElementById("speedDial"),
+  needleCanvas: document.getElementById("speedNeedle"),
   speedValue: document.getElementById("speedValue"),
   speedUnit: document.getElementById("speedUnit"),
   status: document.getElementById("status"),
@@ -34,7 +35,8 @@ const elements = {
   unitButtons: Array.from(document.querySelectorAll(".unit-btn")),
 };
 
-const canvasContext = elements.canvas.getContext("2d");
+const dialContext = elements.dialCanvas.getContext("2d");
+const needleContext = elements.needleCanvas.getContext("2d");
 
 const state = {
   unit: loadUnitPreference(),
@@ -279,18 +281,21 @@ function handlePositionError(error) {
 }
 
 function resizeCanvas() {
-  const rect = elements.canvas.getBoundingClientRect();
+  const rect = elements.dialCanvas.getBoundingClientRect();
   const size = Math.max(1, Math.floor(Math.min(rect.width, rect.height)));
   const dpr = window.devicePixelRatio || 1;
 
-  if (size === state.canvasSize && elements.canvas.width === Math.floor(size * dpr)) {
+  if (size === state.canvasSize && elements.dialCanvas.width === Math.floor(size * dpr)) {
     return;
   }
 
   state.canvasSize = size;
-  elements.canvas.width = Math.floor(size * dpr);
-  elements.canvas.height = Math.floor(size * dpr);
-  canvasContext.setTransform(dpr, 0, 0, dpr, 0, 0);
+  for (const canvas of [elements.dialCanvas, elements.needleCanvas]) {
+    canvas.width = Math.floor(size * dpr);
+    canvas.height = Math.floor(size * dpr);
+  }
+  dialContext.setTransform(dpr, 0, 0, dpr, 0, 0);
+  needleContext.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawGauge();
 }
 
@@ -330,38 +335,39 @@ function drawGauge() {
   const pivotOuterColor = getCssColor("--speed-pivot-outer", "#202633");
   const pivotInnerColor = getCssColor("--speed-pivot-inner", accentColor);
 
-  canvasContext.clearRect(0, 0, size, size);
+  dialContext.clearRect(0, 0, size, size);
+  needleContext.clearRect(0, 0, size, size);
 
-  const backdrop = canvasContext.createRadialGradient(center, center, radius * 0.2, center, center, radius);
+  const backdrop = dialContext.createRadialGradient(center, center, radius * 0.2, center, center, radius);
   backdrop.addColorStop(0, bgColor);
   backdrop.addColorStop(1, "transparent");
-  canvasContext.fillStyle = backdrop;
-  canvasContext.beginPath();
-  canvasContext.arc(center, center, radius, 0, Math.PI * 2);
-  canvasContext.fill();
+  dialContext.fillStyle = backdrop;
+  dialContext.beginPath();
+  dialContext.arc(center, center, radius, 0, Math.PI * 2);
+  dialContext.fill();
 
-  canvasContext.strokeStyle = trackColor;
-  canvasContext.lineWidth = Math.max(8, size * 0.03);
-  canvasContext.beginPath();
-  canvasContext.arc(center, center, ringRadius, startAngle, endAngle);
-  canvasContext.stroke();
+  dialContext.strokeStyle = trackColor;
+  dialContext.lineWidth = Math.max(8, size * 0.03);
+  dialContext.beginPath();
+  dialContext.arc(center, center, ringRadius, startAngle, endAngle);
+  dialContext.stroke();
 
   const progress = Math.min(displaySpeed / gaugeMax, 1);
-  canvasContext.strokeStyle = accentColor;
-  canvasContext.lineCap = "round";
-  canvasContext.beginPath();
-  canvasContext.arc(center, center, ringRadius, startAngle, startAngle + progress * angleRange);
-  canvasContext.stroke();
-  canvasContext.lineCap = "butt";
+  dialContext.strokeStyle = accentColor;
+  dialContext.lineCap = "round";
+  dialContext.beginPath();
+  dialContext.arc(center, center, ringRadius, startAngle, startAngle + progress * angleRange);
+  dialContext.stroke();
+  dialContext.lineCap = "butt";
 
   const tickCount = gaugeMax / UNIT_CONFIG[state.unit].tickStep;
   const fontSize = Math.max(13, size * 0.024);
 
-  canvasContext.fillStyle = mutedColor;
-  canvasContext.strokeStyle = mutedColor;
-  canvasContext.font = `700 ${fontSize}px system-ui`;
-  canvasContext.textAlign = "center";
-  canvasContext.textBaseline = "middle";
+  dialContext.fillStyle = mutedColor;
+  dialContext.strokeStyle = mutedColor;
+  dialContext.font = `700 ${fontSize}px system-ui`;
+  dialContext.textAlign = "center";
+  dialContext.textBaseline = "middle";
 
   for (let index = 0; index <= tickCount; index += 1) {
     const tickValue = index * UNIT_CONFIG[state.unit].tickStep;
@@ -370,19 +376,19 @@ function drawGauge() {
     const outerRadius = radius * 0.9;
     const labelRadius = radius * 0.64;
 
-    canvasContext.lineWidth = index % 2 === 0 ? 3 : 2;
-    canvasContext.beginPath();
-    canvasContext.moveTo(
+    dialContext.lineWidth = index % 2 === 0 ? 3 : 2;
+    dialContext.beginPath();
+    dialContext.moveTo(
       center + innerRadius * Math.cos(tickAngle),
       center + innerRadius * Math.sin(tickAngle),
     );
-    canvasContext.lineTo(
+    dialContext.lineTo(
       center + outerRadius * Math.cos(tickAngle),
       center + outerRadius * Math.sin(tickAngle),
     );
-    canvasContext.stroke();
+    dialContext.stroke();
 
-    canvasContext.fillText(
+    dialContext.fillText(
       String(tickValue),
       center + labelRadius * Math.cos(tickAngle),
       center + labelRadius * Math.sin(tickAngle),
@@ -398,38 +404,38 @@ function drawGauge() {
   // needle with the gauge angle instead of the short counterweight.
   const needleAngle = startAngle + progress * angleRange + Math.PI / 2;
 
-  canvasContext.save();
-  canvasContext.translate(center, center);
-  canvasContext.rotate(needleAngle);
-  const needleGradient = canvasContext.createLinearGradient(0, needleBack, 0, -needleLength);
+  needleContext.save();
+  needleContext.translate(center, center);
+  needleContext.rotate(needleAngle);
+  const needleGradient = needleContext.createLinearGradient(0, needleBack, 0, -needleLength);
   needleGradient.addColorStop(0, needleBaseColor);
   needleGradient.addColorStop(1, needleTipColor);
-  canvasContext.shadowColor = "rgba(0, 0, 0, 0.24)";
-  canvasContext.shadowBlur = Math.max(8, size * 0.016);
-  canvasContext.shadowOffsetY = 2;
-  canvasContext.fillStyle = needleGradient;
-  canvasContext.beginPath();
-  canvasContext.moveTo(-needleTailWidth, needleBack);
-  canvasContext.lineTo(-needleTipWidth, -needleLength);
-  canvasContext.lineTo(needleTipWidth, -needleLength);
-  canvasContext.lineTo(needleTailWidth, needleBack);
-  canvasContext.closePath();
-  canvasContext.fill();
+  needleContext.shadowColor = "rgba(0, 0, 0, 0.24)";
+  needleContext.shadowBlur = Math.max(8, size * 0.016);
+  needleContext.shadowOffsetY = 2;
+  needleContext.fillStyle = needleGradient;
+  needleContext.beginPath();
+  needleContext.moveTo(-needleTailWidth, needleBack);
+  needleContext.lineTo(-needleTipWidth, -needleLength);
+  needleContext.lineTo(needleTipWidth, -needleLength);
+  needleContext.lineTo(needleTailWidth, needleBack);
+  needleContext.closePath();
+  needleContext.fill();
 
-  canvasContext.shadowColor = "transparent";
-  canvasContext.fillStyle = "rgba(255, 255, 255, 0.32)";
-  canvasContext.fillRect(-needleTipWidth * 0.4, -needleLength * 0.92, needleTipWidth * 0.8, needleLength * 0.95);
-  canvasContext.restore();
+  needleContext.shadowColor = "transparent";
+  needleContext.fillStyle = "rgba(255, 255, 255, 0.32)";
+  needleContext.fillRect(-needleTipWidth * 0.4, -needleLength * 0.92, needleTipWidth * 0.8, needleLength * 0.95);
+  needleContext.restore();
 
-  canvasContext.fillStyle = pivotOuterColor;
-  canvasContext.beginPath();
-  canvasContext.arc(center, center, Math.max(10, size * 0.018), 0, Math.PI * 2);
-  canvasContext.fill();
+  needleContext.fillStyle = pivotOuterColor;
+  needleContext.beginPath();
+  needleContext.arc(center, center, Math.max(10, size * 0.018), 0, Math.PI * 2);
+  needleContext.fill();
 
-  canvasContext.fillStyle = pivotInnerColor;
-  canvasContext.beginPath();
-  canvasContext.arc(center, center, Math.max(4, size * 0.008), 0, Math.PI * 2);
-  canvasContext.fill();
+  needleContext.fillStyle = pivotInnerColor;
+  needleContext.beginPath();
+  needleContext.arc(center, center, Math.max(4, size * 0.008), 0, Math.PI * 2);
+  needleContext.fill();
 }
 
 function renderMetrics() {

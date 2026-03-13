@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="speed-page">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
@@ -100,7 +100,7 @@
         <div class="speed-stage">
           <div class="gauge-card">
             <div class="gauge-stage">
-              <canvas id="speedGauge" class="speed-gauge" aria-label="Analog speedometer"></canvas>
+              <canvas id="speedDial" class="speed-gauge speed-dial" aria-hidden="true"></canvas>
               <div class="gauge-overlay">
                 <span class="gauge-kicker">Live speed</span>
                 <div class="gauge-reading">
@@ -109,6 +109,7 @@
                 </div>
                 <p id="subStatus" class="gauge-substatus">Looking for your first GPS fix</p>
               </div>
+              <canvas id="speedNeedle" class="speed-gauge speed-needle" aria-label="Analog speedometer"></canvas>
             </div>
           </div>
 
