@@ -389,8 +389,10 @@ function drawGauge() {
     );
   }
 
-  const needleLength = radius * 0.72;
-  const needleBack = radius * 0.12;
+  const needleLength = radius * 0.86;
+  const needleBack = radius * 0.16;
+  const needleTailWidth = Math.max(6, size * 0.012);
+  const needleTipWidth = Math.max(2.5, size * 0.0048);
   // The needle shape is authored pointing straight up (-Y), while the gauge
   // angles are expressed in canvas space from +X. Align the long end of the
   // needle with the gauge angle instead of the short counterweight.
@@ -407,16 +409,16 @@ function drawGauge() {
   canvasContext.shadowOffsetY = 2;
   canvasContext.fillStyle = needleGradient;
   canvasContext.beginPath();
-  canvasContext.moveTo(-4, needleBack);
-  canvasContext.lineTo(-2, -needleLength);
-  canvasContext.lineTo(2, -needleLength);
-  canvasContext.lineTo(4, needleBack);
+  canvasContext.moveTo(-needleTailWidth, needleBack);
+  canvasContext.lineTo(-needleTipWidth, -needleLength);
+  canvasContext.lineTo(needleTipWidth, -needleLength);
+  canvasContext.lineTo(needleTailWidth, needleBack);
   canvasContext.closePath();
   canvasContext.fill();
 
   canvasContext.shadowColor = "transparent";
   canvasContext.fillStyle = "rgba(255, 255, 255, 0.32)";
-  canvasContext.fillRect(-1, -needleLength * 0.92, 1.2, needleLength * 0.95);
+  canvasContext.fillRect(-needleTipWidth * 0.4, -needleLength * 0.92, needleTipWidth * 0.8, needleLength * 0.95);
   canvasContext.restore();
 
   canvasContext.fillStyle = pivotOuterColor;
