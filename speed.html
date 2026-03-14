@@ -285,53 +285,63 @@
             </div>
           </div>
 
-          <div class="stats-grid" data-i18n-aria="tripStats" aria-label="Trip stats">
-            <article class="metric-card">
-              <span class="metric-label" data-i18n="max">Max</span>
-              <strong id="maxSpeed">0</strong>
-              <span id="maxSpeedUnit" class="metric-unit">km/h</span>
-            </article>
+          <div class="speed-side-panel">
+            <div class="stats-grid" data-i18n-aria="tripStats" aria-label="Trip stats">
+              <article class="metric-card">
+                <span class="metric-label" data-i18n="max">Max</span>
+                <strong id="maxSpeed">0</strong>
+                <span id="maxSpeedUnit" class="metric-unit">km/h</span>
+              </article>
 
-            <article class="metric-card">
-              <span class="metric-label" data-i18n="average">Average</span>
-              <strong id="avgSpeed">0</strong>
-              <span id="avgSpeedUnit" class="metric-unit">km/h</span>
-            </article>
+              <article class="metric-card">
+                <span class="metric-label" data-i18n="average">Average</span>
+                <strong id="avgSpeed">0</strong>
+                <span id="avgSpeedUnit" class="metric-unit">km/h</span>
+              </article>
 
-            <article class="metric-card">
-              <span class="metric-label" data-i18n="distance">Distance</span>
-              <strong id="distanceValue">0</strong>
-              <span id="distanceUnit" class="metric-unit">m</span>
-            </article>
+              <article class="metric-card">
+                <span class="metric-label" data-i18n="distance">Distance</span>
+                <strong id="distanceValue">0</strong>
+                <span id="distanceUnit" class="metric-unit">m</span>
+              </article>
 
-            <article class="metric-card">
-              <span class="metric-label" data-i18n="nearestTrap">Nearest Trap</span>
-              <strong id="nearestTrapDistance">—</strong>
-              <span id="nearestTrapUnit" class="metric-unit" data-i18n="away">away</span>
-            </article>
+              <article class="metric-card">
+                <span class="metric-label" data-i18n="nearestTrap">Nearest Trap</span>
+                <strong id="nearestTrapDistance">—</strong>
+                <span id="nearestTrapUnit" class="metric-unit" data-i18n="away">away</span>
+              </article>
 
-            <article class="metric-card">
-              <span class="metric-label" data-i18n="duration">Duration</span>
-              <strong id="durationValue">00:00</strong>
-              <span class="metric-unit" data-i18n="trip">trip</span>
-            </article>
+              <article class="metric-card">
+                <span class="metric-label" data-i18n="duration">Duration</span>
+                <strong id="durationValue">00:00</strong>
+                <span class="metric-unit" data-i18n="trip">trip</span>
+              </article>
 
-            <article class="metric-card">
-              <span class="metric-label" data-i18n="altitude">Altitude</span>
-              <strong id="altitudeValue">—</strong>
-              <span id="altitudeUnit" class="metric-unit">m</span>
-            </article>
+              <article class="metric-card">
+                <span class="metric-label" data-i18n="altitude">Altitude</span>
+                <strong id="altitudeValue">—</strong>
+                <span id="altitudeUnit" class="metric-unit">m</span>
+              </article>
 
-            <article class="metric-card">
-              <span class="metric-label" data-i18n="maxAlt">Max Alt</span>
-              <strong id="maxAltitude">—</strong>
-              <span id="maxAltitudeUnit" class="metric-unit">m</span>
-            </article>
+              <article class="metric-card">
+                <span class="metric-label" data-i18n="maxAlt">Max Alt</span>
+                <strong id="maxAltitude">—</strong>
+                <span id="maxAltitudeUnit" class="metric-unit">m</span>
+              </article>
 
-            <article class="metric-card">
-              <span class="metric-label" data-i18n="minAlt">Min Alt</span>
-              <strong id="minAltitude">—</strong>
-              <span id="minAltitudeUnit" class="metric-unit">m</span>
+              <article class="metric-card">
+                <span class="metric-label" data-i18n="minAlt">Min Alt</span>
+                <strong id="minAltitude">—</strong>
+                <span id="minAltitudeUnit" class="metric-unit">m</span>
+              </article>
+            </div>
+
+            <article class="globe-card" data-i18n-aria="currentLocationGlobe" aria-label="Current location globe">
+              <div class="globe-card-header">
+                <span class="globe-card-kicker" data-i18n="liveGlobe">Live globe</span>
+                <p id="globeStatus" class="globe-card-status" data-i18n="requestingGps">Requesting GPS...</p>
+              </div>
+              <div id="speedGlobe" class="speed-globe" aria-hidden="true"></div>
             </article>
           </div>
 

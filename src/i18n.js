@@ -54,6 +54,7 @@ const translations = {
     off: 'Off',
     away: 'away',
     liveSpeed: 'Live speed',
+    liveGlobe: 'Live globe',
     changeLanguage: 'Change language',
 
     // Aria labels
@@ -76,6 +77,7 @@ const translations = {
     trapAlertSettings: 'Trap alert settings',
     trapAlertDistancePresets: 'Trap alert distance presets',
     tripStats: 'Trip stats',
+    currentLocationGlobe: 'Current location globe',
 
     // Energy Calculator
     energyTitle: 'EV Trip Cost',
@@ -121,6 +123,7 @@ const translations = {
     gpsUnavailable: 'GPS unavailable',
     waitingForGps: 'Waiting for GPS...',
     gpsError: 'GPS error',
+    globeUnavailable: 'Globe unavailable',
     gpsLive: 'GPS live',
     gpsLockedAccuracy: 'GPS locked · +/-{value} {unit}',
     gpsLiveAccuracy: 'GPS live · +/-{value} {unit}',
@@ -247,6 +250,7 @@ const translations = {
     off: 'No',
     away: 'distancia',
     liveSpeed: 'Velocidad en vivo',
+    liveGlobe: 'Globo en vivo',
     changeLanguage: 'Cambiar idioma',
 
     // Aria labels
@@ -269,6 +273,7 @@ const translations = {
     trapAlertSettings: 'Configuración de alertas de radar',
     trapAlertDistancePresets: 'Preajustes de distancia para alerta de radar',
     tripStats: 'Estadísticas del viaje',
+    currentLocationGlobe: 'Globo de ubicación actual',
 
     // Energy Calculator
     energyTitle: 'Costo de Viaje EV',
@@ -314,6 +319,7 @@ const translations = {
     gpsUnavailable: 'GPS no disponible',
     waitingForGps: 'Esperando GPS...',
     gpsError: 'Error de GPS',
+    globeUnavailable: 'Globo no disponible',
     gpsLive: 'GPS activo',
     gpsLockedAccuracy: 'GPS preciso · +/-{value} {unit}',
     gpsLiveAccuracy: 'GPS activo · +/-{value} {unit}',

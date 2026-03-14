@@ -1,4 +1,6 @@
+import "maplibre-gl/dist/maplibre-gl.css";
 import "../styles/speed.less";
+import maplibregl from "maplibre-gl";
 import KDBush from "kdbush";
 import { around as geoAround, distance as geoDistanceKm } from "geokdbush";
 import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
@@ -21,6 +23,16 @@ const OVERSPEED_SOUND_URL = "/audio/overspeed_notification.m4a";
 const TRAP_SOUND_URL = "/audio/near_camera_notification.m4a";
 const TRAP_DATA_URL = "/geo/ansv_cameras_compact.min.json";
 const TRAP_INDEX_URL = "/geo/ansv_cameras_compact.kdbush";
+const GLOBE_DEFAULT_CENTER = [137.9150899566626, 36.25956997955441];
+const GLOBE_DEFAULT_ZOOM = 0.15;
+const GLOBE_FOLLOW_ZOOM = 1.15;
+const GLOBE_SOURCE_ID = "live-position";
+const GLOBE_SATELLITE_ATTRIBUTION = [
+  '<a href="https://s2maps.eu" target="_blank" rel="noopener noreferrer">Sentinel-2 cloudless</a>',
+  'by',
+  '<a href="https://eox.at" target="_blank" rel="noopener noreferrer">EOX IT Services GmbH</a>',
+  '(Contains modified Copernicus Sentinel data 2020)',
+].join(" ");
 const UNIT_CONFIG = {
   mph: { label: "mph", baseMax: 120, tickStep: 20, factor: 2.2369362920544 },
   kmh: { label: "km/h", baseMax: 200, tickStep: 40, factor: 3.6 },
@@ -111,6 +123,8 @@ const elements = {
   backgroundAudioButtons: Array.from(document.querySelectorAll(".background-audio-btn")),
   unitButtons: Array.from(document.querySelectorAll(".unit-btn")),
   distanceUnitButtons: Array.from(document.querySelectorAll(".distance-unit-btn")),
+  globeMount: document.getElementById("speedGlobe"),
+  globeStatus: document.getElementById("globeStatus"),
 };
 
 const dialContext = elements.dialCanvas.getContext("2d");
@@ -179,9 +193,15 @@ const state = {
   recentSpeeds: [],
   lastAccuracyM: null,
   lastFixAt: 0,
+  lastPositionTimestamp: null,
   renderFrameId: null,
   lastTextUpdateAt: 0,
   canvasSize: 0,
+  globeMap: null,
+  globeReady: false,
+  globeError: null,
+  globeResizeObserver: null,
+  globeCenter: null,
 };
 
 function tf(key, values = {}) {
@@ -438,6 +458,7 @@ function setStatus(kind, params = null) {
   state.statusText = getStatusText(kind, params);
   elements.status.textContent = state.statusText;
   renderSubStatus();
+  renderGlobeStatus();
 }
 
 function showNotice(message) {
@@ -458,6 +479,250 @@ function hideNotice() {
   state.noticeKey = null;
   state.noticeParams = null;
   elements.notice.hidden = true;
+}
+
+function getEmptyGlobeSourceData() {
+  return {
+    type: "FeatureCollection",
+    features: [],
+  };
+}
+
+function getGlobePointData(longitude, latitude) {
+  return {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: [longitude, latitude],
+        },
+      },
+    ],
+  };
+}
+
+function renderGlobeStatus() {
+  if (!elements.globeStatus) return;
+  if (state.globeError) {
+    elements.globeStatus.textContent = t("globeUnavailable");
+    return;
+  }
+
+  if (Number.isFinite(state.lastPositionTimestamp)) {
+    elements.globeStatus.textContent = formatGlobeTimestamp(state.lastPositionTimestamp);
+    return;
+  }
+
+  elements.globeStatus.textContent = state.statusText;
+}
+
+function formatGlobeTimestamp(timestamp) {
+  try {
+    return new Intl.DateTimeFormat(getLang(), {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      timeZoneName: "short",
+    }).format(timestamp);
+  } catch {
+    return new Date(timestamp).toLocaleString();
+  }
+}
+
+function collapseGlobeAttributionControl() {
+  const attributionControl = elements.globeMount?.querySelector(".maplibregl-ctrl-attrib");
+  if (!attributionControl) return;
+
+  attributionControl.classList.remove("maplibregl-compact-show");
+  attributionControl.removeAttribute("open");
+}
+
+function resizeGlobe() {
+  if (!state.globeMap || !elements.globeMount) return;
+
+  const rect = elements.globeMount.getBoundingClientRect();
+  if (rect.width < 1 || rect.height < 1) return;
+
+  state.globeMap.resize();
+}
+
+function updateGlobeSource(longitude, latitude) {
+  if (!state.globeMap || !state.globeReady) return;
+
+  const source = state.globeMap.getSource(GLOBE_SOURCE_ID);
+  if (source && typeof source.setData === "function") {
+    source.setData(getGlobePointData(longitude, latitude));
+  }
+}
+
+function syncGlobePosition(longitude, latitude, { immediate = false } = {}) {
+  if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) return;
+  if (!state.globeMap || !state.globeReady) return;
+
+  updateGlobeSource(longitude, latitude);
+
+  const nextCenter = [longitude, latitude];
+  const centerDistanceM = Array.isArray(state.globeCenter)
+    ? haversineDistance(
+      {
+        longitude: state.globeCenter[0],
+        latitude: state.globeCenter[1],
+      },
+      {
+        longitude,
+        latitude,
+      },
+    )
+    : Number.POSITIVE_INFINITY;
+  const isAlreadyCentered = centerDistanceM < 120;
+
+  if (isAlreadyCentered) return;
+
+  state.globeCenter = nextCenter;
+
+  if (immediate) {
+    state.globeMap.jumpTo({ center: nextCenter, zoom: GLOBE_FOLLOW_ZOOM });
+    return;
+  }
+
+  state.globeMap.easeTo({
+    center: nextCenter,
+    zoom: GLOBE_FOLLOW_ZOOM,
+    duration: 1400,
+    essential: true,
+  });
+}
+
+function resetGlobe() {
+  state.globeCenter = null;
+
+  if (!state.globeMap || !state.globeReady) {
+    renderGlobeStatus();
+    return;
+  }
+
+  const source = state.globeMap.getSource(GLOBE_SOURCE_ID);
+  if (source && typeof source.setData === "function") {
+    source.setData(getEmptyGlobeSourceData());
+  }
+
+  state.globeMap.easeTo({
+    center: GLOBE_DEFAULT_CENTER,
+    zoom: GLOBE_DEFAULT_ZOOM,
+    duration: 900,
+    essential: true,
+  });
+}
+
+function initGlobe() {
+  if (!elements.globeMount || state.globeMap) return;
+
+  try {
+    const globeMap = new maplibregl.Map({
+      container: elements.globeMount,
+      antialias: true,
+      attributionControl: false,
+      interactive: false,
+      center: GLOBE_DEFAULT_CENTER,
+      zoom: GLOBE_DEFAULT_ZOOM,
+      style: {
+        version: 8,
+        projection: {
+          type: "globe",
+        },
+        sources: {
+          satellite: {
+            type: "raster",
+            tiles: ["https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg"],
+            attribution: GLOBE_SATELLITE_ATTRIBUTION,
+          },
+          [GLOBE_SOURCE_ID]: {
+            type: "geojson",
+            data: getEmptyGlobeSourceData(),
+          },
+        },
+        layers: [
+          {
+            id: "Satellite",
+            type: "raster",
+            source: "satellite",
+          },
+          {
+            id: "globe-position-glow",
+            type: "circle",
+            source: GLOBE_SOURCE_ID,
+            paint: {
+              "circle-radius": 14,
+              "circle-color": "#10b981",
+              "circle-opacity": 0.22,
+              "circle-blur": 0.55,
+            },
+          },
+          {
+            id: "globe-position-core",
+            type: "circle",
+            source: GLOBE_SOURCE_ID,
+            paint: {
+              "circle-radius": 5,
+              "circle-color": "#10b981",
+              "circle-stroke-width": 2,
+              "circle-stroke-color": "#ffffff",
+            },
+          },
+        ],
+        sky: {
+          "atmosphere-blend": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            0, 1,
+            5, 1,
+            7, 0,
+          ],
+        },
+        light: {
+          anchor: "map",
+          position: [1.5, 90, 80],
+        },
+      },
+    });
+
+    globeMap.addControl(new maplibregl.AttributionControl({ compact: true }));
+
+    state.globeMap = globeMap;
+    state.globeError = null;
+    renderGlobeStatus();
+
+    globeMap.on("load", () => {
+      state.globeReady = true;
+      collapseGlobeAttributionControl();
+      resizeGlobe();
+
+      if (state.lastPoint) {
+        syncGlobePosition(state.lastPoint.longitude, state.lastPoint.latitude, { immediate: true });
+      }
+    });
+
+    globeMap.on("resize", () => {
+      collapseGlobeAttributionControl();
+    });
+
+    if (typeof ResizeObserver === "function") {
+      state.globeResizeObserver = new ResizeObserver(() => {
+        resizeGlobe();
+      });
+      state.globeResizeObserver.observe(elements.globeMount);
+    }
+  } catch (error) {
+    state.globeError = error;
+    state.globeReady = false;
+    renderGlobeStatus();
+  }
 }
 
 function convertSpeed(speedMs, unit = state.unit) {
@@ -1553,7 +1818,9 @@ function resetTripData() {
   state.recentSpeeds = [];
   state.lastAccuracyM = null;
   state.lastFixAt = 0;
+  state.lastPositionTimestamp = null;
 
+  resetGlobe();
   hideNotice();
   closeAlertPanel();
   setStatus("requesting");
@@ -1650,8 +1917,10 @@ function handlePosition(position) {
   state.maxSpeedMs = Math.max(state.maxSpeedMs, state.currentSpeedMs);
   state.lastAccuracyM = currentAccuracyM;
   state.lastFixAt = Date.now();
+  state.lastPositionTimestamp = normalizedTimestamp;
 
   updateNearestTrap(coords.longitude, coords.latitude);
+  syncGlobePosition(coords.longitude, coords.latitude);
 
   if (Number.isFinite(coords.altitude)) {
     state.currentAltitudeM = coords.altitude;
@@ -1697,6 +1966,7 @@ function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
 
   if (size === state.canvasSize && elements.dialCanvas.width === Math.floor(size * dpr)) {
+    resizeGlobe();
     return;
   }
 
@@ -1708,6 +1978,7 @@ function resizeCanvas() {
   dialContext.setTransform(dpr, 0, 0, dpr, 0, 0);
   needleContext.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawGauge();
+  resizeGlobe();
 }
 
 function getCssColor(name, fallback) {
@@ -1962,6 +2233,7 @@ function syncLanguage() {
     elements.noticeText.textContent = tf(state.noticeKey, state.noticeParams ?? {});
   }
 
+  renderGlobeStatus();
   renderMetrics();
   drawGauge();
 }
@@ -2161,6 +2433,7 @@ function init() {
   }
 
   renderMetrics();
+  initGlobe();
   resizeCanvas();
   bindEvents();
   loadTrapArtifacts();

@@ -19,6 +19,7 @@
     "@jaames/iro": "^5.5.2",
     "geokdbush": "^2.0.1",
     "kdbush": "^4.0.2",
+    "maplibre-gl": "^5.20.1",
     "mathjs": "^15.1.0"
   },
   "engines": {
