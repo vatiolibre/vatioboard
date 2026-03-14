@@ -1,9 +1,14 @@
 import "../styles/speed.less";
 
 const STORAGE_UNIT_KEY = "vatio_speed_unit";
+const STORAGE_ALTITUDE_UNIT_KEY = "vatio_speed_altitude_unit";
 const UNIT_CONFIG = {
   mph: { label: "mph", baseMax: 120, tickStep: 20, factor: 2.2369362920544 },
   kmh: { label: "km/h", baseMax: 200, tickStep: 40, factor: 3.6 },
+};
+const ALTITUDE_UNIT_CONFIG = {
+  ft: { label: "ft", factor: 3.2808398950131 },
+  m: { label: "m", factor: 1 },
 };
 
 const SPEED_SMOOTHING_SAMPLES = 5;
@@ -28,11 +33,18 @@ const elements = {
   distanceValue: document.getElementById("distanceValue"),
   distanceUnit: document.getElementById("distanceUnit"),
   durationValue: document.getElementById("durationValue"),
+  altitudeValue: document.getElementById("altitudeValue"),
+  altitudeUnit: document.getElementById("altitudeUnit"),
+  maxAltitude: document.getElementById("maxAltitude"),
+  maxAltitudeUnit: document.getElementById("maxAltitudeUnit"),
+  minAltitude: document.getElementById("minAltitude"),
+  minAltitudeUnit: document.getElementById("minAltitudeUnit"),
   notice: document.getElementById("notice"),
   noticeText: document.getElementById("noticeText"),
   retryGps: document.getElementById("retryGps"),
   resetTrip: document.getElementById("resetTrip"),
   unitButtons: Array.from(document.querySelectorAll(".unit-btn")),
+  altitudeUnitButtons: Array.from(document.querySelectorAll(".altitude-unit-btn")),
 };
 
 const dialContext = elements.dialCanvas.getContext("2d");
@@ -40,6 +52,7 @@ const needleContext = elements.needleCanvas.getContext("2d");
 
 const state = {
   unit: loadUnitPreference(),
+  altitudeUnit: loadAltitudeUnitPreference(),
   watchId: null,
   startTime: Date.now(),
   currentSpeedMs: 0,
@@ -48,6 +61,9 @@ const state = {
   speedSumMs: 0,
   speedSamples: 0,
   totalDistanceM: 0,
+  currentAltitudeM: null,
+  maxAltitudeM: null,
+  minAltitudeM: null,
   lastPoint: null,
   recentSpeeds: [],
   lastAccuracyM: null,
@@ -74,6 +90,23 @@ function saveUnitPreference(unit) {
   }
 }
 
+function loadAltitudeUnitPreference() {
+  try {
+    const unit = window.localStorage.getItem(STORAGE_ALTITUDE_UNIT_KEY);
+    return unit && ALTITUDE_UNIT_CONFIG[unit] ? unit : "ft";
+  } catch {
+    return "ft";
+  }
+}
+
+function saveAltitudeUnitPreference(unit) {
+  try {
+    window.localStorage.setItem(STORAGE_ALTITUDE_UNIT_KEY, unit);
+  } catch {
+    // Ignore storage restrictions. The page still works without persistence.
+  }
+}
+
 function setStatus(text) {
   elements.status.textContent = text;
   elements.subStatus.textContent = text;
@@ -92,6 +125,10 @@ function convertSpeed(speedMs, unit = state.unit) {
   return speedMs * UNIT_CONFIG[unit].factor;
 }
 
+function convertAltitude(altitudeM, unit = state.altitudeUnit) {
+  return altitudeM * ALTITUDE_UNIT_CONFIG[unit].factor;
+}
+
 function getAverageSpeedMs() {
   return state.speedSamples > 0 ? state.speedSumMs / state.speedSamples : 0;
 }
@@ -106,6 +143,11 @@ function getDistanceDisplay(distanceM, unit = state.unit) {
   const miles = distanceM / 1609.344;
   if (miles < 10) return { value: miles.toFixed(1), unit: "mi" };
   return { value: Math.round(miles).toString(), unit: "mi" };
+}
+
+function formatAltitude(altitudeM, unit = state.altitudeUnit) {
+  if (!Number.isFinite(altitudeM)) return "—";
+  return Math.round(convertAltitude(altitudeM, unit)).toString();
 }
 
 function formatDuration(ms) {
@@ -159,6 +201,19 @@ function setUnit(unit) {
   drawGauge();
 }
 
+function setAltitudeUnit(unit) {
+  if (!ALTITUDE_UNIT_CONFIG[unit] || unit === state.altitudeUnit) return;
+
+  state.altitudeUnit = unit;
+  saveAltitudeUnitPreference(unit);
+
+  for (const button of elements.altitudeUnitButtons) {
+    button.setAttribute("aria-pressed", button.dataset.altitudeUnit === unit ? "true" : "false");
+  }
+
+  renderMetrics();
+}
+
 function resetTripData() {
   state.startTime = Date.now();
   state.currentSpeedMs = 0;
@@ -167,6 +222,9 @@ function resetTripData() {
   state.speedSumMs = 0;
   state.speedSamples = 0;
   state.totalDistanceM = 0;
+  state.currentAltitudeM = null;
+  state.maxAltitudeM = null;
+  state.minAltitudeM = null;
   state.lastPoint = null;
   state.recentSpeeds = [];
   state.lastAccuracyM = null;
@@ -252,6 +310,16 @@ function handlePosition(position) {
   state.lastAccuracyM = coords.accuracy;
   state.lastFixAt = Date.now();
 
+  if (Number.isFinite(coords.altitude)) {
+    state.currentAltitudeM = coords.altitude;
+    state.maxAltitudeM = state.maxAltitudeM === null
+      ? coords.altitude
+      : Math.max(state.maxAltitudeM, coords.altitude);
+    state.minAltitudeM = state.minAltitudeM === null
+      ? coords.altitude
+      : Math.min(state.minAltitudeM, coords.altitude);
+  }
+
   setStatus(describeAccuracy(coords.accuracy));
   renderMetrics();
 }
@@ -334,17 +402,53 @@ function drawGauge() {
   const needleTipColor = getCssColor("--speed-needle-tip", "#ff5a36");
   const pivotOuterColor = getCssColor("--speed-pivot-outer", "#202633");
   const pivotInnerColor = getCssColor("--speed-pivot-inner", accentColor);
+  const dialCoreColor = getCssColor("--speed-dial-core", "#ffffff");
+  const dialMidColor = getCssColor("--speed-dial-mid", bgColor);
+  const dialEdgeColor = getCssColor("--speed-dial-edge", "#e7f0fb");
+  const dialRimColor = getCssColor("--speed-dial-rim", trackColor);
+  const dialHighlightColor = getCssColor("--speed-dial-highlight", "rgba(255,255,255,0.92)");
 
   dialContext.clearRect(0, 0, size, size);
   needleContext.clearRect(0, 0, size, size);
 
-  const backdrop = dialContext.createRadialGradient(center, center, radius * 0.2, center, center, radius);
-  backdrop.addColorStop(0, bgColor);
-  backdrop.addColorStop(1, "transparent");
+  const backdrop = dialContext.createRadialGradient(
+    center,
+    center,
+    radius * 0.06,
+    center,
+    center,
+    radius,
+  );
+  backdrop.addColorStop(0, dialCoreColor);
+  backdrop.addColorStop(0.62, dialMidColor);
+  backdrop.addColorStop(1, dialEdgeColor);
   dialContext.fillStyle = backdrop;
   dialContext.beginPath();
   dialContext.arc(center, center, radius, 0, Math.PI * 2);
   dialContext.fill();
+
+  const gloss = dialContext.createRadialGradient(
+    center,
+    center,
+    radius * 0.14,
+    center,
+    center,
+    radius * 0.92,
+  );
+  gloss.addColorStop(0, dialHighlightColor);
+  gloss.addColorStop(0.28, "rgba(255, 255, 255, 0.18)");
+  gloss.addColorStop(0.64, "rgba(255, 255, 255, 0.05)");
+  gloss.addColorStop(1, "transparent");
+  dialContext.fillStyle = gloss;
+  dialContext.beginPath();
+  dialContext.arc(center, center, radius, 0, Math.PI * 2);
+  dialContext.fill();
+
+  dialContext.strokeStyle = dialRimColor;
+  dialContext.lineWidth = Math.max(2, size * 0.004);
+  dialContext.beginPath();
+  dialContext.arc(center, center, radius - dialContext.lineWidth, 0, Math.PI * 2);
+  dialContext.stroke();
 
   dialContext.strokeStyle = trackColor;
   dialContext.lineWidth = Math.max(8, size * 0.03);
@@ -444,6 +548,7 @@ function renderMetrics() {
   const averageSpeed = Math.round(convertSpeed(getAverageSpeedMs()));
   const distance = getDistanceDisplay(state.totalDistanceM);
   const unitLabel = UNIT_CONFIG[state.unit].label;
+  const altitudeUnitLabel = ALTITUDE_UNIT_CONFIG[state.altitudeUnit].label;
 
   elements.speedValue.textContent = String(currentSpeed);
   elements.speedUnit.textContent = unitLabel;
@@ -454,6 +559,12 @@ function renderMetrics() {
   elements.distanceValue.textContent = distance.value;
   elements.distanceUnit.textContent = distance.unit;
   elements.durationValue.textContent = formatDuration(Date.now() - state.startTime);
+  elements.altitudeValue.textContent = formatAltitude(state.currentAltitudeM);
+  elements.altitudeUnit.textContent = altitudeUnitLabel;
+  elements.maxAltitude.textContent = formatAltitude(state.maxAltitudeM);
+  elements.maxAltitudeUnit.textContent = altitudeUnitLabel;
+  elements.minAltitude.textContent = formatAltitude(state.minAltitudeM);
+  elements.minAltitudeUnit.textContent = altitudeUnitLabel;
 }
 
 function renderFrame(now) {
@@ -497,6 +608,10 @@ function bindEvents() {
     button.addEventListener("click", () => setUnit(button.dataset.unit));
   }
 
+  for (const button of elements.altitudeUnitButtons) {
+    button.addEventListener("click", () => setAltitudeUnit(button.dataset.altitudeUnit));
+  }
+
   window.addEventListener("resize", resizeCanvas, { passive: true });
   window.addEventListener("orientationchange", resizeCanvas, { passive: true });
   window.addEventListener("pageshow", () => {
@@ -519,6 +634,10 @@ function bindEvents() {
 function init() {
   for (const button of elements.unitButtons) {
     button.setAttribute("aria-pressed", button.dataset.unit === state.unit ? "true" : "false");
+  }
+
+  for (const button of elements.altitudeUnitButtons) {
+    button.setAttribute("aria-pressed", button.dataset.altitudeUnit === state.altitudeUnit ? "true" : "false");
   }
 
   renderMetrics();

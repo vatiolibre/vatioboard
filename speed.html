@@ -83,6 +83,11 @@
             <button type="button" class="unit-btn" data-unit="kmh">km/h</button>
           </div>
 
+          <div class="unit-switch" role="group" aria-label="Altitude unit">
+            <button type="button" class="altitude-unit-btn" data-altitude-unit="ft">ft</button>
+            <button type="button" class="altitude-unit-btn" data-altitude-unit="m">m</button>
+          </div>
+
           <button id="resetTrip" type="button">Reset trip</button>
 
           <div class="right-stack" aria-label="Connection status">
@@ -136,6 +141,24 @@
               <span class="metric-label">Duration</span>
               <strong id="durationValue">00:00</strong>
               <span class="metric-unit">trip</span>
+            </article>
+
+            <article class="metric-card">
+              <span class="metric-label">Altitude</span>
+              <strong id="altitudeValue">—</strong>
+              <span id="altitudeUnit" class="metric-unit">ft</span>
+            </article>
+
+            <article class="metric-card">
+              <span class="metric-label">Max Alt</span>
+              <strong id="maxAltitude">—</strong>
+              <span id="maxAltitudeUnit" class="metric-unit">ft</span>
+            </article>
+
+            <article class="metric-card">
+              <span class="metric-label">Min Alt</span>
+              <strong id="minAltitude">—</strong>
+              <span id="minAltitudeUnit" class="metric-unit">ft</span>
             </article>
           </div>
 

@@ -2,16 +2,30 @@
 
 :root{
     --speed-accent: #10b981;
-    --speed-accent-soft: rgba(16, 185, 129, 0.22);
-    --speed-track: rgba(17, 24, 39, 0.12);
-    --speed-tick: rgba(17, 24, 39, 0.46);
-    --speed-surface: rgba(255, 255, 255, 0.72);
-    --speed-surface-strong: rgba(255, 255, 255, 0.9);
+    --speed-accent-soft: rgba(16, 185, 129, 0.08);
+    --speed-track: rgba(17, 24, 39, 0.1);
+    --speed-tick: rgba(17, 24, 39, 0.6);
+    --speed-surface: rgba(250, 250, 250, 0.96);
+    --speed-surface-strong: rgba(255, 255, 255, 0.99);
     --speed-overlay: rgba(17, 24, 39, 0.72);
     --speed-needle-base: #8f1622;
     --speed-needle-tip: #ff5a36;
     --speed-pivot-outer: #202633;
     --speed-pivot-inner: #f4f5f7;
+    --speed-dial-core: #ffffff;
+    --speed-dial-mid: #fafafa;
+    --speed-dial-edge: #eceff2;
+    --speed-dial-rim: rgba(17, 24, 39, 0.08);
+    --speed-dial-highlight: rgba(255, 255, 255, 0.92);
+    --speed-page-top: #ffffff;
+    --speed-page-bottom: #f3f4f6;
+    --speed-panel-border: rgba(17, 24, 39, 0.08);
+    --speed-panel-shadow: 0 18px 44px rgba(15, 23, 42, 0.1);
+    --speed-chip-bg: rgba(255, 255, 255, 0.8);
+    --speed-card-shadow: 0 14px 34px rgba(15, 23, 42, 0.08);
+    --speed-page-sheen: rgba(255, 255, 255, 0.72);
+    --speed-gauge-glow: rgba(16, 185, 129, 0.08);
+    --speed-gauge-glow-edge: rgba(255, 255, 255, 0.2);
 }
 
 @media (prefers-color-scheme: dark){
@@ -27,6 +41,20 @@
         --speed-needle-tip: #ff6b47;
         --speed-pivot-outer: #090b10;
         --speed-pivot-inner: #d9dce2;
+        --speed-dial-core: #26292f;
+        --speed-dial-mid: #1d2025;
+        --speed-dial-edge: #121419;
+        --speed-dial-rim: rgba(255, 255, 255, 0.08);
+        --speed-dial-highlight: rgba(255, 255, 255, 0.08);
+        --speed-page-top: #1b1d22;
+        --speed-page-bottom: #131519;
+        --speed-panel-border: rgba(255, 255, 255, 0.1);
+        --speed-panel-shadow: var(--shadow);
+        --speed-chip-bg: rgba(31, 31, 31, 0.82);
+        --speed-card-shadow: 0 16px 36px rgba(0, 0, 0, 0.34);
+        --speed-page-sheen: rgba(255, 255, 255, 0.04);
+        --speed-gauge-glow: rgba(52, 211, 153, 0.16);
+        --speed-gauge-glow-edge: rgba(255, 255, 255, 0.05);
     }
 }
 
@@ -45,8 +73,8 @@ body.speed-page{
 
 body.speed-page{
     background:
-      radial-gradient(circle at top center, color-mix(in srgb, var(--speed-accent-soft) 85%, transparent), transparent 42%),
-      linear-gradient(180deg, color-mix(in srgb, var(--surface) 55%, var(--bg)) 0%, var(--bg) 100%);
+      linear-gradient(180deg, var(--speed-page-sheen), transparent 24%),
+      linear-gradient(180deg, var(--speed-page-top) 0%, var(--speed-page-bottom) 100%);
     overflow-x: hidden;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
@@ -80,8 +108,9 @@ body.speed-page{
     min-height: 30px;
     padding: 0 10px;
     border-radius: 999px;
-    border: 1px solid var(--border);
-    background: color-mix(in srgb, var(--surface) 70%, transparent);
+    border: 1px solid var(--speed-panel-border);
+    background: var(--speed-chip-bg);
+    box-shadow: inset 0 0 0 1px var(--inner-ring);
     color: var(--muted);
     font-size: 11px;
     font-weight: 900;
@@ -100,13 +129,13 @@ body.speed-page{
     gap: 4px;
     align-items: center;
     padding: 4px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--speed-panel-border);
     border-radius: calc(var(--radius-sm) + 4px);
-    background: color-mix(in srgb, var(--surface) 72%, transparent);
+    background: var(--speed-chip-bg);
     box-shadow: inset 0 0 0 1px var(--inner-ring);
 }
 
-.unit-switch .unit-btn{
+.unit-switch button{
     min-width: 72px;
     border: 0;
     background: transparent;
@@ -114,12 +143,12 @@ body.speed-page{
     box-shadow: none;
 }
 
-.unit-switch .unit-btn:hover{
+.unit-switch button:hover{
     background: var(--btn-hover-bg);
     color: var(--btn-fg);
 }
 
-.unit-switch .unit-btn[aria-pressed="true"]{
+.unit-switch button[aria-pressed="true"]{
     background: var(--btn-active-bg);
     color: var(--btn-active-fg);
 }
@@ -144,12 +173,12 @@ body.speed-page{
 
 .gauge-card{
     position: relative;
-    border: 1px solid var(--border);
+    border: 1px solid var(--speed-panel-border);
     border-radius: calc(var(--radius) + 8px);
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--speed-surface-strong) 96%, transparent), color-mix(in srgb, var(--speed-surface) 96%, transparent));
+      linear-gradient(180deg, color-mix(in srgb, var(--speed-surface-strong) 100%, transparent), color-mix(in srgb, var(--speed-surface) 100%, transparent));
     box-shadow:
-      var(--shadow),
+      var(--speed-panel-shadow),
       inset 0 0 0 1px var(--inner-ring);
     overflow: hidden;
 }
@@ -164,7 +193,22 @@ body.speed-page{
         180deg,
         color-mix(in srgb, var(--inner-highlight) 90%, transparent),
         transparent 24%
+      ),
+      linear-gradient(
+        130deg,
+        rgba(255, 255, 255, 0.42),
+        transparent 40%
       );
+}
+
+.gauge-card::after{
+    content:"";
+    position:absolute;
+    inset: 18px;
+    border-radius: calc(var(--radius) + 2px);
+    border: 1px solid color-mix(in srgb, var(--speed-panel-border) 82%, transparent);
+    pointer-events: none;
+    opacity: 0.7;
 }
 
 .gauge-stage{
@@ -173,6 +217,26 @@ body.speed-page{
     margin: 0 auto;
     aspect-ratio: 1 / 1;
     isolation: isolate;
+}
+
+.gauge-stage::before{
+    content:"";
+    position: absolute;
+    width: 86%;
+    height: 86%;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background:
+      radial-gradient(
+        circle at center,
+        color-mix(in srgb, var(--speed-gauge-glow-edge) 70%, transparent) 0%,
+        var(--speed-gauge-glow) 34%,
+        transparent 70%
+      );
+    pointer-events: none;
+    z-index: 0;
 }
 
 .speed-gauge{
@@ -245,7 +309,7 @@ body.speed-page{
 
 .stats-grid{
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     gap: 12px;
 }
 
@@ -255,11 +319,11 @@ body.speed-page{
     align-items: end;
     min-height: 110px;
     padding: 16px 18px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--speed-panel-border);
     border-radius: calc(var(--radius-sm) + 2px);
-    background: color-mix(in srgb, var(--surface) 84%, transparent);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--speed-surface-strong) 98%, transparent), color-mix(in srgb, var(--speed-surface) 98%, transparent));
     box-shadow:
-      0 10px 24px rgba(0, 0, 0, 0.08),
+      var(--speed-card-shadow),
       inset 0 0 0 1px var(--inner-ring);
 }
 
@@ -292,7 +356,7 @@ body.speed-page{
     padding: 14px 16px;
     border: 1px solid color-mix(in srgb, var(--speed-accent) 40%, var(--border));
     border-radius: calc(var(--radius-sm) + 2px);
-    background: color-mix(in srgb, var(--speed-accent) 10%, var(--surface));
+    background: linear-gradient(180deg, color-mix(in srgb, var(--speed-surface-strong) 94%, transparent), color-mix(in srgb, var(--speed-accent) 8%, var(--speed-surface)));
 }
 
 .notice p{
@@ -331,7 +395,7 @@ body.speed-page{
         width: 100%;
     }
 
-    .unit-switch .unit-btn{
+    .unit-switch button{
         flex: 1 1 0;
     }
 
@@ -351,6 +415,83 @@ body.speed-page{
 
     .notice button{
         width: 100%;
+    }
+}
+
+@media (max-width: 720px) and (orientation: portrait){
+    .speed-header-inner{
+        gap: 8px;
+        padding-top: 6px;
+        padding-bottom: 6px;
+    }
+
+    .speed-toolbar{
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .speed-toolbar .unit-switch{
+        width: auto;
+        min-width: 0;
+    }
+
+    .speed-toolbar .unit-switch button{
+        min-width: 0;
+        padding: 8px 10px;
+        font-size: 13px;
+    }
+
+    .speed-toolbar > button{
+        padding: 8px 10px;
+        font-size: 13px;
+        white-space: nowrap;
+    }
+
+    .speed-toolbar .right-stack{
+        grid-column: 1 / -1;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+        max-width: none;
+        width: 100%;
+        gap: 8px;
+    }
+
+    .speed-toolbar .status{
+        font-size: 11px;
+    }
+
+    .speed-toolbar .attribution{
+        font-size: 10px;
+        flex: 0 0 auto;
+    }
+}
+
+@media (orientation: landscape) and (min-width: 640px){
+    .speed-stage{
+        grid-template-columns: minmax(0, 1fr) minmax(252px, 332px);
+        align-items: start;
+    }
+
+    .stats-grid{
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-content: start;
+        gap: 10px;
+    }
+
+    .metric-card{
+        min-height: 92px;
+        padding: 14px;
+    }
+
+    .metric-card strong{
+        font-size: clamp(22px, 2.4vw, 32px);
+    }
+
+    .notice{
+        grid-column: 1 / -1;
     }
 }
 
