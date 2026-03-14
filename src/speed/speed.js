@@ -168,7 +168,8 @@ const trapAlertAudio = new Audio(TRAP_SOUND_URL);
 trapAlertAudio.loop = false;
 trapAlertAudio.preload = "auto";
 trapAlertAudio.playsInline = true;
-const backgroundKeepAliveAudio = new Audio(createSilentLoopAudioUrl());
+let backgroundKeepAliveAudioUrl = createSilentLoopAudioUrl();
+const backgroundKeepAliveAudio = new Audio(backgroundKeepAliveAudioUrl);
 backgroundKeepAliveAudio.loop = true;
 backgroundKeepAliveAudio.preload = "auto";
 backgroundKeepAliveAudio.playsInline = true;
@@ -917,6 +918,19 @@ function stopBackgroundKeepAliveAudio() {
   backgroundKeepAliveAudio.currentTime = 0;
 }
 
+function revokeBackgroundKeepAliveAudioUrl() {
+  if (!backgroundKeepAliveAudioUrl) return;
+  URL.revokeObjectURL(backgroundKeepAliveAudioUrl);
+  backgroundKeepAliveAudioUrl = "";
+}
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    stopBackgroundKeepAliveAudio();
+    revokeBackgroundKeepAliveAudioUrl();
+  });
+}
+
 async function ensureAudioElementLooping(audio) {
   audio.loop = true;
   silenceAudioElement(audio);
@@ -1097,12 +1111,12 @@ async function armBackgroundAlertAudio() {
   state.backgroundAudioArmPending = true;
 
   try {
-    await ensureBackgroundKeepAliveAudio();
     await primeAlertAudio();
     if (!state.audioPrimed) {
-      throw new Error("Alert audio priming failed");
+      return;
     }
 
+    await ensureBackgroundKeepAliveAudio();
     await Promise.all([
       ensureAudioElementLooping(overspeedAudio),
       ensureAudioElementLooping(trapAlertAudio),
@@ -1114,7 +1128,7 @@ async function armBackgroundAlertAudio() {
     keepOverspeedAudioAlive();
     keepTrapAudioAlive();
   } catch {
-    state.backgroundAudioArmed = false;
+    disarmBackgroundAlertAudio();
   } finally {
     state.backgroundAudioArmPending = false;
   }
