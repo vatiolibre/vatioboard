@@ -132,14 +132,19 @@ const state = {
   alertSoundEnabled: loadAlertSoundEnabledPreference(),
   audioPrimed: false,
   audioPrimePending: false,
+  backgroundAudioArmed: false,
+  backgroundAudioArmPending: false,
   alertSoundBlocked: false,
   alertSoundPending: false,
+  overspeedAudible: false,
   trapAlertEnabled: loadTrapAlertEnabledPreference(),
   trapAlertDistanceM: loadTrapAlertDistancePreference(initialDistanceUnit),
   trapSoundEnabled: loadTrapSoundEnabledPreference(),
   alertTriggerDiscovered: loadAlertTriggerDiscoveredPreference(),
   trapSoundBlocked: false,
   trapSoundPending: false,
+  trapAudible: false,
+  trapMuteTimeoutId: null,
   watchId: null,
   startTime: null,
   trackingStartedAt: Date.now(),
@@ -527,20 +532,74 @@ function shouldPlayOverspeedSound() {
   return getAlertUiState().over && state.alertSoundEnabled;
 }
 
+function clearTrapMuteTimeout() {
+  if (state.trapMuteTimeoutId !== null) {
+    window.clearTimeout(state.trapMuteTimeoutId);
+    state.trapMuteTimeoutId = null;
+  }
+}
+
+function getTrapSoundDurationMs() {
+  return Number.isFinite(trapAlertAudio.duration) && trapAlertAudio.duration > 0
+    ? Math.round(trapAlertAudio.duration * 1000)
+    : 1800;
+}
+
+function silenceAudioElement(audio) {
+  audio.muted = true;
+  audio.volume = 0;
+}
+
+function activateAudioElement(audio) {
+  audio.muted = false;
+  audio.volume = 1;
+}
+
+async function ensureAudioElementLooping(audio) {
+  audio.loop = true;
+  silenceAudioElement(audio);
+
+  if (!audio.paused) {
+    return true;
+  }
+
+  audio.currentTime = 0;
+  const playPromise = audio.play();
+  if (playPromise && typeof playPromise.then === "function") {
+    await playPromise;
+  }
+
+  return true;
+}
+
 function stopOverspeedSound() {
   state.alertSoundPending = false;
+  state.overspeedAudible = false;
   overspeedAudio.pause();
   overspeedAudio.currentTime = 0;
+}
+
+function keepOverspeedAudioAlive() {
+  state.overspeedAudible = false;
+  overspeedAudio.loop = true;
+  silenceAudioElement(overspeedAudio);
+  if (!overspeedAudio.paused) {
+    overspeedAudio.currentTime = 0;
+  }
 }
 
 function syncOverspeedSound({ fromUserGesture = false } = {}) {
   if (!shouldPlayOverspeedSound()) {
     state.alertSoundBlocked = false;
+    if (state.backgroundAudioArmed) {
+      keepOverspeedAudioAlive();
+      return;
+    }
     stopOverspeedSound();
     return;
   }
 
-  if (!overspeedAudio.paused) {
+  if (state.overspeedAudible && !overspeedAudio.paused) {
     return;
   }
 
@@ -552,10 +611,13 @@ function syncOverspeedSound({ fromUserGesture = false } = {}) {
     return;
   }
 
+  overspeedAudio.loop = true;
   overspeedAudio.currentTime = 0;
+  activateAudioElement(overspeedAudio);
   const playPromise = overspeedAudio.play();
   if (!playPromise || typeof playPromise.then !== "function") {
     state.alertSoundBlocked = false;
+    state.overspeedAudible = true;
     return;
   }
 
@@ -564,6 +626,7 @@ function syncOverspeedSound({ fromUserGesture = false } = {}) {
     .then(() => {
       state.alertSoundPending = false;
       state.alertSoundBlocked = false;
+      state.overspeedAudible = true;
     })
     .catch(() => {
       state.alertSoundPending = false;
@@ -574,13 +637,33 @@ function syncOverspeedSound({ fromUserGesture = false } = {}) {
 
 function stopTrapSound() {
   state.trapSoundPending = false;
+  state.trapAudible = false;
+  clearTrapMuteTimeout();
   trapAlertAudio.pause();
   trapAlertAudio.currentTime = 0;
+}
+
+function keepTrapAudioAlive() {
+  clearTrapMuteTimeout();
+  state.trapAudible = false;
+  trapAlertAudio.loop = true;
+  silenceAudioElement(trapAlertAudio);
+  if (!trapAlertAudio.paused) {
+    trapAlertAudio.currentTime = 0;
+  }
+}
+
+function scheduleTrapAudioMute() {
+  clearTrapMuteTimeout();
+  state.trapMuteTimeoutId = window.setTimeout(() => {
+    keepTrapAudioAlive();
+  }, getTrapSoundDurationMs());
 }
 
 async function primeAudioElement(audio) {
   const previousMuted = audio.muted;
   const previousVolume = audio.volume;
+  const previousLoop = audio.loop;
 
   audio.muted = true;
   audio.volume = 0;
@@ -601,6 +684,7 @@ async function primeAudioElement(audio) {
   } finally {
     audio.muted = previousMuted;
     audio.volume = previousVolume;
+    audio.loop = previousLoop;
   }
 }
 
@@ -625,18 +709,60 @@ async function primeAlertAudio() {
   }
 }
 
+async function armBackgroundAlertAudio() {
+  if (
+    state.backgroundAudioArmed
+    && !state.backgroundAudioArmPending
+    && !overspeedAudio.paused
+    && !trapAlertAudio.paused
+  ) {
+    return;
+  }
+  if (state.backgroundAudioArmPending) return;
+
+  await primeAlertAudio();
+  if (!state.audioPrimed) return;
+
+  state.backgroundAudioArmPending = true;
+
+  try {
+    await Promise.all([
+      ensureAudioElementLooping(overspeedAudio),
+      ensureAudioElementLooping(trapAlertAudio),
+    ]);
+
+    state.backgroundAudioArmed = true;
+    state.alertSoundBlocked = false;
+    state.trapSoundBlocked = false;
+    keepOverspeedAudioAlive();
+    keepTrapAudioAlive();
+  } catch {
+    state.backgroundAudioArmed = false;
+  } finally {
+    state.backgroundAudioArmPending = false;
+  }
+}
+
 function syncTrapSound({ fromUserGesture = false } = {}) {
   const activeTrap = getActiveTrapAlert();
 
   if (!activeTrap) {
     state.lastTrapSoundedId = null;
     state.trapSoundBlocked = false;
+    if (state.backgroundAudioArmed) {
+      keepTrapAudioAlive();
+      return;
+    }
     stopTrapSound();
     return;
   }
 
   if (!state.trapSoundEnabled) {
     state.trapSoundBlocked = false;
+    if (state.backgroundAudioArmed) {
+      keepTrapAudioAlive();
+      return;
+    }
     stopTrapSound();
     return;
   }
@@ -653,11 +779,18 @@ function syncTrapSound({ fromUserGesture = false } = {}) {
     return;
   }
 
+  clearTrapMuteTimeout();
+  trapAlertAudio.loop = state.backgroundAudioArmed;
   trapAlertAudio.currentTime = 0;
+  activateAudioElement(trapAlertAudio);
   const playPromise = trapAlertAudio.play();
   if (!playPromise || typeof playPromise.then !== "function") {
     state.trapSoundBlocked = false;
+    state.trapAudible = true;
     state.lastTrapSoundedId = activeTrap.id;
+    if (state.backgroundAudioArmed) {
+      scheduleTrapAudioMute();
+    }
     return;
   }
 
@@ -666,7 +799,11 @@ function syncTrapSound({ fromUserGesture = false } = {}) {
     .then(() => {
       state.trapSoundPending = false;
       state.trapSoundBlocked = false;
+      state.trapAudible = true;
       state.lastTrapSoundedId = activeTrap.id;
+      if (state.backgroundAudioArmed) {
+        scheduleTrapAudioMute();
+      }
     })
     .catch(() => {
       state.trapSoundPending = false;
@@ -1802,11 +1939,12 @@ function bindEvents() {
     resizeCanvas();
     if (state.watchId === null) startTracking();
     startRenderLoop();
+    void armBackgroundAlertAudio();
     syncOverspeedSound();
     syncTrapSound();
   });
   document.addEventListener("pointerdown", (event) => {
-    void primeAlertAudio();
+    void armBackgroundAlertAudio();
     const insideAlertUi = elements.alertPanel.contains(event.target) || elements.alertTrigger.contains(event.target);
     if (!insideAlertUi) {
       syncOverspeedSound({ fromUserGesture: true });
@@ -1817,7 +1955,7 @@ function bindEvents() {
     closeAlertPanel();
   });
   document.addEventListener("keydown", (event) => {
-    void primeAlertAudio();
+    void armBackgroundAlertAudio();
     syncOverspeedSound({ fromUserGesture: true });
     syncTrapSound({ fromUserGesture: true });
     if (event.key === "Escape") closeAlertPanel();
@@ -1832,6 +1970,7 @@ function bindEvents() {
     resizeCanvas();
     ensureTrapArtifactsLoaded();
     startRenderLoop();
+    void armBackgroundAlertAudio();
     syncOverspeedSound();
     syncTrapSound();
   });
