@@ -173,14 +173,17 @@ body.speed-page.alert-panel-open .speed-main{
 .speed-main{
     align-items: flex-start;
     justify-content: center;
-    padding: clamp(12px, 2vw, 20px);
+    padding-top: clamp(8px, 1.4vw, 14px);
+    padding-right: max(8px, env(safe-area-inset-right));
     padding-bottom: max(20px, env(safe-area-inset-bottom));
+    padding-left: max(8px, env(safe-area-inset-left));
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
 }
 
 .speed-shell{
-    width: min(100%, 980px);
+    width: 100%;
+    max-width: 1320px;
 }
 
 .speed-stage{
@@ -810,7 +813,10 @@ body.speed-page.alert-panel-open .speed-main{
 
 @media (max-width: 720px){
     .speed-main{
-        padding: 10px;
+        padding-top: 8px;
+        padding-right: max(8px, env(safe-area-inset-right));
+        padding-bottom: max(18px, env(safe-area-inset-bottom));
+        padding-left: max(8px, env(safe-area-inset-left));
     }
 
     .speed-toolbar{
@@ -1001,31 +1007,58 @@ body.speed-page.alert-panel-open .speed-main{
     }
 }
 
-@media (orientation: landscape) and (min-width: 640px){
+@media (min-width: 800px){
     .speed-stage{
-        grid-template-columns: minmax(0, 1fr) minmax(252px, 332px);
+        grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
         align-items: start;
+        gap: 12px;
+    }
+
+    .gauge-stage{
+        width: 100%;
+        max-width: 720px;
     }
 
     .stats-grid{
         grid-template-columns: repeat(2, minmax(0, 1fr));
         align-content: start;
-        gap: 10px;
+        gap: 8px;
     }
 
     .metric-card{
-        min-height: 92px;
-        padding: 14px;
+        min-height: 88px;
+        padding: 12px;
     }
 
     .metric-card strong{
-        font-size: clamp(22px, 2.4vw, 32px);
+        font-size: clamp(21px, 2.2vw, 30px);
     }
 
     .notice{
         grid-column: 1 / -1;
     }
 
+}
+
+@media (min-width: 800px) and (max-width: 1040px){
+    .speed-stage{
+        grid-template-columns: minmax(0, 1fr) minmax(204px, 264px);
+        gap: 10px;
+    }
+
+    .metric-card{
+        min-height: 82px;
+        padding: 10px;
+    }
+
+    .metric-card strong{
+        font-size: clamp(18px, 2vw, 26px);
+    }
+
+    .metric-label,
+    .metric-unit{
+        font-size: 11px;
+    }
 }
 
 @media (max-width: 520px), (max-height: 760px){
