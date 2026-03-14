@@ -30,6 +30,9 @@ const GLOBE_DEFAULT_ZOOM = 0.15;
 const GLOBE_FOLLOW_ZOOM = 0.8;
 const GLOBE_FOLLOW_RESUME_DELAY_MS = 12000;
 const GLOBE_SOURCE_ID = "live-position";
+const GLOBE_TERMINATOR_SOURCE_ID = "solar-terminator";
+const GLOBE_LIGHT_RADIUS = 1.5;
+const GLOBE_SOLAR_UPDATE_INTERVAL_MS = 60000;
 const GLOBE_SATELLITE_ATTRIBUTION = [
   '<a href="https://s2maps.eu" target="_blank" rel="noopener noreferrer">Sentinel-2 cloudless</a>',
   'by',
@@ -252,7 +255,215 @@ const state = {
   globeCenter: null,
   globeFollowPausedUntil: 0,
   globeFollowResumeTimeoutId: null,
+  globeSolarUpdateIntervalId: null,
+  globeSolarSyncFrameId: null,
 };
+
+function clampNumber(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function toRadians(degrees) {
+  return degrees * (Math.PI / 180);
+}
+
+function toDegrees(radians) {
+  return radians * (180 / Math.PI);
+}
+
+function normalizeDegrees360(value) {
+  return ((value % 360) + 360) % 360;
+}
+
+function normalizeDegrees180(value) {
+  const normalized = normalizeDegrees360(value);
+  return normalized > 180 ? normalized - 360 : normalized;
+}
+
+function dotVector3(a, b) {
+  return (a[0] * b[0]) + (a[1] * b[1]) + (a[2] * b[2]);
+}
+
+function crossVector3(a, b) {
+  return [
+    (a[1] * b[2]) - (a[2] * b[1]),
+    (a[2] * b[0]) - (a[0] * b[2]),
+    (a[0] * b[1]) - (a[1] * b[0]),
+  ];
+}
+
+function normalizeVector3(vector) {
+  const magnitude = Math.hypot(vector[0], vector[1], vector[2]);
+  if (!Number.isFinite(magnitude) || magnitude <= 1e-9) {
+    return null;
+  }
+
+  return [
+    vector[0] / magnitude,
+    vector[1] / magnitude,
+    vector[2] / magnitude,
+  ];
+}
+
+function lngLatToUnitVector(longitude, latitude) {
+  const longitudeRad = toRadians(longitude);
+  const latitudeRad = toRadians(latitude);
+  const cosLatitude = Math.cos(latitudeRad);
+
+  return [
+    Math.sin(longitudeRad) * cosLatitude,
+    Math.sin(latitudeRad),
+    Math.cos(longitudeRad) * cosLatitude,
+  ];
+}
+
+function unitVectorToLngLat(vector) {
+  const normalized = normalizeVector3(vector);
+  if (!normalized) {
+    return [0, 0];
+  }
+
+  return [
+    normalizeDegrees180(toDegrees(Math.atan2(normalized[0], normalized[2]))),
+    toDegrees(Math.asin(clampNumber(normalized[1], -1, 1))),
+  ];
+}
+
+function getSunVectorAtTime(timestamp = Date.now()) {
+  const julianDay = (timestamp / 86400000) + 2440587.5;
+  const julianCentury = (julianDay - 2451545) / 36525;
+  const meanLongitude = normalizeDegrees360(
+    280.46646 + (julianCentury * (36000.76983 + (julianCentury * 0.0003032))),
+  );
+  const meanAnomaly = normalizeDegrees360(
+    357.52911 + (julianCentury * (35999.05029 - (0.0001537 * julianCentury))),
+  );
+  const equationOfCenter =
+    (Math.sin(toRadians(meanAnomaly)) * (1.914602 - (julianCentury * (0.004817 + (0.000014 * julianCentury)))))
+    + (Math.sin(toRadians(2 * meanAnomaly)) * (0.019993 - (0.000101 * julianCentury)))
+    + (Math.sin(toRadians(3 * meanAnomaly)) * 0.000289);
+  const trueLongitude = meanLongitude + equationOfCenter;
+  const omega = 125.04 - (1934.136 * julianCentury);
+  const apparentLongitude = trueLongitude - 0.00569 - (0.00478 * Math.sin(toRadians(omega)));
+  const meanObliquity =
+    23
+    + ((26 + ((21.448 - (julianCentury * (46.815 + (julianCentury * (0.00059 - (0.001813 * julianCentury)))))) / 60)) / 60);
+  const trueObliquity = meanObliquity + (0.00256 * Math.cos(toRadians(omega)));
+  const apparentLongitudeRad = toRadians(apparentLongitude);
+  const trueObliquityRad = toRadians(trueObliquity);
+  const rightAscension = normalizeDegrees360(toDegrees(
+    Math.atan2(
+      Math.cos(trueObliquityRad) * Math.sin(apparentLongitudeRad),
+      Math.cos(apparentLongitudeRad),
+    ),
+  ));
+  const declination = toDegrees(Math.asin(
+    Math.sin(trueObliquityRad) * Math.sin(apparentLongitudeRad),
+  ));
+  const greenwichSiderealTime = normalizeDegrees360(
+    280.46061837
+    + (360.98564736629 * (julianDay - 2451545))
+    + (0.000387933 * (julianCentury ** 2))
+    - ((julianCentury ** 3) / 38710000),
+  );
+  const subsolarLongitude = normalizeDegrees180(rightAscension - greenwichSiderealTime);
+
+  return {
+    declination,
+    subsolarLongitude,
+    vector: lngLatToUnitVector(subsolarLongitude, declination),
+  };
+}
+
+function getSolarLightPosition(longitude, latitude, sunVector) {
+  const normalizedLongitude = normalizeDegrees180(longitude);
+  const longitudeRad = toRadians(normalizedLongitude);
+  const latitudeRad = toRadians(latitude);
+  const east = [
+    Math.cos(longitudeRad),
+    0,
+    -Math.sin(longitudeRad),
+  ];
+  const north = [
+    -Math.sin(latitudeRad) * Math.sin(longitudeRad),
+    Math.cos(latitudeRad),
+    -Math.sin(latitudeRad) * Math.cos(longitudeRad),
+  ];
+  const up = lngLatToUnitVector(normalizedLongitude, latitude);
+  const altitude = toDegrees(Math.asin(clampNumber(dotVector3(sunVector, up), -1, 1)));
+  const azimuth = normalizeDegrees360(toDegrees(Math.atan2(
+    dotVector3(sunVector, east),
+    dotVector3(sunVector, north),
+  )));
+
+  return [GLOBE_LIGHT_RADIUS, azimuth, clampNumber(90 - altitude, 0, 180)];
+}
+
+function getEmptyGlobeTerminatorData() {
+  return {
+    type: "FeatureCollection",
+    features: [],
+  };
+}
+
+function getSolarTerminatorData(sunVector) {
+  const referenceVector = Math.abs(sunVector[1]) < 0.99
+    ? [0, 1, 0]
+    : [1, 0, 0];
+  const axisA = normalizeVector3(crossVector3(sunVector, referenceVector));
+  const axisB = axisA ? normalizeVector3(crossVector3(sunVector, axisA)) : null;
+
+  if (!axisA || !axisB) {
+    return getEmptyGlobeTerminatorData();
+  }
+
+  const coordinates = [];
+  let segment = [];
+  let previousLongitude = null;
+
+  for (let step = 0; step <= 360; step += 1) {
+    const angle = (step / 360) * (Math.PI * 2);
+    const point = [
+      (axisA[0] * Math.cos(angle)) + (axisB[0] * Math.sin(angle)),
+      (axisA[1] * Math.cos(angle)) + (axisB[1] * Math.sin(angle)),
+      (axisA[2] * Math.cos(angle)) + (axisB[2] * Math.sin(angle)),
+    ];
+    const [pointLongitude, pointLatitude] = unitVectorToLngLat(point);
+
+    if (
+      segment.length > 0
+      && previousLongitude !== null
+      && Math.abs(pointLongitude - previousLongitude) > 180
+    ) {
+      if (segment.length > 1) {
+        coordinates.push(segment);
+      }
+      segment = [];
+    }
+
+    segment.push([pointLongitude, pointLatitude]);
+    previousLongitude = pointLongitude;
+  }
+
+  if (segment.length > 1) {
+    coordinates.push(segment);
+  }
+
+  return {
+    type: "FeatureCollection",
+    features: coordinates.length > 0
+      ? [
+        {
+          type: "Feature",
+          geometry: {
+            type: "MultiLineString",
+            coordinates,
+          },
+        },
+      ]
+      : [],
+  };
+}
 
 function tf(key, values = {}) {
   return t(key).replace(/\{(\w+)\}/g, (_, token) => String(values[token] ?? ""));
@@ -616,6 +827,67 @@ function resizeGlobe() {
   state.globeMap.resize();
 }
 
+function clearGlobeSolarSyncFrame() {
+  if (state.globeSolarSyncFrameId === null) return;
+  window.cancelAnimationFrame(state.globeSolarSyncFrameId);
+  state.globeSolarSyncFrameId = null;
+}
+
+function stopGlobeSolarUpdates() {
+  clearGlobeSolarSyncFrame();
+
+  if (state.globeSolarUpdateIntervalId === null) return;
+  window.clearInterval(state.globeSolarUpdateIntervalId);
+  state.globeSolarUpdateIntervalId = null;
+}
+
+function syncGlobeSolarState() {
+  if (!state.globeMap || !state.globeReady) return;
+
+  const mapCenter = state.globeMap.getCenter();
+  const center = Array.isArray(state.globeCenter)
+    ? state.globeCenter
+    : mapCenter
+      ? [normalizeDegrees180(mapCenter.lng), mapCenter.lat]
+      : GLOBE_DEFAULT_CENTER;
+  const { vector: sunVector } = getSunVectorAtTime();
+  const lightPosition = getSolarLightPosition(center[0], center[1], sunVector);
+
+  state.globeMap.setLight({
+    anchor: "map",
+    position: lightPosition,
+    "position-transition": {
+      duration: 0,
+      delay: 0,
+    },
+  });
+
+  const source = state.globeMap.getSource(GLOBE_TERMINATOR_SOURCE_ID);
+  if (source && typeof source.setData === "function") {
+    source.setData(getSolarTerminatorData(sunVector));
+  }
+}
+
+function queueGlobeSolarSync() {
+  if (!state.globeMap || !state.globeReady) return;
+  if (state.globeSolarSyncFrameId !== null) return;
+
+  state.globeSolarSyncFrameId = window.requestAnimationFrame(() => {
+    state.globeSolarSyncFrameId = null;
+    syncGlobeSolarState();
+  });
+}
+
+function startGlobeSolarUpdates() {
+  if (!state.globeMap || !state.globeReady) return;
+  if (state.globeSolarUpdateIntervalId !== null) return;
+
+  syncGlobeSolarState();
+  state.globeSolarUpdateIntervalId = window.setInterval(() => {
+    queueGlobeSolarSync();
+  }, GLOBE_SOLAR_UPDATE_INTERVAL_MS);
+}
+
 function clearGlobeFollowResumeTimeout() {
   if (state.globeFollowResumeTimeoutId === null) return;
   window.clearTimeout(state.globeFollowResumeTimeoutId);
@@ -628,7 +900,7 @@ function syncStoredGlobeCenter() {
   const center = state.globeMap.getCenter();
   if (!center) return;
 
-  state.globeCenter = [center.lng, center.lat];
+  state.globeCenter = [normalizeDegrees180(center.lng), center.lat];
 }
 
 function isGlobeFollowPaused() {
@@ -749,6 +1021,12 @@ function initGlobe() {
   if (!elements.globeMount || state.globeMap) return;
 
   try {
+    const initialSunVector = getSunVectorAtTime().vector;
+    const initialLightPosition = getSolarLightPosition(
+      GLOBE_DEFAULT_CENTER[0],
+      GLOBE_DEFAULT_CENTER[1],
+      initialSunVector,
+    );
     const globeMap = new maplibregl.Map({
       container: elements.globeMount,
       antialias: true,
@@ -771,12 +1049,45 @@ function initGlobe() {
             type: "geojson",
             data: getEmptyGlobeSourceData(),
           },
+          [GLOBE_TERMINATOR_SOURCE_ID]: {
+            type: "geojson",
+            data: getSolarTerminatorData(initialSunVector),
+          },
         },
         layers: [
           {
             id: "Satellite",
             type: "raster",
             source: "satellite",
+          },
+          {
+            id: "globe-terminator-glow",
+            type: "line",
+            source: GLOBE_TERMINATOR_SOURCE_ID,
+            layout: {
+              "line-cap": "round",
+              "line-join": "round",
+            },
+            paint: {
+              "line-color": "#f8fafc",
+              "line-opacity": 0.2,
+              "line-width": 4,
+              "line-blur": 0.8,
+            },
+          },
+          {
+            id: "globe-terminator-core",
+            type: "line",
+            source: GLOBE_TERMINATOR_SOURCE_ID,
+            layout: {
+              "line-cap": "round",
+              "line-join": "round",
+            },
+            paint: {
+              "line-color": "#fef3c7",
+              "line-opacity": 0.7,
+              "line-width": 1.5,
+            },
           },
           {
             id: "globe-position-glow",
@@ -813,7 +1124,7 @@ function initGlobe() {
         },
         light: {
           anchor: "map",
-          position: [1.5, 90, 80],
+          position: initialLightPosition,
         },
       },
     });
@@ -832,16 +1143,25 @@ function initGlobe() {
     globeMap.on("load", () => {
       state.globeReady = true;
       syncStoredGlobeCenter();
+      startGlobeSolarUpdates();
       collapseGlobeAttributionControl();
       resizeGlobe();
 
       if (state.lastPoint) {
         syncGlobePosition(state.lastPoint.longitude, state.lastPoint.latitude, { immediate: true });
+      } else {
+        queueGlobeSolarSync();
       }
+    });
+
+    globeMap.on("move", () => {
+      syncStoredGlobeCenter();
+      queueGlobeSolarSync();
     });
 
     globeMap.on("moveend", () => {
       syncStoredGlobeCenter();
+      queueGlobeSolarSync();
       collapseGlobeAttributionControl();
     });
 
@@ -2770,6 +3090,8 @@ function bindEvents() {
   window.addEventListener("pageshow", () => {
     ensureTrapArtifactsLoaded();
     resizeCanvas();
+    startGlobeSolarUpdates();
+    queueGlobeSolarSync();
     if (state.watchId === null) startTracking();
     startRenderLoop();
     if (wantsBackgroundAudio()) {
@@ -2798,12 +3120,15 @@ function bindEvents() {
 
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
+      stopGlobeSolarUpdates();
       stopRenderLoop();
       return;
     }
 
     resizeCanvas();
     ensureTrapArtifactsLoaded();
+    startGlobeSolarUpdates();
+    queueGlobeSolarSync();
     startRenderLoop();
     if (wantsBackgroundAudio()) {
       void armBackgroundAlertAudio();
