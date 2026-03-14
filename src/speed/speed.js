@@ -174,6 +174,7 @@ backgroundKeepAliveAudio.loop = true;
 backgroundKeepAliveAudio.preload = "auto";
 backgroundKeepAliveAudio.playsInline = true;
 let trapLoadPromise = null;
+let audioPrimePromise = null;
 const pageDescriptionMeta = document.querySelector('meta[name="description"]');
 
 const initialUnit = loadUnitPreference();
@@ -942,12 +943,12 @@ if (import.meta.hot) {
 
 async function ensureAudioElementLooping(audio) {
   audio.loop = true;
-  silenceAudioElement(audio);
 
   if (!audio.paused) {
     return true;
   }
 
+  silenceAudioElement(audio);
   audio.currentTime = 0;
   const playPromise = audio.play();
   if (playPromise && typeof playPromise.then === "function") {
@@ -1048,11 +1049,19 @@ function keepTrapAudioAlive() {
   }
 }
 
-function scheduleTrapAudioMute() {
+function getRemainingTrapSoundDurationMs() {
+  if (Number.isFinite(trapAlertAudio.duration) && trapAlertAudio.duration > 0) {
+    return Math.max(0, Math.round((trapAlertAudio.duration - trapAlertAudio.currentTime) * 1000));
+  }
+
+  return getTrapSoundDurationMs();
+}
+
+function scheduleTrapAudioMute(delayMs = getTrapSoundDurationMs()) {
   clearTrapMuteTimeout();
   state.trapMuteTimeoutId = window.setTimeout(() => {
     keepTrapAudioAlive();
-  }, getTrapSoundDurationMs());
+  }, Math.max(0, delayMs));
 }
 
 async function primeAudioElement(audio) {
@@ -1087,25 +1096,37 @@ async function primeAudioElement(audio) {
   }
 }
 
-async function primeAlertAudio() {
-  if (state.audioPrimed || state.audioPrimePending) return;
+function primeAlertAudio() {
+  if (state.audioPrimed) {
+    return Promise.resolve(true);
+  }
+
+  if (audioPrimePromise) {
+    return audioPrimePromise;
+  }
 
   state.audioPrimePending = true;
+  audioPrimePromise = (async () => {
+    try {
+      const [overspeedPrimed, trapPrimed] = await Promise.all([
+        primeAudioElement(overspeedAudio),
+        primeAudioElement(trapAlertAudio),
+      ]);
 
-  try {
-    const [overspeedPrimed, trapPrimed] = await Promise.all([
-      primeAudioElement(overspeedAudio),
-      primeAudioElement(trapAlertAudio),
-    ]);
+      state.audioPrimed = overspeedPrimed && trapPrimed;
+      if (state.audioPrimed) {
+        state.alertSoundBlocked = false;
+        state.trapSoundBlocked = false;
+      }
 
-    state.audioPrimed = overspeedPrimed && trapPrimed;
-    if (state.audioPrimed) {
-      state.alertSoundBlocked = false;
-      state.trapSoundBlocked = false;
+      return state.audioPrimed;
+    } finally {
+      state.audioPrimePending = false;
+      audioPrimePromise = null;
     }
-  } finally {
-    state.audioPrimePending = false;
-  }
+  })();
+
+  return audioPrimePromise;
 }
 
 async function armBackgroundAlertAudio() {
@@ -1126,12 +1147,12 @@ async function armBackgroundAlertAudio() {
   state.backgroundAudioArmPending = true;
 
   try {
-    await primeAlertAudio();
+    const audioPrimed = await primeAlertAudio();
     if (isStaleBackgroundAudioArm(backgroundAudioRevision)) {
       shouldRetry = wantsBackgroundAudio();
       return;
     }
-    if (!state.audioPrimed) {
+    if (!audioPrimed) {
       return;
     }
 
@@ -1142,8 +1163,8 @@ async function armBackgroundAlertAudio() {
       return;
     }
     await Promise.all([
-      ensureAudioElementLooping(overspeedAudio),
-      ensureAudioElementLooping(trapAlertAudio),
+      overspeedAudio.paused ? ensureAudioElementLooping(overspeedAudio) : Promise.resolve(true),
+      trapAlertAudio.paused ? ensureAudioElementLooping(trapAlertAudio) : Promise.resolve(true),
     ]);
     if (isStaleBackgroundAudioArm(backgroundAudioRevision)) {
       shouldRetry = wantsBackgroundAudio();
@@ -1154,8 +1175,11 @@ async function armBackgroundAlertAudio() {
     state.backgroundAudioArmed = true;
     state.alertSoundBlocked = false;
     state.trapSoundBlocked = false;
-    keepOverspeedAudioAlive();
-    keepTrapAudioAlive();
+    if (trapAlertAudio.paused) {
+      keepTrapAudioAlive();
+    } else if (state.trapAudible || state.trapSoundPending) {
+      scheduleTrapAudioMute(getRemainingTrapSoundDurationMs());
+    }
   } catch {
     disarmBackgroundAlertAudio();
   } finally {
