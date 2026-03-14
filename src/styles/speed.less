@@ -1260,13 +1260,23 @@ body.speed-page.alert-panel-open .speed-main{
 @media (min-width: 800px){
     .speed-stage{
         grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
-        align-items: start;
+        align-items: stretch;
         gap: 12px;
+    }
+
+    .gauge-card{
+        display: grid;
+        place-items: center;
+        min-height: 100%;
     }
 
     .gauge-stage{
         width: 100%;
         max-width: 720px;
+    }
+
+    .speed-side-panel{
+        height: 100%;
     }
 
     .stats-grid{
