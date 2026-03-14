@@ -476,7 +476,7 @@ function getSolarNightCapRing(sunVector, altitude) {
   }
 
   const antiSolarVector = [-sunVector[0], -sunVector[1], -sunVector[2]];
-  const [antiSolarLongitude, antiSolarLatitude] = unitVectorToLngLat(antiSolarVector);
+  const [antiSolarLongitude] = unitVectorToLngLat(antiSolarVector);
   const level = clampNumber(Math.sin(toRadians(altitude)), -0.999999, 0.999999);
   const circleRadius = Math.sqrt(Math.max(0, 1 - (level * level)));
   const circleCenter = [
@@ -498,10 +498,7 @@ function getSolarNightCapRing(sunVector, altitude) {
     ring.push([normalizeDegreesNear(pointLongitude, antiSolarLongitude), pointLatitude]);
   }
 
-  return {
-    antiSolarPoint: [antiSolarLongitude, antiSolarLatitude],
-    ring,
-  };
+  return ring;
 }
 
 function getSolarNightData(sunVector) {
@@ -509,21 +506,10 @@ function getSolarNightData(sunVector) {
 
   for (let index = 0; index < GLOBE_NIGHT_CAPS.length; index += 1) {
     const nightCap = GLOBE_NIGHT_CAPS[index];
-    const cap = getSolarNightCapRing(sunVector, nightCap.altitude);
+    const ring = getSolarNightCapRing(sunVector, nightCap.altitude);
 
-    if (!cap || cap.ring.length < 4) {
+    if (!ring || ring.length < 4) {
       continue;
-    }
-
-    const triangles = [];
-
-    for (let ringIndex = 0; ringIndex < cap.ring.length - 1; ringIndex += 1) {
-      triangles.push([[
-        cap.antiSolarPoint,
-        cap.ring[ringIndex],
-        cap.ring[ringIndex + 1],
-        cap.antiSolarPoint,
-      ]]);
     }
 
     features.push({
@@ -534,8 +520,8 @@ function getSolarNightData(sunVector) {
         sortKey: index,
       },
       geometry: {
-        type: "MultiPolygon",
-        coordinates: triangles,
+        type: "Polygon",
+        coordinates: [ring],
       },
     });
   }
@@ -1151,6 +1137,7 @@ function initGlobe() {
               "fill-sort-key": ["coalesce", ["get", "sortKey"], 0],
             },
             paint: {
+              "fill-antialias": false,
               "fill-color": ["coalesce", ["get", "color"], "#050d18"],
               "fill-opacity": ["coalesce", ["get", "opacity"], 0],
             },
