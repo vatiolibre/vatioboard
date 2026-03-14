@@ -23,6 +23,8 @@ const OVERSPEED_SOUND_URL = "/audio/overspeed_notification.m4a";
 const TRAP_SOUND_URL = "/audio/near_camera_notification.m4a";
 const TRAP_DATA_URL = "/geo/ansv_cameras_compact.min.json";
 const TRAP_INDEX_URL = "/geo/ansv_cameras_compact.kdbush";
+const BACKGROUND_KEEPALIVE_SAMPLE_RATE = 22050;
+const BACKGROUND_KEEPALIVE_DURATION_SECONDS = 2;
 const GLOBE_DEFAULT_CENTER = [137.9150899566626, 36.25956997955441];
 const GLOBE_DEFAULT_ZOOM = 0.15;
 const GLOBE_FOLLOW_ZOOM = 0.8;
@@ -127,6 +129,35 @@ const elements = {
   globeStatus: document.getElementById("globeStatus"),
 };
 
+function writeAsciiString(view, offset, value) {
+  for (let index = 0; index < value.length; index += 1) {
+    view.setUint8(offset + index, value.charCodeAt(index));
+  }
+}
+
+// Use a real silent loop so background mode claims the media session immediately.
+function createSilentLoopAudioUrl() {
+  const sampleCount = BACKGROUND_KEEPALIVE_SAMPLE_RATE * BACKGROUND_KEEPALIVE_DURATION_SECONDS;
+  const buffer = new ArrayBuffer(44 + (sampleCount * 2));
+  const view = new DataView(buffer);
+
+  writeAsciiString(view, 0, "RIFF");
+  view.setUint32(4, 36 + (sampleCount * 2), true);
+  writeAsciiString(view, 8, "WAVE");
+  writeAsciiString(view, 12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, BACKGROUND_KEEPALIVE_SAMPLE_RATE, true);
+  view.setUint32(28, BACKGROUND_KEEPALIVE_SAMPLE_RATE * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeAsciiString(view, 36, "data");
+  view.setUint32(40, sampleCount * 2, true);
+
+  return URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
+}
+
 const dialContext = elements.dialCanvas.getContext("2d");
 const needleContext = elements.needleCanvas.getContext("2d");
 const overspeedAudio = new Audio(OVERSPEED_SOUND_URL);
@@ -137,6 +168,10 @@ const trapAlertAudio = new Audio(TRAP_SOUND_URL);
 trapAlertAudio.loop = false;
 trapAlertAudio.preload = "auto";
 trapAlertAudio.playsInline = true;
+const backgroundKeepAliveAudio = new Audio(createSilentLoopAudioUrl());
+backgroundKeepAliveAudio.loop = true;
+backgroundKeepAliveAudio.preload = "auto";
+backgroundKeepAliveAudio.playsInline = true;
 let trapLoadPromise = null;
 const pageDescriptionMeta = document.querySelector('meta[name="description"]');
 
@@ -859,6 +894,29 @@ function activateAudioElement(audio) {
   audio.volume = 1;
 }
 
+async function ensureBackgroundKeepAliveAudio() {
+  backgroundKeepAliveAudio.loop = true;
+  backgroundKeepAliveAudio.muted = false;
+  backgroundKeepAliveAudio.volume = 1;
+
+  if (!backgroundKeepAliveAudio.paused) {
+    return true;
+  }
+
+  backgroundKeepAliveAudio.currentTime = 0;
+  const playPromise = backgroundKeepAliveAudio.play();
+  if (playPromise && typeof playPromise.then === "function") {
+    await playPromise;
+  }
+
+  return true;
+}
+
+function stopBackgroundKeepAliveAudio() {
+  backgroundKeepAliveAudio.pause();
+  backgroundKeepAliveAudio.currentTime = 0;
+}
+
 async function ensureAudioElementLooping(audio) {
   audio.loop = true;
   silenceAudioElement(audio);
@@ -889,6 +947,11 @@ function keepOverspeedAudioAlive() {
   silenceAudioElement(overspeedAudio);
   if (!overspeedAudio.paused) {
     overspeedAudio.currentTime = 0;
+    return;
+  }
+
+  if (state.backgroundAudioArmed) {
+    void ensureAudioElementLooping(overspeedAudio).catch(() => {});
   }
 }
 
@@ -954,6 +1017,11 @@ function keepTrapAudioAlive() {
   silenceAudioElement(trapAlertAudio);
   if (!trapAlertAudio.paused) {
     trapAlertAudio.currentTime = 0;
+    return;
+  }
+
+  if (state.backgroundAudioArmed) {
+    void ensureAudioElementLooping(trapAlertAudio).catch(() => {});
   }
 }
 
@@ -1018,6 +1086,7 @@ async function armBackgroundAlertAudio() {
   if (
     state.backgroundAudioArmed
     && !state.backgroundAudioArmPending
+    && !backgroundKeepAliveAudio.paused
     && !overspeedAudio.paused
     && !trapAlertAudio.paused
   ) {
@@ -1025,12 +1094,15 @@ async function armBackgroundAlertAudio() {
   }
   if (state.backgroundAudioArmPending) return;
 
-  await primeAlertAudio();
-  if (!state.audioPrimed) return;
-
   state.backgroundAudioArmPending = true;
 
   try {
+    await ensureBackgroundKeepAliveAudio();
+    await primeAlertAudio();
+    if (!state.audioPrimed) {
+      throw new Error("Alert audio priming failed");
+    }
+
     await Promise.all([
       ensureAudioElementLooping(overspeedAudio),
       ensureAudioElementLooping(trapAlertAudio),
@@ -1052,6 +1124,7 @@ function disarmBackgroundAlertAudio() {
   state.backgroundAudioArmed = false;
   state.backgroundAudioArmPending = false;
   clearTrapMuteTimeout();
+  stopBackgroundKeepAliveAudio();
 
   if (shouldPlayOverspeedSound()) {
     overspeedAudio.loop = true;
@@ -1080,7 +1153,6 @@ function renderQuickAudioControls() {
 
   if (elements.quickBackgroundAudioToggle) {
     elements.quickBackgroundAudioToggle.setAttribute("aria-pressed", String(state.backgroundAudioEnabled));
-    elements.quickBackgroundAudioToggle.disabled = state.audioMuted;
     const backgroundAudioLabel = state.backgroundAudioEnabled
       ? t("disableBackgroundAudio")
       : t("enableBackgroundAudio");
@@ -1647,6 +1719,8 @@ function setAudioMuted(muted, { fromUserGesture = false } = {}) {
   saveAudioMutedPreference(muted);
 
   if (muted) {
+    state.backgroundAudioEnabled = false;
+    saveBackgroundAudioEnabledPreference(false);
     disarmBackgroundAlertAudio();
     stopOverspeedSound();
     stopTrapSound();
@@ -1729,11 +1803,16 @@ function setTrapSoundEnabled(enabled, options = {}) {
 }
 
 function setBackgroundAudioEnabled(enabled, { fromUserGesture = false } = {}) {
+  if (enabled && state.audioMuted) {
+    state.audioMuted = false;
+    saveAudioMutedPreference(false);
+  }
+
   state.backgroundAudioEnabled = enabled;
   saveBackgroundAudioEnabledPreference(enabled);
 
   if (enabled) {
-    if (fromUserGesture && !state.audioMuted) {
+    if (fromUserGesture) {
       void armBackgroundAlertAudio();
     }
   } else {
@@ -2323,7 +2402,6 @@ function bindEvents() {
   });
 
   elements.quickBackgroundAudioToggle?.addEventListener("click", () => {
-    if (state.audioMuted) return;
     setBackgroundAudioEnabled(!state.backgroundAudioEnabled, { fromUserGesture: true });
   });
 
