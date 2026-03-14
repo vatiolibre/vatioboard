@@ -88,6 +88,11 @@ body.speed-page{
     -webkit-overflow-scrolling: touch;
 }
 
+body.speed-page.alert-panel-open,
+body.speed-page.alert-panel-open .speed-main{
+    overflow: hidden;
+}
+
 .speed-app{
     min-height: 100vh;
     min-height: 100dvh;
@@ -703,6 +708,21 @@ body.speed-page{
     .speed-toolbar .attribution{
         font-size: 10px;
         flex: 0 0 auto;
+    }
+
+    .speed-alert-panel{
+        position: fixed;
+        inset:
+          max(10px, calc(env(safe-area-inset-top) + 10px))
+          10px
+          max(10px, calc(env(safe-area-inset-bottom) + 10px));
+        z-index: 40;
+        gap: 12px;
+        padding: 14px;
+        border-radius: calc(var(--radius) + 6px);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
     }
 }
 

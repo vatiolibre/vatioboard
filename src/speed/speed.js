@@ -406,11 +406,13 @@ function setAlertLimitToCurrentSpeed() {
 
 function openAlertPanel() {
   renderAlertUi();
+  document.body.classList.add("alert-panel-open");
   elements.alertPanel.hidden = false;
   elements.alertTrigger.setAttribute("aria-expanded", "true");
 }
 
 function closeAlertPanel() {
+  document.body.classList.remove("alert-panel-open");
   elements.alertPanel.hidden = true;
   elements.alertTrigger.setAttribute("aria-expanded", "false");
 }
@@ -925,6 +927,8 @@ function bindEvents() {
 }
 
 function init() {
+  document.body.classList.remove("alert-panel-open");
+
   for (const button of elements.unitButtons) {
     button.setAttribute("aria-pressed", button.dataset.unit === state.unit ? "true" : "false");
   }
