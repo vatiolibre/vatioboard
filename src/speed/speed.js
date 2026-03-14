@@ -25,7 +25,7 @@ const TRAP_DATA_URL = "/geo/ansv_cameras_compact.min.json";
 const TRAP_INDEX_URL = "/geo/ansv_cameras_compact.kdbush";
 const GLOBE_DEFAULT_CENTER = [137.9150899566626, 36.25956997955441];
 const GLOBE_DEFAULT_ZOOM = 0.15;
-const GLOBE_FOLLOW_ZOOM = 1.15;
+const GLOBE_FOLLOW_ZOOM = 0.8;
 const GLOBE_SOURCE_ID = "live-position";
 const GLOBE_SATELLITE_ATTRIBUTION = [
   '<a href="https://s2maps.eu" target="_blank" rel="noopener noreferrer">Sentinel-2 cloudless</a>',
