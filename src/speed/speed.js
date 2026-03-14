@@ -4,6 +4,8 @@ const STORAGE_UNIT_KEY = "vatio_speed_unit";
 const STORAGE_ALTITUDE_UNIT_KEY = "vatio_speed_altitude_unit";
 const STORAGE_ALERT_ENABLED_KEY = "vatio_speed_alert_enabled";
 const STORAGE_ALERT_LIMIT_KEY = "vatio_speed_alert_limit_ms";
+const STORAGE_ALERT_SOUND_ENABLED_KEY = "vatio_speed_alert_sound_enabled";
+const OVERSPEED_SOUND_URL = "/audio/overspeed_notification.m4a";
 const UNIT_CONFIG = {
   mph: { label: "mph", baseMax: 120, tickStep: 20, factor: 2.2369362920544 },
   kmh: { label: "km/h", baseMax: 200, tickStep: 40, factor: 3.6 },
@@ -63,18 +65,26 @@ const elements = {
   alertValue: document.getElementById("alertValue"),
   alertUnit: document.getElementById("alertUnit"),
   alertPresets: document.getElementById("alertPresets"),
+  alertSoundButtons: Array.from(document.querySelectorAll(".alert-sound-btn")),
   unitButtons: Array.from(document.querySelectorAll(".unit-btn")),
   altitudeUnitButtons: Array.from(document.querySelectorAll(".altitude-unit-btn")),
 };
 
 const dialContext = elements.dialCanvas.getContext("2d");
 const needleContext = elements.needleCanvas.getContext("2d");
+const overspeedAudio = new Audio(OVERSPEED_SOUND_URL);
+overspeedAudio.loop = true;
+overspeedAudio.preload = "auto";
+overspeedAudio.playsInline = true;
 
 const state = {
   unit: loadUnitPreference(),
   altitudeUnit: loadAltitudeUnitPreference(),
   alertEnabled: loadAlertEnabledPreference(),
   alertLimitMs: loadAlertLimitPreference(),
+  alertSoundEnabled: loadAlertSoundEnabledPreference(),
+  alertSoundBlocked: false,
+  alertSoundPending: false,
   watchId: null,
   startTime: Date.now(),
   statusText: "Requesting GPS...",
@@ -163,6 +173,23 @@ function saveAlertLimitPreference(limitMs) {
   }
 }
 
+function loadAlertSoundEnabledPreference() {
+  try {
+    const value = window.localStorage.getItem(STORAGE_ALERT_SOUND_ENABLED_KEY);
+    return value === null ? true : value === "true";
+  } catch {
+    return true;
+  }
+}
+
+function saveAlertSoundEnabledPreference(enabled) {
+  try {
+    window.localStorage.setItem(STORAGE_ALERT_SOUND_ENABLED_KEY, String(enabled));
+  } catch {
+    // Ignore storage restrictions. The page still works without persistence.
+  }
+}
+
 function setStatus(text) {
   state.statusText = text;
   elements.status.textContent = text;
@@ -226,6 +253,55 @@ function getAlertUiState() {
     limitDisplayValue,
     deltaDisplayValue,
   };
+}
+
+function shouldPlayOverspeedSound() {
+  return getAlertUiState().over && state.alertSoundEnabled && !document.hidden;
+}
+
+function stopOverspeedSound() {
+  state.alertSoundPending = false;
+  overspeedAudio.pause();
+  overspeedAudio.currentTime = 0;
+}
+
+function syncOverspeedSound({ fromUserGesture = false } = {}) {
+  if (!shouldPlayOverspeedSound()) {
+    state.alertSoundBlocked = false;
+    stopOverspeedSound();
+    return;
+  }
+
+  if (!overspeedAudio.paused) {
+    return;
+  }
+
+  if (state.alertSoundPending) {
+    return;
+  }
+
+  if (state.alertSoundBlocked && !fromUserGesture) {
+    return;
+  }
+
+  overspeedAudio.currentTime = 0;
+  const playPromise = overspeedAudio.play();
+  if (!playPromise || typeof playPromise.then !== "function") {
+    state.alertSoundBlocked = false;
+    return;
+  }
+
+  state.alertSoundPending = true;
+  playPromise
+    .then(() => {
+      state.alertSoundPending = false;
+      state.alertSoundBlocked = false;
+    })
+    .catch(() => {
+      state.alertSoundPending = false;
+      state.alertSoundBlocked = true;
+      stopOverspeedSound();
+    });
 }
 
 function getAverageSpeedMs() {
@@ -361,11 +437,18 @@ function renderAlertUi() {
     button.setAttribute("aria-pressed", String(Number(button.dataset.alertPreset) === currentLimitDisplay));
   }
 
+  for (const button of elements.alertSoundButtons) {
+    button.setAttribute("aria-pressed", String(
+      (button.dataset.alertSound === "on") === state.alertSoundEnabled,
+    ));
+  }
+
   elements.gaugeCard.classList.toggle("is-alert-enabled", alertState.enabled);
   elements.gaugeCard.classList.toggle("is-alert-near", alertState.near);
   elements.gaugeCard.classList.toggle("is-alert-over", alertState.over);
 
   renderSubStatus();
+  syncOverspeedSound();
 }
 
 function setAlertEnabled(enabled) {
@@ -377,6 +460,12 @@ function setAlertEnabled(enabled) {
   saveAlertEnabledPreference(enabled);
   renderAlertUi();
   drawGauge();
+}
+
+function setAlertSoundEnabled(enabled) {
+  state.alertSoundEnabled = enabled;
+  saveAlertSoundEnabledPreference(enabled);
+  renderAlertUi();
 }
 
 function setAlertLimitDisplay(value, { enable = true } = {}) {
@@ -481,6 +570,7 @@ function stopTracking() {
     navigator.geolocation.clearWatch(state.watchId);
     state.watchId = null;
   }
+  stopOverspeedSound();
 }
 
 function startTracking() {
@@ -890,6 +980,9 @@ function bindEvents() {
     if (!button) return;
     setAlertLimitDisplay(Number(button.dataset.alertPreset));
   });
+  for (const button of elements.alertSoundButtons) {
+    button.addEventListener("click", () => setAlertSoundEnabled(button.dataset.alertSound === "on"));
+  }
 
   for (const button of elements.unitButtons) {
     button.addEventListener("click", () => setUnit(button.dataset.unit));
@@ -905,24 +998,29 @@ function bindEvents() {
     resizeCanvas();
     if (state.watchId === null) startTracking();
     startRenderLoop();
+    syncOverspeedSound();
   });
   document.addEventListener("pointerdown", (event) => {
+    syncOverspeedSound({ fromUserGesture: true });
     if (elements.alertPanel.hidden) return;
     if (elements.alertPanel.contains(event.target) || elements.alertTrigger.contains(event.target)) return;
     closeAlertPanel();
   });
   document.addEventListener("keydown", (event) => {
+    syncOverspeedSound({ fromUserGesture: true });
     if (event.key === "Escape") closeAlertPanel();
   });
 
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
+      stopOverspeedSound();
       stopRenderLoop();
       return;
     }
 
     resizeCanvas();
     startRenderLoop();
+    syncOverspeedSound();
   });
 }
 
