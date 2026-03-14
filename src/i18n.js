@@ -178,9 +178,10 @@ const translations = {
     poweredBy: 'Powered by',
     speedTagline: 'Minimal live speedometer by Vatio Libre',
     speedRoute: 'SPEED',
-    speedPageTitle: 'Vatio Speed - Minimal Live Speedometer',
-    speedPageDescription: 'Minimal live GPS speedometer built with the Vatio Board Tesla-style interface. Opens directly in the browser and starts tracking as soon as the page loads.',
-    speedPageH1: 'Vatio Speed live speedometer',
+    speedPageTitle: 'Vatio Speed - Free Live GPS Speedometer for Tesla and Mobile',
+    speedPageDescription: 'Vatio Speed is a free live GPS speedometer with an analog dial, trip stats, unit switching, altitude tracking, and speed trap alerts. Works in Tesla browsers and modern mobile browsers.',
+    speedPageH1: 'Vatio Speed live GPS speedometer',
+    speedPageLead: 'Live GPS speedometer with analog dial, trip stats, unit switching, altitude tracking, and speed trap alerts for Tesla and mobile browsers.',
 
     // Speed alert templates
     trapLabel: 'Trap {distance}',
@@ -374,9 +375,10 @@ const translations = {
     poweredBy: 'Creado por',
     speedTagline: 'Velocímetro en vivo minimalista por Vatio Libre',
     speedRoute: 'VELOCIDAD',
-    speedPageTitle: 'Vatio Speed - Velocímetro en vivo minimalista',
-    speedPageDescription: 'Velocímetro GPS minimalista en vivo con la interfaz Tesla de Vatio Board. Se abre en el navegador y empieza a medir al cargar.',
-    speedPageH1: 'Velocímetro en vivo Vatio Speed',
+    speedPageTitle: 'Vatio Speed - Velocímetro GPS en vivo gratis para Tesla y móvil',
+    speedPageDescription: 'Vatio Speed es un velocímetro GPS en vivo gratis con dial analógico, estadísticas de viaje, cambio de unidades, seguimiento de altitud y alertas de radares. Funciona bien en navegadores Tesla y móviles modernos.',
+    speedPageH1: 'Vatio Speed velocímetro GPS en vivo',
+    speedPageLead: 'Velocímetro GPS en vivo con dial analógico, estadísticas de viaje, cambio de unidades, seguimiento de altitud y alertas de radares para navegadores Tesla y móviles.',
 
     // Speed alert templates
     trapLabel: 'Radar {distance}',

@@ -40,15 +40,135 @@
     })();
   </script>
 
-  <title>Vatio Speed - Minimal Live Speedometer</title>
+  <title>Vatio Speed - Free Live GPS Speedometer for Tesla and Mobile</title>
   <meta
     name="description"
-    content="Minimal live GPS speedometer built with the Vatio Board Tesla-style interface. Opens directly in the browser and starts tracking as soon as the page loads."
+    content="Vatio Speed is a free live GPS speedometer with an analog dial, trip stats, unit switching, altitude tracking, and speed trap alerts. Works in Tesla browsers and modern mobile browsers."
   />
+  <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
   <meta name="color-scheme" content="light dark" />
   <meta name="theme-color" content="#181818" media="(prefers-color-scheme: dark)" />
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
   <link rel="canonical" href="https://vatioboard.com/speed.html" />
+
+  <meta property="og:site_name" content="VatioLibre" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Vatio Speed - Free Live GPS Speedometer" />
+  <meta property="og:description" content="Free live GPS speedometer with trip stats, unit switching, altitude tracking, and speed trap alerts. Built for Tesla and modern mobile browsers." />
+  <meta property="og:url" content="https://vatioboard.com/speed.html" />
+  <meta property="og:image" content="https://vatioboard.com/img/vatio-board-speed-og-1200x630.jpg" />
+  <meta property="og:image:type" content="image/jpeg" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Vatio Speed live GPS speedometer with trip stats and globe" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Vatio Speed - Free Live GPS Speedometer" />
+  <meta name="twitter:description" content="Free live GPS speedometer with trip stats, unit switching, altitude tracking, and speed trap alerts. Built for Tesla and modern mobile browsers." />
+  <meta name="twitter:image" content="https://vatioboard.com/img/vatio-board-speed-og-1200x630.jpg" />
+  <meta name="twitter:image:alt" content="Vatio Speed live GPS speedometer with trip stats and globe" />
+
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "VatioLibre",
+      "url": "https://vatioboard.com",
+      "logo": "https://vatioboard.com/favicon.ico",
+      "sameAs": [
+        "https://vatioboard.com",
+        "https://github.com/vatiolibre"
+      ]
+    }
+  </script>
+
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Vatio Speed",
+      "url": "https://vatioboard.com/speed.html",
+      "applicationCategory": "UtilitiesApplication",
+      "operatingSystem": "Web",
+      "browserRequirements": "Requires JavaScript, geolocation, and a modern browser.",
+      "description": "Free live GPS speedometer with an analog dial, trip stats, unit switching, altitude tracking, and speed trap alerts. Works in Tesla browsers and modern mobile browsers.",
+      "image": "https://vatioboard.com/img/vatio-board-speed-og-1200x630.jpg",
+      "isAccessibleForFree": true,
+      "publisher": {
+        "@type": "Organization",
+        "name": "VatioLibre",
+        "url": "https://vatioboard.com"
+      },
+      "codeRepository": "https://github.com/vatiolibre/vatioboard",
+      "featureList": [
+        "Live GPS speedometer",
+        "Analog speedometer dial",
+        "Trip distance, duration, and average speed",
+        "km/h and mph switching",
+        "Altitude tracking",
+        "Manual speed alerts",
+        "Nearby speed trap alerts"
+      ],
+      "keywords": [
+        "GPS speedometer",
+        "live speedometer",
+        "Tesla speedometer",
+        "trip speed tracker",
+        "speed trap alerts",
+        "kmh mph speedometer",
+        "browser speedometer"
+      ]
+    }
+  </script>
+
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is Vatio Speed?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Vatio Speed is a free live GPS speedometer that runs in the browser and shows your current speed, trip stats, altitude, and nearby speed trap alerts."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does Vatio Speed use GPS?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Vatio Speed uses your browser's geolocation to calculate and display live speed and trip information."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does Vatio Speed work in Tesla browsers?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Vatio Speed is designed to work well in Tesla browsers and modern mobile browsers."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I switch between km/h and mph?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Vatio Speed supports both km/h and mph, plus metric and imperial distance units."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does Vatio Speed include speed alerts and trap alerts?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. You can enable manual speed alerts and nearby speed trap alerts directly from the speedometer interface."
+          }
+        }
+      ]
+    }
+  </script>
 
   <style>
     .sr-only{
@@ -67,6 +187,7 @@
 
 <body class="speed-page">
   <h1 class="sr-only" data-i18n="speedPageH1">Vatio Speed live speedometer</h1>
+  <p class="sr-only" data-i18n="speedPageLead">Live GPS speedometer with analog dial, trip stats, unit switching, altitude tracking, and speed trap alerts for Tesla and mobile browsers.</p>
 
   <div class="app speed-app">
     <header>
