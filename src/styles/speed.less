@@ -369,6 +369,47 @@ body.speed-page.alert-panel-open .speed-main{
     color: var(--btn-fg);
 }
 
+.speed-alert-settings{
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid color-mix(in srgb, var(--speed-panel-border) 88%, transparent);
+}
+
+.speed-alert-settings-title{
+    grid-column: 1 / -1;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.speed-alert-setting{
+    display: grid;
+    gap: 6px;
+}
+
+.speed-alert-setting-label{
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    justify-self: center;
+    text-align: center;
+}
+
+.speed-alert-switch{
+    width: 100%;
+}
+
+.speed-alert-switch button{
+    flex: 1 1 0;
+    min-width: 0;
+}
+
 .speed-alert-actions{
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -669,40 +710,33 @@ body.speed-page.alert-panel-open .speed-main{
 
     .speed-toolbar{
         display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+        grid-template-columns: auto minmax(0, 1fr);
         align-items: center;
         gap: 6px;
-    }
-
-    .speed-toolbar .unit-switch{
-        width: auto;
-        min-width: 0;
-    }
-
-    .speed-toolbar .unit-switch button{
-        min-width: 0;
-        padding: 8px 10px;
-        font-size: 13px;
     }
 
     .speed-toolbar > button{
         padding: 8px 10px;
         font-size: 13px;
         white-space: nowrap;
+        justify-self: start;
     }
 
     .speed-toolbar .right-stack{
-        grid-column: 1 / -1;
-        flex-direction: row;
-        justify-content: space-between;
-        align-items: center;
+        grid-column: auto;
+        justify-self: end;
+        margin-left: 0;
+        align-items: flex-end;
         max-width: none;
-        width: 100%;
-        gap: 8px;
+        width: auto;
+        min-width: 0;
+        gap: 2px;
     }
 
     .speed-toolbar .status{
         font-size: 11px;
+        text-align: right;
+        line-height: 1.15;
     }
 
     .speed-toolbar .attribution{
@@ -767,6 +801,10 @@ body.speed-page.alert-panel-open .speed-main{
     }
 
     .speed-alert-actions{
+        grid-template-columns: 1fr;
+    }
+
+    .speed-alert-settings{
         grid-template-columns: 1fr;
     }
 

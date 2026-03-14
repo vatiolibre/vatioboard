@@ -78,16 +78,6 @@
         </div>
 
         <div class="toolbar speed-toolbar" role="toolbar" aria-label="Speedometer controls">
-          <div class="unit-switch" role="group" aria-label="Speed unit">
-            <button type="button" class="unit-btn" data-unit="mph">mph</button>
-            <button type="button" class="unit-btn" data-unit="kmh">km/h</button>
-          </div>
-
-          <div class="unit-switch" role="group" aria-label="Altitude unit">
-            <button type="button" class="altitude-unit-btn" data-altitude-unit="ft">ft</button>
-            <button type="button" class="altitude-unit-btn" data-altitude-unit="m">m</button>
-          </div>
-
           <button id="resetTrip" type="button">Reset trip</button>
 
           <div class="right-stack" aria-label="Connection status">
@@ -154,6 +144,26 @@
               </div>
 
               <div id="alertPresets" class="speed-alert-presets" role="group" aria-label="Quick speed alert presets"></div>
+
+              <div class="speed-alert-settings" aria-label="Units">
+                <span class="speed-alert-settings-title">Units</span>
+
+                <div class="speed-alert-setting">
+                  <span class="speed-alert-setting-label">Speed</span>
+                  <div class="unit-switch speed-alert-switch" role="group" aria-label="Speed unit">
+                    <button type="button" class="unit-btn" data-unit="mph">mph</button>
+                    <button type="button" class="unit-btn" data-unit="kmh">km/h</button>
+                  </div>
+                </div>
+
+                <div class="speed-alert-setting">
+                  <span class="speed-alert-setting-label">Altitude</span>
+                  <div class="unit-switch speed-alert-switch" role="group" aria-label="Altitude unit">
+                    <button type="button" class="altitude-unit-btn" data-altitude-unit="ft">ft</button>
+                    <button type="button" class="altitude-unit-btn" data-altitude-unit="m">m</button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
