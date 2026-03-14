@@ -104,6 +104,17 @@
       <section class="speed-shell" aria-label="Live analog speedometer">
         <div class="speed-stage">
           <div class="gauge-card">
+            <button
+              id="alertTrigger"
+              class="speed-alert-trigger"
+              type="button"
+              aria-expanded="false"
+              aria-controls="speedAlertPanel"
+            >
+              <span class="speed-alert-trigger-label">Limit</span>
+              <span id="alertTriggerValue" class="speed-alert-trigger-value">Off</span>
+            </button>
+
             <div class="gauge-stage">
               <canvas id="speedDial" class="speed-gauge speed-dial" aria-hidden="true"></canvas>
               <div class="gauge-overlay">
@@ -115,6 +126,34 @@
                 <p id="subStatus" class="gauge-substatus">Looking for your first GPS fix</p>
               </div>
               <canvas id="speedNeedle" class="speed-gauge speed-needle" aria-label="Analog speedometer"></canvas>
+            </div>
+
+            <div id="speedAlertPanel" class="speed-alert-panel" hidden aria-label="Set speed alert">
+              <div class="speed-alert-panel-header">
+                <div class="speed-alert-copy">
+                  <span class="speed-alert-panel-kicker">Speed alert</span>
+                  <strong id="alertPanelStatus">Off</strong>
+                </div>
+                <button id="closeAlertPanel" type="button" class="speed-alert-done">Done</button>
+              </div>
+
+              <div class="speed-alert-actions">
+                <button id="alertToggle" type="button" class="speed-alert-toggle">Turn on</button>
+                <button id="alertUseCurrent" type="button" class="speed-alert-secondary">
+                  Use current speed
+                </button>
+              </div>
+
+              <div class="speed-alert-stepper" role="group" aria-label="Set alert speed limit">
+                <button id="alertDecrease" type="button" aria-label="Decrease speed alert">−</button>
+                <div class="speed-alert-limit-display">
+                  <span id="alertValue">55</span>
+                  <span id="alertUnit">mph</span>
+                </div>
+                <button id="alertIncrease" type="button" aria-label="Increase speed alert">+</button>
+              </div>
+
+              <div id="alertPresets" class="speed-alert-presets" role="group" aria-label="Quick speed alert presets"></div>
             </div>
           </div>
 
