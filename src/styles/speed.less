@@ -234,9 +234,12 @@ body.speed-page.alert-panel-open .speed-main{
     right: 18px;
     z-index: 5;
     display: grid;
-    gap: 2px;
-    min-width: 108px;
-    padding: 10px 12px;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    min-width: 168px;
+    min-height: 52px;
+    padding: 10px 14px;
     border: 1px solid var(--speed-panel-border);
     border-radius: 18px;
     background: color-mix(in srgb, var(--speed-chip-bg) 96%, transparent);
@@ -259,6 +262,33 @@ body.speed-page.alert-panel-open .speed-main{
     background: color-mix(in srgb, var(--speed-chip-bg) 84%, var(--speed-accent-soft));
 }
 
+.speed-alert-trigger-icon{
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--speed-accent-soft) 72%, var(--speed-chip-bg));
+    color: var(--btn-fg);
+}
+
+.speed-alert-trigger-icon svg,
+.speed-alert-trigger-chevron svg{
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.7;
+}
+
+.speed-alert-trigger-copy{
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
 .speed-alert-trigger-label{
     font-size: 10px;
     font-weight: 800;
@@ -272,6 +302,77 @@ body.speed-page.alert-panel-open .speed-main{
     font-weight: 900;
     letter-spacing: -0.03em;
     color: var(--btn-fg);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.speed-alert-trigger-chevron{
+    display: grid;
+    place-items: center;
+    color: var(--muted);
+    transition: transform 160ms ease, color 160ms ease;
+}
+
+.speed-alert-trigger[aria-expanded="true"] .speed-alert-trigger-chevron{
+    transform: rotate(90deg);
+    color: var(--btn-fg);
+}
+
+.speed-alert-trigger-hint{
+    position: absolute;
+    top: 76px;
+    right: 18px;
+    z-index: 5;
+    margin: 0;
+    padding: 7px 10px;
+    max-width: 220px;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--speed-surface-strong) 96%, transparent);
+    border: 1px solid color-mix(in srgb, var(--speed-panel-border) 88%, transparent);
+    box-shadow:
+      0 10px 24px rgba(15, 23, 42, 0.1),
+      inset 0 0 0 1px var(--inner-ring);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--btn-fg);
+    pointer-events: none;
+}
+
+.speed-alert-trigger-hint[hidden]{
+    display: none !important;
+}
+
+.speed-alert-trigger-hint::before{
+    content:"";
+    position: absolute;
+    top: -6px;
+    right: 20px;
+    width: 12px;
+    height: 12px;
+    border-top: 1px solid color-mix(in srgb, var(--speed-panel-border) 88%, transparent);
+    border-left: 1px solid color-mix(in srgb, var(--speed-panel-border) 88%, transparent);
+    background: color-mix(in srgb, var(--speed-surface-strong) 96%, transparent);
+    transform: rotate(45deg);
+}
+
+.gauge-card.is-alert-discoverable .speed-alert-trigger{
+    border-color: color-mix(in srgb, var(--speed-accent) 52%, var(--speed-panel-border));
+    box-shadow:
+      0 0 0 6px color-mix(in srgb, var(--speed-accent-soft) 20%, transparent),
+      0 12px 28px rgba(15, 23, 42, 0.12),
+      inset 0 0 0 1px var(--inner-ring);
+    animation: speed-alert-trigger-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes speed-alert-trigger-pulse{
+    0%, 100%{
+        transform: translateY(0);
+    }
+    50%{
+        transform: translateY(-1px);
+    }
 }
 
 .gauge-stage{
@@ -747,8 +848,15 @@ body.speed-page.alert-panel-open .speed-main{
     .speed-alert-trigger{
         top: 12px;
         right: 12px;
-        min-width: 98px;
+        min-width: 148px;
         padding: 8px 10px;
+        gap: 8px;
+    }
+
+    .speed-alert-trigger-hint{
+        top: 66px;
+        right: 12px;
+        max-width: 190px;
     }
 
     .speed-alert-panel{

@@ -11,6 +11,7 @@ const STORAGE_ALERT_SOUND_ENABLED_KEY = "vatio_speed_alert_sound_enabled";
 const STORAGE_TRAP_ALERT_ENABLED_KEY = "vatio_speed_trap_alert_enabled";
 const STORAGE_TRAP_ALERT_DISTANCE_KEY = "vatio_speed_trap_alert_distance_m";
 const STORAGE_TRAP_SOUND_ENABLED_KEY = "vatio_speed_trap_sound_enabled";
+const STORAGE_ALERT_TRIGGER_DISCOVERED_KEY = "vatio_speed_alert_trigger_discovered";
 const OVERSPEED_SOUND_URL = "/audio/overspeed_notification.m4a";
 const TRAP_SOUND_URL = "/audio/near_camera_notification.m4a";
 const TRAP_DATA_URL = "/geo/ansv_cameras_compact.min.json";
@@ -44,6 +45,9 @@ const TRAP_ALERT_PRESETS = {
 };
 
 const SPEED_SMOOTHING_SAMPLES = 5;
+const MIN_MOVING_SPEED_MS = 0.8;
+const MIN_DISTANCE_NOISE_FLOOR_M = 4;
+const MAX_ACCURACY_INFLUENCE_M = 18;
 const MAX_PLAUSIBLE_SPEED_MS = 120;
 const GEO_ERROR_CODE = {
   PERMISSION_DENIED: 1,
@@ -80,6 +84,7 @@ const elements = {
   resetTrip: document.getElementById("resetTrip"),
   alertTrigger: document.getElementById("alertTrigger"),
   alertTriggerValue: document.getElementById("alertTriggerValue"),
+  alertTriggerHint: document.getElementById("alertTriggerHint"),
   alertPanel: document.getElementById("speedAlertPanel"),
   alertPanelStatus: document.getElementById("alertPanelStatus"),
   closeAlertPanel: document.getElementById("closeAlertPanel"),
@@ -123,6 +128,7 @@ const state = {
   trapAlertEnabled: loadTrapAlertEnabledPreference(),
   trapAlertDistanceM: loadTrapAlertDistancePreference(initialDistanceUnit),
   trapSoundEnabled: loadTrapSoundEnabledPreference(),
+  alertTriggerDiscovered: loadAlertTriggerDiscoveredPreference(),
   trapSoundBlocked: false,
   trapSoundPending: false,
   watchId: null,
@@ -131,8 +137,6 @@ const state = {
   currentSpeedMs: 0,
   displayedSpeedMs: 0,
   maxSpeedMs: 0,
-  speedSumMs: 0,
-  speedSamples: 0,
   totalDistanceM: 0,
   currentAltitudeM: null,
   maxAltitudeM: null,
@@ -321,6 +325,22 @@ function saveTrapSoundEnabledPreference(enabled) {
   }
 }
 
+function loadAlertTriggerDiscoveredPreference() {
+  try {
+    return window.localStorage.getItem(STORAGE_ALERT_TRIGGER_DISCOVERED_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function saveAlertTriggerDiscoveredPreference(discovered) {
+  try {
+    window.localStorage.setItem(STORAGE_ALERT_TRIGGER_DISCOVERED_KEY, String(discovered));
+  } catch {
+    // Ignore storage restrictions. The page still works without persistence.
+  }
+}
+
 function setStatus(text) {
   state.statusText = text;
   elements.status.textContent = text;
@@ -346,6 +366,10 @@ function convertDisplaySpeedToMs(value, unit = state.unit) {
 
 function convertDistanceMeasurement(valueM, unit = state.distanceUnit) {
   return valueM * DISTANCE_UNIT_CONFIG[unit].factor;
+}
+
+function getElapsedTripSeconds() {
+  return Math.max(0, (Date.now() - state.startTime) / 1000);
 }
 
 function getAlertConfig(unit = state.unit) {
@@ -648,11 +672,13 @@ function formatTrapSpeed(speedKph) {
 }
 
 function getAverageSpeedMs() {
-  return state.speedSamples > 0 ? state.speedSumMs / state.speedSamples : 0;
+  const elapsedSeconds = getElapsedTripSeconds();
+  return elapsedSeconds > 0 ? state.totalDistanceM / elapsedSeconds : 0;
 }
 
 function getDistanceDisplay(distanceM, unit = state.distanceUnit) {
   if (unit === "m") {
+    if (distanceM < 1000) return { value: Math.round(distanceM).toString(), unit: "m" };
     const kilometers = distanceM / 1000;
     if (kilometers < 10) return { value: kilometers.toFixed(1), unit: "km" };
     return { value: Math.round(kilometers).toString(), unit: "km" };
@@ -705,6 +731,15 @@ function describeAccuracy(accuracyM) {
   if (rounded <= 12) return `GPS locked · +/-${accuracyValue} ${accuracyUnit}`;
   if (rounded <= 40) return `GPS live · +/-${accuracyValue} ${accuracyUnit}`;
   return `Weak GPS · +/-${accuracyValue} ${accuracyUnit}`;
+}
+
+function getMovementThresholdM(currentAccuracyM, previousAccuracyM) {
+  const accuracies = [currentAccuracyM, previousAccuracyM].filter(Number.isFinite);
+  const accuracyFloorM = accuracies.length > 0
+    ? Math.min(Math.max(...accuracies), MAX_ACCURACY_INFLUENCE_M)
+    : 0;
+
+  return Math.max(MIN_DISTANCE_NOISE_FLOOR_M, accuracyFloorM * 0.5);
 }
 
 function renderAlertPresets() {
@@ -762,10 +797,10 @@ function getAlertTriggerText(alertState) {
   }
 
   if (state.trapAlertEnabled) {
-    return "Trap on";
+    return `Trap ${getConfiguredTrapAlertDistanceLabel()}`;
   }
 
-  return "Off";
+  return "Tap to configure";
 }
 
 function getAlertTriggerLabel(alertState) {
@@ -786,10 +821,16 @@ function getAlertTriggerLabel(alertState) {
   }
 
   if (state.trapAlertEnabled) {
-    return "Trap alerts on";
+    return `Configure trap alerts at ${getConfiguredTrapAlertDistanceLabel()}`;
   }
 
-  return "All alerts off";
+  return "Tap to configure speed and trap alerts";
+}
+
+function syncAlertTriggerDiscovery() {
+  const shouldHighlightTrigger = !state.alertTriggerDiscovered && elements.alertPanel.hidden;
+  elements.alertTriggerHint.hidden = !shouldHighlightTrigger;
+  elements.gaugeCard.classList.toggle("is-alert-discoverable", shouldHighlightTrigger);
 }
 
 function getAlertPanelStatusText(alertState) {
@@ -901,6 +942,7 @@ function renderAlertUi(options = {}) {
   elements.gaugeCard.classList.toggle("is-alert-over", alertState.over);
   elements.gaugeCard.classList.toggle("is-trap-active", alertState.trapActive);
 
+  syncAlertTriggerDiscovery();
   renderSubStatus();
   syncOverspeedSound(options);
   syncTrapSound(options);
@@ -987,9 +1029,13 @@ function setTrapSoundEnabled(enabled, options = {}) {
 }
 
 function openAlertPanel() {
+  elements.alertPanel.hidden = false;
+  if (!state.alertTriggerDiscovered) {
+    state.alertTriggerDiscovered = true;
+    saveAlertTriggerDiscoveredPreference(true);
+  }
   renderAlertUi();
   document.body.classList.add("alert-panel-open");
-  elements.alertPanel.hidden = false;
   elements.alertPanel.scrollTop = 0;
   elements.alertTrigger.setAttribute("aria-expanded", "true");
 }
@@ -998,6 +1044,7 @@ function closeAlertPanel() {
   document.body.classList.remove("alert-panel-open");
   elements.alertPanel.hidden = true;
   elements.alertTrigger.setAttribute("aria-expanded", "false");
+  syncAlertTriggerDiscovery();
 }
 
 function toggleAlertPanel() {
@@ -1044,8 +1091,6 @@ function resetTripData() {
   state.currentSpeedMs = 0;
   state.displayedSpeedMs = 0;
   state.maxSpeedMs = 0;
-  state.speedSumMs = 0;
-  state.speedSamples = 0;
   state.totalDistanceM = 0;
   state.currentAltitudeM = null;
   state.maxAltitudeM = null;
@@ -1105,6 +1150,7 @@ function handlePosition(position) {
   hideNotice();
 
   const coords = position.coords;
+  const currentAccuracyM = Number.isFinite(coords.accuracy) ? coords.accuracy : null;
   const nextPoint = {
     latitude: coords.latitude,
     longitude: coords.longitude,
@@ -1116,14 +1162,24 @@ function handlePosition(position) {
   if (state.lastPoint) {
     const elapsedSeconds = Math.max((nextPoint.timestamp - state.lastPoint.timestamp) / 1000, 0.25);
     const distanceM = haversineDistance(state.lastPoint, nextPoint);
+    const fallbackSpeedMs = distanceM / elapsedSeconds;
     const plausibleDistanceM = elapsedSeconds * MAX_PLAUSIBLE_SPEED_MS;
+    const movementThresholdM = getMovementThresholdM(currentAccuracyM, state.lastAccuracyM);
+    const hasReportedMotion = Number.isFinite(speedMs) && speedMs >= MIN_MOVING_SPEED_MS;
+    const hasMeaningfulMovement =
+      distanceM >= movementThresholdM
+      && fallbackSpeedMs >= MIN_MOVING_SPEED_MS;
 
-    if (distanceM <= plausibleDistanceM) {
+    // Keep tiny GPS wander from counting as travel unless it also looks like real motion.
+    if (distanceM <= plausibleDistanceM && (hasReportedMotion || hasMeaningfulMovement)) {
       state.totalDistanceM += distanceM;
       if (speedMs === null) {
-        speedMs = distanceM / elapsedSeconds;
+        speedMs = fallbackSpeedMs;
       }
+      state.lastPoint = nextPoint;
     }
+  } else {
+    state.lastPoint = nextPoint;
   }
 
   if (!Number.isFinite(speedMs) || speedMs < 0) speedMs = 0;
@@ -1136,10 +1192,7 @@ function handlePosition(position) {
   state.currentSpeedMs =
     state.recentSpeeds.reduce((sum, sample) => sum + sample, 0) / state.recentSpeeds.length;
   state.maxSpeedMs = Math.max(state.maxSpeedMs, state.currentSpeedMs);
-  state.speedSumMs += state.currentSpeedMs;
-  state.speedSamples += 1;
-  state.lastPoint = nextPoint;
-  state.lastAccuracyM = coords.accuracy;
+  state.lastAccuracyM = currentAccuracyM;
   state.lastFixAt = Date.now();
 
   updateNearestTrap(coords.longitude, coords.latitude);
