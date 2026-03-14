@@ -101,7 +101,7 @@
               aria-expanded="false"
               aria-controls="speedAlertPanel"
             >
-              <span class="speed-alert-trigger-label">Limit</span>
+              <span class="speed-alert-trigger-label">Alerts</span>
               <span id="alertTriggerValue" class="speed-alert-trigger-value">Off</span>
             </button>
 
@@ -118,38 +118,71 @@
               <canvas id="speedNeedle" class="speed-gauge speed-needle" aria-label="Analog speedometer"></canvas>
             </div>
 
-            <div id="speedAlertPanel" class="speed-alert-panel" hidden aria-label="Set speed alert">
-              <div class="speed-alert-panel-header">
-                <div class="speed-alert-copy">
-                  <span class="speed-alert-panel-kicker">Speed alert</span>
-                  <strong id="alertPanelStatus">Off</strong>
+            <div id="speedAlertPanel" class="speed-alert-panel" hidden aria-label="Configure alerts">
+              <div class="speed-alert-panel-top">
+                <div class="speed-alert-panel-header">
+                  <div class="speed-alert-copy">
+                    <span class="speed-alert-panel-kicker">Alerts</span>
+                    <strong id="alertPanelStatus">Off</strong>
+                  </div>
+                  <button id="closeAlertPanel" type="button" class="speed-alert-done">Done</button>
                 </div>
-                <button id="closeAlertPanel" type="button" class="speed-alert-done">Done</button>
               </div>
 
-              <div class="speed-alert-actions">
-                <button id="alertToggle" type="button" class="speed-alert-toggle">Turn on</button>
-                <button id="alertUseCurrent" type="button" class="speed-alert-secondary">
-                  Use current speed
-                </button>
-              </div>
+              <div class="speed-alert-section" aria-label="Speed alert settings">
+                <span class="speed-alert-settings-title">Manual speed</span>
 
-              <div class="speed-alert-stepper" role="group" aria-label="Set alert speed limit">
-                <button id="alertDecrease" type="button" aria-label="Decrease speed alert">−</button>
-                <div class="speed-alert-limit-display">
-                  <span id="alertValue">55</span>
-                  <span id="alertUnit">mph</span>
+                <div class="speed-alert-actions">
+                  <button id="alertToggle" type="button" class="speed-alert-toggle">Turn on</button>
+                  <button id="alertUseCurrent" type="button" class="speed-alert-secondary">
+                    Use current speed
+                  </button>
                 </div>
-                <button id="alertIncrease" type="button" aria-label="Increase speed alert">+</button>
+
+                <div class="speed-alert-stepper" role="group" aria-label="Set alert speed limit">
+                  <button id="alertDecrease" type="button" aria-label="Decrease speed alert">−</button>
+                  <div class="speed-alert-limit-display">
+                    <span id="alertValue">55</span>
+                    <span id="alertUnit">mph</span>
+                  </div>
+                  <button id="alertIncrease" type="button" aria-label="Increase speed alert">+</button>
+                </div>
+
+                <div id="alertPresets" class="speed-alert-presets" role="group" aria-label="Quick speed alert presets"></div>
+
+                <div class="speed-alert-setting speed-alert-sound-setting">
+                  <span class="speed-alert-setting-label">Overspeed sound</span>
+                  <div class="unit-switch speed-alert-switch" role="group" aria-label="Overspeed sound">
+                    <button type="button" class="alert-sound-btn" data-alert-sound="off">Off</button>
+                    <button type="button" class="alert-sound-btn" data-alert-sound="on">On</button>
+                  </div>
+                </div>
+
+                <p class="speed-alert-note">Nearby trap speed overrides the manual limit.</p>
               </div>
 
-              <div id="alertPresets" class="speed-alert-presets" role="group" aria-label="Quick speed alert presets"></div>
+              <div class="speed-alert-section" aria-label="Trap alert settings">
+                <span class="speed-alert-settings-title">Trap alerts</span>
 
-              <div class="speed-alert-setting speed-alert-sound-setting">
-                <span class="speed-alert-setting-label">Overspeed sound</span>
-                <div class="unit-switch speed-alert-switch" role="group" aria-label="Overspeed sound">
-                  <button type="button" class="alert-sound-btn" data-alert-sound="off">Off</button>
-                  <button type="button" class="alert-sound-btn" data-alert-sound="on">On</button>
+                <div class="speed-alert-setting speed-alert-sound-setting">
+                  <span class="speed-alert-setting-label">Trap alerts</span>
+                  <div class="unit-switch speed-alert-switch" role="group" aria-label="Trap alerts">
+                    <button type="button" class="trap-alert-btn" data-trap-alert="off">Off</button>
+                    <button type="button" class="trap-alert-btn" data-trap-alert="on">On</button>
+                  </div>
+                </div>
+
+                <div class="speed-alert-setting">
+                  <span class="speed-alert-setting-label">Alert distance</span>
+                  <div id="trapDistancePresets" class="speed-alert-presets" role="group" aria-label="Trap alert distance presets"></div>
+                </div>
+
+                <div class="speed-alert-setting speed-alert-sound-setting">
+                  <span class="speed-alert-setting-label">Trap sound</span>
+                  <div class="unit-switch speed-alert-switch" role="group" aria-label="Trap alert sound">
+                    <button type="button" class="trap-sound-btn" data-trap-sound="off">Off</button>
+                    <button type="button" class="trap-sound-btn" data-trap-sound="on">On</button>
+                  </div>
                 </div>
               </div>
 
@@ -165,10 +198,10 @@
                 </div>
 
                 <div class="speed-alert-setting">
-                  <span class="speed-alert-setting-label">Altitude</span>
-                  <div class="unit-switch speed-alert-switch" role="group" aria-label="Altitude unit">
-                    <button type="button" class="altitude-unit-btn" data-altitude-unit="ft">ft</button>
-                    <button type="button" class="altitude-unit-btn" data-altitude-unit="m">m</button>
+                  <span class="speed-alert-setting-label">Distance</span>
+                  <div class="unit-switch speed-alert-switch" role="group" aria-label="Distance unit">
+                    <button type="button" class="distance-unit-btn" data-distance-unit="ft">ft</button>
+                    <button type="button" class="distance-unit-btn" data-distance-unit="m">m</button>
                   </div>
                 </div>
               </div>

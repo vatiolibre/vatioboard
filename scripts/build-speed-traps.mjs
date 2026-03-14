@@ -7,7 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "..");
 
-const sourcePath = path.resolve(projectRoot, "public/geo/ansv_cameras_maplibre.geojson");
+const sourcePath = path.resolve(projectRoot, "data-src/ansv_cameras_maplibre.geojson");
 const compactPath = path.resolve(projectRoot, "public/geo/ansv_cameras_compact.min.json");
 const indexPath = path.resolve(projectRoot, "public/geo/ansv_cameras_compact.kdbush");
 

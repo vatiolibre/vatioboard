@@ -29,6 +29,8 @@
     --speed-alert: #ef4444;
     --speed-alert-soft: rgba(239, 68, 68, 0.12);
     --speed-alert-marker: #ff7a5c;
+    --speed-trap: #f59e0b;
+    --speed-trap-soft: rgba(245, 158, 11, 0.14);
     --speed-alert-panel: rgba(255, 255, 255, 0.9);
 }
 
@@ -62,6 +64,8 @@
         --speed-alert: #ff7a5c;
         --speed-alert-soft: rgba(255, 122, 92, 0.16);
         --speed-alert-marker: #ff9477;
+        --speed-trap: #fbbf24;
+        --speed-trap-soft: rgba(251, 191, 36, 0.18);
         --speed-alert-panel: rgba(22, 24, 28, 0.88);
     }
 }
@@ -328,12 +332,16 @@ body.speed-page.alert-panel-open .speed-main{
     display: grid;
     gap: 12px;
     padding: 14px;
+    max-height: calc(100% - 36px);
     border: 1px solid color-mix(in srgb, var(--speed-panel-border) 92%, transparent);
     border-radius: calc(var(--radius-sm) + 6px);
     background: var(--speed-alert-panel);
     box-shadow:
       0 24px 50px rgba(15, 23, 42, 0.18),
       inset 0 0 0 1px var(--inner-ring);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
 }
@@ -369,6 +377,21 @@ body.speed-page.alert-panel-open .speed-main{
     color: var(--btn-fg);
 }
 
+.speed-alert-panel-top{
+    display: grid;
+    gap: 0;
+}
+
+.speed-alert-section{
+    display: grid;
+    gap: 10px;
+}
+
+.speed-alert-section + .speed-alert-section{
+    padding-top: 12px;
+    border-top: 1px solid color-mix(in srgb, var(--speed-panel-border) 88%, transparent);
+}
+
 .speed-alert-settings{
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -392,11 +415,14 @@ body.speed-page.alert-panel-open .speed-main{
 }
 
 .speed-alert-sound-setting{
-    justify-items: center;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
 }
 
 .speed-alert-sound-setting .speed-alert-switch{
-    width: min(100%, 240px);
+    width: auto;
+    min-width: 140px;
 }
 
 .speed-alert-setting-label{
@@ -409,6 +435,11 @@ body.speed-page.alert-panel-open .speed-main{
     text-align: center;
 }
 
+.speed-alert-sound-setting .speed-alert-setting-label{
+    justify-self: start;
+    text-align: left;
+}
+
 .speed-alert-switch{
     width: 100%;
 }
@@ -416,6 +447,15 @@ body.speed-page.alert-panel-open .speed-main{
 .speed-alert-switch button{
     flex: 1 1 0;
     min-width: 0;
+}
+
+.speed-alert-note{
+    margin: 0;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.3;
+    color: var(--muted);
+    text-align: left;
 }
 
 .speed-alert-actions{
@@ -508,6 +548,17 @@ body.speed-page.alert-panel-open .speed-main{
 
 .gauge-card.is-alert-near .speed-alert-trigger{
     border-color: color-mix(in srgb, var(--speed-alert-marker) 55%, var(--speed-panel-border));
+}
+
+.gauge-card.is-trap-active .speed-alert-trigger{
+    border-color: color-mix(in srgb, var(--speed-trap) 55%, var(--speed-panel-border));
+    background: color-mix(in srgb, var(--speed-trap-soft) 48%, var(--speed-chip-bg));
+}
+
+.gauge-card.is-trap-active:not(.is-alert-over) .speed-alert-trigger-value,
+.gauge-card.is-trap-active:not(.is-alert-over) .speed-alert-panel-header strong,
+.gauge-card.is-trap-active:not(.is-alert-over) .gauge-substatus{
+    color: var(--speed-trap);
 }
 
 .gauge-card.is-alert-over{
@@ -751,7 +802,9 @@ body.speed-page.alert-panel-open .speed-main{
         font-size: 10px;
         flex: 0 0 auto;
     }
+}
 
+@media (max-width: 820px), (max-height: 820px){
     .speed-alert-panel{
         position: fixed;
         inset:
@@ -759,12 +812,84 @@ body.speed-page.alert-panel-open .speed-main{
           10px
           max(10px, calc(env(safe-area-inset-bottom) + 10px));
         z-index: 40;
-        gap: 12px;
-        padding: 14px;
+        gap: 10px;
+        padding: 12px;
+        max-height: none;
         border-radius: calc(var(--radius) + 6px);
-        overflow-y: auto;
-        overscroll-behavior: contain;
-        -webkit-overflow-scrolling: touch;
+    }
+
+    .speed-alert-panel-top{
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        margin: -12px -12px 0;
+        padding: 12px 12px 10px;
+        background:
+          linear-gradient(
+            180deg,
+            color-mix(in srgb, var(--speed-alert-panel) 100%, transparent),
+            color-mix(in srgb, var(--speed-alert-panel) 94%, transparent)
+          );
+    }
+
+    .speed-alert-section{
+        gap: 8px;
+    }
+
+    .speed-alert-panel-header strong{
+        font-size: 20px;
+    }
+
+    .speed-alert-settings{
+        gap: 8px;
+        padding-top: 10px;
+    }
+
+    .speed-alert-stepper{
+        grid-template-columns: 46px minmax(0, 1fr) 46px;
+        gap: 8px;
+    }
+
+    .speed-alert-stepper button{
+        width: 46px;
+        height: 46px;
+        border-radius: 14px;
+        font-size: 28px;
+    }
+
+    .speed-alert-limit-display{
+        min-height: 64px;
+        padding: 10px 12px;
+    }
+
+    #alertValue{
+        font-size: clamp(28px, 8vw, 38px);
+    }
+
+    .speed-alert-presets{
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        padding-bottom: 2px;
+        scroll-snap-type: x proximity;
+        grid-template-columns: none;
+    }
+
+    .speed-alert-presets button{
+        flex: 0 0 auto;
+        min-width: 84px;
+        min-height: 40px;
+        padding: 8px 10px;
+        scroll-snap-align: start;
+    }
+
+    .speed-alert-switch button{
+        min-height: 42px;
+    }
+
+    .speed-alert-note{
+        font-size: 10px;
+        line-height: 1.25;
     }
 }
 
@@ -808,26 +933,14 @@ body.speed-page.alert-panel-open .speed-main{
         font-size: clamp(24px, 8vw, 34px);
     }
 
-    .speed-alert-actions{
-        grid-template-columns: 1fr;
-    }
-
-    .speed-alert-settings{
-        grid-template-columns: 1fr;
-    }
-
     .speed-alert-stepper{
-        grid-template-columns: 50px minmax(0, 1fr) 50px;
+        grid-template-columns: 44px minmax(0, 1fr) 44px;
     }
 
     .speed-alert-stepper button{
-        width: 50px;
-        height: 50px;
-        border-radius: 16px;
-        font-size: 28px;
-    }
-
-    .speed-alert-presets{
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        width: 44px;
+        height: 44px;
+        border-radius: 14px;
+        font-size: 26px;
     }
 }

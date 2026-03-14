@@ -11,6 +11,8 @@ node_modules
 dist
 dist-ssr
 *.local
+public/geo/ansv_cameras_compact.min.json
+public/geo/ansv_cameras_compact.kdbush
 
 # Editor directories and files
 .vscode/*
