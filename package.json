@@ -4,7 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "prepare:geo": "node scripts/build-speed-traps.mjs",
+    "predev": "npm run prepare:geo",
     "dev": "vite",
+    "prebuild": "npm run prepare:geo",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -14,6 +17,8 @@
   },
   "dependencies": {
     "@jaames/iro": "^5.5.2",
+    "geokdbush": "^2.0.1",
+    "kdbush": "^4.0.2",
     "mathjs": "^15.1.0"
   },
   "engines": {

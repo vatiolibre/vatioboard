@@ -1,4 +1,6 @@
 import "../styles/speed.less";
+import KDBush from "kdbush";
+import { around as geoAround, distance as geoDistanceKm } from "geokdbush";
 
 const STORAGE_UNIT_KEY = "vatio_speed_unit";
 const STORAGE_ALTITUDE_UNIT_KEY = "vatio_speed_altitude_unit";
@@ -6,6 +8,9 @@ const STORAGE_ALERT_ENABLED_KEY = "vatio_speed_alert_enabled";
 const STORAGE_ALERT_LIMIT_KEY = "vatio_speed_alert_limit_ms";
 const STORAGE_ALERT_SOUND_ENABLED_KEY = "vatio_speed_alert_sound_enabled";
 const OVERSPEED_SOUND_URL = "/audio/overspeed_notification.m4a";
+const TRAP_DATA_URL = "/geo/ansv_cameras_compact.min.json";
+const TRAP_INDEX_URL = "/geo/ansv_cameras_compact.kdbush";
+const TRAP_NEARBY_DISTANCE_M = 1000;
 const UNIT_CONFIG = {
   mph: { label: "mph", baseMax: 120, tickStep: 20, factor: 2.2369362920544 },
   kmh: { label: "km/h", baseMax: 200, tickStep: 40, factor: 3.6 },
@@ -42,6 +47,8 @@ const elements = {
   avgSpeedUnit: document.getElementById("avgSpeedUnit"),
   distanceValue: document.getElementById("distanceValue"),
   distanceUnit: document.getElementById("distanceUnit"),
+  nearestTrapDistance: document.getElementById("nearestTrapDistance"),
+  nearestTrapUnit: document.getElementById("nearestTrapUnit"),
   durationValue: document.getElementById("durationValue"),
   altitudeValue: document.getElementById("altitudeValue"),
   altitudeUnit: document.getElementById("altitudeUnit"),
@@ -98,6 +105,11 @@ const state = {
   maxAltitudeM: null,
   minAltitudeM: null,
   lastPoint: null,
+  trapRecords: [],
+  trapIndex: null,
+  nearestTrapDistanceM: null,
+  nearestTrapSpeedKph: null,
+  trapLoadError: null,
   recentSpeeds: [],
   lastAccuracyM: null,
   lastFixAt: 0,
@@ -304,6 +316,109 @@ function syncOverspeedSound({ fromUserGesture = false } = {}) {
     });
 }
 
+function buildTrapIndex(traps) {
+  const index = new KDBush(traps.length);
+  for (const [lon, lat] of traps) {
+    index.add(lon, lat);
+  }
+  index.finish();
+  return index;
+}
+
+async function loadTrapArtifacts() {
+  try {
+    const [dataResponse, indexResponse] = await Promise.all([
+      fetch(TRAP_DATA_URL, { cache: "no-cache" }),
+      fetch(TRAP_INDEX_URL, { cache: "no-cache" }),
+    ]);
+
+    if (!dataResponse.ok) {
+      throw new Error(`Trap dataset request failed with ${dataResponse.status}`);
+    }
+
+    const compact = await dataResponse.json();
+    const traps = Array.isArray(compact?.traps) ? compact.traps : [];
+
+    state.trapRecords = traps.filter((trap) =>
+      Array.isArray(trap)
+      && trap.length >= 2
+      && Number.isFinite(trap[0])
+      && Number.isFinite(trap[1]));
+
+    if (indexResponse.ok) {
+      state.trapIndex = KDBush.from(await indexResponse.arrayBuffer());
+    } else {
+      state.trapIndex = buildTrapIndex(state.trapRecords);
+    }
+
+    state.trapLoadError = null;
+  } catch (error) {
+    state.trapRecords = [];
+    state.trapIndex = null;
+    state.trapLoadError = error;
+  }
+
+  if (state.lastPoint) {
+    updateNearestTrap(state.lastPoint.longitude, state.lastPoint.latitude);
+  }
+
+  renderMetrics();
+}
+
+function updateNearestTrap(longitude, latitude) {
+  if (!state.trapIndex || state.trapRecords.length === 0) {
+    state.nearestTrapDistanceM = null;
+    state.nearestTrapSpeedKph = null;
+    return;
+  }
+
+  const nearestIds = geoAround(state.trapIndex, longitude, latitude, 1);
+  if (nearestIds.length === 0) {
+    state.nearestTrapDistanceM = null;
+    state.nearestTrapSpeedKph = null;
+    return;
+  }
+
+  const nearestTrap = state.trapRecords[nearestIds[0]];
+  state.nearestTrapDistanceM = geoDistanceKm(longitude, latitude, nearestTrap[0], nearestTrap[1]) * 1000;
+  state.nearestTrapSpeedKph = Number.isFinite(nearestTrap[2]) ? nearestTrap[2] : null;
+}
+
+function formatTrapDistance(distanceM) {
+  if (!Number.isFinite(distanceM)) {
+    return { value: "—", unit: "away" };
+  }
+
+  if (state.unit === "kmh") {
+    if (distanceM < 1000) {
+      return { value: Math.round(distanceM).toString(), unit: "m away" };
+    }
+
+    const kilometers = distanceM / 1000;
+    return {
+      value: kilometers < 10 ? kilometers.toFixed(1) : Math.round(kilometers).toString(),
+      unit: "km away",
+    };
+  }
+
+  const feet = distanceM * 3.2808398950131;
+  if (feet < 5280) {
+    return { value: Math.round(feet).toString(), unit: "ft away" };
+  }
+
+  const miles = distanceM / 1609.344;
+  return {
+    value: miles < 10 ? miles.toFixed(1) : Math.round(miles).toString(),
+    unit: "mi away",
+  };
+}
+
+function formatTrapSpeed(speedKph) {
+  if (!Number.isFinite(speedKph)) return null;
+  if (state.unit === "kmh") return `${Math.round(speedKph)} km/h`;
+  return `${Math.round(speedKph / 1.609344)} mph`;
+}
+
 function getAverageSpeedMs() {
   return state.speedSamples > 0 ? state.speedSumMs / state.speedSamples : 0;
 }
@@ -395,6 +510,15 @@ function renderSubStatus() {
 
   if (alertState.enabled && isLiveStatus) {
     elements.subStatus.textContent = `Alert at ${alertState.limitDisplayValue} ${alertState.unitLabel}`;
+    return;
+  }
+
+  if (isLiveStatus && Number.isFinite(state.nearestTrapDistanceM) && state.nearestTrapDistanceM <= TRAP_NEARBY_DISTANCE_M) {
+    const trapDistance = formatTrapDistance(state.nearestTrapDistanceM);
+    const trapSpeed = formatTrapSpeed(state.nearestTrapSpeedKph);
+    elements.subStatus.textContent = trapSpeed
+      ? `Trap ahead ${trapDistance.value} ${trapDistance.unit} · ${trapSpeed}`
+      : `Trap ahead ${trapDistance.value} ${trapDistance.unit}`;
     return;
   }
 
@@ -554,6 +678,8 @@ function resetTripData() {
   state.maxAltitudeM = null;
   state.minAltitudeM = null;
   state.lastPoint = null;
+  state.nearestTrapDistanceM = null;
+  state.nearestTrapSpeedKph = null;
   state.recentSpeeds = [];
   state.lastAccuracyM = null;
   state.lastFixAt = 0;
@@ -639,6 +765,8 @@ function handlePosition(position) {
   state.lastPoint = nextPoint;
   state.lastAccuracyM = coords.accuracy;
   state.lastFixAt = Date.now();
+
+  updateNearestTrap(coords.longitude, coords.latitude);
 
   if (Number.isFinite(coords.altitude)) {
     state.currentAltitudeM = coords.altitude;
@@ -906,6 +1034,7 @@ function renderMetrics() {
   const maxSpeed = Math.round(convertSpeed(state.maxSpeedMs));
   const averageSpeed = Math.round(convertSpeed(getAverageSpeedMs()));
   const distance = getDistanceDisplay(state.totalDistanceM);
+  const nearestTrap = formatTrapDistance(state.nearestTrapDistanceM);
   const unitLabel = UNIT_CONFIG[state.unit].label;
   const altitudeUnitLabel = ALTITUDE_UNIT_CONFIG[state.altitudeUnit].label;
 
@@ -917,6 +1046,8 @@ function renderMetrics() {
   elements.avgSpeedUnit.textContent = unitLabel;
   elements.distanceValue.textContent = distance.value;
   elements.distanceUnit.textContent = distance.unit;
+  elements.nearestTrapDistance.textContent = nearestTrap.value;
+  elements.nearestTrapUnit.textContent = nearestTrap.unit;
   elements.durationValue.textContent = formatDuration(Date.now() - state.startTime);
   elements.altitudeValue.textContent = formatAltitude(state.currentAltitudeM);
   elements.altitudeUnit.textContent = altitudeUnitLabel;
@@ -1038,6 +1169,7 @@ function init() {
   renderMetrics();
   resizeCanvas();
   bindEvents();
+  loadTrapArtifacts();
   startTracking();
   startRenderLoop();
 }
