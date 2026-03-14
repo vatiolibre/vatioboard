@@ -8,7 +8,7 @@ import { createEnergyCalculatorWidget } from "../energy/energy-calculator-widget
 import { createFloatingDock } from "../dock/floating-dock.js";
 import iro from "@jaames/iro";
 import { t, applyTranslations, toggleLang, getLang } from "../i18n.js";
-import { IconCalculator, IconEnergy } from "../icons.js";
+import { IconCalculator, IconEnergy, IconSpeed } from "../icons.js";
 
 // Apply translations immediately
 applyTranslations();
@@ -22,8 +22,10 @@ langToggleBtn.addEventListener("click", () => {
 
 // Toolbar buttons
 const openCalcBtn = document.getElementById("openCalc");
+const openSpeedBtn = document.getElementById("openSpeed");
 const openEnergyBtn = document.getElementById("openEnergy");
 const openCalcMenuBtn = document.getElementById("openCalcMenu");
+const openSpeedMenuBtn = document.getElementById("openSpeedMenu");
 const openEnergyMenuBtn = document.getElementById("openEnergyMenu");
 const toolsMenuBtn = document.getElementById("toolsMenuBtn");
 const toolsMenuList = document.getElementById("toolsMenuList");
@@ -36,6 +38,8 @@ function applyButtonIcon(button, icon) {
 
 applyButtonIcon(openCalcBtn, IconCalculator);
 applyButtonIcon(openCalcMenuBtn, IconCalculator);
+applyButtonIcon(openSpeedBtn, IconSpeed);
+applyButtonIcon(openSpeedMenuBtn, IconSpeed);
 applyButtonIcon(openEnergyBtn, IconEnergy);
 applyButtonIcon(openEnergyMenuBtn, IconEnergy);
 
@@ -78,6 +82,13 @@ const bindToggle = (btn, widget) => {
   });
 };
 
+const bindNavigation = (btn, href) => {
+  btn?.addEventListener("click", () => {
+    closeToolsMenu();
+    window.location.href = href;
+  });
+};
+
 bindToggle(openCalcBtn, calcWidget);
 bindToggle(openCalcMenuBtn, calcWidget);
 bindToggle(calcBtn, calcWidget);
@@ -85,6 +96,9 @@ bindToggle(calcBtn, calcWidget);
 bindToggle(openEnergyBtn, energyWidget);
 bindToggle(openEnergyMenuBtn, energyWidget);
 bindToggle(energyBtn, energyWidget);
+
+bindNavigation(openSpeedBtn, "/speed.html");
+bindNavigation(openSpeedMenuBtn, "/speed.html");
 
   (function(){
     const canvas = document.getElementById("pad");
