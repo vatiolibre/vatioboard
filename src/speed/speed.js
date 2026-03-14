@@ -27,7 +27,7 @@ const ALERT_CONFIG = {
   mph: { step: 5, min: 10, max: 180, presets: [25, 35, 45, 55, 65, 75] },
   kmh: { step: 10, min: 20, max: 280, presets: [40, 60, 80, 100, 120, 140] },
 };
-const DEFAULT_ALERT_LIMIT_MS = 55 / UNIT_CONFIG.mph.factor;
+const DEFAULT_ALERT_LIMIT_MS = 100 / UNIT_CONFIG.kmh.factor;
 const TRAP_ALERT_PRESETS = {
   ft: [
     { meters: 304.8, label: "1000 ft" },
@@ -156,9 +156,9 @@ const state = {
 function loadUnitPreference() {
   try {
     const unit = window.localStorage.getItem(STORAGE_UNIT_KEY);
-    return unit && UNIT_CONFIG[unit] ? unit : "mph";
+    return unit && UNIT_CONFIG[unit] ? unit : "kmh";
   } catch {
-    return "mph";
+    return "kmh";
   }
 }
 
@@ -178,9 +178,9 @@ function loadDistanceUnitPreference() {
     }
 
     const legacyUnit = window.localStorage.getItem(LEGACY_STORAGE_ALTITUDE_UNIT_KEY);
-    return legacyUnit && DISTANCE_UNIT_CONFIG[legacyUnit] ? legacyUnit : "ft";
+    return legacyUnit && DISTANCE_UNIT_CONFIG[legacyUnit] ? legacyUnit : "m";
   } catch {
-    return "ft";
+    return "m";
   }
 }
 
@@ -951,7 +951,7 @@ function setAlertLimitToCurrentSpeed() {
 function setTrapAlertEnabled(enabled, options = {}) {
   state.trapAlertEnabled = enabled;
   if (!Number.isFinite(state.trapAlertDistanceM) || state.trapAlertDistanceM <= 0) {
-    state.trapAlertDistanceM = getDefaultTrapAlertDistanceM(state.unit);
+    state.trapAlertDistanceM = getDefaultTrapAlertDistanceM(state.distanceUnit);
   }
 
   if (!enabled) {
@@ -964,7 +964,7 @@ function setTrapAlertEnabled(enabled, options = {}) {
 }
 
 function setTrapAlertDistance(distanceM, { enable = true, fromUserGesture = false } = {}) {
-  state.trapAlertDistanceM = normalizeTrapAlertDistance(distanceM, state.unit);
+  state.trapAlertDistanceM = normalizeTrapAlertDistance(distanceM, state.distanceUnit);
   saveTrapAlertDistancePreference(state.trapAlertDistanceM);
 
   if (enable) {
