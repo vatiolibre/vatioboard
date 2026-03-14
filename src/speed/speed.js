@@ -28,6 +28,7 @@ const BACKGROUND_KEEPALIVE_DURATION_SECONDS = 2;
 const GLOBE_DEFAULT_CENTER = [137.9150899566626, 36.25956997955441];
 const GLOBE_DEFAULT_ZOOM = 0.15;
 const GLOBE_FOLLOW_ZOOM = 0.8;
+const GLOBE_FOLLOW_RESUME_DELAY_MS = 12000;
 const GLOBE_SOURCE_ID = "live-position";
 const GLOBE_SATELLITE_ATTRIBUTION = [
   '<a href="https://s2maps.eu" target="_blank" rel="noopener noreferrer">Sentinel-2 cloudless</a>',
@@ -249,6 +250,8 @@ const state = {
   globeError: null,
   globeResizeObserver: null,
   globeCenter: null,
+  globeFollowPausedUntil: 0,
+  globeFollowResumeTimeoutId: null,
 };
 
 function tf(key, values = {}) {
@@ -551,6 +554,8 @@ function getGlobePointData(longitude, latitude) {
 }
 
 function clearGlobePosition() {
+  clearGlobeFollowResumeTimeout();
+  state.globeFollowPausedUntil = 0;
   state.globeCenter = null;
 
   if (!state.globeMap || !state.globeReady) {
@@ -611,6 +616,45 @@ function resizeGlobe() {
   state.globeMap.resize();
 }
 
+function clearGlobeFollowResumeTimeout() {
+  if (state.globeFollowResumeTimeoutId === null) return;
+  window.clearTimeout(state.globeFollowResumeTimeoutId);
+  state.globeFollowResumeTimeoutId = null;
+}
+
+function syncStoredGlobeCenter() {
+  if (!state.globeMap) return;
+
+  const center = state.globeMap.getCenter();
+  if (!center) return;
+
+  state.globeCenter = [center.lng, center.lat];
+}
+
+function isGlobeFollowPaused() {
+  return state.globeFollowPausedUntil > Date.now();
+}
+
+function resumeGlobeFollow() {
+  clearGlobeFollowResumeTimeout();
+  state.globeFollowPausedUntil = 0;
+
+  if (!state.lastPoint) return;
+
+  syncGlobePosition(state.lastPoint.longitude, state.lastPoint.latitude, { force: true });
+}
+
+function pauseGlobeFollow() {
+  if (!state.globeMap || !state.globeReady) return;
+
+  state.globeFollowPausedUntil = Date.now() + GLOBE_FOLLOW_RESUME_DELAY_MS;
+  clearGlobeFollowResumeTimeout();
+  state.globeFollowResumeTimeoutId = window.setTimeout(() => {
+    state.globeFollowResumeTimeoutId = null;
+    resumeGlobeFollow();
+  }, GLOBE_FOLLOW_RESUME_DELAY_MS);
+}
+
 function updateGlobeSource(longitude, latitude) {
   if (!state.globeMap || !state.globeReady) return;
 
@@ -620,11 +664,15 @@ function updateGlobeSource(longitude, latitude) {
   }
 }
 
-function syncGlobePosition(longitude, latitude, { immediate = false } = {}) {
+function syncGlobePosition(longitude, latitude, { immediate = false, force = false } = {}) {
   if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) return;
   if (!state.globeMap || !state.globeReady) return;
 
   updateGlobeSource(longitude, latitude);
+
+  if (!force && isGlobeFollowPaused()) {
+    return;
+  }
 
   const nextCenter = [longitude, latitude];
   const centerDistanceM = Array.isArray(state.globeCenter)
@@ -641,7 +689,7 @@ function syncGlobePosition(longitude, latitude, { immediate = false } = {}) {
     : Number.POSITIVE_INFINITY;
   const isAlreadyCentered = centerDistanceM < 120;
 
-  if (isAlreadyCentered) return;
+  if (isAlreadyCentered && !force) return;
 
   state.globeCenter = nextCenter;
 
@@ -705,7 +753,7 @@ function initGlobe() {
       container: elements.globeMount,
       antialias: true,
       attributionControl: false,
-      interactive: false,
+      interactive: true,
       center: GLOBE_DEFAULT_CENTER,
       zoom: GLOBE_DEFAULT_ZOOM,
       style: {
@@ -770,20 +818,31 @@ function initGlobe() {
       },
     });
 
+    globeMap.scrollZoom.disable();
+    globeMap.boxZoom.disable();
+    globeMap.doubleClickZoom.disable();
+    globeMap.keyboard.disable();
     globeMap.addControl(new maplibregl.AttributionControl({ compact: true }));
 
     state.globeMap = globeMap;
     state.globeError = null;
+    state.globeCenter = [...GLOBE_DEFAULT_CENTER];
     renderGlobeStatus();
 
     globeMap.on("load", () => {
       state.globeReady = true;
+      syncStoredGlobeCenter();
       collapseGlobeAttributionControl();
       resizeGlobe();
 
       if (state.lastPoint) {
         syncGlobePosition(state.lastPoint.longitude, state.lastPoint.latitude, { immediate: true });
       }
+    });
+
+    globeMap.on("moveend", () => {
+      syncStoredGlobeCenter();
+      collapseGlobeAttributionControl();
     });
 
     globeMap.on("resize", () => {
@@ -1051,6 +1110,7 @@ if (import.meta.hot) {
   import.meta.hot.dispose(() => {
     stopBackgroundKeepAliveAudio();
     revokeBackgroundKeepAliveAudioUrl();
+    clearGlobeFollowResumeTimeout();
   });
 }
 
@@ -2700,6 +2760,10 @@ function bindEvents() {
   for (const button of elements.distanceUnitButtons) {
     button.addEventListener("click", () => setDistanceUnit(button.dataset.distanceUnit));
   }
+
+  elements.globeMount?.addEventListener("pointerdown", () => {
+    pauseGlobeFollow();
+  }, { passive: true });
 
   window.addEventListener("resize", resizeCanvas, { passive: true });
   window.addEventListener("orientationchange", resizeCanvas, { passive: true });
