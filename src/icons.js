@@ -33,3 +33,11 @@ export const IconEnergy = `
     <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>
 `;
+
+export const IconSpeed = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M4 15a8 8 0 1 1 16 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M12 12l4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M7.5 15h0M12 8h0M16.5 15h0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  </svg>
+`;

@@ -15,6 +15,7 @@ const translations = {
     clear: 'Clear',
     savePng: 'Save PNG',
     calculator: 'Calculator',
+    speedometer: 'Speedometer',
     energy: 'Trip Cost',
     tools: 'Tools',
 
@@ -22,6 +23,7 @@ const translations = {
     presetColors: 'Preset colors',
     moreColors: 'More colors',
     openCalculator: 'Open calculator',
+    openSpeedometer: 'Open speedometer',
     openEnergy: 'Open trip cost calculator',
 
     // Energy Calculator
@@ -104,6 +106,7 @@ const translations = {
     clear: 'Limpiar',
     savePng: 'Guardar PNG',
     calculator: 'Calculadora',
+    speedometer: 'Velocímetro',
     energy: 'Costo de viaje',
     tools: 'Herramientas',
 
@@ -111,6 +114,7 @@ const translations = {
     presetColors: 'Colores predefinidos',
     moreColors: 'Más colores',
     openCalculator: 'Abrir calculadora',
+    openSpeedometer: 'Abrir velocímetro',
     openEnergy: 'Abrir calculadora de costo de viaje',
 
     // Energy Calculator
