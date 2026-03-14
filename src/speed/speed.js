@@ -130,6 +130,8 @@ const state = {
   alertEnabled: loadAlertEnabledPreference(),
   alertLimitMs: loadAlertLimitPreference(),
   alertSoundEnabled: loadAlertSoundEnabledPreference(),
+  audioPrimed: false,
+  audioPrimePending: false,
   alertSoundBlocked: false,
   alertSoundPending: false,
   trapAlertEnabled: loadTrapAlertEnabledPreference(),
@@ -522,7 +524,7 @@ function getAlertUiState() {
 }
 
 function shouldPlayOverspeedSound() {
-  return getAlertUiState().over && state.alertSoundEnabled && !document.hidden;
+  return getAlertUiState().over && state.alertSoundEnabled;
 }
 
 function stopOverspeedSound() {
@@ -576,6 +578,53 @@ function stopTrapSound() {
   trapAlertAudio.currentTime = 0;
 }
 
+async function primeAudioElement(audio) {
+  const previousMuted = audio.muted;
+  const previousVolume = audio.volume;
+
+  audio.muted = true;
+  audio.volume = 0;
+  audio.currentTime = 0;
+
+  try {
+    const playPromise = audio.play();
+    if (playPromise && typeof playPromise.then === "function") {
+      await playPromise;
+    }
+    audio.pause();
+    audio.currentTime = 0;
+    return true;
+  } catch {
+    audio.pause();
+    audio.currentTime = 0;
+    return false;
+  } finally {
+    audio.muted = previousMuted;
+    audio.volume = previousVolume;
+  }
+}
+
+async function primeAlertAudio() {
+  if (state.audioPrimed || state.audioPrimePending) return;
+
+  state.audioPrimePending = true;
+
+  try {
+    const [overspeedPrimed, trapPrimed] = await Promise.all([
+      primeAudioElement(overspeedAudio),
+      primeAudioElement(trapAlertAudio),
+    ]);
+
+    state.audioPrimed = overspeedPrimed && trapPrimed;
+    if (state.audioPrimed) {
+      state.alertSoundBlocked = false;
+      state.trapSoundBlocked = false;
+    }
+  } finally {
+    state.audioPrimePending = false;
+  }
+}
+
 function syncTrapSound({ fromUserGesture = false } = {}) {
   const activeTrap = getActiveTrapAlert();
 
@@ -586,7 +635,7 @@ function syncTrapSound({ fromUserGesture = false } = {}) {
     return;
   }
 
-  if (!state.trapSoundEnabled || document.hidden) {
+  if (!state.trapSoundEnabled) {
     state.trapSoundBlocked = false;
     stopTrapSound();
     return;
@@ -1757,6 +1806,7 @@ function bindEvents() {
     syncTrapSound();
   });
   document.addEventListener("pointerdown", (event) => {
+    void primeAlertAudio();
     const insideAlertUi = elements.alertPanel.contains(event.target) || elements.alertTrigger.contains(event.target);
     if (!insideAlertUi) {
       syncOverspeedSound({ fromUserGesture: true });
@@ -1767,6 +1817,7 @@ function bindEvents() {
     closeAlertPanel();
   });
   document.addEventListener("keydown", (event) => {
+    void primeAlertAudio();
     syncOverspeedSound({ fromUserGesture: true });
     syncTrapSound({ fromUserGesture: true });
     if (event.key === "Escape") closeAlertPanel();
@@ -1774,8 +1825,6 @@ function bindEvents() {
 
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
-      stopOverspeedSound();
-      stopTrapSound();
       stopRenderLoop();
       return;
     }
