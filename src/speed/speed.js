@@ -113,6 +113,7 @@ const trapAlertAudio = new Audio(TRAP_SOUND_URL);
 trapAlertAudio.loop = false;
 trapAlertAudio.preload = "auto";
 trapAlertAudio.playsInline = true;
+let trapLoadPromise = null;
 
 const initialUnit = loadUnitPreference();
 const initialDistanceUnit = loadDistanceUnitPreference();
@@ -132,7 +133,8 @@ const state = {
   trapSoundBlocked: false,
   trapSoundPending: false,
   watchId: null,
-  startTime: Date.now(),
+  startTime: null,
+  trackingStartedAt: Date.now(),
   statusText: "Requesting GPS...",
   currentSpeedMs: 0,
   displayedSpeedMs: 0,
@@ -147,6 +149,7 @@ const state = {
   nearestTrapId: null,
   nearestTrapDistanceM: null,
   nearestTrapSpeedKph: null,
+  trapLoadPending: true,
   trapLoadError: null,
   lastTrapSoundedId: null,
   recentSpeeds: [],
@@ -369,6 +372,7 @@ function convertDistanceMeasurement(valueM, unit = state.distanceUnit) {
 }
 
 function getElapsedTripSeconds() {
+  if (!Number.isFinite(state.startTime)) return 0;
   return Math.max(0, (Date.now() - state.startTime) / 1000);
 }
 
@@ -401,7 +405,12 @@ function getConfiguredTrapAlertDistanceLabel(distanceM = state.trapAlertDistance
   return matchingPreset?.label ?? getTrapAlertDistanceLabel(distanceM);
 }
 
+function isTrapDataReady() {
+  return !state.trapLoadPending && !state.trapLoadError;
+}
+
 function getActiveTrapAlert() {
+  if (!isTrapDataReady()) return null;
   if (!state.trapAlertEnabled) return null;
   if (!Number.isFinite(state.nearestTrapDistanceM) || !Number.isFinite(state.trapAlertDistanceM)) return null;
   if (state.nearestTrapDistanceM > state.trapAlertDistanceM) return null;
@@ -572,46 +581,72 @@ function buildTrapIndex(traps) {
 }
 
 async function loadTrapArtifacts() {
-  try {
-    const [dataResponse, indexResponse] = await Promise.all([
-      fetch(TRAP_DATA_URL, { cache: "no-cache" }),
-      fetch(TRAP_INDEX_URL, { cache: "no-cache" }),
-    ]);
-
-    if (!dataResponse.ok) {
-      throw new Error(`Trap dataset request failed with ${dataResponse.status}`);
-    }
-
-    const compact = await dataResponse.json();
-    const traps = Array.isArray(compact?.traps) ? compact.traps : [];
-
-    state.trapRecords = traps.filter((trap) =>
-      Array.isArray(trap)
-      && trap.length >= 2
-      && Number.isFinite(trap[0])
-      && Number.isFinite(trap[1]));
-
-    if (indexResponse.ok) {
-      state.trapIndex = KDBush.from(await indexResponse.arrayBuffer());
-    } else {
-      state.trapIndex = buildTrapIndex(state.trapRecords);
-    }
-
-    state.trapLoadError = null;
-  } catch (error) {
-    state.trapRecords = [];
-    state.trapIndex = null;
-    state.nearestTrapId = null;
-    state.nearestTrapDistanceM = null;
-    state.nearestTrapSpeedKph = null;
-    state.trapLoadError = error;
+  if (trapLoadPromise) {
+    return trapLoadPromise;
   }
 
-  if (state.lastPoint) {
-    updateNearestTrap(state.lastPoint.longitude, state.lastPoint.latitude);
+  if (isTrapDataReady()) {
+    return state.trapIndex;
   }
 
+  state.trapLoadPending = true;
+  state.trapLoadError = null;
   renderMetrics();
+
+  trapLoadPromise = (async () => {
+    try {
+      const [dataResponse, indexResponse] = await Promise.all([
+        fetch(TRAP_DATA_URL, { cache: "no-cache" }),
+        fetch(TRAP_INDEX_URL, { cache: "no-cache" }),
+      ]);
+
+      if (!dataResponse.ok) {
+        throw new Error(`Trap dataset request failed with ${dataResponse.status}`);
+      }
+
+      const compact = await dataResponse.json();
+      const traps = Array.isArray(compact?.traps) ? compact.traps : [];
+
+      state.trapRecords = traps.filter((trap) =>
+        Array.isArray(trap)
+        && trap.length >= 2
+        && Number.isFinite(trap[0])
+        && Number.isFinite(trap[1]));
+
+      if (indexResponse.ok) {
+        state.trapIndex = KDBush.from(await indexResponse.arrayBuffer());
+      } else {
+        state.trapIndex = buildTrapIndex(state.trapRecords);
+      }
+
+      state.trapLoadError = null;
+    } catch (error) {
+      state.trapRecords = [];
+      state.trapIndex = null;
+      state.nearestTrapId = null;
+      state.nearestTrapDistanceM = null;
+      state.nearestTrapSpeedKph = null;
+      state.trapLoadError = error;
+    } finally {
+      state.trapLoadPending = false;
+      trapLoadPromise = null;
+    }
+
+    if (state.lastPoint) {
+      updateNearestTrap(state.lastPoint.longitude, state.lastPoint.latitude);
+    }
+
+    renderMetrics();
+    return state.trapIndex;
+  })();
+
+  return trapLoadPromise;
+}
+
+function ensureTrapArtifactsLoaded() {
+  if (!state.trapAlertEnabled) return;
+  if (state.trapLoadPending || isTrapDataReady()) return;
+  void loadTrapArtifacts();
 }
 
 function updateNearestTrap(longitude, latitude) {
@@ -796,6 +831,14 @@ function getAlertTriggerText(alertState) {
     return `${getAlertLimitDisplayValue()} ${UNIT_CONFIG[state.unit].label}`;
   }
 
+  if (state.trapAlertEnabled && state.trapLoadPending) {
+    return "Loading traps";
+  }
+
+  if (state.trapAlertEnabled && state.trapLoadError) {
+    return "Trap unavailable";
+  }
+
   if (state.trapAlertEnabled) {
     return `Trap ${getConfiguredTrapAlertDistanceLabel()}`;
   }
@@ -818,6 +861,14 @@ function getAlertTriggerLabel(alertState) {
 
   if (alertState.manualEnabled) {
     return `Manual speed alert set to ${getAlertLimitDisplayValue()} ${UNIT_CONFIG[state.unit].label}`;
+  }
+
+  if (state.trapAlertEnabled && state.trapLoadPending) {
+    return "Loading speed trap data";
+  }
+
+  if (state.trapAlertEnabled && state.trapLoadError) {
+    return "Trap alerts are enabled, but trap data is unavailable";
   }
 
   if (state.trapAlertEnabled) {
@@ -848,6 +899,14 @@ function getAlertPanelStatusText(alertState) {
 
   if (alertState.manualEnabled) {
     return `${getAlertLimitDisplayValue()} ${UNIT_CONFIG[state.unit].label}`;
+  }
+
+  if (state.trapAlertEnabled && state.trapLoadPending) {
+    return "Loading trap data";
+  }
+
+  if (state.trapAlertEnabled && state.trapLoadError) {
+    return "Trap data unavailable";
   }
 
   if (state.trapAlertEnabled) {
@@ -883,6 +942,16 @@ function renderSubStatus() {
 
   if (alertState.manualEnabled) {
     elements.subStatus.textContent = `Manual alert at ${getAlertLimitDisplayValue()} ${UNIT_CONFIG[state.unit].label}`;
+    return;
+  }
+
+  if (state.trapAlertEnabled && state.trapLoadPending) {
+    elements.subStatus.textContent = "Loading trap data";
+    return;
+  }
+
+  if (state.trapAlertEnabled && state.trapLoadError) {
+    elements.subStatus.textContent = "Trap data unavailable";
     return;
   }
 
@@ -937,7 +1006,7 @@ function renderAlertUi(options = {}) {
     ));
   }
 
-  elements.gaugeCard.classList.toggle("is-alert-enabled", isManualAlertActive() || state.trapAlertEnabled);
+  elements.gaugeCard.classList.toggle("is-alert-enabled", isManualAlertActive() || (state.trapAlertEnabled && isTrapDataReady()));
   elements.gaugeCard.classList.toggle("is-alert-near", alertState.near);
   elements.gaugeCard.classList.toggle("is-alert-over", alertState.over);
   elements.gaugeCard.classList.toggle("is-trap-active", alertState.trapActive);
@@ -1001,6 +1070,9 @@ function setTrapAlertEnabled(enabled, options = {}) {
   }
 
   saveTrapAlertEnabledPreference(enabled);
+  if (enabled) {
+    ensureTrapArtifactsLoaded();
+  }
   renderAlertUi(options);
   drawGauge();
 }
@@ -1012,6 +1084,7 @@ function setTrapAlertDistance(distanceM, { enable = true, fromUserGesture = fals
   if (enable) {
     state.trapAlertEnabled = true;
     saveTrapAlertEnabledPreference(true);
+    ensureTrapArtifactsLoaded();
   }
 
   state.lastTrapSoundedId = null;
@@ -1087,7 +1160,7 @@ function setDistanceUnit(unit) {
 }
 
 function resetTripData() {
-  state.startTime = Date.now();
+  state.startTime = null;
   state.currentSpeedMs = 0;
   state.displayedSpeedMs = 0;
   state.maxSpeedMs = 0;
@@ -1128,6 +1201,7 @@ function startTracking() {
   }
 
   stopTracking();
+  state.trackingStartedAt = Date.now();
   setStatus("Requesting GPS...");
 
   state.watchId = navigator.geolocation.watchPosition(
@@ -1148,6 +1222,10 @@ function restartTrip() {
 
 function handlePosition(position) {
   hideNotice();
+
+  if (!Number.isFinite(state.startTime)) {
+    state.startTime = Number.isFinite(position.timestamp) ? position.timestamp : Date.now();
+  }
 
   const coords = position.coords;
   const currentAccuracyM = Number.isFinite(coords.accuracy) ? coords.accuracy : null;
@@ -1480,7 +1558,9 @@ function renderMetrics() {
   elements.distanceUnit.textContent = distance.unit;
   elements.nearestTrapDistance.textContent = nearestTrap.value;
   elements.nearestTrapUnit.textContent = nearestTrap.unit;
-  elements.durationValue.textContent = formatDuration(Date.now() - state.startTime);
+  elements.durationValue.textContent = formatDuration(
+    Number.isFinite(state.startTime) ? Date.now() - state.startTime : 0,
+  );
   elements.altitudeValue.textContent = formatAltitude(state.currentAltitudeM);
   elements.altitudeUnit.textContent = distanceUnitLabel;
   elements.maxAltitude.textContent = formatAltitude(state.maxAltitudeM);
@@ -1507,7 +1587,7 @@ function renderFrame(now) {
     state.lastTextUpdateAt = now;
   }
 
-  if (!state.lastFixAt && Date.now() - state.startTime > 9000 && elements.notice.hidden) {
+  if (!state.lastFixAt && Date.now() - state.trackingStartedAt > 9000 && elements.notice.hidden) {
     showNotice("Still looking for the first GPS fix. Keep location enabled and give the browser a moment.");
   }
 }
@@ -1578,6 +1658,7 @@ function bindEvents() {
   window.addEventListener("resize", resizeCanvas, { passive: true });
   window.addEventListener("orientationchange", resizeCanvas, { passive: true });
   window.addEventListener("pageshow", () => {
+    ensureTrapArtifactsLoaded();
     resizeCanvas();
     if (state.watchId === null) startTracking();
     startRenderLoop();
@@ -1609,6 +1690,7 @@ function bindEvents() {
     }
 
     resizeCanvas();
+    ensureTrapArtifactsLoaded();
     startRenderLoop();
     syncOverspeedSound();
     syncTrapSound();
