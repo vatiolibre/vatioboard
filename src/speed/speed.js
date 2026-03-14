@@ -191,6 +191,7 @@ const state = {
   audioPrimePending: false,
   backgroundAudioArmed: false,
   backgroundAudioArmPending: false,
+  backgroundAudioRevision: 0,
   alertSoundBlocked: false,
   alertSoundPending: false,
   overspeedAudible: false,
@@ -895,6 +896,14 @@ function activateAudioElement(audio) {
   audio.volume = 1;
 }
 
+function wantsBackgroundAudio() {
+  return state.backgroundAudioEnabled && !state.audioMuted;
+}
+
+function isStaleBackgroundAudioArm(revision) {
+  return revision !== state.backgroundAudioRevision || !wantsBackgroundAudio();
+}
+
 async function ensureBackgroundKeepAliveAudio() {
   backgroundKeepAliveAudio.loop = true;
   backgroundKeepAliveAudio.muted = false;
@@ -1047,6 +1056,10 @@ function scheduleTrapAudioMute() {
 }
 
 async function primeAudioElement(audio) {
+  if (!audio.paused) {
+    return true;
+  }
+
   const previousMuted = audio.muted;
   const previousVolume = audio.volume;
   const previousLoop = audio.loop;
@@ -1096,7 +1109,7 @@ async function primeAlertAudio() {
 }
 
 async function armBackgroundAlertAudio() {
-  if (!state.backgroundAudioEnabled || state.audioMuted) return;
+  if (!wantsBackgroundAudio()) return;
   if (
     state.backgroundAudioArmed
     && !state.backgroundAudioArmPending
@@ -1108,19 +1121,35 @@ async function armBackgroundAlertAudio() {
   }
   if (state.backgroundAudioArmPending) return;
 
+  const backgroundAudioRevision = state.backgroundAudioRevision;
+  let shouldRetry = false;
   state.backgroundAudioArmPending = true;
 
   try {
     await primeAlertAudio();
+    if (isStaleBackgroundAudioArm(backgroundAudioRevision)) {
+      shouldRetry = wantsBackgroundAudio();
+      return;
+    }
     if (!state.audioPrimed) {
       return;
     }
 
     await ensureBackgroundKeepAliveAudio();
+    if (isStaleBackgroundAudioArm(backgroundAudioRevision)) {
+      shouldRetry = wantsBackgroundAudio();
+      disarmBackgroundAlertAudio();
+      return;
+    }
     await Promise.all([
       ensureAudioElementLooping(overspeedAudio),
       ensureAudioElementLooping(trapAlertAudio),
     ]);
+    if (isStaleBackgroundAudioArm(backgroundAudioRevision)) {
+      shouldRetry = wantsBackgroundAudio();
+      disarmBackgroundAlertAudio();
+      return;
+    }
 
     state.backgroundAudioArmed = true;
     state.alertSoundBlocked = false;
@@ -1131,6 +1160,9 @@ async function armBackgroundAlertAudio() {
     disarmBackgroundAlertAudio();
   } finally {
     state.backgroundAudioArmPending = false;
+    if (shouldRetry && !state.backgroundAudioArmed && !state.backgroundAudioArmPending) {
+      void armBackgroundAlertAudio();
+    }
   }
 }
 
@@ -1730,6 +1762,7 @@ function setAlertSoundEnabled(enabled, options = {}) {
 
 function setAudioMuted(muted, { fromUserGesture = false } = {}) {
   state.audioMuted = muted;
+  state.backgroundAudioRevision += 1;
   saveAudioMutedPreference(muted);
 
   if (muted) {
@@ -1823,6 +1856,7 @@ function setBackgroundAudioEnabled(enabled, { fromUserGesture = false } = {}) {
   }
 
   state.backgroundAudioEnabled = enabled;
+  state.backgroundAudioRevision += 1;
   saveBackgroundAudioEnabledPreference(enabled);
 
   if (enabled) {
