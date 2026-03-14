@@ -1,6 +1,9 @@
 import "../styles/speed.less";
 import KDBush from "kdbush";
 import { around as geoAround, distance as geoDistanceKm } from "geokdbush";
+import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
+
+applyTranslations();
 
 const STORAGE_UNIT_KEY = "vatio_speed_unit";
 const STORAGE_DISTANCE_UNIT_KEY = "vatio_speed_distance_unit";
@@ -57,6 +60,7 @@ const GEO_ERROR_CODE = {
 
 const elements = {
   gaugeCard: document.querySelector(".gauge-card"),
+  langToggle: document.getElementById("langToggle"),
   dialCanvas: document.getElementById("speedDial"),
   needleCanvas: document.getElementById("speedNeedle"),
   speedValue: document.getElementById("speedValue"),
@@ -114,6 +118,7 @@ trapAlertAudio.loop = false;
 trapAlertAudio.preload = "auto";
 trapAlertAudio.playsInline = true;
 let trapLoadPromise = null;
+const pageDescriptionMeta = document.querySelector('meta[name="description"]');
 
 const initialUnit = loadUnitPreference();
 const initialDistanceUnit = loadDistanceUnitPreference();
@@ -135,7 +140,11 @@ const state = {
   watchId: null,
   startTime: null,
   trackingStartedAt: Date.now(),
-  statusText: "Requesting GPS...",
+  statusKind: "requesting",
+  statusParams: null,
+  statusText: t("requestingGps"),
+  noticeKey: null,
+  noticeParams: null,
   currentSpeedMs: 0,
   displayedSpeedMs: 0,
   maxSpeedMs: 0,
@@ -159,6 +168,18 @@ const state = {
   lastTextUpdateAt: 0,
   canvasSize: 0,
 };
+
+function tf(key, values = {}) {
+  return t(key).replace(/\{(\w+)\}/g, (_, token) => String(values[token] ?? ""));
+}
+
+function updatePageMeta() {
+  document.documentElement.lang = getLang();
+  document.title = t("speedPageTitle");
+  if (pageDescriptionMeta) {
+    pageDescriptionMeta.setAttribute("content", t("speedPageDescription"));
+  }
+}
 
 function loadUnitPreference() {
   try {
@@ -344,18 +365,51 @@ function saveAlertTriggerDiscoveredPreference(discovered) {
   }
 }
 
-function setStatus(text) {
-  state.statusText = text;
-  elements.status.textContent = text;
+function getStatusText(kind = state.statusKind, params = state.statusParams) {
+  switch (kind) {
+    case "accuracy":
+      return describeAccuracy(params?.accuracyM);
+    case "notSupported":
+      return t("gpsNotSupported");
+    case "blocked":
+      return t("gpsBlocked");
+    case "unavailable":
+      return t("gpsUnavailable");
+    case "waiting":
+      return t("waitingForGps");
+    case "error":
+      return params?.text || t("gpsError");
+    case "requesting":
+    default:
+      return t("requestingGps");
+  }
+}
+
+function setStatus(kind, params = null) {
+  state.statusKind = kind;
+  state.statusParams = params;
+  state.statusText = getStatusText(kind, params);
+  elements.status.textContent = state.statusText;
   renderSubStatus();
 }
 
 function showNotice(message) {
+  state.noticeKey = null;
+  state.noticeParams = null;
   elements.notice.hidden = false;
   elements.noticeText.textContent = message;
 }
 
+function showTranslatedNotice(key, params = null) {
+  state.noticeKey = key;
+  state.noticeParams = params;
+  elements.notice.hidden = false;
+  elements.noticeText.textContent = tf(key, params ?? {});
+}
+
 function hideNotice() {
+  state.noticeKey = null;
+  state.noticeParams = null;
   elements.notice.hidden = true;
 }
 
@@ -397,7 +451,7 @@ function isManualAlertActive() {
 function getTrapAlertDistanceLabel(distanceM = state.trapAlertDistanceM) {
   const formatted = formatTrapDistance(distanceM);
   if (formatted.value === "—") return "—";
-  return `${formatted.value} ${formatted.unit.replace(" away", "")}`;
+  return `${formatted.value} ${formatted.unit}`;
 }
 
 function getConfiguredTrapAlertDistanceLabel(distanceM = state.trapAlertDistanceM, unit = state.distanceUnit) {
@@ -673,30 +727,30 @@ function updateNearestTrap(longitude, latitude) {
 
 function formatTrapDistance(distanceM, unit = state.distanceUnit) {
   if (!Number.isFinite(distanceM)) {
-    return { value: "—", unit: "away" };
+    return { value: "—", unit: t("away") };
   }
 
   if (unit === "m") {
     if (distanceM < 1000) {
-      return { value: Math.round(distanceM).toString(), unit: "m away" };
+      return { value: Math.round(distanceM).toString(), unit: "m" };
     }
 
     const kilometers = distanceM / 1000;
     return {
       value: kilometers < 10 ? kilometers.toFixed(1) : Math.round(kilometers).toString(),
-      unit: "km away",
+      unit: "km",
     };
   }
 
   const feet = distanceM * 3.2808398950131;
   if (feet < 5280) {
-    return { value: Math.round(feet).toString(), unit: "ft away" };
+    return { value: Math.round(feet).toString(), unit: "ft" };
   }
 
   const miles = distanceM / 1609.344;
   return {
     value: miles < 10 ? miles.toFixed(1) : Math.round(miles).toString(),
-    unit: "mi away",
+    unit: "mi",
   };
 }
 
@@ -759,13 +813,13 @@ function haversineDistance(a, b) {
 }
 
 function describeAccuracy(accuracyM) {
-  if (!Number.isFinite(accuracyM)) return "GPS live";
+  if (!Number.isFinite(accuracyM)) return t("gpsLive");
   const accuracyValue = Math.round(convertDistanceMeasurement(accuracyM));
   const accuracyUnit = DISTANCE_UNIT_CONFIG[state.distanceUnit].label;
   const rounded = Math.round(accuracyM);
-  if (rounded <= 12) return `GPS locked · +/-${accuracyValue} ${accuracyUnit}`;
-  if (rounded <= 40) return `GPS live · +/-${accuracyValue} ${accuracyUnit}`;
-  return `Weak GPS · +/-${accuracyValue} ${accuracyUnit}`;
+  if (rounded <= 12) return tf("gpsLockedAccuracy", { value: accuracyValue, unit: accuracyUnit });
+  if (rounded <= 40) return tf("gpsLiveAccuracy", { value: accuracyValue, unit: accuracyUnit });
+  return tf("weakGpsAccuracy", { value: accuracyValue, unit: accuracyUnit });
 }
 
 function getMovementThresholdM(currentAccuracyM, previousAccuracyM) {
@@ -820,11 +874,11 @@ function renderTrapDistancePresets() {
 
 function getAlertTriggerText(alertState) {
   if (alertState.over) {
-    return `+${alertState.deltaDisplayValue} over`;
+    return tf("alertOverShort", { delta: alertState.deltaDisplayValue });
   }
 
   if (alertState.trapActive) {
-    return `Trap ${alertState.trapDistanceLabel}`;
+    return tf("trapLabel", { distance: alertState.trapDistanceLabel });
   }
 
   if (alertState.manualEnabled) {
@@ -832,50 +886,50 @@ function getAlertTriggerText(alertState) {
   }
 
   if (state.trapAlertEnabled && state.trapLoadPending) {
-    return "Loading traps";
+    return t("loadingTraps");
   }
 
   if (state.trapAlertEnabled && state.trapLoadError) {
-    return "Trap unavailable";
+    return t("trapUnavailable");
   }
 
   if (state.trapAlertEnabled) {
-    return `Trap ${getConfiguredTrapAlertDistanceLabel()}`;
+    return tf("trapLabel", { distance: getConfiguredTrapAlertDistanceLabel() });
   }
 
-  return "Tap to configure";
+  return t("tapToConfigure");
 }
 
 function getAlertTriggerLabel(alertState) {
   if (alertState.over) {
     return alertState.source === "trap"
-      ? `Over the trap speed limit by ${alertState.deltaDisplayValue} ${alertState.unitLabel}`
-      : `Over the manual speed alert by ${alertState.deltaDisplayValue} ${alertState.unitLabel}`;
+      ? tf("overTrapSpeedLimitBy", { delta: `${alertState.deltaDisplayValue} ${alertState.unitLabel}` })
+      : tf("overManualSpeedAlertBy", { delta: `${alertState.deltaDisplayValue} ${alertState.unitLabel}` });
   }
 
   if (alertState.trapActive) {
     return alertState.trapSpeedLabel
-      ? `Trap alert active ${alertState.trapDistanceLabel} ahead, limit ${alertState.trapSpeedLabel}`
-      : `Trap alert active ${alertState.trapDistanceLabel} ahead`;
+      ? tf("trapAlertActiveWithLimit", { distance: alertState.trapDistanceLabel, limit: alertState.trapSpeedLabel })
+      : tf("trapAlertActive", { distance: alertState.trapDistanceLabel });
   }
 
   if (alertState.manualEnabled) {
-    return `Manual speed alert set to ${getAlertLimitDisplayValue()} ${UNIT_CONFIG[state.unit].label}`;
+    return tf("manualSpeedAlertSetTo", { limit: `${getAlertLimitDisplayValue()} ${UNIT_CONFIG[state.unit].label}` });
   }
 
   if (state.trapAlertEnabled && state.trapLoadPending) {
-    return "Loading speed trap data";
+    return t("loadingSpeedTrapData");
   }
 
   if (state.trapAlertEnabled && state.trapLoadError) {
-    return "Trap alerts are enabled, but trap data is unavailable";
+    return t("trapAlertsEnabledUnavailable");
   }
 
   if (state.trapAlertEnabled) {
-    return `Configure trap alerts at ${getConfiguredTrapAlertDistanceLabel()}`;
+    return tf("configureTrapAlertsAt", { distance: getConfiguredTrapAlertDistanceLabel() });
   }
 
-  return "Tap to configure speed and trap alerts";
+  return t("tapToConfigureAlerts");
 }
 
 function syncAlertTriggerDiscovery() {
@@ -887,14 +941,14 @@ function syncAlertTriggerDiscovery() {
 function getAlertPanelStatusText(alertState) {
   if (alertState.over) {
     return alertState.source === "trap"
-      ? `Over trap by ${alertState.deltaDisplayValue} ${alertState.unitLabel}`
-      : `Over by ${alertState.deltaDisplayValue} ${alertState.unitLabel}`;
+      ? tf("overTrapSummary", { delta: `${alertState.deltaDisplayValue} ${alertState.unitLabel}` })
+      : tf("overSummary", { delta: `${alertState.deltaDisplayValue} ${alertState.unitLabel}` });
   }
 
   if (alertState.trapActive) {
     return alertState.trapSpeedLabel
-      ? `Trap ${alertState.trapDistanceLabel} · ${alertState.trapSpeedLabel}`
-      : `Trap ${alertState.trapDistanceLabel}`;
+      ? tf("trapAheadWithLimit", { distance: alertState.trapDistanceLabel, limit: alertState.trapSpeedLabel })
+      : tf("trapLabel", { distance: alertState.trapDistanceLabel });
   }
 
   if (alertState.manualEnabled) {
@@ -902,24 +956,23 @@ function getAlertPanelStatusText(alertState) {
   }
 
   if (state.trapAlertEnabled && state.trapLoadPending) {
-    return "Loading trap data";
+    return t("loadingTrapData");
   }
 
   if (state.trapAlertEnabled && state.trapLoadError) {
-    return "Trap data unavailable";
+    return t("trapDataUnavailable");
   }
 
   if (state.trapAlertEnabled) {
-    return `Trap alerts · ${getConfiguredTrapAlertDistanceLabel()}`;
+    return tf("trapAlertsSummary", { distance: getConfiguredTrapAlertDistanceLabel() });
   }
 
-  return "Off";
+  return t("off");
 }
 
 function renderSubStatus() {
   const alertState = getAlertUiState();
-  const isLiveStatus = state.lastFixAt > 0
-    && !/^(Requesting GPS|Waiting for GPS|GPS blocked|GPS unavailable|GPS error)/.test(state.statusText);
+  const isLiveStatus = state.lastFixAt > 0 && state.statusKind === "accuracy";
 
   if (!isLiveStatus) {
     elements.subStatus.textContent = state.statusText;
@@ -928,30 +981,32 @@ function renderSubStatus() {
 
   if (alertState.over) {
     elements.subStatus.textContent = alertState.source === "trap"
-      ? `Over trap limit by ${alertState.deltaDisplayValue} ${alertState.unitLabel}`
-      : `Over by ${alertState.deltaDisplayValue} ${alertState.unitLabel}`;
+      ? tf("overTrapLimitBy", { delta: `${alertState.deltaDisplayValue} ${alertState.unitLabel}` })
+      : tf("overSummary", { delta: `${alertState.deltaDisplayValue} ${alertState.unitLabel}` });
     return;
   }
 
   if (alertState.trapActive) {
     elements.subStatus.textContent = alertState.trapSpeedLabel
-      ? `Trap ahead ${alertState.trapDistanceLabel} · Limit ${alertState.trapSpeedLabel}`
-      : `Trap ahead ${alertState.trapDistanceLabel}`;
+      ? tf("trapAheadWithLimit", { distance: alertState.trapDistanceLabel, limit: alertState.trapSpeedLabel })
+      : tf("trapAhead", { distance: alertState.trapDistanceLabel });
     return;
   }
 
   if (alertState.manualEnabled) {
-    elements.subStatus.textContent = `Manual alert at ${getAlertLimitDisplayValue()} ${UNIT_CONFIG[state.unit].label}`;
+    elements.subStatus.textContent = tf("manualAlertAt", {
+      limit: `${getAlertLimitDisplayValue()} ${UNIT_CONFIG[state.unit].label}`,
+    });
     return;
   }
 
   if (state.trapAlertEnabled && state.trapLoadPending) {
-    elements.subStatus.textContent = "Loading trap data";
+    elements.subStatus.textContent = t("loadingTrapData");
     return;
   }
 
   if (state.trapAlertEnabled && state.trapLoadError) {
-    elements.subStatus.textContent = "Trap data unavailable";
+    elements.subStatus.textContent = t("trapDataUnavailable");
     return;
   }
 
@@ -970,7 +1025,7 @@ function renderAlertUi(options = {}) {
   elements.alertTriggerValue.textContent = getAlertTriggerText(alertState);
   elements.alertTrigger.setAttribute("aria-label", getAlertTriggerLabel(alertState));
   elements.alertPanelStatus.textContent = getAlertPanelStatusText(alertState);
-  elements.alertToggle.textContent = isManualAlertActive() ? "Turn off" : "Turn on";
+  elements.alertToggle.textContent = isManualAlertActive() ? t("turnOff") : t("turnOn");
   elements.alertToggle.setAttribute("aria-pressed", String(isManualAlertActive()));
   elements.alertUseCurrent.disabled = !canUseCurrentSpeed;
   elements.alertValue.textContent = String(currentLimitDisplay);
@@ -1179,7 +1234,7 @@ function resetTripData() {
 
   hideNotice();
   closeAlertPanel();
-  setStatus("Requesting GPS...");
+  setStatus("requesting");
   renderMetrics();
   drawGauge();
 }
@@ -1195,14 +1250,14 @@ function stopTracking() {
 
 function startTracking() {
   if (!("geolocation" in navigator)) {
-    setStatus("GPS not supported");
-    showNotice("This browser does not expose geolocation, so live speed cannot start here.");
+    setStatus("notSupported");
+    showTranslatedNotice("noticeNoGeolocation");
     return;
   }
 
   stopTracking();
   state.trackingStartedAt = Date.now();
-  setStatus("Requesting GPS...");
+  setStatus("requesting");
 
   state.watchId = navigator.geolocation.watchPosition(
     handlePosition,
@@ -1285,32 +1340,32 @@ function handlePosition(position) {
       : Math.min(state.minAltitudeM, coords.altitude);
   }
 
-  setStatus(describeAccuracy(coords.accuracy));
+  setStatus("accuracy", { accuracyM: coords.accuracy });
   renderMetrics();
 }
 
 function handlePositionError(error) {
   if (error.code === GEO_ERROR_CODE.PERMISSION_DENIED) {
     stopTracking();
-    setStatus("GPS blocked");
-    showNotice("Location access is required. Allow GPS for this site and press Retry GPS.");
+    setStatus("blocked");
+    showTranslatedNotice("noticeLocationRequired");
     return;
   }
 
   if (error.code === GEO_ERROR_CODE.POSITION_UNAVAILABLE) {
-    setStatus("GPS unavailable");
-    showNotice("GPS signal is unavailable right now. Move to a clearer area and retry.");
+    setStatus("unavailable");
+    showTranslatedNotice("noticeSignalUnavailable");
     return;
   }
 
   if (error.code === GEO_ERROR_CODE.TIMEOUT) {
-    setStatus("Waiting for GPS...");
-    showNotice("Still waiting for a GPS lock. Make sure location access is enabled and try again.");
+    setStatus("waiting");
+    showTranslatedNotice("noticeStillWaiting");
     return;
   }
 
-  setStatus("GPS error");
-  showNotice(error.message || "An unexpected geolocation error interrupted tracking.");
+  setStatus("error");
+  showNotice(error.message || t("gpsError"));
 }
 
 function resizeCanvas() {
@@ -1570,6 +1625,24 @@ function renderMetrics() {
   renderAlertUi();
 }
 
+function syncLanguage() {
+  applyTranslations();
+  updatePageMeta();
+  if (elements.langToggle) {
+    elements.langToggle.textContent = getLang().toUpperCase();
+  }
+
+  state.statusText = getStatusText(state.statusKind, state.statusParams);
+  elements.status.textContent = state.statusText;
+
+  if (!elements.notice.hidden && state.noticeKey) {
+    elements.noticeText.textContent = tf(state.noticeKey, state.noticeParams ?? {});
+  }
+
+  renderMetrics();
+  drawGauge();
+}
+
 function renderFrame(now) {
   state.renderFrameId = window.requestAnimationFrame(renderFrame);
 
@@ -1588,7 +1661,7 @@ function renderFrame(now) {
   }
 
   if (!state.lastFixAt && Date.now() - state.trackingStartedAt > 9000 && elements.notice.hidden) {
-    showNotice("Still looking for the first GPS fix. Keep location enabled and give the browser a moment.");
+    showTranslatedNotice("noticeStillLookingFirstFix");
   }
 }
 
@@ -1604,6 +1677,9 @@ function stopRenderLoop() {
 }
 
 function bindEvents() {
+  elements.langToggle?.addEventListener("click", () => {
+    toggleLang();
+  });
   elements.retryGps.addEventListener("click", restartTrip);
   elements.resetTrip.addEventListener("click", restartTrip);
   elements.alertTrigger.addEventListener("click", toggleAlertPanel);
@@ -1695,10 +1771,16 @@ function bindEvents() {
     syncOverspeedSound();
     syncTrapSound();
   });
+  document.addEventListener("i18n:change", syncLanguage);
 }
 
 function init() {
   document.body.classList.remove("alert-panel-open");
+  updatePageMeta();
+
+  if (elements.langToggle) {
+    elements.langToggle.textContent = getLang().toUpperCase();
+  }
 
   for (const button of elements.unitButtons) {
     button.setAttribute("aria-pressed", button.dataset.unit === state.unit ? "true" : "false");
