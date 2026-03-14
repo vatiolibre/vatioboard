@@ -1,57 +1,118 @@
 # VatioBoard
 
-**VatioBoard** is a fast, full-screen drawing board with a built-in calculator, designed to work great on modern browsers—including in-car browsers like Tesla’s.
+VatioBoard is a multi-page Vite app for touch-first browser tools. The repo currently ships three user-facing surfaces:
 
-This project is part of the **VatioLibre.com** community and is shared for **educational purposes**.
+- `Vatio Board`: a full-screen drawing board with color controls, PNG export, and quick access to utility widgets
+- `Calculator`: a draggable calculator widget with history and formatting settings
+- `Vatio Speed`: a live GPS speedometer with trip stats, globe view, and speed-trap alerts
 
-- Production URL: https://www.vatioboard.com
-- Repository: https://github.com/vatiolibre/vatioboard  
-- Creator: **Oscar Perez**
-- Community: **VatioLibre.com** (https://vatiolibre.com)
+The project is part of the VatioLibre community and is published for educational use.
 
----
+- Production site: https://www.vatioboard.com
+- Repository: https://github.com/vatiolibre/vatioboard
+- Community: https://vatiolibre.com
+- Creator: Oscar Perez
 
-## Features
+## App Surfaces
 
-- ✍️ Full-screen drawing canvas (pen + eraser)
-- 🎚️ Brush size control
-- 🎨 Color presets + custom color picker
-- 🖼️ Export drawing as PNG
-- 🧮 Embeddable calculator widget (floating panel / button-triggered)
-- 🌗 Light/Dark mode friendly UI
-- 📱 Touch optimized (great for tablets and in-car browsers)
+### Board
 
----
+`index.html` loads the main drawing board from [`src/board/board.js`](src/board/board.js).
 
-## Tech Stack
+Key behavior:
 
-- **Vite** (build + dev server)
-- **Vanilla JavaScript** (ES Modules)
-- **LESS** (styling)
+- Pen and eraser tools on a full-screen canvas
+- Brush size control
+- Preset swatches plus an `iro`-powered custom color picker
+- PNG export
+- Theme-aware default ink color
+- Shared language toggle (`en` / `es`)
+- Embedded calculator and EV trip cost widgets
+- Link out to the standalone speedometer page
 
----
+### Calculator Widget
 
-## Project Structure (high level)
+The calculator lives under `src/calculator/` and is used in two places:
+
+- embedded in the board UI
+- standalone demo page at `calculator.html`
+
+Key behavior:
+
+- `mathjs`-powered expression evaluation
+- calculator history stored in `localStorage`
+- draggable panel
+- configurable decimal precision and thousands separator
+- touch-friendly keypad and sheets for history/settings
+
+### EV Trip Cost Widget
+
+The energy widget lives under `src/energy/` and is mounted from the board.
+
+Key behavior:
+
+- simple mode for one-trip energy and cost estimates
+- multi-trip mode for up to 5 trips
+- km/mi-aware ranges and formatting
+- persisted trip settings and values in `localStorage`
+- shared number-formatting rules with the calculator widget
+
+### Speedometer
+
+`speed.html` loads the standalone speedometer from [`src/speed/speed.js`](src/speed/speed.js).
+
+Key behavior:
+
+- live speed from browser geolocation
+- analog dial plus max speed, average speed, distance, duration, and altitude
+- km/h or mph display, with metric/imperial distance units
+- manual speed alerts and nearby speed-trap alerts
+- optional background-audio mode to keep alerts ready when the page is hidden
+- MapLibre globe that follows the current location
+- bilingual UI via the shared i18n module
+
+## Stack
+
+- Vite 7 multi-page build
+- Vanilla JavaScript ES modules
+- LESS for styling
+- `mathjs` for calculator evaluation
+- `@jaames/iro` for the board color picker
+- `maplibre-gl` for the speedometer globe
+- `kdbush` and `geokdbush` for fast speed-trap lookup
+
+## Project Structure
 
 ```txt
 .
-├─ index.html                 # Main drawing board page
-├─ calculator.html            # Calculator demo page
+├─ index.html                # Board page
+├─ calculator.html           # Standalone calculator demo
+├─ speed.html                # Standalone GPS speedometer
+├─ data-src/                 # Source datasets used to build speed-trap artifacts
+├─ public/
+│  ├─ audio/                 # Alert sounds
+│  ├─ geo/                   # Generated compact trap payload + spatial index
+│  └─ img/                   # Logos and social images
+├─ scripts/
+│  └─ build-speed-traps.mjs  # Generates public/geo artifacts from GeoJSON
 ├─ src/
-│  ├─ board/board.js          # Drawing board logic + calculator integration
-│  ├─ calculator/             # Calculator widget + core logic
-│  └─ styles/                 # LESS styles for board and calculator
-└─ vite.config.js             # Vite multi-page build configuration
-````
+│  ├─ board/                 # Drawing board entry module
+│  ├─ calculator/            # Calculator widget/core/storage
+│  ├─ dock/                  # Floating dock used on the board
+│  ├─ energy/                # EV trip cost widget/core/storage
+│  ├─ speed/                 # Speedometer entry module
+│  ├─ styles/                # LESS bundles for each surface
+│  ├─ i18n.js                # Shared English/Spanish translations
+│  └─ icons.js               # Shared SVG icon markup
+└─ vite.config.js            # Multi-page Vite configuration
+```
 
----
-
-## Getting Started
+## Development
 
 ### Requirements
 
-* Node.js 24+ recommended
-* npm (or pnpm/yarn if you prefer)
+- Node.js `>=24`
+- npm
 
 ### Install
 
@@ -59,64 +120,70 @@ This project is part of the **VatioLibre.com** community and is shared for **edu
 npm install
 ```
 
-### Run locally (dev mode)
+### Available Scripts
 
 ```bash
+npm run prepare:geo
 npm run dev
-```
-
-Then open the URL shown in the terminal (usually `http://localhost:5173`).
-
-### Production build
-
-```bash
 npm run build
-```
-
-### Preview production build
-
-```bash
 npm run preview
 ```
 
----
+What they do:
 
-## Pages
+- `npm run prepare:geo`: reads `data-src/ansv_cameras_maplibre.geojson` and generates:
+  - `public/geo/ansv_cameras_compact.min.json`
+  - `public/geo/ansv_cameras_compact.kdbush`
+- `npm run dev`: runs `prepare:geo` first, then starts the Vite dev server
+- `npm run build`: runs `prepare:geo` first, then builds `dist/`
+- `npm run preview`: serves the production build locally
 
-* **Board**: `index.html` (drawing board + calculator button)
-* **Calculator demo**: `calculator.html` (standalone calculator demo)
+### Entry Pages During Development
 
-Vite is configured as a **multi-page app** via `rollupOptions.input` in `vite.config.js`.
+Vite is configured as a multi-page app through `vite.config.js`.
 
----
+- `index.html`
+- `calculator.html`
+- `speed.html`
 
-## Educational Use
+## Runtime Notes
 
-This repository is published as part of the **VatioLibre.com community** for learning and educational exploration.
-You’re welcome to study it, fork it, and build on it—please provide attribution.
+- UI language is shared across pages through `src/i18n.js`
+- Most widget state is stored in `localStorage`:
+  - calculator history, expression state, and formatting settings
+  - board ink color and draggable panel positions
+  - energy widget settings and trip data
+  - speedometer units, alerts, and audio preferences
+- The speedometer requires geolocation support and user permission
+- Some audio features on the speedometer depend on a user gesture, which is why the page includes explicit audio toggles
 
----
+## Deployment
+
+GitHub Actions deploys the production build to GitHub Pages on pushes to `main`.
+
+The workflow in `.github/workflows/deploy.yml`:
+
+- installs dependencies with `npm ci`
+- builds the site with Node 24
+- uploads `dist/`
+- publishes via GitHub Pages
 
 ## Contributing
 
-Contributions are welcome—especially bug fixes, UI improvements, and Tesla/in-car usability enhancements.
+Contributions are welcome, especially around:
 
-1. Fork the repo
-2. Create a feature branch
-3. Commit your changes
-4. Open a Pull Request
-
----
+- browser compatibility
+- mobile and in-car usability
+- widget polish and accessibility
+- data pipeline improvements for the speedometer
 
 ## License
 
-* **MIT License**
-
----
+MIT
 
 ## Credits
 
-Created by **Oscar Perez**.
-Part of the **VatioLibre.com** community.
-Logos and branding contribution by **Mauricio Pradilla**: https://mauriciopradilla.com/
-Contributions to **vatioboard.com** and **vatiolibre.com** by **Santiago Jimenez Moncada**: https://github.com/ssantss
+- Oscar Perez
+- VatioLibre community
+- Mauricio Pradilla for logo and branding contributions: https://mauriciopradilla.com/
+- Santiago Jimenez Moncada for contributions to `vatioboard.com` and `vatiolibre.com`: https://github.com/ssantss
