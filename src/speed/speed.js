@@ -31,8 +31,20 @@ const GLOBE_FOLLOW_ZOOM = 0.8;
 const GLOBE_FOLLOW_RESUME_DELAY_MS = 12000;
 const GLOBE_SOURCE_ID = "live-position";
 const GLOBE_TERMINATOR_SOURCE_ID = "solar-terminator";
-const GLOBE_LIGHT_RADIUS = 1.5;
+const GLOBE_NIGHT_SOURCE_ID = "solar-night";
 const GLOBE_SOLAR_UPDATE_INTERVAL_MS = 60000;
+const GLOBE_RASTER_BRIGHTNESS_MIN = 0.2;
+const GLOBE_RASTER_CONTRAST = 0.14;
+const GLOBE_SKY_COLOR = "#e6f2ff";
+const GLOBE_HORIZON_COLOR = "#ffffff";
+const GLOBE_SKY_HORIZON_BLEND = 0.28;
+const GLOBE_NIGHT_POLYGON_STEPS = 180;
+const GLOBE_NIGHT_CAPS = [
+  { altitude: -1, opacity: 0.08, color: "#10233a" },
+  { altitude: -6, opacity: 0.12, color: "#0a1525" },
+  { altitude: -12, opacity: 0.18, color: "#050d18" },
+  { altitude: -18, opacity: 0.24, color: "#020711" },
+];
 const GLOBE_SATELLITE_ATTRIBUTION = [
   '<a href="https://s2maps.eu" target="_blank" rel="noopener noreferrer">Sentinel-2 cloudless</a>',
   'by',
@@ -257,6 +269,7 @@ const state = {
   globeFollowResumeTimeoutId: null,
   globeSolarUpdateIntervalId: null,
   globeSolarSyncFrameId: null,
+  globeSolarGeometryDirty: false,
 };
 
 function clampNumber(value, min, max) {
@@ -278,6 +291,10 @@ function normalizeDegrees360(value) {
 function normalizeDegrees180(value) {
   const normalized = normalizeDegrees360(value);
   return normalized > 180 ? normalized - 360 : normalized;
+}
+
+function normalizeDegreesNear(value, reference) {
+  return reference + normalizeDegrees180(value - reference);
 }
 
 function dotVector3(a, b) {
@@ -375,38 +392,14 @@ function getSunVectorAtTime(timestamp = Date.now()) {
   };
 }
 
-function getSolarLightPosition(longitude, latitude, sunVector) {
-  const normalizedLongitude = normalizeDegrees180(longitude);
-  const longitudeRad = toRadians(normalizedLongitude);
-  const latitudeRad = toRadians(latitude);
-  const east = [
-    Math.cos(longitudeRad),
-    0,
-    -Math.sin(longitudeRad),
-  ];
-  const north = [
-    -Math.sin(latitudeRad) * Math.sin(longitudeRad),
-    Math.cos(latitudeRad),
-    -Math.sin(latitudeRad) * Math.cos(longitudeRad),
-  ];
-  const up = lngLatToUnitVector(normalizedLongitude, latitude);
-  const altitude = toDegrees(Math.asin(clampNumber(dotVector3(sunVector, up), -1, 1)));
-  const azimuth = normalizeDegrees360(toDegrees(Math.atan2(
-    dotVector3(sunVector, east),
-    dotVector3(sunVector, north),
-  )));
-
-  return [GLOBE_LIGHT_RADIUS, azimuth, clampNumber(90 - altitude, 0, 180)];
-}
-
-function getEmptyGlobeTerminatorData() {
+function getEmptyGlobeFeatureCollection() {
   return {
     type: "FeatureCollection",
     features: [],
   };
 }
 
-function getSolarTerminatorData(sunVector) {
+function getSolarReferenceFrame(sunVector) {
   const referenceVector = Math.abs(sunVector[1]) < 0.99
     ? [0, 1, 0]
     : [1, 0, 0];
@@ -414,9 +407,20 @@ function getSolarTerminatorData(sunVector) {
   const axisB = axisA ? normalizeVector3(crossVector3(sunVector, axisA)) : null;
 
   if (!axisA || !axisB) {
-    return getEmptyGlobeTerminatorData();
+    return null;
   }
 
+  return { axisA, axisB };
+}
+
+function getSolarTerminatorData(sunVector) {
+  const solarReferenceFrame = getSolarReferenceFrame(sunVector);
+
+  if (!solarReferenceFrame) {
+    return getEmptyGlobeFeatureCollection();
+  }
+
+  const { axisA, axisB } = solarReferenceFrame;
   const coordinates = [];
   let segment = [];
   let previousLongitude = null;
@@ -462,6 +466,83 @@ function getSolarTerminatorData(sunVector) {
         },
       ]
       : [],
+  };
+}
+
+function getSolarNightCapRing(sunVector, altitude) {
+  const solarReferenceFrame = getSolarReferenceFrame(sunVector);
+  if (!solarReferenceFrame) {
+    return null;
+  }
+
+  const antiSolarVector = [-sunVector[0], -sunVector[1], -sunVector[2]];
+  const [antiSolarLongitude, antiSolarLatitude] = unitVectorToLngLat(antiSolarVector);
+  const level = clampNumber(Math.sin(toRadians(altitude)), -0.999999, 0.999999);
+  const circleRadius = Math.sqrt(Math.max(0, 1 - (level * level)));
+  const circleCenter = [
+    sunVector[0] * level,
+    sunVector[1] * level,
+    sunVector[2] * level,
+  ];
+  const { axisA, axisB } = solarReferenceFrame;
+  const ring = [];
+
+  for (let step = 0; step <= GLOBE_NIGHT_POLYGON_STEPS; step += 1) {
+    const angle = (step / GLOBE_NIGHT_POLYGON_STEPS) * (Math.PI * 2);
+    const point = [
+      circleCenter[0] + (circleRadius * ((axisA[0] * Math.cos(angle)) + (axisB[0] * Math.sin(angle)))),
+      circleCenter[1] + (circleRadius * ((axisA[1] * Math.cos(angle)) + (axisB[1] * Math.sin(angle)))),
+      circleCenter[2] + (circleRadius * ((axisA[2] * Math.cos(angle)) + (axisB[2] * Math.sin(angle)))),
+    ];
+    const [pointLongitude, pointLatitude] = unitVectorToLngLat(point);
+    ring.push([normalizeDegreesNear(pointLongitude, antiSolarLongitude), pointLatitude]);
+  }
+
+  return {
+    antiSolarPoint: [antiSolarLongitude, antiSolarLatitude],
+    ring,
+  };
+}
+
+function getSolarNightData(sunVector) {
+  const features = [];
+
+  for (let index = 0; index < GLOBE_NIGHT_CAPS.length; index += 1) {
+    const nightCap = GLOBE_NIGHT_CAPS[index];
+    const cap = getSolarNightCapRing(sunVector, nightCap.altitude);
+
+    if (!cap || cap.ring.length < 4) {
+      continue;
+    }
+
+    const triangles = [];
+
+    for (let ringIndex = 0; ringIndex < cap.ring.length - 1; ringIndex += 1) {
+      triangles.push([[
+        cap.antiSolarPoint,
+        cap.ring[ringIndex],
+        cap.ring[ringIndex + 1],
+        cap.antiSolarPoint,
+      ]]);
+    }
+
+    features.push({
+      type: "Feature",
+      properties: {
+        color: nightCap.color,
+        opacity: nightCap.opacity,
+        sortKey: index,
+      },
+      geometry: {
+        type: "MultiPolygon",
+        coordinates: triangles,
+      },
+    });
+  }
+
+  return {
+    type: "FeatureCollection",
+    features,
   };
 }
 
@@ -831,6 +912,7 @@ function clearGlobeSolarSyncFrame() {
   if (state.globeSolarSyncFrameId === null) return;
   window.cancelAnimationFrame(state.globeSolarSyncFrameId);
   state.globeSolarSyncFrameId = null;
+  state.globeSolarGeometryDirty = false;
 }
 
 function stopGlobeSolarUpdates() {
@@ -841,40 +923,37 @@ function stopGlobeSolarUpdates() {
   state.globeSolarUpdateIntervalId = null;
 }
 
-function syncGlobeSolarState() {
+function syncGlobeSolarState({ updateGeometry = false } = {}) {
   if (!state.globeMap || !state.globeReady) return;
-
-  const mapCenter = state.globeMap.getCenter();
-  const center = Array.isArray(state.globeCenter)
-    ? state.globeCenter
-    : mapCenter
-      ? [normalizeDegrees180(mapCenter.lng), mapCenter.lat]
-      : GLOBE_DEFAULT_CENTER;
   const { vector: sunVector } = getSunVectorAtTime();
-  const lightPosition = getSolarLightPosition(center[0], center[1], sunVector);
 
-  state.globeMap.setLight({
-    anchor: "map",
-    position: lightPosition,
-    "position-transition": {
-      duration: 0,
-      delay: 0,
-    },
-  });
+  if (!updateGeometry) {
+    return;
+  }
 
-  const source = state.globeMap.getSource(GLOBE_TERMINATOR_SOURCE_ID);
-  if (source && typeof source.setData === "function") {
-    source.setData(getSolarTerminatorData(sunVector));
+  const terminatorSource = state.globeMap.getSource(GLOBE_TERMINATOR_SOURCE_ID);
+  if (terminatorSource && typeof terminatorSource.setData === "function") {
+    terminatorSource.setData(getSolarTerminatorData(sunVector));
+  }
+
+  const nightSource = state.globeMap.getSource(GLOBE_NIGHT_SOURCE_ID);
+  if (nightSource && typeof nightSource.setData === "function") {
+    nightSource.setData(getSolarNightData(sunVector));
   }
 }
 
-function queueGlobeSolarSync() {
+function queueGlobeSolarSync(updateGeometry = false) {
   if (!state.globeMap || !state.globeReady) return;
+  if (updateGeometry) {
+    state.globeSolarGeometryDirty = true;
+  }
   if (state.globeSolarSyncFrameId !== null) return;
 
   state.globeSolarSyncFrameId = window.requestAnimationFrame(() => {
     state.globeSolarSyncFrameId = null;
-    syncGlobeSolarState();
+    const shouldUpdateGeometry = state.globeSolarGeometryDirty;
+    state.globeSolarGeometryDirty = false;
+    syncGlobeSolarState({ updateGeometry: shouldUpdateGeometry });
   });
 }
 
@@ -882,9 +961,9 @@ function startGlobeSolarUpdates() {
   if (!state.globeMap || !state.globeReady) return;
   if (state.globeSolarUpdateIntervalId !== null) return;
 
-  syncGlobeSolarState();
+  syncGlobeSolarState({ updateGeometry: true });
   state.globeSolarUpdateIntervalId = window.setInterval(() => {
-    queueGlobeSolarSync();
+    queueGlobeSolarSync(true);
   }, GLOBE_SOLAR_UPDATE_INTERVAL_MS);
 }
 
@@ -1022,11 +1101,6 @@ function initGlobe() {
 
   try {
     const initialSunVector = getSunVectorAtTime().vector;
-    const initialLightPosition = getSolarLightPosition(
-      GLOBE_DEFAULT_CENTER[0],
-      GLOBE_DEFAULT_CENTER[1],
-      initialSunVector,
-    );
     const globeMap = new maplibregl.Map({
       container: elements.globeMount,
       antialias: true,
@@ -1053,12 +1127,33 @@ function initGlobe() {
             type: "geojson",
             data: getSolarTerminatorData(initialSunVector),
           },
+          [GLOBE_NIGHT_SOURCE_ID]: {
+            type: "geojson",
+            data: getSolarNightData(initialSunVector),
+          },
         },
         layers: [
           {
             id: "Satellite",
             type: "raster",
             source: "satellite",
+            paint: {
+              "raster-brightness-min": GLOBE_RASTER_BRIGHTNESS_MIN,
+              "raster-brightness-max": 1,
+              "raster-contrast": GLOBE_RASTER_CONTRAST,
+            },
+          },
+          {
+            id: "globe-night-fill",
+            type: "fill",
+            source: GLOBE_NIGHT_SOURCE_ID,
+            layout: {
+              "fill-sort-key": ["coalesce", ["get", "sortKey"], 0],
+            },
+            paint: {
+              "fill-color": ["coalesce", ["get", "color"], "#050d18"],
+              "fill-opacity": ["coalesce", ["get", "opacity"], 0],
+            },
           },
           {
             id: "globe-terminator-glow",
@@ -1113,6 +1208,9 @@ function initGlobe() {
           },
         ],
         sky: {
+          "sky-color": GLOBE_SKY_COLOR,
+          "horizon-color": GLOBE_HORIZON_COLOR,
+          "sky-horizon-blend": GLOBE_SKY_HORIZON_BLEND,
           "atmosphere-blend": [
             "interpolate",
             ["linear"],
@@ -1121,10 +1219,6 @@ function initGlobe() {
             5, 1,
             7, 0,
           ],
-        },
-        light: {
-          anchor: "map",
-          position: initialLightPosition,
         },
       },
     });
@@ -1150,7 +1244,7 @@ function initGlobe() {
       if (state.lastPoint) {
         syncGlobePosition(state.lastPoint.longitude, state.lastPoint.latitude, { immediate: true });
       } else {
-        queueGlobeSolarSync();
+        queueGlobeSolarSync(true);
       }
     });
 
