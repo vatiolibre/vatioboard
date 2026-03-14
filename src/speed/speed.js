@@ -52,6 +52,7 @@ const MIN_MOVING_SPEED_MS = 0.8;
 const MIN_DISTANCE_NOISE_FLOOR_M = 4;
 const MAX_ACCURACY_INFLUENCE_M = 18;
 const MAX_PLAUSIBLE_SPEED_MS = 120;
+const MIN_VALID_EPOCH_MS = Date.UTC(2000, 0, 1);
 const GEO_ERROR_CODE = {
   PERMISSION_DENIED: 1,
   POSITION_UNAVAILABLE: 2,
@@ -796,6 +797,19 @@ function formatDuration(ms) {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+function normalizePositionTimestamp(timestamp, fallbackMs = Date.now()) {
+  if (!Number.isFinite(timestamp)) return fallbackMs;
+
+  const safeFallbackMs = Number.isFinite(fallbackMs) ? fallbackMs : Date.now();
+  const maxReasonableMs = safeFallbackMs + (60 * 1000);
+
+  if (timestamp < MIN_VALID_EPOCH_MS || timestamp > maxReasonableMs) {
+    return safeFallbackMs;
+  }
+
+  return timestamp;
+}
+
 function haversineDistance(a, b) {
   const radius = 6371000;
   const lat1 = (a.latitude * Math.PI) / 180;
@@ -1277,9 +1291,10 @@ function restartTrip() {
 
 function handlePosition(position) {
   hideNotice();
+  const normalizedTimestamp = normalizePositionTimestamp(position.timestamp);
 
   if (!Number.isFinite(state.startTime)) {
-    state.startTime = Number.isFinite(position.timestamp) ? position.timestamp : Date.now();
+    state.startTime = normalizedTimestamp;
   }
 
   const coords = position.coords;
@@ -1287,7 +1302,7 @@ function handlePosition(position) {
   const nextPoint = {
     latitude: coords.latitude,
     longitude: coords.longitude,
-    timestamp: position.timestamp,
+    timestamp: normalizedTimestamp,
   };
 
   let speedMs = Number.isFinite(coords.speed) && coords.speed >= 0 ? coords.speed : null;
