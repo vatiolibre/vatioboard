@@ -14,6 +14,8 @@ const STORAGE_ALERT_SOUND_ENABLED_KEY = "vatio_speed_alert_sound_enabled";
 const STORAGE_TRAP_ALERT_ENABLED_KEY = "vatio_speed_trap_alert_enabled";
 const STORAGE_TRAP_ALERT_DISTANCE_KEY = "vatio_speed_trap_alert_distance_m";
 const STORAGE_TRAP_SOUND_ENABLED_KEY = "vatio_speed_trap_sound_enabled";
+const STORAGE_AUDIO_MUTED_KEY = "vatio_speed_audio_muted";
+const STORAGE_BACKGROUND_AUDIO_ENABLED_KEY = "vatio_speed_background_audio_enabled";
 const STORAGE_ALERT_TRIGGER_DISCOVERED_KEY = "vatio_speed_alert_trigger_discovered";
 const OVERSPEED_SOUND_URL = "/audio/overspeed_notification.m4a";
 const TRAP_SOUND_URL = "/audio/near_camera_notification.m4a";
@@ -104,6 +106,9 @@ const elements = {
   trapAlertButtons: Array.from(document.querySelectorAll(".trap-alert-btn")),
   trapDistancePresets: document.getElementById("trapDistancePresets"),
   trapSoundButtons: Array.from(document.querySelectorAll(".trap-sound-btn")),
+  quickAudioToggle: document.getElementById("quickAudioToggle"),
+  quickBackgroundAudioToggle: document.getElementById("quickBackgroundAudioToggle"),
+  backgroundAudioButtons: Array.from(document.querySelectorAll(".background-audio-btn")),
   unitButtons: Array.from(document.querySelectorAll(".unit-btn")),
   distanceUnitButtons: Array.from(document.querySelectorAll(".distance-unit-btn")),
 };
@@ -130,6 +135,8 @@ const state = {
   alertEnabled: loadAlertEnabledPreference(),
   alertLimitMs: loadAlertLimitPreference(),
   alertSoundEnabled: loadAlertSoundEnabledPreference(),
+  audioMuted: loadAudioMutedPreference(),
+  backgroundAudioEnabled: loadBackgroundAudioEnabledPreference(),
   audioPrimed: false,
   audioPrimePending: false,
   backgroundAudioArmed: false,
@@ -273,6 +280,38 @@ function loadAlertSoundEnabledPreference() {
 function saveAlertSoundEnabledPreference(enabled) {
   try {
     window.localStorage.setItem(STORAGE_ALERT_SOUND_ENABLED_KEY, String(enabled));
+  } catch {
+    // Ignore storage restrictions. The page still works without persistence.
+  }
+}
+
+function loadAudioMutedPreference() {
+  try {
+    return window.localStorage.getItem(STORAGE_AUDIO_MUTED_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function saveAudioMutedPreference(muted) {
+  try {
+    window.localStorage.setItem(STORAGE_AUDIO_MUTED_KEY, String(muted));
+  } catch {
+    // Ignore storage restrictions. The page still works without persistence.
+  }
+}
+
+function loadBackgroundAudioEnabledPreference() {
+  try {
+    return window.localStorage.getItem(STORAGE_BACKGROUND_AUDIO_ENABLED_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function saveBackgroundAudioEnabledPreference(enabled) {
+  try {
+    window.localStorage.setItem(STORAGE_BACKGROUND_AUDIO_ENABLED_KEY, String(enabled));
   } catch {
     // Ignore storage restrictions. The page still works without persistence.
   }
@@ -529,7 +568,7 @@ function getAlertUiState() {
 }
 
 function shouldPlayOverspeedSound() {
-  return getAlertUiState().over && state.alertSoundEnabled;
+  return getAlertUiState().over && state.alertSoundEnabled && !state.audioMuted;
 }
 
 function clearTrapMuteTimeout() {
@@ -710,6 +749,7 @@ async function primeAlertAudio() {
 }
 
 async function armBackgroundAlertAudio() {
+  if (!state.backgroundAudioEnabled || state.audioMuted) return;
   if (
     state.backgroundAudioArmed
     && !state.backgroundAudioArmPending
@@ -743,6 +783,47 @@ async function armBackgroundAlertAudio() {
   }
 }
 
+function disarmBackgroundAlertAudio() {
+  state.backgroundAudioArmed = false;
+  state.backgroundAudioArmPending = false;
+  clearTrapMuteTimeout();
+
+  if (shouldPlayOverspeedSound()) {
+    overspeedAudio.loop = true;
+    activateAudioElement(overspeedAudio);
+  } else {
+    stopOverspeedSound();
+  }
+
+  const activeTrap = getActiveTrapAlert();
+  if (activeTrap && state.trapSoundEnabled && state.trapAudible) {
+    trapAlertAudio.loop = false;
+    activateAudioElement(trapAlertAudio);
+  } else {
+    stopTrapSound();
+  }
+}
+
+function renderQuickAudioControls() {
+  if (elements.quickAudioToggle) {
+    elements.quickAudioToggle.setAttribute("aria-pressed", String(!state.audioMuted));
+    elements.quickAudioToggle.classList.toggle("is-muted", state.audioMuted);
+    const audioToggleLabel = state.audioMuted ? t("unmuteAlertAudio") : t("muteAlertAudio");
+    elements.quickAudioToggle.setAttribute("aria-label", audioToggleLabel);
+    elements.quickAudioToggle.title = audioToggleLabel;
+  }
+
+  if (elements.quickBackgroundAudioToggle) {
+    elements.quickBackgroundAudioToggle.setAttribute("aria-pressed", String(state.backgroundAudioEnabled));
+    elements.quickBackgroundAudioToggle.disabled = state.audioMuted;
+    const backgroundAudioLabel = state.backgroundAudioEnabled
+      ? t("disableBackgroundAudio")
+      : t("enableBackgroundAudio");
+    elements.quickBackgroundAudioToggle.setAttribute("aria-label", backgroundAudioLabel);
+    elements.quickBackgroundAudioToggle.title = backgroundAudioLabel;
+  }
+}
+
 function syncTrapSound({ fromUserGesture = false } = {}) {
   const activeTrap = getActiveTrapAlert();
 
@@ -757,7 +838,7 @@ function syncTrapSound({ fromUserGesture = false } = {}) {
     return;
   }
 
-  if (!state.trapSoundEnabled) {
+  if (!state.trapSoundEnabled || state.audioMuted) {
     state.trapSoundBlocked = false;
     if (state.backgroundAudioArmed) {
       keepTrapAudioAlive();
@@ -1261,11 +1342,18 @@ function renderAlertUi(options = {}) {
     ));
   }
 
+  for (const button of elements.backgroundAudioButtons) {
+    button.setAttribute("aria-pressed", String(
+      (button.dataset.backgroundAudio === "on") === state.backgroundAudioEnabled,
+    ));
+  }
+
   elements.gaugeCard.classList.toggle("is-alert-enabled", isManualAlertActive() || (state.trapAlertEnabled && isTrapDataReady()));
   elements.gaugeCard.classList.toggle("is-alert-near", alertState.near);
   elements.gaugeCard.classList.toggle("is-alert-over", alertState.over);
   elements.gaugeCard.classList.toggle("is-trap-active", alertState.trapActive);
 
+  renderQuickAudioControls();
   syncAlertTriggerDiscovery();
   renderSubStatus();
   syncOverspeedSound(options);
@@ -1287,6 +1375,25 @@ function setAlertSoundEnabled(enabled, options = {}) {
   state.alertSoundEnabled = enabled;
   saveAlertSoundEnabledPreference(enabled);
   renderAlertUi(options);
+}
+
+function setAudioMuted(muted, { fromUserGesture = false } = {}) {
+  state.audioMuted = muted;
+  saveAudioMutedPreference(muted);
+
+  if (muted) {
+    disarmBackgroundAlertAudio();
+    stopOverspeedSound();
+    stopTrapSound();
+  } else if (fromUserGesture) {
+    if (state.backgroundAudioEnabled) {
+      void armBackgroundAlertAudio();
+    } else {
+      void primeAlertAudio();
+    }
+  }
+
+  renderAlertUi({ fromUserGesture });
 }
 
 function setAlertLimitDisplay(value, { enable = true, fromUserGesture = false } = {}) {
@@ -1354,6 +1461,21 @@ function setTrapSoundEnabled(enabled, options = {}) {
   }
   saveTrapSoundEnabledPreference(enabled);
   renderAlertUi(options);
+}
+
+function setBackgroundAudioEnabled(enabled, { fromUserGesture = false } = {}) {
+  state.backgroundAudioEnabled = enabled;
+  saveBackgroundAudioEnabledPreference(enabled);
+
+  if (enabled) {
+    if (fromUserGesture && !state.audioMuted) {
+      void armBackgroundAlertAudio();
+    }
+  } else {
+    disarmBackgroundAlertAudio();
+  }
+
+  renderAlertUi({ fromUserGesture });
 }
 
 function openAlertPanel() {
@@ -1924,6 +2046,21 @@ function bindEvents() {
     });
   }
 
+  elements.quickAudioToggle?.addEventListener("click", () => {
+    setAudioMuted(!state.audioMuted, { fromUserGesture: true });
+  });
+
+  elements.quickBackgroundAudioToggle?.addEventListener("click", () => {
+    if (state.audioMuted) return;
+    setBackgroundAudioEnabled(!state.backgroundAudioEnabled, { fromUserGesture: true });
+  });
+
+  for (const button of elements.backgroundAudioButtons) {
+    button.addEventListener("click", () => {
+      setBackgroundAudioEnabled(button.dataset.backgroundAudio === "on", { fromUserGesture: true });
+    });
+  }
+
   for (const button of elements.unitButtons) {
     button.addEventListener("click", () => setUnit(button.dataset.unit));
   }
@@ -1939,12 +2076,18 @@ function bindEvents() {
     resizeCanvas();
     if (state.watchId === null) startTracking();
     startRenderLoop();
-    void armBackgroundAlertAudio();
+    if (state.backgroundAudioEnabled && !state.audioMuted) {
+      void armBackgroundAlertAudio();
+    }
     syncOverspeedSound();
     syncTrapSound();
   });
   document.addEventListener("pointerdown", (event) => {
-    void armBackgroundAlertAudio();
+    if (state.backgroundAudioEnabled && !state.audioMuted) {
+      void armBackgroundAlertAudio();
+    } else if (!state.audioMuted) {
+      void primeAlertAudio();
+    }
     const insideAlertUi = elements.alertPanel.contains(event.target) || elements.alertTrigger.contains(event.target);
     if (!insideAlertUi) {
       syncOverspeedSound({ fromUserGesture: true });
@@ -1955,7 +2098,11 @@ function bindEvents() {
     closeAlertPanel();
   });
   document.addEventListener("keydown", (event) => {
-    void armBackgroundAlertAudio();
+    if (state.backgroundAudioEnabled && !state.audioMuted) {
+      void armBackgroundAlertAudio();
+    } else if (!state.audioMuted) {
+      void primeAlertAudio();
+    }
     syncOverspeedSound({ fromUserGesture: true });
     syncTrapSound({ fromUserGesture: true });
     if (event.key === "Escape") closeAlertPanel();
@@ -1970,7 +2117,9 @@ function bindEvents() {
     resizeCanvas();
     ensureTrapArtifactsLoaded();
     startRenderLoop();
-    void armBackgroundAlertAudio();
+    if (state.backgroundAudioEnabled && !state.audioMuted) {
+      void armBackgroundAlertAudio();
+    }
     syncOverspeedSound();
     syncTrapSound();
   });
@@ -2002,6 +2151,12 @@ function init() {
   for (const button of elements.trapSoundButtons) {
     button.setAttribute("aria-pressed", String(
       (button.dataset.trapSound === "on") === state.trapSoundEnabled,
+    ));
+  }
+
+  for (const button of elements.backgroundAudioButtons) {
+    button.setAttribute("aria-pressed", String(
+      (button.dataset.backgroundAudio === "on") === state.backgroundAudioEnabled,
     ));
   }
 

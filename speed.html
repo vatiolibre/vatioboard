@@ -88,6 +88,47 @@
         <div class="toolbar speed-toolbar" role="toolbar" data-i18n-aria="speedometerControls" aria-label="Speedometer controls">
           <button id="resetTrip" type="button" data-i18n="resetTrip">Reset trip</button>
 
+          <div class="toolbar-audio-quick" role="group" data-i18n-aria="audioQuickControls" aria-label="Audio quick controls">
+            <button
+              id="quickAudioToggle"
+              type="button"
+              class="toolbar-quick-btn"
+              data-i18n-aria="toggleAlertAudio"
+              data-i18n-title="toggleAlertAudio"
+              aria-label="Toggle alert audio"
+              title="Toggle alert audio"
+            >
+              <span class="toolbar-quick-icon toolbar-quick-icon-audio" aria-hidden="true">
+                <svg viewBox="0 0 20 20" focusable="false">
+                  <path d="M4 8.5h3l4-3v9l-4-3H4z" />
+                  <path class="toolbar-quick-wave" d="M13.25 7.25a4 4 0 0 1 0 5.5" />
+                  <path class="toolbar-quick-wave" d="M14.75 5.5a6.5 6.5 0 0 1 0 9" />
+                  <path class="toolbar-quick-slash" d="M4 4l12 12" />
+                </svg>
+              </span>
+              <span class="toolbar-quick-label" data-i18n="audio">Audio</span>
+            </button>
+
+            <button
+              id="quickBackgroundAudioToggle"
+              type="button"
+              class="toolbar-quick-btn toolbar-quick-btn-background"
+              data-i18n-aria="toggleBackgroundAudio"
+              data-i18n-title="toggleBackgroundAudio"
+              aria-label="Toggle background audio"
+              title="Toggle background audio"
+            >
+              <span class="toolbar-quick-icon" aria-hidden="true">
+                <svg viewBox="0 0 20 20" focusable="false">
+                  <rect x="4" y="5" width="8" height="10" rx="2" />
+                  <path d="M14.5 7.5a3.5 3.5 0 0 1 0 5" />
+                  <path d="M16.25 5.5a6 6 0 0 1 0 9" />
+                </svg>
+              </span>
+              <span class="toolbar-quick-label" data-i18n="backgroundCompact">BG</span>
+            </button>
+          </div>
+
           <div class="right-stack" data-i18n-aria="connectionStatus" aria-label="Connection status">
             <span id="status" class="status" aria-live="polite" data-i18n="requestingGps">Requesting GPS...</span>
             <span class="attribution">
@@ -208,6 +249,17 @@
                     <button type="button" class="trap-sound-btn" data-trap-sound="off" data-i18n="off">Off</button>
                     <button type="button" class="trap-sound-btn" data-trap-sound="on" data-i18n="on">On</button>
                   </div>
+                </div>
+              </div>
+
+              <div class="speed-alert-section">
+                <div class="speed-alert-setting speed-alert-sound-setting speed-alert-background-setting">
+                  <span class="speed-alert-setting-label" data-i18n="backgroundAudio">Background audio</span>
+                  <div class="unit-switch speed-alert-switch" role="group" data-i18n-aria="backgroundAudio" aria-label="Background audio">
+                    <button type="button" class="background-audio-btn" data-background-audio="off" data-i18n="off">Off</button>
+                    <button type="button" class="background-audio-btn" data-background-audio="on" data-i18n="on">On</button>
+                  </div>
+                  <p class="speed-alert-setting-note" data-i18n="backgroundAudioHelp">Keeps alerts ready when the browser is hidden.</p>
                 </div>
               </div>
 

@@ -141,6 +141,82 @@ body.speed-page.alert-panel-open .speed-main{
     padding-right: max(4px, env(safe-area-inset-right));
 }
 
+.toolbar-audio-quick{
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+    padding: 4px;
+    border: 1px solid var(--speed-panel-border);
+    border-radius: calc(var(--radius-sm) + 4px);
+    background: var(--speed-chip-bg);
+    box-shadow: inset 0 0 0 1px var(--inner-ring);
+}
+
+.toolbar-quick-btn{
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 38px;
+    min-width: 0;
+    padding: 8px 10px;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    box-shadow: none;
+    white-space: nowrap;
+}
+
+.toolbar-quick-btn:hover{
+    background: var(--btn-hover-bg);
+    color: var(--btn-fg);
+}
+
+.toolbar-quick-btn[aria-pressed="true"]{
+    background: var(--btn-active-bg);
+    color: var(--btn-active-fg);
+}
+
+.toolbar-quick-btn:disabled{
+    opacity: 0.48;
+    cursor: default;
+}
+
+.toolbar-quick-icon{
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+}
+
+.toolbar-quick-icon svg{
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.toolbar-quick-label{
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+}
+
+.toolbar-quick-icon-audio .toolbar-quick-slash{
+    opacity: 0;
+}
+
+.toolbar-quick-btn.is-muted .toolbar-quick-wave{
+    opacity: 0;
+}
+
+.toolbar-quick-btn.is-muted .toolbar-quick-slash{
+    opacity: 1;
+}
+
 .unit-switch{
     display: inline-flex;
     gap: 4px;
@@ -562,6 +638,16 @@ body.speed-page.alert-panel-open .speed-main{
     text-align: left;
 }
 
+.speed-alert-setting-note{
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.3;
+    color: var(--muted);
+    text-align: left;
+}
+
 .speed-alert-actions{
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -883,7 +969,7 @@ body.speed-page.alert-panel-open .speed-main{
 
     .speed-toolbar{
         display: grid;
-        grid-template-columns: auto minmax(0, 1fr);
+        grid-template-columns: auto auto minmax(0, 1fr);
         align-items: center;
         gap: 6px;
     }
@@ -893,6 +979,19 @@ body.speed-page.alert-panel-open .speed-main{
         font-size: 13px;
         white-space: nowrap;
         justify-self: start;
+    }
+
+    .toolbar-audio-quick{
+        justify-self: start;
+    }
+
+    .toolbar-quick-btn{
+        min-height: 34px;
+        padding: 7px 9px;
+    }
+
+    .toolbar-quick-label{
+        font-size: 11px;
     }
 
     .speed-toolbar .right-stack{

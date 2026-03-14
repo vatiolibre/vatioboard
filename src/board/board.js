@@ -97,8 +97,8 @@ bindToggle(openEnergyBtn, energyWidget);
 bindToggle(openEnergyMenuBtn, energyWidget);
 bindToggle(energyBtn, energyWidget);
 
-bindNavigation(openSpeedBtn, "/speed.html");
-bindNavigation(openSpeedMenuBtn, "/speed.html");
+bindNavigation(openSpeedBtn, "/speed");
+bindNavigation(openSpeedMenuBtn, "/speed");
 
   (function(){
     const canvas = document.getElementById("pad");
