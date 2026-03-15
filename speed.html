@@ -350,12 +350,17 @@
                   </div>
 
                   <div class="waze-hud">
-                    <div class="waze-speed-pill">
+                    <div id="wazeSpeedPill" class="waze-speed-pill">
                       <span class="waze-speed-kicker" data-i18n="liveSpeed">Live speed</span>
                       <div class="waze-speed-reading">
                         <strong id="wazeSpeedValue">0</strong>
                         <span id="wazeSpeedUnit">km/h</span>
                       </div>
+                      <div class="waze-speed-limit">
+                        <span id="wazeSpeedLimitLabel" class="waze-speed-limit-label" data-i18n="speedLimit">Limit</span>
+                        <strong id="wazeSpeedLimitValue" class="waze-speed-limit-value">Off</strong>
+                      </div>
+                      <p id="wazeSpeedNote" class="waze-speed-note" hidden>Manual alert</p>
                     </div>
 
                     <div class="waze-hud-actions">

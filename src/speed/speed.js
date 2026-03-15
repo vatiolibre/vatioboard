@@ -104,8 +104,12 @@ const elements = {
   wazeFrame: document.getElementById("wazeFrame"),
   wazePlaceholder: document.getElementById("wazePlaceholder"),
   wazePlaceholderText: document.getElementById("wazePlaceholderText"),
+  wazeSpeedPill: document.getElementById("wazeSpeedPill"),
   wazeSpeedValue: document.getElementById("wazeSpeedValue"),
   wazeSpeedUnit: document.getElementById("wazeSpeedUnit"),
+  wazeSpeedLimitLabel: document.getElementById("wazeSpeedLimitLabel"),
+  wazeSpeedLimitValue: document.getElementById("wazeSpeedLimitValue"),
+  wazeSpeedNote: document.getElementById("wazeSpeedNote"),
   wazeLocationPrompt: document.getElementById("wazeLocationPrompt"),
   wazeRecenter: document.getElementById("wazeRecenter"),
   alertBackdrop: document.getElementById("speedAlertBackdrop"),
@@ -1005,12 +1009,30 @@ function renderWazeUi() {
 
   const currentSpeed = Math.round(convertSpeed(state.currentSpeedMs));
   const unitLabel = UNIT_CONFIG[state.unit].label;
+  const alertState = getAlertUiState();
   const hasFrameSrc = Boolean(elements.wazeFrame?.getAttribute("src"));
   const isReady = hasFrameSrc && state.wazeLoaded && !state.wazeLoadPending;
   const waitingText = state.statusKind === "requesting" ? t("liveMapWaitingGps") : state.statusText;
+  const limitLabel = alertState.enabled ? t("speedLimit") : t("alerts");
+  const limitValue = alertState.enabled ? `${alertState.limitDisplayValue} ${unitLabel}` : t("off");
+  let speedNote = "";
+
+  if (alertState.over) {
+    speedNote = tf("alertOverShort", { delta: `${alertState.deltaDisplayValue} ${unitLabel}` });
+  } else if (alertState.near) {
+    speedNote = t("nearLimit");
+  } else if (alertState.source === "trap") {
+    speedNote = t("trapCompact");
+  } else if (alertState.source === "manual") {
+    speedNote = t("manualCompact");
+  }
 
   elements.wazeSpeedValue.textContent = String(currentSpeed);
   elements.wazeSpeedUnit.textContent = unitLabel;
+  elements.wazeSpeedLimitLabel.textContent = limitLabel;
+  elements.wazeSpeedLimitValue.textContent = limitValue;
+  elements.wazeSpeedNote.hidden = !speedNote;
+  elements.wazeSpeedNote.textContent = speedNote;
   elements.wazePlaceholderText.textContent = state.wazeLoadPending
     ? t("loadingWazeMap")
     : (hasFrameSrc ? t("enableWazeLocation") : waitingText);
@@ -1022,6 +1044,10 @@ function renderWazeUi() {
   elements.wazeRecenter.hidden = false;
   elements.wazeRecenter.disabled = state.wazeLoadPending || !hasLiveCoordinateFix();
   elements.wazeRecenter.classList.toggle("is-stale", shouldRefreshWazeEmbed());
+  elements.wazeSpeedPill.classList.toggle("has-limit", alertState.enabled);
+  elements.wazeSpeedPill.classList.toggle("is-alert-near", alertState.near);
+  elements.wazeSpeedPill.classList.toggle("is-alert-over", alertState.over);
+  elements.wazeSpeedPill.classList.toggle("is-trap-active", alertState.trapActive);
   elements.wazePlaceholder.classList.toggle("is-hidden", isReady);
   elements.wazeStage.classList.toggle("is-loading", state.wazeLoadPending);
   elements.wazeStage.classList.toggle("is-ready", isReady);
