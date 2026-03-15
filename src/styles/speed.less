@@ -684,9 +684,9 @@ body.speed-page.alert-panel-open .speed-main{
 
 .waze-hud{
     position: absolute;
-    right: 16px;
-    bottom: 16px;
-    left: 16px;
+    right: 54px;
+    bottom: 34px;
+    left: 10px;
     z-index: 3;
     display: flex;
     align-items: flex-end;
@@ -705,14 +705,19 @@ body.speed-page.alert-panel-open .speed-main{
     gap: 4px;
     min-width: 132px;
     padding: 12px 14px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    margin-left: -4px;
+    margin-bottom: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 24px;
-    background: rgba(7, 17, 31, 0.76);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.06)),
+      rgba(7, 17, 31, 0.34);
     box-shadow:
-      0 14px 30px rgba(7, 12, 24, 0.24),
-      inset 0 0 0 1px rgba(255, 255, 255, 0.03);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
+      0 16px 34px rgba(7, 12, 24, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.24),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+    backdrop-filter: blur(14px) saturate(135%);
+    -webkit-backdrop-filter: blur(14px) saturate(135%);
 }
 
 .waze-speed-kicker{
@@ -754,12 +759,16 @@ body.speed-page.alert-panel-open .speed-main{
     max-width: min(280px, 72vw);
     margin: 0;
     padding: 10px 12px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.18);
     border-radius: 16px;
-    background: rgba(7, 17, 31, 0.7);
-    box-shadow: 0 12px 28px rgba(7, 12, 24, 0.24);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.05)),
+      rgba(7, 17, 31, 0.32);
+    box-shadow:
+      0 14px 30px rgba(7, 12, 24, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    backdrop-filter: blur(14px) saturate(135%);
+    -webkit-backdrop-filter: blur(14px) saturate(135%);
     font-size: 12px;
     font-weight: 700;
     line-height: 1.3;
@@ -770,18 +779,24 @@ body.speed-page.alert-panel-open .speed-main{
 .waze-recenter{
     min-height: 44px;
     padding: 0 16px;
-    border: 1px solid rgba(255, 255, 255, 0.16);
+    border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 999px;
-    background: rgba(7, 17, 31, 0.78);
-    box-shadow: 0 14px 30px rgba(7, 12, 24, 0.24);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.05)),
+      rgba(7, 17, 31, 0.34);
+    box-shadow:
+      0 14px 30px rgba(7, 12, 24, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.22);
     color: #ffffff;
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(14px) saturate(135%);
+    -webkit-backdrop-filter: blur(14px) saturate(135%);
 }
 
 .waze-recenter:hover{
-    background: rgba(14, 165, 233, 0.72);
-    border-color: rgba(255, 255, 255, 0.24);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.06)),
+      rgba(14, 165, 233, 0.48);
+    border-color: rgba(255, 255, 255, 0.28);
 }
 
 .waze-recenter.is-stale{
@@ -1439,8 +1454,8 @@ body.speed-page.alert-panel-open .speed-main{
     }
 
     .waze-hud{
-        right: 12px;
-        bottom: 12px;
+        right: 28px;
+        bottom: 22px;
         left: 12px;
         align-items: stretch;
         flex-wrap: wrap;
@@ -1448,6 +1463,8 @@ body.speed-page.alert-panel-open .speed-main{
 
     .waze-speed-pill{
         min-width: 0;
+        margin-left: -2px;
+        margin-bottom: 4px;
     }
 
     .waze-hud-actions{
