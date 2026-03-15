@@ -645,6 +645,12 @@ body.speed-page.alert-panel-open .speed-main{
     touch-action: pan-x pan-y pinch-zoom;
 }
 
+@media (prefers-color-scheme: dark){
+    .waze-frame{
+        filter: invert(0.92) hue-rotate(180deg) saturate(0.85) brightness(0.82) contrast(0.95);
+    }
+}
+
 .waze-placeholder{
     position: absolute;
     inset: 0;
