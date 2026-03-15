@@ -339,6 +339,7 @@
                     title="Waze map"
                     tabindex="-1"
                     loading="lazy"
+                    allow="geolocation; fullscreen"
                     referrerpolicy="strict-origin-when-cross-origin"
                     allowfullscreen
                   ></iframe>
@@ -358,12 +359,19 @@
                     </div>
 
                     <div class="waze-hud-actions">
-                      <p id="wazeStatus" class="waze-status" aria-live="polite">Waiting for GPS to center the live map.</p>
+                      <button
+                        id="wazeLocationPrompt"
+                        class="waze-location-prompt"
+                        type="button"
+                      >
+                        Enable Waze location
+                      </button>
                       <button
                         id="wazeRecenter"
                         class="waze-recenter"
                         type="button"
                         tabindex="-1"
+                        hidden
                         data-i18n="recenterMap"
                         data-i18n-aria="recenterMap"
                         aria-label="Recenter map"

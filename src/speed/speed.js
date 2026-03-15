@@ -104,7 +104,7 @@ const elements = {
   wazePlaceholderText: document.getElementById("wazePlaceholderText"),
   wazeSpeedValue: document.getElementById("wazeSpeedValue"),
   wazeSpeedUnit: document.getElementById("wazeSpeedUnit"),
-  wazeStatus: document.getElementById("wazeStatus"),
+  wazeLocationPrompt: document.getElementById("wazeLocationPrompt"),
   wazeRecenter: document.getElementById("wazeRecenter"),
   alertBackdrop: document.getElementById("speedAlertBackdrop"),
   dialCanvas: document.getElementById("speedDial"),
@@ -940,25 +940,18 @@ function getWazeEmbedUrl(latitude, longitude) {
   return `${WAZE_EMBED_BASE_URL}?${params.toString()}`;
 }
 
-function isWazeStale() {
-  if (
-    !hasLiveCoordinateFix()
-    || !Number.isFinite(state.wazeCenterLatitude)
-    || !Number.isFinite(state.wazeCenterLongitude)
-  ) {
-    return false;
+function getWazePermissionUrl() {
+  const existingSrc = elements.wazeFrame?.getAttribute("src");
+  if (existingSrc) {
+    return existingSrc;
   }
 
-  return haversineDistance(
-    {
-      latitude: state.wazeCenterLatitude,
-      longitude: state.wazeCenterLongitude,
-    },
-    {
-      latitude: state.lastKnownLatitude,
-      longitude: state.lastKnownLongitude,
-    },
-  ) >= 60;
+  const coordinates = getCurrentCoordinates();
+  if (coordinates) {
+    return getWazeEmbedUrl(coordinates.latitude, coordinates.longitude);
+  }
+
+  return `${WAZE_EMBED_BASE_URL}?zoom=13&lat=40.7484&lon=-73.9857&ct=livemap`;
 }
 
 function resetWazeEmbed({ clearFrame = false } = {}) {
@@ -980,26 +973,22 @@ function renderWazeUi() {
 
   const currentSpeed = Math.round(convertSpeed(state.currentSpeedMs));
   const unitLabel = UNIT_CONFIG[state.unit].label;
-  const hasCoordinates = hasLiveCoordinateFix();
-  const isReady = hasCoordinates && state.wazeLoaded && !state.wazeLoadPending;
+  const hasFrameSrc = Boolean(elements.wazeFrame?.getAttribute("src"));
+  const isReady = hasFrameSrc && state.wazeLoaded && !state.wazeLoadPending;
   const waitingText = state.statusKind === "requesting" ? t("liveMapWaitingGps") : state.statusText;
-  const statusText = state.wazeLoadPending
-    ? t("loadingWazeMap")
-    : (!hasCoordinates
-      ? waitingText
-      : (isWazeStale() ? t("recenterToLatestFix") : t("mapCenteredOnLatestFix")));
 
   elements.wazeSpeedValue.textContent = String(currentSpeed);
   elements.wazeSpeedUnit.textContent = unitLabel;
-  elements.wazeStatus.textContent = statusText;
   elements.wazePlaceholderText.textContent = state.wazeLoadPending
     ? t("loadingWazeMap")
-    : (!hasCoordinates ? waitingText : statusText);
-  elements.wazeRecenter.disabled = !hasCoordinates || state.wazeLoadPending;
-  elements.wazeRecenter.classList.toggle(
-    "is-stale",
-    hasCoordinates && !state.wazeLoadPending && isWazeStale(),
-  );
+    : (hasFrameSrc ? t("enableWazeLocation") : waitingText);
+  if (elements.wazeLocationPrompt) {
+    elements.wazeLocationPrompt.textContent = t("enableWazeLocation");
+    elements.wazeLocationPrompt.title = hasFrameSrc ? t("enableWazeLocation") : waitingText;
+    elements.wazeLocationPrompt.disabled = state.wazeLoadPending;
+  }
+  elements.wazeRecenter.disabled = true;
+  elements.wazeRecenter.classList.remove("is-stale");
   elements.wazePlaceholder.classList.toggle("is-hidden", isReady);
   elements.wazeStage.classList.toggle("is-loading", state.wazeLoadPending);
   elements.wazeStage.classList.toggle("is-ready", isReady);
@@ -1009,23 +998,16 @@ function renderWazeUi() {
   }
 }
 
-function syncWazeEmbed({ force = false } = {}) {
+function syncWazeEmbed() {
   if (!elements.wazeFrame) return;
 
-  const coordinates = getCurrentCoordinates();
-  if (!coordinates) {
+  if (state.wazeLoadPending || state.wazeLoaded || elements.wazeFrame.getAttribute("src")) {
     renderWazeUi();
     return;
   }
 
-  const alreadyCentered = !force
-    && Number.isFinite(state.wazeCenterLatitude)
-    && Number.isFinite(state.wazeCenterLongitude)
-    && Math.abs(state.wazeCenterLatitude - coordinates.latitude) < 0.00001
-    && Math.abs(state.wazeCenterLongitude - coordinates.longitude) < 0.00001
-    && state.wazeLoaded;
-
-  if (alreadyCentered) {
+  const coordinates = getCurrentCoordinates();
+  if (!coordinates) {
     renderWazeUi();
     return;
   }
@@ -1058,6 +1040,10 @@ function renderPrimaryView() {
     elements.wazeRecenter.tabIndex = state.primaryView === "waze" ? 0 : -1;
   }
 
+  if (elements.wazeLocationPrompt) {
+    elements.wazeLocationPrompt.tabIndex = state.primaryView === "waze" ? 0 : -1;
+  }
+
   for (const button of elements.primaryViewButtons) {
     button.setAttribute("aria-pressed", String(button.dataset.primaryView === state.primaryView));
   }
@@ -1065,7 +1051,7 @@ function renderPrimaryView() {
   renderWazeUi();
 }
 
-function setPrimaryView(view, { forceSync = false } = {}) {
+function setPrimaryView(view) {
   if (view !== "gauge" && view !== "waze") return;
 
   const viewChanged = state.primaryView !== view;
@@ -1073,8 +1059,8 @@ function setPrimaryView(view, { forceSync = false } = {}) {
   savePrimaryViewPreference(view);
   renderPrimaryView();
 
-  if (view === "waze" && (viewChanged || forceSync || !state.wazeLoaded || isWazeStale())) {
-    syncWazeEmbed({ force: true });
+  if (view === "waze" && (!state.wazeLoaded || !elements.wazeFrame?.getAttribute("src"))) {
+    syncWazeEmbed();
   }
 
   if (viewChanged) {
@@ -2964,8 +2950,8 @@ function handlePosition(position) {
 
   updateNearestTrap(coords.longitude, coords.latitude);
   syncGlobePosition(coords.longitude, coords.latitude);
-  if (state.primaryView === "waze" && (!state.wazeLoaded || !Number.isFinite(state.wazeCenteredAt))) {
-    syncWazeEmbed({ force: true });
+  if (state.primaryView === "waze" && (!state.wazeLoaded || !elements.wazeFrame?.getAttribute("src"))) {
+    syncWazeEmbed();
   } else {
     renderWazeUi();
   }
@@ -3363,8 +3349,8 @@ function bindEvents() {
     });
   }
 
-  elements.wazeRecenter?.addEventListener("click", () => {
-    syncWazeEmbed({ force: true });
+  elements.wazeLocationPrompt?.addEventListener("click", () => {
+    window.open(getWazePermissionUrl(), "_blank", "noopener,noreferrer");
   });
 
   elements.wazeFrame?.addEventListener("load", () => {
