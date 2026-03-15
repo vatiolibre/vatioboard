@@ -264,6 +264,31 @@
       <section class="speed-shell" data-i18n-aria="liveAnalogSpeedometer" aria-label="Live analog speedometer">
         <div class="speed-stage">
           <div class="gauge-card">
+            <div class="speed-view-switch" role="group" data-i18n-aria="viewMode" aria-label="View mode">
+              <button
+                id="primaryViewGauge"
+                class="speed-view-btn"
+                type="button"
+                data-primary-view="gauge"
+                data-i18n="speedometer"
+                data-i18n-aria="showSpeedometer"
+                aria-label="Show speedometer"
+              >
+                Speedometer
+              </button>
+              <button
+                id="primaryViewWaze"
+                class="speed-view-btn speed-view-btn-waze"
+                type="button"
+                data-primary-view="waze"
+                data-i18n="wazeMap"
+                data-i18n-aria="showWazeMap"
+                aria-label="Show Waze map"
+              >
+                Waze map
+              </button>
+            </div>
+
             <button
               id="alertTrigger"
               class="speed-alert-trigger"
@@ -292,17 +317,61 @@
             </button>
             <p id="alertTriggerHint" class="speed-alert-trigger-hint" hidden data-i18n="alertsHint">Tap Alerts to set speed and trap warnings</p>
 
-            <div class="gauge-stage">
-              <canvas id="speedDial" class="speed-gauge speed-dial" aria-hidden="true"></canvas>
-              <div class="gauge-overlay">
-                <span class="gauge-kicker" data-i18n="liveSpeed">Live speed</span>
-                <div class="gauge-reading">
-                  <span id="speedValue">0</span>
-                  <span id="speedUnit">km/h</span>
+            <div id="speedPrimaryStage" class="speed-primary-stage">
+              <div id="gaugeStage" class="gauge-stage speed-primary-panel">
+                <canvas id="speedDial" class="speed-gauge speed-dial" aria-hidden="true"></canvas>
+                <div class="gauge-overlay">
+                  <span class="gauge-kicker" data-i18n="liveSpeed">Live speed</span>
+                  <div class="gauge-reading">
+                    <span id="speedValue">0</span>
+                    <span id="speedUnit">km/h</span>
+                  </div>
+                  <p id="subStatus" class="gauge-substatus" data-i18n="lookingFirstGpsFix">Looking for your first GPS fix</p>
                 </div>
-                <p id="subStatus" class="gauge-substatus" data-i18n="lookingFirstGpsFix">Looking for your first GPS fix</p>
+                <canvas id="speedNeedle" class="speed-gauge speed-needle" data-i18n-aria="analogSpeedometer" aria-label="Analog speedometer"></canvas>
               </div>
-              <canvas id="speedNeedle" class="speed-gauge speed-needle" data-i18n-aria="analogSpeedometer" aria-label="Analog speedometer"></canvas>
+
+              <section id="wazeStage" class="waze-stage speed-primary-panel" aria-hidden="true">
+                <div class="waze-map-shell">
+                  <iframe
+                    id="wazeFrame"
+                    class="waze-frame"
+                    title="Waze map"
+                    loading="lazy"
+                    referrerpolicy="strict-origin-when-cross-origin"
+                    allowfullscreen
+                  ></iframe>
+
+                  <div id="wazePlaceholder" class="waze-placeholder">
+                    <span class="waze-placeholder-kicker" data-i18n="wazeMap">Waze map</span>
+                    <p id="wazePlaceholderText">Waiting for GPS to center the live map.</p>
+                  </div>
+
+                  <div class="waze-hud">
+                    <div class="waze-speed-pill">
+                      <span class="waze-speed-kicker" data-i18n="liveSpeed">Live speed</span>
+                      <div class="waze-speed-reading">
+                        <strong id="wazeSpeedValue">0</strong>
+                        <span id="wazeSpeedUnit">km/h</span>
+                      </div>
+                    </div>
+
+                    <div class="waze-hud-actions">
+                      <p id="wazeStatus" class="waze-status" aria-live="polite">Waiting for GPS to center the live map.</p>
+                      <button
+                        id="wazeRecenter"
+                        class="waze-recenter"
+                        type="button"
+                        data-i18n="recenterMap"
+                        data-i18n-aria="recenterMap"
+                        aria-label="Recenter map"
+                      >
+                        Recenter map
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </section>
             </div>
 
             <div id="speedAlertPanel" class="speed-alert-panel" hidden data-i18n-aria="configureAlerts" aria-label="Configure alerts">

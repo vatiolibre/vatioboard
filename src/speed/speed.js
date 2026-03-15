@@ -19,6 +19,7 @@ const STORAGE_TRAP_SOUND_ENABLED_KEY = "vatio_speed_trap_sound_enabled";
 const STORAGE_AUDIO_MUTED_KEY = "vatio_speed_audio_muted";
 const STORAGE_BACKGROUND_AUDIO_ENABLED_KEY = "vatio_speed_background_audio_enabled";
 const STORAGE_ALERT_TRIGGER_DISCOVERED_KEY = "vatio_speed_alert_trigger_discovered";
+const STORAGE_PRIMARY_VIEW_KEY = "vatio_speed_primary_view";
 const OVERSPEED_SOUND_URL = "/audio/overspeed_notification.m4a";
 const TRAP_SOUND_URL = "/audio/near_camera_notification.m4a";
 const TRAP_DATA_URL = "/geo/ansv_cameras_compact.min.json";
@@ -51,6 +52,7 @@ const GLOBE_SATELLITE_ATTRIBUTION = [
   '<a href="https://eox.at" target="_blank" rel="noopener noreferrer">EOX IT Services GmbH</a>',
   '(Contains modified Copernicus Sentinel data 2020)',
 ].join(" ");
+const WAZE_EMBED_BASE_URL = "https://embed.waze.com/iframe";
 const UNIT_CONFIG = {
   mph: { label: "mph", baseMax: 120, tickStep: 20, factor: 2.2369362920544 },
   kmh: { label: "km/h", baseMax: 200, tickStep: 40, factor: 3.6 },
@@ -94,6 +96,16 @@ const GEO_ERROR_CODE = {
 const elements = {
   gaugeCard: document.querySelector(".gauge-card"),
   langToggle: document.getElementById("langToggle"),
+  primaryViewButtons: Array.from(document.querySelectorAll(".speed-view-btn")),
+  gaugeStage: document.getElementById("gaugeStage"),
+  wazeStage: document.getElementById("wazeStage"),
+  wazeFrame: document.getElementById("wazeFrame"),
+  wazePlaceholder: document.getElementById("wazePlaceholder"),
+  wazePlaceholderText: document.getElementById("wazePlaceholderText"),
+  wazeSpeedValue: document.getElementById("wazeSpeedValue"),
+  wazeSpeedUnit: document.getElementById("wazeSpeedUnit"),
+  wazeStatus: document.getElementById("wazeStatus"),
+  wazeRecenter: document.getElementById("wazeRecenter"),
   dialCanvas: document.getElementById("speedDial"),
   needleCanvas: document.getElementById("speedNeedle"),
   speedValue: document.getElementById("speedValue"),
@@ -200,10 +212,12 @@ const pageDescriptionMeta = document.querySelector('meta[name="description"]');
 
 const initialUnit = loadUnitPreference();
 const initialDistanceUnit = loadDistanceUnitPreference();
+const initialPrimaryView = loadPrimaryViewPreference();
 
 const state = {
   unit: initialUnit,
   distanceUnit: initialDistanceUnit,
+  primaryView: initialPrimaryView,
   alertEnabled: loadAlertEnabledPreference(),
   alertLimitMs: loadAlertLimitPreference(),
   alertSoundEnabled: loadAlertSoundEnabledPreference(),
@@ -257,9 +271,16 @@ const state = {
   lastAccuracyM: null,
   lastFixAt: 0,
   lastPositionTimestamp: null,
+  lastKnownLatitude: null,
+  lastKnownLongitude: null,
   renderFrameId: null,
   lastTextUpdateAt: 0,
   canvasSize: 0,
+  wazeLoaded: false,
+  wazeLoadPending: false,
+  wazeCenteredAt: null,
+  wazeCenterLatitude: null,
+  wazeCenterLongitude: null,
   globeMap: null,
   globeReady: false,
   globeError: null,
@@ -583,6 +604,22 @@ function saveDistanceUnitPreference(unit) {
   }
 }
 
+function loadPrimaryViewPreference() {
+  try {
+    return window.localStorage.getItem(STORAGE_PRIMARY_VIEW_KEY) === "waze" ? "waze" : "gauge";
+  } catch {
+    return "gauge";
+  }
+}
+
+function savePrimaryViewPreference(view) {
+  try {
+    window.localStorage.setItem(STORAGE_PRIMARY_VIEW_KEY, view);
+  } catch {
+    // Ignore storage restrictions. The page still works without persistence.
+  }
+}
+
 function loadAlertEnabledPreference() {
   try {
     return window.localStorage.getItem(STORAGE_ALERT_ENABLED_KEY) === "true";
@@ -787,6 +824,7 @@ function setStatus(kind, params = null) {
   elements.status.textContent = state.statusText;
   renderSubStatus();
   renderGlobeStatus();
+  renderWazeUi();
 }
 
 function showNotice(message) {
@@ -859,6 +897,178 @@ function renderGlobeStatus() {
   }
 
   elements.globeStatus.textContent = state.statusText;
+}
+
+function hasLiveCoordinateFix() {
+  return Number.isFinite(state.lastKnownLatitude) && Number.isFinite(state.lastKnownLongitude);
+}
+
+function getCurrentCoordinates() {
+  if (hasLiveCoordinateFix()) {
+    return {
+      latitude: state.lastKnownLatitude,
+      longitude: state.lastKnownLongitude,
+    };
+  }
+
+  if (!state.lastPoint) {
+    return null;
+  }
+
+  return {
+    latitude: state.lastPoint.latitude,
+    longitude: state.lastPoint.longitude,
+  };
+}
+
+function getWazeZoomLevel(speedMs = state.currentSpeedMs) {
+  const speedKmh = speedMs * UNIT_CONFIG.kmh.factor;
+  if (speedKmh < 15) return 15;
+  if (speedKmh < 45) return 14;
+  if (speedKmh < 90) return 13;
+  return 12;
+}
+
+function getWazeEmbedUrl(latitude, longitude) {
+  const params = new URLSearchParams({
+    zoom: String(getWazeZoomLevel()),
+    lat: latitude.toFixed(6),
+    lon: longitude.toFixed(6),
+    ct: "livemap",
+  });
+  return `${WAZE_EMBED_BASE_URL}?${params.toString()}`;
+}
+
+function isWazeStale() {
+  if (
+    !hasLiveCoordinateFix()
+    || !Number.isFinite(state.wazeCenterLatitude)
+    || !Number.isFinite(state.wazeCenterLongitude)
+  ) {
+    return false;
+  }
+
+  return haversineDistance(
+    {
+      latitude: state.wazeCenterLatitude,
+      longitude: state.wazeCenterLongitude,
+    },
+    {
+      latitude: state.lastKnownLatitude,
+      longitude: state.lastKnownLongitude,
+    },
+  ) >= 60;
+}
+
+function resetWazeEmbed({ clearFrame = false } = {}) {
+  state.wazeLoadPending = false;
+  state.wazeLoaded = false;
+  state.wazeCenteredAt = null;
+  state.wazeCenterLatitude = null;
+  state.wazeCenterLongitude = null;
+
+  if (clearFrame) {
+    elements.wazeFrame?.removeAttribute("src");
+  }
+
+  renderWazeUi();
+}
+
+function renderWazeUi() {
+  if (!elements.wazeStage) return;
+
+  const currentSpeed = Math.round(convertSpeed(state.currentSpeedMs));
+  const unitLabel = UNIT_CONFIG[state.unit].label;
+  const hasCoordinates = hasLiveCoordinateFix();
+  const isReady = hasCoordinates && state.wazeLoaded && !state.wazeLoadPending;
+  const waitingText = state.statusKind === "requesting" ? t("liveMapWaitingGps") : state.statusText;
+  const statusText = state.wazeLoadPending
+    ? t("loadingWazeMap")
+    : (!hasCoordinates
+      ? waitingText
+      : (isWazeStale() ? t("recenterToLatestFix") : t("mapCenteredOnLatestFix")));
+
+  elements.wazeSpeedValue.textContent = String(currentSpeed);
+  elements.wazeSpeedUnit.textContent = unitLabel;
+  elements.wazeStatus.textContent = statusText;
+  elements.wazePlaceholderText.textContent = state.wazeLoadPending
+    ? t("loadingWazeMap")
+    : (!hasCoordinates ? waitingText : statusText);
+  elements.wazeRecenter.disabled = !hasCoordinates || state.wazeLoadPending;
+  elements.wazeRecenter.classList.toggle(
+    "is-stale",
+    hasCoordinates && !state.wazeLoadPending && isWazeStale(),
+  );
+  elements.wazePlaceholder.classList.toggle("is-hidden", isReady);
+  elements.wazeStage.classList.toggle("is-loading", state.wazeLoadPending);
+  elements.wazeStage.classList.toggle("is-ready", isReady);
+
+  if (elements.wazeFrame) {
+    elements.wazeFrame.title = t("wazeMap");
+  }
+}
+
+function syncWazeEmbed({ force = false } = {}) {
+  if (!elements.wazeFrame) return;
+
+  const coordinates = getCurrentCoordinates();
+  if (!coordinates) {
+    renderWazeUi();
+    return;
+  }
+
+  const alreadyCentered = !force
+    && Number.isFinite(state.wazeCenterLatitude)
+    && Number.isFinite(state.wazeCenterLongitude)
+    && Math.abs(state.wazeCenterLatitude - coordinates.latitude) < 0.00001
+    && Math.abs(state.wazeCenterLongitude - coordinates.longitude) < 0.00001
+    && state.wazeLoaded;
+
+  if (alreadyCentered) {
+    renderWazeUi();
+    return;
+  }
+
+  state.wazeLoadPending = true;
+  state.wazeLoaded = false;
+  state.wazeCenterLatitude = coordinates.latitude;
+  state.wazeCenterLongitude = coordinates.longitude;
+  state.wazeCenteredAt = Number.isFinite(state.lastPositionTimestamp)
+    ? state.lastPositionTimestamp
+    : Date.now();
+  elements.wazeFrame.src = getWazeEmbedUrl(coordinates.latitude, coordinates.longitude);
+  renderWazeUi();
+}
+
+function renderPrimaryView() {
+  if (!elements.gaugeCard) return;
+
+  elements.gaugeCard.dataset.primaryView = state.primaryView;
+  elements.gaugeStage?.setAttribute("aria-hidden", String(state.primaryView !== "gauge"));
+  elements.wazeStage?.setAttribute("aria-hidden", String(state.primaryView !== "waze"));
+
+  for (const button of elements.primaryViewButtons) {
+    button.setAttribute("aria-pressed", String(button.dataset.primaryView === state.primaryView));
+  }
+
+  renderWazeUi();
+}
+
+function setPrimaryView(view, { forceSync = false } = {}) {
+  if (view !== "gauge" && view !== "waze") return;
+
+  const viewChanged = state.primaryView !== view;
+  state.primaryView = view;
+  savePrimaryViewPreference(view);
+  renderPrimaryView();
+
+  if (view === "waze" && (viewChanged || forceSync || !state.wazeLoaded || isWazeStale())) {
+    syncWazeEmbed({ force: true });
+  }
+
+  if (viewChanged) {
+    resizeCanvas();
+  }
 }
 
 function formatGlobeTimestamp(timestamp) {
@@ -1075,11 +1285,15 @@ function clearLiveFixState({ preserveContinuity = false } = {}) {
   state.lastFixAt = 0;
   state.lastPositionTimestamp = null;
   if (!preserveContinuity) {
+    state.lastKnownLatitude = null;
+    state.lastKnownLongitude = null;
     state.lastPoint = null;
     state.lastTrapSoundedId = null;
     state.lastAccuracyM = null;
+    resetWazeEmbed({ clearFrame: true });
   }
   clearGlobePosition();
+  renderWazeUi();
 }
 
 function initGlobe() {
@@ -2684,6 +2898,8 @@ function handlePosition(position) {
 
   const coords = position.coords;
   const currentAccuracyM = Number.isFinite(coords.accuracy) ? coords.accuracy : null;
+  state.lastKnownLatitude = coords.latitude;
+  state.lastKnownLongitude = coords.longitude;
   const nextPoint = {
     latitude: coords.latitude,
     longitude: coords.longitude,
@@ -2731,6 +2947,11 @@ function handlePosition(position) {
 
   updateNearestTrap(coords.longitude, coords.latitude);
   syncGlobePosition(coords.longitude, coords.latitude);
+  if (state.primaryView === "waze" && (!state.wazeLoaded || !Number.isFinite(state.wazeCenteredAt))) {
+    syncWazeEmbed({ force: true });
+  } else {
+    renderWazeUi();
+  }
 
   if (Number.isFinite(coords.altitude)) {
     state.currentAltitudeM = coords.altitude;
@@ -3039,6 +3260,7 @@ function renderMetrics() {
   elements.minAltitude.textContent = formatAltitude(state.minAltitudeM);
   elements.minAltitudeUnit.textContent = distanceUnitLabel;
   renderAlertUi();
+  renderWazeUi();
 }
 
 function syncLanguage() {
@@ -3056,6 +3278,7 @@ function syncLanguage() {
   }
 
   renderGlobeStatus();
+  renderPrimaryView();
   renderMetrics();
   drawGauge();
 }
@@ -3116,6 +3339,23 @@ function bindEvents() {
     if (!button) return;
     setAlertLimitDisplay(Number(button.dataset.alertPreset), { fromUserGesture: true });
   });
+
+  for (const button of elements.primaryViewButtons) {
+    button.addEventListener("click", () => {
+      setPrimaryView(button.dataset.primaryView);
+    });
+  }
+
+  elements.wazeRecenter?.addEventListener("click", () => {
+    syncWazeEmbed({ force: true });
+  });
+
+  elements.wazeFrame?.addEventListener("load", () => {
+    state.wazeLoadPending = false;
+    state.wazeLoaded = Boolean(elements.wazeFrame?.getAttribute("src"));
+    renderWazeUi();
+  });
+
   for (const button of elements.alertSoundButtons) {
     button.addEventListener("click", () => {
       setAlertSoundEnabled(button.dataset.alertSound === "on", { fromUserGesture: true });
@@ -3229,6 +3469,10 @@ function init() {
     elements.langToggle.textContent = getLang().toUpperCase();
   }
 
+  for (const button of elements.primaryViewButtons) {
+    button.setAttribute("aria-pressed", button.dataset.primaryView === state.primaryView ? "true" : "false");
+  }
+
   for (const button of elements.unitButtons) {
     button.setAttribute("aria-pressed", button.dataset.unit === state.unit ? "true" : "false");
   }
@@ -3255,6 +3499,7 @@ function init() {
     ));
   }
 
+  renderPrimaryView();
   renderMetrics();
   initGlobe();
   resizeCanvas();
