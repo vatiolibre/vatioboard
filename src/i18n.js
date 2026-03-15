@@ -56,7 +56,7 @@ const translations = {
     liveSpeed: 'Live speed',
     liveGlobe: 'Live globe',
     wazeMap: 'Waze map',
-    recenterMap: 'Recenter map',
+    recenterMap: 'Refresh map',
     changeLanguage: 'Change language',
 
     // Aria labels
@@ -264,7 +264,7 @@ const translations = {
     liveSpeed: 'Velocidad en vivo',
     liveGlobe: 'Globo en vivo',
     wazeMap: 'Mapa Waze',
-    recenterMap: 'Recentrar mapa',
+    recenterMap: 'Actualizar mapa',
     changeLanguage: 'Cambiar idioma',
 
     // Aria labels

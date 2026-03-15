@@ -53,6 +53,8 @@ const GLOBE_SATELLITE_ATTRIBUTION = [
   '(Contains modified Copernicus Sentinel data 2020)',
 ].join(" ");
 const WAZE_EMBED_BASE_URL = "https://embed.waze.com/iframe";
+const WAZE_REFRESH_MIN_INTERVAL_MS = 20000;
+const WAZE_REFRESH_MIN_DISTANCE_M = 100;
 const UNIT_CONFIG = {
   mph: { label: "mph", baseMax: 120, tickStep: 20, factor: 2.2369362920544 },
   kmh: { label: "km/h", baseMax: 200, tickStep: 40, factor: 3.6 },
@@ -954,6 +956,36 @@ function getWazePermissionUrl() {
   return `${WAZE_EMBED_BASE_URL}?zoom=13&lat=40.7484&lon=-73.9857&ct=livemap`;
 }
 
+function shouldRefreshWazeEmbed() {
+  if (
+    !hasLiveCoordinateFix()
+    || !Number.isFinite(state.wazeCenterLatitude)
+    || !Number.isFinite(state.wazeCenterLongitude)
+    || !Number.isFinite(state.lastPositionTimestamp)
+    || !Number.isFinite(state.wazeCenteredAt)
+  ) {
+    return false;
+  }
+
+  const elapsedMs = state.lastPositionTimestamp - state.wazeCenteredAt;
+  if (elapsedMs < WAZE_REFRESH_MIN_INTERVAL_MS) {
+    return false;
+  }
+
+  const distanceM = haversineDistance(
+    {
+      latitude: state.wazeCenterLatitude,
+      longitude: state.wazeCenterLongitude,
+    },
+    {
+      latitude: state.lastKnownLatitude,
+      longitude: state.lastKnownLongitude,
+    },
+  );
+
+  return distanceM >= WAZE_REFRESH_MIN_DISTANCE_M;
+}
+
 function resetWazeEmbed({ clearFrame = false } = {}) {
   state.wazeLoadPending = false;
   state.wazeLoaded = false;
@@ -987,8 +1019,9 @@ function renderWazeUi() {
     elements.wazeLocationPrompt.title = hasFrameSrc ? t("enableWazeLocation") : waitingText;
     elements.wazeLocationPrompt.disabled = state.wazeLoadPending;
   }
-  elements.wazeRecenter.disabled = true;
-  elements.wazeRecenter.classList.remove("is-stale");
+  elements.wazeRecenter.hidden = false;
+  elements.wazeRecenter.disabled = state.wazeLoadPending || !hasLiveCoordinateFix();
+  elements.wazeRecenter.classList.toggle("is-stale", shouldRefreshWazeEmbed());
   elements.wazePlaceholder.classList.toggle("is-hidden", isReady);
   elements.wazeStage.classList.toggle("is-loading", state.wazeLoadPending);
   elements.wazeStage.classList.toggle("is-ready", isReady);
@@ -998,16 +1031,22 @@ function renderWazeUi() {
   }
 }
 
-function syncWazeEmbed() {
+function syncWazeEmbed({ force = false } = {}) {
   if (!elements.wazeFrame) return;
 
-  if (state.wazeLoadPending || state.wazeLoaded || elements.wazeFrame.getAttribute("src")) {
+  if (state.wazeLoadPending) {
     renderWazeUi();
     return;
   }
 
   const coordinates = getCurrentCoordinates();
   if (!coordinates) {
+    renderWazeUi();
+    return;
+  }
+
+  const hasFrameSrc = Boolean(elements.wazeFrame.getAttribute("src"));
+  if (hasFrameSrc && !force && !shouldRefreshWazeEmbed()) {
     renderWazeUi();
     return;
   }
@@ -1059,7 +1098,7 @@ function setPrimaryView(view) {
   savePrimaryViewPreference(view);
   renderPrimaryView();
 
-  if (view === "waze" && (!state.wazeLoaded || !elements.wazeFrame?.getAttribute("src"))) {
+  if (view === "waze" && (!state.wazeLoaded || !elements.wazeFrame?.getAttribute("src") || shouldRefreshWazeEmbed())) {
     syncWazeEmbed();
   }
 
@@ -2950,7 +2989,7 @@ function handlePosition(position) {
 
   updateNearestTrap(coords.longitude, coords.latitude);
   syncGlobePosition(coords.longitude, coords.latitude);
-  if (state.primaryView === "waze" && (!state.wazeLoaded || !elements.wazeFrame?.getAttribute("src"))) {
+  if (state.primaryView === "waze" && (!state.wazeLoaded || !elements.wazeFrame?.getAttribute("src") || shouldRefreshWazeEmbed())) {
     syncWazeEmbed();
   } else {
     renderWazeUi();
@@ -3351,6 +3390,10 @@ function bindEvents() {
 
   elements.wazeLocationPrompt?.addEventListener("click", () => {
     window.open(getWazePermissionUrl(), "_blank", "noopener,noreferrer");
+  });
+
+  elements.wazeRecenter?.addEventListener("click", () => {
+    syncWazeEmbed({ force: true });
   });
 
   elements.wazeFrame?.addEventListener("load", () => {

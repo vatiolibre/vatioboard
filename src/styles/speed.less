@@ -616,6 +616,7 @@ body.speed-page.alert-panel-open .speed-main{
     width: 100%;
     height: 100%;
     overflow: hidden;
+    touch-action: pan-x pan-y pinch-zoom;
     border-radius: calc(var(--radius) + 8px);
     background:
       linear-gradient(180deg, rgba(8, 15, 28, 0.84), rgba(7, 14, 22, 0.92)),
@@ -641,6 +642,7 @@ body.speed-page.alert-panel-open .speed-main{
     border: 0;
     display: block;
     background: linear-gradient(180deg, #dfe9ef 0%, #d4dee6 100%);
+    touch-action: pan-x pan-y pinch-zoom;
 }
 
 .waze-placeholder{
@@ -751,16 +753,23 @@ body.speed-page.alert-panel-open .speed-main{
 
 .waze-hud-actions{
     display: grid;
-    justify-items: end;
+    width: min(232px, 56vw);
+    justify-items: stretch;
     gap: 10px;
+    margin-right: 28px;
 }
 
-.waze-location-prompt{
-    max-width: min(280px, 72vw);
+.waze-location-prompt,
+.waze-recenter{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 44px;
     margin: 0;
-    padding: 10px 12px;
+    padding: 10px 16px;
     border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 16px;
+    border-radius: 18px;
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.05)),
       rgba(7, 17, 31, 0.32);
@@ -773,44 +782,26 @@ body.speed-page.alert-panel-open .speed-main{
     font-family: inherit;
     font-weight: 700;
     line-height: 1.3;
-    text-align: right;
+    text-align: center;
     color: rgba(255, 255, 255, 0.92);
     cursor: pointer;
+    transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
 }
 
-.waze-location-prompt:hover{
+.waze-location-prompt:hover,
+.waze-recenter:hover{
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.07)),
       rgba(14, 165, 233, 0.34);
     border-color: rgba(255, 255, 255, 0.26);
+    transform: translateY(-1px);
 }
 
-.waze-location-prompt:disabled{
+.waze-location-prompt:disabled,
+.waze-recenter:disabled{
     opacity: 0.6;
     cursor: default;
-}
-
-.waze-recenter{
-    min-height: 44px;
-    padding: 0 16px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 999px;
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.05)),
-      rgba(7, 17, 31, 0.34);
-    box-shadow:
-      0 14px 30px rgba(7, 12, 24, 0.2),
-      inset 0 1px 0 rgba(255, 255, 255, 0.22);
-    color: #ffffff;
-    backdrop-filter: blur(14px) saturate(135%);
-    -webkit-backdrop-filter: blur(14px) saturate(135%);
-}
-
-.waze-recenter:hover{
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.06)),
-      rgba(14, 165, 233, 0.48);
-    border-color: rgba(255, 255, 255, 0.28);
+    transform: none;
 }
 
 .waze-recenter.is-stale{
@@ -1484,13 +1475,10 @@ body.speed-page.alert-panel-open .speed-main{
     .waze-hud-actions{
         width: 100%;
         justify-items: stretch;
+        margin-right: 0;
     }
 
-    .waze-location-prompt{
-        max-width: none;
-        text-align: left;
-    }
-
+    .waze-location-prompt,
     .waze-recenter{
         width: 100%;
     }
