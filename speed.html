@@ -337,6 +337,7 @@
                     id="wazeFrame"
                     class="waze-frame"
                     title="Waze map"
+                    tabindex="-1"
                     loading="lazy"
                     referrerpolicy="strict-origin-when-cross-origin"
                     allowfullscreen
@@ -362,6 +363,7 @@
                         id="wazeRecenter"
                         class="waze-recenter"
                         type="button"
+                        tabindex="-1"
                         data-i18n="recenterMap"
                         data-i18n-aria="recenterMap"
                         aria-label="Recenter map"
@@ -373,6 +375,8 @@
                 </div>
               </section>
             </div>
+
+            <div id="speedAlertBackdrop" class="speed-alert-backdrop" hidden aria-hidden="true"></div>
 
             <div id="speedAlertPanel" class="speed-alert-panel" hidden data-i18n-aria="configureAlerts" aria-label="Configure alerts">
               <div class="speed-alert-panel-top">

@@ -106,6 +106,7 @@ const elements = {
   wazeSpeedUnit: document.getElementById("wazeSpeedUnit"),
   wazeStatus: document.getElementById("wazeStatus"),
   wazeRecenter: document.getElementById("wazeRecenter"),
+  alertBackdrop: document.getElementById("speedAlertBackdrop"),
   dialCanvas: document.getElementById("speedDial"),
   needleCanvas: document.getElementById("speedNeedle"),
   speedValue: document.getElementById("speedValue"),
@@ -1046,6 +1047,16 @@ function renderPrimaryView() {
   elements.gaugeCard.dataset.primaryView = state.primaryView;
   elements.gaugeStage?.setAttribute("aria-hidden", String(state.primaryView !== "gauge"));
   elements.wazeStage?.setAttribute("aria-hidden", String(state.primaryView !== "waze"));
+  elements.gaugeStage?.toggleAttribute("inert", state.primaryView !== "gauge");
+  elements.wazeStage?.toggleAttribute("inert", state.primaryView !== "waze");
+
+  if (elements.wazeFrame) {
+    elements.wazeFrame.tabIndex = state.primaryView === "waze" ? 0 : -1;
+  }
+
+  if (elements.wazeRecenter) {
+    elements.wazeRecenter.tabIndex = state.primaryView === "waze" ? 0 : -1;
+  }
 
   for (const button of elements.primaryViewButtons) {
     button.setAttribute("aria-pressed", String(button.dataset.primaryView === state.primaryView));
@@ -2752,6 +2763,9 @@ function setBackgroundAudioEnabled(enabled, { fromUserGesture = false } = {}) {
 }
 
 function openAlertPanel() {
+  if (elements.alertBackdrop) {
+    elements.alertBackdrop.hidden = false;
+  }
   elements.alertPanel.hidden = false;
   if (!state.alertTriggerDiscovered) {
     state.alertTriggerDiscovered = true;
@@ -2765,6 +2779,9 @@ function openAlertPanel() {
 
 function closeAlertPanel() {
   document.body.classList.remove("alert-panel-open");
+  if (elements.alertBackdrop) {
+    elements.alertBackdrop.hidden = true;
+  }
   elements.alertPanel.hidden = true;
   elements.alertTrigger.setAttribute("aria-expanded", "false");
   syncAlertTriggerDiscovery();
