@@ -53,8 +53,8 @@ const GLOBE_SATELLITE_ATTRIBUTION = [
   '(Contains modified Copernicus Sentinel data 2020)',
 ].join(" ");
 const WAZE_EMBED_BASE_URL = "https://embed.waze.com/iframe";
-const WAZE_REFRESH_MIN_INTERVAL_MS = 20000;
-const WAZE_REFRESH_MIN_DISTANCE_M = 100;
+const WAZE_REFRESH_MIN_INTERVAL_MS = 300000;
+const WAZE_REFRESH_MIN_DISTANCE_M = 300;
 const UNIT_CONFIG = {
   mph: { label: "mph", baseMax: 120, tickStep: 20, factor: 2.2369362920544 },
   kmh: { label: "km/h", baseMax: 200, tickStep: 40, factor: 3.6 },
