@@ -276,6 +276,10 @@ body.speed-page.alert-panel-open .speed-main{
 }
 
 .gauge-card{
+    --speed-floating-control-offset: 18px;
+    --speed-floating-control-height: 52px;
+    --speed-primary-stage-side-padding: 18px;
+    --speed-primary-stage-bottom-padding: 12px;
     position: relative;
     border: 1px solid var(--speed-panel-border);
     border-radius: calc(var(--radius) + 8px);
@@ -317,11 +321,13 @@ body.speed-page.alert-panel-open .speed-main{
 
 .speed-view-switch{
     position: absolute;
-    top: 18px;
-    left: 18px;
+    top: var(--speed-floating-control-offset);
+    left: var(--speed-floating-control-offset);
     z-index: 5;
     display: inline-flex;
     gap: 4px;
+    box-sizing: border-box;
+    height: var(--speed-floating-control-height);
     padding: 4px;
     border: 1px solid var(--speed-panel-border);
     border-radius: 18px;
@@ -335,7 +341,9 @@ body.speed-page.alert-panel-open .speed-main{
 
 .speed-view-btn{
     min-width: 104px;
-    min-height: 44px;
+    box-sizing: border-box;
+    min-height: calc(var(--speed-floating-control-height) - 10px);
+    height: calc(var(--speed-floating-control-height) - 10px);
     padding: 10px 14px;
     border: 0;
     border-radius: 14px;
@@ -370,15 +378,17 @@ body.speed-page.alert-panel-open .speed-main{
 
 .speed-alert-trigger{
     position: absolute;
-    top: 18px;
-    right: 18px;
+    top: var(--speed-floating-control-offset);
+    right: var(--speed-floating-control-offset);
     z-index: 5;
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 10px;
     min-width: 168px;
-    min-height: 52px;
+    box-sizing: border-box;
+    min-height: var(--speed-floating-control-height);
+    height: var(--speed-floating-control-height);
     padding: 10px 14px;
     border: 1px solid var(--speed-panel-border);
     border-radius: 18px;
@@ -523,6 +533,15 @@ body.speed-page.alert-panel-open .speed-main{
     isolation: isolate;
 }
 
+.gauge-card[data-primary-view="waze"] .speed-primary-stage{
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    margin: 0;
+    aspect-ratio: auto;
+    align-self: stretch;
+}
+
 .speed-primary-panel{
     position: absolute;
     inset: 0;
@@ -595,13 +614,19 @@ body.speed-page.alert-panel-open .speed-main{
 .waze-stage{
     position: absolute;
     inset: 0;
-    padding: 78px 22px 22px;
+    padding:
+      calc(var(--speed-floating-control-offset) + var(--speed-floating-control-height))
+      var(--speed-primary-stage-side-padding)
+      var(--speed-primary-stage-bottom-padding);
 }
 
 .waze-stage::before{
     content:"";
     position: absolute;
-    inset: 18px;
+    inset:
+      calc(var(--speed-floating-control-offset) + var(--speed-floating-control-height))
+      var(--speed-primary-stage-side-padding)
+      var(--speed-primary-stage-bottom-padding);
     border-radius: calc(var(--radius) + 4px);
     background:
       radial-gradient(circle at 18% 22%, rgba(29, 185, 84, 0.18), transparent 24%),
@@ -1459,6 +1484,12 @@ body.speed-page.alert-panel-open .speed-main{
 }
 
 @media (max-width: 720px){
+    .gauge-card{
+        --speed-floating-control-offset: 12px;
+        --speed-primary-stage-side-padding: 12px;
+        --speed-primary-stage-bottom-padding: 10px;
+    }
+
     .speed-main{
         padding-top: 8px;
         padding-right: max(8px, env(safe-area-inset-right));
@@ -1507,22 +1538,23 @@ body.speed-page.alert-panel-open .speed-main{
     }
 
     .speed-view-switch{
-        top: 12px;
-        left: 12px;
+        top: var(--speed-floating-control-offset);
+        left: var(--speed-floating-control-offset);
         max-width: calc(100% - 180px);
     }
 
     .speed-view-btn{
         flex: 1 1 0;
         min-width: 0;
-        min-height: 40px;
+        min-height: calc(var(--speed-floating-control-height) - 10px);
+        height: calc(var(--speed-floating-control-height) - 10px);
         padding: 8px 12px;
         font-size: 11px;
     }
 
     .speed-alert-trigger{
-        top: 12px;
-        right: 12px;
+        top: var(--speed-floating-control-offset);
+        right: var(--speed-floating-control-offset);
         min-width: 148px;
         padding: 8px 10px;
         gap: 8px;
@@ -1540,10 +1572,6 @@ body.speed-page.alert-panel-open .speed-main{
         bottom: 12px;
         padding: 12px;
         gap: 10px;
-    }
-
-    .waze-stage{
-        padding: 72px 14px 14px;
     }
 
     .waze-map-shell{
@@ -1741,6 +1769,10 @@ body.speed-page.alert-panel-open .speed-main{
         display: grid;
         place-items: center;
         min-height: 100%;
+    }
+
+    .gauge-card[data-primary-view="waze"]{
+        place-items: stretch;
     }
 
     .speed-primary-stage{
