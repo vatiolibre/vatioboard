@@ -280,6 +280,8 @@ body.speed-page.alert-panel-open .speed-main{
     --speed-floating-control-height: 52px;
     --speed-primary-stage-side-padding: 18px;
     --speed-primary-stage-bottom-padding: 12px;
+    --speed-waze-stage-min-height: clamp(360px, calc(100vh - 190px), 780px);
+    --speed-waze-stage-min-height: clamp(360px, calc(100svh - 190px), 780px);
     position: relative;
     border: 1px solid var(--speed-panel-border);
     border-radius: calc(var(--radius) + 8px);
@@ -536,10 +538,10 @@ body.speed-page.alert-panel-open .speed-main{
 .gauge-card[data-primary-view="waze"] .speed-primary-stage{
     width: 100%;
     max-width: none;
-    height: 100%;
+    min-height: var(--speed-waze-stage-min-height);
+    height: auto;
     margin: 0;
     aspect-ratio: auto;
-    align-self: stretch;
 }
 
 .speed-primary-panel{
@@ -1773,6 +1775,12 @@ body.speed-page.alert-panel-open .speed-main{
 
     .gauge-card[data-primary-view="waze"]{
         place-items: stretch;
+    }
+
+    .gauge-card[data-primary-view="waze"] .speed-primary-stage{
+        min-height: 0;
+        height: 100%;
+        align-self: stretch;
     }
 
     .speed-primary-stage{
