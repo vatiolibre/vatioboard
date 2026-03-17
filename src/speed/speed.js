@@ -1124,7 +1124,10 @@ function setPrimaryView(view) {
   savePrimaryViewPreference(view);
   renderPrimaryView();
 
-  if (view === "waze" && (!state.wazeLoaded || !elements.wazeFrame?.getAttribute("src") || shouldRefreshWazeEmbed())) {
+  // Reload the embed only when it does not exist yet. Once Waze is already live,
+  // keep the current iframe stable and surface "Recenter" instead of forcing a refresh,
+  // because cross-origin Waze layers sometimes appear only after a user-driven map move.
+  if (view === "waze" && (!state.wazeLoaded || !elements.wazeFrame?.getAttribute("src"))) {
     syncWazeEmbed();
   }
 
@@ -3015,7 +3018,7 @@ function handlePosition(position) {
 
   updateNearestTrap(coords.longitude, coords.latitude);
   syncGlobePosition(coords.longitude, coords.latitude);
-  if (state.primaryView === "waze" && (!state.wazeLoaded || !elements.wazeFrame?.getAttribute("src") || shouldRefreshWazeEmbed())) {
+  if (state.primaryView === "waze" && (!state.wazeLoaded || !elements.wazeFrame?.getAttribute("src"))) {
     syncWazeEmbed();
   } else {
     renderWazeUi();
