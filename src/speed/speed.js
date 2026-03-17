@@ -99,7 +99,9 @@ const elements = {
   gaugeCard: document.querySelector(".gauge-card"),
   langToggle: document.getElementById("langToggle"),
   primaryViewButtons: Array.from(document.querySelectorAll(".speed-view-btn")),
+  speedPrimaryStage: document.getElementById("speedPrimaryStage"),
   gaugeStage: document.getElementById("gaugeStage"),
+  gaugeStageInner: document.querySelector(".gauge-stage-inner"),
   wazeStage: document.getElementById("wazeStage"),
   wazeFrame: document.getElementById("wazeFrame"),
   wazePlaceholder: document.getElementById("wazePlaceholder"),
@@ -283,6 +285,7 @@ const state = {
   renderFrameId: null,
   lastTextUpdateAt: 0,
   canvasSize: 0,
+  gaugeStageSize: 0,
   wazeLoaded: false,
   wazeLoadPending: false,
   wazeCenteredAt: null,
@@ -291,6 +294,7 @@ const state = {
   globeMap: null,
   globeReady: false,
   globeError: null,
+  gaugeResizeObserver: null,
   globeResizeObserver: null,
   globeCenter: null,
   globeFollowPausedUntil: 0,
@@ -3075,6 +3079,7 @@ function handlePositionError(error) {
 }
 
 function resizeCanvas() {
+  syncGaugeStageSize();
   const rect = elements.dialCanvas.getBoundingClientRect();
   const size = Math.max(1, Math.floor(Math.min(rect.width, rect.height)));
   const dpr = window.devicePixelRatio || 1;
@@ -3093,6 +3098,26 @@ function resizeCanvas() {
   needleContext.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawGauge();
   resizeGlobe();
+}
+
+function syncGaugeStageSize() {
+  if (!elements.gaugeStage || !elements.gaugeStageInner) return;
+
+  const rect = elements.gaugeStage.getBoundingClientRect();
+  const size = Math.max(1, Math.floor(Math.min(rect.width, rect.height)));
+  if (size === state.gaugeStageSize) return;
+
+  state.gaugeStageSize = size;
+  elements.gaugeStageInner.style.setProperty("--speed-gauge-stage-size", `${size}px`);
+}
+
+function initGaugeLayoutObserver() {
+  if (!elements.speedPrimaryStage || typeof ResizeObserver !== "function") return;
+
+  state.gaugeResizeObserver = new ResizeObserver(() => {
+    resizeCanvas();
+  });
+  state.gaugeResizeObserver.observe(elements.speedPrimaryStage);
 }
 
 function getCssColor(name, fallback) {
@@ -3577,6 +3602,7 @@ function init() {
   renderPrimaryView();
   renderMetrics();
   initGlobe();
+  initGaugeLayoutObserver();
   resizeCanvas();
   bindEvents();
   loadTrapArtifacts();
