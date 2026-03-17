@@ -24,6 +24,9 @@ const OVERSPEED_SOUND_URL = "/audio/overspeed_notification.m4a";
 const TRAP_SOUND_URL = "/audio/near_camera_notification.m4a";
 const TRAP_DATA_URL = "/geo/ansv_cameras_compact.min.json";
 const TRAP_INDEX_URL = "/geo/ansv_cameras_compact.kdbush";
+const SPEED_APP_NAME = "Vatio Speed";
+const RUNTIME_ARTWORK_SIZE = 512;
+const MEDIA_METADATA_MIN_UPDATE_INTERVAL_MS = 1000;
 const BACKGROUND_KEEPALIVE_SAMPLE_RATE = 22050;
 const BACKGROUND_KEEPALIVE_DURATION_SECONDS = 2;
 const GLOBE_DEFAULT_CENTER = [137.9150899566626, 36.25956997955441];
@@ -218,6 +221,11 @@ backgroundKeepAliveAudio.playsInline = true;
 let trapLoadPromise = null;
 let audioPrimePromise = null;
 const pageDescriptionMeta = document.querySelector('meta[name="description"]');
+const MEDIA_SESSION_FALLBACK_ARTWORK = [
+  { src: "/favicon-96x96.png", sizes: "96x96", type: "image/png" },
+  { src: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+  { src: "/img/vatio-board-speed-og-1200x630.jpg", sizes: "1200x630", type: "image/jpeg" },
+];
 
 const initialUnit = loadUnitPreference();
 const initialDistanceUnit = loadDistanceUnitPreference();
@@ -302,6 +310,14 @@ const state = {
   globeSolarUpdateIntervalId: null,
   globeSolarSyncFrameId: null,
   globeSolarGeometryDirty: false,
+  runtimePageTitle: "",
+  runtimeArtworkSignature: "",
+  runtimeArtworkDataUrl: "",
+  runtimeDynamicArtworkBlocked: false,
+  runtimeMediaMetadataSignature: "",
+  runtimeMediaMetadataUrgencySignature: "",
+  runtimeMediaMetadataUpdatedAt: 0,
+  runtimeMediaPlaybackState: "",
 };
 
 function clampNumber(value, min, max) {
@@ -568,12 +584,478 @@ function tf(key, values = {}) {
   return t(key).replace(/\{(\w+)\}/g, (_, token) => String(values[token] ?? ""));
 }
 
+function capitalizeText(value) {
+  return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : value;
+}
+
+function truncateText(value, maxLength = 32) {
+  if (!value) return "";
+  return value.length > maxLength ? `${value.slice(0, Math.max(0, maxLength - 1))}...` : value;
+}
+
+function escapeSvgText(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function supportsMediaSession() {
+  return "mediaSession" in navigator;
+}
+
+function supportsMediaMetadata() {
+  return supportsMediaSession() && typeof window.MediaMetadata === "function";
+}
+
+function getRuntimeSpeedLabel() {
+  return `${Math.round(convertSpeed(state.currentSpeedMs))} ${UNIT_CONFIG[state.unit].label}`;
+}
+
+function getRuntimeTripLabel() {
+  const distance = getDistanceDisplay(state.totalDistanceM);
+  return `${capitalizeText(t("trip"))} ${distance.value} ${distance.unit}`;
+}
+
+function getRuntimeBackgroundAudioLabel() {
+  return `${t("backgroundAudio")}: ${state.backgroundAudioEnabled ? t("on") : t("off")}`;
+}
+
+function getRuntimeArtworkStatusBadgeText() {
+  return state.statusKind === "accuracy" && state.lastFixAt > 0
+    ? t("gpsLive")
+    : state.statusText;
+}
+
+function getRuntimeArtworkAlertValue(alertState = getAlertUiState()) {
+  if (alertState.trapActive) {
+    return alertState.trapSpeedLabel
+      ? `${alertState.trapDistanceLabel} / ${alertState.trapSpeedLabel}`
+      : alertState.trapDistanceLabel;
+  }
+
+  if (alertState.manualEnabled) {
+    return `${getAlertLimitDisplayValue()} ${UNIT_CONFIG[state.unit].label}`;
+  }
+
+  if (state.trapAlertEnabled && state.trapLoadPending) {
+    return t("loadingTraps");
+  }
+
+  if (state.trapAlertEnabled && state.trapLoadError) {
+    return t("trapUnavailable");
+  }
+
+  if (state.trapAlertEnabled) {
+    return getConfiguredTrapAlertDistanceLabel();
+  }
+
+  return t("off");
+}
+
+function getCriticalAlertText(alertState = getAlertUiState()) {
+  if (alertState.over) {
+    return alertState.source === "trap"
+      ? tf("overTrapLimitBy", { delta: `${alertState.deltaDisplayValue} ${alertState.unitLabel}` })
+      : tf("overSummary", { delta: `${alertState.deltaDisplayValue} ${alertState.unitLabel}` });
+  }
+
+  if (alertState.trapActive) {
+    return alertState.trapSpeedLabel
+      ? tf("trapAheadWithLimit", { distance: alertState.trapDistanceLabel, limit: alertState.trapSpeedLabel })
+      : tf("trapAhead", { distance: alertState.trapDistanceLabel });
+  }
+
+  return "";
+}
+
+function getSubStatusText(alertState = getAlertUiState()) {
+  const isLiveStatus = state.lastFixAt > 0 && state.statusKind === "accuracy";
+
+  if (!isLiveStatus) {
+    return state.statusText;
+  }
+
+  if (alertState.over) {
+    return alertState.source === "trap"
+      ? tf("overTrapLimitBy", { delta: `${alertState.deltaDisplayValue} ${alertState.unitLabel}` })
+      : tf("overSummary", { delta: `${alertState.deltaDisplayValue} ${alertState.unitLabel}` });
+  }
+
+  if (alertState.trapActive) {
+    return alertState.trapSpeedLabel
+      ? tf("trapAheadWithLimit", { distance: alertState.trapDistanceLabel, limit: alertState.trapSpeedLabel })
+      : tf("trapAhead", { distance: alertState.trapDistanceLabel });
+  }
+
+  if (alertState.manualEnabled) {
+    return tf("manualAlertAt", {
+      limit: `${getAlertLimitDisplayValue()} ${UNIT_CONFIG[state.unit].label}`,
+    });
+  }
+
+  if (state.trapAlertEnabled && state.trapLoadPending) {
+    return t("loadingTrapData");
+  }
+
+  if (state.trapAlertEnabled && state.trapLoadError) {
+    return t("trapDataUnavailable");
+  }
+
+  return state.statusText;
+}
+
+function getRuntimeMediaTitle(alertState = getAlertUiState()) {
+  if (state.lastFixAt <= 0) {
+    return state.statusText;
+  }
+
+  const speedLabel = getRuntimeSpeedLabel();
+  const criticalAlertText = getCriticalAlertText(alertState);
+  return criticalAlertText ? `${speedLabel} · ${criticalAlertText}` : speedLabel;
+}
+
+function getRuntimeMediaArtist(alertState = getAlertUiState()) {
+  if (state.lastFixAt <= 0) {
+    return getRuntimeBackgroundAudioLabel();
+  }
+
+  if (alertState.over || alertState.trapActive) {
+    return state.statusText;
+  }
+
+  return getSubStatusText(alertState);
+}
+
+function getRuntimeMediaAlbum() {
+  if (state.lastFixAt <= 0) {
+    return SPEED_APP_NAME;
+  }
+
+  return `${SPEED_APP_NAME} · ${getRuntimeTripLabel()}`;
+}
+
+function getRuntimePageTitle(alertState = getAlertUiState()) {
+  const title = getRuntimeMediaTitle(alertState);
+  return title ? `${title} | ${SPEED_APP_NAME}` : t("speedPageTitle");
+}
+
+function getRuntimeMediaPlaybackState() {
+  if (!backgroundKeepAliveAudio.paused || !overspeedAudio.paused || !trapAlertAudio.paused) {
+    return "playing";
+  }
+
+  if (
+    state.backgroundAudioEnabled
+    || state.backgroundAudioArmPending
+    || state.alertSoundPending
+    || state.trapSoundPending
+  ) {
+    return "paused";
+  }
+
+  return "none";
+}
+
+function getRuntimeArtworkPalette(alertState = getAlertUiState()) {
+  if (alertState.over) {
+    return {
+      bgStart: "#21080d",
+      bgEnd: "#4a1017",
+      accent: "#ff7b63",
+      accentSoft: "#ffb39f",
+      panel: "rgba(26, 10, 13, 0.78)",
+      panelBorder: "rgba(255, 176, 158, 0.22)",
+      text: "#fff4f1",
+      muted: "#f8c8be",
+      chip: "rgba(255, 123, 99, 0.16)",
+      chipBorder: "rgba(255, 123, 99, 0.34)",
+    };
+  }
+
+  if (alertState.trapActive) {
+    return {
+      bgStart: "#1c1406",
+      bgEnd: "#4f3108",
+      accent: "#f6c453",
+      accentSoft: "#ffe29e",
+      panel: "rgba(24, 18, 8, 0.78)",
+      panelBorder: "rgba(246, 196, 83, 0.22)",
+      text: "#fff9eb",
+      muted: "#f5dfad",
+      chip: "rgba(246, 196, 83, 0.14)",
+      chipBorder: "rgba(246, 196, 83, 0.28)",
+    };
+  }
+
+  return {
+    bgStart: "#081421",
+    bgEnd: "#163854",
+    accent: "#63e6be",
+    accentSoft: "#93c5fd",
+    panel: "rgba(8, 19, 33, 0.72)",
+    panelBorder: "rgba(147, 197, 253, 0.16)",
+    text: "#f8fbff",
+    muted: "#bfd5ea",
+    chip: "rgba(99, 230, 190, 0.12)",
+    chipBorder: "rgba(147, 197, 253, 0.24)",
+  };
+}
+
+function buildRuntimeArtworkModel(alertState = getAlertUiState()) {
+  const speedValue = String(Math.round(convertSpeed(state.currentSpeedMs)));
+  const criticalAlertText = getCriticalAlertText(alertState);
+  const sectionLabel = criticalAlertText ? t("alerts") : getRuntimeArtworkStatusBadgeText();
+  const primaryLine = criticalAlertText || getSubStatusText(alertState);
+  const tripDistance = getDistanceDisplay(state.totalDistanceM);
+
+  return {
+    speedValue,
+    unitLabel: UNIT_CONFIG[state.unit].label,
+    statusBadge: truncateText(getRuntimeArtworkStatusBadgeText(), 24),
+    sectionLabel: truncateText(sectionLabel, 24),
+    primaryLine: truncateText(primaryLine || state.statusText, 42),
+    tripLabel: capitalizeText(t("trip")),
+    tripValue: truncateText(`${tripDistance.value} ${tripDistance.unit}`, 16),
+    alertLabel: t("alerts"),
+    alertValue: truncateText(getRuntimeArtworkAlertValue(alertState), 22),
+    backgroundLabel: t("backgroundCompact"),
+    backgroundValue: truncateText(state.backgroundAudioEnabled ? t("on") : t("off"), 12),
+    palette: getRuntimeArtworkPalette(alertState),
+  };
+}
+
+function createRuntimeArtworkDataUrl(alertState = getAlertUiState()) {
+  const model = buildRuntimeArtworkModel(alertState);
+  const {
+    speedValue,
+    unitLabel,
+    statusBadge,
+    sectionLabel,
+    primaryLine,
+    tripLabel,
+    tripValue,
+    alertLabel,
+    alertValue,
+    backgroundLabel,
+    backgroundValue,
+    palette,
+  } = model;
+
+  const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="${RUNTIME_ARTWORK_SIZE}" height="${RUNTIME_ARTWORK_SIZE}" viewBox="0 0 512 512" role="img" aria-label="${escapeSvgText(SPEED_APP_NAME)}">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="${palette.bgStart}" />
+      <stop offset="100%" stop-color="${palette.bgEnd}" />
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="${palette.accent}" />
+      <stop offset="100%" stop-color="${palette.accentSoft}" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="rgba(0,0,0,0.22)" />
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="44" fill="url(#bg)" />
+  <circle cx="420" cy="96" r="94" fill="${palette.accent}" opacity="0.12" />
+  <circle cx="458" cy="66" r="54" fill="${palette.accentSoft}" opacity="0.12" />
+  <rect x="28" y="28" width="456" height="456" rx="34" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)" />
+
+  <text x="48" y="62" fill="${palette.muted}" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" letter-spacing="2">VATIO SPEED</text>
+  <g filter="url(#shadow)">
+    <rect x="356" y="38" width="108" height="34" rx="17" fill="${palette.chip}" stroke="${palette.chipBorder}" />
+  </g>
+  <text x="410" y="60" text-anchor="middle" fill="${palette.text}" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700">${escapeSvgText(statusBadge)}</text>
+
+  <text x="48" y="116" fill="${palette.muted}" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="700" letter-spacing="2">${escapeSvgText(t("speed"))}</text>
+  <text x="48" y="248" fill="${palette.text}" font-family="Arial, Helvetica, sans-serif" font-size="170" font-weight="700">${escapeSvgText(speedValue)}</text>
+  <text x="344" y="248" fill="${palette.accentSoft}" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="700">${escapeSvgText(unitLabel)}</text>
+
+  <g filter="url(#shadow)">
+    <rect x="40" y="284" width="432" height="100" rx="28" fill="${palette.panel}" stroke="${palette.panelBorder}" />
+  </g>
+  <text x="64" y="318" fill="${palette.muted}" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" letter-spacing="1.5">${escapeSvgText(sectionLabel)}</text>
+  <text x="64" y="356" fill="${palette.text}" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700">${escapeSvgText(primaryLine)}</text>
+
+  <g filter="url(#shadow)">
+    <rect x="40" y="404" width="132" height="72" rx="22" fill="${palette.chip}" stroke="${palette.chipBorder}" />
+    <rect x="190" y="404" width="132" height="72" rx="22" fill="${palette.chip}" stroke="${palette.chipBorder}" />
+    <rect x="340" y="404" width="132" height="72" rx="22" fill="${palette.chip}" stroke="${palette.chipBorder}" />
+  </g>
+
+  <text x="58" y="430" fill="${palette.muted}" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700">${escapeSvgText(tripLabel)}</text>
+  <text x="58" y="460" fill="${palette.text}" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700">${escapeSvgText(tripValue)}</text>
+
+  <text x="208" y="430" fill="${palette.muted}" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700">${escapeSvgText(alertLabel)}</text>
+  <text x="208" y="460" fill="${palette.text}" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700">${escapeSvgText(alertValue)}</text>
+
+  <text x="358" y="430" fill="${palette.muted}" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700">${escapeSvgText(backgroundLabel)}</text>
+  <text x="358" y="460" fill="${palette.text}" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700">${escapeSvgText(backgroundValue)}</text>
+</svg>`.trim();
+
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+function getRuntimeArtworkSignature(alertState = getAlertUiState()) {
+  const model = buildRuntimeArtworkModel(alertState);
+  return JSON.stringify([
+    model.speedValue,
+    model.unitLabel,
+    model.statusBadge,
+    model.sectionLabel,
+    model.primaryLine,
+    model.tripValue,
+    model.alertValue,
+    model.backgroundValue,
+    model.palette.bgStart,
+    model.palette.bgEnd,
+    model.palette.accent,
+  ]);
+}
+
+function getRuntimeMediaArtwork(alertState = getAlertUiState()) {
+  const artworkSignature = getRuntimeArtworkSignature(alertState);
+
+  if (state.runtimeArtworkSignature !== artworkSignature || !state.runtimeArtworkDataUrl) {
+    state.runtimeArtworkDataUrl = createRuntimeArtworkDataUrl(alertState);
+    state.runtimeArtworkSignature = artworkSignature;
+  }
+
+  return [
+    {
+      src: state.runtimeArtworkDataUrl,
+      sizes: `${RUNTIME_ARTWORK_SIZE}x${RUNTIME_ARTWORK_SIZE}`,
+      type: "image/svg+xml",
+    },
+    ...MEDIA_SESSION_FALLBACK_ARTWORK,
+  ];
+}
+
+function syncRuntimePagePresentation() {
+  const alertState = getAlertUiState();
+  const nextPageTitle = getRuntimePageTitle(alertState);
+
+  if (state.runtimePageTitle !== nextPageTitle) {
+    document.title = nextPageTitle;
+    state.runtimePageTitle = nextPageTitle;
+  }
+
+  if (!supportsMediaSession()) {
+    return;
+  }
+
+  const nextPlaybackState = getRuntimeMediaPlaybackState();
+  if (state.runtimeMediaPlaybackState !== nextPlaybackState) {
+    try {
+      navigator.mediaSession.playbackState = nextPlaybackState;
+    } catch {
+      // Some embedded browsers expose mediaSession but reject playback state updates.
+    }
+    state.runtimeMediaPlaybackState = nextPlaybackState;
+  }
+
+  if (!supportsMediaMetadata()) {
+    return;
+  }
+
+  const artworkSignature = state.runtimeDynamicArtworkBlocked
+    ? "fallback-artwork"
+    : getRuntimeArtworkSignature(alertState);
+  const metadataTitle = getRuntimeMediaTitle(alertState);
+  const metadataArtist = getRuntimeMediaArtist(alertState);
+  const metadataAlbum = getRuntimeMediaAlbum();
+  const metadataSignature = JSON.stringify([
+    metadataTitle,
+    metadataArtist,
+    metadataAlbum,
+    artworkSignature,
+  ]);
+  const metadataUrgencySignature = JSON.stringify([
+    state.statusKind,
+    state.audioMuted,
+    state.backgroundAudioEnabled,
+    state.lastFixAt > 0,
+    alertState.source,
+    alertState.over,
+    alertState.trapActive,
+  ]);
+  const now = Date.now();
+
+  if (state.runtimeMediaMetadataSignature === metadataSignature) {
+    return;
+  }
+
+  if (
+    state.runtimeMediaMetadataUpdatedAt > 0
+    && (now - state.runtimeMediaMetadataUpdatedAt) < MEDIA_METADATA_MIN_UPDATE_INTERVAL_MS
+    && state.runtimeMediaMetadataUrgencySignature === metadataUrgencySignature
+  ) {
+    return;
+  }
+
+  const metadataInit = {
+    title: metadataTitle,
+    artist: metadataArtist,
+    album: metadataAlbum,
+    artwork: state.runtimeDynamicArtworkBlocked
+      ? MEDIA_SESSION_FALLBACK_ARTWORK
+      : getRuntimeMediaArtwork(alertState),
+  };
+
+  try {
+    navigator.mediaSession.metadata = new window.MediaMetadata(metadataInit);
+  } catch {
+    if (!state.runtimeDynamicArtworkBlocked) {
+      state.runtimeDynamicArtworkBlocked = true;
+      try {
+        navigator.mediaSession.metadata = new window.MediaMetadata({
+          ...metadataInit,
+          artwork: MEDIA_SESSION_FALLBACK_ARTWORK,
+        });
+      } catch {
+        // Ignore browsers that reject metadata construction.
+      }
+    }
+  }
+  state.runtimeMediaMetadataSignature = metadataSignature;
+  state.runtimeMediaMetadataUrgencySignature = metadataUrgencySignature;
+  state.runtimeMediaMetadataUpdatedAt = now;
+}
+
+function setMediaSessionActionHandler(action, handler) {
+  if (!supportsMediaSession() || typeof navigator.mediaSession.setActionHandler !== "function") {
+    return;
+  }
+
+  try {
+    navigator.mediaSession.setActionHandler(action, handler);
+  } catch {
+    // Ignore unsupported actions on partial Media Session implementations.
+  }
+}
+
+function installMediaSessionActionHandlers() {
+  setMediaSessionActionHandler("play", () => {
+    setBackgroundAudioEnabled(true, { fromUserGesture: true });
+  });
+  setMediaSessionActionHandler("pause", () => {
+    setBackgroundAudioEnabled(false, { fromUserGesture: true });
+  });
+  setMediaSessionActionHandler("stop", () => {
+    setBackgroundAudioEnabled(false, { fromUserGesture: true });
+    setAudioMuted(true, { fromUserGesture: true });
+  });
+}
+
 function updatePageMeta() {
   document.documentElement.lang = getLang();
-  document.title = t("speedPageTitle");
   if (pageDescriptionMeta) {
     pageDescriptionMeta.setAttribute("content", t("speedPageDescription"));
   }
+  syncRuntimePagePresentation();
 }
 
 function loadUnitPreference() {
@@ -836,6 +1318,7 @@ function setStatus(kind, params = null) {
   renderSubStatus();
   renderGlobeStatus();
   renderWazeUi();
+  syncRuntimePagePresentation();
 }
 
 function showNotice(message) {
@@ -2589,46 +3072,7 @@ function getAlertPanelStatusText(alertState) {
 }
 
 function renderSubStatus() {
-  const alertState = getAlertUiState();
-  const isLiveStatus = state.lastFixAt > 0 && state.statusKind === "accuracy";
-
-  if (!isLiveStatus) {
-    elements.subStatus.textContent = state.statusText;
-    return;
-  }
-
-  if (alertState.over) {
-    elements.subStatus.textContent = alertState.source === "trap"
-      ? tf("overTrapLimitBy", { delta: `${alertState.deltaDisplayValue} ${alertState.unitLabel}` })
-      : tf("overSummary", { delta: `${alertState.deltaDisplayValue} ${alertState.unitLabel}` });
-    return;
-  }
-
-  if (alertState.trapActive) {
-    elements.subStatus.textContent = alertState.trapSpeedLabel
-      ? tf("trapAheadWithLimit", { distance: alertState.trapDistanceLabel, limit: alertState.trapSpeedLabel })
-      : tf("trapAhead", { distance: alertState.trapDistanceLabel });
-    return;
-  }
-
-  if (alertState.manualEnabled) {
-    elements.subStatus.textContent = tf("manualAlertAt", {
-      limit: `${getAlertLimitDisplayValue()} ${UNIT_CONFIG[state.unit].label}`,
-    });
-    return;
-  }
-
-  if (state.trapAlertEnabled && state.trapLoadPending) {
-    elements.subStatus.textContent = t("loadingTrapData");
-    return;
-  }
-
-  if (state.trapAlertEnabled && state.trapLoadError) {
-    elements.subStatus.textContent = t("trapDataUnavailable");
-    return;
-  }
-
-  elements.subStatus.textContent = state.statusText;
+  elements.subStatus.textContent = getSubStatusText();
 }
 
 function renderAlertUi(options = {}) {
@@ -3357,16 +3801,17 @@ function renderMetrics() {
   elements.minAltitudeUnit.textContent = distanceUnitLabel;
   renderAlertUi();
   renderWazeUi();
+  syncRuntimePagePresentation();
 }
 
 function syncLanguage() {
   applyTranslations();
+  state.statusText = getStatusText(state.statusKind, state.statusParams);
   updatePageMeta();
   if (elements.langToggle) {
     elements.langToggle.textContent = getLang().toUpperCase();
   }
 
-  state.statusText = getStatusText(state.statusKind, state.statusParams);
   elements.status.textContent = state.statusText;
 
   if (!elements.notice.hidden && state.noticeKey) {
@@ -3543,6 +3988,7 @@ function bindEvents() {
     if (document.hidden) {
       stopGlobeSolarUpdates();
       stopRenderLoop();
+      syncRuntimePagePresentation();
       return;
     }
 
@@ -3556,14 +4002,15 @@ function bindEvents() {
     }
     syncOverspeedSound();
     syncTrapSound();
+    syncRuntimePagePresentation();
   });
   document.addEventListener("i18n:change", syncLanguage);
 }
 
 function init() {
   document.body.classList.remove("alert-panel-open");
-  updatePageMeta();
   normalizeInitialAudioPreferences();
+  updatePageMeta();
 
   if (elements.langToggle) {
     elements.langToggle.textContent = getLang().toUpperCase();
@@ -3599,6 +4046,13 @@ function init() {
     ));
   }
 
+  for (const audio of [overspeedAudio, trapAlertAudio, backgroundKeepAliveAudio]) {
+    audio.addEventListener("play", syncRuntimePagePresentation);
+    audio.addEventListener("pause", syncRuntimePagePresentation);
+    audio.addEventListener("ended", syncRuntimePagePresentation);
+  }
+
+  installMediaSessionActionHandlers();
   renderPrimaryView();
   renderMetrics();
   initGlobe();
