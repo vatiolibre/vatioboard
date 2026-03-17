@@ -883,10 +883,10 @@ body.speed-page.alert-panel-open .speed-main{
 
 .waze-hud-actions{
     display: grid;
-    width: auto;
-    max-width: min(150px, 40vw);
-    justify-items: end;
-    gap: 8px;
+    width: min(150px, 40vw);
+    max-width: 100%;
+    justify-items: stretch;
+    gap: 4px;
     margin-right: 22px;
 }
 
@@ -895,11 +895,12 @@ body.speed-page.alert-panel-open .speed-main{
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: auto;
+    width: 100%;
     max-width: 100%;
-    min-height: 40px;
+    max-height: 35px;
+    min-height: 30px;
     margin: 0;
-    padding: 8px 12px;
+    padding: 6px 10px;
     border: 1px solid rgba(255, 255, 255, 0.18);
     border-radius: 18px;
     background:
@@ -910,15 +911,15 @@ body.speed-page.alert-panel-open .speed-main{
       inset 0 1px 0 rgba(255, 255, 255, 0.22);
     backdrop-filter: blur(14px) saturate(135%);
     -webkit-backdrop-filter: blur(14px) saturate(135%);
-    font-size: 11px;
+    font-size: 10px;
     font-family: inherit;
     font-weight: 700;
-    line-height: 1.2;
+    line-height: 1.1;
     text-align: center;
     color: rgba(255, 255, 255, 0.92);
     cursor: pointer;
     transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
-    justify-self: end;
+    justify-self: stretch;
 }
 
 .waze-location-prompt:hover,
@@ -1611,6 +1612,8 @@ body.speed-page.alert-panel-open .speed-main{
     .waze-hud-actions{
         width: 100%;
         justify-items: stretch;
+        align-self: end;
+        align-content: end;
         margin-right: 50px;
     }
 
@@ -1786,6 +1789,7 @@ body.speed-page.alert-panel-open .speed-main{
         -webkit-overflow-scrolling: touch;
         touch-action: pan-y;
     }
+
 }
 
 @media (min-width: 800px){
