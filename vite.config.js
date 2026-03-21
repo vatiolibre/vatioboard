@@ -14,6 +14,7 @@ export default defineConfig({
         calculator: resolve(__dirname, "calculator.html"),
         speed: resolve(__dirname, "speed.html"),
         gpsRate: resolve(__dirname, "gps-rate.html"),
+        accel: resolve(__dirname, "accel.html"),
       },
     },
   },

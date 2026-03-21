@@ -25,6 +25,7 @@ const ACCURACY_WARNING_M = 25;
 const SPARSE_INTERVAL_WARNING_MS = 2500;
 const SPARSE_HZ_WARNING = 0.66;
 const STALE_SAMPLE_AGE_MS = 1500;
+const MIN_VALID_EPOCH_MS = Date.UTC(2000, 0, 1);
 const MOVING_SPEED_THRESHOLD_MS = 1;
 const STATIONARY_SPEED_THRESHOLD_MS = 0.3;
 const MIN_DISTANCE_NOISE_FLOOR_M = 4;
@@ -232,6 +233,19 @@ function normalizeStoredSummary(summary) {
 
 function isFiniteNumber(value) {
   return Number.isFinite(value);
+}
+
+function normalizePositionTimestamp(timestamp, fallbackMs = Date.now()) {
+  if (!isFiniteNumber(timestamp)) return fallbackMs;
+
+  const safeFallbackMs = isFiniteNumber(fallbackMs) ? fallbackMs : Date.now();
+  const maxReasonableMs = safeFallbackMs + (60 * 1000);
+
+  if (timestamp < MIN_VALID_EPOCH_MS || timestamp > maxReasonableMs) {
+    return safeFallbackMs;
+  }
+
+  return timestamp;
 }
 
 function getElapsedActiveMs() {
@@ -1011,7 +1025,7 @@ function renderLatestSample() {
   elements.latestGeoTimestampValue.textContent = latestSample ? formatLocalTimestamp(latestSample.positionTimestampMs) : "—";
   elements.latestPerfTimestampValue.textContent = latestSample ? formatPerfTimestamp(latestSample.performanceNowMs) : "—";
   elements.latestSampleAgeValue.textContent = latestSample
-    ? formatMs(isFiniteNumber(latestSample.positionTimestampMs) ? Math.max(0, Date.now() - latestSample.positionTimestampMs) : null)
+    ? formatMs(latestSample.sampleAgeMs)
     : "—";
   elements.latestCallbackDeltaValue.textContent = latestSample ? formatMs(latestSample.intervalMs) : "—";
   elements.latestGeoDeltaValue.textContent = latestSample ? formatMs(latestSample.geoTimestampDeltaMs) : "—";
@@ -1082,13 +1096,15 @@ function buildSample(position) {
   const callbackWallClockMs = Date.now();
   const previousSample = state.samples.length ? state.samples[state.samples.length - 1] : null;
   const coords = position.coords || {};
-  const positionTimestampMs = isFiniteNumber(position.timestamp) ? position.timestamp : null;
+  const positionTimestampMs = normalizePositionTimestamp(position.timestamp, callbackWallClockMs);
   const intervalMs = previousSample ? callbackPerfMs - previousSample.performanceNowMs : null;
   const effectiveHz = isFiniteNumber(intervalMs) && intervalMs > 0 ? 1000 / intervalMs : null;
   const geoTimestampDeltaMs = previousSample && isFiniteNumber(positionTimestampMs) && isFiniteNumber(previousSample.positionTimestampMs)
     ? positionTimestampMs - previousSample.positionTimestampMs
     : null;
-  const sampleAgeMs = isFiniteNumber(positionTimestampMs) ? callbackWallClockMs - positionTimestampMs : null;
+  const sampleAgeMs = isFiniteNumber(positionTimestampMs)
+    ? Math.max(0, callbackWallClockMs - positionTimestampMs)
+    : null;
   const motion = classifyMotion(coords, previousSample, callbackPerfMs);
   const sample = {
     index: state.samples.length + 1,

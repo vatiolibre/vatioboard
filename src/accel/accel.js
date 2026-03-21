@@ -1,0 +1,1866 @@
+import "../styles/accel.less";
+
+(function () {
+  var LANG_KEY = "vatio_board_lang";
+  var STORAGE_KEYS = {
+    runs: "vatioboard.accel.runs",
+    settings: "vatioboard.accel.settings",
+  };
+
+  var MPH_TO_MS = 0.44704;
+  var KMH_TO_MS = 1000 / 3600;
+  var FT_TO_M = 0.3048;
+  var EIGHTH_MILE_M = 201.168;
+  var QUARTER_MILE_M = 402.336;
+  var GEO_OPTIONS = {
+    enableHighAccuracy: true,
+    maximumAge: 0,
+    timeout: 10000,
+  };
+  var GEO_ERROR_CODE = {
+    PERMISSION_DENIED: 1,
+    POSITION_UNAVAILABLE: 2,
+    TIMEOUT: 3,
+  };
+  var MAX_RUNS = 40;
+  var MAX_PLAUSIBLE_SPEED_MS = 90;
+  var READY_SAMPLE_AGE_MS = 2500;
+  var READY_ACCURACY_M = 30;
+  var STALE_INTERVAL_MS = 1500;
+  var SPARSE_INTERVAL_MS = 1800;
+  var RECENT_INTERVAL_WINDOW = 12;
+  var TIMER_TICK_MS = 50;
+  var MIN_VALID_RUN_SAMPLES = 4;
+  var MIN_VALID_RUN_DURATION_MS = 800;
+
+  var translations = {
+    en: {
+      accelPageTitle: "Vatio Accel - Browser Acceleration Timer for Tesla and Mobile",
+      accelPageDescription: "Browser-based acceleration timer using only geolocation and local processing. Built for Tesla browser testing and honest run quality scoring.",
+      accelPageH1: "Vatio Accel browser acceleration timer",
+      accelTagline: "Browser acceleration timer by Vatio Libre",
+      accelRoute: "ACCEL",
+      accelToolbar: "Acceleration tools",
+      accelGpsLab: "GPS Lab",
+      accelHeroKicker: "Browser acceleration timer",
+      accelHeroTitle: "Browser-based acceleration testing for Tesla and mobile",
+      accelHeroLead: "Uses browser geolocation only. Results are estimates based on observed GPS callbacks, not certified timing.",
+      accelDisclaimer: "Accuracy depends on browser callback rate, GPS quality, visibility state, and device behavior. Use repeated runs and quality grades honestly.",
+      accelStorageNote: "Runs and settings stay in local storage on this browser only",
+      accelStatusPanel: "Status panel",
+      accelStatusLead: "Live browser GPS readiness and signal quality.",
+      accelTestSelector: "Test selector",
+      accelTestLead: "Standing-start, rolling-start, and distance presets.",
+      accelCustomRange: "Custom speed range",
+      accelStartSpeed: "Start speed",
+      accelEndSpeed: "End speed",
+      accelControls: "Controls",
+      accelControlsLead: "Arm the run, choose rollout, and store quick notes locally.",
+      accelArm: "Arm",
+      accelCancel: "Stop / Cancel",
+      accelReset: "Reset",
+      accelRollout: "Rollout",
+      accelRolloutOneFoot: "1 ft",
+      accelLaunchThreshold: "Launch threshold",
+      accelLaunchThresholdHalf: "0.5 mph",
+      accelLaunchThresholdOne: "1.0 mph",
+      accelNotes: "Run notes",
+      accelNotesPlaceholder: "Example: 90% SOC, flat road",
+      accelLiveRun: "Live run",
+      accelLiveLead: "Large timer, speed, distance, and target progress during the run.",
+      accelElapsed: "Elapsed",
+      accelCurrentSpeed: "Current speed",
+      accelCurrentTarget: "Current target",
+      accelProgress: "Progress",
+      accelResult: "Result",
+      accelResultLead: "Latest completed run stored locally on this browser.",
+      accelNoResult: "Arm and complete a run to see the result here.",
+      accelSelectedTest: "Selected test",
+      accelFinalTime: "Final time",
+      accelTrapSpeed: "Trap speed",
+      accelRolloutUsed: "Rollout",
+      accelAverageAccuracy: "Average accuracy",
+      accelRunHz: "Run avg Hz",
+      accelQualityGrade: "Quality grade",
+      accelTimestamp: "Timestamp",
+      accelBestComparison: "Best vs latest",
+      accelDiagnostics: "Diagnostics",
+      accelDiagnosticsLead: "Observed callback timing, uncertainty, and warning flags.",
+      accelAverageInterval: "Average interval",
+      accelJitter: "Jitter",
+      accelSparseUpdates: "Sparse updates",
+      accelStaleSamples: "Stale samples",
+      accelSpeedSource: "Speed source",
+      accelSamples: "Samples",
+      accelHistory: "History",
+      accelHistoryLead: "Saved locally in this browser. Newest runs first.",
+      accelNoHistory: "No saved runs yet.",
+      accelClearHistory: "Clear all",
+      accelGpsReady: "GPS ready",
+      accelLatestAccuracy: "Latest accuracy",
+      accelObservedHz: "Observed Hz",
+      accelQuality: "Quality",
+      accelState: "State",
+      accelPermissionPrompt: "Prompt",
+      accelPermissionGranted: "Granted",
+      accelPermissionDenied: "Denied",
+      accelPermissionUnsupported: "Unsupported",
+      accelPermissionUnknown: "Unknown",
+      accelReadyYes: "Ready",
+      accelReadyNo: "Not ready",
+      accelQualityGood: "Good",
+      accelQualityFair: "Fair",
+      accelQualityPoor: "Poor",
+      accelQualityInvalid: "Invalid",
+      accelStateIdle: "Idle",
+      accelStateArmed: "Armed",
+      accelStateWaitingLaunch: "Waiting launch",
+      accelStateWaitingRollout: "Waiting rollout",
+      accelStateRunning: "Running",
+      accelStateCompleted: "Completed",
+      accelStateCancelled: "Cancelled",
+      accelStateGpsWaiting: "Waiting GPS",
+      accelStateError: "Error",
+      accelPreset0to30: "0-30 mph",
+      accelPreset0to40: "0-40 mph",
+      accelPreset0to50: "0-50 mph",
+      accelPreset0to60: "0-60 mph",
+      accelPreset0to100Kmh: "0-100 km/h",
+      accelPreset60to130: "60-130 mph",
+      accelPresetEighthMile: "1/8 mile",
+      accelPresetQuarterMile: "1/4 mile",
+      accelPresetCustom: "Custom range",
+      accelRolloutOff: "Off",
+      accelRolloutOn: "1 ft rollout",
+      accelRolloutIgnored: "Ignored on rolling tests",
+      accelRolloutUnavailable: "Not used",
+      accelQualityCurrent: "Current quality",
+      accelWarningAccuracy: "Accuracy warning",
+      accelWarningSparse: "Sparse updates",
+      accelWarningStale: "Stale samples",
+      accelWarningDerived: "Derived speed",
+      accelWarningNoWarnings: "No active warnings",
+      accelSpeedReported: "Reported GPS speed",
+      accelSpeedDerivedLabel: "Derived from displacement",
+      accelNeedGps: "Need a current GPS fix before arming.",
+      accelNoGeolocation: "This browser does not expose geolocation.",
+      accelWaitingForFix: "Waiting for a cleaner GPS fix.",
+      accelCustomInvalid: "Custom range must end above the start speed.",
+      accelArmedStandingNotice: "Run armed. Waiting for launch.",
+      accelArmedRollingNotice: "Run armed. Waiting for the start speed crossing.",
+      accelRunCancelledNotice: "Run cancelled.",
+      accelRunResetNotice: "Live run state reset.",
+      accelRunSavedNotice: "Run completed and saved locally.",
+      accelHistoryClearedNotice: "Saved run history cleared.",
+      accelDeleteRunConfirm: 'Delete run "{label}"?',
+      accelClearHistoryConfirm: "Delete all saved acceleration runs?",
+      accelBestRun: "Best saved run",
+      accelNoComparison: "No saved comparison yet",
+      accelFasterBy: "{value} faster than best saved",
+      accelSlowerBy: "{value} slower than best saved",
+      accelInvalidBySignal: "Invalid due to low-quality signal",
+      accelMphUnit: "mph",
+      accelKmhUnit: "km/h",
+      accelUnavailable: "—",
+      accelSamplesShort: "{count} samples",
+      accelOff: "Off",
+      accelOn: "On",
+      permission: "Permission",
+      speedometer: "Speedometer",
+      openBoard: "Open board",
+      changeLanguage: "Change language",
+      heading: "Heading",
+      altitude: "Altitude",
+      distance: "Distance",
+      units: "Units",
+      off: "Off",
+      on: "On",
+      delete: "Delete",
+      speed: "Speed",
+      accuracy: "Accuracy",
+    },
+    es: {
+      accelPageTitle: "Vatio Accel - Temporizador de aceleracion para Tesla y movil",
+      accelPageDescription: "Temporizador de aceleracion basado en navegador usando solo geolocalizacion y procesamiento local. Pensado para pruebas en el navegador de Tesla y con puntuacion honesta de calidad.",
+      accelPageH1: "Vatio Accel temporizador de aceleracion en navegador",
+      accelTagline: "Temporizador de aceleracion en navegador por Vatio Libre",
+      accelRoute: "ACCEL",
+      accelToolbar: "Herramientas de aceleracion",
+      accelGpsLab: "GPS Lab",
+      accelHeroKicker: "Temporizador en navegador",
+      accelHeroTitle: "Pruebas de aceleracion en navegador para Tesla y movil",
+      accelHeroLead: "Usa solo geolocalizacion del navegador. Los resultados son estimaciones basadas en callbacks GPS observados, no tiempos certificados.",
+      accelDisclaimer: "La precision depende de la frecuencia de callbacks del navegador, la calidad GPS, la visibilidad de la pestaña y el comportamiento del dispositivo. Usa repeticiones y grados de calidad con honestidad.",
+      accelStorageNote: "Las corridas y ajustes quedan guardados solo en el almacenamiento local de este navegador",
+      accelStatusPanel: "Panel de estado",
+      accelStatusLead: "Disponibilidad GPS y calidad de senal en vivo.",
+      accelTestSelector: "Selector de prueba",
+      accelTestLead: "Presets desde parado, lanzados y por distancia.",
+      accelCustomRange: "Rango de velocidad personalizado",
+      accelStartSpeed: "Velocidad inicial",
+      accelEndSpeed: "Velocidad final",
+      accelControls: "Controles",
+      accelControlsLead: "Arma la corrida, elige rollout y guarda notas locales.",
+      accelArm: "Armar",
+      accelCancel: "Detener / Cancelar",
+      accelReset: "Reiniciar",
+      accelRollout: "Rollout",
+      accelRolloutOneFoot: "1 pie",
+      accelLaunchThreshold: "Umbral de salida",
+      accelLaunchThresholdHalf: "0.5 mph",
+      accelLaunchThresholdOne: "1.0 mph",
+      accelNotes: "Notas de la corrida",
+      accelNotesPlaceholder: "Ejemplo: 90% SOC, via plana",
+      accelLiveRun: "Corrida en vivo",
+      accelLiveLead: "Temporizador grande, velocidad, distancia y progreso del objetivo.",
+      accelElapsed: "Tiempo",
+      accelCurrentSpeed: "Velocidad actual",
+      accelCurrentTarget: "Objetivo actual",
+      accelProgress: "Progreso",
+      accelResult: "Resultado",
+      accelResultLead: "Ultima corrida completada guardada localmente en este navegador.",
+      accelNoResult: "Arma y completa una corrida para ver el resultado aqui.",
+      accelSelectedTest: "Prueba seleccionada",
+      accelFinalTime: "Tiempo final",
+      accelTrapSpeed: "Velocidad de trampa",
+      accelRolloutUsed: "Rollout",
+      accelAverageAccuracy: "Precision promedio",
+      accelRunHz: "Hz promedio de la corrida",
+      accelQualityGrade: "Calidad",
+      accelTimestamp: "Fecha",
+      accelBestComparison: "Mejor vs ultima",
+      accelDiagnostics: "Diagnosticos",
+      accelDiagnosticsLead: "Tiempos observados de callback, incertidumbre y alertas.",
+      accelAverageInterval: "Intervalo promedio",
+      accelJitter: "Jitter",
+      accelSparseUpdates: "Actualizaciones dispersas",
+      accelStaleSamples: "Muestras antiguas",
+      accelSpeedSource: "Fuente de velocidad",
+      accelSamples: "Muestras",
+      accelHistory: "Historial",
+      accelHistoryLead: "Guardado localmente en este navegador. Corridas mas nuevas primero.",
+      accelNoHistory: "Aun no hay corridas guardadas.",
+      accelClearHistory: "Borrar todo",
+      accelGpsReady: "GPS listo",
+      accelLatestAccuracy: "Precision actual",
+      accelObservedHz: "Hz observados",
+      accelQuality: "Calidad",
+      accelState: "Estado",
+      accelPermissionPrompt: "Solicitar",
+      accelPermissionGranted: "Permitido",
+      accelPermissionDenied: "Bloqueado",
+      accelPermissionUnsupported: "No soportado",
+      accelPermissionUnknown: "Desconocido",
+      accelReadyYes: "Listo",
+      accelReadyNo: "No listo",
+      accelQualityGood: "Buena",
+      accelQualityFair: "Aceptable",
+      accelQualityPoor: "Pobre",
+      accelQualityInvalid: "Invalida",
+      accelStateIdle: "En espera",
+      accelStateArmed: "Armado",
+      accelStateWaitingLaunch: "Esperando salida",
+      accelStateWaitingRollout: "Esperando rollout",
+      accelStateRunning: "Corriendo",
+      accelStateCompleted: "Completada",
+      accelStateCancelled: "Cancelada",
+      accelStateGpsWaiting: "Esperando GPS",
+      accelStateError: "Error",
+      accelPreset0to30: "0-30 mph",
+      accelPreset0to40: "0-40 mph",
+      accelPreset0to50: "0-50 mph",
+      accelPreset0to60: "0-60 mph",
+      accelPreset0to100Kmh: "0-100 km/h",
+      accelPreset60to130: "60-130 mph",
+      accelPresetEighthMile: "1/8 de milla",
+      accelPresetQuarterMile: "1/4 de milla",
+      accelPresetCustom: "Rango personalizado",
+      accelRolloutOff: "Apagado",
+      accelRolloutOn: "Rollout de 1 pie",
+      accelRolloutIgnored: "Ignorado en pruebas lanzadas",
+      accelRolloutUnavailable: "No aplica",
+      accelQualityCurrent: "Calidad actual",
+      accelWarningAccuracy: "Precision pobre",
+      accelWarningSparse: "Actualizaciones dispersas",
+      accelWarningStale: "Muestras antiguas",
+      accelWarningDerived: "Velocidad derivada",
+      accelWarningNoWarnings: "Sin alertas activas",
+      accelSpeedReported: "Velocidad GPS reportada",
+      accelSpeedDerivedLabel: "Derivada por desplazamiento",
+      accelNeedGps: "Necesitas una fijacion GPS actual antes de armar.",
+      accelNoGeolocation: "Este navegador no expone geolocalizacion.",
+      accelWaitingForFix: "Esperando una fijacion GPS mas limpia.",
+      accelCustomInvalid: "El rango personalizado debe terminar por encima de la velocidad inicial.",
+      accelArmedStandingNotice: "Corrida armada. Esperando la salida.",
+      accelArmedRollingNotice: "Corrida armada. Esperando el cruce de velocidad inicial.",
+      accelRunCancelledNotice: "Corrida cancelada.",
+      accelRunResetNotice: "Estado de corrida reiniciado.",
+      accelRunSavedNotice: "Corrida completada y guardada localmente.",
+      accelHistoryClearedNotice: "Historial de corridas borrado.",
+      accelDeleteRunConfirm: 'Borrar la corrida "{label}"?',
+      accelClearHistoryConfirm: "Borrar todas las corridas guardadas?",
+      accelBestRun: "Mejor corrida guardada",
+      accelNoComparison: "Aun no hay comparacion guardada",
+      accelFasterBy: "{value} mas rapida que la mejor guardada",
+      accelSlowerBy: "{value} mas lenta que la mejor guardada",
+      accelInvalidBySignal: "Invalida por calidad de senal insuficiente",
+      accelMphUnit: "mph",
+      accelKmhUnit: "km/h",
+      accelUnavailable: "—",
+      accelSamplesShort: "{count} muestras",
+      accelOff: "Apagado",
+      accelOn: "Encendido",
+      permission: "Permiso",
+      speedometer: "Velocimetro",
+      openBoard: "Abrir tablero",
+      changeLanguage: "Cambiar idioma",
+      heading: "Rumbo",
+      altitude: "Altitud",
+      distance: "Distancia",
+      units: "Unidades",
+      off: "Apagado",
+      on: "Encendido",
+      delete: "Borrar",
+      speed: "Velocidad",
+      accuracy: "Precision",
+    },
+  };
+
+  var presetDefinitions = [
+    { id: "0-30-mph", type: "speed", labelKey: "accelPreset0to30", standingStart: true, startSpeedMs: 0, targetSpeedMs: 30 * MPH_TO_MS, displayUnit: "mph" },
+    { id: "0-40-mph", type: "speed", labelKey: "accelPreset0to40", standingStart: true, startSpeedMs: 0, targetSpeedMs: 40 * MPH_TO_MS, displayUnit: "mph" },
+    { id: "0-50-mph", type: "speed", labelKey: "accelPreset0to50", standingStart: true, startSpeedMs: 0, targetSpeedMs: 50 * MPH_TO_MS, displayUnit: "mph" },
+    { id: "0-60-mph", type: "speed", labelKey: "accelPreset0to60", standingStart: true, startSpeedMs: 0, targetSpeedMs: 60 * MPH_TO_MS, displayUnit: "mph" },
+    { id: "0-100-kmh", type: "speed", labelKey: "accelPreset0to100Kmh", standingStart: true, startSpeedMs: 0, targetSpeedMs: 100 * KMH_TO_MS, displayUnit: "kmh" },
+    { id: "60-130-mph", type: "speed", labelKey: "accelPreset60to130", standingStart: false, startSpeedMs: 60 * MPH_TO_MS, targetSpeedMs: 130 * MPH_TO_MS, displayUnit: "mph" },
+    { id: "eighth-mile", type: "distance", labelKey: "accelPresetEighthMile", standingStart: true, distanceTargetM: EIGHTH_MILE_M, displayUnit: "mph", distanceDisplay: "ft" },
+    { id: "quarter-mile", type: "distance", labelKey: "accelPresetQuarterMile", standingStart: true, distanceTargetM: QUARTER_MILE_M, displayUnit: "mph", distanceDisplay: "ft" },
+    { id: "custom", type: "custom", labelKey: "accelPresetCustom", standingStart: false, displayUnit: "mph" },
+  ];
+
+  var elements = {
+    langToggle: document.getElementById("langToggle"),
+    pageDescriptionMeta: document.querySelector('meta[name="description"]'),
+    toolbarPermissionValue: document.getElementById("toolbarPermissionValue"),
+    toolbarQualityValue: document.getElementById("toolbarQualityValue"),
+    toolbarStateValue: document.getElementById("toolbarStateValue"),
+    heroStatusBadge: document.getElementById("heroStatusBadge"),
+    permissionValue: document.getElementById("permissionValue"),
+    gpsReadyValue: document.getElementById("gpsReadyValue"),
+    latestAccuracyValue: document.getElementById("latestAccuracyValue"),
+    observedHzValue: document.getElementById("observedHzValue"),
+    statusSpeedValue: document.getElementById("statusSpeedValue"),
+    statusHeadingValue: document.getElementById("statusHeadingValue"),
+    statusAltitudeValue: document.getElementById("statusAltitudeValue"),
+    speedSourceValue: document.getElementById("speedSourceValue"),
+    presetGrid: document.getElementById("presetGrid"),
+    customRangePanel: document.getElementById("customRangePanel"),
+    customStartInput: document.getElementById("customStartInput"),
+    customEndInput: document.getElementById("customEndInput"),
+    customUnitMph: document.getElementById("customUnitMph"),
+    customUnitKmh: document.getElementById("customUnitKmh"),
+    customRangeNotice: document.getElementById("customRangeNotice"),
+    armRun: document.getElementById("armRun"),
+    cancelRun: document.getElementById("cancelRun"),
+    resetRun: document.getElementById("resetRun"),
+    rolloutOff: document.getElementById("rolloutOff"),
+    rolloutOn: document.getElementById("rolloutOn"),
+    launchThresholdHalf: document.getElementById("launchThresholdHalf"),
+    launchThresholdOne: document.getElementById("launchThresholdOne"),
+    runNotes: document.getElementById("runNotes"),
+    actionNotice: document.getElementById("actionNotice"),
+    liveElapsedValue: document.getElementById("liveElapsedValue"),
+    liveSpeedValue: document.getElementById("liveSpeedValue"),
+    liveSpeedUnit: document.getElementById("liveSpeedUnit"),
+    liveDistanceValue: document.getElementById("liveDistanceValue"),
+    liveTargetValue: document.getElementById("liveTargetValue"),
+    liveStateValue: document.getElementById("liveStateValue"),
+    liveQualityValue: document.getElementById("liveQualityValue"),
+    progressLabel: document.getElementById("progressLabel"),
+    progressFill: document.getElementById("progressFill"),
+    resultEmptyState: document.getElementById("resultEmptyState"),
+    resultContent: document.getElementById("resultContent"),
+    resultElapsedValue: document.getElementById("resultElapsedValue"),
+    resultPresetValue: document.getElementById("resultPresetValue"),
+    resultTrapSpeedValue: document.getElementById("resultTrapSpeedValue"),
+    resultRolloutValue: document.getElementById("resultRolloutValue"),
+    resultAccuracyValue: document.getElementById("resultAccuracyValue"),
+    resultHzValue: document.getElementById("resultHzValue"),
+    resultQualityValue: document.getElementById("resultQualityValue"),
+    resultTimestampValue: document.getElementById("resultTimestampValue"),
+    resultComparisonValue: document.getElementById("resultComparisonValue"),
+    warningBadges: document.getElementById("warningBadges"),
+    diagnosticAverageIntervalValue: document.getElementById("diagnosticAverageIntervalValue"),
+    diagnosticJitterValue: document.getElementById("diagnosticJitterValue"),
+    diagnosticSparseValue: document.getElementById("diagnosticSparseValue"),
+    diagnosticStaleValue: document.getElementById("diagnosticStaleValue"),
+    diagnosticSpeedSourceValue: document.getElementById("diagnosticSpeedSourceValue"),
+    diagnosticSamplesValue: document.getElementById("diagnosticSamplesValue"),
+    clearHistory: document.getElementById("clearHistory"),
+    historyEmptyState: document.getElementById("historyEmptyState"),
+    historyList: document.getElementById("historyList"),
+  };
+
+  var defaultSettings = {
+    selectedPresetId: "0-60-mph",
+    rolloutEnabled: false,
+    launchThresholdMph: 0.5,
+    customStart: 0,
+    customEnd: 60,
+    customUnit: "mph",
+    notes: "",
+  };
+
+  var state = {
+    lang: detectLang(),
+    permissionState: "prompt",
+    permissionStatus: null,
+    geolocationSupported: Boolean(navigator.geolocation),
+    watchId: null,
+    uiTimerId: null,
+    sessionSampleCount: 0,
+    sessionIntervals: [],
+    recentIntervals: [],
+    latestSample: null,
+    currentQuality: null,
+    runs: loadRuns(),
+    settings: loadSettings(),
+    run: null,
+    latestResult: null,
+    actionNoticeTimerId: null,
+  };
+
+  state.latestResult = state.runs.length ? state.runs[0] : null;
+
+  init();
+
+  function init() {
+    applyTranslations();
+    elements.runNotes.value = state.settings.notes;
+    renderPresetButtons();
+    renderControlSelections();
+    bindEvents();
+    renderAll();
+    startUiTimer();
+    updatePermissionState();
+    ensureWatch();
+  }
+
+  function detectLang() {
+    try {
+      var stored = localStorage.getItem(LANG_KEY);
+      if (stored === "en" || stored === "es") return stored;
+    } catch (error) {
+      // Ignore storage failures.
+    }
+
+    if (window.__lang === "es" || window.__lang === "en") return window.__lang;
+    return navigator.language && navigator.language.startsWith("es") ? "es" : "en";
+  }
+
+  function t(key, params) {
+    var pack = translations[state.lang] || translations.en;
+    var fallbackPack = translations.en;
+    var text = pack[key] || fallbackPack[key] || key;
+
+    if (!params) return text;
+
+    return text.replace(/\{(\w+)\}/g, function (match, token) {
+      return Object.prototype.hasOwnProperty.call(params, token) ? String(params[token]) : match;
+    });
+  }
+
+  function applyTranslations() {
+    document.title = t("accelPageTitle");
+    if (elements.pageDescriptionMeta) elements.pageDescriptionMeta.setAttribute("content", t("accelPageDescription"));
+    if (elements.langToggle) elements.langToggle.textContent = state.lang.toUpperCase();
+
+    var textNodes = document.querySelectorAll("[data-i18n]");
+    for (var index = 0; index < textNodes.length; index += 1) {
+      var node = textNodes[index];
+      var key = node.getAttribute("data-i18n");
+      node.textContent = t(key);
+    }
+
+    var titleNodes = document.querySelectorAll("[data-i18n-title]");
+    for (var titleIndex = 0; titleIndex < titleNodes.length; titleIndex += 1) {
+      var titleNode = titleNodes[titleIndex];
+      titleNode.setAttribute("title", t(titleNode.getAttribute("data-i18n-title")));
+    }
+
+    var ariaNodes = document.querySelectorAll("[data-i18n-aria]");
+    for (var ariaIndex = 0; ariaIndex < ariaNodes.length; ariaIndex += 1) {
+      var ariaNode = ariaNodes[ariaIndex];
+      ariaNode.setAttribute("aria-label", t(ariaNode.getAttribute("data-i18n-aria")));
+    }
+
+    var placeholderNodes = document.querySelectorAll("[data-i18n-placeholder]");
+    for (var placeholderIndex = 0; placeholderIndex < placeholderNodes.length; placeholderIndex += 1) {
+      var placeholderNode = placeholderNodes[placeholderIndex];
+      placeholderNode.setAttribute("placeholder", t(placeholderNode.getAttribute("data-i18n-placeholder")));
+    }
+  }
+
+  function bindEvents() {
+    elements.langToggle.addEventListener("click", handleLangToggle);
+    elements.presetGrid.addEventListener("click", handlePresetClick);
+    elements.customStartInput.addEventListener("input", handleCustomInput);
+    elements.customEndInput.addEventListener("input", handleCustomInput);
+    elements.customUnitMph.addEventListener("click", handleCustomUnitClick);
+    elements.customUnitKmh.addEventListener("click", handleCustomUnitClick);
+    elements.armRun.addEventListener("click", handleArm);
+    elements.cancelRun.addEventListener("click", handleCancel);
+    elements.resetRun.addEventListener("click", handleReset);
+    elements.rolloutOff.addEventListener("click", handleRolloutClick);
+    elements.rolloutOn.addEventListener("click", handleRolloutClick);
+    elements.launchThresholdHalf.addEventListener("click", handleThresholdClick);
+    elements.launchThresholdOne.addEventListener("click", handleThresholdClick);
+    elements.runNotes.addEventListener("input", handleNotesInput);
+    elements.clearHistory.addEventListener("click", handleClearHistory);
+    elements.historyList.addEventListener("click", handleHistoryClick);
+    document.addEventListener("visibilitychange", renderAll);
+  }
+
+  function handleLangToggle() {
+    state.lang = state.lang === "en" ? "es" : "en";
+
+    try {
+      localStorage.setItem(LANG_KEY, state.lang);
+    } catch (error) {
+      // Ignore storage failures.
+    }
+
+    document.documentElement.lang = state.lang;
+    applyTranslations();
+    renderPresetButtons();
+    renderAll();
+  }
+
+  function loadSettings() {
+    var raw = loadJson(STORAGE_KEYS.settings);
+    var settings = raw && typeof raw === "object" ? raw : {};
+    return {
+      selectedPresetId: typeof settings.selectedPresetId === "string" ? settings.selectedPresetId : defaultSettings.selectedPresetId,
+      rolloutEnabled: Boolean(settings.rolloutEnabled),
+      launchThresholdMph: settings.launchThresholdMph === 1 ? 1 : 0.5,
+      customStart: toFiniteNumber(settings.customStart, defaultSettings.customStart),
+      customEnd: toFiniteNumber(settings.customEnd, defaultSettings.customEnd),
+      customUnit: settings.customUnit === "kmh" ? "kmh" : "mph",
+      notes: typeof settings.notes === "string" ? settings.notes : "",
+    };
+  }
+
+  function saveSettings() {
+    saveJson(STORAGE_KEYS.settings, state.settings);
+  }
+
+  function loadRuns() {
+    var raw = loadJson(STORAGE_KEYS.runs);
+    if (!Array.isArray(raw)) return [];
+
+    var runs = [];
+    for (var index = 0; index < raw.length; index += 1) {
+      var run = normalizeStoredRun(raw[index]);
+      if (run) runs.push(run);
+    }
+
+    runs.sort(function (left, right) {
+      return right.savedAtMs - left.savedAtMs;
+    });
+
+    return runs.slice(0, MAX_RUNS);
+  }
+
+  function saveRuns() {
+    saveJson(STORAGE_KEYS.runs, state.runs.slice(0, MAX_RUNS));
+  }
+
+  function normalizeStoredRun(run) {
+    if (!run || typeof run !== "object") return null;
+    if (!isFiniteNumber(run.savedAtMs) || !isFiniteNumber(run.elapsedMs)) return null;
+
+    return {
+      id: typeof run.id === "string" ? run.id : "run-" + String(run.savedAtMs),
+      savedAtMs: run.savedAtMs,
+      presetId: typeof run.presetId === "string" ? run.presetId : "custom",
+      presetSignature: typeof run.presetSignature === "string" ? run.presetSignature : "custom",
+      presetKind: typeof run.presetKind === "string" ? run.presetKind : "speed",
+      standingStart: Boolean(run.standingStart),
+      customStart: isFiniteNumber(run.customStart) ? run.customStart : null,
+      customEnd: isFiniteNumber(run.customEnd) ? run.customEnd : null,
+      customUnit: run.customUnit === "kmh" ? "kmh" : (run.customUnit === "mph" ? "mph" : null),
+      startSpeedMs: isFiniteNumber(run.startSpeedMs) ? run.startSpeedMs : 0,
+      targetSpeedMs: isFiniteNumber(run.targetSpeedMs) ? run.targetSpeedMs : null,
+      distanceTargetM: isFiniteNumber(run.distanceTargetM) ? run.distanceTargetM : null,
+      displayUnit: run.displayUnit === "kmh" ? "kmh" : "mph",
+      distanceDisplay: run.distanceDisplay === "m" ? "m" : "ft",
+      elapsedMs: run.elapsedMs,
+      trapSpeedMs: isFiniteNumber(run.trapSpeedMs) ? run.trapSpeedMs : null,
+      rolloutApplied: Boolean(run.rolloutApplied),
+      averageAccuracyM: isFiniteNumber(run.averageAccuracyM) ? run.averageAccuracyM : null,
+      averageHz: isFiniteNumber(run.averageHz) ? run.averageHz : null,
+      averageIntervalMs: isFiniteNumber(run.averageIntervalMs) ? run.averageIntervalMs : null,
+      jitterMs: isFiniteNumber(run.jitterMs) ? run.jitterMs : null,
+      qualityGrade: typeof run.qualityGrade === "string" ? run.qualityGrade : "invalid",
+      qualityScore: isFiniteNumber(run.qualityScore) ? run.qualityScore : 0,
+      warningKeys: Array.isArray(run.warningKeys) ? run.warningKeys.slice(0, 8) : [],
+      sampleCount: isFiniteNumber(run.sampleCount) ? run.sampleCount : 0,
+      sparseCount: isFiniteNumber(run.sparseCount) ? run.sparseCount : 0,
+      staleCount: isFiniteNumber(run.staleCount) ? run.staleCount : 0,
+      speedSource: typeof run.speedSource === "string" ? run.speedSource : "reported",
+      notes: typeof run.notes === "string" ? run.notes : "",
+    };
+  }
+
+  function loadJson(key) {
+    try {
+      var value = localStorage.getItem(key);
+      return value ? JSON.parse(value) : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function saveJson(key, value) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (error) {
+      // Ignore storage failures in constrained browsers.
+    }
+  }
+
+  function toFiniteNumber(value, fallback) {
+    return isFiniteNumber(Number(value)) ? Number(value) : fallback;
+  }
+
+  function isFiniteNumber(value) {
+    return Number.isFinite(value);
+  }
+
+  function getSelectedPreset() {
+    if (state.settings.selectedPresetId === "custom") return buildCustomPreset();
+
+    for (var index = 0; index < presetDefinitions.length; index += 1) {
+      if (presetDefinitions[index].id === state.settings.selectedPresetId) return copyPreset(presetDefinitions[index]);
+    }
+
+    return copyPreset(presetDefinitions[3]);
+  }
+
+  function copyPreset(preset) {
+    return {
+      id: preset.id,
+      type: preset.type,
+      labelKey: preset.labelKey,
+      standingStart: Boolean(preset.standingStart),
+      startSpeedMs: isFiniteNumber(preset.startSpeedMs) ? preset.startSpeedMs : 0,
+      targetSpeedMs: isFiniteNumber(preset.targetSpeedMs) ? preset.targetSpeedMs : null,
+      distanceTargetM: isFiniteNumber(preset.distanceTargetM) ? preset.distanceTargetM : null,
+      displayUnit: preset.displayUnit === "kmh" ? "kmh" : "mph",
+      distanceDisplay: preset.distanceDisplay === "m" ? "m" : "ft",
+      customStart: null,
+      customEnd: null,
+      customUnit: null,
+    };
+  }
+
+  function buildCustomPreset() {
+    var start = Math.max(0, Number(state.settings.customStart) || 0);
+    var end = Math.max(0, Number(state.settings.customEnd) || 0);
+    var unit = state.settings.customUnit === "kmh" ? "kmh" : "mph";
+    var factor = unit === "kmh" ? KMH_TO_MS : MPH_TO_MS;
+
+    return {
+      id: "custom",
+      type: "speed",
+      labelKey: "accelPresetCustom",
+      standingStart: start <= 0,
+      startSpeedMs: start * factor,
+      targetSpeedMs: end * factor,
+      distanceTargetM: null,
+      displayUnit: unit,
+      distanceDisplay: "ft",
+      customStart: start,
+      customEnd: end,
+      customUnit: unit,
+    };
+  }
+
+  function getPresetLabel(presetOrRun) {
+    if (!presetOrRun) return t("accelUnavailable");
+
+    if (presetOrRun.id === "custom" || presetOrRun.presetId === "custom") {
+      if (!isFiniteNumber(presetOrRun.customStart) && !isFiniteNumber(presetOrRun.customEnd) && !isFiniteNumber(presetOrRun.targetSpeedMs)) {
+        return t("accelPresetCustom");
+      }
+      var unit = presetOrRun.customUnit === "kmh" ? t("accelKmhUnit") : t("accelMphUnit");
+      var start = isFiniteNumber(presetOrRun.customStart) ? presetOrRun.customStart : Math.round(msToSpeedUnit(presetOrRun.startSpeedMs || 0, presetOrRun.displayUnit || "mph"));
+      var end = isFiniteNumber(presetOrRun.customEnd) ? presetOrRun.customEnd : Math.round(msToSpeedUnit(presetOrRun.targetSpeedMs || 0, presetOrRun.displayUnit || "mph"));
+      return t("accelPresetCustom") + " · " + formatNumber(start, 0) + "-" + formatNumber(end, 0) + " " + unit;
+    }
+
+    return t(presetOrRun.labelKey || presetKeyFromId(presetOrRun.presetId));
+  }
+
+  function presetKeyFromId(presetId) {
+    for (var index = 0; index < presetDefinitions.length; index += 1) {
+      if (presetDefinitions[index].id === presetId) return presetDefinitions[index].labelKey;
+    }
+    return "accelPresetCustom";
+  }
+
+  function getPresetSignature(preset) {
+    if (preset.id === "custom") {
+      return "custom:" + String(preset.customStart) + ":" + String(preset.customEnd) + ":" + String(preset.customUnit);
+    }
+    return preset.id;
+  }
+
+  function renderPresetButtons() {
+    var html = "";
+    var selectedId = state.settings.selectedPresetId;
+
+    for (var index = 0; index < presetDefinitions.length; index += 1) {
+      var preset = presetDefinitions[index];
+      var pressed = preset.id === selectedId ? "true" : "false";
+      html += '<button type="button" class="accel-preset-btn" data-preset-id="' + escapeHtml(preset.id) + '" aria-pressed="' + pressed + '">' + escapeHtml(getPresetLabel(copyPreset(preset))) + "</button>";
+    }
+
+    elements.presetGrid.innerHTML = html;
+    elements.customRangePanel.hidden = selectedId !== "custom";
+    elements.customStartInput.value = String(state.settings.customStart);
+    elements.customEndInput.value = String(state.settings.customEnd);
+  }
+
+  function renderControlSelections() {
+    var rolloutPressed = state.settings.rolloutEnabled;
+    elements.rolloutOff.setAttribute("aria-pressed", String(!rolloutPressed));
+    elements.rolloutOn.setAttribute("aria-pressed", String(rolloutPressed));
+    elements.launchThresholdHalf.setAttribute("aria-pressed", String(state.settings.launchThresholdMph === 0.5));
+    elements.launchThresholdOne.setAttribute("aria-pressed", String(state.settings.launchThresholdMph === 1));
+    elements.customUnitMph.setAttribute("aria-pressed", String(state.settings.customUnit === "mph"));
+    elements.customUnitKmh.setAttribute("aria-pressed", String(state.settings.customUnit === "kmh"));
+
+    if (state.settings.selectedPresetId === "custom" && !isCustomRangeValid()) {
+      elements.customRangeNotice.textContent = t("accelCustomInvalid");
+    } else {
+      elements.customRangeNotice.textContent = "";
+    }
+  }
+
+  function startUiTimer() {
+    if (state.uiTimerId) window.clearInterval(state.uiTimerId);
+    state.uiTimerId = window.setInterval(renderLivePanel, TIMER_TICK_MS);
+  }
+
+  function handlePresetClick(event) {
+    var button = event.target.closest("[data-preset-id]");
+    if (!button) return;
+
+    state.settings.selectedPresetId = button.getAttribute("data-preset-id");
+    saveSettings();
+    renderPresetButtons();
+    renderControlSelections();
+    renderAll();
+  }
+
+  function handleCustomInput() {
+    state.settings.customStart = toFiniteNumber(elements.customStartInput.value, 0);
+    state.settings.customEnd = toFiniteNumber(elements.customEndInput.value, 0);
+    saveSettings();
+    renderControlSelections();
+    renderAll();
+  }
+
+  function handleCustomUnitClick(event) {
+    var button = event.currentTarget;
+    state.settings.customUnit = button.getAttribute("data-unit") === "kmh" ? "kmh" : "mph";
+    saveSettings();
+    renderControlSelections();
+    renderPresetButtons();
+    renderAll();
+  }
+
+  function handleRolloutClick(event) {
+    state.settings.rolloutEnabled = event.currentTarget.getAttribute("data-rollout") === "on";
+    saveSettings();
+    renderControlSelections();
+    renderAll();
+  }
+
+  function handleThresholdClick(event) {
+    state.settings.launchThresholdMph = event.currentTarget.getAttribute("data-threshold") === "1" ? 1 : 0.5;
+    saveSettings();
+    renderControlSelections();
+    renderAll();
+  }
+
+  function handleNotesInput() {
+    state.settings.notes = elements.runNotes.value || "";
+    saveSettings();
+  }
+
+  function handleArm() {
+    var preset = getSelectedPreset();
+
+    if (!state.geolocationSupported) {
+      setActionNotice("accelNoGeolocation");
+      renderAll();
+      return;
+    }
+
+    if (state.settings.selectedPresetId === "custom" && !isCustomRangeValid()) {
+      setActionNotice("accelCustomInvalid");
+      renderAll();
+      return;
+    }
+
+    if (!state.latestSample) {
+      setActionNotice("accelNeedGps");
+      renderAll();
+      return;
+    }
+
+    if (state.run && (state.run.stage === "armed" || state.run.stage === "waiting_rollout" || state.run.stage === "running")) {
+      return;
+    }
+
+    state.run = createRun(preset);
+    setActionNotice(preset.standingStart ? "accelArmedStandingNotice" : "accelArmedRollingNotice");
+    renderAll();
+  }
+
+  function handleCancel() {
+    if (!state.run || state.run.stage === "completed") return;
+    state.run = null;
+    setActionNotice("accelRunCancelledNotice");
+    renderAll();
+  }
+
+  function handleReset() {
+    state.run = null;
+    setActionNotice("accelRunResetNotice");
+    renderAll();
+  }
+
+  function handleClearHistory() {
+    if (!state.runs.length) return;
+    if (!window.confirm(t("accelClearHistoryConfirm"))) return;
+
+    state.runs = [];
+    state.latestResult = null;
+    saveRuns();
+    setActionNotice("accelHistoryClearedNotice");
+    renderAll();
+  }
+
+  function handleHistoryClick(event) {
+    var button = event.target.closest("[data-run-id]");
+    if (!button) return;
+
+    var runId = button.getAttribute("data-run-id");
+    var run = findRunById(runId);
+    if (!run) return;
+
+    if (!window.confirm(t("accelDeleteRunConfirm", { label: getPresetLabel(run) }))) return;
+
+    state.runs = state.runs.filter(function (entry) {
+      return entry.id !== runId;
+    });
+    state.latestResult = state.runs.length ? state.runs[0] : null;
+    saveRuns();
+    renderAll();
+  }
+
+  function findRunById(runId) {
+    for (var index = 0; index < state.runs.length; index += 1) {
+      if (state.runs[index].id === runId) return state.runs[index];
+    }
+    return null;
+  }
+
+  function createRun(preset) {
+    return {
+      id: "run-" + Date.now() + "-" + String(Math.floor(Math.random() * 100000)),
+      preset: preset,
+      stage: "armed",
+      createdAtMs: Date.now(),
+      armedAtPerfMs: performance.now(),
+      launchThresholdMs: state.settings.launchThresholdMph * MPH_TO_MS,
+      rolloutApplied: Boolean(state.settings.rolloutEnabled && preset.standingStart),
+      rolloutDistanceM: state.settings.rolloutEnabled && preset.standingStart ? FT_TO_M : 0,
+      sampleCount: 0,
+      intervalValues: [],
+      accuracyValues: [],
+      sparseCount: 0,
+      staleCount: 0,
+      nullSpeedCount: 0,
+      derivedSpeedCount: 0,
+      distanceSinceArmM: 0,
+      prevDistanceSinceArmM: 0,
+      launchCrossPerfMs: null,
+      launchCrossDistanceM: null,
+      startPerfMs: null,
+      startDistanceM: null,
+      finishPerfMs: null,
+      finishSpeedMs: null,
+      lastSample: null,
+      result: null,
+    };
+  }
+
+  function ensureWatch() {
+    if (!state.geolocationSupported || state.watchId !== null) return;
+
+    try {
+      state.watchId = navigator.geolocation.watchPosition(handlePosition, handleGeoError, GEO_OPTIONS);
+    } catch (error) {
+      state.watchId = null;
+      setActionNotice("accelNoGeolocation");
+    }
+  }
+
+  function updatePermissionState() {
+    if (!navigator.permissions || typeof navigator.permissions.query !== "function") {
+      state.permissionState = state.geolocationSupported ? "unknown" : "unsupported";
+      renderAll();
+      return;
+    }
+
+    navigator.permissions.query({ name: "geolocation" }).then(function (status) {
+      state.permissionStatus = status;
+      state.permissionState = status.state;
+      renderAll();
+
+      var handler = function () {
+        state.permissionState = status.state;
+        renderAll();
+      };
+
+      if (typeof status.addEventListener === "function") status.addEventListener("change", handler);
+      else status.onchange = handler;
+    }).catch(function () {
+      state.permissionState = state.geolocationSupported ? "unknown" : "unsupported";
+      renderAll();
+    });
+  }
+
+  function handleGeoError(error) {
+    if (!error) return;
+
+    if (error.code === GEO_ERROR_CODE.PERMISSION_DENIED) state.permissionState = "denied";
+    if (!state.latestSample && error.code === GEO_ERROR_CODE.PERMISSION_DENIED) setActionNotice("accelNeedGps");
+    renderAll();
+  }
+
+  function handlePosition(position) {
+    var perfMs = performance.now();
+    var geoMs = isFiniteNumber(Number(position.timestamp)) ? Number(position.timestamp) : Date.now();
+    var coords = position && position.coords ? position.coords : {};
+    var latitude = isFiniteNumber(coords.latitude) ? coords.latitude : null;
+    var longitude = isFiniteNumber(coords.longitude) ? coords.longitude : null;
+    var accuracyM = isFiniteNumber(coords.accuracy) ? Math.max(0, coords.accuracy) : null;
+    var altitudeM = isFiniteNumber(coords.altitude) ? coords.altitude : null;
+    var headingDeg = isFiniteNumber(coords.heading) && coords.heading >= 0 ? coords.heading : null;
+    var rawSpeedMs = isFiniteNumber(coords.speed) && coords.speed >= 0 ? coords.speed : null;
+
+    var previousSample = state.latestSample;
+    var deltaMs = previousSample ? perfMs - previousSample.perfMs : null;
+    var segmentDistanceM = previousSample ? getDistanceM(previousSample.latitude, previousSample.longitude, latitude, longitude) : 0;
+    var derivedSpeedMs = null;
+
+    if (rawSpeedMs === null && previousSample && isFiniteNumber(deltaMs) && deltaMs > 0) {
+      derivedSpeedMs = segmentDistanceM / (deltaMs / 1000);
+      var blendedAccuracy = averageFinite(previousSample.accuracyM, accuracyM);
+      var noiseFloor = blendedAccuracy !== null ? clamp(blendedAccuracy * 0.35, 2, 12) : 3;
+      if (segmentDistanceM <= noiseFloor && derivedSpeedMs < 3) derivedSpeedMs = 0;
+      derivedSpeedMs = clamp(derivedSpeedMs, 0, MAX_PLAUSIBLE_SPEED_MS);
+    }
+
+    var speedMs = rawSpeedMs !== null ? rawSpeedMs : (derivedSpeedMs !== null ? derivedSpeedMs : 0);
+    var sample = {
+      perfMs: perfMs,
+      geoMs: geoMs,
+      latitude: latitude,
+      longitude: longitude,
+      accuracyM: accuracyM,
+      altitudeM: altitudeM,
+      headingDeg: headingDeg,
+      rawSpeedMs: rawSpeedMs,
+      derivedSpeedMs: derivedSpeedMs,
+      speedMs: speedMs,
+      speedSource: rawSpeedMs !== null ? "reported" : "derived",
+      deltaMs: deltaMs,
+      segmentDistanceM: segmentDistanceM,
+      stale: isFiniteNumber(deltaMs) && deltaMs >= STALE_INTERVAL_MS,
+      sparse: isFiniteNumber(deltaMs) && deltaMs >= SPARSE_INTERVAL_MS,
+    };
+
+    state.latestSample = sample;
+    state.sessionSampleCount += 1;
+
+    if (isFiniteNumber(deltaMs) && deltaMs > 0) {
+      state.sessionIntervals.push(deltaMs);
+      state.recentIntervals.push(deltaMs);
+      if (state.recentIntervals.length > RECENT_INTERVAL_WINDOW) state.recentIntervals.shift();
+    }
+
+    state.currentQuality = buildLiveQuality();
+
+    if (state.run && (state.run.stage === "armed" || state.run.stage === "waiting_rollout" || state.run.stage === "running")) {
+      processRunSample(sample);
+    }
+
+    renderAll();
+  }
+
+  function processRunSample(sample) {
+    var run = state.run;
+    if (!run) return;
+
+    if (run.sampleCount === 0) {
+      run.sampleCount = 1;
+      if (sample.accuracyM !== null) run.accuracyValues.push(sample.accuracyM);
+      if (sample.rawSpeedMs === null) run.nullSpeedCount += 1;
+      if (sample.speedSource === "derived") run.derivedSpeedCount += 1;
+      run.lastSample = sample;
+      return;
+    }
+
+    var previousSample = run.lastSample;
+    if (!previousSample) {
+      run.lastSample = sample;
+      return;
+    }
+
+    run.sampleCount += 1;
+    if (isFiniteNumber(sample.deltaMs) && sample.deltaMs > 0) run.intervalValues.push(sample.deltaMs);
+    if (sample.accuracyM !== null) run.accuracyValues.push(sample.accuracyM);
+    if (sample.rawSpeedMs === null) run.nullSpeedCount += 1;
+    if (sample.speedSource === "derived") run.derivedSpeedCount += 1;
+    if (sample.stale) run.staleCount += 1;
+    if (sample.sparse) run.sparseCount += 1;
+
+    run.prevDistanceSinceArmM = run.distanceSinceArmM;
+    run.distanceSinceArmM += sample.segmentDistanceM;
+
+    var previousSpeed = previousSample.speedMs;
+    var currentSpeed = sample.speedMs;
+
+    if (run.preset.standingStart) {
+      if (run.launchCrossPerfMs === null) {
+        var launchCross = interpolateSpeedCrossing(previousSample, sample, run.launchThresholdMs);
+        if (launchCross) {
+          run.launchCrossPerfMs = launchCross.perfMs;
+          run.launchCrossDistanceM = interpolateValue(run.prevDistanceSinceArmM, run.distanceSinceArmM, launchCross.ratio);
+        }
+      }
+
+      if (run.launchCrossPerfMs !== null && run.startPerfMs === null) {
+        if (!run.rolloutApplied) {
+          run.startPerfMs = run.launchCrossPerfMs;
+          run.startDistanceM = run.launchCrossDistanceM;
+          run.stage = "running";
+        } else {
+          run.stage = "waiting_rollout";
+          var rolloutTarget = run.launchCrossDistanceM + run.rolloutDistanceM;
+          var rolloutCross = interpolateRangeCrossing(
+            run.prevDistanceSinceArmM,
+            run.distanceSinceArmM,
+            rolloutTarget,
+            previousSample.perfMs,
+            sample.perfMs
+          );
+
+          if (rolloutCross) {
+            run.startPerfMs = rolloutCross.perfMs;
+            run.startDistanceM = rolloutTarget;
+            run.stage = "running";
+          }
+        }
+      }
+    } else if (run.startPerfMs === null) {
+      var rollingCross = interpolateSpeedCrossing(previousSample, sample, run.preset.startSpeedMs);
+      if (rollingCross) {
+        run.startPerfMs = rollingCross.perfMs;
+        run.startDistanceM = interpolateValue(run.prevDistanceSinceArmM, run.distanceSinceArmM, rollingCross.ratio);
+        run.stage = "running";
+      }
+    }
+
+    if (run.startPerfMs !== null && run.finishPerfMs === null) {
+      if (run.preset.type === "speed") {
+        var targetCross = interpolateSpeedCrossing(previousSample, sample, run.preset.targetSpeedMs);
+        if (targetCross && targetCross.perfMs >= run.startPerfMs) {
+          run.finishPerfMs = targetCross.perfMs;
+          run.finishSpeedMs = run.preset.targetSpeedMs;
+          completeRun();
+        }
+      } else if (run.preset.type === "distance") {
+        var prevDistanceFromStartM = Math.max(0, run.prevDistanceSinceArmM - run.startDistanceM);
+        var currentDistanceFromStartM = Math.max(0, run.distanceSinceArmM - run.startDistanceM);
+        var finishCross = interpolateRangeCrossing(
+          prevDistanceFromStartM,
+          currentDistanceFromStartM,
+          run.preset.distanceTargetM,
+          previousSample.perfMs,
+          sample.perfMs
+        );
+
+        if (finishCross) {
+          run.finishPerfMs = finishCross.perfMs;
+          run.finishSpeedMs = interpolateValue(previousSpeed, currentSpeed, finishCross.ratio);
+          completeRun();
+        }
+      }
+    }
+
+    run.lastSample = sample;
+  }
+
+  function completeRun() {
+    var run = state.run;
+    if (!run || run.finishPerfMs === null || run.startPerfMs === null) return;
+
+    var result = buildResult(run);
+    run.stage = "completed";
+    run.result = result;
+    state.latestResult = result;
+    state.runs.unshift(result);
+    if (state.runs.length > MAX_RUNS) state.runs = state.runs.slice(0, MAX_RUNS);
+    saveRuns();
+    setActionNotice("accelRunSavedNotice");
+    renderAll();
+  }
+
+  function buildResult(run) {
+    var intervalStats = computeIntervalStats(run.intervalValues);
+    var averageAccuracyM = averageArray(run.accuracyValues);
+    var nullSpeedShare = run.sampleCount > 0 ? run.nullSpeedCount / run.sampleCount : 1;
+    var derivedShare = run.sampleCount > 0 ? run.derivedSpeedCount / run.sampleCount : 1;
+    var quality = evaluateQuality({
+      sampleCount: run.sampleCount,
+      durationMs: run.finishPerfMs - run.startPerfMs,
+      averageAccuracyM: averageAccuracyM,
+      averageHz: intervalStats.hz,
+      averageIntervalMs: intervalStats.averageMs,
+      jitterMs: intervalStats.jitterMs,
+      staleCount: run.staleCount,
+      sparseCount: run.sparseCount,
+      nullSpeedShare: nullSpeedShare,
+      derivedShare: derivedShare,
+    });
+
+    return {
+      id: run.id,
+      savedAtMs: Date.now(),
+      presetId: run.preset.id,
+      presetSignature: getPresetSignature(run.preset),
+      presetKind: run.preset.type,
+      standingStart: run.preset.standingStart,
+      customStart: run.preset.customStart,
+      customEnd: run.preset.customEnd,
+      customUnit: run.preset.customUnit,
+      startSpeedMs: run.preset.startSpeedMs,
+      targetSpeedMs: run.preset.targetSpeedMs,
+      distanceTargetM: run.preset.distanceTargetM,
+      displayUnit: run.preset.displayUnit,
+      distanceDisplay: run.preset.distanceDisplay,
+      elapsedMs: run.finishPerfMs - run.startPerfMs,
+      trapSpeedMs: run.preset.type === "distance" ? run.finishSpeedMs : null,
+      rolloutApplied: run.rolloutApplied,
+      averageAccuracyM: averageAccuracyM,
+      averageHz: intervalStats.hz,
+      averageIntervalMs: intervalStats.averageMs,
+      jitterMs: intervalStats.jitterMs,
+      qualityGrade: quality.grade,
+      qualityScore: quality.score,
+      warningKeys: quality.warningKeys,
+      sampleCount: run.sampleCount,
+      sparseCount: run.sparseCount,
+      staleCount: run.staleCount,
+      speedSource: derivedShare > 0.5 ? "derived" : "reported",
+      notes: state.settings.notes || "",
+    };
+  }
+
+  function buildLiveQuality() {
+    var intervalStats = computeIntervalStats(state.recentIntervals);
+    var accuracyM = state.latestSample ? state.latestSample.accuracyM : null;
+    var quality = evaluateQuality({
+      sampleCount: state.sessionSampleCount,
+      durationMs: intervalStats.averageMs ? intervalStats.averageMs * Math.max(0, state.recentIntervals.length) : 0,
+      averageAccuracyM: accuracyM,
+      averageHz: intervalStats.hz,
+      averageIntervalMs: intervalStats.averageMs,
+      jitterMs: intervalStats.jitterMs,
+      staleCount: state.latestSample && state.latestSample.stale ? 1 : 0,
+      sparseCount: state.latestSample && state.latestSample.sparse ? 1 : 0,
+      nullSpeedShare: state.latestSample && state.latestSample.rawSpeedMs === null ? 1 : 0,
+      derivedShare: state.latestSample && state.latestSample.speedSource === "derived" ? 1 : 0,
+      isLive: true,
+    });
+
+    quality.averageIntervalMs = intervalStats.averageMs;
+    quality.jitterMs = intervalStats.jitterMs;
+    quality.averageHz = intervalStats.hz;
+    quality.samples = state.sessionSampleCount;
+    return quality;
+  }
+
+  function evaluateQuality(input) {
+    var score = 100;
+    var warningKeys = [];
+
+    if (!isFiniteNumber(input.sampleCount) || input.sampleCount < (input.isLive ? 2 : MIN_VALID_RUN_SAMPLES)) {
+      return { grade: "invalid", score: 0, warningKeys: warningKeys };
+    }
+
+    if (!input.isLive && (!isFiniteNumber(input.durationMs) || input.durationMs < MIN_VALID_RUN_DURATION_MS)) {
+      return { grade: "invalid", score: 0, warningKeys: warningKeys };
+    }
+
+    if (!isFiniteNumber(input.averageAccuracyM)) score -= 15;
+    else if (input.averageAccuracyM > 35) {
+      score -= 60;
+      warningKeys.push("accelWarningAccuracy");
+    } else if (input.averageAccuracyM > 20) {
+      score -= 35;
+      warningKeys.push("accelWarningAccuracy");
+    } else if (input.averageAccuracyM > 12) {
+      score -= 15;
+    }
+
+    if (!isFiniteNumber(input.averageHz) || input.averageHz <= 0) {
+      score -= 35;
+    } else if (input.averageHz < 0.6) {
+      score -= 55;
+      warningKeys.push("accelWarningSparse");
+    } else if (input.averageHz < 1.0) {
+      score -= 30;
+      warningKeys.push("accelWarningSparse");
+    } else if (input.averageHz < 1.5) {
+      score -= 15;
+    }
+
+    if (isFiniteNumber(input.averageIntervalMs) && input.averageIntervalMs >= SPARSE_INTERVAL_MS) {
+      score -= 15;
+      if (warningKeys.indexOf("accelWarningSparse") === -1) warningKeys.push("accelWarningSparse");
+    }
+
+    if (isFiniteNumber(input.jitterMs) && input.jitterMs > 900) score -= 18;
+    else if (isFiniteNumber(input.jitterMs) && input.jitterMs > 450) score -= 8;
+
+    if (input.staleCount > 0) {
+      score -= Math.min(30, input.staleCount * 8);
+      warningKeys.push("accelWarningStale");
+    }
+
+    if (input.sparseCount > 0) {
+      score -= Math.min(25, input.sparseCount * 6);
+      if (warningKeys.indexOf("accelWarningSparse") === -1) warningKeys.push("accelWarningSparse");
+    }
+
+    if (input.derivedShare > 0.4) {
+      score -= input.derivedShare > 0.8 ? 18 : 8;
+      warningKeys.push("accelWarningDerived");
+    }
+
+    if (input.nullSpeedShare > 0.8) score -= 10;
+
+    score = clamp(score, 0, 100);
+
+    if (score <= 25) return { grade: "invalid", score: score, warningKeys: dedupeList(warningKeys) };
+    if (score >= 80) return { grade: "good", score: score, warningKeys: dedupeList(warningKeys) };
+    if (score >= 55) return { grade: "fair", score: score, warningKeys: dedupeList(warningKeys) };
+    return { grade: "poor", score: score, warningKeys: dedupeList(warningKeys) };
+  }
+
+  function dedupeList(values) {
+    var deduped = [];
+    for (var index = 0; index < values.length; index += 1) {
+      if (deduped.indexOf(values[index]) === -1) deduped.push(values[index]);
+    }
+    return deduped;
+  }
+
+  function computeIntervalStats(intervals) {
+    if (!intervals || !intervals.length) {
+      return {
+        averageMs: null,
+        jitterMs: null,
+        hz: null,
+        maxMs: null,
+      };
+    }
+
+    var total = 0;
+    var maxMs = 0;
+    for (var index = 0; index < intervals.length; index += 1) {
+      total += intervals[index];
+      if (intervals[index] > maxMs) maxMs = intervals[index];
+    }
+
+    var averageMs = total / intervals.length;
+    var variance = 0;
+    for (var varianceIndex = 0; varianceIndex < intervals.length; varianceIndex += 1) {
+      variance += Math.pow(intervals[varianceIndex] - averageMs, 2);
+    }
+
+    variance = variance / intervals.length;
+
+    return {
+      averageMs: averageMs,
+      jitterMs: Math.sqrt(variance),
+      hz: averageMs > 0 ? 1000 / averageMs : null,
+      maxMs: maxMs,
+    };
+  }
+
+  function averageArray(values) {
+    if (!values || !values.length) return null;
+    var total = 0;
+    var count = 0;
+
+    for (var index = 0; index < values.length; index += 1) {
+      if (!isFiniteNumber(values[index])) continue;
+      total += values[index];
+      count += 1;
+    }
+
+    return count ? total / count : null;
+  }
+
+  function averageFinite(left, right) {
+    var values = [];
+    if (isFiniteNumber(left)) values.push(left);
+    if (isFiniteNumber(right)) values.push(right);
+    return values.length ? averageArray(values) : null;
+  }
+
+  function interpolateSpeedCrossing(previousSample, currentSample, targetSpeedMs) {
+    if (!previousSample || !currentSample) return null;
+    if (!isFiniteNumber(previousSample.speedMs) || !isFiniteNumber(currentSample.speedMs)) return null;
+    if (previousSample.speedMs >= targetSpeedMs || currentSample.speedMs < targetSpeedMs) return null;
+
+    var speedDelta = currentSample.speedMs - previousSample.speedMs;
+    if (!isFiniteNumber(speedDelta) || speedDelta <= 0) return null;
+
+    var ratio = (targetSpeedMs - previousSample.speedMs) / speedDelta;
+    ratio = clamp(ratio, 0, 1);
+
+    return {
+      ratio: ratio,
+      perfMs: interpolateValue(previousSample.perfMs, currentSample.perfMs, ratio),
+    };
+  }
+
+  function interpolateRangeCrossing(previousValue, currentValue, targetValue, previousPerfMs, currentPerfMs) {
+    if (!isFiniteNumber(previousValue) || !isFiniteNumber(currentValue) || !isFiniteNumber(targetValue)) return null;
+    if (previousValue >= targetValue || currentValue < targetValue) return null;
+
+    var delta = currentValue - previousValue;
+    if (!isFiniteNumber(delta) || delta <= 0) return null;
+
+    var ratio = (targetValue - previousValue) / delta;
+    ratio = clamp(ratio, 0, 1);
+
+    return {
+      ratio: ratio,
+      perfMs: interpolateValue(previousPerfMs, currentPerfMs, ratio),
+    };
+  }
+
+  function interpolateValue(start, end, ratio) {
+    return start + ((end - start) * ratio);
+  }
+
+  function renderAll() {
+    renderControlSelections();
+    renderControlState();
+    renderStatusPanel();
+    renderLivePanel();
+    renderResultCard();
+    renderDiagnostics();
+    renderHistory();
+  }
+
+  function renderControlState() {
+    var hasActiveRun = Boolean(state.run && (state.run.stage === "armed" || state.run.stage === "waiting_rollout" || state.run.stage === "running"));
+    var hasRunState = Boolean(state.run);
+    var customInvalid = state.settings.selectedPresetId === "custom" && !isCustomRangeValid();
+
+    elements.armRun.disabled = hasActiveRun || !state.geolocationSupported || customInvalid;
+    elements.cancelRun.disabled = !hasActiveRun;
+    elements.resetRun.disabled = !hasRunState;
+  }
+
+  function renderStatusPanel() {
+    var displayPreset = state.run ? state.run.preset : getSelectedPreset();
+    var speedUnit = displayPreset.displayUnit;
+    var permissionLabel = getPermissionLabel(state.permissionState);
+    var ready = isGpsReady();
+    var liveQuality = state.currentQuality;
+    var qualityLabel = liveQuality ? getQualityLabel(liveQuality.grade) : t("accelUnavailable");
+    var stateLabel = getRunStateLabel();
+
+    elements.toolbarPermissionValue.textContent = permissionLabel;
+    elements.toolbarQualityValue.textContent = qualityLabel;
+    elements.toolbarStateValue.textContent = stateLabel;
+    elements.heroStatusBadge.textContent = stateLabel;
+    elements.heroStatusBadge.dataset.state = getBadgeTone();
+
+    elements.permissionValue.textContent = permissionLabel;
+    elements.gpsReadyValue.textContent = ready ? t("accelReadyYes") : t("accelReadyNo");
+    elements.latestAccuracyValue.textContent = formatMeters(state.latestSample ? state.latestSample.accuracyM : null);
+    elements.observedHzValue.textContent = formatHz(liveQuality ? liveQuality.averageHz : null);
+    elements.statusSpeedValue.textContent = formatSpeedValue(state.latestSample ? state.latestSample.speedMs : null, speedUnit);
+    elements.statusHeadingValue.textContent = formatHeading(state.latestSample ? state.latestSample.headingDeg : null);
+    elements.statusAltitudeValue.textContent = formatMeters(state.latestSample ? state.latestSample.altitudeM : null);
+    elements.speedSourceValue.textContent = getSpeedSourceLabel(state.latestSample ? state.latestSample.speedSource : null);
+  }
+
+  function renderLivePanel() {
+    var run = state.run;
+    var displayPreset = run ? run.preset : getSelectedPreset();
+    var speedUnit = displayPreset.displayUnit;
+    var liveState = getRunStateLabel();
+    var liveQuality = run && run.result
+      ? { grade: run.result.qualityGrade }
+      : (run && run.stage !== "completed" ? buildCurrentRunQuality(run) : state.currentQuality);
+
+    elements.liveStateValue.textContent = liveState;
+    elements.liveQualityValue.textContent = liveQuality ? getQualityLabel(liveQuality.grade) : t("accelUnavailable");
+    elements.liveSpeedUnit.textContent = speedUnit === "kmh" ? t("accelKmhUnit") : t("accelMphUnit");
+    elements.liveSpeedValue.textContent = formatLiveSpeedNumber(state.latestSample ? state.latestSample.speedMs : null, speedUnit);
+    elements.liveTargetValue.textContent = getPresetLabel(displayPreset);
+
+    if (run && run.stage === "completed" && run.result) {
+      elements.liveElapsedValue.textContent = formatRunSeconds(run.result.elapsedMs);
+      elements.liveDistanceValue.textContent = formatRunDistance(
+        run.result.presetKind === "distance" && isFiniteNumber(run.result.distanceTargetM)
+          ? run.result.distanceTargetM
+          : Math.max(0, (run.distanceSinceArmM || 0) - (run.startDistanceM || 0)),
+        displayPreset
+      );
+      setProgressFromRun(run, displayPreset);
+      return;
+    }
+
+    if (run && run.startPerfMs !== null) {
+      elements.liveElapsedValue.textContent = formatRunSeconds(performance.now() - run.startPerfMs);
+    } else {
+      elements.liveElapsedValue.textContent = "0.000";
+    }
+
+    if (run && run.startPerfMs !== null) {
+      elements.liveDistanceValue.textContent = formatRunDistance(
+        Math.max(0, run.distanceSinceArmM - run.startDistanceM),
+        displayPreset
+      );
+    } else {
+      elements.liveDistanceValue.textContent = formatRunDistance(0, displayPreset);
+    }
+
+    setProgressFromRun(run, displayPreset);
+  }
+
+  function setProgressFromRun(run, preset) {
+    var fraction = 0;
+    var label = t("accelUnavailable");
+
+    if (!run) {
+      fraction = 0;
+      label = getTargetProgressLabel(preset, 0);
+    } else if (run.stage === "completed" && run.result) {
+      fraction = 1;
+      if (preset.type === "distance") label = getDistanceProgressLabel(preset.distanceTargetM, preset.distanceTargetM, preset);
+      else label = getSpeedProgressLabel(preset.targetSpeedMs, preset.targetSpeedMs, preset.displayUnit, preset.startSpeedMs);
+    } else if (preset.type === "distance") {
+      var distanceValue = run.startPerfMs !== null ? Math.max(0, run.distanceSinceArmM - run.startDistanceM) : 0;
+      fraction = preset.distanceTargetM > 0 ? clamp(distanceValue / preset.distanceTargetM, 0, 1) : 0;
+      label = getDistanceProgressLabel(distanceValue, preset.distanceTargetM, preset);
+    } else {
+      var currentSpeed = state.latestSample ? state.latestSample.speedMs : 0;
+      var baseline = preset.standingStart ? 0 : preset.startSpeedMs;
+      var denominator = Math.max(0.1, preset.targetSpeedMs - baseline);
+      fraction = clamp((currentSpeed - baseline) / denominator, 0, 1);
+      label = getSpeedProgressLabel(currentSpeed, preset.targetSpeedMs, preset.displayUnit, baseline);
+    }
+
+    elements.progressLabel.textContent = label;
+    elements.progressFill.style.width = String(Math.round(fraction * 1000) / 10) + "%";
+  }
+
+  function renderResultCard() {
+    var result = state.latestResult;
+
+    if (!result) {
+      elements.resultEmptyState.hidden = false;
+      elements.resultContent.hidden = true;
+      return;
+    }
+
+    elements.resultEmptyState.hidden = true;
+    elements.resultContent.hidden = false;
+    elements.resultElapsedValue.textContent = formatRunSeconds(result.elapsedMs) + " s";
+    elements.resultPresetValue.textContent = getPresetLabel(result);
+    elements.resultTrapSpeedValue.textContent = result.presetKind === "distance"
+      ? formatSpeedValue(result.trapSpeedMs, result.displayUnit)
+      : t("accelUnavailable");
+    elements.resultRolloutValue.textContent = getRolloutLabel(result);
+    elements.resultAccuracyValue.textContent = formatMeters(result.averageAccuracyM);
+    elements.resultHzValue.textContent = formatHz(result.averageHz);
+    elements.resultQualityValue.textContent = getQualityLabel(result.qualityGrade);
+    elements.resultTimestampValue.textContent = formatTimestamp(result.savedAtMs);
+    elements.resultComparisonValue.textContent = buildComparisonText(result);
+  }
+
+  function renderDiagnostics() {
+    var diagnostics = getCurrentDiagnostics();
+    elements.diagnosticAverageIntervalValue.textContent = formatMs(diagnostics.averageIntervalMs);
+    elements.diagnosticJitterValue.textContent = formatMs(diagnostics.jitterMs);
+    elements.diagnosticSparseValue.textContent = formatInteger(diagnostics.sparseCount);
+    elements.diagnosticStaleValue.textContent = formatInteger(diagnostics.staleCount);
+    elements.diagnosticSpeedSourceValue.textContent = getSpeedSourceLabel(diagnostics.speedSource);
+    elements.diagnosticSamplesValue.textContent = formatInteger(diagnostics.sampleCount);
+
+    renderWarningBadges(diagnostics.warningKeys);
+  }
+
+  function getCurrentDiagnostics() {
+    if (state.run && state.run.result) {
+      return {
+        averageIntervalMs: state.run.result.averageIntervalMs,
+        jitterMs: state.run.result.jitterMs,
+        sparseCount: state.run.result.sparseCount,
+        staleCount: state.run.result.staleCount,
+        speedSource: state.run.result.speedSource,
+        sampleCount: state.run.result.sampleCount,
+        warningKeys: state.run.result.warningKeys || [],
+      };
+    }
+
+    if (state.run && (state.run.stage === "armed" || state.run.stage === "waiting_rollout" || state.run.stage === "running")) {
+      var liveRunQuality = buildCurrentRunQuality(state.run);
+      return {
+        averageIntervalMs: liveRunQuality.averageIntervalMs,
+        jitterMs: liveRunQuality.jitterMs,
+        sparseCount: state.run.sparseCount,
+        staleCount: state.run.staleCount,
+        speedSource: state.run.derivedSpeedCount > (state.run.sampleCount / 2) ? "derived" : "reported",
+        sampleCount: state.run.sampleCount,
+        warningKeys: liveRunQuality.warningKeys,
+      };
+    }
+
+    var sessionQuality = state.currentQuality || buildLiveQuality();
+    return {
+      averageIntervalMs: sessionQuality.averageIntervalMs,
+      jitterMs: sessionQuality.jitterMs,
+      sparseCount: state.latestSample && state.latestSample.sparse ? 1 : 0,
+      staleCount: state.latestSample && state.latestSample.stale ? 1 : 0,
+      speedSource: state.latestSample ? state.latestSample.speedSource : null,
+      sampleCount: state.sessionSampleCount,
+      warningKeys: sessionQuality.warningKeys || [],
+    };
+  }
+
+  function buildCurrentRunQuality(run) {
+    var stats = computeIntervalStats(run.intervalValues);
+    var averageAccuracyM = averageArray(run.accuracyValues);
+    var quality = evaluateQuality({
+      sampleCount: run.sampleCount,
+      durationMs: run.startPerfMs !== null ? performance.now() - run.startPerfMs : 0,
+      averageAccuracyM: averageAccuracyM,
+      averageHz: stats.hz,
+      averageIntervalMs: stats.averageMs,
+      jitterMs: stats.jitterMs,
+      staleCount: run.staleCount,
+      sparseCount: run.sparseCount,
+      nullSpeedShare: run.sampleCount ? run.nullSpeedCount / run.sampleCount : 1,
+      derivedShare: run.sampleCount ? run.derivedSpeedCount / run.sampleCount : 1,
+      isLive: true,
+    });
+
+    quality.averageIntervalMs = stats.averageMs;
+    quality.jitterMs = stats.jitterMs;
+    return quality;
+  }
+
+  function renderWarningBadges(warningKeys) {
+    var warnings = warningKeys && warningKeys.length ? warningKeys : ["accelWarningNoWarnings"];
+    var html = "";
+
+    for (var index = 0; index < warnings.length; index += 1) {
+      var warningKey = warnings[index];
+      var tone = warningKey === "accelWarningNoWarnings" ? "ok" : "warning";
+      if (warningKey === "accelWarningStale") tone = "danger";
+      html += '<span class="accel-warning-badge" data-tone="' + tone + '">' + escapeHtml(t(warningKey)) + "</span>";
+    }
+
+    elements.warningBadges.innerHTML = html;
+  }
+
+  function renderHistory() {
+    if (!state.runs.length) {
+      elements.historyEmptyState.hidden = false;
+      elements.historyList.innerHTML = "";
+      return;
+    }
+
+    elements.historyEmptyState.hidden = true;
+
+    var html = "";
+    for (var index = 0; index < state.runs.length; index += 1) {
+      var run = state.runs[index];
+      html += '<article class="accel-history-item">';
+      html += '<div class="accel-history-copy">';
+      html += '<div class="accel-history-main"><strong>' + escapeHtml(getPresetLabel(run)) + "</strong> <span>" + escapeHtml(formatRunSeconds(run.elapsedMs)) + " s</span></div>";
+      html += '<div class="accel-history-meta">' + escapeHtml(getQualityLabel(run.qualityGrade)) + " · " + escapeHtml(formatTimestamp(run.savedAtMs)) + "</div>";
+      if (run.notes) html += '<div class="accel-history-note">' + escapeHtml(run.notes) + "</div>";
+      html += "</div>";
+      html += '<button type="button" class="accel-delete-btn" data-run-id="' + escapeHtml(run.id) + '">' + escapeHtml(t("delete")) + "</button>";
+      html += "</article>";
+    }
+
+    elements.historyList.innerHTML = html;
+  }
+
+  function getRunStateLabel() {
+    if (!state.geolocationSupported) return t("accelStateError");
+    if (!state.latestSample && (!state.run || state.run.stage !== "completed")) return t("accelStateGpsWaiting");
+    if (!state.run) return t("accelStateIdle");
+
+    switch (state.run.stage) {
+      case "armed":
+        return t("accelStateWaitingLaunch");
+      case "waiting_rollout":
+        return t("accelStateWaitingRollout");
+      case "running":
+        return t("accelStateRunning");
+      case "completed":
+        return t("accelStateCompleted");
+      default:
+        return t("accelStateIdle");
+    }
+  }
+
+  function getBadgeTone() {
+    if (!state.geolocationSupported) return "error";
+    if (state.run && state.run.stage === "running") return "running";
+    if (state.run && state.run.stage === "completed") return "good";
+    if (!isGpsReady()) return "warning";
+    return "idle";
+  }
+
+  function getPermissionLabel(permissionState) {
+    switch (permissionState) {
+      case "granted":
+        return t("accelPermissionGranted");
+      case "denied":
+        return t("accelPermissionDenied");
+      case "prompt":
+        return t("accelPermissionPrompt");
+      case "unsupported":
+        return t("accelPermissionUnsupported");
+      default:
+        return t("accelPermissionUnknown");
+    }
+  }
+
+  function getQualityLabel(grade) {
+    switch (grade) {
+      case "good":
+        return t("accelQualityGood");
+      case "fair":
+        return t("accelQualityFair");
+      case "poor":
+        return t("accelQualityPoor");
+      default:
+        return t("accelQualityInvalid");
+    }
+  }
+
+  function getSpeedSourceLabel(source) {
+    if (source === "derived") return t("accelSpeedDerivedLabel");
+    if (source === "reported") return t("accelSpeedReported");
+    return t("accelUnavailable");
+  }
+
+  function getRolloutLabel(result) {
+    if (!result.standingStart) return t("accelRolloutIgnored");
+    return result.rolloutApplied ? t("accelRolloutOn") : t("accelRolloutOff");
+  }
+
+  function isGpsReady() {
+    if (!state.latestSample) return false;
+    if (!isFiniteNumber(state.latestSample.geoMs)) return false;
+    if ((Date.now() - state.latestSample.geoMs) > READY_SAMPLE_AGE_MS) return false;
+    if (isFiniteNumber(state.latestSample.accuracyM) && state.latestSample.accuracyM > READY_ACCURACY_M) return false;
+    return true;
+  }
+
+  function isCustomRangeValid() {
+    return toFiniteNumber(state.settings.customEnd, 0) > toFiniteNumber(state.settings.customStart, 0);
+  }
+
+  function setActionNotice(key, params) {
+    if (state.actionNoticeTimerId) window.clearTimeout(state.actionNoticeTimerId);
+    elements.actionNotice.textContent = t(key, params || {});
+
+    state.actionNoticeTimerId = window.setTimeout(function () {
+      elements.actionNotice.textContent = "";
+      state.actionNoticeTimerId = null;
+    }, 2600);
+  }
+
+  function buildComparisonText(result) {
+    var best = findBestComparableRun(result);
+    if (!best) return t("accelNoComparison");
+    if (best.id === result.id) return t("accelBestRun");
+
+    var deltaMs = result.elapsedMs - best.elapsedMs;
+    var deltaText = formatRunSeconds(Math.abs(deltaMs)) + " s";
+    return deltaMs < 0 ? t("accelFasterBy", { value: deltaText }) : t("accelSlowerBy", { value: deltaText });
+  }
+
+  function findBestComparableRun(result) {
+    var matches = [];
+    for (var index = 0; index < state.runs.length; index += 1) {
+      var run = state.runs[index];
+      if (run.presetSignature !== result.presetSignature) continue;
+      if (run.qualityGrade === "invalid") continue;
+      matches.push(run);
+    }
+
+    if (!matches.length) return null;
+
+    matches.sort(function (left, right) {
+      return left.elapsedMs - right.elapsedMs;
+    });
+
+    return matches[0];
+  }
+
+  function getDistanceM(latA, lonA, latB, lonB) {
+    if (!isFiniteNumber(latA) || !isFiniteNumber(lonA) || !isFiniteNumber(latB) || !isFiniteNumber(lonB)) return 0;
+
+    var rad = Math.PI / 180;
+    var phi1 = latA * rad;
+    var phi2 = latB * rad;
+    var deltaPhi = (latB - latA) * rad;
+    var deltaLambda = (lonB - lonA) * rad;
+    var sinPhi = Math.sin(deltaPhi / 2);
+    var sinLambda = Math.sin(deltaLambda / 2);
+    var a = (sinPhi * sinPhi) + (Math.cos(phi1) * Math.cos(phi2) * sinLambda * sinLambda);
+    var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return 6371000 * c;
+  }
+
+  function msToSpeedUnit(speedMs, unit) {
+    if (!isFiniteNumber(speedMs)) return null;
+    return unit === "kmh" ? speedMs * 3.6 : speedMs * 2.2369362920544;
+  }
+
+  function formatLiveSpeedNumber(speedMs, unit) {
+    if (!isFiniteNumber(speedMs)) return "0";
+    return formatNumber(msToSpeedUnit(speedMs, unit), 0);
+  }
+
+  function formatSpeedValue(speedMs, unit) {
+    if (!isFiniteNumber(speedMs)) return t("accelUnavailable");
+    return formatNumber(msToSpeedUnit(speedMs, unit), 1) + " " + (unit === "kmh" ? t("accelKmhUnit") : t("accelMphUnit"));
+  }
+
+  function formatRunDistance(distanceM, preset) {
+    if (!isFiniteNumber(distanceM)) return t("accelUnavailable");
+
+    if (preset && preset.distanceDisplay === "ft") {
+      return formatNumber(distanceM * 3.2808398950131, 0) + " ft";
+    }
+
+    return formatNumber(distanceM, 1) + " m";
+  }
+
+  function getDistanceProgressLabel(currentDistanceM, targetDistanceM, preset) {
+    return formatRunDistance(currentDistanceM, preset) + " / " + formatRunDistance(targetDistanceM, preset);
+  }
+
+  function getSpeedProgressLabel(currentSpeedMs, targetSpeedMs, unit, baselineMs) {
+    var baseline = isFiniteNumber(baselineMs) ? baselineMs : 0;
+    var currentValue = Math.max(baseline, currentSpeedMs || 0);
+    return formatNumber(msToSpeedUnit(currentValue, unit), 0) + " / " + formatNumber(msToSpeedUnit(targetSpeedMs, unit), 0) + " " + (unit === "kmh" ? t("accelKmhUnit") : t("accelMphUnit"));
+  }
+
+  function getTargetProgressLabel(preset, value) {
+    if (preset.type === "distance") return getDistanceProgressLabel(value, preset.distanceTargetM, preset);
+    return getSpeedProgressLabel(0, preset.targetSpeedMs, preset.displayUnit, preset.startSpeedMs);
+  }
+
+  function formatHeading(value) {
+    if (!isFiniteNumber(value)) return t("accelUnavailable");
+    return formatNumber(value, 0) + "°";
+  }
+
+  function formatMeters(value) {
+    if (!isFiniteNumber(value)) return t("accelUnavailable");
+    var decimals = Math.abs(value) >= 100 ? 0 : 1;
+    return formatNumber(value, decimals) + " m";
+  }
+
+  function formatHz(value) {
+    if (!isFiniteNumber(value) || value <= 0) return t("accelUnavailable");
+    var decimals = value >= 10 ? 1 : 2;
+    return formatNumber(value, decimals) + " Hz";
+  }
+
+  function formatMs(value) {
+    if (!isFiniteNumber(value)) return t("accelUnavailable");
+    return formatNumber(value, value >= 100 ? 0 : 1) + " ms";
+  }
+
+  function formatInteger(value) {
+    if (!isFiniteNumber(value)) return t("accelUnavailable");
+    return new Intl.NumberFormat(state.lang, { maximumFractionDigits: 0 }).format(value);
+  }
+
+  function formatNumber(value, decimals) {
+    if (!isFiniteNumber(value)) return t("accelUnavailable");
+    return new Intl.NumberFormat(state.lang, {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    }).format(value);
+  }
+
+  function formatRunSeconds(durationMs) {
+    if (!isFiniteNumber(durationMs)) return "0.000";
+    return formatNumber(Math.max(0, durationMs) / 1000, 3);
+  }
+
+  function formatTimestamp(timestampMs) {
+    if (!isFiniteNumber(timestampMs)) return t("accelUnavailable");
+    var date = new Date(timestampMs);
+    return new Intl.DateTimeFormat(state.lang, {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).format(date);
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+})();

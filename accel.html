@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en" class="accel-page">
+<head>
+  <meta charset="utf-8" />
+  <script>
+    (function () {
+      var stored = null;
+      try {
+        stored = localStorage.getItem("vatio_board_lang");
+      } catch (error) {
+        stored = null;
+      }
+      var lang = stored || (navigator.language && navigator.language.startsWith("es") ? "es" : "en");
+      document.documentElement.lang = lang;
+      window.__lang = lang;
+    })();
+  </script>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+
+  <link rel="icon" type="image/svg+xml" href="/favicon_dark.svg?v=2" media="(prefers-color-scheme: dark)" />
+  <link rel="icon" type="image/svg+xml" href="/favicon_ligth.svg?v=2" media="(prefers-color-scheme: light)" />
+  <link id="favicon-fallback" rel="icon" type="image/svg+xml" href="/favicon_ligth.svg?v=2" />
+  <link id="shortcut-favicon" rel="shortcut icon" href="/favicon_ligth.svg?v=2" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+  <link rel="manifest" href="/site.webmanifest" />
+
+  <script>
+    (function () {
+      var query = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+      var icons = [
+        document.getElementById("favicon-fallback"),
+        document.getElementById("shortcut-favicon"),
+      ];
+
+      function applyThemeFavicon() {
+        var href = (query && query.matches ? "/favicon_dark.svg" : "/favicon_ligth.svg") + "?v=2";
+        for (var index = 0; index < icons.length; index += 1) {
+          if (icons[index]) icons[index].href = href;
+        }
+      }
+
+      applyThemeFavicon();
+      if (!query) return;
+      if (query.addEventListener) query.addEventListener("change", applyThemeFavicon);
+      else if (query.addListener) query.addListener(applyThemeFavicon);
+    })();
+  </script>
+
+  <title>Vatio Accel - Browser Acceleration Timer for Tesla and Mobile</title>
+  <meta
+    name="description"
+    content="Browser-based acceleration timer using only geolocation and local processing. Built for Tesla browser testing and honest run quality scoring."
+  />
+  <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="theme-color" content="#181818" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+  <link rel="canonical" href="https://vatioboard.com/accel.html" />
+
+  <style>
+    .sr-only{
+      position:absolute !important;
+      width:1px;
+      height:1px;
+      padding:0;
+      margin:-1px;
+      overflow:hidden;
+      clip:rect(0,0,0,0);
+      white-space:nowrap;
+      border:0;
+    }
+  </style>
+</head>
+<body class="accel-page">
+  <h1 class="sr-only" data-i18n="accelPageH1">Vatio Accel browser acceleration timer</h1>
+
+  <div class="app accel-app">
+    <header>
+      <div class="header-inner accel-header-inner">
+        <div class="brand" data-i18n-title="accelTagline" title="Browser acceleration timer by Vatio Libre">
+          <a class="brand-home" href="/" aria-label="Open Vatio Board">
+            <span class="dot" aria-hidden="true"></span>
+            <picture class="brand-logo" aria-hidden="true">
+              <source srcset="/img/vb_logo_dark.svg" media="(prefers-color-scheme: dark)" />
+              <source srcset="/img/vb_logo_light.svg" media="(prefers-color-scheme: light)" />
+              <img src="/img/vb_logo_light.svg" alt="" width="757" height="107" decoding="async" />
+            </picture>
+            <span class="sr-only">Vatio Board</span>
+          </a>
+          <span class="route-chip" aria-hidden="true" data-i18n="accelRoute">ACCEL</span>
+          <button id="langToggle" type="button" class="lang-toggle" aria-label="Change language" data-i18n-aria="changeLanguage">EN</button>
+        </div>
+
+        <div class="toolbar accel-toolbar" role="toolbar" aria-label="Acceleration tools" data-i18n-aria="accelToolbar">
+          <div class="accel-toolbar-status">
+            <span class="accel-pill">
+              <span class="accel-pill-label" data-i18n="permission">Permission</span>
+              <strong id="toolbarPermissionValue">—</strong>
+            </span>
+            <span class="accel-pill">
+              <span class="accel-pill-label" data-i18n="accelQuality">Quality</span>
+              <strong id="toolbarQualityValue">—</strong>
+            </span>
+            <span class="accel-pill">
+              <span class="accel-pill-label" data-i18n="accelState">State</span>
+              <strong id="toolbarStateValue" aria-live="polite">Idle</strong>
+            </span>
+          </div>
+
+          <div class="right-stack accel-right-stack">
+            <span class="attribution">
+              <a href="/speed.html" data-i18n="speedometer">Speedometer</a>
+            </span>
+            <span class="attribution">
+              <a href="/gps-rate.html" data-i18n="accelGpsLab">GPS Lab</a>
+            </span>
+            <span class="attribution">
+              <a href="/" data-i18n="openBoard">Open board</a>
+            </span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="accel-main">
+      <section class="accel-hero accel-card">
+        <div class="accel-hero-copy">
+          <span class="accel-kicker" data-i18n="accelHeroKicker">Browser acceleration timer</span>
+          <h2 data-i18n="accelHeroTitle">Browser-based acceleration testing for Tesla and mobile</h2>
+          <p class="accel-lead" data-i18n="accelHeroLead">
+            Uses browser geolocation only. Results are estimates based on observed GPS callbacks, not certified timing.
+          </p>
+          <p class="accel-disclaimer" data-i18n="accelDisclaimer">
+            Accuracy depends on browser callback rate, GPS quality, visibility state, and device behavior. Use repeated runs and quality grades honestly.
+          </p>
+
+          <div class="accel-meta-line">
+            <span id="heroStatusBadge" class="accel-chip">Idle</span>
+            <span class="accel-chip accel-chip-muted" data-i18n="accelStorageNote">
+              Runs and settings stay in local storage on this browser only
+            </span>
+          </div>
+        </div>
+
+        <div class="accel-status-panel">
+          <div class="accel-card-head">
+            <div>
+              <span class="accel-card-kicker" data-i18n="accelStatusPanel">Status panel</span>
+              <p class="accel-card-lead" data-i18n="accelStatusLead">Live browser GPS readiness and signal quality.</p>
+            </div>
+          </div>
+
+          <div class="accel-status-grid">
+            <div class="accel-metric">
+              <span class="accel-metric-label" data-i18n="permission">Permission</span>
+              <strong id="permissionValue" class="accel-metric-value">—</strong>
+            </div>
+            <div class="accel-metric">
+              <span class="accel-metric-label" data-i18n="accelGpsReady">GPS ready</span>
+              <strong id="gpsReadyValue" class="accel-metric-value">—</strong>
+            </div>
+            <div class="accel-metric">
+              <span class="accel-metric-label" data-i18n="accelLatestAccuracy">Latest accuracy</span>
+              <strong id="latestAccuracyValue" class="accel-metric-value">—</strong>
+            </div>
+            <div class="accel-metric">
+              <span class="accel-metric-label" data-i18n="accelObservedHz">Observed Hz</span>
+              <strong id="observedHzValue" class="accel-metric-value">—</strong>
+            </div>
+            <div class="accel-metric">
+              <span class="accel-metric-label" data-i18n="accelCurrentSpeed">Current speed</span>
+              <strong id="statusSpeedValue" class="accel-metric-value">—</strong>
+            </div>
+            <div class="accel-metric">
+              <span class="accel-metric-label" data-i18n="heading">Heading</span>
+              <strong id="statusHeadingValue" class="accel-metric-value">—</strong>
+            </div>
+            <div class="accel-metric">
+              <span class="accel-metric-label" data-i18n="altitude">Altitude</span>
+              <strong id="statusAltitudeValue" class="accel-metric-value">—</strong>
+            </div>
+            <div class="accel-metric">
+              <span class="accel-metric-label" data-i18n="accelSpeedSource">Speed source</span>
+              <strong id="speedSourceValue" class="accel-metric-value">—</strong>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="accel-workbench">
+        <article class="accel-card">
+          <div class="accel-card-head">
+            <div>
+              <span class="accel-card-kicker" data-i18n="accelTestSelector">Test selector</span>
+              <p class="accel-card-lead" data-i18n="accelTestLead">Standing-start, rolling-start, and distance presets.</p>
+            </div>
+          </div>
+
+          <div id="presetGrid" class="accel-preset-grid"></div>
+
+          <div id="customRangePanel" class="accel-custom-panel" hidden>
+            <div class="accel-section-title" data-i18n="accelCustomRange">Custom speed range</div>
+
+            <div class="accel-custom-grid">
+              <label class="accel-field" for="customStartInput">
+                <span data-i18n="accelStartSpeed">Start speed</span>
+                <input id="customStartInput" type="number" min="0" step="1" inputmode="decimal" />
+              </label>
+
+              <label class="accel-field" for="customEndInput">
+                <span data-i18n="accelEndSpeed">End speed</span>
+                <input id="customEndInput" type="number" min="0" step="1" inputmode="decimal" />
+              </label>
+            </div>
+
+            <div class="accel-segmented" role="group" aria-label="Custom range units" data-i18n-aria="units">
+              <button id="customUnitMph" type="button" class="accel-segment-btn" data-unit="mph">mph</button>
+              <button id="customUnitKmh" type="button" class="accel-segment-btn" data-unit="kmh">km/h</button>
+            </div>
+
+            <p id="customRangeNotice" class="accel-inline-note"></p>
+          </div>
+        </article>
+
+        <article class="accel-card">
+          <div class="accel-card-head">
+            <div>
+              <span class="accel-card-kicker" data-i18n="accelControls">Controls</span>
+              <p class="accel-card-lead" data-i18n="accelControlsLead">Arm the run, choose rollout, and store quick notes locally.</p>
+            </div>
+          </div>
+
+          <div class="accel-action-grid" role="group" aria-label="Run controls" data-i18n-aria="accelControls">
+            <button id="armRun" type="button" class="accel-action-btn accel-action-btn-primary" data-i18n="accelArm">Arm</button>
+            <button id="cancelRun" type="button" class="accel-action-btn" data-i18n="accelCancel">Stop / Cancel</button>
+            <button id="resetRun" type="button" class="accel-action-btn" data-i18n="accelReset">Reset</button>
+          </div>
+
+          <div class="accel-controls-stack">
+            <div>
+              <div class="accel-section-title" data-i18n="accelRollout">Rollout</div>
+              <div class="accel-segmented" role="group" aria-label="Rollout toggle">
+                <button id="rolloutOff" type="button" class="accel-segment-btn" data-rollout="off" data-i18n="off">Off</button>
+                <button id="rolloutOn" type="button" class="accel-segment-btn" data-rollout="on" data-i18n="accelRolloutOneFoot">1 ft</button>
+              </div>
+            </div>
+
+            <div>
+              <div class="accel-section-title" data-i18n="accelLaunchThreshold">Launch threshold</div>
+              <div class="accel-segmented" role="group" aria-label="Launch threshold">
+                <button id="launchThresholdHalf" type="button" class="accel-segment-btn" data-threshold="0.5" data-i18n="accelLaunchThresholdHalf">0.5 mph</button>
+                <button id="launchThresholdOne" type="button" class="accel-segment-btn" data-threshold="1" data-i18n="accelLaunchThresholdOne">1.0 mph</button>
+              </div>
+            </div>
+
+            <label class="accel-field" for="runNotes">
+              <span data-i18n="accelNotes">Run notes</span>
+              <textarea
+                id="runNotes"
+                rows="3"
+                data-i18n-placeholder="accelNotesPlaceholder"
+                placeholder="Example: 90% SOC, flat road"
+              ></textarea>
+            </label>
+          </div>
+
+          <p id="actionNotice" class="accel-feedback" aria-live="polite"></p>
+        </article>
+
+        <article class="accel-card accel-live-card">
+          <div class="accel-card-head">
+            <div>
+              <span class="accel-card-kicker" data-i18n="accelLiveRun">Live run</span>
+              <p class="accel-card-lead" data-i18n="accelLiveLead">Large timer, speed, distance, and target progress during the run.</p>
+            </div>
+          </div>
+
+          <div class="accel-live-primary">
+            <div class="accel-live-timer-wrap">
+              <span class="accel-live-label" data-i18n="accelElapsed">Elapsed</span>
+              <strong id="liveElapsedValue" class="accel-live-timer">0.000</strong>
+              <span class="accel-live-unit">s</span>
+            </div>
+
+            <div class="accel-live-speed-wrap">
+              <span class="accel-live-label" data-i18n="accelCurrentSpeed">Current speed</span>
+              <strong id="liveSpeedValue" class="accel-live-speed">0</strong>
+              <span id="liveSpeedUnit" class="accel-live-unit">mph</span>
+            </div>
+          </div>
+
+          <div class="accel-live-grid">
+            <div class="accel-metric">
+              <span class="accel-metric-label" data-i18n="distance">Distance</span>
+              <strong id="liveDistanceValue" class="accel-metric-value">—</strong>
+            </div>
+            <div class="accel-metric">
+              <span class="accel-metric-label" data-i18n="accelCurrentTarget">Current target</span>
+              <strong id="liveTargetValue" class="accel-metric-value">—</strong>
+            </div>
+            <div class="accel-metric">
+              <span class="accel-metric-label" data-i18n="accelState">Run state</span>
+              <strong id="liveStateValue" class="accel-metric-value">Idle</strong>
+            </div>
+            <div class="accel-metric">
+              <span class="accel-metric-label" data-i18n="accelQuality">Quality</span>
+              <strong id="liveQualityValue" class="accel-metric-value">—</strong>
+            </div>
+          </div>
+
+          <div class="accel-progress-shell">
+            <div class="accel-progress-head">
+              <span data-i18n="accelProgress">Progress</span>
+              <span id="progressLabel" class="accel-inline-note">—</span>
+            </div>
+            <div class="accel-progress-track" aria-hidden="true">
+              <span id="progressFill" class="accel-progress-fill"></span>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="accel-results-grid">
+        <article class="accel-card accel-result-card">
+          <div class="accel-card-head">
+            <div>
+              <span class="accel-card-kicker" data-i18n="accelResult">Result</span>
+              <p class="accel-card-lead" data-i18n="accelResultLead">Latest completed run stored locally on this browser.</p>
+            </div>
+          </div>
+
+          <div id="resultEmptyState" class="accel-empty-copy" data-i18n="accelNoResult">Arm and complete a run to see the result here.</div>
+
+          <div id="resultContent" hidden>
+            <div class="accel-result-primary">
+              <span class="accel-live-label" data-i18n="accelFinalTime">Final time</span>
+              <strong id="resultElapsedValue" class="accel-result-time">—</strong>
+            </div>
+
+            <div class="accel-result-grid">
+              <div class="accel-metric">
+                <span class="accel-metric-label" data-i18n="accelSelectedTest">Selected test</span>
+                <strong id="resultPresetValue" class="accel-metric-value">—</strong>
+              </div>
+              <div class="accel-metric">
+                <span class="accel-metric-label" data-i18n="accelTrapSpeed">Trap speed</span>
+                <strong id="resultTrapSpeedValue" class="accel-metric-value">—</strong>
+              </div>
+              <div class="accel-metric">
+                <span class="accel-metric-label" data-i18n="accelRolloutUsed">Rollout</span>
+                <strong id="resultRolloutValue" class="accel-metric-value">—</strong>
+              </div>
+              <div class="accel-metric">
+                <span class="accel-metric-label" data-i18n="accelAverageAccuracy">Average accuracy</span>
+                <strong id="resultAccuracyValue" class="accel-metric-value">—</strong>
+              </div>
+              <div class="accel-metric">
+                <span class="accel-metric-label" data-i18n="accelRunHz">Run avg Hz</span>
+                <strong id="resultHzValue" class="accel-metric-value">—</strong>
+              </div>
+              <div class="accel-metric">
+                <span class="accel-metric-label" data-i18n="accelQualityGrade">Quality grade</span>
+                <strong id="resultQualityValue" class="accel-metric-value">—</strong>
+              </div>
+              <div class="accel-metric">
+                <span class="accel-metric-label" data-i18n="accelTimestamp">Timestamp</span>
+                <strong id="resultTimestampValue" class="accel-metric-value accel-metric-wrap">—</strong>
+              </div>
+              <div class="accel-metric">
+                <span class="accel-metric-label" data-i18n="accelBestComparison">Best vs latest</span>
+                <strong id="resultComparisonValue" class="accel-metric-value accel-metric-wrap">—</strong>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="accel-card">
+          <div class="accel-card-head">
+            <div>
+              <span class="accel-card-kicker" data-i18n="accelDiagnostics">Diagnostics</span>
+              <p class="accel-card-lead" data-i18n="accelDiagnosticsLead">Observed callback timing, uncertainty, and warning flags.</p>
+            </div>
+          </div>
+
+          <div id="warningBadges" class="accel-warning-list"></div>
+
+          <div class="accel-metrics-grid">
+            <div class="accel-metric">
+              <span class="accel-metric-label" data-i18n="accelAverageInterval">Average interval</span>
+              <strong id="diagnosticAverageIntervalValue" class="accel-metric-value">—</strong>
+            </div>
+            <div class="accel-metric">
+              <span class="accel-metric-label" data-i18n="accelJitter">Jitter</span>
+              <strong id="diagnosticJitterValue" class="accel-metric-value">—</strong>
+            </div>
+            <div class="accel-metric">
+              <span class="accel-metric-label" data-i18n="accelSparseUpdates">Sparse updates</span>
+              <strong id="diagnosticSparseValue" class="accel-metric-value">—</strong>
+            </div>
+            <div class="accel-metric">
+              <span class="accel-metric-label" data-i18n="accelStaleSamples">Stale samples</span>
+              <strong id="diagnosticStaleValue" class="accel-metric-value">—</strong>
+            </div>
+            <div class="accel-metric">
+              <span class="accel-metric-label" data-i18n="accelSpeedSource">Speed source</span>
+              <strong id="diagnosticSpeedSourceValue" class="accel-metric-value">—</strong>
+            </div>
+            <div class="accel-metric">
+              <span class="accel-metric-label" data-i18n="accelSamples">Samples</span>
+              <strong id="diagnosticSamplesValue" class="accel-metric-value">—</strong>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="accel-card accel-history-card">
+        <div class="accel-card-head accel-history-head">
+          <div>
+            <span class="accel-card-kicker" data-i18n="accelHistory">History</span>
+            <p class="accel-card-lead" data-i18n="accelHistoryLead">Saved locally in this browser. Newest runs first.</p>
+          </div>
+          <button id="clearHistory" type="button" class="accel-action-btn accel-action-btn-compact" data-i18n="accelClearHistory">Clear all</button>
+        </div>
+
+        <div id="historyEmptyState" class="accel-empty-copy" data-i18n="accelNoHistory">No saved runs yet.</div>
+        <div id="historyList" class="accel-history-list"></div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="/src/accel/accel.js"></script>
+</body>
+</html>

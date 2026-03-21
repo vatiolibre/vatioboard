@@ -1,11 +1,12 @@
 # VatioBoard
 
-VatioBoard is a multi-page Vite app for touch-first browser tools. The repo currently ships four user-facing surfaces:
+VatioBoard is a multi-page Vite app for touch-first browser tools. The repo currently ships five user-facing surfaces:
 
 - `Vatio Board`: a full-screen drawing board with color controls, PNG export, and quick access to utility widgets
 - `Calculator`: a draggable calculator widget with history and formatting settings
 - `Vatio Speed`: a live GPS speedometer with trip stats, globe view, and speed-trap alerts
 - `Vatio GPS Rate Lab`: a front-end geolocation diagnostics page for measuring observed browser callback rate and field availability
+- `Vatio Accel`: a browser-only acceleration timer that estimates runs from geolocation updates and stores history in local browser storage
 
 The project is part of the VatioLibre community and is published for educational use.
 
@@ -85,6 +86,19 @@ Key behavior:
 - stores session notes and the last saved summary in `localStorage`
 - optimized for Tesla-sized touch screens, while still working on normal mobile and desktop browsers
 
+### Acceleration Timer
+
+`accel.html` loads the standalone acceleration page from [`src/accel/accel.js`](src/accel/accel.js).
+
+Key behavior:
+
+- browser-only acceleration timing using `navigator.geolocation.watchPosition()`
+- standing-start, rolling-start, distance, and custom speed-range presets
+- auto arm / launch / completion flow with rollout and launch-threshold controls
+- speed fallback from displacement when `coords.speed` is missing
+- local-only run history and settings stored in `localStorage`
+- explicit quality grades and warning badges so results are presented as estimates, not certified timing
+
 ## Stack
 
 - Vite 7 multi-page build
@@ -103,6 +117,7 @@ Key behavior:
 ├─ calculator.html           # Standalone calculator demo
 ├─ speed.html                # Standalone GPS speedometer
 ├─ gps-rate.html             # Standalone browser geolocation diagnostics page
+├─ accel.html                # Standalone browser acceleration timer
 ├─ data-src/                 # Source datasets used to build speed-trap artifacts
 ├─ public/
 │  ├─ audio/                 # Alert sounds
@@ -116,6 +131,7 @@ Key behavior:
 │  ├─ dock/                  # Floating dock used on the board
 │  ├─ energy/                # EV trip cost widget/core/storage
 │  ├─ gps-rate/              # GPS rate diagnostics entry module
+│  ├─ accel/                 # Acceleration timer entry module
 │  ├─ speed/                 # Speedometer entry module
 │  ├─ styles/                # LESS bundles for each surface
 │  ├─ i18n.js                # Shared English/Spanish translations
@@ -162,6 +178,7 @@ Vite is configured as a multi-page app through `vite.config.js`.
 - `calculator.html`
 - `speed.html`
 - `gps-rate.html`
+- `accel.html`
 
 ## Runtime Notes
 
@@ -175,6 +192,10 @@ Vite is configured as a multi-page app through `vite.config.js`.
 - Some audio features on the speedometer depend on a user gesture, which is why the page includes explicit audio toggles
 - The GPS Rate Lab is also browser-only and requires geolocation support plus user permission
 - GPS Rate Lab results are observed callback rates from the browser, not guaranteed GPS hardware sampling frequency
+- The acceleration timer is also browser-only and requires geolocation support plus user permission
+- Acceleration runs are estimates from observed browser GPS updates and are stored locally under:
+  - `vatioboard.accel.runs`
+  - `vatioboard.accel.settings`
 
 ## GPS Rate Lab Note
 
@@ -195,6 +216,27 @@ Known limitations:
 - callbacks can be throttled by the browser, OS, permissions, battery policy, or hidden/background tab behavior
 - fields like `speed`, `heading`, `altitude`, and `altitudeAccuracy` may be null or unsupported depending on the browser and motion state
 - the page is intended for honest diagnostics, not Dragy-like claims or guaranteed telemetry precision
+
+## Acceleration Timer Note
+
+How it works:
+
+- open `http://localhost:5173/accel.html`
+- pick a preset or custom speed range
+- arm the run and let the page wait for movement or the rolling start threshold
+- the page times the run from observed browser geolocation updates, interpolates target crossings, and saves completed runs locally
+
+Known limitations:
+
+- this is a browser-based performance timer, not a certified timing system
+- observed geolocation callbacks are browser/device dependent and may be sparse, stale, or noisy
+- distance, speed, rollout, and interpolation are all estimates from the browser geolocation stream
+- quality grades are intended to expose uncertainty, not hide it
+
+Storage:
+
+- runs are stored in local browser storage at `vatioboard.accel.runs`
+- page settings are stored in local browser storage at `vatioboard.accel.settings`
 
 ## Deployment
 
