@@ -42,11 +42,16 @@ import "../styles/accel.less";
       accelRoute: "ACCEL",
       accelToolbar: "Acceleration tools",
       accelGpsLab: "GPS Lab",
+      accelSetup: "Setup",
+      accelResultsPanel: "Results",
+      accelOpenSetup: "Open setup",
+      accelOpenResults: "Open results and history",
       accelHeroKicker: "Browser acceleration timer",
       accelHeroTitle: "Browser-based acceleration testing for Tesla and mobile",
       accelHeroLead: "Uses browser geolocation only. Results are estimates based on observed GPS callbacks, not certified timing.",
       accelDisclaimer: "Accuracy depends on browser callback rate, GPS quality, visibility state, and device behavior. Use repeated runs and quality grades honestly.",
       accelStorageNote: "Runs and settings stay in local storage on this browser only",
+      accelLocalOnly: "Local only",
       accelStatusPanel: "Status panel",
       accelStatusLead: "Live browser GPS readiness and signal quality.",
       accelTestSelector: "Test selector",
@@ -134,6 +139,8 @@ import "../styles/accel.less";
       accelRolloutOn: "1 ft rollout",
       accelRolloutIgnored: "Ignored on rolling tests",
       accelRolloutUnavailable: "Not used",
+      accelStandingStart: "Standing start",
+      accelRollingStart: "Rolling start",
       accelQualityCurrent: "Current quality",
       accelWarningAccuracy: "Accuracy warning",
       accelWarningSparse: "Sparse updates",
@@ -159,6 +166,7 @@ import "../styles/accel.less";
       accelFasterBy: "{value} faster than best saved",
       accelSlowerBy: "{value} slower than best saved",
       accelInvalidBySignal: "Invalid due to low-quality signal",
+      accelNoSavedRunsShort: "No saved runs",
       accelMphUnit: "mph",
       accelKmhUnit: "km/h",
       accelUnavailable: "—",
@@ -175,6 +183,7 @@ import "../styles/accel.less";
       units: "Units",
       off: "Off",
       on: "On",
+      done: "Done",
       delete: "Delete",
       speed: "Speed",
       accuracy: "Accuracy",
@@ -187,11 +196,16 @@ import "../styles/accel.less";
       accelRoute: "ACCEL",
       accelToolbar: "Herramientas de aceleracion",
       accelGpsLab: "GPS Lab",
+      accelSetup: "Configurar",
+      accelResultsPanel: "Resultados",
+      accelOpenSetup: "Abrir configuracion",
+      accelOpenResults: "Abrir resultados e historial",
       accelHeroKicker: "Temporizador en navegador",
       accelHeroTitle: "Pruebas de aceleracion en navegador para Tesla y movil",
       accelHeroLead: "Usa solo geolocalizacion del navegador. Los resultados son estimaciones basadas en callbacks GPS observados, no tiempos certificados.",
       accelDisclaimer: "La precision depende de la frecuencia de callbacks del navegador, la calidad GPS, la visibilidad de la pestaña y el comportamiento del dispositivo. Usa repeticiones y grados de calidad con honestidad.",
       accelStorageNote: "Las corridas y ajustes quedan guardados solo en el almacenamiento local de este navegador",
+      accelLocalOnly: "Solo local",
       accelStatusPanel: "Panel de estado",
       accelStatusLead: "Disponibilidad GPS y calidad de senal en vivo.",
       accelTestSelector: "Selector de prueba",
@@ -279,6 +293,8 @@ import "../styles/accel.less";
       accelRolloutOn: "Rollout de 1 pie",
       accelRolloutIgnored: "Ignorado en pruebas lanzadas",
       accelRolloutUnavailable: "No aplica",
+      accelStandingStart: "Desde parado",
+      accelRollingStart: "Lanzada",
       accelQualityCurrent: "Calidad actual",
       accelWarningAccuracy: "Precision pobre",
       accelWarningSparse: "Actualizaciones dispersas",
@@ -304,6 +320,7 @@ import "../styles/accel.less";
       accelFasterBy: "{value} mas rapida que la mejor guardada",
       accelSlowerBy: "{value} mas lenta que la mejor guardada",
       accelInvalidBySignal: "Invalida por calidad de senal insuficiente",
+      accelNoSavedRunsShort: "Sin corridas guardadas",
       accelMphUnit: "mph",
       accelKmhUnit: "km/h",
       accelUnavailable: "—",
@@ -320,6 +337,7 @@ import "../styles/accel.less";
       units: "Unidades",
       off: "Apagado",
       on: "Encendido",
+      done: "Listo",
       delete: "Borrar",
       speed: "Velocidad",
       accuracy: "Precision",
@@ -341,10 +359,22 @@ import "../styles/accel.less";
   var elements = {
     langToggle: document.getElementById("langToggle"),
     pageDescriptionMeta: document.querySelector('meta[name="description"]'),
+    sheetBackdrop: document.getElementById("accelSheetBackdrop"),
+    setupTrigger: document.getElementById("setupTrigger"),
+    setupTriggerValue: document.getElementById("setupTriggerValue"),
+    setupTriggerMeta: document.getElementById("setupTriggerMeta"),
+    resultsTrigger: document.getElementById("resultsTrigger"),
+    resultsTriggerValue: document.getElementById("resultsTriggerValue"),
+    resultsTriggerMeta: document.getElementById("resultsTriggerMeta"),
     toolbarPermissionValue: document.getElementById("toolbarPermissionValue"),
     toolbarQualityValue: document.getElementById("toolbarQualityValue"),
     toolbarStateValue: document.getElementById("toolbarStateValue"),
-    heroStatusBadge: document.getElementById("heroStatusBadge"),
+    setupPanel: document.getElementById("setupPanel"),
+    closeSetupPanel: document.getElementById("closeSetupPanel"),
+    setupPanelStatus: document.getElementById("setupPanelStatus"),
+    resultsPanel: document.getElementById("resultsPanel"),
+    closeResultsPanel: document.getElementById("closeResultsPanel"),
+    resultsPanelStatus: document.getElementById("resultsPanelStatus"),
     permissionValue: document.getElementById("permissionValue"),
     gpsReadyValue: document.getElementById("gpsReadyValue"),
     latestAccuracyValue: document.getElementById("latestAccuracyValue"),
@@ -427,6 +457,7 @@ import "../styles/accel.less";
     settings: loadSettings(),
     run: null,
     latestResult: null,
+    openPanel: null,
     actionNoticeTimerId: null,
   };
 
@@ -503,6 +534,15 @@ import "../styles/accel.less";
 
   function bindEvents() {
     elements.langToggle.addEventListener("click", handleLangToggle);
+    elements.setupTrigger.addEventListener("click", function () {
+      togglePanel("setup");
+    });
+    elements.resultsTrigger.addEventListener("click", function () {
+      togglePanel("results");
+    });
+    elements.closeSetupPanel.addEventListener("click", closePanel);
+    elements.closeResultsPanel.addEventListener("click", closePanel);
+    elements.sheetBackdrop.addEventListener("click", closePanel);
     elements.presetGrid.addEventListener("click", handlePresetClick);
     elements.customStartInput.addEventListener("input", handleCustomInput);
     elements.customEndInput.addEventListener("input", handleCustomInput);
@@ -519,6 +559,7 @@ import "../styles/accel.less";
     elements.clearHistory.addEventListener("click", handleClearHistory);
     elements.historyList.addEventListener("click", handleHistoryClick);
     document.addEventListener("visibilitychange", renderAll);
+    document.addEventListener("keydown", handleKeyDown);
   }
 
   function handleLangToggle() {
@@ -534,6 +575,41 @@ import "../styles/accel.less";
     applyTranslations();
     renderPresetButtons();
     renderAll();
+  }
+
+  function handleKeyDown(event) {
+    if (event.key !== "Escape" || !state.openPanel) return;
+    event.preventDefault();
+    closePanel();
+  }
+
+  function openPanel(panelName) {
+    if (state.openPanel === panelName) return;
+    state.openPanel = panelName;
+    renderSheetUi();
+
+    var focusTarget = panelName === "setup" ? elements.closeSetupPanel : elements.closeResultsPanel;
+    if (focusTarget) focusTarget.focus();
+  }
+
+  function closePanel() {
+    if (!state.openPanel) return;
+
+    var previouslyOpen = state.openPanel;
+    state.openPanel = null;
+    renderSheetUi();
+
+    var trigger = previouslyOpen === "setup" ? elements.setupTrigger : elements.resultsTrigger;
+    if (trigger) trigger.focus();
+  }
+
+  function togglePanel(panelName) {
+    if (state.openPanel === panelName) {
+      closePanel();
+      return;
+    }
+
+    openPanel(panelName);
   }
 
   function loadSettings() {
@@ -1383,6 +1459,7 @@ import "../styles/accel.less";
     renderResultCard();
     renderDiagnostics();
     renderHistory();
+    renderSheetUi();
   }
 
   function renderControlState() {
@@ -1393,6 +1470,7 @@ import "../styles/accel.less";
     elements.armRun.disabled = hasActiveRun || !state.geolocationSupported || customInvalid;
     elements.cancelRun.disabled = !hasActiveRun;
     elements.resetRun.disabled = !hasRunState;
+    elements.clearHistory.disabled = !state.runs.length;
   }
 
   function renderStatusPanel() {
@@ -1403,21 +1481,46 @@ import "../styles/accel.less";
     var liveQuality = state.currentQuality;
     var qualityLabel = liveQuality ? getQualityLabel(liveQuality.grade) : t("accelUnavailable");
     var stateLabel = getRunStateLabel();
+    var readyLabel = ready ? t("accelReadyYes") : t("accelReadyNo");
+    var accuracyLabel = formatMeters(state.latestSample ? state.latestSample.accuracyM : null);
 
-    elements.toolbarPermissionValue.textContent = permissionLabel;
-    elements.toolbarQualityValue.textContent = qualityLabel;
-    elements.toolbarStateValue.textContent = stateLabel;
-    elements.heroStatusBadge.textContent = stateLabel;
-    elements.heroStatusBadge.dataset.state = getBadgeTone();
+    elements.toolbarPermissionValue.textContent = readyLabel;
+    elements.toolbarQualityValue.textContent = accuracyLabel;
+    elements.toolbarStateValue.textContent = qualityLabel;
 
     elements.permissionValue.textContent = permissionLabel;
-    elements.gpsReadyValue.textContent = ready ? t("accelReadyYes") : t("accelReadyNo");
-    elements.latestAccuracyValue.textContent = formatMeters(state.latestSample ? state.latestSample.accuracyM : null);
+    elements.gpsReadyValue.textContent = readyLabel;
+    elements.latestAccuracyValue.textContent = accuracyLabel;
     elements.observedHzValue.textContent = formatHz(liveQuality ? liveQuality.averageHz : null);
     elements.statusSpeedValue.textContent = formatSpeedValue(state.latestSample ? state.latestSample.speedMs : null, speedUnit);
     elements.statusHeadingValue.textContent = formatHeading(state.latestSample ? state.latestSample.headingDeg : null);
     elements.statusAltitudeValue.textContent = formatMeters(state.latestSample ? state.latestSample.altitudeM : null);
     elements.speedSourceValue.textContent = getSpeedSourceLabel(state.latestSample ? state.latestSample.speedSource : null);
+  }
+
+  function renderSheetUi() {
+    var setupOpen = state.openPanel === "setup";
+    var resultsOpen = state.openPanel === "results";
+    var setupSummary = getSetupSummary();
+    var resultsSummary = getResultsSummary();
+
+    elements.setupTriggerValue.textContent = setupSummary.title;
+    elements.setupTriggerMeta.textContent = setupSummary.meta;
+    elements.resultsTriggerValue.textContent = resultsSummary.title;
+    elements.resultsTriggerMeta.textContent = resultsSummary.meta;
+    elements.setupPanelStatus.textContent = setupSummary.title + " · " + setupSummary.meta;
+    elements.resultsPanelStatus.textContent = getResultsPanelStatusText();
+
+    elements.setupTrigger.setAttribute("aria-expanded", String(setupOpen));
+    elements.resultsTrigger.setAttribute("aria-expanded", String(resultsOpen));
+    elements.setupTrigger.classList.toggle("is-open", setupOpen);
+    elements.resultsTrigger.classList.toggle("is-open", resultsOpen);
+
+    elements.sheetBackdrop.hidden = !(setupOpen || resultsOpen);
+    elements.setupPanel.hidden = !setupOpen;
+    elements.resultsPanel.hidden = !resultsOpen;
+
+    document.body.classList.toggle("accel-sheet-open", setupOpen || resultsOpen);
   }
 
   function renderLivePanel() {
@@ -1627,6 +1730,41 @@ import "../styles/accel.less";
     elements.historyList.innerHTML = html;
   }
 
+  function getSetupSummary() {
+    var preset = getSelectedPreset();
+    var metaParts = [preset.standingStart ? t("accelStandingStart") : t("accelRollingStart")];
+
+    if (preset.standingStart) {
+      metaParts.push(state.settings.rolloutEnabled ? t("accelRolloutOn") : t("accelRolloutOff"));
+    }
+
+    return {
+      title: getPresetLabel(preset),
+      meta: metaParts.join(" · "),
+    };
+  }
+
+  function getResultsSummary() {
+    var result = state.latestResult;
+    if (!result) {
+      return {
+        title: t("accelNoSavedRunsShort"),
+        meta: t("accelLocalOnly"),
+      };
+    }
+
+    return {
+      title: formatRunSeconds(result.elapsedMs) + " s",
+      meta: getPresetLabel(result) + " · " + getQualityLabel(result.qualityGrade),
+    };
+  }
+
+  function getResultsPanelStatusText() {
+    var result = state.latestResult;
+    if (!result) return t("accelStorageNote");
+    return getPresetLabel(result) + " · " + formatTimestamp(result.savedAtMs);
+  }
+
   function getRunStateLabel() {
     if (!state.geolocationSupported) return t("accelStateError");
     if (!state.latestSample && (!state.run || state.run.stage !== "completed")) return t("accelStateGpsWaiting");
@@ -1644,14 +1782,6 @@ import "../styles/accel.less";
       default:
         return t("accelStateIdle");
     }
-  }
-
-  function getBadgeTone() {
-    if (!state.geolocationSupported) return "error";
-    if (state.run && state.run.stage === "running") return "running";
-    if (state.run && state.run.stage === "completed") return "good";
-    if (!isGpsReady()) return "warning";
-    return "idle";
   }
 
   function getPermissionLabel(permissionState) {
