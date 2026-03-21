@@ -1,10 +1,11 @@
 # VatioBoard
 
-VatioBoard is a multi-page Vite app for touch-first browser tools. The repo currently ships three user-facing surfaces:
+VatioBoard is a multi-page Vite app for touch-first browser tools. The repo currently ships four user-facing surfaces:
 
 - `Vatio Board`: a full-screen drawing board with color controls, PNG export, and quick access to utility widgets
 - `Calculator`: a draggable calculator widget with history and formatting settings
 - `Vatio Speed`: a live GPS speedometer with trip stats, globe view, and speed-trap alerts
+- `Vatio GPS Rate Lab`: a front-end geolocation diagnostics page for measuring observed browser callback rate and field availability
 
 The project is part of the VatioLibre community and is published for educational use.
 
@@ -71,6 +72,19 @@ Key behavior:
 - MapLibre globe that follows the current location
 - bilingual UI via the shared i18n module
 
+### GPS Rate Lab
+
+`gps-rate.html` loads the standalone diagnostics page from [`src/gps-rate/gps-rate.js`](src/gps-rate/gps-rate.js).
+
+Key behavior:
+
+- uses browser `navigator.geolocation.watchPosition()` only
+- measures observed callback intervals with both `position.timestamp` and `performance.now()`
+- shows summary stats, warning badges, raw latest sample values, and a live event log
+- exports captured samples plus summary stats to JSON or CSV
+- stores session notes and the last saved summary in `localStorage`
+- optimized for Tesla-sized touch screens, while still working on normal mobile and desktop browsers
+
 ## Stack
 
 - Vite 7 multi-page build
@@ -88,6 +102,7 @@ Key behavior:
 ├─ index.html                # Board page
 ├─ calculator.html           # Standalone calculator demo
 ├─ speed.html                # Standalone GPS speedometer
+├─ gps-rate.html             # Standalone browser geolocation diagnostics page
 ├─ data-src/                 # Source datasets used to build speed-trap artifacts
 ├─ public/
 │  ├─ audio/                 # Alert sounds
@@ -100,6 +115,7 @@ Key behavior:
 │  ├─ calculator/            # Calculator widget/core/storage
 │  ├─ dock/                  # Floating dock used on the board
 │  ├─ energy/                # EV trip cost widget/core/storage
+│  ├─ gps-rate/              # GPS rate diagnostics entry module
 │  ├─ speed/                 # Speedometer entry module
 │  ├─ styles/                # LESS bundles for each surface
 │  ├─ i18n.js                # Shared English/Spanish translations
@@ -145,6 +161,7 @@ Vite is configured as a multi-page app through `vite.config.js`.
 - `index.html`
 - `calculator.html`
 - `speed.html`
+- `gps-rate.html`
 
 ## Runtime Notes
 
@@ -156,6 +173,28 @@ Vite is configured as a multi-page app through `vite.config.js`.
   - speedometer units, alerts, and audio preferences
 - The speedometer requires geolocation support and user permission
 - Some audio features on the speedometer depend on a user gesture, which is why the page includes explicit audio toggles
+- The GPS Rate Lab is also browser-only and requires geolocation support plus user permission
+- GPS Rate Lab results are observed callback rates from the browser, not guaranteed GPS hardware sampling frequency
+
+## GPS Rate Lab Note
+
+What it does:
+
+- runs a front-end-only browser geolocation sampling test
+- reports observed callback interval timing, field availability, and warning conditions like sparse updates or hidden-tab throttling
+
+How to run it:
+
+- `npm install`
+- `npm run dev`
+- open `http://localhost:5173/gps-rate.html`
+
+Known limitations:
+
+- browser geolocation callback rate is not the same thing as GPS hardware frequency
+- callbacks can be throttled by the browser, OS, permissions, battery policy, or hidden/background tab behavior
+- fields like `speed`, `heading`, `altitude`, and `altitudeAccuracy` may be null or unsupported depending on the browser and motion state
+- the page is intended for honest diagnostics, not Dragy-like claims or guaranteed telemetry precision
 
 ## Deployment
 
