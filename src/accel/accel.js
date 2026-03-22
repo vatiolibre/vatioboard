@@ -25,7 +25,6 @@ import "../styles/accel.less";
   var MAX_RUNS = 40;
   var MAX_PLAUSIBLE_SPEED_MS = 90;
   var READY_SAMPLE_AGE_MS = 2500;
-  var READY_ACCURACY_M = 30;
   var STALE_INTERVAL_MS = 1500;
   var SPARSE_INTERVAL_MS = 1800;
   var RECENT_INTERVAL_WINDOW = 12;
@@ -1031,7 +1030,8 @@ import "../styles/accel.less";
 
   function handlePosition(position) {
     var perfMs = performance.now();
-    var geoMs = isFiniteNumber(Number(position.timestamp)) ? Number(position.timestamp) : Date.now();
+    var receivedAtMs = Date.now();
+    var geoMs = isFiniteNumber(Number(position.timestamp)) ? Number(position.timestamp) : receivedAtMs;
     var coords = position && position.coords ? position.coords : {};
     var latitude = isFiniteNumber(coords.latitude) ? coords.latitude : null;
     var longitude = isFiniteNumber(coords.longitude) ? coords.longitude : null;
@@ -1056,6 +1056,7 @@ import "../styles/accel.less";
     var speedMs = rawSpeedMs !== null ? rawSpeedMs : (derivedSpeedMs !== null ? derivedSpeedMs : 0);
     var sample = {
       perfMs: perfMs,
+      receivedAtMs: receivedAtMs,
       geoMs: geoMs,
       latitude: latitude,
       longitude: longitude,
@@ -1825,9 +1826,8 @@ import "../styles/accel.less";
 
   function isGpsReady() {
     if (!state.latestSample) return false;
-    if (!isFiniteNumber(state.latestSample.geoMs)) return false;
-    if ((Date.now() - state.latestSample.geoMs) > READY_SAMPLE_AGE_MS) return false;
-    if (isFiniteNumber(state.latestSample.accuracyM) && state.latestSample.accuracyM > READY_ACCURACY_M) return false;
+    if (!isFiniteNumber(state.latestSample.receivedAtMs)) return false;
+    if ((Date.now() - state.latestSample.receivedAtMs) > READY_SAMPLE_AGE_MS) return false;
     return true;
   }
 
