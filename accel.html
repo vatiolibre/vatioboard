@@ -414,29 +414,77 @@
         </div>
 
         <div class="accel-sheet-body">
-          <section class="accel-sheet-section">
-            <header class="accel-card-head">
-              <span class="accel-card-kicker" data-i18n="accelResult">Result</span>
-              <p class="accel-card-lead" data-i18n="accelResultLead">Latest completed run stored locally on this browser.</p>
-            </header>
-
+          <section class="accel-sheet-section" aria-label="Latest result">
             <div id="resultEmptyState" class="accel-empty-copy" data-i18n="accelNoResult">Arm and complete a run to see the result here.</div>
 
             <div id="resultContent" hidden>
-              <div class="accel-result-primary">
+              <header class="accel-result-primary">
                 <span class="accel-live-label" data-i18n="accelFinalTime">Final time</span>
                 <strong id="resultElapsedValue" class="accel-result-time">—</strong>
-              </div>
+                <p class="accel-result-primary-meta">
+                  <span class="accel-result-primary-item">
+                    <span class="accel-metric-label" data-i18n="accelSelectedTest">Selected test</span>
+                    <strong id="resultPresetValue" class="accel-metric-value">—</strong>
+                  </span>
+                  <span class="accel-result-primary-item">
+                    <span class="accel-metric-label" data-i18n="accelFinishSpeed">Finish speed</span>
+                    <strong id="resultFinishSpeedValue" class="accel-metric-value">—</strong>
+                  </span>
+                  <span class="accel-result-primary-item">
+                    <span class="accel-metric-label" data-i18n="accelQualityGrade">Quality grade</span>
+                    <strong id="resultQualityValue" class="accel-metric-value">—</strong>
+                  </span>
+                </p>
+              </header>
+
+              <section class="accel-result-graph-shell">
+                <header class="accel-result-graph-head">
+                  <span class="accel-section-title" data-i18n="accelSpeedGraph">Speed graph</span>
+                  <span id="resultGraphMeta" class="accel-inline-note" data-i18n="accelSpeedGraphLead">Time vs speed</span>
+                </header>
+
+                <div id="resultGraphEmptyState" class="accel-empty-copy" hidden data-i18n="accelSpeedGraphEmpty">Speed graph data is available for new runs.</div>
+
+                <div id="resultGraphFrame" class="accel-result-graph-frame" hidden>
+                  <div class="accel-result-graph-canvas-shell">
+                    <canvas
+                      id="resultGraphCanvas"
+                      class="accel-result-graph-canvas"
+                      data-i18n-aria="accelSpeedGraphAria"
+                      aria-label="Interactive speed graph"
+                    ></canvas>
+                  </div>
+                  <p class="accel-result-graph-hint accel-inline-note" data-i18n="accelSpeedGraphHint">Touch or click the graph to inspect each sample.</p>
+                  <div class="accel-result-graph-details">
+                    <div class="accel-result-graph-detail">
+                      <span class="accel-metric-label" data-i18n="accelGraphPointTime">Time</span>
+                      <strong id="resultGraphTimeValue" class="accel-metric-value">—</strong>
+                    </div>
+                    <div class="accel-result-graph-detail">
+                      <span class="accel-metric-label" data-i18n="accelGraphPointSpeed">Speed</span>
+                      <strong id="resultGraphSpeedValue" class="accel-metric-value">—</strong>
+                    </div>
+                    <div class="accel-result-graph-detail">
+                      <span class="accel-metric-label" data-i18n="accelGraphPointDistance">Distance</span>
+                      <strong id="resultGraphDistanceValue" class="accel-metric-value">—</strong>
+                    </div>
+                    <div class="accel-result-graph-detail">
+                      <span class="accel-metric-label" data-i18n="altitude">Altitude</span>
+                      <strong id="resultGraphAltitudeValue" class="accel-metric-value">—</strong>
+                    </div>
+                    <div class="accel-result-graph-detail">
+                      <span class="accel-metric-label" data-i18n="accelGraphPointAccuracy">Accuracy</span>
+                      <strong id="resultGraphAccuracyValue" class="accel-metric-value">—</strong>
+                    </div>
+                    <div class="accel-result-graph-detail">
+                      <span class="accel-metric-label" data-i18n="accelGraphPointSlope">Slope</span>
+                      <strong id="resultGraphSlopeValue" class="accel-metric-value">—</strong>
+                    </div>
+                  </div>
+                </div>
+              </section>
 
               <div class="accel-result-grid">
-                <div class="accel-metric">
-                  <span class="accel-metric-label" data-i18n="accelSelectedTest">Selected test</span>
-                  <strong id="resultPresetValue" class="accel-metric-value">—</strong>
-                </div>
-                <div class="accel-metric">
-                  <span class="accel-metric-label" data-i18n="accelFinishSpeed">Finish speed</span>
-                  <strong id="resultFinishSpeedValue" class="accel-metric-value">—</strong>
-                </div>
                 <div class="accel-metric">
                   <span class="accel-metric-label" data-i18n="accelRolloutUsed">Rollout</span>
                   <strong id="resultRolloutValue" class="accel-metric-value">—</strong>
@@ -457,18 +505,17 @@
                   <span class="accel-metric-label" data-i18n="accelRunHz">Run avg Hz</span>
                   <strong id="resultHzValue" class="accel-metric-value">—</strong>
                 </div>
-                <div class="accel-metric">
-                  <span class="accel-metric-label" data-i18n="accelQualityGrade">Quality grade</span>
-                  <strong id="resultQualityValue" class="accel-metric-value">—</strong>
-                </div>
-                <div class="accel-metric">
-                  <span class="accel-metric-label" data-i18n="accelTimestamp">Timestamp</span>
-                  <strong id="resultTimestampValue" class="accel-metric-value accel-metric-wrap">—</strong>
-                </div>
-                <div class="accel-metric">
+              </div>
+
+              <div class="accel-result-footnotes">
+                <p class="accel-result-footnote">
                   <span class="accel-metric-label" data-i18n="accelBestComparison">Best vs latest</span>
                   <strong id="resultComparisonValue" class="accel-metric-value accel-metric-wrap">—</strong>
-                </div>
+                </p>
+                <p class="accel-result-footnote">
+                  <span class="accel-metric-label" data-i18n="accelTimestamp">Timestamp</span>
+                  <strong id="resultTimestampValue" class="accel-metric-value accel-metric-wrap">—</strong>
+                </p>
               </div>
             </div>
           </section>
@@ -511,8 +558,10 @@
 
           <section class="accel-sheet-section accel-history-card">
             <header class="accel-card-head accel-history-head">
-              <span class="accel-card-kicker" data-i18n="accelHistory">History</span>
-              <p class="accel-card-lead" data-i18n="accelHistoryLead">Saved locally in this browser. Newest runs first.</p>
+              <div class="accel-history-head-copy">
+                <span class="accel-card-kicker" data-i18n="accelHistory">History</span>
+                <p class="accel-card-lead" data-i18n="accelHistoryLead">Saved locally in this browser. Newest runs first.</p>
+              </div>
               <button id="clearHistory" type="button" class="accel-action-btn accel-action-btn-compact" data-i18n="accelClearHistory">Clear all</button>
             </header>
 

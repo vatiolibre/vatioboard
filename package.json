@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@jaames/iro": "^5.5.2",
+    "chart.js": "^4.5.1",
     "geokdbush": "^2.0.1",
     "kdbush": "^4.0.2",
     "maplibre-gl": "^5.20.1",

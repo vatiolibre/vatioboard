@@ -1,4 +1,5 @@
 import "../styles/accel.less";
+import Chart from "chart.js/auto";
 import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
 
 (function () {
@@ -41,12 +42,46 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
   var SPARSE_INTERVAL_MS = 1800;
   var RECENT_INTERVAL_WINDOW = 12;
   var TIMER_TICK_MS = 50;
+  var TRACE_DUPLICATE_EPSILON_MS = 0.01;
   var MIN_VALID_RUN_SAMPLES = 4;
   var MIN_VALID_RUN_DURATION_MS = 800;
   var FINISH_SOUND_URL = "/audio/finish.m4a";
+  var RESULT_GRAPH_HEIGHT = 220;
   var finishAudio = typeof Audio === "function" ? new Audio(FINISH_SOUND_URL) : null;
   var finishAudioPrimePromise = null;
   var finishAudioPrimed = false;
+  var resultGraphChart = null;
+  var resultGraphResizeObserver = null;
+  var resultGraphRefreshFrame = 0;
+  var resultGraphRenderKey = "";
+  var resultGraphSelectionResultId = "";
+  var resultGraphSelectionPointKey = "";
+  var RESULT_GRAPH_GUIDE_PLUGIN = {
+    id: "resultGraphGuide",
+    afterDatasetsDraw: function (chart, args, options) {
+      if (!chart || !chart.tooltip || !chart.chartArea) return;
+
+      var activeElements = chart.tooltip.getActiveElements ? chart.tooltip.getActiveElements() : [];
+      if (!activeElements || !activeElements.length) return;
+
+      var activeElement = activeElements[0].element;
+      if (!activeElement || !isFiniteNumber(activeElement.x) || !isFiniteNumber(activeElement.y)) return;
+
+      var chartArea = chart.chartArea;
+      var ctx = chart.ctx;
+      ctx.save();
+      ctx.strokeStyle = options && options.color ? options.color : "rgba(128, 128, 128, 0.5)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(activeElement.x, chartArea.top);
+      ctx.lineTo(activeElement.x, chartArea.bottom);
+      ctx.moveTo(chartArea.left, activeElement.y);
+      ctx.lineTo(chartArea.right, activeElement.y);
+      ctx.stroke();
+      ctx.restore();
+    },
+  };
 
   if (finishAudio) {
     finishAudio.preload = "auto";
@@ -110,6 +145,16 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       accelNoResult: "Arm and complete a run to see the result here.",
       accelSelectedTest: "Selected test",
       accelFinalTime: "Final time",
+      accelSpeedGraph: "Speed graph",
+      accelSpeedGraphLead: "Time vs speed",
+      accelSpeedGraphEmpty: "Speed graph data is available for new runs.",
+      accelSpeedGraphAria: "Interactive speed graph",
+      accelSpeedGraphHint: "Touch or click the graph to inspect each sample.",
+      accelGraphPointTime: "Time",
+      accelGraphPointSpeed: "Speed",
+      accelGraphPointDistance: "Distance",
+      accelGraphPointAccuracy: "Accuracy",
+      accelGraphPointSlope: "Slope",
       accelFinishSpeed: "Finish speed",
       accelTrapSpeed: "Trap speed",
       accelRolloutUsed: "Rollout",
@@ -289,6 +334,16 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       accelNoResult: "Arma y completa una corrida para ver el resultado aqui.",
       accelSelectedTest: "Prueba seleccionada",
       accelFinalTime: "Tiempo final",
+      accelSpeedGraph: "Grafica de velocidad",
+      accelSpeedGraphLead: "Tiempo vs velocidad",
+      accelSpeedGraphEmpty: "Los datos de la grafica de velocidad estaran disponibles para nuevas corridas.",
+      accelSpeedGraphAria: "Grafica interactiva de velocidad",
+      accelSpeedGraphHint: "Toca o haz clic en la grafica para inspeccionar cada muestra.",
+      accelGraphPointTime: "Tiempo",
+      accelGraphPointSpeed: "Velocidad",
+      accelGraphPointDistance: "Distancia",
+      accelGraphPointAccuracy: "Precision",
+      accelGraphPointSlope: "Pendiente",
       accelFinishSpeed: "Velocidad final",
       accelTrapSpeed: "Velocidad de trampa",
       accelRolloutUsed: "Rollout",
@@ -523,6 +578,16 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     resultEmptyState: document.getElementById("resultEmptyState"),
     resultContent: document.getElementById("resultContent"),
     resultElapsedValue: document.getElementById("resultElapsedValue"),
+    resultGraphMeta: document.getElementById("resultGraphMeta"),
+    resultGraphEmptyState: document.getElementById("resultGraphEmptyState"),
+    resultGraphFrame: document.getElementById("resultGraphFrame"),
+    resultGraphCanvas: document.getElementById("resultGraphCanvas"),
+    resultGraphTimeValue: document.getElementById("resultGraphTimeValue"),
+    resultGraphSpeedValue: document.getElementById("resultGraphSpeedValue"),
+    resultGraphDistanceValue: document.getElementById("resultGraphDistanceValue"),
+    resultGraphAltitudeValue: document.getElementById("resultGraphAltitudeValue"),
+    resultGraphAccuracyValue: document.getElementById("resultGraphAccuracyValue"),
+    resultGraphSlopeValue: document.getElementById("resultGraphSlopeValue"),
     resultPresetValue: document.getElementById("resultPresetValue"),
     resultFinishSpeedValue: document.getElementById("resultFinishSpeedValue"),
     resultRolloutValue: document.getElementById("resultRolloutValue"),
@@ -598,6 +663,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     renderPresetButtons();
     renderControlSelections();
     bindEvents();
+    setupResultGraphObservers();
     renderAll();
     startUiTimer();
     updatePermissionState();
@@ -742,6 +808,17 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     elements.historyList.addEventListener("click", handleHistoryClick);
     document.addEventListener("visibilitychange", renderAll);
     document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("pagehide", destroyResultGraph);
+    window.addEventListener("resize", requestResultGraphRefresh);
+  }
+
+  function setupResultGraphObservers() {
+    if (!elements.resultGraphFrame || typeof ResizeObserver !== "function") return;
+
+    resultGraphResizeObserver = new ResizeObserver(function () {
+      requestResultGraphRefresh();
+    });
+    resultGraphResizeObserver.observe(elements.resultGraphFrame);
   }
 
   function handleLangToggle() {
@@ -895,6 +972,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     var startSpeedMs = isFiniteNumber(run.startSpeedMs) ? run.startSpeedMs : 0;
     var targetSpeedMs = isFiniteNumber(run.targetSpeedMs) ? run.targetSpeedMs : null;
     var presetKind = typeof run.presetKind === "string" ? run.presetKind : "speed";
+    var speedTrace = normalizeStoredSpeedTrace(run.speedTrace);
     var finishSpeedMs = isFiniteNumber(run.finishSpeedMs)
       ? run.finishSpeedMs
       : (isFiniteNumber(run.trapSpeedMs)
@@ -922,6 +1000,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       displayUnit: run.displayUnit === "kmh" ? "kmh" : "mph",
       distanceDisplay: run.distanceDisplay === "m" ? "m" : "ft",
       elapsedMs: run.elapsedMs,
+      speedTrace: speedTrace,
       finishSpeedMs: finishSpeedMs,
       trapSpeedMs: isFiniteNumber(run.trapSpeedMs) ? run.trapSpeedMs : null,
       rolloutApplied: Boolean(run.rolloutApplied),
@@ -968,6 +1047,32 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
 
   function isFiniteNumber(value) {
     return Number.isFinite(value);
+  }
+
+  function normalizeStoredSpeedTrace(trace) {
+    if (!Array.isArray(trace) || !trace.length) return [];
+
+    var normalized = [];
+    for (var index = 0; index < trace.length; index += 1) {
+      var point = trace[index];
+      if (!point || typeof point !== "object") continue;
+      if (!isFiniteNumber(point.elapsedMs) || !isFiniteNumber(point.speedMs)) continue;
+      var normalizedPoint = {
+        elapsedMs: Math.max(0, point.elapsedMs),
+        speedMs: Math.max(0, point.speedMs),
+      };
+      if (isFiniteNumber(point.distanceM)) normalizedPoint.distanceM = Math.max(0, point.distanceM);
+      if (isFiniteNumber(point.altitudeM)) normalizedPoint.altitudeM = point.altitudeM;
+      if (isFiniteNumber(point.accuracyM)) normalizedPoint.accuracyM = Math.max(0, point.accuracyM);
+      if (typeof point.speedSource === "string") normalizedPoint.speedSource = point.speedSource;
+      normalized.push(normalizedPoint);
+    }
+
+    if (!normalized.length) return [];
+    normalized.sort(function (left, right) {
+      return left.elapsedMs - right.elapsedMs;
+    });
+    return compactSpeedTrace(normalized);
   }
 
   function findPresetDefinition(presetId) {
@@ -1407,6 +1512,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       rolloutApplied: Boolean(state.settings.rolloutEnabled && preset.standingStart),
       rolloutDistanceM: state.settings.rolloutEnabled && preset.standingStart ? FT_TO_M : 0,
       partials: buildRunPartials(preset),
+      speedTrace: [],
       sampleCount: 0,
       intervalValues: [],
       accuracyValues: [],
@@ -1422,6 +1528,9 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       startPerfMs: null,
       startDistanceM: null,
       startAltitudeM: null,
+      startAccuracyM: null,
+      startTraceSpeedMs: null,
+      startSpeedSource: null,
       finishPerfMs: null,
       finishDistanceM: null,
       finishSpeedMs: null,
@@ -1586,6 +1695,9 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
           run.startPerfMs = run.launchCrossPerfMs;
           run.startDistanceM = run.launchCrossDistanceM;
           run.startAltitudeM = run.launchCrossAltitudeM;
+          run.startAccuracyM = averageFinite(previousSample.accuracyM, sample.accuracyM);
+          run.startTraceSpeedMs = run.launchThresholdMs;
+          run.startSpeedSource = sample.speedSource;
           run.stage = "running";
         } else {
           run.stage = "waiting_rollout";
@@ -1602,6 +1714,9 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
             run.startPerfMs = rolloutCross.perfMs;
             run.startDistanceM = rolloutTarget;
             run.startAltitudeM = interpolateMeasurement(previousSample.altitudeM, sample.altitudeM, rolloutCross.ratio);
+            run.startAccuracyM = averageFinite(previousSample.accuracyM, sample.accuracyM);
+            run.startTraceSpeedMs = interpolateValue(previousSpeed, currentSpeed, rolloutCross.ratio);
+            run.startSpeedSource = sample.speedSource;
             run.stage = "running";
           }
         }
@@ -1612,6 +1727,9 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
         run.startPerfMs = rollingCross.perfMs;
         run.startDistanceM = interpolateValue(run.prevDistanceSinceArmM, run.distanceSinceArmM, rollingCross.ratio);
         run.startAltitudeM = interpolateMeasurement(previousSample.altitudeM, sample.altitudeM, rollingCross.ratio);
+        run.startAccuracyM = averageFinite(previousSample.accuracyM, sample.accuracyM);
+        run.startTraceSpeedMs = run.preset.startSpeedMs;
+        run.startSpeedSource = sample.speedSource;
         run.stage = "running";
       }
     }
@@ -1619,8 +1737,18 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     if (run.startPerfMs !== null && run.startAltitudeM === null && isFiniteNumber(sample.altitudeM)) {
       run.startAltitudeM = sample.altitudeM;
     }
+    if (run.startPerfMs !== null && run.startAccuracyM === null && isFiniteNumber(sample.accuracyM)) {
+      run.startAccuracyM = sample.accuracyM;
+    }
+    if (run.startPerfMs !== null && !isFiniteNumber(run.startTraceSpeedMs)) {
+      run.startTraceSpeedMs = run.preset.standingStart ? 0 : run.preset.startSpeedMs;
+    }
+    if (run.startPerfMs !== null && !run.startSpeedSource) {
+      run.startSpeedSource = sample.speedSource;
+    }
 
     if (run.startPerfMs !== null) {
+      ensureSpeedTraceStarted(run);
       seedRunPartialStarts(run);
       updateRunPartials(run, previousSample, sample);
     }
@@ -1633,6 +1761,12 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
           run.finishDistanceM = interpolateValue(run.prevDistanceSinceArmM, run.distanceSinceArmM, targetCross.ratio);
           run.finishSpeedMs = run.preset.targetSpeedMs;
           run.finishAltitudeM = interpolateMeasurement(previousSample.altitudeM, sample.altitudeM, targetCross.ratio);
+          appendSpeedTracePoint(run, run.finishPerfMs - run.startPerfMs, run.finishSpeedMs, {
+            distanceM: Math.max(0, run.finishDistanceM - run.startDistanceM),
+            altitudeM: run.finishAltitudeM,
+            accuracyM: averageFinite(previousSample.accuracyM, sample.accuracyM),
+            speedSource: sample.speedSource,
+          });
           completeRun();
         }
       } else if (run.preset.type === "distance") {
@@ -1651,9 +1785,24 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
           run.finishDistanceM = run.startDistanceM + run.preset.distanceTargetM;
           run.finishSpeedMs = interpolateValue(previousSpeed, currentSpeed, finishCross.ratio);
           run.finishAltitudeM = interpolateMeasurement(previousSample.altitudeM, sample.altitudeM, finishCross.ratio);
+          appendSpeedTracePoint(run, run.finishPerfMs - run.startPerfMs, run.finishSpeedMs, {
+            distanceM: Math.max(0, run.finishDistanceM - run.startDistanceM),
+            altitudeM: run.finishAltitudeM,
+            accuracyM: averageFinite(previousSample.accuracyM, sample.accuracyM),
+            speedSource: sample.speedSource,
+          });
           completeRun();
         }
       }
+    }
+
+    if (run.finishPerfMs === null && sample.perfMs >= run.startPerfMs) {
+      appendSpeedTracePoint(run, sample.perfMs - run.startPerfMs, sample.speedMs, {
+        distanceM: Math.max(0, run.distanceSinceArmM - run.startDistanceM),
+        altitudeM: sample.altitudeM,
+        accuracyM: sample.accuracyM,
+        speedSource: sample.speedSource,
+      });
     }
 
     run.lastSample = sample;
@@ -1711,6 +1860,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       displayUnit: state.settings.speedUnit,
       distanceDisplay: state.settings.distanceUnit,
       elapsedMs: run.finishPerfMs - run.startPerfMs,
+      speedTrace: compactSpeedTrace(run.speedTrace),
       finishSpeedMs: run.finishSpeedMs,
       trapSpeedMs: run.preset.type === "distance" ? run.finishSpeedMs : null,
       rolloutApplied: run.rolloutApplied,
@@ -1934,6 +2084,73 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     return null;
   }
 
+  function ensureSpeedTraceStarted(run) {
+    if (!run || !run.speedTrace) return;
+    if (run.startPerfMs === null) return;
+    if (run.speedTrace.length) return;
+    appendSpeedTracePoint(run, 0, run.startTraceSpeedMs, {
+      distanceM: 0,
+      altitudeM: run.startAltitudeM,
+      accuracyM: run.startAccuracyM,
+      speedSource: run.startSpeedSource,
+    });
+  }
+
+  function appendSpeedTracePoint(run, elapsedMs, speedMs, details) {
+    if (!run || !run.speedTrace) return;
+    if (!isFiniteNumber(elapsedMs) || !isFiniteNumber(speedMs)) return;
+
+    var normalizedElapsedMs = Math.max(0, elapsedMs);
+    var normalizedSpeedMs = Math.max(0, speedMs);
+    var trace = run.speedTrace;
+    var lastPoint = trace.length ? trace[trace.length - 1] : null;
+    var nextPoint = {
+      elapsedMs: normalizedElapsedMs,
+      speedMs: normalizedSpeedMs,
+    };
+
+    if (details && isFiniteNumber(details.distanceM)) nextPoint.distanceM = Math.max(0, details.distanceM);
+    if (details && isFiniteNumber(details.altitudeM)) nextPoint.altitudeM = details.altitudeM;
+    if (details && isFiniteNumber(details.accuracyM)) nextPoint.accuracyM = Math.max(0, details.accuracyM);
+    if (details && typeof details.speedSource === "string") nextPoint.speedSource = details.speedSource;
+
+    if (lastPoint && Math.abs(lastPoint.elapsedMs - normalizedElapsedMs) <= TRACE_DUPLICATE_EPSILON_MS) {
+      lastPoint.elapsedMs = nextPoint.elapsedMs;
+      lastPoint.speedMs = nextPoint.speedMs;
+      if (Object.prototype.hasOwnProperty.call(nextPoint, "distanceM")) lastPoint.distanceM = nextPoint.distanceM;
+      if (Object.prototype.hasOwnProperty.call(nextPoint, "altitudeM")) lastPoint.altitudeM = nextPoint.altitudeM;
+      if (Object.prototype.hasOwnProperty.call(nextPoint, "accuracyM")) lastPoint.accuracyM = nextPoint.accuracyM;
+      if (Object.prototype.hasOwnProperty.call(nextPoint, "speedSource")) lastPoint.speedSource = nextPoint.speedSource;
+      return;
+    }
+
+    if (lastPoint && normalizedElapsedMs < lastPoint.elapsedMs) return;
+
+    trace.push(nextPoint);
+  }
+
+  function compactSpeedTrace(trace) {
+    var maxPoints = 120;
+    if (!Array.isArray(trace) || trace.length <= maxPoints) return trace ? trace.slice() : [];
+
+    var compacted = [];
+    var lastIndex = trace.length - 1;
+    for (var index = 0; index < maxPoints; index += 1) {
+      var sourceIndex = Math.round((index / (maxPoints - 1)) * lastIndex);
+      var point = trace[sourceIndex];
+      var compactedPoint = {
+        elapsedMs: point.elapsedMs,
+        speedMs: point.speedMs,
+      };
+      if (isFiniteNumber(point.distanceM)) compactedPoint.distanceM = point.distanceM;
+      if (isFiniteNumber(point.altitudeM)) compactedPoint.altitudeM = point.altitudeM;
+      if (isFiniteNumber(point.accuracyM)) compactedPoint.accuracyM = point.accuracyM;
+      if (typeof point.speedSource === "string") compactedPoint.speedSource = point.speedSource;
+      compacted.push(compactedPoint);
+    }
+    return compacted;
+  }
+
   function seedRunPartialStarts(run) {
     if (!run || run.startPerfMs === null || !run.partials || !run.partials.length) return;
 
@@ -2059,6 +2276,8 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     elements.resultsPanel.hidden = !resultsOpen;
 
     document.body.classList.toggle("accel-sheet-open", setupOpen || resultsOpen);
+    if (resultsOpen) requestResultGraphRefresh();
+    else destroyResultGraph();
   }
 
   function renderLiveSpeedometer(preset, liveState) {
@@ -2190,6 +2409,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     if (!result) {
       elements.resultEmptyState.hidden = false;
       elements.resultContent.hidden = true;
+      renderResultGraph(null);
       return;
     }
 
@@ -2206,6 +2426,371 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     elements.resultQualityValue.textContent = getQualityLabel(result.qualityGrade);
     elements.resultTimestampValue.textContent = formatTimestamp(result.savedAtMs);
     elements.resultComparisonValue.textContent = buildComparisonText(result);
+    renderResultGraph(result);
+  }
+
+  function renderResultGraph(result) {
+    if (!elements.resultGraphMeta || !elements.resultGraphEmptyState || !elements.resultGraphFrame) return;
+
+    var speedUnit = state.settings.speedUnit;
+    elements.resultGraphMeta.textContent = t("accelSpeedGraphLead") + " · " + getSpeedUnitLabel(speedUnit);
+
+    if (!result || !Array.isArray(result.speedTrace) || result.speedTrace.length < 2) {
+      elements.resultGraphEmptyState.hidden = false;
+      elements.resultGraphFrame.hidden = true;
+      resultGraphSelectionResultId = "";
+      resultGraphSelectionPointKey = "";
+      renderResultGraphDetails(null);
+      destroyResultGraph();
+      return;
+    }
+
+    var graphData = buildResultGraphData(result);
+    if (graphData.length < 2) {
+      elements.resultGraphEmptyState.hidden = false;
+      elements.resultGraphFrame.hidden = true;
+      resultGraphSelectionResultId = "";
+      resultGraphSelectionPointKey = "";
+      renderResultGraphDetails(null);
+      destroyResultGraph();
+      return;
+    }
+
+    elements.resultGraphEmptyState.hidden = true;
+    elements.resultGraphFrame.hidden = false;
+    var selectedPoint = getSelectedResultGraphPoint(result, graphData);
+    renderResultGraphDetails(selectedPoint);
+
+    if (state.openPanel !== "results") return;
+    mountResultGraph(result, graphData, selectedPoint);
+  }
+
+  function buildResultGraphData(result) {
+    if (!result || !Array.isArray(result.speedTrace) || result.speedTrace.length < 2) return [];
+
+    var trace = compactSpeedTrace(result.speedTrace);
+    var speedUnit = state.settings.speedUnit;
+    var graphData = [];
+
+    for (var index = 0; index < trace.length; index += 1) {
+      var point = trace[index];
+      var distanceM = isFiniteNumber(point.distanceM) ? point.distanceM : null;
+      var altitudeM = isFiniteNumber(point.altitudeM) ? point.altitudeM : null;
+
+      graphData.push({
+        key: String(index) + "-" + String(point.elapsedMs),
+        elapsedMs: point.elapsedMs,
+        elapsedSeconds: point.elapsedMs / 1000,
+        speedMs: point.speedMs,
+        speedDisplay: msToSpeedUnit(point.speedMs, speedUnit),
+        distanceM: distanceM,
+        altitudeM: altitudeM,
+        accuracyM: isFiniteNumber(point.accuracyM) ? point.accuracyM : null,
+        slopePercent: getTraceSlopePercent(result.startAltitudeM, altitudeM, distanceM),
+      });
+    }
+
+    return graphData;
+  }
+
+  function renderResultGraphDetails(point) {
+    if (!elements.resultGraphTimeValue) return;
+
+    elements.resultGraphTimeValue.textContent = point ? formatRunSeconds(point.elapsedMs) + " s" : "—";
+    elements.resultGraphSpeedValue.textContent = point && isFiniteNumber(point.speedMs) ? formatSpeedValue(point.speedMs, state.settings.speedUnit) : "—";
+    elements.resultGraphDistanceValue.textContent = point && isFiniteNumber(point.distanceM) ? formatRunDistance(point.distanceM) : "—";
+    elements.resultGraphAltitudeValue.textContent = point && isFiniteNumber(point.altitudeM) ? formatDistanceMeasurement(point.altitudeM) : "—";
+    elements.resultGraphAccuracyValue.textContent = point && isFiniteNumber(point.accuracyM) ? formatDistanceMeasurement(point.accuracyM) : "—";
+    elements.resultGraphSlopeValue.textContent = point && isFiniteNumber(point.slopePercent) ? formatSlopePercent(point.slopePercent) : "—";
+  }
+
+  function getSelectedResultGraphPoint(result, graphData) {
+    if (result && result.id === resultGraphSelectionResultId && resultGraphSelectionPointKey) {
+      for (var index = 0; index < graphData.length; index += 1) {
+        if (graphData[index].key === resultGraphSelectionPointKey) return graphData[index];
+      }
+    }
+
+    var fallbackPoint = graphData.length ? graphData[graphData.length - 1] : null;
+    resultGraphSelectionResultId = result ? result.id : "";
+    resultGraphSelectionPointKey = fallbackPoint ? fallbackPoint.key : "";
+    return fallbackPoint;
+  }
+
+  function getTraceSlopePercent(startAltitudeM, altitudeM, distanceM) {
+    if (!isFiniteNumber(startAltitudeM) || !isFiniteNumber(altitudeM) || !isFiniteNumber(distanceM) || distanceM < 1) return null;
+    return ((altitudeM - startAltitudeM) / distanceM) * 100;
+  }
+
+  function requestResultGraphRefresh() {
+    if (resultGraphRefreshFrame || state.openPanel !== "results") return;
+
+    resultGraphRefreshFrame = window.requestAnimationFrame(function () {
+      resultGraphRefreshFrame = 0;
+      renderResultGraph(state.latestResult);
+    });
+  }
+
+  function destroyResultGraph() {
+    if (resultGraphRefreshFrame) {
+      window.cancelAnimationFrame(resultGraphRefreshFrame);
+      resultGraphRefreshFrame = 0;
+    }
+    if (resultGraphChart) {
+      resultGraphChart.destroy();
+      resultGraphChart = null;
+    }
+    resultGraphRenderKey = "";
+  }
+
+  function mountResultGraph(result, graphData, selectedPoint) {
+    if (!elements.resultGraphCanvas || !elements.resultGraphFrame || !graphData || graphData.length < 2) return;
+
+    var frameWidth = Math.floor(elements.resultGraphFrame.clientWidth || elements.resultGraphFrame.getBoundingClientRect().width || 0);
+    if (frameWidth < 120) return;
+
+    var renderKey = [
+      result.id,
+      state.settings.speedUnit,
+      state.settings.distanceUnit,
+      state.lang,
+      frameWidth,
+      RESULT_GRAPH_HEIGHT,
+    ].join(":");
+    if (renderKey === resultGraphRenderKey) return;
+
+    var canvasElement = elements.resultGraphCanvas;
+    canvasElement.style.width = "100%";
+    canvasElement.style.height = RESULT_GRAPH_HEIGHT + "px";
+    var config = buildResultGraphConfig(result, graphData, selectedPoint);
+    destroyResultGraph();
+    resultGraphRenderKey = renderKey;
+    resultGraphChart = new Chart(canvasElement, config);
+    setResultGraphActivePoint(resultGraphChart, getResultGraphSelectedIndex(selectedPoint, graphData));
+  }
+
+  function buildResultGraphConfig(result, graphData, selectedPoint) {
+    var speedUnit = state.settings.speedUnit;
+    var speedTick = speedUnit === "kmh" ? 20 : 10;
+    var maxSpeedDisplay = speedTick;
+    var maxElapsedSeconds = 0.1;
+
+    for (var index = 0; index < graphData.length; index += 1) {
+      maxSpeedDisplay = Math.max(maxSpeedDisplay, graphData[index].speedDisplay || 0);
+      maxElapsedSeconds = Math.max(maxElapsedSeconds, graphData[index].elapsedSeconds || 0);
+    }
+
+    var graphMaxSpeedDisplay = Math.max(speedTick, Math.ceil(maxSpeedDisplay / speedTick) * speedTick);
+    var palette = getResultGraphPalette();
+
+    return {
+      type: "line",
+      plugins: [RESULT_GRAPH_GUIDE_PLUGIN],
+      data: {
+        datasets: [
+          {
+            label: t("accelSpeedGraph"),
+            data: graphData,
+            parsing: {
+              xAxisKey: "elapsedSeconds",
+              yAxisKey: "speedDisplay",
+            },
+            normalized: true,
+            borderColor: palette.line,
+            backgroundColor: palette.area,
+            fill: true,
+            borderWidth: 3,
+            cubicInterpolationMode: "monotone",
+            tension: 0.24,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            pointHitRadius: 18,
+            pointHoverBorderWidth: 2,
+            pointHoverBackgroundColor: palette.line,
+            pointHoverBorderColor: palette.markerOutline,
+          },
+        ],
+      },
+      options: {
+        animation: false,
+        responsive: true,
+        maintainAspectRatio: false,
+        resizeDelay: 60,
+        events: ["mousemove", "mouseout", "click", "touchstart", "touchmove"],
+        interaction: {
+          mode: "nearest",
+          intersect: false,
+          axis: "xy",
+        },
+        layout: {
+          padding: {
+            top: 12,
+            right: 14,
+            bottom: 8,
+            left: 6,
+          },
+        },
+        scales: {
+          x: {
+            type: "linear",
+            min: 0,
+            max: maxElapsedSeconds,
+            grid: {
+              color: palette.grid,
+              drawTicks: false,
+            },
+            border: {
+              color: palette.axis,
+            },
+            ticks: {
+              color: palette.label,
+              maxTicksLimit: 5,
+              padding: 8,
+              callback: function (value) {
+                var numericValue = Number(value);
+                var decimals = maxElapsedSeconds >= 10 ? 1 : 2;
+                return formatNumber(numericValue, decimals) + " s";
+              },
+            },
+          },
+          y: {
+            min: 0,
+            max: graphMaxSpeedDisplay,
+            grid: {
+              color: palette.grid,
+              drawTicks: false,
+            },
+            border: {
+              color: palette.axis,
+            },
+            ticks: {
+              color: palette.label,
+              maxTicksLimit: 5,
+              padding: 8,
+              callback: function (value) {
+                return formatNumber(Number(value), 0);
+              },
+            },
+          },
+        },
+        plugins: {
+          legend: {
+            display: false,
+          },
+          tooltip: {
+            enabled: true,
+            displayColors: false,
+            backgroundColor: palette.markerBackground,
+            titleColor: palette.markerOutline,
+            bodyColor: palette.markerOutline,
+            borderColor: palette.axis,
+            borderWidth: 1,
+            cornerRadius: 12,
+            padding: 12,
+            caretSize: 6,
+            caretPadding: 10,
+            bodySpacing: 4,
+            titleSpacing: 6,
+            callbacks: {
+              title: function (items) {
+                if (!items || !items.length || !items[0].raw) return "";
+                return formatRunSeconds(items[0].raw.elapsedMs) + " s";
+              },
+              label: function (context) {
+                return context && context.raw ? formatSpeedValue(context.raw.speedMs, state.settings.speedUnit) : "";
+              },
+              afterLabel: function (context) {
+                return buildResultGraphTooltipLines(context ? context.raw : null);
+              },
+            },
+          },
+          resultGraphGuide: {
+            color: palette.crosshair,
+          },
+        },
+        onHover: function (event, activeElements, chart) {
+          handleResultGraphInteraction(chart, activeElements);
+        },
+        onClick: function (event, activeElements, chart) {
+          handleResultGraphInteraction(chart, activeElements);
+        },
+      },
+    };
+  }
+
+  function getResultGraphSelectedIndex(selectedPoint, graphData) {
+    if (!selectedPoint || !graphData || !graphData.length) return -1;
+
+    for (var index = 0; index < graphData.length; index += 1) {
+      if (graphData[index].key === selectedPoint.key) return index;
+    }
+
+    return graphData.length - 1;
+  }
+
+  function setResultGraphActivePoint(chart, index) {
+    if (!chart || index < 0) return;
+
+    var meta = chart.getDatasetMeta(0);
+    if (!meta || !meta.data || !meta.data[index]) return;
+
+    var pointElement = meta.data[index];
+    var pointPosition = pointElement.getProps
+      ? pointElement.getProps(["x", "y"], true)
+      : { x: pointElement.x, y: pointElement.y };
+    var activeElements = [{ datasetIndex: 0, index: index }];
+
+    chart.setActiveElements(activeElements);
+    if (chart.tooltip && typeof chart.tooltip.setActiveElements === "function") {
+      chart.tooltip.setActiveElements(activeElements, pointPosition);
+    }
+    chart.update("none");
+    handleResultGraphInteraction(chart, activeElements);
+  }
+
+  function handleResultGraphInteraction(chart, activeElements) {
+    if (!chart || !activeElements || !activeElements.length) return;
+
+    var activePoint = activeElements[0];
+    var dataset = chart.data && chart.data.datasets && chart.data.datasets[activePoint.datasetIndex]
+      ? chart.data.datasets[activePoint.datasetIndex]
+      : null;
+    var rawPoint = dataset && Array.isArray(dataset.data) ? dataset.data[activePoint.index] : null;
+    if (!rawPoint) return;
+
+    resultGraphSelectionResultId = state.latestResult ? state.latestResult.id : "";
+    resultGraphSelectionPointKey = rawPoint.key || "";
+    renderResultGraphDetails(rawPoint);
+  }
+
+  function buildResultGraphTooltipLines(rawPoint) {
+    if (!rawPoint) return [];
+
+    return [
+      t("accelGraphPointDistance") + ": " + (isFiniteNumber(rawPoint.distanceM) ? formatRunDistance(rawPoint.distanceM) : "—"),
+      t("altitude") + ": " + (isFiniteNumber(rawPoint.altitudeM) ? formatDistanceMeasurement(rawPoint.altitudeM) : "—"),
+      t("accelGraphPointAccuracy") + ": " + (isFiniteNumber(rawPoint.accuracyM) ? formatDistanceMeasurement(rawPoint.accuracyM) : "—"),
+      t("accelGraphPointSlope") + ": " + (isFiniteNumber(rawPoint.slopePercent) ? formatSlopePercent(rawPoint.slopePercent) : "—"),
+    ];
+  }
+
+  function getResultGraphPalette() {
+    return {
+      line: getCssColorValue("--accel-accent", "#10b981"),
+      area: getCssColorValue("--accel-accent-soft", "rgba(16, 185, 129, 0.18)"),
+      axis: getCssColorValue("--accel-border", "rgba(17, 24, 39, 0.22)"),
+      grid: getCssColorValue("--accel-border", "rgba(17, 24, 39, 0.14)"),
+      label: getCssColorValue("--accel-muted", "#8d8f95"),
+      crosshair: getCssColorValue("--accel-muted", "rgba(141, 143, 149, 0.64)"),
+      markerBackground: getCssColorValue("--accel-surface-strong", "#181a20"),
+      markerOutline: getCssColorValue("--accel-chip-fg", "#f7f8fa"),
+    };
+  }
+
+  function getCssColorValue(name, fallback) {
+    var sourceElement = elements.resultGraphFrame || elements.liveSpeedGaugeStage || document.documentElement;
+    var value = getComputedStyle(sourceElement).getPropertyValue(name).trim();
+    return value || fallback;
   }
 
   function renderDiagnostics() {
