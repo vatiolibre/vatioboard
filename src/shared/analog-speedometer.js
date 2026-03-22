@@ -103,6 +103,8 @@ export function createAnalogSpeedometer(options) {
     const dialEdgeColor = getCssColor("--analog-speedometer-dial-edge", "#e7f0fb");
     const dialRimColor = getCssColor("--analog-speedometer-dial-rim", trackColor);
     const dialHighlightColor = getCssColor("--analog-speedometer-dial-highlight", "rgba(255,255,255,0.92)");
+    const dialHighlightMidColor = getCssColor("--analog-speedometer-dial-highlight-mid", "rgba(255,255,255,0.18)");
+    const dialHighlightFadeColor = getCssColor("--analog-speedometer-dial-highlight-fade", "rgba(255,255,255,0.05)");
 
     dialContext.clearRect(0, 0, size, size);
     needleContext.clearRect(0, 0, size, size);
@@ -132,8 +134,8 @@ export function createAnalogSpeedometer(options) {
       radius * 0.92,
     );
     gloss.addColorStop(0, dialHighlightColor);
-    gloss.addColorStop(0.28, "rgba(255, 255, 255, 0.18)");
-    gloss.addColorStop(0.64, "rgba(255, 255, 255, 0.05)");
+    gloss.addColorStop(0.28, dialHighlightMidColor);
+    gloss.addColorStop(0.64, dialHighlightFadeColor);
     gloss.addColorStop(1, "transparent");
     dialContext.fillStyle = gloss;
     dialContext.beginPath();

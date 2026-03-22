@@ -40,6 +40,7 @@
         --accel-muted: rgba(255, 255, 255, 0.64);
         --accel-panel-soft: rgba(255, 255, 255, 0.05);
     }
+
 }
 
 html.accel-page,
@@ -864,6 +865,22 @@ body.accel-page{
     --speed-dial-highlight: rgba(255, 255, 255, 0.88);
     --speed-gauge-glow: color-mix(in srgb, var(--accel-accent-soft) 72%, transparent);
     --speed-gauge-glow-edge: rgba(255, 255, 255, 0.2);
+}
+
+@media (prefers-color-scheme: dark){
+    .accel-speedometer-stage{
+        --speed-surface: #1d2025;
+        --speed-track: rgba(255, 255, 255, 0.08);
+        --speed-dial-core: #26292f;
+        --speed-dial-mid: #1d2025;
+        --speed-dial-edge: #121419;
+        --speed-dial-rim: rgba(255, 255, 255, 0.08);
+        --speed-dial-highlight: rgba(255, 255, 255, 0.04);
+        --speed-dial-highlight-mid: rgba(255, 255, 255, 0.015);
+        --speed-dial-highlight-fade: rgba(255, 255, 255, 0.005);
+        --speed-gauge-glow: rgba(52, 211, 153, 0.08);
+        --speed-gauge-glow-edge: rgba(255, 255, 255, 0.02);
+    }
 }
 
 .accel-speedometer-stage .analog-speedometer-substatus{
