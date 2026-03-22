@@ -45,6 +45,8 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
   var RECENT_INTERVAL_WINDOW = 12;
   var TIMER_TICK_MS = 50;
   var TRACE_DUPLICATE_EPSILON_MS = 0.01;
+  var CLOCK_DELTA_DISAGREEMENT_RATIO = 4;
+  var CLOCK_DELTA_DISAGREEMENT_MS = 250;
   var MIN_VALID_RUN_SAMPLES = 4;
   var MIN_VALID_RUN_DURATION_MS = 800;
   var FINISH_SOUND_URL = "/audio/finish.m4a";
@@ -1023,7 +1025,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     var startSpeedMs = isFiniteNumber(run.startSpeedMs) ? run.startSpeedMs : 0;
     var targetSpeedMs = isFiniteNumber(run.targetSpeedMs) ? run.targetSpeedMs : null;
     var presetKind = typeof run.presetKind === "string" ? run.presetKind : "speed";
-    var speedTrace = normalizeStoredSpeedTrace(run.speedTrace);
+    var speedTrace = normalizeStoredSpeedTrace(run.speedTrace, run.elapsedMs);
     var partials = normalizeStoredPartials(run.partials);
     var finishSpeedMs = isFiniteNumber(run.finishSpeedMs)
       ? run.finishSpeedMs
@@ -1118,7 +1120,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     return Number.isFinite(value);
   }
 
-  function normalizeStoredSpeedTrace(trace) {
+  function normalizeStoredSpeedTrace(trace, expectedElapsedMs) {
     if (!Array.isArray(trace) || !trace.length) return [];
 
     var normalized = [];
@@ -1141,7 +1143,48 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     normalized.sort(function (left, right) {
       return left.elapsedMs - right.elapsedMs;
     });
+    normalized = repairStoredSpeedTrace(normalized, expectedElapsedMs);
     return compactSpeedTrace(normalized);
+  }
+
+  function repairStoredSpeedTrace(trace, expectedElapsedMs) {
+    if (!Array.isArray(trace) || !trace.length) return [];
+    if (!isFiniteNumber(expectedElapsedMs) || expectedElapsedMs <= 0) return trace.slice();
+
+    var normalizedExpectedMs = Math.max(1, expectedElapsedMs);
+    var maxAllowedElapsedMs = normalizedExpectedMs * 1.25;
+    var maxElapsedMs = trace[trace.length - 1].elapsedMs;
+    if (!isFiniteNumber(maxElapsedMs) || maxElapsedMs <= 0) return trace.slice();
+
+    var inRangeCount = 0;
+    for (var index = 0; index < trace.length; index += 1) {
+      if (trace[index].elapsedMs <= maxAllowedElapsedMs) inRangeCount += 1;
+    }
+
+    if (maxElapsedMs > maxAllowedElapsedMs && inRangeCount >= 2) {
+      return trace.filter(function (point) {
+        return point.elapsedMs <= maxAllowedElapsedMs;
+      });
+    }
+
+    if (maxElapsedMs <= normalizedExpectedMs * CLOCK_DELTA_DISAGREEMENT_RATIO) return trace.slice();
+
+    var scale = normalizedExpectedMs / maxElapsedMs;
+    var scaled = [];
+    for (var scaleIndex = 0; scaleIndex < trace.length; scaleIndex += 1) {
+      var sourcePoint = trace[scaleIndex];
+      var scaledPoint = {
+        elapsedMs: sourcePoint.elapsedMs * scale,
+        speedMs: sourcePoint.speedMs,
+      };
+      if (isFiniteNumber(sourcePoint.distanceM)) scaledPoint.distanceM = sourcePoint.distanceM;
+      if (isFiniteNumber(sourcePoint.altitudeM)) scaledPoint.altitudeM = sourcePoint.altitudeM;
+      if (isFiniteNumber(sourcePoint.accuracyM)) scaledPoint.accuracyM = sourcePoint.accuracyM;
+      if (typeof sourcePoint.speedSource === "string") scaledPoint.speedSource = sourcePoint.speedSource;
+      scaled.push(scaledPoint);
+    }
+
+    return scaled;
   }
 
   function normalizeStoredPartials(partials) {
@@ -1786,7 +1829,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
   }
 
   function handlePosition(position) {
-    var perfMs = performance.now();
+    var rawPerfMs = performance.now();
     var receivedAtMs = Date.now();
     var geoMs = isFiniteNumber(Number(position.timestamp)) ? Number(position.timestamp) : receivedAtMs;
     var coords = position && position.coords ? position.coords : {};
@@ -1798,7 +1841,10 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     var rawSpeedMs = isFiniteNumber(coords.speed) && coords.speed >= 0 ? coords.speed : null;
 
     var previousSample = state.latestSample;
-    var deltaMs = previousSample ? perfMs - previousSample.perfMs : null;
+    var rawPerfDeltaMs = previousSample ? rawPerfMs - previousSample.rawPerfMs : null;
+    var receivedDeltaMs = previousSample ? receivedAtMs - previousSample.receivedAtMs : null;
+    var deltaMs = previousSample ? resolveClockDeltaMs(rawPerfDeltaMs, receivedDeltaMs) : null;
+    var perfMs = previousSample && isFiniteNumber(deltaMs) ? previousSample.perfMs + deltaMs : rawPerfMs;
     var segmentDistanceM = previousSample ? getDistanceM(previousSample.latitude, previousSample.longitude, latitude, longitude) : 0;
     var derivedSpeedMs = null;
 
@@ -1812,6 +1858,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
 
     var speedMs = rawSpeedMs !== null ? rawSpeedMs : (derivedSpeedMs !== null ? derivedSpeedMs : 0);
     var sample = {
+      rawPerfMs: rawPerfMs,
       perfMs: perfMs,
       receivedAtMs: receivedAtMs,
       geoMs: geoMs,
@@ -2032,10 +2079,11 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     var nullSpeedShare = run.sampleCount > 0 ? run.nullSpeedCount / run.sampleCount : 1;
     var derivedShare = run.sampleCount > 0 ? run.derivedSpeedCount / run.sampleCount : 1;
     var runDistanceM = getCompletedRunDistance(run);
+    var elapsedMs = run.finishPerfMs - run.startPerfMs;
     var slopeAnalysis = buildSlopeAnalysis(run.startAltitudeM, run.finishAltitudeM, runDistanceM);
     var quality = evaluateQuality({
       sampleCount: run.sampleCount,
-      durationMs: run.finishPerfMs - run.startPerfMs,
+      durationMs: elapsedMs,
       averageAccuracyM: averageAccuracyM,
       averageHz: intervalStats.hz,
       averageIntervalMs: intervalStats.averageMs,
@@ -2062,8 +2110,8 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
       distanceTargetM: run.preset.distanceTargetM,
       displayUnit: state.settings.speedUnit,
       distanceDisplay: state.settings.distanceUnit,
-      elapsedMs: run.finishPerfMs - run.startPerfMs,
-      speedTrace: compactSpeedTrace(run.speedTrace),
+      elapsedMs: elapsedMs,
+      speedTrace: normalizeStoredSpeedTrace(run.speedTrace, elapsedMs),
       partials: serializeRunPartials(run.partials),
       finishSpeedMs: run.finishSpeedMs,
       trapSpeedMs: run.preset.type === "distance" ? run.finishSpeedMs : null,
@@ -2552,7 +2600,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     }
 
     if (run && run.startPerfMs !== null) {
-      elements.liveElapsedValue.textContent = formatRunSeconds(performance.now() - run.startPerfMs);
+      elements.liveElapsedValue.textContent = formatRunSeconds(getCurrentClockMs() - run.startPerfMs);
     } else {
       elements.liveElapsedValue.textContent = "0.000";
     }
@@ -3469,6 +3517,45 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
   function formatHeading(value) {
     if (!isFiniteNumber(value)) return t("accelUnavailable");
     return formatNumber(value, 0) + "°";
+  }
+
+  function normalizeNonNegativeDurationMs(value) {
+    if (!isFiniteNumber(value) || value < 0) return null;
+    return value;
+  }
+
+  function resolveClockDeltaMs(perfDeltaMs, receivedDeltaMs) {
+    var normalizedPerfMs = normalizeNonNegativeDurationMs(perfDeltaMs);
+    var normalizedReceivedMs = normalizeNonNegativeDurationMs(receivedDeltaMs);
+
+    if (normalizedPerfMs === null) return normalizedReceivedMs;
+    if (normalizedReceivedMs === null) return normalizedPerfMs;
+
+    if (normalizedPerfMs === 0 || normalizedReceivedMs === 0) {
+      if (Math.max(normalizedPerfMs, normalizedReceivedMs) >= CLOCK_DELTA_DISAGREEMENT_MS) {
+        return Math.min(normalizedPerfMs, normalizedReceivedMs);
+      }
+      return Math.max(normalizedPerfMs, normalizedReceivedMs);
+    }
+
+    var disagreementRatio = Math.max(normalizedPerfMs, normalizedReceivedMs) / Math.max(1, Math.min(normalizedPerfMs, normalizedReceivedMs));
+    var disagreementMs = Math.abs(normalizedPerfMs - normalizedReceivedMs);
+    if (disagreementRatio >= CLOCK_DELTA_DISAGREEMENT_RATIO && disagreementMs >= CLOCK_DELTA_DISAGREEMENT_MS) {
+      return normalizedReceivedMs;
+    }
+
+    return normalizedPerfMs;
+  }
+
+  function getCurrentClockMs() {
+    var rawPerfMs = performance.now();
+    if (!state.latestSample) return rawPerfMs;
+
+    var perfDeltaMs = rawPerfMs - state.latestSample.rawPerfMs;
+    var receivedDeltaMs = Date.now() - state.latestSample.receivedAtMs;
+    var deltaMs = resolveClockDeltaMs(perfDeltaMs, receivedDeltaMs);
+    if (!isFiniteNumber(deltaMs)) return state.latestSample.perfMs;
+    return state.latestSample.perfMs + deltaMs;
   }
 
   function formatDistanceMeasurement(valueM, unit) {
