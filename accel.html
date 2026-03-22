@@ -700,6 +700,62 @@
             </div>
           </section>
 
+          <section id="debugRawSection" class="accel-sheet-section" hidden>
+            <header class="accel-card-head">
+              <span class="accel-card-kicker">Debug</span>
+              <p class="accel-card-lead">Raw samples captured during the run before graph processing.</p>
+            </header>
+
+            <div id="debugRawEmptyState" class="accel-empty-copy">No raw run samples captured yet.</div>
+
+            <div id="debugRawTableWrap" class="accel-debug-table-wrap" hidden>
+              <table class="accel-debug-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Delta ms</th>
+                    <th>Hz</th>
+                    <th>Lat / Lon</th>
+                    <th>Raw speed</th>
+                    <th>Derived speed</th>
+                    <th>Used speed</th>
+                    <th>Heading</th>
+                    <th>Accuracy</th>
+                    <th>State</th>
+                  </tr>
+                </thead>
+                <tbody id="debugRawTableBody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="debugGraphSection" class="accel-sheet-section" hidden>
+            <header class="accel-card-head">
+              <span class="accel-card-kicker">Debug</span>
+              <p class="accel-card-lead">Points passed into the Results speed graph.</p>
+            </header>
+
+            <div id="debugGraphEmptyState" class="accel-empty-copy">No graph points available yet.</div>
+
+            <div id="debugGraphTableWrap" class="accel-debug-table-wrap" hidden>
+              <table class="accel-debug-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Elapsed ms</th>
+                    <th>Time</th>
+                    <th>Speed</th>
+                    <th>Distance</th>
+                    <th>Altitude</th>
+                    <th>Accuracy</th>
+                    <th>Source</th>
+                  </tr>
+                </thead>
+                <tbody id="debugGraphTableBody"></tbody>
+              </table>
+            </div>
+          </section>
+
           <section class="accel-sheet-section accel-history-card">
             <header class="accel-card-head accel-history-head">
               <div class="accel-history-head-copy">

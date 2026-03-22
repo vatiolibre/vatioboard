@@ -38,6 +38,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     TIMEOUT: 3,
   };
   var MAX_RUNS = 40;
+  var MAX_DEBUG_SAMPLE_ROWS = 200;
   var MAX_PLAUSIBLE_SPEED_MS = 90;
   var READY_SAMPLE_AGE_MS = 2500;
   var STALE_INTERVAL_MS = 1500;
@@ -613,6 +614,14 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     resultGraphAltitudeValue: document.getElementById("resultGraphAltitudeValue"),
     resultGraphAccuracyValue: document.getElementById("resultGraphAccuracyValue"),
     resultGraphSlopeValue: document.getElementById("resultGraphSlopeValue"),
+    debugRawSection: document.getElementById("debugRawSection"),
+    debugRawEmptyState: document.getElementById("debugRawEmptyState"),
+    debugRawTableWrap: document.getElementById("debugRawTableWrap"),
+    debugRawTableBody: document.getElementById("debugRawTableBody"),
+    debugGraphSection: document.getElementById("debugGraphSection"),
+    debugGraphEmptyState: document.getElementById("debugGraphEmptyState"),
+    debugGraphTableWrap: document.getElementById("debugGraphTableWrap"),
+    debugGraphTableBody: document.getElementById("debugGraphTableBody"),
     resultPartialsSection: document.getElementById("resultPartialsSection"),
     resultPartialsList: document.getElementById("resultPartialsList"),
     resultPresetValue: document.getElementById("resultPresetValue"),
@@ -1030,6 +1039,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     var targetSpeedMs = isFiniteNumber(run.targetSpeedMs) ? run.targetSpeedMs : null;
     var presetKind = typeof run.presetKind === "string" ? run.presetKind : "speed";
     var speedTrace = normalizeStoredSpeedTrace(run.speedTrace, run.elapsedMs);
+    var sampleLog = normalizeStoredSampleLog(run.sampleLog);
     var partials = normalizeStoredPartials(run.partials);
     var finishSpeedMs = isFiniteNumber(run.finishSpeedMs)
       ? run.finishSpeedMs
@@ -1068,6 +1078,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
       distanceDisplay: run.distanceDisplay === "m" ? "m" : "ft",
       elapsedMs: run.elapsedMs,
       speedTrace: speedTrace,
+      sampleLog: sampleLog,
       partials: partials,
       finishSpeedMs: finishSpeedMs,
       trapSpeedMs: isFiniteNumber(run.trapSpeedMs) ? run.trapSpeedMs : null,
@@ -1149,6 +1160,38 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     });
     normalized = repairStoredSpeedTrace(normalized, expectedElapsedMs);
     return compactSpeedTrace(normalized);
+  }
+
+  function normalizeStoredSampleLog(sampleLog) {
+    if (!Array.isArray(sampleLog) || !sampleLog.length) return [];
+
+    var normalized = [];
+    for (var index = 0; index < sampleLog.length; index += 1) {
+      var sample = sampleLog[index];
+      if (!sample || typeof sample !== "object") continue;
+
+      normalized.push({
+        index: normalized.length + 1,
+        stage: typeof sample.stage === "string" ? sample.stage : "armed",
+        deltaMs: isFiniteNumber(sample.deltaMs) ? Math.max(0, sample.deltaMs) : null,
+        effectiveHz: isFiniteNumber(sample.effectiveHz) ? Math.max(0, sample.effectiveHz) : null,
+        latitude: isFiniteNumber(sample.latitude) ? sample.latitude : null,
+        longitude: isFiniteNumber(sample.longitude) ? sample.longitude : null,
+        rawSpeedMs: isFiniteNumber(sample.rawSpeedMs) ? Math.max(0, sample.rawSpeedMs) : null,
+        derivedSpeedMs: isFiniteNumber(sample.derivedSpeedMs) ? Math.max(0, sample.derivedSpeedMs) : null,
+        speedMs: isFiniteNumber(sample.speedMs) ? Math.max(0, sample.speedMs) : null,
+        speedSource: typeof sample.speedSource === "string" ? sample.speedSource : "reported",
+        headingDeg: isFiniteNumber(sample.headingDeg) ? sample.headingDeg : null,
+        accuracyM: isFiniteNumber(sample.accuracyM) ? Math.max(0, sample.accuracyM) : null,
+        altitudeM: isFiniteNumber(sample.altitudeM) ? sample.altitudeM : null,
+        distanceFromStartM: isFiniteNumber(sample.distanceFromStartM) ? Math.max(0, sample.distanceFromStartM) : null,
+        elapsedFromStartMs: isFiniteNumber(sample.elapsedFromStartMs) ? Math.max(0, sample.elapsedFromStartMs) : null,
+        stale: Boolean(sample.stale),
+        sparse: Boolean(sample.sparse),
+      });
+    }
+
+    return normalized.slice(-MAX_DEBUG_SAMPLE_ROWS);
   }
 
   function repairStoredSpeedTrace(trace, expectedElapsedMs) {
@@ -1761,6 +1804,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
       rolloutDistanceM: state.settings.rolloutEnabled && preset.standingStart ? FT_TO_M : 0,
       partials: buildRunPartials(preset),
       speedTrace: [],
+      sampleLog: [],
       sampleCount: 0,
       intervalValues: [],
       accuracyValues: [],
@@ -1900,12 +1944,14 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
       if (sample.accuracyM !== null) run.accuracyValues.push(sample.accuracyM);
       if (sample.rawSpeedMs === null) run.nullSpeedCount += 1;
       if (sample.speedSource === "derived") run.derivedSpeedCount += 1;
+      appendRunSampleLog(run, sample);
       run.lastSample = sample;
       return;
     }
 
     var previousSample = run.lastSample;
     if (!previousSample) {
+      appendRunSampleLog(run, sample);
       run.lastSample = sample;
       return;
     }
@@ -2049,6 +2095,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
       });
     }
 
+    appendRunSampleLog(run, sample);
     run.lastSample = sample;
   }
 
@@ -2108,6 +2155,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
       distanceDisplay: state.settings.distanceUnit,
       elapsedMs: elapsedMs,
       speedTrace: normalizeStoredSpeedTrace(run.speedTrace, elapsedMs),
+      sampleLog: normalizeStoredSampleLog(run.sampleLog),
       partials: serializeRunPartials(run.partials),
       finishSpeedMs: run.finishSpeedMs,
       trapSpeedMs: run.preset.type === "distance" ? run.finishSpeedMs : null,
@@ -2455,6 +2503,38 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     trace.push(nextPoint);
   }
 
+  function appendRunSampleLog(run, sample) {
+    if (!run || !sample) return;
+    if (!Array.isArray(run.sampleLog)) run.sampleLog = [];
+
+    run.sampleLog.push({
+      index: run.sampleLog.length + 1,
+      stage: run.stage,
+      deltaMs: isFiniteNumber(sample.deltaMs) && sample.deltaMs > 0 ? sample.deltaMs : null,
+      effectiveHz: isFiniteNumber(sample.deltaMs) && sample.deltaMs > 0 ? 1000 / sample.deltaMs : null,
+      latitude: sample.latitude,
+      longitude: sample.longitude,
+      rawSpeedMs: sample.rawSpeedMs,
+      derivedSpeedMs: sample.derivedSpeedMs,
+      speedMs: sample.speedMs,
+      speedSource: sample.speedSource,
+      headingDeg: sample.headingDeg,
+      accuracyM: sample.accuracyM,
+      altitudeM: sample.altitudeM,
+      distanceFromStartM: isFiniteNumber(run.startDistanceM) ? Math.max(0, run.distanceSinceArmM - run.startDistanceM) : null,
+      elapsedFromStartMs: isFiniteNumber(run.startPerfMs) && sample.perfMs >= run.startPerfMs ? sample.perfMs - run.startPerfMs : null,
+      stale: Boolean(sample.stale),
+      sparse: Boolean(sample.sparse),
+    });
+
+    if (run.sampleLog.length > MAX_DEBUG_SAMPLE_ROWS) {
+      run.sampleLog = run.sampleLog.slice(-MAX_DEBUG_SAMPLE_ROWS);
+      for (var index = 0; index < run.sampleLog.length; index += 1) {
+        run.sampleLog[index].index = index + 1;
+      }
+    }
+  }
+
   function compactSpeedTrace(trace) {
     var maxPoints = 120;
     if (!Array.isArray(trace) || trace.length <= maxPoints) return trace ? trace.slice() : [];
@@ -2538,6 +2618,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     renderLivePanel();
     renderResultCard();
     renderDiagnostics();
+    renderDebugTables();
     renderHistory();
     renderSheetUi();
   }
@@ -2825,9 +2906,13 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
   }
 
   function buildResultGraphData(result) {
-    if (!result || !Array.isArray(result.speedTrace) || result.speedTrace.length < 2) return [];
+    return buildGraphDataFromTraceSource(result);
+  }
 
-    var trace = compactSpeedTrace(result.speedTrace);
+  function buildGraphDataFromTraceSource(source) {
+    if (!source || !Array.isArray(source.speedTrace) || !source.speedTrace.length) return [];
+
+    var trace = compactSpeedTrace(source.speedTrace);
     var speedUnit = state.settings.speedUnit;
     var graphData = [];
 
@@ -2845,11 +2930,121 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
         distanceM: distanceM,
         altitudeM: altitudeM,
         accuracyM: isFiniteNumber(point.accuracyM) ? point.accuracyM : null,
-        slopePercent: getTraceSlopePercent(result.startAltitudeM, altitudeM, distanceM),
+        speedSource: typeof point.speedSource === "string" ? point.speedSource : null,
+        slopePercent: getTraceSlopePercent(source.startAltitudeM, altitudeM, distanceM),
       });
     }
 
     return graphData;
+  }
+
+  function renderDebugTables() {
+    renderDebugRawTable();
+    renderDebugGraphTable();
+  }
+
+  function renderDebugRawTable() {
+    if (!elements.debugRawSection || !elements.debugRawEmptyState || !elements.debugRawTableWrap || !elements.debugRawTableBody) return;
+
+    var activeRun = isRunActive(state.run) ? state.run : null;
+    var result = activeRun ? null : getDisplayedResult();
+    var rawRows = activeRun && Array.isArray(activeRun.sampleLog)
+      ? activeRun.sampleLog
+      : (result && Array.isArray(result.sampleLog) ? result.sampleLog : []);
+    var hasContext = Boolean(activeRun || result);
+
+    elements.debugRawSection.hidden = !hasContext;
+    if (!hasContext) {
+      elements.debugRawTableBody.innerHTML = "";
+      return;
+    }
+
+    if (!rawRows.length) {
+      elements.debugRawEmptyState.hidden = false;
+      elements.debugRawTableWrap.hidden = true;
+      elements.debugRawTableBody.innerHTML = "";
+      return;
+    }
+
+    var html = "";
+    for (var index = rawRows.length - 1; index >= 0; index -= 1) {
+      var row = rawRows[index];
+      var stateLabel = getDebugSampleState(row);
+      html += "<tr>";
+      html += "<td>" + escapeHtml(formatInteger(row.index)) + "</td>";
+      html += "<td>" + escapeHtml(formatMs(row.deltaMs)) + "</td>";
+      html += "<td>" + escapeHtml(formatHz(row.effectiveHz)) + "</td>";
+      html += '<td class="accel-debug-mono">' + escapeHtml(formatDebugCoordinatePair(row.latitude, row.longitude)) + "</td>";
+      html += "<td>" + escapeHtml(formatDebugSpeedMs(row.rawSpeedMs)) + "</td>";
+      html += "<td>" + escapeHtml(formatDebugSpeedMs(row.derivedSpeedMs)) + "</td>";
+      html += "<td>" + escapeHtml(formatDebugSpeedMs(row.speedMs)) + "</td>";
+      html += "<td>" + escapeHtml(formatHeading(row.headingDeg)) + "</td>";
+      html += "<td>" + escapeHtml(formatDebugMeters(row.accuracyM)) + "</td>";
+      html += "<td>" + escapeHtml(stateLabel) + "</td>";
+      html += "</tr>";
+    }
+
+    elements.debugRawEmptyState.hidden = true;
+    elements.debugRawTableWrap.hidden = false;
+    elements.debugRawTableBody.innerHTML = html;
+  }
+
+  function renderDebugGraphTable() {
+    if (!elements.debugGraphSection || !elements.debugGraphEmptyState || !elements.debugGraphTableWrap || !elements.debugGraphTableBody) return;
+
+    var activeRun = isRunActive(state.run) ? state.run : null;
+    var result = activeRun ? null : getDisplayedResult();
+    var graphRows = activeRun
+      ? buildGraphDataFromTraceSource(activeRun)
+      : (result ? buildResultGraphData(result) : []);
+    var hasContext = Boolean(activeRun || result);
+
+    elements.debugGraphSection.hidden = !hasContext;
+    if (!hasContext) {
+      elements.debugGraphTableBody.innerHTML = "";
+      return;
+    }
+
+    if (!graphRows.length) {
+      elements.debugGraphEmptyState.hidden = false;
+      elements.debugGraphTableWrap.hidden = true;
+      elements.debugGraphTableBody.innerHTML = "";
+      return;
+    }
+
+    var html = "";
+    for (var index = 0; index < graphRows.length; index += 1) {
+      var row = graphRows[index];
+      html += "<tr>";
+      html += "<td>" + escapeHtml(formatInteger(index + 1)) + "</td>";
+      html += "<td>" + escapeHtml(formatMs(row.elapsedMs)) + "</td>";
+      html += "<td>" + escapeHtml(formatRunSeconds(row.elapsedMs) + " s") + "</td>";
+      html += "<td>" + escapeHtml(formatSpeedValue(row.speedMs, state.settings.speedUnit)) + "</td>";
+      html += "<td>" + escapeHtml(formatDebugMeters(row.distanceM)) + "</td>";
+      html += "<td>" + escapeHtml(formatDebugMeters(row.altitudeM)) + "</td>";
+      html += "<td>" + escapeHtml(formatDebugMeters(row.accuracyM)) + "</td>";
+      html += "<td>" + escapeHtml(getSpeedSourceLabel(row.speedSource)) + "</td>";
+      html += "</tr>";
+    }
+
+    elements.debugGraphEmptyState.hidden = true;
+    elements.debugGraphTableWrap.hidden = false;
+    elements.debugGraphTableBody.innerHTML = html;
+  }
+
+  function getDebugSampleState(sample) {
+    if (!sample) return t("accelUnavailable");
+
+    var flags = [];
+    if (sample.stale) flags.push("stale");
+    if (sample.sparse) flags.push("sparse");
+
+    return flags.length ? sample.stage + " · " + flags.join(", ") : sample.stage;
+  }
+
+  function formatDebugCoordinatePair(latitude, longitude) {
+    if (!isFiniteNumber(latitude) || !isFiniteNumber(longitude)) return t("accelUnavailable");
+    return formatDebugCoordinate(latitude) + ", " + formatDebugCoordinate(longitude);
   }
 
   function renderResultGraphDetails(point) {
@@ -3582,6 +3777,24 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
   function formatHeading(value) {
     if (!isFiniteNumber(value)) return t("accelUnavailable");
     return formatNumber(value, 0) + "°";
+  }
+
+  function formatDebugCoordinate(value) {
+    if (!isFiniteNumber(value)) return t("accelUnavailable");
+    return new Intl.NumberFormat(state.lang, {
+      minimumFractionDigits: 6,
+      maximumFractionDigits: 6,
+    }).format(value);
+  }
+
+  function formatDebugMeters(value) {
+    if (!isFiniteNumber(value)) return t("accelUnavailable");
+    return formatNumber(value, Math.abs(value) >= 100 ? 0 : 1) + " m";
+  }
+
+  function formatDebugSpeedMs(value) {
+    if (!isFiniteNumber(value)) return t("accelUnavailable");
+    return formatNumber(value, 2) + " m/s";
   }
 
   function normalizeNonNegativeDurationMs(value) {

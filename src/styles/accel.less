@@ -1256,6 +1256,53 @@ body.accel-page .accel-result-graph-canvas{
     color: var(--accel-accent);
 }
 
+.accel-debug-table-wrap{
+    overflow: auto;
+    max-height: min(42vh, 460px);
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--accel-panel-soft) 88%, var(--accel-surface-strong));
+}
+
+.accel-debug-table{
+    width: 100%;
+    min-width: 980px;
+    border-collapse: collapse;
+}
+
+.accel-debug-table th,
+.accel-debug-table td{
+    padding: 9px 10px;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.4;
+    vertical-align: top;
+    text-align: left;
+}
+
+.accel-debug-table thead th{
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: color-mix(in srgb, var(--accel-surface-strong) 98%, transparent);
+    color: var(--accel-muted);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.accel-debug-table tbody tr:nth-child(even){
+    background: color-mix(in srgb, var(--accel-panel-soft) 54%, transparent);
+}
+
+.accel-debug-table tbody tr + tr td{
+    border-top: 1px solid color-mix(in srgb, var(--accel-border) 38%, transparent);
+}
+
+.accel-debug-mono{
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
 .accel-history-main{
     display: flex;
     flex-wrap: wrap;
