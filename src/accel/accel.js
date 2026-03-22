@@ -2057,7 +2057,10 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
             accuracyM: averageFinite(previousSample.accuracyM, sample.accuracyM),
             speedSource: sample.speedSource,
           });
+          appendRunSampleLog(run, sample);
+          run.lastSample = sample;
           completeRun();
+          return;
         }
       } else if (run.preset.type === "distance") {
         var prevDistanceFromStartM = Math.max(0, run.prevDistanceSinceArmM - run.startDistanceM);
@@ -2081,7 +2084,10 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
             accuracyM: averageFinite(previousSample.accuracyM, sample.accuracyM),
             speedSource: sample.speedSource,
           });
+          appendRunSampleLog(run, sample);
+          run.lastSample = sample;
           completeRun();
+          return;
         }
       }
     }
@@ -2154,7 +2160,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
       displayUnit: state.settings.speedUnit,
       distanceDisplay: state.settings.distanceUnit,
       elapsedMs: elapsedMs,
-      speedTrace: normalizeStoredSpeedTrace(run.speedTrace, elapsedMs),
+      speedTrace: buildResultSpeedTrace(run, elapsedMs),
       sampleLog: normalizeStoredSampleLog(run.sampleLog),
       partials: serializeRunPartials(run.partials),
       finishSpeedMs: run.finishSpeedMs,
@@ -2533,6 +2539,96 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
         run.sampleLog[index].index = index + 1;
       }
     }
+  }
+
+  function buildResultSpeedTrace(run, expectedElapsedMs) {
+    var postProcessedTrace = buildSpeedTraceFromSampleLog(run, expectedElapsedMs);
+    if (postProcessedTrace.length >= 2) {
+      return normalizeStoredSpeedTrace(postProcessedTrace, expectedElapsedMs);
+    }
+    return normalizeStoredSpeedTrace(run && run.speedTrace ? run.speedTrace : [], expectedElapsedMs);
+  }
+
+  function buildSpeedTraceFromSampleLog(run, expectedElapsedMs) {
+    if (!run || !Array.isArray(run.sampleLog) || !run.sampleLog.length) return [];
+
+    var startedSamples = [];
+    for (var index = 0; index < run.sampleLog.length; index += 1) {
+      var sample = run.sampleLog[index];
+      if (!sample || !isFiniteNumber(sample.speedMs) || !isFiniteNumber(sample.elapsedFromStartMs)) continue;
+      startedSamples.push(sample);
+    }
+
+    if (!startedSamples.length) return [];
+
+    var trace = [];
+    if (isFiniteNumber(run.startTraceSpeedMs)) {
+      trace.push({
+        elapsedMs: 0,
+        speedMs: Math.max(0, run.startTraceSpeedMs),
+        distanceM: 0,
+        altitudeM: run.startAltitudeM,
+        accuracyM: run.startAccuracyM,
+        speedSource: run.startSpeedSource,
+      });
+    }
+
+    var accumulatedElapsedMs = 0;
+    for (var sampleIndex = 0; sampleIndex < startedSamples.length; sampleIndex += 1) {
+      var currentSample = startedSamples[sampleIndex];
+      var stepMs = 0;
+
+      if (sampleIndex === 0) {
+        stepMs = isFiniteNumber(currentSample.deltaMs) && currentSample.deltaMs > 0
+          ? currentSample.deltaMs
+          : Math.max(0, Math.min(currentSample.elapsedFromStartMs, 1000));
+      } else if (isFiniteNumber(currentSample.deltaMs) && currentSample.deltaMs > 0) {
+        stepMs = currentSample.deltaMs;
+      } else {
+        var previousElapsedMs = startedSamples[sampleIndex - 1].elapsedFromStartMs;
+        stepMs = isFiniteNumber(previousElapsedMs)
+          ? Math.max(0, currentSample.elapsedFromStartMs - previousElapsedMs)
+          : 0;
+      }
+
+      accumulatedElapsedMs += Math.max(0, stepMs);
+      trace.push({
+        elapsedMs: accumulatedElapsedMs,
+        speedMs: Math.max(0, currentSample.speedMs),
+        distanceM: isFiniteNumber(currentSample.distanceFromStartM) ? Math.max(0, currentSample.distanceFromStartM) : null,
+        altitudeM: isFiniteNumber(currentSample.altitudeM) ? currentSample.altitudeM : null,
+        accuracyM: isFiniteNumber(currentSample.accuracyM) ? Math.max(0, currentSample.accuracyM) : null,
+        speedSource: typeof currentSample.speedSource === "string" ? currentSample.speedSource : null,
+      });
+    }
+
+    if (trace.length && isFiniteNumber(expectedElapsedMs) && expectedElapsedMs > 0) {
+      var traceLastElapsedMs = trace[trace.length - 1].elapsedMs;
+      if (isFiniteNumber(traceLastElapsedMs) && traceLastElapsedMs > 0) {
+        var scale = expectedElapsedMs / traceLastElapsedMs;
+        for (var traceIndex = 0; traceIndex < trace.length; traceIndex += 1) {
+          trace[traceIndex].elapsedMs = trace[traceIndex].elapsedMs * scale;
+        }
+      }
+    }
+
+    if (isFiniteNumber(expectedElapsedMs) && isFiniteNumber(run.finishSpeedMs)) {
+      var lastPoint = trace.length ? trace[trace.length - 1] : null;
+      if (!lastPoint || Math.abs(lastPoint.elapsedMs - expectedElapsedMs) > TRACE_DUPLICATE_EPSILON_MS) {
+        trace.push({
+          elapsedMs: expectedElapsedMs,
+          speedMs: Math.max(0, run.finishSpeedMs),
+          distanceM: isFiniteNumber(run.finishDistanceM) && isFiniteNumber(run.startDistanceM)
+            ? Math.max(0, run.finishDistanceM - run.startDistanceM)
+            : (isFiniteNumber(run.preset && run.preset.distanceTargetM) ? run.preset.distanceTargetM : null),
+          altitudeM: isFiniteNumber(run.finishAltitudeM) ? run.finishAltitudeM : null,
+          accuracyM: isFiniteNumber(run.startAccuracyM) ? run.startAccuracyM : null,
+          speedSource: typeof run.startSpeedSource === "string" ? run.startSpeedSource : null,
+        });
+      }
+    }
+
+    return trace;
   }
 
   function compactSpeedTrace(trace) {
