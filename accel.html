@@ -92,6 +92,11 @@
         </div>
 
         <div class="toolbar accel-toolbar" role="toolbar" aria-label="Acceleration tools" data-i18n-aria="accelToolbar">
+          <div class="accel-toolbar-actions">
+            <button id="armRun" type="button" class="accel-action-btn accel-action-btn-primary accel-toolbar-btn">Start test</button>
+            <button id="cancelRun" type="button" class="accel-action-btn accel-action-btn-danger accel-toolbar-btn" hidden>Cancel test</button>
+          </div>
+
           <div class="right-stack accel-right-stack">
             <span class="attribution">
               <a href="/speed.html" data-i18n="speedometer">Speedometer</a>
@@ -109,60 +114,22 @@
 
     <main class="accel-main">
       <section class="accel-shell">
-        <article class="accel-card accel-primary-card">
-          <header class="accel-primary-header">
-            <div class="accel-trigger-stack">
-              <button
-                id="setupTrigger"
-                type="button"
-                class="accel-sheet-trigger"
-                aria-expanded="false"
-                aria-controls="setupPanel"
-                data-i18n-aria="accelOpenSetup"
-              >
-                <span class="accel-sheet-trigger-label" data-i18n="accelSetup">Setup</span>
-                <strong id="setupTriggerValue" class="accel-sheet-trigger-value">—</strong>
-                <span id="setupTriggerMeta" class="accel-sheet-trigger-meta">—</span>
-              </button>
+        <div class="accel-stage">
+          <article class="accel-card accel-primary-card accel-gauge-card">
+            <button
+              id="setupTrigger"
+              type="button"
+              class="accel-sheet-trigger accel-sheet-trigger-floating"
+              aria-expanded="false"
+              aria-controls="setupPanel"
+              data-i18n-aria="accelOpenSetup"
+            >
+              <span class="accel-sheet-trigger-label" data-i18n="accelSetup">Setup</span>
+              <strong id="setupTriggerValue" class="accel-sheet-trigger-value">—</strong>
+              <span id="setupTriggerMeta" class="accel-sheet-trigger-meta">—</span>
+            </button>
 
-              <button
-                id="resultsTrigger"
-                type="button"
-                class="accel-sheet-trigger"
-                aria-expanded="false"
-                aria-controls="resultsPanel"
-                data-i18n-aria="accelOpenResults"
-              >
-                <span class="accel-sheet-trigger-label" data-i18n="accelResultsPanel">Results</span>
-                <strong id="resultsTriggerValue" class="accel-sheet-trigger-value">—</strong>
-                <span id="resultsTriggerMeta" class="accel-sheet-trigger-meta">—</span>
-              </button>
-            </div>
-          </header>
-
-          <div class="accel-status-strip">
-            <span class="accel-pill">
-              <span class="accel-pill-label" data-i18n="accelGpsReady">GPS ready</span>
-              <strong id="toolbarPermissionValue">—</strong>
-            </span>
-            <span class="accel-pill">
-              <span class="accel-pill-label" data-i18n="accelLatestAccuracy">Latest accuracy</span>
-              <strong id="toolbarQualityValue">—</strong>
-            </span>
-            <span class="accel-pill">
-              <span class="accel-pill-label" data-i18n="accelQuality">Quality</span>
-              <strong id="toolbarStateValue" aria-live="polite">—</strong>
-            </span>
-          </div>
-
-          <div class="accel-primary-stage">
-            <div class="accel-live-primary">
-              <div class="accel-live-timer-wrap">
-                <span class="accel-live-label" data-i18n="accelElapsed">Elapsed</span>
-                <strong id="liveElapsedValue" class="accel-live-timer">0.000</strong>
-                <span class="accel-live-unit">s</span>
-              </div>
-
+            <div class="accel-primary-stage">
               <div class="accel-speedometer-wrap">
                 <div id="liveSpeedGaugeStage" class="analog-speedometer-stage accel-speedometer-stage">
                   <div id="liveSpeedGaugeInner" class="analog-speedometer-inner">
@@ -179,24 +146,13 @@
                   </div>
                 </div>
               </div>
-            </div>
 
-            <div class="accel-live-grid">
-              <div class="accel-metric">
-                <span class="accel-metric-label" data-i18n="accelSelectedTest">Selected test</span>
-                <strong id="liveTargetValue" class="accel-metric-value accel-metric-wrap">—</strong>
-              </div>
-              <div class="accel-metric">
-                <span class="accel-metric-label" data-i18n="distance">Distance</span>
-                <strong id="liveDistanceValue" class="accel-metric-value">—</strong>
-              </div>
-              <div class="accel-metric">
-                <span class="accel-metric-label" data-i18n="accelState">Run state</span>
-                <strong id="liveStateValue" class="accel-metric-value">Idle</strong>
-              </div>
-              <div class="accel-metric">
-                <span class="accel-metric-label" data-i18n="accelQuality">Quality</span>
-                <strong id="liveQualityValue" class="accel-metric-value">—</strong>
+              <div class="accel-live-timer-wrap">
+                <span class="accel-live-label" data-i18n="accelElapsed">Elapsed</span>
+                <div class="accel-live-timer-reading">
+                  <strong id="liveElapsedValue" class="accel-live-timer">0.000</strong>
+                  <span class="accel-live-unit">s</span>
+                </div>
               </div>
             </div>
 
@@ -209,15 +165,61 @@
                 <span id="progressFill" class="accel-progress-fill"></span>
               </div>
             </div>
-          </div>
 
-          <div class="accel-action-grid" role="group" aria-label="Run controls" data-i18n-aria="accelControls">
-            <button id="armRun" type="button" class="accel-action-btn accel-action-btn-primary">Start test</button>
-            <button id="cancelRun" type="button" class="accel-action-btn accel-action-btn-danger" hidden>Cancel test</button>
-          </div>
+            <p id="actionNotice" class="accel-feedback" aria-live="polite"></p>
+          </article>
 
-          <p id="actionNotice" class="accel-feedback" aria-live="polite"></p>
-        </article>
+          <div class="accel-side-panel">
+            <button
+              id="resultsTrigger"
+              type="button"
+              class="accel-sheet-trigger accel-sheet-trigger-side"
+              aria-expanded="false"
+              aria-controls="resultsPanel"
+              data-i18n-aria="accelOpenResults"
+            >
+              <span class="accel-sheet-trigger-label" data-i18n="accelResultsPanel">Results</span>
+              <strong id="resultsTriggerValue" class="accel-sheet-trigger-value">—</strong>
+              <span id="resultsTriggerMeta" class="accel-sheet-trigger-meta">—</span>
+            </button>
+
+            <article class="accel-card accel-side-card">
+              <div class="accel-status-strip">
+                <span class="accel-pill">
+                  <span class="accel-pill-label" data-i18n="accelGpsReady">GPS ready</span>
+                  <strong id="toolbarPermissionValue">—</strong>
+                </span>
+                <span class="accel-pill">
+                  <span class="accel-pill-label" data-i18n="accelLatestAccuracy">Latest accuracy</span>
+                  <strong id="toolbarQualityValue">—</strong>
+                </span>
+                <span class="accel-pill">
+                  <span class="accel-pill-label" data-i18n="accelQualityCurrent">Current quality</span>
+                  <strong id="toolbarStateValue" aria-live="polite">—</strong>
+                </span>
+              </div>
+
+              <div class="accel-live-grid">
+                <div class="accel-metric">
+                  <span class="accel-metric-label" data-i18n="accelSelectedTest">Selected test</span>
+                  <strong id="liveTargetValue" class="accel-metric-value accel-metric-wrap">—</strong>
+                </div>
+                <div class="accel-metric">
+                  <span class="accel-metric-label" data-i18n="distance">Distance</span>
+                  <strong id="liveDistanceValue" class="accel-metric-value">—</strong>
+                </div>
+                <div class="accel-metric">
+                  <span class="accel-metric-label" data-i18n="accelState">Run state</span>
+                  <strong id="liveStateValue" class="accel-metric-value">Idle</strong>
+                </div>
+                <div class="accel-metric">
+                  <span class="accel-metric-label" data-i18n="accelQualityGrade">Quality grade</span>
+                  <strong id="liveQualityValue" class="accel-metric-value">—</strong>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
       </section>
 
       <div id="accelSheetBackdrop" class="accel-sheet-backdrop" hidden></div>
