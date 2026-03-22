@@ -56,6 +56,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
   var resultGraphRenderKey = "";
   var resultGraphSelectionResultId = "";
   var resultGraphSelectionPointKey = "";
+  var resultGraphObservedPanelWidth = 0;
   var RESULT_GRAPH_GUIDE_PLUGIN = {
     id: "resultGraphGuide",
     afterDatasetsDraw: function (chart, args, options) {
@@ -185,6 +186,9 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       accelHistoryLead: "Saved locally in this browser. Newest runs first.",
       accelNoHistory: "No saved runs yet.",
       accelClearHistory: "Clear all",
+      accelLoadResult: "Load result",
+      accelViewingResult: "Viewing",
+      accelResultLoadedNotice: "Saved result loaded.",
       accelGpsReady: "GPS ready",
       accelLatestAccuracy: "Latest accuracy",
       accelObservedHz: "Observed Hz",
@@ -374,6 +378,9 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       accelHistoryLead: "Guardado localmente en este navegador. Corridas mas nuevas primero.",
       accelNoHistory: "Aun no hay corridas guardadas.",
       accelClearHistory: "Borrar todo",
+      accelLoadResult: "Cargar resultado",
+      accelViewingResult: "Viendo",
+      accelResultLoadedNotice: "Resultado guardado cargado.",
       accelGpsReady: "GPS listo",
       accelLatestAccuracy: "Precision actual",
       accelObservedHz: "Hz observados",
@@ -577,6 +584,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     progressFill: document.getElementById("progressFill"),
     resultEmptyState: document.getElementById("resultEmptyState"),
     resultContent: document.getElementById("resultContent"),
+    resultPrimaryHeader: document.getElementById("resultPrimaryHeader"),
     resultElapsedValue: document.getElementById("resultElapsedValue"),
     resultGraphMeta: document.getElementById("resultGraphMeta"),
     resultGraphEmptyState: document.getElementById("resultGraphEmptyState"),
@@ -588,6 +596,8 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     resultGraphAltitudeValue: document.getElementById("resultGraphAltitudeValue"),
     resultGraphAccuracyValue: document.getElementById("resultGraphAccuracyValue"),
     resultGraphSlopeValue: document.getElementById("resultGraphSlopeValue"),
+    resultPartialsSection: document.getElementById("resultPartialsSection"),
+    resultPartialsList: document.getElementById("resultPartialsList"),
     resultPresetValue: document.getElementById("resultPresetValue"),
     resultFinishSpeedValue: document.getElementById("resultFinishSpeedValue"),
     resultRolloutValue: document.getElementById("resultRolloutValue"),
@@ -598,6 +608,8 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     resultQualityValue: document.getElementById("resultQualityValue"),
     resultTimestampValue: document.getElementById("resultTimestampValue"),
     resultComparisonValue: document.getElementById("resultComparisonValue"),
+    resultNotesRow: document.getElementById("resultNotesRow"),
+    resultNotesValue: document.getElementById("resultNotesValue"),
     warningBadges: document.getElementById("warningBadges"),
     diagnosticAverageIntervalValue: document.getElementById("diagnosticAverageIntervalValue"),
     diagnosticJitterValue: document.getElementById("diagnosticJitterValue"),
@@ -648,11 +660,13 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     settings: loadSettings(),
     run: null,
     latestResult: null,
+    selectedResultId: "",
     openPanel: null,
     actionNoticeTimerId: null,
   };
 
   state.latestResult = state.runs.length ? state.runs[0] : null;
+  state.selectedResultId = state.latestResult ? state.latestResult.id : "";
 
   init();
 
@@ -813,12 +827,15 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
   }
 
   function setupResultGraphObservers() {
-    if (!elements.resultGraphFrame || typeof ResizeObserver !== "function") return;
+    if (!elements.resultsPanel || typeof ResizeObserver !== "function") return;
 
     resultGraphResizeObserver = new ResizeObserver(function () {
+      var panelWidth = Math.floor(elements.resultsPanel.clientWidth || elements.resultsPanel.getBoundingClientRect().width || 0);
+      if (panelWidth < 120 || panelWidth === resultGraphObservedPanelWidth) return;
+      resultGraphObservedPanelWidth = panelWidth;
       requestResultGraphRefresh();
     });
-    resultGraphResizeObserver.observe(elements.resultGraphFrame);
+    resultGraphResizeObserver.observe(elements.resultsPanel);
   }
 
   function handleLangToggle() {
@@ -845,6 +862,9 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
   function openPanel(panelName) {
     if (state.openPanel === panelName) return;
     state.openPanel = panelName;
+    if (panelName === "results" && elements.resultsPanel) {
+      resultGraphObservedPanelWidth = Math.floor(elements.resultsPanel.clientWidth || elements.resultsPanel.getBoundingClientRect().width || 0);
+    }
     renderSheetUi();
 
     var focusTarget = panelName === "setup" ? elements.closeSetupPanel : elements.closeResultsPanel;
@@ -973,12 +993,21 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     var targetSpeedMs = isFiniteNumber(run.targetSpeedMs) ? run.targetSpeedMs : null;
     var presetKind = typeof run.presetKind === "string" ? run.presetKind : "speed";
     var speedTrace = normalizeStoredSpeedTrace(run.speedTrace);
+    var partials = normalizeStoredPartials(run.partials);
     var finishSpeedMs = isFiniteNumber(run.finishSpeedMs)
       ? run.finishSpeedMs
       : (isFiniteNumber(run.trapSpeedMs)
         ? run.trapSpeedMs
         : (presetKind === "speed" && isFiniteNumber(targetSpeedMs) ? targetSpeedMs : null));
     var presetSignature = typeof run.presetSignature === "string" ? run.presetSignature : presetId;
+    var comparisonSignature = typeof run.comparisonSignature === "string"
+      ? run.comparisonSignature
+      : buildComparisonSignature({
+        presetId: presetId,
+        presetSignature: presetSignature,
+        startSpeedMs: startSpeedMs,
+        targetSpeedMs: targetSpeedMs,
+      });
 
     if (presetId === "custom" && isFiniteNumber(startSpeedMs) && isFiniteNumber(targetSpeedMs)) {
       presetSignature = getCustomPresetSignature(startSpeedMs, targetSpeedMs);
@@ -989,6 +1018,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       savedAtMs: run.savedAtMs,
       presetId: presetId,
       presetSignature: presetSignature,
+      comparisonSignature: comparisonSignature,
       presetKind: presetKind,
       standingStart: Boolean(run.standingStart),
       customStart: isFiniteNumber(run.customStart) ? run.customStart : null,
@@ -1001,11 +1031,16 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       distanceDisplay: run.distanceDisplay === "m" ? "m" : "ft",
       elapsedMs: run.elapsedMs,
       speedTrace: speedTrace,
+      partials: partials,
       finishSpeedMs: finishSpeedMs,
       trapSpeedMs: isFiniteNumber(run.trapSpeedMs) ? run.trapSpeedMs : null,
       rolloutApplied: Boolean(run.rolloutApplied),
+      launchThresholdMs: isFiniteNumber(run.launchThresholdMs) ? run.launchThresholdMs : null,
+      rolloutDistanceM: isFiniteNumber(run.rolloutDistanceM) ? run.rolloutDistanceM : null,
       averageAccuracyM: isFiniteNumber(run.averageAccuracyM) ? run.averageAccuracyM : null,
       runDistanceM: isFiniteNumber(run.runDistanceM) ? run.runDistanceM : null,
+      finishDistanceM: isFiniteNumber(run.finishDistanceM) ? run.finishDistanceM : null,
+      startAccuracyM: isFiniteNumber(run.startAccuracyM) ? run.startAccuracyM : null,
       startAltitudeM: isFiniteNumber(run.startAltitudeM) ? run.startAltitudeM : null,
       finishAltitudeM: isFiniteNumber(run.finishAltitudeM) ? run.finishAltitudeM : null,
       elevationDeltaM: isFiniteNumber(run.elevationDeltaM) ? run.elevationDeltaM : null,
@@ -1019,7 +1054,10 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       sampleCount: isFiniteNumber(run.sampleCount) ? run.sampleCount : 0,
       sparseCount: isFiniteNumber(run.sparseCount) ? run.sparseCount : 0,
       staleCount: isFiniteNumber(run.staleCount) ? run.staleCount : 0,
+      nullSpeedCount: isFiniteNumber(run.nullSpeedCount) ? run.nullSpeedCount : 0,
+      derivedSpeedCount: isFiniteNumber(run.derivedSpeedCount) ? run.derivedSpeedCount : 0,
       speedSource: typeof run.speedSource === "string" ? run.speedSource : "reported",
+      startSpeedSource: typeof run.startSpeedSource === "string" ? run.startSpeedSource : null,
       notes: typeof run.notes === "string" ? run.notes : "",
     };
   }
@@ -1073,6 +1111,82 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       return left.elapsedMs - right.elapsedMs;
     });
     return compactSpeedTrace(normalized);
+  }
+
+  function normalizeStoredPartials(partials) {
+    if (!Array.isArray(partials) || !partials.length) return [];
+
+    var normalized = [];
+    for (var index = 0; index < partials.length; index += 1) {
+      var partial = partials[index];
+      if (!partial || typeof partial !== "object" || typeof partial.kind !== "string") continue;
+
+      if (partial.kind === "distance") {
+        if (!isFiniteNumber(partial.distanceM)) continue;
+        normalized.push({
+          id: typeof partial.id === "string" ? partial.id : "distance-" + String(index),
+          kind: "distance",
+          labelKey: typeof partial.labelKey === "string" ? partial.labelKey : "accelUnavailable",
+          distanceM: Math.max(0, partial.distanceM),
+          showTrapSpeed: Boolean(partial.showTrapSpeed),
+          elapsedMs: isFiniteNumber(partial.elapsedMs) ? Math.max(0, partial.elapsedMs) : null,
+          trapSpeedMs: isFiniteNumber(partial.trapSpeedMs) ? Math.max(0, partial.trapSpeedMs) : null,
+        });
+        continue;
+      }
+
+      if (partial.kind === "speed") {
+        if (!isFiniteNumber(partial.startSpeedMs) || !isFiniteNumber(partial.targetSpeedMs)) continue;
+        normalized.push({
+          id: typeof partial.id === "string" ? partial.id : "speed-" + String(index),
+          kind: "speed",
+          labelKey: typeof partial.labelKey === "string" ? partial.labelKey : "accelUnavailable",
+          startSpeedMs: Math.max(0, partial.startSpeedMs),
+          targetSpeedMs: Math.max(0, partial.targetSpeedMs),
+          elapsedMs: isFiniteNumber(partial.elapsedMs) ? Math.max(0, partial.elapsedMs) : null,
+        });
+      }
+    }
+
+    return normalized;
+  }
+
+  function serializeRunPartials(partials) {
+    if (!Array.isArray(partials) || !partials.length) return [];
+
+    var serialized = [];
+    for (var index = 0; index < partials.length; index += 1) {
+      var partial = partials[index];
+      if (!partial || typeof partial !== "object" || typeof partial.kind !== "string") continue;
+
+      if (partial.kind === "distance") {
+        if (!isFiniteNumber(partial.distanceM)) continue;
+        serialized.push({
+          id: partial.id,
+          kind: "distance",
+          labelKey: partial.labelKey,
+          distanceM: partial.distanceM,
+          showTrapSpeed: Boolean(partial.showTrapSpeed),
+          elapsedMs: isFiniteNumber(partial.elapsedMs) ? partial.elapsedMs : null,
+          trapSpeedMs: isFiniteNumber(partial.trapSpeedMs) ? partial.trapSpeedMs : null,
+        });
+        continue;
+      }
+
+      if (partial.kind === "speed") {
+        if (!isFiniteNumber(partial.startSpeedMs) || !isFiniteNumber(partial.targetSpeedMs)) continue;
+        serialized.push({
+          id: partial.id,
+          kind: "speed",
+          labelKey: partial.labelKey,
+          startSpeedMs: partial.startSpeedMs,
+          targetSpeedMs: partial.targetSpeedMs,
+          elapsedMs: isFiniteNumber(partial.elapsedMs) ? partial.elapsedMs : null,
+        });
+      }
+    }
+
+    return serialized;
   }
 
   function findPresetDefinition(presetId) {
@@ -1295,6 +1409,22 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     return preset.id;
   }
 
+  function buildComparisonSignature(presetLike) {
+    if (!presetLike) return "unknown";
+
+    var presetId = presetLike.id || presetLike.presetId || "";
+    if (presetId === "custom") {
+      return getCustomPresetSignature(presetLike.startSpeedMs, presetLike.targetSpeedMs);
+    }
+
+    var definition = findPresetDefinition(presetId);
+    if (definition && definition.variantGroup) return definition.variantGroup;
+
+    if (typeof presetLike.variantGroup === "string" && presetLike.variantGroup) return presetLike.variantGroup;
+    if (typeof presetLike.presetSignature === "string" && presetLike.presetSignature) return presetLike.presetSignature;
+    return presetId || "unknown";
+  }
+
   function getCustomPresetSignature(startSpeedMs, targetSpeedMs) {
     return "custom:" + formatSignatureNumber(startSpeedMs) + ":" + formatSignatureNumber(targetSpeedMs);
   }
@@ -1469,25 +1599,38 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
 
     state.runs = [];
     state.latestResult = null;
+    state.selectedResultId = "";
     saveRuns();
     setActionNotice("accelHistoryClearedNotice");
     renderAll();
   }
 
   function handleHistoryClick(event) {
-    var button = event.target.closest("[data-run-id]");
+    var button = event.target.closest("[data-history-action][data-run-id]");
     if (!button) return;
 
     var runId = button.getAttribute("data-run-id");
     var run = findRunById(runId);
     if (!run) return;
 
+    var action = button.getAttribute("data-history-action");
+    if (action === "load") {
+      selectResult(runId);
+      openPanel("results");
+      scrollResultsPanelToTop();
+      setActionNotice("accelResultLoadedNotice");
+      renderAll();
+      return;
+    }
+
+    if (action !== "delete") return;
     if (!window.confirm(t("accelDeleteRunConfirm", { label: getPresetLabel(run) }))) return;
 
     state.runs = state.runs.filter(function (entry) {
       return entry.id !== runId;
     });
     state.latestResult = state.runs.length ? state.runs[0] : null;
+    if (state.selectedResultId === runId) selectResult(null);
     saveRuns();
     renderAll();
   }
@@ -1497,6 +1640,26 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       if (state.runs[index].id === runId) return state.runs[index];
     }
     return null;
+  }
+
+  function getDisplayedResult() {
+    if (state.selectedResultId) {
+      var selectedRun = findRunById(state.selectedResultId);
+      if (selectedRun) return selectedRun;
+    }
+    return state.latestResult;
+  }
+
+  function selectResult(runId) {
+    var run = runId ? findRunById(runId) : null;
+    state.selectedResultId = run ? run.id : (state.latestResult ? state.latestResult.id : "");
+  }
+
+  function scrollResultsPanelToTop() {
+    if (!elements.resultsPanel) return;
+    var body = elements.resultsPanel.querySelector(".accel-sheet-body");
+    if (body && typeof body.scrollTo === "function") body.scrollTo({ top: 0, behavior: "smooth" });
+    else if (body) body.scrollTop = 0;
   }
 
   function createRun(preset) {
@@ -1818,6 +1981,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     state.latestResult = result;
     state.runs.unshift(result);
     if (state.runs.length > MAX_RUNS) state.runs = state.runs.slice(0, MAX_RUNS);
+    state.selectedResultId = result.id;
     saveRuns();
     playFinishAudio();
     setActionNotice("accelRunSavedNotice");
@@ -1849,6 +2013,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       savedAtMs: Date.now(),
       presetId: run.preset.id,
       presetSignature: getPresetSignature(run.preset),
+      comparisonSignature: buildComparisonSignature(run.preset),
       presetKind: run.preset.type,
       standingStart: run.preset.standingStart,
       customStart: run.preset.customStart,
@@ -1861,11 +2026,16 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       distanceDisplay: state.settings.distanceUnit,
       elapsedMs: run.finishPerfMs - run.startPerfMs,
       speedTrace: compactSpeedTrace(run.speedTrace),
+      partials: serializeRunPartials(run.partials),
       finishSpeedMs: run.finishSpeedMs,
       trapSpeedMs: run.preset.type === "distance" ? run.finishSpeedMs : null,
       rolloutApplied: run.rolloutApplied,
+      launchThresholdMs: run.launchThresholdMs,
+      rolloutDistanceM: run.rolloutDistanceM,
       averageAccuracyM: averageAccuracyM,
       runDistanceM: runDistanceM,
+      finishDistanceM: run.finishDistanceM,
+      startAccuracyM: run.startAccuracyM,
       startAltitudeM: run.startAltitudeM,
       finishAltitudeM: run.finishAltitudeM,
       elevationDeltaM: slopeAnalysis.elevationDeltaM,
@@ -1879,7 +2049,10 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       sampleCount: run.sampleCount,
       sparseCount: run.sparseCount,
       staleCount: run.staleCount,
+      nullSpeedCount: run.nullSpeedCount,
+      derivedSpeedCount: run.derivedSpeedCount,
       speedSource: derivedShare > 0.5 ? "derived" : "reported",
+      startSpeedSource: run.startSpeedSource,
       notes: state.settings.notes || "",
     };
   }
@@ -2368,7 +2541,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       var status = partial.elapsedMs !== null ? "done" : (run.stage === "completed" ? "missed" : "waiting");
       html += '<div class="accel-partial-row" data-status="' + status + '">';
       html += '<span class="accel-partial-label">' + escapeHtml(getPartialLabel(partial)) + "</span>";
-      html += '<strong class="accel-partial-value">' + escapeHtml(formatPartialValue(partial, run)) + "</strong>";
+      html += '<strong class="accel-partial-value">' + escapeHtml(formatPartialValue(partial, run && run.speedUnit ? run.speedUnit : state.settings.speedUnit, run && run.stage === "completed")) + "</strong>";
       html += "</div>";
     }
 
@@ -2404,17 +2577,21 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
   }
 
   function renderResultCard() {
-    var result = state.latestResult;
+    var result = getDisplayedResult();
 
     if (!result) {
       elements.resultEmptyState.hidden = false;
       elements.resultContent.hidden = true;
+      if (elements.resultPrimaryHeader) elements.resultPrimaryHeader.hidden = true;
+      renderResultPartials(null);
+      if (elements.resultNotesRow) elements.resultNotesRow.hidden = true;
       renderResultGraph(null);
       return;
     }
 
     elements.resultEmptyState.hidden = true;
     elements.resultContent.hidden = false;
+    if (elements.resultPrimaryHeader) elements.resultPrimaryHeader.hidden = false;
     elements.resultElapsedValue.textContent = formatRunSeconds(result.elapsedMs) + " s";
     elements.resultPresetValue.textContent = getPresetLabel(result);
     elements.resultFinishSpeedValue.textContent = formatSpeedValue(result.finishSpeedMs, state.settings.speedUnit);
@@ -2426,7 +2603,35 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     elements.resultQualityValue.textContent = getQualityLabel(result.qualityGrade);
     elements.resultTimestampValue.textContent = formatTimestamp(result.savedAtMs);
     elements.resultComparisonValue.textContent = buildComparisonText(result);
+    renderResultPartials(result);
+    if (elements.resultNotesRow && elements.resultNotesValue) {
+      var hasNotes = Boolean(result.notes);
+      elements.resultNotesRow.hidden = !hasNotes;
+      elements.resultNotesValue.textContent = hasNotes ? result.notes : t("accelUnavailable");
+    }
     renderResultGraph(result);
+  }
+
+  function renderResultPartials(result) {
+    if (!elements.resultPartialsSection || !elements.resultPartialsList) return;
+    if (!result || !result.partials || !result.partials.length) {
+      elements.resultPartialsSection.hidden = true;
+      elements.resultPartialsList.innerHTML = "";
+      return;
+    }
+
+    var html = "";
+    for (var index = 0; index < result.partials.length; index += 1) {
+      var partial = result.partials[index];
+      var status = partial && partial.elapsedMs !== null ? "done" : "missed";
+      html += '<div class="accel-partial-row" data-status="' + status + '">';
+      html += '<span class="accel-partial-label">' + escapeHtml(getPartialLabel(partial)) + "</span>";
+      html += '<strong class="accel-partial-value">' + escapeHtml(formatPartialValue(partial, state.settings.speedUnit, true)) + "</strong>";
+      html += "</div>";
+    }
+
+    elements.resultPartialsSection.hidden = false;
+    elements.resultPartialsList.innerHTML = html;
   }
 
   function renderResultGraph(result) {
@@ -2527,7 +2732,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
 
     resultGraphRefreshFrame = window.requestAnimationFrame(function () {
       resultGraphRefreshFrame = 0;
-      renderResultGraph(state.latestResult);
+      renderResultGraph(getDisplayedResult());
     });
   }
 
@@ -2758,7 +2963,8 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     var rawPoint = dataset && Array.isArray(dataset.data) ? dataset.data[activePoint.index] : null;
     if (!rawPoint) return;
 
-    resultGraphSelectionResultId = state.latestResult ? state.latestResult.id : "";
+    var displayedResult = getDisplayedResult();
+    resultGraphSelectionResultId = displayedResult ? displayedResult.id : "";
     resultGraphSelectionPointKey = rawPoint.key || "";
     renderResultGraphDetails(rawPoint);
   }
@@ -2806,6 +3012,19 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
   }
 
   function getCurrentDiagnostics() {
+    var displayedResult = getDisplayedResult();
+    if (displayedResult) {
+      return {
+        averageIntervalMs: displayedResult.averageIntervalMs,
+        jitterMs: displayedResult.jitterMs,
+        sparseCount: displayedResult.sparseCount,
+        staleCount: displayedResult.staleCount,
+        speedSource: displayedResult.speedSource,
+        sampleCount: displayedResult.sampleCount,
+        warningKeys: displayedResult.warningKeys || [],
+      };
+    }
+
     if (state.run && state.run.result) {
       return {
         averageIntervalMs: state.run.result.averageIntervalMs,
@@ -2889,15 +3108,20 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     elements.historyEmptyState.hidden = true;
 
     var html = "";
+    var displayedResult = getDisplayedResult();
     for (var index = 0; index < state.runs.length; index += 1) {
       var run = state.runs[index];
-      html += '<article class="accel-history-item">';
+      var isSelected = Boolean(displayedResult && displayedResult.id === run.id);
+      html += '<article class="accel-history-item" data-selected="' + String(isSelected) + '">';
       html += '<div class="accel-history-copy">';
       html += '<div class="accel-history-main"><strong>' + escapeHtml(getPresetLabel(run)) + "</strong> <span>" + escapeHtml(formatRunSeconds(run.elapsedMs)) + " s</span></div>";
       html += '<div class="accel-history-meta">' + escapeHtml(getQualityLabel(run.qualityGrade)) + " · " + escapeHtml(formatTimestamp(run.savedAtMs)) + "</div>";
       if (run.notes) html += '<div class="accel-history-note">' + escapeHtml(run.notes) + "</div>";
       html += "</div>";
-      html += '<button type="button" class="accel-delete-btn" data-run-id="' + escapeHtml(run.id) + '">' + escapeHtml(t("delete")) + "</button>";
+      html += '<div class="accel-history-actions">';
+      html += '<button type="button" class="accel-action-btn accel-action-btn-compact accel-history-load-btn" data-history-action="load" data-run-id="' + escapeHtml(run.id) + '" aria-pressed="' + String(isSelected) + '">' + escapeHtml(isSelected ? t("accelViewingResult") : t("accelLoadResult")) + "</button>";
+      html += '<button type="button" class="accel-delete-btn" data-history-action="delete" data-run-id="' + escapeHtml(run.id) + '">' + escapeHtml(t("delete")) + "</button>";
+      html += "</div>";
       html += "</article>";
     }
 
@@ -2921,7 +3145,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
   }
 
   function getResultsSummary() {
-    var result = state.latestResult;
+    var result = getDisplayedResult();
     if (!result) {
       return {
         title: t("accelNoSavedRunsShort"),
@@ -2936,7 +3160,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
   }
 
   function getResultsPanelStatusText() {
-    var result = state.latestResult;
+    var result = getDisplayedResult();
     if (!result) return t("accelStorageNote");
     return getPresetLabel(result) + " · " + formatTimestamp(result.savedAtMs);
   }
@@ -3076,34 +3300,41 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     return t(partial.labelKey);
   }
 
-  function formatPartialValue(partial, run) {
+  function formatPartialValue(partial, speedUnit, runCompleted) {
     if (!partial) return t("accelUnavailable");
-    var runCompleted = Boolean(run && run.stage === "completed");
+    var activeSpeedUnit = speedUnit || state.settings.speedUnit;
     if (!isFiniteNumber(partial.elapsedMs)) {
       return runCompleted ? t("accelPartialNotCaptured") : t("accelPartialWaiting");
     }
 
     var elapsedText = formatRunSeconds(partial.elapsedMs) + " s";
     if (!partial.showTrapSpeed || !isFiniteNumber(partial.trapSpeedMs)) return elapsedText;
-    return elapsedText + " @ " + formatSpeedValue(partial.trapSpeedMs, run && run.speedUnit ? run.speedUnit : state.settings.speedUnit);
+    return elapsedText + " @ " + formatSpeedValue(partial.trapSpeedMs, activeSpeedUnit);
   }
 
   function findBestComparableRun(result) {
     var matches = [];
+    var validMatches = [];
+    var comparisonSignature = result && result.comparisonSignature
+      ? result.comparisonSignature
+      : buildComparisonSignature(result);
+
     for (var index = 0; index < state.runs.length; index += 1) {
       var run = state.runs[index];
-      if (run.presetSignature !== result.presetSignature) continue;
-      if (run.qualityGrade === "invalid") continue;
+      var runComparisonSignature = run.comparisonSignature || buildComparisonSignature(run);
+      if (runComparisonSignature !== comparisonSignature) continue;
       matches.push(run);
+      if (run.qualityGrade !== "invalid") validMatches.push(run);
     }
 
-    if (!matches.length) return null;
+    var comparableRuns = validMatches.length ? validMatches : matches;
+    if (!comparableRuns.length) return null;
 
-    matches.sort(function (left, right) {
+    comparableRuns.sort(function (left, right) {
       return left.elapsedMs - right.elapsedMs;
     });
 
-    return matches[0];
+    return comparableRuns[0];
   }
 
   function getDistanceM(latA, lonA, latB, lonB) {

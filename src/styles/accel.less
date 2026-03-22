@@ -72,7 +72,7 @@ body.accel-page{
     min-height: 100dvh;
 }
 
-.accel-page header{
+.accel-app > header{
     background: color-mix(in srgb, var(--bg) 84%, transparent);
 }
 
@@ -839,6 +839,12 @@ body.accel-page{
     font-weight: 700;
 }
 
+.accel-result-partials{
+    display: grid;
+    gap: 6px;
+    padding-top: 2px;
+}
+
 .accel-speedometer-wrap{
     display: block;
 }
@@ -929,7 +935,8 @@ body.accel-page{
 
 .accel-result-footnotes{
     display: grid;
-    gap: 8px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 16px;
     padding-top: 10px;
     border-top: 1px solid color-mix(in srgb, var(--accel-border) 44%, transparent);
 }
@@ -937,6 +944,7 @@ body.accel-page{
 .accel-result-footnote{
     display: grid;
     gap: 4px;
+    align-content: start;
     margin: 0;
 }
 
@@ -944,6 +952,10 @@ body.accel-page{
     font-size: 14px;
     font-weight: 600;
     line-height: 1.4;
+}
+
+#resultNotesRow{
+    grid-column: 1 / -1;
 }
 
 .accel-live-unit{
@@ -1013,6 +1025,7 @@ body.accel-page{
     bottom: max(12px, calc(env(safe-area-inset-bottom) + 12px));
     z-index: 40;
     display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
     gap: 12px;
     width: min(960px, calc(100vw - 32px));
     max-width: none;
@@ -1044,6 +1057,13 @@ body.accel-page{
     align-items: flex-start;
 }
 
+.accel-sheet-results .accel-sheet-top{
+    display: grid;
+    grid-template-columns: minmax(0, 220px) minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 16px;
+}
+
 .accel-sheet-copy{
     min-width: 0;
 }
@@ -1055,10 +1075,40 @@ body.accel-page{
     letter-spacing: -0.03em;
 }
 
+.accel-result-primary-bar{
+    align-items: flex-end;
+    justify-content: flex-start;
+    gap: 6px;
+    width: min(100%, 560px);
+    margin-left: auto;
+    padding: 2px 0 0 18px;
+    border-bottom: 0;
+    border-left: 1px solid color-mix(in srgb, var(--accel-border) 54%, transparent);
+    background: transparent;
+    text-align: right;
+}
+
+.accel-result-primary-bar .accel-result-time{
+    font-size: clamp(34px, 4.8vw, 58px);
+}
+
+.accel-result-primary-bar .accel-result-primary-meta{
+    width: 100%;
+    gap: 8px 14px;
+    padding-top: 10px;
+}
+
+.accel-result-primary-bar .accel-result-primary-item{
+    text-align: right;
+}
+
 .accel-sheet-body{
     display: grid;
     gap: 12px;
+    min-height: 0;
     overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
     padding-right: 4px;
 }
 
@@ -1163,6 +1213,27 @@ body.accel-page{
     min-width: 0;
 }
 
+.accel-history-actions{
+    display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.accel-history-load-btn{
+    min-width: 104px;
+}
+
+.accel-history-load-btn[aria-pressed="true"]{
+    background: var(--btn-active-bg);
+    color: var(--btn-active-fg);
+    border-color: color-mix(in srgb, var(--btn-active-bg) 35%, var(--border));
+}
+
+.accel-history-item[data-selected="true"] .accel-history-main strong{
+    color: var(--accel-accent);
+}
+
 .accel-history-main{
     display: flex;
     flex-wrap: wrap;
@@ -1209,6 +1280,25 @@ button:disabled{
         width: min(760px, calc(100vw - 24px));
     }
 
+    .accel-sheet-results .accel-sheet-top{
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .accel-result-primary-bar{
+        grid-column: 1 / -1;
+        width: 100%;
+        margin-left: 0;
+        padding: 12px 0 0;
+        border-left: 0;
+        border-top: 1px solid color-mix(in srgb, var(--accel-border) 54%, transparent);
+        align-items: flex-start;
+        text-align: left;
+    }
+
+    .accel-result-primary-bar .accel-result-primary-item{
+        text-align: left;
+    }
+
     .accel-sheet-setup .accel-sheet-body,
     .accel-sheet-results .accel-sheet-body{
         grid-template-columns: minmax(0, 1fr);
@@ -1235,6 +1325,10 @@ button:disabled{
 
     .accel-history-item{
         grid-template-columns: minmax(0, 1fr);
+    }
+
+    .accel-history-actions{
+        justify-content: flex-start;
     }
 
     .accel-result-graph-details{
@@ -1349,6 +1443,10 @@ button:disabled{
         grid-template-columns: minmax(0, 1fr);
     }
 
+    .accel-result-footnotes{
+        grid-template-columns: minmax(0, 1fr);
+    }
+
     .accel-history-head{
         display: grid;
         grid-template-columns: minmax(0, 1fr);
@@ -1358,6 +1456,16 @@ button:disabled{
     .accel-history-head > .accel-action-btn{
         width: 100%;
         align-self: stretch;
+    }
+
+    .accel-history-actions{
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .accel-history-actions > .accel-action-btn,
+    .accel-history-actions > .accel-delete-btn{
+        width: 100%;
     }
 }
 

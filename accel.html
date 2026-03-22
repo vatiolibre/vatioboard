@@ -410,6 +410,24 @@
             <h2 id="resultsPanelTitle" class="accel-sheet-title" data-i18n="accelResultsPanel">Results</h2>
             <p id="resultsPanelStatus" class="accel-card-lead">—</p>
           </div>
+          <header id="resultPrimaryHeader" class="accel-result-primary accel-result-primary-bar" hidden>
+            <span class="accel-live-label" data-i18n="accelFinalTime">Final time</span>
+            <strong id="resultElapsedValue" class="accel-result-time">—</strong>
+            <p class="accel-result-primary-meta">
+              <span class="accel-result-primary-item">
+                <span class="accel-metric-label" data-i18n="accelSelectedTest">Selected test</span>
+                <strong id="resultPresetValue" class="accel-metric-value">—</strong>
+              </span>
+              <span class="accel-result-primary-item">
+                <span class="accel-metric-label" data-i18n="accelFinishSpeed">Finish speed</span>
+                <strong id="resultFinishSpeedValue" class="accel-metric-value">—</strong>
+              </span>
+              <span class="accel-result-primary-item">
+                <span class="accel-metric-label" data-i18n="accelQualityGrade">Quality grade</span>
+                <strong id="resultQualityValue" class="accel-metric-value">—</strong>
+              </span>
+            </p>
+          </header>
           <button id="closeResultsPanel" type="button" class="accel-sheet-close" data-i18n="done">Done</button>
         </div>
 
@@ -418,25 +436,6 @@
             <div id="resultEmptyState" class="accel-empty-copy" data-i18n="accelNoResult">Arm and complete a run to see the result here.</div>
 
             <div id="resultContent" hidden>
-              <header class="accel-result-primary">
-                <span class="accel-live-label" data-i18n="accelFinalTime">Final time</span>
-                <strong id="resultElapsedValue" class="accel-result-time">—</strong>
-                <p class="accel-result-primary-meta">
-                  <span class="accel-result-primary-item">
-                    <span class="accel-metric-label" data-i18n="accelSelectedTest">Selected test</span>
-                    <strong id="resultPresetValue" class="accel-metric-value">—</strong>
-                  </span>
-                  <span class="accel-result-primary-item">
-                    <span class="accel-metric-label" data-i18n="accelFinishSpeed">Finish speed</span>
-                    <strong id="resultFinishSpeedValue" class="accel-metric-value">—</strong>
-                  </span>
-                  <span class="accel-result-primary-item">
-                    <span class="accel-metric-label" data-i18n="accelQualityGrade">Quality grade</span>
-                    <strong id="resultQualityValue" class="accel-metric-value">—</strong>
-                  </span>
-                </p>
-              </header>
-
               <section class="accel-result-graph-shell">
                 <header class="accel-result-graph-head">
                   <span class="accel-section-title" data-i18n="accelSpeedGraph">Speed graph</span>
@@ -484,6 +483,11 @@
                 </div>
               </section>
 
+              <section id="resultPartialsSection" class="accel-result-partials" hidden>
+                <span class="accel-section-title" data-i18n="accelPartials">Partials</span>
+                <div id="resultPartialsList" class="accel-partials-list"></div>
+              </section>
+
               <div class="accel-result-grid">
                 <div class="accel-metric">
                   <span class="accel-metric-label" data-i18n="accelRolloutUsed">Rollout</span>
@@ -511,6 +515,10 @@
                 <p class="accel-result-footnote">
                   <span class="accel-metric-label" data-i18n="accelBestComparison">Best vs latest</span>
                   <strong id="resultComparisonValue" class="accel-metric-value accel-metric-wrap">—</strong>
+                </p>
+                <p id="resultNotesRow" class="accel-result-footnote" hidden>
+                  <span class="accel-metric-label" data-i18n="accelNotes">Run notes</span>
+                  <strong id="resultNotesValue" class="accel-metric-value accel-metric-wrap">—</strong>
                 </p>
                 <p class="accel-result-footnote">
                   <span class="accel-metric-label" data-i18n="accelTimestamp">Timestamp</span>
