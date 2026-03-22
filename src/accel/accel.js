@@ -1,4 +1,5 @@
 import "../styles/accel.less";
+import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
 
 (function () {
   var LANG_KEY = "vatio_board_lang";
@@ -454,8 +455,13 @@ import "../styles/accel.less";
     runNotes: document.getElementById("runNotes"),
     actionNotice: document.getElementById("actionNotice"),
     liveElapsedValue: document.getElementById("liveElapsedValue"),
+    liveSpeedGaugeStage: document.getElementById("liveSpeedGaugeStage"),
+    liveSpeedGaugeInner: document.getElementById("liveSpeedGaugeInner"),
+    liveSpeedDial: document.getElementById("liveSpeedDial"),
+    liveSpeedNeedle: document.getElementById("liveSpeedNeedle"),
     liveSpeedValue: document.getElementById("liveSpeedValue"),
     liveSpeedUnit: document.getElementById("liveSpeedUnit"),
+    liveSpeedSubstatus: document.getElementById("liveSpeedSubstatus"),
     liveDistanceValue: document.getElementById("liveDistanceValue"),
     liveTargetValue: document.getElementById("liveTargetValue"),
     liveStateValue: document.getElementById("liveStateValue"),
@@ -484,6 +490,17 @@ import "../styles/accel.less";
     historyEmptyState: document.getElementById("historyEmptyState"),
     historyList: document.getElementById("historyList"),
   };
+
+  var liveSpeedometer = createAnalogSpeedometer({
+    stageElement: elements.liveSpeedGaugeStage,
+    stageInnerElement: elements.liveSpeedGaugeInner,
+    dialCanvas: elements.liveSpeedDial,
+    needleCanvas: elements.liveSpeedNeedle,
+    valueElement: elements.liveSpeedValue,
+    unitElement: elements.liveSpeedUnit,
+    substatusElement: elements.liveSpeedSubstatus,
+    styleSourceElement: elements.liveSpeedGaugeStage,
+  });
 
   var defaultSettings = {
     selectedPresetId: "0-60-mph",
@@ -1819,10 +1836,35 @@ import "../styles/accel.less";
     document.body.classList.toggle("accel-sheet-open", setupOpen || resultsOpen);
   }
 
+  function renderLiveSpeedometer(preset, liveState) {
+    var speedUnit = state.settings.speedUnit;
+    var gaugeStep = speedUnit === "kmh" ? 20 : 10;
+    var baseGaugeMax = speedUnit === "kmh" ? 140 : 80;
+    var currentSpeedMs = state.latestSample ? state.latestSample.speedMs : null;
+    var currentDisplay = Math.max(0, isFiniteNumber(currentSpeedMs) ? msToSpeedUnit(currentSpeedMs, speedUnit) : 0);
+    var markerValue = preset && preset.type === "speed" && isFiniteNumber(preset.targetSpeedMs)
+      ? msToSpeedUnit(preset.targetSpeedMs, speedUnit)
+      : null;
+    var peakDisplay = Math.max(baseGaugeMax, currentDisplay, markerValue || 0);
+
+    if (state.run && state.run.result && isFiniteNumber(state.run.result.trapSpeedMs)) {
+      peakDisplay = Math.max(peakDisplay, msToSpeedUnit(state.run.result.trapSpeedMs, speedUnit));
+    }
+
+    liveSpeedometer.render({
+      value: currentDisplay,
+      valueText: formatLiveSpeedNumber(currentSpeedMs, speedUnit),
+      unitText: getSpeedUnitLabel(speedUnit),
+      substatusText: liveState,
+      maxValue: Math.max(baseGaugeMax, Math.ceil(peakDisplay / gaugeStep) * gaugeStep),
+      tickStep: gaugeStep,
+      markerValue: markerValue,
+    });
+  }
+
   function renderLivePanel() {
     var run = state.run;
     var displayPreset = run ? run.preset : getSelectedPreset();
-    var speedUnit = state.settings.speedUnit;
     var liveState = getRunStateLabel();
     var liveQuality = run && run.result
       ? { grade: run.result.qualityGrade }
@@ -1830,9 +1872,8 @@ import "../styles/accel.less";
 
     elements.liveStateValue.textContent = liveState;
     elements.liveQualityValue.textContent = liveQuality ? getQualityLabel(liveQuality.grade) : t("accelUnavailable");
-    elements.liveSpeedUnit.textContent = getSpeedUnitLabel(speedUnit);
-    elements.liveSpeedValue.textContent = formatLiveSpeedNumber(state.latestSample ? state.latestSample.speedMs : null, speedUnit);
     elements.liveTargetValue.textContent = getPresetLabel(displayPreset);
+    renderLiveSpeedometer(displayPreset, liveState);
 
     if (run && run.stage === "completed" && run.result) {
       elements.liveElapsedValue.textContent = formatRunSeconds(run.result.elapsedMs);

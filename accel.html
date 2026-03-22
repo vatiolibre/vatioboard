@@ -163,10 +163,21 @@
                 <span class="accel-live-unit">s</span>
               </div>
 
-              <div class="accel-live-speed-wrap">
-                <span class="accel-live-label" data-i18n="accelCurrentSpeed">Current speed</span>
-                <strong id="liveSpeedValue" class="accel-live-speed">0</strong>
-                <span id="liveSpeedUnit" class="accel-live-unit">mph</span>
+              <div class="accel-speedometer-wrap">
+                <div id="liveSpeedGaugeStage" class="analog-speedometer-stage accel-speedometer-stage">
+                  <div id="liveSpeedGaugeInner" class="analog-speedometer-inner">
+                    <canvas id="liveSpeedDial" class="analog-speedometer-canvas analog-speedometer-dial" aria-hidden="true"></canvas>
+                    <div class="analog-speedometer-overlay">
+                      <span class="analog-speedometer-kicker" data-i18n="accelCurrentSpeed">Current speed</span>
+                      <div class="analog-speedometer-reading">
+                        <span id="liveSpeedValue" class="analog-speedometer-value">0</span>
+                        <span id="liveSpeedUnit" class="analog-speedometer-unit">mph</span>
+                      </div>
+                      <p id="liveSpeedSubstatus" class="analog-speedometer-substatus">Idle</p>
+                    </div>
+                    <canvas id="liveSpeedNeedle" class="analog-speedometer-canvas analog-speedometer-needle" aria-label="Analog speedometer"></canvas>
+                  </div>
+                </div>
               </div>
             </div>
 

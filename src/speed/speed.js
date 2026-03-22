@@ -4,6 +4,7 @@ import maplibregl from "maplibre-gl";
 import KDBush from "kdbush";
 import { around as geoAround, distance as geoDistanceKm } from "geokdbush";
 import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
+import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
 
 applyTranslations();
 
@@ -198,8 +199,17 @@ function createSilentLoopAudioUrl() {
   return URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
 }
 
-const dialContext = elements.dialCanvas.getContext("2d");
-const needleContext = elements.needleCanvas.getContext("2d");
+const analogSpeedometer = createAnalogSpeedometer({
+  stageElement: elements.gaugeStage,
+  stageInnerElement: elements.gaugeStageInner,
+  dialCanvas: elements.dialCanvas,
+  needleCanvas: elements.needleCanvas,
+  valueElement: elements.speedValue,
+  unitElement: elements.speedUnit,
+  substatusElement: elements.subStatus,
+  resizeTarget: elements.speedPrimaryStage,
+  styleSourceElement: elements.gaugeStage,
+});
 const overspeedAudio = new Audio(OVERSPEED_SOUND_URL);
 overspeedAudio.loop = true;
 overspeedAudio.preload = "auto";
@@ -3523,49 +3533,17 @@ function handlePositionError(error) {
 }
 
 function resizeCanvas() {
-  syncGaugeStageSize();
-  const rect = elements.dialCanvas.getBoundingClientRect();
-  const size = Math.max(1, Math.floor(Math.min(rect.width, rect.height)));
-  const dpr = window.devicePixelRatio || 1;
-
-  if (size === state.canvasSize && elements.dialCanvas.width === Math.floor(size * dpr)) {
-    resizeGlobe();
-    return;
-  }
-
-  state.canvasSize = size;
-  for (const canvas of [elements.dialCanvas, elements.needleCanvas]) {
-    canvas.width = Math.floor(size * dpr);
-    canvas.height = Math.floor(size * dpr);
-  }
-  dialContext.setTransform(dpr, 0, 0, dpr, 0, 0);
-  needleContext.setTransform(dpr, 0, 0, dpr, 0, 0);
-  drawGauge();
+  analogSpeedometer.resize();
   resizeGlobe();
 }
 
-function syncGaugeStageSize() {
-  if (!elements.gaugeStage || !elements.gaugeStageInner) return;
-
-  const rect = elements.gaugeStage.getBoundingClientRect();
-  const size = Math.max(1, Math.floor(Math.min(rect.width, rect.height)));
-  if (size === state.gaugeStageSize) return;
-
-  state.gaugeStageSize = size;
-  elements.gaugeStageInner.style.setProperty("--speed-gauge-stage-size", `${size}px`);
-}
-
 function initGaugeLayoutObserver() {
-  if (!elements.speedPrimaryStage || typeof ResizeObserver !== "function") return;
-
-  state.gaugeResizeObserver = new ResizeObserver(() => {
-    resizeCanvas();
-  });
-  state.gaugeResizeObserver.observe(elements.speedPrimaryStage);
+  // Shared component owns its own resize observer.
 }
 
 function getCssColor(name, fallback) {
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const styleTarget = elements.gaugeStage || document.documentElement;
+  const value = getComputedStyle(styleTarget).getPropertyValue(name).trim();
   return value || fallback;
 }
 
@@ -3576,17 +3554,10 @@ function getGaugeMaximum(displaySpeed) {
 }
 
 function drawGauge() {
-  if (state.canvasSize === 0) return;
-
   const alertState = getAlertUiState();
-  const size = state.canvasSize;
-  const center = size / 2;
-  const radius = size * 0.42;
-  const ringRadius = radius * 0.84;
-  const startAngle = Math.PI * 0.75;
-  const endAngle = Math.PI * 2.25;
-  const angleRange = endAngle - startAngle;
   const displaySpeed = convertSpeed(state.displayedSpeedMs);
+  const currentSpeed = Math.round(convertSpeed(state.currentSpeedMs));
+  const unitLabel = UNIT_CONFIG[state.unit].label;
   const gaugeMax = getGaugeMaximum(
     Math.max(
       displaySpeed,
@@ -3595,9 +3566,6 @@ function drawGauge() {
     ),
   );
 
-  const bgColor = getCssColor("--speed-surface", "rgba(255,255,255,0.7)");
-  const mutedColor = getCssColor("--speed-tick", "rgba(17,24,39,0.4)");
-  const trackColor = getCssColor("--speed-track", "rgba(17,24,39,0.12)");
   const trapAccentColor = getCssColor("--speed-trap", "#f59e0b");
   const accentColor = alertState.over
     ? getCssColor("--speed-alert", "#ef4444")
@@ -3605,170 +3573,18 @@ function drawGauge() {
   const alertMarkerColor = alertState.source === "trap"
     ? trapAccentColor
     : getCssColor("--speed-alert-marker", "#ff7a5c");
-  const needleBaseColor = getCssColor("--speed-needle-base", "#8f1622");
-  const needleTipColor = getCssColor("--speed-needle-tip", "#ff5a36");
-  const pivotOuterColor = getCssColor("--speed-pivot-outer", "#202633");
-  const pivotInnerColor = getCssColor("--speed-pivot-inner", accentColor);
-  const dialCoreColor = getCssColor("--speed-dial-core", "#ffffff");
-  const dialMidColor = getCssColor("--speed-dial-mid", bgColor);
-  const dialEdgeColor = getCssColor("--speed-dial-edge", "#e7f0fb");
-  const dialRimColor = getCssColor("--speed-dial-rim", trackColor);
-  const dialHighlightColor = getCssColor("--speed-dial-highlight", "rgba(255,255,255,0.92)");
-
-  dialContext.clearRect(0, 0, size, size);
-  needleContext.clearRect(0, 0, size, size);
-
-  const backdrop = dialContext.createRadialGradient(
-    center,
-    center,
-    radius * 0.06,
-    center,
-    center,
-    radius,
-  );
-  backdrop.addColorStop(0, dialCoreColor);
-  backdrop.addColorStop(0.62, dialMidColor);
-  backdrop.addColorStop(1, dialEdgeColor);
-  dialContext.fillStyle = backdrop;
-  dialContext.beginPath();
-  dialContext.arc(center, center, radius, 0, Math.PI * 2);
-  dialContext.fill();
-
-  const gloss = dialContext.createRadialGradient(
-    center,
-    center,
-    radius * 0.14,
-    center,
-    center,
-    radius * 0.92,
-  );
-  gloss.addColorStop(0, dialHighlightColor);
-  gloss.addColorStop(0.28, "rgba(255, 255, 255, 0.18)");
-  gloss.addColorStop(0.64, "rgba(255, 255, 255, 0.05)");
-  gloss.addColorStop(1, "transparent");
-  dialContext.fillStyle = gloss;
-  dialContext.beginPath();
-  dialContext.arc(center, center, radius, 0, Math.PI * 2);
-  dialContext.fill();
-
-  dialContext.strokeStyle = dialRimColor;
-  dialContext.lineWidth = Math.max(2, size * 0.004);
-  dialContext.beginPath();
-  dialContext.arc(center, center, radius - dialContext.lineWidth, 0, Math.PI * 2);
-  dialContext.stroke();
-
-  dialContext.strokeStyle = trackColor;
-  dialContext.lineWidth = Math.max(8, size * 0.03);
-  dialContext.beginPath();
-  dialContext.arc(center, center, ringRadius, startAngle, endAngle);
-  dialContext.stroke();
-
-  const progress = Math.min(displaySpeed / gaugeMax, 1);
-
-  if (alertState.enabled) {
-    const alertAngle = startAngle + Math.min(alertState.limitDisplayValue / gaugeMax, 1) * angleRange;
-    const markerInnerRadius = ringRadius - Math.max(16, size * 0.032);
-    const markerOuterRadius = ringRadius + Math.max(10, size * 0.02);
-
-    dialContext.strokeStyle = alertMarkerColor;
-    dialContext.lineWidth = Math.max(4, size * 0.007);
-    dialContext.lineCap = "round";
-    dialContext.beginPath();
-    dialContext.moveTo(
-      center + markerInnerRadius * Math.cos(alertAngle),
-      center + markerInnerRadius * Math.sin(alertAngle),
-    );
-    dialContext.lineTo(
-      center + markerOuterRadius * Math.cos(alertAngle),
-      center + markerOuterRadius * Math.sin(alertAngle),
-    );
-    dialContext.stroke();
-    dialContext.lineCap = "butt";
-  }
-
-  dialContext.strokeStyle = accentColor;
-  dialContext.lineCap = "round";
-  dialContext.beginPath();
-  dialContext.arc(center, center, ringRadius, startAngle, startAngle + progress * angleRange);
-  dialContext.stroke();
-  dialContext.lineCap = "butt";
-
-  const tickCount = gaugeMax / UNIT_CONFIG[state.unit].tickStep;
-  const fontSize = Math.max(13, size * 0.024);
-
-  dialContext.fillStyle = mutedColor;
-  dialContext.strokeStyle = mutedColor;
-  dialContext.font = `700 ${fontSize}px system-ui`;
-  dialContext.textAlign = "center";
-  dialContext.textBaseline = "middle";
-
-  for (let index = 0; index <= tickCount; index += 1) {
-    const tickValue = index * UNIT_CONFIG[state.unit].tickStep;
-    const tickAngle = startAngle + (tickValue / gaugeMax) * angleRange;
-    const innerRadius = radius * 0.78;
-    const outerRadius = radius * 0.9;
-    const labelRadius = radius * 0.64;
-
-    dialContext.lineWidth = index % 2 === 0 ? 3 : 2;
-    dialContext.beginPath();
-    dialContext.moveTo(
-      center + innerRadius * Math.cos(tickAngle),
-      center + innerRadius * Math.sin(tickAngle),
-    );
-    dialContext.lineTo(
-      center + outerRadius * Math.cos(tickAngle),
-      center + outerRadius * Math.sin(tickAngle),
-    );
-    dialContext.stroke();
-
-    dialContext.fillText(
-      String(tickValue),
-      center + labelRadius * Math.cos(tickAngle),
-      center + labelRadius * Math.sin(tickAngle),
-    );
-  }
-
-  const needleLength = radius * 0.86;
-  const needleBack = radius * 0.16;
-  const needleTailWidth = Math.max(6, size * 0.012);
-  const needleTipWidth = Math.max(2.5, size * 0.0048);
-  // The needle shape is authored pointing straight up (-Y), while the gauge
-  // angles are expressed in canvas space from +X. Align the long end of the
-  // needle with the gauge angle instead of the short counterweight.
-  const needleAngle = startAngle + progress * angleRange + Math.PI / 2;
-
-  needleContext.save();
-  needleContext.translate(center, center);
-  needleContext.rotate(needleAngle);
-  const needleGradient = needleContext.createLinearGradient(0, needleBack, 0, -needleLength);
-  needleGradient.addColorStop(0, needleBaseColor);
-  needleGradient.addColorStop(1, needleTipColor);
-  needleContext.shadowColor = "rgba(0, 0, 0, 0.24)";
-  needleContext.shadowBlur = Math.max(8, size * 0.016);
-  needleContext.shadowOffsetY = 2;
-  needleContext.fillStyle = needleGradient;
-  needleContext.beginPath();
-  needleContext.moveTo(-needleTailWidth, needleBack);
-  needleContext.lineTo(-needleTipWidth, -needleLength);
-  needleContext.lineTo(needleTipWidth, -needleLength);
-  needleContext.lineTo(needleTailWidth, needleBack);
-  needleContext.closePath();
-  needleContext.fill();
-
-  needleContext.shadowColor = "transparent";
-  needleContext.fillStyle = "rgba(255, 255, 255, 0.32)";
-  needleContext.fillRect(-needleTipWidth * 0.4, -needleLength * 0.92, needleTipWidth * 0.8, needleLength * 0.95);
-  needleContext.restore();
-
-  needleContext.fillStyle = pivotOuterColor;
-  needleContext.beginPath();
-  needleContext.arc(center, center, Math.max(10, size * 0.018), 0, Math.PI * 2);
-  needleContext.fill();
-
-  needleContext.fillStyle = pivotInnerColor;
-  needleContext.beginPath();
-  needleContext.arc(center, center, Math.max(4, size * 0.008), 0, Math.PI * 2);
-  needleContext.fill();
+  analogSpeedometer.render({
+    value: displaySpeed,
+    valueText: String(currentSpeed),
+    unitText: unitLabel,
+    substatusText: getSubStatusText(),
+    maxValue: gaugeMax,
+    tickStep: UNIT_CONFIG[state.unit].tickStep,
+    markerValue: alertState.enabled ? alertState.limitDisplayValue : null,
+    accentColor,
+    markerColor: alertMarkerColor,
+    pivotInnerColor: accentColor,
+  });
 }
 
 function renderMetrics() {

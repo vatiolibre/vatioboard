@@ -667,12 +667,12 @@ body.accel-page{
 
 .accel-live-primary{
     display: grid;
-    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
-    gap: 10px;
+    grid-template-columns: minmax(0, 0.74fr) minmax(0, 1.26fr);
+    gap: 16px;
+    align-items: center;
 }
 
 .accel-live-timer-wrap,
-.accel-live-speed-wrap,
 .accel-result-primary{
     display: flex;
     flex-direction: column;
@@ -687,8 +687,33 @@ body.accel-page{
     background: none;
 }
 
+.accel-speedometer-wrap{
+    display: grid;
+    align-items: center;
+}
+
+.accel-speedometer-stage{
+    width: min(100%, 420px);
+    margin-inline: auto;
+    --speed-accent: var(--accel-accent);
+    --speed-alert-marker: var(--accel-highlight);
+    --speed-surface: color-mix(in srgb, var(--accel-surface-strong) 98%, transparent);
+    --speed-tick: color-mix(in srgb, var(--accel-muted) 88%, transparent);
+    --speed-track: color-mix(in srgb, var(--accel-border) 72%, transparent);
+    --speed-dial-core: color-mix(in srgb, var(--accel-surface-strong) 100%, transparent);
+    --speed-dial-mid: color-mix(in srgb, var(--accel-surface-strong) 96%, var(--accel-surface));
+    --speed-dial-edge: color-mix(in srgb, var(--accel-panel-soft) 60%, var(--accel-surface-strong));
+    --speed-dial-rim: color-mix(in srgb, var(--accel-border) 78%, transparent);
+    --speed-dial-highlight: rgba(255, 255, 255, 0.88);
+    --speed-gauge-glow: color-mix(in srgb, var(--accel-accent-soft) 72%, transparent);
+    --speed-gauge-glow-edge: rgba(255, 255, 255, 0.2);
+}
+
+.accel-speedometer-stage .analog-speedometer-substatus{
+    min-height: 2.7em;
+}
+
 .accel-live-timer,
-.accel-live-speed,
 .accel-result-time{
     font-variant-numeric: tabular-nums;
     font-size: clamp(48px, 7vw, 88px);
@@ -943,12 +968,15 @@ button:disabled{
 @media (max-width: 780px){
     .accel-status-strip,
     .accel-action-grid,
-    .accel-live-primary,
     .accel-live-grid,
     .accel-result-grid,
     .accel-status-grid,
     .accel-metrics-grid{
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .accel-live-primary{
+        grid-template-columns: minmax(0, 1fr);
     }
 
     .accel-custom-grid{
@@ -994,9 +1022,12 @@ button:disabled{
     }
 
     .accel-live-timer,
-    .accel-live-speed,
     .accel-result-time{
         font-size: 34px;
+    }
+
+    .accel-speedometer-stage{
+        width: min(100%, 340px);
     }
 
     .accel-sheet{
@@ -1014,7 +1045,6 @@ button:disabled{
 @media (max-width: 520px){
     .accel-trigger-stack,
     .accel-action-grid,
-    .accel-live-primary,
     .accel-segmented,
     .accel-status-strip,
     .accel-live-grid,
@@ -1040,13 +1070,11 @@ button:disabled{
     }
 
     .accel-live-timer-wrap,
-    .accel-live-speed-wrap,
     .accel-result-primary{
         padding-bottom: 10px;
     }
 
     .accel-live-timer,
-    .accel-live-speed,
     .accel-result-time{
         font-size: clamp(28px, 4vw, 42px);
     }

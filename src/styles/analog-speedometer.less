@@ -1,0 +1,123 @@
+.analog-speedometer-stage{
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    isolation: isolate;
+    --analog-speedometer-accent: var(--speed-accent, var(--accel-accent, #10b981));
+    --analog-speedometer-marker: var(--speed-alert-marker, var(--accel-highlight, #f59e0b));
+    --analog-speedometer-surface: var(--speed-surface, var(--accel-surface-strong, rgba(255, 255, 255, 0.98)));
+    --analog-speedometer-tick: var(--speed-tick, var(--accel-muted, rgba(17, 24, 39, 0.42)));
+    --analog-speedometer-track: var(--speed-track, rgba(17, 24, 39, 0.12));
+    --analog-speedometer-needle-base: var(--speed-needle-base, #8f1622);
+    --analog-speedometer-needle-tip: var(--speed-needle-tip, #ff5a36);
+    --analog-speedometer-pivot-outer: var(--speed-pivot-outer, #202633);
+    --analog-speedometer-pivot-inner: var(--speed-pivot-inner, var(--analog-speedometer-accent));
+    --analog-speedometer-dial-core: var(--speed-dial-core, #ffffff);
+    --analog-speedometer-dial-mid: var(--speed-dial-mid, var(--analog-speedometer-surface));
+    --analog-speedometer-dial-edge: var(--speed-dial-edge, #eceff2);
+    --analog-speedometer-dial-rim: var(--speed-dial-rim, rgba(17, 24, 39, 0.08));
+    --analog-speedometer-dial-highlight: var(--speed-dial-highlight, rgba(255, 255, 255, 0.92));
+    --analog-speedometer-glow: var(--speed-gauge-glow, var(--accel-accent-soft, rgba(16, 185, 129, 0.08)));
+    --analog-speedometer-glow-edge: var(--speed-gauge-glow-edge, rgba(255, 255, 255, 0.2));
+}
+
+.analog-speedometer-inner{
+    position: relative;
+    width: var(--analog-speedometer-size, 100%);
+    height: var(--analog-speedometer-size, 100%);
+    max-width: 100%;
+    max-height: 100%;
+}
+
+.analog-speedometer-inner::before{
+    content: "";
+    position: absolute;
+    width: 86%;
+    height: 86%;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background:
+      radial-gradient(
+        circle at center,
+        color-mix(in srgb, var(--analog-speedometer-glow-edge) 70%, transparent) 0%,
+        var(--analog-speedometer-glow) 34%,
+        transparent 70%
+      );
+    pointer-events: none;
+    z-index: 0;
+}
+
+.analog-speedometer-canvas{
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    pointer-events: none;
+}
+
+.analog-speedometer-dial{
+    z-index: 1;
+}
+
+.analog-speedometer-overlay{
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    padding: 18% 14% 16%;
+    text-align: center;
+}
+
+.analog-speedometer-needle{
+    z-index: 3;
+}
+
+.analog-speedometer-kicker{
+    color: var(--analog-speedometer-tick);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.analog-speedometer-reading{
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.analog-speedometer-value{
+    font-variant-numeric: tabular-nums;
+    font-size: clamp(52px, 9vw, 88px);
+    font-weight: 900;
+    line-height: 0.9;
+    letter-spacing: -0.05em;
+    color: var(--btn-fg, #0f172a);
+}
+
+.analog-speedometer-unit{
+    color: var(--analog-speedometer-tick);
+    font-size: clamp(16px, 2.4vw, 24px);
+    font-weight: 800;
+    line-height: 1;
+    transform: translateY(-0.28em);
+}
+
+.analog-speedometer-substatus{
+    max-width: 18ch;
+    margin: 10px 0 0;
+    color: var(--analog-speedometer-tick);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.35;
+}
