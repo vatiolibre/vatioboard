@@ -42,6 +42,10 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
   var READY_SAMPLE_AGE_MS = 2500;
   var STALE_INTERVAL_MS = 1500;
   var SPARSE_INTERVAL_MS = 1800;
+  var MOVING_SPEED_THRESHOLD_MS = 1;
+  var STATIONARY_SPEED_THRESHOLD_MS = 0.3;
+  var MIN_DISTANCE_NOISE_FLOOR_M = 4;
+  var MAX_ACCURACY_INFLUENCE_M = 18;
   var RECENT_INTERVAL_WINDOW = 12;
   var TIMER_TICK_MS = 50;
   var TRACE_DUPLICATE_EPSILON_MS = 0.01;
@@ -1838,7 +1842,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     var accuracyM = isFiniteNumber(coords.accuracy) ? Math.max(0, coords.accuracy) : null;
     var altitudeM = isFiniteNumber(coords.altitude) ? coords.altitude : null;
     var headingDeg = isFiniteNumber(coords.heading) && coords.heading >= 0 ? coords.heading : null;
-    var rawSpeedMs = isFiniteNumber(coords.speed) && coords.speed >= 0 ? coords.speed : null;
+    var rawSpeedMs = normalizeReportedSpeedMs(coords.speed);
 
     var previousSample = state.latestSample;
     var rawPerfDeltaMs = previousSample ? rawPerfMs - previousSample.rawPerfMs : null;
@@ -1846,17 +1850,9 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     var deltaMs = previousSample ? resolveClockDeltaMs(rawPerfDeltaMs, receivedDeltaMs) : null;
     var perfMs = previousSample && isFiniteNumber(deltaMs) ? previousSample.perfMs + deltaMs : rawPerfMs;
     var segmentDistanceM = previousSample ? getDistanceM(previousSample.latitude, previousSample.longitude, latitude, longitude) : 0;
-    var derivedSpeedMs = null;
-
-    if (rawSpeedMs === null && previousSample && isFiniteNumber(deltaMs) && deltaMs > 0) {
-      derivedSpeedMs = segmentDistanceM / (deltaMs / 1000);
-      var blendedAccuracy = averageFinite(previousSample.accuracyM, accuracyM);
-      var noiseFloor = blendedAccuracy !== null ? clamp(blendedAccuracy * 0.35, 2, 12) : 3;
-      if (segmentDistanceM <= noiseFloor && derivedSpeedMs < 3) derivedSpeedMs = 0;
-      derivedSpeedMs = clamp(derivedSpeedMs, 0, MAX_PLAUSIBLE_SPEED_MS);
-    }
-
-    var speedMs = rawSpeedMs !== null ? rawSpeedMs : (derivedSpeedMs !== null ? derivedSpeedMs : 0);
+    var resolvedSpeed = resolveSampleSpeed(rawSpeedMs, previousSample, deltaMs, segmentDistanceM, accuracyM);
+    var derivedSpeedMs = resolvedSpeed.derivedSpeedMs;
+    var speedMs = resolvedSpeed.speedMs;
     var sample = {
       rawPerfMs: rawPerfMs,
       perfMs: perfMs,
@@ -1867,10 +1863,10 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
       accuracyM: accuracyM,
       altitudeM: altitudeM,
       headingDeg: headingDeg,
-      rawSpeedMs: rawSpeedMs,
+      rawSpeedMs: resolvedSpeed.reportedSpeedMs,
       derivedSpeedMs: derivedSpeedMs,
       speedMs: speedMs,
-      speedSource: rawSpeedMs !== null ? "reported" : "derived",
+      speedSource: resolvedSpeed.speedSource,
       deltaMs: deltaMs,
       segmentDistanceM: segmentDistanceM,
       stale: isFiniteNumber(deltaMs) && deltaMs >= STALE_INTERVAL_MS,
@@ -2297,6 +2293,75 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     if (isFiniteNumber(left)) values.push(left);
     if (isFiniteNumber(right)) values.push(right);
     return values.length ? averageArray(values) : null;
+  }
+
+  function normalizeReportedSpeedMs(value) {
+    if (!isFiniteNumber(value) || value < 0) return null;
+    return clamp(value, 0, MAX_PLAUSIBLE_SPEED_MS);
+  }
+
+  function getMovementThresholdM(currentAccuracyM, previousAccuracyM) {
+    var accuracies = [];
+    if (isFiniteNumber(currentAccuracyM)) accuracies.push(currentAccuracyM);
+    if (isFiniteNumber(previousAccuracyM)) accuracies.push(previousAccuracyM);
+
+    var accuracyFloorM = accuracies.length
+      ? Math.min(Math.max.apply(null, accuracies), MAX_ACCURACY_INFLUENCE_M)
+      : 0;
+
+    return Math.max(MIN_DISTANCE_NOISE_FLOOR_M, accuracyFloorM * 0.5);
+  }
+
+  function buildDerivedSpeedMs(previousSample, deltaMs, segmentDistanceM, accuracyM) {
+    if (!previousSample || !isFiniteNumber(deltaMs) || deltaMs <= 0 || !isFiniteNumber(segmentDistanceM)) return null;
+
+    var derivedSpeedMs = segmentDistanceM / (deltaMs / 1000);
+    if (!isFiniteNumber(derivedSpeedMs) || derivedSpeedMs < 0) return null;
+
+    var movementThresholdM = getMovementThresholdM(accuracyM, previousSample.accuracyM);
+    if (segmentDistanceM <= Math.max(2, movementThresholdM * 0.5) && derivedSpeedMs <= STATIONARY_SPEED_THRESHOLD_MS) {
+      derivedSpeedMs = 0;
+    }
+
+    return clamp(derivedSpeedMs, 0, MAX_PLAUSIBLE_SPEED_MS);
+  }
+
+  function resolveSampleSpeed(rawSpeedMs, previousSample, deltaMs, segmentDistanceM, accuracyM) {
+    var reportedSpeedMs = normalizeReportedSpeedMs(rawSpeedMs);
+    var derivedSpeedMs = buildDerivedSpeedMs(previousSample, deltaMs, segmentDistanceM, accuracyM);
+
+    if (reportedSpeedMs === null) {
+      return {
+        reportedSpeedMs: null,
+        derivedSpeedMs: derivedSpeedMs,
+        speedMs: derivedSpeedMs !== null ? derivedSpeedMs : 0,
+        speedSource: "derived",
+      };
+    }
+
+    if (derivedSpeedMs !== null) {
+      var movementThresholdM = getMovementThresholdM(accuracyM, previousSample ? previousSample.accuracyM : null);
+      var reportedLooksStationary = reportedSpeedMs <= STATIONARY_SPEED_THRESHOLD_MS;
+      var derivedLooksMoving = segmentDistanceM >= movementThresholdM && derivedSpeedMs >= MOVING_SPEED_THRESHOLD_MS;
+      var derivedClearlyHigher = derivedSpeedMs >= Math.max(MOVING_SPEED_THRESHOLD_MS + 0.5, reportedSpeedMs * 2.5)
+        && (derivedSpeedMs - reportedSpeedMs) >= 1.5;
+
+      if (reportedLooksStationary && derivedLooksMoving && derivedClearlyHigher) {
+        return {
+          reportedSpeedMs: reportedSpeedMs,
+          derivedSpeedMs: derivedSpeedMs,
+          speedMs: derivedSpeedMs,
+          speedSource: "derived",
+        };
+      }
+    }
+
+    return {
+      reportedSpeedMs: reportedSpeedMs,
+      derivedSpeedMs: derivedSpeedMs,
+      speedMs: reportedSpeedMs,
+      speedSource: "reported",
+    };
   }
 
   function interpolateSpeedCrossing(previousSample, currentSample, targetSpeedMs) {
