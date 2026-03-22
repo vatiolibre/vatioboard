@@ -93,9 +93,10 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
 
   var translations = {
     en: {
-      accelPageTitle: "Vatio Accel - Browser Acceleration Timer for Tesla and Mobile",
-      accelPageDescription: "Browser-based acceleration timer using only geolocation and local processing. Built for Tesla browser testing and honest run quality scoring.",
-      accelPageH1: "Vatio Accel browser acceleration timer",
+      accelPageTitle: "Vatio Accel - Free GPS Acceleration Timer for Tesla and Mobile",
+      accelPageDescription: "Free browser-based GPS acceleration timer for 0-60, 60-130, 1/8 mile, 1/4 mile, and 0-100 km/h testing. Built for Tesla and modern mobile browsers with local result history and interactive graphs.",
+      accelPageH1: "Vatio Accel free browser acceleration timer",
+      accelPageLead: "Browser-based GPS acceleration timer for 0-60 mph, 60-130 mph, quarter-mile, and metric acceleration testing in Tesla and mobile browsers.",
       accelTagline: "Browser acceleration timer by Vatio Libre",
       accelRoute: "ACCEL",
       accelToolbar: "Acceleration tools",
@@ -286,9 +287,10 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
       accuracy: "Accuracy",
     },
     es: {
-      accelPageTitle: "Vatio Accel - Temporizador de aceleracion para Tesla y movil",
-      accelPageDescription: "Temporizador de aceleracion basado en navegador usando solo geolocalizacion y procesamiento local. Pensado para pruebas en el navegador de Tesla y con puntuacion honesta de calidad.",
-      accelPageH1: "Vatio Accel temporizador de aceleracion en navegador",
+      accelPageTitle: "Vatio Accel - Temporizador GPS de aceleracion gratis para Tesla y movil",
+      accelPageDescription: "Temporizador GPS de aceleracion gratis en navegador para pruebas de 0-60, 60-130, 1/8 de milla, 1/4 de milla y 0-100 km/h. Pensado para Tesla y navegadores moviles modernos con historial local y graficas interactivas.",
+      accelPageH1: "Vatio Accel temporizador GPS de aceleracion en navegador",
+      accelPageLead: "Temporizador GPS de aceleracion en navegador para pruebas 0-60 mph, 60-130 mph, cuarto de milla y aceleracion metrica en Tesla y moviles.",
       accelTagline: "Temporizador de aceleracion en navegador por Vatio Libre",
       accelRoute: "ACCEL",
       accelToolbar: "Herramientas de aceleracion",
