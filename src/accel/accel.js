@@ -110,6 +110,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       accelNoResult: "Arm and complete a run to see the result here.",
       accelSelectedTest: "Selected test",
       accelFinalTime: "Final time",
+      accelFinishSpeed: "Finish speed",
       accelTrapSpeed: "Trap speed",
       accelRolloutUsed: "Rollout",
       accelAverageAccuracy: "Average accuracy",
@@ -121,6 +122,14 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       accelBestComparison: "Best vs latest",
       accelDiagnostics: "Diagnostics",
       accelDiagnosticsLead: "Observed callback timing, uncertainty, and warning flags.",
+      accelPartials: "Partials",
+      accelPartialWaiting: "Waiting",
+      accelPartialNotCaptured: "Not captured",
+      accelPartial60ft: "60 ft",
+      accelPartial1000ft: "1000 ft",
+      accelPartial100m: "100 m",
+      accelPartial0to130: "0-130 mph",
+      accelPartial0to200Kmh: "0-200 km/h",
       accelAverageInterval: "Average interval",
       accelJitter: "Jitter",
       accelSparseUpdates: "Sparse updates",
@@ -280,6 +289,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       accelNoResult: "Arma y completa una corrida para ver el resultado aqui.",
       accelSelectedTest: "Prueba seleccionada",
       accelFinalTime: "Tiempo final",
+      accelFinishSpeed: "Velocidad final",
       accelTrapSpeed: "Velocidad de trampa",
       accelRolloutUsed: "Rollout",
       accelAverageAccuracy: "Precision promedio",
@@ -291,6 +301,14 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       accelBestComparison: "Mejor vs ultima",
       accelDiagnostics: "Diagnosticos",
       accelDiagnosticsLead: "Tiempos observados de callback, incertidumbre y alertas.",
+      accelPartials: "Parciales",
+      accelPartialWaiting: "Esperando",
+      accelPartialNotCaptured: "Sin captura",
+      accelPartial60ft: "60 pies",
+      accelPartial1000ft: "1000 pies",
+      accelPartial100m: "100 m",
+      accelPartial0to130: "0-130 mph",
+      accelPartial0to200Kmh: "0-200 km/h",
       accelAverageInterval: "Intervalo promedio",
       accelJitter: "Jitter",
       accelSparseUpdates: "Actualizaciones dispersas",
@@ -414,6 +432,33 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     { id: "custom", type: "custom", labelKey: "accelPresetCustom", standingStart: false, variantGroup: "custom" },
   ];
 
+  var distancePartialDefinitions = {
+    ft: [
+      { id: "60-ft", kind: "distance", labelKey: "accelPartial60ft", distanceM: 60 * FT_TO_M, showTrapSpeed: false },
+      { id: "eighth-mile", kind: "distance", labelKey: "accelPresetEighthMile", distanceM: EIGHTH_MILE_M, showTrapSpeed: true },
+      { id: "1000-ft", kind: "distance", labelKey: "accelPartial1000ft", distanceM: 1000 * FT_TO_M, showTrapSpeed: true },
+      { id: "quarter-mile", kind: "distance", labelKey: "accelPresetQuarterMile", distanceM: QUARTER_MILE_M, showTrapSpeed: true },
+    ],
+    m: [
+      { id: "100-m", kind: "distance", labelKey: "accelPartial100m", distanceM: 100, showTrapSpeed: false },
+      { id: "200-m", kind: "distance", labelKey: "accelPreset200M", distanceM: 200, showTrapSpeed: true },
+      { id: "400-m", kind: "distance", labelKey: "accelPreset400M", distanceM: 400, showTrapSpeed: true },
+    ],
+  };
+
+  var speedPartialDefinitions = {
+    mph: [
+      { id: "0-60-mph", kind: "speed", labelKey: "accelPreset0to60", startSpeedMs: 0, targetSpeedMs: 60 * MPH_TO_MS },
+      { id: "60-130-mph", kind: "speed", labelKey: "accelPreset60to130", startSpeedMs: 60 * MPH_TO_MS, targetSpeedMs: 130 * MPH_TO_MS },
+      { id: "0-130-mph", kind: "speed", labelKey: "accelPartial0to130", startSpeedMs: 0, targetSpeedMs: 130 * MPH_TO_MS },
+    ],
+    kmh: [
+      { id: "0-100-kmh", kind: "speed", labelKey: "accelPreset0to100Kmh", startSpeedMs: 0, targetSpeedMs: 100 * KMH_TO_MS },
+      { id: "100-200-kmh", kind: "speed", labelKey: "accelPreset100to200Kmh", startSpeedMs: 100 * KMH_TO_MS, targetSpeedMs: 200 * KMH_TO_MS },
+      { id: "0-200-kmh", kind: "speed", labelKey: "accelPartial0to200Kmh", startSpeedMs: 0, targetSpeedMs: 200 * KMH_TO_MS },
+    ],
+  };
+
   var elements = {
     langToggle: document.getElementById("langToggle"),
     pageDescriptionMeta: document.querySelector('meta[name="description"]'),
@@ -471,13 +516,15 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     liveTargetValue: document.getElementById("liveTargetValue"),
     liveStateValue: document.getElementById("liveStateValue"),
     liveQualityValue: document.getElementById("liveQualityValue"),
+    livePartialsSection: document.getElementById("livePartialsSection"),
+    livePartialsList: document.getElementById("livePartialsList"),
     progressLabel: document.getElementById("progressLabel"),
     progressFill: document.getElementById("progressFill"),
     resultEmptyState: document.getElementById("resultEmptyState"),
     resultContent: document.getElementById("resultContent"),
     resultElapsedValue: document.getElementById("resultElapsedValue"),
     resultPresetValue: document.getElementById("resultPresetValue"),
-    resultTrapSpeedValue: document.getElementById("resultTrapSpeedValue"),
+    resultFinishSpeedValue: document.getElementById("resultFinishSpeedValue"),
     resultRolloutValue: document.getElementById("resultRolloutValue"),
     resultAccuracyValue: document.getElementById("resultAccuracyValue"),
     resultSlopeValue: document.getElementById("resultSlopeValue"),
@@ -847,6 +894,12 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     var presetId = typeof run.presetId === "string" ? run.presetId : "custom";
     var startSpeedMs = isFiniteNumber(run.startSpeedMs) ? run.startSpeedMs : 0;
     var targetSpeedMs = isFiniteNumber(run.targetSpeedMs) ? run.targetSpeedMs : null;
+    var presetKind = typeof run.presetKind === "string" ? run.presetKind : "speed";
+    var finishSpeedMs = isFiniteNumber(run.finishSpeedMs)
+      ? run.finishSpeedMs
+      : (isFiniteNumber(run.trapSpeedMs)
+        ? run.trapSpeedMs
+        : (presetKind === "speed" && isFiniteNumber(targetSpeedMs) ? targetSpeedMs : null));
     var presetSignature = typeof run.presetSignature === "string" ? run.presetSignature : presetId;
 
     if (presetId === "custom" && isFiniteNumber(startSpeedMs) && isFiniteNumber(targetSpeedMs)) {
@@ -858,7 +911,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       savedAtMs: run.savedAtMs,
       presetId: presetId,
       presetSignature: presetSignature,
-      presetKind: typeof run.presetKind === "string" ? run.presetKind : "speed",
+      presetKind: presetKind,
       standingStart: Boolean(run.standingStart),
       customStart: isFiniteNumber(run.customStart) ? run.customStart : null,
       customEnd: isFiniteNumber(run.customEnd) ? run.customEnd : null,
@@ -869,6 +922,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       displayUnit: run.displayUnit === "kmh" ? "kmh" : "mph",
       distanceDisplay: run.distanceDisplay === "m" ? "m" : "ft",
       elapsedMs: run.elapsedMs,
+      finishSpeedMs: finishSpeedMs,
       trapSpeedMs: isFiniteNumber(run.trapSpeedMs) ? run.trapSpeedMs : null,
       rolloutApplied: Boolean(run.rolloutApplied),
       averageAccuracyM: isFiniteNumber(run.averageAccuracyM) ? run.averageAccuracyM : null,
@@ -1056,6 +1110,70 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     if (presetOrRun.id === "custom" || presetOrRun.presetId === "custom") return t("accelCustomRange");
     if (presetOrRun.type === "distance" || presetOrRun.presetKind === "distance") return t("accelDistanceTest");
     return presetOrRun.standingStart ? t("accelStandingStart") : t("accelRollingStart");
+  }
+
+  function buildRunPartials(preset) {
+    var partials = [];
+    var speedUnit = normalizeSpeedUnit(state.settings.speedUnit);
+    var distanceUnit = normalizeDistanceUnit(state.settings.distanceUnit);
+    var minimumStartSpeedMs = preset && !preset.standingStart && isFiniteNumber(preset.startSpeedMs) ? preset.startSpeedMs : 0;
+    var distanceDefinitions = distancePartialDefinitions[distanceUnit] || [];
+    var speedDefinitions = speedPartialDefinitions[speedUnit] || [];
+
+    if (shouldIncludeDistancePartials(preset, speedUnit)) {
+      for (var distanceIndex = 0; distanceIndex < distanceDefinitions.length; distanceIndex += 1) {
+        var distanceDefinition = distanceDefinitions[distanceIndex];
+        if (preset.type === "distance" && isFiniteNumber(preset.distanceTargetM) && distanceDefinition.distanceM > (preset.distanceTargetM + 0.01)) {
+          continue;
+        }
+        partials.push(createDistancePartial(distanceDefinition));
+      }
+    }
+
+    for (var speedIndex = 0; speedIndex < speedDefinitions.length; speedIndex += 1) {
+      var speedDefinition = speedDefinitions[speedIndex];
+      if (speedDefinition.startSpeedMs + 0.01 < minimumStartSpeedMs) continue;
+      if (preset.type === "speed" && isFiniteNumber(preset.targetSpeedMs) && speedDefinition.targetSpeedMs > (preset.targetSpeedMs + 0.01)) continue;
+      partials.push(createSpeedPartial(speedDefinition));
+    }
+
+    return partials;
+  }
+
+  function shouldIncludeDistancePartials(preset, speedUnit) {
+    if (!preset) return false;
+    if (preset.type === "distance") return true;
+    if (!preset.standingStart) return false;
+    if (!isFiniteNumber(preset.targetSpeedMs)) return false;
+    return preset.targetSpeedMs >= getLongRunSpeedThreshold(speedUnit);
+  }
+
+  function getLongRunSpeedThreshold(speedUnit) {
+    return normalizeSpeedUnit(speedUnit) === "kmh" ? (200 * KMH_TO_MS) : (130 * MPH_TO_MS);
+  }
+
+  function createDistancePartial(definition) {
+    return {
+      id: definition.id,
+      kind: "distance",
+      labelKey: definition.labelKey,
+      distanceM: definition.distanceM,
+      showTrapSpeed: Boolean(definition.showTrapSpeed),
+      elapsedMs: null,
+      trapSpeedMs: null,
+    };
+  }
+
+  function createSpeedPartial(definition) {
+    return {
+      id: definition.id,
+      kind: "speed",
+      labelKey: definition.labelKey,
+      startSpeedMs: definition.startSpeedMs,
+      targetSpeedMs: definition.targetSpeedMs,
+      startCrossPerfMs: null,
+      elapsedMs: null,
+    };
   }
 
   function presetKeyFromId(presetId) {
@@ -1283,9 +1401,12 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       stage: "armed",
       createdAtMs: Date.now(),
       armedAtPerfMs: performance.now(),
+      speedUnit: state.settings.speedUnit,
+      distanceUnit: state.settings.distanceUnit,
       launchThresholdMs: state.settings.launchThresholdMs,
       rolloutApplied: Boolean(state.settings.rolloutEnabled && preset.standingStart),
       rolloutDistanceM: state.settings.rolloutEnabled && preset.standingStart ? FT_TO_M : 0,
+      partials: buildRunPartials(preset),
       sampleCount: 0,
       intervalValues: [],
       accuracyValues: [],
@@ -1499,6 +1620,11 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       run.startAltitudeM = sample.altitudeM;
     }
 
+    if (run.startPerfMs !== null) {
+      seedRunPartialStarts(run);
+      updateRunPartials(run, previousSample, sample);
+    }
+
     if (run.startPerfMs !== null && run.finishPerfMs === null) {
       if (run.preset.type === "speed") {
         var targetCross = interpolateSpeedCrossing(previousSample, sample, run.preset.targetSpeedMs);
@@ -1585,6 +1711,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       displayUnit: state.settings.speedUnit,
       distanceDisplay: state.settings.distanceUnit,
       elapsedMs: run.finishPerfMs - run.startPerfMs,
+      finishSpeedMs: run.finishSpeedMs,
       trapSpeedMs: run.preset.type === "distance" ? run.finishSpeedMs : null,
       rolloutApplied: run.rolloutApplied,
       averageAccuracyM: averageAccuracyM,
@@ -1807,6 +1934,60 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     return null;
   }
 
+  function seedRunPartialStarts(run) {
+    if (!run || run.startPerfMs === null || !run.partials || !run.partials.length) return;
+
+    var runStartSpeedMs = run.preset && isFiniteNumber(run.preset.startSpeedMs) ? run.preset.startSpeedMs : 0;
+    for (var index = 0; index < run.partials.length; index += 1) {
+      var partial = run.partials[index];
+      if (partial.kind !== "speed" || partial.startCrossPerfMs !== null) continue;
+      if (partial.startSpeedMs <= (runStartSpeedMs + 0.01)) partial.startCrossPerfMs = run.startPerfMs;
+    }
+  }
+
+  function updateRunPartials(run, previousSample, sample) {
+    if (!run || !run.partials || !run.partials.length) return;
+    if (!previousSample || !sample || run.startPerfMs === null || run.startDistanceM === null) return;
+
+    var previousSpeed = previousSample.speedMs;
+    var currentSpeed = sample.speedMs;
+    var previousDistanceFromStartM = Math.max(0, run.prevDistanceSinceArmM - run.startDistanceM);
+    var currentDistanceFromStartM = Math.max(0, run.distanceSinceArmM - run.startDistanceM);
+
+    for (var index = 0; index < run.partials.length; index += 1) {
+      var partial = run.partials[index];
+      if (partial.elapsedMs !== null) continue;
+
+      if (partial.kind === "distance") {
+        var distanceCross = interpolateRangeCrossing(
+          previousDistanceFromStartM,
+          currentDistanceFromStartM,
+          partial.distanceM,
+          previousSample.perfMs,
+          sample.perfMs
+        );
+
+        if (!distanceCross) continue;
+        partial.elapsedMs = distanceCross.perfMs - run.startPerfMs;
+        partial.trapSpeedMs = interpolateValue(previousSpeed, currentSpeed, distanceCross.ratio);
+        continue;
+      }
+
+      if (partial.startCrossPerfMs === null) {
+        var partialStartCross = interpolateSpeedCrossing(previousSample, sample, partial.startSpeedMs);
+        if (partialStartCross && partialStartCross.perfMs >= run.startPerfMs) {
+          partial.startCrossPerfMs = partialStartCross.perfMs;
+        }
+      }
+
+      if (partial.startCrossPerfMs === null) continue;
+
+      var partialTargetCross = interpolateSpeedCrossing(previousSample, sample, partial.targetSpeedMs);
+      if (!partialTargetCross || partialTargetCross.perfMs < partial.startCrossPerfMs) continue;
+      partial.elapsedMs = partialTargetCross.perfMs - partial.startCrossPerfMs;
+    }
+  }
+
   function renderAll() {
     renderControlSelections();
     renderControlState();
@@ -1891,7 +2072,9 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       : null;
     var peakDisplay = Math.max(baseGaugeMax, currentDisplay, markerValue || 0);
 
-    if (state.run && state.run.result && isFiniteNumber(state.run.result.trapSpeedMs)) {
+    if (state.run && state.run.result && isFiniteNumber(state.run.result.finishSpeedMs)) {
+      peakDisplay = Math.max(peakDisplay, msToSpeedUnit(state.run.result.finishSpeedMs, speedUnit));
+    } else if (state.run && state.run.result && isFiniteNumber(state.run.result.trapSpeedMs)) {
       peakDisplay = Math.max(peakDisplay, msToSpeedUnit(state.run.result.trapSpeedMs, speedUnit));
     }
 
@@ -1918,6 +2101,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     elements.liveQualityValue.textContent = liveQuality ? getQualityLabel(liveQuality.grade) : t("accelUnavailable");
     elements.liveTargetValue.textContent = getPresetLabel(displayPreset);
     elements.liveSlopeValue.textContent = formatSlopePercent(getLiveSlopePercent(run));
+    renderLivePartials(run);
     renderLiveSpeedometer(displayPreset, liveState);
 
     if (run && run.stage === "completed" && run.result) {
@@ -1949,6 +2133,28 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     }
 
     setProgressFromRun(run, displayPreset);
+  }
+
+  function renderLivePartials(run) {
+    if (!elements.livePartialsSection || !elements.livePartialsList) return;
+    if (!run || !run.partials || !run.partials.length) {
+      elements.livePartialsSection.hidden = true;
+      elements.livePartialsList.innerHTML = "";
+      return;
+    }
+
+    var html = "";
+    for (var index = 0; index < run.partials.length; index += 1) {
+      var partial = run.partials[index];
+      var status = partial.elapsedMs !== null ? "done" : (run.stage === "completed" ? "missed" : "waiting");
+      html += '<div class="accel-partial-row" data-status="' + status + '">';
+      html += '<span class="accel-partial-label">' + escapeHtml(getPartialLabel(partial)) + "</span>";
+      html += '<strong class="accel-partial-value">' + escapeHtml(formatPartialValue(partial, run)) + "</strong>";
+      html += "</div>";
+    }
+
+    elements.livePartialsSection.hidden = false;
+    elements.livePartialsList.innerHTML = html;
   }
 
   function setProgressFromRun(run, preset) {
@@ -1991,9 +2197,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     elements.resultContent.hidden = false;
     elements.resultElapsedValue.textContent = formatRunSeconds(result.elapsedMs) + " s";
     elements.resultPresetValue.textContent = getPresetLabel(result);
-    elements.resultTrapSpeedValue.textContent = result.presetKind === "distance"
-      ? formatSpeedValue(result.trapSpeedMs, state.settings.speedUnit)
-      : t("accelUnavailable");
+    elements.resultFinishSpeedValue.textContent = formatSpeedValue(result.finishSpeedMs, state.settings.speedUnit);
     elements.resultRolloutValue.textContent = getRolloutLabel(result);
     elements.resultAccuracyValue.textContent = formatDistanceMeasurement(result.averageAccuracyM);
     elements.resultSlopeValue.textContent = formatSlopePercent(result.slopePercent);
@@ -2280,6 +2484,23 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       ? Math.max(0, run.distanceSinceArmM - run.startDistanceM)
       : null;
     return buildSlopeAnalysis(run.startAltitudeM, currentAltitudeM, currentDistanceM).slopePercent;
+  }
+
+  function getPartialLabel(partial) {
+    if (!partial) return t("accelUnavailable");
+    return t(partial.labelKey);
+  }
+
+  function formatPartialValue(partial, run) {
+    if (!partial) return t("accelUnavailable");
+    var runCompleted = Boolean(run && run.stage === "completed");
+    if (!isFiniteNumber(partial.elapsedMs)) {
+      return runCompleted ? t("accelPartialNotCaptured") : t("accelPartialWaiting");
+    }
+
+    var elapsedText = formatRunSeconds(partial.elapsedMs) + " s";
+    if (!partial.showTrapSpeed || !isFiniteNumber(partial.trapSpeedMs)) return elapsedText;
+    return elapsedText + " @ " + formatSpeedValue(partial.trapSpeedMs, run && run.speedUnit ? run.speedUnit : state.settings.speedUnit);
   }
 
   function findBestComparableRun(result) {

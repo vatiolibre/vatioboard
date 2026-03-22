@@ -455,6 +455,48 @@ body.accel-page{
     word-break: break-word;
 }
 
+.accel-live-partials{
+    display: grid;
+    gap: 6px;
+}
+
+.accel-partials-list{
+    display: grid;
+    gap: 0;
+}
+
+.accel-partial-row{
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: baseline;
+    min-height: 0;
+    padding: 10px 0 0;
+    border-top: 1px solid color-mix(in srgb, var(--accel-border) 52%, transparent);
+}
+
+.accel-partial-label{
+    color: var(--accel-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    line-height: 1.35;
+    text-transform: uppercase;
+}
+
+.accel-partial-value{
+    font-variant-numeric: tabular-nums;
+    font-size: 15px;
+    font-weight: 800;
+    line-height: 1.25;
+    text-align: right;
+}
+
+.accel-partial-row[data-status="waiting"] .accel-partial-value,
+.accel-partial-row[data-status="missed"] .accel-partial-value{
+    color: var(--accel-muted);
+}
+
 .accel-primary-stage{
     position: relative;
     width: min(100%, 760px);
@@ -1133,6 +1175,15 @@ button:disabled{
 
     .accel-sheet-trigger-floating{
         min-height: 56px;
+    }
+
+    .accel-partial-row{
+        grid-template-columns: minmax(0, 1fr);
+        gap: 4px;
+    }
+
+    .accel-partial-value{
+        text-align: left;
     }
 }
 
