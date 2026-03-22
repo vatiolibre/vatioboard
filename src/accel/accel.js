@@ -1481,7 +1481,14 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
 
   function startUiTimer() {
     if (state.uiTimerId) window.clearInterval(state.uiTimerId);
-    state.uiTimerId = window.setInterval(renderLivePanel, TIMER_TICK_MS);
+    state.uiTimerId = window.setInterval(renderRealtimeUi, TIMER_TICK_MS);
+  }
+
+  function renderRealtimeUi() {
+    renderControlState();
+    renderStatusPanel();
+    renderLivePanel();
+    renderDiagnostics();
   }
 
   function handlePresetClick(event) {
@@ -1571,7 +1578,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       return;
     }
 
-    if (!state.latestSample) {
+    if (!isGpsReady()) {
       setActionNotice("accelNeedGps");
       renderAll();
       return;
@@ -2060,6 +2067,8 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
   function buildLiveQuality() {
     var intervalStats = computeIntervalStats(state.recentIntervals);
     var accuracyM = state.latestSample ? state.latestSample.accuracyM : null;
+    var latestSampleStale = isLatestSampleStale();
+    var latestSampleSparse = isLatestSampleSparse();
     var quality = evaluateQuality({
       sampleCount: state.sessionSampleCount,
       durationMs: intervalStats.averageMs ? intervalStats.averageMs * Math.max(0, state.recentIntervals.length) : 0,
@@ -2067,8 +2076,8 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       averageHz: intervalStats.hz,
       averageIntervalMs: intervalStats.averageMs,
       jitterMs: intervalStats.jitterMs,
-      staleCount: state.latestSample && state.latestSample.stale ? 1 : 0,
-      sparseCount: state.latestSample && state.latestSample.sparse ? 1 : 0,
+      staleCount: latestSampleStale ? 1 : 0,
+      sparseCount: latestSampleSparse ? 1 : 0,
       nullSpeedShare: state.latestSample && state.latestSample.rawSpeedMs === null ? 1 : 0,
       derivedShare: state.latestSample && state.latestSample.speedSource === "derived" ? 1 : 0,
       isLive: true,
@@ -2393,12 +2402,13 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     var hasActiveRun = isRunActive(state.run);
     var customInvalid = state.settings.selectedPresetId === "custom" && !isCustomRangeValid();
     var primaryLabelKey = state.run && state.run.stage === "completed" ? "accelRunAgain" : "accelArm";
+    var gpsReady = isGpsReady();
 
     elements.armRun.textContent = t(primaryLabelKey);
     elements.cancelRun.textContent = t("accelCancel");
     elements.armRun.hidden = hasActiveRun;
     elements.cancelRun.hidden = !hasActiveRun;
-    elements.armRun.disabled = !state.geolocationSupported || customInvalid;
+    elements.armRun.disabled = !state.geolocationSupported || customInvalid || !gpsReady;
     elements.cancelRun.disabled = !hasActiveRun;
     elements.clearHistory.disabled = !state.runs.length;
   }
@@ -2407,7 +2417,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     var speedUnit = state.settings.speedUnit;
     var permissionLabel = getPermissionLabel(state.permissionState);
     var ready = isGpsReady();
-    var liveQuality = state.currentQuality;
+    var liveQuality = isRunActive(state.run) ? buildCurrentRunQuality(state.run) : buildLiveQuality();
     var qualityLabel = liveQuality ? getQualityLabel(liveQuality.grade) : t("accelUnavailable");
     var readyLabel = ready ? t("accelReadyYes") : t("accelReadyNo");
     var accuracyLabel = formatDistanceMeasurement(state.latestSample ? state.latestSample.accuracyM : null);
@@ -2487,7 +2497,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     var liveState = getRunStateLabel();
     var liveQuality = run && run.result
       ? { grade: run.result.qualityGrade }
-      : (run && run.stage !== "completed" ? buildCurrentRunQuality(run) : state.currentQuality);
+      : (run && run.stage !== "completed" ? buildCurrentRunQuality(run) : buildLiveQuality());
 
     elements.liveStateValue.textContent = liveState;
     elements.liveQualityValue.textContent = liveQuality ? getQualityLabel(liveQuality.grade) : t("accelUnavailable");
@@ -3050,12 +3060,12 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       };
     }
 
-    var sessionQuality = state.currentQuality || buildLiveQuality();
+    var sessionQuality = buildLiveQuality();
     return {
       averageIntervalMs: sessionQuality.averageIntervalMs,
       jitterMs: sessionQuality.jitterMs,
-      sparseCount: state.latestSample && state.latestSample.sparse ? 1 : 0,
-      staleCount: state.latestSample && state.latestSample.stale ? 1 : 0,
+      sparseCount: isLatestSampleSparse() ? 1 : 0,
+      staleCount: isLatestSampleStale() ? 1 : 0,
       speedSource: state.latestSample ? state.latestSample.speedSource : null,
       sampleCount: state.sessionSampleCount,
       warningKeys: sessionQuality.warningKeys || [],
@@ -3167,7 +3177,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
 
   function getRunStateLabel() {
     if (!state.geolocationSupported) return t("accelStateError");
-    if (!state.latestSample && (!state.run || state.run.stage !== "completed")) return t("accelStateGpsWaiting");
+    if (!isGpsReady() && (!state.run || state.run.stage !== "completed")) return t("accelStateGpsWaiting");
     if (!state.run) return t("accelStateIdle");
 
     switch (state.run.stage) {
@@ -3224,10 +3234,21 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
   }
 
   function isGpsReady() {
-    if (!state.latestSample) return false;
-    if (!isFiniteNumber(state.latestSample.receivedAtMs)) return false;
-    if ((Date.now() - state.latestSample.receivedAtMs) > READY_SAMPLE_AGE_MS) return false;
-    return true;
+    var latestSampleAgeMs = getLatestSampleAgeMs();
+    return isFiniteNumber(latestSampleAgeMs) && latestSampleAgeMs <= READY_SAMPLE_AGE_MS;
+  }
+
+  function getLatestSampleAgeMs() {
+    if (!state.latestSample || !isFiniteNumber(state.latestSample.receivedAtMs)) return null;
+    return Math.max(0, Date.now() - state.latestSample.receivedAtMs);
+  }
+
+  function isLatestSampleStale() {
+    return Boolean(state.latestSample && (state.latestSample.stale || getLatestSampleAgeMs() >= STALE_INTERVAL_MS));
+  }
+
+  function isLatestSampleSparse() {
+    return Boolean(state.latestSample && (state.latestSample.sparse || getLatestSampleAgeMs() >= SPARSE_INTERVAL_MS));
   }
 
   function isCustomRangeValid() {
