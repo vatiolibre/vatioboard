@@ -113,6 +113,8 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       accelTrapSpeed: "Trap speed",
       accelRolloutUsed: "Rollout",
       accelAverageAccuracy: "Average accuracy",
+      accelSlope: "Slope",
+      accelElevationChange: "Elevation change",
       accelRunHz: "Run avg Hz",
       accelQualityGrade: "Quality grade",
       accelTimestamp: "Timestamp",
@@ -281,6 +283,8 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       accelTrapSpeed: "Velocidad de trampa",
       accelRolloutUsed: "Rollout",
       accelAverageAccuracy: "Precision promedio",
+      accelSlope: "Pendiente",
+      accelElevationChange: "Cambio de altitud",
       accelRunHz: "Hz promedio de la corrida",
       accelQualityGrade: "Calidad",
       accelTimestamp: "Fecha",
@@ -463,6 +467,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     liveSpeedUnit: document.getElementById("liveSpeedUnit"),
     liveSpeedSubstatus: document.getElementById("liveSpeedSubstatus"),
     liveDistanceValue: document.getElementById("liveDistanceValue"),
+    liveSlopeValue: document.getElementById("liveSlopeValue"),
     liveTargetValue: document.getElementById("liveTargetValue"),
     liveStateValue: document.getElementById("liveStateValue"),
     liveQualityValue: document.getElementById("liveQualityValue"),
@@ -475,6 +480,8 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     resultTrapSpeedValue: document.getElementById("resultTrapSpeedValue"),
     resultRolloutValue: document.getElementById("resultRolloutValue"),
     resultAccuracyValue: document.getElementById("resultAccuracyValue"),
+    resultSlopeValue: document.getElementById("resultSlopeValue"),
+    resultElevationValue: document.getElementById("resultElevationValue"),
     resultHzValue: document.getElementById("resultHzValue"),
     resultQualityValue: document.getElementById("resultQualityValue"),
     resultTimestampValue: document.getElementById("resultTimestampValue"),
@@ -865,6 +872,11 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       trapSpeedMs: isFiniteNumber(run.trapSpeedMs) ? run.trapSpeedMs : null,
       rolloutApplied: Boolean(run.rolloutApplied),
       averageAccuracyM: isFiniteNumber(run.averageAccuracyM) ? run.averageAccuracyM : null,
+      runDistanceM: isFiniteNumber(run.runDistanceM) ? run.runDistanceM : null,
+      startAltitudeM: isFiniteNumber(run.startAltitudeM) ? run.startAltitudeM : null,
+      finishAltitudeM: isFiniteNumber(run.finishAltitudeM) ? run.finishAltitudeM : null,
+      elevationDeltaM: isFiniteNumber(run.elevationDeltaM) ? run.elevationDeltaM : null,
+      slopePercent: isFiniteNumber(run.slopePercent) ? run.slopePercent : null,
       averageHz: isFiniteNumber(run.averageHz) ? run.averageHz : null,
       averageIntervalMs: isFiniteNumber(run.averageIntervalMs) ? run.averageIntervalMs : null,
       jitterMs: isFiniteNumber(run.jitterMs) ? run.jitterMs : null,
@@ -1285,10 +1297,14 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       prevDistanceSinceArmM: 0,
       launchCrossPerfMs: null,
       launchCrossDistanceM: null,
+      launchCrossAltitudeM: null,
       startPerfMs: null,
       startDistanceM: null,
+      startAltitudeM: null,
       finishPerfMs: null,
+      finishDistanceM: null,
       finishSpeedMs: null,
+      finishAltitudeM: null,
       lastSample: null,
       result: null,
     };
@@ -1440,6 +1456,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
         if (launchCross) {
           run.launchCrossPerfMs = launchCross.perfMs;
           run.launchCrossDistanceM = interpolateValue(run.prevDistanceSinceArmM, run.distanceSinceArmM, launchCross.ratio);
+          run.launchCrossAltitudeM = interpolateMeasurement(previousSample.altitudeM, sample.altitudeM, launchCross.ratio);
         }
       }
 
@@ -1447,6 +1464,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
         if (!run.rolloutApplied) {
           run.startPerfMs = run.launchCrossPerfMs;
           run.startDistanceM = run.launchCrossDistanceM;
+          run.startAltitudeM = run.launchCrossAltitudeM;
           run.stage = "running";
         } else {
           run.stage = "waiting_rollout";
@@ -1462,6 +1480,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
           if (rolloutCross) {
             run.startPerfMs = rolloutCross.perfMs;
             run.startDistanceM = rolloutTarget;
+            run.startAltitudeM = interpolateMeasurement(previousSample.altitudeM, sample.altitudeM, rolloutCross.ratio);
             run.stage = "running";
           }
         }
@@ -1471,8 +1490,13 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       if (rollingCross) {
         run.startPerfMs = rollingCross.perfMs;
         run.startDistanceM = interpolateValue(run.prevDistanceSinceArmM, run.distanceSinceArmM, rollingCross.ratio);
+        run.startAltitudeM = interpolateMeasurement(previousSample.altitudeM, sample.altitudeM, rollingCross.ratio);
         run.stage = "running";
       }
+    }
+
+    if (run.startPerfMs !== null && run.startAltitudeM === null && isFiniteNumber(sample.altitudeM)) {
+      run.startAltitudeM = sample.altitudeM;
     }
 
     if (run.startPerfMs !== null && run.finishPerfMs === null) {
@@ -1480,7 +1504,9 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
         var targetCross = interpolateSpeedCrossing(previousSample, sample, run.preset.targetSpeedMs);
         if (targetCross && targetCross.perfMs >= run.startPerfMs) {
           run.finishPerfMs = targetCross.perfMs;
+          run.finishDistanceM = interpolateValue(run.prevDistanceSinceArmM, run.distanceSinceArmM, targetCross.ratio);
           run.finishSpeedMs = run.preset.targetSpeedMs;
+          run.finishAltitudeM = interpolateMeasurement(previousSample.altitudeM, sample.altitudeM, targetCross.ratio);
           completeRun();
         }
       } else if (run.preset.type === "distance") {
@@ -1496,7 +1522,9 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
 
         if (finishCross) {
           run.finishPerfMs = finishCross.perfMs;
+          run.finishDistanceM = run.startDistanceM + run.preset.distanceTargetM;
           run.finishSpeedMs = interpolateValue(previousSpeed, currentSpeed, finishCross.ratio);
+          run.finishAltitudeM = interpolateMeasurement(previousSample.altitudeM, sample.altitudeM, finishCross.ratio);
           completeRun();
         }
       }
@@ -1526,6 +1554,8 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     var averageAccuracyM = averageArray(run.accuracyValues);
     var nullSpeedShare = run.sampleCount > 0 ? run.nullSpeedCount / run.sampleCount : 1;
     var derivedShare = run.sampleCount > 0 ? run.derivedSpeedCount / run.sampleCount : 1;
+    var runDistanceM = getCompletedRunDistance(run);
+    var slopeAnalysis = buildSlopeAnalysis(run.startAltitudeM, run.finishAltitudeM, runDistanceM);
     var quality = evaluateQuality({
       sampleCount: run.sampleCount,
       durationMs: run.finishPerfMs - run.startPerfMs,
@@ -1558,6 +1588,11 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       trapSpeedMs: run.preset.type === "distance" ? run.finishSpeedMs : null,
       rolloutApplied: run.rolloutApplied,
       averageAccuracyM: averageAccuracyM,
+      runDistanceM: runDistanceM,
+      startAltitudeM: run.startAltitudeM,
+      finishAltitudeM: run.finishAltitudeM,
+      elevationDeltaM: slopeAnalysis.elevationDeltaM,
+      slopePercent: slopeAnalysis.slopePercent,
       averageHz: intervalStats.hz,
       averageIntervalMs: intervalStats.averageMs,
       jitterMs: intervalStats.jitterMs,
@@ -1763,6 +1798,15 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     return start + ((end - start) * ratio);
   }
 
+  function interpolateMeasurement(previousValue, currentValue, ratio) {
+    if (isFiniteNumber(previousValue) && isFiniteNumber(currentValue)) {
+      return interpolateValue(previousValue, currentValue, ratio);
+    }
+    if (isFiniteNumber(currentValue)) return currentValue;
+    if (isFiniteNumber(previousValue)) return previousValue;
+    return null;
+  }
+
   function renderAll() {
     renderControlSelections();
     renderControlState();
@@ -1873,14 +1917,18 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     elements.liveStateValue.textContent = liveState;
     elements.liveQualityValue.textContent = liveQuality ? getQualityLabel(liveQuality.grade) : t("accelUnavailable");
     elements.liveTargetValue.textContent = getPresetLabel(displayPreset);
+    elements.liveSlopeValue.textContent = formatSlopePercent(getLiveSlopePercent(run));
     renderLiveSpeedometer(displayPreset, liveState);
 
     if (run && run.stage === "completed" && run.result) {
       elements.liveElapsedValue.textContent = formatRunSeconds(run.result.elapsedMs);
       elements.liveDistanceValue.textContent = formatRunDistance(
-        run.result.presetKind === "distance" && isFiniteNumber(run.result.distanceTargetM)
-          ? run.result.distanceTargetM
+        isFiniteNumber(run.result.runDistanceM)
+          ? run.result.runDistanceM
+          : (run.result.presetKind === "distance" && isFiniteNumber(run.result.distanceTargetM)
+            ? run.result.distanceTargetM
           : Math.max(0, (run.distanceSinceArmM || 0) - (run.startDistanceM || 0))
+          )
       );
       setProgressFromRun(run, displayPreset);
       return;
@@ -1948,6 +1996,8 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       : t("accelUnavailable");
     elements.resultRolloutValue.textContent = getRolloutLabel(result);
     elements.resultAccuracyValue.textContent = formatDistanceMeasurement(result.averageAccuracyM);
+    elements.resultSlopeValue.textContent = formatSlopePercent(result.slopePercent);
+    elements.resultElevationValue.textContent = formatSignedDistanceMeasurement(result.elevationDeltaM);
     elements.resultHzValue.textContent = formatHz(result.averageHz);
     elements.resultQualityValue.textContent = getQualityLabel(result.qualityGrade);
     elements.resultTimestampValue.textContent = formatTimestamp(result.savedAtMs);
@@ -2191,6 +2241,47 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     return deltaMs < 0 ? t("accelFasterBy", { value: deltaText }) : t("accelSlowerBy", { value: deltaText });
   }
 
+  function getCompletedRunDistance(run) {
+    if (!run) return null;
+    if (isFiniteNumber(run.finishDistanceM) && isFiniteNumber(run.startDistanceM)) {
+      return Math.max(0, run.finishDistanceM - run.startDistanceM);
+    }
+    if (run.preset && run.preset.type === "distance" && isFiniteNumber(run.preset.distanceTargetM)) {
+      return run.preset.distanceTargetM;
+    }
+    if (isFiniteNumber(run.distanceSinceArmM) && isFiniteNumber(run.startDistanceM)) {
+      return Math.max(0, run.distanceSinceArmM - run.startDistanceM);
+    }
+    return null;
+  }
+
+  function buildSlopeAnalysis(startAltitudeM, finishAltitudeM, runDistanceM) {
+    if (!isFiniteNumber(startAltitudeM) || !isFiniteNumber(finishAltitudeM)) {
+      return { elevationDeltaM: null, slopePercent: null };
+    }
+    if (!isFiniteNumber(runDistanceM) || runDistanceM <= 0) {
+      return { elevationDeltaM: null, slopePercent: null };
+    }
+
+    var elevationDeltaM = finishAltitudeM - startAltitudeM;
+    return {
+      elevationDeltaM: elevationDeltaM,
+      slopePercent: (elevationDeltaM / runDistanceM) * 100,
+    };
+  }
+
+  function getLiveSlopePercent(run) {
+    if (!run) return null;
+    if (run.stage === "completed" && run.result) return run.result.slopePercent;
+    if (run.startPerfMs === null) return null;
+
+    var currentAltitudeM = state.latestSample ? state.latestSample.altitudeM : null;
+    var currentDistanceM = isFiniteNumber(run.startDistanceM)
+      ? Math.max(0, run.distanceSinceArmM - run.startDistanceM)
+      : null;
+    return buildSlopeAnalysis(run.startAltitudeM, currentAltitudeM, currentDistanceM).slopePercent;
+  }
+
   function findBestComparableRun(result) {
     var matches = [];
     for (var index = 0; index < state.runs.length; index += 1) {
@@ -2297,6 +2388,21 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     var converted = convertDistanceMeasurement(valueM, normalizedUnit);
     var decimals = Math.abs(converted) >= 100 ? 0 : 1;
     return formatNumber(converted, decimals) + " " + getDistanceUnitLabel(normalizedUnit);
+  }
+
+  function formatSignedDistanceMeasurement(valueM, unit) {
+    if (!isFiniteNumber(valueM)) return t("accelUnavailable");
+    var normalizedUnit = normalizeDistanceUnit(unit || state.settings.distanceUnit);
+    var converted = convertDistanceMeasurement(Math.abs(valueM), normalizedUnit);
+    var decimals = Math.abs(converted) >= 100 ? 0 : 1;
+    var sign = Math.abs(valueM) < 0.05 ? "" : (valueM > 0 ? "+" : "-");
+    return sign + formatNumber(converted, decimals) + " " + getDistanceUnitLabel(normalizedUnit);
+  }
+
+  function formatSlopePercent(value) {
+    if (!isFiniteNumber(value)) return t("accelUnavailable");
+    var sign = Math.abs(value) < 0.05 ? "" : (value > 0 ? "+" : "-");
+    return sign + formatNumber(Math.abs(value), 1) + "%";
   }
 
   function formatHz(value) {
