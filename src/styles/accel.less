@@ -250,13 +250,23 @@ body.accel-page{
 }
 
 .accel-card-head{
-    position: relative;
-    z-index: 1;
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 12px;
     align-items: flex-start;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
+}
+
+.accel-card-head > .accel-card-lead{
+    grid-column: 1 / -1;
+    margin: 0;
+}
+
+.accel-card-head > .accel-action-btn,
+.accel-card-head > .accel-sheet-close{
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: start;
 }
 
 .accel-card-lead{
@@ -267,32 +277,13 @@ body.accel-page{
 }
 
 .accel-primary-card{
-    position: relative;
     display: grid;
-    gap: 14px;
+    gap: 16px;
     padding: 18px;
 }
 
-.accel-primary-card::after{
-    content: "";
-    position: absolute;
-    inset: 18px;
-    border-radius: calc(var(--radius) + 2px);
-    border: 1px solid color-mix(in srgb, var(--accel-border) 78%, transparent);
-    opacity: 0.72;
-    pointer-events: none;
-}
-
-.accel-primary-card > *{
-    position: relative;
-    z-index: 1;
-}
-
 .accel-primary-header{
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 14px;
-    align-items: start;
+    display: block;
 }
 
 .accel-trigger-stack{
@@ -317,6 +308,12 @@ body.accel-page{
       inset 0 0 0 1px var(--inner-ring);
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
+    cursor: pointer;
+    transition:
+      background-color 160ms ease,
+      border-color 160ms ease,
+      box-shadow 160ms ease,
+      transform 160ms ease;
 }
 
 .accel-sheet-trigger:hover,
@@ -331,6 +328,9 @@ body.accel-page{
 .accel-sheet-trigger.is-open{
     border-color: color-mix(in srgb, var(--accel-accent) 36%, var(--accel-border));
     background: color-mix(in srgb, var(--accel-chip-bg) 84%, var(--accel-accent-soft));
+    box-shadow:
+      0 14px 30px rgba(15, 23, 42, 0.12),
+      inset 0 0 0 1px color-mix(in srgb, var(--accel-accent) 22%, transparent);
 }
 
 .accel-sheet-trigger-label{
@@ -358,7 +358,7 @@ body.accel-page{
 .accel-status-strip{
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
+    gap: 14px;
 }
 
 .accel-status-grid,
@@ -374,24 +374,26 @@ body.accel-page{
     display: grid;
     gap: 4px;
     align-content: start;
-    min-height: 74px;
-    padding: 12px 14px;
-    border-radius: 18px;
-    border: 1px solid color-mix(in srgb, var(--accel-border) 88%, transparent);
-    background: color-mix(in srgb, var(--accel-chip-bg) 90%, transparent);
+    min-height: 0;
+    padding: 10px 0 0;
+    border-radius: 0;
+    border: 0;
+    border-top: 1px solid color-mix(in srgb, var(--accel-border) 58%, transparent);
+    background: none;
     color: var(--accel-chip-fg);
-    box-shadow: inset 0 0 0 1px var(--inner-ring);
+    box-shadow: none;
 }
 
 .accel-metric{
     display: flex;
     flex-direction: column;
     gap: 4px;
-    min-height: 66px;
-    padding: 11px 12px;
-    border-radius: 16px;
-    border: 1px solid color-mix(in srgb, var(--accel-border) 74%, transparent);
-    background: color-mix(in srgb, var(--accel-panel-soft) 92%, var(--accel-surface-strong));
+    min-height: 0;
+    padding: 10px 0 0;
+    border-radius: 0;
+    border: 0;
+    border-top: 1px solid color-mix(in srgb, var(--accel-border) 52%, transparent);
+    background: none;
 }
 
 .accel-metric-label,
@@ -418,22 +420,16 @@ body.accel-page{
 
 .accel-primary-stage{
     display: grid;
-    gap: 10px;
-    padding: 16px;
-    border-radius: 24px;
-    border: 1px solid color-mix(in srgb, var(--accel-border) 76%, transparent);
-    background:
-      linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--accel-surface-strong) 98%, transparent),
-        color-mix(in srgb, var(--accel-panel-soft) 86%, var(--accel-surface))
-      );
-    box-shadow: inset 0 0 0 1px var(--inner-ring);
+    gap: 14px;
+    padding: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
 }
 
 .accel-preset-grid{
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
     gap: 8px;
 }
 
@@ -447,13 +443,42 @@ body.accel-page{
     font-weight: 700;
     min-height: 48px;
     padding: 10px 12px;
+    cursor: pointer;
+    transition:
+      background-color 160ms ease,
+      border-color 160ms ease,
+      box-shadow 160ms ease,
+      transform 160ms ease;
 }
 
 .accel-preset-btn{
+    display: grid;
+    gap: 6px;
+    align-content: start;
+    min-height: 84px;
     border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
     background: var(--btn-bg);
     color: var(--btn-fg);
     text-align: left;
+    box-shadow:
+      0 10px 24px rgba(15, 23, 42, 0.06),
+      inset 0 0 0 1px var(--inner-ring);
+}
+
+.accel-preset-title{
+    font-size: 15px;
+    font-weight: 800;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+}
+
+.accel-preset-meta{
+    color: var(--accel-muted);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    line-height: 1.3;
+    text-transform: uppercase;
 }
 
 .accel-preset-btn[aria-pressed="true"]{
@@ -462,17 +487,23 @@ body.accel-page{
     border-color: color-mix(in srgb, var(--btn-active-bg) 35%, var(--border));
 }
 
+.accel-preset-btn[aria-pressed="true"] .accel-preset-meta{
+    color: color-mix(in srgb, var(--btn-active-fg) 78%, transparent);
+}
+
 .accel-preset-btn:hover{
     background: var(--btn-hover-bg);
+    transform: translateY(-1px);
 }
 
 .accel-custom-panel{
-    margin-top: 10px;
+    margin-top: 6px;
     display: grid;
     gap: 8px;
-    padding: 10px 12px;
-    border-radius: 16px;
-    background: color-mix(in srgb, var(--accel-panel-soft) 92%, transparent);
+    padding: 10px 0 0;
+    border-top: 1px solid color-mix(in srgb, var(--accel-border) 48%, transparent);
+    border-radius: 0;
+    background: none;
 }
 
 .accel-custom-grid{
@@ -526,6 +557,36 @@ body.accel-page{
     border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
     background: var(--btn-bg);
     color: var(--btn-fg);
+    box-shadow:
+      0 8px 20px rgba(15, 23, 42, 0.05),
+      inset 0 0 0 1px var(--inner-ring);
+}
+
+.accel-units-grid{
+    gap: 8px;
+}
+
+.accel-unit-btn{
+    display: grid;
+    gap: 4px;
+    align-content: start;
+    min-height: 84px;
+    padding: 12px 14px;
+    text-align: left;
+}
+
+.accel-unit-btn-title{
+    font-size: 17px;
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+}
+
+.accel-unit-btn-meta{
+    color: var(--accel-muted);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.35;
 }
 
 .accel-segment-btn[aria-pressed="true"]{
@@ -534,14 +595,18 @@ body.accel-page{
     border-color: color-mix(in srgb, var(--btn-active-bg) 35%, var(--border));
 }
 
+.accel-segment-btn[aria-pressed="true"] .accel-unit-btn-meta{
+    color: color-mix(in srgb, var(--btn-active-fg) 78%, transparent);
+}
+
 .accel-controls-stack{
     display: grid;
-    gap: 10px;
+    gap: 14px;
 }
 
 .accel-action-grid{
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     gap: 6px;
     margin-bottom: 10px;
 }
@@ -550,6 +615,9 @@ body.accel-page{
     border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
     background: var(--btn-bg);
     color: var(--btn-fg);
+    box-shadow:
+      0 10px 24px rgba(15, 23, 42, 0.06),
+      inset 0 0 0 1px var(--inner-ring);
 }
 
 .accel-sheet-close{
@@ -558,12 +626,25 @@ body.accel-page{
     border: 1px solid color-mix(in srgb, var(--accel-border) 88%, transparent);
     background: var(--btn-bg);
     color: var(--btn-fg);
+    box-shadow:
+      0 10px 24px rgba(15, 23, 42, 0.06),
+      inset 0 0 0 1px var(--inner-ring);
 }
 
 .accel-action-btn-primary{
     background: var(--btn-active-bg);
     color: var(--btn-active-fg);
     border-color: color-mix(in srgb, var(--btn-active-bg) 35%, var(--border));
+}
+
+.accel-action-btn-danger{
+    border-color: color-mix(in srgb, var(--accel-danger) 24%, var(--border));
+    background: color-mix(in srgb, var(--accel-danger-soft) 44%, var(--btn-bg));
+    color: var(--accel-danger);
+}
+
+.accel-action-btn-danger:hover{
+    background: color-mix(in srgb, var(--accel-danger-soft) 62%, var(--btn-hover-bg));
 }
 
 .accel-action-btn-compact{
@@ -598,11 +679,12 @@ body.accel-page{
     justify-content: center;
     align-items: flex-start;
     gap: 4px;
-    min-height: 168px;
-    padding: 18px;
-    border-radius: 22px;
-    border: 1px solid color-mix(in srgb, var(--accel-border) 72%, transparent);
-    background: color-mix(in srgb, var(--accel-panel-soft) 92%, var(--accel-surface-strong));
+    min-height: 0;
+    padding: 0 0 12px;
+    border-radius: 0;
+    border: 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--accel-border) 54%, transparent);
+    background: none;
 }
 
 .accel-live-timer,
@@ -737,10 +819,15 @@ body.accel-page{
 .accel-sheet-section{
     display: grid;
     gap: 10px;
-    padding: 12px;
-    border-radius: 20px;
-    border: 1px solid color-mix(in srgb, var(--accel-border) 78%, transparent);
-    background: color-mix(in srgb, var(--accel-panel-soft) 92%, var(--accel-surface-strong));
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+}
+
+.accel-sheet-section + .accel-sheet-section{
+    padding-top: 14px;
+    border-top: 1px solid color-mix(in srgb, var(--accel-border) 54%, transparent);
 }
 
 .accel-warning-list{
@@ -790,9 +877,10 @@ body.accel-page{
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 10px;
     align-items: center;
-    padding: 12px;
-    border-radius: 16px;
-    background: color-mix(in srgb, var(--accel-panel-soft) 90%, var(--accel-surface-strong));
+    padding: 10px 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--accel-border) 46%, transparent);
+    border-radius: 0;
+    background: none;
 }
 
 .accel-history-copy{
@@ -833,7 +921,7 @@ body.accel-page.accel-sheet-open{
 
 button:disabled{
     opacity: 0.48;
-    cursor: default;
+    cursor: not-allowed;
 }
 
 @media (max-width: 980px){
@@ -901,13 +989,8 @@ button:disabled{
         padding: 14px;
     }
 
-    .accel-primary-card::after{
-        inset: 14px;
-    }
-
     .accel-primary-stage{
-        padding: 12px;
-        border-radius: 20px;
+        gap: 12px;
     }
 
     .accel-live-timer,
@@ -959,8 +1042,7 @@ button:disabled{
     .accel-live-timer-wrap,
     .accel-live-speed-wrap,
     .accel-result-primary{
-        min-height: 108px;
-        padding: 12px;
+        padding-bottom: 10px;
     }
 
     .accel-live-timer,

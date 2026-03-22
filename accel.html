@@ -110,7 +110,7 @@
     <main class="accel-main">
       <section class="accel-shell">
         <article class="accel-card accel-primary-card">
-          <div class="accel-primary-header">
+          <header class="accel-primary-header">
             <div class="accel-trigger-stack">
               <button
                 id="setupTrigger"
@@ -138,7 +138,7 @@
                 <span id="resultsTriggerMeta" class="accel-sheet-trigger-meta">—</span>
               </button>
             </div>
-          </div>
+          </header>
 
           <div class="accel-status-strip">
             <span class="accel-pill">
@@ -190,10 +190,10 @@
             </div>
 
             <div class="accel-progress-shell">
-              <div class="accel-progress-head">
+              <header class="accel-progress-head">
                 <span data-i18n="accelProgress">Progress</span>
                 <span id="progressLabel" class="accel-inline-note">—</span>
-              </div>
+              </header>
               <div class="accel-progress-track" aria-hidden="true">
                 <span id="progressFill" class="accel-progress-fill"></span>
               </div>
@@ -201,9 +201,8 @@
           </div>
 
           <div class="accel-action-grid" role="group" aria-label="Run controls" data-i18n-aria="accelControls">
-            <button id="armRun" type="button" class="accel-action-btn accel-action-btn-primary" data-i18n="accelArm">Arm</button>
-            <button id="cancelRun" type="button" class="accel-action-btn" data-i18n="accelCancel">Stop / Cancel</button>
-            <button id="resetRun" type="button" class="accel-action-btn" data-i18n="accelReset">Reset</button>
+            <button id="armRun" type="button" class="accel-action-btn accel-action-btn-primary">Start test</button>
+            <button id="cancelRun" type="button" class="accel-action-btn accel-action-btn-danger" hidden>Cancel test</button>
           </div>
 
           <p id="actionNotice" class="accel-feedback" aria-live="polite"></p>
@@ -232,12 +231,10 @@
 
         <div class="accel-sheet-body">
           <section class="accel-sheet-section">
-            <div class="accel-card-head">
-              <div>
-                <span class="accel-card-kicker" data-i18n="accelTestSelector">Test selector</span>
-                <p class="accel-card-lead" data-i18n="accelTestLead">Standing-start, rolling-start, and distance presets.</p>
-              </div>
-            </div>
+            <header class="accel-card-head">
+              <span class="accel-card-kicker" data-i18n="accelTestSelector">Test selector</span>
+              <p class="accel-card-lead" data-i18n="accelTestLead">Standing-start, rolling-start, and distance presets.</p>
+            </header>
 
             <div id="presetGrid" class="accel-preset-grid"></div>
 
@@ -247,18 +244,13 @@
               <div class="accel-custom-grid">
                 <label class="accel-field" for="customStartInput">
                   <span data-i18n="accelStartSpeed">Start speed</span>
-                  <input id="customStartInput" type="number" min="0" step="1" inputmode="decimal" />
+                  <input id="customStartInput" type="number" min="0" step="0.1" inputmode="decimal" />
                 </label>
 
                 <label class="accel-field" for="customEndInput">
                   <span data-i18n="accelEndSpeed">End speed</span>
-                  <input id="customEndInput" type="number" min="0" step="1" inputmode="decimal" />
+                  <input id="customEndInput" type="number" min="0" step="0.1" inputmode="decimal" />
                 </label>
-              </div>
-
-              <div class="accel-segmented" role="group" aria-label="Custom range units" data-i18n-aria="units">
-                <button id="customUnitMph" type="button" class="accel-segment-btn" data-unit="mph">mph</button>
-                <button id="customUnitKmh" type="button" class="accel-segment-btn" data-unit="kmh">km/h</button>
               </div>
 
               <p id="customRangeNotice" class="accel-inline-note"></p>
@@ -266,12 +258,47 @@
           </section>
 
           <section class="accel-sheet-section">
-            <div class="accel-card-head">
+            <header class="accel-card-head">
+              <span class="accel-card-kicker" data-i18n="units">Units</span>
+              <p class="accel-card-lead" data-i18n="accelUnitsLead">Choose how speed, distance, altitude, and accuracy are shown.</p>
+            </header>
+
+            <div class="accel-controls-stack">
               <div>
-                <span class="accel-card-kicker" data-i18n="accelControls">Controls</span>
-                <p class="accel-card-lead" data-i18n="accelControlsLead">Arm the run, choose rollout, and store quick notes locally.</p>
+                <div class="accel-section-title" data-i18n="speed">Speed</div>
+                <div class="accel-segmented accel-units-grid" role="group" aria-label="Speed units" data-i18n-aria="speed">
+                  <button id="speedUnitMph" type="button" class="accel-segment-btn accel-unit-btn" data-unit="mph">
+                    <span class="accel-unit-btn-title">mph</span>
+                    <span class="accel-unit-btn-meta" data-i18n="accelImperialTests">Imperial tests</span>
+                  </button>
+                  <button id="speedUnitKmh" type="button" class="accel-segment-btn accel-unit-btn" data-unit="kmh">
+                    <span class="accel-unit-btn-title">km/h</span>
+                    <span class="accel-unit-btn-meta" data-i18n="accelMetricTests">Metric tests</span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <div class="accel-section-title" data-i18n="accelDistanceAltitude">Distance + altitude</div>
+                <div class="accel-segmented accel-units-grid" role="group" aria-label="Distance and altitude units" data-i18n-aria="accelDistanceAltitude">
+                  <button id="distanceUnitFt" type="button" class="accel-segment-btn accel-unit-btn" data-unit="ft">
+                    <span class="accel-unit-btn-title">ft</span>
+                    <span class="accel-unit-btn-meta" data-i18n="accelMileDistanceTests">Mile-based distances</span>
+                  </button>
+                  <button id="distanceUnitM" type="button" class="accel-segment-btn accel-unit-btn" data-unit="m">
+                    <span class="accel-unit-btn-title">m</span>
+                    <span class="accel-unit-btn-meta" data-i18n="accelMetricDistanceTests">Metric distances</span>
+                  </button>
+                </div>
               </div>
             </div>
+          </section>
+
+          <section class="accel-sheet-section">
+            <header class="accel-card-head">
+              <span class="accel-card-kicker" data-i18n="accelControls">Controls</span>
+              <p class="accel-card-lead" data-i18n="accelControlsLead">Arm the run, choose rollout, and store quick notes locally.</p>
+            </header>
 
             <div class="accel-controls-stack">
               <div>
@@ -303,12 +330,10 @@
           </section>
 
           <section class="accel-sheet-section">
-            <div class="accel-card-head">
-              <div>
-                <span class="accel-card-kicker" data-i18n="accelStatusPanel">Status panel</span>
-                <p class="accel-card-lead" data-i18n="accelStatusLead">Live browser GPS readiness and signal quality.</p>
-              </div>
-            </div>
+            <header class="accel-card-head">
+              <span class="accel-card-kicker" data-i18n="accelStatusPanel">Status panel</span>
+              <p class="accel-card-lead" data-i18n="accelStatusLead">Live browser GPS readiness and signal quality.</p>
+            </header>
 
             <div class="accel-status-grid">
               <div class="accel-metric">
@@ -368,12 +393,10 @@
 
         <div class="accel-sheet-body">
           <section class="accel-sheet-section">
-            <div class="accel-card-head">
-              <div>
-                <span class="accel-card-kicker" data-i18n="accelResult">Result</span>
-                <p class="accel-card-lead" data-i18n="accelResultLead">Latest completed run stored locally on this browser.</p>
-              </div>
-            </div>
+            <header class="accel-card-head">
+              <span class="accel-card-kicker" data-i18n="accelResult">Result</span>
+              <p class="accel-card-lead" data-i18n="accelResultLead">Latest completed run stored locally on this browser.</p>
+            </header>
 
             <div id="resultEmptyState" class="accel-empty-copy" data-i18n="accelNoResult">Arm and complete a run to see the result here.</div>
 
@@ -421,12 +444,10 @@
           </section>
 
           <section class="accel-sheet-section">
-            <div class="accel-card-head">
-              <div>
-                <span class="accel-card-kicker" data-i18n="accelDiagnostics">Diagnostics</span>
-                <p class="accel-card-lead" data-i18n="accelDiagnosticsLead">Observed callback timing, uncertainty, and warning flags.</p>
-              </div>
-            </div>
+            <header class="accel-card-head">
+              <span class="accel-card-kicker" data-i18n="accelDiagnostics">Diagnostics</span>
+              <p class="accel-card-lead" data-i18n="accelDiagnosticsLead">Observed callback timing, uncertainty, and warning flags.</p>
+            </header>
 
             <div id="warningBadges" class="accel-warning-list"></div>
 
@@ -459,13 +480,11 @@
           </section>
 
           <section class="accel-sheet-section accel-history-card">
-            <div class="accel-card-head accel-history-head">
-              <div>
-                <span class="accel-card-kicker" data-i18n="accelHistory">History</span>
-                <p class="accel-card-lead" data-i18n="accelHistoryLead">Saved locally in this browser. Newest runs first.</p>
-              </div>
+            <header class="accel-card-head accel-history-head">
+              <span class="accel-card-kicker" data-i18n="accelHistory">History</span>
+              <p class="accel-card-lead" data-i18n="accelHistoryLead">Saved locally in this browser. Newest runs first.</p>
               <button id="clearHistory" type="button" class="accel-action-btn accel-action-btn-compact" data-i18n="accelClearHistory">Clear all</button>
-            </div>
+            </header>
 
             <div id="historyEmptyState" class="accel-empty-copy" data-i18n="accelNoHistory">No saved runs yet.</div>
             <div id="historyList" class="accel-history-list"></div>

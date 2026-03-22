@@ -2,6 +2,9 @@ import "../styles/accel.less";
 
 (function () {
   var LANG_KEY = "vatio_board_lang";
+  var SHARED_SPEED_UNIT_KEY = "vatio_speed_unit";
+  var SHARED_DISTANCE_UNIT_KEY = "vatio_speed_distance_unit";
+  var SHARED_LEGACY_ALTITUDE_UNIT_KEY = "vatio_speed_altitude_unit";
   var STORAGE_KEYS = {
     runs: "vatioboard.accel.runs",
     settings: "vatioboard.accel.settings",
@@ -12,6 +15,14 @@ import "../styles/accel.less";
   var FT_TO_M = 0.3048;
   var EIGHTH_MILE_M = 201.168;
   var QUARTER_MILE_M = 402.336;
+  var SPEED_UNIT_CONFIG = {
+    mph: { factor: 2.2369362920544, labelKey: "accelMphUnit" },
+    kmh: { factor: 3.6, labelKey: "accelKmhUnit" },
+  };
+  var DISTANCE_UNIT_CONFIG = {
+    ft: { factor: 3.2808398950131, label: "ft" },
+    m: { factor: 1, label: "m" },
+  };
   var GEO_OPTIONS = {
     enableHighAccuracy: true,
     maximumAge: 0,
@@ -31,6 +42,15 @@ import "../styles/accel.less";
   var TIMER_TICK_MS = 50;
   var MIN_VALID_RUN_SAMPLES = 4;
   var MIN_VALID_RUN_DURATION_MS = 800;
+  var FINISH_SOUND_URL = "/audio/finish.m4a";
+  var finishAudio = typeof Audio === "function" ? new Audio(FINISH_SOUND_URL) : null;
+  var finishAudioPrimePromise = null;
+  var finishAudioPrimed = false;
+
+  if (finishAudio) {
+    finishAudio.preload = "auto";
+    finishAudio.loop = false;
+  }
 
   var translations = {
     en: {
@@ -54,14 +74,22 @@ import "../styles/accel.less";
       accelStatusPanel: "Status panel",
       accelStatusLead: "Live browser GPS readiness and signal quality.",
       accelTestSelector: "Test selector",
-      accelTestLead: "Standing-start, rolling-start, and distance presets.",
+      accelTestLead: "Available tests update with the selected speed and distance units.",
       accelCustomRange: "Custom speed range",
       accelStartSpeed: "Start speed",
       accelEndSpeed: "End speed",
+      accelUnitsLead: "Choose how speed, distance, altitude, and accuracy are shown.",
+      accelDistanceAltitude: "Distance + altitude",
+      accelDistanceTest: "Distance test",
+      accelImperialTests: "Imperial tests",
+      accelMetricTests: "Metric tests",
+      accelMileDistanceTests: "Mile-based distances",
+      accelMetricDistanceTests: "Metric distances",
       accelControls: "Controls",
-      accelControlsLead: "Arm the run, choose rollout, and store quick notes locally.",
-      accelArm: "Arm",
-      accelCancel: "Stop / Cancel",
+      accelControlsLead: "Choose rollout and notes before starting a run.",
+      accelArm: "Start test",
+      accelCancel: "Cancel test",
+      accelRunAgain: "Run again",
       accelReset: "Reset",
       accelRollout: "Rollout",
       accelRolloutOneFoot: "1 ft",
@@ -129,10 +157,16 @@ import "../styles/accel.less";
       accelPreset0to40: "0-40 mph",
       accelPreset0to50: "0-50 mph",
       accelPreset0to60: "0-60 mph",
+      accelPreset0to50Kmh: "0-50 km/h",
+      accelPreset0to60Kmh: "0-60 km/h",
+      accelPreset0to80Kmh: "0-80 km/h",
       accelPreset0to100Kmh: "0-100 km/h",
       accelPreset60to130: "60-130 mph",
+      accelPreset100to200Kmh: "100-200 km/h",
       accelPresetEighthMile: "1/8 mile",
       accelPresetQuarterMile: "1/4 mile",
+      accelPreset200M: "200 m",
+      accelPreset400M: "400 m",
       accelPresetCustom: "Custom range",
       accelRolloutOff: "Off",
       accelRolloutOn: "1 ft rollout",
@@ -152,8 +186,8 @@ import "../styles/accel.less";
       accelNoGeolocation: "This browser does not expose geolocation.",
       accelWaitingForFix: "Waiting for a cleaner GPS fix.",
       accelCustomInvalid: "Custom range must end above the start speed.",
-      accelArmedStandingNotice: "Run armed. Waiting for launch.",
-      accelArmedRollingNotice: "Run armed. Waiting for the start speed crossing.",
+      accelArmedStandingNotice: "Test ready. Waiting for launch.",
+      accelArmedRollingNotice: "Test ready. Waiting for the start speed crossing.",
       accelRunCancelledNotice: "Run cancelled.",
       accelRunResetNotice: "Live run state reset.",
       accelRunSavedNotice: "Run completed and saved locally.",
@@ -208,14 +242,22 @@ import "../styles/accel.less";
       accelStatusPanel: "Panel de estado",
       accelStatusLead: "Disponibilidad GPS y calidad de senal en vivo.",
       accelTestSelector: "Selector de prueba",
-      accelTestLead: "Presets desde parado, lanzados y por distancia.",
+      accelTestLead: "Las pruebas disponibles cambian segun las unidades de velocidad y distancia.",
       accelCustomRange: "Rango de velocidad personalizado",
       accelStartSpeed: "Velocidad inicial",
       accelEndSpeed: "Velocidad final",
+      accelUnitsLead: "Elige como se muestran la velocidad, la distancia, la altitud y la precision.",
+      accelDistanceAltitude: "Distancia + altitud",
+      accelDistanceTest: "Prueba de distancia",
+      accelImperialTests: "Pruebas imperiales",
+      accelMetricTests: "Pruebas metricas",
+      accelMileDistanceTests: "Distancias en millas",
+      accelMetricDistanceTests: "Distancias metricas",
       accelControls: "Controles",
-      accelControlsLead: "Arma la corrida, elige rollout y guarda notas locales.",
-      accelArm: "Armar",
-      accelCancel: "Detener / Cancelar",
+      accelControlsLead: "Ajusta rollout y notas antes de iniciar una corrida.",
+      accelArm: "Iniciar prueba",
+      accelCancel: "Cancelar prueba",
+      accelRunAgain: "Repetir prueba",
       accelReset: "Reiniciar",
       accelRollout: "Rollout",
       accelRolloutOneFoot: "1 pie",
@@ -283,10 +325,16 @@ import "../styles/accel.less";
       accelPreset0to40: "0-40 mph",
       accelPreset0to50: "0-50 mph",
       accelPreset0to60: "0-60 mph",
+      accelPreset0to50Kmh: "0-50 km/h",
+      accelPreset0to60Kmh: "0-60 km/h",
+      accelPreset0to80Kmh: "0-80 km/h",
       accelPreset0to100Kmh: "0-100 km/h",
       accelPreset60to130: "60-130 mph",
+      accelPreset100to200Kmh: "100-200 km/h",
       accelPresetEighthMile: "1/8 de milla",
       accelPresetQuarterMile: "1/4 de milla",
+      accelPreset200M: "200 m",
+      accelPreset400M: "400 m",
       accelPresetCustom: "Rango personalizado",
       accelRolloutOff: "Apagado",
       accelRolloutOn: "Rollout de 1 pie",
@@ -306,8 +354,8 @@ import "../styles/accel.less";
       accelNoGeolocation: "Este navegador no expone geolocalizacion.",
       accelWaitingForFix: "Esperando una fijacion GPS mas limpia.",
       accelCustomInvalid: "El rango personalizado debe terminar por encima de la velocidad inicial.",
-      accelArmedStandingNotice: "Corrida armada. Esperando la salida.",
-      accelArmedRollingNotice: "Corrida armada. Esperando el cruce de velocidad inicial.",
+      accelArmedStandingNotice: "Prueba lista. Esperando la salida.",
+      accelArmedRollingNotice: "Prueba lista. Esperando el cruce de velocidad inicial.",
       accelRunCancelledNotice: "Corrida cancelada.",
       accelRunResetNotice: "Estado de corrida reiniciado.",
       accelRunSavedNotice: "Corrida completada y guardada localmente.",
@@ -344,15 +392,21 @@ import "../styles/accel.less";
   };
 
   var presetDefinitions = [
-    { id: "0-30-mph", type: "speed", labelKey: "accelPreset0to30", standingStart: true, startSpeedMs: 0, targetSpeedMs: 30 * MPH_TO_MS, displayUnit: "mph" },
-    { id: "0-40-mph", type: "speed", labelKey: "accelPreset0to40", standingStart: true, startSpeedMs: 0, targetSpeedMs: 40 * MPH_TO_MS, displayUnit: "mph" },
-    { id: "0-50-mph", type: "speed", labelKey: "accelPreset0to50", standingStart: true, startSpeedMs: 0, targetSpeedMs: 50 * MPH_TO_MS, displayUnit: "mph" },
-    { id: "0-60-mph", type: "speed", labelKey: "accelPreset0to60", standingStart: true, startSpeedMs: 0, targetSpeedMs: 60 * MPH_TO_MS, displayUnit: "mph" },
-    { id: "0-100-kmh", type: "speed", labelKey: "accelPreset0to100Kmh", standingStart: true, startSpeedMs: 0, targetSpeedMs: 100 * KMH_TO_MS, displayUnit: "kmh" },
-    { id: "60-130-mph", type: "speed", labelKey: "accelPreset60to130", standingStart: false, startSpeedMs: 60 * MPH_TO_MS, targetSpeedMs: 130 * MPH_TO_MS, displayUnit: "mph" },
-    { id: "eighth-mile", type: "distance", labelKey: "accelPresetEighthMile", standingStart: true, distanceTargetM: EIGHTH_MILE_M, displayUnit: "mph", distanceDisplay: "ft" },
-    { id: "quarter-mile", type: "distance", labelKey: "accelPresetQuarterMile", standingStart: true, distanceTargetM: QUARTER_MILE_M, displayUnit: "mph", distanceDisplay: "ft" },
-    { id: "custom", type: "custom", labelKey: "accelPresetCustom", standingStart: false, displayUnit: "mph" },
+    { id: "0-30-mph", type: "speed", labelKey: "accelPreset0to30", standingStart: true, startSpeedMs: 0, targetSpeedMs: 30 * MPH_TO_MS, speedSystem: "mph", variantGroup: "launch-1" },
+    { id: "0-40-mph", type: "speed", labelKey: "accelPreset0to40", standingStart: true, startSpeedMs: 0, targetSpeedMs: 40 * MPH_TO_MS, speedSystem: "mph", variantGroup: "launch-2" },
+    { id: "0-50-mph", type: "speed", labelKey: "accelPreset0to50", standingStart: true, startSpeedMs: 0, targetSpeedMs: 50 * MPH_TO_MS, speedSystem: "mph", variantGroup: "launch-3" },
+    { id: "0-60-mph", type: "speed", labelKey: "accelPreset0to60", standingStart: true, startSpeedMs: 0, targetSpeedMs: 60 * MPH_TO_MS, speedSystem: "mph", variantGroup: "launch-4" },
+    { id: "60-130-mph", type: "speed", labelKey: "accelPreset60to130", standingStart: false, startSpeedMs: 60 * MPH_TO_MS, targetSpeedMs: 130 * MPH_TO_MS, speedSystem: "mph", variantGroup: "roll-1" },
+    { id: "0-50-kmh", type: "speed", labelKey: "accelPreset0to50Kmh", standingStart: true, startSpeedMs: 0, targetSpeedMs: 50 * KMH_TO_MS, speedSystem: "kmh", variantGroup: "launch-1" },
+    { id: "0-60-kmh", type: "speed", labelKey: "accelPreset0to60Kmh", standingStart: true, startSpeedMs: 0, targetSpeedMs: 60 * KMH_TO_MS, speedSystem: "kmh", variantGroup: "launch-2" },
+    { id: "0-80-kmh", type: "speed", labelKey: "accelPreset0to80Kmh", standingStart: true, startSpeedMs: 0, targetSpeedMs: 80 * KMH_TO_MS, speedSystem: "kmh", variantGroup: "launch-3" },
+    { id: "0-100-kmh", type: "speed", labelKey: "accelPreset0to100Kmh", standingStart: true, startSpeedMs: 0, targetSpeedMs: 100 * KMH_TO_MS, speedSystem: "kmh", variantGroup: "launch-4" },
+    { id: "100-200-kmh", type: "speed", labelKey: "accelPreset100to200Kmh", standingStart: false, startSpeedMs: 100 * KMH_TO_MS, targetSpeedMs: 200 * KMH_TO_MS, speedSystem: "kmh", variantGroup: "roll-1" },
+    { id: "eighth-mile", type: "distance", labelKey: "accelPresetEighthMile", standingStart: true, distanceTargetM: EIGHTH_MILE_M, distanceSystem: "ft", variantGroup: "distance-short" },
+    { id: "quarter-mile", type: "distance", labelKey: "accelPresetQuarterMile", standingStart: true, distanceTargetM: QUARTER_MILE_M, distanceSystem: "ft", variantGroup: "distance-long" },
+    { id: "200-m", type: "distance", labelKey: "accelPreset200M", standingStart: true, distanceTargetM: 200, distanceSystem: "m", variantGroup: "distance-short" },
+    { id: "400-m", type: "distance", labelKey: "accelPreset400M", standingStart: true, distanceTargetM: 400, distanceSystem: "m", variantGroup: "distance-long" },
+    { id: "custom", type: "custom", labelKey: "accelPresetCustom", standingStart: false, variantGroup: "custom" },
   ];
 
   var elements = {
@@ -386,12 +440,13 @@ import "../styles/accel.less";
     customRangePanel: document.getElementById("customRangePanel"),
     customStartInput: document.getElementById("customStartInput"),
     customEndInput: document.getElementById("customEndInput"),
-    customUnitMph: document.getElementById("customUnitMph"),
-    customUnitKmh: document.getElementById("customUnitKmh"),
+    speedUnitMph: document.getElementById("speedUnitMph"),
+    speedUnitKmh: document.getElementById("speedUnitKmh"),
+    distanceUnitFt: document.getElementById("distanceUnitFt"),
+    distanceUnitM: document.getElementById("distanceUnitM"),
     customRangeNotice: document.getElementById("customRangeNotice"),
     armRun: document.getElementById("armRun"),
     cancelRun: document.getElementById("cancelRun"),
-    resetRun: document.getElementById("resetRun"),
     rolloutOff: document.getElementById("rolloutOff"),
     rolloutOn: document.getElementById("rolloutOn"),
     launchThresholdHalf: document.getElementById("launchThresholdHalf"),
@@ -433,10 +488,11 @@ import "../styles/accel.less";
   var defaultSettings = {
     selectedPresetId: "0-60-mph",
     rolloutEnabled: false,
-    launchThresholdMph: 0.5,
+    launchThresholdMs: 0.5 * MPH_TO_MS,
+    speedUnit: "mph",
+    distanceUnit: "ft",
     customStart: 0,
     customEnd: 60,
-    customUnit: "mph",
     notes: "",
   };
 
@@ -467,6 +523,7 @@ import "../styles/accel.less";
   function init() {
     applyTranslations();
     elements.runNotes.value = state.settings.notes;
+    if (syncSelectedPresetForUnits()) saveSettings();
     renderPresetButtons();
     renderControlSelections();
     bindEvents();
@@ -486,6 +543,60 @@ import "../styles/accel.less";
 
     if (window.__lang === "es" || window.__lang === "en") return window.__lang;
     return navigator.language && navigator.language.startsWith("es") ? "es" : "en";
+  }
+
+  function primeFinishAudio() {
+    if (!finishAudio) return Promise.resolve(false);
+    if (finishAudioPrimed) return Promise.resolve(true);
+    if (finishAudioPrimePromise) return finishAudioPrimePromise;
+
+    finishAudioPrimePromise = (async function () {
+      var previousMuted = finishAudio.muted;
+      var previousVolume = finishAudio.volume;
+      var previousLoop = finishAudio.loop;
+
+      try {
+        finishAudio.muted = true;
+        finishAudio.volume = 0;
+        finishAudio.loop = false;
+        finishAudio.currentTime = 0;
+        var playPromise = finishAudio.play();
+        if (playPromise && typeof playPromise.then === "function") await playPromise;
+        finishAudio.pause();
+        finishAudio.currentTime = 0;
+        finishAudioPrimed = true;
+        return true;
+      } catch (error) {
+        finishAudio.pause();
+        finishAudio.currentTime = 0;
+        finishAudioPrimed = false;
+        return false;
+      } finally {
+        finishAudio.muted = previousMuted;
+        finishAudio.volume = previousVolume;
+        finishAudio.loop = previousLoop;
+        finishAudioPrimePromise = null;
+      }
+    })();
+
+    return finishAudioPrimePromise;
+  }
+
+  function playFinishAudio() {
+    if (!finishAudio) return;
+
+    try {
+      finishAudio.pause();
+      finishAudio.currentTime = 0;
+      var playPromise = finishAudio.play();
+      if (playPromise && typeof playPromise.catch === "function") {
+        playPromise.catch(function () {
+          // Ignore autoplay or playback failures.
+        });
+      }
+    } catch (error) {
+      // Ignore autoplay or playback failures.
+    }
   }
 
   function t(key, params) {
@@ -545,11 +656,12 @@ import "../styles/accel.less";
     elements.presetGrid.addEventListener("click", handlePresetClick);
     elements.customStartInput.addEventListener("input", handleCustomInput);
     elements.customEndInput.addEventListener("input", handleCustomInput);
-    elements.customUnitMph.addEventListener("click", handleCustomUnitClick);
-    elements.customUnitKmh.addEventListener("click", handleCustomUnitClick);
+    elements.speedUnitMph.addEventListener("click", handleSpeedUnitClick);
+    elements.speedUnitKmh.addEventListener("click", handleSpeedUnitClick);
+    elements.distanceUnitFt.addEventListener("click", handleDistanceUnitClick);
+    elements.distanceUnitM.addEventListener("click", handleDistanceUnitClick);
     elements.armRun.addEventListener("click", handleArm);
     elements.cancelRun.addEventListener("click", handleCancel);
-    elements.resetRun.addEventListener("click", handleReset);
     elements.rolloutOff.addEventListener("click", handleRolloutClick);
     elements.rolloutOn.addEventListener("click", handleRolloutClick);
     elements.launchThresholdHalf.addEventListener("click", handleThresholdClick);
@@ -611,16 +723,70 @@ import "../styles/accel.less";
     openPanel(panelName);
   }
 
+  function normalizeSpeedUnit(unit) {
+    return unit === "kmh" ? "kmh" : "mph";
+  }
+
+  function normalizeDistanceUnit(unit) {
+    return unit === "m" ? "m" : "ft";
+  }
+
+  function loadSharedSpeedUnitPreference() {
+    try {
+      var unit = localStorage.getItem(SHARED_SPEED_UNIT_KEY);
+      return unit && SPEED_UNIT_CONFIG[unit] ? unit : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function loadSharedDistanceUnitPreference() {
+    try {
+      var unit = localStorage.getItem(SHARED_DISTANCE_UNIT_KEY);
+      if (unit && DISTANCE_UNIT_CONFIG[unit]) return unit;
+
+      var legacyUnit = localStorage.getItem(SHARED_LEGACY_ALTITUDE_UNIT_KEY);
+      return legacyUnit && DISTANCE_UNIT_CONFIG[legacyUnit] ? legacyUnit : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function getDefaultSpeedUnit(selectedPresetId) {
+    var sharedUnit = loadSharedSpeedUnitPreference();
+    if (sharedUnit) return sharedUnit;
+    var preset = findPresetDefinition(selectedPresetId);
+    if (preset && preset.speedSystem) return preset.speedSystem;
+    return "mph";
+  }
+
+  function getDefaultDistanceUnit(selectedPresetId) {
+    var sharedUnit = loadSharedDistanceUnitPreference();
+    if (sharedUnit) return sharedUnit;
+    var preset = findPresetDefinition(selectedPresetId);
+    if (preset && preset.distanceSystem) return preset.distanceSystem;
+    return "ft";
+  }
+
   function loadSettings() {
     var raw = loadJson(STORAGE_KEYS.settings);
     var settings = raw && typeof raw === "object" ? raw : {};
+    var selectedPresetId = typeof settings.selectedPresetId === "string" ? settings.selectedPresetId : defaultSettings.selectedPresetId;
+    var speedUnit = normalizeSpeedUnit(settings.speedUnit || settings.customUnit || getDefaultSpeedUnit(selectedPresetId));
+    var distanceUnit = normalizeDistanceUnit(settings.distanceUnit || getDefaultDistanceUnit(selectedPresetId));
+    var defaultCustomEnd = speedUnit === "kmh" ? 100 : defaultSettings.customEnd;
+    var launchThresholdMs = isFiniteNumber(settings.launchThresholdMs)
+      ? settings.launchThresholdMs
+      : ((settings.launchThresholdMph === 1 ? 1 : 0.5) * MPH_TO_MS);
+
     return {
-      selectedPresetId: typeof settings.selectedPresetId === "string" ? settings.selectedPresetId : defaultSettings.selectedPresetId,
+      selectedPresetId: selectedPresetId,
       rolloutEnabled: Boolean(settings.rolloutEnabled),
-      launchThresholdMph: settings.launchThresholdMph === 1 ? 1 : 0.5,
+      launchThresholdMs: launchThresholdMs,
+      speedUnit: speedUnit,
+      distanceUnit: distanceUnit,
       customStart: toFiniteNumber(settings.customStart, defaultSettings.customStart),
-      customEnd: toFiniteNumber(settings.customEnd, defaultSettings.customEnd),
-      customUnit: settings.customUnit === "kmh" ? "kmh" : "mph",
+      customEnd: toFiniteNumber(settings.customEnd, defaultCustomEnd),
       notes: typeof settings.notes === "string" ? settings.notes : "",
     };
   }
@@ -654,18 +820,27 @@ import "../styles/accel.less";
     if (!run || typeof run !== "object") return null;
     if (!isFiniteNumber(run.savedAtMs) || !isFiniteNumber(run.elapsedMs)) return null;
 
+    var presetId = typeof run.presetId === "string" ? run.presetId : "custom";
+    var startSpeedMs = isFiniteNumber(run.startSpeedMs) ? run.startSpeedMs : 0;
+    var targetSpeedMs = isFiniteNumber(run.targetSpeedMs) ? run.targetSpeedMs : null;
+    var presetSignature = typeof run.presetSignature === "string" ? run.presetSignature : presetId;
+
+    if (presetId === "custom" && isFiniteNumber(startSpeedMs) && isFiniteNumber(targetSpeedMs)) {
+      presetSignature = getCustomPresetSignature(startSpeedMs, targetSpeedMs);
+    }
+
     return {
       id: typeof run.id === "string" ? run.id : "run-" + String(run.savedAtMs),
       savedAtMs: run.savedAtMs,
-      presetId: typeof run.presetId === "string" ? run.presetId : "custom",
-      presetSignature: typeof run.presetSignature === "string" ? run.presetSignature : "custom",
+      presetId: presetId,
+      presetSignature: presetSignature,
       presetKind: typeof run.presetKind === "string" ? run.presetKind : "speed",
       standingStart: Boolean(run.standingStart),
       customStart: isFiniteNumber(run.customStart) ? run.customStart : null,
       customEnd: isFiniteNumber(run.customEnd) ? run.customEnd : null,
       customUnit: run.customUnit === "kmh" ? "kmh" : (run.customUnit === "mph" ? "mph" : null),
-      startSpeedMs: isFiniteNumber(run.startSpeedMs) ? run.startSpeedMs : 0,
-      targetSpeedMs: isFiniteNumber(run.targetSpeedMs) ? run.targetSpeedMs : null,
+      startSpeedMs: startSpeedMs,
+      targetSpeedMs: targetSpeedMs,
       distanceTargetM: isFiniteNumber(run.distanceTargetM) ? run.distanceTargetM : null,
       displayUnit: run.displayUnit === "kmh" ? "kmh" : "mph",
       distanceDisplay: run.distanceDisplay === "m" ? "m" : "ft",
@@ -712,14 +887,85 @@ import "../styles/accel.less";
     return Number.isFinite(value);
   }
 
-  function getSelectedPreset() {
-    if (state.settings.selectedPresetId === "custom") return buildCustomPreset();
+  function findPresetDefinition(presetId) {
+    for (var index = 0; index < presetDefinitions.length; index += 1) {
+      if (presetDefinitions[index].id === presetId) return presetDefinitions[index];
+    }
+    return null;
+  }
+
+  function isPresetAvailableForUnits(preset, speedUnit, distanceUnit) {
+    if (!preset) return false;
+    if (preset.id === "custom") return true;
+    if (preset.type === "speed") return preset.speedSystem === normalizeSpeedUnit(speedUnit);
+    if (preset.type === "distance") return preset.distanceSystem === normalizeDistanceUnit(distanceUnit);
+    return false;
+  }
+
+  function getAvailablePresetDefinitions(speedUnit, distanceUnit) {
+    var normalizedSpeedUnit = normalizeSpeedUnit(speedUnit || state.settings.speedUnit);
+    var normalizedDistanceUnit = normalizeDistanceUnit(distanceUnit || state.settings.distanceUnit);
+    var available = [];
 
     for (var index = 0; index < presetDefinitions.length; index += 1) {
-      if (presetDefinitions[index].id === state.settings.selectedPresetId) return copyPreset(presetDefinitions[index]);
+      var preset = presetDefinitions[index];
+      if (isPresetAvailableForUnits(preset, normalizedSpeedUnit, normalizedDistanceUnit)) available.push(preset);
     }
 
-    return copyPreset(presetDefinitions[3]);
+    return available;
+  }
+
+  function getDefaultSpeedPresetId(speedUnit) {
+    return normalizeSpeedUnit(speedUnit) === "kmh" ? "0-100-kmh" : "0-60-mph";
+  }
+
+  function getDefaultDistancePresetId(distanceUnit) {
+    return normalizeDistanceUnit(distanceUnit) === "m" ? "400-m" : "quarter-mile";
+  }
+
+  function resolvePresetIdForUnits(presetId, speedUnit, distanceUnit) {
+    if (presetId === "custom") return "custom";
+
+    var preset = findPresetDefinition(presetId);
+    if (!preset) return getDefaultSpeedPresetId(speedUnit);
+    if (isPresetAvailableForUnits(preset, speedUnit, distanceUnit)) return preset.id;
+
+    for (var index = 0; index < presetDefinitions.length; index += 1) {
+      var candidate = presetDefinitions[index];
+      if (candidate.variantGroup !== preset.variantGroup) continue;
+      if (isPresetAvailableForUnits(candidate, speedUnit, distanceUnit)) return candidate.id;
+    }
+
+    if (preset.type === "distance") return getDefaultDistancePresetId(distanceUnit);
+    return getDefaultSpeedPresetId(speedUnit);
+  }
+
+  function syncSelectedPresetForUnits() {
+    var resolvedPresetId = resolvePresetIdForUnits(
+      state.settings.selectedPresetId,
+      state.settings.speedUnit,
+      state.settings.distanceUnit
+    );
+
+    if (resolvedPresetId === state.settings.selectedPresetId) return false;
+    state.settings.selectedPresetId = resolvedPresetId;
+    return true;
+  }
+
+  function getSelectedPreset() {
+    var selectedPresetId = resolvePresetIdForUnits(
+      state.settings.selectedPresetId,
+      state.settings.speedUnit,
+      state.settings.distanceUnit
+    );
+
+    if (selectedPresetId === "custom") return buildCustomPreset();
+
+    for (var index = 0; index < presetDefinitions.length; index += 1) {
+      if (presetDefinitions[index].id === selectedPresetId) return copyPreset(presetDefinitions[index]);
+    }
+
+    return copyPreset(findPresetDefinition(getDefaultSpeedPresetId(state.settings.speedUnit)));
   }
 
   function copyPreset(preset) {
@@ -731,8 +977,9 @@ import "../styles/accel.less";
       startSpeedMs: isFiniteNumber(preset.startSpeedMs) ? preset.startSpeedMs : 0,
       targetSpeedMs: isFiniteNumber(preset.targetSpeedMs) ? preset.targetSpeedMs : null,
       distanceTargetM: isFiniteNumber(preset.distanceTargetM) ? preset.distanceTargetM : null,
-      displayUnit: preset.displayUnit === "kmh" ? "kmh" : "mph",
-      distanceDisplay: preset.distanceDisplay === "m" ? "m" : "ft",
+      speedSystem: preset.speedSystem || null,
+      distanceSystem: preset.distanceSystem || null,
+      variantGroup: preset.variantGroup || preset.id,
       customStart: null,
       customEnd: null,
       customUnit: null,
@@ -742,7 +989,7 @@ import "../styles/accel.less";
   function buildCustomPreset() {
     var start = Math.max(0, Number(state.settings.customStart) || 0);
     var end = Math.max(0, Number(state.settings.customEnd) || 0);
-    var unit = state.settings.customUnit === "kmh" ? "kmh" : "mph";
+    var unit = state.settings.speedUnit;
     var factor = unit === "kmh" ? KMH_TO_MS : MPH_TO_MS;
 
     return {
@@ -753,8 +1000,6 @@ import "../styles/accel.less";
       startSpeedMs: start * factor,
       targetSpeedMs: end * factor,
       distanceTargetM: null,
-      displayUnit: unit,
-      distanceDisplay: "ft",
       customStart: start,
       customEnd: end,
       customUnit: unit,
@@ -765,16 +1010,23 @@ import "../styles/accel.less";
     if (!presetOrRun) return t("accelUnavailable");
 
     if (presetOrRun.id === "custom" || presetOrRun.presetId === "custom") {
-      if (!isFiniteNumber(presetOrRun.customStart) && !isFiniteNumber(presetOrRun.customEnd) && !isFiniteNumber(presetOrRun.targetSpeedMs)) {
+      if (!isFiniteNumber(presetOrRun.targetSpeedMs)) {
         return t("accelPresetCustom");
       }
-      var unit = presetOrRun.customUnit === "kmh" ? t("accelKmhUnit") : t("accelMphUnit");
-      var start = isFiniteNumber(presetOrRun.customStart) ? presetOrRun.customStart : Math.round(msToSpeedUnit(presetOrRun.startSpeedMs || 0, presetOrRun.displayUnit || "mph"));
-      var end = isFiniteNumber(presetOrRun.customEnd) ? presetOrRun.customEnd : Math.round(msToSpeedUnit(presetOrRun.targetSpeedMs || 0, presetOrRun.displayUnit || "mph"));
-      return t("accelPresetCustom") + " · " + formatNumber(start, 0) + "-" + formatNumber(end, 0) + " " + unit;
+      var speedUnit = state.settings.speedUnit;
+      var start = msToSpeedUnit(presetOrRun.startSpeedMs || 0, speedUnit);
+      var end = msToSpeedUnit(presetOrRun.targetSpeedMs || 0, speedUnit);
+      return t("accelPresetCustom") + " · " + formatAdaptiveNumber(start) + "-" + formatAdaptiveNumber(end) + " " + getSpeedUnitLabel(speedUnit);
     }
 
     return t(presetOrRun.labelKey || presetKeyFromId(presetOrRun.presetId));
+  }
+
+  function getPresetMetaLabel(presetOrRun) {
+    if (!presetOrRun) return t("accelUnavailable");
+    if (presetOrRun.id === "custom" || presetOrRun.presetId === "custom") return t("accelCustomRange");
+    if (presetOrRun.type === "distance" || presetOrRun.presetKind === "distance") return t("accelDistanceTest");
+    return presetOrRun.standingStart ? t("accelStandingStart") : t("accelRollingStart");
   }
 
   function presetKeyFromId(presetId) {
@@ -786,35 +1038,57 @@ import "../styles/accel.less";
 
   function getPresetSignature(preset) {
     if (preset.id === "custom") {
-      return "custom:" + String(preset.customStart) + ":" + String(preset.customEnd) + ":" + String(preset.customUnit);
+      return getCustomPresetSignature(preset.startSpeedMs, preset.targetSpeedMs);
     }
     return preset.id;
   }
 
+  function getCustomPresetSignature(startSpeedMs, targetSpeedMs) {
+    return "custom:" + formatSignatureNumber(startSpeedMs) + ":" + formatSignatureNumber(targetSpeedMs);
+  }
+
+  function formatSignatureNumber(value) {
+    if (!isFiniteNumber(value)) return "0";
+    return String(Math.round(value * 1000000) / 1000000);
+  }
+
   function renderPresetButtons() {
     var html = "";
-    var selectedId = state.settings.selectedPresetId;
+    var selectedId = resolvePresetIdForUnits(
+      state.settings.selectedPresetId,
+      state.settings.speedUnit,
+      state.settings.distanceUnit
+    );
+    var availablePresets = getAvailablePresetDefinitions();
 
-    for (var index = 0; index < presetDefinitions.length; index += 1) {
-      var preset = presetDefinitions[index];
+    for (var index = 0; index < availablePresets.length; index += 1) {
+      var preset = availablePresets[index];
       var pressed = preset.id === selectedId ? "true" : "false";
-      html += '<button type="button" class="accel-preset-btn" data-preset-id="' + escapeHtml(preset.id) + '" aria-pressed="' + pressed + '">' + escapeHtml(getPresetLabel(copyPreset(preset))) + "</button>";
+      var presetCopy = copyPreset(preset);
+      html += '<button type="button" class="accel-preset-btn" data-preset-id="' + escapeHtml(preset.id) + '" aria-pressed="' + pressed + '">';
+      html += '<span class="accel-preset-title">' + escapeHtml(getPresetLabel(presetCopy)) + "</span>";
+      html += '<span class="accel-preset-meta">' + escapeHtml(getPresetMetaLabel(presetCopy)) + "</span>";
+      html += "</button>";
     }
 
     elements.presetGrid.innerHTML = html;
     elements.customRangePanel.hidden = selectedId !== "custom";
-    elements.customStartInput.value = String(state.settings.customStart);
-    elements.customEndInput.value = String(state.settings.customEnd);
+    elements.customStartInput.value = formatInputSpeedValue(state.settings.customStart);
+    elements.customEndInput.value = formatInputSpeedValue(state.settings.customEnd);
   }
 
   function renderControlSelections() {
     var rolloutPressed = state.settings.rolloutEnabled;
     elements.rolloutOff.setAttribute("aria-pressed", String(!rolloutPressed));
     elements.rolloutOn.setAttribute("aria-pressed", String(rolloutPressed));
-    elements.launchThresholdHalf.setAttribute("aria-pressed", String(state.settings.launchThresholdMph === 0.5));
-    elements.launchThresholdOne.setAttribute("aria-pressed", String(state.settings.launchThresholdMph === 1));
-    elements.customUnitMph.setAttribute("aria-pressed", String(state.settings.customUnit === "mph"));
-    elements.customUnitKmh.setAttribute("aria-pressed", String(state.settings.customUnit === "kmh"));
+    elements.launchThresholdHalf.setAttribute("aria-pressed", String(isSameNumber(state.settings.launchThresholdMs, 0.5 * MPH_TO_MS)));
+    elements.launchThresholdOne.setAttribute("aria-pressed", String(isSameNumber(state.settings.launchThresholdMs, 1 * MPH_TO_MS)));
+    elements.speedUnitMph.setAttribute("aria-pressed", String(state.settings.speedUnit === "mph"));
+    elements.speedUnitKmh.setAttribute("aria-pressed", String(state.settings.speedUnit === "kmh"));
+    elements.distanceUnitFt.setAttribute("aria-pressed", String(state.settings.distanceUnit === "ft"));
+    elements.distanceUnitM.setAttribute("aria-pressed", String(state.settings.distanceUnit === "m"));
+    elements.launchThresholdHalf.textContent = formatThresholdOptionLabel(0.5 * MPH_TO_MS);
+    elements.launchThresholdOne.textContent = formatThresholdOptionLabel(1 * MPH_TO_MS);
 
     if (state.settings.selectedPresetId === "custom" && !isCustomRangeValid()) {
       elements.customRangeNotice.textContent = t("accelCustomInvalid");
@@ -840,16 +1114,35 @@ import "../styles/accel.less";
   }
 
   function handleCustomInput() {
-    state.settings.customStart = toFiniteNumber(elements.customStartInput.value, 0);
-    state.settings.customEnd = toFiniteNumber(elements.customEndInput.value, 0);
+    state.settings.customStart = normalizeCustomSpeedInput(elements.customStartInput.value, 0);
+    state.settings.customEnd = normalizeCustomSpeedInput(elements.customEndInput.value, 0);
     saveSettings();
     renderControlSelections();
     renderAll();
   }
 
-  function handleCustomUnitClick(event) {
+  function handleSpeedUnitClick(event) {
     var button = event.currentTarget;
-    state.settings.customUnit = button.getAttribute("data-unit") === "kmh" ? "kmh" : "mph";
+    var nextUnit = normalizeSpeedUnit(button.getAttribute("data-unit"));
+    if (nextUnit === state.settings.speedUnit) return;
+
+    state.settings.customStart = convertSpeedInputValue(state.settings.customStart, state.settings.speedUnit, nextUnit);
+    state.settings.customEnd = convertSpeedInputValue(state.settings.customEnd, state.settings.speedUnit, nextUnit);
+    state.settings.speedUnit = nextUnit;
+    syncSelectedPresetForUnits();
+    saveSettings();
+    renderControlSelections();
+    renderPresetButtons();
+    renderAll();
+  }
+
+  function handleDistanceUnitClick(event) {
+    var button = event.currentTarget;
+    var nextUnit = normalizeDistanceUnit(button.getAttribute("data-unit"));
+    if (nextUnit === state.settings.distanceUnit) return;
+
+    state.settings.distanceUnit = nextUnit;
+    syncSelectedPresetForUnits();
     saveSettings();
     renderControlSelections();
     renderPresetButtons();
@@ -864,7 +1157,7 @@ import "../styles/accel.less";
   }
 
   function handleThresholdClick(event) {
-    state.settings.launchThresholdMph = event.currentTarget.getAttribute("data-threshold") === "1" ? 1 : 0.5;
+    state.settings.launchThresholdMs = event.currentTarget.getAttribute("data-threshold") === "1" ? 1 * MPH_TO_MS : 0.5 * MPH_TO_MS;
     saveSettings();
     renderControlSelections();
     renderAll();
@@ -875,8 +1168,14 @@ import "../styles/accel.less";
     saveSettings();
   }
 
+  function isRunActive(run) {
+    return Boolean(run && (run.stage === "armed" || run.stage === "waiting_rollout" || run.stage === "running"));
+  }
+
   function handleArm() {
     var preset = getSelectedPreset();
+
+    primeFinishAudio();
 
     if (!state.geolocationSupported) {
       setActionNotice("accelNoGeolocation");
@@ -896,7 +1195,7 @@ import "../styles/accel.less";
       return;
     }
 
-    if (state.run && (state.run.stage === "armed" || state.run.stage === "waiting_rollout" || state.run.stage === "running")) {
+    if (isRunActive(state.run)) {
       return;
     }
 
@@ -909,12 +1208,6 @@ import "../styles/accel.less";
     if (!state.run || state.run.stage === "completed") return;
     state.run = null;
     setActionNotice("accelRunCancelledNotice");
-    renderAll();
-  }
-
-  function handleReset() {
-    state.run = null;
-    setActionNotice("accelRunResetNotice");
     renderAll();
   }
 
@@ -961,7 +1254,7 @@ import "../styles/accel.less";
       stage: "armed",
       createdAtMs: Date.now(),
       armedAtPerfMs: performance.now(),
-      launchThresholdMs: state.settings.launchThresholdMph * MPH_TO_MS,
+      launchThresholdMs: state.settings.launchThresholdMs,
       rolloutApplied: Boolean(state.settings.rolloutEnabled && preset.standingStart),
       rolloutDistanceM: state.settings.rolloutEnabled && preset.standingStart ? FT_TO_M : 0,
       sampleCount: 0,
@@ -1206,6 +1499,7 @@ import "../styles/accel.less";
     state.runs.unshift(result);
     if (state.runs.length > MAX_RUNS) state.runs = state.runs.slice(0, MAX_RUNS);
     saveRuns();
+    playFinishAudio();
     setActionNotice("accelRunSavedNotice");
     renderAll();
   }
@@ -1241,8 +1535,8 @@ import "../styles/accel.less";
       startSpeedMs: run.preset.startSpeedMs,
       targetSpeedMs: run.preset.targetSpeedMs,
       distanceTargetM: run.preset.distanceTargetM,
-      displayUnit: run.preset.displayUnit,
-      distanceDisplay: run.preset.distanceDisplay,
+      displayUnit: state.settings.speedUnit,
+      distanceDisplay: state.settings.distanceUnit,
       elapsedMs: run.finishPerfMs - run.startPerfMs,
       trapSpeedMs: run.preset.type === "distance" ? run.finishSpeedMs : null,
       rolloutApplied: run.rolloutApplied,
@@ -1464,26 +1758,27 @@ import "../styles/accel.less";
   }
 
   function renderControlState() {
-    var hasActiveRun = Boolean(state.run && (state.run.stage === "armed" || state.run.stage === "waiting_rollout" || state.run.stage === "running"));
-    var hasRunState = Boolean(state.run);
+    var hasActiveRun = isRunActive(state.run);
     var customInvalid = state.settings.selectedPresetId === "custom" && !isCustomRangeValid();
+    var primaryLabelKey = state.run && state.run.stage === "completed" ? "accelRunAgain" : "accelArm";
 
-    elements.armRun.disabled = hasActiveRun || !state.geolocationSupported || customInvalid;
+    elements.armRun.textContent = t(primaryLabelKey);
+    elements.cancelRun.textContent = t("accelCancel");
+    elements.armRun.hidden = hasActiveRun;
+    elements.cancelRun.hidden = !hasActiveRun;
+    elements.armRun.disabled = !state.geolocationSupported || customInvalid;
     elements.cancelRun.disabled = !hasActiveRun;
-    elements.resetRun.disabled = !hasRunState;
     elements.clearHistory.disabled = !state.runs.length;
   }
 
   function renderStatusPanel() {
-    var displayPreset = state.run ? state.run.preset : getSelectedPreset();
-    var speedUnit = displayPreset.displayUnit;
+    var speedUnit = state.settings.speedUnit;
     var permissionLabel = getPermissionLabel(state.permissionState);
     var ready = isGpsReady();
     var liveQuality = state.currentQuality;
     var qualityLabel = liveQuality ? getQualityLabel(liveQuality.grade) : t("accelUnavailable");
-    var stateLabel = getRunStateLabel();
     var readyLabel = ready ? t("accelReadyYes") : t("accelReadyNo");
-    var accuracyLabel = formatMeters(state.latestSample ? state.latestSample.accuracyM : null);
+    var accuracyLabel = formatDistanceMeasurement(state.latestSample ? state.latestSample.accuracyM : null);
 
     elements.toolbarPermissionValue.textContent = readyLabel;
     elements.toolbarQualityValue.textContent = accuracyLabel;
@@ -1495,7 +1790,7 @@ import "../styles/accel.less";
     elements.observedHzValue.textContent = formatHz(liveQuality ? liveQuality.averageHz : null);
     elements.statusSpeedValue.textContent = formatSpeedValue(state.latestSample ? state.latestSample.speedMs : null, speedUnit);
     elements.statusHeadingValue.textContent = formatHeading(state.latestSample ? state.latestSample.headingDeg : null);
-    elements.statusAltitudeValue.textContent = formatMeters(state.latestSample ? state.latestSample.altitudeM : null);
+    elements.statusAltitudeValue.textContent = formatDistanceMeasurement(state.latestSample ? state.latestSample.altitudeM : null);
     elements.speedSourceValue.textContent = getSpeedSourceLabel(state.latestSample ? state.latestSample.speedSource : null);
   }
 
@@ -1527,7 +1822,7 @@ import "../styles/accel.less";
   function renderLivePanel() {
     var run = state.run;
     var displayPreset = run ? run.preset : getSelectedPreset();
-    var speedUnit = displayPreset.displayUnit;
+    var speedUnit = state.settings.speedUnit;
     var liveState = getRunStateLabel();
     var liveQuality = run && run.result
       ? { grade: run.result.qualityGrade }
@@ -1535,7 +1830,7 @@ import "../styles/accel.less";
 
     elements.liveStateValue.textContent = liveState;
     elements.liveQualityValue.textContent = liveQuality ? getQualityLabel(liveQuality.grade) : t("accelUnavailable");
-    elements.liveSpeedUnit.textContent = speedUnit === "kmh" ? t("accelKmhUnit") : t("accelMphUnit");
+    elements.liveSpeedUnit.textContent = getSpeedUnitLabel(speedUnit);
     elements.liveSpeedValue.textContent = formatLiveSpeedNumber(state.latestSample ? state.latestSample.speedMs : null, speedUnit);
     elements.liveTargetValue.textContent = getPresetLabel(displayPreset);
 
@@ -1544,8 +1839,7 @@ import "../styles/accel.less";
       elements.liveDistanceValue.textContent = formatRunDistance(
         run.result.presetKind === "distance" && isFiniteNumber(run.result.distanceTargetM)
           ? run.result.distanceTargetM
-          : Math.max(0, (run.distanceSinceArmM || 0) - (run.startDistanceM || 0)),
-        displayPreset
+          : Math.max(0, (run.distanceSinceArmM || 0) - (run.startDistanceM || 0))
       );
       setProgressFromRun(run, displayPreset);
       return;
@@ -1559,11 +1853,10 @@ import "../styles/accel.less";
 
     if (run && run.startPerfMs !== null) {
       elements.liveDistanceValue.textContent = formatRunDistance(
-        Math.max(0, run.distanceSinceArmM - run.startDistanceM),
-        displayPreset
+        Math.max(0, run.distanceSinceArmM - run.startDistanceM)
       );
     } else {
-      elements.liveDistanceValue.textContent = formatRunDistance(0, displayPreset);
+      elements.liveDistanceValue.textContent = formatRunDistance(0);
     }
 
     setProgressFromRun(run, displayPreset);
@@ -1578,18 +1871,18 @@ import "../styles/accel.less";
       label = getTargetProgressLabel(preset, 0);
     } else if (run.stage === "completed" && run.result) {
       fraction = 1;
-      if (preset.type === "distance") label = getDistanceProgressLabel(preset.distanceTargetM, preset.distanceTargetM, preset);
-      else label = getSpeedProgressLabel(preset.targetSpeedMs, preset.targetSpeedMs, preset.displayUnit, preset.startSpeedMs);
+      if (preset.type === "distance") label = getDistanceProgressLabel(preset.distanceTargetM, preset.distanceTargetM);
+      else label = getSpeedProgressLabel(preset.targetSpeedMs, preset.targetSpeedMs, state.settings.speedUnit, preset.startSpeedMs);
     } else if (preset.type === "distance") {
       var distanceValue = run.startPerfMs !== null ? Math.max(0, run.distanceSinceArmM - run.startDistanceM) : 0;
       fraction = preset.distanceTargetM > 0 ? clamp(distanceValue / preset.distanceTargetM, 0, 1) : 0;
-      label = getDistanceProgressLabel(distanceValue, preset.distanceTargetM, preset);
+      label = getDistanceProgressLabel(distanceValue, preset.distanceTargetM);
     } else {
       var currentSpeed = state.latestSample ? state.latestSample.speedMs : 0;
       var baseline = preset.standingStart ? 0 : preset.startSpeedMs;
       var denominator = Math.max(0.1, preset.targetSpeedMs - baseline);
       fraction = clamp((currentSpeed - baseline) / denominator, 0, 1);
-      label = getSpeedProgressLabel(currentSpeed, preset.targetSpeedMs, preset.displayUnit, baseline);
+      label = getSpeedProgressLabel(currentSpeed, preset.targetSpeedMs, state.settings.speedUnit, baseline);
     }
 
     elements.progressLabel.textContent = label;
@@ -1610,10 +1903,10 @@ import "../styles/accel.less";
     elements.resultElapsedValue.textContent = formatRunSeconds(result.elapsedMs) + " s";
     elements.resultPresetValue.textContent = getPresetLabel(result);
     elements.resultTrapSpeedValue.textContent = result.presetKind === "distance"
-      ? formatSpeedValue(result.trapSpeedMs, result.displayUnit)
+      ? formatSpeedValue(result.trapSpeedMs, state.settings.speedUnit)
       : t("accelUnavailable");
     elements.resultRolloutValue.textContent = getRolloutLabel(result);
-    elements.resultAccuracyValue.textContent = formatMeters(result.averageAccuracyM);
+    elements.resultAccuracyValue.textContent = formatDistanceMeasurement(result.averageAccuracyM);
     elements.resultHzValue.textContent = formatHz(result.averageHz);
     elements.resultQualityValue.textContent = getQualityLabel(result.qualityGrade);
     elements.resultTimestampValue.textContent = formatTimestamp(result.savedAtMs);
@@ -1645,7 +1938,7 @@ import "../styles/accel.less";
       };
     }
 
-    if (state.run && (state.run.stage === "armed" || state.run.stage === "waiting_rollout" || state.run.stage === "running")) {
+    if (isRunActive(state.run)) {
       var liveRunQuality = buildCurrentRunQuality(state.run);
       return {
         averageIntervalMs: liveRunQuality.averageIntervalMs,
@@ -1738,6 +2031,8 @@ import "../styles/accel.less";
     if (preset.standingStart) {
       metaParts.push(state.settings.rolloutEnabled ? t("accelRolloutOn") : t("accelRolloutOff"));
     }
+
+    metaParts.push(getSpeedUnitLabel(state.settings.speedUnit) + " / " + getDistanceUnitLabel(state.settings.distanceUnit));
 
     return {
       title: getPresetLabel(preset),
@@ -1890,7 +2185,31 @@ import "../styles/accel.less";
 
   function msToSpeedUnit(speedMs, unit) {
     if (!isFiniteNumber(speedMs)) return null;
-    return unit === "kmh" ? speedMs * 3.6 : speedMs * 2.2369362920544;
+    return speedMs * SPEED_UNIT_CONFIG[normalizeSpeedUnit(unit)].factor;
+  }
+
+  function speedUnitValueToMs(value, unit) {
+    if (!isFiniteNumber(value)) return null;
+    return value / SPEED_UNIT_CONFIG[normalizeSpeedUnit(unit)].factor;
+  }
+
+  function convertSpeedInputValue(value, fromUnit, toUnit) {
+    if (!isFiniteNumber(value)) return 0;
+    if (fromUnit === toUnit) return normalizeCustomSpeedInput(value, 0);
+    return normalizeCustomSpeedInput(msToSpeedUnit(speedUnitValueToMs(value, fromUnit), toUnit), 0);
+  }
+
+  function getSpeedUnitLabel(unit) {
+    return t(SPEED_UNIT_CONFIG[normalizeSpeedUnit(unit)].labelKey);
+  }
+
+  function getDistanceUnitLabel(unit) {
+    return DISTANCE_UNIT_CONFIG[normalizeDistanceUnit(unit)].label;
+  }
+
+  function convertDistanceMeasurement(valueM, unit) {
+    if (!isFiniteNumber(valueM)) return null;
+    return valueM * DISTANCE_UNIT_CONFIG[normalizeDistanceUnit(unit)].factor;
   }
 
   function formatLiveSpeedNumber(speedMs, unit) {
@@ -1900,32 +2219,30 @@ import "../styles/accel.less";
 
   function formatSpeedValue(speedMs, unit) {
     if (!isFiniteNumber(speedMs)) return t("accelUnavailable");
-    return formatNumber(msToSpeedUnit(speedMs, unit), 1) + " " + (unit === "kmh" ? t("accelKmhUnit") : t("accelMphUnit"));
+    return formatNumber(msToSpeedUnit(speedMs, unit), 1) + " " + getSpeedUnitLabel(unit);
   }
 
-  function formatRunDistance(distanceM, preset) {
+  function formatRunDistance(distanceM, unit) {
     if (!isFiniteNumber(distanceM)) return t("accelUnavailable");
-
-    if (preset && preset.distanceDisplay === "ft") {
-      return formatNumber(distanceM * 3.2808398950131, 0) + " ft";
-    }
-
-    return formatNumber(distanceM, 1) + " m";
+    var normalizedUnit = normalizeDistanceUnit(unit || state.settings.distanceUnit);
+    var converted = convertDistanceMeasurement(distanceM, normalizedUnit);
+    var decimals = normalizedUnit === "m" ? 1 : 0;
+    return formatNumber(converted, decimals) + " " + getDistanceUnitLabel(normalizedUnit);
   }
 
-  function getDistanceProgressLabel(currentDistanceM, targetDistanceM, preset) {
-    return formatRunDistance(currentDistanceM, preset) + " / " + formatRunDistance(targetDistanceM, preset);
+  function getDistanceProgressLabel(currentDistanceM, targetDistanceM) {
+    return formatRunDistance(currentDistanceM) + " / " + formatRunDistance(targetDistanceM);
   }
 
   function getSpeedProgressLabel(currentSpeedMs, targetSpeedMs, unit, baselineMs) {
     var baseline = isFiniteNumber(baselineMs) ? baselineMs : 0;
     var currentValue = Math.max(baseline, currentSpeedMs || 0);
-    return formatNumber(msToSpeedUnit(currentValue, unit), 0) + " / " + formatNumber(msToSpeedUnit(targetSpeedMs, unit), 0) + " " + (unit === "kmh" ? t("accelKmhUnit") : t("accelMphUnit"));
+    return formatNumber(msToSpeedUnit(currentValue, unit), 0) + " / " + formatNumber(msToSpeedUnit(targetSpeedMs, unit), 0) + " " + getSpeedUnitLabel(unit);
   }
 
   function getTargetProgressLabel(preset, value) {
-    if (preset.type === "distance") return getDistanceProgressLabel(value, preset.distanceTargetM, preset);
-    return getSpeedProgressLabel(0, preset.targetSpeedMs, preset.displayUnit, preset.startSpeedMs);
+    if (preset.type === "distance") return getDistanceProgressLabel(value, preset.distanceTargetM);
+    return getSpeedProgressLabel(0, preset.targetSpeedMs, state.settings.speedUnit, preset.startSpeedMs);
   }
 
   function formatHeading(value) {
@@ -1933,10 +2250,12 @@ import "../styles/accel.less";
     return formatNumber(value, 0) + "°";
   }
 
-  function formatMeters(value) {
-    if (!isFiniteNumber(value)) return t("accelUnavailable");
-    var decimals = Math.abs(value) >= 100 ? 0 : 1;
-    return formatNumber(value, decimals) + " m";
+  function formatDistanceMeasurement(valueM, unit) {
+    if (!isFiniteNumber(valueM)) return t("accelUnavailable");
+    var normalizedUnit = normalizeDistanceUnit(unit || state.settings.distanceUnit);
+    var converted = convertDistanceMeasurement(valueM, normalizedUnit);
+    var decimals = Math.abs(converted) >= 100 ? 0 : 1;
+    return formatNumber(converted, decimals) + " " + getDistanceUnitLabel(normalizedUnit);
   }
 
   function formatHz(value) {
@@ -1961,6 +2280,34 @@ import "../styles/accel.less";
       minimumFractionDigits: decimals,
       maximumFractionDigits: decimals,
     }).format(value);
+  }
+
+  function formatAdaptiveNumber(value) {
+    if (!isFiniteNumber(value)) return t("accelUnavailable");
+    var rounded = Math.round(value);
+    var decimals = Math.abs(value - rounded) < 0.05 ? 0 : 1;
+    return formatNumber(value, decimals);
+  }
+
+  function normalizeCustomSpeedInput(value, fallback) {
+    var normalized = Math.max(0, toFiniteNumber(value, fallback));
+    return Math.round(normalized * 10) / 10;
+  }
+
+  function formatInputSpeedValue(value) {
+    if (!isFiniteNumber(value)) return "";
+    var normalized = normalizeCustomSpeedInput(value, 0);
+    if (Math.abs(normalized - Math.round(normalized)) < 0.001) return String(Math.round(normalized));
+    return normalized.toFixed(1);
+  }
+
+  function formatThresholdOptionLabel(speedMs) {
+    return formatNumber(msToSpeedUnit(speedMs, state.settings.speedUnit), 1) + " " + getSpeedUnitLabel(state.settings.speedUnit);
+  }
+
+  function isSameNumber(left, right) {
+    if (!isFiniteNumber(left) || !isFiniteNumber(right)) return false;
+    return Math.abs(left - right) < 0.0001;
   }
 
   function formatRunSeconds(durationMs) {
