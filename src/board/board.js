@@ -6,9 +6,10 @@ import "../styles/dock.less";
 import { createCalculatorWidget } from "../calculator/calculator-widget.js";
 import { createEnergyCalculatorWidget } from "../energy/energy-calculator-widget.js";
 import { createFloatingDock } from "../dock/floating-dock.js";
+import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
 import iro from "@jaames/iro";
 import { t, applyTranslations, toggleLang, getLang } from "../i18n.js";
-import { IconCalculator, IconEnergy, IconSpeed } from "../icons.js";
+import { IconAccel, IconCalculator, IconEnergy, IconSpeed } from "../icons.js";
 
 // Apply translations immediately
 applyTranslations();
@@ -24,20 +25,16 @@ langToggleBtn.addEventListener("click", () => {
 const openCalcBtn = document.getElementById("openCalc");
 const openSpeedBtn = document.getElementById("openSpeed");
 const openEnergyBtn = document.getElementById("openEnergy");
+const openAccelMenuBtn = document.getElementById("openAccelMenu");
 const openCalcMenuBtn = document.getElementById("openCalcMenu");
 const openSpeedMenuBtn = document.getElementById("openSpeedMenu");
 const openEnergyMenuBtn = document.getElementById("openEnergyMenu");
 const toolsMenuBtn = document.getElementById("toolsMenuBtn");
 const toolsMenuList = document.getElementById("toolsMenuList");
 
-function applyButtonIcon(button, icon) {
-  const iconSlot = button?.querySelector(".btn-icon");
-  if (!iconSlot) return;
-  iconSlot.innerHTML = icon;
-}
-
 applyButtonIcon(openCalcBtn, IconCalculator);
 applyButtonIcon(openCalcMenuBtn, IconCalculator);
+applyButtonIcon(openAccelMenuBtn, IconAccel);
 applyButtonIcon(openSpeedBtn, IconSpeed);
 applyButtonIcon(openSpeedMenuBtn, IconSpeed);
 applyButtonIcon(openEnergyBtn, IconEnergy);
@@ -45,31 +42,7 @@ applyButtonIcon(openEnergyMenuBtn, IconEnergy);
 
 // Floating dock with tool buttons
 const { calcBtn, energyBtn } = createFloatingDock();
-
-function setToolsMenuOpen(isOpen) {
-  if (!toolsMenuBtn || !toolsMenuList) return;
-  toolsMenuList.hidden = !isOpen;
-  toolsMenuBtn.setAttribute("aria-expanded", isOpen ? "true" : "false");
-}
-
-function closeToolsMenu() {
-  setToolsMenuOpen(false);
-}
-
-toolsMenuBtn?.addEventListener("click", (e) => {
-  e.stopPropagation();
-  setToolsMenuOpen(toolsMenuList?.hidden ?? true);
-});
-
-document.addEventListener("click", (e) => {
-  if (!toolsMenuList || toolsMenuList.hidden) return;
-  if (toolsMenuBtn?.contains(e.target) || toolsMenuList.contains(e.target)) return;
-  closeToolsMenu();
-});
-
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") closeToolsMenu();
-});
+const toolsMenu = initToolsMenu({ button: toolsMenuBtn, list: toolsMenuList });
 
 // Create widgets - all buttons toggle the same instance
 const calcWidget = createCalculatorWidget({ floating: false });
@@ -78,13 +51,13 @@ const energyWidget = createEnergyCalculatorWidget({ button: null });
 const bindToggle = (btn, widget) => {
   btn?.addEventListener("click", () => {
     widget.toggle();
-    closeToolsMenu();
+    toolsMenu.close();
   });
 };
 
 const bindNavigation = (btn, href) => {
   btn?.addEventListener("click", () => {
-    closeToolsMenu();
+    toolsMenu.close();
     window.location.href = href;
   });
 };
@@ -99,6 +72,7 @@ bindToggle(energyBtn, energyWidget);
 
 bindNavigation(openSpeedBtn, "/speed");
 bindNavigation(openSpeedMenuBtn, "/speed");
+bindNavigation(openAccelMenuBtn, "/accel");
 
   (function(){
     const canvas = document.getElementById("pad");

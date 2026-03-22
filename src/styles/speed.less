@@ -146,6 +146,42 @@ body.speed-page.alert-panel-open .speed-main{
     padding-right: max(4px, env(safe-area-inset-right));
 }
 
+.speed-toolbar .right-stack{
+    max-width: none;
+    gap: 6px;
+    align-items: flex-end;
+}
+
+.speed-tools-menu{
+    width: auto;
+}
+
+.speed-tools-menu .tools-menu-btn{
+    min-width: 126px;
+}
+
+.speed-tools-menu .tools-menu-list{
+    min-width: 220px;
+    border-color: color-mix(in srgb, var(--speed-panel-border) 92%, transparent);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--speed-surface-strong) 100%, transparent),
+        color-mix(in srgb, var(--speed-surface) 100%, transparent)
+      );
+    box-shadow: 0 20px 42px rgba(15, 23, 42, 0.22);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+}
+
+.speed-tools-menu .tools-menu-list button{
+    justify-content: flex-start;
+}
+
+.speed-toolbar .status{
+    text-align: right;
+}
+
 .toolbar-audio-quick{
     display: inline-flex;
     gap: 4px;
@@ -1507,8 +1543,8 @@ body.speed-page.alert-panel-open .speed-main{
     }
 
     .speed-toolbar .right-stack{
-        margin-left: 0;
-        align-items: flex-start;
+        margin-left: auto;
+        align-items: flex-end;
     }
 
     .stats-grid{

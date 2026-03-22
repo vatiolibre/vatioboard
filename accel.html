@@ -97,16 +97,31 @@
             <button id="cancelRun" type="button" class="accel-action-btn accel-action-btn-danger accel-toolbar-btn" hidden>Cancel test</button>
           </div>
 
-          <div class="right-stack accel-right-stack">
-            <span class="attribution">
-              <a href="/speed.html" data-i18n="speedometer">Speedometer</a>
-            </span>
-            <span class="attribution">
-              <a href="/gps-rate.html" data-i18n="accelGpsLab">GPS Lab</a>
-            </span>
-            <span class="attribution">
-              <a href="/" data-i18n="openBoard">Open board</a>
-            </span>
+          <div class="tools-menu accel-tools-menu">
+            <button
+              id="accelToolsMenuBtn"
+              type="button"
+              class="tools-menu-btn"
+              data-i18n="tools"
+              aria-haspopup="menu"
+              aria-expanded="false"
+            >
+              Tools
+            </button>
+            <div id="accelToolsMenuList" class="tools-menu-list" role="menu" hidden>
+              <button id="openAccelSpeedMenu" type="button" role="menuitem" class="btn-with-icon">
+                <span class="btn-icon" aria-hidden="true"></span>
+                <span data-i18n="speedometer">Speedometer</span>
+              </button>
+              <button id="openAccelGpsLabMenu" type="button" role="menuitem" class="btn-with-icon">
+                <span class="btn-icon" aria-hidden="true"></span>
+                <span data-i18n="accelGpsLab">GPS Lab</span>
+              </button>
+              <button id="openAccelBoardMenu" type="button" role="menuitem" class="btn-with-icon">
+                <span class="btn-icon" aria-hidden="true"></span>
+                <span data-i18n="openBoard">Open board</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

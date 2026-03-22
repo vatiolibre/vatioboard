@@ -1,5 +1,7 @@
 import "../styles/gps-rate.less";
 import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
+import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
+import { IconAccel, IconBoard, IconCalculator, IconSpeed } from "../icons.js";
 
 applyTranslations();
 
@@ -43,6 +45,12 @@ const HISTOGRAM_BUCKETS = [
 const elements = {
   langToggle: document.getElementById("langToggle"),
   pageDescriptionMeta: document.querySelector('meta[name="description"]'),
+  toolsMenuBtn: document.getElementById("gpsRateToolsMenuBtn"),
+  toolsMenuList: document.getElementById("gpsRateToolsMenuList"),
+  openSpeedMenu: document.getElementById("openGpsRateSpeedMenu"),
+  openAccelMenu: document.getElementById("openGpsRateAccelMenu"),
+  openCalculatorMenu: document.getElementById("openGpsRateCalculatorMenu"),
+  openBoardMenu: document.getElementById("openGpsRateBoardMenu"),
   permissionChipValue: document.getElementById("permissionChipValue"),
   visibilityChipValue: document.getElementById("visibilityChipValue"),
   headerStatusText: document.getElementById("headerStatusText"),
@@ -121,6 +129,24 @@ const elements = {
   logTableWrap: document.getElementById("logTableWrap"),
   eventLogBody: document.getElementById("eventLogBody"),
 };
+
+const toolsMenu = initToolsMenu({
+  button: elements.toolsMenuBtn,
+  list: elements.toolsMenuList,
+});
+
+applyButtonIcon(elements.openSpeedMenu, IconSpeed);
+applyButtonIcon(elements.openAccelMenu, IconAccel);
+applyButtonIcon(elements.openCalculatorMenu, IconCalculator);
+applyButtonIcon(elements.openBoardMenu, IconBoard);
+
+function bindMenuNavigation(element, href) {
+  if (!element) return;
+  element.addEventListener("click", () => {
+    toolsMenu.close();
+    window.location.href = href;
+  });
+}
 
 const state = {
   permissionState: "unknown",
@@ -1508,6 +1534,10 @@ function bindEvents() {
   elements.langToggle.addEventListener("click", () => {
     toggleLang();
   });
+  bindMenuNavigation(elements.openSpeedMenu, "/speed");
+  bindMenuNavigation(elements.openAccelMenu, "/accel");
+  bindMenuNavigation(elements.openCalculatorMenu, "/calculator");
+  bindMenuNavigation(elements.openBoardMenu, "/");
 
   document.addEventListener("i18n:change", syncLanguage);
   document.addEventListener("visibilitychange", handleVisibilityChange);

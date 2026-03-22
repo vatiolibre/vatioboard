@@ -5,6 +5,8 @@ import KDBush from "kdbush";
 import { around as geoAround, distance as geoDistanceKm } from "geokdbush";
 import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
 import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
+import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
+import { IconAccel, IconBoard, IconGpsLab } from "../icons.js";
 
 applyTranslations();
 
@@ -102,6 +104,11 @@ const GEO_ERROR_CODE = {
 const elements = {
   gaugeCard: document.querySelector(".gauge-card"),
   langToggle: document.getElementById("langToggle"),
+  toolsMenuBtn: document.getElementById("speedToolsMenuBtn"),
+  toolsMenuList: document.getElementById("speedToolsMenuList"),
+  openAccelMenu: document.getElementById("openSpeedAccelMenu"),
+  openGpsLabMenu: document.getElementById("openSpeedGpsLabMenu"),
+  openBoardMenu: document.getElementById("openSpeedBoardMenu"),
   primaryViewButtons: Array.from(document.querySelectorAll(".speed-view-btn")),
   speedPrimaryStage: document.getElementById("speedPrimaryStage"),
   gaugeStage: document.getElementById("gaugeStage"),
@@ -169,6 +176,23 @@ const elements = {
   globeMount: document.getElementById("speedGlobe"),
   globeStatus: document.getElementById("globeStatus"),
 };
+
+const toolsMenu = initToolsMenu({
+  button: elements.toolsMenuBtn,
+  list: elements.toolsMenuList,
+});
+
+applyButtonIcon(elements.openAccelMenu, IconAccel);
+applyButtonIcon(elements.openGpsLabMenu, IconGpsLab);
+applyButtonIcon(elements.openBoardMenu, IconBoard);
+
+function bindMenuNavigation(element, href) {
+  if (!element) return;
+  element.addEventListener("click", () => {
+    toolsMenu.close();
+    window.location.href = href;
+  });
+}
 
 function writeAsciiString(view, offset, value) {
   for (let index = 0; index < value.length; index += 1) {
@@ -3677,6 +3701,9 @@ function bindEvents() {
   elements.langToggle?.addEventListener("click", () => {
     toggleLang();
   });
+  bindMenuNavigation(elements.openAccelMenu, "/accel");
+  bindMenuNavigation(elements.openGpsLabMenu, "/gps-rate");
+  bindMenuNavigation(elements.openBoardMenu, "/");
   elements.retryGps.addEventListener("click", () => restartTrip({ fromUserGesture: true }));
   elements.resetTrip.addEventListener("click", () => restartTrip({ fromUserGesture: true }));
   elements.alertTrigger.addEventListener("click", toggleAlertPanel);

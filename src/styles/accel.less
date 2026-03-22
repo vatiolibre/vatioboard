@@ -122,35 +122,30 @@ body.accel-page{
     min-width: 148px;
 }
 
-.accel-pill{
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    min-height: 38px;
-    padding: 7px 12px;
-    border-radius: 999px;
-    border: 0;
-    background: color-mix(in srgb, var(--accel-chip-bg) 90%, transparent);
-    color: var(--accel-chip-fg);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-}
-
-.accel-pill-label{
-    color: var(--accel-muted);
-    font-size: 11px;
-    font-weight: 700;
-}
-
-.accel-pill strong{
-    font-size: 18px;
-    font-weight: 800;
-    line-height: 1.1;
-}
-
-.accel-right-stack{
+.accel-tools-menu{
     margin-left: auto;
-    align-items: flex-end;
+}
+
+.accel-tools-menu .tools-menu-btn{
+    min-width: 126px;
+}
+
+.accel-tools-menu .tools-menu-list{
+    min-width: 220px;
+    border-color: color-mix(in srgb, var(--accel-border) 92%, transparent);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--accel-surface-strong) 100%, transparent),
+        color-mix(in srgb, var(--accel-surface) 100%, transparent)
+      );
+    box-shadow: 0 20px 42px rgba(15, 23, 42, 0.22);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+}
+
+.accel-tools-menu .tools-menu-list button{
+    justify-content: flex-start;
 }
 
 .accel-main{
@@ -1075,10 +1070,20 @@ body.accel-page .accel-result-graph-canvas{
 }
 
 .accel-sheet-results .accel-sheet-top{
+    position: relative;
     display: grid;
-    grid-template-columns: minmax(0, 220px) minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
     align-items: start;
     gap: 16px;
+    padding-right: 88px;
+}
+
+.accel-sheet-results .accel-sheet-close{
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 2;
+    align-self: start;
 }
 
 .accel-sheet-copy{
@@ -1298,7 +1303,7 @@ button:disabled{
     }
 
     .accel-sheet-results .accel-sheet-top{
-        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-columns: minmax(0, 1fr);
     }
 
     .accel-result-primary-bar{
@@ -1368,11 +1373,10 @@ button:disabled{
         flex-wrap: wrap;
     }
 
-    .accel-right-stack{
+    .accel-tools-menu{
         width: 100%;
-        flex-direction: row;
-        justify-content: flex-start;
-        align-items: center;
+        display: flex;
+        justify-content: flex-end;
     }
 
     .accel-toolbar-actions{

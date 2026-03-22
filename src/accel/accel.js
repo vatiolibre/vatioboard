@@ -1,6 +1,8 @@
 import "../styles/accel.less";
 import Chart from "chart.js/auto";
 import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
+import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
+import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
 
 (function () {
   var LANG_KEY = "vatio_board_lang";
@@ -268,6 +270,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       accelOff: "Off",
       accelOn: "On",
       permission: "Permission",
+      tools: "Tools",
       speedometer: "Speedometer",
       openBoard: "Open board",
       changeLanguage: "Change language",
@@ -460,6 +463,7 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
       accelOff: "Apagado",
       accelOn: "Encendido",
       permission: "Permiso",
+      tools: "Herramientas",
       speedometer: "Velocimetro",
       openBoard: "Abrir tablero",
       changeLanguage: "Cambiar idioma",
@@ -524,6 +528,11 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
   var elements = {
     langToggle: document.getElementById("langToggle"),
     pageDescriptionMeta: document.querySelector('meta[name="description"]'),
+    toolsMenuBtn: document.getElementById("accelToolsMenuBtn"),
+    toolsMenuList: document.getElementById("accelToolsMenuList"),
+    openSpeedMenu: document.getElementById("openAccelSpeedMenu"),
+    openGpsLabMenu: document.getElementById("openAccelGpsLabMenu"),
+    openBoardMenu: document.getElementById("openAccelBoardMenu"),
     sheetBackdrop: document.getElementById("accelSheetBackdrop"),
     setupTrigger: document.getElementById("setupTrigger"),
     setupTriggerValue: document.getElementById("setupTriggerValue"),
@@ -621,6 +630,15 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     historyEmptyState: document.getElementById("historyEmptyState"),
     historyList: document.getElementById("historyList"),
   };
+
+  var toolsMenu = initToolsMenu({
+    button: elements.toolsMenuBtn,
+    list: elements.toolsMenuList,
+  });
+
+  applyButtonIcon(elements.openSpeedMenu, IconSpeed);
+  applyButtonIcon(elements.openGpsLabMenu, IconGpsLab);
+  applyButtonIcon(elements.openBoardMenu, IconBoard);
 
   var liveSpeedometer = createAnalogSpeedometer({
     stageElement: elements.liveSpeedGaugeStage,
@@ -795,6 +813,9 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
 
   function bindEvents() {
     elements.langToggle.addEventListener("click", handleLangToggle);
+    bindMenuNavigation(elements.openSpeedMenu, "/speed");
+    bindMenuNavigation(elements.openGpsLabMenu, "/gps-rate");
+    bindMenuNavigation(elements.openBoardMenu, "/");
     elements.setupTrigger.addEventListener("click", function () {
       togglePanel("setup");
     });
@@ -824,6 +845,14 @@ import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
     document.addEventListener("keydown", handleKeyDown);
     window.addEventListener("pagehide", destroyResultGraph);
     window.addEventListener("resize", requestResultGraphRefresh);
+  }
+
+  function bindMenuNavigation(element, href) {
+    if (!element) return;
+    element.addEventListener("click", function () {
+      toolsMenu.close();
+      window.location.href = href;
+    });
   }
 
   function setupResultGraphObservers() {

@@ -147,7 +147,34 @@ body.gps-rate-page{
 
 .gps-rate-right-stack{
     margin-left: auto;
+    max-width: none;
     align-items: flex-end;
+}
+
+.gps-rate-tools-menu{
+    width: auto;
+}
+
+.gps-rate-tools-menu .tools-menu-btn{
+    min-width: 126px;
+}
+
+.gps-rate-tools-menu .tools-menu-list{
+    min-width: 220px;
+    border-color: color-mix(in srgb, var(--border) 92%, transparent);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface) 100%, transparent),
+        color-mix(in srgb, var(--canvas-bg) 100%, transparent)
+      );
+    box-shadow: 0 20px 42px rgba(15, 23, 42, 0.22);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+}
+
+.gps-rate-tools-menu .tools-menu-list button{
+    justify-content: flex-start;
 }
 
 .gps-rate-main{
@@ -811,9 +838,9 @@ body.gps-rate-page{
 
     .gps-rate-right-stack{
         width: 100%;
-        flex-direction: row;
-        justify-content: flex-start;
-        align-items: center;
+        display: flex;
+        justify-content: flex-end;
+        align-items: flex-start;
     }
 
     .gps-rate-main{

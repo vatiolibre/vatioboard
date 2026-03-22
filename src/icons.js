@@ -41,3 +41,28 @@ export const IconSpeed = `
     <path d="M7.5 15h0M12 8h0M16.5 15h0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
   </svg>
 `;
+
+export const IconAccel = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M4 16a8 8 0 1 1 16 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M10 14l5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M14.5 9H15a2 2 0 0 1 2 2v0.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M6.8 18.5h10.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+  </svg>
+`;
+
+export const IconGpsLab = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <circle cx="12" cy="12" r="6.5" stroke="currentColor" stroke-width="1.6"/>
+    <path d="M12 3v3M12 18v3M3 12h3M18 12h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    <circle cx="12" cy="12" r="1.6" fill="currentColor"/>
+  </svg>
+`;
+
+export const IconBoard = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <rect x="4" y="4" width="16" height="12" rx="2.5" stroke="currentColor" stroke-width="1.6"/>
+    <path d="M8 20h8M12 16v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M8 12.2l2.3-2.2 1.9 1.9 3.8-3.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`;
