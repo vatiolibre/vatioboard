@@ -1038,7 +1038,6 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     var startSpeedMs = isFiniteNumber(run.startSpeedMs) ? run.startSpeedMs : 0;
     var targetSpeedMs = isFiniteNumber(run.targetSpeedMs) ? run.targetSpeedMs : null;
     var presetKind = typeof run.presetKind === "string" ? run.presetKind : "speed";
-    var speedTrace = normalizeStoredSpeedTrace(run.speedTrace, run.elapsedMs);
     var sampleLog = normalizeStoredSampleLog(run.sampleLog);
     var partials = normalizeStoredPartials(run.partials);
     var finishSpeedMs = isFiniteNumber(run.finishSpeedMs)
@@ -1060,7 +1059,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
       presetSignature = getCustomPresetSignature(startSpeedMs, targetSpeedMs);
     }
 
-    return {
+    var normalizedRun = {
       id: typeof run.id === "string" ? run.id : "run-" + String(run.savedAtMs),
       savedAtMs: run.savedAtMs,
       presetId: presetId,
@@ -1077,7 +1076,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
       displayUnit: run.displayUnit === "kmh" ? "kmh" : "mph",
       distanceDisplay: run.distanceDisplay === "m" ? "m" : "ft",
       elapsedMs: run.elapsedMs,
-      speedTrace: speedTrace,
+      speedTrace: [],
       sampleLog: sampleLog,
       partials: partials,
       finishSpeedMs: finishSpeedMs,
@@ -1108,6 +1107,12 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
       startSpeedSource: typeof run.startSpeedSource === "string" ? run.startSpeedSource : null,
       notes: typeof run.notes === "string" ? run.notes : "",
     };
+
+    normalizedRun.speedTrace = sampleLog.length
+      ? buildResultSpeedTrace(normalizedRun, normalizedRun.elapsedMs)
+      : normalizeStoredSpeedTrace(run.speedTrace, run.elapsedMs);
+
+    return normalizedRun;
   }
 
   function loadJson(key) {
@@ -2553,13 +2558,13 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     if (!run || !Array.isArray(run.sampleLog) || !run.sampleLog.length) return [];
 
     var startedSamples = [];
+    var hasExpectedElapsedMs = isFiniteNumber(expectedElapsedMs) && expectedElapsedMs > 0;
     for (var index = 0; index < run.sampleLog.length; index += 1) {
       var sample = run.sampleLog[index];
       if (!sample || !isFiniteNumber(sample.speedMs) || !isFiniteNumber(sample.elapsedFromStartMs)) continue;
+      if (hasExpectedElapsedMs && sample.elapsedFromStartMs > (expectedElapsedMs + TRACE_DUPLICATE_EPSILON_MS)) continue;
       startedSamples.push(sample);
     }
-
-    if (!startedSamples.length) return [];
 
     var trace = [];
     if (isFiniteNumber(run.startTraceSpeedMs)) {
@@ -2573,46 +2578,36 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
       });
     }
 
-    var accumulatedElapsedMs = 0;
     for (var sampleIndex = 0; sampleIndex < startedSamples.length; sampleIndex += 1) {
       var currentSample = startedSamples[sampleIndex];
-      var stepMs = 0;
+      var sampleElapsedMs = Math.max(0, currentSample.elapsedFromStartMs);
+      if (hasExpectedElapsedMs) sampleElapsedMs = Math.min(sampleElapsedMs, expectedElapsedMs);
+      if (trace.length && sampleElapsedMs < (trace[trace.length - 1].elapsedMs - TRACE_DUPLICATE_EPSILON_MS)) continue;
 
-      if (sampleIndex === 0) {
-        stepMs = isFiniteNumber(currentSample.deltaMs) && currentSample.deltaMs > 0
-          ? currentSample.deltaMs
-          : Math.max(0, Math.min(currentSample.elapsedFromStartMs, 1000));
-      } else if (isFiniteNumber(currentSample.deltaMs) && currentSample.deltaMs > 0) {
-        stepMs = currentSample.deltaMs;
-      } else {
-        var previousElapsedMs = startedSamples[sampleIndex - 1].elapsedFromStartMs;
-        stepMs = isFiniteNumber(previousElapsedMs)
-          ? Math.max(0, currentSample.elapsedFromStartMs - previousElapsedMs)
-          : 0;
-      }
-
-      accumulatedElapsedMs += Math.max(0, stepMs);
-      trace.push({
-        elapsedMs: accumulatedElapsedMs,
+      var nextPoint = {
+        elapsedMs: sampleElapsedMs,
         speedMs: Math.max(0, currentSample.speedMs),
         distanceM: isFiniteNumber(currentSample.distanceFromStartM) ? Math.max(0, currentSample.distanceFromStartM) : null,
         altitudeM: isFiniteNumber(currentSample.altitudeM) ? currentSample.altitudeM : null,
         accuracyM: isFiniteNumber(currentSample.accuracyM) ? Math.max(0, currentSample.accuracyM) : null,
         speedSource: typeof currentSample.speedSource === "string" ? currentSample.speedSource : null,
-      });
-    }
+      };
 
-    if (trace.length && isFiniteNumber(expectedElapsedMs) && expectedElapsedMs > 0) {
-      var traceLastElapsedMs = trace[trace.length - 1].elapsedMs;
-      if (isFiniteNumber(traceLastElapsedMs) && traceLastElapsedMs > 0) {
-        var scale = expectedElapsedMs / traceLastElapsedMs;
-        for (var traceIndex = 0; traceIndex < trace.length; traceIndex += 1) {
-          trace[traceIndex].elapsedMs = trace[traceIndex].elapsedMs * scale;
-        }
+      var lastPoint = trace.length ? trace[trace.length - 1] : null;
+      if (lastPoint && Math.abs(lastPoint.elapsedMs - sampleElapsedMs) <= TRACE_DUPLICATE_EPSILON_MS) {
+        lastPoint.elapsedMs = nextPoint.elapsedMs;
+        lastPoint.speedMs = nextPoint.speedMs;
+        lastPoint.distanceM = nextPoint.distanceM;
+        lastPoint.altitudeM = nextPoint.altitudeM;
+        lastPoint.accuracyM = nextPoint.accuracyM;
+        lastPoint.speedSource = nextPoint.speedSource;
+      } else {
+        trace.push(nextPoint);
       }
     }
 
     if (isFiniteNumber(expectedElapsedMs) && isFiniteNumber(run.finishSpeedMs)) {
+      var finishContext = getSpeedTraceFinishContext(run.sampleLog, expectedElapsedMs);
       var lastPoint = trace.length ? trace[trace.length - 1] : null;
       if (!lastPoint || Math.abs(lastPoint.elapsedMs - expectedElapsedMs) > TRACE_DUPLICATE_EPSILON_MS) {
         trace.push({
@@ -2620,15 +2615,55 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
           speedMs: Math.max(0, run.finishSpeedMs),
           distanceM: isFiniteNumber(run.finishDistanceM) && isFiniteNumber(run.startDistanceM)
             ? Math.max(0, run.finishDistanceM - run.startDistanceM)
-            : (isFiniteNumber(run.preset && run.preset.distanceTargetM) ? run.preset.distanceTargetM : null),
+            : (isFiniteNumber(run.distanceTargetM) ? run.distanceTargetM : (isFiniteNumber(run.preset && run.preset.distanceTargetM) ? run.preset.distanceTargetM : null)),
           altitudeM: isFiniteNumber(run.finishAltitudeM) ? run.finishAltitudeM : null,
-          accuracyM: isFiniteNumber(run.startAccuracyM) ? run.startAccuracyM : null,
-          speedSource: typeof run.startSpeedSource === "string" ? run.startSpeedSource : null,
+          accuracyM: finishContext.accuracyM,
+          speedSource: finishContext.speedSource,
         });
+      } else {
+        lastPoint.elapsedMs = expectedElapsedMs;
+        lastPoint.speedMs = Math.max(0, run.finishSpeedMs);
+        if (isFiniteNumber(run.finishDistanceM) && isFiniteNumber(run.startDistanceM)) {
+          lastPoint.distanceM = Math.max(0, run.finishDistanceM - run.startDistanceM);
+        } else if (isFiniteNumber(run.distanceTargetM)) {
+          lastPoint.distanceM = run.distanceTargetM;
+        } else if (isFiniteNumber(run.preset && run.preset.distanceTargetM)) {
+          lastPoint.distanceM = run.preset.distanceTargetM;
+        }
+        if (isFiniteNumber(run.finishAltitudeM)) lastPoint.altitudeM = run.finishAltitudeM;
+        if (isFiniteNumber(finishContext.accuracyM)) lastPoint.accuracyM = finishContext.accuracyM;
+        if (typeof finishContext.speedSource === "string") lastPoint.speedSource = finishContext.speedSource;
       }
     }
 
     return trace;
+  }
+
+  function getSpeedTraceFinishContext(sampleLog, expectedElapsedMs) {
+    if (!Array.isArray(sampleLog) || !sampleLog.length) {
+      return {
+        accuracyM: null,
+        speedSource: null,
+      };
+    }
+
+    var fallbackSample = null;
+    for (var index = 0; index < sampleLog.length; index += 1) {
+      var sample = sampleLog[index];
+      if (!sample || !isFiniteNumber(sample.elapsedFromStartMs)) continue;
+      fallbackSample = sample;
+      if (isFiniteNumber(expectedElapsedMs) && sample.elapsedFromStartMs + TRACE_DUPLICATE_EPSILON_MS >= expectedElapsedMs) {
+        return {
+          accuracyM: isFiniteNumber(sample.accuracyM) ? Math.max(0, sample.accuracyM) : null,
+          speedSource: typeof sample.speedSource === "string" ? sample.speedSource : null,
+        };
+      }
+    }
+
+    return {
+      accuracyM: fallbackSample && isFiniteNumber(fallbackSample.accuracyM) ? Math.max(0, fallbackSample.accuracyM) : null,
+      speedSource: fallbackSample && typeof fallbackSample.speedSource === "string" ? fallbackSample.speedSource : null,
+    };
   }
 
   function compactSpeedTrace(trace) {
@@ -3161,10 +3196,27 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
       }
     }
 
-    var fallbackPoint = graphData.length ? graphData[graphData.length - 1] : null;
+    var fallbackPoint = getPreferredResultGraphFallbackPoint(graphData);
     resultGraphSelectionResultId = result ? result.id : "";
     resultGraphSelectionPointKey = fallbackPoint ? fallbackPoint.key : "";
     return fallbackPoint;
+  }
+
+  function getPreferredResultGraphFallbackPoint(graphData) {
+    if (!Array.isArray(graphData) || !graphData.length) return null;
+
+    for (var index = graphData.length - 1; index >= 0; index -= 1) {
+      if (isFiniteNumber(graphData[index].slopePercent)) return graphData[index];
+    }
+
+    for (var detailIndex = graphData.length - 1; detailIndex >= 0; detailIndex -= 1) {
+      var point = graphData[detailIndex];
+      if (isFiniteNumber(point.distanceM) || isFiniteNumber(point.altitudeM) || isFiniteNumber(point.accuracyM)) {
+        return point;
+      }
+    }
+
+    return graphData[graphData.length - 1];
   }
 
   function getTraceSlopePercent(startAltitudeM, altitudeM, distanceM) {
