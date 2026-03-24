@@ -5,6 +5,7 @@ import KDBush from "kdbush";
 import { around as geoAround, distance as geoDistanceKm } from "geokdbush";
 import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
 import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
+import { initSupportPanel } from "../shared/support-panel.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
 import { IconAccel, IconBoard, IconGpsLab } from "../icons.js";
 
@@ -181,6 +182,7 @@ const toolsMenu = initToolsMenu({
   button: elements.toolsMenuBtn,
   list: elements.toolsMenuList,
 });
+initSupportPanel();
 
 applyButtonIcon(elements.openAccelMenu, IconAccel);
 applyButtonIcon(elements.openGpsLabMenu, IconGpsLab);

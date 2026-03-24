@@ -18,6 +18,10 @@
     --accel-chip-fg: #0f172a;
     --accel-muted: rgba(17, 24, 39, 0.6);
     --accel-panel-soft: rgba(17, 24, 39, 0.04);
+    --founding-border: var(--accel-border);
+    --founding-surface: color-mix(in srgb, var(--accel-surface) 100%, transparent);
+    --founding-surface-strong: color-mix(in srgb, var(--accel-surface-strong) 100%, transparent);
+    --founding-shadow: var(--accel-card-shadow);
 }
 
 @media (prefers-color-scheme: dark){
@@ -39,6 +43,10 @@
         --accel-chip-fg: rgba(255, 255, 255, 0.92);
         --accel-muted: rgba(255, 255, 255, 0.64);
         --accel-panel-soft: rgba(255, 255, 255, 0.05);
+        --founding-border: var(--accel-border);
+        --founding-surface: color-mix(in srgb, var(--accel-surface) 100%, transparent);
+        --founding-surface-strong: color-mix(in srgb, var(--accel-surface-strong) 100%, transparent);
+        --founding-shadow: var(--accel-card-shadow);
     }
 
 }
@@ -124,6 +132,10 @@ body.accel-page{
 
 .accel-tools-menu{
     margin-left: auto;
+}
+
+.accel-toolbar-utility-row{
+    align-items: center;
 }
 
 .accel-tools-menu .tools-menu-btn{
@@ -1418,6 +1430,11 @@ button:disabled{
         justify-content: flex-start;
         align-items: flex-start;
         flex-wrap: wrap;
+    }
+
+    .accel-toolbar-utility-row{
+        width: 100%;
+        justify-content: space-between;
     }
 
     .accel-tools-menu{

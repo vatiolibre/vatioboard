@@ -17,6 +17,17 @@
   --calc-radius: 16px;
 
   --calc-font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+
+  --founding-fg: var(--calc-text);
+  --founding-muted: rgba(17,24,39,.72);
+  --founding-border: var(--calc-border);
+  --founding-surface: rgba(255,255,255,.92);
+  --founding-surface-strong: rgba(255,255,255,.98);
+  --founding-shadow: 0 16px 34px rgba(15,23,42,.08);
+  --founding-accent: #111827;
+  --founding-accent-contrast: #ffffff;
+  --founding-badge-bg: rgba(16,185,129,.14);
+  --founding-badge-fg: #047857;
 }
 
 @media (prefers-color-scheme: dark){
@@ -44,7 +55,22 @@
 
     /* Accent */
     --calc-accent: #10b981;
+
+    --founding-muted: rgba(255,255,255,.72);
+    --founding-surface: rgba(26,27,30,.82);
+    --founding-surface-strong: rgba(26,27,30,.92);
+    --founding-shadow: 0 18px 36px rgba(0,0,0,.34);
+    --founding-accent: rgba(255,255,255,.92);
+    --founding-accent-contrast: #111827;
+    --founding-badge-bg: rgba(52,211,153,.18);
+    --founding-badge-fg: #6ee7b7;
   }
+}
+
+@import "./founding-support.less";
+
+.demo-toolbar .support-panel-anchor{
+  margin-left: auto;
 }
 
 /* Floating launcher button */

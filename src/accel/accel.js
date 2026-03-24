@@ -1,6 +1,7 @@
 import "../styles/accel.less";
 import Chart from "chart.js/auto";
 import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
+import { initSupportPanel } from "../shared/support-panel.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
 import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
 
@@ -107,6 +108,13 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
       accelTagline: "Browser acceleration timer by Vatio Libre",
       accelRoute: "ACCEL",
       accelToolbar: "Acceleration tools",
+      foundingBadge: "Founding Members",
+      foundingSummary: "Support VatioLibre and join the Founding Members",
+      foundingToolbarButton: "Support",
+      foundingMeta: "8-year price lock and every premium feature",
+      foundingTitle: "Become a VatioLibre founding member",
+      foundingBody: "Lock your subscription price for 8 years while it stays active and get all current and future premium features, including real-time tracking, battery management, advanced telemetry, and contributor recognition.",
+      foundingCta: "Become a founding member",
       accelGpsLab: "GPS Lab",
       accelSetup: "Setup",
       accelResultsPanel: "Results",
@@ -301,6 +309,13 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
       accelTagline: "Temporizador de aceleracion en navegador por Vatio Libre",
       accelRoute: "ACCEL",
       accelToolbar: "Herramientas de aceleracion",
+      foundingBadge: "Miembros fundadores",
+      foundingSummary: "Apoya VatioLibre y únete a los Miembros fundadores",
+      foundingToolbarButton: "Apoyar",
+      foundingMeta: "Precio congelado por 8 años y acceso premium total",
+      foundingTitle: "Conviértete en fundador de VatioLibre",
+      foundingBody: "Congela el precio de tu suscripción por 8 años mientras siga activa y accede a todas las funciones premium actuales y futuras, incluyendo rastreo en tiempo real, gestión de batería, telemetría avanzada y reconocimiento como contribuidor.",
+      foundingCta: "Conviértete en fundador",
       accelGpsLab: "GPS Lab",
       accelSetup: "Configurar",
       accelResultsPanel: "Resultados",
@@ -652,6 +667,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     button: elements.toolsMenuBtn,
     list: elements.toolsMenuList,
   });
+  initSupportPanel();
 
   applyButtonIcon(elements.openSpeedMenu, IconSpeed);
   applyButtonIcon(elements.openGpsLabMenu, IconGpsLab);

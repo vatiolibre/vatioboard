@@ -1,5 +1,6 @@
 import "../styles/gps-rate.less";
 import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
+import { initSupportPanel } from "../shared/support-panel.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
 import { IconAccel, IconBoard, IconCalculator, IconSpeed } from "../icons.js";
 
@@ -134,6 +135,7 @@ const toolsMenu = initToolsMenu({
   button: elements.toolsMenuBtn,
   list: elements.toolsMenuList,
 });
+initSupportPanel();
 
 applyButtonIcon(elements.openSpeedMenu, IconSpeed);
 applyButtonIcon(elements.openAccelMenu, IconAccel);
