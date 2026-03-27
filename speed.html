@@ -209,6 +209,25 @@
         <div class="toolbar speed-toolbar" role="toolbar" data-i18n-aria="speedometerControls" aria-label="Speedometer controls">
           <button id="resetTrip" type="button" data-i18n="resetTrip">Reset trip</button>
 
+          <div class="toolbar-recording-quick" role="group" data-i18n-aria="recordingControls" aria-label="Recording controls">
+            <button
+              id="toggleRecording"
+              type="button"
+              class="toolbar-recording-btn"
+              data-i18n="pauseRecording"
+            >
+              Pause recording
+            </button>
+            <button
+              id="stopRecording"
+              type="button"
+              class="toolbar-recording-btn toolbar-recording-btn-stop"
+              data-i18n="stopRecording"
+            >
+              Stop recording
+            </button>
+          </div>
+
           <div class="toolbar-audio-quick" role="group" data-i18n-aria="audioQuickControls" aria-label="Audio quick controls">
             <button
               id="quickAudioToggle"
@@ -291,6 +310,10 @@
                   Tools
                 </button>
                 <div id="speedToolsMenuList" class="tools-menu-list" role="menu" hidden>
+                  <button id="openSpeedReplayMenu" type="button" role="menuitem" class="btn-with-icon">
+                    <span class="btn-icon" aria-hidden="true"></span>
+                    <span data-i18n="driveReplay">Drive Replay</span>
+                  </button>
                   <button id="openSpeedAccelMenu" type="button" role="menuitem" class="btn-with-icon">
                     <span class="btn-icon" aria-hidden="true"></span>
                     <span data-i18n="accelerationTest">Acceleration Test</span>

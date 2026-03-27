@@ -1,0 +1,208 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { bootHtmlPage, expectPageSeo, flushTasks } from "../helpers/page-smoke.js";
+
+vi.mock("chart.js/auto", () => ({
+  default: class FakeChart {
+    constructor(canvas) {
+      this.canvas = canvas;
+      this.ctx = canvas.getContext("2d");
+      this.chartArea = {
+        top: 0,
+        left: 0,
+        right: 300,
+        bottom: 220,
+      };
+      this.scales = {
+        x: {
+          getPixelForValue: (value) => value,
+        },
+      };
+    }
+
+    destroy() {}
+    draw() {}
+    update() {}
+  },
+}));
+
+vi.mock("maplibre-gl", () => {
+  class FakeMap {
+    constructor() {
+      this.handlers = {};
+      this.sources = new Map();
+      this.scrollZoom = { disable: vi.fn(), enable: vi.fn() };
+      this.boxZoom = { disable: vi.fn() };
+      this.doubleClickZoom = { disable: vi.fn() };
+      this.keyboard = { disable: vi.fn() };
+      queueMicrotask(() => {
+        for (const handler of this.handlers.load ?? []) {
+          handler();
+        }
+      });
+    }
+
+    on(event, handler) {
+      (this.handlers[event] ??= []).push(handler);
+      return this;
+    }
+
+    addControl() {
+      return this;
+    }
+
+    getSource(id) {
+      if (!this.sources.has(id)) {
+        this.sources.set(id, { setData: vi.fn() });
+      }
+      return this.sources.get(id);
+    }
+
+    jumpTo() {}
+    easeTo() {}
+    fitBounds() {}
+    stop() {}
+    remove() {}
+  }
+
+  class FakeAttributionControl {}
+
+  return {
+    default: {
+      Map: FakeMap,
+      AttributionControl: FakeAttributionControl,
+    },
+  };
+});
+
+describe("replay.html smoke", () => {
+  beforeEach(async () => {
+    localStorage.clear();
+    localStorage.setItem("vatio_speed_replay_active_v1", JSON.stringify({
+      id: "active-session",
+      version: 1,
+      source: "speed",
+      unit: "kmh",
+      distanceUnit: "m",
+      startedAtMs: 1000,
+      updatedAtMs: 4000,
+      endedAtMs: 4000,
+      maxSpeedMs: 15,
+      totalDistanceM: 180,
+      minAltitudeM: 10,
+      maxAltitudeM: 20,
+      samples: [
+        {
+          timestampMs: 1000,
+          latitude: 40.7128,
+          longitude: -74.006,
+          speedMs: 0,
+          altitudeM: 10,
+          accuracyM: 5,
+          headingDeg: 180,
+          totalDistanceM: 0,
+        },
+        {
+          timestampMs: 2500,
+          latitude: 40.7138,
+          longitude: -74.005,
+          speedMs: 10,
+          altitudeM: 15,
+          accuracyM: 4,
+          headingDeg: 182,
+          totalDistanceM: 80,
+        },
+        {
+          timestampMs: 4000,
+          latitude: 40.7148,
+          longitude: -74.004,
+          speedMs: 15,
+          altitudeM: 20,
+          accuracyM: 4,
+          headingDeg: 184,
+          totalDistanceM: 180,
+        },
+      ],
+    }));
+    localStorage.setItem("vatio_speed_replay_library_v1", JSON.stringify([
+      {
+        id: "saved-session",
+        version: 1,
+        source: "speed",
+        unit: "kmh",
+        distanceUnit: "m",
+        startedAtMs: 5000,
+        updatedAtMs: 7000,
+        endedAtMs: 7000,
+        maxSpeedMs: 11,
+        totalDistanceM: 120,
+        minAltitudeM: 8,
+        maxAltitudeM: 18,
+        recordingState: "stopped",
+        samples: [
+          {
+            timestampMs: 5000,
+            latitude: 40.72,
+            longitude: -74.01,
+            speedMs: 0,
+            altitudeM: 8,
+            accuracyM: 5,
+            headingDeg: 160,
+            totalDistanceM: 0,
+          },
+          {
+            timestampMs: 7000,
+            latitude: 40.721,
+            longitude: -74.009,
+            speedMs: 11,
+            altitudeM: 18,
+            accuracyM: 5,
+            headingDeg: 170,
+            totalDistanceM: 120,
+          },
+        ],
+      },
+    ]));
+    window.confirm = vi.fn(() => true);
+
+    vi.resetModules();
+    await bootHtmlPage("replay.html");
+  });
+
+  it("boots the replay page and renders the stored session", async () => {
+    await import("../../src/replay/replay.js");
+    await flushTasks();
+
+    expectPageSeo({
+      titleIncludes: "Vatio Drive Replay",
+      canonical: "https://vatioboard.com/replay.html",
+    });
+    expect(document.getElementById("replayEmptyState").hidden).toBe(true);
+    expect(document.getElementById("replayShell").hidden).toBe(false);
+    expect(document.getElementById("replaySessionChip").textContent).toBe("Active session");
+    expect(document.getElementById("replaySampleCountValue").textContent).toBe("3");
+    expect(document.getElementById("replayPeakSpeedValue").textContent).toContain("54 km/h");
+    expect(document.querySelector("#replayPlayPause .replay-action-icon svg")).toBeTruthy();
+    expect(document.getElementById("replayPlayPause").getAttribute("aria-label")).toBe("Play");
+    expect(document.querySelector("#replayRestart .replay-action-icon svg")).toBeTruthy();
+    expect(document.querySelector("#replayApproach .replay-action-icon svg")).toBeTruthy();
+    expect(document.querySelectorAll("#replayRecordingsList button[data-recording-id]")).toHaveLength(2);
+    expect(document.querySelectorAll("#replayRecordingsList button[data-delete-recording-id]")).toHaveLength(1);
+    expect(document.getElementById("replayGraphHeadingCurrent").textContent).toContain("180");
+    expect(document.querySelector(".replay-live-grid")).toBeNull();
+    expect(document.querySelector(".replay-map-head")).toBeNull();
+    expect(document.getElementById("replayMap").hasAttribute("aria-hidden")).toBe(false);
+  });
+
+  it("lets the user delete saved recordings while keeping the active session", async () => {
+    await import("../../src/replay/replay.js");
+    await flushTasks();
+
+    document.querySelector('#replayRecordingsList button[data-delete-recording-id="saved-session"]').click();
+    await flushTasks();
+
+    expect(window.confirm).toHaveBeenCalledTimes(1);
+    expect(document.querySelectorAll("#replayRecordingsList button[data-recording-id]")).toHaveLength(1);
+    expect(document.querySelector('#replayRecordingsList button[data-delete-recording-id="saved-session"]')).toBeNull();
+    expect(JSON.parse(localStorage.getItem("vatio_speed_replay_library_v1"))).toEqual([]);
+  });
+});

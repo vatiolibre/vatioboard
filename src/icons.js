@@ -66,3 +66,39 @@ export const IconBoard = `
     <path d="M8 12.2l2.3-2.2 1.9 1.9 3.8-3.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>
 `;
+
+export const IconReplay = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M5 7.5a8.5 8.5 0 1 1-1 7.3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M5 3.5v5h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M11 9.25 15.75 12 11 14.75Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+  </svg>
+`;
+
+export const IconPlay = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M8 6.75v10.5c0 .74.8 1.21 1.46.84l8-4.75a.97.97 0 0 0 0-1.68l-8-4.75A.97.97 0 0 0 8 6.75Z" fill="currentColor"/>
+  </svg>
+`;
+
+export const IconPause = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <rect x="7" y="6.5" width="3.5" height="11" rx="1.2" fill="currentColor"/>
+    <rect x="13.5" y="6.5" width="3.5" height="11" rx="1.2" fill="currentColor"/>
+  </svg>
+`;
+
+export const IconRestart = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M6.75 8.25A6.75 6.75 0 1 1 6 14.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M6.75 4.75v3.9h3.9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`;
+
+export const IconWorld = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.6"/>
+    <path d="M4.5 12h15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M12 4.25c2.15 2.1 3.25 4.7 3.25 7.75S14.15 17.65 12 19.75c-2.15-2.1-3.25-4.7-3.25-7.75S9.85 6.35 12 4.25Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+  </svg>
+`;

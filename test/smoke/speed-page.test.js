@@ -75,6 +75,7 @@ describe("speed.html smoke", () => {
       canonical: "https://vatioboard.com/speed.html",
     });
     expect(getBrowserMocks().geolocation.watchPosition).toHaveBeenCalledTimes(1);
+    expect(document.getElementById("toggleRecording").textContent).toBe("Pause recording");
 
     emitGeolocationSuccess({
       coords: {

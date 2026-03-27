@@ -4,7 +4,15 @@ import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
 import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
 import { initSupportPanel } from "../shared/support-panel.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
-import { IconAccel, IconBoard, IconGpsLab } from "../icons.js";
+import { IconAccel, IconBoard, IconGpsLab, IconReplay } from "../icons.js";
+import {
+  archiveReplaySession,
+  createReplaySession,
+  hasReplaySamples,
+  loadActiveReplaySession,
+  appendReplaySample,
+  saveActiveReplaySession,
+} from "../replay/session.js";
 import {
   DEFAULT_ALERT_LIMIT_MS,
   DISTANCE_UNIT_CONFIG,
@@ -67,6 +75,7 @@ const elements = {
   langToggle: document.getElementById("langToggle"),
   toolsMenuBtn: document.getElementById("speedToolsMenuBtn"),
   toolsMenuList: document.getElementById("speedToolsMenuList"),
+  openReplayMenu: document.getElementById("openSpeedReplayMenu"),
   openAccelMenu: document.getElementById("openSpeedAccelMenu"),
   openGpsLabMenu: document.getElementById("openSpeedGpsLabMenu"),
   openBoardMenu: document.getElementById("openSpeedBoardMenu"),
@@ -112,6 +121,8 @@ const elements = {
   noticeText: document.getElementById("noticeText"),
   retryGps: document.getElementById("retryGps"),
   resetTrip: document.getElementById("resetTrip"),
+  toggleRecording: document.getElementById("toggleRecording"),
+  stopRecording: document.getElementById("stopRecording"),
   alertTrigger: document.getElementById("alertTrigger"),
   alertTriggerValue: document.getElementById("alertTriggerValue"),
   alertTriggerHint: document.getElementById("alertTriggerHint"),
@@ -147,6 +158,7 @@ initSupportPanel();
 applyButtonIcon(elements.openAccelMenu, IconAccel);
 applyButtonIcon(elements.openGpsLabMenu, IconGpsLab);
 applyButtonIcon(elements.openBoardMenu, IconBoard);
+applyButtonIcon(elements.openReplayMenu, IconReplay);
 
 const analogSpeedometer = createAnalogSpeedometer({
   stageElement: elements.gaugeStage,
@@ -163,6 +175,12 @@ const analogSpeedometer = createAnalogSpeedometer({
 const pageDescriptionMeta = document.querySelector('meta[name="description"]');
 const loadedPreferences = normalizeInitialAudioPreferences(loadInitialPreferences());
 const initialPreferences = loadedPreferences.preferences;
+const restoredReplaySession = loadActiveReplaySession();
+const initialReplaySession = restoredReplaySession || createReplaySession({
+  unit: initialPreferences.unit,
+  distanceUnit: initialPreferences.distanceUnit,
+  recordingState: "recording",
+});
 
 const state = {
   unit: initialPreferences.unit,
@@ -248,6 +266,8 @@ const state = {
   runtimeMediaMetadataUrgencySignature: "",
   runtimeMediaMetadataUpdatedAt: 0,
   runtimeMediaPlaybackState: "",
+  recordingState: initialReplaySession.recordingState,
+  replaySession: initialReplaySession,
 };
 
 let globeController = null;
@@ -350,6 +370,90 @@ audioController = createSpeedAudioController({
 
 function renderMetrics() {
   speedRenderer.renderMetrics(renderAlertUi);
+}
+
+function renderRecordingControls() {
+  if (!elements.toggleRecording || !elements.stopRecording) return;
+
+  const hasSamples = hasReplaySamples(state.replaySession, 1);
+  const toggleLabel = state.recordingState === "recording"
+    ? t("pauseRecording")
+    : (state.recordingState === "paused" ? t("resumeRecording") : t("startRecording"));
+
+  elements.toggleRecording.textContent = toggleLabel;
+  elements.toggleRecording.setAttribute("aria-pressed", String(state.recordingState === "recording"));
+  elements.stopRecording.disabled = state.recordingState === "stopped" && !hasSamples;
+}
+
+function syncReplaySessionPreferences() {
+  state.replaySession = {
+    ...state.replaySession,
+    unit: state.unit,
+    distanceUnit: state.distanceUnit,
+    recordingState: state.recordingState,
+  };
+  saveActiveReplaySession(state.replaySession);
+  renderRecordingControls();
+}
+
+function resetReplaySession({
+  archiveCurrent = true,
+  endedAtMs = Date.now(),
+  recordingState = state.recordingState,
+  minSamples = 2,
+} = {}) {
+  if (archiveCurrent) {
+    archiveReplaySession(state.replaySession, { endedAtMs, minSamples });
+  }
+
+  state.recordingState = recordingState;
+  state.replaySession = createReplaySession({
+    unit: state.unit,
+    distanceUnit: state.distanceUnit,
+    recordingState,
+  });
+  saveActiveReplaySession(state.replaySession);
+  renderRecordingControls();
+}
+
+function setRecordingState(recordingState) {
+  state.recordingState = recordingState;
+  state.replaySession = {
+    ...state.replaySession,
+    recordingState,
+    unit: state.unit,
+    distanceUnit: state.distanceUnit,
+  };
+  saveActiveReplaySession(state.replaySession);
+  renderRecordingControls();
+}
+
+function toggleRecording() {
+  if (state.recordingState === "recording") {
+    setRecordingState("paused");
+    return;
+  }
+
+  if (state.recordingState === "stopped") {
+    resetReplaySession({
+      archiveCurrent: false,
+      recordingState: "recording",
+    });
+    return;
+  }
+
+  setRecordingState("recording");
+}
+
+function stopRecordingSession() {
+  resetReplaySession({
+    archiveCurrent: true,
+    endedAtMs: Number.isFinite(state.lastPositionTimestamp)
+      ? state.lastPositionTimestamp
+      : Date.now(),
+    recordingState: "stopped",
+    minSamples: 1,
+  });
 }
 
 function updateNearestTrapState(longitude, latitude) {
@@ -713,6 +817,7 @@ function setUnit(unit) {
   }
 
   delete elements.alertPresets.dataset.unit;
+  syncReplaySessionPreferences();
   renderMetrics();
   speedRenderer.drawGauge();
 }
@@ -730,6 +835,7 @@ function setDistanceUnit(unit) {
   }
 
   delete elements.trapDistancePresets.dataset.unit;
+  syncReplaySessionPreferences();
   renderMetrics();
 }
 
@@ -756,6 +862,12 @@ function clearLiveFixState({ preserveContinuity = false } = {}) {
 }
 
 function resetTripData() {
+  resetReplaySession({
+    endedAtMs: Number.isFinite(state.lastPositionTimestamp)
+      ? state.lastPositionTimestamp
+      : Date.now(),
+    recordingState: state.recordingState,
+  });
   state.startTime = null;
   state.currentSpeedMs = 0;
   state.displayedSpeedMs = 0;
@@ -908,6 +1020,29 @@ function handlePosition(position) {
       : Math.min(state.minAltitudeM, coords.altitude);
   }
 
+  if (state.recordingState === "recording") {
+    state.replaySession = appendReplaySample(
+      state.replaySession,
+      {
+        timestampMs: normalizedTimestamp,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        speedMs: state.currentSpeedMs,
+        altitudeM: Number.isFinite(coords.altitude) ? coords.altitude : null,
+        accuracyM: currentAccuracyM,
+        headingDeg: Number.isFinite(coords.heading) ? coords.heading : null,
+        totalDistanceM: state.totalDistanceM,
+      },
+      {
+        unit: state.unit,
+        distanceUnit: state.distanceUnit,
+        recordingState: state.recordingState,
+      },
+    );
+    saveActiveReplaySession(state.replaySession);
+    renderRecordingControls();
+  }
+
   setStatus("accuracy", { accuracyM: coords.accuracy });
   renderMetrics();
   audioController.maybeRecoverSuppressedBackgroundAudio();
@@ -996,17 +1131,21 @@ function syncLanguage() {
     renderPrimaryView,
     renderMetrics,
   });
+  renderRecordingControls();
 }
 
 function bindEvents() {
   elements.langToggle?.addEventListener("click", () => {
     toggleLang();
   });
+  bindMenuNavigation(elements.openReplayMenu, "/replay.html");
   bindMenuNavigation(elements.openAccelMenu, "/accel");
   bindMenuNavigation(elements.openGpsLabMenu, "/gps-rate");
   bindMenuNavigation(elements.openBoardMenu, "/");
   elements.retryGps.addEventListener("click", () => restartTrip({ fromUserGesture: true }));
   elements.resetTrip.addEventListener("click", () => restartTrip({ fromUserGesture: true }));
+  elements.toggleRecording?.addEventListener("click", toggleRecording);
+  elements.stopRecording?.addEventListener("click", stopRecordingSession);
   elements.alertTrigger.addEventListener("click", toggleAlertPanel);
   elements.closeAlertPanel.addEventListener("click", closeAlertPanel);
   elements.alertToggle.addEventListener("click", () => {
@@ -1156,6 +1295,7 @@ function init() {
   if (loadedPreferences.changed) {
     saveBackgroundAudioEnabledPreference(false);
   }
+  saveActiveReplaySession(state.replaySession);
   updatePageMeta();
 
   if (elements.langToggle) {
@@ -1199,6 +1339,7 @@ function init() {
   });
   renderPrimaryView();
   renderMetrics();
+  renderRecordingControls();
   globeController.initGlobe();
   resizeCanvas();
   bindEvents();
