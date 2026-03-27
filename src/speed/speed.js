@@ -6,6 +6,7 @@ import { around as geoAround, distance as geoDistanceKm } from "geokdbush";
 import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
 import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
 import { initSupportPanel } from "../shared/support-panel.js";
+import { loadBoolean, loadNumber, loadText, saveBoolean, saveNumber, saveText } from "../shared/storage.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
 import { IconAccel, IconBoard, IconGpsLab } from "../icons.js";
 
@@ -1095,140 +1096,76 @@ function updatePageMeta() {
 }
 
 function loadUnitPreference() {
-  try {
-    const unit = window.localStorage.getItem(STORAGE_UNIT_KEY);
-    return unit && UNIT_CONFIG[unit] ? unit : "kmh";
-  } catch {
-    return "kmh";
-  }
+  const unit = loadText(STORAGE_UNIT_KEY, "");
+  return unit && UNIT_CONFIG[unit] ? unit : "kmh";
 }
 
 function saveUnitPreference(unit) {
-  try {
-    window.localStorage.setItem(STORAGE_UNIT_KEY, unit);
-  } catch {
-    // Ignore storage restrictions. The page still works without persistence.
-  }
+  saveText(STORAGE_UNIT_KEY, unit);
 }
 
 function loadDistanceUnitPreference() {
-  try {
-    const storedUnit = window.localStorage.getItem(STORAGE_DISTANCE_UNIT_KEY);
-    if (storedUnit && DISTANCE_UNIT_CONFIG[storedUnit]) {
-      return storedUnit;
-    }
-
-    const legacyUnit = window.localStorage.getItem(LEGACY_STORAGE_ALTITUDE_UNIT_KEY);
-    return legacyUnit && DISTANCE_UNIT_CONFIG[legacyUnit] ? legacyUnit : "m";
-  } catch {
-    return "m";
+  const storedUnit = loadText(STORAGE_DISTANCE_UNIT_KEY, "");
+  if (storedUnit && DISTANCE_UNIT_CONFIG[storedUnit]) {
+    return storedUnit;
   }
+
+  const legacyUnit = loadText(LEGACY_STORAGE_ALTITUDE_UNIT_KEY, "");
+  return legacyUnit && DISTANCE_UNIT_CONFIG[legacyUnit] ? legacyUnit : "m";
 }
 
 function saveDistanceUnitPreference(unit) {
-  try {
-    window.localStorage.setItem(STORAGE_DISTANCE_UNIT_KEY, unit);
-  } catch {
-    // Ignore storage restrictions. The page still works without persistence.
-  }
+  saveText(STORAGE_DISTANCE_UNIT_KEY, unit);
 }
 
 function loadPrimaryViewPreference() {
-  try {
-    return window.localStorage.getItem(STORAGE_PRIMARY_VIEW_KEY) === "waze" ? "waze" : "gauge";
-  } catch {
-    return "gauge";
-  }
+  return loadText(STORAGE_PRIMARY_VIEW_KEY, "") === "waze" ? "waze" : "gauge";
 }
 
 function savePrimaryViewPreference(view) {
-  try {
-    window.localStorage.setItem(STORAGE_PRIMARY_VIEW_KEY, view);
-  } catch {
-    // Ignore storage restrictions. The page still works without persistence.
-  }
+  saveText(STORAGE_PRIMARY_VIEW_KEY, view);
 }
 
 function loadAlertEnabledPreference() {
-  try {
-    return window.localStorage.getItem(STORAGE_ALERT_ENABLED_KEY) === "true";
-  } catch {
-    return false;
-  }
+  return loadBoolean(STORAGE_ALERT_ENABLED_KEY, false);
 }
 
 function saveAlertEnabledPreference(enabled) {
-  try {
-    window.localStorage.setItem(STORAGE_ALERT_ENABLED_KEY, String(enabled));
-  } catch {
-    // Ignore storage restrictions. The page still works without persistence.
-  }
+  saveBoolean(STORAGE_ALERT_ENABLED_KEY, enabled);
 }
 
 function loadAlertLimitPreference() {
-  try {
-    const value = Number.parseFloat(window.localStorage.getItem(STORAGE_ALERT_LIMIT_KEY) || "");
-    return Number.isFinite(value) && value > 0 ? value : DEFAULT_ALERT_LIMIT_MS;
-  } catch {
-    return DEFAULT_ALERT_LIMIT_MS;
-  }
+  return loadNumber(STORAGE_ALERT_LIMIT_KEY, DEFAULT_ALERT_LIMIT_MS, {
+    validate: (value) => value > 0,
+  });
 }
 
 function saveAlertLimitPreference(limitMs) {
-  try {
-    window.localStorage.setItem(STORAGE_ALERT_LIMIT_KEY, String(limitMs));
-  } catch {
-    // Ignore storage restrictions. The page still works without persistence.
-  }
+  saveNumber(STORAGE_ALERT_LIMIT_KEY, limitMs);
 }
 
 function loadAlertSoundEnabledPreference() {
-  try {
-    const value = window.localStorage.getItem(STORAGE_ALERT_SOUND_ENABLED_KEY);
-    return value === null ? true : value === "true";
-  } catch {
-    return true;
-  }
+  return loadBoolean(STORAGE_ALERT_SOUND_ENABLED_KEY, true);
 }
 
 function saveAlertSoundEnabledPreference(enabled) {
-  try {
-    window.localStorage.setItem(STORAGE_ALERT_SOUND_ENABLED_KEY, String(enabled));
-  } catch {
-    // Ignore storage restrictions. The page still works without persistence.
-  }
+  saveBoolean(STORAGE_ALERT_SOUND_ENABLED_KEY, enabled);
 }
 
 function loadAudioMutedPreference() {
-  try {
-    return window.localStorage.getItem(STORAGE_AUDIO_MUTED_KEY) === "true";
-  } catch {
-    return false;
-  }
+  return loadBoolean(STORAGE_AUDIO_MUTED_KEY, false);
 }
 
 function saveAudioMutedPreference(muted) {
-  try {
-    window.localStorage.setItem(STORAGE_AUDIO_MUTED_KEY, String(muted));
-  } catch {
-    // Ignore storage restrictions. The page still works without persistence.
-  }
+  saveBoolean(STORAGE_AUDIO_MUTED_KEY, muted);
 }
 
 function loadBackgroundAudioEnabledPreference() {
-  try {
-    return window.localStorage.getItem(STORAGE_BACKGROUND_AUDIO_ENABLED_KEY) === "true";
-  } catch {
-    return false;
-  }
+  return loadBoolean(STORAGE_BACKGROUND_AUDIO_ENABLED_KEY, false);
 }
 
 function saveBackgroundAudioEnabledPreference(enabled) {
-  try {
-    window.localStorage.setItem(STORAGE_BACKGROUND_AUDIO_ENABLED_KEY, String(enabled));
-  } catch {
-    // Ignore storage restrictions. The page still works without persistence.
-  }
+  saveBoolean(STORAGE_BACKGROUND_AUDIO_ENABLED_KEY, enabled);
 }
 
 function getTrapAlertPresets(unit = state.distanceUnit) {
@@ -1257,73 +1194,38 @@ function normalizeTrapAlertDistance(distanceM, unit = state.distanceUnit) {
 }
 
 function loadTrapAlertEnabledPreference() {
-  try {
-    const value = window.localStorage.getItem(STORAGE_TRAP_ALERT_ENABLED_KEY);
-    return value === null ? true : value === "true";
-  } catch {
-    return true;
-  }
+  return loadBoolean(STORAGE_TRAP_ALERT_ENABLED_KEY, true);
 }
 
 function saveTrapAlertEnabledPreference(enabled) {
-  try {
-    window.localStorage.setItem(STORAGE_TRAP_ALERT_ENABLED_KEY, String(enabled));
-  } catch {
-    // Ignore storage restrictions. The page still works without persistence.
-  }
+  saveBoolean(STORAGE_TRAP_ALERT_ENABLED_KEY, enabled);
 }
 
 function loadTrapAlertDistancePreference(unit = initialDistanceUnit) {
-  try {
-    const value = Number.parseFloat(window.localStorage.getItem(STORAGE_TRAP_ALERT_DISTANCE_KEY) || "");
-    if (!Number.isFinite(value) || value <= 0) {
-      return getDefaultTrapAlertDistanceM(unit);
-    }
-    return normalizeTrapAlertDistance(value, unit);
-  } catch {
-    return getDefaultTrapAlertDistanceM(unit);
-  }
+  const value = loadNumber(STORAGE_TRAP_ALERT_DISTANCE_KEY, getDefaultTrapAlertDistanceM(unit), {
+    validate: (distance) => distance > 0,
+  });
+  return normalizeTrapAlertDistance(value, unit);
 }
 
 function saveTrapAlertDistancePreference(distanceM) {
-  try {
-    window.localStorage.setItem(STORAGE_TRAP_ALERT_DISTANCE_KEY, String(distanceM));
-  } catch {
-    // Ignore storage restrictions. The page still works without persistence.
-  }
+  saveNumber(STORAGE_TRAP_ALERT_DISTANCE_KEY, distanceM);
 }
 
 function loadTrapSoundEnabledPreference() {
-  try {
-    const value = window.localStorage.getItem(STORAGE_TRAP_SOUND_ENABLED_KEY);
-    return value === null ? true : value === "true";
-  } catch {
-    return true;
-  }
+  return loadBoolean(STORAGE_TRAP_SOUND_ENABLED_KEY, true);
 }
 
 function saveTrapSoundEnabledPreference(enabled) {
-  try {
-    window.localStorage.setItem(STORAGE_TRAP_SOUND_ENABLED_KEY, String(enabled));
-  } catch {
-    // Ignore storage restrictions. The page still works without persistence.
-  }
+  saveBoolean(STORAGE_TRAP_SOUND_ENABLED_KEY, enabled);
 }
 
 function loadAlertTriggerDiscoveredPreference() {
-  try {
-    return window.localStorage.getItem(STORAGE_ALERT_TRIGGER_DISCOVERED_KEY) === "true";
-  } catch {
-    return false;
-  }
+  return loadBoolean(STORAGE_ALERT_TRIGGER_DISCOVERED_KEY, false);
 }
 
 function saveAlertTriggerDiscoveredPreference(discovered) {
-  try {
-    window.localStorage.setItem(STORAGE_ALERT_TRIGGER_DISCOVERED_KEY, String(discovered));
-  } catch {
-    // Ignore storage restrictions. The page still works without persistence.
-  }
+  saveBoolean(STORAGE_ALERT_TRIGGER_DISCOVERED_KEY, discovered);
 }
 
 function getStatusText(kind = state.statusKind, params = state.statusParams) {

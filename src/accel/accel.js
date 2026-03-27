@@ -1,12 +1,13 @@
 import "../styles/accel.less";
 import Chart from "chart.js/auto";
+import { applyTranslations as applySharedTranslations, getLang, t as sharedT, toggleLang } from "../i18n.js";
 import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
 import { initSupportPanel } from "../shared/support-panel.js";
+import { loadJson, loadText, saveJson } from "../shared/storage.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
 import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
 
 (function () {
-  var LANG_KEY = "vatio_board_lang";
   var SHARED_SPEED_UNIT_KEY = "vatio_speed_unit";
   var SHARED_DISTANCE_UNIT_KEY = "vatio_speed_distance_unit";
   var SHARED_LEGACY_ALTITUDE_UNIT_KEY = "vatio_speed_altitude_unit";
@@ -98,411 +99,6 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     finishAudio.preload = "auto";
     finishAudio.loop = false;
   }
-
-  var translations = {
-    en: {
-      accelPageTitle: "Vatio Accel - Free GPS Acceleration Timer for Tesla and Mobile",
-      accelPageDescription: "Free browser-based GPS acceleration timer for 0-60, 60-130, 1/8 mile, 1/4 mile, and 0-100 km/h testing. Built for Tesla and modern mobile browsers with local result history and interactive graphs.",
-      accelPageH1: "Vatio Accel free browser acceleration timer",
-      accelPageLead: "Browser-based GPS acceleration timer for 0-60 mph, 60-130 mph, quarter-mile, and metric acceleration testing in Tesla and mobile browsers.",
-      accelTagline: "Browser acceleration timer by Vatio Libre",
-      accelRoute: "ACCEL",
-      accelToolbar: "Acceleration tools",
-      foundingBadge: "Founding Members",
-      foundingSummary: "Support VatioLibre and join the Founding Members",
-      foundingToolbarButton: "Support",
-      foundingMeta: "8-year price lock and every premium feature",
-      foundingTitle: "Become a VatioLibre founding member",
-      foundingBody: "Lock your subscription price for 8 years while it stays active and get all current and future premium features, including real-time tracking, battery management, advanced telemetry, and contributor recognition.",
-      foundingCta: "Become a founding member",
-      accelGpsLab: "GPS Lab",
-      accelSetup: "Setup",
-      accelResultsPanel: "Results",
-      accelOpenSetup: "Open setup",
-      accelOpenResults: "Open results and history",
-      accelHeroKicker: "Browser acceleration timer",
-      accelHeroTitle: "Browser-based acceleration testing for Tesla and mobile",
-      accelHeroLead: "Uses browser geolocation only. Results are estimates based on observed GPS callbacks, not certified timing.",
-      accelDisclaimer: "Accuracy depends on browser callback rate, GPS quality, visibility state, and device behavior. Use repeated runs and quality grades honestly.",
-      accelStorageNote: "Runs and settings stay in local storage on this browser only",
-      accelLocalOnly: "Local only",
-      accelStatusPanel: "Status panel",
-      accelStatusLead: "Live browser GPS readiness and signal quality.",
-      accelTestSelector: "Test selector",
-      accelTestLead: "Available tests update with the selected speed and distance units.",
-      accelCustomRange: "Custom speed range",
-      accelStartSpeed: "Start speed",
-      accelEndSpeed: "End speed",
-      accelUnitsLead: "Choose how speed, distance, altitude, and accuracy are shown.",
-      accelDistanceAltitude: "Distance + altitude",
-      accelDistanceTest: "Distance test",
-      accelImperialTests: "Imperial tests",
-      accelMetricTests: "Metric tests",
-      accelMileDistanceTests: "Mile-based distances",
-      accelMetricDistanceTests: "Metric distances",
-      accelControls: "Controls",
-      accelControlsLead: "Choose rollout and notes before starting a run.",
-      accelArm: "Start test",
-      accelCancel: "Cancel test",
-      accelRunAgain: "Run again",
-      accelReset: "Reset",
-      accelRollout: "Rollout",
-      accelRolloutOneFoot: "1 ft",
-      accelLaunchThreshold: "Launch threshold",
-      accelLaunchThresholdHalf: "0.5 mph",
-      accelLaunchThresholdOne: "1.0 mph",
-      accelNotes: "Run notes",
-      accelNotesPlaceholder: "Example: 90% SOC, flat road",
-      accelLiveRun: "Live run",
-      accelLiveLead: "Large timer, speed, distance, and target progress during the run.",
-      accelElapsed: "Elapsed",
-      accelCurrentSpeed: "Current speed",
-      accelCurrentTarget: "Current target",
-      accelProgress: "Progress",
-      accelResult: "Result",
-      accelResultLead: "Latest completed run stored locally on this browser.",
-      accelNoResult: "Arm and complete a run to see the result here.",
-      accelSelectedTest: "Selected test",
-      accelFinalTime: "Final time",
-      accelSpeedGraph: "Speed graph",
-      accelSpeedGraphLead: "Time vs speed",
-      accelSpeedGraphEmpty: "Speed graph data is available for new runs.",
-      accelSpeedGraphAria: "Interactive speed graph",
-      accelSpeedGraphHint: "Touch or click the graph to inspect each sample.",
-      accelGraphPointTime: "Time",
-      accelGraphPointSpeed: "Speed",
-      accelGraphPointDistance: "Distance",
-      accelGraphPointAccuracy: "Accuracy",
-      accelGraphPointSlope: "Slope",
-      accelFinishSpeed: "Finish speed",
-      accelTrapSpeed: "Trap speed",
-      accelRolloutUsed: "Rollout",
-      accelAverageAccuracy: "Average accuracy",
-      accelSlope: "Slope",
-      accelElevationChange: "Elevation change",
-      accelRunHz: "Run avg Hz",
-      accelQualityGrade: "Quality grade",
-      accelTimestamp: "Timestamp",
-      accelBestComparison: "Best vs latest",
-      accelDiagnostics: "Diagnostics",
-      accelDiagnosticsLead: "Observed callback timing, uncertainty, and warning flags.",
-      accelPartials: "Partials",
-      accelPartialWaiting: "Waiting",
-      accelPartialNotCaptured: "Not captured",
-      accelPartial60ft: "60 ft",
-      accelPartial1000ft: "1000 ft",
-      accelPartial100m: "100 m",
-      accelPartial0to130: "0-130 mph",
-      accelPartial0to200Kmh: "0-200 km/h",
-      accelAverageInterval: "Average interval",
-      accelJitter: "Jitter",
-      accelSparseUpdates: "Sparse updates",
-      accelStaleSamples: "Stale samples",
-      accelSpeedSource: "Speed source",
-      accelSamples: "Samples",
-      accelHistory: "History",
-      accelHistoryLead: "Saved locally in this browser. Newest runs first.",
-      accelNoHistory: "No saved runs yet.",
-      accelClearHistory: "Clear all",
-      accelLoadResult: "Load result",
-      accelViewingResult: "Viewing",
-      accelResultLoadedNotice: "Saved result loaded.",
-      accelGpsReady: "GPS ready",
-      accelLatestAccuracy: "Latest accuracy",
-      accelObservedHz: "Observed Hz",
-      accelQuality: "Quality",
-      accelState: "State",
-      accelPermissionPrompt: "Prompt",
-      accelPermissionGranted: "Granted",
-      accelPermissionDenied: "Denied",
-      accelPermissionUnsupported: "Unsupported",
-      accelPermissionUnknown: "Unknown",
-      accelReadyYes: "Ready",
-      accelReadyNo: "Not ready",
-      accelQualityGood: "Good",
-      accelQualityFair: "Fair",
-      accelQualityPoor: "Poor",
-      accelQualityInvalid: "Invalid",
-      accelStateIdle: "Idle",
-      accelStateArmed: "Armed",
-      accelStateWaitingLaunch: "Waiting launch",
-      accelStateWaitingRollout: "Waiting rollout",
-      accelStateRunning: "Running",
-      accelStateCompleted: "Completed",
-      accelStateCancelled: "Cancelled",
-      accelStateGpsWaiting: "Waiting GPS",
-      accelStateError: "Error",
-      accelPreset0to30: "0-30 mph",
-      accelPreset0to40: "0-40 mph",
-      accelPreset0to50: "0-50 mph",
-      accelPreset0to60: "0-60 mph",
-      accelPreset0to50Kmh: "0-50 km/h",
-      accelPreset0to60Kmh: "0-60 km/h",
-      accelPreset0to80Kmh: "0-80 km/h",
-      accelPreset0to100Kmh: "0-100 km/h",
-      accelPreset60to130: "60-130 mph",
-      accelPreset100to200Kmh: "100-200 km/h",
-      accelPresetEighthMile: "1/8 mile",
-      accelPresetQuarterMile: "1/4 mile",
-      accelPreset200M: "200 m",
-      accelPreset400M: "400 m",
-      accelPresetCustom: "Custom range",
-      accelRolloutOff: "Off",
-      accelRolloutOn: "1 ft rollout",
-      accelRolloutIgnored: "Ignored on rolling tests",
-      accelRolloutUnavailable: "Not used",
-      accelStandingStart: "Standing start",
-      accelRollingStart: "Rolling start",
-      accelQualityCurrent: "Current quality",
-      accelWarningAccuracy: "Accuracy warning",
-      accelWarningSparse: "Sparse updates",
-      accelWarningStale: "Stale samples",
-      accelWarningDerived: "Derived speed",
-      accelWarningNoWarnings: "No active warnings",
-      accelSpeedReported: "Reported GPS speed",
-      accelSpeedDerivedLabel: "Derived from displacement",
-      accelNeedGps: "Need a current GPS fix before arming.",
-      accelNoGeolocation: "This browser does not expose geolocation.",
-      accelWaitingForFix: "Waiting for a cleaner GPS fix.",
-      accelCustomInvalid: "Custom range must end above the start speed.",
-      accelArmedStandingNotice: "Test ready. Waiting for launch.",
-      accelArmedRollingNotice: "Test ready. Waiting for the start speed crossing.",
-      accelRunCancelledNotice: "Run cancelled.",
-      accelRunResetNotice: "Live run state reset.",
-      accelRunSavedNotice: "Run completed and saved locally.",
-      accelHistoryClearedNotice: "Saved run history cleared.",
-      accelDeleteRunConfirm: 'Delete run "{label}"?',
-      accelClearHistoryConfirm: "Delete all saved acceleration runs?",
-      accelBestRun: "Best saved run",
-      accelNoComparison: "No saved comparison yet",
-      accelFasterBy: "{value} faster than best saved",
-      accelSlowerBy: "{value} slower than best saved",
-      accelInvalidBySignal: "Invalid due to low-quality signal",
-      accelNoSavedRunsShort: "No saved runs",
-      accelMphUnit: "mph",
-      accelKmhUnit: "km/h",
-      accelUnavailable: "—",
-      accelSamplesShort: "{count} samples",
-      accelOff: "Off",
-      accelOn: "On",
-      permission: "Permission",
-      tools: "Tools",
-      speedometer: "Speedometer",
-      openBoard: "Open board",
-      changeLanguage: "Change language",
-      heading: "Heading",
-      altitude: "Altitude",
-      distance: "Distance",
-      units: "Units",
-      off: "Off",
-      on: "On",
-      done: "Done",
-      delete: "Delete",
-      speed: "Speed",
-      accuracy: "Accuracy",
-    },
-    es: {
-      accelPageTitle: "Vatio Accel - Temporizador GPS de aceleracion gratis para Tesla y movil",
-      accelPageDescription: "Temporizador GPS de aceleracion gratis en navegador para pruebas de 0-60, 60-130, 1/8 de milla, 1/4 de milla y 0-100 km/h. Pensado para Tesla y navegadores moviles modernos con historial local y graficas interactivas.",
-      accelPageH1: "Vatio Accel temporizador GPS de aceleracion en navegador",
-      accelPageLead: "Temporizador GPS de aceleracion en navegador para pruebas 0-60 mph, 60-130 mph, cuarto de milla y aceleracion metrica en Tesla y moviles.",
-      accelTagline: "Temporizador de aceleracion en navegador por Vatio Libre",
-      accelRoute: "ACCEL",
-      accelToolbar: "Herramientas de aceleracion",
-      foundingBadge: "Miembros fundadores",
-      foundingSummary: "Apoya VatioLibre y únete a los Miembros fundadores",
-      foundingToolbarButton: "Apoyar",
-      foundingMeta: "Precio congelado por 8 años y acceso premium total",
-      foundingTitle: "Conviértete en fundador de VatioLibre",
-      foundingBody: "Congela el precio de tu suscripción por 8 años mientras siga activa y accede a todas las funciones premium actuales y futuras, incluyendo rastreo en tiempo real, gestión de batería, telemetría avanzada y reconocimiento como contribuidor.",
-      foundingCta: "Conviértete en fundador",
-      accelGpsLab: "GPS Lab",
-      accelSetup: "Configurar",
-      accelResultsPanel: "Resultados",
-      accelOpenSetup: "Abrir configuracion",
-      accelOpenResults: "Abrir resultados e historial",
-      accelHeroKicker: "Temporizador en navegador",
-      accelHeroTitle: "Pruebas de aceleracion en navegador para Tesla y movil",
-      accelHeroLead: "Usa solo geolocalizacion del navegador. Los resultados son estimaciones basadas en callbacks GPS observados, no tiempos certificados.",
-      accelDisclaimer: "La precision depende de la frecuencia de callbacks del navegador, la calidad GPS, la visibilidad de la pestaña y el comportamiento del dispositivo. Usa repeticiones y grados de calidad con honestidad.",
-      accelStorageNote: "Las corridas y ajustes quedan guardados solo en el almacenamiento local de este navegador",
-      accelLocalOnly: "Solo local",
-      accelStatusPanel: "Panel de estado",
-      accelStatusLead: "Disponibilidad GPS y calidad de senal en vivo.",
-      accelTestSelector: "Selector de prueba",
-      accelTestLead: "Las pruebas disponibles cambian segun las unidades de velocidad y distancia.",
-      accelCustomRange: "Rango de velocidad personalizado",
-      accelStartSpeed: "Velocidad inicial",
-      accelEndSpeed: "Velocidad final",
-      accelUnitsLead: "Elige como se muestran la velocidad, la distancia, la altitud y la precision.",
-      accelDistanceAltitude: "Distancia + altitud",
-      accelDistanceTest: "Prueba de distancia",
-      accelImperialTests: "Pruebas imperiales",
-      accelMetricTests: "Pruebas metricas",
-      accelMileDistanceTests: "Distancias en millas",
-      accelMetricDistanceTests: "Distancias metricas",
-      accelControls: "Controles",
-      accelControlsLead: "Ajusta rollout y notas antes de iniciar una corrida.",
-      accelArm: "Iniciar prueba",
-      accelCancel: "Cancelar prueba",
-      accelRunAgain: "Repetir prueba",
-      accelReset: "Reiniciar",
-      accelRollout: "Rollout",
-      accelRolloutOneFoot: "1 pie",
-      accelLaunchThreshold: "Umbral de salida",
-      accelLaunchThresholdHalf: "0.5 mph",
-      accelLaunchThresholdOne: "1.0 mph",
-      accelNotes: "Notas de la corrida",
-      accelNotesPlaceholder: "Ejemplo: 90% SOC, via plana",
-      accelLiveRun: "Corrida en vivo",
-      accelLiveLead: "Temporizador grande, velocidad, distancia y progreso del objetivo.",
-      accelElapsed: "Tiempo",
-      accelCurrentSpeed: "Velocidad actual",
-      accelCurrentTarget: "Objetivo actual",
-      accelProgress: "Progreso",
-      accelResult: "Resultado",
-      accelResultLead: "Ultima corrida completada guardada localmente en este navegador.",
-      accelNoResult: "Arma y completa una corrida para ver el resultado aqui.",
-      accelSelectedTest: "Prueba seleccionada",
-      accelFinalTime: "Tiempo final",
-      accelSpeedGraph: "Grafica de velocidad",
-      accelSpeedGraphLead: "Tiempo vs velocidad",
-      accelSpeedGraphEmpty: "Los datos de la grafica de velocidad estaran disponibles para nuevas corridas.",
-      accelSpeedGraphAria: "Grafica interactiva de velocidad",
-      accelSpeedGraphHint: "Toca o haz clic en la grafica para inspeccionar cada muestra.",
-      accelGraphPointTime: "Tiempo",
-      accelGraphPointSpeed: "Velocidad",
-      accelGraphPointDistance: "Distancia",
-      accelGraphPointAccuracy: "Precision",
-      accelGraphPointSlope: "Pendiente",
-      accelFinishSpeed: "Velocidad final",
-      accelTrapSpeed: "Velocidad de trampa",
-      accelRolloutUsed: "Rollout",
-      accelAverageAccuracy: "Precision promedio",
-      accelSlope: "Pendiente",
-      accelElevationChange: "Cambio de altitud",
-      accelRunHz: "Hz promedio de la corrida",
-      accelQualityGrade: "Calidad",
-      accelTimestamp: "Fecha",
-      accelBestComparison: "Mejor vs ultima",
-      accelDiagnostics: "Diagnosticos",
-      accelDiagnosticsLead: "Tiempos observados de callback, incertidumbre y alertas.",
-      accelPartials: "Parciales",
-      accelPartialWaiting: "Esperando",
-      accelPartialNotCaptured: "Sin captura",
-      accelPartial60ft: "60 pies",
-      accelPartial1000ft: "1000 pies",
-      accelPartial100m: "100 m",
-      accelPartial0to130: "0-130 mph",
-      accelPartial0to200Kmh: "0-200 km/h",
-      accelAverageInterval: "Intervalo promedio",
-      accelJitter: "Jitter",
-      accelSparseUpdates: "Actualizaciones dispersas",
-      accelStaleSamples: "Muestras antiguas",
-      accelSpeedSource: "Fuente de velocidad",
-      accelSamples: "Muestras",
-      accelHistory: "Historial",
-      accelHistoryLead: "Guardado localmente en este navegador. Corridas mas nuevas primero.",
-      accelNoHistory: "Aun no hay corridas guardadas.",
-      accelClearHistory: "Borrar todo",
-      accelLoadResult: "Cargar resultado",
-      accelViewingResult: "Viendo",
-      accelResultLoadedNotice: "Resultado guardado cargado.",
-      accelGpsReady: "GPS listo",
-      accelLatestAccuracy: "Precision actual",
-      accelObservedHz: "Hz observados",
-      accelQuality: "Calidad",
-      accelState: "Estado",
-      accelPermissionPrompt: "Solicitar",
-      accelPermissionGranted: "Permitido",
-      accelPermissionDenied: "Bloqueado",
-      accelPermissionUnsupported: "No soportado",
-      accelPermissionUnknown: "Desconocido",
-      accelReadyYes: "Listo",
-      accelReadyNo: "No listo",
-      accelQualityGood: "Buena",
-      accelQualityFair: "Aceptable",
-      accelQualityPoor: "Pobre",
-      accelQualityInvalid: "Invalida",
-      accelStateIdle: "En espera",
-      accelStateArmed: "Armado",
-      accelStateWaitingLaunch: "Esperando salida",
-      accelStateWaitingRollout: "Esperando rollout",
-      accelStateRunning: "Corriendo",
-      accelStateCompleted: "Completada",
-      accelStateCancelled: "Cancelada",
-      accelStateGpsWaiting: "Esperando GPS",
-      accelStateError: "Error",
-      accelPreset0to30: "0-30 mph",
-      accelPreset0to40: "0-40 mph",
-      accelPreset0to50: "0-50 mph",
-      accelPreset0to60: "0-60 mph",
-      accelPreset0to50Kmh: "0-50 km/h",
-      accelPreset0to60Kmh: "0-60 km/h",
-      accelPreset0to80Kmh: "0-80 km/h",
-      accelPreset0to100Kmh: "0-100 km/h",
-      accelPreset60to130: "60-130 mph",
-      accelPreset100to200Kmh: "100-200 km/h",
-      accelPresetEighthMile: "1/8 de milla",
-      accelPresetQuarterMile: "1/4 de milla",
-      accelPreset200M: "200 m",
-      accelPreset400M: "400 m",
-      accelPresetCustom: "Rango personalizado",
-      accelRolloutOff: "Apagado",
-      accelRolloutOn: "Rollout de 1 pie",
-      accelRolloutIgnored: "Ignorado en pruebas lanzadas",
-      accelRolloutUnavailable: "No aplica",
-      accelStandingStart: "Desde parado",
-      accelRollingStart: "Lanzada",
-      accelQualityCurrent: "Calidad actual",
-      accelWarningAccuracy: "Precision pobre",
-      accelWarningSparse: "Actualizaciones dispersas",
-      accelWarningStale: "Muestras antiguas",
-      accelWarningDerived: "Velocidad derivada",
-      accelWarningNoWarnings: "Sin alertas activas",
-      accelSpeedReported: "Velocidad GPS reportada",
-      accelSpeedDerivedLabel: "Derivada por desplazamiento",
-      accelNeedGps: "Necesitas una fijacion GPS actual antes de armar.",
-      accelNoGeolocation: "Este navegador no expone geolocalizacion.",
-      accelWaitingForFix: "Esperando una fijacion GPS mas limpia.",
-      accelCustomInvalid: "El rango personalizado debe terminar por encima de la velocidad inicial.",
-      accelArmedStandingNotice: "Prueba lista. Esperando la salida.",
-      accelArmedRollingNotice: "Prueba lista. Esperando el cruce de velocidad inicial.",
-      accelRunCancelledNotice: "Corrida cancelada.",
-      accelRunResetNotice: "Estado de corrida reiniciado.",
-      accelRunSavedNotice: "Corrida completada y guardada localmente.",
-      accelHistoryClearedNotice: "Historial de corridas borrado.",
-      accelDeleteRunConfirm: 'Borrar la corrida "{label}"?',
-      accelClearHistoryConfirm: "Borrar todas las corridas guardadas?",
-      accelBestRun: "Mejor corrida guardada",
-      accelNoComparison: "Aun no hay comparacion guardada",
-      accelFasterBy: "{value} mas rapida que la mejor guardada",
-      accelSlowerBy: "{value} mas lenta que la mejor guardada",
-      accelInvalidBySignal: "Invalida por calidad de senal insuficiente",
-      accelNoSavedRunsShort: "Sin corridas guardadas",
-      accelMphUnit: "mph",
-      accelKmhUnit: "km/h",
-      accelUnavailable: "—",
-      accelSamplesShort: "{count} muestras",
-      accelOff: "Apagado",
-      accelOn: "Encendido",
-      permission: "Permiso",
-      tools: "Herramientas",
-      speedometer: "Velocimetro",
-      openBoard: "Abrir tablero",
-      changeLanguage: "Cambiar idioma",
-      heading: "Rumbo",
-      altitude: "Altitud",
-      distance: "Distancia",
-      units: "Unidades",
-      off: "Apagado",
-      on: "Encendido",
-      done: "Listo",
-      delete: "Borrar",
-      speed: "Velocidad",
-      accuracy: "Precision",
-    },
-  };
 
   var presetDefinitions = [
     { id: "0-30-mph", type: "speed", labelKey: "accelPreset0to30", standingStart: true, startSpeedMs: 0, targetSpeedMs: 30 * MPH_TO_MS, speedSystem: "mph", variantGroup: "launch-1" },
@@ -696,7 +292,6 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
   };
 
   var state = {
-    lang: detectLang(),
     permissionState: "prompt",
     permissionStatus: null,
     geolocationSupported: Boolean(navigator.geolocation),
@@ -733,18 +328,6 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     startUiTimer();
     updatePermissionState();
     ensureWatch();
-  }
-
-  function detectLang() {
-    try {
-      var stored = localStorage.getItem(LANG_KEY);
-      if (stored === "en" || stored === "es") return stored;
-    } catch (error) {
-      // Ignore storage failures.
-    }
-
-    if (window.__lang === "es" || window.__lang === "en") return window.__lang;
-    return navigator.language && navigator.language.startsWith("es") ? "es" : "en";
   }
 
   function primeFinishAudio() {
@@ -802,46 +385,15 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
   }
 
   function t(key, params) {
-    var pack = translations[state.lang] || translations.en;
-    var fallbackPack = translations.en;
-    var text = pack[key] || fallbackPack[key] || key;
-
-    if (!params) return text;
-
-    return text.replace(/\{(\w+)\}/g, function (match, token) {
-      return Object.prototype.hasOwnProperty.call(params, token) ? String(params[token]) : match;
-    });
+    return sharedT(key, params);
   }
 
   function applyTranslations() {
     document.title = t("accelPageTitle");
     if (elements.pageDescriptionMeta) elements.pageDescriptionMeta.setAttribute("content", t("accelPageDescription"));
-    if (elements.langToggle) elements.langToggle.textContent = state.lang.toUpperCase();
-
-    var textNodes = document.querySelectorAll("[data-i18n]");
-    for (var index = 0; index < textNodes.length; index += 1) {
-      var node = textNodes[index];
-      var key = node.getAttribute("data-i18n");
-      node.textContent = t(key);
-    }
-
-    var titleNodes = document.querySelectorAll("[data-i18n-title]");
-    for (var titleIndex = 0; titleIndex < titleNodes.length; titleIndex += 1) {
-      var titleNode = titleNodes[titleIndex];
-      titleNode.setAttribute("title", t(titleNode.getAttribute("data-i18n-title")));
-    }
-
-    var ariaNodes = document.querySelectorAll("[data-i18n-aria]");
-    for (var ariaIndex = 0; ariaIndex < ariaNodes.length; ariaIndex += 1) {
-      var ariaNode = ariaNodes[ariaIndex];
-      ariaNode.setAttribute("aria-label", t(ariaNode.getAttribute("data-i18n-aria")));
-    }
-
-    var placeholderNodes = document.querySelectorAll("[data-i18n-placeholder]");
-    for (var placeholderIndex = 0; placeholderIndex < placeholderNodes.length; placeholderIndex += 1) {
-      var placeholderNode = placeholderNodes[placeholderIndex];
-      placeholderNode.setAttribute("placeholder", t(placeholderNode.getAttribute("data-i18n-placeholder")));
-    }
+    document.documentElement.lang = getLang();
+    applySharedTranslations();
+    if (elements.langToggle) elements.langToggle.textContent = getLang().toUpperCase();
   }
 
   function bindEvents() {
@@ -901,15 +453,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
   }
 
   function handleLangToggle() {
-    state.lang = state.lang === "en" ? "es" : "en";
-
-    try {
-      localStorage.setItem(LANG_KEY, state.lang);
-    } catch (error) {
-      // Ignore storage failures.
-    }
-
-    document.documentElement.lang = state.lang;
+    toggleLang();
     applyTranslations();
     renderPresetButtons();
     renderAll();
@@ -962,24 +506,16 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
   }
 
   function loadSharedSpeedUnitPreference() {
-    try {
-      var unit = localStorage.getItem(SHARED_SPEED_UNIT_KEY);
-      return unit && SPEED_UNIT_CONFIG[unit] ? unit : null;
-    } catch (error) {
-      return null;
-    }
+    var unit = loadText(SHARED_SPEED_UNIT_KEY, "");
+    return unit && SPEED_UNIT_CONFIG[unit] ? unit : null;
   }
 
   function loadSharedDistanceUnitPreference() {
-    try {
-      var unit = localStorage.getItem(SHARED_DISTANCE_UNIT_KEY);
-      if (unit && DISTANCE_UNIT_CONFIG[unit]) return unit;
+    var unit = loadText(SHARED_DISTANCE_UNIT_KEY, "");
+    if (unit && DISTANCE_UNIT_CONFIG[unit]) return unit;
 
-      var legacyUnit = localStorage.getItem(SHARED_LEGACY_ALTITUDE_UNIT_KEY);
-      return legacyUnit && DISTANCE_UNIT_CONFIG[legacyUnit] ? legacyUnit : null;
-    } catch (error) {
-      return null;
-    }
+    var legacyUnit = loadText(SHARED_LEGACY_ALTITUDE_UNIT_KEY, "");
+    return legacyUnit && DISTANCE_UNIT_CONFIG[legacyUnit] ? legacyUnit : null;
   }
 
   function getDefaultSpeedUnit(selectedPresetId) {
@@ -999,7 +535,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
   }
 
   function loadSettings() {
-    var raw = loadJson(STORAGE_KEYS.settings);
+    var raw = loadJson(STORAGE_KEYS.settings, null);
     var settings = raw && typeof raw === "object" ? raw : {};
     var selectedPresetId = typeof settings.selectedPresetId === "string" ? settings.selectedPresetId : defaultSettings.selectedPresetId;
     var speedUnit = normalizeSpeedUnit(settings.speedUnit || settings.customUnit || getDefaultSpeedUnit(selectedPresetId));
@@ -1026,7 +562,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
   }
 
   function loadRuns() {
-    var raw = loadJson(STORAGE_KEYS.runs);
+    var raw = loadJson(STORAGE_KEYS.runs, null);
     if (!Array.isArray(raw)) return [];
 
     var runs = [];
@@ -1129,23 +665,6 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
       : normalizeStoredSpeedTrace(run.speedTrace, run.elapsedMs);
 
     return normalizedRun;
-  }
-
-  function loadJson(key) {
-    try {
-      var value = localStorage.getItem(key);
-      return value ? JSON.parse(value) : null;
-    } catch (error) {
-      return null;
-    }
-  }
-
-  function saveJson(key, value) {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch (error) {
-      // Ignore storage failures in constrained browsers.
-    }
   }
 
   function toFiniteNumber(value, fallback) {
@@ -3271,7 +2790,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
       result.id,
       state.settings.speedUnit,
       state.settings.distanceUnit,
-      state.lang,
+      getLang(),
       frameWidth,
       RESULT_GRAPH_HEIGHT,
     ].join(":");
@@ -3633,7 +3152,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
       html += "</div>";
       html += '<div class="accel-history-actions">';
       html += '<button type="button" class="accel-action-btn accel-action-btn-compact accel-history-load-btn" data-history-action="load" data-run-id="' + escapeHtml(run.id) + '" aria-pressed="' + String(isSelected) + '">' + escapeHtml(isSelected ? t("accelViewingResult") : t("accelLoadResult")) + "</button>";
-      html += '<button type="button" class="accel-delete-btn" data-history-action="delete" data-run-id="' + escapeHtml(run.id) + '">' + escapeHtml(t("delete")) + "</button>";
+      html += '<button type="button" class="accel-delete-btn" data-history-action="delete" data-run-id="' + escapeHtml(run.id) + '">' + escapeHtml(t("accelDelete")) + "</button>";
       html += "</div>";
       html += "</article>";
     }
@@ -3945,7 +3464,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
 
   function formatDebugCoordinate(value) {
     if (!isFiniteNumber(value)) return t("accelUnavailable");
-    return new Intl.NumberFormat(state.lang, {
+    return new Intl.NumberFormat(getLang(), {
       minimumFractionDigits: 6,
       maximumFractionDigits: 6,
     }).format(value);
@@ -4036,12 +3555,12 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
 
   function formatInteger(value) {
     if (!isFiniteNumber(value)) return t("accelUnavailable");
-    return new Intl.NumberFormat(state.lang, { maximumFractionDigits: 0 }).format(value);
+    return new Intl.NumberFormat(getLang(), { maximumFractionDigits: 0 }).format(value);
   }
 
   function formatNumber(value, decimals) {
     if (!isFiniteNumber(value)) return t("accelUnavailable");
-    return new Intl.NumberFormat(state.lang, {
+    return new Intl.NumberFormat(getLang(), {
       minimumFractionDigits: decimals,
       maximumFractionDigits: decimals,
     }).format(value);
@@ -4083,7 +3602,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
   function formatTimestamp(timestampMs) {
     if (!isFiniteNumber(timestampMs)) return t("accelUnavailable");
     var date = new Date(timestampMs);
-    return new Intl.DateTimeFormat(state.lang, {
+    return new Intl.DateTimeFormat(getLang(), {
       year: "numeric",
       month: "short",
       day: "2-digit",

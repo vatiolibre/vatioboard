@@ -1,16 +1,21 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 const STATE_KEY = "embeddable_calc_state_v1";
 const HISTORY_KEY = "embeddable_calc_history_v1";
 
 describe("CalcCore", () => {
   let CalcCore;
+  let setLang;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
+    ({ CalcCore } = await import("../../src/calculator/calc-core.js"));
+    ({ setLang } = await import("../../src/i18n.js"));
+  });
+
+  beforeEach(() => {
     localStorage.clear();
     window.__lang = "en";
-    vi.resetModules();
-    ({ CalcCore } = await import("../../src/calculator/calc-core.js"));
+    setLang("en");
   });
 
   it("evaluates normalized arithmetic and persists the result", async () => {

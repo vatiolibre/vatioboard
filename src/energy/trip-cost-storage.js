@@ -1,3 +1,5 @@
+import { loadJson, removeStoredValue, saveJson } from "../shared/storage.js";
+
 const SETTINGS_KEY = "energy_trip_cost_settings_v1";
 const VALUES_KEY = "energy_trip_cost_values_v1";
 const MULTI_TRIP_KEY = "energy_multi_trip_v1";
@@ -14,73 +16,45 @@ const DEFAULT_VALUES = {
 };
 
 export function loadTripCostSettings() {
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    const stored = raw ? JSON.parse(raw) : null;
-    return {
-      ...DEFAULT_SETTINGS,
-      unit: stored?.unit === "mi" ? "mi" : "km",
-      mode: stored?.mode === "multi" ? "multi" : "simple",
-    };
-  } catch {
-    return { ...DEFAULT_SETTINGS };
-  }
+  const stored = loadJson(SETTINGS_KEY, null);
+  return {
+    ...DEFAULT_SETTINGS,
+    unit: stored?.unit === "mi" ? "mi" : "km",
+    mode: stored?.mode === "multi" ? "multi" : "simple",
+  };
 }
 
 export function saveTripCostSettings(settings) {
-  try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  } catch {
-    // ignore
-  }
+  saveJson(SETTINGS_KEY, settings);
 }
 
 export function loadTripCostValues() {
-  try {
-    const raw = localStorage.getItem(VALUES_KEY);
-    const stored = raw ? JSON.parse(raw) : null;
-    return {
-      distance: stored?.distance ?? DEFAULT_VALUES.distance,
-      consumption: stored?.consumption ?? DEFAULT_VALUES.consumption,
-      price: stored?.price ?? DEFAULT_VALUES.price,
-    };
-  } catch {
-    return { ...DEFAULT_VALUES };
-  }
+  const stored = loadJson(VALUES_KEY, null);
+  return {
+    distance: stored?.distance ?? DEFAULT_VALUES.distance,
+    consumption: stored?.consumption ?? DEFAULT_VALUES.consumption,
+    price: stored?.price ?? DEFAULT_VALUES.price,
+  };
 }
 
 export function saveTripCostValues(values) {
-  try {
-    localStorage.setItem(VALUES_KEY, JSON.stringify(values));
-  } catch {
-    // ignore
-  }
+  saveJson(VALUES_KEY, values);
 }
 
 // Multi-trip functions
 let nextTripId = 1;
 
 export function loadMultiTrips() {
-  try {
-    const raw = localStorage.getItem(MULTI_TRIP_KEY);
-    const stored = raw ? JSON.parse(raw) : null;
-    if (stored?.trips && Array.isArray(stored.trips)) {
-      // Update nextTripId based on stored trips
-      nextTripId = Math.max(...stored.trips.map(t => t.id), 0) + 1;
-      return stored.trips;
-    }
-    return [];
-  } catch {
-    return [];
+  const stored = loadJson(MULTI_TRIP_KEY, null);
+  if (stored?.trips && Array.isArray(stored.trips)) {
+    nextTripId = Math.max(...stored.trips.map((t) => t.id), 0) + 1;
+    return stored.trips;
   }
+  return [];
 }
 
 export function saveMultiTrips(trips) {
-  try {
-    localStorage.setItem(MULTI_TRIP_KEY, JSON.stringify({ trips }));
-  } catch {
-    // ignore
-  }
+  saveJson(MULTI_TRIP_KEY, { trips });
 }
 
 export function createNewTrip(number) {
@@ -95,12 +69,8 @@ export function createNewTrip(number) {
 }
 
 export function clearAllTrips() {
-  try {
-    localStorage.removeItem(MULTI_TRIP_KEY);
-    nextTripId = 1;
-  } catch {
-    // ignore
-  }
+  removeStoredValue(MULTI_TRIP_KEY);
+  nextTripId = 1;
 }
 
 export { DEFAULT_SETTINGS, DEFAULT_VALUES };

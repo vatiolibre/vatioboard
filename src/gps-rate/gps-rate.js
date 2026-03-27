@@ -1,6 +1,7 @@
 import "../styles/gps-rate.less";
 import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
 import { initSupportPanel } from "../shared/support-panel.js";
+import { loadBoolean, loadJson, loadText, saveJson, saveText } from "../shared/storage.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
 import { IconAccel, IconBoard, IconCalculator, IconSpeed } from "../icons.js";
 
@@ -179,45 +180,6 @@ function tf(key, params = {}) {
     }
     return match;
   });
-}
-
-function loadText(key, fallback = "") {
-  try {
-    const value = localStorage.getItem(key);
-    return value === null ? fallback : value;
-  } catch {
-    return fallback;
-  }
-}
-
-function loadBoolean(key, fallback = false) {
-  const value = loadText(key, fallback ? "true" : "false");
-  return value === "true";
-}
-
-function loadJson(key) {
-  try {
-    const value = localStorage.getItem(key);
-    return value ? JSON.parse(value) : null;
-  } catch {
-    return null;
-  }
-}
-
-function saveText(key, value) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // Ignore storage failures in private or constrained browsers.
-  }
-}
-
-function saveJson(key, value) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // Ignore storage failures in private or constrained browsers.
-  }
 }
 
 function normalizeStoredSummary(summary) {
