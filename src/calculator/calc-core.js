@@ -32,7 +32,7 @@ function applyPercentRules(expr) {
   // 100 * 10% → 100 * 0.10 ✅ (handled by the “Remaining x%” rule)
   // 10 / 1% → 10 / 0.01 ✅ (handled by the “Remaining x%” rule)
 
-  s = s.replace(/(.*?)([+\-])(\d+(?:\.\d+)?)%$/g, (match, left, op, num) => {
+  s = s.replace(/(.*?)([+-])(\d+(?:\.\d+)?)%$/g, (match, left, op, num) => {
     const leftTrim = String(left).trim();
 
     // If left is a simple percent literal like "1%" or "2.5%", do NOT treat the last % as "of left"

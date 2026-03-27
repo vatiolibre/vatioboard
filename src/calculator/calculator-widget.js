@@ -112,7 +112,11 @@ export function createCalculatorWidget(options = {}) {
   function keepInputEndVisible(input) {
     // Put caret at end (so the browser scroll logic is consistent)
     const len = input.value.length;
-    try { input.setSelectionRange(len, len); } catch {}
+    try {
+      input.setSelectionRange(len, len);
+    } catch {
+      // Some browsers reject selection updates on non-editable inputs.
+    }
 
     // Force scroll to the far right
     input.scrollLeft = input.scrollWidth;
@@ -173,7 +177,9 @@ export function createCalculatorWidget(options = {}) {
         const newCursorPos = mapCursorPosition(oldValue, displayExpr, oldCursorPos);
         try {
           exprInput.setSelectionRange(newCursorPos, newCursorPos);
-        } catch {}
+        } catch {
+          // Cursor restoration can fail on transient browser selection states.
+        }
       }
     }
 
@@ -292,7 +298,7 @@ export function createCalculatorWidget(options = {}) {
   });
 
   // launcher (floating button) unless user provided their own button
-  let launcher = null;
+  let launcher;
 
   if (floating) {
     launcher = el("button", {

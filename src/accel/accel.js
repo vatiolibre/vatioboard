@@ -1226,8 +1226,8 @@ import { loadRuns, loadSettings, saveRuns as persistRuns, saveSettings as persis
   }
 
   function setProgressFromRun(run, preset) {
-    var fraction = 0;
-    var label = t("accelUnavailable");
+    var fraction;
+    var label;
 
     if (!run) {
       fraction = 0;
