@@ -68,8 +68,58 @@ export function normalizeReplaySample(sample) {
     headingDeg: isFiniteNumber(sample.headingDeg) ? sample.headingDeg : null,
     totalDistanceM: isFiniteNumber(sample.totalDistanceM) && sample.totalDistanceM >= 0
       ? sample.totalDistanceM
-      : 0,
+      : null,
   };
+}
+
+function haversineDistanceM(left, right) {
+  if (!left || !right) return 0;
+
+  const earthRadiusM = 6371000;
+  const lat1 = (left.latitude * Math.PI) / 180;
+  const lat2 = (right.latitude * Math.PI) / 180;
+  const deltaLat = ((right.latitude - left.latitude) * Math.PI) / 180;
+  const deltaLon = ((right.longitude - left.longitude) * Math.PI) / 180;
+
+  const sinLat = Math.sin(deltaLat / 2);
+  const sinLon = Math.sin(deltaLon / 2);
+  const calc = (
+    sinLat * sinLat
+    + Math.cos(lat1) * Math.cos(lat2) * sinLon * sinLon
+  );
+
+  return earthRadiusM * 2 * Math.atan2(Math.sqrt(calc), Math.sqrt(1 - calc));
+}
+
+function normalizeReplayDistances(samples) {
+  if (!Array.isArray(samples) || samples.length === 0) return [];
+
+  const normalized = [];
+
+  for (let index = 0; index < samples.length; index += 1) {
+    const sample = samples[index];
+    const previous = normalized[index - 1] ?? null;
+    const fallbackDistanceM = previous
+      ? previous.totalDistanceM + haversineDistanceM(previous, sample)
+      : 0;
+    const hasStoredDistance = isFiniteNumber(sample.totalDistanceM) && sample.totalDistanceM >= 0;
+    const storedDistanceM = hasStoredDistance ? sample.totalDistanceM : null;
+    const totalDistanceM = previous
+      ? Math.max(
+        previous.totalDistanceM,
+        storedDistanceM !== null && storedDistanceM >= previous.totalDistanceM
+          ? storedDistanceM
+          : fallbackDistanceM,
+      )
+      : Math.max(0, storedDistanceM ?? 0);
+
+    normalized.push({
+      ...sample,
+      totalDistanceM,
+    });
+  }
+
+  return normalized;
 }
 
 function getReplaySortTimestamp(session) {
@@ -125,12 +175,14 @@ export function normalizeReplaySession(session) {
     dedupedSamples.push(sample);
   }
 
-  const firstSample = dedupedSamples[0] ?? null;
-  const lastSample = dedupedSamples[dedupedSamples.length - 1] ?? null;
-  const altitudeValues = dedupedSamples
+  const normalizedSamples = normalizeReplayDistances(dedupedSamples);
+
+  const firstSample = normalizedSamples[0] ?? null;
+  const lastSample = normalizedSamples[normalizedSamples.length - 1] ?? null;
+  const altitudeValues = normalizedSamples
     .map((sample) => sample.altitudeM)
     .filter(isFiniteNumber);
-  const maxSpeedMs = dedupedSamples.reduce(
+  const maxSpeedMs = normalizedSamples.reduce(
     (maximum, sample) => Math.max(maximum, sample.speedMs),
     0,
   );
@@ -155,16 +207,17 @@ export function normalizeReplaySession(session) {
       ? session.endedAtMs
       : (lastSample ? lastSample.timestampMs : null),
     maxSpeedMs: isFiniteNumber(session.maxSpeedMs) ? session.maxSpeedMs : maxSpeedMs,
-    totalDistanceM: isFiniteNumber(session.totalDistanceM)
-      ? Math.max(0, session.totalDistanceM)
-      : (lastSample ? lastSample.totalDistanceM : 0),
+    totalDistanceM: Math.max(
+      isFiniteNumber(session.totalDistanceM) ? Math.max(0, session.totalDistanceM) : 0,
+      lastSample ? lastSample.totalDistanceM : 0,
+    ),
     minAltitudeM: isFiniteNumber(session.minAltitudeM)
       ? session.minAltitudeM
       : (altitudeValues.length ? Math.min(...altitudeValues) : null),
     maxAltitudeM: isFiniteNumber(session.maxAltitudeM)
       ? session.maxAltitudeM
       : (altitudeValues.length ? Math.max(...altitudeValues) : null),
-    samples: limitReplaySamples(dedupedSamples),
+    samples: limitReplaySamples(normalizedSamples),
   };
 }
 

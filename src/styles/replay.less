@@ -134,6 +134,43 @@ body.replay-page{
     margin-left: auto;
 }
 
+.replay-axis-group{
+    display: inline-flex;
+    gap: 0;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--replay-border) 72%, transparent);
+    background: color-mix(in srgb, var(--replay-surface-muted) 92%, transparent);
+}
+
+.replay-axis-btn{
+    appearance: none;
+    border: 0;
+    min-width: 68px;
+    min-height: 32px;
+    padding: 0 12px;
+    border-radius: 0;
+    background: transparent;
+    color: var(--replay-muted);
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+}
+
+.replay-axis-btn + .replay-axis-btn{
+    border-left: 1px solid color-mix(in srgb, var(--replay-border) 62%, transparent);
+}
+
+.replay-axis-btn:hover{
+    background: var(--btn-hover-bg);
+    color: var(--btn-fg);
+}
+
+.replay-axis-btn[aria-pressed="true"]{
+    background: color-mix(in srgb, var(--replay-accent-soft) 100%, transparent);
+    color: var(--replay-accent-strong);
+}
+
 .replay-tools-menu .tools-menu-btn{
     min-width: 126px;
 }

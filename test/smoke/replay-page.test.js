@@ -191,6 +191,21 @@ describe("replay.html smoke", () => {
     expect(document.querySelector(".replay-live-grid")).toBeNull();
     expect(document.querySelector(".replay-map-head")).toBeNull();
     expect(document.getElementById("replayMap").hasAttribute("aria-hidden")).toBe(false);
+    expect(document.getElementById("replayAxisTime").getAttribute("aria-pressed")).toBe("true");
+    expect(document.getElementById("replayProgress").max).toBe("3000");
+
+    document.getElementById("replayAxisDistance").click();
+    await flushTasks();
+
+    expect(document.getElementById("replayAxisDistance").getAttribute("aria-pressed")).toBe("true");
+    expect(document.getElementById("replayDurationValue").textContent).toBe("180 m");
+    expect(document.getElementById("replayProgress").max).toBe("180");
+
+    document.getElementById("replayProgress").value = "80";
+    document.getElementById("replayProgress").dispatchEvent(new Event("input", { bubbles: true }));
+    await flushTasks();
+
+    expect(document.getElementById("replayElapsedValue").textContent).toBe("80 m");
   });
 
   it("lets the user delete saved recordings while keeping the active session", async () => {
@@ -204,5 +219,17 @@ describe("replay.html smoke", () => {
     expect(document.querySelectorAll("#replayRecordingsList button[data-recording-id]")).toHaveLength(1);
     expect(document.querySelector('#replayRecordingsList button[data-delete-recording-id="saved-session"]')).toBeNull();
     expect(JSON.parse(localStorage.getItem("vatio_speed_replay_library_v1"))).toEqual([]);
+  });
+
+  it("boots cleanly into the empty state when there are no replay recordings", async () => {
+    localStorage.clear();
+    vi.resetModules();
+    await bootHtmlPage("replay.html");
+
+    await import("../../src/replay/replay.js");
+    await flushTasks();
+
+    expect(document.getElementById("replayEmptyState").hidden).toBe(false);
+    expect(document.getElementById("replayShell").hidden).toBe(true);
   });
 });

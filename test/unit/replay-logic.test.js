@@ -6,6 +6,7 @@ import {
   getReplayGraphCursorX,
   getReplayHighlights,
   getReplayPlayedCoordinates,
+  getReplaySampleAtDistanceM,
   getReplaySampleAtElapsedMs,
   getReplaySummary,
 } from "../../src/replay/logic.js";
@@ -17,6 +18,7 @@ import {
   loadReplayLibrary,
   loadReplayRecords,
   loadReplaySelection,
+  normalizeReplaySession,
   removeReplayRecording,
   saveActiveReplaySession,
   saveReplayLibrary,
@@ -82,6 +84,27 @@ describe("replay helpers", () => {
     expect(session.totalDistanceM).toBe(120);
     expect(session.minAltitudeM).toBe(10);
     expect(session.maxAltitudeM).toBe(14);
+  });
+
+  it("rebuilds cumulative distance for legacy recordings that are missing per-sample totals", () => {
+    const session = normalizeReplaySession({
+      id: "legacy-distance",
+      unit: "kmh",
+      distanceUnit: "m",
+      startedAtMs: 1000,
+      endedAtMs: 3000,
+      totalDistanceM: 0,
+      samples: [
+        createSample({ timestampMs: 1000, latitude: 40.7128, longitude: -74.006, totalDistanceM: undefined }),
+        createSample({ timestampMs: 2000, latitude: 40.7138, longitude: -74.005, totalDistanceM: undefined }),
+        createSample({ timestampMs: 3000, latitude: 40.7148, longitude: -74.004, totalDistanceM: undefined }),
+      ],
+    });
+
+    expect(session.samples[0].totalDistanceM).toBe(0);
+    expect(session.samples[1].totalDistanceM).toBeGreaterThan(0);
+    expect(session.samples[2].totalDistanceM).toBeGreaterThan(session.samples[1].totalDistanceM);
+    expect(session.totalDistanceM).toBe(session.samples[2].totalDistanceM);
   });
 
   it("prefers the active session when loading replay selection and exposes the recordings list", () => {
@@ -201,6 +224,30 @@ describe("replay helpers", () => {
     ]);
   });
 
+  it("interpolates replay samples from traveled distance for distance-mode scrubbing", () => {
+    const session = {
+      samples: [
+        createSample({ timestampMs: 1000, latitude: 40, longitude: -74, speedMs: 0, totalDistanceM: 0 }),
+        createSample({ timestampMs: 3000, latitude: 42, longitude: -72, speedMs: 20, totalDistanceM: 200 }),
+        createSample({ timestampMs: 5000, latitude: 43, longitude: -71, speedMs: 30, totalDistanceM: 400 }),
+      ],
+      startedAtMs: 1000,
+      endedAtMs: 5000,
+      totalDistanceM: 400,
+      maxSpeedMs: 30,
+      distanceUnit: "m",
+      unit: "kmh",
+    };
+
+    const sample = getReplaySampleAtDistanceM(session, 300);
+
+    expect(sample.latitude).toBe(42.5);
+    expect(sample.longitude).toBe(-71.5);
+    expect(sample.speedMs).toBe(25);
+    expect(sample.totalDistanceM).toBe(300);
+    expect(sample.elapsedMs).toBe(3000);
+  });
+
   it("builds summary totals and highlight moments from the replay session", () => {
     const session = {
       samples: [
@@ -282,9 +329,21 @@ describe("replay helpers", () => {
     expect(headingGraph.minValue).toBe(0);
     expect(headingGraph.maxValue).toBe(360);
     expect(buildReplayMetricSeries(session, "speedMs")).toEqual([
-      { elapsedMs: 0, elapsedSeconds: 0, value: 0 },
-      { elapsedMs: 2000, elapsedSeconds: 2, value: 10 },
-      { elapsedMs: 4000, elapsedSeconds: 4, value: 20 },
+      { elapsedMs: 0, elapsedSeconds: 0, distanceM: 0, xValue: 0, value: 0 },
+      { elapsedMs: 2000, elapsedSeconds: 2, distanceM: 0, xValue: 2, value: 10 },
+      { elapsedMs: 4000, elapsedSeconds: 4, distanceM: 0, xValue: 4, value: 20 },
+    ]);
+    expect(buildReplayMetricSeries({
+      ...session,
+      samples: [
+        createSample({ timestampMs: 1000, speedMs: 0, altitudeM: 10, headingDeg: 90, totalDistanceM: 0 }),
+        createSample({ timestampMs: 3000, speedMs: 10, altitudeM: 20, headingDeg: 180, totalDistanceM: 60 }),
+        createSample({ timestampMs: 5000, speedMs: 20, altitudeM: 15, headingDeg: 270, totalDistanceM: 180 }),
+      ],
+    }, "speedMs", "distance")).toEqual([
+      { elapsedMs: 0, elapsedSeconds: 0, distanceM: 0, xValue: 0, value: 0 },
+      { elapsedMs: 2000, elapsedSeconds: 2, distanceM: 60, xValue: 60, value: 10 },
+      { elapsedMs: 4000, elapsedSeconds: 4, distanceM: 180, xValue: 180, value: 20 },
     ]);
     expect(getReplayGraphCursorX(session, 2000, { width: 320, paddingX: 10 })).toBe(160);
   });

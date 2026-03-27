@@ -44,6 +44,10 @@ export function getReplayPathCoordinates(session) {
   return session.samples.map((sample) => [sample.longitude, sample.latitude]);
 }
 
+function getSampleDistanceM(sample) {
+  return isFiniteNumber(sample?.totalDistanceM) ? Math.max(0, sample.totalDistanceM) : 0;
+}
+
 export function getReplayBounds(session) {
   const coordinates = getReplayPathCoordinates(session);
   if (!coordinates.length) return null;
@@ -140,6 +144,69 @@ export function getReplaySampleAtElapsedMs(session, elapsedMs) {
   return {
     ...lastSample,
     elapsedMs: summary.durationMs,
+    progress: 1,
+    sampleIndex: session.samples.length - 1,
+  };
+}
+
+export function getReplaySampleAtDistanceM(session, distanceM) {
+  if (!session || !Array.isArray(session.samples) || session.samples.length === 0) {
+    return null;
+  }
+
+  const summary = getReplaySummary(session);
+  const clampedDistanceM = Math.min(Math.max(distanceM, 0), summary.totalDistanceM);
+  const firstSample = session.samples[0];
+
+  if (session.samples.length === 1) {
+    return {
+      ...firstSample,
+      elapsedMs: 0,
+      totalDistanceM: clampedDistanceM,
+      progress: summary.totalDistanceM > 0 ? clampedDistanceM / summary.totalDistanceM : 1,
+      sampleIndex: 0,
+    };
+  }
+
+  for (let index = 1; index < session.samples.length; index += 1) {
+    const right = session.samples[index];
+    const left = session.samples[index - 1];
+    const leftDistanceM = getSampleDistanceM(left);
+    const rightDistanceM = getSampleDistanceM(right);
+
+    if (clampedDistanceM > rightDistanceM) {
+      continue;
+    }
+
+    const spanDistanceM = rightDistanceM - leftDistanceM;
+    const ratio = spanDistanceM > 0
+      ? Math.min(Math.max((clampedDistanceM - leftDistanceM) / spanDistanceM, 0), 1)
+      : 0;
+    const timestampMs = interpolateValue(left, right, ratio, "timestampMs");
+    const elapsedMs = isFiniteNumber(timestampMs) && isFiniteNumber(summary.startedAtMs)
+      ? Math.max(0, timestampMs - summary.startedAtMs)
+      : 0;
+
+    return {
+      timestampMs,
+      latitude: interpolateValue(left, right, ratio, "latitude"),
+      longitude: interpolateValue(left, right, ratio, "longitude"),
+      speedMs: interpolateValue(left, right, ratio, "speedMs") ?? 0,
+      altitudeM: interpolateValue(left, right, ratio, "altitudeM"),
+      accuracyM: interpolateValue(left, right, ratio, "accuracyM"),
+      headingDeg: interpolateValue(left, right, ratio, "headingDeg"),
+      totalDistanceM: clampedDistanceM,
+      elapsedMs,
+      progress: summary.totalDistanceM > 0 ? clampedDistanceM / summary.totalDistanceM : 1,
+      sampleIndex: index,
+    };
+  }
+
+  const lastSample = session.samples[session.samples.length - 1];
+  return {
+    ...lastSample,
+    elapsedMs: summary.durationMs,
+    totalDistanceM: summary.totalDistanceM,
     progress: 1,
     sampleIndex: session.samples.length - 1,
   };
@@ -253,7 +320,7 @@ export function formatReplayDistanceValue(distanceM, unit) {
   return distanceM * DISTANCE_UNIT_CONFIG[unit].factor;
 }
 
-export function buildReplayMetricSeries(session, metricKey) {
+export function buildReplayMetricSeries(session, metricKey, axisMode = "time") {
   if (!session || !Array.isArray(session.samples) || session.samples.length === 0) {
     return [];
   }
@@ -267,9 +334,12 @@ export function buildReplayMetricSeries(session, metricKey) {
     if (!isFiniteNumber(sample[metricKey])) continue;
 
     const elapsedMs = Math.max(0, sample.timestampMs - baseTimestampMs);
+    const distanceM = getSampleDistanceM(sample);
     series.push({
       elapsedMs,
       elapsedSeconds: elapsedMs / 1000,
+      distanceM,
+      xValue: axisMode === "distance" ? distanceM : (elapsedMs / 1000),
       value: sample[metricKey],
     });
   }

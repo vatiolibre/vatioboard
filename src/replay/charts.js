@@ -1,16 +1,21 @@
 import Chart from "chart.js/auto";
-import { buildReplayMetricSeries, formatReplayDistanceValue, formatReplaySpeedValue } from "./logic.js";
+import {
+  buildReplayMetricSeries,
+  formatReplayDistanceValue,
+  formatReplaySpeedValue,
+  getReplaySummary,
+} from "./logic.js";
 
 const replayCursorPlugin = {
   id: "replayCursor",
   afterDatasetsDraw(chart) {
-    if (!chart || !chart.chartArea || !chart.scales?.x || !Number.isFinite(chart.$replayCursorValueSeconds)) {
+    if (!chart || !chart.chartArea || !chart.scales?.x || !Number.isFinite(chart.$replayCursorValue)) {
       return;
     }
 
     const xScale = chart.scales.x;
     const ctx = chart.ctx;
-    const x = xScale.getPixelForValue(chart.$replayCursorValueSeconds);
+    const x = xScale.getPixelForValue(chart.$replayCursorValue);
 
     if (!Number.isFinite(x)) return;
 
@@ -39,11 +44,36 @@ export function createReplayChartsController({
   getDistanceUnit,
 }) {
   let activeSession = null;
+  let activeAxisMode = "time";
   let charts = {
     speed: null,
     altitude: null,
     heading: null,
   };
+
+  function formatAxisNumber(value, decimals = 0) {
+    return new Intl.NumberFormat(document.documentElement.lang || undefined, {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    }).format(value);
+  }
+
+  function formatDistanceLabel(distanceM) {
+    const distanceUnit = getDistanceUnit();
+    const distanceValue = formatReplayDistanceValue(distanceM, distanceUnit);
+
+    if (distanceUnit === "ft" && distanceValue >= 5280) {
+      const miles = distanceM / 1609.344;
+      return `${formatAxisNumber(miles, miles < 10 ? 1 : 0)} mi`;
+    }
+
+    if (distanceUnit === "m" && distanceValue >= 1000) {
+      const kilometers = distanceM / 1000;
+      return `${formatAxisNumber(kilometers, kilometers < 10 ? 1 : 0)} km`;
+    }
+
+    return `${formatAxisNumber(distanceValue, distanceUnit === "m" ? 0 : 0)} ${distanceUnit === "ft" ? "ft" : "m"}`;
+  }
 
   function getCssColor(name, fallback) {
     const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -72,11 +102,19 @@ export function createReplayChartsController({
   }
 
   function buildMetricDataset(metricKey) {
-    const series = buildReplayMetricSeries(activeSession, metricKey);
+    const series = buildReplayMetricSeries(activeSession, metricKey, activeAxisMode);
     return series.map((point) => ({
-      x: point.elapsedSeconds,
+      x: point.xValue,
       y: point.value,
     }));
+  }
+
+  function getAxisMax() {
+    const summary = getReplaySummary(activeSession);
+    if (activeAxisMode === "distance") {
+      return Math.max(0, summary.totalDistanceM);
+    }
+    return Math.max(0, summary.durationMs / 1000);
   }
 
   function createMetricChart({
@@ -138,6 +176,9 @@ export function createReplayChartsController({
           x: {
             type: "linear",
             min: 0,
+            max: getAxisMax(),
+            bounds: "data",
+            offset: false,
             grid: {
               color: palette.axis,
               drawBorder: false,
@@ -145,7 +186,9 @@ export function createReplayChartsController({
             ticks: {
               color: palette.label,
               callback(value) {
-                return formatPlaybackDuration(value);
+                return activeAxisMode === "distance"
+                  ? formatDistanceLabel(value)
+                  : formatPlaybackDuration(value);
               },
               maxTicksLimit: 4,
             },
@@ -170,8 +213,9 @@ export function createReplayChartsController({
     });
   }
 
-  function renderSession(session) {
+  function renderSession(session, axisMode = "time") {
     activeSession = session;
+    activeAxisMode = axisMode === "distance" ? "distance" : "time";
     destroyCharts();
 
     if (!activeSession) return;
@@ -200,16 +244,21 @@ export function createReplayChartsController({
       tickFormatter: (value) => `${Math.round(value)}°`,
     });
 
-    updatePlayback(0);
+    updatePlayback({ elapsedMs: 0, totalDistanceM: 0 });
   }
 
-  function updatePlayback(elapsedMs) {
-    const cursorValueSeconds = Math.max(0, elapsedMs) / 1000;
+  function updatePlayback(playbackPoint = {}) {
+    const safePlaybackPoint = playbackPoint && typeof playbackPoint === "object"
+      ? playbackPoint
+      : {};
+    const cursorValue = activeAxisMode === "distance"
+      ? Math.max(0, safePlaybackPoint.totalDistanceM ?? 0)
+      : (Math.max(0, safePlaybackPoint.elapsedMs ?? 0) / 1000);
     const palette = getPalette();
 
     for (const chart of Object.values(charts)) {
       if (!chart) continue;
-      chart.$replayCursorValueSeconds = cursorValueSeconds;
+      chart.$replayCursorValue = cursorValue;
       chart.$replayCursorColor = palette.cursor;
       chart.draw();
     }

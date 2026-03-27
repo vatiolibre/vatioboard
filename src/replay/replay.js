@@ -18,6 +18,7 @@ import {
   formatReplaySpeedValue,
   getReplayHighlights,
   getReplayPlayedCoordinates,
+  getReplaySampleAtDistanceM,
   getReplaySampleAtElapsedMs,
   getReplaySummary,
 } from "./logic.js";
@@ -31,6 +32,7 @@ const elements = {
   langToggle: document.getElementById("langToggle"),
   pageDescriptionMeta: document.querySelector('meta[name="description"]'),
   replaySessionChip: document.getElementById("replaySessionChip"),
+  replayAxisButtons: Array.from(document.querySelectorAll(".replay-axis-btn")),
   replayToolsMenuBtn: document.getElementById("replayToolsMenuBtn"),
   replayToolsMenuList: document.getElementById("replayToolsMenuList"),
   openReplaySpeedMenu: document.getElementById("openReplaySpeedMenu"),
@@ -99,6 +101,7 @@ const state = {
   summary: getReplaySummary(initialSelection.session),
   highlights: getReplayHighlights(initialSelection.session),
   playbackRate: 4,
+  dashboardAxis: "time",
   elapsedMs: 0,
   playing: false,
   playPending: false,
@@ -256,6 +259,13 @@ function renderSessionState() {
 function renderRateButtons() {
   for (const button of elements.replayRateButtons) {
     const isActive = Number(button.dataset.rate) === state.playbackRate;
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  }
+}
+
+function renderAxisButtons() {
+  for (const button of elements.replayAxisButtons) {
+    const isActive = button.dataset.axis === state.dashboardAxis;
     button.setAttribute("aria-pressed", isActive ? "true" : "false");
   }
 }
@@ -431,14 +441,52 @@ function renderRecordings() {
 }
 
 function renderGraphs() {
-  chartsController.renderSession(state.session);
+  chartsController.renderSession(state.session, state.dashboardAxis);
 }
 
 function updateGraphPlayback(sample) {
   setElementText(graphElements.speed.current, formatSpeed(sample?.speedMs));
   setElementText(graphElements.altitude.current, formatAltitude(sample?.altitudeM));
   setElementText(graphElements.heading.current, formatHeading(sample?.headingDeg));
-  chartsController.updatePlayback(state.elapsedMs);
+  chartsController.updatePlayback(sample);
+}
+
+function getPlaybackProgressCurrentLabel(sample) {
+  if (state.dashboardAxis === "distance") {
+    return formatDistance(sample?.totalDistanceM ?? 0);
+  }
+
+  return formatDuration(sample?.elapsedMs ?? 0);
+}
+
+function getPlaybackProgressTotalLabel() {
+  if (state.dashboardAxis === "distance") {
+    return formatDistance(state.summary.totalDistanceM);
+  }
+
+  return formatDuration(state.summary.durationMs);
+}
+
+function getPlaybackAxisMaxValue() {
+  return state.dashboardAxis === "distance"
+    ? Math.max(0, state.summary.totalDistanceM)
+    : Math.max(0, state.summary.durationMs);
+}
+
+function getPlaybackAxisValue(sample) {
+  if (state.dashboardAxis === "distance") {
+    return Math.max(0, sample?.totalDistanceM ?? 0);
+  }
+  return Math.max(0, sample?.elapsedMs ?? 0);
+}
+
+function renderPlaybackProgressScale(sample) {
+  if (!elements.replayProgress) return;
+
+  elements.replayProgress.min = "0";
+  elements.replayProgress.max = String(getPlaybackAxisMaxValue());
+  elements.replayProgress.step = "any";
+  elements.replayProgress.value = String(getPlaybackAxisValue(sample));
 }
 
 function renderPlaybackFrame() {
@@ -454,14 +502,9 @@ function renderPlaybackFrame() {
   }
 
   const playedCoordinates = getReplayPlayedCoordinates(state.session, state.elapsedMs);
-  const progressValue = state.summary.durationMs > 0
-    ? Math.round((state.elapsedMs / state.summary.durationMs) * 1000)
-    : 0;
-
-  if (elements.replayProgress) {
-    elements.replayProgress.value = String(progressValue);
-  }
-  setElementText(elements.replayElapsedValue, formatDuration(sample.elapsedMs));
+  renderPlaybackProgressScale(sample);
+  setElementText(elements.replayElapsedValue, getPlaybackProgressCurrentLabel(sample));
+  setElementText(elements.replayDurationValue, getPlaybackProgressTotalLabel());
   updateGraphPlayback(sample);
 
   mapController.renderPlaybackFrame({
@@ -546,6 +589,15 @@ function setPlaybackRate(rate) {
   renderRateButtons();
 }
 
+function setDashboardAxis(axis) {
+  const nextAxis = axis === "distance" ? "distance" : "time";
+  if (state.dashboardAxis === nextAxis) return;
+  state.dashboardAxis = nextAxis;
+  renderAxisButtons();
+  renderGraphs();
+  renderPlaybackFrame();
+}
+
 function resetPlayback({ refitMap = true } = {}) {
   stopPlayback();
   state.elapsedMs = 0;
@@ -580,6 +632,7 @@ function applyReplaySelection(recordingId = null) {
   renderHighlights();
   renderGraphs();
   renderPlaybackButtons();
+  renderAxisButtons();
   renderPlaybackFrame();
 
   if (state.session) {
@@ -597,6 +650,7 @@ function syncLanguage() {
   renderSessionState();
   renderPlaybackButtons();
   renderActionIcons();
+  renderAxisButtons();
   renderRateButtons();
   renderRecordings();
   renderStaticSummary();
@@ -634,8 +688,16 @@ function bindEvents() {
   elements.replayProgress?.addEventListener("input", (event) => {
     if (!state.session) return;
     stopPlayback();
-    const progressValue = Number(event.target.value) / 1000;
-    state.elapsedMs = state.summary.durationMs * progressValue;
+    const axisValue = Number(event.target.value);
+    if (state.dashboardAxis === "distance") {
+      const sample = getReplaySampleAtDistanceM(
+        state.session,
+        axisValue,
+      );
+      state.elapsedMs = sample?.elapsedMs ?? 0;
+    } else {
+      state.elapsedMs = axisValue;
+    }
     renderPlaybackFrame();
   });
 
@@ -666,6 +728,12 @@ function bindEvents() {
     });
   }
 
+  for (const button of elements.replayAxisButtons) {
+    button.addEventListener("click", () => {
+      setDashboardAxis(button.dataset.axis);
+    });
+  }
+
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
       stopPlayback();
@@ -685,6 +753,7 @@ function init() {
   }
 
   renderSessionState();
+  renderAxisButtons();
   renderRateButtons();
   renderPlaybackButtons();
   renderActionIcons();
