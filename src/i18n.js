@@ -1,9 +1,12 @@
+import { accelTranslations } from "./accel/translations.js";
+import { loadText, saveText } from "./shared/storage.js";
+
 /**
  * VatioBoard i18n - Minimal internationalization
  * Supports: English (en), Spanish (es)
  */
 
-const translations = {
+const baseTranslations = {
   en: {
     // UI Controls
     pen: 'Pen',
@@ -741,9 +744,14 @@ const translations = {
   }
 };
 
+const translations = {
+  en: { ...baseTranslations.en, ...accelTranslations.en },
+  es: { ...baseTranslations.es, ...accelTranslations.es },
+};
+
 const LANG_KEY = 'vatio_board_lang';
 
-const storedLang = localStorage.getItem(LANG_KEY);
+const storedLang = loadText(LANG_KEY, null);
 const detectedLang = storedLang || window.__lang || (navigator.language?.startsWith('es') ? 'es' : 'en');
 
 // Current language (can be changed later for manual switching)
@@ -754,8 +762,16 @@ let currentLang = detectedLang;
  * @param {string} key - Translation key
  * @returns {string} - Translated string or key if not found
  */
-export function t(key) {
-  return translations[currentLang]?.[key] ?? translations.en[key] ?? key;
+export function t(key, params) {
+  const text = translations[currentLang]?.[key] ?? translations.en[key] ?? key;
+  if (!params) return text;
+
+  return text.replace(/\{(\w+)\}/g, (match, token) => {
+    if (Object.prototype.hasOwnProperty.call(params, token)) {
+      return String(params[token]);
+    }
+    return match;
+  });
 }
 
 /**
@@ -773,7 +789,7 @@ export function getLang() {
 export function setLang(lang) {
   if (translations[lang]) {
     currentLang = lang;
-    localStorage.setItem(LANG_KEY, lang);
+    saveText(LANG_KEY, lang);
     document.documentElement.lang = lang;
   }
 }

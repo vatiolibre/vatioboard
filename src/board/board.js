@@ -336,7 +336,9 @@ bindNavigation(openAccelMenuBtn, "/accel");
     if (!iroPicker || syncingFromIro) return;
     try {
         iroPicker.color.hexString = inkRaw;
-    } catch {}
+    } catch {
+        // Ignore invalid intermediate picker states while syncing.
+    }
     }
 
     function syncColorChip(){
