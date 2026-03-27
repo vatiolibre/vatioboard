@@ -191,29 +191,47 @@
       <section id="replayShell" class="replay-shell" hidden>
         <article class="replay-card replay-graphs-card">
           <section class="replay-graphs-grid" aria-label="Replay graphs">
-            <section class="replay-graph-card">
+            <button
+              type="button"
+              class="replay-graph-card replay-graph-trigger"
+              data-graph-metric="speedMs"
+              data-i18n-aria="replayExpandGraph"
+              aria-label="Expand graph"
+            >
               <header class="replay-graph-head">
                 <span class="replay-metric-label" data-i18n="speed">Speed</span>
                 <strong id="replayGraphSpeedCurrent" class="replay-graph-current">—</strong>
               </header>
               <canvas id="replayGraphSpeedCanvas" class="replay-graph-canvas" aria-label="Replay speed chart"></canvas>
-            </section>
+            </button>
 
-            <section class="replay-graph-card">
+            <button
+              type="button"
+              class="replay-graph-card replay-graph-trigger"
+              data-graph-metric="altitudeM"
+              data-i18n-aria="replayExpandGraph"
+              aria-label="Expand graph"
+            >
               <header class="replay-graph-head">
                 <span class="replay-metric-label" data-i18n="altitude">Altitude</span>
                 <strong id="replayGraphAltitudeCurrent" class="replay-graph-current">—</strong>
               </header>
               <canvas id="replayGraphAltitudeCanvas" class="replay-graph-canvas" aria-label="Replay altitude chart"></canvas>
-            </section>
+            </button>
 
-            <section class="replay-graph-card">
+            <button
+              type="button"
+              class="replay-graph-card replay-graph-trigger"
+              data-graph-metric="headingDeg"
+              data-i18n-aria="replayExpandGraph"
+              aria-label="Expand graph"
+            >
               <header class="replay-graph-head">
                 <span class="replay-metric-label" data-i18n="heading">Heading</span>
                 <strong id="replayGraphHeadingCurrent" class="replay-graph-current">—</strong>
               </header>
               <canvas id="replayGraphHeadingCanvas" class="replay-graph-canvas" aria-label="Replay heading chart"></canvas>
-            </section>
+            </button>
           </section>
         </article>
 
@@ -324,6 +342,120 @@
       </section>
     </main>
   </div>
+
+  <section
+    id="replayGraphSheet"
+    class="replay-graph-sheet"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="replayGraphSheetTitle"
+    hidden
+  >
+    <div id="replayGraphSheetBackdrop" class="replay-graph-sheet-backdrop" aria-hidden="true"></div>
+
+    <section class="replay-graph-sheet-panel">
+      <header class="replay-graph-sheet-header">
+        <h2 id="replayGraphSheetTitle" class="replay-graph-sheet-title" data-i18n="replayExploreCharts">Explore charts</h2>
+        <button id="closeReplayGraphSheet" type="button" class="replay-action-btn replay-action-btn-secondary" data-i18n="close">Close</button>
+      </header>
+
+      <section class="replay-graph-sheet-controls">
+        <section class="replay-axis-group replay-sheet-axis-group" role="group" aria-label="Dashboard axis" data-i18n-aria="replayDashboardAxis">
+          <button type="button" class="replay-axis-btn" data-axis="time" data-i18n="replayAxisTime">Time</button>
+          <button type="button" class="replay-axis-btn" data-axis="distance" data-i18n="replayAxisDistance">Distance</button>
+        </section>
+
+        <section class="replay-filter-group" aria-label="Filter range" data-i18n-aria="replayFilterRange">
+          <div class="replay-filter-values">
+            <span class="replay-filter-value">
+              <span class="replay-metric-label" data-i18n="replayFilterStart">Start</span>
+              <strong id="replayFilterStartValue" class="replay-filter-value-text">00:00</strong>
+            </span>
+            <span class="replay-filter-value replay-filter-value-end">
+              <span class="replay-metric-label" data-i18n="replayFilterEnd">End</span>
+              <strong id="replayFilterEndValue" class="replay-filter-value-text">00:00</strong>
+            </span>
+          </div>
+
+          <div id="replayFilterSlider" class="replay-filter-slider dual-range-input">
+            <input
+              id="replayFilterStart"
+              class="replay-filter-range replay-filter-range-start"
+              type="range"
+              min="0"
+              max="1000"
+              value="0"
+              step="1"
+              aria-label="Filter start"
+              data-i18n-aria="replayFilterStart"
+            />
+            <input
+              id="replayFilterEnd"
+              class="replay-filter-range replay-filter-range-end"
+              type="range"
+              min="0"
+              max="1000"
+              value="1000"
+              step="1"
+              aria-label="Filter end"
+              data-i18n-aria="replayFilterEnd"
+            />
+          </div>
+        </section>
+      </section>
+
+      <section class="replay-graph-sheet-grid" aria-label="Expanded replay charts">
+        <article class="replay-graph-sheet-stage">
+          <header class="replay-graph-sheet-stage-head">
+            <span class="replay-metric-label" data-i18n="speed">Speed</span>
+            <strong id="replayExpandedSpeedCurrent" class="replay-graph-sheet-current">—</strong>
+          </header>
+          <div class="replay-graph-sheet-canvas-wrap">
+            <canvas
+              id="replayExpandedSpeedCanvas"
+              class="replay-expanded-graph-canvas"
+              data-graph-sheet-scrub="speedMs"
+              aria-label="Expanded replay speed chart"
+            ></canvas>
+          </div>
+        </article>
+
+        <article class="replay-graph-sheet-stage">
+          <header class="replay-graph-sheet-stage-head">
+            <span class="replay-metric-label" data-i18n="altitude">Altitude</span>
+            <strong id="replayExpandedAltitudeCurrent" class="replay-graph-sheet-current">—</strong>
+          </header>
+          <div class="replay-graph-sheet-canvas-wrap">
+            <canvas
+              id="replayExpandedAltitudeCanvas"
+              class="replay-expanded-graph-canvas"
+              data-graph-sheet-scrub="altitudeM"
+              aria-label="Expanded replay altitude chart"
+            ></canvas>
+          </div>
+        </article>
+
+        <article class="replay-graph-sheet-stage">
+          <header class="replay-graph-sheet-stage-head">
+            <span class="replay-metric-label" data-i18n="heading">Heading</span>
+            <strong id="replayExpandedHeadingCurrent" class="replay-graph-sheet-current">—</strong>
+          </header>
+          <div class="replay-graph-sheet-canvas-wrap">
+            <canvas
+              id="replayExpandedHeadingCanvas"
+              class="replay-expanded-graph-canvas"
+              data-graph-sheet-scrub="headingDeg"
+              aria-label="Expanded replay heading chart"
+            ></canvas>
+          </div>
+        </article>
+      </section>
+
+      <section class="replay-graph-sheet-foot">
+        <p class="replay-graph-sheet-hint" data-i18n="replayDragToExplore">Drag across the chart to scrub the replay.</p>
+      </section>
+    </section>
+  </section>
 
   <script type="module" src="/src/replay/replay.js"></script>
 </body>

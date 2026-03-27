@@ -3,8 +3,12 @@ import {
   buildReplayMetricSeries,
   formatReplayDistanceValue,
   formatReplaySpeedValue,
+  getReplayAxisRange,
+  getReplayMetricDomain,
   getReplaySummary,
 } from "./logic.js";
+
+const DETAIL_METRIC_KEYS = ["speedMs", "altitudeM", "headingDeg"];
 
 const replayCursorPlugin = {
   id: "replayCursor",
@@ -21,8 +25,8 @@ const replayCursorPlugin = {
 
     ctx.save();
     ctx.strokeStyle = chart.$replayCursorColor || "rgba(52, 211, 153, 0.82)";
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([5, 5]);
+    ctx.lineWidth = chart.$replayCursorWidth || 1.5;
+    ctx.setLineDash(chart.$replayCursorDash || [5, 5]);
     ctx.beginPath();
     ctx.moveTo(x, chart.chartArea.top);
     ctx.lineTo(x, chart.chartArea.bottom);
@@ -38,6 +42,19 @@ function formatPlaybackDuration(seconds) {
   return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function normalizeDetailMetricKey(metricKey) {
+  return DETAIL_METRIC_KEYS.includes(metricKey) ? metricKey : "speedMs";
+}
+
+function normalizeHeadingTickValue(value) {
+  if (!Number.isFinite(value)) return value;
+  return ((value % 360) + 360) % 360;
+}
+
 export function createReplayChartsController({
   elements,
   getSpeedUnit,
@@ -45,10 +62,22 @@ export function createReplayChartsController({
 }) {
   let activeSession = null;
   let activeAxisMode = "time";
-  let charts = {
-    speed: null,
-    altitude: null,
-    heading: null,
+  let detailOpen = false;
+  let detailRangeStartRatio = 0;
+  let detailRangeEndRatio = 1;
+  let lastPlaybackPoint = {
+    elapsedMs: 0,
+    totalDistanceM: 0,
+  };
+  let overviewCharts = {
+    speedMs: null,
+    altitudeM: null,
+    headingDeg: null,
+  };
+  let detailCharts = {
+    speedMs: null,
+    altitudeM: null,
+    headingDeg: null,
   };
 
   function formatAxisNumber(value, decimals = 0) {
@@ -72,7 +101,7 @@ export function createReplayChartsController({
       return `${formatAxisNumber(kilometers, kilometers < 10 ? 1 : 0)} km`;
     }
 
-    return `${formatAxisNumber(distanceValue, distanceUnit === "m" ? 0 : 0)} ${distanceUnit === "ft" ? "ft" : "m"}`;
+    return `${formatAxisNumber(distanceValue, 0)} ${distanceUnit === "ft" ? "ft" : "m"}`;
   }
 
   function getCssColor(name, fallback) {
@@ -90,14 +119,89 @@ export function createReplayChartsController({
     };
   }
 
-  function destroyCharts() {
-    for (const chart of Object.values(charts)) {
+  function getMetricConfig(metricKey) {
+    const speedUnit = getSpeedUnit();
+    const distanceUnit = getDistanceUnit();
+
+    if (metricKey === "altitudeM") {
+      return {
+        metricKey,
+        min: undefined,
+        max: undefined,
+        tickFormatter: (value) => `${Math.round(formatReplayDistanceValue(value, distanceUnit))} ${distanceUnit === "ft" ? "ft" : "m"}`,
+      };
+    }
+
+    if (metricKey === "headingDeg") {
+      return {
+        metricKey,
+        min: undefined,
+        max: undefined,
+        tickFormatter: (value) => `${Math.round(normalizeHeadingTickValue(value))}°`,
+      };
+    }
+
+    return {
+      metricKey: "speedMs",
+      min: 0,
+      max: undefined,
+      tickFormatter: (value) => `${Math.round(formatReplaySpeedValue(value, speedUnit))} ${speedUnit === "mph" ? "mph" : "km/h"}`,
+    };
+  }
+
+  function getMetricYGrace(metricKey, detailMode) {
+    if (metricKey === "headingDeg") return 0;
+    return detailMode ? "8%" : "4%";
+  }
+
+  function getDetailMetricBounds(metricKey, axisRange) {
+    const domain = getReplayMetricDomain(activeSession, metricKey, activeAxisMode, axisRange);
+    if (!domain) return null;
+
+    let min = domain.min;
+    let max = domain.max;
+
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
+
+    if (max <= min) {
+      const pad = metricKey === "headingDeg"
+        ? 2
+        : Math.max(0.5, Math.abs(max || min) * 0.08, 1);
+      min -= pad;
+      max += pad;
+    }
+
+    if (metricKey === "speedMs") {
+      min = Math.max(0, min);
+    }
+
+    if (metricKey === "headingDeg") {
+      if (max <= min) {
+        max = min + 4;
+      }
+    }
+
+    return { min, max };
+  }
+
+  function destroyChartMap(chartMap) {
+    for (const chart of Object.values(chartMap)) {
       if (chart) chart.destroy();
     }
-    charts = {
-      speed: null,
-      altitude: null,
-      heading: null,
+  }
+
+  function destroyCharts() {
+    destroyChartMap(overviewCharts);
+    destroyChartMap(detailCharts);
+    overviewCharts = {
+      speedMs: null,
+      altitudeM: null,
+      headingDeg: null,
+    };
+    detailCharts = {
+      speedMs: null,
+      altitudeM: null,
+      headingDeg: null,
     };
   }
 
@@ -117,16 +221,27 @@ export function createReplayChartsController({
     return Math.max(0, summary.durationMs / 1000);
   }
 
+  function getOverviewAxisRange() {
+    return getReplayAxisRange(getAxisMax(), 0, 1);
+  }
+
+  function getDetailAxisRange() {
+    return getReplayAxisRange(getAxisMax(), detailRangeStartRatio, detailRangeEndRatio);
+  }
+
   function createMetricChart({
     canvas,
     metricKey,
-    tickFormatter,
-    min,
-    max,
+    axisRange,
+    detailMode = false,
   }) {
-    if (!canvas) return null;
+    if (!canvas || !activeSession) return null;
 
     const palette = getPalette();
+    const metricConfig = getMetricConfig(metricKey);
+    const detailBounds = detailMode ? getDetailMetricBounds(metricConfig.metricKey, axisRange) : null;
+    const yMin = detailBounds?.min ?? metricConfig.min;
+    const yMax = detailBounds?.max ?? metricConfig.max;
 
     return new Chart(canvas, {
       type: "line",
@@ -134,12 +249,13 @@ export function createReplayChartsController({
       data: {
         datasets: [
           {
-            data: buildMetricDataset(metricKey),
+            data: buildMetricDataset(metricConfig.metricKey),
             parsing: false,
             normalized: true,
             borderColor: palette.line,
             backgroundColor: palette.fill,
-            borderWidth: 2.5,
+            borderWidth: detailMode ? 2.5 : 2.25,
+            clip: detailMode ? 10 : 4,
             tension: 0.28,
             cubicInterpolationMode: "monotone",
             fill: true,
@@ -164,8 +280,8 @@ export function createReplayChartsController({
           padding: {
             left: 0,
             right: 0,
-            top: 0,
-            bottom: 0,
+            top: detailMode ? 6 : 2,
+            bottom: detailMode ? 6 : 2,
           },
         },
         interaction: {
@@ -175,8 +291,8 @@ export function createReplayChartsController({
         scales: {
           x: {
             type: "linear",
-            min: 0,
-            max: getAxisMax(),
+            min: axisRange.min,
+            max: axisRange.max,
             bounds: "data",
             offset: false,
             grid: {
@@ -190,12 +306,13 @@ export function createReplayChartsController({
                   ? formatDistanceLabel(value)
                   : formatPlaybackDuration(value);
               },
-              maxTicksLimit: 4,
+              maxTicksLimit: detailMode ? 6 : 4,
             },
           },
           y: {
-            min,
-            max,
+            min: yMin,
+            max: yMax,
+            grace: detailMode ? 0 : getMetricYGrace(metricConfig.metricKey, detailMode),
             grid: {
               color: palette.axis,
               drawBorder: false,
@@ -203,9 +320,9 @@ export function createReplayChartsController({
             ticks: {
               color: palette.label,
               callback(value) {
-                return tickFormatter(value);
+                return metricConfig.tickFormatter(value);
               },
-              maxTicksLimit: 5,
+              maxTicksLimit: detailMode ? 6 : 5,
             },
           },
         },
@@ -213,60 +330,170 @@ export function createReplayChartsController({
     });
   }
 
-  function renderSession(session, axisMode = "time") {
-    activeSession = session;
-    activeAxisMode = axisMode === "distance" ? "distance" : "time";
-    destroyCharts();
+  function applyPlaybackCursor(chart, cursorValue, palette, detailMode = false) {
+    if (!chart) return;
+    chart.$replayCursorValue = cursorValue;
+    chart.$replayCursorColor = palette.cursor;
+    chart.$replayCursorWidth = detailMode ? 2 : 1.5;
+    chart.$replayCursorDash = detailMode ? [] : [5, 5];
+    chart.draw();
+  }
+
+  function getCursorValue(playbackPoint) {
+    return activeAxisMode === "distance"
+      ? Math.max(0, playbackPoint.totalDistanceM ?? 0)
+      : (Math.max(0, playbackPoint.elapsedMs ?? 0) / 1000);
+  }
+
+  function renderOverviewCharts() {
+    destroyChartMap(overviewCharts);
+    overviewCharts = {
+      speedMs: null,
+      altitudeM: null,
+      headingDeg: null,
+    };
 
     if (!activeSession) return;
 
-    const speedUnit = getSpeedUnit();
-    const distanceUnit = getDistanceUnit();
-
-    charts.speed = createMetricChart({
+    const axisRange = getOverviewAxisRange();
+    overviewCharts.speedMs = createMetricChart({
       canvas: elements.speedCanvas,
       metricKey: "speedMs",
-      min: 0,
-      tickFormatter: (value) => `${Math.round(formatReplaySpeedValue(value, speedUnit))} ${speedUnit === "mph" ? "mph" : "km/h"}`,
+      axisRange,
     });
-
-    charts.altitude = createMetricChart({
+    overviewCharts.altitudeM = createMetricChart({
       canvas: elements.altitudeCanvas,
       metricKey: "altitudeM",
-      tickFormatter: (value) => `${Math.round(formatReplayDistanceValue(value, distanceUnit))} ${distanceUnit === "ft" ? "ft" : "m"}`,
+      axisRange,
     });
-
-    charts.heading = createMetricChart({
+    overviewCharts.headingDeg = createMetricChart({
       canvas: elements.headingCanvas,
       metricKey: "headingDeg",
-      min: 0,
-      max: 360,
-      tickFormatter: (value) => `${Math.round(value)}°`,
+      axisRange,
     });
+  }
 
-    updatePlayback({ elapsedMs: 0, totalDistanceM: 0 });
+  function renderDetailCharts() {
+    destroyChartMap(detailCharts);
+    detailCharts = {
+      speedMs: null,
+      altitudeM: null,
+      headingDeg: null,
+    };
+
+    if (!detailOpen || !activeSession) return;
+
+    const axisRange = getDetailAxisRange();
+    detailCharts.speedMs = createMetricChart({
+      canvas: elements.detailSpeedCanvas,
+      metricKey: "speedMs",
+      axisRange,
+      detailMode: true,
+    });
+    detailCharts.altitudeM = createMetricChart({
+      canvas: elements.detailAltitudeCanvas,
+      metricKey: "altitudeM",
+      axisRange,
+      detailMode: true,
+    });
+    detailCharts.headingDeg = createMetricChart({
+      canvas: elements.detailHeadingCanvas,
+      metricKey: "headingDeg",
+      axisRange,
+      detailMode: true,
+    });
+  }
+
+  function renderSession(session, axisMode = "time") {
+    activeSession = session;
+    activeAxisMode = axisMode === "distance" ? "distance" : "time";
+    renderOverviewCharts();
+    renderDetailCharts();
+    updatePlayback(lastPlaybackPoint);
   }
 
   function updatePlayback(playbackPoint = {}) {
     const safePlaybackPoint = playbackPoint && typeof playbackPoint === "object"
       ? playbackPoint
       : {};
-    const cursorValue = activeAxisMode === "distance"
-      ? Math.max(0, safePlaybackPoint.totalDistanceM ?? 0)
-      : (Math.max(0, safePlaybackPoint.elapsedMs ?? 0) / 1000);
     const palette = getPalette();
+    const cursorValue = getCursorValue(safePlaybackPoint);
 
-    for (const chart of Object.values(charts)) {
-      if (!chart) continue;
-      chart.$replayCursorValue = cursorValue;
-      chart.$replayCursorColor = palette.cursor;
-      chart.draw();
+    lastPlaybackPoint = {
+      elapsedMs: Math.max(0, safePlaybackPoint.elapsedMs ?? 0),
+      totalDistanceM: Math.max(0, safePlaybackPoint.totalDistanceM ?? 0),
+    };
+
+    for (const chart of Object.values(overviewCharts)) {
+      applyPlaybackCursor(chart, cursorValue, palette, false);
     }
+
+    for (const chart of Object.values(detailCharts)) {
+      applyPlaybackCursor(chart, cursorValue, palette, true);
+    }
+  }
+
+  function setDetailOpen(nextOpen) {
+    const normalizedOpen = Boolean(nextOpen);
+    if (detailOpen === normalizedOpen && (!detailOpen || detailCharts.speedMs)) {
+      return;
+    }
+
+    detailOpen = normalizedOpen;
+    renderDetailCharts();
+    updatePlayback(lastPlaybackPoint);
+  }
+
+  function setDetailRange(startRatio, endRatio) {
+    const normalizedRange = getReplayAxisRange(1, startRatio, endRatio);
+    if (
+      detailRangeStartRatio === normalizedRange.startRatio
+      && detailRangeEndRatio === normalizedRange.endRatio
+    ) {
+      return;
+    }
+
+    detailRangeStartRatio = normalizedRange.startRatio;
+    detailRangeEndRatio = normalizedRange.endRatio;
+    renderDetailCharts();
+    updatePlayback(lastPlaybackPoint);
+  }
+
+  function getDetailAxisValueFromClientX(metricKey, clientX) {
+    const normalizedMetricKey = normalizeDetailMetricKey(metricKey);
+    const chart = detailCharts[normalizedMetricKey];
+    if (!chart?.canvas || !Number.isFinite(clientX)) return null;
+
+    const xScale = chart.scales?.x;
+    const axisRange = getDetailAxisRange();
+    const rect = chart.canvas.getBoundingClientRect();
+    const localX = clientX - rect.left;
+
+    if (typeof xScale?.getValueForPixel === "function") {
+      const value = xScale.getValueForPixel(localX);
+      return Number.isFinite(value)
+        ? clamp(value, axisRange.min, axisRange.max)
+        : null;
+    }
+
+    const chartArea = chart.chartArea || {
+      left: 0,
+      right: rect.width,
+    };
+    const ratio = clamp(
+      (localX - chartArea.left) / Math.max(1, chartArea.right - chartArea.left),
+      0,
+      1,
+    );
+    return axisRange.min + ((axisRange.max - axisRange.min) * ratio);
   }
 
   return {
     destroy: destroyCharts,
+    getDetailAxisValueFromClientX,
     renderSession,
+    setDetailOpen,
+    setDetailRange,
     updatePlayback,
   };
 }

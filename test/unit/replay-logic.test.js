@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   buildReplayGraphModel,
   buildReplayMetricSeries,
+  getReplayAxisRange,
+  getReplayMetricDomain,
   getReplayBounds,
   getReplayGraphCursorX,
   getReplayHighlights,
@@ -248,6 +250,23 @@ describe("replay helpers", () => {
     expect(sample.elapsedMs).toBe(3000);
   });
 
+  it("interpolates heading across north using the shortest circular path", () => {
+    const session = {
+      samples: [
+        createSample({ timestampMs: 1000, headingDeg: 350, totalDistanceM: 0 }),
+        createSample({ timestampMs: 3000, headingDeg: 10, totalDistanceM: 100 }),
+      ],
+      startedAtMs: 1000,
+      endedAtMs: 3000,
+      totalDistanceM: 100,
+      distanceUnit: "m",
+      unit: "kmh",
+    };
+
+    expect(getReplaySampleAtElapsedMs(session, 1000).headingDeg).toBe(0);
+    expect(getReplaySampleAtDistanceM(session, 50).headingDeg).toBe(0);
+  });
+
   it("builds summary totals and highlight moments from the replay session", () => {
     const session = {
       samples: [
@@ -346,5 +365,91 @@ describe("replay helpers", () => {
       { elapsedMs: 4000, elapsedSeconds: 4, distanceM: 180, xValue: 180, value: 20 },
     ]);
     expect(getReplayGraphCursorX(session, 2000, { width: 320, paddingX: 10 })).toBe(160);
+  });
+
+  it("builds stable chart windows for touch-friendly graph filters", () => {
+    expect(getReplayAxisRange(180, 0, 1)).toEqual({
+      startRatio: 0,
+      endRatio: 1,
+      min: 0,
+      max: 180,
+    });
+    expect(getReplayAxisRange(180, 0, 0.38)).toEqual({
+      startRatio: 0,
+      endRatio: 0.38,
+      min: 0,
+      max: 68.4,
+    });
+    expect(getReplayAxisRange(180, 0.8, 0.2)).toEqual({
+      startRatio: 0.2,
+      endRatio: 0.8,
+      min: 36,
+      max: 144,
+    });
+    expect(getReplayAxisRange(180, 0.99, 1)).toEqual({
+      startRatio: 0.98,
+      endRatio: 1,
+      min: 176.4,
+      max: 180,
+    });
+    expect(getReplayAxisRange(0, 0.4, 0.6)).toEqual({
+      startRatio: 0,
+      endRatio: 1,
+      min: 0,
+      max: 1,
+    });
+  });
+
+  it("derives metric min and max from the filtered replay interval", () => {
+    const session = {
+      samples: [
+        createSample({ timestampMs: 1000, speedMs: 0, altitudeM: 10, totalDistanceM: 0 }),
+        createSample({ timestampMs: 2000, speedMs: 10, altitudeM: 16, totalDistanceM: 50 }),
+        createSample({ timestampMs: 3000, speedMs: 30, altitudeM: 22, totalDistanceM: 110 }),
+        createSample({ timestampMs: 4000, speedMs: 15, altitudeM: 18, totalDistanceM: 160 }),
+      ],
+      startedAtMs: 1000,
+      endedAtMs: 4000,
+      totalDistanceM: 160,
+      maxSpeedMs: 30,
+      distanceUnit: "m",
+      unit: "kmh",
+    };
+
+    expect(getReplayMetricDomain(session, "speedMs", "time", { min: 1, max: 2.5 })).toEqual({
+      min: 10,
+      max: 30,
+    });
+    expect(getReplayMetricDomain(session, "altitudeM", "distance", { min: 25, max: 135 })).toEqual({
+      min: 13,
+      max: 22,
+    });
+  });
+
+  it("keeps heading domains tight when the filtered interval crosses north", () => {
+    const session = {
+      samples: [
+        createSample({ timestampMs: 1000, headingDeg: 350, totalDistanceM: 0 }),
+        createSample({ timestampMs: 2000, headingDeg: 355, totalDistanceM: 40 }),
+        createSample({ timestampMs: 3000, headingDeg: 5, totalDistanceM: 80 }),
+        createSample({ timestampMs: 4000, headingDeg: 12, totalDistanceM: 120 }),
+      ],
+      startedAtMs: 1000,
+      endedAtMs: 4000,
+      totalDistanceM: 120,
+      distanceUnit: "m",
+      unit: "kmh",
+    };
+
+    expect(buildReplayMetricSeries(session, "headingDeg")).toEqual([
+      { elapsedMs: 0, elapsedSeconds: 0, distanceM: 0, xValue: 0, value: 350 },
+      { elapsedMs: 1000, elapsedSeconds: 1, distanceM: 40, xValue: 1, value: 355 },
+      { elapsedMs: 2000, elapsedSeconds: 2, distanceM: 80, xValue: 2, value: 365 },
+      { elapsedMs: 3000, elapsedSeconds: 3, distanceM: 120, xValue: 3, value: 372 },
+    ]);
+    expect(getReplayMetricDomain(session, "headingDeg", "time", { min: 0.5, max: 2.5 })).toEqual({
+      min: 352.5,
+      max: 368.5,
+    });
   });
 });

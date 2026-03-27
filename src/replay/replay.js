@@ -1,5 +1,7 @@
 import "maplibre-gl/dist/maplibre-gl.css";
+import "@stanko/dual-range-input/dist/index.css";
 import "../styles/replay.less";
+import DualRangeInput from "@stanko/dual-range-input";
 import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
 import {
   IconAccel,
@@ -14,6 +16,7 @@ import {
 import { initSupportPanel } from "../shared/support-panel.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
 import {
+  getReplayAxisRange,
   formatReplayDistanceValue,
   formatReplaySpeedValue,
   getReplayHighlights,
@@ -33,6 +36,7 @@ const elements = {
   pageDescriptionMeta: document.querySelector('meta[name="description"]'),
   replaySessionChip: document.getElementById("replaySessionChip"),
   replayAxisButtons: Array.from(document.querySelectorAll(".replay-axis-btn")),
+  replayGraphTriggers: Array.from(document.querySelectorAll(".replay-graph-trigger")),
   replayToolsMenuBtn: document.getElementById("replayToolsMenuBtn"),
   replayToolsMenuList: document.getElementById("replayToolsMenuList"),
   openReplaySpeedMenu: document.getElementById("openReplaySpeedMenu"),
@@ -63,6 +67,15 @@ const elements = {
   replayHighlightsList: document.getElementById("replayHighlightsList"),
   replayRecordingsList: document.getElementById("replayRecordingsList"),
   replayRateButtons: Array.from(document.querySelectorAll(".replay-rate-btn")),
+  replayGraphSheet: document.getElementById("replayGraphSheet"),
+  replayGraphSheetBackdrop: document.getElementById("replayGraphSheetBackdrop"),
+  closeReplayGraphSheet: document.getElementById("closeReplayGraphSheet"),
+  replayGraphSheetTitle: document.getElementById("replayGraphSheetTitle"),
+  replayFilterSlider: document.getElementById("replayFilterSlider"),
+  replayFilterStart: document.getElementById("replayFilterStart"),
+  replayFilterEnd: document.getElementById("replayFilterEnd"),
+  replayFilterStartValue: document.getElementById("replayFilterStartValue"),
+  replayFilterEndValue: document.getElementById("replayFilterEndValue"),
 };
 
 const graphElements = {
@@ -78,6 +91,20 @@ const graphElements = {
     current: document.getElementById("replayGraphHeadingCurrent"),
     canvas: document.getElementById("replayGraphHeadingCanvas"),
   },
+  expanded: {
+    speed: {
+      current: document.getElementById("replayExpandedSpeedCurrent"),
+      canvas: document.getElementById("replayExpandedSpeedCanvas"),
+    },
+    altitude: {
+      current: document.getElementById("replayExpandedAltitudeCurrent"),
+      canvas: document.getElementById("replayExpandedAltitudeCanvas"),
+    },
+    heading: {
+      current: document.getElementById("replayExpandedHeadingCurrent"),
+      canvas: document.getElementById("replayExpandedHeadingCanvas"),
+    },
+  },
 };
 
 const toolsMenu = initToolsMenu({
@@ -92,6 +119,9 @@ applyButtonIcon(elements.openReplayAccelMenu, IconAccel);
 applyButtonIcon(elements.openReplayBoardMenu, IconBoard);
 
 const initialSelection = loadReplaySelection();
+const replayFilterController = elements.replayFilterStart && elements.replayFilterEnd
+  ? new DualRangeInput(elements.replayFilterStart, elements.replayFilterEnd)
+  : null;
 
 const state = {
   records: initialSelection.records,
@@ -108,6 +138,10 @@ const state = {
   frameId: null,
   lastFrameAt: null,
   introPlayed: false,
+  expandedGraphOpen: false,
+  expandedGraphFilterStartRatio: 0,
+  expandedGraphFilterEndRatio: 1,
+  expandedGraphPointerId: null,
 };
 
 refreshDerivedState();
@@ -117,6 +151,9 @@ const chartsController = createReplayChartsController({
     speedCanvas: graphElements.speed.canvas,
     altitudeCanvas: graphElements.altitude.canvas,
     headingCanvas: graphElements.heading.canvas,
+    detailSpeedCanvas: graphElements.expanded.speed.canvas,
+    detailAltitudeCanvas: graphElements.expanded.altitude.canvas,
+    detailHeadingCanvas: graphElements.expanded.heading.canvas,
   },
   getSpeedUnit,
   getDistanceUnit,
@@ -268,6 +305,62 @@ function renderAxisButtons() {
     const isActive = button.dataset.axis === state.dashboardAxis;
     button.setAttribute("aria-pressed", isActive ? "true" : "false");
   }
+}
+
+function renderExpandedGraphControls() {
+  const axisRange = getExpandedGraphAxisRange();
+  const startValue = Math.round(axisRange.startRatio * 1000);
+  const endValue = Math.round(axisRange.endRatio * 1000);
+
+  if (elements.replayFilterStart) {
+    elements.replayFilterStart.value = String(startValue);
+  }
+
+  if (elements.replayFilterEnd) {
+    elements.replayFilterEnd.value = String(endValue);
+  }
+
+  if (elements.replayFilterStartValue) {
+    elements.replayFilterStartValue.textContent = formatExpandedGraphAxisValue(axisRange.min);
+  }
+
+  if (elements.replayFilterEndValue) {
+    elements.replayFilterEndValue.textContent = formatExpandedGraphAxisValue(axisRange.max);
+  }
+
+  if (elements.replayFilterSlider) {
+    replayFilterController?.update();
+  }
+}
+
+function renderExpandedGraphPlayback(sample) {
+  setElementText(graphElements.expanded.speed.current, formatSpeed(sample?.speedMs));
+  setElementText(graphElements.expanded.altitude.current, formatAltitude(sample?.altitudeM));
+  setElementText(graphElements.expanded.heading.current, formatHeading(sample?.headingDeg));
+}
+
+function renderExpandedGraphSheet() {
+  const shouldOpen = state.expandedGraphOpen && Boolean(state.session);
+
+  if (elements.replayGraphSheet) {
+    elements.replayGraphSheet.hidden = !shouldOpen;
+  }
+  document.body.classList.toggle("replay-graph-sheet-open", shouldOpen);
+
+  if (!shouldOpen) {
+    chartsController.setDetailOpen(false);
+    return;
+  }
+
+  chartsController.setDetailRange(
+    state.expandedGraphFilterStartRatio,
+    state.expandedGraphFilterEndRatio,
+  );
+  chartsController.setDetailOpen(true);
+  renderExpandedGraphControls();
+  renderExpandedGraphPlayback(
+    getReplaySampleAtElapsedMs(state.session, state.elapsedMs),
+  );
 }
 
 function renderPlaybackButtons() {
@@ -442,12 +535,14 @@ function renderRecordings() {
 
 function renderGraphs() {
   chartsController.renderSession(state.session, state.dashboardAxis);
+  renderExpandedGraphSheet();
 }
 
 function updateGraphPlayback(sample) {
   setElementText(graphElements.speed.current, formatSpeed(sample?.speedMs));
   setElementText(graphElements.altitude.current, formatAltitude(sample?.altitudeM));
   setElementText(graphElements.heading.current, formatHeading(sample?.headingDeg));
+  renderExpandedGraphPlayback(sample);
   chartsController.updatePlayback(sample);
 }
 
@@ -471,6 +566,28 @@ function getPlaybackAxisMaxValue() {
   return state.dashboardAxis === "distance"
     ? Math.max(0, state.summary.totalDistanceM)
     : Math.max(0, state.summary.durationMs);
+}
+
+function getExpandedGraphAxisMaxValue() {
+  return state.dashboardAxis === "distance"
+    ? Math.max(0, state.summary.totalDistanceM)
+    : Math.max(0, state.summary.durationMs / 1000);
+}
+
+function getExpandedGraphAxisRange() {
+  return getReplayAxisRange(
+    getExpandedGraphAxisMaxValue(),
+    state.expandedGraphFilterStartRatio,
+    state.expandedGraphFilterEndRatio,
+  );
+}
+
+function formatExpandedGraphAxisValue(axisValue) {
+  if (state.dashboardAxis === "distance") {
+    return formatDistance(axisValue);
+  }
+
+  return formatDuration(axisValue * 1000);
 }
 
 function getPlaybackAxisValue(sample) {
@@ -589,6 +706,52 @@ function setPlaybackRate(rate) {
   renderRateButtons();
 }
 
+function setPlaybackFromExpandedAxisValue(axisValue) {
+  if (!state.session || !Number.isFinite(axisValue)) return;
+
+  if (state.dashboardAxis === "distance") {
+    const sample = getReplaySampleAtDistanceM(state.session, axisValue);
+    state.elapsedMs = sample?.elapsedMs ?? 0;
+  } else {
+    state.elapsedMs = Math.max(0, axisValue * 1000);
+  }
+
+  renderPlaybackFrame();
+}
+
+function scrubExpandedGraph(metricKey, clientX) {
+  const axisValue = chartsController.getDetailAxisValueFromClientX(metricKey, clientX);
+  if (!Number.isFinite(axisValue)) return;
+  stopPlayback();
+  setPlaybackFromExpandedAxisValue(axisValue);
+}
+
+function openExpandedGraph() {
+  if (!state.session) return;
+  state.expandedGraphOpen = true;
+  renderExpandedGraphSheet();
+}
+
+function closeExpandedGraph() {
+  state.expandedGraphOpen = false;
+  state.expandedGraphPointerId = null;
+  renderExpandedGraphSheet();
+}
+
+function setExpandedGraphRange(startRatio, endRatio) {
+  const axisRange = getReplayAxisRange(1, startRatio, endRatio);
+  if (
+    state.expandedGraphFilterStartRatio === axisRange.startRatio
+    && state.expandedGraphFilterEndRatio === axisRange.endRatio
+  ) {
+    return;
+  }
+
+  state.expandedGraphFilterStartRatio = axisRange.startRatio;
+  state.expandedGraphFilterEndRatio = axisRange.endRatio;
+  renderExpandedGraphSheet();
+}
+
 function setDashboardAxis(axis) {
   const nextAxis = axis === "distance" ? "distance" : "time";
   if (state.dashboardAxis === nextAxis) return;
@@ -623,6 +786,8 @@ function applyReplaySelection(recordingId = null) {
   state.selectedRecordingId = selection.session?.id ?? null;
   state.elapsedMs = 0;
   state.introPlayed = false;
+  state.expandedGraphOpen = false;
+  state.expandedGraphPointerId = null;
   refreshDerivedState();
 
   renderSessionStateView();
@@ -673,6 +838,12 @@ function bindEvents() {
     window.location.href = "/speed";
   });
 
+  for (const trigger of elements.replayGraphTriggers) {
+    trigger.addEventListener("click", () => {
+      openExpandedGraph();
+    });
+  }
+
   elements.replayPlayPause?.addEventListener("click", togglePlayback);
 
   elements.replayRestart?.addEventListener("click", () => {
@@ -684,6 +855,9 @@ function bindEvents() {
     await mapController.runApproachAnimation();
     state.introPlayed = true;
   });
+
+  elements.closeReplayGraphSheet?.addEventListener("click", closeExpandedGraph);
+  elements.replayGraphSheetBackdrop?.addEventListener("click", closeExpandedGraph);
 
   elements.replayProgress?.addEventListener("input", (event) => {
     if (!state.session) return;
@@ -699,6 +873,18 @@ function bindEvents() {
       state.elapsedMs = axisValue;
     }
     renderPlaybackFrame();
+  });
+
+  elements.replayFilterStart?.addEventListener("input", (event) => {
+    const startRatio = Number(event.target.value) / 1000;
+    const endRatio = Number(elements.replayFilterEnd?.value ?? 1000) / 1000;
+    setExpandedGraphRange(startRatio, endRatio);
+  });
+
+  elements.replayFilterEnd?.addEventListener("input", (event) => {
+    const startRatio = Number(elements.replayFilterStart?.value ?? 0) / 1000;
+    const endRatio = Number(event.target.value) / 1000;
+    setExpandedGraphRange(startRatio, endRatio);
   });
 
   elements.replayRecordingsList?.addEventListener("click", (event) => {
@@ -734,9 +920,47 @@ function bindEvents() {
     });
   }
 
+  for (const canvas of [
+    graphElements.expanded.speed.canvas,
+    graphElements.expanded.altitude.canvas,
+    graphElements.expanded.heading.canvas,
+  ]) {
+    canvas?.addEventListener("pointerdown", (event) => {
+      if (!state.expandedGraphOpen) return;
+      state.expandedGraphPointerId = event.pointerId;
+      event.preventDefault();
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      scrubExpandedGraph(event.currentTarget.dataset.graphSheetScrub, event.clientX);
+    });
+
+    canvas?.addEventListener("pointermove", (event) => {
+      if (state.expandedGraphPointerId !== event.pointerId) return;
+      event.preventDefault();
+      scrubExpandedGraph(event.currentTarget.dataset.graphSheetScrub, event.clientX);
+    });
+
+    canvas?.addEventListener("pointerup", (event) => {
+      if (state.expandedGraphPointerId !== event.pointerId) return;
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+      state.expandedGraphPointerId = null;
+    });
+
+    canvas?.addEventListener("pointercancel", (event) => {
+      if (state.expandedGraphPointerId !== event.pointerId) return;
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+      state.expandedGraphPointerId = null;
+    });
+  }
+
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
       stopPlayback();
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.expandedGraphOpen) {
+      closeExpandedGraph();
     }
   });
 
@@ -776,6 +1000,7 @@ if (import.meta.hot) {
     stopPlayback();
     chartsController.destroy();
     mapController.destroy();
+    replayFilterController?.destroy();
   });
 }
 

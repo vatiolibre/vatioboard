@@ -3,8 +3,9 @@ import { bootHtmlPage, expectPageSeo, flushTasks } from "../helpers/page-smoke.j
 
 vi.mock("chart.js/auto", () => ({
   default: class FakeChart {
-    constructor(canvas) {
+    constructor(canvas, config) {
       this.canvas = canvas;
+      this.config = config;
       this.ctx = canvas.getContext("2d");
       this.chartArea = {
         top: 0,
@@ -15,6 +16,9 @@ vi.mock("chart.js/auto", () => ({
       this.scales = {
         x: {
           getPixelForValue: (value) => value,
+          getValueForPixel: (value) => value,
+          min: config?.options?.scales?.x?.min ?? 0,
+          max: config?.options?.scales?.x?.max ?? 300,
         },
       };
     }
@@ -206,6 +210,36 @@ describe("replay.html smoke", () => {
     await flushTasks();
 
     expect(document.getElementById("replayElapsedValue").textContent).toBe("80 m");
+  });
+
+  it("opens the expanded graph sheet with stacked charts and a dual-range filter", async () => {
+    await import("../../src/replay/replay.js");
+    await flushTasks();
+
+    document.querySelector('[data-graph-metric="headingDeg"]').click();
+    await flushTasks();
+
+    expect(document.getElementById("replayGraphSheet").hidden).toBe(false);
+    expect(document.getElementById("replayGraphSheetTitle").textContent).toBe("Explore charts");
+    expect(document.getElementById("replayExpandedSpeedCurrent").textContent).toContain("0");
+    expect(document.getElementById("replayExpandedAltitudeCurrent").textContent).toContain("10");
+    expect(document.getElementById("replayExpandedHeadingCurrent").textContent).toContain("180");
+    expect(document.getElementById("replayFilterStart")).toBeTruthy();
+    expect(document.getElementById("replayFilterEnd")).toBeTruthy();
+
+    document.getElementById("replayFilterStart").value = "250";
+    document.getElementById("replayFilterStart").dispatchEvent(new Event("input", { bubbles: true }));
+    document.getElementById("replayFilterEnd").value = "750";
+    document.getElementById("replayFilterEnd").dispatchEvent(new Event("input", { bubbles: true }));
+    await flushTasks();
+
+    expect(document.getElementById("replayFilterStartValue").textContent).toBe("00:01");
+    expect(document.getElementById("replayFilterEndValue").textContent).toBe("00:02");
+
+    document.getElementById("closeReplayGraphSheet").click();
+    await flushTasks();
+
+    expect(document.getElementById("replayGraphSheet").hidden).toBe(true);
   });
 
   it("lets the user delete saved recordings while keeping the active session", async () => {

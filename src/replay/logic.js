@@ -95,6 +95,35 @@ function interpolateValue(left, right, ratio, key) {
   return leftValue + ((rightValue - leftValue) * ratio);
 }
 
+function normalizeHeadingDegrees(value) {
+  if (!isFiniteNumber(value)) return null;
+  return ((value % 360) + 360) % 360;
+}
+
+function getHeadingDeltaDegrees(leftHeadingDeg, rightHeadingDeg) {
+  const left = normalizeHeadingDegrees(leftHeadingDeg);
+  const right = normalizeHeadingDegrees(rightHeadingDeg);
+
+  if (!isFiniteNumber(left) || !isFiniteNumber(right)) return null;
+
+  let delta = right - left;
+  if (delta > 180) delta -= 360;
+  if (delta < -180) delta += 360;
+  return delta;
+}
+
+function interpolateHeadingDegrees(leftHeadingDeg, rightHeadingDeg, ratio) {
+  const left = normalizeHeadingDegrees(leftHeadingDeg);
+  const right = normalizeHeadingDegrees(rightHeadingDeg);
+
+  if (!isFiniteNumber(left) && !isFiniteNumber(right)) return null;
+  if (!isFiniteNumber(left)) return right;
+  if (!isFiniteNumber(right)) return left;
+
+  const delta = getHeadingDeltaDegrees(left, right);
+  return normalizeHeadingDegrees(left + (delta * ratio));
+}
+
 export function getReplaySampleAtElapsedMs(session, elapsedMs) {
   if (!session || !Array.isArray(session.samples) || session.samples.length === 0) {
     return null;
@@ -132,7 +161,7 @@ export function getReplaySampleAtElapsedMs(session, elapsedMs) {
       speedMs: interpolateValue(left, right, ratio, "speedMs") ?? 0,
       altitudeM: interpolateValue(left, right, ratio, "altitudeM"),
       accuracyM: interpolateValue(left, right, ratio, "accuracyM"),
-      headingDeg: interpolateValue(left, right, ratio, "headingDeg"),
+      headingDeg: interpolateHeadingDegrees(left.headingDeg, right.headingDeg, ratio),
       totalDistanceM: interpolateValue(left, right, ratio, "totalDistanceM") ?? left.totalDistanceM,
       elapsedMs: clampedElapsedMs,
       progress: summary.durationMs > 0 ? clampedElapsedMs / summary.durationMs : 1,
@@ -194,7 +223,7 @@ export function getReplaySampleAtDistanceM(session, distanceM) {
       speedMs: interpolateValue(left, right, ratio, "speedMs") ?? 0,
       altitudeM: interpolateValue(left, right, ratio, "altitudeM"),
       accuracyM: interpolateValue(left, right, ratio, "accuracyM"),
-      headingDeg: interpolateValue(left, right, ratio, "headingDeg"),
+      headingDeg: interpolateHeadingDegrees(left.headingDeg, right.headingDeg, ratio),
       totalDistanceM: clampedDistanceM,
       elapsedMs,
       progress: summary.totalDistanceM > 0 ? clampedDistanceM / summary.totalDistanceM : 1,
@@ -320,6 +349,49 @@ export function formatReplayDistanceValue(distanceM, unit) {
   return distanceM * DISTANCE_UNIT_CONFIG[unit].factor;
 }
 
+export function getReplayAxisRange(axisMax, startRatio = 0, endRatio = 1) {
+  const safeAxisMax = Number.isFinite(axisMax) && axisMax > 0 ? axisMax : 0;
+
+  if (safeAxisMax <= 0) {
+    return {
+      startRatio: 0,
+      endRatio: 1,
+      min: 0,
+      max: 1,
+    };
+  }
+
+  let safeStartRatio = Number.isFinite(startRatio) ? startRatio : 0;
+  let safeEndRatio = Number.isFinite(endRatio) ? endRatio : 1;
+
+  safeStartRatio = Math.min(Math.max(safeStartRatio, 0), 1);
+  safeEndRatio = Math.min(Math.max(safeEndRatio, 0), 1);
+
+  if (safeStartRatio > safeEndRatio) {
+    [safeStartRatio, safeEndRatio] = [safeEndRatio, safeStartRatio];
+  }
+
+  const minGapRatio = 0.02;
+  if ((safeEndRatio - safeStartRatio) < minGapRatio) {
+    if (safeEndRatio >= 1) {
+      safeEndRatio = 1;
+      safeStartRatio = Math.max(0, safeEndRatio - minGapRatio);
+    } else {
+      safeEndRatio = Math.min(1, safeStartRatio + minGapRatio);
+      if ((safeEndRatio - safeStartRatio) < minGapRatio) {
+        safeStartRatio = Math.max(0, safeEndRatio - minGapRatio);
+      }
+    }
+  }
+
+  return {
+    startRatio: safeStartRatio,
+    endRatio: safeEndRatio,
+    min: safeAxisMax * safeStartRatio,
+    max: safeAxisMax * safeEndRatio,
+  };
+}
+
 export function buildReplayMetricSeries(session, metricKey, axisMode = "time") {
   if (!session || !Array.isArray(session.samples) || session.samples.length === 0) {
     return [];
@@ -328,6 +400,7 @@ export function buildReplayMetricSeries(session, metricKey, axisMode = "time") {
   const summary = getReplaySummary(session);
   const baseTimestampMs = summary.startedAtMs ?? session.samples[0]?.timestampMs ?? 0;
   const series = [];
+  let previousHeadingValue = null;
 
   for (let index = 0; index < session.samples.length; index += 1) {
     const sample = session.samples[index];
@@ -335,16 +408,91 @@ export function buildReplayMetricSeries(session, metricKey, axisMode = "time") {
 
     const elapsedMs = Math.max(0, sample.timestampMs - baseTimestampMs);
     const distanceM = getSampleDistanceM(sample);
+    let value = sample[metricKey];
+
+    if (metricKey === "headingDeg") {
+      const heading = normalizeHeadingDegrees(sample.headingDeg);
+      if (!isFiniteNumber(heading)) continue;
+
+      if (!isFiniteNumber(previousHeadingValue)) {
+        value = heading;
+      } else {
+        const previousHeading = normalizeHeadingDegrees(previousHeadingValue);
+        const delta = getHeadingDeltaDegrees(previousHeading, heading);
+        value = previousHeadingValue + (delta ?? 0);
+      }
+
+      previousHeadingValue = value;
+    }
+
     series.push({
       elapsedMs,
       elapsedSeconds: elapsedMs / 1000,
       distanceM,
       xValue: axisMode === "distance" ? distanceM : (elapsedMs / 1000),
-      value: sample[metricKey],
+      value,
     });
   }
 
   return series;
+}
+
+export function getReplayMetricDomain(session, metricKey, axisMode = "time", axisRange = null) {
+  const series = buildReplayMetricSeries(session, metricKey, axisMode);
+  if (!series.length) return null;
+
+  const globalMinX = series[0].xValue;
+  const globalMaxX = series[series.length - 1].xValue;
+  let rangeMin = Number.isFinite(axisRange?.min) ? axisRange.min : globalMinX;
+  let rangeMax = Number.isFinite(axisRange?.max) ? axisRange.max : globalMaxX;
+
+  rangeMin = Math.min(Math.max(rangeMin, globalMinX), globalMaxX);
+  rangeMax = Math.min(Math.max(rangeMax, globalMinX), globalMaxX);
+
+  if (rangeMin > rangeMax) {
+    [rangeMin, rangeMax] = [rangeMax, rangeMin];
+  }
+
+  const values = [];
+
+  function addInterpolatedValue(targetX) {
+    if (!Number.isFinite(targetX)) return;
+
+    for (let index = 1; index < series.length; index += 1) {
+      const left = series[index - 1];
+      const right = series[index];
+
+      if (targetX < left.xValue || targetX > right.xValue) continue;
+
+      const span = right.xValue - left.xValue;
+      if (span <= 0) {
+        values.push(left.value);
+        return;
+      }
+
+      const ratio = Math.min(Math.max((targetX - left.xValue) / span, 0), 1);
+      values.push(left.value + ((right.value - left.value) * ratio));
+      return;
+    }
+
+    values.push(series[series.length - 1].value);
+  }
+
+  addInterpolatedValue(rangeMin);
+  addInterpolatedValue(rangeMax);
+
+  for (let index = 0; index < series.length; index += 1) {
+    const point = series[index];
+    if (point.xValue < rangeMin || point.xValue > rangeMax) continue;
+    values.push(point.value);
+  }
+
+  if (!values.length) return null;
+
+  return {
+    min: Math.min(...values),
+    max: Math.max(...values),
+  };
 }
 
 export function buildReplayGraphModel(session, options = {}) {
