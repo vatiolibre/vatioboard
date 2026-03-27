@@ -9,11 +9,17 @@
     "dev": "vite",
     "prebuild": "npm run prepare:geo",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:unit": "vitest run test/unit",
+    "test:smoke": "vitest run test/smoke"
   },
   "devDependencies": {
+    "jsdom": "^29.0.1",
     "less": "^4.5.1",
-    "vite": "^7.2.4"
+    "vite": "^7.2.4",
+    "vitest": "^4.1.2"
   },
   "dependencies": {
     "@jaames/iro": "^5.5.2",
