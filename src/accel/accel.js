@@ -3,147 +3,70 @@ import Chart from "chart.js/auto";
 import { applyTranslations as applySharedTranslations, getLang, t as sharedT, toggleLang } from "../i18n.js";
 import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
 import { initSupportPanel } from "../shared/support-panel.js";
-import { loadJson, loadText, saveJson } from "../shared/storage.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
 import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
+import {
+  FINISH_SOUND_URL,
+  GEO_ERROR_CODE,
+  GEO_OPTIONS,
+  MAX_RUNS,
+  MPH_TO_MS,
+  READY_SAMPLE_AGE_MS,
+  RECENT_INTERVAL_WINDOW,
+  RESULT_GRAPH_HEIGHT,
+  SPARSE_INTERVAL_MS,
+  STALE_INTERVAL_MS,
+  TIMER_TICK_MS,
+  normalizeDistanceUnit,
+  normalizeSpeedUnit,
+} from "./constants.js";
+import { createAccelFormatters } from "./formatters.js";
+import { createAccelHistoryHelpers } from "./history.js";
+import {
+  appendRunSampleLog,
+  appendSpeedTracePoint,
+  averageFinite,
+  buildCurrentRunQuality,
+  buildLiveQuality,
+  buildResult,
+  buildSlopeAnalysis,
+  clamp,
+  compactSpeedTrace,
+  createLiveSample,
+  createRunState,
+  ensureSpeedTraceStarted,
+  interpolateMeasurement,
+  interpolateRangeCrossing,
+  interpolateSpeedCrossing,
+  interpolateValue,
+  isFiniteNumber,
+  resolveClockDeltaMs,
+  seedRunPartialStarts,
+  toFiniteNumber,
+  updateRunPartials,
+} from "./logic.js";
+import {
+  buildComparisonSignature,
+  buildRunPartials,
+  copyPreset,
+  getAvailablePresetDefinitions as listAvailablePresetDefinitions,
+  getPresetSignature,
+  getSelectedPreset as resolveSelectedPreset,
+  presetKeyFromId,
+  resolvePresetIdForUnits,
+} from "./presets.js";
+import { createAccelResultGraph } from "./result-graph.js";
+import { loadRuns, loadSettings, saveRuns as persistRuns, saveSettings as persistSettings } from "./storage.js";
 
 (function () {
-  var SHARED_SPEED_UNIT_KEY = "vatio_speed_unit";
-  var SHARED_DISTANCE_UNIT_KEY = "vatio_speed_distance_unit";
-  var SHARED_LEGACY_ALTITUDE_UNIT_KEY = "vatio_speed_altitude_unit";
-  var STORAGE_KEYS = {
-    runs: "vatioboard.accel.runs",
-    settings: "vatioboard.accel.settings",
-  };
-
-  var MPH_TO_MS = 0.44704;
-  var KMH_TO_MS = 1000 / 3600;
-  var FT_TO_M = 0.3048;
-  var EIGHTH_MILE_M = 201.168;
-  var QUARTER_MILE_M = 402.336;
-  var SPEED_UNIT_CONFIG = {
-    mph: { factor: 2.2369362920544, labelKey: "accelMphUnit" },
-    kmh: { factor: 3.6, labelKey: "accelKmhUnit" },
-  };
-  var DISTANCE_UNIT_CONFIG = {
-    ft: { factor: 3.2808398950131, label: "ft" },
-    m: { factor: 1, label: "m" },
-  };
-  var GEO_OPTIONS = {
-    enableHighAccuracy: true,
-    maximumAge: 0,
-    timeout: 10000,
-  };
-  var GEO_ERROR_CODE = {
-    PERMISSION_DENIED: 1,
-    POSITION_UNAVAILABLE: 2,
-    TIMEOUT: 3,
-  };
-  var MAX_RUNS = 40;
-  var MAX_DEBUG_SAMPLE_ROWS = 200;
-  var MAX_PLAUSIBLE_SPEED_MS = 90;
-  var READY_SAMPLE_AGE_MS = 2500;
-  var STALE_INTERVAL_MS = 1500;
-  var SPARSE_INTERVAL_MS = 1800;
-  var MOVING_SPEED_THRESHOLD_MS = 1;
-  var STATIONARY_SPEED_THRESHOLD_MS = 0.3;
-  var MIN_DISTANCE_NOISE_FLOOR_M = 4;
-  var MAX_ACCURACY_INFLUENCE_M = 18;
-  var RECENT_INTERVAL_WINDOW = 12;
-  var TIMER_TICK_MS = 50;
-  var TRACE_DUPLICATE_EPSILON_MS = 0.01;
-  var CLOCK_DELTA_DISAGREEMENT_RATIO = 4;
-  var CLOCK_DELTA_DISAGREEMENT_MS = 250;
-  var MIN_VALID_RUN_SAMPLES = 4;
-  var MIN_VALID_RUN_DURATION_MS = 800;
-  var FINISH_SOUND_URL = "/audio/finish.m4a";
-  var RESULT_GRAPH_HEIGHT = 220;
   var finishAudio = typeof Audio === "function" ? new Audio(FINISH_SOUND_URL) : null;
   var finishAudioPrimePromise = null;
   var finishAudioPrimed = false;
-  var resultGraphChart = null;
-  var resultGraphResizeObserver = null;
-  var resultGraphRefreshFrame = 0;
-  var resultGraphRenderKey = "";
-  var resultGraphSelectionResultId = "";
-  var resultGraphSelectionPointKey = "";
-  var resultGraphObservedPanelWidth = 0;
-  var RESULT_GRAPH_GUIDE_PLUGIN = {
-    id: "resultGraphGuide",
-    afterDatasetsDraw: function (chart, args, options) {
-      if (!chart || !chart.tooltip || !chart.chartArea) return;
-
-      var activeElements = chart.tooltip.getActiveElements ? chart.tooltip.getActiveElements() : [];
-      if (!activeElements || !activeElements.length) return;
-
-      var activeElement = activeElements[0].element;
-      if (!activeElement || !isFiniteNumber(activeElement.x) || !isFiniteNumber(activeElement.y)) return;
-
-      var chartArea = chart.chartArea;
-      var ctx = chart.ctx;
-      ctx.save();
-      ctx.strokeStyle = options && options.color ? options.color : "rgba(128, 128, 128, 0.5)";
-      ctx.lineWidth = 1;
-      ctx.setLineDash([4, 4]);
-      ctx.beginPath();
-      ctx.moveTo(activeElement.x, chartArea.top);
-      ctx.lineTo(activeElement.x, chartArea.bottom);
-      ctx.moveTo(chartArea.left, activeElement.y);
-      ctx.lineTo(chartArea.right, activeElement.y);
-      ctx.stroke();
-      ctx.restore();
-    },
-  };
 
   if (finishAudio) {
     finishAudio.preload = "auto";
     finishAudio.loop = false;
   }
-
-  var presetDefinitions = [
-    { id: "0-30-mph", type: "speed", labelKey: "accelPreset0to30", standingStart: true, startSpeedMs: 0, targetSpeedMs: 30 * MPH_TO_MS, speedSystem: "mph", variantGroup: "launch-1" },
-    { id: "0-40-mph", type: "speed", labelKey: "accelPreset0to40", standingStart: true, startSpeedMs: 0, targetSpeedMs: 40 * MPH_TO_MS, speedSystem: "mph", variantGroup: "launch-2" },
-    { id: "0-50-mph", type: "speed", labelKey: "accelPreset0to50", standingStart: true, startSpeedMs: 0, targetSpeedMs: 50 * MPH_TO_MS, speedSystem: "mph", variantGroup: "launch-3" },
-    { id: "0-60-mph", type: "speed", labelKey: "accelPreset0to60", standingStart: true, startSpeedMs: 0, targetSpeedMs: 60 * MPH_TO_MS, speedSystem: "mph", variantGroup: "launch-4" },
-    { id: "60-130-mph", type: "speed", labelKey: "accelPreset60to130", standingStart: false, startSpeedMs: 60 * MPH_TO_MS, targetSpeedMs: 130 * MPH_TO_MS, speedSystem: "mph", variantGroup: "roll-1" },
-    { id: "0-50-kmh", type: "speed", labelKey: "accelPreset0to50Kmh", standingStart: true, startSpeedMs: 0, targetSpeedMs: 50 * KMH_TO_MS, speedSystem: "kmh", variantGroup: "launch-1" },
-    { id: "0-60-kmh", type: "speed", labelKey: "accelPreset0to60Kmh", standingStart: true, startSpeedMs: 0, targetSpeedMs: 60 * KMH_TO_MS, speedSystem: "kmh", variantGroup: "launch-2" },
-    { id: "0-80-kmh", type: "speed", labelKey: "accelPreset0to80Kmh", standingStart: true, startSpeedMs: 0, targetSpeedMs: 80 * KMH_TO_MS, speedSystem: "kmh", variantGroup: "launch-3" },
-    { id: "0-100-kmh", type: "speed", labelKey: "accelPreset0to100Kmh", standingStart: true, startSpeedMs: 0, targetSpeedMs: 100 * KMH_TO_MS, speedSystem: "kmh", variantGroup: "launch-4" },
-    { id: "100-200-kmh", type: "speed", labelKey: "accelPreset100to200Kmh", standingStart: false, startSpeedMs: 100 * KMH_TO_MS, targetSpeedMs: 200 * KMH_TO_MS, speedSystem: "kmh", variantGroup: "roll-1" },
-    { id: "eighth-mile", type: "distance", labelKey: "accelPresetEighthMile", standingStart: true, distanceTargetM: EIGHTH_MILE_M, distanceSystem: "ft", variantGroup: "distance-short" },
-    { id: "quarter-mile", type: "distance", labelKey: "accelPresetQuarterMile", standingStart: true, distanceTargetM: QUARTER_MILE_M, distanceSystem: "ft", variantGroup: "distance-long" },
-    { id: "200-m", type: "distance", labelKey: "accelPreset200M", standingStart: true, distanceTargetM: 200, distanceSystem: "m", variantGroup: "distance-short" },
-    { id: "400-m", type: "distance", labelKey: "accelPreset400M", standingStart: true, distanceTargetM: 400, distanceSystem: "m", variantGroup: "distance-long" },
-    { id: "custom", type: "custom", labelKey: "accelPresetCustom", standingStart: false, variantGroup: "custom" },
-  ];
-
-  var distancePartialDefinitions = {
-    ft: [
-      { id: "60-ft", kind: "distance", labelKey: "accelPartial60ft", distanceM: 60 * FT_TO_M, showTrapSpeed: false },
-      { id: "eighth-mile", kind: "distance", labelKey: "accelPresetEighthMile", distanceM: EIGHTH_MILE_M, showTrapSpeed: true },
-      { id: "1000-ft", kind: "distance", labelKey: "accelPartial1000ft", distanceM: 1000 * FT_TO_M, showTrapSpeed: true },
-      { id: "quarter-mile", kind: "distance", labelKey: "accelPresetQuarterMile", distanceM: QUARTER_MILE_M, showTrapSpeed: true },
-    ],
-    m: [
-      { id: "100-m", kind: "distance", labelKey: "accelPartial100m", distanceM: 100, showTrapSpeed: false },
-      { id: "200-m", kind: "distance", labelKey: "accelPreset200M", distanceM: 200, showTrapSpeed: true },
-      { id: "400-m", kind: "distance", labelKey: "accelPreset400M", distanceM: 400, showTrapSpeed: true },
-    ],
-  };
-
-  var speedPartialDefinitions = {
-    mph: [
-      { id: "0-60-mph", kind: "speed", labelKey: "accelPreset0to60", startSpeedMs: 0, targetSpeedMs: 60 * MPH_TO_MS },
-      { id: "60-130-mph", kind: "speed", labelKey: "accelPreset60to130", startSpeedMs: 60 * MPH_TO_MS, targetSpeedMs: 130 * MPH_TO_MS },
-      { id: "0-130-mph", kind: "speed", labelKey: "accelPartial0to130", startSpeedMs: 0, targetSpeedMs: 130 * MPH_TO_MS },
-    ],
-    kmh: [
-      { id: "0-100-kmh", kind: "speed", labelKey: "accelPreset0to100Kmh", startSpeedMs: 0, targetSpeedMs: 100 * KMH_TO_MS },
-      { id: "100-200-kmh", kind: "speed", labelKey: "accelPreset100to200Kmh", startSpeedMs: 100 * KMH_TO_MS, targetSpeedMs: 200 * KMH_TO_MS },
-      { id: "0-200-kmh", kind: "speed", labelKey: "accelPartial0to200Kmh", startSpeedMs: 0, targetSpeedMs: 200 * KMH_TO_MS },
-    ],
-  };
 
   var elements = {
     langToggle: document.getElementById("langToggle"),
@@ -280,17 +203,6 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     styleSourceElement: elements.liveSpeedGaugeStage,
   });
 
-  var defaultSettings = {
-    selectedPresetId: "0-60-mph",
-    rolloutEnabled: false,
-    launchThresholdMs: 0.5 * MPH_TO_MS,
-    speedUnit: "mph",
-    distanceUnit: "ft",
-    customStart: 0,
-    customEnd: 60,
-    notes: "",
-  };
-
   var state = {
     permissionState: "prompt",
     permissionStatus: null,
@@ -313,6 +225,78 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
 
   state.latestResult = state.runs.length ? state.runs[0] : null;
   state.selectedResultId = state.latestResult ? state.latestResult.id : "";
+
+  var formatters = createAccelFormatters({
+    t: t,
+    getLang: getLang,
+    getSettings: function () {
+      return state.settings;
+    },
+  });
+  var convertSpeedInputValue = formatters.convertSpeedInputValue;
+  var escapeHtml = formatters.escapeHtml;
+  var formatAdaptiveNumber = formatters.formatAdaptiveNumber;
+  var formatDebugCoordinate = formatters.formatDebugCoordinate;
+  var formatDebugCoordinatePair = formatters.formatDebugCoordinatePair;
+  var formatDebugMeters = formatters.formatDebugMeters;
+  var formatDebugSpeedMs = formatters.formatDebugSpeedMs;
+  var formatDistanceMeasurement = formatters.formatDistanceMeasurement;
+  var formatHeading = formatters.formatHeading;
+  var formatHz = formatters.formatHz;
+  var formatInputSpeedValue = formatters.formatInputSpeedValue;
+  var formatInteger = formatters.formatInteger;
+  var formatLiveSpeedNumber = formatters.formatLiveSpeedNumber;
+  var formatMs = formatters.formatMs;
+  var formatNumber = formatters.formatNumber;
+  var formatPartialValue = formatters.formatPartialValue;
+  var formatRunDistance = formatters.formatRunDistance;
+  var formatRunSeconds = formatters.formatRunSeconds;
+  var formatSignedDistanceMeasurement = formatters.formatSignedDistanceMeasurement;
+  var formatSlopePercent = formatters.formatSlopePercent;
+  var formatSpeedValue = formatters.formatSpeedValue;
+  var formatThresholdOptionLabel = formatters.formatThresholdOptionLabel;
+  var formatTimestamp = formatters.formatTimestamp;
+  var getDistanceProgressLabel = formatters.getDistanceProgressLabel;
+  var getDistanceUnitLabel = formatters.getDistanceUnitLabel;
+  var getPartialLabel = formatters.getPartialLabel;
+  var getSpeedProgressLabel = formatters.getSpeedProgressLabel;
+  var getSpeedUnitLabel = formatters.getSpeedUnitLabel;
+  var getTargetProgressLabel = formatters.getTargetProgressLabel;
+  var isSameNumber = formatters.isSameNumber;
+  var msToSpeedUnit = formatters.msToSpeedUnit;
+  var normalizeCustomSpeedInput = formatters.normalizeCustomSpeedInput;
+
+  var historyHelpers = createAccelHistoryHelpers({
+    getRuns: function () {
+      return state.runs;
+    },
+    formatRunSeconds: formatRunSeconds,
+    t: t,
+    buildComparisonSignature: buildComparisonSignature,
+  });
+  var buildComparisonText = historyHelpers.buildComparisonText;
+
+  var resultGraph = createAccelResultGraph({
+    Chart: Chart,
+    elements: elements,
+    getDisplayedResult: getDisplayedResult,
+    getLang: getLang,
+    getState: function () {
+      return state;
+    },
+    isFiniteNumber: isFiniteNumber,
+    compactSpeedTrace: compactSpeedTrace,
+    msToSpeedUnit: msToSpeedUnit,
+    formatDistanceMeasurement: formatDistanceMeasurement,
+    formatNumber: formatNumber,
+    formatRunDistance: formatRunDistance,
+    formatRunSeconds: formatRunSeconds,
+    formatSlopePercent: formatSlopePercent,
+    formatSpeedValue: formatSpeedValue,
+    getSpeedUnitLabel: getSpeedUnitLabel,
+    t: t,
+    resultGraphHeight: RESULT_GRAPH_HEIGHT,
+  });
 
   init();
 
@@ -441,15 +425,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
   }
 
   function setupResultGraphObservers() {
-    if (!elements.resultsPanel || typeof ResizeObserver !== "function") return;
-
-    resultGraphResizeObserver = new ResizeObserver(function () {
-      var panelWidth = Math.floor(elements.resultsPanel.clientWidth || elements.resultsPanel.getBoundingClientRect().width || 0);
-      if (panelWidth < 120 || panelWidth === resultGraphObservedPanelWidth) return;
-      resultGraphObservedPanelWidth = panelWidth;
-      requestResultGraphRefresh();
-    });
-    resultGraphResizeObserver.observe(elements.resultsPanel);
+    resultGraph.setupObservers();
   }
 
   function handleLangToggle() {
@@ -469,7 +445,7 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     if (state.openPanel === panelName) return;
     state.openPanel = panelName;
     if (panelName === "results" && elements.resultsPanel) {
-      resultGraphObservedPanelWidth = Math.floor(elements.resultsPanel.clientWidth || elements.resultsPanel.getBoundingClientRect().width || 0);
+      resultGraph.noteResultsPanelWidth();
     }
     renderSheetUi();
 
@@ -497,410 +473,20 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     openPanel(panelName);
   }
 
-  function normalizeSpeedUnit(unit) {
-    return unit === "kmh" ? "kmh" : "mph";
-  }
-
-  function normalizeDistanceUnit(unit) {
-    return unit === "m" ? "m" : "ft";
-  }
-
-  function loadSharedSpeedUnitPreference() {
-    var unit = loadText(SHARED_SPEED_UNIT_KEY, "");
-    return unit && SPEED_UNIT_CONFIG[unit] ? unit : null;
-  }
-
-  function loadSharedDistanceUnitPreference() {
-    var unit = loadText(SHARED_DISTANCE_UNIT_KEY, "");
-    if (unit && DISTANCE_UNIT_CONFIG[unit]) return unit;
-
-    var legacyUnit = loadText(SHARED_LEGACY_ALTITUDE_UNIT_KEY, "");
-    return legacyUnit && DISTANCE_UNIT_CONFIG[legacyUnit] ? legacyUnit : null;
-  }
-
-  function getDefaultSpeedUnit(selectedPresetId) {
-    var sharedUnit = loadSharedSpeedUnitPreference();
-    if (sharedUnit) return sharedUnit;
-    var preset = findPresetDefinition(selectedPresetId);
-    if (preset && preset.speedSystem) return preset.speedSystem;
-    return "mph";
-  }
-
-  function getDefaultDistanceUnit(selectedPresetId) {
-    var sharedUnit = loadSharedDistanceUnitPreference();
-    if (sharedUnit) return sharedUnit;
-    var preset = findPresetDefinition(selectedPresetId);
-    if (preset && preset.distanceSystem) return preset.distanceSystem;
-    return "ft";
-  }
-
-  function loadSettings() {
-    var raw = loadJson(STORAGE_KEYS.settings, null);
-    var settings = raw && typeof raw === "object" ? raw : {};
-    var selectedPresetId = typeof settings.selectedPresetId === "string" ? settings.selectedPresetId : defaultSettings.selectedPresetId;
-    var speedUnit = normalizeSpeedUnit(settings.speedUnit || settings.customUnit || getDefaultSpeedUnit(selectedPresetId));
-    var distanceUnit = normalizeDistanceUnit(settings.distanceUnit || getDefaultDistanceUnit(selectedPresetId));
-    var defaultCustomEnd = speedUnit === "kmh" ? 100 : defaultSettings.customEnd;
-    var launchThresholdMs = isFiniteNumber(settings.launchThresholdMs)
-      ? settings.launchThresholdMs
-      : ((settings.launchThresholdMph === 1 ? 1 : 0.5) * MPH_TO_MS);
-
-    return {
-      selectedPresetId: selectedPresetId,
-      rolloutEnabled: Boolean(settings.rolloutEnabled),
-      launchThresholdMs: launchThresholdMs,
-      speedUnit: speedUnit,
-      distanceUnit: distanceUnit,
-      customStart: toFiniteNumber(settings.customStart, defaultSettings.customStart),
-      customEnd: toFiniteNumber(settings.customEnd, defaultCustomEnd),
-      notes: typeof settings.notes === "string" ? settings.notes : "",
-    };
-  }
-
   function saveSettings() {
-    saveJson(STORAGE_KEYS.settings, state.settings);
-  }
-
-  function loadRuns() {
-    var raw = loadJson(STORAGE_KEYS.runs, null);
-    if (!Array.isArray(raw)) return [];
-
-    var runs = [];
-    for (var index = 0; index < raw.length; index += 1) {
-      var run = normalizeStoredRun(raw[index]);
-      if (run) runs.push(run);
-    }
-
-    runs.sort(function (left, right) {
-      return right.savedAtMs - left.savedAtMs;
-    });
-
-    return runs.slice(0, MAX_RUNS);
+    persistSettings(state.settings);
   }
 
   function saveRuns() {
-    saveJson(STORAGE_KEYS.runs, state.runs.slice(0, MAX_RUNS));
+    persistRuns(state.runs);
   }
 
-  function normalizeStoredRun(run) {
-    if (!run || typeof run !== "object") return null;
-    if (!isFiniteNumber(run.savedAtMs) || !isFiniteNumber(run.elapsedMs)) return null;
-
-    var presetId = typeof run.presetId === "string" ? run.presetId : "custom";
-    var startSpeedMs = isFiniteNumber(run.startSpeedMs) ? run.startSpeedMs : 0;
-    var targetSpeedMs = isFiniteNumber(run.targetSpeedMs) ? run.targetSpeedMs : null;
-    var presetKind = typeof run.presetKind === "string" ? run.presetKind : "speed";
-    var sampleLog = normalizeStoredSampleLog(run.sampleLog);
-    var partials = normalizeStoredPartials(run.partials);
-    var finishSpeedMs = isFiniteNumber(run.finishSpeedMs)
-      ? run.finishSpeedMs
-      : (isFiniteNumber(run.trapSpeedMs)
-        ? run.trapSpeedMs
-        : (presetKind === "speed" && isFiniteNumber(targetSpeedMs) ? targetSpeedMs : null));
-    var presetSignature = typeof run.presetSignature === "string" ? run.presetSignature : presetId;
-    var comparisonSignature = typeof run.comparisonSignature === "string"
-      ? run.comparisonSignature
-      : buildComparisonSignature({
-        presetId: presetId,
-        presetSignature: presetSignature,
-        startSpeedMs: startSpeedMs,
-        targetSpeedMs: targetSpeedMs,
-      });
-
-    if (presetId === "custom" && isFiniteNumber(startSpeedMs) && isFiniteNumber(targetSpeedMs)) {
-      presetSignature = getCustomPresetSignature(startSpeedMs, targetSpeedMs);
-    }
-
-    var normalizedRun = {
-      id: typeof run.id === "string" ? run.id : "run-" + String(run.savedAtMs),
-      savedAtMs: run.savedAtMs,
-      presetId: presetId,
-      presetSignature: presetSignature,
-      comparisonSignature: comparisonSignature,
-      presetKind: presetKind,
-      standingStart: Boolean(run.standingStart),
-      customStart: isFiniteNumber(run.customStart) ? run.customStart : null,
-      customEnd: isFiniteNumber(run.customEnd) ? run.customEnd : null,
-      customUnit: run.customUnit === "kmh" ? "kmh" : (run.customUnit === "mph" ? "mph" : null),
-      startSpeedMs: startSpeedMs,
-      targetSpeedMs: targetSpeedMs,
-      distanceTargetM: isFiniteNumber(run.distanceTargetM) ? run.distanceTargetM : null,
-      displayUnit: run.displayUnit === "kmh" ? "kmh" : "mph",
-      distanceDisplay: run.distanceDisplay === "m" ? "m" : "ft",
-      elapsedMs: run.elapsedMs,
-      speedTrace: [],
-      sampleLog: sampleLog,
-      partials: partials,
-      finishSpeedMs: finishSpeedMs,
-      trapSpeedMs: isFiniteNumber(run.trapSpeedMs) ? run.trapSpeedMs : null,
-      rolloutApplied: Boolean(run.rolloutApplied),
-      launchThresholdMs: isFiniteNumber(run.launchThresholdMs) ? run.launchThresholdMs : null,
-      rolloutDistanceM: isFiniteNumber(run.rolloutDistanceM) ? run.rolloutDistanceM : null,
-      averageAccuracyM: isFiniteNumber(run.averageAccuracyM) ? run.averageAccuracyM : null,
-      runDistanceM: isFiniteNumber(run.runDistanceM) ? run.runDistanceM : null,
-      finishDistanceM: isFiniteNumber(run.finishDistanceM) ? run.finishDistanceM : null,
-      startAccuracyM: isFiniteNumber(run.startAccuracyM) ? run.startAccuracyM : null,
-      startAltitudeM: isFiniteNumber(run.startAltitudeM) ? run.startAltitudeM : null,
-      finishAltitudeM: isFiniteNumber(run.finishAltitudeM) ? run.finishAltitudeM : null,
-      elevationDeltaM: isFiniteNumber(run.elevationDeltaM) ? run.elevationDeltaM : null,
-      slopePercent: isFiniteNumber(run.slopePercent) ? run.slopePercent : null,
-      averageHz: isFiniteNumber(run.averageHz) ? run.averageHz : null,
-      averageIntervalMs: isFiniteNumber(run.averageIntervalMs) ? run.averageIntervalMs : null,
-      jitterMs: isFiniteNumber(run.jitterMs) ? run.jitterMs : null,
-      qualityGrade: typeof run.qualityGrade === "string" ? run.qualityGrade : "invalid",
-      qualityScore: isFiniteNumber(run.qualityScore) ? run.qualityScore : 0,
-      warningKeys: Array.isArray(run.warningKeys) ? run.warningKeys.slice(0, 8) : [],
-      sampleCount: isFiniteNumber(run.sampleCount) ? run.sampleCount : 0,
-      sparseCount: isFiniteNumber(run.sparseCount) ? run.sparseCount : 0,
-      staleCount: isFiniteNumber(run.staleCount) ? run.staleCount : 0,
-      nullSpeedCount: isFiniteNumber(run.nullSpeedCount) ? run.nullSpeedCount : 0,
-      derivedSpeedCount: isFiniteNumber(run.derivedSpeedCount) ? run.derivedSpeedCount : 0,
-      speedSource: typeof run.speedSource === "string" ? run.speedSource : "reported",
-      startSpeedSource: typeof run.startSpeedSource === "string" ? run.startSpeedSource : null,
-      notes: typeof run.notes === "string" ? run.notes : "",
-    };
-
-    normalizedRun.speedTrace = sampleLog.length
-      ? buildResultSpeedTrace(normalizedRun, normalizedRun.elapsedMs)
-      : normalizeStoredSpeedTrace(run.speedTrace, run.elapsedMs);
-
-    return normalizedRun;
+  function getSelectedPreset() {
+    return resolveSelectedPreset(state.settings);
   }
 
-  function toFiniteNumber(value, fallback) {
-    return isFiniteNumber(Number(value)) ? Number(value) : fallback;
-  }
-
-  function isFiniteNumber(value) {
-    return Number.isFinite(value);
-  }
-
-  function normalizeStoredSpeedTrace(trace, expectedElapsedMs) {
-    if (!Array.isArray(trace) || !trace.length) return [];
-
-    var normalized = [];
-    for (var index = 0; index < trace.length; index += 1) {
-      var point = trace[index];
-      if (!point || typeof point !== "object") continue;
-      if (!isFiniteNumber(point.elapsedMs) || !isFiniteNumber(point.speedMs)) continue;
-      var normalizedPoint = {
-        elapsedMs: Math.max(0, point.elapsedMs),
-        speedMs: Math.max(0, point.speedMs),
-      };
-      if (isFiniteNumber(point.distanceM)) normalizedPoint.distanceM = Math.max(0, point.distanceM);
-      if (isFiniteNumber(point.altitudeM)) normalizedPoint.altitudeM = point.altitudeM;
-      if (isFiniteNumber(point.accuracyM)) normalizedPoint.accuracyM = Math.max(0, point.accuracyM);
-      if (typeof point.speedSource === "string") normalizedPoint.speedSource = point.speedSource;
-      normalized.push(normalizedPoint);
-    }
-
-    if (!normalized.length) return [];
-    normalized.sort(function (left, right) {
-      return left.elapsedMs - right.elapsedMs;
-    });
-    normalized = repairStoredSpeedTrace(normalized, expectedElapsedMs);
-    return compactSpeedTrace(normalized);
-  }
-
-  function normalizeStoredSampleLog(sampleLog) {
-    if (!Array.isArray(sampleLog) || !sampleLog.length) return [];
-
-    var normalized = [];
-    for (var index = 0; index < sampleLog.length; index += 1) {
-      var sample = sampleLog[index];
-      if (!sample || typeof sample !== "object") continue;
-
-      normalized.push({
-        index: normalized.length + 1,
-        stage: typeof sample.stage === "string" ? sample.stage : "armed",
-        deltaMs: isFiniteNumber(sample.deltaMs) ? Math.max(0, sample.deltaMs) : null,
-        effectiveHz: isFiniteNumber(sample.effectiveHz) ? Math.max(0, sample.effectiveHz) : null,
-        latitude: isFiniteNumber(sample.latitude) ? sample.latitude : null,
-        longitude: isFiniteNumber(sample.longitude) ? sample.longitude : null,
-        rawSpeedMs: isFiniteNumber(sample.rawSpeedMs) ? Math.max(0, sample.rawSpeedMs) : null,
-        derivedSpeedMs: isFiniteNumber(sample.derivedSpeedMs) ? Math.max(0, sample.derivedSpeedMs) : null,
-        speedMs: isFiniteNumber(sample.speedMs) ? Math.max(0, sample.speedMs) : null,
-        speedSource: typeof sample.speedSource === "string" ? sample.speedSource : "reported",
-        headingDeg: isFiniteNumber(sample.headingDeg) ? sample.headingDeg : null,
-        accuracyM: isFiniteNumber(sample.accuracyM) ? Math.max(0, sample.accuracyM) : null,
-        altitudeM: isFiniteNumber(sample.altitudeM) ? sample.altitudeM : null,
-        distanceFromStartM: isFiniteNumber(sample.distanceFromStartM) ? Math.max(0, sample.distanceFromStartM) : null,
-        elapsedFromStartMs: isFiniteNumber(sample.elapsedFromStartMs) ? Math.max(0, sample.elapsedFromStartMs) : null,
-        stale: Boolean(sample.stale),
-        sparse: Boolean(sample.sparse),
-      });
-    }
-
-    return normalized.slice(-MAX_DEBUG_SAMPLE_ROWS);
-  }
-
-  function repairStoredSpeedTrace(trace, expectedElapsedMs) {
-    if (!Array.isArray(trace) || !trace.length) return [];
-    if (!isFiniteNumber(expectedElapsedMs) || expectedElapsedMs <= 0) return trace.slice();
-
-    var normalizedExpectedMs = Math.max(1, expectedElapsedMs);
-    var maxAllowedElapsedMs = normalizedExpectedMs * 1.25;
-    var maxElapsedMs = trace[trace.length - 1].elapsedMs;
-    if (!isFiniteNumber(maxElapsedMs) || maxElapsedMs <= 0) return trace.slice();
-
-    var inRangeCount = 0;
-    for (var index = 0; index < trace.length; index += 1) {
-      if (trace[index].elapsedMs <= maxAllowedElapsedMs) inRangeCount += 1;
-    }
-
-    if (maxElapsedMs > maxAllowedElapsedMs && inRangeCount >= 2) {
-      return trace.filter(function (point) {
-        return point.elapsedMs <= maxAllowedElapsedMs;
-      });
-    }
-
-    if (maxElapsedMs <= normalizedExpectedMs * CLOCK_DELTA_DISAGREEMENT_RATIO) return trace.slice();
-
-    var scale = normalizedExpectedMs / maxElapsedMs;
-    var scaled = [];
-    for (var scaleIndex = 0; scaleIndex < trace.length; scaleIndex += 1) {
-      var sourcePoint = trace[scaleIndex];
-      var scaledPoint = {
-        elapsedMs: sourcePoint.elapsedMs * scale,
-        speedMs: sourcePoint.speedMs,
-      };
-      if (isFiniteNumber(sourcePoint.distanceM)) scaledPoint.distanceM = sourcePoint.distanceM;
-      if (isFiniteNumber(sourcePoint.altitudeM)) scaledPoint.altitudeM = sourcePoint.altitudeM;
-      if (isFiniteNumber(sourcePoint.accuracyM)) scaledPoint.accuracyM = sourcePoint.accuracyM;
-      if (typeof sourcePoint.speedSource === "string") scaledPoint.speedSource = sourcePoint.speedSource;
-      scaled.push(scaledPoint);
-    }
-
-    return scaled;
-  }
-
-  function normalizeStoredPartials(partials) {
-    if (!Array.isArray(partials) || !partials.length) return [];
-
-    var normalized = [];
-    for (var index = 0; index < partials.length; index += 1) {
-      var partial = partials[index];
-      if (!partial || typeof partial !== "object" || typeof partial.kind !== "string") continue;
-
-      if (partial.kind === "distance") {
-        if (!isFiniteNumber(partial.distanceM)) continue;
-        normalized.push({
-          id: typeof partial.id === "string" ? partial.id : "distance-" + String(index),
-          kind: "distance",
-          labelKey: typeof partial.labelKey === "string" ? partial.labelKey : "accelUnavailable",
-          distanceM: Math.max(0, partial.distanceM),
-          showTrapSpeed: Boolean(partial.showTrapSpeed),
-          elapsedMs: isFiniteNumber(partial.elapsedMs) ? Math.max(0, partial.elapsedMs) : null,
-          trapSpeedMs: isFiniteNumber(partial.trapSpeedMs) ? Math.max(0, partial.trapSpeedMs) : null,
-        });
-        continue;
-      }
-
-      if (partial.kind === "speed") {
-        if (!isFiniteNumber(partial.startSpeedMs) || !isFiniteNumber(partial.targetSpeedMs)) continue;
-        normalized.push({
-          id: typeof partial.id === "string" ? partial.id : "speed-" + String(index),
-          kind: "speed",
-          labelKey: typeof partial.labelKey === "string" ? partial.labelKey : "accelUnavailable",
-          startSpeedMs: Math.max(0, partial.startSpeedMs),
-          targetSpeedMs: Math.max(0, partial.targetSpeedMs),
-          elapsedMs: isFiniteNumber(partial.elapsedMs) ? Math.max(0, partial.elapsedMs) : null,
-        });
-      }
-    }
-
-    return normalized;
-  }
-
-  function serializeRunPartials(partials) {
-    if (!Array.isArray(partials) || !partials.length) return [];
-
-    var serialized = [];
-    for (var index = 0; index < partials.length; index += 1) {
-      var partial = partials[index];
-      if (!partial || typeof partial !== "object" || typeof partial.kind !== "string") continue;
-
-      if (partial.kind === "distance") {
-        if (!isFiniteNumber(partial.distanceM)) continue;
-        serialized.push({
-          id: partial.id,
-          kind: "distance",
-          labelKey: partial.labelKey,
-          distanceM: partial.distanceM,
-          showTrapSpeed: Boolean(partial.showTrapSpeed),
-          elapsedMs: isFiniteNumber(partial.elapsedMs) ? partial.elapsedMs : null,
-          trapSpeedMs: isFiniteNumber(partial.trapSpeedMs) ? partial.trapSpeedMs : null,
-        });
-        continue;
-      }
-
-      if (partial.kind === "speed") {
-        if (!isFiniteNumber(partial.startSpeedMs) || !isFiniteNumber(partial.targetSpeedMs)) continue;
-        serialized.push({
-          id: partial.id,
-          kind: "speed",
-          labelKey: partial.labelKey,
-          startSpeedMs: partial.startSpeedMs,
-          targetSpeedMs: partial.targetSpeedMs,
-          elapsedMs: isFiniteNumber(partial.elapsedMs) ? partial.elapsedMs : null,
-        });
-      }
-    }
-
-    return serialized;
-  }
-
-  function findPresetDefinition(presetId) {
-    for (var index = 0; index < presetDefinitions.length; index += 1) {
-      if (presetDefinitions[index].id === presetId) return presetDefinitions[index];
-    }
-    return null;
-  }
-
-  function isPresetAvailableForUnits(preset, speedUnit, distanceUnit) {
-    if (!preset) return false;
-    if (preset.id === "custom") return true;
-    if (preset.type === "speed") return preset.speedSystem === normalizeSpeedUnit(speedUnit);
-    if (preset.type === "distance") return preset.distanceSystem === normalizeDistanceUnit(distanceUnit);
-    return false;
-  }
-
-  function getAvailablePresetDefinitions(speedUnit, distanceUnit) {
-    var normalizedSpeedUnit = normalizeSpeedUnit(speedUnit || state.settings.speedUnit);
-    var normalizedDistanceUnit = normalizeDistanceUnit(distanceUnit || state.settings.distanceUnit);
-    var available = [];
-
-    for (var index = 0; index < presetDefinitions.length; index += 1) {
-      var preset = presetDefinitions[index];
-      if (isPresetAvailableForUnits(preset, normalizedSpeedUnit, normalizedDistanceUnit)) available.push(preset);
-    }
-
-    return available;
-  }
-
-  function getDefaultSpeedPresetId(speedUnit) {
-    return normalizeSpeedUnit(speedUnit) === "kmh" ? "0-100-kmh" : "0-60-mph";
-  }
-
-  function getDefaultDistancePresetId(distanceUnit) {
-    return normalizeDistanceUnit(distanceUnit) === "m" ? "400-m" : "quarter-mile";
-  }
-
-  function resolvePresetIdForUnits(presetId, speedUnit, distanceUnit) {
-    if (presetId === "custom") return "custom";
-
-    var preset = findPresetDefinition(presetId);
-    if (!preset) return getDefaultSpeedPresetId(speedUnit);
-    if (isPresetAvailableForUnits(preset, speedUnit, distanceUnit)) return preset.id;
-
-    for (var index = 0; index < presetDefinitions.length; index += 1) {
-      var candidate = presetDefinitions[index];
-      if (candidate.variantGroup !== preset.variantGroup) continue;
-      if (isPresetAvailableForUnits(candidate, speedUnit, distanceUnit)) return candidate.id;
-    }
-
-    if (preset.type === "distance") return getDefaultDistancePresetId(distanceUnit);
-    return getDefaultSpeedPresetId(speedUnit);
+  function getAvailablePresetDefinitions() {
+    return listAvailablePresetDefinitions(state.settings.speedUnit, state.settings.distanceUnit);
   }
 
   function syncSelectedPresetForUnits() {
@@ -913,60 +499,6 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     if (resolvedPresetId === state.settings.selectedPresetId) return false;
     state.settings.selectedPresetId = resolvedPresetId;
     return true;
-  }
-
-  function getSelectedPreset() {
-    var selectedPresetId = resolvePresetIdForUnits(
-      state.settings.selectedPresetId,
-      state.settings.speedUnit,
-      state.settings.distanceUnit
-    );
-
-    if (selectedPresetId === "custom") return buildCustomPreset();
-
-    for (var index = 0; index < presetDefinitions.length; index += 1) {
-      if (presetDefinitions[index].id === selectedPresetId) return copyPreset(presetDefinitions[index]);
-    }
-
-    return copyPreset(findPresetDefinition(getDefaultSpeedPresetId(state.settings.speedUnit)));
-  }
-
-  function copyPreset(preset) {
-    return {
-      id: preset.id,
-      type: preset.type,
-      labelKey: preset.labelKey,
-      standingStart: Boolean(preset.standingStart),
-      startSpeedMs: isFiniteNumber(preset.startSpeedMs) ? preset.startSpeedMs : 0,
-      targetSpeedMs: isFiniteNumber(preset.targetSpeedMs) ? preset.targetSpeedMs : null,
-      distanceTargetM: isFiniteNumber(preset.distanceTargetM) ? preset.distanceTargetM : null,
-      speedSystem: preset.speedSystem || null,
-      distanceSystem: preset.distanceSystem || null,
-      variantGroup: preset.variantGroup || preset.id,
-      customStart: null,
-      customEnd: null,
-      customUnit: null,
-    };
-  }
-
-  function buildCustomPreset() {
-    var start = Math.max(0, Number(state.settings.customStart) || 0);
-    var end = Math.max(0, Number(state.settings.customEnd) || 0);
-    var unit = state.settings.speedUnit;
-    var factor = unit === "kmh" ? KMH_TO_MS : MPH_TO_MS;
-
-    return {
-      id: "custom",
-      type: "speed",
-      labelKey: "accelPresetCustom",
-      standingStart: start <= 0,
-      startSpeedMs: start * factor,
-      targetSpeedMs: end * factor,
-      distanceTargetM: null,
-      customStart: start,
-      customEnd: end,
-      customUnit: unit,
-    };
   }
 
   function getPresetLabel(presetOrRun) {
@@ -990,109 +522,6 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     if (presetOrRun.id === "custom" || presetOrRun.presetId === "custom") return t("accelCustomRange");
     if (presetOrRun.type === "distance" || presetOrRun.presetKind === "distance") return t("accelDistanceTest");
     return presetOrRun.standingStart ? t("accelStandingStart") : t("accelRollingStart");
-  }
-
-  function buildRunPartials(preset) {
-    var partials = [];
-    var speedUnit = normalizeSpeedUnit(state.settings.speedUnit);
-    var distanceUnit = normalizeDistanceUnit(state.settings.distanceUnit);
-    var minimumStartSpeedMs = preset && !preset.standingStart && isFiniteNumber(preset.startSpeedMs) ? preset.startSpeedMs : 0;
-    var distanceDefinitions = distancePartialDefinitions[distanceUnit] || [];
-    var speedDefinitions = speedPartialDefinitions[speedUnit] || [];
-
-    if (shouldIncludeDistancePartials(preset, speedUnit)) {
-      for (var distanceIndex = 0; distanceIndex < distanceDefinitions.length; distanceIndex += 1) {
-        var distanceDefinition = distanceDefinitions[distanceIndex];
-        if (preset.type === "distance" && isFiniteNumber(preset.distanceTargetM) && distanceDefinition.distanceM > (preset.distanceTargetM + 0.01)) {
-          continue;
-        }
-        partials.push(createDistancePartial(distanceDefinition));
-      }
-    }
-
-    for (var speedIndex = 0; speedIndex < speedDefinitions.length; speedIndex += 1) {
-      var speedDefinition = speedDefinitions[speedIndex];
-      if (speedDefinition.startSpeedMs + 0.01 < minimumStartSpeedMs) continue;
-      if (preset.type === "speed" && isFiniteNumber(preset.targetSpeedMs) && speedDefinition.targetSpeedMs > (preset.targetSpeedMs + 0.01)) continue;
-      partials.push(createSpeedPartial(speedDefinition));
-    }
-
-    return partials;
-  }
-
-  function shouldIncludeDistancePartials(preset, speedUnit) {
-    if (!preset) return false;
-    if (preset.type === "distance") return true;
-    if (!preset.standingStart) return false;
-    if (!isFiniteNumber(preset.targetSpeedMs)) return false;
-    return preset.targetSpeedMs >= getLongRunSpeedThreshold(speedUnit);
-  }
-
-  function getLongRunSpeedThreshold(speedUnit) {
-    return normalizeSpeedUnit(speedUnit) === "kmh" ? (200 * KMH_TO_MS) : (130 * MPH_TO_MS);
-  }
-
-  function createDistancePartial(definition) {
-    return {
-      id: definition.id,
-      kind: "distance",
-      labelKey: definition.labelKey,
-      distanceM: definition.distanceM,
-      showTrapSpeed: Boolean(definition.showTrapSpeed),
-      elapsedMs: null,
-      trapSpeedMs: null,
-    };
-  }
-
-  function createSpeedPartial(definition) {
-    return {
-      id: definition.id,
-      kind: "speed",
-      labelKey: definition.labelKey,
-      startSpeedMs: definition.startSpeedMs,
-      targetSpeedMs: definition.targetSpeedMs,
-      startCrossPerfMs: null,
-      elapsedMs: null,
-    };
-  }
-
-  function presetKeyFromId(presetId) {
-    for (var index = 0; index < presetDefinitions.length; index += 1) {
-      if (presetDefinitions[index].id === presetId) return presetDefinitions[index].labelKey;
-    }
-    return "accelPresetCustom";
-  }
-
-  function getPresetSignature(preset) {
-    if (preset.id === "custom") {
-      return getCustomPresetSignature(preset.startSpeedMs, preset.targetSpeedMs);
-    }
-    return preset.id;
-  }
-
-  function buildComparisonSignature(presetLike) {
-    if (!presetLike) return "unknown";
-
-    var presetId = presetLike.id || presetLike.presetId || "";
-    if (presetId === "custom") {
-      return getCustomPresetSignature(presetLike.startSpeedMs, presetLike.targetSpeedMs);
-    }
-
-    var definition = findPresetDefinition(presetId);
-    if (definition && definition.variantGroup) return definition.variantGroup;
-
-    if (typeof presetLike.variantGroup === "string" && presetLike.variantGroup) return presetLike.variantGroup;
-    if (typeof presetLike.presetSignature === "string" && presetLike.presetSignature) return presetLike.presetSignature;
-    return presetId || "unknown";
-  }
-
-  function getCustomPresetSignature(startSpeedMs, targetSpeedMs) {
-    return "custom:" + formatSignatureNumber(startSpeedMs) + ":" + formatSignatureNumber(targetSpeedMs);
-  }
-
-  function formatSignatureNumber(value) {
-    if (!isFiniteNumber(value)) return "0";
-    return String(Math.round(value * 1000000) / 1000000);
   }
 
   function renderPresetButtons() {
@@ -1331,45 +760,13 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
   }
 
   function createRun(preset) {
-    return {
-      id: "run-" + Date.now() + "-" + String(Math.floor(Math.random() * 100000)),
+    return createRunState({
       preset: preset,
-      stage: "armed",
-      createdAtMs: Date.now(),
-      armedAtPerfMs: performance.now(),
-      speedUnit: state.settings.speedUnit,
-      distanceUnit: state.settings.distanceUnit,
-      launchThresholdMs: state.settings.launchThresholdMs,
-      rolloutApplied: Boolean(state.settings.rolloutEnabled && preset.standingStart),
-      rolloutDistanceM: state.settings.rolloutEnabled && preset.standingStart ? FT_TO_M : 0,
-      partials: buildRunPartials(preset),
-      speedTrace: [],
-      sampleLog: [],
-      sampleCount: 0,
-      intervalValues: [],
-      accuracyValues: [],
-      sparseCount: 0,
-      staleCount: 0,
-      nullSpeedCount: 0,
-      derivedSpeedCount: 0,
-      distanceSinceArmM: 0,
-      prevDistanceSinceArmM: 0,
-      launchCrossPerfMs: null,
-      launchCrossDistanceM: null,
-      launchCrossAltitudeM: null,
-      startPerfMs: null,
-      startDistanceM: null,
-      startAltitudeM: null,
-      startAccuracyM: null,
-      startTraceSpeedMs: null,
-      startSpeedSource: null,
-      finishPerfMs: null,
-      finishDistanceM: null,
-      finishSpeedMs: null,
-      finishAltitudeM: null,
-      lastSample: null,
-      result: null,
-    };
+      settings: state.settings,
+      partials: buildRunPartials(preset, state.settings),
+      nowMs: Date.now(),
+      perfMs: performance.now(),
+    });
   }
 
   function ensureWatch() {
@@ -1417,45 +814,13 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
   }
 
   function handlePosition(position) {
-    var rawPerfMs = performance.now();
-    var receivedAtMs = Date.now();
-    var geoMs = isFiniteNumber(Number(position.timestamp)) ? Number(position.timestamp) : receivedAtMs;
-    var coords = position && position.coords ? position.coords : {};
-    var latitude = isFiniteNumber(coords.latitude) ? coords.latitude : null;
-    var longitude = isFiniteNumber(coords.longitude) ? coords.longitude : null;
-    var accuracyM = isFiniteNumber(coords.accuracy) ? Math.max(0, coords.accuracy) : null;
-    var altitudeM = isFiniteNumber(coords.altitude) ? coords.altitude : null;
-    var headingDeg = isFiniteNumber(coords.heading) && coords.heading >= 0 ? coords.heading : null;
-    var rawSpeedMs = normalizeReportedSpeedMs(coords.speed);
-
-    var previousSample = state.latestSample;
-    var rawPerfDeltaMs = previousSample ? rawPerfMs - previousSample.rawPerfMs : null;
-    var receivedDeltaMs = previousSample ? receivedAtMs - previousSample.receivedAtMs : null;
-    var deltaMs = previousSample ? resolveClockDeltaMs(rawPerfDeltaMs, receivedDeltaMs) : null;
-    var perfMs = previousSample && isFiniteNumber(deltaMs) ? previousSample.perfMs + deltaMs : rawPerfMs;
-    var segmentDistanceM = previousSample ? getDistanceM(previousSample.latitude, previousSample.longitude, latitude, longitude) : 0;
-    var resolvedSpeed = resolveSampleSpeed(rawSpeedMs, previousSample, deltaMs, segmentDistanceM, accuracyM);
-    var derivedSpeedMs = resolvedSpeed.derivedSpeedMs;
-    var speedMs = resolvedSpeed.speedMs;
-    var sample = {
-      rawPerfMs: rawPerfMs,
-      perfMs: perfMs,
-      receivedAtMs: receivedAtMs,
-      geoMs: geoMs,
-      latitude: latitude,
-      longitude: longitude,
-      accuracyM: accuracyM,
-      altitudeM: altitudeM,
-      headingDeg: headingDeg,
-      rawSpeedMs: resolvedSpeed.reportedSpeedMs,
-      derivedSpeedMs: derivedSpeedMs,
-      speedMs: speedMs,
-      speedSource: resolvedSpeed.speedSource,
-      deltaMs: deltaMs,
-      segmentDistanceM: segmentDistanceM,
-      stale: isFiniteNumber(deltaMs) && deltaMs >= STALE_INTERVAL_MS,
-      sparse: isFiniteNumber(deltaMs) && deltaMs >= SPARSE_INTERVAL_MS,
-    };
+    var sample = createLiveSample({
+      position: position,
+      previousSample: state.latestSample,
+      rawPerfMs: performance.now(),
+      receivedAtMs: Date.now(),
+    });
+    var deltaMs = sample.deltaMs;
 
     state.latestSample = sample;
     state.sessionSampleCount += 1;
@@ -1466,7 +831,13 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
       if (state.recentIntervals.length > RECENT_INTERVAL_WINDOW) state.recentIntervals.shift();
     }
 
-    state.currentQuality = buildLiveQuality();
+    state.currentQuality = buildLiveQuality({
+      sessionSampleCount: state.sessionSampleCount,
+      recentIntervals: state.recentIntervals,
+      latestSample: state.latestSample,
+      latestSampleStale: isLatestSampleStale(),
+      latestSampleSparse: isLatestSampleSparse(),
+    });
 
     if (state.run && (state.run.stage === "armed" || state.run.stage === "waiting_rollout" || state.run.stage === "running")) {
       processRunSample(sample);
@@ -1649,7 +1020,10 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     var run = state.run;
     if (!run || run.finishPerfMs === null || run.startPerfMs === null) return;
 
-    var result = buildResult(run);
+    var result = buildResult(run, state.settings, {
+      getPresetSignature: getPresetSignature,
+      buildComparisonSignature: buildComparisonSignature,
+    });
     run.stage = "completed";
     run.result = result;
     state.latestResult = result;
@@ -1660,621 +1034,6 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     playFinishAudio();
     setActionNotice("accelRunSavedNotice");
     renderAll();
-  }
-
-  function buildResult(run) {
-    var intervalStats = computeIntervalStats(run.intervalValues);
-    var averageAccuracyM = averageArray(run.accuracyValues);
-    var nullSpeedShare = run.sampleCount > 0 ? run.nullSpeedCount / run.sampleCount : 1;
-    var derivedShare = run.sampleCount > 0 ? run.derivedSpeedCount / run.sampleCount : 1;
-    var runDistanceM = getCompletedRunDistance(run);
-    var elapsedMs = run.finishPerfMs - run.startPerfMs;
-    var slopeAnalysis = buildSlopeAnalysis(run.startAltitudeM, run.finishAltitudeM, runDistanceM);
-    var quality = evaluateQuality({
-      sampleCount: run.sampleCount,
-      durationMs: elapsedMs,
-      averageAccuracyM: averageAccuracyM,
-      averageHz: intervalStats.hz,
-      averageIntervalMs: intervalStats.averageMs,
-      jitterMs: intervalStats.jitterMs,
-      staleCount: run.staleCount,
-      sparseCount: run.sparseCount,
-      nullSpeedShare: nullSpeedShare,
-      derivedShare: derivedShare,
-    });
-
-    return {
-      id: run.id,
-      savedAtMs: Date.now(),
-      presetId: run.preset.id,
-      presetSignature: getPresetSignature(run.preset),
-      comparisonSignature: buildComparisonSignature(run.preset),
-      presetKind: run.preset.type,
-      standingStart: run.preset.standingStart,
-      customStart: run.preset.customStart,
-      customEnd: run.preset.customEnd,
-      customUnit: run.preset.customUnit,
-      startSpeedMs: run.preset.startSpeedMs,
-      targetSpeedMs: run.preset.targetSpeedMs,
-      distanceTargetM: run.preset.distanceTargetM,
-      displayUnit: state.settings.speedUnit,
-      distanceDisplay: state.settings.distanceUnit,
-      elapsedMs: elapsedMs,
-      speedTrace: buildResultSpeedTrace(run, elapsedMs),
-      sampleLog: normalizeStoredSampleLog(run.sampleLog),
-      partials: serializeRunPartials(run.partials),
-      finishSpeedMs: run.finishSpeedMs,
-      trapSpeedMs: run.preset.type === "distance" ? run.finishSpeedMs : null,
-      rolloutApplied: run.rolloutApplied,
-      launchThresholdMs: run.launchThresholdMs,
-      rolloutDistanceM: run.rolloutDistanceM,
-      averageAccuracyM: averageAccuracyM,
-      runDistanceM: runDistanceM,
-      finishDistanceM: run.finishDistanceM,
-      startAccuracyM: run.startAccuracyM,
-      startAltitudeM: run.startAltitudeM,
-      finishAltitudeM: run.finishAltitudeM,
-      elevationDeltaM: slopeAnalysis.elevationDeltaM,
-      slopePercent: slopeAnalysis.slopePercent,
-      averageHz: intervalStats.hz,
-      averageIntervalMs: intervalStats.averageMs,
-      jitterMs: intervalStats.jitterMs,
-      qualityGrade: quality.grade,
-      qualityScore: quality.score,
-      warningKeys: quality.warningKeys,
-      sampleCount: run.sampleCount,
-      sparseCount: run.sparseCount,
-      staleCount: run.staleCount,
-      nullSpeedCount: run.nullSpeedCount,
-      derivedSpeedCount: run.derivedSpeedCount,
-      speedSource: derivedShare > 0.5 ? "derived" : "reported",
-      startSpeedSource: run.startSpeedSource,
-      notes: state.settings.notes || "",
-    };
-  }
-
-  function buildLiveQuality() {
-    var intervalStats = computeIntervalStats(state.recentIntervals);
-    var accuracyM = state.latestSample ? state.latestSample.accuracyM : null;
-    var latestSampleStale = isLatestSampleStale();
-    var latestSampleSparse = isLatestSampleSparse();
-    var quality = evaluateQuality({
-      sampleCount: state.sessionSampleCount,
-      durationMs: intervalStats.averageMs ? intervalStats.averageMs * Math.max(0, state.recentIntervals.length) : 0,
-      averageAccuracyM: accuracyM,
-      averageHz: intervalStats.hz,
-      averageIntervalMs: intervalStats.averageMs,
-      jitterMs: intervalStats.jitterMs,
-      staleCount: latestSampleStale ? 1 : 0,
-      sparseCount: latestSampleSparse ? 1 : 0,
-      nullSpeedShare: state.latestSample && state.latestSample.rawSpeedMs === null ? 1 : 0,
-      derivedShare: state.latestSample && state.latestSample.speedSource === "derived" ? 1 : 0,
-      isLive: true,
-    });
-
-    quality.averageIntervalMs = intervalStats.averageMs;
-    quality.jitterMs = intervalStats.jitterMs;
-    quality.averageHz = intervalStats.hz;
-    quality.samples = state.sessionSampleCount;
-    return quality;
-  }
-
-  function evaluateQuality(input) {
-    var score = 100;
-    var warningKeys = [];
-
-    if (!isFiniteNumber(input.sampleCount) || input.sampleCount < (input.isLive ? 2 : MIN_VALID_RUN_SAMPLES)) {
-      return { grade: "invalid", score: 0, warningKeys: warningKeys };
-    }
-
-    if (!input.isLive && (!isFiniteNumber(input.durationMs) || input.durationMs < MIN_VALID_RUN_DURATION_MS)) {
-      return { grade: "invalid", score: 0, warningKeys: warningKeys };
-    }
-
-    if (!isFiniteNumber(input.averageAccuracyM)) score -= 15;
-    else if (input.averageAccuracyM > 35) {
-      score -= 60;
-      warningKeys.push("accelWarningAccuracy");
-    } else if (input.averageAccuracyM > 20) {
-      score -= 35;
-      warningKeys.push("accelWarningAccuracy");
-    } else if (input.averageAccuracyM > 12) {
-      score -= 15;
-    }
-
-    if (!isFiniteNumber(input.averageHz) || input.averageHz <= 0) {
-      score -= 35;
-    } else if (input.averageHz < 0.6) {
-      score -= 55;
-      warningKeys.push("accelWarningSparse");
-    } else if (input.averageHz < 1.0) {
-      score -= 30;
-      warningKeys.push("accelWarningSparse");
-    } else if (input.averageHz < 1.5) {
-      score -= 15;
-    }
-
-    if (isFiniteNumber(input.averageIntervalMs) && input.averageIntervalMs >= SPARSE_INTERVAL_MS) {
-      score -= 15;
-      if (warningKeys.indexOf("accelWarningSparse") === -1) warningKeys.push("accelWarningSparse");
-    }
-
-    if (isFiniteNumber(input.jitterMs) && input.jitterMs > 900) score -= 18;
-    else if (isFiniteNumber(input.jitterMs) && input.jitterMs > 450) score -= 8;
-
-    if (input.staleCount > 0) {
-      score -= Math.min(30, input.staleCount * 8);
-      warningKeys.push("accelWarningStale");
-    }
-
-    if (input.sparseCount > 0) {
-      score -= Math.min(25, input.sparseCount * 6);
-      if (warningKeys.indexOf("accelWarningSparse") === -1) warningKeys.push("accelWarningSparse");
-    }
-
-    if (input.derivedShare > 0.4) {
-      score -= input.derivedShare > 0.8 ? 18 : 8;
-      warningKeys.push("accelWarningDerived");
-    }
-
-    if (input.nullSpeedShare > 0.8) score -= 10;
-
-    score = clamp(score, 0, 100);
-
-    if (score <= 25) return { grade: "invalid", score: score, warningKeys: dedupeList(warningKeys) };
-    if (score >= 80) return { grade: "good", score: score, warningKeys: dedupeList(warningKeys) };
-    if (score >= 55) return { grade: "fair", score: score, warningKeys: dedupeList(warningKeys) };
-    return { grade: "poor", score: score, warningKeys: dedupeList(warningKeys) };
-  }
-
-  function dedupeList(values) {
-    var deduped = [];
-    for (var index = 0; index < values.length; index += 1) {
-      if (deduped.indexOf(values[index]) === -1) deduped.push(values[index]);
-    }
-    return deduped;
-  }
-
-  function computeIntervalStats(intervals) {
-    if (!intervals || !intervals.length) {
-      return {
-        averageMs: null,
-        jitterMs: null,
-        hz: null,
-        maxMs: null,
-      };
-    }
-
-    var total = 0;
-    var maxMs = 0;
-    for (var index = 0; index < intervals.length; index += 1) {
-      total += intervals[index];
-      if (intervals[index] > maxMs) maxMs = intervals[index];
-    }
-
-    var averageMs = total / intervals.length;
-    var variance = 0;
-    for (var varianceIndex = 0; varianceIndex < intervals.length; varianceIndex += 1) {
-      variance += Math.pow(intervals[varianceIndex] - averageMs, 2);
-    }
-
-    variance = variance / intervals.length;
-
-    return {
-      averageMs: averageMs,
-      jitterMs: Math.sqrt(variance),
-      hz: averageMs > 0 ? 1000 / averageMs : null,
-      maxMs: maxMs,
-    };
-  }
-
-  function averageArray(values) {
-    if (!values || !values.length) return null;
-    var total = 0;
-    var count = 0;
-
-    for (var index = 0; index < values.length; index += 1) {
-      if (!isFiniteNumber(values[index])) continue;
-      total += values[index];
-      count += 1;
-    }
-
-    return count ? total / count : null;
-  }
-
-  function averageFinite(left, right) {
-    var values = [];
-    if (isFiniteNumber(left)) values.push(left);
-    if (isFiniteNumber(right)) values.push(right);
-    return values.length ? averageArray(values) : null;
-  }
-
-  function normalizeReportedSpeedMs(value) {
-    if (!isFiniteNumber(value) || value < 0) return null;
-    return clamp(value, 0, MAX_PLAUSIBLE_SPEED_MS);
-  }
-
-  function getMovementThresholdM(currentAccuracyM, previousAccuracyM) {
-    var accuracies = [];
-    if (isFiniteNumber(currentAccuracyM)) accuracies.push(currentAccuracyM);
-    if (isFiniteNumber(previousAccuracyM)) accuracies.push(previousAccuracyM);
-
-    var accuracyFloorM = accuracies.length
-      ? Math.min(Math.max.apply(null, accuracies), MAX_ACCURACY_INFLUENCE_M)
-      : 0;
-
-    return Math.max(MIN_DISTANCE_NOISE_FLOOR_M, accuracyFloorM * 0.5);
-  }
-
-  function buildDerivedSpeedMs(previousSample, deltaMs, segmentDistanceM, accuracyM) {
-    if (!previousSample || !isFiniteNumber(deltaMs) || deltaMs <= 0 || !isFiniteNumber(segmentDistanceM)) return null;
-
-    var derivedSpeedMs = segmentDistanceM / (deltaMs / 1000);
-    if (!isFiniteNumber(derivedSpeedMs) || derivedSpeedMs < 0) return null;
-
-    var movementThresholdM = getMovementThresholdM(accuracyM, previousSample.accuracyM);
-    if (segmentDistanceM <= Math.max(2, movementThresholdM * 0.5) && derivedSpeedMs <= STATIONARY_SPEED_THRESHOLD_MS) {
-      derivedSpeedMs = 0;
-    }
-
-    return clamp(derivedSpeedMs, 0, MAX_PLAUSIBLE_SPEED_MS);
-  }
-
-  function resolveSampleSpeed(rawSpeedMs, previousSample, deltaMs, segmentDistanceM, accuracyM) {
-    var reportedSpeedMs = normalizeReportedSpeedMs(rawSpeedMs);
-    var derivedSpeedMs = buildDerivedSpeedMs(previousSample, deltaMs, segmentDistanceM, accuracyM);
-
-    if (reportedSpeedMs === null) {
-      return {
-        reportedSpeedMs: null,
-        derivedSpeedMs: derivedSpeedMs,
-        speedMs: derivedSpeedMs !== null ? derivedSpeedMs : 0,
-        speedSource: "derived",
-      };
-    }
-
-    if (derivedSpeedMs !== null) {
-      var movementThresholdM = getMovementThresholdM(accuracyM, previousSample ? previousSample.accuracyM : null);
-      var reportedLooksStationary = reportedSpeedMs <= STATIONARY_SPEED_THRESHOLD_MS;
-      var derivedLooksMoving = segmentDistanceM >= movementThresholdM && derivedSpeedMs >= MOVING_SPEED_THRESHOLD_MS;
-      var derivedClearlyHigher = derivedSpeedMs >= Math.max(MOVING_SPEED_THRESHOLD_MS + 0.5, reportedSpeedMs * 2.5)
-        && (derivedSpeedMs - reportedSpeedMs) >= 1.5;
-
-      if (reportedLooksStationary && derivedLooksMoving && derivedClearlyHigher) {
-        return {
-          reportedSpeedMs: reportedSpeedMs,
-          derivedSpeedMs: derivedSpeedMs,
-          speedMs: derivedSpeedMs,
-          speedSource: "derived",
-        };
-      }
-    }
-
-    return {
-      reportedSpeedMs: reportedSpeedMs,
-      derivedSpeedMs: derivedSpeedMs,
-      speedMs: reportedSpeedMs,
-      speedSource: "reported",
-    };
-  }
-
-  function interpolateSpeedCrossing(previousSample, currentSample, targetSpeedMs) {
-    if (!previousSample || !currentSample) return null;
-    if (!isFiniteNumber(previousSample.speedMs) || !isFiniteNumber(currentSample.speedMs)) return null;
-    if (previousSample.speedMs >= targetSpeedMs || currentSample.speedMs < targetSpeedMs) return null;
-
-    var speedDelta = currentSample.speedMs - previousSample.speedMs;
-    if (!isFiniteNumber(speedDelta) || speedDelta <= 0) return null;
-
-    var ratio = (targetSpeedMs - previousSample.speedMs) / speedDelta;
-    ratio = clamp(ratio, 0, 1);
-
-    return {
-      ratio: ratio,
-      perfMs: interpolateValue(previousSample.perfMs, currentSample.perfMs, ratio),
-    };
-  }
-
-  function interpolateRangeCrossing(previousValue, currentValue, targetValue, previousPerfMs, currentPerfMs) {
-    if (!isFiniteNumber(previousValue) || !isFiniteNumber(currentValue) || !isFiniteNumber(targetValue)) return null;
-    if (previousValue >= targetValue || currentValue < targetValue) return null;
-
-    var delta = currentValue - previousValue;
-    if (!isFiniteNumber(delta) || delta <= 0) return null;
-
-    var ratio = (targetValue - previousValue) / delta;
-    ratio = clamp(ratio, 0, 1);
-
-    return {
-      ratio: ratio,
-      perfMs: interpolateValue(previousPerfMs, currentPerfMs, ratio),
-    };
-  }
-
-  function interpolateValue(start, end, ratio) {
-    return start + ((end - start) * ratio);
-  }
-
-  function interpolateMeasurement(previousValue, currentValue, ratio) {
-    if (isFiniteNumber(previousValue) && isFiniteNumber(currentValue)) {
-      return interpolateValue(previousValue, currentValue, ratio);
-    }
-    if (isFiniteNumber(currentValue)) return currentValue;
-    if (isFiniteNumber(previousValue)) return previousValue;
-    return null;
-  }
-
-  function ensureSpeedTraceStarted(run) {
-    if (!run || !run.speedTrace) return;
-    if (run.startPerfMs === null) return;
-    if (run.speedTrace.length) return;
-    appendSpeedTracePoint(run, 0, run.startTraceSpeedMs, {
-      distanceM: 0,
-      altitudeM: run.startAltitudeM,
-      accuracyM: run.startAccuracyM,
-      speedSource: run.startSpeedSource,
-    });
-  }
-
-  function appendSpeedTracePoint(run, elapsedMs, speedMs, details) {
-    if (!run || !run.speedTrace) return;
-    if (!isFiniteNumber(elapsedMs) || !isFiniteNumber(speedMs)) return;
-
-    var normalizedElapsedMs = Math.max(0, elapsedMs);
-    var normalizedSpeedMs = Math.max(0, speedMs);
-    var trace = run.speedTrace;
-    var lastPoint = trace.length ? trace[trace.length - 1] : null;
-    var nextPoint = {
-      elapsedMs: normalizedElapsedMs,
-      speedMs: normalizedSpeedMs,
-    };
-
-    if (details && isFiniteNumber(details.distanceM)) nextPoint.distanceM = Math.max(0, details.distanceM);
-    if (details && isFiniteNumber(details.altitudeM)) nextPoint.altitudeM = details.altitudeM;
-    if (details && isFiniteNumber(details.accuracyM)) nextPoint.accuracyM = Math.max(0, details.accuracyM);
-    if (details && typeof details.speedSource === "string") nextPoint.speedSource = details.speedSource;
-
-    if (lastPoint && Math.abs(lastPoint.elapsedMs - normalizedElapsedMs) <= TRACE_DUPLICATE_EPSILON_MS) {
-      lastPoint.elapsedMs = nextPoint.elapsedMs;
-      lastPoint.speedMs = nextPoint.speedMs;
-      if (Object.prototype.hasOwnProperty.call(nextPoint, "distanceM")) lastPoint.distanceM = nextPoint.distanceM;
-      if (Object.prototype.hasOwnProperty.call(nextPoint, "altitudeM")) lastPoint.altitudeM = nextPoint.altitudeM;
-      if (Object.prototype.hasOwnProperty.call(nextPoint, "accuracyM")) lastPoint.accuracyM = nextPoint.accuracyM;
-      if (Object.prototype.hasOwnProperty.call(nextPoint, "speedSource")) lastPoint.speedSource = nextPoint.speedSource;
-      return;
-    }
-
-    if (lastPoint && normalizedElapsedMs < lastPoint.elapsedMs) return;
-
-    trace.push(nextPoint);
-  }
-
-  function appendRunSampleLog(run, sample) {
-    if (!run || !sample) return;
-    if (!Array.isArray(run.sampleLog)) run.sampleLog = [];
-
-    run.sampleLog.push({
-      index: run.sampleLog.length + 1,
-      stage: run.stage,
-      deltaMs: isFiniteNumber(sample.deltaMs) && sample.deltaMs > 0 ? sample.deltaMs : null,
-      effectiveHz: isFiniteNumber(sample.deltaMs) && sample.deltaMs > 0 ? 1000 / sample.deltaMs : null,
-      latitude: sample.latitude,
-      longitude: sample.longitude,
-      rawSpeedMs: sample.rawSpeedMs,
-      derivedSpeedMs: sample.derivedSpeedMs,
-      speedMs: sample.speedMs,
-      speedSource: sample.speedSource,
-      headingDeg: sample.headingDeg,
-      accuracyM: sample.accuracyM,
-      altitudeM: sample.altitudeM,
-      distanceFromStartM: isFiniteNumber(run.startDistanceM) ? Math.max(0, run.distanceSinceArmM - run.startDistanceM) : null,
-      elapsedFromStartMs: isFiniteNumber(run.startPerfMs) && sample.perfMs >= run.startPerfMs ? sample.perfMs - run.startPerfMs : null,
-      stale: Boolean(sample.stale),
-      sparse: Boolean(sample.sparse),
-    });
-
-    if (run.sampleLog.length > MAX_DEBUG_SAMPLE_ROWS) {
-      run.sampleLog = run.sampleLog.slice(-MAX_DEBUG_SAMPLE_ROWS);
-      for (var index = 0; index < run.sampleLog.length; index += 1) {
-        run.sampleLog[index].index = index + 1;
-      }
-    }
-  }
-
-  function buildResultSpeedTrace(run, expectedElapsedMs) {
-    var postProcessedTrace = buildSpeedTraceFromSampleLog(run, expectedElapsedMs);
-    if (postProcessedTrace.length >= 2) {
-      return normalizeStoredSpeedTrace(postProcessedTrace, expectedElapsedMs);
-    }
-    return normalizeStoredSpeedTrace(run && run.speedTrace ? run.speedTrace : [], expectedElapsedMs);
-  }
-
-  function buildSpeedTraceFromSampleLog(run, expectedElapsedMs) {
-    if (!run || !Array.isArray(run.sampleLog) || !run.sampleLog.length) return [];
-
-    var startedSamples = [];
-    var hasExpectedElapsedMs = isFiniteNumber(expectedElapsedMs) && expectedElapsedMs > 0;
-    for (var index = 0; index < run.sampleLog.length; index += 1) {
-      var sample = run.sampleLog[index];
-      if (!sample || !isFiniteNumber(sample.speedMs) || !isFiniteNumber(sample.elapsedFromStartMs)) continue;
-      if (hasExpectedElapsedMs && sample.elapsedFromStartMs > (expectedElapsedMs + TRACE_DUPLICATE_EPSILON_MS)) continue;
-      startedSamples.push(sample);
-    }
-
-    var trace = [];
-    if (isFiniteNumber(run.startTraceSpeedMs)) {
-      trace.push({
-        elapsedMs: 0,
-        speedMs: Math.max(0, run.startTraceSpeedMs),
-        distanceM: 0,
-        altitudeM: run.startAltitudeM,
-        accuracyM: run.startAccuracyM,
-        speedSource: run.startSpeedSource,
-      });
-    }
-
-    for (var sampleIndex = 0; sampleIndex < startedSamples.length; sampleIndex += 1) {
-      var currentSample = startedSamples[sampleIndex];
-      var sampleElapsedMs = Math.max(0, currentSample.elapsedFromStartMs);
-      if (hasExpectedElapsedMs) sampleElapsedMs = Math.min(sampleElapsedMs, expectedElapsedMs);
-      if (trace.length && sampleElapsedMs < (trace[trace.length - 1].elapsedMs - TRACE_DUPLICATE_EPSILON_MS)) continue;
-
-      var nextPoint = {
-        elapsedMs: sampleElapsedMs,
-        speedMs: Math.max(0, currentSample.speedMs),
-        distanceM: isFiniteNumber(currentSample.distanceFromStartM) ? Math.max(0, currentSample.distanceFromStartM) : null,
-        altitudeM: isFiniteNumber(currentSample.altitudeM) ? currentSample.altitudeM : null,
-        accuracyM: isFiniteNumber(currentSample.accuracyM) ? Math.max(0, currentSample.accuracyM) : null,
-        speedSource: typeof currentSample.speedSource === "string" ? currentSample.speedSource : null,
-      };
-
-      var lastPoint = trace.length ? trace[trace.length - 1] : null;
-      if (lastPoint && Math.abs(lastPoint.elapsedMs - sampleElapsedMs) <= TRACE_DUPLICATE_EPSILON_MS) {
-        lastPoint.elapsedMs = nextPoint.elapsedMs;
-        lastPoint.speedMs = nextPoint.speedMs;
-        lastPoint.distanceM = nextPoint.distanceM;
-        lastPoint.altitudeM = nextPoint.altitudeM;
-        lastPoint.accuracyM = nextPoint.accuracyM;
-        lastPoint.speedSource = nextPoint.speedSource;
-      } else {
-        trace.push(nextPoint);
-      }
-    }
-
-    if (isFiniteNumber(expectedElapsedMs) && isFiniteNumber(run.finishSpeedMs)) {
-      var finishContext = getSpeedTraceFinishContext(run.sampleLog, expectedElapsedMs);
-      var lastPoint = trace.length ? trace[trace.length - 1] : null;
-      if (!lastPoint || Math.abs(lastPoint.elapsedMs - expectedElapsedMs) > TRACE_DUPLICATE_EPSILON_MS) {
-        trace.push({
-          elapsedMs: expectedElapsedMs,
-          speedMs: Math.max(0, run.finishSpeedMs),
-          distanceM: isFiniteNumber(run.finishDistanceM) && isFiniteNumber(run.startDistanceM)
-            ? Math.max(0, run.finishDistanceM - run.startDistanceM)
-            : (isFiniteNumber(run.distanceTargetM) ? run.distanceTargetM : (isFiniteNumber(run.preset && run.preset.distanceTargetM) ? run.preset.distanceTargetM : null)),
-          altitudeM: isFiniteNumber(run.finishAltitudeM) ? run.finishAltitudeM : null,
-          accuracyM: finishContext.accuracyM,
-          speedSource: finishContext.speedSource,
-        });
-      } else {
-        lastPoint.elapsedMs = expectedElapsedMs;
-        lastPoint.speedMs = Math.max(0, run.finishSpeedMs);
-        if (isFiniteNumber(run.finishDistanceM) && isFiniteNumber(run.startDistanceM)) {
-          lastPoint.distanceM = Math.max(0, run.finishDistanceM - run.startDistanceM);
-        } else if (isFiniteNumber(run.distanceTargetM)) {
-          lastPoint.distanceM = run.distanceTargetM;
-        } else if (isFiniteNumber(run.preset && run.preset.distanceTargetM)) {
-          lastPoint.distanceM = run.preset.distanceTargetM;
-        }
-        if (isFiniteNumber(run.finishAltitudeM)) lastPoint.altitudeM = run.finishAltitudeM;
-        if (isFiniteNumber(finishContext.accuracyM)) lastPoint.accuracyM = finishContext.accuracyM;
-        if (typeof finishContext.speedSource === "string") lastPoint.speedSource = finishContext.speedSource;
-      }
-    }
-
-    return trace;
-  }
-
-  function getSpeedTraceFinishContext(sampleLog, expectedElapsedMs) {
-    if (!Array.isArray(sampleLog) || !sampleLog.length) {
-      return {
-        accuracyM: null,
-        speedSource: null,
-      };
-    }
-
-    var fallbackSample = null;
-    for (var index = 0; index < sampleLog.length; index += 1) {
-      var sample = sampleLog[index];
-      if (!sample || !isFiniteNumber(sample.elapsedFromStartMs)) continue;
-      fallbackSample = sample;
-      if (isFiniteNumber(expectedElapsedMs) && sample.elapsedFromStartMs + TRACE_DUPLICATE_EPSILON_MS >= expectedElapsedMs) {
-        return {
-          accuracyM: isFiniteNumber(sample.accuracyM) ? Math.max(0, sample.accuracyM) : null,
-          speedSource: typeof sample.speedSource === "string" ? sample.speedSource : null,
-        };
-      }
-    }
-
-    return {
-      accuracyM: fallbackSample && isFiniteNumber(fallbackSample.accuracyM) ? Math.max(0, fallbackSample.accuracyM) : null,
-      speedSource: fallbackSample && typeof fallbackSample.speedSource === "string" ? fallbackSample.speedSource : null,
-    };
-  }
-
-  function compactSpeedTrace(trace) {
-    var maxPoints = 120;
-    if (!Array.isArray(trace) || trace.length <= maxPoints) return trace ? trace.slice() : [];
-
-    var compacted = [];
-    var lastIndex = trace.length - 1;
-    for (var index = 0; index < maxPoints; index += 1) {
-      var sourceIndex = Math.round((index / (maxPoints - 1)) * lastIndex);
-      var point = trace[sourceIndex];
-      var compactedPoint = {
-        elapsedMs: point.elapsedMs,
-        speedMs: point.speedMs,
-      };
-      if (isFiniteNumber(point.distanceM)) compactedPoint.distanceM = point.distanceM;
-      if (isFiniteNumber(point.altitudeM)) compactedPoint.altitudeM = point.altitudeM;
-      if (isFiniteNumber(point.accuracyM)) compactedPoint.accuracyM = point.accuracyM;
-      if (typeof point.speedSource === "string") compactedPoint.speedSource = point.speedSource;
-      compacted.push(compactedPoint);
-    }
-    return compacted;
-  }
-
-  function seedRunPartialStarts(run) {
-    if (!run || run.startPerfMs === null || !run.partials || !run.partials.length) return;
-
-    var runStartSpeedMs = run.preset && isFiniteNumber(run.preset.startSpeedMs) ? run.preset.startSpeedMs : 0;
-    for (var index = 0; index < run.partials.length; index += 1) {
-      var partial = run.partials[index];
-      if (partial.kind !== "speed" || partial.startCrossPerfMs !== null) continue;
-      if (partial.startSpeedMs <= (runStartSpeedMs + 0.01)) partial.startCrossPerfMs = run.startPerfMs;
-    }
-  }
-
-  function updateRunPartials(run, previousSample, sample) {
-    if (!run || !run.partials || !run.partials.length) return;
-    if (!previousSample || !sample || run.startPerfMs === null || run.startDistanceM === null) return;
-
-    var previousSpeed = previousSample.speedMs;
-    var currentSpeed = sample.speedMs;
-    var previousDistanceFromStartM = Math.max(0, run.prevDistanceSinceArmM - run.startDistanceM);
-    var currentDistanceFromStartM = Math.max(0, run.distanceSinceArmM - run.startDistanceM);
-
-    for (var index = 0; index < run.partials.length; index += 1) {
-      var partial = run.partials[index];
-      if (partial.elapsedMs !== null) continue;
-
-      if (partial.kind === "distance") {
-        var distanceCross = interpolateRangeCrossing(
-          previousDistanceFromStartM,
-          currentDistanceFromStartM,
-          partial.distanceM,
-          previousSample.perfMs,
-          sample.perfMs
-        );
-
-        if (!distanceCross) continue;
-        partial.elapsedMs = distanceCross.perfMs - run.startPerfMs;
-        partial.trapSpeedMs = interpolateValue(previousSpeed, currentSpeed, distanceCross.ratio);
-        continue;
-      }
-
-      if (partial.startCrossPerfMs === null) {
-        var partialStartCross = interpolateSpeedCrossing(previousSample, sample, partial.startSpeedMs);
-        if (partialStartCross && partialStartCross.perfMs >= run.startPerfMs) {
-          partial.startCrossPerfMs = partialStartCross.perfMs;
-        }
-      }
-
-      if (partial.startCrossPerfMs === null) continue;
-
-      var partialTargetCross = interpolateSpeedCrossing(previousSample, sample, partial.targetSpeedMs);
-      if (!partialTargetCross || partialTargetCross.perfMs < partial.startCrossPerfMs) continue;
-      partial.elapsedMs = partialTargetCross.perfMs - partial.startCrossPerfMs;
-    }
   }
 
   function renderAll() {
@@ -2308,7 +1067,15 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     var speedUnit = state.settings.speedUnit;
     var permissionLabel = getPermissionLabel(state.permissionState);
     var ready = isGpsReady();
-    var liveQuality = isRunActive(state.run) ? buildCurrentRunQuality(state.run) : buildLiveQuality();
+    var liveQuality = isRunActive(state.run)
+      ? buildCurrentRunQuality(state.run, state.run.startPerfMs !== null ? performance.now() - state.run.startPerfMs : 0)
+      : buildLiveQuality({
+        sessionSampleCount: state.sessionSampleCount,
+        recentIntervals: state.recentIntervals,
+        latestSample: state.latestSample,
+        latestSampleStale: isLatestSampleStale(),
+        latestSampleSparse: isLatestSampleSparse(),
+      });
     var qualityLabel = liveQuality ? getQualityLabel(liveQuality.grade) : t("accelUnavailable");
     var readyLabel = ready ? t("accelReadyYes") : t("accelReadyNo");
     var accuracyLabel = formatDistanceMeasurement(state.latestSample ? state.latestSample.accuracyM : null);
@@ -2388,7 +1155,15 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     var liveState = getRunStateLabel();
     var liveQuality = run && run.result
       ? { grade: run.result.qualityGrade }
-      : (run && run.stage !== "completed" ? buildCurrentRunQuality(run) : buildLiveQuality());
+      : (run && run.stage !== "completed"
+        ? buildCurrentRunQuality(run, run.startPerfMs !== null ? performance.now() - run.startPerfMs : 0)
+        : buildLiveQuality({
+          sessionSampleCount: state.sessionSampleCount,
+          recentIntervals: state.recentIntervals,
+          latestSample: state.latestSample,
+          latestSampleStale: isLatestSampleStale(),
+          latestSampleSparse: isLatestSampleSparse(),
+        }));
 
     elements.liveStateValue.textContent = liveState;
     elements.liveQualityValue.textContent = liveQuality ? getQualityLabel(liveQuality.grade) : t("accelUnavailable");
@@ -2536,72 +1311,15 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
   }
 
   function renderResultGraph(result) {
-    if (!elements.resultGraphMeta || !elements.resultGraphEmptyState || !elements.resultGraphFrame) return;
-
-    var speedUnit = state.settings.speedUnit;
-    elements.resultGraphMeta.textContent = t("accelSpeedGraphLead") + " · " + getSpeedUnitLabel(speedUnit);
-
-    if (!result || !Array.isArray(result.speedTrace) || result.speedTrace.length < 2) {
-      elements.resultGraphEmptyState.hidden = false;
-      elements.resultGraphFrame.hidden = true;
-      resultGraphSelectionResultId = "";
-      resultGraphSelectionPointKey = "";
-      renderResultGraphDetails(null);
-      destroyResultGraph();
-      return;
-    }
-
-    var graphData = buildResultGraphData(result);
-    if (graphData.length < 2) {
-      elements.resultGraphEmptyState.hidden = false;
-      elements.resultGraphFrame.hidden = true;
-      resultGraphSelectionResultId = "";
-      resultGraphSelectionPointKey = "";
-      renderResultGraphDetails(null);
-      destroyResultGraph();
-      return;
-    }
-
-    elements.resultGraphEmptyState.hidden = true;
-    elements.resultGraphFrame.hidden = false;
-    var selectedPoint = getSelectedResultGraphPoint(result, graphData);
-    renderResultGraphDetails(selectedPoint);
-
-    if (state.openPanel !== "results") return;
-    mountResultGraph(result, graphData, selectedPoint);
+    resultGraph.render(result);
   }
 
   function buildResultGraphData(result) {
-    return buildGraphDataFromTraceSource(result);
+    return resultGraph.buildGraphDataFromTraceSource(result);
   }
 
   function buildGraphDataFromTraceSource(source) {
-    if (!source || !Array.isArray(source.speedTrace) || !source.speedTrace.length) return [];
-
-    var trace = compactSpeedTrace(source.speedTrace);
-    var speedUnit = state.settings.speedUnit;
-    var graphData = [];
-
-    for (var index = 0; index < trace.length; index += 1) {
-      var point = trace[index];
-      var distanceM = isFiniteNumber(point.distanceM) ? point.distanceM : null;
-      var altitudeM = isFiniteNumber(point.altitudeM) ? point.altitudeM : null;
-
-      graphData.push({
-        key: String(index) + "-" + String(point.elapsedMs),
-        elapsedMs: point.elapsedMs,
-        elapsedSeconds: point.elapsedMs / 1000,
-        speedMs: point.speedMs,
-        speedDisplay: msToSpeedUnit(point.speedMs, speedUnit),
-        distanceM: distanceM,
-        altitudeM: altitudeM,
-        accuracyM: isFiniteNumber(point.accuracyM) ? point.accuracyM : null,
-        speedSource: typeof point.speedSource === "string" ? point.speedSource : null,
-        slopePercent: getTraceSlopePercent(source.startAltitudeM, altitudeM, distanceM),
-      });
-    }
-
-    return graphData;
+    return resultGraph.buildGraphDataFromTraceSource(source);
   }
 
   function renderDebugTables() {
@@ -2708,327 +1426,12 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     return flags.length ? sample.stage + " · " + flags.join(", ") : sample.stage;
   }
 
-  function formatDebugCoordinatePair(latitude, longitude) {
-    if (!isFiniteNumber(latitude) || !isFiniteNumber(longitude)) return t("accelUnavailable");
-    return formatDebugCoordinate(latitude) + ", " + formatDebugCoordinate(longitude);
-  }
-
-  function renderResultGraphDetails(point) {
-    if (!elements.resultGraphTimeValue) return;
-
-    elements.resultGraphTimeValue.textContent = point ? formatRunSeconds(point.elapsedMs) + " s" : "—";
-    elements.resultGraphSpeedValue.textContent = point && isFiniteNumber(point.speedMs) ? formatSpeedValue(point.speedMs, state.settings.speedUnit) : "—";
-    elements.resultGraphDistanceValue.textContent = point && isFiniteNumber(point.distanceM) ? formatRunDistance(point.distanceM) : "—";
-    elements.resultGraphAltitudeValue.textContent = point && isFiniteNumber(point.altitudeM) ? formatDistanceMeasurement(point.altitudeM) : "—";
-    elements.resultGraphAccuracyValue.textContent = point && isFiniteNumber(point.accuracyM) ? formatDistanceMeasurement(point.accuracyM) : "—";
-    elements.resultGraphSlopeValue.textContent = point && isFiniteNumber(point.slopePercent) ? formatSlopePercent(point.slopePercent) : "—";
-  }
-
-  function getSelectedResultGraphPoint(result, graphData) {
-    if (result && result.id === resultGraphSelectionResultId && resultGraphSelectionPointKey) {
-      for (var index = 0; index < graphData.length; index += 1) {
-        if (graphData[index].key === resultGraphSelectionPointKey) return graphData[index];
-      }
-    }
-
-    var fallbackPoint = getPreferredResultGraphFallbackPoint(graphData);
-    resultGraphSelectionResultId = result ? result.id : "";
-    resultGraphSelectionPointKey = fallbackPoint ? fallbackPoint.key : "";
-    return fallbackPoint;
-  }
-
-  function getPreferredResultGraphFallbackPoint(graphData) {
-    if (!Array.isArray(graphData) || !graphData.length) return null;
-
-    for (var index = graphData.length - 1; index >= 0; index -= 1) {
-      if (isFiniteNumber(graphData[index].slopePercent)) return graphData[index];
-    }
-
-    for (var detailIndex = graphData.length - 1; detailIndex >= 0; detailIndex -= 1) {
-      var point = graphData[detailIndex];
-      if (isFiniteNumber(point.distanceM) || isFiniteNumber(point.altitudeM) || isFiniteNumber(point.accuracyM)) {
-        return point;
-      }
-    }
-
-    return graphData[graphData.length - 1];
-  }
-
-  function getTraceSlopePercent(startAltitudeM, altitudeM, distanceM) {
-    if (!isFiniteNumber(startAltitudeM) || !isFiniteNumber(altitudeM) || !isFiniteNumber(distanceM) || distanceM < 1) return null;
-    return ((altitudeM - startAltitudeM) / distanceM) * 100;
-  }
-
   function requestResultGraphRefresh() {
-    if (resultGraphRefreshFrame || state.openPanel !== "results") return;
-
-    resultGraphRefreshFrame = window.requestAnimationFrame(function () {
-      resultGraphRefreshFrame = 0;
-      renderResultGraph(getDisplayedResult());
-    });
+    resultGraph.requestRefresh();
   }
 
   function destroyResultGraph() {
-    if (resultGraphRefreshFrame) {
-      window.cancelAnimationFrame(resultGraphRefreshFrame);
-      resultGraphRefreshFrame = 0;
-    }
-    if (resultGraphChart) {
-      resultGraphChart.destroy();
-      resultGraphChart = null;
-    }
-    resultGraphRenderKey = "";
-  }
-
-  function mountResultGraph(result, graphData, selectedPoint) {
-    if (!elements.resultGraphCanvas || !elements.resultGraphFrame || !graphData || graphData.length < 2) return;
-
-    var frameWidth = Math.floor(elements.resultGraphFrame.clientWidth || elements.resultGraphFrame.getBoundingClientRect().width || 0);
-    if (frameWidth < 120) return;
-
-    var renderKey = [
-      result.id,
-      state.settings.speedUnit,
-      state.settings.distanceUnit,
-      getLang(),
-      frameWidth,
-      RESULT_GRAPH_HEIGHT,
-    ].join(":");
-    if (renderKey === resultGraphRenderKey) return;
-
-    var canvasElement = elements.resultGraphCanvas;
-    canvasElement.style.width = "100%";
-    canvasElement.style.height = RESULT_GRAPH_HEIGHT + "px";
-    var config = buildResultGraphConfig(result, graphData, selectedPoint);
-    destroyResultGraph();
-    resultGraphRenderKey = renderKey;
-    resultGraphChart = new Chart(canvasElement, config);
-    setResultGraphActivePoint(resultGraphChart, getResultGraphSelectedIndex(selectedPoint, graphData));
-  }
-
-  function buildResultGraphConfig(result, graphData, selectedPoint) {
-    var speedUnit = state.settings.speedUnit;
-    var speedTick = speedUnit === "kmh" ? 20 : 10;
-    var maxSpeedDisplay = speedTick;
-    var maxElapsedSeconds = 0.1;
-
-    for (var index = 0; index < graphData.length; index += 1) {
-      maxSpeedDisplay = Math.max(maxSpeedDisplay, graphData[index].speedDisplay || 0);
-      maxElapsedSeconds = Math.max(maxElapsedSeconds, graphData[index].elapsedSeconds || 0);
-    }
-
-    var graphMaxSpeedDisplay = Math.max(speedTick, Math.ceil(maxSpeedDisplay / speedTick) * speedTick);
-    var palette = getResultGraphPalette();
-
-    return {
-      type: "line",
-      plugins: [RESULT_GRAPH_GUIDE_PLUGIN],
-      data: {
-        datasets: [
-          {
-            label: t("accelSpeedGraph"),
-            data: graphData,
-            parsing: {
-              xAxisKey: "elapsedSeconds",
-              yAxisKey: "speedDisplay",
-            },
-            normalized: true,
-            borderColor: palette.line,
-            backgroundColor: palette.area,
-            fill: true,
-            borderWidth: 3,
-            cubicInterpolationMode: "monotone",
-            tension: 0.24,
-            pointRadius: 0,
-            pointHoverRadius: 4,
-            pointHitRadius: 18,
-            pointHoverBorderWidth: 2,
-            pointHoverBackgroundColor: palette.line,
-            pointHoverBorderColor: palette.markerOutline,
-          },
-        ],
-      },
-      options: {
-        animation: false,
-        responsive: true,
-        maintainAspectRatio: false,
-        resizeDelay: 60,
-        events: ["mousemove", "mouseout", "click", "touchstart", "touchmove"],
-        interaction: {
-          mode: "nearest",
-          intersect: false,
-          axis: "xy",
-        },
-        layout: {
-          padding: {
-            top: 12,
-            right: 14,
-            bottom: 8,
-            left: 6,
-          },
-        },
-        scales: {
-          x: {
-            type: "linear",
-            min: 0,
-            max: maxElapsedSeconds,
-            grid: {
-              color: palette.grid,
-              drawTicks: false,
-            },
-            border: {
-              color: palette.axis,
-            },
-            ticks: {
-              color: palette.label,
-              maxTicksLimit: 5,
-              padding: 8,
-              callback: function (value) {
-                var numericValue = Number(value);
-                var decimals = maxElapsedSeconds >= 10 ? 1 : 2;
-                return formatNumber(numericValue, decimals) + " s";
-              },
-            },
-          },
-          y: {
-            min: 0,
-            max: graphMaxSpeedDisplay,
-            grid: {
-              color: palette.grid,
-              drawTicks: false,
-            },
-            border: {
-              color: palette.axis,
-            },
-            ticks: {
-              color: palette.label,
-              maxTicksLimit: 5,
-              padding: 8,
-              callback: function (value) {
-                return formatNumber(Number(value), 0);
-              },
-            },
-          },
-        },
-        plugins: {
-          legend: {
-            display: false,
-          },
-          tooltip: {
-            enabled: true,
-            displayColors: false,
-            backgroundColor: palette.markerBackground,
-            titleColor: palette.markerOutline,
-            bodyColor: palette.markerOutline,
-            borderColor: palette.axis,
-            borderWidth: 1,
-            cornerRadius: 12,
-            padding: 12,
-            caretSize: 6,
-            caretPadding: 10,
-            bodySpacing: 4,
-            titleSpacing: 6,
-            callbacks: {
-              title: function (items) {
-                if (!items || !items.length || !items[0].raw) return "";
-                return formatRunSeconds(items[0].raw.elapsedMs) + " s";
-              },
-              label: function (context) {
-                return context && context.raw ? formatSpeedValue(context.raw.speedMs, state.settings.speedUnit) : "";
-              },
-              afterLabel: function (context) {
-                return buildResultGraphTooltipLines(context ? context.raw : null);
-              },
-            },
-          },
-          resultGraphGuide: {
-            color: palette.crosshair,
-          },
-        },
-        onHover: function (event, activeElements, chart) {
-          handleResultGraphInteraction(chart, activeElements);
-        },
-        onClick: function (event, activeElements, chart) {
-          handleResultGraphInteraction(chart, activeElements);
-        },
-      },
-    };
-  }
-
-  function getResultGraphSelectedIndex(selectedPoint, graphData) {
-    if (!selectedPoint || !graphData || !graphData.length) return -1;
-
-    for (var index = 0; index < graphData.length; index += 1) {
-      if (graphData[index].key === selectedPoint.key) return index;
-    }
-
-    return graphData.length - 1;
-  }
-
-  function setResultGraphActivePoint(chart, index) {
-    if (!chart || index < 0) return;
-
-    var meta = chart.getDatasetMeta(0);
-    if (!meta || !meta.data || !meta.data[index]) return;
-
-    var pointElement = meta.data[index];
-    var pointPosition = pointElement.getProps
-      ? pointElement.getProps(["x", "y"], true)
-      : { x: pointElement.x, y: pointElement.y };
-    var activeElements = [{ datasetIndex: 0, index: index }];
-
-    chart.setActiveElements(activeElements);
-    if (chart.tooltip && typeof chart.tooltip.setActiveElements === "function") {
-      chart.tooltip.setActiveElements(activeElements, pointPosition);
-    }
-    chart.update("none");
-    handleResultGraphInteraction(chart, activeElements);
-  }
-
-  function handleResultGraphInteraction(chart, activeElements) {
-    if (!chart || !activeElements || !activeElements.length) return;
-
-    var activePoint = activeElements[0];
-    var dataset = chart.data && chart.data.datasets && chart.data.datasets[activePoint.datasetIndex]
-      ? chart.data.datasets[activePoint.datasetIndex]
-      : null;
-    var rawPoint = dataset && Array.isArray(dataset.data) ? dataset.data[activePoint.index] : null;
-    if (!rawPoint) return;
-
-    var displayedResult = getDisplayedResult();
-    resultGraphSelectionResultId = displayedResult ? displayedResult.id : "";
-    resultGraphSelectionPointKey = rawPoint.key || "";
-    renderResultGraphDetails(rawPoint);
-  }
-
-  function buildResultGraphTooltipLines(rawPoint) {
-    if (!rawPoint) return [];
-
-    return [
-      t("accelGraphPointDistance") + ": " + (isFiniteNumber(rawPoint.distanceM) ? formatRunDistance(rawPoint.distanceM) : "—"),
-      t("altitude") + ": " + (isFiniteNumber(rawPoint.altitudeM) ? formatDistanceMeasurement(rawPoint.altitudeM) : "—"),
-      t("accelGraphPointAccuracy") + ": " + (isFiniteNumber(rawPoint.accuracyM) ? formatDistanceMeasurement(rawPoint.accuracyM) : "—"),
-      t("accelGraphPointSlope") + ": " + (isFiniteNumber(rawPoint.slopePercent) ? formatSlopePercent(rawPoint.slopePercent) : "—"),
-    ];
-  }
-
-  function getResultGraphPalette() {
-    return {
-      line: getCssColorValue("--accel-accent", "#10b981"),
-      area: getCssColorValue("--accel-accent-soft", "rgba(16, 185, 129, 0.18)"),
-      axis: getCssColorValue("--accel-border", "rgba(17, 24, 39, 0.22)"),
-      grid: getCssColorValue("--accel-border", "rgba(17, 24, 39, 0.14)"),
-      label: getCssColorValue("--accel-muted", "#8d8f95"),
-      crosshair: getCssColorValue("--accel-muted", "rgba(141, 143, 149, 0.64)"),
-      markerBackground: getCssColorValue("--accel-surface-strong", "#181a20"),
-      markerOutline: getCssColorValue("--accel-chip-fg", "#f7f8fa"),
-    };
-  }
-
-  function getCssColorValue(name, fallback) {
-    var sourceElement = elements.resultGraphFrame || elements.liveSpeedGaugeStage || document.documentElement;
-    var value = getComputedStyle(sourceElement).getPropertyValue(name).trim();
-    return value || fallback;
+    resultGraph.destroy();
   }
 
   function renderDiagnostics() {
@@ -3070,7 +1473,10 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     }
 
     if (isRunActive(state.run)) {
-      var liveRunQuality = buildCurrentRunQuality(state.run);
+      var liveRunQuality = buildCurrentRunQuality(
+        state.run,
+        state.run.startPerfMs !== null ? performance.now() - state.run.startPerfMs : 0
+      );
       return {
         averageIntervalMs: liveRunQuality.averageIntervalMs,
         jitterMs: liveRunQuality.jitterMs,
@@ -3082,7 +1488,13 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
       };
     }
 
-    var sessionQuality = buildLiveQuality();
+    var sessionQuality = buildLiveQuality({
+      sessionSampleCount: state.sessionSampleCount,
+      recentIntervals: state.recentIntervals,
+      latestSample: state.latestSample,
+      latestSampleStale: isLatestSampleStale(),
+      latestSampleSparse: isLatestSampleSparse(),
+    });
     return {
       averageIntervalMs: sessionQuality.averageIntervalMs,
       jitterMs: sessionQuality.jitterMs,
@@ -3092,28 +1504,6 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
       sampleCount: state.sessionSampleCount,
       warningKeys: sessionQuality.warningKeys || [],
     };
-  }
-
-  function buildCurrentRunQuality(run) {
-    var stats = computeIntervalStats(run.intervalValues);
-    var averageAccuracyM = averageArray(run.accuracyValues);
-    var quality = evaluateQuality({
-      sampleCount: run.sampleCount,
-      durationMs: run.startPerfMs !== null ? performance.now() - run.startPerfMs : 0,
-      averageAccuracyM: averageAccuracyM,
-      averageHz: stats.hz,
-      averageIntervalMs: stats.averageMs,
-      jitterMs: stats.jitterMs,
-      staleCount: run.staleCount,
-      sparseCount: run.sparseCount,
-      nullSpeedShare: run.sampleCount ? run.nullSpeedCount / run.sampleCount : 1,
-      derivedShare: run.sampleCount ? run.derivedSpeedCount / run.sampleCount : 1,
-      isLive: true,
-    });
-
-    quality.averageIntervalMs = stats.averageMs;
-    quality.jitterMs = stats.jitterMs;
-    return quality;
   }
 
   function renderWarningBadges(warningKeys) {
@@ -3287,45 +1677,6 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     }, 2600);
   }
 
-  function buildComparisonText(result) {
-    var best = findBestComparableRun(result);
-    if (!best) return t("accelNoComparison");
-    if (best.id === result.id) return t("accelBestRun");
-
-    var deltaMs = result.elapsedMs - best.elapsedMs;
-    var deltaText = formatRunSeconds(Math.abs(deltaMs)) + " s";
-    return deltaMs < 0 ? t("accelFasterBy", { value: deltaText }) : t("accelSlowerBy", { value: deltaText });
-  }
-
-  function getCompletedRunDistance(run) {
-    if (!run) return null;
-    if (isFiniteNumber(run.finishDistanceM) && isFiniteNumber(run.startDistanceM)) {
-      return Math.max(0, run.finishDistanceM - run.startDistanceM);
-    }
-    if (run.preset && run.preset.type === "distance" && isFiniteNumber(run.preset.distanceTargetM)) {
-      return run.preset.distanceTargetM;
-    }
-    if (isFiniteNumber(run.distanceSinceArmM) && isFiniteNumber(run.startDistanceM)) {
-      return Math.max(0, run.distanceSinceArmM - run.startDistanceM);
-    }
-    return null;
-  }
-
-  function buildSlopeAnalysis(startAltitudeM, finishAltitudeM, runDistanceM) {
-    if (!isFiniteNumber(startAltitudeM) || !isFiniteNumber(finishAltitudeM)) {
-      return { elevationDeltaM: null, slopePercent: null };
-    }
-    if (!isFiniteNumber(runDistanceM) || runDistanceM <= 0) {
-      return { elevationDeltaM: null, slopePercent: null };
-    }
-
-    var elevationDeltaM = finishAltitudeM - startAltitudeM;
-    return {
-      elevationDeltaM: elevationDeltaM,
-      slopePercent: (elevationDeltaM / runDistanceM) * 100,
-    };
-  }
-
   function getLiveSlopePercent(run) {
     if (!run) return null;
     if (run.stage === "completed" && run.result) return run.result.slopePercent;
@@ -3338,176 +1689,6 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     return buildSlopeAnalysis(run.startAltitudeM, currentAltitudeM, currentDistanceM).slopePercent;
   }
 
-  function getPartialLabel(partial) {
-    if (!partial) return t("accelUnavailable");
-    return t(partial.labelKey);
-  }
-
-  function formatPartialValue(partial, speedUnit, runCompleted) {
-    if (!partial) return t("accelUnavailable");
-    var activeSpeedUnit = speedUnit || state.settings.speedUnit;
-    if (!isFiniteNumber(partial.elapsedMs)) {
-      return runCompleted ? t("accelPartialNotCaptured") : t("accelPartialWaiting");
-    }
-
-    var elapsedText = formatRunSeconds(partial.elapsedMs) + " s";
-    if (!partial.showTrapSpeed || !isFiniteNumber(partial.trapSpeedMs)) return elapsedText;
-    return elapsedText + " @ " + formatSpeedValue(partial.trapSpeedMs, activeSpeedUnit);
-  }
-
-  function findBestComparableRun(result) {
-    var matches = [];
-    var validMatches = [];
-    var comparisonSignature = result && result.comparisonSignature
-      ? result.comparisonSignature
-      : buildComparisonSignature(result);
-
-    for (var index = 0; index < state.runs.length; index += 1) {
-      var run = state.runs[index];
-      var runComparisonSignature = run.comparisonSignature || buildComparisonSignature(run);
-      if (runComparisonSignature !== comparisonSignature) continue;
-      matches.push(run);
-      if (run.qualityGrade !== "invalid") validMatches.push(run);
-    }
-
-    var comparableRuns = validMatches.length ? validMatches : matches;
-    if (!comparableRuns.length) return null;
-
-    comparableRuns.sort(function (left, right) {
-      return left.elapsedMs - right.elapsedMs;
-    });
-
-    return comparableRuns[0];
-  }
-
-  function getDistanceM(latA, lonA, latB, lonB) {
-    if (!isFiniteNumber(latA) || !isFiniteNumber(lonA) || !isFiniteNumber(latB) || !isFiniteNumber(lonB)) return 0;
-
-    var rad = Math.PI / 180;
-    var phi1 = latA * rad;
-    var phi2 = latB * rad;
-    var deltaPhi = (latB - latA) * rad;
-    var deltaLambda = (lonB - lonA) * rad;
-    var sinPhi = Math.sin(deltaPhi / 2);
-    var sinLambda = Math.sin(deltaLambda / 2);
-    var a = (sinPhi * sinPhi) + (Math.cos(phi1) * Math.cos(phi2) * sinLambda * sinLambda);
-    var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return 6371000 * c;
-  }
-
-  function msToSpeedUnit(speedMs, unit) {
-    if (!isFiniteNumber(speedMs)) return null;
-    return speedMs * SPEED_UNIT_CONFIG[normalizeSpeedUnit(unit)].factor;
-  }
-
-  function speedUnitValueToMs(value, unit) {
-    if (!isFiniteNumber(value)) return null;
-    return value / SPEED_UNIT_CONFIG[normalizeSpeedUnit(unit)].factor;
-  }
-
-  function convertSpeedInputValue(value, fromUnit, toUnit) {
-    if (!isFiniteNumber(value)) return 0;
-    if (fromUnit === toUnit) return normalizeCustomSpeedInput(value, 0);
-    return normalizeCustomSpeedInput(msToSpeedUnit(speedUnitValueToMs(value, fromUnit), toUnit), 0);
-  }
-
-  function getSpeedUnitLabel(unit) {
-    return t(SPEED_UNIT_CONFIG[normalizeSpeedUnit(unit)].labelKey);
-  }
-
-  function getDistanceUnitLabel(unit) {
-    return DISTANCE_UNIT_CONFIG[normalizeDistanceUnit(unit)].label;
-  }
-
-  function convertDistanceMeasurement(valueM, unit) {
-    if (!isFiniteNumber(valueM)) return null;
-    return valueM * DISTANCE_UNIT_CONFIG[normalizeDistanceUnit(unit)].factor;
-  }
-
-  function formatLiveSpeedNumber(speedMs, unit) {
-    if (!isFiniteNumber(speedMs)) return "0";
-    return formatNumber(msToSpeedUnit(speedMs, unit), 0);
-  }
-
-  function formatSpeedValue(speedMs, unit) {
-    if (!isFiniteNumber(speedMs)) return t("accelUnavailable");
-    return formatNumber(msToSpeedUnit(speedMs, unit), 1) + " " + getSpeedUnitLabel(unit);
-  }
-
-  function formatRunDistance(distanceM, unit) {
-    if (!isFiniteNumber(distanceM)) return t("accelUnavailable");
-    var normalizedUnit = normalizeDistanceUnit(unit || state.settings.distanceUnit);
-    var converted = convertDistanceMeasurement(distanceM, normalizedUnit);
-    var decimals = normalizedUnit === "m" ? 1 : 0;
-    return formatNumber(converted, decimals) + " " + getDistanceUnitLabel(normalizedUnit);
-  }
-
-  function getDistanceProgressLabel(currentDistanceM, targetDistanceM) {
-    return formatRunDistance(currentDistanceM) + " / " + formatRunDistance(targetDistanceM);
-  }
-
-  function getSpeedProgressLabel(currentSpeedMs, targetSpeedMs, unit, baselineMs) {
-    var baseline = isFiniteNumber(baselineMs) ? baselineMs : 0;
-    var currentValue = Math.max(baseline, currentSpeedMs || 0);
-    return formatNumber(msToSpeedUnit(currentValue, unit), 0) + " / " + formatNumber(msToSpeedUnit(targetSpeedMs, unit), 0) + " " + getSpeedUnitLabel(unit);
-  }
-
-  function getTargetProgressLabel(preset, value) {
-    if (preset.type === "distance") return getDistanceProgressLabel(value, preset.distanceTargetM);
-    return getSpeedProgressLabel(0, preset.targetSpeedMs, state.settings.speedUnit, preset.startSpeedMs);
-  }
-
-  function formatHeading(value) {
-    if (!isFiniteNumber(value)) return t("accelUnavailable");
-    return formatNumber(value, 0) + "°";
-  }
-
-  function formatDebugCoordinate(value) {
-    if (!isFiniteNumber(value)) return t("accelUnavailable");
-    return new Intl.NumberFormat(getLang(), {
-      minimumFractionDigits: 6,
-      maximumFractionDigits: 6,
-    }).format(value);
-  }
-
-  function formatDebugMeters(value) {
-    if (!isFiniteNumber(value)) return t("accelUnavailable");
-    return formatNumber(value, Math.abs(value) >= 100 ? 0 : 1) + " m";
-  }
-
-  function formatDebugSpeedMs(value) {
-    if (!isFiniteNumber(value)) return t("accelUnavailable");
-    return formatNumber(value, 2) + " m/s";
-  }
-
-  function normalizeNonNegativeDurationMs(value) {
-    if (!isFiniteNumber(value) || value < 0) return null;
-    return value;
-  }
-
-  function resolveClockDeltaMs(perfDeltaMs, receivedDeltaMs) {
-    var normalizedPerfMs = normalizeNonNegativeDurationMs(perfDeltaMs);
-    var normalizedReceivedMs = normalizeNonNegativeDurationMs(receivedDeltaMs);
-
-    if (normalizedPerfMs === null) return normalizedReceivedMs;
-    if (normalizedReceivedMs === null) return normalizedPerfMs;
-
-    if (normalizedPerfMs === 0 || normalizedReceivedMs === 0) {
-      if (Math.max(normalizedPerfMs, normalizedReceivedMs) >= CLOCK_DELTA_DISAGREEMENT_MS) {
-        return Math.min(normalizedPerfMs, normalizedReceivedMs);
-      }
-      return Math.max(normalizedPerfMs, normalizedReceivedMs);
-    }
-
-    var disagreementRatio = Math.max(normalizedPerfMs, normalizedReceivedMs) / Math.max(1, Math.min(normalizedPerfMs, normalizedReceivedMs));
-    var disagreementMs = Math.abs(normalizedPerfMs - normalizedReceivedMs);
-    if (disagreementRatio >= CLOCK_DELTA_DISAGREEMENT_RATIO && disagreementMs >= CLOCK_DELTA_DISAGREEMENT_MS) {
-      return normalizedReceivedMs;
-    }
-
-    return normalizedPerfMs;
-  }
-
   function getCurrentClockMs() {
     var rawPerfMs = performance.now();
     if (!state.latestSample) return rawPerfMs;
@@ -3517,111 +1698,5 @@ import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
     var deltaMs = resolveClockDeltaMs(perfDeltaMs, receivedDeltaMs);
     if (!isFiniteNumber(deltaMs)) return state.latestSample.perfMs;
     return state.latestSample.perfMs + deltaMs;
-  }
-
-  function formatDistanceMeasurement(valueM, unit) {
-    if (!isFiniteNumber(valueM)) return t("accelUnavailable");
-    var normalizedUnit = normalizeDistanceUnit(unit || state.settings.distanceUnit);
-    var converted = convertDistanceMeasurement(valueM, normalizedUnit);
-    var decimals = Math.abs(converted) >= 100 ? 0 : 1;
-    return formatNumber(converted, decimals) + " " + getDistanceUnitLabel(normalizedUnit);
-  }
-
-  function formatSignedDistanceMeasurement(valueM, unit) {
-    if (!isFiniteNumber(valueM)) return t("accelUnavailable");
-    var normalizedUnit = normalizeDistanceUnit(unit || state.settings.distanceUnit);
-    var converted = convertDistanceMeasurement(Math.abs(valueM), normalizedUnit);
-    var decimals = Math.abs(converted) >= 100 ? 0 : 1;
-    var sign = Math.abs(valueM) < 0.05 ? "" : (valueM > 0 ? "+" : "-");
-    return sign + formatNumber(converted, decimals) + " " + getDistanceUnitLabel(normalizedUnit);
-  }
-
-  function formatSlopePercent(value) {
-    if (!isFiniteNumber(value)) return t("accelUnavailable");
-    var sign = Math.abs(value) < 0.05 ? "" : (value > 0 ? "+" : "-");
-    return sign + formatNumber(Math.abs(value), 1) + "%";
-  }
-
-  function formatHz(value) {
-    if (!isFiniteNumber(value) || value <= 0) return t("accelUnavailable");
-    var decimals = value >= 10 ? 1 : 2;
-    return formatNumber(value, decimals) + " Hz";
-  }
-
-  function formatMs(value) {
-    if (!isFiniteNumber(value)) return t("accelUnavailable");
-    return formatNumber(value, value >= 100 ? 0 : 1) + " ms";
-  }
-
-  function formatInteger(value) {
-    if (!isFiniteNumber(value)) return t("accelUnavailable");
-    return new Intl.NumberFormat(getLang(), { maximumFractionDigits: 0 }).format(value);
-  }
-
-  function formatNumber(value, decimals) {
-    if (!isFiniteNumber(value)) return t("accelUnavailable");
-    return new Intl.NumberFormat(getLang(), {
-      minimumFractionDigits: decimals,
-      maximumFractionDigits: decimals,
-    }).format(value);
-  }
-
-  function formatAdaptiveNumber(value) {
-    if (!isFiniteNumber(value)) return t("accelUnavailable");
-    var rounded = Math.round(value);
-    var decimals = Math.abs(value - rounded) < 0.05 ? 0 : 1;
-    return formatNumber(value, decimals);
-  }
-
-  function normalizeCustomSpeedInput(value, fallback) {
-    var normalized = Math.max(0, toFiniteNumber(value, fallback));
-    return Math.round(normalized * 10) / 10;
-  }
-
-  function formatInputSpeedValue(value) {
-    if (!isFiniteNumber(value)) return "";
-    var normalized = normalizeCustomSpeedInput(value, 0);
-    if (Math.abs(normalized - Math.round(normalized)) < 0.001) return String(Math.round(normalized));
-    return normalized.toFixed(1);
-  }
-
-  function formatThresholdOptionLabel(speedMs) {
-    return formatNumber(msToSpeedUnit(speedMs, state.settings.speedUnit), 1) + " " + getSpeedUnitLabel(state.settings.speedUnit);
-  }
-
-  function isSameNumber(left, right) {
-    if (!isFiniteNumber(left) || !isFiniteNumber(right)) return false;
-    return Math.abs(left - right) < 0.0001;
-  }
-
-  function formatRunSeconds(durationMs) {
-    if (!isFiniteNumber(durationMs)) return "0.000";
-    return formatNumber(Math.max(0, durationMs) / 1000, 3);
-  }
-
-  function formatTimestamp(timestampMs) {
-    if (!isFiniteNumber(timestampMs)) return t("accelUnavailable");
-    var date = new Date(timestampMs);
-    return new Intl.DateTimeFormat(getLang(), {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }).format(date);
-  }
-
-  function clamp(value, min, max) {
-    return Math.min(max, Math.max(min, value));
-  }
-
-  function escapeHtml(value) {
-    return String(value)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
   }
 })();
