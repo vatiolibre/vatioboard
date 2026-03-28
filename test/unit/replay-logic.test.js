@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildReplayGraphModel,
   buildReplayMetricSeries,
@@ -39,6 +39,125 @@ function createSample(overrides = {}) {
     headingDeg: 180,
     totalDistanceM: 0,
     ...overrides,
+  };
+}
+
+function cloneJson(value) {
+  if (value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value));
+}
+
+function createFakeIndexedDb({ shouldFailPut = () => false } = {}) {
+  const records = new Map();
+  const objectStoreNames = new Set();
+  let putCounter = 0;
+  let failPut = shouldFailPut;
+
+  function createRequest(executor) {
+    const request = {
+      result: undefined,
+      error: null,
+      onsuccess: null,
+      onerror: null,
+    };
+
+    queueMicrotask(() => {
+      try {
+        executor({
+          resolve(value) {
+            request.result = cloneJson(value);
+            request.onsuccess?.({ target: request });
+          },
+          reject(error) {
+            request.error = error;
+            request.onerror?.({ target: request });
+          },
+        });
+      } catch (error) {
+        request.error = error;
+        request.onerror?.({ target: request });
+      }
+    });
+
+    return request;
+  }
+
+  const database = {
+    objectStoreNames: {
+      contains(name) {
+        return objectStoreNames.has(name);
+      },
+    },
+    createObjectStore(name) {
+      objectStoreNames.add(name);
+      return {};
+    },
+    transaction() {
+      const transaction = {
+        onabort: null,
+        error: null,
+        objectStore() {
+          return {
+            get(key) {
+              return createRequest(({ resolve }) => {
+                resolve(records.has(key) ? records.get(key) : undefined);
+              });
+            },
+            put(value, key) {
+              return createRequest(({ resolve, reject }) => {
+                putCounter += 1;
+                if (failPut(key, cloneJson(value), putCounter)) {
+                  const error = new Error(`Failed to store ${key}`);
+                  transaction.error = error;
+                  reject(error);
+                  return;
+                }
+
+                records.set(key, cloneJson(value));
+                resolve(undefined);
+              });
+            },
+            delete(key) {
+              return createRequest(({ resolve }) => {
+                records.delete(key);
+                resolve(undefined);
+              });
+            },
+          };
+        },
+      };
+
+      return transaction;
+    },
+  };
+
+  return {
+    __records: records,
+    open: vi.fn(() => {
+      const request = {
+        result: database,
+        error: null,
+        onupgradeneeded: null,
+        onsuccess: null,
+        onerror: null,
+        onblocked: null,
+      };
+
+      queueMicrotask(() => {
+        try {
+          request.onupgradeneeded?.({ target: request });
+          request.onsuccess?.({ target: request });
+        } catch (error) {
+          request.error = error;
+          request.onerror?.({ target: request });
+        }
+      });
+
+      return request;
+    }),
+    setShouldFailPut(nextShouldFailPut) {
+      failPut = nextShouldFailPut;
+    },
   };
 }
 
@@ -111,6 +230,105 @@ describe("replay helpers", () => {
     expect(restoredSession.samples).toHaveLength(1305);
     expect(restoredSession.samples[0].timestampMs).toBe(1000);
     expect(restoredSession.samples[1304].timestampMs).toBe(1000 + (1304 * 100));
+  });
+
+  it("keeps unsaved replay samples embedded when a chunk write fails", async () => {
+    const originalIndexedDb = globalThis.indexedDB;
+    const fakeIndexedDb = createFakeIndexedDb({
+      shouldFailPut: (key) => key === "replayChunk:partial-save:1",
+    });
+    Object.defineProperty(globalThis, "indexedDB", {
+      configurable: true,
+      writable: true,
+      value: fakeIndexedDb,
+    });
+    vi.resetModules();
+
+    try {
+      const replay = await import("../../src/replay/session.js");
+      let session = replay.createReplaySession({ id: "partial-save", unit: "kmh", distanceUnit: "m" });
+
+      for (let index = 0; index < 401; index += 1) {
+        session = replay.appendReplaySample(session, createSample({
+          timestampMs: 1000 + (index * 100),
+          latitude: 40.7128 + (index / 100000),
+          longitude: -74.006 + (index / 100000),
+          totalDistanceM: index * 6,
+        }));
+      }
+
+      await replay.saveActiveReplaySession(session);
+
+      const pendingSession = await replay.loadActiveReplaySession();
+
+      expect(pendingSession.chunkCount).toBe(1);
+      expect(pendingSession.persistedSampleCount).toBe(200);
+      expect(pendingSession.sampleCount).toBe(401);
+      expect(pendingSession.samples).toHaveLength(201);
+      expect(fakeIndexedDb.__records.has("replayChunk:partial-save:0")).toBe(true);
+      expect(fakeIndexedDb.__records.has("replayChunk:partial-save:1")).toBe(false);
+
+      fakeIndexedDb.setShouldFailPut(() => false);
+      await replay.saveActiveReplaySession(pendingSession);
+
+      const restoredSession = await replay.loadActiveReplaySession({ includeSamples: true });
+
+      expect(restoredSession.sampleCount).toBe(401);
+      expect(restoredSession.persistedSampleCount).toBe(401);
+      expect(restoredSession.samples).toHaveLength(401);
+      expect((await replay.loadActiveReplaySession()).samples).toEqual([]);
+    } finally {
+      Object.defineProperty(globalThis, "indexedDB", {
+        configurable: true,
+        writable: true,
+        value: originalIndexedDb,
+      });
+      vi.resetModules();
+    }
+  });
+
+  it("deletes stored replay chunks when clearing the active session", async () => {
+    const originalIndexedDb = globalThis.indexedDB;
+    const fakeIndexedDb = createFakeIndexedDb();
+    Object.defineProperty(globalThis, "indexedDB", {
+      configurable: true,
+      writable: true,
+      value: fakeIndexedDb,
+    });
+    vi.resetModules();
+
+    try {
+      const replay = await import("../../src/replay/session.js");
+      let session = replay.createReplaySession({ id: "active-cleanup", unit: "kmh", distanceUnit: "m" });
+
+      for (let index = 0; index < 250; index += 1) {
+        session = replay.appendReplaySample(session, createSample({
+          timestampMs: 1000 + (index * 100),
+          latitude: 40.7128 + (index / 100000),
+          longitude: -74.006 + (index / 100000),
+          totalDistanceM: index * 4,
+        }));
+      }
+
+      await replay.saveActiveReplaySession(session);
+      expect(fakeIndexedDb.__records.has(replay.REPLAY_ACTIVE_KEY)).toBe(true);
+      expect(fakeIndexedDb.__records.has("replayChunk:active-cleanup:0")).toBe(true);
+      expect(fakeIndexedDb.__records.has("replayChunk:active-cleanup:1")).toBe(true);
+
+      await replay.clearActiveReplaySession();
+
+      expect(await replay.loadActiveReplaySession()).toBeNull();
+      expect(fakeIndexedDb.__records.has(replay.REPLAY_ACTIVE_KEY)).toBe(false);
+      expect(fakeIndexedDb.__records.has("replayChunk:active-cleanup:0")).toBe(false);
+      expect(fakeIndexedDb.__records.has("replayChunk:active-cleanup:1")).toBe(false);
+    } finally {
+      Object.defineProperty(globalThis, "indexedDB", {
+        configurable: true,
+        writable: true,
+        value: originalIndexedDb,
+      });
+      vi.resetModules();
+    }
   });
 
   it("rebuilds cumulative distance for legacy recordings that are missing per-sample totals", () => {

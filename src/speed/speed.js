@@ -276,6 +276,9 @@ let wazeController = null;
 let audioController = null;
 let replayPersistTimerId = null;
 let replayPersistChain = Promise.resolve();
+let replayPersistInFlight = false;
+let replayPersistRequested = false;
+let replayPersistScheduled = false;
 
 function clearReplayPersistTimer() {
   if (replayPersistTimerId !== null) {
@@ -342,24 +345,40 @@ function reconcilePersistedReplaySession(currentSession, sessionSnapshot, persis
   };
 }
 
-function enqueueReplaySessionPersist(sessionSnapshot) {
+function enqueueReplaySessionPersist() {
+  replayPersistRequested = true;
+  if (replayPersistInFlight || replayPersistScheduled) return replayPersistChain;
+
+  replayPersistScheduled = true;
   replayPersistChain = replayPersistChain
     .catch(() => {})
     .then(async () => {
-      const persistedSession = await saveActiveReplaySession(sessionSnapshot);
-      state.replaySession = reconcilePersistedReplaySession(
-        state.replaySession,
-        sessionSnapshot,
-        persistedSession,
-      );
-      return state.replaySession;
+      replayPersistScheduled = false;
+      replayPersistInFlight = true;
+
+      try {
+        while (replayPersistRequested) {
+          replayPersistRequested = false;
+          const sessionSnapshot = state.replaySession;
+          const persistedSession = await saveActiveReplaySession(sessionSnapshot);
+          state.replaySession = reconcilePersistedReplaySession(
+            state.replaySession,
+            sessionSnapshot,
+            persistedSession,
+          );
+        }
+
+        return state.replaySession;
+      } finally {
+        replayPersistInFlight = false;
+      }
     });
   return replayPersistChain;
 }
 
 function persistReplaySessionNow() {
   clearReplayPersistTimer();
-  return enqueueReplaySessionPersist(state.replaySession);
+  return enqueueReplaySessionPersist();
 }
 
 function scheduleReplaySessionPersist({ immediate = false } = {}) {
@@ -372,7 +391,7 @@ function scheduleReplaySessionPersist({ immediate = false } = {}) {
 
   replayPersistTimerId = window.setTimeout(() => {
     replayPersistTimerId = null;
-    void enqueueReplaySessionPersist(state.replaySession);
+    void enqueueReplaySessionPersist();
   }, ACTIVE_REPLAY_PERSIST_INTERVAL_MS);
 }
 

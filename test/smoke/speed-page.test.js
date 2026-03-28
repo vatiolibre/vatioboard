@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { emitGeolocationSuccess, getBrowserMocks } from "../helpers/browser-mocks.js";
 import { bootHtmlPage, expectPageSeo, flushTasks } from "../helpers/page-smoke.js";
 
+const saveActiveReplaySessionSpy = vi.fn();
+
 vi.mock("../../src/shared/analog-speedometer.js", () => ({
   createAnalogSpeedometer: () => ({
     render: vi.fn(),
@@ -9,6 +11,15 @@ vi.mock("../../src/shared/analog-speedometer.js", () => ({
     destroy: vi.fn(),
   }),
 }));
+
+vi.mock("../../src/replay/session.js", async () => {
+  const actual = await vi.importActual("../../src/replay/session.js");
+  saveActiveReplaySessionSpy.mockImplementation(actual.saveActiveReplaySession);
+  return {
+    ...actual,
+    saveActiveReplaySession: saveActiveReplaySessionSpy,
+  };
+});
 
 vi.mock("maplibre-gl", () => {
   class FakeMap {
@@ -63,6 +74,7 @@ vi.mock("maplibre-gl", () => {
 describe("speed.html smoke", () => {
   beforeEach(async () => {
     vi.resetModules();
+    saveActiveReplaySessionSpy.mockClear();
     await bootHtmlPage("speed.html");
   });
 
@@ -89,5 +101,30 @@ describe("speed.html smoke", () => {
 
     expect(document.getElementById("speedValue").textContent).toBe("36");
     expect(document.getElementById("altitudeValue").textContent).toBe("42");
+  });
+
+  it("coalesces replay persistence under high-frequency recording bursts", async () => {
+    const speedPage = await import("../../src/speed/speed.js");
+    await speedPage.initPromise;
+    await flushTasks();
+
+    for (let index = 0; index < 205; index += 1) {
+      emitGeolocationSuccess({
+        timestamp: 1000 + (index * 100),
+        coords: {
+          latitude: 40.7128 + (index / 100000),
+          longitude: -74.006 + (index / 100000),
+          speed: 10,
+          accuracy: 5,
+          altitude: 42,
+        },
+      });
+    }
+
+    await flushTasks();
+    await flushTasks();
+    await flushTasks();
+
+    expect(saveActiveReplaySessionSpy.mock.calls.length).toBeLessThanOrEqual(3);
   });
 });

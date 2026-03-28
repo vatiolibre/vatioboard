@@ -251,15 +251,33 @@ function stripReplaySessionSamples(session) {
   });
 }
 
+function hasEmbeddedReplaySamples(session) {
+  return Boolean(Array.isArray(session?.samples) && session.samples.length > 0);
+}
+
+function isEmbeddedFullSession(session) {
+  return Boolean(
+    session
+    && session.chunkCount === 0
+    && session.persistedSampleCount === session.sampleCount
+    && hasEmbeddedReplaySamples(session)
+    && session.samples.length === session.sampleCount
+    && session.sampleCount > 0,
+  );
+}
+
+function maybeStripReplaySessionSamples(session) {
+  const normalizedSession = normalizeReplaySession(session);
+  if (!normalizedSession) return null;
+  return hasEmbeddedReplaySamples(normalizedSession)
+    ? normalizedSession
+    : stripReplaySessionSamples(normalizedSession);
+}
+
 function needsChunkMigration(session) {
   return Boolean(
     replayStore.hasSupport()
-    && session
-    && session.chunkCount === 0
-    && session.sampleCount > 0
-    && session.persistedSampleCount === session.sampleCount
-    && Array.isArray(session.samples)
-    && session.samples.length === session.sampleCount,
+    && isEmbeddedFullSession(session),
   );
 }
 
@@ -278,12 +296,7 @@ function createEmbeddedReplaySession(session, samples) {
 function getReplaySamplesToPersist(session) {
   if (!session || !Array.isArray(session.samples) || session.samples.length === 0) return [];
 
-  const embeddedFullSession = session.chunkCount === 0
-    && session.persistedSampleCount === session.sampleCount
-    && session.samples.length === session.sampleCount
-    && session.sampleCount > 0;
-
-  if (embeddedFullSession) {
+  if (isEmbeddedFullSession(session)) {
     return session.samples.slice();
   }
 
@@ -295,15 +308,25 @@ function getReplaySamplesToPersist(session) {
 
 async function saveReplaySampleChunks(sessionId, samples, startChunkIndex = 0) {
   let chunkIndex = startChunkIndex;
+  let savedSampleCount = 0;
 
   for (let index = 0; index < samples.length; index += REPLAY_PERSIST_CHUNK_SIZE) {
     const chunk = samples.slice(index, index + REPLAY_PERSIST_CHUNK_SIZE);
     const stored = await replayStore.setValue(getReplayChunkKey(sessionId, chunkIndex), chunk);
-    if (!stored) return chunkIndex - startChunkIndex;
+    if (!stored) {
+      return {
+        savedChunkCount: chunkIndex - startChunkIndex,
+        savedSampleCount,
+      };
+    }
+    savedSampleCount += chunk.length;
     chunkIndex += 1;
   }
 
-  return chunkIndex - startChunkIndex;
+  return {
+    savedChunkCount: chunkIndex - startChunkIndex,
+    savedSampleCount,
+  };
 }
 
 async function loadReplaySampleChunks(sessionId, chunkCount) {
@@ -334,21 +357,36 @@ async function persistReplaySessionData(session) {
   }
 
   const samplesToPersist = getReplaySamplesToPersist(normalizedSession);
+  const migratingEmbeddedSession = isEmbeddedFullSession(normalizedSession);
+  const basePersistedSampleCount = migratingEmbeddedSession
+    ? 0
+    : normalizedSession.persistedSampleCount;
   let chunkCount = normalizedSession.chunkCount;
+  let persistedSampleCount = basePersistedSampleCount;
 
   if (samplesToPersist.length > 0) {
-    chunkCount += await saveReplaySampleChunks(
+    const saveResult = await saveReplaySampleChunks(
       normalizedSession.id,
       samplesToPersist,
       normalizedSession.chunkCount,
     );
+    chunkCount += saveResult.savedChunkCount;
+    persistedSampleCount = Math.min(
+      normalizedSession.sampleCount,
+      basePersistedSampleCount + saveResult.savedSampleCount,
+    );
   }
+
+  const pendingSampleCount = Math.max(0, normalizedSession.sampleCount - persistedSampleCount);
+  const pendingSamples = pendingSampleCount > 0
+    ? normalizedSession.samples.slice(-pendingSampleCount)
+    : [];
 
   return normalizeReplaySession({
     ...normalizedSession,
-    samples: [],
+    samples: pendingSamples,
     chunkCount,
-    persistedSampleCount: normalizedSession.sampleCount,
+    persistedSampleCount,
     lastSample: normalizedSession.lastSample,
   });
 }
@@ -374,7 +412,10 @@ async function hydrateReplaySessionSamples(session) {
     ...normalizedSession,
     samples: mergedSamples,
     sampleCount: Math.max(normalizedSession.sampleCount, mergedSamples.length),
-    persistedSampleCount: Math.max(normalizedSession.sampleCount, mergedSamples.length),
+    persistedSampleCount: Math.min(
+      normalizePositiveInteger(normalizedSession.persistedSampleCount, 0),
+      mergedSamples.length,
+    ),
     lastSample: mergedSamples[mergedSamples.length - 1] ?? normalizedSession.lastSample,
   });
 }
@@ -387,7 +428,7 @@ async function ensureChunkedReplaySession(session, storageKey = null) {
 
   const persistedSession = await persistReplaySessionData(normalizedSession);
   if (storageKey) {
-    await saveReplayValue(storageKey, stripReplaySessionSamples(persistedSession));
+    await saveReplayValue(storageKey, maybeStripReplaySessionSamples(persistedSession));
   }
   return persistedSession;
 }
@@ -613,7 +654,7 @@ export async function loadActiveReplaySession(options = {}) {
   if (!session) return null;
 
   if (!options.includeSamples || !replayStore.hasSupport()) {
-    return replayStore.hasSupport() ? stripReplaySessionSamples(session) : session;
+    return replayStore.hasSupport() ? maybeStripReplaySessionSamples(session) : session;
   }
 
   return hydrateReplaySessionSamples(session);
@@ -629,11 +670,15 @@ export async function saveActiveReplaySession(session) {
   }
 
   const persistedSession = await persistReplaySessionData(normalizedSession);
-  await saveReplayValue(REPLAY_ACTIVE_KEY, stripReplaySessionSamples(persistedSession));
+  await saveReplayValue(REPLAY_ACTIVE_KEY, maybeStripReplaySessionSamples(persistedSession));
   return persistedSession;
 }
 
 export async function clearActiveReplaySession() {
+  const activeSession = await loadActiveReplaySession();
+  if (activeSession) {
+    await deleteReplaySampleChunks(activeSession.id, activeSession.chunkCount ?? 0);
+  }
   await removeReplayValue(REPLAY_ACTIVE_KEY);
 }
 
@@ -645,7 +690,7 @@ export async function loadLastReplaySession(options = {}) {
   if (!session) return null;
 
   if (!options.includeSamples || !replayStore.hasSupport()) {
-    return replayStore.hasSupport() ? stripReplaySessionSamples(session) : session;
+    return replayStore.hasSupport() ? maybeStripReplaySessionSamples(session) : session;
   }
 
   return hydrateReplaySessionSamples(session);
@@ -662,7 +707,7 @@ export async function saveLastReplaySession(session) {
   }
 
   const persistedSession = await persistReplaySessionData(normalizedSession);
-  await saveReplayValue(REPLAY_LAST_KEY, stripReplaySessionSamples(persistedSession));
+  await saveReplayValue(REPLAY_LAST_KEY, maybeStripReplaySessionSamples(persistedSession));
   return persistedSession;
 }
 
@@ -692,7 +737,7 @@ export async function loadReplayLibrary() {
   }
 
   const strippedLibrary = normalizedLibrary
-    .map(stripReplaySessionSamples)
+    .map(maybeStripReplaySessionSamples)
     .filter(Boolean)
     .slice(0, MAX_STORED_REPLAYS);
 
@@ -724,7 +769,7 @@ export async function saveReplayLibrary(recordings) {
   const persistedRecordings = [];
   for (const recording of normalizedRecordings) {
     const persistedRecording = await persistReplaySessionData(recording);
-    persistedRecordings.push(stripReplaySessionSamples(persistedRecording));
+    persistedRecordings.push(maybeStripReplaySessionSamples(persistedRecording));
   }
 
   await saveReplayValue(REPLAY_LIBRARY_KEY, persistedRecordings);
