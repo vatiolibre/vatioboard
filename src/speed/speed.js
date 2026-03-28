@@ -4,7 +4,7 @@ import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
 import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
 import { initSupportPanel } from "../shared/support-panel.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
-import { IconAccel, IconBoard, IconGpsLab, IconReplay } from "../icons.js";
+import { IconAccel, IconBoard, IconGpsLab, IconReplay, IconRestart, IconSettings } from "../icons.js";
 import {
   archiveReplaySession,
   createReplaySession,
@@ -77,6 +77,7 @@ const elements = {
   toolsMenuBtn: document.getElementById("speedToolsMenuBtn"),
   toolsMenuList: document.getElementById("speedToolsMenuList"),
   openReplayMenu: document.getElementById("openSpeedReplayMenu"),
+  openReplayQuick: document.getElementById("openReplayQuick"),
   openAccelMenu: document.getElementById("openSpeedAccelMenu"),
   openGpsLabMenu: document.getElementById("openSpeedGpsLabMenu"),
   openBoardMenu: document.getElementById("openSpeedBoardMenu"),
@@ -160,6 +161,9 @@ applyButtonIcon(elements.openAccelMenu, IconAccel);
 applyButtonIcon(elements.openGpsLabMenu, IconGpsLab);
 applyButtonIcon(elements.openBoardMenu, IconBoard);
 applyButtonIcon(elements.openReplayMenu, IconReplay);
+applyButtonIcon(elements.openReplayQuick, IconReplay);
+applyButtonIcon(elements.resetTrip, IconRestart);
+applyButtonIcon(elements.toolsMenuBtn, IconSettings);
 
 const analogSpeedometer = createAnalogSpeedometer({
   stageElement: elements.gaugeStage,
@@ -513,9 +517,21 @@ function renderRecordingControls() {
   const toggleLabel = state.recordingState === "recording"
     ? t("pauseRecording")
     : (state.recordingState === "paused" ? t("resumeRecording") : t("startRecording"));
+  const toggleIcon = state.recordingState === "recording" ? "pause" : "record";
+  const resetLabel = t("resetTrip");
+  const stopLabel = t("stopRecording");
+  const replayLabel = t("driveReplay");
 
-  elements.toggleRecording.textContent = toggleLabel;
+  elements.resetTrip?.setAttribute("aria-label", resetLabel);
+  elements.resetTrip?.setAttribute("title", resetLabel);
+  elements.toggleRecording.dataset.recordingIcon = toggleIcon;
+  elements.toggleRecording.setAttribute("aria-label", toggleLabel);
+  elements.toggleRecording.setAttribute("title", toggleLabel);
   elements.toggleRecording.setAttribute("aria-pressed", String(state.recordingState === "recording"));
+  elements.openReplayQuick?.setAttribute("aria-label", replayLabel);
+  elements.openReplayQuick?.setAttribute("title", replayLabel);
+  elements.stopRecording.setAttribute("aria-label", stopLabel);
+  elements.stopRecording.setAttribute("title", stopLabel);
   elements.stopRecording.disabled = state.recordingState === "stopped" && !hasSamples;
 }
 
@@ -1277,6 +1293,7 @@ function bindEvents() {
     toggleLang();
   });
   bindMenuNavigation(elements.openReplayMenu, "/replay.html");
+  bindMenuNavigation(elements.openReplayQuick, "/replay.html");
   bindMenuNavigation(elements.openAccelMenu, "/accel");
   bindMenuNavigation(elements.openGpsLabMenu, "/gps-rate");
   bindMenuNavigation(elements.openBoardMenu, "/");

@@ -10,7 +10,17 @@ import { initSupportPanel } from "../shared/support-panel.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
 import iro from "@jaames/iro";
 import { t, applyTranslations, toggleLang, getLang } from "../i18n.js";
-import { IconAccel, IconCalculator, IconEnergy, IconSpeed } from "../icons.js";
+import {
+  IconAccel,
+  IconCalculator,
+  IconDownload,
+  IconEnergy,
+  IconEraser,
+  IconPen,
+  IconSettings,
+  IconSpeed,
+  IconTrash,
+} from "../icons.js";
 
 // Apply translations immediately
 applyTranslations();
@@ -33,6 +43,10 @@ const openEnergyMenuBtn = document.getElementById("openEnergyMenu");
 const toolsMenuBtn = document.getElementById("toolsMenuBtn");
 const toolsMenuList = document.getElementById("toolsMenuList");
 
+applyButtonIcon(document.getElementById("pen"), IconPen);
+applyButtonIcon(document.getElementById("erase"), IconEraser);
+applyButtonIcon(document.getElementById("clear"), IconTrash);
+applyButtonIcon(document.getElementById("save"), IconDownload);
 applyButtonIcon(openCalcBtn, IconCalculator);
 applyButtonIcon(openCalcMenuBtn, IconCalculator);
 applyButtonIcon(openAccelMenuBtn, IconAccel);
@@ -40,10 +54,12 @@ applyButtonIcon(openSpeedBtn, IconSpeed);
 applyButtonIcon(openSpeedMenuBtn, IconSpeed);
 applyButtonIcon(openEnergyBtn, IconEnergy);
 applyButtonIcon(openEnergyMenuBtn, IconEnergy);
+applyButtonIcon(toolsMenuBtn, IconSettings);
 
 // Floating dock with tool buttons
 const { calcBtn, energyBtn } = createFloatingDock();
 const toolsMenu = initToolsMenu({ button: toolsMenuBtn, list: toolsMenuList });
+toolsMenu.setOpen(true);
 initSupportPanel();
 
 // Create widgets - all buttons toggle the same instance

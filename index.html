@@ -261,8 +261,87 @@
         </div>
 
         <div class="toolbar" role="toolbar" aria-label="Drawing tools">
-          <button id="pen" type="button" aria-pressed="true" data-i18n="pen">Pen</button>
-          <button id="erase" type="button" aria-pressed="false" data-i18n="eraser">Eraser</button>
+          <div class="board-action-strip">
+            <button
+              id="pen"
+              type="button"
+              class="board-action-btn board-action-btn-pen"
+              aria-pressed="true"
+              data-i18n-aria="pen"
+              data-i18n-title="pen"
+              aria-label="Pen"
+              title="Pen"
+            >
+              <span class="btn-icon" aria-hidden="true"></span>
+            </button>
+            <button
+              id="erase"
+              type="button"
+              class="board-action-btn board-action-btn-erase"
+              aria-pressed="false"
+              data-i18n-aria="eraser"
+              data-i18n-title="eraser"
+              aria-label="Eraser"
+              title="Eraser"
+            >
+              <span class="btn-icon" aria-hidden="true"></span>
+            </button>
+            <button
+              id="clear"
+              type="button"
+              class="board-action-btn board-action-btn-clear"
+              data-i18n-aria="clear"
+              data-i18n-title="clear"
+              aria-label="Clear"
+              title="Clear"
+            >
+              <span class="btn-icon" aria-hidden="true"></span>
+            </button>
+            <button
+              id="save"
+              type="button"
+              class="board-action-btn board-action-btn-save"
+              data-i18n-aria="savePng"
+              data-i18n-title="savePng"
+              aria-label="Save PNG"
+              title="Save PNG"
+            >
+              <span class="btn-icon" aria-hidden="true"></span>
+            </button>
+            <div class="tools-menu board-tools-menu">
+              <button
+                id="toolsMenuBtn"
+                type="button"
+                class="tools-menu-btn board-action-btn board-action-btn-tools"
+                data-i18n-aria="tools"
+                data-i18n-title="tools"
+                aria-label="Tools"
+                title="Tools"
+                aria-haspopup="menu"
+                aria-expanded="false"
+              >
+                <span class="btn-icon" aria-hidden="true"></span>
+              </button>
+              <div id="toolsMenuList" class="tools-menu-list" role="menu" hidden>
+                <button id="openAccelMenu" type="button" role="menuitem" class="btn-with-icon">
+                  <span class="btn-icon" aria-hidden="true"></span>
+                  <span data-i18n="accelerationTest">Acceleration Test</span>
+                </button>
+                <button id="openSpeedMenu" type="button" role="menuitem" class="btn-with-icon">
+                  <span class="btn-icon" aria-hidden="true"></span>
+                  <span data-i18n="speedometer">Speedometer</span>
+                </button>
+                <button id="openCalcMenu" type="button" role="menuitem" class="btn-with-icon">
+                  <span class="btn-icon" aria-hidden="true"></span>
+                  <span data-i18n="calculator">Calculator</span>
+                </button>
+                <button id="openEnergyMenu" type="button" role="menuitem" class="btn-with-icon">
+                  <span class="btn-icon" aria-hidden="true"></span>
+                  <span data-i18n="energy">Energy</span>
+                </button>
+              </div>
+            </div>
+          </div>
 
           <label class="size-label">
             <span data-i18n="size">Size</span>
@@ -290,10 +369,6 @@
               </div>
             </div>
           </div>
-
-
-          <button id="clear" type="button" class="btn-danger" data-i18n="clear">Clear</button>
-          <button id="save" type="button" class="btn-success" data-i18n="savePng">Save PNG</button>
           <div class="tool-buttons">
             <button id="openCalc" type="button" class="btn-with-icon">
               <span class="btn-icon" aria-hidden="true"></span>
@@ -335,36 +410,6 @@
                   <a class="support-panel__cta" href="https://buy.stripe.com/bJe4gr1X708Jd9q93W2kw00" target="_blank" rel="noopener noreferrer" data-i18n="foundingCta">Become a founding member</a>
                 </div>
               </section>
-            </div>
-            <div class="tools-menu">
-              <button
-                id="toolsMenuBtn"
-                type="button"
-                class="tools-menu-btn"
-                data-i18n="tools"
-                aria-haspopup="menu"
-                aria-expanded="false"
-              >
-                Tools
-              </button>
-              <div id="toolsMenuList" class="tools-menu-list" role="menu" hidden>
-                <button id="openAccelMenu" type="button" role="menuitem" class="btn-with-icon">
-                  <span class="btn-icon" aria-hidden="true"></span>
-                  <span data-i18n="accelerationTest">Acceleration Test</span>
-                </button>
-                <button id="openSpeedMenu" type="button" role="menuitem" class="btn-with-icon">
-                  <span class="btn-icon" aria-hidden="true"></span>
-                  <span data-i18n="speedometer">Speedometer</span>
-                </button>
-                <button id="openCalcMenu" type="button" role="menuitem" class="btn-with-icon">
-                  <span class="btn-icon" aria-hidden="true"></span>
-                  <span data-i18n="calculator">Calculator</span>
-                </button>
-                <button id="openEnergyMenu" type="button" role="menuitem" class="btn-with-icon">
-                  <span class="btn-icon" aria-hidden="true"></span>
-                  <span data-i18n="energy">Energy</span>
-                </button>
-              </div>
             </div>
           </div>
           <div class="right-stack" aria-label="Status and attribution">

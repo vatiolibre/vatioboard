@@ -214,8 +214,60 @@
 
         <div class="toolbar accel-toolbar" role="toolbar" aria-label="Acceleration tools" data-i18n-aria="accelToolbar">
           <div class="accel-toolbar-actions">
-            <button id="armRun" type="button" class="accel-action-btn accel-action-btn-primary accel-toolbar-btn">Start test</button>
-            <button id="cancelRun" type="button" class="accel-action-btn accel-action-btn-danger accel-toolbar-btn" hidden>Cancel test</button>
+            <div class="accel-toolbar-strip">
+              <button
+                id="armRun"
+                type="button"
+                class="accel-toolbar-btn accel-toolbar-icon-btn accel-toolbar-btn-start"
+                data-i18n-aria="accelArm"
+                data-i18n-title="accelArm"
+                aria-label="Start test"
+                title="Start test"
+              >
+                <span class="btn-icon" aria-hidden="true"></span>
+              </button>
+              <button
+                id="cancelRun"
+                type="button"
+                class="accel-toolbar-btn accel-toolbar-icon-btn accel-toolbar-btn-cancel"
+                data-i18n-aria="accelCancel"
+                data-i18n-title="accelCancel"
+                aria-label="Cancel test"
+                title="Cancel test"
+                hidden
+              >
+                <span class="btn-icon" aria-hidden="true"></span>
+              </button>
+              <div class="tools-menu accel-tools-menu">
+                <button
+                  id="accelToolsMenuBtn"
+                  type="button"
+                  class="tools-menu-btn accel-toolbar-btn accel-toolbar-icon-btn accel-toolbar-btn-tools"
+                  data-i18n-aria="tools"
+                  data-i18n-title="tools"
+                  aria-label="Tools"
+                  title="Tools"
+                  aria-haspopup="menu"
+                  aria-expanded="false"
+                >
+                  <span class="btn-icon" aria-hidden="true"></span>
+                </button>
+                <div id="accelToolsMenuList" class="tools-menu-list" role="menu" hidden>
+                  <button id="openAccelSpeedMenu" type="button" role="menuitem" class="btn-with-icon">
+                    <span class="btn-icon" aria-hidden="true"></span>
+                    <span data-i18n="accelSpeedometer">Speedometer</span>
+                  </button>
+                  <button id="openAccelGpsLabMenu" type="button" role="menuitem" class="btn-with-icon">
+                    <span class="btn-icon" aria-hidden="true"></span>
+                    <span data-i18n="accelGpsLab">GPS Lab</span>
+                  </button>
+                  <button id="openAccelBoardMenu" type="button" role="menuitem" class="btn-with-icon">
+                    <span class="btn-icon" aria-hidden="true"></span>
+                    <span data-i18n="accelOpenBoard">Open board</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="toolbar-utility-row toolbar-utility-row-end accel-toolbar-utility-row">
@@ -245,32 +297,6 @@
                   <a class="support-panel__cta" href="https://buy.stripe.com/bJe4gr1X708Jd9q93W2kw00" target="_blank" rel="noopener noreferrer" data-i18n="foundingCta">Become a founding member</a>
                 </div>
               </section>
-            </div>
-            <div class="tools-menu accel-tools-menu">
-              <button
-                id="accelToolsMenuBtn"
-                type="button"
-                class="tools-menu-btn"
-                data-i18n="tools"
-                aria-haspopup="menu"
-                aria-expanded="false"
-              >
-                Tools
-              </button>
-              <div id="accelToolsMenuList" class="tools-menu-list" role="menu" hidden>
-                <button id="openAccelSpeedMenu" type="button" role="menuitem" class="btn-with-icon">
-                  <span class="btn-icon" aria-hidden="true"></span>
-                  <span data-i18n="accelSpeedometer">Speedometer</span>
-                </button>
-                <button id="openAccelGpsLabMenu" type="button" role="menuitem" class="btn-with-icon">
-                  <span class="btn-icon" aria-hidden="true"></span>
-                  <span data-i18n="accelGpsLab">GPS Lab</span>
-                </button>
-                <button id="openAccelBoardMenu" type="button" role="menuitem" class="btn-with-icon">
-                  <span class="btn-icon" aria-hidden="true"></span>
-                  <span data-i18n="accelOpenBoard">Open board</span>
-                </button>
-              </div>
             </div>
           </div>
         </div>

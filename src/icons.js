@@ -67,6 +67,39 @@ export const IconBoard = `
   </svg>
 `;
 
+export const IconPen = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="m14.35 5.65 4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M5 19l3.75-.85 8.45-8.45a1.75 1.75 0 0 0 0-2.47l-.42-.42a1.75 1.75 0 0 0-2.47 0L5.85 15.25 5 19Z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M8.55 18.2 5.8 15.45" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`;
+
+export const IconEraser = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="m7.15 15.65 6.55-6.55a1.9 1.9 0 0 1 2.69 0l1.51 1.51a1.9 1.9 0 0 1 0 2.69l-3.58 3.58a2.5 2.5 0 0 1-1.77.73H9.66a2.5 2.5 0 0 1-1.77-.73l-1.4-1.4a1.29 1.29 0 0 1 0-1.83Z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M13.55 17.6H19" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    <path d="m9.9 12.9 3.2 3.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`;
+
+export const IconTrash = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M9.25 4.75h5.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    <path d="M6 7.25h12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    <path d="M8.1 7.25v10.1a1 1 0 0 0 1 1h5.8a1 1 0 0 0 1-1V7.25" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M10.25 10.3v5.2M13.75 10.3v5.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+  </svg>
+`;
+
+export const IconDownload = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M12 4.75v8.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    <path d="m8.7 10.15 3.3 3.3 3.3-3.3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M5.75 16.5v.9a1 1 0 0 0 1 1h10.5a1 1 0 0 0 1-1v-.9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`;
+
 export const IconReplay = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path d="M5 7.5a8.5 8.5 0 1 1-1 7.3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>

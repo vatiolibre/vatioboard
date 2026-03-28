@@ -122,24 +122,105 @@ body.accel-page{
 .accel-toolbar-actions{
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
+    gap: 0;
+    flex-wrap: nowrap;
 }
 
-.accel-toolbar-btn{
-    min-width: 148px;
+.accel-toolbar-strip{
+    --accel-toolbar-size: 46px;
+    --accel-toolbar-icon-size: 20px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+    padding: 0;
+    border: 1px solid var(--accel-border);
+    border-radius: 0;
+    background: var(--accel-chip-bg);
+    box-shadow: inset 0 0 0 1px var(--inner-ring);
+    overflow: visible;
 }
 
 .accel-tools-menu{
-    margin-left: auto;
+    margin-left: 0;
 }
 
 .accel-toolbar-utility-row{
     align-items: center;
 }
 
-.accel-tools-menu .tools-menu-btn{
-    min-width: 126px;
+.accel-toolbar-icon-btn{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--accel-toolbar-size);
+    min-width: var(--accel-toolbar-size);
+    height: var(--accel-toolbar-size);
+    min-height: var(--accel-toolbar-size);
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--muted);
+    box-shadow: none;
+    flex: 0 0 auto;
+}
+
+.accel-toolbar-icon-btn + .accel-toolbar-icon-btn{
+    border-left: 1px solid color-mix(in srgb, var(--accel-border) 100%, transparent);
+}
+
+.accel-toolbar-strip > .accel-tools-menu{
+    border-left: 1px solid color-mix(in srgb, var(--accel-border) 100%, transparent);
+}
+
+.accel-toolbar-icon-btn .btn-icon{
+    width: var(--accel-toolbar-icon-size);
+    height: var(--accel-toolbar-icon-size);
+}
+
+.accel-toolbar-icon-btn .btn-icon svg{
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.accel-toolbar-icon-btn:hover{
+    background: var(--btn-hover-bg);
+    color: var(--btn-fg);
+}
+
+.accel-toolbar-icon-btn[aria-pressed="true"]{
+    background: var(--btn-active-bg);
+    color: var(--btn-active-fg);
+}
+
+.accel-toolbar-icon-btn:disabled{
+    opacity: 0.42;
+    cursor: default;
+}
+
+.accel-toolbar-icon-btn:disabled:hover{
+    background: transparent;
+    color: var(--muted);
+}
+
+.accel-toolbar-btn-start{
+    background: var(--btn-active-bg);
+    color: var(--btn-active-fg);
+}
+
+.accel-toolbar-btn-start:hover{
+    background: color-mix(in srgb, var(--btn-active-bg) 88%, var(--btn-hover-bg));
+    color: var(--btn-active-fg);
+}
+
+.accel-toolbar-btn-cancel{
+    color: var(--accel-danger);
+}
+
+.accel-tools-menu .tools-menu-btn[aria-expanded="true"]{
+    background: var(--btn-active-bg);
+    color: var(--btn-active-fg);
 }
 
 .accel-tools-menu .tools-menu-list{
@@ -623,6 +704,7 @@ body.accel-page{
 .accel-field textarea:focus,
 .accel-sheet-trigger:focus-visible,
 .accel-sheet-close:focus-visible,
+.accel-toolbar-icon-btn:focus-visible,
 .accel-action-btn:focus-visible,
 .accel-segment-btn:focus-visible,
 .accel-preset-btn:focus-visible,
@@ -1434,21 +1516,16 @@ button:disabled{
 
     .accel-toolbar-utility-row{
         width: 100%;
-        justify-content: space-between;
-    }
-
-    .accel-tools-menu{
-        width: 100%;
-        display: flex;
         justify-content: flex-end;
     }
 
-    .accel-toolbar-actions{
-        width: 100%;
+    .accel-toolbar-strip{
+        --accel-toolbar-size: 42px;
+        --accel-toolbar-icon-size: 18px;
     }
 
-    .accel-toolbar-btn{
-        width: 100%;
+    .accel-toolbar-actions{
+        width: auto;
     }
 
     .accel-main{

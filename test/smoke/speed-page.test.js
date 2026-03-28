@@ -88,7 +88,26 @@ describe("speed.html smoke", () => {
       canonical: "https://vatioboard.com/speed.html",
     });
     expect(getBrowserMocks().geolocation.watchPosition).toHaveBeenCalledTimes(1);
-    expect(document.getElementById("toggleRecording").textContent).toBe("Pause recording");
+    expect(document.getElementById("resetTrip").getAttribute("aria-label")).toBe("Reset trip");
+    expect(document.querySelector("#resetTrip .toolbar-recording-glyph svg")).toBeTruthy();
+    expect(document.getElementById("toggleRecording").getAttribute("aria-label")).toBe("Pause recording");
+    expect(document.querySelector("#toggleRecording .toolbar-recording-glyph")).toBeTruthy();
+    expect(document.getElementById("openReplayQuick").getAttribute("aria-label")).toBe("Drive Replay");
+    expect(document.querySelector("#openReplayQuick .toolbar-recording-glyph svg")).toBeTruthy();
+    expect(document.querySelector("#stopRecording .toolbar-recording-glyph")).toBeTruthy();
+    expect(document.getElementById("quickAudioToggle").getAttribute("aria-label")).toBe("Mute alert audio");
+    expect(document.querySelector("#quickAudioToggle .toolbar-recording-glyph svg")).toBeTruthy();
+    expect(document.getElementById("quickBackgroundAudioToggle").getAttribute("aria-label")).toBe("Enable background audio");
+    expect(document.querySelector("#quickBackgroundAudioToggle .toolbar-recording-glyph svg")).toBeTruthy();
+    expect(document.getElementById("speedToolsMenuBtn").getAttribute("aria-label")).toBe("Tools");
+    expect(document.querySelector("#speedToolsMenuBtn .btn-icon svg")).toBeTruthy();
+    expect(document.getElementById("speedToolsMenuList").hidden).toBe(true);
+
+    document.getElementById("speedToolsMenuBtn").click();
+    await flushTasks();
+
+    expect(document.getElementById("speedToolsMenuList").hidden).toBe(false);
+    expect(document.getElementById("speedToolsMenuBtn").getAttribute("aria-expanded")).toBe("true");
 
     emitGeolocationSuccess({
       coords: {

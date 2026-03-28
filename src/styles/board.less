@@ -241,11 +241,29 @@ header{
     flex-wrap:wrap;
 }
 
+.board-action-strip{
+    --board-action-size: 46px;
+    --board-action-icon-size: 20px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 0;
+    background: color-mix(in srgb, var(--surface) 78%, transparent);
+    box-shadow: inset 0 0 0 1px var(--inner-ring);
+    overflow: visible;
+}
+
 @import "./founding-support.less";
 
 .tools-menu{
     position: relative;
     display: block;
+}
+
+.board-tools-menu{
+    width: auto;
 }
 
 .tools-menu-list{
@@ -291,6 +309,83 @@ header{
     width: 16px;
     height: 16px;
     display: block;
+}
+
+.board-action-btn{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--board-action-size);
+    min-width: var(--board-action-size);
+    height: var(--board-action-size);
+    min-height: var(--board-action-size);
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--muted);
+    box-shadow: none;
+    flex: 0 0 auto;
+}
+
+.board-action-btn + .board-action-btn{
+    border-left: 1px solid color-mix(in srgb, var(--border) 100%, transparent);
+}
+
+.board-action-strip > .board-tools-menu{
+    border-left: 1px solid color-mix(in srgb, var(--border) 100%, transparent);
+}
+
+.board-action-btn:hover{
+    background: var(--btn-hover-bg);
+    color: var(--btn-fg);
+}
+
+.board-action-btn[aria-pressed="true"]{
+    background: var(--btn-active-bg);
+    color: var(--btn-active-fg);
+    border-color: transparent;
+}
+
+.board-action-btn-clear{
+    color: var(--danger-fg);
+}
+
+.board-action-btn-save{
+    color: var(--success-bg);
+}
+
+.board-tools-menu .tools-menu-btn[aria-expanded="true"]{
+    background: var(--btn-active-bg);
+    color: var(--btn-active-fg);
+}
+
+.board-action-btn .btn-icon{
+    width: var(--board-action-icon-size);
+    height: var(--board-action-icon-size);
+}
+
+.board-action-btn .btn-icon svg{
+    width: 100%;
+    height: 100%;
+}
+
+.board-tools-menu .tools-menu-list{
+    min-width: 220px;
+    border-color: color-mix(in srgb, var(--border) 92%, transparent);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface) 100%, transparent),
+        color-mix(in srgb, var(--bg) 94%, transparent)
+      );
+    box-shadow: 0 20px 42px rgba(15, 23, 42, 0.22);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+}
+
+.board-tools-menu .tools-menu-list button{
+    justify-content: flex-start;
 }
 
 .tool-buttons{
@@ -555,6 +650,11 @@ canvas{
     margin-left: 0;         /* remove desktop offset */
     flex-wrap: wrap;
     overflow-x: visible;
+  }
+
+  .board-action-strip{
+    --board-action-size: 42px;
+    --board-action-icon-size: 18px;
   }
 
   .size-label,

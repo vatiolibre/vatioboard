@@ -4,7 +4,7 @@ import { applyTranslations as applySharedTranslations, getLang, t as sharedT, to
 import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
 import { initSupportPanel } from "../shared/support-panel.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
-import { IconBoard, IconGpsLab, IconSpeed } from "../icons.js";
+import { IconBoard, IconClose, IconGpsLab, IconPlay, IconSettings, IconSpeed } from "../icons.js";
 import {
   FINISH_SOUND_URL,
   GEO_ERROR_CODE,
@@ -194,6 +194,9 @@ export const initPromise = (function () {
   });
   initSupportPanel();
 
+  applyButtonIcon(elements.armRun, IconPlay);
+  applyButtonIcon(elements.cancelRun, IconClose);
+  applyButtonIcon(elements.toolsMenuBtn, IconSettings);
   applyButtonIcon(elements.openSpeedMenu, IconSpeed);
   applyButtonIcon(elements.openGpsLabMenu, IconGpsLab);
   applyButtonIcon(elements.openBoardMenu, IconBoard);
@@ -1064,9 +1067,12 @@ export const initPromise = (function () {
     var customInvalid = state.settings.selectedPresetId === "custom" && !isCustomRangeValid();
     var primaryLabelKey = state.run && state.run.stage === "completed" ? "accelRunAgain" : "accelArm";
     var gpsReady = isGpsReady();
+    var primaryLabel = t(primaryLabelKey);
 
-    elements.armRun.textContent = t(primaryLabelKey);
-    elements.cancelRun.textContent = t("accelCancel");
+    elements.armRun.setAttribute("aria-label", primaryLabel);
+    elements.armRun.setAttribute("title", primaryLabel);
+    elements.cancelRun.setAttribute("aria-label", t("accelCancel"));
+    elements.cancelRun.setAttribute("title", t("accelCancel"));
     elements.armRun.hidden = hasActiveRun;
     elements.cancelRun.hidden = !hasActiveRun;
     elements.armRun.disabled = !state.geolocationSupported || customInvalid || !gpsReady;

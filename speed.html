@@ -207,38 +207,59 @@
         </div>
 
         <div class="toolbar speed-toolbar" role="toolbar" data-i18n-aria="speedometerControls" aria-label="Speedometer controls">
-          <button id="resetTrip" type="button" data-i18n="resetTrip">Reset trip</button>
-
-          <div class="toolbar-recording-quick" role="group" data-i18n-aria="recordingControls" aria-label="Recording controls">
+          <div class="toolbar-recording-quick">
+            <button
+              id="resetTrip"
+              type="button"
+              class="toolbar-recording-btn toolbar-recording-btn-reset"
+              data-i18n-aria="resetTrip"
+              aria-label="Reset trip"
+              title="Reset trip"
+            >
+              <span class="toolbar-recording-glyph btn-icon" aria-hidden="true"></span>
+            </button>
             <button
               id="toggleRecording"
               type="button"
-              class="toolbar-recording-btn"
-              data-i18n="pauseRecording"
+              class="toolbar-recording-btn toolbar-recording-btn-toggle"
+              data-recording-icon="pause"
+              aria-label="Pause recording"
+              title="Pause recording"
             >
-              Pause recording
+              <span class="toolbar-recording-glyph" aria-hidden="true"></span>
+            </button>
+            <button
+              id="openReplayQuick"
+              type="button"
+              class="toolbar-recording-btn toolbar-recording-btn-replay"
+              data-recording-icon="replay"
+              data-i18n-aria="driveReplay"
+              aria-label="Drive Replay"
+              title="Drive Replay"
+            >
+              <span class="toolbar-recording-glyph btn-icon" aria-hidden="true"></span>
             </button>
             <button
               id="stopRecording"
               type="button"
               class="toolbar-recording-btn toolbar-recording-btn-stop"
-              data-i18n="stopRecording"
+              data-recording-icon="stop"
+              data-i18n-aria="stopRecording"
+              aria-label="Stop recording"
+              title="Stop recording"
             >
-              Stop recording
+              <span class="toolbar-recording-glyph" aria-hidden="true"></span>
             </button>
-          </div>
-
-          <div class="toolbar-audio-quick" role="group" data-i18n-aria="audioQuickControls" aria-label="Audio quick controls">
             <button
               id="quickAudioToggle"
               type="button"
-              class="toolbar-quick-btn"
+              class="toolbar-recording-btn toolbar-recording-btn-audio"
               data-i18n-aria="toggleAlertAudio"
               data-i18n-title="toggleAlertAudio"
               aria-label="Toggle alert audio"
               title="Toggle alert audio"
             >
-              <span class="toolbar-quick-icon toolbar-quick-icon-audio" aria-hidden="true">
+              <span class="toolbar-recording-glyph toolbar-quick-icon toolbar-quick-icon-audio" aria-hidden="true">
                 <svg viewBox="0 0 20 20" focusable="false">
                   <path d="M4 8.5h3l4-3v9l-4-3H4z" />
                   <path class="toolbar-quick-wave" d="M13.25 7.25a4 4 0 0 1 0 5.5" />
@@ -246,27 +267,58 @@
                   <path class="toolbar-quick-slash" d="M4 4l12 12" />
                 </svg>
               </span>
-              <span class="toolbar-quick-label" data-i18n="audio">Audio</span>
             </button>
 
             <button
               id="quickBackgroundAudioToggle"
               type="button"
-              class="toolbar-quick-btn toolbar-quick-btn-background"
+              class="toolbar-recording-btn toolbar-recording-btn-background"
               data-i18n-aria="toggleBackgroundAudio"
               data-i18n-title="toggleBackgroundAudio"
               aria-label="Toggle background audio"
               title="Toggle background audio"
             >
-              <span class="toolbar-quick-icon" aria-hidden="true">
+              <span class="toolbar-recording-glyph toolbar-quick-icon" aria-hidden="true">
                 <svg viewBox="0 0 20 20" focusable="false">
                   <rect x="4" y="5" width="8" height="10" rx="2" />
                   <path d="M14.5 7.5a3.5 3.5 0 0 1 0 5" />
                   <path d="M16.25 5.5a6 6 0 0 1 0 9" />
                 </svg>
               </span>
-              <span class="toolbar-quick-label" data-i18n="backgroundCompact">BG</span>
             </button>
+            <div class="tools-menu speed-tools-menu">
+              <button
+                id="speedToolsMenuBtn"
+                type="button"
+                class="tools-menu-btn toolbar-recording-btn toolbar-recording-btn-tools"
+                data-i18n-aria="tools"
+                data-i18n-title="tools"
+                aria-label="Tools"
+                title="Tools"
+                aria-haspopup="menu"
+                aria-expanded="false"
+              >
+                <span class="toolbar-recording-glyph btn-icon" aria-hidden="true"></span>
+              </button>
+              <div id="speedToolsMenuList" class="tools-menu-list" role="menu" hidden>
+                <button id="openSpeedReplayMenu" type="button" role="menuitem" class="btn-with-icon">
+                  <span class="btn-icon" aria-hidden="true"></span>
+                  <span data-i18n="driveReplay">Drive Replay</span>
+                </button>
+                <button id="openSpeedAccelMenu" type="button" role="menuitem" class="btn-with-icon">
+                  <span class="btn-icon" aria-hidden="true"></span>
+                  <span data-i18n="accelerationTest">Acceleration Test</span>
+                </button>
+                <button id="openSpeedGpsLabMenu" type="button" role="menuitem" class="btn-with-icon">
+                  <span class="btn-icon" aria-hidden="true"></span>
+                  <span data-i18n="gpsLab">GPS Lab</span>
+                </button>
+                <button id="openSpeedBoardMenu" type="button" role="menuitem" class="btn-with-icon">
+                  <span class="btn-icon" aria-hidden="true"></span>
+                  <span data-i18n="openBoard">Open board</span>
+                </button>
+              </div>
+            </div>
           </div>
 
           <div class="right-stack" data-i18n-aria="connectionStatus" aria-label="Connection status">
@@ -297,36 +349,6 @@
                     <a class="support-panel__cta" href="https://buy.stripe.com/bJe4gr1X708Jd9q93W2kw00" target="_blank" rel="noopener noreferrer" data-i18n="foundingCta">Become a founding member</a>
                   </div>
                 </section>
-              </div>
-              <div class="tools-menu speed-tools-menu">
-                <button
-                  id="speedToolsMenuBtn"
-                  type="button"
-                  class="tools-menu-btn"
-                  data-i18n="tools"
-                  aria-haspopup="menu"
-                  aria-expanded="false"
-                >
-                  Tools
-                </button>
-                <div id="speedToolsMenuList" class="tools-menu-list" role="menu" hidden>
-                  <button id="openSpeedReplayMenu" type="button" role="menuitem" class="btn-with-icon">
-                    <span class="btn-icon" aria-hidden="true"></span>
-                    <span data-i18n="driveReplay">Drive Replay</span>
-                  </button>
-                  <button id="openSpeedAccelMenu" type="button" role="menuitem" class="btn-with-icon">
-                    <span class="btn-icon" aria-hidden="true"></span>
-                    <span data-i18n="accelerationTest">Acceleration Test</span>
-                  </button>
-                  <button id="openSpeedGpsLabMenu" type="button" role="menuitem" class="btn-with-icon">
-                    <span class="btn-icon" aria-hidden="true"></span>
-                    <span data-i18n="gpsLab">GPS Lab</span>
-                  </button>
-                  <button id="openSpeedBoardMenu" type="button" role="menuitem" class="btn-with-icon">
-                    <span class="btn-icon" aria-hidden="true"></span>
-                    <span data-i18n="openBoard">Open board</span>
-                  </button>
-                </div>
               </div>
             </div>
             <span id="status" class="status" aria-live="polite" data-i18n="requestingGps">Requesting GPS...</span>

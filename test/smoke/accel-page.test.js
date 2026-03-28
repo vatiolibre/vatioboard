@@ -49,6 +49,16 @@ describe("accel.html smoke", () => {
       titleIncludes: "Vatio Accel",
       canonical: "https://vatioboard.com/accel.html",
     });
+    expect(document.getElementById("armRun").getAttribute("aria-label")).toBe("Start test");
+    expect(document.querySelector("#armRun .btn-icon svg")).toBeTruthy();
+    expect(document.querySelector("#cancelRun .btn-icon svg")).toBeTruthy();
+    expect(document.getElementById("accelToolsMenuBtn").getAttribute("aria-label")).toBe("Tools");
+    expect(document.querySelector("#accelToolsMenuBtn .btn-icon svg")).toBeTruthy();
+    expect(document.getElementById("accelToolsMenuList").hidden).toBe(true);
+    document.getElementById("accelToolsMenuBtn").click();
+    await flushTasks();
+    expect(document.getElementById("accelToolsMenuList").hidden).toBe(false);
+    expect(document.getElementById("accelToolsMenuBtn").getAttribute("aria-expanded")).toBe("true");
     expect(getBrowserMocks().geolocation.watchPosition).toHaveBeenCalledTimes(1);
 
     emitGeolocationSuccess({
