@@ -33,6 +33,12 @@ describe("index.html smoke", () => {
     expect(document.querySelector("#pen .btn-icon svg")).toBeTruthy();
     expect(document.getElementById("erase").getAttribute("aria-label")).toBe("Eraser");
     expect(document.querySelector("#erase .btn-icon svg")).toBeTruthy();
+    expect(document.getElementById("undo").getAttribute("aria-label")).toBe("Undo");
+    expect(document.querySelector("#undo .btn-icon svg")).toBeTruthy();
+    expect(document.getElementById("redo").getAttribute("aria-label")).toBe("Redo");
+    expect(document.querySelector("#redo .btn-icon svg")).toBeTruthy();
+    expect(document.getElementById("undo").disabled).toBe(true);
+    expect(document.getElementById("redo").disabled).toBe(true);
     expect(document.getElementById("clear").getAttribute("aria-label")).toBe("Clear");
     expect(document.querySelector("#clear .btn-icon svg")).toBeTruthy();
     expect(document.getElementById("save").getAttribute("aria-label")).toBe("Save PNG");
@@ -56,6 +62,31 @@ describe("index.html smoke", () => {
 
     document.getElementById("sizePreview").click();
     expect(document.getElementById("colorPopup").hidden).toBe(false);
+
+    const canvas = document.getElementById("pad");
+    const pointerDown = new MouseEvent("pointerdown", { bubbles: true, clientX: 12, clientY: 12 });
+    const pointerMove = new MouseEvent("pointermove", { bubbles: true, clientX: 42, clientY: 32 });
+    const pointerUp = new MouseEvent("pointerup", { bubbles: true, clientX: 42, clientY: 32 });
+    Object.defineProperty(pointerDown, "pointerId", { value: 1 });
+    Object.defineProperty(pointerMove, "pointerId", { value: 1 });
+    Object.defineProperty(pointerUp, "pointerId", { value: 1 });
+
+    canvas.dispatchEvent(pointerDown);
+    canvas.dispatchEvent(pointerMove);
+    canvas.dispatchEvent(pointerUp);
+
+    expect(document.getElementById("undo").disabled).toBe(false);
+    expect(document.getElementById("redo").disabled).toBe(true);
+
+    document.getElementById("undo").click();
+    expect(document.getElementById("status").textContent).toBe("Undo");
+    expect(document.getElementById("undo").disabled).toBe(true);
+    expect(document.getElementById("redo").disabled).toBe(false);
+
+    document.getElementById("redo").click();
+    expect(document.getElementById("status").textContent).toBe("Redo");
+    expect(document.getElementById("undo").disabled).toBe(false);
+    expect(document.getElementById("redo").disabled).toBe(true);
 
     document.getElementById("openCalc").click();
     expect(document.querySelector(".calc-panel").hidden).toBe(false);

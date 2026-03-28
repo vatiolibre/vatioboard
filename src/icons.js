@@ -117,6 +117,20 @@ export const IconDownload = `
   </svg>
 `;
 
+export const IconUndo = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M9 7H6v3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M6 10c1.1-2.55 3.5-4 6.6-4 4.05 0 6.9 2.8 6.9 6.8 0 1.84-.65 3.42-1.94 4.72" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`;
+
+export const IconRedo = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M15 7h3v3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M18 10c-1.1-2.55-3.5-4-6.6-4-4.05 0-6.9 2.8-6.9 6.8 0 1.84.65 3.42 1.94 4.72" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`;
+
 export const IconReplay = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path d="M5 7.5a8.5 8.5 0 1 1-1 7.3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>

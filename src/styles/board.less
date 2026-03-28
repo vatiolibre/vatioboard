@@ -319,6 +319,16 @@ header{
     color: var(--btn-fg);
 }
 
+.board-action-btn:disabled{
+    opacity: 0.42;
+    cursor: default;
+}
+
+.board-action-btn:disabled:hover{
+    background: transparent;
+    color: var(--muted);
+}
+
 .board-action-btn[aria-pressed="true"]{
     background: var(--btn-active-bg);
     color: var(--btn-active-fg);

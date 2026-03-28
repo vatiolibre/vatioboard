@@ -11,6 +11,8 @@ const baseTranslations = {
     // UI Controls
     pen: 'Pen',
     eraser: 'Eraser',
+    undo: 'Undo',
+    redo: 'Redo',
     size: 'Size',
     color: 'Color',
     hex: 'Hex',
@@ -422,6 +424,8 @@ const baseTranslations = {
     // UI Controls
     pen: 'Lápiz',
     eraser: 'Borrador',
+    undo: 'Deshacer',
+    redo: 'Rehacer',
     size: 'Tamaño',
     color: 'Color',
     hex: 'Hex',

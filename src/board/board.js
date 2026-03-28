@@ -16,9 +16,11 @@ import {
   IconEnergy,
   IconEraser,
   IconPen,
+  IconRedo,
   IconSettings,
   IconSpeed,
   IconTrash,
+  IconUndo,
 } from "../icons.js";
 
 // Apply translations immediately
@@ -44,6 +46,8 @@ const toolsMenuList = document.getElementById("toolsMenuList");
 
 applyButtonIcon(document.getElementById("pen"), IconPen);
 applyButtonIcon(document.getElementById("erase"), IconEraser);
+applyButtonIcon(document.getElementById("undo"), IconUndo);
+applyButtonIcon(document.getElementById("redo"), IconRedo);
 applyButtonIcon(document.getElementById("clear"), IconTrash);
 applyButtonIcon(document.getElementById("save"), IconDownload);
 applyButtonIcon(openCalcBtn, IconCalculator);
@@ -97,6 +101,8 @@ bindNavigation(openAccelMenuBtn, "/accel");
 
     const penBtn = document.getElementById("pen");
     const eraseBtn = document.getElementById("erase");
+    const undoBtn = document.getElementById("undo");
+    const redoBtn = document.getElementById("redo");
     const sizeEl = document.getElementById("size");
     const sizePreview = document.getElementById("sizePreview");
     const clearBtn = document.getElementById("clear");
@@ -191,12 +197,15 @@ bindNavigation(openAccelMenuBtn, "/accel");
     let tool = "pen"; // "pen" | "eraser"
     let drawing = false;
     let last = null;
+    let currentStroke = null;
+    const commandHistory = [];
+    const redoHistory = [];
+    const MAX_HISTORY_STEPS = 120;
 
     // Theme-aware colors from CSS variables
     function cssVar(name){
       return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     }
-    function currentInk(){ return cssVar("--ink") || "#111827"; }
     function currentCanvasBg(){ return cssVar("--canvas-bg") || "#ffffff"; }
 
     function setStatus(s){ statusEl.textContent = s; }
@@ -212,6 +221,40 @@ bindNavigation(openAccelMenuBtn, "/accel");
       const sizeValue = Math.max(2, Math.min(22, Number(sizeEl.value) || 6));
       sizePreview.style.setProperty("--board-size-preview", `${sizeValue}px`);
       sizeEl.setAttribute("aria-valuetext", `${sizeValue}`);
+    }
+
+    function clonePoint(point){
+      return { x: point.x, y: point.y };
+    }
+
+    function cloneCommand(command){
+      if (!command) return null;
+      if (command.type === "clear") return { type: "clear" };
+      return {
+        type: "stroke",
+        tool: command.tool,
+        size: command.size,
+        inkRaw: command.inkRaw,
+        points: command.points.map(clonePoint),
+      };
+    }
+
+    function syncHistoryButtons(){
+      if (undoBtn) undoBtn.disabled = commandHistory.length === 0;
+      if (redoBtn) redoBtn.disabled = redoHistory.length === 0;
+    }
+
+    function pushHistoryCommand(command, { clearRedo = true } = {}){
+      const nextCommand = cloneCommand(command);
+      if (!nextCommand) return;
+      commandHistory.push(nextCommand);
+      if (commandHistory.length > MAX_HISTORY_STEPS) {
+        commandHistory.shift();
+      }
+      if (clearRedo) {
+        redoHistory.length = 0;
+      }
+      syncHistoryButtons();
     }
 
     // ---- Color utilities (contrast-safe ink) ----
@@ -307,6 +350,77 @@ bindNavigation(openAccelMenuBtn, "/accel");
 
     function setCssInk(hex){
       document.documentElement.style.setProperty("--ink", hex);
+    }
+
+    function fillCanvasBackground(){
+      const rect = canvas.getBoundingClientRect();
+      ctx.save();
+      ctx.globalCompositeOperation = "source-over";
+      ctx.fillStyle = currentCanvasBg();
+      ctx.fillRect(0, 0, rect.width, rect.height);
+      ctx.restore();
+    }
+
+    function applyCommandStyle(command){
+      ctx.lineWidth = command.size;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      if (command.tool === "eraser") {
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.strokeStyle = "rgba(0,0,0,1)";
+        ctx.fillStyle = "rgba(0,0,0,1)";
+      } else {
+        ctx.globalCompositeOperation = "source-over";
+        const appliedInk = ensureInkContrast(command.inkRaw);
+        ctx.strokeStyle = appliedInk;
+        ctx.fillStyle = appliedInk;
+      }
+    }
+
+    function drawCommand(command){
+      if (!command) return;
+      if (command.type === "clear") {
+        fillCanvasBackground();
+        return;
+      }
+
+      if (!Array.isArray(command.points) || command.points.length === 0) return;
+
+      ctx.save();
+      applyCommandStyle(command);
+
+      if (command.points.length === 1) {
+        const point = command.points[0];
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, Math.max(1, command.size / 2), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        return;
+      }
+
+      ctx.beginPath();
+      ctx.moveTo(command.points[0].x, command.points[0].y);
+
+      let previousPoint = command.points[0];
+      for (let index = 1; index < command.points.length; index += 1) {
+        const point = command.points[index];
+        const middleX = (previousPoint.x + point.x) / 2;
+        const middleY = (previousPoint.y + point.y) / 2;
+        ctx.quadraticCurveTo(previousPoint.x, previousPoint.y, middleX, middleY);
+        previousPoint = point;
+      }
+
+      ctx.lineTo(previousPoint.x, previousPoint.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function redrawCanvas(){
+      fillCanvasBackground();
+      for (const command of commandHistory) {
+        drawCommand(command);
+      }
     }
 
     function ensureIroPicker(){
@@ -438,53 +552,12 @@ bindNavigation(openAccelMenuBtn, "/accel");
       const rect = canvas.getBoundingClientRect();
       const dpr = Math.max(1, window.devicePixelRatio || 1);
 
-      // Snapshot current drawing
-      let snapshot = null;
-      if (canvas.width && canvas.height){
-        snapshot = document.createElement("canvas");
-        snapshot.width = canvas.width;
-        snapshot.height = canvas.height;
-        snapshot.getContext("2d").drawImage(canvas, 0, 0);
-      }
-
       canvas.width = Math.floor(rect.width * dpr);
       canvas.height = Math.floor(rect.height * dpr);
 
       // Work in CSS pixels
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-      // Fill background for visibility + saved PNG background
-      ctx.save();
-      ctx.globalCompositeOperation = "source-over";
-      ctx.fillStyle = currentCanvasBg();
-      ctx.fillRect(0, 0, rect.width, rect.height);
-      ctx.restore();
-
-      // Restore snapshot scaled into new size
-      if (snapshot){
-        const oldCssW = snapshot.width / dpr;
-        const oldCssH = snapshot.height / dpr;
-
-        ctx.save();
-        ctx.globalCompositeOperation = "source-over";
-        ctx.drawImage(snapshot, 0, 0, oldCssW, oldCssH);
-        ctx.restore();
-      }
-    }
-
-    function styleStroke(){
-      const size = parseInt(sizeEl.value || "6", 10);
-      ctx.lineWidth = size;
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-
-      if(tool === "eraser"){
-        ctx.globalCompositeOperation = "destination-out";
-        ctx.strokeStyle = "rgba(0,0,0,1)";
-      } else {
-        ctx.globalCompositeOperation = "source-over";
-        ctx.strokeStyle = currentInk();
-      }
+      redrawCanvas();
     }
 
     function pos(ev){
@@ -496,15 +569,23 @@ bindNavigation(openAccelMenuBtn, "/accel");
       drawing = true;
       canvas.setPointerCapture(ev.pointerId);
       last = pos(ev);
-      styleStroke();
+      currentStroke = {
+        type: "stroke",
+        tool,
+        size: parseInt(sizeEl.value || "6", 10),
+        inkRaw,
+        points: [clonePoint(last)],
+      };
+      applyCommandStyle(currentStroke);
       ctx.beginPath();
       ctx.moveTo(last.x, last.y);
     }
 
     function move(ev){
-      if(!drawing) return;
+      if(!drawing || !currentStroke) return;
       const p = pos(ev);
-      styleStroke();
+      currentStroke.points.push(clonePoint(p));
+      applyCommandStyle(currentStroke);
 
       const mx = (last.x + p.x) / 2;
       const my = (last.y + p.y) / 2;
@@ -514,19 +595,59 @@ bindNavigation(openAccelMenuBtn, "/accel");
     }
 
     function end(){
+      if (!drawing) return;
       drawing = false;
       last = null;
+      if (currentStroke) {
+        pushHistoryCommand(currentStroke);
+        currentStroke = null;
+        redrawCanvas();
+      }
       setStatus(t("savedLocally"));
     }
 
     function clear(){
-      const r = canvas.getBoundingClientRect();
-      ctx.save();
-      ctx.globalCompositeOperation = "source-over";
-      ctx.fillStyle = currentCanvasBg();
-      ctx.fillRect(0,0,r.width,r.height);
-      ctx.restore();
+      currentStroke = null;
+      drawing = false;
+      last = null;
+
+      if (commandHistory.length === 0) {
+        redoHistory.length = 0;
+        redrawCanvas();
+        syncHistoryButtons();
+        setStatus(t("cleared"));
+        return;
+      }
+
+      pushHistoryCommand({ type: "clear" });
+      redrawCanvas();
       setStatus(t("cleared"));
+    }
+
+    function undo(){
+      if (!commandHistory.length) return;
+      if (drawing) {
+        drawing = false;
+        currentStroke = null;
+        last = null;
+      }
+      const command = commandHistory.pop();
+      redoHistory.push(command);
+      redrawCanvas();
+      syncHistoryButtons();
+      setStatus(t("undo"));
+    }
+
+    function redo(){
+      if (!redoHistory.length) return;
+      const command = redoHistory.pop();
+      pushHistoryCommand(command, { clearRedo: false });
+      redrawCanvas();
+      setStatus(t("redo"));
+    }
+
+    function isEditableElement(element){
+      return Boolean(element?.closest?.("input, textarea, [contenteditable='true']"));
     }
 
     function savePNG(){
@@ -563,6 +684,8 @@ bindNavigation(openAccelMenuBtn, "/accel");
 
     penBtn.addEventListener("click", ()=>{ tool="pen"; setActive(); });
     eraseBtn.addEventListener("click", ()=>{ tool="eraser"; setActive(); });
+    undoBtn?.addEventListener("click", undo);
+    redoBtn?.addEventListener("click", redo);
 
     sizeEl.addEventListener("input", syncSizePreview);
 
@@ -581,9 +704,30 @@ bindNavigation(openAccelMenuBtn, "/accel");
     }
 
     window.addEventListener("resize", resize);
+    document.addEventListener("keydown", (event) => {
+      if (isEditableElement(document.activeElement)) return;
+      if (!(event.ctrlKey || event.metaKey)) return;
+
+      const key = event.key.toLowerCase();
+      if (key === "z") {
+        event.preventDefault();
+        if (event.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
+        return;
+      }
+
+      if (key === "y") {
+        event.preventDefault();
+        redo();
+      }
+    });
 
     // Init
     syncSizePreview();
+    syncHistoryButtons();
     setActive();
 
     renderSwatches();
