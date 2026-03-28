@@ -203,12 +203,6 @@ header{
     padding-right: 0;
   }
 
-  .right-stack{
-    margin-left: auto;
-    align-items: flex-end;
-    max-width: 160px;
-  }
-
   input[type="range"]{
     width: clamp(130px, 20vw, 200px);
   }
@@ -566,22 +560,37 @@ input[type="range"]{
     accent-color: color-mix(in srgb, var(--ink) 80%, var(--success-bg));
 }
 
-/* Keep status + attribution on the far right, stacked, minimal space */
 .right-stack{
-    margin-left: auto;
     display: flex;
     flex-direction: column;
     align-items: flex-end;
-    gap: 2px;
-    line-height: 1.05;
+    gap: 3px;
+    line-height: 1.1;
     min-width: 0;
-    flex: 0 1 auto;
-    max-width: clamp(120px, 14vw, 180px);
+    max-width: min(44vw, 220px);
+    text-align: right;
+}
+
+.board-canvas-meta{
+    position: absolute;
+    right: clamp(10px, 1.6vw, 16px);
+    bottom: clamp(10px, 1.6vw, 16px);
+    z-index: 1;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--surface) 34%, transparent);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--inner-ring) 55%, transparent);
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-select: none;
+    opacity: .86;
 }
 
 .status{
     margin-left: 0;
-    font-size: 12px;
+    font-size: 11px;
     color: var(--muted);
     font-weight: 800;
     white-space: normal;
@@ -590,25 +599,14 @@ input[type="range"]{
 }
 
 .attribution{
-    font-size: 10px;
+    font-size: 9px;
     color: var(--muted);
     font-weight: 800;
-    opacity: .9;
-    white-space: nowrap;
+    opacity: .8;
+    white-space: normal;
     margin-left: 0;
     max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.attribution a{
-    color: inherit;
-    text-decoration: none;
-    border-bottom: 1px dotted color-mix(in srgb, var(--muted) 60%, transparent);
-}
-
-.attribution a:hover{
-    border-bottom-style: solid;
+    overflow-wrap: anywhere;
 }
 
 main{
@@ -734,10 +732,11 @@ canvas{
     margin-left: auto;
   }
 
-  .right-stack{
-    margin-left: auto;
-    align-items:flex-end;
-    max-width: 150px;
+  .board-canvas-meta{
+    right: 10px;
+    bottom: 10px;
+    max-width: min(56vw, 200px);
+    padding: 7px 8px;
   }
 }
 

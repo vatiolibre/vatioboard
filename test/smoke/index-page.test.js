@@ -55,6 +55,8 @@ describe("index.html smoke", () => {
     expect(document.querySelector(".calc-panel")).toBeTruthy();
     expect(document.querySelector(".energy-panel")).toBeTruthy();
     expect(document.querySelector(".floating-dock")).toBeTruthy();
+    expect(document.querySelector(".canvas-frame .board-canvas-meta")).toBeTruthy();
+    expect(document.querySelector("header .board-canvas-meta")).toBeNull();
 
     document.getElementById("size").value = "12";
     document.getElementById("size").dispatchEvent(new Event("input", { bubbles: true }));
