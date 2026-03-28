@@ -246,6 +246,12 @@ describe("replay.html smoke", () => {
     expect(document.getElementById("replayExpandedSpeedCurrent").textContent).toContain("0");
     expect(document.getElementById("replayExpandedAltitudeCurrent").textContent).toContain("10");
     expect(document.getElementById("replayExpandedHeadingCurrent").textContent).toContain("180");
+    expect(document.querySelector(".replay-graph-sheet-header .replay-sheet-axis-group")).toBeTruthy();
+    expect(document.querySelector(".replay-graph-sheet-controls .replay-sheet-axis-group")).toBeNull();
+    expect(document.querySelector(".replay-sheet-axis-group .replay-sheet-axis-label")?.textContent).toBe("Time");
+    expect(document.querySelectorAll(".replay-sheet-axis-group .replay-sheet-axis-label")).toHaveLength(2);
+    expect(document.querySelector(".replay-filter-row")).toBeTruthy();
+    expect(document.querySelector(".replay-filter-row #replayFilterSlider")).toBeTruthy();
     expect(document.getElementById("replayFilterStart")).toBeTruthy();
     expect(document.getElementById("replayFilterEnd")).toBeTruthy();
 

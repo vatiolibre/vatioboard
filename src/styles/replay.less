@@ -868,14 +868,16 @@ body.replay-page.replay-graph-sheet-open{
 
 .replay-graph-sheet-header{
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: 12px;
     padding-bottom: 2px;
+    flex-wrap: wrap;
 }
 
 .replay-graph-sheet-header .replay-action-btn{
-    align-self: flex-start;
+    align-self: center;
+    margin-left: auto;
 }
 
 .replay-graph-sheet-title{
@@ -891,9 +893,37 @@ body.replay-page.replay-graph-sheet-open{
 }
 
 .replay-sheet-axis-group{
+    display: inline-flex;
+    align-items: stretch;
+    flex-wrap: nowrap;
     width: fit-content;
+    max-width: 100%;
     border: 1px solid color-mix(in srgb, var(--replay-border) 72%, transparent);
     background: color-mix(in srgb, var(--replay-surface-muted) 92%, transparent);
+}
+
+.replay-sheet-axis-group .replay-axis-btn{
+    width: auto;
+    min-width: 0;
+    min-height: 36px;
+    padding: 0 12px;
+    gap: 6px;
+    justify-content: center;
+}
+
+.replay-sheet-axis-group .replay-axis-btn .btn-icon{
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+}
+
+.replay-sheet-axis-label{
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    line-height: 1;
+    white-space: nowrap;
 }
 
 .replay-filter-group{
@@ -902,10 +932,10 @@ body.replay-page.replay-graph-sheet-open{
     min-width: 0;
 }
 
-.replay-filter-values{
-    display: flex;
-    align-items: end;
-    justify-content: space-between;
+.replay-filter-row{
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
     gap: 12px;
     min-width: 0;
 }
@@ -914,6 +944,7 @@ body.replay-page.replay-graph-sheet-open{
     display: grid;
     gap: 4px;
     min-width: 0;
+    align-content: center;
 }
 
 .replay-filter-value-end{
@@ -1095,21 +1126,32 @@ body.replay-page.replay-graph-sheet-open{
     }
 
     .replay-graph-sheet-header{
-        flex-wrap: wrap;
+        align-items: stretch;
     }
 
-    .replay-sheet-axis-group{
-        width: 100%;
+    .replay-graph-sheet-header .replay-action-btn{
+        margin-left: 0;
     }
 
     .replay-sheet-axis-group .replay-axis-btn{
-        flex: 1 1 0;
+        flex: 0 0 auto;
         min-width: 0;
-        min-height: 40px;
+        min-height: 36px;
+        justify-content: center;
     }
 
-    .replay-filter-values{
+    .replay-filter-row{
+        grid-template-columns: minmax(0, 1fr);
         gap: 10px;
+    }
+
+    .replay-filter-value{
+        justify-items: start;
+        text-align: left;
+    }
+
+    .replay-filter-value-end{
+        justify-items: end;
     }
 
     .replay-graph-sheet-canvas-wrap{

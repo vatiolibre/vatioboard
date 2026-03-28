@@ -353,10 +353,6 @@
     <section class="replay-graph-sheet-panel">
       <header class="replay-graph-sheet-header">
         <h2 id="replayGraphSheetTitle" class="replay-graph-sheet-title" data-i18n="replayExploreCharts">Explore charts</h2>
-        <button id="closeReplayGraphSheet" type="button" class="replay-action-btn replay-action-btn-secondary" data-i18n="close">Close</button>
-      </header>
-
-      <section class="replay-graph-sheet-controls">
         <section class="replay-axis-group replay-sheet-axis-group" role="group" aria-label="Dashboard axis" data-i18n-aria="replayDashboardAxis">
           <button
             type="button"
@@ -368,6 +364,7 @@
             title="Time"
           >
             <span class="btn-icon" aria-hidden="true"></span>
+            <span class="replay-sheet-axis-label" data-i18n="replayAxisTime">Time</span>
           </button>
           <button
             type="button"
@@ -379,44 +376,49 @@
             title="Distance"
           >
             <span class="btn-icon" aria-hidden="true"></span>
+            <span class="replay-sheet-axis-label" data-i18n="replayAxisDistance">Distance</span>
           </button>
         </section>
+        <button id="closeReplayGraphSheet" type="button" class="replay-action-btn replay-action-btn-secondary" data-i18n="close">Close</button>
+      </header>
 
+      <section class="replay-graph-sheet-controls">
         <section class="replay-filter-group" aria-label="Filter range" data-i18n-aria="replayFilterRange">
-          <div class="replay-filter-values">
+          <div class="replay-filter-row">
             <span class="replay-filter-value">
               <span class="replay-metric-label" data-i18n="replayFilterStart">Start</span>
               <strong id="replayFilterStartValue" class="replay-filter-value-text">00:00</strong>
             </span>
+
+            <div id="replayFilterSlider" class="replay-filter-slider dual-range-input">
+              <input
+                id="replayFilterStart"
+                class="replay-filter-range replay-filter-range-start"
+                type="range"
+                min="0"
+                max="1000"
+                value="0"
+                step="1"
+                aria-label="Filter start"
+                data-i18n-aria="replayFilterStart"
+              />
+              <input
+                id="replayFilterEnd"
+                class="replay-filter-range replay-filter-range-end"
+                type="range"
+                min="0"
+                max="1000"
+                value="1000"
+                step="1"
+                aria-label="Filter end"
+                data-i18n-aria="replayFilterEnd"
+              />
+            </div>
+
             <span class="replay-filter-value replay-filter-value-end">
               <span class="replay-metric-label" data-i18n="replayFilterEnd">End</span>
               <strong id="replayFilterEndValue" class="replay-filter-value-text">00:00</strong>
             </span>
-          </div>
-
-          <div id="replayFilterSlider" class="replay-filter-slider dual-range-input">
-            <input
-              id="replayFilterStart"
-              class="replay-filter-range replay-filter-range-start"
-              type="range"
-              min="0"
-              max="1000"
-              value="0"
-              step="1"
-              aria-label="Filter start"
-              data-i18n-aria="replayFilterStart"
-            />
-            <input
-              id="replayFilterEnd"
-              class="replay-filter-range replay-filter-range-end"
-              type="range"
-              min="0"
-              max="1000"
-              value="1000"
-              step="1"
-              aria-label="Filter end"
-              data-i18n-aria="replayFilterEnd"
-            />
           </div>
         </section>
       </section>
