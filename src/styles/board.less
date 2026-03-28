@@ -442,20 +442,12 @@ label{
     min-width: 0;
 }
 
-/* Color tool should look exactly like "Size" label */
-.color-label{
-    /* inherits label base styles, but we ensure layout */
-    display:flex;
-    align-items:center;
-    gap:10px;
-    white-space: nowrap;
-}
-
 .size-label{
     justify-content: flex-start;
     gap: 12px;
-    min-width: clamp(210px, 24vw, 320px);
+    min-width: clamp(300px, 34vw, 470px);
     padding-right: 12px;
+    white-space: nowrap;
 }
 
 .size-label input[type="range"]{
@@ -465,6 +457,11 @@ label{
 
 .size-preview{
     --board-size-preview: 6px;
+    appearance: none;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    box-shadow: none;
     position: relative;
     display: inline-flex;
     align-items: center;
@@ -473,6 +470,28 @@ label{
     min-width: 52px;
     height: 24px;
     color: var(--btn-fg);
+    cursor: pointer;
+    flex: 0 0 auto;
+}
+
+.size-preview:hover{
+    background: transparent;
+    opacity: 1;
+}
+
+.size-preview:active{
+    transform: none;
+}
+
+.size-preview:focus-visible{
+    outline: none;
+}
+
+.size-preview:focus-visible .size-preview-stroke{
+    box-shadow:
+      0 0 0 3px color-mix(in srgb, var(--ink) 18%, transparent),
+      0 0 0 1px color-mix(in srgb, var(--inner-ring) 65%, transparent),
+      0 4px 10px color-mix(in srgb, var(--ink) 14%, transparent);
 }
 
 .size-preview::before{
@@ -504,6 +523,7 @@ label{
     display:flex;
     gap:8px;
     align-items:center;
+    flex: 0 0 auto;
 }
 
 /* Slightly tighter so it feels like an embedded control */
@@ -683,17 +703,25 @@ canvas{
     --board-action-icon-size: 18px;
   }
 
-  .size-label,
-  .color-label{
-    width:100%;
-    justify-content:space-between;
+  .size-label{
+    width: 100%;
+    min-width: 0;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    row-gap: 8px;
   }
 
-  input[type="range"]{ width: 55vw; max-width: 280px; }
+  .size-label input[type="range"]{
+    width: 100%;
+    max-width: none;
+    flex-basis: 100%;
+    order: 2;
+  }
 
-  .color-label .swatches{
-    flex-wrap:wrap;
-    justify-content:flex-end;
+  .size-label .swatches{
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    margin-left: auto;
   }
 
   .right-stack{
@@ -701,39 +729,6 @@ canvas{
     align-items:flex-end;
     max-width: 150px;
   }
-}
-
-/* Color picker popup */
-.color-chip{
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border-radius: 8px;
-  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
-  background: var(--ink);              /* will be overridden by inline style too */
-  cursor: pointer;
-
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--inner-ring) 65%, transparent),
-    0 0 0 0 transparent;
-
-  transition: transform .06s ease, opacity .12s ease, box-shadow .12s ease, border-color .12s ease;
-}
-
-.color-chip:hover{
-  transform: translateY(-1px);
-  opacity: .98;
-}
-
-.color-chip:active{
-  transform: translateY(1px);
-}
-
-.color-chip:focus-visible{
-  outline: none;
-  box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--ink) 22%, transparent),
-    inset 0 0 0 1px color-mix(in srgb, var(--inner-ring) 65%, transparent);
 }
 
 .color-popup{

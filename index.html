@@ -344,18 +344,18 @@
           </div>
 
           <label class="size-label">
-            <span id="sizePreview" class="size-preview" aria-hidden="true">
+            <button
+              id="sizePreview"
+              type="button"
+              class="size-preview"
+              data-i18n-aria="moreColors"
+              aria-label="More colors"
+              title="More colors"
+            >
               <span class="size-preview-stroke"></span>
-            </span>
+            </button>
             <input id="size" type="range" min="2" max="22" value="6" data-i18n-aria="size" aria-label="Size" />
-          </label>
-
-          <!-- Color (matches "Size" label style) -->
-          <label class="color-label" aria-label="Ink color">
-            <span data-i18n="color">Color</span>
             <div id="swatches" class="swatches" data-i18n-aria="presetColors" aria-label="Preset colors"></div>
-
-            <button id="colorChip" type="button" class="color-chip" data-i18n-aria="moreColors" aria-label="More colors" hidden></button>
           </label>
 
           <div id="colorPopup" class="color-popup" hidden>

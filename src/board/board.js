@@ -116,7 +116,7 @@ bindNavigation(openAccelMenuBtn, "/accel");
     (isDarkMode() ? "#e5e7eb" : "#111827");
 
     // Popup UI
-    const colorChipBtn = document.getElementById("colorChip");
+    const colorTriggerBtn = document.getElementById("sizePreview");
     const colorPopup = document.getElementById("colorPopup");
     const colorPopupClose = document.getElementById("colorPopupClose");
 
@@ -170,7 +170,7 @@ bindNavigation(openAccelMenuBtn, "/accel");
       if (colorPopup) colorPopup.hidden = true;
     }
 
-    colorChipBtn?.addEventListener("click", openColorPopup);
+    colorTriggerBtn?.addEventListener("click", openColorPopup);
     colorPopupClose?.addEventListener("click", closeColorPopup);
     colorPopup?.addEventListener("click", (e) => {
     if (e.target === colorPopup) closeColorPopup();
@@ -187,14 +187,6 @@ bindNavigation(openAccelMenuBtn, "/accel");
         setPopupFromInkRaw();
       }
     });
-
-    // Show "More" if popup UI exists
-    if (colorChipBtn && colorPopup && hexInput && iroPickerEl) {
-      colorChipBtn.hidden = false;
-    } else if (colorChipBtn) {
-      colorChipBtn.hidden = true;
-    }
-
 
     let tool = "pen"; // "pen" | "eraser"
     let drawing = false;
@@ -362,16 +354,12 @@ bindNavigation(openAccelMenuBtn, "/accel");
     }
     }
 
-    function syncColorChip(){
-      if (!colorChipBtn) return;
+    function syncColorTrigger(){
+      if (!colorTriggerBtn) return;
 
-      // show the *raw* selected color as the chip fill
       const raw = normalizeHex(inkRaw) || "#111827";
-      colorChipBtn.style.background = raw;
-
-      // nice tooltip + accessibility
-      colorChipBtn.title = `${t("moreColors")} (${raw})`;
-      colorChipBtn.setAttribute("aria-label", `${t("moreColors")}. Current: ${raw}`);
+      colorTriggerBtn.title = `${t("moreColors")} (${raw})`;
+      colorTriggerBtn.setAttribute("aria-label", `${t("moreColors")}. Current: ${raw}`);
     }
 
     // Presets tuned for Tesla-ish minimal look (different per theme)
@@ -412,7 +400,7 @@ bindNavigation(openAccelMenuBtn, "/accel");
       }
 
       syncColorUI();
-      syncColorChip();
+      syncColorTrigger();
     }
 
     function syncColorUI(){
@@ -428,7 +416,7 @@ bindNavigation(openAccelMenuBtn, "/accel");
       const applied = appliedInkFromRaw();
       setCssInk(applied);
       syncColorUI();
-      syncColorChip();
+      syncColorTrigger();
     }
 
     function setInkRaw(hex){
