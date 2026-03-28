@@ -21,6 +21,23 @@ export const IconHistory = `
   </svg>
 `;
 
+export const IconTime = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <circle cx="12" cy="12" r="7.25" stroke="currentColor" stroke-width="1.7"/>
+    <path d="M12 8.25v4.1l2.85 1.9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M12 3.75v1.5M12 18.75v1.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+  </svg>
+`;
+
+export const IconDistance = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M4.75 12H19.25" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    <path d="m7.25 9.5-2.5 2.5 2.5 2.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="m16.75 9.5 2.5 2.5-2.5 2.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M9.5 8.25v7.5M14.5 8.25v7.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+  </svg>
+`;
+
 export const IconClose = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path d="M18 6L6 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>

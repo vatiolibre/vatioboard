@@ -110,72 +110,84 @@
 
         <div class="toolbar replay-toolbar">
           <div class="replay-toolbar-right">
-            <section class="replay-axis-group" role="group" aria-label="Dashboard axis" data-i18n-aria="replayDashboardAxis">
-              <button id="replayAxisTime" type="button" class="replay-axis-btn" data-axis="time" data-i18n="replayAxisTime">Time</button>
-              <button id="replayAxisDistance" type="button" class="replay-axis-btn" data-axis="distance" data-i18n="replayAxisDistance">Distance</button>
-            </section>
-
-            <div class="support-panel-anchor">
-              <button
-                id="supportPanelTrigger"
-                type="button"
-                class="support-panel-trigger"
-                aria-expanded="false"
-                aria-controls="supportPanel"
-                data-i18n="foundingToolbarButton"
-                data-i18n-title="foundingSummary"
-              >
-                Support
-              </button>
-              <section id="supportPanel" class="support-panel" role="dialog" aria-modal="false" aria-labelledby="supportPanelTitle" hidden>
-                <div class="support-panel__header">
-                  <div class="support-panel__header-copy">
-                    <span class="support-panel__badge" data-i18n="foundingBadge">Founding Members</span>
-                    <h2 id="supportPanelTitle" class="support-panel__title" data-i18n="foundingTitle">Become a VatioLibre founding member</h2>
-                    <p class="support-panel__meta" data-i18n="foundingMeta">8-year price lock and every premium feature</p>
-                  </div>
-                  <button id="supportPanelClose" type="button" class="support-panel__close" data-i18n="close">Close</button>
-                </div>
-                <p class="support-panel__body" data-i18n="foundingBody">Lock your subscription price for 8 years while it stays active and get all current and future premium features, including real-time tracking, battery management, advanced telemetry, and contributor recognition.</p>
-                <div class="support-panel__footer">
-                  <a class="support-panel__cta" href="https://buy.stripe.com/bJe4gr1X708Jd9q93W2kw00" target="_blank" rel="noopener noreferrer" data-i18n="foundingCta">Become a founding member</a>
-                </div>
+            <div class="replay-toolbar-strip">
+              <section class="replay-axis-group" role="group" aria-label="Dashboard axis" data-i18n-aria="replayDashboardAxis">
+                <button
+                  id="replayAxisTime"
+                  type="button"
+                  class="replay-axis-btn replay-toolbar-icon-btn"
+                  data-axis="time"
+                  data-i18n-aria="replayAxisTime"
+                  data-i18n-title="replayAxisTime"
+                  aria-label="Time"
+                  title="Time"
+                >
+                  <span class="btn-icon" aria-hidden="true"></span>
+                </button>
+                <button
+                  id="replayAxisDistance"
+                  type="button"
+                  class="replay-axis-btn replay-toolbar-icon-btn"
+                  data-axis="distance"
+                  data-i18n-aria="replayAxisDistance"
+                  data-i18n-title="replayAxisDistance"
+                  aria-label="Distance"
+                  title="Distance"
+                >
+                  <span class="btn-icon" aria-hidden="true"></span>
+                </button>
               </section>
-            </div>
 
-            <div class="tools-menu replay-tools-menu">
-              <button
-                id="replayToolsMenuBtn"
-                type="button"
-                class="tools-menu-btn"
-                data-i18n="tools"
-                aria-haspopup="menu"
-                aria-expanded="false"
-              >
-                Tools
+              <button id="replayPlayPause" type="button" class="replay-toolbar-icon-btn replay-toolbar-transport-btn replay-toolbar-transport-btn-play" aria-label="Play" title="Play">
+                <span id="replayPlayPauseIcon" class="replay-action-icon" aria-hidden="true"></span>
+                <span id="replayPlayPauseText" class="sr-only">Play</span>
               </button>
-              <div id="replayToolsMenuList" class="tools-menu-list" role="menu" hidden>
-                <button id="openReplaySpeedMenu" type="button" role="menuitem" class="btn-with-icon">
+              <button id="replayRestart" type="button" class="replay-toolbar-icon-btn replay-toolbar-transport-btn" aria-label="Restart" title="Restart">
+                <span id="replayRestartIcon" class="replay-action-icon" aria-hidden="true"></span>
+                <span class="sr-only" data-i18n="replayRestart">Restart</span>
+              </button>
+              <button id="replayApproach" type="button" class="replay-toolbar-icon-btn replay-toolbar-transport-btn" aria-label="World approach" title="World approach">
+                <span id="replayApproachIcon" class="replay-action-icon" aria-hidden="true"></span>
+                <span class="sr-only" data-i18n="replayApproach">World approach</span>
+              </button>
+
+              <div class="tools-menu replay-tools-menu">
+                <button
+                  id="replayToolsMenuBtn"
+                  type="button"
+                  class="tools-menu-btn replay-toolbar-icon-btn"
+                  data-i18n-aria="tools"
+                  data-i18n-title="tools"
+                  aria-label="Tools"
+                  title="Tools"
+                  aria-haspopup="menu"
+                  aria-expanded="false"
+                >
                   <span class="btn-icon" aria-hidden="true"></span>
-                  <span data-i18n="speedometer">Speedometer</span>
                 </button>
-                <button id="openReplayGpsLabMenu" type="button" role="menuitem" class="btn-with-icon">
-                  <span class="btn-icon" aria-hidden="true"></span>
-                  <span data-i18n="gpsLab">GPS Lab</span>
-                </button>
-                <button id="openReplayAccelMenu" type="button" role="menuitem" class="btn-with-icon">
-                  <span class="btn-icon" aria-hidden="true"></span>
-                  <span data-i18n="accelerationTest">Acceleration Test</span>
-                </button>
-                <button id="openReplayBoardMenu" type="button" role="menuitem" class="btn-with-icon">
-                  <span class="btn-icon" aria-hidden="true"></span>
-                  <span data-i18n="openBoard">Open board</span>
-                </button>
+                <div id="replayToolsMenuList" class="tools-menu-list" role="menu" hidden>
+                  <button id="openReplaySpeedMenu" type="button" role="menuitem" class="btn-with-icon">
+                    <span class="btn-icon" aria-hidden="true"></span>
+                    <span data-i18n="speedometer">Speedometer</span>
+                  </button>
+                  <button id="openReplayGpsLabMenu" type="button" role="menuitem" class="btn-with-icon">
+                    <span class="btn-icon" aria-hidden="true"></span>
+                    <span data-i18n="gpsLab">GPS Lab</span>
+                  </button>
+                  <button id="openReplayAccelMenu" type="button" role="menuitem" class="btn-with-icon">
+                    <span class="btn-icon" aria-hidden="true"></span>
+                    <span data-i18n="accelerationTest">Acceleration Test</span>
+                  </button>
+                  <button id="openReplayBoardMenu" type="button" role="menuitem" class="btn-with-icon">
+                    <span class="btn-icon" aria-hidden="true"></span>
+                    <span data-i18n="openBoard">Open board</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
 
-          <span id="replaySessionChip" class="status" aria-live="polite" data-i18n="replaySessionActive">Active session</span>
+          <span id="replaySessionChip" class="status replay-session-chip" aria-live="polite" data-i18n="replaySessionActive">Active session</span>
         </div>
       </div>
     </header>
@@ -240,21 +252,6 @@
             <div id="replayMap" class="replay-map"></div>
 
             <div class="replay-transport-row">
-              <div class="replay-control-row" role="group" aria-label="Replay controls">
-                <button id="replayPlayPause" type="button" class="replay-action-btn replay-action-btn-square" aria-label="Play" title="Play">
-                  <span id="replayPlayPauseIcon" class="replay-action-icon" aria-hidden="true"></span>
-                  <span id="replayPlayPauseText" class="sr-only">Play</span>
-                </button>
-                <button id="replayRestart" type="button" class="replay-action-btn replay-action-btn-secondary replay-action-btn-square" aria-label="Restart" title="Restart">
-                  <span id="replayRestartIcon" class="replay-action-icon" aria-hidden="true"></span>
-                  <span class="sr-only" data-i18n="replayRestart">Restart</span>
-                </button>
-                <button id="replayApproach" type="button" class="replay-action-btn replay-action-btn-secondary replay-action-btn-square" aria-label="World approach" title="World approach">
-                  <span id="replayApproachIcon" class="replay-action-icon" aria-hidden="true"></span>
-                  <span class="sr-only" data-i18n="replayApproach">World approach</span>
-                </button>
-              </div>
-
               <div class="replay-progress-wrap">
                 <input
                   id="replayProgress"
@@ -361,8 +358,28 @@
 
       <section class="replay-graph-sheet-controls">
         <section class="replay-axis-group replay-sheet-axis-group" role="group" aria-label="Dashboard axis" data-i18n-aria="replayDashboardAxis">
-          <button type="button" class="replay-axis-btn" data-axis="time" data-i18n="replayAxisTime">Time</button>
-          <button type="button" class="replay-axis-btn" data-axis="distance" data-i18n="replayAxisDistance">Distance</button>
+          <button
+            type="button"
+            class="replay-axis-btn replay-toolbar-icon-btn"
+            data-axis="time"
+            data-i18n-aria="replayAxisTime"
+            data-i18n-title="replayAxisTime"
+            aria-label="Time"
+            title="Time"
+          >
+            <span class="btn-icon" aria-hidden="true"></span>
+          </button>
+          <button
+            type="button"
+            class="replay-axis-btn replay-toolbar-icon-btn"
+            data-axis="distance"
+            data-i18n-aria="replayAxisDistance"
+            data-i18n-title="replayAxisDistance"
+            aria-label="Distance"
+            title="Distance"
+          >
+            <span class="btn-icon" aria-hidden="true"></span>
+          </button>
         </section>
 
         <section class="replay-filter-group" aria-label="Filter range" data-i18n-aria="replayFilterRange">

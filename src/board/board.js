@@ -6,7 +6,6 @@ import "../styles/dock.less";
 import { createCalculatorWidget } from "../calculator/calculator-widget.js";
 import { createEnergyCalculatorWidget } from "../energy/energy-calculator-widget.js";
 import { createFloatingDock } from "../dock/floating-dock.js";
-import { initSupportPanel } from "../shared/support-panel.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
 import iro from "@jaames/iro";
 import { t, applyTranslations, toggleLang, getLang } from "../i18n.js";
@@ -60,7 +59,6 @@ applyButtonIcon(toolsMenuBtn, IconSettings);
 const { calcBtn, energyBtn } = createFloatingDock();
 const toolsMenu = initToolsMenu({ button: toolsMenuBtn, list: toolsMenuList });
 toolsMenu.setOpen(true);
-initSupportPanel();
 
 // Create widgets - all buttons toggle the same instance
 const calcWidget = createCalculatorWidget({ floating: false });

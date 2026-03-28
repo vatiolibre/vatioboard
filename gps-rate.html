@@ -103,63 +103,34 @@
           </div>
 
           <div class="right-stack gps-rate-right-stack">
-            <div class="toolbar-utility-row">
-              <div class="support-panel-anchor">
-                <button
-                  id="supportPanelTrigger"
-                  type="button"
-                  class="support-panel-trigger"
-                  aria-expanded="false"
-                  aria-controls="supportPanel"
-                  data-i18n="foundingToolbarButton"
-                  data-i18n-title="foundingSummary"
-                >
-                  Support
+            <div class="tools-menu gps-rate-tools-menu">
+              <button
+                id="gpsRateToolsMenuBtn"
+                type="button"
+                class="tools-menu-btn"
+                data-i18n="tools"
+                aria-haspopup="menu"
+                aria-expanded="false"
+              >
+                Tools
+              </button>
+              <div id="gpsRateToolsMenuList" class="tools-menu-list" role="menu" hidden>
+                <button id="openGpsRateSpeedMenu" type="button" role="menuitem" class="btn-with-icon">
+                  <span class="btn-icon" aria-hidden="true"></span>
+                  <span data-i18n="speedometer">Speedometer</span>
                 </button>
-                <section id="supportPanel" class="support-panel" role="dialog" aria-modal="false" aria-labelledby="supportPanelTitle" hidden>
-                  <div class="support-panel__header">
-                    <div class="support-panel__header-copy">
-                      <span class="support-panel__badge" data-i18n="foundingBadge">Founding Members</span>
-                      <h2 id="supportPanelTitle" class="support-panel__title" data-i18n="foundingTitle">Become a VatioLibre founding member</h2>
-                      <p class="support-panel__meta" data-i18n="foundingMeta">8-year price lock and every premium feature</p>
-                    </div>
-                    <button id="supportPanelClose" type="button" class="support-panel__close" data-i18n="close">Close</button>
-                  </div>
-                  <p class="support-panel__body" data-i18n="foundingBody">Lock your subscription price for 8 years while it stays active and get all current and future premium features, including real-time tracking, battery management, advanced telemetry, and contributor recognition.</p>
-                  <div class="support-panel__footer">
-                    <a class="support-panel__cta" href="https://buy.stripe.com/bJe4gr1X708Jd9q93W2kw00" target="_blank" rel="noopener noreferrer" data-i18n="foundingCta">Become a founding member</a>
-                  </div>
-                </section>
-              </div>
-              <div class="tools-menu gps-rate-tools-menu">
-                <button
-                  id="gpsRateToolsMenuBtn"
-                  type="button"
-                  class="tools-menu-btn"
-                  data-i18n="tools"
-                  aria-haspopup="menu"
-                  aria-expanded="false"
-                >
-                  Tools
+                <button id="openGpsRateAccelMenu" type="button" role="menuitem" class="btn-with-icon">
+                  <span class="btn-icon" aria-hidden="true"></span>
+                  <span data-i18n="accelerationTest">Acceleration Test</span>
                 </button>
-                <div id="gpsRateToolsMenuList" class="tools-menu-list" role="menu" hidden>
-                  <button id="openGpsRateSpeedMenu" type="button" role="menuitem" class="btn-with-icon">
-                    <span class="btn-icon" aria-hidden="true"></span>
-                    <span data-i18n="speedometer">Speedometer</span>
-                  </button>
-                  <button id="openGpsRateAccelMenu" type="button" role="menuitem" class="btn-with-icon">
-                    <span class="btn-icon" aria-hidden="true"></span>
-                    <span data-i18n="accelerationTest">Acceleration Test</span>
-                  </button>
-                  <button id="openGpsRateCalculatorMenu" type="button" role="menuitem" class="btn-with-icon">
-                    <span class="btn-icon" aria-hidden="true"></span>
-                    <span data-i18n="calculator">Calculator</span>
-                  </button>
-                  <button id="openGpsRateBoardMenu" type="button" role="menuitem" class="btn-with-icon">
-                    <span class="btn-icon" aria-hidden="true"></span>
-                    <span data-i18n="openBoard">Open board</span>
-                  </button>
-                </div>
+                <button id="openGpsRateCalculatorMenu" type="button" role="menuitem" class="btn-with-icon">
+                  <span class="btn-icon" aria-hidden="true"></span>
+                  <span data-i18n="calculator">Calculator</span>
+                </button>
+                <button id="openGpsRateBoardMenu" type="button" role="menuitem" class="btn-with-icon">
+                  <span class="btn-icon" aria-hidden="true"></span>
+                  <span data-i18n="openBoard">Open board</span>
+                </button>
               </div>
             </div>
           </div>

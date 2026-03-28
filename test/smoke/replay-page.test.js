@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { bootHtmlPage, expectPageSeo, flushTasks } from "../helpers/page-smoke.js";
 
+const fakeMaps = [];
+
 vi.mock("chart.js/auto", () => ({
   default: class FakeChart {
     constructor(canvas, config) {
@@ -38,6 +40,12 @@ vi.mock("maplibre-gl", () => {
       this.boxZoom = { disable: vi.fn() };
       this.doubleClickZoom = { disable: vi.fn() };
       this.keyboard = { disable: vi.fn() };
+      this.jumpTo = vi.fn();
+      this.easeTo = vi.fn();
+      this.fitBounds = vi.fn();
+      this.stop = vi.fn();
+      this.remove = vi.fn();
+      fakeMaps.push(this);
       queueMicrotask(() => {
         for (const handler of this.handlers.load ?? []) {
           handler();
@@ -60,12 +68,6 @@ vi.mock("maplibre-gl", () => {
       }
       return this.sources.get(id);
     }
-
-    jumpTo() {}
-    easeTo() {}
-    fitBounds() {}
-    stop() {}
-    remove() {}
   }
 
   class FakeAttributionControl {}
@@ -80,6 +82,7 @@ vi.mock("maplibre-gl", () => {
 
 describe("replay.html smoke", () => {
   beforeEach(async () => {
+    fakeMaps.length = 0;
     localStorage.clear();
     localStorage.setItem("vatio_speed_replay_active_v1", JSON.stringify({
       id: "active-session",
@@ -186,10 +189,16 @@ describe("replay.html smoke", () => {
     expect(document.getElementById("replaySessionChip").textContent).toBe("Active session");
     expect(document.getElementById("replaySampleCountValue").textContent).toBe("3");
     expect(document.getElementById("replayPeakSpeedValue").textContent).toContain("54 km/h");
+    expect(document.querySelector("#replayAxisTime .btn-icon svg")).toBeTruthy();
+    expect(document.querySelector("#replayAxisDistance .btn-icon svg")).toBeTruthy();
+    expect(document.getElementById("replayToolsMenuBtn").getAttribute("aria-label")).toBe("Tools");
+    expect(document.querySelector("#replayToolsMenuBtn .btn-icon svg")).toBeTruthy();
     expect(document.querySelector("#replayPlayPause .replay-action-icon svg")).toBeTruthy();
     expect(document.getElementById("replayPlayPause").getAttribute("aria-label")).toBe("Play");
     expect(document.querySelector("#replayRestart .replay-action-icon svg")).toBeTruthy();
     expect(document.querySelector("#replayApproach .replay-action-icon svg")).toBeTruthy();
+    expect(document.getElementById("replayRestart").disabled).toBe(false);
+    expect(document.getElementById("replayApproach").disabled).toBe(false);
     expect(document.querySelectorAll("#replayRecordingsList button[data-recording-id]")).toHaveLength(2);
     expect(document.querySelectorAll("#replayRecordingsList button[data-delete-recording-id]")).toHaveLength(1);
     expect(document.getElementById("replayGraphHeadingCurrent").textContent).toContain("180");
@@ -211,6 +220,17 @@ describe("replay.html smoke", () => {
     await flushTasks();
 
     expect(document.getElementById("replayElapsedValue").textContent).toBe("80 m");
+
+    document.getElementById("replayRestart").click();
+    await flushTasks();
+
+    expect(document.getElementById("replayElapsedValue").textContent).toBe("0 m");
+
+    document.getElementById("replayApproach").click();
+    await flushTasks();
+
+    expect(fakeMaps[0]?.stop).toHaveBeenCalled();
+    expect(fakeMaps[0]?.jumpTo).toHaveBeenCalled();
   });
 
   it("opens the expanded graph sheet with stacked charts and a dual-range filter", async () => {

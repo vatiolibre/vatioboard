@@ -2,7 +2,6 @@ import "../styles/accel.less";
 import Chart from "chart.js/auto";
 import { applyTranslations as applySharedTranslations, getLang, t as sharedT, toggleLang } from "../i18n.js";
 import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
-import { initSupportPanel } from "../shared/support-panel.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
 import { IconBoard, IconClose, IconGpsLab, IconPlay, IconSettings, IconSpeed } from "../icons.js";
 import {
@@ -192,7 +191,6 @@ export const initPromise = (function () {
     button: elements.toolsMenuBtn,
     list: elements.toolsMenuList,
   });
-  initSupportPanel();
 
   applyButtonIcon(elements.armRun, IconPlay);
   applyButtonIcon(elements.cancelRun, IconClose);

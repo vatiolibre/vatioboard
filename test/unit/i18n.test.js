@@ -9,7 +9,7 @@ describe("shared i18n", () => {
     document.body.innerHTML = `
       <button data-i18n="calculator"></button>
       <button data-i18n-aria="changeLanguage"></button>
-      <button data-i18n-title="foundingSummary"></button>
+      <button data-i18n-title="tagline"></button>
       <input data-i18n-placeholder="accelNotesPlaceholder" />
     `;
     vi.resetModules();
@@ -21,7 +21,7 @@ describe("shared i18n", () => {
 
     expect(document.querySelector('[data-i18n="calculator"]').textContent).toBe("Calculator");
     expect(document.querySelector("[data-i18n-aria]").getAttribute("aria-label")).toBe("Change language");
-    expect(document.querySelector("[data-i18n-title]").getAttribute("title")).toContain("VatioLibre");
+    expect(document.querySelector("[data-i18n-title]").getAttribute("title")).toContain("Vatio Libre");
     expect(document.querySelector("[data-i18n-placeholder]").getAttribute("placeholder")).toBe("Example: 90% SOC, flat road");
   });
 

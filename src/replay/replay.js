@@ -6,14 +6,16 @@ import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
 import {
   IconAccel,
   IconBoard,
+  IconDistance,
   IconGpsLab,
   IconPause,
   IconPlay,
   IconRestart,
+  IconSettings,
   IconSpeed,
+  IconTime,
   IconWorld,
 } from "../icons.js";
-import { initSupportPanel } from "../shared/support-panel.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
 import {
   getReplayAxisRange,
@@ -111,12 +113,18 @@ const toolsMenu = initToolsMenu({
   button: elements.replayToolsMenuBtn,
   list: elements.replayToolsMenuList,
 });
-initSupportPanel();
 
 applyButtonIcon(elements.openReplaySpeedMenu, IconSpeed);
 applyButtonIcon(elements.openReplayGpsLabMenu, IconGpsLab);
 applyButtonIcon(elements.openReplayAccelMenu, IconAccel);
 applyButtonIcon(elements.openReplayBoardMenu, IconBoard);
+applyButtonIcon(elements.replayToolsMenuBtn, IconSettings);
+for (const button of document.querySelectorAll('.replay-axis-btn[data-axis="time"]')) {
+  applyButtonIcon(button, IconTime);
+}
+for (const button of document.querySelectorAll('.replay-axis-btn[data-axis="distance"]')) {
+  applyButtonIcon(button, IconDistance);
+}
 
 const replayFilterController = elements.replayFilterStart && elements.replayFilterEnd
   ? new DualRangeInput(elements.replayFilterStart, elements.replayFilterEnd)
@@ -365,6 +373,7 @@ function renderExpandedGraphSheet() {
 
 function renderPlaybackButtons() {
   if (!elements.replayPlayPause) return;
+  const hasSession = Boolean(state.session);
   const label = state.playing || state.playPending
     ? t("replayPause")
     : t("replayPlay");
@@ -378,9 +387,11 @@ function renderPlaybackButtons() {
   }
   elements.replayPlayPause.setAttribute("aria-label", label);
   elements.replayPlayPause.title = label;
+  elements.replayPlayPause.disabled = !hasSession;
 }
 
 function renderActionIcons() {
+  const hasSession = Boolean(state.session);
   if (elements.replayRestartIcon) {
     elements.replayRestartIcon.innerHTML = IconRestart;
   }
@@ -391,11 +402,13 @@ function renderActionIcons() {
     const restartLabel = t("replayRestart");
     elements.replayRestart.setAttribute("aria-label", restartLabel);
     elements.replayRestart.title = restartLabel;
+    elements.replayRestart.disabled = !hasSession;
   }
   if (elements.replayApproach) {
     const approachLabel = t("replayApproach");
     elements.replayApproach.setAttribute("aria-label", approachLabel);
     elements.replayApproach.title = approachLabel;
+    elements.replayApproach.disabled = !hasSession;
   }
 }
 
@@ -797,6 +810,7 @@ async function applyReplaySelection(recordingId = null) {
   renderHighlights();
   renderGraphs();
   renderPlaybackButtons();
+  renderActionIcons();
   renderAxisButtons();
   renderPlaybackFrame();
 
