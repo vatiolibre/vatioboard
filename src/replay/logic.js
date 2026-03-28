@@ -2,12 +2,21 @@ import { DISTANCE_UNIT_CONFIG, UNIT_CONFIG } from "../speed/constants.js";
 import { isFiniteNumber } from "./session.js";
 
 export function getReplayDurationMs(session) {
-  if (!session || !Array.isArray(session.samples) || session.samples.length < 2) return 0;
-  return Math.max(0, session.samples[session.samples.length - 1].timestampMs - session.samples[0].timestampMs);
+  if (!session) return 0;
+
+  if (Array.isArray(session.samples) && session.samples.length >= 2) {
+    return Math.max(0, session.samples[session.samples.length - 1].timestampMs - session.samples[0].timestampMs);
+  }
+
+  if (isFiniteNumber(session.startedAtMs) && isFiniteNumber(session.endedAtMs)) {
+    return Math.max(0, session.endedAtMs - session.startedAtMs);
+  }
+
+  return 0;
 }
 
 export function getReplaySummary(session) {
-  if (!session || !Array.isArray(session.samples)) {
+  if (!session) {
     return {
       sampleCount: 0,
       durationMs: 0,
@@ -22,18 +31,27 @@ export function getReplaySummary(session) {
   }
 
   const durationMs = getReplayDurationMs(session);
+  const sampleCount = isFiniteNumber(session.sampleCount)
+    ? Math.max(0, Math.round(session.sampleCount))
+    : (Array.isArray(session.samples) ? session.samples.length : 0);
+  const lastSample = Array.isArray(session.samples) && session.samples.length
+    ? session.samples[session.samples.length - 1]
+    : null;
+  const firstSample = Array.isArray(session.samples) && session.samples.length
+    ? session.samples[0]
+    : null;
   const totalDistanceM = isFiniteNumber(session.totalDistanceM)
     ? Math.max(0, session.totalDistanceM)
-    : (session.samples[session.samples.length - 1]?.totalDistanceM ?? 0);
+    : (lastSample?.totalDistanceM ?? 0);
 
   return {
-    sampleCount: session.samples.length,
+    sampleCount,
     durationMs,
     totalDistanceM,
     maxSpeedMs: isFiniteNumber(session.maxSpeedMs) ? session.maxSpeedMs : 0,
     averageSpeedMs: durationMs > 0 ? totalDistanceM / (durationMs / 1000) : 0,
-    startedAtMs: session.startedAtMs ?? session.samples[0]?.timestampMs ?? null,
-    endedAtMs: session.endedAtMs ?? session.samples[session.samples.length - 1]?.timestampMs ?? null,
+    startedAtMs: session.startedAtMs ?? firstSample?.timestampMs ?? null,
+    endedAtMs: session.endedAtMs ?? lastSample?.timestampMs ?? null,
     minAltitudeM: isFiniteNumber(session.minAltitudeM) ? session.minAltitudeM : null,
     maxAltitudeM: isFiniteNumber(session.maxAltitudeM) ? session.maxAltitudeM : null,
   };

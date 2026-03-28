@@ -11,6 +11,7 @@ import {
   hasReplaySamples,
   loadActiveReplaySession,
   appendReplaySample,
+  REPLAY_PERSIST_CHUNK_SIZE,
   saveActiveReplaySession,
 } from "../replay/session.js";
 import {
@@ -283,10 +284,76 @@ function clearReplayPersistTimer() {
   }
 }
 
+function reconcilePersistedReplaySession(currentSession, sessionSnapshot, persistedSession) {
+  if (!persistedSession) return currentSession;
+  if (!currentSession || currentSession.id !== persistedSession.id) return currentSession;
+
+  const snapshotSampleCount = Number.isFinite(sessionSnapshot?.sampleCount)
+    ? Math.max(0, Math.round(sessionSnapshot.sampleCount))
+    : 0;
+  const currentSampleCount = Number.isFinite(currentSession.sampleCount)
+    ? Math.max(0, Math.round(currentSession.sampleCount))
+    : 0;
+  const unsavedSampleCount = Math.max(0, currentSampleCount - snapshotSampleCount);
+
+  if (unsavedSampleCount === 0) {
+    return {
+      ...persistedSession,
+      unit: currentSession.unit,
+      distanceUnit: currentSession.distanceUnit,
+      recordingState: currentSession.recordingState,
+    };
+  }
+
+  const pendingSamples = Array.isArray(currentSession.samples)
+    ? currentSession.samples.slice(-unsavedSampleCount)
+    : [];
+  const latestPendingSample = pendingSamples[pendingSamples.length - 1] ?? currentSession.lastSample;
+
+  return {
+    ...persistedSession,
+    unit: currentSession.unit,
+    distanceUnit: currentSession.distanceUnit,
+    recordingState: currentSession.recordingState,
+    sampleCount: persistedSession.sampleCount + pendingSamples.length,
+    persistedSampleCount: persistedSession.sampleCount,
+    samples: pendingSamples,
+    lastSample: latestPendingSample ?? persistedSession.lastSample,
+    maxSpeedMs: Math.max(
+      Number.isFinite(persistedSession.maxSpeedMs) ? persistedSession.maxSpeedMs : 0,
+      Number.isFinite(currentSession.maxSpeedMs) ? currentSession.maxSpeedMs : 0,
+    ),
+    totalDistanceM: Math.max(
+      Number.isFinite(persistedSession.totalDistanceM) ? persistedSession.totalDistanceM : 0,
+      Number.isFinite(currentSession.totalDistanceM) ? currentSession.totalDistanceM : 0,
+    ),
+    minAltitudeM: Number.isFinite(currentSession.minAltitudeM)
+      ? (Number.isFinite(persistedSession.minAltitudeM)
+        ? Math.min(persistedSession.minAltitudeM, currentSession.minAltitudeM)
+        : currentSession.minAltitudeM)
+      : persistedSession.minAltitudeM,
+    maxAltitudeM: Number.isFinite(currentSession.maxAltitudeM)
+      ? (Number.isFinite(persistedSession.maxAltitudeM)
+        ? Math.max(persistedSession.maxAltitudeM, currentSession.maxAltitudeM)
+        : currentSession.maxAltitudeM)
+      : persistedSession.maxAltitudeM,
+    updatedAtMs: latestPendingSample?.timestampMs ?? currentSession.updatedAtMs ?? persistedSession.updatedAtMs,
+    endedAtMs: latestPendingSample?.timestampMs ?? currentSession.endedAtMs ?? persistedSession.endedAtMs,
+  };
+}
+
 function enqueueReplaySessionPersist(sessionSnapshot) {
   replayPersistChain = replayPersistChain
     .catch(() => {})
-    .then(() => saveActiveReplaySession(sessionSnapshot));
+    .then(async () => {
+      const persistedSession = await saveActiveReplaySession(sessionSnapshot);
+      state.replaySession = reconcilePersistedReplaySession(
+        state.replaySession,
+        sessionSnapshot,
+        persistedSession,
+      );
+      return state.replaySession;
+    });
   return replayPersistChain;
 }
 
@@ -1087,7 +1154,11 @@ function handlePosition(position) {
         recordingState: state.recordingState,
       },
     );
-    scheduleReplaySessionPersist();
+    if (state.replaySession.samples.length >= REPLAY_PERSIST_CHUNK_SIZE) {
+      scheduleReplaySessionPersist({ immediate: true });
+    } else {
+      scheduleReplaySessionPersist();
+    }
     renderRecordingControls();
   }
 

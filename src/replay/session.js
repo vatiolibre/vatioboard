@@ -1,3 +1,4 @@
+import { createIndexedJsonKeyValueStore } from "../shared/indexed-storage.js";
 import { loadJson, removeStoredValue, saveJson } from "../shared/storage.js";
 
 export const REPLAY_ACTIVE_KEY = "vatio_speed_replay_active_v1";
@@ -6,6 +7,7 @@ export const REPLAY_LAST_KEY = "vatio_speed_replay_last_v1";
 export const REPLAY_SCHEMA_VERSION = 1;
 export const MAX_REPLAY_SAMPLES = 1200;
 export const MAX_STORED_REPLAYS = 12;
+export const REPLAY_PERSIST_CHUNK_SIZE = 200;
 
 const REPLAY_DB_NAME = "vatio-replay-storage";
 const REPLAY_DB_VERSION = 1;
@@ -15,127 +17,45 @@ const REPLAY_STORAGE_KEYS = [
   REPLAY_LAST_KEY,
   REPLAY_LIBRARY_KEY,
 ];
+const REPLAY_CHUNK_KEY_PREFIX = "replayChunk:";
 
-let replayDbPromise = null;
+const replayStore = createIndexedJsonKeyValueStore({
+  dbName: REPLAY_DB_NAME,
+  dbVersion: REPLAY_DB_VERSION,
+  storeName: REPLAY_DB_STORE,
+});
+
 let replayMigrationPromise = null;
 
 export function isFiniteNumber(value) {
   return Number.isFinite(value);
 }
 
-function hasIndexedDbSupport() {
-  return typeof indexedDB !== "undefined" && typeof indexedDB.open === "function";
+function normalizePositiveInteger(value, fallback = 0) {
+  if (!isFiniteNumber(value)) return fallback;
+  return Math.max(0, Math.round(value));
 }
 
-function openReplayDatabase() {
-  if (!hasIndexedDbSupport()) {
-    return Promise.resolve(null);
-  }
-
-  if (!replayDbPromise) {
-    replayDbPromise = new Promise((resolve) => {
-      try {
-        const request = indexedDB.open(REPLAY_DB_NAME, REPLAY_DB_VERSION);
-
-        request.onupgradeneeded = () => {
-          const database = request.result;
-          if (!database.objectStoreNames.contains(REPLAY_DB_STORE)) {
-            database.createObjectStore(REPLAY_DB_STORE);
-          }
-        };
-
-        request.onsuccess = () => {
-          resolve(request.result);
-        };
-
-        request.onerror = () => {
-          replayDbPromise = Promise.resolve(null);
-          resolve(null);
-        };
-
-        request.onblocked = () => {
-          replayDbPromise = Promise.resolve(null);
-          resolve(null);
-        };
-      } catch {
-        replayDbPromise = Promise.resolve(null);
-        resolve(null);
-      }
-    });
-  }
-
-  return replayDbPromise;
-}
-
-async function getIndexedReplayValue(key) {
-  const database = await openReplayDatabase();
-  if (!database) return undefined;
-
-  try {
-    return await new Promise((resolve, reject) => {
-      const transaction = database.transaction(REPLAY_DB_STORE, "readonly");
-      const request = transaction.objectStore(REPLAY_DB_STORE).get(key);
-      request.onsuccess = () => resolve(request.result ?? undefined);
-      request.onerror = () => reject(request.error);
-      transaction.onabort = () => reject(transaction.error ?? request.error);
-    });
-  } catch {
-    return undefined;
-  }
-}
-
-async function setIndexedReplayValue(key, value) {
-  const database = await openReplayDatabase();
-  if (!database) return false;
-
-  try {
-    await new Promise((resolve, reject) => {
-      const transaction = database.transaction(REPLAY_DB_STORE, "readwrite");
-      const request = transaction.objectStore(REPLAY_DB_STORE).put(value, key);
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-      transaction.onabort = () => reject(transaction.error ?? request.error);
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function deleteIndexedReplayValue(key) {
-  const database = await openReplayDatabase();
-  if (!database) return false;
-
-  try {
-    await new Promise((resolve, reject) => {
-      const transaction = database.transaction(REPLAY_DB_STORE, "readwrite");
-      const request = transaction.objectStore(REPLAY_DB_STORE).delete(key);
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-      transaction.onabort = () => reject(transaction.error ?? request.error);
-    });
-    return true;
-  } catch {
-    return false;
-  }
+function getReplayChunkKey(sessionId, chunkIndex) {
+  return `${REPLAY_CHUNK_KEY_PREFIX}${sessionId}:${String(chunkIndex)}`;
 }
 
 async function migrateLegacyReplayStorage() {
-  if (!hasIndexedDbSupport()) return;
+  if (!replayStore.hasSupport()) return;
 
   if (!replayMigrationPromise) {
     replayMigrationPromise = (async () => {
-      const database = await openReplayDatabase();
+      const database = await replayStore.openDatabase();
       if (!database) return;
 
       for (const storageKey of REPLAY_STORAGE_KEYS) {
-        const existingValue = await getIndexedReplayValue(storageKey);
+        const existingValue = await replayStore.getValue(storageKey);
         if (existingValue !== undefined) continue;
 
         const legacyValue = loadJson(storageKey, undefined);
         if (legacyValue === undefined) continue;
 
-        const stored = await setIndexedReplayValue(storageKey, legacyValue);
+        const stored = await replayStore.setValue(storageKey, legacyValue);
         if (stored) {
           removeStoredValue(storageKey);
         }
@@ -149,7 +69,7 @@ async function migrateLegacyReplayStorage() {
 async function loadReplayValue(key, fallback) {
   await migrateLegacyReplayStorage();
 
-  const indexedValue = await getIndexedReplayValue(key);
+  const indexedValue = await replayStore.getValue(key);
   if (indexedValue !== undefined) return indexedValue;
 
   return loadJson(key, fallback);
@@ -158,7 +78,7 @@ async function loadReplayValue(key, fallback) {
 async function saveReplayValue(key, value) {
   await migrateLegacyReplayStorage();
 
-  const stored = await setIndexedReplayValue(key, value);
+  const stored = await replayStore.setValue(key, value);
   if (stored) {
     removeStoredValue(key);
     return;
@@ -169,7 +89,7 @@ async function saveReplayValue(key, value) {
 
 async function removeReplayValue(key) {
   await migrateLegacyReplayStorage();
-  await deleteIndexedReplayValue(key);
+  await replayStore.deleteValue(key);
   removeStoredValue(key);
 }
 
@@ -193,6 +113,30 @@ function normalizeReplayId(value, fallbackTimestamp = Date.now()) {
   return `replay-${Math.max(0, Math.round(fallbackTimestamp))}`;
 }
 
+function sortAndDedupeReplaySamples(samples) {
+  if (!Array.isArray(samples) || samples.length === 0) return [];
+
+  const sortedSamples = samples
+    .map(normalizeReplaySample)
+    .filter(Boolean)
+    .sort((left, right) => left.timestampMs - right.timestampMs);
+  const dedupedSamples = [];
+
+  for (let index = 0; index < sortedSamples.length; index += 1) {
+    const sample = sortedSamples[index];
+    const previous = dedupedSamples[dedupedSamples.length - 1];
+
+    if (previous && previous.timestampMs === sample.timestampMs) {
+      dedupedSamples[dedupedSamples.length - 1] = sample;
+      continue;
+    }
+
+    dedupedSamples.push(sample);
+  }
+
+  return dedupedSamples;
+}
+
 export function createReplaySession(options = {}) {
   const startedAtMs = isFiniteNumber(options.startedAtMs) ? options.startedAtMs : null;
   const fallbackTimestamp = startedAtMs ?? Date.now();
@@ -211,6 +155,10 @@ export function createReplaySession(options = {}) {
     totalDistanceM: 0,
     minAltitudeM: null,
     maxAltitudeM: null,
+    sampleCount: 0,
+    chunkCount: 0,
+    persistedSampleCount: 0,
+    lastSample: null,
     samples: [],
   };
 }
@@ -284,9 +232,164 @@ function normalizeReplayDistances(samples) {
   return normalized;
 }
 
+function normalizeReplaySamplesArray(samples) {
+  return normalizeReplayDistances(sortAndDedupeReplaySamples(samples));
+}
+
 function getReplaySortTimestamp(session) {
   if (!session) return 0;
   return session.endedAtMs ?? session.updatedAtMs ?? session.startedAtMs ?? 0;
+}
+
+function stripReplaySessionSamples(session) {
+  const normalizedSession = normalizeReplaySession(session);
+  if (!normalizedSession) return null;
+
+  return normalizeReplaySession({
+    ...normalizedSession,
+    samples: [],
+  });
+}
+
+function needsChunkMigration(session) {
+  return Boolean(
+    replayStore.hasSupport()
+    && session
+    && session.chunkCount === 0
+    && session.sampleCount > 0
+    && session.persistedSampleCount === session.sampleCount
+    && Array.isArray(session.samples)
+    && session.samples.length === session.sampleCount,
+  );
+}
+
+function createEmbeddedReplaySession(session, samples) {
+  const normalizedSamples = normalizeReplaySamplesArray(samples);
+  return normalizeReplaySession({
+    ...session,
+    sampleCount: normalizedSamples.length,
+    chunkCount: 0,
+    persistedSampleCount: normalizedSamples.length,
+    lastSample: normalizedSamples[normalizedSamples.length - 1] ?? session?.lastSample ?? null,
+    samples: normalizedSamples,
+  });
+}
+
+function getReplaySamplesToPersist(session) {
+  if (!session || !Array.isArray(session.samples) || session.samples.length === 0) return [];
+
+  const embeddedFullSession = session.chunkCount === 0
+    && session.persistedSampleCount === session.sampleCount
+    && session.samples.length === session.sampleCount
+    && session.sampleCount > 0;
+
+  if (embeddedFullSession) {
+    return session.samples.slice();
+  }
+
+  const pendingCount = Math.max(0, session.sampleCount - session.persistedSampleCount);
+  if (pendingCount === 0) return [];
+
+  return session.samples.slice(-pendingCount);
+}
+
+async function saveReplaySampleChunks(sessionId, samples, startChunkIndex = 0) {
+  let chunkIndex = startChunkIndex;
+
+  for (let index = 0; index < samples.length; index += REPLAY_PERSIST_CHUNK_SIZE) {
+    const chunk = samples.slice(index, index + REPLAY_PERSIST_CHUNK_SIZE);
+    const stored = await replayStore.setValue(getReplayChunkKey(sessionId, chunkIndex), chunk);
+    if (!stored) return chunkIndex - startChunkIndex;
+    chunkIndex += 1;
+  }
+
+  return chunkIndex - startChunkIndex;
+}
+
+async function loadReplaySampleChunks(sessionId, chunkCount) {
+  const samples = [];
+
+  for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
+    const chunk = await replayStore.getValue(getReplayChunkKey(sessionId, chunkIndex));
+    if (!Array.isArray(chunk) || chunk.length === 0) continue;
+    samples.push(...chunk);
+  }
+
+  return normalizeReplaySamplesArray(samples);
+}
+
+async function deleteReplaySampleChunks(sessionId, chunkCount) {
+  if (!replayStore.hasSupport()) return;
+
+  for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
+    await replayStore.deleteValue(getReplayChunkKey(sessionId, chunkIndex));
+  }
+}
+
+async function persistReplaySessionData(session) {
+  const normalizedSession = normalizeReplaySession(session) || createReplaySession();
+
+  if (!replayStore.hasSupport()) {
+    return createEmbeddedReplaySession(normalizedSession, normalizedSession.samples);
+  }
+
+  const samplesToPersist = getReplaySamplesToPersist(normalizedSession);
+  let chunkCount = normalizedSession.chunkCount;
+
+  if (samplesToPersist.length > 0) {
+    chunkCount += await saveReplaySampleChunks(
+      normalizedSession.id,
+      samplesToPersist,
+      normalizedSession.chunkCount,
+    );
+  }
+
+  return normalizeReplaySession({
+    ...normalizedSession,
+    samples: [],
+    chunkCount,
+    persistedSampleCount: normalizedSession.sampleCount,
+    lastSample: normalizedSession.lastSample,
+  });
+}
+
+async function hydrateReplaySessionSamples(session) {
+  const normalizedSession = normalizeReplaySession(session);
+  if (!normalizedSession) return null;
+
+  if (!replayStore.hasSupport()) {
+    return createEmbeddedReplaySession(normalizedSession, normalizedSession.samples);
+  }
+
+  const chunkSamples = await loadReplaySampleChunks(
+    normalizedSession.id,
+    normalizedSession.chunkCount,
+  );
+  const mergedSamples = normalizeReplaySamplesArray([
+    ...chunkSamples,
+    ...normalizedSession.samples,
+  ]);
+
+  return normalizeReplaySession({
+    ...normalizedSession,
+    samples: mergedSamples,
+    sampleCount: Math.max(normalizedSession.sampleCount, mergedSamples.length),
+    persistedSampleCount: Math.max(normalizedSession.sampleCount, mergedSamples.length),
+    lastSample: mergedSamples[mergedSamples.length - 1] ?? normalizedSession.lastSample,
+  });
+}
+
+async function ensureChunkedReplaySession(session, storageKey = null) {
+  const normalizedSession = normalizeReplaySession(session);
+  if (!normalizedSession || !needsChunkMigration(normalizedSession)) {
+    return normalizedSession;
+  }
+
+  const persistedSession = await persistReplaySessionData(normalizedSession);
+  if (storageKey) {
+    await saveReplayValue(storageKey, stripReplaySessionSamples(persistedSession));
+  }
+  return persistedSession;
 }
 
 export function limitReplaySamples(samples, maxSamples = MAX_REPLAY_SAMPLES) {
@@ -317,42 +420,41 @@ export function limitReplaySamples(samples, maxSamples = MAX_REPLAY_SAMPLES) {
 export function normalizeReplaySession(session) {
   if (!session || typeof session !== "object") return null;
 
-  const samples = Array.isArray(session.samples)
-    ? session.samples
-      .map(normalizeReplaySample)
-      .filter(Boolean)
-      .sort((left, right) => left.timestampMs - right.timestampMs)
-    : [];
-  const dedupedSamples = [];
-
-  for (let index = 0; index < samples.length; index += 1) {
-    const sample = samples[index];
-    const previous = dedupedSamples[dedupedSamples.length - 1];
-
-    if (previous && previous.timestampMs === sample.timestampMs) {
-      dedupedSamples[dedupedSamples.length - 1] = sample;
-      continue;
-    }
-
-    dedupedSamples.push(sample);
-  }
-
-  const normalizedSamples = normalizeReplayDistances(dedupedSamples);
-
-  const firstSample = normalizedSamples[0] ?? null;
-  const lastSample = normalizedSamples[normalizedSamples.length - 1] ?? null;
+  const normalizedSamples = normalizeReplaySamplesArray(session.samples);
+  const hasExplicitPersistedSampleCount = isFiniteNumber(session.persistedSampleCount);
+  const hasExplicitChunkCount = isFiniteNumber(session.chunkCount);
+  const inferredEmbeddedFullSession = normalizedSamples.length > 0
+    && !hasExplicitPersistedSampleCount
+    && !hasExplicitChunkCount;
+  const sampleCount = isFiniteNumber(session.sampleCount)
+    ? Math.max(normalizePositiveInteger(session.sampleCount), normalizedSamples.length)
+    : normalizedSamples.length;
+  const persistedSampleCount = inferredEmbeddedFullSession
+    ? sampleCount
+    : Math.min(
+      sampleCount,
+      normalizePositiveInteger(
+        session.persistedSampleCount,
+        Math.max(0, sampleCount - normalizedSamples.length),
+      ),
+    );
+  const chunkCount = inferredEmbeddedFullSession
+    ? 0
+    : normalizePositiveInteger(session.chunkCount, 0);
+  const lastSample = normalizedSamples[normalizedSamples.length - 1]
+    ?? normalizeReplaySample(session.lastSample);
   const altitudeValues = normalizedSamples
     .map((sample) => sample.altitudeM)
     .filter(isFiniteNumber);
   const maxSpeedMs = normalizedSamples.reduce(
     (maximum, sample) => Math.max(maximum, sample.speedMs),
-    0,
+    isFiniteNumber(session.maxSpeedMs) ? session.maxSpeedMs : 0,
   );
 
   return {
     id: normalizeReplayId(
       session.id,
-      session.startedAtMs ?? firstSample?.timestampMs ?? Date.now(),
+      session.startedAtMs ?? lastSample?.timestampMs ?? Date.now(),
     ),
     version: REPLAY_SCHEMA_VERSION,
     source: "speed",
@@ -361,14 +463,14 @@ export function normalizeReplaySession(session) {
     recordingState: normalizeRecordingState(session.recordingState),
     startedAtMs: isFiniteNumber(session.startedAtMs)
       ? session.startedAtMs
-      : (firstSample ? firstSample.timestampMs : null),
+      : (normalizedSamples[0] ? normalizedSamples[0].timestampMs : null),
     updatedAtMs: isFiniteNumber(session.updatedAtMs)
       ? session.updatedAtMs
       : (lastSample ? lastSample.timestampMs : null),
     endedAtMs: isFiniteNumber(session.endedAtMs)
       ? session.endedAtMs
       : (lastSample ? lastSample.timestampMs : null),
-    maxSpeedMs: isFiniteNumber(session.maxSpeedMs) ? session.maxSpeedMs : maxSpeedMs,
+    maxSpeedMs,
     totalDistanceM: Math.max(
       isFiniteNumber(session.totalDistanceM) ? Math.max(0, session.totalDistanceM) : 0,
       lastSample ? lastSample.totalDistanceM : 0,
@@ -379,12 +481,22 @@ export function normalizeReplaySession(session) {
     maxAltitudeM: isFiniteNumber(session.maxAltitudeM)
       ? session.maxAltitudeM
       : (altitudeValues.length ? Math.max(...altitudeValues) : null),
-    samples: limitReplaySamples(normalizedSamples),
+    sampleCount,
+    chunkCount,
+    persistedSampleCount,
+    lastSample,
+    samples: normalizedSamples,
   };
 }
 
 export function hasReplaySamples(session, minSamples = 1) {
-  return Boolean(session && Array.isArray(session.samples) && session.samples.length >= minSamples);
+  if (!session) return false;
+
+  const sampleCount = isFiniteNumber(session.sampleCount)
+    ? normalizePositiveInteger(session.sampleCount)
+    : (Array.isArray(session.samples) ? session.samples.length : 0);
+
+  return sampleCount >= minSamples;
 }
 
 export function appendReplaySample(session, sample, options = {}) {
@@ -394,18 +506,59 @@ export function appendReplaySample(session, sample, options = {}) {
   }
 
   const currentSession = normalizeReplaySession(session) || createReplaySession(options);
-  const nextSamples = currentSession.samples.slice();
-  const lastSample = nextSamples[nextSamples.length - 1] ?? null;
+  const bufferedSamples = Array.isArray(currentSession.samples)
+    ? currentSession.samples.slice()
+    : [];
+  const lastSample = currentSession.lastSample;
 
   if (lastSample && normalizedSample.timestampMs < lastSample.timestampMs) {
     return currentSession;
   }
 
   if (lastSample && normalizedSample.timestampMs === lastSample.timestampMs) {
-    nextSamples[nextSamples.length - 1] = normalizedSample;
-  } else {
-    nextSamples.push(normalizedSample);
+    if (bufferedSamples.length === 0) {
+      return normalizeReplaySession({
+        ...currentSession,
+        unit: normalizeSpeedUnit(options.unit, currentSession.unit),
+        distanceUnit: normalizeDistanceUnit(options.distanceUnit, currentSession.distanceUnit),
+        recordingState: normalizeRecordingState(
+          options.recordingState,
+          currentSession.recordingState,
+        ),
+      });
+    }
+
+    bufferedSamples[bufferedSamples.length - 1] = normalizedSample;
+
+    const dedupedBufferedSamples = normalizeReplaySamplesArray(bufferedSamples);
+    return normalizeReplaySession({
+      ...currentSession,
+      unit: normalizeSpeedUnit(options.unit, currentSession.unit),
+      distanceUnit: normalizeDistanceUnit(options.distanceUnit, currentSession.distanceUnit),
+      recordingState: normalizeRecordingState(
+        options.recordingState,
+        currentSession.recordingState,
+      ),
+      updatedAtMs: normalizedSample.timestampMs,
+      endedAtMs: normalizedSample.timestampMs,
+      maxSpeedMs: Math.max(currentSession.maxSpeedMs, normalizedSample.speedMs),
+      totalDistanceM: normalizedSample.totalDistanceM,
+      minAltitudeM: isFiniteNumber(normalizedSample.altitudeM)
+        ? (isFiniteNumber(currentSession.minAltitudeM)
+          ? Math.min(currentSession.minAltitudeM, normalizedSample.altitudeM)
+          : normalizedSample.altitudeM)
+        : currentSession.minAltitudeM,
+      maxAltitudeM: isFiniteNumber(normalizedSample.altitudeM)
+        ? (isFiniteNumber(currentSession.maxAltitudeM)
+          ? Math.max(currentSession.maxAltitudeM, normalizedSample.altitudeM)
+          : normalizedSample.altitudeM)
+        : currentSession.maxAltitudeM,
+      lastSample: normalizedSample,
+      samples: dedupedBufferedSamples,
+    });
   }
+
+  bufferedSamples.push(normalizedSample);
 
   return normalizeReplaySession({
     ...currentSession,
@@ -430,7 +583,9 @@ export function appendReplaySample(session, sample, options = {}) {
         ? Math.max(currentSession.maxAltitudeM, normalizedSample.altitudeM)
         : normalizedSample.altitudeM)
       : currentSession.maxAltitudeM,
-    samples: limitReplaySamples(nextSamples, options.maxSamples ?? MAX_REPLAY_SAMPLES),
+    sampleCount: currentSession.sampleCount + 1,
+    lastSample: normalizedSample,
+    samples: bufferedSamples,
   });
 }
 
@@ -438,7 +593,7 @@ export function finalizeReplaySession(session, endedAtMs = null) {
   const normalizedSession = normalizeReplaySession(session);
   if (!normalizedSession) return null;
 
-  return {
+  return normalizeReplaySession({
     ...normalizedSession,
     recordingState: "stopped",
     updatedAtMs: isFiniteNumber(endedAtMs)
@@ -447,48 +602,109 @@ export function finalizeReplaySession(session, endedAtMs = null) {
     endedAtMs: isFiniteNumber(endedAtMs)
       ? endedAtMs
       : normalizedSession.endedAtMs,
-  };
+  });
 }
 
-export async function loadActiveReplaySession() {
-  return normalizeReplaySession(await loadReplayValue(REPLAY_ACTIVE_KEY, null));
+export async function loadActiveReplaySession(options = {}) {
+  const session = await ensureChunkedReplaySession(
+    await loadReplayValue(REPLAY_ACTIVE_KEY, null),
+    REPLAY_ACTIVE_KEY,
+  );
+  if (!session) return null;
+
+  if (!options.includeSamples || !replayStore.hasSupport()) {
+    return replayStore.hasSupport() ? stripReplaySessionSamples(session) : session;
+  }
+
+  return hydrateReplaySessionSamples(session);
 }
 
 export async function saveActiveReplaySession(session) {
   const normalizedSession = normalizeReplaySession(session) || createReplaySession();
-  await saveReplayValue(REPLAY_ACTIVE_KEY, normalizedSession);
+
+  if (!replayStore.hasSupport()) {
+    const embeddedSession = createEmbeddedReplaySession(normalizedSession, normalizedSession.samples);
+    await saveReplayValue(REPLAY_ACTIVE_KEY, embeddedSession);
+    return embeddedSession;
+  }
+
+  const persistedSession = await persistReplaySessionData(normalizedSession);
+  await saveReplayValue(REPLAY_ACTIVE_KEY, stripReplaySessionSamples(persistedSession));
+  return persistedSession;
 }
 
 export async function clearActiveReplaySession() {
   await removeReplayValue(REPLAY_ACTIVE_KEY);
 }
 
-export async function loadLastReplaySession() {
-  return normalizeReplaySession(await loadReplayValue(REPLAY_LAST_KEY, null));
+export async function loadLastReplaySession(options = {}) {
+  const session = await ensureChunkedReplaySession(
+    await loadReplayValue(REPLAY_LAST_KEY, null),
+    REPLAY_LAST_KEY,
+  );
+  if (!session) return null;
+
+  if (!options.includeSamples || !replayStore.hasSupport()) {
+    return replayStore.hasSupport() ? stripReplaySessionSamples(session) : session;
+  }
+
+  return hydrateReplaySessionSamples(session);
 }
 
 export async function saveLastReplaySession(session) {
   const normalizedSession = normalizeReplaySession(session);
-  if (!normalizedSession) return;
-  await saveReplayValue(REPLAY_LAST_KEY, normalizedSession);
+  if (!normalizedSession) return null;
+
+  if (!replayStore.hasSupport()) {
+    const embeddedSession = createEmbeddedReplaySession(normalizedSession, normalizedSession.samples);
+    await saveReplayValue(REPLAY_LAST_KEY, embeddedSession);
+    return embeddedSession;
+  }
+
+  const persistedSession = await persistReplaySessionData(normalizedSession);
+  await saveReplayValue(REPLAY_LAST_KEY, stripReplaySessionSamples(persistedSession));
+  return persistedSession;
 }
 
 export async function loadReplayLibrary() {
   const rawLibrary = await loadReplayValue(REPLAY_LIBRARY_KEY, []);
-  const normalizedLibrary = Array.isArray(rawLibrary)
-    ? rawLibrary.map(normalizeReplaySession).filter(Boolean)
-    : [];
-  const legacySession = await loadLastReplaySession();
+  const normalizedLibrary = [];
+  let libraryChanged = false;
 
-  if (legacySession && !normalizedLibrary.some((session) => session.id === legacySession.id)) {
-    normalizedLibrary.unshift(legacySession);
+  if (Array.isArray(rawLibrary)) {
+    for (const entry of rawLibrary) {
+      const normalizedEntry = await ensureChunkedReplaySession(entry);
+      if (!normalizedEntry) continue;
+      if (needsChunkMigration(normalizeReplaySession(entry))) libraryChanged = true;
+      normalizedLibrary.push(normalizedEntry);
+    }
+  }
+  const lastSession = await loadLastReplaySession();
+
+  if (lastSession && !normalizedLibrary.some((session) => session.id === lastSession.id)) {
+    normalizedLibrary.unshift(lastSession);
   }
 
   normalizedLibrary.sort((left, right) => getReplaySortTimestamp(right) - getReplaySortTimestamp(left));
-  return normalizedLibrary.slice(0, MAX_STORED_REPLAYS);
+
+  if (!replayStore.hasSupport()) {
+    return normalizedLibrary.slice(0, MAX_STORED_REPLAYS);
+  }
+
+  const strippedLibrary = normalizedLibrary
+    .map(stripReplaySessionSamples)
+    .filter(Boolean)
+    .slice(0, MAX_STORED_REPLAYS);
+
+  if (libraryChanged) {
+    await saveReplayValue(REPLAY_LIBRARY_KEY, strippedLibrary);
+  }
+
+  return strippedLibrary;
 }
 
 export async function saveReplayLibrary(recordings) {
+  const previousLibrary = await loadReplayLibrary();
   const normalizedRecordings = Array.isArray(recordings)
     ? recordings
       .map(normalizeReplaySession)
@@ -496,7 +712,30 @@ export async function saveReplayLibrary(recordings) {
       .sort((left, right) => getReplaySortTimestamp(right) - getReplaySortTimestamp(left))
       .slice(0, MAX_STORED_REPLAYS)
     : [];
-  await saveReplayValue(REPLAY_LIBRARY_KEY, normalizedRecordings);
+
+  if (!replayStore.hasSupport()) {
+    const embeddedRecordings = normalizedRecordings
+      .map((recording) => createEmbeddedReplaySession(recording, recording.samples))
+      .filter(Boolean);
+    await saveReplayValue(REPLAY_LIBRARY_KEY, embeddedRecordings);
+    return embeddedRecordings;
+  }
+
+  const persistedRecordings = [];
+  for (const recording of normalizedRecordings) {
+    const persistedRecording = await persistReplaySessionData(recording);
+    persistedRecordings.push(stripReplaySessionSamples(persistedRecording));
+  }
+
+  await saveReplayValue(REPLAY_LIBRARY_KEY, persistedRecordings);
+
+  const keptIds = new Set(persistedRecordings.map((recording) => recording.id));
+  for (const previousRecording of previousLibrary) {
+    if (keptIds.has(previousRecording.id)) continue;
+    await deleteReplaySampleChunks(previousRecording.id, previousRecording.chunkCount ?? 0);
+  }
+
+  return persistedRecordings;
 }
 
 export async function archiveReplaySession(
@@ -510,6 +749,7 @@ export async function archiveReplaySession(
 
   const nextRecordings = (await loadReplayLibrary()).filter((entry) => entry.id !== normalizedSession.id);
   nextRecordings.unshift(normalizedSession);
+  await saveLastReplaySession(normalizedSession);
   await saveReplayLibrary(nextRecordings.slice(0, options.maxRecordings ?? MAX_STORED_REPLAYS));
   return loadReplayLibrary();
 }
@@ -519,8 +759,8 @@ export async function removeReplayRecording(recordingId) {
     return loadReplayLibrary();
   }
 
-  const legacySession = await loadLastReplaySession();
-  if (legacySession?.id === recordingId) {
+  const lastSession = await loadLastReplaySession();
+  if (lastSession?.id === recordingId) {
     await removeReplayValue(REPLAY_LAST_KEY);
   }
 
@@ -552,6 +792,19 @@ export async function loadReplayRecords() {
   return recordings;
 }
 
+async function loadReplayRecordSession(record) {
+  if (!record) return null;
+  if (record.source === "active") {
+    return loadActiveReplaySession({ includeSamples: true });
+  }
+
+  if (!replayStore.hasSupport()) {
+    return normalizeReplaySession(record.session);
+  }
+
+  return hydrateReplaySessionSamples(record.session);
+}
+
 export async function loadReplaySelection(selectedId = null) {
   const records = await loadReplayRecords();
 
@@ -560,7 +813,7 @@ export async function loadReplaySelection(selectedId = null) {
     if (selectedRecord) {
       return {
         source: selectedRecord.source,
-        session: selectedRecord.session,
+        session: await loadReplayRecordSession(selectedRecord),
         records,
       };
     }
@@ -573,7 +826,7 @@ export async function loadReplaySelection(selectedId = null) {
 
   return {
     source: preferredRecord?.source ?? null,
-    session: preferredRecord?.session ?? null,
+    session: preferredRecord ? await loadReplayRecordSession(preferredRecord) : null,
     records,
   };
 }

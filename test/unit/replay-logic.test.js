@@ -16,6 +16,7 @@ import {
   archiveReplaySession,
   appendReplaySample,
   createReplaySession,
+  loadActiveReplaySession,
   limitReplaySamples,
   loadReplayLibrary,
   loadReplayRecords,
@@ -82,10 +83,34 @@ describe("replay helpers", () => {
     expect(session.unit).toBe("kmh");
     expect(session.distanceUnit).toBe("m");
     expect(session.samples).toHaveLength(2);
+    expect(session.sampleCount).toBe(2);
     expect(session.maxSpeedMs).toBe(20);
     expect(session.totalDistanceM).toBe(120);
     expect(session.minAltitudeM).toBe(10);
     expect(session.maxAltitudeM).toBe(14);
+  });
+
+  it("preserves more than 1200 replay samples when saving and loading the active session", async () => {
+    let session = createReplaySession({ id: "long-drive", unit: "kmh", distanceUnit: "m" });
+
+    for (let index = 0; index < 1305; index += 1) {
+      session = appendReplaySample(session, createSample({
+        timestampMs: 1000 + (index * 100),
+        latitude: 40.7128 + (index / 100000),
+        longitude: -74.006 + (index / 100000),
+        speedMs: index % 30,
+        altitudeM: 10 + (index % 5),
+        totalDistanceM: index * 8,
+      }));
+    }
+
+    await saveActiveReplaySession(session);
+    const restoredSession = await loadActiveReplaySession({ includeSamples: true });
+
+    expect(restoredSession.sampleCount).toBe(1305);
+    expect(restoredSession.samples).toHaveLength(1305);
+    expect(restoredSession.samples[0].timestampMs).toBe(1000);
+    expect(restoredSession.samples[1304].timestampMs).toBe(1000 + (1304 * 100));
   });
 
   it("rebuilds cumulative distance for legacy recordings that are missing per-sample totals", () => {
