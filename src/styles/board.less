@@ -451,6 +451,54 @@ label{
     white-space: nowrap;
 }
 
+.size-label{
+    justify-content: flex-start;
+    gap: 12px;
+    min-width: clamp(210px, 24vw, 320px);
+    padding-right: 12px;
+}
+
+.size-label input[type="range"]{
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.size-preview{
+    --board-size-preview: 6px;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    min-width: 52px;
+    height: 24px;
+    color: var(--btn-fg);
+}
+
+.size-preview::before{
+    content: "";
+    position: absolute;
+    left: 4px;
+    right: 4px;
+    top: 50%;
+    height: 1px;
+    transform: translateY(-50%);
+    background: color-mix(in srgb, var(--border) 86%, transparent);
+}
+
+.size-preview-stroke{
+    position: relative;
+    display: block;
+    width: clamp(14px, calc(14px + var(--board-size-preview) * 1.8), 48px);
+    height: var(--board-size-preview);
+    min-height: 2px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--ink) 90%, var(--btn-fg));
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--inner-ring) 65%, transparent),
+      0 4px 10px color-mix(in srgb, var(--ink) 14%, transparent);
+}
+
 /* Presets line up like a compact inline group */
 .swatches{
     display:flex;

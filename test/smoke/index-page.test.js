@@ -41,9 +41,16 @@ describe("index.html smoke", () => {
     expect(document.querySelector("#toolsMenuBtn .btn-icon svg")).toBeTruthy();
     expect(document.getElementById("toolsMenuList").hidden).toBe(false);
     expect(document.getElementById("toolsMenuBtn").getAttribute("aria-expanded")).toBe("true");
+    expect(document.getElementById("sizeVal")).toBeNull();
+    expect(document.getElementById("sizePreview")).toBeTruthy();
+    expect(document.getElementById("sizePreview").style.getPropertyValue("--board-size-preview")).toBe("6px");
     expect(document.querySelector(".calc-panel")).toBeTruthy();
     expect(document.querySelector(".energy-panel")).toBeTruthy();
     expect(document.querySelector(".floating-dock")).toBeTruthy();
+
+    document.getElementById("size").value = "12";
+    document.getElementById("size").dispatchEvent(new Event("input", { bubbles: true }));
+    expect(document.getElementById("sizePreview").style.getPropertyValue("--board-size-preview")).toBe("12px");
 
     document.getElementById("openCalc").click();
     expect(document.querySelector(".calc-panel").hidden).toBe(false);

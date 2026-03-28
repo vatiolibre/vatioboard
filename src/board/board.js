@@ -98,7 +98,7 @@ bindNavigation(openAccelMenuBtn, "/accel");
     const penBtn = document.getElementById("pen");
     const eraseBtn = document.getElementById("erase");
     const sizeEl = document.getElementById("size");
-    const sizeVal = document.getElementById("sizeVal");
+    const sizePreview = document.getElementById("sizePreview");
     const clearBtn = document.getElementById("clear");
     const saveBtn = document.getElementById("save");
 
@@ -213,6 +213,13 @@ bindNavigation(openAccelMenuBtn, "/accel");
       penBtn.setAttribute("aria-pressed", tool === "pen" ? "true" : "false");
       eraseBtn.setAttribute("aria-pressed", tool === "eraser" ? "true" : "false");
       setStatus(tool === "pen" ? t("pen") : t("eraser"));
+    }
+
+    function syncSizePreview(){
+      if (!sizeEl || !sizePreview) return;
+      const sizeValue = Math.max(2, Math.min(22, Number(sizeEl.value) || 6));
+      sizePreview.style.setProperty("--board-size-preview", `${sizeValue}px`);
+      sizeEl.setAttribute("aria-valuetext", `${sizeValue}`);
     }
 
     // ---- Color utilities (contrast-safe ink) ----
@@ -569,7 +576,7 @@ bindNavigation(openAccelMenuBtn, "/accel");
     penBtn.addEventListener("click", ()=>{ tool="pen"; setActive(); });
     eraseBtn.addEventListener("click", ()=>{ tool="eraser"; setActive(); });
 
-    sizeEl.addEventListener("input", ()=>{ sizeVal.textContent = sizeEl.value; });
+    sizeEl.addEventListener("input", syncSizePreview);
 
     clearBtn.addEventListener("click", clear);
     saveBtn.addEventListener("click", savePNG);
@@ -588,7 +595,7 @@ bindNavigation(openAccelMenuBtn, "/accel");
     window.addEventListener("resize", resize);
 
     // Init
-    sizeVal.textContent = sizeEl.value;
+    syncSizePreview();
     setActive();
 
     renderSwatches();

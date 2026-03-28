@@ -344,9 +344,10 @@
           </div>
 
           <label class="size-label">
-            <span data-i18n="size">Size</span>
-            <input id="size" type="range" min="2" max="22" value="6" />
-            <span id="sizeVal" style="min-width:28px;display:inline-block;text-align:right;">6</span>
+            <span id="sizePreview" class="size-preview" aria-hidden="true">
+              <span class="size-preview-stroke"></span>
+            </span>
+            <input id="size" type="range" min="2" max="22" value="6" data-i18n-aria="size" aria-label="Size" />
           </label>
 
           <!-- Color (matches "Size" label style) -->
