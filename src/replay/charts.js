@@ -109,13 +109,37 @@ export function createReplayChartsController({
     return value || fallback;
   }
 
-  function getPalette() {
+  function getSharedPalette() {
     return {
-      line: getCssColor("--replay-accent-strong", "#10b981"),
-      fill: getCssColor("--replay-accent-soft", "rgba(16, 185, 129, 0.16)"),
       axis: getCssColor("--replay-border", "rgba(17, 24, 39, 0.12)"),
       label: getCssColor("--replay-muted", "rgba(17, 24, 39, 0.66)"),
       cursor: getCssColor("--replay-track", "rgba(52, 211, 153, 0.82)"),
+    };
+  }
+
+  function getMetricPalette(metricKey) {
+    const shared = getSharedPalette();
+
+    if (metricKey === "altitudeM") {
+      return {
+        ...shared,
+        line: getCssColor("--replay-altitude-line", "#f97316"),
+        fill: getCssColor("--replay-altitude-fill", "rgba(249, 115, 22, 0.16)"),
+      };
+    }
+
+    if (metricKey === "headingDeg") {
+      return {
+        ...shared,
+        line: getCssColor("--replay-heading-line", "#3b82f6"),
+        fill: getCssColor("--replay-heading-fill", "rgba(59, 130, 246, 0.16)"),
+      };
+    }
+
+    return {
+      ...shared,
+      line: getCssColor("--replay-speed-line", "#10b981"),
+      fill: getCssColor("--replay-speed-fill", "rgba(16, 185, 129, 0.16)"),
     };
   }
 
@@ -237,8 +261,8 @@ export function createReplayChartsController({
   }) {
     if (!canvas || !activeSession) return null;
 
-    const palette = getPalette();
     const metricConfig = getMetricConfig(metricKey);
+    const palette = getMetricPalette(metricConfig.metricKey);
     const detailBounds = detailMode ? getDetailMetricBounds(metricConfig.metricKey, axisRange) : null;
     const yMin = detailBounds?.min ?? metricConfig.min;
     const yMax = detailBounds?.max ?? metricConfig.max;
@@ -416,7 +440,7 @@ export function createReplayChartsController({
     const safePlaybackPoint = playbackPoint && typeof playbackPoint === "object"
       ? playbackPoint
       : {};
-    const palette = getPalette();
+    const palette = getSharedPalette();
     const cursorValue = getCursorValue(safePlaybackPoint);
 
     lastPlaybackPoint = {
