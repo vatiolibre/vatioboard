@@ -109,7 +109,7 @@ describe("replay helpers", () => {
     expect(session.totalDistanceM).toBe(session.samples[2].totalDistanceM);
   });
 
-  it("prefers the active session when loading replay selection and exposes the recordings list", () => {
+  it("prefers the active session when loading replay selection and exposes the recordings list", async () => {
     const activeSession = appendReplaySample(
       appendReplaySample(createReplaySession(), createSample()),
       createSample({ timestampMs: 2000, speedMs: 15 }),
@@ -119,11 +119,11 @@ describe("replay helpers", () => {
       createSample({ timestampMs: 6000, speedMs: 8 }),
     );
 
-    saveActiveReplaySession(activeSession);
-    saveLastReplaySession(lastSession);
+    await saveActiveReplaySession(activeSession);
+    await saveLastReplaySession(lastSession);
 
-    const selection = loadReplaySelection();
-    const records = loadReplayRecords();
+    const selection = await loadReplaySelection();
+    const records = await loadReplayRecords();
 
     expect(selection.source).toBe("active");
     expect(selection.session.samples).toHaveLength(2);
@@ -131,29 +131,29 @@ describe("replay helpers", () => {
     expect(records[0].source).toBe("active");
   });
 
-  it("falls back to the saved recordings library when there is no active session", () => {
-    saveReplayLibrary([
+  it("falls back to the saved recordings library when there is no active session", async () => {
+    await saveReplayLibrary([
       appendReplaySample(
         appendReplaySample(createReplaySession({ id: "library-only" }), createSample({ timestampMs: 5000 })),
         createSample({ timestampMs: 6000, speedMs: 9, totalDistanceM: 120 }),
       ),
     ]);
 
-    const selection = loadReplaySelection();
+    const selection = await loadReplaySelection();
 
     expect(selection.source).toBe("library");
     expect(selection.session.id).toBe("library-only");
   });
 
-  it("archives finalized sessions into a bounded replay library and migrates the legacy slot", () => {
+  it("archives finalized sessions into a bounded replay library and migrates the legacy slot", async () => {
     const session = appendReplaySample(
       appendReplaySample(createReplaySession({ id: "active-1" }), createSample()),
       createSample({ timestampMs: 3000, speedMs: 18, totalDistanceM: 240 }),
     );
 
-    archiveReplaySession(session, { endedAtMs: 3000 });
+    await archiveReplaySession(session, { endedAtMs: 3000 });
 
-    const library = loadReplayLibrary();
+    const library = await loadReplayLibrary();
 
     expect(library).toHaveLength(1);
     expect(library[0]).toMatchObject({
@@ -162,16 +162,16 @@ describe("replay helpers", () => {
       totalDistanceM: 240,
     });
 
-    saveLastReplaySession(appendReplaySample(
+    await saveLastReplaySession(appendReplaySample(
       appendReplaySample(createReplaySession({ id: "legacy-last" }), createSample({ timestampMs: 7000 })),
       createSample({ timestampMs: 8000, speedMs: 11 }),
     ));
 
-    expect(loadReplayLibrary().map((entry) => entry.id)).toContain("legacy-last");
+    expect((await loadReplayLibrary()).map((entry) => entry.id)).toContain("legacy-last");
   });
 
-  it("removes saved recordings without affecting the rest of the library", () => {
-    saveReplayLibrary([
+  it("removes saved recordings without affecting the rest of the library", async () => {
+    await saveReplayLibrary([
       appendReplaySample(
         appendReplaySample(createReplaySession({ id: "keep-me" }), createSample({ timestampMs: 1000 })),
         createSample({ timestampMs: 2000, speedMs: 7 }),
@@ -181,15 +181,15 @@ describe("replay helpers", () => {
         createSample({ timestampMs: 4000, speedMs: 9 }),
       ),
     ]);
-    saveLastReplaySession(appendReplaySample(
+    await saveLastReplaySession(appendReplaySample(
       appendReplaySample(createReplaySession({ id: "delete-me" }), createSample({ timestampMs: 5000 })),
       createSample({ timestampMs: 6000, speedMs: 10 }),
     ));
 
-    const remaining = removeReplayRecording("delete-me");
+    const remaining = await removeReplayRecording("delete-me");
 
     expect(remaining.map((entry) => entry.id)).toEqual(["keep-me"]);
-    expect(loadReplayLibrary().map((entry) => entry.id)).toEqual(["keep-me"]);
+    expect((await loadReplayLibrary()).map((entry) => entry.id)).toEqual(["keep-me"]);
     expect(localStorage.getItem("vatio_speed_replay_last_v1")).toBeNull();
   });
 

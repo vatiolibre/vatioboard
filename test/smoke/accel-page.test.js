@@ -41,7 +41,8 @@ describe("accel.html smoke", () => {
   });
 
   it("boots the acceleration page and enables the test after a mocked fix", async () => {
-    await import("../../src/accel/accel.js");
+    const accelPage = await import("../../src/accel/accel.js");
+    await accelPage.initPromise;
     await flushTasks();
 
     expectPageSeo({

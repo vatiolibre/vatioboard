@@ -56,9 +56,15 @@ import {
   resolvePresetIdForUnits,
 } from "./presets.js";
 import { createAccelResultGraph } from "./result-graph.js";
-import { loadRuns, loadSettings, saveRuns as persistRuns, saveSettings as persistSettings } from "./storage.js";
+import {
+  createDefaultSettings,
+  loadRuns,
+  loadSettings,
+  saveRuns as persistRuns,
+  saveSettings as persistSettings,
+} from "./storage.js";
 
-(function () {
+export const initPromise = (function () {
   var finishAudio = typeof Audio === "function" ? new Audio(FINISH_SOUND_URL) : null;
   var finishAudioPrimePromise = null;
   var finishAudioPrimed = false;
@@ -214,17 +220,14 @@ import { loadRuns, loadSettings, saveRuns as persistRuns, saveSettings as persis
     recentIntervals: [],
     latestSample: null,
     currentQuality: null,
-    runs: loadRuns(),
-    settings: loadSettings(),
+    runs: [],
+    settings: createDefaultSettings(),
     run: null,
     latestResult: null,
     selectedResultId: "",
     openPanel: null,
     actionNoticeTimerId: null,
   };
-
-  state.latestResult = state.runs.length ? state.runs[0] : null;
-  state.selectedResultId = state.latestResult ? state.latestResult.id : "";
 
   var formatters = createAccelFormatters({
     t: t,
@@ -298,9 +301,17 @@ import { loadRuns, loadSettings, saveRuns as persistRuns, saveSettings as persis
     resultGraphHeight: RESULT_GRAPH_HEIGHT,
   });
 
-  init();
+  async function init() {
+    var loadedState = await Promise.all([
+      loadSettings(),
+      loadRuns(),
+    ]);
 
-  function init() {
+    state.settings = loadedState[0];
+    state.runs = loadedState[1];
+    state.latestResult = state.runs.length ? state.runs[0] : null;
+    state.selectedResultId = state.latestResult ? state.latestResult.id : "";
+
     applyTranslations();
     elements.runNotes.value = state.settings.notes;
     if (syncSelectedPresetForUnits()) saveSettings();
@@ -474,11 +485,11 @@ import { loadRuns, loadSettings, saveRuns as persistRuns, saveSettings as persis
   }
 
   function saveSettings() {
-    persistSettings(state.settings);
+    void persistSettings(state.settings);
   }
 
   function saveRuns() {
-    persistRuns(state.runs);
+    void persistRuns(state.runs);
   }
 
   function getSelectedPreset() {
@@ -1699,4 +1710,5 @@ import { loadRuns, loadSettings, saveRuns as persistRuns, saveSettings as persis
     if (!isFiniteNumber(deltaMs)) return state.latestSample.perfMs;
     return state.latestSample.perfMs + deltaMs;
   }
+  return init();
 })();

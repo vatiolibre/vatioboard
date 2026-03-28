@@ -1,4 +1,5 @@
-import { loadJson, loadText, saveJson } from "../shared/storage.js";
+import { createIndexedJsonKeyValueStore } from "../shared/indexed-storage.js";
+import { loadJson, loadText, removeStoredValue, saveJson } from "../shared/storage.js";
 import {
   DISTANCE_UNIT_CONFIG,
   MAX_RUNS,
@@ -25,6 +26,24 @@ import {
   findPresetDefinition,
   getCustomPresetSignature,
 } from "./presets.js";
+
+const ACCEL_DB_NAME = "vatio-accel-storage";
+const ACCEL_DB_VERSION = 1;
+const ACCEL_DB_STORE = "accelRecords";
+const ACCEL_STORAGE_KEYS = [
+  STORAGE_KEYS.settings,
+  STORAGE_KEYS.runs,
+];
+
+const accelStore = createIndexedJsonKeyValueStore({
+  dbName: ACCEL_DB_NAME,
+  dbVersion: ACCEL_DB_VERSION,
+  storeName: ACCEL_DB_STORE,
+});
+
+let accelMigrationPromise = null;
+let settingsSavePromise = Promise.resolve();
+let runsSavePromise = Promise.resolve();
 
 export function loadSharedSpeedUnitPreference() {
   const unit = loadText(SHARED_SPEED_UNIT_KEY, "");
@@ -55,8 +74,7 @@ export function getDefaultDistanceUnit(selectedPresetId) {
   return "ft";
 }
 
-export function loadSettings() {
-  const raw = loadJson(STORAGE_KEYS.settings, null);
+function normalizeSettings(raw) {
   const settings = raw && typeof raw === "object" ? raw : {};
   const selectedPresetId = typeof settings.selectedPresetId === "string" ? settings.selectedPresetId : defaultSettings.selectedPresetId;
   const speedUnit = normalizeSpeedUnit(settings.speedUnit || settings.customUnit || getDefaultSpeedUnit(selectedPresetId));
@@ -78,8 +96,79 @@ export function loadSettings() {
   };
 }
 
+function cloneJsonValue(value, fallback) {
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return fallback;
+  }
+}
+
+function queuePersistence(previousPromise, task) {
+  return previousPromise
+    .catch(() => {})
+    .then(task);
+}
+
+async function migrateLegacyAccelStorage() {
+  if (!accelStore.hasSupport()) return;
+
+  if (!accelMigrationPromise) {
+    accelMigrationPromise = (async () => {
+      const database = await accelStore.openDatabase();
+      if (!database) return;
+
+      for (const storageKey of ACCEL_STORAGE_KEYS) {
+        const existingValue = await accelStore.getValue(storageKey);
+        if (existingValue !== undefined) continue;
+
+        const legacyValue = loadJson(storageKey, undefined);
+        if (legacyValue === undefined) continue;
+
+        const stored = await accelStore.setValue(storageKey, legacyValue);
+        if (stored) {
+          removeStoredValue(storageKey);
+        }
+      }
+    })();
+  }
+
+  return accelMigrationPromise;
+}
+
+async function loadAccelValue(key, fallback) {
+  await migrateLegacyAccelStorage();
+
+  const indexedValue = await accelStore.getValue(key);
+  if (indexedValue !== undefined) return indexedValue;
+
+  return loadJson(key, fallback);
+}
+
+async function saveAccelValue(key, value) {
+  await migrateLegacyAccelStorage();
+
+  const stored = await accelStore.setValue(key, value);
+  if (stored) {
+    removeStoredValue(key);
+    return;
+  }
+
+  saveJson(key, value);
+}
+
+export function createDefaultSettings() {
+  return normalizeSettings(null);
+}
+
+export async function loadSettings() {
+  return normalizeSettings(await loadAccelValue(STORAGE_KEYS.settings, null));
+}
+
 export function saveSettings(settings) {
-  saveJson(STORAGE_KEYS.settings, settings);
+  const snapshot = cloneJsonValue(settings, createDefaultSettings());
+  settingsSavePromise = queuePersistence(settingsSavePromise, () => saveAccelValue(STORAGE_KEYS.settings, snapshot));
+  return settingsSavePromise;
 }
 
 export function normalizeStoredRun(run) {
@@ -172,8 +261,8 @@ export function normalizeStoredRun(run) {
   return normalizedRun;
 }
 
-export function loadRuns() {
-  const raw = loadJson(STORAGE_KEYS.runs, null);
+export async function loadRuns() {
+  const raw = await loadAccelValue(STORAGE_KEYS.runs, null);
   if (!Array.isArray(raw)) return [];
 
   const runs = [];
@@ -187,5 +276,7 @@ export function loadRuns() {
 }
 
 export function saveRuns(runs) {
-  saveJson(STORAGE_KEYS.runs, runs.slice(0, MAX_RUNS));
+  const snapshot = cloneJsonValue(Array.isArray(runs) ? runs.slice(0, MAX_RUNS) : [], []);
+  runsSavePromise = queuePersistence(runsSavePromise, () => saveAccelValue(STORAGE_KEYS.runs, snapshot));
+  return runsSavePromise;
 }

@@ -36,7 +36,8 @@ export const GEO_ERROR_CODE = {
 };
 
 export const MAX_RUNS = 40;
-export const MAX_DEBUG_SAMPLE_ROWS = 200;
+export const MAX_DEBUG_SAMPLE_ROWS = 5000;
+export const MAX_RESULT_TRACE_POINTS = 800;
 export const MAX_PLAUSIBLE_SPEED_MS = 90;
 export const READY_SAMPLE_AGE_MS = 2500;
 export const STALE_INTERVAL_MS = 1500;

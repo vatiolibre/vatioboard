@@ -118,18 +118,17 @@ applyButtonIcon(elements.openReplayGpsLabMenu, IconGpsLab);
 applyButtonIcon(elements.openReplayAccelMenu, IconAccel);
 applyButtonIcon(elements.openReplayBoardMenu, IconBoard);
 
-const initialSelection = loadReplaySelection();
 const replayFilterController = elements.replayFilterStart && elements.replayFilterEnd
   ? new DualRangeInput(elements.replayFilterStart, elements.replayFilterEnd)
   : null;
 
 const state = {
-  records: initialSelection.records,
-  selectedRecordingId: initialSelection.session?.id ?? null,
-  sessionSource: initialSelection.source,
-  session: initialSelection.session,
-  summary: getReplaySummary(initialSelection.session),
-  highlights: getReplayHighlights(initialSelection.session),
+  records: [],
+  selectedRecordingId: null,
+  sessionSource: null,
+  session: null,
+  summary: getReplaySummary(null),
+  highlights: getReplayHighlights(null),
   playbackRate: 4,
   dashboardAxis: "time",
   elapsedMs: 0,
@@ -143,6 +142,7 @@ const state = {
   expandedGraphFilterEndRatio: 1,
   expandedGraphPointerId: null,
 };
+let replaySelectionPromise = Promise.resolve();
 
 refreshDerivedState();
 
@@ -777,8 +777,8 @@ function renderSessionStateView() {
   elements.replayShell.hidden = !hasSession;
 }
 
-function applyReplaySelection(recordingId = null) {
-  const selection = loadReplaySelection(recordingId ?? state.selectedRecordingId);
+async function applyReplaySelection(recordingId = null) {
+  const selection = await loadReplaySelection(recordingId ?? state.selectedRecordingId);
 
   state.records = selection.records;
   state.sessionSource = selection.source;
@@ -804,6 +804,15 @@ function applyReplaySelection(recordingId = null) {
     mapController.init();
   }
   mapController.setSession(state.session);
+}
+
+function requestReplaySelection(recordingId = null) {
+  replaySelectionPromise = applyReplaySelection(recordingId);
+  return replaySelectionPromise;
+}
+
+export function waitForReplaySelection() {
+  return replaySelectionPromise;
 }
 
 function syncLanguage() {
@@ -887,7 +896,7 @@ function bindEvents() {
     setExpandedGraphRange(startRatio, endRatio);
   });
 
-  elements.replayRecordingsList?.addEventListener("click", (event) => {
+  elements.replayRecordingsList?.addEventListener("click", async (event) => {
     const deleteButton = event.target.closest("button[data-delete-recording-id]");
     if (deleteButton) {
       const { deleteRecordingId } = deleteButton.dataset;
@@ -895,17 +904,20 @@ function bindEvents() {
       if (!window.confirm(t("replayDeleteRecordingConfirm"))) return;
 
       stopPlayback();
-      removeReplayRecording(deleteRecordingId);
-      applyReplaySelection(
-        deleteRecordingId === state.selectedRecordingId ? null : state.selectedRecordingId,
-      );
+      replaySelectionPromise = (async () => {
+        await removeReplayRecording(deleteRecordingId);
+        return applyReplaySelection(
+          deleteRecordingId === state.selectedRecordingId ? null : state.selectedRecordingId,
+        );
+      })();
+      await replaySelectionPromise;
       return;
     }
 
     const button = event.target.closest("button[data-recording-id]");
     if (!button) return;
     stopPlayback();
-    applyReplaySelection(button.dataset.recordingId);
+    await requestReplaySelection(button.dataset.recordingId);
   });
 
   for (const button of elements.replayRateButtons) {
@@ -968,7 +980,7 @@ function bindEvents() {
   window.addEventListener("pagehide", stopPlayback);
 }
 
-function init() {
+async function init() {
   updatePageMeta();
   renderSessionStateView();
 
@@ -982,17 +994,8 @@ function init() {
   renderPlaybackButtons();
   renderActionIcons();
   renderRecordings();
-
-  if (!state.session) {
-    updateGraphPlayback(null);
-    return;
-  }
-
-  renderStaticSummary();
-  renderHighlights();
-  renderGraphs();
-  mapController.init();
-  renderPlaybackFrame();
+  updateGraphPlayback(null);
+  await requestReplaySelection();
 }
 
 if (import.meta.hot) {
@@ -1005,4 +1008,4 @@ if (import.meta.hot) {
 }
 
 bindEvents();
-init();
+export const initPromise = init();

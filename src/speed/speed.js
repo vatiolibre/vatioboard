@@ -175,12 +175,12 @@ const analogSpeedometer = createAnalogSpeedometer({
 const pageDescriptionMeta = document.querySelector('meta[name="description"]');
 const loadedPreferences = normalizeInitialAudioPreferences(loadInitialPreferences());
 const initialPreferences = loadedPreferences.preferences;
-const restoredReplaySession = loadActiveReplaySession();
-const initialReplaySession = restoredReplaySession || createReplaySession({
+const initialReplaySession = createReplaySession({
   unit: initialPreferences.unit,
   distanceUnit: initialPreferences.distanceUnit,
   recordingState: "recording",
 });
+const ACTIVE_REPLAY_PERSIST_INTERVAL_MS = 5000;
 
 const state = {
   unit: initialPreferences.unit,
@@ -273,6 +273,54 @@ const state = {
 let globeController = null;
 let wazeController = null;
 let audioController = null;
+let replayPersistTimerId = null;
+let replayPersistChain = Promise.resolve();
+
+function clearReplayPersistTimer() {
+  if (replayPersistTimerId !== null) {
+    window.clearTimeout(replayPersistTimerId);
+    replayPersistTimerId = null;
+  }
+}
+
+function enqueueReplaySessionPersist(sessionSnapshot) {
+  replayPersistChain = replayPersistChain
+    .catch(() => {})
+    .then(() => saveActiveReplaySession(sessionSnapshot));
+  return replayPersistChain;
+}
+
+function persistReplaySessionNow() {
+  clearReplayPersistTimer();
+  return enqueueReplaySessionPersist(state.replaySession);
+}
+
+function scheduleReplaySessionPersist({ immediate = false } = {}) {
+  if (immediate || state.recordingState !== "recording") {
+    void persistReplaySessionNow();
+    return;
+  }
+
+  if (replayPersistTimerId !== null) return;
+
+  replayPersistTimerId = window.setTimeout(() => {
+    replayPersistTimerId = null;
+    void enqueueReplaySessionPersist(state.replaySession);
+  }, ACTIVE_REPLAY_PERSIST_INTERVAL_MS);
+}
+
+async function hydrateReplaySession() {
+  const restoredReplaySession = await loadActiveReplaySession();
+  if (!restoredReplaySession) return;
+
+  state.recordingState = restoredReplaySession.recordingState;
+  state.replaySession = {
+    ...restoredReplaySession,
+    unit: state.unit,
+    distanceUnit: state.distanceUnit,
+    recordingState: restoredReplaySession.recordingState,
+  };
+}
 
 function bindMenuNavigation(element, href) {
   if (!element) return;
@@ -392,7 +440,7 @@ function syncReplaySessionPreferences() {
     distanceUnit: state.distanceUnit,
     recordingState: state.recordingState,
   };
-  saveActiveReplaySession(state.replaySession);
+  scheduleReplaySessionPersist({ immediate: true });
   renderRecordingControls();
 }
 
@@ -403,7 +451,7 @@ function resetReplaySession({
   minSamples = 2,
 } = {}) {
   if (archiveCurrent) {
-    archiveReplaySession(state.replaySession, { endedAtMs, minSamples });
+    void archiveReplaySession(state.replaySession, { endedAtMs, minSamples });
   }
 
   state.recordingState = recordingState;
@@ -412,7 +460,7 @@ function resetReplaySession({
     distanceUnit: state.distanceUnit,
     recordingState,
   });
-  saveActiveReplaySession(state.replaySession);
+  scheduleReplaySessionPersist({ immediate: true });
   renderRecordingControls();
 }
 
@@ -424,7 +472,7 @@ function setRecordingState(recordingState) {
     unit: state.unit,
     distanceUnit: state.distanceUnit,
   };
-  saveActiveReplaySession(state.replaySession);
+  scheduleReplaySessionPersist({ immediate: true });
   renderRecordingControls();
 }
 
@@ -1039,7 +1087,7 @@ function handlePosition(position) {
         recordingState: state.recordingState,
       },
     );
-    saveActiveReplaySession(state.replaySession);
+    scheduleReplaySessionPersist();
     renderRecordingControls();
   }
 
@@ -1144,8 +1192,12 @@ function bindEvents() {
   bindMenuNavigation(elements.openBoardMenu, "/");
   elements.retryGps.addEventListener("click", () => restartTrip({ fromUserGesture: true }));
   elements.resetTrip.addEventListener("click", () => restartTrip({ fromUserGesture: true }));
-  elements.toggleRecording?.addEventListener("click", toggleRecording);
-  elements.stopRecording?.addEventListener("click", stopRecordingSession);
+  elements.toggleRecording?.addEventListener("click", () => {
+    toggleRecording();
+  });
+  elements.stopRecording?.addEventListener("click", () => {
+    stopRecordingSession();
+  });
   elements.alertTrigger.addEventListener("click", toggleAlertPanel);
   elements.closeAlertPanel.addEventListener("click", closeAlertPanel);
   elements.alertToggle.addEventListener("click", () => {
@@ -1269,6 +1321,7 @@ function bindEvents() {
 
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
+      void persistReplaySessionNow();
       globeController.stopGlobeSolarUpdates();
       stopRenderLoop();
       audioController.syncRuntimePagePresentation();
@@ -1288,14 +1341,18 @@ function bindEvents() {
     audioController.syncRuntimePagePresentation();
   });
   document.addEventListener("i18n:change", syncLanguage);
+  window.addEventListener("pagehide", () => {
+    void persistReplaySessionNow();
+  });
 }
 
-function init() {
+async function init() {
   document.body.classList.remove("alert-panel-open");
   if (loadedPreferences.changed) {
     saveBackgroundAudioEnabledPreference(false);
   }
-  saveActiveReplaySession(state.replaySession);
+  await hydrateReplaySession();
+  await persistReplaySessionNow();
   updatePageMeta();
 
   if (elements.langToggle) {
@@ -1350,10 +1407,11 @@ function init() {
 
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
+    clearReplayPersistTimer();
     audioController.dispose();
     globeController.stopGlobeSolarUpdates();
     globeController.clearGlobeFollowResumeTimeout();
   });
 }
 
-init();
+export const initPromise = init();

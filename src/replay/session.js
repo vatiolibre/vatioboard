@@ -7,8 +7,170 @@ export const REPLAY_SCHEMA_VERSION = 1;
 export const MAX_REPLAY_SAMPLES = 1200;
 export const MAX_STORED_REPLAYS = 12;
 
+const REPLAY_DB_NAME = "vatio-replay-storage";
+const REPLAY_DB_VERSION = 1;
+const REPLAY_DB_STORE = "replayRecords";
+const REPLAY_STORAGE_KEYS = [
+  REPLAY_ACTIVE_KEY,
+  REPLAY_LAST_KEY,
+  REPLAY_LIBRARY_KEY,
+];
+
+let replayDbPromise = null;
+let replayMigrationPromise = null;
+
 export function isFiniteNumber(value) {
   return Number.isFinite(value);
+}
+
+function hasIndexedDbSupport() {
+  return typeof indexedDB !== "undefined" && typeof indexedDB.open === "function";
+}
+
+function openReplayDatabase() {
+  if (!hasIndexedDbSupport()) {
+    return Promise.resolve(null);
+  }
+
+  if (!replayDbPromise) {
+    replayDbPromise = new Promise((resolve) => {
+      try {
+        const request = indexedDB.open(REPLAY_DB_NAME, REPLAY_DB_VERSION);
+
+        request.onupgradeneeded = () => {
+          const database = request.result;
+          if (!database.objectStoreNames.contains(REPLAY_DB_STORE)) {
+            database.createObjectStore(REPLAY_DB_STORE);
+          }
+        };
+
+        request.onsuccess = () => {
+          resolve(request.result);
+        };
+
+        request.onerror = () => {
+          replayDbPromise = Promise.resolve(null);
+          resolve(null);
+        };
+
+        request.onblocked = () => {
+          replayDbPromise = Promise.resolve(null);
+          resolve(null);
+        };
+      } catch {
+        replayDbPromise = Promise.resolve(null);
+        resolve(null);
+      }
+    });
+  }
+
+  return replayDbPromise;
+}
+
+async function getIndexedReplayValue(key) {
+  const database = await openReplayDatabase();
+  if (!database) return undefined;
+
+  try {
+    return await new Promise((resolve, reject) => {
+      const transaction = database.transaction(REPLAY_DB_STORE, "readonly");
+      const request = transaction.objectStore(REPLAY_DB_STORE).get(key);
+      request.onsuccess = () => resolve(request.result ?? undefined);
+      request.onerror = () => reject(request.error);
+      transaction.onabort = () => reject(transaction.error ?? request.error);
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+async function setIndexedReplayValue(key, value) {
+  const database = await openReplayDatabase();
+  if (!database) return false;
+
+  try {
+    await new Promise((resolve, reject) => {
+      const transaction = database.transaction(REPLAY_DB_STORE, "readwrite");
+      const request = transaction.objectStore(REPLAY_DB_STORE).put(value, key);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+      transaction.onabort = () => reject(transaction.error ?? request.error);
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function deleteIndexedReplayValue(key) {
+  const database = await openReplayDatabase();
+  if (!database) return false;
+
+  try {
+    await new Promise((resolve, reject) => {
+      const transaction = database.transaction(REPLAY_DB_STORE, "readwrite");
+      const request = transaction.objectStore(REPLAY_DB_STORE).delete(key);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+      transaction.onabort = () => reject(transaction.error ?? request.error);
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function migrateLegacyReplayStorage() {
+  if (!hasIndexedDbSupport()) return;
+
+  if (!replayMigrationPromise) {
+    replayMigrationPromise = (async () => {
+      const database = await openReplayDatabase();
+      if (!database) return;
+
+      for (const storageKey of REPLAY_STORAGE_KEYS) {
+        const existingValue = await getIndexedReplayValue(storageKey);
+        if (existingValue !== undefined) continue;
+
+        const legacyValue = loadJson(storageKey, undefined);
+        if (legacyValue === undefined) continue;
+
+        const stored = await setIndexedReplayValue(storageKey, legacyValue);
+        if (stored) {
+          removeStoredValue(storageKey);
+        }
+      }
+    })();
+  }
+
+  return replayMigrationPromise;
+}
+
+async function loadReplayValue(key, fallback) {
+  await migrateLegacyReplayStorage();
+
+  const indexedValue = await getIndexedReplayValue(key);
+  if (indexedValue !== undefined) return indexedValue;
+
+  return loadJson(key, fallback);
+}
+
+async function saveReplayValue(key, value) {
+  await migrateLegacyReplayStorage();
+
+  const stored = await setIndexedReplayValue(key, value);
+  if (stored) {
+    removeStoredValue(key);
+    return;
+  }
+
+  saveJson(key, value);
+}
+
+async function removeReplayValue(key) {
+  await migrateLegacyReplayStorage();
+  await deleteIndexedReplayValue(key);
+  removeStoredValue(key);
 }
 
 function normalizeSpeedUnit(unit, fallback = "kmh") {
@@ -288,35 +450,35 @@ export function finalizeReplaySession(session, endedAtMs = null) {
   };
 }
 
-export function loadActiveReplaySession() {
-  return normalizeReplaySession(loadJson(REPLAY_ACTIVE_KEY, null));
+export async function loadActiveReplaySession() {
+  return normalizeReplaySession(await loadReplayValue(REPLAY_ACTIVE_KEY, null));
 }
 
-export function saveActiveReplaySession(session) {
+export async function saveActiveReplaySession(session) {
   const normalizedSession = normalizeReplaySession(session) || createReplaySession();
-  saveJson(REPLAY_ACTIVE_KEY, normalizedSession);
+  await saveReplayValue(REPLAY_ACTIVE_KEY, normalizedSession);
 }
 
-export function clearActiveReplaySession() {
-  removeStoredValue(REPLAY_ACTIVE_KEY);
+export async function clearActiveReplaySession() {
+  await removeReplayValue(REPLAY_ACTIVE_KEY);
 }
 
-export function loadLastReplaySession() {
-  return normalizeReplaySession(loadJson(REPLAY_LAST_KEY, null));
+export async function loadLastReplaySession() {
+  return normalizeReplaySession(await loadReplayValue(REPLAY_LAST_KEY, null));
 }
 
-export function saveLastReplaySession(session) {
+export async function saveLastReplaySession(session) {
   const normalizedSession = normalizeReplaySession(session);
   if (!normalizedSession) return;
-  saveJson(REPLAY_LAST_KEY, normalizedSession);
+  await saveReplayValue(REPLAY_LAST_KEY, normalizedSession);
 }
 
-export function loadReplayLibrary() {
-  const rawLibrary = loadJson(REPLAY_LIBRARY_KEY, []);
+export async function loadReplayLibrary() {
+  const rawLibrary = await loadReplayValue(REPLAY_LIBRARY_KEY, []);
   const normalizedLibrary = Array.isArray(rawLibrary)
     ? rawLibrary.map(normalizeReplaySession).filter(Boolean)
     : [];
-  const legacySession = loadLastReplaySession();
+  const legacySession = await loadLastReplaySession();
 
   if (legacySession && !normalizedLibrary.some((session) => session.id === legacySession.id)) {
     normalizedLibrary.unshift(legacySession);
@@ -326,7 +488,7 @@ export function loadReplayLibrary() {
   return normalizedLibrary.slice(0, MAX_STORED_REPLAYS);
 }
 
-export function saveReplayLibrary(recordings) {
+export async function saveReplayLibrary(recordings) {
   const normalizedRecordings = Array.isArray(recordings)
     ? recordings
       .map(normalizeReplaySession)
@@ -334,10 +496,10 @@ export function saveReplayLibrary(recordings) {
       .sort((left, right) => getReplaySortTimestamp(right) - getReplaySortTimestamp(left))
       .slice(0, MAX_STORED_REPLAYS)
     : [];
-  saveJson(REPLAY_LIBRARY_KEY, normalizedRecordings);
+  await saveReplayValue(REPLAY_LIBRARY_KEY, normalizedRecordings);
 }
 
-export function archiveReplaySession(
+export async function archiveReplaySession(
   session,
   options = {},
 ) {
@@ -346,29 +508,29 @@ export function archiveReplaySession(
     return loadReplayLibrary();
   }
 
-  const nextRecordings = loadReplayLibrary().filter((entry) => entry.id !== normalizedSession.id);
+  const nextRecordings = (await loadReplayLibrary()).filter((entry) => entry.id !== normalizedSession.id);
   nextRecordings.unshift(normalizedSession);
-  saveReplayLibrary(nextRecordings.slice(0, options.maxRecordings ?? MAX_STORED_REPLAYS));
+  await saveReplayLibrary(nextRecordings.slice(0, options.maxRecordings ?? MAX_STORED_REPLAYS));
   return loadReplayLibrary();
 }
 
-export function removeReplayRecording(recordingId) {
+export async function removeReplayRecording(recordingId) {
   if (typeof recordingId !== "string" || !recordingId) {
     return loadReplayLibrary();
   }
 
-  const legacySession = loadLastReplaySession();
+  const legacySession = await loadLastReplaySession();
   if (legacySession?.id === recordingId) {
-    removeStoredValue(REPLAY_LAST_KEY);
+    await removeReplayValue(REPLAY_LAST_KEY);
   }
 
-  const nextRecordings = loadReplayLibrary().filter((entry) => entry.id !== recordingId);
-  saveReplayLibrary(nextRecordings);
+  const nextRecordings = (await loadReplayLibrary()).filter((entry) => entry.id !== recordingId);
+  await saveReplayLibrary(nextRecordings);
   return loadReplayLibrary();
 }
 
-export function loadReplayRecords() {
-  const activeSession = loadActiveReplaySession();
+export async function loadReplayRecords() {
+  const activeSession = await loadActiveReplaySession();
   const recordings = [];
 
   if (hasReplaySamples(activeSession, 1)) {
@@ -379,7 +541,7 @@ export function loadReplayRecords() {
     });
   }
 
-  for (const session of loadReplayLibrary()) {
+  for (const session of await loadReplayLibrary()) {
     recordings.push({
       id: session.id,
       source: "library",
@@ -390,8 +552,8 @@ export function loadReplayRecords() {
   return recordings;
 }
 
-export function loadReplaySelection(selectedId = null) {
-  const records = loadReplayRecords();
+export async function loadReplaySelection(selectedId = null) {
+  const records = await loadReplayRecords();
 
   if (selectedId) {
     const selectedRecord = records.find((record) => record.id === selectedId);

@@ -5,6 +5,7 @@ import {
   MAX_ACCURACY_INFLUENCE_M,
   MAX_DEBUG_SAMPLE_ROWS,
   MAX_PLAUSIBLE_SPEED_MS,
+  MAX_RESULT_TRACE_POINTS,
   MIN_DISTANCE_NOISE_FLOOR_M,
   MIN_VALID_RUN_DURATION_MS,
   MIN_VALID_RUN_SAMPLES,
@@ -764,7 +765,7 @@ export function getSpeedTraceFinishContext(sampleLog, expectedElapsedMs) {
 }
 
 export function compactSpeedTrace(trace) {
-  const maxPoints = 120;
+  const maxPoints = MAX_RESULT_TRACE_POINTS;
   if (!Array.isArray(trace) || trace.length <= maxPoints) return trace ? trace.slice() : [];
 
   const compacted = [];

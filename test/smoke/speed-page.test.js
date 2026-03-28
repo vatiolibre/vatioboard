@@ -67,7 +67,8 @@ describe("speed.html smoke", () => {
   });
 
   it("boots the speedometer and reacts to a mocked geolocation fix", async () => {
-    await import("../../src/speed/speed.js");
+    const speedPage = await import("../../src/speed/speed.js");
+    await speedPage.initPromise;
     await flushTasks();
 
     expectPageSeo({

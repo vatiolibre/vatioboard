@@ -1,8 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FT_TO_M, MPH_TO_MS } from "../../src/accel/constants.js";
 import {
+  FT_TO_M,
+  MAX_RESULT_TRACE_POINTS,
+  MPH_TO_MS,
+} from "../../src/accel/constants.js";
+import {
+  appendRunSampleLog,
   buildResult,
   buildSlopeAnalysis,
+  compactSpeedTrace,
   createLiveSample,
   createRunState,
   seedRunPartialStarts,
@@ -243,5 +249,46 @@ describe("accel logic helpers", () => {
         elapsedMs: 5000,
       },
     ]);
+  });
+
+  it("retains dense raw sample logs beyond the old 200-row cutoff", () => {
+    const run = createRunState({
+      preset: createPreset(),
+      settings: createSettings(),
+      partials: [],
+      nowMs: 100,
+      perfMs: 10,
+    });
+
+    for (let index = 0; index < 300; index += 1) {
+      appendRunSampleLog(run, {
+        deltaMs: 80,
+        latitude: 4.7 + (index / 100000),
+        longitude: -74.07,
+        rawSpeedMs: 0,
+        derivedSpeedMs: null,
+        speedMs: 20,
+        speedSource: "reported",
+        headingDeg: 180,
+        accuracyM: 5,
+        altitudeM: 2600,
+        perfMs: 1000 + (index * 80),
+        stale: false,
+        sparse: false,
+      });
+    }
+
+    expect(run.sampleLog).toHaveLength(300);
+    expect(run.sampleLog[0].index).toBe(1);
+    expect(run.sampleLog[299].index).toBe(300);
+  });
+
+  it("keeps higher-density traces intact until they exceed the result graph cap", () => {
+    const denseTrace = Array.from({ length: MAX_RESULT_TRACE_POINTS - 10 }, (_, index) => ({
+      elapsedMs: index * 50,
+      speedMs: index / 10,
+    }));
+
+    expect(compactSpeedTrace(denseTrace)).toHaveLength(MAX_RESULT_TRACE_POINTS - 10);
   });
 });

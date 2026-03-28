@@ -173,7 +173,8 @@ describe("replay.html smoke", () => {
   });
 
   it("boots the replay page and renders the stored session", async () => {
-    await import("../../src/replay/replay.js");
+    const replayPage = await import("../../src/replay/replay.js");
+    await replayPage.initPromise;
     await flushTasks();
 
     expectPageSeo({
@@ -213,7 +214,8 @@ describe("replay.html smoke", () => {
   });
 
   it("opens the expanded graph sheet with stacked charts and a dual-range filter", async () => {
-    await import("../../src/replay/replay.js");
+    const replayPage = await import("../../src/replay/replay.js");
+    await replayPage.initPromise;
     await flushTasks();
 
     document.querySelector('[data-graph-metric="headingDeg"]').click();
@@ -243,16 +245,20 @@ describe("replay.html smoke", () => {
   });
 
   it("lets the user delete saved recordings while keeping the active session", async () => {
-    await import("../../src/replay/replay.js");
+    const replayPage = await import("../../src/replay/replay.js");
+    await replayPage.initPromise;
+    const { loadReplayLibrary } = await import("../../src/replay/session.js");
     await flushTasks();
 
     document.querySelector('#replayRecordingsList button[data-delete-recording-id="saved-session"]').click();
+    await replayPage.waitForReplaySelection();
+    await loadReplayLibrary();
     await flushTasks();
 
     expect(window.confirm).toHaveBeenCalledTimes(1);
     expect(document.querySelectorAll("#replayRecordingsList button[data-recording-id]")).toHaveLength(1);
     expect(document.querySelector('#replayRecordingsList button[data-delete-recording-id="saved-session"]')).toBeNull();
-    expect(JSON.parse(localStorage.getItem("vatio_speed_replay_library_v1"))).toEqual([]);
+    expect(await loadReplayLibrary()).toEqual([]);
   });
 
   it("boots cleanly into the empty state when there are no replay recordings", async () => {
@@ -260,7 +266,8 @@ describe("replay.html smoke", () => {
     vi.resetModules();
     await bootHtmlPage("replay.html");
 
-    await import("../../src/replay/replay.js");
+    const replayPage = await import("../../src/replay/replay.js");
+    await replayPage.initPromise;
     await flushTasks();
 
     expect(document.getElementById("replayEmptyState").hidden).toBe(false);
