@@ -388,9 +388,9 @@ export function createReplayMapController({
                 "line-join": "round",
               },
               paint: {
-                "line-color": "#dbeafe",
-                "line-opacity": 0.32,
-                "line-width": 4,
+                "line-color": "#fb7185",
+                "line-opacity": 0.5,
+                "line-width": 4.2,
               },
             },
             {
