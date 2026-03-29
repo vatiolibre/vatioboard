@@ -7,12 +7,14 @@ export function createAccelResultGraph({
   isFiniteNumber,
   compactSpeedTrace,
   msToSpeedUnit,
+  convertDistanceMeasurement,
   formatDistanceMeasurement,
   formatNumber,
   formatRunDistance,
   formatRunSeconds,
   formatSlopePercent,
   formatSpeedValue,
+  getDistanceUnitLabel,
   getSpeedUnitLabel,
   t,
   resultGraphHeight,
@@ -21,17 +23,52 @@ export function createAccelResultGraph({
   let resultGraphResizeObserver = null;
   let resultGraphRefreshFrame = 0;
   let resultGraphRenderKey = "";
+  let resultGraphRenderOptions = {};
   let resultGraphSelectionResultId = "";
   let resultGraphSelectionPointKey = "";
   let resultGraphObservedPanelWidth = 0;
 
-  const resultGraphGuidePlugin = {
-    id: "resultGraphGuide",
-    afterDatasetsDraw(chart, args, options) {
-      if (!chart || !chart.tooltip || !chart.chartArea) return;
+	  const resultGraphGuidePlugin = {
+	    id: "resultGraphGuide",
+	    afterDatasetsDraw(chart, args, options) {
+	      if (!chart || !chart.tooltip || !chart.chartArea) return;
 
-      const activeElements = chart.tooltip.getActiveElements ? chart.tooltip.getActiveElements() : [];
-      if (!activeElements || !activeElements.length) return;
+      const replayCursor = chart.$accelReplayCursor;
+      const xScale = chart.scales && chart.scales.x ? chart.scales.x : null;
+      if (replayCursor && xScale && isFiniteNumber(replayCursor.xValue)) {
+        const x = xScale.getPixelForValue(replayCursor.xValue);
+        if (isFiniteNumber(x)) {
+          const chartArea = chart.chartArea;
+          const ctx = chart.ctx;
+          const yScale = chart.scales && chart.scales.y ? chart.scales.y : null;
+
+          ctx.save();
+          ctx.strokeStyle = options && options.replayColor ? options.replayColor : "rgba(16, 185, 129, 0.82)";
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([]);
+          ctx.beginPath();
+          ctx.moveTo(x, chartArea.top);
+          ctx.lineTo(x, chartArea.bottom);
+          ctx.stroke();
+
+          if (yScale && isFiniteNumber(replayCursor.yValue)) {
+            const y = yScale.getPixelForValue(replayCursor.yValue);
+            if (isFiniteNumber(y)) {
+              ctx.fillStyle = options && options.replayColor ? options.replayColor : "rgba(16, 185, 129, 0.82)";
+              ctx.strokeStyle = options && options.replayOutline ? options.replayOutline : "#ffffff";
+              ctx.lineWidth = 2;
+              ctx.beginPath();
+              ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.stroke();
+            }
+          }
+          ctx.restore();
+        }
+      }
+
+	      const activeElements = chart.tooltip.getActiveElements ? chart.tooltip.getActiveElements() : [];
+	      if (!activeElements || !activeElements.length) return;
 
       const activeElement = activeElements[0].element;
       if (!activeElement || !isFiniteNumber(activeElement.x) || !isFiniteNumber(activeElement.y)) return;
@@ -62,6 +99,7 @@ export function createAccelResultGraph({
 
     const trace = compactSpeedTrace(source.speedTrace);
     const speedUnit = getState().settings.speedUnit;
+    const distanceUnit = getState().settings.distanceUnit;
     const graphData = [];
 
     for (let index = 0; index < trace.length; index += 1) {
@@ -76,6 +114,7 @@ export function createAccelResultGraph({
         speedMs: point.speedMs,
         speedDisplay: msToSpeedUnit(point.speedMs, speedUnit),
         distanceM,
+        distanceDisplay: isFiniteNumber(distanceM) ? convertDistanceMeasurement(distanceM, distanceUnit) : null,
         altitudeM,
         accuracyM: isFiniteNumber(point.accuracyM) ? point.accuracyM : null,
         speedSource: typeof point.speedSource === "string" ? point.speedSource : null,
@@ -88,6 +127,58 @@ export function createAccelResultGraph({
 
   function buildResultGraphData(result) {
     return buildGraphDataFromTraceSource(result);
+  }
+
+  function getGraphAxisMode(options) {
+    return options && options.axisMode === "distance" ? "distance" : "time";
+  }
+
+  function getGraphPointAxisValue(point, axisMode) {
+    if (!point) return null;
+    return axisMode === "distance" ? point.distanceDisplay : point.elapsedSeconds;
+  }
+
+  function getGraphPointDisplayValue(point, axisMode) {
+    if (!point) return null;
+    return axisMode === "distance" ? point.distanceM : point.elapsedMs;
+  }
+
+  function buildMarkerDataset(markerPoints, axisMode) {
+    if (!Array.isArray(markerPoints) || !markerPoints.length) return [];
+
+    const speedUnit = getState().settings.speedUnit;
+    const distanceUnit = getState().settings.distanceUnit;
+
+    return markerPoints
+      .filter(Boolean)
+      .map((marker, index) => ({
+        key: marker.id || `marker-${index}`,
+        markerKind: marker.kind || "partial",
+        markerLabel: marker.label || "",
+        elapsedMs: Math.max(0, marker.elapsedMs || 0),
+        elapsedSeconds: Math.max(0, marker.elapsedMs || 0) / 1000,
+        distanceM: isFiniteNumber(marker.distanceM) ? Math.max(0, marker.distanceM) : null,
+        distanceDisplay: isFiniteNumber(marker.distanceM) ? convertDistanceMeasurement(marker.distanceM, distanceUnit) : null,
+        speedMs: isFiniteNumber(marker.speedMs) ? Math.max(0, marker.speedMs) : null,
+        speedDisplay: isFiniteNumber(marker.speedMs) ? msToSpeedUnit(marker.speedMs, speedUnit) : null,
+        axisValue: axisMode === "distance"
+          ? (isFiniteNumber(marker.distanceM) ? convertDistanceMeasurement(marker.distanceM, distanceUnit) : null)
+          : Math.max(0, marker.elapsedMs || 0) / 1000,
+      }))
+      .filter((marker) => isFiniteNumber(marker.axisValue) && isFiniteNumber(marker.speedDisplay));
+  }
+
+  function getGraphMaxValue(graphData, axisMode) {
+    let maxValue = axisMode === "distance" ? 0 : 0.1;
+    const key = axisMode === "distance" ? "distanceDisplay" : "elapsedSeconds";
+
+    for (let index = 0; index < graphData.length; index += 1) {
+      if (isFiniteNumber(graphData[index][key])) {
+        maxValue = Math.max(maxValue, graphData[index][key]);
+      }
+    }
+
+    return maxValue;
   }
 
   function renderResultGraphDetails(point) {
@@ -171,19 +262,22 @@ export function createAccelResultGraph({
     };
   }
 
-  function buildResultGraphConfig(result, graphData, selectedPoint) {
+  function buildResultGraphConfig(result, graphData, selectedPoint, options) {
     const speedUnit = getState().settings.speedUnit;
+    const distanceUnit = getState().settings.distanceUnit;
+    const axisMode = getGraphAxisMode(options);
+    const markerDataset = buildMarkerDataset(options && options.markerPoints, axisMode);
+    const graphMaxAxisValue = getGraphMaxValue(graphData, axisMode);
     const speedTick = speedUnit === "kmh" ? 20 : 10;
     let maxSpeedDisplay = speedTick;
-    let maxElapsedSeconds = 0.1;
 
     for (let index = 0; index < graphData.length; index += 1) {
       maxSpeedDisplay = Math.max(maxSpeedDisplay, graphData[index].speedDisplay || 0);
-      maxElapsedSeconds = Math.max(maxElapsedSeconds, graphData[index].elapsedSeconds || 0);
     }
 
     const graphMaxSpeedDisplay = Math.max(speedTick, Math.ceil(maxSpeedDisplay / speedTick) * speedTick);
     const palette = getResultGraphPalette();
+    const xAxisKey = axisMode === "distance" ? "distanceDisplay" : "elapsedSeconds";
 
     return {
       type: "line",
@@ -194,7 +288,7 @@ export function createAccelResultGraph({
             label: t("accelSpeedGraph"),
             data: graphData,
             parsing: {
-              xAxisKey: "elapsedSeconds",
+              xAxisKey,
               yAxisKey: "speedDisplay",
             },
             normalized: true,
@@ -210,6 +304,36 @@ export function createAccelResultGraph({
             pointHoverBorderWidth: 2,
             pointHoverBackgroundColor: palette.line,
             pointHoverBorderColor: palette.markerOutline,
+          },
+          {
+            type: "scatter",
+            label: t("accelPartials"),
+            data: markerDataset,
+            parsing: {
+              xAxisKey,
+              yAxisKey: "speedDisplay",
+            },
+            showLine: false,
+            pointRadius(context) {
+              return context && context.raw && context.raw.markerKind === "finish" ? 4.5 : 3.5;
+            },
+            pointHoverRadius(context) {
+              return context && context.raw && context.raw.markerKind === "finish" ? 6 : 5;
+            },
+            pointHitRadius: 18,
+            pointBackgroundColor(context) {
+              return context && context.raw && context.raw.markerKind === "finish"
+                ? palette.markerBackground
+                : palette.markerOutline;
+            },
+            pointBorderColor(context) {
+              return context && context.raw && context.raw.markerKind === "finish"
+                ? palette.markerOutline
+                : palette.line;
+            },
+            pointBorderWidth(context) {
+              return context && context.raw && context.raw.markerKind === "finish" ? 2 : 1.5;
+            },
           },
         ],
       },
@@ -236,7 +360,7 @@ export function createAccelResultGraph({
           x: {
             type: "linear",
             min: 0,
-            max: maxElapsedSeconds,
+            max: graphMaxAxisValue,
             grid: {
               color: palette.grid,
               drawTicks: false,
@@ -250,7 +374,11 @@ export function createAccelResultGraph({
               padding: 8,
               callback(value) {
                 const numericValue = Number(value);
-                const decimals = maxElapsedSeconds >= 10 ? 1 : 2;
+                if (axisMode === "distance") {
+                  const decimals = distanceUnit === "m" ? (graphMaxAxisValue >= 100 ? 0 : 1) : 0;
+                  return `${formatNumber(numericValue, decimals)} ${getDistanceUnitLabel(distanceUnit)}`;
+                }
+                const decimals = graphMaxAxisValue >= 10 ? 1 : 2;
                 return `${formatNumber(numericValue, decimals)} s`;
               },
             },
@@ -279,8 +407,8 @@ export function createAccelResultGraph({
           legend: {
             display: false,
           },
-          tooltip: {
-            enabled: true,
+	          tooltip: {
+	            enabled: true,
             displayColors: false,
             backgroundColor: palette.markerBackground,
             titleColor: palette.markerOutline,
@@ -293,26 +421,37 @@ export function createAccelResultGraph({
             caretPadding: 10,
             bodySpacing: 4,
             titleSpacing: 6,
-            callbacks: {
-              title(items) {
-                if (!items || !items.length || !items[0].raw) return "";
-                return `${formatRunSeconds(items[0].raw.elapsedMs)} s`;
-              },
-              label(context) {
-                return context && context.raw ? formatSpeedValue(context.raw.speedMs, getState().settings.speedUnit) : "";
-              },
-              afterLabel(context) {
-                return buildResultGraphTooltipLines(context ? context.raw : null);
-              },
-            },
-          },
-          resultGraphGuide: {
-            color: palette.crosshair,
-          },
-        },
-        onHover(event, activeElements, chart) {
-          handleResultGraphInteraction(chart, activeElements);
-        },
+	            callbacks: {
+	              title(items) {
+	                if (!items || !items.length || !items[0].raw) return "";
+                const rawPoint = items[0].raw;
+                if (rawPoint.markerLabel) return rawPoint.markerLabel;
+	                return `${formatRunSeconds(rawPoint.elapsedMs)} s`;
+	              },
+	              label(context) {
+                if (!context || !context.raw) return "";
+                const rawPoint = context.raw;
+                if (isFiniteNumber(rawPoint.speedMs)) return formatSpeedValue(rawPoint.speedMs, getState().settings.speedUnit);
+                return "";
+	              },
+	              afterLabel(context) {
+                const rawPoint = context ? context.raw : null;
+                if (rawPoint && rawPoint.markerLabel) {
+                  return buildResultGraphTooltipLines(rawPoint);
+                }
+	                return buildResultGraphTooltipLines(rawPoint);
+	              },
+	            },
+	          },
+	          resultGraphGuide: {
+	            color: palette.crosshair,
+            replayColor: palette.line,
+            replayOutline: palette.markerOutline,
+	          },
+	        },
+	        onHover(event, activeElements, chart) {
+	          handleResultGraphInteraction(chart, activeElements);
+	        },
         onClick(event, activeElements, chart) {
           handleResultGraphInteraction(chart, activeElements);
         },
@@ -320,7 +459,7 @@ export function createAccelResultGraph({
     };
   }
 
-  function setResultGraphActivePoint(chart, index) {
+  function setResultGraphActivePoint(chart, index, syncDetails = true) {
     if (!chart || index < 0) return;
 
     const meta = chart.getDatasetMeta(0);
@@ -337,11 +476,12 @@ export function createAccelResultGraph({
       chart.tooltip.setActiveElements(activeElements, pointPosition);
     }
     chart.update("none");
-    handleResultGraphInteraction(chart, activeElements);
+    if (syncDetails) handleResultGraphInteraction(chart, activeElements);
   }
 
   function handleResultGraphInteraction(chart, activeElements) {
     if (!chart || !activeElements || !activeElements.length) return;
+    if (chart.$accelReplayLocked) return;
 
     const activePoint = activeElements[0];
     const dataset = chart.data && chart.data.datasets && chart.data.datasets[activePoint.datasetIndex]
@@ -356,6 +496,32 @@ export function createAccelResultGraph({
     renderResultGraphDetails(rawPoint);
   }
 
+  function getNearestGraphPointIndex(graphData, point, axisMode) {
+    if (!Array.isArray(graphData) || !graphData.length || !point) return -1;
+    if (point.key) {
+      for (let index = 0; index < graphData.length; index += 1) {
+        if (graphData[index].key === point.key) return index;
+      }
+    }
+
+    const targetValue = getGraphPointDisplayValue(point, axisMode);
+    if (!isFiniteNumber(targetValue)) return graphData.length - 1;
+
+    let nearestIndex = 0;
+    let nearestDistance = Infinity;
+    const key = axisMode === "distance" ? "distanceM" : "elapsedMs";
+    for (let index = 0; index < graphData.length; index += 1) {
+      if (!isFiniteNumber(graphData[index][key])) continue;
+      const difference = Math.abs(graphData[index][key] - targetValue);
+      if (difference < nearestDistance) {
+        nearestDistance = difference;
+        nearestIndex = index;
+      }
+    }
+
+    return nearestIndex;
+  }
+
   function destroy() {
     if (resultGraphRefreshFrame) {
       window.cancelAnimationFrame(resultGraphRefreshFrame);
@@ -366,17 +532,20 @@ export function createAccelResultGraph({
       resultGraphChart = null;
     }
     resultGraphRenderKey = "";
+    resultGraphRenderOptions = {};
   }
 
-  function mount(result, graphData, selectedPoint) {
+  function mount(result, graphData, selectedPoint, options) {
     if (!elements.resultGraphCanvas || !elements.resultGraphFrame || !graphData || graphData.length < 2) return;
 
     const state = getState();
+    const axisMode = getGraphAxisMode(options);
     const frameWidth = Math.floor(elements.resultGraphFrame.clientWidth || elements.resultGraphFrame.getBoundingClientRect().width || 0);
     if (frameWidth < 120) return;
 
     const renderKey = [
       result.id,
+      axisMode,
       state.settings.speedUnit,
       state.settings.distanceUnit,
       getLang(),
@@ -388,24 +557,52 @@ export function createAccelResultGraph({
     const canvasElement = elements.resultGraphCanvas;
     canvasElement.style.width = "100%";
     canvasElement.style.height = `${resultGraphHeight}px`;
-    const config = buildResultGraphConfig(result, graphData, selectedPoint);
-    destroy();
-    resultGraphRenderKey = renderKey;
-    resultGraphChart = new Chart(canvasElement, config);
-    setResultGraphActivePoint(resultGraphChart, getResultGraphSelectedIndex(selectedPoint, graphData));
+    if (renderKey !== resultGraphRenderKey) {
+      const config = buildResultGraphConfig(result, graphData, selectedPoint, options);
+      destroy();
+      resultGraphRenderKey = renderKey;
+      resultGraphChart = new Chart(canvasElement, config);
+    }
   }
 
-  function render(result) {
+  function syncReplayCursor(graphData, displayedPoint, options) {
+    if (!resultGraphChart || !displayedPoint) return;
+
+    const axisMode = getGraphAxisMode(options);
+    resultGraphChart.$accelReplayLocked = Boolean(options && options.playbackPoint);
+    resultGraphChart.$accelReplayCursor = options && options.playbackPoint
+      ? {
+        xValue: getGraphPointAxisValue(displayedPoint, axisMode),
+        yValue: displayedPoint.speedDisplay,
+      }
+      : null;
+
+    const index = getNearestGraphPointIndex(graphData, displayedPoint, axisMode);
+    if (index >= 0) {
+      setResultGraphActivePoint(resultGraphChart, index, !(options && options.playbackPoint));
+    } else {
+      resultGraphChart.update("none");
+    }
+  }
+
+  function render(result, options = {}) {
     if (!elements.resultGraphMeta || !elements.resultGraphEmptyState || !elements.resultGraphFrame) return;
+    resultGraphRenderOptions = options;
 
     const speedUnit = getState().settings.speedUnit;
-    elements.resultGraphMeta.textContent = `${t("accelSpeedGraphLead")} · ${getSpeedUnitLabel(speedUnit)}`;
+    const axisMode = getGraphAxisMode(options);
+    const metaKey = axisMode === "distance" ? "accelSpeedGraphLeadDistance" : "accelSpeedGraphLead";
+    elements.resultGraphMeta.textContent = `${t(metaKey)} · ${getSpeedUnitLabel(speedUnit)}`;
 
     if (!result || !Array.isArray(result.speedTrace) || result.speedTrace.length < 2) {
       elements.resultGraphEmptyState.hidden = false;
       elements.resultGraphFrame.hidden = true;
       resultGraphSelectionResultId = "";
       resultGraphSelectionPointKey = "";
+      if (resultGraphChart) {
+        resultGraphChart.$accelReplayCursor = null;
+        resultGraphChart.$accelReplayLocked = false;
+      }
       renderResultGraphDetails(null);
       destroy();
       return;
@@ -424,11 +621,24 @@ export function createAccelResultGraph({
 
     elements.resultGraphEmptyState.hidden = true;
     elements.resultGraphFrame.hidden = false;
-    const selectedPoint = getSelectedResultGraphPoint(result, graphData);
-    renderResultGraphDetails(selectedPoint);
+    const displayedPoint = options && options.playbackPoint
+      ? {
+        ...options.playbackPoint,
+        elapsedSeconds: options.playbackPoint.elapsedMs / 1000,
+        speedDisplay: msToSpeedUnit(options.playbackPoint.speedMs, speedUnit),
+        distanceDisplay: isFiniteNumber(options.playbackPoint.distanceM)
+          ? convertDistanceMeasurement(options.playbackPoint.distanceM, getState().settings.distanceUnit)
+          : null,
+      }
+      : getSelectedResultGraphPoint(result, graphData);
+    renderResultGraphDetails(displayedPoint);
 
     if (getState().openPanel !== "results") return;
-    mount(result, graphData, selectedPoint);
+    mount(result, graphData, displayedPoint, options);
+    syncReplayCursor(graphData, displayedPoint, options);
+    if (options && options.playbackPoint) {
+      renderResultGraphDetails(displayedPoint);
+    }
   }
 
   function requestRefresh() {
@@ -436,7 +646,7 @@ export function createAccelResultGraph({
 
     resultGraphRefreshFrame = window.requestAnimationFrame(() => {
       resultGraphRefreshFrame = 0;
-      render(getDisplayedResult());
+      render(getDisplayedResult(), resultGraphRenderOptions);
     });
   }
 

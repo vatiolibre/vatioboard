@@ -1,9 +1,23 @@
+import "maplibre-gl/dist/maplibre-gl.css";
+import "@stanko/dual-range-input/dist/index.css";
 import "../styles/accel.less";
 import Chart from "chart.js/auto";
+import DualRangeInput from "@stanko/dual-range-input";
 import { applyTranslations as applySharedTranslations, getLang, t as sharedT, toggleLang } from "../i18n.js";
 import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
-import { IconBoard, IconClose, IconGpsLab, IconPages, IconPlay, IconSpeed } from "../icons.js";
+import {
+  IconBoard,
+  IconClose,
+  IconDistance,
+  IconGpsLab,
+  IconPages,
+  IconPause,
+  IconPlay,
+  IconRestart,
+  IconSpeed,
+  IconTime,
+} from "../icons.js";
 import {
   FINISH_SOUND_URL,
   GEO_ERROR_CODE,
@@ -54,6 +68,14 @@ import {
   presetKeyFromId,
   resolvePresetIdForUnits,
 } from "./presets.js";
+import {
+  buildAccelReplayMarkers,
+  buildAccelReplaySource,
+  getAccelReplayFrameAtDistanceM,
+  getAccelReplayFrameAtElapsedMs,
+} from "./replay.js";
+import { createAccelReplayMapController } from "./replay-map.js";
+import { createAccelReplayChartsController } from "./replay-charts.js";
 import { createAccelResultGraph } from "./result-graph.js";
 import {
   createDefaultSettings,
@@ -147,6 +169,36 @@ export const initPromise = (function () {
     resultGraphEmptyState: document.getElementById("resultGraphEmptyState"),
     resultGraphFrame: document.getElementById("resultGraphFrame"),
     resultGraphCanvas: document.getElementById("resultGraphCanvas"),
+    resultReplayControls: document.getElementById("resultReplayControls"),
+    resultReplayToggle: document.getElementById("resultReplayToggle"),
+    resultReplayRestart: document.getElementById("resultReplayRestart"),
+    resultReplayProgress: document.getElementById("resultReplayProgress"),
+    resultReplayCurrentValue: document.getElementById("resultReplayCurrentValue"),
+    resultReplayMaxValue: document.getElementById("resultReplayMaxValue"),
+    resultReplayAxisTime: document.getElementById("resultReplayAxisTime"),
+    resultReplayAxisDistance: document.getElementById("resultReplayAxisDistance"),
+    resultReplayChartsBtn: document.getElementById("resultReplayChartsBtn"),
+    resultReplayMapShell: document.getElementById("resultReplayMapShell"),
+    resultReplayMap: document.getElementById("resultReplayMap"),
+    resultReplayChartSheet: document.getElementById("resultReplayChartSheet"),
+    resultReplayChartSheetBackdrop: document.getElementById("resultReplayChartSheetBackdrop"),
+    closeResultReplayChartSheet: document.getElementById("closeResultReplayChartSheet"),
+    resultReplaySheetAxisTime: document.getElementById("resultReplaySheetAxisTime"),
+    resultReplaySheetAxisDistance: document.getElementById("resultReplaySheetAxisDistance"),
+    resultReplaySheetFilterSlider: document.getElementById("resultReplaySheetFilterSlider"),
+    resultReplaySheetFilterStart: document.getElementById("resultReplaySheetFilterStart"),
+    resultReplaySheetFilterEnd: document.getElementById("resultReplaySheetFilterEnd"),
+    resultReplaySheetFilterStartValue: document.getElementById("resultReplaySheetFilterStartValue"),
+    resultReplaySheetFilterEndValue: document.getElementById("resultReplaySheetFilterEndValue"),
+    resultReplaySheetSpeedStage: document.getElementById("resultReplaySheetSpeedStage"),
+    resultReplaySheetSpeedValue: document.getElementById("resultReplaySheetSpeedValue"),
+    resultReplaySheetSpeedCanvas: document.getElementById("resultReplaySheetSpeedCanvas"),
+    resultReplaySheetAltitudeStage: document.getElementById("resultReplaySheetAltitudeStage"),
+    resultReplaySheetAltitudeValue: document.getElementById("resultReplaySheetAltitudeValue"),
+    resultReplaySheetAltitudeCanvas: document.getElementById("resultReplaySheetAltitudeCanvas"),
+    resultReplaySheetHeadingStage: document.getElementById("resultReplaySheetHeadingStage"),
+    resultReplaySheetHeadingValue: document.getElementById("resultReplaySheetHeadingValue"),
+    resultReplaySheetHeadingCanvas: document.getElementById("resultReplaySheetHeadingCanvas"),
     resultGraphTimeValue: document.getElementById("resultGraphTimeValue"),
     resultGraphSpeedValue: document.getElementById("resultGraphSpeedValue"),
     resultGraphDistanceValue: document.getElementById("resultGraphDistanceValue"),
@@ -198,6 +250,16 @@ export const initPromise = (function () {
   applyButtonIcon(elements.openSpeedMenu, IconSpeed);
   applyButtonIcon(elements.openGpsLabMenu, IconGpsLab);
   applyButtonIcon(elements.openBoardMenu, IconBoard);
+  applyButtonIcon(elements.resultReplayToggle, IconPlay);
+  applyButtonIcon(elements.resultReplayRestart, IconRestart);
+  applyButtonIcon(elements.resultReplayAxisTime, IconTime);
+  applyButtonIcon(elements.resultReplayAxisDistance, IconDistance);
+  applyButtonIcon(elements.resultReplaySheetAxisTime, IconTime);
+  applyButtonIcon(elements.resultReplaySheetAxisDistance, IconDistance);
+
+  var replayChartFilterController = elements.resultReplaySheetFilterStart && elements.resultReplaySheetFilterEnd
+    ? new DualRangeInput(elements.resultReplaySheetFilterStart, elements.resultReplaySheetFilterEnd)
+    : null;
 
   var liveSpeedometer = createAnalogSpeedometer({
     stageElement: elements.liveSpeedGaugeStage,
@@ -226,6 +288,20 @@ export const initPromise = (function () {
     run: null,
     latestResult: null,
     selectedResultId: "",
+    replay: {
+      axisMode: "time",
+      engaged: false,
+      playing: false,
+      positionMs: 0,
+      playbackStartPerfMs: 0,
+      playbackStartElapsedMs: 0,
+      sourceResultId: "",
+      source: null,
+      chartSheetOpen: false,
+      chartScrubMetric: "",
+      chartFilterStartRatio: 0,
+      chartFilterEndRatio: 1,
+    },
     openPanel: null,
     actionNoticeTimerId: null,
   };
@@ -245,6 +321,7 @@ export const initPromise = (function () {
   var formatDebugMeters = formatters.formatDebugMeters;
   var formatDebugSpeedMs = formatters.formatDebugSpeedMs;
   var formatDistanceMeasurement = formatters.formatDistanceMeasurement;
+  var convertDistanceMeasurement = formatters.convertDistanceMeasurement;
   var formatHeading = formatters.formatHeading;
   var formatHz = formatters.formatHz;
   var formatInputSpeedValue = formatters.formatInputSpeedValue;
@@ -291,15 +368,40 @@ export const initPromise = (function () {
     isFiniteNumber: isFiniteNumber,
     compactSpeedTrace: compactSpeedTrace,
     msToSpeedUnit: msToSpeedUnit,
+    convertDistanceMeasurement: convertDistanceMeasurement,
     formatDistanceMeasurement: formatDistanceMeasurement,
     formatNumber: formatNumber,
     formatRunDistance: formatRunDistance,
     formatRunSeconds: formatRunSeconds,
     formatSlopePercent: formatSlopePercent,
     formatSpeedValue: formatSpeedValue,
+    getDistanceUnitLabel: getDistanceUnitLabel,
     getSpeedUnitLabel: getSpeedUnitLabel,
     t: t,
     resultGraphHeight: RESULT_GRAPH_HEIGHT,
+  });
+  var replayCharts = createAccelReplayChartsController({
+    Chart: Chart,
+    elements: {
+      replayDetailSpeedCanvas: elements.resultReplaySheetSpeedCanvas,
+      replayDetailAltitudeCanvas: elements.resultReplaySheetAltitudeCanvas,
+      replayDetailHeadingCanvas: elements.resultReplaySheetHeadingCanvas,
+    },
+    convertDistanceMeasurement: convertDistanceMeasurement,
+    formatNumber: formatNumber,
+    getDistanceUnit: function () {
+      return state.settings.distanceUnit;
+    },
+    getDistanceUnitLabel: getDistanceUnitLabel,
+    getSpeedUnit: function () {
+      return state.settings.speedUnit;
+    },
+    getSpeedUnitLabel: getSpeedUnitLabel,
+    isFiniteNumber: isFiniteNumber,
+    msToSpeedUnit: msToSpeedUnit,
+  });
+  var replayMap = createAccelReplayMapController({
+    element: elements.resultReplayMap,
   });
 
   async function init() {
@@ -422,6 +524,21 @@ export const initPromise = (function () {
     elements.runNotes.addEventListener("input", handleNotesInput);
     elements.clearHistory.addEventListener("click", handleClearHistory);
     elements.historyList.addEventListener("click", handleHistoryClick);
+    elements.resultReplayToggle.addEventListener("click", handleReplayToggle);
+    elements.resultReplayRestart.addEventListener("click", handleReplayRestart);
+    elements.resultReplayProgress.addEventListener("input", handleReplayProgressInput);
+    elements.resultReplayAxisTime.addEventListener("click", handleReplayAxisClick);
+    elements.resultReplayAxisDistance.addEventListener("click", handleReplayAxisClick);
+    elements.resultReplayChartsBtn.addEventListener("click", handleReplayChartsOpen);
+    elements.closeResultReplayChartSheet.addEventListener("click", handleReplayChartsClose);
+    elements.resultReplayChartSheetBackdrop.addEventListener("click", handleReplayChartsClose);
+    elements.resultReplaySheetAxisTime.addEventListener("click", handleReplayAxisClick);
+    elements.resultReplaySheetAxisDistance.addEventListener("click", handleReplayAxisClick);
+    elements.resultReplaySheetFilterStart.addEventListener("input", handleReplayChartFilterInput);
+    elements.resultReplaySheetFilterEnd.addEventListener("input", handleReplayChartFilterInput);
+    bindReplayChartScrub(elements.resultReplaySheetSpeedCanvas);
+    bindReplayChartScrub(elements.resultReplaySheetAltitudeCanvas);
+    bindReplayChartScrub(elements.resultReplaySheetHeadingCanvas);
     document.addEventListener("visibilitychange", renderAll);
     document.addEventListener("keydown", handleKeyDown);
     window.addEventListener("pagehide", destroyResultGraph);
@@ -447,9 +564,22 @@ export const initPromise = (function () {
     renderAll();
   }
 
+  function focusElement(element) {
+    if (!element || typeof element.focus !== "function") return;
+    try {
+      element.focus({ preventScroll: true });
+    } catch {
+      element.focus();
+    }
+  }
+
   function handleKeyDown(event) {
     if (event.key !== "Escape" || !state.openPanel) return;
     event.preventDefault();
+    if (state.replay.chartSheetOpen) {
+      handleReplayChartsClose();
+      return;
+    }
     closePanel();
   }
 
@@ -460,6 +590,9 @@ export const initPromise = (function () {
       resultGraph.noteResultsPanelWidth();
     }
     renderSheetUi();
+    if (panelName === "results") {
+      renderResultCard();
+    }
 
     var focusTarget = panelName === "setup" ? elements.closeSetupPanel : elements.closeResultsPanel;
     if (focusTarget) focusTarget.focus();
@@ -469,6 +602,11 @@ export const initPromise = (function () {
     if (!state.openPanel) return;
 
     var previouslyOpen = state.openPanel;
+    if (previouslyOpen === "results") {
+      pauseReplayPlayback();
+      replayMap.destroy();
+    }
+    setReplayChartSheetOpen(false);
     state.openPanel = null;
     renderSheetUi();
 
@@ -587,10 +725,14 @@ export const initPromise = (function () {
   }
 
   function renderRealtimeUi() {
+    var replayChanged = updateReplayPlaybackClock();
     renderControlState();
     renderStatusPanel();
     renderLivePanel();
     renderDiagnostics();
+    if (state.openPanel === "results" && (state.replay.playing || replayChanged)) {
+      renderResultCard();
+    }
   }
 
   function handlePresetClick(event) {
@@ -706,6 +848,7 @@ export const initPromise = (function () {
     if (!state.runs.length) return;
     if (!window.confirm(t("accelClearHistoryConfirm"))) return;
 
+    resetReplayState({ preserveAxisMode: true });
     state.runs = [];
     state.latestResult = null;
     state.selectedResultId = "";
@@ -724,10 +867,20 @@ export const initPromise = (function () {
 
     var action = button.getAttribute("data-history-action");
     if (action === "load") {
+      pauseReplayPlayback();
       selectResult(runId);
       openPanel("results");
       scrollResultsPanelToTop();
       setActionNotice("accelResultLoadedNotice");
+      renderAll();
+      return;
+    }
+
+    if (action === "replay") {
+      selectResult(runId);
+      openPanel("results");
+      scrollResultsPanelToTop();
+      startReplayPlayback({ restart: true });
       renderAll();
       return;
     }
@@ -761,7 +914,38 @@ export const initPromise = (function () {
 
   function selectResult(runId) {
     var run = runId ? findRunById(runId) : null;
-    state.selectedResultId = run ? run.id : (state.latestResult ? state.latestResult.id : "");
+    var nextResultId = run ? run.id : (state.latestResult ? state.latestResult.id : "");
+    if (state.selectedResultId !== nextResultId) {
+      resetReplayState({ preserveAxisMode: true });
+    }
+    state.selectedResultId = nextResultId;
+  }
+
+  function handleReplayToggle() {
+    if (state.replay.playing) pauseReplayPlayback();
+    else startReplayPlayback();
+    renderResultCard();
+  }
+
+  function handleReplayRestart() {
+    state.replay.engaged = true;
+    state.replay.playing = false;
+    state.replay.positionMs = 0;
+    state.replay.playbackStartElapsedMs = 0;
+    state.replay.playbackStartPerfMs = 0;
+    renderResultCard();
+  }
+
+  function handleReplayProgressInput() {
+    setReplayPositionFromAxisValue(Number(elements.resultReplayProgress.value));
+    renderResultCard();
+  }
+
+  function handleReplayAxisClick(event) {
+    var nextAxisMode = event.currentTarget.getAttribute("data-axis") === "distance" ? "distance" : "time";
+    if (state.replay.axisMode === nextAxisMode) return;
+    state.replay.axisMode = nextAxisMode;
+    renderResultCard();
   }
 
   function scrollResultsPanelToTop() {
@@ -769,6 +953,298 @@ export const initPromise = (function () {
     var body = elements.resultsPanel.querySelector(".accel-sheet-body");
     if (body && typeof body.scrollTo === "function") body.scrollTo({ top: 0, behavior: "smooth" });
     else if (body) body.scrollTop = 0;
+  }
+
+  function bindReplayChartScrub(canvas) {
+    if (!canvas) return;
+    canvas.addEventListener("pointerdown", handleReplayChartPointerDown);
+    canvas.addEventListener("pointermove", handleReplayChartPointerMove);
+    canvas.addEventListener("pointerup", handleReplayChartPointerUp);
+    canvas.addEventListener("pointercancel", handleReplayChartPointerUp);
+    canvas.addEventListener("lostpointercapture", handleReplayChartPointerUp);
+  }
+
+  function setReplayChartSheetOpen(nextOpen) {
+    state.replay.chartSheetOpen = Boolean(nextOpen);
+    state.replay.chartScrubMetric = "";
+    if (!state.replay.chartSheetOpen) {
+      replayCharts.destroy();
+    }
+    if (elements.resultReplayChartSheet) elements.resultReplayChartSheet.hidden = !state.replay.chartSheetOpen;
+    document.body.classList.toggle("accel-replay-chart-sheet-open", state.replay.chartSheetOpen);
+    if (state.replay.chartSheetOpen) focusElement(elements.closeResultReplayChartSheet || elements.resultReplayChartSheet);
+    else if (state.openPanel === "results") focusElement(elements.resultReplayChartsBtn);
+  }
+
+  function getReplayDisplayPoint(source) {
+    if (!source) return null;
+    return getAccelReplayFrameAtElapsedMs(source, state.replay.positionMs);
+  }
+
+  function handleReplayChartsOpen() {
+    var result = getDisplayedResult();
+    var source = ensureReplaySource(result);
+    if (!source) return;
+    setReplayChartSheetOpen(true);
+    renderResultCard();
+  }
+
+  function handleReplayChartsClose() {
+    setReplayChartSheetOpen(false);
+    renderResultCard();
+  }
+
+  function handleReplayChartFilterInput() {
+    var startRatio = Number(elements.resultReplaySheetFilterStart.value || 0) / 1000;
+    var endRatio = Number(elements.resultReplaySheetFilterEnd.value || 1000) / 1000;
+    setReplayChartFilterRange(startRatio, endRatio);
+  }
+
+  function scrubReplayChartAtClientX(metricKey, clientX) {
+    var axisValue = replayCharts.getAxisValueFromClientX(metricKey, clientX);
+    if (!isFiniteNumber(axisValue)) return;
+    pauseReplayPlayback();
+    setReplayPositionFromAxisValue(axisValue);
+    renderResultCard();
+  }
+
+  function handleReplayChartPointerDown(event) {
+    var metricKey = event.currentTarget.getAttribute("data-accel-replay-scrub");
+    if (!metricKey) return;
+
+    event.preventDefault();
+    state.replay.chartScrubMetric = metricKey;
+    state.replay.engaged = true;
+    if (event.currentTarget.setPointerCapture && event.pointerId !== undefined) {
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {
+        // Ignore pointer-capture failures.
+      }
+    }
+    scrubReplayChartAtClientX(metricKey, event.clientX);
+  }
+
+  function handleReplayChartPointerMove(event) {
+    var metricKey = event.currentTarget.getAttribute("data-accel-replay-scrub");
+    if (!metricKey || state.replay.chartScrubMetric !== metricKey) return;
+    scrubReplayChartAtClientX(metricKey, event.clientX);
+  }
+
+  function handleReplayChartPointerUp() {
+    state.replay.chartScrubMetric = "";
+  }
+
+  function resetReplayState(options) {
+    var preserveAxisMode = !options || options.preserveAxisMode !== false;
+    var nextAxisMode = preserveAxisMode ? state.replay.axisMode : "time";
+
+    state.replay.playing = false;
+    state.replay.engaged = false;
+    state.replay.positionMs = 0;
+    state.replay.playbackStartPerfMs = 0;
+    state.replay.playbackStartElapsedMs = 0;
+    state.replay.sourceResultId = "";
+    state.replay.source = null;
+    state.replay.axisMode = nextAxisMode;
+    state.replay.chartScrubMetric = "";
+    state.replay.chartFilterStartRatio = 0;
+    state.replay.chartFilterEndRatio = 1;
+    setReplayChartSheetOpen(false);
+  }
+
+  function ensureReplaySource(result) {
+    if (!result) {
+      resetReplayState({ preserveAxisMode: true });
+      return null;
+    }
+
+    if (state.replay.source && state.replay.sourceResultId === result.id) {
+      return state.replay.source;
+    }
+
+    state.replay.playing = false;
+    state.replay.engaged = false;
+    state.replay.positionMs = 0;
+    state.replay.playbackStartPerfMs = 0;
+    state.replay.playbackStartElapsedMs = 0;
+    state.replay.sourceResultId = result.id;
+    state.replay.source = buildAccelReplaySource(result);
+    return state.replay.source;
+  }
+
+  function getReplayAxisModeForSource(source) {
+    if (!source || !source.hasDistanceAxis) return "time";
+    return state.replay.axisMode === "distance" ? "distance" : "time";
+  }
+
+  function getReplayAxisMaxValue(source, axisMode) {
+    if (!source) return 0;
+    return axisMode === "distance" ? source.totalDistanceM : source.durationMs;
+  }
+
+  function getReplayChartAxisRange(axisMax, startRatio, endRatio) {
+    var safeAxisMax = isFiniteNumber(axisMax) && axisMax > 0 ? axisMax : 0;
+
+    if (safeAxisMax <= 0) {
+      return {
+        startRatio: 0,
+        endRatio: 1,
+        min: 0,
+        max: 1,
+      };
+    }
+
+    var safeStartRatio = isFiniteNumber(startRatio) ? clamp(startRatio, 0, 1) : 0;
+    var safeEndRatio = isFiniteNumber(endRatio) ? clamp(endRatio, 0, 1) : 1;
+
+    if (safeStartRatio > safeEndRatio) {
+      var temp = safeStartRatio;
+      safeStartRatio = safeEndRatio;
+      safeEndRatio = temp;
+    }
+
+    var minGapRatio = 0.02;
+    if ((safeEndRatio - safeStartRatio) < minGapRatio) {
+      if (safeEndRatio >= 1) {
+        safeEndRatio = 1;
+        safeStartRatio = Math.max(0, safeEndRatio - minGapRatio);
+      } else {
+        safeEndRatio = Math.min(1, safeStartRatio + minGapRatio);
+        if ((safeEndRatio - safeStartRatio) < minGapRatio) {
+          safeStartRatio = Math.max(0, safeEndRatio - minGapRatio);
+        }
+      }
+    }
+
+    return {
+      startRatio: safeStartRatio,
+      endRatio: safeEndRatio,
+      min: safeAxisMax * safeStartRatio,
+      max: safeAxisMax * safeEndRatio,
+    };
+  }
+
+  function getReplayChartAxisMaxValue(source, axisMode) {
+    if (!source) return 0;
+    if (axisMode === "distance") return Math.max(0, source.totalDistanceM || 0);
+    return Math.max(0, (source.durationMs || 0) / 1000);
+  }
+
+  function getReplayChartRangeForSource(source, axisMode) {
+    return getReplayChartAxisRange(
+      getReplayChartAxisMaxValue(source, axisMode),
+      state.replay.chartFilterStartRatio,
+      state.replay.chartFilterEndRatio,
+    );
+  }
+
+  function getReplayPositionPoint(source) {
+    if (!source || !state.replay.engaged) return null;
+    return getAccelReplayFrameAtElapsedMs(source, state.replay.positionMs);
+  }
+
+  function pauseReplayPlayback() {
+    if (!state.replay.playing) return;
+
+    var result = getDisplayedResult();
+    var source = ensureReplaySource(result);
+    if (!source) {
+      state.replay.playing = false;
+      return;
+    }
+
+    var nextElapsedMs = state.replay.playbackStartElapsedMs + (performance.now() - state.replay.playbackStartPerfMs);
+    state.replay.positionMs = clamp(nextElapsedMs, 0, source.durationMs);
+    state.replay.playing = false;
+  }
+
+  function startReplayPlayback(options) {
+    var result = getDisplayedResult();
+    var source = ensureReplaySource(result);
+    if (!source) return;
+
+    var shouldRestart = Boolean(options && options.restart);
+    if (shouldRestart || state.replay.positionMs >= source.durationMs) {
+      state.replay.positionMs = 0;
+    }
+
+    state.replay.engaged = true;
+    state.replay.playing = true;
+    state.replay.playbackStartPerfMs = performance.now();
+    state.replay.playbackStartElapsedMs = state.replay.positionMs;
+  }
+
+  function updateReplayPlaybackClock() {
+    if (!state.replay.playing) return false;
+
+    var result = getDisplayedResult();
+    var source = ensureReplaySource(result);
+    if (!source) {
+      state.replay.playing = false;
+      return false;
+    }
+
+    var nextElapsedMs = state.replay.playbackStartElapsedMs + (performance.now() - state.replay.playbackStartPerfMs);
+    var clampedElapsedMs = clamp(nextElapsedMs, 0, source.durationMs);
+    var changed = Math.abs(clampedElapsedMs - state.replay.positionMs) > 0.5;
+    state.replay.positionMs = clampedElapsedMs;
+
+    if (clampedElapsedMs >= source.durationMs) {
+      state.replay.playing = false;
+      state.replay.playbackStartPerfMs = 0;
+      state.replay.playbackStartElapsedMs = clampedElapsedMs;
+    }
+
+    return changed;
+  }
+
+  function setReplayPositionFromAxisValue(value) {
+    var result = getDisplayedResult();
+    var source = ensureReplaySource(result);
+    if (!source) return;
+
+    var axisMode = getReplayAxisModeForSource(source);
+    state.replay.engaged = true;
+    state.replay.playing = false;
+
+    if (axisMode === "distance") {
+      var replayPoint = getAccelReplayFrameAtDistanceM(source, value);
+      state.replay.positionMs = replayPoint ? replayPoint.elapsedMs : 0;
+      return;
+    }
+
+    state.replay.positionMs = clamp(value, 0, source.durationMs);
+  }
+
+  function setReplayChartFilterRange(startRatio, endRatio) {
+    var axisRange = getReplayChartAxisRange(1, startRatio, endRatio);
+    if (
+      state.replay.chartFilterStartRatio === axisRange.startRatio
+      && state.replay.chartFilterEndRatio === axisRange.endRatio
+    ) {
+      return;
+    }
+
+    state.replay.chartFilterStartRatio = axisRange.startRatio;
+    state.replay.chartFilterEndRatio = axisRange.endRatio;
+    renderResultCard();
+  }
+
+  function formatReplayAxisValue(value, axisMode) {
+    if (axisMode === "distance") return formatRunDistance(value);
+    return formatRunSeconds(value) + " s";
+  }
+
+  function formatReplayChartAxisValue(value, axisMode) {
+    if (axisMode === "distance") return formatRunDistance(value);
+    return formatRunSeconds(value * 1000) + " s";
+  }
+
+  function isReplayableResult(result) {
+    if (!result) return false;
+    if (Array.isArray(result.sampleLog) && result.sampleLog.length >= 2) return true;
+    return Boolean(Array.isArray(result.speedTrace) && result.speedTrace.length >= 2);
   }
 
   function createRun(preset) {
@@ -1041,6 +1517,7 @@ export const initPromise = (function () {
     state.latestResult = result;
     state.runs.unshift(result);
     if (state.runs.length > MAX_RUNS) state.runs = state.runs.slice(0, MAX_RUNS);
+    resetReplayState({ preserveAxisMode: true });
     state.selectedResultId = result.id;
     saveRuns();
     playFinishAudio();
@@ -1267,16 +1744,130 @@ export const initPromise = (function () {
     elements.progressFill.style.width = String(Math.round(fraction * 1000) / 10) + "%";
   }
 
+  function renderReplayControls(result, replaySource, replayPoint) {
+    if (!elements.resultReplayControls || !elements.resultReplayToggle || !elements.resultReplayProgress) return;
+
+    var hasReplay = Boolean(result && replaySource);
+    elements.resultReplayControls.hidden = !hasReplay;
+    if (elements.resultReplayChartsBtn) {
+      elements.resultReplayChartsBtn.hidden = !hasReplay;
+      elements.resultReplayChartsBtn.disabled = !hasReplay;
+    }
+    if (!hasReplay) return;
+
+    var axisMode = getReplayAxisModeForSource(replaySource);
+    var currentAxisValue = replayPoint
+      ? (axisMode === "distance" ? replayPoint.distanceM : replayPoint.elapsedMs)
+      : 0;
+    var maxAxisValue = getReplayAxisMaxValue(replaySource, axisMode);
+    var playLabel = state.replay.playing ? t("accelReplayPause") : t("accelReplayPlay");
+
+    elements.resultReplayToggle.setAttribute("aria-label", playLabel);
+    elements.resultReplayToggle.setAttribute("title", playLabel);
+    applyButtonIcon(elements.resultReplayToggle, state.replay.playing ? IconPause : IconPlay);
+    elements.resultReplayToggle.disabled = false;
+    elements.resultReplayRestart.disabled = false;
+
+    elements.resultReplayProgress.disabled = false;
+    elements.resultReplayProgress.max = String(maxAxisValue);
+    elements.resultReplayProgress.value = String(currentAxisValue);
+    elements.resultReplayCurrentValue.textContent = formatReplayAxisValue(currentAxisValue, axisMode);
+    elements.resultReplayMaxValue.textContent = formatReplayAxisValue(maxAxisValue, axisMode);
+
+    elements.resultReplayAxisTime.setAttribute("aria-pressed", String(axisMode === "time"));
+    elements.resultReplayAxisDistance.setAttribute("aria-pressed", String(axisMode === "distance"));
+    elements.resultReplayAxisDistance.disabled = !replaySource.hasDistanceAxis;
+  }
+
+  function renderReplayChartControls(replaySource) {
+    if (!replaySource || !elements.resultReplaySheetFilterStart || !elements.resultReplaySheetFilterEnd) return;
+
+    var axisMode = getReplayAxisModeForSource(replaySource);
+    var axisRange = getReplayChartRangeForSource(replaySource, axisMode);
+    var startValue = Math.round(axisRange.startRatio * 1000);
+    var endValue = Math.round(axisRange.endRatio * 1000);
+
+    elements.resultReplaySheetFilterStart.value = String(startValue);
+    elements.resultReplaySheetFilterEnd.value = String(endValue);
+    if (elements.resultReplaySheetFilterStartValue) {
+      elements.resultReplaySheetFilterStartValue.textContent = formatReplayChartAxisValue(axisRange.min, axisMode);
+    }
+    if (elements.resultReplaySheetFilterEndValue) {
+      elements.resultReplaySheetFilterEndValue.textContent = formatReplayChartAxisValue(axisRange.max, axisMode);
+    }
+
+    if (replayChartFilterController && typeof replayChartFilterController.update === "function") {
+      replayChartFilterController.update();
+    }
+  }
+
+  function renderReplayChartSheet(result, replaySource, replayPoint) {
+    if (!elements.resultReplayChartSheet) return;
+
+    var hasReplay = Boolean(result && replaySource);
+    if (!hasReplay) {
+      setReplayChartSheetOpen(false);
+      replayCharts.destroy();
+      return;
+    }
+
+    if (!state.replay.chartSheetOpen) {
+      elements.resultReplayChartSheet.hidden = true;
+      replayCharts.destroy();
+      return;
+    }
+
+    var axisMode = getReplayAxisModeForSource(replaySource);
+    var displayPoint = replayPoint || getReplayDisplayPoint(replaySource);
+
+    elements.resultReplayChartSheet.hidden = false;
+    elements.resultReplaySheetAxisTime.setAttribute("aria-pressed", String(axisMode === "time"));
+    elements.resultReplaySheetAxisDistance.setAttribute("aria-pressed", String(axisMode === "distance"));
+    elements.resultReplaySheetAxisDistance.disabled = !replaySource.hasDistanceAxis;
+    renderReplayChartControls(replaySource);
+
+    replayCharts.renderSource(
+      replaySource,
+      axisMode,
+      state.replay.chartFilterStartRatio,
+      state.replay.chartFilterEndRatio,
+    );
+
+    var showAltitude = replayCharts.hasMetricData("altitudeM");
+    var showHeading = replayCharts.hasMetricData("headingDeg");
+    if (elements.resultReplaySheetAltitudeStage) elements.resultReplaySheetAltitudeStage.hidden = !showAltitude;
+    if (elements.resultReplaySheetHeadingStage) elements.resultReplaySheetHeadingStage.hidden = !showHeading;
+
+    elements.resultReplaySheetSpeedValue.textContent = displayPoint && isFiniteNumber(displayPoint.speedMs)
+      ? formatSpeedValue(displayPoint.speedMs, state.settings.speedUnit)
+      : "—";
+    elements.resultReplaySheetAltitudeValue.textContent = showAltitude && displayPoint && isFiniteNumber(displayPoint.altitudeM)
+      ? formatDistanceMeasurement(displayPoint.altitudeM)
+      : "—";
+    elements.resultReplaySheetHeadingValue.textContent = showHeading && displayPoint
+      ? formatHeading(displayPoint.headingDeg)
+      : "—";
+
+    replayCharts.updatePlayback(displayPoint);
+  }
+
   function renderResultCard() {
     var result = getDisplayedResult();
+    var replaySource = ensureReplaySource(result);
+    var replayPoint = replaySource && state.replay.engaged
+      ? getReplayPositionPoint(replaySource)
+      : null;
 
     if (!result) {
       elements.resultEmptyState.hidden = false;
       elements.resultContent.hidden = true;
       if (elements.resultPrimaryHeader) elements.resultPrimaryHeader.hidden = true;
-      renderResultPartials(null);
+      renderResultPartials(null, null);
+      renderReplayControls(null, null, null);
+      renderReplayMap(null, null, null);
+      renderReplayChartSheet(null, null, null);
       if (elements.resultNotesRow) elements.resultNotesRow.hidden = true;
-      renderResultGraph(null);
+      renderResultGraph(null, null, null);
       return;
     }
 
@@ -1294,16 +1885,19 @@ export const initPromise = (function () {
     elements.resultQualityValue.textContent = getQualityLabel(result.qualityGrade);
     elements.resultTimestampValue.textContent = formatTimestamp(result.savedAtMs);
     elements.resultComparisonValue.textContent = buildComparisonText(result);
-    renderResultPartials(result);
+    renderResultPartials(result, replayPoint);
+    renderReplayControls(result, replaySource, replayPoint);
+    renderReplayMap(result, replaySource, replayPoint);
+    renderReplayChartSheet(result, replaySource, replayPoint);
     if (elements.resultNotesRow && elements.resultNotesValue) {
       var hasNotes = Boolean(result.notes);
       elements.resultNotesRow.hidden = !hasNotes;
       elements.resultNotesValue.textContent = hasNotes ? result.notes : t("accelUnavailable");
     }
-    renderResultGraph(result);
+    renderResultGraph(result, replaySource, replayPoint);
   }
 
-  function renderResultPartials(result) {
+  function renderResultPartials(result, replayPoint) {
     if (!elements.resultPartialsSection || !elements.resultPartialsList) return;
     if (!result || !result.partials || !result.partials.length) {
       elements.resultPartialsSection.hidden = true;
@@ -1315,6 +1909,10 @@ export const initPromise = (function () {
     for (var index = 0; index < result.partials.length; index += 1) {
       var partial = result.partials[index];
       var status = partial && partial.elapsedMs !== null ? "done" : "missed";
+      if (partial && partial.elapsedMs !== null && replayPoint) {
+        if (Math.abs(replayPoint.elapsedMs - partial.elapsedMs) <= 140) status = "active";
+        else if (replayPoint.elapsedMs + 0.5 < partial.elapsedMs) status = "waiting";
+      }
       html += '<div class="accel-partial-row" data-status="' + status + '">';
       html += '<span class="accel-partial-label">' + escapeHtml(getPartialLabel(partial)) + "</span>";
       html += '<strong class="accel-partial-value">' + escapeHtml(formatPartialValue(partial, state.settings.speedUnit, true)) + "</strong>";
@@ -1325,8 +1923,46 @@ export const initPromise = (function () {
     elements.resultPartialsList.innerHTML = html;
   }
 
-  function renderResultGraph(result) {
-    resultGraph.render(result);
+  function renderResultGraph(result, replaySource, replayPoint) {
+    var markerPoints = result && replaySource
+      ? buildAccelReplayMarkers(result, replaySource, {
+        finishLabel: t("accelReplayFinish"),
+        getPartialLabel: getPartialLabel,
+      })
+      : [];
+    resultGraph.render(result, {
+      axisMode: getReplayAxisModeForSource(replaySource),
+      markerPoints: markerPoints,
+      playbackPoint: replayPoint,
+    });
+  }
+
+  function renderReplayMap(result, replaySource, replayPoint) {
+    if (!elements.resultReplayMapShell || !elements.resultReplayMap) return;
+
+    var hasReplayMap = Boolean(
+      state.openPanel === "results"
+      && result
+      && replaySource
+      && replaySource.hasGeoPath
+    );
+
+    elements.resultReplayMapShell.hidden = !hasReplayMap;
+
+    if (!hasReplayMap) {
+      replayMap.clear();
+      return;
+    }
+
+    replayMap.init();
+    replayMap.setSource(replaySource);
+
+    var displayPoint = replayPoint || getReplayDisplayPoint(replaySource);
+    replayMap.renderPlaybackFrame(
+      replaySource,
+      displayPoint,
+      displayPoint ? displayPoint.elapsedMs : state.replay.positionMs,
+    );
   }
 
   function buildResultGraphData(result) {
@@ -1447,6 +2083,8 @@ export const initPromise = (function () {
 
   function destroyResultGraph() {
     resultGraph.destroy();
+    replayCharts.destroy();
+    replayMap.destroy();
   }
 
   function renderDiagnostics() {
@@ -1557,6 +2195,7 @@ export const initPromise = (function () {
       html += "</div>";
       html += '<div class="accel-history-actions">';
       html += '<button type="button" class="accel-action-btn accel-action-btn-compact accel-history-load-btn" data-history-action="load" data-run-id="' + escapeHtml(run.id) + '" aria-pressed="' + String(isSelected) + '">' + escapeHtml(isSelected ? t("accelViewingResult") : t("accelLoadResult")) + "</button>";
+      html += '<button type="button" class="accel-action-btn accel-action-btn-compact accel-history-replay-btn" data-history-action="replay" data-run-id="' + escapeHtml(run.id) + '"' + (isReplayableResult(run) ? "" : " disabled") + '>' + escapeHtml(t("accelReplay")) + "</button>";
       html += '<button type="button" class="accel-delete-btn" data-history-action="delete" data-run-id="' + escapeHtml(run.id) + '">' + escapeHtml(t("accelDelete")) + "</button>";
       html += "</div>";
       html += "</article>";

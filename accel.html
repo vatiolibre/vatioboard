@@ -604,6 +604,94 @@
                   <span id="resultGraphMeta" class="accel-inline-note" data-i18n="accelSpeedGraphLead">Time vs speed</span>
                 </header>
 
+                <div id="resultReplayControls" class="accel-replay-controls" hidden>
+                  <div class="accel-replay-toolbar">
+                    <div class="accel-replay-transport accel-toolbar-strip" role="group" aria-label="Replay controls" data-i18n-aria="accelReplayControls">
+                      <button
+                        id="resultReplayToggle"
+                        type="button"
+                        class="accel-toolbar-icon-btn accel-replay-icon-btn accel-toolbar-btn-start"
+                        aria-label="Play replay"
+                        title="Play replay"
+                      >
+                        <span class="btn-icon" aria-hidden="true"></span>
+                      </button>
+                      <button
+                        id="resultReplayRestart"
+                        type="button"
+                        class="accel-toolbar-icon-btn accel-replay-icon-btn"
+                        data-i18n-aria="accelReplayRestart"
+                        data-i18n-title="accelReplayRestart"
+                        aria-label="Restart replay"
+                        title="Restart replay"
+                      >
+                        <span class="btn-icon" aria-hidden="true"></span>
+                      </button>
+                    </div>
+
+                    <div class="accel-replay-axis accel-replay-sheet-axis-group" role="group" aria-label="Replay axis" data-i18n-aria="accelReplayAxis">
+                      <button
+                        id="resultReplayAxisTime"
+                        type="button"
+                        class="accel-segment-btn accel-replay-axis-btn"
+                        data-axis="time"
+                        data-i18n-aria="accelReplayAxisTime"
+                        data-i18n-title="accelReplayAxisTime"
+                        aria-label="Time"
+                        title="Time"
+                      >
+                        <span class="btn-icon" aria-hidden="true"></span>
+                        <span class="accel-replay-axis-label" data-i18n="accelReplayAxisTime">Time</span>
+                      </button>
+                      <button
+                        id="resultReplayAxisDistance"
+                        type="button"
+                        class="accel-segment-btn accel-replay-axis-btn"
+                        data-axis="distance"
+                        data-i18n-aria="accelReplayAxisDistance"
+                        data-i18n-title="accelReplayAxisDistance"
+                        aria-label="Distance"
+                        title="Distance"
+                      >
+                        <span class="btn-icon" aria-hidden="true"></span>
+                        <span class="accel-replay-axis-label" data-i18n="accelReplayAxisDistance">Distance</span>
+                      </button>
+                    </div>
+
+                    <button
+                      id="resultReplayChartsBtn"
+                      type="button"
+                      class="accel-action-btn accel-action-btn-compact accel-replay-charts-btn"
+                      data-i18n="accelExploreCharts"
+                    >Explore charts</button>
+                  </div>
+
+                  <div class="accel-replay-progress-row">
+                    <strong id="resultReplayCurrentValue" class="accel-replay-progress-value">0.000 s</strong>
+                    <input
+                      id="resultReplayProgress"
+                      type="range"
+                      min="0"
+                      max="0"
+                      step="any"
+                      value="0"
+                      class="accel-replay-progress"
+                      data-i18n-aria="accelReplayProgress"
+                      aria-label="Replay progress"
+                    />
+                    <strong id="resultReplayMaxValue" class="accel-replay-progress-value">0.000 s</strong>
+                  </div>
+                </div>
+
+                <div id="resultReplayMapShell" class="accel-result-map-shell" hidden>
+                  <div
+                    id="resultReplayMap"
+                    class="accel-result-map"
+                    data-i18n-aria="accelReplayMapAria"
+                    aria-label="Acceleration replay map"
+                  ></div>
+                </div>
+
                 <div id="resultGraphEmptyState" class="accel-empty-copy" hidden data-i18n="accelSpeedGraphEmpty">Speed graph data is available for new runs.</div>
 
                 <div id="resultGraphFrame" class="accel-result-graph-frame" hidden>
@@ -643,6 +731,7 @@
                     </div>
                   </div>
                 </div>
+
               </section>
 
               <section id="resultPartialsSection" class="accel-result-partials" hidden>
@@ -795,6 +884,146 @@
             <div id="historyList" class="accel-history-list"></div>
           </section>
         </div>
+      </section>
+
+      <section
+        id="resultReplayChartSheet"
+        class="accel-replay-chart-sheet"
+        hidden
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="resultReplayChartSheetTitle"
+        tabindex="-1"
+      >
+        <div id="resultReplayChartSheetBackdrop" class="accel-replay-chart-sheet-backdrop" aria-hidden="true"></div>
+
+        <section class="accel-replay-chart-sheet-panel">
+          <header class="accel-replay-chart-sheet-header">
+            <h3 id="resultReplayChartSheetTitle" class="accel-replay-chart-sheet-title" data-i18n="accelExploreCharts">Explore charts</h3>
+
+            <div class="accel-replay-chart-sheet-axis accel-replay-sheet-axis-group" role="group" aria-label="Replay axis" data-i18n-aria="accelReplayAxis">
+              <button
+                id="resultReplaySheetAxisTime"
+                type="button"
+                class="accel-segment-btn accel-replay-axis-btn"
+                data-axis="time"
+                data-i18n-aria="accelReplayAxisTime"
+                data-i18n-title="accelReplayAxisTime"
+                aria-label="Time"
+                title="Time"
+              >
+                <span class="btn-icon" aria-hidden="true"></span>
+                <span class="accel-replay-axis-label" data-i18n="accelReplayAxisTime">Time</span>
+              </button>
+              <button
+                id="resultReplaySheetAxisDistance"
+                type="button"
+                class="accel-segment-btn accel-replay-axis-btn"
+                data-axis="distance"
+                data-i18n-aria="accelReplayAxisDistance"
+                data-i18n-title="accelReplayAxisDistance"
+                aria-label="Distance"
+                title="Distance"
+              >
+                <span class="btn-icon" aria-hidden="true"></span>
+                <span class="accel-replay-axis-label" data-i18n="accelReplayAxisDistance">Distance</span>
+              </button>
+            </div>
+
+            <button id="closeResultReplayChartSheet" type="button" class="accel-sheet-close accel-replay-chart-sheet-close" data-i18n="close">Close</button>
+          </header>
+
+          <section class="accel-replay-filter-group" aria-label="Filter range" data-i18n-aria="replayFilterRange">
+            <div class="accel-replay-filter-row">
+              <span class="accel-replay-filter-value">
+                <span class="accel-metric-label" data-i18n="replayFilterStart">Start</span>
+                <strong id="resultReplaySheetFilterStartValue" class="accel-replay-filter-value-text">0.000 s</strong>
+              </span>
+
+              <div id="resultReplaySheetFilterSlider" class="accel-replay-filter-slider dual-range-input">
+                <input
+                  id="resultReplaySheetFilterStart"
+                  class="accel-replay-filter-range accel-replay-filter-range-start"
+                  type="range"
+                  min="0"
+                  max="1000"
+                  value="0"
+                  step="1"
+                  aria-label="Filter start"
+                  data-i18n-aria="replayFilterStart"
+                />
+                <input
+                  id="resultReplaySheetFilterEnd"
+                  class="accel-replay-filter-range accel-replay-filter-range-end"
+                  type="range"
+                  min="0"
+                  max="1000"
+                  value="1000"
+                  step="1"
+                  aria-label="Filter end"
+                  data-i18n-aria="replayFilterEnd"
+                />
+              </div>
+
+              <span class="accel-replay-filter-value accel-replay-filter-value-end">
+                <span class="accel-metric-label" data-i18n="replayFilterEnd">End</span>
+                <strong id="resultReplaySheetFilterEndValue" class="accel-replay-filter-value-text">0.000 s</strong>
+              </span>
+            </div>
+          </section>
+
+          <section class="accel-replay-chart-sheet-grid" aria-label="Expanded accel replay charts">
+            <article id="resultReplaySheetSpeedStage" class="accel-replay-chart-stage">
+              <header class="accel-replay-chart-stage-head">
+                <span class="accel-section-title" data-i18n="speed">Speed</span>
+                <strong id="resultReplaySheetSpeedValue" class="accel-replay-chart-current">—</strong>
+              </header>
+              <div class="accel-replay-chart-canvas-wrap">
+                <canvas
+                  id="resultReplaySheetSpeedCanvas"
+                  class="accel-replay-chart-canvas"
+                  data-accel-replay-scrub="speedMs"
+                  data-i18n-aria="accelReplaySpeedChart"
+                  aria-label="Replay speed chart"
+                ></canvas>
+              </div>
+            </article>
+
+            <article id="resultReplaySheetAltitudeStage" class="accel-replay-chart-stage">
+              <header class="accel-replay-chart-stage-head">
+                <span class="accel-section-title" data-i18n="altitude">Altitude</span>
+                <strong id="resultReplaySheetAltitudeValue" class="accel-replay-chart-current">—</strong>
+              </header>
+              <div class="accel-replay-chart-canvas-wrap">
+                <canvas
+                  id="resultReplaySheetAltitudeCanvas"
+                  class="accel-replay-chart-canvas"
+                  data-accel-replay-scrub="altitudeM"
+                  data-i18n-aria="accelReplayAltitudeChart"
+                  aria-label="Replay altitude chart"
+                ></canvas>
+              </div>
+            </article>
+
+            <article id="resultReplaySheetHeadingStage" class="accel-replay-chart-stage">
+              <header class="accel-replay-chart-stage-head">
+                <span class="accel-section-title" data-i18n="heading">Heading</span>
+                <strong id="resultReplaySheetHeadingValue" class="accel-replay-chart-current">—</strong>
+              </header>
+              <div class="accel-replay-chart-canvas-wrap">
+                <canvas
+                  id="resultReplaySheetHeadingCanvas"
+                  class="accel-replay-chart-canvas"
+                  data-accel-replay-scrub="headingDeg"
+                  data-i18n-aria="accelReplayHeadingChart"
+                  aria-label="Replay heading chart"
+                ></canvas>
+              </div>
+            </article>
+          </section>
+
+          <p class="accel-inline-note accel-replay-chart-sheet-hint" data-i18n="accelReplayDragToExplore">Drag across the chart to scrub the replay.</p>
+        </section>
       </section>
     </main>
   </div>

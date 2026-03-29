@@ -18,6 +18,14 @@
     --accel-chip-fg: #0f172a;
     --accel-muted: rgba(17, 24, 39, 0.6);
     --accel-panel-soft: rgba(17, 24, 39, 0.04);
+    --accel-replay-altitude-line: #f97316;
+    --accel-replay-altitude-fill: rgba(249, 115, 22, 0.16);
+    --accel-replay-heading-line: #3b82f6;
+    --accel-replay-heading-fill: rgba(59, 130, 246, 0.16);
+    --accel-map-shell:
+      radial-gradient(circle at 22% 18%, rgba(56, 189, 248, 0.16), transparent 34%),
+      radial-gradient(circle at 78% 22%, rgba(52, 211, 153, 0.18), transparent 30%),
+      linear-gradient(180deg, #06111d 0%, #02060b 100%);
 }
 
 @media (prefers-color-scheme: dark){
@@ -39,6 +47,14 @@
         --accel-chip-fg: rgba(255, 255, 255, 0.92);
         --accel-muted: rgba(255, 255, 255, 0.64);
         --accel-panel-soft: rgba(255, 255, 255, 0.05);
+        --accel-replay-altitude-line: #fb923c;
+        --accel-replay-altitude-fill: rgba(251, 146, 60, 0.18);
+        --accel-replay-heading-line: #60a5fa;
+        --accel-replay-heading-fill: rgba(96, 165, 250, 0.18);
+        --accel-map-shell:
+          radial-gradient(circle at 22% 18%, rgba(56, 189, 248, 0.16), transparent 34%),
+          radial-gradient(circle at 78% 22%, rgba(52, 211, 153, 0.16), transparent 30%),
+          linear-gradient(180deg, #03070c 0%, #010204 100%);
     }
 
 }
@@ -591,6 +607,18 @@ body.accel-page{
     color: var(--accel-muted);
 }
 
+.accel-partial-row[data-status="active"]{
+    margin-top: 6px;
+    padding: 10px 12px;
+    border-top-color: transparent;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--accel-accent-soft) 72%, transparent);
+}
+
+.accel-partial-row[data-status="active"] .accel-partial-value{
+    color: var(--accel-accent);
+}
+
 .accel-primary-stage{
     position: relative;
     width: min(100%, 760px);
@@ -878,6 +906,411 @@ body.accel-page{
     align-items: end;
     justify-content: space-between;
     gap: 10px;
+}
+
+.accel-replay-controls{
+    display: grid;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+}
+
+.accel-replay-toolbar{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.accel-replay-transport{
+    --accel-toolbar-size: 42px;
+    --accel-toolbar-hit-width: 46px;
+    --accel-toolbar-icon-size: 18px;
+}
+
+.accel-replay-axis{
+    display: inline-flex;
+    align-items: stretch;
+    justify-content: start;
+    flex-wrap: nowrap;
+}
+
+.accel-replay-sheet-axis-group{
+    width: fit-content;
+    max-width: 100%;
+    border: 1px solid color-mix(in srgb, var(--accel-border) 72%, transparent);
+    background: color-mix(in srgb, var(--accel-panel-soft) 92%, transparent);
+}
+
+.accel-replay-axis-btn{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: auto;
+    min-width: 0;
+    min-height: 36px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    font-size: 13px;
+}
+
+.accel-replay-axis-btn + .accel-replay-axis-btn{
+    border-left: 1px solid color-mix(in srgb, var(--accel-border) 72%, transparent);
+}
+
+.accel-replay-axis-btn .btn-icon{
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+}
+
+.accel-replay-axis-label{
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.accel-replay-sheet-axis-group .accel-replay-axis-btn:hover{
+    background: var(--btn-hover-bg);
+    transform: none;
+}
+
+.accel-replay-sheet-axis-group .accel-replay-axis-btn[aria-pressed="true"]{
+    background: var(--btn-active-bg);
+    color: var(--btn-active-fg);
+    border-color: transparent;
+}
+
+.accel-replay-progress-row{
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr) max-content;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+}
+
+.accel-replay-progress-value{
+    color: var(--accel-muted);
+    font-size: 12px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.accel-replay-progress{
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    height: 28px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    box-sizing: border-box;
+    background: transparent;
+    accent-color: var(--accel-accent);
+    justify-self: stretch;
+    align-self: center;
+    cursor: pointer;
+}
+
+input.accel-replay-progress{
+    width: 100%;
+    max-width: none;
+}
+
+.accel-replay-progress::-webkit-slider-runnable-track{
+    height: 6px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accel-border) 100%, var(--accel-panel-soft));
+}
+
+.accel-replay-progress::-webkit-slider-thumb{
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    margin-top: -6px;
+    border-radius: 50%;
+    border: 2px solid color-mix(in srgb, var(--accel-surface-strong) 92%, white);
+    background: var(--accel-accent);
+    box-shadow: 0 4px 10px rgba(16, 185, 129, 0.22);
+}
+
+.accel-replay-progress::-moz-range-track{
+    height: 6px;
+    border: 0;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accel-border) 100%, var(--accel-panel-soft));
+}
+
+.accel-replay-progress::-moz-range-thumb{
+    width: 18px;
+    height: 18px;
+    border: 2px solid color-mix(in srgb, var(--accel-surface-strong) 92%, white);
+    border-radius: 50%;
+    background: var(--accel-accent);
+    box-shadow: 0 4px 10px rgba(16, 185, 129, 0.22);
+}
+
+.accel-replay-charts-btn{
+    white-space: nowrap;
+}
+
+body.accel-page.accel-replay-chart-sheet-open{
+    overflow: hidden;
+}
+
+.accel-replay-chart-sheet{
+    position: fixed;
+    inset: 0;
+    z-index: 120;
+    display: grid;
+    place-items: stretch;
+    padding:
+      max(12px, calc(env(safe-area-inset-top) + 12px))
+      max(12px, calc(env(safe-area-inset-right) + 12px))
+      max(12px, calc(env(safe-area-inset-bottom) + 12px))
+      max(12px, calc(env(safe-area-inset-left) + 12px));
+}
+
+.accel-replay-chart-sheet[hidden]{
+    display: none !important;
+}
+
+.accel-replay-chart-sheet-backdrop{
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.38);
+    backdrop-filter: blur(4px);
+}
+
+.accel-replay-chart-sheet-panel{
+    position: relative;
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    gap: 14px;
+    padding: 18px;
+    border-radius: 22px;
+    border: 1px solid color-mix(in srgb, var(--accel-border) 88%, transparent);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--accel-surface-strong) 100%, transparent),
+        color-mix(in srgb, var(--accel-surface) 98%, transparent)
+      );
+    box-shadow: 0 28px 64px rgba(15, 23, 42, 0.2);
+    overflow: hidden;
+}
+
+.accel-replay-chart-sheet-header{
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: start;
+    gap: 10px 12px;
+}
+
+.accel-replay-chart-sheet-title{
+    margin: 0;
+    font-size: 18px;
+    line-height: 1.1;
+}
+
+.accel-replay-chart-sheet-axis{
+    display: inline-grid;
+    grid-auto-flow: column;
+    justify-content: start;
+}
+
+.accel-replay-filter-group{
+    display: grid;
+    gap: 0;
+    min-width: 0;
+}
+
+.accel-replay-filter-row{
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr) max-content;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.accel-replay-filter-value{
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+    align-content: center;
+}
+
+.accel-replay-filter-value-end{
+    justify-items: end;
+    text-align: right;
+}
+
+.accel-replay-filter-value-text{
+    font-size: 14px;
+    font-weight: 780;
+    line-height: 1.15;
+    letter-spacing: -0.015em;
+    font-variant-numeric: tabular-nums;
+}
+
+.accel-replay-filter-slider{
+    --dri-height: 32px;
+    --dri-thumb-width: 20px;
+    --dri-thumb-height: 20px;
+    --dri-thumb-color: var(--accel-accent);
+    --dri-thumb-hover-color: color-mix(in srgb, var(--accel-accent) 78%, white 22%);
+    --dri-thumb-active-color: color-mix(in srgb, var(--accel-accent) 90%, white 10%);
+    --dri-thumb-border-color: color-mix(in srgb, var(--accel-surface-strong) 88%, white);
+    --dri-thumb-border-hover-color: var(--dri-thumb-border-color);
+    --dri-thumb-border-active-color: var(--dri-thumb-border-color);
+    --dri-thumb-border-radius: 999px;
+    --dri-thumb-border-width: 2px;
+    --dri-track-height: 6px;
+    --dri-track-border-radius: 999px;
+    --dri-track-color: color-mix(in srgb, var(--accel-border) 100%, var(--accel-panel-soft));
+    --dri-track-filled-color: color-mix(in srgb, var(--accel-accent) 86%, white 14%);
+    --dri-track-filled-gradient-mid-color: var(--dri-track-filled-color);
+    --dri-track-filled-gradient-end-color: var(--dri-track-filled-color);
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    align-items: center;
+}
+
+.accel-replay-filter-slider.dual-range-input{
+    padding-inline-end: calc(var(--dri-thumb-width) * 2);
+}
+
+.accel-replay-filter-slider.dual-range-input input{
+    width: auto;
+    max-width: none;
+    min-width: var(--dri-thumb-width);
+    cursor: ew-resize;
+}
+
+.accel-replay-filter-slider.dual-range-input input::-webkit-slider-thumb{
+    box-shadow: 0 6px 14px rgba(16, 185, 129, 0.28);
+}
+
+.accel-replay-filter-slider.dual-range-input input::-moz-range-thumb{
+    box-shadow: 0 6px 14px rgba(16, 185, 129, 0.28);
+}
+
+.accel-replay-chart-sheet-grid{
+    display: grid;
+    gap: 12px;
+    min-height: 0;
+    align-content: start;
+    overflow: auto;
+}
+
+.accel-replay-chart-stage{
+    display: grid;
+    gap: 10px;
+    padding: 2px 0;
+}
+
+.accel-replay-chart-stage + .accel-replay-chart-stage{
+    padding-top: 14px;
+    border-top: 1px solid color-mix(in srgb, var(--accel-border) 54%, transparent);
+}
+
+.accel-replay-chart-stage-head{
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 0 2px;
+}
+
+.accel-replay-chart-current{
+    font-size: clamp(16px, 1.8vw, 22px);
+    font-weight: 780;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.accel-replay-chart-canvas-wrap{
+    min-height: clamp(180px, 24vh, 250px);
+    touch-action: none;
+}
+
+body.accel-page .accel-replay-chart-canvas{
+    display: block;
+    width: 100% !important;
+    height: clamp(180px, 24vh, 250px) !important;
+    touch-action: none;
+}
+
+.accel-replay-chart-sheet-hint{
+    margin: 0;
+}
+
+.accel-result-map-shell{
+    display: grid;
+    gap: 8px;
+}
+
+.accel-result-map{
+    position: relative;
+    min-height: clamp(250px, 34vh, 400px);
+    width: 100%;
+    margin: 0;
+    border-radius: 0;
+    overflow: hidden;
+    background: var(--accel-map-shell);
+    border: 0;
+    box-shadow: none;
+}
+
+.accel-result-map::after{
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity 180ms ease;
+    background:
+      radial-gradient(circle at 50% 50%, transparent 48%, rgba(0, 0, 0, 0.34) 100%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 30%);
+}
+
+.accel-result-map.replay-map-closeup::after{
+    opacity: 0;
+}
+
+.accel-result-map .maplibregl-canvas{
+    outline: none;
+}
+
+.accel-result-map .maplibregl-ctrl-attrib{
+    background: color-mix(in srgb, var(--accel-chip-bg) 92%, transparent);
+    color: var(--accel-muted);
+    font-size: 10px;
+    border-radius: 0;
+}
+
+.accel-result-map .maplibregl-ctrl-bottom-right{
+    right: 10px;
+    bottom: 10px;
 }
 
 .accel-result-graph-frame{
@@ -1177,6 +1610,14 @@ body.accel-page .accel-result-graph-canvas{
     padding-right: 88px;
 }
 
+.accel-sheet-results{
+    left: max(12px, calc(env(safe-area-inset-left) + 12px));
+    right: max(12px, calc(env(safe-area-inset-right) + 12px));
+    width: auto;
+    max-width: none;
+    transform: none;
+}
+
 .accel-sheet-results .accel-sheet-close{
     position: absolute;
     top: 0;
@@ -1345,6 +1786,10 @@ body.accel-page .accel-result-graph-canvas{
     min-width: 104px;
 }
 
+.accel-history-replay-btn{
+    min-width: 96px;
+}
+
 .accel-history-load-btn[aria-pressed="true"]{
     background: var(--btn-active-bg);
     color: var(--btn-active-fg);
@@ -1503,6 +1948,37 @@ button:disabled{
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
+    .accel-replay-toolbar{
+        align-items: stretch;
+    }
+
+    .accel-replay-axis:not(.accel-replay-sheet-axis-group){
+        width: 100%;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .accel-replay-chart-sheet{
+        padding:
+          max(8px, calc(env(safe-area-inset-top) + 8px))
+          max(8px, calc(env(safe-area-inset-right) + 8px))
+          max(8px, calc(env(safe-area-inset-bottom) + 8px))
+          max(8px, calc(env(safe-area-inset-left) + 8px));
+    }
+
+    .accel-replay-chart-sheet-panel{
+        padding: 14px;
+        border-radius: 18px;
+    }
+
+    .accel-replay-chart-sheet-header{
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .accel-replay-chart-sheet-axis:not(.accel-replay-sheet-axis-group){
+        width: 100%;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
     .accel-result-primary-meta{
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -1602,6 +2078,11 @@ button:disabled{
         border-radius: 24px;
         transform: none;
     }
+
+    .accel-sheet-results{
+        left: 8px;
+        right: 8px;
+    }
 }
 
 @media (max-width: 520px){
@@ -1633,6 +2114,32 @@ button:disabled{
 
     .accel-result-graph-details{
         grid-template-columns: minmax(0, 1fr);
+    }
+
+    .accel-replay-progress-row{
+        grid-template-columns: minmax(0, 1fr);
+        gap: 6px;
+    }
+
+    .accel-replay-progress-value:last-child{
+        text-align: right;
+    }
+
+    .accel-replay-filter-row{
+        grid-template-columns: minmax(0, 1fr);
+        gap: 10px;
+    }
+
+    .accel-replay-filter-value,
+    .accel-replay-filter-value-end{
+        justify-items: start;
+        text-align: left;
+    }
+
+    .accel-replay-chart-stage-head{
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
     }
 
     .accel-result-primary-meta{
