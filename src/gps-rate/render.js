@@ -322,6 +322,15 @@ export function createGpsRateRenderer({
     elements.startTest.disabled = state.isRunning || !("geolocation" in navigator);
     elements.stopTest.disabled = !state.isRunning;
     elements.resetTest.disabled = !state.isRunning && !hasCurrentSamples;
+    if (elements.startQuickTest) {
+      elements.startQuickTest.disabled = elements.startTest.disabled;
+    }
+    if (elements.stopQuickTest) {
+      elements.stopQuickTest.disabled = elements.stopTest.disabled;
+    }
+    if (elements.resetQuickTest) {
+      elements.resetQuickTest.disabled = elements.resetTest.disabled;
+    }
     elements.exportJson.disabled = !hasCurrentSamples;
     elements.exportCsv.disabled = !hasCurrentSamples;
     elements.copySummary.disabled = !canCopy;

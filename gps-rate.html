@@ -86,32 +86,20 @@
         </div>
 
         <div class="toolbar gps-rate-toolbar" role="toolbar" data-i18n-aria="gpsRateToolbar" aria-label="GPS rate tools">
-          <div class="gps-rate-toolbar-status">
-            <span class="gps-rate-pill">
-              <span class="gps-rate-pill-label" data-i18n="gpsRatePermission">Permission</span>
-              <strong id="permissionChipValue">Prompt</strong>
-            </span>
-            <span class="gps-rate-pill">
-              <span class="gps-rate-pill-label" data-i18n="gpsRateVisibility">Visibility</span>
-              <strong id="visibilityChipValue">Visible</strong>
-            </span>
-            <span class="gps-rate-pill">
-              <span class="gps-rate-pill-label" data-i18n="gpsRateStatus">Status</span>
-              <strong id="headerStatusText" aria-live="polite">Idle</strong>
-            </span>
-          </div>
-
-          <div class="right-stack gps-rate-right-stack">
+          <div class="gps-rate-toolbar-strip">
             <div class="tools-menu gps-rate-tools-menu">
               <button
                 id="gpsRateToolsMenuBtn"
                 type="button"
-                class="tools-menu-btn"
-                data-i18n="tools"
+                class="tools-menu-btn gps-rate-toolbar-icon-btn"
+                data-i18n-aria="pages"
+                data-i18n-title="pages"
+                aria-label="Pages"
+                title="Pages"
                 aria-haspopup="menu"
                 aria-expanded="false"
               >
-                Tools
+                <span class="btn-icon" aria-hidden="true"></span>
               </button>
               <div id="gpsRateToolsMenuList" class="tools-menu-list" role="menu" hidden>
                 <button id="openGpsRateSpeedMenu" type="button" role="menuitem" class="btn-with-icon">
@@ -132,6 +120,54 @@
                 </button>
               </div>
             </div>
+
+            <button
+              id="gpsRateStartQuick"
+              type="button"
+              class="gps-rate-toolbar-icon-btn gps-rate-toolbar-btn-start"
+              data-i18n-aria="gpsRateStart"
+              data-i18n-title="gpsRateStart"
+              aria-label="Start Test"
+              title="Start Test"
+            >
+              <span class="btn-icon" aria-hidden="true"></span>
+            </button>
+            <button
+              id="gpsRateStopQuick"
+              type="button"
+              class="gps-rate-toolbar-icon-btn gps-rate-toolbar-btn-stop"
+              data-i18n-aria="gpsRateStop"
+              data-i18n-title="gpsRateStop"
+              aria-label="Stop Test"
+              title="Stop Test"
+            >
+              <span class="btn-icon" aria-hidden="true"></span>
+            </button>
+            <button
+              id="gpsRateResetQuick"
+              type="button"
+              class="gps-rate-toolbar-icon-btn gps-rate-toolbar-btn-reset"
+              data-i18n-aria="gpsRateReset"
+              data-i18n-title="gpsRateReset"
+              aria-label="Reset"
+              title="Reset"
+            >
+              <span class="btn-icon" aria-hidden="true"></span>
+            </button>
+          </div>
+
+          <div class="gps-rate-toolbar-status" data-i18n-aria="connectionStatus" aria-label="Connection status">
+            <span class="gps-rate-toolbar-meta">
+              <span class="gps-rate-toolbar-meta-item">
+                <span data-i18n="gpsRatePermission">Permission</span>
+                <strong id="permissionChipValue">Prompt</strong>
+              </span>
+              <span class="gps-rate-toolbar-meta-item">
+                <span data-i18n="gpsRateVisibility">Visibility</span>
+                <strong id="visibilityChipValue">Visible</strong>
+              </span>
+            </span>
+            <span id="headerStatusText" class="status gps-rate-toolbar-status-text" aria-live="polite">Idle</span>
           </div>
         </div>
 

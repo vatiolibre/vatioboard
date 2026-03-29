@@ -2,7 +2,16 @@ import "../styles/gps-rate.less";
 import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
 import { loadBoolean, loadJson, loadText, saveJson, saveText } from "../shared/storage.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
-import { IconAccel, IconBoard, IconCalculator, IconSpeed } from "../icons.js";
+import {
+  IconAccel,
+  IconBoard,
+  IconCalculator,
+  IconClose,
+  IconPages,
+  IconPlay,
+  IconRestart,
+  IconSpeed,
+} from "../icons.js";
 import { APP_NAME, GEO_ERROR_CODE, GEO_OPTIONS, STORAGE_KEYS } from "./constants.js";
 import { createGpsRateController } from "./controller.js";
 import { createGpsRateRenderer } from "./render.js";
@@ -23,6 +32,9 @@ const elements = {
   permissionChipValue: document.getElementById("permissionChipValue"),
   visibilityChipValue: document.getElementById("visibilityChipValue"),
   headerStatusText: document.getElementById("headerStatusText"),
+  startQuickTest: document.getElementById("gpsRateStartQuick"),
+  stopQuickTest: document.getElementById("gpsRateStopQuick"),
+  resetQuickTest: document.getElementById("gpsRateResetQuick"),
   statusBadge: document.getElementById("statusBadge"),
   startTest: document.getElementById("startTest"),
   stopTest: document.getElementById("stopTest"),
@@ -108,6 +120,10 @@ applyButtonIcon(elements.openSpeedMenu, IconSpeed);
 applyButtonIcon(elements.openAccelMenu, IconAccel);
 applyButtonIcon(elements.openCalculatorMenu, IconCalculator);
 applyButtonIcon(elements.openBoardMenu, IconBoard);
+applyButtonIcon(elements.toolsMenuBtn, IconPages);
+applyButtonIcon(elements.startQuickTest, IconPlay);
+applyButtonIcon(elements.stopQuickTest, IconClose);
+applyButtonIcon(elements.resetQuickTest, IconRestart);
 
 const state = createGpsRateState({
   hiddenNow: document.hidden,

@@ -17,7 +17,11 @@ describe("gps-rate.html smoke", () => {
       canonical: "https://vatioboard.com/gps-rate.html",
     });
 
-    document.getElementById("startTest").click();
+    expect(document.getElementById("gpsRateToolsMenuBtn").getAttribute("aria-label")).toBe("Pages");
+    expect(document.querySelector("#gpsRateToolsMenuBtn .btn-icon svg")).toBeTruthy();
+    expect(document.querySelector("#gpsRateStartQuick .btn-icon svg")).toBeTruthy();
+
+    document.getElementById("gpsRateStartQuick").click();
     expect(getBrowserMocks().geolocation.watchPosition).toHaveBeenCalledTimes(1);
 
     emitGeolocationSuccess({

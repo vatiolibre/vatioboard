@@ -467,6 +467,9 @@ export function createGpsRateController({
     elements.startTest.addEventListener("click", startTest);
     elements.stopTest.addEventListener("click", () => stopTest({ persist: true }));
     elements.resetTest.addEventListener("click", resetTest);
+    elements.startQuickTest?.addEventListener("click", startTest);
+    elements.stopQuickTest?.addEventListener("click", () => stopTest({ persist: true }));
+    elements.resetQuickTest?.addEventListener("click", resetTest);
     elements.exportJson.addEventListener("click", exportJson);
     elements.exportCsv.addEventListener("click", exportCsv);
     elements.copySummary.addEventListener("click", copySummary);
