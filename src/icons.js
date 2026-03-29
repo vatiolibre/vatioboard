@@ -95,17 +95,23 @@ export const IconBoard = `
 
 export const IconPen = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <path d="m14.35 5.65 4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M5 19l3.75-.85 8.45-8.45a1.75 1.75 0 0 0 0-2.47l-.42-.42a1.75 1.75 0 0 0-2.47 0L5.85 15.25 5 19Z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M8.55 18.2 5.8 15.45" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M16.05 4.8 19.2 7.95c.47.47.47 1.23 0 1.7l-4.2 4.2-5.05-5.05 4.2-4.2c.47-.47 1.23-.47 1.7 0Z" fill="currentColor" opacity="0.14"/>
+    <path d="m14.95 5.95 3.05 3.05" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M5.55 19.15 8.95 10.8l4.25 4.25-8.55 4.15.9-3.05Z" style="fill: var(--board-pen-tip, currentColor);" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+    <path d="M7.5 16.6 9.6 12.1l2.65 2.65-4.75 1.85Z" style="fill: color-mix(in srgb, var(--board-pen-tip, currentColor) 86%, white 14%);" opacity="0.9"/>
+    <path d="m9.95 9.8 4.45-4.45a1.2 1.2 0 0 1 1.7 0l1.85 1.85a1.2 1.2 0 0 1 0 1.7L13.5 13.35" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="m9.15 10.95 3.9 3.9" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M4.8 19.15h4.75" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/>
   </svg>
 `;
 
 export const IconEraser = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <path d="m7.15 15.65 6.55-6.55a1.9 1.9 0 0 1 2.69 0l1.51 1.51a1.9 1.9 0 0 1 0 2.69l-3.58 3.58a2.5 2.5 0 0 1-1.77.73H9.66a2.5 2.5 0 0 1-1.77-.73l-1.4-1.4a1.29 1.29 0 0 1 0-1.83Z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M13.55 17.6H19" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-    <path d="m9.9 12.9 3.2 3.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="m6.15 15.5 6.35-6.35a1.95 1.95 0 0 1 2.76 0l2.09 2.09a1.95 1.95 0 0 1 0 2.76l-3.78 3.78a2.55 2.55 0 0 1-1.8.74H8.7a2.4 2.4 0 0 1-1.69-.7L5.6 16.9a1.27 1.27 0 0 1 0-1.4Z" fill="currentColor" opacity="0.14"/>
+    <path d="m6.15 15.5 6.35-6.35a1.95 1.95 0 0 1 2.76 0l2.09 2.09a1.95 1.95 0 0 1 0 2.76l-3.78 3.78a2.55 2.55 0 0 1-1.8.74H8.7a2.4 2.4 0 0 1-1.69-.7L5.6 16.4a1.27 1.27 0 0 1 0-1.4Z" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="m9.15 11.95 4.15 4.15" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M12.95 18.5h6.2" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"/>
+    <path d="M6.7 18.5h2.7" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" opacity="0.78"/>
   </svg>
 `;
 

@@ -476,6 +476,12 @@ bindNavigation(openAccelMenuBtn, "/accel");
       colorTriggerBtn.setAttribute("aria-label", `${t("moreColors")}. Current: ${raw}`);
     }
 
+    function syncPenButtonColor(){
+      if (!penBtn) return;
+      const raw = normalizeHex(inkRaw) || "#111827";
+      penBtn.style.setProperty("--board-pen-tip", raw);
+    }
+
     // Presets tuned for Tesla-ish minimal look (different per theme)
     const PRESETS = [
       { id: "graphite", light: "#111827", dark: "#e5e7eb" },
@@ -529,6 +535,7 @@ bindNavigation(openAccelMenuBtn, "/accel");
     function applyInk(){
       const applied = appliedInkFromRaw();
       setCssInk(applied);
+      syncPenButtonColor();
       syncColorUI();
       syncColorTrigger();
     }
