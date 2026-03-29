@@ -90,6 +90,12 @@ body.replay-page.replay-graph-sheet-open{
 
 .replay-header-inner{
     gap: 14px;
+    flex-wrap: nowrap;
+}
+
+.replay-header-inner > .brand{
+    order: 2;
+    margin-left: auto;
 }
 
 .brand-home{
@@ -117,10 +123,18 @@ body.replay-page.replay-graph-sheet-open{
 }
 
 .replay-toolbar{
+    order: 1;
     justify-content: flex-start;
     gap: 10px;
     overflow: visible;
+    margin-left: 0;
     padding-right: max(4px, env(safe-area-inset-right));
+}
+
+.replay-header-inner > .route-chip{
+    order: 3;
+    margin-left: 0;
+    flex: 0 0 auto;
 }
 
 .replay-toolbar-right{
@@ -1070,11 +1084,23 @@ body.replay-page.replay-graph-sheet-open{
 }
 
 @media (max-width: 760px){
+    .replay-header-inner{
+        flex-wrap: wrap;
+    }
+
+    .replay-header-inner .brand{
+        flex: 1 1 auto;
+        margin-left: 0;
+    }
+
     .replay-summary-grid{
         grid-template-columns: 1fr;
     }
 
     .replay-toolbar{
+        width: 100%;
+        flex: 1 1 100%;
+        margin-left: 0;
         align-items: stretch;
     }
 
@@ -1086,6 +1112,10 @@ body.replay-page.replay-graph-sheet-open{
     .replay-toolbar-strip{
         --replay-toolbar-size: 40px;
         --replay-toolbar-icon-size: 17px;
+    }
+
+    .replay-header-inner > .route-chip{
+        margin-left: auto;
     }
 
     .replay-map{

@@ -79,6 +79,12 @@ body.accel-page{
 
 .accel-header-inner{
     gap: 14px;
+    flex-wrap: nowrap;
+}
+
+.accel-header-inner > .brand{
+    order: 2;
+    margin-left: auto;
 }
 
 .brand-home{
@@ -105,10 +111,18 @@ body.accel-page{
 }
 
 .accel-toolbar{
+    order: 1;
     justify-content: space-between;
     gap: 10px;
     overflow: visible;
+    margin-left: 0;
     padding-right: max(4px, env(safe-area-inset-right));
+}
+
+.accel-header-inner > .route-chip{
+    order: 3;
+    margin-left: 0;
+    flex: 0 0 auto;
 }
 
 .accel-toolbar-actions{
@@ -1500,10 +1514,22 @@ button:disabled{
 }
 
 @media (max-width: 680px){
+    .accel-header-inner{
+        flex-wrap: wrap;
+    }
+
+    .accel-header-inner .brand{
+        flex: 1 1 auto;
+        margin-left: 0;
+    }
+
     .accel-toolbar{
+        width: 100%;
+        flex: 1 1 100%;
+        margin-left: 0;
         justify-content: flex-start;
         align-items: flex-start;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
     }
 
     .accel-toolbar-utility-row{
@@ -1518,6 +1544,10 @@ button:disabled{
 
     .accel-toolbar-actions{
         width: auto;
+    }
+
+    .accel-header-inner > .route-chip{
+        margin-left: auto;
     }
 
     .accel-main{

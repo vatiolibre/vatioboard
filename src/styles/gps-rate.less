@@ -84,6 +84,7 @@ body.gps-rate-page{
 
 .gps-rate-header-inner{
     gap: 14px;
+    flex-wrap: nowrap;
 }
 
 .brand-home{
@@ -114,6 +115,11 @@ body.gps-rate-page{
     gap: 10px;
     overflow: visible;
     padding-right: max(4px, env(safe-area-inset-right));
+}
+
+.gps-rate-header-inner > .route-chip{
+    margin-left: auto;
+    flex: 0 0 auto;
 }
 
 .gps-rate-toolbar-status{
@@ -828,7 +834,17 @@ body.gps-rate-page{
 }
 
 @media (max-width: 680px){
+    .gps-rate-header-inner{
+        flex-wrap: wrap;
+    }
+
+    .gps-rate-header-inner .brand{
+        flex: 1 1 100%;
+    }
+
     .gps-rate-toolbar{
+        width: auto;
+        margin-left: 0;
         align-items: flex-start;
     }
 
@@ -841,6 +857,10 @@ body.gps-rate-page{
         display: flex;
         justify-content: flex-end;
         align-items: flex-start;
+    }
+
+    .gps-rate-header-inner > .route-chip{
+        margin-left: auto;
     }
 
     .gps-rate-main{

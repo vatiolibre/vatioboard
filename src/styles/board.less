@@ -113,6 +113,11 @@ header{
     flex-wrap:nowrap;
 }
 
+.header-inner > .brand{
+    order: 2;
+    margin-left: auto;
+}
+
 .brand{
     display:flex;
     align-items:center;
@@ -166,11 +171,12 @@ header{
 }
 
 .toolbar{
+    order: 1;
     display:flex;
     gap:8px;
     align-items:center;
     flex-wrap:nowrap;
-    margin-left: 4px;
+    margin-left: 0;
     flex: 1;
     min-width: 0;
     overflow: visible;
@@ -191,6 +197,10 @@ header{
 @media (max-width: 1600px){
   .header-inner{
     flex-wrap: wrap;
+  }
+
+  .header-inner .brand{
+    margin-left: 0;
   }
 
   .toolbar{
@@ -683,6 +693,7 @@ canvas{
   }
 
   .brand{
+    order: 2;
     width: 100%;
     justify-content: space-between;
     gap: 8px;
@@ -700,6 +711,7 @@ canvas{
   }
 
   .toolbar{
+    order: 1;
     width: 100%;
     margin-left: 0;         /* remove desktop offset */
     flex-wrap: wrap;

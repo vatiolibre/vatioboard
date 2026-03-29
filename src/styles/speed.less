@@ -113,6 +113,12 @@ body.speed-page.alert-panel-open .speed-main{
 
 .speed-header-inner{
     gap: 14px;
+    flex-wrap: nowrap;
+}
+
+.speed-header-inner > .brand{
+    order: 2;
+    margin-left: auto;
 }
 
 .brand-home{
@@ -142,16 +148,25 @@ body.speed-page.alert-panel-open .speed-main{
 .speed-toolbar{
     --speed-toolbar-touch-size: 46px;
     --speed-toolbar-icon-size: 20px;
-    justify-content: flex-end;
+    order: 1;
+    justify-content: flex-start;
     gap: 10px;
     overflow: visible;
+    margin-left: 0;
     padding-right: max(4px, env(safe-area-inset-right));
+}
+
+.speed-header-inner > .route-chip{
+    order: 3;
+    margin-left: 0;
+    flex: 0 0 auto;
 }
 
 .speed-toolbar .right-stack{
     max-width: none;
     gap: 6px;
     align-items: flex-end;
+    margin-left: auto;
 }
 
 .speed-tools-menu{
@@ -1671,13 +1686,29 @@ body.speed-page.alert-panel-open .speed-main{
 }
 
 @media (max-width: 960px){
+    .speed-header-inner{
+        flex-wrap: wrap;
+    }
+
+    .speed-header-inner .brand{
+        flex: 1 1 auto;
+        margin-left: 0;
+    }
+
     .speed-toolbar{
+        width: 100%;
+        flex: 1 1 100%;
+        margin-left: 0;
         justify-content: flex-start;
     }
 
     .speed-toolbar .right-stack{
         margin-left: auto;
         align-items: flex-end;
+    }
+
+    .speed-header-inner > .route-chip{
+        margin-left: auto;
     }
 
     .stats-grid{
