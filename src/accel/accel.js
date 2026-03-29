@@ -3,7 +3,7 @@ import Chart from "chart.js/auto";
 import { applyTranslations as applySharedTranslations, getLang, t as sharedT, toggleLang } from "../i18n.js";
 import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
-import { IconBoard, IconClose, IconGpsLab, IconPlay, IconSettings, IconSpeed } from "../icons.js";
+import { IconBoard, IconClose, IconGpsLab, IconPages, IconPlay, IconSpeed } from "../icons.js";
 import {
   FINISH_SOUND_URL,
   GEO_ERROR_CODE,
@@ -194,7 +194,7 @@ export const initPromise = (function () {
 
   applyButtonIcon(elements.armRun, IconPlay);
   applyButtonIcon(elements.cancelRun, IconClose);
-  applyButtonIcon(elements.toolsMenuBtn, IconSettings);
+  applyButtonIcon(elements.toolsMenuBtn, IconPages);
   applyButtonIcon(elements.openSpeedMenu, IconSpeed);
   applyButtonIcon(elements.openGpsLabMenu, IconGpsLab);
   applyButtonIcon(elements.openBoardMenu, IconBoard);

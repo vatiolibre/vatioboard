@@ -52,7 +52,7 @@ describe("accel.html smoke", () => {
     expect(document.getElementById("armRun").getAttribute("aria-label")).toBe("Start test");
     expect(document.querySelector("#armRun .btn-icon svg")).toBeTruthy();
     expect(document.querySelector("#cancelRun .btn-icon svg")).toBeTruthy();
-    expect(document.getElementById("accelToolsMenuBtn").getAttribute("aria-label")).toBe("Tools");
+    expect(document.getElementById("accelToolsMenuBtn").getAttribute("aria-label")).toBe("Pages");
     expect(document.querySelector("#accelToolsMenuBtn .btn-icon svg")).toBeTruthy();
     expect(document.getElementById("accelToolsMenuList").hidden).toBe(true);
     document.getElementById("accelToolsMenuBtn").click();

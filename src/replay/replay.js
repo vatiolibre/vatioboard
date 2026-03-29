@@ -8,10 +8,10 @@ import {
   IconBoard,
   IconDistance,
   IconGpsLab,
+  IconPages,
   IconPause,
   IconPlay,
   IconRestart,
-  IconSettings,
   IconSpeed,
   IconTime,
   IconWorld,
@@ -118,7 +118,7 @@ applyButtonIcon(elements.openReplaySpeedMenu, IconSpeed);
 applyButtonIcon(elements.openReplayGpsLabMenu, IconGpsLab);
 applyButtonIcon(elements.openReplayAccelMenu, IconAccel);
 applyButtonIcon(elements.openReplayBoardMenu, IconBoard);
-applyButtonIcon(elements.replayToolsMenuBtn, IconSettings);
+applyButtonIcon(elements.replayToolsMenuBtn, IconPages);
 for (const button of document.querySelectorAll('.replay-axis-btn[data-axis="time"]')) {
   applyButtonIcon(button, IconTime);
 }

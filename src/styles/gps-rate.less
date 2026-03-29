@@ -835,14 +835,24 @@ body.gps-rate-page{
 
 @media (max-width: 680px){
     .gps-rate-header-inner{
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        column-gap: 6px;
+        row-gap: 4px;
         flex-wrap: wrap;
     }
 
     .gps-rate-header-inner .brand{
-        flex: 1 1 100%;
+        order: 2;
+        width: auto;
+        min-width: 0;
+        flex: 0 1 auto;
+        justify-content: flex-start;
     }
 
     .gps-rate-toolbar{
+        grid-column: 1 / -1;
         width: auto;
         margin-left: 0;
         align-items: flex-start;
@@ -860,7 +870,9 @@ body.gps-rate-page{
     }
 
     .gps-rate-header-inner > .route-chip{
-        margin-left: auto;
+        order: 3;
+        margin-left: 0;
+        justify-self: end;
     }
 
     .gps-rate-main{

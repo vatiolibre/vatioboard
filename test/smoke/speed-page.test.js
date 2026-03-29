@@ -99,7 +99,7 @@ describe("speed.html smoke", () => {
     expect(document.querySelector("#quickAudioToggle .toolbar-recording-glyph svg")).toBeTruthy();
     expect(document.getElementById("quickBackgroundAudioToggle").getAttribute("aria-label")).toBe("Enable background audio");
     expect(document.querySelector("#quickBackgroundAudioToggle .toolbar-recording-glyph svg")).toBeTruthy();
-    expect(document.getElementById("speedToolsMenuBtn").getAttribute("aria-label")).toBe("Tools");
+    expect(document.getElementById("speedToolsMenuBtn").getAttribute("aria-label")).toBe("Pages");
     expect(document.querySelector("#speedToolsMenuBtn .btn-icon svg")).toBeTruthy();
     expect(document.getElementById("speedToolsMenuList").hidden).toBe(true);
 

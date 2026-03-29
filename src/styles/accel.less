@@ -78,7 +78,7 @@ body.accel-page{
 }
 
 .accel-header-inner{
-    gap: 14px;
+    gap: 8px;
     flex-wrap: nowrap;
 }
 
@@ -113,10 +113,10 @@ body.accel-page{
 .accel-toolbar{
     order: 1;
     justify-content: space-between;
-    gap: 10px;
+    gap: 6px;
     overflow: visible;
     margin-left: 0;
-    padding-right: max(4px, env(safe-area-inset-right));
+    padding-right: 0;
 }
 
 .accel-header-inner > .route-chip{
@@ -134,6 +134,7 @@ body.accel-page{
 
 .accel-toolbar-strip{
     --accel-toolbar-size: 46px;
+    --accel-toolbar-hit-width: 54px;
     --accel-toolbar-icon-size: 20px;
     display: inline-flex;
     align-items: center;
@@ -158,8 +159,8 @@ body.accel-page{
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: var(--accel-toolbar-size);
-    min-width: var(--accel-toolbar-size);
+    width: var(--accel-toolbar-hit-width);
+    min-width: var(--accel-toolbar-hit-width);
     height: var(--accel-toolbar-size);
     min-height: var(--accel-toolbar-size);
     padding: 0;
@@ -171,11 +172,7 @@ body.accel-page{
     flex: 0 0 auto;
 }
 
-.accel-toolbar-icon-btn + .accel-toolbar-icon-btn{
-    border-left: 1px solid color-mix(in srgb, var(--accel-border) 100%, transparent);
-}
-
-.accel-toolbar-strip > .accel-tools-menu{
+.accel-toolbar-strip > * + *{
     border-left: 1px solid color-mix(in srgb, var(--accel-border) 100%, transparent);
 }
 
@@ -230,6 +227,8 @@ body.accel-page{
 }
 
 .accel-tools-menu .tools-menu-list{
+    left: 0;
+    right: auto;
     min-width: 220px;
     border-color: color-mix(in srgb, var(--accel-border) 92%, transparent);
     background:
@@ -1513,17 +1512,27 @@ button:disabled{
     }
 }
 
-@media (max-width: 680px){
+@media (max-width: 720px){
     .accel-header-inner{
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        column-gap: 6px;
+        row-gap: 4px;
         flex-wrap: wrap;
     }
 
     .accel-header-inner .brand{
-        flex: 1 1 auto;
+        order: 2;
+        width: auto;
+        min-width: 0;
+        flex: 0 1 auto;
+        justify-content: flex-start;
         margin-left: 0;
     }
 
     .accel-toolbar{
+        grid-column: 1 / -1;
         width: 100%;
         flex: 1 1 100%;
         margin-left: 0;
@@ -1539,6 +1548,7 @@ button:disabled{
 
     .accel-toolbar-strip{
         --accel-toolbar-size: 42px;
+        --accel-toolbar-hit-width: 46px;
         --accel-toolbar-icon-size: 18px;
     }
 
@@ -1547,7 +1557,9 @@ button:disabled{
     }
 
     .accel-header-inner > .route-chip{
-        margin-left: auto;
+        order: 3;
+        margin-left: 0;
+        justify-self: end;
     }
 
     .accel-main{

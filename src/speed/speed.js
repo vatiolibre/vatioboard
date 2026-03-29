@@ -3,7 +3,7 @@ import "../styles/speed.less";
 import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
 import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
-import { IconAccel, IconBoard, IconGpsLab, IconReplay, IconRestart, IconSettings } from "../icons.js";
+import { IconAccel, IconBoard, IconGpsLab, IconPages, IconReplay, IconRestart } from "../icons.js";
 import {
   archiveReplaySession,
   createReplaySession,
@@ -161,7 +161,7 @@ applyButtonIcon(elements.openBoardMenu, IconBoard);
 applyButtonIcon(elements.openReplayMenu, IconReplay);
 applyButtonIcon(elements.openReplayQuick, IconReplay);
 applyButtonIcon(elements.resetTrip, IconRestart);
-applyButtonIcon(elements.toolsMenuBtn, IconSettings);
+applyButtonIcon(elements.toolsMenuBtn, IconPages);
 
 const analogSpeedometer = createAnalogSpeedometer({
   stageElement: elements.gaugeStage,

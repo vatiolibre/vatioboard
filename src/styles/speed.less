@@ -112,7 +112,7 @@ body.speed-page.alert-panel-open .speed-main{
 }
 
 .speed-header-inner{
-    gap: 14px;
+    gap: 8px;
     flex-wrap: nowrap;
 }
 
@@ -147,13 +147,14 @@ body.speed-page.alert-panel-open .speed-main{
 
 .speed-toolbar{
     --speed-toolbar-touch-size: 46px;
+    --speed-toolbar-hit-width: 54px;
     --speed-toolbar-icon-size: 20px;
     order: 1;
     justify-content: flex-start;
-    gap: 10px;
+    gap: 6px;
     overflow: visible;
     margin-left: 0;
-    padding-right: max(4px, env(safe-area-inset-right));
+    padding-right: 0;
 }
 
 .speed-header-inner > .route-chip{
@@ -164,7 +165,7 @@ body.speed-page.alert-panel-open .speed-main{
 
 .speed-toolbar .right-stack{
     max-width: none;
-    gap: 6px;
+    gap: 4px;
     align-items: flex-end;
     margin-left: auto;
 }
@@ -176,8 +177,8 @@ body.speed-page.alert-panel-open .speed-main{
 }
 
 .speed-tools-menu .tools-menu-btn{
-    width: var(--speed-toolbar-touch-size);
-    min-width: var(--speed-toolbar-touch-size);
+    width: var(--speed-toolbar-hit-width);
+    min-width: var(--speed-toolbar-hit-width);
     height: var(--speed-toolbar-touch-size);
     min-height: var(--speed-toolbar-touch-size);
     padding: 0;
@@ -188,7 +189,7 @@ body.speed-page.alert-panel-open .speed-main{
     box-shadow: none;
 }
 
-.toolbar-recording-quick > .speed-tools-menu{
+.toolbar-recording-quick > * + *{
     border-left: 1px solid color-mix(in srgb, var(--speed-panel-border) 100%, transparent);
 }
 
@@ -215,6 +216,8 @@ body.speed-page.alert-panel-open .speed-main{
 }
 
 .speed-tools-menu .tools-menu-list{
+    left: 0;
+    right: auto;
     min-width: 220px;
     border-color: color-mix(in srgb, var(--speed-panel-border) 92%, transparent);
     background:
@@ -252,8 +255,8 @@ body.speed-page.alert-panel-open .speed-main{
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: var(--speed-toolbar-touch-size);
-    min-width: var(--speed-toolbar-touch-size);
+    width: var(--speed-toolbar-hit-width);
+    min-width: var(--speed-toolbar-hit-width);
     height: var(--speed-toolbar-touch-size);
     min-height: var(--speed-toolbar-touch-size);
     padding: 0;
@@ -263,10 +266,6 @@ body.speed-page.alert-panel-open .speed-main{
     color: var(--muted);
     box-shadow: none;
     flex: 0 0 auto;
-}
-
-.toolbar-recording-btn + .toolbar-recording-btn{
-    border-left: 1px solid color-mix(in srgb, var(--speed-panel-border) 100%, transparent);
 }
 
 .toolbar-recording-btn:hover{
@@ -1717,6 +1716,29 @@ body.speed-page.alert-panel-open .speed-main{
 }
 
 @media (max-width: 720px){
+    .speed-header-inner{
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        column-gap: 6px;
+        row-gap: 4px;
+    }
+
+    .speed-header-inner .brand{
+        order: 2;
+        width: auto;
+        min-width: 0;
+        flex: 0 1 auto;
+        justify-content: flex-start;
+        margin-left: 0;
+    }
+
+    .speed-header-inner > .route-chip{
+        order: 3;
+        margin-left: 0;
+        justify-self: end;
+    }
+
     .gauge-card{
         --speed-floating-control-offset: 12px;
         --speed-floating-control-height: 48px;
@@ -1735,6 +1757,7 @@ body.speed-page.alert-panel-open .speed-main{
     }
 
     .speed-toolbar{
+        grid-column: 1 / -1;
         width: 100%;
         flex-wrap: wrap;
         gap: 8px;
@@ -1845,18 +1868,19 @@ body.speed-page.alert-panel-open .speed-main{
 
 @media (max-width: 720px) and (orientation: portrait){
     .speed-header-inner{
-        gap: 8px;
+        gap: 6px;
         padding-top: 6px;
         padding-bottom: 6px;
     }
 
     .speed-toolbar{
         --speed-toolbar-touch-size: 40px;
+        --speed-toolbar-hit-width: 46px;
         --speed-toolbar-icon-size: 18px;
         display: grid;
         grid-template-columns: auto auto minmax(0, 1fr);
         align-items: center;
-        gap: 6px;
+        gap: 4px;
     }
 
     .speed-toolbar > button{

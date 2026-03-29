@@ -110,6 +110,39 @@
         <div class="toolbar replay-toolbar">
           <div class="replay-toolbar-right">
             <div class="replay-toolbar-strip">
+              <div class="tools-menu replay-tools-menu">
+                <button
+                  id="replayToolsMenuBtn"
+                  type="button"
+                  class="tools-menu-btn replay-toolbar-icon-btn"
+                  data-i18n-aria="pages"
+                  data-i18n-title="pages"
+                  aria-label="Pages"
+                  title="Pages"
+                  aria-haspopup="menu"
+                  aria-expanded="false"
+                >
+                  <span class="btn-icon" aria-hidden="true"></span>
+                </button>
+                <div id="replayToolsMenuList" class="tools-menu-list" role="menu" hidden>
+                  <button id="openReplaySpeedMenu" type="button" role="menuitem" class="btn-with-icon">
+                    <span class="btn-icon" aria-hidden="true"></span>
+                    <span data-i18n="speedometer">Speedometer</span>
+                  </button>
+                  <button id="openReplayGpsLabMenu" type="button" role="menuitem" class="btn-with-icon">
+                    <span class="btn-icon" aria-hidden="true"></span>
+                    <span data-i18n="gpsLab">GPS Lab</span>
+                  </button>
+                  <button id="openReplayAccelMenu" type="button" role="menuitem" class="btn-with-icon">
+                    <span class="btn-icon" aria-hidden="true"></span>
+                    <span data-i18n="accelerationTest">Acceleration Test</span>
+                  </button>
+                  <button id="openReplayBoardMenu" type="button" role="menuitem" class="btn-with-icon">
+                    <span class="btn-icon" aria-hidden="true"></span>
+                    <span data-i18n="openBoard">Open board</span>
+                  </button>
+                </div>
+              </div>
               <section class="replay-axis-group" role="group" aria-label="Dashboard axis" data-i18n-aria="replayDashboardAxis">
                 <button
                   id="replayAxisTime"
@@ -149,40 +182,6 @@
                 <span id="replayApproachIcon" class="replay-action-icon" aria-hidden="true"></span>
                 <span class="sr-only" data-i18n="replayApproach">World approach</span>
               </button>
-
-              <div class="tools-menu replay-tools-menu">
-                <button
-                  id="replayToolsMenuBtn"
-                  type="button"
-                  class="tools-menu-btn replay-toolbar-icon-btn"
-                  data-i18n-aria="tools"
-                  data-i18n-title="tools"
-                  aria-label="Tools"
-                  title="Tools"
-                  aria-haspopup="menu"
-                  aria-expanded="false"
-                >
-                  <span class="btn-icon" aria-hidden="true"></span>
-                </button>
-                <div id="replayToolsMenuList" class="tools-menu-list" role="menu" hidden>
-                  <button id="openReplaySpeedMenu" type="button" role="menuitem" class="btn-with-icon">
-                    <span class="btn-icon" aria-hidden="true"></span>
-                    <span data-i18n="speedometer">Speedometer</span>
-                  </button>
-                  <button id="openReplayGpsLabMenu" type="button" role="menuitem" class="btn-with-icon">
-                    <span class="btn-icon" aria-hidden="true"></span>
-                    <span data-i18n="gpsLab">GPS Lab</span>
-                  </button>
-                  <button id="openReplayAccelMenu" type="button" role="menuitem" class="btn-with-icon">
-                    <span class="btn-icon" aria-hidden="true"></span>
-                    <span data-i18n="accelerationTest">Acceleration Test</span>
-                  </button>
-                  <button id="openReplayBoardMenu" type="button" role="menuitem" class="btn-with-icon">
-                    <span class="btn-icon" aria-hidden="true"></span>
-                    <span data-i18n="openBoard">Open board</span>
-                  </button>
-                </div>
-              </div>
             </div>
           </div>
 

@@ -43,7 +43,7 @@ describe("index.html smoke", () => {
     expect(document.querySelector("#clear .btn-icon svg")).toBeTruthy();
     expect(document.getElementById("save").getAttribute("aria-label")).toBe("Save PNG");
     expect(document.querySelector("#save .btn-icon svg")).toBeTruthy();
-    expect(document.getElementById("toolsMenuBtn").getAttribute("aria-label")).toBe("Tools");
+    expect(document.getElementById("toolsMenuBtn").getAttribute("aria-label")).toBe("Pages");
     expect(document.querySelector("#toolsMenuBtn .btn-icon svg")).toBeTruthy();
     expect(document.getElementById("toolsMenuList").hidden).toBe(false);
     expect(document.getElementById("toolsMenuBtn").getAttribute("aria-expanded")).toBe("true");

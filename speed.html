@@ -207,6 +207,39 @@
 
         <div class="toolbar speed-toolbar" role="toolbar" data-i18n-aria="speedometerControls" aria-label="Speedometer controls">
           <div class="toolbar-recording-quick">
+            <div class="tools-menu speed-tools-menu">
+              <button
+                id="speedToolsMenuBtn"
+                type="button"
+                class="tools-menu-btn toolbar-recording-btn toolbar-recording-btn-tools"
+                data-i18n-aria="pages"
+                data-i18n-title="pages"
+                aria-label="Pages"
+                title="Pages"
+                aria-haspopup="menu"
+                aria-expanded="false"
+              >
+                <span class="toolbar-recording-glyph btn-icon" aria-hidden="true"></span>
+              </button>
+              <div id="speedToolsMenuList" class="tools-menu-list" role="menu" hidden>
+                <button id="openSpeedReplayMenu" type="button" role="menuitem" class="btn-with-icon">
+                  <span class="btn-icon" aria-hidden="true"></span>
+                  <span data-i18n="driveReplay">Drive Replay</span>
+                </button>
+                <button id="openSpeedAccelMenu" type="button" role="menuitem" class="btn-with-icon">
+                  <span class="btn-icon" aria-hidden="true"></span>
+                  <span data-i18n="accelerationTest">Acceleration Test</span>
+                </button>
+                <button id="openSpeedGpsLabMenu" type="button" role="menuitem" class="btn-with-icon">
+                  <span class="btn-icon" aria-hidden="true"></span>
+                  <span data-i18n="gpsLab">GPS Lab</span>
+                </button>
+                <button id="openSpeedBoardMenu" type="button" role="menuitem" class="btn-with-icon">
+                  <span class="btn-icon" aria-hidden="true"></span>
+                  <span data-i18n="openBoard">Open board</span>
+                </button>
+              </div>
+            </div>
             <button
               id="resetTrip"
               type="button"
@@ -285,39 +318,6 @@
                 </svg>
               </span>
             </button>
-            <div class="tools-menu speed-tools-menu">
-              <button
-                id="speedToolsMenuBtn"
-                type="button"
-                class="tools-menu-btn toolbar-recording-btn toolbar-recording-btn-tools"
-                data-i18n-aria="tools"
-                data-i18n-title="tools"
-                aria-label="Tools"
-                title="Tools"
-                aria-haspopup="menu"
-                aria-expanded="false"
-              >
-                <span class="toolbar-recording-glyph btn-icon" aria-hidden="true"></span>
-              </button>
-              <div id="speedToolsMenuList" class="tools-menu-list" role="menu" hidden>
-                <button id="openSpeedReplayMenu" type="button" role="menuitem" class="btn-with-icon">
-                  <span class="btn-icon" aria-hidden="true"></span>
-                  <span data-i18n="driveReplay">Drive Replay</span>
-                </button>
-                <button id="openSpeedAccelMenu" type="button" role="menuitem" class="btn-with-icon">
-                  <span class="btn-icon" aria-hidden="true"></span>
-                  <span data-i18n="accelerationTest">Acceleration Test</span>
-                </button>
-                <button id="openSpeedGpsLabMenu" type="button" role="menuitem" class="btn-with-icon">
-                  <span class="btn-icon" aria-hidden="true"></span>
-                  <span data-i18n="gpsLab">GPS Lab</span>
-                </button>
-                <button id="openSpeedBoardMenu" type="button" role="menuitem" class="btn-with-icon">
-                  <span class="btn-icon" aria-hidden="true"></span>
-                  <span data-i18n="openBoard">Open board</span>
-                </button>
-              </div>
-            </div>
           </div>
 
           <div class="right-stack" data-i18n-aria="connectionStatus" aria-label="Connection status">

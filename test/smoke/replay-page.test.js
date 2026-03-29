@@ -191,7 +191,7 @@ describe("replay.html smoke", () => {
     expect(document.getElementById("replayPeakSpeedValue").textContent).toContain("54 km/h");
     expect(document.querySelector("#replayAxisTime .btn-icon svg")).toBeTruthy();
     expect(document.querySelector("#replayAxisDistance .btn-icon svg")).toBeTruthy();
-    expect(document.getElementById("replayToolsMenuBtn").getAttribute("aria-label")).toBe("Tools");
+    expect(document.getElementById("replayToolsMenuBtn").getAttribute("aria-label")).toBe("Pages");
     expect(document.querySelector("#replayToolsMenuBtn .btn-icon svg")).toBeTruthy();
     expect(document.querySelector("#replayPlayPause .replay-action-icon svg")).toBeTruthy();
     expect(document.getElementById("replayPlayPause").getAttribute("aria-label")).toBe("Play");

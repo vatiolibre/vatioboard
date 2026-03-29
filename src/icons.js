@@ -13,6 +13,15 @@ export const IconSettings = `
   </svg>
 `;
 
+export const IconPages = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <rect x="4.75" y="4.75" width="5.5" height="5.5" rx="1.2" stroke="currentColor" stroke-width="1.7"/>
+    <rect x="13.75" y="4.75" width="5.5" height="5.5" rx="1.2" stroke="currentColor" stroke-width="1.7"/>
+    <rect x="4.75" y="13.75" width="5.5" height="5.5" rx="1.2" stroke="currentColor" stroke-width="1.7"/>
+    <rect x="13.75" y="13.75" width="5.5" height="5.5" rx="1.2" stroke="currentColor" stroke-width="1.7"/>
+  </svg>
+`;
+
 export const IconHistory = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>

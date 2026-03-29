@@ -15,9 +15,9 @@ import {
   IconDownload,
   IconEnergy,
   IconEraser,
+  IconPages,
   IconPen,
   IconRedo,
-  IconSettings,
   IconSpeed,
   IconTrash,
   IconUndo,
@@ -57,7 +57,7 @@ applyButtonIcon(openSpeedBtn, IconSpeed);
 applyButtonIcon(openSpeedMenuBtn, IconSpeed);
 applyButtonIcon(openEnergyBtn, IconEnergy);
 applyButtonIcon(openEnergyMenuBtn, IconEnergy);
-applyButtonIcon(toolsMenuBtn, IconSettings);
+applyButtonIcon(toolsMenuBtn, IconPages);
 
 // Floating dock with tool buttons
 const { calcBtn, energyBtn } = createFloatingDock();
