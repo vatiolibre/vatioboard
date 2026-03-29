@@ -304,8 +304,8 @@ export function createReplayChartsController({
           padding: {
             left: 0,
             right: 0,
-            top: detailMode ? 6 : 2,
-            bottom: detailMode ? 6 : 2,
+            top: detailMode ? 4 : 0,
+            bottom: detailMode ? 4 : 0,
           },
         },
         interaction: {

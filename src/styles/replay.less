@@ -381,6 +381,20 @@ body.replay-page.replay-graph-sheet-open{
     gap: 12px;
 }
 
+.replay-graphs-card{
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    overflow: visible;
+}
+
+.replay-graphs-card::before{
+    display: none;
+}
+
 .replay-stage{
     display: grid;
     grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
@@ -790,18 +804,19 @@ body.replay-page.replay-graph-sheet-open{
     z-index: 1;
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
-    padding: 18px;
+    gap: 4px;
+    padding: 0;
 }
 
 .replay-graph-card{
     display: grid;
-    gap: 6px;
+    gap: 2px;
     padding: 0;
     border: 0;
     border-radius: 0;
     background: none;
     box-shadow: none;
+    min-width: 0;
 }
 
 .replay-graph-trigger{
@@ -823,21 +838,22 @@ body.replay-page.replay-graph-sheet-open{
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    gap: 10px;
-    padding: 0 2px;
+    gap: 6px;
+    padding: 0;
 }
 
 .replay-graph-current{
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 800;
     letter-spacing: -0.02em;
     font-variant-numeric: tabular-nums;
+    line-height: 1;
 }
 
 .replay-graph-canvas{
     display: block;
     width: 100% !important;
-    height: 236px !important;
+    height: 250px !important;
 }
 
 .replay-graph-sheet{
@@ -1154,10 +1170,15 @@ body.replay-page.replay-graph-sheet-open{
     .replay-card-copy,
     .replay-summary-grid,
     .replay-highlights-list,
-    .replay-recordings-list,
-    .replay-graphs-grid{
+    .replay-recordings-list{
         padding-left: 14px;
         padding-right: 14px;
+    }
+
+    .replay-graphs-grid{
+        padding-left: 0;
+        padding-right: 0;
+        gap: 6px;
     }
 
     .replay-graph-sheet{
