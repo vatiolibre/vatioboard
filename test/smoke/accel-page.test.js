@@ -248,6 +248,8 @@ describe("accel.html smoke", () => {
     expect(document.getElementById("resultReplayToggle").getAttribute("aria-label")).toBe("Pause replay");
     expect(Number(document.getElementById("resultReplayProgress").max)).toBeGreaterThan(0);
     expect(fakeMaps).toHaveLength(1);
+    expect(fakeMaps[0].jumpTo).toHaveBeenCalledTimes(1);
+    expect(fakeMaps[0].fitBounds).not.toHaveBeenCalled();
 
     document.getElementById("resultReplayAxisDistance").click();
     await flushTasks();
@@ -260,7 +262,8 @@ describe("accel.html smoke", () => {
     await flushTasks();
 
     expect(document.getElementById("resultReplayCurrentValue").textContent).toBe(document.getElementById("resultReplayMaxValue").textContent);
-    expect(fakeMaps[0].fitBounds).toHaveBeenCalled();
+    expect(fakeMaps[0].jumpTo).toHaveBeenCalledTimes(1);
+    expect(fakeMaps[0].stop).toHaveBeenCalledTimes(2);
 
     document.getElementById("resultReplayChartsBtn").click();
     await flushTasks();
@@ -328,6 +331,7 @@ describe("accel.html smoke", () => {
     expect(document.getElementById("resultsPanel").hidden).toBe(false);
     expect(document.getElementById("resultReplayMapShell").hidden).toBe(false);
     expect(fakeMaps).toHaveLength(1);
-    expect(fakeMaps[0].fitBounds).toHaveBeenCalled();
+    expect(fakeMaps[0].jumpTo).toHaveBeenCalledTimes(1);
+    expect(fakeMaps[0].fitBounds).not.toHaveBeenCalled();
   });
 });

@@ -82,6 +82,28 @@ export function createReplayMapController({
   let map = null;
   let ready = false;
   let activeSession = session;
+  let shouldAutoFitOnReady = true;
+  let readyPromise = null;
+  let resolveReadyPromise = null;
+  let approachToken = 0;
+  let approachActive = false;
+
+  function createReadyPromise() {
+    readyPromise = new Promise((resolve) => {
+      resolveReadyPromise = resolve;
+    });
+    return readyPromise;
+  }
+
+  function resolveReady() {
+    if (typeof resolveReadyPromise === "function") {
+      resolveReadyPromise();
+    }
+    resolveReadyPromise = null;
+    if (!readyPromise) {
+      readyPromise = Promise.resolve();
+    }
+  }
 
   function syncMapVignetteMode() {
     if (!element) return;
@@ -181,75 +203,110 @@ export function createReplayMapController({
     fitRoute({ duration: 0 });
   }
 
-  async function runApproachAnimation() {
+  function stopMapMotion() {
+    if (typeof map?.stop === "function") {
+      map.stop();
+    }
+  }
+
+  function cancelApproachAnimation() {
+    approachToken += 1;
+    if (!approachActive) return;
+    approachActive = false;
+    stopMapMotion();
+  }
+
+  async function runApproachAnimation(options = {}) {
     if (!map || !ready || !activeSession) return;
+
+    const runToken = approachToken + 1;
+    approachToken = runToken;
+    approachActive = true;
 
     const bounds = getReplayBounds(activeSession);
     if (!bounds) {
+      approachActive = false;
       resetCamera();
       return;
     }
 
-    if (typeof map.stop === "function") {
-      map.stop();
-    }
+    stopMapMotion();
 
-    if (typeof map.jumpTo === "function") {
-      map.jumpTo({
-        center: [0, 18],
-        zoom: 0.35,
-        pitch: 0,
-        bearing: -14,
+    try {
+      if (typeof map.jumpTo === "function") {
+        map.jumpTo({
+          center: [0, 18],
+          zoom: 0.35,
+          pitch: 0,
+          bearing: -14,
+        });
+      }
+
+      const midpoint = getSessionMidpoint();
+
+      if (typeof map.easeTo === "function") {
+        map.easeTo({
+          center: midpoint,
+          zoom: 1.3,
+          pitch: 8,
+          bearing: -6,
+          duration: 1600,
+          essential: true,
+        });
+      }
+
+      await new Promise((resolve) => {
+        window.setTimeout(resolve, 1600);
       });
-    }
 
-    const midpoint = getSessionMidpoint();
+      if (runToken !== approachToken || !map || !ready || !activeSession) return;
 
-    if (typeof map.easeTo === "function") {
-      map.easeTo({
-        center: midpoint,
-        zoom: 1.3,
-        pitch: 8,
-        bearing: -6,
-        duration: 1600,
-        essential: true,
+      fitRoute({
+        duration: options.finalDuration ?? 2200,
+        pitch: options.finalPitch ?? 56,
+        bearing: options.finalBearing ?? 12,
+        maxZoom: options.finalMaxZoom ?? 13,
+        padding: options.finalPadding,
       });
+
+      await new Promise((resolve) => {
+        window.setTimeout(resolve, options.finalDuration ?? 2200);
+      });
+
+      if (runToken !== approachToken || !map || !ready) return;
+
+      collapseReplayAttributionControl(element);
+    } finally {
+      if (runToken === approachToken) {
+        approachActive = false;
+      }
     }
-
-    await new Promise((resolve) => {
-      window.setTimeout(resolve, 1600);
-    });
-
-    fitRoute({
-      duration: 2200,
-      pitch: 56,
-      bearing: 12,
-      maxZoom: 13,
-    });
-
-    await new Promise((resolve) => {
-      window.setTimeout(resolve, 2200);
-    });
-
-    collapseReplayAttributionControl(element);
   }
 
   function renderPlaybackFrame({ sample = null, playedCoordinates = [] } = {}) {
     updateSources({ sample, playedCoordinates });
   }
 
-  function setSession(nextSession) {
+  function setSession(nextSession, options = {}) {
+    const shouldResetCamera = options.resetCamera !== false;
+    cancelApproachAnimation();
     activeSession = nextSession;
+    shouldAutoFitOnReady = shouldResetCamera;
 
     if (!ready) return;
     updateSources();
-    resetCamera();
+    if (shouldResetCamera) {
+      resetCamera();
+    }
   }
 
   function init() {
-    if (!element || map) return;
+    if (!element) return Promise.resolve();
+    if (ready) return Promise.resolve();
+    if (map) return readyPromise ?? Promise.resolve();
 
     try {
+      createReadyPromise();
       const initialSunVector = getSunVectorAtTime().vector;
 
       map = new maplibregl.Map({
@@ -461,9 +518,12 @@ export function createReplayMapController({
         ready = true;
         updateSolarLayers();
         updateSources();
-        resetCamera();
+        if (shouldAutoFitOnReady) {
+          resetCamera();
+        }
         syncMapVignetteMode();
         collapseReplayAttributionControl(element);
+        resolveReady();
       });
 
       map.on("move", () => {
@@ -481,10 +541,16 @@ export function createReplayMapController({
       });
     } catch (error) {
       console.error("Failed to initialize replay map", error);
+      ready = false;
+      resolveReady();
     }
+
+    return readyPromise ?? Promise.resolve();
   }
 
   function destroy() {
+    cancelApproachAnimation();
+    resolveReady();
     if (!map) return;
     if (typeof map.remove === "function") {
       map.remove();
@@ -492,9 +558,12 @@ export function createReplayMapController({
     element?.classList.remove("replay-map-closeup");
     map = null;
     ready = false;
+    readyPromise = null;
+    resolveReadyPromise = null;
   }
 
   return {
+    cancelApproachAnimation,
     destroy,
     fitRoute,
     init,

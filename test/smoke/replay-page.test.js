@@ -207,6 +207,13 @@ describe("replay.html smoke", () => {
     expect(document.getElementById("replayMap").hasAttribute("aria-hidden")).toBe(false);
     expect(document.getElementById("replayAxisTime").getAttribute("aria-pressed")).toBe("true");
     expect(document.getElementById("replayProgress").max).toBe("3000");
+    expect(fakeMaps[0]?.fitBounds).not.toHaveBeenCalled();
+    expect(fakeMaps[0]?.jumpTo).toHaveBeenCalledTimes(1);
+
+    document.getElementById("replayApproach").click();
+    await flushTasks();
+
+    expect(fakeMaps[0]?.jumpTo).toHaveBeenCalledTimes(1);
 
     document.getElementById("replayAxisDistance").click();
     await flushTasks();
@@ -220,17 +227,21 @@ describe("replay.html smoke", () => {
     await flushTasks();
 
     expect(document.getElementById("replayElapsedValue").textContent).toBe("80 m");
+    expect(fakeMaps[0]?.stop).toHaveBeenCalledTimes(2);
 
     document.getElementById("replayRestart").click();
     await flushTasks();
 
     expect(document.getElementById("replayElapsedValue").textContent).toBe("0 m");
 
+    fakeMaps[0]?.stop.mockClear();
+    fakeMaps[0]?.jumpTo.mockClear();
+
     document.getElementById("replayApproach").click();
     await flushTasks();
 
-    expect(fakeMaps[0]?.stop).toHaveBeenCalled();
-    expect(fakeMaps[0]?.jumpTo).toHaveBeenCalled();
+    expect(fakeMaps[0]?.stop).toHaveBeenCalledTimes(1);
+    expect(fakeMaps[0]?.jumpTo).toHaveBeenCalledTimes(1);
   });
 
   it("opens the expanded graph sheet with stacked charts and a dual-range filter", async () => {
@@ -268,6 +279,21 @@ describe("replay.html smoke", () => {
     await flushTasks();
 
     expect(document.getElementById("replayGraphSheet").hidden).toBe(true);
+  });
+
+  it("cancels the intro when the user switches recordings mid-approach", async () => {
+    const replayPage = await import("../../src/replay/replay.js");
+    await replayPage.initPromise;
+    await flushTasks();
+
+    expect(fakeMaps[0]?.stop).toHaveBeenCalledTimes(1);
+
+    document.querySelector('button[data-recording-id="saved-session"]').click();
+    await replayPage.waitForReplaySelection();
+    await flushTasks();
+
+    expect(fakeMaps[0]?.stop).toHaveBeenCalledTimes(2);
+    expect(document.getElementById("replaySessionChip").textContent).toBe("Saved session");
   });
 
   it("lets the user delete saved recordings while keeping the active session", async () => {

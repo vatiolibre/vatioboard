@@ -9,6 +9,13 @@ function hasGeoPoint(frame) {
   return isFiniteNumber(frame?.latitude) && isFiniteNumber(frame?.longitude);
 }
 
+const ACCEL_APPROACH_OPTIONS = {
+  finalMaxZoom: 16.8,
+  finalPitch: 58,
+  finalBearing: 10,
+  finalPadding: { top: 48, right: 48, bottom: 72, left: 48 },
+};
+
 export function createAccelReplayMapController({ element }) {
   const baseController = createReplayMapController({
     element,
@@ -17,10 +24,10 @@ export function createAccelReplayMapController({ element }) {
 
   let activeSource = null;
 
-  function setSource(source) {
-    if (source === activeSource) return;
+  function setSource(source, options = {}) {
+    if (source === activeSource && !options.forceUpdate) return;
     activeSource = source || null;
-    baseController.setSession(buildAccelReplayMapSession(activeSource));
+    baseController.setSession(buildAccelReplayMapSession(activeSource), options);
   }
 
   function renderPlaybackFrame(source, playbackFrame, elapsedMs) {
@@ -52,14 +59,19 @@ export function createAccelReplayMapController({ element }) {
     baseController.destroy();
   }
 
+  function runApproachAnimation() {
+    return baseController.runApproachAnimation(ACCEL_APPROACH_OPTIONS);
+  }
+
   return {
+    cancelApproachAnimation: baseController.cancelApproachAnimation,
     clear,
     destroy,
     fitRoute: baseController.fitRoute,
     init: baseController.init,
     renderPlaybackFrame,
     resetCamera: baseController.resetCamera,
-    runApproachAnimation: baseController.runApproachAnimation,
+    runApproachAnimation,
     setSource,
   };
 }

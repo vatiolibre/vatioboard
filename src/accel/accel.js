@@ -292,11 +292,13 @@ export const initPromise = (function () {
       axisMode: "time",
       engaged: false,
       playing: false,
+      playPending: false,
       positionMs: 0,
       playbackStartPerfMs: 0,
       playbackStartElapsedMs: 0,
       sourceResultId: "",
       source: null,
+      introPlayed: false,
       chartSheetOpen: false,
       chartScrubMetric: "",
       chartFilterStartRatio: 0,
@@ -403,6 +405,8 @@ export const initPromise = (function () {
   var replayMap = createAccelReplayMapController({
     element: elements.resultReplayMap,
   });
+  var replayMapIntroPromise = null;
+  var replayMapIntroToken = 0;
 
   async function init() {
     var loadedState = await Promise.all([
@@ -604,6 +608,7 @@ export const initPromise = (function () {
     var previouslyOpen = state.openPanel;
     if (previouslyOpen === "results") {
       pauseReplayPlayback();
+      resetReplayMapIntroState();
       replayMap.destroy();
     }
     setReplayChartSheetOpen(false);
@@ -880,7 +885,7 @@ export const initPromise = (function () {
       selectResult(runId);
       openPanel("results");
       scrollResultsPanelToTop();
-      startReplayPlayback({ restart: true });
+      void startReplayPlayback({ restart: true });
       renderAll();
       return;
     }
@@ -922,14 +927,17 @@ export const initPromise = (function () {
   }
 
   function handleReplayToggle() {
-    if (state.replay.playing) pauseReplayPlayback();
-    else startReplayPlayback();
+    if (state.replay.playing || state.replay.playPending) pauseReplayPlayback();
+    else void startReplayPlayback();
     renderResultCard();
   }
 
   function handleReplayRestart() {
+    pauseReplayPlayback();
+    cancelReplayMapApproach({ markPlayed: true });
     state.replay.engaged = true;
     state.replay.playing = false;
+    state.replay.playPending = false;
     state.replay.positionMs = 0;
     state.replay.playbackStartElapsedMs = 0;
     state.replay.playbackStartPerfMs = 0;
@@ -937,6 +945,8 @@ export const initPromise = (function () {
   }
 
   function handleReplayProgressInput() {
+    pauseReplayPlayback();
+    cancelReplayMapApproach({ markPlayed: true });
     setReplayPositionFromAxisValue(Number(elements.resultReplayProgress.value));
     renderResultCard();
   }
@@ -1004,6 +1014,7 @@ export const initPromise = (function () {
     var axisValue = replayCharts.getAxisValueFromClientX(metricKey, clientX);
     if (!isFiniteNumber(axisValue)) return;
     pauseReplayPlayback();
+    cancelReplayMapApproach({ markPlayed: true });
     setReplayPositionFromAxisValue(axisValue);
     renderResultCard();
   }
@@ -1040,17 +1051,72 @@ export const initPromise = (function () {
     var nextAxisMode = preserveAxisMode ? state.replay.axisMode : "time";
 
     state.replay.playing = false;
+    state.replay.playPending = false;
     state.replay.engaged = false;
     state.replay.positionMs = 0;
     state.replay.playbackStartPerfMs = 0;
     state.replay.playbackStartElapsedMs = 0;
     state.replay.sourceResultId = "";
     state.replay.source = null;
+    state.replay.introPlayed = false;
     state.replay.axisMode = nextAxisMode;
     state.replay.chartScrubMetric = "";
     state.replay.chartFilterStartRatio = 0;
     state.replay.chartFilterEndRatio = 1;
+    resetReplayMapIntroState();
     setReplayChartSheetOpen(false);
+  }
+
+  function resetReplayMapIntroState() {
+    cancelReplayMapApproach();
+  }
+
+  function cancelReplayMapApproach(options) {
+    var markPlayed = Boolean(options && options.markPlayed);
+    replayMapIntroToken += 1;
+    replayMapIntroPromise = null;
+    replayMap.cancelApproachAnimation();
+    state.replay.introPlayed = markPlayed ? true : false;
+  }
+
+  function runReplayMapApproach(result, replaySource) {
+    if (!result || !replaySource || !replaySource.hasGeoPath) return Promise.resolve();
+    if (state.openPanel !== "results") return Promise.resolve();
+    if (state.replay.introPlayed) return Promise.resolve();
+    if (replayMapIntroPromise) return replayMapIntroPromise;
+
+    var introToken = replayMapIntroToken;
+    replayMapIntroPromise = (async function () {
+      await replayMap.init();
+      if (
+        introToken !== replayMapIntroToken
+        || state.openPanel !== "results"
+        || !state.replay.source
+        || state.replay.sourceResultId !== result.id
+      ) {
+        return;
+      }
+
+      replayMap.setSource(replaySource, { resetCamera: false });
+      await replayMap.runApproachAnimation();
+
+      if (
+        introToken !== replayMapIntroToken
+        || state.openPanel !== "results"
+        || !state.replay.source
+        || state.replay.sourceResultId !== result.id
+      ) {
+        return;
+      }
+
+      state.replay.introPlayed = true;
+    })().finally(function () {
+      if (introToken === replayMapIntroToken) {
+        replayMapIntroPromise = null;
+      }
+    });
+
+    return replayMapIntroPromise;
   }
 
   function ensureReplaySource(result) {
@@ -1064,11 +1130,13 @@ export const initPromise = (function () {
     }
 
     state.replay.playing = false;
+    state.replay.playPending = false;
     state.replay.engaged = false;
     state.replay.positionMs = 0;
     state.replay.playbackStartPerfMs = 0;
     state.replay.playbackStartElapsedMs = 0;
     state.replay.sourceResultId = result.id;
+    resetReplayMapIntroState();
     state.replay.source = buildAccelReplaySource(result);
     return state.replay.source;
   }
@@ -1145,24 +1213,32 @@ export const initPromise = (function () {
   }
 
   function pauseReplayPlayback() {
+    if (state.replay.playPending && !state.replay.playing) {
+      state.replay.playPending = false;
+      return;
+    }
+
     if (!state.replay.playing) return;
 
     var result = getDisplayedResult();
     var source = ensureReplaySource(result);
     if (!source) {
       state.replay.playing = false;
+      state.replay.playPending = false;
       return;
     }
 
     var nextElapsedMs = state.replay.playbackStartElapsedMs + (performance.now() - state.replay.playbackStartPerfMs);
     state.replay.positionMs = clamp(nextElapsedMs, 0, source.durationMs);
     state.replay.playing = false;
+    state.replay.playPending = false;
   }
 
-  function startReplayPlayback(options) {
+  async function startReplayPlayback(options) {
     var result = getDisplayedResult();
     var source = ensureReplaySource(result);
     if (!source) return;
+    if (state.replay.playing || state.replay.playPending) return;
 
     var shouldRestart = Boolean(options && options.restart);
     if (shouldRestart || state.replay.positionMs >= source.durationMs) {
@@ -1170,9 +1246,25 @@ export const initPromise = (function () {
     }
 
     state.replay.engaged = true;
+    state.replay.playPending = true;
+    renderResultCard();
+
+    if (replayMapIntroPromise) {
+      await replayMapIntroPromise;
+    } else if (!state.replay.introPlayed) {
+      await runReplayMapApproach(result, source);
+    }
+
+    if (!state.replay.playPending) {
+      renderResultCard();
+      return;
+    }
+
+    state.replay.playPending = false;
     state.replay.playing = true;
     state.replay.playbackStartPerfMs = performance.now();
     state.replay.playbackStartElapsedMs = state.replay.positionMs;
+    renderResultCard();
   }
 
   function updateReplayPlaybackClock() {
@@ -1182,6 +1274,7 @@ export const initPromise = (function () {
     var source = ensureReplaySource(result);
     if (!source) {
       state.replay.playing = false;
+      state.replay.playPending = false;
       return false;
     }
 
@@ -1192,6 +1285,7 @@ export const initPromise = (function () {
 
     if (clampedElapsedMs >= source.durationMs) {
       state.replay.playing = false;
+      state.replay.playPending = false;
       state.replay.playbackStartPerfMs = 0;
       state.replay.playbackStartElapsedMs = clampedElapsedMs;
     }
@@ -1760,11 +1854,11 @@ export const initPromise = (function () {
       ? (axisMode === "distance" ? replayPoint.distanceM : replayPoint.elapsedMs)
       : 0;
     var maxAxisValue = getReplayAxisMaxValue(replaySource, axisMode);
-    var playLabel = state.replay.playing ? t("accelReplayPause") : t("accelReplayPlay");
+    var playLabel = state.replay.playing || state.replay.playPending ? t("accelReplayPause") : t("accelReplayPlay");
 
     elements.resultReplayToggle.setAttribute("aria-label", playLabel);
     elements.resultReplayToggle.setAttribute("title", playLabel);
-    applyButtonIcon(elements.resultReplayToggle, state.replay.playing ? IconPause : IconPlay);
+    applyButtonIcon(elements.resultReplayToggle, state.replay.playing || state.replay.playPending ? IconPause : IconPlay);
     elements.resultReplayToggle.disabled = false;
     elements.resultReplayRestart.disabled = false;
 
@@ -1955,7 +2049,9 @@ export const initPromise = (function () {
     }
 
     replayMap.init();
-    replayMap.setSource(replaySource);
+    replayMap.setSource(replaySource, {
+      resetCamera: state.replay.introPlayed,
+    });
 
     var displayPoint = replayPoint || getReplayDisplayPoint(replaySource);
     replayMap.renderPlaybackFrame(
@@ -1963,6 +2059,10 @@ export const initPromise = (function () {
       displayPoint,
       displayPoint ? displayPoint.elapsedMs : state.replay.positionMs,
     );
+
+    if (!state.replay.introPlayed) {
+      void runReplayMapApproach(result, replaySource);
+    }
   }
 
   function buildResultGraphData(result) {

@@ -151,6 +151,9 @@ const state = {
   expandedGraphPointerId: null,
 };
 let replaySelectionPromise = Promise.resolve();
+let hasHydratedInitialSelection = false;
+let introApproachPromise = null;
+let introApproachToken = 0;
 
 refreshDerivedState();
 
@@ -171,6 +174,36 @@ const mapController = createReplayMapController({
   element: elements.replayMap,
   session: state.session,
 });
+
+function cancelReplayApproach({ markPlayed = false } = {}) {
+  introApproachToken += 1;
+  introApproachPromise = null;
+  mapController.cancelApproachAnimation();
+  if (markPlayed) {
+    state.introPlayed = true;
+  }
+}
+
+function runReplayApproach({ force = false } = {}) {
+  if (!state.session) return Promise.resolve();
+  if (!force && state.introPlayed) return Promise.resolve();
+  if (introApproachPromise) return introApproachPromise;
+
+  const runToken = introApproachToken;
+  introApproachPromise = (async () => {
+    await mapController.init();
+    if (runToken !== introApproachToken || !state.session) return;
+    await mapController.runApproachAnimation();
+    if (runToken !== introApproachToken || !state.session) return;
+    state.introPlayed = true;
+  })().finally(() => {
+    if (runToken === introApproachToken) {
+      introApproachPromise = null;
+    }
+  });
+
+  return introApproachPromise;
+}
 
 function bindMenuNavigation(element, href) {
   if (!element) return;
@@ -690,9 +723,10 @@ async function startPlayback() {
   state.playPending = true;
   renderPlaybackButtons();
 
-  if (!state.introPlayed) {
-    await mapController.runApproachAnimation();
-    state.introPlayed = true;
+  if (introApproachPromise) {
+    await introApproachPromise;
+  } else if (!state.introPlayed) {
+    await runReplayApproach();
   }
 
   if (!state.playPending) return;
@@ -736,6 +770,7 @@ function scrubExpandedGraph(metricKey, clientX) {
   const axisValue = chartsController.getDetailAxisValueFromClientX(metricKey, clientX);
   if (!Number.isFinite(axisValue)) return;
   stopPlayback();
+  cancelReplayApproach({ markPlayed: true });
   setPlaybackFromExpandedAxisValue(axisValue);
 }
 
@@ -776,6 +811,7 @@ function setDashboardAxis(axis) {
 
 function resetPlayback({ refitMap = true } = {}) {
   stopPlayback();
+  cancelReplayApproach({ markPlayed: true });
   state.elapsedMs = 0;
   renderPlaybackFrame();
 
@@ -791,6 +827,7 @@ function renderSessionStateView() {
 }
 
 async function applyReplaySelection(recordingId = null) {
+  cancelReplayApproach();
   const selection = await loadReplaySelection(recordingId ?? state.selectedRecordingId);
 
   state.records = selection.records;
@@ -817,7 +854,10 @@ async function applyReplaySelection(recordingId = null) {
   if (state.session) {
     mapController.init();
   }
-  mapController.setSession(state.session);
+  mapController.setSession(state.session, {
+    resetCamera: hasHydratedInitialSelection,
+  });
+  hasHydratedInitialSelection = true;
 }
 
 function requestReplaySelection(recordingId = null) {
@@ -875,8 +915,7 @@ function bindEvents() {
 
   elements.replayApproach?.addEventListener("click", async () => {
     stopPlayback();
-    await mapController.runApproachAnimation();
-    state.introPlayed = true;
+    await runReplayApproach({ force: true });
   });
 
   elements.closeReplayGraphSheet?.addEventListener("click", closeExpandedGraph);
@@ -885,6 +924,7 @@ function bindEvents() {
   elements.replayProgress?.addEventListener("input", (event) => {
     if (!state.session) return;
     stopPlayback();
+    cancelReplayApproach({ markPlayed: true });
     const axisValue = Number(event.target.value);
     if (state.dashboardAxis === "distance") {
       const sample = getReplaySampleAtDistanceM(
@@ -1010,6 +1050,7 @@ async function init() {
   renderRecordings();
   updateGraphPlayback(null);
   await requestReplaySelection();
+  void runReplayApproach();
 }
 
 if (import.meta.hot) {
