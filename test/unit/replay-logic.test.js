@@ -183,7 +183,9 @@ describe("replay helpers", () => {
   it("appends replay samples and keeps units plus summary metadata in sync", () => {
     let session = createReplaySession({ unit: "mph", distanceUnit: "ft" });
 
-    session = appendReplaySample(session, createSample(), {
+    session = appendReplaySample(session, createSample({
+      totalDistanceM: 500,
+    }), {
       unit: "mph",
       distanceUnit: "ft",
     });
@@ -193,7 +195,7 @@ describe("replay helpers", () => {
       longitude: -74.005,
       speedMs: 20,
       altitudeM: 14,
-      totalDistanceM: 120,
+      totalDistanceM: 620,
     }), {
       unit: "kmh",
       distanceUnit: "m",
@@ -201,12 +203,49 @@ describe("replay helpers", () => {
 
     expect(session.unit).toBe("kmh");
     expect(session.distanceUnit).toBe("m");
+    expect(session.startDistanceM).toBe(500);
     expect(session.samples).toHaveLength(2);
+    expect(session.samples[0].totalDistanceM).toBe(0);
+    expect(session.samples[1].totalDistanceM).toBe(120);
     expect(session.sampleCount).toBe(2);
     expect(session.maxSpeedMs).toBe(20);
     expect(session.totalDistanceM).toBe(120);
     expect(session.minAltitudeM).toBe(10);
     expect(session.maxAltitudeM).toBe(14);
+  });
+
+  it("rebases replay distances to the recording start when recording begins mid-trip", () => {
+    const legacySession = normalizeReplaySession({
+      id: "mid-trip",
+      unit: "kmh",
+      distanceUnit: "m",
+      totalDistanceM: 680,
+      samples: [
+        createSample({
+          timestampMs: 1000,
+          totalDistanceM: 500,
+        }),
+        createSample({
+          timestampMs: 2000,
+          speedMs: 12,
+          totalDistanceM: 580,
+        }),
+        createSample({
+          timestampMs: 3000,
+          speedMs: 20,
+          totalDistanceM: 680,
+        }),
+      ],
+    });
+
+    expect(legacySession.startDistanceM).toBe(500);
+    expect(legacySession.totalDistanceM).toBe(180);
+    expect(legacySession.samples[0].totalDistanceM).toBe(0);
+    expect(legacySession.samples[1].totalDistanceM).toBe(80);
+    expect(legacySession.samples[2].totalDistanceM).toBe(180);
+    expect(getReplaySummary(legacySession).totalDistanceM).toBe(180);
+    expect(buildReplayMetricSeries(legacySession, "speedMs", "distance").map((point) => point.xValue)).toEqual([0, 80, 180]);
+    expect(getReplaySampleAtDistanceM(legacySession, 180)?.totalDistanceM).toBe(180);
   });
 
   it("preserves more than 1200 replay samples when saving and loading the active session", async () => {
@@ -230,6 +269,82 @@ describe("replay helpers", () => {
     expect(restoredSession.samples).toHaveLength(1305);
     expect(restoredSession.samples[0].timestampMs).toBe(1000);
     expect(restoredSession.samples[1304].timestampMs).toBe(1000 + (1304 * 100));
+  });
+
+  it("rebases chunked metadata-only sessions after reload", async () => {
+    const originalIndexedDb = globalThis.indexedDB;
+    const fakeIndexedDb = createFakeIndexedDb();
+    Object.defineProperty(globalThis, "indexedDB", {
+      configurable: true,
+      writable: true,
+      value: fakeIndexedDb,
+    });
+    vi.resetModules();
+
+    try {
+      const replay = await import("../../src/replay/session.js");
+
+      fakeIndexedDb.__records.set(replay.REPLAY_ACTIVE_KEY, {
+        id: "legacy-chunked",
+        version: 1,
+        source: "speed",
+        unit: "kmh",
+        distanceUnit: "m",
+        recordingState: "stopped",
+        startedAtMs: 1000,
+        updatedAtMs: 3000,
+        endedAtMs: 3000,
+        maxSpeedMs: 20,
+        totalDistanceM: 680,
+        minAltitudeM: 10,
+        maxAltitudeM: 20,
+        sampleCount: 3,
+        chunkCount: 1,
+        persistedSampleCount: 3,
+        lastSample: createSample({
+          timestampMs: 3000,
+          speedMs: 20,
+          altitudeM: 20,
+          totalDistanceM: 680,
+        }),
+        samples: [],
+      });
+      fakeIndexedDb.__records.set("replayChunk:legacy-chunked:0", [
+        createSample({
+          timestampMs: 1000,
+          totalDistanceM: 500,
+        }),
+        createSample({
+          timestampMs: 2000,
+          speedMs: 12,
+          altitudeM: 15,
+          totalDistanceM: 580,
+        }),
+        createSample({
+          timestampMs: 3000,
+          speedMs: 20,
+          altitudeM: 20,
+          totalDistanceM: 680,
+        }),
+      ]);
+
+      const restoredSession = await replay.loadActiveReplaySession();
+
+      expect(restoredSession.startDistanceM).toBe(500);
+      expect(restoredSession.totalDistanceM).toBe(180);
+      expect(restoredSession.lastSample.totalDistanceM).toBe(180);
+      expect(fakeIndexedDb.__records.get(replay.REPLAY_ACTIVE_KEY)).toMatchObject({
+        startDistanceM: 500,
+        totalDistanceM: 180,
+      });
+    } finally {
+      Object.defineProperty(globalThis, "indexedDB", {
+        configurable: true,
+        writable: true,
+        value: originalIndexedDb,
+      });
+      vi.resetModules();
+    }
   });
 
   it("keeps unsaved replay samples embedded when a chunk write fails", async () => {

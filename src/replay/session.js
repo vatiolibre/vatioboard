@@ -149,6 +149,8 @@ export function createReplaySession(options = {}) {
     distanceUnit: normalizeDistanceUnit(options.distanceUnit),
     recordingState: normalizeRecordingState(options.recordingState),
     startedAtMs,
+    startDistanceM: null,
+    distanceRebased: true,
     updatedAtMs: startedAtMs,
     endedAtMs: startedAtMs,
     maxSpeedMs: 0,
@@ -461,7 +463,24 @@ export function limitReplaySamples(samples, maxSamples = MAX_REPLAY_SAMPLES) {
 export function normalizeReplaySession(session) {
   if (!session || typeof session !== "object") return null;
 
-  const normalizedSamples = normalizeReplaySamplesArray(session.samples);
+  const absoluteSamples = normalizeReplaySamplesArray(session.samples);
+  const samplesLookRelative = absoluteSamples.length > 0
+    && (!isFiniteNumber(absoluteSamples[0]?.totalDistanceM) || absoluteSamples[0].totalDistanceM <= 0.001);
+  const storedDistancesAreRelative = session.distanceRebased === true || samplesLookRelative;
+  const hasStoredStartDistance = isFiniteNumber(session.startDistanceM) && session.startDistanceM >= 0;
+  const startDistanceM = hasStoredStartDistance
+    ? session.startDistanceM
+    : (
+      absoluteSamples.length > 0
+        ? (storedDistancesAreRelative ? 0 : absoluteSamples[0].totalDistanceM)
+        : null
+    );
+  const normalizedSamples = !storedDistancesAreRelative && isFiniteNumber(startDistanceM)
+    ? absoluteSamples.map((sample) => ({
+      ...sample,
+      totalDistanceM: Math.max(0, sample.totalDistanceM - startDistanceM),
+    }))
+    : absoluteSamples;
   const hasExplicitPersistedSampleCount = isFiniteNumber(session.persistedSampleCount);
   const hasExplicitChunkCount = isFiniteNumber(session.chunkCount);
   const inferredEmbeddedFullSession = normalizedSamples.length > 0
@@ -482,8 +501,19 @@ export function normalizeReplaySession(session) {
   const chunkCount = inferredEmbeddedFullSession
     ? 0
     : normalizePositiveInteger(session.chunkCount, 0);
-  const lastSample = normalizedSamples[normalizedSamples.length - 1]
-    ?? normalizeReplaySample(session.lastSample);
+  const lastBufferedSample = normalizedSamples[normalizedSamples.length - 1] ?? null;
+  const rawLastSample = normalizeReplaySample(session.lastSample);
+  const lastSample = lastBufferedSample
+    ?? (
+      rawLastSample
+        ? {
+          ...rawLastSample,
+          totalDistanceM: !storedDistancesAreRelative && isFiniteNumber(startDistanceM) && isFiniteNumber(rawLastSample.totalDistanceM)
+            ? Math.max(0, rawLastSample.totalDistanceM - startDistanceM)
+            : rawLastSample.totalDistanceM,
+        }
+        : null
+    );
   const altitudeValues = normalizedSamples
     .map((sample) => sample.altitudeM)
     .filter(isFiniteNumber);
@@ -491,6 +521,13 @@ export function normalizeReplaySession(session) {
     (maximum, sample) => Math.max(maximum, sample.speedMs),
     isFiniteNumber(session.maxSpeedMs) ? session.maxSpeedMs : 0,
   );
+  const normalizedTotalDistanceM = isFiniteNumber(session.totalDistanceM)
+    ? (
+      !storedDistancesAreRelative && isFiniteNumber(startDistanceM)
+        ? Math.max(0, session.totalDistanceM - startDistanceM)
+        : Math.max(0, session.totalDistanceM)
+    )
+    : null;
 
   return {
     id: normalizeReplayId(
@@ -505,6 +542,8 @@ export function normalizeReplaySession(session) {
     startedAtMs: isFiniteNumber(session.startedAtMs)
       ? session.startedAtMs
       : (normalizedSamples[0] ? normalizedSamples[0].timestampMs : null),
+    startDistanceM,
+    distanceRebased: true,
     updatedAtMs: isFiniteNumber(session.updatedAtMs)
       ? session.updatedAtMs
       : (lastSample ? lastSample.timestampMs : null),
@@ -512,10 +551,12 @@ export function normalizeReplaySession(session) {
       ? session.endedAtMs
       : (lastSample ? lastSample.timestampMs : null),
     maxSpeedMs,
-    totalDistanceM: Math.max(
-      isFiniteNumber(session.totalDistanceM) ? Math.max(0, session.totalDistanceM) : 0,
-      lastSample ? lastSample.totalDistanceM : 0,
-    ),
+    totalDistanceM: lastBufferedSample
+      ? Math.max(0, lastBufferedSample.totalDistanceM)
+      : Math.max(
+        normalizedTotalDistanceM ?? 0,
+        lastSample ? lastSample.totalDistanceM : 0,
+      ),
     minAltitudeM: isFiniteNumber(session.minAltitudeM)
       ? session.minAltitudeM
       : (altitudeValues.length ? Math.min(...altitudeValues) : null),
@@ -528,6 +569,37 @@ export function normalizeReplaySession(session) {
     lastSample,
     samples: normalizedSamples,
   };
+}
+
+async function ensureReplaySessionDistanceOrigin(session, storageKey = null) {
+  const normalizedSession = normalizeReplaySession(session);
+  if (!normalizedSession) return null;
+  if (isFiniteNumber(normalizedSession.startDistanceM)) return normalizedSession;
+  if (!replayStore.hasSupport() || normalizedSession.chunkCount <= 0) return normalizedSession;
+
+  const firstChunk = await replayStore.getValue(getReplayChunkKey(normalizedSession.id, 0));
+  const firstSample = Array.isArray(firstChunk) && firstChunk.length > 0
+    ? normalizeReplaySample(firstChunk[0])
+    : null;
+  const startDistanceM = isFiniteNumber(firstSample?.totalDistanceM) && firstSample.totalDistanceM >= 0
+    ? firstSample.totalDistanceM
+    : null;
+
+  if (!isFiniteNumber(startDistanceM)) {
+    return normalizedSession;
+  }
+
+  const rebasedSession = normalizeReplaySession({
+    ...normalizedSession,
+    startDistanceM,
+    distanceRebased: false,
+  });
+
+  if (storageKey) {
+    await saveReplayValue(storageKey, maybeStripReplaySessionSamples(rebasedSession));
+  }
+
+  return rebasedSession;
 }
 
 export function hasReplaySamples(session, minSamples = 1) {
@@ -551,6 +623,13 @@ export function appendReplaySample(session, sample, options = {}) {
     ? currentSession.samples.slice()
     : [];
   const lastSample = currentSession.lastSample;
+  const startDistanceM = isFiniteNumber(currentSession.startDistanceM)
+    ? currentSession.startDistanceM
+    : normalizedSample.totalDistanceM;
+  const relativeSample = {
+    ...normalizedSample,
+    totalDistanceM: Math.max(0, normalizedSample.totalDistanceM - startDistanceM),
+  };
 
   if (lastSample && normalizedSample.timestampMs < lastSample.timestampMs) {
     return currentSession;
@@ -569,7 +648,7 @@ export function appendReplaySample(session, sample, options = {}) {
       });
     }
 
-    bufferedSamples[bufferedSamples.length - 1] = normalizedSample;
+    bufferedSamples[bufferedSamples.length - 1] = relativeSample;
 
     const dedupedBufferedSamples = normalizeReplaySamplesArray(bufferedSamples);
     return normalizeReplaySession({
@@ -580,26 +659,27 @@ export function appendReplaySample(session, sample, options = {}) {
         options.recordingState,
         currentSession.recordingState,
       ),
+      startDistanceM,
       updatedAtMs: normalizedSample.timestampMs,
       endedAtMs: normalizedSample.timestampMs,
-      maxSpeedMs: Math.max(currentSession.maxSpeedMs, normalizedSample.speedMs),
-      totalDistanceM: normalizedSample.totalDistanceM,
-      minAltitudeM: isFiniteNumber(normalizedSample.altitudeM)
+      maxSpeedMs: Math.max(currentSession.maxSpeedMs, relativeSample.speedMs),
+      totalDistanceM: relativeSample.totalDistanceM,
+      minAltitudeM: isFiniteNumber(relativeSample.altitudeM)
         ? (isFiniteNumber(currentSession.minAltitudeM)
-          ? Math.min(currentSession.minAltitudeM, normalizedSample.altitudeM)
-          : normalizedSample.altitudeM)
+          ? Math.min(currentSession.minAltitudeM, relativeSample.altitudeM)
+          : relativeSample.altitudeM)
         : currentSession.minAltitudeM,
-      maxAltitudeM: isFiniteNumber(normalizedSample.altitudeM)
+      maxAltitudeM: isFiniteNumber(relativeSample.altitudeM)
         ? (isFiniteNumber(currentSession.maxAltitudeM)
-          ? Math.max(currentSession.maxAltitudeM, normalizedSample.altitudeM)
-          : normalizedSample.altitudeM)
+          ? Math.max(currentSession.maxAltitudeM, relativeSample.altitudeM)
+          : relativeSample.altitudeM)
         : currentSession.maxAltitudeM,
-      lastSample: normalizedSample,
+      lastSample: relativeSample,
       samples: dedupedBufferedSamples,
     });
   }
 
-  bufferedSamples.push(normalizedSample);
+  bufferedSamples.push(relativeSample);
 
   return normalizeReplaySession({
     ...currentSession,
@@ -610,22 +690,23 @@ export function appendReplaySample(session, sample, options = {}) {
       currentSession.recordingState,
     ),
     startedAtMs: currentSession.startedAtMs ?? normalizedSample.timestampMs,
+    startDistanceM,
     updatedAtMs: normalizedSample.timestampMs,
     endedAtMs: normalizedSample.timestampMs,
-    maxSpeedMs: Math.max(currentSession.maxSpeedMs, normalizedSample.speedMs),
-    totalDistanceM: normalizedSample.totalDistanceM,
-    minAltitudeM: isFiniteNumber(normalizedSample.altitudeM)
+    maxSpeedMs: Math.max(currentSession.maxSpeedMs, relativeSample.speedMs),
+    totalDistanceM: relativeSample.totalDistanceM,
+    minAltitudeM: isFiniteNumber(relativeSample.altitudeM)
       ? (isFiniteNumber(currentSession.minAltitudeM)
-        ? Math.min(currentSession.minAltitudeM, normalizedSample.altitudeM)
-        : normalizedSample.altitudeM)
+        ? Math.min(currentSession.minAltitudeM, relativeSample.altitudeM)
+        : relativeSample.altitudeM)
       : currentSession.minAltitudeM,
-    maxAltitudeM: isFiniteNumber(normalizedSample.altitudeM)
+    maxAltitudeM: isFiniteNumber(relativeSample.altitudeM)
       ? (isFiniteNumber(currentSession.maxAltitudeM)
-        ? Math.max(currentSession.maxAltitudeM, normalizedSample.altitudeM)
-        : normalizedSample.altitudeM)
+        ? Math.max(currentSession.maxAltitudeM, relativeSample.altitudeM)
+        : relativeSample.altitudeM)
       : currentSession.maxAltitudeM,
     sampleCount: currentSession.sampleCount + 1,
-    lastSample: normalizedSample,
+    lastSample: relativeSample,
     samples: bufferedSamples,
   });
 }
@@ -647,10 +728,10 @@ export function finalizeReplaySession(session, endedAtMs = null) {
 }
 
 export async function loadActiveReplaySession(options = {}) {
-  const session = await ensureChunkedReplaySession(
+  const session = await ensureReplaySessionDistanceOrigin(await ensureChunkedReplaySession(
     await loadReplayValue(REPLAY_ACTIVE_KEY, null),
     REPLAY_ACTIVE_KEY,
-  );
+  ), REPLAY_ACTIVE_KEY);
   if (!session) return null;
 
   if (!options.includeSamples || !replayStore.hasSupport()) {
@@ -683,10 +764,10 @@ export async function clearActiveReplaySession() {
 }
 
 export async function loadLastReplaySession(options = {}) {
-  const session = await ensureChunkedReplaySession(
+  const session = await ensureReplaySessionDistanceOrigin(await ensureChunkedReplaySession(
     await loadReplayValue(REPLAY_LAST_KEY, null),
     REPLAY_LAST_KEY,
-  );
+  ), REPLAY_LAST_KEY);
   if (!session) return null;
 
   if (!options.includeSamples || !replayStore.hasSupport()) {
@@ -718,7 +799,7 @@ export async function loadReplayLibrary() {
 
   if (Array.isArray(rawLibrary)) {
     for (const entry of rawLibrary) {
-      const normalizedEntry = await ensureChunkedReplaySession(entry);
+      const normalizedEntry = await ensureReplaySessionDistanceOrigin(await ensureChunkedReplaySession(entry));
       if (!normalizedEntry) continue;
       if (needsChunkMigration(normalizeReplaySession(entry))) libraryChanged = true;
       normalizedLibrary.push(normalizedEntry);

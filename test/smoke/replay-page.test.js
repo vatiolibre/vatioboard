@@ -94,7 +94,7 @@ describe("replay.html smoke", () => {
       updatedAtMs: 4000,
       endedAtMs: 4000,
       maxSpeedMs: 15,
-      totalDistanceM: 180,
+      totalDistanceM: 680,
       minAltitudeM: 10,
       maxAltitudeM: 20,
       samples: [
@@ -106,7 +106,7 @@ describe("replay.html smoke", () => {
           altitudeM: 10,
           accuracyM: 5,
           headingDeg: 180,
-          totalDistanceM: 0,
+          totalDistanceM: 500,
         },
         {
           timestampMs: 2500,
@@ -116,7 +116,7 @@ describe("replay.html smoke", () => {
           altitudeM: 15,
           accuracyM: 4,
           headingDeg: 182,
-          totalDistanceM: 80,
+          totalDistanceM: 580,
         },
         {
           timestampMs: 4000,
@@ -126,7 +126,7 @@ describe("replay.html smoke", () => {
           altitudeM: 20,
           accuracyM: 4,
           headingDeg: 184,
-          totalDistanceM: 180,
+          totalDistanceM: 680,
         },
       ],
     }));
@@ -141,7 +141,7 @@ describe("replay.html smoke", () => {
         updatedAtMs: 7000,
         endedAtMs: 7000,
         maxSpeedMs: 11,
-        totalDistanceM: 120,
+        totalDistanceM: 520,
         minAltitudeM: 8,
         maxAltitudeM: 18,
         recordingState: "stopped",
@@ -154,7 +154,7 @@ describe("replay.html smoke", () => {
             altitudeM: 8,
             accuracyM: 5,
             headingDeg: 160,
-            totalDistanceM: 0,
+            totalDistanceM: 400,
           },
           {
             timestampMs: 7000,
@@ -164,7 +164,7 @@ describe("replay.html smoke", () => {
             altitudeM: 18,
             accuracyM: 5,
             headingDeg: 170,
-            totalDistanceM: 120,
+            totalDistanceM: 520,
           },
         ],
       },
