@@ -287,6 +287,13 @@ export function createReplayMapController({
     updateSources({ sample, playedCoordinates });
   }
 
+  function resize() {
+    if (!map || typeof map.resize !== "function") return;
+    map.resize();
+    syncMapVignetteMode();
+    collapseReplayAttributionControl(element);
+  }
+
   function setSession(nextSession, options = {}) {
     const shouldResetCamera = options.resetCamera !== false;
     cancelApproachAnimation();
@@ -569,6 +576,7 @@ export function createReplayMapController({
     init,
     renderPlaybackFrame,
     resetCamera,
+    resize,
     runApproachAnimation,
     setSession,
   };

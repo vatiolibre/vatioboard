@@ -135,6 +135,7 @@ const state = {
   selectedRecordingId: null,
   sessionSource: null,
   session: null,
+  initialSelectionPending: true,
   summary: getReplaySummary(null),
   highlights: getReplayHighlights(null),
   playbackRate: 4,
@@ -821,6 +822,12 @@ function resetPlayback({ refitMap = true } = {}) {
 }
 
 function renderSessionStateView() {
+  if (state.initialSelectionPending) {
+    elements.replayEmptyState.hidden = true;
+    elements.replayShell.hidden = true;
+    return;
+  }
+
   const hasSession = Boolean(state.session);
   elements.replayEmptyState.hidden = hasSession;
   elements.replayShell.hidden = !hasSession;
@@ -1049,7 +1056,15 @@ async function init() {
   renderActionIcons();
   renderRecordings();
   updateGraphPlayback(null);
-  await requestReplaySelection();
+  try {
+    await requestReplaySelection();
+  } finally {
+    state.initialSelectionPending = false;
+    renderSessionStateView();
+    if (state.session) {
+      mapController.resize();
+    }
+  }
   void runReplayApproach();
 }
 

@@ -43,6 +43,7 @@ vi.mock("maplibre-gl", () => {
       this.jumpTo = vi.fn();
       this.easeTo = vi.fn();
       this.fitBounds = vi.fn();
+      this.resize = vi.fn();
       this.stop = vi.fn();
       this.remove = vi.fn();
       fakeMaps.push(this);
@@ -177,6 +178,8 @@ describe("replay.html smoke", () => {
 
   it("boots the replay page and renders the stored session", async () => {
     const replayPage = await import("../../src/replay/replay.js");
+    expect(document.getElementById("replayEmptyState").hidden).toBe(true);
+    expect(document.getElementById("replayShell").hidden).toBe(true);
     await replayPage.initPromise;
     await flushTasks();
 
@@ -207,8 +210,10 @@ describe("replay.html smoke", () => {
     expect(document.getElementById("replayMap").hasAttribute("aria-hidden")).toBe(false);
     expect(document.getElementById("replayAxisTime").getAttribute("aria-pressed")).toBe("true");
     expect(document.getElementById("replayProgress").max).toBe("3000");
+    expect(document.querySelectorAll(".replay-rate-btn")).toHaveLength(5);
     expect(fakeMaps[0]?.fitBounds).not.toHaveBeenCalled();
     expect(fakeMaps[0]?.jumpTo).toHaveBeenCalledTimes(1);
+    expect(fakeMaps[0]?.resize).toHaveBeenCalledTimes(1);
 
     document.getElementById("replayApproach").click();
     await flushTasks();
@@ -221,6 +226,11 @@ describe("replay.html smoke", () => {
     expect(document.getElementById("replayAxisDistance").getAttribute("aria-pressed")).toBe("true");
     expect(document.getElementById("replayDurationValue").textContent).toBe("180 m");
     expect(document.getElementById("replayProgress").max).toBe("180");
+
+    document.querySelector('.replay-rate-btn[data-rate="1000"]').click();
+    await flushTasks();
+
+    expect(document.querySelector('.replay-rate-btn[data-rate="1000"]')?.getAttribute("aria-pressed")).toBe("true");
 
     document.getElementById("replayProgress").value = "80";
     document.getElementById("replayProgress").dispatchEvent(new Event("input", { bubbles: true }));
