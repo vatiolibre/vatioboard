@@ -204,14 +204,30 @@ describe("accel.html smoke", () => {
     });
     expect(document.getElementById("armRun").getAttribute("aria-label")).toBe("Start test");
     expect(document.querySelector("#armRun .btn-icon svg")).toBeTruthy();
-    expect(document.querySelector("#cancelRun .btn-icon svg")).toBeTruthy();
     expect(document.getElementById("accelToolsMenuBtn").getAttribute("aria-label")).toBe("Pages");
     expect(document.querySelector("#accelToolsMenuBtn .btn-icon svg")).toBeTruthy();
+    expect(document.querySelector("#accelToolbarSetup .btn-icon svg")).toBeTruthy();
+    expect(document.querySelector("#accelToolbarResults .btn-icon svg")).toBeTruthy();
+    expect(document.getElementById("accelToolbarResults").disabled).toBe(true);
     expect(document.getElementById("accelToolsMenuList").hidden).toBe(true);
     document.getElementById("accelToolsMenuBtn").click();
     await flushTasks();
     expect(document.getElementById("accelToolsMenuList").hidden).toBe(false);
     expect(document.getElementById("accelToolsMenuBtn").getAttribute("aria-expanded")).toBe("true");
+    document.getElementById("accelToolbarSetup").click();
+    await flushTasks();
+    expect(document.getElementById("setupPanel").hidden).toBe(false);
+    expect(document.getElementById("accelToolbarSetup").getAttribute("aria-pressed")).toBe("true");
+    document.getElementById("closeSetupPanel").click();
+    await flushTasks();
+    expect(document.activeElement).toBe(document.getElementById("accelToolbarSetup"));
+    document.getElementById("setupTrigger").click();
+    await flushTasks();
+    expect(document.getElementById("setupPanel").hidden).toBe(false);
+    document.getElementById("accelToolbarSetup").click();
+    await flushTasks();
+    expect(document.getElementById("setupPanel").hidden).toBe(true);
+    expect(document.activeElement).toBe(document.getElementById("accelToolbarSetup"));
     expect(getBrowserMocks().geolocation.watchPosition).toHaveBeenCalledTimes(1);
 
     emitGeolocationSuccess({
@@ -226,6 +242,17 @@ describe("accel.html smoke", () => {
 
     expect(document.getElementById("latestAccuracyValue").textContent).not.toBe("—");
     expect(document.getElementById("armRun").disabled).toBe(false);
+
+    document.getElementById("armRun").click();
+    await flushTasks();
+
+    expect(document.getElementById("armRun").getAttribute("aria-label")).toBe("Cancel test");
+    expect(document.getElementById("armRun").disabled).toBe(false);
+
+    document.getElementById("armRun").click();
+    await flushTasks();
+
+    expect(document.getElementById("armRun").getAttribute("aria-label")).toBe("Start test");
   });
 
   it("opens accel replay from history inside the results panel", async () => {
@@ -317,7 +344,7 @@ describe("accel.html smoke", () => {
     expect(document.activeElement).toBe(document.getElementById("resultsTrigger"));
   });
 
-  it("initializes the accel replay map when opening results from the toolbar trigger", async () => {
+  it("opens the results panel from the toolbar results button when runs exist", async () => {
     const storage = await import("../../src/accel/storage.js");
     await storage.saveRuns([createStoredRun()]);
 
@@ -325,7 +352,8 @@ describe("accel.html smoke", () => {
     await accelPage.initPromise;
     await flushTasks();
 
-    document.getElementById("resultsTrigger").click();
+    expect(document.getElementById("accelToolbarResults").disabled).toBe(false);
+    document.getElementById("accelToolbarResults").click();
     await flushTasks();
 
     expect(document.getElementById("resultsPanel").hidden).toBe(false);
@@ -333,5 +361,34 @@ describe("accel.html smoke", () => {
     expect(fakeMaps).toHaveLength(1);
     expect(fakeMaps[0].jumpTo).toHaveBeenCalledTimes(1);
     expect(fakeMaps[0].fitBounds).not.toHaveBeenCalled();
+    document.getElementById("closeResultsPanel").click();
+    await flushTasks();
+    expect(document.activeElement).toBe(document.getElementById("accelToolbarResults"));
+  });
+
+  it("tears down results replay state when switching from results to setup", async () => {
+    const storage = await import("../../src/accel/storage.js");
+    await storage.saveRuns([createStoredRun()]);
+
+    const accelPage = await import("../../src/accel/accel.js");
+    await accelPage.initPromise;
+    await flushTasks();
+
+    document.getElementById("accelToolbarResults").click();
+    await flushTasks();
+    document.getElementById("resultReplayChartsBtn").click();
+    await flushTasks();
+
+    expect(document.getElementById("resultsPanel").hidden).toBe(false);
+    expect(document.getElementById("resultReplayChartSheet").hidden).toBe(false);
+    expect(fakeMaps).toHaveLength(1);
+
+    document.getElementById("accelToolbarSetup").click();
+    await flushTasks();
+
+    expect(document.getElementById("resultsPanel").hidden).toBe(true);
+    expect(document.getElementById("setupPanel").hidden).toBe(false);
+    expect(document.getElementById("resultReplayChartSheet").hidden).toBe(true);
+    expect(fakeMaps[0].remove).toHaveBeenCalledTimes(1);
   });
 });

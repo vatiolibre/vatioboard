@@ -3,7 +3,7 @@ import "../styles/speed.less";
 import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
 import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
-import { IconAccel, IconBoard, IconGpsLab, IconPages, IconReplay, IconRestart } from "../icons.js";
+import { IconAccel, IconBoard, IconGpsLab, IconPages, IconReplay, IconRestart, IconSettings } from "../icons.js";
 import {
   archiveReplaySession,
   createReplaySession,
@@ -77,6 +77,7 @@ const elements = {
   toolsMenuList: document.getElementById("speedToolsMenuList"),
   openReplayMenu: document.getElementById("openSpeedReplayMenu"),
   openReplayQuick: document.getElementById("openReplayQuick"),
+  quickAlertConfig: document.getElementById("quickAlertConfig"),
   openAccelMenu: document.getElementById("openSpeedAccelMenu"),
   openGpsLabMenu: document.getElementById("openSpeedGpsLabMenu"),
   openBoardMenu: document.getElementById("openSpeedBoardMenu"),
@@ -160,6 +161,7 @@ applyButtonIcon(elements.openGpsLabMenu, IconGpsLab);
 applyButtonIcon(elements.openBoardMenu, IconBoard);
 applyButtonIcon(elements.openReplayMenu, IconReplay);
 applyButtonIcon(elements.openReplayQuick, IconReplay);
+applyButtonIcon(elements.quickAlertConfig, IconSettings);
 applyButtonIcon(elements.resetTrip, IconRestart);
 applyButtonIcon(elements.toolsMenuBtn, IconPages);
 
@@ -934,6 +936,8 @@ function openAlertPanel() {
   document.body.classList.add("alert-panel-open");
   elements.alertPanel.scrollTop = 0;
   elements.alertTrigger.setAttribute("aria-expanded", "true");
+  elements.quickAlertConfig?.setAttribute("aria-expanded", "true");
+  elements.quickAlertConfig?.setAttribute("aria-pressed", "true");
 }
 
 function closeAlertPanel() {
@@ -943,6 +947,8 @@ function closeAlertPanel() {
   }
   elements.alertPanel.hidden = true;
   elements.alertTrigger.setAttribute("aria-expanded", "false");
+  elements.quickAlertConfig?.setAttribute("aria-expanded", "false");
+  elements.quickAlertConfig?.setAttribute("aria-pressed", "false");
   syncAlertTriggerDiscovery();
 }
 
@@ -1303,6 +1309,7 @@ function bindEvents() {
   elements.stopRecording?.addEventListener("click", () => {
     stopRecordingSession();
   });
+  elements.quickAlertConfig?.addEventListener("click", toggleAlertPanel);
   elements.alertTrigger.addEventListener("click", toggleAlertPanel);
   elements.closeAlertPanel.addEventListener("click", closeAlertPanel);
   elements.alertToggle.addEventListener("click", () => {
@@ -1408,7 +1415,9 @@ function bindEvents() {
   });
   document.addEventListener("pointerdown", (event) => {
     audioController.handleUserGestureAudioActivation();
-    const insideAlertUi = elements.alertPanel.contains(event.target) || elements.alertTrigger.contains(event.target);
+    const insideAlertUi = elements.alertPanel.contains(event.target)
+      || elements.alertTrigger.contains(event.target)
+      || elements.quickAlertConfig?.contains(event.target);
     if (!insideAlertUi) {
       audioController.syncOverspeedSound({ fromUserGesture: true });
       audioController.syncTrapSound({ fromUserGesture: true });

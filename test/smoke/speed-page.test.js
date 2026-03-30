@@ -88,6 +88,8 @@ describe("speed.html smoke", () => {
       canonical: "https://vatioboard.com/speed.html",
     });
     expect(getBrowserMocks().geolocation.watchPosition).toHaveBeenCalledTimes(1);
+    expect(document.getElementById("quickAlertConfig").getAttribute("aria-label")).toBe("Configure alerts");
+    expect(document.querySelector("#quickAlertConfig .toolbar-recording-glyph svg")).toBeTruthy();
     expect(document.getElementById("resetTrip").getAttribute("aria-label")).toBe("Reset trip");
     expect(document.querySelector("#resetTrip .toolbar-recording-glyph svg")).toBeTruthy();
     expect(document.getElementById("toggleRecording").getAttribute("aria-label")).toBe("Pause recording");
@@ -108,6 +110,14 @@ describe("speed.html smoke", () => {
 
     expect(document.getElementById("speedToolsMenuList").hidden).toBe(false);
     expect(document.getElementById("speedToolsMenuBtn").getAttribute("aria-expanded")).toBe("true");
+    document.getElementById("quickAlertConfig").click();
+    await flushTasks();
+    expect(document.getElementById("speedAlertPanel").hidden).toBe(false);
+    expect(document.getElementById("quickAlertConfig").getAttribute("aria-pressed")).toBe("true");
+    document.getElementById("quickAlertConfig").click();
+    await flushTasks();
+    expect(document.getElementById("speedAlertPanel").hidden).toBe(true);
+    expect(document.getElementById("quickAlertConfig").getAttribute("aria-pressed")).toBe("false");
 
     emitGeolocationSuccess({
       coords: {

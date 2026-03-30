@@ -11,10 +11,12 @@ import {
   IconClose,
   IconDistance,
   IconGpsLab,
+  IconHistory,
   IconPages,
   IconPause,
   IconPlay,
   IconRestart,
+  IconSettings,
   IconSpeed,
   IconTime,
 } from "../icons.js";
@@ -110,6 +112,8 @@ export const initPromise = (function () {
     resultsTrigger: document.getElementById("resultsTrigger"),
     resultsTriggerValue: document.getElementById("resultsTriggerValue"),
     resultsTriggerMeta: document.getElementById("resultsTriggerMeta"),
+    toolbarSetup: document.getElementById("accelToolbarSetup"),
+    toolbarResults: document.getElementById("accelToolbarResults"),
     toolbarPermissionValue: document.getElementById("toolbarPermissionValue"),
     toolbarQualityValue: document.getElementById("toolbarQualityValue"),
     toolbarStateValue: document.getElementById("toolbarStateValue"),
@@ -137,7 +141,6 @@ export const initPromise = (function () {
     distanceUnitM: document.getElementById("distanceUnitM"),
     customRangeNotice: document.getElementById("customRangeNotice"),
     armRun: document.getElementById("armRun"),
-    cancelRun: document.getElementById("cancelRun"),
     rolloutOff: document.getElementById("rolloutOff"),
     rolloutOn: document.getElementById("rolloutOn"),
     launchThresholdHalf: document.getElementById("launchThresholdHalf"),
@@ -245,8 +248,9 @@ export const initPromise = (function () {
   });
 
   applyButtonIcon(elements.armRun, IconPlay);
-  applyButtonIcon(elements.cancelRun, IconClose);
   applyButtonIcon(elements.toolsMenuBtn, IconPages);
+  applyButtonIcon(elements.toolbarSetup, IconSettings);
+  applyButtonIcon(elements.toolbarResults, IconHistory);
   applyButtonIcon(elements.openSpeedMenu, IconSpeed);
   applyButtonIcon(elements.openGpsLabMenu, IconGpsLab);
   applyButtonIcon(elements.openBoardMenu, IconBoard);
@@ -305,6 +309,7 @@ export const initPromise = (function () {
       chartFilterEndRatio: 1,
     },
     openPanel: null,
+    lastPanelTrigger: null,
     actionNoticeTimerId: null,
   };
 
@@ -504,14 +509,27 @@ export const initPromise = (function () {
     bindMenuNavigation(elements.openGpsLabMenu, "/gps-rate");
     bindMenuNavigation(elements.openBoardMenu, "/");
     elements.setupTrigger.addEventListener("click", function () {
-      togglePanel("setup");
+      togglePanel("setup", elements.setupTrigger);
     });
     elements.resultsTrigger.addEventListener("click", function () {
-      togglePanel("results");
+      togglePanel("results", elements.resultsTrigger);
     });
-    elements.closeSetupPanel.addEventListener("click", closePanel);
-    elements.closeResultsPanel.addEventListener("click", closePanel);
-    elements.sheetBackdrop.addEventListener("click", closePanel);
+    elements.toolbarSetup.addEventListener("click", function () {
+      togglePanel("setup", elements.toolbarSetup);
+    });
+    elements.toolbarResults.addEventListener("click", function () {
+      if (!getDisplayedResult()) return;
+      togglePanel("results", elements.toolbarResults);
+    });
+    elements.closeSetupPanel.addEventListener("click", function () {
+      closePanel();
+    });
+    elements.closeResultsPanel.addEventListener("click", function () {
+      closePanel();
+    });
+    elements.sheetBackdrop.addEventListener("click", function () {
+      closePanel();
+    });
     elements.presetGrid.addEventListener("click", handlePresetClick);
     elements.customStartInput.addEventListener("input", handleCustomInput);
     elements.customEndInput.addEventListener("input", handleCustomInput);
@@ -519,8 +537,7 @@ export const initPromise = (function () {
     elements.speedUnitKmh.addEventListener("click", handleSpeedUnitClick);
     elements.distanceUnitFt.addEventListener("click", handleDistanceUnitClick);
     elements.distanceUnitM.addEventListener("click", handleDistanceUnitClick);
-    elements.armRun.addEventListener("click", handleArm);
-    elements.cancelRun.addEventListener("click", handleCancel);
+    elements.armRun.addEventListener("click", handleRunPrimaryAction);
     elements.rolloutOff.addEventListener("click", handleRolloutClick);
     elements.rolloutOn.addEventListener("click", handleRolloutClick);
     elements.launchThresholdHalf.addEventListener("click", handleThresholdClick);
@@ -587,9 +604,21 @@ export const initPromise = (function () {
     closePanel();
   }
 
-  function openPanel(panelName) {
+  function teardownPanel(panelName) {
+    if (panelName !== "results") return;
+    pauseReplayPlayback();
+    resetReplayMapIntroState();
+    replayMap.destroy();
+    setReplayChartSheetOpen(false);
+  }
+
+  function openPanel(panelName, triggerElement) {
     if (state.openPanel === panelName) return;
+    if (state.openPanel) {
+      teardownPanel(state.openPanel);
+    }
     state.openPanel = panelName;
+    state.lastPanelTrigger = triggerElement || null;
     if (panelName === "results" && elements.resultsPanel) {
       resultGraph.noteResultsPanelWidth();
     }
@@ -602,30 +631,26 @@ export const initPromise = (function () {
     if (focusTarget) focusTarget.focus();
   }
 
-  function closePanel() {
+  function closePanel(triggerElement) {
     if (!state.openPanel) return;
 
     var previouslyOpen = state.openPanel;
-    if (previouslyOpen === "results") {
-      pauseReplayPlayback();
-      resetReplayMapIntroState();
-      replayMap.destroy();
-    }
-    setReplayChartSheetOpen(false);
+    teardownPanel(previouslyOpen);
     state.openPanel = null;
     renderSheetUi();
 
-    var trigger = previouslyOpen === "setup" ? elements.setupTrigger : elements.resultsTrigger;
-    if (trigger) trigger.focus();
+    var trigger = triggerElement || state.lastPanelTrigger || (previouslyOpen === "setup" ? elements.setupTrigger : elements.resultsTrigger);
+    state.lastPanelTrigger = null;
+    if (trigger) focusElement(trigger);
   }
 
-  function togglePanel(panelName) {
+  function togglePanel(panelName, triggerElement) {
     if (state.openPanel === panelName) {
-      closePanel();
+      closePanel(triggerElement);
       return;
     }
 
-    openPanel(panelName);
+    openPanel(panelName, triggerElement);
   }
 
   function saveSettings() {
@@ -847,6 +872,15 @@ export const initPromise = (function () {
     state.run = null;
     setActionNotice("accelRunCancelledNotice");
     renderAll();
+  }
+
+  function handleRunPrimaryAction() {
+    if (isRunActive(state.run)) {
+      handleCancel();
+      return;
+    }
+
+    handleArm();
   }
 
   function handleClearHistory() {
@@ -1634,18 +1668,20 @@ export const initPromise = (function () {
   function renderControlState() {
     var hasActiveRun = isRunActive(state.run);
     var customInvalid = state.settings.selectedPresetId === "custom" && !isCustomRangeValid();
-    var primaryLabelKey = state.run && state.run.stage === "completed" ? "accelRunAgain" : "accelArm";
+    var primaryLabelKey = hasActiveRun
+      ? "accelCancel"
+      : (state.run && state.run.stage === "completed" ? "accelRunAgain" : "accelArm");
     var gpsReady = isGpsReady();
     var primaryLabel = t(primaryLabelKey);
 
+    applyButtonIcon(elements.armRun, hasActiveRun ? IconClose : IconPlay);
     elements.armRun.setAttribute("aria-label", primaryLabel);
     elements.armRun.setAttribute("title", primaryLabel);
-    elements.cancelRun.setAttribute("aria-label", t("accelCancel"));
-    elements.cancelRun.setAttribute("title", t("accelCancel"));
-    elements.armRun.hidden = hasActiveRun;
-    elements.cancelRun.hidden = !hasActiveRun;
-    elements.armRun.disabled = !state.geolocationSupported || customInvalid || !gpsReady;
-    elements.cancelRun.disabled = !hasActiveRun;
+    elements.armRun.classList.toggle("accel-toolbar-btn-start", !hasActiveRun);
+    elements.armRun.classList.toggle("accel-toolbar-btn-cancel", hasActiveRun);
+    elements.armRun.disabled = hasActiveRun
+      ? false
+      : (!state.geolocationSupported || customInvalid || !gpsReady);
     elements.clearHistory.disabled = !state.runs.length;
   }
 
@@ -1683,6 +1719,7 @@ export const initPromise = (function () {
   function renderSheetUi() {
     var setupOpen = state.openPanel === "setup";
     var resultsOpen = state.openPanel === "results";
+    var hasResults = Boolean(getDisplayedResult());
     var setupSummary = getSetupSummary();
     var resultsSummary = getResultsSummary();
 
@@ -1697,6 +1734,11 @@ export const initPromise = (function () {
     elements.resultsTrigger.setAttribute("aria-expanded", String(resultsOpen));
     elements.setupTrigger.classList.toggle("is-open", setupOpen);
     elements.resultsTrigger.classList.toggle("is-open", resultsOpen);
+    elements.toolbarSetup.setAttribute("aria-expanded", String(setupOpen));
+    elements.toolbarSetup.setAttribute("aria-pressed", String(setupOpen));
+    elements.toolbarResults.setAttribute("aria-expanded", String(resultsOpen));
+    elements.toolbarResults.setAttribute("aria-pressed", String(resultsOpen));
+    elements.toolbarResults.disabled = !hasResults;
 
     elements.sheetBackdrop.hidden = !(setupOpen || resultsOpen);
     elements.setupPanel.hidden = !setupOpen;

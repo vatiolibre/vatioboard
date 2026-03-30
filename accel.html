@@ -244,6 +244,35 @@
                 </div>
               </div>
               <button
+                id="accelToolbarSetup"
+                type="button"
+                class="accel-toolbar-btn accel-toolbar-icon-btn"
+                data-i18n-aria="accelOpenSetup"
+                data-i18n-title="accelSetup"
+                aria-label="Open setup"
+                title="Setup"
+                aria-controls="setupPanel"
+                aria-expanded="false"
+                aria-pressed="false"
+              >
+                <span class="btn-icon" aria-hidden="true"></span>
+              </button>
+              <button
+                id="accelToolbarResults"
+                type="button"
+                class="accel-toolbar-btn accel-toolbar-icon-btn"
+                data-i18n-aria="accelOpenResults"
+                data-i18n-title="accelResultsPanel"
+                aria-label="Open results"
+                title="Results"
+                aria-controls="resultsPanel"
+                aria-expanded="false"
+                aria-pressed="false"
+                disabled
+              >
+                <span class="btn-icon" aria-hidden="true"></span>
+              </button>
+              <button
                 id="armRun"
                 type="button"
                 class="accel-toolbar-btn accel-toolbar-icon-btn accel-toolbar-btn-start"
@@ -251,18 +280,6 @@
                 data-i18n-title="accelArm"
                 aria-label="Start test"
                 title="Start test"
-              >
-                <span class="btn-icon" aria-hidden="true"></span>
-              </button>
-              <button
-                id="cancelRun"
-                type="button"
-                class="accel-toolbar-btn accel-toolbar-icon-btn accel-toolbar-btn-cancel"
-                data-i18n-aria="accelCancel"
-                data-i18n-title="accelCancel"
-                aria-label="Cancel test"
-                title="Cancel test"
-                hidden
               >
                 <span class="btn-icon" aria-hidden="true"></span>
               </button>
