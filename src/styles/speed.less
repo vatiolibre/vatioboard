@@ -235,9 +235,13 @@ body.speed-page.alert-panel-open .speed-main{
     justify-content: flex-start;
 }
 
-@media (max-width: 900px){
+@media (max-width: 960px){
     .speed-header-inner > .brand{
         display: none;
+    }
+
+    .speed-tools-menu .compact-tools-menu-brand{
+        display: flex;
     }
 }
 
@@ -1716,7 +1720,7 @@ body.speed-page.alert-panel-open .speed-main{
     }
 
     .speed-header-inner > .route-chip{
-        margin-left: auto;
+        display: none;
     }
 
     .stats-grid{
@@ -1740,12 +1744,6 @@ body.speed-page.alert-panel-open .speed-main{
         flex: 0 1 auto;
         justify-content: flex-start;
         margin-left: 0;
-    }
-
-    .speed-header-inner > .route-chip{
-        order: 3;
-        margin-left: 0;
-        justify-self: end;
     }
 
     .gauge-card{
