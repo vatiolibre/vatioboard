@@ -16,6 +16,8 @@ export const STORAGE_KEYS = {
   notes: "vatio_gps_rate_notes",
   keepAwake: "vatio_gps_rate_keep_awake",
   lastSummary: "vatio_gps_rate_last_summary",
+  nominatimBaseUrl: "vatio_gps_rate_nominatim_base_url",
+  nominatimActiveApi: "vatio_gps_rate_nominatim_active_api",
 };
 
 export const MAX_LOG_ROWS = 200;

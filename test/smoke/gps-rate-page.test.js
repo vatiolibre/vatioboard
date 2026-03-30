@@ -9,6 +9,24 @@ describe("gps-rate.html smoke", () => {
   });
 
   it("boots the GPS lab and records a mocked sample", async () => {
+    window.fetch.mockImplementation(async (input) => {
+      const url = typeof input === "string" ? input : String(input?.url ?? "");
+
+      if (url.includes("/search?")) {
+        return new Response(JSON.stringify([
+          { display_name: "Bogota, Colombia" },
+        ]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response("{}", {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
     await import("../../src/gps-rate/gps-rate.js");
     await flushTasks();
 
@@ -40,5 +58,29 @@ describe("gps-rate.html smoke", () => {
 
     expect(document.getElementById("sampleCountValue").textContent).toBe("1");
     expect(document.getElementById("eventLogBody").children).toHaveLength(1);
+
+    expect(document.getElementById("nominatimApiDetails").disabled).toBe(true);
+
+    const searchQuery = document.getElementById("nominatimSearchQuery");
+    searchQuery.value = "Bogota";
+    searchQuery.dispatchEvent(new Event("input", { bubbles: true }));
+    document.getElementById("nominatimSearchRun").click();
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      await flushTasks();
+    }
+
+    expect(window.fetch).toHaveBeenCalledTimes(1);
+    expect(window.fetch.mock.calls[0][0]).toContain("https://nominatim.openstreetmap.org/search?");
+    expect(window.fetch.mock.calls[0][0]).toContain("q=Bogota");
+    expect(document.getElementById("nominatimRequestSourceValue").textContent).toBe("Live request");
+    expect(document.getElementById("nominatimResponseOutput").textContent).toContain("Bogota, Colombia");
+
+    document.getElementById("nominatimSearchRun").click();
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      await flushTasks();
+    }
+
+    expect(window.fetch).toHaveBeenCalledTimes(1);
+    expect(document.getElementById("nominatimRequestSourceValue").textContent).toBe("Cached response");
   });
 });

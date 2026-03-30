@@ -246,6 +246,152 @@
         </div>
       </section>
 
+      <section class="gps-rate-card gps-rate-nominatim-card" aria-labelledby="gpsRateNominatimHeading">
+        <div class="gps-rate-card-head">
+          <div>
+            <span class="gps-rate-card-kicker" data-i18n="gpsRateNominatim">Nominatim API</span>
+            <p id="gpsRateNominatimHeading" class="gps-rate-card-lead" data-i18n="gpsRateNominatimLead">
+              Manual policy-safe requests for Search, Reverse, Lookup, Status, and Details on custom servers.
+            </p>
+          </div>
+          <span class="gps-rate-chip gps-rate-chip-muted" data-i18n="gpsRateNominatimRateLimit">Shared 1 req/s</span>
+        </div>
+
+        <p class="gps-rate-disclaimer gps-rate-nominatim-policy" data-i18n="gpsRateNominatimPolicy">
+          Manual requests only. No autocomplete. Repeated identical requests are cached. Details stays disabled on the public server.
+        </p>
+
+        <div class="gps-rate-nominatim-layout">
+          <label class="gps-rate-notes-field gps-rate-nominatim-base-field" for="nominatimBaseUrl">
+            <span data-i18n="gpsRateNominatimBaseUrl">Nominatim service URL</span>
+            <input
+              id="nominatimBaseUrl"
+              class="gps-rate-text-input"
+              type="url"
+              spellcheck="false"
+              autocapitalize="off"
+              autocomplete="url"
+              placeholder="https://nominatim.openstreetmap.org"
+            />
+          </label>
+
+          <div class="gps-rate-nominatim-endpoints" role="group" data-i18n-aria="gpsRateNominatimEndpoints" aria-label="Nominatim endpoints">
+            <button id="nominatimApiSearch" type="button" class="gps-rate-nominatim-api-btn" data-i18n="gpsRateNominatimSearch" aria-pressed="true">Search</button>
+            <button id="nominatimApiReverse" type="button" class="gps-rate-nominatim-api-btn" data-i18n="gpsRateNominatimReverse" aria-pressed="false">Reverse</button>
+            <button id="nominatimApiLookup" type="button" class="gps-rate-nominatim-api-btn" data-i18n="gpsRateNominatimLookup" aria-pressed="false">Lookup</button>
+            <button id="nominatimApiStatus" type="button" class="gps-rate-nominatim-api-btn" data-i18n="gpsRateNominatimStatusApi" aria-pressed="false">Status</button>
+            <button id="nominatimApiDetails" type="button" class="gps-rate-nominatim-api-btn" data-i18n="gpsRateNominatimDetails" aria-pressed="false">Details</button>
+          </div>
+
+          <div id="nominatimSearchPanel" class="gps-rate-nominatim-panel">
+            <label class="gps-rate-notes-field" for="nominatimSearchQuery">
+              <span data-i18n="gpsRateNominatimSearchQuery">Search query</span>
+              <input
+                id="nominatimSearchQuery"
+                class="gps-rate-text-input"
+                type="text"
+                spellcheck="false"
+                autocapitalize="off"
+                autocomplete="off"
+                data-i18n-placeholder="gpsRateNominatimSearchPlaceholder"
+                placeholder="Example: Bogotá"
+              />
+            </label>
+            <button id="nominatimSearchRun" type="button" class="gps-rate-action-btn gps-rate-action-btn-compact" data-api="search" data-i18n="gpsRateNominatimRun">Run request</button>
+          </div>
+
+          <div id="nominatimReversePanel" class="gps-rate-nominatim-panel" hidden>
+            <div class="gps-rate-nominatim-fields gps-rate-nominatim-fields-two">
+              <label class="gps-rate-notes-field" for="nominatimReverseLat">
+                <span data-i18n="gpsRateLatitude">Latitude</span>
+                <input id="nominatimReverseLat" class="gps-rate-text-input" type="number" step="any" inputmode="decimal" />
+              </label>
+              <label class="gps-rate-notes-field" for="nominatimReverseLon">
+                <span data-i18n="gpsRateLongitude">Longitude</span>
+                <input id="nominatimReverseLon" class="gps-rate-text-input" type="number" step="any" inputmode="decimal" />
+              </label>
+            </div>
+            <div class="gps-rate-nominatim-actions">
+              <button id="nominatimReverseUseLatest" type="button" class="gps-rate-action-btn gps-rate-action-btn-compact" data-i18n="gpsRateNominatimUseLatestSample">Use latest sample</button>
+              <button id="nominatimReverseRun" type="button" class="gps-rate-action-btn gps-rate-action-btn-primary gps-rate-action-btn-compact" data-api="reverse" data-i18n="gpsRateNominatimRun">Run request</button>
+            </div>
+          </div>
+
+          <div id="nominatimLookupPanel" class="gps-rate-nominatim-panel" hidden>
+            <label class="gps-rate-notes-field" for="nominatimLookupIds">
+              <span data-i18n="gpsRateNominatimLookupIds">OSM IDs</span>
+              <input
+                id="nominatimLookupIds"
+                class="gps-rate-text-input"
+                type="text"
+                spellcheck="false"
+                autocapitalize="off"
+                autocomplete="off"
+                data-i18n-placeholder="gpsRateNominatimLookupPlaceholder"
+                placeholder="Example: W104393803,N240109189"
+              />
+            </label>
+            <button id="nominatimLookupRun" type="button" class="gps-rate-action-btn gps-rate-action-btn-compact" data-api="lookup" data-i18n="gpsRateNominatimRun">Run request</button>
+          </div>
+
+          <div id="nominatimStatusPanel" class="gps-rate-nominatim-panel" hidden>
+            <p class="gps-rate-inline-note gps-rate-nominatim-panel-copy" data-i18n="gpsRateNominatimStatusLead">
+              Reports whether the configured service is available and when its data was last updated.
+            </p>
+            <button id="nominatimStatusRun" type="button" class="gps-rate-action-btn gps-rate-action-btn-compact" data-api="status" data-i18n="gpsRateNominatimRun">Run request</button>
+          </div>
+
+          <div id="nominatimDetailsPanel" class="gps-rate-nominatim-panel" hidden>
+            <label class="gps-rate-notes-field" for="nominatimDetailsPlaceId">
+              <span data-i18n="gpsRateNominatimDetailsPlaceId">Place ID</span>
+              <input
+                id="nominatimDetailsPlaceId"
+                class="gps-rate-text-input"
+                type="text"
+                spellcheck="false"
+                autocapitalize="off"
+                autocomplete="off"
+                data-i18n-placeholder="gpsRateNominatimDetailsPlaceholder"
+                placeholder="Example: 123456789"
+              />
+            </label>
+            <p id="nominatimDetailsPolicyNote" class="gps-rate-inline-note gps-rate-nominatim-panel-copy" data-i18n="gpsRateNominatimDetailsPublicNotice" hidden>
+              Details is disabled on the public Nominatim server. Switch the service URL to a custom server to test it.
+            </p>
+            <button id="nominatimDetailsRun" type="button" class="gps-rate-action-btn gps-rate-action-btn-compact" data-api="details" data-i18n="gpsRateNominatimRun">Run request</button>
+          </div>
+
+          <div class="gps-rate-nominatim-summary-grid">
+            <div class="gps-rate-metric">
+              <span class="gps-rate-metric-label" data-i18n="gpsRateStatus">Status</span>
+              <strong id="nominatimRequestStateValue" class="gps-rate-metric-value">Idle</strong>
+            </div>
+            <div class="gps-rate-metric">
+              <span class="gps-rate-metric-label" data-i18n="gpsRateNominatimEndpoint">Endpoint</span>
+              <strong id="nominatimRequestEndpointValue" class="gps-rate-metric-value">—</strong>
+            </div>
+            <div class="gps-rate-metric">
+              <span class="gps-rate-metric-label" data-i18n="gpsRateNominatimSource">Source</span>
+              <strong id="nominatimRequestSourceValue" class="gps-rate-metric-value">—</strong>
+            </div>
+          </div>
+
+          <div class="gps-rate-subsection">
+            <div class="gps-rate-section-title-row">
+              <span data-i18n="gpsRateNominatimRequestUrl">Request URL</span>
+            </div>
+            <pre id="nominatimRequestUrlValue" class="gps-rate-json-output gps-rate-json-output-url">—</pre>
+          </div>
+
+          <div class="gps-rate-subsection">
+            <div class="gps-rate-section-title-row">
+              <span data-i18n="gpsRateNominatimResponse">JSON response</span>
+            </div>
+            <pre id="nominatimResponseOutput" class="gps-rate-json-output" data-i18n="gpsRateNominatimResponseEmpty">No Nominatim request yet.</pre>
+          </div>
+        </div>
+      </section>
+
       <section class="gps-rate-kpi-grid">
         <article class="gps-rate-kpi-card">
           <span class="gps-rate-kpi-label" data-i18n="gpsRateCurrentInterval">Current interval</span>

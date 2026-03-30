@@ -1,4 +1,5 @@
 import { createSample, summarizeSession } from "./summary.js";
+import { createGpsRateNominatimLab } from "./nominatim-lab.js";
 import {
   getElapsedActiveMs,
   hasSessionActivity,
@@ -22,6 +23,14 @@ export function createGpsRateController({
   saveJson,
   saveText,
 }) {
+  const nominatimLab = createGpsRateNominatimLab({
+    elements,
+    state,
+    storageKeys,
+    saveText,
+    t,
+  });
+
   function buildCurrentSummary({ source = "current", savedAtMs = null } = {}) {
     const summary = summarizeSession({
       samples: state.samples.slice(),
@@ -38,6 +47,7 @@ export function createGpsRateController({
   function refreshView() {
     state.currentSummary = buildCurrentSummary({ source: "current" });
     renderer.renderSession();
+    nominatimLab.render();
   }
 
   function setActionNotice(keyOrText, params = null, isRaw = false) {
@@ -497,6 +507,7 @@ export function createGpsRateController({
     elements.sessionNotes.value = state.notes;
     renderer.renderActionNotice();
     refreshView();
+    nominatimLab.init();
     bindEvents();
     refreshPermissionState();
 

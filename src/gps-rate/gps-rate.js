@@ -1,6 +1,7 @@
 import "../styles/gps-rate.less";
 import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
 import { loadBoolean, loadJson, loadText, saveJson, saveText } from "../shared/storage.js";
+import { NOMINATIM_DEFAULT_BASE_URL } from "../shared/nominatim.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
 import {
   IconAccel,
@@ -49,6 +50,38 @@ const elements = {
   visibilitySummaryText: document.getElementById("visibilitySummaryText"),
   sessionNotes: document.getElementById("sessionNotes"),
   actionNotice: document.getElementById("actionNotice"),
+  nominatimBaseUrl: document.getElementById("nominatimBaseUrl"),
+  nominatimApiButtons: {
+    search: document.getElementById("nominatimApiSearch"),
+    reverse: document.getElementById("nominatimApiReverse"),
+    lookup: document.getElementById("nominatimApiLookup"),
+    status: document.getElementById("nominatimApiStatus"),
+    details: document.getElementById("nominatimApiDetails"),
+  },
+  nominatimPanels: {
+    search: document.getElementById("nominatimSearchPanel"),
+    reverse: document.getElementById("nominatimReversePanel"),
+    lookup: document.getElementById("nominatimLookupPanel"),
+    status: document.getElementById("nominatimStatusPanel"),
+    details: document.getElementById("nominatimDetailsPanel"),
+  },
+  nominatimSearchQuery: document.getElementById("nominatimSearchQuery"),
+  nominatimReverseLat: document.getElementById("nominatimReverseLat"),
+  nominatimReverseLon: document.getElementById("nominatimReverseLon"),
+  nominatimLookupIds: document.getElementById("nominatimLookupIds"),
+  nominatimDetailsPlaceId: document.getElementById("nominatimDetailsPlaceId"),
+  nominatimSearchRun: document.getElementById("nominatimSearchRun"),
+  nominatimReverseRun: document.getElementById("nominatimReverseRun"),
+  nominatimReverseUseLatest: document.getElementById("nominatimReverseUseLatest"),
+  nominatimLookupRun: document.getElementById("nominatimLookupRun"),
+  nominatimStatusRun: document.getElementById("nominatimStatusRun"),
+  nominatimDetailsRun: document.getElementById("nominatimDetailsRun"),
+  nominatimDetailsPolicyNote: document.getElementById("nominatimDetailsPolicyNote"),
+  nominatimRequestStateValue: document.getElementById("nominatimRequestStateValue"),
+  nominatimRequestEndpointValue: document.getElementById("nominatimRequestEndpointValue"),
+  nominatimRequestSourceValue: document.getElementById("nominatimRequestSourceValue"),
+  nominatimRequestUrlValue: document.getElementById("nominatimRequestUrlValue"),
+  nominatimResponseOutput: document.getElementById("nominatimResponseOutput"),
   currentIntervalValue: document.getElementById("currentIntervalValue"),
   effectiveHzValue: document.getElementById("effectiveHzValue"),
   sampleCountValue: document.getElementById("sampleCountValue"),
@@ -132,6 +165,8 @@ const state = createGpsRateState({
   keepAwakeRequested: loadBoolean(STORAGE_KEYS.keepAwake, false),
   notes: loadText(STORAGE_KEYS.notes, ""),
   lastSavedSummary: normalizeStoredSummary(loadJson(STORAGE_KEYS.lastSummary)),
+  nominatimBaseUrl: loadText(STORAGE_KEYS.nominatimBaseUrl, NOMINATIM_DEFAULT_BASE_URL),
+  nominatimActiveApi: loadText(STORAGE_KEYS.nominatimActiveApi, "search"),
 });
 
 const renderer = createGpsRateRenderer({

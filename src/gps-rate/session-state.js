@@ -4,6 +4,8 @@ export function createGpsRateState({
   keepAwakeRequested,
   notes,
   lastSavedSummary,
+  nominatimBaseUrl,
+  nominatimActiveApi,
 }) {
   return {
     permissionState: "unknown",
@@ -25,6 +27,21 @@ export function createGpsRateState({
     actionNoticeTimerId: null,
     uiTimerId: null,
     currentSummary: null,
+    nominatim: {
+      baseUrl: typeof nominatimBaseUrl === "string" && nominatimBaseUrl ? nominatimBaseUrl : "https://nominatim.openstreetmap.org",
+      activeApi: typeof nominatimActiveApi === "string" && nominatimActiveApi ? nominatimActiveApi : "search",
+      searchQuery: "",
+      reverseLat: "",
+      reverseLon: "",
+      lookupIds: "",
+      detailsPlaceId: "",
+      isLoading: false,
+      requestState: { key: "gpsRateNominatimIdle", params: null, rawText: null },
+      requestUrl: "",
+      requestSourceKey: null,
+      lastEndpointKey: null,
+      responseText: "",
+    },
   };
 }
 
