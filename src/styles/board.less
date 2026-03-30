@@ -488,14 +488,15 @@ label{
 
 .size-label{
     justify-content: flex-start;
-    gap: 12px;
-    min-width: clamp(300px, 34vw, 470px);
+    gap: 10px;
+    min-width: clamp(280px, 31vw, 430px);
     padding-right: 12px;
     white-space: nowrap;
 }
 
 .size-label input[type="range"]{
-    flex: 1 1 auto;
+    flex: 0 1 clamp(92px, 12vw, 132px);
+    width: clamp(92px, 12vw, 132px);
     min-width: 0;
 }
 
@@ -565,15 +566,15 @@ label{
 /* Presets line up like a compact inline group */
 .swatches{
     display:flex;
-    gap:8px;
+    gap:11px;
     align-items:center;
     flex: 0 0 auto;
 }
 
 /* Slightly tighter so it feels like an embedded control */
 .swatch{
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     padding: 0;
     border-radius: 999px;
     border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
@@ -798,7 +799,7 @@ canvas{
 
   .size-label{
     width: auto;
-    min-width: clamp(260px, 34vw, 420px);
+    min-width: clamp(240px, 31vw, 390px);
     max-width: none;
     flex: 1 1 auto;
     display: flex;
@@ -820,13 +821,13 @@ canvas{
   .size-label .swatches{
     flex-wrap: nowrap;
     justify-content: flex-end;
-    gap: 6px;
+    gap: 9px;
     margin-left: auto;
   }
 
   .size-label .swatch{
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
   }
 
   .board-canvas-meta{
@@ -879,12 +880,12 @@ canvas{
   }
 
   .size-label .swatches{
-    gap: 5px;
+    gap: 8px;
   }
 
   .size-label .swatch{
-    width: 13px;
-    height: 13px;
+    width: 15px;
+    height: 15px;
   }
 }
 
