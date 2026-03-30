@@ -22,6 +22,7 @@ applyTranslations();
 
 const elements = {
   langToggle: document.getElementById("langToggle"),
+  langToggleButtons: Array.from(document.querySelectorAll("[data-lang-toggle], #langToggle")),
   pageDescriptionMeta: document.querySelector('meta[name="description"]'),
   toolsMenuBtn: document.getElementById("gpsRateToolsMenuBtn"),
   toolsMenuList: document.getElementById("gpsRateToolsMenuList"),

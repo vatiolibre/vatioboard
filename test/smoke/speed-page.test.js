@@ -110,6 +110,7 @@ describe("speed.html smoke", () => {
 
     expect(document.getElementById("speedToolsMenuList").hidden).toBe(false);
     expect(document.getElementById("speedToolsMenuBtn").getAttribute("aria-expanded")).toBe("true");
+    expect(document.getElementById("speedLangToggleMenu").textContent).toBe("EN");
     document.getElementById("quickAlertConfig").click();
     await flushTasks();
     expect(document.getElementById("speedAlertPanel").hidden).toBe(false);

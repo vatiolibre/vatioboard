@@ -35,6 +35,7 @@ applyTranslations();
 
 const elements = {
   langToggle: document.getElementById("langToggle"),
+  langToggleButtons: Array.from(document.querySelectorAll("[data-lang-toggle], #langToggle")),
   pageDescriptionMeta: document.querySelector('meta[name="description"]'),
   replaySessionChip: document.getElementById("replaySessionChip"),
   replayAxisButtons: Array.from(document.querySelectorAll(".replay-axis-btn")),
@@ -879,9 +880,9 @@ export function waitForReplaySelection() {
 function syncLanguage() {
   applyTranslations();
   updatePageMeta();
-  if (elements.langToggle) {
-    elements.langToggle.textContent = getLang().toUpperCase();
-  }
+  elements.langToggleButtons.forEach((button) => {
+    button.textContent = getLang().toUpperCase();
+  });
   renderSessionState();
   renderPlaybackButtons();
   renderActionIcons();
@@ -895,8 +896,10 @@ function syncLanguage() {
 }
 
 function bindEvents() {
-  elements.langToggle?.addEventListener("click", () => {
-    toggleLang();
+  elements.langToggleButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      toggleLang();
+    });
   });
 
   bindMenuNavigation(elements.openReplaySpeedMenu, "/speed");
@@ -1045,9 +1048,9 @@ async function init() {
   updatePageMeta();
   renderSessionStateView();
 
-  if (elements.langToggle) {
-    elements.langToggle.textContent = getLang().toUpperCase();
-  }
+  elements.langToggleButtons.forEach((button) => {
+    button.textContent = getLang().toUpperCase();
+  });
 
   renderSessionState();
   renderAxisButtons();

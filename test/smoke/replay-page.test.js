@@ -196,6 +196,10 @@ describe("replay.html smoke", () => {
     expect(document.querySelector("#replayAxisDistance .btn-icon svg")).toBeTruthy();
     expect(document.getElementById("replayToolsMenuBtn").getAttribute("aria-label")).toBe("Pages");
     expect(document.querySelector("#replayToolsMenuBtn .btn-icon svg")).toBeTruthy();
+    document.getElementById("replayToolsMenuBtn").click();
+    await flushTasks();
+    expect(document.getElementById("replayToolsMenuList").hidden).toBe(false);
+    expect(document.getElementById("replayLangToggleMenu").textContent).toBe("EN");
     expect(document.querySelector("#replayPlayPause .replay-action-icon svg")).toBeTruthy();
     expect(document.getElementById("replayPlayPause").getAttribute("aria-label")).toBe("Play");
     expect(document.querySelector("#replayRestart .replay-action-icon svg")).toBeTruthy();

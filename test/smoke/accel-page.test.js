@@ -214,6 +214,7 @@ describe("accel.html smoke", () => {
     await flushTasks();
     expect(document.getElementById("accelToolsMenuList").hidden).toBe(false);
     expect(document.getElementById("accelToolsMenuBtn").getAttribute("aria-expanded")).toBe("true");
+    expect(document.getElementById("accelLangToggleMenu").textContent).toBe("EN");
     document.getElementById("accelToolbarSetup").click();
     await flushTasks();
     expect(document.getElementById("setupPanel").hidden).toBe(false);

@@ -19,6 +19,10 @@ describe("gps-rate.html smoke", () => {
 
     expect(document.getElementById("gpsRateToolsMenuBtn").getAttribute("aria-label")).toBe("Pages");
     expect(document.querySelector("#gpsRateToolsMenuBtn .btn-icon svg")).toBeTruthy();
+    document.getElementById("gpsRateToolsMenuBtn").click();
+    await flushTasks();
+    expect(document.getElementById("gpsRateToolsMenuList").hidden).toBe(false);
+    expect(document.getElementById("gpsRateLangToggleMenu").textContent).toBe("EN");
     expect(document.querySelector("#gpsRateStartQuick .btn-icon svg")).toBeTruthy();
 
     document.getElementById("gpsRateStartQuick").click();

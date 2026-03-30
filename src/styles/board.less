@@ -410,6 +410,17 @@ header{
     display: none;
 }
 
+.compact-tools-menu-brand{
+    display: none;
+}
+
+.compact-tools-menu-logo{
+    width: auto;
+    max-width: calc(100% - 42px);
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
 .tool-buttons{
     display: none;
 }
@@ -766,7 +777,27 @@ canvas{
     border-bottom: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
   }
 
+  .compact-tools-menu-brand{
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    padding: 2px 2px 8px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  }
+
   .board-tools-menu-brand .dot{
+    width: 8px;
+    height: 8px;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--success-bg) 22%, transparent);
+  }
+
+  .compact-tools-menu-brand .dot{
     width: 8px;
     height: 8px;
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--success-bg) 22%, transparent);
@@ -780,6 +811,24 @@ canvas{
   }
 
   .board-tools-menu-brand .lang-toggle{
+    margin-left: auto;
+    flex: 0 0 auto;
+    width: 28px;
+    min-width: 28px;
+    max-width: 28px;
+    height: 24px;
+    padding: 0 0 0 5px;
+    display: inline-grid;
+    place-items: center;
+    text-align: center;
+    text-indent: 0;
+    font-size: 9px;
+    font-weight: 800;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .compact-tools-menu-brand .lang-toggle{
     margin-left: auto;
     flex: 0 0 auto;
     width: 28px;

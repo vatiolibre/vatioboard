@@ -445,16 +445,18 @@ export function createGpsRateController({
   function syncLanguage() {
     applyTranslations();
     renderer.updatePageMeta();
-    if (elements.langToggle) {
-      elements.langToggle.textContent = getLang().toUpperCase();
-    }
+    elements.langToggleButtons.forEach((button) => {
+      button.textContent = getLang().toUpperCase();
+    });
     renderer.renderActionNotice();
     refreshView();
   }
 
   function bindEvents() {
-    elements.langToggle.addEventListener("click", () => {
-      toggleLang();
+    elements.langToggleButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        toggleLang();
+      });
     });
     bindMenuNavigation(elements.openSpeedMenu, "/speed");
     bindMenuNavigation(elements.openAccelMenu, "/accel");
@@ -489,7 +491,9 @@ export function createGpsRateController({
 
   function init() {
     renderer.updatePageMeta();
-    elements.langToggle.textContent = getLang().toUpperCase();
+    elements.langToggleButtons.forEach((button) => {
+      button.textContent = getLang().toUpperCase();
+    });
     elements.sessionNotes.value = state.notes;
     renderer.renderActionNotice();
     refreshView();

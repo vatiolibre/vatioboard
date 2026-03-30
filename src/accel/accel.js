@@ -99,6 +99,7 @@ export const initPromise = (function () {
 
   var elements = {
     langToggle: document.getElementById("langToggle"),
+    langToggleButtons: Array.from(document.querySelectorAll("[data-lang-toggle], #langToggle")),
     pageDescriptionMeta: document.querySelector('meta[name="description"]'),
     toolsMenuBtn: document.getElementById("accelToolsMenuBtn"),
     toolsMenuList: document.getElementById("accelToolsMenuList"),
@@ -500,11 +501,15 @@ export const initPromise = (function () {
     if (elements.pageDescriptionMeta) elements.pageDescriptionMeta.setAttribute("content", t("accelPageDescription"));
     document.documentElement.lang = getLang();
     applySharedTranslations();
-    if (elements.langToggle) elements.langToggle.textContent = getLang().toUpperCase();
+    elements.langToggleButtons.forEach(function (button) {
+      button.textContent = getLang().toUpperCase();
+    });
   }
 
   function bindEvents() {
-    elements.langToggle.addEventListener("click", handleLangToggle);
+    elements.langToggleButtons.forEach(function (button) {
+      button.addEventListener("click", handleLangToggle);
+    });
     bindMenuNavigation(elements.openSpeedMenu, "/speed");
     bindMenuNavigation(elements.openGpsLabMenu, "/gps-rate");
     bindMenuNavigation(elements.openBoardMenu, "/");

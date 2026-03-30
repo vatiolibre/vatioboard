@@ -73,6 +73,7 @@ import {
 const elements = {
   gaugeCard: document.querySelector(".gauge-card"),
   langToggle: document.getElementById("langToggle"),
+  langToggleButtons: Array.from(document.querySelectorAll("[data-lang-toggle], #langToggle")),
   toolsMenuBtn: document.getElementById("speedToolsMenuBtn"),
   toolsMenuList: document.getElementById("speedToolsMenuList"),
   openReplayMenu: document.getElementById("openSpeedReplayMenu"),
@@ -1281,9 +1282,9 @@ function stopRenderLoop() {
 
 function syncLanguage() {
   updatePageMeta();
-  if (elements.langToggle) {
-    elements.langToggle.textContent = getLang().toUpperCase();
-  }
+  elements.langToggleButtons.forEach((button) => {
+    button.textContent = getLang().toUpperCase();
+  });
   speedRenderer.syncLanguage({
     applyTranslations,
     renderPrimaryView,
@@ -1293,8 +1294,10 @@ function syncLanguage() {
 }
 
 function bindEvents() {
-  elements.langToggle?.addEventListener("click", () => {
-    toggleLang();
+  elements.langToggleButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      toggleLang();
+    });
   });
   bindMenuNavigation(elements.openReplayMenu, "/replay.html");
   bindMenuNavigation(elements.openReplayQuick, "/replay.html");
@@ -1469,9 +1472,9 @@ async function init() {
   await persistReplaySessionNow();
   updatePageMeta();
 
-  if (elements.langToggle) {
-    elements.langToggle.textContent = getLang().toUpperCase();
-  }
+  elements.langToggleButtons.forEach((button) => {
+    button.textContent = getLang().toUpperCase();
+  });
 
   for (const button of elements.primaryViewButtons) {
     button.setAttribute("aria-pressed", button.dataset.primaryView === state.primaryView ? "true" : "false");
