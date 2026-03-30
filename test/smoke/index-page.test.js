@@ -29,6 +29,7 @@ describe("index.html smoke", () => {
       canonical: "https://vatioboard.com/",
     });
     expect(document.documentElement.lang).toBe("en");
+    expect(document.getElementById("langToggleMenu").textContent).toBe("EN");
     expect(document.getElementById("pen").getAttribute("aria-label")).toBe("Pen");
     expect(document.querySelector("#pen .btn-icon svg")).toBeTruthy();
     expect(document.getElementById("erase").getAttribute("aria-label")).toBe("Eraser");
@@ -64,6 +65,15 @@ describe("index.html smoke", () => {
 
     document.getElementById("sizePreview").click();
     expect(document.getElementById("colorPopup").hidden).toBe(false);
+    document.getElementById("erase").click();
+    expect(document.getElementById("erase").getAttribute("aria-pressed")).toBe("true");
+    document.querySelector('#swatches .swatch')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(document.getElementById("pen").getAttribute("aria-pressed")).toBe("true");
+    document.getElementById("erase").click();
+    expect(document.getElementById("erase").getAttribute("aria-pressed")).toBe("true");
+    document.getElementById("size").value = "10";
+    document.getElementById("size").dispatchEvent(new Event("input", { bubbles: true }));
+    expect(document.getElementById("pen").getAttribute("aria-pressed")).toBe("true");
 
     const canvas = document.getElementById("pad");
     const pointerDown = new MouseEvent("pointerdown", { bubbles: true, clientX: 12, clientY: 12 });
@@ -74,6 +84,7 @@ describe("index.html smoke", () => {
     Object.defineProperty(pointerUp, "pointerId", { value: 1 });
 
     canvas.dispatchEvent(pointerDown);
+    expect(document.getElementById("toolsMenuList").hidden).toBe(true);
     canvas.dispatchEvent(pointerMove);
     canvas.dispatchEvent(pointerUp);
 
@@ -92,5 +103,10 @@ describe("index.html smoke", () => {
 
     document.getElementById("openCalc").click();
     expect(document.querySelector(".calc-panel").hidden).toBe(false);
+
+    document.getElementById("langToggleMenu").click();
+    expect(document.documentElement.lang).toBe("es");
+    expect(document.getElementById("langToggle").textContent).toBe("ES");
+    expect(document.getElementById("langToggleMenu").textContent).toBe("ES");
   });
 });

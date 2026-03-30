@@ -406,6 +406,10 @@ header{
     justify-content: flex-start;
 }
 
+.board-tools-menu-brand{
+    display: none;
+}
+
 .tool-buttons{
     display: none;
 }
@@ -654,14 +658,14 @@ main{
 .canvas-shell{
     flex:1;
     display:flex;
-    padding: 12px;
+    padding: 0;
     min-height: 0;
 }
 
 .canvas-frame{
     flex: 1;
     border:1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: 0;
     overflow:hidden;
     background: var(--canvas-bg);
     min-height: 0;
@@ -702,12 +706,11 @@ canvas{
     background: var(--canvas-bg);
 }
 
-/* Small screens: extra polish
-   - Brand goes on top
-   - Tools go below (no "two columns")
-   - Tighter header padding + smaller logo for more canvas space
+/* Compact tablet/small-laptop header:
+   - Brand moves into the pages menu
+   - Main action strip + size control stay on one row
 */
-@media (max-width: 720px){
+@media (max-width: 900px){
   .header-inner{
     flex-direction: column;
     align-items: stretch;   /* brand + toolbar full width */
@@ -719,10 +722,7 @@ canvas{
   }
 
   .brand{
-    order: 2;
-    width: 100%;
-    justify-content: space-between;
-    gap: 8px;
+    display: none;
   }
 
   .dot{
@@ -740,7 +740,7 @@ canvas{
     order: 1;
     width: 100%;
     margin-left: 0;         /* remove desktop offset */
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     overflow-x: visible;
     gap: 6px;
   }
@@ -751,25 +751,82 @@ canvas{
     --board-action-icon-size: 18px;
   }
 
-  .size-label{
+  .board-tools-menu-brand{
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    gap: 6px;
     width: 100%;
     min-width: 0;
+    overflow: hidden;
+    padding: 2px 2px 8px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  }
+
+  .board-tools-menu-brand .dot{
+    width: 8px;
+    height: 8px;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--success-bg) 22%, transparent);
+  }
+
+  .board-tools-menu-logo{
+    width: auto;
+    max-width: calc(100% - 42px);
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .board-tools-menu-brand .lang-toggle{
+    margin-left: auto;
+    flex: 0 0 auto;
+    width: 28px;
+    min-width: 28px;
+    max-width: 28px;
+    height: 24px;
+    padding: 0 0 0 5px;
+    display: inline-grid;
+    place-items: center;
+    text-align: center;
+    text-indent: 0;
+    font-size: 9px;
+    font-weight: 800;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .size-label{
+    width: auto;
+    min-width: clamp(260px, 34vw, 420px);
+    max-width: none;
+    flex: 1 1 auto;
+    display: flex;
     justify-content: flex-start;
-    flex-wrap: wrap;
-    row-gap: 8px;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 10px;
+    white-space: nowrap;
+    padding-right: 12px;
   }
 
   .size-label input[type="range"]{
-    width: 100%;
+    width: auto;
     max-width: none;
-    flex-basis: 100%;
-    order: 2;
+    min-width: 0;
+    flex: 1 1 auto;
   }
 
   .size-label .swatches{
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     justify-content: flex-end;
+    gap: 6px;
     margin-left: auto;
+  }
+
+  .size-label .swatch{
+    width: 14px;
+    height: 14px;
   }
 
   .board-canvas-meta{
@@ -777,6 +834,57 @@ canvas{
     bottom: 10px;
     max-width: min(56vw, 200px);
     padding: 7px 8px;
+  }
+}
+
+@media (max-width: 720px){
+  .toolbar{
+    flex-wrap: wrap;
+  }
+
+  .size-label{
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    flex: 0 0 100%;
+    display: grid;
+    grid-template-columns: 52px minmax(72px, 1fr) auto;
+    justify-content: stretch;
+    column-gap: 10px;
+    row-gap: 0;
+    white-space: normal;
+    padding-right: 10px;
+  }
+
+  .size-label input[type="range"]{
+    width: 100%;
+    flex: 1 1 auto;
+  }
+
+  .size-label .swatches{
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 430px){
+  .size-label{
+    grid-template-columns: 48px minmax(56px, 1fr) auto;
+    column-gap: 8px;
+    padding-right: 8px;
+  }
+
+  .size-preview{
+    width: 48px;
+    min-width: 48px;
+  }
+
+  .size-label .swatches{
+    gap: 5px;
+  }
+
+  .size-label .swatch{
+    width: 13px;
+    height: 13px;
   }
 }
 

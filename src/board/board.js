@@ -26,11 +26,21 @@ import {
 // Apply translations immediately
 applyTranslations();
 
-const langToggleBtn = document.getElementById("langToggle");
-langToggleBtn.textContent = getLang().toUpperCase();
-langToggleBtn.addEventListener("click", () => {
-  const newLang = toggleLang();
-  langToggleBtn.textContent = newLang.toUpperCase();
+const langToggleButtons = Array.from(document.querySelectorAll("[data-lang-toggle], #langToggle"));
+
+function syncLangToggleButtons(langCode){
+  const nextLabel = String(langCode || getLang()).toUpperCase();
+  langToggleButtons.forEach((button) => {
+    button.textContent = nextLabel;
+  });
+}
+
+syncLangToggleButtons(getLang());
+langToggleButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const newLang = toggleLang();
+    syncLangToggleButtons(newLang);
+  });
 });
 
 // Toolbar buttons
@@ -210,10 +220,22 @@ bindNavigation(openAccelMenuBtn, "/accel");
 
     function setStatus(s){ statusEl.textContent = s; }
 
-    function setActive(){
+    function setActive(options = {}){
+      const shouldAnnounce = options.announce !== false;
       penBtn.setAttribute("aria-pressed", tool === "pen" ? "true" : "false");
       eraseBtn.setAttribute("aria-pressed", tool === "eraser" ? "true" : "false");
-      setStatus(tool === "pen" ? t("pen") : t("eraser"));
+      if (shouldAnnounce) {
+        setStatus(tool === "pen" ? t("pen") : t("eraser"));
+      }
+    }
+
+    function activatePenTool(options = {}){
+      if (tool === "pen") {
+        if (options.announce) setActive(options);
+        return;
+      }
+      tool = "pen";
+      setActive(options);
     }
 
     function syncSizePreview(){
@@ -221,6 +243,7 @@ bindNavigation(openAccelMenuBtn, "/accel");
       const sizeValue = Math.max(2, Math.min(22, Number(sizeEl.value) || 6));
       sizePreview.style.setProperty("--board-size-preview", `${sizeValue}px`);
       sizeEl.setAttribute("aria-valuetext", `${sizeValue}`);
+      activatePenTool({ announce: true });
     }
 
     function clonePoint(point){
@@ -545,6 +568,7 @@ bindNavigation(openAccelMenuBtn, "/accel");
       if(!h) return;
       inkRaw = h;
       localStorage.setItem(LS_INK_RAW, inkRaw);
+      activatePenTool({ announce: false });
       applyInk();
 
       // NEW: keep popup controls aligned
@@ -573,6 +597,7 @@ bindNavigation(openAccelMenuBtn, "/accel");
     }
 
     function start(ev){
+      toolsMenu.close();
       drawing = true;
       canvas.setPointerCapture(ev.pointerId);
       last = pos(ev);
