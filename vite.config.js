@@ -5,7 +5,9 @@ export default defineConfig({
   base: "/",
   server: {
     host: true,
-    allowedHosts: ["debug.vatiolibre.com", "vatioboard.com", ".vatiolibre.com"],
+    port: 5174,
+    strictPort: true,
+    allowedHosts: ["vatioboard.com", ".vatioboard.com", ".vatiolibre.com"],
   },
   build: {
     rollupOptions: {
@@ -16,6 +18,7 @@ export default defineConfig({
         replay: resolve(__dirname, "replay.html"),
         gpsRate: resolve(__dirname, "gps-rate.html"),
         accel: resolve(__dirname, "accel.html"),
+        login: resolve(__dirname, "login.html"),
       },
     },
   },

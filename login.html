@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>VatioBoard Frappe Login Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 760px;
+      margin: 40px auto;
+      padding: 0 16px;
+      line-height: 1.5;
+    }
+    .card {
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    input, button {
+      width: 100%;
+      padding: 10px 12px;
+      margin-top: 8px;
+      margin-bottom: 14px;
+      box-sizing: border-box;
+      font-size: 14px;
+    }
+    button {
+      cursor: pointer;
+    }
+    pre {
+      background: #f7f7f7;
+      border: 1px solid #eee;
+      border-radius: 8px;
+      padding: 12px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .ok { color: green; font-weight: bold; }
+    .err { color: #b00020; font-weight: bold; }
+    .muted { color: #666; }
+  </style>
+</head>
+<body>
+  <h1>Frappe Login Test</h1>
+
+  <div class="card">
+    <p><strong>Frontend origin:</strong> <span id="frontend-origin"></span></p>
+    <p><strong>Detected API base:</strong> <span id="api-base"></span></p>
+    <p class="muted">
+      This page logs into the Frappe backend using browser cookies and then checks the current session.
+    </p>
+  </div>
+
+  <div class="card">
+    <label for="usr">Email / Username</label>
+    <input id="usr" type="text" autocomplete="username" placeholder="your@email.com" />
+
+    <label for="pwd">Password</label>
+    <input id="pwd" type="password" autocomplete="current-password" placeholder="Password" />
+
+    <button id="login-btn">Login</button>
+    <button id="whoami-btn" type="button">Check Current Session</button>
+    <button id="logout-btn" type="button">Logout</button>
+  </div>
+
+  <div class="card">
+    <div id="status">Ready.</div>
+    <pre id="output"></pre>
+  </div>
+
+  <script>
+    function getEnvironmentConfig() {
+      const host = window.location.hostname;
+
+      // Production
+      if (host === "vatioboard.com" || host === "www.vatioboard.com") {
+        return {
+          frontendOrigin: window.location.origin,
+          apiBase: "https://api.vatioboard.com"
+        };
+      }
+
+      // Development
+      if (host === "dev.vatioboard.com") {
+        return {
+          frontendOrigin: window.location.origin,
+          apiBase: "https://api.dev.vatioboard.com"
+        };
+      }
+
+      // Local fallback for testing the page from localhost
+      return {
+        frontendOrigin: window.location.origin,
+        apiBase: "https://api.dev.vatioboard.com"
+      };
+    }
+
+    const config = getEnvironmentConfig();
+    const statusEl = document.getElementById("status");
+    const outputEl = document.getElementById("output");
+
+    document.getElementById("frontend-origin").textContent = config.frontendOrigin;
+    document.getElementById("api-base").textContent = config.apiBase;
+
+    function setStatus(message, isError = false) {
+      statusEl.innerHTML = isError
+        ? `<span class="err">${message}</span>`
+        : `<span class="ok">${message}</span>`;
+    }
+
+    function setOutput(data) {
+      if (typeof data === "string") {
+        outputEl.textContent = data;
+      } else {
+        outputEl.textContent = JSON.stringify(data, null, 2);
+      }
+    }
+
+    async function safeJson(response) {
+      const text = await response.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        return { raw: text };
+      }
+    }
+
+    async function login() {
+      const usr = document.getElementById("usr").value.trim();
+      const pwd = document.getElementById("pwd").value;
+
+      if (!usr || !pwd) {
+        setStatus("Username and password are required.", true);
+        return;
+      }
+
+      setStatus("Logging in...");
+      setOutput("");
+
+      try {
+        // Use x-www-form-urlencoded to keep it simple with Frappe login
+        const body = new URLSearchParams();
+        body.append("usr", usr);
+        body.append("pwd", pwd);
+
+        const response = await fetch(`${config.apiBase}/api/method/login`, {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded"
+          },
+          body: body.toString()
+        });
+
+        const data = await safeJson(response);
+
+        if (!response.ok) {
+          setStatus(`Login failed (${response.status})`, true);
+          setOutput(data);
+          return;
+        }
+
+        setStatus("Login request succeeded. Checking session...");
+        setOutput(data);
+
+        await whoAmI();
+      } catch (error) {
+        setStatus("Network or CORS error during login.", true);
+        setOutput({
+          message: error.message,
+          hint: "Check CORS, cookie settings, and nginx proxy configuration."
+        });
+      }
+    }
+
+    async function whoAmI() {
+      setStatus("Checking current session...");
+      setOutput("");
+
+      try {
+        const response = await fetch(`${config.apiBase}/api/method/frappe.auth.get_logged_user`, {
+          method: "GET",
+          credentials: "include"
+        });
+
+        const data = await safeJson(response);
+
+        if (!response.ok) {
+          setStatus(`Session check failed (${response.status})`, true);
+          setOutput(data);
+          return;
+        }
+
+        setStatus("Session is active.");
+        setOutput(data);
+      } catch (error) {
+        setStatus("Network or CORS error during session check.", true);
+        setOutput({
+          message: error.message
+        });
+      }
+    }
+
+    async function logout() {
+      setStatus("Logging out...");
+      setOutput("");
+
+      try {
+        const response = await fetch(`${config.apiBase}/api/method/logout`, {
+          method: "GET",
+          credentials: "include"
+        });
+
+        const data = await safeJson(response);
+
+        if (!response.ok) {
+          setStatus(`Logout failed (${response.status})`, true);
+          setOutput(data);
+          return;
+        }
+
+        setStatus("Logged out.");
+        setOutput(data);
+      } catch (error) {
+        setStatus("Network or CORS error during logout.", true);
+        setOutput({
+          message: error.message
+        });
+      }
+    }
+
+    document.getElementById("login-btn").addEventListener("click", login);
+    document.getElementById("whoami-btn").addEventListener("click", whoAmI);
+    document.getElementById("logout-btn").addEventListener("click", logout);
+  </script>
+</body>
+</html>
