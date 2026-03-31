@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>VatioBoard Frappe Login Test</title>
+  <title>VatioBoard Login Test</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -44,13 +44,13 @@
   </style>
 </head>
 <body>
-  <h1>Frappe Login Test</h1>
+  <h1>Login Test</h1>
 
   <div class="card">
     <p><strong>Frontend origin:</strong> <span id="frontend-origin"></span></p>
     <p><strong>Detected API base:</strong> <span id="api-base"></span></p>
     <p class="muted">
-      This page logs into the Frappe backend using browser cookies and then checks the current session.
+      This page logs into the Frappe backend using browser cookies and checks the current session.
     </p>
   </div>
 
@@ -61,7 +61,7 @@
     <label for="pwd">Password</label>
     <input id="pwd" type="password" autocomplete="current-password" placeholder="Password" />
 
-    <button id="login-btn">Login</button>
+    <button id="login-btn" type="button">Login</button>
     <button id="whoami-btn" type="button">Check Current Session</button>
     <button id="logout-btn" type="button">Logout</button>
   </div>
@@ -75,7 +75,6 @@
     function getEnvironmentConfig() {
       const host = window.location.hostname;
 
-      // Production
       if (host === "vatioboard.com" || host === "www.vatioboard.com") {
         return {
           frontendOrigin: window.location.origin,
@@ -83,7 +82,6 @@
         };
       }
 
-      // Development
       if (host === "dev.vatioboard.com") {
         return {
           frontendOrigin: window.location.origin,
@@ -91,7 +89,6 @@
         };
       }
 
-      // Local fallback for testing the page from localhost
       return {
         frontendOrigin: window.location.origin,
         apiBase: "https://api.dev.vatioboard.com"
@@ -112,11 +109,8 @@
     }
 
     function setOutput(data) {
-      if (typeof data === "string") {
-        outputEl.textContent = data;
-      } else {
-        outputEl.textContent = JSON.stringify(data, null, 2);
-      }
+      outputEl.textContent =
+        typeof data === "string" ? data : JSON.stringify(data, null, 2);
     }
 
     async function safeJson(response) {
@@ -141,7 +135,6 @@
       setOutput("");
 
       try {
-        // Use x-www-form-urlencoded to keep it simple with Frappe login
         const body = new URLSearchParams();
         body.append("usr", usr);
         body.append("pwd", pwd);
@@ -163,15 +156,13 @@
           return;
         }
 
-        setStatus("Login request succeeded. Checking session...");
+        setStatus("Login succeeded.");
         setOutput(data);
-
-        await whoAmI();
       } catch (error) {
         setStatus("Network or CORS error during login.", true);
         setOutput({
           message: error.message,
-          hint: "Check CORS, cookie settings, and nginx proxy configuration."
+          hint: "Check CORS, cookie settings, and nginx proxy config."
         });
       }
     }
@@ -181,10 +172,13 @@
       setOutput("");
 
       try {
-        const response = await fetch(`${config.apiBase}/api/method/frappe.auth.get_logged_user`, {
-          method: "GET",
-          credentials: "include"
-        });
+        const response = await fetch(
+          `${config.apiBase}/api/method/frappe.auth.get_logged_user`,
+          {
+            method: "GET",
+            credentials: "include"
+          }
+        );
 
         const data = await safeJson(response);
 
@@ -198,9 +192,7 @@
         setOutput(data);
       } catch (error) {
         setStatus("Network or CORS error during session check.", true);
-        setOutput({
-          message: error.message
-        });
+        setOutput({ message: error.message });
       }
     }
 
@@ -210,8 +202,11 @@
 
       try {
         const response = await fetch(`${config.apiBase}/api/method/logout`, {
-          method: "GET",
-          credentials: "include"
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json"
+          }
         });
 
         const data = await safeJson(response);
@@ -226,9 +221,7 @@
         setOutput(data);
       } catch (error) {
         setStatus("Network or CORS error during logout.", true);
-        setOutput({
-          message: error.message
-        });
+        setOutput({ message: error.message });
       }
     }
 
