@@ -389,7 +389,9 @@ header{
 .board-tools-menu .tools-menu-list{
     left: 0;
     right: auto;
-    min-width: 220px;
+    width: min(280px, calc(100vw - 12px));
+    min-width: min(280px, calc(100vw - 12px));
+    max-width: calc(100vw - 12px);
     border-color: color-mix(in srgb, var(--border) 92%, transparent);
     background:
       linear-gradient(
