@@ -41,6 +41,9 @@ describe("gps-rate.html smoke", () => {
     await flushTasks();
     expect(document.getElementById("gpsRateToolsMenuList").hidden).toBe(false);
     expect(document.getElementById("gpsRateLangToggleMenu").textContent).toBe("EN");
+    expect(document.querySelector("#gpsRateToolsMenuList [data-backend-auth]")).toBeTruthy();
+    expect(document.querySelector("#gpsRateToolsMenuList [data-backend-auth-signup]")?.getAttribute("href")).toBe("https://www.vatiolibre.com/login#signup");
+    expect(document.querySelector("#gpsRateToolsMenuList [data-backend-auth-forgot]")?.getAttribute("href")).toBe("https://www.vatiolibre.com/login#forgot");
     expect(document.querySelector("#gpsRateStartQuick .btn-icon svg")).toBeTruthy();
 
     document.getElementById("gpsRateStartQuick").click();
@@ -69,9 +72,13 @@ describe("gps-rate.html smoke", () => {
       await flushTasks();
     }
 
-    expect(window.fetch).toHaveBeenCalledTimes(1);
-    expect(window.fetch.mock.calls[0][0]).toContain("https://nominatim.openstreetmap.org/search?");
-    expect(window.fetch.mock.calls[0][0]).toContain("q=Bogota");
+    const searchCalls = window.fetch.mock.calls.filter(([input]) => {
+      const url = typeof input === "string" ? input : String(input?.url ?? "");
+      return url.includes("https://nominatim.openstreetmap.org/search?");
+    });
+    expect(searchCalls).toHaveLength(1);
+    expect(searchCalls[0][0]).toContain("https://nominatim.openstreetmap.org/search?");
+    expect(searchCalls[0][0]).toContain("q=Bogota");
     expect(document.getElementById("nominatimRequestSourceValue").textContent).toBe("Live request");
     expect(document.getElementById("nominatimResponseOutput").textContent).toContain("Bogota, Colombia");
 
@@ -80,7 +87,10 @@ describe("gps-rate.html smoke", () => {
       await flushTasks();
     }
 
-    expect(window.fetch).toHaveBeenCalledTimes(1);
+    expect(window.fetch.mock.calls.filter(([input]) => {
+      const url = typeof input === "string" ? input : String(input?.url ?? "");
+      return url.includes("https://nominatim.openstreetmap.org/search?");
+    })).toHaveLength(1);
     expect(document.getElementById("nominatimRequestSourceValue").textContent).toBe("Cached response");
   });
 });

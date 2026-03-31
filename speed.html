@@ -248,6 +248,51 @@
                   <span class="btn-icon" aria-hidden="true"></span>
                   <span data-i18n="openBoard">Open board</span>
                 </button>
+                <form class="backend-auth" data-backend-auth novalidate>
+                  <p class="backend-auth-title" data-i18n="authTitle">VatioLibre account</p>
+                  <p class="backend-auth-status" data-backend-auth-status role="status" aria-live="polite" data-i18n="authCheckingSession">Checking session...</p>
+                  <input
+                    class="backend-auth-input"
+                    data-backend-auth-user
+                    data-backend-auth-guest
+                    type="text"
+                    autocomplete="username"
+                    spellcheck="false"
+                    aria-label="Email / username"
+                    data-i18n-aria="authUsername"
+                    placeholder="Email / username"
+                    data-i18n-placeholder="authUsername"
+                  />
+                  <input
+                    class="backend-auth-input"
+                    data-backend-auth-password
+                    data-backend-auth-guest
+                    type="password"
+                    autocomplete="current-password"
+                    aria-label="Password"
+                    data-i18n-aria="authPassword"
+                    placeholder="Password"
+                    data-i18n-placeholder="authPassword"
+                  />
+                  <button type="submit" data-backend-auth-login data-backend-auth-guest data-i18n="authLogin">Log in</button>
+                  <button type="button" data-backend-auth-logout data-backend-auth-authenticated data-i18n="authLogout">Log out</button>
+                  <a
+                    class="backend-auth-link"
+                    data-backend-auth-guest
+                    data-backend-auth-signup
+                    href="https://www.vatiolibre.com/login#signup"
+                    rel="noreferrer"
+                    data-i18n="authCreateAccount"
+                  >Create account</a>
+                  <a
+                    class="backend-auth-link"
+                    data-backend-auth-guest
+                    data-backend-auth-forgot
+                    href="https://www.vatiolibre.com/login#forgot"
+                    rel="noreferrer"
+                    data-i18n="authForgotPassword"
+                  >Forgot password</a>
+                </form>
               </div>
             </div>
             <button

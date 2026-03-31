@@ -111,6 +111,9 @@ describe("speed.html smoke", () => {
     expect(document.getElementById("speedToolsMenuList").hidden).toBe(false);
     expect(document.getElementById("speedToolsMenuBtn").getAttribute("aria-expanded")).toBe("true");
     expect(document.getElementById("speedLangToggleMenu").textContent).toBe("EN");
+    expect(document.querySelector("#speedToolsMenuList [data-backend-auth]")).toBeTruthy();
+    expect(document.querySelector("#speedToolsMenuList [data-backend-auth-signup]")?.getAttribute("href")).toBe("https://www.vatiolibre.com/login#signup");
+    expect(document.querySelector("#speedToolsMenuList [data-backend-auth-forgot]")?.getAttribute("href")).toBe("https://www.vatiolibre.com/login#forgot");
     document.getElementById("quickAlertConfig").click();
     await flushTasks();
     expect(document.getElementById("speedAlertPanel").hidden).toBe(false);

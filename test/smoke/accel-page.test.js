@@ -215,6 +215,9 @@ describe("accel.html smoke", () => {
     expect(document.getElementById("accelToolsMenuList").hidden).toBe(false);
     expect(document.getElementById("accelToolsMenuBtn").getAttribute("aria-expanded")).toBe("true");
     expect(document.getElementById("accelLangToggleMenu").textContent).toBe("EN");
+    expect(document.querySelector("#accelToolsMenuList [data-backend-auth]")).toBeTruthy();
+    expect(document.querySelector("#accelToolsMenuList [data-backend-auth-signup]")?.getAttribute("href")).toBe("https://www.vatiolibre.com/login#signup");
+    expect(document.querySelector("#accelToolsMenuList [data-backend-auth-forgot]")?.getAttribute("href")).toBe("https://www.vatiolibre.com/login#forgot");
     document.getElementById("accelToolbarSetup").click();
     await flushTasks();
     expect(document.getElementById("setupPanel").hidden).toBe(false);

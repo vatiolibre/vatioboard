@@ -1,9 +1,11 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import "@stanko/dual-range-input/dist/index.css";
 import "../styles/accel.less";
+import "../styles/backend-auth.less";
 import Chart from "chart.js/auto";
 import DualRangeInput from "@stanko/dual-range-input";
 import { applyTranslations as applySharedTranslations, getLang, t as sharedT, toggleLang } from "../i18n.js";
+import { initBackendAuthControllers } from "../shared/backend-auth.js";
 import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
 import {
@@ -88,6 +90,8 @@ import {
 } from "./storage.js";
 
 export const initPromise = (function () {
+  initBackendAuthControllers();
+
   var finishAudio = typeof Audio === "function" ? new Audio(FINISH_SOUND_URL) : null;
   var finishAudioPrimePromise = null;
   var finishAudioPrimed = false;

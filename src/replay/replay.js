@@ -1,6 +1,7 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import "@stanko/dual-range-input/dist/index.css";
 import "../styles/replay.less";
+import "../styles/backend-auth.less";
 import DualRangeInput from "@stanko/dual-range-input";
 import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
 import {
@@ -16,6 +17,7 @@ import {
   IconTime,
   IconWorld,
 } from "../icons.js";
+import { initBackendAuthControllers } from "../shared/backend-auth.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
 import {
   getReplayAxisRange,
@@ -32,6 +34,7 @@ import { createReplayMapController } from "./map.js";
 import { loadReplaySelection, removeReplayRecording } from "./session.js";
 
 applyTranslations();
+initBackendAuthControllers();
 
 const elements = {
   langToggle: document.getElementById("langToggle"),

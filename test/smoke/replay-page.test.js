@@ -200,6 +200,9 @@ describe("replay.html smoke", () => {
     await flushTasks();
     expect(document.getElementById("replayToolsMenuList").hidden).toBe(false);
     expect(document.getElementById("replayLangToggleMenu").textContent).toBe("EN");
+    expect(document.querySelector("#replayToolsMenuList [data-backend-auth]")).toBeTruthy();
+    expect(document.querySelector("#replayToolsMenuList [data-backend-auth-signup]")?.getAttribute("href")).toBe("https://www.vatiolibre.com/login#signup");
+    expect(document.querySelector("#replayToolsMenuList [data-backend-auth-forgot]")?.getAttribute("href")).toBe("https://www.vatiolibre.com/login#forgot");
     expect(document.querySelector("#replayPlayPause .replay-action-icon svg")).toBeTruthy();
     expect(document.getElementById("replayPlayPause").getAttribute("aria-label")).toBe("Play");
     expect(document.querySelector("#replayRestart .replay-action-icon svg")).toBeTruthy();

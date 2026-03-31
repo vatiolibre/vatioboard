@@ -2,7 +2,9 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import "../styles/speed.less";
 import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
 import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
+import { initBackendAuthControllers } from "../shared/backend-auth.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
+import "../styles/backend-auth.less";
 import { IconAccel, IconBoard, IconGpsLab, IconPages, IconReplay, IconRestart, IconSettings } from "../icons.js";
 import {
   archiveReplaySession,
@@ -151,6 +153,8 @@ const elements = {
   globeMount: document.getElementById("speedGlobe"),
   globeStatus: document.getElementById("globeStatus"),
 };
+
+initBackendAuthControllers();
 
 const toolsMenu = initToolsMenu({
   button: elements.toolsMenuBtn,

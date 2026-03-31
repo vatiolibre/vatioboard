@@ -1,5 +1,7 @@
 import "../styles/gps-rate.less";
+import "../styles/backend-auth.less";
 import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
+import { initBackendAuthControllers } from "../shared/backend-auth.js";
 import { loadBoolean, loadJson, loadText, saveJson, saveText } from "../shared/storage.js";
 import { NOMINATIM_DEFAULT_BASE_URL } from "../shared/nominatim.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
@@ -20,6 +22,7 @@ import { createGpsRateState } from "./session-state.js";
 import { normalizeStoredSummary } from "./summary.js";
 
 applyTranslations();
+initBackendAuthControllers();
 
 const elements = {
   langToggle: document.getElementById("langToggle"),
