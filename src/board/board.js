@@ -201,6 +201,11 @@ bindNavigation(openAccelMenuBtn, "/accel");
     colorPopup?.addEventListener("click", (e) => {
     if (e.target === colorPopup) closeColorPopup();
     });
+    swatchesEl?.addEventListener("click", (event) => {
+      if (!event.target?.closest?.(".swatch")) return;
+      event.preventDefault();
+      event.stopPropagation();
+    });
 
     [rRange, gRange, bRange].forEach((el) => el?.addEventListener("input", setInkFromSliders));
 
@@ -216,6 +221,7 @@ bindNavigation(openAccelMenuBtn, "/accel");
 
     let tool = "pen"; // "pen" | "eraser"
     let drawing = false;
+    let activePointerId = null;
     let last = null;
     let currentStroke = null;
     const commandHistory = [];
@@ -259,6 +265,19 @@ bindNavigation(openAccelMenuBtn, "/accel");
       sizePreview.style.setProperty("--board-size-preview", `${sizeValue}px`);
       sizeEl.setAttribute("aria-valuetext", `${sizeValue}`);
       activatePenTool({ announce: true });
+    }
+
+    function setDrawingSelectionLock(isLocked){
+      document.documentElement.classList.toggle("board-is-drawing", isLocked);
+      document.body.classList.toggle("board-is-drawing", isLocked);
+    }
+
+    function clearNativeSelection(){
+      try {
+        window.getSelection?.()?.removeAllRanges?.();
+      } catch {
+        // Ignore browser-specific selection cleanup failures.
+      }
     }
 
     function clonePoint(point){
@@ -612,9 +631,18 @@ bindNavigation(openAccelMenuBtn, "/accel");
     }
 
     function start(ev){
+      if (ev.pointerType === "mouse" && ev.button !== 0) return;
+      if (activePointerId !== null && ev.pointerId !== activePointerId) return;
       toolsMenu.close();
+      clearNativeSelection();
       drawing = true;
-      canvas.setPointerCapture(ev.pointerId);
+      activePointerId = ev.pointerId;
+      setDrawingSelectionLock(true);
+      try {
+        canvas.setPointerCapture?.(ev.pointerId);
+      } catch {
+        // Some browsers reject capture during transient gesture states.
+      }
       last = pos(ev);
       currentStroke = {
         type: "stroke",
@@ -629,6 +657,7 @@ bindNavigation(openAccelMenuBtn, "/accel");
     }
 
     function move(ev){
+      if (activePointerId !== null && ev.pointerId !== activePointerId) return;
       if(!drawing || !currentStroke) return;
       const p = pos(ev);
       currentStroke.points.push(clonePoint(p));
@@ -641,22 +670,41 @@ bindNavigation(openAccelMenuBtn, "/accel");
       last = p;
     }
 
-    function end(){
-      if (!drawing) return;
+    function finishStroke({ commit = true, ev = null } = {}){
+      if (!drawing) return false;
+      if (activePointerId !== null && ev?.pointerId !== undefined && ev.pointerId !== activePointerId) return false;
+      const pointerId = activePointerId;
       drawing = false;
+      activePointerId = null;
+      setDrawingSelectionLock(false);
       last = null;
+
+      if (pointerId !== null && pointerId !== undefined) {
+        try {
+          canvas.releasePointerCapture?.(pointerId);
+        } catch {
+          // Pointer capture may already be released when pointerup/cancel fires.
+        }
+      }
+
       if (currentStroke) {
-        pushHistoryCommand(currentStroke);
+        if (commit) {
+          pushHistoryCommand(currentStroke);
+        }
         currentStroke = null;
         redrawCanvas();
       }
+      return true;
+    }
+
+    function end(ev){
+      if (!drawing) return;
+      if (!finishStroke({ commit: true, ev })) return;
       setStatus(t("draftUpdated"));
     }
 
     function clear(){
-      currentStroke = null;
-      drawing = false;
-      last = null;
+      finishStroke({ commit: false });
 
       if (commandHistory.length === 0) {
         redoHistory.length = 0;
@@ -673,11 +721,7 @@ bindNavigation(openAccelMenuBtn, "/accel");
 
     function undo(){
       if (!commandHistory.length) return;
-      if (drawing) {
-        drawing = false;
-        currentStroke = null;
-        last = null;
-      }
+      finishStroke({ commit: false });
       const command = commandHistory.pop();
       redoHistory.push(command);
       redrawCanvas();
@@ -695,6 +739,12 @@ bindNavigation(openAccelMenuBtn, "/accel");
 
     function isEditableElement(element){
       return Boolean(element?.closest?.("input, textarea, [contenteditable='true']"));
+    }
+
+    function preventSelectionWhileDrawing(event){
+      if (!drawing || isEditableElement(event.target)) return;
+      event.preventDefault();
+      clearNativeSelection();
     }
 
     function dataUrlToBlob(dataUrl){
@@ -862,9 +912,13 @@ bindNavigation(openAccelMenuBtn, "/accel");
     // Events
     canvas.addEventListener("pointerdown", (e)=>{ e.preventDefault(); start(e); });
     canvas.addEventListener("pointermove", (e)=>{ e.preventDefault(); move(e); });
-    canvas.addEventListener("pointerup",   (e)=>{ e.preventDefault(); end(); });
-    canvas.addEventListener("pointercancel",(e)=>{ e.preventDefault(); end(); });
+    canvas.addEventListener("pointerup",   (e)=>{ e.preventDefault(); end(e); });
+    canvas.addEventListener("pointercancel",(e)=>{ e.preventDefault(); end(e); });
+    canvas.addEventListener("lostpointercapture", (e) => { end(e); });
     canvas.addEventListener("contextmenu",(e)=>e.preventDefault());
+    canvas.addEventListener("selectstart", (e) => e.preventDefault());
+    canvas.addEventListener("dragstart", (e) => e.preventDefault());
+    document.addEventListener("selectstart", preventSelectionWhileDrawing);
 
     penBtn.addEventListener("click", ()=>{ tool="pen"; setActive(); });
     eraseBtn.addEventListener("click", ()=>{ tool="eraser"; setActive(); });

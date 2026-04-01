@@ -169,6 +169,14 @@ describe("index.html smoke", () => {
     expect(document.getElementById("sizeVal")).toBeNull();
     expect(document.getElementById("sizePreview")).toBeTruthy();
     expect(document.getElementById("colorChip")).toBeNull();
+    const sizeLabel = document.querySelector(".size-label");
+    expect(sizeLabel).toBeTruthy();
+    expect(sizeLabel.tagName).toBe("DIV");
+    expect(sizeLabel.getAttribute("role")).toBeNull();
+    expect(sizeLabel.children).toHaveLength(3);
+    expect(sizeLabel.children[0].id).toBe("sizePreview");
+    expect(sizeLabel.children[1].id).toBe("size");
+    expect(sizeLabel.children[2].id).toBe("swatches");
     expect(document.querySelector(".size-label #swatches")).toBeTruthy();
     expect(document.getElementById("sizePreview").style.getPropertyValue("--board-size-preview")).toBe("6px");
     expect(document.querySelector(".calc-panel")).toBeTruthy();
@@ -190,12 +198,16 @@ describe("index.html smoke", () => {
     document.getElementById("size").dispatchEvent(new Event("input", { bubbles: true }));
     expect(document.getElementById("sizePreview").style.getPropertyValue("--board-size-preview")).toBe("12px");
 
-    document.getElementById("sizePreview").click();
-    expect(document.getElementById("colorPopup").hidden).toBe(false);
     document.getElementById("erase").click();
     expect(document.getElementById("erase").getAttribute("aria-pressed")).toBe("true");
+    expect(document.getElementById("colorPopup").hidden).toBe(true);
     document.querySelector('#swatches .swatch')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(document.getElementById("colorPopup").hidden).toBe(true);
     expect(document.getElementById("pen").getAttribute("aria-pressed")).toBe("true");
+
+    document.getElementById("sizePreview").click();
+    expect(document.getElementById("colorPopup").hidden).toBe(false);
+
     document.getElementById("erase").click();
     expect(document.getElementById("erase").getAttribute("aria-pressed")).toBe("true");
     document.getElementById("size").value = "10";
@@ -274,6 +286,44 @@ describe("index.html smoke", () => {
     expect(document.getElementById("langToggle").textContent).toBe("ES");
     expect(document.getElementById("langToggleMenu").textContent).toBe("ES");
     expect(document.querySelector(".backend-auth-title").textContent).toBe("Cuenta de VatioLibre");
+  });
+
+  it("keeps drawing locked to one pointer and suppresses native selection", async () => {
+    await import("../../src/board/board.js");
+    await flushBoardTasks();
+
+    const canvas = document.getElementById("pad");
+    const ctx = canvas.getContext("2d");
+    ctx.quadraticCurveTo.mockClear();
+
+    const selectStart = new Event("selectstart", { bubbles: true, cancelable: true });
+    expect(canvas.dispatchEvent(selectStart)).toBe(false);
+
+    const pointerDown = new MouseEvent("pointerdown", { bubbles: true, clientX: 12, clientY: 12 });
+    Object.defineProperty(pointerDown, "pointerId", { value: 1 });
+    canvas.dispatchEvent(pointerDown);
+
+    expect(document.body.classList.contains("board-is-drawing")).toBe(true);
+
+    const foreignMove = new MouseEvent("pointermove", { bubbles: true, clientX: 60, clientY: 60 });
+    Object.defineProperty(foreignMove, "pointerId", { value: 2 });
+    canvas.dispatchEvent(foreignMove);
+    expect(ctx.quadraticCurveTo).not.toHaveBeenCalled();
+
+    const activeMove = new MouseEvent("pointermove", { bubbles: true, clientX: 42, clientY: 32 });
+    Object.defineProperty(activeMove, "pointerId", { value: 1 });
+    canvas.dispatchEvent(activeMove);
+    expect(ctx.quadraticCurveTo).toHaveBeenCalledTimes(1);
+
+    const selectWhileDrawing = new Event("selectstart", { bubbles: true, cancelable: true });
+    expect(document.dispatchEvent(selectWhileDrawing)).toBe(false);
+
+    const lostCapture = new Event("lostpointercapture", { bubbles: true });
+    Object.defineProperty(lostCapture, "pointerId", { value: 1 });
+    canvas.dispatchEvent(lostCapture);
+
+    expect(document.body.classList.contains("board-is-drawing")).toBe(false);
+    expect(document.getElementById("undo").disabled).toBe(false);
   });
 
   it("guides guests to log in before saving", async () => {
