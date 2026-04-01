@@ -7,11 +7,17 @@ const PROD_HOSTS = new Set(["vatioboard.com", "www.vatioboard.com"]);
 // Use an allow_guest endpoint first so guest sessions do not trigger a visible 403.
 const SESSION_PROBE_METHOD = "vatiolibre.services.tesla_connection_status";
 const LOGGED_USER_METHOD = "frappe.auth.get_logged_user";
+const FEATURE_ACCESS_METHOD = "vatiolibre.vatiolibre.feature_access.get_my_feature_access";
+const SAVE_DRAWING_METHOD = "vatiolibre.vatiolibre.drawings.save_my_saved_drawing";
 
 function getFetch(fetchImpl) {
   if (typeof fetchImpl === "function") return fetchImpl;
   if (typeof window?.fetch === "function") return window.fetch.bind(window);
   throw new Error("Fetch API is unavailable.");
+}
+
+function getMethodUrl(methodName, config) {
+  return `${config.apiBase}/api/method/${methodName}`;
 }
 
 async function safeJson(response) {
@@ -35,6 +41,36 @@ function getLoggedUser(data) {
   return user && user !== "Guest" ? user : null;
 }
 
+function getText(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function getFeatureAccess(data) {
+  const message = getMessage(data);
+  return message && typeof message === "object" ? message : null;
+}
+
+async function fetchBackendJson(methodName, {
+  method = "GET",
+  headers,
+  body,
+  fetchImpl,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const request = getFetch(fetchImpl);
+  const response = await request(getMethodUrl(methodName, config), {
+    method,
+    credentials: "include",
+    headers,
+    body,
+  });
+
+  return {
+    response,
+    data: await safeJson(response),
+  };
+}
+
 function setHidden(elements, isHidden) {
   elements.forEach((element) => {
     element.hidden = isHidden;
@@ -55,12 +91,10 @@ export function getBackendAuthConfig(location = window.location) {
 }
 
 export async function fetchBackendSession({ fetchImpl, config = getBackendAuthConfig() } = {}) {
-  const request = getFetch(fetchImpl);
-  const response = await request(`${config.apiBase}/api/method/${SESSION_PROBE_METHOD}`, {
-    method: "GET",
-    credentials: "include",
+  const { response, data } = await fetchBackendJson(SESSION_PROBE_METHOD, {
+    fetchImpl,
+    config,
   });
-  const data = await safeJson(response);
   const payload = getMessage(data);
   const isGuest = response.status === 401
     || response.status === 403
@@ -79,12 +113,10 @@ export async function fetchBackendLoggedUser({
   fetchImpl,
   config = getBackendAuthConfig(),
 } = {}) {
-  const request = getFetch(fetchImpl);
-  const response = await request(`${config.apiBase}/api/method/${LOGGED_USER_METHOD}`, {
-    method: "GET",
-    credentials: "include",
+  const { response, data } = await fetchBackendJson(LOGGED_USER_METHOD, {
+    fetchImpl,
+    config,
   });
-  const data = await safeJson(response);
 
   return {
     ok: response.ok,
@@ -100,12 +132,12 @@ export async function loginToBackend({
   fetchImpl,
   config = getBackendAuthConfig(),
 } = {}) {
-  const request = getFetch(fetchImpl);
   const body = new URLSearchParams();
   body.set("usr", String(username || "").trim());
   body.set("pwd", String(password || ""));
 
-  const response = await request(`${config.apiBase}/api/method/login`, {
+  const request = getFetch(fetchImpl);
+  const response = await request(getMethodUrl("login", config), {
     method: "POST",
     credentials: "include",
     headers: {
@@ -122,19 +154,104 @@ export async function loginToBackend({
 }
 
 export async function logoutFromBackend({ fetchImpl, config = getBackendAuthConfig() } = {}) {
-  const request = getFetch(fetchImpl);
-  const response = await request(`${config.apiBase}/api/method/logout`, {
+  const { response, data } = await fetchBackendJson("logout", {
     method: "POST",
-    credentials: "include",
     headers: {
       "Content-Type": "application/json",
     },
+    fetchImpl,
+    config,
   });
 
   return {
     ok: response.ok,
     status: response.status,
-    data: await safeJson(response),
+    data,
+  };
+}
+
+export function getSavedDrawingsCapability(featureAccessData) {
+  const featureAccess = getFeatureAccess(featureAccessData);
+  const savedDrawings = featureAccess?.features?.saved_drawings;
+
+  return {
+    hasActiveSubscription: featureAccess?.has_active_subscription === true,
+    enabled: savedDrawings?.enabled === true,
+    reason: getText(savedDrawings?.reason),
+    csrfToken: getText(featureAccess?.csrf_token),
+  };
+}
+
+export async function fetchBackendFeatureAccess({
+  fetchImpl,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const { response, data } = await fetchBackendJson(FEATURE_ACCESS_METHOD, {
+    fetchImpl,
+    config,
+  });
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    isGuest: response.status === 401 || response.status === 403,
+    featureAccess: getFeatureAccess(data),
+    capability: getSavedDrawingsCapability(data),
+  };
+}
+
+export async function saveDrawingToBackend({
+  fileBlob,
+  fileName,
+  title,
+  imageWidth,
+  imageHeight,
+  csrfToken,
+  fetchImpl,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const body = new FormData();
+
+  if (!(fileBlob instanceof Blob)) {
+    throw new Error("Drawing file is required.");
+  }
+
+  body.append("file", fileBlob, getText(fileName) || "drawing.png");
+
+  const trimmedTitle = getText(title);
+  if (trimmedTitle) {
+    body.append("title", trimmedTitle);
+  }
+
+  if (Number.isFinite(imageWidth) && imageWidth > 0) {
+    body.append("image_width", String(Math.round(imageWidth)));
+  }
+
+  if (Number.isFinite(imageHeight) && imageHeight > 0) {
+    body.append("image_height", String(Math.round(imageHeight)));
+  }
+
+  const headers = {};
+
+  if (getText(csrfToken)) {
+    headers["X-Frappe-CSRF-Token"] = getText(csrfToken);
+  }
+
+  const { response, data } = await fetchBackendJson(SAVE_DRAWING_METHOD, {
+    method: "POST",
+    headers,
+    body,
+    fetchImpl,
+    config,
+  });
+  const message = getMessage(data);
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    drawing: message?.drawing ?? null,
   };
 }
 

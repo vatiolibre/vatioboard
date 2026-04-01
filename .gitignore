@@ -24,6 +24,7 @@ public/geo/ansv_cameras_compact.kdbush
 *.njsproj
 *.sln
 *.sw?
+*.codex
 *PROJECT_STRUCTURE.md
 *AGENTS.md
 *.Makefile

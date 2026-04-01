@@ -132,6 +132,14 @@ export const IconDownload = `
   </svg>
 `;
 
+export const IconSave = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M6.75 4.75h9.1l3.4 3.4v9.1a2 2 0 0 1-2 2H6.75a2 2 0 0 1-2-2v-10.5a2 2 0 0 1 2-2Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="M8.25 4.75v4.8h6.4v-4.8" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="M9 15.25h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+  </svg>
+`;
+
 export const IconUndo = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path d="M9 7H6v3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>

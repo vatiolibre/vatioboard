@@ -7,19 +7,24 @@ import "../styles/dock.less";
 import { createCalculatorWidget } from "../calculator/calculator-widget.js";
 import { createEnergyCalculatorWidget } from "../energy/energy-calculator-widget.js";
 import { createFloatingDock } from "../dock/floating-dock.js";
-import { initBackendAuthControllers } from "../shared/backend-auth.js";
+import {
+  fetchBackendFeatureAccess,
+  fetchBackendSession,
+  initBackendAuthControllers,
+  saveDrawingToBackend,
+} from "../shared/backend-auth.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
 import iro from "@jaames/iro";
 import { t, applyTranslations, toggleLang, getLang } from "../i18n.js";
 import {
   IconAccel,
   IconCalculator,
-  IconDownload,
   IconEnergy,
   IconEraser,
   IconPages,
   IconPen,
   IconRedo,
+  IconSave,
   IconSpeed,
   IconTrash,
   IconUndo,
@@ -61,7 +66,7 @@ applyButtonIcon(document.getElementById("erase"), IconEraser);
 applyButtonIcon(document.getElementById("undo"), IconUndo);
 applyButtonIcon(document.getElementById("redo"), IconRedo);
 applyButtonIcon(document.getElementById("clear"), IconTrash);
-applyButtonIcon(document.getElementById("save"), IconDownload);
+applyButtonIcon(document.getElementById("save"), IconSave);
 applyButtonIcon(openCalcBtn, IconCalculator);
 applyButtonIcon(openCalcMenuBtn, IconCalculator);
 applyButtonIcon(openAccelMenuBtn, IconAccel);
@@ -120,11 +125,13 @@ bindNavigation(openAccelMenuBtn, "/accel");
     const sizePreview = document.getElementById("sizePreview");
     const clearBtn = document.getElementById("clear");
     const saveBtn = document.getElementById("save");
+    const backendAuthUserInput = document.querySelector("[data-backend-auth-user]");
 
     // NEW: color UI
     const swatchesEl = document.getElementById("swatches");
 
     const LS_INK_RAW = "vatio_board_ink_raw";
+    let saveBusy = false;
 
     function isDarkMode(){
       return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -222,6 +229,11 @@ bindNavigation(openAccelMenuBtn, "/accel");
     function currentCanvasBg(){ return cssVar("--canvas-bg") || "#ffffff"; }
 
     function setStatus(s){ statusEl.textContent = s; }
+
+    function syncSaveButton(){
+      if (!saveBtn) return;
+      saveBtn.disabled = saveBusy;
+    }
 
     function setActive(options = {}){
       const shouldAnnounce = options.announce !== false;
@@ -638,7 +650,7 @@ bindNavigation(openAccelMenuBtn, "/accel");
         currentStroke = null;
         redrawCanvas();
       }
-      setStatus(t("savedLocally"));
+      setStatus(t("draftUpdated"));
     }
 
     function clear(){
@@ -685,7 +697,48 @@ bindNavigation(openAccelMenuBtn, "/accel");
       return Boolean(element?.closest?.("input, textarea, [contenteditable='true']"));
     }
 
-    function savePNG(){
+    function dataUrlToBlob(dataUrl){
+      const value = String(dataUrl || "");
+      const parts = value.split(",", 2);
+      if (parts.length !== 2) {
+        throw new Error("Canvas export data URL is invalid.");
+      }
+
+      const mimeMatch = parts[0].match(/^data:([^;]+);base64$/i);
+      const mimeType = mimeMatch?.[1] || "application/octet-stream";
+      const binary = window.atob(parts[1]);
+      const bytes = new Uint8Array(binary.length);
+
+      for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+      }
+
+      return new Blob([bytes], { type: mimeType });
+    }
+
+    function canvasToPngBlob(sourceCanvas){
+      return new Promise((resolve, reject) => {
+        if (typeof sourceCanvas?.toBlob === "function") {
+          sourceCanvas.toBlob((blob) => {
+            if (blob) {
+              resolve(blob);
+              return;
+            }
+
+            reject(new Error("Could not prepare the drawing."));
+          }, "image/png");
+          return;
+        }
+
+        try {
+          resolve(dataUrlToBlob(sourceCanvas.toDataURL("image/png")));
+        } catch (error) {
+          reject(error);
+        }
+      });
+    }
+
+    async function exportCanvasAsPng(){
       const rect = canvas.getBoundingClientRect();
       const dpr = Math.max(1, window.devicePixelRatio || 1);
 
@@ -693,6 +746,9 @@ bindNavigation(openAccelMenuBtn, "/accel");
       out.width = canvas.width;
       out.height = canvas.height;
       const octx = out.getContext("2d");
+      if (!octx) {
+        throw new Error("Canvas export context is unavailable.");
+      }
 
       octx.setTransform(dpr, 0, 0, dpr, 0, 0);
       octx.fillStyle = currentCanvasBg();
@@ -701,13 +757,106 @@ bindNavigation(openAccelMenuBtn, "/accel");
       octx.setTransform(1,0,0,1,0,0);
       octx.drawImage(canvas, 0, 0);
 
-      const a = document.createElement("a");
-      a.href = out.toDataURL("image/png");
-      a.download = t("drawingFilename");
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setStatus(t("downloadedPng"));
+      return {
+        fileBlob: await canvasToPngBlob(out),
+        fileName: "drawing.png",
+        imageWidth: out.width,
+        imageHeight: out.height,
+      };
+    }
+
+    function openBackendAuth(){
+      toolsMenu.setOpen(true);
+      backendAuthUserInput?.focus?.();
+    }
+
+    function getBlockedSaveMessage(capability){
+      if (capability?.reason) {
+        return capability.reason;
+      }
+
+      if (capability?.hasActiveSubscription) {
+        return t("saveUnavailable");
+      }
+
+      return t("saveSubscriptionRequired");
+    }
+
+    async function saveToVatioLibre(){
+      if (saveBusy) return;
+
+      saveBusy = true;
+      syncSaveButton();
+      setStatus(t("saveCheckingAccess"));
+
+      try {
+        const session = await fetchBackendSession();
+
+        if (!session.ok) {
+          if (session.isGuest) {
+            openBackendAuth();
+            setStatus(t("saveLoginRequired"));
+          } else {
+            setStatus(t("saveSessionCheckFailed", { status: session.status }));
+          }
+          return;
+        }
+
+        if (session.isGuest) {
+          openBackendAuth();
+          setStatus(t("saveLoginRequired"));
+          return;
+        }
+
+        const featureAccess = await fetchBackendFeatureAccess();
+
+        if (!featureAccess.ok) {
+          if (featureAccess.isGuest) {
+            openBackendAuth();
+            setStatus(t("saveLoginRequired"));
+          } else {
+            setStatus(t("saveFeatureAccessFailed", { status: featureAccess.status }));
+          }
+          return;
+        }
+
+        if (!featureAccess.capability.enabled) {
+          setStatus(getBlockedSaveMessage(featureAccess.capability));
+          return;
+        }
+
+        if (!featureAccess.capability.csrfToken) {
+          setStatus(t("saveUnavailable"));
+          return;
+        }
+
+        setStatus(t("savingToVatioLibre"));
+        const exportedDrawing = await exportCanvasAsPng();
+        const saveResult = await saveDrawingToBackend({
+          fileBlob: exportedDrawing.fileBlob,
+          fileName: exportedDrawing.fileName,
+          imageWidth: exportedDrawing.imageWidth,
+          imageHeight: exportedDrawing.imageHeight,
+          csrfToken: featureAccess.capability.csrfToken,
+        });
+
+        if (!saveResult.ok) {
+          if (saveResult.status === 401 || saveResult.status === 403) {
+            openBackendAuth();
+            setStatus(t("saveLoginRequired"));
+          } else {
+            setStatus(t("saveFailed", { status: saveResult.status }));
+          }
+          return;
+        }
+
+        setStatus(t("savedToVatioLibre"));
+      } catch {
+        setStatus(t("saveNetworkError"));
+      } finally {
+        saveBusy = false;
+        syncSaveButton();
+      }
     }
 
     // Events
@@ -725,7 +874,9 @@ bindNavigation(openAccelMenuBtn, "/accel");
     sizeEl.addEventListener("input", syncSizePreview);
 
     clearBtn.addEventListener("click", clear);
-    saveBtn.addEventListener("click", savePNG);
+    saveBtn.addEventListener("click", () => {
+      void saveToVatioLibre();
+    });
 
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     if (mq && mq.addEventListener){
@@ -763,6 +914,7 @@ bindNavigation(openAccelMenuBtn, "/accel");
     // Init
     syncSizePreview();
     syncHistoryButtons();
+    syncSaveButton();
     setActive();
 
     renderSwatches();

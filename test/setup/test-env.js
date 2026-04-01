@@ -381,6 +381,16 @@ beforeEach(() => {
     value: vi.fn(() => "data:image/png;base64,AAAA"),
   });
 
+  Object.defineProperty(HTMLCanvasElement.prototype, "toBlob", {
+    configurable: true,
+    writable: true,
+    value: vi.fn(function toBlob(callback, type = "image/png") {
+      if (typeof callback === "function") {
+        callback(new Blob(["png-bytes"], { type }));
+      }
+    }),
+  });
+
   localStorage.clear();
   sessionStorage.clear();
   document.open();

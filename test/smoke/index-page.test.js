@@ -14,11 +14,28 @@ vi.mock("@jaames/iro", () => ({
   },
 }));
 
+async function flushBoardTasks(iterations = 8) {
+  for (let index = 0; index < iterations; index += 1) {
+    await flushTasks();
+  }
+}
+
 describe("index.html smoke", () => {
+  let sessionUser;
+  let hasActiveSubscription;
+  let savedDrawingsEnabled;
+  let savedDrawingsReason;
+  let csrfToken;
+
   beforeEach(async () => {
     vi.resetModules();
 
-    let sessionUser = "Guest";
+    sessionUser = "Guest";
+    hasActiveSubscription = false;
+    savedDrawingsEnabled = false;
+    savedDrawingsReason = "";
+    csrfToken = "csrf-test-token";
+
     window.fetch = vi.fn(async (input, init = {}) => {
       const url = typeof input === "string" ? input : String(input?.url ?? "");
 
@@ -64,6 +81,51 @@ describe("index.html smoke", () => {
         });
       }
 
+      if (url.endsWith("/api/method/vatiolibre.vatiolibre.feature_access.get_my_feature_access")) {
+        if (sessionUser === "Guest") {
+          return new Response(JSON.stringify({ message: "Guest" }), {
+            status: 403,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
+        return new Response(JSON.stringify({
+          message: {
+            has_active_subscription: hasActiveSubscription,
+            features: {
+              saved_drawings: {
+                enabled: savedDrawingsEnabled,
+                reason: savedDrawingsReason,
+              },
+            },
+            csrf_token: csrfToken,
+          },
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/method/vatiolibre.vatiolibre.drawings.save_my_saved_drawing")) {
+        if (sessionUser === "Guest") {
+          return new Response(JSON.stringify({ message: "Guest" }), {
+            status: 403,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
+        return new Response(JSON.stringify({
+          message: {
+            drawing: {
+              name: "DRAW-0001",
+            },
+          },
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
       return new Response("{}", {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -75,7 +137,7 @@ describe("index.html smoke", () => {
 
   it("boots the board page and mounts its widgets", async () => {
     await import("../../src/board/board.js");
-    await flushTasks();
+    await flushBoardTasks();
 
     expectPageSeo({
       title: "Vatio Board – Free Drawing Board + Calculator (Tesla-Friendly)",
@@ -95,7 +157,7 @@ describe("index.html smoke", () => {
     expect(document.getElementById("redo").disabled).toBe(true);
     expect(document.getElementById("clear").getAttribute("aria-label")).toBe("Clear");
     expect(document.querySelector("#clear .btn-icon svg")).toBeTruthy();
-    expect(document.getElementById("save").getAttribute("aria-label")).toBe("Save PNG");
+    expect(document.getElementById("save").getAttribute("aria-label")).toBe("Save to VatioLibre");
     expect(document.querySelector("#save .btn-icon svg")).toBeTruthy();
     expect(document.getElementById("toolsMenuBtn").getAttribute("aria-label")).toBe("Pages");
     expect(document.querySelector("#toolsMenuBtn .btn-icon svg")).toBeTruthy();
@@ -176,12 +238,7 @@ describe("index.html smoke", () => {
     authUser.value = "test@vatiolibre.com";
     authPassword.value = "secret123";
     authForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-    await flushTasks();
-    await flushTasks();
-    await flushTasks();
-    await flushTasks();
-    await flushTasks();
-    await flushTasks();
+    await flushBoardTasks();
 
     expect(document.querySelector("[data-backend-auth]").dataset.authState).toBe("authenticated");
     expect(document.querySelector("[data-backend-auth-status]").textContent).toBe("Signed in as test@vatiolibre.com");
@@ -191,12 +248,7 @@ describe("index.html smoke", () => {
     expect(document.querySelector("[data-backend-auth-forgot]").hidden).toBe(true);
 
     document.querySelector("[data-backend-auth-logout]").click();
-    await flushTasks();
-    await flushTasks();
-    await flushTasks();
-    await flushTasks();
-    await flushTasks();
-    await flushTasks();
+    await flushBoardTasks();
 
     expect(document.querySelector("[data-backend-auth]").dataset.authState).toBe("guest");
     expect(document.querySelector("[data-backend-auth-status]").textContent).toBe("Signed out");
@@ -222,5 +274,88 @@ describe("index.html smoke", () => {
     expect(document.getElementById("langToggle").textContent).toBe("ES");
     expect(document.getElementById("langToggleMenu").textContent).toBe("ES");
     expect(document.querySelector(".backend-auth-title").textContent).toBe("Cuenta de VatioLibre");
+  });
+
+  it("guides guests to log in before saving", async () => {
+    await import("../../src/board/board.js");
+    await flushBoardTasks();
+
+    document.getElementById("toolsMenuBtn").click();
+    expect(document.getElementById("toolsMenuList").hidden).toBe(true);
+
+    document.getElementById("save").click();
+    await flushBoardTasks();
+
+    expect(document.getElementById("toolsMenuList").hidden).toBe(false);
+    expect(document.getElementById("status").textContent).toBe("Log in to save drawings to VatioLibre.");
+    expect(window.fetch).not.toHaveBeenCalledWith(
+      "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.feature_access.get_my_feature_access",
+      expect.anything()
+    );
+  });
+
+  it("blocks save for signed-in users without the saved drawings feature", async () => {
+    sessionUser = "member@vatiolibre.com";
+    hasActiveSubscription = false;
+    savedDrawingsEnabled = false;
+    savedDrawingsReason = "Saved drawings need an active VatioLibre subscription.";
+
+    await import("../../src/board/board.js");
+    await flushBoardTasks();
+
+    document.getElementById("save").click();
+    await flushBoardTasks();
+
+    expect(document.getElementById("status").textContent).toBe("Saved drawings need an active VatioLibre subscription.");
+    expect(window.fetch).toHaveBeenCalledWith(
+      "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.feature_access.get_my_feature_access",
+      expect.objectContaining({
+        method: "GET",
+        credentials: "include",
+      })
+    );
+    expect(window.fetch).not.toHaveBeenCalledWith(
+      "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.drawings.save_my_saved_drawing",
+      expect.anything()
+    );
+  });
+
+  it("saves drawings to the backend for active subscribers", async () => {
+    sessionUser = "member@vatiolibre.com";
+    hasActiveSubscription = true;
+    savedDrawingsEnabled = true;
+    savedDrawingsReason = "";
+    csrfToken = "csrf-active-token";
+
+    await import("../../src/board/board.js");
+    await flushBoardTasks();
+
+    document.getElementById("save").click();
+    await flushBoardTasks();
+
+    expect(document.getElementById("status").textContent).toBe("Saved to VatioLibre");
+    const saveCall = window.fetch.mock.calls.find(([url]) =>
+      url === "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.drawings.save_my_saved_drawing"
+    );
+
+    expect(saveCall).toBeTruthy();
+
+    const [, saveRequest] = saveCall;
+    expect(saveRequest).toEqual(expect.objectContaining({
+      method: "POST",
+      credentials: "include",
+      headers: expect.objectContaining({
+        "X-Frappe-CSRF-Token": "csrf-active-token",
+      }),
+    }));
+    expect(saveRequest.headers["Content-Type"]).toBeUndefined();
+    expect(saveRequest.body).toBeInstanceOf(FormData);
+    expect(saveRequest.body.get("image_width")).toBe("320");
+    expect(saveRequest.body.get("image_height")).toBe("320");
+
+    const uploadedFile = saveRequest.body.get("file");
+    expect(uploadedFile).toBeInstanceOf(File);
+    expect(uploadedFile.name).toBe("drawing.png");
+    expect(uploadedFile.type).toBe("image/png");
   });
 });
