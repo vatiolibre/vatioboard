@@ -1,12 +1,6 @@
 # VatioBoard
 
-VatioBoard is a multi-page Vite app for touch-first browser tools. The repo currently ships five user-facing surfaces:
-
-- `Vatio Board`: a full-screen drawing board with color controls, PNG export, and quick access to utility widgets
-- `Calculator`: a draggable calculator widget with history and formatting settings
-- `Vatio Speed`: a live GPS speedometer with trip stats, globe view, and speed-trap alerts
-- `Vatio GPS Rate Lab`: a front-end geolocation diagnostics page for measuring observed browser callback rate and field availability
-- `Vatio Accel`: a browser-only acceleration timer that estimates runs from geolocation updates and stores history in local browser storage
+VatioBoard is a multi-page Vite app of touch-first browser tools built for Tesla-sized screens and regular mobile/desktop browsers. The repo is mostly local-first: drawings, calculator state, trip estimates, replay sessions, and acceleration runs are stored in the browser, while some account-aware actions are optionally wired to the VatioLibre backend.
 
 The project is part of the VatioLibre community and is published for educational use.
 
@@ -15,89 +9,111 @@ The project is part of the VatioLibre community and is published for educational
 - Community: https://vatiolibre.com
 - Creator: Oscar Perez
 
-## App Surfaces
+## Pages
 
 ### Board
 
-`index.html` loads the main drawing board from [`src/board/board.js`](src/board/board.js).
+`index.html` loads the main board from [`src/board/board.js`](src/board/board.js).
 
-Key behavior:
+What it does:
 
-- Pen and eraser tools on a full-screen canvas
-- Brush size control
-- Preset swatches plus an `iro`-powered custom color picker
-- PNG export
-- Theme-aware default ink color
-- Shared language toggle (`en` / `es`)
-- Embedded calculator and EV trip cost widgets
-- Link out to the standalone speedometer page
+- full-screen drawing canvas with pen and eraser tools
+- brush size control, preset swatches, and an `iro` color picker
+- undo, redo, clear, and PNG export
+- local autosave of drawing history
+- embedded calculator widget and EV trip cost widget
+- shared English/Spanish toggle
+- optional VatioLibre login and save-to-backend flow for eligible accounts
+
+### Calculator Demo
+
+`calculator.html` loads the standalone calculator demo from [`src/calculator/calculator-demo.js`](src/calculator/calculator-demo.js).
+
+What it does:
+
+- opens the same calculator widget used by the board
+- evaluates expressions with `mathjs`
+- stores history, expression state, and formatting settings locally
+- supports decimal precision and thousands separator settings
+
+### Vatio Speed
+
+`speed.html` loads the live speedometer from [`src/speed/speed.js`](src/speed/speed.js).
+
+What it does:
+
+- reads live browser geolocation data
+- renders an analog speedometer plus trip stats
+- supports `km/h` or `mph`, and metric or imperial distance units
+- offers manual overspeed alerts and nearby speed-trap alerts
+- supports quick audio mute and optional background-audio mode
+- switches between gauge and Waze-style primary views
+- records replay sessions for the replay page
+
+### Drive Replay
+
+`replay.html` loads the replay experience from [`src/replay/replay.js`](src/replay/replay.js).
+
+What it does:
+
+- loads the active and saved replay sessions recorded by Vatio Speed
+- replays a route on a MapLibre globe/map
+- shows speed, altitude, and heading charts
+- supports time-based or distance-based playback
+- offers playback-rate controls and session selection
+- lets users remove saved recordings locally
+
+### Vatio GPS Rate Lab
+
+`gps-rate.html` loads the diagnostics page from [`src/gps-rate/gps-rate.js`](src/gps-rate/gps-rate.js).
+
+What it does:
+
+- measures observed `navigator.geolocation.watchPosition()` callback timing
+- shows summary stats, live values, warnings, and an event log
+- exports captured samples and summaries to JSON or CSV
+- stores notes, wake-lock preference, and the latest saved summary locally
+- includes a Nominatim test panel with cached response reuse
+
+### Vatio Accel
+
+`accel.html` loads the browser-based acceleration timer from [`src/accel/accel.js`](src/accel/accel.js).
+
+What it does:
+
+- times standing-start, rolling-start, distance, and custom speed-range runs
+- uses browser geolocation updates only
+- stores run history and settings locally
+- shows quality grades, warning badges, and diagnostic stats
+- includes result graphs plus replay map/chart views for completed runs
+
+### Backend Login Test
+
+`login.html` is a simple manual integration page for backend auth checks.
+
+What it does:
+
+- logs into the configured Frappe backend with browser cookies
+- checks the current session
+- logs out again
+- helps debug local CORS/session issues separately from the main UI
+
+## Shared Widgets
 
 ### Calculator Widget
 
-The calculator lives under `src/calculator/` and is used in two places:
-
-- embedded in the board UI
-- standalone demo page at `calculator.html`
-
-Key behavior:
-
-- `mathjs`-powered expression evaluation
-- calculator history stored in `localStorage`
-- draggable panel
-- configurable decimal precision and thousands separator
-- touch-friendly keypad and sheets for history/settings
+The calculator module under [`src/calculator/`](src/calculator/) is used by both the board and the standalone calculator demo.
 
 ### EV Trip Cost Widget
 
-The energy widget lives under `src/energy/` and is mounted from the board.
+The energy widget under [`src/energy/`](src/energy/) is mounted from the board.
 
-Key behavior:
+What it does:
 
-- simple mode for one-trip energy and cost estimates
-- multi-trip mode for up to 5 trips
-- km/mi-aware ranges and formatting
-- persisted trip settings and values in `localStorage`
-- shared number-formatting rules with the calculator widget
-
-### Speedometer
-
-`speed.html` loads the standalone speedometer from [`src/speed/speed.js`](src/speed/speed.js).
-
-Key behavior:
-
-- live speed from browser geolocation
-- analog dial plus max speed, average speed, distance, duration, and altitude
-- km/h or mph display, with metric/imperial distance units
-- manual speed alerts and nearby speed-trap alerts
-- optional background-audio mode to keep alerts ready when the page is hidden
-- MapLibre globe that follows the current location
-- bilingual UI via the shared i18n module
-
-### GPS Rate Lab
-
-`gps-rate.html` loads the standalone diagnostics page from [`src/gps-rate/gps-rate.js`](src/gps-rate/gps-rate.js).
-
-Key behavior:
-
-- uses browser `navigator.geolocation.watchPosition()` only
-- measures observed callback intervals with both `position.timestamp` and `performance.now()`
-- shows summary stats, warning badges, raw latest sample values, and a live event log
-- exports captured samples plus summary stats to JSON or CSV
-- stores session notes and the last saved summary in `localStorage`
-- optimized for Tesla-sized touch screens, while still working on normal mobile and desktop browsers
-
-### Acceleration Timer
-
-`accel.html` loads the standalone acceleration page from [`src/accel/accel.js`](src/accel/accel.js).
-
-Key behavior:
-
-- browser-only acceleration timing using `navigator.geolocation.watchPosition()`
-- standing-start, rolling-start, distance, and custom speed-range presets
-- auto arm / launch / completion flow with rollout and launch-threshold controls
-- speed fallback from displacement when `coords.speed` is missing
-- local-only run history and settings stored in `localStorage`
-- explicit quality grades and warning badges so results are presented as estimates, not certified timing
+- supports simple mode for one-trip estimates
+- supports multi-trip mode with locally persisted trip data
+- handles `km` and `mi` ranges and formatting
+- reuses calculator number-format settings where appropriate
 
 ## Stack
 
@@ -106,40 +122,54 @@ Key behavior:
 - LESS for styling
 - `mathjs` for calculator evaluation
 - `@jaames/iro` for the board color picker
-- `maplibre-gl` for the speedometer globe
-- `kdbush` and `geokdbush` for fast speed-trap lookup
+- `maplibre-gl` for speed and replay maps
+- `chart.js` for replay and acceleration charts
+- `@stanko/dual-range-input` for replay and acceleration range controls
+- `kdbush` and `geokdbush` for speed-trap lookup
+- Vitest + jsdom for unit and smoke tests
+- ESLint + Prettier for code quality
 
-## Project Structure
+## Project Layout
 
 ```txt
 .
-├─ index.html                # Board page
-├─ calculator.html           # Standalone calculator demo
-├─ speed.html                # Standalone GPS speedometer
-├─ gps-rate.html             # Standalone browser geolocation diagnostics page
-├─ accel.html                # Standalone browser acceleration timer
-├─ data-src/                 # Source datasets used to build speed-trap artifacts
+├─ index.html
+├─ calculator.html
+├─ speed.html
+├─ replay.html
+├─ gps-rate.html
+├─ accel.html
+├─ login.html
+├─ data-src/                 # Source/reference datasets
 ├─ public/
-│  ├─ audio/                 # Alert sounds
-│  ├─ geo/                   # Generated compact trap payload + spatial index
+│  ├─ audio/                 # Alert and finish sounds
+│  ├─ geo/                   # Generated speed-trap payloads and KDBush index
 │  └─ img/                   # Logos and social images
 ├─ scripts/
-│  └─ build-speed-traps.mjs  # Generates public/geo artifacts from GeoJSON
+│  └─ build-speed-traps.mjs
 ├─ src/
-│  ├─ board/                 # Drawing board entry module
-│  ├─ calculator/            # Calculator widget/core/storage
-│  ├─ dock/                  # Floating dock used on the board
-│  ├─ energy/                # EV trip cost widget/core/storage
-│  ├─ gps-rate/              # GPS rate diagnostics entry module
-│  ├─ accel/                 # Acceleration timer entry module
-│  ├─ speed/                 # Speedometer entry module
-│  ├─ styles/                # LESS bundles for each surface
-│  ├─ i18n.js                # Shared English/Spanish translations
-│  └─ icons.js               # Shared SVG icon markup
-└─ vite.config.js            # Multi-page Vite configuration
+│  ├─ accel/
+│  ├─ board/
+│  ├─ calculator/
+│  ├─ dock/
+│  ├─ energy/
+│  ├─ gps-rate/
+│  ├─ replay/
+│  ├─ shared/
+│  ├─ speed/
+│  ├─ styles/
+│  ├─ i18n.js
+│  └─ icons.js
+├─ test/
+│  ├─ helpers/
+│  ├─ setup/
+│  ├─ smoke/
+│  └─ unit/
+├─ vite.config.js
+└─ vitest.config.js
 ```
 
-## Development
+## Getting Started
 
 ### Requirements
 
@@ -152,102 +182,91 @@ Key behavior:
 npm install
 ```
 
-### Available Scripts
+### Start The Dev Server
 
 ```bash
-npm run prepare:geo
 npm run dev
-npm run build
-npm run preview
 ```
 
-What they do:
+Vite is configured with `strictPort: true`, so local development runs at:
 
-- `npm run prepare:geo`: reads `data-src/ansv_cameras_maplibre.geojson` and generates:
-  - `public/geo/ansv_cameras_compact.min.json`
-  - `public/geo/ansv_cameras_compact.kdbush`
-- `npm run dev`: runs `prepare:geo` first, then starts the Vite dev server
-- `npm run build`: runs `prepare:geo` first, then builds `dist/`
-- `npm run preview`: serves the production build locally
+- `http://localhost:5174/`
 
-### Entry Pages During Development
+Entry pages during development:
 
-Vite is configured as a multi-page app through `vite.config.js`.
+- `http://localhost:5174/`
+- `http://localhost:5174/calculator.html`
+- `http://localhost:5174/speed.html`
+- `http://localhost:5174/replay.html`
+- `http://localhost:5174/gps-rate.html`
+- `http://localhost:5174/accel.html`
+- `http://localhost:5174/login.html`
 
-- `index.html`
-- `calculator.html`
-- `speed.html`
-- `gps-rate.html`
-- `accel.html`
+## Scripts
+
+- `npm run prepare:geo`: builds the speed-trap artifacts consumed by Vatio Speed
+- `npm run dev`: runs Vite locally after the `predev` geo preparation step
+- `npm run build`: creates a production build after the `prebuild` geo preparation step
+- `npm run preview`: serves the built app locally
+- `npm run lint`: runs ESLint
+- `npm run lint:fix`: runs ESLint with autofix
+- `npm run format`: formats the repo with Prettier
+- `npm run format:check`: checks formatting without writing changes
+- `npm test`: runs the full Vitest suite
+- `npm run test:watch`: runs Vitest in watch mode
+- `npm run test:unit`: runs unit tests under `test/unit`
+- `npm run test:smoke`: runs smoke tests under `test/smoke`
+
+## Generated Data
+
+`npm run prepare:geo` reads [`data-src/ansv_cameras_maplibre.geojson`](data-src/ansv_cameras_maplibre.geojson) and generates:
+
+- `public/geo/ansv_cameras_compact.min.json`
+- `public/geo/ansv_cameras_compact.kdbush`
+
+`public/geo/` may be missing in a fresh checkout until you run `npm run prepare:geo`, `npm run dev`, or `npm run build`.
+
+## Persistence Model
+
+The app uses a mix of IndexedDB and `localStorage`.
+
+- board drawings are stored in IndexedDB when available, with `localStorage` fallback/migration helpers
+- speed replay sessions are stored in IndexedDB when available, with `localStorage` fallback/migration helpers
+- accel settings and runs are stored in IndexedDB when available, with `localStorage` fallback/migration helpers
+- calculator state/history/settings, energy widget state, GPS Rate Lab notes/settings, and shared UI preferences use `localStorage`
+- replay depends on sessions recorded by the speed page
+
+## Backend Integration
+
+Shared backend auth lives in [`src/shared/backend-auth.js`](src/shared/backend-auth.js).
+
+Behavior:
+
+- production hosts use `https://api.vatioboard.com`
+- non-production hosts use `https://api.dev.vatioboard.com`
+- board, speed, replay, GPS Rate Lab, and accel surfaces all mount the shared auth controls
+- saving a board drawing to the backend depends on authenticated feature access and the `saved_drawings` capability
+- `login.html` is a plain manual test page for backend session and CORS troubleshooting
+
+## Testing
+
+The repo has both unit and smoke coverage.
+
+- unit tests cover storage, calculations, formatting, i18n, replay logic, GPS helpers, and related modules
+- smoke tests boot the real HTML entry pages in jsdom and assert SEO metadata, control wiring, and key flows with mocked browser APIs
+
+## Automation
+
+- [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs `npm ci`, `npm run lint`, `npm test`, and `npm run build` on pushes and pull requests
+- [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) builds `dist/` with Node 24 and deploys GitHub Pages on pushes to `main` or manual dispatch
 
 ## Runtime Notes
 
-- UI language is shared across pages through `src/i18n.js`
-- Most widget state is stored in `localStorage`:
-  - calculator history, expression state, and formatting settings
-  - board ink color and draggable panel positions
-  - energy widget settings and trip data
-  - speedometer units, alerts, and audio preferences
-- The speedometer requires geolocation support and user permission
-- Some audio features on the speedometer depend on a user gesture, which is why the page includes explicit audio toggles
-- The GPS Rate Lab is also browser-only and requires geolocation support plus user permission
-- GPS Rate Lab results are observed callback rates from the browser, not guaranteed GPS hardware sampling frequency
-- The acceleration timer is also browser-only and requires geolocation support plus user permission
-- Acceleration runs are estimates from observed browser GPS updates and are stored locally under:
-  - `vatioboard.accel.runs`
-  - `vatioboard.accel.settings`
-
-## GPS Rate Lab Note
-
-What it does:
-
-- runs a front-end-only browser geolocation sampling test
-- reports observed callback interval timing, field availability, and warning conditions like sparse updates or hidden-tab throttling
-
-How to run it:
-
-- `npm install`
-- `npm run dev`
-- open `http://localhost:5173/gps-rate.html`
-
-Known limitations:
-
-- browser geolocation callback rate is not the same thing as GPS hardware frequency
-- callbacks can be throttled by the browser, OS, permissions, battery policy, or hidden/background tab behavior
-- fields like `speed`, `heading`, `altitude`, and `altitudeAccuracy` may be null or unsupported depending on the browser and motion state
-- the page is intended for honest diagnostics, not Dragy-like claims or guaranteed telemetry precision
-
-## Acceleration Timer Note
-
-How it works:
-
-- open `http://localhost:5173/accel.html`
-- pick a preset or custom speed range
-- arm the run and let the page wait for movement or the rolling start threshold
-- the page times the run from observed browser geolocation updates, interpolates target crossings, and saves completed runs locally
-
-Known limitations:
-
-- this is a browser-based performance timer, not a certified timing system
-- observed geolocation callbacks are browser/device dependent and may be sparse, stale, or noisy
-- distance, speed, rollout, and interpolation are all estimates from the browser geolocation stream
-- quality grades are intended to expose uncertainty, not hide it
-
-Storage:
-
-- runs are stored in local browser storage at `vatioboard.accel.runs`
-- page settings are stored in local browser storage at `vatioboard.accel.settings`
-
-## Deployment
-
-GitHub Actions deploys the production build to GitHub Pages on pushes to `main`.
-
-The workflow in `.github/workflows/deploy.yml`:
-
-- installs dependencies with `npm ci`
-- builds the site with Node 24
-- uploads `dist/`
-- publishes via GitHub Pages
+- language is shared through [`src/i18n.js`](src/i18n.js)
+- geolocation permission is required for Vatio Speed, Vatio GPS Rate Lab, and Vatio Accel
+- some audio paths require a user gesture before playback is allowed by the browser
+- Vatio GPS Rate Lab reports observed browser callback behavior, not guaranteed GPS hardware frequency
+- Vatio Accel is an estimate-oriented browser timer, not a certified timing system
 
 ## Contributing
 
@@ -257,10 +276,6 @@ Contributions are welcome, especially around:
 - mobile and in-car usability
 - widget polish and accessibility
 - data pipeline improvements for the speedometer
-
-## License
-
-MIT
 
 ## Credits
 
