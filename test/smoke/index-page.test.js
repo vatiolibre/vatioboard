@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { BOARD_DRAWING_KEY } from "../../src/board/storage.js";
 import { bootHtmlPage, expectPageSeo, flushTasks } from "../helpers/page-smoke.js";
 
 vi.mock("@jaames/iro", () => ({
@@ -18,6 +19,15 @@ async function flushBoardTasks(iterations = 8) {
   for (let index = 0; index < iterations; index += 1) {
     await flushTasks();
   }
+}
+
+function dispatchBoardStroke(canvas, pointerId, clientX, clientY) {
+  const pointerDown = new MouseEvent("pointerdown", { bubbles: true, clientX, clientY });
+  const pointerUp = new MouseEvent("pointerup", { bubbles: true, clientX, clientY });
+  Object.defineProperty(pointerDown, "pointerId", { value: pointerId });
+  Object.defineProperty(pointerUp, "pointerId", { value: pointerId });
+  canvas.dispatchEvent(pointerDown);
+  canvas.dispatchEvent(pointerUp);
 }
 
 describe("index.html smoke", () => {
@@ -324,6 +334,72 @@ describe("index.html smoke", () => {
 
     expect(document.body.classList.contains("board-is-drawing")).toBe(false);
     expect(document.getElementById("undo").disabled).toBe(false);
+  });
+
+  it("cancels an active stroke before redoing history", async () => {
+    await import("../../src/board/board.js");
+    await flushBoardTasks();
+
+    const canvas = document.getElementById("pad");
+    dispatchBoardStroke(canvas, 1, 24, 24);
+
+    document.getElementById("undo").click();
+    await flushBoardTasks();
+    expect(document.getElementById("redo").disabled).toBe(false);
+
+    const pointerDown = new MouseEvent("pointerdown", { bubbles: true, clientX: 48, clientY: 48 });
+    Object.defineProperty(pointerDown, "pointerId", { value: 2 });
+    canvas.dispatchEvent(pointerDown);
+    expect(document.body.classList.contains("board-is-drawing")).toBe(true);
+
+    document.getElementById("redo").click();
+    expect(document.body.classList.contains("board-is-drawing")).toBe(false);
+    expect(document.getElementById("redo").disabled).toBe(true);
+
+    const pointerUp = new MouseEvent("pointerup", { bubbles: true, clientX: 48, clientY: 48 });
+    Object.defineProperty(pointerUp, "pointerId", { value: 2 });
+    canvas.dispatchEvent(pointerUp);
+
+    document.getElementById("undo").click();
+    expect(document.getElementById("undo").disabled).toBe(true);
+    expect(document.getElementById("redo").disabled).toBe(false);
+  });
+
+  it("restores large saved drafts after reload without dropping older strokes", async () => {
+    await import("../../src/board/board.js");
+    await flushBoardTasks();
+
+    const canvas = document.getElementById("pad");
+    const ctx = canvas.getContext("2d");
+    ctx.fillRect.mockClear();
+    ctx.drawImage.mockClear();
+
+    for (let index = 0; index < 125; index += 1) {
+      dispatchBoardStroke(canvas, index + 1, 12 + (index % 40), 18 + (index % 50));
+    }
+
+    await flushBoardTasks();
+
+    expect(ctx.fillRect).not.toHaveBeenCalled();
+    expect(ctx.drawImage).toHaveBeenCalledTimes(125);
+
+    const storedBeforeReload = JSON.parse(localStorage.getItem(BOARD_DRAWING_KEY));
+    expect(storedBeforeReload.commandCount).toBe(125);
+    expect(storedBeforeReload.commands).toHaveLength(125);
+
+    vi.resetModules();
+    await bootHtmlPage("index.html");
+    await import("../../src/board/board.js");
+    await flushBoardTasks();
+
+    expect(document.getElementById("undo").disabled).toBe(false);
+
+    document.getElementById("undo").click();
+    await flushBoardTasks();
+
+    const storedAfterUndo = JSON.parse(localStorage.getItem(BOARD_DRAWING_KEY));
+    expect(storedAfterUndo.commandCount).toBe(124);
+    expect(storedAfterUndo.redoCount).toBe(1);
   });
 
   it("guides guests to log in before saving", async () => {

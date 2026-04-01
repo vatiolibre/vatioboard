@@ -5,6 +5,7 @@ import "../styles/energy.less";
 import "../styles/dock.less";
 
 import { createCalculatorWidget } from "../calculator/calculator-widget.js";
+import { loadBoardDrawing, saveBoardDrawing } from "./storage.js";
 import { createEnergyCalculatorWidget } from "../energy/energy-calculator-widget.js";
 import { createFloatingDock } from "../dock/floating-dock.js";
 import {
@@ -115,6 +116,8 @@ bindNavigation(openAccelMenuBtn, "/accel");
   (function(){
     const canvas = document.getElementById("pad");
     const ctx = canvas.getContext("2d", { alpha: true });
+    const historyCanvas = document.createElement("canvas");
+    const historyCtx = historyCanvas.getContext("2d", { alpha: true });
     const statusEl = document.getElementById("status");
 
     const penBtn = document.getElementById("pen");
@@ -224,9 +227,12 @@ bindNavigation(openAccelMenuBtn, "/accel");
     let activePointerId = null;
     let last = null;
     let currentStroke = null;
+    let boardStateRevision = 0;
+    let canvasCssWidth = 0;
+    let canvasCssHeight = 0;
+    let canvasDpr = 1;
     const commandHistory = [];
     const redoHistory = [];
-    const MAX_HISTORY_STEPS = 120;
 
     // Theme-aware colors from CSS variables
     function cssVar(name){
@@ -301,13 +307,47 @@ bindNavigation(openAccelMenuBtn, "/accel");
       if (redoBtn) redoBtn.disabled = redoHistory.length === 0;
     }
 
+    function createBoardDrawingSnapshot(){
+      return {
+        commands: commandHistory.map(cloneCommand).filter(Boolean),
+        redoCommands: redoHistory.map(cloneCommand).filter(Boolean),
+      };
+    }
+
+    function queueBoardPersistence(){
+      boardStateRevision += 1;
+      void saveBoardDrawing(createBoardDrawingSnapshot());
+    }
+
+    async function hydrateBoardDrawing(){
+      const restoreRevision = boardStateRevision;
+      const storedDrawing = await loadBoardDrawing();
+
+      if (boardStateRevision !== restoreRevision || drawing || commandHistory.length > 0 || redoHistory.length > 0) {
+        return;
+      }
+
+      const restoredCommands = Array.isArray(storedDrawing?.commands)
+        ? storedDrawing.commands.map(cloneCommand).filter(Boolean)
+        : [];
+      const restoredRedoCommands = Array.isArray(storedDrawing?.redoCommands)
+        ? storedDrawing.redoCommands.map(cloneCommand).filter(Boolean)
+        : [];
+
+      if (restoredCommands.length === 0 && restoredRedoCommands.length === 0) {
+        return;
+      }
+
+      commandHistory.push(...restoredCommands);
+      redoHistory.push(...restoredRedoCommands);
+      syncHistoryButtons();
+      redrawCanvas();
+    }
+
     function pushHistoryCommand(command, { clearRedo = true } = {}){
       const nextCommand = cloneCommand(command);
       if (!nextCommand) return;
       commandHistory.push(nextCommand);
-      if (commandHistory.length > MAX_HISTORY_STEPS) {
-        commandHistory.shift();
-      }
       if (clearRedo) {
         redoHistory.length = 0;
       }
@@ -409,75 +449,94 @@ bindNavigation(openAccelMenuBtn, "/accel");
       document.documentElement.style.setProperty("--ink", hex);
     }
 
-    function fillCanvasBackground(){
-      const rect = canvas.getBoundingClientRect();
-      ctx.save();
-      ctx.globalCompositeOperation = "source-over";
-      ctx.fillStyle = currentCanvasBg();
-      ctx.fillRect(0, 0, rect.width, rect.height);
-      ctx.restore();
+    function fillCanvasBackground(targetCtx = ctx){
+      targetCtx.save();
+      targetCtx.globalCompositeOperation = "source-over";
+      targetCtx.fillStyle = currentCanvasBg();
+      targetCtx.fillRect(0, 0, canvasCssWidth, canvasCssHeight);
+      targetCtx.restore();
     }
 
-    function applyCommandStyle(command){
-      ctx.lineWidth = command.size;
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
+    function applyCommandStyle(targetCtx, command){
+      targetCtx.lineWidth = command.size;
+      targetCtx.lineCap = "round";
+      targetCtx.lineJoin = "round";
 
       if (command.tool === "eraser") {
-        ctx.globalCompositeOperation = "destination-out";
-        ctx.strokeStyle = "rgba(0,0,0,1)";
-        ctx.fillStyle = "rgba(0,0,0,1)";
+        targetCtx.globalCompositeOperation = "destination-out";
+        targetCtx.strokeStyle = "rgba(0,0,0,1)";
+        targetCtx.fillStyle = "rgba(0,0,0,1)";
       } else {
-        ctx.globalCompositeOperation = "source-over";
+        targetCtx.globalCompositeOperation = "source-over";
         const appliedInk = ensureInkContrast(command.inkRaw);
-        ctx.strokeStyle = appliedInk;
-        ctx.fillStyle = appliedInk;
+        targetCtx.strokeStyle = appliedInk;
+        targetCtx.fillStyle = appliedInk;
       }
     }
 
-    function drawCommand(command){
+    function drawCommandToContext(targetCtx, command){
       if (!command) return;
       if (command.type === "clear") {
-        fillCanvasBackground();
+        fillCanvasBackground(targetCtx);
         return;
       }
 
       if (!Array.isArray(command.points) || command.points.length === 0) return;
 
-      ctx.save();
-      applyCommandStyle(command);
+      targetCtx.save();
+      applyCommandStyle(targetCtx, command);
 
       if (command.points.length === 1) {
         const point = command.points[0];
-        ctx.beginPath();
-        ctx.arc(point.x, point.y, Math.max(1, command.size / 2), 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
+        targetCtx.beginPath();
+        targetCtx.arc(point.x, point.y, Math.max(1, command.size / 2), 0, Math.PI * 2);
+        targetCtx.fill();
+        targetCtx.restore();
         return;
       }
 
-      ctx.beginPath();
-      ctx.moveTo(command.points[0].x, command.points[0].y);
+      targetCtx.beginPath();
+      targetCtx.moveTo(command.points[0].x, command.points[0].y);
 
       let previousPoint = command.points[0];
       for (let index = 1; index < command.points.length; index += 1) {
         const point = command.points[index];
         const middleX = (previousPoint.x + point.x) / 2;
         const middleY = (previousPoint.y + point.y) / 2;
-        ctx.quadraticCurveTo(previousPoint.x, previousPoint.y, middleX, middleY);
+        targetCtx.quadraticCurveTo(previousPoint.x, previousPoint.y, middleX, middleY);
         previousPoint = point;
       }
 
-      ctx.lineTo(previousPoint.x, previousPoint.y);
-      ctx.stroke();
+      targetCtx.lineTo(previousPoint.x, previousPoint.y);
+      targetCtx.stroke();
+      targetCtx.restore();
+    }
+
+    function prepareHistorySurface(){
+      historyCanvas.width = canvas.width;
+      historyCanvas.height = canvas.height;
+      historyCtx.setTransform(canvasDpr, 0, 0, canvasDpr, 0, 0);
+      fillCanvasBackground(historyCtx);
+    }
+
+    function copyHistorySurfaceToVisible(){
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(historyCanvas, 0, 0);
       ctx.restore();
     }
 
-    function redrawCanvas(){
-      fillCanvasBackground();
+    function rebuildHistorySurface(){
+      fillCanvasBackground(historyCtx);
       for (const command of commandHistory) {
-        drawCommand(command);
+        drawCommandToContext(historyCtx, command);
       }
+    }
+
+    function redrawCanvas(){
+      rebuildHistorySurface();
+      copyHistorySurfaceToVisible();
     }
 
     function ensureIroPicker(){
@@ -616,9 +675,13 @@ bindNavigation(openAccelMenuBtn, "/accel");
     function resize(){
       const rect = canvas.getBoundingClientRect();
       const dpr = Math.max(1, window.devicePixelRatio || 1);
+      canvasCssWidth = rect.width;
+      canvasCssHeight = rect.height;
+      canvasDpr = dpr;
 
       canvas.width = Math.floor(rect.width * dpr);
       canvas.height = Math.floor(rect.height * dpr);
+      prepareHistorySurface();
 
       // Work in CSS pixels
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -651,7 +714,7 @@ bindNavigation(openAccelMenuBtn, "/accel");
         inkRaw,
         points: [clonePoint(last)],
       };
-      applyCommandStyle(currentStroke);
+      applyCommandStyle(ctx, currentStroke);
       ctx.beginPath();
       ctx.moveTo(last.x, last.y);
     }
@@ -661,7 +724,7 @@ bindNavigation(openAccelMenuBtn, "/accel");
       if(!drawing || !currentStroke) return;
       const p = pos(ev);
       currentStroke.points.push(clonePoint(p));
-      applyCommandStyle(currentStroke);
+      applyCommandStyle(ctx, currentStroke);
 
       const mx = (last.x + p.x) / 2;
       const my = (last.y + p.y) / 2;
@@ -690,9 +753,11 @@ bindNavigation(openAccelMenuBtn, "/accel");
       if (currentStroke) {
         if (commit) {
           pushHistoryCommand(currentStroke);
+          drawCommandToContext(historyCtx, currentStroke);
+          queueBoardPersistence();
         }
         currentStroke = null;
-        redrawCanvas();
+        copyHistorySurfaceToVisible();
       }
       return true;
     }
@@ -708,14 +773,18 @@ bindNavigation(openAccelMenuBtn, "/accel");
 
       if (commandHistory.length === 0) {
         redoHistory.length = 0;
-        redrawCanvas();
+        fillCanvasBackground(historyCtx);
+        copyHistorySurfaceToVisible();
         syncHistoryButtons();
+        queueBoardPersistence();
         setStatus(t("cleared"));
         return;
       }
 
       pushHistoryCommand({ type: "clear" });
-      redrawCanvas();
+      drawCommandToContext(historyCtx, { type: "clear" });
+      copyHistorySurfaceToVisible();
+      queueBoardPersistence();
       setStatus(t("cleared"));
     }
 
@@ -726,14 +795,18 @@ bindNavigation(openAccelMenuBtn, "/accel");
       redoHistory.push(command);
       redrawCanvas();
       syncHistoryButtons();
+      queueBoardPersistence();
       setStatus(t("undo"));
     }
 
     function redo(){
       if (!redoHistory.length) return;
+      finishStroke({ commit: false });
       const command = redoHistory.pop();
       pushHistoryCommand(command, { clearRedo: false });
-      redrawCanvas();
+      drawCommandToContext(historyCtx, command);
+      copyHistorySurfaceToVisible();
+      queueBoardPersistence();
       setStatus(t("redo"));
     }
 
@@ -976,4 +1049,5 @@ bindNavigation(openAccelMenuBtn, "/accel");
 
     resize();
     setStatus(t("ready"));
+    void hydrateBoardDrawing();
   })();
