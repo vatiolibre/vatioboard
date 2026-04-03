@@ -2,6 +2,29 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { emitGeolocationSuccess, getBrowserMocks } from "../helpers/browser-mocks.js";
 import { bootHtmlPage, expectPageSeo, flushTasks } from "../helpers/page-smoke.js";
 
+vi.mock("../../src/shared/place-resolver.js", async () => {
+  const actual = await vi.importActual("../../src/shared/place-resolver.js");
+  return {
+    ...actual,
+    createPlaceResolver: () => ({
+      reversePlace: vi.fn(async () => ({ place: null, data: null, meta: null })),
+      reverseCountry: vi.fn(async () => ({
+        place: null,
+        data: null,
+        meta: null,
+        countryCode: "",
+      })),
+    }),
+  };
+});
+
+function getSearchCalls() {
+  return window.fetch.mock.calls.filter(([input]) => {
+    const url = typeof input === "string" ? input : String(input?.url ?? "");
+    return url.includes("https://nominatim.openstreetmap.org/search?");
+  });
+}
+
 describe("gps-rate.html smoke", () => {
   beforeEach(async () => {
     vi.resetModules();
@@ -68,14 +91,12 @@ describe("gps-rate.html smoke", () => {
     searchQuery.value = "Bogota";
     searchQuery.dispatchEvent(new Event("input", { bubbles: true }));
     document.getElementById("nominatimSearchRun").click();
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      await flushTasks();
-    }
+    await vi.waitFor(() => {
+      expect(getSearchCalls()).toHaveLength(1);
+    }, { timeout: 2000, interval: 50 });
+    await flushTasks();
 
-    const searchCalls = window.fetch.mock.calls.filter(([input]) => {
-      const url = typeof input === "string" ? input : String(input?.url ?? "");
-      return url.includes("https://nominatim.openstreetmap.org/search?");
-    });
+    const searchCalls = getSearchCalls();
     expect(searchCalls).toHaveLength(1);
     expect(searchCalls[0][0]).toContain("https://nominatim.openstreetmap.org/search?");
     expect(searchCalls[0][0]).toContain("q=Bogota");
@@ -83,14 +104,12 @@ describe("gps-rate.html smoke", () => {
     expect(document.getElementById("nominatimResponseOutput").textContent).toContain("Bogota, Colombia");
 
     document.getElementById("nominatimSearchRun").click();
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      await flushTasks();
-    }
+    await flushTasks();
+    await vi.waitFor(() => {
+      expect(document.getElementById("nominatimRequestSourceValue").textContent).toBe("Cached response");
+    }, { timeout: 1000, interval: 25 });
 
-    expect(window.fetch.mock.calls.filter(([input]) => {
-      const url = typeof input === "string" ? input : String(input?.url ?? "");
-      return url.includes("https://nominatim.openstreetmap.org/search?");
-    })).toHaveLength(1);
+    expect(getSearchCalls()).toHaveLength(1);
     expect(document.getElementById("nominatimRequestSourceValue").textContent).toBe("Cached response");
   });
 });
