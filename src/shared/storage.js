@@ -1,4 +1,4 @@
-export function loadText(key, fallback = "") {
+export function loadText(key, fallback = '') {
   try {
     const value = localStorage.getItem(key);
     return value === null ? fallback : value;
@@ -15,9 +15,17 @@ export function saveText(key, value) {
   }
 }
 
+export function hasStoredValue(key) {
+  try {
+    return localStorage.getItem(key) !== null;
+  } catch {
+    return false;
+  }
+}
+
 export function loadBoolean(key, fallback = false) {
   const value = loadText(key, null);
-  return value === null ? fallback : value === "true";
+  return value === null ? fallback : value === 'true';
 }
 
 export function saveBoolean(key, value) {
@@ -26,10 +34,10 @@ export function saveBoolean(key, value) {
 
 export function loadNumber(key, fallback = 0, options = {}) {
   const value = loadText(key, null);
-  if (value === null || value === "") return fallback;
+  if (value === null || value === '') return fallback;
 
-  const parse = typeof options.parse === "function" ? options.parse : Number.parseFloat;
-  const validate = typeof options.validate === "function" ? options.validate : () => true;
+  const parse = typeof options.parse === 'function' ? options.parse : Number.parseFloat;
+  const validate = typeof options.validate === 'function' ? options.validate : () => true;
   const parsed = parse(value);
 
   if (!Number.isFinite(parsed) || !validate(parsed)) {

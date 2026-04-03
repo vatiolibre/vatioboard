@@ -1,5 +1,5 @@
-import { accelTranslations } from "./accel/translations.js";
-import { loadText, saveText } from "./shared/storage.js";
+import { accelTranslations } from './accel/translations.js';
+import { loadText, saveText } from './shared/storage.js';
 
 /**
  * VatioBoard i18n - Minimal internationalization
@@ -204,11 +204,16 @@ const baseTranslations = {
     nearbyTrapOverrides: 'Nearby trap speed overrides the manual limit.',
     allowLocationAccess: 'Allow location access to measure speed.',
     retryGps: 'Retry GPS',
-    noticeNoGeolocation: 'This browser does not expose geolocation, so live speed cannot start here.',
-    noticeLocationRequired: 'Location access is required. Allow GPS for this site and press Retry GPS.',
-    noticeSignalUnavailable: 'GPS signal is unavailable right now. Move to a clearer area and retry.',
-    noticeStillWaiting: 'Still waiting for a GPS lock. Make sure location access is enabled and try again.',
-    noticeStillLookingFirstFix: 'Still looking for the first GPS fix. Keep location enabled and give the browser a moment.',
+    noticeNoGeolocation:
+      'This browser does not expose geolocation, so live speed cannot start here.',
+    noticeLocationRequired:
+      'Location access is required. Allow GPS for this site and press Retry GPS.',
+    noticeSignalUnavailable:
+      'GPS signal is unavailable right now. Move to a clearer area and retry.',
+    noticeStillWaiting:
+      'Still waiting for a GPS lock. Make sure location access is enabled and try again.',
+    noticeStillLookingFirstFix:
+      'Still looking for the first GPS fix. Keep location enabled and give the browser a moment.',
 
     // Color names
     graphite: 'Graphite',
@@ -242,22 +247,27 @@ const baseTranslations = {
     speedTagline: 'Minimal live speedometer by Vatio Libre',
     speedRoute: 'SPEED',
     speedPageTitle: 'Vatio Speed - Free Live GPS Speedometer for Tesla and Mobile',
-    speedPageDescription: 'Vatio Speed is a free live GPS speedometer with an analog dial, trip stats, unit switching, altitude tracking, and speed trap alerts. Works in Tesla browsers and modern mobile browsers.',
+    speedPageDescription:
+      'Vatio Speed is a free live GPS speedometer with an analog dial, trip stats, unit switching, altitude tracking, and speed trap alerts. Works in Tesla browsers and modern mobile browsers.',
     speedPageH1: 'Vatio Speed live GPS speedometer',
-    speedPageLead: 'Live GPS speedometer with analog dial, trip stats, unit switching, altitude tracking, and speed trap alerts for Tesla and mobile browsers.',
+    speedPageLead:
+      'Live GPS speedometer with analog dial, trip stats, unit switching, altitude tracking, and speed trap alerts for Tesla and mobile browsers.',
     replayTagline: 'Drive replay by Vatio Libre',
     replayRoute: 'REPLAY',
     replaySessionActive: 'Active session',
     replaySessionSaved: 'Saved session',
     replaySessionLast: 'Last saved session',
     replayPageTitle: 'Vatio Drive Replay - Replay your latest GPS drive on a 3D globe',
-    replayPageDescription: 'Replay your latest Vatio Speed drive with a hardware-accelerated 3D globe, route timeline, live playback metrics, and session highlights.',
+    replayPageDescription:
+      'Replay your latest Vatio Speed drive with a hardware-accelerated 3D globe, route timeline, live playback metrics, and session highlights.',
     replayPageH1: 'Vatio Drive Replay',
-    replayPageLead: 'Replay your latest Vatio Speed drive on a hardware-accelerated 3D globe with a progress timeline and live metrics.',
+    replayPageLead:
+      'Replay your latest Vatio Speed drive on a hardware-accelerated 3D globe with a progress timeline and live metrics.',
     replayRecordedAt: 'Recorded',
     replaySamples: 'Samples',
     replayEmptyTitle: 'No replay session saved yet',
-    replayEmptyLead: 'Open Vatio Speed, let GPS collect a route, then come back here to replay it on the globe.',
+    replayEmptyLead:
+      'Open Vatio Speed, let GPS collect a route, then come back here to replay it on the globe.',
     replayOpenSpeed: 'Open Vatio Speed',
     replayPlay: 'Play',
     replayPause: 'Pause',
@@ -275,6 +285,7 @@ const baseTranslations = {
     replayDragToExplore: 'Drag across the chart to scrub the replay.',
     replaySummary: 'Summary',
     replaySummaryLead: 'Static trip totals from the recorded drive.',
+    replayRouteLabel: 'Route',
     replayAltitudeRange: 'Altitude range',
     replayTime: 'Replay time',
     replayRecordings: 'Recordings',
@@ -293,13 +304,16 @@ const baseTranslations = {
     gpsRateRoute: 'GPS LAB',
     gpsRateToolbar: 'GPS rate tools',
     gpsRatePageTitle: 'Vatio GPS Rate Lab - Browser Geolocation Sampling Test',
-    gpsRatePageDescription: 'Measure observed browser geolocation callback rate, intervals, and field availability in Tesla and modern mobile browsers.',
+    gpsRatePageDescription:
+      'Measure observed browser geolocation callback rate, intervals, and field availability in Tesla and modern mobile browsers.',
     gpsRatePageH1: 'Vatio GPS Rate Lab',
     gpsRatePageLead: 'Touch-first browser geolocation diagnostics for Tesla and mobile.',
     gpsRateObservedRateLabel: 'Observed callback rate',
     gpsRateHeroTitle: 'Observed browser geolocation callback rate',
-    gpsRateHeroLead: 'Measures browser callback timing from watchPosition(). This is not GPS hardware frequency.',
-    gpsRateDisclaimer: 'Observed callback rate only. Browser, OS, permissions, visibility, and device behavior all affect results.',
+    gpsRateHeroLead:
+      'Measures browser callback timing from watchPosition(). This is not GPS hardware frequency.',
+    gpsRateDisclaimer:
+      'Observed callback rate only. Browser, OS, permissions, visibility, and device behavior all affect results.',
     gpsRateTestConfig: 'watchPosition high accuracy, maximumAge 0, timeout 10000 ms',
     gpsRateControls: 'Test controls',
     gpsRateStart: 'Start Test',
@@ -325,9 +339,11 @@ const baseTranslations = {
     gpsRateSessionNotes: 'Session notes',
     gpsRateSessionNotesPlaceholder: 'Example: Tesla Model Y browser parked',
     gpsRateNominatim: 'Nominatim API',
-    gpsRateNominatimLead: 'Manual policy-safe requests for Search, Reverse, Lookup, Status, and Details on custom servers.',
+    gpsRateNominatimLead:
+      'Manual policy-safe requests for Search, Reverse, Lookup, Status, and Details on custom servers.',
     gpsRateNominatimRateLimit: 'Shared 1 req/s',
-    gpsRateNominatimPolicy: 'Manual requests only. No autocomplete. Repeated identical requests are cached. Details stays disabled on the public server.',
+    gpsRateNominatimPolicy:
+      'Manual requests only. No autocomplete. Repeated identical requests are cached. Details stays disabled on the public server.',
     gpsRateNominatimBaseUrl: 'Nominatim service URL',
     gpsRateNominatimEndpoints: 'Nominatim endpoints',
     gpsRateNominatimSearch: 'Search',
@@ -343,8 +359,10 @@ const baseTranslations = {
     gpsRateNominatimDetailsPlaceholder: 'Example: 123456789',
     gpsRateNominatimRun: 'Run request',
     gpsRateNominatimUseLatestSample: 'Use latest sample',
-    gpsRateNominatimStatusLead: 'Reports whether the configured service is available and when its data was last updated.',
-    gpsRateNominatimDetailsPublicNotice: 'Details is disabled on the public Nominatim server. Switch the service URL to a custom server to test it.',
+    gpsRateNominatimStatusLead:
+      'Reports whether the configured service is available and when its data was last updated.',
+    gpsRateNominatimDetailsPublicNotice:
+      'Details is disabled on the public Nominatim server. Switch the service URL to a custom server to test it.',
     gpsRateNominatimEndpoint: 'Endpoint',
     gpsRateNominatimSource: 'Source',
     gpsRateNominatimSourceLive: 'Live request',
@@ -379,6 +397,7 @@ const baseTranslations = {
     gpsRateAltitudeAccuracyField: 'Altitude accuracy',
     gpsRateAccuracyField: 'Accuracy field',
     gpsRateAverageAccuracy: 'Average accuracy',
+    gpsRatePlace: 'Place',
     gpsRateStatusNotes: 'Status / notes',
     gpsRateSummaryUnavailable: 'Run a test to fill the summary.',
     gpsRateDiagnostics: 'Diagnostics',
@@ -667,7 +686,8 @@ const baseTranslations = {
     loadingTrapData: 'Cargando datos de radares',
     loadingSpeedTrapData: 'Cargando datos de radares de velocidad',
     trapDataUnavailable: 'Datos de radares no disponibles',
-    trapAlertsEnabledUnavailable: 'Las alertas de radar están activadas, pero los datos no están disponibles',
+    trapAlertsEnabledUnavailable:
+      'Las alertas de radar están activadas, pero los datos no están disponibles',
     lookingFirstGpsFix: 'Buscando la primera señal GPS',
     liveMapWaitingGps: 'Esperando GPS para centrar el mapa en vivo.',
     loadingWazeMap: 'Cargando el mapa en vivo de Waze...',
@@ -684,11 +704,16 @@ const baseTranslations = {
     nearbyTrapOverrides: 'La velocidad del radar cercano reemplaza el límite manual.',
     allowLocationAccess: 'Permite el acceso a la ubicación para medir la velocidad.',
     retryGps: 'Reintentar GPS',
-    noticeNoGeolocation: 'Este navegador no ofrece geolocalización, por lo que la medición no puede iniciar aquí.',
-    noticeLocationRequired: 'Se requiere acceso a la ubicación. Permite el GPS para este sitio y pulsa Reintentar GPS.',
-    noticeSignalUnavailable: 'La señal GPS no está disponible en este momento. Muévete a un área más despejada y vuelve a intentar.',
-    noticeStillWaiting: 'Aún esperando señal GPS. Verifica que la ubicación esté activada y vuelve a intentar.',
-    noticeStillLookingFirstFix: 'Aún buscando la primera señal GPS. Mantén la ubicación activa y dale un momento al navegador.',
+    noticeNoGeolocation:
+      'Este navegador no ofrece geolocalización, por lo que la medición no puede iniciar aquí.',
+    noticeLocationRequired:
+      'Se requiere acceso a la ubicación. Permite el GPS para este sitio y pulsa Reintentar GPS.',
+    noticeSignalUnavailable:
+      'La señal GPS no está disponible en este momento. Muévete a un área más despejada y vuelve a intentar.',
+    noticeStillWaiting:
+      'Aún esperando señal GPS. Verifica que la ubicación esté activada y vuelve a intentar.',
+    noticeStillLookingFirstFix:
+      'Aún buscando la primera señal GPS. Mantén la ubicación activa y dale un momento al navegador.',
 
     // Color names
     graphite: 'Grafito',
@@ -722,22 +747,27 @@ const baseTranslations = {
     speedTagline: 'Velocímetro en vivo minimalista por Vatio Libre',
     speedRoute: 'VELOCIDAD',
     speedPageTitle: 'Vatio Speed - Velocímetro GPS en vivo gratis para Tesla y móvil',
-    speedPageDescription: 'Vatio Speed es un velocímetro GPS en vivo gratis con dial analógico, estadísticas de viaje, cambio de unidades, seguimiento de altitud y alertas de radares. Funciona bien en navegadores Tesla y móviles modernos.',
+    speedPageDescription:
+      'Vatio Speed es un velocímetro GPS en vivo gratis con dial analógico, estadísticas de viaje, cambio de unidades, seguimiento de altitud y alertas de radares. Funciona bien en navegadores Tesla y móviles modernos.',
     speedPageH1: 'Vatio Speed velocímetro GPS en vivo',
-    speedPageLead: 'Velocímetro GPS en vivo con dial analógico, estadísticas de viaje, cambio de unidades, seguimiento de altitud y alertas de radares para navegadores Tesla y móviles.',
+    speedPageLead:
+      'Velocímetro GPS en vivo con dial analógico, estadísticas de viaje, cambio de unidades, seguimiento de altitud y alertas de radares para navegadores Tesla y móviles.',
     replayTagline: 'Replay de conducción por Vatio Libre',
     replayRoute: 'REPLAY',
     replaySessionActive: 'Sesión activa',
     replaySessionSaved: 'Sesión guardada',
     replaySessionLast: 'Última sesión guardada',
     replayPageTitle: 'Vatio Drive Replay - Reproduce tu última ruta GPS en un globo 3D',
-    replayPageDescription: 'Reproduce tu última ruta de Vatio Speed con un globo 3D acelerado por hardware, línea de tiempo, métricas en vivo y puntos destacados.',
+    replayPageDescription:
+      'Reproduce tu última ruta de Vatio Speed con un globo 3D acelerado por hardware, línea de tiempo, métricas en vivo y puntos destacados.',
     replayPageH1: 'Vatio Drive Replay',
-    replayPageLead: 'Reproduce tu última ruta de Vatio Speed en un globo 3D acelerado por hardware con línea de tiempo y métricas en vivo.',
+    replayPageLead:
+      'Reproduce tu última ruta de Vatio Speed en un globo 3D acelerado por hardware con línea de tiempo y métricas en vivo.',
     replayRecordedAt: 'Grabado',
     replaySamples: 'Muestras',
     replayEmptyTitle: 'Todavía no hay una sesión para replay',
-    replayEmptyLead: 'Abre Vatio Speed, deja que el GPS capture una ruta y vuelve aquí para reproducirla en el globo.',
+    replayEmptyLead:
+      'Abre Vatio Speed, deja que el GPS capture una ruta y vuelve aquí para reproducirla en el globo.',
     replayOpenSpeed: 'Abrir Vatio Speed',
     replayPlay: 'Play',
     replayPause: 'Pausa',
@@ -755,6 +785,7 @@ const baseTranslations = {
     replayDragToExplore: 'Arrastra sobre el gráfico para mover el replay.',
     replaySummary: 'Resumen',
     replaySummaryLead: 'Totales estáticos del viaje grabado.',
+    replayRouteLabel: 'Ruta',
     replayAltitudeRange: 'Rango de altitud',
     replayTime: 'Tiempo del replay',
     replayRecordings: 'Grabaciones',
@@ -773,13 +804,16 @@ const baseTranslations = {
     gpsRateRoute: 'GPS LAB',
     gpsRateToolbar: 'Herramientas de tasa GPS',
     gpsRatePageTitle: 'Vatio GPS Rate Lab - Prueba de muestreo de geolocalización del navegador',
-    gpsRatePageDescription: 'Mide la tasa observada de callbacks de geolocalización, sus intervalos y la disponibilidad de campos en navegadores Tesla y móviles modernos.',
+    gpsRatePageDescription:
+      'Mide la tasa observada de callbacks de geolocalización, sus intervalos y la disponibilidad de campos en navegadores Tesla y móviles modernos.',
     gpsRatePageH1: 'Vatio GPS Rate Lab',
     gpsRatePageLead: 'Diagnóstico táctil de geolocalización para Tesla y móvil.',
     gpsRateObservedRateLabel: 'Tasa observada de callbacks',
     gpsRateHeroTitle: 'Tasa observada de callbacks de geolocalización',
-    gpsRateHeroLead: 'Mide el tiempo de los callbacks de watchPosition(). No es la frecuencia real del hardware GPS.',
-    gpsRateDisclaimer: 'Solo muestra la tasa observada de callbacks. El navegador, el sistema, los permisos, la visibilidad y el dispositivo cambian el resultado.',
+    gpsRateHeroLead:
+      'Mide el tiempo de los callbacks de watchPosition(). No es la frecuencia real del hardware GPS.',
+    gpsRateDisclaimer:
+      'Solo muestra la tasa observada de callbacks. El navegador, el sistema, los permisos, la visibilidad y el dispositivo cambian el resultado.',
     gpsRateTestConfig: 'watchPosition alta precisión, maximumAge 0, timeout 10000 ms',
     gpsRateControls: 'Controles de prueba',
     gpsRateStart: 'Iniciar prueba',
@@ -805,9 +839,11 @@ const baseTranslations = {
     gpsRateSessionNotes: 'Notas de sesión',
     gpsRateSessionNotesPlaceholder: 'Ejemplo: navegador Tesla Model Y estacionado',
     gpsRateNominatim: 'API de Nominatim',
-    gpsRateNominatimLead: 'Solicitudes manuales y seguras según la política para Search, Reverse, Lookup, Status y Details en servidores propios.',
+    gpsRateNominatimLead:
+      'Solicitudes manuales y seguras según la política para Search, Reverse, Lookup, Status y Details en servidores propios.',
     gpsRateNominatimRateLimit: 'Compartido 1 req/s',
-    gpsRateNominatimPolicy: 'Solo solicitudes manuales. Sin autocompletar. Las solicitudes idénticas se guardan en caché. Details queda deshabilitado en el servidor público.',
+    gpsRateNominatimPolicy:
+      'Solo solicitudes manuales. Sin autocompletar. Las solicitudes idénticas se guardan en caché. Details queda deshabilitado en el servidor público.',
     gpsRateNominatimBaseUrl: 'URL del servicio Nominatim',
     gpsRateNominatimEndpoints: 'Endpoints de Nominatim',
     gpsRateNominatimSearch: 'Search',
@@ -823,8 +859,10 @@ const baseTranslations = {
     gpsRateNominatimDetailsPlaceholder: 'Ejemplo: 123456789',
     gpsRateNominatimRun: 'Ejecutar solicitud',
     gpsRateNominatimUseLatestSample: 'Usar última muestra',
-    gpsRateNominatimStatusLead: 'Informa si el servicio configurado está disponible y cuándo se actualizó por última vez su base de datos.',
-    gpsRateNominatimDetailsPublicNotice: 'Details está deshabilitado en el servidor público de Nominatim. Cambia la URL del servicio a un servidor propio para probarlo.',
+    gpsRateNominatimStatusLead:
+      'Informa si el servicio configurado está disponible y cuándo se actualizó por última vez su base de datos.',
+    gpsRateNominatimDetailsPublicNotice:
+      'Details está deshabilitado en el servidor público de Nominatim. Cambia la URL del servicio a un servidor propio para probarlo.',
     gpsRateNominatimEndpoint: 'Endpoint',
     gpsRateNominatimSource: 'Origen',
     gpsRateNominatimSourceLive: 'Solicitud en vivo',
@@ -859,6 +897,7 @@ const baseTranslations = {
     gpsRateAltitudeAccuracyField: 'Precisión de altitud',
     gpsRateAccuracyField: 'Campo de precisión',
     gpsRateAverageAccuracy: 'Precisión promedio',
+    gpsRatePlace: 'Lugar',
     gpsRateStatusNotes: 'Estado / notas',
     gpsRateSummaryUnavailable: 'Ejecuta una prueba para llenar el resumen.',
     gpsRateDiagnostics: 'Diagnóstico',
@@ -884,14 +923,16 @@ const baseTranslations = {
     gpsRateCallbackDelta: 'Delta del callback',
     gpsRateGeoDelta: 'Delta de marca geográfica',
     gpsRateMotionAnalysis: 'Análisis de movimiento',
-    gpsRateMotionLead: 'Usa la velocidad reportada cuando existe y luego desplazamiento aproximado contra la precisión.',
+    gpsRateMotionLead:
+      'Usa la velocidad reportada cuando existe y luego desplazamiento aproximado contra la precisión.',
     gpsRateMotionSource: 'Fuente del movimiento',
     gpsRateMovingHz: 'Hz promedio en movimiento',
     gpsRateStationaryHz: 'Hz promedio en reposo',
     gpsRateMovingSamples: 'Muestras en movimiento',
     gpsRateStationarySamples: 'Muestras en reposo',
     gpsRateEventLog: 'Registro de eventos',
-    gpsRateEventLogLead: 'Muestras más nuevas primero. Borrar registro solo limpia el panel visible.',
+    gpsRateEventLogLead:
+      'Muestras más nuevas primero. Borrar registro solo limpia el panel visible.',
     gpsRateClearLog: 'Borrar registro',
     gpsRateLogEmpty: 'Aún no hay callbacks.',
     gpsRateLogIndex: '#',
@@ -947,7 +988,8 @@ const baseTranslations = {
     gpsRateUnavailable: 'Ubicación no disponible',
     gpsRateTimeout: 'Tiempo de espera de ubicación agotado',
     gpsRateError: 'Error de geolocalización',
-    gpsRateObservedOnlyNote: 'Tasa observada de callbacks del navegador, no frecuencia del hardware GPS.',
+    gpsRateObservedOnlyNote:
+      'Tasa observada de callbacks del navegador, no frecuencia del hardware GPS.',
 
     // Speed alert templates
     trapLabel: 'Radar {distance}',
@@ -965,7 +1007,7 @@ const baseTranslations = {
     trapAhead: 'Radar a {distance}',
     manualAlertAt: 'Alerta manual en {limit}',
     overTrapLimitBy: 'Sobre el límite del radar en {delta}',
-  }
+  },
 };
 
 const translations = {
@@ -976,7 +1018,8 @@ const translations = {
 const LANG_KEY = 'vatio_board_lang';
 
 const storedLang = loadText(LANG_KEY, null);
-const detectedLang = storedLang || window.__lang || (navigator.language?.startsWith('es') ? 'es' : 'en');
+const detectedLang =
+  storedLang || window.__lang || (navigator.language?.startsWith('es') ? 'es' : 'en');
 
 // Current language (can be changed later for manual switching)
 let currentLang = detectedLang;
@@ -1034,22 +1077,22 @@ export function toggleLang() {
  * Apply translations to DOM elements with data-i18n attribute
  */
 export function applyTranslations() {
-  document.querySelectorAll('[data-i18n]').forEach(el => {
+  document.querySelectorAll('[data-i18n]').forEach((el) => {
     const key = el.getAttribute('data-i18n');
     el.textContent = t(key);
   });
 
-  document.querySelectorAll('[data-i18n-aria]').forEach(el => {
+  document.querySelectorAll('[data-i18n-aria]').forEach((el) => {
     const key = el.getAttribute('data-i18n-aria');
     el.setAttribute('aria-label', t(key));
   });
 
-  document.querySelectorAll('[data-i18n-title]').forEach(el => {
+  document.querySelectorAll('[data-i18n-title]').forEach((el) => {
     const key = el.getAttribute('data-i18n-title');
     el.setAttribute('title', t(key));
   });
 
-  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+  document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
     const key = el.getAttribute('data-i18n-placeholder');
     el.setAttribute('placeholder', t(key));
   });

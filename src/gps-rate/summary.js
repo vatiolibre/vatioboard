@@ -1,3 +1,4 @@
+import { normalizePlace } from '../shared/place-resolver.js';
 import {
   HISTOGRAM_BUCKETS,
   MAX_ACCURACY_INFLUENCE_M,
@@ -6,22 +7,28 @@ import {
   MOVING_SPEED_THRESHOLD_MS,
   STALE_SAMPLE_AGE_MS,
   STATIONARY_SPEED_THRESHOLD_MS,
-} from "./constants.js";
+} from './constants.js';
 
 export function normalizeStoredSummary(summary, fallbackNow = Date.now()) {
-  if (!summary || typeof summary !== "object") return null;
+  if (!summary || typeof summary !== 'object') return null;
 
   return {
-    source: "saved",
+    source: 'saved',
     savedAtMs: Number.isFinite(summary.savedAtMs) ? summary.savedAtMs : fallbackNow,
     durationMs: Number.isFinite(summary.durationMs) ? summary.durationMs : 0,
     sampleCount: Number.isFinite(summary.sampleCount) ? summary.sampleCount : 0,
-    currentIntervalMs: Number.isFinite(summary.currentIntervalMs) ? summary.currentIntervalMs : null,
-    averageIntervalMs: Number.isFinite(summary.averageIntervalMs) ? summary.averageIntervalMs : null,
+    currentIntervalMs: Number.isFinite(summary.currentIntervalMs)
+      ? summary.currentIntervalMs
+      : null,
+    averageIntervalMs: Number.isFinite(summary.averageIntervalMs)
+      ? summary.averageIntervalMs
+      : null,
     medianIntervalMs: Number.isFinite(summary.medianIntervalMs) ? summary.medianIntervalMs : null,
     minIntervalMs: Number.isFinite(summary.minIntervalMs) ? summary.minIntervalMs : null,
     maxIntervalMs: Number.isFinite(summary.maxIntervalMs) ? summary.maxIntervalMs : null,
-    effectiveAverageHz: Number.isFinite(summary.effectiveAverageHz) ? summary.effectiveAverageHz : null,
+    effectiveAverageHz: Number.isFinite(summary.effectiveAverageHz)
+      ? summary.effectiveAverageHz
+      : null,
     bestObservedHz: Number.isFinite(summary.bestObservedHz) ? summary.bestObservedHz : null,
     fiveSecondHz: Number.isFinite(summary.fiveSecondHz) ? summary.fiveSecondHz : null,
     wholeSessionHz: Number.isFinite(summary.wholeSessionHz) ? summary.wholeSessionHz : null,
@@ -29,7 +36,9 @@ export function normalizeStoredSummary(summary, fallbackNow = Date.now()) {
     latestAccuracyM: Number.isFinite(summary.latestAccuracyM) ? summary.latestAccuracyM : null,
     nullSpeedCount: Number.isFinite(summary.nullSpeedCount) ? summary.nullSpeedCount : 0,
     nullHeadingCount: Number.isFinite(summary.nullHeadingCount) ? summary.nullHeadingCount : 0,
-    missingAltitudeCount: Number.isFinite(summary.missingAltitudeCount) ? summary.missingAltitudeCount : 0,
+    missingAltitudeCount: Number.isFinite(summary.missingAltitudeCount)
+      ? summary.missingAltitudeCount
+      : 0,
     staleSampleCount: Number.isFinite(summary.staleSampleCount) ? summary.staleSampleCount : 0,
     jitterMs: Number.isFinite(summary.jitterMs) ? summary.jitterMs : null,
     fieldAvailability: summary.fieldAvailability || {
@@ -43,8 +52,9 @@ export function normalizeStoredSummary(summary, fallbackNow = Date.now()) {
     motion: summary.motion || {},
     histogram: Array.isArray(summary.histogram) ? summary.histogram : [],
     warnings: Array.isArray(summary.warnings) ? summary.warnings : [],
-    statusText: typeof summary.statusText === "string" ? summary.statusText : "",
-    notes: typeof summary.notes === "string" ? summary.notes : "",
+    statusText: typeof summary.statusText === 'string' ? summary.statusText : '',
+    notes: typeof summary.notes === 'string' ? summary.notes : '',
+    place: normalizePlace(summary.place),
   };
 }
 
@@ -56,7 +66,7 @@ export function normalizePositionTimestamp(timestamp, fallbackMs = Date.now()) {
   if (!isFiniteNumber(timestamp)) return fallbackMs;
 
   const safeFallbackMs = isFiniteNumber(fallbackMs) ? fallbackMs : Date.now();
-  const maxReasonableMs = safeFallbackMs + (60 * 1000);
+  const maxReasonableMs = safeFallbackMs + 60 * 1000;
 
   if (timestamp < MIN_VALID_EPOCH_MS || timestamp > maxReasonableMs) {
     return safeFallbackMs;
@@ -81,15 +91,21 @@ export function median(values) {
 export function standardDeviation(values) {
   if (values.length < 2) return null;
   const meanValue = average(values);
-  const variance = values.reduce((sum, value) => {
-    const delta = value - meanValue;
-    return sum + (delta * delta);
-  }, 0) / values.length;
+  const variance =
+    values.reduce((sum, value) => {
+      const delta = value - meanValue;
+      return sum + delta * delta;
+    }, 0) / values.length;
   return Math.sqrt(variance);
 }
 
 export function haversineDistance(a, b) {
-  if (!isFiniteNumber(a.latitude) || !isFiniteNumber(a.longitude) || !isFiniteNumber(b.latitude) || !isFiniteNumber(b.longitude)) {
+  if (
+    !isFiniteNumber(a.latitude) ||
+    !isFiniteNumber(a.longitude) ||
+    !isFiniteNumber(b.latitude) ||
+    !isFiniteNumber(b.longitude)
+  ) {
     return null;
   }
 
@@ -101,10 +117,7 @@ export function haversineDistance(a, b) {
 
   const sinLat = Math.sin(deltaLat / 2);
   const sinLon = Math.sin(deltaLon / 2);
-  const calc = (
-    sinLat * sinLat
-    + Math.cos(lat1) * Math.cos(lat2) * sinLon * sinLon
-  );
+  const calc = sinLat * sinLat + Math.cos(lat1) * Math.cos(lat2) * sinLon * sinLon;
 
   return radius * 2 * Math.atan2(Math.sqrt(calc), Math.sqrt(1 - calc));
 }
@@ -135,43 +148,50 @@ export function classifyMotion(coords, previousSample, callbackPerfMs) {
 
   if (reportedSpeed !== null) {
     if (reportedSpeed >= MOVING_SPEED_THRESHOLD_MS) {
-      return { state: "moving", source: "reported", derivedSpeedMps: null, distanceM: null };
+      return { state: 'moving', source: 'reported', derivedSpeedMps: null, distanceM: null };
     }
     if (reportedSpeed <= STATIONARY_SPEED_THRESHOLD_MS) {
-      return { state: "stationary", source: "reported", derivedSpeedMps: null, distanceM: null };
+      return { state: 'stationary', source: 'reported', derivedSpeedMps: null, distanceM: null };
     }
   }
 
   if (!previousSample) {
-    return { state: "uncertain", source: "unknown", derivedSpeedMps: null, distanceM: null };
+    return { state: 'uncertain', source: 'unknown', derivedSpeedMps: null, distanceM: null };
   }
 
   const intervalMs = callbackPerfMs - previousSample.performanceNowMs;
   const distanceM = haversineDistance(
     { latitude: previousSample.latitude, longitude: previousSample.longitude },
-    { latitude: coords.latitude, longitude: coords.longitude },
+    { latitude: coords.latitude, longitude: coords.longitude }
   );
 
   if (!isFiniteNumber(intervalMs) || intervalMs <= 0 || !isFiniteNumber(distanceM)) {
-    return { state: "uncertain", source: "unknown", derivedSpeedMps: null, distanceM: null };
+    return { state: 'uncertain', source: 'unknown', derivedSpeedMps: null, distanceM: null };
   }
 
   const derivedSpeedMps = distanceM / (intervalMs / 1000);
   const movementThresholdM = getMovementThresholdM(coords.accuracy, previousSample.accuracyM);
 
   if (distanceM >= movementThresholdM && derivedSpeedMps >= MOVING_SPEED_THRESHOLD_MS) {
-    return { state: "moving", source: "derived", derivedSpeedMps, distanceM };
+    return { state: 'moving', source: 'derived', derivedSpeedMps, distanceM };
   }
 
-  if (distanceM <= Math.max(2, movementThresholdM * 0.5) && derivedSpeedMps <= STATIONARY_SPEED_THRESHOLD_MS) {
-    return { state: "stationary", source: "derived", derivedSpeedMps, distanceM };
+  if (
+    distanceM <= Math.max(2, movementThresholdM * 0.5) &&
+    derivedSpeedMps <= STATIONARY_SPEED_THRESHOLD_MS
+  ) {
+    return { state: 'stationary', source: 'derived', derivedSpeedMps, distanceM };
   }
 
-  return { state: "uncertain", source: "unknown", derivedSpeedMps, distanceM };
+  return { state: 'uncertain', source: 'unknown', derivedSpeedMps, distanceM };
 }
 
 export function isStaleSample(positionTimestampMs, previousSample, sampleAgeMs) {
-  if (isFiniteNumber(positionTimestampMs) && previousSample && isFiniteNumber(previousSample.positionTimestampMs)) {
+  if (
+    isFiniteNumber(positionTimestampMs) &&
+    previousSample &&
+    isFiniteNumber(previousSample.positionTimestampMs)
+  ) {
     if (positionTimestampMs <= previousSample.positionTimestampMs) {
       return true;
     }
@@ -230,18 +250,17 @@ export function buildHistogram(intervals, histogramBuckets = HISTOGRAM_BUCKETS) 
 export function summarizeSession({
   samples,
   durationMs,
-  source = "current",
+  source = 'current',
   savedAtMs = null,
-  notes = "",
-  statusText = "",
+  notes = '',
+  statusText = '',
+  place = null,
 }) {
   const latestSample = samples.length ? samples[samples.length - 1] : null;
   const intervals = samples
     .map((sample) => sample.intervalMs)
     .filter((value) => isFiniteNumber(value) && value > 0);
-  const accuracyValues = samples
-    .map((sample) => sample.accuracyM)
-    .filter(isFiniteNumber);
+  const accuracyValues = samples.map((sample) => sample.accuracyM).filter(isFiniteNumber);
   const fieldAvailability = {
     speed: samples.some((sample) => isFiniteNumber(sample.speedMps)),
     heading: samples.some((sample) => isFiniteNumber(sample.headingDeg)),
@@ -249,9 +268,11 @@ export function summarizeSession({
     altitudeAccuracy: samples.some((sample) => isFiniteNumber(sample.altitudeAccuracyM)),
     accuracy: samples.some((sample) => isFiniteNumber(sample.accuracyM)),
   };
-  const unsupportedFields = Object.keys(fieldAvailability).filter((field) => !fieldAvailability[field]);
-  const movingSummary = computeMotionHz(samples, "moving");
-  const stationarySummary = computeMotionHz(samples, "stationary");
+  const unsupportedFields = Object.keys(fieldAvailability).filter(
+    (field) => !fieldAvailability[field]
+  );
+  const movingSummary = computeMotionHz(samples, 'moving');
+  const stationarySummary = computeMotionHz(samples, 'stationary');
 
   return {
     source,
@@ -278,8 +299,8 @@ export function summarizeSession({
     unsupportedFields,
     histogram: buildHistogram(intervals),
     motion: {
-      latestState: latestSample ? latestSample.movementState : "uncertain",
-      latestSource: latestSample ? latestSample.movementSource : "unknown",
+      latestState: latestSample ? latestSample.movementState : 'uncertain',
+      latestSource: latestSample ? latestSample.movementSource : 'unknown',
       movingHz: movingSummary.hz,
       stationaryHz: stationarySummary.hz,
       movingSamples: movingSummary.sampleCount,
@@ -287,7 +308,8 @@ export function summarizeSession({
     },
     warnings: [],
     statusText,
-    notes: typeof notes === "string" ? notes.trim() : "",
+    notes: typeof notes === 'string' ? notes.trim() : '',
+    place: normalizePlace(place),
   };
 }
 
@@ -303,9 +325,12 @@ export function createSample({
   const positionTimestampMs = normalizePositionTimestamp(position.timestamp, callbackWallClockMs);
   const intervalMs = previousSample ? callbackPerfMs - previousSample.performanceNowMs : null;
   const effectiveHz = isFiniteNumber(intervalMs) && intervalMs > 0 ? 1000 / intervalMs : null;
-  const geoTimestampDeltaMs = previousSample && isFiniteNumber(positionTimestampMs) && isFiniteNumber(previousSample.positionTimestampMs)
-    ? positionTimestampMs - previousSample.positionTimestampMs
-    : null;
+  const geoTimestampDeltaMs =
+    previousSample &&
+    isFiniteNumber(positionTimestampMs) &&
+    isFiniteNumber(previousSample.positionTimestampMs)
+      ? positionTimestampMs - previousSample.positionTimestampMs
+      : null;
   const sampleAgeMs = isFiniteNumber(positionTimestampMs)
     ? Math.max(0, callbackWallClockMs - positionTimestampMs)
     : null;
@@ -331,7 +356,7 @@ export function createSample({
     movementSource: motion.source,
     derivedSpeedMps: motion.derivedSpeedMps,
     distanceFromPreviousM: motion.distanceM,
-    visibilityState: hiddenNow ? "hidden" : "visible",
+    visibilityState: hiddenNow ? 'hidden' : 'visible',
     isStale: isStaleSample(positionTimestampMs, previousSample, sampleAgeMs),
   };
 }

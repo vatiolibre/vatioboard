@@ -1,4 +1,12 @@
-import { loadBoolean, loadNumber, loadText, saveBoolean, saveNumber, saveText } from "../shared/storage.js";
+import {
+  loadBoolean,
+  loadNumber,
+  loadText,
+  saveBoolean,
+  saveNumber,
+  saveText,
+} from '../shared/storage.js';
+import { loadConfiguredDistanceUnit, loadConfiguredSpeedUnit } from '../shared/unit-bootstrap.js';
 import {
   ALERT_CONFIG,
   DEFAULT_ALERT_LIMIT_MS,
@@ -18,11 +26,11 @@ import {
   STORAGE_UNIT_KEY,
   TRAP_ALERT_PRESETS,
   UNIT_CONFIG,
-} from "./constants.js";
+} from './constants.js';
 
 export function loadUnitPreference() {
-  const unit = loadText(STORAGE_UNIT_KEY, "");
-  return unit && UNIT_CONFIG[unit] ? unit : "kmh";
+  const unit = loadConfiguredSpeedUnit('kmh');
+  return unit && UNIT_CONFIG[unit] ? unit : 'kmh';
 }
 
 export function saveUnitPreference(unit) {
@@ -30,13 +38,11 @@ export function saveUnitPreference(unit) {
 }
 
 export function loadDistanceUnitPreference() {
-  const storedUnit = loadText(STORAGE_DISTANCE_UNIT_KEY, "");
-  if (storedUnit && DISTANCE_UNIT_CONFIG[storedUnit]) {
-    return storedUnit;
-  }
+  const storedUnit = loadConfiguredDistanceUnit(null);
+  if (storedUnit && DISTANCE_UNIT_CONFIG[storedUnit]) return storedUnit;
 
-  const legacyUnit = loadText(LEGACY_STORAGE_ALTITUDE_UNIT_KEY, "");
-  return legacyUnit && DISTANCE_UNIT_CONFIG[legacyUnit] ? legacyUnit : "m";
+  const legacyUnit = loadText(LEGACY_STORAGE_ALTITUDE_UNIT_KEY, '');
+  return legacyUnit && DISTANCE_UNIT_CONFIG[legacyUnit] ? legacyUnit : 'm';
 }
 
 export function saveDistanceUnitPreference(unit) {
@@ -44,7 +50,7 @@ export function saveDistanceUnitPreference(unit) {
 }
 
 export function loadPrimaryViewPreference() {
-  return loadText(STORAGE_PRIMARY_VIEW_KEY, "") === "waze" ? "waze" : "gauge";
+  return loadText(STORAGE_PRIMARY_VIEW_KEY, '') === 'waze' ? 'waze' : 'gauge';
 }
 
 export function savePrimaryViewPreference(view) {

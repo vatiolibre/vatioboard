@@ -1508,6 +1508,42 @@ body.accel-page .accel-result-graph-canvas{
     line-height: 1.4;
 }
 
+.accel-result-location-value{
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.accel-result-location-text{
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.accel-result-location-value[data-overflowing="true"] .accel-result-location-text{
+    display: inline-block;
+    min-width: max-content;
+    overflow: visible;
+    text-overflow: clip;
+    will-change: transform;
+    animation: accel-result-location-marquee var(--accel-result-location-scroll-duration, 12s) ease-in-out infinite alternate;
+}
+
+@keyframes accel-result-location-marquee{
+    0%,
+    15%{
+        transform: translateX(0);
+    }
+
+    85%,
+    100%{
+        transform: translateX(calc(-1 * var(--accel-result-location-scroll-distance, 0px)));
+    }
+}
+
 #resultNotesRow{
     grid-column: 1 / -1;
 }

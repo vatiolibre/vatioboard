@@ -1,37 +1,56 @@
-import { describe, expect, it, vi } from "vitest";
-import {
-  getAlertUiState,
-  normalizeAlertDisplayValue,
-} from "../../src/speed/alerts.js";
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { getAlertUiState, normalizeAlertDisplayValue } from '../../src/speed/alerts.js';
 import {
   getMovementThresholdM,
   getWazeEmbedUrl,
   getWazeZoomLevel,
   normalizePositionTimestamp,
-} from "../../src/speed/navigation.js";
-import { normalizeTrapAlertDistance } from "../../src/speed/preferences.js";
-import { convertSpeed } from "../../src/speed/render.js";
+} from '../../src/speed/navigation.js';
 import {
-  formatTrapDistance,
-  formatTrapSpeed,
-  updateNearestTrap,
-} from "../../src/speed/traps.js";
+  loadDistanceUnitPreference,
+  loadUnitPreference,
+  normalizeTrapAlertDistance,
+} from '../../src/speed/preferences.js';
+import { convertSpeed } from '../../src/speed/render.js';
+import { formatTrapDistance, formatTrapSpeed, updateNearestTrap } from '../../src/speed/traps.js';
 
-describe("speed extracted helpers", () => {
-  it("normalizes alert display values to unit steps and limits", () => {
-    expect(normalizeAlertDisplayValue(67, "mph")).toBe(65);
-    expect(normalizeAlertDisplayValue(9, "mph")).toBe(10);
-    expect(normalizeAlertDisplayValue(287, "kmh")).toBe(280);
+describe('speed extracted helpers', () => {
+  beforeEach(() => {
+    localStorage.clear();
   });
 
-  it("snaps trap alert distance preferences to the nearest preset", () => {
-    expect(normalizeTrapAlertDistance(780, "ft")).toBeCloseTo(804.672, 6);
-    expect(normalizeTrapAlertDistance(850, "m")).toBe(1000);
+  it('normalizes alert display values to unit steps and limits', () => {
+    expect(normalizeAlertDisplayValue(67, 'mph')).toBe(65);
+    expect(normalizeAlertDisplayValue(9, 'mph')).toBe(10);
+    expect(normalizeAlertDisplayValue(287, 'kmh')).toBe(280);
   });
 
-  it("builds trap-priority alert state with over-limit details", () => {
+  it('snaps trap alert distance preferences to the nearest preset', () => {
+    expect(normalizeTrapAlertDistance(780, 'ft')).toBeCloseTo(804.672, 6);
+    expect(normalizeTrapAlertDistance(850, 'm')).toBe(1000);
+  });
+
+  it('loads unit preferences from the bootstrap snapshot when shared keys are absent', () => {
+    localStorage.setItem(
+      'vatio_unit_bootstrap_v1',
+      JSON.stringify({
+        initializedAtMs: 100,
+        updatedAtMs: 100,
+        source: 'manual',
+        countryCode: 'us',
+        speedUnit: 'mph',
+        distanceUnit: 'ft',
+        tripDistanceUnit: 'mi',
+      })
+    );
+
+    expect(loadUnitPreference()).toBe('mph');
+    expect(loadDistanceUnitPreference()).toBe('ft');
+  });
+
+  it('builds trap-priority alert state with over-limit details', () => {
     const alertState = getAlertUiState({
-      unit: "mph",
+      unit: 'mph',
       currentSpeedMs: 35,
       alertEnabled: true,
       alertLimitMs: 30,
@@ -48,11 +67,11 @@ describe("speed extracted helpers", () => {
     });
 
     expect(alertState).toMatchObject({
-      source: "trap",
+      source: 'trap',
       enabled: true,
       trapActive: true,
-      trapDistanceLabel: "320 m",
-      trapSpeedLabel: "62 mph",
+      trapDistanceLabel: '320 m',
+      trapSpeedLabel: '62 mph',
       over: true,
       near: false,
     });
@@ -60,9 +79,9 @@ describe("speed extracted helpers", () => {
     expect(alertState.deltaDisplayValue).toBe(16);
   });
 
-  it("builds manual near-limit alert state when no trap limit is active", () => {
+  it('builds manual near-limit alert state when no trap limit is active', () => {
     const alertState = getAlertUiState({
-      unit: "kmh",
+      unit: 'kmh',
       currentSpeedMs: 28,
       alertEnabled: true,
       alertLimitMs: 30,
@@ -79,7 +98,7 @@ describe("speed extracted helpers", () => {
     });
 
     expect(alertState).toMatchObject({
-      source: "manual",
+      source: 'manual',
       enabled: true,
       trapActive: false,
       over: false,
@@ -88,15 +107,15 @@ describe("speed extracted helpers", () => {
     });
   });
 
-  it("formats trap distances and speeds for metric and imperial units", () => {
-    expect(formatTrapDistance(450, "m")).toEqual({ value: "450", unit: "m" });
-    expect(formatTrapDistance(2000, "ft")).toEqual({ value: "1.2", unit: "mi" });
-    expect(formatTrapDistance(Number.NaN, "m", "away")).toEqual({ value: "—", unit: "away" });
-    expect(formatTrapSpeed(100, "kmh")).toBe("100 km/h");
-    expect(formatTrapSpeed(100, "mph")).toBe("62 mph");
+  it('formats trap distances and speeds for metric and imperial units', () => {
+    expect(formatTrapDistance(450, 'm')).toEqual({ value: '450', unit: 'm' });
+    expect(formatTrapDistance(2000, 'ft')).toEqual({ value: '1.2', unit: 'mi' });
+    expect(formatTrapDistance(Number.NaN, 'm', 'away')).toEqual({ value: '—', unit: 'away' });
+    expect(formatTrapSpeed(100, 'kmh')).toBe('100 km/h');
+    expect(formatTrapSpeed(100, 'mph')).toBe('62 mph');
   });
 
-  it("updates nearest trap state from injected spatial helpers", () => {
+  it('updates nearest trap state from injected spatial helpers', () => {
     const trapState = updateNearestTrap(
       { fake: true },
       [
@@ -108,7 +127,7 @@ describe("speed extracted helpers", () => {
       {
         around: vi.fn(() => [1]),
         distanceKm: vi.fn(() => 0.42),
-      },
+      }
     );
 
     expect(trapState).toEqual({
@@ -118,19 +137,19 @@ describe("speed extracted helpers", () => {
     });
   });
 
-  it("derives stable Waze zoom levels and embed URLs", () => {
+  it('derives stable Waze zoom levels and embed URLs', () => {
     expect(getWazeZoomLevel(2)).toBe(15);
     expect(getWazeZoomLevel(20 / 3.6)).toBe(14);
     expect(getWazeZoomLevel(60 / 3.6)).toBe(13);
     expect(getWazeZoomLevel(120 / 3.6)).toBe(12);
 
     const url = getWazeEmbedUrl(40.7484, -73.9857, 60 / 3.6);
-    expect(url).toContain("zoom=13");
-    expect(url).toContain("lat=40.748400");
-    expect(url).toContain("lon=-73.985700");
+    expect(url).toContain('zoom=13');
+    expect(url).toContain('lat=40.748400');
+    expect(url).toContain('lon=-73.985700');
   });
 
-  it("normalizes timestamps and movement thresholds safely", () => {
+  it('normalizes timestamps and movement thresholds safely', () => {
     const now = Date.UTC(2026, 2, 26, 12, 0, 0);
     expect(normalizePositionTimestamp(now - 1000, now)).toBe(now - 1000);
     expect(normalizePositionTimestamp(Date.UTC(1990, 0, 1), now)).toBe(now);

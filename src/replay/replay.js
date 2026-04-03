@@ -1,9 +1,9 @@
-import "maplibre-gl/dist/maplibre-gl.css";
-import "@stanko/dual-range-input/dist/index.css";
-import "../styles/replay.less";
-import "../styles/backend-auth.less";
-import DualRangeInput from "@stanko/dual-range-input";
-import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
+import 'maplibre-gl/dist/maplibre-gl.css';
+import '@stanko/dual-range-input/dist/index.css';
+import '../styles/replay.less';
+import '../styles/backend-auth.less';
+import DualRangeInput from '@stanko/dual-range-input';
+import { applyTranslations, getLang, t, toggleLang } from '../i18n.js';
 import {
   IconAccel,
   IconBoard,
@@ -16,9 +16,9 @@ import {
   IconSpeed,
   IconTime,
   IconWorld,
-} from "../icons.js";
-import { initBackendAuthControllers } from "../shared/backend-auth.js";
-import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
+} from '../icons.js';
+import { initBackendAuthControllers } from '../shared/backend-auth.js';
+import { applyButtonIcon, initToolsMenu } from '../shared/tools-menu.js';
 import {
   getReplayAxisRange,
   formatReplayDistanceValue,
@@ -28,87 +28,88 @@ import {
   getReplaySampleAtDistanceM,
   getReplaySampleAtElapsedMs,
   getReplaySummary,
-} from "./logic.js";
-import { createReplayChartsController } from "./charts.js";
-import { createReplayMapController } from "./map.js";
-import { loadReplaySelection, removeReplayRecording } from "./session.js";
+} from './logic.js';
+import { createReplayChartsController } from './charts.js';
+import { createReplayMapController } from './map.js';
+import { loadReplaySelection, removeReplayRecording } from './session.js';
 
 applyTranslations();
 initBackendAuthControllers();
 
 const elements = {
-  langToggle: document.getElementById("langToggle"),
-  langToggleButtons: Array.from(document.querySelectorAll("[data-lang-toggle], #langToggle")),
+  langToggle: document.getElementById('langToggle'),
+  langToggleButtons: Array.from(document.querySelectorAll('[data-lang-toggle], #langToggle')),
   pageDescriptionMeta: document.querySelector('meta[name="description"]'),
-  replaySessionChip: document.getElementById("replaySessionChip"),
-  replayAxisButtons: Array.from(document.querySelectorAll(".replay-axis-btn")),
-  replayGraphTriggers: Array.from(document.querySelectorAll(".replay-graph-trigger")),
-  replayToolsMenuBtn: document.getElementById("replayToolsMenuBtn"),
-  replayToolsMenuList: document.getElementById("replayToolsMenuList"),
-  openReplaySpeedMenu: document.getElementById("openReplaySpeedMenu"),
-  openReplayGpsLabMenu: document.getElementById("openReplayGpsLabMenu"),
-  openReplayAccelMenu: document.getElementById("openReplayAccelMenu"),
-  openReplayBoardMenu: document.getElementById("openReplayBoardMenu"),
-  replayRecordedAtValue: document.getElementById("replayRecordedAtValue"),
-  replaySampleCountValue: document.getElementById("replaySampleCountValue"),
-  replayEmptyState: document.getElementById("replayEmptyState"),
-  replayOpenSpeed: document.getElementById("replayOpenSpeed"),
-  replayShell: document.getElementById("replayShell"),
-  replayMap: document.getElementById("replayMap"),
-  replayPlayPause: document.getElementById("replayPlayPause"),
-  replayPlayPauseIcon: document.getElementById("replayPlayPauseIcon"),
-  replayPlayPauseText: document.getElementById("replayPlayPauseText"),
-  replayRestart: document.getElementById("replayRestart"),
-  replayRestartIcon: document.getElementById("replayRestartIcon"),
-  replayApproach: document.getElementById("replayApproach"),
-  replayApproachIcon: document.getElementById("replayApproachIcon"),
-  replayProgress: document.getElementById("replayProgress"),
-  replayElapsedValue: document.getElementById("replayElapsedValue"),
-  replayDurationValue: document.getElementById("replayDurationValue"),
-  replayPeakSpeedValue: document.getElementById("replayPeakSpeedValue"),
-  replayAverageSpeedValue: document.getElementById("replayAverageSpeedValue"),
-  replaySummaryDistanceValue: document.getElementById("replaySummaryDistanceValue"),
-  replaySummaryDurationValue: document.getElementById("replaySummaryDurationValue"),
-  replayAltitudeRangeValue: document.getElementById("replayAltitudeRangeValue"),
-  replayHighlightsList: document.getElementById("replayHighlightsList"),
-  replayRecordingsList: document.getElementById("replayRecordingsList"),
-  replayRateButtons: Array.from(document.querySelectorAll(".replay-rate-btn")),
-  replayGraphSheet: document.getElementById("replayGraphSheet"),
-  replayGraphSheetBackdrop: document.getElementById("replayGraphSheetBackdrop"),
-  closeReplayGraphSheet: document.getElementById("closeReplayGraphSheet"),
-  replayGraphSheetTitle: document.getElementById("replayGraphSheetTitle"),
-  replayFilterSlider: document.getElementById("replayFilterSlider"),
-  replayFilterStart: document.getElementById("replayFilterStart"),
-  replayFilterEnd: document.getElementById("replayFilterEnd"),
-  replayFilterStartValue: document.getElementById("replayFilterStartValue"),
-  replayFilterEndValue: document.getElementById("replayFilterEndValue"),
+  replaySessionChip: document.getElementById('replaySessionChip'),
+  replayAxisButtons: Array.from(document.querySelectorAll('.replay-axis-btn')),
+  replayGraphTriggers: Array.from(document.querySelectorAll('.replay-graph-trigger')),
+  replayToolsMenuBtn: document.getElementById('replayToolsMenuBtn'),
+  replayToolsMenuList: document.getElementById('replayToolsMenuList'),
+  openReplaySpeedMenu: document.getElementById('openReplaySpeedMenu'),
+  openReplayGpsLabMenu: document.getElementById('openReplayGpsLabMenu'),
+  openReplayAccelMenu: document.getElementById('openReplayAccelMenu'),
+  openReplayBoardMenu: document.getElementById('openReplayBoardMenu'),
+  replayRecordedAtValue: document.getElementById('replayRecordedAtValue'),
+  replaySampleCountValue: document.getElementById('replaySampleCountValue'),
+  replayEmptyState: document.getElementById('replayEmptyState'),
+  replayOpenSpeed: document.getElementById('replayOpenSpeed'),
+  replayShell: document.getElementById('replayShell'),
+  replayMap: document.getElementById('replayMap'),
+  replayPlayPause: document.getElementById('replayPlayPause'),
+  replayPlayPauseIcon: document.getElementById('replayPlayPauseIcon'),
+  replayPlayPauseText: document.getElementById('replayPlayPauseText'),
+  replayRestart: document.getElementById('replayRestart'),
+  replayRestartIcon: document.getElementById('replayRestartIcon'),
+  replayApproach: document.getElementById('replayApproach'),
+  replayApproachIcon: document.getElementById('replayApproachIcon'),
+  replayProgress: document.getElementById('replayProgress'),
+  replayElapsedValue: document.getElementById('replayElapsedValue'),
+  replayDurationValue: document.getElementById('replayDurationValue'),
+  replayPeakSpeedValue: document.getElementById('replayPeakSpeedValue'),
+  replayAverageSpeedValue: document.getElementById('replayAverageSpeedValue'),
+  replaySummaryDistanceValue: document.getElementById('replaySummaryDistanceValue'),
+  replaySummaryDurationValue: document.getElementById('replaySummaryDurationValue'),
+  replayAltitudeRangeValue: document.getElementById('replayAltitudeRangeValue'),
+  replayRouteValue: document.getElementById('replayRouteValue'),
+  replayHighlightsList: document.getElementById('replayHighlightsList'),
+  replayRecordingsList: document.getElementById('replayRecordingsList'),
+  replayRateButtons: Array.from(document.querySelectorAll('.replay-rate-btn')),
+  replayGraphSheet: document.getElementById('replayGraphSheet'),
+  replayGraphSheetBackdrop: document.getElementById('replayGraphSheetBackdrop'),
+  closeReplayGraphSheet: document.getElementById('closeReplayGraphSheet'),
+  replayGraphSheetTitle: document.getElementById('replayGraphSheetTitle'),
+  replayFilterSlider: document.getElementById('replayFilterSlider'),
+  replayFilterStart: document.getElementById('replayFilterStart'),
+  replayFilterEnd: document.getElementById('replayFilterEnd'),
+  replayFilterStartValue: document.getElementById('replayFilterStartValue'),
+  replayFilterEndValue: document.getElementById('replayFilterEndValue'),
 };
 
 const graphElements = {
   speed: {
-    current: document.getElementById("replayGraphSpeedCurrent"),
-    canvas: document.getElementById("replayGraphSpeedCanvas"),
+    current: document.getElementById('replayGraphSpeedCurrent'),
+    canvas: document.getElementById('replayGraphSpeedCanvas'),
   },
   altitude: {
-    current: document.getElementById("replayGraphAltitudeCurrent"),
-    canvas: document.getElementById("replayGraphAltitudeCanvas"),
+    current: document.getElementById('replayGraphAltitudeCurrent'),
+    canvas: document.getElementById('replayGraphAltitudeCanvas'),
   },
   heading: {
-    current: document.getElementById("replayGraphHeadingCurrent"),
-    canvas: document.getElementById("replayGraphHeadingCanvas"),
+    current: document.getElementById('replayGraphHeadingCurrent'),
+    canvas: document.getElementById('replayGraphHeadingCanvas'),
   },
   expanded: {
     speed: {
-      current: document.getElementById("replayExpandedSpeedCurrent"),
-      canvas: document.getElementById("replayExpandedSpeedCanvas"),
+      current: document.getElementById('replayExpandedSpeedCurrent'),
+      canvas: document.getElementById('replayExpandedSpeedCanvas'),
     },
     altitude: {
-      current: document.getElementById("replayExpandedAltitudeCurrent"),
-      canvas: document.getElementById("replayExpandedAltitudeCanvas"),
+      current: document.getElementById('replayExpandedAltitudeCurrent'),
+      canvas: document.getElementById('replayExpandedAltitudeCanvas'),
     },
     heading: {
-      current: document.getElementById("replayExpandedHeadingCurrent"),
-      canvas: document.getElementById("replayExpandedHeadingCanvas"),
+      current: document.getElementById('replayExpandedHeadingCurrent'),
+      canvas: document.getElementById('replayExpandedHeadingCanvas'),
     },
   },
 };
@@ -130,9 +131,10 @@ for (const button of document.querySelectorAll('.replay-axis-btn[data-axis="dist
   applyButtonIcon(button, IconDistance);
 }
 
-const replayFilterController = elements.replayFilterStart && elements.replayFilterEnd
-  ? new DualRangeInput(elements.replayFilterStart, elements.replayFilterEnd)
-  : null;
+const replayFilterController =
+  elements.replayFilterStart && elements.replayFilterEnd
+    ? new DualRangeInput(elements.replayFilterStart, elements.replayFilterEnd)
+    : null;
 
 const state = {
   records: [],
@@ -143,7 +145,7 @@ const state = {
   summary: getReplaySummary(null),
   highlights: getReplayHighlights(null),
   playbackRate: 4,
-  dashboardAxis: "time",
+  dashboardAxis: 'time',
   elapsedMs: 0,
   playing: false,
   playPending: false,
@@ -159,6 +161,7 @@ let replaySelectionPromise = Promise.resolve();
 let hasHydratedInitialSelection = false;
 let introApproachPromise = null;
 let introApproachToken = 0;
+let recordingsDetailMeasureFrame = null;
 
 refreshDerivedState();
 
@@ -213,7 +216,7 @@ function runReplayApproach({ force = false } = {}) {
 function bindMenuNavigation(element, href) {
   if (!element) return;
 
-  element.addEventListener("click", () => {
+  element.addEventListener('click', () => {
     toolsMenu.close();
     window.location.href = href;
   });
@@ -225,11 +228,11 @@ function refreshDerivedState() {
 }
 
 function getSpeedUnit() {
-  return state.session?.unit === "mph" ? "mph" : "kmh";
+  return state.session?.unit === 'mph' ? 'mph' : 'kmh';
 }
 
 function getDistanceUnit() {
-  return state.session?.distanceUnit === "ft" ? "ft" : "m";
+  return state.session?.distanceUnit === 'ft' ? 'ft' : 'm';
 }
 
 function formatNumber(value, decimals = 0) {
@@ -246,45 +249,45 @@ function formatDuration(durationMs) {
   const seconds = totalSeconds % 60;
 
   if (hours > 0) {
-    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
   }
 
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
 function formatDateTime(timestampMs) {
-  if (!Number.isFinite(timestampMs)) return "—";
+  if (!Number.isFinite(timestampMs)) return '—';
 
   return new Intl.DateTimeFormat(getLang(), {
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
   }).format(new Date(timestampMs));
 }
 
 function formatSpeed(speedMs) {
-  if (!Number.isFinite(speedMs)) return "—";
+  if (!Number.isFinite(speedMs)) return '—';
 
   const unit = getSpeedUnit();
-  const label = unit === "mph" ? "mph" : "km/h";
+  const label = unit === 'mph' ? 'mph' : 'km/h';
   const speedValue = formatReplaySpeedValue(speedMs, unit);
   return `${formatNumber(speedValue, 0)} ${label}`;
 }
 
 function formatDistance(distanceM) {
-  if (!Number.isFinite(distanceM)) return "—";
+  if (!Number.isFinite(distanceM)) return '—';
 
   const unit = getDistanceUnit();
   const distanceValue = formatReplayDistanceValue(distanceM, unit);
-  const decimals = unit === "m" && distanceValue < 1000 ? 0 : 1;
-  const label = unit === "ft" ? "ft" : "m";
+  const decimals = unit === 'm' && distanceValue < 1000 ? 0 : 1;
+  const label = unit === 'ft' ? 'ft' : 'm';
 
-  if (unit === "ft" && distanceValue >= 5280) {
+  if (unit === 'ft' && distanceValue >= 5280) {
     return `${formatNumber(distanceM / 1609.344, distanceM < 16093.44 ? 1 : 0)} mi`;
   }
 
-  if (unit === "m" && distanceValue >= 1000) {
+  if (unit === 'm' && distanceValue >= 1000) {
     return `${formatNumber(distanceM / 1000, distanceM < 10000 ? 1 : 0)} km`;
   }
 
@@ -292,25 +295,25 @@ function formatDistance(distanceM) {
 }
 
 function formatAltitude(altitudeM) {
-  if (!Number.isFinite(altitudeM)) return "—";
+  if (!Number.isFinite(altitudeM)) return '—';
 
   const unit = getDistanceUnit();
-  const label = unit === "ft" ? "ft" : "m";
+  const label = unit === 'ft' ? 'ft' : 'm';
   const altitudeValue = formatReplayDistanceValue(altitudeM, unit);
   return `${formatNumber(altitudeValue, 0)} ${label}`;
 }
 
 function formatHeading(headingDeg) {
-  if (!Number.isFinite(headingDeg)) return "—";
+  if (!Number.isFinite(headingDeg)) return '—';
 
   const normalizedHeading = ((headingDeg % 360) + 360) % 360;
-  const sectors = ["N", "NE", "E", "SE", "S", "SW", "W", "NW", "N"];
+  const sectors = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW', 'N'];
   const sector = sectors[Math.round(normalizedHeading / 45)];
   return `${formatNumber(normalizedHeading, 0)}° ${sector}`;
 }
 
 function formatAcceleration(value) {
-  if (!Number.isFinite(value)) return "—";
+  if (!Number.isFinite(value)) return '—';
   return `${formatNumber(value, 1)} m/s²`;
 }
 
@@ -320,36 +323,71 @@ function setElementText(element, text) {
   }
 }
 
+function syncRecordingDetailOverflow() {
+  if (!elements.replayRecordingsList) return;
+
+  for (const detail of elements.replayRecordingsList.querySelectorAll('.replay-recording-detail')) {
+    const text = detail.querySelector('.replay-recording-detail-text');
+    const button = detail.closest('.replay-recording-btn');
+
+    detail.dataset.overflowing = 'false';
+    detail.style.removeProperty('--replay-detail-scroll-distance');
+    detail.style.removeProperty('--replay-detail-scroll-duration');
+
+    if (!text || button?.getAttribute('aria-pressed') !== 'true') continue;
+
+    const overflowPx = Math.ceil(text.scrollWidth - detail.clientWidth);
+    if (!Number.isFinite(overflowPx) || overflowPx <= 8) continue;
+
+    detail.dataset.overflowing = 'true';
+    detail.style.setProperty('--replay-detail-scroll-distance', `${overflowPx}px`);
+    detail.style.setProperty(
+      '--replay-detail-scroll-duration',
+      `${Math.max(8, Math.min(22, overflowPx / 18 + 6)).toFixed(2)}s`
+    );
+  }
+}
+
+function queueRecordingDetailOverflowSync() {
+  if (recordingsDetailMeasureFrame !== null) {
+    window.cancelAnimationFrame(recordingsDetailMeasureFrame);
+  }
+
+  recordingsDetailMeasureFrame = window.requestAnimationFrame(() => {
+    recordingsDetailMeasureFrame = null;
+    syncRecordingDetailOverflow();
+  });
+}
+
 function updatePageMeta() {
   document.documentElement.lang = getLang();
-  document.title = t("replayPageTitle");
+  document.title = t('replayPageTitle');
   if (elements.pageDescriptionMeta) {
-    elements.pageDescriptionMeta.setAttribute("content", t("replayPageDescription"));
+    elements.pageDescriptionMeta.setAttribute('content', t('replayPageDescription'));
   }
 }
 
 function renderSessionState() {
   if (!elements.replaySessionChip) return;
   if (!state.session) {
-    elements.replaySessionChip.textContent = t("driveReplay");
+    elements.replaySessionChip.textContent = t('driveReplay');
     return;
   }
-  elements.replaySessionChip.textContent = state.sessionSource === "active"
-    ? t("replaySessionActive")
-    : t("replaySessionSaved");
+  elements.replaySessionChip.textContent =
+    state.sessionSource === 'active' ? t('replaySessionActive') : t('replaySessionSaved');
 }
 
 function renderRateButtons() {
   for (const button of elements.replayRateButtons) {
     const isActive = Number(button.dataset.rate) === state.playbackRate;
-    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+    button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
   }
 }
 
 function renderAxisButtons() {
   for (const button of elements.replayAxisButtons) {
     const isActive = button.dataset.axis === state.dashboardAxis;
-    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+    button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
   }
 }
 
@@ -391,7 +429,7 @@ function renderExpandedGraphSheet() {
   if (elements.replayGraphSheet) {
     elements.replayGraphSheet.hidden = !shouldOpen;
   }
-  document.body.classList.toggle("replay-graph-sheet-open", shouldOpen);
+  document.body.classList.toggle('replay-graph-sheet-open', shouldOpen);
 
   if (!shouldOpen) {
     chartsController.setDetailOpen(false);
@@ -400,30 +438,25 @@ function renderExpandedGraphSheet() {
 
   chartsController.setDetailRange(
     state.expandedGraphFilterStartRatio,
-    state.expandedGraphFilterEndRatio,
+    state.expandedGraphFilterEndRatio
   );
   chartsController.setDetailOpen(true);
   renderExpandedGraphControls();
-  renderExpandedGraphPlayback(
-    getReplaySampleAtElapsedMs(state.session, state.elapsedMs),
-  );
+  renderExpandedGraphPlayback(getReplaySampleAtElapsedMs(state.session, state.elapsedMs));
 }
 
 function renderPlaybackButtons() {
   if (!elements.replayPlayPause) return;
   const hasSession = Boolean(state.session);
-  const label = state.playing || state.playPending
-    ? t("replayPause")
-    : t("replayPlay");
+  const label = state.playing || state.playPending ? t('replayPause') : t('replayPlay');
   if (elements.replayPlayPauseIcon) {
-    elements.replayPlayPauseIcon.innerHTML = state.playing || state.playPending
-      ? IconPause
-      : IconPlay;
+    elements.replayPlayPauseIcon.innerHTML =
+      state.playing || state.playPending ? IconPause : IconPlay;
   }
   if (elements.replayPlayPauseText) {
     elements.replayPlayPauseText.textContent = label;
   }
-  elements.replayPlayPause.setAttribute("aria-label", label);
+  elements.replayPlayPause.setAttribute('aria-label', label);
   elements.replayPlayPause.title = label;
   elements.replayPlayPause.disabled = !hasSession;
 }
@@ -437,14 +470,14 @@ function renderActionIcons() {
     elements.replayApproachIcon.innerHTML = IconWorld;
   }
   if (elements.replayRestart) {
-    const restartLabel = t("replayRestart");
-    elements.replayRestart.setAttribute("aria-label", restartLabel);
+    const restartLabel = t('replayRestart');
+    elements.replayRestart.setAttribute('aria-label', restartLabel);
     elements.replayRestart.title = restartLabel;
     elements.replayRestart.disabled = !hasSession;
   }
   if (elements.replayApproach) {
-    const approachLabel = t("replayApproach");
-    elements.replayApproach.setAttribute("aria-label", approachLabel);
+    const approachLabel = t('replayApproach');
+    elements.replayApproach.setAttribute('aria-label', approachLabel);
     elements.replayApproach.title = approachLabel;
     elements.replayApproach.disabled = !hasSession;
   }
@@ -453,9 +486,7 @@ function renderActionIcons() {
 function renderStaticSummary() {
   setElementText(
     elements.replayRecordedAtValue,
-    formatDateTime(
-    state.summary.endedAtMs ?? state.summary.startedAtMs,
-    ),
+    formatDateTime(state.summary.endedAtMs ?? state.summary.startedAtMs)
   );
   setElementText(elements.replaySampleCountValue, formatNumber(state.summary.sampleCount, 0));
   setElementText(elements.replayPeakSpeedValue, formatSpeed(state.summary.maxSpeedMs));
@@ -463,54 +494,52 @@ function renderStaticSummary() {
   setElementText(elements.replaySummaryDistanceValue, formatDistance(state.summary.totalDistanceM));
   setElementText(elements.replaySummaryDurationValue, formatDuration(state.summary.durationMs));
   setElementText(elements.replayDurationValue, formatDuration(state.summary.durationMs));
+  setElementText(elements.replayRouteValue, state.summary.routeLabel || '—');
 
-  if (
-    Number.isFinite(state.summary.minAltitudeM)
-    && Number.isFinite(state.summary.maxAltitudeM)
-  ) {
+  if (Number.isFinite(state.summary.minAltitudeM) && Number.isFinite(state.summary.maxAltitudeM)) {
     setElementText(
       elements.replayAltitudeRangeValue,
-      `${formatAltitude(state.summary.minAltitudeM)} → ${formatAltitude(state.summary.maxAltitudeM)}`,
+      `${formatAltitude(state.summary.minAltitudeM)} → ${formatAltitude(state.summary.maxAltitudeM)}`
     );
   } else {
-    setElementText(elements.replayAltitudeRangeValue, "—");
+    setElementText(elements.replayAltitudeRangeValue, '—');
   }
 }
 
 function renderHighlights() {
-  elements.replayHighlightsList.innerHTML = "";
+  elements.replayHighlightsList.innerHTML = '';
 
   if (!state.highlights.length) {
-    const empty = document.createElement("div");
-    empty.className = "replay-highlight";
-    empty.textContent = t("replayNoHighlights");
+    const empty = document.createElement('div');
+    empty.className = 'replay-highlight';
+    empty.textContent = t('replayNoHighlights');
     elements.replayHighlightsList.appendChild(empty);
     return;
   }
 
   for (let index = 0; index < state.highlights.length; index += 1) {
     const highlight = state.highlights[index];
-    const item = document.createElement("article");
-    item.className = "replay-highlight";
+    const item = document.createElement('article');
+    item.className = 'replay-highlight';
 
-    const label = document.createElement("span");
-    label.className = "replay-highlight-label";
+    const label = document.createElement('span');
+    label.className = 'replay-highlight-label';
     label.textContent = t(highlight.labelKey);
 
-    const value = document.createElement("strong");
-    value.className = "replay-highlight-value";
-    if (highlight.valueUnit === "speed") {
+    const value = document.createElement('strong');
+    value.className = 'replay-highlight-value';
+    if (highlight.valueUnit === 'speed') {
       value.textContent = formatSpeed(highlight.value);
-    } else if (highlight.valueUnit === "altitude") {
+    } else if (highlight.valueUnit === 'altitude') {
       value.textContent = formatAltitude(highlight.value);
-    } else if (highlight.valueUnit === "acceleration") {
+    } else if (highlight.valueUnit === 'acceleration') {
       value.textContent = formatAcceleration(highlight.value);
     } else {
-      value.textContent = String(highlight.value ?? "—");
+      value.textContent = String(highlight.value ?? '—');
     }
 
-    const detail = document.createElement("span");
-    detail.className = "replay-highlight-detail";
+    const detail = document.createElement('span');
+    detail.className = 'replay-highlight-detail';
     detail.textContent = `${formatDuration(highlight.elapsedMs)} · ${formatDateTime(highlight.sample?.timestampMs)}`;
 
     item.appendChild(label);
@@ -523,65 +552,73 @@ function renderHighlights() {
 function renderRecordings() {
   if (!elements.replayRecordingsList) return;
 
-  elements.replayRecordingsList.innerHTML = "";
+  elements.replayRecordingsList.innerHTML = '';
 
   if (!state.records.length) {
-    const empty = document.createElement("div");
-    empty.className = "replay-highlight";
-    empty.textContent = t("replayNoRecordings");
+    const empty = document.createElement('div');
+    empty.className = 'replay-highlight';
+    empty.textContent = t('replayNoRecordings');
     elements.replayRecordingsList.appendChild(empty);
+    queueRecordingDetailOverflowSync();
     return;
   }
 
   for (const record of state.records) {
     const summary = getReplaySummary(record.session);
-    const item = document.createElement("article");
-    item.className = "replay-recording-item";
+    const item = document.createElement('article');
+    item.className = 'replay-recording-item';
 
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "replay-recording-btn";
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'replay-recording-btn';
     button.dataset.recordingId = record.id;
-    button.setAttribute("aria-pressed", String(record.id === state.selectedRecordingId));
+    button.setAttribute('aria-pressed', String(record.id === state.selectedRecordingId));
 
-    const title = document.createElement("span");
-    title.className = "replay-recording-title";
+    const title = document.createElement('span');
+    title.className = 'replay-recording-title';
 
-    const titleText = document.createElement("strong");
+    const titleText = document.createElement('strong');
     titleText.textContent = formatDateTime(summary.endedAtMs ?? summary.startedAtMs);
 
-    const chip = document.createElement("span");
-    chip.className = "replay-recording-chip";
-    chip.textContent = record.source === "active"
-      ? t("replaySessionActive")
-      : t("replaySessionSaved");
+    const chip = document.createElement('span');
+    chip.className = 'replay-recording-chip';
+    chip.textContent =
+      record.source === 'active' ? t('replaySessionActive') : t('replaySessionSaved');
 
     title.append(titleText, chip);
 
-    const meta = document.createElement("span");
-    meta.className = "replay-recording-meta";
+    const meta = document.createElement('span');
+    meta.className = 'replay-recording-meta';
     meta.textContent = `${formatDistance(summary.totalDistanceM)} · ${formatDuration(summary.durationMs)}`;
 
-    const detail = document.createElement("span");
-    detail.className = "replay-recording-detail";
-    detail.textContent = `${formatNumber(summary.sampleCount, 0)} ${t("replaySamples").toLowerCase()}`;
+    const detail = document.createElement('span');
+    detail.className = 'replay-recording-detail';
+    const detailText = document.createElement('span');
+    detailText.className = 'replay-recording-detail-text';
+    detailText.textContent =
+      summary.routeLabel && summary.routeLabel !== '—'
+        ? `${formatNumber(summary.sampleCount, 0)} ${t('replaySamples').toLowerCase()} · ${summary.routeLabel}`
+        : `${formatNumber(summary.sampleCount, 0)} ${t('replaySamples').toLowerCase()}`;
+    detail.appendChild(detailText);
 
     button.append(title, meta, detail);
     item.appendChild(button);
 
-    if (record.source === "library") {
-      const deleteButton = document.createElement("button");
-      deleteButton.type = "button";
-      deleteButton.className = "replay-recording-delete";
+    if (record.source === 'library') {
+      const deleteButton = document.createElement('button');
+      deleteButton.type = 'button';
+      deleteButton.className = 'replay-recording-delete';
       deleteButton.dataset.deleteRecordingId = record.id;
-      deleteButton.setAttribute("aria-label", t("replayDeleteRecording"));
-      deleteButton.title = t("replayDeleteRecording");
-      deleteButton.textContent = t("delete");
+      deleteButton.setAttribute('aria-label', t('replayDeleteRecording'));
+      deleteButton.title = t('replayDeleteRecording');
+      deleteButton.textContent = t('delete');
       item.appendChild(deleteButton);
     }
 
     elements.replayRecordingsList.appendChild(item);
   }
+
+  queueRecordingDetailOverflowSync();
 }
 
 function renderGraphs() {
@@ -598,7 +635,7 @@ function updateGraphPlayback(sample) {
 }
 
 function getPlaybackProgressCurrentLabel(sample) {
-  if (state.dashboardAxis === "distance") {
+  if (state.dashboardAxis === 'distance') {
     return formatDistance(sample?.totalDistanceM ?? 0);
   }
 
@@ -606,7 +643,7 @@ function getPlaybackProgressCurrentLabel(sample) {
 }
 
 function getPlaybackProgressTotalLabel() {
-  if (state.dashboardAxis === "distance") {
+  if (state.dashboardAxis === 'distance') {
     return formatDistance(state.summary.totalDistanceM);
   }
 
@@ -614,13 +651,13 @@ function getPlaybackProgressTotalLabel() {
 }
 
 function getPlaybackAxisMaxValue() {
-  return state.dashboardAxis === "distance"
+  return state.dashboardAxis === 'distance'
     ? Math.max(0, state.summary.totalDistanceM)
     : Math.max(0, state.summary.durationMs);
 }
 
 function getExpandedGraphAxisMaxValue() {
-  return state.dashboardAxis === "distance"
+  return state.dashboardAxis === 'distance'
     ? Math.max(0, state.summary.totalDistanceM)
     : Math.max(0, state.summary.durationMs / 1000);
 }
@@ -629,12 +666,12 @@ function getExpandedGraphAxisRange() {
   return getReplayAxisRange(
     getExpandedGraphAxisMaxValue(),
     state.expandedGraphFilterStartRatio,
-    state.expandedGraphFilterEndRatio,
+    state.expandedGraphFilterEndRatio
   );
 }
 
 function formatExpandedGraphAxisValue(axisValue) {
-  if (state.dashboardAxis === "distance") {
+  if (state.dashboardAxis === 'distance') {
     return formatDistance(axisValue);
   }
 
@@ -642,7 +679,7 @@ function formatExpandedGraphAxisValue(axisValue) {
 }
 
 function getPlaybackAxisValue(sample) {
-  if (state.dashboardAxis === "distance") {
+  if (state.dashboardAxis === 'distance') {
     return Math.max(0, sample?.totalDistanceM ?? 0);
   }
   return Math.max(0, sample?.elapsedMs ?? 0);
@@ -651,9 +688,9 @@ function getPlaybackAxisValue(sample) {
 function renderPlaybackProgressScale(sample) {
   if (!elements.replayProgress) return;
 
-  elements.replayProgress.min = "0";
+  elements.replayProgress.min = '0';
   elements.replayProgress.max = String(getPlaybackAxisMaxValue());
-  elements.replayProgress.step = "any";
+  elements.replayProgress.step = 'any';
   elements.replayProgress.value = String(getPlaybackAxisValue(sample));
 }
 
@@ -761,7 +798,7 @@ function setPlaybackRate(rate) {
 function setPlaybackFromExpandedAxisValue(axisValue) {
   if (!state.session || !Number.isFinite(axisValue)) return;
 
-  if (state.dashboardAxis === "distance") {
+  if (state.dashboardAxis === 'distance') {
     const sample = getReplaySampleAtDistanceM(state.session, axisValue);
     state.elapsedMs = sample?.elapsedMs ?? 0;
   } else {
@@ -794,8 +831,8 @@ function closeExpandedGraph() {
 function setExpandedGraphRange(startRatio, endRatio) {
   const axisRange = getReplayAxisRange(1, startRatio, endRatio);
   if (
-    state.expandedGraphFilterStartRatio === axisRange.startRatio
-    && state.expandedGraphFilterEndRatio === axisRange.endRatio
+    state.expandedGraphFilterStartRatio === axisRange.startRatio &&
+    state.expandedGraphFilterEndRatio === axisRange.endRatio
   ) {
     return;
   }
@@ -806,7 +843,7 @@ function setExpandedGraphRange(startRatio, endRatio) {
 }
 
 function setDashboardAxis(axis) {
-  const nextAxis = axis === "distance" ? "distance" : "time";
+  const nextAxis = axis === 'distance' ? 'distance' : 'time';
   if (state.dashboardAxis === nextAxis) return;
   state.dashboardAxis = nextAxis;
   renderAxisButtons();
@@ -900,50 +937,47 @@ function syncLanguage() {
 
 function bindEvents() {
   elements.langToggleButtons.forEach((button) => {
-    button.addEventListener("click", () => {
+    button.addEventListener('click', () => {
       toggleLang();
     });
   });
 
-  bindMenuNavigation(elements.openReplaySpeedMenu, "/speed");
-  bindMenuNavigation(elements.openReplayGpsLabMenu, "/gps-rate");
-  bindMenuNavigation(elements.openReplayAccelMenu, "/accel");
-  bindMenuNavigation(elements.openReplayBoardMenu, "/");
+  bindMenuNavigation(elements.openReplaySpeedMenu, '/speed');
+  bindMenuNavigation(elements.openReplayGpsLabMenu, '/gps-rate');
+  bindMenuNavigation(elements.openReplayAccelMenu, '/accel');
+  bindMenuNavigation(elements.openReplayBoardMenu, '/');
 
-  elements.replayOpenSpeed?.addEventListener("click", () => {
-    window.location.href = "/speed";
+  elements.replayOpenSpeed?.addEventListener('click', () => {
+    window.location.href = '/speed';
   });
 
   for (const trigger of elements.replayGraphTriggers) {
-    trigger.addEventListener("click", () => {
+    trigger.addEventListener('click', () => {
       openExpandedGraph();
     });
   }
 
-  elements.replayPlayPause?.addEventListener("click", togglePlayback);
+  elements.replayPlayPause?.addEventListener('click', togglePlayback);
 
-  elements.replayRestart?.addEventListener("click", () => {
+  elements.replayRestart?.addEventListener('click', () => {
     resetPlayback();
   });
 
-  elements.replayApproach?.addEventListener("click", async () => {
+  elements.replayApproach?.addEventListener('click', async () => {
     stopPlayback();
     await runReplayApproach({ force: true });
   });
 
-  elements.closeReplayGraphSheet?.addEventListener("click", closeExpandedGraph);
-  elements.replayGraphSheetBackdrop?.addEventListener("click", closeExpandedGraph);
+  elements.closeReplayGraphSheet?.addEventListener('click', closeExpandedGraph);
+  elements.replayGraphSheetBackdrop?.addEventListener('click', closeExpandedGraph);
 
-  elements.replayProgress?.addEventListener("input", (event) => {
+  elements.replayProgress?.addEventListener('input', (event) => {
     if (!state.session) return;
     stopPlayback();
     cancelReplayApproach({ markPlayed: true });
     const axisValue = Number(event.target.value);
-    if (state.dashboardAxis === "distance") {
-      const sample = getReplaySampleAtDistanceM(
-        state.session,
-        axisValue,
-      );
+    if (state.dashboardAxis === 'distance') {
+      const sample = getReplaySampleAtDistanceM(state.session, axisValue);
       state.elapsedMs = sample?.elapsedMs ?? 0;
     } else {
       state.elapsedMs = axisValue;
@@ -951,50 +985,50 @@ function bindEvents() {
     renderPlaybackFrame();
   });
 
-  elements.replayFilterStart?.addEventListener("input", (event) => {
+  elements.replayFilterStart?.addEventListener('input', (event) => {
     const startRatio = Number(event.target.value) / 1000;
     const endRatio = Number(elements.replayFilterEnd?.value ?? 1000) / 1000;
     setExpandedGraphRange(startRatio, endRatio);
   });
 
-  elements.replayFilterEnd?.addEventListener("input", (event) => {
+  elements.replayFilterEnd?.addEventListener('input', (event) => {
     const startRatio = Number(elements.replayFilterStart?.value ?? 0) / 1000;
     const endRatio = Number(event.target.value) / 1000;
     setExpandedGraphRange(startRatio, endRatio);
   });
 
-  elements.replayRecordingsList?.addEventListener("click", async (event) => {
-    const deleteButton = event.target.closest("button[data-delete-recording-id]");
+  elements.replayRecordingsList?.addEventListener('click', async (event) => {
+    const deleteButton = event.target.closest('button[data-delete-recording-id]');
     if (deleteButton) {
       const { deleteRecordingId } = deleteButton.dataset;
       if (!deleteRecordingId) return;
-      if (!window.confirm(t("replayDeleteRecordingConfirm"))) return;
+      if (!window.confirm(t('replayDeleteRecordingConfirm'))) return;
 
       stopPlayback();
       replaySelectionPromise = (async () => {
         await removeReplayRecording(deleteRecordingId);
         return applyReplaySelection(
-          deleteRecordingId === state.selectedRecordingId ? null : state.selectedRecordingId,
+          deleteRecordingId === state.selectedRecordingId ? null : state.selectedRecordingId
         );
       })();
       await replaySelectionPromise;
       return;
     }
 
-    const button = event.target.closest("button[data-recording-id]");
+    const button = event.target.closest('button[data-recording-id]');
     if (!button) return;
     stopPlayback();
     await requestReplaySelection(button.dataset.recordingId);
   });
 
   for (const button of elements.replayRateButtons) {
-    button.addEventListener("click", () => {
+    button.addEventListener('click', () => {
       setPlaybackRate(Number(button.dataset.rate));
     });
   }
 
   for (const button of elements.replayAxisButtons) {
-    button.addEventListener("click", () => {
+    button.addEventListener('click', () => {
       setDashboardAxis(button.dataset.axis);
     });
   }
@@ -1004,7 +1038,7 @@ function bindEvents() {
     graphElements.expanded.altitude.canvas,
     graphElements.expanded.heading.canvas,
   ]) {
-    canvas?.addEventListener("pointerdown", (event) => {
+    canvas?.addEventListener('pointerdown', (event) => {
       if (!state.expandedGraphOpen) return;
       state.expandedGraphPointerId = event.pointerId;
       event.preventDefault();
@@ -1012,39 +1046,40 @@ function bindEvents() {
       scrubExpandedGraph(event.currentTarget.dataset.graphSheetScrub, event.clientX);
     });
 
-    canvas?.addEventListener("pointermove", (event) => {
+    canvas?.addEventListener('pointermove', (event) => {
       if (state.expandedGraphPointerId !== event.pointerId) return;
       event.preventDefault();
       scrubExpandedGraph(event.currentTarget.dataset.graphSheetScrub, event.clientX);
     });
 
-    canvas?.addEventListener("pointerup", (event) => {
+    canvas?.addEventListener('pointerup', (event) => {
       if (state.expandedGraphPointerId !== event.pointerId) return;
       event.currentTarget.releasePointerCapture?.(event.pointerId);
       state.expandedGraphPointerId = null;
     });
 
-    canvas?.addEventListener("pointercancel", (event) => {
+    canvas?.addEventListener('pointercancel', (event) => {
       if (state.expandedGraphPointerId !== event.pointerId) return;
       event.currentTarget.releasePointerCapture?.(event.pointerId);
       state.expandedGraphPointerId = null;
     });
   }
 
-  document.addEventListener("visibilitychange", () => {
+  document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       stopPlayback();
     }
   });
 
-  document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && state.expandedGraphOpen) {
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && state.expandedGraphOpen) {
       closeExpandedGraph();
     }
   });
 
-  document.addEventListener("i18n:change", syncLanguage);
-  window.addEventListener("pagehide", stopPlayback);
+  document.addEventListener('i18n:change', syncLanguage);
+  window.addEventListener('pagehide', stopPlayback);
+  window.addEventListener('resize', queueRecordingDetailOverflowSync);
 }
 
 async function init() {
@@ -1077,6 +1112,9 @@ async function init() {
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
     stopPlayback();
+    if (recordingsDetailMeasureFrame !== null) {
+      window.cancelAnimationFrame(recordingsDetailMeasureFrame);
+    }
     chartsController.destroy();
     mapController.destroy();
     replayFilterController?.destroy();

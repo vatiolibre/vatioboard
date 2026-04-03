@@ -1,14 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { bootHtmlPage, expectPageSeo, flushTasks } from "../helpers/page-smoke.js";
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { bootHtmlPage, expectPageSeo, flushTasks } from '../helpers/page-smoke.js';
 
 const fakeMaps = [];
 
-vi.mock("chart.js/auto", () => ({
+vi.mock('chart.js/auto', () => ({
   default: class FakeChart {
     constructor(canvas, config) {
       this.canvas = canvas;
       this.config = config;
-      this.ctx = canvas.getContext("2d");
+      this.ctx = canvas.getContext('2d');
       this.chartArea = {
         top: 0,
         left: 0,
@@ -31,7 +31,7 @@ vi.mock("chart.js/auto", () => ({
   },
 }));
 
-vi.mock("maplibre-gl", () => {
+vi.mock('maplibre-gl', () => {
   class FakeMap {
     constructor() {
       this.handlers = {};
@@ -81,225 +81,300 @@ vi.mock("maplibre-gl", () => {
   };
 });
 
-describe("replay.html smoke", () => {
+describe('replay.html smoke', () => {
   beforeEach(async () => {
     fakeMaps.length = 0;
     localStorage.clear();
-    localStorage.setItem("vatio_speed_replay_active_v1", JSON.stringify({
-      id: "active-session",
-      version: 1,
-      source: "speed",
-      unit: "kmh",
-      distanceUnit: "m",
-      startedAtMs: 1000,
-      updatedAtMs: 4000,
-      endedAtMs: 4000,
-      maxSpeedMs: 15,
-      totalDistanceM: 680,
-      minAltitudeM: 10,
-      maxAltitudeM: 20,
-      samples: [
-        {
-          timestampMs: 1000,
-          latitude: 40.7128,
-          longitude: -74.006,
-          speedMs: 0,
-          altitudeM: 10,
-          accuracyM: 5,
-          headingDeg: 180,
-          totalDistanceM: 500,
-        },
-        {
-          timestampMs: 2500,
-          latitude: 40.7138,
-          longitude: -74.005,
-          speedMs: 10,
-          altitudeM: 15,
-          accuracyM: 4,
-          headingDeg: 182,
-          totalDistanceM: 580,
-        },
-        {
-          timestampMs: 4000,
-          latitude: 40.7148,
-          longitude: -74.004,
-          speedMs: 15,
-          altitudeM: 20,
-          accuracyM: 4,
-          headingDeg: 184,
-          totalDistanceM: 680,
-        },
-      ],
-    }));
-    localStorage.setItem("vatio_speed_replay_library_v1", JSON.stringify([
-      {
-        id: "saved-session",
+    localStorage.setItem(
+      'vatio_speed_replay_active_v1',
+      JSON.stringify({
+        id: 'active-session',
         version: 1,
-        source: "speed",
-        unit: "kmh",
-        distanceUnit: "m",
-        startedAtMs: 5000,
-        updatedAtMs: 7000,
-        endedAtMs: 7000,
-        maxSpeedMs: 11,
-        totalDistanceM: 520,
-        minAltitudeM: 8,
-        maxAltitudeM: 18,
-        recordingState: "stopped",
+        source: 'speed',
+        unit: 'kmh',
+        distanceUnit: 'm',
+        startedAtMs: 1000,
+        updatedAtMs: 4000,
+        endedAtMs: 4000,
+        maxSpeedMs: 15,
+        totalDistanceM: 680,
+        minAltitudeM: 10,
+        maxAltitudeM: 20,
+        startPlace: {
+          label: 'Fort Lee',
+          locality: 'Fort Lee',
+          state: 'New Jersey',
+          stateCode: 'NJ',
+          houseNumber: '6312',
+          road: 'Hilltop Court',
+          countryCode: 'us',
+        },
+        endPlace: {
+          label: 'Fort Lee',
+          locality: 'Fort Lee',
+          state: 'New Jersey',
+          stateCode: 'NJ',
+          houseNumber: '123',
+          road: 'Anderson Avenue',
+          countryCode: 'us',
+        },
         samples: [
           {
-            timestampMs: 5000,
-            latitude: 40.72,
-            longitude: -74.01,
+            timestampMs: 1000,
+            latitude: 40.7128,
+            longitude: -74.006,
             speedMs: 0,
-            altitudeM: 8,
+            altitudeM: 10,
             accuracyM: 5,
-            headingDeg: 160,
-            totalDistanceM: 400,
+            headingDeg: 180,
+            totalDistanceM: 500,
           },
           {
-            timestampMs: 7000,
-            latitude: 40.721,
-            longitude: -74.009,
-            speedMs: 11,
-            altitudeM: 18,
-            accuracyM: 5,
-            headingDeg: 170,
-            totalDistanceM: 520,
+            timestampMs: 2500,
+            latitude: 40.7138,
+            longitude: -74.005,
+            speedMs: 10,
+            altitudeM: 15,
+            accuracyM: 4,
+            headingDeg: 182,
+            totalDistanceM: 580,
+          },
+          {
+            timestampMs: 4000,
+            latitude: 40.7148,
+            longitude: -74.004,
+            speedMs: 15,
+            altitudeM: 20,
+            accuracyM: 4,
+            headingDeg: 184,
+            totalDistanceM: 680,
           },
         ],
-      },
-    ]));
+      })
+    );
+    localStorage.setItem(
+      'vatio_speed_replay_library_v1',
+      JSON.stringify([
+        {
+          id: 'saved-session',
+          version: 1,
+          source: 'speed',
+          unit: 'kmh',
+          distanceUnit: 'm',
+          startedAtMs: 5000,
+          updatedAtMs: 7000,
+          endedAtMs: 7000,
+          maxSpeedMs: 11,
+          totalDistanceM: 520,
+          minAltitudeM: 8,
+          maxAltitudeM: 18,
+          startPlace: {
+            label: 'Fort Lee',
+            locality: 'Fort Lee',
+            state: 'New Jersey',
+            stateCode: 'NJ',
+            houseNumber: '6312',
+            road: 'Hilltop Court',
+            countryCode: 'us',
+          },
+          endPlace: {
+            label: 'West New York',
+            locality: 'West New York',
+            state: 'New Jersey',
+            stateCode: 'NJ',
+            houseNumber: '119',
+            road: '58th Street',
+            countryCode: 'us',
+          },
+          recordingState: 'stopped',
+          samples: [
+            {
+              timestampMs: 5000,
+              latitude: 40.72,
+              longitude: -74.01,
+              speedMs: 0,
+              altitudeM: 8,
+              accuracyM: 5,
+              headingDeg: 160,
+              totalDistanceM: 400,
+            },
+            {
+              timestampMs: 7000,
+              latitude: 40.721,
+              longitude: -74.009,
+              speedMs: 11,
+              altitudeM: 18,
+              accuracyM: 5,
+              headingDeg: 170,
+              totalDistanceM: 520,
+            },
+          ],
+        },
+      ])
+    );
     window.confirm = vi.fn(() => true);
 
     vi.resetModules();
-    await bootHtmlPage("replay.html");
+    await bootHtmlPage('replay.html');
   });
 
-  it("boots the replay page and renders the stored session", async () => {
-    const replayPage = await import("../../src/replay/replay.js");
-    expect(document.getElementById("replayEmptyState").hidden).toBe(true);
-    expect(document.getElementById("replayShell").hidden).toBe(true);
+  it('boots the replay page and renders the stored session', async () => {
+    const replayPage = await import('../../src/replay/replay.js');
+    expect(document.getElementById('replayEmptyState').hidden).toBe(true);
+    expect(document.getElementById('replayShell').hidden).toBe(true);
     await replayPage.initPromise;
     await flushTasks();
 
     expectPageSeo({
-      titleIncludes: "Vatio Drive Replay",
-      canonical: "https://vatioboard.com/replay.html",
+      titleIncludes: 'Vatio Drive Replay',
+      canonical: 'https://vatioboard.com/replay.html',
     });
-    expect(document.getElementById("replayEmptyState").hidden).toBe(true);
-    expect(document.getElementById("replayShell").hidden).toBe(false);
-    expect(document.getElementById("replaySessionChip").textContent).toBe("Active session");
-    expect(document.getElementById("replaySampleCountValue").textContent).toBe("3");
-    expect(document.getElementById("replayPeakSpeedValue").textContent).toContain("54 km/h");
-    expect(document.querySelector("#replayAxisTime .btn-icon svg")).toBeTruthy();
-    expect(document.querySelector("#replayAxisDistance .btn-icon svg")).toBeTruthy();
-    expect(document.getElementById("replayToolsMenuBtn").getAttribute("aria-label")).toBe("Pages");
-    expect(document.querySelector("#replayToolsMenuBtn .btn-icon svg")).toBeTruthy();
-    document.getElementById("replayToolsMenuBtn").click();
+    expect(document.getElementById('replayEmptyState').hidden).toBe(true);
+    expect(document.getElementById('replayShell').hidden).toBe(false);
+    expect(document.getElementById('replaySessionChip').textContent).toBe('Active session');
+    expect(document.getElementById('replaySampleCountValue').textContent).toBe('3');
+    expect(document.getElementById('replayPeakSpeedValue').textContent).toContain('54 km/h');
+    expect(document.getElementById('replayRouteValue').textContent).toBe(
+      '6312 Hilltop Ct Fort Lee NJ -> 123 Anderson Ave'
+    );
+    expect(document.querySelector('#replayAxisTime .btn-icon svg')).toBeTruthy();
+    expect(document.querySelector('#replayAxisDistance .btn-icon svg')).toBeTruthy();
+    expect(document.getElementById('replayToolsMenuBtn').getAttribute('aria-label')).toBe('Pages');
+    expect(document.querySelector('#replayToolsMenuBtn .btn-icon svg')).toBeTruthy();
+    document.getElementById('replayToolsMenuBtn').click();
     await flushTasks();
-    expect(document.getElementById("replayToolsMenuList").hidden).toBe(false);
-    expect(document.getElementById("replayLangToggleMenu").textContent).toBe("EN");
-    expect(document.querySelector("#replayToolsMenuList [data-backend-auth]")).toBeTruthy();
-    expect(document.querySelector("#replayToolsMenuList [data-backend-auth-signup]")?.getAttribute("href")).toBe("https://www.vatiolibre.com/login#signup");
-    expect(document.querySelector("#replayToolsMenuList [data-backend-auth-forgot]")?.getAttribute("href")).toBe("https://www.vatiolibre.com/login#forgot");
-    expect(document.querySelector("#replayPlayPause .replay-action-icon svg")).toBeTruthy();
-    expect(document.getElementById("replayPlayPause").getAttribute("aria-label")).toBe("Play");
-    expect(document.querySelector("#replayRestart .replay-action-icon svg")).toBeTruthy();
-    expect(document.querySelector("#replayApproach .replay-action-icon svg")).toBeTruthy();
-    expect(document.getElementById("replayRestart").disabled).toBe(false);
-    expect(document.getElementById("replayApproach").disabled).toBe(false);
-    expect(document.querySelectorAll("#replayRecordingsList button[data-recording-id]")).toHaveLength(2);
-    expect(document.querySelectorAll("#replayRecordingsList button[data-delete-recording-id]")).toHaveLength(1);
-    expect(document.getElementById("replayGraphHeadingCurrent").textContent).toContain("180");
-    expect(document.querySelector(".replay-live-grid")).toBeNull();
-    expect(document.querySelector(".replay-map-head")).toBeNull();
-    expect(document.getElementById("replayMap").hasAttribute("aria-hidden")).toBe(false);
-    expect(document.getElementById("replayAxisTime").getAttribute("aria-pressed")).toBe("true");
-    expect(document.getElementById("replayProgress").max).toBe("3000");
-    expect(document.querySelectorAll(".replay-rate-btn")).toHaveLength(5);
+    expect(document.getElementById('replayToolsMenuList').hidden).toBe(false);
+    expect(document.getElementById('replayLangToggleMenu').textContent).toBe('EN');
+    expect(document.querySelector('#replayToolsMenuList [data-backend-auth]')).toBeTruthy();
+    expect(
+      document
+        .querySelector('#replayToolsMenuList [data-backend-auth-signup]')
+        ?.getAttribute('href')
+    ).toBe('https://www.vatiolibre.com/login#signup');
+    expect(
+      document
+        .querySelector('#replayToolsMenuList [data-backend-auth-forgot]')
+        ?.getAttribute('href')
+    ).toBe('https://www.vatiolibre.com/login#forgot');
+    expect(document.querySelector('#replayPlayPause .replay-action-icon svg')).toBeTruthy();
+    expect(document.getElementById('replayPlayPause').getAttribute('aria-label')).toBe('Play');
+    expect(document.querySelector('#replayRestart .replay-action-icon svg')).toBeTruthy();
+    expect(document.querySelector('#replayApproach .replay-action-icon svg')).toBeTruthy();
+    expect(document.getElementById('replayRestart').disabled).toBe(false);
+    expect(document.getElementById('replayApproach').disabled).toBe(false);
+    expect(
+      document.querySelectorAll('#replayRecordingsList button[data-recording-id]')
+    ).toHaveLength(2);
+    expect(
+      document.querySelectorAll('#replayRecordingsList .replay-recording-detail-text')
+    ).toHaveLength(2);
+    expect(
+      document.querySelectorAll('#replayRecordingsList button[data-delete-recording-id]')
+    ).toHaveLength(1);
+    expect(document.getElementById('replayRecordingsList').textContent).toContain(
+      '6312 Hilltop Ct Fort Lee NJ -> 119 58th St West New York NJ'
+    );
+    expect(document.getElementById('replayGraphHeadingCurrent').textContent).toContain('180');
+    expect(document.querySelector('.replay-live-grid')).toBeNull();
+    expect(document.querySelector('.replay-map-head')).toBeNull();
+    expect(document.getElementById('replayMap').hasAttribute('aria-hidden')).toBe(false);
+    expect(document.getElementById('replayAxisTime').getAttribute('aria-pressed')).toBe('true');
+    expect(document.getElementById('replayProgress').max).toBe('3000');
+    expect(document.querySelectorAll('.replay-rate-btn')).toHaveLength(5);
     expect(fakeMaps[0]?.fitBounds).not.toHaveBeenCalled();
     expect(fakeMaps[0]?.jumpTo).toHaveBeenCalledTimes(1);
     expect(fakeMaps[0]?.resize).toHaveBeenCalledTimes(1);
 
-    document.getElementById("replayApproach").click();
+    document.getElementById('replayApproach').click();
     await flushTasks();
 
     expect(fakeMaps[0]?.jumpTo).toHaveBeenCalledTimes(1);
 
-    document.getElementById("replayAxisDistance").click();
+    document.getElementById('replayAxisDistance').click();
     await flushTasks();
 
-    expect(document.getElementById("replayAxisDistance").getAttribute("aria-pressed")).toBe("true");
-    expect(document.getElementById("replayDurationValue").textContent).toBe("180 m");
-    expect(document.getElementById("replayProgress").max).toBe("180");
+    expect(document.getElementById('replayAxisDistance').getAttribute('aria-pressed')).toBe('true');
+    expect(document.getElementById('replayDurationValue').textContent).toBe('180 m');
+    expect(document.getElementById('replayProgress').max).toBe('180');
 
     document.querySelector('.replay-rate-btn[data-rate="1000"]').click();
     await flushTasks();
 
-    expect(document.querySelector('.replay-rate-btn[data-rate="1000"]')?.getAttribute("aria-pressed")).toBe("true");
+    expect(
+      document.querySelector('.replay-rate-btn[data-rate="1000"]')?.getAttribute('aria-pressed')
+    ).toBe('true');
 
-    document.getElementById("replayProgress").value = "80";
-    document.getElementById("replayProgress").dispatchEvent(new Event("input", { bubbles: true }));
+    document.getElementById('replayProgress').value = '80';
+    document.getElementById('replayProgress').dispatchEvent(new Event('input', { bubbles: true }));
     await flushTasks();
 
-    expect(document.getElementById("replayElapsedValue").textContent).toBe("80 m");
+    expect(document.getElementById('replayElapsedValue').textContent).toBe('80 m');
     expect(fakeMaps[0]?.stop).toHaveBeenCalledTimes(2);
 
-    document.getElementById("replayRestart").click();
+    document.getElementById('replayRestart').click();
     await flushTasks();
 
-    expect(document.getElementById("replayElapsedValue").textContent).toBe("0 m");
+    expect(document.getElementById('replayElapsedValue').textContent).toBe('0 m');
 
     fakeMaps[0]?.stop.mockClear();
     fakeMaps[0]?.jumpTo.mockClear();
 
-    document.getElementById("replayApproach").click();
+    document.getElementById('replayApproach').click();
     await flushTasks();
 
     expect(fakeMaps[0]?.stop).toHaveBeenCalledTimes(1);
     expect(fakeMaps[0]?.jumpTo).toHaveBeenCalledTimes(1);
   });
 
-  it("opens the expanded graph sheet with stacked charts and a dual-range filter", async () => {
-    const replayPage = await import("../../src/replay/replay.js");
+  it('opens the expanded graph sheet with stacked charts and a dual-range filter', async () => {
+    const replayPage = await import('../../src/replay/replay.js');
     await replayPage.initPromise;
     await flushTasks();
 
     document.querySelector('[data-graph-metric="headingDeg"]').click();
     await flushTasks();
 
-    expect(document.getElementById("replayGraphSheet").hidden).toBe(false);
-    expect(document.getElementById("replayGraphSheetTitle").textContent).toBe("Explore charts");
-    expect(document.getElementById("replayExpandedSpeedCurrent").textContent).toContain("0");
-    expect(document.getElementById("replayExpandedAltitudeCurrent").textContent).toContain("10");
-    expect(document.getElementById("replayExpandedHeadingCurrent").textContent).toContain("180");
-    expect(document.querySelector(".replay-graph-sheet-header .replay-sheet-axis-group")).toBeTruthy();
-    expect(document.querySelector(".replay-graph-sheet-controls .replay-sheet-axis-group")).toBeNull();
-    expect(document.querySelector(".replay-sheet-axis-group .replay-sheet-axis-label")?.textContent).toBe("Time");
-    expect(document.querySelectorAll(".replay-sheet-axis-group .replay-sheet-axis-label")).toHaveLength(2);
-    expect(document.querySelector(".replay-filter-row")).toBeTruthy();
-    expect(document.querySelector(".replay-filter-row #replayFilterSlider")).toBeTruthy();
-    expect(document.getElementById("replayFilterStart")).toBeTruthy();
-    expect(document.getElementById("replayFilterEnd")).toBeTruthy();
+    expect(document.getElementById('replayGraphSheet').hidden).toBe(false);
+    expect(document.getElementById('replayGraphSheetTitle').textContent).toBe('Explore charts');
+    expect(document.getElementById('replayExpandedSpeedCurrent').textContent).toContain('0');
+    expect(document.getElementById('replayExpandedAltitudeCurrent').textContent).toContain('10');
+    expect(document.getElementById('replayExpandedHeadingCurrent').textContent).toContain('180');
+    expect(
+      document.querySelector('.replay-graph-sheet-header .replay-sheet-axis-group')
+    ).toBeTruthy();
+    expect(
+      document.querySelector('.replay-graph-sheet-controls .replay-sheet-axis-group')
+    ).toBeNull();
+    expect(
+      document.querySelector('.replay-sheet-axis-group .replay-sheet-axis-label')?.textContent
+    ).toBe('Time');
+    expect(
+      document.querySelectorAll('.replay-sheet-axis-group .replay-sheet-axis-label')
+    ).toHaveLength(2);
+    expect(document.querySelector('.replay-filter-row')).toBeTruthy();
+    expect(document.querySelector('.replay-filter-row #replayFilterSlider')).toBeTruthy();
+    expect(document.getElementById('replayFilterStart')).toBeTruthy();
+    expect(document.getElementById('replayFilterEnd')).toBeTruthy();
 
-    document.getElementById("replayFilterStart").value = "250";
-    document.getElementById("replayFilterStart").dispatchEvent(new Event("input", { bubbles: true }));
-    document.getElementById("replayFilterEnd").value = "750";
-    document.getElementById("replayFilterEnd").dispatchEvent(new Event("input", { bubbles: true }));
+    document.getElementById('replayFilterStart').value = '250';
+    document
+      .getElementById('replayFilterStart')
+      .dispatchEvent(new Event('input', { bubbles: true }));
+    document.getElementById('replayFilterEnd').value = '750';
+    document.getElementById('replayFilterEnd').dispatchEvent(new Event('input', { bubbles: true }));
     await flushTasks();
 
-    expect(document.getElementById("replayFilterStartValue").textContent).toBe("00:01");
-    expect(document.getElementById("replayFilterEndValue").textContent).toBe("00:02");
+    expect(document.getElementById('replayFilterStartValue').textContent).toBe('00:01');
+    expect(document.getElementById('replayFilterEndValue').textContent).toBe('00:02');
 
-    document.getElementById("closeReplayGraphSheet").click();
+    document.getElementById('closeReplayGraphSheet').click();
     await flushTasks();
 
-    expect(document.getElementById("replayGraphSheet").hidden).toBe(true);
+    expect(document.getElementById('replayGraphSheet').hidden).toBe(true);
   });
 
-  it("cancels the intro when the user switches recordings mid-approach", async () => {
-    const replayPage = await import("../../src/replay/replay.js");
+  it('cancels the intro when the user switches recordings mid-approach', async () => {
+    const replayPage = await import('../../src/replay/replay.js');
     await replayPage.initPromise;
     await flushTasks();
 
@@ -310,36 +385,44 @@ describe("replay.html smoke", () => {
     await flushTasks();
 
     expect(fakeMaps[0]?.stop).toHaveBeenCalledTimes(2);
-    expect(document.getElementById("replaySessionChip").textContent).toBe("Saved session");
+    expect(document.getElementById('replaySessionChip').textContent).toBe('Saved session');
   });
 
-  it("lets the user delete saved recordings while keeping the active session", async () => {
-    const replayPage = await import("../../src/replay/replay.js");
+  it('lets the user delete saved recordings while keeping the active session', async () => {
+    const replayPage = await import('../../src/replay/replay.js');
     await replayPage.initPromise;
-    const { loadReplayLibrary } = await import("../../src/replay/session.js");
+    const { loadReplayLibrary } = await import('../../src/replay/session.js');
     await flushTasks();
 
-    document.querySelector('#replayRecordingsList button[data-delete-recording-id="saved-session"]').click();
+    document
+      .querySelector('#replayRecordingsList button[data-delete-recording-id="saved-session"]')
+      .click();
     await replayPage.waitForReplaySelection();
     await loadReplayLibrary();
     await flushTasks();
 
     expect(window.confirm).toHaveBeenCalledTimes(1);
-    expect(document.querySelectorAll("#replayRecordingsList button[data-recording-id]")).toHaveLength(1);
-    expect(document.querySelector('#replayRecordingsList button[data-delete-recording-id="saved-session"]')).toBeNull();
+    expect(
+      document.querySelectorAll('#replayRecordingsList button[data-recording-id]')
+    ).toHaveLength(1);
+    expect(
+      document.querySelector(
+        '#replayRecordingsList button[data-delete-recording-id="saved-session"]'
+      )
+    ).toBeNull();
     expect(await loadReplayLibrary()).toEqual([]);
   });
 
-  it("boots cleanly into the empty state when there are no replay recordings", async () => {
+  it('boots cleanly into the empty state when there are no replay recordings', async () => {
     localStorage.clear();
     vi.resetModules();
-    await bootHtmlPage("replay.html");
+    await bootHtmlPage('replay.html');
 
-    const replayPage = await import("../../src/replay/replay.js");
+    const replayPage = await import('../../src/replay/replay.js');
     await replayPage.initPromise;
     await flushTasks();
 
-    expect(document.getElementById("replayEmptyState").hidden).toBe(false);
-    expect(document.getElementById("replayShell").hidden).toBe(true);
+    expect(document.getElementById('replayEmptyState').hidden).toBe(false);
+    expect(document.getElementById('replayShell').hidden).toBe(true);
   });
 });

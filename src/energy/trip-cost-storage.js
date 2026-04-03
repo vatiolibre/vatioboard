@@ -1,26 +1,28 @@
-import { loadJson, removeStoredValue, saveJson } from "../shared/storage.js";
+import { loadJson, removeStoredValue, saveJson } from '../shared/storage.js';
+import { getPreferredTripDistanceUnit } from '../shared/unit-bootstrap.js';
 
-const SETTINGS_KEY = "energy_trip_cost_settings_v1";
-const VALUES_KEY = "energy_trip_cost_values_v1";
-const MULTI_TRIP_KEY = "energy_multi_trip_v1";
+const SETTINGS_KEY = 'energy_trip_cost_settings_v1';
+const VALUES_KEY = 'energy_trip_cost_values_v1';
+const MULTI_TRIP_KEY = 'energy_multi_trip_v1';
 
 const DEFAULT_SETTINGS = {
-  unit: "km", // "km" or "mi"
-  mode: "simple", // "simple" or "multi"
+  unit: 'km', // "km" or "mi"
+  mode: 'simple', // "simple" or "multi"
 };
 
 const DEFAULT_VALUES = {
-  distance: "",
-  consumption: "",
-  price: "",
+  distance: '',
+  consumption: '',
+  price: '',
 };
 
 export function loadTripCostSettings() {
   const stored = loadJson(SETTINGS_KEY, null);
+  const defaultUnit = getPreferredTripDistanceUnit();
   return {
     ...DEFAULT_SETTINGS,
-    unit: stored?.unit === "mi" ? "mi" : "km",
-    mode: stored?.mode === "multi" ? "multi" : "simple",
+    unit: stored?.unit === 'mi' ? 'mi' : defaultUnit === 'mi' ? 'mi' : 'km',
+    mode: stored?.mode === 'multi' ? 'multi' : 'simple',
   };
 }
 
@@ -61,9 +63,9 @@ export function createNewTrip(number) {
   return {
     id: nextTripId++,
     name: `Trip ${number}`,
-    distance: "",
-    consumption: "",
-    price: "",
+    distance: '',
+    consumption: '',
+    price: '',
     expanded: true,
   };
 }

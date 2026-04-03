@@ -1,759 +1,1164 @@
 <!doctype html>
 <html lang="en" class="gps-rate-page">
-<head>
-  <meta charset="utf-8" />
-  <script>
-    (function () {
-      var l = navigator.language && navigator.language.startsWith("es") ? "es" : "en";
-      document.documentElement.lang = l;
-      window.__lang = l;
-    })();
-  </script>
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <head>
+    <meta charset="utf-8" />
+    <script>
+      (function () {
+        var l = navigator.language && navigator.language.startsWith('es') ? 'es' : 'en';
+        document.documentElement.lang = l;
+        window.__lang = l;
+      })();
+    </script>
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"
+    />
 
-  <link rel="icon" type="image/svg+xml" href="/favicon_dark.svg?v=2" media="(prefers-color-scheme: dark)" />
-  <link rel="icon" type="image/svg+xml" href="/favicon_ligth.svg?v=2" media="(prefers-color-scheme: light)" />
-  <link id="favicon-fallback" rel="icon" type="image/svg+xml" href="/favicon_ligth.svg?v=2" />
-  <link id="shortcut-favicon" rel="shortcut icon" href="/favicon_ligth.svg?v=2" />
-  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-  <link rel="manifest" href="/site.webmanifest" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="/favicon_dark.svg?v=2"
+      media="(prefers-color-scheme: dark)"
+    />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="/favicon_ligth.svg?v=2"
+      media="(prefers-color-scheme: light)"
+    />
+    <link id="favicon-fallback" rel="icon" type="image/svg+xml" href="/favicon_ligth.svg?v=2" />
+    <link id="shortcut-favicon" rel="shortcut icon" href="/favicon_ligth.svg?v=2" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
 
-  <script>
-    (function () {
-      var query = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
-      var icons = [
-        document.getElementById("favicon-fallback"),
-        document.getElementById("shortcut-favicon"),
-      ];
+    <script>
+      (function () {
+        var query = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+        var icons = [
+          document.getElementById('favicon-fallback'),
+          document.getElementById('shortcut-favicon'),
+        ];
 
-      function applyThemeFavicon() {
-        var href = (query && query.matches ? "/favicon_dark.svg" : "/favicon_ligth.svg") + "?v=2";
-        icons.forEach(function (icon) {
-          if (icon) icon.href = href;
-        });
+        function applyThemeFavicon() {
+          var href = (query && query.matches ? '/favicon_dark.svg' : '/favicon_ligth.svg') + '?v=2';
+          icons.forEach(function (icon) {
+            if (icon) icon.href = href;
+          });
+        }
+
+        applyThemeFavicon();
+        if (!query) return;
+        if (query.addEventListener) query.addEventListener('change', applyThemeFavicon);
+        else if (query.addListener) query.addListener(applyThemeFavicon);
+      })();
+    </script>
+
+    <title>Vatio GPS Rate Lab - Browser Geolocation Sampling Test</title>
+    <meta
+      name="description"
+      content="Measure observed browser geolocation callback rate, intervals, and field availability in Tesla and modern mobile browsers."
+    />
+    <meta
+      name="robots"
+      content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#181818" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <link rel="canonical" href="https://vatioboard.com/gps-rate.html" />
+
+    <style>
+      .sr-only {
+        position: absolute !important;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
       }
+    </style>
+  </head>
+  <body class="gps-rate-page">
+    <h1 class="sr-only" data-i18n="gpsRatePageH1">Vatio GPS Rate Lab</h1>
+    <p class="sr-only" data-i18n="gpsRatePageLead">
+      Touch-first browser geolocation diagnostics for Tesla and mobile.
+    </p>
 
-      applyThemeFavicon();
-      if (!query) return;
-      if (query.addEventListener) query.addEventListener("change", applyThemeFavicon);
-      else if (query.addListener) query.addListener(applyThemeFavicon);
-    })();
-  </script>
+    <div class="app gps-rate-app">
+      <header>
+        <div class="header-inner gps-rate-header-inner">
+          <div
+            class="brand"
+            data-i18n-title="gpsRateTagline"
+            title="Browser geolocation diagnostics by Vatio Libre"
+          >
+            <a class="brand-home" href="/" data-i18n-aria="openBoard" aria-label="Open Vatio Board">
+              <span class="dot" aria-hidden="true"></span>
+              <picture class="brand-logo" aria-hidden="true">
+                <source srcset="/img/vb_logo_dark.svg" media="(prefers-color-scheme: dark)" />
+                <source srcset="/img/vb_logo_light.svg" media="(prefers-color-scheme: light)" />
+                <img
+                  src="/img/vb_logo_light.svg"
+                  alt=""
+                  width="757"
+                  height="107"
+                  decoding="async"
+                />
+              </picture>
+              <span class="sr-only">Vatio Board</span>
+            </a>
+            <button
+              id="langToggle"
+              type="button"
+              class="lang-toggle"
+              data-i18n-aria="changeLanguage"
+              aria-label="Change language"
+            >
+              EN
+            </button>
+          </div>
 
-  <title>Vatio GPS Rate Lab - Browser Geolocation Sampling Test</title>
-  <meta
-    name="description"
-    content="Measure observed browser geolocation callback rate, intervals, and field availability in Tesla and modern mobile browsers."
-  />
-  <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
-  <meta name="color-scheme" content="light dark" />
-  <meta name="theme-color" content="#181818" media="(prefers-color-scheme: dark)" />
-  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
-  <link rel="canonical" href="https://vatioboard.com/gps-rate.html" />
+          <div
+            class="toolbar gps-rate-toolbar"
+            role="toolbar"
+            data-i18n-aria="gpsRateToolbar"
+            aria-label="GPS rate tools"
+          >
+            <div class="gps-rate-toolbar-strip">
+              <div class="tools-menu gps-rate-tools-menu">
+                <button
+                  id="gpsRateToolsMenuBtn"
+                  type="button"
+                  class="tools-menu-btn gps-rate-toolbar-icon-btn"
+                  data-i18n-aria="pages"
+                  data-i18n-title="pages"
+                  aria-label="Pages"
+                  title="Pages"
+                  aria-haspopup="true"
+                  aria-expanded="false"
+                >
+                  <span class="btn-icon" aria-hidden="true"></span>
+                </button>
+                <div id="gpsRateToolsMenuList" class="tools-menu-list" hidden>
+                  <div
+                    class="compact-tools-menu-brand"
+                    data-i18n-title="gpsRateTagline"
+                    title="Browser geolocation diagnostics by Vatio Libre"
+                  >
+                    <span class="dot" aria-hidden="true"></span>
+                    <picture class="brand-logo compact-tools-menu-logo" aria-hidden="true">
+                      <source srcset="/img/vb_logo_dark.svg" media="(prefers-color-scheme: dark)" />
+                      <source
+                        srcset="/img/vb_logo_light.svg"
+                        media="(prefers-color-scheme: light)"
+                      />
+                      <img
+                        src="/img/vb_logo_light.svg"
+                        alt=""
+                        width="757"
+                        height="107"
+                        decoding="async"
+                      />
+                    </picture>
+                    <span class="sr-only" data-i18n="brand">Vatio Board</span>
+                    <button
+                      id="gpsRateLangToggleMenu"
+                      type="button"
+                      class="lang-toggle"
+                      data-i18n-aria="changeLanguage"
+                      aria-label="Change language"
+                      data-lang-toggle
+                    >
+                      EN
+                    </button>
+                  </div>
+                  <button id="openGpsRateSpeedMenu" type="button" class="btn-with-icon">
+                    <span class="btn-icon" aria-hidden="true"></span>
+                    <span data-i18n="speedometer">Speedometer</span>
+                  </button>
+                  <button id="openGpsRateAccelMenu" type="button" class="btn-with-icon">
+                    <span class="btn-icon" aria-hidden="true"></span>
+                    <span data-i18n="accelerationTest">Acceleration Test</span>
+                  </button>
+                  <button id="openGpsRateCalculatorMenu" type="button" class="btn-with-icon">
+                    <span class="btn-icon" aria-hidden="true"></span>
+                    <span data-i18n="calculator">Calculator</span>
+                  </button>
+                  <button id="openGpsRateBoardMenu" type="button" class="btn-with-icon">
+                    <span class="btn-icon" aria-hidden="true"></span>
+                    <span data-i18n="openBoard">Open board</span>
+                  </button>
+                  <form class="backend-auth" data-backend-auth novalidate>
+                    <p class="backend-auth-title" data-i18n="authTitle">VatioLibre account</p>
+                    <p
+                      class="backend-auth-status"
+                      data-backend-auth-status
+                      role="status"
+                      aria-live="polite"
+                      data-i18n="authCheckingSession"
+                    >
+                      Checking session...
+                    </p>
+                    <input
+                      class="backend-auth-input"
+                      data-backend-auth-user
+                      data-backend-auth-guest
+                      type="text"
+                      autocomplete="username"
+                      spellcheck="false"
+                      aria-label="Email / username"
+                      data-i18n-aria="authUsername"
+                      placeholder="Email / username"
+                      data-i18n-placeholder="authUsername"
+                    />
+                    <input
+                      class="backend-auth-input"
+                      data-backend-auth-password
+                      data-backend-auth-guest
+                      type="password"
+                      autocomplete="current-password"
+                      aria-label="Password"
+                      data-i18n-aria="authPassword"
+                      placeholder="Password"
+                      data-i18n-placeholder="authPassword"
+                    />
+                    <button
+                      type="submit"
+                      data-backend-auth-login
+                      data-backend-auth-guest
+                      data-i18n="authLogin"
+                    >
+                      Log in
+                    </button>
+                    <button
+                      type="button"
+                      data-backend-auth-logout
+                      data-backend-auth-authenticated
+                      data-i18n="authLogout"
+                    >
+                      Log out
+                    </button>
+                    <a
+                      class="backend-auth-link"
+                      data-backend-auth-guest
+                      data-backend-auth-signup
+                      href="https://www.vatiolibre.com/login#signup"
+                      rel="noreferrer"
+                      data-i18n="authCreateAccount"
+                      >Create account</a
+                    >
+                    <a
+                      class="backend-auth-link"
+                      data-backend-auth-guest
+                      data-backend-auth-forgot
+                      href="https://www.vatiolibre.com/login#forgot"
+                      rel="noreferrer"
+                      data-i18n="authForgotPassword"
+                      >Forgot password</a
+                    >
+                  </form>
+                </div>
+              </div>
 
-  <style>
-    .sr-only{
-      position:absolute !important;
-      width:1px;
-      height:1px;
-      padding:0;
-      margin:-1px;
-      overflow:hidden;
-      clip:rect(0,0,0,0);
-      white-space:nowrap;
-      border:0;
-    }
-  </style>
-</head>
-<body class="gps-rate-page">
-  <h1 class="sr-only" data-i18n="gpsRatePageH1">Vatio GPS Rate Lab</h1>
-  <p class="sr-only" data-i18n="gpsRatePageLead">Touch-first browser geolocation diagnostics for Tesla and mobile.</p>
-
-  <div class="app gps-rate-app">
-    <header>
-      <div class="header-inner gps-rate-header-inner">
-        <div class="brand" data-i18n-title="gpsRateTagline" title="Browser geolocation diagnostics by Vatio Libre">
-          <a class="brand-home" href="/" data-i18n-aria="openBoard" aria-label="Open Vatio Board">
-            <span class="dot" aria-hidden="true"></span>
-            <picture class="brand-logo" aria-hidden="true">
-              <source srcset="/img/vb_logo_dark.svg" media="(prefers-color-scheme: dark)" />
-              <source srcset="/img/vb_logo_light.svg" media="(prefers-color-scheme: light)" />
-              <img src="/img/vb_logo_light.svg" alt="" width="757" height="107" decoding="async" />
-            </picture>
-            <span class="sr-only">Vatio Board</span>
-          </a>
-          <button id="langToggle" type="button" class="lang-toggle" data-i18n-aria="changeLanguage" aria-label="Change language">EN</button>
-        </div>
-
-        <div class="toolbar gps-rate-toolbar" role="toolbar" data-i18n-aria="gpsRateToolbar" aria-label="GPS rate tools">
-          <div class="gps-rate-toolbar-strip">
-            <div class="tools-menu gps-rate-tools-menu">
               <button
-                id="gpsRateToolsMenuBtn"
+                id="gpsRateStartQuick"
                 type="button"
-                class="tools-menu-btn gps-rate-toolbar-icon-btn"
-                data-i18n-aria="pages"
-                data-i18n-title="pages"
-                aria-label="Pages"
-                title="Pages"
-                aria-haspopup="true"
-                aria-expanded="false"
+                class="gps-rate-toolbar-icon-btn gps-rate-toolbar-btn-start"
+                data-i18n-aria="gpsRateStart"
+                data-i18n-title="gpsRateStart"
+                aria-label="Start Test"
+                title="Start Test"
               >
                 <span class="btn-icon" aria-hidden="true"></span>
               </button>
-              <div id="gpsRateToolsMenuList" class="tools-menu-list" hidden>
-                <div class="compact-tools-menu-brand" data-i18n-title="gpsRateTagline" title="Browser geolocation diagnostics by Vatio Libre">
-                  <span class="dot" aria-hidden="true"></span>
-                  <picture class="brand-logo compact-tools-menu-logo" aria-hidden="true">
-                    <source srcset="/img/vb_logo_dark.svg" media="(prefers-color-scheme: dark)" />
-                    <source srcset="/img/vb_logo_light.svg" media="(prefers-color-scheme: light)" />
-                    <img src="/img/vb_logo_light.svg" alt="" width="757" height="107" decoding="async" />
-                  </picture>
-                  <span class="sr-only" data-i18n="brand">Vatio Board</span>
-                  <button id="gpsRateLangToggleMenu" type="button" class="lang-toggle" data-i18n-aria="changeLanguage" aria-label="Change language" data-lang-toggle>EN</button>
-                </div>
-                <button id="openGpsRateSpeedMenu" type="button" class="btn-with-icon">
-                  <span class="btn-icon" aria-hidden="true"></span>
-                  <span data-i18n="speedometer">Speedometer</span>
-                </button>
-                <button id="openGpsRateAccelMenu" type="button" class="btn-with-icon">
-                  <span class="btn-icon" aria-hidden="true"></span>
-                  <span data-i18n="accelerationTest">Acceleration Test</span>
-                </button>
-                <button id="openGpsRateCalculatorMenu" type="button" class="btn-with-icon">
-                  <span class="btn-icon" aria-hidden="true"></span>
-                  <span data-i18n="calculator">Calculator</span>
-                </button>
-                <button id="openGpsRateBoardMenu" type="button" class="btn-with-icon">
-                  <span class="btn-icon" aria-hidden="true"></span>
-                  <span data-i18n="openBoard">Open board</span>
-                </button>
-                <form class="backend-auth" data-backend-auth novalidate>
-                  <p class="backend-auth-title" data-i18n="authTitle">VatioLibre account</p>
-                  <p class="backend-auth-status" data-backend-auth-status role="status" aria-live="polite" data-i18n="authCheckingSession">Checking session...</p>
-                  <input
-                    class="backend-auth-input"
-                    data-backend-auth-user
-                    data-backend-auth-guest
-                    type="text"
-                    autocomplete="username"
-                    spellcheck="false"
-                    aria-label="Email / username"
-                    data-i18n-aria="authUsername"
-                    placeholder="Email / username"
-                    data-i18n-placeholder="authUsername"
-                  />
-                  <input
-                    class="backend-auth-input"
-                    data-backend-auth-password
-                    data-backend-auth-guest
-                    type="password"
-                    autocomplete="current-password"
-                    aria-label="Password"
-                    data-i18n-aria="authPassword"
-                    placeholder="Password"
-                    data-i18n-placeholder="authPassword"
-                  />
-                  <button type="submit" data-backend-auth-login data-backend-auth-guest data-i18n="authLogin">Log in</button>
-                  <button type="button" data-backend-auth-logout data-backend-auth-authenticated data-i18n="authLogout">Log out</button>
-                  <a
-                    class="backend-auth-link"
-                    data-backend-auth-guest
-                    data-backend-auth-signup
-                    href="https://www.vatiolibre.com/login#signup"
-                    rel="noreferrer"
-                    data-i18n="authCreateAccount"
-                  >Create account</a>
-                  <a
-                    class="backend-auth-link"
-                    data-backend-auth-guest
-                    data-backend-auth-forgot
-                    href="https://www.vatiolibre.com/login#forgot"
-                    rel="noreferrer"
-                    data-i18n="authForgotPassword"
-                  >Forgot password</a>
-                </form>
-              </div>
+              <button
+                id="gpsRateStopQuick"
+                type="button"
+                class="gps-rate-toolbar-icon-btn gps-rate-toolbar-btn-stop"
+                data-i18n-aria="gpsRateStop"
+                data-i18n-title="gpsRateStop"
+                aria-label="Stop Test"
+                title="Stop Test"
+              >
+                <span class="btn-icon" aria-hidden="true"></span>
+              </button>
+              <button
+                id="gpsRateResetQuick"
+                type="button"
+                class="gps-rate-toolbar-icon-btn gps-rate-toolbar-btn-reset"
+                data-i18n-aria="gpsRateReset"
+                data-i18n-title="gpsRateReset"
+                aria-label="Reset"
+                title="Reset"
+              >
+                <span class="btn-icon" aria-hidden="true"></span>
+              </button>
             </div>
 
-            <button
-              id="gpsRateStartQuick"
-              type="button"
-              class="gps-rate-toolbar-icon-btn gps-rate-toolbar-btn-start"
-              data-i18n-aria="gpsRateStart"
-              data-i18n-title="gpsRateStart"
-              aria-label="Start Test"
-              title="Start Test"
+            <div
+              class="gps-rate-toolbar-status"
+              data-i18n-aria="connectionStatus"
+              aria-label="Connection status"
             >
-              <span class="btn-icon" aria-hidden="true"></span>
-            </button>
-            <button
-              id="gpsRateStopQuick"
-              type="button"
-              class="gps-rate-toolbar-icon-btn gps-rate-toolbar-btn-stop"
-              data-i18n-aria="gpsRateStop"
-              data-i18n-title="gpsRateStop"
-              aria-label="Stop Test"
-              title="Stop Test"
-            >
-              <span class="btn-icon" aria-hidden="true"></span>
-            </button>
-            <button
-              id="gpsRateResetQuick"
-              type="button"
-              class="gps-rate-toolbar-icon-btn gps-rate-toolbar-btn-reset"
-              data-i18n-aria="gpsRateReset"
-              data-i18n-title="gpsRateReset"
-              aria-label="Reset"
-              title="Reset"
-            >
-              <span class="btn-icon" aria-hidden="true"></span>
-            </button>
-          </div>
-
-          <div class="gps-rate-toolbar-status" data-i18n-aria="connectionStatus" aria-label="Connection status">
-            <span class="gps-rate-toolbar-meta">
-              <span class="gps-rate-toolbar-meta-item">
-                <span data-i18n="gpsRatePermission">Permission</span>
-                <strong id="permissionChipValue">Prompt</strong>
+              <span class="gps-rate-toolbar-meta">
+                <span class="gps-rate-toolbar-meta-item">
+                  <span data-i18n="gpsRatePermission">Permission</span>
+                  <strong id="permissionChipValue">Prompt</strong>
+                </span>
+                <span class="gps-rate-toolbar-meta-item">
+                  <span data-i18n="gpsRateVisibility">Visibility</span>
+                  <strong id="visibilityChipValue">Visible</strong>
+                </span>
               </span>
-              <span class="gps-rate-toolbar-meta-item">
-                <span data-i18n="gpsRateVisibility">Visibility</span>
-                <strong id="visibilityChipValue">Visible</strong>
+              <span
+                id="headerStatusText"
+                class="status gps-rate-toolbar-status-text"
+                aria-live="polite"
+                >Idle</span
+              >
+            </div>
+          </div>
+
+          <span class="route-chip" aria-hidden="true" data-i18n="gpsRateRoute">GPS LAB</span>
+        </div>
+      </header>
+
+      <main class="gps-rate-main">
+        <section class="gps-rate-hero">
+          <div class="gps-rate-hero-copy">
+            <span class="gps-rate-kicker" data-i18n="gpsRateObservedRateLabel"
+              >Observed callback rate</span
+            >
+            <h2 data-i18n="gpsRateHeroTitle">Observed browser geolocation callback rate</h2>
+            <p class="gps-rate-lead" data-i18n="gpsRateHeroLead">
+              Measures browser callback timing from watchPosition(). This is not GPS hardware
+              frequency.
+            </p>
+            <p class="gps-rate-disclaimer" data-i18n="gpsRateDisclaimer">
+              Observed callback rate only. Browser, OS, permissions, visibility, and device behavior
+              all affect results.
+            </p>
+
+            <div class="gps-rate-meta-line">
+              <span id="statusBadge" class="gps-rate-chip">Idle</span>
+              <span class="gps-rate-chip gps-rate-chip-muted" data-i18n="gpsRateTestConfig">
+                watchPosition high accuracy, maximumAge 0, timeout 10000 ms
               </span>
-            </span>
-            <span id="headerStatusText" class="status gps-rate-toolbar-status-text" aria-live="polite">Idle</span>
-          </div>
-        </div>
-
-        <span class="route-chip" aria-hidden="true" data-i18n="gpsRateRoute">GPS LAB</span>
-      </div>
-    </header>
-
-    <main class="gps-rate-main">
-      <section class="gps-rate-hero">
-        <div class="gps-rate-hero-copy">
-          <span class="gps-rate-kicker" data-i18n="gpsRateObservedRateLabel">Observed callback rate</span>
-          <h2 data-i18n="gpsRateHeroTitle">Observed browser geolocation callback rate</h2>
-          <p class="gps-rate-lead" data-i18n="gpsRateHeroLead">
-            Measures browser callback timing from watchPosition(). This is not GPS hardware frequency.
-          </p>
-          <p class="gps-rate-disclaimer" data-i18n="gpsRateDisclaimer">
-            Observed callback rate only. Browser, OS, permissions, visibility, and device behavior all affect results.
-          </p>
-
-          <div class="gps-rate-meta-line">
-            <span id="statusBadge" class="gps-rate-chip">Idle</span>
-            <span class="gps-rate-chip gps-rate-chip-muted" data-i18n="gpsRateTestConfig">
-              watchPosition high accuracy, maximumAge 0, timeout 10000 ms
-            </span>
-          </div>
-        </div>
-
-        <div class="gps-rate-controls-panel">
-          <div class="gps-rate-actions" role="group" data-i18n-aria="gpsRateControls" aria-label="Test controls">
-            <button id="startTest" type="button" class="gps-rate-action-btn gps-rate-action-btn-primary" data-i18n="gpsRateStart">Start Test</button>
-            <button id="stopTest" type="button" class="gps-rate-action-btn" data-i18n="gpsRateStop">Stop Test</button>
-            <button id="resetTest" type="button" class="gps-rate-action-btn" data-i18n="gpsRateReset">Reset</button>
-            <button id="exportJson" type="button" class="gps-rate-action-btn" data-i18n="gpsRateExportJson">Export JSON</button>
-            <button id="exportCsv" type="button" class="gps-rate-action-btn" data-i18n="gpsRateExportCsv">Export CSV</button>
-            <button id="copySummary" type="button" class="gps-rate-action-btn" data-i18n="gpsRateCopySummary">Copy Summary</button>
-          </div>
-
-          <div class="gps-rate-options">
-            <button id="wakeLockToggle" type="button" class="gps-rate-toggle-btn" aria-pressed="false">
-              <span data-i18n="gpsRateKeepAwake">Keep Screen Awake</span>
-              <strong id="wakeLockStateText">Screen Sleep</strong>
-            </button>
-
-            <div class="gps-rate-option-pill">
-              <span class="gps-rate-option-label" data-i18n="gpsRatePermission">Permission</span>
-              <strong id="permissionSummaryText">Prompt</strong>
-            </div>
-
-            <div class="gps-rate-option-pill">
-              <span class="gps-rate-option-label" data-i18n="gpsRateVisibility">Visibility</span>
-              <strong id="visibilitySummaryText">Visible</strong>
             </div>
           </div>
 
-          <label class="gps-rate-notes-field" for="sessionNotes">
-            <span data-i18n="gpsRateSessionNotes">Session notes</span>
-            <textarea
-              id="sessionNotes"
-              rows="3"
-              data-i18n-placeholder="gpsRateSessionNotesPlaceholder"
-              placeholder="Example: Tesla Model Y browser parked"
-            ></textarea>
-          </label>
+          <div class="gps-rate-controls-panel">
+            <div
+              class="gps-rate-actions"
+              role="group"
+              data-i18n-aria="gpsRateControls"
+              aria-label="Test controls"
+            >
+              <button
+                id="startTest"
+                type="button"
+                class="gps-rate-action-btn gps-rate-action-btn-primary"
+                data-i18n="gpsRateStart"
+              >
+                Start Test
+              </button>
+              <button
+                id="stopTest"
+                type="button"
+                class="gps-rate-action-btn"
+                data-i18n="gpsRateStop"
+              >
+                Stop Test
+              </button>
+              <button
+                id="resetTest"
+                type="button"
+                class="gps-rate-action-btn"
+                data-i18n="gpsRateReset"
+              >
+                Reset
+              </button>
+              <button
+                id="exportJson"
+                type="button"
+                class="gps-rate-action-btn"
+                data-i18n="gpsRateExportJson"
+              >
+                Export JSON
+              </button>
+              <button
+                id="exportCsv"
+                type="button"
+                class="gps-rate-action-btn"
+                data-i18n="gpsRateExportCsv"
+              >
+                Export CSV
+              </button>
+              <button
+                id="copySummary"
+                type="button"
+                class="gps-rate-action-btn"
+                data-i18n="gpsRateCopySummary"
+              >
+                Copy Summary
+              </button>
+            </div>
 
-          <p id="actionNotice" class="gps-rate-feedback" aria-live="polite"></p>
-        </div>
-      </section>
+            <div class="gps-rate-options">
+              <button
+                id="wakeLockToggle"
+                type="button"
+                class="gps-rate-toggle-btn"
+                aria-pressed="false"
+              >
+                <span data-i18n="gpsRateKeepAwake">Keep Screen Awake</span>
+                <strong id="wakeLockStateText">Screen Sleep</strong>
+              </button>
 
-      <section class="gps-rate-card gps-rate-nominatim-card" aria-labelledby="gpsRateNominatimHeading">
-        <div class="gps-rate-card-head">
-          <div>
-            <span class="gps-rate-card-kicker" data-i18n="gpsRateNominatim">Nominatim API</span>
-            <p id="gpsRateNominatimHeading" class="gps-rate-card-lead" data-i18n="gpsRateNominatimLead">
-              Manual policy-safe requests for Search, Reverse, Lookup, Status, and Details on custom servers.
-            </p>
-          </div>
-          <span class="gps-rate-chip gps-rate-chip-muted" data-i18n="gpsRateNominatimRateLimit">Shared 1 req/s</span>
-        </div>
+              <div class="gps-rate-option-pill">
+                <span class="gps-rate-option-label" data-i18n="gpsRatePermission">Permission</span>
+                <strong id="permissionSummaryText">Prompt</strong>
+              </div>
 
-        <p class="gps-rate-disclaimer gps-rate-nominatim-policy" data-i18n="gpsRateNominatimPolicy">
-          Manual requests only. No autocomplete. Repeated identical requests are cached. Details stays disabled on the public server.
-        </p>
+              <div class="gps-rate-option-pill">
+                <span class="gps-rate-option-label" data-i18n="gpsRateVisibility">Visibility</span>
+                <strong id="visibilitySummaryText">Visible</strong>
+              </div>
+            </div>
 
-        <div class="gps-rate-nominatim-layout">
-          <label class="gps-rate-notes-field gps-rate-nominatim-base-field" for="nominatimBaseUrl">
-            <span data-i18n="gpsRateNominatimBaseUrl">Nominatim service URL</span>
-            <input
-              id="nominatimBaseUrl"
-              class="gps-rate-text-input"
-              type="url"
-              spellcheck="false"
-              autocapitalize="off"
-              autocomplete="url"
-              placeholder="https://nominatim.openstreetmap.org"
-            />
-          </label>
-
-          <div class="gps-rate-nominatim-endpoints" role="group" data-i18n-aria="gpsRateNominatimEndpoints" aria-label="Nominatim endpoints">
-            <button id="nominatimApiSearch" type="button" class="gps-rate-nominatim-api-btn" data-i18n="gpsRateNominatimSearch" aria-pressed="true">Search</button>
-            <button id="nominatimApiReverse" type="button" class="gps-rate-nominatim-api-btn" data-i18n="gpsRateNominatimReverse" aria-pressed="false">Reverse</button>
-            <button id="nominatimApiLookup" type="button" class="gps-rate-nominatim-api-btn" data-i18n="gpsRateNominatimLookup" aria-pressed="false">Lookup</button>
-            <button id="nominatimApiStatus" type="button" class="gps-rate-nominatim-api-btn" data-i18n="gpsRateNominatimStatusApi" aria-pressed="false">Status</button>
-            <button id="nominatimApiDetails" type="button" class="gps-rate-nominatim-api-btn" data-i18n="gpsRateNominatimDetails" aria-pressed="false">Details</button>
-          </div>
-
-          <div id="nominatimSearchPanel" class="gps-rate-nominatim-panel">
-            <label class="gps-rate-notes-field" for="nominatimSearchQuery">
-              <span data-i18n="gpsRateNominatimSearchQuery">Search query</span>
-              <input
-                id="nominatimSearchQuery"
-                class="gps-rate-text-input"
-                type="text"
-                spellcheck="false"
-                autocapitalize="off"
-                autocomplete="off"
-                data-i18n-placeholder="gpsRateNominatimSearchPlaceholder"
-                placeholder="Example: Bogotá"
-              />
+            <label class="gps-rate-notes-field" for="sessionNotes">
+              <span data-i18n="gpsRateSessionNotes">Session notes</span>
+              <textarea
+                id="sessionNotes"
+                rows="3"
+                data-i18n-placeholder="gpsRateSessionNotesPlaceholder"
+                placeholder="Example: Tesla Model Y browser parked"
+              ></textarea>
             </label>
-            <button id="nominatimSearchRun" type="button" class="gps-rate-action-btn gps-rate-action-btn-compact" data-api="search" data-i18n="gpsRateNominatimRun">Run request</button>
+
+            <p id="actionNotice" class="gps-rate-feedback" aria-live="polite"></p>
           </div>
+        </section>
 
-          <div id="nominatimReversePanel" class="gps-rate-nominatim-panel" hidden>
-            <div class="gps-rate-nominatim-fields gps-rate-nominatim-fields-two">
-              <label class="gps-rate-notes-field" for="nominatimReverseLat">
-                <span data-i18n="gpsRateLatitude">Latitude</span>
-                <input id="nominatimReverseLat" class="gps-rate-text-input" type="number" step="any" inputmode="decimal" />
-              </label>
-              <label class="gps-rate-notes-field" for="nominatimReverseLon">
-                <span data-i18n="gpsRateLongitude">Longitude</span>
-                <input id="nominatimReverseLon" class="gps-rate-text-input" type="number" step="any" inputmode="decimal" />
-              </label>
-            </div>
-            <div class="gps-rate-nominatim-actions">
-              <button id="nominatimReverseUseLatest" type="button" class="gps-rate-action-btn gps-rate-action-btn-compact" data-i18n="gpsRateNominatimUseLatestSample">Use latest sample</button>
-              <button id="nominatimReverseRun" type="button" class="gps-rate-action-btn gps-rate-action-btn-primary gps-rate-action-btn-compact" data-api="reverse" data-i18n="gpsRateNominatimRun">Run request</button>
-            </div>
-          </div>
-
-          <div id="nominatimLookupPanel" class="gps-rate-nominatim-panel" hidden>
-            <label class="gps-rate-notes-field" for="nominatimLookupIds">
-              <span data-i18n="gpsRateNominatimLookupIds">OSM IDs</span>
-              <input
-                id="nominatimLookupIds"
-                class="gps-rate-text-input"
-                type="text"
-                spellcheck="false"
-                autocapitalize="off"
-                autocomplete="off"
-                data-i18n-placeholder="gpsRateNominatimLookupPlaceholder"
-                placeholder="Example: W104393803,N240109189"
-              />
-            </label>
-            <button id="nominatimLookupRun" type="button" class="gps-rate-action-btn gps-rate-action-btn-compact" data-api="lookup" data-i18n="gpsRateNominatimRun">Run request</button>
-          </div>
-
-          <div id="nominatimStatusPanel" class="gps-rate-nominatim-panel" hidden>
-            <p class="gps-rate-inline-note gps-rate-nominatim-panel-copy" data-i18n="gpsRateNominatimStatusLead">
-              Reports whether the configured service is available and when its data was last updated.
-            </p>
-            <button id="nominatimStatusRun" type="button" class="gps-rate-action-btn gps-rate-action-btn-compact" data-api="status" data-i18n="gpsRateNominatimRun">Run request</button>
-          </div>
-
-          <div id="nominatimDetailsPanel" class="gps-rate-nominatim-panel" hidden>
-            <label class="gps-rate-notes-field" for="nominatimDetailsPlaceId">
-              <span data-i18n="gpsRateNominatimDetailsPlaceId">Place ID</span>
-              <input
-                id="nominatimDetailsPlaceId"
-                class="gps-rate-text-input"
-                type="text"
-                spellcheck="false"
-                autocapitalize="off"
-                autocomplete="off"
-                data-i18n-placeholder="gpsRateNominatimDetailsPlaceholder"
-                placeholder="Example: 123456789"
-              />
-            </label>
-            <p id="nominatimDetailsPolicyNote" class="gps-rate-inline-note gps-rate-nominatim-panel-copy" data-i18n="gpsRateNominatimDetailsPublicNotice" hidden>
-              Details is disabled on the public Nominatim server. Switch the service URL to a custom server to test it.
-            </p>
-            <button id="nominatimDetailsRun" type="button" class="gps-rate-action-btn gps-rate-action-btn-compact" data-api="details" data-i18n="gpsRateNominatimRun">Run request</button>
-          </div>
-
-          <div class="gps-rate-nominatim-summary-grid">
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateStatus">Status</span>
-              <strong id="nominatimRequestStateValue" class="gps-rate-metric-value">Idle</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateNominatimEndpoint">Endpoint</span>
-              <strong id="nominatimRequestEndpointValue" class="gps-rate-metric-value">—</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateNominatimSource">Source</span>
-              <strong id="nominatimRequestSourceValue" class="gps-rate-metric-value">—</strong>
-            </div>
-          </div>
-
-          <div class="gps-rate-subsection">
-            <div class="gps-rate-section-title-row">
-              <span data-i18n="gpsRateNominatimRequestUrl">Request URL</span>
-            </div>
-            <pre id="nominatimRequestUrlValue" class="gps-rate-json-output gps-rate-json-output-url">—</pre>
-          </div>
-
-          <div class="gps-rate-subsection">
-            <div class="gps-rate-section-title-row">
-              <span data-i18n="gpsRateNominatimResponse">JSON response</span>
-            </div>
-            <pre id="nominatimResponseOutput" class="gps-rate-json-output" data-i18n="gpsRateNominatimResponseEmpty">No Nominatim request yet.</pre>
-          </div>
-        </div>
-      </section>
-
-      <section class="gps-rate-kpi-grid">
-        <article class="gps-rate-kpi-card">
-          <span class="gps-rate-kpi-label" data-i18n="gpsRateCurrentInterval">Current interval</span>
-          <strong id="currentIntervalValue" class="gps-rate-kpi-value">-</strong>
-        </article>
-        <article class="gps-rate-kpi-card">
-          <span class="gps-rate-kpi-label" data-i18n="gpsRateEffectiveHz">Effective Hz</span>
-          <strong id="effectiveHzValue" class="gps-rate-kpi-value">-</strong>
-        </article>
-        <article class="gps-rate-kpi-card">
-          <span class="gps-rate-kpi-label" data-i18n="gpsRateSamples">Samples</span>
-          <strong id="sampleCountValue" class="gps-rate-kpi-value">0</strong>
-        </article>
-        <article class="gps-rate-kpi-card">
-          <span class="gps-rate-kpi-label" data-i18n="gpsRateElapsed">Elapsed</span>
-          <strong id="elapsedValue" class="gps-rate-kpi-value">00:00</strong>
-        </article>
-        <article class="gps-rate-kpi-card">
-          <span class="gps-rate-kpi-label" data-i18n="gpsRateAccuracyLive">Latest accuracy</span>
-          <strong id="liveAccuracyValue" class="gps-rate-kpi-value">-</strong>
-        </article>
-        <article class="gps-rate-kpi-card">
-          <span class="gps-rate-kpi-label" data-i18n="gpsRateMovement">Movement</span>
-          <strong id="movementValue" class="gps-rate-kpi-value">-</strong>
-        </article>
-      </section>
-
-      <section class="gps-rate-content-grid">
-        <article class="gps-rate-card gps-rate-summary-card">
+        <section
+          class="gps-rate-card gps-rate-nominatim-card"
+          aria-labelledby="gpsRateNominatimHeading"
+        >
           <div class="gps-rate-card-head">
             <div>
-              <span class="gps-rate-card-kicker" data-i18n="gpsRateSummary">Summary</span>
-              <p class="gps-rate-card-lead" data-i18n="gpsRateSummaryLead">Screenshot-friendly session summary.</p>
-            </div>
-            <div class="gps-rate-summary-source">
-              <span id="summarySourcePill" class="gps-rate-chip">Current session</span>
-              <span id="summarySavedAt" class="gps-rate-inline-note"></span>
-            </div>
-          </div>
-
-          <div id="summaryGrid" class="gps-rate-summary-grid">
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateElapsed">Elapsed</span>
-              <strong id="summaryDurationValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateSamples">Samples</span>
-              <strong id="summarySampleCountValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateMinimumInterval">Best interval</span>
-              <strong id="summaryBestIntervalValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateAverageInterval">Average interval</span>
-              <strong id="summaryAverageIntervalValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateMedianInterval">Median interval</span>
-              <strong id="summaryMedianIntervalValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateWholeAverageHz">Effective average Hz</span>
-              <strong id="summaryAverageHzValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateBestHz">Best observed Hz</span>
-              <strong id="summaryBestHzValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateSpeedField">Speed field</span>
-              <strong id="summarySpeedFieldValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateHeadingField">Heading field</span>
-              <strong id="summaryHeadingFieldValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateAltitudeField">Altitude field</span>
-              <strong id="summaryAltitudeFieldValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateAverageAccuracy">Average accuracy</span>
-              <strong id="summaryAccuracyValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric gps-rate-metric-wide">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateStatusNotes">Status / notes</span>
-              <strong id="summaryStatusNotesValue" class="gps-rate-metric-value gps-rate-metric-wrap">-</strong>
-            </div>
-          </div>
-
-          <p id="summaryEmptyState" class="gps-rate-empty-copy" data-i18n="gpsRateSummaryUnavailable">Run a test to fill the summary.</p>
-        </article>
-
-        <article class="gps-rate-card gps-rate-diagnostics-card">
-          <div class="gps-rate-card-head">
-            <div>
-              <span class="gps-rate-card-kicker" data-i18n="gpsRateDiagnostics">Diagnostics</span>
-              <p class="gps-rate-card-lead" data-i18n="gpsRateDiagnosticsLead">Intervals, warnings, and field quality indicators.</p>
-            </div>
-          </div>
-
-          <div id="warningBadges" class="gps-rate-warning-list"></div>
-
-          <div class="gps-rate-diagnostics-grid">
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateJitter">Jitter</span>
-              <strong id="jitterValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateStaleSamples">Stale samples</span>
-              <strong id="staleCountValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateNullSpeed">Null speed</span>
-              <strong id="nullSpeedValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateNullHeading">Null heading</span>
-              <strong id="nullHeadingValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateMissingAltitude">Missing altitude</span>
-              <strong id="missingAltitudeValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateBestHz">Best observed Hz</span>
-              <strong id="bestObservedHzValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateFiveSecondHz">Last 5s Hz</span>
-              <strong id="fiveSecondHzValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateWholeSessionHz">Whole session Hz</span>
-              <strong id="wholeSessionHzValue" class="gps-rate-metric-value">-</strong>
-            </div>
-          </div>
-
-          <div class="gps-rate-sparkline-shell">
-            <div class="gps-rate-section-title-row">
-              <span data-i18n="gpsRateSparkline">Interval sparkline</span>
-              <span id="sparklineRangeLabel" class="gps-rate-inline-note">Last 48 intervals</span>
-            </div>
-
-            <svg id="intervalSparkline" class="gps-rate-sparkline" viewBox="0 0 240 80" preserveAspectRatio="none" aria-hidden="true">
-              <polyline id="intervalSparklineLine" points=""></polyline>
-            </svg>
-          </div>
-
-          <div class="gps-rate-subsection">
-            <div class="gps-rate-section-title-row">
-              <span data-i18n="gpsRateHistogram">Interval histogram</span>
-            </div>
-            <div id="histogramList" class="gps-rate-histogram"></div>
-          </div>
-
-          <div class="gps-rate-subsection">
-            <div class="gps-rate-section-title-row">
-              <span data-i18n="gpsRateAvailability">Field availability</span>
-            </div>
-            <div class="gps-rate-availability-grid">
-              <div class="gps-rate-availability-item">
-                <span class="gps-rate-metric-label" data-i18n="gpsRateSpeedField">Speed field</span>
-                <strong id="availabilitySpeedValue" class="gps-rate-metric-value">-</strong>
-              </div>
-              <div class="gps-rate-availability-item">
-                <span class="gps-rate-metric-label" data-i18n="gpsRateHeadingField">Heading field</span>
-                <strong id="availabilityHeadingValue" class="gps-rate-metric-value">-</strong>
-              </div>
-              <div class="gps-rate-availability-item">
-                <span class="gps-rate-metric-label" data-i18n="gpsRateAltitudeField">Altitude field</span>
-                <strong id="availabilityAltitudeValue" class="gps-rate-metric-value">-</strong>
-              </div>
-              <div class="gps-rate-availability-item">
-                <span class="gps-rate-metric-label" data-i18n="gpsRateAltitudeAccuracyField">Altitude accuracy</span>
-                <strong id="availabilityAltitudeAccuracyValue" class="gps-rate-metric-value">-</strong>
-              </div>
-              <div class="gps-rate-availability-item">
-                <span class="gps-rate-metric-label" data-i18n="gpsRateAccuracyField">Accuracy field</span>
-                <strong id="availabilityAccuracyValue" class="gps-rate-metric-value">-</strong>
-              </div>
-            </div>
-          </div>
-        </article>
-
-        <article class="gps-rate-card gps-rate-latest-card">
-          <div class="gps-rate-card-head">
-            <div>
-              <span class="gps-rate-card-kicker" data-i18n="gpsRateLatestSample">Latest sample</span>
-              <p class="gps-rate-card-lead" data-i18n="gpsRateLatestSampleLead">Raw values from the most recent callback.</p>
-            </div>
-          </div>
-
-          <div class="gps-rate-raw-grid">
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateLatitude">Latitude</span>
-              <strong id="latestLatitudeValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateLongitude">Longitude</span>
-              <strong id="latestLongitudeValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="speed">Speed</span>
-              <strong id="latestSpeedValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="heading">Heading</span>
-              <strong id="latestHeadingValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="accuracy">Accuracy</span>
-              <strong id="latestAccuracyValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="altitude">Altitude</span>
-              <strong id="latestAltitudeValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="altitudeAccuracy">Altitude accuracy</span>
-              <strong id="latestAltitudeAccuracyValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateGeoTimestamp">Geolocation timestamp</span>
-              <strong id="latestGeoTimestampValue" class="gps-rate-metric-value gps-rate-metric-wrap">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRatePerfTimestamp">Performance timestamp</span>
-              <strong id="latestPerfTimestampValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateSampleAge">Sample age</span>
-              <strong id="latestSampleAgeValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateCallbackDelta">Callback delta</span>
-              <strong id="latestCallbackDeltaValue" class="gps-rate-metric-value">-</strong>
-            </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateGeoDelta">Geo timestamp delta</span>
-              <strong id="latestGeoDeltaValue" class="gps-rate-metric-value">-</strong>
-            </div>
-          </div>
-        </article>
-
-        <article class="gps-rate-card gps-rate-motion-card">
-          <div class="gps-rate-card-head">
-            <div>
-              <span class="gps-rate-card-kicker" data-i18n="gpsRateMotionAnalysis">Motion analysis</span>
-              <p class="gps-rate-card-lead" data-i18n="gpsRateMotionLead">
-                Uses reported speed when available, then coarse displacement vs accuracy.
+              <span class="gps-rate-card-kicker" data-i18n="gpsRateNominatim">Nominatim API</span>
+              <p
+                id="gpsRateNominatimHeading"
+                class="gps-rate-card-lead"
+                data-i18n="gpsRateNominatimLead"
+              >
+                Manual policy-safe requests for Search, Reverse, Lookup, Status, and Details on
+                custom servers.
               </p>
             </div>
+            <span class="gps-rate-chip gps-rate-chip-muted" data-i18n="gpsRateNominatimRateLimit"
+              >Shared 1 req/s</span
+            >
           </div>
 
-          <div class="gps-rate-motion-grid">
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateMovement">Movement</span>
-              <strong id="motionStateValue" class="gps-rate-metric-value">-</strong>
+          <p
+            class="gps-rate-disclaimer gps-rate-nominatim-policy"
+            data-i18n="gpsRateNominatimPolicy"
+          >
+            Manual requests only. No autocomplete. Repeated identical requests are cached. Details
+            stays disabled on the public server.
+          </p>
+
+          <div class="gps-rate-nominatim-layout">
+            <label
+              class="gps-rate-notes-field gps-rate-nominatim-base-field"
+              for="nominatimBaseUrl"
+            >
+              <span data-i18n="gpsRateNominatimBaseUrl">Nominatim service URL</span>
+              <input
+                id="nominatimBaseUrl"
+                class="gps-rate-text-input"
+                type="url"
+                spellcheck="false"
+                autocapitalize="off"
+                autocomplete="url"
+                placeholder="https://nominatim.openstreetmap.org"
+              />
+            </label>
+
+            <div
+              class="gps-rate-nominatim-endpoints"
+              role="group"
+              data-i18n-aria="gpsRateNominatimEndpoints"
+              aria-label="Nominatim endpoints"
+            >
+              <button
+                id="nominatimApiSearch"
+                type="button"
+                class="gps-rate-nominatim-api-btn"
+                data-i18n="gpsRateNominatimSearch"
+                aria-pressed="true"
+              >
+                Search
+              </button>
+              <button
+                id="nominatimApiReverse"
+                type="button"
+                class="gps-rate-nominatim-api-btn"
+                data-i18n="gpsRateNominatimReverse"
+                aria-pressed="false"
+              >
+                Reverse
+              </button>
+              <button
+                id="nominatimApiLookup"
+                type="button"
+                class="gps-rate-nominatim-api-btn"
+                data-i18n="gpsRateNominatimLookup"
+                aria-pressed="false"
+              >
+                Lookup
+              </button>
+              <button
+                id="nominatimApiStatus"
+                type="button"
+                class="gps-rate-nominatim-api-btn"
+                data-i18n="gpsRateNominatimStatusApi"
+                aria-pressed="false"
+              >
+                Status
+              </button>
+              <button
+                id="nominatimApiDetails"
+                type="button"
+                class="gps-rate-nominatim-api-btn"
+                data-i18n="gpsRateNominatimDetails"
+                aria-pressed="false"
+              >
+                Details
+              </button>
             </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateMotionSource">Motion source</span>
-              <strong id="motionSourceValue" class="gps-rate-metric-value">-</strong>
+
+            <div id="nominatimSearchPanel" class="gps-rate-nominatim-panel">
+              <label class="gps-rate-notes-field" for="nominatimSearchQuery">
+                <span data-i18n="gpsRateNominatimSearchQuery">Search query</span>
+                <input
+                  id="nominatimSearchQuery"
+                  class="gps-rate-text-input"
+                  type="text"
+                  spellcheck="false"
+                  autocapitalize="off"
+                  autocomplete="off"
+                  data-i18n-placeholder="gpsRateNominatimSearchPlaceholder"
+                  placeholder="Example: Bogotá"
+                />
+              </label>
+              <button
+                id="nominatimSearchRun"
+                type="button"
+                class="gps-rate-action-btn gps-rate-action-btn-compact"
+                data-api="search"
+                data-i18n="gpsRateNominatimRun"
+              >
+                Run request
+              </button>
             </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateMovingHz">Moving avg Hz</span>
-              <strong id="movingHzValue" class="gps-rate-metric-value">-</strong>
+
+            <div id="nominatimReversePanel" class="gps-rate-nominatim-panel" hidden>
+              <div class="gps-rate-nominatim-fields gps-rate-nominatim-fields-two">
+                <label class="gps-rate-notes-field" for="nominatimReverseLat">
+                  <span data-i18n="gpsRateLatitude">Latitude</span>
+                  <input
+                    id="nominatimReverseLat"
+                    class="gps-rate-text-input"
+                    type="number"
+                    step="any"
+                    inputmode="decimal"
+                  />
+                </label>
+                <label class="gps-rate-notes-field" for="nominatimReverseLon">
+                  <span data-i18n="gpsRateLongitude">Longitude</span>
+                  <input
+                    id="nominatimReverseLon"
+                    class="gps-rate-text-input"
+                    type="number"
+                    step="any"
+                    inputmode="decimal"
+                  />
+                </label>
+              </div>
+              <div class="gps-rate-nominatim-actions">
+                <button
+                  id="nominatimReverseUseLatest"
+                  type="button"
+                  class="gps-rate-action-btn gps-rate-action-btn-compact"
+                  data-i18n="gpsRateNominatimUseLatestSample"
+                >
+                  Use latest sample
+                </button>
+                <button
+                  id="nominatimReverseRun"
+                  type="button"
+                  class="gps-rate-action-btn gps-rate-action-btn-primary gps-rate-action-btn-compact"
+                  data-api="reverse"
+                  data-i18n="gpsRateNominatimRun"
+                >
+                  Run request
+                </button>
+              </div>
             </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateStationaryHz">Stationary avg Hz</span>
-              <strong id="stationaryHzValue" class="gps-rate-metric-value">-</strong>
+
+            <div id="nominatimLookupPanel" class="gps-rate-nominatim-panel" hidden>
+              <label class="gps-rate-notes-field" for="nominatimLookupIds">
+                <span data-i18n="gpsRateNominatimLookupIds">OSM IDs</span>
+                <input
+                  id="nominatimLookupIds"
+                  class="gps-rate-text-input"
+                  type="text"
+                  spellcheck="false"
+                  autocapitalize="off"
+                  autocomplete="off"
+                  data-i18n-placeholder="gpsRateNominatimLookupPlaceholder"
+                  placeholder="Example: W104393803,N240109189"
+                />
+              </label>
+              <button
+                id="nominatimLookupRun"
+                type="button"
+                class="gps-rate-action-btn gps-rate-action-btn-compact"
+                data-api="lookup"
+                data-i18n="gpsRateNominatimRun"
+              >
+                Run request
+              </button>
             </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateMovingSamples">Moving samples</span>
-              <strong id="movingSamplesValue" class="gps-rate-metric-value">-</strong>
+
+            <div id="nominatimStatusPanel" class="gps-rate-nominatim-panel" hidden>
+              <p
+                class="gps-rate-inline-note gps-rate-nominatim-panel-copy"
+                data-i18n="gpsRateNominatimStatusLead"
+              >
+                Reports whether the configured service is available and when its data was last
+                updated.
+              </p>
+              <button
+                id="nominatimStatusRun"
+                type="button"
+                class="gps-rate-action-btn gps-rate-action-btn-compact"
+                data-api="status"
+                data-i18n="gpsRateNominatimRun"
+              >
+                Run request
+              </button>
             </div>
-            <div class="gps-rate-metric">
-              <span class="gps-rate-metric-label" data-i18n="gpsRateStationarySamples">Stationary samples</span>
-              <strong id="stationarySamplesValue" class="gps-rate-metric-value">-</strong>
+
+            <div id="nominatimDetailsPanel" class="gps-rate-nominatim-panel" hidden>
+              <label class="gps-rate-notes-field" for="nominatimDetailsPlaceId">
+                <span data-i18n="gpsRateNominatimDetailsPlaceId">Place ID</span>
+                <input
+                  id="nominatimDetailsPlaceId"
+                  class="gps-rate-text-input"
+                  type="text"
+                  spellcheck="false"
+                  autocapitalize="off"
+                  autocomplete="off"
+                  data-i18n-placeholder="gpsRateNominatimDetailsPlaceholder"
+                  placeholder="Example: 123456789"
+                />
+              </label>
+              <p
+                id="nominatimDetailsPolicyNote"
+                class="gps-rate-inline-note gps-rate-nominatim-panel-copy"
+                data-i18n="gpsRateNominatimDetailsPublicNotice"
+                hidden
+              >
+                Details is disabled on the public Nominatim server. Switch the service URL to a
+                custom server to test it.
+              </p>
+              <button
+                id="nominatimDetailsRun"
+                type="button"
+                class="gps-rate-action-btn gps-rate-action-btn-compact"
+                data-api="details"
+                data-i18n="gpsRateNominatimRun"
+              >
+                Run request
+              </button>
+            </div>
+
+            <div class="gps-rate-nominatim-summary-grid">
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateStatus">Status</span>
+                <strong id="nominatimRequestStateValue" class="gps-rate-metric-value">Idle</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateNominatimEndpoint"
+                  >Endpoint</span
+                >
+                <strong id="nominatimRequestEndpointValue" class="gps-rate-metric-value">—</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateNominatimSource">Source</span>
+                <strong id="nominatimRequestSourceValue" class="gps-rate-metric-value">—</strong>
+              </div>
+            </div>
+
+            <div class="gps-rate-subsection">
+              <div class="gps-rate-section-title-row">
+                <span data-i18n="gpsRateNominatimRequestUrl">Request URL</span>
+              </div>
+              <pre
+                id="nominatimRequestUrlValue"
+                class="gps-rate-json-output gps-rate-json-output-url"
+              >
+—</pre
+              >
+            </div>
+
+            <div class="gps-rate-subsection">
+              <div class="gps-rate-section-title-row">
+                <span data-i18n="gpsRateNominatimResponse">JSON response</span>
+              </div>
+              <pre
+                id="nominatimResponseOutput"
+                class="gps-rate-json-output"
+                data-i18n="gpsRateNominatimResponseEmpty"
+              >
+No Nominatim request yet.</pre
+              >
             </div>
           </div>
-        </article>
+        </section>
 
-        <article class="gps-rate-card gps-rate-log-card">
-          <div class="gps-rate-card-head gps-rate-log-head">
-            <div>
-              <span class="gps-rate-card-kicker" data-i18n="gpsRateEventLog">Event log</span>
-              <p class="gps-rate-card-lead" data-i18n="gpsRateEventLogLead">Newest samples first. Clear Log only clears the visible panel.</p>
+        <section class="gps-rate-kpi-grid">
+          <article class="gps-rate-kpi-card">
+            <span class="gps-rate-kpi-label" data-i18n="gpsRateCurrentInterval"
+              >Current interval</span
+            >
+            <strong id="currentIntervalValue" class="gps-rate-kpi-value">-</strong>
+          </article>
+          <article class="gps-rate-kpi-card">
+            <span class="gps-rate-kpi-label" data-i18n="gpsRateEffectiveHz">Effective Hz</span>
+            <strong id="effectiveHzValue" class="gps-rate-kpi-value">-</strong>
+          </article>
+          <article class="gps-rate-kpi-card">
+            <span class="gps-rate-kpi-label" data-i18n="gpsRateSamples">Samples</span>
+            <strong id="sampleCountValue" class="gps-rate-kpi-value">0</strong>
+          </article>
+          <article class="gps-rate-kpi-card">
+            <span class="gps-rate-kpi-label" data-i18n="gpsRateElapsed">Elapsed</span>
+            <strong id="elapsedValue" class="gps-rate-kpi-value">00:00</strong>
+          </article>
+          <article class="gps-rate-kpi-card">
+            <span class="gps-rate-kpi-label" data-i18n="gpsRateAccuracyLive">Latest accuracy</span>
+            <strong id="liveAccuracyValue" class="gps-rate-kpi-value">-</strong>
+          </article>
+          <article class="gps-rate-kpi-card">
+            <span class="gps-rate-kpi-label" data-i18n="gpsRateMovement">Movement</span>
+            <strong id="movementValue" class="gps-rate-kpi-value">-</strong>
+          </article>
+        </section>
+
+        <section class="gps-rate-content-grid">
+          <article class="gps-rate-card gps-rate-summary-card">
+            <div class="gps-rate-card-head">
+              <div>
+                <span class="gps-rate-card-kicker" data-i18n="gpsRateSummary">Summary</span>
+                <p class="gps-rate-card-lead" data-i18n="gpsRateSummaryLead">
+                  Screenshot-friendly session summary.
+                </p>
+              </div>
+              <div class="gps-rate-summary-source">
+                <span id="summarySourcePill" class="gps-rate-chip">Current session</span>
+                <span id="summarySavedAt" class="gps-rate-inline-note"></span>
+              </div>
             </div>
-            <button id="clearLog" type="button" class="gps-rate-action-btn gps-rate-action-btn-compact" data-i18n="gpsRateClearLog">Clear Log</button>
-          </div>
 
-          <p id="logEmptyState" class="gps-rate-empty-copy" data-i18n="gpsRateLogEmpty">No callbacks yet.</p>
+            <div id="summaryGrid" class="gps-rate-summary-grid">
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateElapsed">Elapsed</span>
+                <strong id="summaryDurationValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateSamples">Samples</span>
+                <strong id="summarySampleCountValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateMinimumInterval"
+                  >Best interval</span
+                >
+                <strong id="summaryBestIntervalValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateAverageInterval"
+                  >Average interval</span
+                >
+                <strong id="summaryAverageIntervalValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateMedianInterval"
+                  >Median interval</span
+                >
+                <strong id="summaryMedianIntervalValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateWholeAverageHz"
+                  >Effective average Hz</span
+                >
+                <strong id="summaryAverageHzValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateBestHz"
+                  >Best observed Hz</span
+                >
+                <strong id="summaryBestHzValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateSpeedField">Speed field</span>
+                <strong id="summarySpeedFieldValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateHeadingField"
+                  >Heading field</span
+                >
+                <strong id="summaryHeadingFieldValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateAltitudeField"
+                  >Altitude field</span
+                >
+                <strong id="summaryAltitudeFieldValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateAverageAccuracy"
+                  >Average accuracy</span
+                >
+                <strong id="summaryAccuracyValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRatePlace">Place</span>
+                <strong id="summaryPlaceValue" class="gps-rate-metric-value gps-rate-metric-wrap"
+                  >-</strong
+                >
+              </div>
+              <div class="gps-rate-metric gps-rate-metric-wide">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateStatusNotes"
+                  >Status / notes</span
+                >
+                <strong
+                  id="summaryStatusNotesValue"
+                  class="gps-rate-metric-value gps-rate-metric-wrap"
+                  >-</strong
+                >
+              </div>
+            </div>
 
-          <div id="logTableWrap" class="gps-rate-table-wrap" hidden>
-            <table class="gps-rate-log-table">
-              <thead>
-                <tr>
-                  <th scope="col" data-i18n="gpsRateLogIndex">#</th>
-                  <th scope="col" data-i18n="gpsRateLogDelta">Delta ms</th>
-                  <th scope="col" data-i18n="gpsRateLogHz">Hz</th>
-                  <th scope="col" data-i18n="gpsRateLogLatLon">Lat / Lon</th>
-                  <th scope="col" data-i18n="gpsRateLogSpeed">Speed</th>
-                  <th scope="col" data-i18n="gpsRateLogHeading">Heading</th>
-                  <th scope="col" data-i18n="gpsRateLogAccuracy">Accuracy</th>
-                  <th scope="col" data-i18n="gpsRateLogState">State</th>
-                </tr>
-              </thead>
-              <tbody id="eventLogBody"></tbody>
-            </table>
-          </div>
-        </article>
-      </section>
-    </main>
-  </div>
+            <p
+              id="summaryEmptyState"
+              class="gps-rate-empty-copy"
+              data-i18n="gpsRateSummaryUnavailable"
+            >
+              Run a test to fill the summary.
+            </p>
+          </article>
 
-  <script type="module" src="/src/gps-rate/gps-rate.js"></script>
-</body>
+          <article class="gps-rate-card gps-rate-diagnostics-card">
+            <div class="gps-rate-card-head">
+              <div>
+                <span class="gps-rate-card-kicker" data-i18n="gpsRateDiagnostics">Diagnostics</span>
+                <p class="gps-rate-card-lead" data-i18n="gpsRateDiagnosticsLead">
+                  Intervals, warnings, and field quality indicators.
+                </p>
+              </div>
+            </div>
+
+            <div id="warningBadges" class="gps-rate-warning-list"></div>
+
+            <div class="gps-rate-diagnostics-grid">
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateJitter">Jitter</span>
+                <strong id="jitterValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateStaleSamples"
+                  >Stale samples</span
+                >
+                <strong id="staleCountValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateNullSpeed">Null speed</span>
+                <strong id="nullSpeedValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateNullHeading"
+                  >Null heading</span
+                >
+                <strong id="nullHeadingValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateMissingAltitude"
+                  >Missing altitude</span
+                >
+                <strong id="missingAltitudeValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateBestHz"
+                  >Best observed Hz</span
+                >
+                <strong id="bestObservedHzValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateFiveSecondHz"
+                  >Last 5s Hz</span
+                >
+                <strong id="fiveSecondHzValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateWholeSessionHz"
+                  >Whole session Hz</span
+                >
+                <strong id="wholeSessionHzValue" class="gps-rate-metric-value">-</strong>
+              </div>
+            </div>
+
+            <div class="gps-rate-sparkline-shell">
+              <div class="gps-rate-section-title-row">
+                <span data-i18n="gpsRateSparkline">Interval sparkline</span>
+                <span id="sparklineRangeLabel" class="gps-rate-inline-note">Last 48 intervals</span>
+              </div>
+
+              <svg
+                id="intervalSparkline"
+                class="gps-rate-sparkline"
+                viewBox="0 0 240 80"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              >
+                <polyline id="intervalSparklineLine" points=""></polyline>
+              </svg>
+            </div>
+
+            <div class="gps-rate-subsection">
+              <div class="gps-rate-section-title-row">
+                <span data-i18n="gpsRateHistogram">Interval histogram</span>
+              </div>
+              <div id="histogramList" class="gps-rate-histogram"></div>
+            </div>
+
+            <div class="gps-rate-subsection">
+              <div class="gps-rate-section-title-row">
+                <span data-i18n="gpsRateAvailability">Field availability</span>
+              </div>
+              <div class="gps-rate-availability-grid">
+                <div class="gps-rate-availability-item">
+                  <span class="gps-rate-metric-label" data-i18n="gpsRateSpeedField"
+                    >Speed field</span
+                  >
+                  <strong id="availabilitySpeedValue" class="gps-rate-metric-value">-</strong>
+                </div>
+                <div class="gps-rate-availability-item">
+                  <span class="gps-rate-metric-label" data-i18n="gpsRateHeadingField"
+                    >Heading field</span
+                  >
+                  <strong id="availabilityHeadingValue" class="gps-rate-metric-value">-</strong>
+                </div>
+                <div class="gps-rate-availability-item">
+                  <span class="gps-rate-metric-label" data-i18n="gpsRateAltitudeField"
+                    >Altitude field</span
+                  >
+                  <strong id="availabilityAltitudeValue" class="gps-rate-metric-value">-</strong>
+                </div>
+                <div class="gps-rate-availability-item">
+                  <span class="gps-rate-metric-label" data-i18n="gpsRateAltitudeAccuracyField"
+                    >Altitude accuracy</span
+                  >
+                  <strong id="availabilityAltitudeAccuracyValue" class="gps-rate-metric-value"
+                    >-</strong
+                  >
+                </div>
+                <div class="gps-rate-availability-item">
+                  <span class="gps-rate-metric-label" data-i18n="gpsRateAccuracyField"
+                    >Accuracy field</span
+                  >
+                  <strong id="availabilityAccuracyValue" class="gps-rate-metric-value">-</strong>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="gps-rate-card gps-rate-latest-card">
+            <div class="gps-rate-card-head">
+              <div>
+                <span class="gps-rate-card-kicker" data-i18n="gpsRateLatestSample"
+                  >Latest sample</span
+                >
+                <p class="gps-rate-card-lead" data-i18n="gpsRateLatestSampleLead">
+                  Raw values from the most recent callback.
+                </p>
+              </div>
+            </div>
+
+            <div class="gps-rate-raw-grid">
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateLatitude">Latitude</span>
+                <strong id="latestLatitudeValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateLongitude">Longitude</span>
+                <strong id="latestLongitudeValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="speed">Speed</span>
+                <strong id="latestSpeedValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="heading">Heading</span>
+                <strong id="latestHeadingValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="accuracy">Accuracy</span>
+                <strong id="latestAccuracyValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="altitude">Altitude</span>
+                <strong id="latestAltitudeValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="altitudeAccuracy"
+                  >Altitude accuracy</span
+                >
+                <strong id="latestAltitudeAccuracyValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateGeoTimestamp"
+                  >Geolocation timestamp</span
+                >
+                <strong
+                  id="latestGeoTimestampValue"
+                  class="gps-rate-metric-value gps-rate-metric-wrap"
+                  >-</strong
+                >
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRatePerfTimestamp"
+                  >Performance timestamp</span
+                >
+                <strong id="latestPerfTimestampValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateSampleAge">Sample age</span>
+                <strong id="latestSampleAgeValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateCallbackDelta"
+                  >Callback delta</span
+                >
+                <strong id="latestCallbackDeltaValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateGeoDelta"
+                  >Geo timestamp delta</span
+                >
+                <strong id="latestGeoDeltaValue" class="gps-rate-metric-value">-</strong>
+              </div>
+            </div>
+          </article>
+
+          <article class="gps-rate-card gps-rate-motion-card">
+            <div class="gps-rate-card-head">
+              <div>
+                <span class="gps-rate-card-kicker" data-i18n="gpsRateMotionAnalysis"
+                  >Motion analysis</span
+                >
+                <p class="gps-rate-card-lead" data-i18n="gpsRateMotionLead">
+                  Uses reported speed when available, then coarse displacement vs accuracy.
+                </p>
+              </div>
+            </div>
+
+            <div class="gps-rate-motion-grid">
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateMovement">Movement</span>
+                <strong id="motionStateValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateMotionSource"
+                  >Motion source</span
+                >
+                <strong id="motionSourceValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateMovingHz">Moving avg Hz</span>
+                <strong id="movingHzValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateStationaryHz"
+                  >Stationary avg Hz</span
+                >
+                <strong id="stationaryHzValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateMovingSamples"
+                  >Moving samples</span
+                >
+                <strong id="movingSamplesValue" class="gps-rate-metric-value">-</strong>
+              </div>
+              <div class="gps-rate-metric">
+                <span class="gps-rate-metric-label" data-i18n="gpsRateStationarySamples"
+                  >Stationary samples</span
+                >
+                <strong id="stationarySamplesValue" class="gps-rate-metric-value">-</strong>
+              </div>
+            </div>
+          </article>
+
+          <article class="gps-rate-card gps-rate-log-card">
+            <div class="gps-rate-card-head gps-rate-log-head">
+              <div>
+                <span class="gps-rate-card-kicker" data-i18n="gpsRateEventLog">Event log</span>
+                <p class="gps-rate-card-lead" data-i18n="gpsRateEventLogLead">
+                  Newest samples first. Clear Log only clears the visible panel.
+                </p>
+              </div>
+              <button
+                id="clearLog"
+                type="button"
+                class="gps-rate-action-btn gps-rate-action-btn-compact"
+                data-i18n="gpsRateClearLog"
+              >
+                Clear Log
+              </button>
+            </div>
+
+            <p id="logEmptyState" class="gps-rate-empty-copy" data-i18n="gpsRateLogEmpty">
+              No callbacks yet.
+            </p>
+
+            <div id="logTableWrap" class="gps-rate-table-wrap" hidden>
+              <table class="gps-rate-log-table">
+                <thead>
+                  <tr>
+                    <th scope="col" data-i18n="gpsRateLogIndex">#</th>
+                    <th scope="col" data-i18n="gpsRateLogDelta">Delta ms</th>
+                    <th scope="col" data-i18n="gpsRateLogHz">Hz</th>
+                    <th scope="col" data-i18n="gpsRateLogLatLon">Lat / Lon</th>
+                    <th scope="col" data-i18n="gpsRateLogSpeed">Speed</th>
+                    <th scope="col" data-i18n="gpsRateLogHeading">Heading</th>
+                    <th scope="col" data-i18n="gpsRateLogAccuracy">Accuracy</th>
+                    <th scope="col" data-i18n="gpsRateLogState">State</th>
+                  </tr>
+                </thead>
+                <tbody id="eventLogBody"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/src/gps-rate/gps-rate.js"></script>
+  </body>
 </html>

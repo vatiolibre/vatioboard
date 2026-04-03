@@ -1,11 +1,16 @@
-import { DISTANCE_UNIT_CONFIG, UNIT_CONFIG } from "../speed/constants.js";
-import { isFiniteNumber } from "./session.js";
+import { normalizePlace } from '../shared/place-resolver.js';
+import { formatRouteString } from '../shared/route-string.js';
+import { DISTANCE_UNIT_CONFIG, UNIT_CONFIG } from '../speed/constants.js';
+import { isFiniteNumber } from './session.js';
 
 export function getReplayDurationMs(session) {
   if (!session) return 0;
 
   if (Array.isArray(session.samples) && session.samples.length >= 2) {
-    return Math.max(0, session.samples[session.samples.length - 1].timestampMs - session.samples[0].timestampMs);
+    return Math.max(
+      0,
+      session.samples[session.samples.length - 1].timestampMs - session.samples[0].timestampMs
+    );
   }
 
   if (isFiniteNumber(session.startedAtMs) && isFiniteNumber(session.endedAtMs)) {
@@ -27,19 +32,24 @@ export function getReplaySummary(session) {
       endedAtMs: null,
       minAltitudeM: null,
       maxAltitudeM: null,
+      startPlace: null,
+      endPlace: null,
+      routeLabel: '—',
     };
   }
 
   const durationMs = getReplayDurationMs(session);
   const sampleCount = isFiniteNumber(session.sampleCount)
     ? Math.max(0, Math.round(session.sampleCount))
-    : (Array.isArray(session.samples) ? session.samples.length : 0);
-  const lastSample = Array.isArray(session.samples) && session.samples.length
-    ? session.samples[session.samples.length - 1]
-    : null;
-  const firstSample = Array.isArray(session.samples) && session.samples.length
-    ? session.samples[0]
-    : null;
+    : Array.isArray(session.samples)
+      ? session.samples.length
+      : 0;
+  const lastSample =
+    Array.isArray(session.samples) && session.samples.length
+      ? session.samples[session.samples.length - 1]
+      : null;
+  const firstSample =
+    Array.isArray(session.samples) && session.samples.length ? session.samples[0] : null;
   const totalDistanceM = isFiniteNumber(session.totalDistanceM)
     ? Math.max(0, session.totalDistanceM)
     : (lastSample?.totalDistanceM ?? 0);
@@ -54,6 +64,9 @@ export function getReplaySummary(session) {
     endedAtMs: session.endedAtMs ?? lastSample?.timestampMs ?? null,
     minAltitudeM: isFiniteNumber(session.minAltitudeM) ? session.minAltitudeM : null,
     maxAltitudeM: isFiniteNumber(session.maxAltitudeM) ? session.maxAltitudeM : null,
+    startPlace: normalizePlace(session.startPlace),
+    endPlace: normalizePlace(session.endPlace),
+    routeLabel: formatRouteString(session.startPlace, session.endPlace),
   };
 }
 
@@ -110,7 +123,7 @@ function interpolateValue(left, right, ratio, key) {
   if (!isFiniteNumber(leftValue)) return rightValue;
   if (!isFiniteNumber(rightValue)) return leftValue;
 
-  return leftValue + ((rightValue - leftValue) * ratio);
+  return leftValue + (rightValue - leftValue) * ratio;
 }
 
 function normalizeHeadingDegrees(value) {
@@ -139,7 +152,7 @@ function interpolateHeadingDegrees(leftHeadingDeg, rightHeadingDeg, ratio) {
   if (!isFiniteNumber(right)) return left;
 
   const delta = getHeadingDeltaDegrees(left, right);
-  return normalizeHeadingDegrees(left + (delta * ratio));
+  return normalizeHeadingDegrees(left + delta * ratio);
 }
 
 export function getReplaySampleAtElapsedMs(session, elapsedMs) {
@@ -174,13 +187,13 @@ export function getReplaySampleAtElapsedMs(session, elapsedMs) {
 
     return {
       timestampMs: targetTimestampMs,
-      latitude: interpolateValue(left, right, ratio, "latitude"),
-      longitude: interpolateValue(left, right, ratio, "longitude"),
-      speedMs: interpolateValue(left, right, ratio, "speedMs") ?? 0,
-      altitudeM: interpolateValue(left, right, ratio, "altitudeM"),
-      accuracyM: interpolateValue(left, right, ratio, "accuracyM"),
+      latitude: interpolateValue(left, right, ratio, 'latitude'),
+      longitude: interpolateValue(left, right, ratio, 'longitude'),
+      speedMs: interpolateValue(left, right, ratio, 'speedMs') ?? 0,
+      altitudeM: interpolateValue(left, right, ratio, 'altitudeM'),
+      accuracyM: interpolateValue(left, right, ratio, 'accuracyM'),
       headingDeg: interpolateHeadingDegrees(left.headingDeg, right.headingDeg, ratio),
-      totalDistanceM: interpolateValue(left, right, ratio, "totalDistanceM") ?? left.totalDistanceM,
+      totalDistanceM: interpolateValue(left, right, ratio, 'totalDistanceM') ?? left.totalDistanceM,
       elapsedMs: clampedElapsedMs,
       progress: summary.durationMs > 0 ? clampedElapsedMs / summary.durationMs : 1,
       sampleIndex: index,
@@ -226,21 +239,23 @@ export function getReplaySampleAtDistanceM(session, distanceM) {
     }
 
     const spanDistanceM = rightDistanceM - leftDistanceM;
-    const ratio = spanDistanceM > 0
-      ? Math.min(Math.max((clampedDistanceM - leftDistanceM) / spanDistanceM, 0), 1)
-      : 0;
-    const timestampMs = interpolateValue(left, right, ratio, "timestampMs");
-    const elapsedMs = isFiniteNumber(timestampMs) && isFiniteNumber(summary.startedAtMs)
-      ? Math.max(0, timestampMs - summary.startedAtMs)
-      : 0;
+    const ratio =
+      spanDistanceM > 0
+        ? Math.min(Math.max((clampedDistanceM - leftDistanceM) / spanDistanceM, 0), 1)
+        : 0;
+    const timestampMs = interpolateValue(left, right, ratio, 'timestampMs');
+    const elapsedMs =
+      isFiniteNumber(timestampMs) && isFiniteNumber(summary.startedAtMs)
+        ? Math.max(0, timestampMs - summary.startedAtMs)
+        : 0;
 
     return {
       timestampMs,
-      latitude: interpolateValue(left, right, ratio, "latitude"),
-      longitude: interpolateValue(left, right, ratio, "longitude"),
-      speedMs: interpolateValue(left, right, ratio, "speedMs") ?? 0,
-      altitudeM: interpolateValue(left, right, ratio, "altitudeM"),
-      accuracyM: interpolateValue(left, right, ratio, "accuracyM"),
+      latitude: interpolateValue(left, right, ratio, 'latitude'),
+      longitude: interpolateValue(left, right, ratio, 'longitude'),
+      speedMs: interpolateValue(left, right, ratio, 'speedMs') ?? 0,
+      altitudeM: interpolateValue(left, right, ratio, 'altitudeM'),
+      accuracyM: interpolateValue(left, right, ratio, 'accuracyM'),
       headingDeg: interpolateHeadingDegrees(left.headingDeg, right.headingDeg, ratio),
       totalDistanceM: clampedDistanceM,
       elapsedMs,
@@ -281,7 +296,8 @@ export function getReplayHighlights(session) {
   if (!session || !Array.isArray(session.samples) || session.samples.length === 0) return [];
 
   const summary = getReplaySummary(session);
-  const firstMovingSample = session.samples.find((sample) => sample.speedMs >= 1) ?? session.samples[0];
+  const firstMovingSample =
+    session.samples.find((sample) => sample.speedMs >= 1) ?? session.samples[0];
   let highestPointSample = null;
   let peakSpeedSample = session.samples[0];
   let strongestPull = null;
@@ -294,8 +310,8 @@ export function getReplayHighlights(session) {
     }
 
     if (
-      isFiniteNumber(sample.altitudeM)
-      && (!highestPointSample || sample.altitudeM > highestPointSample.altitudeM)
+      isFiniteNumber(sample.altitudeM) &&
+      (!highestPointSample || sample.altitudeM > highestPointSample.altitudeM)
     ) {
       highestPointSample = sample;
     }
@@ -317,42 +333,54 @@ export function getReplayHighlights(session) {
 
   const highlights = [
     {
-      id: "first-move",
-      labelKey: "replayFirstMove",
+      id: 'first-move',
+      labelKey: 'replayFirstMove',
       sample: firstMovingSample,
-      elapsedMs: Math.max(0, firstMovingSample.timestampMs - (summary.startedAtMs ?? firstMovingSample.timestampMs)),
+      elapsedMs: Math.max(
+        0,
+        firstMovingSample.timestampMs - (summary.startedAtMs ?? firstMovingSample.timestampMs)
+      ),
       value: firstMovingSample.speedMs,
-      valueUnit: "speed",
+      valueUnit: 'speed',
     },
     {
-      id: "peak-speed",
-      labelKey: "replayPeakSpeed",
+      id: 'peak-speed',
+      labelKey: 'replayPeakSpeed',
       sample: peakSpeedSample,
-      elapsedMs: Math.max(0, peakSpeedSample.timestampMs - (summary.startedAtMs ?? peakSpeedSample.timestampMs)),
+      elapsedMs: Math.max(
+        0,
+        peakSpeedSample.timestampMs - (summary.startedAtMs ?? peakSpeedSample.timestampMs)
+      ),
       value: peakSpeedSample.speedMs,
-      valueUnit: "speed",
+      valueUnit: 'speed',
     },
   ];
 
   if (highestPointSample) {
     highlights.push({
-      id: "highest-point",
-      labelKey: "replayHighestPoint",
+      id: 'highest-point',
+      labelKey: 'replayHighestPoint',
       sample: highestPointSample,
-      elapsedMs: Math.max(0, highestPointSample.timestampMs - (summary.startedAtMs ?? highestPointSample.timestampMs)),
+      elapsedMs: Math.max(
+        0,
+        highestPointSample.timestampMs - (summary.startedAtMs ?? highestPointSample.timestampMs)
+      ),
       value: highestPointSample.altitudeM,
-      valueUnit: "altitude",
+      valueUnit: 'altitude',
     });
   }
 
   if (strongestPull && strongestPull.accelerationMps2 > 0) {
     highlights.push({
-      id: "strongest-pull",
-      labelKey: "replayStrongestPull",
+      id: 'strongest-pull',
+      labelKey: 'replayStrongestPull',
       sample: strongestPull.sample,
-      elapsedMs: Math.max(0, strongestPull.sample.timestampMs - (summary.startedAtMs ?? strongestPull.sample.timestampMs)),
+      elapsedMs: Math.max(
+        0,
+        strongestPull.sample.timestampMs - (summary.startedAtMs ?? strongestPull.sample.timestampMs)
+      ),
       value: strongestPull.accelerationMps2,
-      valueUnit: "acceleration",
+      valueUnit: 'acceleration',
     });
   }
 
@@ -390,13 +418,13 @@ export function getReplayAxisRange(axisMax, startRatio = 0, endRatio = 1) {
   }
 
   const minGapRatio = 0.02;
-  if ((safeEndRatio - safeStartRatio) < minGapRatio) {
+  if (safeEndRatio - safeStartRatio < minGapRatio) {
     if (safeEndRatio >= 1) {
       safeEndRatio = 1;
       safeStartRatio = Math.max(0, safeEndRatio - minGapRatio);
     } else {
       safeEndRatio = Math.min(1, safeStartRatio + minGapRatio);
-      if ((safeEndRatio - safeStartRatio) < minGapRatio) {
+      if (safeEndRatio - safeStartRatio < minGapRatio) {
         safeStartRatio = Math.max(0, safeEndRatio - minGapRatio);
       }
     }
@@ -410,7 +438,7 @@ export function getReplayAxisRange(axisMax, startRatio = 0, endRatio = 1) {
   };
 }
 
-export function buildReplayMetricSeries(session, metricKey, axisMode = "time") {
+export function buildReplayMetricSeries(session, metricKey, axisMode = 'time') {
   if (!session || !Array.isArray(session.samples) || session.samples.length === 0) {
     return [];
   }
@@ -428,7 +456,7 @@ export function buildReplayMetricSeries(session, metricKey, axisMode = "time") {
     const distanceM = getSampleDistanceM(sample);
     let value = sample[metricKey];
 
-    if (metricKey === "headingDeg") {
+    if (metricKey === 'headingDeg') {
       const heading = normalizeHeadingDegrees(sample.headingDeg);
       if (!isFiniteNumber(heading)) continue;
 
@@ -447,7 +475,7 @@ export function buildReplayMetricSeries(session, metricKey, axisMode = "time") {
       elapsedMs,
       elapsedSeconds: elapsedMs / 1000,
       distanceM,
-      xValue: axisMode === "distance" ? distanceM : (elapsedMs / 1000),
+      xValue: axisMode === 'distance' ? distanceM : elapsedMs / 1000,
       value,
     });
   }
@@ -455,7 +483,7 @@ export function buildReplayMetricSeries(session, metricKey, axisMode = "time") {
   return series;
 }
 
-export function getReplayMetricDomain(session, metricKey, axisMode = "time", axisRange = null) {
+export function getReplayMetricDomain(session, metricKey, axisMode = 'time', axisRange = null) {
   const series = buildReplayMetricSeries(session, metricKey, axisMode);
   if (!series.length) return null;
 
@@ -489,7 +517,7 @@ export function getReplayMetricDomain(session, metricKey, axisMode = "time", axi
       }
 
       const ratio = Math.min(Math.max((targetX - left.xValue) / span, 0), 1);
-      values.push(left.value + ((right.value - left.value) * ratio));
+      values.push(left.value + (right.value - left.value) * ratio);
       return;
     }
 
@@ -518,12 +546,12 @@ export function buildReplayGraphModel(session, options = {}) {
   const height = Number.isFinite(options.height) ? options.height : 92;
   const paddingX = Number.isFinite(options.paddingX) ? options.paddingX : 10;
   const paddingY = Number.isFinite(options.paddingY) ? options.paddingY : 10;
-  const metricKey = options.metricKey || "speedMs";
+  const metricKey = options.metricKey || 'speedMs';
 
   if (!session || !Array.isArray(session.samples) || session.samples.length === 0) {
     return {
-      path: "",
-      areaPath: "",
+      path: '',
+      areaPath: '',
       hasValues: false,
       minValue: null,
       maxValue: null,
@@ -534,14 +562,14 @@ export function buildReplayGraphModel(session, options = {}) {
 
   const summary = getReplaySummary(session);
   const baseTimestampMs = summary.startedAtMs ?? session.samples[0]?.timestampMs ?? 0;
-  const plotWidth = Math.max(1, width - (paddingX * 2));
-  const plotHeight = Math.max(1, height - (paddingY * 2));
+  const plotWidth = Math.max(1, width - paddingX * 2);
+  const plotHeight = Math.max(1, height - paddingY * 2);
   const validSamples = session.samples.filter((sample) => isFiniteNumber(sample[metricKey]));
 
   if (!validSamples.length) {
     return {
-      path: "",
-      areaPath: "",
+      path: '',
+      areaPath: '',
       hasValues: false,
       minValue: null,
       maxValue: null,
@@ -557,21 +585,22 @@ export function buildReplayGraphModel(session, options = {}) {
   const spanValue = Math.max(1e-9, maxValue - minValue);
   const points = validSamples.map((sample) => {
     const elapsedMs = Math.max(0, sample.timestampMs - baseTimestampMs);
-    const ratioX = summary.durationMs > 0
-      ? Math.min(Math.max(elapsedMs / summary.durationMs, 0), 1)
-      : 1;
+    const ratioX =
+      summary.durationMs > 0 ? Math.min(Math.max(elapsedMs / summary.durationMs, 0), 1) : 1;
     const normalizedValue = Math.min(Math.max((sample[metricKey] - minValue) / spanValue, 0), 1);
 
     return {
-      x: paddingX + (ratioX * plotWidth),
-      y: height - paddingY - (normalizedValue * plotHeight),
+      x: paddingX + ratioX * plotWidth,
+      y: height - paddingY - normalizedValue * plotHeight,
     };
   });
 
-  const path = points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(" ");
+  const path = points
+    .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
+    .join(' ');
   const areaPath = points.length
     ? `${path} L ${points[points.length - 1].x.toFixed(2)} ${(height - paddingY).toFixed(2)} L ${points[0].x.toFixed(2)} ${(height - paddingY).toFixed(2)} Z`
-    : "";
+    : '';
 
   return {
     path,
@@ -587,11 +616,9 @@ export function buildReplayGraphModel(session, options = {}) {
 export function getReplayGraphCursorX(session, elapsedMs, options = {}) {
   const width = Number.isFinite(options.width) ? options.width : 320;
   const paddingX = Number.isFinite(options.paddingX) ? options.paddingX : 10;
-  const plotWidth = Math.max(1, width - (paddingX * 2));
+  const plotWidth = Math.max(1, width - paddingX * 2);
   const durationMs = getReplayDurationMs(session);
-  const ratio = durationMs > 0
-    ? Math.min(Math.max(elapsedMs / durationMs, 0), 1)
-    : 1;
+  const ratio = durationMs > 0 ? Math.min(Math.max(elapsedMs / durationMs, 0), 1) : 1;
 
-  return paddingX + (ratio * plotWidth);
+  return paddingX + ratio * plotWidth;
 }

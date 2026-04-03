@@ -3,8 +3,9 @@
  * Manejo del sheet de configuración (unit toggle + thousands separator)
  */
 
-import { saveTripCostSettings } from "../trip-cost-storage.js";
-import { saveSettings as saveCalcSettings } from "../../calculator/storage.js";
+import { saveTripCostSettings } from '../trip-cost-storage.js';
+import { saveSettings as saveCalcSettings } from '../../calculator/storage.js';
+import { markUnitBootstrapManualSelection } from '../../shared/unit-bootstrap.js';
 
 /**
  * initSettingsSheet - Inicializa el sheet de configuración
@@ -38,20 +39,20 @@ export function initSettingsSheet({
   function setSettingsSheetOpen(isOpen) {
     if (isOpen) {
       settingsSheet.hidden = false;
-      settingsSheet.setAttribute("aria-hidden", "false");
+      settingsSheet.setAttribute('aria-hidden', 'false');
       syncForm();
-      requestAnimationFrame(() => settingsSheet.classList.add("is-open"));
+      requestAnimationFrame(() => settingsSheet.classList.add('is-open'));
       onOpen?.();
       return;
     }
-    settingsSheet.classList.remove("is-open");
-    settingsSheet.setAttribute("aria-hidden", "true");
+    settingsSheet.classList.remove('is-open');
+    settingsSheet.setAttribute('aria-hidden', 'true');
   }
 
   // Hide after transition ends
-  settingsSheet.addEventListener("transitionend", (e) => {
-    if (e.propertyName !== "transform") return;
-    if (!settingsSheet.classList.contains("is-open")) {
+  settingsSheet.addEventListener('transitionend', (e) => {
+    if (e.propertyName !== 'transform') return;
+    if (!settingsSheet.classList.contains('is-open')) {
       settingsSheet.hidden = true;
     }
   });
@@ -59,26 +60,26 @@ export function initSettingsSheet({
   function syncForm() {
     // Unit buttons
     unitBtns.forEach((btn) => {
-      btn.classList.toggle("is-active", btn.dataset.unit === tripSettings.unit);
+      btn.classList.toggle('is-active', btn.dataset.unit === tripSettings.unit);
     });
     // Thousands toggle
-    thousandsToggle.checked = (formatSettings.thousandSeparator ?? "") !== "";
+    thousandsToggle.checked = (formatSettings.thousandSeparator ?? '') !== '';
   }
 
   // Prevent drag from capturing settings button clicks
-  settingsBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
-  settingsBtn.addEventListener("click", () => {
-    const isOpen = settingsSheet.classList.contains("is-open");
+  settingsBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+  settingsBtn.addEventListener('click', () => {
+    const isOpen = settingsSheet.classList.contains('is-open');
     setSettingsSheetOpen(!isOpen);
   });
 
-  settingsCloseBtn.addEventListener("click", () => {
+  settingsCloseBtn.addEventListener('click', () => {
     setSettingsSheetOpen(false);
   });
 
   // Close settings when clicking outside
-  panel.addEventListener("click", (e) => {
-    if (!settingsSheet.classList.contains("is-open")) return;
+  panel.addEventListener('click', (e) => {
+    if (!settingsSheet.classList.contains('is-open')) return;
     if (!settingsSheet.contains(e.target) && !settingsBtn.contains(e.target)) {
       setSettingsSheetOpen(false);
     }
@@ -86,18 +87,19 @@ export function initSettingsSheet({
 
   // Unit toggle
   unitBtns.forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener('click', () => {
       const newUnit = btn.dataset.unit;
       tripSettings.unit = newUnit;
       saveTripCostSettings(tripSettings);
+      markUnitBootstrapManualSelection({ tripDistanceUnit: newUnit });
       syncForm();
       onUnitChange(newUnit);
     });
   });
 
   // Thousands separator toggle
-  thousandsToggle.addEventListener("change", () => {
-    formatSettings.thousandSeparator = thousandsToggle.checked ? "." : "";
+  thousandsToggle.addEventListener('change', () => {
+    formatSettings.thousandSeparator = thousandsToggle.checked ? '.' : '';
     saveCalcSettings(formatSettings);
     onThousandsChange(formatSettings);
   });

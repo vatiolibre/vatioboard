@@ -1,45 +1,56 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from 'vitest';
 import {
   classifyMotion,
   createSample,
   normalizeStoredSummary,
   summarizeSession,
-} from "../../src/gps-rate/summary.js";
+} from '../../src/gps-rate/summary.js';
 
-describe("gps-rate summary helpers", () => {
-  it("normalizes saved summaries with stable defaults", () => {
-    const normalized = normalizeStoredSummary({
-      savedAtMs: 123,
-      sampleCount: 4,
-      averageIntervalMs: 500,
-      fieldAvailability: { speed: true },
-      unsupportedFields: ["heading"],
-      histogram: [{ label: "500-999", count: 2 }],
-      warnings: [{ kind: "ok", label: "No warnings", detail: "" }],
-      statusText: "Stopped",
-      notes: "Saved run",
-    }, 999);
+describe('gps-rate summary helpers', () => {
+  it('normalizes saved summaries with stable defaults', () => {
+    const normalized = normalizeStoredSummary(
+      {
+        savedAtMs: 123,
+        sampleCount: 4,
+        averageIntervalMs: 500,
+        fieldAvailability: { speed: true },
+        unsupportedFields: ['heading'],
+        histogram: [{ label: '500-999', count: 2 }],
+        warnings: [{ kind: 'ok', label: 'No warnings', detail: '' }],
+        statusText: 'Stopped',
+        notes: 'Saved run',
+        place: {
+          label: 'Bogota',
+          countryCode: 'co',
+        },
+      },
+      999
+    );
 
     expect(normalized).toMatchObject({
-      source: "saved",
+      source: 'saved',
       savedAtMs: 123,
       durationMs: 0,
       sampleCount: 4,
       averageIntervalMs: 500,
       fieldAvailability: { speed: true },
-      unsupportedFields: ["heading"],
-      histogram: [{ label: "500-999", count: 2 }],
-      warnings: [{ kind: "ok", label: "No warnings", detail: "" }],
-      statusText: "Stopped",
-      notes: "Saved run",
+      unsupportedFields: ['heading'],
+      histogram: [{ label: '500-999', count: 2 }],
+      warnings: [{ kind: 'ok', label: 'No warnings', detail: '' }],
+      statusText: 'Stopped',
+      notes: 'Saved run',
+      place: {
+        label: 'Bogota',
+        countryCode: 'co',
+      },
     });
     expect(normalizeStoredSummary(null)).toBeNull();
   });
 
-  it("prefers reported speed and falls back to derived motion classification", () => {
+  it('prefers reported speed and falls back to derived motion classification', () => {
     expect(classifyMotion({ speed: 2.5 }, null, 1000)).toEqual({
-      state: "moving",
-      source: "reported",
+      state: 'moving',
+      source: 'reported',
       derivedSpeedMps: null,
       distanceM: null,
     });
@@ -51,31 +62,39 @@ describe("gps-rate summary helpers", () => {
       accuracyM: 4,
     };
 
-    const derivedMoving = classifyMotion({
-      latitude: 0.0001,
-      longitude: 0,
-      accuracy: 4,
-      speed: null,
-    }, previousSample, 2000);
+    const derivedMoving = classifyMotion(
+      {
+        latitude: 0.0001,
+        longitude: 0,
+        accuracy: 4,
+        speed: null,
+      },
+      previousSample,
+      2000
+    );
 
-    expect(derivedMoving.state).toBe("moving");
-    expect(derivedMoving.source).toBe("derived");
+    expect(derivedMoving.state).toBe('moving');
+    expect(derivedMoving.source).toBe('derived');
     expect(derivedMoving.derivedSpeedMps).toBeGreaterThan(1);
     expect(derivedMoving.distanceM).toBeGreaterThan(4);
 
-    const derivedStationary = classifyMotion({
-      latitude: 0.000001,
-      longitude: 0,
-      accuracy: 4,
-      speed: null,
-    }, previousSample, 1000);
+    const derivedStationary = classifyMotion(
+      {
+        latitude: 0.000001,
+        longitude: 0,
+        accuracy: 4,
+        speed: null,
+      },
+      previousSample,
+      1000
+    );
 
-    expect(derivedStationary.state).toBe("stationary");
-    expect(derivedStationary.source).toBe("derived");
+    expect(derivedStationary.state).toBe('stationary');
+    expect(derivedStationary.source).toBe('derived');
     expect(derivedStationary.derivedSpeedMps).toBeLessThanOrEqual(0.3);
   });
 
-  it("creates samples with normalized fields and stale detection", () => {
+  it('creates samples with normalized fields and stale detection', () => {
     const baseTimestampMs = Date.UTC(2024, 0, 1, 0, 0, 0);
     const sample = createSample({
       position: {
@@ -109,16 +128,16 @@ describe("gps-rate summary helpers", () => {
       effectiveHz: 1000 / 600,
       geoTimestampDeltaMs: -500,
       sampleAgeMs: 1500,
-      movementState: "moving",
-      movementSource: "reported",
-      visibilityState: "hidden",
+      movementState: 'moving',
+      movementSource: 'reported',
+      visibilityState: 'hidden',
       isStale: true,
     });
     expect(sample.latitude).toBe(4.711);
     expect(sample.longitude).toBe(-74.0721);
   });
 
-  it("summarizes intervals, field availability, histogram, and motion metrics", () => {
+  it('summarizes intervals, field availability, histogram, and motion metrics', () => {
     const samples = [
       {
         index: 1,
@@ -130,8 +149,8 @@ describe("gps-rate summary helpers", () => {
         altitudeM: null,
         altitudeAccuracyM: null,
         intervalMs: null,
-        movementState: "uncertain",
-        movementSource: "unknown",
+        movementState: 'uncertain',
+        movementSource: 'unknown',
         isStale: false,
       },
       {
@@ -144,8 +163,8 @@ describe("gps-rate summary helpers", () => {
         altitudeM: 10,
         altitudeAccuracyM: null,
         intervalMs: 1000,
-        movementState: "moving",
-        movementSource: "reported",
+        movementState: 'moving',
+        movementSource: 'reported',
         isStale: false,
       },
       {
@@ -158,8 +177,8 @@ describe("gps-rate summary helpers", () => {
         altitudeM: 12,
         altitudeAccuracyM: null,
         intervalMs: 500,
-        movementState: "moving",
-        movementSource: "reported",
+        movementState: 'moving',
+        movementSource: 'reported',
         isStale: true,
       },
     ];
@@ -167,8 +186,12 @@ describe("gps-rate summary helpers", () => {
     const summary = summarizeSession({
       samples,
       durationMs: 3500,
-      notes: "  Tesla browser  ",
-      statusText: "Running",
+      notes: '  Tesla browser  ',
+      statusText: 'Running',
+      place: {
+        label: 'Bogota',
+        countryCode: 'co',
+      },
     });
 
     expect(summary.sampleCount).toBe(3);
@@ -195,19 +218,23 @@ describe("gps-rate summary helpers", () => {
       altitudeAccuracy: false,
       accuracy: true,
     });
-    expect(summary.unsupportedFields).toEqual(["altitudeAccuracy"]);
+    expect(summary.unsupportedFields).toEqual(['altitudeAccuracy']);
     expect(summary.motion).toMatchObject({
-      latestState: "moving",
-      latestSource: "reported",
+      latestState: 'moving',
+      latestSource: 'reported',
       movingSamples: 2,
       stationarySamples: 0,
     });
     expect(summary.motion.movingHz).toBeCloseTo(1000 / 750, 6);
     expect(summary.motion.stationaryHz).toBeNull();
-    expect(summary.histogram).toContainEqual({ label: "500-999", count: 1 });
-    expect(summary.histogram).toContainEqual({ label: "1000-1499", count: 1 });
-    expect(summary.statusText).toBe("Running");
-    expect(summary.notes).toBe("Tesla browser");
+    expect(summary.histogram).toContainEqual({ label: '500-999', count: 1 });
+    expect(summary.histogram).toContainEqual({ label: '1000-1499', count: 1 });
+    expect(summary.statusText).toBe('Running');
+    expect(summary.notes).toBe('Tesla browser');
+    expect(summary.place).toMatchObject({
+      label: 'Bogota',
+      countryCode: 'co',
+    });
     expect(summary.warnings).toEqual([]);
   });
 });

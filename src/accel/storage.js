@@ -1,5 +1,7 @@
-import { createIndexedJsonKeyValueStore } from "../shared/indexed-storage.js";
-import { loadJson, loadText, removeStoredValue, saveJson } from "../shared/storage.js";
+import { createIndexedJsonKeyValueStore } from '../shared/indexed-storage.js';
+import { normalizePlace } from '../shared/place-resolver.js';
+import { loadJson, loadText, removeStoredValue, saveJson } from '../shared/storage.js';
+import { loadConfiguredDistanceUnit, loadConfiguredSpeedUnit } from '../shared/unit-bootstrap.js';
 import {
   DISTANCE_UNIT_CONFIG,
   MAX_RUNS,
@@ -12,7 +14,7 @@ import {
   defaultSettings,
   normalizeDistanceUnit,
   normalizeSpeedUnit,
-} from "./constants.js";
+} from './constants.js';
 import {
   buildResultSpeedTrace,
   isFiniteNumber,
@@ -20,20 +22,17 @@ import {
   normalizeStoredSampleLog,
   normalizeStoredSpeedTrace,
   toFiniteNumber,
-} from "./logic.js";
+} from './logic.js';
 import {
   buildComparisonSignature,
   findPresetDefinition,
   getCustomPresetSignature,
-} from "./presets.js";
+} from './presets.js';
 
-const ACCEL_DB_NAME = "vatio-accel-storage";
+const ACCEL_DB_NAME = 'vatio-accel-storage';
 const ACCEL_DB_VERSION = 1;
-const ACCEL_DB_STORE = "accelRecords";
-const ACCEL_STORAGE_KEYS = [
-  STORAGE_KEYS.settings,
-  STORAGE_KEYS.runs,
-];
+const ACCEL_DB_STORE = 'accelRecords';
+const ACCEL_STORAGE_KEYS = [STORAGE_KEYS.settings, STORAGE_KEYS.runs];
 
 const accelStore = createIndexedJsonKeyValueStore({
   dbName: ACCEL_DB_NAME,
@@ -46,43 +45,50 @@ let settingsSavePromise = Promise.resolve();
 let runsSavePromise = Promise.resolve();
 
 export function loadSharedSpeedUnitPreference() {
-  const unit = loadText(SHARED_SPEED_UNIT_KEY, "");
+  const unit = loadText(SHARED_SPEED_UNIT_KEY, '');
   return unit && SPEED_UNIT_CONFIG[unit] ? unit : null;
 }
 
 export function loadSharedDistanceUnitPreference() {
-  const unit = loadText(SHARED_DISTANCE_UNIT_KEY, "");
+  const unit = loadText(SHARED_DISTANCE_UNIT_KEY, '');
   if (unit && DISTANCE_UNIT_CONFIG[unit]) return unit;
 
-  const legacyUnit = loadText(SHARED_LEGACY_ALTITUDE_UNIT_KEY, "");
+  const legacyUnit = loadText(SHARED_LEGACY_ALTITUDE_UNIT_KEY, '');
   return legacyUnit && DISTANCE_UNIT_CONFIG[legacyUnit] ? legacyUnit : null;
 }
 
 export function getDefaultSpeedUnit(selectedPresetId) {
-  const sharedUnit = loadSharedSpeedUnitPreference();
+  const sharedUnit = loadConfiguredSpeedUnit(null) ?? loadSharedSpeedUnitPreference();
   if (sharedUnit) return sharedUnit;
   const preset = findPresetDefinition(selectedPresetId);
   if (preset && preset.speedSystem) return preset.speedSystem;
-  return "mph";
+  return 'mph';
 }
 
 export function getDefaultDistanceUnit(selectedPresetId) {
-  const sharedUnit = loadSharedDistanceUnitPreference();
+  const sharedUnit = loadConfiguredDistanceUnit(null) ?? loadSharedDistanceUnitPreference();
   if (sharedUnit) return sharedUnit;
   const preset = findPresetDefinition(selectedPresetId);
   if (preset && preset.distanceSystem) return preset.distanceSystem;
-  return "ft";
+  return 'ft';
 }
 
 function normalizeSettings(raw) {
-  const settings = raw && typeof raw === "object" ? raw : {};
-  const selectedPresetId = typeof settings.selectedPresetId === "string" ? settings.selectedPresetId : defaultSettings.selectedPresetId;
-  const speedUnit = normalizeSpeedUnit(settings.speedUnit || settings.customUnit || getDefaultSpeedUnit(selectedPresetId));
-  const distanceUnit = normalizeDistanceUnit(settings.distanceUnit || getDefaultDistanceUnit(selectedPresetId));
-  const defaultCustomEnd = speedUnit === "kmh" ? 100 : defaultSettings.customEnd;
+  const settings = raw && typeof raw === 'object' ? raw : {};
+  const selectedPresetId =
+    typeof settings.selectedPresetId === 'string'
+      ? settings.selectedPresetId
+      : defaultSettings.selectedPresetId;
+  const speedUnit = normalizeSpeedUnit(
+    settings.speedUnit || settings.customUnit || getDefaultSpeedUnit(selectedPresetId)
+  );
+  const distanceUnit = normalizeDistanceUnit(
+    settings.distanceUnit || getDefaultDistanceUnit(selectedPresetId)
+  );
+  const defaultCustomEnd = speedUnit === 'kmh' ? 100 : defaultSettings.customEnd;
   const launchThresholdMs = isFiniteNumber(settings.launchThresholdMs)
     ? settings.launchThresholdMs
-    : ((settings.launchThresholdMph === 1 ? 1 : 0.5) * MPH_TO_MS);
+    : (settings.launchThresholdMph === 1 ? 1 : 0.5) * MPH_TO_MS;
 
   return {
     selectedPresetId,
@@ -92,7 +98,7 @@ function normalizeSettings(raw) {
     distanceUnit,
     customStart: toFiniteNumber(settings.customStart, defaultSettings.customStart),
     customEnd: toFiniteNumber(settings.customEnd, defaultCustomEnd),
-    notes: typeof settings.notes === "string" ? settings.notes : "",
+    notes: typeof settings.notes === 'string' ? settings.notes : '',
   };
 }
 
@@ -105,9 +111,7 @@ function cloneJsonValue(value, fallback) {
 }
 
 function queuePersistence(previousPromise, task) {
-  return previousPromise
-    .catch(() => {})
-    .then(task);
+  return previousPromise.catch(() => {}).then(task);
 }
 
 async function migrateLegacyAccelStorage() {
@@ -167,41 +171,46 @@ export async function loadSettings() {
 
 export function saveSettings(settings) {
   const snapshot = cloneJsonValue(settings, createDefaultSettings());
-  settingsSavePromise = queuePersistence(settingsSavePromise, () => saveAccelValue(STORAGE_KEYS.settings, snapshot));
+  settingsSavePromise = queuePersistence(settingsSavePromise, () =>
+    saveAccelValue(STORAGE_KEYS.settings, snapshot)
+  );
   return settingsSavePromise;
 }
 
 export function normalizeStoredRun(run) {
-  if (!run || typeof run !== "object") return null;
+  if (!run || typeof run !== 'object') return null;
   if (!isFiniteNumber(run.savedAtMs) || !isFiniteNumber(run.elapsedMs)) return null;
 
-  const presetId = typeof run.presetId === "string" ? run.presetId : "custom";
+  const presetId = typeof run.presetId === 'string' ? run.presetId : 'custom';
   const startSpeedMs = isFiniteNumber(run.startSpeedMs) ? run.startSpeedMs : 0;
   const targetSpeedMs = isFiniteNumber(run.targetSpeedMs) ? run.targetSpeedMs : null;
-  const presetKind = typeof run.presetKind === "string" ? run.presetKind : "speed";
+  const presetKind = typeof run.presetKind === 'string' ? run.presetKind : 'speed';
   const sampleLog = normalizeStoredSampleLog(run.sampleLog);
   const partials = normalizeStoredPartials(run.partials);
   const finishSpeedMs = isFiniteNumber(run.finishSpeedMs)
     ? run.finishSpeedMs
-    : (isFiniteNumber(run.trapSpeedMs)
+    : isFiniteNumber(run.trapSpeedMs)
       ? run.trapSpeedMs
-      : (presetKind === "speed" && isFiniteNumber(targetSpeedMs) ? targetSpeedMs : null));
-  let presetSignature = typeof run.presetSignature === "string" ? run.presetSignature : presetId;
-  let comparisonSignature = typeof run.comparisonSignature === "string"
-    ? run.comparisonSignature
-    : buildComparisonSignature({
-      presetId,
-      presetSignature,
-      startSpeedMs,
-      targetSpeedMs,
-    });
+      : presetKind === 'speed' && isFiniteNumber(targetSpeedMs)
+        ? targetSpeedMs
+        : null;
+  let presetSignature = typeof run.presetSignature === 'string' ? run.presetSignature : presetId;
+  let comparisonSignature =
+    typeof run.comparisonSignature === 'string'
+      ? run.comparisonSignature
+      : buildComparisonSignature({
+          presetId,
+          presetSignature,
+          startSpeedMs,
+          targetSpeedMs,
+        });
 
-  if (presetId === "custom" && isFiniteNumber(startSpeedMs) && isFiniteNumber(targetSpeedMs)) {
+  if (presetId === 'custom' && isFiniteNumber(startSpeedMs) && isFiniteNumber(targetSpeedMs)) {
     presetSignature = getCustomPresetSignature(startSpeedMs, targetSpeedMs);
   }
 
   const normalizedRun = {
-    id: typeof run.id === "string" ? run.id : `run-${String(run.savedAtMs)}`,
+    id: typeof run.id === 'string' ? run.id : `run-${String(run.savedAtMs)}`,
     savedAtMs: run.savedAtMs,
     presetId,
     presetSignature,
@@ -210,12 +219,12 @@ export function normalizeStoredRun(run) {
     standingStart: Boolean(run.standingStart),
     customStart: isFiniteNumber(run.customStart) ? run.customStart : null,
     customEnd: isFiniteNumber(run.customEnd) ? run.customEnd : null,
-    customUnit: run.customUnit === "kmh" ? "kmh" : (run.customUnit === "mph" ? "mph" : null),
+    customUnit: run.customUnit === 'kmh' ? 'kmh' : run.customUnit === 'mph' ? 'mph' : null,
     startSpeedMs,
     targetSpeedMs,
     distanceTargetM: isFiniteNumber(run.distanceTargetM) ? run.distanceTargetM : null,
-    displayUnit: run.displayUnit === "kmh" ? "kmh" : "mph",
-    distanceDisplay: run.distanceDisplay === "m" ? "m" : "ft",
+    displayUnit: run.displayUnit === 'kmh' ? 'kmh' : 'mph',
+    distanceDisplay: run.distanceDisplay === 'm' ? 'm' : 'ft',
     elapsedMs: run.elapsedMs,
     speedTrace: [],
     sampleLog,
@@ -236,7 +245,7 @@ export function normalizeStoredRun(run) {
     averageHz: isFiniteNumber(run.averageHz) ? run.averageHz : null,
     averageIntervalMs: isFiniteNumber(run.averageIntervalMs) ? run.averageIntervalMs : null,
     jitterMs: isFiniteNumber(run.jitterMs) ? run.jitterMs : null,
-    qualityGrade: typeof run.qualityGrade === "string" ? run.qualityGrade : "invalid",
+    qualityGrade: typeof run.qualityGrade === 'string' ? run.qualityGrade : 'invalid',
     qualityScore: isFiniteNumber(run.qualityScore) ? run.qualityScore : 0,
     warningKeys: Array.isArray(run.warningKeys) ? run.warningKeys.slice(0, 8) : [],
     sampleCount: isFiniteNumber(run.sampleCount) ? run.sampleCount : 0,
@@ -244,9 +253,11 @@ export function normalizeStoredRun(run) {
     staleCount: isFiniteNumber(run.staleCount) ? run.staleCount : 0,
     nullSpeedCount: isFiniteNumber(run.nullSpeedCount) ? run.nullSpeedCount : 0,
     derivedSpeedCount: isFiniteNumber(run.derivedSpeedCount) ? run.derivedSpeedCount : 0,
-    speedSource: typeof run.speedSource === "string" ? run.speedSource : "reported",
-    startSpeedSource: typeof run.startSpeedSource === "string" ? run.startSpeedSource : null,
-    notes: typeof run.notes === "string" ? run.notes : "",
+    speedSource: typeof run.speedSource === 'string' ? run.speedSource : 'reported',
+    startSpeedSource: typeof run.startSpeedSource === 'string' ? run.startSpeedSource : null,
+    notes: typeof run.notes === 'string' ? run.notes : '',
+    startPlace: normalizePlace(run.startPlace),
+    endPlace: normalizePlace(run.endPlace),
   };
 
   normalizedRun.speedTrace = sampleLog.length
@@ -277,6 +288,8 @@ export async function loadRuns() {
 
 export function saveRuns(runs) {
   const snapshot = cloneJsonValue(Array.isArray(runs) ? runs.slice(0, MAX_RUNS) : [], []);
-  runsSavePromise = queuePersistence(runsSavePromise, () => saveAccelValue(STORAGE_KEYS.runs, snapshot));
+  runsSavePromise = queuePersistence(runsSavePromise, () =>
+    saveAccelValue(STORAGE_KEYS.runs, snapshot)
+  );
   return runsSavePromise;
 }

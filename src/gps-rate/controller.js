@@ -1,11 +1,16 @@
-import { createSample, summarizeSession } from "./summary.js";
-import { createGpsRateNominatimLab } from "./nominatim-lab.js";
+import { createPlaceResolver } from '../shared/place-resolver.js';
+import {
+  hasConfiguredUnitPreferences,
+  maybeInitializeUnitsFromCountry,
+} from '../shared/unit-bootstrap.js';
+import { createSample, summarizeSession } from './summary.js';
+import { createGpsRateNominatimLab } from './nominatim-lab.js';
 import {
   getElapsedActiveMs,
   hasSessionActivity,
   setRawStatus,
   setStatus,
-} from "./session-state.js";
+} from './session-state.js';
 
 export function createGpsRateController({
   appName,
@@ -23,6 +28,10 @@ export function createGpsRateController({
   saveJson,
   saveText,
 }) {
+  const placeResolver = createPlaceResolver({ getLanguage: getLang });
+  let unitBootstrapPending = false;
+  let savedSummaryPlaceRequestId = 0;
+
   const nominatimLab = createGpsRateNominatimLab({
     elements,
     state,
@@ -31,7 +40,7 @@ export function createGpsRateController({
     t,
   });
 
-  function buildCurrentSummary({ source = "current", savedAtMs = null } = {}) {
+  function buildCurrentSummary({ source = 'current', savedAtMs = null } = {}) {
     const summary = summarizeSession({
       samples: state.samples.slice(),
       durationMs: getElapsedActiveMs(state, performance.now()),
@@ -45,7 +54,7 @@ export function createGpsRateController({
   }
 
   function refreshView() {
-    state.currentSummary = buildCurrentSummary({ source: "current" });
+    state.currentSummary = buildCurrentSummary({ source: 'current' });
     renderer.renderSession();
     nominatimLab.render();
   }
@@ -70,14 +79,72 @@ export function createGpsRateController({
 
   function persistCurrentSummary() {
     if (!state.samples.length) return;
-    const summary = buildCurrentSummary({ source: "saved", savedAtMs: Date.now() });
+    const summary = buildCurrentSummary({ source: 'saved', savedAtMs: Date.now() });
     state.lastSavedSummary = summary;
     saveJson(storageKeys.lastSummary, summary);
+
+    const latestSample = state.samples[state.samples.length - 1];
+    if (!latestSample) return;
+
+    savedSummaryPlaceRequestId += 1;
+    const placeRequestId = savedSummaryPlaceRequestId;
+
+    void (async () => {
+      try {
+        const response = await placeResolver.reversePlace({
+          latitude: latestSample.latitude,
+          longitude: latestSample.longitude,
+          zoom: 18,
+        });
+        if (response.place?.countryCode) {
+          maybeInitializeUnitsFromCountry(response.place.countryCode);
+        }
+        if (!response.place) return;
+        if (placeRequestId !== savedSummaryPlaceRequestId) return;
+        if (!state.lastSavedSummary || state.lastSavedSummary.savedAtMs !== summary.savedAtMs)
+          return;
+
+        const enrichedSummary = renderer.decorateSummary({
+          ...summary,
+          place: response.place,
+        });
+        state.lastSavedSummary = enrichedSummary;
+        saveJson(storageKeys.lastSummary, enrichedSummary);
+
+        if (!hasSessionActivity(state)) {
+          renderer.renderSession();
+        }
+      } catch {
+        // Ignore Nominatim/network failures and keep the saved summary.
+      }
+    })();
+  }
+
+  function maybeBootstrapUnitsFromSample(sample) {
+    if (unitBootstrapPending || hasConfiguredUnitPreferences()) return;
+    if (!sample || !Number.isFinite(sample.latitude) || !Number.isFinite(sample.longitude)) return;
+
+    unitBootstrapPending = true;
+    placeResolver
+      .reverseCountry({
+        latitude: sample.latitude,
+        longitude: sample.longitude,
+      })
+      .then((response) => {
+        if (!response || !response.countryCode) return;
+        maybeInitializeUnitsFromCountry(response.countryCode);
+      })
+      .catch(() => {
+        // Ignore Nominatim/network failures and keep sampling live.
+      })
+      .finally(() => {
+        unitBootstrapPending = false;
+      });
   }
 
   function bindMenuNavigation(element, href) {
     if (!element) return;
-    element.addEventListener("click", () => {
+    element.addEventListener('click', () => {
       toolsMenu.close();
       window.location.href = href;
     });
@@ -109,7 +176,8 @@ export function createGpsRateController({
     });
 
     state.samples.push(sample);
-    setStatus(state, "gpsRateRunning");
+    maybeBootstrapUnitsFromSample(sample);
+    setStatus(state, 'gpsRateRunning');
     renderer.appendLogRow(sample);
     refreshView();
   }
@@ -118,45 +186,45 @@ export function createGpsRateController({
     if (error.code === geoErrorCode.PERMISSION_DENIED) {
       stopWatchOnly();
       finishRunningClock();
-      setStatus(state, "gpsRatePermissionBlocked");
+      setStatus(state, 'gpsRatePermissionBlocked');
       refreshView();
       return;
     }
 
     if (error.code === geoErrorCode.POSITION_UNAVAILABLE) {
-      setStatus(state, "gpsRateUnavailable");
+      setStatus(state, 'gpsRateUnavailable');
       refreshView();
       return;
     }
 
     if (error.code === geoErrorCode.TIMEOUT) {
-      setStatus(state, "gpsRateTimeout");
+      setStatus(state, 'gpsRateTimeout');
       refreshView();
       return;
     }
 
-    setRawStatus(state, error && error.message ? error.message : t("gpsRateError"));
+    setRawStatus(state, error && error.message ? error.message : t('gpsRateError'));
     refreshView();
   }
 
   function startTest() {
     if (state.isRunning) return;
 
-    if (!("geolocation" in navigator)) {
-      setStatus(state, "gpsRateUnsupported");
+    if (!('geolocation' in navigator)) {
+      setStatus(state, 'gpsRateUnsupported');
       refreshView();
       return;
     }
 
     state.isRunning = true;
     state.runStartedPerfMs = performance.now();
-    setStatus(state, "gpsRateWaitingFix");
+    setStatus(state, 'gpsRateWaitingFix');
     stopWatchOnly();
 
     state.watchId = navigator.geolocation.watchPosition(
       handlePosition,
       handlePositionError,
-      geoOptions,
+      geoOptions
     );
 
     if (state.keepAwakeRequested) {
@@ -171,7 +239,7 @@ export function createGpsRateController({
 
     stopWatchOnly();
     finishRunningClock();
-    setStatus(state, "gpsRateStopped");
+    setStatus(state, 'gpsRateStopped');
     if (persist) persistCurrentSummary();
     refreshView();
   }
@@ -186,26 +254,29 @@ export function createGpsRateController({
     state.accumulatedRunDurationMs = 0;
     state.samples = [];
     state.hiddenCount = 0;
-    setStatus(state, "gpsRateResetDone");
+    setStatus(state, 'gpsRateResetDone');
     renderer.clearVisibleLog();
     refreshView();
   }
 
   function getExportFilename(extension) {
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const notes = state.notes.trim()
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const notes = state.notes
+      .trim()
       .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
       .slice(0, 28);
 
-    return notes ? `gps-rate-${notes}-${timestamp}.${extension}` : `gps-rate-${timestamp}.${extension}`;
+    return notes
+      ? `gps-rate-${notes}-${timestamp}.${extension}`
+      : `gps-rate-${timestamp}.${extension}`;
   }
 
   function downloadTextFile(filename, contents, mimeType) {
     const blob = new Blob([contents], { type: mimeType });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
+    const link = document.createElement('a');
     link.href = url;
     link.download = filename;
     document.body.appendChild(link);
@@ -215,7 +286,7 @@ export function createGpsRateController({
   }
 
   function getCurrentOrLiveSummary() {
-    return state.currentSummary || buildCurrentSummary({ source: "current" });
+    return state.currentSummary || buildCurrentSummary({ source: 'current' });
   }
 
   function buildExportPayload() {
@@ -232,20 +303,20 @@ export function createGpsRateController({
 
   function exportJson() {
     if (!state.samples.length) {
-      setActionNotice("gpsRateExportUnavailable");
+      setActionNotice('gpsRateExportUnavailable');
       return;
     }
 
     const payload = JSON.stringify(buildExportPayload(), null, 2);
-    downloadTextFile(getExportFilename("json"), payload, "application/json");
-    setActionNotice("gpsRateJsonExported");
+    downloadTextFile(getExportFilename('json'), payload, 'application/json');
+    setActionNotice('gpsRateJsonExported');
   }
 
   function csvCell(value) {
-    if (value === null || value === undefined) return "";
+    if (value === null || value === undefined) return '';
     const stringValue = String(value);
     if (/[",\n]/.test(stringValue)) {
-      return `"${stringValue.replace(/"/g, "\"\"")}"`;
+      return `"${stringValue.replace(/"/g, '""')}"`;
     }
     return stringValue;
   }
@@ -254,108 +325,118 @@ export function createGpsRateController({
     const summary = getCurrentOrLiveSummary();
     const lines = [
       `# ${appName}`,
-      `# ${t("gpsRateObservedOnlyNote")}`,
+      `# ${t('gpsRateObservedOnlyNote')}`,
       `# Exported: ${new Date().toISOString()}`,
-      `# Notes: ${state.notes.trim() || "-"}`,
+      `# Notes: ${state.notes.trim() || '-'}`,
+      `# Place: ${renderer.getPlaceLabel(summary.place)}`,
       `# Samples: ${summary.sampleCount}`,
       `# Duration Ms: ${Math.round(summary.durationMs)}`,
-      `# Average Interval Ms: ${summary.averageIntervalMs ?? ""}`,
-      `# Median Interval Ms: ${summary.medianIntervalMs ?? ""}`,
-      `# Best Interval Ms: ${summary.minIntervalMs ?? ""}`,
-      `# Best Observed Hz: ${summary.bestObservedHz ?? ""}`,
-      `# Whole Session Hz: ${summary.wholeSessionHz ?? ""}`,
-      "index,callback_wall_clock_iso,callback_wall_clock_ms,performance_now_ms,position_timestamp_iso,position_timestamp_ms,interval_ms,effective_hz,geo_timestamp_delta_ms,sample_age_ms,latitude,longitude,speed_mps,heading_deg,accuracy_m,altitude_m,altitude_accuracy_m,movement_state,movement_source,derived_speed_mps,distance_from_previous_m,visibility_state,is_stale",
+      `# Average Interval Ms: ${summary.averageIntervalMs ?? ''}`,
+      `# Median Interval Ms: ${summary.medianIntervalMs ?? ''}`,
+      `# Best Interval Ms: ${summary.minIntervalMs ?? ''}`,
+      `# Best Observed Hz: ${summary.bestObservedHz ?? ''}`,
+      `# Whole Session Hz: ${summary.wholeSessionHz ?? ''}`,
+      'index,callback_wall_clock_iso,callback_wall_clock_ms,performance_now_ms,position_timestamp_iso,position_timestamp_ms,interval_ms,effective_hz,geo_timestamp_delta_ms,sample_age_ms,latitude,longitude,speed_mps,heading_deg,accuracy_m,altitude_m,altitude_accuracy_m,movement_state,movement_source,derived_speed_mps,distance_from_previous_m,visibility_state,is_stale',
     ];
 
     for (let index = 0; index < state.samples.length; index += 1) {
       const sample = state.samples[index];
-      lines.push([
-        sample.index,
-        Number.isFinite(sample.callbackWallClockMs) ? new Date(sample.callbackWallClockMs).toISOString() : "",
-        sample.callbackWallClockMs,
-        sample.performanceNowMs,
-        Number.isFinite(sample.positionTimestampMs) ? new Date(sample.positionTimestampMs).toISOString() : "",
-        sample.positionTimestampMs,
-        sample.intervalMs,
-        sample.effectiveHz,
-        sample.geoTimestampDeltaMs,
-        sample.sampleAgeMs,
-        sample.latitude,
-        sample.longitude,
-        sample.speedMps,
-        sample.headingDeg,
-        sample.accuracyM,
-        sample.altitudeM,
-        sample.altitudeAccuracyM,
-        sample.movementState,
-        sample.movementSource,
-        sample.derivedSpeedMps,
-        sample.distanceFromPreviousM,
-        sample.visibilityState,
-        sample.isStale,
-      ].map(csvCell).join(","));
+      lines.push(
+        [
+          sample.index,
+          Number.isFinite(sample.callbackWallClockMs)
+            ? new Date(sample.callbackWallClockMs).toISOString()
+            : '',
+          sample.callbackWallClockMs,
+          sample.performanceNowMs,
+          Number.isFinite(sample.positionTimestampMs)
+            ? new Date(sample.positionTimestampMs).toISOString()
+            : '',
+          sample.positionTimestampMs,
+          sample.intervalMs,
+          sample.effectiveHz,
+          sample.geoTimestampDeltaMs,
+          sample.sampleAgeMs,
+          sample.latitude,
+          sample.longitude,
+          sample.speedMps,
+          sample.headingDeg,
+          sample.accuracyM,
+          sample.altitudeM,
+          sample.altitudeAccuracyM,
+          sample.movementState,
+          sample.movementSource,
+          sample.derivedSpeedMps,
+          sample.distanceFromPreviousM,
+          sample.visibilityState,
+          sample.isStale,
+        ]
+          .map(csvCell)
+          .join(',')
+      );
     }
 
-    return lines.join("\n");
+    return lines.join('\n');
   }
 
   function exportCsv() {
     if (!state.samples.length) {
-      setActionNotice("gpsRateExportUnavailable");
+      setActionNotice('gpsRateExportUnavailable');
       return;
     }
 
-    downloadTextFile(getExportFilename("csv"), buildCsv(), "text/csv;charset=utf-8");
-    setActionNotice("gpsRateCsvExported");
+    downloadTextFile(getExportFilename('csv'), buildCsv(), 'text/csv;charset=utf-8');
+    setActionNotice('gpsRateCsvExported');
   }
 
   async function copySummary() {
     const summary = hasSessionActivity(state) ? state.currentSummary : state.lastSavedSummary;
 
     if (!summary) {
-      setActionNotice("gpsRateExportUnavailable");
+      setActionNotice('gpsRateExportUnavailable');
       return;
     }
 
     const lines = [
       appName,
-      t("gpsRateObservedOnlyNote"),
-      `${t("gpsRateStatus")}: ${summary.statusText || "—"}`,
-      `${t("gpsRateElapsed")}: ${renderer.formatDuration(summary.durationMs)}`,
-      `${t("gpsRateSamples")}: ${renderer.formatInteger(summary.sampleCount)}`,
-      `${t("gpsRateMinimumInterval")}: ${renderer.formatMs(summary.minIntervalMs)}`,
-      `${t("gpsRateAverageInterval")}: ${renderer.formatMs(summary.averageIntervalMs)}`,
-      `${t("gpsRateMedianInterval")}: ${renderer.formatMs(summary.medianIntervalMs)}`,
-      `${t("gpsRateWholeAverageHz")}: ${renderer.formatHz(summary.effectiveAverageHz)}`,
-      `${t("gpsRateBestHz")}: ${renderer.formatHz(summary.bestObservedHz)}`,
-      `${t("gpsRateAverageAccuracy")}: ${renderer.formatMeters(summary.averageAccuracyM)}`,
-      `${t("gpsRateSpeedField")}: ${summary.fieldAvailability.speed ? t("gpsRateAvailable") : t("gpsRateNotSeen")}`,
-      `${t("gpsRateHeadingField")}: ${summary.fieldAvailability.heading ? t("gpsRateAvailable") : t("gpsRateNotSeen")}`,
-      `${t("gpsRateAltitudeField")}: ${summary.fieldAvailability.altitude ? t("gpsRateAvailable") : t("gpsRateNotSeen")}`,
-      `${t("gpsRateFiveSecondHz")}: ${renderer.formatHz(summary.fiveSecondHz)}`,
-      `${t("gpsRateWholeSessionHz")}: ${renderer.formatHz(summary.wholeSessionHz)}`,
-      `${t("gpsRateSessionNotes")}: ${summary.notes || "-"}`,
+      t('gpsRateObservedOnlyNote'),
+      `${t('gpsRateStatus')}: ${summary.statusText || '—'}`,
+      `${t('gpsRatePlace')}: ${renderer.getPlaceLabel(summary.place)}`,
+      `${t('gpsRateElapsed')}: ${renderer.formatDuration(summary.durationMs)}`,
+      `${t('gpsRateSamples')}: ${renderer.formatInteger(summary.sampleCount)}`,
+      `${t('gpsRateMinimumInterval')}: ${renderer.formatMs(summary.minIntervalMs)}`,
+      `${t('gpsRateAverageInterval')}: ${renderer.formatMs(summary.averageIntervalMs)}`,
+      `${t('gpsRateMedianInterval')}: ${renderer.formatMs(summary.medianIntervalMs)}`,
+      `${t('gpsRateWholeAverageHz')}: ${renderer.formatHz(summary.effectiveAverageHz)}`,
+      `${t('gpsRateBestHz')}: ${renderer.formatHz(summary.bestObservedHz)}`,
+      `${t('gpsRateAverageAccuracy')}: ${renderer.formatMeters(summary.averageAccuracyM)}`,
+      `${t('gpsRateSpeedField')}: ${summary.fieldAvailability.speed ? t('gpsRateAvailable') : t('gpsRateNotSeen')}`,
+      `${t('gpsRateHeadingField')}: ${summary.fieldAvailability.heading ? t('gpsRateAvailable') : t('gpsRateNotSeen')}`,
+      `${t('gpsRateAltitudeField')}: ${summary.fieldAvailability.altitude ? t('gpsRateAvailable') : t('gpsRateNotSeen')}`,
+      `${t('gpsRateFiveSecondHz')}: ${renderer.formatHz(summary.fiveSecondHz)}`,
+      `${t('gpsRateWholeSessionHz')}: ${renderer.formatHz(summary.wholeSessionHz)}`,
+      `${t('gpsRateSessionNotes')}: ${summary.notes || '-'}`,
     ];
 
-    const text = lines.join("\n");
+    const text = lines.join('\n');
 
     try {
-      if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
         await navigator.clipboard.writeText(text);
       } else {
-        const area = document.createElement("textarea");
+        const area = document.createElement('textarea');
         area.value = text;
-        area.setAttribute("readonly", "readonly");
-        area.style.position = "absolute";
-        area.style.left = "-9999px";
+        area.setAttribute('readonly', 'readonly');
+        area.style.position = 'absolute';
+        area.style.left = '-9999px';
         document.body.appendChild(area);
         area.select();
-        document.execCommand("copy");
+        document.execCommand('copy');
         area.remove();
       }
-      setActionNotice("gpsRateSummaryCopied");
+      setActionNotice('gpsRateSummaryCopied');
     } catch {
-      setActionNotice("gpsRateCopyUnavailable");
+      setActionNotice('gpsRateCopyUnavailable');
     }
   }
 
@@ -363,16 +444,16 @@ export function createGpsRateController({
     if (!state.wakeLockSupported || document.hidden) return;
 
     try {
-      const sentinel = await navigator.wakeLock.request("screen");
+      const sentinel = await navigator.wakeLock.request('screen');
       state.wakeLockSentinel = sentinel;
-      sentinel.addEventListener("release", () => {
+      sentinel.addEventListener('release', () => {
         state.wakeLockSentinel = null;
         refreshView();
       });
       refreshView();
-      if (!silent) setActionNotice("gpsRateWakeEnabled");
+      if (!silent) setActionNotice('gpsRateWakeEnabled');
     } catch {
-      if (!silent) setActionNotice("gpsRateWakeFailed");
+      if (!silent) setActionNotice('gpsRateWakeFailed');
       refreshView();
     }
   }
@@ -385,7 +466,7 @@ export function createGpsRateController({
       // Ignore stale release errors.
     }
     state.wakeLockSentinel = null;
-    if (!silent) setActionNotice("gpsRateWakeDisabled");
+    if (!silent) setActionNotice('gpsRateWakeDisabled');
     refreshView();
   }
 
@@ -402,34 +483,37 @@ export function createGpsRateController({
   }
 
   async function refreshPermissionState() {
-    if (!navigator.permissions || typeof navigator.permissions.query !== "function") {
-      state.permissionState = "unsupported";
+    if (!navigator.permissions || typeof navigator.permissions.query !== 'function') {
+      state.permissionState = 'unsupported';
       refreshView();
       return;
     }
 
     try {
-      if (state.permissionStatus && typeof state.permissionStatus.removeEventListener === "function") {
-        state.permissionStatus.removeEventListener("change", handlePermissionChange);
+      if (
+        state.permissionStatus &&
+        typeof state.permissionStatus.removeEventListener === 'function'
+      ) {
+        state.permissionStatus.removeEventListener('change', handlePermissionChange);
       }
 
-      state.permissionStatus = await navigator.permissions.query({ name: "geolocation" });
+      state.permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
       state.permissionState = state.permissionStatus.state;
 
-      if (typeof state.permissionStatus.addEventListener === "function") {
-        state.permissionStatus.addEventListener("change", handlePermissionChange);
+      if (typeof state.permissionStatus.addEventListener === 'function') {
+        state.permissionStatus.addEventListener('change', handlePermissionChange);
       } else {
         state.permissionStatus.onchange = handlePermissionChange;
       }
     } catch {
-      state.permissionState = "unknown";
+      state.permissionState = 'unknown';
     }
 
     refreshView();
   }
 
   function handlePermissionChange() {
-    state.permissionState = state.permissionStatus ? state.permissionStatus.state : "unknown";
+    state.permissionState = state.permissionStatus ? state.permissionStatus.state : 'unknown';
     refreshView();
   }
 
@@ -464,36 +548,36 @@ export function createGpsRateController({
 
   function bindEvents() {
     elements.langToggleButtons.forEach((button) => {
-      button.addEventListener("click", () => {
+      button.addEventListener('click', () => {
         toggleLang();
       });
     });
-    bindMenuNavigation(elements.openSpeedMenu, "/speed");
-    bindMenuNavigation(elements.openAccelMenu, "/accel");
-    bindMenuNavigation(elements.openCalculatorMenu, "/calculator");
-    bindMenuNavigation(elements.openBoardMenu, "/");
+    bindMenuNavigation(elements.openSpeedMenu, '/speed');
+    bindMenuNavigation(elements.openAccelMenu, '/accel');
+    bindMenuNavigation(elements.openCalculatorMenu, '/calculator');
+    bindMenuNavigation(elements.openBoardMenu, '/');
 
-    document.addEventListener("i18n:change", syncLanguage);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
+    document.addEventListener('i18n:change', syncLanguage);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    elements.startTest.addEventListener("click", startTest);
-    elements.stopTest.addEventListener("click", () => stopTest({ persist: true }));
-    elements.resetTest.addEventListener("click", resetTest);
-    elements.startQuickTest?.addEventListener("click", startTest);
-    elements.stopQuickTest?.addEventListener("click", () => stopTest({ persist: true }));
-    elements.resetQuickTest?.addEventListener("click", resetTest);
-    elements.exportJson.addEventListener("click", exportJson);
-    elements.exportCsv.addEventListener("click", exportCsv);
-    elements.copySummary.addEventListener("click", copySummary);
-    elements.wakeLockToggle.addEventListener("click", toggleWakeLock);
-    elements.clearLog.addEventListener("click", () => {
+    elements.startTest.addEventListener('click', startTest);
+    elements.stopTest.addEventListener('click', () => stopTest({ persist: true }));
+    elements.resetTest.addEventListener('click', resetTest);
+    elements.startQuickTest?.addEventListener('click', startTest);
+    elements.stopQuickTest?.addEventListener('click', () => stopTest({ persist: true }));
+    elements.resetQuickTest?.addEventListener('click', resetTest);
+    elements.exportJson.addEventListener('click', exportJson);
+    elements.exportCsv.addEventListener('click', exportCsv);
+    elements.copySummary.addEventListener('click', copySummary);
+    elements.wakeLockToggle.addEventListener('click', toggleWakeLock);
+    elements.clearLog.addEventListener('click', () => {
       renderer.clearVisibleLog();
-      setActionNotice("gpsRateLogCleared");
+      setActionNotice('gpsRateLogCleared');
       refreshView();
     });
-    elements.sessionNotes.addEventListener("input", handleNotesInput);
+    elements.sessionNotes.addEventListener('input', handleNotesInput);
 
-    window.addEventListener("beforeunload", () => {
+    window.addEventListener('beforeunload', () => {
       persistCurrentSummary();
       releaseWakeLock({ silent: true });
     });

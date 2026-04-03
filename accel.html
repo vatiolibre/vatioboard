@@ -1,1105 +1,1485 @@
 <!doctype html>
 <html lang="en" class="accel-page">
-<head>
-  <meta charset="utf-8" />
-  <script>
-    (function () {
-      var stored = null;
-      try {
-        stored = localStorage.getItem("vatio_board_lang");
-      } catch (error) {
-        stored = null;
-      }
-      var lang = stored || (navigator.language && navigator.language.startsWith("es") ? "es" : "en");
-      document.documentElement.lang = lang;
-      window.__lang = lang;
-    })();
-  </script>
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-
-  <link rel="icon" type="image/svg+xml" href="/favicon_dark.svg?v=2" media="(prefers-color-scheme: dark)" />
-  <link rel="icon" type="image/svg+xml" href="/favicon_ligth.svg?v=2" media="(prefers-color-scheme: light)" />
-  <link id="favicon-fallback" rel="icon" type="image/svg+xml" href="/favicon_ligth.svg?v=2" />
-  <link id="shortcut-favicon" rel="shortcut icon" href="/favicon_ligth.svg?v=2" />
-  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-  <link rel="manifest" href="/site.webmanifest" />
-
-  <script>
-    (function () {
-      var query = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
-      var icons = [
-        document.getElementById("favicon-fallback"),
-        document.getElementById("shortcut-favicon"),
-      ];
-
-      function applyThemeFavicon() {
-        var href = (query && query.matches ? "/favicon_dark.svg" : "/favicon_ligth.svg") + "?v=2";
-        for (var index = 0; index < icons.length; index += 1) {
-          if (icons[index]) icons[index].href = href;
+  <head>
+    <meta charset="utf-8" />
+    <script>
+      (function () {
+        var stored = null;
+        try {
+          stored = localStorage.getItem('vatio_board_lang');
+        } catch (error) {
+          stored = null;
         }
-      }
+        var lang =
+          stored || (navigator.language && navigator.language.startsWith('es') ? 'es' : 'en');
+        document.documentElement.lang = lang;
+        window.__lang = lang;
+      })();
+    </script>
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"
+    />
 
-      applyThemeFavicon();
-      if (!query) return;
-      if (query.addEventListener) query.addEventListener("change", applyThemeFavicon);
-      else if (query.addListener) query.addListener(applyThemeFavicon);
-    })();
-  </script>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="/favicon_dark.svg?v=2"
+      media="(prefers-color-scheme: dark)"
+    />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="/favicon_ligth.svg?v=2"
+      media="(prefers-color-scheme: light)"
+    />
+    <link id="favicon-fallback" rel="icon" type="image/svg+xml" href="/favicon_ligth.svg?v=2" />
+    <link id="shortcut-favicon" rel="shortcut icon" href="/favicon_ligth.svg?v=2" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
 
-  <title>Vatio Accel - Free GPS Acceleration Timer for Tesla and Mobile</title>
-  <meta
-    name="description"
-    content="Free browser-based GPS acceleration timer for 0-60, 60-130, 1/8 mile, 1/4 mile, and 0-100 km/h testing. Built for Tesla and modern mobile browsers with local result history and interactive graphs."
-  />
-  <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
-  <meta name="color-scheme" content="light dark" />
-  <meta name="theme-color" content="#181818" media="(prefers-color-scheme: dark)" />
-  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
-  <link rel="canonical" href="https://vatioboard.com/accel.html" />
+    <script>
+      (function () {
+        var query = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+        var icons = [
+          document.getElementById('favicon-fallback'),
+          document.getElementById('shortcut-favicon'),
+        ];
 
-  <meta property="og:site_name" content="VatioLibre" />
-  <meta property="og:type" content="website" />
-  <meta property="og:title" content="Vatio Accel - Free GPS Acceleration Timer" />
-  <meta property="og:description" content="Free browser-based GPS acceleration timer for 0-60, 60-130, 1/8 mile, 1/4 mile, and 0-100 km/h testing. Built for Tesla and modern mobile browsers." />
-  <meta property="og:url" content="https://vatioboard.com/accel.html" />
-  <meta property="og:image" content="https://vatioboard.com/img/vatio-board-accel-og-1200x630.jpg" />
-  <meta property="og:image:type" content="image/jpeg" />
-  <meta property="og:image:width" content="1200" />
-  <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="Vatio Libre acceleration test preview" />
+        function applyThemeFavicon() {
+          var href = (query && query.matches ? '/favicon_dark.svg' : '/favicon_ligth.svg') + '?v=2';
+          for (var index = 0; index < icons.length; index += 1) {
+            if (icons[index]) icons[index].href = href;
+          }
+        }
 
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Vatio Accel - Free GPS Acceleration Timer" />
-  <meta name="twitter:description" content="Free browser-based GPS acceleration timer for 0-60, 60-130, 1/8 mile, 1/4 mile, and 0-100 km/h testing. Built for Tesla and modern mobile browsers." />
-  <meta name="twitter:image" content="https://vatioboard.com/img/vatio-board-accel-og-1200x630.jpg" />
-  <meta name="twitter:image:alt" content="Vatio Libre acceleration test preview" />
+        applyThemeFavicon();
+        if (!query) return;
+        if (query.addEventListener) query.addEventListener('change', applyThemeFavicon);
+        else if (query.addListener) query.addListener(applyThemeFavicon);
+      })();
+    </script>
 
-  <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "Organization",
-      "name": "VatioLibre",
-      "url": "https://vatioboard.com",
-      "logo": "https://vatioboard.com/favicon.ico",
-      "sameAs": [
-        "https://vatioboard.com",
-        "https://github.com/vatiolibre"
-      ]
-    }
-  </script>
+    <title>Vatio Accel - Free GPS Acceleration Timer for Tesla and Mobile</title>
+    <meta
+      name="description"
+      content="Free browser-based GPS acceleration timer for 0-60, 60-130, 1/8 mile, 1/4 mile, and 0-100 km/h testing. Built for Tesla and modern mobile browsers with local result history and interactive graphs."
+    />
+    <meta
+      name="robots"
+      content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#181818" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <link rel="canonical" href="https://vatioboard.com/accel.html" />
 
-  <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "WebApplication",
-      "name": "Vatio Accel",
-      "url": "https://vatioboard.com/accel.html",
-      "applicationCategory": "UtilitiesApplication",
-      "operatingSystem": "Web",
-      "browserRequirements": "Requires JavaScript, geolocation, and a modern browser.",
-      "description": "Free browser-based GPS acceleration timer for 0-60, 60-130, 1/8 mile, 1/4 mile, and 0-100 km/h testing. Built for Tesla and modern mobile browsers with local result history and interactive graphs.",
-      "image": "https://vatioboard.com/img/vatio-board-og-1200x630.jpg",
-      "isAccessibleForFree": true,
-      "publisher": {
+    <meta property="og:site_name" content="VatioLibre" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vatio Accel - Free GPS Acceleration Timer" />
+    <meta
+      property="og:description"
+      content="Free browser-based GPS acceleration timer for 0-60, 60-130, 1/8 mile, 1/4 mile, and 0-100 km/h testing. Built for Tesla and modern mobile browsers."
+    />
+    <meta property="og:url" content="https://vatioboard.com/accel.html" />
+    <meta
+      property="og:image"
+      content="https://vatioboard.com/img/vatio-board-accel-og-1200x630.jpg"
+    />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Vatio Libre acceleration test preview" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Vatio Accel - Free GPS Acceleration Timer" />
+    <meta
+      name="twitter:description"
+      content="Free browser-based GPS acceleration timer for 0-60, 60-130, 1/8 mile, 1/4 mile, and 0-100 km/h testing. Built for Tesla and modern mobile browsers."
+    />
+    <meta
+      name="twitter:image"
+      content="https://vatioboard.com/img/vatio-board-accel-og-1200x630.jpg"
+    />
+    <meta name="twitter:image:alt" content="Vatio Libre acceleration test preview" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
         "@type": "Organization",
         "name": "VatioLibre",
-        "url": "https://vatioboard.com"
-      },
-      "codeRepository": "https://github.com/vatiolibre/vatioboard",
-      "featureList": [
-        "Browser-based GPS acceleration timer",
-        "0-60 mph and 0-100 km/h acceleration presets",
-        "60-130 mph and 100-200 km/h roll testing",
-        "1/8 mile, 1/4 mile, 200 m, and 400 m timing",
-        "Local run history and saved results",
-        "Interactive time vs speed result graph",
-        "Run quality grading and slope analysis"
-      ],
-      "keywords": [
-        "GPS acceleration timer",
-        "0-60 timer",
-        "60-130 timer",
-        "quarter mile timer",
-        "Tesla acceleration test",
-        "browser acceleration timer",
-        "1/4 mile time",
-        "0-100 km/h timer"
-      ]
-    }
-  </script>
+        "url": "https://vatioboard.com",
+        "logo": "https://vatioboard.com/favicon.ico",
+        "sameAs": ["https://vatioboard.com", "https://github.com/vatiolibre"]
+      }
+    </script>
 
-  <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "FAQPage",
-      "mainEntity": [
-        {
-          "@type": "Question",
-          "name": "What is Vatio Accel?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Vatio Accel is a free browser-based GPS acceleration timer for measuring runs like 0-60 mph, 60-130 mph, 0-100 km/h, and common drag distance tests."
-          }
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Vatio Accel",
+        "url": "https://vatioboard.com/accel.html",
+        "applicationCategory": "UtilitiesApplication",
+        "operatingSystem": "Web",
+        "browserRequirements": "Requires JavaScript, geolocation, and a modern browser.",
+        "description": "Free browser-based GPS acceleration timer for 0-60, 60-130, 1/8 mile, 1/4 mile, and 0-100 km/h testing. Built for Tesla and modern mobile browsers with local result history and interactive graphs.",
+        "image": "https://vatioboard.com/img/vatio-board-og-1200x630.jpg",
+        "isAccessibleForFree": true,
+        "publisher": {
+          "@type": "Organization",
+          "name": "VatioLibre",
+          "url": "https://vatioboard.com"
         },
-        {
-          "@type": "Question",
-          "name": "Does Vatio Accel use GPS?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Yes. Vatio Accel uses your browser's geolocation data and local processing to estimate acceleration timing and run details."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "Does Vatio Accel work in Tesla browsers?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Yes. Vatio Accel is designed for Tesla browsers and modern mobile browsers that support geolocation."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "What tests can Vatio Accel measure?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Vatio Accel supports common speed tests like 0-60 mph, 60-130 mph, 0-100 km/h, plus distance-based tests such as 1/8 mile, 1/4 mile, 200 m, and 400 m."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "Are Vatio Accel results certified timing?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "No. Vatio Accel provides estimated timing based on browser geolocation callbacks, so results should be treated as informal performance measurements rather than certified timing."
-          }
-        }
-      ]
-    }
-  </script>
+        "codeRepository": "https://github.com/vatiolibre/vatioboard",
+        "featureList": [
+          "Browser-based GPS acceleration timer",
+          "0-60 mph and 0-100 km/h acceleration presets",
+          "60-130 mph and 100-200 km/h roll testing",
+          "1/8 mile, 1/4 mile, 200 m, and 400 m timing",
+          "Local run history and saved results",
+          "Interactive time vs speed result graph",
+          "Run quality grading and slope analysis"
+        ],
+        "keywords": [
+          "GPS acceleration timer",
+          "0-60 timer",
+          "60-130 timer",
+          "quarter mile timer",
+          "Tesla acceleration test",
+          "browser acceleration timer",
+          "1/4 mile time",
+          "0-100 km/h timer"
+        ]
+      }
+    </script>
 
-  <style>
-    .sr-only{
-      position:absolute !important;
-      width:1px;
-      height:1px;
-      padding:0;
-      margin:-1px;
-      overflow:hidden;
-      clip:rect(0,0,0,0);
-      white-space:nowrap;
-      border:0;
-    }
-  </style>
-</head>
-<body class="accel-page">
-  <h1 class="sr-only" data-i18n="accelPageH1">Vatio Accel browser acceleration timer</h1>
-  <p class="sr-only" data-i18n="accelPageLead">Browser-based GPS acceleration timer for 0-60 mph, 60-130 mph, quarter-mile, and metric acceleration testing in Tesla and mobile browsers.</p>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is Vatio Accel?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Vatio Accel is a free browser-based GPS acceleration timer for measuring runs like 0-60 mph, 60-130 mph, 0-100 km/h, and common drag distance tests."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does Vatio Accel use GPS?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Vatio Accel uses your browser's geolocation data and local processing to estimate acceleration timing and run details."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does Vatio Accel work in Tesla browsers?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Vatio Accel is designed for Tesla browsers and modern mobile browsers that support geolocation."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What tests can Vatio Accel measure?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Vatio Accel supports common speed tests like 0-60 mph, 60-130 mph, 0-100 km/h, plus distance-based tests such as 1/8 mile, 1/4 mile, 200 m, and 400 m."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Are Vatio Accel results certified timing?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. Vatio Accel provides estimated timing based on browser geolocation callbacks, so results should be treated as informal performance measurements rather than certified timing."
+            }
+          }
+        ]
+      }
+    </script>
 
-  <div class="app accel-app">
-    <header>
-      <div class="header-inner accel-header-inner">
-        <div class="brand" data-i18n-title="accelTagline" title="Browser acceleration timer by Vatio Libre">
-          <a class="brand-home" href="/" aria-label="Open Vatio Board">
-            <span class="dot" aria-hidden="true"></span>
-            <picture class="brand-logo" aria-hidden="true">
-              <source srcset="/img/vb_logo_dark.svg" media="(prefers-color-scheme: dark)" />
-              <source srcset="/img/vb_logo_light.svg" media="(prefers-color-scheme: light)" />
-              <img src="/img/vb_logo_light.svg" alt="" width="757" height="107" decoding="async" />
-            </picture>
-            <span class="sr-only">Vatio Board</span>
-          </a>
-          <button id="langToggle" type="button" class="lang-toggle" aria-label="Change language" data-i18n-aria="changeLanguage">EN</button>
-        </div>
+    <style>
+      .sr-only {
+        position: absolute !important;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+    </style>
+  </head>
+  <body class="accel-page">
+    <h1 class="sr-only" data-i18n="accelPageH1">Vatio Accel browser acceleration timer</h1>
+    <p class="sr-only" data-i18n="accelPageLead">
+      Browser-based GPS acceleration timer for 0-60 mph, 60-130 mph, quarter-mile, and metric
+      acceleration testing in Tesla and mobile browsers.
+    </p>
 
-        <div class="toolbar accel-toolbar" role="toolbar" aria-label="Acceleration tools" data-i18n-aria="accelToolbar">
-          <div class="accel-toolbar-actions">
-            <div class="accel-toolbar-strip">
-              <div class="tools-menu accel-tools-menu">
+    <div class="app accel-app">
+      <header>
+        <div class="header-inner accel-header-inner">
+          <div
+            class="brand"
+            data-i18n-title="accelTagline"
+            title="Browser acceleration timer by Vatio Libre"
+          >
+            <a class="brand-home" href="/" aria-label="Open Vatio Board">
+              <span class="dot" aria-hidden="true"></span>
+              <picture class="brand-logo" aria-hidden="true">
+                <source srcset="/img/vb_logo_dark.svg" media="(prefers-color-scheme: dark)" />
+                <source srcset="/img/vb_logo_light.svg" media="(prefers-color-scheme: light)" />
+                <img
+                  src="/img/vb_logo_light.svg"
+                  alt=""
+                  width="757"
+                  height="107"
+                  decoding="async"
+                />
+              </picture>
+              <span class="sr-only">Vatio Board</span>
+            </a>
+            <button
+              id="langToggle"
+              type="button"
+              class="lang-toggle"
+              aria-label="Change language"
+              data-i18n-aria="changeLanguage"
+            >
+              EN
+            </button>
+          </div>
+
+          <div
+            class="toolbar accel-toolbar"
+            role="toolbar"
+            aria-label="Acceleration tools"
+            data-i18n-aria="accelToolbar"
+          >
+            <div class="accel-toolbar-actions">
+              <div class="accel-toolbar-strip">
+                <div class="tools-menu accel-tools-menu">
+                  <button
+                    id="accelToolsMenuBtn"
+                    type="button"
+                    class="tools-menu-btn accel-toolbar-btn accel-toolbar-icon-btn accel-toolbar-btn-tools"
+                    data-i18n-aria="pages"
+                    data-i18n-title="pages"
+                    aria-label="Pages"
+                    title="Pages"
+                    aria-haspopup="true"
+                    aria-expanded="false"
+                  >
+                    <span class="btn-icon" aria-hidden="true"></span>
+                  </button>
+                  <div id="accelToolsMenuList" class="tools-menu-list" hidden>
+                    <div
+                      class="compact-tools-menu-brand"
+                      data-i18n-title="accelTagline"
+                      title="Browser acceleration timer by Vatio Libre"
+                    >
+                      <span class="dot" aria-hidden="true"></span>
+                      <picture class="brand-logo compact-tools-menu-logo" aria-hidden="true">
+                        <source
+                          srcset="/img/vb_logo_dark.svg"
+                          media="(prefers-color-scheme: dark)"
+                        />
+                        <source
+                          srcset="/img/vb_logo_light.svg"
+                          media="(prefers-color-scheme: light)"
+                        />
+                        <img
+                          src="/img/vb_logo_light.svg"
+                          alt=""
+                          width="757"
+                          height="107"
+                          decoding="async"
+                        />
+                      </picture>
+                      <span class="sr-only" data-i18n="brand">Vatio Board</span>
+                      <button
+                        id="accelLangToggleMenu"
+                        type="button"
+                        class="lang-toggle"
+                        aria-label="Change language"
+                        data-i18n-aria="changeLanguage"
+                        data-lang-toggle
+                      >
+                        EN
+                      </button>
+                    </div>
+                    <button id="openAccelSpeedMenu" type="button" class="btn-with-icon">
+                      <span class="btn-icon" aria-hidden="true"></span>
+                      <span data-i18n="accelSpeedometer">Speedometer</span>
+                    </button>
+                    <button id="openAccelGpsLabMenu" type="button" class="btn-with-icon">
+                      <span class="btn-icon" aria-hidden="true"></span>
+                      <span data-i18n="accelGpsLab">GPS Lab</span>
+                    </button>
+                    <button id="openAccelBoardMenu" type="button" class="btn-with-icon">
+                      <span class="btn-icon" aria-hidden="true"></span>
+                      <span data-i18n="accelOpenBoard">Open board</span>
+                    </button>
+                    <form class="backend-auth" data-backend-auth novalidate>
+                      <p class="backend-auth-title" data-i18n="authTitle">VatioLibre account</p>
+                      <p
+                        class="backend-auth-status"
+                        data-backend-auth-status
+                        role="status"
+                        aria-live="polite"
+                        data-i18n="authCheckingSession"
+                      >
+                        Checking session...
+                      </p>
+                      <input
+                        class="backend-auth-input"
+                        data-backend-auth-user
+                        data-backend-auth-guest
+                        type="text"
+                        autocomplete="username"
+                        spellcheck="false"
+                        aria-label="Email / username"
+                        data-i18n-aria="authUsername"
+                        placeholder="Email / username"
+                        data-i18n-placeholder="authUsername"
+                      />
+                      <input
+                        class="backend-auth-input"
+                        data-backend-auth-password
+                        data-backend-auth-guest
+                        type="password"
+                        autocomplete="current-password"
+                        aria-label="Password"
+                        data-i18n-aria="authPassword"
+                        placeholder="Password"
+                        data-i18n-placeholder="authPassword"
+                      />
+                      <button
+                        type="submit"
+                        data-backend-auth-login
+                        data-backend-auth-guest
+                        data-i18n="authLogin"
+                      >
+                        Log in
+                      </button>
+                      <button
+                        type="button"
+                        data-backend-auth-logout
+                        data-backend-auth-authenticated
+                        data-i18n="authLogout"
+                      >
+                        Log out
+                      </button>
+                      <a
+                        class="backend-auth-link"
+                        data-backend-auth-guest
+                        data-backend-auth-signup
+                        href="https://www.vatiolibre.com/login#signup"
+                        rel="noreferrer"
+                        data-i18n="authCreateAccount"
+                        >Create account</a
+                      >
+                      <a
+                        class="backend-auth-link"
+                        data-backend-auth-guest
+                        data-backend-auth-forgot
+                        href="https://www.vatiolibre.com/login#forgot"
+                        rel="noreferrer"
+                        data-i18n="authForgotPassword"
+                        >Forgot password</a
+                      >
+                    </form>
+                  </div>
+                </div>
                 <button
-                  id="accelToolsMenuBtn"
+                  id="accelToolbarSetup"
                   type="button"
-                  class="tools-menu-btn accel-toolbar-btn accel-toolbar-icon-btn accel-toolbar-btn-tools"
-                  data-i18n-aria="pages"
-                  data-i18n-title="pages"
-                  aria-label="Pages"
-                  title="Pages"
-                  aria-haspopup="true"
+                  class="accel-toolbar-btn accel-toolbar-icon-btn"
+                  data-i18n-aria="accelOpenSetup"
+                  data-i18n-title="accelSetup"
+                  aria-label="Open setup"
+                  title="Setup"
+                  aria-controls="setupPanel"
                   aria-expanded="false"
+                  aria-pressed="false"
                 >
                   <span class="btn-icon" aria-hidden="true"></span>
                 </button>
-                <div id="accelToolsMenuList" class="tools-menu-list" hidden>
-                  <div class="compact-tools-menu-brand" data-i18n-title="accelTagline" title="Browser acceleration timer by Vatio Libre">
-                    <span class="dot" aria-hidden="true"></span>
-                    <picture class="brand-logo compact-tools-menu-logo" aria-hidden="true">
-                      <source srcset="/img/vb_logo_dark.svg" media="(prefers-color-scheme: dark)" />
-                      <source srcset="/img/vb_logo_light.svg" media="(prefers-color-scheme: light)" />
-                      <img src="/img/vb_logo_light.svg" alt="" width="757" height="107" decoding="async" />
-                    </picture>
-                    <span class="sr-only" data-i18n="brand">Vatio Board</span>
-                    <button id="accelLangToggleMenu" type="button" class="lang-toggle" aria-label="Change language" data-i18n-aria="changeLanguage" data-lang-toggle>EN</button>
-                  </div>
-                  <button id="openAccelSpeedMenu" type="button" class="btn-with-icon">
-                    <span class="btn-icon" aria-hidden="true"></span>
-                    <span data-i18n="accelSpeedometer">Speedometer</span>
-                  </button>
-                  <button id="openAccelGpsLabMenu" type="button" class="btn-with-icon">
-                    <span class="btn-icon" aria-hidden="true"></span>
-                    <span data-i18n="accelGpsLab">GPS Lab</span>
-                  </button>
-                  <button id="openAccelBoardMenu" type="button" class="btn-with-icon">
-                    <span class="btn-icon" aria-hidden="true"></span>
-                    <span data-i18n="accelOpenBoard">Open board</span>
-                  </button>
-                  <form class="backend-auth" data-backend-auth novalidate>
-                    <p class="backend-auth-title" data-i18n="authTitle">VatioLibre account</p>
-                    <p class="backend-auth-status" data-backend-auth-status role="status" aria-live="polite" data-i18n="authCheckingSession">Checking session...</p>
-                    <input
-                      class="backend-auth-input"
-                      data-backend-auth-user
-                      data-backend-auth-guest
-                      type="text"
-                      autocomplete="username"
-                      spellcheck="false"
-                      aria-label="Email / username"
-                      data-i18n-aria="authUsername"
-                      placeholder="Email / username"
-                      data-i18n-placeholder="authUsername"
-                    />
-                    <input
-                      class="backend-auth-input"
-                      data-backend-auth-password
-                      data-backend-auth-guest
-                      type="password"
-                      autocomplete="current-password"
-                      aria-label="Password"
-                      data-i18n-aria="authPassword"
-                      placeholder="Password"
-                      data-i18n-placeholder="authPassword"
-                    />
-                    <button type="submit" data-backend-auth-login data-backend-auth-guest data-i18n="authLogin">Log in</button>
-                    <button type="button" data-backend-auth-logout data-backend-auth-authenticated data-i18n="authLogout">Log out</button>
-                    <a
-                      class="backend-auth-link"
-                      data-backend-auth-guest
-                      data-backend-auth-signup
-                      href="https://www.vatiolibre.com/login#signup"
-                      rel="noreferrer"
-                      data-i18n="authCreateAccount"
-                    >Create account</a>
-                    <a
-                      class="backend-auth-link"
-                      data-backend-auth-guest
-                      data-backend-auth-forgot
-                      href="https://www.vatiolibre.com/login#forgot"
-                      rel="noreferrer"
-                      data-i18n="authForgotPassword"
-                    >Forgot password</a>
-                  </form>
-                </div>
+                <button
+                  id="accelToolbarResults"
+                  type="button"
+                  class="accel-toolbar-btn accel-toolbar-icon-btn"
+                  data-i18n-aria="accelOpenResults"
+                  data-i18n-title="accelResultsPanel"
+                  aria-label="Open results"
+                  title="Results"
+                  aria-controls="resultsPanel"
+                  aria-expanded="false"
+                  aria-pressed="false"
+                  disabled
+                >
+                  <span class="btn-icon" aria-hidden="true"></span>
+                </button>
+                <button
+                  id="armRun"
+                  type="button"
+                  class="accel-toolbar-btn accel-toolbar-icon-btn accel-toolbar-btn-start"
+                  data-i18n-aria="accelArm"
+                  data-i18n-title="accelArm"
+                  aria-label="Start test"
+                  title="Start test"
+                >
+                  <span class="btn-icon" aria-hidden="true"></span>
+                </button>
               </div>
+            </div>
+          </div>
+
+          <span class="route-chip" aria-hidden="true" data-i18n="accelRoute">ACCEL</span>
+        </div>
+      </header>
+
+      <main class="accel-main">
+        <section class="accel-shell">
+          <div class="accel-stage">
+            <article class="accel-card accel-primary-card accel-gauge-card">
               <button
-                id="accelToolbarSetup"
+                id="setupTrigger"
                 type="button"
-                class="accel-toolbar-btn accel-toolbar-icon-btn"
-                data-i18n-aria="accelOpenSetup"
-                data-i18n-title="accelSetup"
-                aria-label="Open setup"
-                title="Setup"
+                class="accel-sheet-trigger accel-sheet-trigger-floating"
+                aria-expanded="false"
                 aria-controls="setupPanel"
-                aria-expanded="false"
-                aria-pressed="false"
+                data-i18n-aria="accelOpenSetup"
               >
-                <span class="btn-icon" aria-hidden="true"></span>
+                <span class="accel-sheet-trigger-label" data-i18n="accelSetup">Setup</span>
+                <strong id="setupTriggerValue" class="accel-sheet-trigger-value">—</strong>
+                <span id="setupTriggerMeta" class="accel-sheet-trigger-meta">—</span>
               </button>
-              <button
-                id="accelToolbarResults"
-                type="button"
-                class="accel-toolbar-btn accel-toolbar-icon-btn"
-                data-i18n-aria="accelOpenResults"
-                data-i18n-title="accelResultsPanel"
-                aria-label="Open results"
-                title="Results"
-                aria-controls="resultsPanel"
-                aria-expanded="false"
-                aria-pressed="false"
-                disabled
-              >
-                <span class="btn-icon" aria-hidden="true"></span>
-              </button>
-              <button
-                id="armRun"
-                type="button"
-                class="accel-toolbar-btn accel-toolbar-icon-btn accel-toolbar-btn-start"
-                data-i18n-aria="accelArm"
-                data-i18n-title="accelArm"
-                aria-label="Start test"
-                title="Start test"
-              >
-                <span class="btn-icon" aria-hidden="true"></span>
-              </button>
-            </div>
-          </div>
-        </div>
 
-        <span class="route-chip" aria-hidden="true" data-i18n="accelRoute">ACCEL</span>
-      </div>
-    </header>
-
-    <main class="accel-main">
-      <section class="accel-shell">
-        <div class="accel-stage">
-          <article class="accel-card accel-primary-card accel-gauge-card">
-            <button
-              id="setupTrigger"
-              type="button"
-              class="accel-sheet-trigger accel-sheet-trigger-floating"
-              aria-expanded="false"
-              aria-controls="setupPanel"
-              data-i18n-aria="accelOpenSetup"
-            >
-              <span class="accel-sheet-trigger-label" data-i18n="accelSetup">Setup</span>
-              <strong id="setupTriggerValue" class="accel-sheet-trigger-value">—</strong>
-              <span id="setupTriggerMeta" class="accel-sheet-trigger-meta">—</span>
-            </button>
-
-            <div class="accel-primary-stage">
-              <div class="accel-speedometer-wrap">
-                <div id="liveSpeedGaugeStage" class="analog-speedometer-stage accel-speedometer-stage">
-                  <div id="liveSpeedGaugeInner" class="analog-speedometer-inner">
-                    <canvas id="liveSpeedDial" class="analog-speedometer-canvas analog-speedometer-dial" aria-hidden="true"></canvas>
-                    <div class="analog-speedometer-overlay">
-                      <span class="analog-speedometer-kicker" data-i18n="accelCurrentSpeed">Current speed</span>
-                      <div class="analog-speedometer-reading">
-                        <span id="liveSpeedValue" class="analog-speedometer-value">0</span>
-                        <span id="liveSpeedUnit" class="analog-speedometer-unit">mph</span>
-                      </div>
-                      <p id="liveSpeedSubstatus" class="analog-speedometer-substatus">Idle</p>
-                    </div>
-                    <canvas id="liveSpeedNeedle" class="analog-speedometer-canvas analog-speedometer-needle" aria-label="Analog speedometer"></canvas>
-                  </div>
-                </div>
-              </div>
-
-              <div class="accel-live-timer-wrap">
-                <span class="accel-live-label" data-i18n="accelElapsed">Elapsed</span>
-                <div class="accel-live-timer-reading">
-                  <strong id="liveElapsedValue" class="accel-live-timer">0.000</strong>
-                  <span class="accel-live-unit">s</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="accel-progress-shell">
-              <header class="accel-progress-head">
-                <span data-i18n="accelProgress">Progress</span>
-                <span id="progressLabel" class="accel-inline-note">—</span>
-              </header>
-              <div class="accel-progress-track" aria-hidden="true">
-                <span id="progressFill" class="accel-progress-fill"></span>
-              </div>
-            </div>
-
-            <p id="actionNotice" class="accel-feedback" aria-live="polite"></p>
-          </article>
-
-          <div class="accel-side-panel">
-            <button
-              id="resultsTrigger"
-              type="button"
-              class="accel-sheet-trigger accel-sheet-trigger-side"
-              aria-expanded="false"
-              aria-controls="resultsPanel"
-              data-i18n-aria="accelOpenResults"
-            >
-              <span class="accel-sheet-trigger-label" data-i18n="accelResultsPanel">Results</span>
-              <strong id="resultsTriggerValue" class="accel-sheet-trigger-value">—</strong>
-              <span id="resultsTriggerMeta" class="accel-sheet-trigger-meta">—</span>
-            </button>
-
-            <article class="accel-card accel-side-card">
-              <div class="accel-status-strip">
-                <span class="accel-pill">
-                  <span class="accel-pill-label" data-i18n="accelGpsReady">GPS ready</span>
-                  <strong id="toolbarPermissionValue">—</strong>
-                </span>
-                <span class="accel-pill">
-                  <span class="accel-pill-label" data-i18n="accelLatestAccuracy">Latest accuracy</span>
-                  <strong id="toolbarQualityValue">—</strong>
-                </span>
-                <span class="accel-pill">
-                  <span class="accel-pill-label" data-i18n="accelQualityCurrent">Current quality</span>
-                  <strong id="toolbarStateValue" aria-live="polite">—</strong>
-                </span>
-              </div>
-
-              <div class="accel-live-grid">
-                <div class="accel-metric">
-                  <span class="accel-metric-label" data-i18n="accelSelectedTest">Selected test</span>
-                  <strong id="liveTargetValue" class="accel-metric-value accel-metric-wrap">—</strong>
-                </div>
-                <div class="accel-metric">
-                  <span class="accel-metric-label" data-i18n="distance">Distance</span>
-                  <strong id="liveDistanceValue" class="accel-metric-value">—</strong>
-                </div>
-                <div class="accel-metric">
-                  <span class="accel-metric-label" data-i18n="accelSlope">Slope</span>
-                  <strong id="liveSlopeValue" class="accel-metric-value">—</strong>
-                </div>
-                <div class="accel-metric">
-                  <span class="accel-metric-label" data-i18n="accelState">Run state</span>
-                  <strong id="liveStateValue" class="accel-metric-value">Idle</strong>
-                </div>
-                <div class="accel-metric">
-                  <span class="accel-metric-label" data-i18n="accelQualityGrade">Quality grade</span>
-                  <strong id="liveQualityValue" class="accel-metric-value">—</strong>
-                </div>
-              </div>
-
-              <section id="livePartialsSection" class="accel-live-partials" hidden>
-                <div class="accel-section-title" data-i18n="accelPartials">Partials</div>
-                <div id="livePartialsList" class="accel-partials-list"></div>
-              </section>
-            </article>
-          </div>
-        </div>
-      </section>
-
-      <div id="accelSheetBackdrop" class="accel-sheet-backdrop" hidden></div>
-
-      <section
-        id="setupPanel"
-        class="accel-sheet accel-sheet-setup"
-        hidden
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="setupPanelTitle"
-        tabindex="-1"
-      >
-        <div class="accel-sheet-top">
-          <div class="accel-sheet-copy">
-            <span class="accel-card-kicker" data-i18n="accelSetup">Setup</span>
-            <h2 id="setupPanelTitle" class="accel-sheet-title" data-i18n="accelSetup">Setup</h2>
-            <p id="setupPanelStatus" class="accel-card-lead">—</p>
-          </div>
-          <button id="closeSetupPanel" type="button" class="accel-sheet-close" data-i18n="done">Done</button>
-        </div>
-
-        <div class="accel-sheet-body">
-          <section class="accel-sheet-section">
-            <header class="accel-card-head">
-              <span class="accel-card-kicker" data-i18n="accelTestSelector">Test selector</span>
-              <p class="accel-card-lead" data-i18n="accelTestLead">Standing-start, rolling-start, and distance presets.</p>
-            </header>
-
-            <div id="presetGrid" class="accel-preset-grid"></div>
-
-            <div id="customRangePanel" class="accel-custom-panel" hidden>
-              <div class="accel-section-title" data-i18n="accelCustomRange">Custom speed range</div>
-
-              <div class="accel-custom-grid">
-                <label class="accel-field" for="customStartInput">
-                  <span data-i18n="accelStartSpeed">Start speed</span>
-                  <input id="customStartInput" type="number" min="0" step="0.1" inputmode="decimal" />
-                </label>
-
-                <label class="accel-field" for="customEndInput">
-                  <span data-i18n="accelEndSpeed">End speed</span>
-                  <input id="customEndInput" type="number" min="0" step="0.1" inputmode="decimal" />
-                </label>
-              </div>
-
-              <p id="customRangeNotice" class="accel-inline-note"></p>
-            </div>
-          </section>
-
-          <section class="accel-sheet-section">
-            <header class="accel-card-head">
-              <span class="accel-card-kicker" data-i18n="units">Units</span>
-              <p class="accel-card-lead" data-i18n="accelUnitsLead">Choose how speed, distance, altitude, and accuracy are shown.</p>
-            </header>
-
-            <div class="accel-controls-stack">
-              <div>
-                <div class="accel-section-title" data-i18n="speed">Speed</div>
-                <div class="accel-segmented accel-units-grid" role="group" aria-label="Speed units" data-i18n-aria="speed">
-                  <button id="speedUnitMph" type="button" class="accel-segment-btn accel-unit-btn" data-unit="mph">
-                    <span class="accel-unit-btn-title">mph</span>
-                    <span class="accel-unit-btn-meta" data-i18n="accelImperialTests">Imperial tests</span>
-                  </button>
-                  <button id="speedUnitKmh" type="button" class="accel-segment-btn accel-unit-btn" data-unit="kmh">
-                    <span class="accel-unit-btn-title">km/h</span>
-                    <span class="accel-unit-btn-meta" data-i18n="accelMetricTests">Metric tests</span>
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <div class="accel-section-title" data-i18n="accelDistanceAltitude">Distance + altitude</div>
-                <div class="accel-segmented accel-units-grid" role="group" aria-label="Distance and altitude units" data-i18n-aria="accelDistanceAltitude">
-                  <button id="distanceUnitFt" type="button" class="accel-segment-btn accel-unit-btn" data-unit="ft">
-                    <span class="accel-unit-btn-title">ft</span>
-                    <span class="accel-unit-btn-meta" data-i18n="accelMileDistanceTests">Mile-based distances</span>
-                  </button>
-                  <button id="distanceUnitM" type="button" class="accel-segment-btn accel-unit-btn" data-unit="m">
-                    <span class="accel-unit-btn-title">m</span>
-                    <span class="accel-unit-btn-meta" data-i18n="accelMetricDistanceTests">Metric distances</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section class="accel-sheet-section">
-            <header class="accel-card-head">
-              <span class="accel-card-kicker" data-i18n="accelControls">Controls</span>
-              <p class="accel-card-lead" data-i18n="accelControlsLead">Arm the run, choose rollout, and store quick notes locally.</p>
-            </header>
-
-            <div class="accel-controls-stack">
-              <div>
-                <div class="accel-section-title" data-i18n="accelRollout">Rollout</div>
-                <div class="accel-segmented" role="group" aria-label="Rollout toggle">
-                  <button id="rolloutOff" type="button" class="accel-segment-btn" data-rollout="off" data-i18n="accelOff">Off</button>
-                  <button id="rolloutOn" type="button" class="accel-segment-btn" data-rollout="on" data-i18n="accelRolloutOneFoot">1 ft</button>
-                </div>
-              </div>
-
-              <div>
-                <div class="accel-section-title" data-i18n="accelLaunchThreshold">Launch threshold</div>
-                <div class="accel-segmented" role="group" aria-label="Launch threshold">
-                  <button id="launchThresholdHalf" type="button" class="accel-segment-btn" data-threshold="0.5" data-i18n="accelLaunchThresholdHalf">0.5 mph</button>
-                  <button id="launchThresholdOne" type="button" class="accel-segment-btn" data-threshold="1" data-i18n="accelLaunchThresholdOne">1.0 mph</button>
-                </div>
-              </div>
-
-              <label class="accel-field" for="runNotes">
-                <span data-i18n="accelNotes">Run notes</span>
-                <textarea
-                  id="runNotes"
-                  rows="3"
-                  data-i18n-placeholder="accelNotesPlaceholder"
-                  placeholder="Example: 90% SOC, flat road"
-                ></textarea>
-              </label>
-            </div>
-          </section>
-
-          <section class="accel-sheet-section">
-            <header class="accel-card-head">
-              <span class="accel-card-kicker" data-i18n="accelStatusPanel">Status panel</span>
-              <p class="accel-card-lead" data-i18n="accelStatusLead">Live browser GPS readiness and signal quality.</p>
-            </header>
-
-            <div class="accel-status-grid">
-              <div class="accel-metric">
-                <span class="accel-metric-label" data-i18n="permission">Permission</span>
-                <strong id="permissionValue" class="accel-metric-value">—</strong>
-              </div>
-              <div class="accel-metric">
-                <span class="accel-metric-label" data-i18n="accelGpsReady">GPS ready</span>
-                <strong id="gpsReadyValue" class="accel-metric-value">—</strong>
-              </div>
-              <div class="accel-metric">
-                <span class="accel-metric-label" data-i18n="accelLatestAccuracy">Latest accuracy</span>
-                <strong id="latestAccuracyValue" class="accel-metric-value">—</strong>
-              </div>
-              <div class="accel-metric">
-                <span class="accel-metric-label" data-i18n="accelObservedHz">Observed Hz</span>
-                <strong id="observedHzValue" class="accel-metric-value">—</strong>
-              </div>
-              <div class="accel-metric">
-                <span class="accel-metric-label" data-i18n="accelCurrentSpeed">Current speed</span>
-                <strong id="statusSpeedValue" class="accel-metric-value">—</strong>
-              </div>
-              <div class="accel-metric">
-                <span class="accel-metric-label" data-i18n="heading">Heading</span>
-                <strong id="statusHeadingValue" class="accel-metric-value">—</strong>
-              </div>
-              <div class="accel-metric">
-                <span class="accel-metric-label" data-i18n="altitude">Altitude</span>
-                <strong id="statusAltitudeValue" class="accel-metric-value">—</strong>
-              </div>
-              <div class="accel-metric">
-                <span class="accel-metric-label" data-i18n="accelSpeedSource">Speed source</span>
-                <strong id="speedSourceValue" class="accel-metric-value">—</strong>
-              </div>
-            </div>
-          </section>
-        </div>
-      </section>
-
-      <section
-        id="resultsPanel"
-        class="accel-sheet accel-sheet-results"
-        hidden
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="resultsPanelTitle"
-        tabindex="-1"
-      >
-        <div class="accel-sheet-top">
-          <div class="accel-sheet-copy">
-            <span class="accel-card-kicker" data-i18n="accelResultsPanel">Results</span>
-            <h2 id="resultsPanelTitle" class="accel-sheet-title" data-i18n="accelResultsPanel">Results</h2>
-            <p id="resultsPanelStatus" class="accel-card-lead">—</p>
-          </div>
-          <header id="resultPrimaryHeader" class="accel-result-primary accel-result-primary-bar" hidden>
-            <span class="accel-live-label" data-i18n="accelFinalTime">Final time</span>
-            <strong id="resultElapsedValue" class="accel-result-time">—</strong>
-            <p class="accel-result-primary-meta">
-              <span class="accel-result-primary-item">
-                <span class="accel-metric-label" data-i18n="accelSelectedTest">Selected test</span>
-                <strong id="resultPresetValue" class="accel-metric-value">—</strong>
-              </span>
-              <span class="accel-result-primary-item">
-                <span class="accel-metric-label" data-i18n="accelFinishSpeed">Finish speed</span>
-                <strong id="resultFinishSpeedValue" class="accel-metric-value">—</strong>
-              </span>
-              <span class="accel-result-primary-item">
-                <span class="accel-metric-label" data-i18n="accelQualityGrade">Quality grade</span>
-                <strong id="resultQualityValue" class="accel-metric-value">—</strong>
-              </span>
-            </p>
-          </header>
-          <button id="closeResultsPanel" type="button" class="accel-sheet-close" data-i18n="done">Done</button>
-        </div>
-
-        <div class="accel-sheet-body">
-          <section class="accel-sheet-section" aria-label="Latest result">
-            <div id="resultEmptyState" class="accel-empty-copy" data-i18n="accelNoResult">Arm and complete a run to see the result here.</div>
-
-            <div id="resultContent" hidden>
-              <section class="accel-result-graph-shell">
-                <header class="accel-result-graph-head">
-                  <span class="accel-section-title" data-i18n="accelSpeedGraph">Speed graph</span>
-                  <span id="resultGraphMeta" class="accel-inline-note" data-i18n="accelSpeedGraphLead">Time vs speed</span>
-                </header>
-
-                <div id="resultReplayControls" class="accel-replay-controls" hidden>
-                  <div class="accel-replay-toolbar">
-                    <div class="accel-replay-transport accel-toolbar-strip" role="group" aria-label="Replay controls" data-i18n-aria="accelReplayControls">
-                      <button
-                        id="resultReplayToggle"
-                        type="button"
-                        class="accel-toolbar-icon-btn accel-replay-icon-btn accel-toolbar-btn-start"
-                        aria-label="Play replay"
-                        title="Play replay"
-                      >
-                        <span class="btn-icon" aria-hidden="true"></span>
-                      </button>
-                      <button
-                        id="resultReplayRestart"
-                        type="button"
-                        class="accel-toolbar-icon-btn accel-replay-icon-btn"
-                        data-i18n-aria="accelReplayRestart"
-                        data-i18n-title="accelReplayRestart"
-                        aria-label="Restart replay"
-                        title="Restart replay"
-                      >
-                        <span class="btn-icon" aria-hidden="true"></span>
-                      </button>
-                    </div>
-
-                    <div class="accel-replay-axis accel-replay-sheet-axis-group" role="group" aria-label="Replay axis" data-i18n-aria="accelReplayAxis">
-                      <button
-                        id="resultReplayAxisTime"
-                        type="button"
-                        class="accel-segment-btn accel-replay-axis-btn"
-                        data-axis="time"
-                        data-i18n-aria="accelReplayAxisTime"
-                        data-i18n-title="accelReplayAxisTime"
-                        aria-label="Time"
-                        title="Time"
-                      >
-                        <span class="btn-icon" aria-hidden="true"></span>
-                        <span class="accel-replay-axis-label" data-i18n="accelReplayAxisTime">Time</span>
-                      </button>
-                      <button
-                        id="resultReplayAxisDistance"
-                        type="button"
-                        class="accel-segment-btn accel-replay-axis-btn"
-                        data-axis="distance"
-                        data-i18n-aria="accelReplayAxisDistance"
-                        data-i18n-title="accelReplayAxisDistance"
-                        aria-label="Distance"
-                        title="Distance"
-                      >
-                        <span class="btn-icon" aria-hidden="true"></span>
-                        <span class="accel-replay-axis-label" data-i18n="accelReplayAxisDistance">Distance</span>
-                      </button>
-                    </div>
-
-                    <button
-                      id="resultReplayChartsBtn"
-                      type="button"
-                      class="accel-action-btn accel-action-btn-compact accel-replay-charts-btn"
-                      data-i18n="accelExploreCharts"
-                    >Explore charts</button>
-                  </div>
-
-                  <div class="accel-replay-progress-row">
-                    <strong id="resultReplayCurrentValue" class="accel-replay-progress-value">0.000 s</strong>
-                    <input
-                      id="resultReplayProgress"
-                      type="range"
-                      min="0"
-                      max="0"
-                      step="any"
-                      value="0"
-                      class="accel-replay-progress"
-                      data-i18n-aria="accelReplayProgress"
-                      aria-label="Replay progress"
-                    />
-                    <strong id="resultReplayMaxValue" class="accel-replay-progress-value">0.000 s</strong>
-                  </div>
-                </div>
-
-                <div id="resultReplayMapShell" class="accel-result-map-shell" hidden>
+              <div class="accel-primary-stage">
+                <div class="accel-speedometer-wrap">
                   <div
-                    id="resultReplayMap"
-                    class="accel-result-map"
-                    data-i18n-aria="accelReplayMapAria"
-                    aria-label="Acceleration replay map"
-                  ></div>
-                </div>
-
-                <div id="resultGraphEmptyState" class="accel-empty-copy" hidden data-i18n="accelSpeedGraphEmpty">Speed graph data is available for new runs.</div>
-
-                <div id="resultGraphFrame" class="accel-result-graph-frame" hidden>
-                  <div class="accel-result-graph-canvas-shell">
-                    <canvas
-                      id="resultGraphCanvas"
-                      class="accel-result-graph-canvas"
-                      data-i18n-aria="accelSpeedGraphAria"
-                      aria-label="Interactive speed graph"
-                    ></canvas>
-                  </div>
-                  <p class="accel-result-graph-hint accel-inline-note" data-i18n="accelSpeedGraphHint">Touch or click the graph to inspect each sample.</p>
-                  <div class="accel-result-graph-details">
-                    <div class="accel-result-graph-detail">
-                      <span class="accel-metric-label" data-i18n="accelGraphPointTime">Time</span>
-                      <strong id="resultGraphTimeValue" class="accel-metric-value">—</strong>
-                    </div>
-                    <div class="accel-result-graph-detail">
-                      <span class="accel-metric-label" data-i18n="accelGraphPointSpeed">Speed</span>
-                      <strong id="resultGraphSpeedValue" class="accel-metric-value">—</strong>
-                    </div>
-                    <div class="accel-result-graph-detail">
-                      <span class="accel-metric-label" data-i18n="accelGraphPointDistance">Distance</span>
-                      <strong id="resultGraphDistanceValue" class="accel-metric-value">—</strong>
-                    </div>
-                    <div class="accel-result-graph-detail">
-                      <span class="accel-metric-label" data-i18n="altitude">Altitude</span>
-                      <strong id="resultGraphAltitudeValue" class="accel-metric-value">—</strong>
-                    </div>
-                    <div class="accel-result-graph-detail">
-                      <span class="accel-metric-label" data-i18n="accelGraphPointAccuracy">Accuracy</span>
-                      <strong id="resultGraphAccuracyValue" class="accel-metric-value">—</strong>
-                    </div>
-                    <div class="accel-result-graph-detail">
-                      <span class="accel-metric-label" data-i18n="accelGraphPointSlope">Slope</span>
-                      <strong id="resultGraphSlopeValue" class="accel-metric-value">—</strong>
+                    id="liveSpeedGaugeStage"
+                    class="analog-speedometer-stage accel-speedometer-stage"
+                  >
+                    <div id="liveSpeedGaugeInner" class="analog-speedometer-inner">
+                      <canvas
+                        id="liveSpeedDial"
+                        class="analog-speedometer-canvas analog-speedometer-dial"
+                        aria-hidden="true"
+                      ></canvas>
+                      <div class="analog-speedometer-overlay">
+                        <span class="analog-speedometer-kicker" data-i18n="accelCurrentSpeed"
+                          >Current speed</span
+                        >
+                        <div class="analog-speedometer-reading">
+                          <span id="liveSpeedValue" class="analog-speedometer-value">0</span>
+                          <span id="liveSpeedUnit" class="analog-speedometer-unit">mph</span>
+                        </div>
+                        <p id="liveSpeedSubstatus" class="analog-speedometer-substatus">Idle</p>
+                      </div>
+                      <canvas
+                        id="liveSpeedNeedle"
+                        class="analog-speedometer-canvas analog-speedometer-needle"
+                        aria-label="Analog speedometer"
+                      ></canvas>
                     </div>
                   </div>
                 </div>
 
-              </section>
-
-              <section id="resultPartialsSection" class="accel-result-partials" hidden>
-                <span class="accel-section-title" data-i18n="accelPartials">Partials</span>
-                <div id="resultPartialsList" class="accel-partials-list"></div>
-              </section>
-
-              <div class="accel-result-grid">
-                <div class="accel-metric">
-                  <span class="accel-metric-label" data-i18n="accelRolloutUsed">Rollout</span>
-                  <strong id="resultRolloutValue" class="accel-metric-value">—</strong>
-                </div>
-                <div class="accel-metric">
-                  <span class="accel-metric-label" data-i18n="accelAverageAccuracy">Average accuracy</span>
-                  <strong id="resultAccuracyValue" class="accel-metric-value">—</strong>
-                </div>
-                <div class="accel-metric">
-                  <span class="accel-metric-label" data-i18n="accelSlope">Slope</span>
-                  <strong id="resultSlopeValue" class="accel-metric-value">—</strong>
-                </div>
-                <div class="accel-metric">
-                  <span class="accel-metric-label" data-i18n="accelElevationChange">Elevation change</span>
-                  <strong id="resultElevationValue" class="accel-metric-value">—</strong>
-                </div>
-                <div class="accel-metric">
-                  <span class="accel-metric-label" data-i18n="accelRunHz">Run avg Hz</span>
-                  <strong id="resultHzValue" class="accel-metric-value">—</strong>
+                <div class="accel-live-timer-wrap">
+                  <span class="accel-live-label" data-i18n="accelElapsed">Elapsed</span>
+                  <div class="accel-live-timer-reading">
+                    <strong id="liveElapsedValue" class="accel-live-timer">0.000</strong>
+                    <span class="accel-live-unit">s</span>
+                  </div>
                 </div>
               </div>
 
-              <div class="accel-result-footnotes">
-                <p class="accel-result-footnote">
-                  <span class="accel-metric-label" data-i18n="accelBestComparison">Best vs latest</span>
-                  <strong id="resultComparisonValue" class="accel-metric-value accel-metric-wrap">—</strong>
-                </p>
-                <p id="resultNotesRow" class="accel-result-footnote" hidden>
-                  <span class="accel-metric-label" data-i18n="accelNotes">Run notes</span>
-                  <strong id="resultNotesValue" class="accel-metric-value accel-metric-wrap">—</strong>
-                </p>
-                <p class="accel-result-footnote">
-                  <span class="accel-metric-label" data-i18n="accelTimestamp">Timestamp</span>
-                  <strong id="resultTimestampValue" class="accel-metric-value accel-metric-wrap">—</strong>
-                </p>
+              <div class="accel-progress-shell">
+                <header class="accel-progress-head">
+                  <span data-i18n="accelProgress">Progress</span>
+                  <span id="progressLabel" class="accel-inline-note">—</span>
+                </header>
+                <div class="accel-progress-track" aria-hidden="true">
+                  <span id="progressFill" class="accel-progress-fill"></span>
+                </div>
               </div>
-            </div>
-          </section>
 
-          <section class="accel-sheet-section">
-            <header class="accel-card-head">
-              <span class="accel-card-kicker" data-i18n="accelDiagnostics">Diagnostics</span>
-              <p class="accel-card-lead" data-i18n="accelDiagnosticsLead">Observed callback timing, uncertainty, and warning flags.</p>
-            </header>
+              <p id="actionNotice" class="accel-feedback" aria-live="polite"></p>
+            </article>
 
-            <div id="warningBadges" class="accel-warning-list"></div>
-
-            <div class="accel-metrics-grid">
-              <div class="accel-metric">
-                <span class="accel-metric-label" data-i18n="accelAverageInterval">Average interval</span>
-                <strong id="diagnosticAverageIntervalValue" class="accel-metric-value">—</strong>
-              </div>
-              <div class="accel-metric">
-                <span class="accel-metric-label" data-i18n="accelJitter">Jitter</span>
-                <strong id="diagnosticJitterValue" class="accel-metric-value">—</strong>
-              </div>
-              <div class="accel-metric">
-                <span class="accel-metric-label" data-i18n="accelSparseUpdates">Sparse updates</span>
-                <strong id="diagnosticSparseValue" class="accel-metric-value">—</strong>
-              </div>
-              <div class="accel-metric">
-                <span class="accel-metric-label" data-i18n="accelStaleSamples">Stale samples</span>
-                <strong id="diagnosticStaleValue" class="accel-metric-value">—</strong>
-              </div>
-              <div class="accel-metric">
-                <span class="accel-metric-label" data-i18n="accelSpeedSource">Speed source</span>
-                <strong id="diagnosticSpeedSourceValue" class="accel-metric-value">—</strong>
-              </div>
-              <div class="accel-metric">
-                <span class="accel-metric-label" data-i18n="accelSamples">Samples</span>
-                <strong id="diagnosticSamplesValue" class="accel-metric-value">—</strong>
-              </div>
-            </div>
-          </section>
-
-          <section id="debugRawSection" class="accel-sheet-section" hidden>
-            <header class="accel-card-head">
-              <span class="accel-card-kicker">Debug</span>
-              <p class="accel-card-lead">Raw samples captured during the run before graph processing.</p>
-            </header>
-
-            <div id="debugRawEmptyState" class="accel-empty-copy">No raw run samples captured yet.</div>
-
-            <div id="debugRawTableWrap" class="accel-debug-table-wrap" hidden>
-              <table class="accel-debug-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Delta ms</th>
-                    <th>Hz</th>
-                    <th>Lat / Lon</th>
-                    <th>Raw speed</th>
-                    <th>Derived speed</th>
-                    <th>Used speed</th>
-                    <th>Heading</th>
-                    <th>Accuracy</th>
-                    <th>State</th>
-                  </tr>
-                </thead>
-                <tbody id="debugRawTableBody"></tbody>
-              </table>
-            </div>
-          </section>
-
-          <section id="debugGraphSection" class="accel-sheet-section" hidden>
-            <header class="accel-card-head">
-              <span class="accel-card-kicker">Debug</span>
-              <p class="accel-card-lead">Points passed into the Results speed graph.</p>
-            </header>
-
-            <div id="debugGraphEmptyState" class="accel-empty-copy">No graph points available yet.</div>
-
-            <div id="debugGraphTableWrap" class="accel-debug-table-wrap" hidden>
-              <table class="accel-debug-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Elapsed ms</th>
-                    <th>Time</th>
-                    <th>Speed</th>
-                    <th>Distance</th>
-                    <th>Altitude</th>
-                    <th>Accuracy</th>
-                    <th>Source</th>
-                  </tr>
-                </thead>
-                <tbody id="debugGraphTableBody"></tbody>
-              </table>
-            </div>
-          </section>
-
-          <section class="accel-sheet-section accel-history-card">
-            <header class="accel-card-head accel-history-head">
-              <div class="accel-history-head-copy">
-                <span class="accel-card-kicker" data-i18n="accelHistory">History</span>
-                <p class="accel-card-lead" data-i18n="accelHistoryLead">Saved locally in this browser. Newest runs first.</p>
-              </div>
-              <button id="clearHistory" type="button" class="accel-action-btn accel-action-btn-compact" data-i18n="accelClearHistory">Clear all</button>
-            </header>
-
-            <div id="historyEmptyState" class="accel-empty-copy" data-i18n="accelNoHistory">No saved runs yet.</div>
-            <div id="historyList" class="accel-history-list"></div>
-          </section>
-        </div>
-      </section>
-
-      <section
-        id="resultReplayChartSheet"
-        class="accel-replay-chart-sheet"
-        hidden
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="resultReplayChartSheetTitle"
-        tabindex="-1"
-      >
-        <div id="resultReplayChartSheetBackdrop" class="accel-replay-chart-sheet-backdrop" aria-hidden="true"></div>
-
-        <section class="accel-replay-chart-sheet-panel">
-          <header class="accel-replay-chart-sheet-header">
-            <h3 id="resultReplayChartSheetTitle" class="accel-replay-chart-sheet-title" data-i18n="accelExploreCharts">Explore charts</h3>
-
-            <div class="accel-replay-chart-sheet-axis accel-replay-sheet-axis-group" role="group" aria-label="Replay axis" data-i18n-aria="accelReplayAxis">
+            <div class="accel-side-panel">
               <button
-                id="resultReplaySheetAxisTime"
+                id="resultsTrigger"
                 type="button"
-                class="accel-segment-btn accel-replay-axis-btn"
-                data-axis="time"
-                data-i18n-aria="accelReplayAxisTime"
-                data-i18n-title="accelReplayAxisTime"
-                aria-label="Time"
-                title="Time"
+                class="accel-sheet-trigger accel-sheet-trigger-side"
+                aria-expanded="false"
+                aria-controls="resultsPanel"
+                data-i18n-aria="accelOpenResults"
               >
-                <span class="btn-icon" aria-hidden="true"></span>
-                <span class="accel-replay-axis-label" data-i18n="accelReplayAxisTime">Time</span>
+                <span class="accel-sheet-trigger-label" data-i18n="accelResultsPanel">Results</span>
+                <strong id="resultsTriggerValue" class="accel-sheet-trigger-value">—</strong>
+                <span id="resultsTriggerMeta" class="accel-sheet-trigger-meta">—</span>
               </button>
-              <button
-                id="resultReplaySheetAxisDistance"
-                type="button"
-                class="accel-segment-btn accel-replay-axis-btn"
-                data-axis="distance"
-                data-i18n-aria="accelReplayAxisDistance"
-                data-i18n-title="accelReplayAxisDistance"
-                aria-label="Distance"
-                title="Distance"
-              >
-                <span class="btn-icon" aria-hidden="true"></span>
-                <span class="accel-replay-axis-label" data-i18n="accelReplayAxisDistance">Distance</span>
-              </button>
+
+              <article class="accel-card accel-side-card">
+                <div class="accel-status-strip">
+                  <span class="accel-pill">
+                    <span class="accel-pill-label" data-i18n="accelGpsReady">GPS ready</span>
+                    <strong id="toolbarPermissionValue">—</strong>
+                  </span>
+                  <span class="accel-pill">
+                    <span class="accel-pill-label" data-i18n="accelLatestAccuracy"
+                      >Latest accuracy</span
+                    >
+                    <strong id="toolbarQualityValue">—</strong>
+                  </span>
+                  <span class="accel-pill">
+                    <span class="accel-pill-label" data-i18n="accelQualityCurrent"
+                      >Current quality</span
+                    >
+                    <strong id="toolbarStateValue" aria-live="polite">—</strong>
+                  </span>
+                </div>
+
+                <div class="accel-live-grid">
+                  <div class="accel-metric">
+                    <span class="accel-metric-label" data-i18n="accelSelectedTest"
+                      >Selected test</span
+                    >
+                    <strong id="liveTargetValue" class="accel-metric-value accel-metric-wrap"
+                      >—</strong
+                    >
+                  </div>
+                  <div class="accel-metric">
+                    <span class="accel-metric-label" data-i18n="distance">Distance</span>
+                    <strong id="liveDistanceValue" class="accel-metric-value">—</strong>
+                  </div>
+                  <div class="accel-metric">
+                    <span class="accel-metric-label" data-i18n="accelSlope">Slope</span>
+                    <strong id="liveSlopeValue" class="accel-metric-value">—</strong>
+                  </div>
+                  <div class="accel-metric">
+                    <span class="accel-metric-label" data-i18n="accelState">Run state</span>
+                    <strong id="liveStateValue" class="accel-metric-value">Idle</strong>
+                  </div>
+                  <div class="accel-metric">
+                    <span class="accel-metric-label" data-i18n="accelQualityGrade"
+                      >Quality grade</span
+                    >
+                    <strong id="liveQualityValue" class="accel-metric-value">—</strong>
+                  </div>
+                </div>
+
+                <section id="livePartialsSection" class="accel-live-partials" hidden>
+                  <div class="accel-section-title" data-i18n="accelPartials">Partials</div>
+                  <div id="livePartialsList" class="accel-partials-list"></div>
+                </section>
+              </article>
             </div>
-
-            <button id="closeResultReplayChartSheet" type="button" class="accel-sheet-close accel-replay-chart-sheet-close" data-i18n="close">Close</button>
-          </header>
-
-          <section class="accel-replay-filter-group" aria-label="Filter range" data-i18n-aria="replayFilterRange">
-            <div class="accel-replay-filter-row">
-              <span class="accel-replay-filter-value">
-                <span class="accel-metric-label" data-i18n="replayFilterStart">Start</span>
-                <strong id="resultReplaySheetFilterStartValue" class="accel-replay-filter-value-text">0.000 s</strong>
-              </span>
-
-              <div id="resultReplaySheetFilterSlider" class="accel-replay-filter-slider dual-range-input">
-                <input
-                  id="resultReplaySheetFilterStart"
-                  class="accel-replay-filter-range accel-replay-filter-range-start"
-                  type="range"
-                  min="0"
-                  max="1000"
-                  value="0"
-                  step="1"
-                  aria-label="Filter start"
-                  data-i18n-aria="replayFilterStart"
-                />
-                <input
-                  id="resultReplaySheetFilterEnd"
-                  class="accel-replay-filter-range accel-replay-filter-range-end"
-                  type="range"
-                  min="0"
-                  max="1000"
-                  value="1000"
-                  step="1"
-                  aria-label="Filter end"
-                  data-i18n-aria="replayFilterEnd"
-                />
-              </div>
-
-              <span class="accel-replay-filter-value accel-replay-filter-value-end">
-                <span class="accel-metric-label" data-i18n="replayFilterEnd">End</span>
-                <strong id="resultReplaySheetFilterEndValue" class="accel-replay-filter-value-text">0.000 s</strong>
-              </span>
-            </div>
-          </section>
-
-          <section class="accel-replay-chart-sheet-grid" aria-label="Expanded accel replay charts">
-            <article id="resultReplaySheetSpeedStage" class="accel-replay-chart-stage">
-              <header class="accel-replay-chart-stage-head">
-                <span class="accel-section-title" data-i18n="speed">Speed</span>
-                <strong id="resultReplaySheetSpeedValue" class="accel-replay-chart-current">—</strong>
-              </header>
-              <div class="accel-replay-chart-canvas-wrap">
-                <canvas
-                  id="resultReplaySheetSpeedCanvas"
-                  class="accel-replay-chart-canvas"
-                  data-accel-replay-scrub="speedMs"
-                  data-i18n-aria="accelReplaySpeedChart"
-                  aria-label="Replay speed chart"
-                ></canvas>
-              </div>
-            </article>
-
-            <article id="resultReplaySheetAltitudeStage" class="accel-replay-chart-stage">
-              <header class="accel-replay-chart-stage-head">
-                <span class="accel-section-title" data-i18n="altitude">Altitude</span>
-                <strong id="resultReplaySheetAltitudeValue" class="accel-replay-chart-current">—</strong>
-              </header>
-              <div class="accel-replay-chart-canvas-wrap">
-                <canvas
-                  id="resultReplaySheetAltitudeCanvas"
-                  class="accel-replay-chart-canvas"
-                  data-accel-replay-scrub="altitudeM"
-                  data-i18n-aria="accelReplayAltitudeChart"
-                  aria-label="Replay altitude chart"
-                ></canvas>
-              </div>
-            </article>
-
-            <article id="resultReplaySheetHeadingStage" class="accel-replay-chart-stage">
-              <header class="accel-replay-chart-stage-head">
-                <span class="accel-section-title" data-i18n="heading">Heading</span>
-                <strong id="resultReplaySheetHeadingValue" class="accel-replay-chart-current">—</strong>
-              </header>
-              <div class="accel-replay-chart-canvas-wrap">
-                <canvas
-                  id="resultReplaySheetHeadingCanvas"
-                  class="accel-replay-chart-canvas"
-                  data-accel-replay-scrub="headingDeg"
-                  data-i18n-aria="accelReplayHeadingChart"
-                  aria-label="Replay heading chart"
-                ></canvas>
-              </div>
-            </article>
-          </section>
-
-          <p class="accel-inline-note accel-replay-chart-sheet-hint" data-i18n="accelReplayDragToExplore">Drag across the chart to scrub the replay.</p>
+          </div>
         </section>
-      </section>
-    </main>
-  </div>
 
-  <script type="module" src="/src/accel/accel.js"></script>
-</body>
+        <div id="accelSheetBackdrop" class="accel-sheet-backdrop" hidden></div>
+
+        <section
+          id="setupPanel"
+          class="accel-sheet accel-sheet-setup"
+          hidden
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="setupPanelTitle"
+          tabindex="-1"
+        >
+          <div class="accel-sheet-top">
+            <div class="accel-sheet-copy">
+              <span class="accel-card-kicker" data-i18n="accelSetup">Setup</span>
+              <h2 id="setupPanelTitle" class="accel-sheet-title" data-i18n="accelSetup">Setup</h2>
+              <p id="setupPanelStatus" class="accel-card-lead">—</p>
+            </div>
+            <button id="closeSetupPanel" type="button" class="accel-sheet-close" data-i18n="done">
+              Done
+            </button>
+          </div>
+
+          <div class="accel-sheet-body">
+            <section class="accel-sheet-section">
+              <header class="accel-card-head">
+                <span class="accel-card-kicker" data-i18n="accelTestSelector">Test selector</span>
+                <p class="accel-card-lead" data-i18n="accelTestLead">
+                  Standing-start, rolling-start, and distance presets.
+                </p>
+              </header>
+
+              <div id="presetGrid" class="accel-preset-grid"></div>
+
+              <div id="customRangePanel" class="accel-custom-panel" hidden>
+                <div class="accel-section-title" data-i18n="accelCustomRange">
+                  Custom speed range
+                </div>
+
+                <div class="accel-custom-grid">
+                  <label class="accel-field" for="customStartInput">
+                    <span data-i18n="accelStartSpeed">Start speed</span>
+                    <input
+                      id="customStartInput"
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      inputmode="decimal"
+                    />
+                  </label>
+
+                  <label class="accel-field" for="customEndInput">
+                    <span data-i18n="accelEndSpeed">End speed</span>
+                    <input
+                      id="customEndInput"
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      inputmode="decimal"
+                    />
+                  </label>
+                </div>
+
+                <p id="customRangeNotice" class="accel-inline-note"></p>
+              </div>
+            </section>
+
+            <section class="accel-sheet-section">
+              <header class="accel-card-head">
+                <span class="accel-card-kicker" data-i18n="units">Units</span>
+                <p class="accel-card-lead" data-i18n="accelUnitsLead">
+                  Choose how speed, distance, altitude, and accuracy are shown.
+                </p>
+              </header>
+
+              <div class="accel-controls-stack">
+                <div>
+                  <div class="accel-section-title" data-i18n="speed">Speed</div>
+                  <div
+                    class="accel-segmented accel-units-grid"
+                    role="group"
+                    aria-label="Speed units"
+                    data-i18n-aria="speed"
+                  >
+                    <button
+                      id="speedUnitMph"
+                      type="button"
+                      class="accel-segment-btn accel-unit-btn"
+                      data-unit="mph"
+                    >
+                      <span class="accel-unit-btn-title">mph</span>
+                      <span class="accel-unit-btn-meta" data-i18n="accelImperialTests"
+                        >Imperial tests</span
+                      >
+                    </button>
+                    <button
+                      id="speedUnitKmh"
+                      type="button"
+                      class="accel-segment-btn accel-unit-btn"
+                      data-unit="kmh"
+                    >
+                      <span class="accel-unit-btn-title">km/h</span>
+                      <span class="accel-unit-btn-meta" data-i18n="accelMetricTests"
+                        >Metric tests</span
+                      >
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <div class="accel-section-title" data-i18n="accelDistanceAltitude">
+                    Distance + altitude
+                  </div>
+                  <div
+                    class="accel-segmented accel-units-grid"
+                    role="group"
+                    aria-label="Distance and altitude units"
+                    data-i18n-aria="accelDistanceAltitude"
+                  >
+                    <button
+                      id="distanceUnitFt"
+                      type="button"
+                      class="accel-segment-btn accel-unit-btn"
+                      data-unit="ft"
+                    >
+                      <span class="accel-unit-btn-title">ft</span>
+                      <span class="accel-unit-btn-meta" data-i18n="accelMileDistanceTests"
+                        >Mile-based distances</span
+                      >
+                    </button>
+                    <button
+                      id="distanceUnitM"
+                      type="button"
+                      class="accel-segment-btn accel-unit-btn"
+                      data-unit="m"
+                    >
+                      <span class="accel-unit-btn-title">m</span>
+                      <span class="accel-unit-btn-meta" data-i18n="accelMetricDistanceTests"
+                        >Metric distances</span
+                      >
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="accel-sheet-section">
+              <header class="accel-card-head">
+                <span class="accel-card-kicker" data-i18n="accelControls">Controls</span>
+                <p class="accel-card-lead" data-i18n="accelControlsLead">
+                  Arm the run, choose rollout, and store quick notes locally.
+                </p>
+              </header>
+
+              <div class="accel-controls-stack">
+                <div>
+                  <div class="accel-section-title" data-i18n="accelRollout">Rollout</div>
+                  <div class="accel-segmented" role="group" aria-label="Rollout toggle">
+                    <button
+                      id="rolloutOff"
+                      type="button"
+                      class="accel-segment-btn"
+                      data-rollout="off"
+                      data-i18n="accelOff"
+                    >
+                      Off
+                    </button>
+                    <button
+                      id="rolloutOn"
+                      type="button"
+                      class="accel-segment-btn"
+                      data-rollout="on"
+                      data-i18n="accelRolloutOneFoot"
+                    >
+                      1 ft
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <div class="accel-section-title" data-i18n="accelLaunchThreshold">
+                    Launch threshold
+                  </div>
+                  <div class="accel-segmented" role="group" aria-label="Launch threshold">
+                    <button
+                      id="launchThresholdHalf"
+                      type="button"
+                      class="accel-segment-btn"
+                      data-threshold="0.5"
+                      data-i18n="accelLaunchThresholdHalf"
+                    >
+                      0.5 mph
+                    </button>
+                    <button
+                      id="launchThresholdOne"
+                      type="button"
+                      class="accel-segment-btn"
+                      data-threshold="1"
+                      data-i18n="accelLaunchThresholdOne"
+                    >
+                      1.0 mph
+                    </button>
+                  </div>
+                </div>
+
+                <label class="accel-field" for="runNotes">
+                  <span data-i18n="accelNotes">Run notes</span>
+                  <textarea
+                    id="runNotes"
+                    rows="3"
+                    data-i18n-placeholder="accelNotesPlaceholder"
+                    placeholder="Example: 90% SOC, flat road"
+                  ></textarea>
+                </label>
+              </div>
+            </section>
+
+            <section class="accel-sheet-section">
+              <header class="accel-card-head">
+                <span class="accel-card-kicker" data-i18n="accelStatusPanel">Status panel</span>
+                <p class="accel-card-lead" data-i18n="accelStatusLead">
+                  Live browser GPS readiness and signal quality.
+                </p>
+              </header>
+
+              <div class="accel-status-grid">
+                <div class="accel-metric">
+                  <span class="accel-metric-label" data-i18n="permission">Permission</span>
+                  <strong id="permissionValue" class="accel-metric-value">—</strong>
+                </div>
+                <div class="accel-metric">
+                  <span class="accel-metric-label" data-i18n="accelGpsReady">GPS ready</span>
+                  <strong id="gpsReadyValue" class="accel-metric-value">—</strong>
+                </div>
+                <div class="accel-metric">
+                  <span class="accel-metric-label" data-i18n="accelLatestAccuracy"
+                    >Latest accuracy</span
+                  >
+                  <strong id="latestAccuracyValue" class="accel-metric-value">—</strong>
+                </div>
+                <div class="accel-metric">
+                  <span class="accel-metric-label" data-i18n="accelObservedHz">Observed Hz</span>
+                  <strong id="observedHzValue" class="accel-metric-value">—</strong>
+                </div>
+                <div class="accel-metric">
+                  <span class="accel-metric-label" data-i18n="accelCurrentSpeed"
+                    >Current speed</span
+                  >
+                  <strong id="statusSpeedValue" class="accel-metric-value">—</strong>
+                </div>
+                <div class="accel-metric">
+                  <span class="accel-metric-label" data-i18n="heading">Heading</span>
+                  <strong id="statusHeadingValue" class="accel-metric-value">—</strong>
+                </div>
+                <div class="accel-metric">
+                  <span class="accel-metric-label" data-i18n="altitude">Altitude</span>
+                  <strong id="statusAltitudeValue" class="accel-metric-value">—</strong>
+                </div>
+                <div class="accel-metric">
+                  <span class="accel-metric-label" data-i18n="accelSpeedSource">Speed source</span>
+                  <strong id="speedSourceValue" class="accel-metric-value">—</strong>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section
+          id="resultsPanel"
+          class="accel-sheet accel-sheet-results"
+          hidden
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="resultsPanelTitle"
+          tabindex="-1"
+        >
+          <div class="accel-sheet-top">
+            <div class="accel-sheet-copy">
+              <span class="accel-card-kicker" data-i18n="accelResultsPanel">Results</span>
+              <h2 id="resultsPanelTitle" class="accel-sheet-title" data-i18n="accelResultsPanel">
+                Results
+              </h2>
+              <p id="resultsPanelStatus" class="accel-card-lead">—</p>
+            </div>
+            <header
+              id="resultPrimaryHeader"
+              class="accel-result-primary accel-result-primary-bar"
+              hidden
+            >
+              <span class="accel-live-label" data-i18n="accelFinalTime">Final time</span>
+              <strong id="resultElapsedValue" class="accel-result-time">—</strong>
+              <p class="accel-result-primary-meta">
+                <span class="accel-result-primary-item">
+                  <span class="accel-metric-label" data-i18n="accelSelectedTest"
+                    >Selected test</span
+                  >
+                  <strong id="resultPresetValue" class="accel-metric-value">—</strong>
+                </span>
+                <span class="accel-result-primary-item">
+                  <span class="accel-metric-label" data-i18n="accelFinishSpeed">Finish speed</span>
+                  <strong id="resultFinishSpeedValue" class="accel-metric-value">—</strong>
+                </span>
+                <span class="accel-result-primary-item">
+                  <span class="accel-metric-label" data-i18n="accelQualityGrade"
+                    >Quality grade</span
+                  >
+                  <strong id="resultQualityValue" class="accel-metric-value">—</strong>
+                </span>
+              </p>
+            </header>
+            <button id="closeResultsPanel" type="button" class="accel-sheet-close" data-i18n="done">
+              Done
+            </button>
+          </div>
+
+          <div class="accel-sheet-body">
+            <section class="accel-sheet-section" aria-label="Latest result">
+              <div id="resultEmptyState" class="accel-empty-copy" data-i18n="accelNoResult">
+                Arm and complete a run to see the result here.
+              </div>
+
+              <div id="resultContent" hidden>
+                <section class="accel-result-graph-shell">
+                  <header class="accel-result-graph-head">
+                    <span class="accel-section-title" data-i18n="accelSpeedGraph">Speed graph</span>
+                    <span
+                      id="resultGraphMeta"
+                      class="accel-inline-note"
+                      data-i18n="accelSpeedGraphLead"
+                      >Time vs speed</span
+                    >
+                  </header>
+
+                  <div id="resultReplayControls" class="accel-replay-controls" hidden>
+                    <div class="accel-replay-toolbar">
+                      <div
+                        class="accel-replay-transport accel-toolbar-strip"
+                        role="group"
+                        aria-label="Replay controls"
+                        data-i18n-aria="accelReplayControls"
+                      >
+                        <button
+                          id="resultReplayToggle"
+                          type="button"
+                          class="accel-toolbar-icon-btn accel-replay-icon-btn accel-toolbar-btn-start"
+                          aria-label="Play replay"
+                          title="Play replay"
+                        >
+                          <span class="btn-icon" aria-hidden="true"></span>
+                        </button>
+                        <button
+                          id="resultReplayRestart"
+                          type="button"
+                          class="accel-toolbar-icon-btn accel-replay-icon-btn"
+                          data-i18n-aria="accelReplayRestart"
+                          data-i18n-title="accelReplayRestart"
+                          aria-label="Restart replay"
+                          title="Restart replay"
+                        >
+                          <span class="btn-icon" aria-hidden="true"></span>
+                        </button>
+                      </div>
+
+                      <div
+                        class="accel-replay-axis accel-replay-sheet-axis-group"
+                        role="group"
+                        aria-label="Replay axis"
+                        data-i18n-aria="accelReplayAxis"
+                      >
+                        <button
+                          id="resultReplayAxisTime"
+                          type="button"
+                          class="accel-segment-btn accel-replay-axis-btn"
+                          data-axis="time"
+                          data-i18n-aria="accelReplayAxisTime"
+                          data-i18n-title="accelReplayAxisTime"
+                          aria-label="Time"
+                          title="Time"
+                        >
+                          <span class="btn-icon" aria-hidden="true"></span>
+                          <span class="accel-replay-axis-label" data-i18n="accelReplayAxisTime"
+                            >Time</span
+                          >
+                        </button>
+                        <button
+                          id="resultReplayAxisDistance"
+                          type="button"
+                          class="accel-segment-btn accel-replay-axis-btn"
+                          data-axis="distance"
+                          data-i18n-aria="accelReplayAxisDistance"
+                          data-i18n-title="accelReplayAxisDistance"
+                          aria-label="Distance"
+                          title="Distance"
+                        >
+                          <span class="btn-icon" aria-hidden="true"></span>
+                          <span class="accel-replay-axis-label" data-i18n="accelReplayAxisDistance"
+                            >Distance</span
+                          >
+                        </button>
+                      </div>
+
+                      <button
+                        id="resultReplayChartsBtn"
+                        type="button"
+                        class="accel-action-btn accel-action-btn-compact accel-replay-charts-btn"
+                        data-i18n="accelExploreCharts"
+                      >
+                        Explore charts
+                      </button>
+                    </div>
+
+                    <div class="accel-replay-progress-row">
+                      <strong id="resultReplayCurrentValue" class="accel-replay-progress-value"
+                        >0.000 s</strong
+                      >
+                      <input
+                        id="resultReplayProgress"
+                        type="range"
+                        min="0"
+                        max="0"
+                        step="any"
+                        value="0"
+                        class="accel-replay-progress"
+                        data-i18n-aria="accelReplayProgress"
+                        aria-label="Replay progress"
+                      />
+                      <strong id="resultReplayMaxValue" class="accel-replay-progress-value"
+                        >0.000 s</strong
+                      >
+                    </div>
+                  </div>
+
+                  <div id="resultReplayMapShell" class="accel-result-map-shell" hidden>
+                    <div
+                      id="resultReplayMap"
+                      class="accel-result-map"
+                      data-i18n-aria="accelReplayMapAria"
+                      aria-label="Acceleration replay map"
+                    ></div>
+                  </div>
+
+                  <div
+                    id="resultGraphEmptyState"
+                    class="accel-empty-copy"
+                    hidden
+                    data-i18n="accelSpeedGraphEmpty"
+                  >
+                    Speed graph data is available for new runs.
+                  </div>
+
+                  <div id="resultGraphFrame" class="accel-result-graph-frame" hidden>
+                    <div class="accel-result-graph-canvas-shell">
+                      <canvas
+                        id="resultGraphCanvas"
+                        class="accel-result-graph-canvas"
+                        data-i18n-aria="accelSpeedGraphAria"
+                        aria-label="Interactive speed graph"
+                      ></canvas>
+                    </div>
+                    <p
+                      class="accel-result-graph-hint accel-inline-note"
+                      data-i18n="accelSpeedGraphHint"
+                    >
+                      Touch or click the graph to inspect each sample.
+                    </p>
+                    <div class="accel-result-graph-details">
+                      <div class="accel-result-graph-detail">
+                        <span class="accel-metric-label" data-i18n="accelGraphPointTime">Time</span>
+                        <strong id="resultGraphTimeValue" class="accel-metric-value">—</strong>
+                      </div>
+                      <div class="accel-result-graph-detail">
+                        <span class="accel-metric-label" data-i18n="accelGraphPointSpeed"
+                          >Speed</span
+                        >
+                        <strong id="resultGraphSpeedValue" class="accel-metric-value">—</strong>
+                      </div>
+                      <div class="accel-result-graph-detail">
+                        <span class="accel-metric-label" data-i18n="accelGraphPointDistance"
+                          >Distance</span
+                        >
+                        <strong id="resultGraphDistanceValue" class="accel-metric-value">—</strong>
+                      </div>
+                      <div class="accel-result-graph-detail">
+                        <span class="accel-metric-label" data-i18n="altitude">Altitude</span>
+                        <strong id="resultGraphAltitudeValue" class="accel-metric-value">—</strong>
+                      </div>
+                      <div class="accel-result-graph-detail">
+                        <span class="accel-metric-label" data-i18n="accelGraphPointAccuracy"
+                          >Accuracy</span
+                        >
+                        <strong id="resultGraphAccuracyValue" class="accel-metric-value">—</strong>
+                      </div>
+                      <div class="accel-result-graph-detail">
+                        <span class="accel-metric-label" data-i18n="accelGraphPointSlope"
+                          >Slope</span
+                        >
+                        <strong id="resultGraphSlopeValue" class="accel-metric-value">—</strong>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section id="resultPartialsSection" class="accel-result-partials" hidden>
+                  <span class="accel-section-title" data-i18n="accelPartials">Partials</span>
+                  <div id="resultPartialsList" class="accel-partials-list"></div>
+                </section>
+
+                <div class="accel-result-grid">
+                  <div class="accel-metric">
+                    <span class="accel-metric-label" data-i18n="accelRolloutUsed">Rollout</span>
+                    <strong id="resultRolloutValue" class="accel-metric-value">—</strong>
+                  </div>
+                  <div class="accel-metric">
+                    <span class="accel-metric-label" data-i18n="accelAverageAccuracy"
+                      >Average accuracy</span
+                    >
+                    <strong id="resultAccuracyValue" class="accel-metric-value">—</strong>
+                  </div>
+                  <div class="accel-metric">
+                    <span class="accel-metric-label" data-i18n="accelSlope">Slope</span>
+                    <strong id="resultSlopeValue" class="accel-metric-value">—</strong>
+                  </div>
+                  <div class="accel-metric">
+                    <span class="accel-metric-label" data-i18n="accelElevationChange"
+                      >Elevation change</span
+                    >
+                    <strong id="resultElevationValue" class="accel-metric-value">—</strong>
+                  </div>
+                  <div class="accel-metric">
+                    <span class="accel-metric-label" data-i18n="accelRunHz">Run avg Hz</span>
+                    <strong id="resultHzValue" class="accel-metric-value">—</strong>
+                  </div>
+                </div>
+
+                <div class="accel-result-footnotes">
+                  <p class="accel-result-footnote">
+                    <span class="accel-metric-label" data-i18n="accelBestComparison"
+                      >Best vs latest</span
+                    >
+                    <strong id="resultComparisonValue" class="accel-metric-value accel-metric-wrap"
+                      >—</strong
+                    >
+                  </p>
+                  <p id="resultNotesRow" class="accel-result-footnote" hidden>
+                    <span class="accel-metric-label" data-i18n="accelNotes">Run notes</span>
+                    <strong id="resultNotesValue" class="accel-metric-value accel-metric-wrap"
+                      >—</strong
+                    >
+                  </p>
+                  <p class="accel-result-footnote">
+                    <span class="accel-metric-label" data-i18n="accelLocation">Location</span>
+                    <strong id="resultLocationValue" class="accel-metric-value accel-result-location-value"
+                      ><span class="accel-result-location-text">—</span></strong
+                    >
+                  </p>
+                  <p class="accel-result-footnote">
+                    <span class="accel-metric-label" data-i18n="accelTimestamp">Timestamp</span>
+                    <strong id="resultTimestampValue" class="accel-metric-value accel-metric-wrap"
+                      >—</strong
+                    >
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            <section class="accel-sheet-section">
+              <header class="accel-card-head">
+                <span class="accel-card-kicker" data-i18n="accelDiagnostics">Diagnostics</span>
+                <p class="accel-card-lead" data-i18n="accelDiagnosticsLead">
+                  Observed callback timing, uncertainty, and warning flags.
+                </p>
+              </header>
+
+              <div id="warningBadges" class="accel-warning-list"></div>
+
+              <div class="accel-metrics-grid">
+                <div class="accel-metric">
+                  <span class="accel-metric-label" data-i18n="accelAverageInterval"
+                    >Average interval</span
+                  >
+                  <strong id="diagnosticAverageIntervalValue" class="accel-metric-value">—</strong>
+                </div>
+                <div class="accel-metric">
+                  <span class="accel-metric-label" data-i18n="accelJitter">Jitter</span>
+                  <strong id="diagnosticJitterValue" class="accel-metric-value">—</strong>
+                </div>
+                <div class="accel-metric">
+                  <span class="accel-metric-label" data-i18n="accelSparseUpdates"
+                    >Sparse updates</span
+                  >
+                  <strong id="diagnosticSparseValue" class="accel-metric-value">—</strong>
+                </div>
+                <div class="accel-metric">
+                  <span class="accel-metric-label" data-i18n="accelStaleSamples"
+                    >Stale samples</span
+                  >
+                  <strong id="diagnosticStaleValue" class="accel-metric-value">—</strong>
+                </div>
+                <div class="accel-metric">
+                  <span class="accel-metric-label" data-i18n="accelSpeedSource">Speed source</span>
+                  <strong id="diagnosticSpeedSourceValue" class="accel-metric-value">—</strong>
+                </div>
+                <div class="accel-metric">
+                  <span class="accel-metric-label" data-i18n="accelSamples">Samples</span>
+                  <strong id="diagnosticSamplesValue" class="accel-metric-value">—</strong>
+                </div>
+              </div>
+            </section>
+
+            <section id="debugRawSection" class="accel-sheet-section" hidden>
+              <header class="accel-card-head">
+                <span class="accel-card-kicker">Debug</span>
+                <p class="accel-card-lead">
+                  Raw samples captured during the run before graph processing.
+                </p>
+              </header>
+
+              <div id="debugRawEmptyState" class="accel-empty-copy">
+                No raw run samples captured yet.
+              </div>
+
+              <div id="debugRawTableWrap" class="accel-debug-table-wrap" hidden>
+                <table class="accel-debug-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Delta ms</th>
+                      <th>Hz</th>
+                      <th>Lat / Lon</th>
+                      <th>Raw speed</th>
+                      <th>Derived speed</th>
+                      <th>Used speed</th>
+                      <th>Heading</th>
+                      <th>Accuracy</th>
+                      <th>State</th>
+                    </tr>
+                  </thead>
+                  <tbody id="debugRawTableBody"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section id="debugGraphSection" class="accel-sheet-section" hidden>
+              <header class="accel-card-head">
+                <span class="accel-card-kicker">Debug</span>
+                <p class="accel-card-lead">Points passed into the Results speed graph.</p>
+              </header>
+
+              <div id="debugGraphEmptyState" class="accel-empty-copy">
+                No graph points available yet.
+              </div>
+
+              <div id="debugGraphTableWrap" class="accel-debug-table-wrap" hidden>
+                <table class="accel-debug-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Elapsed ms</th>
+                      <th>Time</th>
+                      <th>Speed</th>
+                      <th>Distance</th>
+                      <th>Altitude</th>
+                      <th>Accuracy</th>
+                      <th>Source</th>
+                    </tr>
+                  </thead>
+                  <tbody id="debugGraphTableBody"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="accel-sheet-section accel-history-card">
+              <header class="accel-card-head accel-history-head">
+                <div class="accel-history-head-copy">
+                  <span class="accel-card-kicker" data-i18n="accelHistory">History</span>
+                  <p class="accel-card-lead" data-i18n="accelHistoryLead">
+                    Saved locally in this browser. Newest runs first.
+                  </p>
+                </div>
+                <button
+                  id="clearHistory"
+                  type="button"
+                  class="accel-action-btn accel-action-btn-compact"
+                  data-i18n="accelClearHistory"
+                >
+                  Clear all
+                </button>
+              </header>
+
+              <div id="historyEmptyState" class="accel-empty-copy" data-i18n="accelNoHistory">
+                No saved runs yet.
+              </div>
+              <div id="historyList" class="accel-history-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section
+          id="resultReplayChartSheet"
+          class="accel-replay-chart-sheet"
+          hidden
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="resultReplayChartSheetTitle"
+          tabindex="-1"
+        >
+          <div
+            id="resultReplayChartSheetBackdrop"
+            class="accel-replay-chart-sheet-backdrop"
+            aria-hidden="true"
+          ></div>
+
+          <section class="accel-replay-chart-sheet-panel">
+            <header class="accel-replay-chart-sheet-header">
+              <h3
+                id="resultReplayChartSheetTitle"
+                class="accel-replay-chart-sheet-title"
+                data-i18n="accelExploreCharts"
+              >
+                Explore charts
+              </h3>
+
+              <div
+                class="accel-replay-chart-sheet-axis accel-replay-sheet-axis-group"
+                role="group"
+                aria-label="Replay axis"
+                data-i18n-aria="accelReplayAxis"
+              >
+                <button
+                  id="resultReplaySheetAxisTime"
+                  type="button"
+                  class="accel-segment-btn accel-replay-axis-btn"
+                  data-axis="time"
+                  data-i18n-aria="accelReplayAxisTime"
+                  data-i18n-title="accelReplayAxisTime"
+                  aria-label="Time"
+                  title="Time"
+                >
+                  <span class="btn-icon" aria-hidden="true"></span>
+                  <span class="accel-replay-axis-label" data-i18n="accelReplayAxisTime">Time</span>
+                </button>
+                <button
+                  id="resultReplaySheetAxisDistance"
+                  type="button"
+                  class="accel-segment-btn accel-replay-axis-btn"
+                  data-axis="distance"
+                  data-i18n-aria="accelReplayAxisDistance"
+                  data-i18n-title="accelReplayAxisDistance"
+                  aria-label="Distance"
+                  title="Distance"
+                >
+                  <span class="btn-icon" aria-hidden="true"></span>
+                  <span class="accel-replay-axis-label" data-i18n="accelReplayAxisDistance"
+                    >Distance</span
+                  >
+                </button>
+              </div>
+
+              <button
+                id="closeResultReplayChartSheet"
+                type="button"
+                class="accel-sheet-close accel-replay-chart-sheet-close"
+                data-i18n="close"
+              >
+                Close
+              </button>
+            </header>
+
+            <section
+              class="accel-replay-filter-group"
+              aria-label="Filter range"
+              data-i18n-aria="replayFilterRange"
+            >
+              <div class="accel-replay-filter-row">
+                <span class="accel-replay-filter-value">
+                  <span class="accel-metric-label" data-i18n="replayFilterStart">Start</span>
+                  <strong
+                    id="resultReplaySheetFilterStartValue"
+                    class="accel-replay-filter-value-text"
+                    >0.000 s</strong
+                  >
+                </span>
+
+                <div
+                  id="resultReplaySheetFilterSlider"
+                  class="accel-replay-filter-slider dual-range-input"
+                >
+                  <input
+                    id="resultReplaySheetFilterStart"
+                    class="accel-replay-filter-range accel-replay-filter-range-start"
+                    type="range"
+                    min="0"
+                    max="1000"
+                    value="0"
+                    step="1"
+                    aria-label="Filter start"
+                    data-i18n-aria="replayFilterStart"
+                  />
+                  <input
+                    id="resultReplaySheetFilterEnd"
+                    class="accel-replay-filter-range accel-replay-filter-range-end"
+                    type="range"
+                    min="0"
+                    max="1000"
+                    value="1000"
+                    step="1"
+                    aria-label="Filter end"
+                    data-i18n-aria="replayFilterEnd"
+                  />
+                </div>
+
+                <span class="accel-replay-filter-value accel-replay-filter-value-end">
+                  <span class="accel-metric-label" data-i18n="replayFilterEnd">End</span>
+                  <strong
+                    id="resultReplaySheetFilterEndValue"
+                    class="accel-replay-filter-value-text"
+                    >0.000 s</strong
+                  >
+                </span>
+              </div>
+            </section>
+
+            <section
+              class="accel-replay-chart-sheet-grid"
+              aria-label="Expanded accel replay charts"
+            >
+              <article id="resultReplaySheetSpeedStage" class="accel-replay-chart-stage">
+                <header class="accel-replay-chart-stage-head">
+                  <span class="accel-section-title" data-i18n="speed">Speed</span>
+                  <strong id="resultReplaySheetSpeedValue" class="accel-replay-chart-current"
+                    >—</strong
+                  >
+                </header>
+                <div class="accel-replay-chart-canvas-wrap">
+                  <canvas
+                    id="resultReplaySheetSpeedCanvas"
+                    class="accel-replay-chart-canvas"
+                    data-accel-replay-scrub="speedMs"
+                    data-i18n-aria="accelReplaySpeedChart"
+                    aria-label="Replay speed chart"
+                  ></canvas>
+                </div>
+              </article>
+
+              <article id="resultReplaySheetAltitudeStage" class="accel-replay-chart-stage">
+                <header class="accel-replay-chart-stage-head">
+                  <span class="accel-section-title" data-i18n="altitude">Altitude</span>
+                  <strong id="resultReplaySheetAltitudeValue" class="accel-replay-chart-current"
+                    >—</strong
+                  >
+                </header>
+                <div class="accel-replay-chart-canvas-wrap">
+                  <canvas
+                    id="resultReplaySheetAltitudeCanvas"
+                    class="accel-replay-chart-canvas"
+                    data-accel-replay-scrub="altitudeM"
+                    data-i18n-aria="accelReplayAltitudeChart"
+                    aria-label="Replay altitude chart"
+                  ></canvas>
+                </div>
+              </article>
+
+              <article id="resultReplaySheetHeadingStage" class="accel-replay-chart-stage">
+                <header class="accel-replay-chart-stage-head">
+                  <span class="accel-section-title" data-i18n="heading">Heading</span>
+                  <strong id="resultReplaySheetHeadingValue" class="accel-replay-chart-current"
+                    >—</strong
+                  >
+                </header>
+                <div class="accel-replay-chart-canvas-wrap">
+                  <canvas
+                    id="resultReplaySheetHeadingCanvas"
+                    class="accel-replay-chart-canvas"
+                    data-accel-replay-scrub="headingDeg"
+                    data-i18n-aria="accelReplayHeadingChart"
+                    aria-label="Replay heading chart"
+                  ></canvas>
+                </div>
+              </article>
+            </section>
+
+            <p
+              class="accel-inline-note accel-replay-chart-sheet-hint"
+              data-i18n="accelReplayDragToExplore"
+            >
+              Drag across the chart to scrub the replay.
+            </p>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/src/accel/accel.js"></script>
+  </body>
 </html>

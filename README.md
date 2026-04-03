@@ -1,6 +1,6 @@
 # VatioBoard
 
-VatioBoard is a multi-page Vite app of touch-first browser tools built for Tesla-sized screens and regular mobile/desktop browsers. The repo is mostly local-first: drawings, calculator state, trip estimates, replay sessions, and acceleration runs are stored in the browser, while some account-aware actions are optionally wired to the VatioLibre backend.
+VatioBoard is a multi-page Vite app of touch-first browser tools built for Tesla-sized screens and regular mobile/desktop browsers. The repo is mostly local-first: drawings, calculator state, trip estimates, replay sessions, and acceleration runs are stored in the browser, while some account-aware actions are optionally wired to the VatioLibre backend. Recent location-aware features also reuse a shared Nominatim client for lightweight reverse geocoding and first-run regional unit defaults.
 
 The project is part of the VatioLibre community and is published for educational use.
 
@@ -45,10 +45,12 @@ What it does:
 - reads live browser geolocation data
 - renders an analog speedometer plus trip stats
 - supports `km/h` or `mph`, and metric or imperial distance units
+- can auto-configure shared speed and distance units from the detected country on first use
 - offers manual overspeed alerts and nearby speed-trap alerts
 - supports quick audio mute and optional background-audio mode
 - switches between gauge and Waze-style primary views
 - records replay sessions for the replay page
+- enriches saved replay sessions with approximate start/end place labels when available
 
 ### Drive Replay
 
@@ -61,6 +63,7 @@ What it does:
 - shows speed, altitude, and heading charts
 - supports time-based or distance-based playback
 - offers playback-rate controls and session selection
+- shows route labels derived from saved start/end place metadata
 - lets users remove saved recordings locally
 
 ### Vatio GPS Rate Lab
@@ -73,7 +76,9 @@ What it does:
 - shows summary stats, live values, warnings, and an event log
 - exports captured samples and summaries to JSON or CSV
 - stores notes, wake-lock preference, and the latest saved summary locally
-- includes a Nominatim test panel with cached response reuse
+- reverse-geocodes saved summaries to a human-readable place label when available
+- can auto-configure shared units from the first detected country during place resolution
+- includes a rate-limited Nominatim test panel with cached response reuse and public-server policy guards
 
 ### Vatio Accel
 
@@ -84,6 +89,8 @@ What it does:
 - times standing-start, rolling-start, distance, and custom speed-range runs
 - uses browser geolocation updates only
 - stores run history and settings locally
+- saves approximate start/end place labels with completed runs when available
+- keeps unit choices aligned with the shared regional unit bootstrap used by other pages
 - shows quality grades, warning badges, and diagnostic stats
 - includes result graphs plus replay map/chart views for completed runs
 
@@ -112,6 +119,7 @@ What it does:
 
 - supports simple mode for one-trip estimates
 - supports multi-trip mode with locally persisted trip data
+- defaults to `km` or `mi` from the shared regional unit bootstrap
 - handles `km` and `mi` ranges and formatting
 - reuses calculator number-format settings where appropriate
 
@@ -126,6 +134,7 @@ What it does:
 - `chart.js` for replay and acceleration charts
 - `@stanko/dual-range-input` for replay and acceleration range controls
 - `kdbush` and `geokdbush` for speed-trap lookup
+- shared Nominatim helpers for reverse geocoding, cached lookup reuse, and regional unit bootstrapping
 - Vitest + jsdom for unit and smoke tests
 - ESLint + Prettier for code quality
 
@@ -228,12 +237,14 @@ Entry pages during development:
 
 ## Persistence Model
 
-The app uses a mix of IndexedDB and `localStorage`.
+The app uses a mix of IndexedDB, `localStorage`, and `sessionStorage`.
 
 - board drawings are stored in IndexedDB when available, with `localStorage` fallback/migration helpers
 - speed replay sessions are stored in IndexedDB when available, with `localStorage` fallback/migration helpers
 - accel settings and runs are stored in IndexedDB when available, with `localStorage` fallback/migration helpers
-- calculator state/history/settings, energy widget state, GPS Rate Lab notes/settings, and shared UI preferences use `localStorage`
+- calculator state/history/settings, energy widget state, GPS Rate Lab notes/settings, shared unit preferences, and UI preferences use `localStorage`
+- replay sessions, accel runs, and GPS Rate saved summaries can include normalized place metadata
+- shared Nominatim scheduling state uses `localStorage`, and response caching uses `sessionStorage`
 - replay depends on sessions recorded by the speed page
 
 ## Backend Integration
@@ -264,6 +275,8 @@ The repo has both unit and smoke coverage.
 
 - language is shared through [`src/i18n.js`](src/i18n.js)
 - geolocation permission is required for Vatio Speed, Vatio GPS Rate Lab, and Vatio Accel
+- the first successful place lookup can initialize shared regional units unless the user already chose units manually
+- reverse geocoding is intentionally lightweight, cached, and non-blocking for recording flows
 - some audio paths require a user gesture before playback is allowed by the browser
 - Vatio GPS Rate Lab reports observed browser callback behavior, not guaranteed GPS hardware frequency
 - Vatio Accel is an estimate-oriented browser timer, not a certified timing system

@@ -1,11 +1,25 @@
-import "maplibre-gl/dist/maplibre-gl.css";
-import "../styles/speed.less";
-import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
-import { createAnalogSpeedometer } from "../shared/analog-speedometer.js";
-import { initBackendAuthControllers } from "../shared/backend-auth.js";
-import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
-import "../styles/backend-auth.less";
-import { IconAccel, IconBoard, IconGpsLab, IconPages, IconReplay, IconRestart, IconSettings } from "../icons.js";
+import 'maplibre-gl/dist/maplibre-gl.css';
+import '../styles/speed.less';
+import { applyTranslations, getLang, t, toggleLang } from '../i18n.js';
+import { createAnalogSpeedometer } from '../shared/analog-speedometer.js';
+import { initBackendAuthControllers } from '../shared/backend-auth.js';
+import { createPlaceResolver } from '../shared/place-resolver.js';
+import { applyButtonIcon, initToolsMenu } from '../shared/tools-menu.js';
+import {
+  hasConfiguredUnitPreferences,
+  markUnitBootstrapManualSelection,
+  maybeInitializeUnitsFromCountry,
+} from '../shared/unit-bootstrap.js';
+import '../styles/backend-auth.less';
+import {
+  IconAccel,
+  IconBoard,
+  IconGpsLab,
+  IconPages,
+  IconReplay,
+  IconRestart,
+  IconSettings,
+} from '../icons.js';
 import {
   archiveReplaySession,
   createReplaySession,
@@ -14,7 +28,7 @@ import {
   appendReplaySample,
   REPLAY_PERSIST_CHUNK_SIZE,
   saveActiveReplaySession,
-} from "../replay/session.js";
+} from '../replay/session.js';
 import {
   DEFAULT_ALERT_LIMIT_MS,
   DISTANCE_UNIT_CONFIG,
@@ -24,7 +38,7 @@ import {
   SPEED_SMOOTHING_SAMPLES,
   UNIT_CONFIG,
   WAZE_EMBED_BASE_URL,
-} from "./constants.js";
+} from './constants.js';
 import {
   getTrapAlertPresets,
   loadInitialPreferences,
@@ -42,116 +56,116 @@ import {
   saveTrapAlertEnabledPreference,
   saveTrapSoundEnabledPreference,
   saveUnitPreference,
-} from "./preferences.js";
+} from './preferences.js';
 import {
   getAlertConfig,
   getAlertLimitDisplayValue as computeAlertLimitDisplayValue,
   getAlertUiState as buildAlertUiState,
   isManualAlertActive,
   normalizeAlertDisplayValue,
-} from "./alerts.js";
-import { createSpeedAudioController } from "./audio.js";
+} from './alerts.js';
+import { createSpeedAudioController } from './audio.js';
 import {
   createGlobeController,
   createWazeController,
   getMovementThresholdM,
   haversineDistance,
   normalizePositionTimestamp,
-} from "./navigation.js";
+} from './navigation.js';
 import {
   convertDisplaySpeedToMs,
   convertSpeed,
   createSpeedRenderer,
   formatGlobeTimestamp,
   tf,
-} from "./render.js";
+} from './render.js';
 import {
   createTrapLoader,
   formatTrapDistance,
   formatTrapSpeed,
   updateNearestTrap,
-} from "./traps.js";
+} from './traps.js';
 
 const elements = {
-  gaugeCard: document.querySelector(".gauge-card"),
-  langToggle: document.getElementById("langToggle"),
-  langToggleButtons: Array.from(document.querySelectorAll("[data-lang-toggle], #langToggle")),
-  toolsMenuBtn: document.getElementById("speedToolsMenuBtn"),
-  toolsMenuList: document.getElementById("speedToolsMenuList"),
-  openReplayMenu: document.getElementById("openSpeedReplayMenu"),
-  openReplayQuick: document.getElementById("openReplayQuick"),
-  quickAlertConfig: document.getElementById("quickAlertConfig"),
-  openAccelMenu: document.getElementById("openSpeedAccelMenu"),
-  openGpsLabMenu: document.getElementById("openSpeedGpsLabMenu"),
-  openBoardMenu: document.getElementById("openSpeedBoardMenu"),
-  primaryViewButtons: Array.from(document.querySelectorAll(".speed-view-btn")),
-  speedPrimaryStage: document.getElementById("speedPrimaryStage"),
-  gaugeStage: document.getElementById("gaugeStage"),
-  gaugeStageInner: document.querySelector(".gauge-stage-inner"),
-  wazeStage: document.getElementById("wazeStage"),
-  wazeFrame: document.getElementById("wazeFrame"),
-  wazePlaceholder: document.getElementById("wazePlaceholder"),
-  wazePlaceholderText: document.getElementById("wazePlaceholderText"),
-  wazeSpeedPill: document.getElementById("wazeSpeedPill"),
-  wazeSpeedValue: document.getElementById("wazeSpeedValue"),
-  wazeSpeedUnit: document.getElementById("wazeSpeedUnit"),
-  wazeSpeedLimitLabel: document.getElementById("wazeSpeedLimitLabel"),
-  wazeSpeedLimitValue: document.getElementById("wazeSpeedLimitValue"),
-  wazeSpeedNote: document.getElementById("wazeSpeedNote"),
-  wazeLocationPrompt: document.getElementById("wazeLocationPrompt"),
-  wazeRecenter: document.getElementById("wazeRecenter"),
-  alertBackdrop: document.getElementById("speedAlertBackdrop"),
-  dialCanvas: document.getElementById("speedDial"),
-  needleCanvas: document.getElementById("speedNeedle"),
-  speedValue: document.getElementById("speedValue"),
-  speedUnit: document.getElementById("speedUnit"),
-  status: document.getElementById("status"),
-  subStatus: document.getElementById("subStatus"),
-  maxSpeed: document.getElementById("maxSpeed"),
-  maxSpeedUnit: document.getElementById("maxSpeedUnit"),
-  avgSpeed: document.getElementById("avgSpeed"),
-  avgSpeedUnit: document.getElementById("avgSpeedUnit"),
-  distanceValue: document.getElementById("distanceValue"),
-  distanceUnit: document.getElementById("distanceUnit"),
-  nearestTrapDistance: document.getElementById("nearestTrapDistance"),
-  nearestTrapUnit: document.getElementById("nearestTrapUnit"),
-  durationValue: document.getElementById("durationValue"),
-  altitudeValue: document.getElementById("altitudeValue"),
-  altitudeUnit: document.getElementById("altitudeUnit"),
-  maxAltitude: document.getElementById("maxAltitude"),
-  maxAltitudeUnit: document.getElementById("maxAltitudeUnit"),
-  minAltitude: document.getElementById("minAltitude"),
-  minAltitudeUnit: document.getElementById("minAltitudeUnit"),
-  notice: document.getElementById("notice"),
-  noticeText: document.getElementById("noticeText"),
-  retryGps: document.getElementById("retryGps"),
-  resetTrip: document.getElementById("resetTrip"),
-  toggleRecording: document.getElementById("toggleRecording"),
-  stopRecording: document.getElementById("stopRecording"),
-  alertTrigger: document.getElementById("alertTrigger"),
-  alertTriggerValue: document.getElementById("alertTriggerValue"),
-  alertTriggerHint: document.getElementById("alertTriggerHint"),
-  alertPanel: document.getElementById("speedAlertPanel"),
-  alertPanelStatus: document.getElementById("alertPanelStatus"),
-  closeAlertPanel: document.getElementById("closeAlertPanel"),
-  alertToggle: document.getElementById("alertToggle"),
-  alertUseCurrent: document.getElementById("alertUseCurrent"),
-  alertDecrease: document.getElementById("alertDecrease"),
-  alertIncrease: document.getElementById("alertIncrease"),
-  alertValue: document.getElementById("alertValue"),
-  alertUnit: document.getElementById("alertUnit"),
-  alertPresets: document.getElementById("alertPresets"),
-  alertSoundButtons: Array.from(document.querySelectorAll(".alert-sound-btn")),
-  trapAlertButtons: Array.from(document.querySelectorAll(".trap-alert-btn")),
-  trapDistancePresets: document.getElementById("trapDistancePresets"),
-  trapSoundButtons: Array.from(document.querySelectorAll(".trap-sound-btn")),
-  quickAudioToggle: document.getElementById("quickAudioToggle"),
-  quickBackgroundAudioToggle: document.getElementById("quickBackgroundAudioToggle"),
-  backgroundAudioButtons: Array.from(document.querySelectorAll(".background-audio-btn")),
-  unitButtons: Array.from(document.querySelectorAll(".unit-btn")),
-  distanceUnitButtons: Array.from(document.querySelectorAll(".distance-unit-btn")),
-  globeMount: document.getElementById("speedGlobe"),
-  globeStatus: document.getElementById("globeStatus"),
+  gaugeCard: document.querySelector('.gauge-card'),
+  langToggle: document.getElementById('langToggle'),
+  langToggleButtons: Array.from(document.querySelectorAll('[data-lang-toggle], #langToggle')),
+  toolsMenuBtn: document.getElementById('speedToolsMenuBtn'),
+  toolsMenuList: document.getElementById('speedToolsMenuList'),
+  openReplayMenu: document.getElementById('openSpeedReplayMenu'),
+  openReplayQuick: document.getElementById('openReplayQuick'),
+  quickAlertConfig: document.getElementById('quickAlertConfig'),
+  openAccelMenu: document.getElementById('openSpeedAccelMenu'),
+  openGpsLabMenu: document.getElementById('openSpeedGpsLabMenu'),
+  openBoardMenu: document.getElementById('openSpeedBoardMenu'),
+  primaryViewButtons: Array.from(document.querySelectorAll('.speed-view-btn')),
+  speedPrimaryStage: document.getElementById('speedPrimaryStage'),
+  gaugeStage: document.getElementById('gaugeStage'),
+  gaugeStageInner: document.querySelector('.gauge-stage-inner'),
+  wazeStage: document.getElementById('wazeStage'),
+  wazeFrame: document.getElementById('wazeFrame'),
+  wazePlaceholder: document.getElementById('wazePlaceholder'),
+  wazePlaceholderText: document.getElementById('wazePlaceholderText'),
+  wazeSpeedPill: document.getElementById('wazeSpeedPill'),
+  wazeSpeedValue: document.getElementById('wazeSpeedValue'),
+  wazeSpeedUnit: document.getElementById('wazeSpeedUnit'),
+  wazeSpeedLimitLabel: document.getElementById('wazeSpeedLimitLabel'),
+  wazeSpeedLimitValue: document.getElementById('wazeSpeedLimitValue'),
+  wazeSpeedNote: document.getElementById('wazeSpeedNote'),
+  wazeLocationPrompt: document.getElementById('wazeLocationPrompt'),
+  wazeRecenter: document.getElementById('wazeRecenter'),
+  alertBackdrop: document.getElementById('speedAlertBackdrop'),
+  dialCanvas: document.getElementById('speedDial'),
+  needleCanvas: document.getElementById('speedNeedle'),
+  speedValue: document.getElementById('speedValue'),
+  speedUnit: document.getElementById('speedUnit'),
+  status: document.getElementById('status'),
+  subStatus: document.getElementById('subStatus'),
+  maxSpeed: document.getElementById('maxSpeed'),
+  maxSpeedUnit: document.getElementById('maxSpeedUnit'),
+  avgSpeed: document.getElementById('avgSpeed'),
+  avgSpeedUnit: document.getElementById('avgSpeedUnit'),
+  distanceValue: document.getElementById('distanceValue'),
+  distanceUnit: document.getElementById('distanceUnit'),
+  nearestTrapDistance: document.getElementById('nearestTrapDistance'),
+  nearestTrapUnit: document.getElementById('nearestTrapUnit'),
+  durationValue: document.getElementById('durationValue'),
+  altitudeValue: document.getElementById('altitudeValue'),
+  altitudeUnit: document.getElementById('altitudeUnit'),
+  maxAltitude: document.getElementById('maxAltitude'),
+  maxAltitudeUnit: document.getElementById('maxAltitudeUnit'),
+  minAltitude: document.getElementById('minAltitude'),
+  minAltitudeUnit: document.getElementById('minAltitudeUnit'),
+  notice: document.getElementById('notice'),
+  noticeText: document.getElementById('noticeText'),
+  retryGps: document.getElementById('retryGps'),
+  resetTrip: document.getElementById('resetTrip'),
+  toggleRecording: document.getElementById('toggleRecording'),
+  stopRecording: document.getElementById('stopRecording'),
+  alertTrigger: document.getElementById('alertTrigger'),
+  alertTriggerValue: document.getElementById('alertTriggerValue'),
+  alertTriggerHint: document.getElementById('alertTriggerHint'),
+  alertPanel: document.getElementById('speedAlertPanel'),
+  alertPanelStatus: document.getElementById('alertPanelStatus'),
+  closeAlertPanel: document.getElementById('closeAlertPanel'),
+  alertToggle: document.getElementById('alertToggle'),
+  alertUseCurrent: document.getElementById('alertUseCurrent'),
+  alertDecrease: document.getElementById('alertDecrease'),
+  alertIncrease: document.getElementById('alertIncrease'),
+  alertValue: document.getElementById('alertValue'),
+  alertUnit: document.getElementById('alertUnit'),
+  alertPresets: document.getElementById('alertPresets'),
+  alertSoundButtons: Array.from(document.querySelectorAll('.alert-sound-btn')),
+  trapAlertButtons: Array.from(document.querySelectorAll('.trap-alert-btn')),
+  trapDistancePresets: document.getElementById('trapDistancePresets'),
+  trapSoundButtons: Array.from(document.querySelectorAll('.trap-sound-btn')),
+  quickAudioToggle: document.getElementById('quickAudioToggle'),
+  quickBackgroundAudioToggle: document.getElementById('quickBackgroundAudioToggle'),
+  backgroundAudioButtons: Array.from(document.querySelectorAll('.background-audio-btn')),
+  unitButtons: Array.from(document.querySelectorAll('.unit-btn')),
+  distanceUnitButtons: Array.from(document.querySelectorAll('.distance-unit-btn')),
+  globeMount: document.getElementById('speedGlobe'),
+  globeStatus: document.getElementById('globeStatus'),
 };
 
 initBackendAuthControllers();
@@ -160,6 +174,7 @@ const toolsMenu = initToolsMenu({
   button: elements.toolsMenuBtn,
   list: elements.toolsMenuList,
 });
+const placeResolver = createPlaceResolver({ getLanguage: getLang });
 
 applyButtonIcon(elements.openAccelMenu, IconAccel);
 applyButtonIcon(elements.openGpsLabMenu, IconGpsLab);
@@ -188,7 +203,7 @@ const initialPreferences = loadedPreferences.preferences;
 const initialReplaySession = createReplaySession({
   unit: initialPreferences.unit,
   distanceUnit: initialPreferences.distanceUnit,
-  recordingState: "recording",
+  recordingState: 'recording',
 });
 const ACTIVE_REPLAY_PERSIST_INTERVAL_MS = 5000;
 
@@ -224,9 +239,9 @@ const state = {
   watchId: null,
   startTime: null,
   trackingStartedAt: Date.now(),
-  statusKind: "requesting",
+  statusKind: 'requesting',
   statusParams: null,
-  statusText: t("requestingGps"),
+  statusText: t('requestingGps'),
   noticeKey: null,
   noticeParams: null,
   currentSpeedMs: 0,
@@ -268,14 +283,14 @@ const state = {
   globeSolarUpdateIntervalId: null,
   globeSolarSyncFrameId: null,
   globeSolarGeometryDirty: false,
-  runtimePageTitle: "",
-  runtimeArtworkSignature: "",
-  runtimeArtworkDataUrl: "",
+  runtimePageTitle: '',
+  runtimeArtworkSignature: '',
+  runtimeArtworkDataUrl: '',
   runtimeDynamicArtworkBlocked: false,
-  runtimeMediaMetadataSignature: "",
-  runtimeMediaMetadataUrgencySignature: "",
+  runtimeMediaMetadataSignature: '',
+  runtimeMediaMetadataUrgencySignature: '',
   runtimeMediaMetadataUpdatedAt: 0,
-  runtimeMediaPlaybackState: "",
+  runtimeMediaPlaybackState: '',
   recordingState: initialReplaySession.recordingState,
   replaySession: initialReplaySession,
 };
@@ -288,6 +303,7 @@ let replayPersistChain = Promise.resolve();
 let replayPersistInFlight = false;
 let replayPersistRequested = false;
 let replayPersistScheduled = false;
+let replayStartPlacePendingSessionId = '';
 
 function clearReplayPersistTimer() {
   if (replayPersistTimerId !== null) {
@@ -320,7 +336,8 @@ function reconcilePersistedReplaySession(currentSession, sessionSnapshot, persis
   const pendingSamples = Array.isArray(currentSession.samples)
     ? currentSession.samples.slice(-unsavedSampleCount)
     : [];
-  const latestPendingSample = pendingSamples[pendingSamples.length - 1] ?? currentSession.lastSample;
+  const latestPendingSample =
+    pendingSamples[pendingSamples.length - 1] ?? currentSession.lastSample;
 
   return {
     ...persistedSession,
@@ -333,24 +350,28 @@ function reconcilePersistedReplaySession(currentSession, sessionSnapshot, persis
     lastSample: latestPendingSample ?? persistedSession.lastSample,
     maxSpeedMs: Math.max(
       Number.isFinite(persistedSession.maxSpeedMs) ? persistedSession.maxSpeedMs : 0,
-      Number.isFinite(currentSession.maxSpeedMs) ? currentSession.maxSpeedMs : 0,
+      Number.isFinite(currentSession.maxSpeedMs) ? currentSession.maxSpeedMs : 0
     ),
     totalDistanceM: Math.max(
       Number.isFinite(persistedSession.totalDistanceM) ? persistedSession.totalDistanceM : 0,
-      Number.isFinite(currentSession.totalDistanceM) ? currentSession.totalDistanceM : 0,
+      Number.isFinite(currentSession.totalDistanceM) ? currentSession.totalDistanceM : 0
     ),
     minAltitudeM: Number.isFinite(currentSession.minAltitudeM)
-      ? (Number.isFinite(persistedSession.minAltitudeM)
+      ? Number.isFinite(persistedSession.minAltitudeM)
         ? Math.min(persistedSession.minAltitudeM, currentSession.minAltitudeM)
-        : currentSession.minAltitudeM)
+        : currentSession.minAltitudeM
       : persistedSession.minAltitudeM,
     maxAltitudeM: Number.isFinite(currentSession.maxAltitudeM)
-      ? (Number.isFinite(persistedSession.maxAltitudeM)
+      ? Number.isFinite(persistedSession.maxAltitudeM)
         ? Math.max(persistedSession.maxAltitudeM, currentSession.maxAltitudeM)
-        : currentSession.maxAltitudeM)
+        : currentSession.maxAltitudeM
       : persistedSession.maxAltitudeM,
-    updatedAtMs: latestPendingSample?.timestampMs ?? currentSession.updatedAtMs ?? persistedSession.updatedAtMs,
-    endedAtMs: latestPendingSample?.timestampMs ?? currentSession.endedAtMs ?? persistedSession.endedAtMs,
+    updatedAtMs:
+      latestPendingSample?.timestampMs ??
+      currentSession.updatedAtMs ??
+      persistedSession.updatedAtMs,
+    endedAtMs:
+      latestPendingSample?.timestampMs ?? currentSession.endedAtMs ?? persistedSession.endedAtMs,
   };
 }
 
@@ -373,7 +394,7 @@ function enqueueReplaySessionPersist() {
           state.replaySession = reconcilePersistedReplaySession(
             state.replaySession,
             sessionSnapshot,
-            persistedSession,
+            persistedSession
           );
         }
 
@@ -391,7 +412,7 @@ function persistReplaySessionNow() {
 }
 
 function scheduleReplaySessionPersist({ immediate = false } = {}) {
-  if (immediate || state.recordingState !== "recording") {
+  if (immediate || state.recordingState !== 'recording') {
     void persistReplaySessionNow();
     return;
   }
@@ -402,6 +423,213 @@ function scheduleReplaySessionPersist({ immediate = false } = {}) {
     replayPersistTimerId = null;
     void enqueueReplaySessionPersist();
   }, ACTIVE_REPLAY_PERSIST_INTERVAL_MS);
+}
+
+function syncUnitButtons() {
+  for (const button of elements.unitButtons) {
+    button.setAttribute('aria-pressed', button.dataset.unit === state.unit ? 'true' : 'false');
+  }
+}
+
+function syncDistanceUnitButtons() {
+  for (const button of elements.distanceUnitButtons) {
+    button.setAttribute(
+      'aria-pressed',
+      button.dataset.distanceUnit === state.distanceUnit ? 'true' : 'false'
+    );
+  }
+}
+
+function applyUnitsConfiguration(
+  { unit = state.unit, distanceUnit = state.distanceUnit } = {},
+  { persist = true, manual = persist } = {}
+) {
+  let unitChanged = false;
+  let distanceChanged = false;
+
+  if (UNIT_CONFIG[unit] && unit !== state.unit) {
+    state.unit = unit;
+    unitChanged = true;
+    if (persist) {
+      saveUnitPreference(unit);
+    }
+    delete elements.alertPresets.dataset.unit;
+  }
+
+  if (DISTANCE_UNIT_CONFIG[distanceUnit] && distanceUnit !== state.distanceUnit) {
+    state.distanceUnit = distanceUnit;
+    state.trapAlertDistanceM = normalizeTrapAlertDistance(state.trapAlertDistanceM, distanceUnit);
+    distanceChanged = true;
+    if (persist) {
+      saveDistanceUnitPreference(distanceUnit);
+    }
+    saveTrapAlertDistancePreference(state.trapAlertDistanceM);
+    delete elements.trapDistancePresets.dataset.unit;
+  }
+
+  if (!unitChanged && !distanceChanged) {
+    return false;
+  }
+
+  if (manual) {
+    markUnitBootstrapManualSelection({
+      speedUnit: unitChanged ? state.unit : undefined,
+      distanceUnit: distanceChanged ? state.distanceUnit : undefined,
+    });
+  }
+
+  syncUnitButtons();
+  syncDistanceUnitButtons();
+  syncReplaySessionPreferences();
+  renderMetrics();
+  if (unitChanged) {
+    speedRenderer.drawGauge();
+  }
+  return true;
+}
+
+function maybeApplyAutoConfiguredUnits(countryCode) {
+  if (hasConfiguredUnitPreferences()) return false;
+
+  const bootstrapResult = maybeInitializeUnitsFromCountry(countryCode);
+  if (!bootstrapResult.changed) return false;
+
+  return applyUnitsConfiguration(
+    {
+      unit: bootstrapResult.config.speedUnit,
+      distanceUnit: bootstrapResult.config.distanceUnit,
+    },
+    {
+      persist: false,
+      manual: false,
+    }
+  );
+}
+
+async function reversePlaceForSample(sample, options = {}) {
+  if (!Number.isFinite(sample?.latitude) || !Number.isFinite(sample?.longitude)) {
+    return {
+      place: null,
+      data: null,
+      meta: null,
+    };
+  }
+
+  return placeResolver.reversePlace({
+    latitude: sample.latitude,
+    longitude: sample.longitude,
+    zoom: Number.isFinite(options.zoom) ? options.zoom : 18,
+  });
+}
+
+async function maybeResolveReplayStartPlace(sample) {
+  if (!sample) return;
+  if (state.replaySession.startPlace) return;
+  if (replayStartPlacePendingSessionId === state.replaySession.id) return;
+
+  const sessionId = state.replaySession.id;
+  replayStartPlacePendingSessionId = sessionId;
+
+  try {
+    const response = await reversePlaceForSample(sample);
+    if (response.place?.countryCode) {
+      maybeApplyAutoConfiguredUnits(response.place.countryCode);
+    }
+    if (!response.place) return;
+    if (state.replaySession.id !== sessionId) return;
+
+    state.replaySession = {
+      ...state.replaySession,
+      startPlace: response.place,
+    };
+    scheduleReplaySessionPersist({ immediate: true });
+  } catch {
+    // Ignore Nominatim/network failures and keep recording.
+  } finally {
+    if (replayStartPlacePendingSessionId === sessionId) {
+      replayStartPlacePendingSessionId = '';
+    }
+  }
+}
+
+async function enrichReplaySessionPlaces(session) {
+  if (!session) return session;
+
+  let nextSession = session;
+  const startSample =
+    session.firstSample ??
+    (Array.isArray(session.samples) && session.samples.length
+      ? session.samples[0]
+      : session.lastSample);
+  const endSample =
+    session.lastSample ??
+    (Array.isArray(session.samples) && session.samples.length
+      ? session.samples[session.samples.length - 1]
+      : null);
+
+  if (!nextSession.startPlace && startSample) {
+    try {
+      const response = await reversePlaceForSample(startSample);
+      if (response.place?.countryCode) {
+        maybeApplyAutoConfiguredUnits(response.place.countryCode);
+      }
+      if (response.place) {
+        nextSession = {
+          ...nextSession,
+          startPlace: response.place,
+        };
+      }
+    } catch {
+      // Ignore Nominatim/network failures and keep archiving.
+    }
+  }
+
+  if (!nextSession.endPlace && endSample) {
+    const canReuseStartPlace = Boolean(
+      nextSession.startPlace &&
+      startSample &&
+      Number.isFinite(startSample.latitude) &&
+      Number.isFinite(startSample.longitude) &&
+      Number.isFinite(endSample.latitude) &&
+      Number.isFinite(endSample.longitude) &&
+      startSample.latitude === endSample.latitude &&
+      startSample.longitude === endSample.longitude
+    );
+
+    if (canReuseStartPlace) {
+      nextSession = {
+        ...nextSession,
+        endPlace: nextSession.startPlace,
+      };
+    } else {
+      try {
+        const response = await reversePlaceForSample(endSample);
+        if (response.place?.countryCode) {
+          maybeApplyAutoConfiguredUnits(response.place.countryCode);
+        }
+        if (response.place) {
+          nextSession = {
+            ...nextSession,
+            endPlace: response.place,
+          };
+        }
+      } catch {
+        // Ignore Nominatim/network failures and keep archiving.
+      }
+    }
+  }
+
+  return nextSession;
+}
+
+function archiveReplaySessionWithPlaces(session, options = {}) {
+  void (async () => {
+    await archiveReplaySession(session, options);
+    const sessionWithPlaces = await enrichReplaySessionPlaces(session);
+    if (sessionWithPlaces !== session) {
+      await archiveReplaySession(sessionWithPlaces, options);
+    }
+  })();
 }
 
 async function hydrateReplaySession() {
@@ -419,20 +647,25 @@ async function hydrateReplaySession() {
 
 function bindMenuNavigation(element, href) {
   if (!element) return;
-  element.addEventListener("click", () => {
+  element.addEventListener('click', () => {
     toolsMenu.close();
     window.location.href = href;
   });
 }
 
 function getTrapAlertDistanceLabel(distanceM = state.trapAlertDistanceM) {
-  const formatted = formatTrapDistance(distanceM, state.distanceUnit, t("away"));
-  if (formatted.value === "—") return "—";
+  const formatted = formatTrapDistance(distanceM, state.distanceUnit, t('away'));
+  if (formatted.value === '—') return '—';
   return `${formatted.value} ${formatted.unit}`;
 }
 
-function getConfiguredTrapAlertDistanceLabel(distanceM = state.trapAlertDistanceM, unit = state.distanceUnit) {
-  const matchingPreset = getTrapAlertPresets(unit).find((preset) => Math.abs(preset.meters - distanceM) < 1);
+function getConfiguredTrapAlertDistanceLabel(
+  distanceM = state.trapAlertDistanceM,
+  unit = state.distanceUnit
+) {
+  const matchingPreset = getTrapAlertPresets(unit).find(
+    (preset) => Math.abs(preset.meters - distanceM) < 1
+  );
   return matchingPreset?.label ?? getTrapAlertDistanceLabel(distanceM);
 }
 
@@ -519,25 +752,31 @@ function renderRecordingControls() {
   if (!elements.toggleRecording || !elements.stopRecording) return;
 
   const hasSamples = hasReplaySamples(state.replaySession, 1);
-  const toggleLabel = state.recordingState === "recording"
-    ? t("pauseRecording")
-    : (state.recordingState === "paused" ? t("resumeRecording") : t("startRecording"));
-  const toggleIcon = state.recordingState === "recording" ? "pause" : "record";
-  const resetLabel = t("resetTrip");
-  const stopLabel = t("stopRecording");
-  const replayLabel = t("driveReplay");
+  const toggleLabel =
+    state.recordingState === 'recording'
+      ? t('pauseRecording')
+      : state.recordingState === 'paused'
+        ? t('resumeRecording')
+        : t('startRecording');
+  const toggleIcon = state.recordingState === 'recording' ? 'pause' : 'record';
+  const resetLabel = t('resetTrip');
+  const stopLabel = t('stopRecording');
+  const replayLabel = t('driveReplay');
 
-  elements.resetTrip?.setAttribute("aria-label", resetLabel);
-  elements.resetTrip?.setAttribute("title", resetLabel);
+  elements.resetTrip?.setAttribute('aria-label', resetLabel);
+  elements.resetTrip?.setAttribute('title', resetLabel);
   elements.toggleRecording.dataset.recordingIcon = toggleIcon;
-  elements.toggleRecording.setAttribute("aria-label", toggleLabel);
-  elements.toggleRecording.setAttribute("title", toggleLabel);
-  elements.toggleRecording.setAttribute("aria-pressed", String(state.recordingState === "recording"));
-  elements.openReplayQuick?.setAttribute("aria-label", replayLabel);
-  elements.openReplayQuick?.setAttribute("title", replayLabel);
-  elements.stopRecording.setAttribute("aria-label", stopLabel);
-  elements.stopRecording.setAttribute("title", stopLabel);
-  elements.stopRecording.disabled = state.recordingState === "stopped" && !hasSamples;
+  elements.toggleRecording.setAttribute('aria-label', toggleLabel);
+  elements.toggleRecording.setAttribute('title', toggleLabel);
+  elements.toggleRecording.setAttribute(
+    'aria-pressed',
+    String(state.recordingState === 'recording')
+  );
+  elements.openReplayQuick?.setAttribute('aria-label', replayLabel);
+  elements.openReplayQuick?.setAttribute('title', replayLabel);
+  elements.stopRecording.setAttribute('aria-label', stopLabel);
+  elements.stopRecording.setAttribute('title', stopLabel);
+  elements.stopRecording.disabled = state.recordingState === 'stopped' && !hasSamples;
 }
 
 function syncReplaySessionPreferences() {
@@ -558,10 +797,11 @@ function resetReplaySession({
   minSamples = 2,
 } = {}) {
   if (archiveCurrent) {
-    void archiveReplaySession(state.replaySession, { endedAtMs, minSamples });
+    archiveReplaySessionWithPlaces(state.replaySession, { endedAtMs, minSamples });
   }
 
   state.recordingState = recordingState;
+  replayStartPlacePendingSessionId = '';
   state.replaySession = createReplaySession({
     unit: state.unit,
     distanceUnit: state.distanceUnit,
@@ -584,20 +824,20 @@ function setRecordingState(recordingState) {
 }
 
 function toggleRecording() {
-  if (state.recordingState === "recording") {
-    setRecordingState("paused");
+  if (state.recordingState === 'recording') {
+    setRecordingState('paused');
     return;
   }
 
-  if (state.recordingState === "stopped") {
+  if (state.recordingState === 'stopped') {
     resetReplaySession({
       archiveCurrent: false,
-      recordingState: "recording",
+      recordingState: 'recording',
     });
     return;
   }
 
-  setRecordingState("recording");
+  setRecordingState('recording');
 }
 
 function stopRecordingSession() {
@@ -606,7 +846,7 @@ function stopRecordingSession() {
     endedAtMs: Number.isFinite(state.lastPositionTimestamp)
       ? state.lastPositionTimestamp
       : Date.now(),
-    recordingState: "stopped",
+    recordingState: 'stopped',
     minSamples: 1,
   });
 }
@@ -620,8 +860,8 @@ function updateNearestTrapState(longitude, latitude) {
 
 const trapLoader = createTrapLoader({
   state,
-  dataUrl: "/geo/ansv_cameras_compact.min.json",
-  indexUrl: "/geo/ansv_cameras_compact.kdbush",
+  dataUrl: '/geo/ansv_cameras_compact.min.json',
+  indexUrl: '/geo/ansv_cameras_compact.kdbush',
   renderMetrics,
   afterLoad: () => {
     if (state.lastPoint) {
@@ -633,7 +873,7 @@ const trapLoader = createTrapLoader({
 function updatePageMeta() {
   document.documentElement.lang = getLang();
   if (pageDescriptionMeta) {
-    pageDescriptionMeta.setAttribute("content", t("speedPageDescription"));
+    pageDescriptionMeta.setAttribute('content', t('speedPageDescription'));
   }
   audioController.syncRuntimePagePresentation();
 }
@@ -673,39 +913,39 @@ function renderPrimaryView() {
   if (!elements.gaugeCard) return;
 
   elements.gaugeCard.dataset.primaryView = state.primaryView;
-  elements.gaugeStage?.setAttribute("aria-hidden", String(state.primaryView !== "gauge"));
-  elements.wazeStage?.setAttribute("aria-hidden", String(state.primaryView !== "waze"));
-  elements.gaugeStage?.toggleAttribute("inert", state.primaryView !== "gauge");
-  elements.wazeStage?.toggleAttribute("inert", state.primaryView !== "waze");
+  elements.gaugeStage?.setAttribute('aria-hidden', String(state.primaryView !== 'gauge'));
+  elements.wazeStage?.setAttribute('aria-hidden', String(state.primaryView !== 'waze'));
+  elements.gaugeStage?.toggleAttribute('inert', state.primaryView !== 'gauge');
+  elements.wazeStage?.toggleAttribute('inert', state.primaryView !== 'waze');
 
   if (elements.wazeFrame) {
-    elements.wazeFrame.tabIndex = state.primaryView === "waze" ? 0 : -1;
+    elements.wazeFrame.tabIndex = state.primaryView === 'waze' ? 0 : -1;
   }
 
   if (elements.wazeRecenter) {
-    elements.wazeRecenter.tabIndex = state.primaryView === "waze" ? 0 : -1;
+    elements.wazeRecenter.tabIndex = state.primaryView === 'waze' ? 0 : -1;
   }
 
   if (elements.wazeLocationPrompt) {
-    elements.wazeLocationPrompt.tabIndex = state.primaryView === "waze" ? 0 : -1;
+    elements.wazeLocationPrompt.tabIndex = state.primaryView === 'waze' ? 0 : -1;
   }
 
   for (const button of elements.primaryViewButtons) {
-    button.setAttribute("aria-pressed", String(button.dataset.primaryView === state.primaryView));
+    button.setAttribute('aria-pressed', String(button.dataset.primaryView === state.primaryView));
   }
 
   wazeController.renderWazeUi();
 }
 
 function setPrimaryView(view) {
-  if (view !== "gauge" && view !== "waze") return;
+  if (view !== 'gauge' && view !== 'waze') return;
 
   const viewChanged = state.primaryView !== view;
   state.primaryView = view;
   savePrimaryViewPreference(view);
   renderPrimaryView();
 
-  if (view === "waze" && (!state.wazeLoaded || !elements.wazeFrame?.getAttribute("src"))) {
+  if (view === 'waze' && (!state.wazeLoaded || !elements.wazeFrame?.getAttribute('src'))) {
     wazeController.syncWazeEmbed();
   }
 
@@ -716,19 +956,22 @@ function setPrimaryView(view) {
 
 function renderQuickAudioControls() {
   if (elements.quickAudioToggle) {
-    elements.quickAudioToggle.setAttribute("aria-pressed", String(!state.audioMuted));
-    elements.quickAudioToggle.classList.toggle("is-muted", state.audioMuted);
-    const audioToggleLabel = state.audioMuted ? t("unmuteAlertAudio") : t("muteAlertAudio");
-    elements.quickAudioToggle.setAttribute("aria-label", audioToggleLabel);
+    elements.quickAudioToggle.setAttribute('aria-pressed', String(!state.audioMuted));
+    elements.quickAudioToggle.classList.toggle('is-muted', state.audioMuted);
+    const audioToggleLabel = state.audioMuted ? t('unmuteAlertAudio') : t('muteAlertAudio');
+    elements.quickAudioToggle.setAttribute('aria-label', audioToggleLabel);
     elements.quickAudioToggle.title = audioToggleLabel;
   }
 
   if (elements.quickBackgroundAudioToggle) {
-    elements.quickBackgroundAudioToggle.setAttribute("aria-pressed", String(state.backgroundAudioEnabled));
+    elements.quickBackgroundAudioToggle.setAttribute(
+      'aria-pressed',
+      String(state.backgroundAudioEnabled)
+    );
     const backgroundAudioLabel = state.backgroundAudioEnabled
-      ? t("disableBackgroundAudio")
-      : t("enableBackgroundAudio");
-    elements.quickBackgroundAudioToggle.setAttribute("aria-label", backgroundAudioLabel);
+      ? t('disableBackgroundAudio')
+      : t('enableBackgroundAudio');
+    elements.quickBackgroundAudioToggle.setAttribute('aria-label', backgroundAudioLabel);
     elements.quickBackgroundAudioToggle.title = backgroundAudioLabel;
   }
 }
@@ -736,67 +979,85 @@ function renderQuickAudioControls() {
 function syncAlertTriggerDiscovery() {
   const shouldHighlightTrigger = !state.alertTriggerDiscovered && elements.alertPanel.hidden;
   elements.alertTriggerHint.hidden = !shouldHighlightTrigger;
-  elements.gaugeCard.classList.toggle("is-alert-discoverable", shouldHighlightTrigger);
+  elements.gaugeCard.classList.toggle('is-alert-discoverable', shouldHighlightTrigger);
 }
 
 function renderAlertUi(options = {}) {
   const alertState = getAlertUiState();
   const currentLimitDisplay = getAlertLimitDisplayValue();
-  const canUseCurrentSpeed = state.lastFixAt > 0
-    && Math.round(convertSpeed(state.currentSpeedMs, state.unit)) >= getAlertConfig(state.unit).min;
+  const canUseCurrentSpeed =
+    state.lastFixAt > 0 &&
+    Math.round(convertSpeed(state.currentSpeedMs, state.unit)) >= getAlertConfig(state.unit).min;
 
   speedRenderer.renderAlertPresets();
   speedRenderer.renderTrapDistancePresets();
 
   elements.alertTriggerValue.textContent = speedRenderer.getAlertTriggerText(alertState);
-  elements.alertTrigger.setAttribute("aria-label", speedRenderer.getAlertTriggerLabel(alertState));
+  elements.alertTrigger.setAttribute('aria-label', speedRenderer.getAlertTriggerLabel(alertState));
   elements.alertPanelStatus.textContent = speedRenderer.getAlertPanelStatusText(alertState);
-  elements.alertToggle.textContent = isManualAlertActive(state.alertEnabled, state.alertLimitMs) ? t("turnOff") : t("turnOn");
-  elements.alertToggle.setAttribute("aria-pressed", String(isManualAlertActive(state.alertEnabled, state.alertLimitMs)));
+  elements.alertToggle.textContent = isManualAlertActive(state.alertEnabled, state.alertLimitMs)
+    ? t('turnOff')
+    : t('turnOn');
+  elements.alertToggle.setAttribute(
+    'aria-pressed',
+    String(isManualAlertActive(state.alertEnabled, state.alertLimitMs))
+  );
   elements.alertUseCurrent.disabled = !canUseCurrentSpeed;
   elements.alertValue.textContent = String(currentLimitDisplay);
   elements.alertUnit.textContent = UNIT_CONFIG[state.unit].label;
   elements.alertDecrease.disabled = currentLimitDisplay <= getAlertConfig(state.unit).min;
   elements.alertIncrease.disabled = currentLimitDisplay >= getAlertConfig(state.unit).max;
 
-  for (const button of elements.alertPresets.querySelectorAll("button")) {
-    button.setAttribute("aria-pressed", String(Number(button.dataset.alertPreset) === currentLimitDisplay));
+  for (const button of elements.alertPresets.querySelectorAll('button')) {
+    button.setAttribute(
+      'aria-pressed',
+      String(Number(button.dataset.alertPreset) === currentLimitDisplay)
+    );
   }
 
   for (const button of elements.alertSoundButtons) {
-    button.setAttribute("aria-pressed", String(
-      (button.dataset.alertSound === "on") === state.alertSoundEnabled,
-    ));
+    button.setAttribute(
+      'aria-pressed',
+      String((button.dataset.alertSound === 'on') === state.alertSoundEnabled)
+    );
   }
 
   for (const button of elements.trapAlertButtons) {
-    button.setAttribute("aria-pressed", String(
-      (button.dataset.trapAlert === "on") === state.trapAlertEnabled,
-    ));
+    button.setAttribute(
+      'aria-pressed',
+      String((button.dataset.trapAlert === 'on') === state.trapAlertEnabled)
+    );
   }
 
-  for (const button of elements.trapDistancePresets.querySelectorAll("button")) {
-    button.setAttribute("aria-pressed", String(
-      Math.abs(Number(button.dataset.trapDistance) - state.trapAlertDistanceM) < 1,
-    ));
+  for (const button of elements.trapDistancePresets.querySelectorAll('button')) {
+    button.setAttribute(
+      'aria-pressed',
+      String(Math.abs(Number(button.dataset.trapDistance) - state.trapAlertDistanceM) < 1)
+    );
   }
 
   for (const button of elements.trapSoundButtons) {
-    button.setAttribute("aria-pressed", String(
-      (button.dataset.trapSound === "on") === state.trapSoundEnabled,
-    ));
+    button.setAttribute(
+      'aria-pressed',
+      String((button.dataset.trapSound === 'on') === state.trapSoundEnabled)
+    );
   }
 
   for (const button of elements.backgroundAudioButtons) {
-    button.setAttribute("aria-pressed", String(
-      (button.dataset.backgroundAudio === "on") === state.backgroundAudioEnabled,
-    ));
+    button.setAttribute(
+      'aria-pressed',
+      String((button.dataset.backgroundAudio === 'on') === state.backgroundAudioEnabled)
+    );
   }
 
-  elements.gaugeCard.classList.toggle("is-alert-enabled", isManualAlertActive(state.alertEnabled, state.alertLimitMs) || (state.trapAlertEnabled && trapLoader.isTrapDataReady()));
-  elements.gaugeCard.classList.toggle("is-alert-near", alertState.near);
-  elements.gaugeCard.classList.toggle("is-alert-over", alertState.over);
-  elements.gaugeCard.classList.toggle("is-trap-active", alertState.trapActive);
+  elements.gaugeCard.classList.toggle(
+    'is-alert-enabled',
+    isManualAlertActive(state.alertEnabled, state.alertLimitMs) ||
+      (state.trapAlertEnabled && trapLoader.isTrapDataReady())
+  );
+  elements.gaugeCard.classList.toggle('is-alert-near', alertState.near);
+  elements.gaugeCard.classList.toggle('is-alert-over', alertState.over);
+  elements.gaugeCard.classList.toggle('is-trap-active', alertState.trapActive);
 
   renderQuickAudioControls();
   syncAlertTriggerDiscovery();
@@ -857,18 +1118,23 @@ function setAlertLimitDisplay(value, { enable = true, fromUserGesture = false } 
 function adjustAlertLimit(stepDirection, options = {}) {
   const { step } = getAlertConfig(state.unit);
   const currentDisplayValue = normalizeAlertDisplayValue(getAlertLimitDisplayValue(), state.unit);
-  setAlertLimitDisplay(currentDisplayValue + (stepDirection * step), options);
+  setAlertLimitDisplay(currentDisplayValue + stepDirection * step, options);
 }
 
 function setAlertLimitToCurrentSpeed() {
   if (state.lastFixAt === 0) return;
-  setAlertLimitDisplay(Math.round(convertSpeed(state.currentSpeedMs, state.unit)), { fromUserGesture: true });
+  setAlertLimitDisplay(Math.round(convertSpeed(state.currentSpeedMs, state.unit)), {
+    fromUserGesture: true,
+  });
 }
 
 function setTrapAlertEnabled(enabled, options = {}) {
   state.trapAlertEnabled = enabled;
   if (!Number.isFinite(state.trapAlertDistanceM) || state.trapAlertDistanceM <= 0) {
-    state.trapAlertDistanceM = getTrapAlertPresets(state.distanceUnit)[Math.min(1, getTrapAlertPresets(state.distanceUnit).length - 1)]?.meters ?? 500;
+    state.trapAlertDistanceM =
+      getTrapAlertPresets(state.distanceUnit)[
+        Math.min(1, getTrapAlertPresets(state.distanceUnit).length - 1)
+      ]?.meters ?? 500;
   }
 
   if (!enabled) {
@@ -938,22 +1204,22 @@ function openAlertPanel() {
     saveAlertTriggerDiscoveredPreference(true);
   }
   renderAlertUi();
-  document.body.classList.add("alert-panel-open");
+  document.body.classList.add('alert-panel-open');
   elements.alertPanel.scrollTop = 0;
-  elements.alertTrigger.setAttribute("aria-expanded", "true");
-  elements.quickAlertConfig?.setAttribute("aria-expanded", "true");
-  elements.quickAlertConfig?.setAttribute("aria-pressed", "true");
+  elements.alertTrigger.setAttribute('aria-expanded', 'true');
+  elements.quickAlertConfig?.setAttribute('aria-expanded', 'true');
+  elements.quickAlertConfig?.setAttribute('aria-pressed', 'true');
 }
 
 function closeAlertPanel() {
-  document.body.classList.remove("alert-panel-open");
+  document.body.classList.remove('alert-panel-open');
   if (elements.alertBackdrop) {
     elements.alertBackdrop.hidden = true;
   }
   elements.alertPanel.hidden = true;
-  elements.alertTrigger.setAttribute("aria-expanded", "false");
-  elements.quickAlertConfig?.setAttribute("aria-expanded", "false");
-  elements.quickAlertConfig?.setAttribute("aria-pressed", "false");
+  elements.alertTrigger.setAttribute('aria-expanded', 'false');
+  elements.quickAlertConfig?.setAttribute('aria-expanded', 'false');
+  elements.quickAlertConfig?.setAttribute('aria-pressed', 'false');
   syncAlertTriggerDiscovery();
 }
 
@@ -966,36 +1232,11 @@ function toggleAlertPanel() {
 }
 
 function setUnit(unit) {
-  if (!UNIT_CONFIG[unit] || unit === state.unit) return;
-
-  state.unit = unit;
-  saveUnitPreference(unit);
-
-  for (const button of elements.unitButtons) {
-    button.setAttribute("aria-pressed", button.dataset.unit === unit ? "true" : "false");
-  }
-
-  delete elements.alertPresets.dataset.unit;
-  syncReplaySessionPreferences();
-  renderMetrics();
-  speedRenderer.drawGauge();
+  applyUnitsConfiguration({ unit });
 }
 
 function setDistanceUnit(unit) {
-  if (!DISTANCE_UNIT_CONFIG[unit] || unit === state.distanceUnit) return;
-
-  state.distanceUnit = unit;
-  state.trapAlertDistanceM = normalizeTrapAlertDistance(state.trapAlertDistanceM, unit);
-  saveDistanceUnitPreference(unit);
-  saveTrapAlertDistancePreference(state.trapAlertDistanceM);
-
-  for (const button of elements.distanceUnitButtons) {
-    button.setAttribute("aria-pressed", button.dataset.distanceUnit === unit ? "true" : "false");
-  }
-
-  delete elements.trapDistancePresets.dataset.unit;
-  syncReplaySessionPreferences();
-  renderMetrics();
+  applyUnitsConfiguration({ distanceUnit: unit });
 }
 
 function clearLiveFixState({ preserveContinuity = false } = {}) {
@@ -1048,7 +1289,7 @@ function resetTripData() {
   globeController.resetGlobe();
   hideNotice();
   closeAlertPanel();
-  setStatus("requesting");
+  setStatus('requesting');
   renderMetrics();
   speedRenderer.drawGauge();
 }
@@ -1067,13 +1308,13 @@ function stopTracking({ disarmBackgroundAudio = false } = {}) {
 }
 
 function startTracking({ fromUserGesture = false } = {}) {
-  if (!("geolocation" in navigator)) {
+  if (!('geolocation' in navigator)) {
     clearLiveFixState();
     audioController.suppressBackgroundAudioRuntime();
     audioController.stopOverspeedSound();
     audioController.stopTrapSound();
-    setStatus("notSupported");
-    showTranslatedNotice("noticeNoGeolocation");
+    setStatus('notSupported');
+    showTranslatedNotice('noticeNoGeolocation');
     renderMetrics();
     speedRenderer.drawGauge();
     return;
@@ -1081,7 +1322,7 @@ function startTracking({ fromUserGesture = false } = {}) {
 
   stopTracking();
   state.trackingStartedAt = Date.now();
-  setStatus("requesting");
+  setStatus('requesting');
   renderMetrics();
   speedRenderer.drawGauge();
 
@@ -1089,15 +1330,11 @@ function startTracking({ fromUserGesture = false } = {}) {
     audioController.handleUserGestureAudioActivation();
   }
 
-  state.watchId = navigator.geolocation.watchPosition(
-    handlePosition,
-    handlePositionError,
-    {
-      enableHighAccuracy: true,
-      maximumAge: 1000,
-      timeout: 10000,
-    },
-  );
+  state.watchId = navigator.geolocation.watchPosition(handlePosition, handlePositionError, {
+    enableHighAccuracy: true,
+    maximumAge: 1000,
+    timeout: 10000,
+  });
 }
 
 function restartTrip({ fromUserGesture = false } = {}) {
@@ -1133,8 +1370,7 @@ function handlePosition(position) {
     const movementThresholdM = getMovementThresholdM(currentAccuracyM, state.lastAccuracyM);
     const hasReportedMotion = Number.isFinite(speedMs) && speedMs >= MIN_MOVING_SPEED_MS;
     const hasMeaningfulMovement =
-      distanceM >= movementThresholdM
-      && fallbackSpeedMs >= MIN_MOVING_SPEED_MS;
+      distanceM >= movementThresholdM && fallbackSpeedMs >= MIN_MOVING_SPEED_MS;
 
     if (distanceM <= plausibleDistanceM && (hasReportedMotion || hasMeaningfulMovement)) {
       state.totalDistanceM += distanceM;
@@ -1163,7 +1399,10 @@ function handlePosition(position) {
 
   updateNearestTrapState(coords.longitude, coords.latitude);
   globeController.syncGlobePosition(coords.longitude, coords.latitude);
-  if (state.primaryView === "waze" && (!state.wazeLoaded || !elements.wazeFrame?.getAttribute("src"))) {
+  if (
+    state.primaryView === 'waze' &&
+    (!state.wazeLoaded || !elements.wazeFrame?.getAttribute('src'))
+  ) {
     wazeController.syncWazeEmbed();
   } else {
     wazeController.renderWazeUi();
@@ -1171,15 +1410,13 @@ function handlePosition(position) {
 
   if (Number.isFinite(coords.altitude)) {
     state.currentAltitudeM = coords.altitude;
-    state.maxAltitudeM = state.maxAltitudeM === null
-      ? coords.altitude
-      : Math.max(state.maxAltitudeM, coords.altitude);
-    state.minAltitudeM = state.minAltitudeM === null
-      ? coords.altitude
-      : Math.min(state.minAltitudeM, coords.altitude);
+    state.maxAltitudeM =
+      state.maxAltitudeM === null ? coords.altitude : Math.max(state.maxAltitudeM, coords.altitude);
+    state.minAltitudeM =
+      state.minAltitudeM === null ? coords.altitude : Math.min(state.minAltitudeM, coords.altitude);
   }
 
-  if (state.recordingState === "recording") {
+  if (state.recordingState === 'recording') {
     state.replaySession = appendReplaySample(
       state.replaySession,
       {
@@ -1196,7 +1433,12 @@ function handlePosition(position) {
         unit: state.unit,
         distanceUnit: state.distanceUnit,
         recordingState: state.recordingState,
-      },
+      }
+    );
+    void maybeResolveReplayStartPlace(
+      state.replaySession.firstSample ??
+        state.replaySession.samples[0] ??
+        state.replaySession.lastSample
     );
     if (state.replaySession.samples.length >= REPLAY_PERSIST_CHUNK_SIZE) {
       scheduleReplaySessionPersist({ immediate: true });
@@ -1206,7 +1448,7 @@ function handlePosition(position) {
     renderRecordingControls();
   }
 
-  setStatus("accuracy", { accuracyM: coords.accuracy });
+  setStatus('accuracy', { accuracyM: coords.accuracy });
   renderMetrics();
   audioController.maybeRecoverSuppressedBackgroundAudio();
 }
@@ -1214,8 +1456,8 @@ function handlePosition(position) {
 function handlePositionError(error) {
   if (error.code === GEO_ERROR_CODE.PERMISSION_DENIED) {
     stopTracking({ disarmBackgroundAudio: true });
-    setStatus("blocked");
-    showTranslatedNotice("noticeLocationRequired");
+    setStatus('blocked');
+    showTranslatedNotice('noticeLocationRequired');
     renderMetrics();
     speedRenderer.drawGauge();
     return;
@@ -1223,8 +1465,8 @@ function handlePositionError(error) {
 
   if (error.code === GEO_ERROR_CODE.POSITION_UNAVAILABLE) {
     clearLiveFixState({ preserveContinuity: true });
-    setStatus("unavailable");
-    showTranslatedNotice("noticeSignalUnavailable");
+    setStatus('unavailable');
+    showTranslatedNotice('noticeSignalUnavailable');
     renderMetrics();
     speedRenderer.drawGauge();
     return;
@@ -1232,16 +1474,16 @@ function handlePositionError(error) {
 
   if (error.code === GEO_ERROR_CODE.TIMEOUT) {
     clearLiveFixState({ preserveContinuity: true });
-    setStatus("waiting");
-    showTranslatedNotice("noticeStillWaiting");
+    setStatus('waiting');
+    showTranslatedNotice('noticeStillWaiting');
     renderMetrics();
     speedRenderer.drawGauge();
     return;
   }
 
   clearLiveFixState({ preserveContinuity: true });
-  setStatus("error");
-  showNotice(error.message || t("gpsError"));
+  setStatus('error');
+  showNotice(error.message || t('gpsError'));
   renderMetrics();
   speedRenderer.drawGauge();
 }
@@ -1269,7 +1511,7 @@ function renderFrame(now) {
   }
 
   if (!state.lastFixAt && Date.now() - state.trackingStartedAt > 9000 && elements.notice.hidden) {
-    showTranslatedNotice("noticeStillLookingFirstFix");
+    showTranslatedNotice('noticeStillLookingFirstFix');
   }
 }
 
@@ -1299,115 +1541,123 @@ function syncLanguage() {
 
 function bindEvents() {
   elements.langToggleButtons.forEach((button) => {
-    button.addEventListener("click", () => {
+    button.addEventListener('click', () => {
       toggleLang();
     });
   });
-  bindMenuNavigation(elements.openReplayMenu, "/replay.html");
-  bindMenuNavigation(elements.openReplayQuick, "/replay.html");
-  bindMenuNavigation(elements.openAccelMenu, "/accel");
-  bindMenuNavigation(elements.openGpsLabMenu, "/gps-rate");
-  bindMenuNavigation(elements.openBoardMenu, "/");
-  elements.retryGps.addEventListener("click", () => restartTrip({ fromUserGesture: true }));
-  elements.resetTrip.addEventListener("click", () => restartTrip({ fromUserGesture: true }));
-  elements.toggleRecording?.addEventListener("click", () => {
+  bindMenuNavigation(elements.openReplayMenu, '/replay.html');
+  bindMenuNavigation(elements.openReplayQuick, '/replay.html');
+  bindMenuNavigation(elements.openAccelMenu, '/accel');
+  bindMenuNavigation(elements.openGpsLabMenu, '/gps-rate');
+  bindMenuNavigation(elements.openBoardMenu, '/');
+  elements.retryGps.addEventListener('click', () => restartTrip({ fromUserGesture: true }));
+  elements.resetTrip.addEventListener('click', () => restartTrip({ fromUserGesture: true }));
+  elements.toggleRecording?.addEventListener('click', () => {
     toggleRecording();
   });
-  elements.stopRecording?.addEventListener("click", () => {
+  elements.stopRecording?.addEventListener('click', () => {
     stopRecordingSession();
   });
-  elements.quickAlertConfig?.addEventListener("click", toggleAlertPanel);
-  elements.alertTrigger.addEventListener("click", toggleAlertPanel);
-  elements.closeAlertPanel.addEventListener("click", closeAlertPanel);
-  elements.alertToggle.addEventListener("click", () => {
+  elements.quickAlertConfig?.addEventListener('click', toggleAlertPanel);
+  elements.alertTrigger.addEventListener('click', toggleAlertPanel);
+  elements.closeAlertPanel.addEventListener('click', closeAlertPanel);
+  elements.alertToggle.addEventListener('click', () => {
     if (isManualAlertActive(state.alertEnabled, state.alertLimitMs)) {
       setAlertEnabled(false, { fromUserGesture: true });
       return;
     }
     setAlertEnabled(true, { fromUserGesture: true });
   });
-  elements.alertUseCurrent.addEventListener("click", setAlertLimitToCurrentSpeed);
-  elements.alertDecrease.addEventListener("click", () => adjustAlertLimit(-1, { fromUserGesture: true }));
-  elements.alertIncrease.addEventListener("click", () => adjustAlertLimit(1, { fromUserGesture: true }));
-  elements.alertPresets.addEventListener("click", (event) => {
-    const button = event.target.closest("button[data-alert-preset]");
+  elements.alertUseCurrent.addEventListener('click', setAlertLimitToCurrentSpeed);
+  elements.alertDecrease.addEventListener('click', () =>
+    adjustAlertLimit(-1, { fromUserGesture: true })
+  );
+  elements.alertIncrease.addEventListener('click', () =>
+    adjustAlertLimit(1, { fromUserGesture: true })
+  );
+  elements.alertPresets.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-alert-preset]');
     if (!button) return;
     setAlertLimitDisplay(Number(button.dataset.alertPreset), { fromUserGesture: true });
   });
 
   for (const button of elements.primaryViewButtons) {
-    button.addEventListener("click", () => {
+    button.addEventListener('click', () => {
       setPrimaryView(button.dataset.primaryView);
     });
   }
 
-  elements.wazeLocationPrompt?.addEventListener("click", () => {
-    window.open(wazeController.getWazePermissionUrl(), "_blank", "noopener,noreferrer");
+  elements.wazeLocationPrompt?.addEventListener('click', () => {
+    window.open(wazeController.getWazePermissionUrl(), '_blank', 'noopener,noreferrer');
   });
 
-  elements.wazeRecenter?.addEventListener("click", () => {
+  elements.wazeRecenter?.addEventListener('click', () => {
     wazeController.syncWazeEmbed({ force: true });
   });
 
-  elements.wazeFrame?.addEventListener("load", () => {
+  elements.wazeFrame?.addEventListener('load', () => {
     state.wazeLoadPending = false;
-    state.wazeLoaded = Boolean(elements.wazeFrame?.getAttribute("src"));
+    state.wazeLoaded = Boolean(elements.wazeFrame?.getAttribute('src'));
     wazeController.renderWazeUi();
   });
 
   for (const button of elements.alertSoundButtons) {
-    button.addEventListener("click", () => {
-      setAlertSoundEnabled(button.dataset.alertSound === "on", { fromUserGesture: true });
+    button.addEventListener('click', () => {
+      setAlertSoundEnabled(button.dataset.alertSound === 'on', { fromUserGesture: true });
     });
   }
 
   for (const button of elements.trapAlertButtons) {
-    button.addEventListener("click", () => {
-      setTrapAlertEnabled(button.dataset.trapAlert === "on", { fromUserGesture: true });
+    button.addEventListener('click', () => {
+      setTrapAlertEnabled(button.dataset.trapAlert === 'on', { fromUserGesture: true });
     });
   }
 
-  elements.trapDistancePresets.addEventListener("click", (event) => {
-    const button = event.target.closest("button[data-trap-distance]");
+  elements.trapDistancePresets.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-trap-distance]');
     if (!button) return;
     setTrapAlertDistance(Number(button.dataset.trapDistance), { fromUserGesture: true });
   });
 
   for (const button of elements.trapSoundButtons) {
-    button.addEventListener("click", () => {
-      setTrapSoundEnabled(button.dataset.trapSound === "on", { fromUserGesture: true });
+    button.addEventListener('click', () => {
+      setTrapSoundEnabled(button.dataset.trapSound === 'on', { fromUserGesture: true });
     });
   }
 
-  elements.quickAudioToggle?.addEventListener("click", () => {
+  elements.quickAudioToggle?.addEventListener('click', () => {
     setAudioMuted(!state.audioMuted, { fromUserGesture: true });
   });
 
-  elements.quickBackgroundAudioToggle?.addEventListener("click", () => {
+  elements.quickBackgroundAudioToggle?.addEventListener('click', () => {
     setBackgroundAudioEnabled(!state.backgroundAudioEnabled, { fromUserGesture: true });
   });
 
   for (const button of elements.backgroundAudioButtons) {
-    button.addEventListener("click", () => {
-      setBackgroundAudioEnabled(button.dataset.backgroundAudio === "on", { fromUserGesture: true });
+    button.addEventListener('click', () => {
+      setBackgroundAudioEnabled(button.dataset.backgroundAudio === 'on', { fromUserGesture: true });
     });
   }
 
   for (const button of elements.unitButtons) {
-    button.addEventListener("click", () => setUnit(button.dataset.unit));
+    button.addEventListener('click', () => setUnit(button.dataset.unit));
   }
 
   for (const button of elements.distanceUnitButtons) {
-    button.addEventListener("click", () => setDistanceUnit(button.dataset.distanceUnit));
+    button.addEventListener('click', () => setDistanceUnit(button.dataset.distanceUnit));
   }
 
-  elements.globeMount?.addEventListener("pointerdown", () => {
-    globeController.pauseGlobeFollow();
-  }, { passive: true });
+  elements.globeMount?.addEventListener(
+    'pointerdown',
+    () => {
+      globeController.pauseGlobeFollow();
+    },
+    { passive: true }
+  );
 
-  window.addEventListener("resize", resizeCanvas, { passive: true });
-  window.addEventListener("orientationchange", resizeCanvas, { passive: true });
-  window.addEventListener("pageshow", () => {
+  window.addEventListener('resize', resizeCanvas, { passive: true });
+  window.addEventListener('orientationchange', resizeCanvas, { passive: true });
+  window.addEventListener('pageshow', () => {
     trapLoader.ensureTrapArtifactsLoaded();
     resizeCanvas();
     globeController.startGlobeSolarUpdates();
@@ -1420,11 +1670,12 @@ function bindEvents() {
     audioController.syncOverspeedSound();
     audioController.syncTrapSound();
   });
-  document.addEventListener("pointerdown", (event) => {
+  document.addEventListener('pointerdown', (event) => {
     audioController.handleUserGestureAudioActivation();
-    const insideAlertUi = elements.alertPanel.contains(event.target)
-      || elements.alertTrigger.contains(event.target)
-      || elements.quickAlertConfig?.contains(event.target);
+    const insideAlertUi =
+      elements.alertPanel.contains(event.target) ||
+      elements.alertTrigger.contains(event.target) ||
+      elements.quickAlertConfig?.contains(event.target);
     if (!insideAlertUi) {
       audioController.syncOverspeedSound({ fromUserGesture: true });
       audioController.syncTrapSound({ fromUserGesture: true });
@@ -1433,14 +1684,14 @@ function bindEvents() {
     if (insideAlertUi) return;
     closeAlertPanel();
   });
-  document.addEventListener("keydown", (event) => {
+  document.addEventListener('keydown', (event) => {
     audioController.handleUserGestureAudioActivation();
     audioController.syncOverspeedSound({ fromUserGesture: true });
     audioController.syncTrapSound({ fromUserGesture: true });
-    if (event.key === "Escape") closeAlertPanel();
+    if (event.key === 'Escape') closeAlertPanel();
   });
 
-  document.addEventListener("visibilitychange", () => {
+  document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       void persistReplaySessionNow();
       globeController.stopGlobeSolarUpdates();
@@ -1461,14 +1712,14 @@ function bindEvents() {
     audioController.syncTrapSound();
     audioController.syncRuntimePagePresentation();
   });
-  document.addEventListener("i18n:change", syncLanguage);
-  window.addEventListener("pagehide", () => {
+  document.addEventListener('i18n:change', syncLanguage);
+  window.addEventListener('pagehide', () => {
     void persistReplaySessionNow();
   });
 }
 
 async function init() {
-  document.body.classList.remove("alert-panel-open");
+  document.body.classList.remove('alert-panel-open');
   if (loadedPreferences.changed) {
     saveBackgroundAudioEnabledPreference(false);
   }
@@ -1481,33 +1732,42 @@ async function init() {
   });
 
   for (const button of elements.primaryViewButtons) {
-    button.setAttribute("aria-pressed", button.dataset.primaryView === state.primaryView ? "true" : "false");
+    button.setAttribute(
+      'aria-pressed',
+      button.dataset.primaryView === state.primaryView ? 'true' : 'false'
+    );
   }
 
   for (const button of elements.unitButtons) {
-    button.setAttribute("aria-pressed", button.dataset.unit === state.unit ? "true" : "false");
+    button.setAttribute('aria-pressed', button.dataset.unit === state.unit ? 'true' : 'false');
   }
 
   for (const button of elements.distanceUnitButtons) {
-    button.setAttribute("aria-pressed", button.dataset.distanceUnit === state.distanceUnit ? "true" : "false");
+    button.setAttribute(
+      'aria-pressed',
+      button.dataset.distanceUnit === state.distanceUnit ? 'true' : 'false'
+    );
   }
 
   for (const button of elements.trapAlertButtons) {
-    button.setAttribute("aria-pressed", String(
-      (button.dataset.trapAlert === "on") === state.trapAlertEnabled,
-    ));
+    button.setAttribute(
+      'aria-pressed',
+      String((button.dataset.trapAlert === 'on') === state.trapAlertEnabled)
+    );
   }
 
   for (const button of elements.trapSoundButtons) {
-    button.setAttribute("aria-pressed", String(
-      (button.dataset.trapSound === "on") === state.trapSoundEnabled,
-    ));
+    button.setAttribute(
+      'aria-pressed',
+      String((button.dataset.trapSound === 'on') === state.trapSoundEnabled)
+    );
   }
 
   for (const button of elements.backgroundAudioButtons) {
-    button.setAttribute("aria-pressed", String(
-      (button.dataset.backgroundAudio === "on") === state.backgroundAudioEnabled,
-    ));
+    button.setAttribute(
+      'aria-pressed',
+      String((button.dataset.backgroundAudio === 'on') === state.backgroundAudioEnabled)
+    );
   }
 
   audioController.attachRuntimeAudioEventListeners();
