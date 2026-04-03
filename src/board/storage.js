@@ -257,7 +257,7 @@ async function loadCommandChunks(generation, section, chunkCount, expectedCount)
 async function persistBoardDocument(document) {
   const normalized = toBoardDrawing({
     ...document,
-    updatedAtMs: Date.now(),
+    updatedAtMs: isFiniteNumber(document?.updatedAtMs) ? document.updatedAtMs : Date.now(),
   });
 
   const database = await openBoardDatabase();

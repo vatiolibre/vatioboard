@@ -1,8 +1,10 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
 import '../styles/speed.less';
+import '../styles/cloud-sync-status.less';
 import { applyTranslations, getLang, t, toggleLang } from '../i18n.js';
 import { createAnalogSpeedometer } from '../shared/analog-speedometer.js';
 import { initBackendAuthControllers } from '../shared/backend-auth.js';
+import { initCloudSyncStatusIndicator } from '../shared/cloud-sync-status-indicator.js';
 import { createPlaceResolver } from '../shared/place-resolver.js';
 import { applyButtonIcon, initToolsMenu } from '../shared/tools-menu.js';
 import {
@@ -25,10 +27,22 @@ import {
   createReplaySession,
   hasReplaySamples,
   loadActiveReplaySession,
+  loadReplaySessionById,
   appendReplaySample,
   REPLAY_PERSIST_CHUNK_SIZE,
   saveActiveReplaySession,
 } from '../replay/session.js';
+import {
+  CLOUD_SYNC_ENTITY_TYPES,
+  queueCloudSyncChange,
+  startCloudSyncLoop,
+} from '../shared/cloud-sync.js';
+import {
+  ensureSingleTabOwnership,
+  hasSingleTabOwnership,
+  releaseSingleTabOwnership,
+  SINGLE_TAB_OWNERSHIP_EVENT,
+} from '../shared/single-tab.js';
 import {
   DEFAULT_ALERT_LIMIT_MS,
   DISTANCE_UNIT_CONFIG,
@@ -90,6 +104,7 @@ const elements = {
   gaugeCard: document.querySelector('.gauge-card'),
   langToggle: document.getElementById('langToggle'),
   langToggleButtons: Array.from(document.querySelectorAll('[data-lang-toggle], #langToggle')),
+  toolbar: document.querySelector('.speed-toolbar'),
   toolsMenuBtn: document.getElementById('speedToolsMenuBtn'),
   toolsMenuList: document.getElementById('speedToolsMenuList'),
   openReplayMenu: document.getElementById('openSpeedReplayMenu'),
@@ -169,12 +184,66 @@ const elements = {
 };
 
 initBackendAuthControllers();
+const singleTabOwnershipPromise = ensureSingleTabOwnership();
 
 const toolsMenu = initToolsMenu({
   button: elements.toolsMenuBtn,
   list: elements.toolsMenuList,
 });
 const placeResolver = createPlaceResolver({ getLanguage: getLang });
+
+function focusElement(element) {
+  if (!element || typeof element.focus !== 'function') return;
+  try {
+    element.focus({ preventScroll: true });
+  } catch {
+    element.focus();
+  }
+}
+
+function isVisibleForFocus(element) {
+  return Boolean(element && element.hidden !== true && !element.closest('[hidden]'));
+}
+
+function getCloudSyncLauncherFocusTarget() {
+  const candidates = [
+    elements.toolsMenuList?.querySelector('[data-backend-auth-user]'),
+    elements.toolsMenuList?.querySelector('[data-backend-auth-password]'),
+    elements.toolsMenuList?.querySelector('[data-backend-auth-login]'),
+    elements.toolsMenuList?.querySelector('[data-backend-auth-logout]'),
+    elements.toolsMenuList?.querySelector('[data-backend-auth-status]'),
+  ];
+
+  return candidates.find(isVisibleForFocus) || null;
+}
+
+function focusCloudSyncLauncherTarget(attempt = 0) {
+  toolsMenu.setOpen(true);
+  const target = getCloudSyncLauncherFocusTarget();
+  if (target) {
+    focusElement(target);
+    if (target.matches?.('input') && typeof target.select === 'function') {
+      target.select();
+    }
+    return;
+  }
+
+  if (attempt >= 6) return;
+  Promise.resolve().then(() => {
+    focusCloudSyncLauncherTarget(attempt + 1);
+  });
+}
+
+function openCloudSyncLauncher() {
+  Promise.resolve().then(() => {
+    focusCloudSyncLauncherTarget();
+  });
+}
+
+initCloudSyncStatusIndicator({
+  mount: elements.toolbar,
+  openLauncher: openCloudSyncLauncher,
+});
 
 applyButtonIcon(elements.openAccelMenu, IconAccel);
 applyButtonIcon(elements.openGpsLabMenu, IconGpsLab);
@@ -625,9 +694,33 @@ async function enrichReplaySessionPlaces(session) {
 function archiveReplaySessionWithPlaces(session, options = {}) {
   void (async () => {
     await archiveReplaySession(session, options);
+    const archivedSession = await loadReplaySessionById(session?.id);
+    if (archivedSession) {
+      await queueCloudSyncChange({
+        entityType: CLOUD_SYNC_ENTITY_TYPES.replaySession,
+        recordId: archivedSession.id,
+        recordTitle: archivedSession.startPlace?.label || archivedSession.id,
+        updatedAtMs: archivedSession.updatedAtMs ?? archivedSession.endedAtMs ?? Date.now(),
+        payload: archivedSession,
+      });
+    }
     const sessionWithPlaces = await enrichReplaySessionPlaces(session);
     if (sessionWithPlaces !== session) {
       await archiveReplaySession(sessionWithPlaces, options);
+      const enrichedArchivedSession = await loadReplaySessionById(sessionWithPlaces?.id);
+      if (enrichedArchivedSession) {
+        await queueCloudSyncChange({
+          entityType: CLOUD_SYNC_ENTITY_TYPES.replaySession,
+          recordId: enrichedArchivedSession.id,
+          recordTitle:
+            enrichedArchivedSession.startPlace?.label || enrichedArchivedSession.id,
+          updatedAtMs:
+            enrichedArchivedSession.updatedAtMs
+            ?? enrichedArchivedSession.endedAtMs
+            ?? Date.now(),
+          payload: enrichedArchivedSession,
+        });
+      }
     }
   })();
 }
@@ -1526,6 +1619,38 @@ function stopRenderLoop() {
   state.renderFrameId = null;
 }
 
+function handleSingleTabOwnershipChange(event) {
+  if (event?.detail?.owned !== false) return;
+
+  void persistReplaySessionNow();
+  stopTracking({ disarmBackgroundAudio: true });
+  stopRenderLoop();
+  globeController.stopGlobeSolarUpdates();
+  audioController.disarmBackgroundAlertAudio();
+  audioController.syncRuntimePagePresentation();
+  closeAlertPanel();
+}
+
+function resumeVisibleRuntime() {
+  if (!hasSingleTabOwnership()) {
+    audioController.syncRuntimePagePresentation();
+    return false;
+  }
+
+  resizeCanvas();
+  trapLoader.ensureTrapArtifactsLoaded();
+  globeController.startGlobeSolarUpdates();
+  globeController.queueGlobeSolarSync();
+  startRenderLoop();
+  if (audioController.wantsBackgroundAudio()) {
+    void audioController.armBackgroundAlertAudio();
+  }
+  audioController.syncOverspeedSound();
+  audioController.syncTrapSound();
+  audioController.syncRuntimePagePresentation();
+  return true;
+}
+
 function syncLanguage() {
   updatePageMeta();
   elements.langToggleButtons.forEach((button) => {
@@ -1657,18 +1782,12 @@ function bindEvents() {
 
   window.addEventListener('resize', resizeCanvas, { passive: true });
   window.addEventListener('orientationchange', resizeCanvas, { passive: true });
-  window.addEventListener('pageshow', () => {
-    trapLoader.ensureTrapArtifactsLoaded();
-    resizeCanvas();
-    globeController.startGlobeSolarUpdates();
-    globeController.queueGlobeSolarSync();
-    if (state.watchId === null) startTracking();
-    startRenderLoop();
-    if (audioController.wantsBackgroundAudio()) {
-      void audioController.armBackgroundAlertAudio();
+  window.addEventListener('pageshow', async () => {
+    if (!(await ensureSingleTabOwnership())) {
+      return;
     }
-    audioController.syncOverspeedSound();
-    audioController.syncTrapSound();
+    if (state.watchId === null) startTracking();
+    resumeVisibleRuntime();
   });
   document.addEventListener('pointerdown', (event) => {
     audioController.handleUserGestureAudioActivation();
@@ -1700,25 +1819,20 @@ function bindEvents() {
       return;
     }
 
-    resizeCanvas();
-    trapLoader.ensureTrapArtifactsLoaded();
-    globeController.startGlobeSolarUpdates();
-    globeController.queueGlobeSolarSync();
-    startRenderLoop();
-    if (audioController.wantsBackgroundAudio()) {
-      void audioController.armBackgroundAlertAudio();
-    }
-    audioController.syncOverspeedSound();
-    audioController.syncTrapSound();
-    audioController.syncRuntimePagePresentation();
+    resumeVisibleRuntime();
   });
   document.addEventListener('i18n:change', syncLanguage);
   window.addEventListener('pagehide', () => {
     void persistReplaySessionNow();
   });
+  window.addEventListener(SINGLE_TAB_OWNERSHIP_EVENT, handleSingleTabOwnershipChange);
 }
 
 async function init() {
+  if (!(await singleTabOwnershipPromise)) {
+    return;
+  }
+
   document.body.classList.remove('alert-panel-open');
   if (loadedPreferences.changed) {
     saveBackgroundAudioEnabledPreference(false);
@@ -1782,12 +1896,14 @@ async function init() {
   resizeCanvas();
   bindEvents();
   trapLoader.loadTrapArtifacts();
+  startCloudSyncLoop();
   startTracking();
   startRenderLoop();
 }
 
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
+    releaseSingleTabOwnership();
     clearReplayPersistTimer();
     audioController.dispose();
     globeController.stopGlobeSolarUpdates();

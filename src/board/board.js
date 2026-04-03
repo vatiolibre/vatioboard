@@ -14,6 +14,14 @@ import {
   initBackendAuthControllers,
   saveDrawingToBackend,
 } from "../shared/backend-auth.js";
+import {
+  CLOUD_SYNC_APPLIED_EVENT,
+  CLOUD_SYNC_ENTITY_TYPES,
+  queueCloudSyncChange,
+  startCloudSyncLoop,
+  syncCloudRecords,
+} from "../shared/cloud-sync.js";
+import { ensureSingleTabOwnership, SINGLE_TAB_OWNERSHIP_EVENT } from "../shared/single-tab.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
 import iro from "@jaames/iro";
 import { t, applyTranslations, toggleLang, getLang } from "../i18n.js";
@@ -33,6 +41,7 @@ import {
 
 // Apply translations immediately
 applyTranslations();
+const singleTabOwnershipPromise = ensureSingleTabOwnership();
 
 const langToggleButtons = Array.from(document.querySelectorAll("[data-lang-toggle], #langToggle"));
 
@@ -316,7 +325,19 @@ bindNavigation(openAccelMenuBtn, "/accel");
 
     function queueBoardPersistence(){
       boardStateRevision += 1;
-      void saveBoardDrawing(createBoardDrawingSnapshot());
+      const updatedAtMs = Date.now();
+      const snapshot = {
+        ...createBoardDrawingSnapshot(),
+        updatedAtMs,
+      };
+      void saveBoardDrawing(snapshot);
+      void queueCloudSyncChange({
+        entityType: CLOUD_SYNC_ENTITY_TYPES.boardDrawing,
+        recordId: "primary",
+        recordTitle: "Board",
+        updatedAtMs,
+        payload: snapshot,
+      });
     }
 
     async function hydrateBoardDrawing(){
@@ -768,6 +789,11 @@ bindNavigation(openAccelMenuBtn, "/accel");
       setStatus(t("draftUpdated"));
     }
 
+    function handleSingleTabOwnershipChange(event){
+      if (event?.detail?.owned !== false) return;
+      finishStroke({ commit: false });
+    }
+
     function clear(){
       finishStroke({ commit: false });
 
@@ -1038,6 +1064,12 @@ bindNavigation(openAccelMenuBtn, "/accel");
       }
     });
 
+    window.addEventListener(CLOUD_SYNC_APPLIED_EVENT, (event) => {
+      if (event?.detail?.entityType !== CLOUD_SYNC_ENTITY_TYPES.boardDrawing) return;
+      void hydrateBoardDrawing();
+    });
+    window.addEventListener(SINGLE_TAB_OWNERSHIP_EVENT, handleSingleTabOwnershipChange);
+
     // Init
     syncSizePreview();
     syncHistoryButtons();
@@ -1049,5 +1081,17 @@ bindNavigation(openAccelMenuBtn, "/accel");
 
     resize();
     setStatus(t("ready"));
-    void hydrateBoardDrawing();
+    void (async () => {
+      if (!(await singleTabOwnershipPromise)) {
+        return;
+      }
+
+      startCloudSyncLoop({ immediate: false });
+      try {
+        await syncCloudRecords();
+      } catch {
+        // Keep the page usable with the local drawing if sync is temporarily unavailable.
+      }
+      await hydrateBoardDrawing();
+    })();
   })();

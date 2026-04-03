@@ -210,6 +210,14 @@ beforeEach(() => {
     value: mediaSession,
   });
 
+  Object.defineProperty(window.navigator, "locks", {
+    configurable: true,
+    writable: true,
+    value: {
+      request: vi.fn((_name, _options, callback) => Promise.resolve(callback({ name: "test-lock" }))),
+    },
+  });
+
   Object.defineProperty(window, "MediaMetadata", {
     configurable: true,
     writable: true,

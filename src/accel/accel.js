@@ -1,6 +1,7 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
 import '@stanko/dual-range-input/dist/index.css';
 import '../styles/accel.less';
+import '../styles/cloud-sync-status.less';
 import '../styles/backend-auth.less';
 import Chart from 'chart.js/auto';
 import DualRangeInput from '@stanko/dual-range-input';
@@ -12,6 +13,15 @@ import {
 } from '../i18n.js';
 import { initBackendAuthControllers } from '../shared/backend-auth.js';
 import { createAnalogSpeedometer } from '../shared/analog-speedometer.js';
+import { initCloudSyncStatusIndicator } from '../shared/cloud-sync-status-indicator.js';
+import {
+  CLOUD_SYNC_APPLIED_EVENT,
+  CLOUD_SYNC_ENTITY_TYPES,
+  queueCloudSyncChange,
+  queueCloudSyncDeletion,
+  startCloudSyncLoop,
+  syncCloudRecords,
+} from '../shared/cloud-sync.js';
 import { createPlaceResolver } from '../shared/place-resolver.js';
 import { formatRouteString } from '../shared/route-string.js';
 import { hasStoredValue } from '../shared/storage.js';
@@ -21,6 +31,7 @@ import {
   markUnitBootstrapManualSelection,
   maybeInitializeUnitsFromCountry,
 } from '../shared/unit-bootstrap.js';
+import { ensureSingleTabOwnership, SINGLE_TAB_OWNERSHIP_EVENT } from '../shared/single-tab.js';
 import {
   IconBoard,
   IconClose,
@@ -105,6 +116,7 @@ import {
 
 export const initPromise = (function () {
   initBackendAuthControllers();
+  const singleTabOwnershipPromise = ensureSingleTabOwnership();
 
   var finishAudio = typeof Audio === 'function' ? new Audio(FINISH_SOUND_URL) : null;
   var finishAudioPrimePromise = null;
@@ -119,6 +131,7 @@ export const initPromise = (function () {
     langToggle: document.getElementById('langToggle'),
     langToggleButtons: Array.from(document.querySelectorAll('[data-lang-toggle], #langToggle')),
     pageDescriptionMeta: document.querySelector('meta[name="description"]'),
+    toolbar: document.querySelector('.accel-toolbar'),
     toolsMenuBtn: document.getElementById('accelToolsMenuBtn'),
     toolsMenuList: document.getElementById('accelToolsMenuList'),
     openSpeedMenu: document.getElementById('openAccelSpeedMenu'),
@@ -265,6 +278,18 @@ export const initPromise = (function () {
   var toolsMenu = initToolsMenu({
     button: elements.toolsMenuBtn,
     list: elements.toolsMenuList,
+  });
+
+  function openCloudSyncLauncher() {
+    Promise.resolve().then(function () {
+      focusCloudSyncLauncherTarget();
+    });
+  }
+
+  initCloudSyncStatusIndicator({
+    mount: elements.toolbar,
+    alignEnd: true,
+    openLauncher: openCloudSyncLauncher,
   });
 
   applyButtonIcon(elements.armRun, IconPlay);
@@ -443,6 +468,16 @@ export const initPromise = (function () {
   var replayMapIntroToken = 0;
 
   async function init() {
+    if (!(await singleTabOwnershipPromise)) {
+      return;
+    }
+
+    startCloudSyncLoop({ immediate: false });
+    try {
+      await syncCloudRecords();
+    } catch {
+      // Keep the page usable with local data if sync is temporarily unavailable.
+    }
     var loadedState = await Promise.all([loadSettings(), loadRuns()]);
 
     state.settings = loadedState[0];
@@ -601,7 +636,15 @@ export const initPromise = (function () {
     document.addEventListener('visibilitychange', renderAll);
     document.addEventListener('keydown', handleKeyDown);
     window.addEventListener('pagehide', destroyResultGraph);
+    window.addEventListener('pageshow', (event) => {
+      void restoreAfterPageShow(event);
+    });
     window.addEventListener('resize', handleWindowResize);
+    window.addEventListener(SINGLE_TAB_OWNERSHIP_EVENT, handleSingleTabOwnershipChange);
+    window.addEventListener(CLOUD_SYNC_APPLIED_EVENT, function (event) {
+      if (event?.detail?.entityType !== CLOUD_SYNC_ENTITY_TYPES.accelRun) return;
+      refreshStoredRuns();
+    });
   }
 
   function syncResultLocationOverflow() {
@@ -735,6 +778,40 @@ export const initPromise = (function () {
     }
   }
 
+  function isVisibleForFocus(element) {
+    return Boolean(element && element.hidden !== true && !element.closest('[hidden]'));
+  }
+
+  function getCloudSyncLauncherFocusTarget() {
+    var candidates = [
+      elements.toolsMenuList?.querySelector('[data-backend-auth-user]'),
+      elements.toolsMenuList?.querySelector('[data-backend-auth-password]'),
+      elements.toolsMenuList?.querySelector('[data-backend-auth-login]'),
+      elements.toolsMenuList?.querySelector('[data-backend-auth-logout]'),
+      elements.toolsMenuList?.querySelector('[data-backend-auth-status]'),
+    ];
+
+    return candidates.find(isVisibleForFocus) || null;
+  }
+
+  function focusCloudSyncLauncherTarget(attempt) {
+    var nextAttempt = Number.isFinite(attempt) ? attempt : 0;
+    toolsMenu.setOpen(true);
+    var target = getCloudSyncLauncherFocusTarget();
+    if (target) {
+      focusElement(target);
+      if (target.matches?.('input') && typeof target.select === 'function') {
+        target.select();
+      }
+      return;
+    }
+
+    if (nextAttempt >= 6) return;
+    Promise.resolve().then(function () {
+      focusCloudSyncLauncherTarget(nextAttempt + 1);
+    });
+  }
+
   function handleKeyDown(event) {
     if (event.key !== 'Escape' || !state.openPanel) return;
     event.preventDefault();
@@ -803,6 +880,31 @@ export const initPromise = (function () {
 
   function saveRuns() {
     void persistRuns(state.runs);
+  }
+
+  function queueRunForCloudSync(run) {
+    if (!run || !run.id) return;
+
+    void queueCloudSyncChange({
+      entityType: CLOUD_SYNC_ENTITY_TYPES.accelRun,
+      recordId: run.id,
+      recordTitle: run.presetId || run.id,
+      updatedAtMs: run.savedAtMs || Date.now(),
+      payload: run,
+    });
+  }
+
+  function refreshStoredRuns() {
+    void loadRuns().then(function (runs) {
+      state.runs = runs;
+      state.latestResult = runs.length ? runs[0] : null;
+
+      if (!state.selectedResultId || !findRunById(state.selectedResultId)) {
+        state.selectedResultId = state.latestResult ? state.latestResult.id : '';
+      }
+
+      renderAll();
+    });
   }
 
   function applyAutoConfiguredUnits(countryCode) {
@@ -1042,6 +1144,7 @@ export const initPromise = (function () {
 
       updateRunInState(nextRun);
       saveRuns();
+      queueRunForCloudSync(nextRun);
       renderAll();
     })();
   }
@@ -1166,6 +1269,38 @@ export const initPromise = (function () {
   function startUiTimer() {
     if (state.uiTimerId) window.clearInterval(state.uiTimerId);
     state.uiTimerId = window.setInterval(renderRealtimeUi, TIMER_TICK_MS);
+  }
+
+  function stopUiTimer() {
+    if (!state.uiTimerId) return;
+    window.clearInterval(state.uiTimerId);
+    state.uiTimerId = null;
+  }
+
+  function stopRealtimeTracking() {
+    if (state.watchId !== null) {
+      navigator.geolocation.clearWatch(state.watchId);
+      state.watchId = null;
+    }
+    stopUiTimer();
+    pauseReplayPlayback();
+  }
+
+  function handleSingleTabOwnershipChange(event) {
+    if (event?.detail?.owned !== false) return;
+    stopRealtimeTracking();
+  }
+
+  async function restoreAfterPageShow(event) {
+    if (event?.persisted !== true) return;
+    if (!(await ensureSingleTabOwnership())) {
+      return;
+    }
+
+    startUiTimer();
+    updatePermissionState();
+    ensureWatch();
+    renderAll();
   }
 
   function renderRealtimeUi() {
@@ -1314,6 +1449,13 @@ export const initPromise = (function () {
     if (!state.runs.length) return;
     if (!window.confirm(t('accelClearHistoryConfirm'))) return;
 
+    state.runs.forEach(function (run) {
+      void queueCloudSyncDeletion({
+        entityType: CLOUD_SYNC_ENTITY_TYPES.accelRun,
+        recordId: run.id,
+      });
+    });
+
     resetReplayState({ preserveAxisMode: true });
     state.runs = [];
     state.latestResult = null;
@@ -1360,6 +1502,10 @@ export const initPromise = (function () {
     state.latestResult = state.runs.length ? state.runs[0] : null;
     if (state.selectedResultId === runId) selectResult(null);
     saveRuns();
+    void queueCloudSyncDeletion({
+      entityType: CLOUD_SYNC_ENTITY_TYPES.accelRun,
+      recordId: runId,
+    });
     renderAll();
   }
 
@@ -2144,6 +2290,7 @@ export const initPromise = (function () {
     resetReplayState({ preserveAxisMode: true });
     state.selectedResultId = result.id;
     saveRuns();
+    queueRunForCloudSync(result);
     enrichRunPlaces(result.id);
     playFinishAudio();
     setActionNotice('accelRunSavedNotice');

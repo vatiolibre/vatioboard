@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { emitGeolocationSuccess, getBrowserMocks } from '../helpers/browser-mocks.js';
 import { bootHtmlPage, expectPageSeo, flushTasks } from '../helpers/page-smoke.js';
 
@@ -102,9 +102,15 @@ describe('speed.html smoke', () => {
     await bootHtmlPage('speed.html');
   });
 
+  afterEach(async () => {
+    window.dispatchEvent(new Event('pagehide'));
+    await settleAsyncWork(40);
+  });
+
   it('boots the speedometer and reacts to a mocked geolocation fix', async () => {
     const speedPage = await import('../../src/speed/speed.js');
     await speedPage.initPromise;
+    await settleAsyncWork();
     await flushTasks();
 
     expectPageSeo({
@@ -140,12 +146,35 @@ describe('speed.html smoke', () => {
     expect(document.getElementById('speedToolsMenuBtn').getAttribute('aria-label')).toBe('Pages');
     expect(document.querySelector('#speedToolsMenuBtn .btn-icon svg')).toBeTruthy();
     expect(document.getElementById('speedToolsMenuList').hidden).toBe(true);
+    expect(document.querySelector('.cloud-sync-indicator-btn')?.textContent).toBe('Local only');
 
-    document.getElementById('speedToolsMenuBtn').click();
+    document.querySelector('.cloud-sync-indicator-btn')?.click();
     await flushTasks();
+
+    expect(document.querySelector('.cloud-sync-indicator-panel')?.hidden).toBe(false);
+    expect(document.querySelector('.cloud-sync-indicator-link')?.getAttribute('href')).toBe(
+      'https://www.vatiolibre.com/login#signup'
+    );
+    document.querySelector('.cloud-sync-indicator-link')?.click();
+    await flushTasks();
+    expect(document.querySelector('.cloud-sync-indicator-panel')?.hidden).toBe(true);
+
+    document.querySelector('.cloud-sync-indicator-btn')?.click();
+    await flushTasks();
+    document.querySelector('.cloud-sync-indicator-close')?.click();
+    await flushTasks();
+    expect(document.querySelector('.cloud-sync-indicator-panel')?.hidden).toBe(true);
+
+    document.querySelector('.cloud-sync-indicator-btn')?.click();
+    await flushTasks();
+    document.querySelector('.cloud-sync-indicator-action')?.click();
+    await settleAsyncWork();
 
     expect(document.getElementById('speedToolsMenuList').hidden).toBe(false);
     expect(document.getElementById('speedToolsMenuBtn').getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(
+      document.querySelector('#speedToolsMenuList [data-backend-auth-user]')
+    );
     expect(document.getElementById('speedLangToggleMenu').textContent).toBe('EN');
     expect(document.querySelector('#speedToolsMenuList [data-backend-auth]')).toBeTruthy();
     expect(
@@ -154,6 +183,9 @@ describe('speed.html smoke', () => {
     expect(
       document.querySelector('#speedToolsMenuList [data-backend-auth-forgot]')?.getAttribute('href')
     ).toBe('https://www.vatiolibre.com/login#forgot');
+    document.getElementById('speedToolsMenuBtn').click();
+    await flushTasks();
+    expect(document.getElementById('speedToolsMenuList').hidden).toBe(true);
     document.getElementById('quickAlertConfig').click();
     await flushTasks();
     expect(document.getElementById('speedAlertPanel').hidden).toBe(false);
@@ -234,22 +266,25 @@ describe('speed.html smoke', () => {
   });
 
   it('keeps distinct start and end places when the trip ends elsewhere', async () => {
-    reversePlaceSpy
-      .mockResolvedValueOnce({
-        place: {
-          label: 'Fort Lee',
-          city: 'Fort Lee',
-          locality: 'Fort Lee',
-          state: 'New Jersey',
-          stateCode: 'NJ',
-          houseNumber: '6312',
-          road: 'Hilltop Court',
-          countryCode: 'us',
-        },
-        data: null,
-        meta: null,
-      })
-      .mockResolvedValueOnce({
+    reversePlaceSpy.mockImplementation(async ({ latitude }) => {
+      if (latitude > 40.82) {
+        return {
+          place: {
+            label: 'Fort Lee',
+            city: 'Fort Lee',
+            locality: 'Fort Lee',
+            state: 'New Jersey',
+            stateCode: 'NJ',
+            houseNumber: '6312',
+            road: 'Hilltop Court',
+            countryCode: 'us',
+          },
+          data: null,
+          meta: null,
+        };
+      }
+
+      return {
         place: {
           label: 'West New York',
           city: 'West New York',
@@ -262,7 +297,8 @@ describe('speed.html smoke', () => {
         },
         data: null,
         meta: null,
-      });
+      };
+    });
 
     const speedPage = await import('../../src/speed/speed.js');
     await speedPage.initPromise;
@@ -293,9 +329,20 @@ describe('speed.html smoke', () => {
     await flushTasks();
 
     document.getElementById('stopRecording').click();
-    await settleAsyncWork();
-
-    const finalArchivedSession = archiveReplaySessionSpy.mock.calls.at(-1)?.[0];
+    let finalArchivedSession = archiveReplaySessionSpy.mock.calls.find(
+      ([session]) =>
+        session?.startPlace?.houseNumber === '6312' && session?.endPlace?.houseNumber === '119'
+    )?.[0];
+    for (let index = 0; index < 80; index += 1) {
+      if (finalArchivedSession) {
+        break;
+      }
+      await flushTasks();
+      finalArchivedSession = archiveReplaySessionSpy.mock.calls.find(
+        ([session]) =>
+          session?.startPlace?.houseNumber === '6312' && session?.endPlace?.houseNumber === '119'
+      )?.[0];
+    }
     expect(finalArchivedSession).toMatchObject({
       startPlace: {
         houseNumber: '6312',

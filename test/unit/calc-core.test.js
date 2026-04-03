@@ -1,17 +1,11 @@
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+import { CalcCore } from "../../src/calculator/calc-core.js";
+import { setLang } from "../../src/i18n.js";
 
 const STATE_KEY = "embeddable_calc_state_v1";
 const HISTORY_KEY = "embeddable_calc_history_v1";
 
 describe("CalcCore", () => {
-  let CalcCore;
-  let setLang;
-
-  beforeAll(async () => {
-    ({ CalcCore } = await import("../../src/calculator/calc-core.js"));
-    ({ setLang } = await import("../../src/i18n.js"));
-  });
-
   beforeEach(() => {
     localStorage.clear();
     window.__lang = "en";

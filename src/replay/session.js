@@ -986,6 +986,19 @@ async function loadReplayRecordSession(record) {
   return hydrateReplaySessionSamples(record.session);
 }
 
+export async function loadReplaySessionById(recordingId) {
+  if (typeof recordingId !== 'string' || !recordingId) {
+    return null;
+  }
+
+  const record = (await loadReplayRecords()).find((entry) => entry.id === recordingId);
+  if (!record) {
+    return null;
+  }
+
+  return loadReplayRecordSession(record);
+}
+
 export async function loadReplaySelection(selectedId = null) {
   const records = await loadReplayRecords();
 

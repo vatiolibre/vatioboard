@@ -20,6 +20,7 @@ import {
   limitReplaySamples,
   loadReplayLibrary,
   loadReplayRecords,
+  loadReplaySessionById,
   loadReplaySelection,
   normalizeReplaySession,
   removeReplayRecording,
@@ -53,12 +54,12 @@ function createFakeIndexedDb({ shouldFailPut = () => false } = {}) {
   let putCounter = 0;
   let failPut = shouldFailPut;
 
-  function createRequest(executor) {
-    const request = {
-      result: undefined,
-      error: null,
-      onsuccess: null,
-      onerror: null,
+function createRequest(transaction, executor) {
+  const request = {
+    result: undefined,
+    error: null,
+    onsuccess: null,
+    onerror: null,
     };
 
     queueMicrotask(() => {
@@ -67,15 +68,26 @@ function createFakeIndexedDb({ shouldFailPut = () => false } = {}) {
           resolve(value) {
             request.result = cloneJson(value);
             request.onsuccess?.({ target: request });
+            queueMicrotask(() => {
+              transaction.oncomplete?.({ target: transaction });
+            });
           },
           reject(error) {
             request.error = error;
             request.onerror?.({ target: request });
+            queueMicrotask(() => {
+              transaction.error = error;
+              transaction.onabort?.({ target: transaction });
+            });
           },
         });
       } catch (error) {
         request.error = error;
         request.onerror?.({ target: request });
+        queueMicrotask(() => {
+          transaction.error = error;
+          transaction.onabort?.({ target: transaction });
+        });
       }
     });
 
@@ -95,16 +107,17 @@ function createFakeIndexedDb({ shouldFailPut = () => false } = {}) {
     transaction() {
       const transaction = {
         onabort: null,
+        oncomplete: null,
         error: null,
         objectStore() {
           return {
             get(key) {
-              return createRequest(({ resolve }) => {
+              return createRequest(transaction, ({ resolve }) => {
                 resolve(records.has(key) ? records.get(key) : undefined);
               });
             },
             put(value, key) {
-              return createRequest(({ resolve, reject }) => {
+              return createRequest(transaction, ({ resolve, reject }) => {
                 putCounter += 1;
                 if (failPut(key, cloneJson(value), putCounter)) {
                   const error = new Error(`Failed to store ${key}`);
@@ -118,7 +131,7 @@ function createFakeIndexedDb({ shouldFailPut = () => false } = {}) {
               });
             },
             delete(key) {
-              return createRequest(({ resolve }) => {
+              return createRequest(transaction, ({ resolve }) => {
                 records.delete(key);
                 resolve(undefined);
               });
@@ -645,6 +658,32 @@ describe('replay helpers', () => {
     );
 
     expect((await loadReplayLibrary()).map((entry) => entry.id)).toContain('legacy-last');
+  });
+
+  it('loads archived replay sessions with hydrated samples by id', async () => {
+    let session = createReplaySession({ id: 'hydrated-library-session' });
+
+    for (let index = 0; index < 250; index += 1) {
+      session = appendReplaySample(
+        session,
+        createSample({
+          timestampMs: 1000 + index * 100,
+          latitude: 40.7128 + index / 100000,
+          longitude: -74.006 + index / 100000,
+          totalDistanceM: index * 6,
+        })
+      );
+    }
+
+    await archiveReplaySession(session, { endedAtMs: 1000 + 249 * 100 });
+
+    const hydratedSession = await loadReplaySessionById('hydrated-library-session');
+
+    expect(hydratedSession).not.toBeNull();
+    expect(hydratedSession.id).toBe('hydrated-library-session');
+    expect(hydratedSession.samples).toHaveLength(250);
+    expect(hydratedSession.samples[0].timestampMs).toBe(1000);
+    expect(hydratedSession.samples[249].timestampMs).toBe(1000 + 249 * 100);
   });
 
   it('removes saved recordings without affecting the rest of the library', async () => {

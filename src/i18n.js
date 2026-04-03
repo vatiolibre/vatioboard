@@ -155,6 +155,22 @@ const baseTranslations = {
     authLogoutFailed: 'Logout failed ({status})',
     authSessionCheckFailed: 'Session check failed ({status})',
     authNetworkError: 'Network or CORS error',
+    cloudSyncLocalOnly: 'Local only',
+    cloudSyncSyncing: 'Syncing',
+    cloudSyncSynced: 'Synced',
+    cloudSyncPaused: 'Sync paused',
+    cloudSyncFailed: 'Sync failed',
+    cloudSyncHelpLocalOnly:
+      'Cloud sync needs a www.vatiolibre.com account and an active subscription.',
+    cloudSyncHelpSyncing:
+      'Cloud sync is running through your www.vatiolibre.com account and active subscription.',
+    cloudSyncHelpSynced:
+      'This data is synced through your www.vatiolibre.com account and active subscription.',
+    cloudSyncHelpPaused:
+      'Cloud sync is paused. Reconnect or return to this tab, then continue with your www.vatiolibre.com account and active subscription.',
+    cloudSyncHelpFailed:
+      'Cloud sync could not finish. Check your www.vatiolibre.com account and active subscription, then try again.',
+    cloudSyncSubscribe: 'Subscribe',
     draftUpdated: 'Draft updated',
     cleared: 'Cleared',
     colorUpdated: 'Color updated',
@@ -169,6 +185,10 @@ const baseTranslations = {
     savedToVatioLibre: 'Saved to VatioLibre',
     saveFailed: 'Save failed ({status})',
     saveNetworkError: 'Could not reach VatioLibre right now',
+    singleTabBlockedTitle: 'VatioBoard is already open in another tab',
+    singleTabBlockedMessage:
+      'Use VatioBoard in a single tab for this browser profile. Close the other tab, then retry here.',
+    singleTabRetry: 'Retry here',
     downloadedPng: 'Downloaded PNG',
     savedLocally: 'Saved locally (not persisted)',
     requestingGps: 'Requesting GPS...',
@@ -654,6 +674,22 @@ const baseTranslations = {
     authLogoutFailed: 'Falló el cierre de sesión ({status})',
     authSessionCheckFailed: 'Falló la verificación de sesión ({status})',
     authNetworkError: 'Error de red o CORS',
+    cloudSyncLocalOnly: 'Solo local',
+    cloudSyncSyncing: 'Sincronizando',
+    cloudSyncSynced: 'Sincronizado',
+    cloudSyncPaused: 'Sync en pausa',
+    cloudSyncFailed: 'Sync falló',
+    cloudSyncHelpLocalOnly:
+      'Cloud sync necesita una cuenta de www.vatiolibre.com y una suscripción activa.',
+    cloudSyncHelpSyncing:
+      'Cloud sync está ejecutándose con tu cuenta de www.vatiolibre.com y tu suscripción activa.',
+    cloudSyncHelpSynced:
+      'Estos datos están sincronizados con tu cuenta de www.vatiolibre.com y tu suscripción activa.',
+    cloudSyncHelpPaused:
+      'Cloud sync está en pausa. Vuelve a conectarte o regresa a esta pestaña, luego continúa con tu cuenta de www.vatiolibre.com y tu suscripción activa.',
+    cloudSyncHelpFailed:
+      'Cloud sync no pudo completarse. Revisa tu cuenta de www.vatiolibre.com y tu suscripción activa, luego intenta de nuevo.',
+    cloudSyncSubscribe: 'Suscribirse',
     draftUpdated: 'Borrador actualizado',
     cleared: 'Limpiado',
     colorUpdated: 'Color actualizado',
@@ -668,6 +704,10 @@ const baseTranslations = {
     savedToVatioLibre: 'Guardado en VatioLibre',
     saveFailed: 'Falló el guardado ({status})',
     saveNetworkError: 'No se pudo conectar con VatioLibre en este momento',
+    singleTabBlockedTitle: 'VatioBoard ya está abierto en otra pestaña',
+    singleTabBlockedMessage:
+      'Usa VatioBoard en una sola pestaña para este perfil del navegador. Cierra la otra pestaña y luego vuelve a intentar aquí.',
+    singleTabRetry: 'Reintentar aquí',
     downloadedPng: 'PNG descargado',
     savedLocally: 'Guardado no persistente',
     requestingGps: 'Solicitando GPS...',

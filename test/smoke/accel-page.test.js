@@ -295,14 +295,25 @@ describe('accel.html smoke', () => {
     expect(document.querySelector('#armRun .btn-icon svg')).toBeTruthy();
     expect(document.getElementById('accelToolsMenuBtn').getAttribute('aria-label')).toBe('Pages');
     expect(document.querySelector('#accelToolsMenuBtn .btn-icon svg')).toBeTruthy();
+    expect(document.querySelector('.cloud-sync-indicator-btn')?.textContent).toBe('Local only');
+    document.querySelector('.cloud-sync-indicator-btn')?.click();
+    await flushTasks();
+    expect(document.querySelector('.cloud-sync-indicator-panel')?.hidden).toBe(false);
+    document.querySelector('.cloud-sync-indicator-close')?.click();
+    await flushTasks();
+    expect(document.querySelector('.cloud-sync-indicator-panel')?.hidden).toBe(true);
+    document.querySelector('.cloud-sync-indicator-btn')?.click();
+    await flushTasks();
+    document.querySelector('.cloud-sync-indicator-action')?.click();
+    await settleAsyncWork();
     expect(document.querySelector('#accelToolbarSetup .btn-icon svg')).toBeTruthy();
     expect(document.querySelector('#accelToolbarResults .btn-icon svg')).toBeTruthy();
     expect(document.getElementById('accelToolbarResults').disabled).toBe(true);
-    expect(document.getElementById('accelToolsMenuList').hidden).toBe(true);
-    document.getElementById('accelToolsMenuBtn').click();
-    await flushTasks();
     expect(document.getElementById('accelToolsMenuList').hidden).toBe(false);
     expect(document.getElementById('accelToolsMenuBtn').getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(
+      document.querySelector('#accelToolsMenuList [data-backend-auth-user]')
+    );
     expect(document.getElementById('accelLangToggleMenu').textContent).toBe('EN');
     expect(document.querySelector('#accelToolsMenuList [data-backend-auth]')).toBeTruthy();
     expect(
@@ -311,6 +322,9 @@ describe('accel.html smoke', () => {
     expect(
       document.querySelector('#accelToolsMenuList [data-backend-auth-forgot]')?.getAttribute('href')
     ).toBe('https://www.vatiolibre.com/login#forgot');
+    document.getElementById('accelToolsMenuBtn').click();
+    await flushTasks();
+    expect(document.getElementById('accelToolsMenuList').hidden).toBe(true);
     document.getElementById('accelToolbarSetup').click();
     await flushTasks();
     expect(document.getElementById('setupPanel').hidden).toBe(false);

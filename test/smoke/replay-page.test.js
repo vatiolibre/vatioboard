@@ -237,6 +237,7 @@ describe('replay.html smoke', () => {
     expect(document.getElementById('replayRouteValue').textContent).toBe(
       '6312 Hilltop Ct Fort Lee NJ -> 123 Anderson Ave'
     );
+    expect(document.querySelector('.cloud-sync-indicator-btn')?.textContent).toBe('Local only');
     expect(document.querySelector('#replayAxisTime .btn-icon svg')).toBeTruthy();
     expect(document.querySelector('#replayAxisDistance .btn-icon svg')).toBeTruthy();
     expect(document.getElementById('replayToolsMenuBtn').getAttribute('aria-label')).toBe('Pages');

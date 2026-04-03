@@ -1,6 +1,7 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
 import '@stanko/dual-range-input/dist/index.css';
 import '../styles/replay.less';
+import '../styles/cloud-sync-status.less';
 import '../styles/backend-auth.less';
 import DualRangeInput from '@stanko/dual-range-input';
 import { applyTranslations, getLang, t, toggleLang } from '../i18n.js';
@@ -18,6 +19,19 @@ import {
   IconWorld,
 } from '../icons.js';
 import { initBackendAuthControllers } from '../shared/backend-auth.js';
+import { initCloudSyncStatusIndicator } from '../shared/cloud-sync-status-indicator.js';
+import {
+  CLOUD_SYNC_APPLIED_EVENT,
+  CLOUD_SYNC_ENTITY_TYPES,
+  queueCloudSyncDeletion,
+  startCloudSyncLoop,
+  syncCloudRecords,
+} from '../shared/cloud-sync.js';
+import {
+  ensureSingleTabOwnership,
+  releaseSingleTabOwnership,
+  SINGLE_TAB_OWNERSHIP_EVENT,
+} from '../shared/single-tab.js';
 import { applyButtonIcon, initToolsMenu } from '../shared/tools-menu.js';
 import {
   getReplayAxisRange,
@@ -34,12 +48,14 @@ import { createReplayMapController } from './map.js';
 import { loadReplaySelection, removeReplayRecording } from './session.js';
 
 applyTranslations();
+const singleTabOwnershipPromise = ensureSingleTabOwnership();
 initBackendAuthControllers();
 
 const elements = {
   langToggle: document.getElementById('langToggle'),
   langToggleButtons: Array.from(document.querySelectorAll('[data-lang-toggle], #langToggle')),
   pageDescriptionMeta: document.querySelector('meta[name="description"]'),
+  toolbar: document.querySelector('.replay-toolbar'),
   replaySessionChip: document.getElementById('replaySessionChip'),
   replayAxisButtons: Array.from(document.querySelectorAll('.replay-axis-btn')),
   replayGraphTriggers: Array.from(document.querySelectorAll('.replay-graph-trigger')),
@@ -117,6 +133,60 @@ const graphElements = {
 const toolsMenu = initToolsMenu({
   button: elements.replayToolsMenuBtn,
   list: elements.replayToolsMenuList,
+});
+
+function focusElement(element) {
+  if (!element || typeof element.focus !== 'function') return;
+  try {
+    element.focus({ preventScroll: true });
+  } catch {
+    element.focus();
+  }
+}
+
+function isVisibleForFocus(element) {
+  return Boolean(element && element.hidden !== true && !element.closest('[hidden]'));
+}
+
+function getCloudSyncLauncherFocusTarget() {
+  const candidates = [
+    elements.replayToolsMenuList?.querySelector('[data-backend-auth-user]'),
+    elements.replayToolsMenuList?.querySelector('[data-backend-auth-password]'),
+    elements.replayToolsMenuList?.querySelector('[data-backend-auth-login]'),
+    elements.replayToolsMenuList?.querySelector('[data-backend-auth-logout]'),
+    elements.replayToolsMenuList?.querySelector('[data-backend-auth-status]'),
+  ];
+
+  return candidates.find(isVisibleForFocus) || null;
+}
+
+function focusCloudSyncLauncherTarget(attempt = 0) {
+  toolsMenu.setOpen(true);
+  const target = getCloudSyncLauncherFocusTarget();
+  if (target) {
+    focusElement(target);
+    if (target.matches?.('input') && typeof target.select === 'function') {
+      target.select();
+    }
+    return;
+  }
+
+  if (attempt >= 6) return;
+  Promise.resolve().then(() => {
+    focusCloudSyncLauncherTarget(attempt + 1);
+  });
+}
+
+function openCloudSyncLauncher() {
+  Promise.resolve().then(() => {
+    focusCloudSyncLauncherTarget();
+  });
+}
+
+initCloudSyncStatusIndicator({
+  mount: elements.toolbar,
+  alignEnd: true,
+  openLauncher: openCloudSyncLauncher,
 });
 
 applyButtonIcon(elements.openReplaySpeedMenu, IconSpeed);
@@ -1007,6 +1077,10 @@ function bindEvents() {
       stopPlayback();
       replaySelectionPromise = (async () => {
         await removeReplayRecording(deleteRecordingId);
+        await queueCloudSyncDeletion({
+          entityType: CLOUD_SYNC_ENTITY_TYPES.replaySession,
+          recordId: deleteRecordingId,
+        });
         return applyReplaySelection(
           deleteRecordingId === state.selectedRecordingId ? null : state.selectedRecordingId
         );
@@ -1080,9 +1154,22 @@ function bindEvents() {
   document.addEventListener('i18n:change', syncLanguage);
   window.addEventListener('pagehide', stopPlayback);
   window.addEventListener('resize', queueRecordingDetailOverflowSync);
+  window.addEventListener(SINGLE_TAB_OWNERSHIP_EVENT, (event) => {
+    if (event?.detail?.owned !== false) return;
+    stopPlayback();
+  });
+  window.addEventListener(CLOUD_SYNC_APPLIED_EVENT, (event) => {
+    if (event?.detail?.entityType !== CLOUD_SYNC_ENTITY_TYPES.replaySession) return;
+    if (state.initialSelectionPending) return;
+    void requestReplaySelection(state.selectedRecordingId);
+  });
 }
 
 async function init() {
+  if (!(await singleTabOwnershipPromise)) {
+    return;
+  }
+
   updatePageMeta();
   renderSessionStateView();
 
@@ -1098,6 +1185,12 @@ async function init() {
   renderRecordings();
   updateGraphPlayback(null);
   try {
+    startCloudSyncLoop({ immediate: false });
+    try {
+      await syncCloudRecords();
+    } catch {
+      // Keep the page usable with local data if sync is temporarily unavailable.
+    }
     await requestReplaySelection();
   } finally {
     state.initialSelectionPending = false;
@@ -1111,6 +1204,7 @@ async function init() {
 
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
+    releaseSingleTabOwnership();
     stopPlayback();
     if (recordingsDetailMeasureFrame !== null) {
       window.cancelAnimationFrame(recordingsDetailMeasureFrame);
