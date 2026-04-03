@@ -26,10 +26,10 @@ import {
   IconClose,
   IconDistance,
   IconGpsLab,
-  IconHistory,
   IconPages,
   IconPause,
   IconPlay,
+  IconReplay,
   IconRestart,
   IconSettings,
   IconSpeed,
@@ -270,7 +270,7 @@ export const initPromise = (function () {
   applyButtonIcon(elements.armRun, IconPlay);
   applyButtonIcon(elements.toolsMenuBtn, IconPages);
   applyButtonIcon(elements.toolbarSetup, IconSettings);
-  applyButtonIcon(elements.toolbarResults, IconHistory);
+  applyButtonIcon(elements.toolbarResults, IconReplay);
   applyButtonIcon(elements.openSpeedMenu, IconSpeed);
   applyButtonIcon(elements.openGpsLabMenu, IconGpsLab);
   applyButtonIcon(elements.openBoardMenu, IconBoard);
@@ -340,6 +340,7 @@ export const initPromise = (function () {
     actionNoticeTimerId: null,
   };
   var resultLocationMeasureFrame = null;
+  var historyDetailMeasureFrame = null;
 
   var formatters = createAccelFormatters({
     t: t,
@@ -647,9 +648,55 @@ export const initPromise = (function () {
     });
   }
 
+  function syncHistoryDetailOverflow() {
+    if (!elements.historyList) return;
+
+    for (var detail of elements.historyList.querySelectorAll('.accel-history-detail')) {
+      var text = detail.querySelector('.accel-history-detail-text');
+      var button = detail.closest('.accel-history-btn');
+
+      detail.dataset.overflowing = 'false';
+      detail.style.removeProperty('--accel-history-detail-scroll-distance');
+      detail.style.removeProperty('--accel-history-detail-scroll-duration');
+
+      if (
+        !text ||
+        !button ||
+        button.getAttribute('aria-pressed') !== 'true' ||
+        state.openPanel !== 'results' ||
+        !elements.resultsPanel ||
+        elements.resultsPanel.hidden
+      ) {
+        continue;
+      }
+
+      var overflowPx = Math.ceil(text.scrollWidth - detail.clientWidth);
+      if (!Number.isFinite(overflowPx) || overflowPx <= 8) continue;
+
+      detail.dataset.overflowing = 'true';
+      detail.style.setProperty('--accel-history-detail-scroll-distance', overflowPx + 'px');
+      detail.style.setProperty(
+        '--accel-history-detail-scroll-duration',
+        Math.max(8, Math.min(22, overflowPx / 18 + 6)).toFixed(2) + 's'
+      );
+    }
+  }
+
+  function queueHistoryDetailOverflowSync() {
+    if (historyDetailMeasureFrame !== null) {
+      window.cancelAnimationFrame(historyDetailMeasureFrame);
+    }
+
+    historyDetailMeasureFrame = window.requestAnimationFrame(function () {
+      historyDetailMeasureFrame = null;
+      syncHistoryDetailOverflow();
+    });
+  }
+
   function handleWindowResize() {
     requestResultGraphRefresh();
     queueResultLocationOverflowSync();
+    queueHistoryDetailOverflowSync();
   }
 
   function setResultLocationText(text) {
@@ -2214,9 +2261,11 @@ export const initPromise = (function () {
     if (resultsOpen) {
       requestResultGraphRefresh();
       queueResultLocationOverflowSync();
+      queueHistoryDetailOverflowSync();
     } else {
       destroyResultGraph();
       queueResultLocationOverflowSync();
+      queueHistoryDetailOverflowSync();
     }
   }
 
@@ -2895,6 +2944,7 @@ export const initPromise = (function () {
     if (!state.runs.length) {
       elements.historyEmptyState.hidden = false;
       elements.historyList.innerHTML = '';
+      queueHistoryDetailOverflowSync();
       return;
     }
 
@@ -2907,51 +2957,51 @@ export const initPromise = (function () {
       var isSelected = Boolean(displayedResult && displayedResult.id === run.id);
       var locationLabel = getRunLocationLabel(run);
       html += '<article class="accel-history-item" data-selected="' + String(isSelected) + '">';
-      html += '<div class="accel-history-copy">';
       html +=
-        '<div class="accel-history-main"><strong>' +
-        escapeHtml(getPresetLabel(run)) +
-        '</strong> <span>' +
-        escapeHtml(formatRunSeconds(run.elapsedMs)) +
-        ' s</span></div>';
-      html +=
-        '<div class="accel-history-meta">' +
-        escapeHtml(getQualityLabel(run.qualityGrade)) +
-        ' · ' +
-        escapeHtml(formatTimestamp(run.savedAtMs)) +
-        '</div>';
-      if (locationLabel !== t('accelUnavailable'))
-        html += '<div class="accel-history-meta">' + escapeHtml(locationLabel) + '</div>';
-      if (run.notes) html += '<div class="accel-history-note">' + escapeHtml(run.notes) + '</div>';
-      html += '</div>';
-      html += '<div class="accel-history-actions">';
-      html +=
-        '<button type="button" class="accel-action-btn accel-action-btn-compact accel-history-load-btn" data-history-action="load" data-run-id="' +
+        '<button type="button" class="accel-history-btn" data-history-action="load" data-run-id="' +
         escapeHtml(run.id) +
         '" aria-pressed="' +
         String(isSelected) +
-        '">' +
-        escapeHtml(isSelected ? t('accelViewingResult') : t('accelLoadResult')) +
-        '</button>';
+        '">';
       html +=
-        '<button type="button" class="accel-action-btn accel-action-btn-compact accel-history-replay-btn" data-history-action="replay" data-run-id="' +
-        escapeHtml(run.id) +
-        '"' +
-        (isReplayableResult(run) ? '' : ' disabled') +
-        '>' +
-        escapeHtml(t('accelReplay')) +
-        '</button>';
+        '<span class="accel-history-title"><strong>' +
+        escapeHtml(getPresetLabel(run)) +
+        '</strong>';
+      if (isSelected) {
+        html += '<span class="accel-history-chip">' + escapeHtml(t('accelViewingResult')) + '</span>';
+      }
+      html += '</span>';
       html +=
-        '<button type="button" class="accel-delete-btn" data-history-action="delete" data-run-id="' +
+        '<span class="accel-history-meta">' +
+        escapeHtml(formatRunSeconds(run.elapsedMs)) +
+        ' s · ' +
+        escapeHtml(getQualityLabel(run.qualityGrade)) +
+        ' · ' +
+        escapeHtml(formatTimestamp(run.savedAtMs)) +
+        '</span>';
+      if (locationLabel !== t('accelUnavailable')) {
+        html +=
+          '<span class="accel-history-detail"><span class="accel-history-detail-text">' +
+          escapeHtml(locationLabel) +
+          '</span></span>';
+      }
+      if (run.notes) html += '<span class="accel-history-note">' + escapeHtml(run.notes) + '</span>';
+      html += '</button>';
+      html +=
+        '<button type="button" class="accel-delete-btn accel-history-delete" data-history-action="delete" data-run-id="' +
         escapeHtml(run.id) +
+        '" aria-label="' +
+        escapeHtml(t('accelDelete')) +
+        '" title="' +
+        escapeHtml(t('accelDelete')) +
         '">' +
         escapeHtml(t('accelDelete')) +
         '</button>';
-      html += '</div>';
       html += '</article>';
     }
 
     elements.historyList.innerHTML = html;
+    queueHistoryDetailOverflowSync();
   }
 
   function getSetupSummary() {
@@ -3121,6 +3171,9 @@ export const initPromise = (function () {
     import.meta.hot.dispose(function () {
       if (resultLocationMeasureFrame !== null) {
         window.cancelAnimationFrame(resultLocationMeasureFrame);
+      }
+      if (historyDetailMeasureFrame !== null) {
+        window.cancelAnimationFrame(historyDetailMeasureFrame);
       }
     });
   }

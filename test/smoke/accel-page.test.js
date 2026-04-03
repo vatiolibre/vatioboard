@@ -565,7 +565,7 @@ describe('accel.html smoke', () => {
     );
   });
 
-  it('opens accel replay from history inside the results panel', async () => {
+  it('loads an accel result from history into the results panel', async () => {
     const storage = await import('../../src/accel/storage.js');
     await storage.saveRuns([createStoredRun()]);
 
@@ -573,20 +573,30 @@ describe('accel.html smoke', () => {
     await accelPage.initPromise;
     await flushTasks();
 
-    const replayButton = document.querySelector(
-      '[data-history-action="replay"][data-run-id="run-1"]'
+    const historyButton = document.querySelector(
+      '[data-history-action="load"][data-run-id="run-1"]'
     );
-    expect(replayButton).toBeTruthy();
+    expect(historyButton).toBeTruthy();
+    expect(document.querySelector('[data-history-action="replay"]')).toBeNull();
     expect(document.getElementById('historyList').textContent).toContain(
       '6312 Hilltop Ct Fort Lee NJ -> 123 Anderson Ave'
     );
+    expect(document.querySelector('#historyList .accel-history-detail-text')).toBeTruthy();
 
-    replayButton.click();
+    historyButton.click();
     await flushTasks();
 
     expect(document.getElementById('resultsPanel').hidden).toBe(false);
     expect(document.getElementById('resultReplayControls').hidden).toBe(false);
     expect(document.getElementById('resultReplayMapShell').hidden).toBe(false);
+    expect(document.querySelector('.accel-history-btn[aria-pressed="true"]')).toBeTruthy();
+    expect(document.querySelector('.accel-history-chip')?.textContent).toBe('Viewing');
+    expect(document.getElementById('resultReplayToggle').getAttribute('aria-label')).toBe(
+      'Play replay'
+    );
+
+    document.getElementById('resultReplayToggle').click();
+    await settleAsyncWork(4);
     expect(document.getElementById('resultReplayToggle').getAttribute('aria-label')).toBe(
       'Pause replay'
     );
