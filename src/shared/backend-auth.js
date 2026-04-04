@@ -19,6 +19,23 @@ const SYNC_RESPONSE_GZIP_BASE64_ENCODING = "gzip_base64";
 
 export const BACKEND_AUTH_STATE_EVENT = "vatioboard:backend-auth-state";
 
+const BACKEND_SESSION_CACHE_TTL_MS = 30 * 1000;
+const BACKEND_FEATURE_ACCESS_CACHE_TTL_MS = 30 * 1000;
+const backendSessionCache = {
+  configKey: "",
+  fetchedAtMs: 0,
+  promise: null,
+  requestVersion: 0,
+  value: null,
+};
+const backendFeatureAccessCache = {
+  configKey: "",
+  fetchedAtMs: 0,
+  promise: null,
+  requestVersion: 0,
+  value: null,
+};
+
 function getFetch(fetchImpl) {
   if (typeof fetchImpl === "function") return fetchImpl;
   if (typeof window?.fetch === "function") return window.fetch.bind(window);
@@ -27,6 +44,10 @@ function getFetch(fetchImpl) {
 
 function getMethodUrl(methodName, config) {
   return `${config.apiBase}/api/method/${methodName}`;
+}
+
+function getConfigCacheKey(config) {
+  return String(config?.apiBase || "").trim();
 }
 
 async function safeJson(response) {
@@ -52,6 +73,110 @@ function getLoggedUser(data) {
 
 function getText(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function cloneCachedResult(value) {
+  if (!value || typeof value !== "object") {
+    return value ?? null;
+  }
+
+  if (Array.isArray(value)) {
+    return value.slice();
+  }
+
+  return { ...value };
+}
+
+function createAbortError() {
+  const error = new Error("Request aborted.");
+  error.name = "AbortError";
+  return error;
+}
+
+function waitForAbort(promise, signal) {
+  if (!signal) return promise;
+  if (signal.aborted) {
+    return Promise.reject(createAbortError());
+  }
+
+  return new Promise((resolve, reject) => {
+    const handleAbort = () => {
+      cleanup();
+      reject(createAbortError());
+    };
+    const cleanup = () => {
+      signal.removeEventListener("abort", handleAbort);
+    };
+
+    signal.addEventListener("abort", handleAbort, { once: true });
+    Promise.resolve(promise).then(
+      (value) => {
+        cleanup();
+        resolve(value);
+      },
+      (error) => {
+        cleanup();
+        reject(error);
+      }
+    );
+  });
+}
+
+function clearRequestCache(cache) {
+  cache.configKey = "";
+  cache.fetchedAtMs = 0;
+  cache.promise = null;
+  cache.requestVersion += 1;
+  cache.value = null;
+}
+
+function hasFreshCachedValue(cache, configKey, ttlMs) {
+  return Boolean(
+    cache.value
+    && cache.configKey === configKey
+    && (Date.now() - cache.fetchedAtMs) < ttlMs
+  );
+}
+
+async function loadCachedBackendRequest(cache, loader, {
+  force = false,
+  ttlMs,
+  configKey,
+  signal,
+} = {}) {
+  if (!force && hasFreshCachedValue(cache, configKey, ttlMs)) {
+    return cloneCachedResult(cache.value);
+  }
+
+  if (!force && cache.promise && cache.configKey === configKey) {
+    return cloneCachedResult(await waitForAbort(cache.promise, signal));
+  }
+
+  const requestVersion = cache.requestVersion + 1;
+  cache.requestVersion = requestVersion;
+  cache.configKey = configKey;
+  cache.promise = Promise.resolve()
+    .then(loader)
+    .then((result) => {
+      if (cache.requestVersion === requestVersion && cache.configKey === configKey) {
+        cache.value = cloneCachedResult(result);
+        cache.fetchedAtMs = Date.now();
+      }
+      return cloneCachedResult(result);
+    })
+    .catch((error) => {
+      if (cache.requestVersion === requestVersion && !cache.value) {
+        cache.fetchedAtMs = 0;
+      }
+      throw error;
+    })
+    .finally(() => {
+      if (cache.requestVersion === requestVersion) {
+        cache.promise = null;
+      }
+    });
+
+  return cloneCachedResult(await waitForAbort(cache.promise, signal));
 }
 
 function hasGzipCompressionSupport() {
@@ -232,6 +357,29 @@ export async function fetchBackendSession({
   };
 }
 
+export function clearBackendAccessCache() {
+  clearRequestCache(backendSessionCache);
+  clearRequestCache(backendFeatureAccessCache);
+}
+
+export async function getBackendSessionState({
+  fetchImpl,
+  signal,
+  force = false,
+  config = getBackendAuthConfig(),
+} = {}) {
+  return loadCachedBackendRequest(
+    backendSessionCache,
+    () => fetchBackendSession({ fetchImpl, config }),
+    {
+      force,
+      ttlMs: BACKEND_SESSION_CACHE_TTL_MS,
+      configKey: getConfigCacheKey(config),
+      signal,
+    }
+  );
+}
+
 export async function fetchBackendLoggedUser({
   fetchImpl,
   config = getBackendAuthConfig(),
@@ -321,6 +469,24 @@ export async function fetchBackendFeatureAccess({
     capability: getSavedDrawingsCapability(data),
     cloudSyncCapability: getCloudSyncCapability(data),
   };
+}
+
+export async function getBackendFeatureAccessState({
+  fetchImpl,
+  signal,
+  force = false,
+  config = getBackendAuthConfig(),
+} = {}) {
+  return loadCachedBackendRequest(
+    backendFeatureAccessCache,
+    () => fetchBackendFeatureAccess({ fetchImpl, config }),
+    {
+      force,
+      ttlMs: BACKEND_FEATURE_ACCESS_CACHE_TTL_MS,
+      configKey: getConfigCacheKey(config),
+      signal,
+    }
+  );
 }
 
 export async function saveDrawingToBackend({
@@ -608,7 +774,11 @@ export function createBackendAuthController({
     let isGuest = false;
 
     try {
-      const session = await fetchBackendSession({ fetchImpl, config });
+      const session = await getBackendSessionState({
+        fetchImpl,
+        config,
+        force: options.force !== false,
+      });
 
       if (!session.ok) {
         currentUser = null;
@@ -680,8 +850,9 @@ export function createBackendAuthController({
         return;
       }
 
+      clearBackendAccessCache();
       if (passwordInput) passwordInput.value = "";
-      await refreshSession({ userHint: username });
+      await refreshSession({ userHint: username, force: true });
     } catch {
       busy = false;
       setStatus("authNetworkError", null, "danger");
@@ -718,8 +889,9 @@ export function createBackendAuthController({
         return;
       }
 
+      clearBackendAccessCache();
       currentUser = null;
-      await refreshSession();
+      await refreshSession({ force: true });
     } catch {
       busy = false;
       setStatus("authNetworkError", null, "danger");

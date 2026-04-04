@@ -9,8 +9,8 @@ import { loadBoardDrawing, saveBoardDrawing } from "./storage.js";
 import { createEnergyCalculatorWidget } from "../energy/energy-calculator-widget.js";
 import { createFloatingDock } from "../dock/floating-dock.js";
 import {
-  fetchBackendFeatureAccess,
-  fetchBackendSession,
+  getBackendFeatureAccessState,
+  getBackendSessionState,
   initBackendAuthControllers,
   saveDrawingToBackend,
 } from "../shared/backend-auth.js";
@@ -939,7 +939,7 @@ bindNavigation(openAccelMenuBtn, "/accel");
       setStatus(t("saveCheckingAccess"));
 
       try {
-        const session = await fetchBackendSession();
+        const session = await getBackendSessionState();
 
         if (!session.ok) {
           if (session.isGuest) {
@@ -957,7 +957,7 @@ bindNavigation(openAccelMenuBtn, "/accel");
           return;
         }
 
-        const featureAccess = await fetchBackendFeatureAccess();
+        const featureAccess = await getBackendFeatureAccessState();
 
         if (!featureAccess.ok) {
           if (featureAccess.isGuest) {
@@ -1086,12 +1086,10 @@ bindNavigation(openAccelMenuBtn, "/accel");
         return;
       }
 
-      startCloudSyncLoop({ immediate: false });
-      try {
-        await syncCloudRecords();
-      } catch {
-        // Keep the page usable with the local drawing if sync is temporarily unavailable.
-      }
       await hydrateBoardDrawing();
+      startCloudSyncLoop({ immediate: false });
+      void syncCloudRecords().catch(() => {
+        // Keep the page usable with the local drawing if sync is temporarily unavailable.
+      });
     })();
   })();

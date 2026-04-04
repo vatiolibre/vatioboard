@@ -472,12 +472,6 @@ export const initPromise = (function () {
       return;
     }
 
-    startCloudSyncLoop({ immediate: false });
-    try {
-      await syncCloudRecords();
-    } catch {
-      // Keep the page usable with local data if sync is temporarily unavailable.
-    }
     var loadedState = await Promise.all([loadSettings(), loadRuns()]);
 
     state.settings = loadedState[0];
@@ -500,6 +494,10 @@ export const initPromise = (function () {
     bindEvents();
     setupResultGraphObservers();
     renderAll();
+    startCloudSyncLoop({ immediate: false });
+    void syncCloudRecords().catch(function () {
+      // Keep the page usable with local data if sync is temporarily unavailable.
+    });
     startUiTimer();
     updatePermissionState();
     ensureWatch();

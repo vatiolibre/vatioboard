@@ -12,8 +12,8 @@ import { createIndexedJsonKeyValueStore } from "./indexed-storage.js";
 import {
   BACKEND_AUTH_STATE_EVENT,
   downloadSyncPayloadFromBackend,
-  fetchBackendFeatureAccess,
-  fetchBackendSession,
+  getBackendFeatureAccessState,
+  getBackendSessionState,
   pullSyncChangesFromBackend,
   pushSyncChangesToBackend,
 } from "./backend-auth.js";
@@ -45,6 +45,7 @@ const CLOUD_SYNC_OUTBOX_KEY = "outbox";
 const CLOUD_SYNC_STATE_KEY = "state";
 const CLOUD_SYNC_OUTBOX_FALLBACK_KEY = "vatioboard.cloud_sync.outbox";
 const CLOUD_SYNC_STATE_FALLBACK_KEY = "vatioboard.cloud_sync.state";
+const CLOUD_SYNC_BOOTSTRAP_VERSION = 2;
 const CLOUD_SYNC_PULL_LIMIT = 100;
 const CLOUD_SYNC_PUSH_BATCH_SIZE = 25;
 const CLOUD_SYNC_RETRY_MS = 5000;
@@ -267,6 +268,7 @@ async function loadCloudSyncState() {
 
   return {
     cursor: typeof state.cursor === "string" ? state.cursor : "",
+    bootstrapVersion: normalizePositiveInteger(state.bootstrapVersion, 0),
     records:
       state.records && typeof state.records === "object" && !Array.isArray(state.records)
         ? state.records
@@ -278,6 +280,7 @@ async function saveCloudSyncState(state) {
   const snapshot = cloneJson(
     {
       cursor: typeof state?.cursor === "string" ? state.cursor : "",
+      bootstrapVersion: normalizePositiveInteger(state?.bootstrapVersion, 0),
       records:
         state?.records && typeof state.records === "object" && !Array.isArray(state.records)
           ? state.records
@@ -285,6 +288,7 @@ async function saveCloudSyncState(state) {
     },
     {
       cursor: "",
+      bootstrapVersion: 0,
       records: {},
     }
   );
@@ -324,11 +328,24 @@ function normalizeQueuedChange(change) {
     change.updatedAtMs,
     deletedAtMs || Date.now()
   );
-  const payload = deletedAtMs ? null : cloneJson(change.payload, null);
+  const payloadMode =
+    deletedAtMs > 0
+      ? "deleted"
+      : String(
+        change.payloadMode
+        || (Object.prototype.hasOwnProperty.call(change, "payload") ? "inline" : "lazy")
+      ).trim().toLowerCase() || "inline";
+  const payload = deletedAtMs || payloadMode === "lazy"
+    ? null
+    : cloneJson(change.payload, null);
   const contentHash =
     typeof change.contentHash === "string" && change.contentHash
       ? change.contentHash
-      : hashString(payload === null ? `deleted:${deletedAtMs}` : stableStringify(payload));
+      : (
+        payload === null
+          ? (deletedAtMs ? hashString(`deleted:${deletedAtMs}`) : "")
+          : hashString(stableStringify(payload))
+      );
 
   return {
     entityType,
@@ -339,6 +356,8 @@ function normalizeQueuedChange(change) {
     deletedAtMs,
     contentHash,
     payload,
+    payloadMode,
+    manifest: deletedAtMs ? null : cloneJson(change.manifest, null),
   };
 }
 
@@ -354,6 +373,7 @@ function areQueuedChangesEquivalent(left, right) {
     && normalizedLeft.updatedAtMs === normalizedRight.updatedAtMs
     && normalizedLeft.deletedAtMs === normalizedRight.deletedAtMs
     && normalizedLeft.contentHash === normalizedRight.contentHash
+    && normalizedLeft.payloadMode === normalizedRight.payloadMode
   );
 }
 
@@ -398,6 +418,67 @@ function createQueuedChangePayload(change) {
     content_hash: change.contentHash,
     record_title: change.recordTitle || undefined,
     payload: change.payload,
+  };
+}
+
+function countArrayItems(value) {
+  return Array.isArray(value) ? value.length : 0;
+}
+
+function createReplaySessionManifest(session) {
+  if (!session || typeof session !== "object") return null;
+
+  return {
+    id: String(session.id || "").trim(),
+    startedAtMs: normalizePositiveInteger(session.startedAtMs, 0),
+    endedAtMs: normalizePositiveInteger(session.endedAtMs, 0),
+    updatedAtMs: normalizePositiveInteger(session.updatedAtMs, 0),
+    unit: String(session.unit || "").trim() || "kmh",
+    distanceUnit: String(session.distanceUnit || "").trim() || "m",
+    sampleCount: normalizePositiveInteger(
+      session.sampleCount ?? session.persistedSampleCount ?? countArrayItems(session.samples),
+      0
+    ),
+    totalDistanceM: Number.isFinite(session.totalDistanceM) ? session.totalDistanceM : 0,
+    maxSpeedMs: Number.isFinite(session.maxSpeedMs) ? session.maxSpeedMs : 0,
+    minAltitudeM: Number.isFinite(session.minAltitudeM) ? session.minAltitudeM : 0,
+    maxAltitudeM: Number.isFinite(session.maxAltitudeM) ? session.maxAltitudeM : 0,
+    startPlace: cloneJson(session.startPlace, null),
+    endPlace: cloneJson(session.endPlace, null),
+    recordingState: String(session.recordingState || "").trim() || "stopped",
+    contentHash: String(session.contentHash || "").trim(),
+    previewRoute: cloneJson(session.previewRoute, null),
+  };
+}
+
+function createAccelRunManifest(run) {
+  if (!run || typeof run !== "object") return null;
+
+  return {
+    id: String(run.id || "").trim(),
+    presetId: String(run.presetId || "").trim(),
+    presetSignature: String(run.presetSignature || "").trim(),
+    elapsedMs: Number.isFinite(run.elapsedMs) ? run.elapsedMs : 0,
+    savedAtMs: normalizePositiveInteger(run.savedAtMs ?? run.updatedAtMs, 0),
+    qualityGrade: String(run.qualityGrade || "").trim(),
+    qualityScore: Number.isFinite(run.qualityScore) ? run.qualityScore : null,
+    warningKeys: Array.isArray(run.warningKeys) ? run.warningKeys.slice() : [],
+    startPlace: cloneJson(run.startPlace, null),
+    endPlace: cloneJson(run.endPlace, null),
+    sampleCount: normalizePositiveInteger(run.sampleCount ?? countArrayItems(run.sampleLog), 0),
+    contentHash: String(run.contentHash || "").trim(),
+  };
+}
+
+function createBoardDrawingManifest(drawing) {
+  if (!drawing || typeof drawing !== "object") return null;
+
+  return {
+    updatedAtMs: normalizePositiveInteger(drawing.updatedAtMs, 0),
+    commandCount: countArrayItems(drawing.commands),
+    redoCommandCount: countArrayItems(drawing.redoCommands),
+    generation: String(drawing.generation || "").trim(),
+    contentHash: String(drawing.contentHash || "").trim(),
   };
 }
 
@@ -466,18 +547,15 @@ async function queueBootstrapReplayChanges(stateRecords, outboxMap) {
       continue;
     }
 
-    const replayPayload = (await loadReplaySessionById(session.id)) ?? session;
-    const replayUpdatedAtMs = normalizePositiveInteger(
-      replayPayload.updatedAtMs ?? replayPayload.endedAtMs ?? replayPayload.startedAtMs,
-      updatedAtMs
-    );
     queuedChanges.push(
       normalizeQueuedChange({
         entityType: CLOUD_SYNC_ENTITY_TYPES.replaySession,
-        recordId: replayPayload.id || session.id,
-        recordTitle: replayPayload.startPlace?.label || replayPayload.id || session.id,
-        updatedAtMs: replayUpdatedAtMs,
-        payload: replayPayload,
+        recordId: session.id,
+        recordTitle: session.startPlace?.label || session.id,
+        updatedAtMs,
+        payloadMode: "lazy",
+        contentHash: String(session.contentHash || "").trim(),
+        manifest: createReplaySessionManifest(session),
       })
     );
   }
@@ -511,7 +589,9 @@ async function queueBootstrapAccelChanges(stateRecords, outboxMap) {
         recordId: run.id,
         recordTitle: run.presetId || run.id,
         updatedAtMs,
-        payload: run,
+        payloadMode: "lazy",
+        contentHash: String(run.contentHash || "").trim(),
+        manifest: createAccelRunManifest(run),
       })
     );
   }
@@ -546,13 +626,18 @@ async function queueBootstrapBoardChange(stateRecords, outboxMap) {
       recordId: CLOUD_SYNC_BOARD_RECORD_ID,
       recordTitle: "Board",
       updatedAtMs,
-      payload: drawing,
+      payloadMode: "lazy",
+      contentHash: String(drawing.contentHash || "").trim(),
+      manifest: createBoardDrawingManifest(drawing),
     }),
   ].filter(Boolean);
 }
 
 async function bootstrapLocalCloudSyncChanges() {
   const [state, outbox] = await Promise.all([loadCloudSyncState(), loadCloudSyncOutbox()]);
+  if (state.bootstrapVersion >= CLOUD_SYNC_BOOTSTRAP_VERSION) {
+    return;
+  }
   const outboxMap = new Map(
     normalizeOutboxEntries(outbox)
       .map((entry) => [getEntityKey(entry.entityType, entry.recordId), entry])
@@ -564,24 +649,29 @@ async function bootstrapLocalCloudSyncChanges() {
     ...(await queueBootstrapBoardChange(state.records, outboxMap)),
   ];
 
-  if (queuedChanges.length === 0) return;
+  if (queuedChanges.length > 0) {
+    await mutateCloudSyncOutbox((latestOutbox) => {
+      const latestOutboxMap = new Map(
+        latestOutbox.map((entry) => [getEntityKey(entry.entityType, entry.recordId), entry])
+      );
+      const nextOutbox = latestOutbox.slice();
 
-  await mutateCloudSyncOutbox((latestOutbox) => {
-    const latestOutboxMap = new Map(
-      latestOutbox.map((entry) => [getEntityKey(entry.entityType, entry.recordId), entry])
-    );
-    const nextOutbox = latestOutbox.slice();
+      for (const change of queuedChanges) {
+        const entityKey = getEntityKey(change.entityType, change.recordId);
+        if (latestOutboxMap.has(entityKey)) continue;
+        latestOutboxMap.set(entityKey, change);
+        nextOutbox.push(change);
+      }
 
-    for (const change of queuedChanges) {
-      const entityKey = getEntityKey(change.entityType, change.recordId);
-      if (latestOutboxMap.has(entityKey)) continue;
-      latestOutboxMap.set(entityKey, change);
-      nextOutbox.push(change);
-    }
+      return {
+        nextOutbox,
+      };
+    });
+  }
 
-    return {
-      nextOutbox,
-    };
+  await saveCloudSyncState({
+    ...state,
+    bootstrapVersion: CLOUD_SYNC_BOOTSTRAP_VERSION,
   });
 }
 
@@ -713,6 +803,69 @@ async function applyRemoteCloudDeletion(meta) {
   }
 }
 
+async function hydrateReplayChangePayload(change) {
+  return loadReplaySessionById(change.recordId);
+}
+
+async function hydrateAccelChangePayload(change) {
+  const runs = await loadRuns();
+  return runs.find((entry) => entry.id === change.recordId) ?? null;
+}
+
+async function hydrateBoardChangePayload() {
+  return loadBoardDrawing();
+}
+
+function getHydratedRecordTitle(change, payload) {
+  if (!payload || typeof payload !== "object") {
+    return change.recordTitle || change.recordId;
+  }
+
+  if (change.entityType === CLOUD_SYNC_ENTITY_TYPES.replaySession) {
+    return payload.startPlace?.label || payload.id || change.recordTitle || change.recordId;
+  }
+  if (change.entityType === CLOUD_SYNC_ENTITY_TYPES.accelRun) {
+    return payload.presetId || payload.id || change.recordTitle || change.recordId;
+  }
+  if (change.entityType === CLOUD_SYNC_ENTITY_TYPES.boardDrawing) {
+    return change.recordTitle || "Board";
+  }
+
+  return change.recordTitle || change.recordId;
+}
+
+async function hydrateQueuedChangeForPush(change) {
+  const normalized = normalizeQueuedChange(change);
+  if (!normalized) return null;
+  if (normalized.deletedAtMs > 0 || normalized.payloadMode !== "lazy") {
+    return normalized;
+  }
+
+  let payload = null;
+  if (normalized.entityType === CLOUD_SYNC_ENTITY_TYPES.replaySession) {
+    payload = await hydrateReplayChangePayload(normalized);
+  } else if (normalized.entityType === CLOUD_SYNC_ENTITY_TYPES.accelRun) {
+    payload = await hydrateAccelChangePayload(normalized);
+  } else if (normalized.entityType === CLOUD_SYNC_ENTITY_TYPES.boardDrawing) {
+    payload = await hydrateBoardChangePayload(normalized);
+  }
+
+  if (!payload) {
+    throw new Error(
+      `Cloud sync payload for ${normalized.entityType}:${normalized.recordId} is unavailable.`
+    );
+  }
+
+  const hydratedPayload = cloneJson(payload, null);
+  return normalizeQueuedChange({
+    ...normalized,
+    contentHash: hashString(stableStringify(hydratedPayload)),
+    recordTitle: getHydratedRecordTitle(normalized, hydratedPayload),
+    payloadMode: "inline",
+    payload: hydratedPayload,
+  });
+}
+
 async function pushCloudSyncOutbox({
   csrfToken,
   signal,
@@ -731,15 +884,26 @@ async function pushCloudSyncOutbox({
 
   const state = await loadCloudSyncState();
   const processedChanges = [];
+  const resolvedChanges = [];
+
+  for (const change of validChanges) {
+    const hydratedChange = await hydrateQueuedChangeForPush(change);
+    if (!hydratedChange) continue;
+    resolvedChanges.push({
+      original: change,
+      hydrated: hydratedChange,
+    });
+  }
+
   for (
     let batchStart = 0;
-    batchStart < validChanges.length;
+    batchStart < resolvedChanges.length;
     batchStart += CLOUD_SYNC_PUSH_BATCH_SIZE
   ) {
     if (!hasSingleTabOwnership() || !isCloudSyncAuthAllowed()) return;
-    const batch = validChanges.slice(batchStart, batchStart + CLOUD_SYNC_PUSH_BATCH_SIZE);
+    const batch = resolvedChanges.slice(batchStart, batchStart + CLOUD_SYNC_PUSH_BATCH_SIZE);
     const result = await pushSyncChangesToBackend({
-      changes: batch.map(createQueuedChangePayload),
+      changes: batch.map(({ hydrated }) => createQueuedChangePayload(hydrated)),
       csrfToken,
       signal,
     });
@@ -754,7 +918,7 @@ async function pushCloudSyncOutbox({
       state.records[getEntityKey(meta.entityType, meta.clientRecordId)] = meta;
     }
 
-    processedChanges.push(...batch);
+    processedChanges.push(...batch.map(({ original }) => original));
   }
 
   await saveCloudSyncState(state);
@@ -821,7 +985,7 @@ async function pullCloudSyncRecords({ signal } = {}) {
 }
 
 async function resolveCloudSyncCapability({ signal } = {}) {
-  const session = await fetchBackendSession({ signal });
+  const session = await getBackendSessionState({ signal });
   if (!session.ok || session.isGuest) {
     if (session.isGuest) {
       backendAuthenticated = false;
@@ -838,7 +1002,7 @@ async function resolveCloudSyncCapability({ signal } = {}) {
   backendAuthenticated = true;
   logoutPending = false;
 
-  const featureAccess = await fetchBackendFeatureAccess({ signal });
+  const featureAccess = await getBackendFeatureAccessState({ signal });
   if (!featureAccess.ok || featureAccess.isGuest) {
     if (featureAccess.isGuest) {
       backendAuthenticated = false;
@@ -908,9 +1072,8 @@ function scheduleCloudSync({ immediate = false } = {}) {
 }
 
 export async function queueCloudSyncChange(change) {
-  if (!hasSingleTabOwnership() || !isCloudSyncAuthAllowed()) return false;
   const didQueue = await queueNormalizedCloudSyncChange(change);
-  if (didQueue) {
+  if (didQueue && hasSingleTabOwnership()) {
     scheduleCloudSync();
   }
   return didQueue;

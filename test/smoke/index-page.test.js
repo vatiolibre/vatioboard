@@ -15,7 +15,7 @@ vi.mock("@jaames/iro", () => ({
   },
 }));
 
-async function flushBoardTasks(iterations = 8) {
+async function flushBoardTasks(iterations = 16) {
   for (let index = 0; index < iterations; index += 1) {
     await flushTasks();
   }

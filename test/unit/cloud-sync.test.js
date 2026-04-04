@@ -81,6 +81,7 @@ function mockCloudSyncDependencies({
     ok: true,
     isGuest: false,
   }));
+  const getBackendSessionState = vi.fn(async (options = {}) => fetchBackendSession(options));
   const fetchBackendFeatureAccess = vi.fn(async () => ({
     ok: true,
     isGuest: false,
@@ -90,6 +91,9 @@ function mockCloudSyncDependencies({
       csrfToken: 'csrf-token',
     },
   }));
+  const getBackendFeatureAccessState = vi.fn(async (options = {}) =>
+    fetchBackendFeatureAccess(options)
+  );
   const downloadSyncPayloadFromBackend = vi.fn(async () => ({
     ok: true,
     status: 200,
@@ -118,6 +122,8 @@ function mockCloudSyncDependencies({
     downloadSyncPayloadFromBackend,
     fetchBackendFeatureAccess,
     fetchBackendSession,
+    getBackendFeatureAccessState,
+    getBackendSessionState,
     pullSyncChangesFromBackend,
     pushSyncChangesToBackend,
   }));
@@ -131,6 +137,8 @@ function mockCloudSyncDependencies({
     downloadSyncPayloadFromBackend,
     fetchBackendFeatureAccess,
     fetchBackendSession,
+    getBackendFeatureAccessState,
+    getBackendSessionState,
     hasSingleTabOwnership,
     loadBoardDrawing,
     loadReplayLibrary,
@@ -316,7 +324,12 @@ describe('cloud sync', () => {
     });
 
     void syncCloudRecords();
-    await flushAsyncWork(20);
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      await flushAsyncWork();
+      if (mocks.pushSyncChangesToBackend.mock.calls.length === 1) {
+        break;
+      }
+    }
     expect(mocks.pushSyncChangesToBackend).toHaveBeenCalledTimes(1);
 
     await queueCloudSyncChange({
@@ -502,7 +515,12 @@ describe('cloud sync', () => {
     });
 
     const syncPromise = syncCloudRecords();
-    await flushAsyncWork(20);
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      await flushAsyncWork();
+      if (mocks.pushSyncChangesToBackend.mock.calls.length === 1) {
+        break;
+      }
+    }
     expect(mocks.pushSyncChangesToBackend).toHaveBeenCalledTimes(1);
 
     window.dispatchEvent(new CustomEvent('vatioboard:backend-auth-state', {
@@ -525,7 +543,7 @@ describe('cloud sync', () => {
     expect(mocks.fetchBackendSession).toHaveBeenCalledTimes(1);
   });
 
-  it('does not queue or run cloud sync while signed out', async () => {
+  it('queues while signed out and waits to sync until auth is restored', async () => {
     const mocks = mockCloudSyncDependencies();
     const { CLOUD_SYNC_ENTITY_TYPES, queueCloudSyncChange, startCloudSyncLoop, syncCloudRecords } =
       await importCloudSyncModule();
@@ -551,7 +569,7 @@ describe('cloud sync', () => {
         id: 'run-signed-out',
         savedAtMs: 2000,
       },
-    })).resolves.toBe(false);
+    })).resolves.toBe(true);
 
     await expect(syncCloudRecords()).resolves.toEqual({
       ok: false,
@@ -560,5 +578,24 @@ describe('cloud sync', () => {
     });
     expect(mocks.fetchBackendSession).not.toHaveBeenCalled();
     expect(mocks.pushSyncChangesToBackend).not.toHaveBeenCalled();
+
+    window.dispatchEvent(new CustomEvent('vatioboard:backend-auth-state', {
+      detail: {
+        authenticated: true,
+        busy: false,
+        isGuest: false,
+        pendingLogout: false,
+        user: 'driver@example.com',
+      },
+    }));
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      await flushAsyncWork();
+      if (mocks.pushSyncChangesToBackend.mock.calls.length === 1) {
+        break;
+      }
+    }
+
+    expect(mocks.fetchBackendSession).toHaveBeenCalledTimes(1);
+    expect(mocks.pushSyncChangesToBackend).toHaveBeenCalledTimes(1);
   });
 });

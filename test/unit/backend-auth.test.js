@@ -1,13 +1,44 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  clearBackendAccessCache,
   downloadSyncPayloadFromBackend,
+  getBackendFeatureAccessState,
+  getBackendSessionState,
   pushSyncChangesToBackend,
 } from '../../src/shared/backend-auth.js';
 
 const TEST_CONFIG = {
   apiBase: 'https://api.test.example',
 };
+
+afterEach(() => {
+  clearBackendAccessCache();
+});
+
+function createDeferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+
+  return {
+    promise,
+    reject,
+    resolve,
+  };
+}
+
+function jsonResponse(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+}
 
 async function gzipText(text) {
   const sourceStream = new Response(text, {
@@ -38,6 +69,187 @@ async function gunzipText(bytes) {
 }
 
 describe('backend auth transport helpers', () => {
+  it('dedupes concurrent session probes', async () => {
+    clearBackendAccessCache();
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      message: {
+        is_guest: false,
+      },
+    }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    }));
+
+    const [first, second] = await Promise.all([
+      getBackendSessionState({
+        fetchImpl,
+        config: TEST_CONFIG,
+      }),
+      getBackendSessionState({
+        fetchImpl,
+        config: TEST_CONFIG,
+      }),
+    ]);
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('dedupes concurrent feature access probes', async () => {
+    clearBackendAccessCache();
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      message: {
+        has_active_subscription: true,
+        csrf_token: 'csrf-token',
+        features: {
+          saved_drawings: {
+            enabled: true,
+          },
+          cloud_sync: {
+            enabled: true,
+          },
+        },
+      },
+    }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    }));
+
+    const [first, second] = await Promise.all([
+      getBackendFeatureAccessState({
+        fetchImpl,
+        config: TEST_CONFIG,
+      }),
+      getBackendFeatureAccessState({
+        fetchImpl,
+        config: TEST_CONFIG,
+      }),
+    ]);
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(first.cloudSyncCapability.enabled).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not repopulate stale session state after the cache is cleared mid-request', async () => {
+    clearBackendAccessCache();
+    const staleProbe = createDeferred();
+    const freshProbe = createDeferred();
+    const fetchImpl = vi
+      .fn()
+      .mockImplementationOnce(() => staleProbe.promise)
+      .mockImplementationOnce(() => freshProbe.promise);
+
+    const staleResultPromise = getBackendSessionState({
+      fetchImpl,
+      config: TEST_CONFIG,
+    });
+
+    clearBackendAccessCache();
+
+    const freshResultPromise = getBackendSessionState({
+      fetchImpl,
+      config: TEST_CONFIG,
+    });
+
+    staleProbe.resolve(jsonResponse({
+      message: {
+        is_guest: true,
+      },
+    }, 401));
+    freshProbe.resolve(jsonResponse({
+      message: {
+        is_guest: false,
+      },
+    }));
+
+    const [staleResult, freshResult] = await Promise.all([
+      staleResultPromise,
+      freshResultPromise,
+    ]);
+
+    expect(staleResult.isGuest).toBe(true);
+    expect(freshResult.authenticated).toBe(true);
+
+    const cachedResult = await getBackendSessionState({
+      fetchImpl,
+      config: TEST_CONFIG,
+    });
+
+    expect(cachedResult.authenticated).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not repopulate stale feature access after the cache is cleared mid-request', async () => {
+    clearBackendAccessCache();
+    const staleProbe = createDeferred();
+    const freshProbe = createDeferred();
+    const fetchImpl = vi
+      .fn()
+      .mockImplementationOnce(() => staleProbe.promise)
+      .mockImplementationOnce(() => freshProbe.promise);
+
+    const staleResultPromise = getBackendFeatureAccessState({
+      fetchImpl,
+      config: TEST_CONFIG,
+    });
+
+    clearBackendAccessCache();
+
+    const freshResultPromise = getBackendFeatureAccessState({
+      fetchImpl,
+      config: TEST_CONFIG,
+    });
+
+    staleProbe.resolve(jsonResponse({
+      message: {
+        has_active_subscription: false,
+        features: {
+          cloud_sync: {
+            enabled: false,
+          },
+        },
+      },
+    }));
+    freshProbe.resolve(jsonResponse({
+      message: {
+        has_active_subscription: true,
+        csrf_token: 'fresh-csrf-token',
+        features: {
+          saved_drawings: {
+            enabled: true,
+          },
+          cloud_sync: {
+            enabled: true,
+          },
+        },
+      },
+    }));
+
+    const [staleResult, freshResult] = await Promise.all([
+      staleResultPromise,
+      freshResultPromise,
+    ]);
+
+    expect(staleResult.cloudSyncCapability.enabled).toBe(false);
+    expect(freshResult.cloudSyncCapability.enabled).toBe(true);
+
+    const cachedResult = await getBackendFeatureAccessState({
+      fetchImpl,
+      config: TEST_CONFIG,
+    });
+
+    expect(cachedResult.cloudSyncCapability.enabled).toBe(true);
+    expect(cachedResult.capability.enabled).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
   it('pushes large sync batches as a gzipped multipart payload', async () => {
     const changes = [
       {

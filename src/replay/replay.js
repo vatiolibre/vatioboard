@@ -1185,12 +1185,6 @@ async function init() {
   renderRecordings();
   updateGraphPlayback(null);
   try {
-    startCloudSyncLoop({ immediate: false });
-    try {
-      await syncCloudRecords();
-    } catch {
-      // Keep the page usable with local data if sync is temporarily unavailable.
-    }
     await requestReplaySelection();
   } finally {
     state.initialSelectionPending = false;
@@ -1199,6 +1193,10 @@ async function init() {
       mapController.resize();
     }
   }
+  startCloudSyncLoop({ immediate: false });
+  void syncCloudRecords().catch(() => {
+    // Keep the page usable with local data if sync is temporarily unavailable.
+  });
   void runReplayApproach();
 }
 
