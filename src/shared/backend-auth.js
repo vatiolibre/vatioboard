@@ -13,6 +13,9 @@ const PUSH_SYNC_METHOD = "vatiolibre.vatiolibre.cloud_sync.push_my_sync_changes"
 const PULL_SYNC_METHOD = "vatiolibre.vatiolibre.cloud_sync.pull_my_sync_changes";
 const DOWNLOAD_SYNC_PAYLOAD_METHOD = "vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload";
 const DELETE_SYNC_RECORD_METHOD = "vatiolibre.vatiolibre.cloud_sync.delete_my_sync_record";
+const SYNC_REQUEST_COMPRESSION_MIN_BYTES = 128 * 1024;
+const SYNC_REQUEST_GZIP_ENCODING = "gzip";
+const SYNC_RESPONSE_GZIP_BASE64_ENCODING = "gzip_base64";
 
 export const BACKEND_AUTH_STATE_EVENT = "vatioboard:backend-auth-state";
 
@@ -49,6 +52,85 @@ function getLoggedUser(data) {
 
 function getText(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function hasGzipCompressionSupport() {
+  return (
+    typeof CompressionStream === "function"
+    && typeof Response === "function"
+    && typeof Blob === "function"
+    && typeof TextEncoder === "function"
+  );
+}
+
+function hasGzipDecompressionSupport() {
+  return (
+    typeof DecompressionStream === "function"
+    && typeof Response === "function"
+    && typeof Blob === "function"
+  );
+}
+
+async function createCompressedJsonBlob(value) {
+  const serialized = String(value || "");
+  const encoded = new TextEncoder().encode(serialized);
+  if (
+    encoded.byteLength < SYNC_REQUEST_COMPRESSION_MIN_BYTES
+    || !hasGzipCompressionSupport()
+  ) {
+    return null;
+  }
+
+  const sourceStream = new Response(encoded, {
+    headers: {
+      "Content-Type": "application/json",
+    },
+  }).body;
+  if (!sourceStream) {
+    return null;
+  }
+
+  const compressedStream = sourceStream.pipeThrough(
+    new CompressionStream(SYNC_REQUEST_GZIP_ENCODING)
+  );
+  return new Response(compressedStream).blob();
+}
+
+function decodeBase64ToBytes(value) {
+  const normalized = getText(value);
+  if (!normalized) return new Uint8Array();
+
+  if (typeof atob === "function") {
+    const decoded = atob(normalized);
+    const bytes = new Uint8Array(decoded.length);
+    for (let index = 0; index < decoded.length; index += 1) {
+      bytes[index] = decoded.charCodeAt(index);
+    }
+    return bytes;
+  }
+
+  if (typeof Buffer !== "undefined") {
+    return Uint8Array.from(Buffer.from(normalized, "base64"));
+  }
+
+  throw new Error("Base64 decoding is unavailable.");
+}
+
+async function decodeCompressedJsonBase64(value) {
+  const compressedBytes = decodeBase64ToBytes(value);
+  const sourceStream = new Response(compressedBytes, {
+    headers: {
+      "Content-Type": "application/gzip",
+    },
+  }).body;
+  if (!sourceStream) {
+    throw new Error("Compressed payload stream is unavailable.");
+  }
+
+  const decompressedStream = sourceStream.pipeThrough(
+    new DecompressionStream(SYNC_REQUEST_GZIP_ENCODING)
+  );
+  return new Response(decompressedStream).json();
 }
 
 function getFeatureAccess(data) {
@@ -302,12 +384,18 @@ export async function pushSyncChangesToBackend({
   signal,
   config = getBackendAuthConfig(),
 } = {}) {
-  const body = new URLSearchParams();
-  body.set("changes", JSON.stringify(Array.isArray(changes) ? changes : []));
+  const serializedChanges = JSON.stringify(Array.isArray(changes) ? changes : []);
+  const compressedChanges = await createCompressedJsonBlob(serializedChanges);
+  const body = new FormData();
 
-  const headers = {
-    "Content-Type": "application/x-www-form-urlencoded",
-  };
+  if (compressedChanges) {
+    body.append("changes_encoding", SYNC_REQUEST_GZIP_ENCODING);
+    body.append("changes_gzip", compressedChanges, "changes.json.gz");
+  } else {
+    body.append("changes", serializedChanges);
+  }
+
+  const headers = {};
   if (getText(csrfToken)) {
     headers["X-Frappe-CSRF-Token"] = getText(csrfToken);
   }
@@ -315,7 +403,7 @@ export async function pushSyncChangesToBackend({
   const { response, data } = await fetchBackendJson(PUSH_SYNC_METHOD, {
     method: "POST",
     headers,
-    body: body.toString(),
+    body,
     fetchImpl,
     signal,
     config,
@@ -375,6 +463,10 @@ export async function downloadSyncPayloadFromBackend({
 } = {}) {
   const body = new URLSearchParams();
   body.set("name", getText(name));
+  if (hasGzipDecompressionSupport()) {
+    body.set("compressed", "1");
+    body.set("payload_encoding", SYNC_RESPONSE_GZIP_BASE64_ENCODING);
+  }
 
   const { response, data } = await fetchBackendJson(DOWNLOAD_SYNC_PAYLOAD_METHOD, {
     method: "POST",
@@ -387,13 +479,21 @@ export async function downloadSyncPayloadFromBackend({
     config,
   });
   const message = getMessage(data);
+  let payload = message?.payload ?? null;
+  if (
+    payload === null
+    && getText(message?.payload_encoding) === SYNC_RESPONSE_GZIP_BASE64_ENCODING
+    && getText(message?.payload_gzip_base64)
+  ) {
+    payload = await decodeCompressedJsonBase64(message.payload_gzip_base64);
+  }
 
   return {
     ok: response.ok,
     status: response.status,
     data,
     record: message?.record ?? null,
-    payload: message?.payload ?? null,
+    payload,
   };
 }
 
