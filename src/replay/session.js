@@ -24,6 +24,20 @@ const replayStore = createIndexedJsonKeyValueStore({
 });
 
 let replayMigrationPromise = null;
+let replayIndexedStorageAvailabilityPromise = null;
+
+async function hasReplayIndexedStorageAvailable() {
+  if (!replayStore.hasSupport()) return false;
+
+  if (!replayIndexedStorageAvailabilityPromise) {
+    replayIndexedStorageAvailabilityPromise = replayStore
+      .openDatabase()
+      .then((database) => Boolean(database))
+      .catch(() => false);
+  }
+
+  return replayIndexedStorageAvailabilityPromise;
+}
 
 export function isFiniteNumber(value) {
   return Number.isFinite(value);
@@ -351,7 +365,7 @@ async function deleteReplaySampleChunks(sessionId, chunkCount) {
 async function persistReplaySessionData(session) {
   const normalizedSession = normalizeReplaySession(session) || createReplaySession();
 
-  if (!replayStore.hasSupport()) {
+  if (!(await hasReplayIndexedStorageAvailable())) {
     return createEmbeddedReplaySession(normalizedSession, normalizedSession.samples);
   }
 
@@ -393,7 +407,7 @@ async function hydrateReplaySessionSamples(session) {
   const normalizedSession = normalizeReplaySession(session);
   if (!normalizedSession) return null;
 
-  if (!replayStore.hasSupport()) {
+  if (!(await hasReplayIndexedStorageAvailable())) {
     return createEmbeddedReplaySession(normalizedSession, normalizedSession.samples);
   }
 
@@ -613,7 +627,9 @@ export function isReplayPayloadComplete(session, options = {}) {
 async function ensureReplaySessionDistanceOrigin(session, storageKey = null) {
   const normalizedSession = normalizeReplaySession(session);
   if (!normalizedSession) return null;
-  if (!replayStore.hasSupport() || normalizedSession.chunkCount <= 0) return normalizedSession;
+  if (!(await hasReplayIndexedStorageAvailable()) || normalizedSession.chunkCount <= 0) {
+    return normalizedSession;
+  }
   if (isFiniteNumber(normalizedSession.startDistanceM) && normalizedSession.firstSample) {
     return normalizedSession;
   }
@@ -792,6 +808,7 @@ export function finalizeReplaySession(session, endedAtMs = null) {
 }
 
 export async function loadActiveReplaySession(options = {}) {
+  const hasIndexedStorage = await hasReplayIndexedStorageAvailable();
   const session = await ensureReplaySessionDistanceOrigin(
     await ensureChunkedReplaySession(
       await loadReplayValue(REPLAY_ACTIVE_KEY, null),
@@ -801,8 +818,8 @@ export async function loadActiveReplaySession(options = {}) {
   );
   if (!session) return null;
 
-  if (!options.includeSamples || !replayStore.hasSupport()) {
-    return replayStore.hasSupport() ? maybeStripReplaySessionSamples(session) : session;
+  if (!options.includeSamples || !hasIndexedStorage) {
+    return hasIndexedStorage ? maybeStripReplaySessionSamples(session) : session;
   }
 
   return hydrateReplaySessionSamples(session);
@@ -811,7 +828,7 @@ export async function loadActiveReplaySession(options = {}) {
 export async function saveActiveReplaySession(session) {
   const normalizedSession = normalizeReplaySession(session) || createReplaySession();
 
-  if (!replayStore.hasSupport()) {
+  if (!(await hasReplayIndexedStorageAvailable())) {
     const embeddedSession = createEmbeddedReplaySession(
       normalizedSession,
       normalizedSession.samples
@@ -834,14 +851,15 @@ export async function clearActiveReplaySession() {
 }
 
 export async function loadLastReplaySession(options = {}) {
+  const hasIndexedStorage = await hasReplayIndexedStorageAvailable();
   const session = await ensureReplaySessionDistanceOrigin(
     await ensureChunkedReplaySession(await loadReplayValue(REPLAY_LAST_KEY, null), REPLAY_LAST_KEY),
     REPLAY_LAST_KEY
   );
   if (!session) return null;
 
-  if (!options.includeSamples || !replayStore.hasSupport()) {
-    return replayStore.hasSupport() ? maybeStripReplaySessionSamples(session) : session;
+  if (!options.includeSamples || !hasIndexedStorage) {
+    return hasIndexedStorage ? maybeStripReplaySessionSamples(session) : session;
   }
 
   return hydrateReplaySessionSamples(session);
@@ -851,7 +869,7 @@ export async function saveLastReplaySession(session) {
   const normalizedSession = normalizeReplaySession(session);
   if (!normalizedSession) return null;
 
-  if (!replayStore.hasSupport()) {
+  if (!(await hasReplayIndexedStorageAvailable())) {
     const embeddedSession = createEmbeddedReplaySession(
       normalizedSession,
       normalizedSession.samples
@@ -877,6 +895,7 @@ export function consumePendingReplaySessionOpen() {
 }
 
 export async function loadReplayLibrary() {
+  const hasIndexedStorage = await hasReplayIndexedStorageAvailable();
   const rawLibrary = await loadReplayValue(REPLAY_LIBRARY_KEY, []);
   const normalizedLibrary = [];
   let libraryChanged = false;
@@ -901,7 +920,7 @@ export async function loadReplayLibrary() {
     (left, right) => getReplaySortTimestamp(right) - getReplaySortTimestamp(left)
   );
 
-  if (!replayStore.hasSupport()) {
+  if (!hasIndexedStorage) {
     return normalizedLibrary.slice(0, MAX_STORED_REPLAYS);
   }
 
@@ -919,6 +938,7 @@ export async function loadReplayLibrary() {
 
 export async function saveReplayLibrary(recordings) {
   const previousLibrary = await loadReplayLibrary();
+  const hasIndexedStorage = await hasReplayIndexedStorageAvailable();
   const normalizedRecordings = Array.isArray(recordings)
     ? recordings
         .map(normalizeReplaySession)
@@ -927,7 +947,7 @@ export async function saveReplayLibrary(recordings) {
         .slice(0, MAX_STORED_REPLAYS)
     : [];
 
-  if (!replayStore.hasSupport()) {
+  if (!hasIndexedStorage) {
     const embeddedRecordings = normalizedRecordings
       .map((recording) => createEmbeddedReplaySession(recording, recording.samples))
       .filter(Boolean);
@@ -1034,7 +1054,7 @@ async function loadReplayRecordSession(record) {
     return loadActiveReplaySession({ includeSamples: true });
   }
 
-  if (!replayStore.hasSupport()) {
+  if (!(await hasReplayIndexedStorageAvailable())) {
     return normalizeReplaySession(record.session);
   }
 

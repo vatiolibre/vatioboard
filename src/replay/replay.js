@@ -370,6 +370,7 @@ async function maybeRestoreReplayTelemetry(recordingId, session) {
       });
       const restored = result?.ok === true && isReplayPayloadComplete(result?.payload);
       if (restored) {
+        pendingReplayOpenSession = result.payload;
         remoteReplayRestoreFailures.delete(normalizedRecordingId);
         return true;
       }
