@@ -364,4 +364,65 @@ describe("board storage", () => {
       vi.resetModules();
     }
   });
+
+  it("stores current cloud document metadata and consumes pending opens once", async () => {
+    const boardStorage = await import("../../src/board/storage.js");
+
+    boardStorage.saveCurrentBoardDocumentMeta({
+      name: "BOARD-DOC-1",
+      title: "Skidpad",
+      updatedAtMs: 1712163600000,
+    });
+
+    expect(boardStorage.loadCurrentBoardDocumentMeta()).toEqual({
+      name: "BOARD-DOC-1",
+      title: "Skidpad",
+      updatedAtMs: 1712163600000,
+    });
+
+    boardStorage.queuePendingBoardDocumentOpen({
+      document: {
+        name: "BOARD-DOC-1",
+        title: "Skidpad",
+      },
+      payload: {
+        updatedAtMs: 1712163600000,
+        commands: [
+          {
+            type: "stroke",
+            tool: "pen",
+            size: 6,
+            inkRaw: "#111827",
+            points: [createPoint(1, 2), createPoint(1.5, 2.5)],
+          },
+        ],
+        redoCommands: [],
+      },
+    });
+
+    expect(boardStorage.consumePendingBoardDocumentOpen()).toEqual({
+      document: {
+        name: "BOARD-DOC-1",
+        title: "Skidpad",
+      },
+      payload: {
+        version: boardStorage.BOARD_SCHEMA_VERSION,
+        updatedAtMs: 1712163600000,
+        commands: [
+          {
+            type: "stroke",
+            tool: "pen",
+            size: 6,
+            inkRaw: "#111827",
+            points: [createPoint(1, 2), createPoint(1.5, 2.5)],
+          },
+        ],
+        redoCommands: [],
+      },
+    });
+    expect(boardStorage.consumePendingBoardDocumentOpen()).toBeNull();
+
+    boardStorage.clearCurrentBoardDocumentMeta();
+    expect(boardStorage.loadCurrentBoardDocumentMeta()).toBeNull();
+  });
 });

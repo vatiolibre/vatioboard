@@ -3,8 +3,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   clearBackendAccessCache,
   downloadSyncPayloadFromBackend,
+  getBackendAccelRunDetail,
   getBackendFeatureAccessState,
+  getBackendSavedDrawingAssetDetail,
   getBackendSessionState,
+  listBackendSavedDrawingAssets,
+  normalizeBackendOwnedUrl,
   pushSyncChangesToBackend,
 } from '../../src/shared/backend-auth.js';
 
@@ -69,6 +73,116 @@ async function gunzipText(bytes) {
 }
 
 describe('backend auth transport helpers', () => {
+  it('rewrites backend-owned media URLs to the configured BFF origin', () => {
+    expect(normalizeBackendOwnedUrl(
+      'https://dev.vatiolibre.com/api/method/vatiolibre.vatiolibre.drawings.get_my_saved_drawing_detail?name=DRAW-1',
+      {
+        config: {
+          apiBase: 'https://api.dev.vatioboard.com',
+        },
+      }
+    )).toBe(
+      'https://api.dev.vatioboard.com/api/method/vatiolibre.vatiolibre.drawings.get_my_saved_drawing_detail?name=DRAW-1'
+    );
+
+    expect(normalizeBackendOwnedUrl(
+      'https://www.vatiolibre.com/api/method/vatiolibre.vatiolibre.drawings.download_my_saved_drawing?name=DRAW-2&as_attachment=1',
+      {
+        config: {
+          apiBase: 'https://api.vatioboard.com',
+        },
+      }
+    )).toBe(
+      'https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.drawings.download_my_saved_drawing?name=DRAW-2&as_attachment=1'
+    );
+
+    expect(normalizeBackendOwnedUrl('/api/method/vatiolibre.vatiolibre.drawings.get_my_saved_drawing_detail?name=DRAW-3', {
+      config: {
+        apiBase: 'https://api.dev.vatioboard.com',
+      },
+    })).toBe(
+      'https://api.dev.vatioboard.com/api/method/vatiolibre.vatiolibre.drawings.get_my_saved_drawing_detail?name=DRAW-3'
+    );
+
+    expect(normalizeBackendOwnedUrl('/files/skidpad.png?token=view#preview', {
+      config: {
+        apiBase: 'https://api.vatioboard.com',
+      },
+    })).toBe('https://api.vatioboard.com/files/skidpad.png?token=view#preview');
+
+    expect(normalizeBackendOwnedUrl('/private/files/skidpad.png?download=1', {
+      config: {
+        apiBase: 'https://api.dev.vatioboard.com',
+      },
+    })).toBe('https://api.dev.vatioboard.com/private/files/skidpad.png?download=1');
+
+    expect(normalizeBackendOwnedUrl('https://cdn.example.com/skidpad.png?token=view', {
+      config: {
+        apiBase: 'https://api.vatioboard.com',
+      },
+    })).toBe('https://cdn.example.com/skidpad.png?token=view');
+  });
+
+  it('normalizes saved drawing media URLs returned by shared list/detail helpers', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({
+        message: {
+          drawings: [
+            {
+              name: 'DRAW-1',
+              title: 'Skidpad',
+              image_url: 'https://www.vatiolibre.com/files/skidpad.png?token=view#preview',
+              download_url: 'https://www.vatiolibre.com/private/files/skidpad.png?download=1',
+              export_url: '/api/method/vatiolibre.vatiolibre.drawings.download_my_saved_drawing?name=DRAW-1&as_attachment=1',
+            },
+          ],
+          total_count: 1,
+          has_more: false,
+          next_offset: 1,
+        },
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        message: {
+          drawing: {
+            name: 'DRAW-1',
+            title: 'Skidpad',
+            image_url: 'https://dev.vatiolibre.com/files/skidpad.png?token=view#preview',
+            download_url: '/private/files/skidpad.png?download=1',
+            export_url: 'https://127.0.0.1/api/method/vatiolibre.vatiolibre.drawings.download_my_saved_drawing?name=DRAW-1',
+          },
+        },
+      }));
+
+    const listResult = await listBackendSavedDrawingAssets({
+      fetchImpl,
+      config: {
+        apiBase: 'https://api.vatioboard.com',
+      },
+    });
+
+    const detailResult = await getBackendSavedDrawingAssetDetail({
+      name: 'DRAW-1',
+      fetchImpl,
+      config: {
+        apiBase: 'https://api.dev.vatioboard.com',
+      },
+    });
+
+    expect(listResult.drawings).toEqual([
+      expect.objectContaining({
+        image_url: 'https://api.vatioboard.com/files/skidpad.png?token=view#preview',
+        download_url: 'https://api.vatioboard.com/private/files/skidpad.png?download=1',
+        export_url: 'https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.drawings.download_my_saved_drawing?name=DRAW-1&as_attachment=1',
+      }),
+    ]);
+    expect(detailResult.drawing).toEqual(expect.objectContaining({
+      image_url: 'https://api.dev.vatioboard.com/files/skidpad.png?token=view#preview',
+      download_url: 'https://api.dev.vatioboard.com/private/files/skidpad.png?download=1',
+      export_url: 'https://api.dev.vatioboard.com/api/method/vatiolibre.vatiolibre.drawings.download_my_saved_drawing?name=DRAW-1',
+    }));
+  });
+
   it('dedupes concurrent session probes', async () => {
     clearBackendAccessCache();
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
@@ -248,6 +362,49 @@ describe('backend auth transport helpers', () => {
     expect(cachedResult.cloudSyncCapability.enabled).toBe(true);
     expect(cachedResult.capability.enabled).toBe(true);
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('requests accel detail from the accel detail backend method', async () => {
+    const fetchImpl = vi.fn(async (url) => {
+      const requestUrl = new URL(String(url));
+      expect(requestUrl.pathname).toBe(
+        '/api/method/vatiolibre.vatiolibre.cloud_sync.get_my_accel_recording_detail'
+      );
+      expect(requestUrl.searchParams.get('name')).toBe('SYNC-ACCEL-1');
+      expect(requestUrl.searchParams.get('include_payload')).toBe('1');
+
+      return jsonResponse({
+        message: {
+          record: {
+            name: 'SYNC-ACCEL-1',
+            title: 'Quarter mile',
+          },
+          payload: {
+            id: 'run-1',
+          },
+        },
+      });
+    });
+
+    const result = await getBackendAccelRunDetail({
+      name: 'SYNC-ACCEL-1',
+      includePayload: true,
+      fetchImpl,
+      config: TEST_CONFIG,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: 200,
+      record: {
+        name: 'SYNC-ACCEL-1',
+        title: 'Quarter mile',
+      },
+      payload: {
+        id: 'run-1',
+      },
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it('pushes large sync batches as a gzipped multipart payload', async () => {

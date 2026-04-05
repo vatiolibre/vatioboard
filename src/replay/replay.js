@@ -24,6 +24,7 @@ import {
   CLOUD_SYNC_APPLIED_EVENT,
   CLOUD_SYNC_ENTITY_TYPES,
   queueCloudSyncDeletion,
+  restoreCloudSyncRecord,
   startCloudSyncLoop,
   syncCloudRecords,
 } from '../shared/cloud-sync.js';
@@ -45,7 +46,11 @@ import {
 } from './logic.js';
 import { createReplayChartsController } from './charts.js';
 import { createReplayMapController } from './map.js';
-import { loadReplaySelection, removeReplayRecording } from './session.js';
+import {
+  isReplayPayloadComplete,
+  loadReplaySelection,
+  removeReplayRecording,
+} from './session.js';
 
 applyTranslations();
 const singleTabOwnershipPromise = ensureSingleTabOwnership();
@@ -64,6 +69,7 @@ const elements = {
   openReplaySpeedMenu: document.getElementById('openReplaySpeedMenu'),
   openReplayGpsLabMenu: document.getElementById('openReplayGpsLabMenu'),
   openReplayAccelMenu: document.getElementById('openReplayAccelMenu'),
+  openReplayLibraryMenu: document.getElementById('openReplayLibraryMenu'),
   openReplayBoardMenu: document.getElementById('openReplayBoardMenu'),
   replayRecordedAtValue: document.getElementById('replayRecordedAtValue'),
   replaySampleCountValue: document.getElementById('replaySampleCountValue'),
@@ -192,6 +198,7 @@ initCloudSyncStatusIndicator({
 applyButtonIcon(elements.openReplaySpeedMenu, IconSpeed);
 applyButtonIcon(elements.openReplayGpsLabMenu, IconGpsLab);
 applyButtonIcon(elements.openReplayAccelMenu, IconAccel);
+applyButtonIcon(elements.openReplayLibraryMenu, IconWorld);
 applyButtonIcon(elements.openReplayBoardMenu, IconBoard);
 applyButtonIcon(elements.replayToolsMenuBtn, IconPages);
 for (const button of document.querySelectorAll('.replay-axis-btn[data-axis="time"]')) {
@@ -232,6 +239,7 @@ let hasHydratedInitialSelection = false;
 let introApproachPromise = null;
 let introApproachToken = 0;
 let recordingsDetailMeasureFrame = null;
+const remoteReplayRestoreAttempts = new Set();
 
 refreshDerivedState();
 
@@ -295,6 +303,24 @@ function bindMenuNavigation(element, href) {
 function refreshDerivedState() {
   state.summary = getReplaySummary(state.session);
   state.highlights = getReplayHighlights(state.session);
+}
+
+async function maybeRestoreReplayTelemetry(recordingId, session) {
+  const normalizedRecordingId = typeof recordingId === 'string' ? recordingId.trim() : '';
+  if (!normalizedRecordingId) return false;
+  if (session && isReplayPayloadComplete(session)) return false;
+  if (remoteReplayRestoreAttempts.has(normalizedRecordingId)) return false;
+
+  remoteReplayRestoreAttempts.add(normalizedRecordingId);
+  try {
+    const result = await restoreCloudSyncRecord({
+      entityType: CLOUD_SYNC_ENTITY_TYPES.replaySession,
+      recordId: normalizedRecordingId,
+    });
+    return result?.ok === true && isReplayPayloadComplete(result?.payload);
+  } catch {
+    return false;
+  }
 }
 
 function getSpeedUnit() {
@@ -946,7 +972,13 @@ function renderSessionStateView() {
 
 async function applyReplaySelection(recordingId = null) {
   cancelReplayApproach();
-  const selection = await loadReplaySelection(recordingId ?? state.selectedRecordingId);
+  const requestedRecordingId = recordingId ?? state.selectedRecordingId;
+  let selection = await loadReplaySelection(requestedRecordingId);
+  const restoreRecordingId = selection.session?.id ?? requestedRecordingId ?? null;
+
+  if (await maybeRestoreReplayTelemetry(restoreRecordingId, selection.session)) {
+    selection = await loadReplaySelection(restoreRecordingId);
+  }
 
   state.records = selection.records;
   state.sessionSource = selection.source;
@@ -1015,6 +1047,7 @@ function bindEvents() {
   bindMenuNavigation(elements.openReplaySpeedMenu, '/speed');
   bindMenuNavigation(elements.openReplayGpsLabMenu, '/gps-rate');
   bindMenuNavigation(elements.openReplayAccelMenu, '/accel');
+  bindMenuNavigation(elements.openReplayLibraryMenu, '/library.html?tab=speed');
   bindMenuNavigation(elements.openReplayBoardMenu, '/');
 
   elements.replayOpenSpeed?.addEventListener('click', () => {
@@ -1161,7 +1194,7 @@ function bindEvents() {
   window.addEventListener(CLOUD_SYNC_APPLIED_EVENT, (event) => {
     if (event?.detail?.entityType !== CLOUD_SYNC_ENTITY_TYPES.replaySession) return;
     if (state.initialSelectionPending) return;
-    void requestReplaySelection(state.selectedRecordingId);
+    void requestReplaySelection(state.selectedRecordingId ?? event?.detail?.recordId ?? null);
   });
 }
 
@@ -1169,6 +1202,7 @@ async function init() {
   if (!(await singleTabOwnershipPromise)) {
     return;
   }
+  const initialRecordingId = new URLSearchParams(window.location.search).get('record');
 
   updatePageMeta();
   renderSessionStateView();
@@ -1185,7 +1219,7 @@ async function init() {
   renderRecordings();
   updateGraphPlayback(null);
   try {
-    await requestReplaySelection();
+    await requestReplaySelection(initialRecordingId);
   } finally {
     state.initialSelectionPending = false;
     renderSessionStateView();

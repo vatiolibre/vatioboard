@@ -272,6 +272,33 @@ export function normalizeStoredRun(run) {
   return normalizedRun;
 }
 
+export function getAccelPayloadCompleteness(run, { minPoints = 2 } = {}) {
+  const normalizedRun = normalizeStoredRun(run);
+  const requiredPoints = Math.max(1, Math.round(Number(minPoints) || 2));
+  const hasSampleLogPayload = Boolean(
+    normalizedRun
+    && Array.isArray(normalizedRun.sampleLog)
+    && normalizedRun.sampleLog.length >= requiredPoints
+  );
+  const hasSpeedTracePayload = Boolean(
+    normalizedRun
+    && Array.isArray(normalizedRun.speedTrace)
+    && normalizedRun.speedTrace.length >= requiredPoints
+  );
+  const payloadComplete = hasSampleLogPayload || hasSpeedTracePayload;
+
+  return {
+    hasSampleLogPayload,
+    hasSpeedTracePayload,
+    payloadComplete,
+    canOpen: payloadComplete,
+  };
+}
+
+export function isAccelPayloadComplete(run, options = {}) {
+  return getAccelPayloadCompleteness(run, options).payloadComplete;
+}
+
 export async function loadRuns() {
   const raw = await loadAccelValue(STORAGE_KEYS.runs, null);
   if (!Array.isArray(raw)) return [];
@@ -292,4 +319,16 @@ export function saveRuns(runs) {
     saveAccelValue(STORAGE_KEYS.runs, snapshot)
   );
   return runsSavePromise;
+}
+
+export async function importRun(run, options = {}) {
+  const normalizedRun = normalizeStoredRun(run);
+  if (!normalizedRun || !isAccelPayloadComplete(normalizedRun, options)) {
+    return null;
+  }
+
+  const nextRuns = (await loadRuns()).filter((entry) => entry.id !== normalizedRun.id);
+  nextRuns.unshift(normalizedRun);
+  await saveRuns(nextRuns.slice(0, options.maxRuns ?? MAX_RUNS));
+  return normalizedRun;
 }

@@ -5,14 +5,24 @@ import "../styles/energy.less";
 import "../styles/dock.less";
 
 import { createCalculatorWidget } from "../calculator/calculator-widget.js";
-import { loadBoardDrawing, saveBoardDrawing } from "./storage.js";
+import {
+  clearCurrentBoardDocumentMeta,
+  consumePendingBoardDocumentOpen,
+  loadBoardDrawing,
+  loadCurrentBoardDocumentMeta,
+  saveBoardDrawing,
+  saveCurrentBoardDocumentMeta,
+} from "./storage.js";
 import { createEnergyCalculatorWidget } from "../energy/energy-calculator-widget.js";
 import { createFloatingDock } from "../dock/floating-dock.js";
 import {
+  deleteBoardDocumentFromBackend,
   getBackendFeatureAccessState,
   getBackendSessionState,
   initBackendAuthControllers,
+  saveBoardDocumentToBackend,
   saveDrawingToBackend,
+  updateBoardDocumentInBackend,
 } from "../shared/backend-auth.js";
 import {
   CLOUD_SYNC_APPLIED_EVENT,
@@ -37,6 +47,7 @@ import {
   IconSpeed,
   IconTrash,
   IconUndo,
+  IconWorld,
 } from "../icons.js";
 
 // Apply translations immediately
@@ -66,8 +77,12 @@ const openSpeedBtn = document.getElementById("openSpeed");
 const openEnergyBtn = document.getElementById("openEnergy");
 const openAccelMenuBtn = document.getElementById("openAccelMenu");
 const openCalcMenuBtn = document.getElementById("openCalcMenu");
+const openLibraryMenuBtn = document.getElementById("openLibraryMenu");
 const openSpeedMenuBtn = document.getElementById("openSpeedMenu");
 const openEnergyMenuBtn = document.getElementById("openEnergyMenu");
+const saveBoardDocumentMenuBtn = document.getElementById("saveBoardDocumentMenu");
+const saveBoardDocumentCopyMenuBtn = document.getElementById("saveBoardDocumentCopyMenu");
+const deleteBoardDocumentMenuBtn = document.getElementById("deleteBoardDocumentMenu");
 const toolsMenuBtn = document.getElementById("toolsMenuBtn");
 const toolsMenuList = document.getElementById("toolsMenuList");
 
@@ -80,10 +95,14 @@ applyButtonIcon(document.getElementById("save"), IconSave);
 applyButtonIcon(openCalcBtn, IconCalculator);
 applyButtonIcon(openCalcMenuBtn, IconCalculator);
 applyButtonIcon(openAccelMenuBtn, IconAccel);
+applyButtonIcon(openLibraryMenuBtn, IconWorld);
 applyButtonIcon(openSpeedBtn, IconSpeed);
 applyButtonIcon(openSpeedMenuBtn, IconSpeed);
 applyButtonIcon(openEnergyBtn, IconEnergy);
 applyButtonIcon(openEnergyMenuBtn, IconEnergy);
+applyButtonIcon(saveBoardDocumentMenuBtn, IconSave);
+applyButtonIcon(saveBoardDocumentCopyMenuBtn, IconSave);
+applyButtonIcon(deleteBoardDocumentMenuBtn, IconTrash);
 applyButtonIcon(toolsMenuBtn, IconPages);
 
 // Floating dock with tool buttons
@@ -121,6 +140,7 @@ bindToggle(energyBtn, energyWidget);
 bindNavigation(openSpeedBtn, "/speed");
 bindNavigation(openSpeedMenuBtn, "/speed");
 bindNavigation(openAccelMenuBtn, "/accel");
+bindNavigation(openLibraryMenuBtn, "/library.html?tab=board_documents");
 
   (function(){
     const canvas = document.getElementById("pad");
@@ -144,6 +164,8 @@ bindNavigation(openAccelMenuBtn, "/accel");
 
     const LS_INK_RAW = "vatio_board_ink_raw";
     let saveBusy = false;
+    let boardDocumentBusy = false;
+    let currentBoardDocument = loadCurrentBoardDocumentMeta();
 
     function isDarkMode(){
       return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -256,6 +278,18 @@ bindNavigation(openAccelMenuBtn, "/accel");
       saveBtn.disabled = saveBusy;
     }
 
+    function syncBoardDocumentActions(){
+      if (saveBoardDocumentMenuBtn) {
+        saveBoardDocumentMenuBtn.disabled = boardDocumentBusy;
+      }
+      if (saveBoardDocumentCopyMenuBtn) {
+        saveBoardDocumentCopyMenuBtn.disabled = boardDocumentBusy;
+      }
+      if (deleteBoardDocumentMenuBtn) {
+        deleteBoardDocumentMenuBtn.disabled = boardDocumentBusy || !currentBoardDocument?.name;
+      }
+    }
+
     function setActive(options = {}){
       const shouldAnnounce = options.announce !== false;
       penBtn.setAttribute("aria-pressed", tool === "pen" ? "true" : "false");
@@ -342,7 +376,8 @@ bindNavigation(openAccelMenuBtn, "/accel");
 
     async function hydrateBoardDrawing(){
       const restoreRevision = boardStateRevision;
-      const storedDrawing = await loadBoardDrawing();
+      const pendingOpen = consumePendingBoardDocumentOpen();
+      const storedDrawing = pendingOpen?.payload || await loadBoardDrawing();
 
       if (boardStateRevision !== restoreRevision || drawing || commandHistory.length > 0 || redoHistory.length > 0) {
         return;
@@ -355,14 +390,35 @@ bindNavigation(openAccelMenuBtn, "/accel");
         ? storedDrawing.redoCommands.map(cloneCommand).filter(Boolean)
         : [];
 
-      if (restoredCommands.length === 0 && restoredRedoCommands.length === 0) {
+      if (!pendingOpen && restoredCommands.length === 0 && restoredRedoCommands.length === 0) {
         return;
       }
 
+      commandHistory.length = 0;
+      redoHistory.length = 0;
       commandHistory.push(...restoredCommands);
       redoHistory.push(...restoredRedoCommands);
       syncHistoryButtons();
       redrawCanvas();
+
+      if (pendingOpen?.document) {
+        currentBoardDocument = {
+          name: pendingOpen.document.name,
+          title: pendingOpen.document.title,
+          updatedAtMs: pendingOpen.document.updated_at_ms || storedDrawing.updatedAtMs || Date.now(),
+        };
+        saveCurrentBoardDocumentMeta(currentBoardDocument);
+        syncBoardDocumentActions();
+
+        const updatedAtMs = storedDrawing.updatedAtMs || Date.now();
+        void saveBoardDrawing({
+          ...storedDrawing,
+          updatedAtMs,
+        });
+        setStatus(t("boardDocumentOpened", {
+          title: currentBoardDocument.title || t("boardDocumentUntitled"),
+        }));
+      }
     }
 
     function pushHistoryCommand(command, { clearRedo = true } = {}){
@@ -931,6 +987,162 @@ bindNavigation(openAccelMenuBtn, "/accel");
       return t("saveSubscriptionRequired");
     }
 
+    async function resolveCloudSyncAccess(){
+      const session = await getBackendSessionState();
+
+      if (!session.ok) {
+        if (session.isGuest) {
+          openBackendAuth();
+          setStatus(t("saveLoginRequired"));
+        } else {
+          setStatus(t("saveSessionCheckFailed", { status: session.status }));
+        }
+        return null;
+      }
+
+      if (session.isGuest) {
+        openBackendAuth();
+        setStatus(t("saveLoginRequired"));
+        return null;
+      }
+
+      const featureAccess = await getBackendFeatureAccessState();
+
+      if (!featureAccess.ok) {
+        if (featureAccess.isGuest) {
+          openBackendAuth();
+          setStatus(t("saveLoginRequired"));
+        } else {
+          setStatus(t("saveFeatureAccessFailed", { status: featureAccess.status }));
+        }
+        return null;
+      }
+
+      if (!featureAccess.cloudSyncCapability.enabled) {
+        setStatus(getBlockedSaveMessage(featureAccess.cloudSyncCapability));
+        return null;
+      }
+
+      if (!featureAccess.cloudSyncCapability.csrfToken) {
+        setStatus(t("saveUnavailable"));
+        return null;
+      }
+
+      return featureAccess.cloudSyncCapability;
+    }
+
+    function createBoardDocumentSnapshot(){
+      return {
+        ...createBoardDrawingSnapshot(),
+        updatedAtMs: Date.now(),
+      };
+    }
+
+    async function saveBoardDocumentToCloud({ saveAsNew = false } = {}){
+      if (boardDocumentBusy) return;
+
+      boardDocumentBusy = true;
+      syncBoardDocumentActions();
+      setStatus(t("saveCheckingAccess"));
+
+      try {
+        const capability = await resolveCloudSyncAccess();
+        if (!capability) return;
+
+        const snapshot = createBoardDocumentSnapshot();
+        let response = null;
+
+        if (!saveAsNew && currentBoardDocument?.name) {
+          setStatus(t("boardDocumentSaving"));
+          response = await updateBoardDocumentInBackend({
+            name: currentBoardDocument.name,
+            payload: snapshot,
+            csrfToken: capability.csrfToken,
+          });
+        } else {
+          const title = window.prompt(
+            t("boardDocumentPromptTitle"),
+            currentBoardDocument?.title || t("boardDocumentUntitled")
+          );
+          if (title === null) return;
+
+          const trimmedTitle = String(title || "").trim();
+          if (!trimmedTitle) {
+            setStatus(t("boardDocumentTitleRequired"));
+            return;
+          }
+
+          setStatus(t("boardDocumentSaving"));
+          response = await saveBoardDocumentToBackend({
+            title: trimmedTitle,
+            payload: snapshot,
+            csrfToken: capability.csrfToken,
+          });
+        }
+
+        if (!response?.ok || !response.document) {
+          if (response?.status === 401 || response?.status === 403) {
+            openBackendAuth();
+            setStatus(t("saveLoginRequired"));
+          } else {
+            setStatus(t("boardDocumentSaveFailed", { status: response?.status || 0 }));
+          }
+          return;
+        }
+
+        currentBoardDocument = {
+          name: response.document.name,
+          title: response.document.title,
+          updatedAtMs: response.document.updated_at_ms || snapshot.updatedAtMs,
+        };
+        saveCurrentBoardDocumentMeta(currentBoardDocument);
+        syncBoardDocumentActions();
+        setStatus(t("boardDocumentSaved", { title: currentBoardDocument.title || t("boardDocumentUntitled") }));
+      } catch {
+        setStatus(t("saveNetworkError"));
+      } finally {
+        boardDocumentBusy = false;
+        syncBoardDocumentActions();
+      }
+    }
+
+    async function deleteBoardDocumentFromCloud(){
+      if (!currentBoardDocument?.name || boardDocumentBusy) return;
+      if (!window.confirm(t("boardDocumentDeleteConfirm", {
+        title: currentBoardDocument.title || t("boardDocumentUntitled"),
+      }))) {
+        return;
+      }
+
+      boardDocumentBusy = true;
+      syncBoardDocumentActions();
+      setStatus(t("boardDocumentDeleting"));
+
+      try {
+        const capability = await resolveCloudSyncAccess();
+        if (!capability) return;
+
+        const response = await deleteBoardDocumentFromBackend({
+          name: currentBoardDocument.name,
+          csrfToken: capability.csrfToken,
+        });
+        if (!response.ok) {
+          setStatus(t("boardDocumentDeleteFailed", { status: response.status || 0 }));
+          return;
+        }
+
+        currentBoardDocument = null;
+        clearCurrentBoardDocumentMeta();
+        syncBoardDocumentActions();
+        setStatus(t("boardDocumentDeleted"));
+      } catch {
+        setStatus(t("saveNetworkError"));
+      } finally {
+        boardDocumentBusy = false;
+        syncBoardDocumentActions();
+      }
+    }
+
     async function saveToVatioLibre(){
       if (saveBusy) return;
 
@@ -1030,6 +1242,18 @@ bindNavigation(openAccelMenuBtn, "/accel");
     saveBtn.addEventListener("click", () => {
       void saveToVatioLibre();
     });
+    saveBoardDocumentMenuBtn?.addEventListener("click", () => {
+      toolsMenu.close();
+      void saveBoardDocumentToCloud();
+    });
+    saveBoardDocumentCopyMenuBtn?.addEventListener("click", () => {
+      toolsMenu.close();
+      void saveBoardDocumentToCloud({ saveAsNew: true });
+    });
+    deleteBoardDocumentMenuBtn?.addEventListener("click", () => {
+      toolsMenu.close();
+      void deleteBoardDocumentFromCloud();
+    });
 
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     if (mq && mq.addEventListener){
@@ -1074,6 +1298,7 @@ bindNavigation(openAccelMenuBtn, "/accel");
     syncSizePreview();
     syncHistoryButtons();
     syncSaveButton();
+    syncBoardDocumentActions();
     setActive();
 
     renderSwatches();

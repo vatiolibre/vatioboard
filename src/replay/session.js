@@ -589,6 +589,26 @@ export function normalizeReplaySession(session) {
   };
 }
 
+export function getReplayPayloadCompleteness(session, { minSamples = 2 } = {}) {
+  const normalizedSession = normalizeReplaySession(session);
+  const requiredSamples = Math.max(1, normalizePositiveInteger(minSamples, 2));
+  const hasSamplesPayload = Boolean(
+    normalizedSession
+    && Array.isArray(normalizedSession.samples)
+    && normalizedSession.samples.length >= requiredSamples
+  );
+
+  return {
+    hasSamplesPayload,
+    payloadComplete: hasSamplesPayload,
+    canOpen: hasSamplesPayload,
+  };
+}
+
+export function isReplayPayloadComplete(session, options = {}) {
+  return getReplayPayloadCompleteness(session, options).payloadComplete;
+}
+
 async function ensureReplaySessionDistanceOrigin(session, storageKey = null) {
   const normalizedSession = normalizeReplaySession(session);
   if (!normalizedSession) return null;
@@ -920,19 +940,42 @@ export async function saveReplayLibrary(recordings) {
   return persistedRecordings;
 }
 
-export async function archiveReplaySession(session, options = {}) {
-  const normalizedSession = finalizeReplaySession(session, options.endedAtMs ?? null);
-  if (!hasReplaySamples(normalizedSession, options.minSamples ?? 2)) {
-    return loadReplayLibrary();
+export async function importReplaySession(session, options = {}) {
+  const normalizedSession = normalizeReplaySession(session);
+  if (!normalizedSession || !isReplayPayloadComplete(normalizedSession, options)) {
+    return null;
   }
 
   const nextRecordings = (await loadReplayLibrary()).filter(
     (entry) => entry.id !== normalizedSession.id
   );
   nextRecordings.unshift(normalizedSession);
-  await saveLastReplaySession(normalizedSession);
+
+  if (options.saveLast !== false) {
+    await saveLastReplaySession(normalizedSession);
+  }
+  await saveReplayLibrary(
+    nextRecordings.slice(0, options.maxRecordings ?? MAX_STORED_REPLAYS)
+  );
+  return normalizedSession;
+}
+
+export async function archiveReplaySession(session, options = {}) {
+  const normalizedSession = finalizeReplaySession(session, options.endedAtMs ?? null);
+  if (!hasReplaySamples(normalizedSession, options.minSamples ?? 2)) {
+    return null;
+  }
+
+  const persistedArchivedSession = await saveLastReplaySession(normalizedSession);
+  const archivedSession =
+    (await hydrateReplaySessionSamples(persistedArchivedSession ?? normalizedSession))
+    ?? normalizedSession;
+  const nextRecordings = (await loadReplayLibrary()).filter(
+    (entry) => entry.id !== normalizedSession.id
+  );
+  nextRecordings.unshift(archivedSession);
   await saveReplayLibrary(nextRecordings.slice(0, options.maxRecordings ?? MAX_STORED_REPLAYS));
-  return loadReplayLibrary();
+  return archivedSession;
 }
 
 export async function removeReplayRecording(recordingId) {

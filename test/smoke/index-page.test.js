@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BOARD_DRAWING_KEY } from "../../src/board/storage.js";
+import {
+  BOARD_CURRENT_DOCUMENT_KEY,
+  BOARD_DRAWING_KEY,
+  BOARD_PENDING_OPEN_DOCUMENT_KEY,
+} from "../../src/board/storage.js";
 import { bootHtmlPage, expectPageSeo, flushTasks } from "../helpers/page-smoke.js";
 
 vi.mock("@jaames/iro", () => ({
@@ -33,6 +37,7 @@ function dispatchBoardStroke(canvas, pointerId, clientX, clientY) {
 describe("index.html smoke", () => {
   let sessionUser;
   let hasActiveSubscription;
+  let cloudSyncEnabled;
   let savedDrawingsEnabled;
   let savedDrawingsReason;
   let csrfToken;
@@ -42,6 +47,7 @@ describe("index.html smoke", () => {
 
     sessionUser = "Guest";
     hasActiveSubscription = false;
+    cloudSyncEnabled = false;
     savedDrawingsEnabled = false;
     savedDrawingsReason = "";
     csrfToken = "csrf-test-token";
@@ -103,12 +109,45 @@ describe("index.html smoke", () => {
           message: {
             has_active_subscription: hasActiveSubscription,
             features: {
+              cloud_sync: {
+                enabled: cloudSyncEnabled,
+              },
               saved_drawings: {
                 enabled: savedDrawingsEnabled,
                 reason: savedDrawingsReason,
               },
             },
             csrf_token: csrfToken,
+          },
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/method/vatiolibre.vatiolibre.board_documents.save_my_board_document")) {
+        return new Response(JSON.stringify({
+          message: {
+            document: {
+              name: "BOARD-DOC-0001",
+              title: "Autocross sketch",
+              updated_at_ms: 1712163600000,
+            },
+          },
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/method/vatiolibre.vatiolibre.board_documents.update_my_board_document")) {
+        return new Response(JSON.stringify({
+          message: {
+            document: {
+              name: "BOARD-DOC-0001",
+              title: "Autocross sketch",
+              updated_at_ms: 1712167200000,
+            },
           },
         }), {
           status: 200,
@@ -483,5 +522,87 @@ describe("index.html smoke", () => {
     expect(uploadedFile).toBeInstanceOf(File);
     expect(uploadedFile.name).toBe("drawing.png");
     expect(uploadedFile.type).toBe("image/png");
+  });
+
+  it("saves a cloud board document and updates it on the next save", async () => {
+    sessionUser = "board-docs@vatiolibre.com";
+    hasActiveSubscription = true;
+    cloudSyncEnabled = true;
+    savedDrawingsEnabled = true;
+    window.prompt = vi.fn(() => "Autocross sketch");
+
+    await import("../../src/board/board.js");
+    await flushBoardTasks();
+
+    const canvas = document.getElementById("pad");
+    dispatchBoardStroke(canvas, 7, 120, 160);
+    await flushBoardTasks();
+
+    document.getElementById("saveBoardDocumentMenu").click();
+    await flushBoardTasks();
+
+    expect(window.fetch).toHaveBeenCalledWith(
+      "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.board_documents.save_my_board_document",
+      expect.anything()
+    );
+    expect(JSON.parse(localStorage.getItem("vatio_board_document_current_v1"))).toMatchObject({
+      name: "BOARD-DOC-0001",
+      title: "Autocross sketch",
+    });
+
+    dispatchBoardStroke(canvas, 8, 180, 210);
+    await flushBoardTasks();
+
+    document.getElementById("saveBoardDocumentMenu").click();
+    await flushBoardTasks();
+
+    expect(window.fetch).toHaveBeenCalledWith(
+      "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.board_documents.update_my_board_document",
+      expect.anything()
+    );
+  });
+
+  it("opens an empty pending cloud board document without syncing it and keeps it current for updates", async () => {
+    sessionUser = "board-docs@vatiolibre.com";
+    hasActiveSubscription = true;
+    cloudSyncEnabled = true;
+    savedDrawingsEnabled = true;
+    window.prompt = vi.fn();
+
+    localStorage.setItem(BOARD_PENDING_OPEN_DOCUMENT_KEY, JSON.stringify({
+      document: {
+        name: "BOARD-DOC-EMPTY",
+        title: "Blank sketch",
+        updated_at_ms: 1712163600000,
+      },
+      payload: {
+        updatedAtMs: 1712163600000,
+        commands: [],
+        redoCommands: [],
+      },
+    }));
+
+    await import("../../src/board/board.js");
+    await flushBoardTasks();
+
+    expect(JSON.parse(localStorage.getItem(BOARD_CURRENT_DOCUMENT_KEY))).toMatchObject({
+      name: "BOARD-DOC-EMPTY",
+      title: "Blank sketch",
+    });
+    expect(document.getElementById("status").textContent).toBe('Opened board document "Blank sketch"');
+
+    const pushCall = window.fetch.mock.calls.find(([url]) =>
+      url === "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.cloud_sync.push_my_sync_changes"
+    );
+    expect(pushCall).toBeUndefined();
+
+    document.getElementById("saveBoardDocumentMenu").click();
+    await flushBoardTasks();
+
+    expect(window.prompt).not.toHaveBeenCalled();
+    expect(window.fetch).toHaveBeenCalledWith(
+      "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.board_documents.update_my_board_document",
+      expect.anything()
+    );
   });
 });

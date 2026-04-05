@@ -23,6 +23,10 @@ function createServerRecord(change, index = 0) {
   };
 }
 
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
 async function flushAsyncWork(turns = 4) {
   for (let turn = 0; turn < turns; turn += 1) {
     await Promise.resolve();
@@ -36,10 +40,13 @@ async function importCloudSyncModule() {
 function mockCloudSyncDependencies({
   replayLibrary = [],
   replaySessionsById = {},
+  runs = [],
   pullRecords = [],
   pushImpl = null,
   pullImpl = null,
 } = {}) {
+  let currentReplayLibrary = cloneJson(replayLibrary);
+  let currentRuns = cloneJson(runs);
   const createEmptyBoardDrawing = vi.fn(() => ({
     commands: [],
     redoCommands: [],
@@ -53,12 +60,35 @@ function mockCloudSyncDependencies({
     version: 1,
   }));
   const saveBoardDrawing = vi.fn(async () => {});
-  const loadRuns = vi.fn(async () => []);
-  const saveRuns = vi.fn(async () => {});
-  const loadReplayLibrary = vi.fn(async () => replayLibrary);
-  const loadReplaySessionById = vi.fn(async (recordingId) => replaySessionsById[recordingId] ?? null);
-  const removeReplayRecording = vi.fn(async () => []);
-  const saveReplayLibrary = vi.fn(async (library) => library);
+  const loadRuns = vi.fn(async () => cloneJson(currentRuns));
+  const saveRuns = vi.fn(async (nextRuns) => {
+    currentRuns = cloneJson(nextRuns ?? []);
+    return cloneJson(currentRuns);
+  });
+  const loadReplayLibrary = vi.fn(async () => cloneJson(currentReplayLibrary));
+  const loadReplaySessionById = vi.fn(async (recordingId) => {
+    if (Object.prototype.hasOwnProperty.call(replaySessionsById, recordingId)) {
+      return cloneJson(replaySessionsById[recordingId]);
+    }
+    return cloneJson(
+      currentReplayLibrary.find((entry) => entry.id === recordingId) ?? null
+    );
+  });
+  const removeReplayRecording = vi.fn(async (recordingId) => {
+    currentReplayLibrary = currentReplayLibrary.filter((entry) => entry.id !== recordingId);
+    return cloneJson(currentReplayLibrary);
+  });
+  const saveReplayLibrary = vi.fn(async (library) => {
+    currentReplayLibrary = cloneJson(library ?? []);
+    return cloneJson(currentReplayLibrary);
+  });
+  const isAccelPayloadComplete = vi.fn((payload) => Boolean(
+    Array.isArray(payload?.sampleLog) && payload.sampleLog.length >= 2
+    || Array.isArray(payload?.speedTrace) && payload.speedTrace.length >= 2
+  ));
+  const isReplayPayloadComplete = vi.fn((payload) => Boolean(
+    Array.isArray(payload?.samples) && payload.samples.length >= 2
+  ));
   const pushSyncChangesToBackend = vi.fn(
     pushImpl
       || (async ({ changes }) => ({
@@ -107,11 +137,13 @@ function mockCloudSyncDependencies({
     saveBoardDrawing,
   }));
   vi.doMock(ACCEL_STORAGE_MODULE, () => ({
+    isAccelPayloadComplete,
     loadRuns,
     saveRuns,
   }));
   vi.doMock(REPLAY_SESSION_MODULE, () => ({
     MAX_STORED_REPLAYS: 12,
+    isReplayPayloadComplete,
     loadReplayLibrary,
     loadReplaySessionById,
     removeReplayRecording,
@@ -141,6 +173,8 @@ function mockCloudSyncDependencies({
     getBackendSessionState,
     hasSingleTabOwnership,
     loadBoardDrawing,
+    isAccelPayloadComplete,
+    isReplayPayloadComplete,
     loadReplayLibrary,
     loadReplaySessionById,
     loadRuns,
@@ -235,6 +269,264 @@ describe('cloud sync', () => {
     expect(pushedReplay.record_title).toBe('Hydrated replay');
     expect(pushedReplay.payload.samples).toEqual(hydratedReplay.samples);
     expect(mocks.loadReplaySessionById).toHaveBeenCalledWith('replay-1');
+  });
+
+  it('pushes full replay telemetry when a just-archived replay is queued inline', async () => {
+    const strippedReplay = {
+      id: 'replay-1',
+      updatedAtMs: 3000,
+      endedAtMs: 3000,
+      startedAtMs: 1000,
+      sampleCount: 3,
+      persistedSampleCount: 3,
+      chunkCount: 1,
+      samples: [],
+      startPlace: { label: 'Library shell' },
+    };
+    const archivedReplay = {
+      ...strippedReplay,
+      startPlace: { label: 'Archived replay' },
+      samples: [
+        { timestampMs: 1000, latitude: 1, longitude: 1, totalDistanceM: 0, speedMs: 0 },
+        { timestampMs: 2000, latitude: 2, longitude: 2, totalDistanceM: 100, speedMs: 12 },
+        { timestampMs: 3000, latitude: 3, longitude: 3, totalDistanceM: 220, speedMs: 18 },
+      ],
+    };
+    const mocks = mockCloudSyncDependencies({
+      replayLibrary: [strippedReplay],
+      replaySessionsById: {
+        'replay-1': strippedReplay,
+      },
+    });
+    const { CLOUD_SYNC_ENTITY_TYPES, queueCloudSyncChange, syncCloudRecords } =
+      await importCloudSyncModule();
+
+    await queueCloudSyncChange({
+      entityType: CLOUD_SYNC_ENTITY_TYPES.replaySession,
+      recordId: archivedReplay.id,
+      recordTitle: archivedReplay.startPlace.label,
+      updatedAtMs: archivedReplay.updatedAtMs,
+      payload: archivedReplay,
+    });
+    await syncCloudRecords();
+
+    expect(mocks.pushSyncChangesToBackend).toHaveBeenCalledTimes(1);
+    expect(mocks.loadReplaySessionById).not.toHaveBeenCalled();
+    const pushedReplay = mocks.pushSyncChangesToBackend.mock.calls[0][0].changes[0];
+    expect(pushedReplay.client_record_id).toBe('replay-1');
+    expect(pushedReplay.payload.samples).toEqual(archivedReplay.samples);
+    expect(pushedReplay.record_title).toBe('Archived replay');
+  });
+
+  it('restores full replay telemetry from downloaded sync payloads on a fresh browser', async () => {
+    const fullReplayPayload = {
+      id: 'replay-remote-1',
+      updatedAtMs: 3000,
+      endedAtMs: 3000,
+      startedAtMs: 1000,
+      sampleCount: 3,
+      persistedSampleCount: 3,
+      chunkCount: 0,
+      startPlace: { label: 'Remote replay' },
+      samples: [
+        { timestampMs: 1000, latitude: 1, longitude: 1, totalDistanceM: 0, speedMs: 0 },
+        { timestampMs: 2000, latitude: 1.5, longitude: 1.5, totalDistanceM: 120, speedMs: 14 },
+        { timestampMs: 3000, latitude: 2, longitude: 2, totalDistanceM: 260, speedMs: 21 },
+      ],
+    };
+    const remoteReplayRecord = createServerRecord({
+      entity_type: 'replay_session',
+      client_record_id: 'replay-remote-1',
+      device_id: 'device-b',
+      updated_at_ms: 3000,
+      payload: {
+        id: 'replay-remote-1',
+        sampleCount: 3,
+      },
+    });
+    const mocks = mockCloudSyncDependencies({
+      pullRecords: [remoteReplayRecord],
+    });
+    mocks.downloadSyncPayloadFromBackend.mockResolvedValue({
+      ok: true,
+      status: 200,
+      payload: fullReplayPayload,
+    });
+
+    const { syncCloudRecords } = await importCloudSyncModule();
+    await syncCloudRecords();
+
+    const replayLibrary = await mocks.loadReplayLibrary();
+    expect(replayLibrary).toHaveLength(1);
+    expect(replayLibrary[0]).toEqual(fullReplayPayload);
+    expect(mocks.saveReplayLibrary).toHaveBeenCalledWith([fullReplayPayload]);
+  });
+
+  it('can re-download and re-apply a replay payload by record id when a page needs telemetry recovery', async () => {
+    const fullReplayPayload = {
+      id: 'replay-remote-restore',
+      updatedAtMs: 3200,
+      endedAtMs: 3200,
+      startedAtMs: 1000,
+      sampleCount: 3,
+      persistedSampleCount: 3,
+      chunkCount: 0,
+      startPlace: { label: 'Recovered replay' },
+      samples: [
+        { timestampMs: 1000, latitude: 1, longitude: 1, totalDistanceM: 0, speedMs: 0 },
+        { timestampMs: 2100, latitude: 1.4, longitude: 1.4, totalDistanceM: 140, speedMs: 16 },
+        { timestampMs: 3200, latitude: 2, longitude: 2, totalDistanceM: 280, speedMs: 24 },
+      ],
+    };
+    const remoteReplayRecord = createServerRecord({
+      entity_type: 'replay_session',
+      client_record_id: 'replay-remote-restore',
+      device_id: 'device-b',
+      updated_at_ms: 3200,
+      payload: {
+        id: 'replay-remote-restore',
+        sampleCount: 3,
+      },
+    });
+    localStorage.setItem('vatioboard.cloud_sync.state', JSON.stringify({
+      cursor: '',
+      bootstrapVersion: 2,
+      records: {
+        'replay_session:replay-remote-restore': remoteReplayRecord,
+      },
+    }));
+
+    const mocks = mockCloudSyncDependencies();
+    mocks.downloadSyncPayloadFromBackend.mockResolvedValue({
+      ok: true,
+      status: 200,
+      payload: fullReplayPayload,
+    });
+
+    const { restoreCloudSyncRecord } = await importCloudSyncModule();
+    const restoreResult = await restoreCloudSyncRecord({
+      entityType: 'replay_session',
+      recordId: 'replay-remote-restore',
+    });
+
+    expect(restoreResult).toMatchObject({
+      ok: true,
+      meta: expect.objectContaining({
+        name: remoteReplayRecord.name,
+        clientRecordId: 'replay-remote-restore',
+      }),
+      payload: fullReplayPayload,
+    });
+    expect(mocks.downloadSyncPayloadFromBackend).toHaveBeenCalledWith({
+      name: remoteReplayRecord.name,
+      signal: undefined,
+    });
+    expect(mocks.saveReplayLibrary).toHaveBeenCalledWith([fullReplayPayload]);
+  });
+
+  it('does not let a summary-only remote replay payload replace richer local telemetry', async () => {
+    const localReplay = {
+      id: 'replay-1',
+      updatedAtMs: 2000,
+      endedAtMs: 2000,
+      startedAtMs: 1000,
+      sampleCount: 2,
+      persistedSampleCount: 2,
+      chunkCount: 0,
+      startPlace: { label: 'Local replay' },
+      samples: [
+        { timestampMs: 1000, latitude: 1, longitude: 1, totalDistanceM: 0 },
+        { timestampMs: 2000, latitude: 2, longitude: 2, totalDistanceM: 100 },
+      ],
+    };
+    const remoteReplayRecord = createServerRecord({
+      entity_type: 'replay_session',
+      client_record_id: 'replay-1',
+      device_id: 'device-b',
+      updated_at_ms: 3000,
+      payload: {
+        id: 'replay-1',
+        sampleCount: 24,
+      },
+    });
+    const mocks = mockCloudSyncDependencies({
+      replayLibrary: [localReplay],
+      replaySessionsById: {
+        'replay-1': localReplay,
+      },
+      pullRecords: [remoteReplayRecord],
+    });
+    mocks.downloadSyncPayloadFromBackend.mockResolvedValue({
+      ok: true,
+      status: 200,
+      payload: {
+        id: 'replay-1',
+        sampleCount: 24,
+        startedAtMs: 1000,
+        endedAtMs: 3000,
+      },
+    });
+
+    const { syncCloudRecords } = await importCloudSyncModule();
+    await syncCloudRecords();
+
+    const replayLibrary = await mocks.loadReplayLibrary();
+    expect(replayLibrary).toEqual([localReplay]);
+    expect(mocks.saveReplayLibrary).not.toHaveBeenCalled();
+  });
+
+  it('does not let a summary-only remote accel payload replace richer local telemetry', async () => {
+    const localRun = {
+      id: 'run-1',
+      savedAtMs: 2000,
+      elapsedMs: 4200,
+      presetId: '0-60',
+      presetSignature: '0-60',
+      comparisonSignature: '0-60',
+      presetKind: 'speed',
+      displayUnit: 'mph',
+      distanceDisplay: 'ft',
+      finishSpeedMs: 26.8,
+      qualityGrade: 'good',
+      qualityScore: 90,
+      speedTrace: [
+        { elapsedMs: 0, speedMs: 0, distanceM: 0 },
+        { elapsedMs: 4200, speedMs: 26.8, distanceM: 120 },
+      ],
+      sampleLog: [],
+      partials: [],
+    };
+    const remoteAccelRecord = createServerRecord({
+      entity_type: 'accel_run',
+      client_record_id: 'run-1',
+      device_id: 'device-b',
+      updated_at_ms: 3000,
+      payload: {
+        id: 'run-1',
+        elapsedMs: 4200,
+      },
+    });
+    const mocks = mockCloudSyncDependencies({
+      runs: [localRun],
+      pullRecords: [remoteAccelRecord],
+    });
+    mocks.downloadSyncPayloadFromBackend.mockResolvedValue({
+      ok: true,
+      status: 200,
+      payload: {
+        id: 'run-1',
+        savedAtMs: 3000,
+        elapsedMs: 4200,
+        presetId: '0-60',
+      },
+    });
+
+    const { syncCloudRecords } = await importCloudSyncModule();
+    await syncCloudRecords();
+
+    const storedRuns = await mocks.loadRuns();
+    expect(storedRuns).toEqual([localRun]);
+    expect(mocks.saveRuns).not.toHaveBeenCalled();
   });
 
   it('preserves distinct outbox changes queued concurrently', async () => {

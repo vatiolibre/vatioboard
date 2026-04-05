@@ -16,6 +16,8 @@ import {
   archiveReplaySession,
   appendReplaySample,
   createReplaySession,
+  importReplaySession,
+  isReplayPayloadComplete,
   loadActiveReplaySession,
   limitReplaySamples,
   loadReplayLibrary,
@@ -193,6 +195,59 @@ describe('replay helpers', () => {
     expect(limited).toHaveLength(4);
     expect(limited[0].timestampMs).toBe(samples[0].timestampMs);
     expect(limited[limited.length - 1].timestampMs).toBe(samples[samples.length - 1].timestampMs);
+  });
+
+  it('imports playable replay payloads with telemetry samples', async () => {
+    const imported = await importReplaySession({
+      id: 'cloud-replay-1',
+      startedAtMs: 1000,
+      endedAtMs: 2000,
+      updatedAtMs: 2000,
+      unit: 'kmh',
+      distanceUnit: 'm',
+      samples: [
+        createSample({
+          timestampMs: 1000,
+          totalDistanceM: 0,
+        }),
+        createSample({
+          timestampMs: 2000,
+          latitude: 40.7138,
+          longitude: -74.005,
+          totalDistanceM: 120,
+          speedMs: 18,
+        }),
+      ],
+    }, {
+      saveLast: false,
+    });
+
+    expect(isReplayPayloadComplete(imported)).toBe(true);
+    expect(imported?.samples).toHaveLength(2);
+    expect(getReplayBounds(imported)).not.toBeNull();
+  });
+
+  it('rejects summary-only replay imports without playable telemetry samples', async () => {
+    await expect(importReplaySession({
+      id: 'cloud-replay-summary',
+      startedAtMs: 1000,
+      endedAtMs: 2000,
+      updatedAtMs: 2000,
+      sampleCount: 24,
+      firstSample: {
+        timestampMs: 1000,
+      },
+      lastSample: {
+        timestampMs: 2000,
+      },
+      samples: [],
+    })).resolves.toBeNull();
+
+    expect(isReplayPayloadComplete({
+      id: 'cloud-replay-summary',
+      sampleCount: 24,
+      samples: [],
+    })).toBe(false);
   });
 
   it('appends replay samples and keeps units plus summary metadata in sync', () => {
@@ -658,6 +713,70 @@ describe('replay helpers', () => {
     );
 
     expect((await loadReplayLibrary()).map((entry) => entry.id)).toContain('legacy-last');
+  });
+
+  it('returns a hydrated archived replay payload even when the stored library entry is chunked metadata', async () => {
+    const originalIndexedDb = globalThis.indexedDB;
+    const fakeIndexedDb = createFakeIndexedDb();
+    Object.defineProperty(globalThis, 'indexedDB', {
+      configurable: true,
+      writable: true,
+      value: fakeIndexedDb,
+    });
+    vi.resetModules();
+
+    try {
+      const replay = await import('../../src/replay/session.js');
+      let session = replay.createReplaySession({
+        id: 'chunked-archive',
+        unit: 'kmh',
+        distanceUnit: 'm',
+      });
+
+      for (let index = 0; index < 250; index += 1) {
+        session = replay.appendReplaySample(
+          session,
+          createSample({
+            timestampMs: 1000 + index * 100,
+            latitude: 40.7128 + index / 100000,
+            longitude: -74.006 + index / 100000,
+            speedMs: 10 + (index % 5),
+            totalDistanceM: index * 6,
+          })
+        );
+      }
+
+      await replay.saveActiveReplaySession(session);
+      const metadataOnlySession = await replay.loadActiveReplaySession();
+      const archivedSession = await replay.archiveReplaySession(metadataOnlySession, {
+        endedAtMs: 1000 + 249 * 100,
+      });
+      const library = await replay.loadReplayLibrary();
+
+      expect(metadataOnlySession.samples).toEqual([]);
+      expect(archivedSession).not.toBeNull();
+      expect(replay.isReplayPayloadComplete(archivedSession)).toBe(true);
+      expect(archivedSession.samples).toHaveLength(250);
+      expect(archivedSession.samples[0]).toMatchObject({
+        timestampMs: 1000,
+        latitude: 40.7128,
+        longitude: -74.006,
+        totalDistanceM: 0,
+      });
+      expect(archivedSession.samples[249]).toMatchObject({
+        timestampMs: 1000 + 249 * 100,
+        totalDistanceM: 249 * 6,
+      });
+      expect(library[0].id).toBe('chunked-archive');
+      expect(library[0].samples).toEqual([]);
+    } finally {
+      Object.defineProperty(globalThis, 'indexedDB', {
+        configurable: true,
+        writable: true,
+        value: originalIndexedDb,
+      });
+      vi.resetModules();
+    }
   });
 
   it('loads archived replay sessions with hydrated samples by id', async () => {

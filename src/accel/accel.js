@@ -45,6 +45,7 @@ import {
   IconSettings,
   IconSpeed,
   IconTime,
+  IconWorld,
 } from '../icons.js';
 import {
   FINISH_SOUND_URL,
@@ -136,6 +137,7 @@ export const initPromise = (function () {
     toolsMenuList: document.getElementById('accelToolsMenuList'),
     openSpeedMenu: document.getElementById('openAccelSpeedMenu'),
     openGpsLabMenu: document.getElementById('openAccelGpsLabMenu'),
+    openLibraryMenu: document.getElementById('openAccelLibraryMenu'),
     openBoardMenu: document.getElementById('openAccelBoardMenu'),
     sheetBackdrop: document.getElementById('accelSheetBackdrop'),
     setupTrigger: document.getElementById('setupTrigger'),
@@ -298,6 +300,7 @@ export const initPromise = (function () {
   applyButtonIcon(elements.toolbarResults, IconReplay);
   applyButtonIcon(elements.openSpeedMenu, IconSpeed);
   applyButtonIcon(elements.openGpsLabMenu, IconGpsLab);
+  applyButtonIcon(elements.openLibraryMenu, IconWorld);
   applyButtonIcon(elements.openBoardMenu, IconBoard);
   applyButtonIcon(elements.resultReplayToggle, IconPlay);
   applyButtonIcon(elements.resultReplayRestart, IconRestart);
@@ -471,13 +474,14 @@ export const initPromise = (function () {
     if (!(await singleTabOwnershipPromise)) {
       return;
     }
+    var initialRunId = new URLSearchParams(window.location.search).get('run') || '';
 
     var loadedState = await Promise.all([loadSettings(), loadRuns()]);
 
     state.settings = loadedState[0];
     state.runs = loadedState[1];
     state.latestResult = state.runs.length ? state.runs[0] : null;
-    state.selectedResultId = state.latestResult ? state.latestResult.id : '';
+    state.selectedResultId = initialRunId || (state.latestResult ? state.latestResult.id : '');
 
     if (hasStoredValue(STORAGE_KEYS.settings) && !hasConfiguredUnitPreferences()) {
       markUnitBootstrapManualSelection({
@@ -578,6 +582,7 @@ export const initPromise = (function () {
     });
     bindMenuNavigation(elements.openSpeedMenu, '/speed');
     bindMenuNavigation(elements.openGpsLabMenu, '/gps-rate');
+    bindMenuNavigation(elements.openLibraryMenu, '/library.html?tab=accel');
     bindMenuNavigation(elements.openBoardMenu, '/');
     elements.setupTrigger.addEventListener('click', function () {
       togglePanel('setup', elements.setupTrigger);

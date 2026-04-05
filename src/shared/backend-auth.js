@@ -9,10 +9,21 @@ const SESSION_PROBE_METHOD = "vatiolibre.services.tesla_connection_status";
 const LOGGED_USER_METHOD = "frappe.auth.get_logged_user";
 const FEATURE_ACCESS_METHOD = "vatiolibre.vatiolibre.feature_access.get_my_feature_access";
 const SAVE_DRAWING_METHOD = "vatiolibre.vatiolibre.drawings.save_my_saved_drawing";
+const LIST_SAVED_DRAWINGS_METHOD = "vatiolibre.vatiolibre.drawings.list_my_saved_drawings";
+const GET_SAVED_DRAWING_DETAIL_METHOD = "vatiolibre.vatiolibre.drawings.get_my_saved_drawing_detail";
 const PUSH_SYNC_METHOD = "vatiolibre.vatiolibre.cloud_sync.push_my_sync_changes";
 const PULL_SYNC_METHOD = "vatiolibre.vatiolibre.cloud_sync.pull_my_sync_changes";
 const DOWNLOAD_SYNC_PAYLOAD_METHOD = "vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload";
 const DELETE_SYNC_RECORD_METHOD = "vatiolibre.vatiolibre.cloud_sync.delete_my_sync_record";
+const LIST_SPEED_RECORDINGS_METHOD = "vatiolibre.vatiolibre.cloud_sync.list_my_speed_recordings";
+const GET_SPEED_RECORDING_DETAIL_METHOD = "vatiolibre.vatiolibre.cloud_sync.get_my_speed_recording_detail";
+const LIST_ACCEL_RECORDINGS_METHOD = "vatiolibre.vatiolibre.cloud_sync.list_my_accel_recordings";
+const GET_ACCEL_RECORDING_DETAIL_METHOD = "vatiolibre.vatiolibre.cloud_sync.get_my_accel_recording_detail";
+const LIST_BOARD_DOCUMENTS_METHOD = "vatiolibre.vatiolibre.board_documents.list_my_board_documents";
+const GET_BOARD_DOCUMENT_DETAIL_METHOD = "vatiolibre.vatiolibre.board_documents.get_my_board_document_detail";
+const SAVE_BOARD_DOCUMENT_METHOD = "vatiolibre.vatiolibre.board_documents.save_my_board_document";
+const UPDATE_BOARD_DOCUMENT_METHOD = "vatiolibre.vatiolibre.board_documents.update_my_board_document";
+const DELETE_BOARD_DOCUMENT_METHOD = "vatiolibre.vatiolibre.board_documents.delete_my_board_document";
 const SYNC_REQUEST_COMPRESSION_MIN_BYTES = 128 * 1024;
 const SYNC_REQUEST_GZIP_ENCODING = "gzip";
 const SYNC_RESPONSE_GZIP_BASE64_ENCODING = "gzip_base64";
@@ -21,6 +32,25 @@ export const BACKEND_AUTH_STATE_EVENT = "vatioboard:backend-auth-state";
 
 const BACKEND_SESSION_CACHE_TTL_MS = 30 * 1000;
 const BACKEND_FEATURE_ACCESS_CACHE_TTL_MS = 30 * 1000;
+const BACKEND_MEDIA_FIELD_KEYS = Object.freeze([
+  "download_url",
+  "export_url",
+  "image_url",
+  "preview_image_url",
+]);
+const BACKEND_OWNED_HOSTS = new Set([
+  "127.0.0.1",
+  "debug.vatiolibre.com",
+  "dev.vatiolibre.com",
+  "localhost",
+  "vatiolibre.com",
+  "www.vatiolibre.com",
+]);
+const BACKEND_OWNED_PATH_PREFIXES = Object.freeze([
+  "/api/method",
+  "/files",
+  "/private/files",
+]);
 const backendSessionCache = {
   configKey: "",
   fetchedAtMs: 0,
@@ -46,8 +76,131 @@ function getMethodUrl(methodName, config) {
   return `${config.apiBase}/api/method/${methodName}`;
 }
 
+function buildMethodUrl(methodName, args = {}, config) {
+  const url = new URL(getMethodUrl(methodName, config));
+
+  Object.entries(args || {}).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") return;
+    url.searchParams.set(key, String(value));
+  });
+
+  return url.toString();
+}
+
+function createUrlEncodedBody(args = {}) {
+  const body = new URLSearchParams();
+
+  Object.entries(args || {}).forEach(([key, value]) => {
+    if (value === undefined || value === null) return;
+    body.set(key, String(value));
+  });
+
+  return body.toString();
+}
+
 function getConfigCacheKey(config) {
   return String(config?.apiBase || "").trim();
+}
+
+function hasBackendOwnedPath(pathname) {
+  const normalizedPath = getText(pathname);
+  if (!normalizedPath) return false;
+
+  return BACKEND_OWNED_PATH_PREFIXES.some((prefix) =>
+    normalizedPath === prefix || normalizedPath.startsWith(`${prefix}/`)
+  );
+}
+
+function getApiBaseUrl(config) {
+  try {
+    return new URL(String(config?.apiBase || "").trim());
+  } catch {
+    return null;
+  }
+}
+
+export function normalizeBackendOwnedUrl(value, {
+  config = getBackendAuthConfig(),
+} = {}) {
+  if (typeof value !== "string") return value;
+
+  const normalizedValue = value.trim();
+  if (!normalizedValue) return normalizedValue;
+
+  const apiBaseUrl = getApiBaseUrl(config);
+  if (!apiBaseUrl) return normalizedValue;
+
+  let parsedUrl = null;
+  let isRelativeBackendPath = false;
+
+  try {
+    parsedUrl = new URL(normalizedValue);
+  } catch {
+    if (!normalizedValue.startsWith("/")) {
+      return normalizedValue;
+    }
+
+    try {
+      parsedUrl = new URL(normalizedValue, apiBaseUrl);
+      isRelativeBackendPath = true;
+    } catch {
+      return normalizedValue;
+    }
+  }
+
+  if (!parsedUrl) {
+    return normalizedValue;
+  }
+
+  if (parsedUrl.origin === apiBaseUrl.origin) {
+    return parsedUrl.toString();
+  }
+
+  if (isRelativeBackendPath) {
+    return hasBackendOwnedPath(parsedUrl.pathname)
+      ? new URL(`${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}`, apiBaseUrl).toString()
+      : normalizedValue;
+  }
+
+  if (!BACKEND_OWNED_HOSTS.has(String(parsedUrl.hostname || "").toLowerCase())) {
+    return normalizedValue;
+  }
+
+  if (!hasBackendOwnedPath(parsedUrl.pathname)) {
+    return normalizedValue;
+  }
+
+  return new URL(
+    `${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}`,
+    apiBaseUrl
+  ).toString();
+}
+
+function normalizeBackendMediaRecord(record, { config = getBackendAuthConfig() } = {}) {
+  if (!record || typeof record !== "object" || Array.isArray(record)) {
+    return record ?? null;
+  }
+
+  let normalizedRecord = record;
+
+  BACKEND_MEDIA_FIELD_KEYS.forEach((fieldName) => {
+    if (!Object.prototype.hasOwnProperty.call(record, fieldName)) return;
+    const fieldValue = record[fieldName];
+    const normalizedValue = normalizeBackendOwnedUrl(fieldValue, { config });
+    if (normalizedValue === fieldValue) return;
+
+    if (normalizedRecord === record) {
+      normalizedRecord = { ...record };
+    }
+    normalizedRecord[fieldName] = normalizedValue;
+  });
+
+  return normalizedRecord;
+}
+
+function normalizeBackendMediaRecords(records, { config = getBackendAuthConfig() } = {}) {
+  if (!Array.isArray(records) || records.length === 0) return [];
+  return records.map((record) => normalizeBackendMediaRecord(record, { config }));
 }
 
 async function safeJson(response) {
@@ -314,6 +467,44 @@ async function fetchBackendJson(methodName, {
   };
 }
 
+async function fetchBackendMethodJson(methodName, {
+  method = "GET",
+  args,
+  headers,
+  body,
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const request = getFetch(fetchImpl);
+  const upperMethod = String(method || "GET").toUpperCase();
+  const requestHeaders = {
+    ...(headers || {}),
+  };
+  let requestBody = body;
+  let requestUrl = getMethodUrl(methodName, config);
+
+  if (upperMethod === "GET") {
+    requestUrl = buildMethodUrl(methodName, args, config);
+  } else if (requestBody === undefined && args) {
+    requestBody = createUrlEncodedBody(args);
+    requestHeaders["Content-Type"] = "application/x-www-form-urlencoded";
+  }
+
+  const response = await request(requestUrl, {
+    method: upperMethod,
+    credentials: "include",
+    headers: requestHeaders,
+    body: requestBody,
+    signal,
+  });
+
+  return {
+    response,
+    data: await safeJson(response),
+  };
+}
+
 function setHidden(elements, isHidden) {
   elements.forEach((element) => {
     element.hidden = isHidden;
@@ -489,6 +680,344 @@ export async function getBackendFeatureAccessState({
   );
 }
 
+export async function listBackendSpeedRecordings({
+  limit,
+  offset,
+  search,
+  sort,
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const { response, data } = await fetchBackendMethodJson(LIST_SPEED_RECORDINGS_METHOD, {
+    args: { limit, offset, search, sort },
+    fetchImpl,
+    signal,
+    config,
+  });
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    records: Array.isArray(getMessage(data)?.records) ? getMessage(data).records : [],
+    totalCount: Number(getMessage(data)?.total_count) || 0,
+    hasMore: getMessage(data)?.has_more === true,
+    nextOffset: Number(getMessage(data)?.next_offset) || 0,
+    activeFilters: getMessage(data)?.active_filters || {},
+  };
+}
+
+export async function getBackendSpeedRecordingDetail({
+  name,
+  includePayload = false,
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const { response, data } = await fetchBackendMethodJson(GET_SPEED_RECORDING_DETAIL_METHOD, {
+    args: {
+      name,
+      include_payload: includePayload ? 1 : 0,
+    },
+    fetchImpl,
+    signal,
+    config,
+  });
+  const message = getMessage(data);
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    record: message?.record ?? null,
+    payload: message?.payload ?? null,
+  };
+}
+
+export async function listBackendAccelRuns({
+  limit,
+  offset,
+  search,
+  sort,
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const { response, data } = await fetchBackendMethodJson(LIST_ACCEL_RECORDINGS_METHOD, {
+    args: { limit, offset, search, sort },
+    fetchImpl,
+    signal,
+    config,
+  });
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    records: Array.isArray(getMessage(data)?.records) ? getMessage(data).records : [],
+    totalCount: Number(getMessage(data)?.total_count) || 0,
+    hasMore: getMessage(data)?.has_more === true,
+    nextOffset: Number(getMessage(data)?.next_offset) || 0,
+    activeFilters: getMessage(data)?.active_filters || {},
+  };
+}
+
+export async function getBackendAccelRunDetail({
+  name,
+  includePayload = false,
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const { response, data } = await fetchBackendMethodJson(GET_ACCEL_RECORDING_DETAIL_METHOD, {
+    args: {
+      name,
+      include_payload: includePayload ? 1 : 0,
+    },
+    fetchImpl,
+    signal,
+    config,
+  });
+  const message = getMessage(data);
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    record: message?.record ?? null,
+    payload: message?.payload ?? null,
+  };
+}
+
+export async function listBackendSavedDrawingAssets({
+  limit,
+  offset,
+  search,
+  sort,
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const { response, data } = await fetchBackendMethodJson(LIST_SAVED_DRAWINGS_METHOD, {
+    args: { limit, offset, search, sort },
+    fetchImpl,
+    signal,
+    config,
+  });
+  const message = getMessage(data);
+  const drawings = normalizeBackendMediaRecords(
+    Array.isArray(message?.drawings) ? message.drawings : [],
+    { config }
+  );
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    drawings,
+    totalCount: Number(message?.total_count) || 0,
+    hasMore: message?.has_more === true,
+    nextOffset: Number(message?.next_offset) || 0,
+    activeFilters: message?.active_filters || {},
+  };
+}
+
+export async function getBackendSavedDrawingAssetDetail({
+  name,
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const { response, data } = await fetchBackendMethodJson(GET_SAVED_DRAWING_DETAIL_METHOD, {
+    args: { name },
+    fetchImpl,
+    signal,
+    config,
+  });
+  const message = getMessage(data);
+  const drawing = normalizeBackendMediaRecord(message?.drawing ?? null, { config });
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    drawing,
+  };
+}
+
+export async function listBackendBoardDocuments({
+  limit,
+  offset,
+  search,
+  sort,
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const { response, data } = await fetchBackendMethodJson(LIST_BOARD_DOCUMENTS_METHOD, {
+    args: { limit, offset, search, sort },
+    fetchImpl,
+    signal,
+    config,
+  });
+  const message = getMessage(data);
+  const documents = normalizeBackendMediaRecords(
+    Array.isArray(message?.documents) ? message.documents : [],
+    { config }
+  );
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    documents,
+    totalCount: Number(message?.total_count) || 0,
+    hasMore: message?.has_more === true,
+    nextOffset: Number(message?.next_offset) || 0,
+    activeFilters: message?.active_filters || {},
+  };
+}
+
+export async function getBackendBoardDocumentDetail({
+  name,
+  includePayload = false,
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const { response, data } = await fetchBackendMethodJson(GET_BOARD_DOCUMENT_DETAIL_METHOD, {
+    args: {
+      name,
+      include_payload: includePayload ? 1 : 0,
+    },
+    fetchImpl,
+    signal,
+    config,
+  });
+  const message = getMessage(data);
+  const document = normalizeBackendMediaRecord(message?.document ?? null, { config });
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    document,
+    payload: message?.payload ?? null,
+  };
+}
+
+export async function saveBoardDocumentToBackend({
+  title,
+  payload,
+  csrfToken,
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const body = new FormData();
+  body.append("title", getText(title) || "");
+  body.append("payload", typeof payload === "string" ? payload : JSON.stringify(payload || {}));
+
+  const headers = {};
+  if (getText(csrfToken)) {
+    headers["X-Frappe-CSRF-Token"] = getText(csrfToken);
+  }
+
+  const { response, data } = await fetchBackendMethodJson(SAVE_BOARD_DOCUMENT_METHOD, {
+    method: "POST",
+    body,
+    headers,
+    fetchImpl,
+    signal,
+    config,
+  });
+  const message = getMessage(data);
+  const document = normalizeBackendMediaRecord(message?.document ?? null, { config });
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    document,
+  };
+}
+
+export async function updateBoardDocumentInBackend({
+  name,
+  title,
+  payload,
+  csrfToken,
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const body = new FormData();
+  body.append("name", getText(name));
+  if (title !== undefined) {
+    body.append("title", String(title ?? ""));
+  }
+  if (payload !== undefined) {
+    body.append("payload", typeof payload === "string" ? payload : JSON.stringify(payload || {}));
+  }
+
+  const headers = {};
+  if (getText(csrfToken)) {
+    headers["X-Frappe-CSRF-Token"] = getText(csrfToken);
+  }
+
+  const { response, data } = await fetchBackendMethodJson(UPDATE_BOARD_DOCUMENT_METHOD, {
+    method: "POST",
+    body,
+    headers,
+    fetchImpl,
+    signal,
+    config,
+  });
+  const message = getMessage(data);
+  const document = normalizeBackendMediaRecord(message?.document ?? null, { config });
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    document,
+  };
+}
+
+export async function deleteBoardDocumentFromBackend({
+  name,
+  csrfToken,
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const body = new FormData();
+  body.append("name", getText(name));
+
+  const headers = {};
+  if (getText(csrfToken)) {
+    headers["X-Frappe-CSRF-Token"] = getText(csrfToken);
+  }
+
+  const { response, data } = await fetchBackendMethodJson(DELETE_BOARD_DOCUMENT_METHOD, {
+    method: "POST",
+    body,
+    headers,
+    fetchImpl,
+    signal,
+    config,
+  });
+  const message = getMessage(data);
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    name: message?.name ?? getText(name),
+  };
+}
+
 export async function saveDrawingToBackend({
   fileBlob,
   fileName,
@@ -534,12 +1063,13 @@ export async function saveDrawingToBackend({
     config,
   });
   const message = getMessage(data);
+  const drawing = normalizeBackendMediaRecord(message?.drawing ?? null, { config });
 
   return {
     ok: response.ok,
     status: response.status,
     data,
-    drawing: message?.drawing ?? null,
+    drawing,
   };
 }
 

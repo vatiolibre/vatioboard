@@ -21,13 +21,13 @@ import {
   IconReplay,
   IconRestart,
   IconSettings,
+  IconWorld,
 } from '../icons.js';
 import {
   archiveReplaySession,
   createReplaySession,
   hasReplaySamples,
   loadActiveReplaySession,
-  loadReplaySessionById,
   appendReplaySample,
   REPLAY_PERSIST_CHUNK_SIZE,
   saveActiveReplaySession,
@@ -109,6 +109,7 @@ const elements = {
   toolsMenuList: document.getElementById('speedToolsMenuList'),
   openReplayMenu: document.getElementById('openSpeedReplayMenu'),
   openReplayQuick: document.getElementById('openReplayQuick'),
+  openLibraryMenu: document.getElementById('openSpeedLibraryMenu'),
   quickAlertConfig: document.getElementById('quickAlertConfig'),
   openAccelMenu: document.getElementById('openSpeedAccelMenu'),
   openGpsLabMenu: document.getElementById('openSpeedGpsLabMenu'),
@@ -247,6 +248,7 @@ initCloudSyncStatusIndicator({
 
 applyButtonIcon(elements.openAccelMenu, IconAccel);
 applyButtonIcon(elements.openGpsLabMenu, IconGpsLab);
+applyButtonIcon(elements.openLibraryMenu, IconWorld);
 applyButtonIcon(elements.openBoardMenu, IconBoard);
 applyButtonIcon(elements.openReplayMenu, IconReplay);
 applyButtonIcon(elements.openReplayQuick, IconReplay);
@@ -693,8 +695,7 @@ async function enrichReplaySessionPlaces(session) {
 
 function archiveReplaySessionWithPlaces(session, options = {}) {
   void (async () => {
-    await archiveReplaySession(session, options);
-    const archivedSession = await loadReplaySessionById(session?.id);
+    const archivedSession = await archiveReplaySession(session, options);
     if (archivedSession) {
       await queueCloudSyncChange({
         entityType: CLOUD_SYNC_ENTITY_TYPES.replaySession,
@@ -706,8 +707,7 @@ function archiveReplaySessionWithPlaces(session, options = {}) {
     }
     const sessionWithPlaces = await enrichReplaySessionPlaces(session);
     if (sessionWithPlaces !== session) {
-      await archiveReplaySession(sessionWithPlaces, options);
-      const enrichedArchivedSession = await loadReplaySessionById(sessionWithPlaces?.id);
+      const enrichedArchivedSession = await archiveReplaySession(sessionWithPlaces, options);
       if (enrichedArchivedSession) {
         await queueCloudSyncChange({
           entityType: CLOUD_SYNC_ENTITY_TYPES.replaySession,
@@ -1672,6 +1672,7 @@ function bindEvents() {
   });
   bindMenuNavigation(elements.openReplayMenu, '/replay.html');
   bindMenuNavigation(elements.openReplayQuick, '/replay.html');
+  bindMenuNavigation(elements.openLibraryMenu, '/library.html?tab=speed');
   bindMenuNavigation(elements.openAccelMenu, '/accel');
   bindMenuNavigation(elements.openGpsLabMenu, '/gps-rate');
   bindMenuNavigation(elements.openBoardMenu, '/');

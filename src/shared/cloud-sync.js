@@ -1,8 +1,9 @@
 import { createEmptyBoardDrawing, loadBoardDrawing, saveBoardDrawing } from "../board/storage.js";
 import { MAX_RUNS } from "../accel/constants.js";
-import { loadRuns, saveRuns } from "../accel/storage.js";
+import { isAccelPayloadComplete, loadRuns, saveRuns } from "../accel/storage.js";
 import {
   MAX_STORED_REPLAYS,
+  isReplayPayloadComplete,
   loadReplayLibrary,
   loadReplaySessionById,
   removeReplayRecording,
@@ -408,6 +409,15 @@ function normalizeRecordMeta(record) {
   };
 }
 
+async function findCloudSyncRecordMeta(entityType, recordId) {
+  const normalizedEntityType = String(entityType || "").trim();
+  const normalizedRecordId = String(recordId || "").trim();
+  if (!normalizedEntityType || !normalizedRecordId) return null;
+
+  const state = await loadCloudSyncState();
+  return normalizeRecordMeta(state.records[getEntityKey(normalizedEntityType, normalizedRecordId)]);
+}
+
 function createQueuedChangePayload(change) {
   return {
     entity_type: change.entityType,
@@ -737,6 +747,10 @@ function releaseSyncLease() {
 }
 
 async function applyReplayRecord(meta, payload) {
+  if (!isReplayPayloadComplete(payload)) {
+    return;
+  }
+
   const library = await loadReplayLibrary();
   const nextLibrary = library.filter((entry) => entry.id !== meta.clientRecordId);
   nextLibrary.unshift(cloneJson(payload, null));
@@ -748,6 +762,10 @@ async function deleteReplayRecord(meta) {
 }
 
 async function applyAccelRun(meta, payload) {
+  if (!isAccelPayloadComplete(payload)) {
+    return;
+  }
+
   const runs = await loadRuns();
   const nextRuns = runs.filter((entry) => entry.id !== meta.clientRecordId);
   nextRuns.unshift(cloneJson(payload, null));
@@ -787,6 +805,45 @@ async function applyRemoteCloudRecord(meta, payload) {
   if (meta.entityType === CLOUD_SYNC_ENTITY_TYPES.boardDrawing) {
     await applyBoardDrawing(meta, payload);
   }
+}
+
+export async function restoreCloudSyncRecord({
+  entityType,
+  recordId,
+  signal,
+} = {}) {
+  const meta = await findCloudSyncRecordMeta(entityType, recordId);
+  if (!meta || meta.deletedAtMs > 0) {
+    return {
+      ok: false,
+      reason: "missing",
+      meta: null,
+      payload: null,
+    };
+  }
+
+  const payloadResult = await downloadSyncPayloadFromBackend({
+    name: meta.name,
+    signal,
+  });
+  if (!payloadResult.ok || payloadResult.payload === null || payloadResult.payload === undefined) {
+    return {
+      ok: false,
+      reason: "download_failed",
+      status: payloadResult.status,
+      meta,
+      payload: null,
+    };
+  }
+
+  await applyRemoteCloudRecord(meta, payloadResult.payload);
+  return {
+    ok: true,
+    reason: "",
+    status: payloadResult.status,
+    meta,
+    payload: payloadResult.payload,
+  };
 }
 
 async function applyRemoteCloudDeletion(meta) {
