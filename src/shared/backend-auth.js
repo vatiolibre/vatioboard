@@ -1154,6 +1154,7 @@ export async function pullSyncChangesFromBackend({
 export async function downloadSyncPayloadFromBackend({
   name,
   fetchImpl,
+  onRequestStart,
   signal,
   config = getBackendAuthConfig(),
 } = {}) {
@@ -1164,6 +1165,7 @@ export async function downloadSyncPayloadFromBackend({
     body.set("payload_encoding", SYNC_RESPONSE_GZIP_BASE64_ENCODING);
   }
 
+  onRequestStart?.();
   const { response, data } = await fetchBackendJson(DOWNLOAD_SYNC_PAYLOAD_METHOD, {
     method: "POST",
     headers: {

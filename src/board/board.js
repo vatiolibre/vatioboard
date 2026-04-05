@@ -7,12 +7,15 @@ import "../styles/dock.less";
 import { createCalculatorWidget } from "../calculator/calculator-widget.js";
 import {
   clearCurrentBoardDocumentMeta,
-  consumePendingBoardDocumentOpen,
   loadBoardDrawing,
   loadCurrentBoardDocumentMeta,
   saveBoardDrawing,
   saveCurrentBoardDocumentMeta,
 } from "./storage.js";
+import {
+  consumeBoardDocumentOpen,
+  persistBoardDocumentSelection,
+} from "../shared/repositories/board-document-repository.js";
 import { createEnergyCalculatorWidget } from "../energy/energy-calculator-widget.js";
 import { createFloatingDock } from "../dock/floating-dock.js";
 import {
@@ -376,7 +379,7 @@ bindNavigation(openLibraryMenuBtn, "/library.html?tab=board_documents");
 
     async function hydrateBoardDrawing(){
       const restoreRevision = boardStateRevision;
-      const pendingOpen = consumePendingBoardDocumentOpen();
+      const pendingOpen = await consumeBoardDocumentOpen();
       const storedDrawing = pendingOpen?.payload || await loadBoardDrawing();
 
       if (boardStateRevision !== restoreRevision || drawing || commandHistory.length > 0 || redoHistory.length > 0) {
@@ -407,14 +410,14 @@ bindNavigation(openLibraryMenuBtn, "/library.html?tab=board_documents");
           title: pendingOpen.document.title,
           updatedAtMs: pendingOpen.document.updated_at_ms || storedDrawing.updatedAtMs || Date.now(),
         };
-        saveCurrentBoardDocumentMeta(currentBoardDocument);
-        syncBoardDocumentActions();
-
-        const updatedAtMs = storedDrawing.updatedAtMs || Date.now();
-        void saveBoardDrawing({
-          ...storedDrawing,
-          updatedAtMs,
+        await persistBoardDocumentSelection({
+          document: pendingOpen.document,
+          payload: {
+            ...storedDrawing,
+            updatedAtMs: storedDrawing.updatedAtMs || Date.now(),
+          },
         });
+        syncBoardDocumentActions();
         setStatus(t("boardDocumentOpened", {
           title: currentBoardDocument.title || t("boardDocumentUntitled"),
         }));

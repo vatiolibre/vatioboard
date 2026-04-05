@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { bootHtmlPage, expectPageSeo, flushTasks } from '../helpers/page-smoke.js';
 
 const fakeMaps = [];
+const originalIndexedDb = globalThis.indexedDB;
 
 async function settleAsyncWork(iterations = 20) {
   for (let index = 0; index < iterations; index += 1) {
@@ -234,6 +235,14 @@ describe('replay.html smoke', () => {
     await bootHtmlPage('replay.html');
   });
 
+  afterEach(() => {
+    Object.defineProperty(globalThis, 'indexedDB', {
+      configurable: true,
+      writable: true,
+      value: originalIndexedDb,
+    });
+  });
+
   it('boots the replay page and renders the stored session', async () => {
     const replayPage = await import('../../src/replay/replay.js');
     expect(document.getElementById('replayEmptyState').hidden).toBe(true);
@@ -343,6 +352,38 @@ describe('replay.html smoke', () => {
 
     expect(fakeMaps[0]?.stop).toHaveBeenCalledTimes(1);
     expect(fakeMaps[0]?.jumpTo).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to the first local session when a requested replay is missing in degraded storage', async () => {
+    Object.defineProperty(globalThis, 'indexedDB', {
+      configurable: true,
+      writable: true,
+      value: {
+        open: vi.fn(() => {
+          const request = {
+            error: new Error('IndexedDB blocked'),
+            onblocked: null,
+            onerror: null,
+            onsuccess: null,
+            onupgradeneeded: null,
+            result: null,
+          };
+          queueMicrotask(() => {
+            request.onblocked?.({ target: request });
+          });
+          return request;
+        }),
+      },
+    });
+    window.history.replaceState({}, '', '/replay.html?record=missing-replay');
+
+    const replayPage = await import('../../src/replay/replay.js');
+    await replayPage.initPromise;
+    await settleAsyncWork();
+
+    expect(document.getElementById('replayShell').hidden).toBe(false);
+    expect(document.getElementById('replaySessionChip').textContent).toBe('Active session');
+    expect(document.getElementById('replaySampleCountValue').textContent).toBe('3');
   });
 
   it('opens the expanded graph sheet with stacked charts and a dual-range filter', async () => {
@@ -647,13 +688,14 @@ describe('replay.html smoke', () => {
     }));
 
     let resolveDownload;
+    const delayedDownload = new Promise((resolve) => {
+      resolveDownload = resolve;
+    });
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === 'string' ? input : String(input?.url ?? '');
 
       if (url.includes('vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload')) {
-        return new Promise((resolve) => {
-          resolveDownload = resolve;
-        });
+        return delayedDownload;
       }
 
       if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_records')) {

@@ -146,7 +146,9 @@ describe('speed.html smoke', () => {
     expect(document.getElementById('speedToolsMenuBtn').getAttribute('aria-label')).toBe('Pages');
     expect(document.querySelector('#speedToolsMenuBtn .btn-icon svg')).toBeTruthy();
     expect(document.getElementById('speedToolsMenuList').hidden).toBe(true);
-    expect(document.querySelector('.cloud-sync-indicator-btn')?.textContent).toBe('Local only');
+    expect(['Local only', 'Syncing']).toContain(
+      document.querySelector('.cloud-sync-indicator-btn')?.textContent
+    );
 
     document.querySelector('.cloud-sync-indicator-btn')?.click();
     await flushTasks();

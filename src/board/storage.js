@@ -1,4 +1,5 @@
 import { createIndexedJsonKeyValueStore } from "../shared/indexed-storage.js";
+import { createStorageCapability } from "../shared/storage-capability.js";
 import { loadJson, removeStoredValue, saveJson } from "../shared/storage.js";
 
 export const BOARD_DRAWING_KEY = "vatio_board_drawing_v1";
@@ -18,6 +19,10 @@ const boardStore = createIndexedJsonKeyValueStore({
   dbName: BOARD_DB_NAME,
   dbVersion: BOARD_DB_VERSION,
   storeName: BOARD_DB_STORE,
+});
+const boardStorageCapability = createStorageCapability({
+  namespace: "board-storage",
+  store: boardStore,
 });
 
 let boardMigrationPromise = null;
@@ -148,13 +153,17 @@ function createGenerationId() {
 }
 
 async function openBoardDatabase() {
-  if (!boardStore.hasSupport()) return null;
+  if (!(await boardStorageCapability.isIndexedDbUsable())) return null;
 
   try {
     return await boardStore.openDatabase();
   } catch {
     return null;
   }
+}
+
+export function getBoardStorageCapability() {
+  return boardStorageCapability;
 }
 
 function createSnapshotReference(document, { previous = false } = {}) {

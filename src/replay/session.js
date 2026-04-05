@@ -1,5 +1,6 @@
 import { createIndexedJsonKeyValueStore } from '../shared/indexed-storage.js';
 import { normalizePlace } from '../shared/place-resolver.js';
+import { createStorageCapability } from '../shared/storage-capability.js';
 import { loadJson, removeStoredValue, saveJson } from '../shared/storage.js';
 
 export const REPLAY_ACTIVE_KEY = 'vatio_speed_replay_active_v1';
@@ -22,21 +23,19 @@ const replayStore = createIndexedJsonKeyValueStore({
   dbVersion: REPLAY_DB_VERSION,
   storeName: REPLAY_DB_STORE,
 });
+const replayStorageCapability = createStorageCapability({
+  namespace: 'replay-storage',
+  store: replayStore,
+});
 
 let replayMigrationPromise = null;
-let replayIndexedStorageAvailabilityPromise = null;
 
 async function hasReplayIndexedStorageAvailable() {
-  if (!replayStore.hasSupport()) return false;
+  return replayStorageCapability.isIndexedDbUsable();
+}
 
-  if (!replayIndexedStorageAvailabilityPromise) {
-    replayIndexedStorageAvailabilityPromise = replayStore
-      .openDatabase()
-      .then((database) => Boolean(database))
-      .catch(() => false);
-  }
-
-  return replayIndexedStorageAvailabilityPromise;
+export function getReplayStorageCapability() {
+  return replayStorageCapability;
 }
 
 export function isFiniteNumber(value) {
@@ -53,7 +52,7 @@ function getReplayChunkKey(sessionId, chunkIndex) {
 }
 
 async function migrateLegacyReplayStorage() {
-  if (!replayStore.hasSupport()) return;
+  if (!(await replayStorageCapability.isIndexedDbUsable())) return;
 
   if (!replayMigrationPromise) {
     replayMigrationPromise = (async () => {

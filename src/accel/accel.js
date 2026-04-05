@@ -19,11 +19,15 @@ import {
   CLOUD_SYNC_ENTITY_TYPES,
   queueCloudSyncChange,
   queueCloudSyncDeletion,
-  restoreCloudSyncRecord,
   startCloudSyncLoop,
   syncCloudRecords,
 } from '../shared/cloud-sync.js';
 import { createPlaceResolver } from '../shared/place-resolver.js';
+import {
+  clearAccelRestoreFailure,
+  ensureAccelTelemetry,
+  getAccelSelection,
+} from '../shared/repositories/accel-repository.js';
 import { formatRouteString } from '../shared/route-string.js';
 import { hasStoredValue } from '../shared/storage.js';
 import { applyButtonIcon, initToolsMenu } from '../shared/tools-menu.js';
@@ -471,18 +475,7 @@ export const initPromise = (function () {
   });
   var replayMapIntroPromise = null;
   var replayMapIntroToken = 0;
-  var selectedTelemetryRestoreFailureCooldownMs = 5000;
-  var remoteAccelRestorePromises = new Map();
-  var remoteAccelRestoreFailures = new Map();
   var storedRunsRefreshVersion = 0;
-
-  function hasRecentAccelRestoreFailure(runId) {
-    var failedAtMs = remoteAccelRestoreFailures.get(runId);
-    return Boolean(
-      Number.isFinite(failedAtMs)
-      && Date.now() - failedAtMs < selectedTelemetryRestoreFailureCooldownMs
-    );
-  }
 
   function applyStoredRuns(runs, preferredResultId, { preserveMissingPreferred = false } = {}) {
     state.runs = Array.isArray(runs) ? runs : [];
@@ -506,47 +499,13 @@ export const initPromise = (function () {
     state.selectedResultId = state.latestResult ? state.latestResult.id : '';
   }
 
-  async function maybeRestoreAccelTelemetry(runId, run) {
-    var normalizedRunId = typeof runId === 'string' ? runId.trim() : '';
-    if (!normalizedRunId) return false;
-    if (run && isAccelPayloadComplete(run)) return false;
-    if (hasRecentAccelRestoreFailure(normalizedRunId)) return false;
-    if (remoteAccelRestorePromises.has(normalizedRunId)) {
-      return remoteAccelRestorePromises.get(normalizedRunId);
-    }
-
-    var restorePromise = (async function () {
-      try {
-        var result = await restoreCloudSyncRecord({
-          entityType: CLOUD_SYNC_ENTITY_TYPES.accelRun,
-          recordId: normalizedRunId,
-        });
-        var restored = result?.ok === true && isAccelPayloadComplete(result?.payload);
-        if (restored) {
-          remoteAccelRestoreFailures.delete(normalizedRunId);
-          return true;
-        }
-
-        remoteAccelRestoreFailures.set(normalizedRunId, Date.now());
-        return false;
-      } catch {
-        remoteAccelRestoreFailures.set(normalizedRunId, Date.now());
-        return false;
-      }
-    })().finally(function () {
-      remoteAccelRestorePromises.delete(normalizedRunId);
-    });
-
-    remoteAccelRestorePromises.set(normalizedRunId, restorePromise);
-    return restorePromise;
-  }
-
   async function ensureSelectedResultTelemetry(runId, { selectionSnapshotId = null } = {}) {
     var normalizedRunId =
       typeof runId === 'string' && runId.trim() ? runId.trim() : state.selectedResultId || state.latestResult?.id || '';
     var selectedRun = normalizedRunId ? findRunById(normalizedRunId) : state.latestResult;
 
-    if (!(await maybeRestoreAccelTelemetry(normalizedRunId, selectedRun))) {
+    var restoreResult = await ensureAccelTelemetry(normalizedRunId, { run: selectedRun });
+    if (!restoreResult?.restored) {
       return false;
     }
 
@@ -557,8 +516,10 @@ export const initPromise = (function () {
     ) {
       return false;
     }
-
-    applyStoredRuns(await loadRuns(), normalizedRunId, {
+    var selection = await getAccelSelection(normalizedRunId, {
+      preserveMissingSelection: true,
+    });
+    applyStoredRuns(selection.runs, normalizedRunId, {
       preserveMissingPreferred: true,
     });
     return true;
@@ -594,10 +555,15 @@ export const initPromise = (function () {
     }
     var initialRunId = new URLSearchParams(window.location.search).get('run') || '';
 
-    var loadedState = await Promise.all([loadSettings(), loadRuns()]);
+    var loadedState = await Promise.all([
+      loadSettings(),
+      getAccelSelection(initialRunId, {
+        preserveMissingSelection: Boolean(initialRunId),
+      }),
+    ]);
 
     state.settings = loadedState[0];
-    applyStoredRuns(loadedState[1], initialRunId, {
+    applyStoredRuns(loadedState[1].runs, initialRunId, {
       preserveMissingPreferred: Boolean(initialRunId),
     });
 
@@ -776,7 +742,7 @@ export const initPromise = (function () {
     window.addEventListener(CLOUD_SYNC_APPLIED_EVENT, function (event) {
       if (event?.detail?.entityType !== CLOUD_SYNC_ENTITY_TYPES.accelRun) return;
       if (event?.detail?.deleted === true && event?.detail?.recordId === state.selectedResultId) {
-        remoteAccelRestoreFailures.delete(event.detail.recordId);
+        clearAccelRestoreFailure(event.detail.recordId);
         refreshStoredRuns({
           preferredResultId: '',
           preserveMissingPreferred: false,
@@ -784,10 +750,15 @@ export const initPromise = (function () {
         return;
       }
       if (event?.detail?.recordId && event.detail.recordId === state.selectedResultId) {
-        remoteAccelRestoreFailures.delete(event.detail.recordId);
+        clearAccelRestoreFailure(event.detail.recordId);
         refreshStoredRuns({
           preferredResultId: event.detail.recordId,
           preserveMissingPreferred: true,
+        });
+        void ensureSelectedResultTelemetry(event.detail.recordId, {
+          selectionSnapshotId: event.detail.recordId,
+        }).then(function (restored) {
+          if (restored) renderAll();
         });
         return;
       }
@@ -1058,18 +1029,15 @@ export const initPromise = (function () {
   } = {}) {
     storedRunsRefreshVersion += 1;
     void (async function () {
-      var runs = await loadRuns();
       var normalizedPreferredResultId =
         typeof preferredResultId === 'string' && preferredResultId.trim() ? preferredResultId.trim() : '';
       var currentSelectedResultId =
         typeof state.selectedResultId === 'string' && state.selectedResultId.trim() ? state.selectedResultId.trim() : '';
-      var currentSelectionExists = Boolean(
-        currentSelectedResultId && runs.some(function (entry) {
-          return entry.id === currentSelectedResultId;
-        })
-      );
-      var livePreferredResultId = normalizedPreferredResultId || (currentSelectionExists ? currentSelectedResultId : '');
-      applyStoredRuns(runs, livePreferredResultId, {
+      var livePreferredResultId = normalizedPreferredResultId || currentSelectedResultId;
+      var selection = await getAccelSelection(livePreferredResultId, {
+        preserveMissingSelection: preserveMissingPreferred && Boolean(livePreferredResultId),
+      });
+      applyStoredRuns(selection.runs, livePreferredResultId, {
         preserveMissingPreferred: preserveMissingPreferred && Boolean(livePreferredResultId),
       });
       var selectedResultId = state.selectedResultId || livePreferredResultId || '';

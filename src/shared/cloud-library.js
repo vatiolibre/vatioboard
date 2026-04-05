@@ -1,4 +1,5 @@
 import { createIndexedJsonKeyValueStore } from "./indexed-storage.js";
+import { createStorageCapability } from "./storage-capability.js";
 
 const CLOUD_LIBRARY_DB_NAME = "vatioboard-cloud-library";
 const CLOUD_LIBRARY_DB_VERSION = 1;
@@ -9,6 +10,10 @@ const detailStore = createIndexedJsonKeyValueStore({
   dbName: CLOUD_LIBRARY_DB_NAME,
   dbVersion: CLOUD_LIBRARY_DB_VERSION,
   storeName: CLOUD_LIBRARY_DB_STORE,
+});
+const detailStoreCapability = createStorageCapability({
+  namespace: "cloud-library-detail-cache",
+  store: detailStore,
 });
 
 let detailStoreMutationChain = Promise.resolve();
@@ -150,7 +155,7 @@ async function touchPersistedDetailIndex(resourceKey, mode, name, maxEntries) {
 }
 
 async function loadPersistedDetail(resourceKey, mode, name, ttlMs, maxEntries) {
-  if (!detailStore.hasSupport()) return null;
+  if (!(await detailStoreCapability.isIndexedDbUsable())) return null;
 
   const entryKey = getDetailEntryKey(resourceKey, mode, name);
   const storedEntry = await detailStore.getValue(entryKey);
@@ -177,7 +182,7 @@ async function loadPersistedDetail(resourceKey, mode, name, ttlMs, maxEntries) {
 }
 
 async function savePersistedDetail(resourceKey, mode, name, value, maxEntries) {
-  if (!detailStore.hasSupport()) return;
+  if (!(await detailStoreCapability.isIndexedDbUsable())) return;
 
   await queueDetailStoreMutation(async () => {
     await detailStore.setValue(getDetailEntryKey(resourceKey, mode, name), {

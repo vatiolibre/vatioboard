@@ -1,5 +1,6 @@
 import { createIndexedJsonKeyValueStore } from '../shared/indexed-storage.js';
 import { normalizePlace } from '../shared/place-resolver.js';
+import { createStorageCapability } from '../shared/storage-capability.js';
 import { loadJson, loadText, removeStoredValue, saveJson } from '../shared/storage.js';
 import { loadConfiguredDistanceUnit, loadConfiguredSpeedUnit } from '../shared/unit-bootstrap.js';
 import {
@@ -39,10 +40,18 @@ const accelStore = createIndexedJsonKeyValueStore({
   dbVersion: ACCEL_DB_VERSION,
   storeName: ACCEL_DB_STORE,
 });
+const accelStorageCapability = createStorageCapability({
+  namespace: 'accel-storage',
+  store: accelStore,
+});
 
 let accelMigrationPromise = null;
 let settingsSavePromise = Promise.resolve();
 let runsSavePromise = Promise.resolve();
+
+export function getAccelStorageCapability() {
+  return accelStorageCapability;
+}
 
 export function loadSharedSpeedUnitPreference() {
   const unit = loadText(SHARED_SPEED_UNIT_KEY, '');
@@ -115,7 +124,7 @@ function queuePersistence(previousPromise, task) {
 }
 
 async function migrateLegacyAccelStorage() {
-  if (!accelStore.hasSupport()) return;
+  if (!(await accelStorageCapability.isIndexedDbUsable())) return;
 
   if (!accelMigrationPromise) {
     accelMigrationPromise = (async () => {

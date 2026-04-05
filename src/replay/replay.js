@@ -19,7 +19,6 @@ import {
   IconWorld,
 } from '../icons.js';
 import {
-  getBackendSpeedRecordingDetail,
   initBackendAuthControllers,
 } from '../shared/backend-auth.js';
 import { initCloudSyncStatusIndicator } from '../shared/cloud-sync-status-indicator.js';
@@ -27,10 +26,21 @@ import {
   CLOUD_SYNC_APPLIED_EVENT,
   CLOUD_SYNC_ENTITY_TYPES,
   queueCloudSyncDeletion,
-  restoreCloudSyncRecord,
   startCloudSyncLoop,
   syncCloudRecords,
 } from '../shared/cloud-sync.js';
+import {
+  clearReplayRestoreFailure,
+  ensureReplayTelemetry,
+  getReplaySelection,
+  listReplayRecords,
+  registerLinkedReplayCloudRecord,
+  removeReplayRecord,
+} from '../shared/repositories/replay-repository.js';
+import {
+  NAVIGATION_PAYLOAD_RESOURCES,
+  queueNavigationPayloadHandoff,
+} from '../shared/navigation-payload-handoff.js';
 import {
   ensureSingleTabOwnership,
   releaseSingleTabOwnership,
@@ -49,14 +59,7 @@ import {
 } from './logic.js';
 import { createReplayChartsController } from './charts.js';
 import { createReplayMapController } from './map.js';
-import {
-  consumePendingReplaySessionOpen,
-  isReplayPayloadComplete,
-  loadReplayRecords,
-  loadReplaySelection,
-  importReplaySession,
-  removeReplayRecording,
-} from './session.js';
+import { isReplayPayloadComplete } from './session.js';
 
 applyTranslations();
 const singleTabOwnershipPromise = ensureSingleTabOwnership();
@@ -241,16 +244,13 @@ const state = {
   expandedGraphPointerId: null,
 };
 let replaySelectionPromise = Promise.resolve();
+let replaySelectionKickoffPromise = Promise.resolve();
 let replaySelectionRequestVersion = 0;
 let hasHydratedInitialSelection = false;
 let introApproachPromise = null;
 let introApproachToken = 0;
 let recordingsDetailMeasureFrame = null;
-const replayTelemetryRestoreFailureCooldownMs = 5000;
-const remoteReplayRestorePromises = new Map();
-const remoteReplayRestoreFailures = new Map();
-let pendingReplayOpenSession = null;
-let linkedCloudReplayRecord = null;
+let pendingReplayRecoveryRecordingId = null;
 
 refreshDerivedState();
 
@@ -316,79 +316,6 @@ function refreshDerivedState() {
   state.highlights = getReplayHighlights(state.session);
 }
 
-function hasRecentReplayRestoreFailure(recordingId) {
-  const failedAtMs = remoteReplayRestoreFailures.get(recordingId);
-  return Boolean(
-    Number.isFinite(failedAtMs)
-    && Date.now() - failedAtMs < replayTelemetryRestoreFailureCooldownMs
-  );
-}
-
-async function maybeRestoreReplayTelemetry(recordingId, session) {
-  const normalizedRecordingId = typeof recordingId === 'string' ? recordingId.trim() : '';
-  if (!normalizedRecordingId) return false;
-  if (session && isReplayPayloadComplete(session)) return false;
-  if (hasRecentReplayRestoreFailure(normalizedRecordingId)) return false;
-  if (remoteReplayRestorePromises.has(normalizedRecordingId)) {
-    return remoteReplayRestorePromises.get(normalizedRecordingId);
-  }
-
-  const restorePromise = (async () => {
-    try {
-      const linkedCloudRecordName =
-        linkedCloudReplayRecord?.recordId === normalizedRecordingId
-          ? linkedCloudReplayRecord.name
-          : '';
-
-      if (linkedCloudRecordName) {
-        const detail = await getBackendSpeedRecordingDetail({
-          name: linkedCloudRecordName,
-          includePayload: true,
-        });
-        const payloadId =
-          typeof detail?.payload?.id === 'string' && detail.payload.id.trim()
-            ? detail.payload.id.trim()
-            : normalizedRecordingId;
-        if (
-          detail?.ok
-          && payloadId === normalizedRecordingId
-          && isReplayPayloadComplete(detail?.payload)
-        ) {
-          pendingReplayOpenSession = detail.payload;
-          await importReplaySession(detail.payload, {
-            saveLast: true,
-          }).catch(() => null);
-          linkedCloudReplayRecord = null;
-          remoteReplayRestoreFailures.delete(normalizedRecordingId);
-          return true;
-        }
-      }
-
-      const result = await restoreCloudSyncRecord({
-        entityType: CLOUD_SYNC_ENTITY_TYPES.replaySession,
-        recordId: normalizedRecordingId,
-      });
-      const restored = result?.ok === true && isReplayPayloadComplete(result?.payload);
-      if (restored) {
-        pendingReplayOpenSession = result.payload;
-        remoteReplayRestoreFailures.delete(normalizedRecordingId);
-        return true;
-      }
-
-      remoteReplayRestoreFailures.set(normalizedRecordingId, Date.now());
-      return false;
-    } catch {
-      remoteReplayRestoreFailures.set(normalizedRecordingId, Date.now());
-      return false;
-    }
-  })().finally(() => {
-    remoteReplayRestorePromises.delete(normalizedRecordingId);
-  });
-
-  remoteReplayRestorePromises.set(normalizedRecordingId, restorePromise);
-  return restorePromise;
-}
-
 function isLatestReplaySelectionRequest(requestId) {
   return Number.isFinite(requestId) && requestId === replaySelectionRequestVersion;
 }
@@ -398,7 +325,10 @@ function shouldApplyReplayRestore(requestId, restoreRecordingId) {
   return Boolean(
     typeof restoreRecordingId === 'string'
     && restoreRecordingId
-    && state.selectedRecordingId === restoreRecordingId
+    && (
+      state.selectedRecordingId === restoreRecordingId
+      || pendingReplayRecoveryRecordingId === restoreRecordingId
+    )
   );
 }
 
@@ -424,7 +354,7 @@ function maybeFallbackMissingReplaySelection(recordingId = state.selectedRecordi
 }
 
 async function refreshReplayRecordsList() {
-  state.records = await loadReplayRecords();
+  state.records = await listReplayRecords();
   renderRecordings();
 }
 
@@ -1111,13 +1041,19 @@ async function refreshReplaySelectionTelemetry({
   restoreRecordingId,
   session,
 } = {}) {
-  if (!(await maybeRestoreReplayTelemetry(restoreRecordingId, session))) {
+  const result = await ensureReplayTelemetry(restoreRecordingId, { session });
+  if (!result?.restored) {
     return false;
   }
   if (!shouldApplyReplayRestore(requestId, restoreRecordingId)) return false;
-  if (state.selectedRecordingId !== restoreRecordingId) return false;
+  if (
+    state.selectedRecordingId !== restoreRecordingId
+    && pendingReplayRecoveryRecordingId !== restoreRecordingId
+  ) {
+    return false;
+  }
 
-  await requestReplaySelection(restoreRecordingId);
+  await requestReplaySelection(restoreRecordingId, { settleMicrotasks: 0 });
   return state.selectedRecordingId === restoreRecordingId;
 }
 
@@ -1128,52 +1064,20 @@ async function applyReplaySelection(recordingId, { requestId = replaySelectionRe
     typeof requestedRecordingId === 'string' && requestedRecordingId.trim()
       ? requestedRecordingId.trim()
       : null;
-  const selection = await loadReplaySelection(requestedRecordingId);
+  const selection = await getReplaySelection(requestedRecordingId);
   if (!isLatestReplaySelectionRequest(requestId)) return false;
-
-  const matchingPendingReplay =
-    normalizedRequestedRecordingId
-    && pendingReplayOpenSession?.id === normalizedRequestedRecordingId
-    && isReplayPayloadComplete(pendingReplayOpenSession)
-      ? pendingReplayOpenSession
-      : null;
-
-  if (matchingPendingReplay) {
-    const nextRecords = selection.records.some((record) => record.id === normalizedRequestedRecordingId)
-      ? selection.records
-      : [
-        {
-          id: matchingPendingReplay.id,
-          source: 'library',
-          session: matchingPendingReplay,
-        },
-        ...selection.records,
-      ];
-    applyReplaySelectionState({
-      records: nextRecords,
-      source: 'library',
-      session: matchingPendingReplay,
-      selectedRecordingId: matchingPendingReplay.id,
-    });
-    pendingReplayOpenSession = null;
-    void importReplaySession(matchingPendingReplay, {
-      saveLast: true,
-    }).catch(() => {
-      // Keep the full in-memory payload active even if persistence fails.
-    });
-    return true;
-  }
 
   const requestedRecordExists = normalizedRequestedRecordingId
     ? selection.records.some((record) => record.id === normalizedRequestedRecordingId)
     : false;
 
   if (normalizedRequestedRecordingId && !requestedRecordExists) {
+    pendingReplayRecoveryRecordingId = normalizedRequestedRecordingId;
     applyReplaySelectionState({
       records: selection.records,
-      source: null,
-      session: null,
-      selectedRecordingId: normalizedRequestedRecordingId,
+      source: selection.source,
+      session: selection.session,
+      selectedRecordingId: selection.session?.id ?? null,
     });
     void refreshReplaySelectionTelemetry({
       requestId,
@@ -1183,6 +1087,7 @@ async function applyReplaySelection(recordingId, { requestId = replaySelectionRe
     return true;
   }
 
+  pendingReplayRecoveryRecordingId = null;
   const restoreRecordingId = normalizedRequestedRecordingId ?? selection.session?.id ?? null;
   applyReplaySelectionState(selection);
 
@@ -1200,15 +1105,41 @@ async function applyReplaySelection(recordingId, { requestId = replaySelectionRe
   return true;
 }
 
-function requestReplaySelection(recordingId) {
+async function recoverReplaySelection(recordingId, attempts = 4) {
+  const normalizedRecordingId =
+    typeof recordingId === 'string' && recordingId.trim() ? recordingId.trim() : null;
+  if (!normalizedRecordingId) {
+    await requestReplaySelection(recordingId, { settleMicrotasks: 0 });
+    return state.selectedRecordingId === null;
+  }
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    await requestReplaySelection(normalizedRecordingId, { settleMicrotasks: 0 });
+    if (state.selectedRecordingId === normalizedRecordingId) {
+      return true;
+    }
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  }
+
+  return state.selectedRecordingId === normalizedRecordingId;
+}
+
+function requestReplaySelection(recordingId, { settleMicrotasks = 100 } = {}) {
   const requestId = replaySelectionRequestVersion + 1;
   replaySelectionRequestVersion = requestId;
-  replaySelectionPromise = applyReplaySelection(recordingId, { requestId });
+  replaySelectionPromise = applyReplaySelection(recordingId, { requestId }).then(async (result) => {
+    for (let index = 0; index < settleMicrotasks; index += 1) {
+      await Promise.resolve();
+    }
+    return result;
+  });
   return replaySelectionPromise;
 }
 
 export function waitForReplaySelection() {
-  return replaySelectionPromise;
+  return Promise.all([replaySelectionPromise, replaySelectionKickoffPromise]).then(() => undefined);
 }
 
 function syncLanguage() {
@@ -1301,7 +1232,7 @@ function bindEvents() {
 
       stopPlayback();
       replaySelectionPromise = (async () => {
-        await removeReplayRecording(deleteRecordingId);
+        await removeReplayRecord(deleteRecordingId);
         await queueCloudSyncDeletion({
           entityType: CLOUD_SYNC_ENTITY_TYPES.replaySession,
           recordId: deleteRecordingId,
@@ -1317,6 +1248,24 @@ function bindEvents() {
     const button = event.target.closest('button[data-recording-id]');
     if (!button) return;
     stopPlayback();
+    const nextRecord = state.records.find((record) => record.id === button.dataset.recordingId) ?? null;
+    if (nextRecord?.session && !isReplayPayloadComplete(nextRecord.session)) {
+      replaySelectionKickoffPromise = new Promise((resolve) => {
+        let settled = false;
+        const resolveOnce = () => {
+          if (settled) return;
+          settled = true;
+          resolve();
+        };
+
+        void ensureReplayTelemetry(button.dataset.recordingId, {
+          session: nextRecord.session,
+          onPayloadDownloadStart: resolveOnce,
+        }).finally(resolveOnce);
+      });
+    } else {
+      replaySelectionKickoffPromise = Promise.resolve();
+    }
     await requestReplaySelection(button.dataset.recordingId);
   });
 
@@ -1386,13 +1335,53 @@ function bindEvents() {
   window.addEventListener(CLOUD_SYNC_APPLIED_EVENT, (event) => {
     if (event?.detail?.entityType !== CLOUD_SYNC_ENTITY_TYPES.replaySession) return;
     if (state.initialSelectionPending) return;
+    if (
+      event?.detail?.deleted !== true
+      && pendingReplayRecoveryRecordingId
+    ) {
+      if (isReplayPayloadComplete(event?.detail?.payload)) {
+        const payload = event.detail.payload;
+        const nextRecords = state.records.some((record) => record.id === payload.id)
+          ? state.records.map((record) =>
+            record.id === payload.id
+              ? {
+                ...record,
+                source: 'library',
+                session: payload,
+              }
+              : record
+          )
+          : [{
+            id: payload.id,
+            source: 'library',
+            session: payload,
+          }, ...state.records];
+
+        pendingReplayRecoveryRecordingId = null;
+        queueNavigationPayloadHandoff({
+          resourceType: NAVIGATION_PAYLOAD_RESOURCES.replaySession,
+          recordId: payload.id,
+          payload,
+        });
+        applyReplaySelectionState({
+          records: nextRecords,
+          source: 'library',
+          session: payload,
+          selectedRecordingId: payload.id,
+        });
+        return;
+      }
+      clearReplayRestoreFailure(event.detail.recordId);
+      void recoverReplaySelection(event.detail.recordId);
+      return;
+    }
     if (event?.detail?.deleted === true && event?.detail?.recordId === state.selectedRecordingId) {
-      remoteReplayRestoreFailures.delete(event.detail.recordId);
+      clearReplayRestoreFailure(event.detail.recordId);
       void requestReplaySelection(null);
       return;
     }
     if (event?.detail?.recordId && event.detail.recordId === state.selectedRecordingId) {
-      remoteReplayRestoreFailures.delete(event.detail.recordId);
+      clearReplayRestoreFailure(event.detail.recordId);
       void requestReplaySelection(event.detail.recordId);
       return;
     }
@@ -1413,14 +1402,9 @@ async function init() {
   const urlParams = new URLSearchParams(window.location.search);
   const initialRecordingId = urlParams.get('record');
   const initialCloudRecordName = urlParams.get('cloudRecord');
-  pendingReplayOpenSession = consumePendingReplaySessionOpen();
-  linkedCloudReplayRecord =
-    initialRecordingId && initialCloudRecordName
-      ? {
-        recordId: initialRecordingId,
-        name: initialCloudRecordName,
-      }
-      : null;
+  if (initialRecordingId && initialCloudRecordName) {
+    registerLinkedReplayCloudRecord(initialRecordingId, initialCloudRecordName);
+  }
 
   updatePageMeta();
   renderSessionStateView();
@@ -1437,7 +1421,7 @@ async function init() {
   renderRecordings();
   updateGraphPlayback(null);
   try {
-    await requestReplaySelection(initialRecordingId);
+    await requestReplaySelection(initialRecordingId, { settleMicrotasks: 0 });
   } finally {
     state.initialSelectionPending = false;
     renderSessionStateView();

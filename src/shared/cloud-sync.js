@@ -19,6 +19,7 @@ import {
   pushSyncChangesToBackend,
 } from "./backend-auth.js";
 import { hasSingleTabOwnership, SINGLE_TAB_OWNERSHIP_EVENT } from "./single-tab.js";
+import { createStorageCapability } from "./storage-capability.js";
 import { loadJson, loadText, saveJson, saveText } from "./storage.js";
 
 export const CLOUD_SYNC_ENTITY_TYPES = Object.freeze({
@@ -56,6 +57,10 @@ const syncStore = createIndexedJsonKeyValueStore({
   dbName: CLOUD_SYNC_DB_NAME,
   dbVersion: CLOUD_SYNC_DB_VERSION,
   storeName: CLOUD_SYNC_DB_STORE,
+});
+const syncStoreCapability = createStorageCapability({
+  namespace: "cloud-sync-state",
+  store: syncStore,
 });
 
 let listenersInstalled = false;
@@ -262,10 +267,28 @@ function abortActiveCloudSync() {
 }
 
 async function loadCloudSyncState() {
-  const indexedValue = await syncStore.getValue(CLOUD_SYNC_STATE_KEY);
-  const storedValue =
-    indexedValue !== undefined ? indexedValue : loadJson(CLOUD_SYNC_STATE_FALLBACK_KEY, {});
-  const state = storedValue && typeof storedValue === "object" ? storedValue : {};
+  const indexedValue = await syncStoreCapability.isIndexedDbUsable()
+    ? await syncStore.getValue(CLOUD_SYNC_STATE_KEY)
+    : undefined;
+  const fallbackValue = loadJson(CLOUD_SYNC_STATE_FALLBACK_KEY, {});
+  const indexedState = indexedValue && typeof indexedValue === "object" ? indexedValue : {};
+  const fallbackState = fallbackValue && typeof fallbackValue === "object" ? fallbackValue : {};
+  const indexedRecords =
+    indexedState.records && typeof indexedState.records === "object" && !Array.isArray(indexedState.records)
+      ? indexedState.records
+      : {};
+  const fallbackRecords =
+    fallbackState.records && typeof fallbackState.records === "object" && !Array.isArray(fallbackState.records)
+      ? fallbackState.records
+      : {};
+  const state = {
+    ...indexedState,
+    ...fallbackState,
+    records: {
+      ...indexedRecords,
+      ...fallbackRecords,
+    },
+  };
 
   return {
     cursor: typeof state.cursor === "string" ? state.cursor : "",
@@ -293,14 +316,18 @@ async function saveCloudSyncState(state) {
       records: {},
     }
   );
-  const stored = await syncStore.setValue(CLOUD_SYNC_STATE_KEY, snapshot);
+  const stored = (await syncStoreCapability.isIndexedDbUsable())
+    ? await syncStore.setValue(CLOUD_SYNC_STATE_KEY, snapshot)
+    : false;
   if (!stored) {
     saveJson(CLOUD_SYNC_STATE_FALLBACK_KEY, snapshot);
   }
 }
 
 async function loadCloudSyncOutbox() {
-  const indexedValue = await syncStore.getValue(CLOUD_SYNC_OUTBOX_KEY);
+  const indexedValue = await syncStoreCapability.isIndexedDbUsable()
+    ? await syncStore.getValue(CLOUD_SYNC_OUTBOX_KEY)
+    : undefined;
   const storedValue =
     indexedValue !== undefined ? indexedValue : loadJson(CLOUD_SYNC_OUTBOX_FALLBACK_KEY, []);
   return Array.isArray(storedValue) ? storedValue : [];
@@ -308,7 +335,9 @@ async function loadCloudSyncOutbox() {
 
 async function saveCloudSyncOutbox(outbox) {
   const snapshot = cloneJson(Array.isArray(outbox) ? outbox : [], []);
-  const stored = await syncStore.setValue(CLOUD_SYNC_OUTBOX_KEY, snapshot);
+  const stored = (await syncStoreCapability.isIndexedDbUsable())
+    ? await syncStore.setValue(CLOUD_SYNC_OUTBOX_KEY, snapshot)
+    : false;
   if (!stored) {
     saveJson(CLOUD_SYNC_OUTBOX_FALLBACK_KEY, snapshot);
   }
@@ -812,6 +841,31 @@ export async function restoreCloudSyncRecord({
   recordId,
   signal,
 } = {}) {
+  const result = await downloadCloudSyncRecord({
+    entityType,
+    recordId,
+    signal,
+  });
+  if (result?.ok !== true) {
+    return result;
+  }
+
+  await applyRemoteCloudRecord(result.meta, result.payload);
+  return {
+    ok: true,
+    reason: "",
+    status: result.status,
+    meta: result.meta,
+    payload: result.payload,
+  };
+}
+
+export async function downloadCloudSyncRecord({
+  entityType,
+  recordId,
+  onPayloadDownloadStart,
+  signal,
+} = {}) {
   const meta = await findCloudSyncRecordMeta(entityType, recordId);
   if (!meta || meta.deletedAtMs > 0) {
     return {
@@ -824,6 +878,7 @@ export async function restoreCloudSyncRecord({
 
   const payloadResult = await downloadSyncPayloadFromBackend({
     name: meta.name,
+    onRequestStart: onPayloadDownloadStart,
     signal,
   });
   if (!payloadResult.ok || payloadResult.payload === null || payloadResult.payload === undefined) {
@@ -836,7 +891,6 @@ export async function restoreCloudSyncRecord({
     };
   }
 
-  await applyRemoteCloudRecord(meta, payloadResult.payload);
   return {
     ok: true,
     reason: "",
@@ -1011,6 +1065,7 @@ async function pullCloudSyncRecords({ signal } = {}) {
       if (!hasSingleTabOwnership() || !isCloudSyncAuthAllowed()) return;
       const meta = normalizeRecordMeta(record);
       if (!meta) continue;
+      let appliedPayload = null;
 
       if (meta.deletedAtMs > 0) {
         await applyRemoteCloudDeletion(meta);
@@ -1023,7 +1078,8 @@ async function pullCloudSyncRecords({ signal } = {}) {
         if (!payloadResult.ok) {
           throw new Error(`Cloud sync payload download failed with status ${payloadResult.status}.`);
         }
-        await applyRemoteCloudRecord(meta, payloadResult.payload);
+        appliedPayload = payloadResult.payload;
+        await applyRemoteCloudRecord(meta, appliedPayload);
       }
 
       state.records[getEntityKey(meta.entityType, meta.clientRecordId)] = meta;
@@ -1031,6 +1087,7 @@ async function pullCloudSyncRecords({ signal } = {}) {
         entityType: meta.entityType,
         recordId: meta.clientRecordId,
         deleted: meta.deletedAtMs > 0,
+        payload: meta.deletedAtMs > 0 ? null : appliedPayload,
       });
     }
 
