@@ -699,6 +699,566 @@ describe('accel.html smoke', () => {
     expect(document.activeElement).toBe(document.getElementById('resultsTrigger'));
   });
 
+  it('restores a summary-only selected run from cloud sync before opening results', async () => {
+    const storage = await import('../../src/accel/storage.js');
+    const fullRun = createStoredRun();
+    const summaryRun = {
+      ...fullRun,
+      speedTrace: [],
+      sampleLog: [],
+    };
+    await storage.saveRuns([summaryRun]);
+    localStorage.setItem('vatioboard.cloud_sync.state', JSON.stringify({
+      cursor: '',
+      bootstrapVersion: 2,
+      records: {
+        'accel_run:run-1': {
+          name: 'sync-restore-run-1',
+          entity_type: 'accel_run',
+          client_record_id: 'run-1',
+          device_id: 'device-b',
+          record_title: '0-60-mph',
+          content_hash: 'hash-run-1',
+          client_updated_at_ms: String(fullRun.savedAtMs),
+          deleted_at_ms: '',
+          server_version: 1,
+          payload_size: 256,
+          modified: '2026-04-05 02:30:00.000000',
+        },
+      },
+    }));
+
+    window.fetch = vi.fn(async (input) => {
+      const url = typeof input === 'string' ? input : String(input?.url ?? '');
+
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload')) {
+        return new Response(JSON.stringify({
+          message: {
+            payload: fullRun,
+          },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_records')) {
+        return new Response(JSON.stringify({
+          message: {
+            records: [],
+            has_more: false,
+            next_cursor: '',
+          },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response('{}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    const accelPage = await import('../../src/accel/accel.js');
+    await accelPage.initPromise;
+    await settleAsyncWork();
+
+    expect(window.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload'),
+      expect.any(Object)
+    );
+    document.getElementById('accelToolbarResults').click();
+    await flushTasks();
+
+    expect(document.getElementById('resultReplayControls').hidden).toBe(false);
+    expect(document.getElementById('resultReplayMapShell').hidden).toBe(false);
+    expect(fakeMaps).toHaveLength(1);
+  });
+
+  it('retries accel telemetry recovery after cloud sync metadata arrives later', async () => {
+    const storage = await import('../../src/accel/storage.js');
+    const fullRun = createStoredRun();
+    const summaryRun = {
+      ...fullRun,
+      speedTrace: [],
+      sampleLog: [],
+    };
+    await storage.saveRuns([summaryRun]);
+
+    window.fetch = vi.fn(async (input) => {
+      const url = typeof input === 'string' ? input : String(input?.url ?? '');
+
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload')) {
+        return new Response(JSON.stringify({
+          message: {
+            payload: fullRun,
+          },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_records')) {
+        return new Response(JSON.stringify({
+          message: {
+            records: [],
+            has_more: false,
+            next_cursor: '',
+          },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response('{}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    const accelPage = await import('../../src/accel/accel.js');
+    await accelPage.initPromise;
+    await settleAsyncWork();
+
+    expect(window.fetch).not.toHaveBeenCalledWith(
+      expect.stringContaining('vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload'),
+      expect.any(Object)
+    );
+
+    localStorage.setItem('vatioboard.cloud_sync.state', JSON.stringify({
+      cursor: '',
+      bootstrapVersion: 2,
+      records: {
+        'accel_run:run-1': {
+          name: 'sync-restore-run-1-late',
+          entity_type: 'accel_run',
+          client_record_id: 'run-1',
+          device_id: 'device-b',
+          record_title: '0-60-mph',
+          content_hash: 'hash-run-1-late',
+          client_updated_at_ms: String(fullRun.savedAtMs),
+          deleted_at_ms: '',
+          server_version: 1,
+          payload_size: 256,
+          modified: '2026-04-05 02:45:00.000000',
+        },
+      },
+    }));
+    window.dispatchEvent(new CustomEvent('vatioboard:cloud-sync-applied', {
+      detail: {
+        entityType: 'accel_run',
+        recordId: 'run-1',
+      },
+    }));
+    await settleAsyncWork();
+
+    expect(window.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload'),
+      expect.any(Object)
+    );
+  });
+
+  it('keeps accel boot non-blocking while a background restore is still downloading', async () => {
+    const storage = await import('../../src/accel/storage.js');
+    const fullRun = createStoredRun();
+    const summaryRun = {
+      ...fullRun,
+      speedTrace: [],
+      sampleLog: [],
+    };
+    await storage.saveRuns([summaryRun]);
+    localStorage.setItem('vatioboard.cloud_sync.state', JSON.stringify({
+      cursor: '',
+      bootstrapVersion: 2,
+      records: {
+        'accel_run:run-1': {
+          name: 'sync-restore-run-1-slow',
+          entity_type: 'accel_run',
+          client_record_id: 'run-1',
+          device_id: 'device-b',
+          record_title: '0-60-mph',
+          content_hash: 'hash-run-1-slow',
+          client_updated_at_ms: String(fullRun.savedAtMs),
+          deleted_at_ms: '',
+          server_version: 1,
+          payload_size: 256,
+          modified: '2026-04-05 03:10:00.000000',
+        },
+      },
+    }));
+
+    var resolveDownload;
+    var downloadPending = new Promise(function (resolve) {
+      resolveDownload = resolve;
+    });
+    window.fetch = vi.fn(async (input) => {
+      const url = typeof input === 'string' ? input : String(input?.url ?? '');
+
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload')) {
+        return downloadPending;
+      }
+
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_records')) {
+        return new Response(JSON.stringify({
+          message: {
+            records: [],
+            has_more: false,
+            next_cursor: '',
+          },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response('{}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    const accelPage = await import('../../src/accel/accel.js');
+    var initResolved = false;
+    accelPage.initPromise.then(function () {
+      initResolved = true;
+    });
+    await settleAsyncWork();
+
+    expect(initResolved).toBe(true);
+    expect(document.getElementById('accelToolbarResults').disabled).toBe(false);
+
+    resolveDownload(new Response(JSON.stringify({
+      message: {
+        payload: fullRun,
+      },
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    await settleAsyncWork();
+  });
+
+  it('does not let a stale accel restore snap selection back to an older run', async () => {
+    const storage = await import('../../src/accel/storage.js');
+    const restoredRun = createStoredRun();
+    const summaryRun = {
+      ...restoredRun,
+      speedTrace: [],
+      sampleLog: [],
+    };
+    const latestRun = {
+      ...createStoredRun(),
+      id: 'run-2',
+      savedAtMs: Date.UTC(2026, 2, 29, 11, 0, 0),
+      notes: 'Second run',
+      startPlace: { label: 'Hoboken' },
+      endPlace: { label: 'Jersey City' },
+    };
+    await storage.saveRuns([latestRun, summaryRun]);
+    localStorage.setItem('vatioboard.cloud_sync.state', JSON.stringify({
+      cursor: '',
+      bootstrapVersion: 2,
+      records: {
+        'accel_run:run-1': {
+          name: 'sync-restore-run-1-race',
+          entity_type: 'accel_run',
+          client_record_id: 'run-1',
+          device_id: 'device-b',
+          record_title: '0-60-mph',
+          content_hash: 'hash-run-1-race',
+          client_updated_at_ms: String(restoredRun.savedAtMs),
+          deleted_at_ms: '',
+          server_version: 1,
+          payload_size: 256,
+          modified: '2026-04-05 03:15:00.000000',
+        },
+      },
+    }));
+
+    var resolveDownload;
+    window.fetch = vi.fn(async (input) => {
+      const url = typeof input === 'string' ? input : String(input?.url ?? '');
+
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload')) {
+        return new Promise(function (resolve) {
+          resolveDownload = resolve;
+        });
+      }
+
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_records')) {
+        return new Response(JSON.stringify({
+          message: {
+            records: [],
+            has_more: false,
+            next_cursor: '',
+          },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response('{}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    const accelPage = await import('../../src/accel/accel.js');
+    await accelPage.initPromise;
+    await settleAsyncWork();
+
+    document.querySelector('[data-history-action="load"][data-run-id="run-1"]').click();
+    await flushTasks();
+    document.querySelector('[data-history-action="load"][data-run-id="run-2"]').click();
+    await flushTasks();
+
+    resolveDownload(new Response(JSON.stringify({
+      message: {
+        payload: restoredRun,
+      },
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    await settleAsyncWork();
+
+    expect(
+      document.querySelector('.accel-history-btn[aria-pressed="true"]')?.getAttribute('data-run-id')
+    ).toBe('run-2');
+    expect(document.getElementById('resultNotesValue').textContent).toBe('Second run');
+  });
+
+  it('falls back to an available local run when a requested remote run never materializes', async () => {
+    const storage = await import('../../src/accel/storage.js');
+    const localRun = createStoredRun();
+    await storage.saveRuns([localRun]);
+    localStorage.setItem('vatioboard.cloud_sync.state', JSON.stringify({
+      cursor: '',
+      bootstrapVersion: 2,
+      records: {},
+    }));
+    window.history.replaceState({}, '', 'https://vatioboard.com/accel.html?run=missing-run');
+
+    window.fetch = vi.fn(async (input) => {
+      const url = typeof input === 'string' ? input : String(input?.url ?? '');
+
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_records')) {
+        return new Response(JSON.stringify({
+          message: {
+            records: [],
+            has_more: false,
+            next_cursor: '',
+          },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response('{}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    const accelPage = await import('../../src/accel/accel.js');
+    await accelPage.initPromise;
+    await settleAsyncWork();
+
+    expect(
+      document.querySelector('.accel-history-btn[aria-pressed="true"]')?.getAttribute('data-run-id')
+    ).toBe('run-1');
+    expect(document.getElementById('accelToolbarResults').disabled).toBe(false);
+  });
+
+  it('keeps a newly synced accel run selected while recovering from a missing deep link', async () => {
+    const storage = await import('../../src/accel/storage.js');
+    const localRun = {
+      ...createStoredRun(),
+      id: 'run-local',
+      savedAtMs: Date.UTC(2026, 2, 29, 13, 0, 0),
+      notes: 'Local latest run',
+    };
+    const remoteRun = {
+      ...createStoredRun(),
+      id: 'run-remote-sync',
+      savedAtMs: Date.UTC(2026, 2, 29, 12, 0, 0),
+      notes: 'Remote synced run',
+      startPlace: { label: 'Hoboken' },
+      endPlace: { label: 'Jersey City' },
+    };
+    await storage.saveRuns([localRun]);
+    window.history.replaceState({}, '', 'https://vatioboard.com/accel.html?run=missing-run');
+
+    window.fetch = vi.fn(async (input) => {
+      const url = typeof input === 'string' ? input : String(input?.url ?? '');
+
+      return new Response('{}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    const accelPage = await import('../../src/accel/accel.js');
+    await accelPage.initPromise;
+    await settleAsyncWork();
+
+    await storage.saveRuns([localRun, remoteRun]);
+    window.dispatchEvent(new CustomEvent('vatioboard:cloud-sync-applied', {
+      detail: {
+        entityType: 'accel_run',
+        recordId: 'run-remote-sync',
+      },
+    }));
+    await settleAsyncWork();
+
+    expect(
+      document.querySelector('.accel-history-btn[aria-pressed="true"]')?.getAttribute('data-run-id')
+    ).toBe('run-remote-sync');
+    expect(document.getElementById('resultNotesValue').textContent).toBe('Remote synced run');
+  });
+
+  it('falls back to an available run after cloud sync deletes the selected run', async () => {
+    const storage = await import('../../src/accel/storage.js');
+    const selectedRun = createStoredRun();
+    const fallbackRun = {
+      ...createStoredRun(),
+      id: 'run-2',
+      savedAtMs: Date.UTC(2026, 2, 29, 11, 0, 0),
+      notes: 'Second run',
+    };
+    await storage.saveRuns([fallbackRun, selectedRun]);
+
+    window.fetch = vi.fn(async (input) => {
+      const url = typeof input === 'string' ? input : String(input?.url ?? '');
+
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_records')) {
+        return new Response(JSON.stringify({
+          message: {
+            records: [],
+            has_more: false,
+            next_cursor: '',
+          },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response('{}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    const accelPage = await import('../../src/accel/accel.js');
+    await accelPage.initPromise;
+    await settleAsyncWork();
+
+    document.querySelector('[data-history-action="load"][data-run-id="run-1"]').click();
+    await settleAsyncWork();
+    await storage.saveRuns([fallbackRun]);
+
+    window.dispatchEvent(new CustomEvent('vatioboard:cloud-sync-applied', {
+      detail: {
+        entityType: 'accel_run',
+        recordId: 'run-1',
+        deleted: true,
+      },
+    }));
+    await settleAsyncWork();
+
+    expect(
+      document.querySelector('.accel-history-btn[aria-pressed="true"]')?.getAttribute('data-run-id')
+    ).toBe('run-2');
+    expect(document.getElementById('resultNotesValue').textContent).toBe('Second run');
+  });
+
+  it('restores a requested remote accel run instead of sticking to a local fallback run', async () => {
+    const storage = await import('../../src/accel/storage.js');
+    const localRun = createStoredRun();
+    const remoteRun = {
+      ...createStoredRun(),
+      id: 'run-remote',
+      savedAtMs: Date.UTC(2026, 2, 29, 12, 0, 0),
+      notes: 'Remote run',
+      startPlace: { label: 'Hoboken' },
+      endPlace: { label: 'Jersey City' },
+    };
+    await storage.saveRuns([localRun]);
+    localStorage.setItem('vatioboard.cloud_sync.state', JSON.stringify({
+      cursor: '',
+      bootstrapVersion: 2,
+      records: {
+        'accel_run:run-remote': {
+          name: 'sync-run-remote',
+          entity_type: 'accel_run',
+          client_record_id: 'run-remote',
+          device_id: 'device-remote',
+          record_title: '0-60-mph',
+          content_hash: 'hash-run-remote',
+          client_updated_at_ms: String(remoteRun.savedAtMs),
+          deleted_at_ms: '',
+          server_version: 1,
+          payload_size: 256,
+          modified: '2026-04-05 04:15:00.000000',
+        },
+      },
+    }));
+    window.history.replaceState({}, '', 'https://vatioboard.com/accel.html?run=run-remote');
+
+    window.fetch = vi.fn(async (input) => {
+      const url = typeof input === 'string' ? input : String(input?.url ?? '');
+
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload')) {
+        return new Response(JSON.stringify({
+          message: {
+            payload: remoteRun,
+          },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_records')) {
+        return new Response(JSON.stringify({
+          message: {
+            records: [],
+            has_more: false,
+            next_cursor: '',
+          },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response('{}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    const accelPage = await import('../../src/accel/accel.js');
+    await accelPage.initPromise;
+    await settleAsyncWork();
+
+    expect(window.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload'),
+      expect.any(Object)
+    );
+    expect(
+      document.querySelector('.accel-history-btn[aria-pressed="true"]')?.getAttribute('data-run-id')
+    ).toBe('run-remote');
+    expect(document.getElementById('resultNotesValue').textContent).toBe('Remote run');
+  });
+
   it('opens the results panel from the toolbar results button when runs exist', async () => {
     const storage = await import('../../src/accel/storage.js');
     await storage.saveRuns([createStoredRun()]);

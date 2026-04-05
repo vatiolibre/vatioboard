@@ -3,6 +3,22 @@ import { bootHtmlPage, expectPageSeo, flushTasks } from '../helpers/page-smoke.j
 
 const fakeMaps = [];
 
+async function settleAsyncWork(iterations = 20) {
+  for (let index = 0; index < iterations; index += 1) {
+    await flushTasks();
+  }
+}
+
+async function waitForRecordingButton(recordingId, iterations = 60) {
+  for (let index = 0; index < iterations; index += 1) {
+    const button = document.querySelector(`button[data-recording-id="${recordingId}"]`);
+    if (button) return button;
+    await flushTasks();
+  }
+
+  return null;
+}
+
 vi.mock('chart.js/auto', () => ({
   default: class FakeChart {
     constructor(canvas, config) {
@@ -427,5 +443,707 @@ describe('replay.html smoke', () => {
 
     expect(document.getElementById('replayEmptyState').hidden).toBe(false);
     expect(document.getElementById('replayShell').hidden).toBe(true);
+  });
+
+  it('keeps replay boot non-blocking while a background restore is still downloading', async () => {
+    localStorage.clear();
+    const summarySession = {
+      id: 'saved-session',
+      version: 1,
+      source: 'speed',
+      unit: 'kmh',
+      distanceUnit: 'm',
+      startedAtMs: 5000,
+      updatedAtMs: 7000,
+      endedAtMs: 7000,
+      maxSpeedMs: 11,
+      totalDistanceM: 520,
+      minAltitudeM: 8,
+      maxAltitudeM: 18,
+      sampleCount: 2,
+      startPlace: { label: 'Fort Lee' },
+      endPlace: { label: 'West New York' },
+      recordingState: 'stopped',
+      samples: [],
+    };
+    localStorage.setItem('vatio_speed_replay_library_v1', JSON.stringify([summarySession]));
+    localStorage.setItem('vatioboard.cloud_sync.state', JSON.stringify({
+      cursor: '',
+      bootstrapVersion: 2,
+      records: {
+        'replay_session:saved-session': {
+          name: 'sync-saved-session-slow',
+          entity_type: 'replay_session',
+          client_record_id: 'saved-session',
+          device_id: 'device-b',
+          record_title: 'saved-session',
+          content_hash: 'hash-saved-session-slow',
+          client_updated_at_ms: String(summarySession.updatedAtMs),
+          deleted_at_ms: '',
+          server_version: 1,
+          payload_size: 256,
+          modified: '2026-04-05 03:30:00.000000',
+        },
+      },
+    }));
+
+    let resolveDownload;
+    const downloadPending = new Promise((resolve) => {
+      resolveDownload = resolve;
+    });
+    window.fetch = vi.fn(async (input) => {
+      const url = typeof input === 'string' ? input : String(input?.url ?? '');
+
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload')) {
+        return downloadPending;
+      }
+
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_records')) {
+        return new Response(JSON.stringify({
+          message: {
+            records: [],
+            has_more: false,
+            next_cursor: '',
+          },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response('{}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    vi.resetModules();
+    await bootHtmlPage('replay.html');
+
+    const replayPage = await import('../../src/replay/replay.js');
+    let initResolved = false;
+    replayPage.initPromise.then(() => {
+      initResolved = true;
+    });
+    await settleAsyncWork();
+
+    expect(initResolved).toBe(true);
+    expect(document.getElementById('replayShell').hidden).toBe(false);
+
+    resolveDownload(new Response(JSON.stringify({
+      message: {
+        payload: {
+          ...summarySession,
+          samples: [
+            {
+              timestampMs: 5000,
+              latitude: 40.72,
+              longitude: -74.01,
+              speedMs: 0,
+              altitudeM: 8,
+              accuracyM: 5,
+              headingDeg: 160,
+              totalDistanceM: 400,
+            },
+            {
+              timestampMs: 7000,
+              latitude: 40.721,
+              longitude: -74.009,
+              speedMs: 11,
+              altitudeM: 18,
+              accuracyM: 5,
+              headingDeg: 170,
+              totalDistanceM: 520,
+            },
+          ],
+        },
+      },
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    await settleAsyncWork();
+  });
+
+  it('does not let a stale replay restore snap selection back to an older recording', async () => {
+    localStorage.clear();
+    const activeSession = {
+      id: 'active-session',
+      version: 1,
+      source: 'speed',
+      unit: 'kmh',
+      distanceUnit: 'm',
+      startedAtMs: 1000,
+      updatedAtMs: 4000,
+      endedAtMs: 4000,
+      maxSpeedMs: 15,
+      totalDistanceM: 680,
+      minAltitudeM: 10,
+      maxAltitudeM: 20,
+      startPlace: { label: 'Fort Lee' },
+      endPlace: { label: 'Anderson Ave' },
+      samples: [
+        {
+          timestampMs: 1000,
+          latitude: 40.7128,
+          longitude: -74.006,
+          speedMs: 0,
+          altitudeM: 10,
+          accuracyM: 5,
+          headingDeg: 180,
+          totalDistanceM: 500,
+        },
+        {
+          timestampMs: 4000,
+          latitude: 40.7148,
+          longitude: -74.004,
+          speedMs: 15,
+          altitudeM: 20,
+          accuracyM: 4,
+          headingDeg: 184,
+          totalDistanceM: 680,
+        },
+      ],
+    };
+    const summarySession = {
+      id: 'saved-session',
+      version: 1,
+      source: 'speed',
+      unit: 'kmh',
+      distanceUnit: 'm',
+      startedAtMs: 5000,
+      updatedAtMs: 7000,
+      endedAtMs: 7000,
+      maxSpeedMs: 11,
+      totalDistanceM: 520,
+      minAltitudeM: 8,
+      maxAltitudeM: 18,
+      sampleCount: 2,
+      startPlace: { label: 'Fort Lee' },
+      endPlace: { label: 'West New York' },
+      recordingState: 'stopped',
+      samples: [],
+    };
+    localStorage.setItem('vatio_speed_replay_active_v1', JSON.stringify(activeSession));
+    localStorage.setItem('vatio_speed_replay_library_v1', JSON.stringify([summarySession]));
+    localStorage.setItem('vatioboard.cloud_sync.state', JSON.stringify({
+      cursor: '',
+      bootstrapVersion: 2,
+      records: {
+        'replay_session:saved-session': {
+          name: 'sync-saved-session-race',
+          entity_type: 'replay_session',
+          client_record_id: 'saved-session',
+          device_id: 'device-b',
+          record_title: 'saved-session',
+          content_hash: 'hash-saved-session-race',
+          client_updated_at_ms: String(summarySession.updatedAtMs),
+          deleted_at_ms: '',
+          server_version: 1,
+          payload_size: 256,
+          modified: '2026-04-05 03:35:00.000000',
+        },
+      },
+    }));
+
+    let resolveDownload;
+    window.fetch = vi.fn(async (input) => {
+      const url = typeof input === 'string' ? input : String(input?.url ?? '');
+
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload')) {
+        return new Promise((resolve) => {
+          resolveDownload = resolve;
+        });
+      }
+
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_records')) {
+        return new Response(JSON.stringify({
+          message: {
+            records: [],
+            has_more: false,
+            next_cursor: '',
+          },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response('{}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    vi.resetModules();
+    await bootHtmlPage('replay.html');
+
+    const replayPage = await import('../../src/replay/replay.js');
+    await replayPage.initPromise;
+    await settleAsyncWork();
+
+    document.querySelector('button[data-recording-id="saved-session"]').click();
+    await replayPage.waitForReplaySelection();
+    document.querySelector('button[data-recording-id="active-session"]').click();
+    await replayPage.waitForReplaySelection();
+
+    resolveDownload(new Response(JSON.stringify({
+      message: {
+        payload: {
+          ...summarySession,
+          samples: [
+            {
+              timestampMs: 5000,
+              latitude: 40.72,
+              longitude: -74.01,
+              speedMs: 0,
+              altitudeM: 8,
+              accuracyM: 5,
+              headingDeg: 160,
+              totalDistanceM: 400,
+            },
+            {
+              timestampMs: 7000,
+              latitude: 40.721,
+              longitude: -74.009,
+              speedMs: 11,
+              altitudeM: 18,
+              accuracyM: 5,
+              headingDeg: 170,
+              totalDistanceM: 520,
+            },
+          ],
+        },
+      },
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    await settleAsyncWork();
+
+    expect(document.getElementById('replaySessionChip').textContent).toBe('Active session');
+  });
+
+  it('falls back to an available local replay when a requested remote recording never materializes', async () => {
+    localStorage.setItem('vatioboard.cloud_sync.state', JSON.stringify({
+      cursor: '',
+      bootstrapVersion: 2,
+      records: {},
+    }));
+    window.fetch = vi.fn(async (input) => {
+      const url = typeof input === 'string' ? input : String(input?.url ?? '');
+
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_records')) {
+        return new Response(JSON.stringify({
+          message: {
+            records: [],
+            has_more: false,
+            next_cursor: '',
+          },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response('{}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    vi.resetModules();
+    await bootHtmlPage('replay.html');
+    window.history.replaceState({}, '', 'https://vatioboard.com/replay.html?record=missing-session');
+
+    const replayPage = await import('../../src/replay/replay.js');
+    await replayPage.initPromise;
+    await settleAsyncWork();
+
+    expect(
+      document.querySelector('button[data-recording-id="active-session"]')?.getAttribute('aria-pressed')
+    ).toBe('true');
+    expect(document.getElementById('replaySessionChip').textContent).toBe('Active session');
+  });
+
+  it('falls back to an available replay after cloud sync deletes the selected recording', async () => {
+    window.fetch = vi.fn(async (input) => {
+      const url = typeof input === 'string' ? input : String(input?.url ?? '');
+
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_records')) {
+        return new Response(JSON.stringify({
+          message: {
+            records: [],
+            has_more: false,
+            next_cursor: '',
+          },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response('{}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    vi.resetModules();
+    await bootHtmlPage('replay.html');
+
+    const replayPage = await import('../../src/replay/replay.js');
+    await replayPage.initPromise;
+    await settleAsyncWork();
+
+    document.querySelector('button[data-recording-id="saved-session"]').click();
+    await replayPage.waitForReplaySelection();
+    localStorage.setItem('vatio_speed_replay_library_v1', JSON.stringify([]));
+
+    window.dispatchEvent(new CustomEvent('vatioboard:cloud-sync-applied', {
+      detail: {
+        entityType: 'replay_session',
+        recordId: 'saved-session',
+        deleted: true,
+      },
+    }));
+    await settleAsyncWork();
+
+    expect(
+      document.querySelector('button[data-recording-id="active-session"]')?.getAttribute('aria-pressed')
+    ).toBe('true');
+    expect(document.getElementById('replaySessionChip').textContent).toBe('Active session');
+  });
+
+  it('selects a newly synced replay when the page is currently empty', async () => {
+    localStorage.clear();
+    window.fetch = vi.fn(async (input) => {
+      const url = typeof input === 'string' ? input : String(input?.url ?? '');
+
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_records')) {
+        return new Response(JSON.stringify({
+          message: {
+            records: [],
+            has_more: false,
+            next_cursor: '',
+          },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response('{}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    vi.resetModules();
+    await bootHtmlPage('replay.html');
+
+    const replayPage = await import('../../src/replay/replay.js');
+    await replayPage.initPromise;
+    await settleAsyncWork();
+
+    expect(document.getElementById('replayShell').hidden).toBe(true);
+
+    localStorage.setItem('vatio_speed_replay_library_v1', JSON.stringify([
+      {
+        id: 'synced-session',
+        version: 1,
+        source: 'speed',
+        unit: 'kmh',
+        distanceUnit: 'm',
+        startedAtMs: 8000,
+        updatedAtMs: 12000,
+        endedAtMs: 12000,
+        maxSpeedMs: 18,
+        totalDistanceM: 940,
+        minAltitudeM: 12,
+        maxAltitudeM: 24,
+        startPlace: { label: 'Hoboken' },
+        endPlace: { label: 'Jersey City' },
+        samples: [
+          {
+            timestampMs: 8000,
+            latitude: 40.739,
+            longitude: -74.03,
+            speedMs: 0,
+            altitudeM: 12,
+            accuracyM: 5,
+            headingDeg: 160,
+            totalDistanceM: 700,
+          },
+          {
+            timestampMs: 12000,
+            latitude: 40.733,
+            longitude: -74.029,
+            speedMs: 18,
+            altitudeM: 24,
+            accuracyM: 4,
+            headingDeg: 172,
+            totalDistanceM: 940,
+          },
+        ],
+      },
+    ]));
+
+    window.dispatchEvent(new CustomEvent('vatioboard:cloud-sync-applied', {
+      detail: {
+        entityType: 'replay_session',
+        recordId: 'synced-session',
+      },
+    }));
+    await settleAsyncWork();
+
+    const syncedButton = await waitForRecordingButton('synced-session');
+    expect(syncedButton?.getAttribute('aria-pressed')).toBe('true');
+    expect(document.getElementById('replayShell').hidden).toBe(false);
+  });
+
+  it('keeps a newly synced replay selected while recovering from a missing deep link', async () => {
+    const remoteSession = {
+      id: 'remote-session-sync',
+      version: 1,
+      source: 'speed',
+      unit: 'kmh',
+      distanceUnit: 'm',
+      startedAtMs: 9000,
+      updatedAtMs: 13000,
+      endedAtMs: 13000,
+      maxSpeedMs: 20,
+      totalDistanceM: 980,
+      minAltitudeM: 9,
+      maxAltitudeM: 21,
+      startPlace: { label: 'Union City' },
+      endPlace: { label: 'Jersey City' },
+      samples: [
+        {
+          timestampMs: 9000,
+          latitude: 40.77,
+          longitude: -74.03,
+          speedMs: 0,
+          altitudeM: 9,
+          accuracyM: 5,
+          headingDeg: 150,
+          totalDistanceM: 800,
+        },
+        {
+          timestampMs: 13000,
+          latitude: 40.771,
+          longitude: -74.028,
+          speedMs: 20,
+          altitudeM: 21,
+          accuracyM: 4,
+          headingDeg: 162,
+          totalDistanceM: 980,
+        },
+      ],
+    };
+
+    window.fetch = vi.fn(async (input) => {
+      const url = typeof input === 'string' ? input : String(input?.url ?? '');
+
+      if (url.includes('vatiolibre.services.tesla_connection_status')) {
+        return new Response(JSON.stringify({
+          message: {
+            is_guest: false,
+          },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (url.includes('vatiolibre.vatiolibre.feature_access.get_my_feature_access')) {
+        return new Response(JSON.stringify({
+          message: {
+            csrf_token: 'csrf-token',
+            has_active_subscription: true,
+            features: {
+              cloud_sync: {
+                enabled: true,
+                reason: '',
+              },
+            },
+          },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_changes')) {
+        return new Response(JSON.stringify({
+          message: {
+            records: [
+              {
+                name: 'sync-remote-session-sync',
+                entity_type: 'replay_session',
+                client_record_id: 'remote-session-sync',
+                device_id: 'device-remote',
+                record_title: 'remote-session-sync',
+                content_hash: 'hash-remote-session-sync',
+                client_updated_at_ms: String(remoteSession.updatedAtMs),
+                deleted_at_ms: '',
+                server_version: 1,
+                payload_size: 256,
+                modified: '2026-04-05 04:30:00.000000',
+              },
+            ],
+            has_more: false,
+            next_cursor: '',
+          },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload')) {
+        return new Response(JSON.stringify({
+          message: {
+            payload: remoteSession,
+          },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response('{}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    vi.resetModules();
+    await bootHtmlPage('replay.html');
+    window.history.replaceState({}, '', 'https://vatioboard.com/replay.html?record=missing-session');
+
+    const replayPage = await import('../../src/replay/replay.js');
+    await replayPage.initPromise;
+    await settleAsyncWork();
+
+    const remoteButton = await waitForRecordingButton('remote-session-sync');
+    expect(remoteButton?.getAttribute('aria-pressed')).toBe('true');
+    expect(
+      document.querySelector('button[data-recording-id="active-session"]')?.getAttribute('aria-pressed')
+    ).toBe('false');
+  });
+
+  it('restores a requested remote replay instead of falling back to a different local session', async () => {
+    const remoteSession = {
+      id: 'remote-session',
+      version: 1,
+      source: 'speed',
+      unit: 'kmh',
+      distanceUnit: 'm',
+      startedAtMs: 8000,
+      updatedAtMs: 12000,
+      endedAtMs: 12000,
+      maxSpeedMs: 18,
+      totalDistanceM: 940,
+      minAltitudeM: 12,
+      maxAltitudeM: 24,
+      sampleCount: 2,
+      startPlace: { label: 'Hoboken' },
+      endPlace: { label: 'Jersey City' },
+      recordingState: 'stopped',
+      samples: [
+        {
+          timestampMs: 8000,
+          latitude: 40.739,
+          longitude: -74.03,
+          speedMs: 0,
+          altitudeM: 12,
+          accuracyM: 5,
+          headingDeg: 160,
+          totalDistanceM: 700,
+        },
+        {
+          timestampMs: 12000,
+          latitude: 40.733,
+          longitude: -74.029,
+          speedMs: 18,
+          altitudeM: 24,
+          accuracyM: 4,
+          headingDeg: 172,
+          totalDistanceM: 940,
+        },
+      ],
+    };
+    localStorage.setItem('vatioboard.cloud_sync.state', JSON.stringify({
+      cursor: '',
+      bootstrapVersion: 2,
+      records: {
+        'replay_session:remote-session': {
+          name: 'sync-remote-session',
+          entity_type: 'replay_session',
+          client_record_id: 'remote-session',
+          device_id: 'device-remote',
+          record_title: 'remote-session',
+          content_hash: 'hash-remote-session',
+          client_updated_at_ms: String(remoteSession.updatedAtMs),
+          deleted_at_ms: '',
+          server_version: 1,
+          payload_size: 256,
+          modified: '2026-04-05 04:10:00.000000',
+        },
+      },
+    }));
+    window.fetch = vi.fn(async (input) => {
+      const url = typeof input === 'string' ? input : String(input?.url ?? '');
+
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload')) {
+        return new Response(JSON.stringify({
+          message: {
+            payload: remoteSession,
+          },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_records')) {
+        return new Response(JSON.stringify({
+          message: {
+            records: [],
+            has_more: false,
+            next_cursor: '',
+          },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response('{}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    vi.resetModules();
+    await bootHtmlPage('replay.html');
+    window.history.replaceState({}, '', 'https://vatioboard.com/replay.html?record=remote-session');
+
+    const replayPage = await import('../../src/replay/replay.js');
+    await replayPage.initPromise;
+    await settleAsyncWork();
+
+    expect(window.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload'),
+      expect.any(Object)
+    );
+    const remoteButton = await waitForRecordingButton('remote-session');
+    expect(
+      remoteButton?.getAttribute('aria-pressed')
+    ).toBe('true');
+    expect(
+      document.querySelector('button[data-recording-id="active-session"]')?.getAttribute('aria-pressed')
+    ).toBe('false');
   });
 });

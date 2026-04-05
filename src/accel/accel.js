@@ -19,6 +19,7 @@ import {
   CLOUD_SYNC_ENTITY_TYPES,
   queueCloudSyncChange,
   queueCloudSyncDeletion,
+  restoreCloudSyncRecord,
   startCloudSyncLoop,
   syncCloudRecords,
 } from '../shared/cloud-sync.js';
@@ -109,6 +110,7 @@ import { createAccelReplayChartsController } from './replay-charts.js';
 import { createAccelResultGraph } from './result-graph.js';
 import {
   createDefaultSettings,
+  isAccelPayloadComplete,
   loadRuns,
   loadSettings,
   saveRuns as persistRuns,
@@ -469,6 +471,122 @@ export const initPromise = (function () {
   });
   var replayMapIntroPromise = null;
   var replayMapIntroToken = 0;
+  var selectedTelemetryRestoreFailureCooldownMs = 5000;
+  var remoteAccelRestorePromises = new Map();
+  var remoteAccelRestoreFailures = new Map();
+  var storedRunsRefreshVersion = 0;
+
+  function hasRecentAccelRestoreFailure(runId) {
+    var failedAtMs = remoteAccelRestoreFailures.get(runId);
+    return Boolean(
+      Number.isFinite(failedAtMs)
+      && Date.now() - failedAtMs < selectedTelemetryRestoreFailureCooldownMs
+    );
+  }
+
+  function applyStoredRuns(runs, preferredResultId, { preserveMissingPreferred = false } = {}) {
+    state.runs = Array.isArray(runs) ? runs : [];
+    state.latestResult = state.runs.length ? state.runs[0] : null;
+
+    var requestedResultId =
+      typeof preferredResultId === 'string' && preferredResultId.trim()
+        ? preferredResultId.trim()
+        : state.selectedResultId || '';
+    var selectedRun = requestedResultId ? state.runs.find((entry) => entry.id === requestedResultId) : null;
+    if (selectedRun) {
+      state.selectedResultId = selectedRun.id;
+      return;
+    }
+
+    if (preserveMissingPreferred && requestedResultId) {
+      state.selectedResultId = requestedResultId;
+      return;
+    }
+
+    state.selectedResultId = state.latestResult ? state.latestResult.id : '';
+  }
+
+  async function maybeRestoreAccelTelemetry(runId, run) {
+    var normalizedRunId = typeof runId === 'string' ? runId.trim() : '';
+    if (!normalizedRunId) return false;
+    if (run && isAccelPayloadComplete(run)) return false;
+    if (hasRecentAccelRestoreFailure(normalizedRunId)) return false;
+    if (remoteAccelRestorePromises.has(normalizedRunId)) {
+      return remoteAccelRestorePromises.get(normalizedRunId);
+    }
+
+    var restorePromise = (async function () {
+      try {
+        var result = await restoreCloudSyncRecord({
+          entityType: CLOUD_SYNC_ENTITY_TYPES.accelRun,
+          recordId: normalizedRunId,
+        });
+        var restored = result?.ok === true && isAccelPayloadComplete(result?.payload);
+        if (restored) {
+          remoteAccelRestoreFailures.delete(normalizedRunId);
+          return true;
+        }
+
+        remoteAccelRestoreFailures.set(normalizedRunId, Date.now());
+        return false;
+      } catch {
+        remoteAccelRestoreFailures.set(normalizedRunId, Date.now());
+        return false;
+      }
+    })().finally(function () {
+      remoteAccelRestorePromises.delete(normalizedRunId);
+    });
+
+    remoteAccelRestorePromises.set(normalizedRunId, restorePromise);
+    return restorePromise;
+  }
+
+  async function ensureSelectedResultTelemetry(runId, { selectionSnapshotId = null } = {}) {
+    var normalizedRunId =
+      typeof runId === 'string' && runId.trim() ? runId.trim() : state.selectedResultId || state.latestResult?.id || '';
+    var selectedRun = normalizedRunId ? findRunById(normalizedRunId) : state.latestResult;
+
+    if (!(await maybeRestoreAccelTelemetry(normalizedRunId, selectedRun))) {
+      return false;
+    }
+
+    if (
+      typeof selectionSnapshotId === 'string'
+      && selectionSnapshotId
+      && state.selectedResultId !== selectionSnapshotId
+    ) {
+      return false;
+    }
+
+    applyStoredRuns(await loadRuns(), normalizedRunId, {
+      preserveMissingPreferred: true,
+    });
+    return true;
+  }
+
+  function hasSelectedResultSelection(runId = state.selectedResultId) {
+    return Boolean(
+      typeof runId === 'string'
+      && runId
+      && findRunById(runId)
+    );
+  }
+
+  function hasMissingSelectedResult(runId = state.selectedResultId) {
+    return Boolean(
+      typeof runId === 'string'
+      && runId
+      && !hasSelectedResultSelection(runId)
+    );
+  }
+
+  function maybeFallbackMissingSelectedResult(runId = state.selectedResultId) {
+    if (!hasMissingSelectedResult(runId)) return;
+    refreshStoredRuns({
+      preferredResultId: '',
+      preserveMissingPreferred: false,
+    });
+  }
 
   async function init() {
     if (!(await singleTabOwnershipPromise)) {
@@ -479,9 +597,9 @@ export const initPromise = (function () {
     var loadedState = await Promise.all([loadSettings(), loadRuns()]);
 
     state.settings = loadedState[0];
-    state.runs = loadedState[1];
-    state.latestResult = state.runs.length ? state.runs[0] : null;
-    state.selectedResultId = initialRunId || (state.latestResult ? state.latestResult.id : '');
+    applyStoredRuns(loadedState[1], initialRunId, {
+      preserveMissingPreferred: Boolean(initialRunId),
+    });
 
     if (hasStoredValue(STORAGE_KEYS.settings) && !hasConfiguredUnitPreferences()) {
       markUnitBootstrapManualSelection({
@@ -498,10 +616,21 @@ export const initPromise = (function () {
     bindEvents();
     setupResultGraphObservers();
     renderAll();
-    startCloudSyncLoop({ immediate: false });
-    void syncCloudRecords().catch(function () {
-      // Keep the page usable with local data if sync is temporarily unavailable.
+    void ensureSelectedResultTelemetry(initialRunId || state.selectedResultId, {
+      selectionSnapshotId: state.selectedResultId || '',
+    }).then(function (restored) {
+      if (restored) renderAll();
     });
+    startCloudSyncLoop({ immediate: false });
+    var syncStoredRunsRefreshVersion = storedRunsRefreshVersion;
+    void syncCloudRecords()
+      .catch(function () {
+        // Keep the page usable with local data if sync is temporarily unavailable.
+      })
+      .finally(function () {
+        if (storedRunsRefreshVersion !== syncStoredRunsRefreshVersion) return;
+        maybeFallbackMissingSelectedResult();
+      });
     startUiTimer();
     updatePermissionState();
     ensureWatch();
@@ -646,7 +775,33 @@ export const initPromise = (function () {
     window.addEventListener(SINGLE_TAB_OWNERSHIP_EVENT, handleSingleTabOwnershipChange);
     window.addEventListener(CLOUD_SYNC_APPLIED_EVENT, function (event) {
       if (event?.detail?.entityType !== CLOUD_SYNC_ENTITY_TYPES.accelRun) return;
-      refreshStoredRuns();
+      if (event?.detail?.deleted === true && event?.detail?.recordId === state.selectedResultId) {
+        remoteAccelRestoreFailures.delete(event.detail.recordId);
+        refreshStoredRuns({
+          preferredResultId: '',
+          preserveMissingPreferred: false,
+        });
+        return;
+      }
+      if (event?.detail?.recordId && event.detail.recordId === state.selectedResultId) {
+        remoteAccelRestoreFailures.delete(event.detail.recordId);
+        refreshStoredRuns({
+          preferredResultId: event.detail.recordId,
+          preserveMissingPreferred: true,
+        });
+        return;
+      }
+      if (hasSelectedResultSelection()) {
+        refreshStoredRuns({
+          preferredResultId: state.selectedResultId,
+          preserveMissingPreferred: false,
+        });
+        return;
+      }
+      refreshStoredRuns({
+        preferredResultId: event?.detail?.recordId || '',
+        preserveMissingPreferred: event?.detail?.deleted !== true,
+      });
     });
   }
 
@@ -897,17 +1052,32 @@ export const initPromise = (function () {
     });
   }
 
-  function refreshStoredRuns() {
-    void loadRuns().then(function (runs) {
-      state.runs = runs;
-      state.latestResult = runs.length ? runs[0] : null;
-
-      if (!state.selectedResultId || !findRunById(state.selectedResultId)) {
-        state.selectedResultId = state.latestResult ? state.latestResult.id : '';
-      }
-
+  function refreshStoredRuns({
+    preferredResultId = state.selectedResultId || '',
+    preserveMissingPreferred = false,
+  } = {}) {
+    storedRunsRefreshVersion += 1;
+    void (async function () {
+      var runs = await loadRuns();
+      var normalizedPreferredResultId =
+        typeof preferredResultId === 'string' && preferredResultId.trim() ? preferredResultId.trim() : '';
+      var currentSelectedResultId =
+        typeof state.selectedResultId === 'string' && state.selectedResultId.trim() ? state.selectedResultId.trim() : '';
+      var currentSelectionExists = Boolean(
+        currentSelectedResultId && runs.some(function (entry) {
+          return entry.id === currentSelectedResultId;
+        })
+      );
+      var livePreferredResultId = normalizedPreferredResultId || (currentSelectionExists ? currentSelectedResultId : '');
+      applyStoredRuns(runs, livePreferredResultId, {
+        preserveMissingPreferred: preserveMissingPreferred && Boolean(livePreferredResultId),
+      });
+      var selectedResultId = state.selectedResultId || livePreferredResultId || '';
+      await ensureSelectedResultTelemetry(selectedResultId, {
+        selectionSnapshotId: selectedResultId,
+      });
       renderAll();
-    });
+    })();
   }
 
   function applyAutoConfiguredUnits(countryCode) {
@@ -1488,11 +1658,18 @@ export const initPromise = (function () {
     }
 
     if (action === 'replay') {
-      selectResult(runId);
-      openPanel('results');
-      scrollResultsPanelToTop();
-      void startReplayPlayback({ restart: true });
-      renderAll();
+      void (async function () {
+        selectResult(runId);
+        openPanel('results');
+        scrollResultsPanelToTop();
+        renderAll();
+        if (await ensureSelectedResultTelemetry(runId, { selectionSnapshotId: runId })) {
+          renderAll();
+        }
+        if (state.selectedResultId !== runId) return;
+        await startReplayPlayback({ restart: true });
+        renderAll();
+      })();
       return;
     }
 
@@ -1521,8 +1698,7 @@ export const initPromise = (function () {
 
   function getDisplayedResult() {
     if (state.selectedResultId) {
-      var selectedRun = findRunById(state.selectedResultId);
-      if (selectedRun) return selectedRun;
+      return findRunById(state.selectedResultId);
     }
     return state.latestResult;
   }
@@ -1534,6 +1710,14 @@ export const initPromise = (function () {
       resetReplayState({ preserveAxisMode: true });
     }
     state.selectedResultId = nextResultId;
+
+    if (nextResultId) {
+      void ensureSelectedResultTelemetry(nextResultId, {
+        selectionSnapshotId: nextResultId,
+      }).then(function (restored) {
+        if (restored) renderAll();
+      });
+    }
   }
 
   function handleReplayToggle() {

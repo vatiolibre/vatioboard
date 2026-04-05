@@ -5,7 +5,11 @@ import {
   queuePendingBoardDocumentOpen,
 } from "../board/storage.js";
 import { t } from "../i18n.js";
-import { importReplaySession, isReplayPayloadComplete } from "../replay/session.js";
+import {
+  importReplaySession,
+  isReplayPayloadComplete,
+  queuePendingReplaySessionOpen,
+} from "../replay/session.js";
 import {
   CLOUD_LIBRARY_TAB_KEYS,
   cloudLibraryResources,
@@ -54,14 +58,16 @@ export async function openCloudReplaySession(name) {
     );
   }
 
+  queuePendingReplaySessionOpen(detail.payload);
   const importedSession = await importReplaySession(detail.payload, {
     saveLast: true,
-  });
-  if (!importedSession?.id) {
+  }).catch(() => null);
+  const replayId = importedSession?.id || detail?.payload?.id;
+  if (!replayId) {
     throw new Error("Replay payload could not be imported.");
   }
 
-  return `/replay.html?record=${encodeRecordName(importedSession.id)}`;
+  return `/replay.html?record=${encodeRecordName(replayId)}&cloudRecord=${encodeRecordName(name)}`;
 }
 
 export async function openCloudAccelRun(name) {

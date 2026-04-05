@@ -424,6 +424,76 @@ describe('cloud sync', () => {
     expect(mocks.saveReplayLibrary).toHaveBeenCalledWith([fullReplayPayload]);
   });
 
+  it('can re-download and re-apply an accel payload by record id when a page needs telemetry recovery', async () => {
+    const fullAccelPayload = {
+      id: 'run-remote-restore',
+      savedAtMs: 4200,
+      elapsedMs: 4200,
+      presetId: '0-60',
+      presetSignature: '0-60',
+      comparisonSignature: '0-60',
+      presetKind: 'speed',
+      displayUnit: 'mph',
+      distanceDisplay: 'ft',
+      finishSpeedMs: 26.8,
+      qualityGrade: 'good',
+      qualityScore: 92,
+      speedTrace: [
+        { elapsedMs: 0, speedMs: 0, distanceM: 0 },
+        { elapsedMs: 4200, speedMs: 26.8, distanceM: 120 },
+      ],
+      sampleLog: [
+        { elapsedFromStartMs: 1200, speedMs: 12, distanceFromStartM: 18, latitude: 1, longitude: 1 },
+        { elapsedFromStartMs: 4200, speedMs: 26.8, distanceFromStartM: 120, latitude: 1.2, longitude: 1.2 },
+      ],
+      partials: [],
+    };
+    const remoteAccelRecord = createServerRecord({
+      entity_type: 'accel_run',
+      client_record_id: 'run-remote-restore',
+      device_id: 'device-b',
+      updated_at_ms: 4200,
+      payload: {
+        id: 'run-remote-restore',
+        elapsedMs: 4200,
+      },
+    });
+    localStorage.setItem('vatioboard.cloud_sync.state', JSON.stringify({
+      cursor: '',
+      bootstrapVersion: 2,
+      records: {
+        'accel_run:run-remote-restore': remoteAccelRecord,
+      },
+    }));
+
+    const mocks = mockCloudSyncDependencies();
+    mocks.downloadSyncPayloadFromBackend.mockResolvedValue({
+      ok: true,
+      status: 200,
+      payload: fullAccelPayload,
+    });
+
+    const { restoreCloudSyncRecord } = await importCloudSyncModule();
+    const restoreResult = await restoreCloudSyncRecord({
+      entityType: 'accel_run',
+      recordId: 'run-remote-restore',
+    });
+
+    expect(restoreResult).toMatchObject({
+      ok: true,
+      meta: expect.objectContaining({
+        name: remoteAccelRecord.name,
+        clientRecordId: 'run-remote-restore',
+      }),
+      payload: fullAccelPayload,
+    });
+    expect(mocks.downloadSyncPayloadFromBackend).toHaveBeenCalledWith({
+      name: remoteAccelRecord.name,
+      signal: undefined,
+    });
+    expect(mocks.saveRuns).toHaveBeenCalledWith([fullAccelPayload]);
+  });
+
   it('does not let a summary-only remote replay payload replace richer local telemetry', async () => {
     const localReplay = {
       id: 'replay-1',

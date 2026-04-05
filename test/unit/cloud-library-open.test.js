@@ -11,6 +11,7 @@ const mockState = vi.hoisted(() => ({
   importRun: vi.fn(),
   loadBoardDrawing: vi.fn(),
   queuePendingBoardDocumentOpen: vi.fn(),
+  queuePendingReplaySessionOpen: vi.fn(),
 }));
 
 vi.mock("../../src/shared/cloud-library-resources.js", () => ({
@@ -42,6 +43,7 @@ vi.mock("../../src/shared/cloud-library-resources.js", () => ({
 vi.mock("../../src/replay/session.js", () => ({
   importReplaySession: mockState.importReplaySession,
   isReplayPayloadComplete: mockState.isReplayPayloadComplete,
+  queuePendingReplaySessionOpen: mockState.queuePendingReplaySessionOpen,
 }));
 
 vi.mock("../../src/accel/storage.js", () => ({
@@ -81,12 +83,19 @@ describe("cloud library open helpers", () => {
 
     const { openCloudReplaySession } = await import("../../src/shared/cloud-library-open.js");
     await expect(openCloudReplaySession("SYNC-REPLAY-1")).resolves.toBe(
-      "/replay.html?record=local-replay-1"
+      "/replay.html?record=local-replay-1&cloudRecord=SYNC-REPLAY-1"
     );
 
     expect(mockState.speedDetail).toHaveBeenCalledWith("SYNC-REPLAY-1", {
       force: true,
       mode: "full",
+    });
+    expect(mockState.queuePendingReplaySessionOpen).toHaveBeenCalledWith({
+      id: "remote-replay-1",
+      samples: [
+        { timestampMs: 1000, latitude: 40.7, longitude: -74.0 },
+        { timestampMs: 2000, latitude: 40.8, longitude: -73.9 },
+      ],
     });
     expect(mockState.importReplaySession).toHaveBeenCalledWith(
       {

@@ -5,6 +5,7 @@ import { loadJson, removeStoredValue, saveJson } from '../shared/storage.js';
 export const REPLAY_ACTIVE_KEY = 'vatio_speed_replay_active_v1';
 export const REPLAY_LIBRARY_KEY = 'vatio_speed_replay_library_v1';
 export const REPLAY_LAST_KEY = 'vatio_speed_replay_last_v1';
+export const REPLAY_PENDING_OPEN_KEY = 'vatio_speed_replay_pending_open_v1';
 export const REPLAY_SCHEMA_VERSION = 1;
 export const MAX_REPLAY_SAMPLES = 1200;
 export const MAX_STORED_REPLAYS = 12;
@@ -862,6 +863,17 @@ export async function saveLastReplaySession(session) {
   const persistedSession = await persistReplaySessionData(normalizedSession);
   await saveReplayValue(REPLAY_LAST_KEY, maybeStripReplaySessionSamples(persistedSession));
   return persistedSession;
+}
+
+export function queuePendingReplaySessionOpen(session) {
+  const normalizedSession = normalizeReplaySession(session);
+  saveJson(REPLAY_PENDING_OPEN_KEY, normalizedSession ?? null);
+}
+
+export function consumePendingReplaySessionOpen() {
+  const pendingSession = normalizeReplaySession(loadJson(REPLAY_PENDING_OPEN_KEY, null));
+  removeStoredValue(REPLAY_PENDING_OPEN_KEY);
+  return pendingSession;
 }
 
 export async function loadReplayLibrary() {
