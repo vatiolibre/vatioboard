@@ -6,6 +6,12 @@ import { createAnalogSpeedometer } from '../shared/analog-speedometer.js';
 import { initBackendAuthControllers } from '../shared/backend-auth.js';
 import { initCloudSyncStatusIndicator } from '../shared/cloud-sync-status-indicator.js';
 import { createPlaceResolver } from '../shared/place-resolver.js';
+import {
+  enrichRouteBoundaryPlaces,
+  getRouteBoundarySamples,
+  isValidGeoSample,
+  reverseGeocodeBoundarySample,
+} from '../shared/route-boundary.js';
 import { applyButtonIcon, initToolsMenu } from '../shared/tools-menu.js';
 import {
   hasConfiguredUnitPreferences,
@@ -375,6 +381,7 @@ let replayPersistInFlight = false;
 let replayPersistRequested = false;
 let replayPersistScheduled = false;
 let replayStartPlacePendingSessionId = '';
+let replayEndPlacePendingSessionId = '';
 
 function clearReplayPersistTimer() {
   if (replayPersistTimerId !== null) {
@@ -577,20 +584,37 @@ function maybeApplyAutoConfiguredUnits(countryCode) {
   );
 }
 
-async function reversePlaceForSample(sample, options = {}) {
-  if (!Number.isFinite(sample?.latitude) || !Number.isFinite(sample?.longitude)) {
-    return {
-      place: null,
-      data: null,
-      meta: null,
-    };
+
+function getReplayBoundaryInputSamples(session) {
+  if (!session) return [];
+  const samples = Array.isArray(session.samples) ? session.samples : [];
+  if (samples.length > 0) return samples;
+
+  var first = session.firstSample;
+  var last = session.lastSample;
+  if (!first && !last) return [];
+
+  if (!first || !isValidGeoSample(first)) return last && isValidGeoSample(last) ? [last] : [];
+  if (!last || !isValidGeoSample(last)) return [first];
+
+  // Avoid duplicates when both samples are effectively the same point
+  if (
+    first.latitude === last.latitude &&
+    first.longitude === last.longitude &&
+    first.timestampMs === last.timestampMs
+  ) {
+    return [first];
   }
 
-  return placeResolver.reversePlace({
-    latitude: sample.latitude,
-    longitude: sample.longitude,
-    zoom: Number.isFinite(options.zoom) ? options.zoom : 18,
-  });
+  // Chronological order
+  if (
+    Number.isFinite(first.timestampMs) &&
+    Number.isFinite(last.timestampMs) &&
+    first.timestampMs > last.timestampMs
+  ) {
+    return [last, first];
+  }
+  return [first, last];
 }
 
 async function maybeResolveReplayStartPlace(sample) {
@@ -602,16 +626,20 @@ async function maybeResolveReplayStartPlace(sample) {
   replayStartPlacePendingSessionId = sessionId;
 
   try {
-    const response = await reversePlaceForSample(sample);
-    if (response.place?.countryCode) {
-      maybeApplyAutoConfiguredUnits(response.place.countryCode);
+    const result = await reverseGeocodeBoundarySample(sample, placeResolver);
+    if (result?.countryCode) {
+      maybeApplyAutoConfiguredUnits(result.countryCode);
     }
-    if (!response.place) return;
+    if (!result?.place) return;
     if (state.replaySession.id !== sessionId) return;
 
     state.replaySession = {
       ...state.replaySession,
-      startPlace: response.place,
+      startPlace: {
+        label: result.boundaryDisplay.label,
+        detail: result.boundaryDisplay.detail,
+        raw: result.place,
+      },
     };
     scheduleReplaySessionPersist({ immediate: true });
   } catch {
@@ -623,74 +651,58 @@ async function maybeResolveReplayStartPlace(sample) {
   }
 }
 
+async function maybeResolveReplayEndPlace(sample) {
+  if (!sample) return;
+  if (state.replaySession.endPlace) return;
+  if (replayEndPlacePendingSessionId === state.replaySession.id) return;
+
+  const sessionId = state.replaySession.id;
+  replayEndPlacePendingSessionId = sessionId;
+
+  try {
+    const result = await reverseGeocodeBoundarySample(sample, placeResolver);
+    if (result?.countryCode) {
+      maybeApplyAutoConfiguredUnits(result.countryCode);
+    }
+    if (!result?.place) return;
+    if (state.replaySession.id !== sessionId) return;
+
+    state.replaySession = {
+      ...state.replaySession,
+      endPlace: {
+        label: result.boundaryDisplay.label,
+        detail: result.boundaryDisplay.detail,
+        raw: result.place,
+      },
+    };
+    scheduleReplaySessionPersist({ immediate: true });
+  } catch {
+    // Ignore Nominatim/network failures and keep recording.
+  } finally {
+    if (replayEndPlacePendingSessionId === sessionId) {
+      replayEndPlacePendingSessionId = '';
+    }
+  }
+}
+
 async function enrichReplaySessionPlaces(session) {
   if (!session) return session;
 
-  let nextSession = session;
-  const startSample =
-    session.firstSample ??
-    (Array.isArray(session.samples) && session.samples.length
-      ? session.samples[0]
-      : session.lastSample);
-  const endSample =
-    session.lastSample ??
-    (Array.isArray(session.samples) && session.samples.length
-      ? session.samples[session.samples.length - 1]
-      : null);
+  const boundarySamples = getReplayBoundaryInputSamples(session);
+  const enrichment = await enrichRouteBoundaryPlaces(boundarySamples, placeResolver, {
+    mode: 'speed',
+    onCountryCode: (code) => maybeApplyAutoConfiguredUnits(code),
+  });
 
-  if (!nextSession.startPlace && startSample) {
-    try {
-      const response = await reversePlaceForSample(startSample);
-      if (response.place?.countryCode) {
-        maybeApplyAutoConfiguredUnits(response.place.countryCode);
-      }
-      if (response.place) {
-        nextSession = {
-          ...nextSession,
-          startPlace: response.place,
-        };
-      }
-    } catch {
-      // Ignore Nominatim/network failures and keep archiving.
-    }
-  }
+  if (!enrichment) return session;
 
-  if (!nextSession.endPlace && endSample) {
-    const canReuseStartPlace = Boolean(
-      nextSession.startPlace &&
-      startSample &&
-      Number.isFinite(startSample.latitude) &&
-      Number.isFinite(startSample.longitude) &&
-      Number.isFinite(endSample.latitude) &&
-      Number.isFinite(endSample.longitude) &&
-      startSample.latitude === endSample.latitude &&
-      startSample.longitude === endSample.longitude
-    );
-
-    if (canReuseStartPlace) {
-      nextSession = {
-        ...nextSession,
-        endPlace: nextSession.startPlace,
-      };
-    } else {
-      try {
-        const response = await reversePlaceForSample(endSample);
-        if (response.place?.countryCode) {
-          maybeApplyAutoConfiguredUnits(response.place.countryCode);
-        }
-        if (response.place) {
-          nextSession = {
-            ...nextSession,
-            endPlace: response.place,
-          };
-        }
-      } catch {
-        // Ignore Nominatim/network failures and keep archiving.
-      }
-    }
-  }
-
-  return nextSession;
+  return {
+    ...session,
+    startBoundaryPoint: enrichment.startBoundaryPoint,
+    endBoundaryPoint: enrichment.endBoundaryPoint,
+    startPlace: enrichment.startPlace ?? session.startPlace,
+    endPlace: enrichment.endPlace ?? session.endPlace,
+  };
 }
 
 function archiveReplaySessionWithPlaces(session, options = {}) {
@@ -736,6 +748,15 @@ async function hydrateReplaySession() {
     distanceUnit: state.distanceUnit,
     recordingState: restoredReplaySession.recordingState,
   };
+
+  // Attempt to resolve missing end place after hydration
+  if (
+    state.replaySession.startPlace &&
+    !state.replaySession.endPlace &&
+    state.replaySession.lastSample
+  ) {
+    void maybeResolveReplayEndPlace(state.replaySession.lastSample);
+  }
 }
 
 function bindMenuNavigation(element, href) {
@@ -895,6 +916,7 @@ function resetReplaySession({
 
   state.recordingState = recordingState;
   replayStartPlacePendingSessionId = '';
+  replayEndPlacePendingSessionId = '';
   state.replaySession = createReplaySession({
     unit: state.unit,
     distanceUnit: state.distanceUnit,

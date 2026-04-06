@@ -479,18 +479,22 @@ describe('accel.html smoke', () => {
     );
     expect(runs[0]).toMatchObject({
       startPlace: {
-        houseNumber: '6312',
-        road: 'Hilltop Court',
+        raw: expect.objectContaining({
+          houseNumber: '6312',
+          road: 'Hilltop Court',
+        }),
       },
       endPlace: {
-        houseNumber: '119',
-        road: '58th Street',
+        raw: expect.objectContaining({
+          houseNumber: '119',
+          road: '58th Street',
+        }),
       },
     });
     expect(runs[0].startPlace).not.toEqual(runs[0].endPlace);
   });
 
-  it('uses the last distinct geo sample when the finish sample repeats the start coordinates', async () => {
+  it('reuses start place for end when boundary coordinates match', async () => {
     const accelPage = await import('../../src/accel/accel.js');
     await accelPage.initPromise;
     await flushTasks();
@@ -563,19 +567,13 @@ describe('accel.html smoke', () => {
     });
     await settleAsyncWork();
 
-    expect(reversePlaceSpy).toHaveBeenNthCalledWith(
-      1,
+    // With boundary selection the start coordinate is the first moving sample
+    // and the end coordinate is the last moving sample. When they match,
+    // only one geocoding call is needed.
+    expect(reversePlaceSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         latitude: 40.8502,
         longitude: -73.9701,
-        zoom: 18,
-      })
-    );
-    expect(reversePlaceSpy).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        latitude: 40.818,
-        longitude: -73.96,
         zoom: 18,
       })
     );

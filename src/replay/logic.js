@@ -1,4 +1,3 @@
-import { normalizePlace } from '../shared/place-resolver.js';
 import { formatRouteString } from '../shared/route-string.js';
 import { DISTANCE_UNIT_CONFIG, UNIT_CONFIG } from '../speed/constants.js';
 import { isFiniteNumber } from './session.js';
@@ -64,9 +63,12 @@ export function getReplaySummary(session) {
     endedAtMs: session.endedAtMs ?? lastSample?.timestampMs ?? null,
     minAltitudeM: isFiniteNumber(session.minAltitudeM) ? session.minAltitudeM : null,
     maxAltitudeM: isFiniteNumber(session.maxAltitudeM) ? session.maxAltitudeM : null,
-    startPlace: normalizePlace(session.startPlace),
-    endPlace: normalizePlace(session.endPlace),
-    routeLabel: formatRouteString(session.startPlace, session.endPlace),
+    startPlace: session.startPlace ?? null,
+    endPlace: session.endPlace ?? null,
+    routeLabel: formatRouteString(
+      session.startPlace?.raw || session.startPlace,
+      session.endPlace?.raw || session.endPlace
+    ),
   };
 }
 

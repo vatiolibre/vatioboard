@@ -1,5 +1,6 @@
 import { createIndexedJsonKeyValueStore } from '../shared/indexed-storage.js';
 import { normalizePlace } from '../shared/place-resolver.js';
+import { buildRouteBoundaryPlaceDisplay } from '../shared/route-boundary.js';
 import { createStorageCapability } from '../shared/storage-capability.js';
 import { loadJson, loadText, removeStoredValue, saveJson } from '../shared/storage.js';
 import { loadConfiguredDistanceUnit, loadConfiguredSpeedUnit } from '../shared/unit-bootstrap.js';
@@ -32,6 +33,20 @@ import {
 
 const ACCEL_DB_NAME = 'vatio-accel-storage';
 const ACCEL_DB_VERSION = 1;
+
+function normalizeBoundaryPlace(place) {
+  if (!place || typeof place !== 'object') return null;
+  if (typeof place.label === 'string' && place.raw && typeof place.raw === 'object') {
+    return {
+      label: place.label.trim(),
+      detail: typeof place.detail === 'string' ? place.detail.trim() : '',
+      raw: normalizePlace(place.raw),
+    };
+  }
+  const legacy = normalizePlace(place);
+  if (!legacy) return null;
+  return buildRouteBoundaryPlaceDisplay(legacy);
+}
 const ACCEL_DB_STORE = 'accelRecords';
 const ACCEL_STORAGE_KEYS = [STORAGE_KEYS.settings, STORAGE_KEYS.runs];
 
@@ -265,8 +280,8 @@ export function normalizeStoredRun(run) {
     speedSource: typeof run.speedSource === 'string' ? run.speedSource : 'reported',
     startSpeedSource: typeof run.startSpeedSource === 'string' ? run.startSpeedSource : null,
     notes: typeof run.notes === 'string' ? run.notes : '',
-    startPlace: normalizePlace(run.startPlace),
-    endPlace: normalizePlace(run.endPlace),
+    startPlace: normalizeBoundaryPlace(run.startPlace),
+    endPlace: normalizeBoundaryPlace(run.endPlace),
   };
 
   normalizedRun.speedTrace = sampleLog.length

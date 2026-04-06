@@ -48,13 +48,17 @@ describe('accel storage helpers', () => {
     expect(run).toMatchObject({
       startPlace: {
         label: 'Queens',
-        countryCode: 'us',
-        osmLookupId: 'R11',
+        raw: expect.objectContaining({
+          countryCode: 'us',
+          osmLookupId: 'R11',
+        }),
       },
       endPlace: {
         label: 'Manhattan',
-        countryCode: 'us',
-        osmLookupId: 'R12',
+        raw: expect.objectContaining({
+          countryCode: 'us',
+          osmLookupId: 'R12',
+        }),
       },
     });
   });

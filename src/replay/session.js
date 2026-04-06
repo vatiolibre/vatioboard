@@ -28,6 +28,33 @@ const replayStorageCapability = createStorageCapability({
   store: replayStore,
 });
 
+/**
+ * Normalizes a place value for the boundary-based place model.
+ * Accepts both the new {label, detail, raw} shape and the legacy
+ * normalizePlace() result. Returns {label, detail, raw} or null.
+ */
+function normalizeBoundaryPlace(place) {
+  if (!place || typeof place !== 'object') return null;
+
+  // New shape: {label, detail, raw}
+  if (typeof place.label === 'string' || typeof place.detail === 'string') {
+    return {
+      label: (typeof place.label === 'string' ? place.label.trim() : '') || '',
+      detail: (typeof place.detail === 'string' ? place.detail.trim() : '') || '',
+      raw: place.raw ?? place,
+    };
+  }
+
+  // Legacy normalizePlace shape – convert
+  const legacy = normalizePlace(place);
+  if (!legacy) return null;
+  return {
+    label: legacy.label || '',
+    detail: legacy.detail || '',
+    raw: legacy,
+  };
+}
+
 let replayMigrationPromise = null;
 
 async function hasReplayIndexedStorageAvailable() {
@@ -596,8 +623,10 @@ export function normalizeReplaySession(session) {
     chunkCount,
     persistedSampleCount,
     firstSample,
-    startPlace: normalizePlace(session.startPlace),
-    endPlace: normalizePlace(session.endPlace),
+    startBoundaryPoint: session.startBoundaryPoint ?? null,
+    endBoundaryPoint: session.endBoundaryPoint ?? null,
+    startPlace: normalizeBoundaryPlace(session.startPlace),
+    endPlace: normalizeBoundaryPlace(session.endPlace),
     lastSample,
     samples: normalizedSamples,
   };

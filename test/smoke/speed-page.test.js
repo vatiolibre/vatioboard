@@ -333,7 +333,7 @@ describe('speed.html smoke', () => {
     document.getElementById('stopRecording').click();
     let finalArchivedSession = archiveReplaySessionSpy.mock.calls.find(
       ([session]) =>
-        session?.startPlace?.houseNumber === '6312' && session?.endPlace?.houseNumber === '119'
+        session?.startPlace?.raw?.houseNumber === '6312' && session?.endPlace?.raw?.houseNumber === '119'
     )?.[0];
     for (let index = 0; index < 80; index += 1) {
       if (finalArchivedSession) {
@@ -342,17 +342,21 @@ describe('speed.html smoke', () => {
       await flushTasks();
       finalArchivedSession = archiveReplaySessionSpy.mock.calls.find(
         ([session]) =>
-          session?.startPlace?.houseNumber === '6312' && session?.endPlace?.houseNumber === '119'
+          session?.startPlace?.raw?.houseNumber === '6312' && session?.endPlace?.raw?.houseNumber === '119'
       )?.[0];
     }
     expect(finalArchivedSession).toMatchObject({
       startPlace: {
-        houseNumber: '6312',
-        road: 'Hilltop Court',
+        raw: expect.objectContaining({
+          houseNumber: '6312',
+          road: 'Hilltop Court',
+        }),
       },
       endPlace: {
-        houseNumber: '119',
-        road: '58th Street',
+        raw: expect.objectContaining({
+          houseNumber: '119',
+          road: '58th Street',
+        }),
       },
     });
     expect(finalArchivedSession.startPlace).not.toEqual(finalArchivedSession.endPlace);

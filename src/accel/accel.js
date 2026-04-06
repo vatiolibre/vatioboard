@@ -24,6 +24,11 @@ import {
 } from '../shared/cloud-sync.js';
 import { createPlaceResolver } from '../shared/place-resolver.js';
 import {
+  enrichRouteBoundaryPlaces,
+  getRouteBoundarySamples,
+  reverseGeocodeBoundarySample,
+} from '../shared/route-boundary.js';
+import {
   clearAccelRestoreFailure,
   ensureAccelTelemetry,
   getAccelSelection,
@@ -1106,58 +1111,9 @@ export const initPromise = (function () {
   }
 
   function getRunLocationLabel(run) {
-    return formatRouteString(run && run.startPlace, run && run.endPlace, t('accelUnavailable'));
-  }
-
-  function hasMatchingSampleCoordinates(left, right) {
-    return Boolean(
-      left &&
-        right &&
-        isFiniteNumber(left.latitude) &&
-        isFiniteNumber(left.longitude) &&
-        isFiniteNumber(right.latitude) &&
-        isFiniteNumber(right.longitude) &&
-        left.latitude === right.latitude &&
-        left.longitude === right.longitude
-    );
-  }
-
-  function findClosestElapsedSample(samples, targetElapsedMs) {
-    if (!Array.isArray(samples) || !samples.length || !isFiniteNumber(targetElapsedMs)) return null;
-
-    var bestSample = null;
-    var bestDeltaMs = Infinity;
-    for (var index = 0; index < samples.length; index += 1) {
-      var sample = samples[index];
-      if (!sample || !isFiniteNumber(sample.elapsedFromStartMs)) continue;
-
-      var deltaMs = Math.abs(sample.elapsedFromStartMs - targetElapsedMs);
-      if (
-        bestSample === null ||
-        deltaMs < bestDeltaMs ||
-        (deltaMs === bestDeltaMs && sample.elapsedFromStartMs > bestSample.elapsedFromStartMs)
-      ) {
-        bestSample = sample;
-        bestDeltaMs = deltaMs;
-      }
-    }
-
-    return bestSample;
-  }
-
-  function findDistinctCoordinateSample(samples, referenceSample, fromEnd) {
-    if (!Array.isArray(samples) || !samples.length) return null;
-
-    var startIndex = fromEnd ? samples.length - 1 : 0;
-    var endIndex = fromEnd ? -1 : samples.length;
-    var step = fromEnd ? -1 : 1;
-    for (var index = startIndex; index !== endIndex; index += step) {
-      var sample = samples[index];
-      if (!sample || !isFiniteNumber(sample.latitude) || !isFiniteNumber(sample.longitude)) continue;
-      if (!hasMatchingSampleCoordinates(sample, referenceSample)) return sample;
-    }
-
-    return null;
+    var startPlace = run && run.startPlace ? (run.startPlace.raw || run.startPlace) : null;
+    var endPlace = run && run.endPlace ? (run.endPlace.raw || run.endPlace) : null;
+    return formatRouteString(startPlace, endPlace, t('accelUnavailable'));
   }
 
   function getRunPlaceBoundarySamples(run) {
@@ -1165,48 +1121,25 @@ export const initPromise = (function () {
       return {
         startSample: null,
         endSample: null,
+        startIndex: -1,
+        endIndex: -1,
+        strategy: 'empty',
       };
     }
 
-    var geoSamples = run.sampleLog.filter(function (sample) {
-      return isFiniteNumber(sample.latitude) && isFiniteNumber(sample.longitude);
+    // Use the shared route-boundary module with accel-specific options.
+    // Accel runs are typically short and fast, so use a smaller lookahead
+    // window and lower movement threshold.
+    return getRouteBoundarySamples(run.sampleLog, {
+      mode: 'accel',
+      movementThresholdM: 10,
+      speedThresholdMs: 0.5,
+      lookaheadWindow: 2,
     });
-
-    var startedGeoSamples = geoSamples.filter(function (sample) {
-      return isFiniteNumber(sample.elapsedFromStartMs);
-    });
-    var preferredSamples = startedGeoSamples.length ? startedGeoSamples : geoSamples;
-    var startSample =
-      findClosestElapsedSample(startedGeoSamples, 0) || preferredSamples[0] || geoSamples[0] || null;
-    var endSample =
-      findClosestElapsedSample(startedGeoSamples, run.elapsedMs) ||
-      preferredSamples[preferredSamples.length - 1] ||
-      geoSamples[geoSamples.length - 1] ||
-      null;
-
-    if (hasMatchingSampleCoordinates(startSample, endSample)) {
-      endSample =
-        findDistinctCoordinateSample(preferredSamples, startSample, true) ||
-        findDistinctCoordinateSample(geoSamples, startSample, true) ||
-        endSample;
-    }
-
-    return {
-      startSample: startSample,
-      endSample: endSample,
-    };
   }
 
   function reversePlaceForRunSample(sample) {
-    if (!sample || !isFiniteNumber(sample.latitude) || !isFiniteNumber(sample.longitude)) {
-      return Promise.resolve({ place: null, data: null, meta: null });
-    }
-
-    return placeResolver.reversePlace({
-      latitude: sample.latitude,
-      longitude: sample.longitude,
-      zoom: 18,
-    });
+    return reverseGeocodeBoundarySample(sample, placeResolver);
   }
 
   function updateRunInState(updatedRun) {
@@ -1239,14 +1172,24 @@ export const initPromise = (function () {
 
       try {
         if (!nextRun.startPlace && boundarySamples.startSample) {
-          var startResponse = await reversePlaceForRunSample(boundarySamples.startSample);
-          if (startResponse.place?.countryCode) {
-            applyAutoConfiguredUnits(startResponse.place.countryCode);
+          var startResult = await reversePlaceForRunSample(boundarySamples.startSample);
+          if (startResult?.countryCode) {
+            applyAutoConfiguredUnits(startResult.countryCode);
           }
-          if (startResponse.place) {
+          if (startResult?.place) {
             nextRun = {
               ...nextRun,
-              startPlace: startResponse.place,
+              startBoundaryPoint: {
+                latitude: boundarySamples.startSample.latitude,
+                longitude: boundarySamples.startSample.longitude,
+                timestampMs: boundarySamples.startSample.timestampMs ?? null,
+                sampleIndex: boundarySamples.startIndex,
+              },
+              startPlace: {
+                label: startResult.boundaryDisplay.label,
+                detail: startResult.boundaryDisplay.detail,
+                raw: startResult.place,
+              },
             };
           }
         }
@@ -1254,23 +1197,42 @@ export const initPromise = (function () {
         if (!nextRun.endPlace && boundarySamples.endSample) {
           var sameCoords = Boolean(
             nextRun.startPlace &&
-              hasMatchingSampleCoordinates(boundarySamples.startSample, boundarySamples.endSample)
+            boundarySamples.startSample &&
+            boundarySamples.endSample &&
+            boundarySamples.startSample.latitude === boundarySamples.endSample.latitude &&
+            boundarySamples.startSample.longitude === boundarySamples.endSample.longitude
           );
 
           if (sameCoords) {
             nextRun = {
               ...nextRun,
-              endPlace: nextRun.startPlace,
+              endBoundaryPoint: {
+                latitude: boundarySamples.endSample.latitude,
+                longitude: boundarySamples.endSample.longitude,
+                timestampMs: boundarySamples.endSample.timestampMs ?? null,
+                sampleIndex: boundarySamples.endIndex,
+              },
+              endPlace: { ...nextRun.startPlace },
             };
           } else {
-            var endResponse = await reversePlaceForRunSample(boundarySamples.endSample);
-            if (endResponse.place?.countryCode) {
-              applyAutoConfiguredUnits(endResponse.place.countryCode);
+            var endResult = await reversePlaceForRunSample(boundarySamples.endSample);
+            if (endResult?.countryCode) {
+              applyAutoConfiguredUnits(endResult.countryCode);
             }
-            if (endResponse.place) {
+            if (endResult?.place) {
               nextRun = {
                 ...nextRun,
-                endPlace: endResponse.place,
+                endBoundaryPoint: {
+                  latitude: boundarySamples.endSample.latitude,
+                  longitude: boundarySamples.endSample.longitude,
+                  timestampMs: boundarySamples.endSample.timestampMs ?? null,
+                  sampleIndex: boundarySamples.endIndex,
+                },
+                endPlace: {
+                  label: endResult.boundaryDisplay.label,
+                  detail: endResult.boundaryDisplay.detail,
+                  raw: endResult.place,
+                },
               };
             }
           }
