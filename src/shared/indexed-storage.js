@@ -1,3 +1,5 @@
+const INDEXED_DB_OPEN_TIMEOUT_MS = 3000;
+
 export function hasIndexedDbSupport() {
   return typeof indexedDB !== "undefined" && typeof indexedDB.open === "function";
 }
@@ -58,8 +60,21 @@ export function createIndexedJsonKeyValueStore({
 
     if (!dbPromise) {
       dbPromise = new Promise((resolve) => {
+        let settled = false;
+        let openTimeoutId;
+        let timedOut = false;
+
         const finish = (database) => {
-          dbPromise = null;
+          if (settled) return;
+          settled = true;
+          clearTimeout(openTimeoutId);
+          // When the open succeeds, clear dbPromise so future calls use databaseRef.
+          // When it fails via error/blocked, clear dbPromise to allow a retry.
+          // When it times out, keep dbPromise cached so subsequent calls return
+          // the resolved null immediately instead of triggering repeated timeouts.
+          if (!timedOut) {
+            dbPromise = null;
+          }
           resolve(database);
         };
 
@@ -67,6 +82,7 @@ export function createIndexedJsonKeyValueStore({
           const request = indexedDB.open(dbName, dbVersion);
 
           request.onupgradeneeded = () => {
+            if (settled) return;
             const database = request.result;
             if (!database.objectStoreNames.contains(storeName)) {
               database.createObjectStore(storeName);
@@ -74,6 +90,7 @@ export function createIndexedJsonKeyValueStore({
           };
 
           request.onsuccess = () => {
+            if (settled) return;
             finish(cacheDatabase(request.result));
           };
 
@@ -84,6 +101,11 @@ export function createIndexedJsonKeyValueStore({
           request.onblocked = () => {
             finish(null);
           };
+
+          openTimeoutId = setTimeout(() => {
+            timedOut = true;
+            finish(null);
+          }, INDEXED_DB_OPEN_TIMEOUT_MS);
         } catch {
           finish(null);
         }

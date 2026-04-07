@@ -1188,4 +1188,164 @@ describe('replay.html smoke', () => {
       document.querySelector('button[data-recording-id="active-session"]')?.getAttribute('aria-pressed')
     ).toBe('false');
   });
+
+  it('reveals the replay shell when single-tab ownership hangs past the timeout', async () => {
+    vi.useFakeTimers();
+
+    vi.doMock('../../src/shared/single-tab.js', () => ({
+      ensureSingleTabOwnership: vi.fn(() => new Promise(() => {})),
+      releaseSingleTabOwnership: vi.fn(),
+      hasSingleTabOwnership: vi.fn(() => false),
+      SINGLE_TAB_OWNERSHIP_EVENT: 'vatioboard:single-tab-ownership',
+    }));
+
+    vi.resetModules();
+    await bootHtmlPage('replay.html');
+
+    const replayPage = await import('../../src/replay/replay.js');
+
+    expect(document.getElementById('replayEmptyState').hidden).toBe(true);
+    expect(document.getElementById('replayShell').hidden).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(3500);
+    for (let index = 0; index < 30; index += 1) {
+      await vi.advanceTimersByTimeAsync(0);
+    }
+
+    expect(document.getElementById('replayShell').hidden).toBe(false);
+    expect(document.getElementById('replayEmptyState').hidden).toBe(true);
+    expect(document.getElementById('replaySessionChip').textContent).toBe('Active session');
+
+    vi.useRealTimers();
+    vi.doUnmock('../../src/shared/single-tab.js');
+  });
+
+  it('reveals the empty state when ownership hangs and no replay data exists', async () => {
+    localStorage.clear();
+    vi.useFakeTimers();
+
+    vi.doMock('../../src/shared/single-tab.js', () => ({
+      ensureSingleTabOwnership: vi.fn(() => new Promise(() => {})),
+      releaseSingleTabOwnership: vi.fn(),
+      hasSingleTabOwnership: vi.fn(() => false),
+      SINGLE_TAB_OWNERSHIP_EVENT: 'vatioboard:single-tab-ownership',
+    }));
+
+    vi.resetModules();
+    await bootHtmlPage('replay.html');
+
+    const replayPage = await import('../../src/replay/replay.js');
+
+    expect(document.getElementById('replayEmptyState').hidden).toBe(true);
+    expect(document.getElementById('replayShell').hidden).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(3500);
+    for (let index = 0; index < 30; index += 1) {
+      await vi.advanceTimersByTimeAsync(0);
+    }
+
+    expect(document.getElementById('replayEmptyState').hidden).toBe(false);
+    expect(document.getElementById('replayShell').hidden).toBe(true);
+
+    vi.useRealTimers();
+    vi.doUnmock('../../src/shared/single-tab.js');
+  });
+
+  it('reveals the replay shell when single-tab ownership rejects', async () => {
+    vi.doMock('../../src/shared/single-tab.js', () => ({
+      ensureSingleTabOwnership: vi.fn(() => Promise.reject(new Error('ownership failure'))),
+      releaseSingleTabOwnership: vi.fn(),
+      hasSingleTabOwnership: vi.fn(() => false),
+      SINGLE_TAB_OWNERSHIP_EVENT: 'vatioboard:single-tab-ownership',
+    }));
+
+    vi.resetModules();
+    await bootHtmlPage('replay.html');
+
+    const replayPage = await import('../../src/replay/replay.js');
+    await replayPage.initPromise;
+    await settleAsyncWork();
+
+    expect(document.getElementById('replayShell').hidden).toBe(false);
+    expect(document.getElementById('replayEmptyState').hidden).toBe(true);
+    expect(document.getElementById('replaySessionChip').textContent).toBe('Active session');
+
+    vi.doUnmock('../../src/shared/single-tab.js');
+  });
+
+  it('does not block startup on backend auth when ownership is degraded', async () => {
+    vi.useFakeTimers();
+
+    vi.doMock('../../src/shared/backend-auth.js', async (importOriginal) => {
+      const actual = await importOriginal();
+      return {
+        ...actual,
+        initBackendAuthControllers: vi.fn(() => new Promise(() => {})),
+      };
+    });
+    vi.doMock('../../src/shared/single-tab.js', () => ({
+      ensureSingleTabOwnership: vi.fn(() => new Promise(() => {})),
+      releaseSingleTabOwnership: vi.fn(),
+      hasSingleTabOwnership: vi.fn(() => false),
+      SINGLE_TAB_OWNERSHIP_EVENT: 'vatioboard:single-tab-ownership',
+    }));
+
+    vi.resetModules();
+    await bootHtmlPage('replay.html');
+
+    const replayPage = await import('../../src/replay/replay.js');
+
+    await vi.advanceTimersByTimeAsync(3500);
+    for (let index = 0; index < 30; index += 1) {
+      await vi.advanceTimersByTimeAsync(0);
+    }
+
+    expect(document.getElementById('replayShell').hidden).toBe(false);
+
+    vi.useRealTimers();
+    vi.doUnmock('../../src/shared/single-tab.js');
+    vi.doUnmock('../../src/shared/backend-auth.js');
+  });
+
+  it('reveals the replay shell when IndexedDB open hangs silently (Safari IDB stall)', async () => {
+    vi.useFakeTimers();
+
+    Object.defineProperty(globalThis, 'indexedDB', {
+      configurable: true,
+      writable: true,
+      value: {
+        open: vi.fn(() => ({
+          result: null,
+          error: null,
+          onupgradeneeded: null,
+          onsuccess: null,
+          onerror: null,
+          onblocked: null,
+        })),
+      },
+    });
+
+    vi.resetModules();
+    await bootHtmlPage('replay.html');
+
+    const replayPage = await import('../../src/replay/replay.js');
+
+    expect(document.getElementById('replayEmptyState').hidden).toBe(true);
+    expect(document.getElementById('replayShell').hidden).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(4000);
+    for (let index = 0; index < 40; index += 1) {
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    await vi.advanceTimersByTimeAsync(4000);
+    for (let index = 0; index < 40; index += 1) {
+      await vi.advanceTimersByTimeAsync(0);
+    }
+
+    expect(document.getElementById('replayShell').hidden).toBe(false);
+    expect(document.getElementById('replayEmptyState').hidden).toBe(true);
+    expect(document.getElementById('replaySessionChip').textContent).toBe('Active session');
+
+    vi.useRealTimers();
+  });
 });

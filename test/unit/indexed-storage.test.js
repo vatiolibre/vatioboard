@@ -215,4 +215,39 @@ describe("indexed storage helper", () => {
     await expect(store.getValue("retry")).resolves.toEqual({ ok: true });
     expect(fakeIndexedDb.open).toHaveBeenCalledTimes(2);
   });
+
+  it("resolves openDatabase with null when indexedDB.open never fires a callback", async () => {
+    vi.useFakeTimers();
+
+    const fakeIndexedDb = {
+      open: vi.fn(() => ({
+        result: null,
+        error: null,
+        onupgradeneeded: null,
+        onsuccess: null,
+        onerror: null,
+        onblocked: null,
+      })),
+    };
+
+    Object.defineProperty(globalThis, "indexedDB", {
+      configurable: true,
+      writable: true,
+      value: fakeIndexedDb,
+    });
+
+    const { createIndexedJsonKeyValueStore } = await importIndexedStorageModule();
+    const store = createIndexedJsonKeyValueStore({
+      dbName: "test-indexed-storage-hang",
+      storeName: "records",
+    });
+
+    const openPromise = store.openDatabase();
+    await vi.advanceTimersByTimeAsync(3500);
+
+    await expect(openPromise).resolves.toBeNull();
+    expect(fakeIndexedDb.open).toHaveBeenCalledTimes(1);
+
+    vi.useRealTimers();
+  });
 });

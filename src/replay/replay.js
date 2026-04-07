@@ -1395,51 +1395,113 @@ function bindEvents() {
   });
 }
 
+const REPLAY_OWNERSHIP_TIMEOUT_MS = 3000;
+
+async function raceOwnershipWithTimeout() {
+  let timeoutId;
+  try {
+    const result = await Promise.race([
+      singleTabOwnershipPromise.then(
+        (owned) => ({ owned: owned === true, degraded: false }),
+        () => ({ owned: false, degraded: true }),
+      ),
+      new Promise((resolve) => {
+        timeoutId = setTimeout(
+          () => resolve({ owned: false, degraded: true }),
+          REPLAY_OWNERSHIP_TIMEOUT_MS,
+        );
+      }),
+    ]);
+    clearTimeout(timeoutId);
+    return result;
+  } catch {
+    clearTimeout(timeoutId);
+    return { owned: false, degraded: true };
+  }
+}
+
 async function init() {
-  if (!(await singleTabOwnershipPromise)) {
+  console.debug('[replay] bootstrap start');
+
+  console.debug('[replay] requesting ownership');
+  const ownership = await raceOwnershipWithTimeout();
+  const ownershipStatus = ownership.owned
+    ? 'owned'
+    : ownership.degraded
+      ? 'degraded'
+      : 'blocked';
+  console.debug('[replay] ownership:', ownershipStatus);
+
+  if (!ownership.owned && !ownership.degraded) {
+    console.debug('[replay] blocked by another tab, deferring to single-tab guard');
     return;
   }
-  const urlParams = new URLSearchParams(window.location.search);
-  const initialRecordingId = urlParams.get('record');
-  const initialCloudRecordName = urlParams.get('cloudRecord');
-  if (initialRecordingId && initialCloudRecordName) {
-    registerLinkedReplayCloudRecord(initialRecordingId, initialCloudRecordName);
+
+  if (ownership.degraded) {
+    console.debug('[replay] continuing in degraded mode after ownership timeout/error');
   }
 
-  updatePageMeta();
-  renderSessionStateView();
-
-  elements.langToggleButtons.forEach((button) => {
-    button.textContent = getLang().toUpperCase();
-  });
-
-  renderSessionState();
-  renderAxisButtons();
-  renderRateButtons();
-  renderPlaybackButtons();
-  renderActionIcons();
-  renderRecordings();
-  updateGraphPlayback(null);
   try {
-    await requestReplaySelection(initialRecordingId, { settleMicrotasks: 0 });
-  } finally {
-    state.initialSelectionPending = false;
-    renderSessionStateView();
-    if (state.session) {
-      mapController.resize();
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialRecordingId = urlParams.get('record');
+    const initialCloudRecordName = urlParams.get('cloudRecord');
+    if (initialRecordingId && initialCloudRecordName) {
+      registerLinkedReplayCloudRecord(initialRecordingId, initialCloudRecordName);
     }
-  }
-  startCloudSyncLoop({ immediate: false });
-  const syncSelectionRequestVersion = replaySelectionRequestVersion;
-  void syncCloudRecords()
-    .catch(() => {
-      // Keep the page usable with local data if sync is temporarily unavailable.
-    })
-    .finally(() => {
-      if (replaySelectionRequestVersion !== syncSelectionRequestVersion) return;
-      maybeFallbackMissingReplaySelection();
+
+    updatePageMeta();
+    renderSessionStateView();
+
+    elements.langToggleButtons.forEach((button) => {
+      button.textContent = getLang().toUpperCase();
     });
-  void runReplayApproach();
+
+    renderSessionState();
+    renderAxisButtons();
+    renderRateButtons();
+    renderPlaybackButtons();
+    renderActionIcons();
+    renderRecordings();
+    updateGraphPlayback(null);
+
+    const selectionSafetyTimeoutId = setTimeout(() => {
+      if (state.initialSelectionPending) {
+        console.debug('[replay] safety timeout: revealing UI after storage stall');
+        state.initialSelectionPending = false;
+        renderSessionStateView();
+      }
+    }, 4000);
+
+    try {
+      await requestReplaySelection(initialRecordingId, { settleMicrotasks: 0 });
+    } finally {
+      clearTimeout(selectionSafetyTimeoutId);
+      state.initialSelectionPending = false;
+      renderSessionStateView();
+      console.debug('[replay] session selected, UI state:', state.session ? 'shell' : 'empty');
+      if (state.session) {
+        mapController.resize();
+      }
+    }
+    startCloudSyncLoop({ immediate: false });
+    const syncSelectionRequestVersion = replaySelectionRequestVersion;
+    void syncCloudRecords()
+      .catch(() => {
+        // Keep the page usable with local data if sync is temporarily unavailable.
+      })
+      .finally(() => {
+        if (replaySelectionRequestVersion !== syncSelectionRequestVersion) return;
+        maybeFallbackMissingReplaySelection();
+      });
+    void runReplayApproach();
+  } finally {
+    if (state.initialSelectionPending) {
+      state.initialSelectionPending = false;
+      renderSessionStateView();
+      console.debug('[replay] fallback UI reveal after init error');
+    }
+    console.debug('[replay] bootstrap complete');
+  }
 }
 
 if (import.meta.hot) {
