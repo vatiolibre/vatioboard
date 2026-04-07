@@ -17,19 +17,17 @@ import {
   saveCurrentBoardDocumentMeta,
 } from '../../board/storage.js';
 import { t } from '../../i18n.js';
+import { showConfirmDialog } from '../ui/confirm-dialog.js';
 
 const boardResource = cloudLibraryResources[CLOUD_LIBRARY_TAB_KEYS.boardDocuments]?.resource;
 
-function confirmReplaceBoardDocument(message, confirmReplace) {
-  if (typeof confirmReplace === 'function') {
-    return Boolean(confirmReplace(message));
-  }
-
-  if (typeof window?.confirm === 'function') {
-    return window.confirm(message);
-  }
-
-  return false;
+async function confirmReplaceBoardDocument(message) {
+  return showConfirmDialog({
+    title: t('createNewConfirmTitle'),
+    message,
+    confirmLabel: t('discard'),
+    destructive: true,
+  });
 }
 
 async function loadCloudLibraryBoardDetail(name) {
@@ -85,7 +83,7 @@ export function loadBoardDocumentMeta() {
   return loadCurrentBoardDocumentMeta();
 }
 
-export async function openBoardDocumentFromCloud(name, { confirmReplace } = {}) {
+export async function openBoardDocumentFromCloud(name) {
   const detail = await loadCloudLibraryBoardDetail(name);
   if (!detail?.document || detail?.payload === null || typeof detail?.payload !== 'object') {
     throw new Error('Board document payload is unavailable.');
@@ -94,9 +92,8 @@ export async function openBoardDocumentFromCloud(name, { confirmReplace } = {}) 
   const localDrawing = await loadBoardDrawing().catch(() => null);
   if (hasBoardDrawingContent(localDrawing)) {
     const title = detail.document.title || t('boardDocumentUntitled');
-    const shouldReplace = confirmReplaceBoardDocument(
+    const shouldReplace = await confirmReplaceBoardDocument(
       t('boardDocumentOpenReplaceConfirm', { title }),
-      confirmReplace
     );
     if (!shouldReplace) {
       return null;

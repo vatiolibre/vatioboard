@@ -307,18 +307,6 @@
                   <span class="btn-icon" aria-hidden="true"></span>
                   <span data-i18n="energy">Energy</span>
                 </button>
-                <button id="saveBoardDocumentMenu" type="button" class="btn-with-icon">
-                  <span class="btn-icon" aria-hidden="true"></span>
-                  <span data-i18n="boardDocumentSaveMenu">Save board document</span>
-                </button>
-                <button id="saveBoardDocumentCopyMenu" type="button" class="btn-with-icon">
-                  <span class="btn-icon" aria-hidden="true"></span>
-                  <span data-i18n="boardDocumentSaveCopyMenu">Save document copy</span>
-                </button>
-                <button id="deleteBoardDocumentMenu" type="button" class="btn-with-icon">
-                  <span class="btn-icon" aria-hidden="true"></span>
-                  <span data-i18n="boardDocumentDeleteMenu">Delete board document</span>
-                </button>
                 <form class="backend-auth" data-backend-auth novalidate>
                   <p class="backend-auth-title" data-i18n="authTitle">VatioLibre account</p>
                   <p class="backend-auth-status" data-backend-auth-status role="status" aria-live="polite" data-i18n="authCheckingSession">Checking session...</p>
@@ -367,26 +355,35 @@
               </div>
             </div>
             <button
-              id="pen"
+              id="createNew"
               type="button"
-              class="board-action-btn board-action-btn-pen"
-              aria-pressed="true"
-              data-i18n-aria="pen"
-              data-i18n-title="pen"
-              aria-label="Pen"
-              title="Pen"
+              class="board-action-btn board-action-btn-create"
+              data-i18n-aria="createNew"
+              data-i18n-title="createNew"
+              aria-label="Create new"
+              title="Create new"
             >
               <span class="btn-icon" aria-hidden="true"></span>
             </button>
             <button
-              id="erase"
+              id="save"
               type="button"
-              class="board-action-btn board-action-btn-erase"
-              aria-pressed="false"
-              data-i18n-aria="eraser"
-              data-i18n-title="eraser"
-              aria-label="Eraser"
-              title="Eraser"
+              class="board-action-btn board-action-btn-save"
+              data-i18n-aria="saveBoardTooltip"
+              data-i18n-title="saveBoardTooltip"
+              aria-label="Save board document"
+              title="Save board document"
+            >
+              <span class="btn-icon" aria-hidden="true"></span>
+            </button>
+            <button
+              id="deleteBoard"
+              type="button"
+              class="board-action-btn board-action-btn-delete"
+              data-i18n-aria="deleteBoardTooltip"
+              data-i18n-title="deleteBoardTooltip"
+              aria-label="Delete board document"
+              title="Delete board document"
             >
               <span class="btn-icon" aria-hidden="true"></span>
             </button>
@@ -415,24 +412,26 @@
               <span class="btn-icon" aria-hidden="true"></span>
             </button>
             <button
-              id="clear"
+              id="erase"
               type="button"
-              class="board-action-btn board-action-btn-clear"
-              data-i18n-aria="clear"
-              data-i18n-title="clear"
-              aria-label="Clear"
-              title="Clear"
+              class="board-action-btn board-action-btn-erase"
+              aria-pressed="false"
+              data-i18n-aria="eraser"
+              data-i18n-title="eraser"
+              aria-label="Eraser"
+              title="Eraser"
             >
               <span class="btn-icon" aria-hidden="true"></span>
             </button>
             <button
-              id="save"
+              id="pen"
               type="button"
-              class="board-action-btn board-action-btn-save"
-              data-i18n-aria="saveToVatioLibre"
-              data-i18n-title="saveToVatioLibre"
-              aria-label="Save to VatioLibre"
-              title="Save to VatioLibre"
+              class="board-action-btn board-action-btn-pen"
+              aria-pressed="true"
+              data-i18n-aria="pen"
+              data-i18n-title="pen"
+              aria-label="Pen"
+              title="Pen"
             >
               <span class="btn-icon" aria-hidden="true"></span>
             </button>

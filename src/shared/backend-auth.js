@@ -1,9 +1,9 @@
 import { t } from "../i18n.js";
+import { getEnvironmentConfig } from "./environment.js";
 
 export const BACKEND_AUTH_SIGNUP_URL = "https://www.vatiolibre.com/login#signup";
 export const BACKEND_AUTH_FORGOT_URL = "https://www.vatiolibre.com/login#forgot";
 
-const PROD_HOSTS = new Set(["vatioboard.com", "www.vatioboard.com"]);
 // Use an allow_guest endpoint first so guest sessions do not trigger a visible 403.
 const SESSION_PROBE_METHOD = "vatiolibre.services.tesla_connection_status";
 const LOGGED_USER_METHOD = "frappe.auth.get_logged_user";
@@ -512,13 +512,11 @@ function setHidden(elements, isHidden) {
 }
 
 export function getBackendAuthConfig(location = window.location) {
-  const host = String(location?.hostname || "").toLowerCase();
+  const env = getEnvironmentConfig(location);
 
   return {
-    frontendOrigin: String(location?.origin || ""),
-    apiBase: PROD_HOSTS.has(host)
-      ? "https://api.vatioboard.com"
-      : "https://api.dev.vatioboard.com",
+    frontendOrigin: env.frontendOrigin,
+    apiBase: env.apiBase,
     signupUrl: BACKEND_AUTH_SIGNUP_URL,
     forgotUrl: BACKEND_AUTH_FORGOT_URL,
   };

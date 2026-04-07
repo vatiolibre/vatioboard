@@ -1,3 +1,11 @@
+export const IconFilePlus = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="M14 3v5h5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="M12 12v5M9.5 14.5h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+  </svg>
+`;
+
 export const IconCalculator = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path d="M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" stroke="currentColor" stroke-width="1.6"/>

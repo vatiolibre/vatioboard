@@ -204,9 +204,11 @@ describe("index.html smoke", () => {
     expect(document.querySelector("#redo .btn-icon svg")).toBeTruthy();
     expect(document.getElementById("undo").disabled).toBe(true);
     expect(document.getElementById("redo").disabled).toBe(true);
-    expect(document.getElementById("clear").getAttribute("aria-label")).toBe("Clear");
-    expect(document.querySelector("#clear .btn-icon svg")).toBeTruthy();
-    expect(document.getElementById("save").getAttribute("aria-label")).toBe("Save to VatioLibre");
+    expect(document.getElementById("createNew").getAttribute("aria-label")).toBe("Create new");
+    expect(document.querySelector("#createNew .btn-icon svg")).toBeTruthy();
+    expect(document.getElementById("save").getAttribute("aria-label")).toBe("Save board document");
+    expect(document.querySelector("#deleteBoard .btn-icon svg")).toBeTruthy();
+    expect(document.getElementById("deleteBoard").getAttribute("aria-label")).toBe("Delete board document");
     expect(document.querySelector("#save .btn-icon svg")).toBeTruthy();
     expect(document.getElementById("toolsMenuBtn").getAttribute("aria-label")).toBe("Pages");
     expect(document.querySelector("#toolsMenuBtn .btn-icon svg")).toBeTruthy();
@@ -453,17 +455,12 @@ describe("index.html smoke", () => {
 
     expect(document.getElementById("toolsMenuList").hidden).toBe(false);
     expect(document.getElementById("status").textContent).toBe("Log in to save drawings to VatioLibre.");
-    expect(window.fetch).not.toHaveBeenCalledWith(
-      "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.feature_access.get_my_feature_access",
-      expect.anything()
-    );
   });
 
-  it("blocks save for signed-in users without the saved drawings feature", async () => {
+  it("blocks save for signed-in users without cloud sync feature", async () => {
     sessionUser = "member@vatiolibre.com";
     hasActiveSubscription = false;
-    savedDrawingsEnabled = false;
-    savedDrawingsReason = "Saved drawings need an active VatioLibre subscription.";
+    cloudSyncEnabled = false;
 
     await import("../../src/board/board.js");
     await flushBoardTasks();
@@ -471,7 +468,6 @@ describe("index.html smoke", () => {
     document.getElementById("save").click();
     await flushBoardTasks();
 
-    expect(document.getElementById("status").textContent).toBe("Saved drawings need an active VatioLibre subscription.");
     expect(window.fetch).toHaveBeenCalledWith(
       "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.feature_access.get_my_feature_access",
       expect.objectContaining({
@@ -480,56 +476,52 @@ describe("index.html smoke", () => {
       })
     );
     expect(window.fetch).not.toHaveBeenCalledWith(
-      "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.drawings.save_my_saved_drawing",
+      "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.board_documents.save_my_board_document",
       expect.anything()
     );
   });
 
-  it("saves drawings to the backend for active subscribers", async () => {
+  it("saves a board document for active subscribers via the Save button", async () => {
     sessionUser = "member@vatiolibre.com";
     hasActiveSubscription = true;
+    cloudSyncEnabled = true;
     savedDrawingsEnabled = true;
-    savedDrawingsReason = "";
     csrfToken = "csrf-active-token";
 
     await import("../../src/board/board.js");
     await flushBoardTasks();
 
+    // Click Save — triggers async access check then prompt dialog
     document.getElementById("save").click();
-    await flushBoardTasks();
 
-    expect(document.getElementById("status").textContent).toBe("Saved to VatioLibre");
-    const saveCall = window.fetch.mock.calls.find(([url]) =>
-      url === "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.drawings.save_my_saved_drawing"
+    // Wait for access check + dialog rendering
+    for (let i = 0; i < 30; i += 1) await flushTasks();
+
+    // Fill and confirm the prompt dialog
+    const promptInput = document.querySelector(".vb-confirm-card input");
+    const confirmBtn = document.querySelector(".vb-confirm-card .vb-confirm-btn--confirm");
+    expect(promptInput).toBeTruthy();
+    expect(confirmBtn).toBeTruthy();
+    promptInput.value = "My board";
+    promptInput.dispatchEvent(new Event("input", { bubbles: true }));
+    confirmBtn.click();
+
+    for (let i = 0; i < 30; i += 1) await flushTasks();
+
+    expect(window.fetch).toHaveBeenCalledWith(
+      "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.board_documents.save_my_board_document",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+      })
     );
-
-    expect(saveCall).toBeTruthy();
-
-    const [, saveRequest] = saveCall;
-    expect(saveRequest).toEqual(expect.objectContaining({
-      method: "POST",
-      credentials: "include",
-      headers: expect.objectContaining({
-        "X-Frappe-CSRF-Token": "csrf-active-token",
-      }),
-    }));
-    expect(saveRequest.headers["Content-Type"]).toBeUndefined();
-    expect(saveRequest.body).toBeInstanceOf(FormData);
-    expect(saveRequest.body.get("image_width")).toBe("320");
-    expect(saveRequest.body.get("image_height")).toBe("320");
-
-    const uploadedFile = saveRequest.body.get("file");
-    expect(uploadedFile).toBeInstanceOf(File);
-    expect(uploadedFile.name).toBe("drawing.png");
-    expect(uploadedFile.type).toBe("image/png");
   });
 
-  it("saves a cloud board document and updates it on the next save", async () => {
+  it("saves a new board document and updates it on the next save", async () => {
     sessionUser = "board-docs@vatiolibre.com";
     hasActiveSubscription = true;
     cloudSyncEnabled = true;
     savedDrawingsEnabled = true;
-    window.prompt = vi.fn(() => "Autocross sketch");
 
     await import("../../src/board/board.js");
     await flushBoardTasks();
@@ -538,8 +530,19 @@ describe("index.html smoke", () => {
     dispatchBoardStroke(canvas, 7, 120, 160);
     await flushBoardTasks();
 
-    document.getElementById("saveBoardDocumentMenu").click();
-    await flushBoardTasks();
+    // Click Save — triggers prompt dialog for title
+    document.getElementById("save").click();
+    for (let i = 0; i < 30; i += 1) await flushTasks();
+
+    const promptInput = document.querySelector(".vb-confirm-card input");
+    const confirmBtn = document.querySelector(".vb-confirm-card .vb-confirm-btn--confirm");
+    expect(promptInput).toBeTruthy();
+    expect(confirmBtn).toBeTruthy();
+    promptInput.value = "Autocross sketch";
+    promptInput.dispatchEvent(new Event("input", { bubbles: true }));
+    confirmBtn.click();
+
+    for (let i = 0; i < 30; i += 1) await flushTasks();
 
     expect(window.fetch).toHaveBeenCalledWith(
       "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.board_documents.save_my_board_document",
@@ -553,8 +556,9 @@ describe("index.html smoke", () => {
     dispatchBoardStroke(canvas, 8, 180, 210);
     await flushBoardTasks();
 
-    document.getElementById("saveBoardDocumentMenu").click();
-    await flushBoardTasks();
+    // Second save — should update (no prompt needed since already named)
+    document.getElementById("save").click();
+    for (let i = 0; i < 30; i += 1) await flushTasks();
 
     expect(window.fetch).toHaveBeenCalledWith(
       "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.board_documents.update_my_board_document",
@@ -562,12 +566,11 @@ describe("index.html smoke", () => {
     );
   });
 
-  it("opens an empty pending cloud board document without syncing it and keeps it current for updates", async () => {
+  it("opens an empty pending cloud board document and keeps it current for updates", async () => {
     sessionUser = "board-docs@vatiolibre.com";
     hasActiveSubscription = true;
     cloudSyncEnabled = true;
     savedDrawingsEnabled = true;
-    window.prompt = vi.fn();
 
     localStorage.setItem(BOARD_PENDING_OPEN_DOCUMENT_KEY, JSON.stringify({
       document: {
@@ -596,10 +599,10 @@ describe("index.html smoke", () => {
     );
     expect(pushCall).toBeUndefined();
 
-    document.getElementById("saveBoardDocumentMenu").click();
+    // Save should update existing (no title prompt for named documents)
+    document.getElementById("save").click();
     await flushBoardTasks();
 
-    expect(window.prompt).not.toHaveBeenCalled();
     expect(window.fetch).toHaveBeenCalledWith(
       "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.board_documents.update_my_board_document",
       expect.anything()

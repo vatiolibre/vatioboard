@@ -3,6 +3,7 @@ import "../styles/backend-auth.less";
 import "../styles/calculator.less";
 import "../styles/energy.less";
 import "../styles/dock.less";
+import "../shared/ui/confirm-dialog.less";
 
 import { createCalculatorWidget } from "../calculator/calculator-widget.js";
 import {
@@ -34,8 +35,37 @@ import {
   startCloudSyncLoop,
   syncCloudRecords,
 } from "../shared/cloud-sync.js";
+import {
+  CLOUD_LIBRARY_TAB_KEYS,
+  cloudLibraryResources,
+} from "../shared/cloud-library-resources.js";
 import { ensureSingleTabOwnership, SINGLE_TAB_OWNERSHIP_EVENT } from "../shared/single-tab.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
+import { showConfirmDialog, showPromptDialog } from "../shared/ui/confirm-dialog.js";
+import {
+  createBlankSession,
+  createOpenedDocumentSession,
+  createRestoredSession,
+  isCloudEligible,
+  isNamedDocument,
+  hasUnsavedWork,
+  needsTitleForSave,
+  markContentModified,
+  markSaved,
+  markDeleted,
+} from "./document-session.js";
+import {
+  queueCreateMutation,
+  queueUpdateMutation,
+  queueDeleteMutation,
+  removeMutation,
+  markMutationFailed,
+  markMutationReplaying,
+  getPendingMutations,
+  hasPendingMutations,
+  clearMutationQueue,
+  reconcileLocalToRemote,
+} from "./offline-mutations.js";
 import iro from "@jaames/iro";
 import { t, applyTranslations, toggleLang, getLang } from "../i18n.js";
 import {
@@ -43,6 +73,7 @@ import {
   IconCalculator,
   IconEnergy,
   IconEraser,
+  IconFilePlus,
   IconPages,
   IconPen,
   IconRedo,
@@ -83,9 +114,6 @@ const openCalcMenuBtn = document.getElementById("openCalcMenu");
 const openLibraryMenuBtn = document.getElementById("openLibraryMenu");
 const openSpeedMenuBtn = document.getElementById("openSpeedMenu");
 const openEnergyMenuBtn = document.getElementById("openEnergyMenu");
-const saveBoardDocumentMenuBtn = document.getElementById("saveBoardDocumentMenu");
-const saveBoardDocumentCopyMenuBtn = document.getElementById("saveBoardDocumentCopyMenu");
-const deleteBoardDocumentMenuBtn = document.getElementById("deleteBoardDocumentMenu");
 const toolsMenuBtn = document.getElementById("toolsMenuBtn");
 const toolsMenuList = document.getElementById("toolsMenuList");
 
@@ -93,8 +121,9 @@ applyButtonIcon(document.getElementById("pen"), IconPen);
 applyButtonIcon(document.getElementById("erase"), IconEraser);
 applyButtonIcon(document.getElementById("undo"), IconUndo);
 applyButtonIcon(document.getElementById("redo"), IconRedo);
-applyButtonIcon(document.getElementById("clear"), IconTrash);
+applyButtonIcon(document.getElementById("createNew"), IconFilePlus);
 applyButtonIcon(document.getElementById("save"), IconSave);
+applyButtonIcon(document.getElementById("deleteBoard"), IconTrash);
 applyButtonIcon(openCalcBtn, IconCalculator);
 applyButtonIcon(openCalcMenuBtn, IconCalculator);
 applyButtonIcon(openAccelMenuBtn, IconAccel);
@@ -103,9 +132,6 @@ applyButtonIcon(openSpeedBtn, IconSpeed);
 applyButtonIcon(openSpeedMenuBtn, IconSpeed);
 applyButtonIcon(openEnergyBtn, IconEnergy);
 applyButtonIcon(openEnergyMenuBtn, IconEnergy);
-applyButtonIcon(saveBoardDocumentMenuBtn, IconSave);
-applyButtonIcon(saveBoardDocumentCopyMenuBtn, IconSave);
-applyButtonIcon(deleteBoardDocumentMenuBtn, IconTrash);
 applyButtonIcon(toolsMenuBtn, IconPages);
 
 // Floating dock with tool buttons
@@ -158,8 +184,9 @@ bindNavigation(openLibraryMenuBtn, "/library.html?tab=board_documents");
     const redoBtn = document.getElementById("redo");
     const sizeEl = document.getElementById("size");
     const sizePreview = document.getElementById("sizePreview");
-    const clearBtn = document.getElementById("clear");
+    const createNewBtn = document.getElementById("createNew");
     const saveBtn = document.getElementById("save");
+    const deleteBoardBtn = document.getElementById("deleteBoard");
     const backendAuthUserInput = document.querySelector("[data-backend-auth-user]");
 
     // NEW: color UI
@@ -167,8 +194,14 @@ bindNavigation(openLibraryMenuBtn, "/library.html?tab=board_documents");
 
     const LS_INK_RAW = "vatio_board_ink_raw";
     let saveBusy = false;
-    let boardDocumentBusy = false;
     let currentBoardDocument = loadCurrentBoardDocumentMeta();
+    let documentSession = currentBoardDocument
+      ? createRestoredSession({
+        name: currentBoardDocument.name,
+        title: currentBoardDocument.title,
+        hasContent: false,
+      })
+      : createBlankSession();
 
     function isDarkMode(){
       return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -276,20 +309,12 @@ bindNavigation(openLibraryMenuBtn, "/library.html?tab=board_documents");
 
     function setStatus(s){ statusEl.textContent = s; }
 
-    function syncSaveButton(){
+    function syncToolbarButtons(){
       if (!saveBtn) return;
-      saveBtn.disabled = saveBusy;
-    }
-
-    function syncBoardDocumentActions(){
-      if (saveBoardDocumentMenuBtn) {
-        saveBoardDocumentMenuBtn.disabled = boardDocumentBusy;
-      }
-      if (saveBoardDocumentCopyMenuBtn) {
-        saveBoardDocumentCopyMenuBtn.disabled = boardDocumentBusy;
-      }
-      if (deleteBoardDocumentMenuBtn) {
-        deleteBoardDocumentMenuBtn.disabled = boardDocumentBusy || !currentBoardDocument?.name;
+      const busy = saveBusy || documentSession.saveState === "saving";
+      saveBtn.disabled = busy;
+      if (deleteBoardBtn) {
+        deleteBoardBtn.disabled = busy || documentSession.deleteState === "deleting";
       }
     }
 
@@ -362,19 +387,22 @@ bindNavigation(openLibraryMenuBtn, "/library.html?tab=board_documents");
 
     function queueBoardPersistence(){
       boardStateRevision += 1;
+      markContentModified(documentSession);
       const updatedAtMs = Date.now();
       const snapshot = {
         ...createBoardDrawingSnapshot(),
         updatedAtMs,
       };
       void saveBoardDrawing(snapshot);
-      void queueCloudSyncChange({
-        entityType: CLOUD_SYNC_ENTITY_TYPES.boardDrawing,
-        recordId: "primary",
-        recordTitle: "Board",
-        updatedAtMs,
-        payload: snapshot,
-      });
+      if (isCloudEligible(documentSession)) {
+        void queueCloudSyncChange({
+          entityType: CLOUD_SYNC_ENTITY_TYPES.boardDrawing,
+          recordId: "primary",
+          recordTitle: documentSession.documentTitle || "Board",
+          updatedAtMs,
+          payload: snapshot,
+        });
+      }
     }
 
     async function hydrateBoardDrawing(){
@@ -410,6 +438,12 @@ bindNavigation(openLibraryMenuBtn, "/library.html?tab=board_documents");
           title: pendingOpen.document.title,
           updatedAtMs: pendingOpen.document.updated_at_ms || storedDrawing.updatedAtMs || Date.now(),
         };
+        documentSession = createOpenedDocumentSession({
+          name: pendingOpen.document.name,
+          title: pendingOpen.document.title,
+          hasContent: restoredCommands.length > 0,
+          linkedPngName: pendingOpen.document.preview_image_file || null,
+        });
         await persistBoardDocumentSelection({
           document: pendingOpen.document,
           payload: {
@@ -417,10 +451,12 @@ bindNavigation(openLibraryMenuBtn, "/library.html?tab=board_documents");
             updatedAtMs: storedDrawing.updatedAtMs || Date.now(),
           },
         });
-        syncBoardDocumentActions();
+        syncToolbarButtons();
         setStatus(t("boardDocumentOpened", {
           title: currentBoardDocument.title || t("boardDocumentUntitled"),
         }));
+      } else if (restoredCommands.length > 0 && !isNamedDocument(documentSession)) {
+        documentSession.hasUserContent = true;
       }
     }
 
@@ -853,22 +889,206 @@ bindNavigation(openLibraryMenuBtn, "/library.html?tab=board_documents");
       finishStroke({ commit: false });
     }
 
-    function clear(){
+    function resetCanvasToBlank(){
       finishStroke({ commit: false });
+      commandHistory.length = 0;
+      redoHistory.length = 0;
+      fillCanvasBackground(historyCtx);
+      copyHistorySurfaceToVisible();
+      syncHistoryButtons();
+    }
 
-      if (commandHistory.length === 0) {
-        redoHistory.length = 0;
-        fillCanvasBackground(historyCtx);
-        copyHistorySurfaceToVisible();
-        syncHistoryButtons();
-        queueBoardPersistence();
+    function invalidateBoardDocumentCache(){
+      try {
+        cloudLibraryResources[CLOUD_LIBRARY_TAB_KEYS.boardDocuments]?.resource?.invalidateList?.();
+      } catch {
+        // Non-critical: cloud library cache refresh can silently fail.
+      }
+    }
+
+    async function saveBoardDocument(){
+      if (saveBusy) return;
+
+      saveBusy = true;
+      documentSession.saveState = "saving";
+      syncToolbarButtons();
+      setStatus(t("saveCheckingAccess"));
+
+      try {
+        const capability = await resolveCloudSyncAccess();
+        if (!capability) return;
+
+        // Prompt for title on first save
+        let title = documentSession.documentTitle;
+        if (needsTitleForSave(documentSession)) {
+          title = await showPromptDialog({
+            title: t("boardTitlePrompt"),
+            placeholder: t("boardTitlePlaceholder"),
+            value: title || "",
+            confirmLabel: t("saveBoard"),
+          });
+          if (title === null) return;
+          title = String(title || "").trim();
+          if (!title) {
+            setStatus(t("boardDocumentTitleRequired"));
+            return;
+          }
+        }
+
+        setStatus(t("boardSaving"));
+        const snapshot = createBoardDocumentSnapshot();
+
+        // Export PNG preview
+        let pngBlob = null;
+        try {
+          const exported = await exportCanvasAsPng();
+          pngBlob = exported.fileBlob;
+        } catch {
+          // Non-critical: save the document without a preview image.
+        }
+
+        let response = null;
+
+        if (isNamedDocument(documentSession)) {
+          // Update existing document
+          response = await updateBoardDocumentInBackend({
+            name: documentSession.remoteDocumentName,
+            payload: snapshot,
+            csrfToken: capability.csrfToken,
+          });
+        } else {
+          // Create new document
+          response = await saveBoardDocumentToBackend({
+            title,
+            payload: snapshot,
+            csrfToken: capability.csrfToken,
+          });
+        }
+
+        if (!response?.ok || !response.document) {
+          if (response?.status === 401 || response?.status === 403) {
+            openBackendAuth();
+            setStatus(t("saveLoginRequired"));
+          } else {
+            setStatus(t("boardCouldNotSave"));
+          }
+          return;
+        }
+
+        // Save PNG linked to the document
+        if (pngBlob) {
+          try {
+            await saveDrawingToBackend({
+              fileBlob: pngBlob,
+              fileName: "drawing.png",
+              csrfToken: capability.csrfToken,
+            });
+          } catch {
+            // Non-critical: document saved but preview image upload failed.
+          }
+        }
+
+        // Update session & persisted metadata
+        markSaved(documentSession, {
+          name: response.document.name,
+          title: response.document.title,
+        });
+        currentBoardDocument = {
+          name: response.document.name,
+          title: response.document.title,
+          updatedAtMs: response.document.updated_at_ms || snapshot.updatedAtMs,
+        };
+        saveCurrentBoardDocumentMeta(currentBoardDocument);
+        invalidateBoardDocumentCache();
+        setStatus(t("boardSaved", { title: currentBoardDocument.title || t("boardDocumentUntitled") }));
+      } catch {
+        setStatus(t("saveNetworkError"));
+      } finally {
+        saveBusy = false;
+        documentSession.saveState = "idle";
+        syncToolbarButtons();
+      }
+    }
+
+    async function deleteBoardDocument(){
+      if (saveBusy || documentSession.deleteState === "deleting") return;
+
+      const named = isNamedDocument(documentSession);
+      const hasContent = commandHistory.length > 0 || documentSession.hasUserContent;
+
+      // Nothing to delete or discard
+      if (!named && !hasContent) {
         setStatus(t("cleared"));
         return;
       }
 
-      pushHistoryCommand({ type: "clear" });
-      drawCommandToContext(historyCtx, { type: "clear" });
-      copyHistorySurfaceToVisible();
+      // Confirm before destructive action
+      const confirmed = await showConfirmDialog({
+        title: named
+          ? t("deleteBoardConfirmTitle")
+          : t("deleteBoardConfirmLocalTitle"),
+        message: named
+          ? t("deleteBoardConfirmMessage", {
+            title: documentSession.documentTitle || t("boardDocumentUntitled"),
+          })
+          : t("deleteBoardConfirmLocalMessage"),
+        confirmLabel: named ? t("deleteBoard") : t("discard"),
+        destructive: true,
+      });
+      if (!confirmed) return;
+
+      if (named) {
+        documentSession.deleteState = "deleting";
+        syncToolbarButtons();
+        setStatus(t("boardDeleting"));
+
+        try {
+          const capability = await resolveCloudSyncAccess();
+          if (!capability) return;
+
+          const response = await deleteBoardDocumentFromBackend({
+            name: documentSession.remoteDocumentName,
+            csrfToken: capability.csrfToken,
+          });
+          if (!response.ok) {
+            setStatus(t("boardDocumentDeleteFailed", { status: response.status || 0 }));
+            return;
+          }
+        } catch {
+          setStatus(t("saveNetworkError"));
+          return;
+        } finally {
+          documentSession.deleteState = "idle";
+          syncToolbarButtons();
+        }
+      }
+
+      // Reset to blank
+      resetCanvasToBlank();
+      markDeleted(documentSession);
+      currentBoardDocument = null;
+      clearCurrentBoardDocumentMeta();
+      documentSession = createBlankSession();
+      invalidateBoardDocumentCache();
+      queueBoardPersistence();
+      setStatus(t("boardDeleted"));
+    }
+
+    async function createNewBoard(){
+      // If there's unsaved work, offer to save first
+      if (hasUnsavedWork(documentSession) && commandHistory.length > 0) {
+        const confirmed = await showConfirmDialog({
+          title: t("createNewConfirmTitle"),
+          message: t("createNewConfirmMessage"),
+          confirmLabel: t("createNew"),
+        });
+        if (!confirmed) return;
+      }
+
+      resetCanvasToBlank();
+      currentBoardDocument = null;
+      clearCurrentBoardDocumentMeta();
+      documentSession = createBlankSession();
       queueBoardPersistence();
       setStatus(t("cleared"));
     }
@@ -1021,17 +1241,22 @@ bindNavigation(openLibraryMenuBtn, "/library.html?tab=board_documents");
         return null;
       }
 
-      if (!featureAccess.cloudSyncCapability.enabled) {
-        setStatus(getBlockedSaveMessage(featureAccess.cloudSyncCapability));
+      // Accept either cloud_sync or saved_drawings capability for the unified save.
+      const cloudSync = featureAccess.cloudSyncCapability;
+      const savedDrawings = featureAccess.capability;
+      const effective = cloudSync?.enabled ? cloudSync : savedDrawings;
+
+      if (!effective?.enabled) {
+        setStatus(getBlockedSaveMessage(cloudSync));
         return null;
       }
 
-      if (!featureAccess.cloudSyncCapability.csrfToken) {
+      if (!effective.csrfToken) {
         setStatus(t("saveUnavailable"));
         return null;
       }
 
-      return featureAccess.cloudSyncCapability;
+      return effective;
     }
 
     function createBoardDocumentSnapshot(){
@@ -1039,188 +1264,6 @@ bindNavigation(openLibraryMenuBtn, "/library.html?tab=board_documents");
         ...createBoardDrawingSnapshot(),
         updatedAtMs: Date.now(),
       };
-    }
-
-    async function saveBoardDocumentToCloud({ saveAsNew = false } = {}){
-      if (boardDocumentBusy) return;
-
-      boardDocumentBusy = true;
-      syncBoardDocumentActions();
-      setStatus(t("saveCheckingAccess"));
-
-      try {
-        const capability = await resolveCloudSyncAccess();
-        if (!capability) return;
-
-        const snapshot = createBoardDocumentSnapshot();
-        let response = null;
-
-        if (!saveAsNew && currentBoardDocument?.name) {
-          setStatus(t("boardDocumentSaving"));
-          response = await updateBoardDocumentInBackend({
-            name: currentBoardDocument.name,
-            payload: snapshot,
-            csrfToken: capability.csrfToken,
-          });
-        } else {
-          const title = window.prompt(
-            t("boardDocumentPromptTitle"),
-            currentBoardDocument?.title || t("boardDocumentUntitled")
-          );
-          if (title === null) return;
-
-          const trimmedTitle = String(title || "").trim();
-          if (!trimmedTitle) {
-            setStatus(t("boardDocumentTitleRequired"));
-            return;
-          }
-
-          setStatus(t("boardDocumentSaving"));
-          response = await saveBoardDocumentToBackend({
-            title: trimmedTitle,
-            payload: snapshot,
-            csrfToken: capability.csrfToken,
-          });
-        }
-
-        if (!response?.ok || !response.document) {
-          if (response?.status === 401 || response?.status === 403) {
-            openBackendAuth();
-            setStatus(t("saveLoginRequired"));
-          } else {
-            setStatus(t("boardDocumentSaveFailed", { status: response?.status || 0 }));
-          }
-          return;
-        }
-
-        currentBoardDocument = {
-          name: response.document.name,
-          title: response.document.title,
-          updatedAtMs: response.document.updated_at_ms || snapshot.updatedAtMs,
-        };
-        saveCurrentBoardDocumentMeta(currentBoardDocument);
-        syncBoardDocumentActions();
-        setStatus(t("boardDocumentSaved", { title: currentBoardDocument.title || t("boardDocumentUntitled") }));
-      } catch {
-        setStatus(t("saveNetworkError"));
-      } finally {
-        boardDocumentBusy = false;
-        syncBoardDocumentActions();
-      }
-    }
-
-    async function deleteBoardDocumentFromCloud(){
-      if (!currentBoardDocument?.name || boardDocumentBusy) return;
-      if (!window.confirm(t("boardDocumentDeleteConfirm", {
-        title: currentBoardDocument.title || t("boardDocumentUntitled"),
-      }))) {
-        return;
-      }
-
-      boardDocumentBusy = true;
-      syncBoardDocumentActions();
-      setStatus(t("boardDocumentDeleting"));
-
-      try {
-        const capability = await resolveCloudSyncAccess();
-        if (!capability) return;
-
-        const response = await deleteBoardDocumentFromBackend({
-          name: currentBoardDocument.name,
-          csrfToken: capability.csrfToken,
-        });
-        if (!response.ok) {
-          setStatus(t("boardDocumentDeleteFailed", { status: response.status || 0 }));
-          return;
-        }
-
-        currentBoardDocument = null;
-        clearCurrentBoardDocumentMeta();
-        syncBoardDocumentActions();
-        setStatus(t("boardDocumentDeleted"));
-      } catch {
-        setStatus(t("saveNetworkError"));
-      } finally {
-        boardDocumentBusy = false;
-        syncBoardDocumentActions();
-      }
-    }
-
-    async function saveToVatioLibre(){
-      if (saveBusy) return;
-
-      saveBusy = true;
-      syncSaveButton();
-      setStatus(t("saveCheckingAccess"));
-
-      try {
-        const session = await getBackendSessionState();
-
-        if (!session.ok) {
-          if (session.isGuest) {
-            openBackendAuth();
-            setStatus(t("saveLoginRequired"));
-          } else {
-            setStatus(t("saveSessionCheckFailed", { status: session.status }));
-          }
-          return;
-        }
-
-        if (session.isGuest) {
-          openBackendAuth();
-          setStatus(t("saveLoginRequired"));
-          return;
-        }
-
-        const featureAccess = await getBackendFeatureAccessState();
-
-        if (!featureAccess.ok) {
-          if (featureAccess.isGuest) {
-            openBackendAuth();
-            setStatus(t("saveLoginRequired"));
-          } else {
-            setStatus(t("saveFeatureAccessFailed", { status: featureAccess.status }));
-          }
-          return;
-        }
-
-        if (!featureAccess.capability.enabled) {
-          setStatus(getBlockedSaveMessage(featureAccess.capability));
-          return;
-        }
-
-        if (!featureAccess.capability.csrfToken) {
-          setStatus(t("saveUnavailable"));
-          return;
-        }
-
-        setStatus(t("savingToVatioLibre"));
-        const exportedDrawing = await exportCanvasAsPng();
-        const saveResult = await saveDrawingToBackend({
-          fileBlob: exportedDrawing.fileBlob,
-          fileName: exportedDrawing.fileName,
-          imageWidth: exportedDrawing.imageWidth,
-          imageHeight: exportedDrawing.imageHeight,
-          csrfToken: featureAccess.capability.csrfToken,
-        });
-
-        if (!saveResult.ok) {
-          if (saveResult.status === 401 || saveResult.status === 403) {
-            openBackendAuth();
-            setStatus(t("saveLoginRequired"));
-          } else {
-            setStatus(t("saveFailed", { status: saveResult.status }));
-          }
-          return;
-        }
-
-        setStatus(t("savedToVatioLibre"));
-      } catch {
-        setStatus(t("saveNetworkError"));
-      } finally {
-        saveBusy = false;
-        syncSaveButton();
-      }
     }
 
     // Events
@@ -1241,21 +1284,14 @@ bindNavigation(openLibraryMenuBtn, "/library.html?tab=board_documents");
 
     sizeEl.addEventListener("input", syncSizePreview);
 
-    clearBtn.addEventListener("click", clear);
-    saveBtn.addEventListener("click", () => {
-      void saveToVatioLibre();
+    createNewBtn?.addEventListener("click", () => {
+      void createNewBoard();
     });
-    saveBoardDocumentMenuBtn?.addEventListener("click", () => {
-      toolsMenu.close();
-      void saveBoardDocumentToCloud();
+    saveBtn?.addEventListener("click", () => {
+      void saveBoardDocument();
     });
-    saveBoardDocumentCopyMenuBtn?.addEventListener("click", () => {
-      toolsMenu.close();
-      void saveBoardDocumentToCloud({ saveAsNew: true });
-    });
-    deleteBoardDocumentMenuBtn?.addEventListener("click", () => {
-      toolsMenu.close();
-      void deleteBoardDocumentFromCloud();
+    deleteBoardBtn?.addEventListener("click", () => {
+      void deleteBoardDocument();
     });
 
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -1300,8 +1336,7 @@ bindNavigation(openLibraryMenuBtn, "/library.html?tab=board_documents");
     // Init
     syncSizePreview();
     syncHistoryButtons();
-    syncSaveButton();
-    syncBoardDocumentActions();
+    syncToolbarButtons();
     setActive();
 
     renderSwatches();

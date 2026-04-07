@@ -164,7 +164,7 @@ beforeEach(() => {
     configurable: true,
     writable: true,
     value: vi.fn((query) => ({
-      matches: false,
+      matches: query === "(prefers-reduced-motion: reduce)",
       media: query,
       onchange: null,
       addListener: vi.fn(),

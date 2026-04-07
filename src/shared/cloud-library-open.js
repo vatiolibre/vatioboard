@@ -10,6 +10,6 @@ export async function openCloudAccelRun(name) {
   return openAccelFromCloud(name);
 }
 
-export async function openCloudBoardDocument(name, { confirmReplace } = {}) {
-  return openBoardDocumentFromCloud(name, { confirmReplace });
+export async function openCloudBoardDocument(name) {
+  return openBoardDocumentFromCloud(name);
 }

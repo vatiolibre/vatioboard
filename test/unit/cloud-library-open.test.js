@@ -69,15 +69,12 @@ describe("cloud library open helpers", () => {
   });
 
   it('delegates board document opens to the board document repository', async () => {
-    const confirmReplace = vi.fn(() => true);
     mockState.openBoardDocumentFromCloud.mockResolvedValue('/');
 
     const { openCloudBoardDocument } = await import('../../src/shared/cloud-library-open.js');
-    await expect(openCloudBoardDocument('BOARD-DOC-1', { confirmReplace })).resolves.toBe('/');
+    await expect(openCloudBoardDocument('BOARD-DOC-1')).resolves.toBe('/');
 
-    expect(mockState.openBoardDocumentFromCloud).toHaveBeenCalledWith('BOARD-DOC-1', {
-      confirmReplace,
-    });
+    expect(mockState.openBoardDocumentFromCloud).toHaveBeenCalledWith('BOARD-DOC-1');
   });
 
 });
