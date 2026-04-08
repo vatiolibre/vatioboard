@@ -1,6 +1,38 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { bootHtmlPage, expectPageSeo, flushTasks } from "../helpers/page-smoke.js";
 
+vi.mock("maplibre-gl", () => {
+  class FakeMap {
+    constructor() {
+      this.handlers = {};
+      this.sources = new Map();
+      this.scrollZoom = { disable: vi.fn() };
+      this.boxZoom = { disable: vi.fn() };
+      this.doubleClickZoom = { disable: vi.fn() };
+      this.dragPan = { disable: vi.fn() };
+      this.dragRotate = { disable: vi.fn() };
+      this.keyboard = { disable: vi.fn() };
+      this.touchZoomRotate = { disable: vi.fn() };
+      this.jumpTo = vi.fn();
+      this.easeTo = vi.fn();
+      this.fitBounds = vi.fn();
+      this.remove = vi.fn();
+      // Fire load synchronously on next microtask
+      Promise.resolve().then(() => {
+        for (const handler of this.handlers.load ?? []) handler();
+      });
+    }
+    on(event, handler) { (this.handlers[event] ??= []).push(handler); return this; }
+    addControl() { return this; }
+    getSource(id) {
+      if (!this.sources.has(id)) this.sources.set(id, { setData: vi.fn() });
+      return this.sources.get(id);
+    }
+    setPaintProperty() {}
+  }
+  return { default: { Map: FakeMap, AttributionControl: class {} } };
+});
+
 async function settleLibraryTasks(iterations = 16) {
   for (let index = 0; index < iterations; index += 1) {
     await flushTasks();
@@ -30,7 +62,7 @@ function jsonResponse(body, status = 200) {
 }
 
 function createAuthenticatedLibraryFetch(handler) {
-  return vi.fn(async (input) => {
+  return vi.fn(async (input, options) => {
     const url = typeof input === "string" ? input : String(input?.url ?? "");
 
     if (url.includes("/api/method/vatiolibre.services.tesla_connection_status")) {
@@ -63,7 +95,7 @@ function createAuthenticatedLibraryFetch(handler) {
       });
     }
 
-    return handler(url);
+    return handler(url, options);
   });
 }
 
@@ -126,6 +158,7 @@ describe("library.html smoke", () => {
                 duration_ms: 185000,
                 distance_unit: "m",
                 total_distance: 1280,
+                total_distance_m: 1280,
                 unit: "kmh",
                 max_speed: 82,
                 start_place_label: "Fort Lee",
@@ -143,6 +176,7 @@ describe("library.html smoke", () => {
                 duration_ms: 92000,
                 distance_unit: "m",
                 total_distance: 640,
+                total_distance_m: 640,
                 unit: "kmh",
                 max_speed: 64,
                 start_place_label: "Fort Lee",
@@ -174,6 +208,7 @@ describe("library.html smoke", () => {
               duration_ms: recordName === "SYNC-REPLAY-2" ? 92000 : 185000,
               distance_unit: "m",
               total_distance: recordName === "SYNC-REPLAY-2" ? 640 : 1280,
+              total_distance_m: recordName === "SYNC-REPLAY-2" ? 640 : 1280,
               unit: "kmh",
               max_speed: recordName === "SYNC-REPLAY-2" ? 64 : 82,
               start_place_label: "Fort Lee",
@@ -200,6 +235,7 @@ describe("library.html smoke", () => {
                 redo_command_count: 0,
                 payload_size: 2048,
                 updated_at_label: "2026-04-03 08:00:00",
+                preview_image_url: "https://example.com/previews/board-1.png",
               },
             ],
             total_count: 1,
@@ -222,6 +258,7 @@ describe("library.html smoke", () => {
               redo_command_count: 0,
               payload_size: 2048,
               updated_at_label: "2026-04-03 08:00:00",
+              preview_image_url: "https://example.com/previews/board-1.png",
             },
           },
         }), {
@@ -330,6 +367,30 @@ describe("library.html smoke", () => {
     expect(document.getElementById("libraryActionOpen")?.disabled).toBe(true);
   });
 
+  it("renders speed and distance meta with human-readable formatting", async () => {
+    const libraryPage = await import("../../src/library/library.js");
+    await libraryPage.initPromise;
+    await settleLibraryTasks();
+
+    // First record: 1280m metric, 82 km/h
+    const metaText = document.getElementById("libraryDetailMeta")?.textContent || "";
+    expect(metaText).toContain("1.3 km");
+    expect(metaText).toContain("82 km/h");
+    expect(metaText).not.toContain("kmh");
+    expect(metaText).not.toMatch(/1280\s*m\b/);
+
+    // Switch to second record: 640m metric, 64 km/h
+    document.querySelectorAll(".library-record")[1]?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true })
+    );
+    await settleLibraryTasks();
+
+    const metaText2 = document.getElementById("libraryDetailMeta")?.textContent || "";
+    expect(metaText2).toContain("640 m");
+    expect(metaText2).toContain("64 km/h");
+    expect(metaText2).not.toContain("kmh");
+  });
+
   it("uses the shared launcher chrome and keeps auth controls inside the menu", async () => {
     const libraryPage = await import("../../src/library/library.js");
     await libraryPage.initPromise;
@@ -341,6 +402,25 @@ describe("library.html smoke", () => {
     expect(document.getElementById("libraryRefresh")?.querySelector("svg")).toBeTruthy();
     expect(document.querySelector(".library-account-panel")).toBeNull();
     expect(document.querySelector(".library-hero")).toBeNull();
+    expect(document.querySelector(".library-overview")).toBeNull();
+
+    // Route chip is a sibling of the toolbar, not inside it
+    const headerInner = document.querySelector(".header-inner.library-header-inner");
+    const routeChip = headerInner?.querySelector(":scope > .route-chip.library-page-chip");
+    expect(routeChip).toBeTruthy();
+    expect(routeChip?.textContent).toBe("LIBRARY");
+    expect(document.querySelector(".library-toolbar .library-page-chip")).toBeNull();
+
+    // Toolbar has library-specific aria
+    const toolbar = document.querySelector(".toolbar.library-toolbar");
+    expect(toolbar?.getAttribute("role")).toBe("toolbar");
+    expect(toolbar?.getAttribute("aria-label")).toBe("Library controls");
+
+    // Replay-style header composition: toolbar-right holds controls, sync indicator mounts to toolbar end
+    const toolbarRight = document.querySelector(".library-toolbar-right");
+    expect(toolbarRight?.querySelector(".library-toolbar-strip")).toBeTruthy();
+    expect(document.getElementById("librarySyncSlot")).toBeNull();
+    expect(toolbar?.querySelector(":scope > .cloud-sync-indicator.cloud-sync-indicator-end")).toBeTruthy();
 
     const toolsMenuButton = document.getElementById("libraryToolsMenuBtn");
     const toolsMenuList = document.getElementById("libraryToolsMenuList");
@@ -370,6 +450,12 @@ describe("library.html smoke", () => {
     expect(document.querySelector('[data-tab="board_documents"]')?.dataset.active).toBe("true");
     expect(document.querySelectorAll(".library-record")).toHaveLength(1);
     expect(document.getElementById("libraryDetailTitle")?.textContent).toBe("Skidpad sketch");
+
+    // Board document with preview_image_url should render an image preview
+    const previewImg = document.querySelector("#libraryDetailPreview img");
+    expect(previewImg).toBeTruthy();
+    expect(previewImg?.src).toContain("board-1.png");
+    expect(document.getElementById("libraryDetailPreview")?.dataset.previewKind).toBe("image");
   });
 
   it("loads saved-image previews and downloads through the BFF origin", async () => {
@@ -559,7 +645,6 @@ describe("library.html smoke", () => {
     expect(document.getElementById("libraryListEmpty")?.textContent).toBe(
       "Sign in with your VatioLibre account to browse your cloud library on this device."
     );
-    expect(document.getElementById("libraryAuthSummaryTitle")?.textContent).toBe("Signed out");
     expect(document.querySelectorAll(".library-record")).toHaveLength(0);
   });
 
@@ -621,5 +706,377 @@ describe("library.html smoke", () => {
     );
     expect(document.getElementById("libraryDetailTitle")?.textContent).toBe("Downtown loop");
     expect(document.querySelectorAll(".library-record")).toHaveLength(1);
+  });
+
+  it("removes a stale speed record when its summary detail returns 404", async () => {
+    let speedListCalls = 0;
+    const staleRecord = {
+      name: "SYNC-REPLAY-GONE",
+      title: "Gone run",
+      record_title: "Gone run",
+      started_at_label: "2026-04-05 08:00:00",
+      sample_count: 18,
+      duration_ms: 81000,
+      has_samples_payload: true,
+      payload_complete: true,
+      can_open: true,
+    };
+    const remainingRecord = {
+      name: "SYNC-REPLAY-OK",
+      title: "Still here",
+      record_title: "Still here",
+      started_at_label: "2026-04-05 09:00:00",
+      sample_count: 24,
+      duration_ms: 120000,
+      has_samples_payload: true,
+      payload_complete: true,
+      can_open: true,
+    };
+
+    window.fetch = createAuthenticatedLibraryFetch((url) => {
+      if (url.includes("/api/method/vatiolibre.vatiolibre.cloud_sync.list_my_speed_recordings")) {
+        speedListCalls += 1;
+        const records = speedListCalls >= 3 ? [remainingRecord] : [staleRecord, remainingRecord];
+        return jsonResponse({
+          message: {
+            records,
+            total_count: records.length,
+            has_more: false,
+            next_offset: records.length,
+          },
+        });
+      }
+
+      if (url.includes("/api/method/vatiolibre.vatiolibre.cloud_sync.get_my_speed_recording_detail")) {
+        const recordName = new URL(url).searchParams.get("name");
+        if (recordName === staleRecord.name) {
+          return jsonResponse({ message: "Missing" }, 404);
+        }
+
+        return jsonResponse({
+          message: {
+            record: remainingRecord,
+          },
+        });
+      }
+
+      return jsonResponse({});
+    });
+
+    const libraryPage = await import("../../src/library/library.js");
+    await libraryPage.initPromise;
+    await settleLibraryTasks();
+
+    expect(Array.from(document.querySelectorAll(".library-record-title")).map((item) => item.textContent)).toEqual([
+      "Still here",
+    ]);
+    expect(document.getElementById("libraryDetailTitle")?.textContent).toBe("Still here");
+    expect(document.querySelector(".library-record[data-selected='true'] .library-record-title")?.textContent).toBe("Still here");
+  });
+
+  it("removes a stale speed record when open hits a 404 on the full cloud detail", async () => {
+    let speedListCalls = 0;
+    let staleDetailCalls = 0;
+    const staleRecord = {
+      name: "SYNC-REPLAY-GONE",
+      title: "Gone run",
+      record_title: "Gone run",
+      started_at_label: "2026-04-05 08:00:00",
+      sample_count: 18,
+      duration_ms: 81000,
+      has_samples_payload: true,
+      payload_complete: true,
+      can_open: true,
+    };
+    const remainingRecord = {
+      name: "SYNC-REPLAY-OK",
+      title: "Still here",
+      record_title: "Still here",
+      started_at_label: "2026-04-05 09:00:00",
+      sample_count: 24,
+      duration_ms: 120000,
+      has_samples_payload: true,
+      payload_complete: true,
+      can_open: true,
+    };
+
+    window.fetch = createAuthenticatedLibraryFetch((url) => {
+      if (url.includes("/api/method/vatiolibre.vatiolibre.cloud_sync.list_my_speed_recordings")) {
+        speedListCalls += 1;
+        const records = speedListCalls >= 3 ? [remainingRecord] : [staleRecord, remainingRecord];
+        return jsonResponse({
+          message: {
+            records,
+            total_count: records.length,
+            has_more: false,
+            next_offset: records.length,
+          },
+        });
+      }
+
+      if (url.includes("/api/method/vatiolibre.vatiolibre.cloud_sync.get_my_speed_recording_detail")) {
+        const requestUrl = new URL(url);
+        const recordName = requestUrl.searchParams.get("name");
+        const includePayload = requestUrl.searchParams.get("include_payload");
+
+        if (recordName === staleRecord.name) {
+          staleDetailCalls += 1;
+          if (includePayload === "1" || staleDetailCalls >= 2) {
+            return jsonResponse({ message: "Missing" }, 404);
+          }
+        }
+
+        return jsonResponse({
+          message: {
+            record: recordName === staleRecord.name ? staleRecord : remainingRecord,
+          },
+        });
+      }
+
+      return jsonResponse({});
+    });
+
+    const libraryPage = await import("../../src/library/library.js");
+    await libraryPage.initPromise;
+    await settleLibraryTasks();
+
+    document.getElementById("libraryActionOpen")?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true })
+    );
+    await settleLibraryTasks();
+
+    expect(Array.from(document.querySelectorAll(".library-record-title")).map((item) => item.textContent)).toEqual([
+      "Still here",
+    ]);
+    expect(document.getElementById("libraryDetailTitle")?.textContent).toBe("Still here");
+    expect(document.querySelector(".library-record[data-selected='true'] .library-record-title")?.textContent).toBe("Still here");
+  });
+
+  it("removes a stale speed record when delete returns 404", async () => {
+    let speedListCalls = 0;
+    const staleRecord = {
+      name: "SYNC-REPLAY-GONE",
+      title: "Gone run",
+      record_title: "Gone run",
+      started_at_label: "2026-04-05 08:00:00",
+      sample_count: 18,
+      duration_ms: 81000,
+      has_samples_payload: true,
+      payload_complete: true,
+      can_open: true,
+      entity_type: "replay_session",
+      client_record_id: "replay-gone",
+      device_id: "DEVICE-1",
+    };
+    const remainingRecord = {
+      name: "SYNC-REPLAY-OK",
+      title: "Still here",
+      record_title: "Still here",
+      started_at_label: "2026-04-05 09:00:00",
+      sample_count: 24,
+      duration_ms: 120000,
+      has_samples_payload: true,
+      payload_complete: true,
+      can_open: true,
+      entity_type: "replay_session",
+      client_record_id: "replay-ok",
+      device_id: "DEVICE-1",
+    };
+
+    window.fetch = createAuthenticatedLibraryFetch((url, options = {}) => {
+      if (url.includes("/api/method/vatiolibre.vatiolibre.cloud_sync.list_my_speed_recordings")) {
+        speedListCalls += 1;
+        const records = speedListCalls >= 3 ? [remainingRecord] : [staleRecord, remainingRecord];
+        return jsonResponse({
+          message: {
+            records,
+            total_count: records.length,
+            has_more: false,
+            next_offset: records.length,
+          },
+        });
+      }
+
+      if (url.includes("/api/method/vatiolibre.vatiolibre.cloud_sync.get_my_speed_recording_detail")) {
+        const recordName = new URL(url).searchParams.get("name");
+        return jsonResponse({
+          message: {
+            record: recordName === staleRecord.name ? staleRecord : remainingRecord,
+          },
+        });
+      }
+
+      if (url.includes("/api/method/vatiolibre.vatiolibre.cloud_sync.delete_my_sync_record")) {
+        const body = new URLSearchParams(String(options?.body || ""));
+        if (body.get("client_record_id") === staleRecord.client_record_id) {
+          return jsonResponse({ message: "Missing" }, 404);
+        }
+        return jsonResponse({ message: { ok: true } });
+      }
+
+      return jsonResponse({});
+    });
+
+    const libraryPage = await import("../../src/library/library.js");
+    await libraryPage.initPromise;
+    await settleLibraryTasks();
+
+    document.getElementById("libraryActionDelete")?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true })
+    );
+    await settleLibraryTasks(2);
+
+    document.querySelector(".vb-confirm-btn--confirm")?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true })
+    );
+    await settleLibraryTasks();
+
+    expect(Array.from(document.querySelectorAll(".library-record-title")).map((item) => item.textContent)).toEqual([
+      "Still here",
+    ]);
+    expect(document.getElementById("libraryDetailTitle")?.textContent).toBe("Still here");
+    expect(document.querySelector(".library-record[data-selected='true'] .library-record-title")?.textContent).toBe("Still here");
+  });
+
+  it("renders a map preview when a speed record includes preview_route", async () => {
+    window.fetch = createAuthenticatedLibraryFetch((url) => {
+      if (url.includes("/api/method/vatiolibre.vatiolibre.cloud_sync.list_my_speed_recordings")) {
+        return jsonResponse({
+          message: {
+            records: [
+              {
+                name: "SYNC-REPLAY-MAP",
+                title: "Riverside drive",
+                record_title: "Riverside drive",
+                started_at_label: "2026-04-05 14:00:00",
+                sample_count: 80,
+                duration_ms: 300000,
+                has_samples_payload: true,
+                payload_complete: true,
+                can_open: true,
+                preview_route: [
+                  [-73.96, 40.81],
+                  [-73.97, 40.82],
+                  [-73.98, 40.83],
+                ],
+              },
+            ],
+            total_count: 1,
+            has_more: false,
+            next_offset: 1,
+          },
+        });
+      }
+
+      if (url.includes("/api/method/vatiolibre.vatiolibre.cloud_sync.get_my_speed_recording_detail")) {
+        return jsonResponse({
+          message: {
+            record: {
+              name: "SYNC-REPLAY-MAP",
+              title: "Riverside drive",
+              started_at_label: "2026-04-05 14:00:00",
+              sample_count: 80,
+              duration_ms: 300000,
+              has_samples_payload: true,
+              payload_complete: true,
+              can_open: true,
+              preview_route: [
+                [-73.96, 40.81],
+                [-73.97, 40.82],
+                [-73.98, 40.83],
+              ],
+            },
+          },
+        });
+      }
+
+      return jsonResponse({});
+    });
+
+    const libraryPage = await import("../../src/library/library.js");
+    await libraryPage.initPromise;
+    await settleLibraryTasks();
+
+    const preview = document.getElementById("libraryDetailPreview");
+    expect(preview?.dataset.previewKind).toBe("map");
+    expect(preview?.querySelector(".library-map-container")).toBeTruthy();
+  });
+
+  it("renders a map preview via fallback when preview_route is absent but places have coordinates", async () => {
+    window.fetch = createAuthenticatedLibraryFetch((url) => {
+      if (url.includes("/api/method/vatiolibre.vatiolibre.cloud_sync.list_my_speed_recordings")) {
+        return jsonResponse({
+          message: {
+            records: [
+              {
+                name: "SYNC-REPLAY-FALLBACK",
+                title: "Fort Lee",
+                record_title: "Fort Lee",
+                started_at_label: "2026-04-08 09:00:00",
+                sample_count: 50,
+                duration_ms: 180000,
+                has_samples_payload: true,
+                payload_complete: true,
+                can_open: true,
+                start_place: {
+                  label: "Fort Lee",
+                  detail: "New Jersey, US",
+                  latitude: 40.8509,
+                  longitude: -73.9701,
+                },
+                end_place: {
+                  label: "Edgewater",
+                  detail: "New Jersey, US",
+                  latitude: 40.8271,
+                  longitude: -73.9754,
+                },
+              },
+            ],
+            total_count: 1,
+            has_more: false,
+            next_offset: 1,
+          },
+        });
+      }
+
+      if (url.includes("/api/method/vatiolibre.vatiolibre.cloud_sync.get_my_speed_recording_detail")) {
+        return jsonResponse({
+          message: {
+            record: {
+              name: "SYNC-REPLAY-FALLBACK",
+              title: "Fort Lee",
+              started_at_label: "2026-04-08 09:00:00",
+              sample_count: 50,
+              duration_ms: 180000,
+              has_samples_payload: true,
+              payload_complete: true,
+              can_open: true,
+              start_place: {
+                label: "Fort Lee",
+                detail: "New Jersey, US",
+                latitude: 40.8509,
+                longitude: -73.9701,
+              },
+              end_place: {
+                label: "Edgewater",
+                detail: "New Jersey, US",
+                latitude: 40.8271,
+                longitude: -73.9754,
+              },
+            },
+          },
+        });
+      }
+
+      return jsonResponse({});
+    });
+
+    const libraryPage = await import("../../src/library/library.js");
+    await libraryPage.initPromise;
+    await settleLibraryTasks();
+
+    const preview = document.getElementById("libraryDetailPreview");
+    expect(preview?.dataset.previewKind).toBe("map");
+    expect(preview?.querySelector(".library-map-container")).toBeTruthy();
   });
 });

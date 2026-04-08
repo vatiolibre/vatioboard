@@ -236,6 +236,8 @@ const baseTranslations = {
     cloudLibraryRequestFailed: 'Could not load this cloud library section ({status})',
     cloudLibraryDetailFailed: 'Could not load this cloud record ({status})',
     cloudLibraryNoItems: 'No cloud records found yet.',
+    cloudLibraryRecordUnavailable:
+      'This cloud record is no longer available. The library was refreshed.',
     cloudLibraryOpenFailed: 'Could not open this cloud record right now.',
     cloudLibraryTelemetryUnavailable:
       'This cloud record only has summary telemetry right now, so it cannot be opened on this device.',
@@ -243,6 +245,12 @@ const baseTranslations = {
     cloudLibraryRenameFailed: 'Rename failed ({status})',
     cloudLibraryDeleted: 'Cloud record deleted',
     cloudLibraryDeleteFailed: 'Delete failed ({status})',
+    cloudLibraryDeleteTitle: 'Delete cloud record',
+    cloudLibraryDeleteMessage: 'This will permanently delete "{title}". This action cannot be undone.',
+    cloudLibraryRenameTitle: 'Rename board document',
+    cloudLibraryRenameMessage: 'Enter a new title for this board document.',
+    libraryBadgeSummaryOnly: 'Summary only',
+    libraryBadgePayloadMissing: 'Payload missing',
     singleTabBlockedTitle: 'VatioBoard is already open in another tab',
     singleTabBlockedMessage:
       'Use VatioBoard in a single tab for this browser profile. Close the other tab, then retry here.',
@@ -350,6 +358,8 @@ const baseTranslations = {
     cloudLibraryDeleteConfirm: 'Delete "{title}"?',
     cloudLibrarySummaryCloudSync: 'Cloud sync',
     cloudLibrarySummarySavedImages: 'Saved images',
+    cloudLibraryTools: 'Library controls',
+    cloudLibraryRoute: 'LIBRARY',
     poweredBy: 'Powered by',
     speedTagline: 'Minimal live speedometer by Vatio Libre',
     speedRoute: 'SPEED',
@@ -853,6 +863,8 @@ const baseTranslations = {
     cloudLibraryRequestFailed: 'No se pudo cargar esta sección ({status})',
     cloudLibraryDetailFailed: 'No se pudo cargar este registro en la nube ({status})',
     cloudLibraryNoItems: 'Todavía no hay registros en la nube.',
+    cloudLibraryRecordUnavailable:
+      'Este registro en la nube ya no está disponible. La biblioteca se actualizó.',
     cloudLibraryOpenFailed: 'No se pudo abrir este registro en la nube.',
     cloudLibraryTelemetryUnavailable:
       'Este registro en la nube solo tiene telemetría resumida por ahora, así que no se puede abrir en este dispositivo.',
@@ -860,6 +872,12 @@ const baseTranslations = {
     cloudLibraryRenameFailed: 'No se pudo renombrar ({status})',
     cloudLibraryDeleted: 'Registro en la nube eliminado',
     cloudLibraryDeleteFailed: 'No se pudo eliminar ({status})',
+    cloudLibraryDeleteTitle: 'Eliminar registro en la nube',
+    cloudLibraryDeleteMessage: 'Esto eliminará permanentemente "{title}". Esta acción no se puede deshacer.',
+    cloudLibraryRenameTitle: 'Renombrar documento del tablero',
+    cloudLibraryRenameMessage: 'Introduce un nuevo título para este documento del tablero.',
+    libraryBadgeSummaryOnly: 'Solo resumen',
+    libraryBadgePayloadMissing: 'Datos no disponibles',
     singleTabBlockedTitle: 'VatioBoard ya está abierto en otra pestaña',
     singleTabBlockedMessage:
       'Usa VatioBoard en una sola pestaña para este perfil del navegador. Cierra la otra pestaña y luego vuelve a intentar aquí.',
@@ -968,6 +986,8 @@ const baseTranslations = {
     cloudLibraryDeleteConfirm: '¿Eliminar "{title}"?',
     cloudLibrarySummaryCloudSync: 'Sincronización en la nube',
     cloudLibrarySummarySavedImages: 'Imágenes guardadas',
+    cloudLibraryTools: 'Controles de la biblioteca',
+    cloudLibraryRoute: 'LIBRARY',
     poweredBy: 'Creado por',
     speedTagline: 'Velocímetro en vivo minimalista por Vatio Libre',
     speedRoute: 'VELOCIDAD',

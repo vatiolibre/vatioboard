@@ -20,12 +20,12 @@ import {
 import { createEnergyCalculatorWidget } from "../energy/energy-calculator-widget.js";
 import { createFloatingDock } from "../dock/floating-dock.js";
 import {
+  BACKEND_AUTH_STATE_EVENT,
   deleteBoardDocumentFromBackend,
   getBackendFeatureAccessState,
   getBackendSessionState,
   initBackendAuthControllers,
   saveBoardDocumentToBackend,
-  saveDrawingToBackend,
   updateBoardDocumentInBackend,
 } from "../shared/backend-auth.js";
 import {
@@ -202,6 +202,7 @@ bindNavigation(openLibraryMenuBtn, "/library.html?tab=board_documents");
         hasContent: false,
       })
       : createBlankSession();
+    let activeBackendUser = null;
 
     function isDarkMode(){
       return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -315,6 +316,77 @@ bindNavigation(openLibraryMenuBtn, "/library.html?tab=board_documents");
       saveBtn.disabled = busy;
       if (deleteBoardBtn) {
         deleteBoardBtn.disabled = busy || documentSession.deleteState === "deleting";
+      }
+    }
+
+    function normalizeBackendUser(value){
+      const normalized = typeof value === "string" ? value.trim() : "";
+      return normalized || null;
+    }
+
+    function clearRemoteBoardDocumentReference({ preserveTitle = true } = {}){
+      const nextTitle = preserveTitle
+        ? (documentSession.documentTitle || currentBoardDocument?.title || "")
+        : "";
+
+      documentSession.remoteDocumentName = null;
+      documentSession.documentTitle = nextTitle;
+      documentSession.lastSavedAtMs = 0;
+      documentSession.materializedRemotely = false;
+      documentSession.openedFromCloud = false;
+      currentBoardDocument = null;
+      clearCurrentBoardDocumentMeta();
+    }
+
+    async function saveBoardDocumentWithFallback({
+      title,
+      snapshot,
+      previewImage,
+      csrfToken,
+    }){
+      if (!isNamedDocument(documentSession)) {
+        return saveBoardDocumentToBackend({
+          title,
+          payload: snapshot,
+          previewImage,
+          csrfToken,
+        });
+      }
+
+      const updateResponse = await updateBoardDocumentInBackend({
+        name: documentSession.remoteDocumentName,
+        payload: snapshot,
+        previewImage,
+        csrfToken,
+      });
+
+      if (updateResponse?.status !== 404) {
+        return updateResponse;
+      }
+
+      clearRemoteBoardDocumentReference({ preserveTitle: true });
+      const fallbackTitle = String(title || documentSession.documentTitle || "").trim();
+
+      return saveBoardDocumentToBackend({
+        title: fallbackTitle,
+        payload: snapshot,
+        previewImage,
+        csrfToken,
+      });
+    }
+
+    function handleBackendAuthStateChange(event){
+      if (event?.detail?.pendingLogout === true) return;
+      if (event?.detail?.isGuest === true || event?.detail?.authenticated !== true) {
+        return;
+      }
+
+      const nextUser = normalizeBackendUser(event?.detail?.user);
+      if (activeBackendUser && nextUser && activeBackendUser !== nextUser) {
+        clearRemoteBoardDocumentReference({ preserveTitle: true });
+      }
+      if (nextUser) {
+        activeBackendUser = nextUser;
       }
     }
 
@@ -947,23 +1019,12 @@ bindNavigation(openLibraryMenuBtn, "/library.html?tab=board_documents");
           // Non-critical: save the document without a preview image.
         }
 
-        let response = null;
-
-        if (isNamedDocument(documentSession)) {
-          // Update existing document
-          response = await updateBoardDocumentInBackend({
-            name: documentSession.remoteDocumentName,
-            payload: snapshot,
-            csrfToken: capability.csrfToken,
-          });
-        } else {
-          // Create new document
-          response = await saveBoardDocumentToBackend({
-            title,
-            payload: snapshot,
-            csrfToken: capability.csrfToken,
-          });
-        }
+        const response = await saveBoardDocumentWithFallback({
+          title,
+          snapshot,
+          previewImage: pngBlob,
+          csrfToken: capability.csrfToken,
+        });
 
         if (!response?.ok || !response.document) {
           if (response?.status === 401 || response?.status === 403) {
@@ -975,18 +1036,7 @@ bindNavigation(openLibraryMenuBtn, "/library.html?tab=board_documents");
           return;
         }
 
-        // Save PNG linked to the document
-        if (pngBlob) {
-          try {
-            await saveDrawingToBackend({
-              fileBlob: pngBlob,
-              fileName: "drawing.png",
-              csrfToken: capability.csrfToken,
-            });
-          } catch {
-            // Non-critical: document saved but preview image upload failed.
-          }
-        }
+
 
         // Update session & persisted metadata
         markSaved(documentSession, {
@@ -1293,6 +1343,7 @@ bindNavigation(openLibraryMenuBtn, "/library.html?tab=board_documents");
     deleteBoardBtn?.addEventListener("click", () => {
       void deleteBoardDocument();
     });
+    window.addEventListener(BACKEND_AUTH_STATE_EVENT, handleBackendAuthStateChange);
 
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     if (mq && mq.addEventListener){

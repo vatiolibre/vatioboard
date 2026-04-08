@@ -41,6 +41,9 @@ describe("index.html smoke", () => {
   let savedDrawingsEnabled;
   let savedDrawingsReason;
   let csrfToken;
+  let staleBoardDocumentNames;
+  let savedBoardDocumentResponse;
+  let updatedBoardDocumentResponse;
 
   beforeEach(async () => {
     vi.resetModules();
@@ -51,6 +54,17 @@ describe("index.html smoke", () => {
     savedDrawingsEnabled = false;
     savedDrawingsReason = "";
     csrfToken = "csrf-test-token";
+    staleBoardDocumentNames = new Set();
+    savedBoardDocumentResponse = {
+      name: "BOARD-DOC-0001",
+      title: "Autocross sketch",
+      updated_at_ms: 1712163600000,
+    };
+    updatedBoardDocumentResponse = {
+      name: "BOARD-DOC-0001",
+      title: "Autocross sketch",
+      updated_at_ms: 1712167200000,
+    };
 
     window.fetch = vi.fn(async (input, init = {}) => {
       const url = typeof input === "string" ? input : String(input?.url ?? "");
@@ -128,11 +142,7 @@ describe("index.html smoke", () => {
       if (url.endsWith("/api/method/vatiolibre.vatiolibre.board_documents.save_my_board_document")) {
         return new Response(JSON.stringify({
           message: {
-            document: {
-              name: "BOARD-DOC-0001",
-              title: "Autocross sketch",
-              updated_at_ms: 1712163600000,
-            },
+            document: savedBoardDocumentResponse,
           },
         }), {
           status: 200,
@@ -141,13 +151,19 @@ describe("index.html smoke", () => {
       }
 
       if (url.endsWith("/api/method/vatiolibre.vatiolibre.board_documents.update_my_board_document")) {
+        const requestedName = String(init.body?.get?.("name") || "").trim();
+        if (staleBoardDocumentNames.has(requestedName)) {
+          return new Response(JSON.stringify({
+            message: "Board document not found.",
+          }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
         return new Response(JSON.stringify({
           message: {
-            document: {
-              name: "BOARD-DOC-0001",
-              title: "Autocross sketch",
-              updated_at_ms: 1712167200000,
-            },
+            document: updatedBoardDocumentResponse,
           },
         }), {
           status: 200,
@@ -607,5 +623,47 @@ describe("index.html smoke", () => {
       "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.board_documents.update_my_board_document",
       expect.anything()
     );
+  });
+
+  it("falls back to creating a new board document when the stored remote document is stale", async () => {
+    sessionUser = "board-docs@vatiolibre.com";
+    hasActiveSubscription = true;
+    cloudSyncEnabled = true;
+    savedDrawingsEnabled = true;
+    staleBoardDocumentNames.add("BOARD-DOC-STALE");
+    savedBoardDocumentResponse = {
+      name: "BOARD-DOC-0002",
+      title: "Recovered sketch",
+      updated_at_ms: 1712169000000,
+    };
+
+    localStorage.setItem(BOARD_CURRENT_DOCUMENT_KEY, JSON.stringify({
+      name: "BOARD-DOC-STALE",
+      title: "Recovered sketch",
+      updatedAtMs: 1712163600000,
+    }));
+
+    await import("../../src/board/board.js");
+    await flushBoardTasks();
+
+    const canvas = document.getElementById("pad");
+    dispatchBoardStroke(canvas, 9, 160, 190);
+    await flushBoardTasks();
+
+    document.getElementById("save").click();
+    for (let i = 0; i < 30; i += 1) await flushTasks();
+
+    expect(window.fetch).toHaveBeenCalledWith(
+      "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.board_documents.update_my_board_document",
+      expect.anything()
+    );
+    expect(window.fetch).toHaveBeenCalledWith(
+      "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.board_documents.save_my_board_document",
+      expect.anything()
+    );
+    expect(JSON.parse(localStorage.getItem(BOARD_CURRENT_DOCUMENT_KEY))).toMatchObject({
+      name: "BOARD-DOC-0002",
+      title: "Recovered sketch",
+    });
   });
 });

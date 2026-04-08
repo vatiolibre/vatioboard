@@ -24,6 +24,7 @@ const GET_BOARD_DOCUMENT_DETAIL_METHOD = "vatiolibre.vatiolibre.board_documents.
 const SAVE_BOARD_DOCUMENT_METHOD = "vatiolibre.vatiolibre.board_documents.save_my_board_document";
 const UPDATE_BOARD_DOCUMENT_METHOD = "vatiolibre.vatiolibre.board_documents.update_my_board_document";
 const DELETE_BOARD_DOCUMENT_METHOD = "vatiolibre.vatiolibre.board_documents.delete_my_board_document";
+const DELETE_SAVED_DRAWING_METHOD = "vatiolibre.vatiolibre.drawings.delete_my_saved_drawing";
 const SYNC_REQUEST_COMPRESSION_MIN_BYTES = 128 * 1024;
 const SYNC_REQUEST_GZIP_ENCODING = "gzip";
 const SYNC_RESPONSE_GZIP_BASE64_ENCODING = "gzip_base64";
@@ -908,6 +909,7 @@ export async function getBackendBoardDocumentDetail({
 export async function saveBoardDocumentToBackend({
   title,
   payload,
+  previewImage,
   csrfToken,
   fetchImpl,
   signal,
@@ -916,6 +918,9 @@ export async function saveBoardDocumentToBackend({
   const body = new FormData();
   body.append("title", getText(title) || "");
   body.append("payload", typeof payload === "string" ? payload : JSON.stringify(payload || {}));
+  if (previewImage instanceof Blob) {
+    body.append("preview_image", previewImage, "preview.png");
+  }
 
   const headers = {};
   if (getText(csrfToken)) {
@@ -945,6 +950,7 @@ export async function updateBoardDocumentInBackend({
   name,
   title,
   payload,
+  previewImage,
   csrfToken,
   fetchImpl,
   signal,
@@ -957,6 +963,9 @@ export async function updateBoardDocumentInBackend({
   }
   if (payload !== undefined) {
     body.append("payload", typeof payload === "string" ? payload : JSON.stringify(payload || {}));
+  }
+  if (previewImage instanceof Blob) {
+    body.append("preview_image", previewImage, "preview.png");
   }
 
   const headers = {};
@@ -1233,6 +1242,41 @@ export async function deleteSyncRecordFromBackend({
     status: response.status,
     data,
     record: message?.record ?? null,
+  };
+}
+
+export async function deleteSavedDrawingFromBackend({
+  name,
+  csrfToken,
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const headers = {
+    "Content-Type": "application/x-www-form-urlencoded",
+  };
+  if (getText(csrfToken)) {
+    headers["X-Frappe-CSRF-Token"] = getText(csrfToken);
+  }
+
+  const body = new URLSearchParams();
+  body.set("name", getText(name));
+
+  const { response, data } = await fetchBackendJson(DELETE_SAVED_DRAWING_METHOD, {
+    method: "POST",
+    headers,
+    body: body.toString(),
+    fetchImpl,
+    signal,
+    config,
+  });
+  const message = getMessage(data);
+
+  return {
+    ok: response.ok && message?.ok !== false,
+    status: response.status,
+    data,
+    name: message?.name ?? null,
   };
 }
 

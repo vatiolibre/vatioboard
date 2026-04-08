@@ -486,8 +486,38 @@ function createReplaySessionManifest(session) {
     endPlace: cloneJson(session.endPlace, null),
     recordingState: String(session.recordingState || "").trim() || "stopped",
     contentHash: String(session.contentHash || "").trim(),
-    previewRoute: cloneJson(session.previewRoute, null),
+    previewRoute: cloneJson(session.previewRoute, null)
+      ?? buildPreviewRouteFromSamples(session.samples),
   };
+}
+
+/**
+ * Build a lightweight [lon, lat][] preview route from GPS samples.
+ * Downsamples to at most 200 points to keep the manifest small.
+ */
+function buildPreviewRouteFromSamples(samples, maxPoints = 200) {
+  if (!Array.isArray(samples) || samples.length < 2) return null;
+
+  const coords = [];
+  for (const s of samples) {
+    const lat = Number(s?.latitude);
+    const lon = Number(s?.longitude);
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      coords.push([lon, lat]);
+    }
+  }
+
+  if (coords.length < 2) return null;
+
+  if (coords.length <= maxPoints) return coords;
+
+  const step = (coords.length - 1) / (maxPoints - 1);
+  const result = [];
+  for (let i = 0; i < maxPoints - 1; i++) {
+    result.push(coords[Math.floor(i * step)]);
+  }
+  result.push(coords[coords.length - 1]);
+  return result;
 }
 
 function createAccelRunManifest(run) {

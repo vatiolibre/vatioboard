@@ -1,5 +1,8 @@
+import "maplibre-gl/dist/maplibre-gl.css";
 import "../styles/library.less";
 import "../styles/backend-auth.less";
+import "../styles/cloud-sync-status.less";
+import "../shared/ui/confirm-dialog.less";
 
 import {
   IconAccel,
@@ -17,6 +20,8 @@ import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
 import {
   BACKEND_AUTH_STATE_EVENT,
   deleteBoardDocumentFromBackend,
+  deleteSavedDrawingFromBackend,
+  deleteSyncRecordFromBackend,
   getBackendFeatureAccessState,
   getBackendSessionState,
   initBackendAuthControllers,
@@ -26,12 +31,17 @@ import {
   CLOUD_LIBRARY_TAB_KEYS,
   getCloudLibraryResource,
 } from "../shared/cloud-library-resources.js";
+import { getResourceConfig } from "./resource-registry.js";
+import { createLibraryMapPreview } from "./library-map-preview.js";
+import { showConfirmDialog } from "../shared/ui/confirm-dialog.js";
+import { showPromptDialog } from "../shared/ui/confirm-dialog.js";
 import {
   openCloudAccelRun,
   openCloudBoardDocument,
   openCloudReplaySession,
 } from "../shared/cloud-library-open.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
+import { initCloudSyncStatusIndicator } from "../shared/cloud-sync-status-indicator.js";
 
 applyTranslations();
 initBackendAuthControllers();
@@ -54,9 +64,8 @@ const elements = {
   refreshButton: document.getElementById("libraryRefresh"),
   toolsMenuButton: document.getElementById("libraryToolsMenuBtn"),
   toolsMenuList: document.getElementById("libraryToolsMenuList"),
+  toolbar: document.querySelector(".library-toolbar"),
   status: document.getElementById("libraryStatus"),
-  authSummaryTitle: document.getElementById("libraryAuthSummaryTitle"),
-  authSummaryBody: document.getElementById("libraryAuthSummaryBody"),
   listEmpty: document.getElementById("libraryListEmpty"),
   listPanel: document.getElementById("libraryList"),
   loadMoreButton: document.getElementById("libraryLoadMore"),
@@ -84,6 +93,59 @@ const toolsMenu = initToolsMenu({
 });
 toolsMenu.setOpen(false);
 
+function focusElement(element) {
+  try {
+    element.focus({ preventScroll: true });
+  } catch {
+    element.focus();
+  }
+}
+
+function isVisibleForFocus(element) {
+  return Boolean(element && element.hidden !== true && !element.closest("[hidden]"));
+}
+
+function getCloudSyncLauncherFocusTarget() {
+  const candidates = [
+    elements.toolsMenuList?.querySelector("[data-backend-auth-user]"),
+    elements.toolsMenuList?.querySelector("[data-backend-auth-password]"),
+    elements.toolsMenuList?.querySelector("[data-backend-auth-login]"),
+    elements.toolsMenuList?.querySelector("[data-backend-auth-logout]"),
+    elements.toolsMenuList?.querySelector("[data-backend-auth-status]"),
+  ];
+
+  return candidates.find(isVisibleForFocus) || null;
+}
+
+function focusCloudSyncLauncherTarget(attempt = 0) {
+  toolsMenu.setOpen(true);
+  const target = getCloudSyncLauncherFocusTarget();
+  if (target) {
+    focusElement(target);
+    if (target.matches?.("input") && typeof target.select === "function") {
+      target.select();
+    }
+    return;
+  }
+
+  if (attempt >= 6) return;
+  Promise.resolve().then(() => {
+    focusCloudSyncLauncherTarget(attempt + 1);
+  });
+}
+
+function openCloudSyncLauncher() {
+  Promise.resolve().then(() => {
+    focusCloudSyncLauncherTarget();
+  });
+}
+
+initCloudSyncStatusIndicator({
+  mount: elements.toolbar,
+  alignEnd: true,
+  openLauncher: openCloudSyncLauncher,
+});
+
 const state = {
   activeTab: normalizeTabKey(new URL(window.location.href).searchParams.get("tab")),
   featureAccess: null,
@@ -108,6 +170,8 @@ const state = {
   statusText: "",
   statusTone: "muted",
 };
+
+let mapPreview = null;
 
 const listRequestState = {
   controller: null,
@@ -329,37 +393,6 @@ function renderStatus() {
     || (hasMessage ? t(state.statusKey, state.statusParams || undefined) : "");
 }
 
-function renderAuthSummary() {
-  if (!elements.authSummaryTitle || !elements.authSummaryBody) return;
-
-  if (state.authLoading) {
-    elements.authSummaryTitle.textContent = t("authCheckingSession");
-    elements.authSummaryBody.textContent = t("cloudLibraryLoading");
-    return;
-  }
-
-  if (!state.session?.authenticated) {
-    elements.authSummaryTitle.textContent = t("authSignedOut");
-    elements.authSummaryBody.textContent = t("cloudLibraryLoginPrompt");
-    return;
-  }
-
-  if (!state.featureAccess?.ok) {
-    elements.authSummaryTitle.textContent = t("authSignedIn");
-    elements.authSummaryBody.textContent = t("cloudLibraryAccessUnavailable");
-    return;
-  }
-
-  const cloudSyncStatus = state.featureAccess.cloudSyncCapability?.enabled ? t("on") : t("off");
-  const savedImagesStatus = state.featureAccess.capability?.enabled ? t("on") : t("off");
-
-  elements.authSummaryTitle.textContent = t("authSignedIn");
-  elements.authSummaryBody.textContent = [
-    `${t("cloudLibrarySummaryCloudSync")}: ${cloudSyncStatus}`,
-    `${t("cloudLibrarySummarySavedImages")}: ${savedImagesStatus}`,
-  ].join(" · ");
-}
-
 function renderTabs() {
   elements.libraryTabs.forEach((button) => {
     const tabKey = normalizeTabKey(button.dataset.tab);
@@ -403,6 +436,10 @@ function getRequestErrorStatus(error) {
   return Number(error?.result?.status || error?.status || 0) || 0;
 }
 
+function isNotFoundError(error) {
+  return getRequestErrorStatus(error) === 404;
+}
+
 function applyLibraryRequestError(error, {
   genericKey = "cloudLibraryRequestFailed",
 } = {}) {
@@ -417,7 +454,6 @@ function applyLibraryRequestError(error, {
     };
     state.featureAccess = null;
     setStatus("cloudLibraryLoginPrompt", null, "danger");
-    renderAuthSummary();
     renderTabs();
     return;
   }
@@ -436,53 +472,50 @@ function applyLibraryRequestError(error, {
 }
 
 function canOpenCloudLibraryItem(item) {
-  if (!item || state.activeTab === CLOUD_LIBRARY_TAB_KEYS.savedImages) {
-    return false;
+  if (!item) return false;
+  const config = getResourceConfig(state.activeTab);
+  return config.canOpen(item);
+}
+
+async function recoverMissingCloudRecord(name, { tabKey = state.activeTab } = {}) {
+  const normalizedName = String(name || "").trim();
+  if (!normalizedName) return;
+
+  const normalizedTabKey = normalizeTabKey(tabKey);
+  const resourceConfig = getCloudLibraryResource(normalizedTabKey);
+  resourceConfig.resource.invalidateDetail(normalizedName, { mode: "summary" });
+  resourceConfig.resource.invalidateDetail(normalizedName, { mode: "full" });
+  resourceConfig.resource.invalidateList();
+
+  if (state.activeTab !== normalizedTabKey) {
+    return;
   }
 
-  if (state.activeTab === CLOUD_LIBRARY_TAB_KEYS.boardDocuments) {
-    return true;
+  state.items = state.items.filter((item) => item.name !== normalizedName);
+  if (state.selectedDetail?.name === normalizedName) {
+    state.selectedDetail = null;
+  }
+  if (state.selectedName === normalizedName) {
+    state.selectedName = state.items[0]?.name || "";
   }
 
-  if (item.payload_available === false) {
-    return false;
-  }
+  renderList();
+  renderDetail();
 
-  if (item.can_open === false || item.payload_complete === false) {
-    return false;
+  let refreshed = false;
+  try {
+    await loadList({ force: true });
+    refreshed = true;
+  } finally {
+    if (refreshed && state.activeTab === normalizedTabKey) {
+      setStatus("cloudLibraryRecordUnavailable", null, "danger");
+    }
   }
-
-  return true;
 }
 
 function buildRecordSubtitle(item = {}) {
-  switch (state.activeTab) {
-    case CLOUD_LIBRARY_TAB_KEYS.speed:
-      return [
-        item.started_at_label || item.ended_at_label,
-        item.start_place_label && item.end_place_label
-          ? `${item.start_place_label} -> ${item.end_place_label}`
-          : item.start_place_label || item.end_place_label,
-      ].filter(Boolean).join(" · ");
-    case CLOUD_LIBRARY_TAB_KEYS.accel:
-      return [
-        item.saved_at_label,
-        item.preset_id,
-        item.quality_grade,
-      ].filter(Boolean).join(" · ");
-    case CLOUD_LIBRARY_TAB_KEYS.boardDocuments:
-      return [
-        item.updated_at_label || item.modified_at_label || item.created_at_label,
-        `${formatCount(item.command_count)} ${t("libraryCommands").toLowerCase()}`,
-      ].filter(Boolean).join(" · ");
-    case CLOUD_LIBRARY_TAB_KEYS.savedImages:
-      return [
-        item.created_at_label || item.modified_at_label,
-        formatDimensionPair(item.image_width, item.image_height),
-      ].filter((value) => value && value !== "—").join(" · ");
-    default:
-      return "";
-  }
+  const config = getResourceConfig(state.activeTab);
+  return config.buildSubtitle(item);
 }
 
 function renderList() {
@@ -495,6 +528,7 @@ function renderList() {
 
   if (hasItems) {
     const fragment = document.createDocumentFragment();
+    const config = getResourceConfig(state.activeTab);
 
     state.items.forEach((item) => {
       const button = document.createElement("button");
@@ -511,6 +545,21 @@ function renderList() {
       subtitle.textContent = buildRecordSubtitle(item) || item.name;
 
       button.append(title, subtitle);
+
+      const badges = config.buildBadges(item);
+      if (badges.length > 0) {
+        const badgeRow = document.createElement("span");
+        badgeRow.className = "library-record-badges";
+        badges.forEach((badge) => {
+          const chip = document.createElement("span");
+          chip.className = "library-record-badge";
+          chip.dataset.tone = badge.tone || "muted";
+          chip.textContent = badge.label;
+          badgeRow.append(chip);
+        });
+        button.append(badgeRow);
+      }
+
       button.addEventListener("click", () => {
         if (state.selectedName === item.name && state.selectedDetail && !state.detailLoading) {
           return;
@@ -548,65 +597,83 @@ function createMetaRow(label, value) {
 }
 
 function buildDetailMetaEntries(item = {}) {
-  switch (state.activeTab) {
-    case CLOUD_LIBRARY_TAB_KEYS.speed:
-      return [
-        [t("libraryCreated"), item.started_at_label || item.ended_at_label || "—"],
-        [t("libraryRoute"), item.start_place_label && item.end_place_label
-          ? `${item.start_place_label} -> ${item.end_place_label}`
-          : item.start_place_label || item.end_place_label || "—"],
-        [t("librarySamples"), formatCount(item.sample_count)],
-        [t("duration"), formatDurationMs(item.duration_ms)],
-        [t("distance"), item.total_distance != null ? `${item.total_distance} ${item.distance_unit || ""}`.trim() : "—"],
-        [t("max"), item.max_speed != null ? `${item.max_speed} ${item.unit || ""}`.trim() : "—"],
-      ];
-    case CLOUD_LIBRARY_TAB_KEYS.accel:
-      return [
-        [t("libraryCreated"), item.saved_at_label || "—"],
-        [t("libraryPreset"), item.preset_id || "—"],
-        [t("libraryQuality"), item.quality_grade || "—"],
-        [t("duration"), formatDurationMs(item.elapsed_ms)],
-        [t("librarySamples"), formatCount(item.sample_count)],
-        [t("speed"), item.finish_speed != null ? `${item.finish_speed} ${item.display_unit || ""}`.trim() : "—"],
-      ];
-    case CLOUD_LIBRARY_TAB_KEYS.boardDocuments:
-      return [
-        [t("libraryUpdated"), item.updated_at_label || item.modified_at_label || "—"],
-        [t("libraryCreated"), item.created_at_label || "—"],
-        [t("libraryCommands"), formatCount(item.command_count)],
-        [t("libraryRedoCommands"), formatCount(item.redo_command_count)],
-        [t("libraryFileSize"), formatFileSize(item.payload_size)],
-      ];
-    case CLOUD_LIBRARY_TAB_KEYS.savedImages:
-      return [
-        [t("libraryCreated"), item.created_at_label || "—"],
-        [t("libraryUpdated"), item.modified_at_label || "—"],
-        [t("libraryDimensions"), formatDimensionPair(item.image_width, item.image_height)],
-        [t("libraryFileSize"), formatFileSize(item.file_size)],
-        [t("libraryFolder"), item.folder_label || "—"],
-      ];
-    default:
-      return [];
-  }
+  const config = getResourceConfig(state.activeTab);
+  return config.buildMetaEntries(item);
 }
 
 function renderDetailPreview(item = {}) {
   if (!elements.detailPreview) return;
 
-  elements.detailPreview.replaceChildren();
+  const config = getResourceConfig(state.activeTab);
+  const previewKind = config.previewKind;
 
-  if (state.activeTab === CLOUD_LIBRARY_TAB_KEYS.savedImages && item.image_url) {
+  // Tear down previous map preview if switching away from map type
+  if (previewKind !== "map" && mapPreview) {
+    mapPreview.destroy();
+    mapPreview = null;
+  }
+
+  const imageUrl = item.image_url || item.preview_image_url;
+  if ((previewKind === "image" || previewKind === "board-preview") && imageUrl) {
+    elements.detailPreview.replaceChildren();
     const image = document.createElement("img");
-    image.src = item.image_url;
+    image.src = imageUrl;
     image.alt = item.title || item.name || t("cloudLibrarySavedImages");
     image.loading = "lazy";
     elements.detailPreview.append(image);
+    elements.detailPreview.dataset.previewKind = "image";
     return;
   }
 
+  if (previewKind === "map") {
+    const coordinates = config.getPreviewRoute(item);
+
+    if (coordinates && coordinates.length >= 2) {
+      // Ensure map container exists
+      let mapContainer = elements.detailPreview.querySelector(".library-map-container");
+      if (!mapContainer) {
+        elements.detailPreview.replaceChildren();
+        mapContainer = document.createElement("div");
+        mapContainer.className = "library-map-container";
+        elements.detailPreview.append(mapContainer);
+      }
+      elements.detailPreview.dataset.previewKind = "map";
+
+      if (!mapPreview || mapPreview._element !== mapContainer) {
+        if (mapPreview) mapPreview.destroy();
+        mapPreview = createLibraryMapPreview({ element: mapContainer });
+        mapPreview._element = mapContainer;
+      }
+
+      void mapPreview.showRoute(coordinates);
+      return;
+    }
+
+    // Fall through to fallback if no route geometry
+    if (mapPreview) {
+      mapPreview.destroy();
+      mapPreview = null;
+    }
+  }
+
+  // Type icon or generic fallback
+  elements.detailPreview.replaceChildren();
+  elements.detailPreview.dataset.previewKind = previewKind || "fallback";
   const fallback = document.createElement("div");
   fallback.className = "library-preview-fallback";
-  fallback.textContent = item.title || item.name || t("cloudLibrary");
+
+  if (previewKind === "type-icon" || previewKind === "board-preview") {
+    const iconWrapper = document.createElement("span");
+    iconWrapper.className = "library-preview-type-icon";
+    iconWrapper.innerHTML = config.tabIcon;
+    fallback.append(iconWrapper);
+    const label = document.createElement("span");
+    label.textContent = item.title || item.name || t("cloudLibrary");
+    fallback.append(label);
+  } else {
+    fallback.textContent = item.title || item.name || t("cloudLibrary");
+  }
+
   elements.detailPreview.append(fallback);
 }
 
@@ -643,6 +710,11 @@ function renderDetail() {
     syncActionButton(elements.actionDownload, false, false);
     syncActionButton(elements.actionRename, false, false);
     syncActionButton(elements.actionDelete, false, false);
+
+    // Tear down map preview when nothing selected
+    if (mapPreview) {
+      mapPreview.cancelAnimation();
+    }
     return;
   }
 
@@ -656,14 +728,14 @@ function renderDetail() {
   });
 
   const actionBusy = state.openBusy || state.mutationBusy || state.detailLoading;
-  const isBoardDocument = state.activeTab === CLOUD_LIBRARY_TAB_KEYS.boardDocuments;
-  const isSavedImage = state.activeTab === CLOUD_LIBRARY_TAB_KEYS.savedImages;
+  const config = getResourceConfig(state.activeTab);
   const canOpenSelectedItem = canOpenCloudLibraryItem(selectedItem);
+  const showOpen = !config.canDownload;
 
-  syncActionButton(elements.actionOpen, !isSavedImage, actionBusy || !canOpenSelectedItem);
-  syncActionButton(elements.actionDownload, isSavedImage, actionBusy);
-  syncActionButton(elements.actionRename, isBoardDocument, actionBusy);
-  syncActionButton(elements.actionDelete, isBoardDocument, actionBusy);
+  syncActionButton(elements.actionOpen, showOpen, actionBusy || !canOpenSelectedItem);
+  syncActionButton(elements.actionDownload, config.canDownload, actionBusy);
+  syncActionButton(elements.actionRename, config.canRename, actionBusy);
+  syncActionButton(elements.actionDelete, config.canDelete, actionBusy);
 }
 
 async function loadDetail(name, { force = false } = {}) {
@@ -711,15 +783,23 @@ async function loadDetail(name, { force = false } = {}) {
         }
         state.selectedDetail = resourceConfig.getDetailItem(freshResponse) || state.selectedDetail;
         renderDetail();
-      }).catch((error) => {
+      }).catch(async (error) => {
         if (requestId !== detailRequestState.requestId || isAbortError(error)) return;
-        applyLibraryRequestError(error, { genericKey: "cloudLibraryDetailFailed" });
-        renderDetail();
+        if (isNotFoundError(error) && tabKey === state.activeTab && name === state.selectedName) {
+          await recoverMissingCloudRecord(name);
+        } else {
+          applyLibraryRequestError(error, { genericKey: "cloudLibraryDetailFailed" });
+          renderDetail();
+        }
       });
     }
   } catch (error) {
     if (!isAbortError(error)) {
-      applyLibraryRequestError(error, { genericKey: "cloudLibraryDetailFailed" });
+      if (isNotFoundError(error) && tabKey === state.activeTab && name === state.selectedName) {
+        await recoverMissingCloudRecord(name);
+      } else {
+        applyLibraryRequestError(error, { genericKey: "cloudLibraryDetailFailed" });
+      }
     }
   } finally {
     if (requestId === detailRequestState.requestId) {
@@ -893,18 +973,20 @@ function triggerDownload(url) {
 async function openSelectedItem() {
   if (!state.selectedName || state.openBusy) return;
 
+  const selectedName = state.selectedName;
+  const tabKey = state.activeTab;
   state.openBusy = true;
   renderDetail();
 
   try {
     let href = "";
 
-    if (state.activeTab === CLOUD_LIBRARY_TAB_KEYS.speed) {
-      href = await openCloudReplaySession(state.selectedName);
-    } else if (state.activeTab === CLOUD_LIBRARY_TAB_KEYS.accel) {
-      href = await openCloudAccelRun(state.selectedName);
-    } else if (state.activeTab === CLOUD_LIBRARY_TAB_KEYS.boardDocuments) {
-      href = await openCloudBoardDocument(state.selectedName);
+    if (tabKey === CLOUD_LIBRARY_TAB_KEYS.speed) {
+      href = await openCloudReplaySession(selectedName);
+    } else if (tabKey === CLOUD_LIBRARY_TAB_KEYS.accel) {
+      href = await openCloudAccelRun(selectedName);
+    } else if (tabKey === CLOUD_LIBRARY_TAB_KEYS.boardDocuments) {
+      href = await openCloudBoardDocument(selectedName);
     }
 
     if (href) {
@@ -912,7 +994,11 @@ async function openSelectedItem() {
     }
   } catch (error) {
     if (!isAbortError(error)) {
-      applyLibraryRequestError(error, { genericKey: "cloudLibraryOpenFailed" });
+      if (isNotFoundError(error)) {
+        await recoverMissingCloudRecord(selectedName, { tabKey });
+      } else {
+        applyLibraryRequestError(error, { genericKey: "cloudLibraryOpenFailed" });
+      }
     }
   } finally {
     state.openBusy = false;
@@ -925,6 +1011,8 @@ async function renameSelectedBoardDocument() {
     return;
   }
 
+  const selectedName = state.selectedName;
+  const tabKey = state.activeTab;
   const capability = getCurrentCapability();
   if (!capability?.enabled || !capability.csrfToken) {
     setStatus("cloudLibraryAccessUnavailable", null, "danger");
@@ -934,7 +1022,16 @@ async function renameSelectedBoardDocument() {
   const currentTitle = state.selectedDetail?.title
     || state.items.find((item) => item.name === state.selectedName)?.title
     || t("boardDocumentUntitled");
-  const title = window.prompt(t("cloudLibraryRenamePrompt"), currentTitle);
+
+  const title = await showPromptDialog({
+    title: t("cloudLibraryRenameTitle"),
+    message: t("cloudLibraryRenameMessage"),
+    placeholder: t("boardTitlePlaceholder"),
+    value: currentTitle,
+    confirmLabel: t("cloudLibraryRename"),
+    cancelLabel: t("cancel"),
+  });
+
   if (title === null) return;
 
   const trimmedTitle = String(title || "").trim();
@@ -948,18 +1045,22 @@ async function renameSelectedBoardDocument() {
 
   try {
     const response = await updateBoardDocumentInBackend({
-      name: state.selectedName,
+      name: selectedName,
       title: trimmedTitle,
       csrfToken: capability.csrfToken,
     });
 
     if (!response.ok || !response.document) {
+      if (response.status === 404) {
+        await recoverMissingCloudRecord(selectedName, { tabKey });
+        return;
+      }
       setStatus("cloudLibraryRenameFailed", { status: response.status || 0 }, "danger");
       return;
     }
 
-    getCurrentResourceConfig().resource.invalidateDetail(state.selectedName, { mode: "summary" });
-    getCurrentResourceConfig().resource.invalidateDetail(state.selectedName, { mode: "full" });
+    getCurrentResourceConfig().resource.invalidateDetail(selectedName, { mode: "summary" });
+    getCurrentResourceConfig().resource.invalidateDetail(selectedName, { mode: "full" });
     getCurrentResourceConfig().resource.invalidateList();
     setStatus("cloudLibraryRenamed", { title: response.document.title }, "success");
     await loadList({ force: true });
@@ -971,10 +1072,13 @@ async function renameSelectedBoardDocument() {
   }
 }
 
-async function deleteSelectedBoardDocument() {
-  if (!state.selectedName || state.mutationBusy || state.activeTab !== CLOUD_LIBRARY_TAB_KEYS.boardDocuments) {
-    return;
-  }
+async function deleteSelectedItem() {
+  if (!state.selectedName || state.mutationBusy) return;
+
+  const selectedName = state.selectedName;
+  const tabKey = state.activeTab;
+  const config = getResourceConfig(state.activeTab);
+  if (!config.canDelete) return;
 
   const capability = getCurrentCapability();
   if (!capability?.enabled || !capability.csrfToken) {
@@ -982,30 +1086,65 @@ async function deleteSelectedBoardDocument() {
     return;
   }
 
-  const currentTitle = state.selectedDetail?.title
-    || state.items.find((item) => item.name === state.selectedName)?.title
-    || t("boardDocumentUntitled");
-  if (!window.confirm(t("cloudLibraryDeleteConfirm", { title: currentTitle }))) {
-    return;
-  }
+  const selectedItem = state.selectedDetail
+    || state.items.find((item) => item.name === selectedName)
+    || null;
+  const currentTitle = selectedItem?.title || selectedItem?.name || selectedName;
+
+  const confirmed = await showConfirmDialog({
+    title: t("cloudLibraryDeleteTitle"),
+    message: t("cloudLibraryDeleteMessage", { title: currentTitle }),
+    confirmLabel: t("cloudLibraryDelete"),
+    cancelLabel: t("cancel"),
+    destructive: true,
+    icon: IconTrash,
+  });
+
+  if (!confirmed) return;
 
   state.mutationBusy = true;
   renderDetail();
 
   try {
-    const response = await deleteBoardDocumentFromBackend({
-      name: state.selectedName,
-      csrfToken: capability.csrfToken,
-    });
+    let response;
 
-    if (!response.ok) {
+    if (state.activeTab === CLOUD_LIBRARY_TAB_KEYS.boardDocuments) {
+      response = await deleteBoardDocumentFromBackend({
+        name: selectedName,
+        csrfToken: capability.csrfToken,
+      });
+    } else if (state.activeTab === CLOUD_LIBRARY_TAB_KEYS.savedImages) {
+      response = await deleteSavedDrawingFromBackend({
+        name: selectedName,
+        csrfToken: capability.csrfToken,
+      });
+    } else if (
+      state.activeTab === CLOUD_LIBRARY_TAB_KEYS.speed
+      || state.activeTab === CLOUD_LIBRARY_TAB_KEYS.accel
+    ) {
+      const ids = config.getDeleteIdentifiers(selectedItem || { name: state.selectedName });
+      response = await deleteSyncRecordFromBackend({
+        entityType: ids.entityType,
+        clientRecordId: ids.clientRecordId,
+        deviceId: ids.deviceId,
+        deletedAtMs: Date.now(),
+        csrfToken: capability.csrfToken,
+      });
+    }
+
+    if (response && !response.ok) {
+      if (response.status === 404) {
+        await recoverMissingCloudRecord(selectedName, { tabKey });
+        return;
+      }
       setStatus("cloudLibraryDeleteFailed", { status: response.status || 0 }, "danger");
       return;
     }
 
-    getCurrentResourceConfig().resource.invalidateDetail(state.selectedName, { mode: "summary" });
-    getCurrentResourceConfig().resource.invalidateDetail(state.selectedName, { mode: "full" });
-    getCurrentResourceConfig().resource.invalidateList();
+    const resourceConfig = getCurrentResourceConfig();
+    resourceConfig.resource.invalidateDetail(selectedName, { mode: "summary" });
+    resourceConfig.resource.invalidateDetail(selectedName, { mode: "full" });
+    resourceConfig.resource.invalidateList();
     setStatus("cloudLibraryDeleted", null, "success");
     state.selectedName = "";
     state.selectedDetail = null;
@@ -1030,6 +1169,13 @@ function downloadSelectedImage() {
 function handleTabSelection(nextTab) {
   const normalizedTab = normalizeTabKey(nextTab);
   if (normalizedTab === state.activeTab) return;
+
+  // Tear down map preview when switching tabs
+  if (mapPreview) {
+    mapPreview.destroy();
+    mapPreview = null;
+  }
+
   state.activeTab = normalizedTab;
   setStatus();
   updateLocationState();
@@ -1041,7 +1187,6 @@ function handleTabSelection(nextTab) {
 
 async function refreshAuthState({ force = false } = {}) {
   state.authLoading = true;
-  renderAuthSummary();
   renderTabs();
 
   try {
@@ -1063,7 +1208,6 @@ async function refreshAuthState({ force = false } = {}) {
     state.featureAccess = null;
   } finally {
     state.authLoading = false;
-    renderAuthSummary();
     renderTabs();
   }
 
@@ -1092,7 +1236,6 @@ async function refreshAuthState({ force = false } = {}) {
 
 function handleLanguageChange() {
   syncLangToggleButtons(getLang());
-  renderAuthSummary();
   renderStatus();
   renderList();
   renderDetail();
@@ -1158,7 +1301,7 @@ function bindEvents() {
     void renameSelectedBoardDocument();
   });
   elements.actionDelete?.addEventListener("click", () => {
-    void deleteSelectedBoardDocument();
+    void deleteSelectedItem();
   });
 
   bindMenuNavigation(elements.openBoardPage, "/");
@@ -1187,14 +1330,8 @@ applyButtonIcon(elements.actionRename, IconBoard);
 applyButtonIcon(elements.actionDelete, IconTrash);
 elements.libraryTabs.forEach((button) => {
   const tabKey = normalizeTabKey(button.dataset.tab);
-  const icon = tabKey === CLOUD_LIBRARY_TAB_KEYS.speed
-    ? IconSpeed
-    : tabKey === CLOUD_LIBRARY_TAB_KEYS.accel
-      ? IconAccel
-      : tabKey === CLOUD_LIBRARY_TAB_KEYS.boardDocuments
-        ? IconBoard
-        : IconDownload;
-  applyButtonIcon(button, icon);
+  const config = getResourceConfig(tabKey);
+  applyButtonIcon(button, config.tabIcon);
 });
 
 bindEvents();
