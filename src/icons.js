@@ -219,3 +219,11 @@ export const IconPin = `
     <path d="M5 19l4.5-4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
   </svg>
 `;
+
+export const IconMore = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
+    <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+    <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
+  </svg>
+`;

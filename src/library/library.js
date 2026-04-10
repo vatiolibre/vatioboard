@@ -10,6 +10,7 @@ import {
   IconDownload,
   IconGpsLab,
   IconMedia,
+  IconMore,
   IconPages,
   IconPin,
   IconReplay,
@@ -98,6 +99,8 @@ const elements = {
   actionDelete: document.getElementById("libraryActionDelete"),
   actionUpload: document.getElementById("libraryActionUpload"),
   actionPin: document.getElementById("libraryActionPin"),
+  overflowBtn: document.getElementById("libraryOverflowBtn"),
+  overflowList: document.getElementById("libraryOverflowList"),
   openBoardPage: document.getElementById("openLibraryBoardMenu"),
   openSpeedPage: document.getElementById("openLibrarySpeedMenu"),
   openReplayPage: document.getElementById("openLibraryReplayMenu"),
@@ -111,6 +114,11 @@ const toolsMenu = initToolsMenu({
   list: elements.toolsMenuList,
 });
 toolsMenu.setOpen(false);
+
+const overflowMenu = initToolsMenu({
+  button: elements.overflowBtn,
+  list: elements.overflowList,
+});
 
 function focusElement(element) {
   try {
@@ -887,6 +895,8 @@ function renderDetail() {
     syncActionButton(elements.actionRename, false, false);
     syncActionButton(elements.actionDelete, false, false);
     syncActionButton(elements.actionPin, false, false);
+    overflowMenu.setOpen(false);
+    if (elements.overflowBtn) elements.overflowBtn.hidden = true;
 
     // Tear down map preview when nothing selected
     if (mapPreview) {
@@ -969,6 +979,10 @@ function renderDetail() {
     elements.actionPin.dataset.pinned = isPinned ? "true" : "false";
     elements.actionPin.dataset.stale = isStalePin ? "true" : "false";
   }
+
+  // Show the overflow trigger when at least one overflow item is visible.
+  const hasOverflowItems = config.canDownload || config.canRename || config.canDelete || isMediaTab;
+  if (elements.overflowBtn) elements.overflowBtn.hidden = !hasOverflowItems;
 
   // Availability status line in the meta section
   if (isMediaTab && elements.detailMeta) {
@@ -1962,6 +1976,7 @@ applyButtonIcon(elements.actionRename, IconBoard);
 applyButtonIcon(elements.actionDelete, IconTrash);
 applyButtonIcon(elements.actionUpload, IconUpload);
 applyButtonIcon(elements.actionPin, IconPin);
+applyButtonIcon(elements.overflowBtn, IconMore);
 elements.libraryTabs.forEach((button) => {
   const tabKey = normalizeTabKey(button.dataset.tab);
   const config = getResourceConfig(tabKey);

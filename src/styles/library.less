@@ -439,6 +439,32 @@ body.library-page select{
     gap: 12px;
 }
 
+.library-search-form:has(.library-upload-btn:not([hidden])){
+    grid-template-columns: minmax(0, 1fr) minmax(190px, 220px) auto;
+}
+
+.library-upload-btn{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 46px;
+    padding: 0 18px;
+    border-radius: 14px;
+    white-space: nowrap;
+}
+
+.library-upload-btn .btn-icon{
+    width: 16px;
+    height: 16px;
+}
+
+.library-upload-btn .btn-icon svg{
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
 .library-search-form input,
 .library-search-form select{
     width: 100%;
@@ -693,15 +719,7 @@ body.library-page select{
     display: flex;
     flex-wrap: wrap;
     justify-content: flex-end;
-    align-items: flex-start;
-    gap: 10px;
-    min-width: min(100%, 360px);
-}
-
-.library-detail-actions-primary,
-.library-detail-actions-secondary{
-    display: flex;
-    flex-wrap: wrap;
+    align-items: center;
     gap: 10px;
 }
 
@@ -709,9 +727,86 @@ body.library-page select{
     min-height: 46px;
 }
 
-.library-detail-actions-primary button,
-.library-detail-actions-secondary button{
+.library-detail-actions > .library-action-primary{
     min-width: 136px;
+}
+
+.library-overflow-menu{
+    position: relative;
+}
+
+.library-overflow-btn{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 46px;
+    min-width: 46px;
+    height: 46px;
+    min-height: 46px;
+    padding: 0;
+    border-radius: 14px;
+    border: 1px solid color-mix(in srgb, var(--library-border) 92%, transparent);
+    background: color-mix(in srgb, var(--library-surface-strong) 98%, transparent);
+    color: var(--library-muted);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--inner-ring) 60%, transparent);
+}
+
+.library-overflow-btn .btn-icon{
+    width: 18px;
+    height: 18px;
+}
+
+.library-overflow-btn .btn-icon svg{
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.library-overflow-btn:hover{
+    background: var(--btn-hover-bg);
+    color: var(--btn-fg);
+}
+
+.library-overflow-btn[aria-expanded="true"]{
+    background: var(--btn-active-bg);
+    color: var(--btn-active-fg);
+}
+
+.library-overflow-list{
+    position: absolute;
+    right: 0;
+    top: 100%;
+    z-index: 10;
+    min-width: 200px;
+    margin-top: 6px;
+    padding: 6px 0;
+    border: 1px solid color-mix(in srgb, var(--library-border) 92%, transparent);
+    border-radius: 14px;
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--library-surface-strong) 100%, transparent),
+        color-mix(in srgb, var(--library-surface) 100%, transparent)
+      );
+    box-shadow: 0 20px 42px rgba(15, 23, 42, 0.22);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+}
+
+.library-overflow-list button{
+    justify-content: flex-start;
+    width: 100%;
+    min-height: 42px;
+    min-width: 0;
+    padding: 0 16px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.library-overflow-list button:hover:not(:disabled){
+    background: var(--btn-hover-bg);
 }
 
 .library-action-primary{
@@ -811,6 +906,7 @@ body.library-page select{
     }
 
     .library-search-form,
+    .library-search-form:has(.library-upload-btn:not([hidden])),
     .library-detail-meta{
         grid-template-columns: 1fr;
     }
@@ -880,9 +976,8 @@ body.library-page select{
         line-height: 1.12;
     }
 
-    .library-detail-actions-primary button,
-    .library-detail-actions-secondary button{
-        flex: 1 1 100%;
-        min-width: 0;
+    .library-overflow-list{
+        right: auto;
+        left: 0;
     }
 }

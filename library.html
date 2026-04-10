@@ -301,6 +301,10 @@
               <option value="title_asc" data-i18n="cloudLibrarySortTitleAsc">Title A-Z</option>
               <option value="title_desc" data-i18n="cloudLibrarySortTitleDesc">Title Z-A</option>
             </select>
+            <button id="libraryActionUpload" type="button" class="library-upload-btn" hidden>
+              <span class="btn-icon" aria-hidden="true"></span>
+              <span data-i18n="cloudLibraryUpload">Upload</span>
+            </button>
           </form>
         </section>
 
@@ -330,33 +334,43 @@
                   <p id="libraryDetailSubtitle" class="library-detail-subtitle"></p>
                 </div>
                 <div class="library-detail-actions">
-                  <div class="library-detail-actions-primary">
-                    <button id="libraryActionOpen" type="button" class="library-action-primary">
+                  <button id="libraryActionOpen" type="button" class="library-action-primary">
+                    <span class="btn-icon" aria-hidden="true"></span>
+                    <span data-i18n="cloudLibraryOpen">Open</span>
+                  </button>
+
+                  <div class="tools-menu library-overflow-menu">
+                    <button
+                      id="libraryOverflowBtn"
+                      type="button"
+                      class="library-overflow-btn"
+                      data-i18n-aria="cloudLibraryMoreActions"
+                      data-i18n-title="cloudLibraryMoreActions"
+                      aria-label="More actions"
+                      title="More actions"
+                      aria-haspopup="true"
+                      aria-expanded="false"
+                    >
                       <span class="btn-icon" aria-hidden="true"></span>
-                      <span data-i18n="cloudLibraryOpen">Open</span>
                     </button>
-                    <button id="libraryActionDownload" type="button" hidden>
-                      <span class="btn-icon" aria-hidden="true"></span>
-                      <span data-i18n="cloudLibraryDownload">Download</span>
-                    </button>
-                    <button id="libraryActionUpload" type="button" hidden>
-                      <span class="btn-icon" aria-hidden="true"></span>
-                      <span data-i18n="cloudLibraryUpload">Upload</span>
-                    </button>
-                    <button id="libraryActionPin" type="button" hidden>
-                      <span class="btn-icon" aria-hidden="true"></span>
-                      <span data-i18n="cloudLibraryPin">Pin offline</span>
-                    </button>
-                  </div>
-                  <div class="library-detail-actions-secondary">
-                    <button id="libraryActionRename" type="button" hidden>
-                      <span class="btn-icon" aria-hidden="true"></span>
-                      <span data-i18n="cloudLibraryRename">Rename</span>
-                    </button>
-                    <button id="libraryActionDelete" type="button" class="btn-danger" hidden>
-                      <span class="btn-icon" aria-hidden="true"></span>
-                      <span data-i18n="cloudLibraryDelete">Delete</span>
-                    </button>
+                    <div id="libraryOverflowList" class="tools-menu-list library-overflow-list" hidden>
+                      <button id="libraryActionDownload" type="button" class="btn-with-icon" hidden>
+                        <span class="btn-icon" aria-hidden="true"></span>
+                        <span data-i18n="cloudLibraryDownload">Download</span>
+                      </button>
+                      <button id="libraryActionPin" type="button" class="btn-with-icon" hidden>
+                        <span class="btn-icon" aria-hidden="true"></span>
+                        <span data-i18n="cloudLibraryPin">Pin offline</span>
+                      </button>
+                      <button id="libraryActionRename" type="button" class="btn-with-icon" hidden>
+                        <span class="btn-icon" aria-hidden="true"></span>
+                        <span data-i18n="cloudLibraryRename">Rename</span>
+                      </button>
+                      <button id="libraryActionDelete" type="button" class="btn-with-icon btn-danger" hidden>
+                        <span class="btn-icon" aria-hidden="true"></span>
+                        <span data-i18n="cloudLibraryDelete">Delete</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
