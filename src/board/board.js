@@ -1291,22 +1291,20 @@ bindNavigation(openLibraryMenuBtn, "/library.html?tab=board_documents");
         return null;
       }
 
-      // Accept either cloud_sync or saved_drawings capability for the unified save.
+      // Board document saves require the cloud_sync capability.
       const cloudSync = featureAccess.cloudSyncCapability;
-      const savedDrawings = featureAccess.capability;
-      const effective = cloudSync?.enabled ? cloudSync : savedDrawings;
 
-      if (!effective?.enabled) {
+      if (!cloudSync?.enabled) {
         setStatus(getBlockedSaveMessage(cloudSync));
         return null;
       }
 
-      if (!effective.csrfToken) {
+      if (!cloudSync.csrfToken) {
         setStatus(t("saveUnavailable"));
         return null;
       }
 
-      return effective;
+      return cloudSync;
     }
 
     function createBoardDocumentSnapshot(){

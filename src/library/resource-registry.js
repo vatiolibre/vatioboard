@@ -1,5 +1,5 @@
 import { t } from "../i18n.js";
-import { IconAccel, IconBoard, IconDownload, IconSpeed } from "../icons.js";
+import { IconAccel, IconBoard, IconDownload, IconMedia, IconSpeed } from "../icons.js";
 import { CLOUD_LIBRARY_TAB_KEYS } from "../shared/cloud-library-resources.js";
 import { formatDisplayDistance, formatDisplaySpeed } from "../shared/display-format.js";
 import { formatRouteString } from "../shared/route-string.js";
@@ -235,18 +235,22 @@ const RESOURCE_CONFIGS = {
     },
   },
 
-  [CLOUD_LIBRARY_TAB_KEYS.savedImages]: {
-    tabIcon: IconDownload,
-    previewKind: "image",
-    canOpen: () => false,
+  [CLOUD_LIBRARY_TAB_KEYS.media]: {
+    tabIcon: IconMedia,
+    previewKind: "media",
+    canOpen: (item) => {
+      const kind = String(item?.media_kind || "").toLowerCase();
+      return kind === "image" || kind === "audio" || kind === "video";
+    },
     canDelete: true,
-    canRename: false,
+    canRename: true,
     canDownload: true,
 
     buildSubtitle(item) {
       return [
         item.created_at_label || item.modified_at_label,
-        formatDimensionPair(item.image_width, item.image_height),
+        item.media_kind,
+        formatFileSize(item.blob_size),
       ].filter((v) => v && v !== "—").join(" · ");
     },
 
@@ -254,16 +258,22 @@ const RESOURCE_CONFIGS = {
       return [
         [t("libraryCreated"), item.created_at_label || "—"],
         [t("libraryUpdated"), item.modified_at_label || "—"],
-        [t("libraryDimensions"), formatDimensionPair(item.image_width, item.image_height)],
-        [t("libraryFileSize"), formatFileSize(item.file_size)],
-        [t("libraryFolder"), item.folder_label || "—"],
+        [t("libraryMediaKind"), item.media_kind || "—"],
+        [t("libraryFileSize"), formatFileSize(item.blob_size)],
+        [t("libraryFolder"), item.folder_path || "—"],
+        [t("libraryOriginalFilename"), item.original_filename || "—"],
       ];
     },
 
     buildBadges(item) {
       const badges = [];
-      const dim = formatDimensionPair(item.image_width, item.image_height);
-      if (dim !== "—") badges.push({ label: dim, tone: "muted" });
+      if (item.media_kind) {
+        badges.push({ label: item.media_kind, tone: "muted" });
+      }
+      const size = formatFileSize(item.blob_size);
+      if (size !== "0 B") {
+        badges.push({ label: size, tone: "muted" });
+      }
       return badges;
     },
 

@@ -9,28 +9,45 @@ import {
   IconBoard,
   IconDownload,
   IconGpsLab,
+  IconMedia,
   IconPages,
+  IconPin,
   IconReplay,
   IconRestart,
   IconSpeed,
   IconTrash,
+  IconUpload,
   IconWorld,
 } from "../icons.js";
 import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
 import {
   BACKEND_AUTH_STATE_EVENT,
   deleteBoardDocumentFromBackend,
-  deleteSavedDrawingFromBackend,
+  deleteMediaAssetFromBackend,
   deleteSyncRecordFromBackend,
+  fetchBackendLoggedUser,
   getBackendFeatureAccessState,
   getBackendSessionState,
   initBackendAuthControllers,
   updateBoardDocumentInBackend,
+  updateMediaAssetInBackend,
+  uploadMediaAssetToBackend,
 } from "../shared/backend-auth.js";
 import {
   CLOUD_LIBRARY_TAB_KEYS,
   getCloudLibraryResource,
 } from "../shared/cloud-library-resources.js";
+import {
+  clearPersistedMediaCacheUser,
+  getMediaCacheUser,
+  getPinnedBlobMeta,
+  getPinnedMediaBlob,
+  isMediaBlobPinned,
+  pinMediaBlob,
+  restorePersistedMediaCacheUser,
+  setMediaCacheUser,
+  unpinMediaBlob,
+} from "../shared/media-cache.js";
 import { getResourceConfig } from "./resource-registry.js";
 import { createLibraryMapPreview } from "./library-map-preview.js";
 import { showConfirmDialog } from "../shared/ui/confirm-dialog.js";
@@ -52,7 +69,7 @@ const TAB_ORDER = [
   CLOUD_LIBRARY_TAB_KEYS.speed,
   CLOUD_LIBRARY_TAB_KEYS.accel,
   CLOUD_LIBRARY_TAB_KEYS.boardDocuments,
-  CLOUD_LIBRARY_TAB_KEYS.savedImages,
+  CLOUD_LIBRARY_TAB_KEYS.media,
 ];
 
 const elements = {
@@ -79,6 +96,8 @@ const elements = {
   actionDownload: document.getElementById("libraryActionDownload"),
   actionRename: document.getElementById("libraryActionRename"),
   actionDelete: document.getElementById("libraryActionDelete"),
+  actionUpload: document.getElementById("libraryActionUpload"),
+  actionPin: document.getElementById("libraryActionPin"),
   openBoardPage: document.getElementById("openLibraryBoardMenu"),
   openSpeedPage: document.getElementById("openLibrarySpeedMenu"),
   openReplayPage: document.getElementById("openLibraryReplayMenu"),
@@ -164,7 +183,12 @@ const state = {
   selectedName: "",
   selectedDetail: null,
   openBusy: false,
-  mutationBusy: false,
+  mutatingNames: new Set(),
+  pinnedNames: new Set(),
+  stalePinnedNames: new Set(),
+  listOffline: false,
+  reconnecting: false,
+  uploadBusy: false,
   statusKey: "",
   statusParams: null,
   statusText: "",
@@ -172,6 +196,22 @@ const state = {
 };
 
 let mapPreview = null;
+let previewObjectUrl = null;
+
+/**
+ * Monotonically increasing generation counter for auth operations.
+ * Incremented by refreshAuthState(); checked by rehydrateAuthOnReconnect()
+ * to discard stale results from in-flight reconnect recovery.
+ */
+let authGeneration = 0;
+let pendingAuthRefresh = null;
+
+function revokePreviewObjectUrl() {
+  if (previewObjectUrl) {
+    URL.revokeObjectURL(previewObjectUrl);
+    previewObjectUrl = null;
+  }
+}
 
 const listRequestState = {
   controller: null,
@@ -280,7 +320,7 @@ function getCurrentCapability() {
   }
 
   const resourceConfig = getCurrentResourceConfig();
-  if (resourceConfig.capabilityKey === "saved_drawings") {
+  if (resourceConfig.capabilityKey === "media_assets") {
     return state.featureAccess.capability;
   }
 
@@ -295,7 +335,7 @@ function getFirstAccessibleTab() {
   return (
     TAB_ORDER.find((tabKey) => {
       const resourceConfig = getCloudLibraryResource(tabKey);
-      const capability = resourceConfig.capabilityKey === "saved_drawings"
+      const capability = resourceConfig.capabilityKey === "media_assets"
         ? state.featureAccess.capability
         : state.featureAccess.cloudSyncCapability;
       return capability?.enabled === true;
@@ -398,17 +438,30 @@ function renderTabs() {
     const tabKey = normalizeTabKey(button.dataset.tab);
     const resourceConfig = getCloudLibraryResource(tabKey);
     const capability = state.featureAccess?.ok
-      ? (resourceConfig.capabilityKey === "saved_drawings"
+      ? (resourceConfig.capabilityKey === "media_assets"
         ? state.featureAccess.capability
         : state.featureAccess.cloudSyncCapability)
       : null;
     const isAccessible = Boolean(state.session?.authenticated) && capability?.enabled === true;
     const isActive = tabKey === state.activeTab;
 
+    // In offline-limited or reconnecting mode, disable non-media tabs to
+    // prevent interaction before capability state is fully restored.
+    const offlineBlocked = (state.listOffline || state.reconnecting)
+      && tabKey !== CLOUD_LIBRARY_TAB_KEYS.media;
+
     button.dataset.active = isActive ? "true" : "false";
-    button.dataset.access = isAccessible ? "granted" : "blocked";
+    button.dataset.access = (isAccessible || (isActive && (state.listOffline || state.reconnecting))) ? "granted" : "blocked";
     button.setAttribute("aria-selected", isActive ? "true" : "false");
+    button.disabled = offlineBlocked;
   });
+
+  // Upload button is only visible on the media tab
+  const showUpload = state.activeTab === CLOUD_LIBRARY_TAB_KEYS.media
+    && state.session?.authenticated === true
+    && getCurrentCapability()?.enabled === true
+    && !state.authLoading;
+  syncActionButton(elements.actionUpload, showUpload, state.uploadBusy);
 }
 
 function buildListEmptyMessage() {
@@ -446,6 +499,7 @@ function applyLibraryRequestError(error, {
   const status = getRequestErrorStatus(error);
 
   if (status === 401) {
+    authGeneration += 1;
     state.session = {
       authenticated: false,
       isGuest: true,
@@ -453,8 +507,12 @@ function applyLibraryRequestError(error, {
       status,
     };
     state.featureAccess = null;
+    state.reconnecting = false;
+    state.authLoading = false;
+    clearPersistedMediaCacheUser();
     setStatus("cloudLibraryLoginPrompt", null, "danger");
     renderTabs();
+    renderDetail();
     return;
   }
 
@@ -475,6 +533,58 @@ function canOpenCloudLibraryItem(item) {
   if (!item) return false;
   const config = getResourceConfig(state.activeTab);
   return config.canOpen(item);
+}
+
+async function refreshPinState(name) {
+  if (!name || state.activeTab !== CLOUD_LIBRARY_TAB_KEYS.media) return;
+  try {
+    const meta = await getPinnedBlobMeta(name);
+    if (meta) {
+      state.pinnedNames.add(name);
+      const item = state.selectedDetail
+        || state.items.find((i) => i.name === name) || null;
+      if (item?.content_hash && meta.content_hash && item.content_hash !== meta.content_hash) {
+        state.stalePinnedNames.add(name);
+      } else {
+        state.stalePinnedNames.delete(name);
+      }
+    } else {
+      state.pinnedNames.delete(name);
+      state.stalePinnedNames.delete(name);
+    }
+    renderDetail();
+  } catch {
+    // IndexedDB may be unavailable; leave pin state unknown.
+  }
+}
+
+async function refreshPinStatesForItems(items) {
+  if (state.activeTab !== CLOUD_LIBRARY_TAB_KEYS.media || !items?.length) return;
+  let changed = false;
+  for (const item of items) {
+    if (!item.name) continue;
+    try {
+      const meta = await getPinnedBlobMeta(item.name);
+      const wasPinned = state.pinnedNames.has(item.name);
+      if (meta) {
+        if (!wasPinned) { state.pinnedNames.add(item.name); changed = true; }
+        const stale = item.content_hash && meta.content_hash
+          && item.content_hash !== meta.content_hash;
+        const wasStale = state.stalePinnedNames.has(item.name);
+        if (stale && !wasStale) { state.stalePinnedNames.add(item.name); changed = true; }
+        else if (!stale && wasStale) { state.stalePinnedNames.delete(item.name); changed = true; }
+      } else {
+        if (wasPinned) { state.pinnedNames.delete(item.name); changed = true; }
+        if (state.stalePinnedNames.has(item.name)) { state.stalePinnedNames.delete(item.name); changed = true; }
+      }
+    } catch {
+      // skip
+    }
+  }
+  if (changed) {
+    renderList();
+    renderDetail();
+  }
 }
 
 async function recoverMissingCloudRecord(name, { tabKey = state.activeTab } = {}) {
@@ -504,7 +614,7 @@ async function recoverMissingCloudRecord(name, { tabKey = state.activeTab } = {}
 
   let refreshed = false;
   try {
-    await loadList({ force: true });
+    await loadList({ force: true, preserveSnapshot: true });
     refreshed = true;
   } finally {
     if (refreshed && state.activeTab === normalizedTabKey) {
@@ -547,6 +657,15 @@ function renderList() {
       button.append(title, subtitle);
 
       const badges = config.buildBadges(item);
+      if (state.activeTab === CLOUD_LIBRARY_TAB_KEYS.media) {
+        if (state.stalePinnedNames.has(item.name)) {
+          badges.push({ label: t("cloudLibraryPinOutdated"), tone: "warning" });
+        } else if (state.pinnedNames.has(item.name)) {
+          badges.push({ label: t("cloudLibraryOfflineAvailable"), tone: "success" });
+        } else if (item._offline) {
+          badges.push({ label: t("cloudLibraryMetadataCached"), tone: "muted" });
+        }
+      }
       if (badges.length > 0) {
         const badgeRow = document.createElement("span");
         badgeRow.className = "library-record-badges";
@@ -601,8 +720,14 @@ function buildDetailMetaEntries(item = {}) {
   return config.buildMetaEntries(item);
 }
 
-function renderDetailPreview(item = {}) {
+function renderDetailPreview(item = {}, { isOfflineItem = false, isPinned = false, localPreviewUrl = "" } = {}) {
   if (!elements.detailPreview) return;
+
+  // Revoke any previous local preview URL to avoid memory leaks.
+  revokePreviewObjectUrl();
+  if (localPreviewUrl) {
+    previewObjectUrl = localPreviewUrl;
+  }
 
   const config = getResourceConfig(state.activeTab);
   const previewKind = config.previewKind;
@@ -613,15 +738,65 @@ function renderDetailPreview(item = {}) {
     mapPreview = null;
   }
 
-  const imageUrl = item.image_url || item.preview_image_url;
-  if ((previewKind === "image" || previewKind === "board-preview") && imageUrl) {
+  const remoteImageUrl = item.image_url || item.preview_image_url;
+  const isMetadataOnlyOffline = isOfflineItem && !isPinned;
+  // For pinned offline items, prefer the local blob URL over the remote URL
+  // to avoid broken previews when the network is unavailable.
+  const imageUrl = (isOfflineItem && isPinned && localPreviewUrl) ? localPreviewUrl : remoteImageUrl;
+
+  // Pinned offline non-image media (audio, video, etc.) — show a type-aware
+  // fallback instead of feeding an arbitrary blob URL into an <img> element.
+  if (isOfflineItem && isPinned && previewKind === "media") {
+    const mediaKind = String(item.media_kind || "").toLowerCase();
+    if (mediaKind !== "image") {
+      elements.detailPreview.replaceChildren();
+      elements.detailPreview.dataset.previewKind = "offline-pinned-fallback";
+      const fallback = document.createElement("div");
+      fallback.className = "library-preview-fallback";
+      const iconWrapper = document.createElement("span");
+      iconWrapper.className = "library-preview-type-icon";
+      iconWrapper.innerHTML = config.tabIcon;
+      fallback.append(iconWrapper);
+      const kindLabel = document.createElement("span");
+      kindLabel.className = "library-preview-kind-label";
+      kindLabel.textContent = item.media_kind || t("cloudLibraryMedia");
+      fallback.append(kindLabel);
+      const statusLabel = document.createElement("span");
+      statusLabel.className = "library-preview-offline-label";
+      statusLabel.textContent = t("cloudLibraryOfflineAvailable");
+      fallback.append(statusLabel);
+      elements.detailPreview.append(fallback);
+      return;
+    }
+  }
+
+  if ((previewKind === "image" || previewKind === "board-preview" || previewKind === "media") && imageUrl && !isMetadataOnlyOffline) {
     elements.detailPreview.replaceChildren();
     const image = document.createElement("img");
     image.src = imageUrl;
-    image.alt = item.title || item.name || t("cloudLibrarySavedImages");
+    image.alt = item.title || item.name || t("cloudLibraryMedia");
     image.loading = "lazy";
     elements.detailPreview.append(image);
     elements.detailPreview.dataset.previewKind = "image";
+    return;
+  }
+
+  // For metadata-only offline items, render a type-aware offline fallback
+  // instead of attempting to load a remote preview URL.
+  if (isMetadataOnlyOffline && (previewKind === "media" || previewKind === "image")) {
+    elements.detailPreview.replaceChildren();
+    elements.detailPreview.dataset.previewKind = "offline-fallback";
+    const fallback = document.createElement("div");
+    fallback.className = "library-preview-fallback";
+    const iconWrapper = document.createElement("span");
+    iconWrapper.className = "library-preview-type-icon";
+    iconWrapper.innerHTML = config.tabIcon;
+    fallback.append(iconWrapper);
+    const label = document.createElement("span");
+    label.className = "library-preview-offline-label";
+    label.textContent = t("cloudLibraryPreviewOffline");
+    fallback.append(label);
+    elements.detailPreview.append(fallback);
     return;
   }
 
@@ -703,6 +878,7 @@ function renderDetail() {
   elements.detailCard.hidden = !detailVisible;
 
   if (!detailVisible) {
+    revokePreviewObjectUrl();
     elements.detailEmpty.textContent = state.detailLoading
       ? t("cloudLibraryLoading")
       : t("cloudLibrarySelectPrompt");
@@ -710,6 +886,7 @@ function renderDetail() {
     syncActionButton(elements.actionDownload, false, false);
     syncActionButton(elements.actionRename, false, false);
     syncActionButton(elements.actionDelete, false, false);
+    syncActionButton(elements.actionPin, false, false);
 
     // Tear down map preview when nothing selected
     if (mapPreview) {
@@ -718,24 +895,105 @@ function renderDetail() {
     return;
   }
 
+  const isSelectedMutating = state.mutatingNames.has(state.selectedName);
+  const actionBusy = state.openBusy || isSelectedMutating || state.detailLoading;
+  const config = getResourceConfig(state.activeTab);
+  const isMediaTab = state.activeTab === CLOUD_LIBRARY_TAB_KEYS.media;
+  const isPinned = isMediaTab && state.pinnedNames.has(state.selectedName);
+  const isStalePin = isMediaTab && state.stalePinnedNames.has(state.selectedName);
+  const isOfflineItem = isMediaTab && Boolean(selectedItem._offline);
+  const isMetadataOnly = isOfflineItem && !isPinned;
+
   elements.detailTitle.textContent = selectedItem.title || selectedItem.name;
   elements.detailSubtitle.textContent = buildRecordSubtitle(selectedItem) || selectedItem.name;
-  renderDetailPreview(selectedItem);
+  renderDetailPreview(selectedItem, { isOfflineItem, isPinned });
+
+  // For pinned offline items, asynchronously resolve a local blob URL
+  // and re-render the preview so it does not rely on a remote URL.
+  // Only image media can be previewed as <img>; skip for audio/video/etc.
+  const selectedMediaKind = String(selectedItem.media_kind || "").toLowerCase();
+  if (isOfflineItem && isPinned && !isStalePin && selectedMediaKind === "image") {
+    const pinnedName = state.selectedName;
+    getPinnedMediaBlob(pinnedName).then((blob) => {
+      if (!blob || state.selectedName !== pinnedName) return;
+      const localUrl = URL.createObjectURL(blob);
+      renderDetailPreview(selectedItem, { isOfflineItem, isPinned, localPreviewUrl: localUrl });
+    }).catch(() => {});
+  }
 
   elements.detailMeta.replaceChildren();
   buildDetailMetaEntries(selectedItem).forEach(([label, value]) => {
     elements.detailMeta.append(createMetaRow(label, value));
   });
 
-  const actionBusy = state.openBusy || state.mutationBusy || state.detailLoading;
-  const config = getResourceConfig(state.activeTab);
   const canOpenSelectedItem = canOpenCloudLibraryItem(selectedItem);
-  const showOpen = !config.canDownload;
+  const showOpen = !config.canDownload || canOpenSelectedItem;
 
-  syncActionButton(elements.actionOpen, showOpen, actionBusy || !canOpenSelectedItem);
-  syncActionButton(elements.actionDownload, config.canDownload, actionBusy);
-  syncActionButton(elements.actionRename, config.canRename, actionBusy);
-  syncActionButton(elements.actionDelete, config.canDelete, actionBusy);
+  // When an item is metadata-only offline, disable actions that require network.
+  // Pinned items can be opened offline but cannot be downloaded/renamed/deleted.
+  // Stale pinned items prefer the remote URL, so open is also disabled offline.
+  const offlineGated = isMetadataOnly || (isOfflineItem && isPinned);
+  // Mutation actions (rename/delete/download) require an active capability with
+  // a CSRF token.  During the offline→online reconnect window feature access may
+  // still be null while rehydration is in progress.  Disable these actions until
+  // the capability is fully resolved to avoid dead-end interactions.
+  const capabilityReady = getCurrentCapability()?.enabled === true;
+  const authGated = !capabilityReady || state.authLoading;
+  const mutationGated = actionBusy || offlineGated || authGated;
+
+  // Open: local-only open (fresh pinned blob) works without auth; all other
+  // open paths hit the network and require a valid session.
+  const hasLocalBlob = isPinned && !isStalePin;
+  const openDisabled = actionBusy || !canOpenSelectedItem || isMetadataOnly
+    || (isStalePin && isOfflineItem)
+    || (!hasLocalBlob && authGated);
+  syncActionButton(elements.actionOpen, showOpen, openDisabled);
+  syncActionButton(elements.actionDownload, config.canDownload, mutationGated);
+  syncActionButton(elements.actionRename, config.canRename, mutationGated);
+  syncActionButton(elements.actionDelete, config.canDelete, mutationGated);
+
+  // Pin/unpin for media assets.
+  // Unpin is a local-only operation and stays available without auth.
+  // Pin / re-pin downloads from the server and requires a valid session.
+  const pinDisabled = actionBusy || (hasLocalBlob ? false : authGated);
+  syncActionButton(elements.actionPin, isMediaTab, pinDisabled);
+  if (elements.actionPin) {
+    const pinLabel = elements.actionPin.querySelector("[data-i18n]");
+    if (pinLabel) {
+      if (isStalePin) {
+        pinLabel.textContent = t("cloudLibraryRepin");
+      } else {
+        pinLabel.textContent = isPinned ? t("cloudLibraryUnpin") : t("cloudLibraryPin");
+      }
+    }
+    elements.actionPin.dataset.pinned = isPinned ? "true" : "false";
+    elements.actionPin.dataset.stale = isStalePin ? "true" : "false";
+  }
+
+  // Availability status line in the meta section
+  if (isMediaTab && elements.detailMeta) {
+    if (isStalePin && isOfflineItem) {
+      elements.detailMeta.append(
+        createMetaRow(t("cloudLibraryAvailability"), t("cloudLibraryPinStaleOffline")),
+      );
+    } else if (isStalePin) {
+      elements.detailMeta.append(
+        createMetaRow(t("cloudLibraryAvailability"), t("cloudLibraryPinOutdated")),
+      );
+    } else if (isPinned) {
+      elements.detailMeta.append(
+        createMetaRow(t("cloudLibraryAvailability"), t("cloudLibraryOfflineAvailable")),
+      );
+    } else if (isOfflineItem) {
+      elements.detailMeta.append(
+        createMetaRow(t("cloudLibraryAvailability"), t("cloudLibraryMetadataCached")),
+      );
+    } else {
+      elements.detailMeta.append(
+        createMetaRow(t("cloudLibraryAvailability"), t("cloudLibraryCloudOnly")),
+      );
+    }
+  }
 }
 
 async function loadDetail(name, { force = false } = {}) {
@@ -805,13 +1063,51 @@ async function loadDetail(name, { force = false } = {}) {
     if (requestId === detailRequestState.requestId) {
       state.detailLoading = false;
       renderDetail();
+      void refreshPinState(name);
     }
   }
 }
 
-async function loadList({ append = false, force = false } = {}) {
+/**
+ * Re-fetch session + feature-access after recovering from offline-limited mode.
+ * Called once when loadList detects a transition from offline → online so that
+ * upload visibility, tab access, and capability-driven actions become current.
+ *
+ * Guarded by authGeneration: results are discarded if a newer auth operation
+ * (refreshAuthState, logout, auth-state event) started while this was in-flight.
+ */
+function rehydrateAuthOnReconnect() {
+  state.reconnecting = true;
+  const myGeneration = authGeneration;
+  void (async () => {
+    try {
+      const session = await getBackendSessionState({ force: true });
+      if (authGeneration !== myGeneration) return;
+      state.session = session;
+      if (session.authenticated) {
+        const loggedUser = await fetchBackendLoggedUser().catch(() => null);
+        if (authGeneration !== myGeneration) return;
+        if (loggedUser?.user) {
+          setMediaCacheUser(loggedUser.user);
+        }
+        const featureAccess = await getBackendFeatureAccessState({ force: true });
+        if (authGeneration !== myGeneration) return;
+        state.featureAccess = featureAccess;
+      }
+    } catch { /* stay with stale state if backend is flaky */ }
+    if (authGeneration === myGeneration) {
+      state.reconnecting = false;
+    }
+    renderTabs();
+    renderDetail();
+  })();
+}
+
+async function loadList({ append = false, force = false, offlineBootstrap = false, preserveSnapshot = false } = {}) {
   const capability = getCurrentCapability();
-  if (!capability?.enabled) {
+  const isOfflineMediaTab = state.listOffline && state.activeTab === CLOUD_LIBRARY_TAB_KEYS.media;
+  const isReconnectingMediaTab = state.reconnecting && state.activeTab === CLOUD_LIBRARY_TAB_KEYS.media;
+  if (!capability?.enabled && !offlineBootstrap && !isOfflineMediaTab && !isReconnectingMediaTab) {
     state.items = [];
     state.totalCount = 0;
     state.hasMore = false;
@@ -841,7 +1137,7 @@ async function loadList({ append = false, force = false } = {}) {
   listRequestState.controller = controller;
   listRequestState.requestKey = requestKey;
   state.listLoading = true;
-  if (!append) {
+  if (!append && !state.reconnecting && !preserveSnapshot) {
     state.items = [];
     state.selectedName = "";
     state.selectedDetail = null;
@@ -874,9 +1170,17 @@ async function loadList({ append = false, force = false } = {}) {
 
     setStatus();
     const nextItems = resourceConfig.getItems(response);
+    const isOfflineResponse = Boolean(response?._offline);
+    if (isOfflineResponse) {
+      for (const item of nextItems) { item._offline = true; }
+    }
     state.items = append ? [...state.items, ...nextItems.filter((item) =>
       !state.items.some((existing) => existing.name === item.name)
     )] : nextItems;
+    const wasOffline = state.listOffline;
+    state.listOffline = isOfflineResponse;
+    if (wasOffline && !isOfflineResponse) rehydrateAuthOnReconnect();
+    if (wasOffline !== isOfflineResponse) renderTabs();
     state.totalCount = Number(response?.totalCount ?? response?.total_count) || state.items.length;
     state.hasMore = response?.hasMore === true || response?.has_more === true;
     state.nextOffset = Number(response?.nextOffset ?? response?.next_offset) || (offset + nextItems.length);
@@ -892,9 +1196,11 @@ async function loadList({ append = false, force = false } = {}) {
     renderList();
     renderDetail();
 
-    if (state.selectedName && (!state.selectedDetail || selectionChanged)) {
+    if (state.selectedName && (!state.selectedDetail || selectionChanged || preserveSnapshot)) {
       void loadDetail(state.selectedName);
     }
+
+    void refreshPinStatesForItems(state.items);
 
     if (!force && !append) {
       const revalidationFence = {
@@ -917,7 +1223,13 @@ async function loadList({ append = false, force = false } = {}) {
         }
 
         const freshItems = resourceConfig.getItems(freshResponse);
+        const wasOffline = state.listOffline;
+        const isFreshOffline = Boolean(freshResponse?._offline);
+        if (isFreshOffline) {
+          for (const item of freshItems) { item._offline = true; }
+        }
         state.items = freshItems;
+        state.listOffline = isFreshOffline;
         state.totalCount = Number(freshResponse?.totalCount ?? freshResponse?.total_count) || state.items.length;
         state.hasMore = freshResponse?.hasMore === true || freshResponse?.has_more === true;
         state.nextOffset = Number(freshResponse?.nextOffset ?? freshResponse?.next_offset) || state.items.length;
@@ -928,6 +1240,8 @@ async function loadList({ append = false, force = false } = {}) {
             void loadDetail(state.selectedName, { force: true });
           }
         }
+        if (wasOffline && !isFreshOffline) rehydrateAuthOnReconnect();
+        if (wasOffline !== isFreshOffline) renderTabs();
         renderList();
         renderDetail();
       }).catch((error) => {
@@ -987,6 +1301,30 @@ async function openSelectedItem() {
       href = await openCloudAccelRun(selectedName);
     } else if (tabKey === CLOUD_LIBRARY_TAB_KEYS.boardDocuments) {
       href = await openCloudBoardDocument(selectedName);
+    } else if (tabKey === CLOUD_LIBRARY_TAB_KEYS.media) {
+      const asset = state.selectedDetail
+        || state.items.find((item) => item.name === selectedName)
+        || null;
+
+      // Prefer the fresh remote asset when the pinned blob is stale
+      const isStale = state.stalePinnedNames.has(selectedName);
+      const viewUrl = asset?.image_url || asset?.download_url || asset?.downloadUrl;
+
+      if (!isStale && state.pinnedNames.has(selectedName)) {
+        const blob = await getPinnedMediaBlob(selectedName).catch(() => null);
+        if (blob) {
+          const objectUrl = URL.createObjectURL(blob);
+          window.open(objectUrl, "_blank", "noopener,noreferrer");
+          setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+          state.openBusy = false;
+          renderDetail();
+          return;
+        }
+      }
+
+      if (viewUrl) {
+        window.open(viewUrl, "_blank", "noopener,noreferrer");
+      }
     }
 
     if (href) {
@@ -1007,7 +1345,7 @@ async function openSelectedItem() {
 }
 
 async function renameSelectedBoardDocument() {
-  if (!state.selectedName || state.mutationBusy || state.activeTab !== CLOUD_LIBRARY_TAB_KEYS.boardDocuments) {
+  if (!state.selectedName || state.mutatingNames.has(state.selectedName) || state.activeTab !== CLOUD_LIBRARY_TAB_KEYS.boardDocuments) {
     return;
   }
 
@@ -1040,7 +1378,7 @@ async function renameSelectedBoardDocument() {
     return;
   }
 
-  state.mutationBusy = true;
+  state.mutatingNames.add(selectedName);
   renderDetail();
 
   try {
@@ -1051,6 +1389,10 @@ async function renameSelectedBoardDocument() {
     });
 
     if (!response.ok || !response.document) {
+      if (response.status === 401) {
+        applyLibraryRequestError({ status: response.status });
+        return;
+      }
       if (response.status === 404) {
         await recoverMissingCloudRecord(selectedName, { tabKey });
         return;
@@ -1063,17 +1405,87 @@ async function renameSelectedBoardDocument() {
     getCurrentResourceConfig().resource.invalidateDetail(selectedName, { mode: "full" });
     getCurrentResourceConfig().resource.invalidateList();
     setStatus("cloudLibraryRenamed", { title: response.document.title }, "success");
-    await loadList({ force: true });
+    await loadList({ force: true, preserveSnapshot: true });
   } catch {
     setStatus("cloudLibraryRenameFailed", { status: 0 }, "danger");
   } finally {
-    state.mutationBusy = false;
+    state.mutatingNames.delete(selectedName);
+    renderDetail();
+  }
+}
+
+async function renameSelectedMediaAsset() {
+  if (!state.selectedName || state.mutatingNames.has(state.selectedName) || state.activeTab !== CLOUD_LIBRARY_TAB_KEYS.media) {
+    return;
+  }
+
+  const selectedName = state.selectedName;
+  const tabKey = state.activeTab;
+  const capability = getCurrentCapability();
+  if (!capability?.enabled || !capability.csrfToken) {
+    setStatus("cloudLibraryAccessUnavailable", null, "danger");
+    return;
+  }
+
+  const currentTitle = state.selectedDetail?.title
+    || state.items.find((item) => item.name === state.selectedName)?.title
+    || t("cloudLibraryMediaUntitled");
+
+  const title = await showPromptDialog({
+    title: t("cloudLibraryRenameMediaTitle"),
+    message: t("cloudLibraryRenameMediaMessage"),
+    placeholder: currentTitle,
+    value: currentTitle,
+    confirmLabel: t("cloudLibraryRename"),
+    cancelLabel: t("cancel"),
+  });
+
+  if (title === null) return;
+
+  const trimmedTitle = String(title || "").trim();
+  if (!trimmedTitle) {
+    setStatus("cloudLibraryRenameFailed", { status: 0 }, "danger");
+    return;
+  }
+
+  state.mutatingNames.add(selectedName);
+  renderDetail();
+
+  try {
+    const response = await updateMediaAssetInBackend({
+      name: selectedName,
+      title: trimmedTitle,
+      csrfToken: capability.csrfToken,
+    });
+
+    if (!response.ok || !response.asset) {
+      if (response.status === 401) {
+        applyLibraryRequestError({ status: response.status });
+        return;
+      }
+      if (response.status === 404) {
+        await recoverMissingCloudRecord(selectedName, { tabKey });
+        return;
+      }
+      setStatus("cloudLibraryRenameFailed", { status: response.status || 0 }, "danger");
+      return;
+    }
+
+    getCurrentResourceConfig().resource.invalidateDetail(selectedName, { mode: "summary" });
+    getCurrentResourceConfig().resource.invalidateDetail(selectedName, { mode: "full" });
+    getCurrentResourceConfig().resource.invalidateList();
+    setStatus("cloudLibraryRenamed", { title: response.asset.title }, "success");
+    await loadList({ force: true, preserveSnapshot: true });
+  } catch {
+    setStatus("cloudLibraryRenameFailed", { status: 0 }, "danger");
+  } finally {
+    state.mutatingNames.delete(selectedName);
     renderDetail();
   }
 }
 
 async function deleteSelectedItem() {
-  if (!state.selectedName || state.mutationBusy) return;
+  if (!state.selectedName || state.mutatingNames.has(state.selectedName)) return;
 
   const selectedName = state.selectedName;
   const tabKey = state.activeTab;
@@ -1102,7 +1514,7 @@ async function deleteSelectedItem() {
 
   if (!confirmed) return;
 
-  state.mutationBusy = true;
+  state.mutatingNames.add(selectedName);
   renderDetail();
 
   try {
@@ -1113,8 +1525,8 @@ async function deleteSelectedItem() {
         name: selectedName,
         csrfToken: capability.csrfToken,
       });
-    } else if (state.activeTab === CLOUD_LIBRARY_TAB_KEYS.savedImages) {
-      response = await deleteSavedDrawingFromBackend({
+    } else if (state.activeTab === CLOUD_LIBRARY_TAB_KEYS.media) {
+      response = await deleteMediaAssetFromBackend({
         name: selectedName,
         csrfToken: capability.csrfToken,
       });
@@ -1133,6 +1545,10 @@ async function deleteSelectedItem() {
     }
 
     if (response && !response.ok) {
+      if (response.status === 401) {
+        applyLibraryRequestError({ status: response.status });
+        return;
+      }
       if (response.status === 404) {
         await recoverMissingCloudRecord(selectedName, { tabKey });
         return;
@@ -1148,27 +1564,155 @@ async function deleteSelectedItem() {
     setStatus("cloudLibraryDeleted", null, "success");
     state.selectedName = "";
     state.selectedDetail = null;
-    await loadList({ force: true });
+    await loadList({ force: true, preserveSnapshot: true });
   } catch {
     setStatus("cloudLibraryDeleteFailed", { status: 0 }, "danger");
   } finally {
-    state.mutationBusy = false;
+    state.mutatingNames.delete(selectedName);
     renderDetail();
   }
 }
 
-function downloadSelectedImage() {
-  const drawing = state.selectedDetail
+function downloadSelectedMedia() {
+  const asset = state.selectedDetail
     || state.items.find((item) => item.name === state.selectedName)
     || null;
-  const downloadUrl = drawing?.download_url || drawing?.downloadUrl;
+  const downloadUrl = asset?.download_url || asset?.downloadUrl;
   if (!downloadUrl) return;
   triggerDownload(downloadUrl);
+}
+
+async function uploadMediaAsset() {
+  if (state.activeTab !== CLOUD_LIBRARY_TAB_KEYS.media || state.uploadBusy) return;
+
+  const capability = getCurrentCapability();
+  if (!capability?.enabled || !capability.csrfToken) {
+    setStatus("cloudLibraryAccessUnavailable", null, "danger");
+    return;
+  }
+
+  const input = document.createElement("input");
+  input.type = "file";
+  input.style.display = "none";
+
+  const filePromise = new Promise((resolve) => {
+    input.addEventListener("change", () => {
+      resolve(input.files?.[0] || null);
+    });
+    input.addEventListener("cancel", () => {
+      resolve(null);
+    });
+  });
+
+  document.body.appendChild(input);
+  input.click();
+  input.remove();
+
+  const file = await filePromise;
+  if (!file) return;
+
+  state.uploadBusy = true;
+  setStatusText(t("cloudLibraryUploading"), "muted");
+  renderTabs();
+
+  try {
+    const response = await uploadMediaAssetToBackend({
+      fileBlob: file,
+      fileName: file.name,
+      title: file.name,
+      csrfToken: capability.csrfToken,
+    });
+
+    if (!response.ok || !response.asset) {
+      if (response.status === 401) {
+        applyLibraryRequestError({ status: response.status });
+        return;
+      }
+      setStatus("cloudLibraryUploadFailed", { status: response.status || 0 }, "danger");
+      return;
+    }
+
+    const resourceConfig = getCurrentResourceConfig();
+    resourceConfig.resource.invalidateList();
+    setStatus("cloudLibraryUploaded", { title: response.asset.title }, "success");
+    // Refresh the list in the background without blocking the UI.
+    void loadList({ force: true, preserveSnapshot: true });
+  } catch {
+    setStatus("cloudLibraryUploadFailed", { status: 0 }, "danger");
+  } finally {
+    state.uploadBusy = false;
+    renderTabs();
+  }
+}
+
+async function togglePinSelectedMedia() {
+  if (state.activeTab !== CLOUD_LIBRARY_TAB_KEYS.media || !state.selectedName) return;
+  if (state.mutatingNames.has(state.selectedName)) return;
+
+  const selectedName = state.selectedName;
+  const isPinned = state.pinnedNames.has(selectedName);
+  const isStale = state.stalePinnedNames.has(selectedName);
+  const asset = state.selectedDetail
+    || state.items.find((item) => item.name === selectedName)
+    || null;
+
+  if (isPinned && !isStale) {
+    // Unpin
+    state.mutatingNames.add(selectedName);
+    renderDetail();
+    try {
+      await unpinMediaBlob(selectedName);
+      state.pinnedNames.delete(selectedName);
+      state.stalePinnedNames.delete(selectedName);
+      setStatus("cloudLibraryUnpinned", { title: asset?.title || selectedName }, "success");
+    } catch {
+      setStatus("cloudLibraryPinFailed", null, "danger");
+    } finally {
+      state.mutatingNames.delete(selectedName);
+      renderDetail();
+    }
+    return;
+  }
+
+  // Pin or re-pin stale blob — download the blob and store it locally
+  const downloadUrl = asset?.download_url || asset?.downloadUrl;
+  if (!downloadUrl) return;
+
+  state.mutatingNames.add(selectedName);
+  setStatusText(t("cloudLibraryPinning"), "muted");
+  renderDetail();
+
+  try {
+    const response = await fetch(downloadUrl, { credentials: "include" });
+    if (!response.ok) {
+      if (response.status === 401) {
+        applyLibraryRequestError({ status: response.status });
+        return;
+      }
+      setStatus("cloudLibraryPinFailed", null, "danger");
+      return;
+    }
+    const blob = await response.blob();
+    await pinMediaBlob(selectedName, blob, { contentHash: asset?.content_hash || null });
+    state.pinnedNames.add(selectedName);
+    state.stalePinnedNames.delete(selectedName);
+    setStatus("cloudLibraryPinned", { title: asset?.title || selectedName }, "success");
+  } catch {
+    setStatus("cloudLibraryPinFailed", null, "danger");
+  } finally {
+    state.mutatingNames.delete(selectedName);
+    renderDetail();
+  }
 }
 
 function handleTabSelection(nextTab) {
   const normalizedTab = normalizeTabKey(nextTab);
   if (normalizedTab === state.activeTab) return;
+
+  // In offline-limited or reconnecting mode, only the media tab is interactive.
+  if ((state.listOffline || state.reconnecting) && normalizedTab !== CLOUD_LIBRARY_TAB_KEYS.media) return;
+
+  revokePreviewObjectUrl();
 
   // Tear down map preview when switching tabs
   if (mapPreview) {
@@ -1185,20 +1729,57 @@ function handleTabSelection(nextTab) {
   void loadList();
 }
 
-async function refreshAuthState({ force = false } = {}) {
+async function drainPendingAuthRefresh(myGeneration) {
+  if (authGeneration === myGeneration && pendingAuthRefresh) {
+    const coalescedOpts = pendingAuthRefresh;
+    pendingAuthRefresh = null;
+    await refreshAuthState(coalescedOpts);
+  }
+}
+
+async function refreshAuthState({ force = false, pendingLogout = false } = {}) {
+  authGeneration += 1;
+  const myGeneration = authGeneration;
+  pendingAuthRefresh = null;
   state.authLoading = true;
   renderTabs();
 
+  // Explicit logout — erase the persisted cache namespace so offline
+  // reuse of this account's cached media is prevented.
+  if (pendingLogout) {
+    clearPersistedMediaCacheUser();
+  }
+
   try {
     const session = await getBackendSessionState({ force });
+    if (authGeneration !== myGeneration) return;
     state.session = session;
 
     if (session.authenticated) {
-      state.featureAccess = await getBackendFeatureAccessState({ force });
+      const loggedUser = await fetchBackendLoggedUser().catch(() => null);
+      if (authGeneration !== myGeneration) return;
+      const user = loggedUser?.user || null;
+      // Only update the cache namespace when we got a concrete user.
+      // A transient logged-user lookup failure should not wipe the
+      // persisted namespace while the session is still valid.
+      if (user) {
+        setMediaCacheUser(user);
+      }
+      const featureAccess = await getBackendFeatureAccessState({ force });
+      if (authGeneration !== myGeneration) return;
+      state.featureAccess = featureAccess;
     } else {
+      clearPersistedMediaCacheUser();
       state.featureAccess = null;
     }
   } catch {
+    if (authGeneration !== myGeneration) return;
+    // Backend unreachable — try to restore a cached namespace so the
+    // media tab can still serve pinned / cached-manifest items.
+    const restoredUser = restorePersistedMediaCacheUser();
+    if (!restoredUser) {
+      setMediaCacheUser(null);
+    }
     state.session = {
       authenticated: false,
       isGuest: true,
@@ -1207,17 +1788,43 @@ async function refreshAuthState({ force = false } = {}) {
     };
     state.featureAccess = null;
   } finally {
-    state.authLoading = false;
-    renderTabs();
+    if (authGeneration === myGeneration) {
+      state.authLoading = false;
+      state.reconnecting = false;
+      renderTabs();
+    }
   }
 
+  if (authGeneration !== myGeneration) return;
+
   if (!state.session?.authenticated) {
-    setStatus("cloudLibraryLoginPrompt", null, "muted");
-    state.items = [];
-    state.selectedName = "";
-    state.selectedDetail = null;
-    renderList();
-    renderDetail();
+    // Even when unauthenticated, if a cached media namespace exists
+    // we allow the media tab to load in offline-limited mode.
+    const hasOfflineNamespace = Boolean(getMediaCacheUser());
+    if (!hasOfflineNamespace) {
+      setStatus("cloudLibraryLoginPrompt", null, "muted");
+      revokePreviewObjectUrl();
+      state.items = [];
+      state.selectedName = "";
+      state.selectedDetail = null;
+      state.pinnedNames.clear();
+      state.stalePinnedNames.clear();
+      state.listOffline = false;
+      renderList();
+      renderDetail();
+      await drainPendingAuthRefresh(myGeneration);
+      return;
+    }
+
+    // Offline-limited mode: switch to media tab and load from cache.
+    if (state.activeTab !== CLOUD_LIBRARY_TAB_KEYS.media) {
+      state.activeTab = CLOUD_LIBRARY_TAB_KEYS.media;
+      updateLocationState();
+      renderTabs();
+    }
+    setStatus();
+    await loadList({ offlineBootstrap: true, preserveSnapshot: true });
+    await drainPendingAuthRefresh(myGeneration);
     return;
   }
 
@@ -1231,7 +1838,8 @@ async function refreshAuthState({ force = false } = {}) {
   }
 
   setStatus();
-  await loadList();
+  await loadList({ preserveSnapshot: true });
+  await drainPendingAuthRefresh(myGeneration);
 }
 
 function handleLanguageChange() {
@@ -1295,13 +1903,23 @@ function bindEvents() {
     void openSelectedItem();
   });
   elements.actionDownload?.addEventListener("click", () => {
-    downloadSelectedImage();
+    downloadSelectedMedia();
   });
   elements.actionRename?.addEventListener("click", () => {
-    void renameSelectedBoardDocument();
+    if (state.activeTab === CLOUD_LIBRARY_TAB_KEYS.media) {
+      void renameSelectedMediaAsset();
+    } else {
+      void renameSelectedBoardDocument();
+    }
   });
   elements.actionDelete?.addEventListener("click", () => {
     void deleteSelectedItem();
+  });
+  elements.actionUpload?.addEventListener("click", () => {
+    void uploadMediaAsset();
+  });
+  elements.actionPin?.addEventListener("click", () => {
+    void togglePinSelectedMedia();
   });
 
   bindMenuNavigation(elements.openBoardPage, "/");
@@ -1310,8 +1928,22 @@ function bindEvents() {
   bindMenuNavigation(elements.openAccelPage, "/accel");
   bindMenuNavigation(elements.openGpsLabPage, "/gps-rate");
 
-  window.addEventListener(BACKEND_AUTH_STATE_EVENT, () => {
-    void refreshAuthState({ force: true });
+  window.addEventListener(BACKEND_AUTH_STATE_EVENT, (event) => {
+    const detail = event?.detail || {};
+    const opts = { force: true, pendingLogout: Boolean(detail.pendingLogout) };
+    // Logout events are always processed immediately.
+    if (opts.pendingLogout) {
+      pendingAuthRefresh = null;
+      void refreshAuthState(opts);
+      return;
+    }
+    // Coalesce non-logout events arriving during an auth refresh.
+    // The pending request is consumed when the current refresh finishes.
+    if (state.authLoading) {
+      pendingAuthRefresh = opts;
+      return;
+    }
+    void refreshAuthState(opts);
   });
   document.addEventListener("i18n:change", handleLanguageChange);
 }
@@ -1328,6 +1960,8 @@ applyButtonIcon(elements.actionOpen, IconWorld);
 applyButtonIcon(elements.actionDownload, IconDownload);
 applyButtonIcon(elements.actionRename, IconBoard);
 applyButtonIcon(elements.actionDelete, IconTrash);
+applyButtonIcon(elements.actionUpload, IconUpload);
+applyButtonIcon(elements.actionPin, IconPin);
 elements.libraryTabs.forEach((button) => {
   const tabKey = normalizeTabKey(button.dataset.tab);
   const config = getResourceConfig(tabKey);

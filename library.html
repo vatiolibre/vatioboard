@@ -58,10 +58,10 @@
       })();
     </script>
 
-    <title>VatioBoard Cloud Library - Recover your saved speed, accel, board, and image data</title>
+    <title>VatioBoard Cloud Library - Recover your saved speed, accel, board, and media data</title>
     <meta
       name="description"
-      content="Browse your VatioBoard cloud library across devices with summary-first speed replays, accel runs, editable board documents, and saved image exports."
+      content="Browse your VatioBoard cloud library across devices with summary-first speed replays, accel runs, editable board documents, and private media assets."
     />
     <meta
       name="robots"
@@ -278,9 +278,9 @@
               <span class="btn-icon" aria-hidden="true"></span>
               <span data-i18n="cloudLibraryBoardDocuments">Board Documents</span>
             </button>
-            <button type="button" class="library-tab" data-tab="saved_images" role="tab" aria-selected="false">
+            <button type="button" class="library-tab" data-tab="media" role="tab" aria-selected="false">
               <span class="btn-icon" aria-hidden="true"></span>
-              <span data-i18n="cloudLibrarySavedImages">Saved Images</span>
+              <span data-i18n="cloudLibraryMedia">Media</span>
             </button>
           </div>
 
@@ -338,6 +338,14 @@
                     <button id="libraryActionDownload" type="button" hidden>
                       <span class="btn-icon" aria-hidden="true"></span>
                       <span data-i18n="cloudLibraryDownload">Download</span>
+                    </button>
+                    <button id="libraryActionUpload" type="button" hidden>
+                      <span class="btn-icon" aria-hidden="true"></span>
+                      <span data-i18n="cloudLibraryUpload">Upload</span>
+                    </button>
+                    <button id="libraryActionPin" type="button" hidden>
+                      <span class="btn-icon" aria-hidden="true"></span>
+                      <span data-i18n="cloudLibraryPin">Pin offline</span>
                     </button>
                   </div>
                   <div class="library-detail-actions-secondary">

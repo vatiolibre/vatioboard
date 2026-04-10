@@ -5,9 +5,9 @@ import {
   downloadSyncPayloadFromBackend,
   getBackendAccelRunDetail,
   getBackendFeatureAccessState,
-  getBackendSavedDrawingAssetDetail,
+  getBackendMediaAssetDetail,
   getBackendSessionState,
-  listBackendSavedDrawingAssets,
+  listBackendMediaAssets,
   normalizeBackendOwnedUrl,
   pushSyncChangesToBackend,
 } from '../../src/shared/backend-auth.js';
@@ -123,18 +123,18 @@ describe('backend auth transport helpers', () => {
     })).toBe('https://cdn.example.com/skidpad.png?token=view');
   });
 
-  it('normalizes saved drawing media URLs returned by shared list/detail helpers', async () => {
+  it('normalizes media asset URLs returned by shared list/detail helpers', async () => {
     const fetchImpl = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse({
         message: {
-          drawings: [
+          assets: [
             {
-              name: 'DRAW-1',
+              name: 'MEDIA-1',
               title: 'Skidpad',
-              image_url: 'https://www.vatiolibre.com/files/skidpad.png?token=view#preview',
+              preview_image_url: 'https://www.vatiolibre.com/files/skidpad.png?token=view#preview',
               download_url: 'https://www.vatiolibre.com/private/files/skidpad.png?download=1',
-              export_url: '/api/method/vatiolibre.vatiolibre.drawings.download_my_saved_drawing?name=DRAW-1&as_attachment=1',
+              export_url: '/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset?name=MEDIA-1&as_attachment=1',
             },
           ],
           total_count: 1,
@@ -144,42 +144,42 @@ describe('backend auth transport helpers', () => {
       }))
       .mockResolvedValueOnce(jsonResponse({
         message: {
-          drawing: {
-            name: 'DRAW-1',
+          asset: {
+            name: 'MEDIA-1',
             title: 'Skidpad',
-            image_url: 'https://dev.vatiolibre.com/files/skidpad.png?token=view#preview',
+            preview_image_url: 'https://dev.vatiolibre.com/files/skidpad.png?token=view#preview',
             download_url: '/private/files/skidpad.png?download=1',
-            export_url: 'https://127.0.0.1/api/method/vatiolibre.vatiolibre.drawings.download_my_saved_drawing?name=DRAW-1',
+            export_url: 'https://127.0.0.1/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset?name=MEDIA-1',
           },
         },
       }));
 
-    const listResult = await listBackendSavedDrawingAssets({
+    const listResult = await listBackendMediaAssets({
       fetchImpl,
       config: {
         apiBase: 'https://api.vatioboard.com',
       },
     });
 
-    const detailResult = await getBackendSavedDrawingAssetDetail({
-      name: 'DRAW-1',
+    const detailResult = await getBackendMediaAssetDetail({
+      name: 'MEDIA-1',
       fetchImpl,
       config: {
         apiBase: 'https://api.dev.vatioboard.com',
       },
     });
 
-    expect(listResult.drawings).toEqual([
+    expect(listResult.assets).toEqual([
       expect.objectContaining({
-        image_url: 'https://api.vatioboard.com/files/skidpad.png?token=view#preview',
+        preview_image_url: 'https://api.vatioboard.com/files/skidpad.png?token=view#preview',
         download_url: 'https://api.vatioboard.com/private/files/skidpad.png?download=1',
-        export_url: 'https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.drawings.download_my_saved_drawing?name=DRAW-1&as_attachment=1',
+        export_url: 'https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset?name=MEDIA-1&as_attachment=1',
       }),
     ]);
-    expect(detailResult.drawing).toEqual(expect.objectContaining({
-      image_url: 'https://api.dev.vatioboard.com/files/skidpad.png?token=view#preview',
+    expect(detailResult.asset).toEqual(expect.objectContaining({
+      preview_image_url: 'https://api.dev.vatioboard.com/files/skidpad.png?token=view#preview',
       download_url: 'https://api.dev.vatioboard.com/private/files/skidpad.png?download=1',
-      export_url: 'https://api.dev.vatioboard.com/api/method/vatiolibre.vatiolibre.drawings.download_my_saved_drawing?name=DRAW-1',
+      export_url: 'https://api.dev.vatioboard.com/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset?name=MEDIA-1',
     }));
   });
 
@@ -219,7 +219,7 @@ describe('backend auth transport helpers', () => {
         has_active_subscription: true,
         csrf_token: 'csrf-token',
         features: {
-          saved_drawings: {
+          media_assets: {
             enabled: true,
           },
           cloud_sync: {
@@ -336,7 +336,7 @@ describe('backend auth transport helpers', () => {
         has_active_subscription: true,
         csrf_token: 'fresh-csrf-token',
         features: {
-          saved_drawings: {
+          media_assets: {
             enabled: true,
           },
           cloud_sync: {

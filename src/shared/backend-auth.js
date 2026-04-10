@@ -8,9 +8,11 @@ export const BACKEND_AUTH_FORGOT_URL = "https://www.vatiolibre.com/login#forgot"
 const SESSION_PROBE_METHOD = "vatiolibre.services.tesla_connection_status";
 const LOGGED_USER_METHOD = "frappe.auth.get_logged_user";
 const FEATURE_ACCESS_METHOD = "vatiolibre.vatiolibre.feature_access.get_my_feature_access";
-const SAVE_DRAWING_METHOD = "vatiolibre.vatiolibre.drawings.save_my_saved_drawing";
-const LIST_SAVED_DRAWINGS_METHOD = "vatiolibre.vatiolibre.drawings.list_my_saved_drawings";
-const GET_SAVED_DRAWING_DETAIL_METHOD = "vatiolibre.vatiolibre.drawings.get_my_saved_drawing_detail";
+const UPLOAD_MEDIA_ASSET_METHOD = "vatiolibre.vatiolibre.media_assets.upload_my_media_asset";
+const LIST_MEDIA_ASSETS_METHOD = "vatiolibre.vatiolibre.media_assets.list_my_media_assets";
+const GET_MEDIA_ASSET_DETAIL_METHOD = "vatiolibre.vatiolibre.media_assets.get_my_media_asset_detail";
+const UPDATE_MEDIA_ASSET_METHOD = "vatiolibre.vatiolibre.media_assets.update_my_media_asset";
+const DELETE_MEDIA_ASSET_METHOD = "vatiolibre.vatiolibre.media_assets.delete_my_media_asset";
 const PUSH_SYNC_METHOD = "vatiolibre.vatiolibre.cloud_sync.push_my_sync_changes";
 const PULL_SYNC_METHOD = "vatiolibre.vatiolibre.cloud_sync.pull_my_sync_changes";
 const DOWNLOAD_SYNC_PAYLOAD_METHOD = "vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload";
@@ -24,7 +26,7 @@ const GET_BOARD_DOCUMENT_DETAIL_METHOD = "vatiolibre.vatiolibre.board_documents.
 const SAVE_BOARD_DOCUMENT_METHOD = "vatiolibre.vatiolibre.board_documents.save_my_board_document";
 const UPDATE_BOARD_DOCUMENT_METHOD = "vatiolibre.vatiolibre.board_documents.update_my_board_document";
 const DELETE_BOARD_DOCUMENT_METHOD = "vatiolibre.vatiolibre.board_documents.delete_my_board_document";
-const DELETE_SAVED_DRAWING_METHOD = "vatiolibre.vatiolibre.drawings.delete_my_saved_drawing";
+
 const SYNC_REQUEST_COMPRESSION_MIN_BYTES = 128 * 1024;
 const SYNC_REQUEST_GZIP_ENCODING = "gzip";
 const SYNC_RESPONSE_GZIP_BASE64_ENCODING = "gzip_base64";
@@ -631,8 +633,8 @@ export async function logoutFromBackend({ fetchImpl, config = getBackendAuthConf
   };
 }
 
-export function getSavedDrawingsCapability(featureAccessData) {
-  return getFeatureCapabilityByKey(featureAccessData, "saved_drawings");
+export function getMediaAssetsCapability(featureAccessData) {
+  return getFeatureCapabilityByKey(featureAccessData, "media_assets");
 }
 
 export function getCloudSyncCapability(featureAccessData) {
@@ -656,7 +658,7 @@ export async function fetchBackendFeatureAccess({
     data,
     isGuest: response.status === 401 || response.status === 403,
     featureAccess: getFeatureAccess(data),
-    capability: getSavedDrawingsCapability(data),
+    capability: getMediaAssetsCapability(data),
     cloudSyncCapability: getCloudSyncCapability(data),
   };
 }
@@ -789,24 +791,25 @@ export async function getBackendAccelRunDetail({
   };
 }
 
-export async function listBackendSavedDrawingAssets({
+export async function listBackendMediaAssets({
   limit,
   offset,
   search,
   sort,
+  media_kind,
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
 } = {}) {
-  const { response, data } = await fetchBackendMethodJson(LIST_SAVED_DRAWINGS_METHOD, {
-    args: { limit, offset, search, sort },
+  const { response, data } = await fetchBackendMethodJson(LIST_MEDIA_ASSETS_METHOD, {
+    args: { limit, offset, search, sort, media_kind },
     fetchImpl,
     signal,
     config,
   });
   const message = getMessage(data);
-  const drawings = normalizeBackendMediaRecords(
-    Array.isArray(message?.drawings) ? message.drawings : [],
+  const assets = normalizeBackendMediaRecords(
+    Array.isArray(message?.assets) ? message.assets : [],
     { config }
   );
 
@@ -814,34 +817,33 @@ export async function listBackendSavedDrawingAssets({
     ok: response.ok,
     status: response.status,
     data,
-    drawings,
+    assets,
     totalCount: Number(message?.total_count) || 0,
     hasMore: message?.has_more === true,
     nextOffset: Number(message?.next_offset) || 0,
-    activeFilters: message?.active_filters || {},
   };
 }
 
-export async function getBackendSavedDrawingAssetDetail({
+export async function getBackendMediaAssetDetail({
   name,
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
 } = {}) {
-  const { response, data } = await fetchBackendMethodJson(GET_SAVED_DRAWING_DETAIL_METHOD, {
+  const { response, data } = await fetchBackendMethodJson(GET_MEDIA_ASSET_DETAIL_METHOD, {
     args: { name },
     fetchImpl,
     signal,
     config,
   });
   const message = getMessage(data);
-  const drawing = normalizeBackendMediaRecord(message?.drawing ?? null, { config });
+  const asset = normalizeBackendMediaRecord(message?.asset ?? null, { config });
 
   return {
     ok: response.ok,
     status: response.status,
     data,
-    drawing,
+    asset,
   };
 }
 
@@ -1025,12 +1027,12 @@ export async function deleteBoardDocumentFromBackend({
   };
 }
 
-export async function saveDrawingToBackend({
+export async function uploadMediaAssetToBackend({
   fileBlob,
   fileName,
   title,
-  imageWidth,
-  imageHeight,
+  folderPath,
+  previewBlob,
   csrfToken,
   fetchImpl,
   config = getBackendAuthConfig(),
@@ -1038,22 +1040,23 @@ export async function saveDrawingToBackend({
   const body = new FormData();
 
   if (!(fileBlob instanceof Blob)) {
-    throw new Error("Drawing file is required.");
+    throw new Error("A file is required.");
   }
 
-  body.append("file", fileBlob, getText(fileName) || "drawing.png");
+  body.append("file", fileBlob, getText(fileName) || "upload");
 
   const trimmedTitle = getText(title);
   if (trimmedTitle) {
     body.append("title", trimmedTitle);
   }
 
-  if (Number.isFinite(imageWidth) && imageWidth > 0) {
-    body.append("image_width", String(Math.round(imageWidth)));
+  const trimmedFolder = getText(folderPath);
+  if (trimmedFolder) {
+    body.append("folder_path", trimmedFolder);
   }
 
-  if (Number.isFinite(imageHeight) && imageHeight > 0) {
-    body.append("image_height", String(Math.round(imageHeight)));
+  if (previewBlob instanceof Blob) {
+    body.append("preview_image", previewBlob, "preview.png");
   }
 
   const headers = {};
@@ -1062,7 +1065,7 @@ export async function saveDrawingToBackend({
     headers["X-Frappe-CSRF-Token"] = getText(csrfToken);
   }
 
-  const { response, data } = await fetchBackendJson(SAVE_DRAWING_METHOD, {
+  const { response, data } = await fetchBackendJson(UPLOAD_MEDIA_ASSET_METHOD, {
     method: "POST",
     headers,
     body,
@@ -1070,13 +1073,57 @@ export async function saveDrawingToBackend({
     config,
   });
   const message = getMessage(data);
-  const drawing = normalizeBackendMediaRecord(message?.drawing ?? null, { config });
+  const asset = normalizeBackendMediaRecord(message?.asset ?? null, { config });
 
   return {
     ok: response.ok,
     status: response.status,
     data,
-    drawing,
+    asset,
+  };
+}
+
+export async function updateMediaAssetInBackend({
+  name,
+  title,
+  folderPath,
+  csrfToken,
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const headers = {
+    "Content-Type": "application/x-www-form-urlencoded",
+  };
+  if (getText(csrfToken)) {
+    headers["X-Frappe-CSRF-Token"] = getText(csrfToken);
+  }
+
+  const body = new URLSearchParams();
+  body.set("name", getText(name));
+  if (title !== undefined && title !== null) {
+    body.set("title", getText(title));
+  }
+  if (folderPath !== undefined && folderPath !== null) {
+    body.set("folder_path", getText(folderPath));
+  }
+
+  const { response, data } = await fetchBackendJson(UPDATE_MEDIA_ASSET_METHOD, {
+    method: "POST",
+    headers,
+    body: body.toString(),
+    fetchImpl,
+    signal,
+    config,
+  });
+  const message = getMessage(data);
+  const asset = normalizeBackendMediaRecord(message?.asset ?? null, { config });
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    asset,
   };
 }
 
@@ -1245,7 +1292,7 @@ export async function deleteSyncRecordFromBackend({
   };
 }
 
-export async function deleteSavedDrawingFromBackend({
+export async function deleteMediaAssetFromBackend({
   name,
   csrfToken,
   fetchImpl,
@@ -1262,7 +1309,7 @@ export async function deleteSavedDrawingFromBackend({
   const body = new URLSearchParams();
   body.set("name", getText(name));
 
-  const { response, data } = await fetchBackendJson(DELETE_SAVED_DRAWING_METHOD, {
+  const { response, data } = await fetchBackendJson(DELETE_MEDIA_ASSET_METHOD, {
     method: "POST",
     headers,
     body: body.toString(),

@@ -38,8 +38,8 @@ describe("index.html smoke", () => {
   let sessionUser;
   let hasActiveSubscription;
   let cloudSyncEnabled;
-  let savedDrawingsEnabled;
-  let savedDrawingsReason;
+  let mediaAssetsEnabled;
+  let mediaAssetsReason;
   let csrfToken;
   let staleBoardDocumentNames;
   let savedBoardDocumentResponse;
@@ -51,8 +51,8 @@ describe("index.html smoke", () => {
     sessionUser = "Guest";
     hasActiveSubscription = false;
     cloudSyncEnabled = false;
-    savedDrawingsEnabled = false;
-    savedDrawingsReason = "";
+    mediaAssetsEnabled = false;
+    mediaAssetsReason = "";
     csrfToken = "csrf-test-token";
     staleBoardDocumentNames = new Set();
     savedBoardDocumentResponse = {
@@ -126,9 +126,9 @@ describe("index.html smoke", () => {
               cloud_sync: {
                 enabled: cloudSyncEnabled,
               },
-              saved_drawings: {
-                enabled: savedDrawingsEnabled,
-                reason: savedDrawingsReason,
+              media_assets: {
+                enabled: mediaAssetsEnabled,
+                reason: mediaAssetsReason,
               },
             },
             csrf_token: csrfToken,
@@ -164,26 +164,6 @@ describe("index.html smoke", () => {
         return new Response(JSON.stringify({
           message: {
             document: updatedBoardDocumentResponse,
-          },
-        }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
-      if (url.endsWith("/api/method/vatiolibre.vatiolibre.drawings.save_my_saved_drawing")) {
-        if (sessionUser === "Guest") {
-          return new Response(JSON.stringify({ message: "Guest" }), {
-            status: 403,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-
-        return new Response(JSON.stringify({
-          message: {
-            drawing: {
-              name: "DRAW-0001",
-            },
           },
         }), {
           status: 200,
@@ -470,7 +450,7 @@ describe("index.html smoke", () => {
     await flushBoardTasks();
 
     expect(document.getElementById("toolsMenuList").hidden).toBe(false);
-    expect(document.getElementById("status").textContent).toBe("Log in to save drawings to VatioLibre.");
+    expect(document.getElementById("status").textContent).toBe("Log in to save board documents to VatioLibre.");
   });
 
   it("blocks save for signed-in users without cloud sync feature", async () => {
@@ -497,11 +477,29 @@ describe("index.html smoke", () => {
     );
   });
 
+  it("blocks board save when media_assets is enabled but cloud_sync is not", async () => {
+    sessionUser = "media-only@vatiolibre.com";
+    hasActiveSubscription = true;
+    cloudSyncEnabled = false;
+    mediaAssetsEnabled = true;
+
+    await import("../../src/board/board.js");
+    await flushBoardTasks();
+
+    document.getElementById("save").click();
+    await flushBoardTasks();
+
+    expect(window.fetch).not.toHaveBeenCalledWith(
+      "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.board_documents.save_my_board_document",
+      expect.anything()
+    );
+  });
+
   it("saves a board document for active subscribers via the Save button", async () => {
     sessionUser = "member@vatiolibre.com";
     hasActiveSubscription = true;
     cloudSyncEnabled = true;
-    savedDrawingsEnabled = true;
+    mediaAssetsEnabled = true;
     csrfToken = "csrf-active-token";
 
     await import("../../src/board/board.js");
@@ -537,7 +535,7 @@ describe("index.html smoke", () => {
     sessionUser = "board-docs@vatiolibre.com";
     hasActiveSubscription = true;
     cloudSyncEnabled = true;
-    savedDrawingsEnabled = true;
+    mediaAssetsEnabled = true;
 
     await import("../../src/board/board.js");
     await flushBoardTasks();
@@ -586,7 +584,7 @@ describe("index.html smoke", () => {
     sessionUser = "board-docs@vatiolibre.com";
     hasActiveSubscription = true;
     cloudSyncEnabled = true;
-    savedDrawingsEnabled = true;
+    mediaAssetsEnabled = true;
 
     localStorage.setItem(BOARD_PENDING_OPEN_DOCUMENT_KEY, JSON.stringify({
       document: {
@@ -629,7 +627,7 @@ describe("index.html smoke", () => {
     sessionUser = "board-docs@vatiolibre.com";
     hasActiveSubscription = true;
     cloudSyncEnabled = true;
-    savedDrawingsEnabled = true;
+    mediaAssetsEnabled = true;
     staleBoardDocumentNames.add("BOARD-DOC-STALE");
     savedBoardDocumentResponse = {
       name: "BOARD-DOC-0002",

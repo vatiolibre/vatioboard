@@ -87,7 +87,7 @@ function createAuthenticatedLibraryFetch(handler) {
             cloud_sync: {
               enabled: true,
             },
-            saved_drawings: {
+            media_assets: {
               enabled: true,
             },
           },
@@ -134,7 +134,7 @@ describe("library.html smoke", () => {
               cloud_sync: {
                 enabled: true,
               },
-              saved_drawings: {
+              media_assets: {
                 enabled: true,
               },
             },
@@ -267,22 +267,22 @@ describe("library.html smoke", () => {
         });
       }
 
-      if (url.includes("/api/method/vatiolibre.vatiolibre.drawings.list_my_saved_drawings")) {
+      if (url.includes("/api/method/vatiolibre.vatiolibre.media_assets.list_my_media_assets")) {
         return new Response(JSON.stringify({
           message: {
-            drawings: [
+            assets: [
               {
-                name: "DRAW-1",
+                name: "MEDIA-1",
                 title: "Skidpad export",
                 created_at_label: "2026-04-03 08:30:00",
                 modified_at_label: "2026-04-03 09:15:00",
-                image_width: 1920,
-                image_height: 1080,
-                file_size: 245760,
-                folder_label: "Exports",
-                image_url: "https://www.vatiolibre.com/files/skidpad.png?token=view#preview",
+                media_kind: "image",
+                blob_size: 245760,
+                original_filename: "skidpad.png",
+                folder_path: "Exports",
+                preview_image_url: "https://www.vatiolibre.com/files/skidpad.png?token=view#preview",
                 download_url: "https://www.vatiolibre.com/private/files/skidpad.png?download=1",
-                export_url: "https://www.vatiolibre.com/api/method/vatiolibre.vatiolibre.drawings.download_my_saved_drawing?name=DRAW-1&as_attachment=1",
+                export_url: "https://www.vatiolibre.com/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset?name=MEDIA-1&as_attachment=1",
               },
             ],
             total_count: 1,
@@ -295,21 +295,21 @@ describe("library.html smoke", () => {
         });
       }
 
-      if (url.includes("/api/method/vatiolibre.vatiolibre.drawings.get_my_saved_drawing_detail")) {
+      if (url.includes("/api/method/vatiolibre.vatiolibre.media_assets.get_my_media_asset_detail")) {
         return new Response(JSON.stringify({
           message: {
-            drawing: {
-              name: "DRAW-1",
+            asset: {
+              name: "MEDIA-1",
               title: "Skidpad export",
               created_at_label: "2026-04-03 08:30:00",
               modified_at_label: "2026-04-03 09:15:00",
-              image_width: 1920,
-              image_height: 1080,
-              file_size: 245760,
-              folder_label: "Exports",
-              image_url: "https://www.vatiolibre.com/files/skidpad.png?token=view#preview",
+              media_kind: "image",
+              blob_size: 245760,
+              original_filename: "skidpad.png",
+              folder_path: "Exports",
+              preview_image_url: "https://www.vatiolibre.com/files/skidpad.png?token=view#preview",
               download_url: "https://www.vatiolibre.com/private/files/skidpad.png?download=1",
-              export_url: "https://www.vatiolibre.com/api/method/vatiolibre.vatiolibre.drawings.download_my_saved_drawing?name=DRAW-1&as_attachment=1",
+              export_url: "https://www.vatiolibre.com/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset?name=MEDIA-1&as_attachment=1",
             },
           },
         }), {
@@ -458,7 +458,7 @@ describe("library.html smoke", () => {
     expect(document.getElementById("libraryDetailPreview")?.dataset.previewKind).toBe("image");
   });
 
-  it("loads saved-image previews and downloads through the BFF origin", async () => {
+  it("loads media asset previews and downloads through the BFF origin", async () => {
     const clickedHrefs = [];
     const clickSpy = vi
       .spyOn(HTMLAnchorElement.prototype, "click")
@@ -471,7 +471,7 @@ describe("library.html smoke", () => {
       await libraryPage.initPromise;
       await settleLibraryTasks();
 
-      document.querySelector('[data-tab="saved_images"]')?.dispatchEvent(
+      document.querySelector('[data-tab="media"]')?.dispatchEvent(
         new MouseEvent("click", { bubbles: true })
       );
       await settleLibraryTasks();

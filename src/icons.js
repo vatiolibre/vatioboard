@@ -197,3 +197,25 @@ export const IconWorld = `
     <path d="M12 4.25c2.15 2.1 3.25 4.7 3.25 7.75S14.15 17.65 12 19.75c-2.15-2.1-3.25-4.7-3.25-7.75S9.85 6.35 12 4.25Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
   </svg>
 `;
+
+export const IconMedia = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <rect x="4" y="4" width="16" height="16" rx="3" stroke="currentColor" stroke-width="1.6"/>
+    <circle cx="9" cy="10" r="2" stroke="currentColor" stroke-width="1.4"/>
+    <path d="M4 16l4-4 3 3 4-5 5 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`;
+
+export const IconUpload = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M12 16V6m0 0l-4 4m4-4l4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M4 17v1a2 2 0 002 2h12a2 2 0 002-2v-1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+  </svg>
+`;
+
+export const IconPin = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M15 4.5l-3.2 3.2L8 9.5l-.5 3L11 16l3-3.5 1.8-3.8L19 5.5l-4-1z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M5 19l4.5-4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  </svg>
+`;

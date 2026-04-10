@@ -428,6 +428,11 @@ body.library-page select{
     outline-offset: 2px;
 }
 
+.library-tab:disabled{
+    pointer-events: none;
+    opacity: 0.35;
+}
+
 .library-search-form{
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(190px, 220px);
@@ -641,6 +646,18 @@ body.library-page select{
     text-align: center;
     color: var(--library-muted);
     gap: 12px;
+}
+
+.library-preview-offline-label{
+    font-size: 12px;
+    font-weight: 600;
+    opacity: 0.6;
+}
+
+.library-preview-kind-label{
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: capitalize;
 }
 
 .library-preview-type-icon{

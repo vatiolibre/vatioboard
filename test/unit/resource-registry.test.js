@@ -380,35 +380,60 @@ describe("boardDocuments resource config", () => {
   });
 });
 
-// ── savedImages config ───────────────────────────────────────────────
+// ── media config ─────────────────────────────────────────────────────
 
-describe("savedImages resource config", () => {
-  const config = getResourceConfig(CLOUD_LIBRARY_TAB_KEYS.savedImages);
+describe("media resource config", () => {
+  const config = getResourceConfig(CLOUD_LIBRARY_TAB_KEYS.media);
 
-  it("has image previewKind", () => {
-    expect(config.previewKind).toBe("image");
+  it("has media previewKind", () => {
+    expect(config.previewKind).toBe("media");
   });
 
-  it("canOpen is always false", () => {
+  it("canOpen returns true for image media", () => {
+    expect(config.canOpen({ media_kind: "image" })).toBe(true);
+  });
+
+  it("canOpen returns true for audio media", () => {
+    expect(config.canOpen({ media_kind: "audio" })).toBe(true);
+  });
+
+  it("canOpen returns true for video media", () => {
+    expect(config.canOpen({ media_kind: "video" })).toBe(true);
+  });
+
+  it("canOpen returns false for archive media", () => {
+    expect(config.canOpen({ media_kind: "archive" })).toBe(false);
+  });
+
+  it("canOpen returns false for other media", () => {
+    expect(config.canOpen({ media_kind: "other" })).toBe(false);
+  });
+
+  it("canOpen returns false when media_kind is missing", () => {
     expect(config.canOpen({})).toBe(false);
+    expect(config.canOpen(null)).toBe(false);
   });
 
   it("supports download", () => {
     expect(config.canDownload).toBe(true);
   });
 
-  it("buildSubtitle includes dimensions", () => {
+  it("supports rename", () => {
+    expect(config.canRename).toBe(true);
+  });
+
+  it("buildSubtitle includes media_kind and size", () => {
     const sub = config.buildSubtitle({
       created_at_label: "Apr 1",
-      image_width: 1920,
-      image_height: 1080,
+      media_kind: "image",
+      blob_size: 245760,
     });
     expect(sub).toContain("Apr 1");
-    expect(sub).toContain("1920 × 1080");
+    expect(sub).toContain("image");
   });
 
   it("getDeleteIdentifiers returns name", () => {
-    expect(config.getDeleteIdentifiers({ name: "img-1" })).toEqual({ name: "img-1" });
+    expect(config.getDeleteIdentifiers({ name: "media-1" })).toEqual({ name: "media-1" });
   });
 });
 

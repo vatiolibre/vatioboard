@@ -256,7 +256,8 @@ Behavior:
 - production hosts use `https://api.vatioboard.com`
 - non-production hosts use `https://api.dev.vatioboard.com`
 - board, speed, replay, GPS Rate Lab, and accel surfaces all mount the shared auth controls
-- saving a board drawing to the backend depends on authenticated feature access and the `saved_drawings` capability
+- saving a board document to the backend depends on authenticated feature access and the `cloud_sync` capability
+- uploading media assets depends on the `media_assets` capability
 - `login.html` is a plain manual test page for backend session and CORS troubleshooting
 
 ## Testing
