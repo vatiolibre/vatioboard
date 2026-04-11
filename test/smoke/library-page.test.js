@@ -1079,4 +1079,233 @@ describe("library.html smoke", () => {
     expect(preview?.dataset.previewKind).toBe("map");
     expect(preview?.querySelector(".library-map-container")).toBeTruthy();
   });
+
+  it("does not rebuild board document preview when revalidation returns the same image URL", async () => {
+    const detailDeferred = createDeferred();
+    const revalidationDeferred = createDeferred();
+    let detailCalls = 0;
+
+    window.fetch = createAuthenticatedLibraryFetch((url) => {
+      if (url.includes("list_my_board_documents")) {
+        return jsonResponse({
+          message: {
+            documents: [{
+              name: "BOARD-DOC-1",
+              title: "Skidpad sketch",
+              command_count: 8,
+              preview_image_url: "https://example.com/previews/board-1.png",
+            }],
+            total_count: 1,
+            has_more: false,
+            next_offset: 1,
+          },
+        });
+      }
+
+      if (url.includes("get_my_board_document_detail")) {
+        detailCalls += 1;
+        if (detailCalls === 1) return detailDeferred.promise;
+        return revalidationDeferred.promise;
+      }
+
+      return jsonResponse({});
+    });
+
+    const libraryPage = await import("../../src/library/library.js");
+    await libraryPage.initPromise;
+    await settleLibraryTasks();
+
+    document.querySelector('[data-tab="board_documents"]')?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true })
+    );
+    await settleLibraryTasks();
+
+    // Resolve initial detail
+    detailDeferred.resolve(jsonResponse({
+      message: {
+        document: {
+          name: "BOARD-DOC-1",
+          title: "Skidpad sketch",
+          command_count: 8,
+          preview_image_url: "https://example.com/previews/board-1.png",
+        },
+      },
+    }));
+    await settleLibraryTasks();
+
+    const preview = document.getElementById("libraryDetailPreview");
+    const firstImg = preview?.querySelector("img");
+    expect(firstImg?.src).toContain("board-1.png");
+
+    // Resolve revalidation with identical data
+    revalidationDeferred.resolve(jsonResponse({
+      message: {
+        document: {
+          name: "BOARD-DOC-1",
+          title: "Skidpad sketch",
+          command_count: 8,
+          preview_image_url: "https://example.com/previews/board-1.png",
+        },
+      },
+    }));
+    await settleLibraryTasks();
+
+    // The same image element should be preserved — no flicker/rebuild.
+    const secondImg = preview?.querySelector("img");
+    expect(secondImg).toBe(firstImg);
+    expect(secondImg?.src).toContain("board-1.png");
+  });
+
+  it("does not restart map preview animation when detail revalidation returns the same route", async () => {
+    const detailDeferred = createDeferred();
+    const revalidationDeferred = createDeferred();
+    let detailCalls = 0;
+
+    const routeCoords = [[-73.97, 40.85], [-73.975, 40.827]];
+    const makeRecord = () => ({
+      name: "SYNC-REPLAY-MAP",
+      title: "Fort Lee",
+      started_at_label: "2026-04-08 09:00:00",
+      sample_count: 50,
+      duration_ms: 180000,
+      has_samples_payload: true,
+      payload_complete: true,
+      can_open: true,
+      preview_route: { coordinates: routeCoords },
+    });
+
+    window.fetch = createAuthenticatedLibraryFetch((url) => {
+      if (url.includes("list_my_speed_recordings")) {
+        return jsonResponse({
+          message: {
+            records: [makeRecord()],
+            total_count: 1,
+            has_more: false,
+            next_offset: 1,
+          },
+        });
+      }
+
+      if (url.includes("get_my_speed_recording_detail")) {
+        detailCalls += 1;
+        if (detailCalls === 1) return detailDeferred.promise;
+        return revalidationDeferred.promise;
+      }
+
+      return jsonResponse({});
+    });
+
+    const libraryPage = await import("../../src/library/library.js");
+    await libraryPage.initPromise;
+    await settleLibraryTasks();
+
+    const preview = document.getElementById("libraryDetailPreview");
+    const mapContainer = preview?.querySelector(".library-map-container");
+    expect(mapContainer).toBeTruthy();
+
+    // Resolve initial detail with preview_route
+    detailDeferred.resolve(jsonResponse({
+      message: { record: makeRecord() },
+    }));
+    await settleLibraryTasks();
+
+    // Count becomes the baseline — the map preview was shown once here.
+    const mapContainerAfterDetail = preview?.querySelector(".library-map-container");
+    expect(mapContainerAfterDetail).toBeTruthy();
+
+    // Resolve revalidation with same route
+    revalidationDeferred.resolve(jsonResponse({
+      message: { record: makeRecord() },
+    }));
+    await settleLibraryTasks();
+
+    // Map container should be the same DOM node — not recreated.
+    expect(preview?.querySelector(".library-map-container")).toBe(mapContainerAfterDetail);
+  });
+
+  it("dedupes preview across summary-first detail loading, response, and revalidation", async () => {
+    const detailDeferred = createDeferred();
+    const revalidationDeferred = createDeferred();
+    let detailCalls = 0;
+    let previewImgCreationCount = 0;
+
+    const originalCreateElement = document.createElement.bind(document);
+    const createElementSpy = vi.spyOn(document, "createElement").mockImplementation((tag) => {
+      const el = originalCreateElement(tag);
+      if (tag === "img") previewImgCreationCount += 1;
+      return el;
+    });
+
+    try {
+      window.fetch = createAuthenticatedLibraryFetch((url) => {
+        if (url.includes("list_my_board_documents")) {
+          return jsonResponse({
+            message: {
+              documents: [{
+                name: "BOARD-DOC-1",
+                title: "Skidpad sketch",
+                command_count: 8,
+                preview_image_url: "https://example.com/previews/board-1.png",
+              }],
+              total_count: 1,
+              has_more: false,
+              next_offset: 1,
+            },
+          });
+        }
+
+        if (url.includes("get_my_board_document_detail")) {
+          detailCalls += 1;
+          if (detailCalls === 1) return detailDeferred.promise;
+          return revalidationDeferred.promise;
+        }
+
+        return jsonResponse({});
+      });
+
+      const libraryPage = await import("../../src/library/library.js");
+      await libraryPage.initPromise;
+      await settleLibraryTasks();
+
+      document.querySelector('[data-tab="board_documents"]')?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true })
+      );
+      await settleLibraryTasks();
+
+      // Reset counter after initial list+tab rendering
+      previewImgCreationCount = 0;
+
+      // Resolve detail — same preview URL as summary
+      detailDeferred.resolve(jsonResponse({
+        message: {
+          document: {
+            name: "BOARD-DOC-1",
+            title: "Skidpad sketch",
+            command_count: 8,
+            preview_image_url: "https://example.com/previews/board-1.png",
+          },
+        },
+      }));
+      await settleLibraryTasks();
+
+      // Resolve revalidation — same preview URL
+      revalidationDeferred.resolve(jsonResponse({
+        message: {
+          document: {
+            name: "BOARD-DOC-1",
+            title: "Skidpad sketch",
+            command_count: 8,
+            preview_image_url: "https://example.com/previews/board-1.png",
+          },
+        },
+      }));
+      await settleLibraryTasks();
+
+      // Preview image should have been created at most once for the
+      // detail+revalidation cycle since the URL never changed.
+      expect(previewImgCreationCount).toBeLessThanOrEqual(1);
+    } finally {
+      createElementSpy.mockRestore();
+    }
+  });
 });

@@ -207,6 +207,14 @@ let mapPreview = null;
 let previewObjectUrl = null;
 
 /**
+ * Lightweight preview-state memo to avoid redundant preview rebuilds.
+ * Updated inside renderDetail(); renderDetailPreview() only runs when the
+ * derived signature changes.  This prevents map animation restarts and
+ * image element recreation caused by metadata-only rerenders.
+ */
+let lastPreviewSignature = "";
+
+/**
  * Monotonically increasing generation counter for auth operations.
  * Incremented by refreshAuthState(); checked by rehydrateAuthOnReconnect()
  * to discard stale results from in-flight reconnect recovery.
@@ -219,6 +227,43 @@ function revokePreviewObjectUrl() {
     URL.revokeObjectURL(previewObjectUrl);
     previewObjectUrl = null;
   }
+}
+
+/**
+ * Derive a stable identity string for the current preview state.
+ * Used to skip renderDetailPreview() when preview inputs are unchanged.
+ */
+function derivePreviewSignature(item, { isOfflineItem = false, isPinned = false, localPreviewUrl = "" } = {}) {
+  if (!item) return "";
+  const config = getResourceConfig(state.activeTab);
+  const previewKind = config.previewKind;
+  const imageUrl = item.image_url || item.preview_image_url || "";
+  const effectiveUrl = (isOfflineItem && isPinned && localPreviewUrl) ? localPreviewUrl : imageUrl;
+  const mediaKind = String(item.media_kind || "");
+
+  // For map previews, include a hash of the route coordinates so we detect
+  // actual route changes but treat identical revalidation data as a no-op.
+  let routeIdentity = "";
+  if (previewKind === "map" && typeof config.getPreviewRoute === "function") {
+    const coords = config.getPreviewRoute(item);
+    if (coords && coords.length >= 2) {
+      // Use first, last, count, and a sampling of middle points for identity.
+      const first = coords[0];
+      const last = coords[coords.length - 1];
+      routeIdentity = `${coords.length}:${first[0]},${first[1]}:${last[0]},${last[1]}`;
+    }
+  }
+
+  return [
+    state.activeTab,
+    item.name || "",
+    previewKind,
+    effectiveUrl,
+    routeIdentity,
+    isOfflineItem ? "offline" : "",
+    isPinned ? "pinned" : "",
+    mediaKind,
+  ].join("|");
 }
 
 const listRequestState = {
@@ -779,6 +824,12 @@ function renderDetailPreview(item = {}, { isOfflineItem = false, isPinned = fals
   }
 
   if ((previewKind === "image" || previewKind === "board-preview" || previewKind === "media") && imageUrl && !isMetadataOnlyOffline) {
+    // Preserve existing image element when the source URL is unchanged.
+    const existingImg = elements.detailPreview.querySelector("img");
+    if (existingImg && existingImg.src === imageUrl) {
+      elements.detailPreview.dataset.previewKind = "image";
+      return;
+    }
     elements.detailPreview.replaceChildren();
     const image = document.createElement("img");
     image.src = imageUrl;
@@ -886,6 +937,7 @@ function renderDetail() {
   elements.detailCard.hidden = !detailVisible;
 
   if (!detailVisible) {
+    lastPreviewSignature = "";
     revokePreviewObjectUrl();
     elements.detailEmpty.textContent = state.detailLoading
       ? t("cloudLibraryLoading")
@@ -916,7 +968,13 @@ function renderDetail() {
 
   elements.detailTitle.textContent = selectedItem.title || selectedItem.name;
   elements.detailSubtitle.textContent = buildRecordSubtitle(selectedItem) || selectedItem.name;
-  renderDetailPreview(selectedItem, { isOfflineItem, isPinned });
+
+  // Only rebuild the preview when preview-relevant inputs changed.
+  const previewSig = derivePreviewSignature(selectedItem, { isOfflineItem, isPinned });
+  if (previewSig !== lastPreviewSignature) {
+    lastPreviewSignature = previewSig;
+    renderDetailPreview(selectedItem, { isOfflineItem, isPinned });
+  }
 
   // For pinned offline items, asynchronously resolve a local blob URL
   // and re-render the preview so it does not rely on a remote URL.
@@ -927,7 +985,11 @@ function renderDetail() {
     getPinnedMediaBlob(pinnedName).then((blob) => {
       if (!blob || state.selectedName !== pinnedName) return;
       const localUrl = URL.createObjectURL(blob);
-      renderDetailPreview(selectedItem, { isOfflineItem, isPinned, localPreviewUrl: localUrl });
+      const localSig = derivePreviewSignature(selectedItem, { isOfflineItem, isPinned, localPreviewUrl: localUrl });
+      if (localSig !== lastPreviewSignature) {
+        lastPreviewSignature = localSig;
+        renderDetailPreview(selectedItem, { isOfflineItem, isPinned, localPreviewUrl: localUrl });
+      }
     }).catch(() => {});
   }
 

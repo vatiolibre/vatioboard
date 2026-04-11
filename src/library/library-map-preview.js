@@ -63,6 +63,7 @@ export function createLibraryMapPreview({ element }) {
   let ready = false;
   let approachToken = 0;
   let currentCoordinates = null;
+  let lastRouteSignature = "";
 
   function destroy() {
     approachToken += 1;
@@ -72,6 +73,7 @@ export function createLibraryMapPreview({ element }) {
     map = null;
     ready = false;
     currentCoordinates = null;
+    lastRouteSignature = "";
   }
 
   function init() {
@@ -269,10 +271,23 @@ export function createLibraryMapPreview({ element }) {
   }
 
   /**
+   * Build a lightweight identity string for a coordinate array.
+   * Used to skip redundant showRoute() calls for the same route.
+   */
+  function buildRouteSignature(coordinates) {
+    if (!coordinates || coordinates.length < 2) return "";
+    const first = coordinates[0];
+    const last = coordinates[coordinates.length - 1];
+    return `${coordinates.length}:${first[0]},${first[1]}:${last[0]},${last[1]}`;
+  }
+
+  /**
    * Set route and animate. If map not init'd yet, init first.
+   * No-op when the route signature matches the currently displayed route.
    */
   async function showRoute(coordinates) {
     if (!coordinates || coordinates.length < 2) {
+      lastRouteSignature = "";
       if (map && ready) {
         hideRoute();
         updateRoute([]);
@@ -280,6 +295,10 @@ export function createLibraryMapPreview({ element }) {
       }
       return;
     }
+
+    const sig = buildRouteSignature(coordinates);
+    if (sig && sig === lastRouteSignature) return;
+    lastRouteSignature = sig;
 
     if (!map) {
       init();

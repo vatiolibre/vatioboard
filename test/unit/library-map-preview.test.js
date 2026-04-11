@@ -241,4 +241,85 @@ describe("createLibraryMapPreview", () => {
 
     vi.useRealTimers();
   });
+
+  it("does not restart animation when showRoute is called with the same coordinates", async () => {
+    vi.useFakeTimers();
+    const element = document.getElementById("mapContainer");
+    const preview = createLibraryMapPreview({ element });
+    preview.init();
+    fireLoad(fakeMaps[0]);
+
+    const coords = [[-74.0, 40.7], [-74.1, 40.8]];
+
+    // First call: should animate
+    const firstPromise = preview.showRoute(coords);
+    await vi.advanceTimersByTimeAsync(4000);
+    await firstPromise;
+
+    const map = fakeMaps[0];
+    const fitCallsAfterFirst = map.fitBounds.mock.calls.length;
+
+    // Second call with identical coordinates: should be a no-op
+    const secondPromise = preview.showRoute(coords);
+    await vi.advanceTimersByTimeAsync(4000);
+    await secondPromise;
+
+    expect(map.fitBounds.mock.calls.length).toBe(fitCallsAfterFirst);
+
+    vi.useRealTimers();
+  });
+
+  it("animates again when showRoute is called with different coordinates", async () => {
+    vi.useFakeTimers();
+    const element = document.getElementById("mapContainer");
+    const preview = createLibraryMapPreview({ element });
+    preview.init();
+    fireLoad(fakeMaps[0]);
+
+    const coordsA = [[-74.0, 40.7], [-74.1, 40.8]];
+    const coordsB = [[-73.9, 40.6], [-73.8, 40.5]];
+
+    const firstPromise = preview.showRoute(coordsA);
+    await vi.advanceTimersByTimeAsync(4000);
+    await firstPromise;
+
+    const map = fakeMaps[0];
+    const fitCallsAfterFirst = map.fitBounds.mock.calls.length;
+
+    const secondPromise = preview.showRoute(coordsB);
+    await vi.advanceTimersByTimeAsync(4000);
+    await secondPromise;
+
+    expect(map.fitBounds.mock.calls.length).toBeGreaterThan(fitCallsAfterFirst);
+
+    vi.useRealTimers();
+  });
+
+  it("allows re-animation after destroy resets the route signature", async () => {
+    vi.useFakeTimers();
+    const element = document.getElementById("mapContainer");
+    const preview = createLibraryMapPreview({ element });
+    preview.init();
+    fireLoad(fakeMaps[0]);
+
+    const coords = [[-74.0, 40.7], [-74.1, 40.8]];
+
+    const firstPromise = preview.showRoute(coords);
+    await vi.advanceTimersByTimeAsync(4000);
+    await firstPromise;
+
+    preview.destroy();
+    preview.init();
+    fireLoad(fakeMaps[1]);
+
+    const secondPromise = preview.showRoute(coords);
+    await vi.advanceTimersByTimeAsync(4000);
+    await secondPromise;
+
+    // Both maps should have received animation calls (reduced-motion uses fitBounds)
+    expect(fakeMaps[0].fitBounds).toHaveBeenCalled();
+    expect(fakeMaps[1].fitBounds).toHaveBeenCalled();
+
+    vi.useRealTimers();
+  });
 });
