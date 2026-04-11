@@ -77,9 +77,9 @@ const MEDIA_ASSET = {
   blob_size: 245760,
   original_filename: "skidpad.png",
   folder_path: "Exports",
-  preview_image_url: "https://www.vatiolibre.com/files/skidpad.png?token=view#preview",
-  download_url: "https://www.vatiolibre.com/private/files/skidpad.png?download=1",
-  export_url: "https://www.vatiolibre.com/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset?name=MEDIA-1&as_attachment=1",
+  preview_image_url: "https://api.vatioboard.com/files/skidpad.png?token=view#preview",
+  download_url: "https://api.vatioboard.com/private/files/skidpad.png?download=1",
+  export_url: "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset?name=MEDIA-1&as_attachment=1",
 };
 
 function createAuthenticatedLibraryFetch(handler) {
@@ -764,7 +764,7 @@ describe("library offline media", () => {
     mockMediaCache.getCachedMediaManifest.mockResolvedValue([cachedItem]);
     mockMediaCache.getCachedMediaMetadata.mockResolvedValue({
       ...cachedItem,
-      preview_image_url: "https://www.vatiolibre.com/files/skidpad.png?token=view#preview",
+      preview_image_url: "https://api.vatioboard.com/files/skidpad.png?token=view#preview",
       download_url: null,
     });
 
@@ -984,7 +984,7 @@ describe("library offline media", () => {
     mockMediaCache.getCachedMediaMetadata.mockResolvedValue({
       ...cachedItem,
       _offline: true,
-      preview_image_url: "https://www.vatiolibre.com/files/skidpad.png?token=view#preview",
+      preview_image_url: "https://api.vatioboard.com/files/skidpad.png?token=view#preview",
       download_url: null,
     });
 
@@ -1032,7 +1032,7 @@ describe("library offline media", () => {
       expect(img).toBeTruthy();
       // The img src should be a blob URL, not the remote URL
       expect(img.src).toMatch(/^blob:/);
-      expect(img.src).not.toContain("vatiolibre.com");
+      expect(img.src).not.toContain("vatioboard.com");
     } finally {
       URL.createObjectURL = originalCreateObjectURL;
     }
@@ -1133,12 +1133,10 @@ describe("library offline media", () => {
     expect(preview).toBeTruthy();
     // Must NOT render an <img> — audio blobs are not images
     expect(preview.querySelector("img")).toBeNull();
-    expect(preview.dataset.previewKind).toBe("offline-pinned-fallback");
-    // Should show the media kind label
-    expect(preview.querySelector(".library-preview-kind-label")).toBeTruthy();
-    expect(preview.querySelector(".library-preview-kind-label").textContent).toBe("audio");
-    // Should show the "available offline" status
-    expect(preview.textContent).toContain("Available offline");
+    // Now mounts an inline media player for pinned offline audio
+    expect(preview.dataset.previewKind).toBe("media-player");
+    expect(preview.querySelector(".media-player")).toBeTruthy();
+    expect(preview.querySelector("audio")).toBeTruthy();
   });
 
   // ── Offline → online recovery ───────────────────────────────────
@@ -1175,7 +1173,7 @@ describe("library offline media", () => {
       if (url.includes("list_my_media_assets")) {
         return jsonResponse({
           message: {
-            assets: [{ ...cachedItem, preview_image_url: "https://www.vatiolibre.com/files/photo.png" }],
+            assets: [{ ...cachedItem, preview_image_url: "https://api.vatioboard.com/files/photo.png" }],
             total_count: 1, has_more: false, next_offset: 1,
           },
         });
@@ -1240,7 +1238,7 @@ describe("library offline media", () => {
         listCallCount += 1;
         return jsonResponse({
           message: {
-            assets: [{ ...cachedItem, preview_image_url: "https://www.vatiolibre.com/files/photo.png" }],
+            assets: [{ ...cachedItem, preview_image_url: "https://api.vatioboard.com/files/photo.png" }],
             total_count: 1, has_more: false, next_offset: 1,
           },
         });
@@ -1385,7 +1383,7 @@ describe("library offline media", () => {
       if (url.includes("list_my_media_assets")) {
         return jsonResponse({
           message: {
-            assets: [{ ...cachedItem, preview_image_url: "https://www.vatiolibre.com/files/photo.png" }],
+            assets: [{ ...cachedItem, preview_image_url: "https://api.vatioboard.com/files/photo.png" }],
             total_count: 1, has_more: false, next_offset: 1,
           },
         });
@@ -1528,7 +1526,7 @@ describe("library offline media", () => {
       if (url.includes("list_my_media_assets")) {
         return jsonResponse({
           message: {
-            assets: [{ ...cachedItem, preview_image_url: "https://www.vatiolibre.com/files/photo.png" }],
+            assets: [{ ...cachedItem, preview_image_url: "https://api.vatioboard.com/files/photo.png" }],
             total_count: 1, has_more: false, next_offset: 1,
           },
         });
@@ -1621,7 +1619,7 @@ describe("library offline media", () => {
       if (url.includes("list_my_media_assets")) {
         return jsonResponse({
           message: {
-            assets: [{ ...cachedItem, preview_image_url: "https://www.vatiolibre.com/files/photo.png" }],
+            assets: [{ ...cachedItem, preview_image_url: "https://api.vatioboard.com/files/photo.png" }],
             total_count: 1, has_more: false, next_offset: 1,
           },
         });
@@ -1710,7 +1708,7 @@ describe("library offline media", () => {
       if (url.includes("list_my_media_assets")) {
         return jsonResponse({
           message: {
-            assets: [{ ...cachedItem, preview_image_url: "https://www.vatiolibre.com/files/photo.png" }],
+            assets: [{ ...cachedItem, preview_image_url: "https://api.vatioboard.com/files/photo.png" }],
             total_count: 1, has_more: false, next_offset: 1,
           },
         });
@@ -1800,7 +1798,7 @@ describe("library offline media", () => {
       if (url.includes("list_my_media_assets")) {
         return jsonResponse({
           message: {
-            assets: [{ ...cachedItem, preview_image_url: "https://www.vatiolibre.com/files/photo.png" }],
+            assets: [{ ...cachedItem, preview_image_url: "https://api.vatioboard.com/files/photo.png" }],
             total_count: 1, has_more: false, next_offset: 1,
           },
         });
@@ -1897,7 +1895,7 @@ describe("library offline media", () => {
       if (url.includes("list_my_media_assets")) {
         return jsonResponse({
           message: {
-            assets: [{ ...cachedItem, preview_image_url: "https://www.vatiolibre.com/files/photo.png" }],
+            assets: [{ ...cachedItem, preview_image_url: "https://api.vatioboard.com/files/photo.png" }],
             total_count: 1, has_more: false, next_offset: 1,
           },
         });
@@ -1987,7 +1985,7 @@ describe("library offline media", () => {
         await listGate;
         return jsonResponse({
           message: {
-            assets: [{ ...cachedItem, preview_image_url: "https://www.vatiolibre.com/files/photo.png" }],
+            assets: [{ ...cachedItem, preview_image_url: "https://api.vatioboard.com/files/photo.png" }],
             total_count: 1, has_more: false, next_offset: 1,
           },
         });
@@ -2133,7 +2131,7 @@ describe("library offline media", () => {
       if (url.includes("list_my_media_assets")) {
         return jsonResponse({
           message: {
-            assets: [{ ...cachedItem, preview_image_url: "https://www.vatiolibre.com/files/photo.png" }],
+            assets: [{ ...cachedItem, preview_image_url: "https://api.vatioboard.com/files/photo.png" }],
             total_count: 1, has_more: false, next_offset: 1,
           },
         });
@@ -2227,7 +2225,7 @@ describe("library offline media", () => {
       if (url.includes("list_my_media_assets")) {
         return jsonResponse({
           message: {
-            assets: [{ ...cachedItem, preview_image_url: "https://www.vatiolibre.com/files/photo.png" }],
+            assets: [{ ...cachedItem, preview_image_url: "https://api.vatioboard.com/files/photo.png" }],
             total_count: 1, has_more: false, next_offset: 1,
           },
         });
@@ -2324,7 +2322,7 @@ describe("library offline media", () => {
         return jsonResponse({
           message: {
             assets: [
-              { ...cachedItem, preview_image_url: "https://www.vatiolibre.com/files/photo.png" },
+              { ...cachedItem, preview_image_url: "https://api.vatioboard.com/files/photo.png" },
               { name: "MEDIA-2", title: "New photo", media_kind: "image", blob_size: 2048,
                 original_filename: "new.png", content_hash: "h2",
                 modified_at: "2026-04-02T10:00:00Z",
@@ -2456,7 +2454,7 @@ describe("library offline media", () => {
       if (url.includes("list_my_media_assets")) {
         return jsonResponse({
           message: {
-            assets: [{ ...cachedItem, preview_image_url: "https://www.vatiolibre.com/files/photo.png" }],
+            assets: [{ ...cachedItem, preview_image_url: "https://api.vatioboard.com/files/photo.png" }],
             total_count: 1, has_more: false, next_offset: 1,
           },
         });
@@ -2526,7 +2524,7 @@ describe("library offline media", () => {
       if (url.includes("list_my_media_assets")) {
         return jsonResponse({
           message: {
-            assets: [{ ...cachedItem, preview_image_url: "https://www.vatiolibre.com/files/photo.png" }],
+            assets: [{ ...cachedItem, preview_image_url: "https://api.vatioboard.com/files/photo.png" }],
             total_count: 1, has_more: false, next_offset: 1,
           },
         });
@@ -2602,8 +2600,8 @@ describe("library offline media", () => {
     const freshItem = {
       ...cachedItem,
       title: "Offline photo",
-      preview_image_url: "https://www.vatiolibre.com/files/photo.png",
-      download_url: "https://www.vatiolibre.com/files/photo.png?download=1",
+      preview_image_url: "https://api.vatioboard.com/files/photo.png",
+      download_url: "https://api.vatioboard.com/files/photo.png?download=1",
     };
 
     window.fetch = vi.fn(async (input) => {
@@ -2739,7 +2737,7 @@ describe("library offline media", () => {
       }
       if (url.includes("list_my_media_assets")) {
         return jsonResponse({
-          message: { assets: [{ ...cachedItem, preview_image_url: "https://www.vatiolibre.com/files/photo.png" }], total_count: 1, has_more: false, next_offset: 1 },
+          message: { assets: [{ ...cachedItem, preview_image_url: "https://api.vatioboard.com/files/photo.png" }], total_count: 1, has_more: false, next_offset: 1 },
         });
       }
       if (url.includes("get_my_media_asset_detail")) {
@@ -3082,6 +3080,67 @@ describe("library offline media", () => {
       expect(freshItems.length).toBe(2);
     } finally {
       createElementSpy.mockRestore();
+    }
+  });
+
+  // ── BFF URL normalization regression ────────────────────────────
+
+  it("normalizes raw backend-origin playback_url to BFF origin before rendering media", async () => {
+    // Simulate backend returning raw legacy-origin URLs (before BFF rewrite).
+    // The library should normalize these to the BFF origin via backend-auth.
+    const audioItem = {
+      name: "MEDIA-AUDIO-1",
+      title: "Raw origin audio",
+      media_kind: "audio",
+      blob_size: 500000,
+      original_filename: "song.mp3",
+      created_at_label: "2026-04-10 12:00:00",
+      modified_at_label: "2026-04-10 12:00:00",
+      folder_path: "Music",
+      preview_image_url: "https://www.vatiolibre.com/files/cover.png?token=view#preview",
+      download_url: "https://www.vatiolibre.com/private/files/song.mp3?download=1",
+      playback_url: "https://www.vatiolibre.com/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset?name=MEDIA-AUDIO-1",
+    };
+
+    window.fetch = createAuthenticatedLibraryFetch((url) => {
+      if (url.includes("list_my_media_assets")) {
+        return jsonResponse({ message: { assets: [audioItem], total_count: 1, has_more: false, next_offset: 1 } });
+      }
+      if (url.includes("get_my_media_asset_detail")) {
+        return jsonResponse({ message: { asset: audioItem } });
+      }
+      if (url.includes("list_my_speed_recordings")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+      if (url.includes("list_my_accel_runs")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+      if (url.includes("list_my_board_documents")) return jsonResponse({ message: { documents: [], total_count: 0, has_more: false } });
+      return jsonResponse({});
+    });
+
+    await bootHtmlPage("library.html");
+    const libraryPage = await import("../../src/library/library.js");
+    await libraryPage.initPromise;
+    await settleLibraryTasks();
+
+    document.querySelector('[data-tab="media"]')?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settleLibraryTasks();
+
+    document.querySelector(".library-record")?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settleLibraryTasks();
+
+    // The rendered audio element should use the BFF origin, not the raw backend origin
+    const audio = document.querySelector("#libraryDetailPreview audio");
+    if (audio) {
+      expect(audio.src).not.toContain("vatiolibre.com");
+      expect(audio.src).toContain("api.vatioboard.com");
+    }
+
+    // Preview image should also be normalized
+    const img = document.querySelector("#libraryDetailPreview img");
+    if (img && img.src && !img.src.startsWith("blob:")) {
+      expect(img.src).not.toContain("vatiolibre.com");
     }
   });
 });

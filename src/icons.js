@@ -227,3 +227,31 @@ export const IconMore = `
     <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
   </svg>
 `;
+
+export const IconVolume = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M11 5L6 9H2v6h4l5 4V5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="M15.54 8.46a5 5 0 0 1 0 7.07" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M19.07 4.93a10 10 0 0 1 0 14.14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+  </svg>
+`;
+
+export const IconMuted = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M11 5L6 9H2v6h4l5 4V5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="M23 9l-6 6M17 9l6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+  </svg>
+`;
+
+export const IconFullscreen = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M16 21h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`;
+
+export const IconFullscreenExit = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M4 14h4v4M20 10h-4V6M14 10h4V6M4 14h4v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M14 10l5-5M4 20l6-6M14 10l5-5M10 14l-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+  </svg>
+`;

@@ -151,6 +151,25 @@ body.library-page select{
     border-left: 1px solid color-mix(in srgb, var(--library-border) 82%, transparent);
 }
 
+.library-toolbar-volume{
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+    height: var(--library-toolbar-size);
+}
+
+.library-toolbar-volume[hidden]{
+    display: none;
+}
+
+.library-toolbar-volume-slider{
+    width: 64px;
+    height: var(--library-toolbar-size);
+    margin: 0 4px 0 0;
+    accent-color: var(--library-accent);
+    cursor: pointer;
+}
+
 .library-toolbar-icon-btn{
     display: inline-flex;
     align-items: center;
@@ -699,6 +718,198 @@ body.library-page select{
     display: block;
     width: 100%;
     height: 100%;
+}
+
+/* ── Inline media player ─────────────────────────────── */
+
+.library-detail-preview[data-preview-kind="media-player"]{
+    min-height: 220px;
+    position: relative;
+    overflow: hidden;
+}
+
+.media-player{
+    display: grid;
+    grid-template-rows: 1fr auto;
+    height: 100%;
+    min-height: 220px;
+    background: var(--library-preview-shell);
+    border-radius: inherit;
+    overflow: hidden;
+}
+
+.media-player-stage{
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.media-player-stage video{
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000;
+    border-radius: inherit;
+}
+
+.media-player-audio-visual{
+    display: grid;
+    place-items: center;
+    gap: 10px;
+    padding: 28px 22px 18px;
+    text-align: center;
+    color: var(--library-muted);
+}
+
+.media-player-audio-icon{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    opacity: 0.45;
+}
+
+.media-player-audio-icon svg{
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.media-player-audio-label{
+    font-size: 13px;
+    font-weight: 700;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.media-player-visualizer{
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    pointer-events: none;
+}
+
+.media-player-stage{
+    position: relative;
+}
+
+.media-player-controls{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: color-mix(in srgb, var(--library-surface-strong) 92%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-top: 1px solid color-mix(in srgb, var(--library-border) 60%, transparent);
+    min-height: 44px;
+}
+
+.media-player-play-btn,
+.media-player-mute-btn,
+.media-player-fullscreen-btn{
+    appearance: none;
+    border: 0;
+    border-radius: 8px;
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.media-player-play-btn .btn-icon,
+.media-player-mute-btn .btn-icon,
+.media-player-fullscreen-btn .btn-icon{
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.media-player-play-btn .btn-icon svg,
+.media-player-mute-btn .btn-icon svg,
+.media-player-fullscreen-btn .btn-icon svg{
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.media-player-play-btn:hover,
+.media-player-mute-btn:hover,
+.media-player-fullscreen-btn:hover{
+    background: color-mix(in srgb, var(--library-accent) 14%, transparent);
+}
+
+.media-player-progress{
+    flex: 1;
+    min-width: 0;
+    accent-color: var(--library-accent);
+    height: 18px;
+    cursor: pointer;
+}
+
+.media-player-time{
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--library-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    min-width: 72px;
+    text-align: center;
+}
+
+.media-player-volume{
+    width: 64px;
+    min-width: 48px;
+    accent-color: var(--library-accent);
+    height: 18px;
+    cursor: pointer;
+}
+
+@media (max-width: 640px){
+    .media-player-volume{
+        display: none;
+    }
+    .media-player-time{
+        min-width: auto;
+    }
+}
+
+.media-player:fullscreen{
+    background: #000;
+    display: flex;
+    flex-direction: column;
+}
+
+.media-player:fullscreen .media-player-stage{
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.media-player:fullscreen video{
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
 }
 
 .library-detail-title{

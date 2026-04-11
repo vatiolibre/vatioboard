@@ -32,6 +32,8 @@
   "dependencies": {
     "@jaames/iro": "^5.5.2",
     "@stanko/dual-range-input": "^1.0.1",
+    "butterchurn": "^2.6.7",
+    "butterchurn-presets": "^2.4.7",
     "chart.js": "^4.5.1",
     "geokdbush": "^2.0.1",
     "kdbush": "^4.0.2",

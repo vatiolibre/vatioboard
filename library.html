@@ -244,6 +244,31 @@
                   </div>
                 </div>
 
+                <div id="libraryToolbarVolume" class="library-toolbar-volume" hidden>
+                  <button
+                    id="libraryToolbarMute"
+                    type="button"
+                    class="library-toolbar-icon-btn"
+                    data-i18n-aria="mediaPlayerMute"
+                    data-i18n-title="mediaPlayerMute"
+                    aria-label="Mute"
+                    title="Mute"
+                  >
+                    <span class="btn-icon" aria-hidden="true"></span>
+                  </button>
+                  <input
+                    id="libraryToolbarVolumeSlider"
+                    type="range"
+                    class="library-toolbar-volume-slider"
+                    min="0"
+                    max="100"
+                    value="100"
+                    step="1"
+                    data-i18n-aria="mediaPlayerVolume"
+                    aria-label="Volume"
+                  />
+                </div>
+
                 <button
                   id="libraryRefresh"
                   type="button"

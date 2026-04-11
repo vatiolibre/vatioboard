@@ -230,6 +230,25 @@ beforeEach(() => {
     value: FakeAudio,
   });
 
+  // Stub HTMLMediaElement methods that jsdom does not implement to suppress
+  // noisy "Not implemented" warnings from media element lifecycle cleanup
+  // (pause/load calls in destroy paths).
+  for (const method of ["play", "pause", "load"]) {
+    if (!HTMLMediaElement.prototype[method].__stubbed) {
+      const original = HTMLMediaElement.prototype[method];
+      Object.defineProperty(HTMLMediaElement.prototype, method, {
+        configurable: true,
+        writable: true,
+        value: Object.assign(function stubbed() {
+          if (method === "play") {
+            this.dispatchEvent?.(new Event("play"));
+            return Promise.resolve();
+          }
+        }, { __stubbed: true, __original: original }),
+      });
+    }
+  }
+
   Object.defineProperty(window, "ResizeObserver", {
     configurable: true,
     writable: true,

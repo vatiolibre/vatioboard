@@ -39,6 +39,7 @@ const BACKEND_MEDIA_FIELD_KEYS = Object.freeze([
   "download_url",
   "export_url",
   "image_url",
+  "playback_url",
   "preview_image_url",
 ]);
 const BACKEND_OWNED_HOSTS = new Set([

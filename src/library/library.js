@@ -11,6 +11,7 @@ import {
   IconGpsLab,
   IconMedia,
   IconMore,
+  IconMuted,
   IconPages,
   IconPin,
   IconReplay,
@@ -18,6 +19,7 @@ import {
   IconSpeed,
   IconTrash,
   IconUpload,
+  IconVolume,
   IconWorld,
 } from "../icons.js";
 import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
@@ -51,6 +53,7 @@ import {
 } from "../shared/media-cache.js";
 import { getResourceConfig } from "./resource-registry.js";
 import { createLibraryMapPreview } from "./library-map-preview.js";
+import { createLibraryMediaPlayer } from "./library-media-player.js";
 import { showConfirmDialog } from "../shared/ui/confirm-dialog.js";
 import { showPromptDialog } from "../shared/ui/confirm-dialog.js";
 import {
@@ -101,6 +104,9 @@ const elements = {
   actionPin: document.getElementById("libraryActionPin"),
   overflowBtn: document.getElementById("libraryOverflowBtn"),
   overflowList: document.getElementById("libraryOverflowList"),
+  toolbarVolume: document.getElementById("libraryToolbarVolume"),
+  toolbarMuteBtn: document.getElementById("libraryToolbarMute"),
+  toolbarVolumeSlider: document.getElementById("libraryToolbarVolumeSlider"),
   openBoardPage: document.getElementById("openLibraryBoardMenu"),
   openSpeedPage: document.getElementById("openLibrarySpeedMenu"),
   openReplayPage: document.getElementById("openLibraryReplayMenu"),
@@ -205,6 +211,7 @@ const state = {
 
 let mapPreview = null;
 let previewObjectUrl = null;
+const libraryMediaPlayer = createLibraryMediaPlayer();
 
 /**
  * Lightweight preview-state memo to avoid redundant preview rebuilds.
@@ -791,17 +798,49 @@ function renderDetailPreview(item = {}, { isOfflineItem = false, isPinned = fals
     mapPreview = null;
   }
 
+  // Tear down any active media player when switching to a non-playable preview
+  const mediaKindLower = String(item.media_kind || "").toLowerCase();
+  const isPlayableMedia = previewKind === "media" && (mediaKindLower === "audio" || mediaKindLower === "video");
+  if (!isPlayableMedia) {
+    libraryMediaPlayer.destroy();
+    syncToolbarVolume();
+  }
+
   const remoteImageUrl = item.image_url || item.preview_image_url;
   const isMetadataOnlyOffline = isOfflineItem && !isPinned;
   // For pinned offline items, prefer the local blob URL over the remote URL
   // to avoid broken previews when the network is unavailable.
   const imageUrl = (isOfflineItem && isPinned && localPreviewUrl) ? localPreviewUrl : remoteImageUrl;
 
-  // Pinned offline non-image media (audio, video, etc.) — show a type-aware
-  // fallback instead of feeding an arbitrary blob URL into an <img> element.
+  // Playable media (audio/video): mount inline media player.
+  // Pinned offline blobs use the local URL; online items use the remote URL.
+  // Metadata-only offline items cannot be played (no blob available).
+  if (isPlayableMedia && !isMetadataOnlyOffline) {
+    const mediaSrc = (isOfflineItem && isPinned && localPreviewUrl)
+      ? localPreviewUrl
+      : (item.playback_url || item.download_url || item.downloadUrl || remoteImageUrl || "");
+
+    if (mediaSrc) {
+      libraryMediaPlayer.destroy();
+      const mounted = libraryMediaPlayer.mount({
+        container: elements.detailPreview,
+        item,
+        blobUrl: (isOfflineItem && isPinned && localPreviewUrl) ? localPreviewUrl : "",
+      });
+      if (mounted) {
+        elements.detailPreview.dataset.previewKind = "media-player";
+        syncToolbarVolume();
+        return;
+      }
+    }
+  }
+
+  // Pinned offline non-image media without a blob URL yet — show a type-aware
+  // fallback. The blob URL will arrive asynchronously and re-trigger this render.
   if (isOfflineItem && isPinned && previewKind === "media") {
-    const mediaKind = String(item.media_kind || "").toLowerCase();
-    if (mediaKind !== "image") {
+    if (mediaKindLower !== "image") {
+      libraryMediaPlayer.destroy();
+      syncToolbarVolume();
       elements.detailPreview.replaceChildren();
       elements.detailPreview.dataset.previewKind = "offline-pinned-fallback";
       const fallback = document.createElement("div");
@@ -954,6 +993,8 @@ function renderDetail() {
     if (mapPreview) {
       mapPreview.cancelAnimation();
     }
+    libraryMediaPlayer.destroy();
+    syncToolbarVolume();
     return;
   }
 
@@ -978,9 +1019,9 @@ function renderDetail() {
 
   // For pinned offline items, asynchronously resolve a local blob URL
   // and re-render the preview so it does not rely on a remote URL.
-  // Only image media can be previewed as <img>; skip for audio/video/etc.
+  // Covers image (for <img>), audio, and video (for inline media player).
   const selectedMediaKind = String(selectedItem.media_kind || "").toLowerCase();
-  if (isOfflineItem && isPinned && !isStalePin && selectedMediaKind === "image") {
+  if (isOfflineItem && isPinned && !isStalePin && (selectedMediaKind === "image" || selectedMediaKind === "audio" || selectedMediaKind === "video")) {
     const pinnedName = state.selectedName;
     getPinnedMediaBlob(pinnedName).then((blob) => {
       if (!blob || state.selectedName !== pinnedName) return;
@@ -1384,7 +1425,10 @@ async function openSelectedItem() {
 
       // Prefer the fresh remote asset when the pinned blob is stale
       const isStale = state.stalePinnedNames.has(selectedName);
-      const viewUrl = asset?.image_url || asset?.download_url || asset?.downloadUrl;
+      const mediaKind = String(asset?.media_kind || "").toLowerCase();
+      const viewUrl = (mediaKind === "audio" || mediaKind === "video")
+        ? (asset?.playback_url || asset?.download_url || asset?.downloadUrl)
+        : (asset?.image_url || asset?.download_url || asset?.downloadUrl);
 
       if (!isStale && state.pinnedNames.has(selectedName)) {
         const blob = await getPinnedMediaBlob(selectedName).catch(() => null);
@@ -2039,11 +2083,49 @@ applyButtonIcon(elements.actionDelete, IconTrash);
 applyButtonIcon(elements.actionUpload, IconUpload);
 applyButtonIcon(elements.actionPin, IconPin);
 applyButtonIcon(elements.overflowBtn, IconMore);
+applyButtonIcon(elements.toolbarMuteBtn, IconVolume);
 elements.libraryTabs.forEach((button) => {
   const tabKey = normalizeTabKey(button.dataset.tab);
   const config = getResourceConfig(tabKey);
   applyButtonIcon(button, config.tabIcon);
 });
+
+// ── Toolbar volume controls ──────────────────────────────────────────
+
+/** Show or hide the toolbar volume group based on active media player. */
+function syncToolbarVolume() {
+  const mediaEl = libraryMediaPlayer.getMediaElement();
+  if (!mediaEl) {
+    if (elements.toolbarVolume) elements.toolbarVolume.hidden = true;
+    return;
+  }
+  if (elements.toolbarVolume) elements.toolbarVolume.hidden = false;
+  if (elements.toolbarVolumeSlider) {
+    elements.toolbarVolumeSlider.value = String(Math.round(mediaEl.volume * 100));
+  }
+  applyButtonIcon(elements.toolbarMuteBtn, mediaEl.muted ? IconMuted : IconVolume);
+}
+
+if (elements.toolbarMuteBtn) {
+  elements.toolbarMuteBtn.addEventListener("click", () => {
+    const mediaEl = libraryMediaPlayer.getMediaElement();
+    if (mediaEl) {
+      mediaEl.muted = !mediaEl.muted;
+      syncToolbarVolume();
+    }
+  });
+}
+
+if (elements.toolbarVolumeSlider) {
+  elements.toolbarVolumeSlider.addEventListener("input", () => {
+    const mediaEl = libraryMediaPlayer.getMediaElement();
+    if (mediaEl) {
+      mediaEl.volume = Number(elements.toolbarVolumeSlider.value) / 100;
+      if (mediaEl.muted && mediaEl.volume > 0) mediaEl.muted = false;
+      syncToolbarVolume();
+    }
+  });
+}
 
 bindEvents();
 
