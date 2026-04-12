@@ -124,6 +124,11 @@ export async function cacheMediaManifest(assets) {
       original_filename: asset.original_filename,
       folder_path: asset.folder_path,
       sort_timestamp: computeSortTimestamp(asset),
+      preview_image_url: asset.preview_image_url || "",
+      download_url: asset.download_url || "",
+      playback_url: asset.playback_url || "",
+      image_url: asset.image_url || "",
+      export_url: asset.export_url || "",
     })),
     cached_at: Date.now(),
   });

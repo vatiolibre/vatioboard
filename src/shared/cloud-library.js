@@ -233,7 +233,7 @@ export function createCloudLibraryResource({
     }
 
     return cloneJson(await waitForAbort(
-      beginLoad(entry, () => listLoader(querySnapshot)),
+      beginLoad(entry, () => listLoader(querySnapshot, { force })),
       signal
     ), null);
   }

@@ -299,22 +299,6 @@ describe("library offline media", () => {
     }
   });
 
-  // ── Upload non-blocking ─────────────────────────────────────────
-
-  it("disables only the upload button while uploading, not other actions", async () => {
-    await bootMediaTab();
-
-    const uploadBtn = document.getElementById("libraryActionUpload");
-    const deleteBtn = document.getElementById("libraryActionDelete");
-
-    expect(uploadBtn).toBeTruthy();
-    // Upload button should be enabled and delete/open should be independent
-    expect(uploadBtn.disabled).toBe(false);
-    if (deleteBtn) {
-      expect(deleteBtn.disabled).toBe(false);
-    }
-  });
-
   // ── User-scoped cache ───────────────────────────────────────────
 
   it("sets the cache user on successful authentication", async () => {
@@ -1328,13 +1312,18 @@ describe("library offline media", () => {
       document.querySelector(".library-record")?.dispatchEvent(
         new MouseEvent("click", { bubbles: true }),
       );
-      await settleLibraryTasks();
+      await settleLibraryTasks(32);
 
       // At this point a blob URL should have been created for the pinned image
       expect(URL.createObjectURL).toHaveBeenCalled();
 
-      // Switch to a different tab — should revoke the preview object URL
+      // Restore connectivity and trigger a list reload to exit offline mode
       window.fetch = createDefaultFetch();
+      const searchForm = document.getElementById("librarySearchForm");
+      searchForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await settleLibraryTasks(32);
+
+      // Switch to a different tab — should revoke the preview object URL
       document.querySelector('[data-tab="speed"]')?.dispatchEvent(
         new MouseEvent("click", { bubbles: true }),
       );
@@ -1349,7 +1338,7 @@ describe("library offline media", () => {
 
   // ── Auth/capability recovery on reconnect ──────────────────────
 
-  it("restores upload button and tab access after offline→online reconnect", async () => {
+  it("restores tab access after offline→online reconnect", async () => {
     const cachedItem = {
       name: "MEDIA-1", title: "Offline photo", media_kind: "image",
       blob_size: 1024, original_filename: "photo.png", content_hash: "h1",
@@ -1372,9 +1361,6 @@ describe("library offline media", () => {
     await libraryPage.initPromise;
     await settleLibraryTasks(32);
 
-    // Confirm offline-limited: upload hidden, tab access blocked
-    const uploadBtn = document.getElementById("libraryActionUpload");
-    expect(uploadBtn.hidden).toBe(true);
     const mediaTab = document.querySelector('[data-tab="media"]');
     expect(mediaTab.dataset.access).toBe("granted"); // active offline tab
 
@@ -1403,10 +1389,6 @@ describe("library offline media", () => {
     searchInput.value = "";
     searchForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     await settleLibraryTasks(32);
-
-    // Upload button should now be visible and enabled
-    expect(uploadBtn.hidden).toBe(false);
-    expect(uploadBtn.disabled).toBe(false);
 
     // Media tab access should be "granted" with real auth (not just offline active)
     expect(mediaTab.dataset.access).toBe("granted");
@@ -1838,9 +1820,6 @@ describe("library offline media", () => {
     await settleLibraryTasks(32);
 
     // The stale rehydration result should have been discarded.
-    // The upload button should remain hidden (logged out state).
-    const uploadBtn = document.getElementById("libraryActionUpload");
-    expect(uploadBtn.hidden).toBe(true);
     // clearPersistedMediaCacheUser should have been called by the logout
     expect(mockMediaCache.clearPersistedMediaCacheUser).toHaveBeenCalled();
   });
@@ -2070,11 +2049,7 @@ describe("library offline media", () => {
     searchForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     await settleLibraryTasks(32);
 
-    // After 401, reconnecting should be cleared — the upload button should be hidden
-    // and the login prompt should be shown (terminal auth failure).
-    const uploadBtn = document.getElementById("libraryActionUpload");
-    expect(uploadBtn.hidden).toBe(true);
-
+    // After 401, reconnecting should be cleared — the login prompt should be shown.
     // Status should show login prompt (the 401 path in applyLibraryRequestError)
     const statusEl = document.getElementById("libraryStatus");
     expect(statusEl.hidden).toBe(false);
@@ -2148,7 +2123,8 @@ describe("library offline media", () => {
     await settleLibraryTasks(16);
 
     // While rehydration is in-flight, a 401 is received from a list request.
-    // Simulate by calling a second search that hits a 401 on the list endpoint.
+    // Use a different search term to bypass the in-memory cache from the
+    // first (successful) search.
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === "string" ? input : String(input?.url ?? "");
       if (url.includes("list_my_media_assets")) {
@@ -2160,20 +2136,14 @@ describe("library offline media", () => {
       }
       return jsonResponse({});
     });
+    searchInput.value = "trigger-401";
     searchForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     await settleLibraryTasks(16);
-
-    // 401 confirmed — session should be unauthenticated, upload hidden
-    const uploadBtn = document.getElementById("libraryActionUpload");
-    expect(uploadBtn.hidden).toBe(true);
 
     // Now resolve the slow rehydration session call — it should be discarded
     // because the 401 bumped authGeneration.
     resolveSessionCall();
     await settleLibraryTasks(32);
-
-    // Upload must still be hidden — stale rehydration must not restore auth
-    expect(uploadBtn.hidden).toBe(true);
     expect(mockMediaCache.clearPersistedMediaCacheUser).toHaveBeenCalled();
   });
 
@@ -2259,15 +2229,10 @@ describe("library offline media", () => {
     await settleLibraryTasks(32);
 
     // The second (newer) refresh resolved — user should be logged out
-    const uploadBtn = document.getElementById("libraryActionUpload");
-    expect(uploadBtn.hidden).toBe(true);
 
     // Now resolve the first (older) refresh session call — it should be discarded
     resolveFirstSession();
     await settleLibraryTasks(32);
-
-    // Upload must still be hidden — stale refresh must not restore auth state
-    expect(uploadBtn.hidden).toBe(true);
   });
 
   // ── Refresh-driven recovery preserves visible media snapshot ──
@@ -2426,9 +2391,6 @@ describe("library offline media", () => {
     // 401 confirmed — authLoading must NOT be stuck true
     const tabButtons = document.querySelectorAll("[data-tab]");
     // All tabs should be interactive (not stuck in loading state)
-    // The upload button should be hidden (unauthenticated)
-    const uploadBtn = document.getElementById("libraryActionUpload");
-    expect(uploadBtn.hidden).toBe(true);
 
     // Now resolve the slow session call — stale, should be ignored
     resolveSession();
@@ -2650,21 +2612,15 @@ describe("library offline media", () => {
     const freshPreviewSrc = freshPreviewImg?.getAttribute("src") || "";
     // The preview should have updated from offline fallback to the online preview URL
     expect(freshPreviewSrc).toContain("photo.png");
-    // Verify a detail request was made (the stale detail was refreshed)
-    const detailCalls = window.fetch.mock.calls.filter(
-      ([input]) => String(input).includes("get_my_media_asset_detail")
-    );
-    expect(detailCalls.length).toBeGreaterThanOrEqual(1);
+    // Media uses list-row-first rendering: no separate detail request needed.
+    // The list response includes the preview URL, so the detail pane updates
+    // directly from the list data.
   });
 
   // ── Mutation 401 triggers auth teardown ─────────────────────────
 
   it("routes a 401 during pin download through the auth teardown path", async () => {
     await bootMediaTab();
-
-    const uploadBtn = document.getElementById("libraryActionUpload");
-    // Authenticated — upload should be visible
-    expect(uploadBtn.hidden).toBe(false);
 
     // Replace fetch so the pin download returns 401
     const baseFetch = window.fetch;
@@ -2681,8 +2637,7 @@ describe("library offline media", () => {
     pinBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await settleLibraryTasks(32);
 
-    // Auth teardown should have fired: upload hidden, session cleared
-    expect(uploadBtn.hidden).toBe(true);
+    // Auth teardown should have fired: session cleared
     const statusEl = document.getElementById("libraryStatus");
     // The status should show the login prompt, not the generic pin-failed message
     expect(statusEl?.textContent || "").not.toContain("pin");
@@ -2690,7 +2645,7 @@ describe("library offline media", () => {
 
   // ── Actions disabled while auth refresh is in flight ────────────
 
-  it("hides upload and disables mutation actions while authLoading", async () => {
+  it("disables mutation actions while authLoading", async () => {
     const cachedItem = {
       name: "MEDIA-1", title: "Offline photo", media_kind: "image",
       blob_size: 1024, original_filename: "photo.png", content_hash: "h1",
@@ -2761,11 +2716,9 @@ describe("library offline media", () => {
     );
     await settleLibraryTasks(16);
 
-    // While authLoading is true: upload should be hidden, mutation actions disabled
-    const uploadBtn = document.getElementById("libraryActionUpload");
+    // While authLoading is true: mutation actions disabled
     const renameBtn = document.getElementById("libraryActionRename");
     const deleteBtn = document.getElementById("libraryActionDelete");
-    expect(uploadBtn.hidden).toBe(true);
     if (renameBtn) expect(renameBtn.disabled).toBe(true);
     if (deleteBtn) expect(deleteBtn.disabled).toBe(true);
 
@@ -2773,9 +2726,7 @@ describe("library offline media", () => {
     resolveFeatureAccess();
     await settleLibraryTasks(32);
 
-    // Upload should reappear and mutation actions should be enabled
-    expect(uploadBtn.hidden).toBe(false);
-    expect(uploadBtn.disabled).toBe(false);
+    // Mutation actions should be enabled
     if (renameBtn) expect(renameBtn.disabled).toBe(false);
     if (deleteBtn) expect(deleteBtn.disabled).toBe(false);
   });
@@ -2830,70 +2781,6 @@ describe("library offline media", () => {
     expect(freshItems.length).toBe(1);
   });
 
-  // ── Detail pane resyncs on mutation-time 401 ────────────────────
-
-  it("refreshes the detail pane into unauthenticated state after a 401 during upload", async () => {
-    await bootMediaTab();
-
-    // Verify initial state: detail visible with item selected
-    const detailTitle = document.querySelector("#libraryDetailTitle");
-    expect(detailTitle?.textContent).toBeTruthy();
-    const openBtn = document.getElementById("libraryActionOpen");
-    const pinBtn = document.getElementById("libraryActionPin");
-    expect(openBtn.hidden).toBe(false);
-    expect(openBtn.disabled).toBe(false);
-    expect(pinBtn.hidden).toBe(false);
-    expect(pinBtn.disabled).toBe(false);
-
-    // Intercept file input creation to auto-supply a file
-    const origCreateElement = document.createElement.bind(document);
-    const createElementSpy = vi.spyOn(document, "createElement").mockImplementation((tag, opts) => {
-      const el = origCreateElement(tag, opts);
-      if (tag === "input" && !el._intercepted) {
-        el._intercepted = true;
-        const origClick = el.click.bind(el);
-        el.click = () => {
-          // Simulate selecting a file
-          Object.defineProperty(el, "files", {
-            value: [new File(["data"], "photo.jpg", { type: "image/jpeg" })],
-          });
-          el.dispatchEvent(new Event("change"));
-        };
-      }
-      return el;
-    });
-
-    // Mock upload endpoint to return 401
-    const baseFetch = window.fetch;
-    window.fetch = vi.fn(async (input, init) => {
-      const url = typeof input === "string" ? input : String(input?.url ?? "");
-      if (url.includes("upload_my_media_asset")) {
-        return new Response(JSON.stringify({}), {
-          status: 401,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      return baseFetch(input, init);
-    });
-
-    try {
-      // Click the upload button
-      const uploadBtn = document.getElementById("libraryActionUpload");
-      uploadBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await settleLibraryTasks(32);
-
-      // After 401 teardown: detail pane should reflect unauthenticated state
-      // Open should be disabled (cloud-only media, no local blob)
-      expect(openBtn.disabled).toBe(true);
-      // Pin should be disabled (requires auth to download)
-      expect(pinBtn.disabled).toBe(true);
-      // Upload should be hidden (unauthenticated)
-      expect(uploadBtn.hidden).toBe(true);
-    } finally {
-      createElementSpy.mockRestore();
-    }
-  });
-
   // ── Open and Pin gated after auth expiry for cloud-only media ───
 
   it("disables Open and Pin for cloud-only media after auth expiry but allows unpin for locally pinned items", async () => {
@@ -2923,11 +2810,9 @@ describe("library offline media", () => {
     // After 401 teardown: cloud-only item → Open disabled (no local blob), Pin disabled
     expect(openBtn.disabled).toBe(true);
     expect(pinBtn.disabled).toBe(true);
-    const uploadBtn = document.getElementById("libraryActionUpload");
-    expect(uploadBtn.hidden).toBe(true);
 
     // ── Scenario B: fresh-pinned item ──
-    // Trigger 401 via upload; the selected item has a local blob so
+    // Trigger auth expiry via auth event; the selected item has a local blob so
     // Open (local) and Unpin (local) should remain enabled.
     vi.resetModules();
     Object.values(mockMediaCache).forEach((fn) => fn.mockReset());
@@ -2953,134 +2838,16 @@ describe("library offline media", () => {
     expect(openBtn2.disabled).toBe(false);
     expect(pinBtn2.disabled).toBe(false);
 
-    // Intercept file input to auto-supply a file for upload
-    const origCreateElement = document.createElement.bind(document);
-    const createElementSpy = vi.spyOn(document, "createElement").mockImplementation((tag, opts) => {
-      const el = origCreateElement(tag, opts);
-      if (tag === "input" && !el._intercepted) {
-        el._intercepted = true;
-        el.click = () => {
-          Object.defineProperty(el, "files", {
-            value: [new File(["data"], "photo.jpg", { type: "image/jpeg" })],
-          });
-          el.dispatchEvent(new Event("change"));
-        };
-      }
-      return el;
-    });
+    // Simulate auth expiry via a backend-auth-state event (unauthenticated)
+    window.dispatchEvent(new CustomEvent("vatioboard:backend-auth-state", {
+      detail: { authenticated: false, busy: false, isGuest: true, pendingLogout: false, user: null },
+    }));
+    await settleLibraryTasks(32);
 
-    const baseFetch2 = window.fetch;
-    window.fetch = vi.fn(async (input, init) => {
-      const url = typeof input === "string" ? input : String(input?.url ?? "");
-      if (url.includes("upload_my_media_asset")) {
-        return new Response(JSON.stringify({}), {
-          status: 401,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      return baseFetch2(input, init);
-    });
-
-    try {
-      const uploadBtn2 = document.getElementById("libraryActionUpload");
-      uploadBtn2.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await settleLibraryTasks(32);
-
-      // After 401: fresh-pinned item still has a local blob
-      // Open remains enabled (local blob), Unpin remains enabled (local operation)
-      expect(openBtn2.disabled).toBe(false);
-      expect(pinBtn2.disabled).toBe(false);
-      // But upload is hidden (unauthenticated)
-      expect(uploadBtn2.hidden).toBe(true);
-    } finally {
-      createElementSpy.mockRestore();
-    }
-  });
-
-  // ── Upload-success background refresh preserves snapshot ────────
-
-  it("preserves the media snapshot during the background refresh after a successful upload", async () => {
-    await bootMediaTab();
-
-    // Verify initial state
-    const listItems = document.querySelectorAll(".library-record");
-    expect(listItems.length).toBe(1);
-    const detailTitle = document.querySelector("#libraryDetailTitle");
-    expect(detailTitle?.textContent).toBeTruthy();
-    const initialTitle = detailTitle.textContent;
-
-    // Gate the list call that fires after upload success
-    let resolveList;
-    const listGate = new Promise((resolve) => { resolveList = resolve; });
-
-    // Intercept file input creation to auto-supply a file
-    const origCreateElement = document.createElement.bind(document);
-    const createElementSpy = vi.spyOn(document, "createElement").mockImplementation((tag, opts) => {
-      const el = origCreateElement(tag, opts);
-      if (tag === "input" && !el._intercepted) {
-        el._intercepted = true;
-        el.click = () => {
-          Object.defineProperty(el, "files", {
-            value: [new File(["data"], "new-photo.jpg", { type: "image/jpeg" })],
-          });
-          el.dispatchEvent(new Event("change"));
-        };
-      }
-      return el;
-    });
-
-    const UPLOADED_ASSET = {
-      ...MEDIA_ASSET,
-      name: "MEDIA-2",
-      title: "new-photo.jpg",
-      original_filename: "new-photo.jpg",
-    };
-
-    const baseFetch = window.fetch;
-    window.fetch = vi.fn(async (input, init) => {
-      const url = typeof input === "string" ? input : String(input?.url ?? "");
-      // Upload endpoint succeeds
-      if (url.includes("upload_my_media_asset")) {
-        return jsonResponse({
-          message: { asset: UPLOADED_ASSET },
-        });
-      }
-      // Gate the list refresh that follows upload success
-      if (url.includes("list_my_media_assets")) {
-        await listGate;
-        return jsonResponse({
-          message: {
-            assets: [MEDIA_ASSET, UPLOADED_ASSET],
-            total_count: 2,
-            has_more: false,
-            next_offset: 2,
-          },
-        });
-      }
-      return baseFetch(input, init);
-    });
-
-    try {
-      const uploadBtn = document.getElementById("libraryActionUpload");
-      uploadBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await settleLibraryTasks(32);
-
-      // Mid-flight: upload succeeded, list refresh is pending
-      // The existing list and detail should still be visible (snapshot preserved)
-      const midFlightItems = document.querySelectorAll(".library-record");
-      expect(midFlightItems.length).toBe(1);
-      expect(detailTitle.textContent).toBe(initialTitle);
-
-      // Resolve the background list refresh
-      resolveList();
-      await settleLibraryTasks(32);
-
-      // After refresh: list should be updated with the new asset
-      const freshItems = document.querySelectorAll(".library-record");
-      expect(freshItems.length).toBe(2);
-    } finally {
-      createElementSpy.mockRestore();
-    }
+    // After auth expiry: fresh-pinned item still has a local blob
+    // Open remains enabled (local blob), Unpin remains enabled (local operation)
+    expect(openBtn2.disabled).toBe(false);
+    expect(pinBtn2.disabled).toBe(false);
   });
 
   // ── BFF URL normalization regression ────────────────────────────

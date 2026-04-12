@@ -18,7 +18,6 @@ import {
   IconRestart,
   IconSpeed,
   IconTrash,
-  IconUpload,
   IconVolume,
   IconWorld,
 } from "../icons.js";
@@ -34,7 +33,6 @@ import {
   initBackendAuthControllers,
   updateBoardDocumentInBackend,
   updateMediaAssetInBackend,
-  uploadMediaAssetToBackend,
 } from "../shared/backend-auth.js";
 import {
   CLOUD_LIBRARY_TAB_KEYS,
@@ -100,7 +98,6 @@ const elements = {
   actionDownload: document.getElementById("libraryActionDownload"),
   actionRename: document.getElementById("libraryActionRename"),
   actionDelete: document.getElementById("libraryActionDelete"),
-  actionUpload: document.getElementById("libraryActionUpload"),
   actionPin: document.getElementById("libraryActionPin"),
   overflowBtn: document.getElementById("libraryOverflowBtn"),
   overflowList: document.getElementById("libraryOverflowList"),
@@ -202,7 +199,6 @@ const state = {
   stalePinnedNames: new Set(),
   listOffline: false,
   reconnecting: false,
-  uploadBusy: false,
   statusKey: "",
   statusParams: null,
   statusText: "",
@@ -261,6 +257,12 @@ function derivePreviewSignature(item, { isOfflineItem = false, isPinned = false,
     }
   }
 
+  // For media items, include the playback/download URL so that transitions
+  // from cache-without-URLs to fresh-with-URLs trigger a re-render.
+  const mediaSrcUrl = previewKind === "media"
+    ? (item.playback_url || item.download_url || "")
+    : "";
+
   return [
     state.activeTab,
     item.name || "",
@@ -270,6 +272,7 @@ function derivePreviewSignature(item, { isOfflineItem = false, isPinned = false,
     isOfflineItem ? "offline" : "",
     isPinned ? "pinned" : "",
     mediaKind,
+    mediaSrcUrl,
   ].join("|");
 }
 
@@ -515,13 +518,6 @@ function renderTabs() {
     button.setAttribute("aria-selected", isActive ? "true" : "false");
     button.disabled = offlineBlocked;
   });
-
-  // Upload button is only visible on the media tab
-  const showUpload = state.activeTab === CLOUD_LIBRARY_TAB_KEYS.media
-    && state.session?.authenticated === true
-    && getCurrentCapability()?.enabled === true
-    && !state.authLoading;
-  syncActionButton(elements.actionUpload, showUpload, state.uploadBusy);
 }
 
 function buildListEmptyMessage() {
@@ -745,10 +741,16 @@ function renderList() {
         }
 
         state.selectedName = item.name;
-        state.selectedDetail = null;
+        if (state.activeTab === CLOUD_LIBRARY_TAB_KEYS.media) {
+          state.selectedDetail = item;
+        } else {
+          state.selectedDetail = null;
+        }
         renderList();
         renderDetail();
-        void loadDetail(item.name);
+        if (state.activeTab !== CLOUD_LIBRARY_TAB_KEYS.media) {
+          void loadDetail(item.name);
+        }
       });
       fragment.append(button);
     });
@@ -1144,7 +1146,7 @@ async function loadDetail(name, { force = false } = {}) {
     state.selectedDetail = resourceConfig.getDetailItem(response) || null;
     renderDetail();
 
-    if (!force) {
+    if (!force && tabKey !== CLOUD_LIBRARY_TAB_KEYS.media) {
       void resourceConfig.resource.getDetail(name, {
         force: true,
         mode: resourceConfig.detailMode || "summary",
@@ -1288,6 +1290,7 @@ async function loadList({ append = false, force = false, offlineBootstrap = fals
     setStatus();
     const nextItems = resourceConfig.getItems(response);
     const isOfflineResponse = Boolean(response?._offline);
+    const isStaleResponse = Boolean(response?._cached || response?._offline);
     if (isOfflineResponse) {
       for (const item of nextItems) { item._offline = true; }
     }
@@ -1308,18 +1311,28 @@ async function loadList({ append = false, force = false, offlineBootstrap = fals
     const selectionChanged = nextSelected !== previousSelectedName;
     state.selectedName = nextSelected;
     if (selectionChanged || !state.selectedDetail || state.selectedDetail.name !== nextSelected) {
-      state.selectedDetail = null;
+      if (tabKey === CLOUD_LIBRARY_TAB_KEYS.media) {
+        state.selectedDetail = state.items.find((i) => i.name === nextSelected) || null;
+      } else {
+        state.selectedDetail = null;
+      }
+    } else if (tabKey === CLOUD_LIBRARY_TAB_KEYS.media) {
+      // Keep detail in sync with the refreshed list row data so flags
+      // like _offline and updated URLs propagate to renderDetail.
+      state.selectedDetail = state.items.find((i) => i.name === state.selectedName) || state.selectedDetail;
     }
     renderList();
     renderDetail();
 
     if (state.selectedName && (!state.selectedDetail || selectionChanged || preserveSnapshot)) {
-      void loadDetail(state.selectedName);
+      if (tabKey !== CLOUD_LIBRARY_TAB_KEYS.media) {
+        void loadDetail(state.selectedName);
+      }
     }
 
     void refreshPinStatesForItems(state.items);
 
-    if (!force && !append) {
+    if (!force && !append && (tabKey !== CLOUD_LIBRARY_TAB_KEYS.media || isStaleResponse)) {
       const revalidationFence = {
         generation,
         requestId,
@@ -1352,10 +1365,18 @@ async function loadList({ append = false, force = false, offlineBootstrap = fals
         state.nextOffset = Number(freshResponse?.nextOffset ?? freshResponse?.next_offset) || state.items.length;
         if (!state.items.some((item) => item.name === state.selectedName)) {
           state.selectedName = state.items[0]?.name || "";
-          state.selectedDetail = null;
-          if (state.selectedName) {
-            void loadDetail(state.selectedName, { force: true });
+          if (tabKey === CLOUD_LIBRARY_TAB_KEYS.media) {
+            state.selectedDetail = state.items.find((i) => i.name === state.selectedName) || null;
+          } else {
+            state.selectedDetail = null;
+            if (state.selectedName) {
+              void loadDetail(state.selectedName, { force: true });
+            }
           }
+        } else if (tabKey === CLOUD_LIBRARY_TAB_KEYS.media && state.selectedName) {
+          // Keep the media detail in sync with the refreshed list row data
+          // so that flags like _offline propagate to renderDetail.
+          state.selectedDetail = state.items.find((i) => i.name === state.selectedName) || state.selectedDetail;
         }
         if (wasOffline && !isFreshOffline) rehydrateAuthOnReconnect();
         if (wasOffline !== isFreshOffline) renderTabs();
@@ -1702,69 +1723,6 @@ function downloadSelectedMedia() {
   triggerDownload(downloadUrl);
 }
 
-async function uploadMediaAsset() {
-  if (state.activeTab !== CLOUD_LIBRARY_TAB_KEYS.media || state.uploadBusy) return;
-
-  const capability = getCurrentCapability();
-  if (!capability?.enabled || !capability.csrfToken) {
-    setStatus("cloudLibraryAccessUnavailable", null, "danger");
-    return;
-  }
-
-  const input = document.createElement("input");
-  input.type = "file";
-  input.style.display = "none";
-
-  const filePromise = new Promise((resolve) => {
-    input.addEventListener("change", () => {
-      resolve(input.files?.[0] || null);
-    });
-    input.addEventListener("cancel", () => {
-      resolve(null);
-    });
-  });
-
-  document.body.appendChild(input);
-  input.click();
-  input.remove();
-
-  const file = await filePromise;
-  if (!file) return;
-
-  state.uploadBusy = true;
-  setStatusText(t("cloudLibraryUploading"), "muted");
-  renderTabs();
-
-  try {
-    const response = await uploadMediaAssetToBackend({
-      fileBlob: file,
-      fileName: file.name,
-      title: file.name,
-      csrfToken: capability.csrfToken,
-    });
-
-    if (!response.ok || !response.asset) {
-      if (response.status === 401) {
-        applyLibraryRequestError({ status: response.status });
-        return;
-      }
-      setStatus("cloudLibraryUploadFailed", { status: response.status || 0 }, "danger");
-      return;
-    }
-
-    const resourceConfig = getCurrentResourceConfig();
-    resourceConfig.resource.invalidateList();
-    setStatus("cloudLibraryUploaded", { title: response.asset.title }, "success");
-    // Refresh the list in the background without blocking the UI.
-    void loadList({ force: true, preserveSnapshot: true });
-  } catch {
-    setStatus("cloudLibraryUploadFailed", { status: 0 }, "danger");
-  } finally {
-    state.uploadBusy = false;
-    renderTabs();
-  }
-}
-
 async function togglePinSelectedMedia() {
   if (state.activeTab !== CLOUD_LIBRARY_TAB_KEYS.media || !state.selectedName) return;
   if (state.mutatingNames.has(state.selectedName)) return;
@@ -2035,9 +1993,6 @@ function bindEvents() {
   elements.actionDelete?.addEventListener("click", () => {
     void deleteSelectedItem();
   });
-  elements.actionUpload?.addEventListener("click", () => {
-    void uploadMediaAsset();
-  });
   elements.actionPin?.addEventListener("click", () => {
     void togglePinSelectedMedia();
   });
@@ -2080,7 +2035,6 @@ applyButtonIcon(elements.actionOpen, IconWorld);
 applyButtonIcon(elements.actionDownload, IconDownload);
 applyButtonIcon(elements.actionRename, IconBoard);
 applyButtonIcon(elements.actionDelete, IconTrash);
-applyButtonIcon(elements.actionUpload, IconUpload);
 applyButtonIcon(elements.actionPin, IconPin);
 applyButtonIcon(elements.overflowBtn, IconMore);
 applyButtonIcon(elements.toolbarMuteBtn, IconVolume);

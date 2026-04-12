@@ -102,7 +102,18 @@ function getSortableTimestamp(item) {
 
 const mediaResource = createCloudLibraryResource({
   resourceKey: "media_asset",
-  listLoader: async (query) => {
+  listLoader: async (query, { force = false } = {}) => {
+    // Cache-first on non-forced requests: return the IndexedDB manifest
+    // immediately so the UI renders without waiting for the network.
+    // The background revalidation pass (force=true) fetches fresh data.
+    if (!force) {
+      const cached = await getCachedMediaManifest().catch(() => null);
+      if (cached && cached.length) {
+        const filtered = filterAndSortOfflineAssets(cached, query);
+        return { assets: filtered, total_count: filtered.length, has_more: false, _cached: true };
+      }
+    }
+
     try {
       const response = await listBackendMediaAssets(query);
       const assets = response?.assets;

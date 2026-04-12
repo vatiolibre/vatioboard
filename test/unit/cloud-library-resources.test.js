@@ -86,7 +86,9 @@ describe("media resource cache wiring", () => {
     mockBackend.listBackendMediaAssets.mockRejectedValue(new Error("offline"));
     mockCache.getCachedMediaManifest.mockResolvedValue(cached);
 
-    const result = await listLoader({});
+    // force=true bypasses the cache-first path and hits the network,
+    // then falls back to the IndexedDB cache on failure.
+    const result = await listLoader({}, { force: true });
 
     expect(result).toEqual({
       assets: cached,
@@ -100,7 +102,39 @@ describe("media resource cache wiring", () => {
     mockBackend.listBackendMediaAssets.mockRejectedValue(new Error("offline"));
     mockCache.getCachedMediaManifest.mockResolvedValue(null);
 
-    await expect(listLoader({})).rejects.toThrow("offline");
+    await expect(listLoader({}, { force: true })).rejects.toThrow("offline");
+  });
+
+  it("returns cached manifest immediately on non-forced requests", async () => {
+    const cached = [{ name: "cached-1", title: "Cached" }];
+    mockCache.getCachedMediaManifest.mockResolvedValue(cached);
+
+    const result = await listLoader({});
+
+    expect(result).toEqual({
+      assets: cached,
+      total_count: 1,
+      has_more: false,
+      _cached: true,
+    });
+    // Should NOT have called the backend
+    expect(mockBackend.listBackendMediaAssets).not.toHaveBeenCalled();
+  });
+
+  it("bypasses cache on forced requests and calls backend", async () => {
+    const cached = [{ name: "cached-1" }];
+    const fresh = [{ name: "fresh-1" }];
+    mockCache.getCachedMediaManifest.mockResolvedValue(cached);
+    mockBackend.listBackendMediaAssets.mockResolvedValue({
+      assets: fresh,
+      total_count: 1,
+      has_more: false,
+    });
+
+    const result = await listLoader({}, { force: true });
+
+    expect(result.assets).toEqual(fresh);
+    expect(mockBackend.listBackendMediaAssets).toHaveBeenCalled();
   });
 
   it("caches an empty manifest to replace stale data", async () => {
