@@ -493,20 +493,21 @@ describe("library.html smoke", () => {
       await settleLibraryTasks();
 
       const previewImage = document.querySelector("#libraryDetailPreview img");
-      // After access resolution, image preview uses the signed S3 URL
-      expect(previewImage?.getAttribute("src")).toBe(
-        "https://s3.example.com/media/skidpad.png?X-Amz-Signature=view"
+      // Preview uses a stable BFF redirect URL (not a signed S3 URL).
+      expect(previewImage?.getAttribute("src")).toContain(
+        "/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset"
       );
+      expect(previewImage?.getAttribute("src")).toContain("name=MEDIA-1");
 
       document.getElementById("libraryActionDownload")?.dispatchEvent(
         new MouseEvent("click", { bubbles: true })
       );
       await settleLibraryTasks();
 
+      // Download resolves a signed S3 URL via the access endpoint.
       expect(clickedHrefs).toEqual([
         "https://s3.example.com/media/skidpad.png?X-Amz-Signature=signed",
       ]);
-      expect(previewImage?.getAttribute("src")).not.toContain("vatiolibre.com");
       // Download goes directly to object storage, not through BFF
       expect(clickedHrefs[0]).not.toContain("vatiolibre.com");
     } finally {

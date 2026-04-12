@@ -24,6 +24,7 @@ import {
 import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
 import {
   BACKEND_AUTH_STATE_EVENT,
+  buildMediaBffUrl,
   deleteBoardDocumentFromBackend,
   deleteMediaAssetFromBackend,
   deleteSyncRecordFromBackend,
@@ -243,18 +244,31 @@ function revokePreviewObjectUrl() {
  * Resolve signed object-storage URLs for a media asset on demand.
  * Returns the cached access if still valid, otherwise fetches fresh URLs
  * from the backend and caches them in memory (never persisted).
+ *
+ * @param {string} assetName
+ * @param {string} [contentHash]
+ * @param {{ intent?: string }} [opts]
  */
-async function resolveMediaAccess(assetName, contentHash) {
+async function resolveMediaAccess(assetName, contentHash, { intent } = {}) {
   if (!assetName) return null;
-  const cached = getCachedMediaAccess(assetName, contentHash);
-  if (cached) return cached;
 
-  const result = await getBackendMediaAssetAccess({ name: assetName });
+  // When no intent is specified, use the generic cache lookup.
+  // Intent-specific requests always go to the backend since the cached
+  // response may hold a different URL set.
+  if (!intent) {
+    const cached = getCachedMediaAccess(assetName, contentHash);
+    if (cached) return cached;
+  }
+
+  const result = await getBackendMediaAssetAccess({ name: assetName, intent });
   if (result.access) {
     const expiry = Number(result.access.expires_in_seconds) || 300;
-    // Use the authoritative content_hash from the access response if available.
     const hash = result.asset?.content_hash || contentHash;
-    setCachedMediaAccess(assetName, hash, result.access, expiry);
+    // Only cache the generic (no-intent) response to avoid polluting the
+    // cache with partial responses.
+    if (!intent) {
+      setCachedMediaAccess(assetName, hash, result.access, expiry);
+    }
     return result.access;
   }
   return null;
@@ -268,8 +282,10 @@ function derivePreviewSignature(item, { isOfflineItem = false, isPinned = false,
   if (!item) return "";
   const config = getResourceConfig(state.activeTab);
   const previewKind = config.previewKind;
+  // For media items, use BFF-derived preview source or fallback to any
+  // URL fields that may be present on resolved items.
   const imageUrl = item.image_url || item.preview_image_url || "";
-  const effectiveUrl = (isOfflineItem && isPinned && localPreviewUrl) ? localPreviewUrl : imageUrl;
+  const effectiveUrl = (isPinned && localPreviewUrl) ? localPreviewUrl : imageUrl;
   const mediaKind = String(item.media_kind || "");
 
   // For map previews, include a hash of the route coordinates so we detect
@@ -839,15 +855,16 @@ function renderDetailPreview(item = {}, { isOfflineItem = false, isPinned = fals
 
   const remoteImageUrl = item.image_url || item.preview_image_url;
   const isMetadataOnlyOffline = isOfflineItem && !isPinned;
-  // For pinned offline items, prefer the local blob URL over the remote URL
-  // to avoid broken previews when the network is unavailable.
-  const imageUrl = (isOfflineItem && isPinned && localPreviewUrl) ? localPreviewUrl : remoteImageUrl;
+  // For pinned items (online or offline), prefer the local blob URL over the
+  // remote URL so playback works without hitting download_my_media_asset.
+  const imageUrl = (isPinned && localPreviewUrl) ? localPreviewUrl : remoteImageUrl;
 
   // Playable media (audio/video): mount inline media player.
-  // Pinned offline blobs use the local URL; online items use the remote URL.
+  // Fresh pinned blobs use the local URL regardless of online/offline state;
+  // remote URLs are only the fallback when no local blob is available.
   // Metadata-only offline items cannot be played (no blob available).
   if (isPlayableMedia && !isMetadataOnlyOffline) {
-    const mediaSrc = (isOfflineItem && isPinned && localPreviewUrl)
+    const mediaSrc = (isPinned && localPreviewUrl)
       ? localPreviewUrl
       : (item.playback_url || item.download_url || item.downloadUrl || remoteImageUrl || "");
 
@@ -856,7 +873,7 @@ function renderDetailPreview(item = {}, { isOfflineItem = false, isPinned = fals
       const mounted = libraryMediaPlayer.mount({
         container: elements.detailPreview,
         item,
-        blobUrl: (isOfflineItem && isPinned && localPreviewUrl) ? localPreviewUrl : "",
+        blobUrl: (isPinned && localPreviewUrl) ? localPreviewUrl : "",
       });
       if (mounted) {
         elements.detailPreview.dataset.previewKind = "media-player";
@@ -1048,11 +1065,12 @@ function renderDetail() {
     renderDetailPreview(selectedItem, { isOfflineItem, isPinned });
   }
 
-  // For pinned offline items, asynchronously resolve a local blob URL
-  // and re-render the preview so it does not rely on a remote URL.
-  // Covers image (for <img>), audio, and video (for inline media player).
+  // For pinned items (online or offline), asynchronously resolve a local
+  // blob URL and re-render the preview so playback does not rely on the
+  // remote BFF redirect URL.  This avoids network requests to
+  // download_my_media_asset for every play action.
   const selectedMediaKind = String(selectedItem.media_kind || "").toLowerCase();
-  if (isOfflineItem && isPinned && !isStalePin && (selectedMediaKind === "image" || selectedMediaKind === "audio" || selectedMediaKind === "video")) {
+  if (isPinned && !isStalePin && (selectedMediaKind === "image" || selectedMediaKind === "audio" || selectedMediaKind === "video")) {
     const pinnedName = state.selectedName;
     getPinnedMediaBlob(pinnedName).then((blob) => {
       if (!blob || state.selectedName !== pinnedName) return;
@@ -1065,25 +1083,32 @@ function renderDetail() {
     }).catch(() => {});
   }
 
-  // For online media items, asynchronously resolve signed object-storage
-  // URLs so the preview loads content directly from the storage backend
-  // (eliminating the byte-streaming hop through Frappe).
-  if (!isOfflineItem && isMediaTab && (selectedMediaKind === "audio" || selectedMediaKind === "video" || selectedMediaKind === "image")) {
-    const accessName = state.selectedName;
-    resolveMediaAccess(accessName, selectedItem.content_hash).then((access) => {
-      if (!access || state.selectedName !== accessName) return;
-      const resolved = { ...selectedItem };
-      if (access.playback_url) resolved.playback_url = access.playback_url;
-      if (access.image_url) resolved.image_url = access.image_url;
-      if (access.download_url) resolved.download_url = access.download_url;
-      if (access.preview_image_url) resolved.preview_image_url = access.preview_image_url;
+  // For online media items without a fresh pin, build stable BFF redirect
+  // URLs for the preview. These URLs redirect to presigned S3 at request
+  // time and do NOT require an eager access resolution call.  Signed
+  // object-storage URLs are only resolved on-demand when the user triggers
+  // download or pin.  Pinned items skip this — the blob path above will
+  // provide the local URL once the async resolution completes.
+  const hasFreshPin = isPinned && !isStalePin;
+  if (!isOfflineItem && !hasFreshPin && isMediaTab && (selectedMediaKind === "audio" || selectedMediaKind === "video" || selectedMediaKind === "image")) {
+    const bffItem = { ...selectedItem };
+    if (selectedMediaKind === "image") {
+      bffItem.image_url = selectedItem.has_preview_image
+        ? buildMediaBffUrl(bffItem.name, { preview: true })
+        : buildMediaBffUrl(bffItem.name);
+    }
+    if (selectedMediaKind === "audio" || selectedMediaKind === "video") {
+      bffItem.playback_url = buildMediaBffUrl(bffItem.name);
+    }
+    if (selectedItem.has_preview_image) {
+      bffItem.preview_image_url = buildMediaBffUrl(bffItem.name, { preview: true });
+    }
 
-      const resolvedSig = derivePreviewSignature(resolved, { isOfflineItem, isPinned });
-      if (resolvedSig !== lastPreviewSignature) {
-        lastPreviewSignature = resolvedSig;
-        renderDetailPreview(resolved, { isOfflineItem, isPinned });
-      }
-    }).catch(() => {});
+    const bffSig = derivePreviewSignature(bffItem, { isOfflineItem, isPinned });
+    if (bffSig !== lastPreviewSignature) {
+      lastPreviewSignature = bffSig;
+      renderDetailPreview(bffItem, { isOfflineItem, isPinned });
+    }
   }
 
   elements.detailMeta.replaceChildren();
@@ -1340,15 +1365,20 @@ async function loadList({ append = false, force = false, offlineBootstrap = fals
     setStatus();
     const nextItems = resourceConfig.getItems(response);
     const isOfflineResponse = Boolean(response?._offline);
+    // During offline bootstrap, cached manifest responses should be treated
+    // as offline so items are tagged _offline and state.listOffline is set.
+    // Without this, cache-first responses (_cached: true) masquerade as
+    // online-capable and the player prefers remote URLs over local blobs.
+    const effectivelyOffline = isOfflineResponse || (offlineBootstrap && Boolean(response?._cached));
     const isStaleResponse = Boolean(response?._cached || response?._offline);
-    if (isOfflineResponse) {
+    if (effectivelyOffline) {
       for (const item of nextItems) { item._offline = true; }
     }
     state.items = append ? [...state.items, ...nextItems.filter((item) =>
       !state.items.some((existing) => existing.name === item.name)
     )] : nextItems;
     const wasOffline = state.listOffline;
-    state.listOffline = isOfflineResponse;
+    state.listOffline = effectivelyOffline;
     if (wasOffline && !isOfflineResponse) rehydrateAuthOnReconnect();
     if (wasOffline !== isOfflineResponse) renderTabs();
     state.totalCount = Number(response?.totalCount ?? response?.total_count) || state.items.length;
@@ -1511,11 +1541,11 @@ async function openSelectedItem() {
       }
 
       // Resolve a signed object-storage URL on demand; fall back to the
-      // BFF download URL (which itself redirects to storage).
-      const access = await resolveMediaAccess(selectedName, asset?.content_hash).catch(() => null);
+      // BFF redirect URL (which itself redirects to storage).
+      const access = await resolveMediaAccess(selectedName, asset?.content_hash, { intent: "playback" }).catch(() => null);
       const viewUrl = (mediaKind === "audio" || mediaKind === "video")
-        ? (access?.playback_url || access?.download_url || asset?.playback_url || asset?.download_url || asset?.downloadUrl)
-        : (access?.image_url || access?.download_url || asset?.image_url || asset?.download_url || asset?.downloadUrl);
+        ? (access?.playback_url || access?.download_url || buildMediaBffUrl(selectedName))
+        : (access?.image_url || access?.download_url || buildMediaBffUrl(selectedName));
 
       if (viewUrl) {
         window.open(viewUrl, "_blank", "noopener,noreferrer");
@@ -1776,15 +1806,14 @@ async function downloadSelectedMedia() {
   if (!assetName) return;
 
   try {
-    const access = await resolveMediaAccess(assetName, asset?.content_hash);
+    const access = await resolveMediaAccess(assetName, asset?.content_hash, { intent: "download" });
     if (access?.download_url) {
       triggerDownload(access.download_url);
       return;
     }
   } catch { /* fall through to BFF URL */ }
 
-  const downloadUrl = asset?.download_url || asset?.downloadUrl;
-  if (downloadUrl) triggerDownload(downloadUrl);
+  triggerDownload(buildMediaBffUrl(assetName) + "&as_attachment=1");
 }
 
 async function togglePinSelectedMedia() {
@@ -1823,7 +1852,7 @@ async function togglePinSelectedMedia() {
   renderDetail();
 
   try {
-    const access = await resolveMediaAccess(selectedName, asset?.content_hash).catch(() => null);
+    const access = await resolveMediaAccess(selectedName, asset?.content_hash, { intent: "pin" }).catch(() => null);
     const signedUrl = access?.download_url;
 
     let response;

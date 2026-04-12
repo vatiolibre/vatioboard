@@ -418,8 +418,8 @@ describe("media resource config", () => {
     expect(config.canDownload).toBe(true);
   });
 
-  it("supports rename", () => {
-    expect(config.canRename).toBe(true);
+  it("does not support rename", () => {
+    expect(config.canRename).toBe(false);
   });
 
   it("buildSubtitle includes media_kind and size", () => {

@@ -18,6 +18,8 @@ const mockMediaCache = vi.hoisted(() => ({
   getMediaCacheUser: vi.fn().mockReturnValue(null),
   restorePersistedMediaCacheUser: vi.fn().mockReturnValue(null),
   clearPersistedMediaCacheUser: vi.fn(),
+  getCachedManifestToken: vi.fn().mockResolvedValue(null),
+  cacheManifestToken: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock("../../src/shared/media-cache.js", () => mockMediaCache);
@@ -77,9 +79,8 @@ const MEDIA_ASSET = {
   blob_size: 245760,
   original_filename: "skidpad.png",
   folder_path: "Exports",
-  preview_image_url: "https://api.vatioboard.com/files/skidpad.png?token=view#preview",
-  download_url: "https://api.vatioboard.com/private/files/skidpad.png?download=1",
-  export_url: "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset?name=MEDIA-1&as_attachment=1",
+  has_preview_image: true,
+  file_extension: "png",
 };
 
 function createAuthenticatedLibraryFetch(handler) {
@@ -102,6 +103,11 @@ function createAuthenticatedLibraryFetch(handler) {
             media_assets: { enabled: true },
           },
         },
+      });
+    }
+    if (url.includes("get_my_media_manifest_version")) {
+      return jsonResponse({
+        message: { manifest_token: "manifest-token-v1", total_count: 1 },
       });
     }
 
@@ -181,6 +187,8 @@ describe("library offline media", () => {
     mockMediaCache.getMediaCacheUser.mockReturnValue(null);
     mockMediaCache.restorePersistedMediaCacheUser.mockReturnValue(null);
     mockMediaCache.clearPersistedMediaCacheUser.mockReturnValue(undefined);
+    mockMediaCache.getCachedManifestToken.mockResolvedValue(null);
+    mockMediaCache.cacheManifestToken.mockResolvedValue(true);
   });
 
   // ── Pin / unpin ─────────────────────────────────────────────────
@@ -721,15 +729,24 @@ describe("library offline media", () => {
       );
       await settleLibraryTasks();
 
+      // Clear any calls from prior leaked async work or initial renders
+      // before measuring the open-button interaction.
+      mockMediaCache.getPinnedMediaBlob.mockClear();
+
       const openBtn = document.getElementById("libraryActionOpen");
       openBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await settleLibraryTasks();
 
       // Should NOT read the local blob because pin is stale
       expect(mockMediaCache.getPinnedMediaBlob).not.toHaveBeenCalled();
-      // Should open the remote download URL instead
+      // Should open the BFF redirect URL for this asset
       expect(openSpy).toHaveBeenCalledWith(
-        expect.stringContaining("skidpad.png"),
+        expect.stringContaining("download_my_media_asset"),
+        "_blank",
+        "noopener,noreferrer",
+      );
+      expect(openSpy).toHaveBeenCalledWith(
+        expect.stringContaining("name=MEDIA-1"),
         "_blank",
         "noopener,noreferrer",
       );
@@ -2926,8 +2943,8 @@ describe("library offline media", () => {
     // But the detail should now reflect the fresh online data with preview
     const freshPreviewImg = document.querySelector("#libraryDetailPreview img");
     const freshPreviewSrc = freshPreviewImg?.getAttribute("src") || "";
-    // The preview should have updated from offline fallback to the online preview URL
-    expect(freshPreviewSrc).toContain("photo.png");
+    // The preview should have updated from offline fallback to the online BFF URL
+    expect(freshPreviewSrc).toContain("download_my_media_asset");
     // Media uses list-row-first rendering: no separate detail request needed.
     // The list response includes the preview URL, so the detail pane updates
     // directly from the list data.
@@ -3235,5 +3252,251 @@ describe("library offline media", () => {
     if (img && img.src && !img.src.startsWith("blob:")) {
       expect(img.src).not.toContain("vatiolibre.com");
     }
+  });
+
+  // ── Pinned blob playback source priority ────────────────────────
+
+  it("after pinning audio, inline player uses local blob URL instead of BFF playback URL", async () => {
+    const audioAsset = {
+      name: "MEDIA-1", title: "My Track", media_kind: "audio",
+      blob_size: 4096, original_filename: "track.mp3", content_hash: "hash-a1",
+      modified_at: "2026-04-03T09:00:00Z",
+      created_at_label: "2026-04-03", modified_at_label: "2026-04-03",
+      folder_path: "Music", has_preview_image: false, file_extension: "mp3",
+    };
+    const fakeBlob = new Blob(["audio-data"], { type: "audio/mpeg" });
+    // Simulate a pinned blob: pin meta matches content_hash, blob exists
+    mockMediaCache.getPinnedBlobMeta.mockResolvedValue({
+      content_hash: "hash-a1", pinned_at: Date.now(),
+    });
+    mockMediaCache.getPinnedMediaBlob.mockResolvedValue(fakeBlob);
+    mockMediaCache.isMediaBlobPinned.mockResolvedValue(true);
+
+    window.fetch = createAuthenticatedLibraryFetch((url) => {
+      if (url.includes("list_my_media_assets")) {
+        return jsonResponse({
+          message: {
+            assets: [audioAsset],
+            total_count: 1, has_more: false, next_offset: 1,
+          },
+        });
+      }
+      if (url.includes("get_my_media_asset_detail")) {
+        return jsonResponse({ message: { asset: audioAsset } });
+      }
+      if (url.includes("list_my_speed_recordings")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+      if (url.includes("list_my_accel_runs")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+      if (url.includes("list_my_board_documents")) return jsonResponse({ message: { documents: [], total_count: 0, has_more: false } });
+      return jsonResponse({});
+    });
+
+    await bootHtmlPage("library.html");
+    const libraryPage = await import("../../src/library/library.js");
+    await libraryPage.initPromise;
+    await settleLibraryTasks();
+
+    document.querySelector('[data-tab="media"]')?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settleLibraryTasks();
+
+    document.querySelector(".library-record")?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settleLibraryTasks(24);
+
+    const preview = document.getElementById("libraryDetailPreview");
+    expect(preview.dataset.previewKind).toBe("media-player");
+    const audio = preview.querySelector("audio");
+    expect(audio).toBeTruthy();
+    // The audio source must be a local blob URL, NOT a BFF redirect URL
+    expect(audio.src).toMatch(/^blob:/);
+    expect(audio.src).not.toContain("download_my_media_asset");
+  });
+
+  it("after pinning video, inline player uses local blob URL instead of BFF playback URL", async () => {
+    const videoAsset = {
+      name: "MEDIA-1", title: "My Video", media_kind: "video",
+      blob_size: 65536, original_filename: "clip.mp4", content_hash: "hash-v1",
+      modified_at: "2026-04-03T09:00:00Z",
+      created_at_label: "2026-04-03", modified_at_label: "2026-04-03",
+      folder_path: "Videos", has_preview_image: false, file_extension: "mp4",
+    };
+    const fakeBlob = new Blob(["video-data"], { type: "video/mp4" });
+    mockMediaCache.getPinnedBlobMeta.mockResolvedValue({
+      content_hash: "hash-v1", pinned_at: Date.now(),
+    });
+    mockMediaCache.getPinnedMediaBlob.mockResolvedValue(fakeBlob);
+    mockMediaCache.isMediaBlobPinned.mockResolvedValue(true);
+
+    window.fetch = createAuthenticatedLibraryFetch((url) => {
+      if (url.includes("list_my_media_assets")) {
+        return jsonResponse({
+          message: {
+            assets: [videoAsset],
+            total_count: 1, has_more: false, next_offset: 1,
+          },
+        });
+      }
+      if (url.includes("get_my_media_asset_detail")) {
+        return jsonResponse({ message: { asset: videoAsset } });
+      }
+      if (url.includes("list_my_speed_recordings")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+      if (url.includes("list_my_accel_runs")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+      if (url.includes("list_my_board_documents")) return jsonResponse({ message: { documents: [], total_count: 0, has_more: false } });
+      return jsonResponse({});
+    });
+
+    await bootHtmlPage("library.html");
+    const libraryPage = await import("../../src/library/library.js");
+    await libraryPage.initPromise;
+    await settleLibraryTasks();
+
+    document.querySelector('[data-tab="media"]')?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settleLibraryTasks();
+
+    document.querySelector(".library-record")?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settleLibraryTasks(24);
+
+    const preview = document.getElementById("libraryDetailPreview");
+    expect(preview.dataset.previewKind).toBe("media-player");
+    const video = preview.querySelector("video");
+    expect(video).toBeTruthy();
+    expect(video.src).toMatch(/^blob:/);
+    expect(video.src).not.toContain("download_my_media_asset");
+  });
+
+  it("offline bootstrap from cached manifest marks items as offline", async () => {
+    const cachedItem = {
+      name: "MEDIA-1", title: "Cached Song", media_kind: "audio",
+      blob_size: 4096, original_filename: "song.mp3", content_hash: "hash-c1",
+      modified_at: "2026-04-03T09:00:00Z",
+      created_at_label: "2026-04-03", modified_at_label: "2026-04-03",
+      folder_path: "Music", has_preview_image: false,
+    };
+    mockMediaCache.restorePersistedMediaCacheUser.mockReturnValue("user@vatiolibre.com");
+    mockMediaCache.getMediaCacheUser.mockReturnValue("user@vatiolibre.com");
+    mockMediaCache.getCachedMediaManifest.mockResolvedValue([cachedItem]);
+
+    // All backend calls fail — offline bootstrap
+    window.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
+
+    await bootHtmlPage("library.html");
+    const libraryPage = await import("../../src/library/library.js");
+    await libraryPage.initPromise;
+    await settleLibraryTasks(32);
+
+    // Media tab should be active and have offline indicator
+    const mediaTab = document.querySelector('[data-tab="media"]');
+    expect(mediaTab.dataset.active).toBe("true");
+
+    // Items should exist from cache
+    expect(document.querySelectorAll(".library-record").length).toBe(1);
+
+    // Non-media tabs should be disabled (offline-limited)
+    expect(document.querySelector('[data-tab="speed"]').disabled).toBe(true);
+    expect(document.querySelector('[data-tab="accel"]').disabled).toBe(true);
+  });
+
+  it("pinned media remains playable after simulating backend unavailability", async () => {
+    const audioAsset = {
+      name: "MEDIA-1", title: "Offline Track", media_kind: "audio",
+      blob_size: 4096, original_filename: "track.mp3", content_hash: "hash-off1",
+      modified_at: "2026-04-03T09:00:00Z",
+      created_at_label: "2026-04-03", modified_at_label: "2026-04-03",
+      folder_path: "Music", has_preview_image: false,
+    };
+    const fakeBlob = new Blob(["audio-data-offline"], { type: "audio/mpeg" });
+    mockMediaCache.restorePersistedMediaCacheUser.mockReturnValue("user@vatiolibre.com");
+    mockMediaCache.getMediaCacheUser.mockReturnValue("user@vatiolibre.com");
+    mockMediaCache.getCachedMediaManifest.mockResolvedValue([audioAsset]);
+    mockMediaCache.getPinnedBlobMeta.mockResolvedValue({
+      content_hash: "hash-off1", pinned_at: Date.now(),
+    });
+    mockMediaCache.getPinnedMediaBlob.mockResolvedValue(fakeBlob);
+    mockMediaCache.isMediaBlobPinned.mockResolvedValue(true);
+
+    // All backend calls fail — offline bootstrap with pinned blob
+    window.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
+
+    await bootHtmlPage("library.html");
+    const libraryPage = await import("../../src/library/library.js");
+    await libraryPage.initPromise;
+    await settleLibraryTasks(32);
+
+    // Select the media item
+    document.querySelector(".library-record")?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settleLibraryTasks(24);
+
+    const preview = document.getElementById("libraryDetailPreview");
+    expect(preview.dataset.previewKind).toBe("media-player");
+    const audio = preview.querySelector("audio");
+    expect(audio).toBeTruthy();
+    // Must use local blob URL, not a remote URL that would fail offline
+    expect(audio.src).toMatch(/^blob:/);
+  });
+
+  it("stale pinned blobs prefer remote URLs over outdated local content", async () => {
+    const audioAsset = {
+      name: "MEDIA-1", title: "Updated Track", media_kind: "audio",
+      blob_size: 4096, original_filename: "track.mp3", content_hash: "hash-new",
+      modified_at: "2026-04-03T09:00:00Z",
+      created_at_label: "2026-04-03", modified_at_label: "2026-04-03",
+      folder_path: "Music", has_preview_image: false, file_extension: "mp3",
+    };
+    const staleBlob = new Blob(["stale-audio"], { type: "audio/mpeg" });
+    // Pin meta has OLD content_hash that does NOT match the asset's current hash
+    mockMediaCache.getPinnedBlobMeta.mockResolvedValue({
+      content_hash: "hash-old", pinned_at: Date.now() - 86400_000,
+    });
+    mockMediaCache.getPinnedMediaBlob.mockResolvedValue(staleBlob);
+    mockMediaCache.isMediaBlobPinned.mockResolvedValue(true);
+
+    window.fetch = createAuthenticatedLibraryFetch((url) => {
+      if (url.includes("list_my_media_assets")) {
+        return jsonResponse({
+          message: {
+            assets: [audioAsset],
+            total_count: 1, has_more: false, next_offset: 1,
+          },
+        });
+      }
+      if (url.includes("get_my_media_asset_detail")) {
+        return jsonResponse({ message: { asset: audioAsset } });
+      }
+      if (url.includes("list_my_speed_recordings")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+      if (url.includes("list_my_accel_runs")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+      if (url.includes("list_my_board_documents")) return jsonResponse({ message: { documents: [], total_count: 0, has_more: false } });
+      return jsonResponse({});
+    });
+
+    await bootHtmlPage("library.html");
+    const libraryPage = await import("../../src/library/library.js");
+    await libraryPage.initPromise;
+    await settleLibraryTasks();
+
+    document.querySelector('[data-tab="media"]')?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settleLibraryTasks();
+
+    document.querySelector(".library-record")?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settleLibraryTasks(24);
+
+    const preview = document.getElementById("libraryDetailPreview");
+    expect(preview.dataset.previewKind).toBe("media-player");
+    const audio = preview.querySelector("audio");
+    expect(audio).toBeTruthy();
+    // Stale pin: audio source should be the remote BFF URL, NOT the local blob
+    expect(audio.src).not.toMatch(/^blob:/);
+    expect(audio.src).toContain("download_my_media_asset");
   });
 });

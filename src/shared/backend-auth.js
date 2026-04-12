@@ -12,6 +12,8 @@ const UPLOAD_MEDIA_ASSET_METHOD = "vatiolibre.vatiolibre.media_assets.upload_my_
 const LIST_MEDIA_ASSETS_METHOD = "vatiolibre.vatiolibre.media_assets.list_my_media_assets";
 const GET_MEDIA_ASSET_DETAIL_METHOD = "vatiolibre.vatiolibre.media_assets.get_my_media_asset_detail";
 const GET_MEDIA_ASSET_ACCESS_METHOD = "vatiolibre.vatiolibre.media_assets.get_my_media_asset_access";
+const GET_MEDIA_MANIFEST_VERSION_METHOD = "vatiolibre.vatiolibre.media_assets.get_my_media_manifest_version";
+const GET_MEDIA_MANIFEST_METHOD = "vatiolibre.vatiolibre.media_assets.get_my_media_manifest";
 const UPDATE_MEDIA_ASSET_METHOD = "vatiolibre.vatiolibre.media_assets.update_my_media_asset";
 const DELETE_MEDIA_ASSET_METHOD = "vatiolibre.vatiolibre.media_assets.delete_my_media_asset";
 const STREAM_MEDIA_ASSET_BLOB_METHOD = "vatiolibre.vatiolibre.media_assets.stream_my_media_asset_blob";
@@ -528,6 +530,23 @@ export function getBackendAuthConfig(location = window.location) {
   };
 }
 
+/**
+ * Build a stable BFF redirect URL for a media asset.
+ * These URLs redirect to presigned object storage at request time.
+ * They are safe to persist, embed in ``<img>`` / ``<audio>`` sources,
+ * and use anywhere a URL that never expires is needed.
+ *
+ * @param {string} assetName
+ * @param {{ preview?: boolean, config?: { apiBase: string } }} [opts]
+ */
+export function buildMediaBffUrl(assetName, { preview = false, config = getBackendAuthConfig() } = {}) {
+  if (!assetName) return "";
+  const base = `${config.apiBase}/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset`;
+  const params = new URLSearchParams({ name: assetName });
+  if (preview) params.set("preview", "1");
+  return `${base}?${params.toString()}`;
+}
+
 export async function fetchBackendSession({
   fetchImpl,
   signal,
@@ -824,6 +843,7 @@ export async function listBackendMediaAssets({
     totalCount: Number(message?.total_count) || 0,
     hasMore: message?.has_more === true,
     nextOffset: Number(message?.next_offset) || 0,
+    manifestToken: message?.manifest_token ?? null,
   };
 }
 
@@ -852,12 +872,15 @@ export async function getBackendMediaAssetDetail({
 
 export async function getBackendMediaAssetAccess({
   name,
+  intent,
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
 } = {}) {
+  const args = { name };
+  if (intent) args.intent = intent;
   const { response, data } = await fetchBackendMethodJson(GET_MEDIA_ASSET_ACCESS_METHOD, {
-    args: { name },
+    args,
     fetchImpl,
     signal,
     config,
@@ -869,6 +892,61 @@ export async function getBackendMediaAssetAccess({
     data,
     asset: message?.asset ?? null,
     access: message?.access ?? null,
+  };
+}
+
+export async function getBackendManifestVersion({
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const { response, data } = await fetchBackendMethodJson(GET_MEDIA_MANIFEST_VERSION_METHOD, {
+    args: {},
+    fetchImpl,
+    signal,
+    config,
+  });
+  const message = getMessage(data);
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    manifestToken: message?.manifest_token ?? null,
+    totalCount: Number(message?.total_count) || 0,
+  };
+}
+
+/**
+ * Fetch the full metadata-only manifest for the user's library.
+ *
+ * Returns all assets (no pagination) plus the manifest token.
+ * Used exclusively for offline manifest caching — the UI browse
+ * path still uses the paginated ``listBackendMediaAssets``.
+ */
+export async function getBackendMediaManifest({
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const { response, data } = await fetchBackendMethodJson(GET_MEDIA_MANIFEST_METHOD, {
+    args: {},
+    fetchImpl,
+    signal,
+    config,
+  });
+  const message = getMessage(data);
+  const assets = normalizeBackendMediaRecords(
+    Array.isArray(message?.assets) ? message.assets : [],
+    { config }
+  );
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    assets,
+    totalCount: Number(message?.total_count) || 0,
+    manifestToken: message?.manifest_token ?? null,
+    isTruncated: message?.is_truncated === true,
   };
 }
 

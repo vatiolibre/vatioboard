@@ -116,55 +116,74 @@ function computeSortTimestamp(asset) {
   return 0;
 }
 
+function mapManifestAsset(asset) {
+  return {
+    name: asset.name,
+    title: asset.title,
+    media_kind: asset.media_kind,
+    mime_type: asset.mime_type,
+    blob_size: asset.blob_size,
+    content_hash: asset.content_hash,
+    created_at: asset.created_at,
+    modified_at: asset.modified_at,
+    created_at_label: asset.created_at_label,
+    modified_at_label: asset.modified_at_label,
+    original_filename: asset.original_filename,
+    file_extension: asset.file_extension || "",
+    folder_path: asset.folder_path,
+    sort_timestamp: computeSortTimestamp(asset),
+    has_preview_image: Boolean(asset.has_preview_image),
+  };
+}
+
 /**
- * Persist the media manifest (list of assets) to IndexedDB.
- *
- * **Durable cache contract**: every URL field stored here is a stable
- * BFF-origin URL that redirects to object storage at request time.
- * These URLs never expire and carry no embedded credentials:
- *
- *   - ``download_url``       → download_my_media_asset?name=…&as_attachment=1
- *   - ``playback_url``       → download_my_media_asset?name=…
- *   - ``image_url``          → download_my_media_asset?name=…
- *   - ``preview_image_url``  → download_my_media_asset?name=…&preview=1
- *   - ``export_url``         → download_my_media_asset?name=…&as_attachment=1
- *
- * Presigned object-storage URLs are NEVER persisted here.
+ * Persist the manifest snapshot atomically — assets and freshness token
+ * are written as a single IndexedDB record so they can never be out of
+ * sync.  Pass ``token: null`` for truncated manifests that should not be
+ * considered canonical/fresh.
  */
-export async function cacheMediaManifest(assets) {
+export async function cacheManifestSnapshot({ assets, token = null }) {
   const key = userKey("__manifest__");
   if (!key || !Array.isArray(assets)) return false;
   return metadataStore.setValue(key, {
-    assets: assets.map((asset) => ({
-      name: asset.name,
-      title: asset.title,
-      media_kind: asset.media_kind,
-      mime_type: asset.mime_type,
-      blob_size: asset.blob_size,
-      content_hash: asset.content_hash,
-      created_at: asset.created_at,
-      modified_at: asset.modified_at,
-      created_at_label: asset.created_at_label,
-      modified_at_label: asset.modified_at_label,
-      original_filename: asset.original_filename,
-      folder_path: asset.folder_path,
-      sort_timestamp: computeSortTimestamp(asset),
-      has_preview_image: Boolean(asset.has_preview_image),
-      preview_image_url: asset.preview_image_url || "",
-      download_url: asset.download_url || "",
-      playback_url: asset.playback_url || "",
-      image_url: asset.image_url || "",
-      export_url: asset.export_url || "",
-    })),
+    assets: assets.map(mapManifestAsset),
+    token: token || null,
     cached_at: Date.now(),
   });
 }
 
-export async function getCachedMediaManifest() {
+/**
+ * Return the full manifest snapshot (assets + optional freshness token).
+ * Returns ``null`` when no snapshot is stored.
+ */
+export async function getCachedManifestSnapshot() {
   const key = userKey("__manifest__");
   if (!key) return null;
   const result = await metadataStore.getValue(key);
-  return result?.assets || null;
+  if (!result?.assets) return null;
+  return { assets: result.assets, token: result.token || null };
+}
+
+/** Convenience wrapper — returns the cached asset list or null. */
+export async function getCachedMediaManifest() {
+  const snapshot = await getCachedManifestSnapshot();
+  return snapshot?.assets || null;
+}
+
+/** Convenience wrapper — returns the cached freshness token or null. */
+export async function getCachedManifestToken() {
+  const snapshot = await getCachedManifestSnapshot();
+  return snapshot?.token || null;
+}
+
+/** @deprecated Use {@link cacheManifestSnapshot} instead. */
+export async function cacheMediaManifest(assets) {
+  return cacheManifestSnapshot({ assets });
+}
+
+/** @deprecated Token is now persisted atomically inside the manifest snapshot. */
+export async function cacheManifestToken() {
+  return false;
 }
 
 // ── Pinned blobs ─────────────────────────────────────────────────────

@@ -242,8 +242,8 @@ const RESOURCE_CONFIGS = {
       const kind = String(item?.media_kind || "").toLowerCase();
       return kind === "image" || kind === "audio" || kind === "video";
     },
-    canDelete: true,
-    canRename: true,
+    canDelete: false,
+    canRename: false,
     canDownload: true,
 
     buildSubtitle(item) {

@@ -1,5 +1,7 @@
 import {
+  getBackendManifestVersion,
   getBackendMediaAssetDetail,
+  getBackendMediaManifest,
   getBackendBoardDocumentDetail,
   getBackendSpeedRecordingDetail,
   listBackendMediaAssets,
@@ -14,8 +16,9 @@ import {
 } from "./backend-auth.js";
 import { createCloudLibraryResource } from "./cloud-library.js";
 import {
-  cacheMediaManifest,
+  cacheManifestSnapshot,
   cacheMediaMetadata,
+  getCachedManifestSnapshot,
   getCachedMediaManifest,
   getCachedMediaMetadata,
 } from "./media-cache.js";
@@ -100,35 +103,118 @@ function getSortableTimestamp(item) {
   return 0;
 }
 
+/**
+ * Sync the canonical full-library manifest in the background.
+ *
+ * This is separate from the paginated browse path:
+ *  - Uses the dedicated ``get_my_media_manifest`` endpoint that returns
+ *    ALL assets (metadata-only, no URL fields, up to 5 000).
+ *  - Persists the result into IndexedDB so the full library is available
+ *    offline.
+ *  - Includes a cheap token-based freshness check to skip redundant
+ *    full-manifest fetches.
+ *
+ * When ``browseToken`` is supplied (from the canonical page-1 list
+ * response), the freshness check uses it directly and avoids a
+ * separate ``get_my_media_manifest_version`` round-trip.
+ *
+ * Returns ``true`` when the manifest was refreshed, ``false`` when skipped.
+ */
+async function syncCanonicalManifest({ browseToken = null } = {}) {
+  try {
+    // Determine the remote token — prefer the one already in hand.
+    let remoteToken = browseToken;
+    if (!remoteToken) {
+      const remoteVersion = await getBackendManifestVersion().catch(() => null);
+      remoteToken = remoteVersion?.ok ? remoteVersion.manifestToken : null;
+    }
+
+    // Freshness check: require BOTH a matching token AND an existing
+    // manifest snapshot.  A lone token without a manifest (e.g. from an
+    // earlier failed write) must not be treated as fresh.
+    if (remoteToken) {
+      const snapshot = await getCachedManifestSnapshot().catch(() => null);
+      if (snapshot?.token && snapshot.token === remoteToken && Array.isArray(snapshot.assets)) {
+        return false; // manifest is still fresh
+      }
+    }
+
+    // Token mismatch or no cached snapshot — fetch the full manifest
+    const response = await getBackendMediaManifest();
+    const assets = response?.assets;
+    if (Array.isArray(assets)) {
+      // Atomic write: assets and freshness token in a single record.
+      // Truncated manifests store null token so the freshness check
+      // always re-fetches until the library fits within the manifest cap.
+      const token = (response.manifestToken && !response.isTruncated)
+        ? response.manifestToken
+        : null;
+      await cacheManifestSnapshot({ assets, token });
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const MEDIA_PAGE_SIZE = 24;
+
 const mediaResource = createCloudLibraryResource({
   resourceKey: "media_asset",
   listLoader: async (query, { force = false } = {}) => {
-    // Cache-first on non-forced requests: return the IndexedDB manifest
-    // immediately so the UI renders without waiting for the network.
-    // The background revalidation pass (force=true) fetches fresh data.
+    const limit = Number(query?.limit) || MEDIA_PAGE_SIZE;
+    const offset = Number(query?.offset) || 0;
+
+    // Cache-first on non-forced requests: return a page-sized slice of
+    // the IndexedDB manifest so the UI renders without a network wait.
+    // The stale-while-revalidate pass (force=true) fetches fresh data.
     if (!force) {
       const cached = await getCachedMediaManifest().catch(() => null);
       if (Array.isArray(cached)) {
         const filtered = filterAndSortOfflineAssets(cached, query);
-        return { assets: filtered, total_count: filtered.length, has_more: false, _cached: true };
+        const page = filtered.slice(offset, offset + limit);
+        return {
+          assets: page,
+          total_count: filtered.length,
+          has_more: offset + page.length < filtered.length,
+          next_offset: offset + page.length,
+          _cached: true,
+        };
       }
     }
 
     try {
       const response = await listBackendMediaAssets(query);
-      const assets = response?.assets;
-      // Always cache the manifest on a successful online response, even when
-      // the list is empty. This ensures a previous manifest does not survive
-      // after the user deletes all their media assets.
-      if (Array.isArray(assets)) {
-        cacheMediaManifest(assets).catch(() => {});
+
+      // Determine whether this is a canonical (unfiltered, first-page) load.
+      const isCanonical = !query?.search && !offset;
+
+      // Trigger background canonical manifest sync when:
+      //  - forced canonical revalidation (stale-while-revalidate), or
+      //  - first successful canonical load with no existing cache (cold visit)
+      if (isCanonical) {
+        if (force) {
+          syncCanonicalManifest({ browseToken: response.manifestToken || null }).catch(() => {});
+        } else {
+          // Cold visit: no cache existed (otherwise we'd have taken the
+          // cache-first path above).  Seed the offline manifest now.
+          syncCanonicalManifest({ browseToken: response.manifestToken || null }).catch(() => {});
+        }
       }
+
       return response;
     } catch (error) {
       const cached = await getCachedMediaManifest().catch(() => null);
       if (Array.isArray(cached)) {
         const filtered = filterAndSortOfflineAssets(cached, query);
-        return { assets: filtered, total_count: filtered.length, has_more: false, _offline: true };
+        const page = filtered.slice(offset, offset + limit);
+        return {
+          assets: page,
+          total_count: filtered.length,
+          has_more: offset + page.length < filtered.length,
+          next_offset: offset + page.length,
+          _offline: true,
+        };
       }
       throw error;
     }
