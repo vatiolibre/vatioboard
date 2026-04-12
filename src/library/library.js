@@ -28,7 +28,9 @@ import {
   deleteMediaAssetFromBackend,
   deleteSyncRecordFromBackend,
   fetchBackendLoggedUser,
+  fetchBackendMediaAssetBlob,
   getBackendFeatureAccessState,
+  getBackendMediaAssetAccess,
   getBackendSessionState,
   initBackendAuthControllers,
   updateBoardDocumentInBackend,
@@ -38,6 +40,11 @@ import {
   CLOUD_LIBRARY_TAB_KEYS,
   getCloudLibraryResource,
 } from "../shared/cloud-library-resources.js";
+import {
+  clearMediaAccessCache,
+  getCachedMediaAccess,
+  setCachedMediaAccess,
+} from "../shared/media-access-cache.js";
 import {
   clearPersistedMediaCacheUser,
   getMediaCacheUser,
@@ -230,6 +237,27 @@ function revokePreviewObjectUrl() {
     URL.revokeObjectURL(previewObjectUrl);
     previewObjectUrl = null;
   }
+}
+
+/**
+ * Resolve signed object-storage URLs for a media asset on demand.
+ * Returns the cached access if still valid, otherwise fetches fresh URLs
+ * from the backend and caches them in memory (never persisted).
+ */
+async function resolveMediaAccess(assetName, contentHash) {
+  if (!assetName) return null;
+  const cached = getCachedMediaAccess(assetName, contentHash);
+  if (cached) return cached;
+
+  const result = await getBackendMediaAssetAccess({ name: assetName });
+  if (result.access) {
+    const expiry = Number(result.access.expires_in_seconds) || 300;
+    // Use the authoritative content_hash from the access response if available.
+    const hash = result.asset?.content_hash || contentHash;
+    setCachedMediaAccess(assetName, hash, result.access, expiry);
+    return result.access;
+  }
+  return null;
 }
 
 /**
@@ -566,6 +594,7 @@ function applyLibraryRequestError(error, {
     state.reconnecting = false;
     state.authLoading = false;
     clearPersistedMediaCacheUser();
+    clearMediaAccessCache();
     setStatus("cloudLibraryLoginPrompt", null, "danger");
     renderTabs();
     renderDetail();
@@ -1036,6 +1065,27 @@ function renderDetail() {
     }).catch(() => {});
   }
 
+  // For online media items, asynchronously resolve signed object-storage
+  // URLs so the preview loads content directly from the storage backend
+  // (eliminating the byte-streaming hop through Frappe).
+  if (!isOfflineItem && isMediaTab && (selectedMediaKind === "audio" || selectedMediaKind === "video" || selectedMediaKind === "image")) {
+    const accessName = state.selectedName;
+    resolveMediaAccess(accessName, selectedItem.content_hash).then((access) => {
+      if (!access || state.selectedName !== accessName) return;
+      const resolved = { ...selectedItem };
+      if (access.playback_url) resolved.playback_url = access.playback_url;
+      if (access.image_url) resolved.image_url = access.image_url;
+      if (access.download_url) resolved.download_url = access.download_url;
+      if (access.preview_image_url) resolved.preview_image_url = access.preview_image_url;
+
+      const resolvedSig = derivePreviewSignature(resolved, { isOfflineItem, isPinned });
+      if (resolvedSig !== lastPreviewSignature) {
+        lastPreviewSignature = resolvedSig;
+        renderDetailPreview(resolved, { isOfflineItem, isPinned });
+      }
+    }).catch(() => {});
+  }
+
   elements.detailMeta.replaceChildren();
   buildDetailMetaEntries(selectedItem).forEach(([label, value]) => {
     elements.detailMeta.append(createMetaRow(label, value));
@@ -1447,9 +1497,6 @@ async function openSelectedItem() {
       // Prefer the fresh remote asset when the pinned blob is stale
       const isStale = state.stalePinnedNames.has(selectedName);
       const mediaKind = String(asset?.media_kind || "").toLowerCase();
-      const viewUrl = (mediaKind === "audio" || mediaKind === "video")
-        ? (asset?.playback_url || asset?.download_url || asset?.downloadUrl)
-        : (asset?.image_url || asset?.download_url || asset?.downloadUrl);
 
       if (!isStale && state.pinnedNames.has(selectedName)) {
         const blob = await getPinnedMediaBlob(selectedName).catch(() => null);
@@ -1462,6 +1509,13 @@ async function openSelectedItem() {
           return;
         }
       }
+
+      // Resolve a signed object-storage URL on demand; fall back to the
+      // BFF download URL (which itself redirects to storage).
+      const access = await resolveMediaAccess(selectedName, asset?.content_hash).catch(() => null);
+      const viewUrl = (mediaKind === "audio" || mediaKind === "video")
+        ? (access?.playback_url || access?.download_url || asset?.playback_url || asset?.download_url || asset?.downloadUrl)
+        : (access?.image_url || access?.download_url || asset?.image_url || asset?.download_url || asset?.downloadUrl);
 
       if (viewUrl) {
         window.open(viewUrl, "_blank", "noopener,noreferrer");
@@ -1714,13 +1768,23 @@ async function deleteSelectedItem() {
   }
 }
 
-function downloadSelectedMedia() {
+async function downloadSelectedMedia() {
   const asset = state.selectedDetail
     || state.items.find((item) => item.name === state.selectedName)
     || null;
+  const assetName = asset?.name || state.selectedName;
+  if (!assetName) return;
+
+  try {
+    const access = await resolveMediaAccess(assetName, asset?.content_hash);
+    if (access?.download_url) {
+      triggerDownload(access.download_url);
+      return;
+    }
+  } catch { /* fall through to BFF URL */ }
+
   const downloadUrl = asset?.download_url || asset?.downloadUrl;
-  if (!downloadUrl) return;
-  triggerDownload(downloadUrl);
+  if (downloadUrl) triggerDownload(downloadUrl);
 }
 
 async function togglePinSelectedMedia() {
@@ -1752,16 +1816,39 @@ async function togglePinSelectedMedia() {
     return;
   }
 
-  // Pin or re-pin stale blob — download the blob and store it locally
-  const downloadUrl = asset?.download_url || asset?.downloadUrl;
-  if (!downloadUrl) return;
-
+  // Pin or re-pin stale blob — resolve a signed URL and download directly
+  // from object storage so the blob never streams through Frappe.
   state.mutatingNames.add(selectedName);
   setStatusText(t("cloudLibraryPinning"), "muted");
   renderDetail();
 
   try {
-    const response = await fetch(downloadUrl, { credentials: "include" });
+    const access = await resolveMediaAccess(selectedName, asset?.content_hash).catch(() => null);
+    const signedUrl = access?.download_url;
+
+    let response;
+    // Fast path: fetch directly from object storage using the signed URL.
+    // This avoids streaming bytes through the Frappe worker.
+    if (signedUrl) {
+      try {
+        response = await fetch(signedUrl);
+        if (!response.ok) response = null;
+      } catch {
+        // TypeError from CORS or network failure — signed URL unusable.
+        response = null;
+      }
+    }
+
+    // Fallback: stream the blob bytes through the backend.
+    // The redirect-based BFF download endpoint (download_my_media_asset)
+    // is NOT a CORS bypass — fetch() follows the 302 to S3, so the
+    // browser still enforces CORS on the final S3 response.
+    // This dedicated streaming endpoint reads bytes server-side and
+    // serves them from the same origin as the frontend.
+    if (!response) {
+      response = await fetchBackendMediaAssetBlob({ name: selectedName });
+    }
+
     if (!response.ok) {
       if (response.status === 401) {
         applyLibraryRequestError({ status: response.status });
@@ -1826,6 +1913,7 @@ async function refreshAuthState({ force = false, pendingLogout = false } = {}) {
   // reuse of this account's cached media is prevented.
   if (pendingLogout) {
     clearPersistedMediaCacheUser();
+    clearMediaAccessCache();
   }
 
   try {
@@ -1848,6 +1936,7 @@ async function refreshAuthState({ force = false, pendingLogout = false } = {}) {
       state.featureAccess = featureAccess;
     } else {
       clearPersistedMediaCacheUser();
+      clearMediaAccessCache();
       state.featureAccess = null;
     }
   } catch {

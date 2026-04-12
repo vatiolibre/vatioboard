@@ -68,6 +68,16 @@ function userKey(key) {
 
 // ── Metadata ─────────────────────────────────────────────────────────
 
+/**
+ * Persist per-asset detail metadata to IndexedDB.
+ *
+ * **Durable cache contract**: this record is stored for offline access.
+ * All URL fields persisted here MUST be stable BFF-origin URLs (e.g.
+ * ``/api/method/…download_my_media_asset?name=X``).  Presigned object-
+ * storage URLs are **never** safe to persist — they expire and leak
+ * credentials.  Signed URLs live only in the in-memory access cache
+ * (media-access-cache.js).
+ */
 export async function cacheMediaMetadata(assetName, metadata) {
   const key = userKey(assetName);
   if (!key || !metadata) return false;
@@ -106,6 +116,21 @@ function computeSortTimestamp(asset) {
   return 0;
 }
 
+/**
+ * Persist the media manifest (list of assets) to IndexedDB.
+ *
+ * **Durable cache contract**: every URL field stored here is a stable
+ * BFF-origin URL that redirects to object storage at request time.
+ * These URLs never expire and carry no embedded credentials:
+ *
+ *   - ``download_url``       → download_my_media_asset?name=…&as_attachment=1
+ *   - ``playback_url``       → download_my_media_asset?name=…
+ *   - ``image_url``          → download_my_media_asset?name=…
+ *   - ``preview_image_url``  → download_my_media_asset?name=…&preview=1
+ *   - ``export_url``         → download_my_media_asset?name=…&as_attachment=1
+ *
+ * Presigned object-storage URLs are NEVER persisted here.
+ */
 export async function cacheMediaManifest(assets) {
   const key = userKey("__manifest__");
   if (!key || !Array.isArray(assets)) return false;
@@ -124,6 +149,7 @@ export async function cacheMediaManifest(assets) {
       original_filename: asset.original_filename,
       folder_path: asset.folder_path,
       sort_timestamp: computeSortTimestamp(asset),
+      has_preview_image: Boolean(asset.has_preview_image),
       preview_image_url: asset.preview_image_url || "",
       download_url: asset.download_url || "",
       playback_url: asset.playback_url || "",

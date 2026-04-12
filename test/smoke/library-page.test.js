@@ -318,6 +318,22 @@ describe("library.html smoke", () => {
         });
       }
 
+      if (url.includes("/api/method/vatiolibre.vatiolibre.media_assets.get_my_media_asset_access")) {
+        return new Response(JSON.stringify({
+          message: {
+            asset: { name: "MEDIA-1", content_hash: "abc123", media_kind: "image" },
+            access: {
+              download_url: "https://s3.example.com/media/skidpad.png?X-Amz-Signature=signed",
+              image_url: "https://s3.example.com/media/skidpad.png?X-Amz-Signature=view",
+              expires_in_seconds: 300,
+            },
+          },
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
       return new Response("{}", {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -458,7 +474,7 @@ describe("library.html smoke", () => {
     expect(document.getElementById("libraryDetailPreview")?.dataset.previewKind).toBe("image");
   });
 
-  it("loads media asset previews and downloads through the BFF origin", async () => {
+  it("loads media asset previews through the BFF origin and downloads via signed storage URLs", async () => {
     const clickedHrefs = [];
     const clickSpy = vi
       .spyOn(HTMLAnchorElement.prototype, "click")
@@ -477,19 +493,21 @@ describe("library.html smoke", () => {
       await settleLibraryTasks();
 
       const previewImage = document.querySelector("#libraryDetailPreview img");
+      // After access resolution, image preview uses the signed S3 URL
       expect(previewImage?.getAttribute("src")).toBe(
-        "https://api.vatioboard.com/files/skidpad.png?token=view#preview"
+        "https://s3.example.com/media/skidpad.png?X-Amz-Signature=view"
       );
 
       document.getElementById("libraryActionDownload")?.dispatchEvent(
         new MouseEvent("click", { bubbles: true })
       );
-      await settleLibraryTasks(2);
+      await settleLibraryTasks();
 
       expect(clickedHrefs).toEqual([
-        "https://api.vatioboard.com/private/files/skidpad.png?download=1",
+        "https://s3.example.com/media/skidpad.png?X-Amz-Signature=signed",
       ]);
       expect(previewImage?.getAttribute("src")).not.toContain("vatiolibre.com");
+      // Download goes directly to object storage, not through BFF
       expect(clickedHrefs[0]).not.toContain("vatiolibre.com");
     } finally {
       clickSpy.mockRestore();

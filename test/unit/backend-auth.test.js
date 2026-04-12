@@ -5,6 +5,7 @@ import {
   downloadSyncPayloadFromBackend,
   getBackendAccelRunDetail,
   getBackendFeatureAccessState,
+  getBackendMediaAssetAccess,
   getBackendMediaAssetDetail,
   getBackendSessionState,
   listBackendMediaAssets,
@@ -534,5 +535,36 @@ describe('backend auth transport helpers', () => {
     expect(result.ok).toBe(true);
     expect(result.record).toEqual({ name: 'sync-replay-1' });
     expect(result.payload).toEqual(payload);
+  });
+
+  it('fetches media asset access without normalizing S3 URLs', async () => {
+    const s3DownloadUrl = 'https://my-bucket.s3.amazonaws.com/key?X-Amz-Signature=abc';
+    const s3PlaybackUrl = 'https://my-bucket.s3.amazonaws.com/key?X-Amz-Signature=def';
+
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse({
+        message: {
+          asset: { name: 'media-1', content_hash: 'aabbcc', media_kind: 'audio' },
+          access: {
+            download_url: s3DownloadUrl,
+            playback_url: s3PlaybackUrl,
+            expires_in_seconds: 300,
+          },
+        },
+      })
+    );
+
+    const result = await getBackendMediaAssetAccess({
+      name: 'media-1',
+      fetchImpl,
+      config: TEST_CONFIG,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.asset).toEqual({ name: 'media-1', content_hash: 'aabbcc', media_kind: 'audio' });
+    // S3 URLs must NOT be rewritten through BFF normalization
+    expect(result.access.download_url).toBe(s3DownloadUrl);
+    expect(result.access.playback_url).toBe(s3PlaybackUrl);
+    expect(result.access.expires_in_seconds).toBe(300);
   });
 });

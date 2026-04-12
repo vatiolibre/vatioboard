@@ -11,8 +11,10 @@ const FEATURE_ACCESS_METHOD = "vatiolibre.vatiolibre.feature_access.get_my_featu
 const UPLOAD_MEDIA_ASSET_METHOD = "vatiolibre.vatiolibre.media_assets.upload_my_media_asset";
 const LIST_MEDIA_ASSETS_METHOD = "vatiolibre.vatiolibre.media_assets.list_my_media_assets";
 const GET_MEDIA_ASSET_DETAIL_METHOD = "vatiolibre.vatiolibre.media_assets.get_my_media_asset_detail";
+const GET_MEDIA_ASSET_ACCESS_METHOD = "vatiolibre.vatiolibre.media_assets.get_my_media_asset_access";
 const UPDATE_MEDIA_ASSET_METHOD = "vatiolibre.vatiolibre.media_assets.update_my_media_asset";
 const DELETE_MEDIA_ASSET_METHOD = "vatiolibre.vatiolibre.media_assets.delete_my_media_asset";
+const STREAM_MEDIA_ASSET_BLOB_METHOD = "vatiolibre.vatiolibre.media_assets.stream_my_media_asset_blob";
 const PUSH_SYNC_METHOD = "vatiolibre.vatiolibre.cloud_sync.push_my_sync_changes";
 const PULL_SYNC_METHOD = "vatiolibre.vatiolibre.cloud_sync.pull_my_sync_changes";
 const DOWNLOAD_SYNC_PAYLOAD_METHOD = "vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload";
@@ -846,6 +848,50 @@ export async function getBackendMediaAssetDetail({
     data,
     asset,
   };
+}
+
+export async function getBackendMediaAssetAccess({
+  name,
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const { response, data } = await fetchBackendMethodJson(GET_MEDIA_ASSET_ACCESS_METHOD, {
+    args: { name },
+    fetchImpl,
+    signal,
+    config,
+  });
+  const message = getMessage(data);
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    asset: message?.asset ?? null,
+    access: message?.access ?? null,
+  };
+}
+
+/**
+ * Fetch media asset bytes streamed through the backend (CORS-safe fallback).
+ *
+ * Returns a raw ``Response`` so the caller can read ``.blob()`` directly.
+ * This bypasses the JSON envelope used by other BFF methods because the
+ * response body is an opaque binary blob.
+ */
+export async function fetchBackendMediaAssetBlob({
+  name,
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const request = getFetch(fetchImpl);
+  const url = buildMethodUrl(STREAM_MEDIA_ASSET_BLOB_METHOD, { name }, config);
+  return request(url, {
+    method: "GET",
+    credentials: "include",
+    signal,
+  });
 }
 
 export async function listBackendBoardDocuments({

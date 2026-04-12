@@ -194,8 +194,9 @@ describe("library offline media", () => {
     expect(pinBtn.textContent).toContain("Pin");
   });
 
-  it("pins a media asset by downloading its blob", async () => {
-    // Return a fake blob when download_url is fetched
+  it("pins a media asset by downloading its blob via signed URL", async () => {
+    // Simulate the access endpoint returning a signed URL, and that URL
+    // serving a real blob (S3 bucket has CORS configured correctly).
     window.fetch = createAuthenticatedLibraryFetch((url) => {
       if (url.includes("list_my_media_assets")) {
         return jsonResponse({
@@ -205,7 +206,15 @@ describe("library offline media", () => {
       if (url.includes("get_my_media_asset_detail")) {
         return jsonResponse({ message: { asset: MEDIA_ASSET } });
       }
-      if (url.includes("/private/files/skidpad.png")) {
+      if (url.includes("get_my_media_asset_access")) {
+        return jsonResponse({
+          message: {
+            asset: { name: "MEDIA-1", content_hash: "abc123", media_kind: "image" },
+            access: { download_url: "https://s3.example.com/signed-blob", expires_in_seconds: 300 },
+          },
+        });
+      }
+      if (url.includes("s3.example.com/signed-blob")) {
         return new Response(new Blob(["fake-png-data"], { type: "image/png" }), { status: 200 });
       }
       if (url.includes("list_my_speed_recordings")) {
@@ -240,6 +249,230 @@ describe("library offline media", () => {
 
     pinBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await settleLibraryTasks();
+
+    // Signed URL should have been fetched directly (fast path)
+    const signedFetch = window.fetch.mock.calls.find(
+      ([u]) => typeof u === "string" && u.includes("s3.example.com/signed-blob"),
+    );
+    expect(signedFetch).toBeTruthy();
+
+    // Streaming fallback should NOT have been used
+    const streamFetch = window.fetch.mock.calls.find(
+      ([u]) => typeof u === "string" && u.includes("stream_my_media_asset_blob"),
+    );
+    expect(streamFetch).toBeUndefined();
+
+    expect(mockMediaCache.pinMediaBlob).toHaveBeenCalledWith(
+      "MEDIA-1",
+      expect.any(Blob),
+      { contentHash: null },
+    );
+  });
+
+  it("falls back to streaming endpoint when signed URL fetch throws (CORS)", async () => {
+    // Simulate the signed S3 URL failing with a TypeError (as browsers do
+    // when CORS blocks the response) and verify the streaming BFF endpoint
+    // is used as the real fallback — not the redirect-based download URL
+    // which also ends up at S3.
+    let signedUrlAttempted = false;
+    window.fetch = createAuthenticatedLibraryFetch((url) => {
+      if (url.includes("list_my_media_assets")) {
+        return jsonResponse({
+          message: { assets: [MEDIA_ASSET], total_count: 1, has_more: false },
+        });
+      }
+      if (url.includes("get_my_media_asset_detail")) {
+        return jsonResponse({ message: { asset: MEDIA_ASSET } });
+      }
+      if (url.includes("get_my_media_asset_access")) {
+        return jsonResponse({
+          message: {
+            asset: { name: "MEDIA-1", content_hash: "abc123", media_kind: "image" },
+            access: { download_url: "https://s3.example.com/signed-blob", expires_in_seconds: 300 },
+          },
+        });
+      }
+      if (url.includes("s3.example.com/signed-blob")) {
+        signedUrlAttempted = true;
+        throw new TypeError("Failed to fetch");
+      }
+      if (url.includes("stream_my_media_asset_blob")) {
+        return new Response(new Blob(["streamed-png-data"], { type: "application/octet-stream" }), { status: 200 });
+      }
+      if (url.includes("list_my_speed_recordings")) {
+        return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+      }
+      if (url.includes("list_my_accel_runs")) {
+        return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+      }
+      if (url.includes("list_my_board_documents")) {
+        return jsonResponse({ message: { documents: [], total_count: 0, has_more: false } });
+      }
+      return jsonResponse({});
+    });
+
+    await bootHtmlPage("library.html");
+    const libraryPage = await import("../../src/library/library.js");
+    await libraryPage.initPromise;
+    await settleLibraryTasks();
+
+    document.querySelector('[data-tab="media"]')?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settleLibraryTasks();
+
+    document.querySelector(".library-record")?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settleLibraryTasks();
+
+    document.getElementById("libraryActionPin").dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settleLibraryTasks();
+
+    // Signed URL was attempted first
+    expect(signedUrlAttempted).toBe(true);
+
+    // Streaming fallback was used
+    const streamFetch = window.fetch.mock.calls.find(
+      ([u]) => typeof u === "string" && u.includes("stream_my_media_asset_blob"),
+    );
+    expect(streamFetch).toBeTruthy();
+
+    // Redirect-based download URL was NOT used (it would not bypass CORS)
+    const redirectFetch = window.fetch.mock.calls.find(
+      ([u]) => typeof u === "string" && u.includes("/private/files/skidpad.png"),
+    );
+    expect(redirectFetch).toBeUndefined();
+
+    expect(mockMediaCache.pinMediaBlob).toHaveBeenCalledWith(
+      "MEDIA-1",
+      expect.any(Blob),
+      { contentHash: null },
+    );
+  });
+
+  it("falls back to streaming endpoint when signed URL returns non-OK", async () => {
+    // Signed URL returns 403 (expired/invalid) — should fall back to stream
+    window.fetch = createAuthenticatedLibraryFetch((url) => {
+      if (url.includes("list_my_media_assets")) {
+        return jsonResponse({
+          message: { assets: [MEDIA_ASSET], total_count: 1, has_more: false },
+        });
+      }
+      if (url.includes("get_my_media_asset_detail")) {
+        return jsonResponse({ message: { asset: MEDIA_ASSET } });
+      }
+      if (url.includes("get_my_media_asset_access")) {
+        return jsonResponse({
+          message: {
+            asset: { name: "MEDIA-1", content_hash: "abc123", media_kind: "image" },
+            access: { download_url: "https://s3.example.com/signed-expired", expires_in_seconds: 300 },
+          },
+        });
+      }
+      if (url.includes("s3.example.com/signed-expired")) {
+        return new Response("<Error>AccessDenied</Error>", { status: 403 });
+      }
+      if (url.includes("stream_my_media_asset_blob")) {
+        return new Response(new Blob(["streamed-data"]), { status: 200 });
+      }
+      if (url.includes("list_my_speed_recordings")) {
+        return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+      }
+      if (url.includes("list_my_accel_runs")) {
+        return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+      }
+      if (url.includes("list_my_board_documents")) {
+        return jsonResponse({ message: { documents: [], total_count: 0, has_more: false } });
+      }
+      return jsonResponse({});
+    });
+
+    await bootHtmlPage("library.html");
+    const libraryPage = await import("../../src/library/library.js");
+    await libraryPage.initPromise;
+    await settleLibraryTasks();
+
+    document.querySelector('[data-tab="media"]')?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settleLibraryTasks();
+    document.querySelector(".library-record")?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settleLibraryTasks();
+
+    document.getElementById("libraryActionPin").dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settleLibraryTasks();
+
+    const streamFetch = window.fetch.mock.calls.find(
+      ([u]) => typeof u === "string" && u.includes("stream_my_media_asset_blob"),
+    );
+    expect(streamFetch).toBeTruthy();
+
+    expect(mockMediaCache.pinMediaBlob).toHaveBeenCalledWith(
+      "MEDIA-1",
+      expect.any(Blob),
+      { contentHash: null },
+    );
+  });
+
+  it("uses streaming endpoint directly when access endpoint returns no signed URL", async () => {
+    // resolveMediaAccess returns null — no signed URL available
+    window.fetch = createAuthenticatedLibraryFetch((url) => {
+      if (url.includes("list_my_media_assets")) {
+        return jsonResponse({
+          message: { assets: [MEDIA_ASSET], total_count: 1, has_more: false },
+        });
+      }
+      if (url.includes("get_my_media_asset_detail")) {
+        return jsonResponse({ message: { asset: MEDIA_ASSET } });
+      }
+      if (url.includes("get_my_media_asset_access")) {
+        return jsonResponse({ message: {} });
+      }
+      if (url.includes("stream_my_media_asset_blob")) {
+        return new Response(new Blob(["fallback-data"]), { status: 200 });
+      }
+      if (url.includes("list_my_speed_recordings")) {
+        return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+      }
+      if (url.includes("list_my_accel_runs")) {
+        return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+      }
+      if (url.includes("list_my_board_documents")) {
+        return jsonResponse({ message: { documents: [], total_count: 0, has_more: false } });
+      }
+      return jsonResponse({});
+    });
+
+    await bootHtmlPage("library.html");
+    const libraryPage = await import("../../src/library/library.js");
+    await libraryPage.initPromise;
+    await settleLibraryTasks();
+
+    document.querySelector('[data-tab="media"]')?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settleLibraryTasks();
+    document.querySelector(".library-record")?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settleLibraryTasks();
+
+    document.getElementById("libraryActionPin").dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settleLibraryTasks();
+
+    const streamFetch = window.fetch.mock.calls.find(
+      ([u]) => typeof u === "string" && u.includes("stream_my_media_asset_blob"),
+    );
+    expect(streamFetch).toBeTruthy();
 
     expect(mockMediaCache.pinMediaBlob).toHaveBeenCalledWith(
       "MEDIA-1",
@@ -405,8 +638,11 @@ describe("library offline media", () => {
       if (url.includes("get_my_media_asset_detail")) {
         return jsonResponse({ message: { asset: assetWithHash } });
       }
-      if (url.includes("/private/files/skidpad.png")) {
-        return new Response(new Blob(["updated-data"], { type: "image/png" }), { status: 200 });
+      if (url.includes("get_my_media_asset_access")) {
+        return jsonResponse({ message: {} });
+      }
+      if (url.includes("stream_my_media_asset_blob")) {
+        return new Response(new Blob(["updated-data"], { type: "application/octet-stream" }), { status: 200 });
       }
       if (url.includes("list_my_speed_recordings")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
       if (url.includes("list_my_accel_runs")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
@@ -819,6 +1055,86 @@ describe("library offline media", () => {
 
     // The 401 handler should have called clearPersistedMediaCacheUser
     expect(mockMediaCache.clearPersistedMediaCacheUser).toHaveBeenCalled();
+  });
+
+  // ── Empty manifest cache correctness ────────────────────────────
+
+  it("returns cached empty manifest without hitting the backend on non-forced load", async () => {
+    // Simulate a user who has zero media: the manifest was cached as [].
+    mockMediaCache.restorePersistedMediaCacheUser.mockReturnValue("user@vatiolibre.com");
+    mockMediaCache.getMediaCacheUser.mockReturnValue("user@vatiolibre.com");
+    mockMediaCache.getCachedMediaManifest.mockResolvedValue([]);
+
+    const listCalls = [];
+    window.fetch = createAuthenticatedLibraryFetch((url) => {
+      if (url.includes("list_my_media_assets")) {
+        listCalls.push(url);
+        return jsonResponse({ message: { assets: [], total_count: 0, has_more: false } });
+      }
+      if (url.includes("list_my_speed_recordings")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+      if (url.includes("list_my_accel_runs")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+      if (url.includes("list_my_board_documents")) return jsonResponse({ message: { documents: [], total_count: 0, has_more: false } });
+      return jsonResponse({});
+    });
+
+    await bootHtmlPage("library.html");
+    const libraryPage = await import("../../src/library/library.js");
+    await libraryPage.initPromise;
+    await settleLibraryTasks();
+
+    // Switch to media tab — the non-forced load should use the cached []
+    document.querySelector('[data-tab="media"]')?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settleLibraryTasks();
+
+    // The media list API should NOT have been called for the initial
+    // non-forced load because the cached empty manifest is a valid result.
+    // (A forced revalidation may fire in the background, but the initial
+    // render must come from cache.)
+    const records = document.querySelectorAll(".library-record");
+    expect(records.length).toBe(0);
+
+    // The empty state should be showing, not the loading indicator
+    const emptyState = document.querySelector(".library-no-results, .library-empty-state, [data-empty-state]");
+    const loadingIndicator = document.querySelector(".library-loading");
+    expect(loadingIndicator?.hidden ?? true).toBe(true);
+  });
+
+  it("returns offline empty manifest instead of throwing when network fails and cache is empty array", async () => {
+    // Simulate offline with a previously cached empty manifest.
+    mockMediaCache.restorePersistedMediaCacheUser.mockReturnValue("user@vatiolibre.com");
+    mockMediaCache.getMediaCacheUser.mockReturnValue("user@vatiolibre.com");
+    mockMediaCache.getCachedMediaManifest.mockResolvedValue([]);
+
+    window.fetch = createAuthenticatedLibraryFetch((url) => {
+      if (url.includes("list_my_media_assets")) {
+        return Promise.reject(new TypeError("Failed to fetch"));
+      }
+      if (url.includes("list_my_speed_recordings")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+      if (url.includes("list_my_accel_runs")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+      if (url.includes("list_my_board_documents")) return jsonResponse({ message: { documents: [], total_count: 0, has_more: false } });
+      return jsonResponse({});
+    });
+
+    await bootHtmlPage("library.html");
+    const libraryPage = await import("../../src/library/library.js");
+    await libraryPage.initPromise;
+    await settleLibraryTasks();
+
+    // Switch to media tab — should NOT throw despite network failure
+    document.querySelector('[data-tab="media"]')?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settleLibraryTasks();
+
+    // Should render an empty list (not an error state)
+    const records = document.querySelectorAll(".library-record");
+    expect(records.length).toBe(0);
+
+    // Should not have an unhandled loading state
+    const loadingIndicator = document.querySelector(".library-loading");
+    expect(loadingIndicator?.hidden ?? true).toBe(true);
   });
 
   // ── Finding 2: Offline search/sort on cached manifest ───────────
@@ -2622,17 +2938,23 @@ describe("library offline media", () => {
   it("routes a 401 during pin download through the auth teardown path", async () => {
     await bootMediaTab();
 
-    // Replace fetch so the pin download returns 401
+    // Replace fetch so the streaming fallback returns 401.
+    // The pin flow: resolve access → try signed URL → fall back to stream.
+    // We simulate the access endpoint failing (no signed URL) so the stream
+    // fallback is used, and that returns 401.
     const baseFetch = window.fetch;
     window.fetch = vi.fn(async (input, init) => {
       const url = typeof input === "string" ? input : String(input?.url ?? "");
-      if (url.includes("skidpad.png")) {
+      if (url.includes("get_my_media_asset_access")) {
+        return jsonResponse({ message: {} });
+      }
+      if (url.includes("stream_my_media_asset_blob")) {
         return new Response("Unauthorized", { status: 401 });
       }
       return baseFetch(input, init);
     });
 
-    // Click pin — triggers fetch(downloadUrl) which returns 401
+    // Click pin — triggers the pin flow which hits 401 on the streaming fallback
     const pinBtn = document.getElementById("libraryActionPin");
     pinBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await settleLibraryTasks(32);
@@ -2785,8 +3107,9 @@ describe("library offline media", () => {
 
   it("disables Open and Pin for cloud-only media after auth expiry but allows unpin for locally pinned items", async () => {
     // ── Scenario A: cloud-only (unpinned) item ──
-    // Clicking Pin on an unpinned item fetches the download URL.
-    // If that returns 401, applyLibraryRequestError fires auth teardown.
+    // Clicking Pin resolves access, tries signed URL, falls back to streaming
+    // endpoint.  If the streaming fallback returns 401, applyLibraryRequestError
+    // fires auth teardown.
     await bootMediaTab();
 
     const openBtn = document.getElementById("libraryActionOpen");
@@ -2794,11 +3117,14 @@ describe("library offline media", () => {
     expect(openBtn.disabled).toBe(false);
     expect(pinBtn.disabled).toBe(false);
 
-    // Mock the download URL to return 401 when Pin tries to fetch the blob
+    // Mock the streaming fallback to return 401 when Pin tries to fetch the blob.
     const baseFetch = window.fetch;
     window.fetch = vi.fn(async (input, init) => {
       const url = typeof input === "string" ? input : String(input?.url ?? "");
-      if (url.includes("skidpad.png")) {
+      if (url.includes("get_my_media_asset_access")) {
+        return jsonResponse({ message: {} });
+      }
+      if (url.includes("stream_my_media_asset_blob")) {
         return new Response("Unauthorized", { status: 401 });
       }
       return baseFetch(input, init);

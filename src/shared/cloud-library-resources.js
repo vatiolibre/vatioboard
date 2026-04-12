@@ -108,7 +108,7 @@ const mediaResource = createCloudLibraryResource({
     // The background revalidation pass (force=true) fetches fresh data.
     if (!force) {
       const cached = await getCachedMediaManifest().catch(() => null);
-      if (cached && cached.length) {
+      if (Array.isArray(cached)) {
         const filtered = filterAndSortOfflineAssets(cached, query);
         return { assets: filtered, total_count: filtered.length, has_more: false, _cached: true };
       }
@@ -126,7 +126,7 @@ const mediaResource = createCloudLibraryResource({
       return response;
     } catch (error) {
       const cached = await getCachedMediaManifest().catch(() => null);
-      if (cached && cached.length) {
+      if (Array.isArray(cached)) {
         const filtered = filterAndSortOfflineAssets(cached, query);
         return { assets: filtered, total_count: filtered.length, has_more: false, _offline: true };
       }
