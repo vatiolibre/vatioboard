@@ -56,6 +56,15 @@ import {
   restorePersistedMediaCacheUser,
   setMediaCacheUser,
   unpinMediaBlob,
+  getLocalMediaBlob,
+  getLocalBlobMeta,
+  getCachedBlobMeta,
+  cacheMediaBlob,
+  isAutoCacheEligible,
+  isAutoCacheInFlight,
+  registerAutoCacheDownload,
+  deriveLocalAvailability,
+  removeCachedMediaBlob,
 } from "../shared/media-cache.js";
 import { getResourceConfig } from "./resource-registry.js";
 import { createLibraryMapPreview } from "./library-map-preview.js";
@@ -205,6 +214,8 @@ const state = {
   mutatingNames: new Set(),
   pinnedNames: new Set(),
   stalePinnedNames: new Set(),
+  cachedBlobNames: new Set(),
+  staleCachedNames: new Set(),
   listOffline: false,
   reconnecting: false,
   statusKey: "",
@@ -272,6 +283,59 @@ async function resolveMediaAccess(assetName, contentHash, { intent } = {}) {
     return result.access;
   }
   return null;
+}
+
+/**
+ * Background-download and cache a media blob for future local-first use.
+ *
+ * Non-blocking: does not stall playback or the UI.  Deduplicates concurrent
+ * downloads for the same asset via ``registerAutoCacheDownload``.
+ */
+async function triggerAutoCacheDownload(assetName, asset) {
+  if (!assetName || !asset) return;
+  if (!isAutoCacheEligible(asset)) return;
+
+  // Skip if the item is already pinned or locally cached with a fresh hash.
+  if (state.pinnedNames.has(assetName) && !state.stalePinnedNames.has(assetName)) return;
+  if (state.cachedBlobNames.has(assetName) && !state.staleCachedNames.has(assetName)) return;
+
+  const doDownload = async () => {
+    // Resolve a signed download URL.
+    const access = await resolveMediaAccess(assetName, asset.content_hash, { intent: "download" }).catch(() => null);
+    const signedUrl = access?.download_url;
+
+    let response;
+    if (signedUrl) {
+      try {
+        response = await fetch(signedUrl);
+        if (!response.ok) response = null;
+      } catch {
+        response = null;
+      }
+    }
+
+    // Fallback: stream through the backend.
+    if (!response) {
+      response = await fetchBackendMediaAssetBlob({ name: assetName });
+    }
+
+    if (!response.ok) return;
+    const blob = await response.blob();
+
+    await cacheMediaBlob(assetName, blob, {
+      contentHash: asset.content_hash || null,
+      blobSize: blob.size,
+      mediaKind: asset.media_kind || null,
+    });
+
+    // Update state so the UI reflects the new local availability.
+    state.cachedBlobNames.add(assetName);
+    state.staleCachedNames.delete(assetName);
+    renderList();
+    renderDetail();
+  };
+
+  registerAutoCacheDownload(assetName, doDownload());
 }
 
 /**
@@ -653,6 +717,25 @@ async function refreshPinState(name) {
       state.pinnedNames.delete(name);
       state.stalePinnedNames.delete(name);
     }
+
+    // Also check non-pinned cached blob state.
+    if (!state.pinnedNames.has(name)) {
+      const cachedMeta = await getCachedBlobMeta(name).catch(() => null);
+      if (cachedMeta) {
+        state.cachedBlobNames.add(name);
+        const item = state.selectedDetail
+          || state.items.find((i) => i.name === name) || null;
+        if (item?.content_hash && cachedMeta.content_hash && item.content_hash !== cachedMeta.content_hash) {
+          state.staleCachedNames.add(name);
+        } else {
+          state.staleCachedNames.delete(name);
+        }
+      } else {
+        state.cachedBlobNames.delete(name);
+        state.staleCachedNames.delete(name);
+      }
+    }
+
     renderDetail();
   } catch {
     // IndexedDB may be unavailable; leave pin state unknown.
@@ -677,6 +760,23 @@ async function refreshPinStatesForItems(items) {
       } else {
         if (wasPinned) { state.pinnedNames.delete(item.name); changed = true; }
         if (state.stalePinnedNames.has(item.name)) { state.stalePinnedNames.delete(item.name); changed = true; }
+      }
+
+      // Check non-pinned cached blob state.
+      if (!state.pinnedNames.has(item.name)) {
+        const cachedMeta = await getCachedBlobMeta(item.name).catch(() => null);
+        const wasCached = state.cachedBlobNames.has(item.name);
+        if (cachedMeta) {
+          if (!wasCached) { state.cachedBlobNames.add(item.name); changed = true; }
+          const stale = item.content_hash && cachedMeta.content_hash
+            && item.content_hash !== cachedMeta.content_hash;
+          const wasStale = state.staleCachedNames.has(item.name);
+          if (stale && !wasStale) { state.staleCachedNames.add(item.name); changed = true; }
+          else if (!stale && wasStale) { state.staleCachedNames.delete(item.name); changed = true; }
+        } else {
+          if (wasCached) { state.cachedBlobNames.delete(item.name); changed = true; }
+          if (state.staleCachedNames.has(item.name)) { state.staleCachedNames.delete(item.name); changed = true; }
+        }
       }
     } catch {
       // skip
@@ -763,6 +863,12 @@ function renderList() {
           badges.push({ label: t("cloudLibraryPinOutdated"), tone: "warning" });
         } else if (state.pinnedNames.has(item.name)) {
           badges.push({ label: t("cloudLibraryOfflineAvailable"), tone: "success" });
+        } else if (state.staleCachedNames.has(item.name)) {
+          badges.push({ label: t("cloudLibraryOutdatedLocal"), tone: "warning" });
+        } else if (state.cachedBlobNames.has(item.name)) {
+          badges.push({ label: t("cloudLibraryOfflineAvailable"), tone: "success" });
+        } else if (isAutoCacheInFlight(item.name)) {
+          badges.push({ label: t("cloudLibraryCachingLocally"), tone: "muted" });
         } else if (item._offline) {
           badges.push({ label: t("cloudLibraryMetadataCached"), tone: "muted" });
         }
@@ -855,17 +961,18 @@ function renderDetailPreview(item = {}, { isOfflineItem = false, isPinned = fals
   }
 
   const remoteImageUrl = item.image_url || item.preview_image_url;
-  const isMetadataOnlyOffline = isOfflineItem && !isPinned;
-  // For pinned items (online or offline), prefer the local blob URL over the
-  // remote URL so playback works without hitting download_my_media_asset.
-  const imageUrl = (isPinned && localPreviewUrl) ? localPreviewUrl : remoteImageUrl;
+  const hasLocalBlob = Boolean(localPreviewUrl);
+  const isMetadataOnlyOffline = isOfflineItem && !isPinned && !hasLocalBlob;
+  // For items with a local blob (pinned or cached), prefer the local URL
+  // over the remote URL so playback works without network access.
+  const imageUrl = hasLocalBlob ? localPreviewUrl : remoteImageUrl;
 
   // Playable media (audio/video): mount inline media player.
-  // Fresh pinned blobs use the local URL regardless of online/offline state;
+  // Fresh local blobs use the local URL regardless of online/offline state;
   // remote URLs are only the fallback when no local blob is available.
   // Metadata-only offline items cannot be played (no blob available).
   if (isPlayableMedia && !isMetadataOnlyOffline) {
-    const mediaSrc = (isPinned && localPreviewUrl)
+    const mediaSrc = hasLocalBlob
       ? localPreviewUrl
       : (item.playback_url || item.download_url || item.downloadUrl || remoteImageUrl || "");
 
@@ -874,7 +981,7 @@ function renderDetailPreview(item = {}, { isOfflineItem = false, isPinned = fals
       const mounted = libraryMediaPlayer.mount({
         container: elements.detailPreview,
         item,
-        blobUrl: (isPinned && localPreviewUrl) ? localPreviewUrl : "",
+        blobUrl: hasLocalBlob ? localPreviewUrl : "",
       });
       if (mounted) {
         elements.detailPreview.dataset.previewKind = "media-player";
@@ -884,14 +991,15 @@ function renderDetailPreview(item = {}, { isOfflineItem = false, isPinned = fals
     }
   }
 
-  // Pinned offline non-image media without a blob URL yet — show a type-aware
-  // fallback. The blob URL will arrive asynchronously and re-trigger this render.
-  if (isOfflineItem && isPinned && previewKind === "media") {
+  // Offline media with a local blob (pinned or cached) but no blob URL yet —
+  // show a type-aware fallback. The blob URL will arrive asynchronously.
+  const hasLocalBlobState = isPinned || state.cachedBlobNames.has(item.name);
+  if (isOfflineItem && hasLocalBlobState && previewKind === "media") {
     if (mediaKindLower !== "image") {
       libraryMediaPlayer.destroy();
       syncToolbarVolume();
       elements.detailPreview.replaceChildren();
-      elements.detailPreview.dataset.previewKind = "offline-pinned-fallback";
+      elements.detailPreview.dataset.previewKind = "offline-local-fallback";
       const fallback = document.createElement("div");
       fallback.className = "library-preview-fallback";
       const iconWrapper = document.createElement("span");
@@ -1053,45 +1161,53 @@ function renderDetail() {
   const isMediaTab = state.activeTab === CLOUD_LIBRARY_TAB_KEYS.media;
   const isPinned = isMediaTab && state.pinnedNames.has(state.selectedName);
   const isStalePin = isMediaTab && state.stalePinnedNames.has(state.selectedName);
+  const isCachedBlob = isMediaTab && state.cachedBlobNames.has(state.selectedName);
+  const isStaleCached = isMediaTab && state.staleCachedNames.has(state.selectedName);
+  const hasAnyFreshLocal = (isPinned && !isStalePin) || (isCachedBlob && !isStaleCached);
   const isOfflineItem = isMediaTab && Boolean(selectedItem._offline);
-  const isMetadataOnly = isOfflineItem && !isPinned;
+  const isMetadataOnly = isOfflineItem && !isPinned && !isCachedBlob;
 
   elements.detailTitle.textContent = selectedItem.title || selectedItem.name;
   elements.detailSubtitle.textContent = buildRecordSubtitle(selectedItem) || selectedItem.name;
 
   // Only rebuild the preview when preview-relevant inputs changed.
+  // When a fresh local blob exists, skip the initial render if there is
+  // already a preview showing — the async blob resolution below (or the
+  // prior BFF render) provides a better URL.  Without this guard,
+  // re-entering renderDetail after auto-cache would regress the preview
+  // from the BFF URL to the raw item URL before the blob resolves.
   const previewSig = derivePreviewSignature(selectedItem, { isOfflineItem, isPinned });
-  if (previewSig !== lastPreviewSignature) {
+  const skipInitialForLocalBlob = hasAnyFreshLocal && lastPreviewSignature;
+  if (!skipInitialForLocalBlob && previewSig !== lastPreviewSignature) {
     lastPreviewSignature = previewSig;
     renderDetailPreview(selectedItem, { isOfflineItem, isPinned });
   }
 
-  // For pinned items (online or offline), asynchronously resolve a local
-  // blob URL and re-render the preview so playback does not rely on the
-  // remote BFF redirect URL.  This avoids network requests to
-  // download_my_media_asset for every play action.
+  // For items with a fresh local blob (pinned or cached), asynchronously
+  // resolve a local blob URL and re-render the preview so playback does
+  // not rely on the remote BFF redirect URL.
   const selectedMediaKind = String(selectedItem.media_kind || "").toLowerCase();
-  if (isPinned && !isStalePin && (selectedMediaKind === "image" || selectedMediaKind === "audio" || selectedMediaKind === "video")) {
-    const pinnedName = state.selectedName;
-    getPinnedMediaBlob(pinnedName).then((blob) => {
-      if (!blob || state.selectedName !== pinnedName) return;
-      const localUrl = URL.createObjectURL(blob);
-      const localSig = derivePreviewSignature(selectedItem, { isOfflineItem, isPinned, localPreviewUrl: localUrl });
+  if (hasAnyFreshLocal && (selectedMediaKind === "image" || selectedMediaKind === "audio" || selectedMediaKind === "video")) {
+    const localName = state.selectedName;
+    Promise.resolve(getLocalMediaBlob(localName)).then((result) => {
+      if (!result?.blob || state.selectedName !== localName) return;
+      // Stale local blobs should not be used for preview when online.
+      if (result.contentHash && selectedItem.content_hash && result.contentHash !== selectedItem.content_hash) return;
+      const localUrl = URL.createObjectURL(result.blob);
+      const localIsPinned = result.source === "pinned";
+      const localSig = derivePreviewSignature(selectedItem, { isOfflineItem, isPinned: localIsPinned, localPreviewUrl: localUrl });
       if (localSig !== lastPreviewSignature) {
         lastPreviewSignature = localSig;
-        renderDetailPreview(selectedItem, { isOfflineItem, isPinned, localPreviewUrl: localUrl });
+        renderDetailPreview(selectedItem, { isOfflineItem, isPinned: localIsPinned, localPreviewUrl: localUrl });
       }
     }).catch(() => {});
   }
 
-  // For online media items without a fresh pin, build stable BFF redirect
-  // URLs for the preview. These URLs redirect to presigned S3 at request
-  // time and do NOT require an eager access resolution call.  Signed
-  // object-storage URLs are only resolved on-demand when the user triggers
-  // download or pin.  Pinned items skip this — the blob path above will
-  // provide the local URL once the async resolution completes.
-  const hasFreshPin = isPinned && !isStalePin;
-  if (!isOfflineItem && !hasFreshPin && isMediaTab && (selectedMediaKind === "audio" || selectedMediaKind === "video" || selectedMediaKind === "image")) {
+  // For online media items without a fresh local blob, build stable BFF
+  // redirect URLs for the preview.  Items with a fresh pinned or cached
+  // blob skip this — the local blob path above will provide the URL.
+  const hasFreshLocal = hasAnyFreshLocal;
+  if (!isOfflineItem && !hasFreshLocal && isMediaTab && (selectedMediaKind === "audio" || selectedMediaKind === "video" || selectedMediaKind === "image")) {
     const bffItem = { ...selectedItem };
     if (selectedMediaKind === "image") {
       bffItem.image_url = selectedItem.has_preview_image
@@ -1109,6 +1225,12 @@ function renderDetail() {
     if (bffSig !== lastPreviewSignature) {
       lastPreviewSignature = bffSig;
       renderDetailPreview(bffItem, { isOfflineItem, isPinned });
+    }
+
+    // Trigger background auto-cache when showing a remote preview for an
+    // eligible item so future interactions use the local blob.
+    if (isAutoCacheEligible(selectedItem)) {
+      triggerAutoCacheDownload(selectedItem.name, selectedItem).catch(() => {});
     }
   }
 
@@ -1178,6 +1300,18 @@ function renderDetail() {
     } else if (isPinned) {
       elements.detailMeta.append(
         createMetaRow(t("cloudLibraryAvailability"), t("cloudLibraryOfflineAvailable")),
+      );
+    } else if (isStaleCached) {
+      elements.detailMeta.append(
+        createMetaRow(t("cloudLibraryAvailability"), t("cloudLibraryOutdatedLocal")),
+      );
+    } else if (isCachedBlob) {
+      elements.detailMeta.append(
+        createMetaRow(t("cloudLibraryAvailability"), t("cloudLibraryOfflineAvailable")),
+      );
+    } else if (isAutoCacheInFlight(state.selectedName)) {
+      elements.detailMeta.append(
+        createMetaRow(t("cloudLibraryAvailability"), t("cloudLibraryCachingLocally")),
       );
     } else if (isOfflineItem) {
       elements.detailMeta.append(
@@ -1527,19 +1661,28 @@ async function openSelectedItem() {
         || state.items.find((item) => item.name === selectedName)
         || null;
 
-      // Prefer the fresh remote asset when the pinned blob is stale
-      const isStale = state.stalePinnedNames.has(selectedName);
       const mediaKind = String(asset?.media_kind || "").toLowerCase();
 
-      if (!isStale && state.pinnedNames.has(selectedName)) {
-        const blob = await getPinnedMediaBlob(selectedName).catch(() => null);
-        if (blob) {
-          const objectUrl = URL.createObjectURL(blob);
-          window.open(objectUrl, "_blank", "noopener,noreferrer");
-          setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
-          state.openBusy = false;
-          renderDetail();
-          return;
+      // Prefer a fresh local blob (pinned or cached) over remote access.
+      const isPinnedStale = state.stalePinnedNames.has(selectedName);
+      const isCachedStale = state.staleCachedNames.has(selectedName);
+      const hasLocalPin = state.pinnedNames.has(selectedName) && !isPinnedStale;
+      const hasLocalCache = state.cachedBlobNames.has(selectedName) && !isCachedStale;
+
+      if (hasLocalPin || hasLocalCache) {
+        const localResult = await getLocalMediaBlob(selectedName).catch(() => null);
+        if (localResult?.blob) {
+          // Verify content hash freshness.
+          const hashOk = !asset?.content_hash || !localResult.contentHash
+            || asset.content_hash === localResult.contentHash;
+          if (hashOk) {
+            const objectUrl = URL.createObjectURL(localResult.blob);
+            window.open(objectUrl, "_blank", "noopener,noreferrer");
+            setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+            state.openBusy = false;
+            renderDetail();
+            return;
+          }
         }
       }
 
@@ -1552,6 +1695,12 @@ async function openSelectedItem() {
 
       if (viewUrl) {
         window.open(viewUrl, "_blank", "noopener,noreferrer");
+      }
+
+      // Trigger background auto-cache for eligible items that were opened
+      // via the remote path (no blocking — fire and forget).
+      if (asset && isAutoCacheEligible(asset)) {
+        triggerAutoCacheDownload(selectedName, asset).catch(() => {});
       }
     }
 
@@ -1891,6 +2040,10 @@ async function togglePinSelectedMedia() {
     }
     const blob = await response.blob();
     await pinMediaBlob(selectedName, blob, { contentHash: asset?.content_hash || null });
+    // Remove any non-pinned cached copy since the durable pin supersedes it.
+    removeCachedMediaBlob(selectedName).catch(() => {});
+    state.cachedBlobNames.delete(selectedName);
+    state.staleCachedNames.delete(selectedName);
     state.pinnedNames.add(selectedName);
     state.stalePinnedNames.delete(selectedName);
     setStatus("cloudLibraryPinned", { title: asset?.title || selectedName }, "success");

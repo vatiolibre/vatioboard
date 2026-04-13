@@ -4,6 +4,10 @@ const METADATA_DB_NAME = "vatioboard_media_metadata";
 const METADATA_STORE_NAME = "metadata";
 const BLOB_DB_NAME = "vatioboard_media_blobs";
 const BLOB_STORE_NAME = "blobs";
+const CACHED_BLOB_DB_NAME = "vatioboard_media_cached_blobs";
+const CACHED_BLOB_STORE_NAME = "cached_blobs";
+const CACHED_BLOB_META_DB_NAME = "vatioboard_media_cached_blob_meta";
+const CACHED_BLOB_META_STORE_NAME = "cached_blob_meta";
 
 const metadataStore = createIndexedJsonKeyValueStore({
   dbName: METADATA_DB_NAME,
@@ -13,6 +17,16 @@ const metadataStore = createIndexedJsonKeyValueStore({
 const blobStore = createIndexedJsonKeyValueStore({
   dbName: BLOB_DB_NAME,
   storeName: BLOB_STORE_NAME,
+});
+
+const cachedBlobStore = createIndexedJsonKeyValueStore({
+  dbName: CACHED_BLOB_DB_NAME,
+  storeName: CACHED_BLOB_STORE_NAME,
+});
+
+const cachedBlobMetaStore = createIndexedJsonKeyValueStore({
+  dbName: CACHED_BLOB_META_DB_NAME,
+  storeName: CACHED_BLOB_META_STORE_NAME,
 });
 
 // ── User-scoped cache namespace ──────────────────────────────────────
@@ -227,4 +241,236 @@ export async function isMediaBlobPinned(assetName) {
   if (!key) return false;
   const entry = await blobStore.getValue(key);
   return entry != null;
+}
+
+// ── Auto-cache policy ────────────────────────────────────────────────
+
+/** Maximum blob size (bytes) eligible for auto-caching. Default 50 MB. */
+export const AUTO_CACHE_MAX_BYTES = 50 * 1024 * 1024;
+
+/** Media kinds eligible for auto-cache-on-play/open. */
+export const AUTO_CACHE_ELIGIBLE_KINDS = Object.freeze(["audio", "image"]);
+
+/**
+ * Returns true when a media item is eligible for auto-caching on play/open.
+ */
+export function isAutoCacheEligible(item) {
+  if (!item) return false;
+  const kind = String(item.media_kind || "").toLowerCase();
+  if (!AUTO_CACHE_ELIGIBLE_KINDS.includes(kind)) return false;
+  if (typeof item.blob_size === "number" && item.blob_size > AUTO_CACHE_MAX_BYTES) return false;
+  return true;
+}
+
+// ── Non-pinned cached blobs ──────────────────────────────────────────
+
+/** In-flight download promises keyed by user-scoped asset key. */
+const _inFlightCacheDownloads = new Map();
+
+/**
+ * Store a non-pinned cached blob in IndexedDB.
+ *
+ * @param {string} assetName
+ * @param {Blob} blob
+ * @param {{ contentHash?: string, blobSize?: number, mediaKind?: string }} [opts]
+ * @returns {Promise<boolean>}
+ */
+export async function cacheMediaBlob(assetName, blob, { contentHash, blobSize, mediaKind } = {}) {
+  const key = userKey(assetName);
+  if (!key || !(blob instanceof Blob)) return false;
+
+  const now = Date.now();
+  const size = blobSize ?? blob.size ?? 0;
+
+  const [blobOk, metaOk] = await Promise.all([
+    cachedBlobStore.setValue(key, { blob }),
+    cachedBlobMetaStore.setValue(key, {
+      content_hash: contentHash || null,
+      blob_size: size,
+      media_kind: mediaKind || null,
+      cached_at: now,
+      last_accessed_at: now,
+      pinned: false,
+    }),
+  ]);
+
+  return blobOk && metaOk;
+}
+
+/**
+ * Retrieve a non-pinned cached blob.
+ * Returns null when no cached blob exists.
+ */
+export async function getCachedMediaBlob(assetName) {
+  const key = userKey(assetName);
+  if (!key) return null;
+  const entry = await cachedBlobStore.getValue(key);
+  return entry?.blob || null;
+}
+
+/**
+ * Retrieve metadata for a non-pinned cached blob.
+ * Returns null when no cached blob metadata exists.
+ */
+export async function getCachedBlobMeta(assetName) {
+  const key = userKey(assetName);
+  if (!key) return null;
+  const entry = await cachedBlobMetaStore.getValue(key);
+  if (!entry) return null;
+  return {
+    content_hash: entry.content_hash || null,
+    blob_size: entry.blob_size ?? 0,
+    media_kind: entry.media_kind || null,
+    cached_at: entry.cached_at || null,
+    last_accessed_at: entry.last_accessed_at || null,
+    pinned: false,
+  };
+}
+
+/**
+ * Update last_accessed_at for a cached blob (touch on use).
+ */
+export async function touchCachedBlobAccess(assetName) {
+  const key = userKey(assetName);
+  if (!key) return false;
+  const entry = await cachedBlobMetaStore.getValue(key);
+  if (!entry) return false;
+  return cachedBlobMetaStore.setValue(key, {
+    ...entry,
+    last_accessed_at: Date.now(),
+  });
+}
+
+/**
+ * Remove a non-pinned cached blob and its metadata.
+ */
+export async function removeCachedMediaBlob(assetName) {
+  const key = userKey(assetName);
+  if (!key) return false;
+  const [a, b] = await Promise.all([
+    cachedBlobStore.deleteValue(key),
+    cachedBlobMetaStore.deleteValue(key),
+  ]);
+  return a || b;
+}
+
+/**
+ * Get the best local blob for an asset, preferring pinned over cached.
+ *
+ * Returns ``{ blob, source, contentHash }`` or null.
+ * ``source`` is ``"pinned"`` or ``"cached"``.
+ */
+export async function getLocalMediaBlob(assetName) {
+  const key = userKey(assetName);
+  if (!key) return null;
+
+  // Pinned blobs have highest priority.
+  const pinnedEntry = await blobStore.getValue(key);
+  if (pinnedEntry?.blob) {
+    return {
+      blob: pinnedEntry.blob,
+      source: "pinned",
+      contentHash: pinnedEntry.content_hash || null,
+    };
+  }
+
+  // Non-pinned cache is second priority.
+  const cachedEntry = await cachedBlobStore.getValue(key);
+  if (cachedEntry?.blob) {
+    // Touch access time in background.
+    touchCachedBlobAccess(assetName).catch(() => {});
+    const meta = await cachedBlobMetaStore.getValue(key).catch(() => null);
+    return {
+      blob: cachedEntry.blob,
+      source: "cached",
+      contentHash: meta?.content_hash || null,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Get combined metadata for any local blob (pinned or cached).
+ */
+export async function getLocalBlobMeta(assetName) {
+  const key = userKey(assetName);
+  if (!key) return null;
+
+  const pinnedEntry = await blobStore.getValue(key);
+  if (pinnedEntry) {
+    return {
+      content_hash: pinnedEntry.content_hash || null,
+      pinned: true,
+      cached_at: pinnedEntry.pinned_at || null,
+      last_accessed_at: null,
+      blob_size: pinnedEntry.blob?.size ?? 0,
+      source: "pinned",
+    };
+  }
+
+  const cachedMeta = await cachedBlobMetaStore.getValue(key);
+  if (cachedMeta) {
+    return {
+      content_hash: cachedMeta.content_hash || null,
+      pinned: false,
+      cached_at: cachedMeta.cached_at || null,
+      last_accessed_at: cachedMeta.last_accessed_at || null,
+      blob_size: cachedMeta.blob_size ?? 0,
+      source: "cached",
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Check whether an in-flight auto-cache download is already running
+ * for the given asset.
+ */
+export function isAutoCacheInFlight(assetName) {
+  const key = userKey(assetName);
+  return key ? _inFlightCacheDownloads.has(key) : false;
+}
+
+/**
+ * Register an in-flight auto-cache download promise.
+ * Returns false if one is already in progress (dedup).
+ * The promise is removed from the map when it settles.
+ */
+export function registerAutoCacheDownload(assetName, downloadPromise) {
+  const key = userKey(assetName);
+  if (!key) return false;
+  if (_inFlightCacheDownloads.has(key)) return false;
+
+  const cleanup = () => { _inFlightCacheDownloads.delete(key); };
+  const tracked = downloadPromise.then(cleanup, cleanup);
+  _inFlightCacheDownloads.set(key, tracked);
+  return true;
+}
+
+/**
+ * Derive the local availability state for a media item.
+ *
+ * @param {object} item - Media asset with name/content_hash fields.
+ * @param {{ pinnedNames?: Set, stalePinnedNames?: Set }} [state]
+ * @returns {"cloud-only"|"caching-locally"|"available-offline"|"outdated-local"}
+ */
+export function deriveLocalAvailability(item, { pinnedNames, stalePinnedNames } = {}) {
+  if (!item?.name) return "cloud-only";
+
+  // Check pinned state (passed from library state sets).
+  const isPinned = pinnedNames?.has(item.name);
+  if (isPinned) {
+    const isStale = stalePinnedNames?.has(item.name);
+    return isStale ? "outdated-local" : "available-offline";
+  }
+
+  // Check non-pinned cache in-flight.
+  if (isAutoCacheInFlight(item.name)) return "caching-locally";
+
+  // Synchronous check not possible for IndexedDB — caller should use
+  // getLocalBlobMeta() for a definitive answer.  Return cloud-only as
+  // the safe default for render-time.
+  return "cloud-only";
 }
