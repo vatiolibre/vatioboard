@@ -1304,4 +1304,14 @@ describe('accel.html smoke', () => {
     expect(document.getElementById('resultReplayChartSheet').hidden).toBe(true);
     expect(fakeMaps[0].remove).toHaveBeenCalledTimes(1);
   });
+
+  it("injects a Player toggle into the tools menu", async () => {
+    await import("../../src/accel/accel.js");
+    await settleAsyncWork();
+
+    const btn = document.querySelector("#accelToolsMenuList [data-player-toggle]");
+    expect(btn).toBeTruthy();
+    expect(btn.querySelector(".btn-icon svg")).toBeTruthy();
+    expect(btn.textContent).toContain("player");
+  });
 });

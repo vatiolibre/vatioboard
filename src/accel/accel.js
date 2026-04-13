@@ -36,6 +36,7 @@ import {
 import { formatRouteString } from '../shared/route-string.js';
 import { hasStoredValue } from '../shared/storage.js';
 import { applyButtonIcon, initToolsMenu } from '../shared/tools-menu.js';
+import { integratePlayerWidget } from '../player/integrate-player-widget.js';
 import {
   hasConfiguredUnitPreferences,
   markUnitBootstrapManualSelection,
@@ -684,6 +685,7 @@ export const initPromise = (function () {
     bindMenuNavigation(elements.openGpsLabMenu, '/gps-rate');
     bindMenuNavigation(elements.openLibraryMenu, '/library.html?tab=accel');
     bindMenuNavigation(elements.openBoardMenu, '/');
+    integratePlayerWidget({ toolsMenuList: elements.toolsMenuList, toolsMenu });
     elements.setupTrigger.addEventListener('click', function () {
       togglePanel('setup', elements.setupTrigger);
     });
@@ -947,6 +949,7 @@ export const initPromise = (function () {
   }
 
   function handleKeyDown(event) {
+    if (event.target.closest('.player-panel')) return;
     if (event.key !== 'Escape' || !state.openPanel) return;
     event.preventDefault();
     if (state.replay.chartSheetOpen) {

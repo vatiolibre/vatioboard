@@ -47,6 +47,7 @@ import {
   SINGLE_TAB_OWNERSHIP_EVENT,
 } from '../shared/single-tab.js';
 import { applyButtonIcon, initToolsMenu } from '../shared/tools-menu.js';
+import { integratePlayerWidget } from '../player/integrate-player-widget.js';
 import {
   getReplayAxisRange,
   formatReplayDistanceValue,
@@ -1172,6 +1173,7 @@ function bindEvents() {
   bindMenuNavigation(elements.openReplayAccelMenu, '/accel');
   bindMenuNavigation(elements.openReplayLibraryMenu, '/library.html?tab=speed');
   bindMenuNavigation(elements.openReplayBoardMenu, '/');
+  integratePlayerWidget({ toolsMenuList: elements.replayToolsMenuList, toolsMenu });
 
   elements.replayOpenSpeed?.addEventListener('click', () => {
     window.location.href = '/speed';
@@ -1320,6 +1322,7 @@ function bindEvents() {
   });
 
   document.addEventListener('keydown', (event) => {
+    if (event.target.closest('.player-panel')) return;
     if (event.key === 'Escape' && state.expandedGraphOpen) {
       closeExpandedGraph();
     }

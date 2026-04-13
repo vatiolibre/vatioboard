@@ -79,6 +79,7 @@ import {
   openCloudReplaySession,
 } from "../shared/cloud-library-open.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
+import { integratePlayerWidget } from "../player/integrate-player-widget.js";
 import { initCloudSyncStatusIndicator } from "../shared/cloud-sync-status-indicator.js";
 
 applyTranslations();
@@ -2343,6 +2344,7 @@ function bindEvents() {
   bindMenuNavigation(elements.openReplayPage, "/replay.html");
   bindMenuNavigation(elements.openAccelPage, "/accel");
   bindMenuNavigation(elements.openGpsLabPage, "/gps-rate");
+  integratePlayerWidget({ toolsMenuList: elements.toolsMenuList, toolsMenu });
 
   window.addEventListener(BACKEND_AUTH_STATE_EVENT, (event) => {
     const detail = event?.detail || {};

@@ -13,6 +13,7 @@ import {
   reverseGeocodeBoundarySample,
 } from '../shared/route-boundary.js';
 import { applyButtonIcon, initToolsMenu } from '../shared/tools-menu.js';
+import { integratePlayerWidget } from '../player/integrate-player-widget.js';
 import {
   hasConfiguredUnitPreferences,
   markUnitBootstrapManualSelection,
@@ -1698,6 +1699,7 @@ function bindEvents() {
   bindMenuNavigation(elements.openAccelMenu, '/accel');
   bindMenuNavigation(elements.openGpsLabMenu, '/gps-rate');
   bindMenuNavigation(elements.openBoardMenu, '/');
+  integratePlayerWidget({ toolsMenuList: elements.toolsMenuList, toolsMenu, mediaSession: false });
   elements.retryGps.addEventListener('click', () => restartTrip({ fromUserGesture: true }));
   elements.resetTrip.addEventListener('click', () => restartTrip({ fromUserGesture: true }));
   elements.toggleRecording?.addEventListener('click', () => {
@@ -1813,6 +1815,7 @@ function bindEvents() {
     resumeVisibleRuntime();
   });
   document.addEventListener('pointerdown', (event) => {
+    if (event.target.closest('.player-panel')) return;
     audioController.handleUserGestureAudioActivation();
     const insideAlertUi =
       elements.alertPanel.contains(event.target) ||
@@ -1827,6 +1830,7 @@ function bindEvents() {
     closeAlertPanel();
   });
   document.addEventListener('keydown', (event) => {
+    if (event.target.closest('.player-panel')) return;
     audioController.handleUserGestureAudioActivation();
     audioController.syncOverspeedSound({ fromUserGesture: true });
     audioController.syncTrapSound({ fromUserGesture: true });

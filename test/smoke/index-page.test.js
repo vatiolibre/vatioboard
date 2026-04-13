@@ -664,4 +664,14 @@ describe("index.html smoke", () => {
       title: "Recovered sketch",
     });
   });
+
+  it("injects a Player toggle into the tools menu", async () => {
+    await import("../../src/board/board.js");
+    await flushBoardTasks();
+
+    const btn = document.querySelector("#toolsMenuList [data-player-toggle]");
+    expect(btn).toBeTruthy();
+    expect(btn.querySelector(".btn-icon svg")).toBeTruthy();
+    expect(btn.textContent).toContain("player");
+  });
 });

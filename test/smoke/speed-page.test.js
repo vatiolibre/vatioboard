@@ -361,4 +361,14 @@ describe('speed.html smoke', () => {
     });
     expect(finalArchivedSession.startPlace).not.toEqual(finalArchivedSession.endPlace);
   });
+
+  it("injects a Player toggle into the tools menu", async () => {
+    await import("../../src/speed/speed.js");
+    await settleAsyncWork();
+
+    const btn = document.querySelector("#speedToolsMenuList [data-player-toggle]");
+    expect(btn).toBeTruthy();
+    expect(btn.querySelector(".btn-icon svg")).toBeTruthy();
+    expect(btn.textContent).toContain("player");
+  });
 });

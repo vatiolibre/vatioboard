@@ -26,6 +26,16 @@ import { loadPlayerSession, savePlayerSession } from "./player-session.js";
 
 // ── State ────────────────────────────────────────────────────────────
 
+let mediaSessionEnabled = true;
+
+/**
+ * Enable or disable Media Session management by this runtime.
+ * Useful when another controller (e.g. speed audio) owns Media Session.
+ */
+export function setMediaSessionEnabled(enabled) {
+  mediaSessionEnabled = enabled;
+}
+
 const listeners = new Set();
 
 const state = {
@@ -291,7 +301,7 @@ export function stopPlayback() {
     currentSourceRevoke = null;
   }
 
-  clearMediaSession();
+  if (mediaSessionEnabled) clearMediaSession();
   persistSession();
   notify();
 }
@@ -577,7 +587,7 @@ function onPlay() {
     }
   }
 
-  setMediaSessionPlaybackState("playing");
+  if (mediaSessionEnabled) setMediaSessionPlaybackState("playing");
   startPositionSync();
   persistSession();
   notify();
@@ -585,7 +595,7 @@ function onPlay() {
 
 function onPause() {
   // Only mark paused if not a temporary interruption (e.g. seeking)
-  setMediaSessionPlaybackState("paused");
+  if (mediaSessionEnabled) setMediaSessionPlaybackState("paused");
   stopPositionSync();
   persistSession();
   notify();
@@ -633,6 +643,7 @@ function onPlaying() {
 // ── Media Session ────────────────────────────────────────────────────
 
 function updateMediaSessionMetadata() {
+  if (!mediaSessionEnabled) return;
   const track = state.currentTrack;
   if (!track) return;
 
@@ -656,6 +667,7 @@ function updateMediaSessionMetadata() {
 }
 
 function syncPositionState() {
+  if (!mediaSessionEnabled) return;
   const el = audio;
   if (!el) return;
   setMediaSessionPositionState({

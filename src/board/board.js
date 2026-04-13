@@ -6,6 +6,7 @@ import "../styles/dock.less";
 import "../shared/ui/confirm-dialog.less";
 
 import { createCalculatorWidget } from "../calculator/calculator-widget.js";
+import { integratePlayerWidget } from "../player/integrate-player-widget.js";
 import {
   clearCurrentBoardDocumentMeta,
   loadBoardDrawing,
@@ -170,6 +171,8 @@ bindNavigation(openSpeedBtn, "/speed");
 bindNavigation(openSpeedMenuBtn, "/speed");
 bindNavigation(openAccelMenuBtn, "/accel");
 bindNavigation(openLibraryMenuBtn, "/library.html?tab=board_documents");
+
+integratePlayerWidget({ toolsMenuList, toolsMenu });
 
   (function(){
     const canvas = document.getElementById("pad");

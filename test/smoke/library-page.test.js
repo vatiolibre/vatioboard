@@ -1300,4 +1300,14 @@ describe("library.html smoke", () => {
       createElementSpy.mockRestore();
     }
   });
+
+  it("injects a Player toggle into the tools menu", async () => {
+    await import("../../src/library/library.js");
+    await settleLibraryTasks();
+
+    const btn = document.querySelector("#libraryToolsMenuList [data-player-toggle]");
+    expect(btn).toBeTruthy();
+    expect(btn.querySelector(".btn-icon svg")).toBeTruthy();
+    expect(btn.textContent).toContain("player");
+  });
 });

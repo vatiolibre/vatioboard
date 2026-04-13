@@ -1348,4 +1348,14 @@ describe('replay.html smoke', () => {
 
     vi.useRealTimers();
   });
+
+  it("injects a Player toggle into the tools menu", async () => {
+    await import("../../src/replay/replay.js");
+    await settleAsyncWork();
+
+    const btn = document.querySelector("#replayToolsMenuList [data-player-toggle]");
+    expect(btn).toBeTruthy();
+    expect(btn.querySelector(".btn-icon svg")).toBeTruthy();
+    expect(btn.textContent).toContain("player");
+  });
 });
