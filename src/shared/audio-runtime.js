@@ -565,7 +565,15 @@ function onPlay() {
     state.remoteSessionActive = true;
     // Trigger background cache non-blockingly
     if (state.currentTrack) {
-      triggerBackgroundCache(state.currentTrack.name, state.currentTrack);
+      const cachedName = state.currentTrack.name;
+      triggerBackgroundCache(state.currentTrack.name, state.currentTrack, {
+        onCached() {
+          for (const track of state.queue) {
+            if (track.name === cachedName) track._offline = true;
+          }
+          notify();
+        },
+      });
     }
   }
 

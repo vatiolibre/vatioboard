@@ -331,6 +331,7 @@ export function createPlayerShell({ container }) {
 
     // Queue active indicator
     renderQueueActive(s.currentTrack?.name);
+    updateOfflineBadges(s.queue);
   }
 
   function renderTrackList(filter = "") {
@@ -383,6 +384,30 @@ export function createPlayerShell({ container }) {
       if (li.dataset?.trackName) {
         li.classList.toggle("active", li.dataset.trackName === currentName);
       }
+    }
+  }
+
+  function updateOfflineBadges(queue) {
+    const newOffline = new Set();
+    for (const track of queue) {
+      if (track._offline) newOffline.add(track.name);
+    }
+    if (newOffline.size === 0) return;
+
+    // Update existing badge DOM nodes without full re-render
+    for (const li of trackListUl.children) {
+      const name = li.dataset?.trackName;
+      if (!name || !newOffline.has(name)) continue;
+      const badge = li.querySelector(".player-queue-item-badge");
+      if (badge && !badge.classList.contains("offline")) {
+        badge.classList.add("offline");
+        badge.title = t("playerOffline");
+      }
+    }
+
+    // Sync allTracks so queue re-renders preserve the badge
+    for (const track of allTracks) {
+      if (newOffline.has(track.name)) track._offline = true;
     }
   }
 

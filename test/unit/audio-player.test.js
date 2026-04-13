@@ -37,6 +37,7 @@ const backendAuthMock = {
   }),
   getBackendMediaManifest: vi.fn().mockResolvedValue({ ok: false, assets: [] }),
   getBackendManifestVersion: vi.fn().mockResolvedValue({ ok: false }),
+  fetchBackendMediaAssetBlob: vi.fn().mockResolvedValue(new Response("", { status: 404 })),
 };
 
 vi.mock("../../src/shared/backend-auth.js", () => backendAuthMock);
@@ -93,6 +94,7 @@ describe("audio-source-resolver", () => {
       },
       asset: { content_hash: "hash_a" },
     });
+    backendAuthMock.fetchBackendMediaAssetBlob.mockResolvedValue(new Response("", { status: 404 }));
     mediaAccessCacheMock.getCachedMediaAccess.mockReturnValue(null);
 
     const mod = await import("../../src/shared/audio-source-resolver.js");
@@ -112,7 +114,7 @@ describe("audio-source-resolver", () => {
     mediaCacheMock.getLocalMediaBlob.mockResolvedValueOnce({
       blob,
       source: "pinned",
-      contentHash: "hash_a",
+      contentHash: "hash_asset_a",
     });
 
     const result = await resolveAudioSource("asset_a", TRACK_A);
@@ -197,6 +199,167 @@ describe("audio-source-resolver", () => {
       "asset_a",
       expect.any(Function),
     );
+  });
+
+  it("skips stale local blob when content_hash differs", async () => {
+    const blob = new Blob(["old audio"], { type: "audio/mp3" });
+    mediaCacheMock.getLocalMediaBlob.mockResolvedValueOnce({
+      blob,
+      source: "cached",
+      contentHash: "old_hash",
+    });
+
+    const result = await resolveAudioSource("asset_a", { ...TRACK_A, content_hash: "new_hash" });
+
+    expect(result).toBeTruthy();
+    expect(result.type).toBe("remote");
+    expect(result.src).toBe("https://cdn.example.com/signed/asset_a.mp3");
+  });
+
+  it("uses fresh local blob when content_hash matches", async () => {
+    const blob = new Blob(["audio"], { type: "audio/mp3" });
+    mediaCacheMock.getLocalMediaBlob.mockResolvedValueOnce({
+      blob,
+      source: "cached",
+      contentHash: "hash_a",
+    });
+
+    const result = await resolveAudioSource("asset_a", { ...TRACK_A, content_hash: "hash_a" });
+
+    expect(result).toBeTruthy();
+    expect(result.type).toBe("blob");
+  });
+
+  it("triggerBackgroundCache prefers signed download URL", async () => {
+    mediaCacheMock.isAutoCacheEligible.mockReturnValueOnce(true);
+    mediaCacheMock.getLocalBlobMeta.mockResolvedValueOnce(null);
+
+    let factory;
+    mediaCacheMock.registerAutoCacheDownload.mockImplementationOnce((name, fn) => {
+      factory = fn;
+      return true;
+    });
+
+    backendAuthMock.getBackendMediaAssetAccess.mockResolvedValueOnce({
+      ok: true,
+      access: {
+        download_url: "https://cdn.example.com/dl/asset_a.mp3",
+        expires_in_seconds: 300,
+      },
+      asset: { content_hash: "hash_a" },
+    });
+
+    const dlBlob = new Blob(["audio"], { type: "audio/mp3" });
+    const fetchFn = vi.fn().mockResolvedValue(new Response(dlBlob, { status: 200 }));
+
+    triggerBackgroundCache("asset_a", TRACK_A, { fetchFn });
+
+    expect(factory).toBeDefined();
+    await factory();
+
+    expect(backendAuthMock.getBackendMediaAssetAccess).toHaveBeenCalledWith({
+      name: "asset_a",
+      intent: "download",
+    });
+    expect(fetchFn).toHaveBeenCalledWith("https://cdn.example.com/dl/asset_a.mp3");
+    expect(mediaCacheMock.cacheMediaBlob).toHaveBeenCalled();
+  });
+
+  it("triggerBackgroundCache falls back to backend blob fetch when signed URL fails", async () => {
+    mediaCacheMock.isAutoCacheEligible.mockReturnValueOnce(true);
+    mediaCacheMock.getLocalBlobMeta.mockResolvedValueOnce(null);
+
+    let factory;
+    mediaCacheMock.registerAutoCacheDownload.mockImplementationOnce((name, fn) => {
+      factory = fn;
+      return true;
+    });
+
+    // Signed download fails
+    backendAuthMock.getBackendMediaAssetAccess.mockRejectedValueOnce(new Error("network"));
+
+    // Backend blob stream succeeds
+    const dlBlob = new Blob(["audio"], { type: "audio/mp3" });
+    backendAuthMock.fetchBackendMediaAssetBlob.mockResolvedValueOnce(
+      new Response(dlBlob, { status: 200 }),
+    );
+
+    triggerBackgroundCache("asset_a", TRACK_A);
+
+    expect(factory).toBeDefined();
+    await factory();
+
+    expect(backendAuthMock.fetchBackendMediaAssetBlob).toHaveBeenCalledWith({ name: "asset_a" });
+    expect(mediaCacheMock.cacheMediaBlob).toHaveBeenCalled();
+  });
+
+  it("triggerBackgroundCache skips download when local blob is fresh", async () => {
+    mediaCacheMock.isAutoCacheEligible.mockReturnValueOnce(true);
+    mediaCacheMock.getLocalBlobMeta.mockResolvedValueOnce({
+      content_hash: "hash_a",
+      source: "cached",
+    });
+
+    let factory;
+    mediaCacheMock.registerAutoCacheDownload.mockImplementationOnce((name, fn) => {
+      factory = fn;
+      return true;
+    });
+
+    triggerBackgroundCache("asset_a", { ...TRACK_A, content_hash: "hash_a" });
+
+    expect(factory).toBeDefined();
+    await factory();
+
+    // Fresh local blob — no download should occur
+    expect(backendAuthMock.getBackendMediaAssetAccess).not.toHaveBeenCalled();
+    expect(mediaCacheMock.cacheMediaBlob).not.toHaveBeenCalled();
+  });
+
+  it("triggerBackgroundCache calls onCached callback on success", async () => {
+    mediaCacheMock.isAutoCacheEligible.mockReturnValueOnce(true);
+    mediaCacheMock.getLocalBlobMeta.mockResolvedValueOnce(null);
+    mediaCacheMock.cacheMediaBlob.mockResolvedValueOnce(true);
+
+    let factory;
+    mediaCacheMock.registerAutoCacheDownload.mockImplementationOnce((name, fn) => {
+      factory = fn;
+      return true;
+    });
+
+    backendAuthMock.getBackendMediaAssetAccess.mockResolvedValueOnce({
+      ok: true,
+      access: {
+        download_url: "https://cdn.example.com/dl/asset_a.mp3",
+        expires_in_seconds: 300,
+      },
+      asset: { content_hash: "hash_a" },
+    });
+
+    const dlBlob = new Blob(["audio"], { type: "audio/mp3" });
+    const fetchFn = vi.fn().mockResolvedValue(new Response(dlBlob, { status: 200 }));
+    const onCached = vi.fn();
+
+    triggerBackgroundCache("asset_a", TRACK_A, { fetchFn, onCached });
+
+    expect(factory).toBeDefined();
+    await factory();
+
+    expect(onCached).toHaveBeenCalledTimes(1);
+  });
+
+  it("triggerBackgroundCache does not duplicate download for same asset", () => {
+    mediaCacheMock.isAutoCacheEligible.mockReturnValue(true);
+    // First call claims the download slot
+    mediaCacheMock.registerAutoCacheDownload.mockReturnValueOnce(true);
+    triggerBackgroundCache("asset_a", TRACK_A);
+    expect(mediaCacheMock.registerAutoCacheDownload).toHaveBeenCalledTimes(1);
+
+    // Second call — registerAutoCacheDownload returns false (already in-flight)
+    mediaCacheMock.registerAutoCacheDownload.mockReturnValueOnce(false);
+    triggerBackgroundCache("asset_a", TRACK_A);
+    expect(mediaCacheMock.registerAutoCacheDownload).toHaveBeenCalledTimes(2);
+    // The dedup is enforced by registerAutoCacheDownload returning false
   });
 });
 
@@ -407,6 +570,7 @@ describe("audio-runtime", () => {
       }),
       getBackendMediaManifest: vi.fn().mockResolvedValue({ ok: false, assets: [] }),
       getBackendManifestVersion: vi.fn().mockResolvedValue({ ok: false }),
+      fetchBackendMediaAssetBlob: vi.fn().mockResolvedValue(new Response("", { status: 404 })),
     }));
 
     vi.doMock("../../src/shared/media-access-cache.js", () => ({
@@ -718,6 +882,7 @@ describe("audio-catalog", () => {
       getBackendMediaManifest: vi.fn().mockResolvedValue({ ok: false, assets: [] }),
       getBackendManifestVersion: vi.fn().mockResolvedValue({ ok: false }),
       getBackendMediaAssetAccess: vi.fn().mockResolvedValue({ ok: false, access: null }),
+      fetchBackendMediaAssetBlob: vi.fn().mockResolvedValue(new Response("", { status: 404 })),
     }));
 
     vi.doMock("../../src/shared/media-access-cache.js", () => ({
@@ -785,6 +950,7 @@ describe("player-shell", () => {
       getBackendMediaAssetAccess: vi.fn().mockResolvedValue({ ok: false, access: null }),
       getBackendMediaManifest: vi.fn().mockResolvedValue({ ok: false, assets: [] }),
       getBackendManifestVersion: vi.fn().mockResolvedValue({ ok: false }),
+      fetchBackendMediaAssetBlob: vi.fn().mockResolvedValue(new Response("", { status: 404 })),
     }));
 
     vi.doMock("../../src/shared/media-access-cache.js", () => ({
@@ -906,6 +1072,30 @@ describe("player-shell", () => {
 
     await vi.waitFor(() => {
       expect(trackItem.classList.contains("active")).toBe(true);
+    });
+
+    shell.destroy();
+  });
+
+  it("offline badge updates when queue track is marked _offline", async () => {
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+
+    // Open queue sheet and set tracks (initially not offline)
+    container.querySelector(".player-queue-toggle-btn").click();
+    shell.setTracks([{ ...TRACK_A, _offline: false }, TRACK_B]);
+
+    const badgeBefore = container.querySelector('[data-track-name="asset_a"] .player-queue-item-badge');
+    expect(badgeBefore).toBeTruthy();
+    expect(badgeBefore.classList.contains("offline")).toBe(false);
+
+    // Simulate runtime notifying that asset_a is now cached:
+    // set queue with _offline = true and trigger renderState via subscriber.
+    runtime.setQueue([{ ...TRACK_A, _offline: true }, TRACK_B], { autoplay: false });
+
+    await vi.waitFor(() => {
+      const badge = container.querySelector('[data-track-name="asset_a"] .player-queue-item-badge');
+      expect(badge.classList.contains("offline")).toBe(true);
     });
 
     shell.destroy();

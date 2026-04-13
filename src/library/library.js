@@ -67,6 +67,7 @@ import {
   deriveLocalAvailability,
   removeCachedMediaBlob,
 } from "../shared/media-cache.js";
+import { triggerBackgroundCache } from "../shared/audio-source-resolver.js";
 import { getResourceConfig } from "./resource-registry.js";
 import { createLibraryMapPreview } from "./library-map-preview.js";
 import { createLibraryMediaPlayer } from "./library-media-player.js";
@@ -309,48 +310,14 @@ async function triggerAutoCacheDownload(assetName, asset) {
   if (state.pinnedNames.has(assetName) && !state.stalePinnedNames.has(assetName)) return;
   if (state.cachedBlobNames.has(assetName) && !state.staleCachedNames.has(assetName)) return;
 
-  const doDownload = async () => {
-    // Resolve a signed download URL.
-    const access = await resolveMediaAccess(assetName, asset.content_hash, { intent: "download" }).catch(() => null);
-    const signedUrl = access?.download_url;
-
-    let response;
-    if (signedUrl) {
-      try {
-        response = await fetch(signedUrl);
-        if (!response.ok) response = null;
-      } catch {
-        response = null;
-      }
-    }
-
-    // Fallback: stream through the backend.
-    if (!response) {
-      response = await fetchBackendMediaAssetBlob({ name: assetName });
-    }
-
-    if (!response.ok) return;
-    const blob = await response.blob();
-
-    const ok = await cacheMediaBlob(assetName, blob, {
-      contentHash: asset.content_hash || null,
-      blobSize: blob.size,
-      mediaKind: asset.media_kind || null,
-    });
-
-    // Update state so the UI reflects the new local availability,
-    // but only when persistence fully succeeded.
-    if (ok) {
+  triggerBackgroundCache(assetName, asset, {
+    onCached() {
       state.cachedBlobNames.add(assetName);
       state.staleCachedNames.delete(assetName);
       renderList();
       renderDetail();
-    }
-  };
-
-  // Pass a factory — the download starts only if no in-flight download
-  // already exists for this asset.
-  registerAutoCacheDownload(assetName, doDownload);
+    },
+  });
 }
 
 /**

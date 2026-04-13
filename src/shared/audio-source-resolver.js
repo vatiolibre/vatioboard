@@ -6,7 +6,7 @@ import {
   cacheMediaBlob,
 } from "./media-cache.js";
 import { getEnvironmentConfig } from "./environment.js";
-import { getBackendMediaAssetAccess } from "./backend-auth.js";
+import { getBackendMediaAssetAccess, fetchBackendMediaAssetBlob } from "./backend-auth.js";
 import { getCachedMediaAccess, setCachedMediaAccess } from "./media-access-cache.js";
 
 /**
@@ -31,15 +31,23 @@ export async function resolveAudioSource(assetName, asset) {
   try {
     const local = await getLocalMediaBlob(assetName);
     if (local?.blob) {
-      const url = URL.createObjectURL(local.blob);
-      return {
-        src: url,
-        type: "blob",
-        blob: local.blob,
-        source: local.source,
-        contentHash: local.contentHash,
-        revokeUrl() { URL.revokeObjectURL(url); },
-      };
+      // Staleness check: if both local and remote content_hash exist
+      // and differ, treat the local blob as stale — skip to remote.
+      const localHash = local.contentHash;
+      const remoteHash = asset?.content_hash;
+      if (localHash && remoteHash && localHash !== remoteHash) {
+        // Stale local blob — fall through to remote
+      } else {
+        const url = URL.createObjectURL(local.blob);
+        return {
+          src: url,
+          type: "blob",
+          blob: local.blob,
+          source: local.source,
+          contentHash: local.contentHash,
+          revokeUrl() { URL.revokeObjectURL(url); },
+        };
+      }
     }
   } catch {
     // IndexedDB unavailable — fall through to remote
@@ -101,33 +109,77 @@ export function buildRemotePlaybackUrl(assetName, asset) {
 
 /**
  * Trigger a non-blocking background cache download for an audio asset.
- * Follows the same contract as library.js triggerAutoCacheDownload:
+ *
+ * Shared by both /library and /player pages:
  *  - deduplicates via registerAutoCacheDownload
- *  - resolves a signed URL on demand, falls back to BFF streaming
+ *  - skips download when local blob is already fresh (content_hash match)
+ *  - prefers getBackendMediaAssetAccess({ intent: "download" }) signed URL
+ *  - falls back to fetchBackendMediaAssetBlob (BFF stream with credentials)
+ *  - final fallback to stable BFF streaming URL
  *  - does NOT interrupt active playback
+ *  - never persists signed URLs to IndexedDB (durable-cache contract)
  *
  * @param {string} assetName
  * @param {object} asset - Asset metadata (needs content_hash, media_kind, blob_size)
- * @param {{ fetchFn?: Function }} [opts]
+ * @param {{ onCached?: Function, fetchFn?: Function }} [opts]
  * @returns {void}
  */
-export function triggerBackgroundCache(assetName, asset, { fetchFn = fetch } = {}) {
+export function triggerBackgroundCache(assetName, asset, { onCached, fetchFn = fetch } = {}) {
   if (!assetName || !asset) return;
   if (!isAutoCacheEligible(asset)) return;
 
   const doDownload = async () => {
-    const streamUrl = buildRemotePlaybackUrl(assetName, asset);
-    if (!streamUrl) return;
+    // Skip if already locally cached with a matching (fresh) content hash.
+    try {
+      const meta = await getLocalBlobMeta(assetName);
+      if (meta?.content_hash && asset.content_hash && meta.content_hash === asset.content_hash) {
+        return;
+      }
+    } catch { /* proceed with download */ }
 
-    const response = await fetchFn(streamUrl);
-    if (!response.ok) return;
+    let response = null;
+
+    // 1. Prefer signed download URL via backend access endpoint.
+    try {
+      const result = await getBackendMediaAssetAccess({ name: assetName, intent: "download" });
+      const signedUrl = result?.access?.download_url;
+      if (signedUrl) {
+        const r = await fetchFn(signedUrl);
+        if (r.ok) response = r;
+      }
+    } catch { /* fall through */ }
+
+    // 2. Fallback: stream through the backend (includes credentials).
+    if (!response) {
+      try {
+        const r = await fetchBackendMediaAssetBlob({ name: assetName });
+        if (r.ok) response = r;
+      } catch { /* fall through */ }
+    }
+
+    // 3. Final fallback: stable BFF streaming URL.
+    if (!response) {
+      const streamUrl = buildRemotePlaybackUrl(assetName, asset);
+      if (streamUrl) {
+        try {
+          const r = await fetchFn(streamUrl);
+          if (r.ok) response = r;
+        } catch { /* no source available */ }
+      }
+    }
+
+    if (!response) return;
 
     const blob = await response.blob();
-    await cacheMediaBlob(assetName, blob, {
+    const ok = await cacheMediaBlob(assetName, blob, {
       contentHash: asset.content_hash || null,
       blobSize: blob.size,
       mediaKind: asset.media_kind || null,
     });
+
+    if (ok && typeof onCached === "function") {
+      try { onCached(); } catch { /* ignore callback errors */ }
+    }
   };
 
   registerAutoCacheDownload(assetName, doDownload);

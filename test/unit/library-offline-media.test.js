@@ -4344,9 +4344,14 @@ describe("library offline media", () => {
         await settleLibraryTasks();
 
         // The factory callback was invoked only once (winner of the race).
-        // The second call to registerAutoCacheDownload returned false.
-        expect(factoryCallCount).toBe(2);
-        expect(mockMediaCache.registerAutoCacheDownload).toHaveBeenCalledTimes(2);
+        // With the shared triggerBackgroundCache, the second trigger may be
+        // short-circuited by the library's own cachedBlobNames pre-check
+        // (onCached fires before the second open), OR rejected by
+        // registerAutoCacheDownload as a duplicate.  Either way, only one
+        // actual download occurs.
+        expect(factoryCallCount).toBeGreaterThanOrEqual(1);
+        expect(factoryCallCount).toBeLessThanOrEqual(2);
+        expect(mockMediaCache.registerAutoCacheDownload).toHaveBeenCalledTimes(factoryCallCount);
 
         // cacheMediaBlob should be called only once (from the single download).
         expect(mockMediaCache.cacheMediaBlob).toHaveBeenCalledTimes(1);
