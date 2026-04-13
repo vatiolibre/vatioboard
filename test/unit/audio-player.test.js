@@ -802,8 +802,8 @@ describe("player-shell", () => {
     const container = document.createElement("div");
     const shell = createPlayerShell({ container });
 
-    expect(container.querySelector(".player-shell")).toBeTruthy();
-    expect(container.querySelector(".player-artwork")).toBeTruthy();
+    expect(container.querySelector(".player-panel")).toBeTruthy();
+    expect(container.querySelector(".player-artwork-compact")).toBeTruthy();
     expect(container.querySelector(".player-transport")).toBeTruthy();
     expect(container.querySelector(".player-btn-play-main")).toBeTruthy();
     expect(container.querySelector(".player-btn-prev")).toBeTruthy();
@@ -817,30 +817,34 @@ describe("player-shell", () => {
   it("destroy removes the shell from the DOM", () => {
     const container = document.createElement("div");
     const shell = createPlayerShell({ container });
-    expect(container.querySelector(".player-shell")).toBeTruthy();
+    expect(container.querySelector(".player-panel")).toBeTruthy();
 
     shell.destroy();
-    expect(container.querySelector(".player-shell")).toBeNull();
+    expect(container.querySelector(".player-panel")).toBeNull();
   });
 
-  it("setTracks populates the track list", () => {
+  it("setTracks populates the track list when queue is open", () => {
     const container = document.createElement("div");
     const shell = createPlayerShell({ container });
 
+    // Open the queue sheet first, then set tracks
+    const queueBtn = container.querySelector(".player-queue-toggle-btn");
+    queueBtn.click();
+
     shell.setTracks([TRACK_A, TRACK_B]);
 
-    const items = container.querySelectorAll(".player-track-item");
+    const items = container.querySelectorAll(".player-queue-item");
     expect(items.length).toBe(2);
 
     shell.destroy();
   });
 
-  it("does not render a queue drawer", () => {
+  it("has a collapsible queue sheet instead of a drawer", () => {
     const container = document.createElement("div");
     const shell = createPlayerShell({ container });
 
     expect(container.querySelector(".player-queue-drawer")).toBeNull();
-    expect(container.querySelector(".player-btn-queue")).toBeNull();
+    expect(container.querySelector(".player-queue-sheet")).toBeTruthy();
 
     shell.destroy();
   });
@@ -891,6 +895,9 @@ describe("player-shell", () => {
   it("track item click does not throw and activates the selected track", async () => {
     const container = document.createElement("div");
     const shell = createPlayerShell({ container });
+
+    // Open queue sheet so items are rendered
+    container.querySelector(".player-queue-toggle-btn").click();
     shell.setTracks([TRACK_A, TRACK_B]);
 
     const trackItem = container.querySelector('[data-track-name="asset_b"]');

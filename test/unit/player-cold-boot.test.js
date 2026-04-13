@@ -51,6 +51,12 @@ async function settlePlayerTasks(iterations = 24) {
   }
 }
 
+/** Open the widget panel and queue sheet so track items appear in the DOM. */
+function openWidgetQueue(playerPage) {
+  playerPage.widget.open();
+  document.querySelector(".player-queue-toggle-btn")?.click();
+}
+
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -237,8 +243,11 @@ describe("player cold boot", () => {
       }),
     );
 
-    // Visible track items should be in the DOM
-    const trackItems = document.querySelectorAll(".player-track-item");
+    // Open the widget and queue to see track items in the DOM
+    openWidgetQueue(playerPage);
+    await settlePlayerTasks(4);
+
+    const trackItems = document.querySelectorAll(".player-queue-item");
     expect(trackItems.length).toBeGreaterThanOrEqual(2);
 
     // Should show audio titles
@@ -267,8 +276,11 @@ describe("player cold boot", () => {
     // Should restore persisted user (not set fresh)
     expect(mockMediaCache.restorePersistedMediaCacheUser).toHaveBeenCalled();
 
-    // Track items should appear from the cached manifest
-    const trackItems = document.querySelectorAll(".player-track-item");
+    // Open the widget and queue to see track items
+    openWidgetQueue(playerPage);
+    await settlePlayerTasks(4);
+
+    const trackItems = document.querySelectorAll(".player-queue-item");
     expect(trackItems.length).toBeGreaterThanOrEqual(2);
   });
 
@@ -290,8 +302,11 @@ describe("player cold boot", () => {
     // Auth should bootstrap independently
     expect(mockMediaCache.setMediaCacheUser).toHaveBeenCalledWith("player-user@vatiolibre.com");
 
-    // Tracks should be visible
-    const trackItems = document.querySelectorAll(".player-track-item");
+    // Open widget and queue to see tracks
+    openWidgetQueue(playerPage);
+    await settlePlayerTasks(4);
+
+    const trackItems = document.querySelectorAll(".player-queue-item");
     expect(trackItems.length).toBeGreaterThanOrEqual(1);
   });
 
@@ -307,7 +322,10 @@ describe("player cold boot", () => {
     await playerPage.initPromise;
     await settlePlayerTasks();
 
-    const trackItems = document.querySelectorAll(".player-track-item");
+    openWidgetQueue(playerPage);
+    await settlePlayerTasks(4);
+
+    const trackItems = document.querySelectorAll(".player-queue-item");
     const trackNames = Array.from(trackItems).map((li) => li.textContent);
 
     // Audio items (by media_kind or mime_type) should be included
@@ -331,11 +349,14 @@ describe("player cold boot", () => {
     await playerPage.initPromise;
     await settlePlayerTasks();
 
-    const trackItems = document.querySelectorAll(".player-track-item");
+    openWidgetQueue(playerPage);
+    await settlePlayerTasks(4);
+
+    const trackItems = document.querySelectorAll(".player-queue-item");
     expect(trackItems.length).toBe(0);
 
-    // Empty state should show
-    const emptyEl = document.querySelector(".player-track-list .player-queue-empty");
+    // Empty state should show in queue list
+    const emptyEl = document.querySelector(".player-queue-list .player-queue-empty");
     expect(emptyEl).toBeTruthy();
   });
 
@@ -351,14 +372,17 @@ describe("player cold boot", () => {
     await playerPage.initPromise;
     await settlePlayerTasks();
 
-    const trackItem = document.querySelector(".player-track-item");
+    openWidgetQueue(playerPage);
+    await settlePlayerTasks(4);
+
+    const trackItem = document.querySelector(".player-queue-item");
     expect(trackItem).toBeTruthy();
     expect(trackItem.textContent).toContain("Morning Ride");
   });
 
   // ── Track list is visible without toggling queue drawer ──────────
 
-  it("track list is visible without toggling the queue drawer", async () => {
+  it("queue sheet is accessible via toggle button", async () => {
     window.fetch = createAuthenticatedPlayerFetch();
 
     await bootHtmlPage("player.html");
@@ -366,13 +390,20 @@ describe("player cold boot", () => {
     await playerPage.initPromise;
     await settlePlayerTasks();
 
-    const trackListPanel = document.querySelector(".player-track-list");
-    expect(trackListPanel).toBeTruthy();
-    expect(trackListPanel.hidden).not.toBe(true);
+    // Widget panel exists and has a queue sheet
+    playerPage.widget.open();
+    const queueSheet = document.querySelector(".player-queue-sheet");
+    expect(queueSheet).toBeTruthy();
 
-    // Queue drawer should no longer exist (removed — single surface)
-    const queueDrawer = document.querySelector(".player-queue-drawer");
-    expect(queueDrawer).toBeNull();
+    // Queue is initially collapsed
+    expect(queueSheet.classList.contains("is-open")).toBe(false);
+
+    // Click the toggle to open
+    document.querySelector(".player-queue-toggle-btn")?.click();
+    expect(queueSheet.classList.contains("is-open")).toBe(true);
+
+    // Old queue drawer should not exist
+    expect(document.querySelector(".player-queue-drawer")).toBeNull();
   });
 
   // ── Unauthenticated visit clears namespace ───────────────────────
@@ -398,14 +429,18 @@ describe("player cold boot", () => {
     await playerPage.initPromise;
     await settlePlayerTasks();
 
-    const searchInput = document.querySelector(".player-search");
+    // Open widget and queue
+    openWidgetQueue(playerPage);
+    await settlePlayerTasks(4);
+
+    const searchInput = document.querySelector(".player-queue-search");
     expect(searchInput).toBeTruthy();
 
     // Type a filter
     searchInput.value = "Highway";
     searchInput.dispatchEvent(new Event("input", { bubbles: true }));
 
-    const trackItems = document.querySelectorAll(".player-track-item");
+    const trackItems = document.querySelectorAll(".player-queue-item");
     expect(trackItems.length).toBe(1);
     expect(trackItems[0].textContent).toContain("Highway Run");
   });

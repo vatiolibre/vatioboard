@@ -7,28 +7,21 @@ describe("player.html smoke", () => {
     await bootHtmlPage("player.html");
   });
 
-  it("boots the player page with correct SEO", async () => {
-    // Mock the async catalog/runtime imports so boot completes
-    vi.doMock("../../src/shared/media-cache.js", () => ({
-      getCachedManifestSnapshot: vi.fn().mockResolvedValue({ assets: [] }),
-      getCachedMediaManifest: vi.fn().mockResolvedValue([]),
-      getLocalMediaBlob: vi.fn().mockResolvedValue(null),
-      getLocalBlobMeta: vi.fn().mockResolvedValue(null),
-      isAutoCacheEligible: vi.fn().mockReturnValue(false),
-      registerAutoCacheDownload: vi.fn(),
-      cacheMediaBlob: vi.fn().mockResolvedValue(undefined),
-    }));
-
-    await import("../../src/player/player-demo.js");
-    await flushTasks();
-
+  it("boots the player demo page with correct SEO", async () => {
     expectPageSeo({
       title: "VatioBoard Audio Player",
       hasDescription: false,
     });
+  });
 
-    const root = document.getElementById("player-root");
-    expect(root).toBeTruthy();
-    expect(root.querySelector(".player-shell")).toBeTruthy();
+  it("has the demo button", () => {
+    const btn = document.getElementById("openPlayer");
+    expect(btn).toBeTruthy();
+    expect(btn.tagName).toBe("BUTTON");
+  });
+
+  it("has the demo page layout", () => {
+    expect(document.querySelector(".player-demo")).toBeTruthy();
+    expect(document.querySelector(".player-demo h1")).toBeTruthy();
   });
 });

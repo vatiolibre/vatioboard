@@ -1,18 +1,18 @@
 /**
- * Player shell.
+ * Player shell — compact embeddable panel renderer.
  *
- * Full-page audio player UI component.  Renders artwork, metadata,
- * transport controls, progress bar, volume, queue drawer, and offline
- * indicators.  Communicates with the audio-runtime singleton — the
- * shell owns zero playback logic.
+ * Renders now-playing metadata, transport controls, progress, volume,
+ * and a collapsible queue bottom-sheet.  Communicates with the
+ * audio-runtime singleton — the shell owns zero playback logic.
  *
- * Mount into any container via createPlayerShell({ container }).
+ * Designed to be mounted inside a draggable widget container by
+ * createPlayerWidget().  Not a full-page layout.
  */
 
 import {
   IconPlay, IconPause, IconSkipBack, IconSkipForward,
   IconRepeat, IconShuffle, IconVolume, IconMuted,
-  IconMusic,
+  IconMusic, IconClose, IconQueue,
 } from "../icons.js";
 import { t } from "../i18n.js";
 import * as runtime from "../shared/audio-runtime.js";
@@ -36,25 +36,53 @@ function formatTime(seconds) {
 }
 
 /**
- * Create and mount the player shell.
+ * Create the compact player panel.
  *
- * @param {{ container: HTMLElement, onTrackSelect?: (track: object) => void }} opts
- * @returns {{ destroy: () => void, setTracks: (tracks: object[]) => void }}
+ * @param {{ container: HTMLElement }} opts
+ * @returns {{
+ *   root: HTMLElement,
+ *   header: HTMLElement,
+ *   closeBtn: HTMLElement,
+ *   destroy: () => void,
+ *   setTracks: (tracks: object[]) => void,
+ * }}
  */
-export function createPlayerShell({ container, onTrackSelect }) {
-  // ── Root element ───────────────────────────────────────────────
-  const root = document.createElement("div");
-  root.className = "player-shell";
+export function createPlayerShell({ container }) {
+  // ── Root panel ─────────────────────────────────────────────────
+  const root = document.createElement("section");
+  root.className = "player-panel";
+  root.hidden = true;
+  root.setAttribute("role", "dialog");
+  root.setAttribute("aria-label", t("playerNowPlaying"));
 
-  // ── Artwork stage ──────────────────────────────────────────────
-  const artworkStage = document.createElement("div");
-  artworkStage.className = "player-artwork";
-  const artworkImg = document.createElement("div");
-  artworkImg.className = "player-artwork-inner";
-  artworkImg.innerHTML = IconMusic;
-  artworkStage.append(artworkImg);
+  // ── Header (drag handle) ───────────────────────────────────────
+  const header = document.createElement("div");
+  header.className = "player-header";
 
-  // ── Metadata ───────────────────────────────────────────────────
+  const titleEl = document.createElement("div");
+  titleEl.className = "player-title";
+  titleEl.textContent = t("playerNowPlaying");
+
+  const queueToggleBtn = makeBtn("player-queue-toggle-btn", IconQueue, t("playerQueue"));
+
+  const spacer = document.createElement("div");
+  spacer.className = "player-spacer";
+
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "player-close";
+  closeBtn.textContent = t("close");
+
+  header.append(titleEl, queueToggleBtn, spacer, closeBtn);
+
+  // ── Now-playing row (compact artwork + metadata) ───────────────
+  const nowPlaying = document.createElement("div");
+  nowPlaying.className = "player-now-playing";
+
+  const artworkCompact = document.createElement("div");
+  artworkCompact.className = "player-artwork-compact";
+  artworkCompact.innerHTML = IconMusic;
+
   const metaSection = document.createElement("div");
   metaSection.className = "player-meta";
   const metaTitle = document.createElement("div");
@@ -62,15 +90,14 @@ export function createPlayerShell({ container, onTrackSelect }) {
   metaTitle.textContent = t("playerNowPlaying");
   const metaArtist = document.createElement("div");
   metaArtist.className = "player-meta-artist";
-  metaSection.append(metaTitle, metaArtist);
-
-  // ── Source badge ───────────────────────────────────────────────
   const sourceBadge = document.createElement("span");
   sourceBadge.className = "player-source-badge";
   sourceBadge.hidden = true;
-  metaSection.append(sourceBadge);
+  metaSection.append(metaTitle, metaArtist, sourceBadge);
 
-  // ── Error message ──────────────────────────────────────────────
+  nowPlaying.append(artworkCompact, metaSection);
+
+  // ── Error ──────────────────────────────────────────────────────
   const errorMsg = document.createElement("div");
   errorMsg.className = "player-error";
   errorMsg.hidden = true;
@@ -97,7 +124,6 @@ export function createPlayerShell({ container, onTrackSelect }) {
   timeTotal.className = "player-time-total";
   timeTotal.textContent = "0:00";
   timeRow.append(timeCurrent, timeTotal);
-
   progressSection.append(progressBar, timeRow);
 
   // ── Transport controls ─────────────────────────────────────────
@@ -129,57 +155,77 @@ export function createPlayerShell({ container, onTrackSelect }) {
 
   volumeRow.append(muteBtn, volumeSlider);
 
-  // ── Search bar ─────────────────────────────────────────────────
-  const searchBar = document.createElement("input");
-  searchBar.type = "search";
-  searchBar.className = "player-search";
-  searchBar.placeholder = t("playerSearch");
-  searchBar.setAttribute("aria-label", t("playerSearch"));
+  // ── Queue bottom sheet ─────────────────────────────────────────
+  const queueSheet = document.createElement("div");
+  queueSheet.className = "player-queue-sheet";
+  queueSheet.setAttribute("aria-hidden", "true");
 
-  // ── Track list (visible by default) ─────────────────────────────
-  const trackList = document.createElement("div");
-  trackList.className = "player-track-list";
+  const queueSheetHeader = document.createElement("div");
+  queueSheetHeader.className = "player-queue-sheet-header";
 
-  const trackListHeader = document.createElement("div");
-  trackListHeader.className = "player-track-list-header";
-  const trackListTitle = document.createElement("span");
-  trackListTitle.className = "player-track-list-title";
-  trackListTitle.textContent = t("playerQueue");
-  trackListHeader.append(trackListTitle);
+  const queueSheetTitle = document.createElement("span");
+  queueSheetTitle.textContent = t("playerQueue");
+
+  const searchInput = document.createElement("input");
+  searchInput.type = "search";
+  searchInput.className = "player-queue-search";
+  searchInput.placeholder = t("playerSearch");
+  searchInput.setAttribute("aria-label", t("playerSearch"));
+
+  const queueCloseBtn = document.createElement("button");
+  queueCloseBtn.type = "button";
+  queueCloseBtn.className = "player-queue-sheet-close";
+  queueCloseBtn.setAttribute("aria-label", t("close"));
+  queueCloseBtn.innerHTML = IconClose;
+
+  queueSheetHeader.append(queueSheetTitle, searchInput, queueCloseBtn);
 
   const trackListUl = document.createElement("ul");
-  trackListUl.className = "player-track-list-items";
+  trackListUl.className = "player-queue-list";
   trackListUl.setAttribute("role", "list");
 
-  const trackListEmpty = document.createElement("li");
-  trackListEmpty.className = "player-queue-empty";
-  trackListEmpty.textContent = t("playerNoTracks");
-  trackListUl.append(trackListEmpty);
+  queueSheet.append(queueSheetHeader, trackListUl);
 
-  trackList.append(trackListHeader, trackListUl);
+  // ── Assembly ───────────────────────────────────────────────────
+  const body = document.createElement("div");
+  body.className = "player-body";
+  body.append(nowPlaying, errorMsg, progressSection, transport, volumeRow);
 
-  // ── Main layout assembly ───────────────────────────────────────
-  const controlsArea = document.createElement("div");
-  controlsArea.className = "player-controls-area";
-  controlsArea.append(metaSection, errorMsg, progressSection, transport, volumeRow);
-
-  root.append(artworkStage, controlsArea, searchBar, trackList);
+  root.append(header, body, queueSheet);
   container.append(root);
 
   // ── State ──────────────────────────────────────────────────────
   let seeking = false;
   let allTracks = [];
+  let queueOpen = false;
+
+  // ── Queue sheet toggle ─────────────────────────────────────────
+  function setQueueOpen(open) {
+    queueOpen = open;
+    queueSheet.classList.toggle("is-open", queueOpen);
+    queueSheet.setAttribute("aria-hidden", String(!queueOpen));
+    queueToggleBtn.classList.toggle("active", queueOpen);
+    if (queueOpen) renderTrackList();
+  }
+
+  // Prevent queue toggle from triggering header drag
+  queueToggleBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  queueToggleBtn.addEventListener("pointerup", (e) => e.stopPropagation());
+  queueToggleBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    setQueueOpen(!queueOpen);
+  });
+  queueCloseBtn.addEventListener("click", () => setQueueOpen(false));
 
   // ── Event wiring ───────────────────────────────────────────────
   playBtn.addEventListener("click", () => {
     const s = runtime.getState();
     if (s.paused || !s.playing) {
-      if (s.muted) {
-        runtime.setMuted(false);
-      }
+      if (s.muted) runtime.setMuted(false);
       void runtime.play();
+    } else {
+      runtime.pause();
     }
-    else runtime.pause();
   });
 
   prevBtn.addEventListener("click", () => { void runtime.previousTrack(); });
@@ -208,9 +254,8 @@ export function createPlayerShell({ container, onTrackSelect }) {
     seeking = false;
   });
 
-  searchBar.addEventListener("input", () => {
-    const query = searchBar.value.trim().toLowerCase();
-    renderTrackList(query);
+  searchInput.addEventListener("input", () => {
+    renderTrackList(searchInput.value.trim().toLowerCase());
   });
 
   // ── Render helpers ─────────────────────────────────────────────
@@ -232,34 +277,32 @@ export function createPlayerShell({ container, onTrackSelect }) {
     metaTitle.textContent = track?.title || track?.original_filename || t("playerNowPlaying");
     metaArtist.textContent = track?.folder_path || "";
 
-    // Artwork
+    // Compact artwork
     const artUrl = track?.preview_image_url || track?.image_url || "";
     if (artUrl) {
-      artworkImg.innerHTML = "";
-      artworkImg.style.backgroundImage = `url(${CSS.escape(artUrl)})`;
-      artworkImg.classList.add("has-image");
+      artworkCompact.innerHTML = "";
+      artworkCompact.style.backgroundImage = `url(${CSS.escape(artUrl)})`;
+      artworkCompact.classList.add("has-image");
     } else {
-      artworkImg.style.backgroundImage = "";
-      artworkImg.innerHTML = IconMusic;
-      artworkImg.classList.remove("has-image");
+      artworkCompact.style.backgroundImage = "";
+      artworkCompact.innerHTML = IconMusic;
+      artworkCompact.classList.remove("has-image");
     }
 
     // Source badge
     if (s.sourceType === "blob") {
       sourceBadge.textContent = t("playerOffline");
       sourceBadge.hidden = false;
-      sourceBadge.classList.add("offline");
-      sourceBadge.classList.remove("remote");
+      sourceBadge.className = "player-source-badge offline";
     } else if (s.sourceType === "remote") {
       sourceBadge.textContent = t("playerRemote");
       sourceBadge.hidden = false;
-      sourceBadge.classList.add("remote");
-      sourceBadge.classList.remove("offline");
+      sourceBadge.className = "player-source-badge remote";
     } else {
       sourceBadge.hidden = true;
     }
 
-    // Shuffle / repeat indicators
+    // Shuffle / repeat
     shuffleBtn.classList.toggle("active", s.shuffle);
     repeatBtn.classList.toggle("active", s.repeat !== "off");
     if (s.repeat === "one") {
@@ -290,16 +333,13 @@ export function createPlayerShell({ container, onTrackSelect }) {
     renderQueueActive(s.currentTrack?.name);
   }
 
-  /**
-   * Render the visible track list panel (always shown below search).
-   */
   function renderTrackList(filter = "") {
     trackListUl.innerHTML = "";
     const s = runtime.getState();
     const source = allTracks.length > 0 ? allTracks : s.queue;
     const tracks = filter
-      ? source.filter((t) => {
-          const hay = `${t.title || ""} ${t.original_filename || ""} ${t.folder_path || ""}`.toLowerCase();
+      ? source.filter((tr) => {
+          const hay = `${tr.title || ""} ${tr.original_filename || ""} ${tr.folder_path || ""}`.toLowerCase();
           return hay.includes(filter);
         })
       : source;
@@ -314,7 +354,7 @@ export function createPlayerShell({ container, onTrackSelect }) {
 
     for (const track of tracks) {
       const li = document.createElement("li");
-      li.className = "player-queue-item player-track-item";
+      li.className = "player-queue-item";
       li.dataset.trackName = track.name;
       if (s.currentTrack?.name === track.name) li.classList.add("active");
 
@@ -322,17 +362,16 @@ export function createPlayerShell({ container, onTrackSelect }) {
       nameSpan.className = "player-queue-item-name";
       nameSpan.textContent = track.title || track.original_filename || track.name;
 
-      const offlineDot = document.createElement("span");
-      offlineDot.className = "player-queue-item-badge";
+      const badge = document.createElement("span");
+      badge.className = "player-queue-item-badge";
       if (track._offline) {
-        offlineDot.classList.add("offline");
-        offlineDot.title = t("playerOffline");
+        badge.classList.add("offline");
+        badge.title = t("playerOffline");
       }
 
-      li.append(nameSpan, offlineDot);
+      li.append(nameSpan, badge);
       li.addEventListener("click", () => {
         void runtime.playCatalogTrack(track.name, allTracks);
-        if (typeof onTrackSelect === "function") onTrackSelect(track);
       });
 
       trackListUl.append(li);
@@ -349,28 +388,26 @@ export function createPlayerShell({ container, onTrackSelect }) {
 
   // ── Runtime subscription ───────────────────────────────────────
   const unsubscribe = runtime.subscribe(renderState);
-
-  // Initial render
   renderState(runtime.getState());
 
   // ── Public API ─────────────────────────────────────────────────
   return {
+    /** The panel DOM element. */
+    root,
+    /** The header element (drag handle for the widget). */
+    header,
+    /** The close button (widget wires its click handler). */
+    closeBtn,
+
     destroy() {
       unsubscribe();
       root.remove();
     },
 
-    /**
-     * Set the browsable track list (used by queue drawer and search).
-     * @param {object[]} tracks
-     */
     setTracks(tracks) {
       allTracks = tracks;
-      renderTrackList();
+      if (queueOpen) renderTrackList();
     },
-
-    /** The root DOM element (for external styling hooks). */
-    root,
   };
 }
 
