@@ -4466,6 +4466,273 @@ describe("library offline media", () => {
     });
   });
 
+  // ── No hot-swap during active remote playback ─────────────────────
+  //
+  // When the user is playing audio/video from a remote source and the
+  // background auto-cache download completes, the active player must NOT
+  // be destroyed and remounted with the cached blob mid-session.
+
+  describe("no hot-swap during active remote playback", () => {
+    const audioAsset = {
+      name: "MEDIA-1",
+      title: "My Track",
+      media_kind: "audio",
+      blob_size: 4096,
+      original_filename: "track.mp3",
+      content_hash: "hash-a1",
+      modified_at: "2026-04-03T09:00:00Z",
+      created_at_label: "2026-04-03",
+      modified_at_label: "2026-04-03",
+      folder_path: "Music",
+      has_preview_image: false,
+      file_extension: "mp3",
+    };
+
+    function createAutoCacheFetch() {
+      return createAuthenticatedLibraryFetch((url) => {
+        if (url.includes("list_my_media_assets")) {
+          return jsonResponse({
+            message: { assets: [audioAsset], total_count: 1, has_more: false, next_offset: 1 },
+          });
+        }
+        if (url.includes("get_my_media_asset_detail")) {
+          return jsonResponse({ message: { asset: audioAsset } });
+        }
+        if (url.includes("get_my_media_asset_access")) {
+          return jsonResponse({
+            message: {
+              asset: { name: audioAsset.name, content_hash: audioAsset.content_hash, media_kind: audioAsset.media_kind },
+              access: { download_url: "https://s3.example.com/signed-blob", expires_in_seconds: 300 },
+            },
+          });
+        }
+        if (url.includes("s3.example.com/signed-blob")) {
+          return new Response(new Blob(["blob-data"], { type: "application/octet-stream" }), { status: 200 });
+        }
+        if (url.includes("stream_my_media_asset_blob")) {
+          return new Response(new Blob(["streamed-data"], { type: "application/octet-stream" }), { status: 200 });
+        }
+        if (url.includes("list_my_speed_recordings")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+        if (url.includes("list_my_accel_runs")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+        if (url.includes("list_my_board_documents")) return jsonResponse({ message: { documents: [], total_count: 0, has_more: false } });
+        return jsonResponse({});
+      });
+    }
+
+    /** Boot the media tab, select the audio item, and return the page module. */
+    async function bootRemoteAudioPlayer() {
+      mockMediaCache.isAutoCacheEligible.mockReturnValue(true);
+
+      window.fetch = createAutoCacheFetch();
+      await bootHtmlPage("library.html");
+      const libraryPage = await import("../../src/library/library.js");
+      await libraryPage.initPromise;
+      await settleLibraryTasks();
+
+      document.querySelector('[data-tab="media"]')?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      document.querySelector(".library-record")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      return libraryPage;
+    }
+
+    it("first click on play is not interrupted when auto-cache completes in the background", async () => {
+      // Capture the download factory so we can invoke it after play starts.
+      let downloadFactory = null;
+      mockMediaCache.registerAutoCacheDownload.mockImplementation((_name, fn) => {
+        downloadFactory = fn;
+        return true;
+      });
+
+      await bootRemoteAudioPlayer();
+
+      // Capture the mounted audio element.
+      const audioEl = document.querySelector(".media-player audio");
+      expect(audioEl).toBeTruthy();
+      expect(audioEl.src).not.toContain("blob:");
+
+      // Simulate the user clicking play → triggers onFirstRemotePlay.
+      audioEl.dispatchEvent(new Event("play"));
+      await settleLibraryTasks();
+
+      // Auto-cache factory was captured.
+      expect(downloadFactory).toBeTruthy();
+
+      // Simulate auto-cache download completing: invoke the factory
+      // and let it finish — this calls cacheMediaBlob → renderDetail().
+      await downloadFactory();
+      await settleLibraryTasks(24);
+
+      // The same audio element should still be in the DOM — not replaced.
+      const audioElAfter = document.querySelector(".media-player audio");
+      expect(audioElAfter).toBe(audioEl);
+    });
+
+    it("auto-cache download still runs in the background during remote playback", async () => {
+      let downloadFactory = null;
+      mockMediaCache.registerAutoCacheDownload.mockImplementation((_name, fn) => {
+        downloadFactory = fn;
+        return true;
+      });
+
+      await bootRemoteAudioPlayer();
+
+      const audioEl = document.querySelector(".media-player audio");
+      audioEl.dispatchEvent(new Event("play"));
+      await settleLibraryTasks();
+
+      // registerAutoCacheDownload was called.
+      expect(mockMediaCache.registerAutoCacheDownload).toHaveBeenCalledWith(
+        "MEDIA-1",
+        expect.any(Function),
+      );
+
+      // Run the download factory — blob should be cached.
+      await downloadFactory();
+      await settleLibraryTasks(24);
+
+      expect(mockMediaCache.cacheMediaBlob).toHaveBeenCalledWith(
+        "MEDIA-1",
+        expect.any(Blob),
+        expect.objectContaining({ contentHash: "hash-a1" }),
+      );
+    });
+
+    it("active audio DOM element is not replaced mid-play when cache completes", async () => {
+      let downloadFactory = null;
+      mockMediaCache.registerAutoCacheDownload.mockImplementation((_name, fn) => {
+        downloadFactory = fn;
+        return true;
+      });
+
+      await bootRemoteAudioPlayer();
+
+      const audioEl = document.querySelector(".media-player audio");
+      const originalSrc = audioEl.src;
+
+      // Start playback.
+      audioEl.dispatchEvent(new Event("play"));
+      await settleLibraryTasks();
+
+      // Complete auto-cache.
+      await downloadFactory();
+      await settleLibraryTasks(24);
+
+      // Audio element should be the same instance with the same source.
+      const currentAudioEl = document.querySelector(".media-player audio");
+      expect(currentAudioEl).toBe(audioEl);
+      expect(currentAudioEl.src).toBe(originalSrc);
+      // Source must still be remote, not blob.
+      expect(currentAudioEl.src).not.toContain("blob:");
+    });
+
+    it("after leaving and remounting the item the cached local blob is used", async () => {
+      let downloadFactory = null;
+      mockMediaCache.registerAutoCacheDownload.mockImplementation((_name, fn) => {
+        downloadFactory = fn;
+        return true;
+      });
+
+      const originalCreateObjectURL = URL.createObjectURL;
+      URL.createObjectURL = vi.fn(() => "blob:vatioboard/local-cached");
+
+      try {
+        await bootRemoteAudioPlayer();
+
+        const audioEl = document.querySelector(".media-player audio");
+
+        // Start playback → triggers auto-cache.
+        audioEl.dispatchEvent(new Event("play"));
+        await settleLibraryTasks();
+
+        // Complete auto-cache in the background.
+        await downloadFactory();
+        await settleLibraryTasks(24);
+
+        // Player is still the remote one (not swapped).
+        expect(document.querySelector(".media-player audio")).toBe(audioEl);
+
+        // Now simulate that the cached blob is available for future mounts.
+        const fakeBlob = new Blob(["cached-audio"], { type: "audio/mpeg" });
+        mockMediaCache.getLocalMediaBlob.mockResolvedValue({
+          blob: fakeBlob,
+          source: "cached",
+          contentHash: "hash-a1",
+        });
+        mockMediaCache.getCachedBlobMeta.mockResolvedValue({
+          content_hash: "hash-a1",
+          cached_at: Date.now(),
+          blob_size: 4096,
+          media_kind: "audio",
+          pinned: false,
+        });
+        mockMediaCache.getCachedMediaBlob.mockResolvedValue(fakeBlob);
+
+        // Leave and come back: switch to speed tab, then back to media.
+        document.querySelector('[data-tab="speed"]')?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true }),
+        );
+        await settleLibraryTasks(24);
+
+        document.querySelector('[data-tab="media"]')?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true }),
+        );
+        await settleLibraryTasks(24);
+
+        document.querySelector(".library-record")?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true }),
+        );
+        await settleLibraryTasks(24);
+
+        // The remounted player should now use the local blob URL.
+        const newAudioEl = document.querySelector(".media-player audio");
+        expect(newAudioEl).toBeTruthy();
+        expect(newAudioEl.src).toContain("blob:");
+      } finally {
+        URL.createObjectURL = originalCreateObjectURL;
+      }
+    });
+
+    it("no second click is required — playback continues through auto-cache completion", async () => {
+      let downloadFactory = null;
+      mockMediaCache.registerAutoCacheDownload.mockImplementation((_name, fn) => {
+        downloadFactory = fn;
+        return true;
+      });
+
+      await bootRemoteAudioPlayer();
+
+      const audioEl = document.querySelector(".media-player audio");
+
+      // The play button should show "Play" initially (paused state).
+      const playBtn = document.querySelector(".media-player-play-btn");
+      expect(playBtn).toBeTruthy();
+
+      // User clicks play.
+      audioEl.dispatchEvent(new Event("play"));
+      await settleLibraryTasks();
+
+      // The play button should now show "Pause" (playing state).
+      expect(playBtn.getAttribute("aria-label")).toContain("Pause");
+
+      // Auto-cache finishes in the background.
+      await downloadFactory();
+      await settleLibraryTasks(24);
+
+      // Play button should STILL show "Pause" — playback was not interrupted.
+      // The same player is still mounted and playing.
+      const playBtnAfter = document.querySelector(".media-player-play-btn");
+      expect(playBtnAfter).toBe(playBtn);
+      expect(playBtnAfter.getAttribute("aria-label")).toContain("Pause");
+    });
+  });
+
   // ── Cached → pinned local promotion ──────────────────────────────
 
   describe("cached to pinned local promotion", () => {

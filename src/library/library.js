@@ -230,6 +230,15 @@ let previewObjectUrl = null;
 const libraryMediaPlayer = createLibraryMediaPlayer();
 
 /**
+ * Tracks an active remote playback session by asset name.  Set when the
+ * user first plays a remote (non-blob) source; cleared when the player
+ * is destroyed or a new preview is mounted.  While set, the async local
+ * blob resolution in renderDetail() skips hot-swapping the player source
+ * so playback is not interrupted by a background auto-cache completion.
+ */
+let remotePlaybackSessionName = "";
+
+/**
  * Lightweight preview-state memo to avoid redundant preview rebuilds.
  * Updated inside renderDetail(); renderDetailPreview() only runs when the
  * derived signature changes.  This prevents map animation restarts and
@@ -960,6 +969,9 @@ function buildDetailMetaEntries(item = {}) {
 function renderDetailPreview(item = {}, { isOfflineItem = false, isPinned = false, localPreviewUrl = "" } = {}) {
   if (!elements.detailPreview) return;
 
+  // A new preview mount ends any active remote playback session.
+  remotePlaybackSessionName = "";
+
   // Revoke any previous local preview URL to avoid memory leaks.
   revokePreviewObjectUrl();
   if (localPreviewUrl) {
@@ -1007,7 +1019,10 @@ function renderDetailPreview(item = {}, { isOfflineItem = false, isPinned = fals
       // used by the Open action.  This fires only once per player mount
       // and skips blob: sources entirely (handled inside createMediaPlayer).
       const onFirstRemotePlay = (!hasLocalBlob && isAutoCacheEligible(item))
-        ? () => triggerAutoCacheDownload(item.name, item).catch(() => {})
+        ? () => {
+            remotePlaybackSessionName = item.name;
+            triggerAutoCacheDownload(item.name, item).catch(() => {});
+          }
         : null;
 
       const mounted = libraryMediaPlayer.mount({
@@ -1183,6 +1198,7 @@ function renderDetail() {
     if (mapPreview) {
       mapPreview.cancelAnimation();
     }
+    remotePlaybackSessionName = "";
     libraryMediaPlayer.destroy();
     syncToolbarVolume();
     return;
@@ -1220,7 +1236,11 @@ function renderDetail() {
   // resolve a local blob URL and re-render the preview so playback does
   // not rely on the remote BFF redirect URL.
   const selectedMediaKind = String(selectedItem.media_kind || "").toLowerCase();
-  if (hasAnyFreshLocal && (selectedMediaKind === "image" || selectedMediaKind === "audio" || selectedMediaKind === "video")) {
+  // Skip async blob resolution when a remote playback session is active
+  // for this item.  The cached blob will be used on the next mount.
+  const skipBlobForActiveRemoteSession = remotePlaybackSessionName === state.selectedName
+    && (selectedMediaKind === "audio" || selectedMediaKind === "video");
+  if (hasAnyFreshLocal && !skipBlobForActiveRemoteSession && (selectedMediaKind === "image" || selectedMediaKind === "audio" || selectedMediaKind === "video")) {
     const localName = state.selectedName;
     Promise.resolve(getLocalMediaBlob(localName)).then((result) => {
       if (!result?.blob || state.selectedName !== localName) return;
