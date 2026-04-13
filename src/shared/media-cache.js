@@ -282,19 +282,41 @@ export async function cacheMediaBlob(assetName, blob, { contentHash, blobSize, m
   const now = Date.now();
   const size = blobSize ?? blob.size ?? 0;
 
-  const [blobOk, metaOk] = await Promise.all([
-    cachedBlobStore.setValue(key, { blob }),
-    cachedBlobMetaStore.setValue(key, {
+  // Write blob first, then meta.  If either step fails, roll back the
+  // other so we never leave orphaned state across the two stores.
+  let blobOk = false;
+  try {
+    blobOk = await cachedBlobStore.setValue(key, { blob });
+  } catch {
+    return false;
+  }
+
+  let metaOk = false;
+  try {
+    metaOk = await cachedBlobMetaStore.setValue(key, {
       content_hash: contentHash || null,
       blob_size: size,
       media_kind: mediaKind || null,
       cached_at: now,
       last_accessed_at: now,
       pinned: false,
-    }),
-  ]);
+    });
+  } catch {
+    // Meta write failed — remove the blob to avoid orphaned data.
+    cachedBlobStore.deleteValue(key).catch(() => {});
+    return false;
+  }
 
-  return blobOk && metaOk;
+  if (!metaOk) {
+    cachedBlobStore.deleteValue(key).catch(() => {});
+    return false;
+  }
+  if (!blobOk) {
+    cachedBlobMetaStore.deleteValue(key).catch(() => {});
+    return false;
+  }
+
+  return true;
 }
 
 /**
@@ -434,14 +456,23 @@ export function isAutoCacheInFlight(assetName) {
 }
 
 /**
- * Register an in-flight auto-cache download promise.
- * Returns false if one is already in progress (dedup).
- * The promise is removed from the map when it settles.
+ * Register an in-flight auto-cache download.
+ *
+ * Accepts a **factory function** that produces the download promise.
+ * The factory is invoked only when no download is already running for
+ * the same asset — this prevents the caller from starting network work
+ * before the dedup guard has claimed ownership.
+ *
+ * Returns ``true`` when the caller's factory won and the download was
+ * started, or ``false`` when a download was already in progress.
  */
-export function registerAutoCacheDownload(assetName, downloadPromise) {
+export function registerAutoCacheDownload(assetName, factoryFn) {
   const key = userKey(assetName);
   if (!key) return false;
   if (_inFlightCacheDownloads.has(key)) return false;
+
+  const downloadPromise = typeof factoryFn === "function" ? factoryFn() : factoryFn;
+  if (!downloadPromise || typeof downloadPromise.then !== "function") return false;
 
   const cleanup = () => { _inFlightCacheDownloads.delete(key); };
   const tracked = downloadPromise.then(cleanup, cleanup);

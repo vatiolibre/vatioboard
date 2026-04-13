@@ -23,6 +23,7 @@ const mockMediaCache = vi.hoisted(() => ({
   getLocalMediaBlob: vi.fn().mockResolvedValue(null),
   getLocalBlobMeta: vi.fn().mockResolvedValue(null),
   getCachedBlobMeta: vi.fn().mockResolvedValue(null),
+  getCachedMediaBlob: vi.fn().mockResolvedValue(null),
   cacheMediaBlob: vi.fn().mockResolvedValue(true),
   isAutoCacheEligible: vi.fn().mockReturnValue(false),
   isAutoCacheInFlight: vi.fn().mockReturnValue(false),
@@ -201,6 +202,7 @@ describe("library offline media", () => {
     mockMediaCache.getLocalMediaBlob.mockResolvedValue(null);
     mockMediaCache.getLocalBlobMeta.mockResolvedValue(null);
     mockMediaCache.getCachedBlobMeta.mockResolvedValue(null);
+    mockMediaCache.getCachedMediaBlob.mockResolvedValue(null);
     mockMediaCache.cacheMediaBlob.mockResolvedValue(true);
     mockMediaCache.isAutoCacheEligible.mockReturnValue(false);
     mockMediaCache.isAutoCacheInFlight.mockReturnValue(false);
@@ -3582,6 +3584,11 @@ describe("library offline media", () => {
 
     it("triggers background auto-cache when opening an eligible audio item remotely", async () => {
       mockMediaCache.isAutoCacheEligible.mockReturnValue(true);
+      // Invoke the factory so the download actually runs in this test.
+      mockMediaCache.registerAutoCacheDownload.mockImplementation((_name, fn) => {
+        if (typeof fn === "function") fn();
+        return true;
+      });
 
       window.fetch = createAutoCacheFetch();
       const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
@@ -3614,7 +3621,7 @@ describe("library offline media", () => {
         // Auto-cache should have triggered in the background
         expect(mockMediaCache.registerAutoCacheDownload).toHaveBeenCalledWith(
           "MEDIA-1",
-          expect.any(Promise),
+          expect.any(Function),
         );
         // The background download should have called cacheMediaBlob
         expect(mockMediaCache.cacheMediaBlob).toHaveBeenCalledWith(
@@ -3638,6 +3645,7 @@ describe("library offline media", () => {
         media_kind: "audio",
         pinned: false,
       });
+      mockMediaCache.getCachedMediaBlob.mockResolvedValue(fakeBlob);
       mockMediaCache.getLocalMediaBlob.mockResolvedValue({
         blob: fakeBlob,
         source: "cached",
@@ -3702,6 +3710,7 @@ describe("library offline media", () => {
         media_kind: "image",
         pinned: false,
       });
+      mockMediaCache.getCachedMediaBlob.mockResolvedValue(fakeBlob);
       mockMediaCache.getLocalMediaBlob.mockResolvedValue({
         blob: fakeBlob,
         source: "cached",
@@ -3750,6 +3759,7 @@ describe("library offline media", () => {
         media_kind: "audio",
         pinned: false,
       });
+      mockMediaCache.getCachedMediaBlob.mockResolvedValue(fakeBlob);
       mockMediaCache.getLocalMediaBlob.mockResolvedValue({
         blob: fakeBlob,
         source: "cached",
@@ -3804,6 +3814,7 @@ describe("library offline media", () => {
         media_kind: "audio",
         pinned: false,
       });
+      mockMediaCache.getCachedMediaBlob.mockResolvedValue(staleBlob);
       // getLocalMediaBlob returns the stale blob (library.js checks hash).
       mockMediaCache.getLocalMediaBlob.mockResolvedValue({
         blob: staleBlob,
@@ -3868,6 +3879,7 @@ describe("library offline media", () => {
         media_kind: "image",
         pinned: false,
       });
+      mockMediaCache.getCachedMediaBlob.mockResolvedValue(new Blob(["x"]));
       mockMediaCache.isAutoCacheEligible.mockReturnValue(true);
 
       window.fetch = createAutoCacheFetch({ assetOverride: assetWithHash });
@@ -3895,7 +3907,7 @@ describe("library offline media", () => {
     });
 
     it("shows cached availability badge and caching-locally badge", async () => {
-      // First test: cached blob → "Available offline" success badge.
+      // First test: cached blob → "Cached locally" success badge.
       mockMediaCache.getCachedBlobMeta.mockResolvedValue({
         content_hash: "img-hash-1",
         cached_at: Date.now(),
@@ -3903,6 +3915,7 @@ describe("library offline media", () => {
         media_kind: "image",
         pinned: false,
       });
+      mockMediaCache.getCachedMediaBlob.mockResolvedValue(new Blob(["x"]));
       mockMediaCache.isAutoCacheEligible.mockReturnValue(true);
 
       window.fetch = createAutoCacheFetch({ assetOverride: imageAsset });
@@ -3920,7 +3933,7 @@ describe("library offline media", () => {
         ".library-record-badge[data-tone='success']",
       );
       expect(cachedBadge).toBeTruthy();
-      expect(cachedBadge.textContent).toBe("Available offline");
+      expect(cachedBadge.textContent).toBe("Cached locally");
 
       // Detail meta should also show availability.
       document.querySelector(".library-record")?.dispatchEvent(
@@ -3929,7 +3942,7 @@ describe("library offline media", () => {
       await settleLibraryTasks();
 
       const detailMeta = document.getElementById("libraryDetailMeta")?.textContent || "";
-      expect(detailMeta).toContain("Available offline");
+      expect(detailMeta).toContain("Cached locally");
     });
 
     it("shows caching-locally badge when auto-cache download is in flight", async () => {
@@ -4005,6 +4018,338 @@ describe("library offline media", () => {
         // so we verify the mock was called and cacheMediaBlob wasn't
         // called more than expected.
         expect(mockMediaCache.registerAutoCacheDownload).toHaveBeenCalled();
+      } finally {
+        openSpy.mockRestore();
+      }
+    });
+
+    // ── Regression: auto-cache only on open/play (Fix 3) ──────────
+
+    it("does not trigger auto-cache when merely selecting an item", async () => {
+      mockMediaCache.isAutoCacheEligible.mockReturnValue(true);
+
+      window.fetch = createAutoCacheFetch();
+      await bootHtmlPage("library.html");
+      const libraryPage = await import("../../src/library/library.js");
+      await libraryPage.initPromise;
+      await settleLibraryTasks();
+
+      document.querySelector('[data-tab="media"]')?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks();
+
+      // Select the item (click on record) — this should NOT trigger auto-cache.
+      document.querySelector(".library-record")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      // registerAutoCacheDownload should NOT have been called from selection alone.
+      expect(mockMediaCache.registerAutoCacheDownload).not.toHaveBeenCalled();
+    });
+
+    it("triggers auto-cache only from the open/play action path", async () => {
+      mockMediaCache.isAutoCacheEligible.mockReturnValue(true);
+      mockMediaCache.registerAutoCacheDownload.mockImplementation((_name, fn) => {
+        if (typeof fn === "function") fn();
+        return true;
+      });
+
+      window.fetch = createAutoCacheFetch();
+      const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+
+      try {
+        await bootHtmlPage("library.html");
+        const libraryPage = await import("../../src/library/library.js");
+        await libraryPage.initPromise;
+        await settleLibraryTasks();
+
+        document.querySelector('[data-tab="media"]')?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true }),
+        );
+        await settleLibraryTasks();
+
+        document.querySelector(".library-record")?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true }),
+        );
+        await settleLibraryTasks();
+
+        // Verify no auto-cache yet.
+        expect(mockMediaCache.registerAutoCacheDownload).not.toHaveBeenCalled();
+
+        // Now actually open.
+        document.getElementById("libraryActionOpen")?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true }),
+        );
+        await settleLibraryTasks();
+
+        // Now auto-cache should have fired from the open path.
+        expect(mockMediaCache.registerAutoCacheDownload).toHaveBeenCalled();
+      } finally {
+        openSpy.mockRestore();
+      }
+    });
+
+    // ── Regression: cached blobs gating parity (Fix 2) ────────────
+
+    it("open action remains enabled for a fresh cached blob when offline", async () => {
+      const fakeBlob = new Blob(["cached-audio"], { type: "audio/mpeg" });
+      const offlineItem = {
+        ...audioAsset,
+        _offline: true,
+        preview_image_url: null,
+        download_url: null,
+      };
+
+      mockMediaCache.getCachedMediaManifest.mockResolvedValue([offlineItem]);
+      mockMediaCache.getCachedMediaMetadata.mockResolvedValue(offlineItem);
+      mockMediaCache.getCachedBlobMeta.mockResolvedValue({
+        content_hash: "hash-a1",
+        cached_at: Date.now(),
+        blob_size: 4096,
+        media_kind: "audio",
+        pinned: false,
+      });
+      mockMediaCache.getCachedMediaBlob.mockResolvedValue(fakeBlob);
+      mockMediaCache.getLocalMediaBlob.mockResolvedValue({
+        blob: fakeBlob,
+        source: "cached",
+        contentHash: "hash-a1",
+      });
+
+      // Simulate offline: media list fetch fails.
+      window.fetch = createAuthenticatedLibraryFetch((url) => {
+        if (url.includes("list_my_media_assets"))
+          return Promise.reject(new TypeError("Failed to fetch"));
+        if (url.includes("get_my_media_asset_detail"))
+          return Promise.reject(new TypeError("Failed to fetch"));
+        if (url.includes("list_my_speed_recordings"))
+          return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+        if (url.includes("list_my_accel_runs"))
+          return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+        if (url.includes("list_my_board_documents"))
+          return jsonResponse({ message: { documents: [], total_count: 0, has_more: false } });
+        return jsonResponse({});
+      });
+
+      await bootHtmlPage("library.html");
+      const libraryPage = await import("../../src/library/library.js");
+      await libraryPage.initPromise;
+      await settleLibraryTasks();
+
+      document.querySelector('[data-tab="media"]')?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      document.querySelector(".library-record")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      // Open action should be enabled — fresh cached blob available locally.
+      const openBtn = document.getElementById("libraryActionOpen");
+      expect(openBtn).toBeTruthy();
+      expect(openBtn.disabled).toBe(false);
+    });
+
+    it("offline open uses local cached blob URL without hitting the backend", async () => {
+      const fakeBlob = new Blob(["cached-audio"], { type: "audio/mpeg" });
+      mockMediaCache.getCachedBlobMeta.mockResolvedValue({
+        content_hash: "hash-a1",
+        cached_at: Date.now(),
+        blob_size: 4096,
+        media_kind: "audio",
+        pinned: false,
+      });
+      mockMediaCache.getCachedMediaBlob.mockResolvedValue(fakeBlob);
+      mockMediaCache.getLocalMediaBlob.mockResolvedValue({
+        blob: fakeBlob,
+        source: "cached",
+        contentHash: "hash-a1",
+      });
+
+      const originalCreateObjectURL = URL.createObjectURL;
+      URL.createObjectURL = vi.fn(() => "blob:vatioboard/cached-open");
+      const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+
+      try {
+        window.fetch = createAutoCacheFetch();
+        await bootHtmlPage("library.html");
+        const libraryPage = await import("../../src/library/library.js");
+        await libraryPage.initPromise;
+        await settleLibraryTasks();
+
+        document.querySelector('[data-tab="media"]')?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true }),
+        );
+        await settleLibraryTasks(24);
+
+        document.querySelector(".library-record")?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true }),
+        );
+        await settleLibraryTasks(24);
+
+        // Open the item.
+        document.getElementById("libraryActionOpen")?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true }),
+        );
+        await settleLibraryTasks();
+
+        // Should use local blob URL.
+        expect(openSpy).toHaveBeenCalled();
+        expect(openSpy.mock.calls[0][0]).toMatch(/^blob:/);
+
+        // No get_my_media_asset_access call needed — local blob used.
+        const accessCalls = window.fetch.mock.calls.filter(
+          ([u]) => typeof u === "string" && u.includes("get_my_media_asset_access"),
+        );
+        expect(accessCalls).toHaveLength(0);
+      } finally {
+        URL.createObjectURL = originalCreateObjectURL;
+        openSpy.mockRestore();
+      }
+    });
+
+    it("stale cached blob open falls through to remote URL", async () => {
+      const updatedAsset = { ...audioAsset, content_hash: "hash-a2" };
+      const staleBlob = new Blob(["old-audio"], { type: "audio/mpeg" });
+
+      mockMediaCache.getCachedBlobMeta.mockResolvedValue({
+        content_hash: "hash-a1",
+        cached_at: Date.now() - 86400000,
+        blob_size: 4096,
+        media_kind: "audio",
+        pinned: false,
+      });
+      mockMediaCache.getCachedMediaBlob.mockResolvedValue(staleBlob);
+      mockMediaCache.getLocalMediaBlob.mockResolvedValue({
+        blob: staleBlob,
+        source: "cached",
+        contentHash: "hash-a1",
+      });
+
+      const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+
+      try {
+        window.fetch = createAutoCacheFetch({ assetOverride: updatedAsset });
+        await bootHtmlPage("library.html");
+        const libraryPage = await import("../../src/library/library.js");
+        await libraryPage.initPromise;
+        await settleLibraryTasks();
+
+        document.querySelector('[data-tab="media"]')?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true }),
+        );
+        await settleLibraryTasks(24);
+
+        document.querySelector(".library-record")?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true }),
+        );
+        await settleLibraryTasks();
+
+        document.getElementById("libraryActionOpen")?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true }),
+        );
+        await settleLibraryTasks();
+
+        // Stale blob should not be used — open should use remote URL.
+        expect(openSpy).toHaveBeenCalled();
+        expect(openSpy.mock.calls[0][0]).not.toMatch(/^blob:/);
+      } finally {
+        openSpy.mockRestore();
+      }
+    });
+
+    // ── Regression: orphaned metadata (Fix 4) ─────────────────────
+
+    it("does not treat orphaned metadata without a blob as locally available", async () => {
+      // Cached meta exists but getCachedMediaBlob returns null (orphaned meta).
+      mockMediaCache.getCachedBlobMeta.mockResolvedValue({
+        content_hash: "hash-a1",
+        cached_at: Date.now(),
+        blob_size: 4096,
+        media_kind: "audio",
+        pinned: false,
+      });
+      mockMediaCache.getCachedMediaBlob.mockResolvedValue(null);
+
+      window.fetch = createAutoCacheFetch();
+      await bootHtmlPage("library.html");
+      const libraryPage = await import("../../src/library/library.js");
+      await libraryPage.initPromise;
+      await settleLibraryTasks();
+
+      document.querySelector('[data-tab="media"]')?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      // No cached-locally badge should appear — orphaned meta is cleaned up.
+      const allBadges = Array.from(document.querySelectorAll(".library-record-badge"));
+      const cachedBadge = allBadges.find(
+        (b) => b.dataset.tone === "success" && b.textContent === "Cached locally",
+      );
+      expect(cachedBadge).toBeFalsy();
+
+      // removeCachedMediaBlob should have been called to clean up orphaned meta.
+      expect(mockMediaCache.removeCachedMediaBlob).toHaveBeenCalledWith("MEDIA-1");
+    });
+
+    // ── Regression: race-safe duplicate download (Fix 1) ──────────
+
+    it("two near-simultaneous triggers produce only one backend access resolution", async () => {
+      mockMediaCache.isAutoCacheEligible.mockReturnValue(true);
+
+      let factoryCallCount = 0;
+      mockMediaCache.registerAutoCacheDownload.mockImplementation((_name, fn) => {
+        factoryCallCount++;
+        if (factoryCallCount === 1) {
+          // First call: accept and invoke the factory.
+          if (typeof fn === "function") fn();
+          return true;
+        }
+        // Second call: reject as duplicate.
+        return false;
+      });
+
+      const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+
+      try {
+        window.fetch = createAutoCacheFetch();
+        await bootHtmlPage("library.html");
+        const libraryPage = await import("../../src/library/library.js");
+        await libraryPage.initPromise;
+        await settleLibraryTasks();
+
+        document.querySelector('[data-tab="media"]')?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true }),
+        );
+        await settleLibraryTasks();
+
+        document.querySelector(".library-record")?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true }),
+        );
+        await settleLibraryTasks();
+
+        // Open twice rapidly.
+        document.getElementById("libraryActionOpen")?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true }),
+        );
+        await settleLibraryTasks(4);
+        document.getElementById("libraryActionOpen")?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true }),
+        );
+        await settleLibraryTasks();
+
+        // The factory callback was invoked only once (winner of the race).
+        // The second call to registerAutoCacheDownload returned false.
+        expect(factoryCallCount).toBe(2);
+        expect(mockMediaCache.registerAutoCacheDownload).toHaveBeenCalledTimes(2);
+
+        // cacheMediaBlob should be called only once (from the single download).
+        expect(mockMediaCache.cacheMediaBlob).toHaveBeenCalledTimes(1);
       } finally {
         openSpy.mockRestore();
       }

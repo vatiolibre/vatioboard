@@ -59,6 +59,7 @@ import {
   getLocalMediaBlob,
   getLocalBlobMeta,
   getCachedBlobMeta,
+  getCachedMediaBlob,
   cacheMediaBlob,
   isAutoCacheEligible,
   isAutoCacheInFlight,
@@ -322,20 +323,25 @@ async function triggerAutoCacheDownload(assetName, asset) {
     if (!response.ok) return;
     const blob = await response.blob();
 
-    await cacheMediaBlob(assetName, blob, {
+    const ok = await cacheMediaBlob(assetName, blob, {
       contentHash: asset.content_hash || null,
       blobSize: blob.size,
       mediaKind: asset.media_kind || null,
     });
 
-    // Update state so the UI reflects the new local availability.
-    state.cachedBlobNames.add(assetName);
-    state.staleCachedNames.delete(assetName);
-    renderList();
-    renderDetail();
+    // Update state so the UI reflects the new local availability,
+    // but only when persistence fully succeeded.
+    if (ok) {
+      state.cachedBlobNames.add(assetName);
+      state.staleCachedNames.delete(assetName);
+      renderList();
+      renderDetail();
+    }
   };
 
-  registerAutoCacheDownload(assetName, doDownload());
+  // Pass a factory — the download starts only if no in-flight download
+  // already exists for this asset.
+  registerAutoCacheDownload(assetName, doDownload);
 }
 
 /**
@@ -767,12 +773,22 @@ async function refreshPinStatesForItems(items) {
         const cachedMeta = await getCachedBlobMeta(item.name).catch(() => null);
         const wasCached = state.cachedBlobNames.has(item.name);
         if (cachedMeta) {
-          if (!wasCached) { state.cachedBlobNames.add(item.name); changed = true; }
-          const stale = item.content_hash && cachedMeta.content_hash
-            && item.content_hash !== cachedMeta.content_hash;
-          const wasStale = state.staleCachedNames.has(item.name);
-          if (stale && !wasStale) { state.staleCachedNames.add(item.name); changed = true; }
-          else if (!stale && wasStale) { state.staleCachedNames.delete(item.name); changed = true; }
+          // Verify that the actual blob exists — orphaned meta without
+          // a usable blob must not mark the item as locally available.
+          const blobExists = await getCachedMediaBlob(item.name).catch(() => null);
+          if (!blobExists) {
+            // Orphaned meta — clean it up silently.
+            removeCachedMediaBlob(item.name).catch(() => {});
+            if (wasCached) { state.cachedBlobNames.delete(item.name); changed = true; }
+            if (state.staleCachedNames.has(item.name)) { state.staleCachedNames.delete(item.name); changed = true; }
+          } else {
+            if (!wasCached) { state.cachedBlobNames.add(item.name); changed = true; }
+            const stale = item.content_hash && cachedMeta.content_hash
+              && item.content_hash !== cachedMeta.content_hash;
+            const wasStale = state.staleCachedNames.has(item.name);
+            if (stale && !wasStale) { state.staleCachedNames.add(item.name); changed = true; }
+            else if (!stale && wasStale) { state.staleCachedNames.delete(item.name); changed = true; }
+          }
         } else {
           if (wasCached) { state.cachedBlobNames.delete(item.name); changed = true; }
           if (state.staleCachedNames.has(item.name)) { state.staleCachedNames.delete(item.name); changed = true; }
@@ -866,7 +882,7 @@ function renderList() {
         } else if (state.staleCachedNames.has(item.name)) {
           badges.push({ label: t("cloudLibraryOutdatedLocal"), tone: "warning" });
         } else if (state.cachedBlobNames.has(item.name)) {
-          badges.push({ label: t("cloudLibraryOfflineAvailable"), tone: "success" });
+          badges.push({ label: t("cloudLibraryCachedLocally"), tone: "success" });
         } else if (isAutoCacheInFlight(item.name)) {
           badges.push({ label: t("cloudLibraryCachingLocally"), tone: "muted" });
         } else if (item._offline) {
@@ -1226,12 +1242,6 @@ function renderDetail() {
       lastPreviewSignature = bffSig;
       renderDetailPreview(bffItem, { isOfflineItem, isPinned });
     }
-
-    // Trigger background auto-cache when showing a remote preview for an
-    // eligible item so future interactions use the local blob.
-    if (isAutoCacheEligible(selectedItem)) {
-      triggerAutoCacheDownload(selectedItem.name, selectedItem).catch(() => {});
-    }
   }
 
   elements.detailMeta.replaceChildren();
@@ -1254,9 +1264,9 @@ function renderDetail() {
   const authGated = !capabilityReady || state.authLoading;
   const mutationGated = actionBusy || offlineGated || authGated;
 
-  // Open: local-only open (fresh pinned blob) works without auth; all other
-  // open paths hit the network and require a valid session.
-  const hasLocalBlob = isPinned && !isStalePin;
+  // Open: local-only open (fresh pinned or cached blob) works without auth;
+  // all other open paths hit the network and require a valid session.
+  const hasLocalBlob = (isPinned && !isStalePin) || (isCachedBlob && !isStaleCached);
   const openDisabled = actionBusy || !canOpenSelectedItem || isMetadataOnly
     || (isStalePin && isOfflineItem)
     || (!hasLocalBlob && authGated);
@@ -1307,7 +1317,7 @@ function renderDetail() {
       );
     } else if (isCachedBlob) {
       elements.detailMeta.append(
-        createMetaRow(t("cloudLibraryAvailability"), t("cloudLibraryOfflineAvailable")),
+        createMetaRow(t("cloudLibraryAvailability"), t("cloudLibraryCachedLocally")),
       );
     } else if (isAutoCacheInFlight(state.selectedName)) {
       elements.detailMeta.append(
