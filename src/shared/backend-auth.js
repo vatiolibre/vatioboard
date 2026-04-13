@@ -547,6 +547,17 @@ export function buildMediaBffUrl(assetName, { preview = false, config = getBacke
   return `${base}?${params.toString()}`;
 }
 
+/**
+ * Build a stable BFF redirect URL for a board document preview image.
+ * @param {string} documentName
+ * @param {{ config?: { apiBase: string } }} [opts]
+ */
+export function buildBoardDocumentPreviewBffUrl(documentName, { config = getBackendAuthConfig() } = {}) {
+  if (!documentName) return "";
+  const base = `${config.apiBase}/api/method/vatiolibre.vatiolibre.board_documents.download_my_board_document_preview`;
+  return `${base}?${new URLSearchParams({ name: documentName }).toString()}`;
+}
+
 export async function fetchBackendSession({
   fetchImpl,
   signal,

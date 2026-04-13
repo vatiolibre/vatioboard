@@ -93,6 +93,7 @@ const RESOURCE_CONFIGS = {
   [CLOUD_LIBRARY_TAB_KEYS.speed]: {
     tabIcon: IconSpeed,
     previewKind: "map",
+    detailFromList: true,
     canOpen: (item) => {
       if (item?.payload_available === false) return false;
       if (item?.can_open === false || item?.payload_complete === false) return false;
@@ -145,6 +146,7 @@ const RESOURCE_CONFIGS = {
   [CLOUD_LIBRARY_TAB_KEYS.accel]: {
     tabIcon: IconAccel,
     previewKind: "map",
+    detailFromList: true,
     canOpen: (item) => {
       if (item?.payload_available === false) return false;
       if (item?.can_open === false || item?.payload_complete === false) return false;
@@ -198,6 +200,7 @@ const RESOURCE_CONFIGS = {
   [CLOUD_LIBRARY_TAB_KEYS.boardDocuments]: {
     tabIcon: IconBoard,
     previewKind: "board-preview",
+    detailFromList: true,
     canOpen: () => true,
     canDelete: true,
     canRename: true,

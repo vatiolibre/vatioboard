@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  buildBoardDocumentPreviewBffUrl,
+  buildMediaBffUrl,
   clearBackendAccessCache,
   downloadSyncPayloadFromBackend,
   getBackendAccelRunDetail,
@@ -566,5 +568,39 @@ describe('backend auth transport helpers', () => {
     expect(result.access.download_url).toBe(s3DownloadUrl);
     expect(result.access.playback_url).toBe(s3PlaybackUrl);
     expect(result.access.expires_in_seconds).toBe(300);
+  });
+});
+
+// ── BFF URL builders ─────────────────────────────────────────────────
+
+describe('buildMediaBffUrl', () => {
+  it('returns an empty string for empty asset name', () => {
+    expect(buildMediaBffUrl('', { config: TEST_CONFIG })).toBe('');
+  });
+
+  it('builds a stable BFF URL for media preview', () => {
+    const url = buildMediaBffUrl('MEDIA-1', { preview: true, config: TEST_CONFIG });
+    expect(url).toContain('/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset');
+    expect(url).toContain('name=MEDIA-1');
+    expect(url).toContain('preview=1');
+  });
+
+  it('builds a stable BFF URL for media download', () => {
+    const url = buildMediaBffUrl('MEDIA-1', { config: TEST_CONFIG });
+    expect(url).toContain('/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset');
+    expect(url).toContain('name=MEDIA-1');
+    expect(url).not.toContain('preview');
+  });
+});
+
+describe('buildBoardDocumentPreviewBffUrl', () => {
+  it('returns an empty string for empty document name', () => {
+    expect(buildBoardDocumentPreviewBffUrl('', { config: TEST_CONFIG })).toBe('');
+  });
+
+  it('builds a stable BFF URL for board document preview', () => {
+    const url = buildBoardDocumentPreviewBffUrl('BOARD-DOC-1', { config: TEST_CONFIG });
+    expect(url).toContain('/api/method/vatiolibre.vatiolibre.board_documents.download_my_board_document_preview');
+    expect(url).toContain('name=BOARD-DOC-1');
   });
 });

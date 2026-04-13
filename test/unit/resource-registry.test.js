@@ -39,6 +39,10 @@ describe("speed resource config", () => {
     expect(config.previewKind).toBe("map");
   });
 
+  it("has detailFromList enabled", () => {
+    expect(config.detailFromList).toBe(true);
+  });
+
   it("canDelete but not rename or download", () => {
     expect(config.canDelete).toBe(true);
     expect(config.canRename).toBe(false);
@@ -304,6 +308,10 @@ describe("accel resource config", () => {
     expect(config.previewKind).toBe("map");
   });
 
+  it("has detailFromList enabled", () => {
+    expect(config.detailFromList).toBe(true);
+  });
+
   it("buildSubtitle includes preset and quality", () => {
     const sub = config.buildSubtitle({
       saved_at_label: "Mar 15",
@@ -362,6 +370,10 @@ describe("boardDocuments resource config", () => {
     expect(config.previewKind).toBe("board-preview");
   });
 
+  it("has detailFromList enabled", () => {
+    expect(config.detailFromList).toBe(true);
+  });
+
   it("canOpen is always true", () => {
     expect(config.canOpen({})).toBe(true);
     expect(config.canOpen(null)).toBe(true);
@@ -387,6 +399,10 @@ describe("media resource config", () => {
 
   it("has media previewKind", () => {
     expect(config.previewKind).toBe("media");
+  });
+
+  it("does not have detailFromList (media uses inline detail)", () => {
+    expect(config.detailFromList).toBeFalsy();
   });
 
   it("canOpen returns true for image media", () => {

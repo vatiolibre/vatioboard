@@ -343,7 +343,7 @@ describe("library.html smoke", () => {
     await bootHtmlPage("library.html");
   });
 
-  it("loads cloud library summaries and lazy detail without requesting payloads", async () => {
+  it("loads cloud library summaries using list row as detail for speed recordings", async () => {
     const libraryPage = await import("../../src/library/library.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
@@ -363,10 +363,12 @@ describe("library.html smoke", () => {
     await settleLibraryTasks();
 
     expect(document.getElementById("libraryDetailTitle")?.textContent).toBe("Bridge run");
-    expect(window.fetch).toHaveBeenCalledWith(
-      expect.stringContaining("include_payload=0"),
-      expect.anything()
+    // With detailFromList, speed records use the list row as their detail
+    // and no separate detail fetch is made.
+    const detailCalls = window.fetch.mock.calls.filter(
+      ([url]) => typeof url === "string" && url.includes("get_my_speed_recording_detail")
     );
+    expect(detailCalls).toHaveLength(0);
   });
 
   it("disables open when a replay only has summary metadata", async () => {
@@ -515,8 +517,7 @@ describe("library.html smoke", () => {
     }
   });
 
-  it("keeps appended items when the initial background revalidation resolves later", async () => {
-    const revalidation = createDeferred();
+  it("keeps appended items across load-more pagination", async () => {
     const loadMore = createDeferred();
     let speedListCalls = 0;
 
@@ -550,25 +551,12 @@ describe("library.html smoke", () => {
           });
         }
 
-        if (offset === 0) {
-          return revalidation.promise;
-        }
-
         if (offset === 2) {
           return loadMore.promise;
         }
-      }
 
-      if (url.includes("/api/method/vatiolibre.vatiolibre.cloud_sync.get_my_speed_recording_detail")) {
-        const recordName = new URL(url).searchParams.get("name");
         return jsonResponse({
-          message: {
-            record: {
-              name: recordName,
-              title: recordName === "SYNC-REPLAY-2" ? "Bridge run" : "Downtown loop",
-              started_at_label: "2026-04-02 10:00:00",
-            },
-          },
+          message: { records: [], total_count: 0, has_more: false, next_offset: 0 },
         });
       }
 
@@ -579,7 +567,8 @@ describe("library.html smoke", () => {
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
-    expect(speedListCalls).toBeGreaterThanOrEqual(2);
+    // Fresh speed response: no background revalidation, only the initial list call
+    expect(speedListCalls).toBe(1);
     expect(Array.from(document.querySelectorAll(".library-record-title")).map((item) => item.textContent)).toEqual([
       "Downtown loop",
       "Bridge run",
@@ -609,29 +598,6 @@ describe("library.html smoke", () => {
         total_count: 4,
         has_more: false,
         next_offset: 4,
-      },
-    }));
-    await settleLibraryTasks();
-
-    revalidation.resolve(jsonResponse({
-      message: {
-        records: [
-          {
-            name: "SYNC-REPLAY-1",
-            title: "Downtown loop",
-            record_title: "Downtown loop",
-            started_at_label: "2026-04-01 10:00:00",
-          },
-          {
-            name: "SYNC-REPLAY-2",
-            title: "Bridge run",
-            record_title: "Bridge run",
-            started_at_label: "2026-04-02 10:00:00",
-          },
-        ],
-        total_count: 4,
-        has_more: true,
-        next_offset: 2,
       },
     }));
     await settleLibraryTasks();
@@ -689,7 +655,7 @@ describe("library.html smoke", () => {
     expect(document.querySelectorAll(".library-record")).toHaveLength(0);
   });
 
-  it("surfaces a 500 detail response as an error instead of rendering empty detail success", async () => {
+  it("uses list row as detail for speed records without a separate detail fetch", async () => {
     window.fetch = createAuthenticatedLibraryFetch((url) => {
       if (url.includes("/api/method/vatiolibre.vatiolibre.cloud_sync.list_my_speed_recordings")) {
         return jsonResponse({
@@ -720,14 +686,18 @@ describe("library.html smoke", () => {
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
-    expect(document.getElementById("libraryStatus")?.textContent).toBe(
-      "Could not load this cloud record (500)"
-    );
+    // With detailFromList, no detail fetch is made — the list row IS the detail.
+    // The 500 detail response is never triggered.
     expect(document.getElementById("libraryDetailTitle")?.textContent).toBe("Downtown loop");
     expect(document.querySelectorAll(".library-record")).toHaveLength(1);
+    // No detail fetch calls for speed records
+    const detailCalls = window.fetch.mock.calls.filter(
+      ([url]) => typeof url === "string" && url.includes("get_my_speed_recording_detail")
+    );
+    expect(detailCalls).toHaveLength(0);
   });
 
-  it("removes a stale speed record when its summary detail returns 404", async () => {
+  it("removes a stale speed record when open hits a 404 on the payload detail", async () => {
     let speedListCalls = 0;
     const staleRecord = {
       name: "SYNC-REPLAY-GONE",
@@ -755,7 +725,7 @@ describe("library.html smoke", () => {
     window.fetch = createAuthenticatedLibraryFetch((url) => {
       if (url.includes("/api/method/vatiolibre.vatiolibre.cloud_sync.list_my_speed_recordings")) {
         speedListCalls += 1;
-        const records = speedListCalls >= 3 ? [remainingRecord] : [staleRecord, remainingRecord];
+        const records = speedListCalls >= 2 ? [remainingRecord] : [staleRecord, remainingRecord];
         return jsonResponse({
           message: {
             records,
@@ -786,6 +756,14 @@ describe("library.html smoke", () => {
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
+    // With detailFromList, stale record is visible from the list.
+    // Clicking "open" triggers a payload fetch that returns 404.
+    expect(document.getElementById("libraryDetailTitle")?.textContent).toBe("Gone run");
+    document.getElementById("libraryActionOpen")?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true })
+    );
+    await settleLibraryTasks();
+
     expect(Array.from(document.querySelectorAll(".library-record-title")).map((item) => item.textContent)).toEqual([
       "Still here",
     ]);
@@ -795,7 +773,6 @@ describe("library.html smoke", () => {
 
   it("removes a stale speed record when open hits a 404 on the full cloud detail", async () => {
     let speedListCalls = 0;
-    let staleDetailCalls = 0;
     const staleRecord = {
       name: "SYNC-REPLAY-GONE",
       title: "Gone run",
@@ -822,7 +799,7 @@ describe("library.html smoke", () => {
     window.fetch = createAuthenticatedLibraryFetch((url) => {
       if (url.includes("/api/method/vatiolibre.vatiolibre.cloud_sync.list_my_speed_recordings")) {
         speedListCalls += 1;
-        const records = speedListCalls >= 3 ? [remainingRecord] : [staleRecord, remainingRecord];
+        const records = speedListCalls >= 2 ? [remainingRecord] : [staleRecord, remainingRecord];
         return jsonResponse({
           message: {
             records,
@@ -836,13 +813,9 @@ describe("library.html smoke", () => {
       if (url.includes("/api/method/vatiolibre.vatiolibre.cloud_sync.get_my_speed_recording_detail")) {
         const requestUrl = new URL(url);
         const recordName = requestUrl.searchParams.get("name");
-        const includePayload = requestUrl.searchParams.get("include_payload");
 
         if (recordName === staleRecord.name) {
-          staleDetailCalls += 1;
-          if (includePayload === "1" || staleDetailCalls >= 2) {
-            return jsonResponse({ message: "Missing" }, 404);
-          }
+          return jsonResponse({ message: "Missing" }, 404);
         }
 
         return jsonResponse({
@@ -905,7 +878,7 @@ describe("library.html smoke", () => {
     window.fetch = createAuthenticatedLibraryFetch((url, options = {}) => {
       if (url.includes("/api/method/vatiolibre.vatiolibre.cloud_sync.list_my_speed_recordings")) {
         speedListCalls += 1;
-        const records = speedListCalls >= 3 ? [remainingRecord] : [staleRecord, remainingRecord];
+        const records = speedListCalls >= 2 ? [remainingRecord] : [staleRecord, remainingRecord];
         return jsonResponse({
           message: {
             records,

@@ -786,14 +786,15 @@ function renderList() {
         }
 
         state.selectedName = item.name;
-        if (state.activeTab === CLOUD_LIBRARY_TAB_KEYS.media) {
+        const config = getResourceConfig(state.activeTab);
+        if (state.activeTab === CLOUD_LIBRARY_TAB_KEYS.media || config.detailFromList) {
           state.selectedDetail = item;
         } else {
           state.selectedDetail = null;
         }
         renderList();
         renderDetail();
-        if (state.activeTab !== CLOUD_LIBRARY_TAB_KEYS.media) {
+        if (state.activeTab !== CLOUD_LIBRARY_TAB_KEYS.media && !config.detailFromList) {
           void loadDetail(item.name);
         }
       });
@@ -1195,6 +1196,7 @@ async function loadDetail(name, { force = false } = {}) {
 
   const resourceConfig = getCurrentResourceConfig();
   const tabKey = state.activeTab;
+  const detailFromList = getResourceConfig(tabKey).detailFromList;
   const requestId = stopRequest(detailRequestState);
   const controller = new AbortController();
   detailRequestState.controller = controller;
@@ -1221,7 +1223,7 @@ async function loadDetail(name, { force = false } = {}) {
     state.selectedDetail = resourceConfig.getDetailItem(response) || null;
     renderDetail();
 
-    if (!force && tabKey !== CLOUD_LIBRARY_TAB_KEYS.media) {
+    if (!force && tabKey !== CLOUD_LIBRARY_TAB_KEYS.media && !detailFromList) {
       void resourceConfig.resource.getDetail(name, {
         force: true,
         mode: resourceConfig.detailMode || "summary",
@@ -1315,6 +1317,7 @@ async function loadList({ append = false, force = false, offlineBootstrap = fals
 
   const resourceConfig = getCurrentResourceConfig();
   const tabKey = state.activeTab;
+  const detailFromList = getResourceConfig(tabKey).detailFromList;
   const offset = append ? state.nextOffset : 0;
   const previousSelectedName = state.selectedName;
   const requestKey = buildListRequestKey({
@@ -1391,12 +1394,12 @@ async function loadList({ append = false, force = false, offlineBootstrap = fals
     const selectionChanged = nextSelected !== previousSelectedName;
     state.selectedName = nextSelected;
     if (selectionChanged || !state.selectedDetail || state.selectedDetail.name !== nextSelected) {
-      if (tabKey === CLOUD_LIBRARY_TAB_KEYS.media) {
+      if (tabKey === CLOUD_LIBRARY_TAB_KEYS.media || detailFromList) {
         state.selectedDetail = state.items.find((i) => i.name === nextSelected) || null;
       } else {
         state.selectedDetail = null;
       }
-    } else if (tabKey === CLOUD_LIBRARY_TAB_KEYS.media) {
+    } else if (tabKey === CLOUD_LIBRARY_TAB_KEYS.media || detailFromList) {
       // Keep detail in sync with the refreshed list row data so flags
       // like _offline and updated URLs propagate to renderDetail.
       state.selectedDetail = state.items.find((i) => i.name === state.selectedName) || state.selectedDetail;
@@ -1405,14 +1408,14 @@ async function loadList({ append = false, force = false, offlineBootstrap = fals
     renderDetail();
 
     if (state.selectedName && (!state.selectedDetail || selectionChanged || preserveSnapshot)) {
-      if (tabKey !== CLOUD_LIBRARY_TAB_KEYS.media) {
+      if (tabKey !== CLOUD_LIBRARY_TAB_KEYS.media && !detailFromList) {
         void loadDetail(state.selectedName);
       }
     }
 
     void refreshPinStatesForItems(state.items);
 
-    if (!force && !append && (tabKey !== CLOUD_LIBRARY_TAB_KEYS.media || isStaleResponse)) {
+    if (!force && !append && isStaleResponse) {
       const revalidationFence = {
         generation,
         requestId,
@@ -1445,7 +1448,7 @@ async function loadList({ append = false, force = false, offlineBootstrap = fals
         state.nextOffset = Number(freshResponse?.nextOffset ?? freshResponse?.next_offset) || state.items.length;
         if (!state.items.some((item) => item.name === state.selectedName)) {
           state.selectedName = state.items[0]?.name || "";
-          if (tabKey === CLOUD_LIBRARY_TAB_KEYS.media) {
+          if (tabKey === CLOUD_LIBRARY_TAB_KEYS.media || detailFromList) {
             state.selectedDetail = state.items.find((i) => i.name === state.selectedName) || null;
           } else {
             state.selectedDetail = null;
@@ -1453,8 +1456,8 @@ async function loadList({ append = false, force = false, offlineBootstrap = fals
               void loadDetail(state.selectedName, { force: true });
             }
           }
-        } else if (tabKey === CLOUD_LIBRARY_TAB_KEYS.media && state.selectedName) {
-          // Keep the media detail in sync with the refreshed list row data
+        } else if ((tabKey === CLOUD_LIBRARY_TAB_KEYS.media || detailFromList) && state.selectedName) {
+          // Keep the detail in sync with the refreshed list row data
           // so that flags like _offline propagate to renderDetail.
           state.selectedDetail = state.items.find((i) => i.name === state.selectedName) || state.selectedDetail;
         }
