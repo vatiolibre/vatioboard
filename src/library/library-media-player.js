@@ -22,7 +22,7 @@ export function createLibraryMediaPlayer() {
    * @param {string} [options.blobUrl] - Local pinned blob URL (takes priority)
    * @returns {boolean} true if player was created
    */
-  function mount({ container, item, blobUrl = "" }) {
+  function mount({ container, item, blobUrl = "", onFirstRemotePlay = null }) {
     destroy();
 
     const mediaKind = String(item?.media_kind || "").toLowerCase();
@@ -45,6 +45,7 @@ export function createLibraryMediaPlayer() {
       title: item.title || item.name || "",
       posterUrl,
       visualizer: mediaKind === "audio" && isVisualizerSafeSource(src),
+      onFirstRemotePlay,
     });
 
     return Boolean(activePlayer);

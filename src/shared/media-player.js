@@ -33,10 +33,11 @@ const PROGRESS_MAX = 1000;
  * @param {string} [options.posterUrl] - Poster image URL for video
  * @returns {{ destroy: () => void, mediaElement: HTMLMediaElement }}
  */
-export function createMediaPlayer({ container, src, kind, title = "", posterUrl = "", visualizer: enableVisualizer = false }) {
+export function createMediaPlayer({ container, src, kind, title = "", posterUrl = "", visualizer: enableVisualizer = false, onFirstRemotePlay = null }) {
   if (!container || !src) return null;
 
   const isVideo = kind === "video";
+  let firstPlayFired = false;
 
   // Root wrapper
   const root = document.createElement("div");
@@ -186,6 +187,14 @@ export function createMediaPlayer({ container, src, kind, title = "", posterUrl 
     delete root.dataset.playbackError;
     syncPlayIcon();
     rafId = requestAnimationFrame(updateLoop);
+
+    // Fire the first-remote-play callback exactly once for non-blob sources.
+    if (!firstPlayFired && typeof onFirstRemotePlay === "function") {
+      firstPlayFired = true;
+      if (!src.startsWith("blob:")) {
+        try { onFirstRemotePlay(); } catch { /* non-blocking */ }
+      }
+    }
   }
 
   function onPause() {

@@ -355,7 +355,7 @@ function derivePreviewSignature(item, { isOfflineItem = false, isPinned = false,
   // For media items, use BFF-derived preview source or fallback to any
   // URL fields that may be present on resolved items.
   const imageUrl = item.image_url || item.preview_image_url || "";
-  const effectiveUrl = (isPinned && localPreviewUrl) ? localPreviewUrl : imageUrl;
+  const effectiveUrl = localPreviewUrl || imageUrl;
   const mediaKind = String(item.media_kind || "");
 
   // For map previews, include a hash of the route coordinates so we detect
@@ -706,6 +706,46 @@ function canOpenCloudLibraryItem(item) {
   return config.canOpen(item);
 }
 
+/**
+ * Check non-pinned cached blob state for a single item, verifying that
+ * both meta and blob exist.  Orphaned meta (meta without a blob) is
+ * cleaned up and the item is NOT marked as locally cached.
+ *
+ * Shared between refreshPinState() and refreshPinStatesForItems() so
+ * the two paths cannot drift.
+ *
+ * @returns {boolean} true if any state set changed
+ */
+async function reconcileCachedBlobState(name, item) {
+  const cachedMeta = await getCachedBlobMeta(name).catch(() => null);
+  const wasCached = state.cachedBlobNames.has(name);
+  let changed = false;
+
+  if (cachedMeta) {
+    // Verify that the actual blob exists — orphaned meta without
+    // a usable blob must not mark the item as locally available.
+    const blobExists = await getCachedMediaBlob(name).catch(() => null);
+    if (!blobExists) {
+      // Orphaned meta — clean it up silently.
+      removeCachedMediaBlob(name).catch(() => {});
+      if (wasCached) { state.cachedBlobNames.delete(name); changed = true; }
+      if (state.staleCachedNames.has(name)) { state.staleCachedNames.delete(name); changed = true; }
+    } else {
+      if (!wasCached) { state.cachedBlobNames.add(name); changed = true; }
+      const stale = item?.content_hash && cachedMeta.content_hash
+        && item.content_hash !== cachedMeta.content_hash;
+      const wasStale = state.staleCachedNames.has(name);
+      if (stale && !wasStale) { state.staleCachedNames.add(name); changed = true; }
+      else if (!stale && wasStale) { state.staleCachedNames.delete(name); changed = true; }
+    }
+  } else {
+    if (wasCached) { state.cachedBlobNames.delete(name); changed = true; }
+    if (state.staleCachedNames.has(name)) { state.staleCachedNames.delete(name); changed = true; }
+  }
+
+  return changed;
+}
+
 async function refreshPinState(name) {
   if (!name || state.activeTab !== CLOUD_LIBRARY_TAB_KEYS.media) return;
   try {
@@ -726,20 +766,9 @@ async function refreshPinState(name) {
 
     // Also check non-pinned cached blob state.
     if (!state.pinnedNames.has(name)) {
-      const cachedMeta = await getCachedBlobMeta(name).catch(() => null);
-      if (cachedMeta) {
-        state.cachedBlobNames.add(name);
-        const item = state.selectedDetail
-          || state.items.find((i) => i.name === name) || null;
-        if (item?.content_hash && cachedMeta.content_hash && item.content_hash !== cachedMeta.content_hash) {
-          state.staleCachedNames.add(name);
-        } else {
-          state.staleCachedNames.delete(name);
-        }
-      } else {
-        state.cachedBlobNames.delete(name);
-        state.staleCachedNames.delete(name);
-      }
+      const item = state.selectedDetail
+        || state.items.find((i) => i.name === name) || null;
+      await reconcileCachedBlobState(name, item);
     }
 
     renderDetail();
@@ -768,31 +797,9 @@ async function refreshPinStatesForItems(items) {
         if (state.stalePinnedNames.has(item.name)) { state.stalePinnedNames.delete(item.name); changed = true; }
       }
 
-      // Check non-pinned cached blob state.
+      // Check non-pinned cached blob state via shared helper.
       if (!state.pinnedNames.has(item.name)) {
-        const cachedMeta = await getCachedBlobMeta(item.name).catch(() => null);
-        const wasCached = state.cachedBlobNames.has(item.name);
-        if (cachedMeta) {
-          // Verify that the actual blob exists — orphaned meta without
-          // a usable blob must not mark the item as locally available.
-          const blobExists = await getCachedMediaBlob(item.name).catch(() => null);
-          if (!blobExists) {
-            // Orphaned meta — clean it up silently.
-            removeCachedMediaBlob(item.name).catch(() => {});
-            if (wasCached) { state.cachedBlobNames.delete(item.name); changed = true; }
-            if (state.staleCachedNames.has(item.name)) { state.staleCachedNames.delete(item.name); changed = true; }
-          } else {
-            if (!wasCached) { state.cachedBlobNames.add(item.name); changed = true; }
-            const stale = item.content_hash && cachedMeta.content_hash
-              && item.content_hash !== cachedMeta.content_hash;
-            const wasStale = state.staleCachedNames.has(item.name);
-            if (stale && !wasStale) { state.staleCachedNames.add(item.name); changed = true; }
-            else if (!stale && wasStale) { state.staleCachedNames.delete(item.name); changed = true; }
-          }
-        } else {
-          if (wasCached) { state.cachedBlobNames.delete(item.name); changed = true; }
-          if (state.staleCachedNames.has(item.name)) { state.staleCachedNames.delete(item.name); changed = true; }
-        }
+        if (await reconcileCachedBlobState(item.name, item)) changed = true;
       }
     } catch {
       // skip
@@ -994,10 +1001,20 @@ function renderDetailPreview(item = {}, { isOfflineItem = false, isPinned = fals
 
     if (mediaSrc) {
       libraryMediaPlayer.destroy();
+
+      // When the source is remote and the item is auto-cache eligible,
+      // wire first-play to trigger the same non-blocking background cache
+      // used by the Open action.  This fires only once per player mount
+      // and skips blob: sources entirely (handled inside createMediaPlayer).
+      const onFirstRemotePlay = (!hasLocalBlob && isAutoCacheEligible(item))
+        ? () => triggerAutoCacheDownload(item.name, item).catch(() => {})
+        : null;
+
       const mounted = libraryMediaPlayer.mount({
         container: elements.detailPreview,
         item,
         blobUrl: hasLocalBlob ? localPreviewUrl : "",
+        onFirstRemotePlay,
       });
       if (mounted) {
         elements.detailPreview.dataset.previewKind = "media-player";
@@ -1994,10 +2011,15 @@ async function togglePinSelectedMedia() {
     state.mutatingNames.add(selectedName);
     renderDetail();
     try {
-      await unpinMediaBlob(selectedName);
-      state.pinnedNames.delete(selectedName);
-      state.stalePinnedNames.delete(selectedName);
-      setStatus("cloudLibraryUnpinned", { title: asset?.title || selectedName }, "success");
+      const unpinOk = await unpinMediaBlob(selectedName);
+      if (unpinOk) {
+        state.pinnedNames.delete(selectedName);
+        state.stalePinnedNames.delete(selectedName);
+        renderList();
+        setStatus("cloudLibraryUnpinned", { title: asset?.title || selectedName }, "success");
+      } else {
+        setStatus("cloudLibraryPinFailed", null, "danger");
+      }
     } catch {
       setStatus("cloudLibraryPinFailed", null, "danger");
     } finally {
@@ -2005,6 +2027,49 @@ async function togglePinSelectedMedia() {
       renderDetail();
     }
     return;
+  }
+
+  // ── Local promotion fast path ──────────────────────────────────
+  // When a fresh cached blob exists locally with a matching content hash,
+  // promote it to pinned entirely locally — no backend access resolution,
+  // no signed URL fetch, no BFF blob streaming.  Stale cached blobs are
+  // intentionally excluded; they fall through to the network path below.
+  const hasFreshCachedBlob = state.cachedBlobNames.has(selectedName) && !state.staleCachedNames.has(selectedName);
+  if (!isPinned && hasFreshCachedBlob) {
+    state.mutatingNames.add(selectedName);
+    setStatusText(t("cloudLibraryPinning"), "muted");
+    renderDetail();
+    try {
+      const localResult = await getCachedMediaBlob(selectedName).catch(() => null);
+      const localMeta = await getCachedBlobMeta(selectedName).catch(() => null);
+      const cachedHash = localMeta?.content_hash || null;
+      const assetHash = asset?.content_hash || null;
+      const hashMatch = !assetHash || !cachedHash || assetHash === cachedHash;
+
+      if (localResult && hashMatch) {
+        const pinOk = await pinMediaBlob(selectedName, localResult, { contentHash: cachedHash });
+        if (pinOk) {
+          removeCachedMediaBlob(selectedName).catch(() => {});
+          state.cachedBlobNames.delete(selectedName);
+          state.staleCachedNames.delete(selectedName);
+          state.pinnedNames.add(selectedName);
+          state.stalePinnedNames.delete(selectedName);
+          renderList();
+          setStatus("cloudLibraryPinned", { title: asset?.title || selectedName }, "success");
+        } else {
+          // Persistence failed — do NOT remove cached copy or update state.
+          setStatus("cloudLibraryPinFailed", null, "danger");
+        }
+        // Whether pin succeeded or failed, do NOT fall through to network.
+        return;
+      }
+      // Cached blob missing or hash mismatch — fall through to network path.
+    } catch {
+      // IndexedDB read failed — fall through to network path.
+    } finally {
+      state.mutatingNames.delete(selectedName);
+      renderDetail();
+    }
   }
 
   // Pin or re-pin stale blob — resolve a signed URL and download directly
@@ -2049,14 +2114,19 @@ async function togglePinSelectedMedia() {
       return;
     }
     const blob = await response.blob();
-    await pinMediaBlob(selectedName, blob, { contentHash: asset?.content_hash || null });
-    // Remove any non-pinned cached copy since the durable pin supersedes it.
-    removeCachedMediaBlob(selectedName).catch(() => {});
-    state.cachedBlobNames.delete(selectedName);
-    state.staleCachedNames.delete(selectedName);
-    state.pinnedNames.add(selectedName);
-    state.stalePinnedNames.delete(selectedName);
-    setStatus("cloudLibraryPinned", { title: asset?.title || selectedName }, "success");
+    const pinOk = await pinMediaBlob(selectedName, blob, { contentHash: asset?.content_hash || null });
+    if (pinOk) {
+      // Remove any non-pinned cached copy since the durable pin supersedes it.
+      removeCachedMediaBlob(selectedName).catch(() => {});
+      state.cachedBlobNames.delete(selectedName);
+      state.staleCachedNames.delete(selectedName);
+      state.pinnedNames.add(selectedName);
+      state.stalePinnedNames.delete(selectedName);
+      renderList();
+      setStatus("cloudLibraryPinned", { title: asset?.title || selectedName }, "success");
+    } else {
+      setStatus("cloudLibraryPinFailed", null, "danger");
+    }
   } catch {
     setStatus("cloudLibraryPinFailed", null, "danger");
   } finally {

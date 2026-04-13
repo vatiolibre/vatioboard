@@ -4354,5 +4354,914 @@ describe("library offline media", () => {
         openSpy.mockRestore();
       }
     });
+
+    // ── Regression: inline play auto-cache (Fix 2) ────────────────
+
+    it("inline play on a remote eligible asset triggers auto-cache", async () => {
+      mockMediaCache.isAutoCacheEligible.mockReturnValue(true);
+
+      window.fetch = createAutoCacheFetch();
+      await bootHtmlPage("library.html");
+      const libraryPage = await import("../../src/library/library.js");
+      await libraryPage.initPromise;
+      await settleLibraryTasks();
+
+      document.querySelector('[data-tab="media"]')?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      document.querySelector(".library-record")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      // No auto-cache before play.
+      expect(mockMediaCache.registerAutoCacheDownload).not.toHaveBeenCalled();
+
+      // Trigger inline play via the media element's "play" event.
+      const mediaEl = document.querySelector(".media-player audio, .media-player video");
+      expect(mediaEl).toBeTruthy();
+      mediaEl.dispatchEvent(new Event("play"));
+      await settleLibraryTasks();
+
+      // Auto-cache should have fired from first remote play.
+      expect(mockMediaCache.registerAutoCacheDownload).toHaveBeenCalledWith(
+        "MEDIA-1",
+        expect.any(Function),
+      );
+    });
+
+    it("inline play on a local blob does not trigger auto-cache", async () => {
+      mockMediaCache.isAutoCacheEligible.mockReturnValue(true);
+      const fakeBlob = new Blob(["cached-audio"], { type: "audio/mpeg" });
+      mockMediaCache.getCachedBlobMeta.mockResolvedValue({
+        content_hash: "hash-a1",
+        cached_at: Date.now(),
+        blob_size: 4096,
+        media_kind: "audio",
+        pinned: false,
+      });
+      mockMediaCache.getCachedMediaBlob.mockResolvedValue(fakeBlob);
+      mockMediaCache.getLocalMediaBlob.mockResolvedValue({
+        blob: fakeBlob,
+        source: "cached",
+        contentHash: "hash-a1",
+      });
+
+      const originalCreateObjectURL = URL.createObjectURL;
+      URL.createObjectURL = vi.fn(() => "blob:vatioboard/local-play");
+
+      try {
+        window.fetch = createAutoCacheFetch();
+        await bootHtmlPage("library.html");
+        const libraryPage = await import("../../src/library/library.js");
+        await libraryPage.initPromise;
+        await settleLibraryTasks();
+
+        document.querySelector('[data-tab="media"]')?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true }),
+        );
+        await settleLibraryTasks(24);
+
+        document.querySelector(".library-record")?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true }),
+        );
+        await settleLibraryTasks(24);
+
+        // Trigger inline play.
+        const mediaEl = document.querySelector(".media-player audio, .media-player video");
+        expect(mediaEl).toBeTruthy();
+        mediaEl.dispatchEvent(new Event("play"));
+        await settleLibraryTasks();
+
+        // Auto-cache should NOT fire — source is a local blob.
+        expect(mockMediaCache.registerAutoCacheDownload).not.toHaveBeenCalled();
+      } finally {
+        URL.createObjectURL = originalCreateObjectURL;
+      }
+    });
+
+    it("passive selection/render still does not trigger auto-cache", async () => {
+      mockMediaCache.isAutoCacheEligible.mockReturnValue(true);
+
+      window.fetch = createAutoCacheFetch();
+      await bootHtmlPage("library.html");
+      const libraryPage = await import("../../src/library/library.js");
+      await libraryPage.initPromise;
+      await settleLibraryTasks();
+
+      document.querySelector('[data-tab="media"]')?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      // Selecting renders the detail — must not trigger auto-cache.
+      document.querySelector(".library-record")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      expect(mockMediaCache.registerAutoCacheDownload).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Cached → pinned local promotion ──────────────────────────────
+
+  describe("cached to pinned local promotion", () => {
+    const audioAsset = {
+      name: "MEDIA-1",
+      title: "My Track",
+      media_kind: "audio",
+      blob_size: 4096,
+      original_filename: "track.mp3",
+      content_hash: "hash-a1",
+      modified_at: "2026-04-03T09:00:00Z",
+      created_at_label: "2026-04-03",
+      modified_at_label: "2026-04-03",
+      folder_path: "Music",
+      has_preview_image: false,
+      file_extension: "mp3",
+    };
+
+    function createPinFetch({ assetOverride } = {}) {
+      const asset = assetOverride || audioAsset;
+      return createAuthenticatedLibraryFetch((url) => {
+        if (url.includes("list_my_media_assets")) {
+          return jsonResponse({
+            message: { assets: [asset], total_count: 1, has_more: false, next_offset: 1 },
+          });
+        }
+        if (url.includes("get_my_media_asset_detail")) {
+          return jsonResponse({ message: { asset } });
+        }
+        if (url.includes("get_my_media_asset_access")) {
+          return jsonResponse({
+            message: {
+              asset: { name: asset.name, content_hash: asset.content_hash, media_kind: asset.media_kind },
+              access: { download_url: "https://s3.example.com/signed-blob", expires_in_seconds: 300 },
+            },
+          });
+        }
+        if (url.includes("s3.example.com/signed-blob")) {
+          return new Response(new Blob(["blob-data"], { type: "application/octet-stream" }), { status: 200 });
+        }
+        if (url.includes("stream_my_media_asset_blob")) {
+          return new Response(new Blob(["streamed-data"], { type: "application/octet-stream" }), { status: 200 });
+        }
+        if (url.includes("list_my_speed_recordings")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+        if (url.includes("list_my_accel_runs")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+        if (url.includes("list_my_board_documents")) return jsonResponse({ message: { documents: [], total_count: 0, has_more: false } });
+        return jsonResponse({});
+      });
+    }
+
+    it("promotes a fresh cached blob to pinned entirely locally without network call", async () => {
+      const fakeBlob = new Blob(["cached-audio"], { type: "audio/mpeg" });
+      mockMediaCache.getCachedBlobMeta.mockResolvedValue({
+        content_hash: "hash-a1",
+        cached_at: Date.now(),
+        blob_size: 4096,
+        media_kind: "audio",
+        pinned: false,
+      });
+      mockMediaCache.getCachedMediaBlob.mockResolvedValue(fakeBlob);
+      mockMediaCache.getLocalMediaBlob.mockResolvedValue({
+        blob: fakeBlob,
+        source: "cached",
+        contentHash: "hash-a1",
+      });
+
+      window.fetch = createPinFetch();
+      await bootHtmlPage("library.html");
+      const libraryPage = await import("../../src/library/library.js");
+      await libraryPage.initPromise;
+      await settleLibraryTasks();
+
+      document.querySelector('[data-tab="media"]')?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      document.querySelector(".library-record")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      // Pin the item.
+      document.getElementById("libraryActionPin")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      // pinMediaBlob should have been called with the local blob.
+      expect(mockMediaCache.pinMediaBlob).toHaveBeenCalledWith(
+        "MEDIA-1",
+        fakeBlob,
+        expect.objectContaining({ contentHash: "hash-a1" }),
+      );
+
+      // Cached copy should have been removed.
+      expect(mockMediaCache.removeCachedMediaBlob).toHaveBeenCalledWith("MEDIA-1");
+
+      // No get_my_media_asset_access call — promotion is fully local.
+      const accessCalls = window.fetch.mock.calls.filter(
+        ([u]) => typeof u === "string" && u.includes("get_my_media_asset_access"),
+      );
+      expect(accessCalls).toHaveLength(0);
+
+      // No signed-blob or stream-blob calls either.
+      const blobCalls = window.fetch.mock.calls.filter(
+        ([u]) => typeof u === "string" && (u.includes("s3.example.com") || u.includes("stream_my_media_asset_blob")),
+      );
+      expect(blobCalls).toHaveLength(0);
+    });
+
+    it("pinning a fresh cached blob works offline", async () => {
+      const fakeBlob = new Blob(["cached-audio"], { type: "audio/mpeg" });
+      const offlineItem = {
+        ...audioAsset,
+        _offline: true,
+        preview_image_url: null,
+        download_url: null,
+      };
+
+      mockMediaCache.getCachedMediaManifest.mockResolvedValue([offlineItem]);
+      mockMediaCache.getCachedMediaMetadata.mockResolvedValue(offlineItem);
+      mockMediaCache.getCachedBlobMeta.mockResolvedValue({
+        content_hash: "hash-a1",
+        cached_at: Date.now(),
+        blob_size: 4096,
+        media_kind: "audio",
+        pinned: false,
+      });
+      mockMediaCache.getCachedMediaBlob.mockResolvedValue(fakeBlob);
+      mockMediaCache.getLocalMediaBlob.mockResolvedValue({
+        blob: fakeBlob,
+        source: "cached",
+        contentHash: "hash-a1",
+      });
+
+      window.fetch = createAuthenticatedLibraryFetch((url) => {
+        if (url.includes("list_my_media_assets"))
+          return Promise.reject(new TypeError("Failed to fetch"));
+        if (url.includes("get_my_media_asset_detail"))
+          return Promise.reject(new TypeError("Failed to fetch"));
+        if (url.includes("list_my_speed_recordings"))
+          return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+        if (url.includes("list_my_accel_runs"))
+          return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+        if (url.includes("list_my_board_documents"))
+          return jsonResponse({ message: { documents: [], total_count: 0, has_more: false } });
+        return jsonResponse({});
+      });
+
+      await bootHtmlPage("library.html");
+      const libraryPage = await import("../../src/library/library.js");
+      await libraryPage.initPromise;
+      await settleLibraryTasks();
+
+      document.querySelector('[data-tab="media"]')?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      document.querySelector(".library-record")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      // Pin the item while fully offline.
+      document.getElementById("libraryActionPin")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      // pinMediaBlob should have been called with the local blob.
+      expect(mockMediaCache.pinMediaBlob).toHaveBeenCalledWith(
+        "MEDIA-1",
+        fakeBlob,
+        expect.objectContaining({ contentHash: "hash-a1" }),
+      );
+      // Cached copy cleaned up.
+      expect(mockMediaCache.removeCachedMediaBlob).toHaveBeenCalledWith("MEDIA-1");
+    });
+
+    it("cached state is replaced by pinned state after promotion", async () => {
+      const fakeBlob = new Blob(["cached-audio"], { type: "audio/mpeg" });
+      mockMediaCache.getCachedBlobMeta.mockResolvedValue({
+        content_hash: "hash-a1",
+        cached_at: Date.now(),
+        blob_size: 4096,
+        media_kind: "audio",
+        pinned: false,
+      });
+      mockMediaCache.getCachedMediaBlob.mockResolvedValue(fakeBlob);
+      mockMediaCache.getLocalMediaBlob.mockResolvedValue({
+        blob: fakeBlob,
+        source: "cached",
+        contentHash: "hash-a1",
+      });
+
+      window.fetch = createPinFetch();
+      await bootHtmlPage("library.html");
+      const libraryPage = await import("../../src/library/library.js");
+      await libraryPage.initPromise;
+      await settleLibraryTasks();
+
+      document.querySelector('[data-tab="media"]')?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      document.querySelector(".library-record")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      // Before pin: badge should say "Cached locally".
+      let badges = Array.from(document.querySelectorAll(".library-record-badge"));
+      let cachedBadge = badges.find((b) => b.textContent === "Cached locally");
+      expect(cachedBadge).toBeTruthy();
+
+      // Pin the item.
+      document.getElementById("libraryActionPin")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      // After pin: badge should change to "Available offline" (pinned).
+      badges = Array.from(document.querySelectorAll(".library-record-badge"));
+      const pinnedBadge = badges.find((b) => b.textContent === "Available offline");
+      expect(pinnedBadge).toBeTruthy();
+      // No "Cached locally" badge should remain.
+      cachedBadge = badges.find((b) => b.textContent === "Cached locally");
+      expect(cachedBadge).toBeFalsy();
+    });
+
+    it("stale cached blob falls through to network pin path", async () => {
+      const staleBlob = new Blob(["old-audio"], { type: "audio/mpeg" });
+      const updatedAsset = { ...audioAsset, content_hash: "hash-a2" };
+
+      mockMediaCache.getCachedBlobMeta.mockResolvedValue({
+        content_hash: "hash-a1",
+        cached_at: Date.now() - 86400000,
+        blob_size: 4096,
+        media_kind: "audio",
+        pinned: false,
+      });
+      mockMediaCache.getCachedMediaBlob.mockResolvedValue(staleBlob);
+      mockMediaCache.getLocalMediaBlob.mockResolvedValue({
+        blob: staleBlob,
+        source: "cached",
+        contentHash: "hash-a1",
+      });
+
+      window.fetch = createPinFetch({ assetOverride: updatedAsset });
+      await bootHtmlPage("library.html");
+      const libraryPage = await import("../../src/library/library.js");
+      await libraryPage.initPromise;
+      await settleLibraryTasks();
+
+      document.querySelector('[data-tab="media"]')?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      document.querySelector(".library-record")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      // Pin the item — stale cache should NOT be promoted.
+      document.getElementById("libraryActionPin")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      // Should have gone through the network path since cache is stale.
+      const accessCalls = window.fetch.mock.calls.filter(
+        ([u]) => typeof u === "string" && u.includes("get_my_media_asset_access"),
+      );
+      expect(accessCalls.length).toBeGreaterThan(0);
+    });
+  });
+
+  // ── Offline inline-preview bootstrap ─────────────────────────────
+
+  describe("offline inline-preview bootstrap", () => {
+    it("boots from cached manifest + blob and mounts playable local preview for audio", async () => {
+      const fakeBlob = new Blob(["cached-audio"], { type: "audio/mpeg" });
+      const offlineAudio = {
+        name: "MEDIA-1",
+        title: "My Track",
+        media_kind: "audio",
+        blob_size: 4096,
+        original_filename: "track.mp3",
+        content_hash: "hash-a1",
+        modified_at: "2026-04-03T09:00:00Z",
+        created_at_label: "2026-04-03",
+        modified_at_label: "2026-04-03",
+        folder_path: "Music",
+        has_preview_image: false,
+        file_extension: "mp3",
+        _offline: true,
+      };
+
+      mockMediaCache.getCachedMediaManifest.mockResolvedValue([offlineAudio]);
+      mockMediaCache.getCachedMediaMetadata.mockResolvedValue(offlineAudio);
+      mockMediaCache.getCachedBlobMeta.mockResolvedValue({
+        content_hash: "hash-a1",
+        cached_at: Date.now(),
+        blob_size: 4096,
+        media_kind: "audio",
+        pinned: false,
+      });
+      mockMediaCache.getCachedMediaBlob.mockResolvedValue(fakeBlob);
+      mockMediaCache.getLocalMediaBlob.mockResolvedValue({
+        blob: fakeBlob,
+        source: "cached",
+        contentHash: "hash-a1",
+      });
+
+      const originalCreateObjectURL = URL.createObjectURL;
+      URL.createObjectURL = vi.fn(() => "blob:vatioboard/local-offline-audio");
+
+      try {
+        // Fully offline — all list/detail calls fail.
+        window.fetch = createAuthenticatedLibraryFetch((url) => {
+          if (url.includes("list_my_media_assets"))
+            return Promise.reject(new TypeError("Failed to fetch"));
+          if (url.includes("get_my_media_asset_detail"))
+            return Promise.reject(new TypeError("Failed to fetch"));
+          if (url.includes("list_my_speed_recordings"))
+            return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+          if (url.includes("list_my_accel_runs"))
+            return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+          if (url.includes("list_my_board_documents"))
+            return jsonResponse({ message: { documents: [], total_count: 0, has_more: false } });
+          return jsonResponse({});
+        });
+
+        await bootHtmlPage("library.html");
+        const libraryPage = await import("../../src/library/library.js");
+        await libraryPage.initPromise;
+        await settleLibraryTasks();
+
+        document.querySelector('[data-tab="media"]')?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true }),
+        );
+        await settleLibraryTasks(24);
+
+        // Select the offline item.
+        document.querySelector(".library-record")?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true }),
+        );
+        await settleLibraryTasks(24);
+
+        // The detail preview should mount a media player with the local blob URL.
+        const preview = document.getElementById("libraryDetailPreview");
+        expect(preview).toBeTruthy();
+        expect(preview.dataset.previewKind).toBe("media-player");
+        expect(preview.querySelector(".media-player")).toBeTruthy();
+
+        // The audio element should use the blob: URL.
+        const audioEl = preview.querySelector("audio");
+        expect(audioEl).toBeTruthy();
+        expect(audioEl.src).toMatch(/^blob:/);
+      } finally {
+        URL.createObjectURL = originalCreateObjectURL;
+      }
+    });
+
+    it("boots from cached manifest + blob and renders local image preview", async () => {
+      const fakeBlob = new Blob(["fake-png"], { type: "image/png" });
+      const offlineImage = {
+        name: "MEDIA-1",
+        title: "Skidpad export",
+        media_kind: "image",
+        blob_size: 245760,
+        original_filename: "skidpad.png",
+        content_hash: "img-hash-1",
+        created_at_label: "2026-04-03",
+        modified_at_label: "2026-04-03",
+        folder_path: "Exports",
+        has_preview_image: true,
+        file_extension: "png",
+        _offline: true,
+      };
+
+      mockMediaCache.getCachedMediaManifest.mockResolvedValue([offlineImage]);
+      mockMediaCache.getCachedMediaMetadata.mockResolvedValue(offlineImage);
+      mockMediaCache.getCachedBlobMeta.mockResolvedValue({
+        content_hash: "img-hash-1",
+        cached_at: Date.now(),
+        blob_size: 245760,
+        media_kind: "image",
+        pinned: false,
+      });
+      mockMediaCache.getCachedMediaBlob.mockResolvedValue(fakeBlob);
+      mockMediaCache.getLocalMediaBlob.mockResolvedValue({
+        blob: fakeBlob,
+        source: "cached",
+        contentHash: "img-hash-1",
+      });
+
+      const originalCreateObjectURL = URL.createObjectURL;
+      URL.createObjectURL = vi.fn(() => "blob:vatioboard/local-offline-image");
+
+      try {
+        window.fetch = createAuthenticatedLibraryFetch((url) => {
+          if (url.includes("list_my_media_assets"))
+            return Promise.reject(new TypeError("Failed to fetch"));
+          if (url.includes("get_my_media_asset_detail"))
+            return Promise.reject(new TypeError("Failed to fetch"));
+          if (url.includes("list_my_speed_recordings"))
+            return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+          if (url.includes("list_my_accel_runs"))
+            return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+          if (url.includes("list_my_board_documents"))
+            return jsonResponse({ message: { documents: [], total_count: 0, has_more: false } });
+          return jsonResponse({});
+        });
+
+        await bootHtmlPage("library.html");
+        const libraryPage = await import("../../src/library/library.js");
+        await libraryPage.initPromise;
+        await settleLibraryTasks();
+
+        document.querySelector('[data-tab="media"]')?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true }),
+        );
+        await settleLibraryTasks(24);
+
+        document.querySelector(".library-record")?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true }),
+        );
+        await settleLibraryTasks(24);
+
+        // The detail preview should render an image with the local blob URL.
+        const preview = document.getElementById("libraryDetailPreview");
+        expect(preview).toBeTruthy();
+        const img = preview.querySelector("img");
+        expect(img).toBeTruthy();
+        expect(img.src).toMatch(/^blob:/);
+      } finally {
+        URL.createObjectURL = originalCreateObjectURL;
+      }
+    });
+  });
+
+  // ── Pin/unpin persistence boolean handling ────────────────────────
+
+  describe("pin/unpin persistence failures", () => {
+    it("local promotion: pinMediaBlob returns false → no success, no pinned state, no network fallback", async () => {
+      const fakeBlob = new Blob(["cached-audio"], { type: "audio/mpeg" });
+      mockMediaCache.getCachedBlobMeta.mockResolvedValue({
+        content_hash: "hash-a1",
+        cached_at: Date.now(),
+        blob_size: 4096,
+        media_kind: "audio",
+        pinned: false,
+      });
+      mockMediaCache.getCachedMediaBlob.mockResolvedValue(fakeBlob);
+      mockMediaCache.getLocalMediaBlob.mockResolvedValue({
+        blob: fakeBlob,
+        source: "cached",
+        contentHash: "hash-a1",
+      });
+      // pinMediaBlob returns false — persistence failure.
+      mockMediaCache.pinMediaBlob.mockResolvedValue(false);
+
+      const audioAsset = {
+        name: "MEDIA-1",
+        title: "My Track",
+        media_kind: "audio",
+        blob_size: 4096,
+        original_filename: "track.mp3",
+        content_hash: "hash-a1",
+        modified_at: "2026-04-03T09:00:00Z",
+        created_at_label: "2026-04-03",
+        modified_at_label: "2026-04-03",
+        folder_path: "Music",
+        has_preview_image: false,
+        file_extension: "mp3",
+      };
+
+      window.fetch = createAuthenticatedLibraryFetch((url) => {
+        if (url.includes("list_my_media_assets")) {
+          return jsonResponse({
+            message: { assets: [audioAsset], total_count: 1, has_more: false, next_offset: 1 },
+          });
+        }
+        if (url.includes("get_my_media_asset_detail")) {
+          return jsonResponse({ message: { asset: audioAsset } });
+        }
+        if (url.includes("get_my_media_asset_access")) {
+          return jsonResponse({
+            message: {
+              asset: { name: audioAsset.name, content_hash: audioAsset.content_hash },
+              access: { download_url: "https://s3.example.com/signed-blob", expires_in_seconds: 300 },
+            },
+          });
+        }
+        if (url.includes("s3.example.com/signed-blob")) {
+          return new Response(new Blob(["blob-data"]), { status: 200 });
+        }
+        if (url.includes("stream_my_media_asset_blob")) {
+          return new Response(new Blob(["streamed-data"]), { status: 200 });
+        }
+        if (url.includes("list_my_speed_recordings")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+        if (url.includes("list_my_accel_runs")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+        if (url.includes("list_my_board_documents")) return jsonResponse({ message: { documents: [], total_count: 0, has_more: false } });
+        return jsonResponse({});
+      });
+
+      await bootHtmlPage("library.html");
+      const libraryPage = await import("../../src/library/library.js");
+      await libraryPage.initPromise;
+      await settleLibraryTasks();
+
+      document.querySelector('[data-tab="media"]')?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      document.querySelector(".library-record")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      // Attempt to pin.
+      document.getElementById("libraryActionPin")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      // pinMediaBlob was called (local promotion attempted).
+      expect(mockMediaCache.pinMediaBlob).toHaveBeenCalledWith(
+        "MEDIA-1",
+        fakeBlob,
+        expect.objectContaining({ contentHash: "hash-a1" }),
+      );
+
+      // Cached copy must NOT have been removed (pin failed).
+      expect(mockMediaCache.removeCachedMediaBlob).not.toHaveBeenCalled();
+
+      // No network fallback: no get_my_media_asset_access call.
+      const accessCalls = window.fetch.mock.calls.filter(
+        ([u]) => typeof u === "string" && u.includes("get_my_media_asset_access"),
+      );
+      expect(accessCalls).toHaveLength(0);
+
+      // Pin button should NOT say "Unpin" — item is not pinned.
+      const pinBtn = document.getElementById("libraryActionPin");
+      expect(pinBtn.dataset.pinned).toBe("false");
+
+      // Status should show failure.
+      const statusEl = document.getElementById("libraryStatus");
+      expect(statusEl?.dataset?.tone).toBe("danger");
+    });
+
+    it("network pin: pinMediaBlob returns false → no pinned state, pin failed status", async () => {
+      // No cached blob — will go through network path.
+      mockMediaCache.pinMediaBlob.mockResolvedValue(false);
+
+      window.fetch = createAuthenticatedLibraryFetch((url) => {
+        if (url.includes("list_my_media_assets")) {
+          return jsonResponse({
+            message: { assets: [MEDIA_ASSET], total_count: 1, has_more: false },
+          });
+        }
+        if (url.includes("get_my_media_asset_detail")) {
+          return jsonResponse({ message: { asset: MEDIA_ASSET } });
+        }
+        if (url.includes("get_my_media_asset_access")) {
+          return jsonResponse({
+            message: {
+              asset: { name: "MEDIA-1", content_hash: "abc123", media_kind: "image" },
+              access: { download_url: "https://s3.example.com/signed-blob", expires_in_seconds: 300 },
+            },
+          });
+        }
+        if (url.includes("s3.example.com/signed-blob")) {
+          return new Response(new Blob(["fake-png-data"], { type: "image/png" }), { status: 200 });
+        }
+        if (url.includes("list_my_speed_recordings")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+        if (url.includes("list_my_accel_runs")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+        if (url.includes("list_my_board_documents")) return jsonResponse({ message: { documents: [], total_count: 0, has_more: false } });
+        return jsonResponse({});
+      });
+
+      await bootHtmlPage("library.html");
+      const libraryPage = await import("../../src/library/library.js");
+      await libraryPage.initPromise;
+      await settleLibraryTasks();
+
+      document.querySelector('[data-tab="media"]')?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks();
+
+      document.querySelector(".library-record")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks();
+
+      document.getElementById("libraryActionPin").dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks();
+
+      // pinMediaBlob was called.
+      expect(mockMediaCache.pinMediaBlob).toHaveBeenCalled();
+
+      // Item should NOT be marked pinned.
+      const pinBtn = document.getElementById("libraryActionPin");
+      expect(pinBtn.dataset.pinned).toBe("false");
+
+      // Status should show failure.
+      const statusEl = document.getElementById("libraryStatus");
+      expect(statusEl?.dataset?.tone).toBe("danger");
+    });
+
+    it("unpin: unpinMediaBlob returns false → remains pinned, failure status", async () => {
+      // Item starts as pinned.
+      mockMediaCache.getPinnedBlobMeta.mockResolvedValue({ content_hash: null, pinned_at: Date.now() });
+      // unpinMediaBlob returns false — persistence failure.
+      mockMediaCache.unpinMediaBlob.mockResolvedValue(false);
+
+      await bootMediaTab();
+
+      const pinBtn = document.getElementById("libraryActionPin");
+      expect(pinBtn.dataset.pinned).toBe("true");
+
+      pinBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await settleLibraryTasks();
+
+      // unpinMediaBlob was called.
+      expect(mockMediaCache.unpinMediaBlob).toHaveBeenCalledWith("MEDIA-1");
+
+      // Item should remain pinned (persistence failed).
+      expect(pinBtn.dataset.pinned).toBe("true");
+
+      // Status should show failure.
+      const statusEl = document.getElementById("libraryStatus");
+      expect(statusEl?.dataset?.tone).toBe("danger");
+    });
+  });
+
+  // ── Orphaned-meta cleanup via shared reconcileCachedBlobState ─────
+  //
+  // The reconcileCachedBlobState() helper is shared between the bulk
+  // refreshPinStatesForItems() path (fires after list load) and the
+  // single-item refreshPinState() path (fires after loadDetail).
+  // For media-tab items the list-load bulk path is the primary caller
+  // because loadDetail() is not invoked for media items on selection.
+  // This test verifies the shared helper through the bulk path, which
+  // is the path that fires during normal media-tab usage.
+
+  describe("orphaned-meta cleanup via shared reconcileCachedBlobState helper", () => {
+    it("orphaned cached meta is cleaned during list load and does not mark item as cached locally", async () => {
+      // No pinned blob — only cached meta exists but blob is missing.
+      mockMediaCache.getCachedBlobMeta.mockResolvedValue({
+        content_hash: "hash-a1",
+        cached_at: Date.now(),
+        blob_size: 4096,
+        media_kind: "audio",
+        pinned: false,
+      });
+      mockMediaCache.getCachedMediaBlob.mockResolvedValue(null);
+
+      window.fetch = createAuthenticatedLibraryFetch((url) => {
+        if (url.includes("list_my_media_assets")) {
+          return jsonResponse({
+            message: { assets: [MEDIA_ASSET], total_count: 1, has_more: false },
+          });
+        }
+        if (url.includes("get_my_media_asset_detail")) {
+          return jsonResponse({ message: { asset: MEDIA_ASSET } });
+        }
+        if (url.includes("list_my_speed_recordings")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+        if (url.includes("list_my_accel_runs")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+        if (url.includes("list_my_board_documents")) return jsonResponse({ message: { documents: [], total_count: 0, has_more: false } });
+        return jsonResponse({});
+      });
+
+      await bootHtmlPage("library.html");
+      const libraryPage = await import("../../src/library/library.js");
+      await libraryPage.initPromise;
+      await settleLibraryTasks();
+
+      document.querySelector('[data-tab="media"]')?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      // After list load, refreshPinStatesForItems → reconcileCachedBlobState
+      // has already run.  No "Cached locally" badge should appear.
+      const allBadges = Array.from(document.querySelectorAll(".library-record-badge"));
+      const cachedBadge = allBadges.find(
+        (b) => b.dataset.tone === "success" && b.textContent === "Cached locally",
+      );
+      expect(cachedBadge).toBeFalsy();
+
+      // removeCachedMediaBlob should have been called to clean up orphaned meta.
+      expect(mockMediaCache.removeCachedMediaBlob).toHaveBeenCalledWith("MEDIA-1");
+    });
+  });
+
+  // ── Row badge immediate sync after network pin / unpin ────────────
+
+  describe("row badge immediate sync after confirmed pin/unpin", () => {
+    it("row badge updates to Available offline immediately after successful network pin", async () => {
+      window.fetch = createAuthenticatedLibraryFetch((url) => {
+        if (url.includes("list_my_media_assets")) {
+          return jsonResponse({
+            message: { assets: [MEDIA_ASSET], total_count: 1, has_more: false },
+          });
+        }
+        if (url.includes("get_my_media_asset_detail")) {
+          return jsonResponse({ message: { asset: MEDIA_ASSET } });
+        }
+        if (url.includes("get_my_media_asset_access")) {
+          return jsonResponse({
+            message: {
+              asset: { name: "MEDIA-1", content_hash: "abc123", media_kind: "image" },
+              access: { download_url: "https://s3.example.com/signed-blob", expires_in_seconds: 300 },
+            },
+          });
+        }
+        if (url.includes("s3.example.com/signed-blob")) {
+          return new Response(new Blob(["fake-png-data"], { type: "image/png" }), { status: 200 });
+        }
+        if (url.includes("list_my_speed_recordings")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+        if (url.includes("list_my_accel_runs")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+        if (url.includes("list_my_board_documents")) return jsonResponse({ message: { documents: [], total_count: 0, has_more: false } });
+        return jsonResponse({});
+      });
+
+      await bootHtmlPage("library.html");
+      const libraryPage = await import("../../src/library/library.js");
+      await libraryPage.initPromise;
+      await settleLibraryTasks();
+
+      document.querySelector('[data-tab="media"]')?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      document.querySelector(".library-record")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      // Before pin: no "Available offline" badge in the list row.
+      let rowBadges = Array.from(document.querySelectorAll(".library-record-badge"));
+      let offlineBadge = rowBadges.find(
+        (b) => b.dataset.tone === "success" && b.textContent === "Available offline",
+      );
+      expect(offlineBadge).toBeFalsy();
+
+      // Pin the item via network path.
+      document.getElementById("libraryActionPin")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      // After successful pin: row badge should show "Available offline" immediately.
+      rowBadges = Array.from(document.querySelectorAll(".library-record-badge"));
+      offlineBadge = rowBadges.find(
+        (b) => b.dataset.tone === "success" && b.textContent === "Available offline",
+      );
+      expect(offlineBadge).toBeTruthy();
+    });
+
+    it("row badge clears immediately after successful unpin", async () => {
+      // Start with a pinned item.
+      mockMediaCache.getPinnedBlobMeta.mockResolvedValue({ content_hash: null, pinned_at: Date.now() });
+
+      await bootMediaTab();
+
+      // Before unpin: "Available offline" badge should be present.
+      let rowBadges = Array.from(document.querySelectorAll(".library-record-badge"));
+      let offlineBadge = rowBadges.find(
+        (b) => b.dataset.tone === "success" && b.textContent === "Available offline",
+      );
+      expect(offlineBadge).toBeTruthy();
+
+      // Unpin.
+      document.getElementById("libraryActionPin")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await settleLibraryTasks(24);
+
+      // After successful unpin: "Available offline" badge should be gone.
+      rowBadges = Array.from(document.querySelectorAll(".library-record-badge"));
+      offlineBadge = rowBadges.find(
+        (b) => b.dataset.tone === "success" && b.textContent === "Available offline",
+      );
+      expect(offlineBadge).toBeFalsy();
+    });
   });
 });
