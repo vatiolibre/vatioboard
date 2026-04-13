@@ -255,3 +255,46 @@ export const IconFullscreenExit = `
     <path d="M14 10l5-5M4 20l6-6M14 10l5-5M10 14l-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
   </svg>
 `;
+
+export const IconSkipBack = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M19 20L9 12l10-8v16Z" fill="currentColor"/>
+    <path d="M5 19V5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  </svg>
+`;
+
+export const IconSkipForward = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M5 4l10 8-10 8V4Z" fill="currentColor"/>
+    <path d="M19 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  </svg>
+`;
+
+export const IconRepeat = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M17 1l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M3 11V9a4 4 0 0 1 4-4h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M7 23l-4-4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M21 13v2a4 4 0 0 1-4 4H3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`;
+
+export const IconShuffle = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`;
+
+export const IconQueue = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M8 6h13M8 12h13M8 18h13M3 6h0M3 12h0M3 18h0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`;
+
+export const IconMusic = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M9 18V5l12-2v13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="6" cy="18" r="3" stroke="currentColor" stroke-width="1.6"/>
+    <circle cx="18" cy="16" r="3" stroke="currentColor" stroke-width="1.6"/>
+  </svg>
+`;

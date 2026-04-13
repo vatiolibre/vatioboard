@@ -20,6 +20,7 @@ export default defineConfig({
         gpsRate: resolve(__dirname, "gps-rate.html"),
         accel: resolve(__dirname, "accel.html"),
         login: resolve(__dirname, "login.html"),
+        player: resolve(__dirname, "player.html"),
       },
     },
   },

@@ -1,0 +1,606 @@
+/* ── Player page custom properties ───────────────────────────────── */
+
+:root {
+  color-scheme: light dark;
+
+  --player-bg: #ffffff;
+  --player-surface: rgba(250, 250, 250, 0.96);
+  --player-text: #111827;
+  --player-muted: rgba(0, 0, 0, 0.55);
+  --player-border: rgba(0, 0, 0, 0.10);
+  --player-accent: #10b981;
+  --player-accent-soft: rgba(16, 185, 129, 0.10);
+  --player-btn: rgba(0, 0, 0, 0.06);
+  --player-btn-hover: rgba(0, 0, 0, 0.10);
+  --player-shadow: 0 18px 50px rgba(0, 0, 0, 0.12);
+  --player-radius: 16px;
+  --player-artwork-size: min(320px, 70vw);
+  --player-font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  --player-queue-bg: rgba(255, 255, 255, 0.98);
+  --player-badge-offline: #10b981;
+  --player-badge-remote: #6366f1;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --player-bg: #0f1012;
+    --player-surface: rgba(27, 29, 34, 0.96);
+    --player-text: rgba(255, 255, 255, 0.92);
+    --player-muted: rgba(255, 255, 255, 0.50);
+    --player-border: rgba(255, 255, 255, 0.10);
+    --player-accent: #34d399;
+    --player-accent-soft: rgba(52, 211, 153, 0.15);
+    --player-btn: rgba(255, 255, 255, 0.07);
+    --player-btn-hover: rgba(255, 255, 255, 0.12);
+    --player-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+    --player-queue-bg: rgba(20, 22, 26, 0.98);
+    --player-badge-offline: #34d399;
+    --player-badge-remote: #818cf8;
+  }
+}
+
+/* ── Page layout ──────────────────────────────────────────────────── */
+
+.player-page {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--player-bg);
+  color: var(--player-text);
+  font-family: var(--player-font);
+  -webkit-font-smoothing: antialiased;
+  padding: 24px 16px env(safe-area-inset-bottom, 0);
+}
+
+/* ── Shell ────────────────────────────────────────────────────────── */
+
+.player-shell {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+/* ── Artwork ──────────────────────────────────────────────────────── */
+
+.player-artwork {
+  width: var(--player-artwork-size);
+  height: var(--player-artwork-size);
+  border-radius: var(--player-radius);
+  overflow: hidden;
+  box-shadow: var(--player-shadow);
+  background: var(--player-surface);
+  flex-shrink: 0;
+}
+
+.player-artwork-inner {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-size: cover;
+  background-position: center;
+  color: var(--player-muted);
+  transition: background-image 0.3s ease;
+}
+
+.player-artwork-inner svg {
+  width: 64px;
+  height: 64px;
+  opacity: 0.4;
+}
+
+.player-artwork-inner.has-image svg {
+  display: none;
+}
+
+/* ── Controls area ────────────────────────────────────────────────── */
+
+.player-controls-area {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Metadata ─────────────────────────────────────────────────────── */
+
+.player-meta {
+  text-align: center;
+  min-height: 48px;
+}
+
+.player-meta-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-meta-artist {
+  font-size: 0.85rem;
+  color: var(--player-muted);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Source badge ──────────────────────────────────────────────────── */
+
+.player-source-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 6px;
+  margin-top: 6px;
+}
+
+.player-source-badge.offline {
+  background: var(--player-accent-soft);
+  color: var(--player-badge-offline);
+}
+
+.player-source-badge.remote {
+  background: rgba(99, 102, 241, 0.10);
+  color: var(--player-badge-remote);
+}
+
+/* ── Error message ────────────────────────────────────────────────── */
+
+.player-error {
+  font-size: 0.8rem;
+  color: #ef4444;
+  text-align: center;
+  padding: 6px 0;
+}
+
+/* ── Progress ─────────────────────────────────────────────────────── */
+
+.player-progress-section {
+  width: 100%;
+}
+
+.player-progress {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  background: var(--player-btn);
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+
+.player-progress::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--player-accent);
+  border: none;
+  cursor: pointer;
+  margin-top: -5px;
+}
+
+.player-progress::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--player-accent);
+  border: none;
+  cursor: pointer;
+}
+
+.player-progress::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+}
+
+.player-time-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--player-muted);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Transport ────────────────────────────────────────────────────── */
+
+.player-transport {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.player-transport button {
+  background: none;
+  border: none;
+  color: var(--player-text);
+  cursor: pointer;
+  padding: 10px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.player-transport button:hover {
+  background: var(--player-btn-hover);
+}
+
+.player-transport button .btn-icon {
+  display: flex;
+}
+
+.player-transport button svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* Main play/pause — larger */
+.player-btn-play-main {
+  background: var(--player-accent) !important;
+  color: #ffffff !important;
+  width: 60px;
+  height: 60px;
+  padding: 0 !important;
+}
+
+.player-btn-play-main:hover {
+  filter: brightness(1.08);
+}
+
+.player-btn-play-main svg {
+  width: 28px !important;
+  height: 28px !important;
+}
+
+/* Active state for shuffle/repeat */
+.player-transport button.active {
+  color: var(--player-accent);
+}
+
+.player-btn-repeat[data-repeat-mode="one"]::after {
+  content: "1";
+  position: absolute;
+  font-size: 0.55rem;
+  font-weight: 700;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.player-btn-repeat {
+  position: relative;
+}
+
+/* ── Volume row ───────────────────────────────────────────────────── */
+
+.player-volume-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
+}
+
+.player-btn-mute {
+  background: none;
+  border: none;
+  color: var(--player-muted);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+}
+
+.player-btn-mute svg {
+  width: 18px;
+  height: 18px;
+}
+
+.player-btn-mute:hover {
+  background: var(--player-btn-hover);
+}
+
+.player-volume {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  height: 4px;
+  background: var(--player-btn);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.player-volume::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--player-muted);
+  border: none;
+  cursor: pointer;
+}
+
+.player-volume::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--player-muted);
+  border: none;
+  cursor: pointer;
+}
+
+/* ── Queue toggle ─────────────────────────────────────────────────── */
+
+.player-btn-queue {
+  background: none;
+  border: none;
+  color: var(--player-muted);
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  transition: background 0.15s ease;
+}
+
+.player-btn-queue svg {
+  width: 20px;
+  height: 20px;
+}
+
+.player-btn-queue:hover {
+  background: var(--player-btn-hover);
+}
+
+.player-btn-queue.active {
+  color: var(--player-accent);
+}
+
+/* ── Search bar ───────────────────────────────────────────────────── */
+
+.player-search {
+  width: 100%;
+  max-width: 420px;
+  padding: 10px 14px;
+  border: 1px solid var(--player-border);
+  border-radius: 10px;
+  background: var(--player-surface);
+  color: var(--player-text);
+  font-size: 0.9rem;
+  font-family: var(--player-font);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.player-search::placeholder {
+  color: var(--player-muted);
+}
+
+.player-search:focus {
+  border-color: var(--player-accent);
+}
+
+/* ── Visible track list (always shown) ─────────────────────────────── */
+
+.player-track-list {
+  width: 100%;
+  max-width: 420px;
+  max-height: 45vh;
+  overflow-y: auto;
+  background: var(--player-surface);
+  border: 1px solid var(--player-border);
+  border-radius: var(--player-radius);
+}
+
+.player-track-list-header {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--player-border);
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--player-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.player-track-list-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.player-track-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  border-bottom: 1px solid var(--player-border);
+  gap: 8px;
+}
+
+.player-track-item:last-child {
+  border-bottom: none;
+}
+
+.player-track-item:hover {
+  background: var(--player-btn-hover);
+}
+
+.player-track-item.active {
+  background: var(--player-accent-soft);
+}
+
+.player-track-item.active .player-queue-item-name {
+  color: var(--player-accent);
+  font-weight: 600;
+}
+
+/* ── Queue drawer ─────────────────────────────────────────────────── */
+
+.player-queue-drawer {
+  width: 100%;
+  max-width: 420px;
+  max-height: 50vh;
+  overflow-y: auto;
+  background: var(--player-queue-bg);
+  border: 1px solid var(--player-border);
+  border-radius: var(--player-radius);
+  box-shadow: var(--player-shadow);
+}
+
+.player-queue-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--player-border);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.player-queue-close {
+  background: none;
+  border: none;
+  color: var(--player-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+}
+
+.player-queue-close svg {
+  width: 16px;
+  height: 16px;
+}
+
+.player-queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.player-queue-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  border-bottom: 1px solid var(--player-border);
+  gap: 8px;
+}
+
+.player-queue-item:last-child {
+  border-bottom: none;
+}
+
+.player-queue-item:hover {
+  background: var(--player-btn-hover);
+}
+
+.player-queue-item.active {
+  background: var(--player-accent-soft);
+}
+
+.player-queue-item-name {
+  flex: 1;
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-queue-item.active .player-queue-item-name {
+  color: var(--player-accent);
+  font-weight: 600;
+}
+
+.player-queue-item-badge {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.player-queue-item-badge.offline {
+  background: var(--player-badge-offline);
+}
+
+.player-queue-empty {
+  padding: 20px 16px;
+  text-align: center;
+  color: var(--player-muted);
+  font-size: 0.85rem;
+}
+
+/* ── Loading / error states ───────────────────────────────────────── */
+
+.player-shell.loading .player-artwork-inner {
+  animation: player-pulse 1.2s ease-in-out infinite;
+}
+
+.player-shell.error .player-artwork {
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.4), var(--player-shadow);
+}
+
+@keyframes player-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* ── Responsive ───────────────────────────────────────────────────── */
+
+@media (min-width: 640px) {
+  :root {
+    --player-artwork-size: 360px;
+  }
+
+  .player-shell {
+    gap: 24px;
+  }
+}
+
+@media (max-width: 360px) {
+  :root {
+    --player-artwork-size: 240px;
+  }
+
+  .player-transport button svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .player-btn-play-main {
+    width: 50px;
+    height: 50px;
+  }
+
+  .player-btn-play-main svg {
+    width: 24px !important;
+    height: 24px !important;
+  }
+}
