@@ -1,4 +1,46 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const visualizerMockState = vi.hoisted(() => {
+  let factory = null;
+
+  function makeController({ available = true, startResult = available } = {}) {
+    let isAvailable = available;
+    return {
+      get isAvailable() {
+        return isAvailable;
+      },
+      setMode: vi.fn(),
+      resize: vi.fn(),
+      start: vi.fn(() => Promise.resolve(Boolean(startResult && isAvailable))),
+      stop: vi.fn(),
+      destroy: vi.fn(),
+      __setAvailable(nextValue) {
+        isAvailable = Boolean(nextValue);
+      },
+    };
+  }
+
+  const calls = [];
+  const createVisualizerSpy = vi.fn((options) => {
+    const controller = typeof factory === "function" ? factory(options) : makeController();
+    calls.push({ options, controller });
+    return controller;
+  });
+
+  return {
+    calls,
+    createVisualizerSpy,
+    makeController,
+    setFactory(nextFactory) {
+      factory = nextFactory;
+    },
+    reset() {
+      factory = null;
+      calls.length = 0;
+      createVisualizerSpy.mockClear();
+    },
+  };
+});
 
 // Provide minimal i18n mock before importing media-player
 vi.mock("../../src/i18n.js", () => ({
@@ -8,7 +50,15 @@ vi.mock("../../src/i18n.js", () => ({
   applyTranslations: vi.fn(),
 }));
 
-const { createMediaPlayer, formatTime } = await import("../../src/shared/media-player.js");
+vi.mock("../../src/shared/audio-mini-visualizer.js", () => ({
+  createMiniAudioVisualizer: visualizerMockState.createVisualizerSpy,
+}));
+
+const {
+  createMediaPlayer,
+  formatTime,
+  VISUALIZER_MODE_STORAGE_KEY,
+} = await import("../../src/shared/media-player.js");
 
 describe("formatTime", () => {
   it("formats zero seconds", () => {
@@ -52,8 +102,15 @@ describe("createMediaPlayer", () => {
   let container;
 
   beforeEach(() => {
+    localStorage.clear();
+    visualizerMockState.reset();
     container = document.createElement("div");
     document.body.append(container);
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+    localStorage.clear();
   });
 
   it("returns null when container is missing", () => {
@@ -103,6 +160,42 @@ describe("createMediaPlayer", () => {
     expect(label.textContent).toBe("Song");
 
     player.destroy();
+  });
+
+  it("renders visualizer controls only for audio players with visualizer enabled", () => {
+    const audioPlayer = createMediaPlayer({
+      container,
+      src: "test.mp3",
+      kind: "audio",
+      title: "Song",
+      visualizer: true,
+    });
+
+    expect(container.querySelector(".media-player-audio-visualizer-modes")).not.toBeNull();
+    expect([...container.querySelectorAll(".media-player-audio-mode-btn")].map((button) => button.dataset.mode)).toEqual([
+      "spectrum",
+      "scope",
+      "off",
+    ]);
+    expect(visualizerMockState.createVisualizerSpy).toHaveBeenCalledTimes(1);
+
+    audioPlayer.destroy();
+
+    const secondContainer = document.createElement("div");
+    document.body.append(secondContainer);
+    visualizerMockState.reset();
+
+    const plainAudioPlayer = createMediaPlayer({
+      container: secondContainer,
+      src: "test.mp3",
+      kind: "audio",
+      title: "Song",
+      visualizer: false,
+    });
+
+    expect(secondContainer.querySelector(".media-player-audio-visualizer-modes")).toBeNull();
+    expect(visualizerMockState.createVisualizerSpy).not.toHaveBeenCalled();
+    plainAudioPlayer.destroy();
   });
 
   it("renders transport controls", () => {
@@ -302,6 +395,19 @@ describe("createMediaPlayer", () => {
     player.destroy();
   });
 
+  it("does not render visualizer controls for video players", () => {
+    const player = createMediaPlayer({
+      container,
+      src: "test.mp4",
+      kind: "video",
+      visualizer: true,
+    });
+
+    expect(container.querySelector(".media-player-audio-visualizer-modes")).toBeNull();
+    expect(visualizerMockState.createVisualizerSpy).not.toHaveBeenCalled();
+    player.destroy();
+  });
+
   it("sets playbackError attribute when play rejects with non-AbortError", async () => {
     const player = createMediaPlayer({ container, src: "test.mp4", kind: "video" });
     const root = container.querySelector(".media-player");
@@ -346,17 +452,100 @@ describe("createMediaPlayer", () => {
   });
 
   it("audio playback works when visualizer is enabled but unavailable", () => {
+    visualizerMockState.setFactory(() =>
+      visualizerMockState.makeController({ available: false, startResult: false }));
+
     const player = createMediaPlayer({
       container, src: "test.mp3", kind: "audio", visualizer: true,
     });
     const audio = container.querySelector("audio");
     expect(audio).not.toBeNull();
     expect(audio.src).toContain("test.mp3");
+    expect(container.querySelector(".media-player-audio-canvas-wrap")?.dataset.visualizerState).toBe("error");
 
     player.mediaElement.play = vi.fn(() => Promise.resolve());
     container.querySelector(".media-player-play-btn").click();
     expect(player.mediaElement.play).toHaveBeenCalled();
 
     player.destroy();
+  });
+
+  it("reads and applies the persisted visualizer mode", () => {
+    localStorage.setItem(VISUALIZER_MODE_STORAGE_KEY, "scope");
+
+    const player = createMediaPlayer({
+      container,
+      src: "test.mp3",
+      kind: "audio",
+      visualizer: true,
+    });
+
+    expect(visualizerMockState.createVisualizerSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "scope" }),
+    );
+    expect(
+      container.querySelector('.media-player-audio-mode-btn[data-mode="scope"]')?.getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(container.querySelector(".media-player-audio-canvas-wrap")?.dataset.visualizerMode).toBe("scope");
+
+    player.destroy();
+  });
+
+  it("switching the mode to off stops visualizer rendering", async () => {
+    const player = createMediaPlayer({
+      container,
+      src: "test.mp3",
+      kind: "audio",
+      visualizer: true,
+    });
+    const controller = visualizerMockState.calls[0]?.controller;
+
+    player.mediaElement.dispatchEvent(new Event("play"));
+    await new Promise((resolve) => queueMicrotask(resolve));
+
+    container
+      .querySelector('.media-player-audio-mode-btn[data-mode="off"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(controller?.setMode).toHaveBeenCalledWith("off");
+    expect(controller?.stop).toHaveBeenCalled();
+    expect(localStorage.getItem(VISUALIZER_MODE_STORAGE_KEY)).toBe("off");
+    expect(container.querySelector(".media-player-audio-canvas-wrap")?.dataset.visualizerState).toBe("disabled");
+
+    player.destroy();
+  });
+
+  it("touching the visualizer area cycles the mode and persists it", () => {
+    const player = createMediaPlayer({
+      container,
+      src: "test.mp3",
+      kind: "audio",
+      visualizer: true,
+    });
+    const controller = visualizerMockState.calls[0]?.controller;
+
+    container
+      .querySelector(".media-player-audio-canvas-wrap")
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(controller?.setMode).toHaveBeenCalledWith("scope");
+    expect(localStorage.getItem(VISUALIZER_MODE_STORAGE_KEY)).toBe("scope");
+    expect(container.querySelector(".media-player-audio-canvas-wrap")?.dataset.visualizerMode).toBe("scope");
+
+    player.destroy();
+  });
+
+  it("destroys the mini visualizer with the player", () => {
+    const player = createMediaPlayer({
+      container,
+      src: "test.mp3",
+      kind: "audio",
+      visualizer: true,
+    });
+    const controller = visualizerMockState.calls[0]?.controller;
+
+    player.destroy();
+
+    expect(controller?.destroy).toHaveBeenCalled();
   });
 });
