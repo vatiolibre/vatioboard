@@ -5,27 +5,45 @@
  * widget into their existing tools menu.  Handles:
  *  - importing player styles
  *  - creating the widget instance (singleton per page)
- *  - injecting a "Player" button into the page's tools menu list
- *  - wiring toggle + menu close behavior
+ *  - injecting a "Player" launcher button into the page's tools menu list
+ *  - showing/hiding the launcher + FAB based on backend auth state
+ *  - closing the widget + stopping playback on logout
+ *  - Media Session ownership opt-out for pages that own it themselves
  *
  * Usage (from any page):
  *
  *   import { integratePlayerWidget } from "../player/integrate-player-widget.js";
  *   const player = integratePlayerWidget({ toolsMenuList, toolsMenu });
- *
- * Options:
- *   - toolsMenuList: the <ul>/<div> that holds tools-menu items
- *   - toolsMenu: the tools-menu controller (from initToolsMenu) — used to close the menu
- *   - mediaSession: whether the player runtime should manage Media Session (default true)
- *   - preload: "on-open" (default) or "immediate"
- *   - mount: element to mount the panel into (default document.body)
  */
 
 import "../styles/player.less";
 import { createPlayerWidget } from "./player-widget.js";
 import { IconMusic } from "../icons.js";
 import { t } from "../i18n.js";
-import { setMediaSessionEnabled } from "../shared/audio-runtime.js";
+import { setMediaSessionEnabled, stopPlayback } from "../shared/audio-runtime.js";
+import { BACKEND_AUTH_STATE_EVENT } from "../shared/backend-auth.js";
+
+// ── Auth helpers ─────────────────────────────────────────────────────
+
+function isLoggedIn(detail) {
+  return (
+    detail.authenticated === true &&
+    detail.isGuest !== true &&
+    detail.pendingLogout !== true
+  );
+}
+
+/**
+ * Read the initial auth state from the nearest [data-backend-auth] root.
+ * Returns true when the form's dataset already says "authenticated".
+ */
+function readInitialAuth(toolsMenuList) {
+  const root = toolsMenuList?.closest("[data-backend-auth]")
+    || toolsMenuList?.querySelector("[data-backend-auth]");
+  return root?.dataset?.authState === "authenticated";
+}
+
+// ── Public API ───────────────────────────────────────────────────────
 
 /**
  * @param {object} opts
@@ -34,7 +52,7 @@ import { setMediaSessionEnabled } from "../shared/audio-runtime.js";
  * @param {boolean} [opts.mediaSession=true] - Let player own Media Session
  * @param {"on-open"|"immediate"} [opts.preload="on-open"]
  * @param {HTMLElement} [opts.mount=document.body]
- * @returns {{ widget: { open, close, toggle, destroy, setTracks }, button: HTMLElement }}
+ * @returns {{ widget: object, button: HTMLElement|null }}
  */
 export function integratePlayerWidget({
   toolsMenuList,
@@ -43,44 +61,80 @@ export function integratePlayerWidget({
   preload = "on-open",
   mount = document.body,
 } = {}) {
-  // Opt out of Media Session if requested (e.g. speed page owns it)
-  if (!mediaSession) {
-    setMediaSessionEnabled(false);
+  // Duplicate-injection guard
+  if (toolsMenuList?.querySelector("[data-player-toggle]")) {
+    return { widget: null, button: null };
   }
 
-  const widget = createPlayerWidget({
-    floating: false,
-    preload,
-    mount,
-  });
+  // Media Session ownership
+  setMediaSessionEnabled(mediaSession);
 
-  // Inject a menu item into the tools menu list
+  // ── Launcher button ────────────────────────────────────────────
   let button = null;
   if (toolsMenuList) {
-    const li = document.createElement("li");
     button = document.createElement("button");
     button.type = "button";
-    button.className = "tools-menu-item";
+    button.className = "btn-with-icon";
     button.dataset.playerToggle = "true";
+    button.hidden = true; // hidden until authenticated
 
     const iconSpan = document.createElement("span");
     iconSpan.className = "btn-icon";
+    iconSpan.setAttribute("aria-hidden", "true");
     iconSpan.innerHTML = IconMusic;
 
     const label = document.createElement("span");
-    label.textContent = t("player") || "Player";
+    label.setAttribute("data-i18n", "audioPlayer");
+    label.textContent = t("audioPlayer");
 
     button.append(iconSpan, label);
-    li.append(button);
-    toolsMenuList.append(li);
 
-    button.addEventListener("click", () => {
-      widget.toggle();
+    // Insert before the backend-auth form (same position as other launchers)
+    const authForm = toolsMenuList.querySelector("[data-backend-auth]");
+    if (authForm) {
+      toolsMenuList.insertBefore(button, authForm);
+    } else {
+      toolsMenuList.append(button);
+    }
+  }
+
+  // ── Widget (with floating FAB + external button) ───────────────
+  const widget = createPlayerWidget({
+    floating: true,
+    button,
+    preload,
+    mount,
+    onOpen() {
       if (toolsMenu && typeof toolsMenu.close === "function") {
         toolsMenu.close();
       }
-    });
+    },
+  });
+
+  // ── FAB element (created by the widget) ────────────────────────
+  const fab = mount.querySelector(".player-fab");
+
+  // ── Auth gating ────────────────────────────────────────────────
+  let authenticated = readInitialAuth(toolsMenuList);
+
+  function syncVisibility(loggedIn) {
+    authenticated = loggedIn;
+    if (button) button.hidden = !loggedIn;
+    if (fab) fab.hidden = !loggedIn;
+
+    if (!loggedIn) {
+      widget.close();
+      stopPlayback();
+    }
   }
+
+  // Apply initial visibility
+  syncVisibility(authenticated);
+
+  // React to auth changes
+  window.addEventListener(BACKEND_AUTH_STATE_EVENT, (event) => {
+    syncVisibility(isLoggedIn(event?.detail || {}));
+  });
 
   return { widget, button };
 }

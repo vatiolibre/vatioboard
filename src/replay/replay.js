@@ -1322,7 +1322,7 @@ function bindEvents() {
   });
 
   document.addEventListener('keydown', (event) => {
-    if (event.target.closest('.player-panel')) return;
+    if (event.target.closest('.player-panel, .player-fab')) return;
     if (event.key === 'Escape' && state.expandedGraphOpen) {
       closeExpandedGraph();
     }

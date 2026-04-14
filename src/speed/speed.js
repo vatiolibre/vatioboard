@@ -1815,7 +1815,7 @@ function bindEvents() {
     resumeVisibleRuntime();
   });
   document.addEventListener('pointerdown', (event) => {
-    if (event.target.closest('.player-panel')) return;
+    if (event.target.closest('.player-panel, .player-fab')) return;
     audioController.handleUserGestureAudioActivation();
     const insideAlertUi =
       elements.alertPanel.contains(event.target) ||
@@ -1830,7 +1830,7 @@ function bindEvents() {
     closeAlertPanel();
   });
   document.addEventListener('keydown', (event) => {
-    if (event.target.closest('.player-panel')) return;
+    if (event.target.closest('.player-panel, .player-fab')) return;
     audioController.handleUserGestureAudioActivation();
     audioController.syncOverspeedSound({ fromUserGesture: true });
     audioController.syncTrapSound({ fromUserGesture: true });

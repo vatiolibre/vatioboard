@@ -362,13 +362,31 @@ describe('speed.html smoke', () => {
     expect(finalArchivedSession.startPlace).not.toEqual(finalArchivedSession.endPlace);
   });
 
-  it("injects a Player toggle into the tools menu", async () => {
+  it("hides the Player launcher for guests and shows it after login", async () => {
     await import("../../src/speed/speed.js");
     await settleAsyncWork();
 
+    // Guest: launcher hidden
     const btn = document.querySelector("#speedToolsMenuList [data-player-toggle]");
     expect(btn).toBeTruthy();
-    expect(btn.querySelector(".btn-icon svg")).toBeTruthy();
-    expect(btn.textContent).toContain("player");
+    expect(btn.hidden).toBe(true);
+    expect(btn.className).toBe("btn-with-icon");
+    expect(btn.querySelector(".btn-icon[aria-hidden='true'] svg")).toBeTruthy();
+    expect(btn.querySelector("[data-i18n='audioPlayer']")).toBeTruthy();
+    const fab = document.querySelector(".player-fab");
+    expect(fab).toBeTruthy();
+    expect(fab.hidden).toBe(true);
+
+    // Log in → launcher appears
+    const authForm = document.querySelector("#speedToolsMenuList [data-backend-auth]");
+    const authUser = authForm.querySelector("[data-backend-auth-user]");
+    const authPassword = authForm.querySelector("[data-backend-auth-password]");
+    authUser.value = "test@vatiolibre.com";
+    authPassword.value = "secret123";
+    authForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await settleAsyncWork();
+
+    expect(btn.hidden).toBe(false);
+    expect(fab.hidden).toBe(false);
   });
 });

@@ -31,9 +31,13 @@ let mediaSessionEnabled = true;
 /**
  * Enable or disable Media Session management by this runtime.
  * Useful when another controller (e.g. speed audio) owns Media Session.
+ * When disabling, immediately clears any existing Media Session state.
  */
 export function setMediaSessionEnabled(enabled) {
   mediaSessionEnabled = enabled;
+  if (!enabled) {
+    clearMediaSession();
+  }
 }
 
 const listeners = new Set();

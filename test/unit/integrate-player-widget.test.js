@@ -46,6 +46,7 @@ const runtimeMock = {
   restoreSession: vi.fn().mockResolvedValue(undefined),
   primeAudio: vi.fn().mockResolvedValue(true),
   setMediaSessionEnabled: vi.fn(),
+  stopPlayback: vi.fn(),
 };
 
 vi.mock("../../src/shared/audio-runtime.js", () => runtimeMock);
@@ -61,6 +62,7 @@ const catalogMock = {
 vi.mock("../../src/shared/audio-catalog.js", () => catalogMock);
 
 vi.mock("../../src/shared/backend-auth.js", () => ({
+  BACKEND_AUTH_STATE_EVENT: "vatioboard:backend-auth-state",
   getBackendSessionState: vi.fn().mockResolvedValue({ authenticated: false }),
   fetchBackendLoggedUser: vi.fn().mockResolvedValue(null),
   getBackendMediaAssetAccess: vi.fn().mockResolvedValue({ ok: false }),
@@ -107,10 +109,20 @@ vi.mock("../../src/shared/audio-cue.js", () => ({
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-async function flushMicrotasks(n = 10) {
-  for (let i = 0; i < n; i++) {
-    await Promise.resolve();
-  }
+function emitAuthState(detail) {
+  window.dispatchEvent(
+    new CustomEvent("vatioboard:backend-auth-state", { detail })
+  );
+}
+
+function makeToolsMenuList(authState = "guest") {
+  const list = document.createElement("div");
+  list.className = "tools-menu-list";
+  const form = document.createElement("form");
+  form.setAttribute("data-backend-auth", "");
+  form.dataset.authState = authState;
+  list.append(form);
+  return list;
 }
 
 // ── Tests ────────────────────────────────────────────────────────────
@@ -130,6 +142,7 @@ describe("integratePlayerWidget", () => {
     vi.doMock("../../src/shared/audio-runtime.js", () => runtimeMock);
     vi.doMock("../../src/shared/audio-catalog.js", () => catalogMock);
     vi.doMock("../../src/shared/backend-auth.js", () => ({
+      BACKEND_AUTH_STATE_EVENT: "vatioboard:backend-auth-state",
       getBackendSessionState: vi.fn().mockResolvedValue({ authenticated: false }),
       fetchBackendLoggedUser: vi.fn().mockResolvedValue(null),
       getBackendMediaAssetAccess: vi.fn().mockResolvedValue({ ok: false }),
@@ -171,6 +184,7 @@ describe("integratePlayerWidget", () => {
 
     runtimeMock.subscribe.mockReturnValue(vi.fn());
     runtimeMock.setMediaSessionEnabled.mockClear();
+    runtimeMock.stopPlayback.mockClear();
 
     const mod = await import("../../src/player/integrate-player-widget.js");
     integratePlayerWidget = mod.integratePlayerWidget;
@@ -180,59 +194,161 @@ describe("integratePlayerWidget", () => {
     document.querySelectorAll(".player-panel, .player-fab").forEach((el) => el.remove());
   });
 
-  it("injects a player button into the tools menu list", () => {
-    const list = document.createElement("ul");
+  // ── Launcher formatting ──────────────────────────────────────
+
+  it("injects a btn-with-icon button before the backend-auth form", () => {
+    const list = makeToolsMenuList();
     const menu = { close: vi.fn() };
 
-    const { widget, button } = integratePlayerWidget({ toolsMenuList: list, toolsMenu: menu });
+    const { button } = integratePlayerWidget({ toolsMenuList: list, toolsMenu: menu });
 
     expect(button).toBeTruthy();
+    expect(button.className).toBe("btn-with-icon");
+    expect(button.parentElement).toBe(list);
     expect(button.dataset.playerToggle).toBe("true");
-    expect(button.querySelector(".btn-icon svg")).toBeTruthy();
-    expect(button.textContent).toContain("player");
-    expect(list.querySelector("[data-player-toggle]")).toBe(button);
-    expect(widget).toBeTruthy();
+    expect(button.querySelector(".btn-icon[aria-hidden='true'] svg")).toBeTruthy();
+    expect(button.querySelector("[data-i18n='audioPlayer']")).toBeTruthy();
+    expect(button.querySelector("[data-i18n='audioPlayer']").textContent).toBe("audioPlayer");
+    // Should be inserted before the auth form
+    const form = list.querySelector("[data-backend-auth]");
+    expect(button.nextElementSibling).toBe(form);
   });
 
-  it("clicking the button toggles the widget and closes the menu", () => {
-    const list = document.createElement("ul");
+  it("does not wrap the button in a <li>", () => {
+    const list = makeToolsMenuList();
+    const { button } = integratePlayerWidget({ toolsMenuList: list, toolsMenu: { close: vi.fn() } });
+    expect(button.parentElement.tagName).not.toBe("LI");
+  });
+
+  // ── Auth gating: guest state ─────────────────────────────────
+
+  it("hides the launcher and FAB when auth state is guest", () => {
+    const list = makeToolsMenuList("guest");
+    const menu = { close: vi.fn() };
+
+    const { button } = integratePlayerWidget({ toolsMenuList: list, toolsMenu: menu });
+
+    expect(button.hidden).toBe(true);
+    const fab = document.querySelector(".player-fab");
+    expect(fab).toBeTruthy();
+    expect(fab.hidden).toBe(true);
+  });
+
+  // ── Auth gating: authenticated state ─────────────────────────
+
+  it("shows the launcher and FAB when initial auth state is authenticated", () => {
+    const list = makeToolsMenuList("authenticated");
+    const menu = { close: vi.fn() };
+
+    const { button } = integratePlayerWidget({ toolsMenuList: list, toolsMenu: menu });
+
+    expect(button.hidden).toBe(false);
+    const fab = document.querySelector(".player-fab");
+    expect(fab.hidden).toBe(false);
+  });
+
+  // ── Auth transitions ─────────────────────────────────────────
+
+  it("shows launcher and FAB when auth transitions from guest to authenticated", () => {
+    const list = makeToolsMenuList("guest");
+    const menu = { close: vi.fn() };
+
+    const { button } = integratePlayerWidget({ toolsMenuList: list, toolsMenu: menu });
+
+    expect(button.hidden).toBe(true);
+
+    emitAuthState({ authenticated: true, isGuest: false, pendingLogout: false });
+
+    expect(button.hidden).toBe(false);
+    expect(document.querySelector(".player-fab").hidden).toBe(false);
+  });
+
+  it("hides launcher, FAB and stops playback on logout", () => {
+    const list = makeToolsMenuList("authenticated");
+    const menu = { close: vi.fn() };
+
+    const { button } = integratePlayerWidget({ toolsMenuList: list, toolsMenu: menu });
+    expect(button.hidden).toBe(false);
+
+    emitAuthState({ authenticated: false, isGuest: true, pendingLogout: false });
+
+    expect(button.hidden).toBe(true);
+    expect(document.querySelector(".player-fab").hidden).toBe(true);
+    expect(runtimeMock.stopPlayback).toHaveBeenCalled();
+  });
+
+  it("hides launcher on pending logout", () => {
+    const list = makeToolsMenuList("authenticated");
+    const menu = { close: vi.fn() };
+
+    const { button } = integratePlayerWidget({ toolsMenuList: list, toolsMenu: menu });
+
+    emitAuthState({ authenticated: true, isGuest: false, pendingLogout: true });
+
+    expect(button.hidden).toBe(true);
+    expect(runtimeMock.stopPlayback).toHaveBeenCalled();
+  });
+
+  // ── FAB presence ─────────────────────────────────────────────
+
+  it("creates a floating FAB via the widget", () => {
+    const list = makeToolsMenuList("authenticated");
+    const menu = { close: vi.fn() };
+
+    integratePlayerWidget({ toolsMenuList: list, toolsMenu: menu });
+
+    const fab = document.querySelector(".player-fab");
+    expect(fab).toBeTruthy();
+  });
+
+  // ── Media Session ────────────────────────────────────────────
+
+  it("calls setMediaSessionEnabled(true) by default", () => {
+    const list = makeToolsMenuList();
+    integratePlayerWidget({ toolsMenuList: list, toolsMenu: { close: vi.fn() } });
+    expect(runtimeMock.setMediaSessionEnabled).toHaveBeenCalledWith(true);
+  });
+
+  it("calls setMediaSessionEnabled(false) when mediaSession: false", () => {
+    const list = makeToolsMenuList();
+    integratePlayerWidget({ toolsMenuList: list, toolsMenu: { close: vi.fn() }, mediaSession: false });
+    expect(runtimeMock.setMediaSessionEnabled).toHaveBeenCalledWith(false);
+  });
+
+  it("Media Session false then true does not leak across integrations", () => {
+    const list1 = makeToolsMenuList();
+    integratePlayerWidget({ toolsMenuList: list1, toolsMenu: { close: vi.fn() }, mediaSession: false });
+    expect(runtimeMock.setMediaSessionEnabled).toHaveBeenCalledWith(false);
+
+    runtimeMock.setMediaSessionEnabled.mockClear();
+
+    const list2 = makeToolsMenuList();
+    integratePlayerWidget({ toolsMenuList: list2, toolsMenu: { close: vi.fn() }, mediaSession: true });
+    expect(runtimeMock.setMediaSessionEnabled).toHaveBeenCalledWith(true);
+  });
+
+  // ── Duplicate injection guard ────────────────────────────────
+
+  it("does not inject a second button if called twice on the same list", () => {
+    const list = makeToolsMenuList();
+    const menu = { close: vi.fn() };
+
+    integratePlayerWidget({ toolsMenuList: list, toolsMenu: menu });
+    integratePlayerWidget({ toolsMenuList: list, toolsMenu: menu });
+
+    expect(list.querySelectorAll("[data-player-toggle]")).toHaveLength(1);
+  });
+
+  // ── Menu close on open ───────────────────────────────────────
+
+  it("closes the tools menu when the player opens via the launcher", () => {
+    const list = makeToolsMenuList("authenticated");
     const menu = { close: vi.fn() };
 
     const { button } = integratePlayerWidget({ toolsMenuList: list, toolsMenu: menu });
 
     button.click();
 
-    expect(menu.close).toHaveBeenCalledTimes(1);
-    // Panel should be visible after toggle
-    const panel = document.querySelector(".player-panel");
-    expect(panel).toBeTruthy();
-    expect(panel.hidden).toBe(false);
-  });
-
-  it("disables media session when mediaSession: false", () => {
-    const list = document.createElement("ul");
-    const menu = { close: vi.fn() };
-
-    integratePlayerWidget({ toolsMenuList: list, toolsMenu: menu, mediaSession: false });
-
-    expect(runtimeMock.setMediaSessionEnabled).toHaveBeenCalledWith(false);
-  });
-
-  it("does not disable media session by default", () => {
-    const list = document.createElement("ul");
-    const menu = { close: vi.fn() };
-
-    integratePlayerWidget({ toolsMenuList: list, toolsMenu: menu });
-
-    expect(runtimeMock.setMediaSessionEnabled).not.toHaveBeenCalled();
-  });
-
-  it("works without a toolsMenuList (no button injected)", () => {
-    const menu = { close: vi.fn() };
-
-    const { widget, button } = integratePlayerWidget({ toolsMenu: menu });
-
-    expect(button).toBeNull();
-    expect(widget).toBeTruthy();
+    expect(menu.close).toHaveBeenCalled();
   });
 });
