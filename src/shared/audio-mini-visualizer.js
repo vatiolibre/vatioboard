@@ -1,5 +1,6 @@
 const VALID_MODES = new Set(["spectrum", "scope", "off"]);
 const MEDIA_GRAPH_BY_ELEMENT = new WeakMap();
+const SPECTRUM_BAR_COUNT = 20;
 
 function normalizeMode(mode) {
   const value = String(mode || "").toLowerCase();
@@ -60,7 +61,7 @@ function drawSpectrum(ctx, analyser, data, palette, state, width, height) {
   ctx.fillStyle = palette.baseline;
   ctx.fillRect(0, baselineY, width, 1);
 
-  const barCount = Math.max(4, Math.min(28, Math.floor(width / 16)));
+  const barCount = SPECTRUM_BAR_COUNT;
   const gap = Math.max(2, Math.floor(width / 220));
   const totalGap = gap * (barCount - 1);
   const barWidth = Math.max(4, Math.floor((width - totalGap) / barCount));

@@ -171,7 +171,7 @@ describe("createMiniAudioVisualizer", () => {
     expect(mount.querySelector("canvas")).toBeNull();
   });
 
-  it("renders stacked spectrum colors and a delayed peak cap", async () => {
+  it("renders 20 stacked spectrum bars with a delayed peak cap", async () => {
     const frameCallbacks = [];
     window.requestAnimationFrame = vi.fn((callback) => {
       frameCallbacks.push(callback);
@@ -190,10 +190,7 @@ describe("createMiniAudioVisualizer", () => {
     document.body.append(mount);
 
     fakeAnalyser.getByteFrequencyData.mockImplementation((buffer) => {
-      buffer.fill(0);
-      buffer[0] = 255;
-      buffer[1] = 220;
-      buffer[2] = 210;
+      buffer.fill(255);
     });
 
     const media = document.createElement("audio");
@@ -212,6 +209,7 @@ describe("createMiniAudioVisualizer", () => {
       "rgb(250, 130, 40)",
       "rgb(255, 190, 50)",
     ]));
+    expect(fakeCanvasContext.rects.filter((rect) => rect.fillStyle === "rgb(255, 190, 50)")).toHaveLength(20);
 
     fakeCanvasContext.fillStyles = [];
     fakeCanvasContext.rects = [];
@@ -220,7 +218,7 @@ describe("createMiniAudioVisualizer", () => {
     });
 
     frameCallbacks.shift()();
-    expect(fakeCanvasContext.rects.some((rect) => rect.fillStyle === "rgb(255, 190, 50)")).toBe(true);
+    expect(fakeCanvasContext.rects.filter((rect) => rect.fillStyle === "rgb(255, 190, 50)")).toHaveLength(20);
 
     controller.destroy();
   });
