@@ -31,8 +31,8 @@ function readVisualizerPalette(target) {
     spectrumLow: styles?.getPropertyValue("--media-player-visualizer-bar-low").trim() || spectrumBar,
     spectrumMid: styles?.getPropertyValue("--media-player-visualizer-bar-mid").trim() || "rgba(190, 242, 100, 0.90)",
     spectrumHigh: styles?.getPropertyValue("--media-player-visualizer-bar-high").trim() || "rgba(251, 146, 60, 0.94)",
-    spectrumPeak: styles?.getPropertyValue("--media-player-visualizer-peak").trim() || "rgba(251, 191, 36, 0.96)",
-    spectrumPeakGlow: styles?.getPropertyValue("--media-player-visualizer-peak-glow").trim() || "rgba(251, 146, 60, 0.38)",
+    spectrumPeak: styles?.getPropertyValue("--media-player-visualizer-peak").trim() || "rgba(214, 214, 206, 0.96)",
+    spectrumPeakGlow: styles?.getPropertyValue("--media-player-visualizer-peak-glow").trim() || "rgba(226, 226, 216, 0.30)",
     spectrumGlow: styles?.getPropertyValue("--media-player-visualizer-glow").trim() || "rgba(16, 185, 129, 0.20)",
     waveform: styles?.getPropertyValue("--media-player-visualizer-line").trim() || "rgba(16, 185, 129, 0.92)",
     grid: styles?.getPropertyValue("--media-player-visualizer-grid").trim() || "rgba(148, 163, 184, 0.14)",
@@ -65,13 +65,14 @@ function drawSpectrum(ctx, analyser, data, palette, state, width, height) {
   const gap = Math.max(2, Math.floor(width / 220));
   const totalGap = gap * (barCount - 1);
   const barWidth = Math.max(4, Math.floor((width - totalGap) / barCount));
-  const usableHeight = Math.max(10, baselineY - topPadding);
   const cellGap = Math.max(1, Math.floor(height / 54));
   const cellHeight = Math.max(2, Math.floor(height / 18));
   const cellStride = cellHeight + cellGap;
+  const peakHeight = Math.max(3, Math.round(cellHeight * 0.9));
+  const peakLift = cellStride;
+  const usableHeight = Math.max(10, baselineY - topPadding - peakHeight - peakLift);
   const cellCount = Math.max(5, Math.floor((usableHeight + cellGap) / cellStride));
-  const peakHeight = Math.max(2, Math.round(cellHeight * 0.58));
-  const peakFall = Math.max(0.85, height * 0.035);
+  const peakFall = Math.max(0.35, height * 0.016);
   const maxBin = Math.max(1, Math.floor(data.length * 0.88));
 
   if (state.peaks.length !== barCount) {
@@ -116,9 +117,9 @@ function drawSpectrum(ctx, analyser, data, palette, state, width, height) {
     state.peaks[index] = Math.min(usableHeight, nextPeak);
 
     if (state.peaks[index] > 0.5) {
-      const y = Math.max(topPadding, Math.round(baselineY - state.peaks[index] - peakHeight - cellGap));
+      const y = Math.max(topPadding, Math.round(baselineY - state.peaks[index] - peakHeight - peakLift));
       ctx.shadowColor = palette.spectrumPeakGlow;
-      ctx.shadowBlur = Math.max(3, Math.round(height * 0.055));
+      ctx.shadowBlur = Math.max(4, Math.round(height * 0.07));
       ctx.fillStyle = palette.spectrumPeak;
       ctx.fillRect(x, y, barWidth, peakHeight);
       ctx.shadowColor = palette.spectrumGlow;

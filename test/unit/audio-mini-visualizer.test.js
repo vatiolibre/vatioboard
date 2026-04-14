@@ -183,7 +183,7 @@ describe("createMiniAudioVisualizer", () => {
     mount.style.setProperty("--media-player-visualizer-bar-low", "rgb(1, 180, 80)");
     mount.style.setProperty("--media-player-visualizer-bar-mid", "rgb(180, 220, 60)");
     mount.style.setProperty("--media-player-visualizer-bar-high", "rgb(250, 130, 40)");
-    mount.style.setProperty("--media-player-visualizer-peak", "rgb(255, 190, 50)");
+    mount.style.setProperty("--media-player-visualizer-peak", "rgb(214, 214, 206)");
     Object.defineProperty(mount, "getBoundingClientRect", {
       value: () => ({ width: 240, height: 72 }),
     });
@@ -207,9 +207,16 @@ describe("createMiniAudioVisualizer", () => {
       "rgb(1, 180, 80)",
       "rgb(180, 220, 60)",
       "rgb(250, 130, 40)",
-      "rgb(255, 190, 50)",
+      "rgb(214, 214, 206)",
     ]));
-    expect(fakeCanvasContext.rects.filter((rect) => rect.fillStyle === "rgb(255, 190, 50)")).toHaveLength(20);
+    const firstFramePeakRects = fakeCanvasContext.rects.filter((rect) => rect.fillStyle === "rgb(214, 214, 206)");
+    expect(firstFramePeakRects).toHaveLength(20);
+    const firstPeakRect = firstFramePeakRects[0];
+    const firstStackRects = fakeCanvasContext.rects
+      .filter((rect) => rect.x === firstPeakRect.x && rect.width === firstPeakRect.width && rect.fillStyle !== "rgb(214, 214, 206)");
+    const firstTopStackRect = firstStackRects.reduce((topRect, rect) => (rect.y < topRect.y ? rect : topRect));
+    expect(firstTopStackRect.fillStyle).toBe("rgb(250, 130, 40)");
+    expect(firstTopStackRect.y - (firstPeakRect.y + firstPeakRect.height)).toBeGreaterThanOrEqual(firstTopStackRect.height);
 
     fakeCanvasContext.fillStyles = [];
     fakeCanvasContext.rects = [];
@@ -218,7 +225,9 @@ describe("createMiniAudioVisualizer", () => {
     });
 
     frameCallbacks.shift()();
-    expect(fakeCanvasContext.rects.filter((rect) => rect.fillStyle === "rgb(255, 190, 50)")).toHaveLength(20);
+    const secondFramePeakRects = fakeCanvasContext.rects.filter((rect) => rect.fillStyle === "rgb(214, 214, 206)");
+    expect(secondFramePeakRects).toHaveLength(20);
+    expect(secondFramePeakRects[0].y - firstPeakRect.y).toBeLessThanOrEqual(2);
 
     controller.destroy();
   });
