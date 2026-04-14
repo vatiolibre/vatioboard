@@ -15,9 +15,20 @@ import {
   IconMusic, IconClose, IconQueue,
 } from "../icons.js";
 import { t } from "../i18n.js";
+import { createMiniAudioVisualizer } from "../shared/audio-mini-visualizer.js";
+import { isVisualizerSafeSource } from "../shared/audio-visualizer.js";
 import * as runtime from "../shared/audio-runtime.js";
+import { loadText, saveText } from "../shared/storage.js";
 
 const PROGRESS_MAX = 1000;
+const VISUALIZER_VISIBLE_STORAGE_KEY = "vatio_board_player_widget_visualizer_visible";
+const VISUALIZER_MODE_STORAGE_KEY = "vatio_board_player_widget_visualizer_mode";
+const VISUALIZER_MODES = new Set(["spectrum", "scope"]);
+const IconVisualizer = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M4 17V9M9.5 17V5M15 17v-7M20 17V7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  </svg>
+`;
 
 function updateRangeVisualFill(input) {
   if (!(input instanceof HTMLInputElement)) return;
@@ -33,6 +44,26 @@ function updateRangeVisualFill(input) {
   const percent = span > 0 ? ((clampedValue - safeMin) / span) * 100 : 0;
 
   input.style.setProperty("--player-range-percent", `${percent}%`);
+}
+
+function normalizeVisualizerMode(mode) {
+  const value = String(mode || "").toLowerCase();
+  return VISUALIZER_MODES.has(value) ? value : "spectrum";
+}
+
+function getNextVisualizerMode(mode) {
+  return normalizeVisualizerMode(mode) === "spectrum" ? "scope" : "spectrum";
+}
+
+function getVisualizerModeLabel(mode) {
+  return normalizeVisualizerMode(mode) === "scope"
+    ? t("mediaPlayerVisualizerScope")
+    : t("mediaPlayerVisualizerSpectrum");
+}
+
+function isSafeVisualizerElement(audioElement) {
+  if (!audioElement?.src) return true;
+  return isVisualizerSafeSource(audioElement.currentSrc || audioElement.src);
 }
 
 /**
@@ -79,6 +110,8 @@ export function createPlayerShell({ container }) {
   titleEl.className = "player-title";
   titleEl.textContent = t("playerNowPlaying");
 
+  const visualizerToggleBtn = makeBtn("player-visualizer-toggle-btn", IconVisualizer, t("mediaPlayerVisualizerMode"));
+
   const queueToggleBtn = makeBtn("player-queue-toggle-btn", IconQueue, t("playerQueue"));
 
   const spacer = document.createElement("div");
@@ -89,7 +122,7 @@ export function createPlayerShell({ container }) {
   closeBtn.className = "player-close";
   closeBtn.textContent = t("close");
 
-  header.append(titleEl, queueToggleBtn, spacer, closeBtn);
+  header.append(titleEl, visualizerToggleBtn, queueToggleBtn, spacer, closeBtn);
 
   // ── Now-playing row (compact artwork + metadata) ───────────────
   const nowPlaying = document.createElement("div");
@@ -112,6 +145,23 @@ export function createPlayerShell({ container }) {
   metaSection.append(metaTitle, metaArtist, sourceBadge);
 
   nowPlaying.append(artworkCompact, metaSection);
+
+  // ── Mini visualizer ─────────────────────────────────────────────
+  const visualizerStrip = document.createElement("button");
+  visualizerStrip.type = "button";
+  visualizerStrip.className = "player-visualizer-strip";
+  visualizerStrip.dataset.visualizerState = "disabled";
+  visualizerStrip.dataset.visualizerMode = "spectrum";
+  visualizerStrip.setAttribute("aria-label", t("mediaPlayerVisualizerCycle"));
+
+  const visualizerHost = document.createElement("div");
+  visualizerHost.className = "player-visualizer-host";
+
+  const visualizerLabel = document.createElement("span");
+  visualizerLabel.className = "player-visualizer-label";
+  visualizerLabel.textContent = t("mediaPlayerVisualizerSpectrum");
+
+  visualizerStrip.append(visualizerHost, visualizerLabel);
 
   // ── Error ──────────────────────────────────────────────────────
   const errorMsg = document.createElement("div");
@@ -206,7 +256,7 @@ export function createPlayerShell({ container }) {
   // ── Assembly ───────────────────────────────────────────────────
   const body = document.createElement("div");
   body.className = "player-body";
-  body.append(nowPlaying, errorMsg, progressSection, transport, volumeRow);
+  body.append(nowPlaying, visualizerStrip, errorMsg, progressSection, transport, volumeRow);
 
   root.append(header, body, queueSheet);
   container.append(root);
@@ -215,6 +265,11 @@ export function createPlayerShell({ container }) {
   let seeking = false;
   let allTracks = [];
   let queueOpen = false;
+  let visualizerVisible = loadText(VISUALIZER_VISIBLE_STORAGE_KEY, "true") !== "false";
+  let visualizerMode = normalizeVisualizerMode(loadText(VISUALIZER_MODE_STORAGE_KEY, "spectrum"));
+  let visualizerController = null;
+  let visualizerMediaElement = null;
+  let visualizerFailed = false;
 
   // ── Queue sheet toggle ─────────────────────────────────────────
   function setQueueOpen(open) {
@@ -233,6 +288,126 @@ export function createPlayerShell({ container }) {
     setQueueOpen(!queueOpen);
   });
   queueCloseBtn.addEventListener("click", () => setQueueOpen(false));
+
+  // ── Visualizer controls ─────────────────────────────────────────
+  function getRuntimeAudioElement() {
+    try {
+      const audioElement = typeof runtime.getAudioElement === "function"
+        ? runtime.getAudioElement()
+        : null;
+      return audioElement && typeof audioElement.addEventListener === "function"
+        ? audioElement
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function syncVisualizerUi({ sourceSafe = true } = {}) {
+    visualizerStrip.hidden = !visualizerVisible;
+    visualizerStrip.dataset.visualizerMode = visualizerMode;
+    visualizerStrip.dataset.visualizerState = visualizerFailed
+      ? "error"
+      : visualizerVisible
+        ? sourceSafe ? "ready" : "disabled"
+        : "disabled";
+    visualizerToggleBtn.classList.toggle("active", visualizerVisible);
+    visualizerToggleBtn.setAttribute("aria-pressed", String(visualizerVisible));
+    visualizerLabel.textContent = visualizerFailed || (visualizerVisible && !sourceSafe)
+      ? t("mediaPlayerVisualizerUnavailable")
+      : getVisualizerModeLabel(visualizerMode);
+  }
+
+  function getOrCreateVisualizer() {
+    if (!visualizerVisible || visualizerFailed) return null;
+
+    const audioElement = getRuntimeAudioElement();
+    if (!audioElement || !isSafeVisualizerElement(audioElement)) return null;
+
+    if (visualizerController && visualizerMediaElement === audioElement) {
+      return visualizerController;
+    }
+
+    visualizerController?.destroy();
+    visualizerController = createMiniAudioVisualizer({
+      mediaElement: audioElement,
+      mount: visualizerHost,
+      mode: visualizerMode,
+    });
+    visualizerMediaElement = audioElement;
+
+    if (!visualizerController.isAvailable) {
+      visualizerFailed = true;
+      visualizerController = null;
+      visualizerMediaElement = null;
+      syncVisualizerUi();
+      return null;
+    }
+
+    return visualizerController;
+  }
+
+  function stopVisualizer() {
+    visualizerController?.stop();
+  }
+
+  function syncVisualizerPlayback(stateSnapshot = runtime.getState()) {
+    const audioElement = getRuntimeAudioElement();
+    const sourceSafe = isSafeVisualizerElement(audioElement);
+    syncVisualizerUi({ sourceSafe });
+    if (!visualizerVisible) {
+      stopVisualizer();
+      return;
+    }
+
+    if (!sourceSafe) {
+      visualizerController?.destroy();
+      visualizerController = null;
+      visualizerMediaElement = null;
+      return;
+    }
+
+    const controller = getOrCreateVisualizer();
+    if (!controller) return;
+
+    controller.setMode(visualizerMode);
+    if (!stateSnapshot.playing || document.hidden) {
+      controller.stop();
+      return;
+    }
+
+    controller.start().then((started) => {
+      if (!started || !controller.isAvailable) {
+        visualizerFailed = true;
+        controller.stop();
+        syncVisualizerUi();
+      }
+    }).catch(() => {
+      visualizerFailed = true;
+      syncVisualizerUi();
+    });
+  }
+
+  function setVisualizerVisible(visible) {
+    visualizerVisible = Boolean(visible);
+    saveText(VISUALIZER_VISIBLE_STORAGE_KEY, visualizerVisible ? "true" : "false");
+    syncVisualizerPlayback();
+  }
+
+  visualizerToggleBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  visualizerToggleBtn.addEventListener("pointerup", (e) => e.stopPropagation());
+  visualizerToggleBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    setVisualizerVisible(!visualizerVisible);
+  });
+
+  visualizerStrip.addEventListener("click", () => {
+    if (visualizerFailed) return;
+    visualizerMode = getNextVisualizerMode(visualizerMode);
+    saveText(VISUALIZER_MODE_STORAGE_KEY, visualizerMode);
+    visualizerController?.setMode(visualizerMode);
+    syncVisualizerPlayback();
+  });
 
   // ── Event wiring ───────────────────────────────────────────────
   playBtn.addEventListener("click", () => {
@@ -360,6 +535,7 @@ export function createPlayerShell({ container }) {
     // Queue active indicator
     renderQueueActive(s.currentTrack?.name);
     updateOfflineBadges(s.queue);
+    syncVisualizerPlayback(s);
   }
 
   function renderTrackList(filter = "") {
@@ -456,6 +632,8 @@ export function createPlayerShell({ container }) {
 
     destroy() {
       unsubscribe();
+      visualizerController?.destroy();
+      visualizerController = null;
       root.remove();
     },
 

@@ -74,6 +74,31 @@ const TRACK_A = makeTrack("asset_a");
 const TRACK_B = makeTrack("asset_b");
 const TRACK_C = makeTrack("asset_c");
 
+function createVisualizerMockState() {
+  const calls = [];
+
+  function makeController() {
+    return {
+      get isAvailable() {
+        return true;
+      },
+      setMode: vi.fn(),
+      resize: vi.fn(),
+      start: vi.fn(() => Promise.resolve(true)),
+      stop: vi.fn(),
+      destroy: vi.fn(),
+    };
+  }
+
+  const createVisualizerSpy = vi.fn((options) => {
+    const controller = makeController();
+    calls.push({ options, controller });
+    return controller;
+  });
+
+  return { calls, createVisualizerSpy };
+}
+
 // ── Tests: audio-source-resolver ─────────────────────────────────────
 
 describe("audio-source-resolver", () => {
@@ -948,9 +973,12 @@ describe("audio-catalog", () => {
 describe("player-shell", () => {
   let createPlayerShell;
   let runtime;
+  let visualizerMockState;
 
   beforeEach(async () => {
     vi.resetModules();
+    localStorage.clear();
+    visualizerMockState = createVisualizerMockState();
 
     vi.doMock("../../src/i18n.js", () => ({
       t: (key) => key,
@@ -989,6 +1017,10 @@ describe("player-shell", () => {
       clearMediaAccessCache: vi.fn(),
     }));
 
+    vi.doMock("../../src/shared/audio-mini-visualizer.js", () => ({
+      createMiniAudioVisualizer: visualizerMockState.createVisualizerSpy,
+    }));
+
     const mod = await import("../../src/player/player-shell.js");
     createPlayerShell = mod.createPlayerShell;
     runtime = await import("../../src/shared/audio-runtime.js");
@@ -1006,6 +1038,53 @@ describe("player-shell", () => {
     expect(container.querySelector(".player-btn-next")).toBeTruthy();
     expect(container.querySelector(".player-progress")).toBeTruthy();
     expect(container.querySelector(".player-volume")).toBeTruthy();
+    expect(container.querySelector(".player-visualizer-toggle-btn")).toBeTruthy();
+    expect(container.querySelector(".player-visualizer-strip")).toBeTruthy();
+
+    shell.destroy();
+  });
+
+  it("toggles the player visualizer strip from the header button", () => {
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+
+    const toggleBtn = container.querySelector(".player-visualizer-toggle-btn");
+    const strip = container.querySelector(".player-visualizer-strip");
+
+    expect(strip.hidden).toBe(false);
+    expect(toggleBtn.classList.contains("active")).toBe(true);
+
+    toggleBtn.click();
+    expect(strip.hidden).toBe(true);
+    expect(toggleBtn.classList.contains("active")).toBe(false);
+
+    toggleBtn.click();
+    expect(strip.hidden).toBe(false);
+    expect(toggleBtn.classList.contains("active")).toBe(true);
+
+    shell.destroy();
+  });
+
+  it("cycles the widget visualizer between spectrum and scope from the strip", async () => {
+    await runtime.play();
+
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    const strip = container.querySelector(".player-visualizer-strip");
+
+    expect(visualizerMockState.createVisualizerSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "spectrum" }),
+    );
+
+    strip.click();
+
+    const controller = visualizerMockState.calls[0]?.controller;
+    expect(controller?.setMode).toHaveBeenCalledWith("scope");
+    expect(strip.dataset.visualizerMode).toBe("scope");
+
+    strip.click();
+    expect(controller?.setMode).toHaveBeenCalledWith("spectrum");
+    expect(strip.dataset.visualizerMode).toBe("spectrum");
 
     shell.destroy();
   });
