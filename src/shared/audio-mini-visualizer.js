@@ -24,6 +24,18 @@ function getAudioContextCtor() {
   return window.AudioContext || window.webkitAudioContext || null;
 }
 
+async function resumeAudioContext(audioContext) {
+  if (!audioContext || audioContext.state === "running") return true;
+
+  try {
+    await audioContext.resume();
+  } catch {
+    return false;
+  }
+
+  return audioContext.state === "running";
+}
+
 function readVisualizerPalette(target) {
   const styles = target ? window.getComputedStyle(target) : null;
   const spectrumBar = styles?.getPropertyValue("--media-player-visualizer-bar").trim() || "rgba(34, 197, 94, 0.90)";
@@ -264,19 +276,9 @@ export function createMiniAudioVisualizer({ mediaElement, mount, mode = "spectru
     if (!currentGraph) {
       const audioContext = new AudioContextCtor();
 
-      try {
-        if (audioContext.state === "suspended") {
-          await audioContext.resume();
-        }
-      } catch {
+      const resumed = await resumeAudioContext(audioContext);
+      if (!resumed) {
         try { await audioContext.close(); } catch { /* ignore */ }
-        markUnavailable();
-        return false;
-      }
-
-      if (audioContext.state !== "running") {
-        try { await audioContext.close(); } catch { /* ignore */ }
-        markUnavailable();
         return false;
       }
 
@@ -292,11 +294,9 @@ export function createMiniAudioVisualizer({ mediaElement, mount, mode = "spectru
 
       currentGraph = { audioContext, sourceNode };
       MEDIA_GRAPH_BY_ELEMENT.set(mediaElement, currentGraph);
-    } else if (currentGraph.audioContext?.state === "suspended") {
-      try {
-        await currentGraph.audioContext.resume();
-      } catch {
-        markUnavailable();
+    } else if (currentGraph.audioContext?.state !== "running") {
+      const resumed = await resumeAudioContext(currentGraph.audioContext);
+      if (!resumed) {
         return false;
       }
     }

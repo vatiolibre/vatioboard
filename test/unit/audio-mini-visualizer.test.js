@@ -171,6 +171,36 @@ describe("createMiniAudioVisualizer", () => {
     expect(mount.querySelector("canvas")).toBeNull();
   });
 
+  it("keeps gesture-blocked AudioContext starts retryable", async () => {
+    const mount = document.createElement("div");
+    Object.defineProperty(mount, "getBoundingClientRect", {
+      value: () => ({ width: 240, height: 72 }),
+    });
+    document.body.append(mount);
+
+    const media = document.createElement("audio");
+    const controller = createMiniAudioVisualizer({
+      mediaElement: media,
+      mount,
+      mode: "spectrum",
+    });
+
+    fakeAudioContext.state = "suspended";
+    fakeAudioContext.resume.mockRejectedValueOnce(new DOMException("gesture required", "NotAllowedError"));
+
+    await expect(controller.start()).resolves.toBe(false);
+    expect(controller.isAvailable).toBe(true);
+    expect(fakeAudioContext.close).toHaveBeenCalled();
+    expect(fakeAudioContext.createAnalyser).not.toHaveBeenCalled();
+
+    fakeAudioContext.state = "running";
+    await expect(controller.start()).resolves.toBe(true);
+    expect(controller.isAvailable).toBe(true);
+    expect(fakeAudioContext.createAnalyser).toHaveBeenCalled();
+
+    controller.destroy();
+  });
+
   it("renders 20 stacked spectrum bars with a delayed peak cap", async () => {
     const frameCallbacks = [];
     window.requestAnimationFrame = vi.fn((callback) => {

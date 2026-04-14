@@ -1089,6 +1089,68 @@ describe("player-shell", () => {
     shell.destroy();
   });
 
+  it("primes the widget visualizer from the play gesture", async () => {
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      value: false,
+    });
+
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    const playBtn = container.querySelector(".player-btn-play-main");
+
+    playBtn.click();
+
+    await vi.waitFor(() => {
+      expect(visualizerMockState.createVisualizerSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ mode: "spectrum" }),
+      );
+    });
+    expect(visualizerMockState.calls[0]?.controller.start).toHaveBeenCalled();
+
+    shell.destroy();
+  });
+
+  it("keeps a blocked widget visualizer start retryable", async () => {
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      value: false,
+    });
+
+    const controller = {
+      get isAvailable() {
+        return true;
+      },
+      setMode: vi.fn(),
+      resize: vi.fn(),
+      start: vi.fn(() => Promise.resolve(false)),
+      stop: vi.fn(),
+      destroy: vi.fn(),
+    };
+    visualizerMockState.createVisualizerSpy.mockImplementationOnce((options) => {
+      visualizerMockState.calls.push({ options, controller });
+      return controller;
+    });
+
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    const playBtn = container.querySelector(".player-btn-play-main");
+    const strip = container.querySelector(".player-visualizer-strip");
+
+    playBtn.click();
+
+    await vi.waitFor(() => {
+      expect(controller.start).toHaveBeenCalled();
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(strip.dataset.visualizerState).toBe("ready");
+    expect(strip.textContent).toBe("mediaPlayerVisualizerSpectrum");
+
+    shell.destroy();
+  });
+
   it("initializes range fill percentages from current player state", () => {
     const container = document.createElement("div");
     const shell = createPlayerShell({ container });
