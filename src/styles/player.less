@@ -18,6 +18,11 @@
   --player-queue-bg: rgba(255, 255, 255, 0.98);
   --player-badge-offline: #10b981;
   --player-badge-remote: #6366f1;
+  --player-focus-ring: rgba(16, 185, 129, 0.20);
+  --player-range-track: rgba(15, 23, 42, 0.14);
+  --player-range-thumb: rgba(255, 255, 255, 0.98);
+  --player-range-thumb-border: rgba(15, 23, 42, 0.14);
+  --player-range-thumb-shadow: 0 1px 4px rgba(15, 23, 42, 0.18);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -35,6 +40,11 @@
     --player-queue-bg: rgba(20, 22, 26, 0.98);
     --player-badge-offline: #34d399;
     --player-badge-remote: #818cf8;
+    --player-focus-ring: rgba(52, 211, 153, 0.22);
+    --player-range-track: rgba(255, 255, 255, 0.16);
+    --player-range-thumb: rgba(246, 248, 251, 0.95);
+    --player-range-thumb-border: rgba(255, 255, 255, 0.14);
+    --player-range-thumb-shadow: 0 1px 5px rgba(0, 0, 0, 0.48);
   }
 }
 
@@ -266,51 +276,155 @@
 
 .player-progress-section {
   width: 100%;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
 }
 
-.player-progress {
+/* Protect embedded player sliders from host-page range rules like
+   input[type="range"] { width: 200px; } used by board/library shells. */
+.player-panel input.player-progress[type="range"],
+.player-panel input.player-volume[type="range"] {
+  --player-range-percent: 0%;
+  --player-range-track-height: 4px;
+  --player-range-thumb-size: 13px;
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 4px;
-  background: var(--player-btn);
-  border-radius: 2px;
+  inline-size: 100%;
+  min-width: 0;
+  min-inline-size: 0;
+  max-width: none;
+  max-inline-size: none;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  box-sizing: border-box;
+  border-radius: 999px;
+  background:
+    linear-gradient(
+      to right,
+      var(--player-accent) 0%,
+      var(--player-accent) var(--player-range-percent),
+      var(--player-range-track) var(--player-range-percent),
+      var(--player-range-track) 100%
+    ) center / 100% var(--player-range-track-height) no-repeat;
+  background-color: transparent;
   outline: none;
   cursor: pointer;
+  touch-action: pan-y;
 }
 
-.player-progress::-webkit-slider-thumb {
+.player-panel input.player-progress[type="range"] {
+  --player-range-track-height: 5px;
+  --player-range-thumb-size: 14px;
+  display: block;
+  flex: 1 1 auto;
+  align-self: stretch;
+  justify-self: stretch;
+}
+
+.player-panel input.player-progress[type="range"]::-webkit-slider-runnable-track,
+.player-panel input.player-volume[type="range"]::-webkit-slider-runnable-track {
+  height: var(--player-range-track-height);
+  background: transparent;
+  border-radius: 999px;
+}
+
+.player-panel input.player-progress[type="range"]::-webkit-slider-thumb,
+.player-panel input.player-volume[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 14px;
-  height: 14px;
+  width: var(--player-range-thumb-size);
+  height: var(--player-range-thumb-size);
   border-radius: 50%;
-  background: var(--player-accent);
-  border: none;
+  background: var(--player-range-thumb);
+  border: 1px solid var(--player-range-thumb-border);
+  box-shadow: var(--player-range-thumb-shadow);
   cursor: pointer;
-  margin-top: -5px;
+  margin-top: calc((var(--player-range-track-height) - var(--player-range-thumb-size)) / 2);
+  transition: transform 0.15s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }
 
-.player-progress::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--player-accent);
+.player-panel input.player-progress[type="range"]::-moz-range-track,
+.player-panel input.player-volume[type="range"]::-moz-range-track {
+  height: var(--player-range-track-height);
+  background: var(--player-range-track);
   border: none;
-  cursor: pointer;
+  border-radius: 999px;
 }
 
-.player-progress::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 2px;
+.player-panel input.player-progress[type="range"]::-moz-range-progress,
+.player-panel input.player-volume[type="range"]::-moz-range-progress {
+  height: var(--player-range-track-height);
+  background: var(--player-accent);
+  border: none;
+  border-radius: 999px;
+}
+
+.player-panel input.player-progress[type="range"]::-moz-range-thumb,
+.player-panel input.player-volume[type="range"]::-moz-range-thumb {
+  width: var(--player-range-thumb-size);
+  height: var(--player-range-thumb-size);
+  border-radius: 50%;
+  background: var(--player-range-thumb);
+  border: 1px solid var(--player-range-thumb-border);
+  box-shadow: var(--player-range-thumb-shadow);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.player-panel input.player-progress[type="range"]:hover::-webkit-slider-thumb,
+.player-panel input.player-volume[type="range"]:hover::-webkit-slider-thumb,
+.player-panel input.player-progress[type="range"]:hover::-moz-range-thumb,
+.player-panel input.player-volume[type="range"]:hover::-moz-range-thumb {
+  transform: scale(1.05);
+}
+
+.player-panel input.player-progress[type="range"]:active::-webkit-slider-thumb,
+.player-panel input.player-volume[type="range"]:active::-webkit-slider-thumb,
+.player-panel input.player-progress[type="range"]:active::-moz-range-thumb,
+.player-panel input.player-volume[type="range"]:active::-moz-range-thumb {
+  transform: scale(1.1);
+  box-shadow:
+    0 0 0 5px var(--player-accent-soft),
+    var(--player-range-thumb-shadow);
+}
+
+.player-panel input.player-progress[type="range"]:focus-visible,
+.player-panel input.player-volume[type="range"]:focus-visible {
+  box-shadow: 0 0 0 3px var(--player-focus-ring);
+}
+
+.player-panel input.player-progress[type="range"]:focus-visible::-webkit-slider-thumb,
+.player-panel input.player-volume[type="range"]:focus-visible::-webkit-slider-thumb,
+.player-panel input.player-progress[type="range"]:focus-visible::-moz-range-thumb,
+.player-panel input.player-volume[type="range"]:focus-visible::-moz-range-thumb {
+  border-color: var(--player-accent);
+  box-shadow:
+    0 0 0 4px var(--player-accent-soft),
+    var(--player-range-thumb-shadow);
 }
 
 .player-time-row {
   display: flex;
+  align-items: center;
   justify-content: space-between;
+  width: 100%;
+  inline-size: 100%;
+  min-width: 0;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
   font-size: 0.7rem;
   color: var(--player-muted);
-  margin-top: 2px;
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
 }
 
 /* ── Transport ────────────────────────────────────────────────────── */
@@ -391,8 +505,10 @@
 .player-volume-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 4px;
+  width: 100%;
+  min-width: 0;
+  gap: 10px;
+  padding: 0;
 }
 
 .player-btn-mute {
@@ -400,49 +516,34 @@
   border: none;
   color: var(--player-muted);
   cursor: pointer;
-  padding: 4px;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  padding: 0;
   border-radius: 50%;
   display: flex;
   align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.18s ease;
 }
 
 .player-btn-mute svg {
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
 }
 
 .player-btn-mute:hover {
   background: var(--player-btn-hover);
+  color: var(--player-text);
 }
 
-.player-volume {
-  -webkit-appearance: none;
-  appearance: none;
-  flex: 1;
-  height: 3px;
-  background: var(--player-btn);
-  border-radius: 2px;
+.player-btn-mute:focus-visible {
   outline: none;
-  cursor: pointer;
+  box-shadow: 0 0 0 3px var(--player-focus-ring);
 }
 
-.player-volume::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--player-muted);
-  border: none;
-  cursor: pointer;
-}
-
-.player-volume::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--player-muted);
-  border: none;
-  cursor: pointer;
+.player-panel input.player-volume[type="range"] {
+  flex: 1 1 auto;
 }
 
 /* ── Queue bottom sheet ───────────────────────────────────────────── */

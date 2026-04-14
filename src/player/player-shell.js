@@ -19,6 +19,22 @@ import * as runtime from "../shared/audio-runtime.js";
 
 const PROGRESS_MAX = 1000;
 
+function updateRangeVisualFill(input) {
+  if (!(input instanceof HTMLInputElement)) return;
+
+  const min = Number(input.min);
+  const max = Number(input.max);
+  const value = Number(input.value);
+  const safeMin = Number.isFinite(min) ? min : 0;
+  const safeMax = Number.isFinite(max) ? max : 100;
+  const safeValue = Number.isFinite(value) ? value : safeMin;
+  const span = safeMax - safeMin;
+  const clampedValue = Math.min(safeMax, Math.max(safeMin, safeValue));
+  const percent = span > 0 ? ((clampedValue - safeMin) / span) * 100 : 0;
+
+  input.style.setProperty("--player-range-percent", `${percent}%`);
+}
+
 /**
  * Format seconds as m:ss or h:mm:ss.
  */
@@ -154,6 +170,7 @@ export function createPlayerShell({ container }) {
   volumeSlider.setAttribute("aria-label", t("mediaPlayerVolume"));
 
   volumeRow.append(muteBtn, volumeSlider);
+  updateRangeVisualFill(volumeSlider);
 
   // ── Queue bottom sheet ─────────────────────────────────────────
   const queueSheet = document.createElement("div");
@@ -235,11 +252,13 @@ export function createPlayerShell({ container }) {
 
   muteBtn.addEventListener("click", () => runtime.setMuted());
   volumeSlider.addEventListener("input", () => {
+    updateRangeVisualFill(volumeSlider);
     runtime.setVolume(Number(volumeSlider.value) / 100);
   });
 
   progressBar.addEventListener("pointerdown", () => { seeking = true; });
   progressBar.addEventListener("input", () => {
+    updateRangeVisualFill(progressBar);
     const s = runtime.getState();
     if (Number.isFinite(s.duration) && s.duration > 0) {
       const time = (Number(progressBar.value) / PROGRESS_MAX) * s.duration;
@@ -251,6 +270,7 @@ export function createPlayerShell({ container }) {
     if (Number.isFinite(s.duration) && s.duration > 0) {
       runtime.seekTo((Number(progressBar.value) / PROGRESS_MAX) * s.duration);
     }
+    updateRangeVisualFill(progressBar);
     seeking = false;
   });
 
@@ -266,11 +286,18 @@ export function createPlayerShell({ container }) {
     playBtn.setAttribute("aria-label", s.playing ? t("mediaPlayerPause") : t("mediaPlayerPlay"));
 
     // Progress
-    if (!seeking && Number.isFinite(s.duration) && s.duration > 0) {
-      progressBar.value = String(Math.round((s.currentTime / s.duration) * PROGRESS_MAX));
-      timeCurrent.textContent = formatTime(s.currentTime);
-      timeTotal.textContent = formatTime(s.duration);
+    if (!seeking) {
+      if (Number.isFinite(s.duration) && s.duration > 0) {
+        progressBar.value = String(Math.round((s.currentTime / s.duration) * PROGRESS_MAX));
+        timeCurrent.textContent = formatTime(s.currentTime);
+        timeTotal.textContent = formatTime(s.duration);
+      } else {
+        progressBar.value = "0";
+        timeCurrent.textContent = "0:00";
+        timeTotal.textContent = "0:00";
+      }
     }
+    updateRangeVisualFill(progressBar);
 
     // Metadata
     const track = s.currentTrack;
@@ -315,6 +342,7 @@ export function createPlayerShell({ container }) {
     muteBtn.querySelector(".btn-icon").innerHTML = s.muted ? IconMuted : IconVolume;
     muteBtn.setAttribute("aria-label", s.muted ? t("mediaPlayerUnmute") : t("mediaPlayerMute"));
     volumeSlider.value = String(Math.round(s.volume * 100));
+    updateRangeVisualFill(volumeSlider);
 
     // Loading/error
     root.classList.toggle("loading", s.loading);
@@ -413,6 +441,8 @@ export function createPlayerShell({ container }) {
 
   // ── Runtime subscription ───────────────────────────────────────
   const unsubscribe = runtime.subscribe(renderState);
+  updateRangeVisualFill(progressBar);
+  updateRangeVisualFill(volumeSlider);
   renderState(runtime.getState());
 
   // ── Public API ─────────────────────────────────────────────────

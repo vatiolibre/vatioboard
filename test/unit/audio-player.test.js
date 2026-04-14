@@ -1010,6 +1010,41 @@ describe("player-shell", () => {
     shell.destroy();
   });
 
+  it("initializes range fill percentages from current player state", () => {
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+
+    const progress = container.querySelector(".player-progress");
+    const volume = container.querySelector(".player-volume");
+
+    expect(progress.style.getPropertyValue("--player-range-percent")).toBe("0%");
+    expect(volume.style.getPropertyValue("--player-range-percent")).toBe("100%");
+
+    shell.destroy();
+  });
+
+  it("updates range fill percentages while dragging progress and volume sliders", async () => {
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+
+    const progress = container.querySelector(".player-progress");
+    const volume = container.querySelector(".player-volume");
+
+    progress.value = "250";
+    progress.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(progress.style.getPropertyValue("--player-range-percent")).toBe("25%");
+
+    volume.value = "42";
+    volume.dispatchEvent(new Event("input", { bubbles: true }));
+
+    expect(volume.style.getPropertyValue("--player-range-percent")).toBe("42%");
+    await vi.waitFor(() => {
+      expect(runtime.getState().volume).toBeCloseTo(0.42, 2);
+    });
+
+    shell.destroy();
+  });
+
   it("destroy removes the shell from the DOM", () => {
     const container = document.createElement("div");
     const shell = createPlayerShell({ container });
