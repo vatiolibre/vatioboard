@@ -6,8 +6,22 @@ import {
   cacheMediaBlob,
 } from "./media-cache.js";
 import { getEnvironmentConfig } from "./environment.js";
-import { getBackendMediaAssetAccess, fetchBackendMediaAssetBlob } from "./backend-auth.js";
+import {
+  fetchBackendMediaAssetBlob,
+  getBackendMediaAssetAccess,
+  getProtectedMediaRequestGate,
+} from "./backend-auth.js";
 import { getCachedMediaAccess, setCachedMediaAccess } from "./media-access-cache.js";
+
+function isAbortError(error) {
+  return Boolean(
+    error
+    && (
+      error.name === "AbortError"
+      || error.code === 20
+    )
+  );
+}
 
 /**
  * Resolve the best available audio source for a media asset.
@@ -80,14 +94,28 @@ async function resolveRemotePlaybackUrl(assetName, asset) {
   const cached = getCachedMediaAccess(assetName, hash);
   if (cached?.playback_url) return cached.playback_url;
 
+  let gate = null;
   try {
-    const result = await getBackendMediaAssetAccess({ name: assetName, intent: "playback" });
+    gate = await getProtectedMediaRequestGate();
+    if (!gate.allowed) return null;
+
+    const result = await getBackendMediaAssetAccess({
+      name: assetName,
+      intent: "playback",
+      signal: gate.signal,
+    });
     if (result?.access?.playback_url) {
       const expiry = Number(result.access.expires_in_seconds) || 300;
       setCachedMediaAccess(assetName, result.asset?.content_hash || hash, result.access, expiry);
       return result.access.playback_url;
     }
-  } catch { /* offline or error — no remote playback available */ }
+  } catch (error) {
+    if (!isAbortError(error)) {
+      // offline or error — no remote playback available
+    }
+  } finally {
+    gate?.cleanup?.();
+  }
 
   return null;
 }
@@ -137,48 +165,72 @@ export function triggerBackgroundCache(assetName, asset, { onCached, fetchFn = f
       }
     } catch { /* proceed with download */ }
 
-    let response = null;
-
-    // 1. Prefer signed download URL via backend access endpoint.
+    let gate = null;
     try {
-      const result = await getBackendMediaAssetAccess({ name: assetName, intent: "download" });
-      const signedUrl = result?.access?.download_url;
-      if (signedUrl) {
-        const r = await fetchFn(signedUrl);
-        if (r.ok) response = r;
-      }
-    } catch { /* fall through */ }
+      gate = await getProtectedMediaRequestGate();
+      if (!gate.allowed) return;
 
-    // 2. Fallback: stream through the backend (includes credentials).
-    if (!response) {
+      let response = null;
+
+      // 1. Prefer signed download URL via backend access endpoint.
       try {
-        const r = await fetchBackendMediaAssetBlob({ name: assetName });
-        if (r.ok) response = r;
-      } catch { /* fall through */ }
-    }
-
-    // 3. Final fallback: stable BFF streaming URL.
-    if (!response) {
-      const streamUrl = buildRemotePlaybackUrl(assetName, asset);
-      if (streamUrl) {
-        try {
-          const r = await fetchFn(streamUrl);
+        const result = await getBackendMediaAssetAccess({
+          name: assetName,
+          intent: "download",
+          signal: gate.signal,
+        });
+        const signedUrl = result?.access?.download_url;
+        if (signedUrl) {
+          const r = await fetchFn(signedUrl, { signal: gate.signal });
           if (r.ok) response = r;
-        } catch { /* no source available */ }
+        }
+      } catch (error) {
+        if (isAbortError(error)) return;
+        // fall through
       }
-    }
 
-    if (!response) return;
+      // 2. Fallback: stream through the backend (includes credentials).
+      if (!response) {
+        try {
+          const r = await fetchBackendMediaAssetBlob({
+            name: assetName,
+            signal: gate.signal,
+          });
+          if (r.ok) response = r;
+        } catch (error) {
+          if (isAbortError(error)) return;
+          // fall through
+        }
+      }
 
-    const blob = await response.blob();
-    const ok = await cacheMediaBlob(assetName, blob, {
-      contentHash: asset.content_hash || null,
-      blobSize: blob.size,
-      mediaKind: asset.media_kind || null,
-    });
+      // 3. Final fallback: stable BFF streaming URL.
+      if (!response) {
+        const streamUrl = buildRemotePlaybackUrl(assetName, asset);
+        if (streamUrl) {
+          try {
+            const r = await fetchFn(streamUrl, { signal: gate.signal });
+            if (r.ok) response = r;
+          } catch (error) {
+            if (isAbortError(error)) return;
+            // no source available
+          }
+        }
+      }
 
-    if (ok && typeof onCached === "function") {
-      try { onCached(); } catch { /* ignore callback errors */ }
+      if (!response) return;
+
+      const blob = await response.blob();
+      const ok = await cacheMediaBlob(assetName, blob, {
+        contentHash: asset.content_hash || null,
+        blobSize: blob.size,
+        mediaKind: asset.media_kind || null,
+      });
+
+      if (ok && typeof onCached === "function") {
+        try { onCached(); } catch { /* ignore callback errors */ }
+      }
+    } finally {
+      gate?.cleanup?.();
     }
   };
 

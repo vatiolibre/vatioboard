@@ -233,7 +233,7 @@ export function createCloudLibraryResource({
     }
 
     return cloneJson(await waitForAbort(
-      beginLoad(entry, () => listLoader(querySnapshot, { force })),
+      beginLoad(entry, () => listLoader(querySnapshot, { force, signal })),
       signal
     ), null);
   }
@@ -273,7 +273,7 @@ export function createCloudLibraryResource({
     }
 
     const value = await waitForAbort(
-      beginLoad(entry, () => detailLoader(normalizedName, { mode })),
+      beginLoad(entry, () => detailLoader(normalizedName, { mode, signal })),
       signal
     );
     if (shouldPersistDetail({ mode, name: normalizedName })) {

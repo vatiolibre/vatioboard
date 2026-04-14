@@ -18,8 +18,26 @@ import {
   getCachedMediaManifest,
   cacheManifestSnapshot,
 } from "./media-cache.js";
-import { getBackendMediaManifest, getBackendManifestVersion } from "./backend-auth.js";
+import {
+  getBackendMediaManifest,
+  getBackendManifestVersion,
+  getProtectedMediaRequestGate,
+} from "./backend-auth.js";
 import { hasLocalSource } from "./audio-source-resolver.js";
+
+function isAbortError(error) {
+  return Boolean(
+    error
+    && (
+      error.name === "AbortError"
+      || error.code === 20
+    )
+  );
+}
+
+function isAuthBlockedResponse(result) {
+  return result?.blockedByAuth === true || result?.status === 401 || result?.status === 403;
+}
 
 /**
  * Load the audio catalog from the cached manifest.
@@ -52,8 +70,14 @@ export async function loadAudioCatalog(query = {}) {
 
   // Cold-online boot: no cached manifest — fetch from backend.
   if (assets.length === 0) {
+    let gate = null;
     try {
-      const response = await getBackendMediaManifest();
+      gate = await getProtectedMediaRequestGate();
+      if (!gate.allowed) {
+        return { tracks: [], total: 0 };
+      }
+
+      const response = await getBackendMediaManifest({ signal: gate.signal });
       if (response?.ok && Array.isArray(response.assets)) {
         assets = response.assets;
         // Cache atomically for future offline use.
@@ -62,7 +86,13 @@ export async function loadAudioCatalog(query = {}) {
           : null;
         cacheManifestSnapshot({ assets, token }).catch(() => {});
       }
-    } catch { /* offline — no manifest available */ }
+    } catch (error) {
+      if (!isAbortError(error)) {
+        // offline — no manifest available
+      }
+    } finally {
+      gate?.cleanup?.();
+    }
   }
 
   // Filter to audio only
@@ -84,9 +114,19 @@ export async function loadAudioCatalog(query = {}) {
  * @returns {Promise<boolean>} true when the manifest was refreshed
  */
 export async function syncAudioCatalog() {
+  let gate = null;
   try {
+    gate = await getProtectedMediaRequestGate();
+    if (!gate.allowed) return false;
+
     // Determine the remote manifest token
-    const remoteVersion = await getBackendManifestVersion().catch(() => null);
+    const remoteVersion = await getBackendManifestVersion({ signal: gate.signal }).catch((error) => {
+      if (isAbortError(error)) throw error;
+      return null;
+    });
+    if (isAuthBlockedResponse(remoteVersion)) {
+      return false;
+    }
     const remoteToken = remoteVersion?.ok ? remoteVersion.manifestToken : null;
 
     // Freshness check: matching token + existing snapshot → skip
@@ -98,15 +138,18 @@ export async function syncAudioCatalog() {
     }
 
     // Token mismatch or no cached snapshot — fetch the full manifest
-    const response = await getBackendMediaManifest();
+    const response = await getBackendMediaManifest({ signal: gate.signal });
     if (!response?.ok || !Array.isArray(response.assets)) return false;
     const token = (response.manifestToken && !response.isTruncated)
       ? response.manifestToken
       : null;
     await cacheManifestSnapshot({ assets: response.assets, token });
     return true;
-  } catch {
+  } catch (error) {
+    if (isAbortError(error)) return false;
     return false;
+  } finally {
+    gate?.cleanup?.();
   }
 }
 

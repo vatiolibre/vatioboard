@@ -32,6 +32,7 @@ import {
   fetchBackendMediaAssetBlob,
   getBackendFeatureAccessState,
   getBackendMediaAssetAccess,
+  getProtectedMediaRequestGate,
   getBackendSessionState,
   initBackendAuthControllers,
   updateBoardDocumentInBackend,
@@ -283,18 +284,30 @@ async function resolveMediaAccess(assetName, contentHash, { intent } = {}) {
     if (cached) return cached;
   }
 
-  const result = await getBackendMediaAssetAccess({ name: assetName, intent });
-  if (result.access) {
-    const expiry = Number(result.access.expires_in_seconds) || 300;
-    const hash = result.asset?.content_hash || contentHash;
-    // Only cache the generic (no-intent) response to avoid polluting the
-    // cache with partial responses.
-    if (!intent) {
-      setCachedMediaAccess(assetName, hash, result.access, expiry);
+  let gate = null;
+  try {
+    gate = await getProtectedMediaRequestGate();
+    if (!gate.allowed) return null;
+
+    const result = await getBackendMediaAssetAccess({
+      name: assetName,
+      intent,
+      signal: gate.signal,
+    });
+    if (result.access) {
+      const expiry = Number(result.access.expires_in_seconds) || 300;
+      const hash = result.asset?.content_hash || contentHash;
+      // Only cache the generic (no-intent) response to avoid polluting the
+      // cache with partial responses.
+      if (!intent) {
+        setCachedMediaAccess(assetName, hash, result.access, expiry);
+      }
+      return result.access;
     }
-    return result.access;
+    return null;
+  } finally {
+    gate?.cleanup?.();
   }
-  return null;
 }
 
 /**

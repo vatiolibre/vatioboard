@@ -1,4 +1,5 @@
 import {
+  getProtectedMediaRequestGate,
   getBackendManifestVersion,
   getBackendMediaAssetDetail,
   getBackendMediaManifest,
@@ -57,8 +58,46 @@ const boardDocumentsResource = createCloudLibraryResource({
     getBackendBoardDocumentDetail({
       name,
       includePayload: mode === "full",
-    }),
+  }),
 });
+
+function isAbortError(error) {
+  return Boolean(
+    error
+    && (
+      error.name === "AbortError"
+      || error.code === 20
+    )
+  );
+}
+
+function isAuthBlockedResponse(result) {
+  return result?.blockedByAuth === true || result?.status === 401 || result?.status === 403;
+}
+
+function createBlockedMediaListResponse() {
+  return {
+    ok: false,
+    status: 401,
+    data: null,
+    assets: [],
+    blockedByAuth: true,
+    hasMore: false,
+    manifestToken: null,
+    nextOffset: 0,
+    totalCount: 0,
+  };
+}
+
+function createBlockedMediaDetailResponse() {
+  return {
+    ok: false,
+    status: 401,
+    asset: null,
+    blockedByAuth: true,
+    data: null,
+  };
+}
 
 function filterAndSortOfflineAssets(assets, query) {
   let result = assets;
@@ -120,12 +159,22 @@ function getSortableTimestamp(item) {
  *
  * Returns ``true`` when the manifest was refreshed, ``false`` when skipped.
  */
-async function syncCanonicalManifest({ browseToken = null } = {}) {
+async function syncCanonicalManifest({ browseToken = null, signal } = {}) {
+  let gate = null;
   try {
+    gate = await getProtectedMediaRequestGate({ signal });
+    if (!gate.allowed) return false;
+
     // Determine the remote token — prefer the one already in hand.
     let remoteToken = browseToken;
     if (!remoteToken) {
-      const remoteVersion = await getBackendManifestVersion().catch(() => null);
+      const remoteVersion = await getBackendManifestVersion({ signal: gate.signal }).catch((error) => {
+        if (isAbortError(error)) throw error;
+        return null;
+      });
+      if (isAuthBlockedResponse(remoteVersion)) {
+        return false;
+      }
       remoteToken = remoteVersion?.ok ? remoteVersion.manifestToken : null;
     }
 
@@ -140,7 +189,10 @@ async function syncCanonicalManifest({ browseToken = null } = {}) {
     }
 
     // Token mismatch or no cached snapshot — fetch the full manifest
-    const response = await getBackendMediaManifest();
+    const response = await getBackendMediaManifest({ signal: gate.signal });
+    if (isAuthBlockedResponse(response) || response?.ok === false) {
+      return false;
+    }
     const assets = response?.assets;
     if (Array.isArray(assets)) {
       // Atomic write: assets and freshness token in a single record.
@@ -152,8 +204,11 @@ async function syncCanonicalManifest({ browseToken = null } = {}) {
       await cacheManifestSnapshot({ assets, token });
     }
     return true;
-  } catch {
+  } catch (error) {
+    if (isAbortError(error)) return false;
     return false;
+  } finally {
+    gate?.cleanup?.();
   }
 }
 
@@ -161,7 +216,7 @@ const MEDIA_PAGE_SIZE = 24;
 
 const mediaResource = createCloudLibraryResource({
   resourceKey: "media_asset",
-  listLoader: async (query, { force = false } = {}) => {
+  listLoader: async (query, { force = false, signal } = {}) => {
     const limit = Number(query?.limit) || MEDIA_PAGE_SIZE;
     const offset = Number(query?.offset) || 0;
 
@@ -183,8 +238,17 @@ const mediaResource = createCloudLibraryResource({
       }
     }
 
+    let gate = null;
     try {
-      const response = await listBackendMediaAssets(query);
+      gate = await getProtectedMediaRequestGate({ signal });
+      if (!gate.allowed) {
+        return createBlockedMediaListResponse();
+      }
+
+      const response = await listBackendMediaAssets({
+        ...query,
+        signal: gate.signal,
+      });
 
       // Determine whether this is a canonical (unfiltered, first-page) load.
       const isCanonical = !query?.search && !offset;
@@ -194,16 +258,25 @@ const mediaResource = createCloudLibraryResource({
       //  - first successful canonical load with no existing cache (cold visit)
       if (isCanonical) {
         if (force) {
-          syncCanonicalManifest({ browseToken: response.manifestToken || null }).catch(() => {});
+          syncCanonicalManifest({
+            browseToken: response.manifestToken || null,
+            signal,
+          }).catch(() => {});
         } else {
           // Cold visit: no cache existed (otherwise we'd have taken the
           // cache-first path above).  Seed the offline manifest now.
-          syncCanonicalManifest({ browseToken: response.manifestToken || null }).catch(() => {});
+          syncCanonicalManifest({
+            browseToken: response.manifestToken || null,
+            signal,
+          }).catch(() => {});
         }
       }
 
       return response;
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       const cached = await getCachedMediaManifest().catch(() => null);
       if (Array.isArray(cached)) {
         const filtered = filterAndSortOfflineAssets(cached, query);
@@ -217,22 +290,35 @@ const mediaResource = createCloudLibraryResource({
         };
       }
       throw error;
+    } finally {
+      gate?.cleanup?.();
     }
   },
-  detailLoader: async (name) => {
+  detailLoader: async (name, { signal } = {}) => {
+    let gate = null;
     try {
-      const response = await getBackendMediaAssetDetail({ name });
+      gate = await getProtectedMediaRequestGate({ signal });
+      if (!gate.allowed) {
+        return createBlockedMediaDetailResponse();
+      }
+
+      const response = await getBackendMediaAssetDetail({ name, signal: gate.signal });
       const asset = response?.asset;
       if (asset && asset.name) {
         cacheMediaMetadata(asset.name, asset).catch(() => {});
       }
       return response;
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       const cached = await getCachedMediaMetadata(name).catch(() => null);
       if (cached) {
         return { asset: { ...cached, _offline: true } };
       }
       throw error;
+    } finally {
+      gate?.cleanup?.();
     }
   },
   shouldPersistDetail: () => false,

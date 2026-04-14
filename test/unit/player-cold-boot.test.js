@@ -64,6 +64,25 @@ function jsonResponse(body, status = 200) {
   });
 }
 
+function createDeferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+
+  return { promise, reject, resolve };
+}
+
+function getFetchUrl(input) {
+  return typeof input === "string" ? input : String(input?.url ?? "");
+}
+
+function countFetchCalls(fetchMock, needle) {
+  return fetchMock.mock.calls.filter(([input]) => getFetchUrl(input).includes(needle)).length;
+}
+
 const AUDIO_ASSET_1 = {
   name: "AUDIO-1",
   title: "Morning Ride",
@@ -235,6 +254,8 @@ describe("player cold boot", () => {
 
     // Auth bootstrap should set the cache user
     expect(mockMediaCache.setMediaCacheUser).toHaveBeenCalledWith("player-user@vatiolibre.com");
+
+    expect(countFetchCalls(window.fetch, "get_my_media_manifest")).toBeGreaterThan(0);
 
     // Backend manifest should have been fetched and cached
     expect(mockMediaCache.cacheManifestSnapshot).toHaveBeenCalledWith(
@@ -417,6 +438,113 @@ describe("player cold boot", () => {
     await settlePlayerTasks();
 
     expect(mockMediaCache.clearPersistedMediaCacheUser).toHaveBeenCalled();
+    expect(countFetchCalls(window.fetch, "get_my_media_manifest_version")).toBe(0);
+    expect(countFetchCalls(window.fetch, "get_my_media_manifest")).toBe(0);
+    expect(countFetchCalls(window.fetch, "list_my_media_assets")).toBe(0);
+    expect(countFetchCalls(window.fetch, "get_my_media_asset_detail")).toBe(0);
+    expect(countFetchCalls(window.fetch, "get_my_media_asset_access")).toBe(0);
+  });
+
+  it("auth-pending boot waits for the session probe before firing manifest requests", async () => {
+    const sessionProbe = createDeferred();
+    const fetchMock = vi.fn(async (input) => {
+      const url = getFetchUrl(input);
+
+      if (url.includes("/api/method/vatiolibre.services.tesla_connection_status")) {
+        return sessionProbe.promise;
+      }
+      if (url.includes("/api/method/frappe.auth.get_logged_user")) {
+        return jsonResponse({ message: "player-user@vatiolibre.com" });
+      }
+      if (url.includes("get_my_media_manifest")) {
+        return jsonResponse({
+          message: {
+            assets: [AUDIO_ASSET_1],
+            manifest_token: "manifest-token-v1",
+            total_count: 1,
+          },
+        });
+      }
+      if (url.includes("get_my_media_manifest_version")) {
+        return jsonResponse({
+          message: { manifest_token: "manifest-token-v1", total_count: 1 },
+        });
+      }
+      return jsonResponse({});
+    });
+    window.fetch = fetchMock;
+
+    await bootHtmlPage("player.html");
+    const playerPage = await import("../../src/player/player-demo.js");
+    await flushTasks();
+    await flushTasks();
+
+    expect(countFetchCalls(fetchMock, "get_my_media_manifest")).toBe(0);
+    expect(countFetchCalls(fetchMock, "get_my_media_manifest_version")).toBe(0);
+
+    sessionProbe.resolve(jsonResponse({ message: { connected: false, is_guest: false } }));
+
+    await playerPage.initPromise;
+    await settlePlayerTasks();
+
+    expect(countFetchCalls(fetchMock, "get_my_media_manifest")).toBeGreaterThan(0);
+  });
+
+  it("logout during manifest bootstrap aborts the in-flight request and skips follow-up protected calls", async () => {
+    let manifestAbortCount = 0;
+    let manifestStarted = false;
+    const fetchMock = vi.fn(async (input, init = {}) => {
+      const url = getFetchUrl(input);
+
+      if (url.includes("/api/method/vatiolibre.services.tesla_connection_status")) {
+        return jsonResponse({ message: { connected: false, is_guest: false } });
+      }
+      if (url.includes("/api/method/frappe.auth.get_logged_user")) {
+        return jsonResponse({ message: "player-user@vatiolibre.com" });
+      }
+      if (url.includes("get_my_media_manifest")) {
+        manifestStarted = true;
+        return new Promise((resolve, reject) => {
+          init.signal?.addEventListener("abort", () => {
+            manifestAbortCount += 1;
+            reject(new DOMException("Aborted", "AbortError"));
+          }, { once: true });
+        });
+      }
+      if (url.includes("get_my_media_manifest_version")) {
+        return jsonResponse({
+          message: { manifest_token: "manifest-token-v1", total_count: 1 },
+        });
+      }
+      return jsonResponse({});
+    });
+    window.fetch = fetchMock;
+
+    await bootHtmlPage("player.html");
+    const playerPage = await import("../../src/player/player-demo.js");
+
+    await vi.waitFor(() => {
+      expect(manifestStarted).toBe(true);
+    });
+
+    window.dispatchEvent(new CustomEvent("vatioboard:backend-auth-state", {
+      detail: {
+        authenticated: true,
+        busy: true,
+        isGuest: false,
+        pendingLogout: true,
+        user: "player-user@vatiolibre.com",
+      },
+    }));
+
+    await playerPage.initPromise;
+    await settlePlayerTasks();
+
+    expect(manifestAbortCount).toBe(1);
+    expect(countFetchCalls(fetchMock, "get_my_media_manifest_version")).toBe(0);
+    expect(countFetchCalls(fetchMock, "list_my_media_assets")).toBe(0);
+    expect(countFetchCalls(fetchMock, "get_my_media_asset_detail")).toBe(0);
+    expect(countFetchCalls(fetchMock, "get_my_media_asset_access")).toBe(0);
   });
 
   // ── Search filters the visible track list ────────────────────────

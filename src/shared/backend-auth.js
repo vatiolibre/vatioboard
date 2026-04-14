@@ -73,6 +73,16 @@ const backendFeatureAccessCache = {
   requestVersion: 0,
   value: null,
 };
+const DEFAULT_BACKEND_AUTH_STATE = Object.freeze({
+  authenticated: null,
+  busy: false,
+  isGuest: null,
+  pendingLogout: false,
+  user: null,
+});
+
+let backendAuthStateListenerInstalled = false;
+let backendAuthStateSnapshot = { ...DEFAULT_BACKEND_AUTH_STATE };
 
 function getFetch(fetchImpl) {
   if (typeof fetchImpl === "function") return fetchImpl;
@@ -234,6 +244,194 @@ function getLoggedUser(data) {
 
 function getText(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeOptionalBoolean(value) {
+  return value === true ? true : value === false ? false : null;
+}
+
+function normalizeBackendAuthStateDetail(detail) {
+  return {
+    authenticated: normalizeOptionalBoolean(detail?.authenticated),
+    busy: detail?.busy === true,
+    isGuest: normalizeOptionalBoolean(detail?.isGuest),
+    pendingLogout: detail?.pendingLogout === true,
+    user: getText(detail?.user) || null,
+  };
+}
+
+function mergeBackendAuthStateSnapshot(detail = {}) {
+  const nextDetail = normalizeBackendAuthStateDetail(detail);
+  backendAuthStateSnapshot = {
+    ...backendAuthStateSnapshot,
+    ...nextDetail,
+  };
+
+  if (backendAuthStateSnapshot.pendingLogout === true) {
+    backendAuthStateSnapshot.authenticated = false;
+  }
+
+  if (backendAuthStateSnapshot.authenticated !== true) {
+    backendAuthStateSnapshot.user = null;
+  }
+
+  if (backendAuthStateSnapshot.isGuest === true) {
+    backendAuthStateSnapshot.authenticated = false;
+  }
+
+  return { ...backendAuthStateSnapshot };
+}
+
+function ensureBackendAuthStateTracking() {
+  if (
+    backendAuthStateListenerInstalled
+    || typeof window === "undefined"
+    || typeof window.addEventListener !== "function"
+  ) {
+    return;
+  }
+
+  window.addEventListener(BACKEND_AUTH_STATE_EVENT, (event) => {
+    mergeBackendAuthStateSnapshot(event?.detail || {});
+  });
+  backendAuthStateListenerInstalled = true;
+}
+
+function createMergedAbortSignal(signals = []) {
+  const activeSignals = signals.filter(Boolean);
+
+  if (activeSignals.length === 0) {
+    return {
+      signal: undefined,
+      cleanup() {},
+    };
+  }
+
+  if (activeSignals.length === 1) {
+    return {
+      signal: activeSignals[0],
+      cleanup() {},
+    };
+  }
+
+  const controller = new AbortController();
+  const handleAbort = () => {
+    if (!controller.signal.aborted) {
+      controller.abort();
+    }
+  };
+
+  activeSignals.forEach((candidate) => {
+    if (candidate.aborted) {
+      handleAbort();
+      return;
+    }
+    candidate.addEventListener("abort", handleAbort, { once: true });
+  });
+
+  return {
+    signal: controller.signal,
+    cleanup() {
+      activeSignals.forEach((candidate) => {
+        candidate.removeEventListener("abort", handleAbort);
+      });
+    },
+  };
+}
+
+function shouldAbortProtectedMediaRequest(detail) {
+  const normalized = normalizeBackendAuthStateDetail(detail);
+  return (
+    normalized.pendingLogout === true
+    || normalized.isGuest === true
+    || (
+      normalized.authenticated === false
+      && normalized.busy !== true
+    )
+  );
+}
+
+export function isBackendUserAuthenticated(sessionOrDetail) {
+  const detail = normalizeBackendAuthStateDetail(sessionOrDetail);
+  return (
+    detail.authenticated === true
+    && detail.isGuest !== true
+    && detail.pendingLogout !== true
+  );
+}
+
+export async function getProtectedMediaRequestGate({
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  ensureBackendAuthStateTracking();
+
+  if (backendAuthStateSnapshot.pendingLogout === true) {
+    throw createAbortError();
+  }
+
+  const authAbortController = new AbortController();
+  const handleAuthStateChange = (event) => {
+    const detail = mergeBackendAuthStateSnapshot(event?.detail || {});
+    if (shouldAbortProtectedMediaRequest(detail)) {
+      authAbortController.abort();
+    }
+  };
+
+  if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+    window.addEventListener(BACKEND_AUTH_STATE_EVENT, handleAuthStateChange);
+  }
+
+  const mergedSignal = createMergedAbortSignal([signal, authAbortController.signal]);
+  const cleanup = () => {
+    mergedSignal.cleanup();
+    if (typeof window !== "undefined" && typeof window.removeEventListener === "function") {
+      window.removeEventListener(BACKEND_AUTH_STATE_EVENT, handleAuthStateChange);
+    }
+  };
+
+  try {
+    const session = isBackendUserAuthenticated(backendAuthStateSnapshot)
+      ? { ...backendAuthStateSnapshot }
+      : await getBackendSessionState({
+        fetchImpl,
+        signal: mergedSignal.signal,
+        config,
+      });
+
+    mergeBackendAuthStateSnapshot({
+      authenticated: session?.authenticated === true,
+      busy: false,
+      isGuest: session?.isGuest === true,
+      pendingLogout: false,
+    });
+
+    if (backendAuthStateSnapshot.pendingLogout === true) {
+      cleanup();
+      throw createAbortError();
+    }
+
+    if (!isBackendUserAuthenticated(session)) {
+      cleanup();
+      return {
+        allowed: false,
+        cleanup() {},
+        session,
+        signal: mergedSignal.signal,
+      };
+    }
+
+    return {
+      allowed: true,
+      cleanup,
+      session,
+      signal: mergedSignal.signal,
+    };
+  } catch (error) {
+    cleanup();
+    throw error;
+  }
 }
 
 function cloneCachedResult(value) {
@@ -437,6 +635,8 @@ function getFeatureCapabilityByKey(featureAccessData, featureKey) {
 }
 
 function emitBackendAuthState(detail) {
+  ensureBackendAuthStateTracking();
+  mergeBackendAuthStateSnapshot(detail);
   if (
     typeof window === "undefined"
     || typeof window.dispatchEvent !== "function"

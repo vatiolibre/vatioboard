@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // ── Hoisted mocks ────────────────────────────────────────────────────
 
 const mockBackend = vi.hoisted(() => ({
+  getProtectedMediaRequestGate: vi.fn(),
   listBackendMediaAssets: vi.fn(),
   getBackendMediaAssetDetail: vi.fn(),
   getBackendManifestVersion: vi.fn(),
@@ -70,6 +71,11 @@ describe("media resource cache wiring", () => {
     mockCache.getCachedMediaMetadata.mockResolvedValue(undefined);
     mockCache.getCachedManifestToken.mockResolvedValue(null);
     mockCache.cacheManifestToken.mockResolvedValue(true);
+    mockBackend.getProtectedMediaRequestGate.mockResolvedValue({
+      allowed: true,
+      cleanup() {},
+      signal: undefined,
+    });
     mockBackend.getBackendManifestVersion.mockResolvedValue({ ok: true, manifestToken: null, totalCount: 0 });
     mockBackend.getBackendMediaManifest.mockResolvedValue({ ok: true, assets: [], totalCount: 0, manifestToken: null });
     mockCloudLib.createCloudLibraryResource.mockReset();

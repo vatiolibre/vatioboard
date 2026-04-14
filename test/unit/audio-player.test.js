@@ -26,6 +26,11 @@ const mediaCacheMock = {
 vi.mock("../../src/shared/media-cache.js", () => mediaCacheMock);
 
 const backendAuthMock = {
+  getProtectedMediaRequestGate: vi.fn().mockResolvedValue({
+    allowed: true,
+    cleanup() {},
+    signal: undefined,
+  }),
   getBackendMediaAssetAccess: vi.fn().mockResolvedValue({
     ok: true,
     access: {
@@ -94,6 +99,11 @@ describe("audio-source-resolver", () => {
       },
       asset: { content_hash: "hash_a" },
     });
+    backendAuthMock.getProtectedMediaRequestGate.mockResolvedValue({
+      allowed: true,
+      cleanup() {},
+      signal: undefined,
+    });
     backendAuthMock.fetchBackendMediaAssetBlob.mockResolvedValue(new Response("", { status: 404 }));
     mediaAccessCacheMock.getCachedMediaAccess.mockReturnValue(null);
 
@@ -133,10 +143,10 @@ describe("audio-source-resolver", () => {
     expect(result).toBeTruthy();
     expect(result.type).toBe("remote");
     expect(result.src).toBe("https://cdn.example.com/signed/asset_a.mp3");
-    expect(backendAuthMock.getBackendMediaAssetAccess).toHaveBeenCalledWith({
+    expect(backendAuthMock.getBackendMediaAssetAccess).toHaveBeenCalledWith(expect.objectContaining({
       name: "asset_a",
       intent: "playback",
-    });
+    }));
   });
 
   it("uses cached media access when available", async () => {
@@ -257,11 +267,14 @@ describe("audio-source-resolver", () => {
     expect(factory).toBeDefined();
     await factory();
 
-    expect(backendAuthMock.getBackendMediaAssetAccess).toHaveBeenCalledWith({
+    expect(backendAuthMock.getBackendMediaAssetAccess).toHaveBeenCalledWith(expect.objectContaining({
       name: "asset_a",
       intent: "download",
-    });
-    expect(fetchFn).toHaveBeenCalledWith("https://cdn.example.com/dl/asset_a.mp3");
+    }));
+    expect(fetchFn).toHaveBeenCalledWith(
+      "https://cdn.example.com/dl/asset_a.mp3",
+      expect.objectContaining({ signal: undefined }),
+    );
     expect(mediaCacheMock.cacheMediaBlob).toHaveBeenCalled();
   });
 
@@ -289,7 +302,9 @@ describe("audio-source-resolver", () => {
     expect(factory).toBeDefined();
     await factory();
 
-    expect(backendAuthMock.fetchBackendMediaAssetBlob).toHaveBeenCalledWith({ name: "asset_a" });
+    expect(backendAuthMock.fetchBackendMediaAssetBlob).toHaveBeenCalledWith(expect.objectContaining({
+      name: "asset_a",
+    }));
     expect(mediaCacheMock.cacheMediaBlob).toHaveBeenCalled();
   });
 
@@ -560,6 +575,11 @@ describe("audio-runtime", () => {
     }));
 
     vi.doMock("../../src/shared/backend-auth.js", () => ({
+      getProtectedMediaRequestGate: vi.fn().mockResolvedValue({
+        allowed: true,
+        cleanup() {},
+        signal: undefined,
+      }),
       getBackendMediaAssetAccess: vi.fn().mockResolvedValue({
         ok: true,
         access: {
@@ -879,6 +899,11 @@ describe("audio-catalog", () => {
     }));
 
     vi.doMock("../../src/shared/backend-auth.js", () => ({
+      getProtectedMediaRequestGate: vi.fn().mockResolvedValue({
+        allowed: true,
+        cleanup() {},
+        signal: undefined,
+      }),
       getBackendMediaManifest: vi.fn().mockResolvedValue({ ok: false, assets: [] }),
       getBackendManifestVersion: vi.fn().mockResolvedValue({ ok: false }),
       getBackendMediaAssetAccess: vi.fn().mockResolvedValue({ ok: false, access: null }),
@@ -947,6 +972,11 @@ describe("player-shell", () => {
     }));
 
     vi.doMock("../../src/shared/backend-auth.js", () => ({
+      getProtectedMediaRequestGate: vi.fn().mockResolvedValue({
+        allowed: true,
+        cleanup() {},
+        signal: undefined,
+      }),
       getBackendMediaAssetAccess: vi.fn().mockResolvedValue({ ok: false, access: null }),
       getBackendMediaManifest: vi.fn().mockResolvedValue({ ok: false, assets: [] }),
       getBackendManifestVersion: vi.fn().mockResolvedValue({ ok: false }),

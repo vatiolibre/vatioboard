@@ -80,6 +80,25 @@ function jsonResponse(body, status = 200) {
   });
 }
 
+function createDeferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+
+  return { promise, reject, resolve };
+}
+
+function getFetchUrl(input) {
+  return typeof input === "string" ? input : String(input?.url ?? "");
+}
+
+function countFetchCalls(fetchMock, needle) {
+  return fetchMock.mock.calls.filter(([input]) => getFetchUrl(input).includes(needle)).length;
+}
+
 const MEDIA_ASSET = {
   name: "MEDIA-1",
   title: "Skidpad export",
@@ -154,6 +173,17 @@ function createDefaultFetch() {
   });
 }
 
+function createGuestLibraryFetch() {
+  return vi.fn(async (input) => {
+    const url = getFetchUrl(input);
+
+    if (url.includes("/api/method/vatiolibre.services.tesla_connection_status")) {
+      return jsonResponse({ message: { connected: false, is_guest: true } }, 200);
+    }
+    return jsonResponse({ exc_type: "PermissionError" }, 403);
+  });
+}
+
 async function bootMediaTab() {
   await bootHtmlPage("library.html");
   window.fetch = createDefaultFetch();
@@ -209,6 +239,127 @@ describe("library offline media", () => {
     mockMediaCache.registerAutoCacheDownload.mockReturnValue(true);
     mockMediaCache.deriveLocalAvailability.mockReturnValue("cloud-only");
     mockMediaCache.removeCachedMediaBlob.mockResolvedValue(true);
+  });
+
+  it("guest cold boot does not call protected media list/detail/access endpoints", async () => {
+    const fetchMock = createGuestLibraryFetch();
+    window.fetch = fetchMock;
+
+    await bootHtmlPage("library.html");
+    const libraryPage = await import("../../src/library/library.js");
+    await libraryPage.initPromise;
+    await settleLibraryTasks();
+
+    document.querySelector('[data-tab="media"]')?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settleLibraryTasks();
+
+    expect(countFetchCalls(fetchMock, "get_my_media_manifest_version")).toBe(0);
+    expect(countFetchCalls(fetchMock, "get_my_media_manifest")).toBe(0);
+    expect(countFetchCalls(fetchMock, "list_my_media_assets")).toBe(0);
+    expect(countFetchCalls(fetchMock, "get_my_media_asset_detail")).toBe(0);
+    expect(countFetchCalls(fetchMock, "get_my_media_asset_access")).toBe(0);
+  });
+
+  it("logout during media list bootstrap aborts the in-flight request and skips remaining protected media calls", async () => {
+    let loggedOut = false;
+    let mediaListStarted = false;
+    let mediaListAbortCount = 0;
+    const mediaList = createDeferred();
+    const fetchMock = vi.fn(async (input, init = {}) => {
+      const url = getFetchUrl(input);
+
+      if (url.includes("/api/method/vatiolibre.services.tesla_connection_status")) {
+        return loggedOut
+          ? jsonResponse({ message: { connected: false, is_guest: true } }, 200)
+          : jsonResponse({ message: { connected: false, is_guest: false } });
+      }
+      if (url.includes("/api/method/frappe.auth.get_logged_user")) {
+        return jsonResponse({ message: "library-user@vatiolibre.com" });
+      }
+      if (url.includes("/api/method/vatiolibre.vatiolibre.feature_access.get_my_feature_access")) {
+        return jsonResponse({
+          message: {
+            has_active_subscription: true,
+            csrf_token: "csrf-test-token",
+            features: {
+              cloud_sync: { enabled: true },
+              media_assets: { enabled: true },
+            },
+          },
+        });
+      }
+      if (url.includes("list_my_speed_recordings")) {
+        return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+      }
+      if (url.includes("list_my_accel_runs")) {
+        return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+      }
+      if (url.includes("list_my_board_documents")) {
+        return jsonResponse({ message: { documents: [], total_count: 0, has_more: false } });
+      }
+      if (url.includes("list_my_media_assets")) {
+        mediaListStarted = true;
+        return new Promise((resolve, reject) => {
+          init.signal?.addEventListener("abort", () => {
+            mediaListAbortCount += 1;
+            reject(new DOMException("Aborted", "AbortError"));
+          }, { once: true });
+          mediaList.promise.then(resolve, reject);
+        });
+      }
+      if (url.includes("get_my_media_manifest_version")) {
+        return jsonResponse({
+          message: { manifest_token: "manifest-token-v1", total_count: 1 },
+        });
+      }
+      if (url.includes("get_my_media_manifest")) {
+        return jsonResponse({
+          message: { assets: [MEDIA_ASSET], manifest_token: "manifest-token-v1", total_count: 1 },
+        });
+      }
+      if (url.includes("get_my_media_asset_detail")) {
+        return jsonResponse({ message: { asset: MEDIA_ASSET } });
+      }
+      if (url.includes("get_my_media_asset_access")) {
+        return jsonResponse({ message: {} });
+      }
+      return jsonResponse({});
+    });
+    window.fetch = fetchMock;
+
+    await bootHtmlPage("library.html");
+    const libraryPage = await import("../../src/library/library.js");
+    await libraryPage.initPromise;
+    await settleLibraryTasks();
+
+    document.querySelector('[data-tab="media"]')?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+
+    await vi.waitFor(() => {
+      expect(mediaListStarted).toBe(true);
+    });
+
+    loggedOut = true;
+    window.dispatchEvent(new CustomEvent("vatioboard:backend-auth-state", {
+      detail: {
+        authenticated: true,
+        busy: true,
+        isGuest: false,
+        pendingLogout: true,
+        user: "library-user@vatiolibre.com",
+      },
+    }));
+
+    await settleLibraryTasks();
+
+    expect(mediaListAbortCount).toBe(1);
+    expect(countFetchCalls(fetchMock, "get_my_media_manifest_version")).toBe(0);
+    expect(countFetchCalls(fetchMock, "get_my_media_manifest")).toBe(0);
+    expect(countFetchCalls(fetchMock, "get_my_media_asset_detail")).toBe(0);
+    expect(countFetchCalls(fetchMock, "get_my_media_asset_access")).toBe(0);
   });
 
   // ── Pin / unpin ─────────────────────────────────────────────────
