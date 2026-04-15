@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createMiniAudioVisualizer } from "../../src/shared/audio-mini-visualizer.js";
+import {
+  createMiniAudioVisualizer,
+  destroyVisualizerGraphForElement,
+} from "../../src/shared/audio-mini-visualizer.js";
 
 describe("createMiniAudioVisualizer", () => {
   let originalAudioContext;
@@ -165,13 +168,13 @@ describe("createMiniAudioVisualizer", () => {
     expect(window.cancelAnimationFrame).toHaveBeenCalled();
 
     controller.destroy();
-    expect(fakeSourceNode.disconnect).toHaveBeenCalledWith(fakeAnalyser);
+    expect(fakeSourceNode.disconnect).toHaveBeenCalled();
     expect(fakeAnalyser.disconnect).toHaveBeenCalled();
     expect(fakeAudioContext.close).toHaveBeenCalled();
     expect(mount.querySelector("canvas")).toBeNull();
   });
 
-  it("keeps gesture-blocked AudioContext starts retryable", async () => {
+  it("tears down a shared media graph for an element and removes it from reuse", async () => {
     const mount = document.createElement("div");
     Object.defineProperty(mount, "getBoundingClientRect", {
       value: () => ({ width: 240, height: 72 }),
@@ -185,20 +188,32 @@ describe("createMiniAudioVisualizer", () => {
       mode: "spectrum",
     });
 
-    fakeAudioContext.state = "suspended";
-    fakeAudioContext.resume.mockRejectedValueOnce(new DOMException("gesture required", "NotAllowedError"));
-
-    await expect(controller.start()).resolves.toBe(false);
-    expect(controller.isAvailable).toBe(true);
-    expect(fakeAudioContext.close).toHaveBeenCalled();
-    expect(fakeAudioContext.createAnalyser).not.toHaveBeenCalled();
-
-    fakeAudioContext.state = "running";
     await expect(controller.start()).resolves.toBe(true);
-    expect(controller.isAvailable).toBe(true);
-    expect(fakeAudioContext.createAnalyser).toHaveBeenCalled();
+    expect(fakeAudioContext.createMediaElementSource).toHaveBeenCalledTimes(1);
+
+    expect(destroyVisualizerGraphForElement(media)).toBe(true);
+    expect(fakeSourceNode.disconnect).toHaveBeenCalled();
+    expect(fakeAnalyser.disconnect).toHaveBeenCalled();
+    expect(fakeAudioContext.close).toHaveBeenCalled();
+    expect(destroyVisualizerGraphForElement(media)).toBe(false);
+
+    const secondMount = document.createElement("div");
+    Object.defineProperty(secondMount, "getBoundingClientRect", {
+      value: () => ({ width: 240, height: 72 }),
+    });
+    document.body.append(secondMount);
+
+    const secondController = createMiniAudioVisualizer({
+      mediaElement: media,
+      mount: secondMount,
+      mode: "spectrum",
+    });
+
+    await expect(secondController.start()).resolves.toBe(true);
+    expect(fakeAudioContext.createMediaElementSource).toHaveBeenCalledTimes(2);
 
     controller.destroy();
+    secondController.destroy();
   });
 
   it("renders 20 stacked spectrum bars with a delayed peak cap", async () => {

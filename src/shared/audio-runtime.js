@@ -22,6 +22,7 @@ import {
   clearMediaSession,
 } from "./media-session-adapter.js";
 import { setMainAudioElement } from "./audio-cue.js";
+import { destroyVisualizerGraphForElement } from "./audio-mini-visualizer.js";
 import { loadPlayerSession, savePlayerSession } from "./player-session.js";
 
 // ── State ────────────────────────────────────────────────────────────
@@ -90,6 +91,53 @@ let sessionSaveTimer = null;
 let primed = false;
 let primeInFlight = null;
 
+function bindAudioElement(el) {
+  el.addEventListener("play", onPlay);
+  el.addEventListener("pause", onPause);
+  el.addEventListener("ended", onEnded);
+  el.addEventListener("timeupdate", onTimeUpdate);
+  el.addEventListener("loadedmetadata", onLoadedMetadata);
+  el.addEventListener("error", onError);
+  el.addEventListener("waiting", onWaiting);
+  el.addEventListener("playing", onPlaying);
+}
+
+function unbindAudioElement(el) {
+  el.removeEventListener("play", onPlay);
+  el.removeEventListener("pause", onPause);
+  el.removeEventListener("ended", onEnded);
+  el.removeEventListener("timeupdate", onTimeUpdate);
+  el.removeEventListener("loadedmetadata", onLoadedMetadata);
+  el.removeEventListener("error", onError);
+  el.removeEventListener("waiting", onWaiting);
+  el.removeEventListener("playing", onPlaying);
+}
+
+function createManagedAudioElement() {
+  const el = new Audio();
+  el.preload = "metadata";
+  el.playsInline = true;
+  el.volume = state.muted ? 0 : state.volume;
+  el.muted = state.muted;
+  bindAudioElement(el);
+  setMainAudioElement(el);
+  return el;
+}
+
+function replaceManagedAudioElement() {
+  if (audio) {
+    unbindAudioElement(audio);
+    try { audio.pause(); } catch { /* ignore */ }
+    try { audio.src = ""; } catch { /* ignore */ }
+    try { audio.load(); } catch { /* ignore */ }
+  }
+
+  primed = false;
+  primeInFlight = null;
+  audio = createManagedAudioElement();
+  return audio;
+}
+
 /**
  * Prime the actual playback audio element via a mute→play→pause cycle.
  *
@@ -139,22 +187,13 @@ export function primeAudio() {
 
 function getAudio() {
   if (!audio) {
-    audio = new Audio();
-    audio.preload = "metadata";
-    audio.playsInline = true;
-
-    audio.addEventListener("play", onPlay);
-    audio.addEventListener("pause", onPause);
-    audio.addEventListener("ended", onEnded);
-    audio.addEventListener("timeupdate", onTimeUpdate);
-    audio.addEventListener("loadedmetadata", onLoadedMetadata);
-    audio.addEventListener("error", onError);
-    audio.addEventListener("waiting", onWaiting);
-    audio.addEventListener("playing", onPlaying);
-
-    setMainAudioElement(audio);
+    audio = createManagedAudioElement();
   }
   return audio;
+}
+
+function shouldResetVisualizerGraph(previousSourceType, nextResolved) {
+  return previousSourceType === "blob" && nextResolved?.type === "remote";
 }
 
 // ── Core playback ────────────────────────────────────────────────────
@@ -182,7 +221,8 @@ async function loadTrack(index, { startTime = 0, autoplay = true } = {}) {
     currentSourceRevoke = null;
   }
 
-  const el = getAudio();
+  let el = getAudio();
+  const previousSourceType = state.sourceType;
 
   const resolved = await resolveAudioSource(track.name, track);
   if (state.currentIndex !== index) return; // selection changed during resolve
@@ -193,6 +233,13 @@ async function loadTrack(index, { startTime = 0, autoplay = true } = {}) {
     state.sourceType = null;
     notify();
     return;
+  }
+
+  if (shouldResetVisualizerGraph(previousSourceType, resolved)) {
+    const hadVisualizerGraph = destroyVisualizerGraphForElement(el);
+    if (hadVisualizerGraph) {
+      el = replaceManagedAudioElement();
+    }
   }
 
   state.sourceType = resolved.type;
@@ -287,6 +334,7 @@ export function pause() {
  * Stop playback and reset position.
  */
 export function stopPlayback() {
+  const previousSourceType = state.sourceType;
   state.paused = true;
   state.currentIndex = -1;
   state.currentTrack = null;
@@ -296,9 +344,14 @@ export function stopPlayback() {
   state.remoteSessionActive = false;
 
   const el = getAudio();
-  el.pause();
-  el.src = "";
-  el.load();
+  const hadVisualizerGraph = destroyVisualizerGraphForElement(el);
+  if (hadVisualizerGraph && previousSourceType === "blob") {
+    replaceManagedAudioElement();
+  } else {
+    el.pause();
+    el.src = "";
+    el.load();
+  }
 
   if (currentSourceRevoke) {
     currentSourceRevoke();

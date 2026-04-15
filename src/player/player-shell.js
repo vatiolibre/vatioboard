@@ -270,7 +270,6 @@ export function createPlayerShell({ container }) {
   let visualizerController = null;
   let visualizerMediaElement = null;
   let visualizerFailed = false;
-  let visualizerStartPromise = null;
 
   // ── Queue sheet toggle ─────────────────────────────────────────
   function setQueueOpen(open) {
@@ -352,54 +351,6 @@ export function createPlayerShell({ container }) {
     visualizerController?.stop();
   }
 
-  function handleVisualizerStartResult(controller, started, sourceSafe = true) {
-    if (started && controller.isAvailable) {
-      syncVisualizerUi({ sourceSafe });
-      return;
-    }
-
-    if (!controller.isAvailable) {
-      visualizerFailed = true;
-      controller.stop();
-    }
-
-    syncVisualizerUi({ sourceSafe });
-  }
-
-  function requestVisualizerStart(controller, sourceSafe = true) {
-    if (visualizerStartPromise) return;
-
-    const startPromise = controller.start()
-      .then((started) => {
-        handleVisualizerStartResult(controller, started, sourceSafe);
-      })
-      .catch(() => {
-        handleVisualizerStartResult(controller, false, sourceSafe);
-      })
-      .finally(() => {
-        if (visualizerStartPromise === startPromise) {
-          visualizerStartPromise = null;
-        }
-      });
-
-    visualizerStartPromise = startPromise;
-  }
-
-  function primeVisualizerFromGesture() {
-    if (!visualizerVisible || visualizerFailed || document.hidden) return;
-
-    const audioElement = getRuntimeAudioElement();
-    const sourceSafe = isSafeVisualizerElement(audioElement);
-    syncVisualizerUi({ sourceSafe });
-    if (!sourceSafe) return;
-
-    const controller = getOrCreateVisualizer();
-    if (!controller) return;
-
-    controller.setMode(visualizerMode);
-    requestVisualizerStart(controller, sourceSafe);
-  }
-
   function syncVisualizerPlayback(stateSnapshot = runtime.getState()) {
     const audioElement = getRuntimeAudioElement();
     const sourceSafe = isSafeVisualizerElement(audioElement);
@@ -425,7 +376,16 @@ export function createPlayerShell({ container }) {
       return;
     }
 
-    requestVisualizerStart(controller, sourceSafe);
+    controller.start().then((started) => {
+      if (!started || !controller.isAvailable) {
+        visualizerFailed = true;
+        controller.stop();
+        syncVisualizerUi();
+      }
+    }).catch(() => {
+      visualizerFailed = true;
+      syncVisualizerUi();
+    });
   }
 
   function setVisualizerVisible(visible) {
@@ -439,7 +399,6 @@ export function createPlayerShell({ container }) {
   visualizerToggleBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     setVisualizerVisible(!visualizerVisible);
-    if (visualizerVisible) primeVisualizerFromGesture();
   });
 
   visualizerStrip.addEventListener("click", () => {
@@ -447,7 +406,6 @@ export function createPlayerShell({ container }) {
     visualizerMode = getNextVisualizerMode(visualizerMode);
     saveText(VISUALIZER_MODE_STORAGE_KEY, visualizerMode);
     visualizerController?.setMode(visualizerMode);
-    primeVisualizerFromGesture();
     syncVisualizerPlayback();
   });
 
@@ -456,10 +414,6 @@ export function createPlayerShell({ container }) {
     const s = runtime.getState();
     if (s.paused || !s.playing) {
       if (s.muted) runtime.setMuted(false);
-      if (typeof runtime.primeAudio === "function") {
-        void runtime.primeAudio();
-      }
-      primeVisualizerFromGesture();
       void runtime.play();
     } else {
       runtime.pause();

@@ -24,16 +24,45 @@ function getAudioContextCtor() {
   return window.AudioContext || window.webkitAudioContext || null;
 }
 
-async function resumeAudioContext(audioContext) {
-  if (!audioContext || audioContext.state === "running") return true;
+function teardownGraphEntry(graphEntry) {
+  if (!graphEntry) return;
 
   try {
-    await audioContext.resume();
+    graphEntry.sourceNode?.disconnect?.();
   } catch {
+    // Best-effort cleanup for already-disconnected graphs.
+  }
+
+  if (graphEntry.analysers instanceof Set) {
+    for (const analyserNode of graphEntry.analysers) {
+      try {
+        analyserNode?.disconnect?.();
+      } catch {
+        // Best-effort cleanup for already-disconnected analysers.
+      }
+    }
+    graphEntry.analysers.clear();
+  }
+
+  try {
+    const closeResult = graphEntry.audioContext?.close?.();
+    closeResult?.catch?.(() => {});
+  } catch {
+    // Ignore close errors during teardown.
+  }
+}
+
+export function destroyVisualizerGraphForElement(mediaElement) {
+  if (!mediaElement || (typeof mediaElement !== "object" && typeof mediaElement !== "function")) {
     return false;
   }
 
-  return audioContext.state === "running";
+  const graphEntry = MEDIA_GRAPH_BY_ELEMENT.get(mediaElement);
+  if (!graphEntry) return false;
+
+  MEDIA_GRAPH_BY_ELEMENT.delete(mediaElement);
+  teardownGraphEntry(graphEntry);
+  return true;
 }
 
 function readVisualizerPalette(target) {
@@ -276,9 +305,19 @@ export function createMiniAudioVisualizer({ mediaElement, mount, mode = "spectru
     if (!currentGraph) {
       const audioContext = new AudioContextCtor();
 
-      const resumed = await resumeAudioContext(audioContext);
-      if (!resumed) {
+      try {
+        if (audioContext.state === "suspended") {
+          await audioContext.resume();
+        }
+      } catch {
         try { await audioContext.close(); } catch { /* ignore */ }
+        markUnavailable();
+        return false;
+      }
+
+      if (audioContext.state !== "running") {
+        try { await audioContext.close(); } catch { /* ignore */ }
+        markUnavailable();
         return false;
       }
 
@@ -292,11 +331,13 @@ export function createMiniAudioVisualizer({ mediaElement, mount, mode = "spectru
         return false;
       }
 
-      currentGraph = { audioContext, sourceNode };
+      currentGraph = { audioContext, sourceNode, analysers: new Set() };
       MEDIA_GRAPH_BY_ELEMENT.set(mediaElement, currentGraph);
-    } else if (currentGraph.audioContext?.state !== "running") {
-      const resumed = await resumeAudioContext(currentGraph.audioContext);
-      if (!resumed) {
+    } else if (currentGraph.audioContext?.state === "suspended") {
+      try {
+        await currentGraph.audioContext.resume();
+      } catch {
+        markUnavailable();
         return false;
       }
     }
@@ -308,6 +349,7 @@ export function createMiniAudioVisualizer({ mediaElement, mount, mode = "spectru
       analyser.minDecibels = -88;
       analyser.maxDecibels = -20;
       currentGraph.sourceNode.connect(analyser);
+      currentGraph.analysers?.add(analyser);
       frequencyData = new Uint8Array(analyser.frequencyBinCount);
       timeDomainData = new Uint8Array(analyser.fftSize);
       graphEntry = currentGraph;
@@ -386,20 +428,22 @@ export function createMiniAudioVisualizer({ mediaElement, mount, mode = "spectru
       resizeObserver = null;
     }
 
-    if (graphEntry?.sourceNode && analyser) {
-      try { graphEntry.sourceNode.disconnect(analyser); } catch { /* ignore */ }
-    }
     if (analyser) {
       try { analyser.disconnect(); } catch { /* ignore */ }
-      analyser = null;
     }
 
     if (graphEntry?.audioContext) {
+      if (graphEntry.analysers && analyser) {
+        graphEntry.analysers.delete(analyser);
+      }
       MEDIA_GRAPH_BY_ELEMENT.delete(mediaElement);
-      graphEntry.audioContext.close().catch(() => {});
+      teardownGraphEntry(graphEntry);
+    } else if (analyser) {
+      try { analyser.disconnect(); } catch { /* ignore */ }
     }
 
     graphEntry = null;
+    analyser = null;
     frequencyData = null;
     timeDomainData = null;
     canvas.remove();

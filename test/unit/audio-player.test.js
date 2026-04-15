@@ -894,6 +894,150 @@ describe("audio-runtime", () => {
   });
 });
 
+describe("audio-runtime local-to-remote transitions", () => {
+  it("replaces the shared audio element when a visualized local track advances to remote", async () => {
+    vi.resetModules();
+    localStorage.clear();
+
+    const resolveAudioSource = vi.fn()
+      .mockResolvedValueOnce({
+        src: "blob:local-track",
+        type: "blob",
+        revokeUrl: vi.fn(),
+      })
+      .mockResolvedValueOnce({
+        src: "https://cdn.example.com/stream-track.mp3",
+        type: "remote",
+        revokeUrl: vi.fn(),
+      });
+    const destroyVisualizerGraphForElement = vi.fn(() => true);
+
+    vi.doMock("../../src/shared/audio-source-resolver.js", () => ({
+      resolveAudioSource,
+      hasLocalSource: vi.fn().mockResolvedValue(false),
+      triggerBackgroundCache: vi.fn(),
+    }));
+
+    vi.doMock("../../src/shared/audio-mini-visualizer.js", () => ({
+      destroyVisualizerGraphForElement,
+    }));
+
+    const runtime = await import("../../src/shared/audio-runtime.js");
+
+    runtime.setQueue([TRACK_A, TRACK_B], { autoplay: false });
+    await vi.waitFor(() => {
+      expect(runtime.getAudioElement()?.src).toBe("blob:local-track");
+    });
+
+    const localEl = runtime.getAudioElement();
+
+    await runtime.nextTrack();
+
+    expect(destroyVisualizerGraphForElement).toHaveBeenCalledTimes(1);
+    expect(destroyVisualizerGraphForElement).toHaveBeenCalledWith(localEl);
+    expect(runtime.getState().sourceType).toBe("remote");
+    expect(runtime.getAudioElement()).not.toBe(localEl);
+    expect(runtime.getAudioElement().src).toBe("https://cdn.example.com/stream-track.mp3");
+
+    const remoteEl = runtime.getAudioElement();
+    runtime.stopPlayback();
+
+    expect(destroyVisualizerGraphForElement).toHaveBeenCalledTimes(2);
+    expect(destroyVisualizerGraphForElement).toHaveBeenLastCalledWith(remoteEl);
+    expect(runtime.getAudioElement()).toBe(remoteEl);
+    expect(remoteEl.src).toBe("");
+  });
+
+  it("keeps playback active after replacing the audio element for a remote next track", async () => {
+    vi.resetModules();
+    localStorage.clear();
+
+    const resolveAudioSource = vi.fn()
+      .mockResolvedValueOnce({
+        src: "blob:local-track",
+        type: "blob",
+        revokeUrl: vi.fn(),
+      })
+      .mockResolvedValueOnce({
+        src: "https://cdn.example.com/stream-track.mp3",
+        type: "remote",
+        revokeUrl: vi.fn(),
+      });
+    const destroyVisualizerGraphForElement = vi.fn(() => true);
+
+    vi.doMock("../../src/shared/audio-source-resolver.js", () => ({
+      resolveAudioSource,
+      hasLocalSource: vi.fn().mockResolvedValue(false),
+      triggerBackgroundCache: vi.fn(),
+    }));
+
+    vi.doMock("../../src/shared/audio-mini-visualizer.js", () => ({
+      destroyVisualizerGraphForElement,
+    }));
+
+    const runtime = await import("../../src/shared/audio-runtime.js");
+
+    runtime.setQueue([TRACK_A, TRACK_B], { autoplay: true });
+    await vi.waitFor(() => {
+      expect(runtime.getAudioElement()?.src).toBe("blob:local-track");
+      expect(runtime.getState().playing).toBe(true);
+    });
+
+    const localEl = runtime.getAudioElement();
+
+    await runtime.nextTrack();
+
+    const remoteEl = runtime.getAudioElement();
+    expect(remoteEl).not.toBe(localEl);
+    expect(destroyVisualizerGraphForElement).toHaveBeenCalledWith(localEl);
+
+    await vi.waitFor(() => {
+      expect(runtime.getState().currentTrack?.name).toBe("asset_b");
+      expect(runtime.getState().paused).toBe(false);
+      expect(runtime.getState().playing).toBe(true);
+      expect(remoteEl.paused).toBe(false);
+      expect(remoteEl.src).toBe("https://cdn.example.com/stream-track.mp3");
+    });
+  });
+
+  it("replaces the audio element on stop after a visualized local track", async () => {
+    vi.resetModules();
+    localStorage.clear();
+
+    const resolveAudioSource = vi.fn().mockResolvedValueOnce({
+      src: "blob:local-track",
+      type: "blob",
+      revokeUrl: vi.fn(),
+    });
+    const destroyVisualizerGraphForElement = vi.fn(() => true);
+
+    vi.doMock("../../src/shared/audio-source-resolver.js", () => ({
+      resolveAudioSource,
+      hasLocalSource: vi.fn().mockResolvedValue(false),
+      triggerBackgroundCache: vi.fn(),
+    }));
+
+    vi.doMock("../../src/shared/audio-mini-visualizer.js", () => ({
+      destroyVisualizerGraphForElement,
+    }));
+
+    const runtime = await import("../../src/shared/audio-runtime.js");
+
+    runtime.setQueue([TRACK_A], { autoplay: false });
+    await vi.waitFor(() => {
+      expect(runtime.getAudioElement()?.src).toBe("blob:local-track");
+    });
+
+    const localEl = runtime.getAudioElement();
+
+    runtime.stopPlayback();
+
+    expect(destroyVisualizerGraphForElement).toHaveBeenCalledWith(localEl);
+    expect(runtime.getAudioElement()).not.toBe(localEl);
+    expect(runtime.getAudioElement().src).toBe("");
+  });
+});
+
 // ── Tests: audio-catalog ─────────────────────────────────────────────
 
 describe("audio-catalog", () => {
@@ -1085,68 +1229,6 @@ describe("player-shell", () => {
     strip.click();
     expect(controller?.setMode).toHaveBeenCalledWith("spectrum");
     expect(strip.dataset.visualizerMode).toBe("spectrum");
-
-    shell.destroy();
-  });
-
-  it("primes the widget visualizer from the play gesture", async () => {
-    Object.defineProperty(document, "hidden", {
-      configurable: true,
-      value: false,
-    });
-
-    const container = document.createElement("div");
-    const shell = createPlayerShell({ container });
-    const playBtn = container.querySelector(".player-btn-play-main");
-
-    playBtn.click();
-
-    await vi.waitFor(() => {
-      expect(visualizerMockState.createVisualizerSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ mode: "spectrum" }),
-      );
-    });
-    expect(visualizerMockState.calls[0]?.controller.start).toHaveBeenCalled();
-
-    shell.destroy();
-  });
-
-  it("keeps a blocked widget visualizer start retryable", async () => {
-    Object.defineProperty(document, "hidden", {
-      configurable: true,
-      value: false,
-    });
-
-    const controller = {
-      get isAvailable() {
-        return true;
-      },
-      setMode: vi.fn(),
-      resize: vi.fn(),
-      start: vi.fn(() => Promise.resolve(false)),
-      stop: vi.fn(),
-      destroy: vi.fn(),
-    };
-    visualizerMockState.createVisualizerSpy.mockImplementationOnce((options) => {
-      visualizerMockState.calls.push({ options, controller });
-      return controller;
-    });
-
-    const container = document.createElement("div");
-    const shell = createPlayerShell({ container });
-    const playBtn = container.querySelector(".player-btn-play-main");
-    const strip = container.querySelector(".player-visualizer-strip");
-
-    playBtn.click();
-
-    await vi.waitFor(() => {
-      expect(controller.start).toHaveBeenCalled();
-    });
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(strip.dataset.visualizerState).toBe("ready");
-    expect(strip.textContent).toBe("mediaPlayerVisualizerSpectrum");
 
     shell.destroy();
   });
