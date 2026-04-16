@@ -29,7 +29,7 @@ function isAbortError(error) {
  * Resolution order (local-first):
  *  1. Pinned blob from IndexedDB
  *  2. Cached blob from IndexedDB
- *  3. Remote playback URL (BFF streaming endpoint)
+ *  3. Remote presigned storage URL (via BFF access endpoint)
  *
  * Returns an object describing the resolved source so consumers can
  * decide how to start playback and whether to trigger background caching.

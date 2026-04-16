@@ -425,4 +425,22 @@ describe("createLibraryMediaPlayer", () => {
 
     lmp.destroy();
   });
+
+  it("enables visualizer for presigned S3 audio URLs", () => {
+    createMediaPlayerSpy.mockClear();
+    const lmp = createLibraryMediaPlayer();
+    const item = {
+      name: "audio-s3",
+      title: "S3 presigned audio",
+      media_kind: "audio",
+      playback_url: "https://my-bucket.s3.us-east-1.amazonaws.com/media/audio.mp3?X-Amz-Signature=abc123",
+    };
+
+    lmp.mount({ container, item });
+    expect(createMediaPlayerSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ visualizer: true }),
+    );
+
+    lmp.destroy();
+  });
 });

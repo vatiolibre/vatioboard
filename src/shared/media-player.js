@@ -1,6 +1,7 @@
 import { IconFullscreen, IconFullscreenExit, IconMuted, IconPause, IconPlay, IconVolume } from "../icons.js";
 import { t } from "../i18n.js";
 import { createMiniAudioVisualizer } from "./audio-mini-visualizer.js";
+import { requiresCrossOriginForAnalysis } from "./audio-visualizer.js";
 import { loadText, saveText } from "./storage.js";
 
 /**
@@ -84,6 +85,11 @@ export function createMediaPlayer({ container, src, kind, title = "", posterUrl 
 
   // Create media element
   const media = document.createElement(isVideo ? "video" : "audio");
+  // CORS: set crossOrigin before src so the browser sends the Origin header
+  // on the initial request. Required for Web Audio analysis of remote storage URLs.
+  if (enableVisualizer && requiresCrossOriginForAnalysis(src)) {
+    media.crossOrigin = "anonymous";
+  }
   media.src = src;
   media.preload = "metadata";
   if (title) media.title = title;

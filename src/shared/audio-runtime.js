@@ -14,6 +14,7 @@
  */
 
 import { resolveAudioSource, hasLocalSource, triggerBackgroundCache } from "./audio-source-resolver.js";
+import { requiresCrossOriginForAnalysis } from "./audio-visualizer.js";
 import {
   setMediaSessionMetadata,
   setMediaSessionPlaybackState,
@@ -260,6 +261,16 @@ async function loadTrack(index, { startTime = 0, autoplay = true } = {}) {
 
   state.sourceType = resolved.type;
   currentSourceRevoke = resolved.revokeUrl;
+
+  // CORS: set crossOrigin before src so the browser includes the Origin
+  // header on the initial request.  Required for Web Audio analysis of
+  // presigned S3 URLs.  For blob/same-origin sources, leave it unset so
+  // existing behavior is unchanged.
+  if (requiresCrossOriginForAnalysis(resolved.src)) {
+    el.crossOrigin = "anonymous";
+  } else if (el.crossOrigin) {
+    el.crossOrigin = "";
+  }
 
   el.src = resolved.src;
   el.volume = state.muted ? 0 : state.volume;

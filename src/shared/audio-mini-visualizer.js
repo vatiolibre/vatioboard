@@ -325,7 +325,12 @@ export function createMiniAudioVisualizer({ mediaElement, mount, mode = "spectru
       try {
         sourceNode = audioContext.createMediaElementSource(mediaElement);
         sourceNode.connect(audioContext.destination);
-      } catch {
+      } catch (err) {
+        // CORS-tainted or detached media element — visualizer disabled,
+        // native <audio> playback continues unaffected.
+        if (typeof console !== "undefined" && console.warn) {
+          console.warn("[mini-visualizer] createMediaElementSource failed — visualizer disabled. If this is a cross-origin source, verify CORS headers and crossOrigin attribute.", err);
+        }
         try { await audioContext.close(); } catch { /* ignore */ }
         markUnavailable();
         return false;

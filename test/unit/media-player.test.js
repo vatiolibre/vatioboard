@@ -141,6 +141,57 @@ describe("createMediaPlayer", () => {
     player.destroy();
   });
 
+  it("sets crossOrigin=anonymous on audio element for S3 URLs when visualizer is enabled", () => {
+    const s3Src = "https://my-bucket.s3.us-east-1.amazonaws.com/audio/file.mp3?X-Amz-Signature=abc";
+    const player = createMediaPlayer({
+      container,
+      src: s3Src,
+      kind: "audio",
+      title: "S3 audio",
+      visualizer: true,
+    });
+    expect(player).not.toBeNull();
+
+    const audio = container.querySelector("audio");
+    expect(audio.crossOrigin).toBe("anonymous");
+    expect(audio.src).toContain("s3.us-east-1.amazonaws.com");
+
+    player.destroy();
+  });
+
+  it("does not set crossOrigin for blob URLs even with visualizer enabled", () => {
+    const player = createMediaPlayer({
+      container,
+      src: "blob:https://vatioboard.com/12345",
+      kind: "audio",
+      title: "Blob audio",
+      visualizer: true,
+    });
+    expect(player).not.toBeNull();
+
+    const audio = container.querySelector("audio");
+    expect(audio.hasAttribute("crossorigin")).toBe(false);
+
+    player.destroy();
+  });
+
+  it("does not set crossOrigin for S3 URLs when visualizer is disabled", () => {
+    const s3Src = "https://my-bucket.s3.us-east-1.amazonaws.com/audio/file.mp3";
+    const player = createMediaPlayer({
+      container,
+      src: s3Src,
+      kind: "audio",
+      title: "S3 no-viz",
+      visualizer: false,
+    });
+    expect(player).not.toBeNull();
+
+    const audio = container.querySelector("audio");
+    expect(audio.hasAttribute("crossorigin")).toBe(false);
+
+    player.destroy();
+  });
+
   it("creates an audio player with visual and hidden audio element", () => {
     const player = createMediaPlayer({ container, src: "test.mp3", kind: "audio", title: "Song" });
     expect(player).not.toBeNull();

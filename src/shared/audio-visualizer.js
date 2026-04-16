@@ -8,9 +8,10 @@
  * state and audio is never silently hijacked.
  *
  * IMPORTANT: Only use with sources that are safe for Web Audio routing
- * (blob: URLs, same-origin URLs). Cross-origin media elements produce a
- * tainted MediaElementAudioSourceNode that silences audio output through
- * the Web Audio graph.
+ * (blob: URLs, same-origin URLs, or CORS-enabled remote storage URLs with
+ * crossOrigin="anonymous" set on the media element). Cross-origin media
+ * elements WITHOUT proper CORS produce a tainted MediaElementAudioSourceNode
+ * that silences audio output through the Web Audio graph.
  *
  * If Butterchurn, WebGL, AudioContext, or resume fails at any point, the
  * native <audio> playback path is preserved — the visualizer is a
@@ -20,9 +21,51 @@
  */
 
 /**
+ * Known object-storage hostname patterns that serve media with CORS headers
+ * allowing Web Audio analysis when `crossOrigin = "anonymous"` is set on the
+ * media element.
+ *
+ * Matches AWS S3 virtual-hosted-style bucket URLs:
+ *   bucket.s3.amazonaws.com             (legacy global endpoint)
+ *   bucket.s3.us-east-1.amazonaws.com   (regional)
+ *   bucket.s3-us-west-2.amazonaws.com   (legacy regional with dash)
+ *
+ * Extend this function if additional storage providers are added.
+ */
+
+/**
+ * Check whether a remote URL points to an allowed CORS-safe object-storage
+ * host. These sources are analyzable by Web Audio provided the media element
+ * has `crossOrigin = "anonymous"` set before `src` is assigned.
+ *
+ * @param {string} hostname
+ * @returns {boolean}
+ */
+function isAllowedStorageHost(hostname) {
+  const h = hostname.toLowerCase();
+  // bucket.s3.amazonaws.com (legacy global)
+  if (h.endsWith(".s3.amazonaws.com")) return true;
+  // bucket.s3.us-east-1.amazonaws.com (regional) or
+  // bucket.s3-us-west-2.amazonaws.com (legacy regional with dash)
+  const s3Idx = h.lastIndexOf(".s3");
+  if (s3Idx < 1) return false;
+  const afterS3 = h.slice(s3Idx + 3);
+  return /^[.-][a-z0-9-]+\.amazonaws\.com$/.test(afterS3);
+}
+
+/**
  * Check whether a media source URL is safe for Web Audio routing via
- * createMediaElementSource(). Cross-origin URLs produce tainted
- * MediaElementAudioSourceNodes that silence audio output.
+ * createMediaElementSource().
+ *
+ * Returns `true` for:
+ *  - `blob:` URLs (local, no CORS needed)
+ *  - `data:` URLs (inline, no CORS needed)
+ *  - Same-origin URLs (no CORS needed)
+ *  - Allowed remote object-storage URLs with CORS (S3 presigned URLs) —
+ *    these require `crossOrigin = "anonymous"` on the media element.
+ *
+ * Returns `false` for all other cross-origin URLs, which would produce
+ * tainted MediaElementAudioSourceNodes that silence audio output.
  *
  * @param {string} src
  * @returns {boolean}
@@ -34,7 +77,31 @@ export function isVisualizerSafeSource(src) {
 
   try {
     const srcUrl = new URL(src, window.location.origin);
-    return srcUrl.origin === window.location.origin;
+    if (srcUrl.origin === window.location.origin) return true;
+    return isAllowedStorageHost(srcUrl.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check whether a source URL requires `crossOrigin = "anonymous"` on the
+ * media element for Web Audio analysis to work without tainting.
+ *
+ * blob:, data:, and same-origin URLs do NOT need crossOrigin.
+ * Allowed remote storage URLs DO need it.
+ *
+ * @param {string} src
+ * @returns {boolean}
+ */
+export function requiresCrossOriginForAnalysis(src) {
+  if (!src) return false;
+  if (src.startsWith("blob:") || src.startsWith("data:")) return false;
+
+  try {
+    const srcUrl = new URL(src, window.location.origin);
+    if (srcUrl.origin === window.location.origin) return false;
+    return isAllowedStorageHost(srcUrl.hostname);
   } catch {
     return false;
   }
