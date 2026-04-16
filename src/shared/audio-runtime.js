@@ -124,12 +124,28 @@ function createManagedAudioElement() {
   return el;
 }
 
+function clearAudioElementSource(el) {
+  if (!el) return;
+
+  try { el.pause(); } catch { /* ignore */ }
+
+  if ("srcObject" in el) {
+    try { el.srcObject = null; } catch { /* ignore */ }
+  }
+
+  if (typeof el.removeAttribute === "function") {
+    try { el.removeAttribute("src"); } catch { /* ignore */ }
+  } else {
+    try { el.src = ""; } catch { /* ignore */ }
+  }
+
+  try { el.load(); } catch { /* ignore */ }
+}
+
 function replaceManagedAudioElement() {
   if (audio) {
     unbindAudioElement(audio);
-    try { audio.pause(); } catch { /* ignore */ }
-    try { audio.src = ""; } catch { /* ignore */ }
-    try { audio.load(); } catch { /* ignore */ }
+    clearAudioElementSource(audio);
   }
 
   primed = false;
@@ -348,9 +364,7 @@ export function stopPlayback() {
   if (hadVisualizerGraph && previousSourceType === "blob") {
     replaceManagedAudioElement();
   } else {
-    el.pause();
-    el.src = "";
-    el.load();
+    clearAudioElementSource(el);
   }
 
   if (currentSourceRevoke) {
@@ -681,7 +695,13 @@ function onLoadedMetadata() {
   notify();
 }
 
-function onError() {
+function onError(event) {
+  const target = event?.currentTarget;
+  const sourceAttr = typeof target?.getAttribute === "function"
+    ? target.getAttribute("src")
+    : target?.src;
+  if (!sourceAttr) return;
+
   state.error = "playback-error";
   state.loading = false;
   notify();

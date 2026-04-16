@@ -734,6 +734,37 @@ describe("audio-runtime", () => {
     expect(navigator.mediaSession.playbackState).toBe("none");
   });
 
+  it("ending the last queued track without repeat stops cleanly and stays replayable", async () => {
+    runtime.setQueue([TRACK_A], { autoplay: true });
+    await vi.waitFor(() => {
+      expect(runtime.getState().currentTrack?.name).toBe("asset_a");
+      expect(runtime.getState().playing).toBe(true);
+    });
+
+    const finishedEl = runtime.getAudioElement();
+    finishedEl.dispatchEvent(new Event("ended"));
+
+    await vi.waitFor(() => {
+      const s = runtime.getState();
+      expect(s.currentTrack).toBeNull();
+      expect(s.currentIndex).toBe(-1);
+      expect(s.paused).toBe(true);
+      expect(s.error).toBeNull();
+    });
+
+    finishedEl.dispatchEvent(new Event("error"));
+    expect(runtime.getState().error).toBeNull();
+
+    await runtime.play();
+
+    await vi.waitFor(() => {
+      const s = runtime.getState();
+      expect(s.currentTrack?.name).toBe("asset_a");
+      expect(s.paused).toBe(false);
+      expect(s.playing).toBe(true);
+    });
+  });
+
   it("restoreSession rebuilds queue from available tracks", async () => {
     // Seed a session
     localStorage.setItem("vatioboard_player_session_v1", JSON.stringify({
