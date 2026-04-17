@@ -527,7 +527,7 @@ describe("player-session", () => {
     const session = loadPlayerSession();
     expect(session.queue).toEqual([]);
     expect(session.paused).toBe(true);
-    expect(session.volume).toBe(1);
+    expect(session.volume).toBe(0.5);
     expect(session.repeat).toBe("off");
     expect(session.shuffle).toBe(false);
   });
@@ -1272,7 +1272,7 @@ describe("player-shell", () => {
     const volume = container.querySelector(".player-volume");
 
     expect(progress.style.getPropertyValue("--player-range-percent")).toBe("0%");
-    expect(volume.style.getPropertyValue("--player-range-percent")).toBe("100%");
+    expect(volume.style.getPropertyValue("--player-range-percent")).toBe("50%");
 
     shell.destroy();
   });

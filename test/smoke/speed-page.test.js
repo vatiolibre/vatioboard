@@ -125,7 +125,7 @@ describe('speed.html smoke', () => {
     expect(document.getElementById('resetTrip').getAttribute('aria-label')).toBe('Reset trip');
     expect(document.querySelector('#resetTrip .toolbar-recording-glyph svg')).toBeTruthy();
     expect(document.getElementById('toggleRecording').getAttribute('aria-label')).toBe(
-      'Pause recording'
+      'Start recording'
     );
     expect(document.querySelector('#toggleRecording .toolbar-recording-glyph')).toBeTruthy();
     expect(document.getElementById('openReplayQuick').getAttribute('aria-label')).toBe(
@@ -242,6 +242,10 @@ describe('speed.html smoke', () => {
     await speedPage.initPromise;
     await flushTasks();
 
+    // Default state is stopped — start recording first
+    document.getElementById('toggleRecording').click();
+    await flushTasks();
+
     emitGeolocationSuccess({
       timestamp: 1000,
       coords: {
@@ -304,6 +308,10 @@ describe('speed.html smoke', () => {
 
     const speedPage = await import('../../src/speed/speed.js');
     await speedPage.initPromise;
+    await flushTasks();
+
+    // Default state is stopped — start recording first
+    document.getElementById('toggleRecording').click();
     await flushTasks();
 
     emitGeolocationSuccess({

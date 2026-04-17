@@ -281,7 +281,7 @@ const initialPreferences = loadedPreferences.preferences;
 const initialReplaySession = createReplaySession({
   unit: initialPreferences.unit,
   distanceUnit: initialPreferences.distanceUnit,
-  recordingState: 'recording',
+  recordingState: 'stopped',
 });
 const ACTIVE_REPLAY_PERSIST_INTERVAL_MS = 5000;
 
