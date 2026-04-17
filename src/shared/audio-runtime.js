@@ -14,7 +14,6 @@
  */
 
 import { resolveAudioSource, hasLocalSource, triggerBackgroundCache } from "./audio-source-resolver.js";
-import { requiresCrossOriginForAnalysis } from "./audio-visualizer.js";
 import {
   setMediaSessionMetadata,
   setMediaSessionPlaybackState,
@@ -118,6 +117,11 @@ function createManagedAudioElement() {
   const el = new Audio();
   el.preload = "metadata";
   el.playsInline = true;
+  // Set crossOrigin early so iOS Safari includes the Origin header on the
+  // very first network request.  Without this, createMediaElementSource()
+  // produces a tainted node and the mini-visualizer cannot read frequency
+  // data.  The attribute is harmless for blob:/same-origin sources.
+  el.crossOrigin = "anonymous";
   el.volume = state.muted ? 0 : state.volume;
   el.muted = state.muted;
   bindAudioElement(el);
@@ -262,15 +266,12 @@ async function loadTrack(index, { startTime = 0, autoplay = true } = {}) {
   state.sourceType = resolved.type;
   currentSourceRevoke = resolved.revokeUrl;
 
-  // CORS: set crossOrigin before src so the browser includes the Origin
-  // header on the initial request.  Required for Web Audio analysis of
-  // presigned S3 URLs.  For blob/same-origin sources, leave it unset so
-  // existing behavior is unchanged.
-  if (requiresCrossOriginForAnalysis(resolved.src)) {
-    el.crossOrigin = "anonymous";
-  } else if (el.crossOrigin) {
-    el.crossOrigin = "";
-  }
+  // CORS: keep crossOrigin="anonymous" for all sources.  The attribute is
+  // set at element creation time so iOS Safari includes the Origin header
+  // from the very first network request, preventing tainted
+  // MediaElementAudioSourceNodes.  For blob:/same-origin sources the
+  // attribute is harmless — the browser skips CORS negotiation.
+  el.crossOrigin = "anonymous";
 
   el.src = resolved.src;
   el.volume = state.muted ? 0 : state.volume;
