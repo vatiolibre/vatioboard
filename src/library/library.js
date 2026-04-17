@@ -54,6 +54,7 @@ import {
   getPinnedMediaBlob,
   isMediaBlobPinned,
   pinMediaBlob,
+  pinMediaFromResponse,
   restorePersistedMediaCacheUser,
   setMediaCacheUser,
   unpinMediaBlob,
@@ -2114,8 +2115,7 @@ async function togglePinSelectedMedia() {
       setStatus("cloudLibraryPinFailed", null, "danger");
       return;
     }
-    const blob = await response.blob();
-    const pinOk = await pinMediaBlob(selectedName, blob, { contentHash: asset?.content_hash || null });
+    const pinOk = await pinMediaFromResponse(selectedName, response, { contentHash: asset?.content_hash || null });
     if (pinOk) {
       // Remove any non-pinned cached copy since the durable pin supersedes it.
       removeCachedMediaBlob(selectedName).catch(() => {});

@@ -10,6 +10,7 @@ const mockMediaCache = vi.hoisted(() => ({
   getCachedMediaMetadata: vi.fn().mockResolvedValue(undefined),
   removeCachedMediaMetadata: vi.fn().mockResolvedValue(true),
   pinMediaBlob: vi.fn().mockResolvedValue(true),
+  pinMediaFromResponse: vi.fn().mockResolvedValue(true),
   getPinnedMediaBlob: vi.fn().mockResolvedValue(null),
   getPinnedBlobMeta: vi.fn().mockResolvedValue(null),
   unpinMediaBlob: vi.fn().mockResolvedValue(true),
@@ -25,6 +26,7 @@ const mockMediaCache = vi.hoisted(() => ({
   getCachedBlobMeta: vi.fn().mockResolvedValue(null),
   getCachedMediaBlob: vi.fn().mockResolvedValue(null),
   cacheMediaBlob: vi.fn().mockResolvedValue(true),
+  cacheMediaFromResponse: vi.fn().mockResolvedValue(true),
   isAutoCacheEligible: vi.fn().mockReturnValue(false),
   isAutoCacheInFlight: vi.fn().mockReturnValue(false),
   registerAutoCacheDownload: vi.fn().mockReturnValue(true),
@@ -219,6 +221,7 @@ describe("library offline media", () => {
     mockMediaCache.getCachedMediaMetadata.mockResolvedValue(undefined);
     mockMediaCache.removeCachedMediaMetadata.mockResolvedValue(true);
     mockMediaCache.pinMediaBlob.mockResolvedValue(true);
+    mockMediaCache.pinMediaFromResponse.mockResolvedValue(true);
     mockMediaCache.getPinnedMediaBlob.mockResolvedValue(null);
     mockMediaCache.getPinnedBlobMeta.mockResolvedValue(null);
     mockMediaCache.unpinMediaBlob.mockResolvedValue(true);
@@ -234,6 +237,7 @@ describe("library offline media", () => {
     mockMediaCache.getCachedBlobMeta.mockResolvedValue(null);
     mockMediaCache.getCachedMediaBlob.mockResolvedValue(null);
     mockMediaCache.cacheMediaBlob.mockResolvedValue(true);
+    mockMediaCache.cacheMediaFromResponse.mockResolvedValue(true);
     mockMediaCache.isAutoCacheEligible.mockReturnValue(false);
     mockMediaCache.isAutoCacheInFlight.mockReturnValue(false);
     mockMediaCache.registerAutoCacheDownload.mockReturnValue(true);
@@ -441,9 +445,9 @@ describe("library offline media", () => {
     );
     expect(streamFetch).toBeUndefined();
 
-    expect(mockMediaCache.pinMediaBlob).toHaveBeenCalledWith(
+    expect(mockMediaCache.pinMediaFromResponse).toHaveBeenCalledWith(
       "MEDIA-1",
-      expect.any(Blob),
+      expect.any(Response),
       { contentHash: null },
     );
   });
@@ -525,9 +529,9 @@ describe("library offline media", () => {
     );
     expect(redirectFetch).toBeUndefined();
 
-    expect(mockMediaCache.pinMediaBlob).toHaveBeenCalledWith(
+    expect(mockMediaCache.pinMediaFromResponse).toHaveBeenCalledWith(
       "MEDIA-1",
-      expect.any(Blob),
+      expect.any(Response),
       { contentHash: null },
     );
   });
@@ -593,9 +597,9 @@ describe("library offline media", () => {
     );
     expect(streamFetch).toBeTruthy();
 
-    expect(mockMediaCache.pinMediaBlob).toHaveBeenCalledWith(
+    expect(mockMediaCache.pinMediaFromResponse).toHaveBeenCalledWith(
       "MEDIA-1",
-      expect.any(Blob),
+      expect.any(Response),
       { contentHash: null },
     );
   });
@@ -653,9 +657,9 @@ describe("library offline media", () => {
     );
     expect(streamFetch).toBeTruthy();
 
-    expect(mockMediaCache.pinMediaBlob).toHaveBeenCalledWith(
+    expect(mockMediaCache.pinMediaFromResponse).toHaveBeenCalledWith(
       "MEDIA-1",
-      expect.any(Blob),
+      expect.any(Response),
       { contentHash: null },
     );
   });
@@ -851,9 +855,9 @@ describe("library offline media", () => {
 
     // Should re-pin with new blob, not unpin
     expect(mockMediaCache.unpinMediaBlob).not.toHaveBeenCalled();
-    expect(mockMediaCache.pinMediaBlob).toHaveBeenCalledWith(
+    expect(mockMediaCache.pinMediaFromResponse).toHaveBeenCalledWith(
       "MEDIA-1",
-      expect.any(Blob),
+      expect.any(Response),
       { contentHash: "new-hash" },
     );
   });
@@ -3340,6 +3344,7 @@ describe("library offline media", () => {
     mockMediaCache.getCachedMediaMetadata.mockResolvedValue(undefined);
     mockMediaCache.removeCachedMediaMetadata.mockResolvedValue(true);
     mockMediaCache.pinMediaBlob.mockResolvedValue(true);
+    mockMediaCache.pinMediaFromResponse.mockResolvedValue(true);
     mockMediaCache.getPinnedMediaBlob.mockResolvedValue(null);
     mockMediaCache.getPinnedBlobMeta.mockResolvedValue({ content_hash: null, pinned_at: Date.now() });
     mockMediaCache.unpinMediaBlob.mockResolvedValue(true);
@@ -3774,10 +3779,10 @@ describe("library offline media", () => {
           "MEDIA-1",
           expect.any(Function),
         );
-        // The background download should have called cacheMediaBlob
-        expect(mockMediaCache.cacheMediaBlob).toHaveBeenCalledWith(
+        // The background download should have called cacheMediaFromResponse
+        expect(mockMediaCache.cacheMediaFromResponse).toHaveBeenCalledWith(
           "MEDIA-1",
-          expect.any(Blob),
+          expect.any(Response),
           expect.objectContaining({ contentHash: "hash-a1" }),
         );
       } finally {
@@ -4504,8 +4509,8 @@ describe("library offline media", () => {
         expect(factoryCallCount).toBeLessThanOrEqual(2);
         expect(mockMediaCache.registerAutoCacheDownload).toHaveBeenCalledTimes(factoryCallCount);
 
-        // cacheMediaBlob should be called only once (from the single download).
-        expect(mockMediaCache.cacheMediaBlob).toHaveBeenCalledTimes(1);
+        // cacheMediaFromResponse should be called only once (from the single download).
+        expect(mockMediaCache.cacheMediaFromResponse).toHaveBeenCalledTimes(1);
       } finally {
         openSpy.mockRestore();
       }
@@ -4721,7 +4726,7 @@ describe("library offline media", () => {
       expect(downloadFactory).toBeTruthy();
 
       // Simulate auto-cache download completing: invoke the factory
-      // and let it finish — this calls cacheMediaBlob → renderDetail().
+      // and let it finish — this calls cacheMediaFromResponse → renderDetail().
       await downloadFactory();
       await settleLibraryTasks(24);
 
@@ -4753,9 +4758,9 @@ describe("library offline media", () => {
       await downloadFactory();
       await settleLibraryTasks(24);
 
-      expect(mockMediaCache.cacheMediaBlob).toHaveBeenCalledWith(
+      expect(mockMediaCache.cacheMediaFromResponse).toHaveBeenCalledWith(
         "MEDIA-1",
-        expect.any(Blob),
+        expect.any(Response),
         expect.objectContaining({ contentHash: "hash-a1" }),
       );
     });
@@ -5446,9 +5451,9 @@ describe("library offline media", () => {
       expect(statusEl?.dataset?.tone).toBe("danger");
     });
 
-    it("network pin: pinMediaBlob returns false → no pinned state, pin failed status", async () => {
+    it("network pin: pinMediaFromResponse returns false → no pinned state, pin failed status", async () => {
       // No cached blob — will go through network path.
-      mockMediaCache.pinMediaBlob.mockResolvedValue(false);
+      mockMediaCache.pinMediaFromResponse.mockResolvedValue(false);
 
       window.fetch = createAuthenticatedLibraryFetch((url) => {
         if (url.includes("list_my_media_assets")) {
@@ -5496,8 +5501,8 @@ describe("library offline media", () => {
       );
       await settleLibraryTasks();
 
-      // pinMediaBlob was called.
-      expect(mockMediaCache.pinMediaBlob).toHaveBeenCalled();
+      // pinMediaFromResponse was called.
+      expect(mockMediaCache.pinMediaFromResponse).toHaveBeenCalled();
 
       // Item should NOT be marked pinned.
       const pinBtn = document.getElementById("libraryActionPin");

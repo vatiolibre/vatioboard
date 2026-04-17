@@ -4,6 +4,7 @@ import {
   isAutoCacheEligible,
   registerAutoCacheDownload,
   cacheMediaBlob,
+  cacheMediaFromResponse,
 } from "./media-cache.js";
 import { getEnvironmentConfig } from "./environment.js";
 import {
@@ -219,10 +220,9 @@ export function triggerBackgroundCache(assetName, asset, { onCached, fetchFn = f
 
       if (!response) return;
 
-      const blob = await response.blob();
-      const ok = await cacheMediaBlob(assetName, blob, {
+      const ok = await cacheMediaFromResponse(assetName, response, {
         contentHash: asset.content_hash || null,
-        blobSize: blob.size,
+        blobSize: asset.blob_size || 0,
         mediaKind: asset.media_kind || null,
       });
 

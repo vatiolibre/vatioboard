@@ -1,4 +1,5 @@
 import { createIndexedJsonKeyValueStore } from "./indexed-storage.js";
+import { createChunkedBlobStore } from "./chunked-blob-store.js";
 
 const METADATA_DB_NAME = "vatioboard_media_metadata";
 const METADATA_STORE_NAME = "metadata";
@@ -14,15 +15,19 @@ const metadataStore = createIndexedJsonKeyValueStore({
   storeName: METADATA_STORE_NAME,
 });
 
-const blobStore = createIndexedJsonKeyValueStore({
-  dbName: BLOB_DB_NAME,
-  storeName: BLOB_STORE_NAME,
-});
+const blobStore = createChunkedBlobStore(
+  createIndexedJsonKeyValueStore({
+    dbName: BLOB_DB_NAME,
+    storeName: BLOB_STORE_NAME,
+  }),
+);
 
-const cachedBlobStore = createIndexedJsonKeyValueStore({
-  dbName: CACHED_BLOB_DB_NAME,
-  storeName: CACHED_BLOB_STORE_NAME,
-});
+const cachedBlobStore = createChunkedBlobStore(
+  createIndexedJsonKeyValueStore({
+    dbName: CACHED_BLOB_DB_NAME,
+    storeName: CACHED_BLOB_STORE_NAME,
+  }),
+);
 
 const cachedBlobMetaStore = createIndexedJsonKeyValueStore({
   dbName: CACHED_BLOB_META_DB_NAME,
@@ -212,6 +217,29 @@ export async function pinMediaBlob(assetName, blob, { contentHash } = {}) {
   });
 }
 
+/**
+ * Pin a media asset by streaming a fetch Response directly into IndexedDB.
+ *
+ * Unlike {@link pinMediaBlob} this never calls `response.blob()` — the
+ * body is read via ReadableStream and each chunk is written to IndexedDB
+ * individually, keeping peak memory usage proportional to one chunk size
+ * (~5 MB) instead of the full file.  This avoids per-object memory limits
+ * on constrained browsers (Tesla Chromium).
+ *
+ * @param {string}   assetName
+ * @param {Response} response   Unconsumed fetch Response.
+ * @param {{ contentHash?: string }} [opts]
+ * @returns {Promise<boolean>}
+ */
+export async function pinMediaFromResponse(assetName, response, { contentHash } = {}) {
+  const key = userKey(assetName);
+  if (!key || !response) return false;
+  return blobStore.streamResponse(key, response, {
+    content_hash: contentHash || null,
+    pinned_at: Date.now(),
+  });
+}
+
 export async function getPinnedMediaBlob(assetName) {
   const key = userKey(assetName);
   if (!key) return null;
@@ -313,6 +341,64 @@ export async function cacheMediaBlob(assetName, blob, { contentHash, blobSize, m
   }
   if (!blobOk) {
     cachedBlobMetaStore.deleteValue(key).catch(() => {});
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Cache a media asset by streaming a fetch Response directly into IndexedDB.
+ *
+ * Streaming variant of {@link cacheMediaBlob} — reads the response body
+ * via ReadableStream so the full blob is never materialised in memory.
+ *
+ * @param {string}   assetName
+ * @param {Response} response   Unconsumed fetch Response.
+ * @param {{ contentHash?: string, blobSize?: number, mediaKind?: string }} [opts]
+ * @returns {Promise<boolean>}
+ */
+export async function cacheMediaFromResponse(assetName, response, { contentHash, blobSize, mediaKind } = {}) {
+  const key = userKey(assetName);
+  if (!key || !response) return false;
+
+  const now = Date.now();
+
+  let blobOk = false;
+  try {
+    blobOk = await cachedBlobStore.streamResponse(key, response);
+  } catch {
+    return false;
+  }
+
+  if (!blobOk) return false;
+
+  // Determine total size: prefer caller-provided, else read manifest.
+  let size = blobSize ?? 0;
+  if (!size) {
+    try {
+      const record = await cachedBlobStore.getValue(key);
+      size = record?.blob?.size ?? 0;
+    } catch { /* use 0 */ }
+  }
+
+  let metaOk = false;
+  try {
+    metaOk = await cachedBlobMetaStore.setValue(key, {
+      content_hash: contentHash || null,
+      blob_size: size,
+      media_kind: mediaKind || null,
+      cached_at: now,
+      last_accessed_at: now,
+      pinned: false,
+    });
+  } catch {
+    cachedBlobStore.deleteValue(key).catch(() => {});
+    return false;
+  }
+
+  if (!metaOk) {
+    cachedBlobStore.deleteValue(key).catch(() => {});
     return false;
   }
 

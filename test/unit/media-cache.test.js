@@ -194,6 +194,11 @@ describe("media-cache local blob tier", () => {
               deleteValue: mockDeleteValue,
             }),
           }));
+          // Bypass the chunked wrapper so the mock stores are called
+          // directly — this test is about media-cache rollback logic.
+          vi.doMock("../../src/shared/chunked-blob-store.js", () => ({
+            createChunkedBlobStore: (store) => store,
+          }));
         },
       };
     }

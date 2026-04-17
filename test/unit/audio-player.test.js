@@ -19,6 +19,7 @@ const mediaCacheMock = {
   isAutoCacheEligible: vi.fn().mockReturnValue(false),
   registerAutoCacheDownload: vi.fn(),
   cacheMediaBlob: vi.fn().mockResolvedValue(undefined),
+  cacheMediaFromResponse: vi.fn().mockResolvedValue(undefined),
   getCachedManifestSnapshot: vi.fn().mockResolvedValue({ assets: [] }),
   getCachedMediaManifest: vi.fn().mockResolvedValue([]),
 };
@@ -300,7 +301,7 @@ describe("audio-source-resolver", () => {
       "https://cdn.example.com/dl/asset_a.mp3",
       expect.objectContaining({ signal: undefined }),
     );
-    expect(mediaCacheMock.cacheMediaBlob).toHaveBeenCalled();
+    expect(mediaCacheMock.cacheMediaFromResponse).toHaveBeenCalled();
   });
 
   it("triggerBackgroundCache falls back to backend blob fetch when signed URL fails", async () => {
@@ -330,7 +331,7 @@ describe("audio-source-resolver", () => {
     expect(backendAuthMock.fetchBackendMediaAssetBlob).toHaveBeenCalledWith(expect.objectContaining({
       name: "asset_a",
     }));
-    expect(mediaCacheMock.cacheMediaBlob).toHaveBeenCalled();
+    expect(mediaCacheMock.cacheMediaFromResponse).toHaveBeenCalled();
   });
 
   it("triggerBackgroundCache skips download when local blob is fresh", async () => {
@@ -353,13 +354,13 @@ describe("audio-source-resolver", () => {
 
     // Fresh local blob — no download should occur
     expect(backendAuthMock.getBackendMediaAssetAccess).not.toHaveBeenCalled();
-    expect(mediaCacheMock.cacheMediaBlob).not.toHaveBeenCalled();
+    expect(mediaCacheMock.cacheMediaFromResponse).not.toHaveBeenCalled();
   });
 
   it("triggerBackgroundCache calls onCached callback on success", async () => {
     mediaCacheMock.isAutoCacheEligible.mockReturnValueOnce(true);
     mediaCacheMock.getLocalBlobMeta.mockResolvedValueOnce(null);
-    mediaCacheMock.cacheMediaBlob.mockResolvedValueOnce(true);
+    mediaCacheMock.cacheMediaFromResponse.mockResolvedValueOnce(true);
 
     let factory;
     mediaCacheMock.registerAutoCacheDownload.mockImplementationOnce((name, fn) => {
@@ -593,6 +594,7 @@ describe("audio-runtime", () => {
       isAutoCacheEligible: vi.fn().mockReturnValue(false),
       registerAutoCacheDownload: vi.fn(),
       cacheMediaBlob: vi.fn().mockResolvedValue(undefined),
+      cacheMediaFromResponse: vi.fn().mockResolvedValue(undefined),
     }));
 
     vi.doMock("../../src/shared/environment.js", () => ({
@@ -1092,6 +1094,7 @@ describe("audio-catalog", () => {
       isAutoCacheEligible: vi.fn().mockReturnValue(false),
       registerAutoCacheDownload: vi.fn(),
       cacheMediaBlob: vi.fn().mockResolvedValue(undefined),
+      cacheMediaFromResponse: vi.fn().mockResolvedValue(undefined),
     }));
 
     vi.doMock("../../src/shared/environment.js", () => ({
@@ -1168,6 +1171,7 @@ describe("player-shell", () => {
       isAutoCacheEligible: vi.fn().mockReturnValue(false),
       registerAutoCacheDownload: vi.fn(),
       cacheMediaBlob: vi.fn().mockResolvedValue(undefined),
+      cacheMediaFromResponse: vi.fn().mockResolvedValue(undefined),
     }));
 
     vi.doMock("../../src/shared/environment.js", () => ({
