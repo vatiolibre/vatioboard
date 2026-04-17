@@ -25,7 +25,7 @@ const DEFAULTS = Object.freeze({
   currentTrackName: "",
   currentTime: 0,
   paused: true,
-  volume: 1,
+  volume: 0.5,
   muted: false,
   repeat: "off",
   shuffle: false,

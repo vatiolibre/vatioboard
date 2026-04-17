@@ -51,7 +51,7 @@ const state = {
   /** Whether the user intends playback to be paused */
   paused: true,
   /** Volume 0-1 */
-  volume: 1,
+  volume: 0.5,
   /** Muted */
   muted: false,
   /** "off" | "all" | "one" */
