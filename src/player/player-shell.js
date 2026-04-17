@@ -17,6 +17,7 @@ import {
 import { t } from "../i18n.js";
 import { createMiniAudioVisualizer } from "../shared/audio-mini-visualizer.js";
 import { isVisualizerSafeSource } from "../shared/audio-visualizer.js";
+import { primeAudioContext } from "../shared/audio-graph-registry.js";
 import { createMilkdropPanel } from "./milkdrop-panel.js";
 import * as runtime from "../shared/audio-runtime.js";
 import { loadText, saveText } from "../shared/storage.js";
@@ -281,6 +282,15 @@ export function createPlayerShell({ container }) {
   let visualizerMediaElement = null;
   let visualizerFailed = false;
 
+  // iOS Safari requires a user gesture before an AudioContext can run.
+  // Block automatic visualizer start (from runtime state subscription) until
+  // the very first user interaction (play / skip / toggle / track click).
+  const _needsGestureGate = (() => {
+    const ua = navigator.userAgent || "";
+    return /Safari\//i.test(ua) && !/Chrom(e|ium)\//i.test(ua) && /iP(hone|od|ad)/i.test(ua);
+  })();
+  let _gestureUnlocked = !_needsGestureGate;
+
   // ── Queue sheet toggle ─────────────────────────────────────────
   function setQueueOpen(open) {
     queueOpen = open;
@@ -370,6 +380,10 @@ export function createPlayerShell({ container }) {
       return;
     }
 
+    // On iOS Safari, defer visualizer start until the first user gesture
+    // so the AudioContext can transition to "running".
+    if (!_gestureUnlocked) return;
+
     if (!sourceSafe) {
       visualizerController?.destroy();
       visualizerController = null;
@@ -408,10 +422,14 @@ export function createPlayerShell({ container }) {
   visualizerToggleBtn.addEventListener("pointerup", (e) => e.stopPropagation());
   visualizerToggleBtn.addEventListener("click", (e) => {
     e.stopPropagation();
+    _gestureUnlocked = true;
+    primeAudioContext();
     setVisualizerVisible(!visualizerVisible);
   });
 
   visualizerStrip.addEventListener("click", () => {
+    _gestureUnlocked = true;
+    primeAudioContext();
     if (visualizerFailed) return;
     visualizerMode = getNextVisualizerMode(visualizerMode);
     saveText(VISUALIZER_MODE_STORAGE_KEY, visualizerMode);
@@ -435,6 +453,12 @@ export function createPlayerShell({ container }) {
 
   // ── Event wiring ───────────────────────────────────────────────
   playBtn.addEventListener("click", () => {
+    // Pre-warm AudioContext synchronously from the user gesture so iOS
+    // Safari allows it to enter the "running" state.  acquireGraph()
+    // will reuse this context when the visualizer starts later.
+    _gestureUnlocked = true;
+    primeAudioContext();
+
     const s = runtime.getState();
     if (s.paused || !s.playing) {
       if (s.muted) runtime.setMuted(false);
@@ -444,8 +468,16 @@ export function createPlayerShell({ container }) {
     }
   });
 
-  prevBtn.addEventListener("click", () => { void runtime.previousTrack(); });
-  nextBtn.addEventListener("click", () => { void runtime.nextTrack(); });
+  prevBtn.addEventListener("click", () => {
+    _gestureUnlocked = true;
+    primeAudioContext();
+    void runtime.previousTrack();
+  });
+  nextBtn.addEventListener("click", () => {
+    _gestureUnlocked = true;
+    primeAudioContext();
+    void runtime.nextTrack();
+  });
   shuffleBtn.addEventListener("click", () => runtime.toggleShuffle());
   repeatBtn.addEventListener("click", () => runtime.cycleRepeat());
 
@@ -600,6 +632,8 @@ export function createPlayerShell({ container }) {
 
       li.append(nameSpan, badge);
       li.addEventListener("click", () => {
+        _gestureUnlocked = true;
+        primeAudioContext();
         void runtime.playCatalogTrack(track.name, allTracks);
       });
 

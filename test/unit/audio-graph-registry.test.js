@@ -5,6 +5,8 @@ import {
   releaseGraph,
   getGraph,
   destroyGraphForElement,
+  primeAudioContext,
+  _resetPrimedForTesting,
 } from "../../src/shared/audio-graph-registry.js";
 
 describe("audio-graph-registry", () => {
@@ -40,6 +42,7 @@ describe("audio-graph-registry", () => {
     window.AudioContext = originalAudioContext;
     // Force cleanup
     destroyGraphForElement(mediaElement);
+    _resetPrimedForTesting();
   });
 
   describe("acquireGraph", () => {
@@ -138,6 +141,49 @@ describe("audio-graph-registry", () => {
       expect(result).toBe(true);
       expect(getGraph(mediaElement)).toBeNull();
       expect(fakeAudioContext.close).toHaveBeenCalled();
+    });
+  });
+
+  describe("primeAudioContext", () => {
+    it("creates and stores a running AudioContext", () => {
+      fakeAudioContext.state = "running";
+      const result = primeAudioContext();
+      expect(result).toBe(true);
+      expect(window.AudioContext).toHaveBeenCalled();
+    });
+
+    it("returns false when AudioContext is unavailable", () => {
+      window.AudioContext = undefined;
+      window.webkitAudioContext = undefined;
+      expect(primeAudioContext()).toBe(false);
+    });
+
+    it("calls resume on a suspended context", () => {
+      fakeAudioContext.state = "suspended";
+      fakeAudioContext.resume = vi.fn(async () => {
+        fakeAudioContext.state = "running";
+      });
+      primeAudioContext();
+      expect(fakeAudioContext.resume).toHaveBeenCalled();
+    });
+
+    it("is a no-op when a running primed context already exists", () => {
+      fakeAudioContext.state = "running";
+      primeAudioContext();
+      const callCount = window.AudioContext.mock.calls.length;
+      primeAudioContext();
+      // Should not create a second context
+      expect(window.AudioContext.mock.calls.length).toBe(callCount);
+    });
+
+    it("primed context is consumed by acquireGraph", async () => {
+      fakeAudioContext.state = "running";
+      primeAudioContext();
+      const entry = await acquireGraph(mediaElement);
+      expect(entry).not.toBeNull();
+      expect(entry.audioContext).toBe(fakeAudioContext);
+      // Only one AudioContext should have been created (the primed one)
+      expect(window.AudioContext).toHaveBeenCalledTimes(1);
     });
   });
 });

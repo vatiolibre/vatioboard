@@ -10,11 +10,30 @@
  * releaseGraph().  The graph (AudioContext + source) is torn down only
  * when the last consumer releases.
  *
+ * iOS Safari requires a user-gesture to transition an AudioContext from
+ * "suspended" to "running".  To avoid race conditions where
+ * acquireGraph() runs inside an async callback (after the gesture
+ * microtask window closes), callers can pre-warm a shared AudioContext
+ * via {@link primeAudioContext} called synchronously from a click / tap
+ * handler.  acquireGraph() then reuses the primed context.
+ *
  * @module audio-graph-registry
  */
 
 /** @type {WeakMap<HTMLMediaElement, GraphEntry>} */
 const MEDIA_GRAPH_BY_ELEMENT = new WeakMap();
+
+/**
+ * Shared pre-warmed AudioContext.
+ *
+ * Created by {@link primeAudioContext} (from a user gesture) and consumed
+ * by the next {@link acquireGraph} call that needs a new context.  Once
+ * bound to a MediaElementSourceNode it is no longer reusable — a new
+ * prime is needed for the next element.
+ *
+ * @type {AudioContext|null}
+ */
+let _primedAudioContext = null;
 
 /**
  * @typedef {object} GraphEntry
@@ -31,6 +50,43 @@ const MEDIA_GRAPH_BY_ELEMENT = new WeakMap();
  */
 export function getGraph(mediaElement) {
   return MEDIA_GRAPH_BY_ELEMENT.get(mediaElement) || null;
+}
+
+/**
+ * Pre-warm a shared AudioContext from a user-gesture handler.
+ *
+ * Must be called **synchronously** inside a click / tap / keydown handler so
+ * iOS Safari allows the context to transition to "running".  The primed
+ * context is stored and reused by the next {@link acquireGraph} call.
+ *
+ * Safe to call repeatedly — subsequent calls are no-ops while a primed
+ * context is already running.
+ *
+ * @returns {boolean} true when a running AudioContext is ready.
+ */
+export function primeAudioContext() {
+  // Already have a usable primed context.
+  if (_primedAudioContext && _primedAudioContext.state === "running") return true;
+
+  // If a previous primed context exists but is closed, discard it.
+  if (_primedAudioContext && _primedAudioContext.state === "closed") {
+    _primedAudioContext = null;
+  }
+
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextCtor) return false;
+
+  try {
+    const ctx = _primedAudioContext || new AudioContextCtor();
+    // resume() inside a user gesture puts iOS Safari into "running".
+    if (ctx.state === "suspended") {
+      ctx.resume().catch(() => {});
+    }
+    _primedAudioContext = ctx;
+    return ctx.state === "running";
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -56,7 +112,15 @@ export async function acquireGraph(mediaElement) {
   const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextCtor) return null;
 
-  const audioContext = new AudioContextCtor();
+  // Prefer the pre-warmed context (created during a user gesture).
+  let audioContext = null;
+  if (_primedAudioContext && _primedAudioContext.state !== "closed") {
+    audioContext = _primedAudioContext;
+    _primedAudioContext = null;  // consumed — next acquireGraph needs a fresh prime
+  } else {
+    audioContext = new AudioContextCtor();
+  }
+
   try {
     if (audioContext.state === "suspended") await audioContext.resume();
   } catch {
@@ -140,4 +204,9 @@ export function destroyGraphForElement(mediaElement) {
     p?.catch?.(() => {});
   } catch { /* ignore */ }
   return true;
+}
+
+/** @internal — reset primed context; test-only. */
+export function _resetPrimedForTesting() {
+  _primedAudioContext = null;
 }

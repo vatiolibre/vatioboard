@@ -29,9 +29,15 @@ describe("isVisualizerSafeSource", () => {
     expect(isVisualizerSafeSource("https://bucket.s3-us-west-2.amazonaws.com/file.mp3")).toBe(true);
   });
 
-  it("returns false for cross-origin BFF URLs", () => {
+  it("returns false for cross-origin BFF URLs not matching current environment", () => {
+    // api.dev.vatioboard.com does not match when running against vatioboard.com
     expect(isVisualizerSafeSource("https://api.dev.vatioboard.com/api/method/download?name=AUDIO-1")).toBe(false);
     expect(isVisualizerSafeSource("https://dev.vatiolibre.com/api/method/download?name=AUDIO-1")).toBe(false);
+  });
+
+  it("returns true for BFF API URLs matching the current environment", () => {
+    // Test env is vatioboard.com → apiBase is api.vatioboard.com
+    expect(isVisualizerSafeSource("https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset?name=AUDIO-1")).toBe(true);
   });
 
   it("returns false for arbitrary cross-origin URLs", () => {
@@ -66,7 +72,12 @@ describe("requiresCrossOriginForAnalysis", () => {
   });
 
   it("returns false for non-storage cross-origin URLs", () => {
+    // api.dev.vatioboard.com does not match when running against vatioboard.com
     expect(requiresCrossOriginForAnalysis("https://api.dev.vatioboard.com/api/method/download?name=AUDIO-1")).toBe(false);
     expect(requiresCrossOriginForAnalysis("https://cdn.example.com/audio.mp3")).toBe(false);
+  });
+
+  it("returns true for BFF API URLs matching the current environment", () => {
+    expect(requiresCrossOriginForAnalysis("https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset?name=AUDIO-1")).toBe(true);
   });
 });

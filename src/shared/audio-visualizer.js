@@ -20,6 +20,8 @@
  * @module audio-visualizer
  */
 
+import { getEnvironmentConfig } from "./environment.js";
+
 /**
  * Known object-storage hostname patterns that serve media with CORS headers
  * allowing Web Audio analysis when `crossOrigin = "anonymous"` is set on the
@@ -29,6 +31,9 @@
  *   bucket.s3.amazonaws.com             (legacy global endpoint)
  *   bucket.s3.us-east-1.amazonaws.com   (regional)
  *   bucket.s3-us-west-2.amazonaws.com   (legacy regional with dash)
+ *
+ * Also matches the BFF API hosts (api.vatioboard.com, api.dev.vatioboard.com)
+ * which stream media blobs or redirect to S3 with proper CORS headers.
  *
  * Extend this function if additional storage providers are added.
  */
@@ -51,6 +56,21 @@ function isAllowedStorageHost(hostname) {
   if (s3Idx < 1) return false;
   const afterS3 = h.slice(s3Idx + 3);
   return /^[.-][a-z0-9-]+\.amazonaws\.com$/.test(afterS3);
+}
+
+/**
+ * Check whether a hostname matches the BFF API host for this environment.
+ * BFF media endpoints stream blobs or redirect to S3 with proper CORS
+ * headers, so they are safe for Web Audio analysis.
+ */
+function isAllowedApiHost(hostname) {
+  try {
+    const { apiBase } = getEnvironmentConfig();
+    const apiHost = new URL(apiBase).hostname.toLowerCase();
+    return hostname.toLowerCase() === apiHost;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -78,7 +98,7 @@ export function isVisualizerSafeSource(src) {
   try {
     const srcUrl = new URL(src, window.location.origin);
     if (srcUrl.origin === window.location.origin) return true;
-    return isAllowedStorageHost(srcUrl.hostname);
+    return isAllowedStorageHost(srcUrl.hostname) || isAllowedApiHost(srcUrl.hostname);
   } catch {
     return false;
   }
@@ -101,7 +121,7 @@ export function requiresCrossOriginForAnalysis(src) {
   try {
     const srcUrl = new URL(src, window.location.origin);
     if (srcUrl.origin === window.location.origin) return false;
-    return isAllowedStorageHost(srcUrl.hostname);
+    return isAllowedStorageHost(srcUrl.hostname) || isAllowedApiHost(srcUrl.hostname);
   } catch {
     return false;
   }

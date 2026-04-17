@@ -30,6 +30,27 @@ const DEFAULT_CHUNK_BYTES = 5 * 1024 * 1024;
 /** Separator used between the main key and chunk index. */
 const CHUNK_SEP = "\0chunk\0";
 
+/**
+ * Returns true when the browser can reliably stream a fetch Response body
+ * via ReadableStream into IndexedDB chunks.
+ *
+ * Safari / WebKit may silently return an empty or broken ReadableStream for
+ * cross-origin fetch responses (known in Safari < 16.4, with edge-cases in
+ * later versions involving server-side redirects).  Since Safari does not
+ * share the per-record IndexedDB size limits that motivated streaming
+ * (those are a Tesla Chromium constraint), falling back to the simpler
+ * `response.blob()` path is safe and avoids the issue entirely.
+ */
+function canStreamFetchBody() {
+  if (typeof ReadableStream === "undefined") return false;
+  if (typeof navigator === "undefined") return true;
+  const ua = navigator.userAgent || "";
+  // Safari / Mobile Safari (not Chrome or Chromium on iOS, which use their
+  // own engine and stream reliably).
+  if (/Safari\//i.test(ua) && !/Chrom(e|ium)\//i.test(ua)) return false;
+  return true;
+}
+
 function chunkKey(baseKey, index) {
   return `${baseKey}${CHUNK_SEP}${index}`;
 }
@@ -179,8 +200,9 @@ export function createChunkedBlobStore(baseStore, { chunkBytes = DEFAULT_CHUNK_B
    * @returns {Promise<boolean>}
    */
   async function streamResponse(key, response, meta = {}) {
-    if (!response?.body) {
-      // No readable stream (e.g. opaque response) — fall back to blob path.
+    if (!response?.body || !canStreamFetchBody()) {
+      // No readable stream, or browser known to have unreliable fetch
+      // ReadableStream (Safari/WebKit) — fall back to the blob path.
       try {
         const blob = await response.blob();
         return setValue(key, { ...meta, blob });

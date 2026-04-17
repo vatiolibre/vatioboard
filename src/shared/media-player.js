@@ -1,6 +1,7 @@
 import { IconFullscreen, IconFullscreenExit, IconMuted, IconPause, IconPlay, IconVolume } from "../icons.js";
 import { t } from "../i18n.js";
 import { createMiniAudioVisualizer } from "./audio-mini-visualizer.js";
+import { primeAudioContext } from "./audio-graph-registry.js";
 import { requiresCrossOriginForAnalysis } from "./audio-visualizer.js";
 import { loadText, saveText } from "./storage.js";
 
@@ -467,6 +468,7 @@ export function createMediaPlayer({ container, src, kind, title = "", posterUrl 
 
   function onPlayBtnClick() {
     if (destroyed) return;
+    primeAudioContext();
     if (media.paused || media.ended) {
       primeVisualizerFromGesture();
       media.play().catch((err) => {
@@ -535,11 +537,13 @@ export function createMediaPlayer({ container, src, kind, title = "", posterUrl 
   function onVisualizerModeClick(event) {
     const target = event.target.closest("button[data-mode]");
     if (!target || !visualizerModeGroup?.contains(target)) return;
+    primeAudioContext();
     setVisualizerMode(target.dataset.mode);
   }
 
   function onVisualizerCanvasClick() {
     if (!shouldRenderVisualizer || visualizerFailed || !activeVisualizer?.isAvailable) return;
+    primeAudioContext();
     setVisualizerMode(getNextVisualizerMode(preferredVisualizerMode));
   }
 
