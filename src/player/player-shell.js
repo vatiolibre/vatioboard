@@ -17,6 +17,7 @@ import {
 import { t } from "../i18n.js";
 import { createMiniAudioVisualizer } from "../shared/audio-mini-visualizer.js";
 import { isVisualizerSafeSource } from "../shared/audio-visualizer.js";
+import { createMilkdropPanel } from "./milkdrop-panel.js";
 import * as runtime from "../shared/audio-runtime.js";
 import { loadText, saveText } from "../shared/storage.js";
 
@@ -27,6 +28,13 @@ const VISUALIZER_MODES = new Set(["spectrum", "scope"]);
 const IconVisualizer = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path d="M4 17V9M9.5 17V5M15 17v-7M20 17V7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  </svg>
+`;
+const IconMilkdrop = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/>
+    <circle cx="12" cy="12" r="4.5" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2.5 2"/>
+    <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
   </svg>
 `;
 
@@ -112,6 +120,8 @@ export function createPlayerShell({ container }) {
 
   const visualizerToggleBtn = makeBtn("player-visualizer-toggle-btn", IconVisualizer, t("mediaPlayerVisualizerMode"));
 
+  const milkdropToggleBtn = makeBtn("player-milkdrop-toggle-btn", IconMilkdrop, t("milkdropOpen"));
+
   const queueToggleBtn = makeBtn("player-queue-toggle-btn", IconQueue, t("playerQueue"));
 
   const spacer = document.createElement("div");
@@ -122,7 +132,7 @@ export function createPlayerShell({ container }) {
   closeBtn.className = "player-close";
   closeBtn.textContent = t("close");
 
-  header.append(titleEl, visualizerToggleBtn, queueToggleBtn, spacer, closeBtn);
+  header.append(titleEl, visualizerToggleBtn, milkdropToggleBtn, queueToggleBtn, spacer, closeBtn);
 
   // ── Now-playing row (compact artwork + metadata) ───────────────
   const nowPlaying = document.createElement("div");
@@ -409,6 +419,20 @@ export function createPlayerShell({ container }) {
     syncVisualizerPlayback();
   });
 
+  // ── Milkdrop panel (lazy) ──────────────────────────────────────
+  let milkdropPanel = null;
+
+  milkdropToggleBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  milkdropToggleBtn.addEventListener("pointerup", (e) => e.stopPropagation());
+  milkdropToggleBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!milkdropPanel) {
+      milkdropPanel = createMilkdropPanel({ mount: container });
+    }
+    milkdropPanel.toggle();
+    milkdropToggleBtn.classList.toggle("active", milkdropPanel.isOpen());
+  });
+
   // ── Event wiring ───────────────────────────────────────────────
   playBtn.addEventListener("click", () => {
     const s = runtime.getState();
@@ -634,6 +658,8 @@ export function createPlayerShell({ container }) {
       unsubscribe();
       visualizerController?.destroy();
       visualizerController = null;
+      milkdropPanel?.destroy();
+      milkdropPanel = null;
       root.remove();
     },
 

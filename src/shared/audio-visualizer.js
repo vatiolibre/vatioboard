@@ -118,7 +118,10 @@ async function loadButterchurn() {
       import("butterchurn-presets"),
     ]);
     butterchurnModule = bc.default || bc;
-    presetsModule = presets.default || presets;
+    const presetLib = presets.default || presets;
+    presetsModule = typeof presetLib.getPresets === "function"
+      ? presetLib.getPresets()
+      : presetLib;
     return butterchurnModule;
   } catch {
     return null;

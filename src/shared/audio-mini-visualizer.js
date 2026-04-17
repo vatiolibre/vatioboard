@@ -1,5 +1,11 @@
+import {
+  acquireGraph,
+  releaseGraph,
+  getGraph,
+  destroyGraphForElement,
+} from "./audio-graph-registry.js";
+
 const VALID_MODES = new Set(["spectrum", "scope", "off"]);
-const MEDIA_GRAPH_BY_ELEMENT = new WeakMap();
 const SPECTRUM_BAR_COUNT = 20;
 
 function normalizeMode(mode) {
@@ -25,30 +31,15 @@ function getAudioContextCtor() {
 }
 
 function teardownGraphEntry(graphEntry) {
+  // Legacy cleanup: disconnect consumers tracked by this module.
   if (!graphEntry) return;
-
-  try {
-    graphEntry.sourceNode?.disconnect?.();
-  } catch {
-    // Best-effort cleanup for already-disconnected graphs.
-  }
-
+  // NOTE: actual AudioContext teardown is now handled by the shared
+  // audio-graph-registry via releaseGraph / destroyGraphForElement.
   if (graphEntry.analysers instanceof Set) {
     for (const analyserNode of graphEntry.analysers) {
-      try {
-        analyserNode?.disconnect?.();
-      } catch {
-        // Best-effort cleanup for already-disconnected analysers.
-      }
+      try { analyserNode?.disconnect?.(); } catch { /* ignore */ }
     }
     graphEntry.analysers.clear();
-  }
-
-  try {
-    const closeResult = graphEntry.audioContext?.close?.();
-    closeResult?.catch?.(() => {});
-  } catch {
-    // Ignore close errors during teardown.
   }
 }
 
@@ -56,13 +47,7 @@ export function destroyVisualizerGraphForElement(mediaElement) {
   if (!mediaElement || (typeof mediaElement !== "object" && typeof mediaElement !== "function")) {
     return false;
   }
-
-  const graphEntry = MEDIA_GRAPH_BY_ELEMENT.get(mediaElement);
-  if (!graphEntry) return false;
-
-  MEDIA_GRAPH_BY_ELEMENT.delete(mediaElement);
-  teardownGraphEntry(graphEntry);
-  return true;
+  return destroyGraphForElement(mediaElement);
 }
 
 function readVisualizerPalette(target) {
@@ -300,51 +285,23 @@ export function createMiniAudioVisualizer({ mediaElement, mount, mode = "spectru
     if (destroyed || !available) return false;
     if (analyser) return true;
 
-    let currentGraph = MEDIA_GRAPH_BY_ELEMENT.get(mediaElement) || null;
+    let currentGraph = getGraph(mediaElement);
 
     if (!currentGraph) {
-      const audioContext = new AudioContextCtor();
-
-      try {
-        if (audioContext.state === "suspended") {
-          await audioContext.resume();
-        }
-      } catch {
-        try { await audioContext.close(); } catch { /* ignore */ }
+      currentGraph = await acquireGraph(mediaElement);
+      if (!currentGraph) {
         markUnavailable();
         return false;
       }
-
-      if (audioContext.state !== "running") {
-        try { await audioContext.close(); } catch { /* ignore */ }
-        markUnavailable();
-        return false;
+      // Wrap in legacy shape expected by local code
+      currentGraph.analysers = currentGraph.consumers;
+    } else {
+      // Existing graph — still bump refCount for this consumer
+      currentGraph.refCount = (currentGraph.refCount || 0) + 1;
+      if (currentGraph.audioContext?.state === "suspended") {
+        try { await currentGraph.audioContext.resume(); } catch { markUnavailable(); return false; }
       }
-
-      let sourceNode = null;
-      try {
-        sourceNode = audioContext.createMediaElementSource(mediaElement);
-        sourceNode.connect(audioContext.destination);
-      } catch (err) {
-        // CORS-tainted or detached media element — visualizer disabled,
-        // native <audio> playback continues unaffected.
-        if (typeof console !== "undefined" && console.warn) {
-          console.warn("[mini-visualizer] createMediaElementSource failed — visualizer disabled. If this is a cross-origin source, verify CORS headers and crossOrigin attribute.", err);
-        }
-        try { await audioContext.close(); } catch { /* ignore */ }
-        markUnavailable();
-        return false;
-      }
-
-      currentGraph = { audioContext, sourceNode, analysers: new Set() };
-      MEDIA_GRAPH_BY_ELEMENT.set(mediaElement, currentGraph);
-    } else if (currentGraph.audioContext?.state === "suspended") {
-      try {
-        await currentGraph.audioContext.resume();
-      } catch {
-        markUnavailable();
-        return false;
-      }
+      if (!currentGraph.analysers) currentGraph.analysers = currentGraph.consumers;
     }
 
     try {
@@ -435,17 +392,11 @@ export function createMiniAudioVisualizer({ mediaElement, mount, mode = "spectru
 
     if (analyser) {
       try { analyser.disconnect(); } catch { /* ignore */ }
+      if (graphEntry?.consumers) graphEntry.consumers.delete(analyser);
     }
 
-    if (graphEntry?.audioContext) {
-      if (graphEntry.analysers && analyser) {
-        graphEntry.analysers.delete(analyser);
-      }
-      MEDIA_GRAPH_BY_ELEMENT.delete(mediaElement);
-      teardownGraphEntry(graphEntry);
-    } else if (analyser) {
-      try { analyser.disconnect(); } catch { /* ignore */ }
-    }
+    // Release our ref on the shared graph (tears down when last consumer leaves)
+    releaseGraph(mediaElement);
 
     graphEntry = null;
     analyser = null;

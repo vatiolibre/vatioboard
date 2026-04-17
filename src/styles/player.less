@@ -857,3 +857,170 @@
     height: 20px !important;
   }
 }
+
+/* ──────────────────────────────────────────────────────────────────
+   Milkdrop floating panel
+   ────────────────────────────────────────────────────────────────── */
+
+.milkdrop-panel {
+  --mk-bg: rgba(12, 12, 14, 0.92);
+  --mk-surface: rgba(28, 28, 32, 0.90);
+  --mk-border: rgba(255, 255, 255, 0.08);
+  --mk-text: rgba(230, 230, 230, 0.92);
+  --mk-text-dim: rgba(180, 180, 180, 0.70);
+  --mk-accent: rgba(16, 185, 129, 0.90);
+  --mk-radius: 14px;
+  --mk-shadow: 0 8px 32px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--mk-border);
+
+  position: fixed;
+  right: 24px;
+  bottom: 120px;
+  z-index: 2147483646;
+  width: 480px;
+  height: 380px;
+  min-width: 320px;
+  min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  background: var(--mk-bg);
+  border: 1px solid var(--mk-border);
+  border-radius: var(--mk-radius);
+  box-shadow: var(--mk-shadow);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  color: var(--mk-text);
+  font-family: var(--player-font, system-ui, -apple-system, sans-serif);
+  overflow: hidden;
+  resize: both;
+  user-select: none;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+
+  &[hidden] {
+    display: none !important;
+  }
+}
+
+.milkdrop-panel.is-fullscreen {
+  width: 100vw !important;
+  height: 100vh !important;
+  border-radius: 0;
+  resize: none;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+}
+
+/* ── Header (drag handle) ──────────────────────────────────────── */
+
+.milkdrop-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  background: var(--mk-surface);
+  border-bottom: 1px solid var(--mk-border);
+  cursor: grab;
+  flex-shrink: 0;
+  min-height: 36px;
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+.milkdrop-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--mk-text-dim);
+  margin-right: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.milkdrop-preset-label {
+  font-size: 11px;
+  color: var(--mk-text-dim);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.milkdrop-spacer {
+  flex: 1;
+}
+
+.milkdrop-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mk-text-dim);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--mk-text);
+  }
+
+  &:active {
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  .btn-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  svg {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+/* ── Stage (WebGL canvas container) ────────────────────────────── */
+
+.milkdrop-stage {
+  flex: 1;
+  overflow: hidden;
+  background: #000;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.milkdrop-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* ── Responsive ────────────────────────────────────────────────── */
+
+@media (max-width: 600px) {
+  .milkdrop-panel {
+    width: calc(100vw - 16px);
+    height: 300px;
+    right: 8px;
+    bottom: 80px;
+    min-width: 0;
+    min-height: 200px;
+    border-radius: 12px;
+  }
+}
