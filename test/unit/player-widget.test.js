@@ -60,6 +60,7 @@ const catalogMock = {
 vi.mock("../../src/shared/audio-catalog.js", () => catalogMock);
 
 vi.mock("../../src/shared/backend-auth.js", () => ({
+  BACKEND_AUTH_STATE_EVENT: "vatioboard:backend-auth-state",
   getBackendSessionState: vi.fn().mockResolvedValue({ authenticated: false }),
   fetchBackendLoggedUser: vi.fn().mockResolvedValue(null),
   getBackendMediaAssetAccess: vi.fn().mockResolvedValue({ ok: false }),
@@ -130,6 +131,7 @@ describe("createPlayerWidget", () => {
     vi.doMock("../../src/shared/audio-catalog.js", () => catalogMock);
 
     vi.doMock("../../src/shared/backend-auth.js", () => ({
+      BACKEND_AUTH_STATE_EVENT: "vatioboard:backend-auth-state",
       getBackendSessionState: vi.fn().mockResolvedValue({ authenticated: false }),
       fetchBackendLoggedUser: vi.fn().mockResolvedValue(null),
       getBackendMediaAssetAccess: vi.fn().mockResolvedValue({ ok: false }),

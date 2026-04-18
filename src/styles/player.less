@@ -48,6 +48,24 @@
   }
 }
 
+/*
+ * Re-enable touch interactions inside the player panel.
+ *
+ * The drawing board sets `touch-action: none` on `*` to guarantee
+ * stutter-free inking on the canvas.  The player needs touch scrolling
+ * (queue sheet) and normal tap/drag behaviour, so we opt back in here.
+ * The class-based selector beats the `*` universal rule.
+ */
+.player-fab,
+.player-panel,
+.player-panel * {
+  touch-action: auto;
+}
+
+.player-queue-sheet.is-open {
+  -webkit-overflow-scrolling: touch;
+}
+
 /* ── Floating launcher (FAB) ──────────────────────────────────────── */
 
 .player-fab {

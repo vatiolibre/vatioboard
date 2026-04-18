@@ -1681,6 +1681,32 @@ export function createBackendAuthController({
   const guestElements = Array.from(root.querySelectorAll("[data-backend-auth-guest]"));
   const authenticatedElements = Array.from(root.querySelectorAll("[data-backend-auth-authenticated]"));
 
+  // ── Password reveal toggle ──────────────────────────────────────
+  if (passwordInput) {
+    const wrap = document.createElement("div");
+    wrap.className = "backend-auth-password-wrap";
+    passwordInput.parentNode.insertBefore(wrap, passwordInput);
+    wrap.append(passwordInput);
+
+    const toggleBtn = document.createElement("button");
+    toggleBtn.type = "button";
+    toggleBtn.className = "backend-auth-password-toggle";
+    toggleBtn.setAttribute("aria-label", t("authTogglePassword"));
+    toggleBtn.tabIndex = -1;
+    toggleBtn.innerHTML = `<svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16" aria-hidden="true">
+      <path d="M10 3C5.5 3 1.7 6 .3 10c1.4 4 5.2 7 9.7 7s8.3-3 9.7-7C18.3 6 14.5 3 10 3Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/>
+    </svg>`;
+
+    toggleBtn.addEventListener("click", () => {
+      const revealed = passwordInput.type === "text";
+      passwordInput.type = revealed ? "password" : "text";
+      toggleBtn.classList.toggle("is-revealed", !revealed);
+      toggleBtn.setAttribute("aria-label", t(revealed ? "authTogglePassword" : "authHidePassword"));
+    });
+
+    wrap.append(toggleBtn);
+  }
+
   let busy = false;
   let currentUser = null;
   let statusKey = "authCheckingSession";
@@ -1808,7 +1834,12 @@ export function createBackendAuthController({
       }
 
       clearBackendAccessCache();
-      if (passwordInput) passwordInput.value = "";
+      if (passwordInput) {
+        passwordInput.value = "";
+        passwordInput.type = "password";
+        const revealBtn = passwordInput.parentNode?.querySelector(".backend-auth-password-toggle");
+        if (revealBtn) revealBtn.classList.remove("is-revealed");
+      }
       await refreshSession({ userHint: username, force: true });
     } catch {
       busy = false;

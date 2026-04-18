@@ -27,6 +27,7 @@ import * as runtime from "../shared/audio-runtime.js";
 import {
   getBackendSessionState,
   fetchBackendLoggedUser,
+  BACKEND_AUTH_STATE_EVENT,
 } from "../shared/backend-auth.js";
 import {
   setMediaCacheUser,
@@ -125,6 +126,35 @@ function getBootstrap(shell) {
     _bootstrapPromise = null;
   });
   return _bootstrapPromise;
+}
+
+/**
+ * Re-bootstrap after an auth state change — reloads the catalog (or
+ * falls back to the demo playlist on logout) and updates the queue
+ * without requiring a page refresh.
+ *
+ * @param {object} shell  – player shell instance
+ * @param {boolean} loggedIn – whether the user just logged in
+ */
+async function reloadCatalogForAuthChange(shell, loggedIn) {
+  // Reset so getBootstrap re-runs the full flow.
+  _bootstrapped = false;
+  _bootstrapPromise = null;
+
+  // Stop playback so the user doesn't keep listening to tracks they
+  // may no longer have access to.
+  runtime.stopPlayback();
+
+  if (loggedIn) {
+    // User just logged in — run the full bootstrap (manifest fetch etc.)
+    await doBootstrap(shell);
+  } else {
+    // Logout — skip backend calls and fall back to demo tracks.
+    const demo = await loadDemoPlaylist();
+    shell.setTracks(demo);
+    if (demo.length > 0) runtime.setQueue(demo, { autoplay: false });
+    _bootstrapped = true;
+  }
 }
 
 /** Exposed for integration tests to await the bootstrap promise. */
@@ -299,8 +329,32 @@ export function createPlayerWidget(options = {}) {
     button.addEventListener("click", toggle);
   }
 
+  // ── Auth change → reload catalog ────────────────────────────
+  let _lastAuthState = undefined;
+
+  function onAuthChange(event) {
+    const detail = event?.detail || {};
+    const isNowAuthenticated = detail.authenticated === true && !detail.isGuest && !detail.pendingLogout;
+
+    // Only react to actual transitions, not duplicate events.
+    if (isNowAuthenticated === _lastAuthState) return;
+    _lastAuthState = isNowAuthenticated;
+
+    // Only reload if the widget has already bootstrapped at least once.
+    // Early auth events (during page load) are tracked but not acted on;
+    // the initial bootstrap will use whatever auth state is current.
+    if (!_bootstrapped && !_bootstrapPromise) return;
+
+    // Re-bootstrap: loads the user catalog on login, falls back to
+    // the demo playlist on logout.
+    reloadCatalogForAuthChange(shell, isNowAuthenticated).catch(() => {});
+  }
+
+  window.addEventListener(BACKEND_AUTH_STATE_EVENT, onAuthChange);
+
   // ── Destroy ──────────────────────────────────────────────────
   function destroy() {
+    window.removeEventListener(BACKEND_AUTH_STATE_EVENT, onAuthChange);
     shell.destroy();
     if (launcher) {
       launcher.remove();

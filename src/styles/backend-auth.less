@@ -55,7 +55,62 @@
   color: var(--muted, rgba(0, 0, 0, 0.55));
 }
 
-.backend-auth button{
+/* ── Password reveal toggle ───────────────────────────────────────── */
+
+.backend-auth-password-wrap{
+  position: relative;
+}
+
+.backend-auth-password-wrap .backend-auth-input{
+  width: 100%;
+  padding-right: 30px;
+}
+
+.backend-auth-password-wrap .backend-auth-password-toggle{
+  /* Reset ALL global button styles from board.less */
+  all: unset;
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  color: var(--muted, rgba(0, 0, 0, 0.55));
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.15s ease, color 0.15s ease;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  z-index: 1;
+}
+
+.backend-auth-password-wrap .backend-auth-password-toggle svg{
+  display: block;
+  width: 12px;
+  height: 12px;
+  pointer-events: none;
+}
+
+.backend-auth-password-wrap .backend-auth-password-toggle:hover{
+  opacity: 1;
+}
+
+.backend-auth-password-wrap .backend-auth-password-toggle:active{
+  /* Override board.less button:active { transform: translateY(1px) } */
+  transform: translateY(-50%);
+  opacity: 0.85;
+}
+
+.backend-auth-password-wrap .backend-auth-password-toggle.is-revealed{
+  opacity: 1;
+  color: var(--success-bg, #10b981);
+}
+
+.backend-auth button:not(.backend-auth-password-toggle){
   width: 100%;
   justify-content: center;
   text-align: center;
