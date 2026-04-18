@@ -1,0 +1,119 @@
+[
+  {
+    "name": "demo:on-the-run",
+    "title": "On The Run",
+    "artist": "Tim Kulig",
+    "album": "Tinctures",
+    "genre": "Electronica",
+    "src": "/audio/demo/On The Run.mp3",
+    "duration": 182.5
+  },
+  {
+    "name": "demo:rocker-chicks",
+    "title": "Rocker Chicks",
+    "artist": "Audionautix",
+    "album": "Audionautix",
+    "genre": "Rock",
+    "src": "/audio/demo/RockerChicks.mp3",
+    "duration": 90.1
+  },
+  {
+    "name": "demo:titan",
+    "title": "Titan",
+    "artist": "Scott Buckley",
+    "album": "Scott Buckley Library",
+    "genre": "Cinematic",
+    "src": "/audio/demo/sb_titan.mp3",
+    "duration": 175.8
+  },
+  {
+    "name": "demo:exit-the-premises",
+    "title": "Exit the Premises",
+    "artist": "Kevin MacLeod",
+    "album": "Incompetech",
+    "genre": "Electronic",
+    "src": "/audio/demo/Exit the Premises.mp3",
+    "duration": 210.1
+  },
+  {
+    "name": "demo:pascifica",
+    "title": "Pascifica",
+    "artist": "Tim Kulig",
+    "album": "Borked Git",
+    "genre": "Cyberpunk",
+    "src": "/audio/demo/Pascifica.mp3",
+    "duration": 271.6
+  },
+  {
+    "name": "demo:rynos-theme",
+    "title": "Ryno's Theme",
+    "artist": "Kevin MacLeod",
+    "album": "Incompetech",
+    "genre": "Cinematic",
+    "src": "/audio/demo/Rynos Theme.mp3",
+    "duration": 185.7
+  },
+  {
+    "name": "demo:legionnaire",
+    "title": "Legionnaire (2022 Remaster)",
+    "artist": "Scott Buckley",
+    "album": "Scott Buckley Library",
+    "genre": "Soundtrack",
+    "src": "/audio/demo/Legionnaire2022.mp3",
+    "duration": 187.1
+  },
+  {
+    "name": "demo:timeless",
+    "title": "Timeless",
+    "artist": "Alex Productions",
+    "album": "Chosic",
+    "genre": "Ambient",
+    "src": "/audio/demo/Timeless(chosic.com).mp3",
+    "duration": 128.3
+  },
+  {
+    "name": "demo:neo-western",
+    "title": "Neo Western",
+    "artist": "Kevin MacLeod",
+    "album": "Incompetech",
+    "genre": "World",
+    "src": "/audio/demo/Neo Western.mp3",
+    "duration": 145.8
+  },
+  {
+    "name": "demo:beach-bum",
+    "title": "Beach Bum",
+    "artist": "Kevin MacLeod",
+    "album": "Rock Classic",
+    "genre": "Rock",
+    "src": "/audio/demo/Beach Bum.mp3",
+    "duration": 52.3
+  },
+  {
+    "name": "demo:the-climb",
+    "title": "The Climb",
+    "artist": "Scott Buckley",
+    "album": "Scott Buckley Library",
+    "genre": "Soundtrack",
+    "src": "/audio/demo/sb_theclimb.mp3",
+    "duration": 347.1
+  },
+  {
+    "name": "demo:what-you-want",
+    "title": "What You Want",
+    "artist": "Kevin MacLeod",
+    "album": "Rock Harder",
+    "genre": "Rock",
+    "src": "/audio/demo/What You Want.mp3",
+    "duration": 87.6
+  },
+  {
+    "name": "demo:canon-in-d",
+    "title": "Canon in D Major",
+    "artist": "Kevin MacLeod",
+    "album": "Famous Classics",
+    "genre": "Classical",
+    "src": "/audio/demo/Canon in D Major.mp3",
+    "duration": 355.7
+  }
+]

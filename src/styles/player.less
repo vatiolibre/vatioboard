@@ -52,7 +52,7 @@
 
 .player-fab {
   position: fixed;
-  right: 16px;
+  left: 16px;
   bottom: 16px;
   z-index: 2147483647;
   width: 52px;
@@ -242,6 +242,19 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.player-meta-genre {
+  display: inline-block;
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-top: 3px;
+  background: var(--player-accent-soft);
+  color: var(--player-accent);
 }
 
 /* ── Source badge ──────────────────────────────────────────────────── */
@@ -706,14 +719,15 @@
 }
 
 .player-queue-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
   align-items: center;
-  justify-content: space-between;
   padding: 8px 12px;
   cursor: pointer;
   transition: background 0.12s ease;
   border-bottom: 1px solid var(--player-border);
-  gap: 8px;
+  gap: 0 8px;
 }
 
 .player-queue-item:last-child {
@@ -729,11 +743,26 @@
 }
 
 .player-queue-item-name {
-  flex: 1;
+  grid-column: 1;
+  grid-row: 1;
   font-size: 0.8rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.player-queue-item-artist {
+  grid-column: 1;
+  grid-row: 2;
+  font-size: 0.7rem;
+  color: var(--player-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-queue-item-artist:empty {
+  display: none;
 }
 
 .player-queue-item.active .player-queue-item-name {
@@ -742,6 +771,8 @@
 }
 
 .player-queue-item-badge {
+  grid-column: 2;
+  grid-row: 1 / -1;
   width: 7px;
   height: 7px;
   border-radius: 50%;

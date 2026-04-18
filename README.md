@@ -297,3 +297,25 @@ Contributions are welcome, especially around:
 - VatioLibre community
 - Mauricio Pradilla for logo and branding contributions: https://mauriciopradilla.com/
 - Santiago Jimenez Moncada for contributions to `vatioboard.com` and `vatiolibre.com`: https://github.com/ssantss
+
+## Demo Music Attribution
+
+The demo songs in `public/audio/demo/` are royalty-free tracks used under
+Creative Commons or similar permissive licenses. They ship with the
+repository so visitors can try the player without signing in.
+
+| Track | Artist | License | Source |
+|---|---|---|---|
+| On The Run | Tim Kulig | CC BY 4.0 | [timkulig.com](https://timkulig.com) |
+| Rocker Chicks | Audionautix | CC BY 4.0 | [audionautix.com](https://audionautix.com) |
+| Titan | Scott Buckley | CC BY 4.0 | [scottbuckley.com.au](https://www.scottbuckley.com.au/library) |
+| Exit the Premises | Kevin MacLeod | CC BY 4.0 | [incompetech.com](https://incompetech.com) |
+| Pascifica | Tim Kulig | CC BY 4.0 | [timkulig.com](https://timkulig.com) |
+| Ryno's Theme | Kevin MacLeod | CC BY 4.0 | [incompetech.com](https://incompetech.com) |
+| Legionnaire (2022 Remaster) | Scott Buckley | CC BY 4.0 | [scottbuckley.com.au](https://www.scottbuckley.com.au/library) |
+| Timeless | Alex Productions | CC0 / Free | [chosic.com](https://www.chosic.com) |
+| Neo Western | Kevin MacLeod | CC BY 4.0 | [incompetech.com](https://incompetech.com) |
+| Beach Bum | Kevin MacLeod | CC BY 4.0 | [incompetech.com](https://incompetech.com) |
+| The Climb | Scott Buckley | CC BY 4.0 | [scottbuckley.com.au](https://www.scottbuckley.com.au/library) |
+| What You Want | Kevin MacLeod | CC BY 4.0 | [incompetech.com](https://incompetech.com) |
+| Canon in D Major | Kevin MacLeod | CC BY 4.0 | [incompetech.com](https://incompetech.com) |

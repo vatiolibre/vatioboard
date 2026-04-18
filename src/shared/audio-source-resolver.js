@@ -42,6 +42,11 @@ function isAbortError(error) {
 export async function resolveAudioSource(assetName, asset) {
   if (!assetName) return null;
 
+  // 0. Direct static src (e.g. demo tracks served from /audio/demo/)
+  if (asset?.src) {
+    return { src: asset.src, type: "remote", revokeUrl() {} };
+  }
+
   // 1. Try local blob (pinned > cached, handled by getLocalMediaBlob)
   try {
     const local = await getLocalMediaBlob(assetName);

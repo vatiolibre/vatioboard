@@ -53,6 +53,17 @@ async function bootstrapAuth() {
   }
 }
 
+async function loadDemoPlaylist() {
+  try {
+    const res = await fetch("/audio/demo/playlist.json");
+    if (!res.ok) return [];
+    const tracks = await res.json();
+    return Array.isArray(tracks) ? tracks : [];
+  } catch {
+    return [];
+  }
+}
+
 async function doBootstrap(shell) {
   try {
     await bootstrapAuth();
@@ -60,36 +71,50 @@ async function doBootstrap(shell) {
     const { tracks } = await loadAudioCatalog();
     const annotated = await annotateOfflineAvailability(tracks);
 
-    shell.setTracks(annotated);
+    // Fall back to the free demo playlist when no catalog is available
+    // (guest / unauthenticated visitors).
+    const playlist = annotated.length > 0 ? annotated : await loadDemoPlaylist();
+
+    shell.setTracks(playlist);
 
     // Restore previous session (or do nothing if cold start)
-    await runtime.restoreSession(annotated, { autoplay: false });
+    await runtime.restoreSession(playlist, { autoplay: false });
 
     // If no session restored, seed the full catalog as queue
     const s = runtime.getState();
-    if (s.queue.length === 0 && annotated.length > 0) {
-      runtime.setQueue(annotated, { autoplay: false });
+    if (s.queue.length === 0 && playlist.length > 0) {
+      runtime.setQueue(playlist, { autoplay: false });
     }
 
     _bootstrapped = true;
 
-    // Non-blocking background revalidation
-    syncAudioCatalog().then(async (refreshed) => {
-      if (!refreshed) return;
-      try {
-        const fresh = await loadAudioCatalog();
-        const freshAnnotated = await annotateOfflineAvailability(fresh.tracks);
-        if (freshAnnotated.length > 0) {
-          shell.setTracks(freshAnnotated);
-          const current = runtime.getState();
-          if (current.paused && current.currentIndex <= 0) {
-            runtime.setQueue(freshAnnotated, { autoplay: false });
+    // Non-blocking background revalidation (skip for demo-only sessions)
+    if (annotated.length > 0) {
+      syncAudioCatalog().then(async (refreshed) => {
+        if (!refreshed) return;
+        try {
+          const fresh = await loadAudioCatalog();
+          const freshAnnotated = await annotateOfflineAvailability(fresh.tracks);
+          if (freshAnnotated.length > 0) {
+            shell.setTracks(freshAnnotated);
+            const current = runtime.getState();
+            if (current.paused && current.currentIndex <= 0) {
+              runtime.setQueue(freshAnnotated, { autoplay: false });
+            }
           }
-        }
-      } catch { /* ignore revalidation failures */ }
-    }).catch(() => {});
+        } catch { /* ignore revalidation failures */ }
+      }).catch(() => {});
+    }
   } catch {
-    // Offline or no manifest — shell starts empty
+    // Offline or no manifest — try demo playlist as last resort
+    try {
+      const demo = await loadDemoPlaylist();
+      if (demo.length > 0) {
+        shell.setTracks(demo);
+        runtime.setQueue(demo, { autoplay: false });
+        _bootstrapped = true;
+      }
+    } catch { /* shell starts empty */ }
   }
 }
 

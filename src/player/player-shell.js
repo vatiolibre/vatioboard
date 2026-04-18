@@ -150,10 +150,13 @@ export function createPlayerShell({ container }) {
   metaTitle.textContent = t("playerNowPlaying");
   const metaArtist = document.createElement("div");
   metaArtist.className = "player-meta-artist";
+  const metaGenre = document.createElement("span");
+  metaGenre.className = "player-meta-genre";
+  metaGenre.hidden = true;
   const sourceBadge = document.createElement("span");
   sourceBadge.className = "player-source-badge";
   sourceBadge.hidden = true;
-  metaSection.append(metaTitle, metaArtist, sourceBadge);
+  metaSection.append(metaTitle, metaArtist, metaGenre, sourceBadge);
 
   nowPlaying.append(artworkCompact, metaSection);
 
@@ -533,7 +536,16 @@ export function createPlayerShell({ container }) {
     // Metadata
     const track = s.currentTrack;
     metaTitle.textContent = track?.title || track?.original_filename || t("playerNowPlaying");
-    metaArtist.textContent = track?.folder_path || "";
+    metaArtist.textContent = track?.artist || track?.folder_path || "";
+
+    // Genre tag
+    const genre = track?.genre || "";
+    if (genre) {
+      metaGenre.textContent = genre;
+      metaGenre.hidden = false;
+    } else {
+      metaGenre.hidden = true;
+    }
 
     // Compact artwork
     const artUrl = track?.preview_image_url || track?.image_url || "";
@@ -600,7 +612,7 @@ export function createPlayerShell({ container }) {
     const source = allTracks.length > 0 ? allTracks : s.queue;
     const tracks = filter
       ? source.filter((tr) => {
-          const hay = `${tr.title || ""} ${tr.original_filename || ""} ${tr.folder_path || ""}`.toLowerCase();
+          const hay = `${tr.title || ""} ${tr.artist || ""} ${tr.original_filename || ""} ${tr.folder_path || ""}`.toLowerCase();
           return hay.includes(filter);
         })
       : source;
@@ -623,6 +635,10 @@ export function createPlayerShell({ container }) {
       nameSpan.className = "player-queue-item-name";
       nameSpan.textContent = track.title || track.original_filename || track.name;
 
+      const artistSpan = document.createElement("span");
+      artistSpan.className = "player-queue-item-artist";
+      artistSpan.textContent = track.artist || track.folder_path || "";
+
       const badge = document.createElement("span");
       badge.className = "player-queue-item-badge";
       if (track._offline) {
@@ -630,7 +646,7 @@ export function createPlayerShell({ container }) {
         badge.title = t("playerOffline");
       }
 
-      li.append(nameSpan, badge);
+      li.append(nameSpan, artistSpan, badge);
       li.addEventListener("click", () => {
         _gestureUnlocked = true;
         primeAudioContext();

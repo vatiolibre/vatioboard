@@ -738,7 +738,7 @@ function updateMediaSessionMetadata() {
 
   setMediaSessionMetadata({
     title: track.title || track.original_filename || track.name || "",
-    artist: track.folder_path || "",
+    artist: track.artist || track.folder_path || "",
     album: "VatioBoard",
     artworkUrl: track.preview_image_url || track.image_url || "",
   });
