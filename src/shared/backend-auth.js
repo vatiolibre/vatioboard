@@ -17,6 +17,10 @@ const GET_MEDIA_MANIFEST_METHOD = "vatiolibre.vatiolibre.media_assets.get_my_med
 const UPDATE_MEDIA_ASSET_METHOD = "vatiolibre.vatiolibre.media_assets.update_my_media_asset";
 const DELETE_MEDIA_ASSET_METHOD = "vatiolibre.vatiolibre.media_assets.delete_my_media_asset";
 const STREAM_MEDIA_ASSET_BLOB_METHOD = "vatiolibre.vatiolibre.media_assets.stream_my_media_asset_blob";
+const LIST_PLAYLISTS_METHOD = "vatiolibre.vatiolibre.media_playlists.list_my_media_playlists";
+const GET_PLAYLIST_DETAIL_METHOD = "vatiolibre.vatiolibre.media_playlists.get_my_media_playlist_detail";
+const GET_PLAYLISTS_MANIFEST_VERSION_METHOD = "vatiolibre.vatiolibre.media_playlists.get_my_media_playlists_manifest_version";
+const GET_PLAYLISTS_MANIFEST_METHOD = "vatiolibre.vatiolibre.media_playlists.get_my_media_playlists_manifest";
 const PUSH_SYNC_METHOD = "vatiolibre.vatiolibre.cloud_sync.push_my_sync_changes";
 const PULL_SYNC_METHOD = "vatiolibre.vatiolibre.cloud_sync.pull_my_sync_changes";
 const DOWNLOAD_SYNC_PAYLOAD_METHOD = "vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload";
@@ -1660,6 +1664,103 @@ export async function deleteMediaAssetFromBackend({
     status: response.status,
     data,
     name: message?.name ?? null,
+  };
+}
+
+// ── Playlist methods ───────────────────────────────────────────────
+
+export async function listBackendPlaylists({
+  search,
+  limit,
+  offset,
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const args = {};
+  if (search) args.search = String(search);
+  if (limit != null) args.limit = Number(limit);
+  if (offset != null) args.offset = Number(offset);
+
+  const { response, data } = await fetchBackendMethodJson(LIST_PLAYLISTS_METHOD, {
+    args,
+    fetchImpl,
+    signal,
+    config,
+  });
+  const message = getMessage(data);
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    playlists: Array.isArray(message?.playlists) ? message.playlists : [],
+    totalCount: Number(message?.total_count) || 0,
+    manifestToken: message?.manifest_token ?? null,
+  };
+}
+
+export async function getBackendPlaylistDetail({
+  name,
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const { response, data } = await fetchBackendMethodJson(GET_PLAYLIST_DETAIL_METHOD, {
+    args: { name: String(name || "") },
+    fetchImpl,
+    signal,
+    config,
+  });
+  const message = getMessage(data);
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    playlist: message?.playlist ?? null,
+  };
+}
+
+export async function getBackendPlaylistsManifestVersion({
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const { response, data } = await fetchBackendMethodJson(GET_PLAYLISTS_MANIFEST_VERSION_METHOD, {
+    args: {},
+    fetchImpl,
+    signal,
+    config,
+  });
+  const message = getMessage(data);
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    manifestToken: message?.manifest_token ?? null,
+    totalCount: Number(message?.total_count) || 0,
+  };
+}
+
+export async function getBackendPlaylistsManifest({
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const { response, data } = await fetchBackendMethodJson(GET_PLAYLISTS_MANIFEST_METHOD, {
+    args: {},
+    fetchImpl,
+    signal,
+    config,
+  });
+  const message = getMessage(data);
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    playlists: Array.isArray(message?.playlists) ? message.playlists : [],
+    totalCount: Number(message?.total_count) || 0,
+    manifestToken: message?.manifest_token ?? null,
+    isTruncated: message?.is_truncated === true,
   };
 }
 

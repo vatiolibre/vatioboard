@@ -55,9 +55,20 @@ const catalogMock = {
   annotateOfflineAvailability: vi.fn().mockImplementation((tracks) =>
     Promise.resolve(tracks.map((t) => ({ ...t, _offline: false }))),
   ),
+  isAudioAsset: vi.fn().mockImplementation(
+    (asset) => asset && String(asset.media_kind || "").toLowerCase() === "audio",
+  ),
 };
 
 vi.mock("../../src/shared/audio-catalog.js", () => catalogMock);
+
+const playlistMock = {
+  loadPlaylists: vi.fn().mockResolvedValue({ playlists: [], total: 0 }),
+  syncPlaylistsManifest: vi.fn().mockResolvedValue(false),
+  loadPlaylistDetail: vi.fn().mockResolvedValue(null),
+};
+
+vi.mock("../../src/shared/playlist-loader.js", () => playlistMock);
 
 vi.mock("../../src/shared/backend-auth.js", () => ({
   BACKEND_AUTH_STATE_EVENT: "vatioboard:backend-auth-state",
@@ -129,6 +140,7 @@ describe("createPlayerWidget", () => {
 
     vi.doMock("../../src/shared/audio-runtime.js", () => runtimeMock);
     vi.doMock("../../src/shared/audio-catalog.js", () => catalogMock);
+    vi.doMock("../../src/shared/playlist-loader.js", () => playlistMock);
 
     vi.doMock("../../src/shared/backend-auth.js", () => ({
       BACKEND_AUTH_STATE_EVENT: "vatioboard:backend-auth-state",
@@ -181,6 +193,9 @@ describe("createPlayerWidget", () => {
     runtimeMock.subscribe.mockReturnValue(vi.fn());
     catalogMock.loadAudioCatalog.mockResolvedValue({ tracks: [], total: 0 });
     catalogMock.syncAudioCatalog.mockResolvedValue(false);
+    playlistMock.loadPlaylists.mockResolvedValue({ playlists: [], total: 0 });
+    playlistMock.syncPlaylistsManifest.mockResolvedValue(false);
+    playlistMock.loadPlaylistDetail.mockResolvedValue(null);
 
     const mod = await import("../../src/player/player-widget.js");
     createPlayerWidget = mod.createPlayerWidget;
@@ -352,6 +367,33 @@ describe("createPlayerWidget", () => {
     widget.destroy();
   });
 
+  // ── Playlist loading ─────────────────────────────────────────
+
+  it("loads playlists during bootstrap", async () => {
+    playlistMock.loadPlaylists.mockClear();
+
+    const widget = createPlayerWidget({ preload: "immediate", floating: false });
+    await flushMicrotasks(20);
+
+    expect(playlistMock.loadPlaylists).toHaveBeenCalled();
+    widget.destroy();
+  });
+
+  it("syncs playlists manifest in background after bootstrap", async () => {
+    playlistMock.syncPlaylistsManifest.mockClear();
+    // Background sync only runs when annotated tracks > 0
+    catalogMock.loadAudioCatalog.mockResolvedValue({
+      tracks: [makeTrack("A")],
+      total: 1,
+    });
+
+    const widget = createPlayerWidget({ preload: "immediate", floating: false });
+    await flushMicrotasks(20);
+
+    expect(playlistMock.syncPlaylistsManifest).toHaveBeenCalled();
+    widget.destroy();
+  });
+
   // ── Lazy bootstrap ───────────────────────────────────────────
 
   it("lazy bootstrap happens on first open, not page load", async () => {
@@ -512,5 +554,237 @@ describe("createPlayerWidget", () => {
 
     widget.destroy();
     localStorage.removeItem("player_widget_pos_v1");
+  });
+
+  // ── Playlist sheet ───────────────────────────────────────────
+
+  it("has a playlist sheet that can be toggled", () => {
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+
+    const panel = document.querySelector(".player-panel");
+    const playlistSheet = panel.querySelector(".player-playlist-sheet");
+    const playlistBtn = panel.querySelector(".player-playlist-toggle-btn");
+
+    expect(playlistSheet).toBeTruthy();
+    expect(playlistSheet.classList.contains("is-open")).toBe(false);
+
+    // Click playlist toggle to open
+    playlistBtn.click();
+    expect(playlistSheet.classList.contains("is-open")).toBe(true);
+
+    // Click close to close
+    const closeBtn = playlistSheet.querySelector(".player-playlist-sheet-close");
+    closeBtn.click();
+    expect(playlistSheet.classList.contains("is-open")).toBe(false);
+
+    widget.destroy();
+  });
+
+  it("playlist and queue sheets are mutually exclusive", () => {
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+
+    const panel = document.querySelector(".player-panel");
+    const queueSheet = panel.querySelector(".player-queue-sheet");
+    const playlistSheet = panel.querySelector(".player-playlist-sheet");
+    const queueBtn = panel.querySelector(".player-queue-toggle-btn");
+    const playlistBtn = panel.querySelector(".player-playlist-toggle-btn");
+
+    // Open queue first
+    queueBtn.click();
+    expect(queueSheet.classList.contains("is-open")).toBe(true);
+    expect(playlistSheet.classList.contains("is-open")).toBe(false);
+
+    // Open playlist → queue should close
+    playlistBtn.click();
+    expect(playlistSheet.classList.contains("is-open")).toBe(true);
+    expect(queueSheet.classList.contains("is-open")).toBe(false);
+
+    // Open queue again → playlist should close
+    queueBtn.click();
+    expect(queueSheet.classList.contains("is-open")).toBe(true);
+    expect(playlistSheet.classList.contains("is-open")).toBe(false);
+
+    widget.destroy();
+  });
+
+  it("setPlaylists renders items in the playlist sheet", () => {
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+
+    widget.setPlaylists([
+      { name: "pl1", title: "Road Trip", item_count: 5 },
+      { name: "pl2", title: "Chill", item_count: 3 },
+    ]);
+
+    const panel = document.querySelector(".player-panel");
+    // Open playlist sheet
+    panel.querySelector(".player-playlist-toggle-btn").click();
+
+    const items = panel.querySelectorAll(".player-playlist-item");
+    expect(items.length).toBe(2);
+
+    widget.destroy();
+  });
+
+  // ── Playlist playback ────────────────────────────────────────
+
+  it("clicking a playlist item loads detail and queues audio tracks", async () => {
+    const tracks = [
+      makeTrack("song_a"),
+      makeTrack("song_b"),
+      makeTrack("song_c"),
+    ];
+
+    catalogMock.loadAudioCatalog.mockResolvedValue({ tracks, total: 3 });
+
+    playlistMock.loadPlaylistDetail.mockResolvedValue({
+      name: "pl1",
+      title: "Road Trip",
+      items: [
+        { media_asset_name: "song_a", position: 0 },
+        { media_asset_name: "song_b", position: 1 },
+        { media_asset_name: "song_c", position: 2 },
+      ],
+    });
+
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    await flushMicrotasks(30); // let bootstrap settle
+    widget.setTracks(tracks);
+    widget.setPlaylists([
+      { name: "pl1", title: "Road Trip", item_count: 3 },
+    ]);
+
+    const panel = document.querySelector(".player-panel");
+    panel.querySelector(".player-playlist-toggle-btn").click();
+
+    // Click the playlist item to open detail view
+    const playlistItem = panel.querySelector(".player-playlist-item");
+    expect(playlistItem).toBeTruthy();
+    playlistItem.click();
+    await flushMicrotasks(20);
+
+    expect(playlistMock.loadPlaylistDetail).toHaveBeenCalledWith("pl1");
+
+    // Click Play All button
+    const playAllBtn = panel.querySelector(".player-playlist-play-all-btn");
+    expect(playAllBtn).toBeTruthy();
+    playAllBtn.click();
+    await flushMicrotasks();
+
+    expect(runtimeMock.setQueue).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "song_a" }),
+        expect.objectContaining({ name: "song_b" }),
+        expect.objectContaining({ name: "song_c" }),
+      ]),
+      { startIndex: 0, autoplay: true },
+    );
+
+    widget.destroy();
+  });
+
+  it("playlist playback skips missing and non-audio items", async () => {
+    const audioTrack = makeTrack("song_a");
+    const imageTrack = makeTrack("img_1", { media_kind: "image", original_filename: "photo.png" });
+
+    catalogMock.loadAudioCatalog.mockResolvedValue({
+      tracks: [audioTrack, imageTrack],
+      total: 2,
+    });
+
+    playlistMock.loadPlaylistDetail.mockResolvedValue({
+      name: "pl2",
+      title: "Mixed",
+      items: [
+        { media_asset_name: "song_a", position: 0 },
+        { media_asset_name: "deleted_track", position: 1 },   // missing
+        { media_asset_name: "img_1", position: 2 },            // non-audio
+      ],
+    });
+
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    await flushMicrotasks(30); // let bootstrap settle
+    widget.setTracks([audioTrack, imageTrack]);
+    widget.setPlaylists([
+      { name: "pl2", title: "Mixed", item_count: 3 },
+    ]);
+
+    const panel = document.querySelector(".player-panel");
+    panel.querySelector(".player-playlist-toggle-btn").click();
+
+    const playlistItem = panel.querySelector(".player-playlist-item");
+    expect(playlistItem).toBeTruthy();
+    playlistItem.click();
+    await flushMicrotasks(20);
+
+    const playAllBtn = panel.querySelector(".player-playlist-play-all-btn");
+    expect(playAllBtn).toBeTruthy();
+    playAllBtn.click();
+    await flushMicrotasks();
+
+    // Only the audio track should be queued; missing & non-audio filtered out
+    expect(runtimeMock.setQueue).toHaveBeenCalledWith(
+      [expect.objectContaining({ name: "song_a" })],
+      { startIndex: 0, autoplay: true },
+    );
+
+    widget.destroy();
+  });
+
+  it("clicking a specific track item sets correct startIndex", async () => {
+    const tracks = [
+      makeTrack("song_a"),
+      makeTrack("song_b"),
+      makeTrack("song_c"),
+    ];
+
+    catalogMock.loadAudioCatalog.mockResolvedValue({ tracks, total: 3 });
+
+    playlistMock.loadPlaylistDetail.mockResolvedValue({
+      name: "pl1",
+      title: "Road Trip",
+      items: [
+        { media_asset_name: "song_a", position: 0 },
+        { media_asset_name: "song_b", position: 1 },
+        { media_asset_name: "song_c", position: 2 },
+      ],
+    });
+
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    await flushMicrotasks(30); // let bootstrap settle
+    widget.setTracks(tracks);
+    widget.setPlaylists([
+      { name: "pl1", title: "Road Trip", item_count: 3 },
+    ]);
+
+    const panel = document.querySelector(".player-panel");
+    panel.querySelector(".player-playlist-toggle-btn").click();
+
+    const playlistItem = panel.querySelector(".player-playlist-item");
+    expect(playlistItem).toBeTruthy();
+    playlistItem.click();
+    await flushMicrotasks(20);
+
+    // Click the second track item (song_b)
+    const trackItems = panel.querySelectorAll(".player-playlist-track-item");
+    expect(trackItems.length).toBe(3);
+    trackItems[1].click();
+    await flushMicrotasks();
+
+    expect(runtimeMock.setQueue).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "song_a" }),
+        expect.objectContaining({ name: "song_b" }),
+        expect.objectContaining({ name: "song_c" }),
+      ]),
+      { startIndex: 1, autoplay: true },
+    );
+
+    widget.destroy();
   });
 });

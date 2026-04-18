@@ -23,6 +23,7 @@ import {
 } from "../calculator/widget/drag.js";
 import { IconMusic } from "../icons.js";
 import { loadAudioCatalog, syncAudioCatalog, annotateOfflineAvailability } from "../shared/audio-catalog.js";
+import { loadPlaylists, syncPlaylistsManifest } from "../shared/playlist-loader.js";
 import * as runtime from "../shared/audio-runtime.js";
 import {
   getBackendSessionState,
@@ -78,6 +79,11 @@ async function doBootstrap(shell) {
 
     shell.setTracks(playlist);
 
+    // Load playlists alongside tracks
+    loadPlaylists().then(({ playlists }) => {
+      shell.setPlaylists(playlists);
+    }).catch(() => {});
+
     // Restore previous session (or do nothing if cold start)
     await runtime.restoreSession(playlist, { autoplay: false });
 
@@ -104,6 +110,15 @@ async function doBootstrap(shell) {
             }
           }
         } catch { /* ignore revalidation failures */ }
+      }).catch(() => {});
+
+      // Background sync playlists
+      syncPlaylistsManifest().then(async (refreshed) => {
+        if (!refreshed) return;
+        try {
+          const { playlists } = await loadPlaylists();
+          shell.setPlaylists(playlists);
+        } catch { /* ignore */ }
       }).catch(() => {});
     }
   } catch {
@@ -152,6 +167,7 @@ async function reloadCatalogForAuthChange(shell, loggedIn) {
     // Logout — skip backend calls and fall back to demo tracks.
     const demo = await loadDemoPlaylist();
     shell.setTracks(demo);
+    shell.setPlaylists([]);
     if (demo.length > 0) runtime.setQueue(demo, { autoplay: false });
     _bootstrapped = true;
   }
@@ -372,5 +388,6 @@ export function createPlayerWidget(options = {}) {
     toggle,
     destroy,
     setTracks: (tracks) => shell.setTracks(tracks),
+    setPlaylists: (playlists) => shell.setPlaylists(playlists),
   };
 }

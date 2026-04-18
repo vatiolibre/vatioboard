@@ -12,7 +12,7 @@
 import {
   IconPlay, IconPause, IconSkipBack, IconSkipForward,
   IconRepeat, IconShuffle, IconVolume, IconMuted,
-  IconMusic, IconClose, IconQueue,
+  IconMusic, IconClose, IconQueue, IconPlaylist,
 } from "../icons.js";
 import { t } from "../i18n.js";
 import { createMiniAudioVisualizer } from "../shared/audio-mini-visualizer.js";
@@ -21,6 +21,8 @@ import { primeAudioContext } from "../shared/audio-graph-registry.js";
 import { createMilkdropPanel } from "./milkdrop-panel.js";
 import * as runtime from "../shared/audio-runtime.js";
 import { loadText, saveText } from "../shared/storage.js";
+import { loadPlaylists, loadPlaylistDetail } from "../shared/playlist-loader.js";
+import { isAudioAsset } from "../shared/audio-catalog.js";
 
 const PROGRESS_MAX = 1000;
 const VISUALIZER_VISIBLE_STORAGE_KEY = "vatio_board_player_widget_visualizer_visible";
@@ -125,6 +127,8 @@ export function createPlayerShell({ container }) {
 
   const queueToggleBtn = makeBtn("player-queue-toggle-btn", IconQueue, t("playerQueue"));
 
+  const playlistToggleBtn = makeBtn("player-playlist-toggle-btn", IconPlaylist, t("playerPlaylists"));
+
   const spacer = document.createElement("div");
   spacer.className = "player-spacer";
 
@@ -133,7 +137,7 @@ export function createPlayerShell({ container }) {
   closeBtn.className = "player-close";
   closeBtn.textContent = t("close");
 
-  header.append(titleEl, visualizerToggleBtn, milkdropToggleBtn, queueToggleBtn, spacer, closeBtn);
+  header.append(titleEl, visualizerToggleBtn, milkdropToggleBtn, queueToggleBtn, playlistToggleBtn, spacer, closeBtn);
 
   // ── Now-playing row (compact artwork + metadata) ───────────────
   const nowPlaying = document.createElement("div");
@@ -267,12 +271,44 @@ export function createPlayerShell({ container }) {
 
   queueSheet.append(queueSheetHeader, trackListUl);
 
+  // ── Playlist bottom sheet ──────────────────────────────────────
+  const playlistSheet = document.createElement("div");
+  playlistSheet.className = "player-playlist-sheet";
+  playlistSheet.setAttribute("aria-hidden", "true");
+
+  const playlistSheetHeader = document.createElement("div");
+  playlistSheetHeader.className = "player-playlist-sheet-header";
+
+  const playlistBackBtn = document.createElement("button");
+  playlistBackBtn.type = "button";
+  playlistBackBtn.className = "player-playlist-back-btn";
+  playlistBackBtn.textContent = "\u2190";
+  playlistBackBtn.hidden = true;
+  playlistBackBtn.setAttribute("aria-label", t("playerBackToPlaylists"));
+
+  const playlistSheetTitle = document.createElement("span");
+  playlistSheetTitle.textContent = t("playerPlaylists");
+
+  const playlistCloseBtn = document.createElement("button");
+  playlistCloseBtn.type = "button";
+  playlistCloseBtn.className = "player-playlist-sheet-close";
+  playlistCloseBtn.setAttribute("aria-label", t("close"));
+  playlistCloseBtn.innerHTML = IconClose;
+
+  playlistSheetHeader.append(playlistBackBtn, playlistSheetTitle, playlistCloseBtn);
+
+  const playlistListUl = document.createElement("ul");
+  playlistListUl.className = "player-playlist-list";
+  playlistListUl.setAttribute("role", "list");
+
+  playlistSheet.append(playlistSheetHeader, playlistListUl);
+
   // ── Assembly ───────────────────────────────────────────────────
   const body = document.createElement("div");
   body.className = "player-body";
   body.append(nowPlaying, visualizerStrip, errorMsg, progressSection, transport, volumeRow);
 
-  root.append(header, body, queueSheet);
+  root.append(header, body, queueSheet, playlistSheet);
   container.append(root);
 
   // ── State ──────────────────────────────────────────────────────
@@ -297,6 +333,7 @@ export function createPlayerShell({ container }) {
   // ── Queue sheet toggle ─────────────────────────────────────────
   function setQueueOpen(open) {
     queueOpen = open;
+    if (open) setPlaylistOpen(false); // close playlists when queue opens
     queueSheet.classList.toggle("is-open", queueOpen);
     queueSheet.setAttribute("aria-hidden", String(!queueOpen));
     queueToggleBtn.classList.toggle("active", queueOpen);
@@ -311,6 +348,157 @@ export function createPlayerShell({ container }) {
     setQueueOpen(!queueOpen);
   });
   queueCloseBtn.addEventListener("click", () => setQueueOpen(false));
+
+  // ── Playlist sheet toggle ──────────────────────────────────────
+  let playlistOpen = false;
+  let playlistDetailView = null; // null = list view, string = viewing a playlist by name
+  let cachedPlaylists = [];
+
+  function setPlaylistOpen(open) {
+    playlistOpen = open;
+    if (open) {
+      setQueueOpen(false); // close queue when playlists open
+      playlistDetailView = null;
+      renderPlaylistList();
+    }
+    playlistSheet.classList.toggle("is-open", playlistOpen);
+    playlistSheet.setAttribute("aria-hidden", String(!playlistOpen));
+    playlistToggleBtn.classList.toggle("active", playlistOpen);
+  }
+
+  function renderPlaylistList() {
+    playlistListUl.innerHTML = "";
+    playlistBackBtn.hidden = true;
+    playlistSheetTitle.textContent = t("playerPlaylists");
+    playlistDetailView = null;
+
+    if (cachedPlaylists.length === 0) {
+      const emptyLi = document.createElement("li");
+      emptyLi.className = "player-playlist-empty";
+      emptyLi.textContent = t("playerNoPlaylists");
+      playlistListUl.append(emptyLi);
+      return;
+    }
+
+    for (const pl of cachedPlaylists) {
+      const li = document.createElement("li");
+      li.className = "player-playlist-item";
+      li.dataset.playlistName = pl.name;
+
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "player-playlist-item-name";
+      nameSpan.textContent = pl.title || pl.name;
+
+      const countSpan = document.createElement("span");
+      countSpan.className = "player-playlist-item-count";
+      countSpan.textContent = t("playerPlaylistTracks", { count: pl.item_count ?? 0 });
+
+      li.append(nameSpan, countSpan);
+      li.addEventListener("click", () => openPlaylistDetail(pl.name, pl.title));
+      playlistListUl.append(li);
+    }
+  }
+
+  async function openPlaylistDetail(name, title) {
+    playlistDetailView = name;
+    playlistBackBtn.hidden = false;
+    playlistSheetTitle.textContent = title || name;
+    playlistListUl.innerHTML = "";
+
+    const loadingLi = document.createElement("li");
+    loadingLi.className = "player-playlist-empty";
+    loadingLi.textContent = "...";
+    playlistListUl.append(loadingLi);
+
+    try {
+      const detail = await loadPlaylistDetail(name);
+      if (playlistDetailView !== name) return; // user navigated away
+
+      playlistListUl.innerHTML = "";
+      const items = Array.isArray(detail?.items) ? detail.items : [];
+
+      if (items.length === 0) {
+        const emptyLi = document.createElement("li");
+        emptyLi.className = "player-playlist-empty";
+        emptyLi.textContent = t("playerNoTracks");
+        playlistListUl.append(emptyLi);
+        return;
+      }
+
+      // Play All button
+      const playAllLi = document.createElement("li");
+      playAllLi.className = "player-playlist-play-all";
+      const playAllBtn = document.createElement("button");
+      playAllBtn.type = "button";
+      playAllBtn.className = "player-playlist-play-all-btn";
+      playAllBtn.textContent = t("playerPlayAll");
+      playAllBtn.addEventListener("click", () => {
+        _gestureUnlocked = true;
+        primeAudioContext();
+        playPlaylistTracks(items);
+      });
+      playAllLi.append(playAllBtn);
+      playlistListUl.append(playAllLi);
+
+      // Track items
+      const trackMap = new Map(allTracks.map((tr) => [tr.name, tr]));
+      for (const item of items) {
+        const li = document.createElement("li");
+        li.className = "player-playlist-track-item";
+
+        const nameSpan = document.createElement("span");
+        nameSpan.className = "player-playlist-track-name";
+        const catalogTrack = trackMap.get(item.media_asset_name);
+        nameSpan.textContent = catalogTrack?.title || item.media_asset_name || "";
+
+        li.append(nameSpan);
+        li.addEventListener("click", () => {
+          _gestureUnlocked = true;
+          primeAudioContext();
+          playPlaylistTracks(items, item);
+        });
+        playlistListUl.append(li);
+      }
+    } catch {
+      if (playlistDetailView !== name) return;
+      playlistListUl.innerHTML = "";
+      const errLi = document.createElement("li");
+      errLi.className = "player-playlist-empty";
+      errLi.textContent = t("playerPlaybackError");
+      playlistListUl.append(errLi);
+    }
+  }
+
+  function playPlaylistTracks(items, startItem) {
+    // Resolve playlist items against the known track catalog
+    const trackMap = new Map();
+    for (const tr of allTracks) {
+      trackMap.set(tr.name, tr);
+    }
+
+    const resolved = items
+      .map((item) => trackMap.get(item.media_asset_name))
+      .filter((tr) => tr && isAudioAsset(tr));
+
+    if (resolved.length === 0) return;
+
+    const startIndex = startItem
+      ? Math.max(0, resolved.findIndex((tr) => tr.name === startItem.media_asset_name))
+      : 0;
+
+    runtime.setQueue(resolved, { startIndex, autoplay: true });
+    setPlaylistOpen(false);
+  }
+
+  playlistBackBtn.addEventListener("click", () => renderPlaylistList());
+
+  playlistToggleBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  playlistToggleBtn.addEventListener("pointerup", (e) => e.stopPropagation());
+  playlistToggleBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    setPlaylistOpen(!playlistOpen);
+  });
+  playlistCloseBtn.addEventListener("click", () => setPlaylistOpen(false));
 
   // ── Visualizer controls ─────────────────────────────────────────
   function getRuntimeAudioElement() {
@@ -716,6 +904,11 @@ export function createPlayerShell({ container }) {
     setTracks(tracks) {
       allTracks = tracks;
       if (queueOpen) renderTrackList();
+    },
+
+    setPlaylists(playlists) {
+      cachedPlaylists = Array.isArray(playlists) ? playlists : [];
+      if (playlistOpen && !playlistDetailView) renderPlaylistList();
     },
   };
 }

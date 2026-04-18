@@ -291,6 +291,16 @@ export const IconQueue = `
   </svg>
 `;
 
+export const IconPlaylist = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M8 6h13M8 12h9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    <path d="M3 6h0M3 12h0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    <path d="M16 16V12l5-1v5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="14" cy="16" r="2" stroke="currentColor" stroke-width="1.4"/>
+    <circle cx="19" cy="15" r="2" stroke="currentColor" stroke-width="1.4"/>
+  </svg>
+`;
+
 export const IconMusic = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path d="M9 18V5l12-2v13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>

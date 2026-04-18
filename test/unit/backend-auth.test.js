@@ -9,8 +9,12 @@ import {
   getBackendFeatureAccessState,
   getBackendMediaAssetAccess,
   getBackendMediaAssetDetail,
+  getBackendPlaylistDetail,
+  getBackendPlaylistsManifest,
+  getBackendPlaylistsManifestVersion,
   getBackendSessionState,
   listBackendMediaAssets,
+  listBackendPlaylists,
   normalizeBackendOwnedUrl,
   pushSyncChangesToBackend,
 } from '../../src/shared/backend-auth.js';
@@ -602,5 +606,152 @@ describe('buildBoardDocumentPreviewBffUrl', () => {
     const url = buildBoardDocumentPreviewBffUrl('BOARD-DOC-1', { config: TEST_CONFIG });
     expect(url).toContain('/api/method/vatiolibre.vatiolibre.board_documents.download_my_board_document_preview');
     expect(url).toContain('name=BOARD-DOC-1');
+  });
+});
+
+// ── Playlist backend methods ─────────────────────────────────────────
+
+describe('listBackendPlaylists', () => {
+  it('parses playlist list response', async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(jsonResponse({
+      message: {
+        playlists: [
+          { name: 'PL-1', title: 'Driving Mix', item_count: 3 },
+          { name: 'PL-2', title: 'Chill Vibes', item_count: 5 },
+        ],
+        total_count: 2,
+        manifest_token: 'abc123',
+      },
+    }));
+
+    const result = await listBackendPlaylists({ fetchImpl, config: TEST_CONFIG });
+
+    expect(result.ok).toBe(true);
+    expect(result.playlists).toHaveLength(2);
+    expect(result.playlists[0].name).toBe('PL-1');
+    expect(result.totalCount).toBe(2);
+    expect(result.manifestToken).toBe('abc123');
+  });
+
+  it('returns empty array on error response', async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(jsonResponse(
+      { message: 'Not Found' },
+      404,
+    ));
+
+    const result = await listBackendPlaylists({ fetchImpl, config: TEST_CONFIG });
+
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(404);
+    expect(result.playlists).toEqual([]);
+  });
+
+  it('passes search, limit, and offset params', async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(jsonResponse({
+      message: { playlists: [], total_count: 0 },
+    }));
+
+    await listBackendPlaylists({
+      search: 'road',
+      limit: 10,
+      offset: 20,
+      fetchImpl,
+      config: TEST_CONFIG,
+    });
+
+    const url = fetchImpl.mock.calls[0][0];
+    expect(url).toContain('media_playlists.list_my_media_playlists');
+  });
+});
+
+describe('getBackendPlaylistDetail', () => {
+  it('parses playlist detail response', async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(jsonResponse({
+      message: {
+        playlist: {
+          name: 'PL-1',
+          title: 'Driving Mix',
+          items: [
+            { media_asset_name: 'MEDIA-1', position: 1 },
+            { media_asset_name: 'MEDIA-2', position: 2 },
+          ],
+        },
+      },
+    }));
+
+    const result = await getBackendPlaylistDetail({ name: 'PL-1', fetchImpl, config: TEST_CONFIG });
+
+    expect(result.ok).toBe(true);
+    expect(result.playlist.name).toBe('PL-1');
+    expect(result.playlist.items).toHaveLength(2);
+  });
+
+  it('returns null playlist on error', async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(jsonResponse(
+      { message: 'Not Found' },
+      404,
+    ));
+
+    const result = await getBackendPlaylistDetail({ name: 'PL-MISSING', fetchImpl, config: TEST_CONFIG });
+
+    expect(result.ok).toBe(false);
+    expect(result.playlist).toBeNull();
+  });
+});
+
+describe('getBackendPlaylistsManifestVersion', () => {
+  it('parses manifest version response', async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(jsonResponse({
+      message: {
+        manifest_token: 'deadbeef',
+        total_count: 10,
+      },
+    }));
+
+    const result = await getBackendPlaylistsManifestVersion({ fetchImpl, config: TEST_CONFIG });
+
+    expect(result.ok).toBe(true);
+    expect(result.manifestToken).toBe('deadbeef');
+    expect(result.totalCount).toBe(10);
+  });
+});
+
+describe('getBackendPlaylistsManifest', () => {
+  it('parses full manifest response', async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(jsonResponse({
+      message: {
+        playlists: [
+          { name: 'PL-1', title: 'Mix 1' },
+          { name: 'PL-2', title: 'Mix 2' },
+        ],
+        total_count: 2,
+        manifest_token: 'tok_v1',
+        is_truncated: false,
+      },
+    }));
+
+    const result = await getBackendPlaylistsManifest({ fetchImpl, config: TEST_CONFIG });
+
+    expect(result.ok).toBe(true);
+    expect(result.playlists).toHaveLength(2);
+    expect(result.manifestToken).toBe('tok_v1');
+    expect(result.isTruncated).toBe(false);
+    expect(result.totalCount).toBe(2);
+  });
+
+  it('detects truncated manifest', async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(jsonResponse({
+      message: {
+        playlists: [{ name: 'PL-1', title: 'Mix 1' }],
+        total_count: 500,
+        manifest_token: 'tok_v2',
+        is_truncated: true,
+      },
+    }));
+
+    const result = await getBackendPlaylistsManifest({ fetchImpl, config: TEST_CONFIG });
+
+    expect(result.isTruncated).toBe(true);
+    expect(result.totalCount).toBe(500);
   });
 });
