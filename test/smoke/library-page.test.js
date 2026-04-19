@@ -476,7 +476,7 @@ describe("library.html smoke", () => {
     expect(document.getElementById("libraryDetailPreview")?.dataset.previewKind).toBe("image");
   });
 
-  it("loads media asset previews through the BFF origin and downloads via signed storage URLs", async () => {
+  it("loads media asset previews through presigned URLs and downloads via signed storage URLs", async () => {
     const clickedHrefs = [];
     const clickSpy = vi
       .spyOn(HTMLAnchorElement.prototype, "click")
@@ -495,11 +495,12 @@ describe("library.html smoke", () => {
       await settleLibraryTasks();
 
       const previewImage = document.querySelector("#libraryDetailPreview img");
-      // Preview uses a stable BFF redirect URL (not a signed S3 URL).
+      // Preview resolves a presigned S3 URL via the access endpoint
+      // (not the BFF redirect, which would 403 cross-origin).
       expect(previewImage?.getAttribute("src")).toContain(
-        "/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset"
+        "s3.example.com"
       );
-      expect(previewImage?.getAttribute("src")).toContain("name=MEDIA-1");
+      expect(previewImage?.getAttribute("src")).toContain("X-Amz-Signature");
 
       document.getElementById("libraryActionDownload")?.dispatchEvent(
         new MouseEvent("click", { bubbles: true })

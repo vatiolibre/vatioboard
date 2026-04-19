@@ -1038,6 +1038,32 @@ function renderDetailPreview(item = {}, { isOfflineItem = false, isPinned = fals
       if (mounted) {
         elements.detailPreview.dataset.previewKind = "media-player";
         syncToolbarVolume();
+
+        // For audio items with embedded artwork, resolve artwork URL on
+        // demand and render a cover image above the player stage.
+        // Deduped via resolveMediaAccess's internal cache.
+        if (mediaKindLower === "audio" && item.has_artwork && item.name && !hasLocalBlob) {
+          resolveMediaAccess(item.name, item.content_hash, { intent: "artwork" })
+            .then((access) => {
+              const artUrl = access?.artwork_url;
+              if (!artUrl || state.selectedName !== item.name) return;
+              const existing = elements.detailPreview.querySelector(".media-player-artwork");
+              if (existing) return;
+              const artImg = document.createElement("img");
+              artImg.className = "media-player-artwork";
+              artImg.src = artUrl;
+              artImg.alt = item.title || "";
+              artImg.loading = "lazy";
+              artImg.onerror = () => artImg.remove();
+              // Insert before the media player root (.media-player).
+              const playerRoot = elements.detailPreview.querySelector(".media-player");
+              if (playerRoot) {
+                playerRoot.before(artImg);
+              }
+            })
+            .catch(() => {});
+        }
+
         return;
       }
     }
@@ -1287,29 +1313,47 @@ function renderDetail() {
     }).catch(() => {});
   }
 
-  // For online media items without a fresh local blob, build stable BFF
-  // redirect URLs for the preview.  Items with a fresh pinned or cached
-  // blob skip this — the local blob path above will provide the URL.
+  // For online media items without a fresh local blob, resolve a presigned
+  // URL via the authenticated access endpoint, then render the preview.
+  // For images this avoids 403 on cross-origin BFF redirect <img> src.
+  // For audio/video this provides a playback_url so the media player can mount.
+  // Before making the network call, verify no local blob exists — the
+  // cachedBlobNames set may not be reconciled yet (async pin-state refresh).
   const hasFreshLocal = hasAnyFreshLocal;
   if (!isOfflineItem && !hasFreshLocal && isMediaTab && (selectedMediaKind === "audio" || selectedMediaKind === "video" || selectedMediaKind === "image")) {
-    const bffItem = { ...selectedItem };
-    if (selectedMediaKind === "image") {
-      bffItem.image_url = selectedItem.has_preview_image
-        ? buildMediaBffUrl(bffItem.name, { preview: true })
-        : buildMediaBffUrl(bffItem.name);
-    }
-    if (selectedMediaKind === "audio" || selectedMediaKind === "video") {
-      bffItem.playback_url = buildMediaBffUrl(bffItem.name);
-    }
-    if (selectedItem.has_preview_image) {
-      bffItem.preview_image_url = buildMediaBffUrl(bffItem.name, { preview: true });
-    }
-
-    const bffSig = derivePreviewSignature(bffItem, { isOfflineItem, isPinned });
-    if (bffSig !== lastPreviewSignature) {
-      lastPreviewSignature = bffSig;
-      renderDetailPreview(bffItem, { isOfflineItem, isPinned });
-    }
+    const accessName = selectedItem.name;
+    const accessHash = selectedItem.content_hash;
+    Promise.resolve(getLocalMediaBlob(accessName)).then((localCheck) => {
+      // A local blob exists (may not be in cachedBlobNames yet) — skip.
+      if (localCheck?.blob) return null;
+      // Fresh pinned/cached items don't need access; stale ones do.
+      const freshPin = state.pinnedNames.has(accessName) && !state.stalePinnedNames.has(accessName);
+      const freshCache = state.cachedBlobNames.has(accessName) && !state.staleCachedNames.has(accessName);
+      if (freshPin || freshCache) return null;
+      if (state.selectedName !== accessName) return null;
+      return resolveMediaAccess(accessName, accessHash);
+    }).then((access) => {
+      // Abort if selection changed or a fresh local blob arrived in the meantime.
+      if (!access || state.selectedName !== accessName) return;
+      const freshPin = state.pinnedNames.has(accessName) && !state.stalePinnedNames.has(accessName);
+      const freshCache = state.cachedBlobNames.has(accessName) && !state.staleCachedNames.has(accessName);
+      if (freshPin || freshCache) return;
+      const accessItem = { ...selectedItem };
+      if (selectedMediaKind === "image") {
+        accessItem.image_url = access.image_url || access.download_url || "";
+      }
+      if (selectedMediaKind === "audio" || selectedMediaKind === "video") {
+        accessItem.playback_url = access.playback_url || access.download_url || "";
+      }
+      if (access.preview_image_url) {
+        accessItem.preview_image_url = access.preview_image_url;
+      }
+      const accessSig = derivePreviewSignature(accessItem, { isOfflineItem, isPinned });
+      if (accessSig !== lastPreviewSignature) {
+        lastPreviewSignature = accessSig;
+        renderDetailPreview(accessItem, { isOfflineItem, isPinned });
+      }
+    }).catch(() => {});
   }
 
   elements.detailMeta.replaceChildren();

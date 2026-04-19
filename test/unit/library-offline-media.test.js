@@ -3105,6 +3105,14 @@ describe("library offline media", () => {
       if (url.includes("get_my_media_asset_detail")) {
         return jsonResponse({ message: { asset: freshItem } });
       }
+      if (url.includes("get_my_media_asset_access")) {
+        return jsonResponse({
+          message: {
+            asset: { name: freshItem.name, content_hash: freshItem.content_hash, media_kind: freshItem.media_kind },
+            access: { image_url: "https://s3.example.com/signed-photo.png", expires_in_seconds: 300 },
+          },
+        });
+      }
       if (url.includes("list_my_speed_recordings")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
       if (url.includes("list_my_accel_runs")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
       if (url.includes("list_my_board_documents")) return jsonResponse({ message: { documents: [], total_count: 0, has_more: false } });
@@ -3122,11 +3130,9 @@ describe("library offline media", () => {
     // But the detail should now reflect the fresh online data with preview
     const freshPreviewImg = document.querySelector("#libraryDetailPreview img");
     const freshPreviewSrc = freshPreviewImg?.getAttribute("src") || "";
-    // The preview should have updated from offline fallback to the online BFF URL
-    expect(freshPreviewSrc).toContain("download_my_media_asset");
-    // Media uses list-row-first rendering: no separate detail request needed.
-    // The list response includes the preview URL, so the detail pane updates
-    // directly from the list data.
+    // The preview should have updated from offline fallback to the presigned URL
+    // resolved via the access endpoint (cross-origin img src can't use BFF URLs).
+    expect(freshPreviewSrc).toContain("s3.example.com/signed-photo");
   });
 
   // ── Mutation 401 triggers auth teardown ─────────────────────────
@@ -3735,6 +3741,14 @@ describe("library offline media", () => {
       if (url.includes("get_my_media_asset_detail")) {
         return jsonResponse({ message: { asset: audioAsset } });
       }
+      if (url.includes("get_my_media_asset_access")) {
+        return jsonResponse({
+          message: {
+            asset: { name: audioAsset.name, content_hash: audioAsset.content_hash, media_kind: audioAsset.media_kind },
+            access: { playback_url: "https://s3.example.com/signed-track.mp3", expires_in_seconds: 300 },
+          },
+        });
+      }
       if (url.includes("list_my_speed_recordings")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
       if (url.includes("list_my_accel_runs")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
       if (url.includes("list_my_board_documents")) return jsonResponse({ message: { documents: [], total_count: 0, has_more: false } });
@@ -3760,9 +3774,9 @@ describe("library offline media", () => {
     expect(preview.dataset.previewKind).toBe("media-player");
     const audio = preview.querySelector("audio");
     expect(audio).toBeTruthy();
-    // Stale pin: audio source should be the remote BFF URL, NOT the local blob
+    // Stale pin: audio source should be the presigned remote URL, NOT the local blob
     expect(audio.src).not.toMatch(/^blob:/);
-    expect(audio.src).toContain("download_my_media_asset");
+    expect(audio.src).toContain("s3.example.com/signed-track");
   });
 
   // ── Auto-cache ────────────────────────────────────────────────────

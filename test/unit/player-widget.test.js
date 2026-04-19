@@ -171,6 +171,7 @@ describe("createPlayerWidget", () => {
       getBackendMediaAssetAccess: vi.fn().mockResolvedValue({ ok: false }),
       getBackendMediaManifest: vi.fn().mockResolvedValue({ ok: false, assets: [] }),
       getBackendManifestVersion: vi.fn().mockResolvedValue({ ok: false }),
+      getProtectedMediaRequestGate: vi.fn().mockResolvedValue({ allowed: false, cleanup: vi.fn() }),
     }));
 
     vi.doMock("../../src/shared/media-cache.js", () => ({
@@ -1036,6 +1037,77 @@ describe("createPlayerWidget", () => {
     expect(track.genre).toBe("Lo-fi");
     expect(track.artwork_ref).toBe("ASSET-art-ref");
     expect(track.content_hash).toBe("sha256-abc");
+
+    widget.destroy();
+  });
+
+  it("resolves artwork for fallback tracks with non-URL artwork_ref", async () => {
+    // CSS.escape is not available in jsdom — polyfill for this test.
+    if (!globalThis.CSS?.escape) {
+      globalThis.CSS = { ...(globalThis.CSS || {}), escape: (v) => v };
+    }
+
+    // Import the mocked backend-auth module to override gate + access.
+    const backendAuth = await import("../../src/shared/backend-auth.js");
+    backendAuth.getProtectedMediaRequestGate.mockResolvedValue({
+      allowed: true,
+      signal: new AbortController().signal,
+      cleanup: vi.fn(),
+    });
+    backendAuth.getBackendMediaAssetAccess.mockResolvedValue({
+      access: { artwork_url: "https://s3.example.com/artwork.jpg" },
+    });
+
+    // Capture the runtime state subscriber so we can trigger re-renders.
+    let stateSubscriber;
+    runtimeMock.subscribe.mockImplementation((cb) => {
+      stateSubscriber = cb;
+      return vi.fn();
+    });
+
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    await flushMicrotasks(30);
+
+    // Simulate a track with a non-URL artwork_ref becoming active.
+    const snapTrack = {
+      name: "ASSET-snap",
+      title: "Snap Song",
+      artist: "Snap Artist",
+      artwork_ref: "ASSET-artwork-123",
+      has_artwork: false,
+    };
+    stateSubscriber({
+      queue: [snapTrack],
+      currentIndex: 0,
+      currentTrack: snapTrack,
+      paused: false,
+      volume: 1,
+      muted: false,
+      repeat: "off",
+      shuffle: false,
+      backgroundMode: false,
+      sourceType: null,
+      loading: false,
+      error: null,
+      currentTime: 0,
+      duration: 120,
+      playing: true,
+    });
+    await flushMicrotasks(30);
+
+    // The access endpoint should have been called with the artwork asset
+    // name (the non-URL artwork_ref), not the track name itself.
+    expect(backendAuth.getBackendMediaAssetAccess).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "ASSET-artwork-123",
+        intent: "artwork",
+      }),
+    );
+
+    // Wait for the artwork resolution promise to settle before destroying
+    // to avoid unhandled errors from DOM access after cleanup.
+    await flushMicrotasks(30);
 
     widget.destroy();
   });

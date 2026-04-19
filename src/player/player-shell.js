@@ -137,13 +137,19 @@ async function resolveArtworkUrl(track) {
     return track.artwork_ref;
   }
 
-  if (track.has_artwork && !track._demo) {
+  // Resolve artwork for tracks with embedded artwork OR snapshot tracks
+  // whose artwork_ref is a plain asset name (not a URL).
+  const artworkAssetName = track.has_artwork
+    ? track.name
+    : (track.artwork_ref && !isArtworkUrl(track.artwork_ref) ? track.artwork_ref : null);
+
+  if (artworkAssetName && !track._demo) {
     let gate = null;
     try {
       gate = await getProtectedMediaRequestGate();
       if (!gate.allowed) { artworkUrlCache.set(track.name, ""); return ""; }
       const result = await getBackendMediaAssetAccess({
-        name: track.name,
+        name: artworkAssetName,
         intent: "artwork",
         signal: gate.signal,
       });
