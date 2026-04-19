@@ -3434,6 +3434,88 @@ describe("library offline media", () => {
     }
   });
 
+  it("renders placeholder when both BFF preview and signed fallback URLs fail", async () => {
+    // Regression: if the BFF image URL fails AND the signed fallback URL
+    // also fails, the library must render the unavailable placeholder
+    // instead of leaving a broken <img>.
+    const imageItem = {
+      name: "MEDIA-IMG-FAIL",
+      title: "Broken preview image",
+      media_kind: "image",
+      blob_size: 200000,
+      content_hash: "abc123",
+      original_filename: "photo.png",
+      created_at_label: "2026-04-10 12:00:00",
+      modified_at_label: "2026-04-10 12:00:00",
+      folder_path: "Photos",
+      preview_image_url: "https://api.vatioboard.com/files/photo.png?token=view#preview",
+      download_url: "https://api.vatioboard.com/private/files/photo.png?download=1",
+      playback_url: null,
+    };
+
+    window.fetch = createAuthenticatedLibraryFetch((url) => {
+      if (url.includes("list_my_media_assets")) {
+        return jsonResponse({ message: { assets: [imageItem], total_count: 1, has_more: false, next_offset: 1 } });
+      }
+      if (url.includes("get_my_media_asset_detail")) {
+        return jsonResponse({ message: { asset: imageItem } });
+      }
+      if (url.includes("get_my_media_asset_access")) {
+        // Return a signed URL that will also "fail"
+        return jsonResponse({
+          message: { access: { download_url: "https://s3.example.com/signed-photo.png?token=expired", expires_in_seconds: 300 } },
+        });
+      }
+      if (url.includes("list_my_speed_recordings")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+      if (url.includes("list_my_accel_runs")) return jsonResponse({ message: { records: [], total_count: 0, has_more: false } });
+      if (url.includes("list_my_board_documents")) return jsonResponse({ message: { documents: [], total_count: 0, has_more: false } });
+      return jsonResponse({});
+    });
+
+    await bootHtmlPage("library.html");
+    const libraryPage = await import("../../src/library/library.js");
+    await libraryPage.initPromise;
+    await settleLibraryTasks();
+
+    // Navigate to media tab and select the image item
+    document.querySelector('[data-tab="media"]')?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settleLibraryTasks();
+
+    document.querySelector(".library-record")?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    await settleLibraryTasks();
+
+    const preview = document.querySelector("#libraryDetailPreview");
+    expect(preview).toBeTruthy();
+
+    // Step 1: BFF image loads — simulate BFF URL failure via onerror
+    const img = preview.querySelector("img");
+    expect(img).toBeTruthy();
+    expect(typeof img.onerror).toBe("function");
+
+    // Fire onerror to simulate BFF 403
+    img.onerror();
+    await settleLibraryTasks();
+
+    // After the signed URL resolves, the img.src should be updated to the signed URL
+    // and a new onerror handler should be attached for the fallback URL.
+    const imgAfterFallback = preview.querySelector("img");
+    if (imgAfterFallback && typeof imgAfterFallback.onerror === "function") {
+      // Step 2: signed URL also fails — fire onerror again
+      imgAfterFallback.onerror();
+      await settleLibraryTasks();
+    }
+
+    // The placeholder should now be rendered
+    expect(preview.dataset.previewKind).toBe("unavailable-fallback");
+    const fallbackEl = preview.querySelector(".library-preview-fallback");
+    expect(fallbackEl).toBeTruthy();
+    expect(fallbackEl.textContent).toContain("Preview unavailable");
+  });
+
   // ── Pinned blob playback source priority ────────────────────────
 
   it("after pinning audio, inline player uses local blob URL instead of BFF playback URL", async () => {

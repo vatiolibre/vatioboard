@@ -24,11 +24,11 @@ const TEST_CONFIG = {
 };
 
 // ── URL origins used in normalization tests ──────────────────────────
-// Raw backend origins: intentional inputs representing URLs returned by
-// the Frappe backend before BFF rewriting.  Do not remove — these prove
-// that normalizeBackendOwnedUrl rewrites legacy origins correctly.
-const LEGACY_DEV_BACKEND_ORIGIN = 'https://dev.vatiolibre.com';
-const LEGACY_PROD_BACKEND_ORIGIN = 'https://www.vatiolibre.com';
+// Raw backend (admin) origins: intentional inputs representing URLs returned
+// by the Frappe backend before BFF rewriting.  Do not remove — these prove
+// that normalizeBackendOwnedUrl rewrites backend origins correctly.
+const BACKEND_DEV_ORIGIN = 'https://dev.vatiolibre.com';
+const BACKEND_PROD_ORIGIN = 'https://www.vatiolibre.com';
 // Expected BFF-rewritten origins.
 const DEV_BFF_ORIGIN = 'https://api.dev.vatioboard.com';
 const PROD_BFF_ORIGIN = 'https://api.vatioboard.com';
@@ -93,7 +93,7 @@ describe('backend auth transport helpers', () => {
   it('rewrites backend-owned media URLs to the configured BFF origin', () => {
     // Raw dev backend origin → dev BFF
     expect(normalizeBackendOwnedUrl(
-      `${LEGACY_DEV_BACKEND_ORIGIN}/api/method/vatiolibre.vatiolibre.drawings.get_my_saved_drawing_detail?name=DRAW-1`,
+      `${BACKEND_DEV_ORIGIN}/api/method/vatiolibre.vatiolibre.drawings.get_my_saved_drawing_detail?name=DRAW-1`,
       {
         config: {
           apiBase: DEV_BFF_ORIGIN,
@@ -105,7 +105,7 @@ describe('backend auth transport helpers', () => {
 
     // Raw prod backend origin → prod BFF
     expect(normalizeBackendOwnedUrl(
-      `${LEGACY_PROD_BACKEND_ORIGIN}/api/method/vatiolibre.vatiolibre.drawings.download_my_saved_drawing?name=DRAW-2&as_attachment=1`,
+      `${BACKEND_PROD_ORIGIN}/api/method/vatiolibre.vatiolibre.drawings.download_my_saved_drawing?name=DRAW-2&as_attachment=1`,
       {
         config: {
           apiBase: PROD_BFF_ORIGIN,
@@ -155,10 +155,10 @@ describe('backend auth transport helpers', () => {
               name: 'MEDIA-1',
               title: 'Skidpad',
               media_kind: 'audio',
-              preview_image_url: `${LEGACY_PROD_BACKEND_ORIGIN}/files/skidpad.png?token=view#preview`,
-              download_url: `${LEGACY_PROD_BACKEND_ORIGIN}/private/files/skidpad.png?download=1`,
+              preview_image_url: `${BACKEND_PROD_ORIGIN}/files/skidpad.png?token=view#preview`,
+              download_url: `${BACKEND_PROD_ORIGIN}/private/files/skidpad.png?download=1`,
               export_url: '/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset?name=MEDIA-1&as_attachment=1',
-              playback_url: `${LEGACY_PROD_BACKEND_ORIGIN}/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset?name=MEDIA-1`,
+              playback_url: `${BACKEND_PROD_ORIGIN}/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset?name=MEDIA-1`,
             },
           ],
           total_count: 1,
@@ -172,10 +172,10 @@ describe('backend auth transport helpers', () => {
             name: 'MEDIA-1',
             title: 'Skidpad',
             media_kind: 'video',
-            preview_image_url: `${LEGACY_DEV_BACKEND_ORIGIN}/files/skidpad.png?token=view#preview`,
+            preview_image_url: `${BACKEND_DEV_ORIGIN}/files/skidpad.png?token=view#preview`,
             download_url: '/private/files/skidpad.png?download=1',
             export_url: 'https://127.0.0.1/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset?name=MEDIA-1',
-            playback_url: `${LEGACY_DEV_BACKEND_ORIGIN}/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset?name=MEDIA-1`,
+            playback_url: `${BACKEND_DEV_ORIGIN}/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset?name=MEDIA-1`,
           },
         },
       }));
@@ -211,9 +211,9 @@ describe('backend auth transport helpers', () => {
     }));
   });
 
-  it('rewrites playback_url from legacy backend origin to the configured BFF origin', () => {
+  it('rewrites playback_url from backend origin to the configured BFF origin', () => {
     expect(normalizeBackendOwnedUrl(
-      `${LEGACY_DEV_BACKEND_ORIGIN}/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset?name=MEDIA-1`,
+      `${BACKEND_DEV_ORIGIN}/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset?name=MEDIA-1`,
       { config: { apiBase: DEV_BFF_ORIGIN } },
     )).toBe(`${DEV_BFF_ORIGIN}/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset?name=MEDIA-1`);
   });

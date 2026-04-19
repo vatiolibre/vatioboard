@@ -12,7 +12,7 @@
 import {
   IconPlay, IconPause, IconSkipBack, IconSkipForward,
   IconRepeat, IconShuffle, IconVolume, IconMuted,
-  IconMusic, IconClose, IconQueue, IconPlaylist,
+  IconMusic, IconClose, IconQueue, IconPlaylist, IconLibrary,
 } from "../icons.js";
 import { t } from "../i18n.js";
 import { createMiniAudioVisualizer } from "../shared/audio-mini-visualizer.js";
@@ -24,7 +24,22 @@ import { loadText, saveText } from "../shared/storage.js";
 import { loadPlaylists, loadPlaylistDetail } from "../shared/playlist-loader.js";
 import { isAudioAsset } from "../shared/audio-catalog.js";
 import { normalizeTrack } from "../shared/track-model.js";
-import { hasLocalSource, triggerBackgroundCache } from "../shared/audio-source-resolver.js";
+import {
+  pinMediaBlob,
+  pinMediaFromResponse,
+  unpinMediaBlob,
+  isMediaBlobPinned,
+  getCachedMediaBlob,
+  getCachedBlobMeta,
+  removeCachedMediaBlob,
+} from "../shared/media-cache.js";
+import {
+  createBackendPlaylist,
+  bulkAddBackendPlaylistItems,
+  getProtectedMediaRequestGate,
+  getBackendMediaAssetAccess,
+  fetchBackendMediaAssetBlob,
+} from "../shared/backend-auth.js";
 
 const PROGRESS_MAX = 1000;
 const VISUALIZER_VISIBLE_STORAGE_KEY = "vatio_board_player_widget_visualizer_visible";
@@ -129,6 +144,8 @@ export function createPlayerShell({ container }) {
 
   const queueToggleBtn = makeBtn("player-queue-toggle-btn", IconQueue, t("playerQueue"));
 
+  const libraryToggleBtn = makeBtn("player-library-toggle-btn", IconLibrary, t("playerLibrary"));
+
   const playlistToggleBtn = makeBtn("player-playlist-toggle-btn", IconPlaylist, t("playerPlaylists"));
 
   const spacer = document.createElement("div");
@@ -139,7 +156,7 @@ export function createPlayerShell({ container }) {
   closeBtn.className = "player-close";
   closeBtn.textContent = t("close");
 
-  header.append(titleEl, visualizerToggleBtn, milkdropToggleBtn, queueToggleBtn, playlistToggleBtn, spacer, closeBtn);
+  header.append(titleEl, visualizerToggleBtn, milkdropToggleBtn, queueToggleBtn, libraryToggleBtn, playlistToggleBtn, spacer, closeBtn);
 
   // ── Now-playing row (compact artwork + metadata) ───────────────
   const nowPlaying = document.createElement("div");
@@ -258,6 +275,31 @@ export function createPlayerShell({ container }) {
   queueSheetClearBtn.className = "player-queue-clear-btn";
   queueSheetClearBtn.textContent = t("playerClearQueue");
 
+  const queueSaveBtn = document.createElement("button");
+  queueSaveBtn.type = "button";
+  queueSaveBtn.className = "player-queue-save-btn";
+  queueSaveBtn.textContent = t("playerSaveQueueAsPlaylist");
+
+  // Inline title form (hidden by default)
+  const queueSaveForm = document.createElement("form");
+  queueSaveForm.className = "player-queue-save-form";
+  queueSaveForm.hidden = true;
+  const queueSaveTitleInput = document.createElement("input");
+  queueSaveTitleInput.type = "text";
+  queueSaveTitleInput.className = "player-queue-save-title-input";
+  queueSaveTitleInput.placeholder = t("playerPlaylistTitlePlaceholder");
+  queueSaveTitleInput.maxLength = 140;
+  queueSaveTitleInput.setAttribute("aria-label", t("playerPlaylistTitlePlaceholder"));
+  const queueSaveConfirmBtn = document.createElement("button");
+  queueSaveConfirmBtn.type = "submit";
+  queueSaveConfirmBtn.className = "player-queue-save-confirm-btn";
+  queueSaveConfirmBtn.textContent = t("playerSaveConfirm");
+  const queueSaveCancelBtn = document.createElement("button");
+  queueSaveCancelBtn.type = "button";
+  queueSaveCancelBtn.className = "player-queue-save-cancel-btn";
+  queueSaveCancelBtn.textContent = t("cancel");
+  queueSaveForm.append(queueSaveTitleInput, queueSaveConfirmBtn, queueSaveCancelBtn);
+
   const searchInput = document.createElement("input");
   searchInput.type = "search";
   searchInput.className = "player-queue-search";
@@ -270,13 +312,44 @@ export function createPlayerShell({ container }) {
   queueCloseBtn.setAttribute("aria-label", t("close"));
   queueCloseBtn.innerHTML = IconClose;
 
-  queueSheetHeader.append(queueSheetTitle, queueSheetClearBtn, searchInput, queueCloseBtn);
+  queueSheetHeader.append(queueSheetTitle, queueSheetClearBtn, queueSaveBtn, queueSaveForm, searchInput, queueCloseBtn);
 
   const trackListUl = document.createElement("ul");
   trackListUl.className = "player-queue-list";
   trackListUl.setAttribute("role", "list");
 
   queueSheet.append(queueSheetHeader, trackListUl);
+
+  // ── Library bottom sheet ───────────────────────────────────────
+  const librarySheet = document.createElement("div");
+  librarySheet.className = "player-library-sheet";
+  librarySheet.setAttribute("aria-hidden", "true");
+
+  const librarySheetHeader = document.createElement("div");
+  librarySheetHeader.className = "player-library-sheet-header";
+
+  const librarySheetTitle = document.createElement("span");
+  librarySheetTitle.textContent = t("playerLibrary");
+
+  const librarySearchInput = document.createElement("input");
+  librarySearchInput.type = "search";
+  librarySearchInput.className = "player-library-search";
+  librarySearchInput.placeholder = t("playerSearch");
+  librarySearchInput.setAttribute("aria-label", t("playerSearch"));
+
+  const libraryCloseBtn = document.createElement("button");
+  libraryCloseBtn.type = "button";
+  libraryCloseBtn.className = "player-library-sheet-close";
+  libraryCloseBtn.setAttribute("aria-label", t("close"));
+  libraryCloseBtn.innerHTML = IconClose;
+
+  librarySheetHeader.append(librarySheetTitle, librarySearchInput, libraryCloseBtn);
+
+  const libraryListUl = document.createElement("ul");
+  libraryListUl.className = "player-library-list";
+  libraryListUl.setAttribute("role", "list");
+
+  librarySheet.append(librarySheetHeader, libraryListUl);
 
   // ── Playlist bottom sheet ──────────────────────────────────────
   const playlistSheet = document.createElement("div");
@@ -315,7 +388,7 @@ export function createPlayerShell({ container }) {
   body.className = "player-body";
   body.append(nowPlaying, visualizerStrip, errorMsg, progressSection, transport, volumeRow);
 
-  root.append(header, body, queueSheet, playlistSheet);
+  root.append(header, body, queueSheet, librarySheet, playlistSheet);
   container.append(root);
 
   // ── State ──────────────────────────────────────────────────────
@@ -340,7 +413,10 @@ export function createPlayerShell({ container }) {
   // ── Queue sheet toggle ─────────────────────────────────────────
   function setQueueOpen(open) {
     queueOpen = open;
-    if (open) setPlaylistOpen(false); // close playlists when queue opens
+    if (open) {
+      setLibraryOpen(false);
+      setPlaylistOpen(false); // close playlists when queue opens
+    }
     queueSheet.classList.toggle("is-open", queueOpen);
     queueSheet.setAttribute("aria-hidden", String(!queueOpen));
     queueToggleBtn.classList.toggle("active", queueOpen);
@@ -363,6 +439,206 @@ export function createPlayerShell({ container }) {
     renderTrackList();
   });
 
+  // Save queue as playlist — show title form
+  queueSaveBtn.addEventListener("click", () => {
+    const s = runtime.getState();
+    const saveable = s.queue.filter((tr) => tr.name && !tr._demo);
+    if (saveable.length === 0) return;
+
+    queueSaveBtn.hidden = true;
+    queueSaveForm.hidden = false;
+    queueSaveTitleInput.value = "";
+    queueSaveTitleInput.focus();
+  });
+
+  queueSaveCancelBtn.addEventListener("click", () => {
+    queueSaveForm.hidden = true;
+    queueSaveBtn.hidden = false;
+  });
+
+  queueSaveForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const title = queueSaveTitleInput.value.trim();
+    if (!title) {
+      queueSaveTitleInput.focus();
+      return;
+    }
+
+    const s = runtime.getState();
+    const saveable = s.queue.filter((tr) => tr.name && !tr._demo);
+    if (saveable.length === 0) return;
+
+    queueSaveConfirmBtn.disabled = true;
+    queueSaveCancelBtn.disabled = true;
+    queueSaveConfirmBtn.textContent = t("playerSavingPlaylist");
+
+    let gate = null;
+    try {
+      gate = await getProtectedMediaRequestGate();
+      if (!gate.allowed) {
+        queueSaveConfirmBtn.textContent = t("playerPlaylistSaveFailed");
+        return;
+      }
+
+      const result = await createBackendPlaylist({ title, signal: gate.signal });
+      if (!result.ok || !result.playlist?.name) {
+        queueSaveConfirmBtn.textContent = t("playerPlaylistSaveFailed");
+        return;
+      }
+
+      await bulkAddBackendPlaylistItems({
+        name: result.playlist.name,
+        mediaAssetNames: saveable.map((tr) => tr.name),
+        signal: gate.signal,
+      }).then((bulkResult) => {
+        if (!bulkResult.ok) {
+          queueSaveConfirmBtn.textContent = t("playerPlaylistSaveFailed");
+        } else if (bulkResult.skipped?.length) {
+          queueSaveConfirmBtn.textContent = t("playerPlaylistSavedPartial");
+        } else {
+          queueSaveConfirmBtn.textContent = t("playerPlaylistSaved");
+        }
+      });
+    } catch {
+      queueSaveConfirmBtn.textContent = t("playerPlaylistSaveFailed");
+    } finally {
+      gate?.cleanup?.();
+      setTimeout(() => {
+        queueSaveForm.hidden = true;
+        queueSaveBtn.hidden = false;
+        queueSaveConfirmBtn.disabled = false;
+        queueSaveCancelBtn.disabled = false;
+        queueSaveConfirmBtn.textContent = t("playerSaveConfirm");
+      }, 2000);
+    }
+  });
+
+  // ── Library sheet toggle ────────────────────────────────────────
+  let libraryOpen = false;
+  let libraryFilter = "";
+
+  function setLibraryOpen(open) {
+    libraryOpen = open;
+    if (open) {
+      setQueueOpen(false);
+      setPlaylistOpen(false);
+      renderLibraryList(libraryFilter);
+    }
+    librarySheet.classList.toggle("is-open", libraryOpen);
+    librarySheet.setAttribute("aria-hidden", String(!libraryOpen));
+    libraryToggleBtn.classList.toggle("active", libraryOpen);
+  }
+
+  function renderLibraryList(filter = "") {
+    libraryListUl.innerHTML = "";
+    const audioTracks = allTracks.filter(isAudioAsset);
+
+    const tracks = filter
+      ? audioTracks.filter((tr) => {
+          const hay = `${tr.title || ""} ${tr.artist || ""} ${tr.album || ""} ${tr.original_filename || ""} ${tr.folder_path || ""}`.toLowerCase();
+          return hay.includes(filter);
+        })
+      : audioTracks;
+
+    if (tracks.length === 0) {
+      const emptyLi = document.createElement("li");
+      emptyLi.className = "player-library-empty";
+      emptyLi.textContent = allTracks.length === 0 ? t("playerEmptyLibrary") : t("playerNoTracks");
+      libraryListUl.append(emptyLi);
+      return;
+    }
+
+    for (const track of tracks) {
+      const li = document.createElement("li");
+      li.className = "player-library-item";
+      li.dataset.trackName = track.name;
+
+      const infoDiv = document.createElement("div");
+      infoDiv.className = "player-library-item-info";
+
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "player-library-item-name";
+      nameSpan.textContent = track.title || track.original_filename || track.name;
+
+      const artistSpan = document.createElement("span");
+      artistSpan.className = "player-library-item-artist";
+      artistSpan.textContent = track.artist || "";
+
+      const durationSpan = document.createElement("span");
+      durationSpan.className = "player-library-item-duration";
+      if (track.duration != null && Number.isFinite(track.duration)) {
+        durationSpan.textContent = formatTime(track.duration);
+      }
+
+      const badge = document.createElement("span");
+      badge.className = "player-library-item-badge";
+      if (track._offline) {
+        badge.classList.add("offline");
+        badge.title = t("playerOffline");
+      }
+
+      infoDiv.append(nameSpan, artistSpan, durationSpan, badge);
+
+      // Action buttons
+      const actionsDiv = document.createElement("div");
+      actionsDiv.className = "player-library-item-actions";
+
+      const playNowBtn = document.createElement("button");
+      playNowBtn.type = "button";
+      playNowBtn.className = "player-library-action-btn";
+      playNowBtn.textContent = t("playerPlayNow");
+      playNowBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        _gestureUnlocked = true;
+        primeAudioContext();
+        void runtime.playCatalogTrack(track.name, allTracks);
+      });
+
+      const playNextBtn = document.createElement("button");
+      playNextBtn.type = "button";
+      playNextBtn.className = "player-library-action-btn";
+      playNextBtn.textContent = t("playerPlayNext");
+      playNextBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        runtime.playNext([track]);
+      });
+
+      const addToQueueBtn = document.createElement("button");
+      addToQueueBtn.type = "button";
+      addToQueueBtn.className = "player-library-action-btn";
+      addToQueueBtn.textContent = t("playerAddToQueue");
+      addToQueueBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        runtime.enqueue([track]);
+      });
+
+      actionsDiv.append(playNowBtn, playNextBtn, addToQueueBtn);
+      li.append(infoDiv, actionsDiv);
+
+      // Default click = play now
+      li.addEventListener("click", () => {
+        _gestureUnlocked = true;
+        primeAudioContext();
+        void runtime.playCatalogTrack(track.name, allTracks);
+      });
+
+      libraryListUl.append(li);
+    }
+  }
+
+  libraryToggleBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  libraryToggleBtn.addEventListener("pointerup", (e) => e.stopPropagation());
+  libraryToggleBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    setLibraryOpen(!libraryOpen);
+  });
+  libraryCloseBtn.addEventListener("click", () => setLibraryOpen(false));
+
+  librarySearchInput.addEventListener("input", () => {
+    libraryFilter = librarySearchInput.value.trim().toLowerCase();
+    renderLibraryList(libraryFilter);
+  });
+
   // ── Playlist sheet toggle ──────────────────────────────────────
   let playlistOpen = false;
   let playlistDetailView = null; // null = list view, string = viewing a playlist by name
@@ -372,6 +648,7 @@ export function createPlayerShell({ container }) {
     playlistOpen = open;
     if (open) {
       setQueueOpen(false); // close queue when playlists open
+      setLibraryOpen(false); // close library when playlists open
       playlistDetailView = null;
       renderPlaylistList();
     }
@@ -419,6 +696,16 @@ export function createPlayerShell({ container }) {
     playlistSheetTitle.textContent = title || name;
     playlistListUl.innerHTML = "";
 
+    // Check for a local (embedded) playlist first (e.g. demo playlists)
+    const localPlaylist = cachedPlaylists.find(
+      (pl) => pl.name === name && pl._local && Array.isArray(pl._items)
+    );
+
+    if (localPlaylist) {
+      renderPlaylistDetailItems(name, title, localPlaylist._items);
+      return;
+    }
+
     const loadingLi = document.createElement("li");
     loadingLi.className = "player-playlist-empty";
     loadingLi.textContent = "...";
@@ -430,167 +717,328 @@ export function createPlayerShell({ container }) {
 
       playlistListUl.innerHTML = "";
       const items = Array.isArray(detail?.items) ? detail.items : [];
-
-      if (items.length === 0) {
-        const emptyLi = document.createElement("li");
-        emptyLi.className = "player-playlist-empty";
-        emptyLi.textContent = t("playerNoTracks");
-        playlistListUl.append(emptyLi);
-        return;
-      }
-
-      // Check offline status for each track
-      const trackMap = new Map(allTracks.map((tr) => [tr.name, tr]));
-      const offlineChecks = await Promise.all(
-        items.map(async (item) => {
-          try {
-            return await hasLocalSource(item.media_asset_name);
-          } catch {
-            return false;
-          }
-        })
-      );
-
-      const totalTracks = items.length;
-      const offlineCount = offlineChecks.filter(Boolean).length;
-
-      // Toolbar row: Play All + offline status + download
-      const toolbarLi = document.createElement("li");
-      toolbarLi.className = "player-playlist-toolbar";
-
-      const playAllBtn = document.createElement("button");
-      playAllBtn.type = "button";
-      playAllBtn.className = "player-playlist-play-all-btn";
-      playAllBtn.textContent = t("playerPlayAll");
-      playAllBtn.addEventListener("click", () => {
-        _gestureUnlocked = true;
-        primeAudioContext();
-        playPlaylistTracks(items);
-      });
-
-      const statusSpan = document.createElement("span");
-      statusSpan.className = "player-playlist-offline-status";
-      if (offlineCount === totalTracks) {
-        statusSpan.textContent = t("playerPlaylistFullyOffline");
-        statusSpan.classList.add("fully-offline");
-      } else if (offlineCount > 0) {
-        statusSpan.textContent = t("playerPlaylistPartialOffline").replace("{0}", offlineCount).replace("{1}", totalTracks);
-      } else {
-        statusSpan.textContent = t("playerPlaylistCloudOnly");
-      }
-
-      toolbarLi.append(playAllBtn, statusSpan);
-
-      // Download playlist button (only if not fully offline)
-      if (offlineCount < totalTracks) {
-        const downloadBtn = document.createElement("button");
-        downloadBtn.type = "button";
-        downloadBtn.className = "player-playlist-download-btn";
-        downloadBtn.textContent = t("playerDownloadPlaylist");
-        downloadBtn.addEventListener("click", () => {
-          downloadBtn.disabled = true;
-          downloadBtn.textContent = t("playerDownloading");
-          downloadPlaylistTracks(items, trackMap, offlineChecks).then(() => {
-            if (playlistDetailView === name) {
-              openPlaylistDetail(name, title); // refresh status
-            }
-          }).catch(() => {
-            downloadBtn.disabled = false;
-            downloadBtn.textContent = t("playerDownloadPlaylist");
-          });
-        });
-        toolbarLi.append(downloadBtn);
-      }
-
-      playlistListUl.append(toolbarLi);
-
-      // Track items
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        const isOffline = offlineChecks[i];
-        const li = document.createElement("li");
-        li.className = "player-playlist-track-item";
-
-        // Resolve display metadata: prefer catalog, fall back to snapshot
-        const catalogTrack = trackMap.get(item.media_asset_name);
-        const displayTitle = catalogTrack?.title || item.snapshot_title || item.media_asset_name || "";
-        const displayArtist = catalogTrack?.artist || item.snapshot_artist || "";
-        const displayDuration = catalogTrack?.duration ?? item.snapshot_duration ?? null;
-
-        const nameSpan = document.createElement("span");
-        nameSpan.className = "player-playlist-track-name";
-        nameSpan.textContent = displayTitle;
-
-        const artistSpan = document.createElement("span");
-        artistSpan.className = "player-playlist-track-artist";
-        artistSpan.textContent = displayArtist;
-
-        const durationSpan = document.createElement("span");
-        durationSpan.className = "player-playlist-track-duration";
-        if (displayDuration != null && Number.isFinite(displayDuration)) {
-          durationSpan.textContent = formatTime(displayDuration);
-        }
-
-        const badge = document.createElement("span");
-        badge.className = "player-playlist-track-badge";
-        if (isOffline) {
-          badge.classList.add("offline");
-          badge.title = t("playerOffline");
-        } else if (!catalogTrack) {
-          li.classList.add("unavailable");
-        } else {
-          badge.classList.add("cloud");
-          badge.title = t("playerRemote");
-        }
-
-        li.append(nameSpan, artistSpan, durationSpan, badge);
-        li.addEventListener("click", () => {
-          _gestureUnlocked = true;
-          primeAudioContext();
-          playPlaylistTracks(items, item);
-        });
-        playlistListUl.append(li);
-      }
+      renderPlaylistDetailItems(name, title, items);
     } catch {
       if (playlistDetailView !== name) return;
       playlistListUl.innerHTML = "";
-      const errLi = document.createElement("li");
-      errLi.className = "player-playlist-empty";
-      errLi.textContent = t("playerPlaybackError");
-      playlistListUl.append(errLi);
+      const errorLi = document.createElement("li");
+      errorLi.className = "player-playlist-empty";
+      errorLi.textContent = t("playerNoTracks");
+      playlistListUl.append(errorLi);
+    }
+  }
+
+  async function renderPlaylistDetailItems(name, title, items) {
+    playlistListUl.innerHTML = "";
+
+    if (items.length === 0) {
+      const emptyLi = document.createElement("li");
+      emptyLi.className = "player-playlist-empty";
+      emptyLi.textContent = t("playerNoTracks");
+      playlistListUl.append(emptyLi);
+      return;
+    }
+
+    // Check if this is a local playlist (demo) — skip pinning UI
+    const isLocal = cachedPlaylists.find((pl) => pl.name === name)?._local === true;
+
+    // Check pinned status for each track (skip for local playlists)
+    const trackMap = new Map(allTracks.map((tr) => [tr.name, tr]));
+    const pinnedChecks = isLocal
+      ? items.map(() => false)
+      : await Promise.all(
+          items.map(async (item) => {
+            try {
+              return await isMediaBlobPinned(item.media_asset_name);
+            } catch {
+              return false;
+            }
+          })
+        );
+
+    const totalTracks = items.length;
+    const pinnedCount = pinnedChecks.filter(Boolean).length;
+
+    // Toolbar row: Play All + pin status + pin/unpin
+    const toolbarLi = document.createElement("li");
+    toolbarLi.className = "player-playlist-toolbar";
+
+    const playAllBtn = document.createElement("button");
+    playAllBtn.type = "button";
+    playAllBtn.className = "player-playlist-play-all-btn";
+    playAllBtn.textContent = t("playerPlayAll");
+    playAllBtn.addEventListener("click", () => {
+      _gestureUnlocked = true;
+      primeAudioContext();
+      playPlaylistTracks(items);
+    });
+
+    toolbarLi.append(playAllBtn);
+
+    // Only show pin/offline status for non-local playlists
+    if (!isLocal) {
+      const statusSpan = document.createElement("span");
+      statusSpan.className = "player-playlist-offline-status";
+      if (pinnedCount === totalTracks) {
+        statusSpan.textContent = t("playerPlaylistFullyPinned");
+        statusSpan.classList.add("fully-offline");
+      } else if (pinnedCount > 0) {
+        statusSpan.textContent = t("playerPlaylistPartiallyPinned").replace("{0}", pinnedCount).replace("{1}", totalTracks);
+      } else {
+        statusSpan.textContent = t("playerPlaylistCloudOnly");
+      }
+      toolbarLi.append(statusSpan);
+
+      // Pin or unpin button
+      if (pinnedCount === totalTracks) {
+        const unpinBtn = document.createElement("button");
+        unpinBtn.type = "button";
+        unpinBtn.className = "player-playlist-download-btn";
+        unpinBtn.textContent = t("playerUnpinPlaylist");
+        unpinBtn.addEventListener("click", () => {
+          unpinBtn.disabled = true;
+          unpinBtn.textContent = t("playerUnpinning");
+          unpinPlaylistTracks(items).then(() => {
+            if (playlistDetailView === name) openPlaylistDetail(name, title);
+          }).catch(() => {
+            unpinBtn.disabled = false;
+            unpinBtn.textContent = t("playerUnpinPlaylist");
+          });
+        });
+        toolbarLi.append(unpinBtn);
+      } else {
+        const pinBtn = document.createElement("button");
+        pinBtn.type = "button";
+        pinBtn.className = "player-playlist-download-btn";
+        pinBtn.textContent = t("playerPinPlaylist");
+        pinBtn.addEventListener("click", () => {
+          pinBtn.disabled = true;
+          pinBtn.textContent = t("playerPinning");
+          pinPlaylistTracks(items, trackMap, pinnedChecks).then(() => {
+            if (playlistDetailView === name) openPlaylistDetail(name, title);
+          }).catch(() => {
+            pinBtn.disabled = false;
+            pinBtn.textContent = t("playerPinPlaylist");
+          });
+        });
+        toolbarLi.append(pinBtn);
+      }
+    }
+
+    playlistListUl.append(toolbarLi);
+
+    // Track items
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const isPinned = pinnedChecks[i];
+      const li = document.createElement("li");
+      li.className = "player-playlist-track-item";
+
+      const catalogTrack = trackMap.get(item.media_asset_name);
+      const displayTitle = catalogTrack?.title || item.snapshot_title || item.media_asset_name || "";
+      const displayArtist = catalogTrack?.artist || item.snapshot_artist || "";
+      const displayDuration = catalogTrack?.duration ?? item.snapshot_duration ?? null;
+
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "player-playlist-track-name";
+      nameSpan.textContent = displayTitle;
+
+      const artistSpan = document.createElement("span");
+      artistSpan.className = "player-playlist-track-artist";
+      artistSpan.textContent = displayArtist;
+
+      const durationSpan = document.createElement("span");
+      durationSpan.className = "player-playlist-track-duration";
+      if (displayDuration != null && Number.isFinite(displayDuration)) {
+        durationSpan.textContent = formatTime(displayDuration);
+      }
+
+      const badge = document.createElement("span");
+      badge.className = "player-playlist-track-badge";
+      if (isPinned) {
+        badge.classList.add("offline");
+        badge.title = t("playerOffline");
+      } else if (!catalogTrack && !isLocal) {
+        li.classList.add("unavailable");
+      } else if (!isLocal) {
+        badge.classList.add("cloud");
+        badge.title = t("playerRemote");
+      }
+
+      const infoDiv = document.createElement("div");
+      infoDiv.className = "player-playlist-track-info";
+      infoDiv.append(nameSpan, artistSpan, durationSpan, badge);
+
+      const actionsDiv = document.createElement("div");
+      actionsDiv.className = "player-playlist-track-actions";
+
+      const playNextBtn = document.createElement("button");
+      playNextBtn.type = "button";
+      playNextBtn.className = "player-playlist-track-action-btn";
+      playNextBtn.textContent = t("playerPlayNext");
+      playNextBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const resolved = catalogTrack || normalizeTrack({
+          name: item.media_asset_name,
+          title: item.snapshot_title || item.media_asset_name,
+          artist: item.snapshot_artist || "",
+          duration: item.snapshot_duration,
+          media_kind: "audio",
+        });
+        if (resolved) runtime.playNext([resolved]);
+      });
+
+      const addToQueueBtn = document.createElement("button");
+      addToQueueBtn.type = "button";
+      addToQueueBtn.className = "player-playlist-track-action-btn";
+      addToQueueBtn.textContent = t("playerAddToQueue");
+      addToQueueBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const resolved = catalogTrack || normalizeTrack({
+          name: item.media_asset_name,
+          title: item.snapshot_title || item.media_asset_name,
+          artist: item.snapshot_artist || "",
+          duration: item.snapshot_duration,
+          media_kind: "audio",
+        });
+        if (resolved) runtime.enqueue([resolved]);
+      });
+
+      actionsDiv.append(playNextBtn, addToQueueBtn);
+      li.append(infoDiv, actionsDiv);
+      li.addEventListener("click", () => {
+        _gestureUnlocked = true;
+        primeAudioContext();
+        playPlaylistTracks(items, item);
+      });
+      playlistListUl.append(li);
     }
   }
 
   /**
-   * Download (cache) all non-offline tracks in a playlist.
+   * Pin all non-pinned tracks in a playlist for durable offline access.
+   * Uses the same download flow as the library: signed URL → BFF fallback → pinMediaFromResponse.
+   * Promotes existing cached blobs to pinned when possible (no network needed).
    * Returns a per-track results array: { name, ok, reason }.
    */
-  async function downloadPlaylistTracks(items, trackMap, offlineChecks) {
+  async function pinPlaylistTracks(items, trackMap, pinnedChecks) {
     const results = [];
     const pending = [];
+
     for (let i = 0; i < items.length; i++) {
       const assetName = items[i].media_asset_name;
-      if (offlineChecks[i]) {
-        results.push({ name: assetName, ok: true, reason: "already_offline" });
+      if (pinnedChecks[i]) {
+        results.push({ name: assetName, ok: true, reason: "already_pinned" });
         continue;
       }
+
       const catalogTrack = trackMap.get(assetName);
       if (!catalogTrack) {
         results.push({ name: assetName, ok: false, reason: "not_in_catalog" });
         continue;
       }
+
       const idx = results.length;
       results.push({ name: assetName, ok: false, reason: "pending" });
-      pending.push(
-        new Promise((resolve) => {
-          triggerBackgroundCache(assetName, catalogTrack, {
-            onCached: () => { results[idx] = { name: assetName, ok: true, reason: "cached" }; resolve(); },
-            onFailed: (reason) => { results[idx] = { name: assetName, ok: false, reason: reason || "failed" }; resolve(); },
-          });
-        })
-      );
+
+      pending.push((async () => {
+        try {
+          // Fast path: promote cached blob to pinned locally
+          const cachedBlob = await getCachedMediaBlob(assetName).catch(() => null);
+          if (cachedBlob) {
+            const cachedMeta = await getCachedBlobMeta(assetName).catch(() => null);
+            const cachedHash = cachedMeta?.content_hash || null;
+            const assetHash = catalogTrack.content_hash || null;
+            const hashMatch = !assetHash || !cachedHash || assetHash === cachedHash;
+
+            if (hashMatch) {
+              const pinOk = await pinMediaBlob(assetName, cachedBlob, { contentHash: cachedHash });
+              if (pinOk) {
+                removeCachedMediaBlob(assetName).catch(() => {});
+                results[idx] = { name: assetName, ok: true, reason: "promoted" };
+                return;
+              }
+            }
+          }
+
+          // Network path: download and pin
+          let gate = null;
+          try {
+            gate = await getProtectedMediaRequestGate();
+            if (!gate.allowed) {
+              results[idx] = { name: assetName, ok: false, reason: "not_allowed" };
+              return;
+            }
+
+            let response = null;
+
+            // 1. Signed download URL
+            try {
+              const result = await getBackendMediaAssetAccess({
+                name: assetName,
+                intent: "download",
+                signal: gate.signal,
+              });
+              const signedUrl = result?.access?.download_url;
+              if (signedUrl) {
+                const r = await fetch(signedUrl, { signal: gate.signal });
+                if (r.ok) response = r;
+              }
+            } catch { /* fall through */ }
+
+            // 2. BFF stream fallback
+            if (!response) {
+              try {
+                const r = await fetchBackendMediaAssetBlob({
+                  name: assetName,
+                  signal: gate.signal,
+                });
+                if (r.ok) response = r;
+              } catch { /* fall through */ }
+            }
+
+            if (!response) {
+              results[idx] = { name: assetName, ok: false, reason: "no_source" };
+              return;
+            }
+
+            const pinOk = await pinMediaFromResponse(assetName, response, {
+              contentHash: catalogTrack.content_hash || null,
+            });
+
+            if (pinOk) {
+              removeCachedMediaBlob(assetName).catch(() => {});
+              results[idx] = { name: assetName, ok: true, reason: "pinned" };
+            } else {
+              results[idx] = { name: assetName, ok: false, reason: "pin_failed" };
+            }
+          } finally {
+            gate?.cleanup?.();
+          }
+        } catch {
+          results[idx] = { name: assetName, ok: false, reason: "error" };
+        }
+      })());
     }
+
     await Promise.allSettled(pending);
+    return results;
+  }
+
+  /**
+   * Unpin all tracks in a playlist.
+   */
+  async function unpinPlaylistTracks(items) {
+    const results = [];
+    for (const item of items) {
+      const assetName = item.media_asset_name;
+      try {
+        const ok = await unpinMediaBlob(assetName);
+        results.push({ name: assetName, ok });
+      } catch {
+        results.push({ name: assetName, ok: false });
+      }
+    }
     return results;
   }
 
@@ -1066,6 +1514,7 @@ export function createPlayerShell({ container }) {
     setTracks(tracks) {
       allTracks = tracks;
       if (queueOpen) renderTrackList();
+      if (libraryOpen) renderLibraryList(libraryFilter);
     },
 
     setPlaylists(playlists) {

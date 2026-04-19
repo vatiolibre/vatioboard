@@ -22,6 +22,13 @@ const mediaCacheMock = {
   cacheMediaFromResponse: vi.fn().mockResolvedValue(undefined),
   getCachedManifestSnapshot: vi.fn().mockResolvedValue({ assets: [] }),
   getCachedMediaManifest: vi.fn().mockResolvedValue([]),
+  pinMediaBlob: vi.fn().mockResolvedValue(true),
+  pinMediaFromResponse: vi.fn().mockResolvedValue(true),
+  unpinMediaBlob: vi.fn().mockResolvedValue(true),
+  isMediaBlobPinned: vi.fn().mockResolvedValue(false),
+  getCachedMediaBlob: vi.fn().mockResolvedValue(null),
+  getCachedBlobMeta: vi.fn().mockResolvedValue(null),
+  removeCachedMediaBlob: vi.fn().mockResolvedValue(true),
 };
 
 vi.mock("../../src/shared/media-cache.js", () => mediaCacheMock);
@@ -44,6 +51,9 @@ const backendAuthMock = {
   getBackendMediaManifest: vi.fn().mockResolvedValue({ ok: false, assets: [] }),
   getBackendManifestVersion: vi.fn().mockResolvedValue({ ok: false }),
   fetchBackendMediaAssetBlob: vi.fn().mockResolvedValue(new Response("", { status: 404 })),
+  createBackendPlaylist: vi.fn().mockResolvedValue({ ok: true, playlist: { name: "pl_new" } }),
+  addBackendPlaylistItem: vi.fn().mockResolvedValue({ ok: true }),
+  bulkAddBackendPlaylistItems: vi.fn().mockResolvedValue({ ok: true, added: [], skipped: [] }),
 };
 
 vi.mock("../../src/shared/backend-auth.js", () => backendAuthMock);
@@ -1745,6 +1755,917 @@ describe("player-shell queue remove action", () => {
     expect(queueSheet.getAttribute("aria-hidden")).toBe("false");
     // Button is interactive
     expect(removeBtn.disabled).toBeFalsy();
+
+    shell.destroy();
+  });
+});
+
+describe("player-shell library sheet", () => {
+  let createPlayerShell;
+  let runtime;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    localStorage.clear();
+
+    vi.doMock("../../src/i18n.js", () => ({
+      t: (key) => key,
+      getLang: () => "en",
+      toggleLang: vi.fn(),
+      applyTranslations: vi.fn(),
+    }));
+    vi.doMock("../../src/shared/media-cache.js", () => ({
+      getLocalMediaBlob: vi.fn().mockResolvedValue(null),
+      getLocalBlobMeta: vi.fn().mockResolvedValue(null),
+      isAutoCacheEligible: vi.fn().mockReturnValue(false),
+      registerAutoCacheDownload: vi.fn(),
+      cacheMediaBlob: vi.fn().mockResolvedValue(undefined),
+      cacheMediaFromResponse: vi.fn().mockResolvedValue(undefined),
+    }));
+    vi.doMock("../../src/shared/environment.js", () => ({
+      getEnvironmentConfig: () => ({ apiBase: "https://api.vatioboard.com" }),
+    }));
+    vi.doMock("../../src/shared/backend-auth.js", () => ({
+      getProtectedMediaRequestGate: vi.fn().mockResolvedValue({
+        allowed: true, cleanup() {}, signal: undefined,
+      }),
+      getBackendMediaAssetAccess: vi.fn().mockResolvedValue({ ok: false, access: null }),
+      getBackendMediaManifest: vi.fn().mockResolvedValue({ ok: false, assets: [] }),
+      getBackendManifestVersion: vi.fn().mockResolvedValue({ ok: false }),
+      fetchBackendMediaAssetBlob: vi.fn().mockResolvedValue(new Response("", { status: 404 })),
+      createBackendPlaylist: vi.fn().mockResolvedValue({ ok: true, playlist: { name: "pl_new" } }),
+      addBackendPlaylistItem: vi.fn().mockResolvedValue({ ok: true }),
+      bulkAddBackendPlaylistItems: vi.fn().mockResolvedValue({ ok: true, added: [], skipped: [] }),
+    }));
+    vi.doMock("../../src/shared/media-access-cache.js", () => ({
+      getCachedMediaAccess: vi.fn().mockReturnValue(null),
+      setCachedMediaAccess: vi.fn(),
+      clearMediaAccessCache: vi.fn(),
+    }));
+    vi.doMock("../../src/shared/audio-mini-visualizer.js", () => ({
+      createMiniAudioVisualizer: vi.fn(() => ({
+        get isAvailable() { return true; },
+        setMode: vi.fn(), resize: vi.fn(),
+        start: vi.fn(() => Promise.resolve(true)),
+        stop: vi.fn(), destroy: vi.fn(),
+      })),
+      destroyVisualizerGraphForElement: vi.fn().mockReturnValue(false),
+    }));
+
+    const mod = await import("../../src/player/player-shell.js");
+    createPlayerShell = mod.createPlayerShell;
+    runtime = await import("../../src/shared/audio-runtime.js");
+  });
+
+  it("renders the library toggle button in the header", () => {
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+
+    expect(container.querySelector(".player-library-toggle-btn")).toBeTruthy();
+    expect(container.querySelector(".player-library-sheet")).toBeTruthy();
+
+    shell.destroy();
+  });
+
+  it("opens the library sheet and populates track list with actions", () => {
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    shell.setTracks([TRACK_A, TRACK_B]);
+
+    const libraryBtn = container.querySelector(".player-library-toggle-btn");
+    libraryBtn.click();
+
+    const librarySheet = container.querySelector(".player-library-sheet");
+    expect(librarySheet.classList.contains("is-open")).toBe(true);
+    expect(librarySheet.getAttribute("aria-hidden")).toBe("false");
+
+    const items = container.querySelectorAll(".player-library-item");
+    expect(items.length).toBe(2);
+
+    // Each item has action buttons
+    const actions = items[0].querySelectorAll(".player-library-action-btn");
+    expect(actions.length).toBe(3); // Play now, Play next, Add to queue
+
+    shell.destroy();
+  });
+
+  it("closes other sheets when library opens", () => {
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    shell.setTracks([TRACK_A]);
+
+    // Open queue first
+    container.querySelector(".player-queue-toggle-btn").click();
+    expect(container.querySelector(".player-queue-sheet").classList.contains("is-open")).toBe(true);
+
+    // Open library — should close queue
+    container.querySelector(".player-library-toggle-btn").click();
+    expect(container.querySelector(".player-queue-sheet").classList.contains("is-open")).toBe(false);
+    expect(container.querySelector(".player-library-sheet").classList.contains("is-open")).toBe(true);
+
+    shell.destroy();
+  });
+
+  it("library search filters tracks by title", () => {
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    shell.setTracks([
+      makeTrack("asset_a", { title: "Alpha Song" }),
+      makeTrack("asset_b", { title: "Beta Track" }),
+    ]);
+
+    container.querySelector(".player-library-toggle-btn").click();
+    expect(container.querySelectorAll(".player-library-item").length).toBe(2);
+
+    // Filter by "alpha"
+    const searchInput = container.querySelector(".player-library-search");
+    searchInput.value = "alpha";
+    searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+
+    expect(container.querySelectorAll(".player-library-item").length).toBe(1);
+
+    shell.destroy();
+  });
+
+  it("Play next action button enqueues track at next position", () => {
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    shell.setTracks([TRACK_A, TRACK_B, TRACK_C]);
+
+    // Set up a queue first
+    runtime.setQueue([TRACK_A], { autoplay: false });
+
+    // Open library and click Play next on TRACK_B
+    container.querySelector(".player-library-toggle-btn").click();
+    const items = container.querySelectorAll(".player-library-item");
+    const playNextBtn = items[1].querySelectorAll(".player-library-action-btn")[1];
+    playNextBtn.click();
+
+    const queue = runtime.getState().queue;
+    // TRACK_B should be in the queue (enqueued at next position)
+    expect(queue.some((tr) => tr.name === "asset_b")).toBe(true);
+
+    shell.destroy();
+  });
+
+  it("Add to queue action button appends track to end of queue", () => {
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    shell.setTracks([TRACK_A, TRACK_B, TRACK_C]);
+
+    runtime.setQueue([TRACK_A], { autoplay: false });
+
+    container.querySelector(".player-library-toggle-btn").click();
+    const items = container.querySelectorAll(".player-library-item");
+    // Third button is "Add to queue"
+    const addBtn = items[2].querySelectorAll(".player-library-action-btn")[2];
+    addBtn.click();
+
+    const queue = runtime.getState().queue;
+    expect(queue[queue.length - 1].name).toBe("asset_c");
+
+    shell.destroy();
+  });
+});
+
+describe("player-shell save queue as playlist", () => {
+  let createPlayerShell;
+  let runtime;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    localStorage.clear();
+
+    vi.doMock("../../src/i18n.js", () => ({
+      t: (key) => key,
+      getLang: () => "en",
+      toggleLang: vi.fn(),
+      applyTranslations: vi.fn(),
+    }));
+    vi.doMock("../../src/shared/media-cache.js", () => ({
+      getLocalMediaBlob: vi.fn().mockResolvedValue(null),
+      getLocalBlobMeta: vi.fn().mockResolvedValue(null),
+      isAutoCacheEligible: vi.fn().mockReturnValue(false),
+      registerAutoCacheDownload: vi.fn(),
+      cacheMediaBlob: vi.fn().mockResolvedValue(undefined),
+      cacheMediaFromResponse: vi.fn().mockResolvedValue(undefined),
+    }));
+    vi.doMock("../../src/shared/environment.js", () => ({
+      getEnvironmentConfig: () => ({ apiBase: "https://api.vatioboard.com" }),
+    }));
+    vi.doMock("../../src/shared/backend-auth.js", () => ({
+      getProtectedMediaRequestGate: vi.fn().mockResolvedValue({
+        allowed: true, cleanup() {}, signal: undefined,
+      }),
+      getBackendMediaAssetAccess: vi.fn().mockResolvedValue({ ok: false, access: null }),
+      getBackendMediaManifest: vi.fn().mockResolvedValue({ ok: false, assets: [] }),
+      getBackendManifestVersion: vi.fn().mockResolvedValue({ ok: false }),
+      fetchBackendMediaAssetBlob: vi.fn().mockResolvedValue(new Response("", { status: 404 })),
+      createBackendPlaylist: vi.fn().mockResolvedValue({ ok: true, playlist: { name: "pl_saved" } }),
+      bulkAddBackendPlaylistItems: vi.fn().mockResolvedValue({ ok: true, added: [], skipped: [] }),
+    }));
+    vi.doMock("../../src/shared/media-access-cache.js", () => ({
+      getCachedMediaAccess: vi.fn().mockReturnValue(null),
+      setCachedMediaAccess: vi.fn(),
+      clearMediaAccessCache: vi.fn(),
+    }));
+    vi.doMock("../../src/shared/audio-mini-visualizer.js", () => ({
+      createMiniAudioVisualizer: vi.fn(() => ({
+        get isAvailable() { return true; },
+        setMode: vi.fn(), resize: vi.fn(),
+        start: vi.fn(() => Promise.resolve(true)),
+        stop: vi.fn(), destroy: vi.fn(),
+      })),
+      destroyVisualizerGraphForElement: vi.fn().mockReturnValue(false),
+    }));
+
+    const mod = await import("../../src/player/player-shell.js");
+    createPlayerShell = mod.createPlayerShell;
+    runtime = await import("../../src/shared/audio-runtime.js");
+  });
+
+  it("renders save queue as playlist button in queue sheet header", () => {
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+
+    container.querySelector(".player-queue-toggle-btn").click();
+
+    const saveBtn = container.querySelector(".player-queue-save-btn");
+    expect(saveBtn).toBeTruthy();
+    expect(saveBtn.textContent).toBe("playerSaveQueueAsPlaylist");
+
+    shell.destroy();
+  });
+
+  it("save flow shows title form, then bulk-adds tracks on submit", async () => {
+    const backendAuth = await import("../../src/shared/backend-auth.js");
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+
+    runtime.setQueue([TRACK_A, TRACK_B], { autoplay: false });
+    shell.setTracks([TRACK_A, TRACK_B]);
+
+    container.querySelector(".player-queue-toggle-btn").click();
+    const saveBtn = container.querySelector(".player-queue-save-btn");
+    saveBtn.click();
+
+    // Form should be visible after clicking save
+    const form = container.querySelector(".player-queue-save-form");
+    expect(form).toBeTruthy();
+    expect(form.hidden).toBe(false);
+    expect(saveBtn.hidden).toBe(true);
+
+    // Fill title and submit
+    const titleInput = form.querySelector(".player-queue-save-title-input");
+    titleInput.value = "My Queue";
+    form.dispatchEvent(new Event("submit", { cancelable: true }));
+
+    await vi.waitFor(() => {
+      expect(backendAuth.createBackendPlaylist).toHaveBeenCalledTimes(1);
+      expect(backendAuth.createBackendPlaylist).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "My Queue" }),
+      );
+    });
+
+    await vi.waitFor(() => {
+      expect(backendAuth.bulkAddBackendPlaylistItems).toHaveBeenCalledTimes(1);
+      expect(backendAuth.bulkAddBackendPlaylistItems).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "pl_saved",
+          mediaAssetNames: ["asset_a", "asset_b"],
+        }),
+      );
+    });
+
+    shell.destroy();
+  });
+
+  it("save form skips demo tracks in bulk add", async () => {
+    const backendAuth = await import("../../src/shared/backend-auth.js");
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+
+    const demoTrack = makeTrack("demo:song", { title: "Demo", _demo: true });
+    runtime.setQueue([demoTrack, TRACK_A], { autoplay: false });
+    shell.setTracks([demoTrack, TRACK_A]);
+
+    container.querySelector(".player-queue-toggle-btn").click();
+    const saveBtn = container.querySelector(".player-queue-save-btn");
+    saveBtn.click();
+
+    const form = container.querySelector(".player-queue-save-form");
+    const titleInput = form.querySelector(".player-queue-save-title-input");
+    titleInput.value = "My Queue";
+    form.dispatchEvent(new Event("submit", { cancelable: true }));
+
+    await vi.waitFor(() => {
+      expect(backendAuth.createBackendPlaylist).toHaveBeenCalledTimes(1);
+    });
+
+    await vi.waitFor(() => {
+      expect(backendAuth.bulkAddBackendPlaylistItems).toHaveBeenCalledTimes(1);
+      expect(backendAuth.bulkAddBackendPlaylistItems).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mediaAssetNames: ["asset_a"],
+        }),
+      );
+    });
+
+    shell.destroy();
+  });
+
+  it("shows failure when bulk add returns ok: false", async () => {
+    const backendAuth = await import("../../src/shared/backend-auth.js");
+    backendAuth.bulkAddBackendPlaylistItems.mockResolvedValueOnce({
+      ok: false, added: [], skipped: [],
+    });
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+
+    runtime.setQueue([TRACK_A], { autoplay: false });
+    shell.setTracks([TRACK_A]);
+
+    container.querySelector(".player-queue-toggle-btn").click();
+    const saveBtn = container.querySelector(".player-queue-save-btn");
+    saveBtn.click();
+
+    const form = container.querySelector(".player-queue-save-form");
+    form.querySelector(".player-queue-save-title-input").value = "Test";
+    form.dispatchEvent(new Event("submit", { cancelable: true }));
+
+    await vi.waitFor(() => {
+      expect(backendAuth.bulkAddBackendPlaylistItems).toHaveBeenCalledTimes(1);
+    });
+
+    await vi.waitFor(() => {
+      const confirmBtn = form.querySelector(".player-queue-save-confirm-btn");
+      expect(confirmBtn.textContent).toBe("playerPlaylistSaveFailed");
+    });
+
+    shell.destroy();
+  });
+
+  it("shows partial success when some tracks are skipped", async () => {
+    const backendAuth = await import("../../src/shared/backend-auth.js");
+    backendAuth.bulkAddBackendPlaylistItems.mockResolvedValueOnce({
+      ok: true,
+      added: [{ name: "asset_a" }],
+      skipped: [{ name: "asset_b", reason: "duplicate" }],
+    });
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+
+    runtime.setQueue([TRACK_A, TRACK_B], { autoplay: false });
+    shell.setTracks([TRACK_A, TRACK_B]);
+
+    container.querySelector(".player-queue-toggle-btn").click();
+    const saveBtn = container.querySelector(".player-queue-save-btn");
+    saveBtn.click();
+
+    const form = container.querySelector(".player-queue-save-form");
+    form.querySelector(".player-queue-save-title-input").value = "Partial";
+    form.dispatchEvent(new Event("submit", { cancelable: true }));
+
+    await vi.waitFor(() => {
+      expect(backendAuth.bulkAddBackendPlaylistItems).toHaveBeenCalledTimes(1);
+    });
+
+    await vi.waitFor(() => {
+      const confirmBtn = form.querySelector(".player-queue-save-confirm-btn");
+      expect(confirmBtn.textContent).toBe("playerPlaylistSavedPartial");
+    });
+
+    shell.destroy();
+  });
+
+  it("shows success when all tracks are added", async () => {
+    const backendAuth = await import("../../src/shared/backend-auth.js");
+    backendAuth.bulkAddBackendPlaylistItems.mockResolvedValueOnce({
+      ok: true,
+      added: [{ name: "asset_a" }, { name: "asset_b" }],
+      skipped: [],
+    });
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+
+    runtime.setQueue([TRACK_A, TRACK_B], { autoplay: false });
+    shell.setTracks([TRACK_A, TRACK_B]);
+
+    container.querySelector(".player-queue-toggle-btn").click();
+    const saveBtn = container.querySelector(".player-queue-save-btn");
+    saveBtn.click();
+
+    const form = container.querySelector(".player-queue-save-form");
+    form.querySelector(".player-queue-save-title-input").value = "All Good";
+    form.dispatchEvent(new Event("submit", { cancelable: true }));
+
+    await vi.waitFor(() => {
+      expect(backendAuth.bulkAddBackendPlaylistItems).toHaveBeenCalledTimes(1);
+    });
+
+    await vi.waitFor(() => {
+      const confirmBtn = form.querySelector(".player-queue-save-confirm-btn");
+      expect(confirmBtn.textContent).toBe("playerPlaylistSaved");
+    });
+
+    shell.destroy();
+  });
+});
+
+describe("player-shell playlist track actions", () => {
+  let createPlayerShell;
+  let runtime;
+  let playlistLoaderMock;
+  let mediaCacheMockLocal;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    localStorage.clear();
+
+    playlistLoaderMock = {
+      loadPlaylists: vi.fn().mockResolvedValue({ playlists: [], total: 0 }),
+      loadPlaylistDetail: vi.fn().mockResolvedValue({
+        name: "pl1",
+        title: "Test Playlist",
+        items: [
+          { media_asset_name: "asset_a", snapshot_title: "Track A", snapshot_artist: "Artist A", snapshot_duration: 120 },
+          { media_asset_name: "asset_b", snapshot_title: "Track B", snapshot_artist: "Artist B", snapshot_duration: 180 },
+        ],
+      }),
+    };
+
+    mediaCacheMockLocal = {
+      getLocalMediaBlob: vi.fn().mockResolvedValue(null),
+      getLocalBlobMeta: vi.fn().mockResolvedValue(null),
+      isAutoCacheEligible: vi.fn().mockReturnValue(false),
+      registerAutoCacheDownload: vi.fn(),
+      cacheMediaBlob: vi.fn().mockResolvedValue(undefined),
+      cacheMediaFromResponse: vi.fn().mockResolvedValue(undefined),
+      pinMediaBlob: vi.fn().mockResolvedValue(true),
+      pinMediaFromResponse: vi.fn().mockResolvedValue(true),
+      unpinMediaBlob: vi.fn().mockResolvedValue(true),
+      isMediaBlobPinned: vi.fn().mockResolvedValue(false),
+      getCachedMediaBlob: vi.fn().mockResolvedValue(null),
+      getCachedBlobMeta: vi.fn().mockResolvedValue(null),
+      removeCachedMediaBlob: vi.fn().mockResolvedValue(true),
+    };
+
+    vi.doMock("../../src/i18n.js", () => ({
+      t: (key) => key,
+      getLang: () => "en",
+      toggleLang: vi.fn(),
+      applyTranslations: vi.fn(),
+    }));
+    vi.doMock("../../src/shared/media-cache.js", () => mediaCacheMockLocal);
+    vi.doMock("../../src/shared/environment.js", () => ({
+      getEnvironmentConfig: () => ({ apiBase: "https://api.vatioboard.com" }),
+    }));
+    vi.doMock("../../src/shared/backend-auth.js", () => ({
+      getProtectedMediaRequestGate: vi.fn().mockResolvedValue({
+        allowed: true, cleanup() {}, signal: undefined,
+      }),
+      getBackendMediaAssetAccess: vi.fn().mockResolvedValue({ ok: false, access: null }),
+      getBackendMediaManifest: vi.fn().mockResolvedValue({ ok: false, assets: [] }),
+      getBackendManifestVersion: vi.fn().mockResolvedValue({ ok: false }),
+      fetchBackendMediaAssetBlob: vi.fn().mockResolvedValue(new Response("", { status: 404 })),
+      createBackendPlaylist: vi.fn().mockResolvedValue({ ok: true, playlist: { name: "pl_new" } }),
+      addBackendPlaylistItem: vi.fn().mockResolvedValue({ ok: true }),
+      bulkAddBackendPlaylistItems: vi.fn().mockResolvedValue({ ok: true, added: [], skipped: [] }),
+    }));
+    vi.doMock("../../src/shared/media-access-cache.js", () => ({
+      getCachedMediaAccess: vi.fn().mockReturnValue(null),
+      setCachedMediaAccess: vi.fn(),
+      clearMediaAccessCache: vi.fn(),
+    }));
+    vi.doMock("../../src/shared/audio-mini-visualizer.js", () => ({
+      createMiniAudioVisualizer: vi.fn(() => ({
+        get isAvailable() { return true; },
+        setMode: vi.fn(), resize: vi.fn(),
+        start: vi.fn(() => Promise.resolve(true)),
+        stop: vi.fn(), destroy: vi.fn(),
+      })),
+      destroyVisualizerGraphForElement: vi.fn().mockReturnValue(false),
+    }));
+    vi.doMock("../../src/shared/playlist-loader.js", () => playlistLoaderMock);
+    vi.doMock("../../src/shared/audio-source-resolver.js", () => ({
+      resolveAudioSource: vi.fn().mockResolvedValue(null),
+      hasLocalSource: vi.fn().mockResolvedValue(false),
+      triggerBackgroundCache: vi.fn(),
+    }));
+
+    const mod = await import("../../src/player/player-shell.js");
+    createPlayerShell = mod.createPlayerShell;
+    runtime = await import("../../src/shared/audio-runtime.js");
+  });
+
+  it("playlist detail track items have Play next and Add to queue actions", async () => {
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    shell.setTracks([TRACK_A, TRACK_B]);
+    shell.setPlaylists([{ name: "pl1", title: "Test Playlist", item_count: 2 }]);
+
+    // Open playlist sheet
+    container.querySelector(".player-playlist-toggle-btn").click();
+
+    // Click to open playlist detail
+    const playlistItem = container.querySelector(".player-playlist-item");
+    playlistItem.click();
+
+    // Wait for detail to load
+    await vi.waitFor(() => {
+      const trackItems = container.querySelectorAll(".player-playlist-track-item");
+      expect(trackItems.length).toBe(2);
+    });
+
+    // Verify action buttons exist on each track
+    const trackItems = container.querySelectorAll(".player-playlist-track-item");
+    const actions = trackItems[0].querySelectorAll(".player-playlist-track-action-btn");
+    expect(actions.length).toBe(2); // Play next, Add to queue
+
+    shell.destroy();
+  });
+
+  it("shows Pin button when tracks are not fully pinned", async () => {
+    mediaCacheMockLocal.isMediaBlobPinned.mockResolvedValue(false);
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    shell.setTracks([TRACK_A, TRACK_B]);
+    shell.setPlaylists([{ name: "pl1", title: "Test Playlist", item_count: 2 }]);
+
+    container.querySelector(".player-playlist-toggle-btn").click();
+    container.querySelector(".player-playlist-item").click();
+
+    await vi.waitFor(() => {
+      const toolbar = container.querySelector(".player-playlist-toolbar");
+      expect(toolbar).toBeTruthy();
+    });
+
+    const toolbar = container.querySelector(".player-playlist-toolbar");
+    const pinBtn = toolbar.querySelector(".player-playlist-download-btn");
+    expect(pinBtn).toBeTruthy();
+    expect(pinBtn.textContent).toBe("playerPinPlaylist");
+
+    // Status should show cloud only
+    const status = toolbar.querySelector(".player-playlist-offline-status");
+    expect(status.textContent).toBe("playerPlaylistCloudOnly");
+
+    shell.destroy();
+  });
+
+  it("shows Unpin button when all tracks are pinned", async () => {
+    mediaCacheMockLocal.isMediaBlobPinned.mockResolvedValue(true);
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    shell.setTracks([TRACK_A, TRACK_B]);
+    shell.setPlaylists([{ name: "pl1", title: "Test Playlist", item_count: 2 }]);
+
+    container.querySelector(".player-playlist-toggle-btn").click();
+    container.querySelector(".player-playlist-item").click();
+
+    await vi.waitFor(() => {
+      const toolbar = container.querySelector(".player-playlist-toolbar");
+      expect(toolbar).toBeTruthy();
+    });
+
+    const toolbar = container.querySelector(".player-playlist-toolbar");
+    const unpinBtn = toolbar.querySelector(".player-playlist-download-btn");
+    expect(unpinBtn).toBeTruthy();
+    expect(unpinBtn.textContent).toBe("playerUnpinPlaylist");
+
+    // Status should show fully pinned
+    const status = toolbar.querySelector(".player-playlist-offline-status");
+    expect(status.textContent).toBe("playerPlaylistFullyPinned");
+    expect(status.classList.contains("fully-offline")).toBe(true);
+
+    shell.destroy();
+  });
+
+  it("shows partially pinned status when some tracks are pinned", async () => {
+    // First track pinned, second not
+    mediaCacheMockLocal.isMediaBlobPinned
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    shell.setTracks([TRACK_A, TRACK_B]);
+    shell.setPlaylists([{ name: "pl1", title: "Test Playlist", item_count: 2 }]);
+
+    container.querySelector(".player-playlist-toggle-btn").click();
+    container.querySelector(".player-playlist-item").click();
+
+    await vi.waitFor(() => {
+      const toolbar = container.querySelector(".player-playlist-toolbar");
+      expect(toolbar).toBeTruthy();
+    });
+
+    const toolbar = container.querySelector(".player-playlist-toolbar");
+    const status = toolbar.querySelector(".player-playlist-offline-status");
+    // t() returns the key, so replace runs on the key string
+    expect(status.textContent).toContain("playerPlaylistPartiallyPinned");
+
+    // Pin button (not unpin) because not fully pinned
+    const pinBtn = toolbar.querySelector(".player-playlist-download-btn");
+    expect(pinBtn.textContent).toBe("playerPinPlaylist");
+
+    shell.destroy();
+  });
+
+  it("pinned tracks show offline badge", async () => {
+    // First track pinned, second not
+    mediaCacheMockLocal.isMediaBlobPinned
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    shell.setTracks([TRACK_A, TRACK_B]);
+    shell.setPlaylists([{ name: "pl1", title: "Test Playlist", item_count: 2 }]);
+
+    container.querySelector(".player-playlist-toggle-btn").click();
+    container.querySelector(".player-playlist-item").click();
+
+    await vi.waitFor(() => {
+      const trackItems = container.querySelectorAll(".player-playlist-track-item");
+      expect(trackItems.length).toBe(2);
+    });
+
+    const trackItems = container.querySelectorAll(".player-playlist-track-item");
+    const badge0 = trackItems[0].querySelector(".player-playlist-track-badge");
+    const badge1 = trackItems[1].querySelector(".player-playlist-track-badge");
+    expect(badge0.classList.contains("offline")).toBe(true);
+    expect(badge1.classList.contains("offline")).toBe(false);
+
+    shell.destroy();
+  });
+
+  it("clicking Pin calls pinMediaFromResponse for non-pinned tracks via backend", async () => {
+    mediaCacheMockLocal.isMediaBlobPinned.mockResolvedValue(false);
+    mediaCacheMockLocal.getCachedMediaBlob.mockResolvedValue(null);
+
+    // Setup backend-auth mock with working download
+    const { getBackendMediaAssetAccess, fetchBackendMediaAssetBlob } = await import("../../src/shared/backend-auth.js");
+    getBackendMediaAssetAccess.mockResolvedValue({
+      ok: true,
+      access: { download_url: "https://cdn.example.com/dl/asset.mp3", expires_in_seconds: 300 },
+      asset: { content_hash: "hash_a" },
+    });
+
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    shell.setTracks([TRACK_A, TRACK_B]);
+    shell.setPlaylists([{ name: "pl1", title: "Test Playlist", item_count: 2 }]);
+
+    container.querySelector(".player-playlist-toggle-btn").click();
+    container.querySelector(".player-playlist-item").click();
+
+    await vi.waitFor(() => {
+      const toolbar = container.querySelector(".player-playlist-toolbar");
+      expect(toolbar).toBeTruthy();
+    });
+
+    const pinBtn = container.querySelector(".player-playlist-download-btn");
+    pinBtn.click();
+
+    // Button should be disabled and show pinning text
+    expect(pinBtn.disabled).toBe(true);
+    expect(pinBtn.textContent).toBe("playerPinning");
+
+    shell.destroy();
+  });
+
+  it("clicking Unpin calls unpinMediaBlob for all tracks", async () => {
+    mediaCacheMockLocal.isMediaBlobPinned.mockResolvedValue(true);
+
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    shell.setTracks([TRACK_A, TRACK_B]);
+    shell.setPlaylists([{ name: "pl1", title: "Test Playlist", item_count: 2 }]);
+
+    container.querySelector(".player-playlist-toggle-btn").click();
+    container.querySelector(".player-playlist-item").click();
+
+    await vi.waitFor(() => {
+      const toolbar = container.querySelector(".player-playlist-toolbar");
+      expect(toolbar).toBeTruthy();
+    });
+
+    const unpinBtn = container.querySelector(".player-playlist-download-btn");
+    expect(unpinBtn.textContent).toBe("playerUnpinPlaylist");
+    unpinBtn.click();
+
+    // Button should be disabled and show unpinning text
+    expect(unpinBtn.disabled).toBe(true);
+    expect(unpinBtn.textContent).toBe("playerUnpinning");
+
+    // Wait for unpin calls
+    await vi.waitFor(() => {
+      expect(mediaCacheMockLocal.unpinMediaBlob).toHaveBeenCalledTimes(2);
+    });
+
+    expect(mediaCacheMockLocal.unpinMediaBlob).toHaveBeenCalledWith("asset_a");
+    expect(mediaCacheMockLocal.unpinMediaBlob).toHaveBeenCalledWith("asset_b");
+
+    shell.destroy();
+  });
+
+  it("pin promotes cached blob to pinned when available", async () => {
+    mediaCacheMockLocal.isMediaBlobPinned.mockResolvedValue(false);
+    const fakeBlob = new Blob(["audio"], { type: "audio/mpeg" });
+    mediaCacheMockLocal.getCachedMediaBlob.mockResolvedValue(fakeBlob);
+    mediaCacheMockLocal.getCachedBlobMeta.mockResolvedValue({ content_hash: "hash_a" });
+
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    shell.setTracks([
+      { ...TRACK_A, content_hash: "hash_a" },
+      { ...TRACK_B, content_hash: "hash_b" },
+    ]);
+    shell.setPlaylists([{ name: "pl1", title: "Test Playlist", item_count: 2 }]);
+
+    container.querySelector(".player-playlist-toggle-btn").click();
+    container.querySelector(".player-playlist-item").click();
+
+    await vi.waitFor(() => {
+      const toolbar = container.querySelector(".player-playlist-toolbar");
+      expect(toolbar).toBeTruthy();
+    });
+
+    const pinBtn = container.querySelector(".player-playlist-download-btn");
+    pinBtn.click();
+
+    // Wait for pin calls — should promote from cache
+    await vi.waitFor(() => {
+      expect(mediaCacheMockLocal.pinMediaBlob).toHaveBeenCalled();
+    });
+
+    // pinMediaBlob was used (promotion path), not pinMediaFromResponse (network path)
+    expect(mediaCacheMockLocal.pinMediaBlob).toHaveBeenCalledWith(
+      "asset_a",
+      fakeBlob,
+      { contentHash: "hash_a" },
+    );
+
+    shell.destroy();
+  });
+});
+
+// ── Tests: player-shell local (demo) playlist ────────────────────────
+
+describe("player-shell local (demo) playlist", () => {
+  let createPlayerShell;
+  let runtime;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    localStorage.clear();
+
+    vi.doMock("../../src/i18n.js", () => ({
+      t: (key) => key,
+      getLang: () => "en",
+      toggleLang: vi.fn(),
+      applyTranslations: vi.fn(),
+    }));
+    vi.doMock("../../src/shared/media-cache.js", () => ({
+      getLocalMediaBlob: vi.fn().mockResolvedValue(null),
+      getLocalBlobMeta: vi.fn().mockResolvedValue(null),
+      isAutoCacheEligible: vi.fn().mockReturnValue(false),
+      registerAutoCacheDownload: vi.fn(),
+      cacheMediaBlob: vi.fn().mockResolvedValue(undefined),
+      cacheMediaFromResponse: vi.fn().mockResolvedValue(undefined),
+      pinMediaBlob: vi.fn().mockResolvedValue(true),
+      pinMediaFromResponse: vi.fn().mockResolvedValue(true),
+      unpinMediaBlob: vi.fn().mockResolvedValue(true),
+      isMediaBlobPinned: vi.fn().mockResolvedValue(false),
+      getCachedMediaBlob: vi.fn().mockResolvedValue(null),
+      getCachedBlobMeta: vi.fn().mockResolvedValue(null),
+      removeCachedMediaBlob: vi.fn().mockResolvedValue(true),
+    }));
+    vi.doMock("../../src/shared/environment.js", () => ({
+      getEnvironmentConfig: () => ({ apiBase: "https://api.vatioboard.com" }),
+    }));
+    vi.doMock("../../src/shared/backend-auth.js", () => ({
+      getProtectedMediaRequestGate: vi.fn().mockResolvedValue({
+        allowed: true, cleanup() {}, signal: undefined,
+      }),
+      getBackendMediaAssetAccess: vi.fn().mockResolvedValue({ ok: false, access: null }),
+      getBackendMediaManifest: vi.fn().mockResolvedValue({ ok: false, assets: [] }),
+      getBackendManifestVersion: vi.fn().mockResolvedValue({ ok: false }),
+      fetchBackendMediaAssetBlob: vi.fn().mockResolvedValue(new Response("", { status: 404 })),
+      createBackendPlaylist: vi.fn().mockResolvedValue({ ok: true, playlist: { name: "pl_new" } }),
+      addBackendPlaylistItem: vi.fn().mockResolvedValue({ ok: true }),
+      bulkAddBackendPlaylistItems: vi.fn().mockResolvedValue({ ok: true, added: [], skipped: [] }),
+    }));
+    vi.doMock("../../src/shared/media-access-cache.js", () => ({
+      getCachedMediaAccess: vi.fn().mockReturnValue(null),
+      setCachedMediaAccess: vi.fn(),
+      clearMediaAccessCache: vi.fn(),
+    }));
+    vi.doMock("../../src/shared/audio-mini-visualizer.js", () => ({
+      createMiniAudioVisualizer: vi.fn(() => ({
+        get isAvailable() { return true; },
+        setMode: vi.fn(), resize: vi.fn(),
+        start: vi.fn(() => Promise.resolve(true)),
+        stop: vi.fn(), destroy: vi.fn(),
+      })),
+      destroyVisualizerGraphForElement: vi.fn().mockReturnValue(false),
+    }));
+    vi.doMock("../../src/shared/playlist-loader.js", () => ({
+      loadPlaylists: vi.fn().mockResolvedValue({ playlists: [], total: 0 }),
+      loadPlaylistDetail: vi.fn().mockRejectedValue(new Error("should not be called for local playlists")),
+    }));
+    vi.doMock("../../src/shared/audio-source-resolver.js", () => ({
+      resolveAudioSource: vi.fn().mockResolvedValue(null),
+      hasLocalSource: vi.fn().mockResolvedValue(false),
+      triggerBackgroundCache: vi.fn(),
+    }));
+
+    const mod = await import("../../src/player/player-shell.js");
+    createPlayerShell = mod.createPlayerShell;
+    runtime = await import("../../src/shared/audio-runtime.js");
+  });
+
+  it("renders local playlist detail without calling loadPlaylistDetail", async () => {
+    const demoPlaylist = {
+      name: "demo:playlist",
+      title: "Demo Playlist",
+      item_count: 2,
+      _local: true,
+      _items: [
+        { media_asset_name: "demo:track-a", snapshot_title: "Demo A", snapshot_artist: "Artist A", snapshot_duration: 120 },
+        { media_asset_name: "demo:track-b", snapshot_title: "Demo B", snapshot_artist: "Artist B", snapshot_duration: 180 },
+      ],
+    };
+
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    shell.setTracks([TRACK_A, TRACK_B]);
+    shell.setPlaylists([demoPlaylist]);
+
+    // Open playlist sheet
+    container.querySelector(".player-playlist-toggle-btn").click();
+
+    // Click demo playlist
+    const playlistItem = container.querySelector(".player-playlist-item");
+    expect(playlistItem.textContent).toContain("Demo Playlist");
+    playlistItem.click();
+
+    // Wait for detail to render (should be instant since it's local)
+    await vi.waitFor(() => {
+      const trackItems = container.querySelectorAll(".player-playlist-track-item");
+      expect(trackItems.length).toBe(2);
+    });
+
+    // Verify tracks rendered with snapshot data
+    const trackItems = container.querySelectorAll(".player-playlist-track-item");
+    expect(trackItems[0].textContent).toContain("Demo A");
+    expect(trackItems[1].textContent).toContain("Demo B");
+
+    // Verify no pin/unpin buttons for local playlists
+    const downloadBtn = container.querySelector(".player-playlist-download-btn");
+    expect(downloadBtn).toBeNull();
+
+    // Verify no offline status for local playlists
+    const offlineStatus = container.querySelector(".player-playlist-offline-status");
+    expect(offlineStatus).toBeNull();
+
+    // Verify Play All button exists
+    const playAllBtn = container.querySelector(".player-playlist-play-all-btn");
+    expect(playAllBtn).toBeTruthy();
+
+    // loadPlaylistDetail should NOT have been called
+    const { loadPlaylistDetail } = await import("../../src/shared/playlist-loader.js");
+    expect(loadPlaylistDetail).not.toHaveBeenCalled();
+
+    shell.destroy();
+  });
+
+  it("local playlist tracks have Play next and Add to queue actions", async () => {
+    const demoPlaylist = {
+      name: "demo:playlist",
+      title: "Demo Playlist",
+      item_count: 1,
+      _local: true,
+      _items: [
+        { media_asset_name: "demo:track-a", snapshot_title: "Demo A", snapshot_artist: "Artist A", snapshot_duration: 120 },
+      ],
+    };
+
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    shell.setTracks([]);
+    shell.setPlaylists([demoPlaylist]);
+
+    container.querySelector(".player-playlist-toggle-btn").click();
+    container.querySelector(".player-playlist-item").click();
+
+    await vi.waitFor(() => {
+      const trackItems = container.querySelectorAll(".player-playlist-track-item");
+      expect(trackItems.length).toBe(1);
+    });
+
+    const actions = container.querySelectorAll(".player-playlist-track-action-btn");
+    expect(actions.length).toBe(2); // Play next, Add to queue
 
     shell.destroy();
   });

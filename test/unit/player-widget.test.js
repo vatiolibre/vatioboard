@@ -371,6 +371,9 @@ describe("createPlayerWidget", () => {
 
   it("loads playlists during bootstrap", async () => {
     playlistMock.loadPlaylists.mockClear();
+    // Provide at least one track so bootstrap takes the authenticated path
+    const track = makeTrack("t1");
+    catalogMock.loadAudioCatalog.mockResolvedValueOnce({ tracks: [track], total: 1 });
 
     const widget = createPlayerWidget({ preload: "immediate", floating: false });
     await flushMicrotasks(20);

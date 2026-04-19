@@ -308,3 +308,11 @@ export const IconMusic = `
     <circle cx="18" cy="16" r="3" stroke="currentColor" stroke-width="1.6"/>
   </svg>
 `;
+
+export const IconLibrary = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M4 6h16M4 10h16M4 14h10M4 18h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    <circle cx="18" cy="16" r="2.5" stroke="currentColor" stroke-width="1.4"/>
+    <path d="M20.5 16V11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+  </svg>
+`;

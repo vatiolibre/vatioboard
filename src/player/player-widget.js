@@ -24,6 +24,7 @@ import {
 import { IconMusic } from "../icons.js";
 import { loadAudioCatalog, syncAudioCatalog, annotateOfflineAvailability } from "../shared/audio-catalog.js";
 import { loadPlaylists, syncPlaylistsManifest } from "../shared/playlist-loader.js";
+import { normalizeTrack } from "../shared/track-model.js";
 import * as runtime from "../shared/audio-runtime.js";
 import {
   getBackendSessionState,
@@ -55,15 +56,33 @@ async function bootstrapAuth() {
   }
 }
 
+const DEMO_PLAYLIST_NAME = "demo:playlist";
+const DEMO_PLAYLIST_TITLE = "Demo Playlist";
+
 async function loadDemoPlaylist() {
   try {
     const res = await fetch("/audio/demo/playlist.json");
     if (!res.ok) return [];
-    const tracks = await res.json();
-    return Array.isArray(tracks) ? tracks : [];
+    const raw = await res.json();
+    return Array.isArray(raw) ? raw.map(normalizeTrack) : [];
   } catch {
     return [];
   }
+}
+
+function buildDemoPlaylistEntry(tracks) {
+  return {
+    name: DEMO_PLAYLIST_NAME,
+    title: DEMO_PLAYLIST_TITLE,
+    item_count: tracks.length,
+    _local: true,
+    _items: tracks.map((t) => ({
+      media_asset_name: t.name,
+      snapshot_title: t.title || "",
+      snapshot_artist: t.artist || "",
+      snapshot_duration: t.duration ?? null,
+    })),
+  };
 }
 
 async function doBootstrap(shell) {
@@ -79,10 +98,14 @@ async function doBootstrap(shell) {
 
     shell.setTracks(playlist);
 
-    // Load playlists alongside tracks
-    loadPlaylists().then(({ playlists }) => {
-      shell.setPlaylists(playlists);
-    }).catch(() => {});
+    // Load playlists alongside tracks (or use demo playlist for guests)
+    if (annotated.length > 0) {
+      loadPlaylists().then(({ playlists }) => {
+        shell.setPlaylists(playlists);
+      }).catch(() => {});
+    } else if (playlist.length > 0) {
+      shell.setPlaylists([buildDemoPlaylistEntry(playlist)]);
+    }
 
     // Restore previous session (or do nothing if cold start)
     await runtime.restoreSession(playlist, { autoplay: false });
@@ -127,6 +150,7 @@ async function doBootstrap(shell) {
       const demo = await loadDemoPlaylist();
       if (demo.length > 0) {
         shell.setTracks(demo);
+        shell.setPlaylists([buildDemoPlaylistEntry(demo)]);
         runtime.setQueue(demo, { autoplay: false });
         _bootstrapped = true;
       }
@@ -167,7 +191,7 @@ async function reloadCatalogForAuthChange(shell, loggedIn) {
     // Logout — skip backend calls and fall back to demo tracks.
     const demo = await loadDemoPlaylist();
     shell.setTracks(demo);
-    shell.setPlaylists([]);
+    shell.setPlaylists(demo.length > 0 ? [buildDemoPlaylistEntry(demo)] : []);
     if (demo.length > 0) runtime.setQueue(demo, { autoplay: false });
     _bootstrapped = true;
   }

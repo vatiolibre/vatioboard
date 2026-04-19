@@ -948,6 +948,28 @@ function buildDetailMetaEntries(item = {}) {
   return config.buildMetaEntries(item);
 }
 
+/**
+ * Render a type-aware placeholder when the preview image cannot be loaded.
+ * Used as a last-resort fallback after both the BFF URL and signed-URL
+ * access resolution have failed.
+ */
+function renderPreviewPlaceholder(item, config) {
+  if (!elements.detailPreview) return;
+  elements.detailPreview.replaceChildren();
+  elements.detailPreview.dataset.previewKind = "unavailable-fallback";
+  const fallback = document.createElement("div");
+  fallback.className = "library-preview-fallback";
+  const iconWrapper = document.createElement("span");
+  iconWrapper.className = "library-preview-type-icon";
+  iconWrapper.innerHTML = config.tabIcon;
+  fallback.append(iconWrapper);
+  const label = document.createElement("span");
+  label.className = "library-preview-offline-label";
+  label.textContent = t("cloudLibraryPreviewUnavailable");
+  fallback.append(label);
+  elements.detailPreview.append(fallback);
+}
+
 function renderDetailPreview(item = {}, { isOfflineItem = false, isPinned = false, localPreviewUrl = "" } = {}) {
   if (!elements.detailPreview) return;
 
@@ -1061,6 +1083,33 @@ function renderDetailPreview(item = {}, { isOfflineItem = false, isPinned = fals
     image.src = imageUrl;
     image.alt = item.title || item.name || t("cloudLibraryMedia");
     image.loading = "lazy";
+
+    // When the BFF redirect URL fails (403/network error on cross-origin
+    // subresource), attempt a single on-demand fallback via signed URL.
+    // Local blob URLs (blob:) never trigger this path.
+    if (!hasLocalBlob && item.name && !imageUrl.startsWith("blob:")) {
+      image.onerror = () => {
+        image.onerror = null; // prevent re-entry during first fallback
+        resolveMediaAccess(item.name, item.content_hash, { intent: "preview" })
+          .then((access) => {
+            const fallbackUrl = access?.image_url || access?.preview_image_url || access?.download_url;
+            if (fallbackUrl && image.parentNode) {
+              // If the signed fallback URL also fails, show placeholder.
+              image.onerror = () => {
+                image.onerror = null;
+                renderPreviewPlaceholder(item, config);
+              };
+              image.src = fallbackUrl;
+            } else {
+              renderPreviewPlaceholder(item, config);
+            }
+          })
+          .catch(() => {
+            renderPreviewPlaceholder(item, config);
+          });
+      };
+    }
+
     elements.detailPreview.append(image);
     elements.detailPreview.dataset.previewKind = "image";
     return;

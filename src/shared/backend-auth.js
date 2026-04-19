@@ -21,6 +21,9 @@ const LIST_PLAYLISTS_METHOD = "vatiolibre.vatiolibre.media_playlists.list_my_med
 const GET_PLAYLIST_DETAIL_METHOD = "vatiolibre.vatiolibre.media_playlists.get_my_media_playlist_detail";
 const GET_PLAYLISTS_MANIFEST_VERSION_METHOD = "vatiolibre.vatiolibre.media_playlists.get_my_media_playlists_manifest_version";
 const GET_PLAYLISTS_MANIFEST_METHOD = "vatiolibre.vatiolibre.media_playlists.get_my_media_playlists_manifest";
+const CREATE_PLAYLIST_METHOD = "vatiolibre.vatiolibre.media_playlists.create_my_media_playlist";
+const ADD_PLAYLIST_ITEM_METHOD = "vatiolibre.vatiolibre.media_playlists.add_my_media_playlist_item";
+const BULK_ADD_PLAYLIST_ITEMS_METHOD = "vatiolibre.vatiolibre.media_playlists.bulk_add_my_media_playlist_items";
 const PUSH_SYNC_METHOD = "vatiolibre.vatiolibre.cloud_sync.push_my_sync_changes";
 const PULL_SYNC_METHOD = "vatiolibre.vatiolibre.cloud_sync.pull_my_sync_changes";
 const DOWNLOAD_SYNC_PAYLOAD_METHOD = "vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload";
@@ -1761,6 +1764,85 @@ export async function getBackendPlaylistsManifest({
     totalCount: Number(message?.total_count) || 0,
     manifestToken: message?.manifest_token ?? null,
     isTruncated: message?.is_truncated === true,
+  };
+}
+
+export async function createBackendPlaylist({
+  title,
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const args = {};
+  if (title) args.title = String(title);
+
+  const { response, data } = await fetchBackendMethodJson(CREATE_PLAYLIST_METHOD, {
+    method: "POST",
+    args,
+    fetchImpl,
+    signal,
+    config,
+  });
+  const message = getMessage(data);
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    playlist: message?.playlist ?? null,
+  };
+}
+
+export async function addBackendPlaylistItem({
+  name,
+  mediaAssetName,
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const { response, data } = await fetchBackendMethodJson(ADD_PLAYLIST_ITEM_METHOD, {
+    method: "POST",
+    args: {
+      name: String(name || ""),
+      media_asset_name: String(mediaAssetName || ""),
+    },
+    fetchImpl,
+    signal,
+    config,
+  });
+  const message = getMessage(data);
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    playlist: message?.playlist ?? null,
+  };
+}
+
+export async function bulkAddBackendPlaylistItems({
+  name,
+  mediaAssetNames,
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+} = {}) {
+  const { response, data } = await fetchBackendMethodJson(BULK_ADD_PLAYLIST_ITEMS_METHOD, {
+    method: "POST",
+    args: {
+      name: String(name || ""),
+      media_asset_names_json: JSON.stringify(mediaAssetNames || []),
+    },
+    fetchImpl,
+    signal,
+    config,
+  });
+  const message = getMessage(data);
+  return {
+    ok: response.ok,
+    status: response.status,
+    data,
+    playlist: message?.playlist ?? null,
+    added: message?.added ?? [],
+    skipped: message?.skipped ?? [],
   };
 }
 
