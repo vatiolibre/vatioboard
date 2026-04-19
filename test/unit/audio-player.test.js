@@ -907,6 +907,38 @@ describe("audio-runtime", () => {
     expect(navigator.mediaSession.playbackState).toBe("none");
   });
 
+  it("Media Session uses artwork_ref when it is a URL", async () => {
+    const artTrack = makeTrack("art_track", {
+      artwork_ref: "https://cdn.example.com/cover.jpg",
+    });
+    runtime.setQueue([artTrack], { autoplay: true });
+    await vi.waitFor(() => {
+      const s = runtime.getState();
+      expect(s.currentTrack?.name).toBe("art_track");
+      expect(s.loading).toBe(false);
+    });
+    const meta = navigator.mediaSession.metadata;
+    expect(meta).toBeTruthy();
+    expect(meta.artwork?.[0]?.src).toBe("https://cdn.example.com/cover.jpg");
+  });
+
+  it("Media Session omits artwork for non-URL artwork_ref", async () => {
+    const nameRefTrack = makeTrack("name_ref_track", {
+      artwork_ref: "MEDIA-ASSET-00123",
+    });
+    runtime.setQueue([nameRefTrack], { autoplay: true });
+    await vi.waitFor(() => {
+      const s = runtime.getState();
+      expect(s.currentTrack?.name).toBe("name_ref_track");
+      expect(s.loading).toBe(false);
+    });
+    const meta = navigator.mediaSession.metadata;
+    expect(meta).toBeTruthy();
+    // First artwork entry should be the fallback, not the asset name
+    const firstSrc = meta.artwork?.[0]?.src || "";
+    expect(firstSrc).not.toBe("MEDIA-ASSET-00123");
+  });
+
   it("ending the last queued track without repeat stops cleanly and stays replayable", async () => {
     runtime.setQueue([TRACK_A], { autoplay: true });
     await vi.waitFor(() => {
@@ -2591,7 +2623,7 @@ describe("player-shell local (demo) playlist", () => {
       title: "Demo Playlist",
       item_count: 2,
       _local: true,
-      _items: [
+      items: [
         { media_asset_name: "demo:track-a", snapshot_title: "Demo A", snapshot_artist: "Artist A", snapshot_duration: 120 },
         { media_asset_name: "demo:track-b", snapshot_title: "Demo B", snapshot_artist: "Artist B", snapshot_duration: 180 },
       ],
@@ -2646,7 +2678,7 @@ describe("player-shell local (demo) playlist", () => {
       title: "Demo Playlist",
       item_count: 1,
       _local: true,
-      _items: [
+      items: [
         { media_asset_name: "demo:track-a", snapshot_title: "Demo A", snapshot_artist: "Artist A", snapshot_duration: 120 },
       ],
     };

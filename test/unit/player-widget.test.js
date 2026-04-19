@@ -77,6 +77,21 @@ vi.mock("../../src/shared/backend-auth.js", () => ({
   getBackendMediaAssetAccess: vi.fn().mockResolvedValue({ ok: false }),
   getBackendMediaManifest: vi.fn().mockResolvedValue({ ok: false, assets: [] }),
   getBackendManifestVersion: vi.fn().mockResolvedValue({ ok: false }),
+  getProtectedMediaRequestGate: vi.fn().mockResolvedValue({ allowed: false, cleanup: vi.fn() }),
+  createBackendPlaylist: vi.fn().mockResolvedValue({ ok: false }),
+  bulkAddBackendPlaylistItems: vi.fn().mockResolvedValue({ ok: false }),
+  fetchBackendMediaAssetBlob: vi.fn().mockResolvedValue(new Response("", { status: 404 })),
+  getBackendPlaylistsManifest: vi.fn().mockResolvedValue({ ok: false, playlists: [] }),
+  getBackendPlaylistsManifestVersion: vi.fn().mockResolvedValue({ ok: false }),
+  getBackendPlaylistDetail: vi.fn().mockResolvedValue({ ok: false }),
+}));
+
+vi.mock("../../src/shared/media-session-adapter.js", () => ({
+  setMediaSessionMetadata: vi.fn(),
+  setMediaSessionPlaybackState: vi.fn(),
+  setMediaSessionPositionState: vi.fn(),
+  setMediaSessionActionHandlers: vi.fn(),
+  clearMediaSession: vi.fn(),
 }));
 
 vi.mock("../../src/shared/media-cache.js", () => ({
@@ -92,6 +107,13 @@ vi.mock("../../src/shared/media-cache.js", () => ({
   isAutoCacheEligible: vi.fn().mockReturnValue(false),
   registerAutoCacheDownload: vi.fn(),
   cacheMediaBlob: vi.fn().mockResolvedValue(undefined),
+  pinMediaBlob: vi.fn().mockResolvedValue(true),
+  pinMediaFromResponse: vi.fn().mockResolvedValue(true),
+  unpinMediaBlob: vi.fn().mockResolvedValue(true),
+  isMediaBlobPinned: vi.fn().mockResolvedValue(false),
+  getCachedMediaBlob: vi.fn().mockResolvedValue(null),
+  getCachedBlobMeta: vi.fn().mockResolvedValue(null),
+  removeCachedMediaBlob: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../../src/shared/media-access-cache.js", () => ({
@@ -810,6 +832,210 @@ describe("createPlayerWidget", () => {
       ]),
       { startIndex: 1, autoplay: true },
     );
+
+    widget.destroy();
+  });
+
+  // ── Demo/local playlist unified contract ─────────────────────
+
+  it("demo playlist uses items (not _items) and renders through unified path", async () => {
+    const demoTracks = [
+      makeTrack("demo:song_a", { title: "Demo A", artist: "Artist A" }),
+      makeTrack("demo:song_b", { title: "Demo B", artist: "Artist B" }),
+    ];
+
+    catalogMock.loadAudioCatalog.mockResolvedValue({ tracks: [], total: 0 });
+
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    await flushMicrotasks(30);
+
+    // Set demo tracks and demo playlist (unified contract: items, not _items)
+    widget.setTracks(demoTracks);
+    widget.setPlaylists([{
+      name: "demo:playlist",
+      title: "Demo Playlist",
+      item_count: 2,
+      total_duration_seconds: 0,
+      _local: true,
+      items: [
+        { media_asset_name: "demo:song_a", snapshot_title: "Demo A", snapshot_artist: "Artist A" },
+        { media_asset_name: "demo:song_b", snapshot_title: "Demo B", snapshot_artist: "Artist B" },
+      ],
+    }]);
+
+    const panel = document.querySelector(".player-panel");
+    panel.querySelector(".player-playlist-toggle-btn").click();
+
+    // Click the demo playlist
+    const playlistItem = panel.querySelector(".player-playlist-item");
+    expect(playlistItem).toBeTruthy();
+    playlistItem.click();
+    await flushMicrotasks(20);
+
+    // Should render track items directly (no backend fetch)
+    expect(playlistMock.loadPlaylistDetail).not.toHaveBeenCalled();
+    const trackItems = panel.querySelectorAll(".player-playlist-track-item");
+    expect(trackItems.length).toBe(2);
+
+    // Play All should queue all demo tracks
+    const playAllBtn = panel.querySelector(".player-playlist-play-all-btn");
+    expect(playAllBtn).toBeTruthy();
+    playAllBtn.click();
+    await flushMicrotasks();
+
+    expect(runtimeMock.setQueue).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "demo:song_a" }),
+        expect.objectContaining({ name: "demo:song_b" }),
+      ]),
+      { startIndex: 0, autoplay: true },
+    );
+
+    // No pin/unpin buttons for local playlists
+    expect(panel.querySelector(".player-playlist-download-btn")).toBeFalsy();
+
+    widget.destroy();
+  });
+
+  it("demo playlist with _items (old shape) does not render inline", async () => {
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    await flushMicrotasks(30);
+
+    widget.setPlaylists([{
+      name: "demo:old",
+      title: "Old Demo",
+      _local: true,
+      _items: [{ media_asset_name: "x" }],
+    }]);
+
+    const panel = document.querySelector(".player-panel");
+    panel.querySelector(".player-playlist-toggle-btn").click();
+
+    const playlistItem = panel.querySelector(".player-playlist-item");
+    expect(playlistItem).toBeTruthy();
+    playlistItem.click();
+    await flushMicrotasks(20);
+
+    // _items is not recognized — falls through to backend fetch
+    expect(playlistMock.loadPlaylistDetail).toHaveBeenCalledWith("demo:old");
+
+    widget.destroy();
+  });
+
+  // ── Pin result and retry ─────────────────────────────────────
+
+  it("shows failure count and retry button after partial pin failure", async () => {
+    const tracks = [
+      makeTrack("song_a"),
+      makeTrack("song_b"),
+      makeTrack("song_fail"),
+    ];
+
+    catalogMock.loadAudioCatalog.mockResolvedValue({ tracks, total: 3 });
+
+    playlistMock.loadPlaylistDetail.mockResolvedValue({
+      name: "pl_pin",
+      title: "Pin Test",
+      items: [
+        { media_asset_name: "song_a", position: 0 },
+        { media_asset_name: "song_b", position: 1 },
+        { media_asset_name: "song_fail", position: 2 },
+      ],
+    });
+
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    await flushMicrotasks(30);
+    widget.setTracks(tracks);
+    widget.setPlaylists([{ name: "pl_pin", title: "Pin Test", item_count: 3 }]);
+
+    const panel = document.querySelector(".player-panel");
+    panel.querySelector(".player-playlist-toggle-btn").click();
+
+    const playlistItem = panel.querySelector(".player-playlist-item");
+    playlistItem.click();
+    await flushMicrotasks(20);
+
+    // Pin button should be present (no tracks pinned)
+    const pinBtn = panel.querySelector(".player-playlist-download-btn");
+    expect(pinBtn).toBeTruthy();
+    expect(pinBtn.textContent).toBe("playerPinPlaylist");
+
+    widget.destroy();
+  });
+
+  it("stale-catalog fallback preserves full snapshot fields for queue items", async () => {
+    // Simulate a playlist whose items are NOT in the audio catalog.
+    // The fallback normalizeTrack call must carry snapshot album, genre,
+    // artwork_ref, and content_hash so the queue UI, now-playing, and
+    // offline logic have complete metadata.
+    const detailItems = [
+      {
+        media_asset_name: "ASSET-missing-from-catalog",
+        position: 0,
+        snapshot_title: "Offline Song",
+        snapshot_artist: "Offline Artist",
+        snapshot_album: "Offline Album",
+        snapshot_genre: "Lo-fi",
+        snapshot_duration: 222,
+        snapshot_artwork_ref: "ASSET-art-ref",
+        snapshot_content_hash: "sha256-abc",
+      },
+    ];
+
+    playlistMock.loadPlaylistDetail.mockResolvedValue({
+      name: "pl_stale",
+      title: "Stale Catalog Playlist",
+      items: detailItems,
+    });
+
+    // Audio catalog returns empty — simulates stale/offline catalog
+    catalogMock.loadAudioCatalog.mockResolvedValue({ tracks: [], total: 0 });
+
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    await flushMicrotasks(30);
+    widget.setTracks([]); // no catalog tracks
+    widget.setPlaylists([
+      { name: "pl_stale", title: "Stale Catalog Playlist", item_count: 1 },
+    ]);
+
+    const panel = document.querySelector(".player-panel");
+    // Open the playlist sheet
+    panel.querySelector(".player-playlist-toggle-btn").click();
+    // Click the playlist item in the list to open its detail
+    const playlistItem = panel.querySelector(".player-playlist-item");
+    playlistItem.click();
+    // Wait for loadPlaylistDetail to resolve and detail view to render
+    await flushMicrotasks(30);
+
+    // Now click the track item inside the detail to trigger playPlaylistTracks
+    const trackItem = panel.querySelector(".player-playlist-track-item");
+    expect(trackItem).toBeTruthy();
+    trackItem.click();
+    await flushMicrotasks(10);
+
+    // playPlaylistTracks falls back to normalizeTrack with snapshot fields
+    // when catalog has no match — setQueue should have been called.
+    const setQueueCalls = runtimeMock.setQueue.mock.calls;
+    const lastCall = setQueueCalls[setQueueCalls.length - 1];
+    expect(lastCall).toBeTruthy();
+
+    const resolvedTracks = lastCall[0];
+    expect(resolvedTracks.length).toBe(1);
+
+    const track = resolvedTracks[0];
+    expect(track.name).toBe("ASSET-missing-from-catalog");
+    expect(track.title).toBe("Offline Song");
+    expect(track.artist).toBe("Offline Artist");
+    // snapshot_album, snapshot_genre flow through normalizeTrack into
+    // the album/genre fallback fields
+    expect(track.album).toBe("Offline Album");
+    expect(track.genre).toBe("Lo-fi");
+    expect(track.artwork_ref).toBe("ASSET-art-ref");
+    expect(track.content_hash).toBe("sha256-abc");
 
     widget.destroy();
   });

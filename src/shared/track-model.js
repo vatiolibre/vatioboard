@@ -114,6 +114,7 @@ export function normalizeTrack(raw) {
   const artwork_ref =
     str(raw.artwork_ref) ||
     str(meta.artwork_ref) ||
+    str(raw.snapshot_artwork_ref) ||
     str(raw.cover_asset_name) ||
     str(raw.preview_image_url) ||
     str(raw.image_url) ||
@@ -130,13 +131,14 @@ export function normalizeTrack(raw) {
     artwork_ref,
     media_kind: str(raw.media_kind) || (isDemo ? "audio" : "other"),
     original_filename: str(raw.original_filename),
-    content_hash: str(raw.content_hash),
+    content_hash: str(raw.content_hash) || str(raw.snapshot_content_hash),
     mime_type: str(raw.mime_type),
     blob_size: raw.blob_size ?? 0,
     file_extension: str(raw.file_extension),
     folder_path: str(raw.folder_path),
     src: str(raw.src),
     has_preview_image: Boolean(raw.has_preview_image),
+    has_artwork: Boolean(raw.has_artwork),
     created_at: raw.created_at ?? null,
     modified_at: raw.modified_at ?? null,
     sort_timestamp: raw.sort_timestamp ?? 0,

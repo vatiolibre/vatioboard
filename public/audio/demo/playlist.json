@@ -6,7 +6,8 @@
     "album": "Tinctures",
     "genre": "Electronica",
     "src": "/audio/demo/On The Run.mp3",
-    "duration": 182.5
+    "duration": 182.5,
+    "media_kind": "audio"
   },
   {
     "name": "demo:rocker-chicks",
@@ -15,7 +16,8 @@
     "album": "Audionautix",
     "genre": "Rock",
     "src": "/audio/demo/RockerChicks.mp3",
-    "duration": 90.1
+    "duration": 90.1,
+    "media_kind": "audio"
   },
   {
     "name": "demo:titan",
@@ -24,7 +26,8 @@
     "album": "Scott Buckley Library",
     "genre": "Cinematic",
     "src": "/audio/demo/sb_titan.mp3",
-    "duration": 175.8
+    "duration": 175.8,
+    "media_kind": "audio"
   },
   {
     "name": "demo:exit-the-premises",
@@ -33,7 +36,8 @@
     "album": "Incompetech",
     "genre": "Electronic",
     "src": "/audio/demo/Exit the Premises.mp3",
-    "duration": 210.1
+    "duration": 210.1,
+    "media_kind": "audio"
   },
   {
     "name": "demo:pascifica",
@@ -42,7 +46,8 @@
     "album": "Borked Git",
     "genre": "Cyberpunk",
     "src": "/audio/demo/Pascifica.mp3",
-    "duration": 271.6
+    "duration": 271.6,
+    "media_kind": "audio"
   },
   {
     "name": "demo:rynos-theme",
@@ -51,7 +56,8 @@
     "album": "Incompetech",
     "genre": "Cinematic",
     "src": "/audio/demo/Rynos Theme.mp3",
-    "duration": 185.7
+    "duration": 185.7,
+    "media_kind": "audio"
   },
   {
     "name": "demo:legionnaire",
@@ -60,7 +66,8 @@
     "album": "Scott Buckley Library",
     "genre": "Soundtrack",
     "src": "/audio/demo/Legionnaire2022.mp3",
-    "duration": 187.1
+    "duration": 187.1,
+    "media_kind": "audio"
   },
   {
     "name": "demo:timeless",
@@ -69,7 +76,8 @@
     "album": "Chosic",
     "genre": "Ambient",
     "src": "/audio/demo/Timeless(chosic.com).mp3",
-    "duration": 128.3
+    "duration": 128.3,
+    "media_kind": "audio"
   },
   {
     "name": "demo:neo-western",
@@ -78,7 +86,8 @@
     "album": "Incompetech",
     "genre": "World",
     "src": "/audio/demo/Neo Western.mp3",
-    "duration": 145.8
+    "duration": 145.8,
+    "media_kind": "audio"
   },
   {
     "name": "demo:beach-bum",
@@ -87,7 +96,8 @@
     "album": "Rock Classic",
     "genre": "Rock",
     "src": "/audio/demo/Beach Bum.mp3",
-    "duration": 52.3
+    "duration": 52.3,
+    "media_kind": "audio"
   },
   {
     "name": "demo:the-climb",
@@ -96,7 +106,8 @@
     "album": "Scott Buckley Library",
     "genre": "Soundtrack",
     "src": "/audio/demo/sb_theclimb.mp3",
-    "duration": 347.1
+    "duration": 347.1,
+    "media_kind": "audio"
   },
   {
     "name": "demo:what-you-want",
@@ -105,7 +116,8 @@
     "album": "Rock Harder",
     "genre": "Rock",
     "src": "/audio/demo/What You Want.mp3",
-    "duration": 87.6
+    "duration": 87.6,
+    "media_kind": "audio"
   },
   {
     "name": "demo:canon-in-d",
@@ -114,6 +126,7 @@
     "album": "Famous Classics",
     "genre": "Classical",
     "src": "/audio/demo/Canon in D Major.mp3",
-    "duration": 355.7
+    "duration": 355.7,
+    "media_kind": "audio"
   }
 ]

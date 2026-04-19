@@ -25,6 +25,10 @@ import { setMainAudioElement } from "./audio-cue.js";
 import { destroyVisualizerGraphForElement } from "./audio-mini-visualizer.js";
 import { loadPlayerSession, savePlayerSession } from "./player-session.js";
 
+function isArtworkUrl(ref) {
+  return typeof ref === "string" && (ref.startsWith("http://") || ref.startsWith("https://") || ref.startsWith("/"));
+}
+
 // ── State ────────────────────────────────────────────────────────────
 
 let mediaSessionEnabled = true;
@@ -812,7 +816,7 @@ function updateMediaSessionMetadata() {
     title: track.title || track.original_filename || track.name || "",
     artist: track.artist || track.folder_path || "",
     album: "VatioBoard",
-    artworkUrl: track.preview_image_url || track.image_url || "",
+    artworkUrl: track.artwork_ref && isArtworkUrl(track.artwork_ref) ? track.artwork_ref : "",
   });
 
   setMediaSessionActionHandlers({

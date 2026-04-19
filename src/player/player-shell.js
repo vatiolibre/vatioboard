@@ -40,6 +40,7 @@ import {
   getBackendMediaAssetAccess,
   fetchBackendMediaAssetBlob,
 } from "../shared/backend-auth.js";
+import { setMediaSessionMetadata } from "../shared/media-session-adapter.js";
 
 const PROGRESS_MAX = 1000;
 const VISUALIZER_VISIBLE_STORAGE_KEY = "vatio_board_player_widget_visualizer_visible";
@@ -108,6 +109,57 @@ function formatTime(seconds) {
     return `${h}:${String(rm).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   }
   return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+// ── Artwork URL resolution ───────────────────────────────────────────
+
+function isArtworkUrl(ref) {
+  return typeof ref === "string" && (ref.startsWith("http://") || ref.startsWith("https://") || ref.startsWith("/"));
+}
+
+/** Resolved artwork URL cache — keyed by track name. */
+const artworkUrlCache = new Map();
+
+/**
+ * Resolve the artwork URL for a track.
+ *
+ * - If `artwork_ref` is already a URL, use directly.
+ * - If the track has embedded artwork (`has_artwork`), resolve via access endpoint.
+ * - Otherwise returns "".
+ */
+async function resolveArtworkUrl(track) {
+  if (!track?.name) return "";
+  const cached = artworkUrlCache.get(track.name);
+  if (cached !== undefined) return cached;
+
+  if (track.artwork_ref && isArtworkUrl(track.artwork_ref)) {
+    artworkUrlCache.set(track.name, track.artwork_ref);
+    return track.artwork_ref;
+  }
+
+  if (track.has_artwork && !track._demo) {
+    let gate = null;
+    try {
+      gate = await getProtectedMediaRequestGate();
+      if (!gate.allowed) { artworkUrlCache.set(track.name, ""); return ""; }
+      const result = await getBackendMediaAssetAccess({
+        name: track.name,
+        intent: "artwork",
+        signal: gate.signal,
+      });
+      const url = result?.access?.artwork_url || "";
+      artworkUrlCache.set(track.name, url);
+      return url;
+    } catch {
+      artworkUrlCache.set(track.name, "");
+      return "";
+    } finally {
+      gate?.cleanup?.();
+    }
+  }
+
+  artworkUrlCache.set(track.name, "");
+  return "";
 }
 
 /**
@@ -643,6 +695,7 @@ export function createPlayerShell({ container }) {
   let playlistOpen = false;
   let playlistDetailView = null; // null = list view, string = viewing a playlist by name
   let cachedPlaylists = [];
+  let lastPinResult = null; // { playlistName, results } — tracks partial pin failures for retry
 
   function setPlaylistOpen(open) {
     playlistOpen = open;
@@ -682,7 +735,11 @@ export function createPlayerShell({ container }) {
 
       const countSpan = document.createElement("span");
       countSpan.className = "player-playlist-item-count";
-      countSpan.textContent = t("playerPlaylistTracks", { count: pl.item_count ?? 0 });
+      const totalDur = pl.total_duration_seconds;
+      const countText = t("playerPlaylistTracks", { count: pl.item_count ?? 0 });
+      countSpan.textContent = totalDur && Number.isFinite(totalDur)
+        ? `${countText} · ${formatTime(totalDur)}`
+        : countText;
 
       li.append(nameSpan, countSpan);
       li.addEventListener("click", () => openPlaylistDetail(pl.name, pl.title));
@@ -698,11 +755,11 @@ export function createPlayerShell({ container }) {
 
     // Check for a local (embedded) playlist first (e.g. demo playlists)
     const localPlaylist = cachedPlaylists.find(
-      (pl) => pl.name === name && pl._local && Array.isArray(pl._items)
+      (pl) => pl.name === name && pl._local && Array.isArray(pl.items)
     );
 
     if (localPlaylist) {
-      renderPlaylistDetailItems(name, title, localPlaylist._items);
+      renderPlaylistDetailItems(name, title, localPlaylist.items);
       return;
     }
 
@@ -799,6 +856,7 @@ export function createPlayerShell({ container }) {
           unpinBtn.disabled = true;
           unpinBtn.textContent = t("playerUnpinning");
           unpinPlaylistTracks(items).then(() => {
+            lastPinResult = null;
             if (playlistDetailView === name) openPlaylistDetail(name, title);
           }).catch(() => {
             unpinBtn.disabled = false;
@@ -814,7 +872,9 @@ export function createPlayerShell({ container }) {
         pinBtn.addEventListener("click", () => {
           pinBtn.disabled = true;
           pinBtn.textContent = t("playerPinning");
-          pinPlaylistTracks(items, trackMap, pinnedChecks).then(() => {
+          pinPlaylistTracks(items, trackMap, pinnedChecks).then((results) => {
+            const failed = results ? results.filter((r) => !r.ok && r.reason !== "already_pinned") : [];
+            lastPinResult = failed.length > 0 ? { playlistName: name, results } : null;
             if (playlistDetailView === name) openPlaylistDetail(name, title);
           }).catch(() => {
             pinBtn.disabled = false;
@@ -822,6 +882,41 @@ export function createPlayerShell({ container }) {
           });
         });
         toolbarLi.append(pinBtn);
+      }
+
+      // Show failure summary + retry from last pin attempt
+      if (lastPinResult && lastPinResult.playlistName === name) {
+        const failedResults = lastPinResult.results.filter((r) => !r.ok && r.reason !== "already_pinned");
+        const succeededCount = lastPinResult.results.filter((r) => r.ok).length;
+        if (failedResults.length > 0) {
+          const resultSpan = document.createElement("span");
+          resultSpan.className = "player-playlist-pin-result";
+          resultSpan.textContent = t("playerPinResult")
+            .replace("{0}", succeededCount)
+            .replace("{1}", failedResults.length);
+          toolbarLi.append(resultSpan);
+
+          const retryBtn = document.createElement("button");
+          retryBtn.type = "button";
+          retryBtn.className = "player-playlist-download-btn";
+          retryBtn.textContent = t("playerRetryFailed");
+          retryBtn.addEventListener("click", () => {
+            retryBtn.disabled = true;
+            retryBtn.textContent = t("playerPinning");
+            const failedNames = new Set(failedResults.map((r) => r.name));
+            const retryItems = items.filter((i) => failedNames.has(i.media_asset_name));
+            const retryPinnedChecks = retryItems.map(() => false);
+            pinPlaylistTracks(retryItems, trackMap, retryPinnedChecks).then((retryResults) => {
+              const stillFailed = retryResults ? retryResults.filter((r) => !r.ok && r.reason !== "already_pinned") : [];
+              lastPinResult = stillFailed.length > 0 ? { playlistName: name, results: retryResults } : null;
+              if (playlistDetailView === name) openPlaylistDetail(name, title);
+            }).catch(() => {
+              retryBtn.disabled = false;
+              retryBtn.textContent = t("playerRetryFailed");
+            });
+          });
+          toolbarLi.append(retryBtn);
+        }
       }
     }
 
@@ -837,6 +932,7 @@ export function createPlayerShell({ container }) {
       const catalogTrack = trackMap.get(item.media_asset_name);
       const displayTitle = catalogTrack?.title || item.snapshot_title || item.media_asset_name || "";
       const displayArtist = catalogTrack?.artist || item.snapshot_artist || "";
+      const displayAlbum = catalogTrack?.album || item.snapshot_album || "";
       const displayDuration = catalogTrack?.duration ?? item.snapshot_duration ?? null;
 
       const nameSpan = document.createElement("span");
@@ -845,7 +941,9 @@ export function createPlayerShell({ container }) {
 
       const artistSpan = document.createElement("span");
       artistSpan.className = "player-playlist-track-artist";
-      artistSpan.textContent = displayArtist;
+      artistSpan.textContent = displayAlbum
+        ? (displayArtist ? `${displayArtist} · ${displayAlbum}` : displayAlbum)
+        : displayArtist;
 
       const durationSpan = document.createElement("span");
       durationSpan.className = "player-playlist-track-duration";
@@ -883,6 +981,10 @@ export function createPlayerShell({ container }) {
           title: item.snapshot_title || item.media_asset_name,
           artist: item.snapshot_artist || "",
           duration: item.snapshot_duration,
+          snapshot_album: item.snapshot_album || "",
+          snapshot_genre: item.snapshot_genre || "",
+          snapshot_artwork_ref: item.snapshot_artwork_ref || "",
+          snapshot_content_hash: item.snapshot_content_hash || "",
           media_kind: "audio",
         });
         if (resolved) runtime.playNext([resolved]);
@@ -899,6 +1001,10 @@ export function createPlayerShell({ container }) {
           title: item.snapshot_title || item.media_asset_name,
           artist: item.snapshot_artist || "",
           duration: item.snapshot_duration,
+          snapshot_album: item.snapshot_album || "",
+          snapshot_genre: item.snapshot_genre || "",
+          snapshot_artwork_ref: item.snapshot_artwork_ref || "",
+          snapshot_content_hash: item.snapshot_content_hash || "",
           media_kind: "audio",
         });
         if (resolved) runtime.enqueue([resolved]);
@@ -1065,6 +1171,10 @@ export function createPlayerShell({ container }) {
             title: item.snapshot_title || item.media_asset_name,
             artist: item.snapshot_artist || "",
             duration: item.snapshot_duration,
+            snapshot_album: item.snapshot_album || "",
+            snapshot_genre: item.snapshot_genre || "",
+            snapshot_artwork_ref: item.snapshot_artwork_ref || "",
+            snapshot_content_hash: item.snapshot_content_hash || "",
             media_kind: "audio",
           });
         }
@@ -1294,6 +1404,8 @@ export function createPlayerShell({ container }) {
 
   // ── Render helpers ─────────────────────────────────────────────
 
+  let lastArtworkTrackName = "";
+
   function renderState(s) {
     // Play/pause
     playBtn.querySelector(".btn-icon").innerHTML = s.playing ? IconPause : IconPlay;
@@ -1327,16 +1439,30 @@ export function createPlayerShell({ container }) {
       metaGenre.hidden = true;
     }
 
-    // Compact artwork
-    const artUrl = track?.preview_image_url || track?.image_url || "";
-    if (artUrl) {
-      artworkCompact.innerHTML = "";
-      artworkCompact.style.backgroundImage = `url(${CSS.escape(artUrl)})`;
-      artworkCompact.classList.add("has-image");
-    } else {
+    // Compact artwork — resolve on track change via async artwork URL lookup
+    const trackName = track?.name || "";
+    if (trackName !== lastArtworkTrackName) {
+      lastArtworkTrackName = trackName;
       artworkCompact.style.backgroundImage = "";
       artworkCompact.innerHTML = IconMusic;
       artworkCompact.classList.remove("has-image");
+
+      if (track) {
+        resolveArtworkUrl(track).then((artUrl) => {
+          if (lastArtworkTrackName !== trackName) return;
+          if (artUrl) {
+            artworkCompact.innerHTML = "";
+            artworkCompact.style.backgroundImage = `url(${CSS.escape(artUrl)})`;
+            artworkCompact.classList.add("has-image");
+            setMediaSessionMetadata({
+              title: track.title || track.original_filename || track.name || "",
+              artist: track.artist || track.folder_path || "",
+              album: "VatioBoard",
+              artworkUrl: artUrl,
+            });
+          }
+        });
+      }
     }
 
     // Source badge
@@ -1418,7 +1544,11 @@ export function createPlayerShell({ container }) {
 
       const artistSpan = document.createElement("span");
       artistSpan.className = "player-queue-item-artist";
-      artistSpan.textContent = track.artist || "";
+      const qArtist = track.artist || "";
+      const qAlbum = track.album || "";
+      artistSpan.textContent = qAlbum
+        ? (qArtist ? `${qArtist} · ${qAlbum}` : qAlbum)
+        : qArtist;
 
       const durationSpan = document.createElement("span");
       durationSpan.className = "player-queue-item-duration";

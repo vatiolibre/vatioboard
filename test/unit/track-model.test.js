@@ -128,6 +128,8 @@ const GOV_FIXTURES = {
     snapshot_artist: "Snap Artist",
     snapshot_album: "Snap Album",
     snapshot_genre: "Snap Genre",
+    snapshot_artwork_ref: "MEDIA-gov-snap",
+    snapshot_content_hash: "sha256-snap-hash",
     snapshot_duration: 60,
   },
   metaObject: {
@@ -163,7 +165,7 @@ describe("track-model contract governance", () => {
     "name", "title", "artist", "album", "genre", "duration",
     "track_number", "artwork_ref", "media_kind", "original_filename",
     "content_hash", "mime_type", "blob_size", "file_extension",
-    "folder_path", "src", "has_preview_image", "created_at",
+    "folder_path", "src", "has_preview_image", "has_artwork", "created_at",
     "modified_at", "sort_timestamp", "_offline", "_demo",
   ].sort();
 
@@ -233,7 +235,38 @@ describe("track-model contract governance", () => {
     expect(t.artist).toBe("Snap Artist");
     expect(t.album).toBe("Snap Album");
     expect(t.genre).toBe("Snap Genre");
+    expect(t.artwork_ref).toBe("MEDIA-gov-snap");
+    expect(t.content_hash).toBe("sha256-snap-hash");
     expect(t.duration).toBe(60);
+  });
+
+  // ── Artwork ref ──────────────────────────────────────────────
+
+  it("artwork_ref: preserves URL-shaped preview_image_url into artwork_ref", () => {
+    const t = normalizeTrack({
+      name: "gov-art-url",
+      preview_image_url: "https://cdn.example.com/thumb.jpg",
+    });
+    expect(t.artwork_ref).toBe("https://cdn.example.com/thumb.jpg");
+  });
+
+  it("artwork_ref: prefers explicit artwork_ref over URL fallbacks", () => {
+    const t = normalizeTrack({
+      name: "gov-art-prio",
+      artwork_ref: "MEDIA-ASSET-cover",
+      preview_image_url: "https://cdn.example.com/thumb.jpg",
+    });
+    expect(t.artwork_ref).toBe("MEDIA-ASSET-cover");
+  });
+
+  it("has_artwork: true when source data flags it", () => {
+    const t = normalizeTrack({ name: "gov-art-flag", has_artwork: true });
+    expect(t.has_artwork).toBe(true);
+  });
+
+  it("has_artwork: false by default", () => {
+    const t = normalizeTrack({ name: "gov-no-art" });
+    expect(t.has_artwork).toBe(false);
   });
 
   // ── metadata_json as object ──────────────────────────────────

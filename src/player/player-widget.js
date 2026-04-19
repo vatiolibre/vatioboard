@@ -71,16 +71,22 @@ async function loadDemoPlaylist() {
 }
 
 function buildDemoPlaylistEntry(tracks) {
+  const totalDuration = tracks.reduce((sum, t) => sum + (t.duration || 0), 0);
   return {
     name: DEMO_PLAYLIST_NAME,
     title: DEMO_PLAYLIST_TITLE,
     item_count: tracks.length,
+    total_duration_seconds: totalDuration,
     _local: true,
-    _items: tracks.map((t) => ({
+    items: tracks.map((t) => ({
       media_asset_name: t.name,
       snapshot_title: t.title || "",
       snapshot_artist: t.artist || "",
+      snapshot_album: t.album || "",
+      snapshot_genre: t.genre || "",
       snapshot_duration: t.duration ?? null,
+      snapshot_artwork_ref: t.artwork_ref || "",
+      snapshot_content_hash: t.content_hash || "",
     })),
   };
 }
