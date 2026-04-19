@@ -23,6 +23,8 @@ import * as runtime from "../shared/audio-runtime.js";
 import { loadText, saveText } from "../shared/storage.js";
 import { loadPlaylists, loadPlaylistDetail } from "../shared/playlist-loader.js";
 import { isAudioAsset } from "../shared/audio-catalog.js";
+import { normalizeTrack } from "../shared/track-model.js";
+import { hasLocalSource, triggerBackgroundCache } from "../shared/audio-source-resolver.js";
 
 const PROGRESS_MAX = 1000;
 const VISUALIZER_VISIBLE_STORAGE_KEY = "vatio_board_player_widget_visualizer_visible";
@@ -240,7 +242,7 @@ export function createPlayerShell({ container }) {
   volumeRow.append(muteBtn, volumeSlider);
   updateRangeVisualFill(volumeSlider);
 
-  // ── Queue bottom sheet ─────────────────────────────────────────
+  // ── Queue bottom sheet (Up Next) ────────────────────────────────
   const queueSheet = document.createElement("div");
   queueSheet.className = "player-queue-sheet";
   queueSheet.setAttribute("aria-hidden", "true");
@@ -249,7 +251,12 @@ export function createPlayerShell({ container }) {
   queueSheetHeader.className = "player-queue-sheet-header";
 
   const queueSheetTitle = document.createElement("span");
-  queueSheetTitle.textContent = t("playerQueue");
+  queueSheetTitle.textContent = t("playerUpNext");
+
+  const queueSheetClearBtn = document.createElement("button");
+  queueSheetClearBtn.type = "button";
+  queueSheetClearBtn.className = "player-queue-clear-btn";
+  queueSheetClearBtn.textContent = t("playerClearQueue");
 
   const searchInput = document.createElement("input");
   searchInput.type = "search";
@@ -263,7 +270,7 @@ export function createPlayerShell({ container }) {
   queueCloseBtn.setAttribute("aria-label", t("close"));
   queueCloseBtn.innerHTML = IconClose;
 
-  queueSheetHeader.append(queueSheetTitle, searchInput, queueCloseBtn);
+  queueSheetHeader.append(queueSheetTitle, queueSheetClearBtn, searchInput, queueCloseBtn);
 
   const trackListUl = document.createElement("ul");
   trackListUl.className = "player-queue-list";
@@ -349,6 +356,13 @@ export function createPlayerShell({ container }) {
   });
   queueCloseBtn.addEventListener("click", () => setQueueOpen(false));
 
+  // Clear queue button
+  queueSheetClearBtn.addEventListener("click", () => {
+    runtime.stopPlayback();
+    runtime.setQueue([], { autoplay: false });
+    renderTrackList();
+  });
+
   // ── Playlist sheet toggle ──────────────────────────────────────
   let playlistOpen = false;
   let playlistDetailView = null; // null = list view, string = viewing a playlist by name
@@ -425,9 +439,25 @@ export function createPlayerShell({ container }) {
         return;
       }
 
-      // Play All button
-      const playAllLi = document.createElement("li");
-      playAllLi.className = "player-playlist-play-all";
+      // Check offline status for each track
+      const trackMap = new Map(allTracks.map((tr) => [tr.name, tr]));
+      const offlineChecks = await Promise.all(
+        items.map(async (item) => {
+          try {
+            return await hasLocalSource(item.media_asset_name);
+          } catch {
+            return false;
+          }
+        })
+      );
+
+      const totalTracks = items.length;
+      const offlineCount = offlineChecks.filter(Boolean).length;
+
+      // Toolbar row: Play All + offline status + download
+      const toolbarLi = document.createElement("li");
+      toolbarLi.className = "player-playlist-toolbar";
+
       const playAllBtn = document.createElement("button");
       playAllBtn.type = "button";
       playAllBtn.className = "player-playlist-play-all-btn";
@@ -437,21 +467,83 @@ export function createPlayerShell({ container }) {
         primeAudioContext();
         playPlaylistTracks(items);
       });
-      playAllLi.append(playAllBtn);
-      playlistListUl.append(playAllLi);
+
+      const statusSpan = document.createElement("span");
+      statusSpan.className = "player-playlist-offline-status";
+      if (offlineCount === totalTracks) {
+        statusSpan.textContent = t("playerPlaylistFullyOffline");
+        statusSpan.classList.add("fully-offline");
+      } else if (offlineCount > 0) {
+        statusSpan.textContent = t("playerPlaylistPartialOffline").replace("{0}", offlineCount).replace("{1}", totalTracks);
+      } else {
+        statusSpan.textContent = t("playerPlaylistCloudOnly");
+      }
+
+      toolbarLi.append(playAllBtn, statusSpan);
+
+      // Download playlist button (only if not fully offline)
+      if (offlineCount < totalTracks) {
+        const downloadBtn = document.createElement("button");
+        downloadBtn.type = "button";
+        downloadBtn.className = "player-playlist-download-btn";
+        downloadBtn.textContent = t("playerDownloadPlaylist");
+        downloadBtn.addEventListener("click", () => {
+          downloadBtn.disabled = true;
+          downloadBtn.textContent = t("playerDownloading");
+          downloadPlaylistTracks(items, trackMap, offlineChecks).then(() => {
+            if (playlistDetailView === name) {
+              openPlaylistDetail(name, title); // refresh status
+            }
+          }).catch(() => {
+            downloadBtn.disabled = false;
+            downloadBtn.textContent = t("playerDownloadPlaylist");
+          });
+        });
+        toolbarLi.append(downloadBtn);
+      }
+
+      playlistListUl.append(toolbarLi);
 
       // Track items
-      const trackMap = new Map(allTracks.map((tr) => [tr.name, tr]));
-      for (const item of items) {
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const isOffline = offlineChecks[i];
         const li = document.createElement("li");
         li.className = "player-playlist-track-item";
 
+        // Resolve display metadata: prefer catalog, fall back to snapshot
+        const catalogTrack = trackMap.get(item.media_asset_name);
+        const displayTitle = catalogTrack?.title || item.snapshot_title || item.media_asset_name || "";
+        const displayArtist = catalogTrack?.artist || item.snapshot_artist || "";
+        const displayDuration = catalogTrack?.duration ?? item.snapshot_duration ?? null;
+
         const nameSpan = document.createElement("span");
         nameSpan.className = "player-playlist-track-name";
-        const catalogTrack = trackMap.get(item.media_asset_name);
-        nameSpan.textContent = catalogTrack?.title || item.media_asset_name || "";
+        nameSpan.textContent = displayTitle;
 
-        li.append(nameSpan);
+        const artistSpan = document.createElement("span");
+        artistSpan.className = "player-playlist-track-artist";
+        artistSpan.textContent = displayArtist;
+
+        const durationSpan = document.createElement("span");
+        durationSpan.className = "player-playlist-track-duration";
+        if (displayDuration != null && Number.isFinite(displayDuration)) {
+          durationSpan.textContent = formatTime(displayDuration);
+        }
+
+        const badge = document.createElement("span");
+        badge.className = "player-playlist-track-badge";
+        if (isOffline) {
+          badge.classList.add("offline");
+          badge.title = t("playerOffline");
+        } else if (!catalogTrack) {
+          li.classList.add("unavailable");
+        } else {
+          badge.classList.add("cloud");
+          badge.title = t("playerRemote");
+        }
+
+        li.append(nameSpan, artistSpan, durationSpan, badge);
         li.addEventListener("click", () => {
           _gestureUnlocked = true;
           primeAudioContext();
@@ -469,16 +561,68 @@ export function createPlayerShell({ container }) {
     }
   }
 
+  /**
+   * Download (cache) all non-offline tracks in a playlist.
+   * Returns a per-track results array: { name, ok, reason }.
+   */
+  async function downloadPlaylistTracks(items, trackMap, offlineChecks) {
+    const results = [];
+    const pending = [];
+    for (let i = 0; i < items.length; i++) {
+      const assetName = items[i].media_asset_name;
+      if (offlineChecks[i]) {
+        results.push({ name: assetName, ok: true, reason: "already_offline" });
+        continue;
+      }
+      const catalogTrack = trackMap.get(assetName);
+      if (!catalogTrack) {
+        results.push({ name: assetName, ok: false, reason: "not_in_catalog" });
+        continue;
+      }
+      const idx = results.length;
+      results.push({ name: assetName, ok: false, reason: "pending" });
+      pending.push(
+        new Promise((resolve) => {
+          triggerBackgroundCache(assetName, catalogTrack, {
+            onCached: () => { results[idx] = { name: assetName, ok: true, reason: "cached" }; resolve(); },
+            onFailed: (reason) => { results[idx] = { name: assetName, ok: false, reason: reason || "failed" }; resolve(); },
+          });
+        })
+      );
+    }
+    await Promise.allSettled(pending);
+    return results;
+  }
+
   function playPlaylistTracks(items, startItem) {
-    // Resolve playlist items against the known track catalog
+    // Resolve playlist items against the known track catalog.
+    // Unavailable tracks are silently skipped — graceful degradation.
     const trackMap = new Map();
     for (const tr of allTracks) {
       trackMap.set(tr.name, tr);
     }
 
     const resolved = items
-      .map((item) => trackMap.get(item.media_asset_name))
-      .filter((tr) => tr && isAudioAsset(tr));
+      .map((item) => {
+        const catalogTrack = trackMap.get(item.media_asset_name);
+        if (catalogTrack) {
+          // Track exists in catalog — only include if it's audio
+          return isAudioAsset(catalogTrack) ? catalogTrack : null;
+        }
+        // Track NOT in catalog (deleted?) — fall back to snapshot metadata
+        // so the queue shows something meaningful for offline playlists
+        if (item.snapshot_title || item.media_asset_name) {
+          return normalizeTrack({
+            name: item.media_asset_name,
+            title: item.snapshot_title || item.media_asset_name,
+            artist: item.snapshot_artist || "",
+            duration: item.snapshot_duration,
+            media_kind: "audio",
+          });
+        }
+        return null;
+      })
+      .filter(Boolean);
 
     if (resolved.length === 0) return;
 
@@ -797,7 +941,8 @@ export function createPlayerShell({ container }) {
   function renderTrackList(filter = "") {
     trackListUl.innerHTML = "";
     const s = runtime.getState();
-    const source = allTracks.length > 0 ? allTracks : s.queue;
+    // Up Next: always show the runtime queue, not the full catalog
+    const source = s.queue;
     const tracks = filter
       ? source.filter((tr) => {
           const hay = `${tr.title || ""} ${tr.artist || ""} ${tr.original_filename || ""} ${tr.folder_path || ""}`.toLowerCase();
@@ -825,7 +970,13 @@ export function createPlayerShell({ container }) {
 
       const artistSpan = document.createElement("span");
       artistSpan.className = "player-queue-item-artist";
-      artistSpan.textContent = track.artist || track.folder_path || "";
+      artistSpan.textContent = track.artist || "";
+
+      const durationSpan = document.createElement("span");
+      durationSpan.className = "player-queue-item-duration";
+      if (track.duration != null && Number.isFinite(track.duration)) {
+        durationSpan.textContent = formatTime(track.duration);
+      }
 
       const badge = document.createElement("span");
       badge.className = "player-queue-item-badge";
@@ -834,11 +985,22 @@ export function createPlayerShell({ container }) {
         badge.title = t("playerOffline");
       }
 
-      li.append(nameSpan, artistSpan, badge);
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "player-queue-remove-btn";
+      removeBtn.textContent = "\u00d7";
+      removeBtn.title = t("playerRemoveFromQueue");
+      removeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        runtime.removeFromQueue(track.name);
+        renderTrackList(filter);
+      });
+
+      li.append(nameSpan, artistSpan, durationSpan, badge, removeBtn);
       li.addEventListener("click", () => {
         _gestureUnlocked = true;
         primeAudioContext();
-        void runtime.playCatalogTrack(track.name, allTracks);
+        void runtime.playTrackByName(track.name);
       });
 
       trackListUl.append(li);

@@ -24,6 +24,7 @@ import {
   getProtectedMediaRequestGate,
 } from "./backend-auth.js";
 import { hasLocalSource } from "./audio-source-resolver.js";
+import { normalizeTrack } from "./track-model.js";
 
 function isAbortError(error) {
   return Boolean(
@@ -95,8 +96,8 @@ export async function loadAudioCatalog(query = {}) {
     }
   }
 
-  // Filter to audio only
-  const audioAssets = assets.filter(isAudioAsset);
+  // Filter to audio only and normalise into canonical shape
+  const audioAssets = assets.filter(isAudioAsset).map(normalizeTrack).filter(Boolean);
 
   // Apply search + sort
   const filtered = filterAndSort(audioAssets, query);
@@ -214,7 +215,7 @@ function filterAndSort(assets, query) {
   const search = String(query?.search || "").trim().toLowerCase();
   if (search) {
     result = result.filter((a) => {
-      const haystack = `${a.title || ""} ${a.original_filename || ""} ${a.folder_path || ""}`.toLowerCase();
+      const haystack = `${a.title || ""} ${a.artist || ""} ${a.album || ""} ${a.genre || ""} ${a.original_filename || ""} ${a.folder_path || ""}`.toLowerCase();
       return haystack.includes(search);
     });
   }

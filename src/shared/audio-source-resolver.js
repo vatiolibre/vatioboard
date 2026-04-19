@@ -155,18 +155,31 @@ export function buildRemotePlaybackUrl(assetName, asset) {
  *
  * @param {string} assetName
  * @param {object} asset - Asset metadata (needs content_hash, media_kind, blob_size)
- * @param {{ onCached?: Function, fetchFn?: Function }} [opts]
+ * @param {{ onCached?: Function, onFailed?: Function, fetchFn?: Function }} [opts]
  * @returns {void}
  */
-export function triggerBackgroundCache(assetName, asset, { onCached, fetchFn = fetch } = {}) {
-  if (!assetName || !asset) return;
-  if (!isAutoCacheEligible(asset)) return;
+export function triggerBackgroundCache(assetName, asset, { onCached, onFailed, fetchFn = fetch } = {}) {
+  if (!assetName || !asset) {
+    if (typeof onFailed === "function") {
+      try { onFailed("ineligible"); } catch { /* ignore */ }
+    }
+    return;
+  }
+  if (!isAutoCacheEligible(asset)) {
+    if (typeof onFailed === "function") {
+      try { onFailed("ineligible"); } catch { /* ignore */ }
+    }
+    return;
+  }
 
   const doDownload = async () => {
     // Skip if already locally cached with a matching (fresh) content hash.
     try {
       const meta = await getLocalBlobMeta(assetName);
       if (meta?.content_hash && asset.content_hash && meta.content_hash === asset.content_hash) {
+        if (typeof onCached === "function") {
+          try { onCached(); } catch { /* ignore */ }
+        }
         return;
       }
     } catch { /* proceed with download */ }
@@ -174,7 +187,12 @@ export function triggerBackgroundCache(assetName, asset, { onCached, fetchFn = f
     let gate = null;
     try {
       gate = await getProtectedMediaRequestGate();
-      if (!gate.allowed) return;
+      if (!gate.allowed) {
+        if (typeof onFailed === "function") {
+          try { onFailed("not_allowed"); } catch { /* ignore */ }
+        }
+        return;
+      }
 
       let response = null;
 
@@ -191,7 +209,12 @@ export function triggerBackgroundCache(assetName, asset, { onCached, fetchFn = f
           if (r.ok) response = r;
         }
       } catch (error) {
-        if (isAbortError(error)) return;
+        if (isAbortError(error)) {
+          if (typeof onFailed === "function") {
+            try { onFailed("aborted"); } catch { /* ignore */ }
+          }
+          return;
+        }
         // fall through
       }
 
@@ -204,7 +227,12 @@ export function triggerBackgroundCache(assetName, asset, { onCached, fetchFn = f
           });
           if (r.ok) response = r;
         } catch (error) {
-          if (isAbortError(error)) return;
+          if (isAbortError(error)) {
+            if (typeof onFailed === "function") {
+              try { onFailed("aborted"); } catch { /* ignore */ }
+            }
+            return;
+          }
           // fall through
         }
       }
@@ -217,13 +245,23 @@ export function triggerBackgroundCache(assetName, asset, { onCached, fetchFn = f
             const r = await fetchFn(streamUrl, { signal: gate.signal });
             if (r.ok) response = r;
           } catch (error) {
-            if (isAbortError(error)) return;
+            if (isAbortError(error)) {
+              if (typeof onFailed === "function") {
+                try { onFailed("aborted"); } catch { /* ignore */ }
+              }
+              return;
+            }
             // no source available
           }
         }
       }
 
-      if (!response) return;
+      if (!response) {
+        if (typeof onFailed === "function") {
+          try { onFailed("no_source"); } catch { /* ignore */ }
+        }
+        return;
+      }
 
       const ok = await cacheMediaFromResponse(assetName, response, {
         contentHash: asset.content_hash || null,
@@ -234,12 +272,25 @@ export function triggerBackgroundCache(assetName, asset, { onCached, fetchFn = f
       if (ok && typeof onCached === "function") {
         try { onCached(); } catch { /* ignore callback errors */ }
       }
+      if (!ok && typeof onFailed === "function") {
+        try { onFailed("cache_failed"); } catch { /* ignore */ }
+      }
+    } catch {
+      // Gate acquisition or unexpected error — settle as failure.
+      if (typeof onFailed === "function") {
+        try { onFailed("no_source"); } catch { /* ignore */ }
+      }
     } finally {
       gate?.cleanup?.();
     }
   };
 
-  registerAutoCacheDownload(assetName, doDownload);
+  const started = registerAutoCacheDownload(assetName, doDownload);
+  if (!started) {
+    if (typeof onFailed === "function") {
+      try { onFailed("already_in_flight"); } catch { /* ignore */ }
+    }
+  }
 }
 
 /**

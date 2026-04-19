@@ -402,6 +402,167 @@ describe("audio-source-resolver", () => {
     expect(mediaCacheMock.registerAutoCacheDownload).toHaveBeenCalledTimes(2);
     // The dedup is enforced by registerAutoCacheDownload returning false
   });
+
+  it("triggerBackgroundCache calls onFailed when no source is available", async () => {
+    mediaCacheMock.isAutoCacheEligible.mockReturnValueOnce(true);
+    mediaCacheMock.getLocalBlobMeta.mockResolvedValueOnce(null);
+
+    let factory;
+    mediaCacheMock.registerAutoCacheDownload.mockImplementationOnce((name, fn) => {
+      factory = fn;
+      return true;
+    });
+
+    // All download methods fail
+    backendAuthMock.getBackendMediaAssetAccess.mockResolvedValueOnce({ ok: false });
+    backendAuthMock.fetchBackendMediaAssetBlob.mockResolvedValueOnce(
+      new Response("", { status: 500 }),
+    );
+    const fetchFn = vi.fn().mockResolvedValue(new Response("", { status: 500 }));
+    const onFailed = vi.fn();
+
+    triggerBackgroundCache("asset_a", TRACK_A, { fetchFn, onFailed });
+    expect(factory).toBeDefined();
+    await factory();
+
+    expect(onFailed).toHaveBeenCalledTimes(1);
+    expect(onFailed).toHaveBeenCalledWith("no_source");
+  });
+
+  it("triggerBackgroundCache calls onFailed for ineligible assets", () => {
+    mediaCacheMock.isAutoCacheEligible.mockReturnValueOnce(false);
+    const onFailed = vi.fn();
+    triggerBackgroundCache("asset_a", TRACK_A, { onFailed });
+    expect(onFailed).toHaveBeenCalledWith("ineligible");
+  });
+
+  it("triggerBackgroundCache calls onFailed when caching fails", async () => {
+    mediaCacheMock.isAutoCacheEligible.mockReturnValueOnce(true);
+    mediaCacheMock.getLocalBlobMeta.mockResolvedValueOnce(null);
+    mediaCacheMock.cacheMediaFromResponse.mockResolvedValueOnce(false);
+
+    let factory;
+    mediaCacheMock.registerAutoCacheDownload.mockImplementationOnce((name, fn) => {
+      factory = fn;
+      return true;
+    });
+
+    backendAuthMock.getBackendMediaAssetAccess.mockResolvedValueOnce({
+      ok: true,
+      access: { download_url: "https://cdn.example.com/dl.mp3", expires_in_seconds: 300 },
+      asset: { content_hash: "hash_a" },
+    });
+
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(new Blob(["audio"]), { status: 200 }),
+    );
+    const onCached = vi.fn();
+    const onFailed = vi.fn();
+
+    triggerBackgroundCache("asset_a", TRACK_A, { fetchFn, onCached, onFailed });
+    expect(factory).toBeDefined();
+    await factory();
+
+    expect(onCached).not.toHaveBeenCalled();
+    expect(onFailed).toHaveBeenCalledWith("cache_failed");
+  });
+
+  it("triggerBackgroundCache calls onFailed('already_in_flight') when dedupe guard fires", () => {
+    mediaCacheMock.isAutoCacheEligible.mockReturnValueOnce(true);
+    // registerAutoCacheDownload returns false — download already in progress
+    mediaCacheMock.registerAutoCacheDownload.mockReturnValueOnce(false);
+
+    const onCached = vi.fn();
+    const onFailed = vi.fn();
+
+    triggerBackgroundCache("asset_a", TRACK_A, { onCached, onFailed });
+
+    expect(onCached).not.toHaveBeenCalled();
+    expect(onFailed).toHaveBeenCalledTimes(1);
+    expect(onFailed).toHaveBeenCalledWith("already_in_flight");
+  });
+
+  it("triggerBackgroundCache calls onFailed('not_allowed') when gate denies access", async () => {
+    mediaCacheMock.isAutoCacheEligible.mockReturnValueOnce(true);
+    mediaCacheMock.getLocalBlobMeta.mockResolvedValueOnce(null);
+
+    let factory;
+    mediaCacheMock.registerAutoCacheDownload.mockImplementationOnce((name, fn) => {
+      factory = fn;
+      return true;
+    });
+
+    // Gate denies the request
+    backendAuthMock.getProtectedMediaRequestGate.mockResolvedValueOnce({
+      allowed: false,
+      cleanup() {},
+      signal: undefined,
+    });
+
+    const onCached = vi.fn();
+    const onFailed = vi.fn();
+
+    triggerBackgroundCache("asset_a", TRACK_A, { onCached, onFailed });
+    expect(factory).toBeDefined();
+    await factory();
+
+    expect(onCached).not.toHaveBeenCalled();
+    expect(onFailed).toHaveBeenCalledTimes(1);
+    expect(onFailed).toHaveBeenCalledWith("not_allowed");
+  });
+
+  it("triggerBackgroundCache calls onCached when local blob is already fresh", async () => {
+    mediaCacheMock.isAutoCacheEligible.mockReturnValueOnce(true);
+    mediaCacheMock.getLocalBlobMeta.mockResolvedValueOnce({
+      content_hash: "hash_a",
+      source: "cached",
+    });
+
+    let factory;
+    mediaCacheMock.registerAutoCacheDownload.mockImplementationOnce((name, fn) => {
+      factory = fn;
+      return true;
+    });
+
+    const onCached = vi.fn();
+    const onFailed = vi.fn();
+
+    triggerBackgroundCache("asset_a", { ...TRACK_A, content_hash: "hash_a" }, { onCached, onFailed });
+    expect(factory).toBeDefined();
+    await factory();
+
+    // Fresh local blob — no download, but settles as cached
+    expect(backendAuthMock.getBackendMediaAssetAccess).not.toHaveBeenCalled();
+    expect(mediaCacheMock.cacheMediaFromResponse).not.toHaveBeenCalled();
+    expect(onCached).toHaveBeenCalledTimes(1);
+    expect(onFailed).not.toHaveBeenCalled();
+  });
+
+  it("triggerBackgroundCache calls onFailed('aborted') on abort error", async () => {
+    mediaCacheMock.isAutoCacheEligible.mockReturnValueOnce(true);
+    mediaCacheMock.getLocalBlobMeta.mockResolvedValueOnce(null);
+
+    let factory;
+    mediaCacheMock.registerAutoCacheDownload.mockImplementationOnce((name, fn) => {
+      factory = fn;
+      return true;
+    });
+
+    // Signed download throws an AbortError
+    const abortError = new DOMException("The operation was aborted.", "AbortError");
+    backendAuthMock.getBackendMediaAssetAccess.mockRejectedValueOnce(abortError);
+
+    const onCached = vi.fn();
+    const onFailed = vi.fn();
+
+    triggerBackgroundCache("asset_a", TRACK_A, { onCached, onFailed });
+    expect(factory).toBeDefined();
+    await factory();
+
+    expect(onCached).not.toHaveBeenCalled();
+    expect(onFailed).toHaveBeenCalledTimes(1);
+    expect(onFailed).toHaveBeenCalledWith("aborted");
+  });
 });
 
 // ── Tests: media-session-adapter ─────────────────────────────────────
@@ -1198,6 +1359,7 @@ describe("player-shell", () => {
 
     vi.doMock("../../src/shared/audio-mini-visualizer.js", () => ({
       createMiniAudioVisualizer: visualizerMockState.createVisualizerSpy,
+      destroyVisualizerGraphForElement: vi.fn().mockReturnValue(false),
     }));
 
     const mod = await import("../../src/player/player-shell.js");
@@ -1320,6 +1482,8 @@ describe("player-shell", () => {
     const queueBtn = container.querySelector(".player-queue-toggle-btn");
     queueBtn.click();
 
+    // Queue sheet reads from runtime queue, not allTracks
+    runtime.setQueue([TRACK_A, TRACK_B], { autoplay: false });
     shell.setTracks([TRACK_A, TRACK_B]);
 
     const items = container.querySelectorAll(".player-queue-item");
@@ -1387,6 +1551,7 @@ describe("player-shell", () => {
 
     // Open queue sheet so items are rendered
     container.querySelector(".player-queue-toggle-btn").click();
+    runtime.setQueue([TRACK_A, TRACK_B], { autoplay: false });
     shell.setTracks([TRACK_A, TRACK_B]);
 
     const trackItem = container.querySelector('[data-track-name="asset_b"]');
@@ -1406,6 +1571,7 @@ describe("player-shell", () => {
 
     // Open queue sheet and set tracks (initially not offline)
     container.querySelector(".player-queue-toggle-btn").click();
+    runtime.setQueue([{ ...TRACK_A, _offline: false }, TRACK_B], { autoplay: false });
     shell.setTracks([{ ...TRACK_A, _offline: false }, TRACK_B]);
 
     const badgeBefore = container.querySelector('[data-track-name="asset_a"] .player-queue-item-badge');
@@ -1420,6 +1586,165 @@ describe("player-shell", () => {
       const badge = container.querySelector('[data-track-name="asset_a"] .player-queue-item-badge');
       expect(badge.classList.contains("offline")).toBe(true);
     });
+
+    shell.destroy();
+  });
+});
+
+describe("audio-runtime auto-skip resilience", () => {
+  it("skips through more than five consecutive unavailable tracks to reach a playable one", async () => {
+    vi.resetModules();
+    localStorage.clear();
+
+    // 8 tracks: first 7 unresolvable, 8th is playable
+    let callCount = 0;
+    const resolveAudioSource = vi.fn(async () => {
+      callCount++;
+      if (callCount < 8) return null; // tracks 1-7 are unavailable
+      return { src: "blob:ok", type: "blob", revokeUrl: vi.fn() };
+    });
+
+    vi.doMock("../../src/shared/audio-source-resolver.js", () => ({
+      resolveAudioSource,
+      hasLocalSource: vi.fn().mockResolvedValue(false),
+      triggerBackgroundCache: vi.fn(),
+    }));
+    vi.doMock("../../src/shared/audio-mini-visualizer.js", () => ({
+      destroyVisualizerGraphForElement: vi.fn().mockReturnValue(false),
+    }));
+
+    const runtime = await import("../../src/shared/audio-runtime.js");
+
+    const tracks = Array.from({ length: 8 }, (_, i) => ({
+      name: `track_${i}`,
+      title: `Track ${i}`,
+      original_filename: `track_${i}.mp3`,
+      media_kind: "audio",
+      content_hash: `h${i}`,
+      blob_size: 1024,
+    }));
+
+    runtime.setQueue(tracks, { autoplay: true });
+
+    // Wait for the auto-skip chain to resolve on the 8th track
+    await vi.waitFor(() => {
+      expect(runtime.getState().currentIndex).toBe(7);
+    }, { timeout: 5000 });
+
+    expect(runtime.getState().error).toBeNull();
+    expect(resolveAudioSource).toHaveBeenCalledTimes(8);
+  });
+});
+
+describe("player-shell queue remove action", () => {
+  let createPlayerShell;
+  let runtime;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    localStorage.clear();
+
+    vi.doMock("../../src/i18n.js", () => ({
+      t: (key) => key,
+      getLang: () => "en",
+      toggleLang: vi.fn(),
+      applyTranslations: vi.fn(),
+    }));
+    vi.doMock("../../src/shared/media-cache.js", () => ({
+      getLocalMediaBlob: vi.fn().mockResolvedValue(null),
+      getLocalBlobMeta: vi.fn().mockResolvedValue(null),
+      isAutoCacheEligible: vi.fn().mockReturnValue(false),
+      registerAutoCacheDownload: vi.fn(),
+      cacheMediaBlob: vi.fn().mockResolvedValue(undefined),
+      cacheMediaFromResponse: vi.fn().mockResolvedValue(undefined),
+    }));
+    vi.doMock("../../src/shared/environment.js", () => ({
+      getEnvironmentConfig: () => ({ apiBase: "https://api.vatioboard.com" }),
+    }));
+    vi.doMock("../../src/shared/backend-auth.js", () => ({
+      getProtectedMediaRequestGate: vi.fn().mockResolvedValue({
+        allowed: true, cleanup() {}, signal: undefined,
+      }),
+      getBackendMediaAssetAccess: vi.fn().mockResolvedValue({ ok: false, access: null }),
+      getBackendMediaManifest: vi.fn().mockResolvedValue({ ok: false, assets: [] }),
+      getBackendManifestVersion: vi.fn().mockResolvedValue({ ok: false }),
+      fetchBackendMediaAssetBlob: vi.fn().mockResolvedValue(new Response("", { status: 404 })),
+    }));
+    vi.doMock("../../src/shared/media-access-cache.js", () => ({
+      getCachedMediaAccess: vi.fn().mockReturnValue(null),
+      setCachedMediaAccess: vi.fn(),
+      clearMediaAccessCache: vi.fn(),
+    }));
+    vi.doMock("../../src/shared/audio-mini-visualizer.js", () => ({
+      createMiniAudioVisualizer: vi.fn(() => ({
+        get isAvailable() { return true; },
+        setMode: vi.fn(), resize: vi.fn(),
+        start: vi.fn(() => Promise.resolve(true)),
+        stop: vi.fn(), destroy: vi.fn(),
+      })),
+      destroyVisualizerGraphForElement: vi.fn().mockReturnValue(false),
+    }));
+
+    const mod = await import("../../src/player/player-shell.js");
+    createPlayerShell = mod.createPlayerShell;
+    runtime = await import("../../src/shared/audio-runtime.js");
+  });
+
+  it("remove button removes a track from the queue", () => {
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+
+    const tracks = [TRACK_A, TRACK_B];
+    runtime.setQueue(tracks, { autoplay: false });
+    shell.setTracks(tracks);
+
+    // Open queue sheet
+    container.querySelector(".player-queue-toggle-btn").click();
+
+    // Verify two items exist
+    let items = container.querySelectorAll(".player-queue-item");
+    expect(items.length).toBe(2);
+
+    // Click the remove button on the first track
+    const removeBtn = items[0].querySelector(".player-queue-remove-btn");
+    expect(removeBtn).toBeTruthy();
+    removeBtn.click();
+
+    // Queue should now have one track
+    expect(runtime.getState().queue.length).toBe(1);
+    expect(runtime.getState().queue[0].name).toBe("asset_b");
+
+    // DOM should reflect the removal
+    items = container.querySelectorAll(".player-queue-item");
+    expect(items.length).toBe(1);
+
+    shell.destroy();
+  });
+
+  it("remove button is always visible (touch-first)", () => {
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+
+    runtime.setQueue([TRACK_A], { autoplay: false });
+    shell.setTracks([TRACK_A]);
+
+    container.querySelector(".player-queue-toggle-btn").click();
+
+    const removeBtn = container.querySelector(".player-queue-remove-btn");
+    // Button exists in the DOM
+    expect(removeBtn).toBeTruthy();
+    // Not hidden by HTML attribute
+    expect(removeBtn.hidden).toBe(false);
+    // No inline styles suppress visibility
+    expect(removeBtn.style.display).not.toBe("none");
+    expect(removeBtn.style.visibility).not.toBe("hidden");
+    expect(removeBtn.style.opacity).not.toBe("0");
+    // Queue sheet ancestor is open (not aria-hidden)
+    const queueSheet = removeBtn.closest(".player-queue-sheet");
+    expect(queueSheet).toBeTruthy();
+    expect(queueSheet.getAttribute("aria-hidden")).toBe("false");
+    // Button is interactive
+    expect(removeBtn.disabled).toBeFalsy();
 
     shell.destroy();
   });

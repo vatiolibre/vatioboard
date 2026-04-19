@@ -220,6 +220,31 @@ function shouldResetVisualizerGraph(previousSourceType, nextResolved) {
 // ── Core playback ────────────────────────────────────────────────────
 
 /**
+ * Counter to prevent infinite skip loops when consecutive tracks are
+ * unavailable.  Reset to 0 each time a track loads successfully.
+ */
+let consecutiveSkips = 0;
+
+/**
+ * Auto-skip to the next track when the current one is unavailable.
+ * Scans forward through the entire queue (wrapping around once) so
+ * playback continues even when a long run of tracks is unavailable,
+ * as long as at least one later track is reachable.  Gives up after
+ * exhausting the queue to prevent infinite loops.
+ */
+function autoSkipUnavailable() {
+  consecutiveSkips += 1;
+  // Allow skipping up to the full queue length (every track tried once)
+  if (consecutiveSkips >= state.queue.length) {
+    consecutiveSkips = 0;
+    return; // every track in the queue has been tried — give up
+  }
+  if (state.queue.length > 1) {
+    nextTrack();
+  }
+}
+
+/**
  * Load and play a track from the queue by index.
  *
  * @param {number} index - Queue index
@@ -253,6 +278,8 @@ async function loadTrack(index, { startTime = 0, autoplay = true } = {}) {
     state.error = "unavailable";
     state.sourceType = null;
     notify();
+    // Auto-skip unavailable tracks (with loop guard)
+    autoSkipUnavailable();
     return;
   }
 
@@ -282,6 +309,7 @@ async function loadTrack(index, { startTime = 0, autoplay = true } = {}) {
   }
 
   state.loading = false;
+  consecutiveSkips = 0; // successful load — reset skip counter
   notify();
 
   updateMediaSessionMetadata();
@@ -322,6 +350,50 @@ export function setQueue(tracks, { startIndex = 0, autoplay = true } = {}) {
  */
 export function enqueue(tracks) {
   state.queue.push(...tracks);
+  persistSession();
+  notify();
+}
+
+/**
+ * Insert tracks immediately after the current track ("Play Next").
+ * @param {object[]} tracks
+ */
+export function playNext(tracks) {
+  if (!Array.isArray(tracks) || tracks.length === 0) return;
+  const insertAt = state.currentIndex >= 0 ? state.currentIndex + 1 : 0;
+  state.queue.splice(insertAt, 0, ...tracks);
+  persistSession();
+  notify();
+}
+
+/**
+ * Remove a track from the queue by name.
+ * If the removed track is currently playing, skip to next.
+ * @param {string} trackName
+ */
+export function removeFromQueue(trackName) {
+  if (!trackName) return;
+  const idx = state.queue.findIndex((t) => t.name === trackName);
+  if (idx < 0) return;
+
+  const wasPlaying = idx === state.currentIndex;
+  state.queue.splice(idx, 1);
+
+  // Adjust currentIndex if the removed track was before/at current
+  if (idx < state.currentIndex) {
+    state.currentIndex -= 1;
+  } else if (wasPlaying) {
+    // If we removed the current track, load the next one at same index
+    if (state.queue.length === 0) {
+      stopPlayback();
+      return;
+    }
+    const nextIdx = Math.min(state.currentIndex, state.queue.length - 1);
+    state.currentIndex = nextIdx;
+    loadTrack(nextIdx, { autoplay: !state.paused });
+    return;
+  }
+
   persistSession();
   notify();
 }

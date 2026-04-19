@@ -119,5 +119,16 @@ function mapPlaylistEntry(playlist) {
     cover_asset_name: playlist.cover_asset_name ?? null,
     created_at: playlist.created_at ?? null,
     modified_at: playlist.modified_at ?? null,
+    items: Array.isArray(playlist.items) ? playlist.items.map(mapPlaylistItem) : undefined,
+  };
+}
+
+function mapPlaylistItem(item) {
+  return {
+    media_asset_name: item.media_asset_name,
+    position: item.position ?? 0,
+    snapshot_title: item.snapshot_title || "",
+    snapshot_artist: item.snapshot_artist || "",
+    snapshot_duration: item.snapshot_duration ?? null,
   };
 }

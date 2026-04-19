@@ -139,6 +139,11 @@ function mapManifestAsset(asset) {
   return {
     name: asset.name,
     title: asset.title,
+    artist: asset.artist || "",
+    album: asset.album || "",
+    genre: asset.genre || "",
+    duration: asset.duration ?? null,
+    track_number: asset.track_number ?? null,
     media_kind: asset.media_kind,
     mime_type: asset.mime_type,
     blob_size: asset.blob_size,

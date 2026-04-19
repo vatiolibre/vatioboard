@@ -738,7 +738,7 @@
 
 .player-queue-item {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto auto;
   grid-template-rows: auto auto;
   align-items: center;
   padding: 8px 12px;
@@ -783,13 +783,25 @@
   display: none;
 }
 
+.player-queue-item-duration {
+  grid-column: 2;
+  grid-row: 1 / -1;
+  font-size: 0.7rem;
+  color: var(--player-muted);
+  white-space: nowrap;
+}
+
+.player-queue-item-duration:empty {
+  display: none;
+}
+
 .player-queue-item.active .player-queue-item-name {
   color: var(--player-accent);
   font-weight: 600;
 }
 
 .player-queue-item-badge {
-  grid-column: 2;
+  grid-column: 3;
   grid-row: 1 / -1;
   width: 7px;
   height: 7px;
@@ -801,11 +813,178 @@
   background: var(--player-badge-offline);
 }
 
+.player-queue-remove-btn {
+  grid-column: 4;
+  grid-row: 1 / -1;
+  background: none;
+  border: none;
+  color: var(--player-muted);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 4px 6px;
+  line-height: 1;
+  border-radius: 4px;
+  opacity: 0.45;
+  transition: opacity 0.12s ease, color 0.12s ease;
+  // Touch-first: always visible; enhanced on hover for pointer devices
+  -webkit-tap-highlight-color: transparent;
+}
+
+.player-queue-item:hover .player-queue-remove-btn {
+  opacity: 1;
+}
+
+.player-queue-remove-btn:active {
+  opacity: 1;
+  color: var(--player-fg);
+}
+
+.player-queue-remove-btn:hover {
+  color: var(--player-fg);
+}
+
+.player-queue-clear-btn {
+  background: none;
+  border: 1px solid var(--player-border);
+  color: var(--player-muted);
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+
+.player-queue-clear-btn:hover {
+  color: var(--player-fg);
+  border-color: var(--player-fg);
+}
+
 .player-queue-empty {
   padding: 16px 12px;
   text-align: center;
   color: var(--player-muted);
   font-size: 0.8rem;
+}
+
+/* ── Playlist track items ─────────────────────────────────────────── */
+
+.player-playlist-track-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  border-bottom: 1px solid var(--player-border);
+  gap: 0 8px;
+}
+
+.player-playlist-track-item:last-child {
+  border-bottom: none;
+}
+
+.player-playlist-track-item:hover {
+  background: var(--player-btn-hover);
+}
+
+.player-playlist-track-item.unavailable {
+  opacity: 0.5;
+}
+
+.player-playlist-track-name {
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-playlist-track-artist {
+  grid-column: 1;
+  grid-row: 2;
+  font-size: 0.7rem;
+  color: var(--player-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-playlist-track-artist:empty {
+  display: none;
+}
+
+.player-playlist-track-duration {
+  grid-column: 2;
+  grid-row: 1 / -1;
+  font-size: 0.7rem;
+  color: var(--player-muted);
+  white-space: nowrap;
+}
+
+.player-playlist-track-duration:empty {
+  display: none;
+}
+
+/* ── Playlist toolbar (Play All + status + download) ──────────────── */
+
+.player-playlist-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--player-border);
+}
+
+.player-playlist-offline-status {
+  font-size: 0.7rem;
+  color: var(--player-muted);
+  flex: 1;
+}
+
+.player-playlist-offline-status.fully-offline {
+  color: var(--player-badge-offline, #22c55e);
+}
+
+.player-playlist-download-btn {
+  background: none;
+  border: 1px solid var(--player-border);
+  color: var(--player-muted);
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease;
+  white-space: nowrap;
+}
+
+.player-playlist-download-btn:hover:not(:disabled) {
+  color: var(--player-fg);
+  border-color: var(--player-fg);
+}
+
+.player-playlist-download-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ── Playlist track badges ────────────────────────────────────────── */
+
+.player-playlist-track-badge {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.player-playlist-track-badge.offline {
+  background: var(--player-badge-offline);
+}
+
+.player-playlist-track-badge.cloud {
+  background: var(--player-badge-remote, #64748b);
+  opacity: 0.4;
 }
 
 /* ── Loading / error states ───────────────────────────────────────── */

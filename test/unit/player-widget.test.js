@@ -496,6 +496,27 @@ describe("createPlayerWidget", () => {
   // ── setTracks ────────────────────────────────────────────────
 
   it("setTracks populates queue list when queue is open", () => {
+    const tracks = [makeTrack("A"), makeTrack("B")];
+
+    // Queue sheet reads from runtime state — set the mock queue
+    runtimeMock.getState.mockReturnValue({
+      queue: tracks,
+      currentIndex: -1,
+      currentTrack: null,
+      paused: true,
+      volume: 1,
+      muted: false,
+      repeat: "off",
+      shuffle: false,
+      backgroundMode: false,
+      sourceType: null,
+      loading: false,
+      error: null,
+      currentTime: 0,
+      duration: 0,
+      playing: false,
+    });
+
     const widget = createPlayerWidget({ floating: false });
     widget.open();
 
@@ -504,10 +525,7 @@ describe("createPlayerWidget", () => {
     // Open queue first
     panel.querySelector(".player-queue-toggle-btn").click();
 
-    widget.setTracks([
-      makeTrack("A"),
-      makeTrack("B"),
-    ]);
+    widget.setTracks(tracks);
 
     // Re-open queue to force render
     const closeBtn = panel.querySelector(".player-queue-sheet-close");
@@ -726,9 +744,14 @@ describe("createPlayerWidget", () => {
     playAllBtn.click();
     await flushMicrotasks();
 
-    // Only the audio track should be queued; missing & non-audio filtered out
+    // Audio tracks should be queued; non-audio catalog items filtered out.
+    // Missing tracks (not in catalog) are included via snapshot fallback
+    // for offline resilience.
     expect(runtimeMock.setQueue).toHaveBeenCalledWith(
-      [expect.objectContaining({ name: "song_a" })],
+      [
+        expect.objectContaining({ name: "song_a" }),
+        expect.objectContaining({ name: "deleted_track" }),
+      ],
       { startIndex: 0, autoplay: true },
     );
 
