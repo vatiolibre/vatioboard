@@ -1704,3 +1704,64 @@
   color: var(--player-fg);
   border-color: var(--player-fg);
 }
+
+/* ── Playlist cover artwork ─────────────────────────────────────── */
+
+.player-playlist-item-cover {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  background: var(--player-btn);
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--player-muted);
+  overflow: hidden;
+}
+
+.player-playlist-item-cover svg {
+  width: 18px;
+  height: 18px;
+  opacity: 0.45;
+}
+
+.player-playlist-item-cover.has-image svg {
+  display: none;
+}
+
+.player-playlist-item-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.player-playlist-detail-cover {
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  background: var(--player-btn);
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--player-muted);
+  overflow: hidden;
+  margin: 0 auto 8px;
+}
+
+.player-playlist-detail-cover svg {
+  width: 24px;
+  height: 24px;
+  opacity: 0.45;
+}
+
+.player-playlist-detail-cover.has-image svg {
+  display: none;
+}

@@ -1111,4 +1111,308 @@ describe("createPlayerWidget", () => {
 
     widget.destroy();
   });
+
+  // ── Playlist cover artwork ─────────────────────────────────────
+
+  it("renders cover artwork element for playlists with cover_asset_name", async () => {
+    catalogMock.loadAudioCatalog.mockResolvedValue({ tracks: [], total: 0 });
+
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    await flushMicrotasks(30);
+
+    widget.setPlaylists([
+      { name: "pl1", title: "Cover Mix", item_count: 2, total_duration_seconds: 300, cover_asset_name: "ASSET-cover" },
+      { name: "pl2", title: "No Cover", item_count: 1, total_duration_seconds: 60 },
+    ]);
+
+    const panel = document.querySelector(".player-panel");
+    panel.querySelector(".player-playlist-toggle-btn").click();
+    await flushMicrotasks(10);
+
+    const items = panel.querySelectorAll(".player-playlist-item");
+    expect(items.length).toBe(2);
+
+    // First playlist has a cover div
+    const cover1 = items[0].querySelector(".player-playlist-item-cover");
+    expect(cover1).toBeTruthy();
+
+    // Text wrapper groups name + count
+    const text1 = items[0].querySelector(".player-playlist-item-text");
+    expect(text1).toBeTruthy();
+    expect(text1.querySelector(".player-playlist-item-name")).toBeTruthy();
+    expect(text1.querySelector(".player-playlist-item-count")).toBeTruthy();
+
+    // Second playlist also has a cover div (placeholder)
+    const cover2 = items[1].querySelector(".player-playlist-item-cover");
+    expect(cover2).toBeTruthy();
+
+    widget.destroy();
+  });
+
+  it("renders playlist detail cover from cover_asset_name", async () => {
+    catalogMock.loadAudioCatalog.mockResolvedValue({ tracks: [], total: 0 });
+    playlistMock.loadPlaylistDetail.mockResolvedValue({
+      name: "pl1",
+      title: "Detail Cover",
+      items: [
+        { media_asset_name: "ASSET-t1", position: 1, snapshot_title: "Track 1", snapshot_artist: "Artist", snapshot_artwork_ref: "ASSET-t1" },
+      ],
+    });
+
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    await flushMicrotasks(30);
+
+    widget.setPlaylists([
+      { name: "pl1", title: "Detail Cover", item_count: 1, total_duration_seconds: 120, cover_asset_name: "ASSET-t1" },
+    ]);
+
+    const panel = document.querySelector(".player-panel");
+    panel.querySelector(".player-playlist-toggle-btn").click();
+    await flushMicrotasks(10);
+
+    // Open detail
+    const playlistItem = panel.querySelector(".player-playlist-item");
+    playlistItem.click();
+    await flushMicrotasks(30);
+
+    const detailCover = panel.querySelector(".player-playlist-detail-cover");
+    expect(detailCover).toBeTruthy();
+
+    widget.destroy();
+  });
+
+  it("playlist list renders total_duration_seconds from cached metadata", async () => {
+    catalogMock.loadAudioCatalog.mockResolvedValue({ tracks: [], total: 0 });
+
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    await flushMicrotasks(30);
+
+    widget.setPlaylists([
+      { name: "pl1", title: "Timed Mix", item_count: 3, total_duration_seconds: 542 },
+    ]);
+
+    const panel = document.querySelector(".player-panel");
+    panel.querySelector(".player-playlist-toggle-btn").click();
+    await flushMicrotasks(10);
+
+    const countSpan = panel.querySelector(".player-playlist-item-count");
+    expect(countSpan).toBeTruthy();
+    // Should contain the formatted duration
+    expect(countSpan.textContent).toContain("9:02");
+
+    widget.destroy();
+  });
+
+  it("playlist detail renders snapshot_album from cached item metadata", async () => {
+    catalogMock.loadAudioCatalog.mockResolvedValue({ tracks: [], total: 0 });
+    playlistMock.loadPlaylistDetail.mockResolvedValue({
+      name: "pl1",
+      title: "Album Test",
+      items: [
+        {
+          media_asset_name: "ASSET-x1",
+          position: 1,
+          snapshot_title: "Song X",
+          snapshot_artist: "Artist X",
+          snapshot_album: "Album X",
+          snapshot_genre: "Rock",
+          snapshot_duration: 180,
+          snapshot_artwork_ref: "ASSET-x1",
+          snapshot_content_hash: "hash1",
+        },
+      ],
+    });
+
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    await flushMicrotasks(30);
+
+    widget.setPlaylists([
+      { name: "pl1", title: "Album Test", item_count: 1, total_duration_seconds: 180 },
+    ]);
+
+    const panel = document.querySelector(".player-panel");
+    panel.querySelector(".player-playlist-toggle-btn").click();
+    await flushMicrotasks(10);
+
+    panel.querySelector(".player-playlist-item").click();
+    await flushMicrotasks(30);
+
+    const artistSpan = panel.querySelector(".player-playlist-track-artist");
+    expect(artistSpan).toBeTruthy();
+    // Should show artist · album
+    expect(artistSpan.textContent).toContain("Artist X");
+    expect(artistSpan.textContent).toContain("Album X");
+
+    widget.destroy();
+  });
+
+  it("deduplicates artwork access for playlists sharing the same cover_asset_name", async () => {
+    if (!globalThis.CSS?.escape) {
+      globalThis.CSS = { ...(globalThis.CSS || {}), escape: (v) => v };
+    }
+
+    const backendAuth = await import("../../src/shared/backend-auth.js");
+    backendAuth.getProtectedMediaRequestGate.mockResolvedValue({
+      allowed: true,
+      signal: new AbortController().signal,
+      cleanup: vi.fn(),
+    });
+    backendAuth.getBackendMediaAssetAccess.mockResolvedValue({
+      access: { artwork_url: "https://s3.example.com/shared-cover.jpg" },
+    });
+
+    catalogMock.loadAudioCatalog.mockResolvedValue({ tracks: [], total: 0 });
+
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    await flushMicrotasks(30);
+
+    // Two playlists share the same cover_asset_name
+    widget.setPlaylists([
+      { name: "pl-a", title: "Playlist A", item_count: 2, cover_asset_name: "SHARED-COVER" },
+      { name: "pl-b", title: "Playlist B", item_count: 3, cover_asset_name: "SHARED-COVER" },
+    ]);
+
+    const panel = document.querySelector(".player-panel");
+    panel.querySelector(".player-playlist-toggle-btn").click();
+    await flushMicrotasks(30);
+
+    // Both playlists call resolveArtworkUrl with name = "SHARED-COVER",
+    // but only one backend access request should fire (inflight dedupe).
+    const artworkCalls = backendAuth.getBackendMediaAssetAccess.mock.calls.filter(
+      (c) => c[0]?.name === "SHARED-COVER" && c[0]?.intent === "artwork"
+    );
+    expect(artworkCalls.length).toBe(1);
+
+    widget.destroy();
+  });
+
+  it("does not permanently blank artwork after a transient !allowed gate", async () => {
+    if (!globalThis.CSS?.escape) {
+      globalThis.CSS = { ...(globalThis.CSS || {}), escape: (v) => v };
+    }
+
+    const backendAuth = await import("../../src/shared/backend-auth.js");
+
+    // First attempt: gate is not allowed (transient auth miss)
+    backendAuth.getProtectedMediaRequestGate.mockResolvedValue({
+      allowed: false,
+      cleanup: vi.fn(),
+    });
+
+    let stateSubscriber;
+    runtimeMock.subscribe.mockImplementation((cb) => {
+      stateSubscriber = cb;
+      return vi.fn();
+    });
+
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    await flushMicrotasks(30);
+
+    const track = {
+      name: "TRACK-gated",
+      title: "Gated Song",
+      artist: "Gated Artist",
+      artwork_ref: "ASSET-gated-art",
+      has_artwork: false,
+    };
+
+    stateSubscriber({
+      queue: [track],
+      currentIndex: 0,
+      currentTrack: track,
+      paused: false,
+      volume: 1,
+      muted: false,
+      repeat: "off",
+      shuffle: false,
+      backgroundMode: false,
+      sourceType: null,
+      loading: false,
+      error: null,
+      currentTime: 0,
+      duration: 120,
+      playing: true,
+    });
+    await flushMicrotasks(30);
+
+    // Should have attempted the gate
+    expect(backendAuth.getProtectedMediaRequestGate).toHaveBeenCalled();
+    const firstGateCalls = backendAuth.getProtectedMediaRequestGate.mock.calls.length;
+
+    // Switch to a different track to reset lastArtworkTrackName
+    const dummyTrack = { name: "TRACK-other", title: "Other" };
+    stateSubscriber({
+      queue: [dummyTrack],
+      currentIndex: 0,
+      currentTrack: dummyTrack,
+      paused: false,
+      volume: 1,
+      muted: false,
+      repeat: "off",
+      shuffle: false,
+      backgroundMode: false,
+      sourceType: null,
+      loading: false,
+      error: null,
+      currentTime: 0,
+      duration: 60,
+      playing: true,
+    });
+    await flushMicrotasks(30);
+
+    // Advance Date.now past the 30s TTL so the failure entry expires
+    const realDateNow = Date.now;
+    Date.now = () => realDateNow() + 35_000;
+
+    // Now simulate auth regain — gate becomes allowed
+    backendAuth.getProtectedMediaRequestGate.mockResolvedValue({
+      allowed: true,
+      signal: new AbortController().signal,
+      cleanup: vi.fn(),
+    });
+    backendAuth.getBackendMediaAssetAccess.mockResolvedValue({
+      access: { artwork_url: "https://s3.example.com/gated-art.jpg" },
+    });
+
+    // Switch back to the gated track
+    stateSubscriber({
+      queue: [track],
+      currentIndex: 0,
+      currentTrack: track,
+      paused: false,
+      volume: 1,
+      muted: false,
+      repeat: "off",
+      shuffle: false,
+      backgroundMode: false,
+      sourceType: null,
+      loading: false,
+      error: null,
+      currentTime: 0,
+      duration: 120,
+      playing: true,
+    });
+    await flushMicrotasks(30);
+
+    // Restore Date.now
+    Date.now = realDateNow;
+
+    // The gate should have been called again after TTL expiry
+    const totalGateCalls = backendAuth.getProtectedMediaRequestGate.mock.calls.length;
+    expect(totalGateCalls).toBeGreaterThan(firstGateCalls);
+
+    // And the access endpoint should have been called this time
+    const artworkAccessCalls = backendAuth.getBackendMediaAssetAccess.mock.calls.filter(
+      (c) => c[0]?.name === "ASSET-gated-art" && c[0]?.intent === "artwork"
+    );
+    expect(artworkAccessCalls.length).toBe(1);
+
+    widget.destroy();
+  });
 });

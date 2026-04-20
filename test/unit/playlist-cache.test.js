@@ -154,4 +154,152 @@ describe("playlist-cache", () => {
     const result = await cache.cachePlaylistsManifestSnapshot({ playlists: [], token: null });
     expect(result).toBeFalsy();
   });
+
+  // ── Full offline contract preservation ─────────────────────────
+
+  it("preserves total_duration_seconds on playlist entries", async () => {
+    const cache = await importCache();
+    const playlists = [
+      { name: "pl1", title: "Mix", item_count: 3, total_duration_seconds: 542.5 },
+    ];
+
+    await cache.cachePlaylistsManifestSnapshot({ playlists, token: "t1" });
+
+    const [, value] = mockStore.setValue.mock.calls[0];
+    expect(value.playlists[0].total_duration_seconds).toBe(542.5);
+  });
+
+  it("preserves item snapshot fields: album, genre, artwork_ref, content_hash", async () => {
+    const cache = await importCache();
+    const playlists = [
+      {
+        name: "pl1",
+        title: "Full Meta",
+        item_count: 1,
+        total_duration_seconds: 200,
+        items: [
+          {
+            media_asset_name: "ASSET-001",
+            position: 1,
+            snapshot_title: "Track One",
+            snapshot_artist: "Artist A",
+            snapshot_album: "Album X",
+            snapshot_genre: "Rock",
+            snapshot_duration: 200,
+            snapshot_artwork_ref: "ASSET-001",
+            snapshot_content_hash: "abc123hash",
+          },
+        ],
+      },
+    ];
+
+    await cache.cachePlaylistsManifestSnapshot({ playlists, token: "t2" });
+
+    const [, value] = mockStore.setValue.mock.calls[0];
+    const item = value.playlists[0].items[0];
+    expect(item.snapshot_album).toBe("Album X");
+    expect(item.snapshot_genre).toBe("Rock");
+    expect(item.snapshot_artwork_ref).toBe("ASSET-001");
+    expect(item.snapshot_content_hash).toBe("abc123hash");
+  });
+
+  it("does not persist signed URLs in cached entries", async () => {
+    const cache = await importCache();
+    const playlists = [
+      {
+        name: "pl1",
+        title: "No URLs",
+        item_count: 1,
+        total_duration_seconds: 100,
+        artwork_url: "https://s3.example.com/signed?expires=123",
+        playback_url: "https://s3.example.com/play?expires=456",
+        items: [
+          {
+            media_asset_name: "ASSET-002",
+            position: 1,
+            snapshot_title: "Track",
+            snapshot_artist: "",
+            snapshot_album: "",
+            snapshot_genre: "",
+            snapshot_duration: 100,
+            snapshot_artwork_ref: "ASSET-002",
+            snapshot_content_hash: "hash2",
+            playback_url: "https://s3.example.com/item-play?expires=789",
+          },
+        ],
+      },
+    ];
+
+    await cache.cachePlaylistsManifestSnapshot({ playlists, token: "t3" });
+
+    const [, value] = mockStore.setValue.mock.calls[0];
+    const serialized = JSON.stringify(value);
+    expect(serialized).not.toContain("expires=");
+    expect(serialized).not.toContain("playback_url");
+    expect(serialized).not.toContain("artwork_url");
+  });
+
+  it("defaults missing optional fields gracefully", async () => {
+    const cache = await importCache();
+    const playlists = [
+      {
+        name: "pl1",
+        title: "Minimal",
+        items: [
+          { media_asset_name: "ASSET-003" },
+        ],
+      },
+    ];
+
+    await cache.cachePlaylistsManifestSnapshot({ playlists, token: "t4" });
+
+    const [, value] = mockStore.setValue.mock.calls[0];
+    const pl = value.playlists[0];
+    expect(pl.total_duration_seconds).toBe(0);
+    expect(pl.item_count).toBe(0);
+    const item = pl.items[0];
+    expect(item.snapshot_album).toBe("");
+    expect(item.snapshot_genre).toBe("");
+    expect(item.snapshot_artwork_ref).toBe("");
+    expect(item.snapshot_content_hash).toBe("");
+    expect(item.snapshot_duration).toBeNull();
+    expect(item.position).toBe(0);
+  });
+
+  // ── fanOutManifestDetails ──────────────────────────────────────
+
+  it("fanOutManifestDetails caches each playlist with items as detail", async () => {
+    const cache = await importCache();
+    const playlists = [
+      {
+        name: "pl1",
+        title: "A",
+        item_count: 1,
+        total_duration_seconds: 60,
+        items: [
+          {
+            media_asset_name: "ASSET-010",
+            position: 1,
+            snapshot_title: "Song A",
+            snapshot_artist: "Artist",
+            snapshot_album: "Album",
+            snapshot_genre: "Pop",
+            snapshot_duration: 60,
+            snapshot_artwork_ref: "ASSET-010",
+            snapshot_content_hash: "hashA",
+          },
+        ],
+      },
+      { name: "pl2", title: "B", item_count: 0 }, // no items — should be skipped
+    ];
+
+    await cache.fanOutManifestDetails(playlists);
+
+    // Only pl1 (has items) should have been cached
+    expect(mockStore.setValue).toHaveBeenCalledOnce();
+    const [key, value] = mockStore.setValue.mock.calls[0];
+    expect(key).toContain("detail:pl1");
+    expect(value.items[0].snapshot_artwork_ref).toBe("ASSET-010");
+    expect(typeof value.cached_at).toBe("number");
+  });
 });

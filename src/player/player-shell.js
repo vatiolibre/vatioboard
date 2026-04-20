@@ -119,6 +119,23 @@ function isArtworkUrl(ref) {
 
 /** Resolved artwork URL cache — keyed by track name. */
 const artworkUrlCache = new Map();
+/** In-flight artwork resolution promises — keyed by artwork asset identity. */
+const artworkInflight = new Map();
+/** TTL expiry for failed artwork lookups — keyed by track name. */
+const artworkFailedUntil = new Map();
+const ARTWORK_FAIL_TTL_MS = 30_000;
+
+/**
+ * Derive the artwork identity key used for inflight dedupe.
+ * Two tracks that resolve to the same backend asset should share one request.
+ *
+ * Priority: non-URL artwork_ref (asset name) > track.name for has_artwork > null.
+ */
+function artworkIdentity(track) {
+  if (track.artwork_ref && !isArtworkUrl(track.artwork_ref)) return track.artwork_ref;
+  if (track.has_artwork) return track.name;
+  return null;
+}
 
 /**
  * Resolve the artwork URL for a track.
@@ -131,6 +148,9 @@ async function resolveArtworkUrl(track) {
   if (!track?.name) return "";
   const cached = artworkUrlCache.get(track.name);
   if (cached !== undefined) return cached;
+  const failExpiry = artworkFailedUntil.get(track.name);
+  if (failExpiry && Date.now() < failExpiry) return "";
+  artworkFailedUntil.delete(track.name);
 
   if (track.artwork_ref && isArtworkUrl(track.artwork_ref)) {
     artworkUrlCache.set(track.name, track.artwork_ref);
@@ -144,23 +164,48 @@ async function resolveArtworkUrl(track) {
     : (track.artwork_ref && !isArtworkUrl(track.artwork_ref) ? track.artwork_ref : null);
 
   if (artworkAssetName && !track._demo) {
-    let gate = null;
+    // Check inflight dedupe by artwork identity
+    const identity = artworkIdentity(track);
+    const pending = identity ? artworkInflight.get(identity) : null;
+    if (pending) {
+      const result = await pending;
+      if (result.ok) {
+        artworkUrlCache.set(track.name, result.url);
+        return result.url;
+      }
+      artworkFailedUntil.set(track.name, Date.now() + ARTWORK_FAIL_TTL_MS);
+      return "";
+    }
+
+    const promise = (async () => {
+      let gate = null;
+      try {
+        gate = await getProtectedMediaRequestGate();
+        if (!gate.allowed) return { ok: false, url: "" };
+        const resp = await getBackendMediaAssetAccess({
+          name: artworkAssetName,
+          intent: "artwork",
+          signal: gate.signal,
+        });
+        return { ok: true, url: resp?.access?.artwork_url || "" };
+      } catch {
+        return { ok: false, url: "" };
+      } finally {
+        gate?.cleanup?.();
+      }
+    })();
+
+    if (identity) artworkInflight.set(identity, promise);
     try {
-      gate = await getProtectedMediaRequestGate();
-      if (!gate.allowed) { artworkUrlCache.set(track.name, ""); return ""; }
-      const result = await getBackendMediaAssetAccess({
-        name: artworkAssetName,
-        intent: "artwork",
-        signal: gate.signal,
-      });
-      const url = result?.access?.artwork_url || "";
-      artworkUrlCache.set(track.name, url);
-      return url;
-    } catch {
-      artworkUrlCache.set(track.name, "");
+      const result = await promise;
+      if (result.ok) {
+        artworkUrlCache.set(track.name, result.url);
+        return result.url;
+      }
+      artworkFailedUntil.set(track.name, Date.now() + ARTWORK_FAIL_TTL_MS);
       return "";
     } finally {
-      gate?.cleanup?.();
+      if (identity) artworkInflight.delete(identity);
     }
   }
 
@@ -735,6 +780,28 @@ export function createPlayerShell({ container }) {
       li.className = "player-playlist-item";
       li.dataset.playlistName = pl.name;
 
+      // Cover artwork thumbnail
+      const coverDiv = document.createElement("div");
+      coverDiv.className = "player-playlist-item-cover";
+      coverDiv.innerHTML = IconMusic;
+      li.append(coverDiv);
+      if (pl.cover_asset_name) {
+        resolveArtworkUrl({
+          name: pl.cover_asset_name,
+          artwork_ref: pl.cover_asset_name,
+          has_artwork: false,
+        }).then((url) => {
+          if (url) {
+            coverDiv.innerHTML = "";
+            coverDiv.style.backgroundImage = `url(${CSS.escape(url)})`;
+            coverDiv.classList.add("has-image");
+          }
+        });
+      }
+
+      const textDiv = document.createElement("div");
+      textDiv.className = "player-playlist-item-text";
+
       const nameSpan = document.createElement("span");
       nameSpan.className = "player-playlist-item-name";
       nameSpan.textContent = pl.title || pl.name;
@@ -747,7 +814,8 @@ export function createPlayerShell({ container }) {
         ? `${countText} · ${formatTime(totalDur)}`
         : countText;
 
-      li.append(nameSpan, countSpan);
+      textDiv.append(nameSpan, countSpan);
+      li.append(textDiv);
       li.addEventListener("click", () => openPlaylistDetail(pl.name, pl.title));
       playlistListUl.append(li);
     }
@@ -800,6 +868,27 @@ export function createPlayerShell({ container }) {
       emptyLi.textContent = t("playerNoTracks");
       playlistListUl.append(emptyLi);
       return;
+    }
+
+    // Cover artwork header
+    const coverAsset = cachedPlaylists.find((pl) => pl.name === name)?.cover_asset_name
+      || items[0]?.snapshot_artwork_ref || "";
+    if (coverAsset) {
+      const coverLi = document.createElement("li");
+      coverLi.className = "player-playlist-detail-cover";
+      coverLi.innerHTML = IconMusic;
+      playlistListUl.append(coverLi);
+      resolveArtworkUrl({
+        name: coverAsset,
+        artwork_ref: coverAsset,
+        has_artwork: false,
+      }).then((url) => {
+        if (url && playlistDetailView === name) {
+          coverLi.innerHTML = "";
+          coverLi.style.backgroundImage = `url(${CSS.escape(url)})`;
+          coverLi.classList.add("has-image");
+        }
+      });
     }
 
     // Check if this is a local playlist (demo) — skip pinning UI

@@ -116,6 +116,7 @@ function mapPlaylistEntry(playlist) {
     name: playlist.name,
     title: playlist.title,
     item_count: playlist.item_count ?? 0,
+    total_duration_seconds: playlist.total_duration_seconds ?? 0,
     cover_asset_name: playlist.cover_asset_name ?? null,
     created_at: playlist.created_at ?? null,
     modified_at: playlist.modified_at ?? null,
@@ -129,6 +130,10 @@ function mapPlaylistItem(item) {
     position: item.position ?? 0,
     snapshot_title: item.snapshot_title || "",
     snapshot_artist: item.snapshot_artist || "",
+    snapshot_album: item.snapshot_album || "",
+    snapshot_genre: item.snapshot_genre || "",
     snapshot_duration: item.snapshot_duration ?? null,
+    snapshot_artwork_ref: item.snapshot_artwork_ref || "",
+    snapshot_content_hash: item.snapshot_content_hash || "",
   };
 }
