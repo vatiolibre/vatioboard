@@ -192,6 +192,7 @@ describe("integratePlayerWidget", () => {
 
   afterEach(() => {
     document.querySelectorAll(".player-panel, .player-fab").forEach((el) => el.remove());
+    localStorage.removeItem("player_widget_visible_v1");
   });
 
   // ── Launcher formatting ──────────────────────────────────────
@@ -232,6 +233,27 @@ describe("integratePlayerWidget", () => {
     const fab = document.querySelector(".player-fab");
     expect(fab).toBeTruthy();
     expect(fab.hidden).toBe(true);
+    expect(runtimeMock.stopPlayback).not.toHaveBeenCalled();
+  });
+
+  it("does not stop playback for an initial unknown auth state during page refresh", () => {
+    const list = makeToolsMenuList();
+    const form = list.querySelector("[data-backend-auth]");
+    delete form.dataset.authState;
+
+    integratePlayerWidget({ toolsMenuList: list, toolsMenu: { close: vi.fn() } });
+
+    expect(document.querySelector(".player-fab").hidden).toBe(true);
+    expect(runtimeMock.stopPlayback).not.toHaveBeenCalled();
+  });
+
+  it("does not stop playback when a guest auth event confirms the initial signed-out state", () => {
+    const list = makeToolsMenuList("guest");
+    integratePlayerWidget({ toolsMenuList: list, toolsMenu: { close: vi.fn() } });
+
+    emitAuthState({ authenticated: false, isGuest: true, pendingLogout: false });
+
+    expect(runtimeMock.stopPlayback).not.toHaveBeenCalled();
   });
 
   // ── Auth gating: authenticated state ─────────────────────────
@@ -245,6 +267,43 @@ describe("integratePlayerWidget", () => {
     expect(button.hidden).toBe(false);
     const fab = document.querySelector(".player-fab");
     expect(fab.hidden).toBe(false);
+  });
+
+  it("restores visible panel state when initial auth state is authenticated", () => {
+    localStorage.setItem("player_widget_visible_v1", "true");
+    const list = makeToolsMenuList("authenticated");
+
+    integratePlayerWidget({ toolsMenuList: list, toolsMenu: { close: vi.fn() } });
+
+    expect(document.querySelector(".player-panel").hidden).toBe(false);
+  });
+
+  it("does not restore visible panel state before auth is known", () => {
+    localStorage.setItem("player_widget_visible_v1", "true");
+    const list = makeToolsMenuList();
+    const form = list.querySelector("[data-backend-auth]");
+    delete form.dataset.authState;
+
+    integratePlayerWidget({ toolsMenuList: list, toolsMenu: { close: vi.fn() } });
+
+    expect(document.querySelector(".player-panel").hidden).toBe(true);
+    expect(localStorage.getItem("player_widget_visible_v1")).toBe("true");
+    expect(runtimeMock.stopPlayback).not.toHaveBeenCalled();
+  });
+
+  it("restores visible panel state when auth becomes authenticated", () => {
+    localStorage.setItem("player_widget_visible_v1", "true");
+    const list = makeToolsMenuList();
+    const form = list.querySelector("[data-backend-auth]");
+    delete form.dataset.authState;
+
+    integratePlayerWidget({ toolsMenuList: list, toolsMenu: { close: vi.fn() } });
+
+    expect(document.querySelector(".player-panel").hidden).toBe(true);
+
+    emitAuthState({ authenticated: true, isGuest: false, pendingLogout: false });
+
+    expect(document.querySelector(".player-panel").hidden).toBe(false);
   });
 
   // ── Auth transitions ─────────────────────────────────────────

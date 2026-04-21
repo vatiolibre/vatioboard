@@ -12,7 +12,7 @@
 
 import { IconClose, IconFullscreen, IconFullscreenExit } from "../icons.js";
 import { t } from "../i18n.js";
-import { acquireGraph, releaseGraph, getGraph } from "../shared/audio-graph-registry.js";
+import { acquireGraph, releaseGraph } from "../shared/audio-graph-registry.js";
 import { isVisualizerSafeSource } from "../shared/audio-visualizer.js";
 import * as runtime from "../shared/audio-runtime.js";
 import { loadText, saveText } from "../shared/storage.js";
@@ -256,6 +256,30 @@ export function createMilkdropPanel(options = {}) {
     }
   }
 
+  function teardownAudioWiring() {
+    stopRenderLoop();
+
+    if (resizeObserver) {
+      resizeObserver.disconnect();
+      resizeObserver = null;
+    }
+
+    if (graphEntry && audioElement) {
+      releaseGraph(audioElement);
+    }
+
+    graphEntry = null;
+    audioElement = null;
+    visualizer = null;
+    wired = false;
+    gl = null;
+
+    if (canvas) {
+      canvas.remove();
+      canvas = null;
+    }
+  }
+
   // ── Core wiring ─────────────────────────────────────────────
   async function wireButterchurn() {
     if (destroyed || failed || wired) return wired;
@@ -263,8 +287,10 @@ export function createMilkdropPanel(options = {}) {
     const Butterchurn = await loadButterchurn();
     if (!Butterchurn || !_presetsModule || destroyed) { failed = true; return false; }
 
+    const state = runtime.getState();
     const el = runtime.getAudioElement();
-    if (!el || !isSafeSource()) { failed = true; return false; }
+    if (!state.currentTrack || !state.sourceType || !el?.src) return false;
+    if (!isSafeSource()) { failed = true; return false; }
 
     // Create WebGL canvas
     canvas = document.createElement("canvas");
@@ -281,6 +307,7 @@ export function createMilkdropPanel(options = {}) {
     graphEntry = await acquireGraph(el);
     if (!graphEntry || destroyed) {
       failed = true;
+      teardownAudioWiring();
       return false;
     }
     audioElement = el;
@@ -295,8 +322,7 @@ export function createMilkdropPanel(options = {}) {
       wired = true;
     } catch {
       failed = true;
-      if (graphEntry) releaseGraph(el);
-      graphEntry = null;
+      teardownAudioWiring();
       return false;
     }
 
@@ -325,8 +351,26 @@ export function createMilkdropPanel(options = {}) {
   function syncWithPlayback() {
     if (destroyed || root.hidden) return;
     const s = runtime.getState();
+    const el = runtime.getAudioElement();
+    const hasPlayableSource = Boolean(s.currentTrack && s.sourceType && el?.src);
+
+    if (!hasPlayableSource) {
+      teardownAudioWiring();
+      return;
+    }
+
+    if (audioElement && audioElement !== el) {
+      teardownAudioWiring();
+    }
+
     if (s.playing && wired) {
       startRenderLoop();
+    } else if (s.playing && !failed) {
+      void wireButterchurn().then((ready) => {
+        if (ready && runtime.getState().playing && !root.hidden && !destroyed) {
+          startRenderLoop();
+        }
+      });
     } else {
       stopRenderLoop();
     }
@@ -480,16 +524,10 @@ export function createMilkdropPanel(options = {}) {
     stopRenderLoop();
 
     if (runtimeUnsub) { runtimeUnsub(); runtimeUnsub = null; }
-    if (resizeObserver) { resizeObserver.disconnect(); resizeObserver = null; }
     if (panelResizeObserver) { panelResizeObserver.disconnect(); panelResizeObserver = null; }
     document.removeEventListener("fullscreenchange", onFullscreenChange);
 
-    if (graphEntry && audioElement) {
-      releaseGraph(audioElement);
-      graphEntry = null;
-    }
-
-    if (canvas) canvas.remove();
+    teardownAudioWiring();
     root.remove();
   }
 

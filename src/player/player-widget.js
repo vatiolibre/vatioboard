@@ -36,23 +36,28 @@ import {
   restorePersistedMediaCacheUser,
   clearPersistedMediaCacheUser,
 } from "../shared/media-cache.js";
+import { isPublicStaticTrack } from "../shared/track-source-policy.js";
 
 // ── Deduped bootstrap (shared across all widget instances) ───────────
 
 let _bootstrapPromise = null;
 let _bootstrapped = false;
+let _lastBootstrappedAuthState = undefined;
 
 async function bootstrapAuth() {
   try {
     const session = await getBackendSessionState();
-    if (session.authenticated) {
+    const authenticated = session.authenticated === true && session.isGuest !== true;
+    if (authenticated) {
       const loggedUser = await fetchBackendLoggedUser().catch(() => null);
       if (loggedUser?.user) setMediaCacheUser(loggedUser.user);
     } else {
       clearPersistedMediaCacheUser();
     }
+    return authenticated;
   } catch {
     restorePersistedMediaCacheUser();
+    return undefined;
   }
 }
 
@@ -91,16 +96,47 @@ function buildDemoPlaylistEntry(tracks) {
   };
 }
 
+function queueNameSignature(tracks) {
+  return Array.isArray(tracks)
+    ? tracks.map((track) => track?.name || "").join("\n")
+    : "";
+}
+
+function isPristineSeededQueue(state, signature) {
+  if (!signature || !state?.paused || state.currentIndex > 0 || state.currentTime > 0.5) {
+    return false;
+  }
+  return queueNameSignature(state.queue) === signature;
+}
+
+function isPristineDemoQueue(state) {
+  if (!state?.paused || state.currentIndex > 0 || state.currentTime > 0.5) {
+    return false;
+  }
+  return Array.isArray(state.queue)
+    && state.queue.length > 0
+    && state.queue.every((track) => isPublicStaticTrack(track?.name, track));
+}
+
 async function doBootstrap(shell) {
   try {
-    await bootstrapAuth();
+    const bootAuthState = await bootstrapAuth();
+    if (bootAuthState !== undefined) {
+      _lastBootstrappedAuthState = bootAuthState;
+    }
 
     const { tracks } = await loadAudioCatalog();
     const annotated = await annotateOfflineAvailability(tracks);
 
     // Fall back to the free demo playlist when no catalog is available
     // (guest / unauthenticated visitors).
-    const playlist = annotated.length > 0 ? annotated : await loadDemoPlaylist();
+    const demoPlaylist = annotated.length > 0 || bootAuthState === true
+      ? await loadDemoPlaylist()
+      : [];
+    const playlist = annotated.length > 0 ? annotated : (demoPlaylist.length > 0 ? demoPlaylist : await loadDemoPlaylist());
+    const restoreCandidates = annotated.length > 0
+      ? [...annotated, ...demoPlaylist]
+      : playlist;
 
     shell.setTracks(playlist);
 
@@ -113,13 +149,19 @@ async function doBootstrap(shell) {
       shell.setPlaylists([buildDemoPlaylistEntry(playlist)]);
     }
 
-    // Restore previous session (or do nothing if cold start)
-    await runtime.restoreSession(playlist, { autoplay: false });
+    // Restore previous session (or do nothing if cold start).  The runtime
+    // only autoplays when the saved session was actively playing.
+    await runtime.restoreSession(restoreCandidates, { autoplay: true });
 
     // If no session restored, seed the full catalog as queue
     const s = runtime.getState();
-    if (s.queue.length === 0 && playlist.length > 0) {
+    let seededQueueSignature = "";
+    if (annotated.length > 0 && isPristineDemoQueue(s)) {
+      runtime.setQueue(annotated, { autoplay: false });
+      seededQueueSignature = queueNameSignature(annotated);
+    } else if (s.queue.length === 0 && playlist.length > 0) {
       runtime.setQueue(playlist, { autoplay: false });
+      seededQueueSignature = queueNameSignature(playlist);
     }
 
     _bootstrapped = true;
@@ -134,8 +176,9 @@ async function doBootstrap(shell) {
           if (freshAnnotated.length > 0) {
             shell.setTracks(freshAnnotated);
             const current = runtime.getState();
-            if (current.paused && current.currentIndex <= 0) {
+            if (isPristineSeededQueue(current, seededQueueSignature)) {
               runtime.setQueue(freshAnnotated, { autoplay: false });
+              seededQueueSignature = queueNameSignature(freshAnnotated);
             }
           }
         } catch { /* ignore revalidation failures */ }
@@ -186,14 +229,14 @@ async function reloadCatalogForAuthChange(shell, loggedIn) {
   _bootstrapped = false;
   _bootstrapPromise = null;
 
-  // Stop playback so the user doesn't keep listening to tracks they
-  // may no longer have access to.
-  runtime.stopPlayback();
-
   if (loggedIn) {
     // User just logged in — run the full bootstrap (manifest fetch etc.)
     await doBootstrap(shell);
   } else {
+    // Stop playback so the user doesn't keep listening to tracks they
+    // may no longer have access to.
+    runtime.stopPlayback();
+
     // Logout — skip backend calls and fall back to demo tracks.
     const demo = await loadDemoPlaylist();
     shell.setTracks(demo);
@@ -218,9 +261,11 @@ export function _getBootstrapPromise() {
  * @param {boolean} [options.floating] - Show floating launcher (default: true unless button provided)
  * @param {HTMLElement|null} [options.button] - External button that toggles the player
  * @param {"on-open"|"immediate"} [options.preload="on-open"] - When to bootstrap catalog
+ * @param {boolean} [options.persistVisibility=true] - Save open/closed panel state
+ * @param {boolean} [options.restoreVisibility=true] - Restore saved open/closed panel state on create
  * @param {Function|null} [options.onOpen]
  * @param {Function|null} [options.onClose]
- * @returns {{ open: Function, close: Function, toggle: Function, destroy: Function, setTracks: Function }}
+ * @returns {{ open: Function, close: Function, toggle: Function, restoreVisibility: Function, destroy: Function, setTracks: Function }}
  */
 export function createPlayerWidget(options = {}) {
   const {
@@ -228,12 +273,15 @@ export function createPlayerWidget(options = {}) {
     floating = options.button ? false : true,
     button = null,
     preload = "on-open",
+    persistVisibility = true,
+    restoreVisibility = true,
     onOpen = null,
     onClose = null,
   } = options;
 
   const DRAG_THRESHOLD_PX = 6;
   const POS_KEY = "player_widget_pos_v1";
+  const VISIBILITY_KEY = "player_widget_visible_v1";
 
   // ── Position persistence ─────────────────────────────────────
   function loadPos() {
@@ -248,6 +296,27 @@ export function createPlayerWidget(options = {}) {
   function savePos(pos) {
     try {
       localStorage.setItem(POS_KEY, JSON.stringify(pos));
+    } catch {
+      // ignore
+    }
+  }
+
+  function loadVisibility() {
+    if (!persistVisibility) return null;
+    try {
+      const raw = localStorage.getItem(VISIBILITY_KEY);
+      if (raw === "true") return true;
+      if (raw === "false") return false;
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  function saveVisibility(visible) {
+    if (!persistVisibility) return;
+    try {
+      localStorage.setItem(VISIBILITY_KEY, visible ? "true" : "false");
     } catch {
       // ignore
     }
@@ -299,8 +368,9 @@ export function createPlayerWidget(options = {}) {
   }
 
   // ── Open / Close / Toggle ────────────────────────────────────
-  function open() {
+  function open({ persist = true } = {}) {
     shell.root.hidden = false;
+    if (persist) saveVisibility(true);
 
     // Lazy bootstrap on first open
     ensureBootstrap();
@@ -313,14 +383,21 @@ export function createPlayerWidget(options = {}) {
     if (typeof onOpen === "function") onOpen();
   }
 
-  function close() {
+  function close({ persist = true } = {}) {
     shell.root.hidden = true;
+    if (persist) saveVisibility(false);
     // Playback continues — closing the panel does NOT stop audio
     if (typeof onClose === "function") onClose();
   }
 
   function toggle() {
     shell.root.hidden ? open() : close();
+  }
+
+  function restoreSavedVisibility() {
+    if (loadVisibility() === true) {
+      open({ persist: false });
+    }
   }
 
   // ── Floating launcher (FAB) ──────────────────────────────────
@@ -382,6 +459,10 @@ export function createPlayerWidget(options = {}) {
     const detail = event?.detail || {};
     const isNowAuthenticated = detail.authenticated === true && !detail.isGuest && !detail.pendingLogout;
 
+    if (_lastAuthState === undefined && _lastBootstrappedAuthState !== undefined) {
+      _lastAuthState = _lastBootstrappedAuthState;
+    }
+
     // Only react to actual transitions, not duplicate events.
     if (isNowAuthenticated === _lastAuthState) return;
     _lastAuthState = isNowAuthenticated;
@@ -397,6 +478,10 @@ export function createPlayerWidget(options = {}) {
   }
 
   window.addEventListener(BACKEND_AUTH_STATE_EVENT, onAuthChange);
+
+  if (restoreVisibility) {
+    restoreSavedVisibility();
+  }
 
   // ── Destroy ──────────────────────────────────────────────────
   function destroy() {
@@ -416,6 +501,7 @@ export function createPlayerWidget(options = {}) {
     open,
     close,
     toggle,
+    restoreVisibility: restoreSavedVisibility,
     destroy,
     setTracks: (tracks) => shell.setTracks(tracks),
     setPlaylists: (playlists) => shell.setPlaylists(playlists),

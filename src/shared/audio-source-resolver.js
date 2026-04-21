@@ -13,6 +13,7 @@ import {
   getProtectedMediaRequestGate,
 } from "./backend-auth.js";
 import { getCachedMediaAccess, setCachedMediaAccess } from "./media-access-cache.js";
+import { isPublicStaticTrack, shouldUseBackendMediaAccess } from "./track-source-policy.js";
 
 function isAbortError(error) {
   return Boolean(
@@ -93,7 +94,7 @@ export async function resolveAudioSource(assetName, asset) {
  * @returns {Promise<string|null>}
  */
 async function resolveRemotePlaybackUrl(assetName, asset) {
-  if (!assetName) return null;
+  if (!shouldUseBackendMediaAccess(assetName, asset)) return null;
   const hash = asset?.content_hash || null;
 
   // Check in-memory cache first
@@ -133,9 +134,9 @@ async function resolveRemotePlaybackUrl(assetName, asset) {
  * by the backend auth layer.
  */
 export function buildRemotePlaybackUrl(assetName, asset) {
+  if (!shouldUseBackendMediaAccess(assetName, asset)) return "";
   if (asset?.playback_url) return asset.playback_url;
   if (asset?.download_url) return asset.download_url;
-  if (!assetName) return "";
 
   const { apiBase } = getEnvironmentConfig();
   return `${apiBase}/api/method/vatiolibre.vatiolibre.media_assets.stream_my_media_asset_blob?name=${encodeURIComponent(assetName)}`;
@@ -162,6 +163,12 @@ export function triggerBackgroundCache(assetName, asset, { onCached, onFailed, f
   if (!assetName || !asset) {
     if (typeof onFailed === "function") {
       try { onFailed("ineligible"); } catch { /* ignore */ }
+    }
+    return;
+  }
+  if (isPublicStaticTrack(assetName, asset)) {
+    if (typeof onFailed === "function") {
+      try { onFailed("static_source"); } catch { /* ignore */ }
     }
     return;
   }

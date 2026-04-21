@@ -35,12 +35,15 @@ function isLoggedIn(detail) {
 
 /**
  * Read the initial auth state from the nearest [data-backend-auth] root.
- * Returns true when the form's dataset already says "authenticated".
+ * Returns undefined when the auth form has not completed its initial
+ * session check yet.  Treating that as a logout would wipe player restore
+ * state during page refresh.
  */
 function readInitialAuth(toolsMenuList) {
   const root = toolsMenuList?.closest("[data-backend-auth]")
     || toolsMenuList?.querySelector("[data-backend-auth]");
-  return root?.dataset?.authState === "authenticated";
+  if (!root?.dataset || !("authState" in root.dataset)) return undefined;
+  return root.dataset.authState === "authenticated";
 }
 
 // ── Public API ───────────────────────────────────────────────────────
@@ -68,6 +71,11 @@ export function integratePlayerWidget({
 
   // Media Session ownership
   setMediaSessionEnabled(mediaSession);
+
+  // Read this before creating the widget so auth-gated pages do not restore
+  // a visible panel while the backend auth form is still checking session.
+  const initialAuthState = readInitialAuth(toolsMenuList);
+  let authenticated = initialAuthState === true;
 
   // ── Launcher button ────────────────────────────────────────────
   let button = null;
@@ -104,6 +112,7 @@ export function integratePlayerWidget({
     button,
     preload,
     mount,
+    restoreVisibility: authenticated,
     onOpen() {
       if (toolsMenu && typeof toolsMenu.close === "function") {
         toolsMenu.close();
@@ -115,25 +124,30 @@ export function integratePlayerWidget({
   const fab = mount.querySelector(".player-fab");
 
   // ── Auth gating ────────────────────────────────────────────────
-  let authenticated = readInitialAuth(toolsMenuList);
-
-  function syncVisibility(loggedIn) {
+  function syncVisibility(loggedIn, { stop = false, restore = false } = {}) {
     authenticated = loggedIn;
     if (button) button.hidden = !loggedIn;
     if (fab) fab.hidden = !loggedIn;
 
-    if (!loggedIn) {
+    if (stop) {
       widget.close();
       stopPlayback();
+    } else if (!loggedIn) {
+      widget.close({ persist: false });
+    } else if (restore) {
+      widget.restoreVisibility();
     }
   }
 
   // Apply initial visibility
-  syncVisibility(authenticated);
+  syncVisibility(authenticated, { stop: false });
 
   // React to auth changes
   window.addEventListener(BACKEND_AUTH_STATE_EVENT, (event) => {
-    syncVisibility(isLoggedIn(event?.detail || {}));
+    const detail = event?.detail || {};
+    const loggedIn = isLoggedIn(detail);
+    const shouldStopPlayback = detail.pendingLogout === true || (authenticated === true && !loggedIn);
+    syncVisibility(loggedIn, { stop: shouldStopPlayback, restore: loggedIn });
   });
 
   return { widget, button };

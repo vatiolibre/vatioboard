@@ -84,6 +84,36 @@ function makeTrack(name, overrides = {}) {
 const TRACK_A = makeTrack("asset_a");
 const TRACK_B = makeTrack("asset_b");
 const TRACK_C = makeTrack("asset_c");
+const PLAYER_SESSION_STORAGE_KEY = "vatioboard_player_session_v2";
+
+let sessionEntrySeed = 0;
+
+function makeSessionEntry(trackLike, overrides = {}) {
+  sessionEntrySeed += 1;
+  const base = typeof trackLike === "string"
+    ? makeTrack(trackLike)
+    : { ...trackLike };
+
+  return {
+    entryId: overrides.entryId || `entry_${sessionEntrySeed}`,
+    name: base.name || "",
+    title: base.title || "",
+    artist: base.artist || "",
+    album: base.album || "",
+    genre: base.genre || "",
+    duration: base.duration ?? null,
+    artwork_ref: base.artwork_ref || "",
+    media_kind: base.media_kind || "audio",
+    original_filename: base.original_filename || "",
+    content_hash: base.content_hash || "",
+    mime_type: base.mime_type || "",
+    blob_size: base.blob_size ?? 0,
+    file_extension: base.file_extension || "",
+    folder_path: base.folder_path || "",
+    src: base.src || "",
+    ...overrides,
+  };
+}
 
 function createVisualizerMockState() {
   const calls = [];
@@ -217,9 +247,22 @@ describe("audio-source-resolver", () => {
     expect(url).toContain("my_asset");
   });
 
+  it("does not build backend stream URLs for demo tracks", () => {
+    const url = buildRemotePlaybackUrl("demo:titan", { media_kind: "audio", _demo: true });
+    expect(url).toBe("");
+  });
+
   it("prefers asset.playback_url when available", () => {
     const url = buildRemotePlaybackUrl("x", { playback_url: "https://cdn.example.com/x.mp3" });
     expect(url).toBe("https://cdn.example.com/x.mp3");
+  });
+
+  it("does not ask backend media access for demo tracks without a static src", async () => {
+    const result = await resolveAudioSource("demo:titan", { name: "demo:titan", media_kind: "audio", _demo: true });
+
+    expect(result).toBeNull();
+    expect(backendAuthMock.getProtectedMediaRequestGate).not.toHaveBeenCalled();
+    expect(backendAuthMock.getBackendMediaAssetAccess).not.toHaveBeenCalled();
   });
 
   it("hasLocalSource returns false when no meta", async () => {
@@ -236,6 +279,22 @@ describe("audio-source-resolver", () => {
     mediaCacheMock.isAutoCacheEligible.mockReturnValueOnce(false);
     triggerBackgroundCache("asset_a", TRACK_A);
     expect(mediaCacheMock.registerAutoCacheDownload).not.toHaveBeenCalled();
+  });
+
+  it("triggerBackgroundCache skips demo/static tracks without backend requests", () => {
+    const onFailed = vi.fn();
+    triggerBackgroundCache("demo:titan", {
+      name: "demo:titan",
+      title: "Titan",
+      media_kind: "audio",
+      src: "/audio/demo/sb_titan.mp3",
+      _demo: true,
+    }, { onFailed });
+
+    expect(mediaCacheMock.isAutoCacheEligible).not.toHaveBeenCalled();
+    expect(mediaCacheMock.registerAutoCacheDownload).not.toHaveBeenCalled();
+    expect(backendAuthMock.getProtectedMediaRequestGate).not.toHaveBeenCalled();
+    expect(onFailed).toHaveBeenCalledWith("static_source");
   });
 
   it("triggerBackgroundCache registers download for eligible assets", () => {
@@ -698,15 +757,23 @@ describe("player-session", () => {
   it("returns defaults when no session exists", () => {
     const session = loadPlayerSession();
     expect(session.queue).toEqual([]);
+    expect(session.queueEntries).toEqual([]);
     expect(session.paused).toBe(true);
-    expect(session.volume).toBe(0.5);
+    expect(session.volume).toBe(0.88);
     expect(session.repeat).toBe("off");
     expect(session.shuffle).toBe(false);
   });
 
   it("persists and restores session state", () => {
+    const trackA = makeSessionEntry("track_a", { entryId: "entry_a" });
+    const trackB = makeSessionEntry("track_b", { entryId: "entry_b" });
+    const playedTrack = makeSessionEntry("played_track", { entryId: "played_entry" });
+
     savePlayerSession({
-      queue: ["track_a", "track_b"],
+      queueEntries: [trackA, trackB],
+      playedEntries: [playedTrack],
+      currentEntryId: "entry_b",
+      currentIndex: 1,
       currentTrackName: "track_a",
       volume: 0.7,
       repeat: "all",
@@ -714,13 +781,16 @@ describe("player-session", () => {
 
     const session = loadPlayerSession();
     expect(session.queue).toEqual(["track_a", "track_b"]);
-    expect(session.currentTrackName).toBe("track_a");
+    expect(session.queueEntries.map((entry) => entry.entryId)).toEqual(["entry_a", "entry_b"]);
+    expect(session.playedEntries.map((entry) => entry.entryId)).toEqual(["played_entry"]);
+    expect(session.currentEntryId).toBe("entry_b");
+    expect(session.currentIndex).toBe(1);
     expect(session.volume).toBe(0.7);
     expect(session.repeat).toBe("all");
   });
 
   it("clears the session", () => {
-    savePlayerSession({ queue: ["track_a"] });
+    savePlayerSession({ queueEntries: [makeSessionEntry("track_a", { entryId: "entry_a" })] });
     clearPlayerSession();
     const session = loadPlayerSession();
     expect(session.queue).toEqual([]);
@@ -737,9 +807,25 @@ describe("player-session", () => {
   });
 
   it("handles corrupt JSON gracefully", () => {
-    localStorage.setItem("vatioboard_player_session_v1", "{{invalid}");
+    localStorage.setItem(PLAYER_SESSION_STORAGE_KEY, "{{invalid}");
     expect(() => loadPlayerSession()).not.toThrow();
     expect(loadPlayerSession().queue).toEqual([]);
+  });
+
+  it("falls back to legacy v1 payloads", () => {
+    localStorage.setItem("vatioboard_player_session_v1", JSON.stringify({
+      queue: ["legacy_track"],
+      currentTrackName: "legacy_track",
+      volume: 0.61,
+      paused: false,
+    }));
+
+    const session = loadPlayerSession();
+    expect(session.queue).toEqual(["legacy_track"]);
+    expect(session.queueEntries).toHaveLength(1);
+    expect(session.currentEntryId).toContain("legacy_0_legacy_track");
+    expect(session.volume).toBe(0.61);
+    expect(session.paused).toBe(false);
   });
 });
 
@@ -806,6 +892,7 @@ describe("audio-runtime", () => {
     expect(s.paused).toBe(true);
     expect(s.currentTrack).toBeNull();
     expect(s.currentIndex).toBe(-1);
+    expect(s.volume).toBe(0.88);
   });
 
   it("setQueue populates the queue", async () => {
@@ -939,7 +1026,7 @@ describe("audio-runtime", () => {
     expect(firstSrc).not.toBe("MEDIA-ASSET-00123");
   });
 
-  it("ending the last queued track without repeat stops cleanly and stays replayable", async () => {
+  it("ending the last queued track without repeat consumes it and stops cleanly", async () => {
     runtime.setQueue([TRACK_A], { autoplay: true });
     await vi.waitFor(() => {
       expect(runtime.getState().currentTrack?.name).toBe("asset_a");
@@ -951,6 +1038,7 @@ describe("audio-runtime", () => {
 
     await vi.waitFor(() => {
       const s = runtime.getState();
+      expect(s.queue).toHaveLength(0);
       expect(s.currentTrack).toBeNull();
       expect(s.currentIndex).toBe(-1);
       expect(s.paused).toBe(true);
@@ -959,21 +1047,153 @@ describe("audio-runtime", () => {
 
     finishedEl.dispatchEvent(new Event("error"));
     expect(runtime.getState().error).toBeNull();
+  });
 
-    await runtime.play();
+  it("nextTrack removes the current song from the queue as playback advances", async () => {
+    runtime.setQueue([TRACK_A, TRACK_B, TRACK_C], { autoplay: true });
+
+    await vi.waitFor(() => {
+      expect(runtime.getState().currentTrack?.name).toBe("asset_a");
+      expect(runtime.getState().queue).toHaveLength(3);
+    });
+
+    await runtime.nextTrack();
 
     await vi.waitFor(() => {
       const s = runtime.getState();
-      expect(s.currentTrack?.name).toBe("asset_a");
-      expect(s.paused).toBe(false);
-      expect(s.playing).toBe(true);
+      expect(s.queue.map((track) => track.name)).toEqual(["asset_b", "asset_c"]);
+      expect(s.currentTrack?.name).toBe("asset_b");
+      expect(s.currentIndex).toBe(0);
     });
+  });
+
+  it("previousTrack reintroduces the last manually skipped song into the queue", async () => {
+    runtime.setQueue([TRACK_A, TRACK_B, TRACK_C], { autoplay: true });
+
+    await vi.waitFor(() => {
+      expect(runtime.getState().currentTrack?.name).toBe("asset_a");
+    });
+
+    await runtime.nextTrack();
+
+    await vi.waitFor(() => {
+      expect(runtime.getState().queue.map((track) => track.name)).toEqual(["asset_b", "asset_c"]);
+      expect(runtime.getState().currentTrack?.name).toBe("asset_b");
+    });
+
+    await runtime.previousTrack();
+
+    await vi.waitFor(() => {
+      const s = runtime.getState();
+      expect(s.queue.map((track) => track.name)).toEqual(["asset_a", "asset_b", "asset_c"]);
+      expect(s.currentTrack?.name).toBe("asset_a");
+      expect(s.currentIndex).toBe(0);
+    });
+  });
+
+  it("reintroduced previous song is consumed again on next", async () => {
+    runtime.setQueue([TRACK_A, TRACK_B, TRACK_C], { autoplay: true });
+
+    await vi.waitFor(() => {
+      expect(runtime.getState().currentTrack?.name).toBe("asset_a");
+    });
+
+    await runtime.nextTrack();
+    await vi.waitFor(() => {
+      expect(runtime.getState().currentTrack?.name).toBe("asset_b");
+    });
+
+    await runtime.previousTrack();
+    await vi.waitFor(() => {
+      expect(runtime.getState().currentTrack?.name).toBe("asset_a");
+    });
+
+    await runtime.nextTrack();
+
+    await vi.waitFor(() => {
+      const s = runtime.getState();
+      expect(s.queue.map((track) => track.name)).toEqual(["asset_b", "asset_c"]);
+      expect(s.currentTrack?.name).toBe("asset_b");
+      expect(s.currentIndex).toBe(0);
+    });
+  });
+
+  it("previousTrack reintroduces the last naturally ended song into the queue", async () => {
+    runtime.setQueue([TRACK_A, TRACK_B, TRACK_C], { autoplay: true });
+
+    await vi.waitFor(() => {
+      expect(runtime.getState().currentTrack?.name).toBe("asset_a");
+    });
+
+    runtime.getAudioElement().dispatchEvent(new Event("ended"));
+
+    await vi.waitFor(() => {
+      expect(runtime.getState().queue.map((track) => track.name)).toEqual(["asset_b", "asset_c"]);
+      expect(runtime.getState().currentTrack?.name).toBe("asset_b");
+    });
+
+    await runtime.previousTrack();
+
+    await vi.waitFor(() => {
+      const s = runtime.getState();
+      expect(s.queue.map((track) => track.name)).toEqual(["asset_a", "asset_b", "asset_c"]);
+      expect(s.currentTrack?.name).toBe("asset_a");
+    });
+  });
+
+  it("nextTrack immediately persists the consumed queue item", async () => {
+    runtime.setQueue([TRACK_A, TRACK_B, TRACK_C], { autoplay: true });
+
+    await vi.waitFor(() => {
+      expect(runtime.getState().currentTrack?.name).toBe("asset_a");
+      expect(runtime.getState().playing).toBe(true);
+    });
+
+    await runtime.nextTrack();
+
+    await vi.waitFor(() => {
+      expect(runtime.getState().currentTrack?.name).toBe("asset_b");
+    });
+
+    const saved = JSON.parse(localStorage.getItem(PLAYER_SESSION_STORAGE_KEY));
+    expect(saved.queueEntries.map((entry) => entry.name)).toEqual(["asset_b", "asset_c"]);
+    expect(saved.playedEntries.map((entry) => entry.name)).toEqual(["asset_a"]);
+    expect(saved.currentEntryId).toBe(runtime.getState().currentTrack?._queueId);
+    expect(saved.currentTime).toBe(0);
+  });
+
+  it("stores the current playback second while a song is playing", async () => {
+    runtime.setQueue([TRACK_A, TRACK_B], { autoplay: true });
+
+    await vi.waitFor(() => {
+      expect(runtime.getState().currentTrack?.name).toBe("asset_a");
+      expect(runtime.getState().playing).toBe(true);
+    });
+
+    const el = runtime.getAudioElement();
+    el.currentTime = 47.8;
+    el.dispatchEvent(new Event("timeupdate"));
+
+    const saved = JSON.parse(localStorage.getItem(PLAYER_SESSION_STORAGE_KEY));
+    expect(saved.currentTime).toBe(47.8);
+    expect(saved.currentEntryId).toBe(runtime.getState().currentTrack?._queueId);
   });
 
   it("restoreSession rebuilds queue from available tracks", async () => {
     // Seed a session
-    localStorage.setItem("vatioboard_player_session_v1", JSON.stringify({
-      queue: ["asset_a", "asset_b", "asset_gone"],
+    localStorage.setItem(PLAYER_SESSION_STORAGE_KEY, JSON.stringify({
+      version: 2,
+      queueEntries: [
+        makeSessionEntry(TRACK_A, { entryId: "entry_a" }),
+        makeSessionEntry(TRACK_B, { entryId: "entry_b" }),
+        makeSessionEntry({
+          name: "asset_gone",
+          title: "Missing Track",
+          media_kind: "audio",
+        }, { entryId: "entry_gone" }),
+      ],
+      currentEntryId: "entry_b",
+      currentIndex: 1,
       currentTrackName: "asset_b",
       currentTime: 30,
       paused: true,
@@ -987,11 +1207,302 @@ describe("audio-runtime", () => {
     await runtime.restoreSession([TRACK_A, TRACK_B], { autoplay: false });
 
     const s = runtime.getState();
-    // "asset_gone" should be filtered out
-    expect(s.queue).toHaveLength(2);
+    expect(s.queue).toHaveLength(3);
+    expect(s.currentTrack?._queueId).toBe("entry_b");
+    expect(runtime.getAudioElement()?.currentTime).toBe(30);
+    expect(s.currentTime).toBe(30);
     expect(s.volume).toBe(0.8);
     expect(s.repeat).toBe("all");
     expect(s.shuffle).toBe(true);
+  });
+
+  it("keeps the restored second when the first post-refresh play primes audio", async () => {
+    localStorage.setItem(PLAYER_SESSION_STORAGE_KEY, JSON.stringify({
+      version: 2,
+      queueEntries: [makeSessionEntry(TRACK_A, { entryId: "entry_a" })],
+      currentEntryId: "entry_a",
+      currentIndex: 0,
+      currentTime: 42,
+      paused: true,
+      volume: 0.8,
+      muted: false,
+      repeat: "off",
+      shuffle: false,
+      backgroundMode: false,
+    }));
+
+    await runtime.restoreSession([TRACK_A], { autoplay: false });
+
+    expect(runtime.getState().currentTrack?._queueId).toBe("entry_a");
+    expect(runtime.getAudioElement()?.currentTime).toBe(42);
+
+    await runtime.play();
+
+    await vi.waitFor(() => {
+      expect(runtime.getState().playing).toBe(true);
+      expect(runtime.getAudioElement()?.currentTime).toBe(42);
+    });
+
+    const saved = JSON.parse(localStorage.getItem(PLAYER_SESSION_STORAGE_KEY));
+    expect(saved.currentTime).toBe(42);
+  });
+
+  it("restoreSession does not show playback error when refresh autoplay is blocked for demo tracks", async () => {
+    const originalPlay = window.Audio.prototype.play;
+    window.Audio.prototype.play = vi.fn(function playBlockedByPolicy() {
+      this.paused = true;
+      return Promise.reject(new DOMException("Autoplay blocked", "NotAllowedError"));
+    });
+
+    try {
+      const demoTrack = {
+        name: "demo:titan",
+        title: "Titan",
+        media_kind: "audio",
+        src: "/audio/demo/sb_titan.mp3",
+        _demo: true,
+      };
+
+      localStorage.setItem(PLAYER_SESSION_STORAGE_KEY, JSON.stringify({
+        version: 2,
+        queueEntries: [makeSessionEntry(demoTrack, { entryId: "demo_entry" })],
+        currentEntryId: "demo_entry",
+        currentIndex: 0,
+        currentTime: 27,
+        paused: false,
+        volume: 0.8,
+        muted: false,
+        repeat: "off",
+        shuffle: false,
+        backgroundMode: false,
+      }));
+
+      await runtime.restoreSession([demoTrack], { autoplay: true });
+
+      await vi.waitFor(() => {
+        const s = runtime.getState();
+        expect(s.currentTrack?.name).toBe("demo:titan");
+        expect(s.currentTime).toBe(27);
+        expect(s.paused).toBe(true);
+        expect(s.playing).toBe(false);
+        expect(s.error).toBeNull();
+      });
+
+      const saved = JSON.parse(localStorage.getItem(PLAYER_SESSION_STORAGE_KEY));
+      expect(saved.currentTime).toBe(27);
+      expect(saved.paused).toBe(true);
+    } finally {
+      window.Audio.prototype.play = originalPlay;
+    }
+  });
+
+  it("reapplies the restored second if metadata loading resets currentTime", async () => {
+    localStorage.setItem(PLAYER_SESSION_STORAGE_KEY, JSON.stringify({
+      version: 2,
+      queueEntries: [makeSessionEntry(TRACK_A, { entryId: "entry_a" })],
+      currentEntryId: "entry_a",
+      currentIndex: 0,
+      currentTime: 36,
+      paused: true,
+      volume: 0.8,
+      muted: false,
+      repeat: "off",
+      shuffle: false,
+      backgroundMode: false,
+    }));
+
+    await runtime.restoreSession([TRACK_A], { autoplay: false });
+
+    const el = runtime.getAudioElement();
+    el.currentTime = 0;
+    el.dispatchEvent(new Event("loadedmetadata"));
+
+    expect(el.currentTime).toBe(36);
+    expect(runtime.getState().currentTime).toBe(36);
+  });
+
+  it("restoreSession preserves duplicate queue entries and exact current item", async () => {
+    const duplicateA1 = makeSessionEntry(TRACK_A, { entryId: "dup_a_1" });
+    const duplicateA2 = makeSessionEntry(TRACK_A, { entryId: "dup_a_2" });
+
+    localStorage.setItem(PLAYER_SESSION_STORAGE_KEY, JSON.stringify({
+      version: 2,
+      queueEntries: [duplicateA1, makeSessionEntry(TRACK_B, { entryId: "entry_b" }), duplicateA2],
+      currentEntryId: "dup_a_2",
+      currentIndex: 2,
+      currentTime: 18,
+      paused: true,
+      volume: 0.55,
+      muted: false,
+      repeat: "off",
+      shuffle: false,
+      backgroundMode: false,
+    }));
+
+    await runtime.restoreSession([TRACK_A, TRACK_B], { autoplay: false });
+
+    const s = runtime.getState();
+    expect(s.queue).toHaveLength(3);
+    expect(s.queue[0]._queueId).toBe("dup_a_1");
+    expect(s.queue[2]._queueId).toBe("dup_a_2");
+    expect(s.currentIndex).toBe(2);
+    expect(s.currentTrack?._queueId).toBe("dup_a_2");
+  });
+
+  it("restoreSession lets previousTrack reintroduce a persisted played song", async () => {
+    localStorage.setItem(PLAYER_SESSION_STORAGE_KEY, JSON.stringify({
+      version: 2,
+      queueEntries: [
+        makeSessionEntry(TRACK_B, { entryId: "entry_b" }),
+        makeSessionEntry(TRACK_C, { entryId: "entry_c" }),
+      ],
+      playedEntries: [
+        makeSessionEntry(TRACK_A, { entryId: "entry_a" }),
+      ],
+      currentEntryId: "entry_b",
+      currentIndex: 0,
+      currentTime: 0,
+      paused: true,
+      volume: 0.8,
+      muted: false,
+      repeat: "off",
+      shuffle: false,
+      backgroundMode: false,
+    }));
+
+    await runtime.restoreSession([TRACK_A, TRACK_B, TRACK_C], { autoplay: false });
+
+    expect(runtime.getState().queue.map((track) => track.name)).toEqual(["asset_b", "asset_c"]);
+    expect(runtime.getState().currentTrack?.name).toBe("asset_b");
+
+    await runtime.previousTrack();
+
+    await vi.waitFor(() => {
+      const s = runtime.getState();
+      expect(s.queue.map((track) => track.name)).toEqual(["asset_a", "asset_b", "asset_c"]);
+      expect(s.currentTrack?.name).toBe("asset_a");
+      expect(s.currentIndex).toBe(0);
+    });
+  });
+
+  it("restoreSession keeps snapshot-only queue entries when absent from the catalog", async () => {
+    const snapshotOnly = makeSessionEntry({
+      name: "snapshot_only",
+      title: "Snapshot Only",
+      artist: "Archive Artist",
+      album: "Archive Album",
+      duration: 47,
+      media_kind: "audio",
+      content_hash: "hash_snapshot",
+    }, { entryId: "snapshot_entry" });
+
+    localStorage.setItem(PLAYER_SESSION_STORAGE_KEY, JSON.stringify({
+      version: 2,
+      queueEntries: [snapshotOnly],
+      currentEntryId: "snapshot_entry",
+      currentIndex: 0,
+      paused: true,
+      volume: 0.66,
+      muted: false,
+      repeat: "off",
+      shuffle: false,
+      backgroundMode: false,
+    }));
+
+    await runtime.restoreSession([TRACK_A], { autoplay: false });
+
+    const s = runtime.getState();
+    expect(s.queue).toHaveLength(1);
+    expect(s.currentTrack?._queueId).toBe("snapshot_entry");
+    expect(s.currentTrack?.name).toBe("snapshot_only");
+    expect(s.currentTrack?.title).toBe("Snapshot Only");
+    expect(s.currentTrack?.artist).toBe("Archive Artist");
+  });
+
+  it("restoreSession skips unavailable restored items without destroying the rest of the queue", async () => {
+    vi.resetModules();
+    localStorage.clear();
+
+    const resolveAudioSource = vi.fn(async (name) => {
+      if (name === "missing_track") return null;
+      return {
+        src: `https://cdn.example.com/${name}.mp3`,
+        type: "remote",
+        revokeUrl: vi.fn(),
+      };
+    });
+
+    vi.doMock("../../src/shared/audio-source-resolver.js", () => ({
+      resolveAudioSource,
+      hasLocalSource: vi.fn().mockResolvedValue(false),
+      triggerBackgroundCache: vi.fn(),
+    }));
+
+    vi.doMock("../../src/i18n.js", () => ({
+      t: (key) => key,
+      getLang: () => "en",
+      toggleLang: vi.fn(),
+      applyTranslations: vi.fn(),
+    }));
+
+    vi.doMock("../../src/shared/media-cache.js", () => ({
+      getLocalMediaBlob: vi.fn().mockResolvedValue(null),
+      getLocalBlobMeta: vi.fn().mockResolvedValue(null),
+      isAutoCacheEligible: vi.fn().mockReturnValue(false),
+      registerAutoCacheDownload: vi.fn(),
+      cacheMediaBlob: vi.fn().mockResolvedValue(undefined),
+      cacheMediaFromResponse: vi.fn().mockResolvedValue(undefined),
+    }));
+
+    vi.doMock("../../src/shared/environment.js", () => ({
+      getEnvironmentConfig: () => ({ apiBase: "https://api.vatioboard.com" }),
+    }));
+
+    vi.doMock("../../src/shared/backend-auth.js", () => ({
+      getProtectedMediaRequestGate: vi.fn().mockResolvedValue({
+        allowed: true,
+        cleanup() {},
+        signal: undefined,
+      }),
+      getBackendMediaAssetAccess: vi.fn().mockResolvedValue({ ok: false, access: null }),
+      getBackendMediaManifest: vi.fn().mockResolvedValue({ ok: false, assets: [] }),
+      getBackendManifestVersion: vi.fn().mockResolvedValue({ ok: false }),
+      fetchBackendMediaAssetBlob: vi.fn().mockResolvedValue(new Response("", { status: 404 })),
+    }));
+
+    vi.doMock("../../src/shared/media-access-cache.js", () => ({
+      getCachedMediaAccess: vi.fn().mockReturnValue(null),
+      setCachedMediaAccess: vi.fn(),
+      clearMediaAccessCache: vi.fn(),
+    }));
+
+    const freshRuntime = await import("../../src/shared/audio-runtime.js");
+
+    localStorage.setItem(PLAYER_SESSION_STORAGE_KEY, JSON.stringify({
+      version: 2,
+      queueEntries: [
+        makeSessionEntry({ name: "missing_track", title: "Missing", media_kind: "audio" }, { entryId: "missing_entry" }),
+        makeSessionEntry(TRACK_B, { entryId: "entry_b" }),
+      ],
+      currentEntryId: "missing_entry",
+      currentIndex: 0,
+      paused: true,
+      volume: 0.72,
+      muted: false,
+      repeat: "off",
+      shuffle: false,
+      backgroundMode: false,
+    }));
+
+    await freshRuntime.restoreSession([TRACK_B], { autoplay: false });
+
+    await vi.waitFor(() => {
+      const s = freshRuntime.getState();
+      expect(s.queue).toHaveLength(2);
+      expect(s.currentIndex).toBe(1);
+      expect(s.currentTrack?.name).toBe("asset_b");
+      expect(s.paused).toBe(true);
+    });
   });
 
   it("getAudioElement returns the internal audio element", async () => {
@@ -1180,8 +1691,9 @@ describe("audio-runtime local-to-remote transitions", () => {
 
     expect(destroyVisualizerGraphForElement).toHaveBeenCalledTimes(2);
     expect(destroyVisualizerGraphForElement).toHaveBeenLastCalledWith(remoteEl);
-    expect(runtime.getAudioElement()).toBe(remoteEl);
+    expect(runtime.getAudioElement()).not.toBe(remoteEl);
     expect(remoteEl.src).toBe("");
+    expect(runtime.getAudioElement().src).toBe("");
   });
 
   it("keeps playback active after replacing the audio element for a remote next track", async () => {
@@ -1271,6 +1783,109 @@ describe("audio-runtime local-to-remote transitions", () => {
     expect(destroyVisualizerGraphForElement).toHaveBeenCalledWith(localEl);
     expect(runtime.getAudioElement()).not.toBe(localEl);
     expect(runtime.getAudioElement().src).toBe("");
+  });
+
+  it("prepares the next remote source near the end without switching before the current track actually ends", async () => {
+    vi.resetModules();
+    localStorage.clear();
+
+    const resolveAudioSource = vi.fn()
+      .mockResolvedValueOnce({
+        src: "https://cdn.example.com/stream-track-1.mp3",
+        type: "remote",
+        revokeUrl: vi.fn(),
+      })
+      .mockResolvedValueOnce({
+        src: "https://cdn.example.com/stream-track-2.mp3",
+        type: "remote",
+        revokeUrl: vi.fn(),
+      });
+
+    vi.doMock("../../src/shared/audio-source-resolver.js", () => ({
+      resolveAudioSource,
+      hasLocalSource: vi.fn().mockResolvedValue(false),
+      triggerBackgroundCache: vi.fn(),
+    }));
+
+    const runtime = await import("../../src/shared/audio-runtime.js");
+
+    runtime.setQueue([TRACK_A, TRACK_B], { autoplay: true });
+
+    await vi.waitFor(() => {
+      expect(runtime.getAudioElement()?.src).toBe("https://cdn.example.com/stream-track-1.mp3");
+      expect(runtime.getState().playing).toBe(true);
+    });
+
+    const currentEl = runtime.getAudioElement();
+    currentEl.duration = 120;
+    currentEl.currentTime = 113;
+    currentEl.dispatchEvent(new Event("timeupdate"));
+
+    await vi.waitFor(() => {
+      expect(resolveAudioSource).toHaveBeenCalledTimes(2);
+    });
+
+    currentEl.currentTime = 119.4;
+    currentEl.dispatchEvent(new Event("timeupdate"));
+
+    expect(runtime.getState().currentTrack?.name).toBe("asset_a");
+    expect(runtime.getAudioElement()?.src).toBe("https://cdn.example.com/stream-track-1.mp3");
+    expect(runtime.getState().playing).toBe(true);
+
+    expect(runtime.getAudioElement()).toBe(currentEl);
+    expect(resolveAudioSource).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses the prepared next remote source on the natural ended path without re-resolving", async () => {
+    vi.resetModules();
+    localStorage.clear();
+
+    const resolveAudioSource = vi.fn()
+      .mockResolvedValueOnce({
+        src: "https://cdn.example.com/stream-track-1.mp3",
+        type: "remote",
+        revokeUrl: vi.fn(),
+      })
+      .mockResolvedValueOnce({
+        src: "https://cdn.example.com/stream-track-2.mp3",
+        type: "remote",
+        revokeUrl: vi.fn(),
+      });
+
+    vi.doMock("../../src/shared/audio-source-resolver.js", () => ({
+      resolveAudioSource,
+      hasLocalSource: vi.fn().mockResolvedValue(false),
+      triggerBackgroundCache: vi.fn(),
+    }));
+
+    const runtime = await import("../../src/shared/audio-runtime.js");
+
+    runtime.setQueue([TRACK_A, TRACK_B], { autoplay: true });
+
+    await vi.waitFor(() => {
+      expect(runtime.getAudioElement()?.src).toBe("https://cdn.example.com/stream-track-1.mp3");
+      expect(runtime.getState().playing).toBe(true);
+    });
+
+    const currentEl = runtime.getAudioElement();
+    currentEl.duration = 120;
+    currentEl.currentTime = 111;
+    currentEl.dispatchEvent(new Event("timeupdate"));
+
+    await vi.waitFor(() => {
+      expect(resolveAudioSource).toHaveBeenCalledTimes(2);
+    });
+
+    currentEl.dispatchEvent(new Event("ended"));
+
+    await vi.waitFor(() => {
+      expect(runtime.getState().currentTrack?.name).toBe("asset_b");
+      expect(runtime.getAudioElement()?.src).toBe("https://cdn.example.com/stream-track-2.mp3");
+      expect(runtime.getState().playing).toBe(true);
+    });
+
+    expect(runtime.getAudioElement()).toBe(currentEl);
+    expect(resolveAudioSource).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -1399,6 +2014,16 @@ describe("player-shell", () => {
       clearMediaAccessCache: vi.fn(),
     }));
 
+    vi.doMock("../../src/shared/audio-source-resolver.js", () => ({
+      resolveAudioSource: vi.fn(async (name, track = {}) => ({
+        src: track.src || `https://cdn.example.com/${name}.mp3`,
+        type: "remote",
+        revokeUrl: vi.fn(),
+      })),
+      hasLocalSource: vi.fn().mockResolvedValue(false),
+      triggerBackgroundCache: vi.fn(),
+    }));
+
     vi.doMock("../../src/shared/audio-mini-visualizer.js", () => ({
       createMiniAudioVisualizer: visualizerMockState.createVisualizerSpy,
       destroyVisualizerGraphForElement: vi.fn().mockReturnValue(false),
@@ -1449,15 +2074,16 @@ describe("player-shell", () => {
   });
 
   it("cycles the widget visualizer between spectrum and scope from the strip", async () => {
-    await runtime.play();
-
     const container = document.createElement("div");
     const shell = createPlayerShell({ container });
     const strip = container.querySelector(".player-visualizer-strip");
+    runtime.setQueue([{ ...TRACK_A, src: "/audio/asset_a.mp3" }], { autoplay: true });
 
-    expect(visualizerMockState.createVisualizerSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ mode: "spectrum" }),
-    );
+    await vi.waitFor(() => {
+      expect(visualizerMockState.createVisualizerSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ mode: "spectrum" }),
+      );
+    });
 
     strip.click();
 
@@ -1480,7 +2106,7 @@ describe("player-shell", () => {
     const volume = container.querySelector(".player-volume");
 
     expect(progress.style.getPropertyValue("--player-range-percent")).toBe("0%");
-    expect(volume.style.getPropertyValue("--player-range-percent")).toBe("50%");
+    expect(volume.style.getPropertyValue("--player-range-percent")).toBe("88%");
 
     shell.destroy();
   });
@@ -1530,6 +2156,107 @@ describe("player-shell", () => {
 
     const items = container.querySelectorAll(".player-queue-item");
     expect(items.length).toBe(2);
+
+    shell.destroy();
+  });
+
+  it("updates the open queue list when a completed song is consumed", async () => {
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    const tracks = [
+      { ...TRACK_A, src: "/audio/asset_a.mp3" },
+      { ...TRACK_B, src: "/audio/asset_b.mp3" },
+      { ...TRACK_C, src: "/audio/asset_c.mp3" },
+    ];
+
+    container.querySelector(".player-queue-toggle-btn").click();
+    runtime.setQueue(tracks, { autoplay: false });
+    shell.setTracks(tracks);
+
+    await vi.waitFor(() => {
+      const items = [...container.querySelectorAll(".player-queue-item")];
+      expect(items.map((item) => item.dataset.trackName)).toEqual(["asset_a", "asset_b", "asset_c"]);
+      expect(runtime.getState().currentIndex).toBe(0);
+      expect(runtime.getState().currentTrack?.name).toBe("asset_a");
+      expect(runtime.getState().loading).toBe(false);
+      expect(runtime.getAudioElement()).toBeTruthy();
+    });
+
+    runtime.getAudioElement().dispatchEvent(new Event("ended"));
+
+    await vi.waitFor(() => {
+      const items = [...container.querySelectorAll(".player-queue-item")];
+      expect(items.map((item) => item.dataset.trackName)).toEqual(["asset_b", "asset_c"]);
+    });
+
+    shell.destroy();
+  });
+
+  it("updates the open queue list when previous reintroduces a consumed song", async () => {
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    const tracks = [
+      { ...TRACK_A, src: "/audio/asset_a.mp3" },
+      { ...TRACK_B, src: "/audio/asset_b.mp3" },
+      { ...TRACK_C, src: "/audio/asset_c.mp3" },
+    ];
+
+    container.querySelector(".player-queue-toggle-btn").click();
+    runtime.setQueue(tracks, { autoplay: false });
+    shell.setTracks(tracks);
+
+    await vi.waitFor(() => {
+      const items = [...container.querySelectorAll(".player-queue-item")];
+      expect(items.map((item) => item.dataset.trackName)).toEqual(["asset_a", "asset_b", "asset_c"]);
+      expect(runtime.getState().currentIndex).toBe(0);
+      expect(runtime.getState().currentTrack?.name).toBe("asset_a");
+      expect(runtime.getState().loading).toBe(false);
+    });
+
+    await runtime.nextTrack();
+
+    await vi.waitFor(() => {
+      const items = [...container.querySelectorAll(".player-queue-item")];
+      expect(items.map((item) => item.dataset.trackName)).toEqual(["asset_b", "asset_c"]);
+    });
+
+    await runtime.previousTrack();
+
+    await vi.waitFor(() => {
+      const items = [...container.querySelectorAll(".player-queue-item")];
+      expect(items.map((item) => item.dataset.trackName)).toEqual(["asset_a", "asset_b", "asset_c"]);
+      expect(items[0].classList.contains("active")).toBe(true);
+    });
+
+    shell.destroy();
+  });
+
+  it("renders an empty open queue without leaving a stale visualizer after the final song completes", async () => {
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    const tracks = [{ ...TRACK_A, src: "/audio/asset_a.mp3" }];
+
+    container.querySelector(".player-queue-toggle-btn").click();
+    runtime.setQueue(tracks, { autoplay: true });
+    shell.setTracks(tracks);
+
+    await vi.waitFor(() => {
+      const items = [...container.querySelectorAll(".player-queue-item")];
+      expect(items.map((item) => item.dataset.trackName)).toEqual(["asset_a"]);
+      expect(runtime.getState().currentTrack?.name).toBe("asset_a");
+      expect(visualizerMockState.calls.length).toBeGreaterThan(0);
+    });
+
+    const controller = visualizerMockState.calls.at(-1).controller;
+    runtime.getAudioElement().dispatchEvent(new Event("ended"));
+
+    await vi.waitFor(() => {
+      expect(runtime.getState().queue).toHaveLength(0);
+      expect(runtime.getState().currentTrack).toBeNull();
+      expect(container.querySelector(".player-queue-item")).toBeNull();
+      expect(container.querySelector(".player-queue-empty")).toBeTruthy();
+      expect(controller.destroy).toHaveBeenCalled();
+    });
 
     shell.destroy();
   });

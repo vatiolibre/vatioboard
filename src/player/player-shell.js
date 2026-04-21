@@ -111,6 +111,20 @@ function formatTime(seconds) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+function getQueueRenderSignature(queue) {
+  if (!Array.isArray(queue) || queue.length === 0) return "";
+  return queue.map((track) => [
+    track?._queueId || "",
+    track?.name || "",
+    track?.title || "",
+    track?.original_filename || "",
+    track?.artist || "",
+    track?.album || "",
+    String(track?.duration ?? ""),
+    track?._offline ? "1" : "0",
+  ].join("\u001f")).join("\u001e");
+}
+
 // ── Artwork URL resolution ───────────────────────────────────────────
 
 function isArtworkUrl(ref) {
@@ -498,6 +512,8 @@ export function createPlayerShell({ container }) {
   let seeking = false;
   let allTracks = [];
   let queueOpen = false;
+  let queueFilter = "";
+  let lastRenderedQueueSignature = "";
   let visualizerVisible = loadText(VISUALIZER_VISIBLE_STORAGE_KEY, "true") !== "false";
   let visualizerMode = normalizeVisualizerMode(loadText(VISUALIZER_MODE_STORAGE_KEY, "spectrum"));
   let visualizerController = null;
@@ -523,7 +539,7 @@ export function createPlayerShell({ container }) {
     queueSheet.classList.toggle("is-open", queueOpen);
     queueSheet.setAttribute("aria-hidden", String(!queueOpen));
     queueToggleBtn.classList.toggle("active", queueOpen);
-    if (queueOpen) renderTrackList();
+    if (queueOpen) renderTrackList(queueFilter);
   }
 
   // Prevent queue toggle from triggering header drag
@@ -1359,10 +1375,27 @@ export function createPlayerShell({ container }) {
     visualizerController?.stop();
   }
 
+  function destroyVisualizerController() {
+    visualizerController?.destroy();
+    visualizerController = null;
+    visualizerMediaElement = null;
+  }
+
   function syncVisualizerPlayback(stateSnapshot = runtime.getState()) {
     const audioElement = getRuntimeAudioElement();
+    const hasPlayableSource = Boolean(
+      stateSnapshot.currentTrack
+        && stateSnapshot.sourceType
+        && audioElement?.src,
+    );
     const sourceSafe = isSafeVisualizerElement(audioElement);
     syncVisualizerUi({ sourceSafe });
+    if (!hasPlayableSource) {
+      stopVisualizer();
+      destroyVisualizerController();
+      return;
+    }
+
     if (!visualizerVisible) {
       stopVisualizer();
       return;
@@ -1373,9 +1406,7 @@ export function createPlayerShell({ container }) {
     if (!_gestureUnlocked) return;
 
     if (!sourceSafe) {
-      visualizerController?.destroy();
-      visualizerController = null;
-      visualizerMediaElement = null;
+      destroyVisualizerController();
       return;
     }
 
@@ -1494,7 +1525,8 @@ export function createPlayerShell({ container }) {
   });
 
   searchInput.addEventListener("input", () => {
-    renderTrackList(searchInput.value.trim().toLowerCase());
+    queueFilter = searchInput.value.trim().toLowerCase();
+    renderTrackList(queueFilter);
   });
 
   // ── Render helpers ─────────────────────────────────────────────
@@ -1601,21 +1633,31 @@ export function createPlayerShell({ container }) {
       errorMsg.hidden = true;
     }
 
+    if (queueOpen) {
+      const queueSignature = getQueueRenderSignature(s.queue);
+      if (queueSignature !== lastRenderedQueueSignature) {
+        renderTrackList(queueFilter);
+      }
+    }
+
     // Queue active indicator
-    renderQueueActive(s.currentTrack?.name);
+    renderQueueActive(s.currentTrack?._queueId || s.currentTrack?.name || "");
     updateOfflineBadges(s.queue);
     syncVisualizerPlayback(s);
   }
 
-  function renderTrackList(filter = "") {
+  function renderTrackList(filter = queueFilter) {
+    queueFilter = filter;
     trackListUl.innerHTML = "";
     const s = runtime.getState();
     // Up Next: always show the runtime queue, not the full catalog
     const source = s.queue;
-    const tracks = filter
+    lastRenderedQueueSignature = getQueueRenderSignature(source);
+    const normalizedFilter = String(filter || "").trim().toLowerCase();
+    const tracks = normalizedFilter
       ? source.filter((tr) => {
           const hay = `${tr.title || ""} ${tr.artist || ""} ${tr.original_filename || ""} ${tr.folder_path || ""}`.toLowerCase();
-          return hay.includes(filter);
+          return hay.includes(normalizedFilter);
         })
       : source;
 
@@ -1631,7 +1673,10 @@ export function createPlayerShell({ container }) {
       const li = document.createElement("li");
       li.className = "player-queue-item";
       li.dataset.trackName = track.name;
-      if (s.currentTrack?.name === track.name) li.classList.add("active");
+      li.dataset.queueId = track._queueId || track.name;
+      if ((s.currentTrack?._queueId || s.currentTrack?.name) === (track._queueId || track.name)) {
+        li.classList.add("active");
+      }
 
       const nameSpan = document.createElement("span");
       nameSpan.className = "player-queue-item-name";
@@ -1665,7 +1710,7 @@ export function createPlayerShell({ container }) {
       removeBtn.title = t("playerRemoveFromQueue");
       removeBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        runtime.removeFromQueue(track.name);
+        runtime.removeFromQueue(track._queueId || track.name);
         renderTrackList(filter);
       });
 
@@ -1673,17 +1718,17 @@ export function createPlayerShell({ container }) {
       li.addEventListener("click", () => {
         _gestureUnlocked = true;
         primeAudioContext();
-        void runtime.playTrackByName(track.name);
+        void runtime.playTrackByName(track._queueId || track.name);
       });
 
       trackListUl.append(li);
     }
   }
 
-  function renderQueueActive(currentName) {
+  function renderQueueActive(currentQueueId) {
     for (const li of trackListUl.children) {
-      if (li.dataset?.trackName) {
-        li.classList.toggle("active", li.dataset.trackName === currentName);
+      if (li.dataset?.queueId) {
+        li.classList.toggle("active", li.dataset.queueId === currentQueueId);
       }
     }
   }
@@ -1729,8 +1774,7 @@ export function createPlayerShell({ container }) {
 
     destroy() {
       unsubscribe();
-      visualizerController?.destroy();
-      visualizerController = null;
+      destroyVisualizerController();
       milkdropPanel?.destroy();
       milkdropPanel = null;
       root.remove();

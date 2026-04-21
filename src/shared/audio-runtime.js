@@ -50,12 +50,14 @@ const listeners = new Set();
 const state = {
   /** @type {object[]} Queue of track metadata objects */
   queue: [],
+  /** Stack of consumed tracks that can be restored by Previous */
+  playedHistory: [],
   /** Index into queue for the current track (-1 = none) */
   currentIndex: -1,
   /** Whether the user intends playback to be paused */
   paused: true,
   /** Volume 0-1 */
-  volume: 0.5,
+  volume: 0.88,
   /** Muted */
   muted: false,
   /** "off" | "all" | "one" */
@@ -82,6 +84,21 @@ let audio = null;
 let currentSourceRevoke = null;
 let positionSyncTimer = null;
 let sessionSaveTimer = null;
+let loadRequestToken = 0;
+let lastPersistedPlaybackSecond = -1;
+let lifecycleBound = false;
+let pendingSeek = null;
+
+const PREPARE_MIN_LEAD_SECONDS = 8;
+const PREPARE_MAX_LEAD_SECONDS = 24;
+const PREPARE_LEAD_RATIO = 0.15;
+const PREPARED_SOURCE_MAX_AGE_MS = 90_000;
+const PLAYED_HISTORY_LIMIT = 50;
+
+let preparedNext = null;
+let prepareNextPromise = null;
+let prepareNextGeneration = 0;
+let queueEntrySeed = 0;
 
 /**
  * Audio priming state — follows the speed/audio.js primeAudioElement pattern.
@@ -101,6 +118,7 @@ function bindAudioElement(el) {
   el.addEventListener("ended", onEnded);
   el.addEventListener("timeupdate", onTimeUpdate);
   el.addEventListener("loadedmetadata", onLoadedMetadata);
+  el.addEventListener("canplay", onCanPlay);
   el.addEventListener("error", onError);
   el.addEventListener("waiting", onWaiting);
   el.addEventListener("playing", onPlaying);
@@ -112,12 +130,14 @@ function unbindAudioElement(el) {
   el.removeEventListener("ended", onEnded);
   el.removeEventListener("timeupdate", onTimeUpdate);
   el.removeEventListener("loadedmetadata", onLoadedMetadata);
+  el.removeEventListener("canplay", onCanPlay);
   el.removeEventListener("error", onError);
   el.removeEventListener("waiting", onWaiting);
   el.removeEventListener("playing", onPlaying);
 }
 
 function createManagedAudioElement() {
+  bindLifecyclePersistence();
   const el = new Audio();
   el.preload = "metadata";
   el.playsInline = true;
@@ -188,16 +208,19 @@ export function primeAudio() {
   el.volume = 0;
 
   primeInFlight = (async () => {
+    const resumeTime = getCurrentPlaybackTime();
+    applyPendingSeek();
+
     try {
       const p = el.play();
       if (p && typeof p.then === "function") await p;
       el.pause();
-      el.currentTime = 0;
+      restorePlaybackTimeAfterPrime(el, resumeTime);
       primed = true;
       return true;
     } catch {
       el.pause();
-      el.currentTime = 0;
+      restorePlaybackTimeAfterPrime(el, resumeTime);
       primed = false;
       return false;
     } finally {
@@ -221,6 +244,441 @@ function shouldResetVisualizerGraph(previousSourceType, nextResolved) {
   return previousSourceType === "blob" && nextResolved?.type === "remote";
 }
 
+function nextQueueEntryId() {
+  queueEntrySeed += 1;
+  return `queue_${Date.now().toString(36)}_${queueEntrySeed.toString(36)}`;
+}
+
+function ensureQueueEntry(track, entryId = "") {
+  if (!track || typeof track !== "object") return null;
+  const queueId = entryId || track._queueId || nextQueueEntryId();
+  return {
+    ...track,
+    _queueId: queueId,
+  };
+}
+
+function prepareQueueEntries(tracks, entryIds = []) {
+  if (!Array.isArray(tracks)) return [];
+  return tracks.map((track, index) => ensureQueueEntry(track, entryIds[index])).filter(Boolean);
+}
+
+function findQueueIndex(ref) {
+  if (!ref) return -1;
+  const byQueueId = state.queue.findIndex((track) => track?._queueId === ref);
+  if (byQueueId >= 0) return byQueueId;
+  return state.queue.findIndex((track) => track?.name === ref);
+}
+
+function serializeQueueEntry(track) {
+  if (!track) return null;
+  return {
+    entryId: track._queueId || nextQueueEntryId(),
+    name: track.name || "",
+    title: track.title || "",
+    artist: track.artist || "",
+    album: track.album || "",
+    genre: track.genre || "",
+    duration: Number.isFinite(track.duration) ? track.duration : null,
+    artwork_ref: track.artwork_ref || "",
+    media_kind: track.media_kind || "audio",
+    original_filename: track.original_filename || "",
+    content_hash: track.content_hash || "",
+    mime_type: track.mime_type || "",
+    blob_size: Number.isFinite(track.blob_size) ? track.blob_size : 0,
+    file_extension: track.file_extension || "",
+    folder_path: track.folder_path || "",
+    src: isStablePersistedSrc(track.src) ? track.src : "",
+  };
+}
+
+function isStablePersistedSrc(src) {
+  return typeof src === "string"
+    && src.length > 0
+    && !src.startsWith("blob:")
+    && !src.startsWith("data:")
+    && !/^https?:\/\//i.test(src);
+}
+
+function buildRestoredQueueEntry(snapshot, availableTrack) {
+  if (!snapshot?.name) return null;
+  return ensureQueueEntry({
+    ...snapshot,
+    ...availableTrack,
+    title: availableTrack?.title || snapshot.title || snapshot.original_filename || snapshot.name,
+    artist: availableTrack?.artist || snapshot.artist || "",
+    album: availableTrack?.album || snapshot.album || "",
+    genre: availableTrack?.genre || snapshot.genre || "",
+    duration: availableTrack?.duration ?? snapshot.duration ?? null,
+    artwork_ref: availableTrack?.artwork_ref || snapshot.artwork_ref || "",
+    media_kind: availableTrack?.media_kind || snapshot.media_kind || "audio",
+    original_filename: availableTrack?.original_filename || snapshot.original_filename || "",
+    content_hash: availableTrack?.content_hash || snapshot.content_hash || "",
+    mime_type: availableTrack?.mime_type || snapshot.mime_type || "",
+    blob_size: availableTrack?.blob_size ?? snapshot.blob_size ?? 0,
+    file_extension: availableTrack?.file_extension || snapshot.file_extension || "",
+    folder_path: availableTrack?.folder_path || snapshot.folder_path || "",
+    src: availableTrack?.src || snapshot.src || "",
+  }, snapshot.entryId);
+}
+
+function getUpcomingTrackIndex(fromIndex = state.currentIndex) {
+  if (state.queue.length === 0 || fromIndex < 0) return -1;
+  if (state.shuffle || state.repeat === "one") return -1;
+
+  const nextIndex = fromIndex + 1;
+  if (nextIndex < state.queue.length) return nextIndex;
+  return state.repeat === "all" ? 0 : -1;
+}
+
+function getPrepareLeadSeconds(duration) {
+  if (!Number.isFinite(duration) || duration <= 0) return PREPARE_MIN_LEAD_SECONDS;
+  return Math.max(
+    PREPARE_MIN_LEAD_SECONDS,
+    Math.min(PREPARE_MAX_LEAD_SECONDS, duration * PREPARE_LEAD_RATIO),
+  );
+}
+
+function isPreparedEntryCurrent(index, track) {
+  return Boolean(
+    preparedNext
+      && preparedNext.index === index
+      && preparedNext.queueId === track?._queueId
+      && (Date.now() - preparedNext.preparedAt) <= PREPARED_SOURCE_MAX_AGE_MS,
+  );
+}
+
+function clearPreparedNext({ keepResolved = false } = {}) {
+  prepareNextGeneration += 1;
+
+  if (!preparedNext) return;
+
+  if (!keepResolved && typeof preparedNext.resolved?.revokeUrl === "function") {
+    try { preparedNext.resolved.revokeUrl(); } catch { /* ignore */ }
+  }
+
+  preparedNext = null;
+}
+
+async function prepareNextTrackSource(index) {
+  const track = state.queue[index];
+  if (!track) return null;
+
+  if (isPreparedEntryCurrent(index, track)) return preparedNext;
+
+  const requestKey = `${index}:${track._queueId}`;
+  if (prepareNextPromise?.key === requestKey) {
+    return prepareNextPromise.promise;
+  }
+
+  clearPreparedNext();
+  const generation = prepareNextGeneration;
+
+  const promise = (async () => {
+    const resolved = await resolveAudioSource(track.name, track);
+    const liveTrack = state.queue[index];
+    if (generation !== prepareNextGeneration || !liveTrack || liveTrack._queueId !== track._queueId || !resolved) {
+      if (resolved?.revokeUrl) {
+        try { resolved.revokeUrl(); } catch { /* ignore */ }
+      }
+      return null;
+    }
+
+    preparedNext = {
+      index,
+      queueId: track._queueId,
+      resolved,
+      preparedAt: Date.now(),
+    };
+    return preparedNext;
+  })().finally(() => {
+    if (prepareNextPromise?.key === requestKey) {
+      prepareNextPromise = null;
+    }
+  });
+
+  prepareNextPromise = { key: requestKey, promise };
+  return promise;
+}
+
+function maybePrepareUpcomingTrack({ force = false } = {}) {
+  if (state.paused) return;
+
+  const nextIndex = getUpcomingTrackIndex();
+  if (nextIndex < 0) {
+    clearPreparedNext();
+    return;
+  }
+
+  const nextTrack = state.queue[nextIndex];
+  if (!nextTrack) return;
+  if (isPreparedEntryCurrent(nextIndex, nextTrack)) return;
+
+  const el = audio;
+  if (!force) {
+    const duration = el?.duration;
+    const currentTime = el?.currentTime || 0;
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    const remaining = duration - currentTime;
+    if (remaining > getPrepareLeadSeconds(duration)) return;
+  }
+
+  void prepareNextTrackSource(nextIndex);
+}
+
+function consumePreparedTrack(index, track) {
+  if (!isPreparedEntryCurrent(index, track)) {
+    if (preparedNext && (!track || preparedNext.queueId !== track._queueId || preparedNext.index !== index)) {
+      clearPreparedNext();
+    }
+    return null;
+  }
+
+  const prepared = preparedNext;
+  clearPreparedNext({ keepResolved: true });
+  return prepared?.resolved || null;
+}
+
+function normalizePlaybackTime(time) {
+  const value = Number(time);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function isAutoplayBlockedError(error) {
+  return error?.name === "NotAllowedError";
+}
+
+function isPendingSeekCurrent() {
+  return Boolean(
+    pendingSeek
+      && pendingSeek.token === loadRequestToken
+      && pendingSeek.queueId === state.currentTrack?._queueId,
+  );
+}
+
+function getCurrentPlaybackTime() {
+  if (isPendingSeekCurrent()) return pendingSeek.time;
+  const currentTime = Number(audio?.currentTime || 0);
+  return Number.isFinite(currentTime) && currentTime >= 0 ? currentTime : 0;
+}
+
+function setAudioCurrentTime(el, time) {
+  if (!el) return false;
+  try {
+    el.currentTime = time;
+    return Math.abs(Number(el.currentTime || 0) - time) < 0.25;
+  } catch {
+    return false;
+  }
+}
+
+function applyPendingSeek({ confirm = false } = {}) {
+  if (!isPendingSeekCurrent()) return false;
+  const applied = setAudioCurrentTime(audio, pendingSeek.time);
+  if (applied && confirm) pendingSeek = null;
+  return applied;
+}
+
+function reconcilePendingSeekDuringPlayback() {
+  if (!isPendingSeekCurrent()) return;
+  const currentTime = Number(audio?.currentTime || 0);
+  if (Number.isFinite(currentTime) && (currentTime >= pendingSeek.time || Math.abs(currentTime - pendingSeek.time) < 0.75)) {
+    pendingSeek = null;
+    return;
+  }
+  applyPendingSeek();
+}
+
+function restorePlaybackTimeAfterPrime(el, time) {
+  const restoreTime = normalizePlaybackTime(time);
+  if (restoreTime > 0) {
+    setAudioCurrentTime(el, restoreTime);
+    return;
+  }
+  setAudioCurrentTime(el, 0);
+}
+
+function getCurrentPlaybackSecond() {
+  return Math.floor(getCurrentPlaybackTime());
+}
+
+function writeSessionSnapshot(overrides = {}) {
+  savePlayerSession({
+    queueEntries: state.queue.map(serializeQueueEntry).filter(Boolean),
+    playedEntries: state.playedHistory.map(serializeQueueEntry).filter(Boolean),
+    currentEntryId: state.currentTrack?._queueId || "",
+    currentIndex: state.currentIndex,
+    currentTrackName: state.currentTrack?.name || "",
+    currentTime: normalizePlaybackTime(overrides.currentTime ?? getCurrentPlaybackTime()),
+    paused: state.paused,
+    volume: state.volume,
+    muted: state.muted,
+    repeat: state.repeat,
+    shuffle: state.shuffle,
+    backgroundMode: state.backgroundMode,
+  });
+  lastPersistedPlaybackSecond = getCurrentPlaybackSecond();
+}
+
+function flushSessionPersistence(overrides = {}) {
+  if (sessionSaveTimer) {
+    clearTimeout(sessionSaveTimer);
+    sessionSaveTimer = null;
+  }
+  writeSessionSnapshot(overrides);
+}
+
+function maybePersistPlaybackProgress() {
+  const second = getCurrentPlaybackSecond();
+  if (second === lastPersistedPlaybackSecond) return;
+  flushSessionPersistence();
+}
+
+function bindLifecyclePersistence() {
+  if (lifecycleBound || typeof window === "undefined" || typeof document === "undefined") return;
+
+  const flushOnHide = () => {
+    if (document.visibilityState === "hidden") {
+      flushSessionPersistence();
+    }
+  };
+
+  window.addEventListener("pagehide", flushSessionPersistence);
+  window.addEventListener("beforeunload", flushSessionPersistence);
+  document.addEventListener("visibilitychange", flushOnHide);
+  lifecycleBound = true;
+}
+
+function removeQueueEntryAt(index) {
+  if (index < 0 || index >= state.queue.length) return null;
+
+  const [removed] = state.queue.splice(index, 1);
+  if (!removed) return null;
+
+  if (index < state.currentIndex) {
+    state.currentIndex -= 1;
+  } else if (index === state.currentIndex) {
+    if (state.queue.length === 0) {
+      state.currentIndex = -1;
+      state.currentTrack = null;
+    } else {
+      state.currentIndex = Math.min(index, state.queue.length - 1);
+      state.currentTrack = state.queue[state.currentIndex] || null;
+    }
+  }
+
+  return removed;
+}
+
+function pushPlayedHistory(track) {
+  if (!track) return;
+  state.playedHistory.push(track);
+  if (state.playedHistory.length > PLAYED_HISTORY_LIMIT) {
+    state.playedHistory.splice(0, state.playedHistory.length - PLAYED_HISTORY_LIMIT);
+  }
+}
+
+function popPlayedHistory() {
+  while (state.playedHistory.length > 0) {
+    const track = state.playedHistory.pop();
+    if (track?.name) return track;
+  }
+  return null;
+}
+
+async function restorePreviousFromHistory({ autoplay = true } = {}) {
+  const previous = popPlayedHistory();
+  if (!previous) return false;
+
+  clearPreparedNext();
+  const insertAt = state.currentIndex >= 0
+    ? Math.max(0, Math.min(state.currentIndex, state.queue.length))
+    : 0;
+
+  state.queue.splice(insertAt, 0, previous);
+  state.paused = !autoplay;
+  flushSessionPersistence({ currentTime: 0 });
+  await loadTrack(insertAt, { autoplay });
+  return true;
+}
+
+function reconcilePreparedNextAfterRemoval(removedIndex, removedQueueId = "") {
+  if (!preparedNext) return;
+
+  if (preparedNext.queueId === removedQueueId || preparedNext.index === removedIndex) {
+    clearPreparedNext();
+    return;
+  }
+
+  if (preparedNext.index > removedIndex) {
+    preparedNext = {
+      ...preparedNext,
+      index: preparedNext.index - 1,
+    };
+  }
+}
+
+async function advanceToNextTrack({ autoplay = true, pausedState = !autoplay, consumeCurrent = false } = {}) {
+  if (state.queue.length === 0) return;
+
+  const previousIndex = state.currentIndex;
+  const currentQueueId = state.currentTrack?._queueId || "";
+
+  if (consumeCurrent && !state.shuffle && state.repeat !== "all" && previousIndex >= 0 && previousIndex >= state.queue.length - 1) {
+    clearPreparedNext();
+    const removed = removeQueueEntryAt(previousIndex);
+    pushPlayedHistory(removed);
+    flushSessionPersistence({ currentTime: 0 });
+    if (state.queue.length === 0) {
+      stopPlayback();
+      return;
+    }
+    stopPlayback();
+    return;
+  }
+
+  let next;
+  if (state.shuffle) {
+    next = Math.floor(Math.random() * state.queue.length);
+  } else {
+    next = state.currentIndex + 1;
+    if (next >= state.queue.length) {
+      if (state.repeat === "all") {
+        next = 0;
+      } else {
+        stopPlayback();
+        return;
+      }
+    }
+  }
+
+  if (consumeCurrent && previousIndex >= 0) {
+    if (next >= 0 && next > previousIndex) {
+      next -= 1;
+    }
+
+    reconcilePreparedNextAfterRemoval(previousIndex, currentQueueId);
+    const removed = removeQueueEntryAt(previousIndex);
+    pushPlayedHistory(removed);
+
+    if (state.queue.length === 0) {
+      stopPlayback();
+      return;
+    }
+
+    if (next < 0 || next >= state.queue.length) {
+      next = Math.min(state.currentIndex >= 0 ? state.currentIndex : 0, state.queue.length - 1);
+    }
+
+    if (currentQueueId && state.queue[next]?._queueId === currentQueueId) {
+      next = Math.min(next + 1, state.queue.length - 1);
+    }
+  }
+
+  state.paused = pausedState;
+  await loadTrack(next, { autoplay });
+}
+
 // ── Core playback ────────────────────────────────────────────────────
 
 /**
@@ -236,7 +694,7 @@ let consecutiveSkips = 0;
  * as long as at least one later track is reachable.  Gives up after
  * exhausting the queue to prevent infinite loops.
  */
-function autoSkipUnavailable() {
+function autoSkipUnavailable(autoplay = !state.paused) {
   consecutiveSkips += 1;
   // Allow skipping up to the full queue length (every track tried once)
   if (consecutiveSkips >= state.queue.length) {
@@ -244,7 +702,7 @@ function autoSkipUnavailable() {
     return; // every track in the queue has been tried — give up
   }
   if (state.queue.length > 1) {
-    nextTrack();
+    advanceToNextTrack({ autoplay, pausedState: state.paused });
   }
 }
 
@@ -252,17 +710,23 @@ function autoSkipUnavailable() {
  * Load and play a track from the queue by index.
  *
  * @param {number} index - Queue index
- * @param {{ startTime?: number, autoplay?: boolean }} [opts]
+ * @param {{ startTime?: number, autoplay?: boolean, suppressAutoplayError?: boolean }} [opts]
  */
-async function loadTrack(index, { startTime = 0, autoplay = true } = {}) {
+async function loadTrack(index, { startTime = 0, autoplay = true, suppressAutoplayError = false } = {}) {
   const track = state.queue[index];
   if (!track) return;
+  const requestToken = ++loadRequestToken;
+  const requestedStartTime = normalizePlaybackTime(startTime);
 
   state.currentIndex = index;
   state.currentTrack = track;
   state.loading = true;
   state.error = null;
   state.remoteSessionActive = false;
+  pendingSeek = requestedStartTime > 0
+    ? { token: requestToken, queueId: track._queueId, time: requestedStartTime }
+    : null;
+  flushSessionPersistence({ currentTime: requestedStartTime });
   notify();
 
   // Revoke previous blob URL
@@ -274,16 +738,23 @@ async function loadTrack(index, { startTime = 0, autoplay = true } = {}) {
   let el = getAudio();
   const previousSourceType = state.sourceType;
 
-  const resolved = await resolveAudioSource(track.name, track);
-  if (state.currentIndex !== index) return; // selection changed during resolve
+  const prepared = consumePreparedTrack(index, track);
+  const resolved = prepared || await resolveAudioSource(track.name, track);
+  if (loadRequestToken !== requestToken || state.currentTrack?._queueId !== track._queueId) {
+    if (!prepared && resolved?.revokeUrl) {
+      try { resolved.revokeUrl(); } catch { /* ignore */ }
+    }
+    return;
+  }
 
   if (!resolved) {
     state.loading = false;
     state.error = "unavailable";
     state.sourceType = null;
+    flushSessionPersistence({ currentTime: requestedStartTime });
     notify();
     // Auto-skip unavailable tracks (with loop guard)
-    autoSkipUnavailable();
+    autoSkipUnavailable(autoplay);
     return;
   }
 
@@ -308,25 +779,35 @@ async function loadTrack(index, { startTime = 0, autoplay = true } = {}) {
   el.volume = state.muted ? 0 : state.volume;
   el.muted = state.muted;
 
-  if (startTime > 0) {
-    el.currentTime = startTime;
+  if (requestedStartTime > 0) {
+    applyPendingSeek();
   }
 
   state.loading = false;
   consecutiveSkips = 0; // successful load — reset skip counter
+  flushSessionPersistence({ currentTime: requestedStartTime });
   notify();
 
   updateMediaSessionMetadata();
 
-  if (!state.paused) {
+  if (autoplay) {
     await primeAudio();
     el.play().catch((err) => {
+      if (suppressAutoplayError && isAutoplayBlockedError(err)) {
+        state.paused = true;
+        state.error = null;
+        flushSessionPersistence();
+        notify();
+        return;
+      }
       if (err?.name !== "AbortError") {
         state.error = "playback-failed";
         notify();
       }
     });
   }
+
+  maybePrepareUpcomingTrack({ force: false });
 }
 
 // ── Public API ───────────────────────────────────────────────────────
@@ -338,11 +819,13 @@ async function loadTrack(index, { startTime = 0, autoplay = true } = {}) {
  * @param {{ startIndex?: number, autoplay?: boolean }} [opts]
  */
 export function setQueue(tracks, { startIndex = 0, autoplay = true } = {}) {
-  state.queue = [...tracks];
+  clearPreparedNext();
+  state.queue = prepareQueueEntries(tracks);
+  state.playedHistory = [];
   state.paused = !autoplay;
   persistSession();
-  if (tracks.length > 0) {
-    loadTrack(Math.min(startIndex, tracks.length - 1), { autoplay });
+  if (state.queue.length > 0) {
+    loadTrack(Math.min(startIndex, state.queue.length - 1), { autoplay });
   } else {
     stopPlayback();
   }
@@ -353,7 +836,7 @@ export function setQueue(tracks, { startIndex = 0, autoplay = true } = {}) {
  * @param {object[]} tracks
  */
 export function enqueue(tracks) {
-  state.queue.push(...tracks);
+  state.queue.push(...prepareQueueEntries(tracks));
   persistSession();
   notify();
 }
@@ -365,7 +848,7 @@ export function enqueue(tracks) {
 export function playNext(tracks) {
   if (!Array.isArray(tracks) || tracks.length === 0) return;
   const insertAt = state.currentIndex >= 0 ? state.currentIndex + 1 : 0;
-  state.queue.splice(insertAt, 0, ...tracks);
+  state.queue.splice(insertAt, 0, ...prepareQueueEntries(tracks));
   persistSession();
   notify();
 }
@@ -375,30 +858,30 @@ export function playNext(tracks) {
  * If the removed track is currently playing, skip to next.
  * @param {string} trackName
  */
-export function removeFromQueue(trackName) {
-  if (!trackName) return;
-  const idx = state.queue.findIndex((t) => t.name === trackName);
+export function removeFromQueue(trackRef) {
+  if (!trackRef) return;
+  const idx = findQueueIndex(trackRef);
   if (idx < 0) return;
 
   const wasPlaying = idx === state.currentIndex;
-  state.queue.splice(idx, 1);
+  const removedQueueId = state.queue[idx]?._queueId || "";
+  reconcilePreparedNextAfterRemoval(idx, removedQueueId);
+  removeQueueEntryAt(idx);
 
   // Adjust currentIndex if the removed track was before/at current
-  if (idx < state.currentIndex) {
-    state.currentIndex -= 1;
-  } else if (wasPlaying) {
+  if (wasPlaying) {
     // If we removed the current track, load the next one at same index
     if (state.queue.length === 0) {
       stopPlayback();
       return;
     }
     const nextIdx = Math.min(state.currentIndex, state.queue.length - 1);
-    state.currentIndex = nextIdx;
+    flushSessionPersistence({ currentTime: 0 });
     loadTrack(nextIdx, { autoplay: !state.paused });
     return;
   }
 
-  persistSession();
+  flushSessionPersistence();
   notify();
 }
 
@@ -413,7 +896,9 @@ export async function play() {
 
   const el = getAudio();
   if (el.src) {
+    applyPendingSeek();
     await primeAudio();
+    applyPendingSeek();
     el.play().catch((err) => {
       if (err?.name !== "AbortError") {
         state.error = "playback-failed";
@@ -438,7 +923,6 @@ export function pause() {
  * Stop playback and reset position.
  */
 export function stopPlayback() {
-  const previousSourceType = state.sourceType;
   state.paused = true;
   state.currentIndex = -1;
   state.currentTrack = null;
@@ -446,10 +930,13 @@ export function stopPlayback() {
   state.loading = false;
   state.error = null;
   state.remoteSessionActive = false;
+  pendingSeek = null;
+  clearPreparedNext();
+  lastPersistedPlaybackSecond = -1;
 
   const el = getAudio();
   const hadVisualizerGraph = destroyVisualizerGraphForElement(el);
-  if (hadVisualizerGraph && previousSourceType === "blob") {
+  if (hadVisualizerGraph) {
     replaceManagedAudioElement();
   } else {
     clearAudioElementSource(el);
@@ -461,7 +948,7 @@ export function stopPlayback() {
   }
 
   if (mediaSessionEnabled) clearMediaSession();
-  persistSession();
+  flushSessionPersistence({ currentTime: 0 });
   notify();
 }
 
@@ -469,36 +956,23 @@ export function stopPlayback() {
  * Skip to next track.
  */
 export async function nextTrack() {
-  if (state.queue.length === 0) return;
-
-  let next;
-  if (state.shuffle) {
-    next = Math.floor(Math.random() * state.queue.length);
-  } else {
-    next = state.currentIndex + 1;
-    if (next >= state.queue.length) {
-      if (state.repeat === "all") {
-        next = 0;
-      } else {
-        stopPlayback();
-        return;
-      }
-    }
-  }
-
-  state.paused = false;
-  await loadTrack(next, { autoplay: true });
+  await advanceToNextTrack({ autoplay: true, pausedState: false, consumeCurrent: true });
 }
 
 /**
  * Skip to previous track (or restart current if > 3s in).
  */
 export async function previousTrack() {
-  if (state.queue.length === 0) return;
+  if (state.queue.length === 0) {
+    await restorePreviousFromHistory({ autoplay: true });
+    return;
+  }
   const el = getAudio();
 
   if (el.currentTime > 3) {
+    pendingSeek = null;
     el.currentTime = 0;
+    flushSessionPersistence({ currentTime: 0 });
     notify();
     return;
   }
@@ -508,7 +982,12 @@ export async function previousTrack() {
     if (state.repeat === "all") {
       prev = state.queue.length - 1;
     } else {
+      if (await restorePreviousFromHistory({ autoplay: true })) {
+        return;
+      }
+      pendingSeek = null;
       el.currentTime = 0;
+      flushSessionPersistence({ currentTime: 0 });
       notify();
       return;
     }
@@ -525,8 +1004,10 @@ export async function previousTrack() {
 export function seekTo(time) {
   const el = getAudio();
   if (Number.isFinite(time) && Number.isFinite(el.duration)) {
+    pendingSeek = null;
     el.currentTime = Math.max(0, Math.min(time, el.duration));
     syncPositionState();
+    flushSessionPersistence();
     notify();
   }
 }
@@ -606,7 +1087,7 @@ export function setBackgroundMode(enabled) {
  * @param {string} name
  */
 export async function playTrackByName(name) {
-  const idx = state.queue.findIndex((t) => t.name === name);
+  const idx = findQueueIndex(name);
   if (idx >= 0) {
     state.paused = false;
     await loadTrack(idx, { autoplay: true });
@@ -646,6 +1127,7 @@ export function getState() {
   const el = audio;
   return {
     queue: state.queue,
+    playedHistory: state.playedHistory,
     currentIndex: state.currentIndex,
     currentTrack: state.currentTrack,
     paused: state.paused,
@@ -657,7 +1139,7 @@ export function getState() {
     sourceType: state.sourceType,
     loading: state.loading,
     error: state.error,
-    currentTime: el?.currentTime || 0,
+    currentTime: getCurrentPlaybackTime(),
     duration: el?.duration || 0,
     playing: el ? !el.paused && !el.ended : false,
   };
@@ -697,10 +1179,14 @@ export async function restoreSession(availableTracks, { autoplay = false } = {})
   state.shuffle = session.shuffle;
   state.backgroundMode = session.backgroundMode;
 
-  // Rebuild queue from persisted names, filtering out tracks no longer available
+  // Rebuild queue from persisted snapshots, overlaying live catalog metadata
+  // when available but preserving snapshot-only entries and duplicates.
   const trackMap = new Map(availableTracks.map((t) => [t.name, t]));
-  const restoredQueue = session.queue
-    .map((name) => trackMap.get(name))
+  const restoredQueue = session.queueEntries
+    .map((snapshot) => buildRestoredQueueEntry(snapshot, trackMap.get(snapshot.name)))
+    .filter(Boolean);
+  state.playedHistory = session.playedEntries
+    .map((snapshot) => buildRestoredQueueEntry(snapshot, trackMap.get(snapshot.name)))
     .filter(Boolean);
 
   if (restoredQueue.length === 0) {
@@ -710,16 +1196,26 @@ export async function restoreSession(availableTracks, { autoplay = false } = {})
 
   state.queue = restoredQueue;
 
-  const currentTrack = trackMap.get(session.currentTrackName);
-  const startIndex = currentTrack
-    ? restoredQueue.findIndex((t) => t.name === currentTrack.name)
-    : 0;
+  const byEntryId = session.currentEntryId
+    ? restoredQueue.findIndex((track) => track._queueId === session.currentEntryId)
+    : -1;
+  const byLegacyName = session.currentTrackName
+    ? restoredQueue.findIndex((track) => track.name === session.currentTrackName)
+    : -1;
+  const startIndex = byEntryId >= 0
+    ? byEntryId
+    : session.currentIndex >= 0 && session.currentIndex < restoredQueue.length
+      ? session.currentIndex
+      : byLegacyName >= 0
+        ? byLegacyName
+        : 0;
 
   if (startIndex >= 0) {
-    state.paused = !autoplay;
+    state.paused = session.paused;
     await loadTrack(startIndex, {
       startTime: session.currentTime || 0,
-      autoplay,
+      autoplay: autoplay && !session.paused,
+      suppressAutoplayError: true,
     });
   }
 }
@@ -748,6 +1244,8 @@ function onPlay() {
 
   if (mediaSessionEnabled) setMediaSessionPlaybackState("playing");
   startPositionSync();
+  maybePrepareUpcomingTrack({ force: false });
+  maybePersistPlaybackProgress();
   persistSession();
   notify();
 }
@@ -756,7 +1254,7 @@ function onPause() {
   // Only mark paused if not a temporary interruption (e.g. seeking)
   if (mediaSessionEnabled) setMediaSessionPlaybackState("paused");
   stopPositionSync();
-  persistSession();
+  flushSessionPersistence();
   notify();
 }
 
@@ -765,21 +1263,36 @@ function onEnded() {
 
   if (state.repeat === "one") {
     const el = getAudio();
+    pendingSeek = null;
     el.currentTime = 0;
+    flushSessionPersistence({ currentTime: 0 });
     el.play().catch(() => {});
     return;
   }
 
-  nextTrack();
+  advanceToNextTrack({ autoplay: true, pausedState: false, consumeCurrent: true });
 }
 
 function onTimeUpdate() {
+  reconcilePendingSeekDuringPlayback();
   syncPositionState();
+  maybePrepareUpcomingTrack({ force: false });
+  maybePersistPlaybackProgress();
   notify();
 }
 
 function onLoadedMetadata() {
+  applyPendingSeek({ confirm: true });
   syncPositionState();
+  maybePrepareUpcomingTrack({ force: true });
+  maybePersistPlaybackProgress();
+  notify();
+}
+
+function onCanPlay() {
+  applyPendingSeek({ confirm: true });
+  syncPositionState();
+  maybePersistPlaybackProgress();
   notify();
 }
 
@@ -792,6 +1305,7 @@ function onError(event) {
 
   state.error = "playback-error";
   state.loading = false;
+  flushSessionPersistence();
   notify();
 }
 
@@ -802,6 +1316,7 @@ function onWaiting() {
 
 function onPlaying() {
   state.loading = false;
+  maybePrepareUpcomingTrack({ force: false });
   notify();
 }
 
@@ -837,7 +1352,7 @@ function syncPositionState() {
   if (!el) return;
   setMediaSessionPositionState({
     duration: el.duration || 0,
-    position: el.currentTime || 0,
+    position: getCurrentPlaybackTime(),
     playbackRate: el.playbackRate || 1,
   });
 }
@@ -861,17 +1376,7 @@ function stopPositionSync() {
 function persistSession() {
   if (sessionSaveTimer) clearTimeout(sessionSaveTimer);
   sessionSaveTimer = setTimeout(() => {
-    savePlayerSession({
-      queue: state.queue.map((t) => t.name),
-      currentTrackName: state.currentTrack?.name || "",
-      currentTime: audio?.currentTime || 0,
-      paused: state.paused,
-      volume: state.volume,
-      muted: state.muted,
-      repeat: state.repeat,
-      shuffle: state.shuffle,
-      backgroundMode: state.backgroundMode,
-    });
+    writeSessionSnapshot();
     sessionSaveTimer = null;
   }, 500);
 }

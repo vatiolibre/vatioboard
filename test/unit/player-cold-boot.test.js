@@ -143,6 +143,8 @@ const MIME_AUDIO_ASSET = {
   folder_path: "Voice",
 };
 
+const PLAYER_SESSION_STORAGE_KEY = "vatioboard_player_session_v2";
+
 function createAuthenticatedPlayerFetch({ assets = [AUDIO_ASSET_1, AUDIO_ASSET_2] } = {}) {
   return vi.fn(async (input) => {
     const url = typeof input === "string" ? input : String(input?.url ?? "");
@@ -329,6 +331,200 @@ describe("player cold boot", () => {
 
     const trackItems = document.querySelectorAll(".player-queue-item");
     expect(trackItems.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("fresh boot uses the 0.88 default volume when no saved session exists", async () => {
+    window.fetch = createAuthenticatedPlayerFetch();
+
+    await bootHtmlPage("player.html");
+    const playerPage = await import("../../src/player/player-demo.js");
+    const runtime = await import("../../src/shared/audio-runtime.js");
+    await playerPage.initPromise;
+    await settlePlayerTasks();
+
+    expect(runtime.getState().volume).toBe(0.88);
+  });
+
+  it("cold boot restores the exact saved queue order and current queue item", async () => {
+    localStorage.setItem(PLAYER_SESSION_STORAGE_KEY, JSON.stringify({
+      version: 2,
+      queueEntries: [
+        {
+          entryId: "dup_a_1",
+          name: "AUDIO-1",
+          title: "Morning Ride",
+          media_kind: "audio",
+          original_filename: "morning-ride.mp3",
+          content_hash: "hash-a1",
+          blob_size: 4096,
+          folder_path: "Music",
+          src: "",
+        },
+        {
+          entryId: "snapshot_missing",
+          name: "ARCHIVE-LOST",
+          title: "Archived Cut",
+          artist: "Archive Artist",
+          album: "Lost Sessions",
+          duration: 61,
+          media_kind: "audio",
+          content_hash: "hash-archive",
+          blob_size: 0,
+          src: "",
+        },
+        {
+          entryId: "dup_a_2",
+          name: "AUDIO-1",
+          title: "Morning Ride",
+          media_kind: "audio",
+          original_filename: "morning-ride.mp3",
+          content_hash: "hash-a1",
+          blob_size: 4096,
+          folder_path: "Music",
+          src: "",
+        },
+        {
+          entryId: "entry_b",
+          name: "AUDIO-2",
+          title: "Highway Run",
+          media_kind: "audio",
+          original_filename: "highway-run.flac",
+          content_hash: "hash-a2",
+          blob_size: 8192,
+          folder_path: "Recordings",
+          src: "",
+        },
+      ],
+      currentEntryId: "dup_a_2",
+      currentIndex: 2,
+      currentTime: 17,
+      paused: true,
+      volume: 0.67,
+      muted: false,
+      repeat: "all",
+      shuffle: false,
+      backgroundMode: true,
+    }));
+
+    window.fetch = createAuthenticatedPlayerFetch();
+
+    await bootHtmlPage("player.html");
+    const playerPage = await import("../../src/player/player-demo.js");
+    const runtime = await import("../../src/shared/audio-runtime.js");
+    await playerPage.initPromise;
+    await settlePlayerTasks();
+
+    await vi.waitFor(() => {
+      const s = runtime.getState();
+      expect(s.queue).toHaveLength(4);
+      expect(s.currentIndex).toBe(2);
+      expect(s.currentTrack?._queueId).toBe("dup_a_2");
+      expect(s.queue[1].name).toBe("ARCHIVE-LOST");
+      expect(s.queue[1].title).toBe("Archived Cut");
+      expect(s.volume).toBe(0.67);
+      expect(s.backgroundMode).toBe(true);
+    });
+  });
+
+  it("background catalog refresh does not replace a restored first queue item", async () => {
+    localStorage.setItem(PLAYER_SESSION_STORAGE_KEY, JSON.stringify({
+      version: 2,
+      queueEntries: [
+        {
+          entryId: "entry_a",
+          name: "AUDIO-1",
+          title: "Morning Ride",
+          media_kind: "audio",
+          original_filename: "morning-ride.mp3",
+          content_hash: "hash-a1",
+          blob_size: 4096,
+          folder_path: "Music",
+          src: "",
+        },
+        {
+          entryId: "entry_b",
+          name: "AUDIO-2",
+          title: "Highway Run",
+          media_kind: "audio",
+          original_filename: "highway-run.flac",
+          content_hash: "hash-a2",
+          blob_size: 8192,
+          folder_path: "Recordings",
+          src: "",
+        },
+      ],
+      currentEntryId: "entry_a",
+      currentIndex: 0,
+      currentTime: 17,
+      paused: true,
+      volume: 0.67,
+      muted: false,
+      repeat: "off",
+      shuffle: false,
+      backgroundMode: false,
+    }));
+
+    window.fetch = createAuthenticatedPlayerFetch();
+
+    await bootHtmlPage("player.html");
+    const playerPage = await import("../../src/player/player-demo.js");
+    const runtime = await import("../../src/shared/audio-runtime.js");
+    await playerPage.initPromise;
+    await settlePlayerTasks();
+
+    await vi.waitFor(() => {
+      const s = runtime.getState();
+      expect(s.queue).toHaveLength(2);
+      expect(s.currentIndex).toBe(0);
+      expect(s.currentTrack?._queueId).toBe("entry_a");
+      expect(s.currentTime).toBe(17);
+    });
+  });
+
+  it("cold boot resumes playback when the saved player status was playing", async () => {
+    localStorage.setItem(PLAYER_SESSION_STORAGE_KEY, JSON.stringify({
+      version: 2,
+      queueEntries: [
+        {
+          entryId: "entry_b",
+          name: "AUDIO-2",
+          title: "Highway Run",
+          media_kind: "audio",
+          original_filename: "highway-run.flac",
+          content_hash: "hash-a2",
+          blob_size: 8192,
+          folder_path: "Recordings",
+          src: "",
+        },
+      ],
+      currentEntryId: "entry_b",
+      currentIndex: 0,
+      currentTime: 23,
+      paused: false,
+      volume: 0.67,
+      muted: false,
+      repeat: "off",
+      shuffle: false,
+      backgroundMode: false,
+    }));
+
+    window.fetch = createAuthenticatedPlayerFetch();
+
+    await bootHtmlPage("player.html");
+    const playerPage = await import("../../src/player/player-demo.js");
+    const runtime = await import("../../src/shared/audio-runtime.js");
+    await playerPage.initPromise;
+    await settlePlayerTasks();
+
+    await vi.waitFor(() => {
+      const s = runtime.getState();
+      expect(s.currentTrack?._queueId).toBe("entry_b");
+      expect(s.currentTrack?.name).toBe("AUDIO-2");
+      expect(s.currentTime).toBe(23);
+      expect(s.paused).toBe(false);
+      expect(s.playing).toBe(true);
+      expect(runtime.getAudioElement()?.currentTime).toBe(23);
+    });
   });
 
   // ── Audio filter accepts mime_type-based items ───────────────────

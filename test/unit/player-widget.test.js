@@ -45,6 +45,7 @@ const runtimeMock = {
   setQueue: vi.fn(),
   restoreSession: vi.fn().mockResolvedValue(undefined),
   primeAudio: vi.fn().mockResolvedValue(true),
+  stopPlayback: vi.fn(),
 };
 
 vi.mock("../../src/shared/audio-runtime.js", () => runtimeMock);
@@ -143,6 +144,39 @@ function makeTrack(name, overrides = {}) {
   };
 }
 
+function makeRuntimeState(overrides = {}) {
+  return {
+    queue: [],
+    currentIndex: -1,
+    currentTrack: null,
+    paused: true,
+    volume: 1,
+    muted: false,
+    repeat: "off",
+    shuffle: false,
+    backgroundMode: false,
+    sourceType: null,
+    loading: false,
+    error: null,
+    currentTime: 0,
+    duration: 0,
+    playing: false,
+    ...overrides,
+  };
+}
+
+function mockDemoPlaylistFetch(tracks) {
+  vi.stubGlobal("fetch", vi.fn(async (url) => {
+    if (String(url).endsWith("/audio/demo/playlist.json")) {
+      return new Response(JSON.stringify(tracks), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return new Response("", { status: 404 });
+  }));
+}
+
 // ── Tests ────────────────────────────────────────────────────────────
 
 describe("createPlayerWidget", () => {
@@ -196,24 +230,11 @@ describe("createPlayerWidget", () => {
     }));
 
     // Reset runtime mock state
-    runtimeMock.getState.mockReturnValue({
-      queue: [],
-      currentIndex: -1,
-      currentTrack: null,
-      paused: true,
-      volume: 1,
-      muted: false,
-      repeat: "off",
-      shuffle: false,
-      backgroundMode: false,
-      sourceType: null,
-      loading: false,
-      error: null,
-      currentTime: 0,
-      duration: 0,
-      playing: false,
-    });
+    runtimeMock.getState.mockReturnValue(makeRuntimeState());
     runtimeMock.subscribe.mockReturnValue(vi.fn());
+    runtimeMock.setQueue.mockClear();
+    runtimeMock.restoreSession.mockClear();
+    runtimeMock.stopPlayback.mockClear();
     catalogMock.loadAudioCatalog.mockResolvedValue({ tracks: [], total: 0 });
     catalogMock.syncAudioCatalog.mockResolvedValue(false);
     playlistMock.loadPlaylists.mockResolvedValue({ playlists: [], total: 0 });
@@ -225,11 +246,13 @@ describe("createPlayerWidget", () => {
 
     // Clean up localStorage
     localStorage.removeItem("player_widget_pos_v1");
+    localStorage.removeItem("player_widget_visible_v1");
   });
 
   afterEach(() => {
     // Clean up any mounted elements
     document.querySelectorAll(".player-panel, .player-fab").forEach((el) => el.remove());
+    vi.unstubAllGlobals();
   });
 
   // ── open / close / toggle ────────────────────────────────────
@@ -256,6 +279,48 @@ describe("createPlayerWidget", () => {
     widget.close();
     const panel = document.querySelector(".player-panel");
     expect(panel.hidden).toBe(true);
+    widget.destroy();
+  });
+
+  it("persists the open panel state", () => {
+    const widget = createPlayerWidget({ floating: false });
+
+    widget.open();
+
+    expect(localStorage.getItem("player_widget_visible_v1")).toBe("true");
+
+    widget.destroy();
+  });
+
+  it("persists the hidden panel state", () => {
+    const widget = createPlayerWidget({ floating: false });
+
+    widget.open();
+    widget.close();
+
+    expect(localStorage.getItem("player_widget_visible_v1")).toBe("false");
+
+    widget.destroy();
+  });
+
+  it("restores the saved visible panel state", () => {
+    localStorage.setItem("player_widget_visible_v1", "true");
+
+    const widget = createPlayerWidget({ floating: false });
+
+    expect(document.querySelector(".player-panel").hidden).toBe(false);
+
+    widget.destroy();
+  });
+
+  it("can skip restoring saved visibility", () => {
+    localStorage.setItem("player_widget_visible_v1", "true");
+
+    const widget = createPlayerWidget({ floating: false, restoreVisibility: false });
+
+    expect(document.querySelector(".player-panel").hidden).toBe(true);
+    expect(localStorage.getItem("player_widget_visible_v1")).toBe("true");
+
     widget.destroy();
   });
 
@@ -446,6 +511,118 @@ describe("createPlayerWidget", () => {
     await flushMicrotasks();
 
     expect(catalogMock.loadAudioCatalog).toHaveBeenCalled();
+
+    widget.destroy();
+  });
+
+  it("does not treat the first matching auth event after bootstrap as a playback-reset transition", async () => {
+    const backendAuth = await import("../../src/shared/backend-auth.js");
+    backendAuth.getBackendSessionState.mockResolvedValue({ authenticated: true, isGuest: false });
+    catalogMock.loadAudioCatalog.mockResolvedValue({
+      tracks: [makeTrack("A")],
+      total: 1,
+    });
+    catalogMock.syncAudioCatalog.mockResolvedValue(false);
+    runtimeMock.restoreSession.mockClear();
+    runtimeMock.stopPlayback.mockClear();
+
+    const widget = createPlayerWidget({ preload: "immediate", floating: false });
+    await flushMicrotasks(20);
+
+    expect(runtimeMock.restoreSession).toHaveBeenCalledTimes(1);
+
+    window.dispatchEvent(new CustomEvent("vatioboard:backend-auth-state", {
+      detail: { authenticated: true, isGuest: false, pendingLogout: false },
+    }));
+    await flushMicrotasks(20);
+
+    expect(runtimeMock.restoreSession).toHaveBeenCalledTimes(1);
+    expect(runtimeMock.stopPlayback).not.toHaveBeenCalled();
+
+    widget.destroy();
+  });
+
+  it("hydrates persisted demo queue on authenticated bootstrap and replaces pristine demo queue", async () => {
+    const backendAuth = await import("../../src/shared/backend-auth.js");
+    const catalogTrack = makeTrack("asset_real");
+    const demoTrack = makeTrack("demo:titan", {
+      title: "Titan",
+      media_kind: "audio",
+      src: "/audio/demo/sb_titan.mp3",
+    });
+
+    backendAuth.getBackendSessionState.mockResolvedValue({ authenticated: true, isGuest: false });
+    catalogMock.loadAudioCatalog.mockResolvedValue({ tracks: [catalogTrack], total: 1 });
+    mockDemoPlaylistFetch([demoTrack]);
+
+    let runtimeState = makeRuntimeState();
+    runtimeMock.getState.mockImplementation(() => runtimeState);
+    runtimeMock.restoreSession.mockImplementation(async () => {
+      runtimeState = makeRuntimeState({
+        queue: [demoTrack],
+        currentIndex: 0,
+        currentTrack: demoTrack,
+        paused: true,
+        currentTime: 0,
+      });
+    });
+
+    const widget = createPlayerWidget({ preload: "immediate", floating: false });
+    await flushMicrotasks(30);
+
+    expect(runtimeMock.restoreSession).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "asset_real" }),
+        expect.objectContaining({ name: "demo:titan", src: "/audio/demo/sb_titan.mp3" }),
+      ]),
+      { autoplay: true },
+    );
+    expect(runtimeMock.setQueue).toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({ name: "asset_real" })]),
+      { autoplay: false },
+    );
+
+    widget.destroy();
+  });
+
+  it("keeps an active demo queue during authenticated bootstrap until the user consumes it", async () => {
+    const backendAuth = await import("../../src/shared/backend-auth.js");
+    const catalogTrack = makeTrack("asset_real");
+    const demoTrack = makeTrack("demo:titan", {
+      title: "Titan",
+      media_kind: "audio",
+      src: "/audio/demo/sb_titan.mp3",
+    });
+
+    backendAuth.getBackendSessionState.mockResolvedValue({ authenticated: true, isGuest: false });
+    catalogMock.loadAudioCatalog.mockResolvedValue({ tracks: [catalogTrack], total: 1 });
+    mockDemoPlaylistFetch([demoTrack]);
+
+    let runtimeState = makeRuntimeState();
+    runtimeMock.getState.mockImplementation(() => runtimeState);
+    runtimeMock.restoreSession.mockImplementation(async () => {
+      runtimeState = makeRuntimeState({
+        queue: [demoTrack],
+        currentIndex: 0,
+        currentTrack: demoTrack,
+        paused: false,
+        currentTime: 42,
+        playing: true,
+        sourceType: "remote",
+      });
+    });
+
+    const widget = createPlayerWidget({ preload: "immediate", floating: false });
+    await flushMicrotasks(30);
+
+    expect(runtimeMock.restoreSession).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "asset_real" }),
+        expect.objectContaining({ name: "demo:titan", src: "/audio/demo/sb_titan.mp3" }),
+      ]),
+      { autoplay: true },
+    );
+    expect(runtimeMock.setQueue).not.toHaveBeenCalled();
 
     widget.destroy();
   });
