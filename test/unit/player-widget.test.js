@@ -762,6 +762,17 @@ describe("createPlayerWidget", () => {
 
   // ── Panel position persistence ───────────────────────────────
 
+  it("places the first-time visitor panel on the left side", () => {
+    const widget = createPlayerWidget({ floating: false });
+    const panel = document.querySelector(".player-panel");
+
+    expect(panel.style.left).toBe("16px");
+    expect(panel.style.right).toBe("auto");
+    expect(panel.style.bottom).toBe("76px");
+
+    widget.destroy();
+  });
+
   it("saves and restores panel position via localStorage", () => {
     localStorage.setItem("player_widget_pos_v1", JSON.stringify({
       panel: { left: "50px", top: "100px" },

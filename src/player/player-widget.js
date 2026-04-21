@@ -282,6 +282,8 @@ export function createPlayerWidget(options = {}) {
   const DRAG_THRESHOLD_PX = 6;
   const POS_KEY = "player_widget_pos_v1";
   const VISIBILITY_KEY = "player_widget_visible_v1";
+  const DEFAULT_PANEL_LEFT = "16px";
+  const DEFAULT_PANEL_BOTTOM = "76px";
 
   // ── Position persistence ─────────────────────────────────────
   function loadPos() {
@@ -325,7 +327,7 @@ export function createPlayerWidget(options = {}) {
   // ── Create player shell ──────────────────────────────────────
   const shell = createPlayerShell({ container: mount });
 
-  // Apply stored panel position
+  // Apply stored panel position, or use the first-visit default.
   {
     const pos = loadPos();
     if (pos?.panel?.left && pos?.panel?.top) {
@@ -334,6 +336,11 @@ export function createPlayerWidget(options = {}) {
       shell.root.style.top = pos.panel.top;
       shell.root.style.right = "auto";
       shell.root.style.bottom = "auto";
+    } else {
+      shell.root.style.position = "fixed";
+      shell.root.style.left = DEFAULT_PANEL_LEFT;
+      shell.root.style.right = "auto";
+      shell.root.style.bottom = DEFAULT_PANEL_BOTTOM;
     }
   }
 
