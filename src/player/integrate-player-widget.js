@@ -21,7 +21,10 @@ import { createPlayerWidget } from "./player-widget.js";
 import { IconMusic } from "../icons.js";
 import { t } from "../i18n.js";
 import { setMediaSessionEnabled, stopPlayback } from "../shared/audio-runtime.js";
-import { BACKEND_AUTH_STATE_EVENT } from "../shared/backend-auth.js";
+import {
+  BACKEND_AUTH_STATE_EVENT,
+  getBackendSessionState,
+} from "../shared/backend-auth.js";
 
 // ── Auth helpers ─────────────────────────────────────────────────────
 
@@ -73,9 +76,11 @@ export function integratePlayerWidget({
   setMediaSessionEnabled(mediaSession);
 
   // Read this before creating the widget so auth-gated pages do not restore
-  // a visible panel while the backend auth form is still checking session.
+  // a visible panel until the backend auth form has published whether the
+  // page is authenticated or guest.
   const initialAuthState = readInitialAuth(toolsMenuList);
   let authenticated = initialAuthState === true;
+  let authStateKnown = initialAuthState !== undefined;
 
   // ── Launcher button ────────────────────────────────────────────
   let button = null;
@@ -84,7 +89,7 @@ export function integratePlayerWidget({
     button.type = "button";
     button.className = "btn-with-icon";
     button.dataset.playerToggle = "true";
-    button.hidden = true; // hidden until authenticated
+    button.hidden = true; // hidden until auth state is known
 
     const iconSpan = document.createElement("span");
     iconSpan.className = "btn-icon";
@@ -112,7 +117,7 @@ export function integratePlayerWidget({
     button,
     preload,
     mount,
-    restoreVisibility: authenticated,
+    restoreVisibility: false,
     onOpen() {
       if (toolsMenu && typeof toolsMenu.close === "function") {
         toolsMenu.close();
@@ -124,31 +129,71 @@ export function integratePlayerWidget({
   const fab = mount.querySelector(".player-fab");
 
   // ── Auth gating ────────────────────────────────────────────────
-  function syncVisibility(loggedIn, { stop = false, restore = false } = {}) {
-    authenticated = loggedIn;
-    if (button) button.hidden = !loggedIn;
-    if (fab) fab.hidden = !loggedIn;
+  function syncVisibility({
+    loggedIn = false,
+    available = false,
+    stop = false,
+    restore = false,
+    known = true,
+  } = {}) {
+    if (known) authStateKnown = true;
+    authenticated = loggedIn === true;
+    if (button) button.hidden = !available;
+    if (fab) fab.hidden = !available;
 
     if (stop) {
-      widget.close();
       stopPlayback();
-    } else if (!loggedIn) {
+    }
+
+    if (!available) {
       widget.close({ persist: false });
     } else if (restore) {
       widget.restoreVisibility();
     }
   }
 
+  async function reconcileInitialAuthState() {
+    if (authStateKnown) return;
+
+    // Give the backend auth form one microtask to publish its dataset after
+    // page scripts finish wiring up. If an auth event already arrived, bail.
+    await Promise.resolve();
+    if (authStateKnown) return;
+
+    const domAuthState = readInitialAuth(toolsMenuList);
+    if (domAuthState !== undefined) {
+      syncVisibility({ loggedIn: domAuthState, available: true, restore: true });
+      return;
+    }
+
+    try {
+      const session = await getBackendSessionState({ force: false });
+      if (authStateKnown) return;
+      const loggedIn = session?.authenticated === true && session?.isGuest !== true;
+      syncVisibility({ loggedIn, available: true, restore: true });
+    } catch {
+      // Leave the widget hidden until the auth form emits a definitive state.
+    }
+  }
+
   // Apply initial visibility
-  syncVisibility(authenticated, { stop: false });
+  syncVisibility({
+    loggedIn: authenticated,
+    available: authStateKnown,
+    restore: authStateKnown,
+    known: authStateKnown,
+  });
 
   // React to auth changes
   window.addEventListener(BACKEND_AUTH_STATE_EVENT, (event) => {
     const detail = event?.detail || {};
     const loggedIn = isLoggedIn(detail);
+    const available = detail.pendingLogout !== true;
     const shouldStopPlayback = detail.pendingLogout === true || (authenticated === true && !loggedIn);
-    syncVisibility(loggedIn, { stop: shouldStopPlayback, restore: loggedIn });
+    syncVisibility({ loggedIn, available, stop: shouldStopPlayback, restore: available });
   });
+
+  void reconcileInitialAuthState();
 
   return { widget, button };
 }

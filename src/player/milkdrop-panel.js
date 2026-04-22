@@ -26,6 +26,7 @@ import {
 const POS_KEY = "milkdrop_panel_pos_v1";
 const PRESET_KEY = "milkdrop_preset_name_v1";
 const SIZE_KEY = "milkdrop_panel_size_v1";
+const VISIBILITY_KEY = "milkdrop_panel_visible_v1";
 
 // ── Icons ─────────────────────────────────────────────────────────
 
@@ -91,6 +92,20 @@ function saveSize(w, h) {
   try { localStorage.setItem(SIZE_KEY, JSON.stringify({ w, h })); } catch { /* ignore */ }
 }
 
+export function loadMilkdropPanelVisibility() {
+  try {
+    return localStorage.getItem(VISIBILITY_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function saveVisibility(isOpen) {
+  try {
+    localStorage.setItem(VISIBILITY_KEY, isOpen ? "true" : "false");
+  } catch { /* ignore */ }
+}
+
 function isSafeSource() {
   const el = runtime.getAudioElement();
   if (!el?.src) return true;
@@ -113,6 +128,9 @@ function makeBtn(cls, icon, label) {
  *
  * @param {object} [options]
  * @param {HTMLElement} [options.mount=document.body]
+ * @param {Function|null} [options.onOpen]
+ * @param {Function|null} [options.onClose]
+ * @param {boolean} [options.restoreVisibility=true]
  * @returns {{
  *   open: () => void,
  *   close: () => void,
@@ -122,7 +140,12 @@ function makeBtn(cls, icon, label) {
  * }}
  */
 export function createMilkdropPanel(options = {}) {
-  const { mount = document.body } = options;
+  const {
+    mount = document.body,
+    onOpen = null,
+    onClose = null,
+    restoreVisibility = true,
+  } = options;
 
   // ── DOM ────────────────────────────────────────────────────────
   const root = document.createElement("section");
@@ -379,7 +402,9 @@ export function createMilkdropPanel(options = {}) {
   // ── Open / Close ────────────────────────────────────────────
   async function open() {
     if (destroyed) return;
+    const wasOpen = !root.hidden;
     root.hidden = false;
+    saveVisibility(true);
 
     // Always clamp to viewport on open to prevent overflow
     clampPanelToWindow();
@@ -393,9 +418,15 @@ export function createMilkdropPanel(options = {}) {
     if (!runtimeUnsub) {
       runtimeUnsub = runtime.subscribe(() => syncWithPlayback());
     }
+
+    if (!wasOpen && typeof onOpen === "function") {
+      onOpen();
+    }
   }
 
   function close() {
+    const wasOpen = !root.hidden;
+
     // Exit fullscreen first — hiding the fullscreen element without
     // exiting leaves the browser's fullscreen overlay active, which
     // blocks all UI interaction on the page underneath.
@@ -405,6 +436,7 @@ export function createMilkdropPanel(options = {}) {
     }
 
     root.hidden = true;
+    saveVisibility(false);
     stopRenderLoop();
 
     // Unsubscribe while closed to avoid unnecessary work
@@ -413,6 +445,10 @@ export function createMilkdropPanel(options = {}) {
       runtimeUnsub = null;
     }
     // Playback continues — closing does NOT stop audio
+
+    if (wasOpen && typeof onClose === "function") {
+      onClose();
+    }
   }
 
   function toggle() {
@@ -510,6 +546,10 @@ export function createMilkdropPanel(options = {}) {
   presetShuffleBtn.addEventListener("click", (e) => { e.stopPropagation(); randomPreset(); });
   fullscreenBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleFullscreen(); });
   closeBtn.addEventListener("click", (e) => { e.stopPropagation(); close(); });
+
+  if (restoreVisibility && loadMilkdropPanelVisibility()) {
+    void open();
+  }
 
   // ── Destroy ─────────────────────────────────────────────────
   function destroy() {

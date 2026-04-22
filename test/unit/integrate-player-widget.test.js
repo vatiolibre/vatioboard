@@ -115,6 +115,12 @@ function emitAuthState(detail) {
   );
 }
 
+async function flushMicrotasks(n = 10) {
+  for (let i = 0; i < n; i++) {
+    await Promise.resolve();
+  }
+}
+
 function makeToolsMenuList(authState = "guest") {
   const list = document.createElement("div");
   list.className = "tools-menu-list";
@@ -129,6 +135,7 @@ function makeToolsMenuList(authState = "guest") {
 
 describe("integratePlayerWidget", () => {
   let integratePlayerWidget;
+  let backendAuthMock;
 
   beforeEach(async () => {
     vi.resetModules();
@@ -186,6 +193,7 @@ describe("integratePlayerWidget", () => {
     runtimeMock.setMediaSessionEnabled.mockClear();
     runtimeMock.stopPlayback.mockClear();
 
+    backendAuthMock = await import("../../src/shared/backend-auth.js");
     const mod = await import("../../src/player/integrate-player-widget.js");
     integratePlayerWidget = mod.integratePlayerWidget;
   });
@@ -223,16 +231,16 @@ describe("integratePlayerWidget", () => {
 
   // ── Auth gating: guest state ─────────────────────────────────
 
-  it("hides the launcher and FAB when auth state is guest", () => {
+  it("shows the launcher and FAB when auth state is guest", () => {
     const list = makeToolsMenuList("guest");
     const menu = { close: vi.fn() };
 
     const { button } = integratePlayerWidget({ toolsMenuList: list, toolsMenu: menu });
 
-    expect(button.hidden).toBe(true);
+    expect(button.hidden).toBe(false);
     const fab = document.querySelector(".player-fab");
     expect(fab).toBeTruthy();
-    expect(fab.hidden).toBe(true);
+    expect(fab.hidden).toBe(false);
     expect(runtimeMock.stopPlayback).not.toHaveBeenCalled();
   });
 
@@ -278,6 +286,15 @@ describe("integratePlayerWidget", () => {
     expect(document.querySelector(".player-panel").hidden).toBe(false);
   });
 
+  it("restores visible panel state when initial auth state is guest", () => {
+    localStorage.setItem("player_widget_visible_v1", "true");
+    const list = makeToolsMenuList("guest");
+
+    integratePlayerWidget({ toolsMenuList: list, toolsMenu: { close: vi.fn() } });
+
+    expect(document.querySelector(".player-panel").hidden).toBe(false);
+  });
+
   it("does not restore visible panel state before auth is known", () => {
     localStorage.setItem("player_widget_visible_v1", "true");
     const list = makeToolsMenuList();
@@ -289,6 +306,46 @@ describe("integratePlayerWidget", () => {
     expect(document.querySelector(".player-panel").hidden).toBe(true);
     expect(localStorage.getItem("player_widget_visible_v1")).toBe("true");
     expect(runtimeMock.stopPlayback).not.toHaveBeenCalled();
+  });
+
+  it("restores visible panel state after probing an authenticated session when the auth event is missed", async () => {
+    backendAuthMock.getBackendSessionState.mockResolvedValueOnce({
+      authenticated: true,
+      isGuest: false,
+    });
+    localStorage.setItem("player_widget_visible_v1", "true");
+    const list = makeToolsMenuList();
+    const form = list.querySelector("[data-backend-auth]");
+    delete form.dataset.authState;
+
+    integratePlayerWidget({ toolsMenuList: list, toolsMenu: { close: vi.fn() } });
+
+    expect(document.querySelector(".player-panel").hidden).toBe(true);
+
+    await flushMicrotasks();
+
+    expect(backendAuthMock.getBackendSessionState).toHaveBeenCalled();
+    expect(document.querySelector(".player-panel").hidden).toBe(false);
+  });
+
+  it("restores visible panel state after probing a guest session when the auth event is missed", async () => {
+    backendAuthMock.getBackendSessionState.mockResolvedValueOnce({
+      authenticated: false,
+      isGuest: true,
+    });
+    localStorage.setItem("player_widget_visible_v1", "true");
+    const list = makeToolsMenuList();
+    const form = list.querySelector("[data-backend-auth]");
+    delete form.dataset.authState;
+
+    integratePlayerWidget({ toolsMenuList: list, toolsMenu: { close: vi.fn() } });
+
+    expect(document.querySelector(".player-panel").hidden).toBe(true);
+
+    await flushMicrotasks();
+
+    expect(backendAuthMock.getBackendSessionState).toHaveBeenCalled();
+    expect(document.querySelector(".player-panel").hidden).toBe(false);
   });
 
   it("restores visible panel state when auth becomes authenticated", () => {
@@ -306,6 +363,21 @@ describe("integratePlayerWidget", () => {
     expect(document.querySelector(".player-panel").hidden).toBe(false);
   });
 
+  it("restores visible panel state when auth becomes guest", () => {
+    localStorage.setItem("player_widget_visible_v1", "true");
+    const list = makeToolsMenuList();
+    const form = list.querySelector("[data-backend-auth]");
+    delete form.dataset.authState;
+
+    integratePlayerWidget({ toolsMenuList: list, toolsMenu: { close: vi.fn() } });
+
+    expect(document.querySelector(".player-panel").hidden).toBe(true);
+
+    emitAuthState({ authenticated: false, isGuest: true, pendingLogout: false });
+
+    expect(document.querySelector(".player-panel").hidden).toBe(false);
+  });
+
   // ── Auth transitions ─────────────────────────────────────────
 
   it("shows launcher and FAB when auth transitions from guest to authenticated", () => {
@@ -314,7 +386,7 @@ describe("integratePlayerWidget", () => {
 
     const { button } = integratePlayerWidget({ toolsMenuList: list, toolsMenu: menu });
 
-    expect(button.hidden).toBe(true);
+    expect(button.hidden).toBe(false);
 
     emitAuthState({ authenticated: true, isGuest: false, pendingLogout: false });
 
@@ -322,7 +394,7 @@ describe("integratePlayerWidget", () => {
     expect(document.querySelector(".player-fab").hidden).toBe(false);
   });
 
-  it("hides launcher, FAB and stops playback on logout", () => {
+  it("keeps launcher available for guests and stops playback on logout", () => {
     const list = makeToolsMenuList("authenticated");
     const menu = { close: vi.fn() };
 
@@ -331,8 +403,8 @@ describe("integratePlayerWidget", () => {
 
     emitAuthState({ authenticated: false, isGuest: true, pendingLogout: false });
 
-    expect(button.hidden).toBe(true);
-    expect(document.querySelector(".player-fab").hidden).toBe(true);
+    expect(button.hidden).toBe(false);
+    expect(document.querySelector(".player-fab").hidden).toBe(false);
     expect(runtimeMock.stopPlayback).toHaveBeenCalled();
   });
 

@@ -194,6 +194,30 @@ describe("createMilkdropPanel", () => {
     expect(mount.querySelector(".milkdrop-panel")).toBeNull();
   });
 
+  it("persists visible state to localStorage", async () => {
+    const panel = createMilkdropPanel({ mount });
+
+    await panel.open();
+    expect(localStorage.getItem("milkdrop_panel_visible_v1")).toBe("true");
+
+    panel.close();
+    expect(localStorage.getItem("milkdrop_panel_visible_v1")).toBe("false");
+
+    panel.destroy();
+  });
+
+  it("restores the saved visible state", () => {
+    localStorage.setItem("milkdrop_panel_visible_v1", "true");
+
+    const panel = createMilkdropPanel({ mount });
+    const el = mount.querySelector(".milkdrop-panel");
+
+    expect(panel.isOpen()).toBe(true);
+    expect(el.hidden).toBe(false);
+
+    panel.destroy();
+  });
+
   it("persists panel position to localStorage", () => {
     const panel = createMilkdropPanel({ mount });
     // Position is saved by makePanelDraggable — just verify key exists after setup

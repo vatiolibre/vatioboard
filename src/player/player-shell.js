@@ -18,7 +18,10 @@ import { t } from "../i18n.js";
 import { createMiniAudioVisualizer } from "../shared/audio-mini-visualizer.js";
 import { isVisualizerSafeSource } from "../shared/audio-visualizer.js";
 import { primeAudioContext } from "../shared/audio-graph-registry.js";
-import { createMilkdropPanel } from "./milkdrop-panel.js";
+import {
+  createMilkdropPanel,
+  loadMilkdropPanelVisibility,
+} from "./milkdrop-panel.js";
 import * as runtime from "../shared/audio-runtime.js";
 import { loadText, saveText } from "../shared/storage.js";
 import { loadPlaylists, loadPlaylistDetail } from "../shared/playlist-loader.js";
@@ -1459,16 +1462,36 @@ export function createPlayerShell({ container }) {
   // ── Milkdrop panel (lazy) ──────────────────────────────────────
   let milkdropPanel = null;
 
+  function syncMilkdropToggle() {
+    const isOpen = milkdropPanel?.isOpen?.() === true;
+    milkdropToggleBtn.classList.toggle("active", isOpen);
+    milkdropToggleBtn.setAttribute("aria-pressed", String(isOpen));
+  }
+
+  function ensureMilkdropPanel() {
+    if (!milkdropPanel) {
+      milkdropPanel = createMilkdropPanel({
+        mount: container,
+        onOpen: syncMilkdropToggle,
+        onClose: syncMilkdropToggle,
+      });
+    }
+    syncMilkdropToggle();
+    return milkdropPanel;
+  }
+
   milkdropToggleBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
   milkdropToggleBtn.addEventListener("pointerup", (e) => e.stopPropagation());
   milkdropToggleBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    if (!milkdropPanel) {
-      milkdropPanel = createMilkdropPanel({ mount: container });
-    }
-    milkdropPanel.toggle();
-    milkdropToggleBtn.classList.toggle("active", milkdropPanel.isOpen());
+    ensureMilkdropPanel().toggle();
+    syncMilkdropToggle();
   });
+
+  syncMilkdropToggle();
+  if (loadMilkdropPanelVisibility()) {
+    ensureMilkdropPanel();
+  }
 
   // ── Event wiring ───────────────────────────────────────────────
   playBtn.addEventListener("click", () => {

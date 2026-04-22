@@ -1970,11 +1970,14 @@ describe("player-shell", () => {
   let createPlayerShell;
   let runtime;
   let visualizerMockState;
+  let createMilkdropPanelMock;
+  let loadMilkdropPanelVisibilityMock;
 
   beforeEach(async () => {
     vi.resetModules();
     localStorage.clear();
     visualizerMockState = createVisualizerMockState();
+    let milkdropOpen = false;
 
     vi.doMock("../../src/i18n.js", () => ({
       t: (key) => key,
@@ -2029,6 +2032,35 @@ describe("player-shell", () => {
       destroyVisualizerGraphForElement: vi.fn().mockReturnValue(false),
     }));
 
+    loadMilkdropPanelVisibilityMock = vi.fn(() => false);
+    createMilkdropPanelMock = vi.fn((options = {}) => {
+      milkdropOpen = loadMilkdropPanelVisibilityMock() === true;
+      return {
+        open: vi.fn(() => {
+          milkdropOpen = true;
+          options.onOpen?.();
+        }),
+        close: vi.fn(() => {
+          milkdropOpen = false;
+          options.onClose?.();
+        }),
+        toggle: vi.fn(() => {
+          milkdropOpen = !milkdropOpen;
+          if (milkdropOpen) {
+            options.onOpen?.();
+          } else {
+            options.onClose?.();
+          }
+        }),
+        isOpen: vi.fn(() => milkdropOpen),
+        destroy: vi.fn(),
+      };
+    });
+    vi.doMock("../../src/player/milkdrop-panel.js", () => ({
+      createMilkdropPanel: createMilkdropPanelMock,
+      loadMilkdropPanelVisibility: loadMilkdropPanelVisibilityMock,
+    }));
+
     const mod = await import("../../src/player/player-shell.js");
     createPlayerShell = mod.createPlayerShell;
     runtime = await import("../../src/shared/audio-runtime.js");
@@ -2069,6 +2101,44 @@ describe("player-shell", () => {
     toggleBtn.click();
     expect(strip.hidden).toBe(false);
     expect(toggleBtn.classList.contains("active")).toBe(true);
+
+    shell.destroy();
+  });
+
+  it("toggles the milkdrop panel from the header button", () => {
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    const toggleBtn = container.querySelector(".player-milkdrop-toggle-btn");
+
+    expect(toggleBtn.classList.contains("active")).toBe(false);
+
+    toggleBtn.click();
+    expect(createMilkdropPanelMock).toHaveBeenCalledTimes(1);
+    expect(toggleBtn.classList.contains("active")).toBe(true);
+    expect(toggleBtn.getAttribute("aria-pressed")).toBe("true");
+
+    toggleBtn.click();
+    expect(createMilkdropPanelMock).toHaveBeenCalledTimes(1);
+    expect(toggleBtn.classList.contains("active")).toBe(false);
+    expect(toggleBtn.getAttribute("aria-pressed")).toBe("false");
+
+    shell.destroy();
+  });
+
+  it("restores the milkdrop panel active state from persisted visibility", () => {
+    loadMilkdropPanelVisibilityMock.mockReturnValue(true);
+
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    const toggleBtn = container.querySelector(".player-milkdrop-toggle-btn");
+
+    expect(createMilkdropPanelMock).toHaveBeenCalledWith(expect.objectContaining({
+      mount: container,
+      onOpen: expect.any(Function),
+      onClose: expect.any(Function),
+    }));
+    expect(toggleBtn.classList.contains("active")).toBe(true);
+    expect(toggleBtn.getAttribute("aria-pressed")).toBe("true");
 
     shell.destroy();
   });
