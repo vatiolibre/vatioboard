@@ -1349,21 +1349,21 @@ describe('replay.html smoke', () => {
     vi.useRealTimers();
   });
 
-  it("hides the Player launcher for guests and shows it after login", async () => {
+  it("keeps the Player launcher available for guests and after login", async () => {
     await import("../../src/replay/replay.js");
     await settleAsyncWork();
 
     const btn = document.querySelector("#replayToolsMenuList [data-player-toggle]");
     expect(btn).toBeTruthy();
-    expect(btn.hidden).toBe(true);
+    expect(btn.hidden).toBe(false);
     expect(btn.className).toBe("btn-with-icon");
     expect(btn.querySelector(".btn-icon[aria-hidden='true'] svg")).toBeTruthy();
     expect(btn.querySelector("[data-i18n='audioPlayer']")).toBeTruthy();
     const fab = document.querySelector(".player-fab");
     expect(fab).toBeTruthy();
-    expect(fab.hidden).toBe(true);
+    expect(fab.hidden).toBe(false);
 
-    // Log in → launcher appears
+    // Log in → launcher stays available.
     const authForm = document.querySelector("#replayToolsMenuList [data-backend-auth]");
     const authUser = authForm.querySelector("[data-backend-auth-user]");
     const authPassword = authForm.querySelector("[data-backend-auth-password]");

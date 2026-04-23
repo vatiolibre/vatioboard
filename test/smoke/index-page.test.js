@@ -665,26 +665,26 @@ describe("index.html smoke", () => {
     });
   });
 
-  it("hides the Player launcher for guests and shows it after login", async () => {
+  it("keeps the Player launcher available for guests, login, and logout", async () => {
     await import("../../src/board/board.js");
     await flushBoardTasks();
 
-    // Guest: launcher hidden, FAB hidden
+    // Guest demo playback is available, so the launcher and FAB are visible.
     const btn = document.querySelector("#toolsMenuList [data-player-toggle]");
     expect(btn).toBeTruthy();
-    expect(btn.hidden).toBe(true);
+    expect(btn.hidden).toBe(false);
     expect(btn.className).toBe("btn-with-icon");
     expect(btn.querySelector(".btn-icon[aria-hidden='true'] svg")).toBeTruthy();
     expect(btn.querySelector("[data-i18n='audioPlayer']")).toBeTruthy();
     const fab = document.querySelector(".player-fab");
     expect(fab).toBeTruthy();
-    expect(fab.hidden).toBe(true);
+    expect(fab.hidden).toBe(false);
 
     // Button should be before the auth form
     const authForm = document.querySelector("#toolsMenuList [data-backend-auth]");
     expect(btn.nextElementSibling).toBe(authForm);
 
-    // Log in → launcher and FAB appear
+    // Log in → launcher and FAB stay available.
     const authUser = document.querySelector("[data-backend-auth-user]");
     const authPassword = document.querySelector("[data-backend-auth-password]");
     const authFormEl = document.querySelector("[data-backend-auth]");
@@ -696,11 +696,11 @@ describe("index.html smoke", () => {
     expect(btn.hidden).toBe(false);
     expect(fab.hidden).toBe(false);
 
-    // Log out → launcher and FAB hidden
+    // Log out → guest demo playback remains available.
     document.querySelector("[data-backend-auth-logout]").click();
     await flushBoardTasks();
 
-    expect(btn.hidden).toBe(true);
-    expect(fab.hidden).toBe(true);
+    expect(btn.hidden).toBe(false);
+    expect(fab.hidden).toBe(false);
   });
 });
