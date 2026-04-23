@@ -66,6 +66,13 @@ const mediaAccessCacheMock = {
 
 vi.mock("../../src/shared/media-access-cache.js", () => mediaAccessCacheMock);
 
+const demoCacheMock = {
+  getCachedDemoTrackBlob: vi.fn().mockResolvedValue(null),
+  triggerDemoTrackCache: vi.fn(),
+};
+
+vi.mock("../../src/shared/demo-cache.js", () => demoCacheMock);
+
 // ── Test fixtures ────────────────────────────────────────────────────
 
 function makeTrack(name, overrides = {}) {
@@ -154,6 +161,7 @@ describe("audio-source-resolver", () => {
     }));
     vi.doMock("../../src/shared/backend-auth.js", () => backendAuthMock);
     vi.doMock("../../src/shared/media-access-cache.js", () => mediaAccessCacheMock);
+    vi.doMock("../../src/shared/demo-cache.js", () => demoCacheMock);
 
     // Reset mock return values
     backendAuthMock.getBackendMediaAssetAccess.mockResolvedValue({
@@ -172,6 +180,8 @@ describe("audio-source-resolver", () => {
     });
     backendAuthMock.fetchBackendMediaAssetBlob.mockResolvedValue(new Response("", { status: 404 }));
     mediaAccessCacheMock.getCachedMediaAccess.mockReturnValue(null);
+    demoCacheMock.getCachedDemoTrackBlob.mockResolvedValue(null);
+    demoCacheMock.triggerDemoTrackCache.mockReset();
 
     const mod = await import("../../src/shared/audio-source-resolver.js");
     resolveAudioSource = mod.resolveAudioSource;
@@ -265,6 +275,27 @@ describe("audio-source-resolver", () => {
     expect(backendAuthMock.getBackendMediaAssetAccess).not.toHaveBeenCalled();
   });
 
+  it("prefers cached demo blobs over the public static src", async () => {
+    const blob = new Blob(["audio"], { type: "audio/mp3" });
+    demoCacheMock.getCachedDemoTrackBlob.mockResolvedValueOnce({
+      blob,
+      src: "/audio/demo/sb_titan.mp3",
+    });
+
+    const result = await resolveAudioSource("demo:titan", {
+      name: "demo:titan",
+      media_kind: "audio",
+      src: "/audio/demo/sb_titan.mp3",
+      _demo: true,
+    });
+
+    expect(result).toBeTruthy();
+    expect(result.type).toBe("blob");
+    expect(result.blob).toBe(blob);
+    expect(result.src).toMatch(/^blob:/);
+    expect(backendAuthMock.getProtectedMediaRequestGate).not.toHaveBeenCalled();
+  });
+
   it("hasLocalSource returns false when no meta", async () => {
     mediaCacheMock.getLocalBlobMeta.mockResolvedValueOnce(null);
     expect(await hasLocalSource("asset_a")).toBe(false);
@@ -275,13 +306,28 @@ describe("audio-source-resolver", () => {
     expect(await hasLocalSource("asset_a")).toBe(true);
   });
 
+  it("hasLocalSource returns true when a demo blob is cached", async () => {
+    demoCacheMock.getCachedDemoTrackBlob.mockResolvedValueOnce({
+      blob: new Blob(["audio"], { type: "audio/mp3" }),
+      src: "/audio/demo/sb_titan.mp3",
+    });
+
+    expect(await hasLocalSource("demo:titan", {
+      name: "demo:titan",
+      media_kind: "audio",
+      src: "/audio/demo/sb_titan.mp3",
+      _demo: true,
+    })).toBe(true);
+  });
+
   it("triggerBackgroundCache skips ineligible assets", () => {
     mediaCacheMock.isAutoCacheEligible.mockReturnValueOnce(false);
     triggerBackgroundCache("asset_a", TRACK_A);
     expect(mediaCacheMock.registerAutoCacheDownload).not.toHaveBeenCalled();
   });
 
-  it("triggerBackgroundCache skips demo/static tracks without backend requests", () => {
+  it("triggerBackgroundCache routes demo tracks through the public demo cache without backend requests", () => {
+    const onCached = vi.fn();
     const onFailed = vi.fn();
     triggerBackgroundCache("demo:titan", {
       name: "demo:titan",
@@ -289,11 +335,36 @@ describe("audio-source-resolver", () => {
       media_kind: "audio",
       src: "/audio/demo/sb_titan.mp3",
       _demo: true,
-    }, { onFailed });
+    }, { onCached, onFailed });
 
     expect(mediaCacheMock.isAutoCacheEligible).not.toHaveBeenCalled();
     expect(mediaCacheMock.registerAutoCacheDownload).not.toHaveBeenCalled();
     expect(backendAuthMock.getProtectedMediaRequestGate).not.toHaveBeenCalled();
+    expect(demoCacheMock.triggerDemoTrackCache).toHaveBeenCalledWith(
+      "demo:titan",
+      expect.objectContaining({
+        name: "demo:titan",
+        src: "/audio/demo/sb_titan.mp3",
+      }),
+      expect.objectContaining({
+        onCached,
+        onFailed,
+      }),
+    );
+  });
+
+  it("triggerBackgroundCache still skips non-demo public static tracks", () => {
+    const onFailed = vi.fn();
+
+    triggerBackgroundCache("public:sample", {
+      name: "public:sample",
+      title: "Sample",
+      media_kind: "audio",
+      src: "/audio/public/sample.mp3",
+    }, { onFailed });
+
+    expect(demoCacheMock.triggerDemoTrackCache).not.toHaveBeenCalled();
+    expect(mediaCacheMock.registerAutoCacheDownload).not.toHaveBeenCalled();
     expect(onFailed).toHaveBeenCalledWith("static_source");
   });
 
@@ -1296,7 +1367,7 @@ describe("audio-runtime", () => {
     }
   });
 
-  it("reapplies the restored second if metadata loading resets currentTime", async () => {
+  it("reapplies the restored second if the browser resets currentTime after metadata loads", async () => {
     localStorage.setItem(PLAYER_SESSION_STORAGE_KEY, JSON.stringify({
       version: 2,
       queueEntries: [makeSessionEntry(TRACK_A, { entryId: "entry_a" })],
@@ -1314,8 +1385,11 @@ describe("audio-runtime", () => {
     await runtime.restoreSession([TRACK_A], { autoplay: false });
 
     const el = runtime.getAudioElement();
-    el.currentTime = 0;
     el.dispatchEvent(new Event("loadedmetadata"));
+    expect(el.currentTime).toBe(36);
+
+    el.currentTime = 0;
+    el.dispatchEvent(new Event("canplay"));
 
     expect(el.currentTime).toBe(36);
     expect(runtime.getState().currentTime).toBe(36);

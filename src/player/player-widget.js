@@ -24,7 +24,7 @@ import {
 import { IconMusic } from "../icons.js";
 import { loadAudioCatalog, syncAudioCatalog, annotateOfflineAvailability } from "../shared/audio-catalog.js";
 import { loadPlaylists, syncPlaylistsManifest } from "../shared/playlist-loader.js";
-import { normalizeTrack } from "../shared/track-model.js";
+import { loadDemoPlaylist, syncDemoPlaylist } from "../shared/demo-cache.js";
 import * as runtime from "../shared/audio-runtime.js";
 import {
   getBackendSessionState,
@@ -64,15 +64,22 @@ async function bootstrapAuth() {
 const DEMO_PLAYLIST_NAME = "demo:playlist";
 const DEMO_PLAYLIST_TITLE = "Demo Playlist";
 
-async function loadDemoPlaylist() {
-  try {
-    const res = await fetch("/audio/demo/playlist.json");
-    if (!res.ok) return [];
-    const raw = await res.json();
-    return Array.isArray(raw) ? raw.map(normalizeTrack) : [];
-  } catch {
-    return [];
-  }
+async function loadAnnotatedDemoPlaylist() {
+  const result = await loadDemoPlaylist();
+  const tracks = await annotateOfflineAvailability(result.tracks || []);
+  return {
+    ...result,
+    tracks,
+  };
+}
+
+async function syncAnnotatedDemoPlaylist() {
+  const result = await syncDemoPlaylist();
+  const tracks = await annotateOfflineAvailability(result.tracks || []);
+  return {
+    ...result,
+    tracks,
+  };
 }
 
 function buildDemoPlaylistEntry(tracks) {
@@ -118,6 +125,23 @@ function isPristineDemoQueue(state) {
     && state.queue.every((track) => isPublicStaticTrack(track?.name, track));
 }
 
+function applyDemoCatalog(shell, tracks) {
+  shell.setTracks(tracks);
+  shell.setPlaylists(tracks.length > 0 ? [buildDemoPlaylistEntry(tracks)] : []);
+}
+
+function maybeRefreshSeededQueue(tracks, seededQueueSignature) {
+  if (!Array.isArray(tracks) || tracks.length === 0) return seededQueueSignature;
+
+  const current = runtime.getState();
+  if (current.queue.length === 0 || isPristineSeededQueue(current, seededQueueSignature)) {
+    runtime.setQueue(tracks, { autoplay: false });
+    return queueNameSignature(tracks);
+  }
+
+  return seededQueueSignature;
+}
+
 async function doBootstrap(shell) {
   try {
     const bootAuthState = await bootstrapAuth();
@@ -127,15 +151,14 @@ async function doBootstrap(shell) {
 
     const { tracks } = await loadAudioCatalog();
     const annotated = await annotateOfflineAvailability(tracks);
+    const demoResult = await loadAnnotatedDemoPlaylist();
+    const demoTracks = demoResult.tracks || [];
 
     // Fall back to the free demo playlist when no catalog is available
     // (guest / unauthenticated visitors).
-    const demoPlaylist = annotated.length > 0 || bootAuthState === true
-      ? await loadDemoPlaylist()
-      : [];
-    const playlist = annotated.length > 0 ? annotated : (demoPlaylist.length > 0 ? demoPlaylist : await loadDemoPlaylist());
+    const playlist = annotated.length > 0 ? annotated : demoTracks;
     const restoreCandidates = annotated.length > 0
-      ? [...annotated, ...demoPlaylist]
+      ? [...annotated, ...demoTracks]
       : playlist;
 
     shell.setTracks(playlist);
@@ -192,14 +215,20 @@ async function doBootstrap(shell) {
           shell.setPlaylists(playlists);
         } catch { /* ignore */ }
       }).catch(() => {});
+    } else {
+      syncAnnotatedDemoPlaylist().then((refreshed) => {
+        if (!refreshed?.refreshed || !refreshed.changed || refreshed.tracks.length === 0) return;
+        applyDemoCatalog(shell, refreshed.tracks);
+        seededQueueSignature = maybeRefreshSeededQueue(refreshed.tracks, seededQueueSignature);
+      }).catch(() => {});
     }
   } catch {
     // Offline or no manifest — try demo playlist as last resort
     try {
-      const demo = await loadDemoPlaylist();
+      const demoResult = await loadAnnotatedDemoPlaylist();
+      const demo = demoResult.tracks || [];
       if (demo.length > 0) {
-        shell.setTracks(demo);
-        shell.setPlaylists([buildDemoPlaylistEntry(demo)]);
+        applyDemoCatalog(shell, demo);
         runtime.setQueue(demo, { autoplay: false });
         _bootstrapped = true;
       }
@@ -238,11 +267,22 @@ async function reloadCatalogForAuthChange(shell, loggedIn) {
     runtime.stopPlayback();
 
     // Logout — skip backend calls and fall back to demo tracks.
-    const demo = await loadDemoPlaylist();
-    shell.setTracks(demo);
-    shell.setPlaylists(demo.length > 0 ? [buildDemoPlaylistEntry(demo)] : []);
-    if (demo.length > 0) runtime.setQueue(demo, { autoplay: false });
+    const demoResult = await loadAnnotatedDemoPlaylist();
+    const demo = demoResult.tracks || [];
+    applyDemoCatalog(shell, demo);
+    if (demo.length > 0) {
+      runtime.setQueue(demo, { autoplay: false });
+    } else {
+      runtime.setQueue([], { autoplay: false });
+    }
     _bootstrapped = true;
+
+    let seededQueueSignature = demo.length > 0 ? queueNameSignature(demo) : "";
+    syncAnnotatedDemoPlaylist().then((refreshed) => {
+      if (!refreshed?.refreshed || !refreshed.changed || refreshed.tracks.length === 0) return;
+      applyDemoCatalog(shell, refreshed.tracks);
+      seededQueueSignature = maybeRefreshSeededQueue(refreshed.tracks, seededQueueSignature);
+    }).catch(() => {});
   }
 }
 
@@ -477,7 +517,7 @@ export function createPlayerWidget(options = {}) {
     // Only reload if the widget has already bootstrapped at least once.
     // Early auth events (during page load) are tracked but not acted on;
     // the initial bootstrap will use whatever auth state is current.
-    if (!_bootstrapped && !_bootstrapPromise) return;
+    if (!_bootstrapped) return;
 
     // Re-bootstrap: loads the user catalog on login, falls back to
     // the demo playlist on logout.

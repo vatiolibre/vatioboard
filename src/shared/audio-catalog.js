@@ -164,7 +164,7 @@ export async function syncAudioCatalog() {
 export async function annotateOfflineAvailability(tracks) {
   const results = await Promise.all(
     tracks.map(async (track) => {
-      const offline = await hasLocalSource(track.name).catch(() => false);
+      const offline = await hasLocalSource(track.name, track).catch(() => false);
       return { ...track, _offline: offline };
     }),
   );

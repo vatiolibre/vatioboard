@@ -123,12 +123,39 @@ vi.mock("../../src/shared/media-access-cache.js", () => ({
   clearMediaAccessCache: vi.fn(),
 }));
 
+const demoCacheMock = {
+  loadDemoPlaylist: vi.fn().mockResolvedValue({
+    tracks: [],
+    source: "empty",
+    cachedAt: 0,
+    signature: "",
+  }),
+  syncDemoPlaylist: vi.fn().mockResolvedValue({
+    refreshed: false,
+    changed: false,
+    tracks: [],
+    source: "empty",
+  }),
+};
+
+vi.mock("../../src/shared/demo-cache.js", () => demoCacheMock);
+
 // ── Helpers ──────────────────────────────────────────────────────────
 
 async function flushMicrotasks(n = 10) {
   for (let i = 0; i < n; i++) {
     await Promise.resolve();
   }
+}
+
+function createDeferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+  return { promise, resolve, reject };
 }
 
 function makeTrack(name, overrides = {}) {
@@ -163,18 +190,6 @@ function makeRuntimeState(overrides = {}) {
     playing: false,
     ...overrides,
   };
-}
-
-function mockDemoPlaylistFetch(tracks) {
-  vi.stubGlobal("fetch", vi.fn(async (url) => {
-    if (String(url).endsWith("/audio/demo/playlist.json")) {
-      return new Response(JSON.stringify(tracks), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      });
-    }
-    return new Response("", { status: 404 });
-  }));
 }
 
 // ── Tests ────────────────────────────────────────────────────────────
@@ -229,17 +244,38 @@ describe("createPlayerWidget", () => {
       clearMediaAccessCache: vi.fn(),
     }));
 
+    vi.doMock("../../src/shared/demo-cache.js", () => demoCacheMock);
+
     // Reset runtime mock state
+    runtimeMock.getState.mockReset();
     runtimeMock.getState.mockReturnValue(makeRuntimeState());
+    runtimeMock.subscribe.mockReset();
     runtimeMock.subscribe.mockReturnValue(vi.fn());
-    runtimeMock.setQueue.mockClear();
-    runtimeMock.restoreSession.mockClear();
-    runtimeMock.stopPlayback.mockClear();
+    runtimeMock.setQueue.mockReset();
+    runtimeMock.setQueue.mockImplementation(() => {});
+    runtimeMock.restoreSession.mockReset();
+    runtimeMock.restoreSession.mockResolvedValue(undefined);
+    runtimeMock.stopPlayback.mockReset();
+    runtimeMock.stopPlayback.mockImplementation(() => {});
     catalogMock.loadAudioCatalog.mockResolvedValue({ tracks: [], total: 0 });
     catalogMock.syncAudioCatalog.mockResolvedValue(false);
     playlistMock.loadPlaylists.mockResolvedValue({ playlists: [], total: 0 });
     playlistMock.syncPlaylistsManifest.mockResolvedValue(false);
     playlistMock.loadPlaylistDetail.mockResolvedValue(null);
+    demoCacheMock.loadDemoPlaylist.mockReset();
+    demoCacheMock.loadDemoPlaylist.mockResolvedValue({
+      tracks: [],
+      source: "empty",
+      cachedAt: 0,
+      signature: "",
+    });
+    demoCacheMock.syncDemoPlaylist.mockReset();
+    demoCacheMock.syncDemoPlaylist.mockResolvedValue({
+      refreshed: false,
+      changed: false,
+      tracks: [],
+      source: "empty",
+    });
 
     const mod = await import("../../src/player/player-widget.js");
     createPlayerWidget = mod.createPlayerWidget;
@@ -515,6 +551,50 @@ describe("createPlayerWidget", () => {
     widget.destroy();
   });
 
+  it("ignores auth events that arrive while the first bootstrap is still in flight", async () => {
+    const backendAuth = await import("../../src/shared/backend-auth.js");
+    const sessionDeferred = createDeferred();
+    const demoTrack = makeTrack("demo:titan", {
+      title: "Titan",
+      src: "/audio/demo/sb_titan.mp3",
+    });
+
+    backendAuth.getBackendSessionState.mockImplementation(() => sessionDeferred.promise);
+    catalogMock.loadAudioCatalog.mockResolvedValue({ tracks: [], total: 0 });
+    demoCacheMock.loadDemoPlaylist.mockResolvedValue({
+      tracks: [demoTrack],
+      source: "cache",
+      cachedAt: Date.now(),
+      signature: "demo",
+    });
+    runtimeMock.restoreSession.mockClear();
+    runtimeMock.setQueue.mockClear();
+    runtimeMock.stopPlayback.mockClear();
+
+    const widget = createPlayerWidget({ preload: "immediate", floating: false });
+    await flushMicrotasks(2);
+
+    window.dispatchEvent(new CustomEvent("vatioboard:backend-auth-state", {
+      detail: { authenticated: false, isGuest: true, pendingLogout: false },
+    }));
+    await flushMicrotasks(5);
+
+    expect(runtimeMock.stopPlayback).not.toHaveBeenCalled();
+    expect(runtimeMock.setQueue).not.toHaveBeenCalled();
+
+    sessionDeferred.resolve({ authenticated: false, isGuest: true });
+    await flushMicrotasks(30);
+
+    expect(runtimeMock.restoreSession).toHaveBeenCalledTimes(1);
+    expect(runtimeMock.setQueue).toHaveBeenCalledTimes(1);
+    expect(runtimeMock.setQueue).toHaveBeenLastCalledWith(
+      [expect.objectContaining({ name: "demo:titan" })],
+      { autoplay: false },
+    );
+
+    widget.destroy();
+  });
+
   it("does not treat the first matching auth event after bootstrap as a playback-reset transition", async () => {
     const backendAuth = await import("../../src/shared/backend-auth.js");
     backendAuth.getBackendSessionState.mockResolvedValue({ authenticated: true, isGuest: false });
@@ -553,7 +633,12 @@ describe("createPlayerWidget", () => {
 
     backendAuth.getBackendSessionState.mockResolvedValue({ authenticated: true, isGuest: false });
     catalogMock.loadAudioCatalog.mockResolvedValue({ tracks: [catalogTrack], total: 1 });
-    mockDemoPlaylistFetch([demoTrack]);
+    demoCacheMock.loadDemoPlaylist.mockResolvedValue({
+      tracks: [demoTrack],
+      source: "network",
+      cachedAt: Date.now(),
+      signature: "demo:titan",
+    });
 
     let runtimeState = makeRuntimeState();
     runtimeMock.getState.mockImplementation(() => runtimeState);
@@ -596,7 +681,12 @@ describe("createPlayerWidget", () => {
 
     backendAuth.getBackendSessionState.mockResolvedValue({ authenticated: true, isGuest: false });
     catalogMock.loadAudioCatalog.mockResolvedValue({ tracks: [catalogTrack], total: 1 });
-    mockDemoPlaylistFetch([demoTrack]);
+    demoCacheMock.loadDemoPlaylist.mockResolvedValue({
+      tracks: [demoTrack],
+      source: "network",
+      cachedAt: Date.now(),
+      signature: "demo:titan",
+    });
 
     let runtimeState = makeRuntimeState();
     runtimeMock.getState.mockImplementation(() => runtimeState);
@@ -623,6 +713,64 @@ describe("createPlayerWidget", () => {
       { autoplay: true },
     );
     expect(runtimeMock.setQueue).not.toHaveBeenCalled();
+
+    widget.destroy();
+  });
+
+  it("revalidates a cached guest demo playlist and refreshes a pristine seeded queue", async () => {
+    const backendAuth = await import("../../src/shared/backend-auth.js");
+    const demoTrack = makeTrack("demo:titan", {
+      title: "Titan",
+      media_kind: "audio",
+      src: "/audio/demo/sb_titan.mp3",
+    });
+    const demoTrackTwo = makeTrack("demo:atlas", {
+      title: "Atlas",
+      media_kind: "audio",
+      src: "/audio/demo/sb_atlas.mp3",
+    });
+
+    backendAuth.getBackendSessionState.mockResolvedValue({ authenticated: false, isGuest: true });
+    catalogMock.loadAudioCatalog.mockResolvedValue({ tracks: [], total: 0 });
+    demoCacheMock.loadDemoPlaylist.mockResolvedValue({
+      tracks: [demoTrack],
+      source: "cache",
+      cachedAt: Date.now() - 10_000,
+      signature: "demo:titan",
+    });
+    demoCacheMock.syncDemoPlaylist.mockResolvedValue({
+      refreshed: true,
+      changed: true,
+      tracks: [demoTrack, demoTrackTwo],
+      source: "network",
+    });
+
+    let runtimeState = makeRuntimeState();
+    runtimeMock.getState.mockImplementation(() => runtimeState);
+    runtimeMock.restoreSession.mockImplementation(async () => {});
+    runtimeMock.setQueue.mockImplementation((tracks) => {
+      runtimeState = makeRuntimeState({
+        queue: tracks,
+        currentIndex: tracks.length > 0 ? 0 : -1,
+        currentTrack: tracks[0] || null,
+        paused: true,
+        currentTime: 0,
+      });
+    });
+
+    const widget = createPlayerWidget({ preload: "immediate", floating: false });
+    await flushMicrotasks(40);
+
+    expect(demoCacheMock.loadDemoPlaylist).toHaveBeenCalledTimes(1);
+    expect(demoCacheMock.syncDemoPlaylist).toHaveBeenCalledTimes(1);
+    expect(runtimeMock.setQueue).toHaveBeenCalledTimes(2);
+    expect(runtimeMock.setQueue.mock.calls[0][0]).toEqual([
+      expect.objectContaining({ name: "demo:titan" }),
+    ]);
+    expect(runtimeMock.setQueue.mock.calls[1][0]).toEqual([
+      expect.objectContaining({ name: "demo:titan" }),
+      expect.objectContaining({ name: "demo:atlas" }),
+    ]);
 
     widget.destroy();
   });

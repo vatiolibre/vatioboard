@@ -1282,7 +1282,7 @@ function onTimeUpdate() {
 }
 
 function onLoadedMetadata() {
-  applyPendingSeek({ confirm: true });
+  applyPendingSeek();
   syncPositionState();
   maybePrepareUpcomingTrack({ force: true });
   maybePersistPlaybackProgress();
@@ -1290,7 +1290,7 @@ function onLoadedMetadata() {
 }
 
 function onCanPlay() {
-  applyPendingSeek({ confirm: true });
+  applyPendingSeek();
   syncPositionState();
   maybePersistPlaybackProgress();
   notify();
@@ -1316,6 +1316,9 @@ function onWaiting() {
 
 function onPlaying() {
   state.loading = false;
+  applyPendingSeek();
+  syncPositionState();
+  maybePersistPlaybackProgress();
   maybePrepareUpcomingTrack({ force: false });
   notify();
 }

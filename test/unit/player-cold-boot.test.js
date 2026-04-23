@@ -83,6 +83,21 @@ function countFetchCalls(fetchMock, needle) {
   return fetchMock.mock.calls.filter(([input]) => getFetchUrl(input).includes(needle)).length;
 }
 
+async function deleteIndexedDbDatabase(name) {
+  if (typeof indexedDB === "undefined" || typeof indexedDB.deleteDatabase !== "function") return;
+
+  await new Promise((resolve) => {
+    try {
+      const request = indexedDB.deleteDatabase(name);
+      request.onsuccess = () => resolve();
+      request.onerror = () => resolve();
+      request.onblocked = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+}
+
 const AUDIO_ASSET_1 = {
   name: "AUDIO-1",
   title: "Morning Ride",
@@ -141,6 +156,33 @@ const MIME_AUDIO_ASSET = {
   content_hash: "hash-a3",
   modified_at: "2026-04-05T11:00:00Z",
   folder_path: "Voice",
+};
+
+const DEMO_TRACK_TITAN = {
+  name: "demo:titan",
+  title: "Titan",
+  media_kind: "audio",
+  original_filename: "sb_titan.mp3",
+  src: "/audio/demo/sb_titan.mp3",
+  duration: 123,
+};
+
+const DEMO_TRACK_ON_THE_RUN = {
+  name: "demo:on-the-run",
+  title: "On The Run",
+  media_kind: "audio",
+  original_filename: "On The Run.mp3",
+  src: "/audio/demo/On The Run.mp3",
+  duration: 182.5,
+};
+
+const DEMO_TRACK_ROCKER_CHICKS = {
+  name: "demo:rocker-chicks",
+  title: "Rocker Chicks",
+  media_kind: "audio",
+  original_filename: "RockerChicks.mp3",
+  src: "/audio/demo/RockerChicks.mp3",
+  duration: 90.1,
 };
 
 const PLAYER_SESSION_STORAGE_KEY = "vatioboard_player_session_v2";
@@ -216,6 +258,23 @@ function createUnauthenticatedFetch() {
   });
 }
 
+function createGuestDemoFetch({ demoTracks = [DEMO_TRACK_TITAN] } = {}) {
+  return vi.fn(async (input) => {
+    const url = typeof input === "string" ? input : String(input?.url ?? "");
+
+    if (url.includes("/api/method/vatiolibre.services.tesla_connection_status")) {
+      return jsonResponse({ message: { connected: false, is_guest: true } }, 200);
+    }
+    if (url.endsWith("/audio/demo/playlist.json")) {
+      return new Response(JSON.stringify(demoTracks), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return jsonResponse({ exc_type: "PermissionError" }, 403);
+  });
+}
+
 function createOfflineFetch() {
   return vi.fn(async () => {
     throw new TypeError("Failed to fetch");
@@ -225,8 +284,11 @@ function createOfflineFetch() {
 // ── Tests ────────────────────────────────────────────────────────────
 
 describe("player cold boot", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetModules();
+    localStorage.clear();
+    await deleteIndexedDbDatabase("vatioboard_demo_playlist");
+    await deleteIndexedDbDatabase("vatioboard_demo_track_blobs");
     Object.values(mockMediaCache).forEach((fn) => {
       if (typeof fn.mockReset === "function") fn.mockReset();
     });
@@ -331,6 +393,246 @@ describe("player cold boot", () => {
 
     const trackItems = document.querySelectorAll(".player-queue-item");
     expect(trackItems.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("guest cold boot restores the saved demo track at the same playback position", async () => {
+    localStorage.setItem(PLAYER_SESSION_STORAGE_KEY, JSON.stringify({
+      version: 2,
+      queueEntries: [{
+        entryId: "demo_entry",
+        name: DEMO_TRACK_TITAN.name,
+        title: DEMO_TRACK_TITAN.title,
+        artist: "",
+        album: "",
+        genre: "",
+        duration: DEMO_TRACK_TITAN.duration,
+        artwork_ref: "",
+        media_kind: "audio",
+        original_filename: DEMO_TRACK_TITAN.original_filename,
+        content_hash: "",
+        mime_type: "audio/mp3",
+        blob_size: 0,
+        file_extension: "mp3",
+        folder_path: "",
+        src: DEMO_TRACK_TITAN.src,
+      }],
+      playedEntries: [],
+      currentEntryId: "demo_entry",
+      currentIndex: 0,
+      currentTime: 42,
+      paused: true,
+      volume: 0.88,
+      muted: false,
+      repeat: "off",
+      shuffle: false,
+      backgroundMode: false,
+    }));
+
+    window.fetch = createGuestDemoFetch();
+
+    await bootHtmlPage("player.html");
+    const playerPage = await import("../../src/player/player-demo.js");
+    const runtime = await import("../../src/shared/audio-runtime.js");
+    await playerPage.initPromise;
+    await settlePlayerTasks();
+
+    const audioEl = runtime.getAudioElement();
+    audioEl.dispatchEvent(new Event("loadedmetadata"));
+    audioEl.currentTime = 0;
+    audioEl.dispatchEvent(new Event("canplay"));
+
+    const state = runtime.getState();
+    expect(state.currentTrack?.name).toBe("demo:titan");
+    expect(state.queue.map((track) => track.name)).toEqual(["demo:titan"]);
+    expect(audioEl.currentTime).toBeGreaterThanOrEqual(41.5);
+    expect(audioEl.currentTime).toBeLessThanOrEqual(42.5);
+    expect(state.currentTime).toBeGreaterThanOrEqual(41.5);
+    expect(state.currentTime).toBeLessThanOrEqual(42.5);
+    expect(countFetchCalls(window.fetch, "/audio/demo/playlist.json")).toBeGreaterThan(0);
+  });
+
+  it("guest cold boot preserves the saved demo queue order and current item from a multi-track playlist", async () => {
+    localStorage.setItem(PLAYER_SESSION_STORAGE_KEY, JSON.stringify({
+      version: 2,
+      queueEntries: [
+        {
+          entryId: "queue_a",
+          name: DEMO_TRACK_ON_THE_RUN.name,
+          title: DEMO_TRACK_ON_THE_RUN.title,
+          artist: "",
+          album: "",
+          genre: "",
+          duration: DEMO_TRACK_ON_THE_RUN.duration,
+          artwork_ref: "",
+          media_kind: "audio",
+          original_filename: DEMO_TRACK_ON_THE_RUN.original_filename,
+          content_hash: "",
+          mime_type: "audio/mp3",
+          blob_size: 0,
+          file_extension: "mp3",
+          folder_path: "",
+          src: DEMO_TRACK_ON_THE_RUN.src,
+        },
+        {
+          entryId: "queue_b",
+          name: DEMO_TRACK_ROCKER_CHICKS.name,
+          title: DEMO_TRACK_ROCKER_CHICKS.title,
+          artist: "",
+          album: "",
+          genre: "",
+          duration: DEMO_TRACK_ROCKER_CHICKS.duration,
+          artwork_ref: "",
+          media_kind: "audio",
+          original_filename: DEMO_TRACK_ROCKER_CHICKS.original_filename,
+          content_hash: "",
+          mime_type: "audio/mp3",
+          blob_size: 0,
+          file_extension: "mp3",
+          folder_path: "",
+          src: DEMO_TRACK_ROCKER_CHICKS.src,
+        },
+        {
+          entryId: "queue_c",
+          name: DEMO_TRACK_TITAN.name,
+          title: DEMO_TRACK_TITAN.title,
+          artist: "",
+          album: "",
+          genre: "",
+          duration: DEMO_TRACK_TITAN.duration,
+          artwork_ref: "",
+          media_kind: "audio",
+          original_filename: DEMO_TRACK_TITAN.original_filename,
+          content_hash: "",
+          mime_type: "audio/mp3",
+          blob_size: 0,
+          file_extension: "mp3",
+          folder_path: "",
+          src: DEMO_TRACK_TITAN.src,
+        },
+      ],
+      playedEntries: [],
+      currentEntryId: "queue_c",
+      currentIndex: 2,
+      currentTime: 42,
+      paused: true,
+      volume: 0.88,
+      muted: false,
+      repeat: "off",
+      shuffle: false,
+      backgroundMode: false,
+    }));
+
+    window.fetch = createGuestDemoFetch({
+      demoTracks: [
+        DEMO_TRACK_ON_THE_RUN,
+        DEMO_TRACK_ROCKER_CHICKS,
+        DEMO_TRACK_TITAN,
+      ],
+    });
+
+    await bootHtmlPage("player.html");
+    const playerPage = await import("../../src/player/player-demo.js");
+    const runtime = await import("../../src/shared/audio-runtime.js");
+    await playerPage.initPromise;
+    await settlePlayerTasks();
+
+    const audioEl = runtime.getAudioElement();
+    audioEl.dispatchEvent(new Event("loadedmetadata"));
+    audioEl.currentTime = 0;
+    audioEl.dispatchEvent(new Event("canplay"));
+
+    const state = runtime.getState();
+    expect(state.queue.map((track) => track._queueId)).toEqual(["queue_a", "queue_b", "queue_c"]);
+    expect(state.currentIndex).toBe(2);
+    expect(state.currentTrack?._queueId).toBe("queue_c");
+    expect(audioEl.currentTime).toBeGreaterThanOrEqual(41.5);
+    expect(audioEl.currentTime).toBeLessThanOrEqual(42.5);
+  });
+
+  it("guest pagehide flush preserves the active demo track and playback second", async () => {
+    window.fetch = createGuestDemoFetch({
+      demoTracks: [
+        DEMO_TRACK_ON_THE_RUN,
+        DEMO_TRACK_ROCKER_CHICKS,
+        DEMO_TRACK_TITAN,
+      ],
+    });
+
+    await bootHtmlPage("player.html");
+    const playerPage = await import("../../src/player/player-demo.js");
+    const runtime = await import("../../src/shared/audio-runtime.js");
+    await playerPage.initPromise;
+    await settlePlayerTasks();
+
+    await runtime.playCatalogTrack("demo:titan", runtime.getState().queue);
+    await settlePlayerTasks();
+
+    const audioEl = runtime.getAudioElement();
+    const activeQueueId = runtime.getState().currentTrack?._queueId;
+    audioEl.currentTime = 42;
+    audioEl.dispatchEvent(new Event("timeupdate"));
+    runtime.pause();
+    await settlePlayerTasks();
+
+    window.dispatchEvent(new Event("pagehide"));
+
+    const saved = JSON.parse(localStorage.getItem(PLAYER_SESSION_STORAGE_KEY));
+    expect(saved.currentIndex).toBe(2);
+    expect(saved.currentEntryId).toBe(activeQueueId);
+    expect(saved.currentTime).toBe(42);
+    expect(saved.paused).toBe(true);
+  });
+
+  it("guest refresh cycle keeps the saved demo queue item and second", async () => {
+    const demoTracks = [
+      DEMO_TRACK_ON_THE_RUN,
+      DEMO_TRACK_ROCKER_CHICKS,
+      DEMO_TRACK_TITAN,
+    ];
+
+    window.fetch = createGuestDemoFetch({ demoTracks });
+
+    await bootHtmlPage("player.html");
+    const firstPage = await import("../../src/player/player-demo.js");
+    const firstRuntime = await import("../../src/shared/audio-runtime.js");
+    await firstPage.initPromise;
+    await settlePlayerTasks();
+
+    await firstRuntime.playCatalogTrack("demo:titan", firstRuntime.getState().queue);
+    await settlePlayerTasks();
+
+    const firstAudioEl = firstRuntime.getAudioElement();
+    firstAudioEl.currentTime = 42;
+    firstAudioEl.dispatchEvent(new Event("timeupdate"));
+    firstRuntime.pause();
+    await settlePlayerTasks();
+    window.dispatchEvent(new Event("pagehide"));
+
+    const persistedBeforeRefresh = JSON.parse(localStorage.getItem(PLAYER_SESSION_STORAGE_KEY));
+    expect(persistedBeforeRefresh.currentIndex).toBe(2);
+    expect(persistedBeforeRefresh.currentTime).toBe(42);
+
+    vi.resetModules();
+    window.fetch = createGuestDemoFetch({ demoTracks });
+
+    await bootHtmlPage("player.html");
+    const refreshedPage = await import("../../src/player/player-demo.js");
+    const refreshedRuntime = await import("../../src/shared/audio-runtime.js");
+    await refreshedPage.initPromise;
+    await settlePlayerTasks();
+
+    const refreshedAudioEl = refreshedRuntime.getAudioElement();
+    refreshedAudioEl.dispatchEvent(new Event("loadedmetadata"));
+    refreshedAudioEl.currentTime = 0;
+    refreshedAudioEl.dispatchEvent(new Event("canplay"));
+
+    const refreshedState = refreshedRuntime.getState();
+    const persistedAfterRefresh = JSON.parse(localStorage.getItem(PLAYER_SESSION_STORAGE_KEY));
+    expect(refreshedState.currentIndex).toBe(2);
+    expect(refreshedState.currentTrack?.name).toBe("demo:titan");
+    expect(refreshedState.currentTime).toBeGreaterThanOrEqual(41.5);
+    expect(persistedAfterRefresh.currentIndex).toBe(2);
+    expect(persistedAfterRefresh.currentTime).toBe(42);
   });
 
   it("fresh boot uses the 0.88 default volume when no saved session exists", async () => {

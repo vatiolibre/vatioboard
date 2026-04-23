@@ -6,6 +6,10 @@ import {
   cacheMediaBlob,
   cacheMediaFromResponse,
 } from "./media-cache.js";
+import {
+  getCachedDemoTrackBlob,
+  triggerDemoTrackCache,
+} from "./demo-cache.js";
 import { getEnvironmentConfig } from "./environment.js";
 import {
   fetchBackendMediaAssetBlob,
@@ -13,7 +17,11 @@ import {
   getProtectedMediaRequestGate,
 } from "./backend-auth.js";
 import { getCachedMediaAccess, setCachedMediaAccess } from "./media-access-cache.js";
-import { isPublicStaticTrack, shouldUseBackendMediaAccess } from "./track-source-policy.js";
+import {
+  isDemoTrackName,
+  isPublicStaticTrack,
+  shouldUseBackendMediaAccess,
+} from "./track-source-policy.js";
 
 function isAbortError(error) {
   return Boolean(
@@ -22,6 +30,14 @@ function isAbortError(error) {
       error.name === "AbortError"
       || error.code === 20
     )
+  );
+}
+
+function isDemoTrack(assetName, asset = {}) {
+  return Boolean(
+    isDemoTrackName(assetName)
+      || isDemoTrackName(asset?.name)
+      || asset?._demo === true,
   );
 }
 
@@ -45,6 +61,24 @@ export async function resolveAudioSource(assetName, asset) {
 
   // 0. Direct static src (e.g. demo tracks served from /audio/demo/)
   if (asset?.src) {
+    if (isDemoTrack(assetName, asset)) {
+      try {
+        const local = await getCachedDemoTrackBlob(assetName, asset);
+        if (local?.blob) {
+          const url = URL.createObjectURL(local.blob);
+          return {
+            src: url,
+            type: "blob",
+            blob: local.blob,
+            source: "demo-cache",
+            revokeUrl() { URL.revokeObjectURL(url); },
+          };
+        }
+      } catch {
+        // IndexedDB unavailable — fall through to the public static src.
+      }
+    }
+
     return { src: asset.src, type: "remote", revokeUrl() {} };
   }
 
@@ -164,6 +198,14 @@ export function triggerBackgroundCache(assetName, asset, { onCached, onFailed, f
     if (typeof onFailed === "function") {
       try { onFailed("ineligible"); } catch { /* ignore */ }
     }
+    return;
+  }
+  if (isDemoTrack(assetName, asset)) {
+    triggerDemoTrackCache(assetName, asset, {
+      fetchFn,
+      onCached,
+      onFailed,
+    });
     return;
   }
   if (isPublicStaticTrack(assetName, asset)) {
@@ -304,10 +346,21 @@ export function triggerBackgroundCache(assetName, asset, { onCached, onFailed, f
  * Check whether an asset has a local blob available (pinned or cached).
  *
  * @param {string} assetName
+ * @param {object} [asset]
  * @returns {Promise<boolean>}
  */
-export async function hasLocalSource(assetName) {
+export async function hasLocalSource(assetName, asset = {}) {
   if (!assetName) return false;
+
+  if (isDemoTrack(assetName, asset)) {
+    try {
+      const cached = await getCachedDemoTrackBlob(assetName, asset);
+      return Boolean(cached?.blob);
+    } catch {
+      return false;
+    }
+  }
+
   try {
     const meta = await getLocalBlobMeta(assetName);
     return Boolean(meta);
