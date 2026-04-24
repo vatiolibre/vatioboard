@@ -19,6 +19,9 @@ export function initSettingsSheet({
   onOpen,
 }) {
   const setSettingsSheetOpen = (isOpen) => {
+    settingsBtn.classList.toggle("active", isOpen);
+    settingsBtn.setAttribute("aria-expanded", isOpen ? "true" : "false");
+
     if (isOpen) {
       settingsSheet.hidden = false;
       settingsSheet.setAttribute("aria-hidden", "false");
@@ -30,6 +33,8 @@ export function initSettingsSheet({
     settingsSheet.classList.remove("is-open");
     settingsSheet.setAttribute("aria-hidden", "true");
   };
+
+  settingsBtn.setAttribute("aria-expanded", "false");
 
   settingsSheet.addEventListener("transitionend", (e) => {
     if (e.propertyName !== "transform") return;

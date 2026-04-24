@@ -32,6 +32,7 @@ export function createCalculatorWidget(options = {}) {
     floating = options.button ? false : true,
     button = null,
     onResult = null,
+    onOpenEnergy = null,
   } = options;
 
   const isTouchLike =
@@ -70,6 +71,7 @@ export function createCalculatorWidget(options = {}) {
     exprInput,
     historyEl,
     historyBtn,
+    energyBtn,
     historySheet,
     historyList,
     historyClearBtn,
@@ -84,7 +86,11 @@ export function createCalculatorWidget(options = {}) {
     closeBtn,
     keys,
     header,
-  } = buildPanel({ t, isTouchLike });
+  } = buildPanel({
+    t,
+    isTouchLike,
+    showEnergyTool: typeof onOpenEnergy === "function",
+  });
 
   // Apply stored panel position (if any)
   {
@@ -296,6 +302,14 @@ export function createCalculatorWidget(options = {}) {
     e.stopPropagation();
     close();
   });
+
+  if (energyBtn && typeof onOpenEnergy === "function") {
+    energyBtn.addEventListener("click", () => {
+      historyApi?.setHistorySheetOpen(false);
+      settingsApi?.setSettingsSheetOpen(false);
+      onOpenEnergy();
+    });
+  }
 
   // launcher (floating button) unless user provided their own button
   let launcher;

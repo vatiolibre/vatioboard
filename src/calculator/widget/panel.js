@@ -1,7 +1,50 @@
 import { el } from "../dom.js";
-import { IconHistory, IconSettings, IconClose } from "../../icons.js";
+import { IconHistory, IconSettings, IconClose, IconEnergy } from "../../icons.js";
 
-export function buildPanel({ t, isTouchLike }) {
+function makeUtilityBtn({ className, icon, ariaLabel, ariaKey, label, labelKey }) {
+  return el(
+    "button",
+    {
+      class: `calc-utility-btn ${className}`,
+      type: "button",
+      "aria-label": ariaLabel,
+      "data-i18n-aria": ariaKey,
+    },
+    el("span", { class: "calc-utility-btn-icon", "aria-hidden": "true", html: icon }),
+    el("span", { class: "calc-utility-btn-label", "data-i18n": labelKey }, label)
+  );
+}
+
+export function buildPanel({ t, isTouchLike, showEnergyTool = false }) {
+  const historyBtn = makeUtilityBtn({
+    className: "calc-history-btn",
+    icon: IconHistory,
+    ariaLabel: t("history"),
+    ariaKey: "history",
+    label: t("history"),
+    labelKey: "history",
+  });
+
+  const energyBtn = showEnergyTool
+    ? makeUtilityBtn({
+      className: "calc-energy-btn",
+      icon: IconEnergy,
+      ariaLabel: t("openEnergy"),
+      ariaKey: "openEnergy",
+      label: t("energy"),
+      labelKey: "energy",
+    })
+    : null;
+
+  const settingsBtn = makeUtilityBtn({
+    className: "calc-settings-btn",
+    icon: IconSettings,
+    ariaLabel: t("settings"),
+    ariaKey: "settings",
+    label: t("settings"),
+    labelKey: "settings",
+  });
+
   const panel = el(
     "section",
     {
@@ -14,32 +57,24 @@ export function buildPanel({ t, isTouchLike }) {
     el(
       "div",
       { class: "calc-header" },
-      el("div", { class: "calc-title", "data-i18n": "calcTitle" }, t("calcTitle")),
+      el(
+        "div",
+        { class: "calc-header-main" },
+        el("div", { class: "calc-header-grip", "aria-hidden": "true" })
+      ),
       el("button", {
-        class: "calc-icon-btn calc-settings-btn",
+        class: "calc-close",
         type: "button",
-        "aria-label": t("settings"),
-        "data-i18n-aria": "settings",
-        html: IconSettings,
-      }),
-      el("div", { class: "calc-spacer" }),
-      el("button", { class: "calc-close", type: "button", "data-i18n": "close" }, t("close"))
+        "aria-label": t("close"),
+        "data-i18n-aria": "close",
+        title: t("close"),
+        html: IconClose,
+      })
     ),
     el(
       "div",
       { class: "calc-display" },
-      el(
-        "div",
-        { class: "calc-history-row" },
-        el("button", {
-          class: "calc-icon-btn calc-history-btn",
-          type: "button",
-          "aria-label": t("history"),
-          "data-i18n-aria": "history",
-          html: IconHistory,
-        }),
-        el("div", { class: "calc-history-text" })
-      ),
+      el("div", { class: "calc-history-text" }),
       el("input", {
         class: "calc-expr",
         type: "text",
@@ -47,6 +82,17 @@ export function buildPanel({ t, isTouchLike }) {
         autocomplete: "off",
         spellcheck: "false",
       })
+    ),
+    el(
+      "div",
+      {
+        class: showEnergyTool
+          ? "calc-utility-row"
+          : "calc-utility-row calc-utility-row-two",
+      },
+      historyBtn,
+      energyBtn,
+      settingsBtn
     ),
     el(
       "div",
@@ -136,6 +182,7 @@ export function buildPanel({ t, isTouchLike }) {
     exprInput,
     historyEl: panel.querySelector(".calc-history-text"),
     historyBtn: panel.querySelector(".calc-history-btn"),
+    energyBtn: panel.querySelector(".calc-energy-btn"),
     historySheet: panel.querySelector(".calc-history-sheet"),
     historyList: panel.querySelector(".calc-history-list"),
     historyClearBtn: panel.querySelector(".calc-history-clear"),

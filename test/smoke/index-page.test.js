@@ -212,6 +212,7 @@ describe("index.html smoke", () => {
     expect(document.getElementById("toolsMenuList").hidden).toBe(false);
     expect(document.getElementById("toolsMenuBtn").getAttribute("aria-expanded")).toBe("true");
     expect(pageHeader?.classList.contains("tools-menu-layer-open")).toBe(true);
+    expect(document.getElementById("openEnergyMenu")).toBeNull();
     expect(document.querySelector("[data-backend-auth]")).toBeTruthy();
     expect(document.querySelector("[data-backend-auth-signup]").getAttribute("href")).toBe("https://www.vatiolibre.com/login#signup");
     expect(document.querySelector("[data-backend-auth-forgot]").getAttribute("href")).toBe("https://www.vatiolibre.com/login#forgot");
@@ -231,6 +232,9 @@ describe("index.html smoke", () => {
     expect(document.querySelector(".calc-panel")).toBeTruthy();
     expect(document.querySelector(".energy-panel")).toBeTruthy();
     expect(document.querySelector(".floating-dock")).toBeTruthy();
+    expect(document.querySelectorAll(".floating-dock .dock-btn")).toHaveLength(1);
+    expect(document.querySelector(".floating-dock .dock-btn-calc")).toBeTruthy();
+    expect(document.querySelector(".floating-dock .dock-btn-energy")).toBeNull();
     expect(document.querySelector(".canvas-frame .board-canvas-meta")).toBeTruthy();
     expect(document.querySelector("header .board-canvas-meta")).toBeNull();
     expect(document.querySelector("[data-backend-auth]").dataset.authState).toBe("guest");
@@ -290,7 +294,24 @@ describe("index.html smoke", () => {
     expect(document.getElementById("redo").disabled).toBe(true);
 
     document.getElementById("openCalc").click();
-    expect(document.querySelector(".calc-panel").hidden).toBe(false);
+    const calcPanel = document.querySelector(".calc-panel");
+    const energyPanel = document.querySelector(".energy-panel");
+    expect(calcPanel.hidden).toBe(false);
+    expect(calcPanel.querySelector(".calc-title")).toBeNull();
+    expect(calcPanel.querySelector(".calc-header-grip")).toBeTruthy();
+    expect(calcPanel.querySelector(".calc-close svg")).toBeTruthy();
+    expect(
+      Array.from(calcPanel.querySelectorAll(".calc-utility-btn-label")).map((node) => node.textContent.trim()),
+    ).toEqual(["History", "Trip Cost", "Settings"]);
+
+    calcPanel.querySelector(".calc-energy-btn").click();
+    expect(energyPanel.hidden).toBe(false);
+    expect(energyPanel.querySelector(".energy-title")).toBeNull();
+    expect(energyPanel.querySelector(".energy-header-grip")).toBeTruthy();
+    expect(energyPanel.querySelector(".energy-close svg")).toBeTruthy();
+    expect(
+      Array.from(energyPanel.querySelectorAll(".energy-toolbar-btn-label")).map((node) => node.textContent.trim()),
+    ).toEqual(["Simple", "Multi-trip", "Settings"]);
 
     const authUser = document.querySelector("[data-backend-auth-user]");
     const authPassword = document.querySelector("[data-backend-auth-password]");

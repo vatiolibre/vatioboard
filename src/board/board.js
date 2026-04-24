@@ -114,7 +114,6 @@ const openAccelMenuBtn = document.getElementById("openAccelMenu");
 const openCalcMenuBtn = document.getElementById("openCalcMenu");
 const openLibraryMenuBtn = document.getElementById("openLibraryMenu");
 const openSpeedMenuBtn = document.getElementById("openSpeedMenu");
-const openEnergyMenuBtn = document.getElementById("openEnergyMenu");
 const toolsMenuBtn = document.getElementById("toolsMenuBtn");
 const toolsMenuList = document.getElementById("toolsMenuList");
 
@@ -132,18 +131,20 @@ applyButtonIcon(openLibraryMenuBtn, IconWorld);
 applyButtonIcon(openSpeedBtn, IconSpeed);
 applyButtonIcon(openSpeedMenuBtn, IconSpeed);
 applyButtonIcon(openEnergyBtn, IconEnergy);
-applyButtonIcon(openEnergyMenuBtn, IconEnergy);
 applyButtonIcon(toolsMenuBtn, IconPages);
 
 // Floating dock with tool buttons
-const { calcBtn, energyBtn } = createFloatingDock();
+const { calcBtn } = createFloatingDock();
 const toolsMenu = initToolsMenu({ button: toolsMenuBtn, list: toolsMenuList });
 initBackendAuthControllers();
 toolsMenu.setOpen(true);
 
 // Create widgets - all buttons toggle the same instance
-const calcWidget = createCalculatorWidget({ floating: false });
 const energyWidget = createEnergyCalculatorWidget({ button: null });
+const calcWidget = createCalculatorWidget({
+  floating: false,
+  onOpenEnergy: () => energyWidget.toggle(),
+});
 
 const bindToggle = (btn, widget) => {
   btn?.addEventListener("click", () => {
@@ -164,8 +165,6 @@ bindToggle(openCalcMenuBtn, calcWidget);
 bindToggle(calcBtn, calcWidget);
 
 bindToggle(openEnergyBtn, energyWidget);
-bindToggle(openEnergyMenuBtn, energyWidget);
-bindToggle(energyBtn, energyWidget);
 
 bindNavigation(openSpeedBtn, "/speed");
 bindNavigation(openSpeedMenuBtn, "/speed");

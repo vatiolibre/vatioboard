@@ -5,17 +5,10 @@
   right: 16px;
   bottom: 16px;
   z-index: var(--vb-z-floating, 1000);
-
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-
-  padding: 8px;
-  border-radius: 32px;
-  border: 1px solid var(--calc-border);
-  background: var(--calc-surface);
-  box-shadow: var(--calc-shadow);
-
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
   cursor: grab;
   touch-action: none;
   user-select: none;
@@ -34,24 +27,24 @@
 }
 
 .dock-btn {
-  width: 44px;
-  height: 44px;
+  width: 52px;
+  height: 52px;
   padding: 0;
-  border-radius: 50%;
+  border-radius: 999px;
   border: 1px solid var(--calc-border);
-  background: var(--calc-btn);
+  background: var(--calc-surface);
   color: var(--calc-text);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  box-shadow: var(--calc-shadow);
+  display: grid;
+  place-items: center;
   cursor: pointer;
-  transition: background 0.15s ease, transform 0.1s ease;
+  transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.2s ease;
   font-family: var(--calc-font);
   -webkit-tap-highlight-color: transparent;
 }
 
 .dock-btn:hover {
-  background: var(--calc-btn-hover);
+  background: color-mix(in srgb, var(--calc-surface) 88%, var(--calc-btn-hover) 12%);
 }
 
 .dock-btn:active {
@@ -59,45 +52,34 @@
 }
 
 .dock-btn svg {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   opacity: 0.9;
   display: block;
   flex-shrink: 0;
 }
 
-/* Accent colors for different tools */
 .dock-btn-calc {
-  background: color-mix(in srgb, var(--calc-accent) 15%, var(--calc-btn));
+  background: color-mix(in srgb, var(--calc-accent) 10%, var(--calc-surface));
 }
 
 .dock-btn-calc:hover {
-  background: color-mix(in srgb, var(--calc-accent) 25%, var(--calc-btn-hover));
-}
-
-.dock-btn-energy {
-  background: color-mix(in srgb, #f59e0b 15%, var(--calc-btn));
-}
-
-.dock-btn-energy:hover {
-  background: color-mix(in srgb, #f59e0b 25%, var(--calc-btn-hover));
+  background: color-mix(in srgb, var(--calc-accent) 16%, var(--calc-surface));
 }
 
 @media (max-width: 420px) {
   .floating-dock {
     right: 12px;
     bottom: 12px;
-    padding: 6px;
-    gap: 6px;
   }
 
   .dock-btn {
-    width: 40px;
-    height: 40px;
+    width: 52px;
+    height: 52px;
   }
 
   .dock-btn svg {
-    width: 18px;
-    height: 18px;
+    width: 22px;
+    height: 22px;
   }
 }

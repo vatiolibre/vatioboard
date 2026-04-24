@@ -1,11 +1,11 @@
 import { el } from "../calculator/dom.js";
-import { IconCalculator, IconEnergy } from "../icons.js";
+import { IconCalculator } from "../icons.js";
 import { t } from "../i18n.js";
 
 /**
  * createFloatingDock()
- * Creates a draggable dock that contains multiple tool buttons.
- * Returns the dock element and methods to get button references.
+ * Creates a draggable calculator launcher dock.
+ * Returns the dock element and calculator button reference.
  */
 export function createFloatingDock({ mount = document.body } = {}) {
   const DRAG_THRESHOLD_PX = 6;
@@ -38,18 +38,10 @@ export function createFloatingDock({ mount = document.body } = {}) {
       "aria-label": t("openCalculator"),
       "data-i18n-aria": "openCalculator",
       html: IconCalculator,
-    }),
-    el("button", {
-      type: "button",
-      class: "dock-btn dock-btn-energy",
-      "aria-label": t("openEnergy"),
-      "data-i18n-aria": "openEnergy",
-      html: IconEnergy,
     })
   );
 
   const calcBtn = dock.querySelector(".dock-btn-calc");
-  const energyBtn = dock.querySelector(".dock-btn-energy");
 
   // Apply stored position
   {
@@ -245,8 +237,6 @@ export function createFloatingDock({ mount = document.body } = {}) {
   }
 
   guardClick(calcBtn);
-  guardClick(energyBtn);
-
   // Keep in bounds on resize
   window.addEventListener("resize", () => {
     clampToViewport();
@@ -258,6 +248,5 @@ export function createFloatingDock({ mount = document.body } = {}) {
   return {
     dock,
     calcBtn,
-    energyBtn,
   };
 }

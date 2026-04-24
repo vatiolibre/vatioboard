@@ -25,6 +25,9 @@ export function initHistorySheet({
   clearHistory,
 }) {
   const setHistorySheetOpen = (isOpen) => {
+    historyBtn.classList.toggle("active", isOpen);
+    historyBtn.setAttribute("aria-expanded", isOpen ? "true" : "false");
+
     if (isOpen) {
       renderHistoryList();
       historySheet.hidden = false;
@@ -37,6 +40,8 @@ export function initHistorySheet({
     historySheet.classList.remove("is-open");
     historySheet.setAttribute("aria-hidden", "true");
   };
+
+  historyBtn.setAttribute("aria-expanded", "false");
 
   historySheet.addEventListener("transitionend", (e) => {
     if (e.propertyName !== "transform") return;
