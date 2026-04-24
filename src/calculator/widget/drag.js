@@ -38,6 +38,8 @@ export function makePanelDraggable({ panel, header, dragThresholdPx, savePos, lo
   let dragging = false;
   let pointerId = null;
 
+  header.classList.add("vb-floating-drag-handle");
+
   let startX = 0,
     startY = 0;
   let lastX = 0,
@@ -65,6 +67,7 @@ export function makePanelDraggable({ panel, header, dragThresholdPx, savePos, lo
 
     dragging = true;
     panel.classList.add("is-dragging");
+    document.documentElement.classList.add("vb-floating-drag-active");
   }
 
   function applyMove() {
@@ -103,6 +106,7 @@ export function makePanelDraggable({ panel, header, dragThresholdPx, savePos, lo
     if (dragging) {
       dragging = false;
       panel.classList.remove("is-dragging");
+      document.documentElement.classList.remove("vb-floating-drag-active");
       clampElementToViewport(panel);
 
       savePos({
@@ -138,8 +142,8 @@ export function makePanelDraggable({ panel, header, dragThresholdPx, savePos, lo
       return;
     }
 
-    // Touch/Pen: wait until movement threshold, but prevent scroll jitter
-    e.preventDefault();
+    // Touch/Pen: the handle's touch-action keeps the page from stealing
+    // this pointer before the drag threshold is crossed.
   });
 
   header.addEventListener("pointermove", (e) => {
@@ -194,6 +198,8 @@ export function makeLauncherDraggable({ launcherEl, dragThresholdPx, savePos, lo
   let moved = false;
   let rafId = 0;
 
+  launcherEl.classList.add("vb-floating-drag-handle");
+
   function startDragNow() {
     if (dragging) return;
 
@@ -208,6 +214,7 @@ export function makeLauncherDraggable({ launcherEl, dragThresholdPx, savePos, lo
 
     dragging = true;
     launcherEl.classList.add("is-dragging");
+    document.documentElement.classList.add("vb-floating-drag-active");
   }
 
   function applyMove() {
@@ -248,6 +255,7 @@ export function makeLauncherDraggable({ launcherEl, dragThresholdPx, savePos, lo
     if (dragging) {
       dragging = false;
       launcherEl.classList.remove("is-dragging");
+      document.documentElement.classList.remove("vb-floating-drag-active");
 
       clampElementToViewport(launcherEl);
 
@@ -279,8 +287,7 @@ export function makeLauncherDraggable({ launcherEl, dragThresholdPx, savePos, lo
       return;
     }
 
-    // Touch/Pen: only begin after threshold to keep tap-to-open reliable
-    e.preventDefault();
+    // Touch/Pen: only begin after threshold to keep tap-to-open reliable.
   });
 
   launcherEl.addEventListener("pointermove", (e) => {

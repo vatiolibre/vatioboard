@@ -42,6 +42,7 @@ const runtimeMock = {
   toggleShuffle: vi.fn(),
   cycleRepeat: vi.fn(),
   playCatalogTrack: vi.fn().mockResolvedValue(undefined),
+  playLibraryTrackNow: vi.fn().mockResolvedValue(undefined),
   setQueue: vi.fn(),
   restoreSession: vi.fn().mockResolvedValue(undefined),
   primeAudio: vi.fn().mockResolvedValue(true),
@@ -463,7 +464,11 @@ describe("createPlayerWidget", () => {
     const panel = document.querySelector(".player-panel");
     expect(panel.querySelector(".player-header")).toBeTruthy();
     expect(panel.querySelector(".player-close")).toBeTruthy();
-    expect(panel.querySelector(".player-title")).toBeTruthy();
+    expect(panel.querySelector(".player-title")).toBeFalsy();
+    expect(panel.querySelector(".player-content-toggle-btn")).toBeTruthy();
+    expect(panel.querySelector(".player-queue-toggle-btn")).toBeFalsy();
+    expect(panel.querySelector(".player-library-toggle-btn")).toBeFalsy();
+    expect(panel.querySelector(".player-playlist-toggle-btn")).toBeFalsy();
 
     widget.destroy();
   });
@@ -814,8 +819,8 @@ describe("createPlayerWidget", () => {
     widget.open();
 
     const panel = document.querySelector(".player-panel");
-    const queueSheet = panel.querySelector(".player-queue-sheet");
-    const queueBtn = panel.querySelector(".player-queue-toggle-btn");
+    const queueSheet = panel.querySelector(".player-content-pane-queue");
+    const queueBtn = panel.querySelector(".player-content-toggle-btn");
 
     expect(queueSheet).toBeTruthy();
     expect(queueSheet.classList.contains("is-open")).toBe(false);
@@ -825,7 +830,7 @@ describe("createPlayerWidget", () => {
     expect(queueSheet.classList.contains("is-open")).toBe(true);
 
     // Click close to close
-    const closeBtn = queueSheet.querySelector(".player-queue-sheet-close");
+    const closeBtn = panel.querySelector(".player-content-sheet-close");
     closeBtn.click();
     expect(queueSheet.classList.contains("is-open")).toBe(false);
 
@@ -874,14 +879,14 @@ describe("createPlayerWidget", () => {
     const panel = document.querySelector(".player-panel");
 
     // Open queue first
-    panel.querySelector(".player-queue-toggle-btn").click();
+    panel.querySelector(".player-content-toggle-btn").click();
 
     widget.setTracks(tracks);
 
     // Re-open queue to force render
-    const closeBtn = panel.querySelector(".player-queue-sheet-close");
+    const closeBtn = panel.querySelector(".player-content-sheet-close");
     closeBtn.click();
-    panel.querySelector(".player-queue-toggle-btn").click();
+    panel.querySelector(".player-content-toggle-btn").click();
 
     const items = panel.querySelectorAll(".player-queue-item");
     expect(items.length).toBe(2);
@@ -943,8 +948,8 @@ describe("createPlayerWidget", () => {
     widget.open();
 
     const panel = document.querySelector(".player-panel");
-    const playlistSheet = panel.querySelector(".player-playlist-sheet");
-    const playlistBtn = panel.querySelector(".player-playlist-toggle-btn");
+    const playlistSheet = panel.querySelector(".player-content-pane-playlists");
+    const playlistBtn = panel.querySelector(".player-content-tab-playlists");
 
     expect(playlistSheet).toBeTruthy();
     expect(playlistSheet.classList.contains("is-open")).toBe(false);
@@ -954,7 +959,7 @@ describe("createPlayerWidget", () => {
     expect(playlistSheet.classList.contains("is-open")).toBe(true);
 
     // Click close to close
-    const closeBtn = playlistSheet.querySelector(".player-playlist-sheet-close");
+    const closeBtn = panel.querySelector(".player-content-sheet-close");
     closeBtn.click();
     expect(playlistSheet.classList.contains("is-open")).toBe(false);
 
@@ -966,13 +971,13 @@ describe("createPlayerWidget", () => {
     widget.open();
 
     const panel = document.querySelector(".player-panel");
-    const queueSheet = panel.querySelector(".player-queue-sheet");
-    const playlistSheet = panel.querySelector(".player-playlist-sheet");
-    const queueBtn = panel.querySelector(".player-queue-toggle-btn");
-    const playlistBtn = panel.querySelector(".player-playlist-toggle-btn");
+    const queueSheet = panel.querySelector(".player-content-pane-queue");
+    const playlistSheet = panel.querySelector(".player-content-pane-playlists");
+    const queueTabBtn = panel.querySelector(".player-content-tab-queue");
+    const playlistBtn = panel.querySelector(".player-content-tab-playlists");
 
     // Open queue first
-    queueBtn.click();
+    queueTabBtn.click();
     expect(queueSheet.classList.contains("is-open")).toBe(true);
     expect(playlistSheet.classList.contains("is-open")).toBe(false);
 
@@ -982,7 +987,7 @@ describe("createPlayerWidget", () => {
     expect(queueSheet.classList.contains("is-open")).toBe(false);
 
     // Open queue again → playlist should close
-    queueBtn.click();
+    queueTabBtn.click();
     expect(queueSheet.classList.contains("is-open")).toBe(true);
     expect(playlistSheet.classList.contains("is-open")).toBe(false);
 
@@ -1000,7 +1005,7 @@ describe("createPlayerWidget", () => {
 
     const panel = document.querySelector(".player-panel");
     // Open playlist sheet
-    panel.querySelector(".player-playlist-toggle-btn").click();
+    panel.querySelector(".player-content-tab-playlists").click();
 
     const items = panel.querySelectorAll(".player-playlist-item");
     expect(items.length).toBe(2);
@@ -1038,7 +1043,7 @@ describe("createPlayerWidget", () => {
     ]);
 
     const panel = document.querySelector(".player-panel");
-    panel.querySelector(".player-playlist-toggle-btn").click();
+    panel.querySelector(".player-content-tab-playlists").click();
 
     // Click the playlist item to open detail view
     const playlistItem = panel.querySelector(".player-playlist-item");
@@ -1094,7 +1099,7 @@ describe("createPlayerWidget", () => {
     ]);
 
     const panel = document.querySelector(".player-panel");
-    panel.querySelector(".player-playlist-toggle-btn").click();
+    panel.querySelector(".player-content-tab-playlists").click();
 
     const playlistItem = panel.querySelector(".player-playlist-item");
     expect(playlistItem).toBeTruthy();
@@ -1148,7 +1153,7 @@ describe("createPlayerWidget", () => {
     ]);
 
     const panel = document.querySelector(".player-panel");
-    panel.querySelector(".player-playlist-toggle-btn").click();
+    panel.querySelector(".player-content-tab-playlists").click();
 
     const playlistItem = panel.querySelector(".player-playlist-item");
     expect(playlistItem).toBeTruthy();
@@ -1202,7 +1207,7 @@ describe("createPlayerWidget", () => {
     }]);
 
     const panel = document.querySelector(".player-panel");
-    panel.querySelector(".player-playlist-toggle-btn").click();
+    panel.querySelector(".player-content-tab-playlists").click();
 
     // Click the demo playlist
     const playlistItem = panel.querySelector(".player-playlist-item");
@@ -1248,7 +1253,7 @@ describe("createPlayerWidget", () => {
     }]);
 
     const panel = document.querySelector(".player-panel");
-    panel.querySelector(".player-playlist-toggle-btn").click();
+    panel.querySelector(".player-content-tab-playlists").click();
 
     const playlistItem = panel.querySelector(".player-playlist-item");
     expect(playlistItem).toBeTruthy();
@@ -1289,7 +1294,7 @@ describe("createPlayerWidget", () => {
     widget.setPlaylists([{ name: "pl_pin", title: "Pin Test", item_count: 3 }]);
 
     const panel = document.querySelector(".player-panel");
-    panel.querySelector(".player-playlist-toggle-btn").click();
+    panel.querySelector(".player-content-tab-playlists").click();
 
     const playlistItem = panel.querySelector(".player-playlist-item");
     playlistItem.click();
@@ -1341,7 +1346,7 @@ describe("createPlayerWidget", () => {
 
     const panel = document.querySelector(".player-panel");
     // Open the playlist sheet
-    panel.querySelector(".player-playlist-toggle-btn").click();
+    panel.querySelector(".player-content-tab-playlists").click();
     // Click the playlist item in the list to open its detail
     const playlistItem = panel.querySelector(".player-playlist-item");
     playlistItem.click();
@@ -1463,7 +1468,7 @@ describe("createPlayerWidget", () => {
     ]);
 
     const panel = document.querySelector(".player-panel");
-    panel.querySelector(".player-playlist-toggle-btn").click();
+    panel.querySelector(".player-content-tab-playlists").click();
     await flushMicrotasks(10);
 
     const items = panel.querySelectorAll(".player-playlist-item");
@@ -1505,7 +1510,7 @@ describe("createPlayerWidget", () => {
     ]);
 
     const panel = document.querySelector(".player-panel");
-    panel.querySelector(".player-playlist-toggle-btn").click();
+    panel.querySelector(".player-content-tab-playlists").click();
     await flushMicrotasks(10);
 
     // Open detail
@@ -1531,7 +1536,7 @@ describe("createPlayerWidget", () => {
     ]);
 
     const panel = document.querySelector(".player-panel");
-    panel.querySelector(".player-playlist-toggle-btn").click();
+    panel.querySelector(".player-content-tab-playlists").click();
     await flushMicrotasks(10);
 
     const countSpan = panel.querySelector(".player-playlist-item-count");
@@ -1571,7 +1576,7 @@ describe("createPlayerWidget", () => {
     ]);
 
     const panel = document.querySelector(".player-panel");
-    panel.querySelector(".player-playlist-toggle-btn").click();
+    panel.querySelector(".player-content-tab-playlists").click();
     await flushMicrotasks(10);
 
     panel.querySelector(".player-playlist-item").click();
@@ -1614,7 +1619,7 @@ describe("createPlayerWidget", () => {
     ]);
 
     const panel = document.querySelector(".player-panel");
-    panel.querySelector(".player-playlist-toggle-btn").click();
+    panel.querySelector(".player-content-tab-playlists").click();
     await flushMicrotasks(30);
 
     // Both playlists call resolveArtworkUrl with name = "SHARED-COVER",

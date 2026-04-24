@@ -99,6 +99,7 @@ let preparedNext = null;
 let prepareNextPromise = null;
 let prepareNextGeneration = 0;
 let queueEntrySeed = 0;
+let libraryContinuation = null;
 
 /**
  * Audio priming state — follows the speed/audio.js primeAudioElement pattern.
@@ -261,6 +262,87 @@ function ensureQueueEntry(track, entryId = "") {
 function prepareQueueEntries(tracks, entryIds = []) {
   if (!Array.isArray(tracks)) return [];
   return tracks.map((track, index) => ensureQueueEntry(track, entryIds[index])).filter(Boolean);
+}
+
+function cloneContinuationTracks(tracks) {
+  if (!Array.isArray(tracks)) return [];
+  return tracks
+    .filter((track) => track && typeof track === "object" && track.name)
+    .map((track) => ({ ...track }));
+}
+
+function clearLibraryContinuation() {
+  libraryContinuation = null;
+}
+
+function setLibraryContinuation(tracks, currentTrackName = "") {
+  const preparedTracks = cloneContinuationTracks(tracks);
+  if (preparedTracks.length === 0) {
+    clearLibraryContinuation();
+    return false;
+  }
+
+  const currentName = String(currentTrackName || "");
+  if (currentName && !preparedTracks.some((track) => track.name === currentName)) {
+    clearLibraryContinuation();
+    return false;
+  }
+
+  libraryContinuation = {
+    tracks: preparedTracks,
+    lastTrackName: currentName,
+    shuffleCycle: currentName ? [currentName] : [],
+  };
+  return true;
+}
+
+function rememberLibraryContinuationTrack(trackName) {
+  if (!libraryContinuation?.tracks?.length || !trackName) return;
+  if (!libraryContinuation.tracks.some((track) => track.name === trackName)) return;
+
+  libraryContinuation.lastTrackName = trackName;
+  if (!libraryContinuation.shuffleCycle.includes(trackName)) {
+    libraryContinuation.shuffleCycle.push(trackName);
+  }
+}
+
+function getNextLibraryContinuationTrack() {
+  const context = libraryContinuation;
+  if (!context?.tracks?.length) return null;
+
+  if (state.shuffle) {
+    let available = context.tracks.filter((track) => !context.shuffleCycle.includes(track.name));
+    if (available.length === 0) {
+      if (state.repeat !== "all") return null;
+
+      context.shuffleCycle = context.lastTrackName ? [context.lastTrackName] : [];
+      available = context.tracks.filter((track) => !context.shuffleCycle.includes(track.name));
+
+      // Single-track libraries should still be able to loop when repeat-all is active.
+      if (available.length === 0) {
+        available = context.tracks.slice();
+      }
+    }
+
+    const nextTrack = available[Math.floor(Math.random() * available.length)];
+    if (!nextTrack) return null;
+    rememberLibraryContinuationTrack(nextTrack.name);
+    return { ...nextTrack };
+  }
+
+  const currentIndex = context.lastTrackName
+    ? context.tracks.findIndex((track) => track.name === context.lastTrackName)
+    : -1;
+  let nextIndex = currentIndex + 1;
+  if (nextIndex >= context.tracks.length) {
+    if (state.repeat !== "all") return null;
+    nextIndex = 0;
+  }
+
+  const nextTrack = context.tracks[nextIndex];
+  if (!nextTrack) return null;
+  rememberLibraryContinuationTrack(nextTrack.name);
+  return { ...nextTrack };
 }
 
 function findQueueIndex(ref) {
@@ -618,6 +700,21 @@ function reconcilePreparedNextAfterRemoval(removedIndex, removedQueueId = "") {
   }
 }
 
+async function continueLibraryPlayback({ autoplay = true, pausedState = !autoplay } = {}) {
+  const nextTrack = getNextLibraryContinuationTrack();
+  if (!nextTrack) {
+    clearLibraryContinuation();
+    return false;
+  }
+
+  clearPreparedNext();
+  state.queue = prepareQueueEntries([nextTrack]);
+  state.paused = pausedState;
+  flushSessionPersistence({ currentTime: 0 });
+  await loadTrack(0, { autoplay });
+  return true;
+}
+
 async function advanceToNextTrack({ autoplay = true, pausedState = !autoplay, consumeCurrent = false } = {}) {
   if (state.queue.length === 0) return;
 
@@ -630,6 +727,9 @@ async function advanceToNextTrack({ autoplay = true, pausedState = !autoplay, co
     pushPlayedHistory(removed);
     flushSessionPersistence({ currentTime: 0 });
     if (state.queue.length === 0) {
+      if (await continueLibraryPlayback({ autoplay, pausedState })) {
+        return;
+      }
       stopPlayback();
       return;
     }
@@ -662,6 +762,9 @@ async function advanceToNextTrack({ autoplay = true, pausedState = !autoplay, co
     pushPlayedHistory(removed);
 
     if (state.queue.length === 0) {
+      if (await continueLibraryPlayback({ autoplay, pausedState })) {
+        return;
+      }
       stopPlayback();
       return;
     }
@@ -819,6 +922,7 @@ async function loadTrack(index, { startTime = 0, autoplay = true, suppressAutopl
  * @param {{ startIndex?: number, autoplay?: boolean }} [opts]
  */
 export function setQueue(tracks, { startIndex = 0, autoplay = true } = {}) {
+  clearLibraryContinuation();
   clearPreparedNext();
   state.queue = prepareQueueEntries(tracks);
   state.playedHistory = [];
@@ -872,7 +976,9 @@ export function removeFromQueue(trackRef) {
   if (wasPlaying) {
     // If we removed the current track, load the next one at same index
     if (state.queue.length === 0) {
-      stopPlayback();
+      continueLibraryPlayback({ autoplay: !state.paused, pausedState: state.paused }).then((continued) => {
+        if (!continued) stopPlayback();
+      });
       return;
     }
     const nextIdx = Math.min(state.currentIndex, state.queue.length - 1);
@@ -923,6 +1029,7 @@ export function pause() {
  * Stop playback and reset position.
  */
 export function stopPlayback() {
+  clearLibraryContinuation();
   state.paused = true;
   state.currentIndex = -1;
   state.currentTrack = null;
@@ -1069,6 +1176,11 @@ export function cycleRepeat() {
  */
 export function toggleShuffle() {
   state.shuffle = !state.shuffle;
+  if (libraryContinuation?.tracks?.length && state.shuffle) {
+    libraryContinuation.shuffleCycle = libraryContinuation.lastTrackName
+      ? [libraryContinuation.lastTrackName]
+      : [];
+  }
   persistSession();
   notify();
 }
@@ -1118,6 +1230,45 @@ export async function playCatalogTrack(name, catalogTracks) {
       return;
     }
   }
+}
+
+/**
+ * Start a specific library track immediately without copying the whole
+ * library into the queue. When there is no upcoming queue, playback can
+ * continue through the library lazily as tracks finish.
+ *
+ * @param {object} track - Track metadata to start now
+ * @param {object[]} libraryTracks - Full library ordering for optional continuation
+ */
+export async function playLibraryTrackNow(track, libraryTracks) {
+  const selectedTrack = ensureQueueEntry(track);
+  if (!selectedTrack) return;
+
+  clearPreparedNext();
+
+  const remainingQueue = state.currentIndex >= 0
+    ? state.queue.slice(state.currentIndex + 1)
+    : state.queue.slice();
+  const preservedQueue = remainingQueue.filter((queuedTrack) => queuedTrack?.name !== selectedTrack.name);
+  const hadUpcomingQueue = preservedQueue.length > 0;
+
+  if (state.currentTrack?.name && state.currentTrack.name !== selectedTrack.name) {
+    pushPlayedHistory(state.currentTrack);
+  }
+
+  state.queue = prepareQueueEntries([selectedTrack, ...preservedQueue], [
+    selectedTrack._queueId,
+  ]);
+  state.paused = false;
+
+  if (!hadUpcomingQueue) {
+    setLibraryContinuation(libraryTracks, selectedTrack.name);
+  } else {
+    clearLibraryContinuation();
+  }
+
+  flushSessionPersistence({ currentTime: 0 });
+  await loadTrack(0, { autoplay: true });
 }
 
 /**
@@ -1172,6 +1323,7 @@ export function subscribe(listener) {
  */
 export async function restoreSession(availableTracks, { autoplay = false } = {}) {
   const session = loadPlayerSession();
+  clearLibraryContinuation();
 
   state.volume = session.volume;
   state.muted = session.muted;

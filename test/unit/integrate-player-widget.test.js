@@ -42,6 +42,7 @@ const runtimeMock = {
   toggleShuffle: vi.fn(),
   cycleRepeat: vi.fn(),
   playCatalogTrack: vi.fn().mockResolvedValue(undefined),
+  playLibraryTrackNow: vi.fn().mockResolvedValue(undefined),
   setQueue: vi.fn(),
   restoreSession: vi.fn().mockResolvedValue(undefined),
   primeAudio: vi.fn().mockResolvedValue(true),

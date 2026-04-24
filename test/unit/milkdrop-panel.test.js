@@ -90,6 +90,8 @@ describe("createMilkdropPanel", () => {
   let originalResizeObserver;
   let originalRequestAnimationFrame;
   let originalCancelAnimationFrame;
+  let originalRequestFullscreen;
+  let originalExitFullscreen;
 
   beforeEach(() => {
     mount = document.createElement("div");
@@ -99,6 +101,8 @@ describe("createMilkdropPanel", () => {
     originalResizeObserver = window.ResizeObserver;
     originalRequestAnimationFrame = window.requestAnimationFrame;
     originalCancelAnimationFrame = window.cancelAnimationFrame;
+    originalRequestFullscreen = HTMLElement.prototype.requestFullscreen;
+    originalExitFullscreen = document.exitFullscreen;
 
     // Mock WebGL context
     HTMLCanvasElement.prototype.getContext = vi.fn(function (type) {
@@ -125,6 +129,8 @@ describe("createMilkdropPanel", () => {
     window.ResizeObserver = originalResizeObserver;
     window.requestAnimationFrame = originalRequestAnimationFrame;
     window.cancelAnimationFrame = originalCancelAnimationFrame;
+    HTMLElement.prototype.requestFullscreen = originalRequestFullscreen;
+    document.exitFullscreen = originalExitFullscreen;
     localStorage.clear();
   });
 
@@ -170,9 +176,135 @@ describe("createMilkdropPanel", () => {
     expect(el).not.toBeNull();
     expect(el.querySelector(".milkdrop-header")).not.toBeNull();
     expect(el.querySelector(".milkdrop-stage")).not.toBeNull();
+    expect(el.querySelector(".milkdrop-resize-handle")).not.toBeNull();
     expect(el.querySelector(".milkdrop-preset-label")).not.toBeNull();
     expect(el.querySelector(".milkdrop-close-btn")).not.toBeNull();
     expect(el.querySelector(".milkdrop-fullscreen-btn")).not.toBeNull();
+    panel.destroy();
+  });
+
+  it("uses fallback fullscreen when native fullscreen is unavailable", async () => {
+    HTMLElement.prototype.requestFullscreen = undefined;
+    document.exitFullscreen = vi.fn().mockResolvedValue(undefined);
+
+    const panel = createMilkdropPanel({ mount });
+    await panel.open();
+    const el = mount.querySelector(".milkdrop-panel");
+    const fullscreenBtn = el.querySelector(".milkdrop-fullscreen-btn");
+
+    fullscreenBtn.click();
+    await Promise.resolve();
+
+    expect(el.classList.contains("is-fullscreen")).toBe(true);
+    expect(el.classList.contains("is-window-fullscreen")).toBe(true);
+    expect(fullscreenBtn.getAttribute("aria-label")).toBe("Exit fullscreen");
+
+    fullscreenBtn.click();
+    await Promise.resolve();
+
+    expect(el.classList.contains("is-fullscreen")).toBe(false);
+    expect(el.classList.contains("is-window-fullscreen")).toBe(false);
+    expect(fullscreenBtn.getAttribute("aria-label")).toBe("Fullscreen");
+
+    panel.destroy();
+  });
+
+  it("falls back when native fullscreen rejects", async () => {
+    HTMLElement.prototype.requestFullscreen = vi.fn().mockRejectedValue(new Error("blocked"));
+    document.exitFullscreen = vi.fn().mockResolvedValue(undefined);
+
+    const panel = createMilkdropPanel({ mount });
+    await panel.open();
+    const el = mount.querySelector(".milkdrop-panel");
+
+    el.querySelector(".milkdrop-fullscreen-btn").click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(HTMLElement.prototype.requestFullscreen).toHaveBeenCalled();
+    expect(el.classList.contains("is-window-fullscreen")).toBe(true);
+
+    panel.destroy();
+  });
+
+  it("exits fallback fullscreen on close and destroy", async () => {
+    HTMLElement.prototype.requestFullscreen = undefined;
+
+    const panel = createMilkdropPanel({ mount });
+    await panel.open();
+    const el = mount.querySelector(".milkdrop-panel");
+    el.querySelector(".milkdrop-fullscreen-btn").click();
+    await Promise.resolve();
+
+    expect(el.classList.contains("is-window-fullscreen")).toBe(true);
+    panel.close();
+    expect(el.classList.contains("is-window-fullscreen")).toBe(false);
+
+    await panel.open();
+    el.querySelector(".milkdrop-fullscreen-btn").click();
+    await Promise.resolve();
+    expect(el.classList.contains("is-window-fullscreen")).toBe(true);
+    panel.destroy();
+    expect(mount.querySelector(".milkdrop-panel")).toBeNull();
+  });
+
+  it("resizes via the touch handle and saves size", async () => {
+    window.requestAnimationFrame = vi.fn((cb) => {
+      cb();
+      return 1;
+    });
+    window.cancelAnimationFrame = vi.fn();
+
+    const panel = createMilkdropPanel({ mount });
+    await panel.open();
+    const el = mount.querySelector(".milkdrop-panel");
+    const handle = el.querySelector(".milkdrop-resize-handle");
+    el.style.width = "480px";
+    el.style.height = "380px";
+    el.getBoundingClientRect = () => {
+      const width = Number.parseInt(el.style.width, 10) || 480;
+      const height = Number.parseInt(el.style.height, 10) || 380;
+      return {
+        left: 16,
+        top: 16,
+        right: 16 + width,
+        bottom: 16 + height,
+        width,
+        height,
+        x: 16,
+        y: 16,
+        toJSON() {},
+      };
+    };
+
+    handle.dispatchEvent(new PointerEvent("pointerdown", {
+      clientX: 480,
+      clientY: 380,
+      pointerId: 9,
+      pointerType: "touch",
+      bubbles: true,
+    }));
+    handle.dispatchEvent(new PointerEvent("pointermove", {
+      clientX: 540,
+      clientY: 430,
+      pointerId: 9,
+      pointerType: "touch",
+      bubbles: true,
+    }));
+    handle.dispatchEvent(new PointerEvent("pointerup", {
+      clientX: 540,
+      clientY: 430,
+      pointerId: 9,
+      pointerType: "touch",
+      bubbles: true,
+    }));
+
+    const saved = JSON.parse(localStorage.getItem("milkdrop_panel_size_v1"));
+    expect(Number.parseInt(el.style.width, 10)).toBeGreaterThan(480);
+    expect(Number.parseInt(el.style.height, 10)).toBeGreaterThan(380);
+    expect(saved.w).toBe(Number.parseInt(el.style.width, 10));
+    expect(saved.h).toBe(Number.parseInt(el.style.height, 10));
+
     panel.destroy();
   });
 
@@ -222,6 +354,33 @@ describe("createMilkdropPanel", () => {
     const panel = createMilkdropPanel({ mount });
     // Position is saved by makePanelDraggable — just verify key exists after setup
     expect(() => localStorage.getItem("milkdrop_panel_pos_v1")).not.toThrow();
+    panel.destroy();
+  });
+
+  it("places first-open panel away from a visible player panel", () => {
+    const playerPanel = document.createElement("section");
+    playerPanel.className = "player-panel";
+    playerPanel.hidden = false;
+    playerPanel.getBoundingClientRect = () => ({
+      left: 16,
+      top: 80,
+      right: 356,
+      bottom: 420,
+      width: 340,
+      height: 340,
+      x: 16,
+      y: 80,
+      toJSON() {},
+    });
+    mount.appendChild(playerPanel);
+
+    const panel = createMilkdropPanel({ mount });
+    const el = mount.querySelector(".milkdrop-panel");
+
+    expect(Number.parseInt(el.style.left, 10)).toBeGreaterThan(400);
+    expect(el.style.right).toBe("auto");
+    expect(el.style.bottom).toBe("auto");
+
     panel.destroy();
   });
 });

@@ -4,7 +4,7 @@
 .vb-confirm-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 9999;
+  z-index: var(--vb-z-modal, 2000);
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -213,6 +213,12 @@
   touch-action: manipulation;
 }
 
+.vb-confirm-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+}
+
 .vb-confirm-btn:active {
   transform: translateY(1px);
   opacity: 0.95;
@@ -223,7 +229,7 @@
   color: var(--btn-fg, #111827);
 }
 
-.vb-confirm-btn--cancel:hover {
+.vb-confirm-btn--cancel:hover:not(:disabled) {
   background: var(--btn-hover-bg, rgba(0, 0, 0, 0.10));
 }
 
@@ -233,7 +239,7 @@
   border-color: transparent;
 }
 
-.vb-confirm-btn--confirm:hover {
+.vb-confirm-btn--confirm:hover:not(:disabled) {
   opacity: 0.92;
 }
 
@@ -243,7 +249,7 @@
   border-color: transparent;
 }
 
-.vb-confirm-btn--destructive:hover {
+.vb-confirm-btn--destructive:hover:not(:disabled) {
   opacity: 0.90;
 }
 

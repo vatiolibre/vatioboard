@@ -54,7 +54,7 @@ async function settlePlayerTasks(iterations = 24) {
 /** Open the widget panel and queue sheet so track items appear in the DOM. */
 function openWidgetQueue(playerPage) {
   playerPage.widget.open();
-  document.querySelector(".player-queue-toggle-btn")?.click();
+  document.querySelector(".player-content-toggle-btn")?.click();
 }
 
 function jsonResponse(body, status = 200) {
@@ -911,14 +911,14 @@ describe("player cold boot", () => {
 
     // Widget panel exists and has a queue sheet
     playerPage.widget.open();
-    const queueSheet = document.querySelector(".player-queue-sheet");
+    const queueSheet = document.querySelector(".player-content-pane-queue");
     expect(queueSheet).toBeTruthy();
 
     // Queue is initially collapsed
     expect(queueSheet.classList.contains("is-open")).toBe(false);
 
     // Click the toggle to open
-    document.querySelector(".player-queue-toggle-btn")?.click();
+    document.querySelector(".player-content-toggle-btn")?.click();
     expect(queueSheet.classList.contains("is-open")).toBe(true);
 
     // Old queue drawer should not exist

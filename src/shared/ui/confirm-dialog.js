@@ -244,6 +244,8 @@ export function showPromptDialog({
   value = "",
   confirmLabel = "Save",
   cancelLabel = "Cancel",
+  inputLabel = "",
+  maxLength = null,
 } = {}) {
   if (activeDialog) {
     activeDialog.dismiss(false);
@@ -285,7 +287,11 @@ export function showPromptDialog({
       value,
       autocomplete: "off",
       spellcheck: "false",
+      "aria-label": inputLabel || placeholder || title || confirmLabel,
     });
+    if (Number.isFinite(maxLength) && maxLength > 0) {
+      input.maxLength = maxLength;
+    }
     card.appendChild(input);
 
     const actions = createEl("div", { className: "vb-confirm-actions" });
@@ -342,11 +348,18 @@ export function showPromptDialog({
       const trimmed = input.value.trim();
       if (trimmed) {
         dismiss(trimmed);
+      } else {
+        input.focus();
       }
+    }
+
+    function syncSubmitState() {
+      confirmBtn.disabled = input.value.trim().length === 0;
     }
 
     confirmBtn.addEventListener("click", submit);
     cancelBtn.addEventListener("click", () => dismiss(null));
+    input.addEventListener("input", syncSubmitState);
 
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
@@ -371,6 +384,7 @@ export function showPromptDialog({
 
     document.body.appendChild(backdrop);
     activeDialog = { backdrop, dismiss };
+    syncSubmitState();
 
     requestAnimationFrame(() => {
       backdrop.classList.add("vb-confirm-entering");

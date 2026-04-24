@@ -33,6 +33,7 @@ vi.mock("../../src/shared/chunked-blob-store.js", () => ({
 const DEMO_TRACK = {
   name: "demo:titan",
   title: "Titan",
+  artwork_ref: "/audio/demo/artwork/cinematic.svg",
   media_kind: "audio",
   original_filename: "sb_titan.mp3",
   src: "/audio/demo/sb_titan.mp3",
@@ -83,6 +84,7 @@ describe("demo-cache", () => {
     expect(value.tracks).toEqual([
       expect.objectContaining({
         name: "demo:titan",
+        artwork_ref: "/audio/demo/artwork/cinematic.svg",
         src: "/audio/demo/sb_titan.mp3",
         _demo: true,
       }),

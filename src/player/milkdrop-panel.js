@@ -106,6 +106,33 @@ function saveVisibility(isOpen) {
   } catch { /* ignore */ }
 }
 
+function clamp(n, min, max) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function pxToNumber(value, fallback) {
+  const parsed = Number.parseFloat(String(value || ""));
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function getPanelSize(root) {
+  const rect = root.getBoundingClientRect();
+  return {
+    width: Math.round(rect.width || pxToNumber(root.style.width, 480)),
+    height: Math.round(rect.height || pxToNumber(root.style.height, 380)),
+  };
+}
+
+function rectsOverlap(a, b, margin = 12) {
+  if (!a || !b) return false;
+  return !(
+    a.left > b.right + margin
+    || a.right < b.left - margin
+    || a.top > b.bottom + margin
+    || a.bottom < b.top - margin
+  );
+}
+
 function isSafeSource() {
   const el = runtime.getAudioElement();
   if (!el?.src) return true;
@@ -179,7 +206,11 @@ export function createMilkdropPanel(options = {}) {
   const stage = document.createElement("div");
   stage.className = "milkdrop-stage";
 
-  root.append(header, stage);
+  const resizeHandle = document.createElement("div");
+  resizeHandle.className = "milkdrop-resize-handle";
+  resizeHandle.setAttribute("aria-hidden", "true");
+
+  root.append(header, stage, resizeHandle);
 
   // Restore saved size
   const savedSize = loadSize();
@@ -200,6 +231,10 @@ export function createMilkdropPanel(options = {}) {
 
   mount.appendChild(root);
 
+  if (!(savedPos?.panel?.left && savedPos?.panel?.top)) {
+    placeInitialPanel();
+  }
+
   // ── Drag ────────────────────────────────────────────────────
   makePanelDraggable({
     panel: root,
@@ -208,6 +243,68 @@ export function createMilkdropPanel(options = {}) {
     savePos,
     loadPos,
   });
+
+  function getVisiblePlayerRect() {
+    const scope = mount instanceof Element ? mount : document;
+    const player = scope.querySelector?.(".player-panel:not([hidden])")
+      || document.querySelector(".player-panel:not([hidden])");
+    if (!player || player === root) return null;
+    const rect = player.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    return rect;
+  }
+
+  function placeInitialPanel() {
+    const margin = 16;
+    const { width, height } = getPanelSize(root);
+    const vw = window.innerWidth || 1024;
+    const vh = window.innerHeight || 768;
+    const fallbackLeft = clamp(vw - width - 24, margin, Math.max(margin, vw - width - margin));
+    const fallbackTop = clamp(vh - height - 120, margin, Math.max(margin, vh - height - margin));
+    const playerRect = getVisiblePlayerRect();
+
+    let left = fallbackLeft;
+    let top = fallbackTop;
+
+    if (playerRect) {
+      const leftCandidate = {
+        left: margin,
+        top: clamp(playerRect.top, margin, Math.max(margin, vh - height - margin)),
+      };
+      const rightCandidate = {
+        left: clamp(vw - width - margin, margin, Math.max(margin, vw - width - margin)),
+        top: clamp(playerRect.top, margin, Math.max(margin, vh - height - margin)),
+      };
+      const topCandidate = {
+        left: clamp(playerRect.left, margin, Math.max(margin, vw - width - margin)),
+        top: margin,
+      };
+      const bottomCandidate = {
+        left: clamp(playerRect.left, margin, Math.max(margin, vw - width - margin)),
+        top: clamp(vh - height - margin, margin, Math.max(margin, vh - height - margin)),
+      };
+      const preferRight = playerRect.left + (playerRect.width / 2) < vw / 2;
+      const candidates = preferRight
+        ? [rightCandidate, leftCandidate, topCandidate, bottomCandidate]
+        : [leftCandidate, rightCandidate, topCandidate, bottomCandidate];
+      const fit = candidates.find((candidate) => !rectsOverlap({
+        left: candidate.left,
+        top: candidate.top,
+        right: candidate.left + width,
+        bottom: candidate.top + height,
+      }, playerRect));
+      if (fit) {
+        left = fit.left;
+        top = fit.top;
+      }
+    }
+
+    root.style.position = "fixed";
+    root.style.left = `${left}px`;
+    root.style.top = `${top}px`;
+    root.style.right = "auto";
+    root.style.bottom = "auto";
+  }
 
   // ── Resize observer for canvas ─────────────────────────────
   let resizeObserver = null;
@@ -426,10 +523,14 @@ export function createMilkdropPanel(options = {}) {
 
   function close() {
     const wasOpen = !root.hidden;
+    endHandleResize();
 
     // Exit fullscreen first — hiding the fullscreen element without
     // exiting leaves the browser's fullscreen overlay active, which
     // blocks all UI interaction on the page underneath.
+    if (isFallbackFullscreen) {
+      exitFallbackFullscreen();
+    }
     if (document.fullscreenElement === root) {
       document.exitFullscreen().catch(() => {});
       // onFullscreenChange will restore size/class; we still hide immediately
@@ -460,27 +561,111 @@ export function createMilkdropPanel(options = {}) {
   }
 
   // ── Fullscreen ──────────────────────────────────────────────
-  let isFullscreen = false;
+  let isNativeFullscreen = false;
+  let isFallbackFullscreen = false;
   let preFullscreenWidth = null;
   let preFullscreenHeight = null;
+  let preFullscreenLeft = null;
+  let preFullscreenTop = null;
+
+  function isFullscreenActive() {
+    return isNativeFullscreen || isFallbackFullscreen;
+  }
 
   function updateFullscreenBtn() {
-    fullscreenBtn.querySelector(".btn-icon").innerHTML = isFullscreen ? IconFullscreenExit : IconFullscreen;
-    fullscreenBtn.setAttribute("aria-label", isFullscreen ? t("mediaPlayerExitFullscreen") : t("mediaPlayerFullscreen"));
+    const active = isFullscreenActive();
+    fullscreenBtn.querySelector(".btn-icon").innerHTML = active ? IconFullscreenExit : IconFullscreen;
+    fullscreenBtn.setAttribute("aria-label", active ? t("mediaPlayerExitFullscreen") : t("mediaPlayerFullscreen"));
+  }
+
+  function savePreFullscreenGeometry() {
+    if (preFullscreenWidth && preFullscreenHeight) return;
+    const rect = root.getBoundingClientRect();
+    preFullscreenWidth = Math.round(rect.width || pxToNumber(root.style.width, 480));
+    preFullscreenHeight = Math.round(rect.height || pxToNumber(root.style.height, 380));
+    preFullscreenLeft = root.style.left || `${Math.round(rect.left || 24)}px`;
+    preFullscreenTop = root.style.top || `${Math.round(rect.top || 80)}px`;
+  }
+
+  function restorePreFullscreenGeometry() {
+    if (preFullscreenWidth && preFullscreenHeight) {
+      root.style.width = `${preFullscreenWidth}px`;
+      root.style.height = `${preFullscreenHeight}px`;
+    }
+    if (preFullscreenLeft && preFullscreenTop) {
+      root.style.left = preFullscreenLeft;
+      root.style.top = preFullscreenTop;
+      root.style.right = "auto";
+      root.style.bottom = "auto";
+    }
+    preFullscreenWidth = null;
+    preFullscreenHeight = null;
+    preFullscreenLeft = null;
+    preFullscreenTop = null;
+  }
+
+  function enterFallbackFullscreen() {
+    savePreFullscreenGeometry();
+    isFallbackFullscreen = true;
+    root.classList.add("is-fullscreen", "is-window-fullscreen");
+    updateFullscreenBtn();
+    resizeAfterFullscreenTransition();
+  }
+
+  function exitFallbackFullscreen({ restore = true } = {}) {
+    if (!isFallbackFullscreen) return;
+    isFallbackFullscreen = false;
+    root.classList.remove("is-window-fullscreen");
+    if (!isNativeFullscreen) {
+      root.classList.remove("is-fullscreen");
+      if (restore) {
+        restorePreFullscreenGeometry();
+        clampPanelToWindow();
+      }
+    }
+    updateFullscreenBtn();
+    resizeAfterFullscreenTransition();
+  }
+
+  async function enterFullscreen() {
+    savePreFullscreenGeometry();
+    if (typeof root.requestFullscreen === "function") {
+      try {
+        await root.requestFullscreen();
+        if (document.fullscreenElement === root) {
+          return;
+        }
+      } catch {
+        // Fall back below.
+      }
+    }
+    enterFallbackFullscreen();
+  }
+
+  async function exitFullscreenMode() {
+    if (isFallbackFullscreen) {
+      exitFallbackFullscreen();
+      return;
+    }
+    if (document.fullscreenElement === root && typeof document.exitFullscreen === "function") {
+      try {
+        await document.exitFullscreen();
+      } catch {
+        isNativeFullscreen = false;
+        root.classList.remove("is-fullscreen");
+        restorePreFullscreenGeometry();
+        clampPanelToWindow();
+        updateFullscreenBtn();
+      }
+    }
   }
 
   async function toggleFullscreen() {
-    try {
-      if (!document.fullscreenElement) {
-        // Save current panel size before entering fullscreen
-        const rect = root.getBoundingClientRect();
-        preFullscreenWidth = Math.round(rect.width);
-        preFullscreenHeight = Math.round(rect.height);
-        await root.requestFullscreen();
-      } else {
-        await document.exitFullscreen();
-      }
-    } catch { /* Fullscreen API may be blocked */ }
+    if (isFullscreenActive() || document.fullscreenElement === root) {
+      await exitFullscreenMode();
+    } else {
+      await enterFullscreen();
+    }
   }
 
   function clampPanelToWindow() {
@@ -493,30 +678,30 @@ export function createMilkdropPanel(options = {}) {
     clampElementToViewport(root);
   }
 
+  function resizeAfterFullscreenTransition() {
+    if (!visualizer || !canvas) return;
+    const w = stage.clientWidth || canvas.width;
+    const h = stage.clientHeight || canvas.height;
+    canvas.width = w;
+    canvas.height = h;
+    visualizer.setRendererSize(w, h);
+  }
+
   function onFullscreenChange() {
-    const wasFullscreen = isFullscreen;
-    isFullscreen = document.fullscreenElement === root;
-    root.classList.toggle("is-fullscreen", isFullscreen);
+    const wasFullscreen = isNativeFullscreen;
+    isNativeFullscreen = document.fullscreenElement === root;
+    root.classList.toggle("is-fullscreen", isNativeFullscreen || isFallbackFullscreen);
     updateFullscreenBtn();
 
     // Restore pre-fullscreen size when exiting fullscreen
-    if (wasFullscreen && !isFullscreen && preFullscreenWidth && preFullscreenHeight) {
-      root.style.width = `${preFullscreenWidth}px`;
-      root.style.height = `${preFullscreenHeight}px`;
-      preFullscreenWidth = null;
-      preFullscreenHeight = null;
+    if (wasFullscreen && !isNativeFullscreen && !isFallbackFullscreen) {
+      restorePreFullscreenGeometry();
       // Re-clamp position to keep panel inside viewport
       clampPanelToWindow();
     }
 
     // Resize canvas after fullscreen transition
-    if (visualizer && canvas) {
-      const w = stage.clientWidth || canvas.width;
-      const h = stage.clientHeight || canvas.height;
-      canvas.width = w;
-      canvas.height = h;
-      visualizer.setRendererSize(w, h);
-    }
+    resizeAfterFullscreenTransition();
   }
 
   document.addEventListener("fullscreenchange", onFullscreenChange);
@@ -525,7 +710,7 @@ export function createMilkdropPanel(options = {}) {
   let panelResizeObserver = null;
   try {
     panelResizeObserver = new ResizeObserver(() => {
-      if (destroyed || root.hidden || isFullscreen) return;
+      if (destroyed || root.hidden || isFullscreenActive()) return;
       const rect = root.getBoundingClientRect();
       if (rect.width > 100 && rect.height > 100) {
         saveSize(Math.round(rect.width), Math.round(rect.height));
@@ -533,6 +718,90 @@ export function createMilkdropPanel(options = {}) {
     });
     panelResizeObserver.observe(root);
   } catch { /* optional */ }
+
+  // ── Touch resize handle ──────────────────────────────────────
+  let resizing = false;
+  let resizePointerId = null;
+  let resizeStartX = 0;
+  let resizeStartY = 0;
+  let resizeStartW = 0;
+  let resizeStartH = 0;
+  let resizeRafId = 0;
+  let resizeLastX = 0;
+  let resizeLastY = 0;
+
+  function applyHandleResize() {
+    resizeRafId = 0;
+    if (!resizing || isFullscreenActive()) return;
+    const dx = resizeLastX - resizeStartX;
+    const dy = resizeLastY - resizeStartY;
+    const maxW = Math.max(320, (window.innerWidth || 1024) - 16);
+    const maxH = Math.max(240, (window.innerHeight || 768) - 16);
+    const nextW = clamp(resizeStartW + dx, 320, maxW);
+    const nextH = clamp(resizeStartH + dy, 240, maxH);
+    root.style.width = `${Math.round(nextW)}px`;
+    root.style.height = `${Math.round(nextH)}px`;
+    resizeAfterFullscreenTransition();
+  }
+
+  function scheduleHandleResize() {
+    if (resizeRafId) return;
+    resizeRafId = requestAnimationFrame(applyHandleResize);
+  }
+
+  function endHandleResize() {
+    if (resizeRafId) {
+      cancelAnimationFrame(resizeRafId);
+      resizeRafId = 0;
+    }
+    if (!resizing) return;
+    resizing = false;
+    root.classList.remove("is-resizing");
+    document.documentElement.classList.remove("vb-floating-drag-active");
+    clampPanelToWindow();
+    const { width, height } = getPanelSize(root);
+    saveSize(width, height);
+    resizePointerId = null;
+  }
+
+  resizeHandle.addEventListener("pointerdown", (e) => {
+    if (isFullscreenActive()) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    resizing = true;
+    resizePointerId = e.pointerId;
+    resizeStartX = resizeLastX = e.clientX;
+    resizeStartY = resizeLastY = e.clientY;
+    const { width, height } = getPanelSize(root);
+    resizeStartW = width;
+    resizeStartH = height;
+    root.classList.add("is-resizing");
+    document.documentElement.classList.add("vb-floating-drag-active");
+
+    try {
+      resizeHandle.setPointerCapture(resizePointerId);
+    } catch { /* ignore */ }
+  }, { passive: false });
+
+  resizeHandle.addEventListener("pointermove", (e) => {
+    if (!resizing || e.pointerId !== resizePointerId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    resizeLastX = e.clientX;
+    resizeLastY = e.clientY;
+    scheduleHandleResize();
+  }, { passive: false });
+
+  resizeHandle.addEventListener("pointerup", (e) => {
+    if (e.pointerId !== resizePointerId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    endHandleResize();
+  });
+
+  resizeHandle.addEventListener("pointercancel", endHandleResize);
 
   // ── Event wiring ────────────────────────────────────────────
   const stopProp = (e) => e.stopPropagation();
@@ -557,11 +826,15 @@ export function createMilkdropPanel(options = {}) {
     destroyed = true;
 
     // Exit fullscreen before teardown to avoid leaving the page stuck
+    if (isFallbackFullscreen) {
+      exitFallbackFullscreen({ restore: false });
+    }
     if (document.fullscreenElement === root) {
       document.exitFullscreen().catch(() => {});
     }
 
     stopRenderLoop();
+    endHandleResize();
 
     if (runtimeUnsub) { runtimeUnsub(); runtimeUnsub = null; }
     if (panelResizeObserver) { panelResizeObserver.disconnect(); panelResizeObserver = null; }

@@ -17,6 +17,7 @@
  */
 
 import "../styles/player.less";
+import "../shared/ui/confirm-dialog.less";
 import { createPlayerWidget } from "./player-widget.js";
 import { IconMusic } from "../icons.js";
 import { t } from "../i18n.js";

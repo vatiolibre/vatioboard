@@ -5,6 +5,7 @@
     "artist": "Tim Kulig",
     "album": "Tinctures",
     "genre": "Electronica",
+    "artwork_ref": "/audio/demo/artwork/electronica.svg",
     "src": "/audio/demo/On The Run.mp3",
     "duration": 182.5,
     "media_kind": "audio"
@@ -15,6 +16,7 @@
     "artist": "Audionautix",
     "album": "Audionautix",
     "genre": "Rock",
+    "artwork_ref": "/audio/demo/artwork/rock.svg",
     "src": "/audio/demo/RockerChicks.mp3",
     "duration": 90.1,
     "media_kind": "audio"
@@ -25,6 +27,7 @@
     "artist": "Scott Buckley",
     "album": "Scott Buckley Library",
     "genre": "Cinematic",
+    "artwork_ref": "/audio/demo/artwork/cinematic.svg",
     "src": "/audio/demo/sb_titan.mp3",
     "duration": 175.8,
     "media_kind": "audio"
@@ -35,6 +38,7 @@
     "artist": "Kevin MacLeod",
     "album": "Incompetech",
     "genre": "Electronic",
+    "artwork_ref": "/audio/demo/artwork/electronica.svg",
     "src": "/audio/demo/Exit the Premises.mp3",
     "duration": 210.1,
     "media_kind": "audio"
@@ -45,6 +49,7 @@
     "artist": "Tim Kulig",
     "album": "Borked Git",
     "genre": "Cyberpunk",
+    "artwork_ref": "/audio/demo/artwork/electronica.svg",
     "src": "/audio/demo/Pascifica.mp3",
     "duration": 271.6,
     "media_kind": "audio"
@@ -55,6 +60,7 @@
     "artist": "Kevin MacLeod",
     "album": "Incompetech",
     "genre": "Cinematic",
+    "artwork_ref": "/audio/demo/artwork/cinematic.svg",
     "src": "/audio/demo/Rynos Theme.mp3",
     "duration": 185.7,
     "media_kind": "audio"
@@ -65,6 +71,7 @@
     "artist": "Scott Buckley",
     "album": "Scott Buckley Library",
     "genre": "Soundtrack",
+    "artwork_ref": "/audio/demo/artwork/cinematic.svg",
     "src": "/audio/demo/Legionnaire2022.mp3",
     "duration": 187.1,
     "media_kind": "audio"
@@ -75,6 +82,7 @@
     "artist": "Alex Productions",
     "album": "Chosic",
     "genre": "Ambient",
+    "artwork_ref": "/audio/demo/artwork/ambient.svg",
     "src": "/audio/demo/Timeless(chosic.com).mp3",
     "duration": 128.3,
     "media_kind": "audio"
@@ -85,6 +93,7 @@
     "artist": "Kevin MacLeod",
     "album": "Incompetech",
     "genre": "World",
+    "artwork_ref": "/audio/demo/artwork/world.svg",
     "src": "/audio/demo/Neo Western.mp3",
     "duration": 145.8,
     "media_kind": "audio"
@@ -95,6 +104,7 @@
     "artist": "Kevin MacLeod",
     "album": "Rock Classic",
     "genre": "Rock",
+    "artwork_ref": "/audio/demo/artwork/rock.svg",
     "src": "/audio/demo/Beach Bum.mp3",
     "duration": 52.3,
     "media_kind": "audio"
@@ -105,6 +115,7 @@
     "artist": "Scott Buckley",
     "album": "Scott Buckley Library",
     "genre": "Soundtrack",
+    "artwork_ref": "/audio/demo/artwork/cinematic.svg",
     "src": "/audio/demo/sb_theclimb.mp3",
     "duration": 347.1,
     "media_kind": "audio"
@@ -115,6 +126,7 @@
     "artist": "Kevin MacLeod",
     "album": "Rock Harder",
     "genre": "Rock",
+    "artwork_ref": "/audio/demo/artwork/rock.svg",
     "src": "/audio/demo/What You Want.mp3",
     "duration": 87.6,
     "media_kind": "audio"
@@ -125,6 +137,7 @@
     "artist": "Kevin MacLeod",
     "album": "Famous Classics",
     "genre": "Classical",
+    "artwork_ref": "/audio/demo/artwork/classical.svg",
     "src": "/audio/demo/Canon in D Major.mp3",
     "duration": 355.7,
     "media_kind": "audio"

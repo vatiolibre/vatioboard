@@ -819,6 +819,7 @@ describe("player-session", () => {
   beforeEach(async () => {
     vi.resetModules();
     localStorage.clear();
+    document.body.innerHTML = "";
     const mod = await import("../../src/shared/player-session.js");
     loadPlayerSession = mod.loadPlayerSession;
     savePlayerSession = mod.savePlayerSession;
@@ -1637,6 +1638,73 @@ describe("audio-runtime", () => {
     });
   });
 
+  it("playLibraryTrackNow starts one library track and preserves the upcoming queue", async () => {
+    runtime.setQueue([TRACK_A, TRACK_C], { autoplay: false });
+
+    await vi.waitFor(() => {
+      expect(runtime.getState().currentTrack?.name).toBe("asset_a");
+      expect(runtime.getState().queue.map((track) => track.name)).toEqual(["asset_a", "asset_c"]);
+    });
+
+    await runtime.playLibraryTrackNow(TRACK_B, [TRACK_A, TRACK_B, TRACK_C]);
+
+    await vi.waitFor(() => {
+      const s = runtime.getState();
+      expect(s.currentTrack?.name).toBe("asset_b");
+      expect(s.queue.map((track) => track.name)).toEqual(["asset_b", "asset_c"]);
+      expect(s.currentIndex).toBe(0);
+    });
+
+    await runtime.previousTrack();
+
+    await vi.waitFor(() => {
+      const s = runtime.getState();
+      expect(s.currentTrack?.name).toBe("asset_a");
+      expect(s.queue.map((track) => track.name)).toEqual(["asset_a", "asset_b", "asset_c"]);
+    });
+  });
+
+  it("playLibraryTrackNow continues lazily through the library when there is no upcoming queue", async () => {
+    await runtime.playLibraryTrackNow(TRACK_B, [TRACK_A, TRACK_B, TRACK_C]);
+
+    await vi.waitFor(() => {
+      const s = runtime.getState();
+      expect(s.currentTrack?.name).toBe("asset_b");
+      expect(s.queue.map((track) => track.name)).toEqual(["asset_b"]);
+    });
+
+    await runtime.nextTrack();
+
+    await vi.waitFor(() => {
+      const s = runtime.getState();
+      expect(s.currentTrack?.name).toBe("asset_c");
+      expect(s.queue.map((track) => track.name)).toEqual(["asset_c"]);
+    });
+  });
+
+  it("playLibraryTrackNow follows shuffle when continuing lazily through the library", async () => {
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.99);
+
+    try {
+      runtime.toggleShuffle();
+      await runtime.playLibraryTrackNow(TRACK_A, [TRACK_A, TRACK_B, TRACK_C]);
+
+      await vi.waitFor(() => {
+        expect(runtime.getState().queue.map((track) => track.name)).toEqual(["asset_a"]);
+      });
+
+      await runtime.nextTrack();
+
+      await vi.waitFor(() => {
+        const s = runtime.getState();
+        expect(s.currentTrack?.name).toBe("asset_c");
+        expect(s.queue.map((track) => track.name)).toEqual(["asset_c"]);
+      });
+    } finally {
+      randomSpy.mockRestore();
+    }
+  });
+
   it("primeAudio resolves false when no source is loaded yet", async () => {
     const result = await runtime.primeAudio();
     expect(result).toBe(false);
@@ -2153,6 +2221,12 @@ describe("player-shell", () => {
     expect(container.querySelector(".player-progress")).toBeTruthy();
     expect(container.querySelector(".player-volume")).toBeTruthy();
     expect(container.querySelector(".player-visualizer-toggle-btn")).toBeTruthy();
+    expect(container.querySelector(".player-content-toggle-btn")).toBeTruthy();
+    expect(container.querySelector(".player-queue-toggle-btn")).toBeNull();
+    expect(container.querySelector(".player-library-toggle-btn")).toBeNull();
+    expect(container.querySelector(".player-playlist-toggle-btn")).toBeNull();
+    expect(container.querySelector(".player-title")).toBeNull();
+    expect(container.querySelector(".player-content-sheet")).toBeTruthy();
     expect(container.querySelector(".player-visualizer-strip")).toBeTruthy();
 
     shell.destroy();
@@ -2291,7 +2365,7 @@ describe("player-shell", () => {
     const shell = createPlayerShell({ container });
 
     // Open the queue sheet first, then set tracks
-    const queueBtn = container.querySelector(".player-queue-toggle-btn");
+    const queueBtn = container.querySelector(".player-content-toggle-btn");
     queueBtn.click();
 
     // Queue sheet reads from runtime queue, not allTracks
@@ -2313,7 +2387,7 @@ describe("player-shell", () => {
       { ...TRACK_C, src: "/audio/asset_c.mp3" },
     ];
 
-    container.querySelector(".player-queue-toggle-btn").click();
+    container.querySelector(".player-content-toggle-btn").click();
     runtime.setQueue(tracks, { autoplay: false });
     shell.setTracks(tracks);
 
@@ -2345,7 +2419,7 @@ describe("player-shell", () => {
       { ...TRACK_C, src: "/audio/asset_c.mp3" },
     ];
 
-    container.querySelector(".player-queue-toggle-btn").click();
+    container.querySelector(".player-content-toggle-btn").click();
     runtime.setQueue(tracks, { autoplay: false });
     shell.setTracks(tracks);
 
@@ -2380,7 +2454,7 @@ describe("player-shell", () => {
     const shell = createPlayerShell({ container });
     const tracks = [{ ...TRACK_A, src: "/audio/asset_a.mp3" }];
 
-    container.querySelector(".player-queue-toggle-btn").click();
+    container.querySelector(".player-content-toggle-btn").click();
     runtime.setQueue(tracks, { autoplay: true });
     shell.setTracks(tracks);
 
@@ -2405,12 +2479,65 @@ describe("player-shell", () => {
     shell.destroy();
   });
 
-  it("has a collapsible queue sheet instead of a drawer", () => {
+  it("opens one integrated content sheet and switches tabs", () => {
     const container = document.createElement("div");
     const shell = createPlayerShell({ container });
 
     expect(container.querySelector(".player-queue-drawer")).toBeNull();
-    expect(container.querySelector(".player-queue-sheet")).toBeTruthy();
+    expect(container.querySelector(".player-content-sheet")).toBeTruthy();
+    expect(container.querySelector(".player-content-pane-queue")).toBeTruthy();
+    expect(container.querySelector(".player-content-pane-library")).toBeTruthy();
+    expect(container.querySelector(".player-content-pane-playlists")).toBeTruthy();
+
+    container.querySelector(".player-content-toggle-btn").click();
+    expect(container.querySelector(".player-content-sheet").classList.contains("is-open")).toBe(true);
+    expect(container.querySelector(".player-content-pane-queue").classList.contains("is-open")).toBe(true);
+
+    container.querySelector(".player-content-tab-library").click();
+    expect(container.querySelector(".player-content-pane-library").classList.contains("is-open")).toBe(true);
+    expect(container.querySelector(".player-content-pane-queue").classList.contains("is-open")).toBe(false);
+
+    container.querySelector(".player-content-tab-playlists").click();
+    expect(container.querySelector(".player-content-pane-playlists").classList.contains("is-open")).toBe(true);
+    expect(container.querySelector(".player-content-pane-library").classList.contains("is-open")).toBe(false);
+
+    shell.destroy();
+  });
+
+  it("content panes consume mouse-wheel scrolling so host pages do not steal it", () => {
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    shell.setTracks([
+      TRACK_A,
+      TRACK_B,
+      TRACK_C,
+      makeTrack("asset_d"),
+      makeTrack("asset_e"),
+    ]);
+
+    container.querySelector(".player-content-tab-library").click();
+    const libraryPane = container.querySelector(".player-content-pane-library");
+
+    Object.defineProperty(libraryPane, "scrollHeight", {
+      configurable: true,
+      value: 640,
+    });
+    Object.defineProperty(libraryPane, "clientHeight", {
+      configurable: true,
+      value: 180,
+    });
+    libraryPane.scrollTop = 0;
+
+    const wheelEvent = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      deltaY: 120,
+    });
+
+    const dispatchResult = libraryPane.dispatchEvent(wheelEvent);
+
+    expect(dispatchResult).toBe(false);
+    expect(libraryPane.scrollTop).toBe(120);
 
     shell.destroy();
   });
@@ -2463,7 +2590,7 @@ describe("player-shell", () => {
     const shell = createPlayerShell({ container });
 
     // Open queue sheet so items are rendered
-    container.querySelector(".player-queue-toggle-btn").click();
+    container.querySelector(".player-content-toggle-btn").click();
     runtime.setQueue([TRACK_A, TRACK_B], { autoplay: false });
     shell.setTracks([TRACK_A, TRACK_B]);
 
@@ -2483,7 +2610,7 @@ describe("player-shell", () => {
     const shell = createPlayerShell({ container });
 
     // Open queue sheet and set tracks (initially not offline)
-    container.querySelector(".player-queue-toggle-btn").click();
+    container.querySelector(".player-content-toggle-btn").click();
     runtime.setQueue([{ ...TRACK_A, _offline: false }, TRACK_B], { autoplay: false });
     shell.setTracks([{ ...TRACK_A, _offline: false }, TRACK_B]);
 
@@ -2612,7 +2739,7 @@ describe("player-shell queue remove action", () => {
     shell.setTracks(tracks);
 
     // Open queue sheet
-    container.querySelector(".player-queue-toggle-btn").click();
+    container.querySelector(".player-content-toggle-btn").click();
 
     // Verify two items exist
     let items = container.querySelectorAll(".player-queue-item");
@@ -2641,7 +2768,7 @@ describe("player-shell queue remove action", () => {
     runtime.setQueue([TRACK_A], { autoplay: false });
     shell.setTracks([TRACK_A]);
 
-    container.querySelector(".player-queue-toggle-btn").click();
+    container.querySelector(".player-content-toggle-btn").click();
 
     const removeBtn = container.querySelector(".player-queue-remove-btn");
     // Button exists in the DOM
@@ -2653,7 +2780,7 @@ describe("player-shell queue remove action", () => {
     expect(removeBtn.style.visibility).not.toBe("hidden");
     expect(removeBtn.style.opacity).not.toBe("0");
     // Queue sheet ancestor is open (not aria-hidden)
-    const queueSheet = removeBtn.closest(".player-queue-sheet");
+    const queueSheet = removeBtn.closest(".player-content-pane-queue");
     expect(queueSheet).toBeTruthy();
     expect(queueSheet.getAttribute("aria-hidden")).toBe("false");
     // Button is interactive
@@ -2724,8 +2851,8 @@ describe("player-shell library sheet", () => {
     const container = document.createElement("div");
     const shell = createPlayerShell({ container });
 
-    expect(container.querySelector(".player-library-toggle-btn")).toBeTruthy();
-    expect(container.querySelector(".player-library-sheet")).toBeTruthy();
+    expect(container.querySelector(".player-content-tab-library")).toBeTruthy();
+    expect(container.querySelector(".player-content-pane-library")).toBeTruthy();
 
     shell.destroy();
   });
@@ -2735,10 +2862,10 @@ describe("player-shell library sheet", () => {
     const shell = createPlayerShell({ container });
     shell.setTracks([TRACK_A, TRACK_B]);
 
-    const libraryBtn = container.querySelector(".player-library-toggle-btn");
+    const libraryBtn = container.querySelector(".player-content-tab-library");
     libraryBtn.click();
 
-    const librarySheet = container.querySelector(".player-library-sheet");
+    const librarySheet = container.querySelector(".player-content-pane-library");
     expect(librarySheet.classList.contains("is-open")).toBe(true);
     expect(librarySheet.getAttribute("aria-hidden")).toBe("false");
 
@@ -2758,13 +2885,13 @@ describe("player-shell library sheet", () => {
     shell.setTracks([TRACK_A]);
 
     // Open queue first
-    container.querySelector(".player-queue-toggle-btn").click();
-    expect(container.querySelector(".player-queue-sheet").classList.contains("is-open")).toBe(true);
+    container.querySelector(".player-content-toggle-btn").click();
+    expect(container.querySelector(".player-content-pane-queue").classList.contains("is-open")).toBe(true);
 
     // Open library — should close queue
-    container.querySelector(".player-library-toggle-btn").click();
-    expect(container.querySelector(".player-queue-sheet").classList.contains("is-open")).toBe(false);
-    expect(container.querySelector(".player-library-sheet").classList.contains("is-open")).toBe(true);
+    container.querySelector(".player-content-tab-library").click();
+    expect(container.querySelector(".player-content-pane-queue").classList.contains("is-open")).toBe(false);
+    expect(container.querySelector(".player-content-pane-library").classList.contains("is-open")).toBe(true);
 
     shell.destroy();
   });
@@ -2777,7 +2904,7 @@ describe("player-shell library sheet", () => {
       makeTrack("asset_b", { title: "Beta Track" }),
     ]);
 
-    container.querySelector(".player-library-toggle-btn").click();
+    container.querySelector(".player-content-tab-library").click();
     expect(container.querySelectorAll(".player-library-item").length).toBe(2);
 
     // Filter by "alpha"
@@ -2786,6 +2913,25 @@ describe("player-shell library sheet", () => {
     searchInput.dispatchEvent(new Event("input", { bubbles: true }));
 
     expect(container.querySelectorAll(".player-library-item").length).toBe(1);
+
+    shell.destroy();
+  });
+
+  it("Play now action starts only the selected library track", async () => {
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    shell.setTracks([TRACK_A, TRACK_B, TRACK_C]);
+
+    container.querySelector(".player-content-tab-library").click();
+    const items = container.querySelectorAll(".player-library-item");
+    const playNowBtn = items[1].querySelectorAll(".player-library-action-btn")[0];
+    playNowBtn.click();
+
+    await vi.waitFor(() => {
+      const s = runtime.getState();
+      expect(s.currentTrack?.name).toBe("asset_b");
+      expect(s.queue.map((track) => track.name)).toEqual(["asset_b"]);
+    });
 
     shell.destroy();
   });
@@ -2799,7 +2945,7 @@ describe("player-shell library sheet", () => {
     runtime.setQueue([TRACK_A], { autoplay: false });
 
     // Open library and click Play next on TRACK_B
-    container.querySelector(".player-library-toggle-btn").click();
+    container.querySelector(".player-content-tab-library").click();
     const items = container.querySelectorAll(".player-library-item");
     const playNextBtn = items[1].querySelectorAll(".player-library-action-btn")[1];
     playNextBtn.click();
@@ -2818,7 +2964,7 @@ describe("player-shell library sheet", () => {
 
     runtime.setQueue([TRACK_A], { autoplay: false });
 
-    container.querySelector(".player-library-toggle-btn").click();
+    container.querySelector(".player-content-tab-library").click();
     const items = container.querySelectorAll(".player-library-item");
     // Third button is "Add to queue"
     const addBtn = items[2].querySelectorAll(".player-library-action-btn")[2];
@@ -2891,16 +3037,17 @@ describe("player-shell save queue as playlist", () => {
     const container = document.createElement("div");
     const shell = createPlayerShell({ container });
 
-    container.querySelector(".player-queue-toggle-btn").click();
+    container.querySelector(".player-content-toggle-btn").click();
 
     const saveBtn = container.querySelector(".player-queue-save-btn");
     expect(saveBtn).toBeTruthy();
     expect(saveBtn.textContent).toBe("playerSaveQueueAsPlaylist");
+    expect(container.querySelector(".player-queue-save-form")).toBeNull();
 
     shell.destroy();
   });
 
-  it("save flow shows title form, then bulk-adds tracks on submit", async () => {
+  it("save flow opens a title prompt, then bulk-adds tracks on submit", async () => {
     const backendAuth = await import("../../src/shared/backend-auth.js");
     const container = document.createElement("div");
     const shell = createPlayerShell({ container });
@@ -2908,20 +3055,28 @@ describe("player-shell save queue as playlist", () => {
     runtime.setQueue([TRACK_A, TRACK_B], { autoplay: false });
     shell.setTracks([TRACK_A, TRACK_B]);
 
-    container.querySelector(".player-queue-toggle-btn").click();
+    container.querySelector(".player-content-toggle-btn").click();
     const saveBtn = container.querySelector(".player-queue-save-btn");
     saveBtn.click();
 
-    // Form should be visible after clicking save
-    const form = container.querySelector(".player-queue-save-form");
-    expect(form).toBeTruthy();
-    expect(form.hidden).toBe(false);
-    expect(saveBtn.hidden).toBe(true);
+    await vi.waitFor(() => {
+      expect(document.body.querySelector(".vb-confirm-backdrop")).toBeTruthy();
+    });
 
-    // Fill title and submit
-    const titleInput = form.querySelector(".player-queue-save-title-input");
-    titleInput.value = "My Queue";
-    form.dispatchEvent(new Event("submit", { cancelable: true }));
+    const dialogInput = document.body.querySelector(".vb-confirm-input");
+    const confirmBtn = document.body.querySelector(".vb-confirm-btn--confirm");
+    expect(dialogInput).toBeTruthy();
+    expect(confirmBtn).toBeTruthy();
+    expect(confirmBtn.disabled).toBe(true);
+
+    dialogInput.value = "My Queue";
+    dialogInput.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(confirmBtn.disabled).toBe(false);
+    confirmBtn.click();
+
+    await vi.waitFor(() => {
+      expect(document.body.querySelector(".vb-confirm-backdrop")).toBeNull();
+    });
 
     await vi.waitFor(() => {
       expect(backendAuth.createBackendPlaylist).toHaveBeenCalledTimes(1);
@@ -2943,7 +3098,38 @@ describe("player-shell save queue as playlist", () => {
     shell.destroy();
   });
 
-  it("save form skips demo tracks in bulk add", async () => {
+  it("canceling the save prompt leaves the queue untouched", async () => {
+    const backendAuth = await import("../../src/shared/backend-auth.js");
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+
+    runtime.setQueue([TRACK_A, TRACK_B], { autoplay: false });
+    shell.setTracks([TRACK_A, TRACK_B]);
+
+    container.querySelector(".player-content-toggle-btn").click();
+    const saveBtn = container.querySelector(".player-queue-save-btn");
+    saveBtn.click();
+
+    await vi.waitFor(() => {
+      expect(document.body.querySelector(".vb-confirm-backdrop")).toBeTruthy();
+    });
+
+    const cancelBtn = document.body.querySelector(".vb-confirm-btn--cancel");
+    expect(cancelBtn).toBeTruthy();
+    cancelBtn.click();
+
+    await vi.waitFor(() => {
+      expect(document.body.querySelector(".vb-confirm-backdrop")).toBeNull();
+    });
+
+    expect(backendAuth.createBackendPlaylist).not.toHaveBeenCalled();
+    expect(backendAuth.bulkAddBackendPlaylistItems).not.toHaveBeenCalled();
+    expect(saveBtn.textContent).toBe("playerSaveQueueAsPlaylist");
+
+    shell.destroy();
+  });
+
+  it("save prompt skips demo tracks in bulk add", async () => {
     const backendAuth = await import("../../src/shared/backend-auth.js");
     const container = document.createElement("div");
     const shell = createPlayerShell({ container });
@@ -2952,14 +3138,23 @@ describe("player-shell save queue as playlist", () => {
     runtime.setQueue([demoTrack, TRACK_A], { autoplay: false });
     shell.setTracks([demoTrack, TRACK_A]);
 
-    container.querySelector(".player-queue-toggle-btn").click();
+    container.querySelector(".player-content-toggle-btn").click();
     const saveBtn = container.querySelector(".player-queue-save-btn");
     saveBtn.click();
 
-    const form = container.querySelector(".player-queue-save-form");
-    const titleInput = form.querySelector(".player-queue-save-title-input");
-    titleInput.value = "My Queue";
-    form.dispatchEvent(new Event("submit", { cancelable: true }));
+    await vi.waitFor(() => {
+      expect(document.body.querySelector(".vb-confirm-backdrop")).toBeTruthy();
+    });
+
+    const dialogInput = document.body.querySelector(".vb-confirm-input");
+    const confirmBtn = document.body.querySelector(".vb-confirm-btn--confirm");
+    dialogInput.value = "My Queue";
+    dialogInput.dispatchEvent(new Event("input", { bubbles: true }));
+    confirmBtn.click();
+
+    await vi.waitFor(() => {
+      expect(document.body.querySelector(".vb-confirm-backdrop")).toBeNull();
+    });
 
     await vi.waitFor(() => {
       expect(backendAuth.createBackendPlaylist).toHaveBeenCalledTimes(1);
@@ -2977,7 +3172,7 @@ describe("player-shell save queue as playlist", () => {
     shell.destroy();
   });
 
-  it("shows failure when bulk add returns ok: false", async () => {
+  it("shows failure on the save button when bulk add returns ok: false", async () => {
     const backendAuth = await import("../../src/shared/backend-auth.js");
     backendAuth.bulkAddBackendPlaylistItems.mockResolvedValueOnce({
       ok: false, added: [], skipped: [],
@@ -2988,27 +3183,36 @@ describe("player-shell save queue as playlist", () => {
     runtime.setQueue([TRACK_A], { autoplay: false });
     shell.setTracks([TRACK_A]);
 
-    container.querySelector(".player-queue-toggle-btn").click();
+    container.querySelector(".player-content-toggle-btn").click();
     const saveBtn = container.querySelector(".player-queue-save-btn");
     saveBtn.click();
 
-    const form = container.querySelector(".player-queue-save-form");
-    form.querySelector(".player-queue-save-title-input").value = "Test";
-    form.dispatchEvent(new Event("submit", { cancelable: true }));
+    await vi.waitFor(() => {
+      expect(document.body.querySelector(".vb-confirm-backdrop")).toBeTruthy();
+    });
+
+    const dialogInput = document.body.querySelector(".vb-confirm-input");
+    const confirmBtn = document.body.querySelector(".vb-confirm-btn--confirm");
+    dialogInput.value = "Test";
+    dialogInput.dispatchEvent(new Event("input", { bubbles: true }));
+    confirmBtn.click();
+
+    await vi.waitFor(() => {
+      expect(document.body.querySelector(".vb-confirm-backdrop")).toBeNull();
+    });
 
     await vi.waitFor(() => {
       expect(backendAuth.bulkAddBackendPlaylistItems).toHaveBeenCalledTimes(1);
     });
 
     await vi.waitFor(() => {
-      const confirmBtn = form.querySelector(".player-queue-save-confirm-btn");
-      expect(confirmBtn.textContent).toBe("playerPlaylistSaveFailed");
+      expect(saveBtn.textContent).toBe("playerPlaylistSaveFailed");
     });
 
     shell.destroy();
   });
 
-  it("shows partial success when some tracks are skipped", async () => {
+  it("shows partial success on the save button when some tracks are skipped", async () => {
     const backendAuth = await import("../../src/shared/backend-auth.js");
     backendAuth.bulkAddBackendPlaylistItems.mockResolvedValueOnce({
       ok: true,
@@ -3021,27 +3225,36 @@ describe("player-shell save queue as playlist", () => {
     runtime.setQueue([TRACK_A, TRACK_B], { autoplay: false });
     shell.setTracks([TRACK_A, TRACK_B]);
 
-    container.querySelector(".player-queue-toggle-btn").click();
+    container.querySelector(".player-content-toggle-btn").click();
     const saveBtn = container.querySelector(".player-queue-save-btn");
     saveBtn.click();
 
-    const form = container.querySelector(".player-queue-save-form");
-    form.querySelector(".player-queue-save-title-input").value = "Partial";
-    form.dispatchEvent(new Event("submit", { cancelable: true }));
+    await vi.waitFor(() => {
+      expect(document.body.querySelector(".vb-confirm-backdrop")).toBeTruthy();
+    });
+
+    const dialogInput = document.body.querySelector(".vb-confirm-input");
+    const confirmBtn = document.body.querySelector(".vb-confirm-btn--confirm");
+    dialogInput.value = "Partial";
+    dialogInput.dispatchEvent(new Event("input", { bubbles: true }));
+    confirmBtn.click();
+
+    await vi.waitFor(() => {
+      expect(document.body.querySelector(".vb-confirm-backdrop")).toBeNull();
+    });
 
     await vi.waitFor(() => {
       expect(backendAuth.bulkAddBackendPlaylistItems).toHaveBeenCalledTimes(1);
     });
 
     await vi.waitFor(() => {
-      const confirmBtn = form.querySelector(".player-queue-save-confirm-btn");
-      expect(confirmBtn.textContent).toBe("playerPlaylistSavedPartial");
+      expect(saveBtn.textContent).toBe("playerPlaylistSavedPartial");
     });
 
     shell.destroy();
   });
 
-  it("shows success when all tracks are added", async () => {
+  it("shows success on the save button when all tracks are added", async () => {
     const backendAuth = await import("../../src/shared/backend-auth.js");
     backendAuth.bulkAddBackendPlaylistItems.mockResolvedValueOnce({
       ok: true,
@@ -3054,21 +3267,30 @@ describe("player-shell save queue as playlist", () => {
     runtime.setQueue([TRACK_A, TRACK_B], { autoplay: false });
     shell.setTracks([TRACK_A, TRACK_B]);
 
-    container.querySelector(".player-queue-toggle-btn").click();
+    container.querySelector(".player-content-toggle-btn").click();
     const saveBtn = container.querySelector(".player-queue-save-btn");
     saveBtn.click();
 
-    const form = container.querySelector(".player-queue-save-form");
-    form.querySelector(".player-queue-save-title-input").value = "All Good";
-    form.dispatchEvent(new Event("submit", { cancelable: true }));
+    await vi.waitFor(() => {
+      expect(document.body.querySelector(".vb-confirm-backdrop")).toBeTruthy();
+    });
+
+    const dialogInput = document.body.querySelector(".vb-confirm-input");
+    const confirmBtn = document.body.querySelector(".vb-confirm-btn--confirm");
+    dialogInput.value = "All Good";
+    dialogInput.dispatchEvent(new Event("input", { bubbles: true }));
+    confirmBtn.click();
+
+    await vi.waitFor(() => {
+      expect(document.body.querySelector(".vb-confirm-backdrop")).toBeNull();
+    });
 
     await vi.waitFor(() => {
       expect(backendAuth.bulkAddBackendPlaylistItems).toHaveBeenCalledTimes(1);
     });
 
     await vi.waitFor(() => {
-      const confirmBtn = form.querySelector(".player-queue-save-confirm-btn");
-      expect(confirmBtn.textContent).toBe("playerPlaylistSaved");
+      expect(saveBtn.textContent).toBe("playerPlaylistSaved");
     });
 
     shell.destroy();
@@ -3168,7 +3390,7 @@ describe("player-shell playlist track actions", () => {
     shell.setPlaylists([{ name: "pl1", title: "Test Playlist", item_count: 2 }]);
 
     // Open playlist sheet
-    container.querySelector(".player-playlist-toggle-btn").click();
+    container.querySelector(".player-content-tab-playlists").click();
 
     // Click to open playlist detail
     const playlistItem = container.querySelector(".player-playlist-item");
@@ -3195,7 +3417,7 @@ describe("player-shell playlist track actions", () => {
     shell.setTracks([TRACK_A, TRACK_B]);
     shell.setPlaylists([{ name: "pl1", title: "Test Playlist", item_count: 2 }]);
 
-    container.querySelector(".player-playlist-toggle-btn").click();
+    container.querySelector(".player-content-tab-playlists").click();
     container.querySelector(".player-playlist-item").click();
 
     await vi.waitFor(() => {
@@ -3222,7 +3444,7 @@ describe("player-shell playlist track actions", () => {
     shell.setTracks([TRACK_A, TRACK_B]);
     shell.setPlaylists([{ name: "pl1", title: "Test Playlist", item_count: 2 }]);
 
-    container.querySelector(".player-playlist-toggle-btn").click();
+    container.querySelector(".player-content-tab-playlists").click();
     container.querySelector(".player-playlist-item").click();
 
     await vi.waitFor(() => {
@@ -3254,7 +3476,7 @@ describe("player-shell playlist track actions", () => {
     shell.setTracks([TRACK_A, TRACK_B]);
     shell.setPlaylists([{ name: "pl1", title: "Test Playlist", item_count: 2 }]);
 
-    container.querySelector(".player-playlist-toggle-btn").click();
+    container.querySelector(".player-content-tab-playlists").click();
     container.querySelector(".player-playlist-item").click();
 
     await vi.waitFor(() => {
@@ -3285,7 +3507,7 @@ describe("player-shell playlist track actions", () => {
     shell.setTracks([TRACK_A, TRACK_B]);
     shell.setPlaylists([{ name: "pl1", title: "Test Playlist", item_count: 2 }]);
 
-    container.querySelector(".player-playlist-toggle-btn").click();
+    container.querySelector(".player-content-tab-playlists").click();
     container.querySelector(".player-playlist-item").click();
 
     await vi.waitFor(() => {
@@ -3319,7 +3541,7 @@ describe("player-shell playlist track actions", () => {
     shell.setTracks([TRACK_A, TRACK_B]);
     shell.setPlaylists([{ name: "pl1", title: "Test Playlist", item_count: 2 }]);
 
-    container.querySelector(".player-playlist-toggle-btn").click();
+    container.querySelector(".player-content-tab-playlists").click();
     container.querySelector(".player-playlist-item").click();
 
     await vi.waitFor(() => {
@@ -3345,7 +3567,7 @@ describe("player-shell playlist track actions", () => {
     shell.setTracks([TRACK_A, TRACK_B]);
     shell.setPlaylists([{ name: "pl1", title: "Test Playlist", item_count: 2 }]);
 
-    container.querySelector(".player-playlist-toggle-btn").click();
+    container.querySelector(".player-content-tab-playlists").click();
     container.querySelector(".player-playlist-item").click();
 
     await vi.waitFor(() => {
@@ -3386,7 +3608,7 @@ describe("player-shell playlist track actions", () => {
     ]);
     shell.setPlaylists([{ name: "pl1", title: "Test Playlist", item_count: 2 }]);
 
-    container.querySelector(".player-playlist-toggle-btn").click();
+    container.querySelector(".player-content-tab-playlists").click();
     container.querySelector(".player-playlist-item").click();
 
     await vi.waitFor(() => {
@@ -3506,7 +3728,7 @@ describe("player-shell local (demo) playlist", () => {
     shell.setPlaylists([demoPlaylist]);
 
     // Open playlist sheet
-    container.querySelector(".player-playlist-toggle-btn").click();
+    container.querySelector(".player-content-tab-playlists").click();
 
     // Click demo playlist
     const playlistItem = container.querySelector(".player-playlist-item");
@@ -3559,7 +3781,7 @@ describe("player-shell local (demo) playlist", () => {
     shell.setTracks([]);
     shell.setPlaylists([demoPlaylist]);
 
-    container.querySelector(".player-playlist-toggle-btn").click();
+    container.querySelector(".player-content-tab-playlists").click();
     container.querySelector(".player-playlist-item").click();
 
     await vi.waitFor(() => {

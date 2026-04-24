@@ -33,6 +33,11 @@
     --inner-highlight: rgba(255,255,255,.22);
     --inner-ring: rgba(0,0,0,.06);
 
+    --vb-z-floating: 1000;
+    --vb-z-floating-secondary: 990;
+    --vb-z-modal: 2000;
+    --vb-z-emergency: 2147483647;
+
 }
 
 @media (prefers-color-scheme: dark){
@@ -82,6 +87,21 @@ body{
 html.board-is-drawing,
 body.board-is-drawing,
 body.board-is-drawing *{
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+}
+
+.vb-floating-drag-handle{
+    touch-action: none;
+}
+
+html.vb-floating-drag-active,
+html.vb-floating-drag-active body{
+    overscroll-behavior: none;
+}
+
+html.vb-floating-drag-active body{
     user-select: none;
     -webkit-user-select: none;
     -webkit-touch-callout: none;

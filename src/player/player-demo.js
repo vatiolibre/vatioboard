@@ -1,4 +1,5 @@
 import "../styles/player.less";
+import "../shared/ui/confirm-dialog.less";
 import { applyTranslations } from "../i18n.js";
 import { createPlayerWidget, _getBootstrapPromise } from "./player-widget.js";
 

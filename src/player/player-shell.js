@@ -44,6 +44,7 @@ import {
   fetchBackendMediaAssetBlob,
 } from "../shared/backend-auth.js";
 import { setMediaSessionMetadata } from "../shared/media-session-adapter.js";
+import { showPromptDialog } from "../shared/ui/confirm-dialog.js";
 
 const PROGRESS_MAX = 1000;
 const VISUALIZER_VISIBLE_STORAGE_KEY = "vatio_board_player_widget_visualizer_visible";
@@ -254,19 +255,12 @@ export function createPlayerShell({ container }) {
   const header = document.createElement("div");
   header.className = "player-header";
 
-  const titleEl = document.createElement("div");
-  titleEl.className = "player-title";
-  titleEl.textContent = t("playerNowPlaying");
-
   const visualizerToggleBtn = makeBtn("player-visualizer-toggle-btn", IconVisualizer, t("mediaPlayerVisualizerMode"));
 
   const milkdropToggleBtn = makeBtn("player-milkdrop-toggle-btn", IconMilkdrop, t("milkdropOpen"));
 
-  const queueToggleBtn = makeBtn("player-queue-toggle-btn", IconQueue, t("playerQueue"));
-
-  const libraryToggleBtn = makeBtn("player-library-toggle-btn", IconLibrary, t("playerLibrary"));
-
-  const playlistToggleBtn = makeBtn("player-playlist-toggle-btn", IconPlaylist, t("playerPlaylists"));
+  const contentToggleBtn = makeBtn("player-content-toggle-btn", IconLibrary, t("playerContent"));
+  contentToggleBtn.setAttribute("aria-expanded", "false");
 
   const spacer = document.createElement("div");
   spacer.className = "player-spacer";
@@ -276,7 +270,7 @@ export function createPlayerShell({ container }) {
   closeBtn.className = "player-close";
   closeBtn.textContent = t("close");
 
-  header.append(titleEl, visualizerToggleBtn, milkdropToggleBtn, queueToggleBtn, libraryToggleBtn, playlistToggleBtn, spacer, closeBtn);
+  header.append(visualizerToggleBtn, milkdropToggleBtn, contentToggleBtn, spacer, closeBtn);
 
   // ── Now-playing row (compact artwork + metadata) ───────────────
   const nowPlaying = document.createElement("div");
@@ -379,13 +373,56 @@ export function createPlayerShell({ container }) {
   volumeRow.append(muteBtn, volumeSlider);
   updateRangeVisualFill(volumeSlider);
 
-  // ── Queue bottom sheet (Up Next) ────────────────────────────────
-  const queueSheet = document.createElement("div");
-  queueSheet.className = "player-queue-sheet";
-  queueSheet.setAttribute("aria-hidden", "true");
+  // ── Integrated content sheet ───────────────────────────────────
+  const contentSheet = document.createElement("div");
+  contentSheet.className = "player-content-sheet";
+  contentSheet.setAttribute("aria-hidden", "true");
+
+  const contentSheetHeader = document.createElement("div");
+  contentSheetHeader.className = "player-content-sheet-header";
+
+  const contentTabs = document.createElement("div");
+  contentTabs.className = "player-content-tabs";
+  contentTabs.setAttribute("role", "tablist");
+  contentTabs.setAttribute("aria-label", t("playerContent"));
+
+  const queueTabBtn = makeTabBtn("queue", IconQueue, t("playerQueue"));
+  const libraryTabBtn = makeTabBtn("library", IconLibrary, t("playerLibrary"));
+  const playlistTabBtn = makeTabBtn("playlists", IconPlaylist, t("playerPlaylists"));
+
+  contentTabs.append(queueTabBtn, libraryTabBtn, playlistTabBtn);
+
+  const contentCloseBtn = document.createElement("button");
+  contentCloseBtn.type = "button";
+  contentCloseBtn.className = "player-content-sheet-close";
+  contentCloseBtn.setAttribute("aria-label", t("close"));
+  contentCloseBtn.innerHTML = IconClose;
+
+  contentSheetHeader.append(contentTabs, contentCloseBtn);
+
+  const contentPaneStack = document.createElement("div");
+  contentPaneStack.className = "player-content-pane-stack";
+
+  const queuePane = document.createElement("section");
+  queuePane.className = "player-content-pane player-content-pane-queue";
+  queuePane.hidden = true;
+  queuePane.setAttribute("role", "tabpanel");
+  queuePane.setAttribute("aria-hidden", "true");
+
+  const libraryPane = document.createElement("section");
+  libraryPane.className = "player-content-pane player-content-pane-library";
+  libraryPane.hidden = true;
+  libraryPane.setAttribute("role", "tabpanel");
+  libraryPane.setAttribute("aria-hidden", "true");
+
+  const playlistPane = document.createElement("section");
+  playlistPane.className = "player-content-pane player-content-pane-playlists";
+  playlistPane.hidden = true;
+  playlistPane.setAttribute("role", "tabpanel");
+  playlistPane.setAttribute("aria-hidden", "true");
 
   const queueSheetHeader = document.createElement("div");
-  queueSheetHeader.className = "player-queue-sheet-header";
+  queueSheetHeader.className = "player-content-pane-toolbar player-queue-toolbar";
 
   const queueSheetTitle = document.createElement("span");
   queueSheetTitle.textContent = t("playerUpNext");
@@ -399,26 +436,7 @@ export function createPlayerShell({ container }) {
   queueSaveBtn.type = "button";
   queueSaveBtn.className = "player-queue-save-btn";
   queueSaveBtn.textContent = t("playerSaveQueueAsPlaylist");
-
-  // Inline title form (hidden by default)
-  const queueSaveForm = document.createElement("form");
-  queueSaveForm.className = "player-queue-save-form";
-  queueSaveForm.hidden = true;
-  const queueSaveTitleInput = document.createElement("input");
-  queueSaveTitleInput.type = "text";
-  queueSaveTitleInput.className = "player-queue-save-title-input";
-  queueSaveTitleInput.placeholder = t("playerPlaylistTitlePlaceholder");
-  queueSaveTitleInput.maxLength = 140;
-  queueSaveTitleInput.setAttribute("aria-label", t("playerPlaylistTitlePlaceholder"));
-  const queueSaveConfirmBtn = document.createElement("button");
-  queueSaveConfirmBtn.type = "submit";
-  queueSaveConfirmBtn.className = "player-queue-save-confirm-btn";
-  queueSaveConfirmBtn.textContent = t("playerSaveConfirm");
-  const queueSaveCancelBtn = document.createElement("button");
-  queueSaveCancelBtn.type = "button";
-  queueSaveCancelBtn.className = "player-queue-save-cancel-btn";
-  queueSaveCancelBtn.textContent = t("cancel");
-  queueSaveForm.append(queueSaveTitleInput, queueSaveConfirmBtn, queueSaveCancelBtn);
+  queueSaveBtn.setAttribute("aria-live", "polite");
 
   const searchInput = document.createElement("input");
   searchInput.type = "search";
@@ -426,27 +444,16 @@ export function createPlayerShell({ container }) {
   searchInput.placeholder = t("playerSearch");
   searchInput.setAttribute("aria-label", t("playerSearch"));
 
-  const queueCloseBtn = document.createElement("button");
-  queueCloseBtn.type = "button";
-  queueCloseBtn.className = "player-queue-sheet-close";
-  queueCloseBtn.setAttribute("aria-label", t("close"));
-  queueCloseBtn.innerHTML = IconClose;
-
-  queueSheetHeader.append(queueSheetTitle, queueSheetClearBtn, queueSaveBtn, queueSaveForm, searchInput, queueCloseBtn);
+  queueSheetHeader.append(queueSheetTitle, queueSheetClearBtn, queueSaveBtn, searchInput);
 
   const trackListUl = document.createElement("ul");
   trackListUl.className = "player-queue-list";
   trackListUl.setAttribute("role", "list");
 
-  queueSheet.append(queueSheetHeader, trackListUl);
-
-  // ── Library bottom sheet ───────────────────────────────────────
-  const librarySheet = document.createElement("div");
-  librarySheet.className = "player-library-sheet";
-  librarySheet.setAttribute("aria-hidden", "true");
+  queuePane.append(queueSheetHeader, trackListUl);
 
   const librarySheetHeader = document.createElement("div");
-  librarySheetHeader.className = "player-library-sheet-header";
+  librarySheetHeader.className = "player-content-pane-toolbar player-library-toolbar";
 
   const librarySheetTitle = document.createElement("span");
   librarySheetTitle.textContent = t("playerLibrary");
@@ -457,27 +464,16 @@ export function createPlayerShell({ container }) {
   librarySearchInput.placeholder = t("playerSearch");
   librarySearchInput.setAttribute("aria-label", t("playerSearch"));
 
-  const libraryCloseBtn = document.createElement("button");
-  libraryCloseBtn.type = "button";
-  libraryCloseBtn.className = "player-library-sheet-close";
-  libraryCloseBtn.setAttribute("aria-label", t("close"));
-  libraryCloseBtn.innerHTML = IconClose;
-
-  librarySheetHeader.append(librarySheetTitle, librarySearchInput, libraryCloseBtn);
+  librarySheetHeader.append(librarySheetTitle, librarySearchInput);
 
   const libraryListUl = document.createElement("ul");
   libraryListUl.className = "player-library-list";
   libraryListUl.setAttribute("role", "list");
 
-  librarySheet.append(librarySheetHeader, libraryListUl);
-
-  // ── Playlist bottom sheet ──────────────────────────────────────
-  const playlistSheet = document.createElement("div");
-  playlistSheet.className = "player-playlist-sheet";
-  playlistSheet.setAttribute("aria-hidden", "true");
+  libraryPane.append(librarySheetHeader, libraryListUl);
 
   const playlistSheetHeader = document.createElement("div");
-  playlistSheetHeader.className = "player-playlist-sheet-header";
+  playlistSheetHeader.className = "player-content-pane-toolbar player-playlist-toolbar-header";
 
   const playlistBackBtn = document.createElement("button");
   playlistBackBtn.type = "button";
@@ -489,34 +485,33 @@ export function createPlayerShell({ container }) {
   const playlistSheetTitle = document.createElement("span");
   playlistSheetTitle.textContent = t("playerPlaylists");
 
-  const playlistCloseBtn = document.createElement("button");
-  playlistCloseBtn.type = "button";
-  playlistCloseBtn.className = "player-playlist-sheet-close";
-  playlistCloseBtn.setAttribute("aria-label", t("close"));
-  playlistCloseBtn.innerHTML = IconClose;
-
-  playlistSheetHeader.append(playlistBackBtn, playlistSheetTitle, playlistCloseBtn);
+  playlistSheetHeader.append(playlistBackBtn, playlistSheetTitle);
 
   const playlistListUl = document.createElement("ul");
   playlistListUl.className = "player-playlist-list";
   playlistListUl.setAttribute("role", "list");
 
-  playlistSheet.append(playlistSheetHeader, playlistListUl);
+  playlistPane.append(playlistSheetHeader, playlistListUl);
+  contentPaneStack.append(queuePane, libraryPane, playlistPane);
+  contentSheet.append(contentSheetHeader, contentPaneStack);
 
   // ── Assembly ───────────────────────────────────────────────────
   const body = document.createElement("div");
   body.className = "player-body";
   body.append(nowPlaying, visualizerStrip, errorMsg, progressSection, transport, volumeRow);
 
-  root.append(header, body, queueSheet, librarySheet, playlistSheet);
+  root.append(header, body, contentSheet);
   container.append(root);
 
   // ── State ──────────────────────────────────────────────────────
   let seeking = false;
   let allTracks = [];
+  let contentOpen = false;
+  let activeContentTab = "queue";
   let queueOpen = false;
   let queueFilter = "";
   let lastRenderedQueueSignature = "";
+  let queueSaveStatusTimer = 0;
   let visualizerVisible = loadText(VISUALIZER_VISIBLE_STORAGE_KEY, "true") !== "false";
   let visualizerMode = normalizeVisualizerMode(loadText(VISUALIZER_MODE_STORAGE_KEY, "spectrum"));
   let visualizerController = null;
@@ -532,27 +527,131 @@ export function createPlayerShell({ container }) {
   })();
   let _gestureUnlocked = !_needsGestureGate;
 
-  // ── Queue sheet toggle ─────────────────────────────────────────
-  function setQueueOpen(open) {
-    queueOpen = open;
-    if (open) {
-      setLibraryOpen(false);
-      setPlaylistOpen(false); // close playlists when queue opens
+  // ── Integrated content sheet toggle ────────────────────────────
+  const CONTENT_TABS = new Set(["queue", "library", "playlists"]);
+  const tabButtons = {
+    queue: queueTabBtn,
+    library: libraryTabBtn,
+    playlists: playlistTabBtn,
+  };
+  const tabPanes = {
+    queue: queuePane,
+    library: libraryPane,
+    playlists: playlistPane,
+  };
+
+  function syncContentSheet({ render = true } = {}) {
+    queueOpen = contentOpen && activeContentTab === "queue";
+    libraryOpen = contentOpen && activeContentTab === "library";
+    playlistOpen = contentOpen && activeContentTab === "playlists";
+
+    contentSheet.classList.toggle("is-open", contentOpen);
+    contentSheet.setAttribute("aria-hidden", String(!contentOpen));
+    contentToggleBtn.classList.toggle("active", contentOpen);
+    contentToggleBtn.setAttribute("aria-expanded", String(contentOpen));
+    contentToggleBtn.setAttribute("aria-pressed", String(contentOpen));
+
+    for (const tab of CONTENT_TABS) {
+      const isActive = contentOpen && activeContentTab === tab;
+      tabButtons[tab].classList.toggle("active", isActive);
+      tabButtons[tab].setAttribute("aria-selected", String(isActive));
+      tabButtons[tab].setAttribute("tabindex", isActive ? "0" : "-1");
+      tabPanes[tab].hidden = !isActive;
+      tabPanes[tab].classList.toggle("is-open", isActive);
+      tabPanes[tab].setAttribute("aria-hidden", String(!isActive));
     }
-    queueSheet.classList.toggle("is-open", queueOpen);
-    queueSheet.setAttribute("aria-hidden", String(!queueOpen));
-    queueToggleBtn.classList.toggle("active", queueOpen);
-    if (queueOpen) renderTrackList(queueFilter);
+
+    if (!render || !contentOpen) return;
+    if (queueOpen) {
+      renderTrackList(queueFilter);
+    } else if (libraryOpen) {
+      renderLibraryList(libraryFilter);
+    } else if (playlistOpen && !playlistDetailView) {
+      renderPlaylistList();
+    }
   }
 
-  // Prevent queue toggle from triggering header drag
-  queueToggleBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
-  queueToggleBtn.addEventListener("pointerup", (e) => e.stopPropagation());
-  queueToggleBtn.addEventListener("click", (e) => {
+  function setContentOpen(open, tab = activeContentTab) {
+    if (open && CONTENT_TABS.has(tab)) {
+      activeContentTab = tab;
+    }
+    contentOpen = Boolean(open);
+    syncContentSheet();
+  }
+
+  function setActiveContentTab(tab) {
+    if (!CONTENT_TABS.has(tab)) return;
+    const changed = activeContentTab !== tab;
+    activeContentTab = tab;
+    contentOpen = true;
+    if (tab === "playlists" && changed) {
+      playlistDetailView = null;
+    }
+    syncContentSheet();
+  }
+
+  function setQueueOpen(open) {
+    setContentOpen(open, "queue");
+  }
+
+  // Prevent content controls from triggering header drag
+  contentToggleBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  contentToggleBtn.addEventListener("pointerup", (e) => e.stopPropagation());
+  contentToggleBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    setQueueOpen(!queueOpen);
+    setContentOpen(!contentOpen);
   });
-  queueCloseBtn.addEventListener("click", () => setQueueOpen(false));
+  contentCloseBtn.addEventListener("click", () => setContentOpen(false));
+
+  for (const [tab, btn] of Object.entries(tabButtons)) {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setActiveContentTab(tab);
+    });
+  }
+
+  function handleContentPaneWheel(e) {
+    const pane = e.currentTarget;
+    if (!(pane instanceof HTMLElement) || pane.hidden) return;
+
+    const canScrollY = pane.scrollHeight > pane.clientHeight;
+    const canScrollX = pane.scrollWidth > pane.clientWidth;
+    if (!canScrollY && !canScrollX) return;
+
+    if (canScrollY && e.deltaY) {
+      pane.scrollTop += e.deltaY;
+    }
+    if (canScrollX && e.deltaX) {
+      pane.scrollLeft += e.deltaX;
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  for (const pane of Object.values(tabPanes)) {
+    pane.addEventListener("wheel", handleContentPaneWheel, { passive: false });
+  }
+
+  queueTabBtn.addEventListener("keydown", (e) => handleContentTabKeydown(e, "queue"));
+  libraryTabBtn.addEventListener("keydown", (e) => handleContentTabKeydown(e, "library"));
+  playlistTabBtn.addEventListener("keydown", (e) => handleContentTabKeydown(e, "playlists"));
+
+  function handleContentTabKeydown(e, currentTab) {
+    const order = ["queue", "library", "playlists"];
+    const index = order.indexOf(currentTab);
+    if (index === -1) return;
+    let nextTab = "";
+    if (e.key === "ArrowRight") {
+      nextTab = order[(index + 1) % order.length];
+    } else if (e.key === "ArrowLeft") {
+      nextTab = order[(index - 1 + order.length) % order.length];
+    }
+    if (!nextTab) return;
+    e.preventDefault();
+    setActiveContentTab(nextTab);
+    tabButtons[nextTab]?.focus?.();
+  }
 
   // Clear queue button
   queueSheetClearBtn.addEventListener("click", () => {
@@ -561,94 +660,94 @@ export function createPlayerShell({ container }) {
     renderTrackList();
   });
 
-  // Save queue as playlist — show title form
-  queueSaveBtn.addEventListener("click", () => {
-    const s = runtime.getState();
-    const saveable = s.queue.filter((tr) => tr.name && !tr._demo);
+  function clearQueueSaveStatusTimer() {
+    if (!queueSaveStatusTimer) return;
+    clearTimeout(queueSaveStatusTimer);
+    queueSaveStatusTimer = 0;
+  }
+
+  function resetQueueSaveButton() {
+    clearQueueSaveStatusTimer();
+    queueSaveBtn.disabled = false;
+    queueSaveBtn.textContent = t("playerSaveQueueAsPlaylist");
+  }
+
+  function showQueueSaveButtonStatus(labelKey) {
+    clearQueueSaveStatusTimer();
+    queueSaveBtn.disabled = true;
+    queueSaveBtn.textContent = t(labelKey);
+    queueSaveStatusTimer = window.setTimeout(() => {
+      resetQueueSaveButton();
+    }, 2000);
+  }
+
+  // Save queue as playlist — prompt for title instead of expanding the toolbar
+  queueSaveBtn.addEventListener("click", async () => {
+    if (queueSaveBtn.disabled) return;
+
+    const initialState = runtime.getState();
+    const initialSaveable = initialState.queue.filter((tr) => tr.name && !tr._demo);
+    if (initialSaveable.length === 0) return;
+
+    const title = await showPromptDialog({
+      title: t("playerSaveQueueAsPlaylist"),
+      placeholder: t("playerPlaylistTitlePlaceholder"),
+      confirmLabel: t("playerSaveConfirm"),
+      cancelLabel: t("cancel"),
+      inputLabel: t("playerPlaylistTitlePlaceholder"),
+      maxLength: 140,
+    });
+    if (title === null) return;
+
+    const trimmedTitle = String(title || "").trim();
+    if (!trimmedTitle) return;
+
+    const currentState = runtime.getState();
+    const saveable = currentState.queue.filter((tr) => tr.name && !tr._demo);
     if (saveable.length === 0) return;
 
-    queueSaveBtn.hidden = true;
-    queueSaveForm.hidden = false;
-    queueSaveTitleInput.value = "";
-    queueSaveTitleInput.focus();
-  });
+    clearQueueSaveStatusTimer();
+    queueSaveBtn.disabled = true;
+    queueSaveBtn.textContent = t("playerSavingPlaylist");
 
-  queueSaveCancelBtn.addEventListener("click", () => {
-    queueSaveForm.hidden = true;
-    queueSaveBtn.hidden = false;
-  });
-
-  queueSaveForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const title = queueSaveTitleInput.value.trim();
-    if (!title) {
-      queueSaveTitleInput.focus();
-      return;
-    }
-
-    const s = runtime.getState();
-    const saveable = s.queue.filter((tr) => tr.name && !tr._demo);
-    if (saveable.length === 0) return;
-
-    queueSaveConfirmBtn.disabled = true;
-    queueSaveCancelBtn.disabled = true;
-    queueSaveConfirmBtn.textContent = t("playerSavingPlaylist");
-
+    let statusKey = "playerPlaylistSaveFailed";
     let gate = null;
     try {
       gate = await getProtectedMediaRequestGate();
       if (!gate.allowed) {
-        queueSaveConfirmBtn.textContent = t("playerPlaylistSaveFailed");
         return;
       }
 
-      const result = await createBackendPlaylist({ title, signal: gate.signal });
+      const result = await createBackendPlaylist({ title: trimmedTitle, signal: gate.signal });
       if (!result.ok || !result.playlist?.name) {
-        queueSaveConfirmBtn.textContent = t("playerPlaylistSaveFailed");
         return;
       }
 
-      await bulkAddBackendPlaylistItems({
+      const bulkResult = await bulkAddBackendPlaylistItems({
         name: result.playlist.name,
         mediaAssetNames: saveable.map((tr) => tr.name),
         signal: gate.signal,
-      }).then((bulkResult) => {
-        if (!bulkResult.ok) {
-          queueSaveConfirmBtn.textContent = t("playerPlaylistSaveFailed");
-        } else if (bulkResult.skipped?.length) {
-          queueSaveConfirmBtn.textContent = t("playerPlaylistSavedPartial");
-        } else {
-          queueSaveConfirmBtn.textContent = t("playerPlaylistSaved");
-        }
       });
+
+      if (bulkResult?.ok) {
+        statusKey = bulkResult.skipped?.length
+          ? "playerPlaylistSavedPartial"
+          : "playerPlaylistSaved";
+      }
     } catch {
-      queueSaveConfirmBtn.textContent = t("playerPlaylistSaveFailed");
+      statusKey = "playerPlaylistSaveFailed";
     } finally {
       gate?.cleanup?.();
-      setTimeout(() => {
-        queueSaveForm.hidden = true;
-        queueSaveBtn.hidden = false;
-        queueSaveConfirmBtn.disabled = false;
-        queueSaveCancelBtn.disabled = false;
-        queueSaveConfirmBtn.textContent = t("playerSaveConfirm");
-      }, 2000);
+      showQueueSaveButtonStatus(statusKey);
     }
   });
 
-  // ── Library sheet toggle ────────────────────────────────────────
+  // ── Library content pane ────────────────────────────────────────
   let libraryOpen = false;
   let libraryFilter = "";
 
   function setLibraryOpen(open) {
-    libraryOpen = open;
-    if (open) {
-      setQueueOpen(false);
-      setPlaylistOpen(false);
-      renderLibraryList(libraryFilter);
-    }
-    librarySheet.classList.toggle("is-open", libraryOpen);
-    librarySheet.setAttribute("aria-hidden", String(!libraryOpen));
-    libraryToggleBtn.classList.toggle("active", libraryOpen);
+    setContentOpen(open, "library");
   }
 
   function renderLibraryList(filter = "") {
@@ -705,30 +804,40 @@ export function createPlayerShell({ container }) {
       const actionsDiv = document.createElement("div");
       actionsDiv.className = "player-library-item-actions";
 
-      const playNowBtn = document.createElement("button");
-      playNowBtn.type = "button";
-      playNowBtn.className = "player-library-action-btn";
-      playNowBtn.textContent = t("playerPlayNow");
-      playNowBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
+      function playTrackNow() {
         _gestureUnlocked = true;
         primeAudioContext();
-        void runtime.playCatalogTrack(track.name, allTracks);
+        void runtime.playLibraryTrackNow(track, audioTracks);
+      }
+
+      const playNowBtn = makeActionBtn(
+        "player-library-action-btn player-library-action-btn--primary",
+        IconPlay,
+        t("playerPlayNow"),
+        t("playerPlayNowShort"),
+      );
+      playNowBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        playTrackNow();
       });
 
-      const playNextBtn = document.createElement("button");
-      playNextBtn.type = "button";
-      playNextBtn.className = "player-library-action-btn";
-      playNextBtn.textContent = t("playerPlayNext");
+      const playNextBtn = makeActionBtn(
+        "player-library-action-btn",
+        IconSkipForward,
+        t("playerPlayNext"),
+        t("playerPlayNextShort"),
+      );
       playNextBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         runtime.playNext([track]);
       });
 
-      const addToQueueBtn = document.createElement("button");
-      addToQueueBtn.type = "button";
-      addToQueueBtn.className = "player-library-action-btn";
-      addToQueueBtn.textContent = t("playerAddToQueue");
+      const addToQueueBtn = makeActionBtn(
+        "player-library-action-btn",
+        IconQueue,
+        t("playerAddToQueue"),
+        t("playerAddToQueueShort"),
+      );
       addToQueueBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         runtime.enqueue([track]);
@@ -739,45 +848,29 @@ export function createPlayerShell({ container }) {
 
       // Default click = play now
       li.addEventListener("click", () => {
-        _gestureUnlocked = true;
-        primeAudioContext();
-        void runtime.playCatalogTrack(track.name, allTracks);
+        playTrackNow();
       });
 
       libraryListUl.append(li);
     }
   }
 
-  libraryToggleBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
-  libraryToggleBtn.addEventListener("pointerup", (e) => e.stopPropagation());
-  libraryToggleBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    setLibraryOpen(!libraryOpen);
-  });
-  libraryCloseBtn.addEventListener("click", () => setLibraryOpen(false));
-
   librarySearchInput.addEventListener("input", () => {
     libraryFilter = librarySearchInput.value.trim().toLowerCase();
     renderLibraryList(libraryFilter);
   });
 
-  // ── Playlist sheet toggle ──────────────────────────────────────
+  // ── Playlist content pane ──────────────────────────────────────
   let playlistOpen = false;
   let playlistDetailView = null; // null = list view, string = viewing a playlist by name
   let cachedPlaylists = [];
   let lastPinResult = null; // { playlistName, results } — tracks partial pin failures for retry
 
   function setPlaylistOpen(open) {
-    playlistOpen = open;
     if (open) {
-      setQueueOpen(false); // close queue when playlists open
-      setLibraryOpen(false); // close library when playlists open
       playlistDetailView = null;
-      renderPlaylistList();
     }
-    playlistSheet.classList.toggle("is-open", playlistOpen);
-    playlistSheet.setAttribute("aria-hidden", String(!playlistOpen));
-    playlistToggleBtn.classList.toggle("active", playlistOpen);
+    setContentOpen(open, "playlists");
   }
 
   function renderPlaylistList() {
@@ -1308,14 +1401,6 @@ export function createPlayerShell({ container }) {
 
   playlistBackBtn.addEventListener("click", () => renderPlaylistList());
 
-  playlistToggleBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
-  playlistToggleBtn.addEventListener("pointerup", (e) => e.stopPropagation());
-  playlistToggleBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    setPlaylistOpen(!playlistOpen);
-  });
-  playlistCloseBtn.addEventListener("click", () => setPlaylistOpen(false));
-
   // ── Visualizer controls ─────────────────────────────────────────
   function getRuntimeAudioElement() {
     try {
@@ -1797,6 +1882,7 @@ export function createPlayerShell({ container }) {
 
     destroy() {
       unsubscribe();
+      clearQueueSaveStatusTimer();
       destroyVisualizerController();
       milkdropPanel?.destroy();
       milkdropPanel = null;
@@ -1827,5 +1913,49 @@ function makeBtn(className, iconHtml, label) {
   icon.className = "btn-icon";
   icon.innerHTML = iconHtml;
   btn.append(icon);
+  return btn;
+}
+
+function makeTabBtn(tab, iconHtml, label) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = `player-content-tab-btn player-content-tab-${tab}`;
+  btn.dataset.contentTab = tab;
+  btn.setAttribute("role", "tab");
+  btn.setAttribute("aria-selected", "false");
+  btn.setAttribute("tabindex", "-1");
+
+  const icon = document.createElement("span");
+  icon.className = "btn-icon";
+  icon.innerHTML = iconHtml;
+
+  const text = document.createElement("span");
+  text.className = "player-content-tab-label";
+  text.textContent = label;
+
+  btn.append(icon, text);
+  return btn;
+}
+
+function makeActionBtn(className, iconHtml, label, visibleLabel = label) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = className;
+  btn.setAttribute("aria-label", label);
+  btn.title = label;
+
+  const icon = document.createElement("span");
+  icon.className = "btn-icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.innerHTML = iconHtml;
+
+  const text = document.createElement("span");
+  text.className = "player-action-label";
+  text.textContent = visibleLabel;
+
+  btn.addEventListener("pointerdown", (event) => event.stopPropagation());
+  btn.addEventListener("pointerup", (event) => event.stopPropagation());
+
+  btn.append(icon, text);
   return btn;
 }

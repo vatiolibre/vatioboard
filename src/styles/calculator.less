@@ -17,6 +17,10 @@
   --calc-radius: 16px;
 
   --calc-font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  --vb-z-floating: 1000;
+  --vb-z-floating-secondary: 990;
+  --vb-z-modal: 2000;
+  --vb-z-emergency: 2147483647;
 
 }
 
@@ -54,7 +58,7 @@
   position: fixed;
   right: 16px;
   bottom: 16px;
-  z-index: 2147483647;
+  z-index: var(--vb-z-floating, 1000);
   width: 52px;
   height: 52px;
   border-radius: 999px;
@@ -77,7 +81,7 @@
   position: fixed;
   right: 16px;
   bottom: 76px;
-  z-index: 2147483647;
+  z-index: var(--vb-z-floating, 1000);
   width: 320px;
   border-radius: var(--calc-radius);
   border: 1px solid var(--calc-border);
