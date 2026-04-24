@@ -183,6 +183,7 @@ describe("index.html smoke", () => {
   it("boots the board page and mounts its widgets", async () => {
     await import("../../src/board/board.js");
     await flushBoardTasks();
+    const pageHeader = document.querySelector("header");
 
     expectPageSeo({
       title: "Vatio Board – Free Drawing Board + Calculator (Tesla-Friendly)",
@@ -210,6 +211,7 @@ describe("index.html smoke", () => {
     expect(document.querySelector("#toolsMenuBtn .btn-icon svg")).toBeTruthy();
     expect(document.getElementById("toolsMenuList").hidden).toBe(false);
     expect(document.getElementById("toolsMenuBtn").getAttribute("aria-expanded")).toBe("true");
+    expect(pageHeader?.classList.contains("tools-menu-layer-open")).toBe(true);
     expect(document.querySelector("[data-backend-auth]")).toBeTruthy();
     expect(document.querySelector("[data-backend-auth-signup]").getAttribute("href")).toBe("https://www.vatiolibre.com/login#signup");
     expect(document.querySelector("[data-backend-auth-forgot]").getAttribute("href")).toBe("https://www.vatiolibre.com/login#forgot");
@@ -442,14 +444,17 @@ describe("index.html smoke", () => {
   it("guides guests to log in before saving", async () => {
     await import("../../src/board/board.js");
     await flushBoardTasks();
+    const pageHeader = document.querySelector("header");
 
     document.getElementById("toolsMenuBtn").click();
     expect(document.getElementById("toolsMenuList").hidden).toBe(true);
+    expect(pageHeader?.classList.contains("tools-menu-layer-open")).toBe(false);
 
     document.getElementById("save").click();
     await flushBoardTasks();
 
     expect(document.getElementById("toolsMenuList").hidden).toBe(false);
+    expect(pageHeader?.classList.contains("tools-menu-layer-open")).toBe(true);
     expect(document.getElementById("status").textContent).toBe("Log in to save board documents to VatioLibre.");
   });
 

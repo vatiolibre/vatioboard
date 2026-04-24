@@ -238,6 +238,7 @@ async function resolveArtworkUrl(track) {
  * @returns {{
  *   root: HTMLElement,
  *   header: HTMLElement,
+ *   nowPlaying: HTMLElement,
  *   closeBtn: HTMLElement,
  *   destroy: () => void,
  *   setTracks: (tracks: object[]) => void,
@@ -255,22 +256,45 @@ export function createPlayerShell({ container }) {
   const header = document.createElement("div");
   header.className = "player-header";
 
-  const visualizerToggleBtn = makeBtn("player-visualizer-toggle-btn", IconVisualizer, t("mediaPlayerVisualizerMode"));
+  const headerMain = document.createElement("div");
+  headerMain.className = "player-header-main";
 
-  const milkdropToggleBtn = makeBtn("player-milkdrop-toggle-btn", IconMilkdrop, t("milkdropOpen"));
+  const headerGrip = document.createElement("div");
+  headerGrip.className = "player-header-grip";
+  headerGrip.setAttribute("aria-hidden", "true");
+  headerMain.append(headerGrip);
 
-  const contentToggleBtn = makeBtn("player-content-toggle-btn", IconLibrary, t("playerContent"));
+  const visualizerToggleBtn = makeUtilityBtn(
+    "player-visualizer-toggle-btn",
+    IconVisualizer,
+    t("mediaPlayerVisualizerMode"),
+    t("playerVisualsShort"),
+  );
+
+  const milkdropToggleBtn = makeUtilityBtn(
+    "player-milkdrop-toggle-btn",
+    IconMilkdrop,
+    t("milkdropOpen"),
+    t("milkdropTitle"),
+  );
+
+  const contentToggleBtn = makeUtilityBtn(
+    "player-content-toggle-btn",
+    IconLibrary,
+    t("playerContent"),
+    t("playerBrowseShort"),
+  );
   contentToggleBtn.setAttribute("aria-expanded", "false");
-
-  const spacer = document.createElement("div");
-  spacer.className = "player-spacer";
+  contentToggleBtn.setAttribute("aria-pressed", "false");
 
   const closeBtn = document.createElement("button");
   closeBtn.type = "button";
   closeBtn.className = "player-close";
-  closeBtn.textContent = t("close");
+  closeBtn.setAttribute("aria-label", t("close"));
+  closeBtn.title = t("close");
+  closeBtn.innerHTML = IconClose;
 
-  header.append(visualizerToggleBtn, milkdropToggleBtn, contentToggleBtn, spacer, closeBtn);
+  header.append(headerMain, closeBtn);
 
   // ── Now-playing row (compact artwork + metadata) ───────────────
   const nowPlaying = document.createElement("div");
@@ -372,6 +396,11 @@ export function createPlayerShell({ container }) {
 
   volumeRow.append(muteBtn, volumeSlider);
   updateRangeVisualFill(volumeSlider);
+
+  // ── Utility controls ───────────────────────────────────────────
+  const utilityRow = document.createElement("div");
+  utilityRow.className = "player-utility-row";
+  utilityRow.append(visualizerToggleBtn, milkdropToggleBtn, contentToggleBtn);
 
   // ── Integrated content sheet ───────────────────────────────────
   const contentSheet = document.createElement("div");
@@ -498,7 +527,7 @@ export function createPlayerShell({ container }) {
   // ── Assembly ───────────────────────────────────────────────────
   const body = document.createElement("div");
   body.className = "player-body";
-  body.append(nowPlaying, visualizerStrip, errorMsg, progressSection, transport, volumeRow);
+  body.append(nowPlaying, visualizerStrip, errorMsg, progressSection, transport, volumeRow, utilityRow);
 
   root.append(header, body, contentSheet);
   container.append(root);
@@ -1877,6 +1906,8 @@ export function createPlayerShell({ container }) {
     root,
     /** The header element (drag handle for the widget). */
     header,
+    /** The now-playing row (secondary drag handle for the widget). */
+    nowPlaying,
     /** The close button (widget wires its click handler). */
     closeBtn,
 
@@ -1913,6 +1944,29 @@ function makeBtn(className, iconHtml, label) {
   icon.className = "btn-icon";
   icon.innerHTML = iconHtml;
   btn.append(icon);
+  return btn;
+}
+
+function makeUtilityBtn(className, iconHtml, label, visibleLabel = label) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = `player-utility-btn ${className}`;
+  btn.setAttribute("aria-label", label);
+  btn.title = label;
+
+  const icon = document.createElement("span");
+  icon.className = "btn-icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.innerHTML = iconHtml;
+
+  const text = document.createElement("span");
+  text.className = "player-utility-btn-label";
+  text.textContent = visibleLabel;
+
+  btn.addEventListener("pointerdown", (event) => event.stopPropagation());
+  btn.addEventListener("pointerup", (event) => event.stopPropagation());
+
+  btn.append(icon, text);
   return btn;
 }
 

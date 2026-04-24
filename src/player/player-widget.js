@@ -387,7 +387,7 @@ export function createPlayerWidget(options = {}) {
   // ── Panel drag ───────────────────────────────────────────────
   makePanelDraggable({
     panel: shell.root,
-    header: shell.header,
+    header: [shell.header, shell.nowPlaying],
     dragThresholdPx: DRAG_THRESHOLD_PX,
     savePos,
     loadPos,

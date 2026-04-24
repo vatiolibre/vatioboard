@@ -413,6 +413,7 @@ describe("library.html smoke", () => {
     const libraryPage = await import("../../src/library/library.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
+    const pageHeader = document.querySelector("header");
 
     expect(document.querySelector(".header-inner.library-header-inner")).toBeTruthy();
     expect(document.querySelector(".brand .brand-home")).toBeTruthy();
@@ -448,6 +449,7 @@ describe("library.html smoke", () => {
 
     expect(toolsMenuButton?.getAttribute("aria-expanded")).toBe("true");
     expect(toolsMenuList?.hidden).toBe(false);
+    expect(pageHeader?.classList.contains("tools-menu-layer-open")).toBe(true);
     expect(document.querySelector("#libraryToolsMenuList [data-backend-auth]")).toBeTruthy();
     expect(document.querySelector("#libraryToolsMenuList [data-backend-auth]")?.dataset.authState).toBe("authenticated");
     expect(document.getElementById("openLibraryReplayMenu")).toBeTruthy();

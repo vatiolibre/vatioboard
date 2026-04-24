@@ -1,3 +1,21 @@
+const toolsMenuOpenCounts = new WeakMap();
+
+function updateToolsMenuLayer(root, delta) {
+  if (!root || !delta) return;
+
+  const current = toolsMenuOpenCounts.get(root) || 0;
+  const next = Math.max(0, current + delta);
+
+  if (next === 0) {
+    toolsMenuOpenCounts.delete(root);
+    root.classList.remove("tools-menu-layer-open");
+    return;
+  }
+
+  toolsMenuOpenCounts.set(root, next);
+  root.classList.add("tools-menu-layer-open");
+}
+
 export function applyButtonIcon(button, icon) {
   var iconSlot = button && button.querySelector ? button.querySelector(".btn-icon") : null;
   if (!iconSlot) return;
@@ -15,9 +33,20 @@ export function initToolsMenu(options) {
     };
   }
 
+  var stackingRoot = button.closest("header") || list.closest("header");
+  var open = list.hidden === false;
+
+  if (open) updateToolsMenuLayer(stackingRoot, 1);
+
   function setOpen(isOpen) {
-    list.hidden = !isOpen;
-    button.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    var nextOpen = isOpen === true;
+    list.hidden = !nextOpen;
+    button.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+
+    if (nextOpen === open) return;
+
+    updateToolsMenuLayer(stackingRoot, nextOpen ? 1 : -1);
+    open = nextOpen;
   }
 
   function close() {

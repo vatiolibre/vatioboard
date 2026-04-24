@@ -2211,8 +2211,11 @@ describe("player-shell", () => {
   it("renders the shell with all transport controls", () => {
     const container = document.createElement("div");
     const shell = createPlayerShell({ container });
+    const body = container.querySelector(".player-body");
 
     expect(container.querySelector(".player-panel")).toBeTruthy();
+    expect(container.querySelector(".player-header-main")).toBeTruthy();
+    expect(container.querySelector(".player-header-label")).toBeNull();
     expect(container.querySelector(".player-artwork-compact")).toBeTruthy();
     expect(container.querySelector(".player-transport")).toBeTruthy();
     expect(container.querySelector(".player-btn-play-main")).toBeTruthy();
@@ -2220,8 +2223,16 @@ describe("player-shell", () => {
     expect(container.querySelector(".player-btn-next")).toBeTruthy();
     expect(container.querySelector(".player-progress")).toBeTruthy();
     expect(container.querySelector(".player-volume")).toBeTruthy();
+    expect(container.querySelector(".player-utility-row")).toBeTruthy();
     expect(container.querySelector(".player-visualizer-toggle-btn")).toBeTruthy();
     expect(container.querySelector(".player-content-toggle-btn")).toBeTruthy();
+    expect(Array.from(container.querySelectorAll(".player-utility-btn-label"), (label) => label.textContent)).toEqual([
+      "playerVisualsShort",
+      "milkdropTitle",
+      "playerBrowseShort",
+    ]);
+    expect(container.querySelector(".player-close svg")).toBeTruthy();
+    expect(body.lastElementChild?.classList.contains("player-utility-row")).toBe(true);
     expect(container.querySelector(".player-queue-toggle-btn")).toBeNull();
     expect(container.querySelector(".player-library-toggle-btn")).toBeNull();
     expect(container.querySelector(".player-playlist-toggle-btn")).toBeNull();
@@ -2232,7 +2243,7 @@ describe("player-shell", () => {
     shell.destroy();
   });
 
-  it("toggles the player visualizer strip from the header button", () => {
+  it("toggles the player visualizer strip from the utility button", () => {
     const container = document.createElement("div");
     const shell = createPlayerShell({ container });
 
@@ -2253,7 +2264,48 @@ describe("player-shell", () => {
     shell.destroy();
   });
 
-  it("toggles the milkdrop panel from the header button", () => {
+  it("opens the content sheet from the utility button with the queue tab active", () => {
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    const toggleBtn = container.querySelector(".player-content-toggle-btn");
+    const contentSheet = container.querySelector(".player-content-sheet");
+    const queueTabBtn = container.querySelector(".player-content-tab-queue");
+    const queuePane = container.querySelector(".player-content-pane-queue");
+
+    expect(toggleBtn.getAttribute("aria-expanded")).toBe("false");
+    expect(toggleBtn.getAttribute("aria-pressed")).toBe("false");
+    expect(contentSheet.classList.contains("is-open")).toBe(false);
+
+    toggleBtn.click();
+
+    expect(toggleBtn.getAttribute("aria-expanded")).toBe("true");
+    expect(toggleBtn.getAttribute("aria-pressed")).toBe("true");
+    expect(contentSheet.classList.contains("is-open")).toBe(true);
+    expect(queueTabBtn.classList.contains("active")).toBe(true);
+    expect(queueTabBtn.getAttribute("aria-selected")).toBe("true");
+    expect(queuePane.hidden).toBe(false);
+    expect(queuePane.classList.contains("is-open")).toBe(true);
+
+    toggleBtn.click();
+
+    expect(toggleBtn.getAttribute("aria-expanded")).toBe("false");
+    expect(toggleBtn.getAttribute("aria-pressed")).toBe("false");
+    expect(contentSheet.classList.contains("is-open")).toBe(false);
+    expect(queuePane.hidden).toBe(true);
+
+    shell.destroy();
+  });
+
+  it("exposes the now playing row on the shell API", () => {
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+
+    expect(shell.nowPlaying).toBe(container.querySelector(".player-now-playing"));
+
+    shell.destroy();
+  });
+
+  it("toggles the milkdrop panel from the utility button", () => {
     const container = document.createElement("div");
     const shell = createPlayerShell({ container });
     const toggleBtn = container.querySelector(".player-milkdrop-toggle-btn");

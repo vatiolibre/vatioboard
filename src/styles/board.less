@@ -127,6 +127,10 @@ header{
     border-bottom: 1px solid var(--border);
 }
 
+header.tools-menu-layer-open{
+    z-index: calc(var(--vb-z-floating, 1000) + 5);
+}
+
 .header-inner{
     width: 100%;
     margin: 0;
@@ -290,7 +294,7 @@ header{
     border: 1px solid var(--border);
     background: var(--surface);
     box-shadow: 0 12px 24px rgba(0, 0, 0, 0.25);
-    z-index: 20;
+    z-index: calc(var(--vb-z-floating, 1000) + 6);
 }
 
 .tools-menu-list button{

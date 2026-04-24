@@ -463,12 +463,30 @@ describe("createPlayerWidget", () => {
 
     const panel = document.querySelector(".player-panel");
     expect(panel.querySelector(".player-header")).toBeTruthy();
+    expect(panel.querySelector(".player-header-label")).toBeFalsy();
     expect(panel.querySelector(".player-close")).toBeTruthy();
+    expect(panel.querySelector(".player-close svg")).toBeTruthy();
+    expect(panel.querySelector(".player-utility-row")).toBeTruthy();
+    expect(Array.from(panel.querySelectorAll(".player-utility-btn-label"), (label) => label.textContent)).toEqual([
+      "playerVisualsShort",
+      "milkdropTitle",
+      "playerBrowseShort",
+    ]);
     expect(panel.querySelector(".player-title")).toBeFalsy();
     expect(panel.querySelector(".player-content-toggle-btn")).toBeTruthy();
     expect(panel.querySelector(".player-queue-toggle-btn")).toBeFalsy();
     expect(panel.querySelector(".player-library-toggle-btn")).toBeFalsy();
     expect(panel.querySelector(".player-playlist-toggle-btn")).toBeFalsy();
+
+    widget.destroy();
+  });
+
+  it("uses the header and now playing row as drag handles", () => {
+    const widget = createPlayerWidget({ floating: false });
+    const panel = document.querySelector(".player-panel");
+
+    expect(panel.querySelector(".player-header").classList.contains("vb-floating-drag-handle")).toBe(true);
+    expect(panel.querySelector(".player-now-playing").classList.contains("vb-floating-drag-handle")).toBe(true);
 
     widget.destroy();
   });

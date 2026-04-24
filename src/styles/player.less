@@ -151,80 +151,118 @@ html.vb-floating-drag-active body {
 /* ── Header (drag handle) ─────────────────────────────────────────── */
 
 .player-header {
+  position: relative;
   display: flex;
+  justify-content: center;
   align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--player-border);
+  padding: 8px 10px 0;
   cursor: grab;
   user-select: none;
+  -webkit-user-select: none;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--player-surface) 96%, #ffffff 4%) 0%,
+      color-mix(in srgb, var(--player-surface) 92%, var(--player-btn) 8%) 58%,
+      color-mix(in srgb, var(--player-surface) 100%, transparent) 100%
+    );
 }
 
 .player-header:active {
   cursor: grabbing;
 }
 
-.player-spacer {
-  flex: 1;
+.player-header::after {
+  content: "";
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: -12px;
+  height: 18px;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--player-surface) 72%, var(--player-btn) 28%) 0%,
+    color-mix(in srgb, var(--player-surface) 92%, transparent) 58%,
+    transparent 100%
+  );
+}
+
+.player-header-main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 0 4px;
+}
+
+.player-header-grip {
+  width: 40px;
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--player-muted) 36%, transparent);
 }
 
 .player-close {
-  border: 1px solid var(--player-border);
-  background: transparent;
-  color: var(--player-text);
-  border-radius: 10px;
-  min-height: 36px;
-  padding: 6px 12px;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  border: 1px solid color-mix(in srgb, var(--player-border) 96%, transparent);
+  background: color-mix(in srgb, var(--player-surface) 68%, transparent);
+  color: color-mix(in srgb, var(--player-muted) 76%, var(--player-text) 24%);
+  border-radius: 999px;
   cursor: pointer;
-  font-size: 0.8rem;
   font-family: var(--player-font);
+  transition:
+    background 0.16s ease,
+    color 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.18s ease,
+    opacity 0.16s ease;
+  -webkit-tap-highlight-color: transparent;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14);
+  opacity: 0.84;
 }
 
-/* Header icon buttons */
-.player-content-toggle-btn,
-.player-milkdrop-toggle-btn,
-.player-visualizer-toggle-btn {
-  background: transparent;
-  border: none;
-  color: var(--player-muted);
-  cursor: pointer;
-  width: 36px;
-  height: 36px;
+.player-close:hover {
+  background: color-mix(in srgb, var(--player-surface) 82%, var(--player-btn-hover) 18%);
+  color: var(--player-text);
+  opacity: 1;
+}
+
+.player-close:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--player-focus-ring);
+}
+
+.player-close {
+  width: 34px;
+  min-height: 34px;
   padding: 0;
-  border-radius: 9px;
   display: grid;
   place-items: center;
-  flex-shrink: 0;
 }
 
-.player-content-toggle-btn:hover,
-.player-milkdrop-toggle-btn:hover,
-.player-visualizer-toggle-btn:hover {
-  background: var(--player-btn-hover);
-  color: var(--player-text);
-}
-
-.player-content-toggle-btn.active,
-.player-milkdrop-toggle-btn.active,
-.player-visualizer-toggle-btn.active {
-  color: var(--player-accent);
-  background: var(--player-accent-soft);
-}
-
-.player-content-toggle-btn svg,
-.player-milkdrop-toggle-btn svg,
-.player-visualizer-toggle-btn svg {
-  width: 19px;
-  height: 19px;
+.player-close svg {
+  width: 16px;
+  height: 16px;
 }
 
 /* ── Body ─────────────────────────────────────────────────────────── */
 
 .player-body {
-  padding: 12px;
+  padding: 10px 12px 12px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--player-surface) 94%, var(--player-btn) 6%) 0%,
+    var(--player-surface) 26px
+  );
 }
 
 /* ── Now-playing (compact) ────────────────────────────────────────── */
@@ -233,6 +271,22 @@ html.vb-floating-drag-active body {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
+  padding: 6px 8px;
+  margin: -2px -2px 0;
+  border-radius: 12px;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background 0.16s ease;
+}
+
+.player-now-playing:hover {
+  background: color-mix(in srgb, var(--player-btn-hover) 56%, transparent);
+}
+
+.player-now-playing:active {
+  cursor: grabbing;
 }
 
 .player-artwork-compact {
@@ -684,6 +738,90 @@ html.vb-floating-drag-active body {
 
 .player-panel input.player-volume[type="range"] {
   flex: 1 1 auto;
+}
+
+/* ── Utility row ─────────────────────────────────────────────────── */
+
+.player-utility-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.player-utility-btn {
+  min-width: 0;
+  min-height: 46px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--player-border) 96%, transparent);
+  border-radius: 12px;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--player-surface) 18%, transparent) 0%,
+      color-mix(in srgb, var(--player-btn) 84%, transparent) 100%
+    );
+  color: color-mix(in srgb, var(--player-muted) 84%, var(--player-text) 16%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  font-family: var(--player-font);
+  transition:
+    background 0.16s ease,
+    color 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.18s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.player-utility-btn:hover {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--player-surface) 24%, transparent) 0%,
+      color-mix(in srgb, var(--player-btn-hover) 88%, transparent) 100%
+    );
+  color: var(--player-text);
+}
+
+.player-utility-btn.active {
+  color: var(--player-accent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--player-accent-soft) 92%, var(--player-surface) 8%) 0%,
+      color-mix(in srgb, var(--player-accent-soft) 76%, var(--player-btn) 24%) 100%
+    );
+  border-color: color-mix(in srgb, var(--player-accent) 34%, var(--player-border));
+}
+
+.player-utility-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--player-focus-ring);
+}
+
+.player-utility-btn .btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.player-utility-btn svg {
+  width: 17px;
+  height: 17px;
+}
+
+.player-utility-btn-label {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
 }
 
 /* ── Integrated content sheet ─────────────────────────────────────── */
@@ -1287,6 +1425,36 @@ html.vb-floating-drag-active body {
     width: calc(100vw - 32px);
     right: 16px;
     left: 16px;
+  }
+
+  .player-header {
+    padding: 8px 8px 0;
+  }
+
+  .player-close {
+    top: 8px;
+    right: 8px;
+    width: 32px;
+    min-height: 32px;
+  }
+
+  .player-now-playing {
+    gap: 10px;
+    padding: 5px 6px;
+  }
+
+  .player-utility-row {
+    gap: 6px;
+  }
+
+  .player-utility-btn {
+    min-height: 42px;
+    padding: 0 8px;
+    gap: 6px;
+  }
+
+  .player-utility-btn-label {
+    font-size: 0.68rem;
   }
 
   .player-transport button svg {

@@ -34,11 +34,14 @@ export function clampElementToViewport(elm, margin = 8) {
 }
 
 export function makePanelDraggable({ panel, header, dragThresholdPx, savePos, loadPos }) {
+  const handles = (Array.isArray(header) ? header : [header]).filter(Boolean);
   let pointerDown = false;
   let dragging = false;
   let pointerId = null;
 
-  header.classList.add("vb-floating-drag-handle");
+  for (const handle of handles) {
+    handle.classList.add("vb-floating-drag-handle");
+  }
 
   let startX = 0,
     startY = 0;
@@ -118,7 +121,7 @@ export function makePanelDraggable({ panel, header, dragThresholdPx, savePos, lo
     pointerId = null;
   }
 
-  header.addEventListener("pointerdown", (e) => {
+  function onPointerDown(e) {
     if (e.target?.closest?.(".calc-close, .calc-settings-btn")) return;
 
     // Mouse: left button only
@@ -131,7 +134,7 @@ export function makePanelDraggable({ panel, header, dragThresholdPx, savePos, lo
     startY = lastY = e.clientY;
 
     try {
-      header.setPointerCapture(pointerId);
+      e.currentTarget?.setPointerCapture?.(pointerId);
     } catch {
       // ignore
     }
@@ -144,9 +147,9 @@ export function makePanelDraggable({ panel, header, dragThresholdPx, savePos, lo
 
     // Touch/Pen: the handle's touch-action keeps the page from stealing
     // this pointer before the drag threshold is crossed.
-  });
+  }
 
-  header.addEventListener("pointermove", (e) => {
+  function onPointerMove(e) {
     if (!pointerDown) return;
 
     lastX = e.clientX;
@@ -165,10 +168,14 @@ export function makePanelDraggable({ panel, header, dragThresholdPx, savePos, lo
     // While dragging, keep it smooth and avoid excessive style writes
     if (e.pointerType !== "mouse") e.preventDefault();
     scheduleMove();
-  }, { passive: false });
+  }
 
-  header.addEventListener("pointerup", endDrag);
-  header.addEventListener("pointercancel", endDrag);
+  for (const handle of handles) {
+    handle.addEventListener("pointerdown", onPointerDown);
+    handle.addEventListener("pointermove", onPointerMove, { passive: false });
+    handle.addEventListener("pointerup", endDrag);
+    handle.addEventListener("pointercancel", endDrag);
+  }
 
   // Keep in bounds on resize
   window.addEventListener("resize", () => {
