@@ -168,6 +168,29 @@ const baseTranslations = {
       'Cloud sync is paused. Reconnect or return to this tab, then continue with your www.vatiolibre.com account and active subscription.',
     cloudSyncHelpFailed:
       'Cloud sync could not finish. Check your www.vatiolibre.com account and active subscription, then try again.',
+    cloudSyncPanelGuest:
+      'Log in to sync this device with VatioLibre. Cloud sync turns on when the account has an active subscription.',
+    cloudSyncPanelNoSubscription:
+      'You are signed in, but cloud sync is waiting for an active subscription.',
+    cloudSyncPanelSubscriberSyncing:
+      'Cloud sync is running. Changes from this device are being saved to your VatioLibre account.',
+    cloudSyncPanelSubscriberSynced:
+      'Cloud sync is on. Changes from this device are saved to your VatioLibre account.',
+    cloudSyncPanelPausedOffline:
+      'Sync is paused while this device is offline. Local changes will retry automatically.',
+    cloudSyncPanelPausedOwnership:
+      'Another open VatioBoard tab is handling sync. This tab will resume if it becomes active.',
+    cloudSyncPanelPausedLogout:
+      'Sync stopped while you sign out.',
+    cloudSyncPanelFailed:
+      'Cloud sync could not finish. Local changes are still saved here and sync will retry.',
+    cloudSyncPanelUnavailable:
+      'Cloud sync could not verify VatioLibre right now. Local changes stay on this device.',
+    cloudSyncPanelChecking: 'Checking your VatioLibre access...',
+    cloudSyncPanelUnknown:
+      'Cloud sync keeps local changes on this device until your VatioLibre access is confirmed.',
+    cloudSyncCreateAccount: 'Create account',
+    cloudSyncManageSubscription: 'Manage subscription',
     cloudSyncSubscribe: 'Subscribe',
     draftUpdated: 'Draft updated',
     cleared: 'Cleared',
@@ -896,6 +919,29 @@ const baseTranslations = {
       'Cloud sync está en pausa. Vuelve a conectarte o regresa a esta pestaña, luego continúa con tu cuenta de www.vatiolibre.com y tu suscripción activa.',
     cloudSyncHelpFailed:
       'Cloud sync no pudo completarse. Revisa tu cuenta de www.vatiolibre.com y tu suscripción activa, luego intenta de nuevo.',
+    cloudSyncPanelGuest:
+      'Inicia sesión para sincronizar este dispositivo con VatioLibre. Cloud sync se activa cuando la cuenta tiene una suscripción activa.',
+    cloudSyncPanelNoSubscription:
+      'Ya iniciaste sesión, pero cloud sync está esperando una suscripción activa.',
+    cloudSyncPanelSubscriberSyncing:
+      'Cloud sync se está ejecutando. Los cambios de este dispositivo se están guardando en tu cuenta de VatioLibre.',
+    cloudSyncPanelSubscriberSynced:
+      'Cloud sync está activo. Los cambios de este dispositivo se guardan en tu cuenta de VatioLibre.',
+    cloudSyncPanelPausedOffline:
+      'Sync está en pausa mientras este dispositivo está sin conexión. Los cambios locales se reintentarán automáticamente.',
+    cloudSyncPanelPausedOwnership:
+      'Otra pestaña abierta de VatioBoard está manejando el sync. Esta pestaña continuará si queda activa.',
+    cloudSyncPanelPausedLogout:
+      'Sync se detuvo mientras cierras sesión.',
+    cloudSyncPanelFailed:
+      'Cloud sync no pudo completarse. Los cambios locales siguen guardados aquí y sync reintentará.',
+    cloudSyncPanelUnavailable:
+      'Cloud sync no pudo verificar VatioLibre ahora mismo. Los cambios locales quedan en este dispositivo.',
+    cloudSyncPanelChecking: 'Verificando tu acceso de VatioLibre...',
+    cloudSyncPanelUnknown:
+      'Cloud sync mantiene los cambios locales en este dispositivo hasta confirmar tu acceso de VatioLibre.',
+    cloudSyncCreateAccount: 'Crear cuenta',
+    cloudSyncManageSubscription: 'Gestionar suscripción',
     cloudSyncSubscribe: 'Suscribirse',
     draftUpdated: 'Borrador actualizado',
     cleared: 'Limpiado',

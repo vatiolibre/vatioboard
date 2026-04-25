@@ -5,6 +5,12 @@ const I18N_MODULE = "../../src/i18n.js";
 const BACKEND_AUTH_MODULE = "../../src/shared/backend-auth.js";
 const CLOUD_SYNC_MODULE = "../../src/shared/cloud-sync.js";
 
+let cloudSyncStatusMock;
+let sessionStateMock;
+let featureAccessStateMock;
+let getBackendFeatureAccessStateMock;
+let getBackendSessionStateMock;
+
 function buildCloudSyncStateModule() {
   const CLOUD_SYNC_STATUS_STATES = Object.freeze({
     failed: "failed",
@@ -18,7 +24,7 @@ function buildCloudSyncStateModule() {
     CLOUD_SYNC_STATUS_EVENT: "vatioboard:cloud-sync-status",
     CLOUD_SYNC_STATUS_STATES,
     getCloudSyncStatus() {
-      return {
+      return cloudSyncStatusMock || {
         state: CLOUD_SYNC_STATUS_STATES.localOnly,
       };
     },
@@ -45,8 +51,34 @@ describe("cloud sync status indicator", () => {
         return key;
       },
     }));
+    cloudSyncStatusMock = {
+      state: "localOnly",
+      reason: "guest",
+    };
+    sessionStateMock = {
+      authenticated: false,
+      isGuest: true,
+      ok: true,
+      status: 200,
+    };
+    featureAccessStateMock = {
+      cloudSyncCapability: {
+        enabled: false,
+        hasActiveSubscription: false,
+        reason: "subscription required",
+      },
+      isGuest: true,
+      ok: false,
+      status: 403,
+    };
+    getBackendFeatureAccessStateMock = vi.fn(() => Promise.resolve(featureAccessStateMock));
+    getBackendSessionStateMock = vi.fn(() => Promise.resolve(sessionStateMock));
     vi.doMock(BACKEND_AUTH_MODULE, () => ({
+      BACKEND_AUTH_STATE_EVENT: "vatioboard:backend-auth-state",
       BACKEND_AUTH_SIGNUP_URL: "https://example.com/signup",
+      BACKEND_SUBSCRIBE_URL: "https://example.com/subscribe",
+      getBackendFeatureAccessState: getBackendFeatureAccessStateMock,
+      getBackendSessionState: getBackendSessionStateMock,
     }));
     vi.doMock(CLOUD_SYNC_MODULE, () => buildCloudSyncStateModule());
   });
@@ -95,6 +127,13 @@ describe("cloud sync status indicator", () => {
     const closeButton = mount.querySelector(".cloud-sync-indicator-close");
 
     toggle.click();
+    await flushAsyncWork();
+    expect(subscribeLink.textContent).toBe("cloudSyncCreateAccount");
+    expect(subscribeLink.getAttribute("href")).toBe("https://example.com/signup");
+    expect(loginButton.hidden).toBe(false);
+    expect(closeButton.parentElement).toBe(panel);
+    expect(closeButton.classList.contains("cloud-sync-indicator-action")).toBe(false);
+    expect(closeButton.querySelector("svg")).toBeTruthy();
     subscribeLink.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     expect(panel.hidden).toBe(true);
 
@@ -107,6 +146,143 @@ describe("cloud sync status indicator", () => {
     toggle.click();
     closeButton.click();
     expect(panel.hidden).toBe(true);
+
+    indicator.destroy();
+  });
+
+  it("shows subscription action without login for authenticated non-subscribers", async () => {
+    cloudSyncStatusMock = {
+      state: "localOnly",
+      reason: "disabled",
+    };
+    sessionStateMock = {
+      authenticated: true,
+      isGuest: false,
+      ok: true,
+      status: 200,
+    };
+    featureAccessStateMock = {
+      cloudSyncCapability: {
+        enabled: false,
+        hasActiveSubscription: false,
+        reason: "An active subscription is required.",
+      },
+      isGuest: false,
+      ok: true,
+      status: 200,
+    };
+
+    const { initCloudSyncStatusIndicator } = await importIndicatorModule();
+    const mount = document.getElementById("mount");
+    const indicator = initCloudSyncStatusIndicator({ mount });
+    const toggle = mount.querySelector(".cloud-sync-indicator-btn");
+    const message = mount.querySelector(".cloud-sync-indicator-copy");
+    const subscribeLink = mount.querySelector(".cloud-sync-indicator-link");
+    const loginButton = mount.querySelector(".cloud-sync-indicator-action");
+
+    toggle.click();
+    await flushAsyncWork();
+
+    expect(message.textContent).toBe("cloudSyncPanelNoSubscription");
+    expect(subscribeLink.hidden).toBe(false);
+    expect(subscribeLink.textContent).toBe("cloudSyncSubscribe");
+    expect(subscribeLink.getAttribute("href")).toBe("https://example.com/subscribe");
+    expect(loginButton.hidden).toBe(true);
+
+    indicator.destroy();
+  });
+
+  it("shows subscriber status without auth prompts for active subscribers", async () => {
+    cloudSyncStatusMock = {
+      state: "synced",
+      reason: "enabled",
+    };
+    sessionStateMock = {
+      authenticated: true,
+      isGuest: false,
+      ok: true,
+      status: 200,
+    };
+    featureAccessStateMock = {
+      cloudSyncCapability: {
+        enabled: true,
+        hasActiveSubscription: true,
+        reason: "",
+      },
+      isGuest: false,
+      ok: true,
+      status: 200,
+    };
+
+    const { initCloudSyncStatusIndicator } = await importIndicatorModule();
+    const mount = document.getElementById("mount");
+    const indicator = initCloudSyncStatusIndicator({ mount });
+    const toggle = mount.querySelector(".cloud-sync-indicator-btn");
+    const message = mount.querySelector(".cloud-sync-indicator-copy");
+    const subscribeLink = mount.querySelector(".cloud-sync-indicator-link");
+    const loginButton = mount.querySelector(".cloud-sync-indicator-action");
+
+    toggle.click();
+    await flushAsyncWork();
+
+    expect(message.textContent).toBe("cloudSyncPanelSubscriberSynced");
+    expect(subscribeLink.hidden).toBe(false);
+    expect(subscribeLink.textContent).toBe("cloudSyncManageSubscription");
+    expect(loginButton.hidden).toBe(true);
+    expect(getBackendSessionStateMock).toHaveBeenCalledWith({ force: true });
+    expect(getBackendFeatureAccessStateMock).toHaveBeenCalledWith({ force: true });
+
+    indicator.destroy();
+  });
+
+  it("does not show login while authenticated subscriber access is still resolving", async () => {
+    cloudSyncStatusMock = {
+      state: "localOnly",
+      reason: "guest",
+    };
+    sessionStateMock = {
+      authenticated: true,
+      isGuest: false,
+      ok: true,
+      status: 200,
+    };
+    featureAccessStateMock = {
+      cloudSyncCapability: {
+        enabled: true,
+        hasActiveSubscription: true,
+        reason: "",
+      },
+      isGuest: false,
+      ok: true,
+      status: 200,
+    };
+
+    const { initCloudSyncStatusIndicator } = await importIndicatorModule();
+    const mount = document.getElementById("mount");
+    const indicator = initCloudSyncStatusIndicator({ mount });
+    const toggle = mount.querySelector(".cloud-sync-indicator-btn");
+    const message = mount.querySelector(".cloud-sync-indicator-copy");
+    const subscribeLink = mount.querySelector(".cloud-sync-indicator-link");
+    const loginButton = mount.querySelector(".cloud-sync-indicator-action");
+
+    window.dispatchEvent(
+      new CustomEvent("vatioboard:backend-auth-state", {
+        detail: {
+          authenticated: true,
+          isGuest: false,
+        },
+      })
+    );
+    toggle.click();
+
+    expect(message.textContent).toBe("cloudSyncPanelChecking");
+    expect(subscribeLink.hidden).toBe(true);
+    expect(loginButton.hidden).toBe(true);
+
+    await flushAsyncWork();
+
+    expect(message.textContent).toBe("cloudSyncPanelSubscriberSynced");
+    expect(loginButton.hidden).toBe(true);
 
     indicator.destroy();
   });

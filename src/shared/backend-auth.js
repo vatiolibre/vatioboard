@@ -3,6 +3,7 @@ import { getEnvironmentConfig } from "./environment.js";
 
 export const BACKEND_AUTH_SIGNUP_URL = "https://www.vatiolibre.com/login#signup";
 export const BACKEND_AUTH_FORGOT_URL = "https://www.vatiolibre.com/login#forgot";
+export const BACKEND_SUBSCRIBE_URL = "https://www.vatiolibre.com/subscribe";
 
 // Use an allow_guest endpoint first so guest sessions do not trigger a visible 403.
 const SESSION_PROBE_METHOD = "vatiolibre.services.tesla_connection_status";
@@ -155,7 +156,7 @@ export function normalizeBackendOwnedUrl(value, {
   const apiBaseUrl = getApiBaseUrl(config);
   if (!apiBaseUrl) return normalizedValue;
 
-  let parsedUrl = null;
+  let parsedUrl;
   let isRelativeBackendPath = false;
 
   try {

@@ -51,22 +51,79 @@
 
 .cloud-sync-indicator-panel{
     position: absolute;
-    top: calc(100% + 8px);
+    top: calc(100% + 14px);
     right: 0;
     z-index: 30;
     display: grid;
-    gap: 10px;
-    width: min(280px, calc(100vw - 24px));
-    padding: 12px;
+    gap: 12px;
+    width: min(292px, calc(100vw - 24px));
+    padding: 16px 14px 14px;
     border: 1px solid var(--cloud-sync-border, rgba(17, 24, 39, 0.12));
-    background: color-mix(in srgb, var(--cloud-sync-panel, rgba(255, 255, 255, 0.96)) 100%, transparent);
+    border-radius: 16px;
+    background:
+        linear-gradient(
+            180deg,
+            color-mix(in srgb, var(--cloud-sync-panel, rgba(255, 255, 255, 0.96)) 96%, var(--cloud-sync-surface, rgba(255, 255, 255, 0.82)) 4%) 0%,
+            color-mix(in srgb, var(--cloud-sync-panel, rgba(255, 255, 255, 0.96)) 100%, transparent) 100%
+        );
     box-shadow: 0 20px 42px rgba(15, 23, 42, 0.18);
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
     pointer-events: auto;
 }
 
+.cloud-sync-indicator-close{
+    appearance: none;
+    position: absolute;
+    top: -14px;
+    right: 10px;
+    z-index: 2;
+    width: 34px;
+    min-height: 34px;
+    padding: 0;
+    border: 1px solid color-mix(in srgb, var(--cloud-sync-border, rgba(17, 24, 39, 0.12)) 96%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--cloud-sync-panel, rgba(255, 255, 255, 0.96)) 68%, transparent);
+    color: color-mix(in srgb, var(--cloud-sync-text, rgba(17, 24, 39, 0.62)) 76%, var(--cloud-sync-text-strong, #111827) 24%);
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    font: inherit;
+    opacity: 0.84;
+    transition:
+        background 0.16s ease,
+        color 0.16s ease,
+        border-color 0.16s ease,
+        box-shadow 0.18s ease,
+        opacity 0.16s ease;
+    -webkit-tap-highlight-color: transparent;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.cloud-sync-indicator-close:hover{
+    background: color-mix(in srgb, var(--cloud-sync-panel, rgba(255, 255, 255, 0.96)) 82%, var(--btn-hover-bg, rgba(17, 24, 39, 0.06)) 18%);
+    color: var(--cloud-sync-text-strong, #111827);
+    opacity: 1;
+}
+
+.cloud-sync-indicator-close:focus-visible{
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--cloud-sync-accent, #10b981) 20%, transparent);
+}
+
+.cloud-sync-indicator-close svg{
+    width: 16px;
+    height: 16px;
+}
+
 .cloud-sync-indicator-panel[hidden]{
+    display: none !important;
+}
+
+.cloud-sync-indicator-link[hidden],
+.cloud-sync-indicator-action[hidden]{
     display: none !important;
 }
 
@@ -75,12 +132,14 @@
     color: var(--cloud-sync-text-strong, var(--btn-fg, #111827));
     font-size: 12px;
     line-height: 1.45;
+    text-align: center;
 }
 
 .cloud-sync-indicator-actions{
-    display: flex;
+    display: grid;
     gap: 8px;
-    flex-wrap: wrap;
+    grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+    width: 100%;
 }
 
 .cloud-sync-indicator-link,
@@ -89,17 +148,20 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    width: 100%;
     min-height: 34px;
-    padding: 0 12px;
-    border-radius: 10px;
+    padding: 0 14px;
+    border-radius: 999px;
     border: 1px solid var(--cloud-sync-border, rgba(17, 24, 39, 0.12));
     background: var(--cloud-sync-surface, rgba(255, 255, 255, 0.82));
     color: var(--cloud-sync-text-strong, var(--btn-fg, #111827));
     font: inherit;
     font-size: 12px;
     font-weight: 700;
+    line-height: 1.1;
     text-decoration: none;
     white-space: nowrap;
+    box-shadow: inset 0 0 0 1px var(--inner-ring, rgba(255, 255, 255, 0.08));
 }
 
 .cloud-sync-indicator-action{

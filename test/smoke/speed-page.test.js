@@ -12,6 +12,78 @@ async function settleAsyncWork(iterations = 20) {
   }
 }
 
+function createActiveSubscriberFetch() {
+  return vi.fn(async (input) => {
+    const url = typeof input === 'string' ? input : String(input?.url ?? '');
+
+    if (url.endsWith('.json')) {
+      return new Response(JSON.stringify({ traps: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (url.endsWith('.kdbush')) {
+      return new Response('', { status: 404 });
+    }
+
+    if (url.includes('vatiolibre.services.tesla_connection_status')) {
+      return new Response(JSON.stringify({ message: { is_guest: false } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (url.includes('frappe.auth.get_logged_user')) {
+      return new Response(JSON.stringify({ message: 'Administrator' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (url.includes('vatiolibre.vatiolibre.feature_access.get_my_feature_access')) {
+      return new Response(JSON.stringify({
+        message: {
+          csrf_token: 'csrf-token',
+          has_active_subscription: true,
+          features: {
+            cloud_sync: {
+              enabled: true,
+              reason: '',
+            },
+          },
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_changes')) {
+      return new Response(JSON.stringify({
+        message: {
+          records: [],
+          has_more: false,
+          next_cursor: '',
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    return new Response('{}', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  });
+}
+
+function getCloudSyncLoginButton() {
+  return Array.from(document.querySelectorAll('.cloud-sync-indicator-action'))
+    .find((button) => !button.classList.contains('cloud-sync-indicator-close'));
+}
+
 vi.mock('../../src/shared/analog-speedometer.js', () => ({
   createAnalogSpeedometer: () => ({
     render: vi.fn(),
@@ -204,6 +276,24 @@ describe('speed.html smoke', () => {
 
     expect(document.getElementById('speedValue').textContent).toBe('36');
     expect(document.getElementById('altitudeValue').textContent).toBe('42');
+  });
+
+  it('hides the cloud sync login action for active subscribers', async () => {
+    window.fetch = createActiveSubscriberFetch();
+
+    const speedPage = await import('../../src/speed/speed.js');
+    await speedPage.initPromise;
+    await settleAsyncWork();
+
+    document.querySelector('.cloud-sync-indicator-btn')?.click();
+    await settleAsyncWork();
+
+    const loginButton = getCloudSyncLoginButton();
+    const subscribeLink = document.querySelector('.cloud-sync-indicator-link');
+
+    expect(subscribeLink?.textContent).toBe('Manage subscription');
+    expect(loginButton?.hidden).toBe(true);
+    expect(window.getComputedStyle(loginButton).display).toBe('none');
   });
 
   it('enables background audio as an internal policy when route recording starts', async () => {
