@@ -905,10 +905,12 @@ describe("player-session", () => {
 
 describe("audio-runtime", () => {
   let runtime;
+  let createdAudio;
 
   beforeEach(async () => {
     vi.resetModules();
     localStorage.clear();
+    createdAudio = [];
 
     vi.doMock("../../src/i18n.js", () => ({
       t: (key) => key,
@@ -954,6 +956,19 @@ describe("audio-runtime", () => {
       setCachedMediaAccess: vi.fn(),
       clearMediaAccessCache: vi.fn(),
     }));
+
+    const BaseAudio = window.Audio;
+    class TrackingAudio extends BaseAudio {
+      constructor(src = "") {
+        super(src);
+        createdAudio.push(this);
+      }
+    }
+    Object.defineProperty(window, "Audio", {
+      configurable: true,
+      writable: true,
+      value: TrackingAudio,
+    });
 
     runtime = await import("../../src/shared/audio-runtime.js");
   });
@@ -1049,6 +1064,67 @@ describe("audio-runtime", () => {
     expect(runtime.getState().shuffle).toBe(true);
     runtime.toggleShuffle();
     expect(runtime.getState().shuffle).toBe(false);
+  });
+
+  it("background mode arms a silent keepalive only while playback is active", async () => {
+    runtime.setQueue([TRACK_A, TRACK_B], { autoplay: false });
+
+    await vi.waitFor(() => {
+      expect(runtime.getAudioElement()?.src).toBeTruthy();
+    });
+
+    const keepAliveAudio = createdAudio.find((audio) => audio.src === "blob:test-url");
+    expect(keepAliveAudio).toBeTruthy();
+    expect(keepAliveAudio.paused).toBe(true);
+
+    runtime.setBackgroundMode(true, { fromUserGesture: true });
+    expect(runtime.getState().backgroundMode).toBe(true);
+    expect(keepAliveAudio.paused).toBe(true);
+
+    await runtime.play();
+
+    await vi.waitFor(() => {
+      expect(keepAliveAudio.paused).toBe(false);
+    });
+
+    runtime.pause();
+
+    await vi.waitFor(() => {
+      expect(keepAliveAudio.paused).toBe(true);
+    });
+  });
+
+  it("background mode keeps media session alive across track handoff gaps", async () => {
+    runtime.setQueue([TRACK_A, TRACK_B], { autoplay: false });
+
+    await vi.waitFor(() => {
+      expect(runtime.getAudioElement()?.src).toBeTruthy();
+    });
+
+    const keepAliveAudio = createdAudio.find((audio) => audio.src === "blob:test-url");
+    expect(keepAliveAudio).toBeTruthy();
+
+    runtime.setBackgroundMode(true, { fromUserGesture: true });
+    await runtime.play();
+
+    await vi.waitFor(() => {
+      expect(keepAliveAudio.paused).toBe(false);
+      expect(navigator.mediaSession.playbackState).toBe("playing");
+    });
+
+    const mainAudio = runtime.getAudioElement();
+    mainAudio.pause();
+
+    expect(keepAliveAudio.paused).toBe(false);
+    expect(navigator.mediaSession.playbackState).toBe("playing");
+
+    mainAudio.dispatchEvent(new Event("ended"));
+
+    await vi.waitFor(() => {
+      expect(runtime.getState().currentTrack?.name).toBe("asset_b");
+      expect(keepAliveAudio.paused).toBe(false);
+      expect(navigator.mediaSession.playbackState).toBe("playing");
+    });
   });
 
   it("stopPlayback resets state and clears Media Session", async () => {
@@ -2229,6 +2305,7 @@ describe("player-shell", () => {
     expect(Array.from(container.querySelectorAll(".player-utility-btn-label"), (label) => label.textContent)).toEqual([
       "playerVisualsShort",
       "milkdropTitle",
+      "playerBackgroundShort",
       "playerBrowseShort",
     ]);
     expect(container.querySelector(".player-close svg")).toBeTruthy();

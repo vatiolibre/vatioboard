@@ -21,6 +21,10 @@ import {
   setMediaSessionActionHandlers,
   clearMediaSession,
 } from "./media-session-adapter.js";
+import {
+  createAudioChannelRetainer,
+  primeAudioElement as primeManagedAudioElement,
+} from "./audio-channel-retainer.js";
 import { setMainAudioElement } from "./audio-cue.js";
 import { destroyVisualizerGraphForElement } from "./audio-mini-visualizer.js";
 import { loadPlayerSession, savePlayerSession } from "./player-session.js";
@@ -112,6 +116,11 @@ let libraryContinuation = null;
  */
 let primed = false;
 let primeInFlight = null;
+let backgroundKeepAliveGeneration = 0;
+let backgroundKeepAliveArmPending = false;
+
+const backgroundAudioRetainer = createAudioChannelRetainer();
+const backgroundKeepAliveAudio = backgroundAudioRetainer.getKeepAliveAudio();
 
 function bindAudioElement(el) {
   el.addEventListener("play", onPlay);
@@ -202,31 +211,18 @@ export function primeAudio() {
   const el = getAudio();
   if (!el.src) return Promise.resolve(false);
 
-  const prevMuted = el.muted;
-  const prevVolume = el.volume;
-
-  el.muted = true;
-  el.volume = 0;
-
   primeInFlight = (async () => {
-    const resumeTime = getCurrentPlaybackTime();
-    applyPendingSeek();
-
     try {
-      const p = el.play();
-      if (p && typeof p.then === "function") await p;
-      el.pause();
-      restorePlaybackTimeAfterPrime(el, resumeTime);
-      primed = true;
-      return true;
-    } catch {
-      el.pause();
-      restorePlaybackTimeAfterPrime(el, resumeTime);
-      primed = false;
-      return false;
+      const audioPrimed = await primeManagedAudioElement(el, {
+        getResumeTime: () => getCurrentPlaybackTime(),
+        beforePlay: () => applyPendingSeek(),
+        restorePlayback: (audioElement, resumeTime) => {
+          restorePlaybackTimeAfterPrime(audioElement, resumeTime);
+        },
+      });
+      primed = audioPrimed;
+      return audioPrimed;
     } finally {
-      el.muted = prevMuted;
-      el.volume = prevVolume;
       primeInFlight = null;
     }
   })();
@@ -240,6 +236,97 @@ function getAudio() {
   }
   return audio;
 }
+
+function wantsBackgroundModeKeepAlive() {
+  return state.backgroundMode && !state.paused && (state.loading || state.currentTrack !== null);
+}
+
+function isBackgroundModeKeepAliveStale(generation) {
+  return generation !== backgroundKeepAliveGeneration || !wantsBackgroundModeKeepAlive();
+}
+
+function getDesiredPlaybackState() {
+  if (backgroundAudioRetainer.isKeepAliveActive()) return "playing";
+
+  if (backgroundKeepAliveArmPending && wantsBackgroundModeKeepAlive()) {
+    return "playing";
+  }
+
+  const el = audio;
+  if (el && !el.paused && !el.ended) {
+    return "playing";
+  }
+
+  if (state.currentTrack || state.loading) {
+    return "paused";
+  }
+
+  return "none";
+}
+
+function syncMediaSessionPlaybackState() {
+  if (!mediaSessionEnabled) return;
+  setMediaSessionPlaybackState(getDesiredPlaybackState());
+}
+
+function stopBackgroundModeKeepAlive() {
+  backgroundKeepAliveGeneration += 1;
+  backgroundKeepAliveArmPending = false;
+  backgroundAudioRetainer.stopKeepAlive();
+  syncMediaSessionPlaybackState();
+}
+
+async function armBackgroundModeKeepAlive() {
+  if (!wantsBackgroundModeKeepAlive()) {
+    stopBackgroundModeKeepAlive();
+    return false;
+  }
+
+  if (backgroundAudioRetainer.isKeepAliveActive()) {
+    syncMediaSessionPlaybackState();
+    return true;
+  }
+
+  if (backgroundKeepAliveArmPending) {
+    syncMediaSessionPlaybackState();
+    return false;
+  }
+
+  const generation = backgroundKeepAliveGeneration;
+  backgroundKeepAliveArmPending = true;
+
+  try {
+    const armed = await backgroundAudioRetainer.ensureKeepAlivePlaying({
+      shouldContinue: () => !isBackgroundModeKeepAliveStale(generation),
+    });
+
+    if (!armed && !isBackgroundModeKeepAliveStale(generation)) {
+      backgroundAudioRetainer.stopKeepAlive();
+    }
+
+    return armed;
+  } catch {
+    if (!isBackgroundModeKeepAliveStale(generation)) {
+      backgroundAudioRetainer.stopKeepAlive();
+    }
+    return false;
+  } finally {
+    backgroundKeepAliveArmPending = false;
+    syncMediaSessionPlaybackState();
+  }
+}
+
+function syncBackgroundModeKeepAlive() {
+  if (wantsBackgroundModeKeepAlive()) {
+    void armBackgroundModeKeepAlive();
+    return;
+  }
+
+  stopBackgroundModeKeepAlive();
+}
+
+backgroundKeepAliveAudio.addEventListener("play", syncMediaSessionPlaybackState);
+backgroundKeepAliveAudio.addEventListener("pause", syncMediaSessionPlaybackState);
 
 function shouldResetVisualizerGraph(previousSourceType, nextResolved) {
   return previousSourceType === "blob" && nextResolved?.type === "remote";
@@ -830,6 +917,8 @@ async function loadTrack(index, { startTime = 0, autoplay = true, suppressAutopl
     ? { token: requestToken, queueId: track._queueId, time: requestedStartTime }
     : null;
   flushSessionPersistence({ currentTime: requestedStartTime });
+  syncBackgroundModeKeepAlive();
+  syncMediaSessionPlaybackState();
   notify();
 
   // Revoke previous blob URL
@@ -855,6 +944,8 @@ async function loadTrack(index, { startTime = 0, autoplay = true, suppressAutopl
     state.error = "unavailable";
     state.sourceType = null;
     flushSessionPersistence({ currentTime: requestedStartTime });
+    syncBackgroundModeKeepAlive();
+    syncMediaSessionPlaybackState();
     notify();
     // Auto-skip unavailable tracks (with loop guard)
     autoSkipUnavailable(autoplay);
@@ -889,22 +980,31 @@ async function loadTrack(index, { startTime = 0, autoplay = true, suppressAutopl
   state.loading = false;
   consecutiveSkips = 0; // successful load — reset skip counter
   flushSessionPersistence({ currentTime: requestedStartTime });
+  syncBackgroundModeKeepAlive();
   notify();
 
   updateMediaSessionMetadata();
+  syncMediaSessionPlaybackState();
 
   if (autoplay) {
+    if (state.backgroundMode) {
+      void armBackgroundModeKeepAlive();
+    }
     await primeAudio();
     el.play().catch((err) => {
       if (suppressAutoplayError && isAutoplayBlockedError(err)) {
         state.paused = true;
         state.error = null;
         flushSessionPersistence();
+        syncBackgroundModeKeepAlive();
+        syncMediaSessionPlaybackState();
         notify();
         return;
       }
       if (err?.name !== "AbortError") {
         state.error = "playback-failed";
+        syncBackgroundModeKeepAlive();
+        syncMediaSessionPlaybackState();
         notify();
       }
     });
@@ -1002,12 +1102,17 @@ export async function play() {
 
   const el = getAudio();
   if (el.src) {
+    if (state.backgroundMode) {
+      void armBackgroundModeKeepAlive();
+    }
     applyPendingSeek();
     await primeAudio();
     applyPendingSeek();
     el.play().catch((err) => {
       if (err?.name !== "AbortError") {
         state.error = "playback-failed";
+        syncBackgroundModeKeepAlive();
+        syncMediaSessionPlaybackState();
         notify();
       }
     });
@@ -1054,6 +1159,7 @@ export function stopPlayback() {
     currentSourceRevoke = null;
   }
 
+  stopBackgroundModeKeepAlive();
   if (mediaSessionEnabled) clearMediaSession();
   flushSessionPersistence({ currentTime: 0 });
   notify();
@@ -1188,8 +1294,15 @@ export function toggleShuffle() {
 /**
  * Toggle background mode.
  */
-export function setBackgroundMode(enabled) {
+export function setBackgroundMode(enabled, { fromUserGesture = false } = {}) {
   state.backgroundMode = enabled;
+  if (enabled && fromUserGesture) {
+    syncBackgroundModeKeepAlive();
+  } else if (!enabled) {
+    stopBackgroundModeKeepAlive();
+  } else {
+    syncMediaSessionPlaybackState();
+  }
   persistSession();
   notify();
 }
@@ -1394,7 +1507,8 @@ function onPlay() {
     }
   }
 
-  if (mediaSessionEnabled) setMediaSessionPlaybackState("playing");
+  syncBackgroundModeKeepAlive();
+  syncMediaSessionPlaybackState();
   startPositionSync();
   maybePrepareUpcomingTrack({ force: false });
   maybePersistPlaybackProgress();
@@ -1404,7 +1518,8 @@ function onPlay() {
 
 function onPause() {
   // Only mark paused if not a temporary interruption (e.g. seeking)
-  if (mediaSessionEnabled) setMediaSessionPlaybackState("paused");
+  syncBackgroundModeKeepAlive();
+  syncMediaSessionPlaybackState();
   stopPositionSync();
   flushSessionPersistence();
   notify();
@@ -1412,6 +1527,8 @@ function onPause() {
 
 function onEnded() {
   state.remoteSessionActive = false;
+  syncBackgroundModeKeepAlive();
+  syncMediaSessionPlaybackState();
 
   if (state.repeat === "one") {
     const el = getAudio();
@@ -1458,16 +1575,22 @@ function onError(event) {
   state.error = "playback-error";
   state.loading = false;
   flushSessionPersistence();
+  syncBackgroundModeKeepAlive();
+  syncMediaSessionPlaybackState();
   notify();
 }
 
 function onWaiting() {
   state.loading = true;
+  syncBackgroundModeKeepAlive();
+  syncMediaSessionPlaybackState();
   notify();
 }
 
 function onPlaying() {
   state.loading = false;
+  syncBackgroundModeKeepAlive();
+  syncMediaSessionPlaybackState();
   applyPendingSeek();
   syncPositionState();
   maybePersistPlaybackProgress();

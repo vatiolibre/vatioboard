@@ -39,6 +39,7 @@ const runtimeMock = {
   seekTo: vi.fn(),
   setVolume: vi.fn(),
   setMuted: vi.fn(),
+  setBackgroundMode: vi.fn(),
   toggleShuffle: vi.fn(),
   cycleRepeat: vi.fn(),
   playCatalogTrack: vi.fn().mockResolvedValue(undefined),
@@ -254,6 +255,8 @@ describe("createPlayerWidget", () => {
     runtimeMock.subscribe.mockReturnValue(vi.fn());
     runtimeMock.setQueue.mockReset();
     runtimeMock.setQueue.mockImplementation(() => {});
+    runtimeMock.setBackgroundMode.mockReset();
+    runtimeMock.setBackgroundMode.mockImplementation(() => {});
     runtimeMock.restoreSession.mockReset();
     runtimeMock.restoreSession.mockResolvedValue(undefined);
     runtimeMock.stopPlayback.mockReset();
@@ -470,6 +473,7 @@ describe("createPlayerWidget", () => {
     expect(Array.from(panel.querySelectorAll(".player-utility-btn-label"), (label) => label.textContent)).toEqual([
       "playerVisualsShort",
       "milkdropTitle",
+      "playerBackgroundShort",
       "playerBrowseShort",
     ]);
     expect(panel.querySelector(".player-title")).toBeFalsy();
@@ -487,6 +491,20 @@ describe("createPlayerWidget", () => {
 
     expect(panel.querySelector(".player-header").classList.contains("vb-floating-drag-handle")).toBe(true);
     expect(panel.querySelector(".player-now-playing").classList.contains("vb-floating-drag-handle")).toBe(true);
+
+    widget.destroy();
+  });
+
+  it("background toggle updates runtime background mode", () => {
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+
+    const toggle = document.querySelector(".player-background-toggle-btn");
+    expect(toggle).toBeTruthy();
+
+    toggle.click();
+
+    expect(runtimeMock.setBackgroundMode).toHaveBeenCalledWith(true, { fromUserGesture: true });
 
     widget.destroy();
   });

@@ -9,36 +9,14 @@ import {
   TRAP_SOUND_URL,
   UNIT_CONFIG,
 } from "./constants.js";
+import {
+  activateAudioElement,
+  createAudioChannelRetainer,
+  primeAudioElement,
+  silenceAudioElement,
+} from "../shared/audio-channel-retainer.js";
 import { shouldPlayOverspeedSound } from "./alerts.js";
 import { capitalizeText, escapeSvgText, getDistanceDisplay, truncateText } from "./render.js";
-
-export function writeAsciiString(view, offset, value) {
-  for (let index = 0; index < value.length; index += 1) {
-    view.setUint8(offset + index, value.charCodeAt(index));
-  }
-}
-
-export function createSilentLoopAudioUrl() {
-  const sampleCount = BACKGROUND_KEEPALIVE_SAMPLE_RATE * BACKGROUND_KEEPALIVE_DURATION_SECONDS;
-  const buffer = new ArrayBuffer(44 + (sampleCount * 2));
-  const view = new DataView(buffer);
-
-  writeAsciiString(view, 0, "RIFF");
-  view.setUint32(4, 36 + (sampleCount * 2), true);
-  writeAsciiString(view, 8, "WAVE");
-  writeAsciiString(view, 12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, BACKGROUND_KEEPALIVE_SAMPLE_RATE, true);
-  view.setUint32(28, BACKGROUND_KEEPALIVE_SAMPLE_RATE * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  writeAsciiString(view, 36, "data");
-  view.setUint32(40, sampleCount * 2, true);
-
-  return URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
-}
 
 export function createSpeedAudioController({
   state,
@@ -60,11 +38,11 @@ export function createSpeedAudioController({
   trapAlertAudio.preload = "auto";
   trapAlertAudio.playsInline = true;
 
-  let backgroundKeepAliveAudioUrl = createSilentLoopAudioUrl();
-  const backgroundKeepAliveAudio = new Audio(backgroundKeepAliveAudioUrl);
-  backgroundKeepAliveAudio.loop = true;
-  backgroundKeepAliveAudio.preload = "auto";
-  backgroundKeepAliveAudio.playsInline = true;
+  const backgroundAudioRetainer = createAudioChannelRetainer({
+    keepAliveSampleRate: BACKGROUND_KEEPALIVE_SAMPLE_RATE,
+    keepAliveDurationSeconds: BACKGROUND_KEEPALIVE_DURATION_SECONDS,
+  });
+  const backgroundKeepAliveAudio = backgroundAudioRetainer.getKeepAliveAudio();
 
   let audioPrimePromise = null;
 
@@ -470,16 +448,6 @@ export function createSpeedAudioController({
     });
   }
 
-  function silenceAudioElement(audio) {
-    audio.muted = true;
-    audio.volume = 0;
-  }
-
-  function activateAudioElement(audio) {
-    audio.muted = false;
-    audio.volume = 1;
-  }
-
   function wantsBackgroundAudio() {
     return state.backgroundAudioEnabled && !state.audioMuted && !state.backgroundAudioSuppressed;
   }
@@ -542,76 +510,11 @@ export function createSpeedAudioController({
     state.backgroundAudioArmed = false;
     state.backgroundAudioArmPending = false;
     clearTrapMuteTimeout();
-    stopBackgroundKeepAliveAudio();
+    backgroundAudioRetainer.stopKeepAlive();
   }
 
   function isStaleBackgroundAudioArm(revision) {
     return revision !== state.backgroundAudioRevision || !wantsBackgroundAudio();
-  }
-
-  function stopAudioElementPlayback(audio) {
-    audio.pause();
-    audio.currentTime = 0;
-  }
-
-  async function ensureBackgroundKeepAliveAudio(revision = state.backgroundAudioRevision) {
-    backgroundKeepAliveAudio.loop = true;
-    backgroundKeepAliveAudio.muted = false;
-    backgroundKeepAliveAudio.volume = 1;
-
-    if (!backgroundKeepAliveAudio.paused) {
-      return !isStaleBackgroundAudioArm(revision);
-    }
-
-    backgroundKeepAliveAudio.currentTime = 0;
-    const playPromise = backgroundKeepAliveAudio.play();
-    if (playPromise && typeof playPromise.then === "function") {
-      await playPromise;
-    }
-
-    if (isStaleBackgroundAudioArm(revision)) {
-      if (!wantsBackgroundAudio()) {
-        stopBackgroundKeepAliveAudio();
-      }
-      return false;
-    }
-
-    return true;
-  }
-
-  function stopBackgroundKeepAliveAudio() {
-    backgroundKeepAliveAudio.pause();
-    backgroundKeepAliveAudio.currentTime = 0;
-  }
-
-  function revokeBackgroundKeepAliveAudioUrl() {
-    if (!backgroundKeepAliveAudioUrl) return;
-    URL.revokeObjectURL(backgroundKeepAliveAudioUrl);
-    backgroundKeepAliveAudioUrl = "";
-  }
-
-  async function ensureAudioElementLooping(audio, revision = state.backgroundAudioRevision) {
-    audio.loop = true;
-
-    if (!audio.paused) {
-      return !isStaleBackgroundAudioArm(revision);
-    }
-
-    silenceAudioElement(audio);
-    audio.currentTime = 0;
-    const playPromise = audio.play();
-    if (playPromise && typeof playPromise.then === "function") {
-      await playPromise;
-    }
-
-    if (isStaleBackgroundAudioArm(revision)) {
-      if (!wantsBackgroundAudio()) {
-        stopAudioElementPlayback(audio);
-      }
-      return false;
-    }
-
-    return true;
   }
 
   function invalidateOverspeedSoundRequest() {
@@ -644,7 +547,9 @@ export function createSpeedAudioController({
     }
 
     if (state.backgroundAudioArmed) {
-      void ensureAudioElementLooping(overspeedAudio, state.backgroundAudioRevision).catch(() => {});
+      void backgroundAudioRetainer.ensureAudioElementLooping(overspeedAudio, {
+        shouldContinue: () => !isStaleBackgroundAudioArm(state.backgroundAudioRevision),
+      }).catch(() => {});
     }
   }
 
@@ -736,7 +641,9 @@ export function createSpeedAudioController({
     }
 
     if (state.backgroundAudioArmed) {
-      void ensureAudioElementLooping(trapAlertAudio, state.backgroundAudioRevision).catch(() => {});
+      void backgroundAudioRetainer.ensureAudioElementLooping(trapAlertAudio, {
+        shouldContinue: () => !isStaleBackgroundAudioArm(state.backgroundAudioRevision),
+      }).catch(() => {});
     }
   }
 
@@ -757,38 +664,6 @@ export function createSpeedAudioController({
     state.trapMuteTimeoutId = window.setTimeout(() => {
       keepTrapAudioAlive();
     }, Math.max(0, delayMs));
-  }
-
-  async function primeAudioElement(audio) {
-    if (!audio.paused) {
-      return true;
-    }
-
-    const previousMuted = audio.muted;
-    const previousVolume = audio.volume;
-    const previousLoop = audio.loop;
-
-    audio.muted = true;
-    audio.volume = 0;
-    audio.currentTime = 0;
-
-    try {
-      const playPromise = audio.play();
-      if (playPromise && typeof playPromise.then === "function") {
-        await playPromise;
-      }
-      audio.pause();
-      audio.currentTime = 0;
-      return true;
-    } catch {
-      audio.pause();
-      audio.currentTime = 0;
-      return false;
-    } finally {
-      audio.muted = previousMuted;
-      audio.volume = previousVolume;
-      audio.loop = previousLoop;
-    }
   }
 
   function primeAlertAudio() {
@@ -851,17 +726,23 @@ export function createSpeedAudioController({
         return;
       }
 
-      await ensureBackgroundKeepAliveAudio(backgroundAudioRevision);
+      await backgroundAudioRetainer.ensureKeepAlivePlaying({
+        shouldContinue: () => !isStaleBackgroundAudioArm(backgroundAudioRevision),
+      });
       if (isStaleBackgroundAudioArm(backgroundAudioRevision)) {
         shouldRetry = wantsBackgroundAudio();
         return;
       }
       await Promise.all([
         overspeedAudio.paused
-          ? ensureAudioElementLooping(overspeedAudio, backgroundAudioRevision)
+          ? backgroundAudioRetainer.ensureAudioElementLooping(overspeedAudio, {
+              shouldContinue: () => !isStaleBackgroundAudioArm(backgroundAudioRevision),
+          })
           : Promise.resolve(true),
         trapAlertAudio.paused
-          ? ensureAudioElementLooping(trapAlertAudio, backgroundAudioRevision)
+          ? backgroundAudioRetainer.ensureAudioElementLooping(trapAlertAudio, {
+              shouldContinue: () => !isStaleBackgroundAudioArm(backgroundAudioRevision),
+          })
           : Promise.resolve(true),
       ]);
       if (isStaleBackgroundAudioArm(backgroundAudioRevision)) {
@@ -895,7 +776,7 @@ export function createSpeedAudioController({
     state.backgroundAudioArmed = false;
     state.backgroundAudioArmPending = false;
     clearTrapMuteTimeout();
-    stopBackgroundKeepAliveAudio();
+    backgroundAudioRetainer.stopKeepAlive();
 
     if (shouldPlayOverspeedSound(getAlertUiState(), state.alertSoundEnabled, state.audioMuted)) {
       overspeedAudio.loop = true;
@@ -1020,8 +901,7 @@ export function createSpeedAudioController({
   }
 
   function dispose() {
-    stopBackgroundKeepAliveAudio();
-    revokeBackgroundKeepAliveAudioUrl();
+    backgroundAudioRetainer.dispose();
   }
 
   return {
