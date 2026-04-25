@@ -70,7 +70,7 @@ export function createSpeedAudioController({
   }
 
   function getRuntimeBackgroundAudioLabel() {
-    return `${t("backgroundAudio")}: ${state.backgroundAudioEnabled ? t("on") : t("off")}`;
+    return `${t("backgroundAudio")}: ${state.backgroundMode ? t("on") : t("off")}`;
   }
 
   function getRuntimeArtworkStatusBadgeText() {
@@ -146,7 +146,7 @@ export function createSpeedAudioController({
     }
 
     if (
-      state.backgroundAudioEnabled
+      state.backgroundMode
       || state.backgroundAudioArmPending
       || state.alertSoundPending
       || state.trapSoundPending
@@ -220,7 +220,7 @@ export function createSpeedAudioController({
       alertLabel: t("alerts"),
       alertValue: truncateText(getRuntimeArtworkAlertValue(alertState), 22),
       backgroundLabel: t("backgroundCompact"),
-      backgroundValue: truncateText(state.backgroundAudioEnabled ? t("on") : t("off"), 12),
+      backgroundValue: truncateText(state.backgroundMode ? t("on") : t("off"), 12),
       palette: getRuntimeArtworkPalette(alertState),
     };
   }
@@ -374,7 +374,7 @@ export function createSpeedAudioController({
     const metadataUrgencySignature = JSON.stringify([
       state.statusKind,
       state.audioMuted,
-      state.backgroundAudioEnabled,
+      state.backgroundMode,
       state.lastFixAt > 0,
       alertState.source,
       alertState.over,
@@ -437,25 +437,24 @@ export function createSpeedAudioController({
 
   function installMediaSessionActionHandlers(handlers) {
     setMediaSessionActionHandler("play", () => {
-      handlers.setBackgroundAudioEnabled(true, { fromUserGesture: true });
+      handlers.setRecordingActive?.(true, { fromUserGesture: true });
     });
     setMediaSessionActionHandler("pause", () => {
-      handlers.setBackgroundAudioEnabled(false, { fromUserGesture: true });
+      handlers.setRecordingActive?.(false, { fromUserGesture: true });
     });
     setMediaSessionActionHandler("stop", () => {
-      handlers.setBackgroundAudioEnabled(false, { fromUserGesture: true });
+      handlers.setRecordingActive?.(false, { fromUserGesture: true });
       handlers.setAudioMuted(true, { fromUserGesture: true });
     });
   }
 
   function wantsBackgroundAudio() {
-    return state.backgroundAudioEnabled && !state.audioMuted && !state.backgroundAudioSuppressed;
+    return state.backgroundMode && !state.backgroundAudioSuppressed;
   }
 
   function canRecoverSuppressedBackgroundAudio() {
     return state.backgroundAudioSuppressed
-      && state.backgroundAudioEnabled
-      && !state.audioMuted
+      && state.backgroundMode
       && state.lastFixAt > 0;
   }
 

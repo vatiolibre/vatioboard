@@ -63,14 +63,12 @@ import {
 import {
   getTrapAlertPresets,
   loadInitialPreferences,
-  normalizeInitialAudioPreferences,
   normalizeTrapAlertDistance,
   saveAlertEnabledPreference,
   saveAlertLimitPreference,
   saveAlertSoundEnabledPreference,
   saveAlertTriggerDiscoveredPreference,
   saveAudioMutedPreference,
-  saveBackgroundAudioEnabledPreference,
   saveDistanceUnitPreference,
   savePrimaryViewPreference,
   saveTrapAlertDistancePreference,
@@ -183,8 +181,6 @@ const elements = {
   trapDistancePresets: document.getElementById('trapDistancePresets'),
   trapSoundButtons: Array.from(document.querySelectorAll('.trap-sound-btn')),
   quickAudioToggle: document.getElementById('quickAudioToggle'),
-  quickBackgroundAudioToggle: document.getElementById('quickBackgroundAudioToggle'),
-  backgroundAudioButtons: Array.from(document.querySelectorAll('.background-audio-btn')),
   unitButtons: Array.from(document.querySelectorAll('.unit-btn')),
   distanceUnitButtons: Array.from(document.querySelectorAll('.distance-unit-btn')),
   globeMount: document.getElementById('speedGlobe'),
@@ -276,8 +272,7 @@ const analogSpeedometer = createAnalogSpeedometer({
 });
 
 const pageDescriptionMeta = document.querySelector('meta[name="description"]');
-const loadedPreferences = normalizeInitialAudioPreferences(loadInitialPreferences());
-const initialPreferences = loadedPreferences.preferences;
+const initialPreferences = loadInitialPreferences();
 const initialReplaySession = createReplaySession({
   unit: initialPreferences.unit,
   distanceUnit: initialPreferences.distanceUnit,
@@ -293,7 +288,7 @@ const state = {
   alertLimitMs: initialPreferences.alertLimitMs,
   alertSoundEnabled: initialPreferences.alertSoundEnabled,
   audioMuted: initialPreferences.audioMuted,
-  backgroundAudioEnabled: initialPreferences.backgroundAudioEnabled,
+  backgroundMode: false,
   audioPrimed: false,
   audioPrimePending: false,
   backgroundAudioArmed: false,
@@ -743,6 +738,7 @@ async function hydrateReplaySession() {
   if (!restoredReplaySession) return;
 
   state.recordingState = restoredReplaySession.recordingState;
+  state.backgroundMode = state.recordingState === 'recording';
   state.replaySession = {
     ...restoredReplaySession,
     unit: state.unit,
@@ -941,7 +937,16 @@ function setRecordingState(recordingState) {
 
 function toggleRecording() {
   if (state.recordingState === 'recording') {
-    setRecordingState('paused');
+    pauseRecordingSession({ fromUserGesture: true });
+    return;
+  }
+
+  startRecordingSession({ fromUserGesture: true });
+}
+
+function startRecordingSession({ fromUserGesture = false } = {}) {
+  if (state.recordingState === 'recording') {
+    syncBackgroundModeWithRecordingState({ fromUserGesture });
     return;
   }
 
@@ -950,13 +955,20 @@ function toggleRecording() {
       archiveCurrent: false,
       recordingState: 'recording',
     });
-    return;
+  } else {
+    setRecordingState('recording');
   }
 
-  setRecordingState('recording');
+  syncBackgroundModeWithRecordingState({ fromUserGesture });
 }
 
-function stopRecordingSession() {
+function pauseRecordingSession({ fromUserGesture = false } = {}) {
+  if (state.recordingState !== 'recording') return;
+  setRecordingState('paused');
+  syncBackgroundModeWithRecordingState({ fromUserGesture });
+}
+
+function stopRecordingSession({ fromUserGesture = false } = {}) {
   resetReplaySession({
     archiveCurrent: true,
     endedAtMs: Number.isFinite(state.lastPositionTimestamp)
@@ -965,6 +977,7 @@ function stopRecordingSession() {
     recordingState: 'stopped',
     minSamples: 1,
   });
+  syncBackgroundModeWithRecordingState({ fromUserGesture });
 }
 
 function updateNearestTrapState(longitude, latitude) {
@@ -1078,18 +1091,6 @@ function renderQuickAudioControls() {
     elements.quickAudioToggle.setAttribute('aria-label', audioToggleLabel);
     elements.quickAudioToggle.title = audioToggleLabel;
   }
-
-  if (elements.quickBackgroundAudioToggle) {
-    elements.quickBackgroundAudioToggle.setAttribute(
-      'aria-pressed',
-      String(state.backgroundAudioEnabled)
-    );
-    const backgroundAudioLabel = state.backgroundAudioEnabled
-      ? t('disableBackgroundAudio')
-      : t('enableBackgroundAudio');
-    elements.quickBackgroundAudioToggle.setAttribute('aria-label', backgroundAudioLabel);
-    elements.quickBackgroundAudioToggle.title = backgroundAudioLabel;
-  }
 }
 
 function syncAlertTriggerDiscovery() {
@@ -1159,13 +1160,6 @@ function renderAlertUi(options = {}) {
     );
   }
 
-  for (const button of elements.backgroundAudioButtons) {
-    button.setAttribute(
-      'aria-pressed',
-      String((button.dataset.backgroundAudio === 'on') === state.backgroundAudioEnabled)
-    );
-  }
-
   elements.gaugeCard.classList.toggle(
     'is-alert-enabled',
     isManualAlertActive(state.alertEnabled, state.alertLimitMs) ||
@@ -1204,13 +1198,7 @@ function setAudioMuted(muted, { fromUserGesture = false } = {}) {
   state.backgroundAudioRevision += 1;
   saveAudioMutedPreference(muted);
 
-  if (muted) {
-    state.backgroundAudioEnabled = false;
-    saveBackgroundAudioEnabledPreference(false);
-    audioController.disarmBackgroundAlertAudio();
-    audioController.stopOverspeedSound();
-    audioController.stopTrapSound();
-  } else if (fromUserGesture) {
+  if (fromUserGesture) {
     audioController.handleUserGestureAudioActivation();
   }
 
@@ -1289,25 +1277,34 @@ function setTrapSoundEnabled(enabled, options = {}) {
   renderAlertUi(options);
 }
 
-function setBackgroundAudioEnabled(enabled, { fromUserGesture = false } = {}) {
-  if (enabled && state.audioMuted) {
-    state.audioMuted = false;
-    saveAudioMutedPreference(false);
+function setBackgroundMode(enabled, { fromUserGesture = false } = {}) {
+  const nextEnabled = Boolean(enabled);
+  const changed = state.backgroundMode !== nextEnabled;
+
+  if (changed) {
+    state.backgroundMode = nextEnabled;
+    state.backgroundAudioRevision += 1;
+    if (nextEnabled) {
+      state.backgroundAudioSuppressed = false;
+    }
   }
 
-  state.backgroundAudioEnabled = enabled;
-  state.backgroundAudioRevision += 1;
-  saveBackgroundAudioEnabledPreference(enabled);
-
-  if (enabled) {
+  if (nextEnabled) {
     if (fromUserGesture) {
       audioController.handleUserGestureAudioActivation();
+    } else {
+      audioController.maybeRecoverSuppressedBackgroundAudio();
     }
-  } else {
+  } else if (changed || state.backgroundAudioArmed || state.backgroundAudioArmPending) {
+    state.backgroundAudioSuppressed = false;
     audioController.disarmBackgroundAlertAudio({ fromUserGesture });
   }
 
   renderAlertUi({ fromUserGesture });
+}
+
+function syncBackgroundModeWithRecordingState({ fromUserGesture = false } = {}) {
+  setBackgroundMode(state.recordingState === 'recording', { fromUserGesture });
 }
 
 function openAlertPanel() {
@@ -1706,7 +1703,7 @@ function bindEvents() {
     toggleRecording();
   });
   elements.stopRecording?.addEventListener('click', () => {
-    stopRecordingSession();
+    stopRecordingSession({ fromUserGesture: true });
   });
   elements.quickAlertConfig?.addEventListener('click', toggleAlertPanel);
   elements.alertTrigger.addEventListener('click', toggleAlertPanel);
@@ -1778,16 +1775,6 @@ function bindEvents() {
   elements.quickAudioToggle?.addEventListener('click', () => {
     setAudioMuted(!state.audioMuted, { fromUserGesture: true });
   });
-
-  elements.quickBackgroundAudioToggle?.addEventListener('click', () => {
-    setBackgroundAudioEnabled(!state.backgroundAudioEnabled, { fromUserGesture: true });
-  });
-
-  for (const button of elements.backgroundAudioButtons) {
-    button.addEventListener('click', () => {
-      setBackgroundAudioEnabled(button.dataset.backgroundAudio === 'on', { fromUserGesture: true });
-    });
-  }
 
   for (const button of elements.unitButtons) {
     button.addEventListener('click', () => setUnit(button.dataset.unit));
@@ -1861,9 +1848,6 @@ async function init() {
   }
 
   document.body.classList.remove('alert-panel-open');
-  if (loadedPreferences.changed) {
-    saveBackgroundAudioEnabledPreference(false);
-  }
   await hydrateReplaySession();
   await persistReplaySessionNow();
   updatePageMeta();
@@ -1904,17 +1888,16 @@ async function init() {
     );
   }
 
-  for (const button of elements.backgroundAudioButtons) {
-    button.setAttribute(
-      'aria-pressed',
-      String((button.dataset.backgroundAudio === 'on') === state.backgroundAudioEnabled)
-    );
-  }
-
   audioController.attachRuntimeAudioEventListeners();
   audioController.installMediaSessionActionHandlers({
     setAudioMuted,
-    setBackgroundAudioEnabled,
+    setRecordingActive: (active, options) => {
+      if (active) {
+        startRecordingSession(options);
+      } else {
+        pauseRecordingSession(options);
+      }
+    },
   });
   renderPrimaryView();
   renderMetrics();

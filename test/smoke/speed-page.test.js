@@ -137,12 +137,8 @@ describe('speed.html smoke', () => {
       'Mute alert audio'
     );
     expect(document.querySelector('#quickAudioToggle .toolbar-recording-glyph svg')).toBeTruthy();
-    expect(document.getElementById('quickBackgroundAudioToggle').getAttribute('aria-label')).toBe(
-      'Enable background audio'
-    );
-    expect(
-      document.querySelector('#quickBackgroundAudioToggle .toolbar-recording-glyph svg')
-    ).toBeTruthy();
+    expect(document.getElementById('quickBackgroundAudioToggle')).toBeNull();
+    expect(document.querySelector('.background-audio-btn')).toBeNull();
     expect(document.getElementById('speedToolsMenuBtn').getAttribute('aria-label')).toBe('Pages');
     expect(document.querySelector('#speedToolsMenuBtn .btn-icon svg')).toBeTruthy();
     expect(document.getElementById('speedToolsMenuList').hidden).toBe(true);
@@ -208,6 +204,30 @@ describe('speed.html smoke', () => {
 
     expect(document.getElementById('speedValue').textContent).toBe('36');
     expect(document.getElementById('altitudeValue').textContent).toBe('42');
+  });
+
+  it('enables background audio as an internal policy when route recording starts', async () => {
+    const speedPage = await import('../../src/speed/speed.js');
+    await speedPage.initPromise;
+    await settleAsyncWork();
+
+    expect(getBrowserMocks().mediaSession.playbackState).not.toBe('playing');
+
+    document.getElementById('toggleRecording').click();
+    await settleAsyncWork();
+
+    expect(document.getElementById('toggleRecording').getAttribute('aria-label')).toBe(
+      'Pause recording'
+    );
+    expect(getBrowserMocks().mediaSession.playbackState).toBe('playing');
+
+    document.getElementById('toggleRecording').click();
+    await settleAsyncWork();
+
+    expect(document.getElementById('toggleRecording').getAttribute('aria-label')).toBe(
+      'Resume recording'
+    );
+    expect(getBrowserMocks().mediaSession.playbackState).not.toBe('playing');
   });
 
   it('coalesces replay persistence under high-frequency recording bursts', async () => {
