@@ -62,13 +62,6 @@ const IconMilkdrop = `
     <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
   </svg>
 `;
-const IconBackgroundMode = `
-  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <rect x="5.25" y="4.75" width="9.5" height="14.5" rx="2.2" stroke="currentColor" stroke-width="1.5"/>
-    <path d="M17 8a3.75 3.75 0 0 1 0 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-    <path d="M19.2 5.8a7 7 0 0 1 0 12.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-  </svg>
-`;
 
 function updateRangeVisualFill(input) {
   if (!(input instanceof HTMLInputElement)) return;
@@ -285,14 +278,6 @@ export function createPlayerShell({ container }) {
     t("milkdropTitle"),
   );
 
-  const backgroundModeToggleBtn = makeUtilityBtn(
-    "player-background-toggle-btn",
-    IconBackgroundMode,
-    t("playerEnableBackgroundMode"),
-    t("playerBackgroundShort"),
-  );
-  backgroundModeToggleBtn.setAttribute("aria-pressed", "false");
-
   const contentToggleBtn = makeUtilityBtn(
     "player-content-toggle-btn",
     IconLibrary,
@@ -418,7 +403,6 @@ export function createPlayerShell({ container }) {
   utilityRow.append(
     visualizerToggleBtn,
     milkdropToggleBtn,
-    backgroundModeToggleBtn,
     contentToggleBtn,
   );
 
@@ -1622,12 +1606,6 @@ export function createPlayerShell({ container }) {
     syncMilkdropToggle();
   });
 
-  backgroundModeToggleBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const s = runtime.getState();
-    runtime.setBackgroundMode(!s.backgroundMode, { fromUserGesture: true });
-  });
-
   syncMilkdropToggle();
   if (loadMilkdropPanelVisibility()) {
     ensureMilkdropPanel();
@@ -1786,14 +1764,6 @@ export function createPlayerShell({ container }) {
     // Loading/error
     root.classList.toggle("loading", s.loading);
     root.classList.toggle("error", Boolean(s.error));
-
-    backgroundModeToggleBtn.classList.toggle("active", s.backgroundMode);
-    backgroundModeToggleBtn.setAttribute("aria-pressed", String(s.backgroundMode));
-    const backgroundModeLabel = s.backgroundMode
-      ? t("playerDisableBackgroundMode")
-      : t("playerEnableBackgroundMode");
-    backgroundModeToggleBtn.setAttribute("aria-label", backgroundModeLabel);
-    backgroundModeToggleBtn.title = backgroundModeLabel;
 
     if (s.error) {
       errorMsg.textContent = s.error === "unavailable"

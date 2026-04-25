@@ -68,7 +68,7 @@ const state = {
   repeat: "off",
   /** Shuffle mode */
   shuffle: false,
-  /** Whether background mode keepalive is desired */
+  /** Internal background audio keepalive policy, enabled after playback starts */
   backgroundMode: false,
   /** Source type for current track: "blob" | "remote" | null */
   sourceType: null,
@@ -235,6 +235,12 @@ function getAudio() {
     audio = createManagedAudioElement();
   }
   return audio;
+}
+
+function enableBackgroundModeForPlaybackStart() {
+  if (state.backgroundMode) return false;
+  state.backgroundMode = true;
+  return true;
 }
 
 function wantsBackgroundModeKeepAlive() {
@@ -908,6 +914,8 @@ async function loadTrack(index, { startTime = 0, autoplay = true, suppressAutopl
   const requestToken = ++loadRequestToken;
   const requestedStartTime = normalizePlaybackTime(startTime);
 
+  if (autoplay) enableBackgroundModeForPlaybackStart();
+
   state.currentIndex = index;
   state.currentTrack = track;
   state.loading = true;
@@ -1101,6 +1109,10 @@ export async function play() {
   state.paused = false;
 
   const el = getAudio();
+  if (el.src || state.queue.length > 0) {
+    enableBackgroundModeForPlaybackStart();
+  }
+
   if (el.src) {
     if (state.backgroundMode) {
       void armBackgroundModeKeepAlive();
@@ -1292,22 +1304,6 @@ export function toggleShuffle() {
 }
 
 /**
- * Toggle background mode.
- */
-export function setBackgroundMode(enabled, { fromUserGesture = false } = {}) {
-  state.backgroundMode = enabled;
-  if (enabled && fromUserGesture) {
-    syncBackgroundModeKeepAlive();
-  } else if (!enabled) {
-    stopBackgroundModeKeepAlive();
-  } else {
-    syncMediaSessionPlaybackState();
-  }
-  persistSession();
-  notify();
-}
-
-/**
  * Play a specific track from the queue by asset name.
  * @param {string} name
  */
@@ -1489,6 +1485,7 @@ export async function restoreSession(availableTracks, { autoplay = false } = {})
 
 function onPlay() {
   state.paused = false;
+  enableBackgroundModeForPlaybackStart();
 
   // Track remote session for no-hot-swap guard
   if (state.sourceType === "remote" && !state.remoteSessionActive) {

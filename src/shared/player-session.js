@@ -15,7 +15,7 @@
  *  - muted
  *  - repeat ("off" | "all" | "one")
  *  - shuffle (boolean)
- *  - backgroundMode (boolean)
+ *  - backgroundMode (boolean — internal playback keepalive policy)
  *
  * Never persists blobs, object URLs, or signed/expiring playback URLs.
  */

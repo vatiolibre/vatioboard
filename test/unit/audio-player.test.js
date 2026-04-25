@@ -1066,7 +1066,7 @@ describe("audio-runtime", () => {
     expect(runtime.getState().shuffle).toBe(false);
   });
 
-  it("background mode arms a silent keepalive only while playback is active", async () => {
+  it("background mode enables on playback start and keeps a silent keepalive only while active", async () => {
     runtime.setQueue([TRACK_A, TRACK_B], { autoplay: false });
 
     await vi.waitFor(() => {
@@ -1076,12 +1076,10 @@ describe("audio-runtime", () => {
     const keepAliveAudio = createdAudio.find((audio) => audio.src === "blob:test-url");
     expect(keepAliveAudio).toBeTruthy();
     expect(keepAliveAudio.paused).toBe(true);
-
-    runtime.setBackgroundMode(true, { fromUserGesture: true });
-    expect(runtime.getState().backgroundMode).toBe(true);
-    expect(keepAliveAudio.paused).toBe(true);
+    expect(runtime.getState().backgroundMode).toBe(false);
 
     await runtime.play();
+    expect(runtime.getState().backgroundMode).toBe(true);
 
     await vi.waitFor(() => {
       expect(keepAliveAudio.paused).toBe(false);
@@ -1091,6 +1089,47 @@ describe("audio-runtime", () => {
 
     await vi.waitFor(() => {
       expect(keepAliveAudio.paused).toBe(true);
+    });
+  });
+
+  it("background mode enables for autoplay queue starts", async () => {
+    expect(runtime.getState().backgroundMode).toBe(false);
+
+    runtime.setQueue([TRACK_A, TRACK_B], { autoplay: true });
+
+    await vi.waitFor(() => {
+      const s = runtime.getState();
+      expect(s.currentTrack?.name).toBe("asset_a");
+      expect(s.backgroundMode).toBe(true);
+    });
+  });
+
+  it("background mode enables when a queued track is clicked to play", async () => {
+    runtime.setQueue([TRACK_A, TRACK_B], { autoplay: false });
+
+    await vi.waitFor(() => {
+      expect(runtime.getState().currentTrack?.name).toBe("asset_a");
+    });
+    expect(runtime.getState().backgroundMode).toBe(false);
+
+    await runtime.playTrackByName("asset_b");
+
+    await vi.waitFor(() => {
+      const s = runtime.getState();
+      expect(s.currentTrack?.name).toBe("asset_b");
+      expect(s.backgroundMode).toBe(true);
+    });
+  });
+
+  it("background mode enables for library Play Now", async () => {
+    expect(runtime.getState().backgroundMode).toBe(false);
+
+    await runtime.playLibraryTrackNow(TRACK_B, [TRACK_A, TRACK_B, TRACK_C]);
+
+    await vi.waitFor(() => {
+      const s = runtime.getState();
+      expect(s.currentTrack?.name).toBe("asset_b");
+      expect(s.backgroundMode).toBe(true);
     });
   });
 
@@ -1104,7 +1143,6 @@ describe("audio-runtime", () => {
     const keepAliveAudio = createdAudio.find((audio) => audio.src === "blob:test-url");
     expect(keepAliveAudio).toBeTruthy();
 
-    runtime.setBackgroundMode(true, { fromUserGesture: true });
     await runtime.play();
 
     await vi.waitFor(() => {
@@ -2302,10 +2340,10 @@ describe("player-shell", () => {
     expect(container.querySelector(".player-utility-row")).toBeTruthy();
     expect(container.querySelector(".player-visualizer-toggle-btn")).toBeTruthy();
     expect(container.querySelector(".player-content-toggle-btn")).toBeTruthy();
+    expect(container.querySelector(".player-background-toggle-btn")).toBeNull();
     expect(Array.from(container.querySelectorAll(".player-utility-btn-label"), (label) => label.textContent)).toEqual([
       "playerVisualsShort",
       "milkdropTitle",
-      "playerBackgroundShort",
       "playerBrowseShort",
     ]);
     expect(container.querySelector(".player-close svg")).toBeTruthy();
