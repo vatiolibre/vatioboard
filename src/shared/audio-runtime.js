@@ -15,16 +15,18 @@
 
 import { resolveAudioSource, hasLocalSource, triggerBackgroundCache } from "./audio-source-resolver.js";
 import {
-  setMediaSessionMetadata,
-  setMediaSessionPlaybackState,
-  setMediaSessionPositionState,
-  setMediaSessionActionHandlers,
-  clearMediaSession,
+  clearMediaSessionClient,
+  updateMediaSessionClient,
 } from "./media-session-adapter.js";
 import {
-  createAudioChannelRetainer,
   primeAudioElement as primeManagedAudioElement,
 } from "./audio-channel-retainer.js";
+import {
+  acquireBackgroundAudioLease,
+  getBackgroundKeepAliveAudio,
+  isBackgroundAudioLeaseActive,
+  releaseBackgroundAudioLease,
+} from "./audio-system.js";
 import { setMainAudioElement } from "./audio-cue.js";
 import { destroyVisualizerGraphForElement } from "./audio-mini-visualizer.js";
 import { loadPlayerSession, savePlayerSession } from "./player-session.js";
@@ -36,6 +38,9 @@ function isArtworkUrl(ref) {
 // ── State ────────────────────────────────────────────────────────────
 
 let mediaSessionEnabled = true;
+const PLAYER_MEDIA_SESSION_OWNER = "player-runtime";
+const PLAYER_MEDIA_SESSION_PRIORITY = 10;
+const PLAYER_BACKGROUND_AUDIO_LEASE = "player-runtime";
 
 /**
  * Enable or disable Media Session management by this runtime.
@@ -45,8 +50,13 @@ let mediaSessionEnabled = true;
 export function setMediaSessionEnabled(enabled) {
   mediaSessionEnabled = enabled;
   if (!enabled) {
-    clearMediaSession();
+    clearMediaSessionClient(PLAYER_MEDIA_SESSION_OWNER);
+    return;
   }
+
+  updateMediaSessionMetadata();
+  syncMediaSessionPlaybackState();
+  syncPositionState();
 }
 
 const listeners = new Set();
@@ -119,8 +129,7 @@ let primeInFlight = null;
 let backgroundKeepAliveGeneration = 0;
 let backgroundKeepAliveArmPending = false;
 
-const backgroundAudioRetainer = createAudioChannelRetainer();
-const backgroundKeepAliveAudio = backgroundAudioRetainer.getKeepAliveAudio();
+const backgroundKeepAliveAudio = getBackgroundKeepAliveAudio();
 
 function bindAudioElement(el) {
   el.addEventListener("play", onPlay);
@@ -252,7 +261,7 @@ function isBackgroundModeKeepAliveStale(generation) {
 }
 
 function getDesiredPlaybackState() {
-  if (backgroundAudioRetainer.isKeepAliveActive()) return "playing";
+  if (isBackgroundAudioLeaseActive(PLAYER_BACKGROUND_AUDIO_LEASE)) return "playing";
 
   if (backgroundKeepAliveArmPending && wantsBackgroundModeKeepAlive()) {
     return "playing";
@@ -272,13 +281,17 @@ function getDesiredPlaybackState() {
 
 function syncMediaSessionPlaybackState() {
   if (!mediaSessionEnabled) return;
-  setMediaSessionPlaybackState(getDesiredPlaybackState());
+  updateMediaSessionClient(PLAYER_MEDIA_SESSION_OWNER, {
+    active: true,
+    priority: PLAYER_MEDIA_SESSION_PRIORITY,
+    playbackState: getDesiredPlaybackState(),
+  });
 }
 
 function stopBackgroundModeKeepAlive() {
   backgroundKeepAliveGeneration += 1;
   backgroundKeepAliveArmPending = false;
-  backgroundAudioRetainer.stopKeepAlive();
+  releaseBackgroundAudioLease(PLAYER_BACKGROUND_AUDIO_LEASE);
   syncMediaSessionPlaybackState();
 }
 
@@ -288,7 +301,7 @@ async function armBackgroundModeKeepAlive() {
     return false;
   }
 
-  if (backgroundAudioRetainer.isKeepAliveActive()) {
+  if (isBackgroundAudioLeaseActive(PLAYER_BACKGROUND_AUDIO_LEASE)) {
     syncMediaSessionPlaybackState();
     return true;
   }
@@ -302,18 +315,18 @@ async function armBackgroundModeKeepAlive() {
   backgroundKeepAliveArmPending = true;
 
   try {
-    const armed = await backgroundAudioRetainer.ensureKeepAlivePlaying({
+    const armed = await acquireBackgroundAudioLease(PLAYER_BACKGROUND_AUDIO_LEASE, {
       shouldContinue: () => !isBackgroundModeKeepAliveStale(generation),
     });
 
     if (!armed && !isBackgroundModeKeepAliveStale(generation)) {
-      backgroundAudioRetainer.stopKeepAlive();
+      releaseBackgroundAudioLease(PLAYER_BACKGROUND_AUDIO_LEASE);
     }
 
     return armed;
   } catch {
     if (!isBackgroundModeKeepAliveStale(generation)) {
-      backgroundAudioRetainer.stopKeepAlive();
+      releaseBackgroundAudioLease(PLAYER_BACKGROUND_AUDIO_LEASE);
     }
     return false;
   } finally {
@@ -1172,7 +1185,7 @@ export function stopPlayback() {
   }
 
   stopBackgroundModeKeepAlive();
-  if (mediaSessionEnabled) clearMediaSession();
+  if (mediaSessionEnabled) clearMediaSessionClient(PLAYER_MEDIA_SESSION_OWNER);
   flushSessionPersistence({ currentTime: 0 });
   notify();
 }
@@ -1602,22 +1615,35 @@ function updateMediaSessionMetadata() {
   const track = state.currentTrack;
   if (!track) return;
 
-  setMediaSessionMetadata({
-    title: track.title || track.original_filename || track.name || "",
-    artist: track.artist || track.folder_path || "",
-    album: "VatioBoard",
-    artworkUrl: track.artwork_ref && isArtworkUrl(track.artwork_ref) ? track.artwork_ref : "",
+  updateMediaSessionClient(PLAYER_MEDIA_SESSION_OWNER, {
+    active: true,
+    priority: PLAYER_MEDIA_SESSION_PRIORITY,
+    metadata: {
+      title: track.title || track.original_filename || track.name || "",
+      artist: track.artist || track.folder_path || "",
+      album: "VatioBoard",
+      artworkUrl: track.artwork_ref && isArtworkUrl(track.artwork_ref) ? track.artwork_ref : "",
+    },
+    handlers: {
+      play,
+      pause,
+      stop: stopPlayback,
+      previoustrack: previousTrack,
+      nexttrack: nextTrack,
+      seekbackward: (details) => seekBackward(details?.seekOffset || 10),
+      seekforward: (details) => seekForward(details?.seekOffset || 10),
+      seekto: (details) => { if (details?.seekTime != null) seekTo(details.seekTime); },
+    },
   });
+}
 
-  setMediaSessionActionHandlers({
-    play,
-    pause,
-    stop: stopPlayback,
-    previoustrack: previousTrack,
-    nexttrack: nextTrack,
-    seekbackward: (details) => seekBackward(details?.seekOffset || 10),
-    seekforward: (details) => seekForward(details?.seekOffset || 10),
-    seekto: (details) => { if (details?.seekTime != null) seekTo(details.seekTime); },
+export function updatePlayerMediaSessionMetadata(metadata = {}) {
+  if (!mediaSessionEnabled) return;
+
+  updateMediaSessionClient(PLAYER_MEDIA_SESSION_OWNER, {
+    active: true,
+    priority: PLAYER_MEDIA_SESSION_PRIORITY,
+    metadata,
   });
 }
 
@@ -1625,10 +1651,14 @@ function syncPositionState() {
   if (!mediaSessionEnabled) return;
   const el = audio;
   if (!el) return;
-  setMediaSessionPositionState({
-    duration: el.duration || 0,
-    position: getCurrentPlaybackTime(),
-    playbackRate: el.playbackRate || 1,
+  updateMediaSessionClient(PLAYER_MEDIA_SESSION_OWNER, {
+    active: true,
+    priority: PLAYER_MEDIA_SESSION_PRIORITY,
+    positionState: {
+      duration: el.duration || 0,
+      position: getCurrentPlaybackTime(),
+      playbackRate: el.playbackRate || 1,
+    },
   });
 }
 

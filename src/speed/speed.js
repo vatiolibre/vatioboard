@@ -1724,7 +1724,7 @@ function bindEvents() {
   bindMenuNavigation(elements.openAccelMenu, '/accel');
   bindMenuNavigation(elements.openGpsLabMenu, '/gps-rate');
   bindMenuNavigation(elements.openBoardMenu, '/');
-  integratePlayerWidget({ toolsMenuList: elements.toolsMenuList, toolsMenu, mediaSession: false });
+  integratePlayerWidget({ toolsMenuList: elements.toolsMenuList, toolsMenu });
   elements.retryGps.addEventListener('click', () => restartTrip({ fromUserGesture: true }));
   elements.resetTrip.addEventListener('click', () => restartTrip({ fromUserGesture: true }));
   elements.toggleRecording?.addEventListener('click', () => {

@@ -43,7 +43,6 @@ import {
   getBackendMediaAssetAccess,
   fetchBackendMediaAssetBlob,
 } from "../shared/backend-auth.js";
-import { setMediaSessionMetadata } from "../shared/media-session-adapter.js";
 import { showPromptDialog } from "../shared/ui/confirm-dialog.js";
 
 const PROGRESS_MAX = 1000;
@@ -1722,7 +1721,7 @@ export function createPlayerShell({ container }) {
             artworkCompact.innerHTML = "";
             artworkCompact.style.backgroundImage = `url(${CSS.escape(artUrl)})`;
             artworkCompact.classList.add("has-image");
-            setMediaSessionMetadata({
+            runtime.updatePlayerMediaSessionMetadata({
               title: track.title || track.original_filename || track.name || "",
               artist: track.artist || track.folder_path || "",
               album: "VatioBoard",

@@ -1,6 +1,4 @@
 import {
-  BACKGROUND_KEEPALIVE_DURATION_SECONDS,
-  BACKGROUND_KEEPALIVE_SAMPLE_RATE,
   MEDIA_METADATA_MIN_UPDATE_INTERVAL_MS,
   MEDIA_SESSION_FALLBACK_ARTWORK,
   OVERSPEED_SOUND_URL,
@@ -12,12 +10,25 @@ import {
 } from "./constants.js";
 import {
   activateAudioElement,
-  createAudioChannelRetainer,
   primeAudioElement,
   silenceAudioElement,
 } from "../shared/audio-channel-retainer.js";
+import {
+  acquireBackgroundAudioLease,
+  getBackgroundKeepAliveAudio,
+  isBackgroundAudioLeaseActive,
+  releaseBackgroundAudioLease,
+} from "../shared/audio-system.js";
+import {
+  clearMediaSessionClient,
+  updateMediaSessionClient,
+} from "../shared/media-session-adapter.js";
 import { shouldPlayOverspeedSound } from "./alerts.js";
 import { capitalizeText, escapeSvgText, getDistanceDisplay, truncateText } from "./render.js";
+
+const SPEED_BACKGROUND_AUDIO_LEASE = "speed-alerts";
+const SPEED_MEDIA_SESSION_OWNER = "speed";
+const SPEED_MEDIA_SESSION_PRIORITY = 50;
 
 export function createSpeedAudioController({
   state,
@@ -49,11 +60,7 @@ export function createSpeedAudioController({
   startRecordingAudio.preload = "auto";
   startRecordingAudio.playsInline = true;
 
-  const backgroundAudioRetainer = createAudioChannelRetainer({
-    keepAliveSampleRate: BACKGROUND_KEEPALIVE_SAMPLE_RATE,
-    keepAliveDurationSeconds: BACKGROUND_KEEPALIVE_DURATION_SECONDS,
-  });
-  const backgroundKeepAliveAudio = backgroundAudioRetainer.getKeepAliveAudio();
+  const backgroundKeepAliveAudio = getBackgroundKeepAliveAudio();
 
   let audioPrimePromise = null;
 
@@ -62,14 +69,6 @@ export function createSpeedAudioController({
     state.trapAudible = false;
     state.trapSoundDeadlineAt = 0;
   });
-
-  function supportsMediaSession() {
-    return "mediaSession" in navigator;
-  }
-
-  function supportsMediaMetadata() {
-    return supportsMediaSession() && typeof window.MediaMetadata === "function";
-  }
 
   function getRuntimeSpeedLabel() {
     return `${Math.round(convertSpeed(state.currentSpeedMs, state.unit))} ${UNIT_CONFIG[state.unit].label}`;
@@ -153,7 +152,7 @@ export function createSpeedAudioController({
 
   function getRuntimeMediaPlaybackState() {
     if (
-      !backgroundKeepAliveAudio.paused
+      isBackgroundAudioLeaseActive(SPEED_BACKGROUND_AUDIO_LEASE)
       || !overspeedAudio.paused
       || !trapAlertAudio.paused
     ) {
@@ -162,6 +161,7 @@ export function createSpeedAudioController({
 
     if (
       state.backgroundMode
+      || state.alertAudioControlActive
       || state.backgroundAudioArmPending
       || state.alertSoundPending
       || state.trapSoundPending
@@ -356,22 +356,14 @@ export function createSpeedAudioController({
       state.runtimePageTitle = nextPageTitle;
     }
 
-    if (!supportsMediaSession()) {
-      return;
-    }
-
     const nextPlaybackState = getRuntimeMediaPlaybackState();
     if (state.runtimeMediaPlaybackState !== nextPlaybackState) {
-      try {
-        navigator.mediaSession.playbackState = nextPlaybackState;
-      } catch {
-        // Ignore partial media session implementations.
-      }
+      updateMediaSessionClient(SPEED_MEDIA_SESSION_OWNER, {
+        active: true,
+        priority: SPEED_MEDIA_SESSION_PRIORITY,
+        playbackState: nextPlaybackState,
+      });
       state.runtimeMediaPlaybackState = nextPlaybackState;
-    }
-
-    if (!supportsMediaMetadata()) {
-      return;
     }
 
     const artworkSignature = state.runtimeDynamicArtworkBlocked
@@ -416,50 +408,35 @@ export function createSpeedAudioController({
       artwork: state.runtimeDynamicArtworkBlocked
         ? MEDIA_SESSION_FALLBACK_ARTWORK
         : getRuntimeMediaArtwork(alertState),
+      fallbackArtwork: MEDIA_SESSION_FALLBACK_ARTWORK,
     };
 
-    try {
-      navigator.mediaSession.metadata = new window.MediaMetadata(metadataInit);
-    } catch {
-      if (!state.runtimeDynamicArtworkBlocked) {
-        state.runtimeDynamicArtworkBlocked = true;
-        try {
-          navigator.mediaSession.metadata = new window.MediaMetadata({
-            ...metadataInit,
-            artwork: MEDIA_SESSION_FALLBACK_ARTWORK,
-          });
-        } catch {
-          // Ignore browsers that reject metadata construction.
-        }
-      }
-    }
+    updateMediaSessionClient(SPEED_MEDIA_SESSION_OWNER, {
+      active: true,
+      priority: SPEED_MEDIA_SESSION_PRIORITY,
+      metadata: metadataInit,
+    });
     state.runtimeMediaMetadataSignature = metadataSignature;
     state.runtimeMediaMetadataUrgencySignature = metadataUrgencySignature;
     state.runtimeMediaMetadataUpdatedAt = now;
   }
 
-  function setMediaSessionActionHandler(action, handler) {
-    if (!supportsMediaSession() || typeof navigator.mediaSession.setActionHandler !== "function") {
-      return;
-    }
-
-    try {
-      navigator.mediaSession.setActionHandler(action, handler);
-    } catch {
-      // Ignore unsupported actions.
-    }
-  }
-
   function installMediaSessionActionHandlers(handlers) {
-    setMediaSessionActionHandler("play", () => {
-      handlers.setRecordingActive?.(true, { fromUserGesture: true });
-    });
-    setMediaSessionActionHandler("pause", () => {
-      handlers.setRecordingActive?.(false, { fromUserGesture: true });
-    });
-    setMediaSessionActionHandler("stop", () => {
-      handlers.setRecordingActive?.(false, { fromUserGesture: true });
-      handlers.setAudioMuted(true, { fromUserGesture: true });
+    updateMediaSessionClient(SPEED_MEDIA_SESSION_OWNER, {
+      active: true,
+      priority: SPEED_MEDIA_SESSION_PRIORITY,
+      handlers: {
+        play: () => {
+          handlers.setRecordingActive?.(true, { fromUserGesture: true });
+        },
+        pause: () => {
+          handlers.setRecordingActive?.(false, { fromUserGesture: true });
+        },
+        stop: () => {
+          handlers.setRecordingActive?.(false, { fromUserGesture: true });
+          handlers.setAudioMuted(true, { fromUserGesture: true });
+        },
+      },
     });
   }
 
@@ -528,7 +505,7 @@ export function createSpeedAudioController({
     state.backgroundAudioArmPending = false;
     state.alertAudioControlActive = false;
     clearTrapMuteTimeout();
-    backgroundAudioRetainer.stopKeepAlive();
+    releaseBackgroundAudioLease(SPEED_BACKGROUND_AUDIO_LEASE);
   }
 
   function playOneShotAudio(audio) {
@@ -552,6 +529,36 @@ export function createSpeedAudioController({
 
   function playStartRecordingSound() {
     return playOneShotAudio(startRecordingAudio);
+  }
+
+  function stopAudioElementPlayback(audio) {
+    if (!audio) return;
+    audio.pause();
+    audio.currentTime = 0;
+  }
+
+  async function ensureAudioElementLooping(audio, { shouldContinue = null } = {}) {
+    if (!audio) return false;
+
+    audio.loop = true;
+
+    if (!audio.paused) {
+      return typeof shouldContinue === "function" ? shouldContinue() : true;
+    }
+
+    silenceAudioElement(audio);
+    audio.currentTime = 0;
+    const playPromise = audio.play();
+    if (playPromise && typeof playPromise.then === "function") {
+      await playPromise;
+    }
+
+    if (typeof shouldContinue === "function" && !shouldContinue()) {
+      stopAudioElementPlayback(audio);
+      return false;
+    }
+
+    return true;
   }
 
   function isStaleBackgroundAudioArm(revision) {
@@ -588,7 +595,7 @@ export function createSpeedAudioController({
     }
 
     if (state.backgroundAudioArmed) {
-      void backgroundAudioRetainer.ensureAudioElementLooping(overspeedAudio, {
+      void ensureAudioElementLooping(overspeedAudio, {
         shouldContinue: () => !isStaleBackgroundAudioArm(state.backgroundAudioRevision),
       }).catch(() => {});
     }
@@ -682,7 +689,7 @@ export function createSpeedAudioController({
     }
 
     if (state.backgroundAudioArmed) {
-      void backgroundAudioRetainer.ensureAudioElementLooping(trapAlertAudio, {
+      void ensureAudioElementLooping(trapAlertAudio, {
         shouldContinue: () => !isStaleBackgroundAudioArm(state.backgroundAudioRevision),
       }).catch(() => {});
     }
@@ -745,7 +752,7 @@ export function createSpeedAudioController({
     if (
       state.backgroundAudioArmed
       && !state.backgroundAudioArmPending
-      && !backgroundKeepAliveAudio.paused
+      && isBackgroundAudioLeaseActive(SPEED_BACKGROUND_AUDIO_LEASE)
       && !overspeedAudio.paused
       && !trapAlertAudio.paused
     ) {
@@ -756,7 +763,7 @@ export function createSpeedAudioController({
     const backgroundAudioRevision = state.backgroundAudioRevision;
     let shouldRetry = false;
     state.backgroundAudioArmPending = true;
-    const keepAlivePromise = backgroundAudioRetainer.ensureKeepAlivePlaying({
+    const keepAlivePromise = acquireBackgroundAudioLease(SPEED_BACKGROUND_AUDIO_LEASE, {
       shouldContinue: () => !isStaleBackgroundAudioArm(backgroundAudioRevision),
     }).then(Boolean, () => false);
 
@@ -780,12 +787,12 @@ export function createSpeedAudioController({
       }
       await Promise.all([
         overspeedAudio.paused
-          ? backgroundAudioRetainer.ensureAudioElementLooping(overspeedAudio, {
+          ? ensureAudioElementLooping(overspeedAudio, {
               shouldContinue: () => !isStaleBackgroundAudioArm(backgroundAudioRevision),
           })
           : Promise.resolve(true),
         trapAlertAudio.paused
-          ? backgroundAudioRetainer.ensureAudioElementLooping(trapAlertAudio, {
+          ? ensureAudioElementLooping(trapAlertAudio, {
               shouldContinue: () => !isStaleBackgroundAudioArm(backgroundAudioRevision),
           })
           : Promise.resolve(true),
@@ -821,7 +828,7 @@ export function createSpeedAudioController({
     state.backgroundAudioArmed = false;
     state.backgroundAudioArmPending = false;
     clearTrapMuteTimeout();
-    backgroundAudioRetainer.stopKeepAlive();
+    releaseBackgroundAudioLease(SPEED_BACKGROUND_AUDIO_LEASE);
 
     if (shouldPlayOverspeedSound(getAlertUiState(), state.alertSoundEnabled, state.audioMuted)) {
       overspeedAudio.loop = true;
@@ -950,7 +957,8 @@ export function createSpeedAudioController({
   }
 
   function dispose() {
-    backgroundAudioRetainer.dispose();
+    releaseBackgroundAudioLease(SPEED_BACKGROUND_AUDIO_LEASE);
+    clearMediaSessionClient(SPEED_MEDIA_SESSION_OWNER);
   }
 
   return {
