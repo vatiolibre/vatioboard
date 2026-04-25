@@ -320,6 +320,156 @@ describe('speed.html smoke', () => {
     expect(getBrowserMocks().mediaSession.playbackState).not.toBe('playing');
   });
 
+  it('starts the recording keep-alive and cue before alert audio priming settles', async () => {
+    const audioInstances = [];
+    const pendingAlertPrime = new Promise(() => {});
+
+    class PendingAlertAudio extends EventTarget {
+      constructor(src = '') {
+        super();
+        this.src = src;
+        this.loop = false;
+        this.preload = 'auto';
+        this.playsInline = true;
+        this.currentTime = 0;
+        this.duration = 0.5;
+        this.paused = true;
+        this.playCalls = 0;
+        audioInstances.push(this);
+      }
+
+      play() {
+        this.playCalls += 1;
+        this.paused = false;
+        this.dispatchEvent(new Event('play'));
+        if (
+          this.src.includes('overspeed_notification')
+          || this.src.includes('near_camera_notification')
+        ) {
+          return pendingAlertPrime;
+        }
+        return Promise.resolve();
+      }
+
+      pause() {
+        this.paused = true;
+        this.dispatchEvent(new Event('pause'));
+      }
+
+      load() {}
+    }
+
+    Object.defineProperty(window, 'Audio', {
+      configurable: true,
+      writable: true,
+      value: PendingAlertAudio,
+    });
+    Object.defineProperty(globalThis, 'Audio', {
+      configurable: true,
+      writable: true,
+      value: PendingAlertAudio,
+    });
+
+    const speedPage = await import('../../src/speed/speed.js');
+    await speedPage.initPromise;
+    await settleAsyncWork();
+
+    document.getElementById('toggleRecording').click();
+    await flushTasks();
+
+    const keepAliveAudioStarted = audioInstances.some((audio) =>
+      audio.src === 'blob:test-url' && audio.playCalls > 0
+    );
+    const startRecordingAudio = audioInstances.find((audio) =>
+      audio.src.includes('/audio/start_recording.m4a')
+    );
+
+    expect(keepAliveAudioStarted).toBe(true);
+    expect(startRecordingAudio?.playCalls).toBe(1);
+    expect(getBrowserMocks().mediaSession.playbackState).toBe('playing');
+  });
+
+  it('quick audio toggle claims background audio and plays a confirmation sound when enabling alerts', async () => {
+    const audioInstances = [];
+    const pendingAlertPrime = new Promise(() => {});
+
+    class PendingAlertAudio extends EventTarget {
+      constructor(src = '') {
+        super();
+        this.src = src;
+        this.loop = false;
+        this.preload = 'auto';
+        this.playsInline = true;
+        this.currentTime = 0;
+        this.duration = 0.5;
+        this.paused = true;
+        this.playCalls = 0;
+        this.blockPlayback = false;
+        audioInstances.push(this);
+      }
+
+      play() {
+        this.playCalls += 1;
+        this.paused = false;
+        this.dispatchEvent(new Event('play'));
+        return this.blockPlayback ? pendingAlertPrime : Promise.resolve();
+      }
+
+      pause() {
+        this.paused = true;
+        this.dispatchEvent(new Event('pause'));
+      }
+
+      load() {}
+    }
+
+    Object.defineProperty(window, 'Audio', {
+      configurable: true,
+      writable: true,
+      value: PendingAlertAudio,
+    });
+    Object.defineProperty(globalThis, 'Audio', {
+      configurable: true,
+      writable: true,
+      value: PendingAlertAudio,
+    });
+
+    const speedPage = await import('../../src/speed/speed.js');
+    await speedPage.initPromise;
+    await settleAsyncWork();
+
+    const overspeedAudio = audioInstances.find((audio) =>
+      audio.src.includes('/audio/overspeed_notification.m4a')
+    );
+    const nearCameraAudios = audioInstances.filter((audio) =>
+      audio.src.includes('/audio/near_camera_notification.m4a')
+    );
+    const trapAlertAudio = nearCameraAudios[0];
+    const alertAudioEnabledAudio = nearCameraAudios[1];
+    overspeedAudio.blockPlayback = true;
+    trapAlertAudio.blockPlayback = true;
+
+    document.getElementById('quickAudioToggle').click();
+    await flushTasks();
+    expect(document.getElementById('quickAudioToggle').getAttribute('aria-label')).toBe(
+      'Unmute alert audio'
+    );
+
+    document.getElementById('quickAudioToggle').click();
+    await flushTasks();
+
+    const keepAliveAudioStarted = audioInstances.some((audio) =>
+      audio.src === 'blob:test-url' && audio.playCalls > 0
+    );
+
+    expect(keepAliveAudioStarted).toBe(true);
+    expect(alertAudioEnabledAudio.playCalls).toBe(1);
+    expect(document.getElementById('quickAudioToggle').getAttribute('aria-label')).toBe(
+      'Mute alert audio'
+    );
+    expect(getBrowserMocks().mediaSession.playbackState).toBe('playing');
+  });
+
   it('coalesces replay persistence under high-frequency recording bursts', async () => {
     const speedPage = await import('../../src/speed/speed.js');
     await speedPage.initPromise;

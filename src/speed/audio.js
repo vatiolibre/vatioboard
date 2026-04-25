@@ -6,6 +6,7 @@ import {
   OVERSPEED_SOUND_URL,
   RUNTIME_ARTWORK_SIZE,
   SPEED_APP_NAME,
+  START_RECORDING_SOUND_URL,
   TRAP_SOUND_URL,
   UNIT_CONFIG,
 } from "./constants.js";
@@ -37,6 +38,16 @@ export function createSpeedAudioController({
   trapAlertAudio.loop = false;
   trapAlertAudio.preload = "auto";
   trapAlertAudio.playsInline = true;
+
+  const alertAudioEnabledAudio = new Audio(TRAP_SOUND_URL);
+  alertAudioEnabledAudio.loop = false;
+  alertAudioEnabledAudio.preload = "auto";
+  alertAudioEnabledAudio.playsInline = true;
+
+  const startRecordingAudio = new Audio(START_RECORDING_SOUND_URL);
+  startRecordingAudio.loop = false;
+  startRecordingAudio.preload = "auto";
+  startRecordingAudio.playsInline = true;
 
   const backgroundAudioRetainer = createAudioChannelRetainer({
     keepAliveSampleRate: BACKGROUND_KEEPALIVE_SAMPLE_RATE,
@@ -141,7 +152,11 @@ export function createSpeedAudioController({
   }
 
   function getRuntimeMediaPlaybackState() {
-    if (!backgroundKeepAliveAudio.paused || !overspeedAudio.paused || !trapAlertAudio.paused) {
+    if (
+      !backgroundKeepAliveAudio.paused
+      || !overspeedAudio.paused
+      || !trapAlertAudio.paused
+    ) {
       return "playing";
     }
 
@@ -449,7 +464,10 @@ export function createSpeedAudioController({
   }
 
   function wantsBackgroundAudio() {
-    return state.backgroundMode && !state.backgroundAudioSuppressed;
+    return (
+      (state.backgroundMode || state.alertAudioControlActive) &&
+      !state.backgroundAudioSuppressed
+    );
   }
 
   function canRecoverSuppressedBackgroundAudio() {
@@ -508,8 +526,32 @@ export function createSpeedAudioController({
     state.backgroundAudioSuppressed = true;
     state.backgroundAudioArmed = false;
     state.backgroundAudioArmPending = false;
+    state.alertAudioControlActive = false;
     clearTrapMuteTimeout();
     backgroundAudioRetainer.stopKeepAlive();
+  }
+
+  function playOneShotAudio(audio) {
+    try {
+      audio.pause();
+      audio.currentTime = 0;
+      activateAudioElement(audio);
+      const playPromise = audio.play();
+      if (playPromise && typeof playPromise.catch === "function") {
+        playPromise.catch(() => {});
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function playAlertAudioEnabledSound() {
+    return playOneShotAudio(alertAudioEnabledAudio);
+  }
+
+  function playStartRecordingSound() {
+    return playOneShotAudio(startRecordingAudio);
   }
 
   function isStaleBackgroundAudioArm(revision) {
@@ -714,6 +756,9 @@ export function createSpeedAudioController({
     const backgroundAudioRevision = state.backgroundAudioRevision;
     let shouldRetry = false;
     state.backgroundAudioArmPending = true;
+    const keepAlivePromise = backgroundAudioRetainer.ensureKeepAlivePlaying({
+      shouldContinue: () => !isStaleBackgroundAudioArm(backgroundAudioRevision),
+    }).then(Boolean, () => false);
 
     try {
       const audioPrimed = await primeAlertAudio();
@@ -725,11 +770,12 @@ export function createSpeedAudioController({
         return;
       }
 
-      await backgroundAudioRetainer.ensureKeepAlivePlaying({
-        shouldContinue: () => !isStaleBackgroundAudioArm(backgroundAudioRevision),
-      });
+      const keepAliveStarted = await keepAlivePromise;
       if (isStaleBackgroundAudioArm(backgroundAudioRevision)) {
         shouldRetry = wantsBackgroundAudio();
+        return;
+      }
+      if (!keepAliveStarted) {
         return;
       }
       await Promise.all([
@@ -892,7 +938,11 @@ export function createSpeedAudioController({
   }
 
   function attachRuntimeAudioEventListeners() {
-    for (const audio of [overspeedAudio, trapAlertAudio, backgroundKeepAliveAudio]) {
+    for (const audio of [
+      overspeedAudio,
+      trapAlertAudio,
+      backgroundKeepAliveAudio,
+    ]) {
       audio.addEventListener("play", syncRuntimePagePresentation);
       audio.addEventListener("pause", syncRuntimePagePresentation);
       audio.addEventListener("ended", syncRuntimePagePresentation);
@@ -911,6 +961,8 @@ export function createSpeedAudioController({
     handleUserGestureAudioActivation,
     installMediaSessionActionHandlers,
     maybeRecoverSuppressedBackgroundAudio,
+    playAlertAudioEnabledSound,
+    playStartRecordingSound,
     primeAlertAudio,
     stopOverspeedSound,
     stopTrapSound,

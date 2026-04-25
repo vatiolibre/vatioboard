@@ -13,6 +13,7 @@ export const STORAGE_PRIMARY_VIEW_KEY = "vatio_speed_primary_view";
 
 export const OVERSPEED_SOUND_URL = "/audio/overspeed_notification.m4a";
 export const TRAP_SOUND_URL = "/audio/near_camera_notification.m4a";
+export const START_RECORDING_SOUND_URL = "/audio/start_recording.m4a";
 export const TRAP_DATA_URL = "/geo/ansv_cameras_compact.min.json";
 export const TRAP_INDEX_URL = "/geo/ansv_cameras_compact.kdbush";
 

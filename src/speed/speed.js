@@ -295,6 +295,7 @@ const state = {
   backgroundAudioArmPending: false,
   backgroundAudioRevision: 0,
   backgroundAudioSuppressed: false,
+  alertAudioControlActive: false,
   overspeedSoundRequestId: 0,
   alertSoundBlocked: false,
   alertSoundPending: false,
@@ -950,6 +951,8 @@ function startRecordingSession({ fromUserGesture = false } = {}) {
     return;
   }
 
+  const shouldPlayStartCue = fromUserGesture;
+
   if (state.recordingState === 'stopped') {
     resetReplaySession({
       archiveCurrent: false,
@@ -960,6 +963,9 @@ function startRecordingSession({ fromUserGesture = false } = {}) {
   }
 
   syncBackgroundModeWithRecordingState({ fromUserGesture });
+  if (shouldPlayStartCue) {
+    audioController.playStartRecordingSound();
+  }
 }
 
 function pauseRecordingSession({ fromUserGesture = false } = {}) {
@@ -1194,12 +1200,34 @@ function setAlertSoundEnabled(enabled, options = {}) {
 }
 
 function setAudioMuted(muted, { fromUserGesture = false } = {}) {
-  state.audioMuted = muted;
-  state.backgroundAudioRevision += 1;
-  saveAudioMutedPreference(muted);
+  const nextMuted = Boolean(muted);
+  const wasMuted = state.audioMuted;
+  const nextAlertAudioControlActive = fromUserGesture && !nextMuted
+    ? true
+    : nextMuted
+      ? false
+      : state.alertAudioControlActive;
+  const alertAudioControlChanged =
+    state.alertAudioControlActive !== nextAlertAudioControlActive;
+
+  state.audioMuted = nextMuted;
+  state.alertAudioControlActive = nextAlertAudioControlActive;
+  if (wasMuted !== nextMuted || alertAudioControlChanged) {
+    state.backgroundAudioRevision += 1;
+  }
+  saveAudioMutedPreference(nextMuted);
 
   if (fromUserGesture) {
-    audioController.handleUserGestureAudioActivation();
+    if (nextMuted && !audioController.wantsBackgroundAudio()) {
+      audioController.disarmBackgroundAlertAudio({ fromUserGesture });
+    } else {
+      audioController.handleUserGestureAudioActivation();
+    }
+    if (wasMuted && !nextMuted) {
+      audioController.playAlertAudioEnabledSound();
+    }
+  } else if (nextMuted && !audioController.wantsBackgroundAudio()) {
+    audioController.disarmBackgroundAlertAudio({ fromUserGesture });
   }
 
   renderAlertUi({ fromUserGesture });
