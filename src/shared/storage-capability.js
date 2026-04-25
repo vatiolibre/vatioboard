@@ -31,7 +31,7 @@ export function createStorageCapability({ store, namespace = 'storage-capability
     }
 
     const probeKey = `${namespace}:probe`;
-    let indexedDbOpenable = false;
+    let indexedDbOpenable;
     let indexedDbWritable = false;
 
     try {

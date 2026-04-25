@@ -11,6 +11,7 @@ import {
   t as sharedT,
   toggleLang,
 } from '../i18n.js';
+import { getCurrentAppRouteQuery, navigateToAppRoute, ROUTE_VISIBLE_EVENT } from '../app/router.js';
 import { initBackendAuthControllers } from '../shared/backend-auth.js';
 import { createAnalogSpeedometer } from '../shared/analog-speedometer.js';
 import { initCloudSyncStatusIndicator } from '../shared/cloud-sync-status-indicator.js';
@@ -127,9 +128,23 @@ import {
   saveSettings as persistSettings,
 } from './storage.js';
 
+let accelLegacyLifecycle = {
+  mount() {},
+  unmount() {},
+};
+
+export function onLegacyViewMount() {
+  accelLegacyLifecycle.mount();
+}
+
+export function onLegacyViewUnmount() {
+  accelLegacyLifecycle.unmount();
+}
+
 export const initPromise = (function () {
   initBackendAuthControllers();
-  const singleTabOwnershipPromise = ensureSingleTabOwnership();
+  const isSpaRuntime = Boolean(window.__vatioboardSpa);
+  const singleTabOwnershipPromise = isSpaRuntime ? Promise.resolve(true) : ensureSingleTabOwnership();
 
   var finishAudio = typeof Audio === 'function' ? new Audio(FINISH_SOUND_URL) : null;
   var finishAudioPrimePromise = null;
@@ -347,6 +362,8 @@ export const initPromise = (function () {
     permissionState: 'prompt',
     permissionStatus: null,
     geolocationSupported: Boolean(navigator.geolocation),
+    viewMounted: true,
+    initialized: false,
     watchId: null,
     uiTimerId: null,
     sessionSampleCount: 0,
@@ -559,7 +576,7 @@ export const initPromise = (function () {
     if (!(await singleTabOwnershipPromise)) {
       return;
     }
-    var initialRunId = new URLSearchParams(window.location.search).get('run') || '';
+    var initialRunId = getCurrentAppRouteQuery().get('run') || '';
 
     var loadedState = await Promise.all([
       loadSettings(),
@@ -593,7 +610,7 @@ export const initPromise = (function () {
     }).then(function (restored) {
       if (restored) renderAll();
     });
-    startCloudSyncLoop({ immediate: false });
+    if (!isSpaRuntime) startCloudSyncLoop({ immediate: false });
     var syncStoredRunsRefreshVersion = storedRunsRefreshVersion;
     void syncCloudRecords()
       .catch(function () {
@@ -603,9 +620,12 @@ export const initPromise = (function () {
         if (storedRunsRefreshVersion !== syncStoredRunsRefreshVersion) return;
         maybeFallbackMissingSelectedResult();
       });
-    startUiTimer();
-    updatePermissionState();
-    ensureWatch();
+    state.initialized = true;
+    if (state.viewMounted) {
+      startUiTimer();
+      updatePermissionState();
+      ensureWatch();
+    }
   }
 
   function primeFinishAudio() {
@@ -681,11 +701,24 @@ export const initPromise = (function () {
     elements.langToggleButtons.forEach(function (button) {
       button.addEventListener('click', handleLangToggle);
     });
-    bindMenuNavigation(elements.openSpeedMenu, '/speed');
-    bindMenuNavigation(elements.openGpsLabMenu, '/gps-rate');
-    bindMenuNavigation(elements.openLibraryMenu, '/library.html?tab=accel');
-    bindMenuNavigation(elements.openBoardMenu, '/');
+    bindMenuNavigation(elements.openSpeedMenu, '#/speed');
+    bindMenuNavigation(elements.openGpsLabMenu, '/gps-rate.html');
+    bindMenuNavigation(elements.openLibraryMenu, '#/library?tab=accel');
+    bindMenuNavigation(elements.openBoardMenu, '#/board');
     integratePlayerWidget({ toolsMenuList: elements.toolsMenuList, toolsMenu });
+    window.__vatioboardCanLeaveAccel = function () {
+      if (!isRunActive(state.run)) return true;
+      return window.confirm(t('accelLeaveActiveRunConfirm'));
+    };
+    window.addEventListener(ROUTE_VISIBLE_EVENT, function (event) {
+      if (event?.detail?.path !== '/accel') return;
+      var routeRunId = getCurrentAppRouteQuery().get('run') || '';
+      if (!routeRunId || routeRunId === state.selectedResultId) return;
+      refreshStoredRuns({
+        preferredResultId: routeRunId,
+        preserveMissingPreferred: true,
+      });
+    });
     elements.setupTrigger.addEventListener('click', function () {
       togglePanel('setup', elements.setupTrigger);
     });
@@ -890,7 +923,7 @@ export const initPromise = (function () {
     if (!element) return;
     element.addEventListener('click', function () {
       toolsMenu.close();
-      window.location.href = href;
+      navigateToAppRoute(href);
     });
   }
 
@@ -1373,6 +1406,7 @@ export const initPromise = (function () {
   }
 
   function startUiTimer() {
+    if (isSpaRuntime && !state.viewMounted) return;
     if (state.uiTimerId) window.clearInterval(state.uiTimerId);
     state.uiTimerId = window.setInterval(renderRealtimeUi, TIMER_TICK_MS);
   }
@@ -1392,14 +1426,53 @@ export const initPromise = (function () {
     pauseReplayPlayback();
   }
 
+  function cancelPendingMeasurementFrames() {
+    if (resultLocationMeasureFrame !== null) {
+      window.cancelAnimationFrame(resultLocationMeasureFrame);
+      resultLocationMeasureFrame = null;
+    }
+    if (historyDetailMeasureFrame !== null) {
+      window.cancelAnimationFrame(historyDetailMeasureFrame);
+      historyDetailMeasureFrame = null;
+    }
+  }
+
+  function handleLegacyViewMount() {
+    state.viewMounted = true;
+    if (!state.initialized) return;
+
+    liveSpeedometer.resize();
+    handleWindowResize();
+    renderAll();
+    startUiTimer();
+    updatePermissionState();
+    ensureWatch();
+  }
+
+  function handleLegacyViewUnmount() {
+    if (!state.viewMounted && isSpaRuntime) return;
+
+    closePanel();
+    stopRealtimeTracking();
+    destroyResultGraph();
+    cancelPendingMeasurementFrames();
+    if (state.actionNoticeTimerId) {
+      window.clearTimeout(state.actionNoticeTimerId);
+      state.actionNoticeTimerId = null;
+    }
+    state.viewMounted = false;
+    document.body.classList.remove('accel-sheet-open');
+  }
+
   function handleSingleTabOwnershipChange(event) {
     if (event?.detail?.owned !== false) return;
     stopRealtimeTracking();
   }
 
   async function restoreAfterPageShow(event) {
+    if (isSpaRuntime && !state.viewMounted) return;
     if (event?.persisted !== true) return;
-    if (!(await ensureSingleTabOwnership())) {
+    if (!isSpaRuntime && !(await ensureSingleTabOwnership())) {
       return;
     }
 
@@ -1410,6 +1483,7 @@ export const initPromise = (function () {
   }
 
   function renderRealtimeUi() {
+    if (isSpaRuntime && !state.viewMounted) return;
     var replayChanged = updateReplayPlaybackClock();
     renderControlState();
     renderStatusPanel();
@@ -2084,6 +2158,7 @@ export const initPromise = (function () {
   }
 
   function ensureWatch() {
+    if (isSpaRuntime && !state.viewMounted) return;
     if (!state.geolocationSupported || state.watchId !== null) return;
 
     try {
@@ -2099,6 +2174,7 @@ export const initPromise = (function () {
   }
 
   function updatePermissionState() {
+    if (isSpaRuntime && !state.viewMounted) return;
     if (!navigator.permissions || typeof navigator.permissions.query !== 'function') {
       state.permissionState = state.geolocationSupported ? 'unknown' : 'unsupported';
       renderAll();
@@ -2108,11 +2184,13 @@ export const initPromise = (function () {
     navigator.permissions
       .query({ name: 'geolocation' })
       .then(function (status) {
+        if (isSpaRuntime && !state.viewMounted) return;
         state.permissionStatus = status;
         state.permissionState = status.state;
         renderAll();
 
         var handler = function () {
+          if (isSpaRuntime && !state.viewMounted) return;
           state.permissionState = status.state;
           renderAll();
         };
@@ -2122,12 +2200,14 @@ export const initPromise = (function () {
         else status.onchange = handler;
       })
       .catch(function () {
+        if (isSpaRuntime && !state.viewMounted) return;
         state.permissionState = state.geolocationSupported ? 'unknown' : 'unsupported';
         renderAll();
       });
   }
 
   function handleGeoError(error) {
+    if (isSpaRuntime && !state.viewMounted) return;
     if (!error) return;
 
     if (error.code === GEO_ERROR_CODE.PERMISSION_DENIED) state.permissionState = 'denied';
@@ -2137,6 +2217,7 @@ export const initPromise = (function () {
   }
 
   function handlePosition(position) {
+    if (isSpaRuntime && !state.viewMounted) return;
     var sample = createLiveSample({
       position: position,
       previousSample: state.latestSample,
@@ -2418,6 +2499,7 @@ export const initPromise = (function () {
   }
 
   function renderAll() {
+    if (isSpaRuntime && !state.viewMounted) return;
     renderControlSelections();
     renderControlState();
     renderStatusPanel();
@@ -3434,14 +3516,14 @@ export const initPromise = (function () {
     return state.latestSample.perfMs + deltaMs;
   }
 
+  accelLegacyLifecycle = {
+    mount: handleLegacyViewMount,
+    unmount: handleLegacyViewUnmount,
+  };
+
   if (import.meta.hot) {
     import.meta.hot.dispose(function () {
-      if (resultLocationMeasureFrame !== null) {
-        window.cancelAnimationFrame(resultLocationMeasureFrame);
-      }
-      if (historyDetailMeasureFrame !== null) {
-        window.cancelAnimationFrame(historyDetailMeasureFrame);
-      }
+      cancelPendingMeasurementFrames();
     });
   }
 

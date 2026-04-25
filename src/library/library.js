@@ -23,6 +23,12 @@ import {
 } from "../icons.js";
 import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
 import {
+  getCurrentAppRouteQuery,
+  navigateToAppRoute,
+  replaceAppRouteQuery,
+  ROUTE_VISIBLE_EVENT,
+} from "../app/router.js";
+import {
   BACKEND_AUTH_STATE_EVENT,
   buildMediaBffUrl,
   deleteBoardDocumentFromBackend,
@@ -80,6 +86,7 @@ import {
   openCloudBoardDocument,
   openCloudReplaySession,
 } from "../shared/cloud-library-open.js";
+import * as audioRuntime from "../shared/audio-runtime.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
 import { integratePlayerWidget } from "../player/integrate-player-widget.js";
 import { initCloudSyncStatusIndicator } from "../shared/cloud-sync-status-indicator.js";
@@ -87,6 +94,7 @@ import { initCloudSyncStatusIndicator } from "../shared/cloud-sync-status-indica
 applyTranslations();
 initBackendAuthControllers();
 
+const isSpaRuntime = Boolean(window.__vatioboardSpa);
 const PAGE_SIZE = 24;
 const SORT_OPTIONS = new Set(["newest", "oldest", "title_asc", "title_desc"]);
 const TAB_ORDER = [
@@ -95,6 +103,7 @@ const TAB_ORDER = [
   CLOUD_LIBRARY_TAB_KEYS.boardDocuments,
   CLOUD_LIBRARY_TAB_KEYS.media,
 ];
+const initialRouteQuery = getCurrentAppRouteQuery();
 
 const elements = {
   langToggleButtons: Array.from(document.querySelectorAll("[data-lang-toggle], #langToggle")),
@@ -199,13 +208,15 @@ initCloudSyncStatusIndicator({
 });
 
 const state = {
-  activeTab: normalizeTabKey(new URL(window.location.href).searchParams.get("tab")),
+  viewMounted: true,
+  initialized: false,
+  activeTab: normalizeTabKey(initialRouteQuery.get("tab")),
   featureAccess: null,
   session: null,
   authLoading: true,
   query: {
-    search: normalizeSearch(new URL(window.location.href).searchParams.get("search")),
-    sort: normalizeSort(new URL(window.location.href).searchParams.get("sort")),
+    search: normalizeSearch(initialRouteQuery.get("search")),
+    sort: normalizeSort(initialRouteQuery.get("sort")),
   },
   items: [],
   totalCount: 0,
@@ -257,6 +268,23 @@ let lastPreviewSignature = "";
  */
 let authGeneration = 0;
 let pendingAuthRefresh = null;
+
+let libraryLegacyLifecycle = {
+  mount() {},
+  unmount() {},
+};
+
+export function onLegacyViewMount() {
+  libraryLegacyLifecycle.mount();
+}
+
+export function onLegacyViewUnmount() {
+  libraryLegacyLifecycle.unmount();
+}
+
+function canRenderView() {
+  return !isSpaRuntime || state.viewMounted;
+}
 
 function revokePreviewObjectUrl() {
   if (previewObjectUrl) {
@@ -550,22 +578,11 @@ function isActiveListRequest({
 }
 
 function updateLocationState() {
-  const url = new URL(window.location.href);
-  url.searchParams.set("tab", state.activeTab);
-
-  if (state.query.search) {
-    url.searchParams.set("search", state.query.search);
-  } else {
-    url.searchParams.delete("search");
-  }
-
-  if (state.query.sort !== "newest") {
-    url.searchParams.set("sort", state.query.sort);
-  } else {
-    url.searchParams.delete("sort");
-  }
-
-  window.history.replaceState({}, "", url);
+  replaceAppRouteQuery({
+    tab: state.activeTab,
+    search: state.query.search || null,
+    sort: state.query.sort !== "newest" ? state.query.sort : null,
+  });
 }
 
 function syncLangToggleButtons(langCode) {
@@ -592,6 +609,7 @@ function setStatusText(statusText = "", statusTone = "muted") {
 }
 
 function renderStatus() {
+  if (!canRenderView()) return;
   if (!elements.status) return;
 
   const hasMessage = Boolean(state.statusText || state.statusKey);
@@ -602,6 +620,7 @@ function renderStatus() {
 }
 
 function renderTabs() {
+  if (!canRenderView()) return;
   elements.libraryTabs.forEach((button) => {
     const tabKey = normalizeTabKey(button.dataset.tab);
     const resourceConfig = getCloudLibraryResource(tabKey);
@@ -844,6 +863,7 @@ function buildRecordSubtitle(item = {}) {
 }
 
 function renderList() {
+  if (!canRenderView()) return;
   if (!elements.listPanel || !elements.listEmpty || !elements.loadMoreButton) return;
 
   elements.listPanel.replaceChildren();
@@ -970,6 +990,17 @@ function renderPreviewPlaceholder(item, config) {
   elements.detailPreview.append(fallback);
 }
 
+async function playMediaItemInGlobalRuntime(item) {
+  if (!item?.name) return;
+  const tracks = state.items.filter((entry) => String(entry?.media_kind || "").toLowerCase() === "audio");
+  audioRuntime.primeAudio?.();
+  await audioRuntime.playLibraryTrackNow(item, tracks.length ? tracks : [item]);
+  window.__vatioboardPlayerWidget?.open?.();
+  if (isAutoCacheEligible(item)) {
+    triggerAutoCacheDownload(item.name, item).catch(() => {});
+  }
+}
+
 function renderDetailPreview(item = {}, { isOfflineItem = false, isPinned = false, localPreviewUrl = "" } = {}) {
   if (!elements.detailPreview) return;
 
@@ -1011,6 +1042,34 @@ function renderDetailPreview(item = {}, { isOfflineItem = false, isPinned = fals
   // remote URLs are only the fallback when no local blob is available.
   // Metadata-only offline items cannot be played (no blob available).
   if (isPlayableMedia && !isMetadataOnlyOffline) {
+    if (window.__vatioboardSpa && mediaKindLower === "audio") {
+      libraryMediaPlayer.destroy();
+      syncToolbarVolume();
+      elements.detailPreview.replaceChildren();
+      elements.detailPreview.dataset.previewKind = "audio-runtime";
+
+      const fallback = document.createElement("div");
+      fallback.className = "library-preview-fallback";
+      const iconWrapper = document.createElement("span");
+      iconWrapper.className = "library-preview-type-icon";
+      iconWrapper.innerHTML = IconMedia;
+      const label = document.createElement("span");
+      label.className = "library-preview-kind-label";
+      label.textContent = item.title || item.original_filename || t("audioPlayer");
+      const playButton = document.createElement("button");
+      playButton.type = "button";
+      playButton.className = "btn-with-icon";
+      playButton.innerHTML = `<span class="btn-icon" aria-hidden="true">${IconVolume}</span><span>${t("audioPlayer")}</span>`;
+      playButton.addEventListener("click", () => {
+        void playMediaItemInGlobalRuntime(item).catch((error) => {
+          applyLibraryRequestError(error, { genericKey: "cloudLibraryOpenFailed" });
+        });
+      });
+      fallback.append(iconWrapper, label, playButton);
+      elements.detailPreview.append(fallback);
+      return;
+    }
+
     const mediaSrc = hasLocalBlob
       ? localPreviewUrl
       : (item.playback_url || item.download_url || item.downloadUrl || remoteImageUrl || "");
@@ -1219,6 +1278,7 @@ function syncActionButton(button, isVisible, isDisabled) {
 }
 
 function renderDetail() {
+  if (!canRenderView()) return;
   if (
     !elements.detailEmpty
     || !elements.detailCard
@@ -1785,6 +1845,13 @@ async function openSelectedItem() {
 
       const mediaKind = String(asset?.media_kind || "").toLowerCase();
 
+      if (window.__vatioboardSpa && mediaKind === "audio") {
+        await playMediaItemInGlobalRuntime(asset);
+        state.openBusy = false;
+        renderDetail();
+        return;
+      }
+
       // Prefer a fresh local blob (pinned or cached) over remote access.
       const isPinnedStale = state.stalePinnedNames.has(selectedName);
       const isCachedStale = state.staleCachedNames.has(selectedName);
@@ -1827,7 +1894,7 @@ async function openSelectedItem() {
     }
 
     if (href) {
-      window.location.href = href;
+      navigateToAppRoute(href);
     }
   } catch (error) {
     if (!isAbortError(error)) {
@@ -2378,8 +2445,40 @@ function handleLanguageChange() {
 function bindMenuNavigation(button, href) {
   button?.addEventListener("click", () => {
     toolsMenu.close();
-    window.location.href = href;
+    navigateToAppRoute(href);
   });
+}
+
+function handleLegacyViewMount() {
+  state.viewMounted = true;
+  renderStatus();
+  renderTabs();
+  renderList();
+  renderDetail();
+  syncToolbarVolume();
+
+  if (state.initialized && !state.listLoading && state.items.length === 0) {
+    void refreshAuthState();
+  }
+}
+
+function handleLegacyViewUnmount() {
+  if (isSpaRuntime && !state.viewMounted) return;
+
+  state.viewMounted = false;
+  stopRequest(listRequestState);
+  stopRequest(detailRequestState);
+  toolsMenu.close();
+  overflowMenu.close();
+  libraryMediaPlayer.destroy();
+  if (mapPreview) {
+    mapPreview.destroy();
+    mapPreview = null;
+  }
+  revokePreviewObjectUrl();
+  remotePlaybackSessionName = "";
+  lastPreviewSignature = "";
+  if (elements.toolbarVolume) elements.toolbarVolume.hidden = true;
 }
 
 function bindEvents() {
@@ -2445,12 +2544,32 @@ function bindEvents() {
     void togglePinSelectedMedia();
   });
 
-  bindMenuNavigation(elements.openBoardPage, "/");
-  bindMenuNavigation(elements.openSpeedPage, "/speed");
-  bindMenuNavigation(elements.openReplayPage, "/replay.html");
-  bindMenuNavigation(elements.openAccelPage, "/accel");
-  bindMenuNavigation(elements.openGpsLabPage, "/gps-rate");
+  bindMenuNavigation(elements.openBoardPage, "#/board");
+  bindMenuNavigation(elements.openSpeedPage, "#/speed");
+  bindMenuNavigation(elements.openReplayPage, "#/replay");
+  bindMenuNavigation(elements.openAccelPage, "#/accel");
+  bindMenuNavigation(elements.openGpsLabPage, "/gps-rate.html");
   integratePlayerWidget({ toolsMenuList: elements.toolsMenuList, toolsMenu });
+
+  window.addEventListener(ROUTE_VISIBLE_EVENT, (event) => {
+    if (event?.detail?.path !== "/library") return;
+    const routeQuery = getCurrentAppRouteQuery();
+    const nextTab = normalizeTabKey(routeQuery.get("tab"));
+    const nextSearch = normalizeSearch(routeQuery.get("search"));
+    const nextSort = normalizeSort(routeQuery.get("sort"));
+    const queryChanged = nextSearch !== state.query.search || nextSort !== state.query.sort;
+
+    state.query.search = nextSearch;
+    state.query.sort = nextSort;
+    if (elements.searchInput) elements.searchInput.value = nextSearch;
+    if (elements.sortSelect) elements.sortSelect.value = nextSort;
+
+    if (nextTab !== state.activeTab) {
+      handleTabSelection(nextTab);
+    } else if (queryChanged) {
+      void loadList();
+    }
+  });
 
   window.addEventListener(BACKEND_AUTH_STATE_EVENT, (event) => {
     const detail = event?.detail || {};
@@ -2532,4 +2651,17 @@ if (elements.toolbarVolumeSlider) {
 
 bindEvents();
 
-export const initPromise = refreshAuthState();
+libraryLegacyLifecycle = {
+  mount: handleLegacyViewMount,
+  unmount: handleLegacyViewUnmount,
+};
+
+async function initLibrary() {
+  try {
+    await refreshAuthState();
+  } finally {
+    state.initialized = true;
+  }
+}
+
+export const initPromise = initLibrary();

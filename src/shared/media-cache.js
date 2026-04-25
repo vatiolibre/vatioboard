@@ -317,14 +317,14 @@ export async function cacheMediaBlob(assetName, blob, { contentHash, blobSize, m
 
   // Write blob first, then meta.  If either step fails, roll back the
   // other so we never leave orphaned state across the two stores.
-  let blobOk = false;
+  let blobOk;
   try {
     blobOk = await cachedBlobStore.setValue(key, { blob });
   } catch {
     return false;
   }
 
-  let metaOk = false;
+  let metaOk;
   try {
     metaOk = await cachedBlobMetaStore.setValue(key, {
       content_hash: contentHash || null,
@@ -369,7 +369,7 @@ export async function cacheMediaFromResponse(assetName, response, { contentHash,
 
   const now = Date.now();
 
-  let blobOk = false;
+  let blobOk;
   try {
     blobOk = await cachedBlobStore.streamResponse(key, response);
   } catch {
@@ -387,7 +387,7 @@ export async function cacheMediaFromResponse(assetName, response, { contentHash,
     } catch { /* use 0 */ }
   }
 
-  let metaOk = false;
+  let metaOk;
   try {
     metaOk = await cachedBlobMetaStore.setValue(key, {
       content_hash: contentHash || null,

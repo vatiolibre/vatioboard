@@ -4,6 +4,8 @@ function toFiniteNumber(value, fallback) {
   return Number.isFinite(value) ? value : fallback;
 }
 
+const MIN_DRAW_SIZE = 24;
+
 export function createAnalogSpeedometer(options) {
   if (!options) return createNoopSpeedometer();
 
@@ -49,7 +51,8 @@ export function createAnalogSpeedometer(options) {
 
   function syncStageSize() {
     const rect = stageElement.getBoundingClientRect();
-    const size = Math.max(1, Math.floor(Math.min(rect.width, rect.height)));
+    const measuredSize = Math.floor(Math.min(rect.width, rect.height));
+    const size = Number.isFinite(measuredSize) && measuredSize >= MIN_DRAW_SIZE ? measuredSize : 0;
     stageInnerElement.style.setProperty("--analog-speedometer-size", `${size}px`);
   }
 
@@ -57,7 +60,8 @@ export function createAnalogSpeedometer(options) {
     syncStageSize();
 
     const rect = dialCanvas.getBoundingClientRect();
-    const size = Math.max(1, Math.floor(Math.min(rect.width, rect.height)));
+    const measuredSize = Math.floor(Math.min(rect.width, rect.height));
+    const size = Number.isFinite(measuredSize) && measuredSize >= MIN_DRAW_SIZE ? measuredSize : 0;
     const dpr = window.devicePixelRatio || 1;
 
     if (size === canvasSize && dialCanvas.width === Math.floor(size * dpr)) return;
@@ -74,7 +78,7 @@ export function createAnalogSpeedometer(options) {
   }
 
   function draw() {
-    if (canvasSize === 0) return;
+    if (canvasSize < MIN_DRAW_SIZE) return;
 
     const size = canvasSize;
     const center = size / 2;
@@ -143,9 +147,9 @@ export function createAnalogSpeedometer(options) {
     dialContext.fill();
 
     dialContext.strokeStyle = dialRimColor;
-    dialContext.lineWidth = Math.max(2, size * 0.004);
+    dialContext.lineWidth = Math.max(1, Math.min(size * 0.08, Math.max(2, size * 0.004)));
     dialContext.beginPath();
-    dialContext.arc(center, center, radius - dialContext.lineWidth, 0, Math.PI * 2);
+    dialContext.arc(center, center, Math.max(0.5, radius - dialContext.lineWidth), 0, Math.PI * 2);
     dialContext.stroke();
 
     dialContext.strokeStyle = trackColor;

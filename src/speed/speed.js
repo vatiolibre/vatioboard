@@ -5,6 +5,7 @@ import { applyTranslations, getLang, t, toggleLang } from '../i18n.js';
 import { createAnalogSpeedometer } from '../shared/analog-speedometer.js';
 import { initBackendAuthControllers } from '../shared/backend-auth.js';
 import { initCloudSyncStatusIndicator } from '../shared/cloud-sync-status-indicator.js';
+import { navigateToAppRoute } from '../app/router.js';
 import { createPlaceResolver } from '../shared/place-resolver.js';
 import {
   enrichRouteBoundaryPlaces,
@@ -188,7 +189,21 @@ const elements = {
 };
 
 initBackendAuthControllers();
-const singleTabOwnershipPromise = ensureSingleTabOwnership();
+const isSpaRuntime = Boolean(window.__vatioboardSpa);
+const singleTabOwnershipPromise = isSpaRuntime ? Promise.resolve(true) : ensureSingleTabOwnership();
+
+let speedLegacyLifecycle = {
+  mount() {},
+  unmount() {},
+};
+
+export function onLegacyViewMount() {
+  speedLegacyLifecycle.mount();
+}
+
+export function onLegacyViewUnmount() {
+  speedLegacyLifecycle.unmount();
+}
 
 const toolsMenu = initToolsMenu({
   button: elements.toolsMenuBtn,
@@ -310,6 +325,8 @@ const state = {
   trapAudible: false,
   trapSoundDeadlineAt: 0,
   trapMuteTimeoutId: null,
+  viewMounted: true,
+  initialized: false,
   watchId: null,
   startTime: null,
   trackingStartedAt: Date.now(),
@@ -761,7 +778,7 @@ function bindMenuNavigation(element, href) {
   if (!element) return;
   element.addEventListener('click', () => {
     toolsMenu.close();
-    window.location.href = href;
+    navigateToAppRoute(href);
   });
 }
 
@@ -1449,6 +1466,8 @@ function stopTracking({ disarmBackgroundAudio = false } = {}) {
 }
 
 function startTracking({ fromUserGesture = false } = {}) {
+  if (isSpaRuntime && !state.viewMounted) return;
+
   if (!('geolocation' in navigator)) {
     clearLiveFixState();
     audioController.suppressBackgroundAudioRuntime();
@@ -1635,6 +1654,11 @@ function resizeCanvas() {
 }
 
 function renderFrame(now) {
+  if (isSpaRuntime && !state.viewMounted) {
+    state.renderFrameId = null;
+    return;
+  }
+
   state.renderFrameId = window.requestAnimationFrame(renderFrame);
 
   const delta = state.currentSpeedMs - state.displayedSpeedMs;
@@ -1657,6 +1681,7 @@ function renderFrame(now) {
 }
 
 function startRenderLoop() {
+  if (isSpaRuntime && !state.viewMounted) return;
   if (state.renderFrameId !== null) return;
   state.renderFrameId = window.requestAnimationFrame(renderFrame);
 }
@@ -1680,6 +1705,8 @@ function handleSingleTabOwnershipChange(event) {
 }
 
 function resumeVisibleRuntime() {
+  if (isSpaRuntime && !state.viewMounted) return false;
+
   if (!hasSingleTabOwnership()) {
     audioController.syncRuntimePagePresentation();
     return false;
@@ -1697,6 +1724,31 @@ function resumeVisibleRuntime() {
   audioController.syncTrapSound();
   audioController.syncRuntimePagePresentation();
   return true;
+}
+
+function handleLegacyViewMount() {
+  state.viewMounted = true;
+  if (!state.initialized) return;
+
+  resizeCanvas();
+  if (state.watchId === null) startTracking();
+  resumeVisibleRuntime();
+}
+
+function handleLegacyViewUnmount() {
+  if (isSpaRuntime && !state.viewMounted) return;
+
+  state.viewMounted = false;
+  void persistReplaySessionNow();
+  stopTracking();
+  stopRenderLoop();
+  globeController.stopGlobeSolarUpdates();
+  globeController.clearGlobeFollowResumeTimeout();
+  audioController.stopOverspeedSound();
+  audioController.stopTrapSound();
+  audioController.syncRuntimePagePresentation();
+  closeAlertPanel();
+  document.body.classList.remove('alert-panel-open');
 }
 
 function syncLanguage() {
@@ -1718,11 +1770,11 @@ function bindEvents() {
       toggleLang();
     });
   });
-  bindMenuNavigation(elements.openReplayMenu, '/replay.html');
-  bindMenuNavigation(elements.openReplayQuick, '/replay.html');
-  bindMenuNavigation(elements.openLibraryMenu, '/library.html?tab=speed');
-  bindMenuNavigation(elements.openAccelMenu, '/accel');
-  bindMenuNavigation(elements.openGpsLabMenu, '/gps-rate');
+  bindMenuNavigation(elements.openReplayMenu, '#/replay');
+  bindMenuNavigation(elements.openReplayQuick, '#/replay');
+  bindMenuNavigation(elements.openLibraryMenu, '#/library?tab=speed');
+  bindMenuNavigation(elements.openAccelMenu, '#/accel');
+  bindMenuNavigation(elements.openGpsLabMenu, '/gps-rate.html');
   bindMenuNavigation(elements.openBoardMenu, '/');
   integratePlayerWidget({ toolsMenuList: elements.toolsMenuList, toolsMenu });
   elements.retryGps.addEventListener('click', () => restartTrip({ fromUserGesture: true }));
@@ -1823,7 +1875,7 @@ function bindEvents() {
   window.addEventListener('resize', resizeCanvas, { passive: true });
   window.addEventListener('orientationchange', resizeCanvas, { passive: true });
   window.addEventListener('pageshow', async () => {
-    if (!(await ensureSingleTabOwnership())) {
+    if (!isSpaRuntime && !(await ensureSingleTabOwnership())) {
       return;
     }
     if (state.watchId === null) startTracking();
@@ -1934,10 +1986,18 @@ async function init() {
   resizeCanvas();
   bindEvents();
   trapLoader.loadTrapArtifacts();
-  startCloudSyncLoop();
-  startTracking();
-  startRenderLoop();
+  if (!isSpaRuntime) startCloudSyncLoop();
+  state.initialized = true;
+  if (state.viewMounted) {
+    startTracking();
+    startRenderLoop();
+  }
 }
+
+speedLegacyLifecycle = {
+  mount: handleLegacyViewMount,
+  unmount: handleLegacyViewUnmount,
+};
 
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {

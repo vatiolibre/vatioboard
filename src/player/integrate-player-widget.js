@@ -76,6 +76,40 @@ export function integratePlayerWidget({
   // Media Session ownership
   setMediaSessionEnabled(mediaSession);
 
+  if (window.__vatioboardSpa && window.__vatioboardPlayerWidget) {
+    let button = null;
+    if (toolsMenuList) {
+      button = document.createElement("button");
+      button.type = "button";
+      button.className = "btn-with-icon";
+      button.dataset.playerToggle = "true";
+
+      const iconSpan = document.createElement("span");
+      iconSpan.className = "btn-icon";
+      iconSpan.setAttribute("aria-hidden", "true");
+      iconSpan.innerHTML = IconMusic;
+
+      const label = document.createElement("span");
+      label.setAttribute("data-i18n", "audioPlayer");
+      label.textContent = t("audioPlayer");
+
+      button.append(iconSpan, label);
+      const authForm = toolsMenuList.querySelector("[data-backend-auth]");
+      if (authForm) toolsMenuList.insertBefore(button, authForm);
+      else toolsMenuList.append(button);
+
+      button.addEventListener("click", () => {
+        window.__vatioboardPlayerWidget.open?.();
+        if (toolsMenu && typeof toolsMenu.close === "function") toolsMenu.close();
+      });
+    }
+
+    return {
+      widget: window.__vatioboardPlayerWidget,
+      button,
+    };
+  }
+
   // Read this before creating the widget so auth-gated pages do not restore
   // a visible panel until the backend auth form has published whether the
   // page is authenticated or guest.

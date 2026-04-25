@@ -113,12 +113,10 @@ export async function acquireGraph(mediaElement) {
   if (!AudioContextCtor) return null;
 
   // Prefer the pre-warmed context (created during a user gesture).
-  let audioContext = null;
-  if (_primedAudioContext && _primedAudioContext.state !== "closed") {
-    audioContext = _primedAudioContext;
+  const hasPrimedContext = _primedAudioContext && _primedAudioContext.state !== "closed";
+  const audioContext = hasPrimedContext ? _primedAudioContext : new AudioContextCtor();
+  if (hasPrimedContext) {
     _primedAudioContext = null;  // consumed — next acquireGraph needs a fresh prime
-  } else {
-    audioContext = new AudioContextCtor();
   }
 
   try {

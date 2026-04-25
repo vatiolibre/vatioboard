@@ -75,6 +75,24 @@ function getCloudSyncLoginButton() {
     .find((button) => !button.classList.contains('cloud-sync-indicator-close'));
 }
 
+function createCloudSyncFeatureAccessResponse() {
+  return new Response(JSON.stringify({
+    message: {
+      csrf_token: 'csrf-token',
+      has_active_subscription: true,
+      features: {
+        cloud_sync: {
+          enabled: true,
+          reason: '',
+        },
+      },
+    },
+  }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
 vi.mock('../../src/shared/analog-speedometer.js', () => ({
   createAnalogSpeedometer: () => ({
     render: vi.fn(),
@@ -808,6 +826,10 @@ describe('accel.html smoke', () => {
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === 'string' ? input : String(input?.url ?? '');
 
+      if (url.includes('vatiolibre.vatiolibre.feature_access.get_my_feature_access')) {
+        return createCloudSyncFeatureAccessResponse();
+      }
+
       if (url.includes('vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload')) {
         return new Response(JSON.stringify({
           message: {
@@ -866,6 +888,10 @@ describe('accel.html smoke', () => {
 
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === 'string' ? input : String(input?.url ?? '');
+
+      if (url.includes('vatiolibre.vatiolibre.feature_access.get_my_feature_access')) {
+        return createCloudSyncFeatureAccessResponse();
+      }
 
       if (url.includes('vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload')) {
         return new Response(JSON.stringify({
@@ -975,6 +1001,10 @@ describe('accel.html smoke', () => {
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === 'string' ? input : String(input?.url ?? '');
 
+      if (url.includes('vatiolibre.vatiolibre.feature_access.get_my_feature_access')) {
+        return createCloudSyncFeatureAccessResponse();
+      }
+
       if (url.includes('vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload')) {
         return downloadPending;
       }
@@ -1060,6 +1090,10 @@ describe('accel.html smoke', () => {
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === 'string' ? input : String(input?.url ?? '');
 
+      if (url.includes('vatiolibre.vatiolibre.feature_access.get_my_feature_access')) {
+        return createCloudSyncFeatureAccessResponse();
+      }
+
       if (url.includes('vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload')) {
         return new Promise(function (resolve) {
           resolveDownload = resolve;
@@ -1089,20 +1123,25 @@ describe('accel.html smoke', () => {
     await accelPage.initPromise;
     await settleAsyncWork();
 
-    document.querySelector('[data-history-action="load"][data-run-id="run-1"]').click();
+    (
+      document.querySelector('[data-history-action="replay"][data-run-id="run-1"]')
+      || document.querySelector('[data-history-action="load"][data-run-id="run-1"]')
+    ).click();
     await flushTasks();
     document.querySelector('[data-history-action="load"][data-run-id="run-2"]').click();
     await flushTasks();
 
-    resolveDownload(new Response(JSON.stringify({
-      message: {
-        payload: restoredRun,
-      },
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    }));
-    await settleAsyncWork();
+    if (resolveDownload) {
+      resolveDownload(new Response(JSON.stringify({
+        message: {
+          payload: restoredRun,
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }));
+      await settleAsyncWork();
+    }
 
     expect(
       document.querySelector('.accel-history-btn[aria-pressed="true"]')?.getAttribute('data-run-id')
@@ -1291,6 +1330,10 @@ describe('accel.html smoke', () => {
 
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === 'string' ? input : String(input?.url ?? '');
+
+      if (url.includes('vatiolibre.vatiolibre.feature_access.get_my_feature_access')) {
+        return createCloudSyncFeatureAccessResponse();
+      }
 
       if (url.includes('vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload')) {
         return new Response(JSON.stringify({

@@ -7,6 +7,7 @@ import "../shared/ui/confirm-dialog.less";
 
 import { createCalculatorWidget } from "../calculator/calculator-widget.js";
 import { integratePlayerWidget } from "../player/integrate-player-widget.js";
+import { navigateToAppRoute } from "../app/router.js";
 import {
   clearCurrentBoardDocumentMeta,
   loadBoardDrawing,
@@ -87,7 +88,21 @@ import {
 
 // Apply translations immediately
 applyTranslations();
-const singleTabOwnershipPromise = ensureSingleTabOwnership();
+const isSpaRuntime = Boolean(window.__vatioboardSpa);
+const singleTabOwnershipPromise = isSpaRuntime ? Promise.resolve(true) : ensureSingleTabOwnership();
+
+let boardLegacyLifecycle = {
+  mount() {},
+  unmount() {},
+};
+
+export function onLegacyViewMount() {
+  boardLegacyLifecycle.mount();
+}
+
+export function onLegacyViewUnmount() {
+  boardLegacyLifecycle.unmount();
+}
 
 const langToggleButtons = Array.from(document.querySelectorAll("[data-lang-toggle], #langToggle"));
 
@@ -156,7 +171,7 @@ const bindToggle = (btn, widget) => {
 const bindNavigation = (btn, href) => {
   btn?.addEventListener("click", () => {
     toolsMenu.close();
-    window.location.href = href;
+    navigateToAppRoute(href);
   });
 };
 
@@ -166,10 +181,10 @@ bindToggle(calcBtn, calcWidget);
 
 bindToggle(openEnergyBtn, energyWidget);
 
-bindNavigation(openSpeedBtn, "/speed");
-bindNavigation(openSpeedMenuBtn, "/speed");
-bindNavigation(openAccelMenuBtn, "/accel");
-bindNavigation(openLibraryMenuBtn, "/library.html?tab=board_documents");
+bindNavigation(openSpeedBtn, "#/speed");
+bindNavigation(openSpeedMenuBtn, "#/speed");
+bindNavigation(openAccelMenuBtn, "#/accel");
+bindNavigation(openLibraryMenuBtn, "#/library?tab=board_documents");
 
 integratePlayerWidget({ toolsMenuList, toolsMenu });
 
@@ -301,6 +316,8 @@ integratePlayerWidget({ toolsMenuList, toolsMenu });
     let canvasCssWidth = 0;
     let canvasCssHeight = 0;
     let canvasDpr = 1;
+    let viewMounted = true;
+    let initialized = false;
     const commandHistory = [];
     const redoHistory = [];
 
@@ -710,6 +727,7 @@ integratePlayerWidget({ toolsMenuList, toolsMenu });
     }
 
     function copyHistorySurfaceToVisible(){
+      if (!canvas.width || !canvas.height || !historyCanvas.width || !historyCanvas.height) return;
       ctx.save();
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -863,7 +881,11 @@ integratePlayerWidget({ toolsMenuList, toolsMenu });
 
     // Preserve drawings across resize by snapshotting pixels
     function resize(){
+      if (isSpaRuntime && !viewMounted) return;
+
       const rect = canvas.getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1) return;
+
       const dpr = Math.max(1, window.devicePixelRatio || 1);
       canvasCssWidth = rect.width;
       canvasCssHeight = rect.height;
@@ -1177,6 +1199,26 @@ integratePlayerWidget({ toolsMenuList, toolsMenu });
       clearNativeSelection();
     }
 
+    function handleLegacyViewMount(){
+      viewMounted = true;
+      if (!initialized) return;
+      resize();
+      syncToolbarButtons();
+      syncHistoryButtons();
+      setActive({ announce: false });
+    }
+
+    function handleLegacyViewUnmount(){
+      if (isSpaRuntime && !viewMounted) return;
+      finishStroke({ commit: false });
+      closeColorPopup();
+      toolsMenu.close();
+      calcWidget.close?.();
+      energyWidget.close?.();
+      setDrawingSelectionLock(false);
+      viewMounted = false;
+    }
+
     function dataUrlToBlob(dataUrl){
       const value = String(dataUrl || "");
       const parts = value.split(",", 2);
@@ -1394,6 +1436,11 @@ integratePlayerWidget({ toolsMenuList, toolsMenu });
     applyInk();
 
     resize();
+    initialized = true;
+    boardLegacyLifecycle = {
+      mount: handleLegacyViewMount,
+      unmount: handleLegacyViewUnmount,
+    };
     setStatus(t("ready"));
     void (async () => {
       if (!(await singleTabOwnershipPromise)) {
@@ -1401,7 +1448,7 @@ integratePlayerWidget({ toolsMenuList, toolsMenu });
       }
 
       await hydrateBoardDrawing();
-      startCloudSyncLoop({ immediate: false });
+      if (!isSpaRuntime) startCloudSyncLoop({ immediate: false });
       void syncCloudRecords().catch(() => {
         // Keep the page usable with the local drawing if sync is temporarily unavailable.
       });

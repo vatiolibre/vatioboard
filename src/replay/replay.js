@@ -22,6 +22,7 @@ import {
   initBackendAuthControllers,
 } from '../shared/backend-auth.js';
 import { initCloudSyncStatusIndicator } from '../shared/cloud-sync-status-indicator.js';
+import { getCurrentAppRouteQuery, navigateToAppRoute, ROUTE_VISIBLE_EVENT } from '../app/router.js';
 import {
   CLOUD_SYNC_APPLIED_EVENT,
   CLOUD_SYNC_ENTITY_TYPES,
@@ -63,7 +64,8 @@ import { createReplayMapController } from './map.js';
 import { isReplayPayloadComplete } from './session.js';
 
 applyTranslations();
-const singleTabOwnershipPromise = ensureSingleTabOwnership();
+const isSpaRuntime = Boolean(window.__vatioboardSpa);
+const singleTabOwnershipPromise = isSpaRuntime ? Promise.resolve(true) : ensureSingleTabOwnership();
 initBackendAuthControllers();
 
 const elements = {
@@ -223,6 +225,19 @@ const replayFilterController =
     ? new DualRangeInput(elements.replayFilterStart, elements.replayFilterEnd)
     : null;
 
+let replayLegacyLifecycle = {
+  mount() {},
+  unmount() {},
+};
+
+export function onLegacyViewMount() {
+  replayLegacyLifecycle.mount();
+}
+
+export function onLegacyViewUnmount() {
+  replayLegacyLifecycle.unmount();
+}
+
 const state = {
   records: [],
   selectedRecordingId: null,
@@ -238,6 +253,8 @@ const state = {
   playPending: false,
   frameId: null,
   lastFrameAt: null,
+  viewMounted: true,
+  initialized: false,
   introPlayed: false,
   expandedGraphOpen: false,
   expandedGraphFilterStartRatio: 0,
@@ -283,6 +300,7 @@ function cancelReplayApproach({ markPlayed = false } = {}) {
 }
 
 function runReplayApproach({ force = false } = {}) {
+  if (isSpaRuntime && !state.viewMounted) return Promise.resolve();
   if (!state.session) return Promise.resolve();
   if (!force && state.introPlayed) return Promise.resolve();
   if (introApproachPromise) return introApproachPromise;
@@ -308,7 +326,7 @@ function bindMenuNavigation(element, href) {
 
   element.addEventListener('click', () => {
     toolsMenu.close();
-    window.location.href = href;
+    navigateToAppRoute(href);
   });
 }
 
@@ -864,7 +882,37 @@ function stopPlayback() {
   renderPlaybackButtons();
 }
 
+function handleLegacyViewMount() {
+  state.viewMounted = true;
+  if (!state.initialized) return;
+
+  renderSessionStateView();
+  renderSessionState();
+  renderPlaybackFrame();
+  queueRecordingDetailOverflowSync();
+  mapController.resize();
+}
+
+function handleLegacyViewUnmount() {
+  if (isSpaRuntime && !state.viewMounted) return;
+
+  stopPlayback();
+  cancelReplayApproach({ markPlayed: true });
+  closeExpandedGraph();
+  if (recordingsDetailMeasureFrame !== null) {
+    window.cancelAnimationFrame(recordingsDetailMeasureFrame);
+    recordingsDetailMeasureFrame = null;
+  }
+  state.viewMounted = false;
+  document.body.classList.remove('replay-graph-sheet-open');
+}
+
 function tick(now) {
+  if (isSpaRuntime && !state.viewMounted) {
+    cancelPlaybackFrame();
+    return;
+  }
+
   if (!state.playing) return;
 
   if (state.lastFrameAt === null) {
@@ -886,6 +934,7 @@ function tick(now) {
 }
 
 async function startPlayback() {
+  if (isSpaRuntime && !state.viewMounted) return;
   if (!state.session || state.playing || state.playPending) return;
   if (state.summary.durationMs <= 0) return;
 
@@ -1168,15 +1217,28 @@ function bindEvents() {
     });
   });
 
-  bindMenuNavigation(elements.openReplaySpeedMenu, '/speed');
-  bindMenuNavigation(elements.openReplayGpsLabMenu, '/gps-rate');
-  bindMenuNavigation(elements.openReplayAccelMenu, '/accel');
-  bindMenuNavigation(elements.openReplayLibraryMenu, '/library.html?tab=speed');
-  bindMenuNavigation(elements.openReplayBoardMenu, '/');
+  bindMenuNavigation(elements.openReplaySpeedMenu, '#/speed');
+  bindMenuNavigation(elements.openReplayGpsLabMenu, '/gps-rate.html');
+  bindMenuNavigation(elements.openReplayAccelMenu, '#/accel');
+  bindMenuNavigation(elements.openReplayLibraryMenu, '#/library?tab=speed');
+  bindMenuNavigation(elements.openReplayBoardMenu, '#/board');
   integratePlayerWidget({ toolsMenuList: elements.replayToolsMenuList, toolsMenu });
 
   elements.replayOpenSpeed?.addEventListener('click', () => {
-    window.location.href = '/speed';
+    navigateToAppRoute('#/speed');
+  });
+
+  window.addEventListener(ROUTE_VISIBLE_EVENT, (event) => {
+    if (event?.detail?.path !== '/replay') return;
+    const routeParams = getCurrentAppRouteQuery();
+    const recordingId = routeParams.get('record');
+    const cloudRecordName = routeParams.get('cloudRecord');
+    if (recordingId && cloudRecordName) {
+      registerLinkedReplayCloudRecord(recordingId, cloudRecordName);
+    }
+    if (recordingId && recordingId !== state.selectedRecordingId) {
+      void requestReplaySelection(recordingId, { settleMicrotasks: 0 });
+    }
   });
 
   for (const trigger of elements.replayGraphTriggers) {
@@ -1445,7 +1507,7 @@ async function init() {
   }
 
   try {
-    const urlParams = new URLSearchParams(window.location.search);
+    const urlParams = getCurrentAppRouteQuery();
     const initialRecordingId = urlParams.get('record');
     const initialCloudRecordName = urlParams.get('cloudRecord');
     if (initialRecordingId && initialCloudRecordName) {
@@ -1486,7 +1548,7 @@ async function init() {
         mapController.resize();
       }
     }
-    startCloudSyncLoop({ immediate: false });
+    if (!isSpaRuntime) startCloudSyncLoop({ immediate: false });
     const syncSelectionRequestVersion = replaySelectionRequestVersion;
     void syncCloudRecords()
       .catch(() => {
@@ -1496,7 +1558,10 @@ async function init() {
         if (replaySelectionRequestVersion !== syncSelectionRequestVersion) return;
         maybeFallbackMissingReplaySelection();
       });
-    void runReplayApproach();
+    state.initialized = true;
+    if (state.viewMounted) {
+      void runReplayApproach();
+    }
   } finally {
     if (state.initialSelectionPending) {
       state.initialSelectionPending = false;
@@ -1506,6 +1571,11 @@ async function init() {
     console.debug('[replay] bootstrap complete');
   }
 }
+
+replayLegacyLifecycle = {
+  mount: handleLegacyViewMount,
+  unmount: handleLegacyViewUnmount,
+};
 
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {

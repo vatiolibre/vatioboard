@@ -202,5 +202,5 @@ export async function openAccelFromCloud(name) {
     // Keep direct-open flow independent from background persistence.
   });
 
-  return `/accel.html?run=${encodeRecordName(runId)}`;
+  return `/#/accel?run=${encodeRecordName(runId)}`;
 }

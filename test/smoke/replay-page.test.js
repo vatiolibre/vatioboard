@@ -1138,6 +1138,24 @@ describe('replay.html smoke', () => {
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === 'string' ? input : String(input?.url ?? '');
 
+      if (url.includes('vatiolibre.vatiolibre.feature_access.get_my_feature_access')) {
+        return new Response(JSON.stringify({
+          message: {
+            csrf_token: 'csrf-token',
+            has_active_subscription: true,
+            features: {
+              cloud_sync: {
+                enabled: true,
+                reason: '',
+              },
+            },
+          },
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
       if (url.includes('vatiolibre.vatiolibre.cloud_sync.download_my_sync_payload')) {
         return new Response(JSON.stringify({
           message: {

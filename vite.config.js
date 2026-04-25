@@ -14,13 +14,8 @@ export default defineConfig({
       input: {
         index: resolve(__dirname, "index.html"),
         calculator: resolve(__dirname, "calculator.html"),
-        speed: resolve(__dirname, "speed.html"),
-        replay: resolve(__dirname, "replay.html"),
-        library: resolve(__dirname, "library.html"),
         gpsRate: resolve(__dirname, "gps-rate.html"),
-        accel: resolve(__dirname, "accel.html"),
         login: resolve(__dirname, "login.html"),
-        player: resolve(__dirname, "player.html"),
       },
     },
   },

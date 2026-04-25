@@ -30,6 +30,7 @@ export function initToolsMenu(options) {
     return {
       close: function () {},
       setOpen: function () {},
+      destroy: function () {},
     };
   }
 
@@ -53,23 +54,36 @@ export function initToolsMenu(options) {
     setOpen(false);
   }
 
-  button.addEventListener("click", function (event) {
+  function handleButtonClick(event) {
     event.stopPropagation();
     setOpen(list.hidden);
-  });
+  }
 
-  document.addEventListener("click", function (event) {
+  function handleDocumentClick(event) {
     if (list.hidden) return;
     if (button.contains(event.target) || list.contains(event.target)) return;
     close();
-  });
+  }
 
-  document.addEventListener("keydown", function (event) {
+  function handleDocumentKeydown(event) {
     if (event.key === "Escape") close();
-  });
+  }
+
+  button.addEventListener("click", handleButtonClick);
+  document.addEventListener("click", handleDocumentClick);
+  document.addEventListener("keydown", handleDocumentKeydown);
+
+  function destroy() {
+    if (open) updateToolsMenuLayer(stackingRoot, -1);
+    open = false;
+    button.removeEventListener("click", handleButtonClick);
+    document.removeEventListener("click", handleDocumentClick);
+    document.removeEventListener("keydown", handleDocumentKeydown);
+  }
 
   return {
     close: close,
     setOpen: setOpen,
+    destroy: destroy,
   };
 }
