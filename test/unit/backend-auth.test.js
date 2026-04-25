@@ -7,12 +7,14 @@ import {
   downloadSyncPayloadFromBackend,
   getBackendAccelRunDetail,
   getBackendFeatureAccessState,
+  getBackendManifestVersion,
   getBackendMediaAssetAccess,
   getBackendMediaAssetDetail,
   getBackendPlaylistDetail,
   getBackendPlaylistsManifest,
   getBackendPlaylistsManifestVersion,
   getBackendSessionState,
+  getProtectedMediaRequestGate,
   listBackendMediaAssets,
   listBackendPlaylists,
   normalizeBackendOwnedUrl,
@@ -293,6 +295,49 @@ describe('backend auth transport helpers', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it('blocks authenticated media gates when media_assets is disabled', async () => {
+    clearBackendAccessCache();
+    const fetchImpl = vi.fn(async (url) => {
+      const requestUrl = String(url);
+      if (requestUrl.includes('tesla_connection_status')) {
+        return jsonResponse({
+          message: {
+            is_guest: false,
+          },
+        });
+      }
+      if (requestUrl.includes('get_my_feature_access')) {
+        return jsonResponse({
+          message: {
+            has_active_subscription: false,
+            features: {
+              media_assets: {
+                enabled: false,
+                reason: 'Media needs a subscription.',
+              },
+              cloud_sync: {
+                enabled: false,
+              },
+            },
+          },
+        });
+      }
+      throw new Error(`Unexpected request: ${requestUrl}`);
+    });
+
+    const gate = await getProtectedMediaRequestGate({
+      fetchImpl,
+      config: TEST_CONFIG,
+    });
+
+    expect(gate.allowed).toBe(false);
+    expect(gate.blockedByFeature).toBe(true);
+    expect(gate.featureKey).toBe('media_assets');
+    expect(gate.status).toBe(403);
+    expect(gate.reason).toBe('Media needs a subscription.');
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
   it('does not repopulate stale session state after the cache is cleared mid-request', async () => {
     clearBackendAccessCache();
     const staleProbe = createDeferred();
@@ -541,6 +586,97 @@ describe('backend auth transport helpers', () => {
     expect(result.ok).toBe(true);
     expect(result.record).toEqual({ name: 'sync-replay-1' });
     expect(result.payload).toEqual(payload);
+  });
+
+  it('normalizes protected endpoint 403 responses as feature-blocked results', async () => {
+    const mediaFetch = vi.fn().mockResolvedValueOnce(jsonResponse({
+      message: 'An active subscription is required to browse media.',
+    }, 403));
+    const syncFetch = vi.fn().mockResolvedValueOnce(jsonResponse({
+      message: 'An active subscription is required to sync.',
+    }, 403));
+
+    const mediaResult = await getBackendManifestVersion({
+      fetchImpl: mediaFetch,
+      config: TEST_CONFIG,
+    });
+    const syncResult = await downloadSyncPayloadFromBackend({
+      name: 'SYNC-1',
+      fetchImpl: syncFetch,
+      config: TEST_CONFIG,
+    });
+
+    expect(mediaResult).toMatchObject({
+      ok: false,
+      status: 403,
+      blockedByFeature: true,
+      featureKey: 'media_assets',
+      reason: 'An active subscription is required to browse media.',
+    });
+    expect(syncResult).toMatchObject({
+      ok: false,
+      status: 403,
+      blockedByFeature: true,
+      featureKey: 'cloud_sync',
+      reason: 'An active subscription is required to sync.',
+    });
+  });
+
+  it('remembers protected endpoint 403s so stale feature cache does not allow retries', async () => {
+    clearBackendAccessCache();
+    const featureFetch = vi.fn().mockResolvedValueOnce(jsonResponse({
+      message: {
+        has_active_subscription: true,
+        csrf_token: 'csrf-token',
+        features: {
+          media_assets: {
+            enabled: true,
+          },
+          cloud_sync: {
+            enabled: true,
+          },
+        },
+      },
+    }));
+    await getBackendFeatureAccessState({
+      fetchImpl: featureFetch,
+      config: TEST_CONFIG,
+    });
+
+    const accessFetch = vi.fn().mockResolvedValueOnce(jsonResponse({
+      message: 'Subscription required.',
+    }, 403));
+    await getBackendMediaAssetAccess({
+      name: 'MEDIA-403',
+      fetchImpl: accessFetch,
+      config: TEST_CONFIG,
+    });
+
+    const gateFetch = vi.fn(async (url) => {
+      const requestUrl = String(url);
+      if (requestUrl.includes('tesla_connection_status')) {
+        return jsonResponse({
+          message: {
+            is_guest: false,
+          },
+        });
+      }
+      throw new Error(`Unexpected request: ${requestUrl}`);
+    });
+
+    const gate = await getProtectedMediaRequestGate({
+      fetchImpl: gateFetch,
+      config: TEST_CONFIG,
+    });
+
+    expect(gate).toMatchObject({
+      allowed: false,
+      blockedByFeature: true,
+      featureKey: 'media_assets',
+      reason: 'Subscription required.',
+      status: 403,
+    });
+    expect(gateFetch).toHaveBeenCalledTimes(1);
   });
 
   it('fetches media asset access without normalizing S3 URLs', async () => {

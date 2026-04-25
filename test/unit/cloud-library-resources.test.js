@@ -164,6 +164,58 @@ describe("media resource cache wiring", () => {
     expect(mockBackend.listBackendMediaAssets).toHaveBeenCalled();
   });
 
+  it("does not call protected media endpoints when the media feature gate is blocked", async () => {
+    mockBackend.getProtectedMediaRequestGate.mockResolvedValue({
+      allowed: false,
+      blockedByFeature: true,
+      cleanup() {},
+      featureKey: "media_assets",
+      reason: "subscription required",
+      signal: undefined,
+      status: 403,
+    });
+    mockCache.getCachedMediaManifest.mockResolvedValue(null);
+
+    const result = await listLoader({}, { force: true });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: 403,
+      blockedByFeature: true,
+      featureKey: "media_assets",
+    });
+    expect(mockBackend.listBackendMediaAssets).not.toHaveBeenCalled();
+    expect(mockBackend.getBackendManifestVersion).not.toHaveBeenCalled();
+    expect(mockBackend.getBackendMediaManifest).not.toHaveBeenCalled();
+  });
+
+  it("returns cached media when forced refresh is blocked by subscription state", async () => {
+    const cached = [{ name: "cached-premium", title: "Cached Premium" }];
+    mockBackend.getProtectedMediaRequestGate.mockResolvedValue({
+      allowed: false,
+      blockedByFeature: true,
+      cleanup() {},
+      featureKey: "media_assets",
+      reason: "subscription required",
+      signal: undefined,
+      status: 403,
+    });
+    mockCache.getCachedMediaManifest.mockResolvedValue(cached);
+
+    const result = await listLoader({}, { force: true });
+
+    expect(result).toMatchObject({
+      assets: cached,
+      blockedByFeature: true,
+      featureKey: "media_assets",
+      status: 403,
+      total_count: 1,
+    });
+    expect(mockBackend.listBackendMediaAssets).not.toHaveBeenCalled();
+    expect(mockBackend.getBackendManifestVersion).not.toHaveBeenCalled();
+    expect(mockBackend.getBackendMediaManifest).not.toHaveBeenCalled();
+  });
+
   it("does not cache even empty results from browse path", async () => {
     mockBackend.listBackendMediaAssets.mockResolvedValue({
       assets: [],
@@ -187,6 +239,52 @@ describe("media resource cache wiring", () => {
 
     expect(result.asset).toEqual(asset);
     expect(mockCache.cacheMediaMetadata).toHaveBeenCalledWith("a1", asset);
+  });
+
+  it("does not call media detail when the media feature gate is blocked", async () => {
+    mockBackend.getProtectedMediaRequestGate.mockResolvedValue({
+      allowed: false,
+      blockedByFeature: true,
+      cleanup() {},
+      featureKey: "media_assets",
+      reason: "subscription required",
+      signal: undefined,
+      status: 403,
+    });
+
+    const result = await detailLoader("a1");
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: 403,
+      blockedByFeature: true,
+      featureKey: "media_assets",
+    });
+    expect(mockBackend.getBackendMediaAssetDetail).not.toHaveBeenCalled();
+  });
+
+  it("returns cached detail when feature-blocked instead of calling media detail", async () => {
+    const cached = { name: "a1", title: "Cached Photo" };
+    mockBackend.getProtectedMediaRequestGate.mockResolvedValue({
+      allowed: false,
+      blockedByFeature: true,
+      cleanup() {},
+      featureKey: "media_assets",
+      reason: "subscription required",
+      signal: undefined,
+      status: 403,
+    });
+    mockCache.getCachedMediaMetadata.mockResolvedValue(cached);
+
+    const result = await detailLoader("a1");
+
+    expect(result).toMatchObject({
+      asset: { ...cached, _offline: true },
+      blockedByFeature: true,
+      featureKey: "media_assets",
+      status: 403,
+    });
+    expect(mockBackend.getBackendMediaAssetDetail).not.toHaveBeenCalled();
   });
 
   it("does not cache when asset is missing from response", async () => {

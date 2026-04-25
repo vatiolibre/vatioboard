@@ -42,6 +42,11 @@ function mockCloudSyncDependencies({
   replaySessionsById = {},
   runs = [],
   pullRecords = [],
+  cloudSyncCapability = {
+    enabled: true,
+    reason: '',
+    csrfToken: 'csrf-token',
+  },
   pushImpl = null,
   pullImpl = null,
 } = {}) {
@@ -115,15 +120,16 @@ function mockCloudSyncDependencies({
   const fetchBackendFeatureAccess = vi.fn(async () => ({
     ok: true,
     isGuest: false,
-    cloudSyncCapability: {
-      enabled: true,
-      reason: '',
-      csrfToken: 'csrf-token',
-    },
+    cloudSyncCapability,
   }));
   const getBackendFeatureAccessState = vi.fn(async (options = {}) =>
     fetchBackendFeatureAccess(options)
   );
+  const getProtectedCloudSyncRequestGate = vi.fn(async () => ({
+    allowed: true,
+    cleanup: vi.fn(),
+    signal: undefined,
+  }));
   const downloadSyncPayloadFromBackend = vi.fn(async () => ({
     ok: true,
     status: 200,
@@ -156,6 +162,7 @@ function mockCloudSyncDependencies({
     fetchBackendSession,
     getBackendFeatureAccessState,
     getBackendSessionState,
+    getProtectedCloudSyncRequestGate,
     pullSyncChangesFromBackend,
     pushSyncChangesToBackend,
   }));
@@ -171,6 +178,7 @@ function mockCloudSyncDependencies({
     fetchBackendSession,
     getBackendFeatureAccessState,
     getBackendSessionState,
+    getProtectedCloudSyncRequestGate,
     hasSingleTabOwnership,
     loadBoardDrawing,
     isAccelPayloadComplete,
@@ -819,6 +827,130 @@ describe('cloud sync', () => {
     expect(mocks.fetchBackendSession).not.toHaveBeenCalled();
     expect(mocks.pullSyncChangesFromBackend).not.toHaveBeenCalled();
     expect(mocks.pushSyncChangesToBackend).not.toHaveBeenCalled();
+  });
+
+  it('skips protected sync endpoints when cloud_sync is disabled', async () => {
+    const mocks = mockCloudSyncDependencies({
+      cloudSyncCapability: {
+        enabled: false,
+        reason: 'subscription required',
+        csrfToken: '',
+      },
+    });
+
+    const { CLOUD_SYNC_ENTITY_TYPES, queueCloudSyncChange, syncCloudRecords } =
+      await importCloudSyncModule();
+
+    await queueCloudSyncChange({
+      entityType: CLOUD_SYNC_ENTITY_TYPES.accelRun,
+      recordId: 'run-disabled',
+      recordTitle: 'Run disabled',
+      updatedAtMs: 1000,
+      contentHash: 'hash-disabled',
+      payload: {
+        id: 'run-disabled',
+        savedAtMs: 1000,
+      },
+    });
+
+    await expect(syncCloudRecords()).resolves.toEqual({
+      ok: true,
+      skipped: true,
+      reason: 'subscription required',
+    });
+    expect(mocks.getBackendFeatureAccessState).toHaveBeenCalledTimes(1);
+    expect(mocks.pullSyncChangesFromBackend).not.toHaveBeenCalled();
+    expect(mocks.pushSyncChangesToBackend).not.toHaveBeenCalled();
+    expect(mocks.downloadSyncPayloadFromBackend).not.toHaveBeenCalled();
+  });
+
+  it('does not download a cloud sync payload when the cloud_sync gate is blocked', async () => {
+    const remoteReplayRecord = createServerRecord({
+      entity_type: 'replay_session',
+      client_record_id: 'replay-disabled-restore',
+      device_id: 'device-b',
+      updated_at_ms: 3200,
+      payload: {
+        id: 'replay-disabled-restore',
+      },
+    });
+    localStorage.setItem('vatioboard.cloud_sync.state', JSON.stringify({
+      cursor: '',
+      bootstrapVersion: 2,
+      records: {
+        'replay_session:replay-disabled-restore': remoteReplayRecord,
+      },
+    }));
+    const mocks = mockCloudSyncDependencies();
+    mocks.getProtectedCloudSyncRequestGate.mockResolvedValue({
+      allowed: false,
+      blockedByFeature: true,
+      cleanup: vi.fn(),
+      featureKey: 'cloud_sync',
+      reason: 'subscription required',
+      signal: undefined,
+      status: 403,
+    });
+
+    const { downloadCloudSyncRecord } = await importCloudSyncModule();
+
+    await expect(downloadCloudSyncRecord({
+      entityType: 'replay_session',
+      recordId: 'replay-disabled-restore',
+    })).resolves.toMatchObject({
+      ok: false,
+      blockedByFeature: true,
+      reason: 'subscription required',
+      status: 403,
+    });
+    expect(mocks.downloadSyncPayloadFromBackend).not.toHaveBeenCalled();
+  });
+
+  it('treats a 403 payload download as cloud_sync disabled without retrying aggressively', async () => {
+    const remoteReplayRecord = createServerRecord({
+      entity_type: 'replay_session',
+      client_record_id: 'replay-403-restore',
+      device_id: 'device-b',
+      updated_at_ms: 3200,
+      payload: {
+        id: 'replay-403-restore',
+      },
+    });
+    localStorage.setItem('vatioboard.cloud_sync.state', JSON.stringify({
+      cursor: '',
+      bootstrapVersion: 2,
+      records: {
+        'replay_session:replay-403-restore': remoteReplayRecord,
+      },
+    }));
+    const mocks = mockCloudSyncDependencies();
+    mocks.downloadSyncPayloadFromBackend.mockResolvedValue({
+      ok: false,
+      status: 403,
+      blockedByFeature: true,
+      reason: 'subscription required',
+      payload: null,
+    });
+
+    const { CLOUD_SYNC_STATUS_STATES, downloadCloudSyncRecord, getCloudSyncStatus, isCloudSyncScheduled } =
+      await importCloudSyncModule();
+
+    const result = await downloadCloudSyncRecord({
+      entityType: 'replay_session',
+      recordId: 'replay-403-restore',
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      blockedByFeature: true,
+      reason: 'subscription required',
+      status: 403,
+    });
+    expect(getCloudSyncStatus()).toMatchObject({
+      state: CLOUD_SYNC_STATUS_STATES.localOnly,
+      reason: 'subscription required',
+    });
+    expect(isCloudSyncScheduled()).toBe(false);
   });
 
   it('schedules sync when the document becomes visible again', async () => {

@@ -954,6 +954,18 @@ describe("player cold boot", () => {
       if (url.includes("/api/method/frappe.auth.get_logged_user")) {
         return jsonResponse({ message: "player-user@vatiolibre.com" });
       }
+      if (url.includes("/api/method/vatiolibre.vatiolibre.feature_access.get_my_feature_access")) {
+        return jsonResponse({
+          message: {
+            has_active_subscription: true,
+            csrf_token: "csrf-test-token",
+            features: {
+              cloud_sync: { enabled: true },
+              media_assets: { enabled: true },
+            },
+          },
+        });
+      }
       if (url.includes("get_my_media_manifest")) {
         return jsonResponse({
           message: {
@@ -999,6 +1011,18 @@ describe("player cold boot", () => {
       }
       if (url.includes("/api/method/frappe.auth.get_logged_user")) {
         return jsonResponse({ message: "player-user@vatiolibre.com" });
+      }
+      if (url.includes("/api/method/vatiolibre.vatiolibre.feature_access.get_my_feature_access")) {
+        return jsonResponse({
+          message: {
+            has_active_subscription: true,
+            csrf_token: "csrf-test-token",
+            features: {
+              cloud_sync: { enabled: true },
+              media_assets: { enabled: true },
+            },
+          },
+        });
       }
       if (url.includes("get_my_media_manifest")) {
         manifestStarted = true;

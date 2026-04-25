@@ -75,28 +75,66 @@ function isAuthBlockedResponse(result) {
   return result?.blockedByAuth === true || result?.status === 401 || result?.status === 403;
 }
 
-function createBlockedMediaListResponse() {
+function createBlockedMediaListResponse(gate = {}) {
   return {
     ok: false,
-    status: 401,
+    status: gate.status || 401,
     data: null,
     assets: [],
-    blockedByAuth: true,
+    blockedByAuth: gate.blockedByAuth !== false,
+    blockedByFeature: gate.blockedByFeature === true,
+    featureKey: gate.featureKey || "media_assets",
     hasMore: false,
     manifestToken: null,
     nextOffset: 0,
+    reason: gate.reason || "",
     totalCount: 0,
   };
 }
 
-function createBlockedMediaDetailResponse() {
+function createBlockedMediaDetailResponse(gate = {}) {
   return {
     ok: false,
-    status: 401,
+    status: gate.status || 401,
     asset: null,
-    blockedByAuth: true,
+    blockedByAuth: gate.blockedByAuth !== false,
+    blockedByFeature: gate.blockedByFeature === true,
     data: null,
+    featureKey: gate.featureKey || "media_assets",
+    reason: gate.reason || "",
   };
+}
+
+function createCachedMediaListResponse(cached, query, {
+  blockedGate = null,
+  offline = false,
+} = {}) {
+  const limit = Number(query?.limit) || MEDIA_PAGE_SIZE;
+  const offset = Number(query?.offset) || 0;
+  const filtered = filterAndSortOfflineAssets(cached, query);
+  const page = filtered.slice(offset, offset + limit);
+  const response = {
+    assets: page,
+    total_count: filtered.length,
+    has_more: offset + page.length < filtered.length,
+    next_offset: offset + page.length,
+  };
+
+  if (offline) {
+    response._offline = true;
+  } else {
+    response._cached = true;
+  }
+
+  if (blockedGate) {
+    response.blockedByAuth = blockedGate.blockedByAuth === true;
+    response.blockedByFeature = blockedGate.blockedByFeature === true;
+    response.featureKey = blockedGate.featureKey || "media_assets";
+    response.reason = blockedGate.reason || "";
+    response.status = blockedGate.status || 403;
+  }
+
+  return response;
 }
 
 function filterAndSortOfflineAssets(assets, query) {
@@ -226,15 +264,7 @@ const mediaResource = createCloudLibraryResource({
     if (!force) {
       const cached = await getCachedMediaManifest().catch(() => null);
       if (Array.isArray(cached)) {
-        const filtered = filterAndSortOfflineAssets(cached, query);
-        const page = filtered.slice(offset, offset + limit);
-        return {
-          assets: page,
-          total_count: filtered.length,
-          has_more: offset + page.length < filtered.length,
-          next_offset: offset + page.length,
-          _cached: true,
-        };
+        return createCachedMediaListResponse(cached, query);
       }
     }
 
@@ -242,7 +272,13 @@ const mediaResource = createCloudLibraryResource({
     try {
       gate = await getProtectedMediaRequestGate({ signal });
       if (!gate.allowed) {
-        return createBlockedMediaListResponse();
+        const cached = gate.blockedByFeature === true
+          ? await getCachedMediaManifest().catch(() => null)
+          : null;
+        if (Array.isArray(cached)) {
+          return createCachedMediaListResponse(cached, query, { blockedGate: gate });
+        }
+        return createBlockedMediaListResponse(gate);
       }
 
       const response = await listBackendMediaAssets({
@@ -279,15 +315,7 @@ const mediaResource = createCloudLibraryResource({
       }
       const cached = await getCachedMediaManifest().catch(() => null);
       if (Array.isArray(cached)) {
-        const filtered = filterAndSortOfflineAssets(cached, query);
-        const page = filtered.slice(offset, offset + limit);
-        return {
-          assets: page,
-          total_count: filtered.length,
-          has_more: offset + page.length < filtered.length,
-          next_offset: offset + page.length,
-          _offline: true,
-        };
+        return createCachedMediaListResponse(cached, query, { offline: true });
       }
       throw error;
     } finally {
@@ -299,7 +327,20 @@ const mediaResource = createCloudLibraryResource({
     try {
       gate = await getProtectedMediaRequestGate({ signal });
       if (!gate.allowed) {
-        return createBlockedMediaDetailResponse();
+        const cached = gate.blockedByFeature === true
+          ? await getCachedMediaMetadata(name).catch(() => null)
+          : null;
+        if (cached) {
+          return {
+            asset: { ...cached, _offline: true },
+            blockedByAuth: gate.blockedByAuth === true,
+            blockedByFeature: gate.blockedByFeature === true,
+            featureKey: gate.featureKey || "media_assets",
+            reason: gate.reason || "",
+            status: gate.status || 403,
+          };
+        }
+        return createBlockedMediaDetailResponse(gate);
       }
 
       const response = await getBackendMediaAssetDetail({ name, signal: gate.signal });

@@ -47,6 +47,7 @@ const runtimeMock = {
   restoreSession: vi.fn().mockResolvedValue(undefined),
   primeAudio: vi.fn().mockResolvedValue(true),
   stopPlayback: vi.fn(),
+  updatePlayerMediaSessionMetadata: vi.fn(),
 };
 
 vi.mock("../../src/shared/audio-runtime.js", () => runtimeMock);
@@ -258,6 +259,8 @@ describe("createPlayerWidget", () => {
     runtimeMock.restoreSession.mockResolvedValue(undefined);
     runtimeMock.stopPlayback.mockReset();
     runtimeMock.stopPlayback.mockImplementation(() => {});
+    runtimeMock.updatePlayerMediaSessionMetadata.mockReset();
+    runtimeMock.updatePlayerMediaSessionMetadata.mockImplementation(() => {});
     catalogMock.loadAudioCatalog.mockResolvedValue({ tracks: [], total: 0 });
     catalogMock.syncAudioCatalog.mockResolvedValue(false);
     playlistMock.loadPlaylists.mockResolvedValue({ playlists: [], total: 0 });

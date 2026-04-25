@@ -14,6 +14,7 @@ import {
   BACKEND_AUTH_STATE_EVENT,
   downloadSyncPayloadFromBackend,
   getBackendFeatureAccessState,
+  getProtectedCloudSyncRequestGate,
   getBackendSessionState,
   pullSyncChangesFromBackend,
   pushSyncChangesToBackend,
@@ -264,6 +265,40 @@ function abortActiveCloudSync() {
   } catch {
     // Ignore abort failures while fencing off active sync work.
   }
+}
+
+function isCloudSyncAccessBlockedResult(result) {
+  const status = Number(result?.status) || 0;
+  return (
+    result?.blockedByAuth === true
+    || result?.blockedByFeature === true
+    || status === 401
+    || status === 403
+  );
+}
+
+function getCloudSyncBlockedReason(result, fallback = "disabled") {
+  const status = Number(result?.status) || 0;
+  if (result?.blockedByAuth === true || status === 401) {
+    return "auth";
+  }
+  return String(result?.reason || fallback || "disabled").trim() || "disabled";
+}
+
+function settleCloudSyncAccessBlocked(result) {
+  const reason = getCloudSyncBlockedReason(result);
+  if (reason === "auth") {
+    backendAuthenticated = false;
+  }
+  syncRetryRequested = false;
+  clearScheduledSyncTimer();
+  setCloudSyncSkippedState(reason);
+  abortActiveCloudSync();
+  return {
+    blocked: true,
+    reason,
+    status: Number(result?.status) || 0,
+  };
 }
 
 async function loadCloudSyncState() {
@@ -906,28 +941,63 @@ export async function downloadCloudSyncRecord({
     };
   }
 
-  const payloadResult = await downloadSyncPayloadFromBackend({
-    name: meta.name,
-    onRequestStart: onPayloadDownloadStart,
-    signal,
-  });
-  if (!payloadResult.ok || payloadResult.payload === null || payloadResult.payload === undefined) {
+  let gate = null;
+  try {
+    gate = await getProtectedCloudSyncRequestGate({ signal });
+    if (!gate.allowed) {
+      const blocked = settleCloudSyncAccessBlocked(gate);
+      return {
+        ok: false,
+        reason: blocked.reason,
+        status: blocked.status,
+        meta,
+        payload: null,
+        blockedByAuth: gate.blockedByAuth === true,
+        blockedByFeature: gate.blockedByFeature === true,
+      };
+    }
+
+    const payloadRequest = {
+      name: meta.name,
+      signal: gate.signal,
+    };
+    if (typeof onPayloadDownloadStart === "function") {
+      payloadRequest.onRequestStart = onPayloadDownloadStart;
+    }
+
+    const payloadResult = await downloadSyncPayloadFromBackend(payloadRequest);
+    if (isCloudSyncAccessBlockedResult(payloadResult)) {
+      const blocked = settleCloudSyncAccessBlocked(payloadResult);
+      return {
+        ok: false,
+        reason: blocked.reason,
+        status: blocked.status,
+        meta,
+        payload: null,
+        blockedByAuth: payloadResult.blockedByAuth === true,
+        blockedByFeature: payloadResult.blockedByFeature === true,
+      };
+    }
+    if (!payloadResult.ok || payloadResult.payload === null || payloadResult.payload === undefined) {
+      return {
+        ok: false,
+        reason: "download_failed",
+        status: payloadResult.status,
+        meta,
+        payload: null,
+      };
+    }
+
     return {
-      ok: false,
-      reason: "download_failed",
+      ok: true,
+      reason: "",
       status: payloadResult.status,
       meta,
-      payload: null,
+      payload: payloadResult.payload,
     };
+  } finally {
+    gate?.cleanup?.();
   }
-
-  return {
-    ok: true,
-    reason: "",
-    status: payloadResult.status,
-    meta,
-    payload: payloadResult.payload,
-  };
 }
 
 async function applyRemoteCloudDeletion(meta) {
@@ -1049,6 +1119,9 @@ async function pushCloudSyncOutbox({
       signal,
     });
     if (!hasSingleTabOwnership() || !isCloudSyncAuthAllowed()) return;
+    if (isCloudSyncAccessBlockedResult(result)) {
+      return settleCloudSyncAccessBlocked(result);
+    }
     if (!result.ok) {
       throw new Error(`Cloud sync push failed with status ${result.status}.`);
     }
@@ -1087,6 +1160,9 @@ async function pullCloudSyncRecords({ signal } = {}) {
       signal,
     });
     if (!hasSingleTabOwnership() || !isCloudSyncAuthAllowed()) return;
+    if (isCloudSyncAccessBlockedResult(result)) {
+      return settleCloudSyncAccessBlocked(result);
+    }
     if (!result.ok) {
       throw new Error(`Cloud sync pull failed with status ${result.status}.`);
     }
@@ -1105,6 +1181,9 @@ async function pullCloudSyncRecords({ signal } = {}) {
           signal,
         });
         if (!hasSingleTabOwnership() || !isCloudSyncAuthAllowed()) return;
+        if (isCloudSyncAccessBlockedResult(payloadResult)) {
+          return settleCloudSyncAccessBlocked(payloadResult);
+        }
         if (!payloadResult.ok) {
           throw new Error(`Cloud sync payload download failed with status ${payloadResult.status}.`);
         }
@@ -1162,6 +1241,9 @@ async function resolveCloudSyncCapability({ signal } = {}) {
 
   backendAuthenticated = true;
   if (featureAccess.cloudSyncCapability.enabled !== true) {
+    syncRetryRequested = false;
+    clearScheduledSyncTimer();
+    abortActiveCloudSync();
     setCloudSyncSkippedState(featureAccess.cloudSyncCapability.reason || "disabled");
   }
   return {
@@ -1345,11 +1427,27 @@ export function syncCloudRecords() {
         };
       }
 
-      await pushCloudSyncOutbox({
+      const pushResult = await pushCloudSyncOutbox({
         csrfToken: capability.csrfToken,
         signal: syncSignal,
       });
-      await pullCloudSyncRecords({ signal: syncSignal });
+      if (pushResult?.blocked) {
+        return {
+          ok: true,
+          skipped: true,
+          reason: pushResult.reason || "disabled",
+        };
+      }
+
+      const pullResult = await pullCloudSyncRecords({ signal: syncSignal });
+      if (pullResult?.blocked) {
+        return {
+          ok: true,
+          skipped: true,
+          reason: pullResult.reason || "disabled",
+        };
+      }
+
       setCloudSyncStatus({
         state: CLOUD_SYNC_STATUS_STATES.synced,
         reason: "enabled",

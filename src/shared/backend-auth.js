@@ -47,6 +47,14 @@ export const BACKEND_AUTH_STATE_EVENT = "vatioboard:backend-auth-state";
 
 const BACKEND_SESSION_CACHE_TTL_MS = 30 * 1000;
 const BACKEND_FEATURE_ACCESS_CACHE_TTL_MS = 30 * 1000;
+const BACKEND_FEATURE_KEYS = Object.freeze({
+  cloudSync: "cloud_sync",
+  mediaAssets: "media_assets",
+});
+const BACKEND_FEATURE_BLOCKED_REASONS = Object.freeze({
+  [BACKEND_FEATURE_KEYS.cloudSync]: "This feature requires an active subscription.",
+  [BACKEND_FEATURE_KEYS.mediaAssets]: "This feature requires an active subscription.",
+});
 const BACKEND_MEDIA_FIELD_KEYS = Object.freeze([
   "download_url",
   "export_url",
@@ -81,6 +89,7 @@ const backendFeatureAccessCache = {
   requestVersion: 0,
   value: null,
 };
+const backendFeatureDenialCache = new Map();
 const DEFAULT_BACKEND_AUTH_STATE = Object.freeze({
   authenticated: null,
   busy: false,
@@ -359,6 +368,131 @@ function shouldAbortProtectedMediaRequest(detail) {
   );
 }
 
+function getProtectedFeatureCapability(featureAccessState, featureKey) {
+  if (featureKey === BACKEND_FEATURE_KEYS.mediaAssets) {
+    return featureAccessState?.capability
+      || getMediaAssetsCapability(featureAccessState?.data);
+  }
+  if (featureKey === BACKEND_FEATURE_KEYS.cloudSync) {
+    return featureAccessState?.cloudSyncCapability
+      || getCloudSyncCapability(featureAccessState?.data);
+  }
+  return getFeatureCapabilityByKey(featureAccessState?.data, featureKey);
+}
+
+function getFeatureBlockedReason(featureKey, capability = {}) {
+  return getText(capability?.reason) || BACKEND_FEATURE_BLOCKED_REASONS[featureKey] || "Feature access is unavailable.";
+}
+
+function getBackendErrorReason(data, fallback = "") {
+  const message = getMessage(data);
+  if (typeof message === "string") return getText(message) || fallback;
+  if (message && typeof message === "object") {
+    return getText(message.reason)
+      || getText(message.message)
+      || getText(message.error)
+      || fallback;
+  }
+
+  const serverMessages = getText(data?._server_messages);
+  if (serverMessages) {
+    try {
+      const parsedMessages = JSON.parse(serverMessages);
+      const firstMessage = Array.isArray(parsedMessages) ? parsedMessages[0] : null;
+      const parsedFirstMessage = typeof firstMessage === "string"
+        ? JSON.parse(firstMessage)
+        : firstMessage;
+      const text = getText(parsedFirstMessage?.message) || getText(firstMessage);
+      if (text) return text;
+    } catch {
+      return fallback;
+    }
+  }
+
+  return fallback;
+}
+
+function normalizeProtectedEndpointResult(result, {
+  featureKey,
+  fallbackReason = "",
+} = {}) {
+  if (!result || typeof result !== "object") return result;
+  const status = Number(result.status) || 0;
+  if (status !== 401 && status !== 403) return result;
+
+  const reason = getBackendErrorReason(
+    result.data,
+    fallbackReason || getFeatureBlockedReason(featureKey)
+  );
+
+  if (status === 403 && featureKey) {
+    rememberProtectedFeatureDenial(featureKey, {
+      reason,
+      status,
+    });
+  }
+
+  return {
+    ...result,
+    blockedByAuth: status === 401,
+    blockedByFeature: status === 403,
+    featureKey,
+    reason,
+  };
+}
+
+function rememberProtectedFeatureDenial(featureKey, {
+  reason = "",
+  status = 403,
+} = {}) {
+  if (!featureKey) return;
+  backendFeatureDenialCache.set(featureKey, {
+    featureKey,
+    reason: getText(reason) || getFeatureBlockedReason(featureKey),
+    status: Number(status) || 403,
+  });
+}
+
+function clearProtectedFeatureDenial(featureKey) {
+  if (!featureKey) return;
+  backendFeatureDenialCache.delete(featureKey);
+}
+
+function clearProtectedFeatureDenials() {
+  backendFeatureDenialCache.clear();
+}
+
+function getRememberedProtectedFeatureDenial(featureKey) {
+  if (!featureKey) return null;
+  return backendFeatureDenialCache.get(featureKey) || null;
+}
+
+function createBlockedProtectedGate({
+  capability = null,
+  featureAccess = null,
+  featureKey,
+  reason,
+  session = null,
+  signal,
+  status = 0,
+  blockedByAuth = false,
+  blockedByFeature = false,
+} = {}) {
+  return {
+    allowed: false,
+    blockedByAuth,
+    blockedByFeature,
+    capability,
+    cleanup() {},
+    featureAccess,
+    featureKey,
+    reason: getText(reason) || "",
+    session,
+    signal,
+    status,
+  };
+}
+
 export function isBackendUserAuthenticated(sessionOrDetail) {
   const detail = normalizeBackendAuthStateDetail(sessionOrDetail);
   return (
@@ -368,7 +502,8 @@ export function isBackendUserAuthenticated(sessionOrDetail) {
   );
 }
 
-export async function getProtectedMediaRequestGate({
+export async function getProtectedFeatureRequestGate({
+  featureKey,
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
@@ -376,7 +511,13 @@ export async function getProtectedMediaRequestGate({
   ensureBackendAuthStateTracking();
 
   if (backendAuthStateSnapshot.pendingLogout === true) {
-    throw createAbortError();
+    return createBlockedProtectedGate({
+      blockedByAuth: true,
+      featureKey,
+      reason: "logout",
+      signal,
+      status: 401,
+    });
   }
 
   const authAbortController = new AbortController();
@@ -422,17 +563,94 @@ export async function getProtectedMediaRequestGate({
 
     if (!isBackendUserAuthenticated(session)) {
       cleanup();
-      return {
-        allowed: false,
-        cleanup() {},
+      return createBlockedProtectedGate({
+        blockedByAuth: true,
+        featureKey,
+        reason: session?.isGuest ? "guest" : "auth",
         session,
         signal: mergedSignal.signal,
-      };
+        status: session?.isGuest ? 401 : (session?.status || 401),
+      });
+    }
+
+    let featureAccess = null;
+    try {
+      featureAccess = await getBackendFeatureAccessState({
+        fetchImpl,
+        signal: mergedSignal.signal,
+        config,
+      });
+    } catch {
+      cleanup();
+      return createBlockedProtectedGate({
+        featureKey,
+        reason: "feature_access_unavailable",
+        session,
+        signal: mergedSignal.signal,
+        status: 0,
+      });
+    }
+
+    if (!featureAccess?.ok || featureAccess?.isGuest) {
+      if (featureAccess?.isGuest) {
+        mergeBackendAuthStateSnapshot({
+          authenticated: false,
+          busy: false,
+          isGuest: true,
+          pendingLogout: false,
+        });
+      }
+      cleanup();
+      return createBlockedProtectedGate({
+        blockedByAuth: featureAccess?.isGuest === true || featureAccess?.status === 401,
+        featureAccess,
+        featureKey,
+        reason: featureAccess?.isGuest ? "guest" : "feature_access_unavailable",
+        session,
+        signal: mergedSignal.signal,
+        status: featureAccess?.status || 0,
+      });
+    }
+
+    const capability = getProtectedFeatureCapability(featureAccess, featureKey);
+    const rememberedDenial = getRememberedProtectedFeatureDenial(featureKey);
+    if (rememberedDenial && capability?.enabled === true) {
+      cleanup();
+      return createBlockedProtectedGate({
+        blockedByFeature: true,
+        capability: {
+          ...capability,
+          enabled: false,
+          reason: rememberedDenial.reason || capability.reason,
+        },
+        featureAccess,
+        featureKey,
+        reason: rememberedDenial.reason || getFeatureBlockedReason(featureKey, capability),
+        session,
+        signal: mergedSignal.signal,
+        status: rememberedDenial.status || 403,
+      });
+    }
+    if (capability?.enabled !== true) {
+      cleanup();
+      return createBlockedProtectedGate({
+        blockedByFeature: true,
+        capability,
+        featureAccess,
+        featureKey,
+        reason: getFeatureBlockedReason(featureKey, capability),
+        session,
+        signal: mergedSignal.signal,
+        status: 403,
+      });
     }
 
     return {
       allowed: true,
+      capability,
       cleanup,
+      featureAccess,
+      featureKey,
       session,
       signal: mergedSignal.signal,
     };
@@ -440,6 +658,24 @@ export async function getProtectedMediaRequestGate({
     cleanup();
     throw error;
   }
+}
+
+export function getProtectedMediaAssetsRequestGate(options = {}) {
+  return getProtectedFeatureRequestGate({
+    ...options,
+    featureKey: BACKEND_FEATURE_KEYS.mediaAssets,
+  });
+}
+
+export function getProtectedCloudSyncRequestGate(options = {}) {
+  return getProtectedFeatureRequestGate({
+    ...options,
+    featureKey: BACKEND_FEATURE_KEYS.cloudSync,
+  });
+}
+
+export function getProtectedMediaRequestGate(options = {}) {
+  return getProtectedMediaAssetsRequestGate(options);
 }
 
 function cloneCachedResult(value) {
@@ -793,6 +1029,8 @@ export async function fetchBackendSession({
 export function clearBackendAccessCache() {
   clearRequestCache(backendSessionCache);
   clearRequestCache(backendFeatureAccessCache);
+  clearProtectedFeatureDenials();
+  backendAuthStateSnapshot = { ...DEFAULT_BACKEND_AUTH_STATE };
 }
 
 export async function getBackendSessionState({
@@ -892,6 +1130,15 @@ export async function fetchBackendFeatureAccess({
     signal,
     config,
   });
+  const capability = getMediaAssetsCapability(data);
+  const cloudSyncCapability = getCloudSyncCapability(data);
+
+  if (capability.enabled === true) {
+    clearProtectedFeatureDenial(BACKEND_FEATURE_KEYS.mediaAssets);
+  }
+  if (cloudSyncCapability.enabled === true) {
+    clearProtectedFeatureDenial(BACKEND_FEATURE_KEYS.cloudSync);
+  }
 
   return {
     ok: response.ok,
@@ -899,8 +1146,8 @@ export async function fetchBackendFeatureAccess({
     data,
     isGuest: response.status === 401 || response.status === 403,
     featureAccess: getFeatureAccess(data),
-    capability: getMediaAssetsCapability(data),
-    cloudSyncCapability: getCloudSyncCapability(data),
+    capability,
+    cloudSyncCapability,
   };
 }
 
@@ -938,7 +1185,7 @@ export async function listBackendSpeedRecordings({
     config,
   });
 
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
@@ -947,7 +1194,7 @@ export async function listBackendSpeedRecordings({
     hasMore: getMessage(data)?.has_more === true,
     nextOffset: Number(getMessage(data)?.next_offset) || 0,
     activeFilters: getMessage(data)?.active_filters || {},
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.cloudSync });
 }
 
 export async function getBackendSpeedRecordingDetail({
@@ -968,13 +1215,13 @@ export async function getBackendSpeedRecordingDetail({
   });
   const message = getMessage(data);
 
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
     record: message?.record ?? null,
     payload: message?.payload ?? null,
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.cloudSync });
 }
 
 export async function listBackendAccelRuns({
@@ -993,7 +1240,7 @@ export async function listBackendAccelRuns({
     config,
   });
 
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
@@ -1002,7 +1249,7 @@ export async function listBackendAccelRuns({
     hasMore: getMessage(data)?.has_more === true,
     nextOffset: Number(getMessage(data)?.next_offset) || 0,
     activeFilters: getMessage(data)?.active_filters || {},
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.cloudSync });
 }
 
 export async function getBackendAccelRunDetail({
@@ -1023,13 +1270,13 @@ export async function getBackendAccelRunDetail({
   });
   const message = getMessage(data);
 
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
     record: message?.record ?? null,
     payload: message?.payload ?? null,
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.cloudSync });
 }
 
 export async function listBackendMediaAssets({
@@ -1054,7 +1301,7 @@ export async function listBackendMediaAssets({
     { config }
   );
 
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
@@ -1063,7 +1310,7 @@ export async function listBackendMediaAssets({
     hasMore: message?.has_more === true,
     nextOffset: Number(message?.next_offset) || 0,
     manifestToken: message?.manifest_token ?? null,
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.mediaAssets });
 }
 
 export async function getBackendMediaAssetDetail({
@@ -1081,12 +1328,12 @@ export async function getBackendMediaAssetDetail({
   const message = getMessage(data);
   const asset = normalizeBackendMediaRecord(message?.asset ?? null, { config });
 
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
     asset,
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.mediaAssets });
 }
 
 export async function getBackendMediaAssetAccess({
@@ -1105,13 +1352,13 @@ export async function getBackendMediaAssetAccess({
     config,
   });
   const message = getMessage(data);
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
     asset: message?.asset ?? null,
     access: message?.access ?? null,
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.mediaAssets });
 }
 
 export async function getBackendManifestVersion({
@@ -1126,13 +1373,13 @@ export async function getBackendManifestVersion({
     config,
   });
   const message = getMessage(data);
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
     manifestToken: message?.manifest_token ?? null,
     totalCount: Number(message?.total_count) || 0,
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.mediaAssets });
 }
 
 /**
@@ -1158,7 +1405,7 @@ export async function getBackendMediaManifest({
     Array.isArray(message?.assets) ? message.assets : [],
     { config }
   );
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
@@ -1166,7 +1413,7 @@ export async function getBackendMediaManifest({
     totalCount: Number(message?.total_count) || 0,
     manifestToken: message?.manifest_token ?? null,
     isTruncated: message?.is_truncated === true,
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.mediaAssets });
 }
 
 /**
@@ -1212,7 +1459,7 @@ export async function listBackendBoardDocuments({
     { config }
   );
 
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
@@ -1221,7 +1468,7 @@ export async function listBackendBoardDocuments({
     hasMore: message?.has_more === true,
     nextOffset: Number(message?.next_offset) || 0,
     activeFilters: message?.active_filters || {},
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.cloudSync });
 }
 
 export async function getBackendBoardDocumentDetail({
@@ -1243,13 +1490,13 @@ export async function getBackendBoardDocumentDetail({
   const message = getMessage(data);
   const document = normalizeBackendMediaRecord(message?.document ?? null, { config });
 
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
     document,
     payload: message?.payload ?? null,
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.cloudSync });
 }
 
 export async function saveBoardDocumentToBackend({
@@ -1284,12 +1531,12 @@ export async function saveBoardDocumentToBackend({
   const message = getMessage(data);
   const document = normalizeBackendMediaRecord(message?.document ?? null, { config });
 
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
     document,
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.cloudSync });
 }
 
 export async function updateBoardDocumentInBackend({
@@ -1330,12 +1577,12 @@ export async function updateBoardDocumentInBackend({
   const message = getMessage(data);
   const document = normalizeBackendMediaRecord(message?.document ?? null, { config });
 
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
     document,
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.cloudSync });
 }
 
 export async function deleteBoardDocumentFromBackend({
@@ -1363,12 +1610,12 @@ export async function deleteBoardDocumentFromBackend({
   });
   const message = getMessage(data);
 
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
     name: message?.name ?? getText(name),
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.cloudSync });
 }
 
 export async function uploadMediaAssetToBackend({
@@ -1419,12 +1666,12 @@ export async function uploadMediaAssetToBackend({
   const message = getMessage(data);
   const asset = normalizeBackendMediaRecord(message?.asset ?? null, { config });
 
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
     asset,
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.mediaAssets });
 }
 
 export async function updateMediaAssetInBackend({
@@ -1463,12 +1710,12 @@ export async function updateMediaAssetInBackend({
   const message = getMessage(data);
   const asset = normalizeBackendMediaRecord(message?.asset ?? null, { config });
 
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
     asset,
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.mediaAssets });
 }
 
 export async function pushSyncChangesToBackend({
@@ -1504,12 +1751,12 @@ export async function pushSyncChangesToBackend({
   });
   const message = getMessage(data);
 
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
     records: Array.isArray(message?.records) ? message.records : [],
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.cloudSync });
 }
 
 export async function pullSyncChangesFromBackend({
@@ -1539,14 +1786,14 @@ export async function pullSyncChangesFromBackend({
   });
   const message = getMessage(data);
 
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
     records: Array.isArray(message?.records) ? message.records : [],
     hasMore: message?.has_more === true,
     nextCursor: getText(message?.next_cursor),
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.cloudSync });
 }
 
 export async function downloadSyncPayloadFromBackend({
@@ -1584,13 +1831,13 @@ export async function downloadSyncPayloadFromBackend({
     payload = await decodeCompressedJsonBase64(message.payload_gzip_base64);
   }
 
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
     record: message?.record ?? null,
     payload,
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.cloudSync });
 }
 
 export async function deleteSyncRecordFromBackend({
@@ -1628,12 +1875,12 @@ export async function deleteSyncRecordFromBackend({
   });
   const message = getMessage(data);
 
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
     record: message?.record ?? null,
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.cloudSync });
 }
 
 export async function deleteMediaAssetFromBackend({
@@ -1663,12 +1910,12 @@ export async function deleteMediaAssetFromBackend({
   });
   const message = getMessage(data);
 
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok && message?.ok !== false,
     status: response.status,
     data,
     name: message?.name ?? null,
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.mediaAssets });
 }
 
 // ── Playlist methods ───────────────────────────────────────────────
@@ -1693,14 +1940,14 @@ export async function listBackendPlaylists({
     config,
   });
   const message = getMessage(data);
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
     playlists: Array.isArray(message?.playlists) ? message.playlists : [],
     totalCount: Number(message?.total_count) || 0,
     manifestToken: message?.manifest_token ?? null,
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.mediaAssets });
 }
 
 export async function getBackendPlaylistDetail({
@@ -1716,12 +1963,12 @@ export async function getBackendPlaylistDetail({
     config,
   });
   const message = getMessage(data);
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
     playlist: message?.playlist ?? null,
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.mediaAssets });
 }
 
 export async function getBackendPlaylistsManifestVersion({
@@ -1736,13 +1983,13 @@ export async function getBackendPlaylistsManifestVersion({
     config,
   });
   const message = getMessage(data);
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
     manifestToken: message?.manifest_token ?? null,
     totalCount: Number(message?.total_count) || 0,
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.mediaAssets });
 }
 
 export async function getBackendPlaylistsManifest({
@@ -1757,7 +2004,7 @@ export async function getBackendPlaylistsManifest({
     config,
   });
   const message = getMessage(data);
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
@@ -1765,7 +2012,7 @@ export async function getBackendPlaylistsManifest({
     totalCount: Number(message?.total_count) || 0,
     manifestToken: message?.manifest_token ?? null,
     isTruncated: message?.is_truncated === true,
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.mediaAssets });
 }
 
 export async function createBackendPlaylist({
@@ -1785,12 +2032,12 @@ export async function createBackendPlaylist({
     config,
   });
   const message = getMessage(data);
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
     playlist: message?.playlist ?? null,
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.mediaAssets });
 }
 
 export async function addBackendPlaylistItem({
@@ -1811,12 +2058,12 @@ export async function addBackendPlaylistItem({
     config,
   });
   const message = getMessage(data);
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
     playlist: message?.playlist ?? null,
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.mediaAssets });
 }
 
 export async function bulkAddBackendPlaylistItems({
@@ -1837,14 +2084,14 @@ export async function bulkAddBackendPlaylistItems({
     config,
   });
   const message = getMessage(data);
-  return {
+  return normalizeProtectedEndpointResult({
     ok: response.ok,
     status: response.status,
     data,
     playlist: message?.playlist ?? null,
     added: message?.added ?? [],
     skipped: message?.skipped ?? [],
-  };
+  }, { featureKey: BACKEND_FEATURE_KEYS.mediaAssets });
 }
 
 export function createBackendAuthController({

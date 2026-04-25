@@ -121,6 +121,7 @@ describe("playlist-loader", () => {
       const result = await loadPlaylists();
       expect(result.playlists).toHaveLength(0);
       expect(result.total).toBe(0);
+      expect(mockBackend.getBackendPlaylistsManifest).not.toHaveBeenCalled();
     });
 
     it("filters playlists by search query", async () => {
@@ -211,6 +212,7 @@ describe("playlist-loader", () => {
       blockGate();
       const detail = await loadPlaylistDetail("pl1");
       expect(detail).toBeNull();
+      expect(mockBackend.getBackendPlaylistDetail).not.toHaveBeenCalled();
     });
 
     it("returns null on network failure", async () => {
@@ -307,6 +309,8 @@ describe("playlist-loader", () => {
       blockGate();
       const refreshed = await syncPlaylistsManifest();
       expect(refreshed).toBe(false);
+      expect(mockBackend.getBackendPlaylistsManifestVersion).not.toHaveBeenCalled();
+      expect(mockBackend.getBackendPlaylistsManifest).not.toHaveBeenCalled();
     });
 
     it("returns false when version check is auth-blocked", async () => {
