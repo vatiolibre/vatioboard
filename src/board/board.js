@@ -89,17 +89,17 @@ applyTranslations();
 const isSpaRuntime = Boolean(window.__vatioboardSpa);
 const singleTabOwnershipPromise = isSpaRuntime ? Promise.resolve(true) : ensureSingleTabOwnership();
 
-let boardLegacyLifecycle = {
+let boardRouteLifecycle = {
   mount() {},
   unmount() {},
 };
 
-export function onLegacyViewMount() {
-  boardLegacyLifecycle.mount();
+export function mountBoardRoute() {
+  boardRouteLifecycle.mount();
 }
 
-export function onLegacyViewUnmount() {
-  boardLegacyLifecycle.unmount();
+export function unmountBoardRoute() {
+  boardRouteLifecycle.unmount();
 }
 
 const langToggleButtons = Array.from(document.querySelectorAll("[data-lang-toggle], #langToggle"));
@@ -1431,7 +1431,7 @@ if (!isSpaRuntime) {
 
     resize();
     initialized = true;
-    boardLegacyLifecycle = {
+    boardRouteLifecycle = {
       mount: handleLegacyViewMount,
       unmount: handleLegacyViewUnmount,
     };

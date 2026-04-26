@@ -9,7 +9,6 @@ import {
   IconAccel,
   IconBoard,
   IconDistance,
-  IconGpsLab,
   IconPages,
   IconPause,
   IconPlay,
@@ -79,7 +78,6 @@ const elements = {
   replayToolsMenuBtn: document.getElementById('replayToolsMenuBtn'),
   replayToolsMenuList: document.getElementById('replayToolsMenuList'),
   openReplaySpeedMenu: document.getElementById('openReplaySpeedMenu'),
-  openReplayGpsLabMenu: document.getElementById('openReplayGpsLabMenu'),
   openReplayAccelMenu: document.getElementById('openReplayAccelMenu'),
   openReplayLibraryMenu: document.getElementById('openReplayLibraryMenu'),
   openReplayBoardMenu: document.getElementById('openReplayBoardMenu'),
@@ -209,7 +207,6 @@ initCloudSyncStatusIndicator({
 });
 
 applyButtonIcon(elements.openReplaySpeedMenu, IconSpeed);
-applyButtonIcon(elements.openReplayGpsLabMenu, IconGpsLab);
 applyButtonIcon(elements.openReplayAccelMenu, IconAccel);
 applyButtonIcon(elements.openReplayLibraryMenu, IconWorld);
 applyButtonIcon(elements.openReplayBoardMenu, IconBoard);
@@ -226,17 +223,17 @@ const replayFilterController =
     ? new DualRangeInput(elements.replayFilterStart, elements.replayFilterEnd)
     : null;
 
-let replayLegacyLifecycle = {
+let replayRouteLifecycle = {
   mount() {},
   unmount() {},
 };
 
-export function onLegacyViewMount() {
-  replayLegacyLifecycle.mount();
+export function mountReplayRoute() {
+  replayRouteLifecycle.mount();
 }
 
-export function onLegacyViewUnmount() {
-  replayLegacyLifecycle.unmount();
+export function unmountReplayRoute() {
+  replayRouteLifecycle.unmount();
 }
 
 const state = {
@@ -1219,7 +1216,6 @@ function bindEvents() {
   });
 
   bindMenuNavigation(elements.openReplaySpeedMenu, '#/speed');
-  bindMenuNavigation(elements.openReplayGpsLabMenu, '/gps-rate.html');
   bindMenuNavigation(elements.openReplayAccelMenu, '#/accel');
   bindMenuNavigation(elements.openReplayLibraryMenu, '#/library?tab=speed');
   bindMenuNavigation(elements.openReplayBoardMenu, '#/board');
@@ -1575,7 +1571,7 @@ async function init() {
   }
 }
 
-replayLegacyLifecycle = {
+replayRouteLifecycle = {
   mount: handleLegacyViewMount,
   unmount: handleLegacyViewUnmount,
 };

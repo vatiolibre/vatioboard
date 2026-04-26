@@ -30,6 +30,31 @@ function installLinkInterceptor() {
   });
 }
 
+function shouldPreloadRoutes() {
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (connection?.saveData) return false;
+  if (["slow-2g", "2g"].includes(connection?.effectiveType)) return false;
+  if (navigator.deviceMemory && navigator.deviceMemory <= 2) return false;
+  return true;
+}
+
+function scheduleRoutePreload({ router, routes: appRoutes }) {
+  if (!shouldPreloadRoutes()) return;
+
+  const preload = () => {
+    for (const route of appRoutes) {
+      if (route.path === router.getRoute()?.path) continue;
+      route.load().catch(() => {});
+    }
+  };
+
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(preload, { timeout: 2500 });
+  } else {
+    window.setTimeout(preload, 500);
+  }
+}
+
 export async function startAppShell({
   viewRoot = document.getElementById("app-view"),
   persistentLayer = document.getElementById("app-persistent-layer"),
@@ -95,13 +120,7 @@ export async function startAppShell({
   });
 
   window.__vatioboardRouter = router;
-
-  setTimeout(() => {
-    for (const route of routes) {
-      if (route.path === router.getRoute()?.path) continue;
-      route.load().catch(() => {});
-    }
-  }, 500);
+  scheduleRoutePreload({ router, routes });
 
   return {
     router,

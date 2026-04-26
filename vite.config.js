@@ -13,9 +13,6 @@ export default defineConfig({
     rollupOptions: {
       input: {
         index: resolve(__dirname, "index.html"),
-        calculator: resolve(__dirname, "calculator.html"),
-        gpsRate: resolve(__dirname, "gps-rate.html"),
-        login: resolve(__dirname, "login.html"),
       },
     },
   },

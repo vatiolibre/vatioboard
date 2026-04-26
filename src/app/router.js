@@ -81,12 +81,13 @@ export function toAppRouteHash(href) {
   const pathname = url.pathname.replace(/\/+$/, "") || "/";
   const search = url.search || "";
 
-  if (pathname === "/" || pathname.endsWith("/index.html")) return "#/board";
-  if (pathname === "/speed" || pathname === "/speed.html") return `#/speed${search}`;
-  if (pathname === "/library" || pathname === "/library.html") return `#/library${search}`;
-  if (pathname === "/accel" || pathname === "/accel.html") return `#/accel${search}`;
-  if (pathname === "/replay" || pathname === "/replay.html") return `#/replay${search}`;
-  if (pathname === "/player" || pathname === "/player.html") return `#/player${search}`;
+  if (pathname === "/") return `#/${search}`;
+  if (pathname === "/speed") return `#/speed${search}`;
+  if (pathname === "/library") return `#/library${search}`;
+  if (pathname === "/accel") return `#/accel${search}`;
+  if (pathname === "/replay") return `#/replay${search}`;
+  if (pathname === "/board") return `#/board${search}`;
+  if (pathname === "/player") return `#/player${search}`;
 
   return "";
 }

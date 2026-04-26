@@ -1,10 +1,19 @@
-import libraryHtml from "../../../library.html?raw";
-import { createLegacyView } from "./legacy-view.js";
+import libraryTemplate from "./templates/library-template.js";
+import { createRouteView } from "./route-view.js";
 
-const view = createLegacyView({
-  html: libraryHtml,
+const view = createRouteView({
   pageName: "library",
+  template: libraryTemplate,
+  meta: {
+    title: "VatioBoard Cloud Library - Recover your saved speed, accel, board, and media data",
+    description:
+      "Browse your VatioBoard cloud library across devices with summary-first speed replays, accel runs, editable board documents, and private media assets.",
+    canonicalPath: "/library",
+    bodyClass: "library-page",
+  },
   loadModule: () => import("../../library/library.js"),
+  mountController: (module) => module.mountLibraryRoute?.(),
+  unmountController: (module) => module.unmountLibraryRoute?.(),
 });
 
 export function mount(root, context) {

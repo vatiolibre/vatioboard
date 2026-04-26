@@ -78,8 +78,7 @@ import { triggerBackgroundCache } from "../shared/audio-source-resolver.js";
 import { getResourceConfig } from "./resource-registry.js";
 import { createLibraryMapPreview } from "./library-map-preview.js";
 import { createLibraryMediaPlayer } from "./library-media-player.js";
-import { showConfirmDialog } from "../shared/ui/confirm-dialog.js";
-import { showPromptDialog } from "../shared/ui/confirm-dialog.js";
+import { showConfirmDialog, showPromptDialog } from "../shared/ui/confirm-dialog.js";
 import {
   openCloudAccelRun,
   openCloudBoardDocument,
@@ -268,17 +267,17 @@ let lastPreviewSignature = "";
 let authGeneration = 0;
 let pendingAuthRefresh = null;
 
-let libraryLegacyLifecycle = {
+let libraryRouteLifecycle = {
   mount() {},
   unmount() {},
 };
 
-export function onLegacyViewMount() {
-  libraryLegacyLifecycle.mount();
+export function mountLibraryRoute() {
+  libraryRouteLifecycle.mount();
 }
 
-export function onLegacyViewUnmount() {
-  libraryLegacyLifecycle.unmount();
+export function unmountLibraryRoute() {
+  libraryRouteLifecycle.unmount();
 }
 
 function canRenderView() {
@@ -2650,7 +2649,7 @@ if (elements.toolbarVolumeSlider) {
 
 bindEvents();
 
-libraryLegacyLifecycle = {
+libraryRouteLifecycle = {
   mount: handleLegacyViewMount,
   unmount: handleLegacyViewUnmount,
 };

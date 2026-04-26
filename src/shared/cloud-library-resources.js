@@ -1,19 +1,15 @@
 import {
-  getProtectedMediaRequestGate,
+  getBackendAccelRunDetail,
+  getBackendBoardDocumentDetail,
   getBackendManifestVersion,
   getBackendMediaAssetDetail,
   getBackendMediaManifest,
-  getBackendBoardDocumentDetail,
   getBackendSpeedRecordingDetail,
-  listBackendMediaAssets,
-  listBackendBoardDocuments,
-  listBackendSpeedRecordings,
-} from "./backend-auth.js";
-
-// Keep accel imports separate since they share a different import line
-import {
-  getBackendAccelRunDetail,
+  getProtectedMediaRequestGate,
   listBackendAccelRuns,
+  listBackendBoardDocuments,
+  listBackendMediaAssets,
+  listBackendSpeedRecordings,
 } from "./backend-auth.js";
 import { createCloudLibraryResource } from "./cloud-library.js";
 import {

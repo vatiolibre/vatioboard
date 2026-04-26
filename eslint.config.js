@@ -35,8 +35,20 @@ export default [
       },
     },
     rules: {
-      'no-console': 'off',
-      'no-unused-vars': 'off',
+      'no-console': ['warn', { allow: ['warn', 'error'] }],
+      'no-debugger': 'error',
+      'no-duplicate-imports': 'error',
+      'no-empty': ['error', { allowEmptyCatch: false }],
+      'no-unreachable': 'error',
+      'no-unused-vars': [
+        'warn',
+        {
+          argsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+        },
+      ],
+      'prefer-const': 'warn',
     },
   },
   {

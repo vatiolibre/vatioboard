@@ -189,17 +189,17 @@ const isSpaRuntime = Boolean(window.__vatioboardSpa);
 if (!isSpaRuntime) initBackendAuthControllers();
 const singleTabOwnershipPromise = isSpaRuntime ? Promise.resolve(true) : ensureSingleTabOwnership();
 
-let speedLegacyLifecycle = {
+let speedRouteLifecycle = {
   mount() {},
   unmount() {},
 };
 
-export function onLegacyViewMount() {
-  speedLegacyLifecycle.mount();
+export function mountSpeedRoute() {
+  speedRouteLifecycle.mount();
 }
 
-export function onLegacyViewUnmount() {
-  speedLegacyLifecycle.unmount();
+export function unmountSpeedRoute() {
+  speedRouteLifecycle.unmount();
 }
 
 const toolsMenu = initToolsMenu({
@@ -1801,7 +1801,7 @@ function bindEvents() {
   bindMenuNavigation(elements.openReplayQuick, '#/replay');
   bindMenuNavigation(elements.openLibraryMenu, '#/library?tab=speed');
   bindMenuNavigation(elements.openAccelMenu, '#/accel');
-  bindMenuNavigation(elements.openBoardMenu, '/');
+  bindMenuNavigation(elements.openBoardMenu, '#/board');
   if (!isSpaRuntime) {
     integratePlayerWidget({ toolsMenuList: elements.toolsMenuList, toolsMenu });
   }
@@ -2022,7 +2022,7 @@ async function init() {
   }
 }
 
-speedLegacyLifecycle = {
+speedRouteLifecycle = {
   mount: handleLegacyViewMount,
   unmount: handleLegacyViewUnmount,
 };

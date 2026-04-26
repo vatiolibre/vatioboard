@@ -129,17 +129,17 @@ import {
 
 const ACCEL_ACTIVITY_ID = 'accel.run';
 
-let accelLegacyLifecycle = {
+let accelRouteLifecycle = {
   mount() {},
   unmount() {},
 };
 
-export function onLegacyViewMount() {
-  accelLegacyLifecycle.mount();
+export function mountAccelRoute() {
+  accelRouteLifecycle.mount();
 }
 
-export function onLegacyViewUnmount() {
-  accelLegacyLifecycle.unmount();
+export function unmountAccelRoute() {
+  accelRouteLifecycle.unmount();
 }
 
 export const initPromise = (function () {
@@ -3572,7 +3572,7 @@ export const initPromise = (function () {
     return state.latestSample.perfMs + deltaMs;
   }
 
-  accelLegacyLifecycle = {
+  accelRouteLifecycle = {
     mount: handleLegacyViewMount,
     unmount: handleLegacyViewUnmount,
   };
