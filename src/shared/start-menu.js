@@ -18,19 +18,19 @@ const START_MENU_KEY = "__vatioboardStartMenu";
 
 const NAV_ITEMS = [
   {
-    icon: IconBoard,
-    i18nKey: "openBoard",
-    href: "#/board",
-    path: "/board",
-    text: "Open board",
-  },
-  {
     icon: IconSpeed,
     i18nKey: "speedometer",
     href: "#/speed",
     path: "/",
     pathAliases: ["/speed"],
     text: "Speedometer",
+  },
+  {
+    icon: IconBoard,
+    i18nKey: "openBoard",
+    href: "#/board",
+    path: "/board",
+    text: "Open board",
   },
   {
     icon: IconReplay,

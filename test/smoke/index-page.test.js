@@ -138,6 +138,7 @@ describe("index.html SPA shell", () => {
     expect(sharedList).toBeTruthy();
     expect(sharedList.hidden).toBe(false);
     expect(localList.hidden).toBe(true);
+    expect(sharedList.querySelector("[data-start-route]")?.dataset.startRoute).toBe("/");
     expect(sharedList.querySelector("[data-start-route='/board']")).toBeTruthy();
     expect(sharedList.querySelector("[data-start-route='/replay']")).toBeTruthy();
     expect(sharedList.querySelector("[data-backend-auth]")).toBeTruthy();
