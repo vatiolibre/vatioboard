@@ -985,6 +985,7 @@ function pauseRecordingSession({ fromUserGesture = false } = {}) {
   if (state.recordingState !== 'recording') return;
   setRecordingState('paused');
   syncBackgroundModeWithRecordingState({ fromUserGesture });
+  stopHiddenTrackingIfIdle({ disarmBackgroundAudio: true });
 }
 
 function stopRecordingSession({ fromUserGesture = false } = {}) {
@@ -997,6 +998,7 @@ function stopRecordingSession({ fromUserGesture = false } = {}) {
     minSamples: 1,
   });
   syncBackgroundModeWithRecordingState({ fromUserGesture });
+  stopHiddenTrackingIfIdle({ disarmBackgroundAudio: true });
 }
 
 function updateNearestTrapState(longitude, latitude) {
@@ -1346,6 +1348,15 @@ function setBackgroundMode(enabled, { fromUserGesture = false } = {}) {
 
 function syncBackgroundModeWithRecordingState({ fromUserGesture = false } = {}) {
   setBackgroundMode(state.recordingState === 'recording', { fromUserGesture });
+}
+
+function shouldKeepTrackingInBackground() {
+  return isSpaRuntime && !state.viewMounted && state.recordingState === 'recording';
+}
+
+function stopHiddenTrackingIfIdle({ disarmBackgroundAudio = false } = {}) {
+  if (!isSpaRuntime || state.viewMounted || shouldKeepTrackingInBackground()) return;
+  stopTracking({ disarmBackgroundAudio });
 }
 
 function openAlertPanel() {
@@ -1734,14 +1745,19 @@ function handleLegacyViewMount() {
 function handleLegacyViewUnmount() {
   if (isSpaRuntime && !state.viewMounted) return;
 
+  const keepTrackingInBackground = state.recordingState === 'recording';
   state.viewMounted = false;
   void persistReplaySessionNow();
-  stopTracking();
+  if (!keepTrackingInBackground) {
+    stopTracking();
+  }
   stopRenderLoop();
   globeController.stopGlobeSolarUpdates();
   globeController.clearGlobeFollowResumeTimeout();
-  audioController.stopOverspeedSound();
-  audioController.stopTrapSound();
+  if (!keepTrackingInBackground) {
+    audioController.stopOverspeedSound();
+    audioController.stopTrapSound();
+  }
   audioController.syncRuntimePagePresentation();
   closeAlertPanel();
   document.body.classList.remove('alert-panel-open');

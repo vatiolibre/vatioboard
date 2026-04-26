@@ -706,6 +706,7 @@ export const initPromise = (function () {
     }
     window.__vatioboardCanLeaveAccel = function () {
       if (!isRunActive(state.run)) return true;
+      if (isSpaRuntime) return true;
       return window.confirm(t('accelLeaveActiveRunConfirm'));
     };
     window.addEventListener(ROUTE_VISIBLE_EVENT, function (event) {
@@ -1425,6 +1426,15 @@ export const initPromise = (function () {
     pauseReplayPlayback();
   }
 
+  function shouldKeepRealtimeTrackingInBackground() {
+    return isSpaRuntime && !state.viewMounted && isRunActive(state.run);
+  }
+
+  function stopHiddenRealtimeTrackingIfIdle() {
+    if (!isSpaRuntime || state.viewMounted || shouldKeepRealtimeTrackingInBackground()) return;
+    stopRealtimeTracking();
+  }
+
   function cancelPendingMeasurementFrames() {
     if (resultLocationMeasureFrame !== null) {
       window.cancelAnimationFrame(resultLocationMeasureFrame);
@@ -1451,8 +1461,14 @@ export const initPromise = (function () {
   function handleLegacyViewUnmount() {
     if (!state.viewMounted && isSpaRuntime) return;
 
+    var keepRealtimeTrackingInBackground = isRunActive(state.run);
     closePanel();
-    stopRealtimeTracking();
+    if (keepRealtimeTrackingInBackground) {
+      stopUiTimer();
+      pauseReplayPlayback();
+    } else {
+      stopRealtimeTracking();
+    }
     destroyResultGraph();
     cancelPendingMeasurementFrames();
     if (state.actionNoticeTimerId) {
@@ -2216,7 +2232,6 @@ export const initPromise = (function () {
   }
 
   function handlePosition(position) {
-    if (isSpaRuntime && !state.viewMounted) return;
     var sample = createLiveSample({
       position: position,
       previousSample: state.latestSample,
@@ -2495,6 +2510,7 @@ export const initPromise = (function () {
     playFinishAudio();
     setActionNotice('accelRunSavedNotice');
     renderAll();
+    stopHiddenRealtimeTrackingIfIdle();
   }
 
   function renderAll() {
