@@ -227,6 +227,8 @@ describe('speed.html smoke', () => {
     expect(document.querySelector('.cloud-sync-indicator-link')?.getAttribute('href')).toBe(
       'https://www.vatiolibre.com/login#signup'
     );
+    expect(document.querySelector('.cloud-sync-indicator-link')?.getAttribute('target')).toBe('_blank');
+    expect(document.querySelector('.cloud-sync-indicator-link')?.getAttribute('rel')).toBe('noopener noreferrer');
     document.querySelector('.cloud-sync-indicator-link')?.click();
     await flushTasks();
     expect(document.querySelector('.cloud-sync-indicator-panel')?.hidden).toBe(true);
@@ -255,6 +257,18 @@ describe('speed.html smoke', () => {
     expect(
       document.querySelector('#speedToolsMenuList [data-backend-auth-forgot]')?.getAttribute('href')
     ).toBe('https://www.vatiolibre.com/login#forgot');
+    expect(
+      document.querySelector('#speedToolsMenuList [data-backend-auth-signup]')?.getAttribute('target')
+    ).toBe('_blank');
+    expect(
+      document.querySelector('#speedToolsMenuList [data-backend-auth-forgot]')?.getAttribute('target')
+    ).toBe('_blank');
+    expect(
+      document.querySelector('#speedToolsMenuList [data-backend-auth-signup]')?.getAttribute('rel')
+    ).toBe('noopener noreferrer');
+    expect(
+      document.querySelector('#speedToolsMenuList [data-backend-auth-forgot]')?.getAttribute('rel')
+    ).toBe('noopener noreferrer');
     document.getElementById('speedToolsMenuBtn').click();
     await flushTasks();
     expect(document.getElementById('speedToolsMenuList').hidden).toBe(true);

@@ -130,6 +130,8 @@ describe("cloud sync status indicator", () => {
     await flushAsyncWork();
     expect(subscribeLink.textContent).toBe("cloudSyncCreateAccount");
     expect(subscribeLink.getAttribute("href")).toBe("https://example.com/signup");
+    expect(subscribeLink.getAttribute("target")).toBe("_blank");
+    expect(subscribeLink.getAttribute("rel")).toBe("noopener noreferrer");
     expect(loginButton.hidden).toBe(false);
     expect(closeButton.parentElement).toBe(panel);
     expect(closeButton.classList.contains("cloud-sync-indicator-action")).toBe(false);
@@ -187,6 +189,8 @@ describe("cloud sync status indicator", () => {
     expect(subscribeLink.hidden).toBe(false);
     expect(subscribeLink.textContent).toBe("cloudSyncSubscribe");
     expect(subscribeLink.getAttribute("href")).toBe("https://example.com/subscribe");
+    expect(subscribeLink.getAttribute("target")).toBe("_blank");
+    expect(subscribeLink.getAttribute("rel")).toBe("noopener noreferrer");
     expect(loginButton.hidden).toBe(true);
 
     indicator.destroy();

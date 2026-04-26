@@ -284,6 +284,26 @@ describe('replay.html smoke', () => {
         .querySelector('#replayToolsMenuList [data-backend-auth-forgot]')
         ?.getAttribute('href')
     ).toBe('https://www.vatiolibre.com/login#forgot');
+    expect(
+      document
+        .querySelector('#replayToolsMenuList [data-backend-auth-signup]')
+        ?.getAttribute('target')
+    ).toBe('_blank');
+    expect(
+      document
+        .querySelector('#replayToolsMenuList [data-backend-auth-forgot]')
+        ?.getAttribute('target')
+    ).toBe('_blank');
+    expect(
+      document
+        .querySelector('#replayToolsMenuList [data-backend-auth-signup]')
+        ?.getAttribute('rel')
+    ).toBe('noopener noreferrer');
+    expect(
+      document
+        .querySelector('#replayToolsMenuList [data-backend-auth-forgot]')
+        ?.getAttribute('rel')
+    ).toBe('noopener noreferrer');
     expect(document.querySelector('#replayPlayPause .replay-action-icon svg')).toBeTruthy();
     expect(document.getElementById('replayPlayPause').getAttribute('aria-label')).toBe('Play');
     expect(document.querySelector('#replayRestart .replay-action-icon svg')).toBeTruthy();

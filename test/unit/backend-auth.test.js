@@ -98,10 +98,16 @@ describe('backend auth controller layout', () => {
 
     const loginButton = form.querySelector('[data-backend-auth-login]');
     const logoutButton = form.querySelector('[data-backend-auth-logout]');
+    const signupLink = form.querySelector('[data-backend-auth-signup]');
+    const forgotLink = form.querySelector('[data-backend-auth-forgot]');
     expect(loginButton.getAttribute('data-i18n')).toBeNull();
     expect(loginButton.querySelector("[data-i18n='authLogin']")).toBeTruthy();
     expect(logoutButton.getAttribute('aria-label')).toBe('Log out');
     expect(logoutButton.querySelector("[data-i18n='authLogout']")).toBeTruthy();
+    expect(signupLink.getAttribute('target')).toBe('_blank');
+    expect(signupLink.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(forgotLink.getAttribute('target')).toBe('_blank');
+    expect(forgotLink.getAttribute('rel')).toBe('noopener noreferrer');
 
     controller.destroy();
   });

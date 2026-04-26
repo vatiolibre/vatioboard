@@ -405,6 +405,18 @@ describe('accel.html smoke', () => {
     expect(
       document.querySelector('#accelToolsMenuList [data-backend-auth-forgot]')?.getAttribute('href')
     ).toBe('https://www.vatiolibre.com/login#forgot');
+    expect(
+      document.querySelector('#accelToolsMenuList [data-backend-auth-signup]')?.getAttribute('target')
+    ).toBe('_blank');
+    expect(
+      document.querySelector('#accelToolsMenuList [data-backend-auth-forgot]')?.getAttribute('target')
+    ).toBe('_blank');
+    expect(
+      document.querySelector('#accelToolsMenuList [data-backend-auth-signup]')?.getAttribute('rel')
+    ).toBe('noopener noreferrer');
+    expect(
+      document.querySelector('#accelToolsMenuList [data-backend-auth-forgot]')?.getAttribute('rel')
+    ).toBe('noopener noreferrer');
     document.getElementById('accelToolsMenuBtn').click();
     await flushTasks();
     expect(document.getElementById('accelToolsMenuList').hidden).toBe(true);

@@ -153,6 +153,10 @@ describe("index.html SPA shell", () => {
     expect(children.indexOf(authForm)).toBeLessThan(children.indexOf(firstRoute));
     expect(children.indexOf(playerButton)).toBeGreaterThan(children.indexOf(authForm));
     expect(authForm.querySelector(".backend-auth-logout-button svg")).toBeTruthy();
+    expect(authForm.querySelector("[data-backend-auth-signup]")?.getAttribute("target")).toBe("_blank");
+    expect(authForm.querySelector("[data-backend-auth-forgot]")?.getAttribute("target")).toBe("_blank");
+    expect(authForm.querySelector("[data-backend-auth-signup]")?.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(authForm.querySelector("[data-backend-auth-forgot]")?.getAttribute("rel")).toBe("noopener noreferrer");
 
     menu.close();
     expect(sharedList.hidden).toBe(true);

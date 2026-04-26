@@ -131,8 +131,8 @@ function buildBackendAuthForm() {
         <span data-i18n="authLogin">Log in</span>
       </button>
       <div class="backend-auth-links">
-        <a class="backend-auth-link" data-backend-auth-signup href="https://www.vatiolibre.com/login#signup" rel="noreferrer" data-i18n="authCreateAccount">Create account</a>
-        <a class="backend-auth-link" data-backend-auth-forgot href="https://www.vatiolibre.com/login#forgot" rel="noreferrer" data-i18n="authForgotPassword">Forgot password</a>
+        <a class="backend-auth-link" data-backend-auth-signup href="https://www.vatiolibre.com/login#signup" target="_blank" rel="noopener noreferrer" data-i18n="authCreateAccount">Create account</a>
+        <a class="backend-auth-link" data-backend-auth-forgot href="https://www.vatiolibre.com/login#forgot" target="_blank" rel="noopener noreferrer" data-i18n="authForgotPassword">Forgot password</a>
       </div>
     </div>
   `;

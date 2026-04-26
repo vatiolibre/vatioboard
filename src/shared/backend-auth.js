@@ -1084,6 +1084,12 @@ function setHidden(elements, isHidden) {
   });
 }
 
+function setExternalPageLinkAttributes(link) {
+  if (!link) return;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+}
+
 export function getBackendAuthConfig(location = window.location) {
   const env = getEnvironmentConfig(location);
 
@@ -2270,10 +2276,12 @@ export function createBackendAuthController({
   if (signupLink && !signupLink.getAttribute("href")) {
     signupLink.href = config.signupUrl;
   }
+  setExternalPageLinkAttributes(signupLink);
 
   if (forgotLink && !forgotLink.getAttribute("href")) {
     forgotLink.href = config.forgotUrl;
   }
+  setExternalPageLinkAttributes(forgotLink);
 
   function renderStatus() {
     if (!statusEl) return;

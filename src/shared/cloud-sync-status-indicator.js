@@ -271,8 +271,8 @@ export function initCloudSyncStatusIndicator({
   const subscribeLink = document.createElement("a");
   subscribeLink.className = "cloud-sync-indicator-link";
   subscribeLink.href = BACKEND_AUTH_SIGNUP_URL;
-  subscribeLink.rel = "noreferrer";
   subscribeLink.target = "_blank";
+  subscribeLink.rel = "noopener noreferrer";
 
   const loginButton = document.createElement("button");
   loginButton.type = "button";

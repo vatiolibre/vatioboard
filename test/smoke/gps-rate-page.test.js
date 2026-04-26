@@ -67,6 +67,10 @@ describe("gps-rate.html smoke", () => {
     expect(document.querySelector("#gpsRateToolsMenuList [data-backend-auth]")).toBeTruthy();
     expect(document.querySelector("#gpsRateToolsMenuList [data-backend-auth-signup]")?.getAttribute("href")).toBe("https://www.vatiolibre.com/login#signup");
     expect(document.querySelector("#gpsRateToolsMenuList [data-backend-auth-forgot]")?.getAttribute("href")).toBe("https://www.vatiolibre.com/login#forgot");
+    expect(document.querySelector("#gpsRateToolsMenuList [data-backend-auth-signup]")?.getAttribute("target")).toBe("_blank");
+    expect(document.querySelector("#gpsRateToolsMenuList [data-backend-auth-forgot]")?.getAttribute("target")).toBe("_blank");
+    expect(document.querySelector("#gpsRateToolsMenuList [data-backend-auth-signup]")?.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(document.querySelector("#gpsRateToolsMenuList [data-backend-auth-forgot]")?.getAttribute("rel")).toBe("noopener noreferrer");
     expect(document.querySelector("#gpsRateStartQuick .btn-icon svg")).toBeTruthy();
 
     document.getElementById("gpsRateStartQuick").click();
