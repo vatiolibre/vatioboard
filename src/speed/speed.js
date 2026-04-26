@@ -3,6 +3,7 @@ import '../styles/speed.less';
 import '../styles/cloud-sync-status.less';
 import { applyTranslations, getLang, t, toggleLang } from '../i18n.js';
 import { createAnalogSpeedometer } from '../shared/analog-speedometer.js';
+import { clearActivity, setActivity } from '../shared/activity-state.js';
 import { initBackendAuthControllers } from '../shared/backend-auth.js';
 import { initCloudSyncStatusIndicator } from '../shared/cloud-sync-status-indicator.js';
 import { navigateToAppRoute } from '../app/router.js';
@@ -290,6 +291,7 @@ const initialReplaySession = createReplaySession({
   recordingState: 'stopped',
 });
 const ACTIVE_REPLAY_PERSIST_INTERVAL_MS = 5000;
+const SPEED_RECORDING_ACTIVITY_ID = 'speed.recording';
 
 const state = {
   unit: initialPreferences.unit,
@@ -392,6 +394,40 @@ let replayPersistRequested = false;
 let replayPersistScheduled = false;
 let replayStartPlacePendingSessionId = '';
 let replayEndPlacePendingSessionId = '';
+
+function getReplayActivitySampleCount(session) {
+  if (Number.isFinite(session?.sampleCount)) return Math.max(0, Math.round(session.sampleCount));
+  if (Array.isArray(session?.samples)) return session.samples.length;
+  return 0;
+}
+
+function getReplayActivityStartedAtMs(session) {
+  const candidates = [
+    session?.startedAtMs,
+    session?.firstSample?.timestampMs,
+    Array.isArray(session?.samples) ? session.samples[0]?.timestampMs : null,
+  ];
+  return candidates.find((value) => Number.isFinite(value) && value > 0) ?? null;
+}
+
+function publishSpeedRecordingActivity() {
+  const trackingActive = state.watchId !== null || (isSpaRuntime && !state.viewMounted);
+  if (state.recordingState !== 'recording' || !trackingActive) {
+    clearActivity(SPEED_RECORDING_ACTIVITY_ID);
+    return;
+  }
+
+  setActivity(SPEED_RECORDING_ACTIVITY_ID, {
+    kind: 'speed',
+    order: 10,
+    route: '#/speed',
+    state: 'recording',
+    labelKey: 'activitySpeedRecording',
+    fallbackDetailKey: 'activityGpsActive',
+    sampleCount: getReplayActivitySampleCount(state.replaySession),
+    startedAtMs: getReplayActivityStartedAtMs(state.replaySession),
+  });
+}
 
 function clearReplayPersistTimer() {
   if (replayPersistTimerId !== null) {
@@ -759,6 +795,7 @@ async function hydrateReplaySession() {
     distanceUnit: state.distanceUnit,
     recordingState: restoredReplaySession.recordingState,
   };
+  publishSpeedRecordingActivity();
 
   // Attempt to resolve missing end place after hydration
   if (
@@ -913,6 +950,7 @@ function syncReplaySessionPreferences() {
   };
   scheduleReplaySessionPersist({ immediate: true });
   renderRecordingControls();
+  publishSpeedRecordingActivity();
 }
 
 function resetReplaySession({
@@ -935,6 +973,7 @@ function resetReplaySession({
   });
   scheduleReplaySessionPersist({ immediate: true });
   renderRecordingControls();
+  publishSpeedRecordingActivity();
 }
 
 function setRecordingState(recordingState) {
@@ -947,6 +986,7 @@ function setRecordingState(recordingState) {
   };
   scheduleReplaySessionPersist({ immediate: true });
   renderRecordingControls();
+  publishSpeedRecordingActivity();
 }
 
 function toggleRecording() {
@@ -1470,6 +1510,7 @@ function stopTracking({ disarmBackgroundAudio = false } = {}) {
   }
   audioController.stopOverspeedSound();
   audioController.stopTrapSound();
+  publishSpeedRecordingActivity();
 }
 
 function startTracking({ fromUserGesture = false } = {}) {
@@ -1484,6 +1525,7 @@ function startTracking({ fromUserGesture = false } = {}) {
     showTranslatedNotice('noticeNoGeolocation');
     renderMetrics();
     speedRenderer.drawGauge();
+    publishSpeedRecordingActivity();
     return;
   }
 
@@ -1502,6 +1544,7 @@ function startTracking({ fromUserGesture = false } = {}) {
     maximumAge: 1000,
     timeout: 10000,
   });
+  publishSpeedRecordingActivity();
 }
 
 function restartTrip({ fromUserGesture = false } = {}) {
@@ -1613,6 +1656,7 @@ function handlePosition(position) {
       scheduleReplaySessionPersist();
     }
     renderRecordingControls();
+    publishSpeedRecordingActivity();
   }
 
   setStatus('accuracy', { accuracyM: coords.accuracy });

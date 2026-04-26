@@ -1,10 +1,12 @@
 import "../styles/app.less";
 import "../styles/player.less";
+import "../styles/activity-indicator.less";
 import "../shared/ui/confirm-dialog.less";
 
 import { createPlayerWidget } from "../player/player-widget.js";
 import { initBackendAuthControllers } from "../shared/backend-auth.js";
 import { startCloudSyncLoop } from "../shared/cloud-sync.js";
+import { initActivityIndicator } from "../shared/activity-indicator.js";
 import { initFloatingTools } from "../shared/floating-tools.js";
 import { initSharedStartMenu } from "../shared/start-menu.js";
 import { ensureSingleTabOwnership } from "../shared/single-tab.js";
@@ -55,6 +57,7 @@ export async function startAppShell({
   window.__vatioboardPlayerWidget = playerWidget;
   const floatingTools = initFloatingTools({ mount: persistentLayer });
   const startMenu = initSharedStartMenu({ floatingTools, mount: persistentLayer });
+  const activityIndicator = initActivityIndicator({ mount: persistentLayer });
 
   installLinkInterceptor();
 
@@ -105,6 +108,7 @@ export async function startAppShell({
     floatingTools,
     playerWidget,
     startMenu,
+    activityIndicator,
     context,
   };
 }

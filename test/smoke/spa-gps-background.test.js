@@ -293,6 +293,7 @@ describe('SPA GPS background runtime', () => {
 
     document.getElementById('toggleRecording').click();
     await settleAsyncWork();
+    expect(document.querySelector('[data-activity-id="speed.recording"]')).toBeTruthy();
     emitGeolocationSuccess({
       timestamp: 100000,
       coords: {
@@ -333,11 +334,15 @@ describe('SPA GPS background runtime', () => {
     armRun.click();
     await settleAsyncWork();
     expect(armRun.getAttribute('aria-label')).toBe('Cancel test');
+    expect(document.querySelector('[data-activity-id="speed.recording"]')).toBeTruthy();
+    expect(document.querySelector('[data-activity-id="accel.run"]')).toBeTruthy();
 
     window.confirm.mockClear();
     await navigateHash('#/board');
 
     expect(window.confirm).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-activity-id="speed.recording"]')).toBeTruthy();
+    expect(document.querySelector('[data-activity-id="accel.run"]')).toBeTruthy();
     expect(nativeClearWatch).not.toHaveBeenCalled();
     expect(serviceClearWatch).not.toHaveBeenCalled();
     expect(nativeWatchPosition).toHaveBeenCalledTimes(1);

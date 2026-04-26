@@ -12,6 +12,7 @@ import {
   toggleLang,
 } from '../i18n.js';
 import { getCurrentAppRouteQuery, navigateToAppRoute, ROUTE_VISIBLE_EVENT } from '../app/router.js';
+import { clearActivity, setActivity } from '../shared/activity-state.js';
 import { initBackendAuthControllers } from '../shared/backend-auth.js';
 import { createAnalogSpeedometer } from '../shared/analog-speedometer.js';
 import { initCloudSyncStatusIndicator } from '../shared/cloud-sync-status-indicator.js';
@@ -126,6 +127,8 @@ import {
   saveRuns as persistRuns,
   saveSettings as persistSettings,
 } from './storage.js';
+
+const ACCEL_ACTIVITY_ID = 'accel.run';
 
 let accelLegacyLifecycle = {
   mount() {},
@@ -602,6 +605,7 @@ export const initPromise = (function () {
     bindEvents();
     setupResultGraphObservers();
     renderAll();
+    publishAccelActivity();
     void ensureSelectedResultTelemetry(initialRunId || state.selectedResultId, {
       selectionSnapshotId: state.selectedResultId || '',
     }).then(function (restored) {
@@ -935,6 +939,7 @@ export const initPromise = (function () {
     applyTranslations();
     renderPresetButtons();
     renderAll();
+    publishAccelActivity();
   }
 
   function focusElement(element) {
@@ -1341,6 +1346,41 @@ export const initPromise = (function () {
     return presetOrRun.standingStart ? t('accelStandingStart') : t('accelRollingStart');
   }
 
+  function getAccelActivityDetail(run) {
+    var preset = run?.preset;
+    if (!preset) return {};
+    var detailKey = preset.labelKey || presetKeyFromId(preset.presetId || preset.id);
+    if (detailKey) return { detailKey: detailKey };
+    return { detail: getPresetLabel(preset) };
+  }
+
+  function getAccelActivityStartedAtMs(run) {
+    if (!run || !isFiniteNumber(run.startPerfMs)) return null;
+    return Date.now() - Math.max(0, performance.now() - run.startPerfMs);
+  }
+
+  function publishAccelActivity() {
+    if (!isRunActive(state.run)) {
+      clearActivity(ACCEL_ACTIVITY_ID);
+      return;
+    }
+
+    var run = state.run;
+    var isRunning = run.stage === 'running';
+    var detail = getAccelActivityDetail(run);
+
+    setActivity(ACCEL_ACTIVITY_ID, {
+      kind: 'accel',
+      order: 20,
+      route: '#/accel',
+      state: isRunning ? 'running' : run.stage,
+      labelKey: isRunning ? 'activityAccelRunning' : 'activityAccelArmed',
+      sampleCount: Number.isFinite(run.sampleCount) ? run.sampleCount : 0,
+      startedAtMs: getAccelActivityStartedAtMs(run),
+      ...detail,
+    });
+  }
+
   function renderPresetButtons() {
     var html = '';
     var selectedId = resolvePresetIdForUnits(
@@ -1482,6 +1522,7 @@ export const initPromise = (function () {
   function handleSingleTabOwnershipChange(event) {
     if (event?.detail?.owned !== false) return;
     stopRealtimeTracking();
+    clearActivity(ACCEL_ACTIVITY_ID);
   }
 
   async function restoreAfterPageShow(event) {
@@ -1621,6 +1662,7 @@ export const initPromise = (function () {
 
     state.run = createRun(preset);
     setActionNotice(preset.standingStart ? 'accelArmedStandingNotice' : 'accelArmedRollingNotice');
+    publishAccelActivity();
     renderAll();
   }
 
@@ -1628,6 +1670,7 @@ export const initPromise = (function () {
     if (!state.run || state.run.stage === 'completed') return;
     state.run = null;
     setActionNotice('accelRunCancelledNotice');
+    publishAccelActivity();
     renderAll();
   }
 
@@ -2265,6 +2308,7 @@ export const initPromise = (function () {
         state.run.stage === 'running')
     ) {
       processRunSample(sample);
+      publishAccelActivity();
     }
 
     renderAll();
@@ -2499,6 +2543,7 @@ export const initPromise = (function () {
     });
     run.stage = 'completed';
     run.result = result;
+    publishAccelActivity();
     state.latestResult = result;
     state.runs.unshift(result);
     if (state.runs.length > MAX_RUNS) state.runs = state.runs.slice(0, MAX_RUNS);
