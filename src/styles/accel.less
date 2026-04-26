@@ -1676,6 +1676,82 @@ body.accel-page .accel-result-graph-canvas{
     align-self: start;
 }
 
+.accel-sheet-setup{
+    top: max(10px, calc(env(safe-area-inset-top) + 10px));
+    right: auto;
+    bottom: auto;
+    left: max(10px, calc(env(safe-area-inset-left) + 10px));
+    align-content: start;
+    gap: 8px;
+    width: min(900px, calc(100vw - 20px));
+    max-height: calc(100vh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    max-height: calc(100dvh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    padding: 10px;
+    border-color: color-mix(in srgb, var(--accel-border) 72%, rgba(255, 255, 255, 0.24));
+    border-radius: calc(var(--radius) + 8px);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--accel-surface-strong) 96%, transparent),
+        color-mix(in srgb, var(--accel-surface) 100%, transparent)
+      );
+    box-shadow:
+      0 24px 56px rgba(15, 23, 42, 0.24),
+      inset 0 0 0 1px var(--inner-ring);
+    backdrop-filter: blur(22px) saturate(1.08);
+    -webkit-backdrop-filter: blur(22px) saturate(1.08);
+    transform: none;
+}
+
+.accel-sheet-setup .accel-sheet-top{
+    position: relative;
+    align-items: center;
+    min-height: 36px;
+    padding: 0 42px 0 2px;
+}
+
+.accel-sheet-setup .accel-sheet-title{
+    margin-top: 3px;
+    font-size: 24px;
+    letter-spacing: 0;
+}
+
+.accel-sheet-setup #setupPanelStatus{
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.3;
+}
+
+.accel-sheet-close-icon{
+    position: absolute;
+    top: 0;
+    right: 0;
+    display: grid;
+    place-items: center;
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+    min-height: 34px;
+    padding: 0;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accel-surface-strong) 68%, transparent);
+    color: color-mix(in srgb, var(--accel-muted) 78%, var(--btn-fg) 22%);
+    box-shadow: 0 10px 20px rgba(15, 23, 42, 0.14);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.accel-sheet-close-icon:hover{
+    border-color: color-mix(in srgb, var(--accel-accent) 36%, var(--accel-border));
+    background: color-mix(in srgb, var(--accel-surface-strong) 84%, var(--accel-accent-soft) 16%);
+    color: var(--btn-fg);
+}
+
+.accel-sheet-close-icon svg{
+    width: 16px;
+    height: 16px;
+}
+
 .accel-sheet-copy{
     min-width: 0;
 }
@@ -1730,6 +1806,11 @@ body.accel-page .accel-result-graph-canvas{
     align-items: start;
 }
 
+.accel-sheet-setup .accel-sheet-body{
+    gap: 8px;
+    padding-right: 4px;
+}
+
 .accel-sheet-setup .accel-sheet-section:first-child,
 .accel-sheet-results .accel-sheet-section:first-child{
     grid-column: 1 / -1;
@@ -1747,6 +1828,127 @@ body.accel-page .accel-result-graph-canvas{
 .accel-sheet-section + .accel-sheet-section{
     padding-top: 14px;
     border-top: 1px solid color-mix(in srgb, var(--accel-border) 54%, transparent);
+}
+
+.accel-sheet-setup .accel-sheet-section{
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid color-mix(in srgb, var(--accel-border) 76%, transparent);
+    border-radius: calc(var(--radius-sm) + 6px);
+    background: color-mix(in srgb, var(--accel-surface-strong) 58%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--inner-ring) 70%, transparent);
+}
+
+.accel-sheet-setup .accel-sheet-section + .accel-sheet-section{
+    padding-top: 10px;
+    border-top: 1px solid color-mix(in srgb, var(--accel-border) 76%, transparent);
+}
+
+.accel-sheet-setup .accel-card-head{
+    gap: 6px;
+    margin-bottom: 0;
+}
+
+.accel-sheet-setup .accel-card-kicker,
+.accel-sheet-setup .accel-metric-label,
+.accel-sheet-setup .accel-section-title,
+.accel-sheet-setup .accel-field span{
+    letter-spacing: 0;
+}
+
+.accel-sheet-setup .accel-card-lead{
+    margin-top: 0;
+    font-size: 12px;
+    line-height: 1.32;
+}
+
+.accel-sheet-setup .accel-preset-grid{
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 6px;
+}
+
+.accel-sheet-setup .accel-preset-btn{
+    gap: 4px;
+    min-height: 70px;
+    padding: 8px 10px;
+    border-radius: 14px;
+}
+
+.accel-sheet-setup .accel-preset-title{
+    font-size: 14px;
+    letter-spacing: 0;
+}
+
+.accel-sheet-setup .accel-preset-meta,
+.accel-sheet-setup .accel-unit-btn-meta{
+    font-size: 10px;
+    letter-spacing: 0;
+    line-height: 1.25;
+}
+
+.accel-sheet-setup .accel-custom-panel{
+    margin-top: 4px;
+    gap: 6px;
+    padding-top: 8px;
+}
+
+.accel-sheet-setup .accel-custom-grid{
+    gap: 6px;
+}
+
+.accel-sheet-setup .accel-controls-stack{
+    gap: 8px;
+}
+
+.accel-sheet-setup .accel-segmented,
+.accel-sheet-setup .accel-units-grid{
+    gap: 6px;
+}
+
+.accel-sheet-setup .accel-segment-btn{
+    min-height: 40px;
+    padding: 8px 10px;
+    border-radius: 13px;
+}
+
+.accel-sheet-setup .accel-unit-btn{
+    gap: 2px;
+    align-content: center;
+    min-height: 62px;
+}
+
+.accel-sheet-setup .accel-unit-btn-title{
+    font-size: 16px;
+    letter-spacing: 0;
+}
+
+.accel-sheet-setup .accel-field{
+    gap: 4px;
+}
+
+.accel-sheet-setup .accel-field input,
+.accel-sheet-setup .accel-field textarea{
+    padding: 8px 10px;
+    border-radius: 13px;
+    line-height: 1.35;
+}
+
+.accel-sheet-setup .accel-field textarea{
+    min-height: 56px;
+}
+
+.accel-sheet-setup .accel-status-grid{
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 6px;
+}
+
+.accel-sheet-setup .accel-metric{
+    gap: 2px;
+    padding-top: 7px;
+}
+
+.accel-sheet-setup .accel-metric-value{
+    font-size: 16px;
 }
 
 .accel-warning-list{
@@ -2013,6 +2215,10 @@ button:disabled{
         width: min(760px, calc(100vw - 24px));
     }
 
+    .accel-sheet-setup{
+        width: min(760px, calc(100vw - 20px));
+    }
+
     .accel-sheet-results .accel-sheet-top{
         grid-template-columns: minmax(0, 1fr);
     }
@@ -2205,6 +2411,17 @@ button:disabled{
         transform: none;
     }
 
+    .accel-sheet-setup{
+        top: max(8px, calc(env(safe-area-inset-top) + 8px));
+        right: 8px;
+        bottom: auto;
+        left: max(8px, calc(env(safe-area-inset-left) + 8px));
+        width: auto;
+        max-height: calc(100vh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+        max-height: calc(100dvh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+        padding: 10px;
+    }
+
     .accel-sheet-results{
         left: 8px;
         right: 8px;
@@ -2327,5 +2544,12 @@ button:disabled{
     .accel-sheet{
         top: 10px;
         bottom: 10px;
+    }
+
+    .accel-sheet-setup{
+        top: 8px;
+        bottom: auto;
+        max-height: calc(100vh - 16px);
+        max-height: calc(100dvh - 16px);
     }
 }

@@ -1175,17 +1175,18 @@ body.speed-page.alert-panel-open .speed-main{
 
 .speed-alert-panel{
     position: fixed;
-    top: max(72px, calc(env(safe-area-inset-top) + 72px));
-    right: max(16px, calc(env(safe-area-inset-right) + 16px));
-    bottom: max(16px, calc(env(safe-area-inset-bottom) + 16px));
-    left: auto;
+    top: max(10px, calc(env(safe-area-inset-top) + 10px));
+    right: auto;
+    bottom: auto;
+    left: max(10px, calc(env(safe-area-inset-left) + 10px));
     z-index: 40;
     display: grid;
-    gap: 10px;
+    gap: 8px;
     align-content: start;
     width: min(430px, calc(100vw - 32px));
-    padding: 10px;
-    max-height: none;
+    padding: 9px;
+    max-height: calc(100vh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    max-height: calc(100dvh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
     border: 1px solid color-mix(in srgb, var(--speed-panel-border) 72%, rgba(255, 255, 255, 0.24));
     border-radius: calc(var(--radius) + 8px);
     background:
@@ -1230,7 +1231,7 @@ body.speed-page.alert-panel-open .speed-main{
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    min-height: 40px;
+    min-height: 36px;
     padding: 2px 44px 2px 2px;
 }
 
@@ -1265,10 +1266,10 @@ body.speed-page.alert-panel-open .speed-main{
     right: 0;
     display: grid;
     place-items: center;
-    width: 36px;
-    min-width: 36px;
-    height: 36px;
-    min-height: 36px;
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+    min-height: 34px;
     padding: 0;
     border: 1px solid color-mix(in srgb, var(--speed-panel-border) 88%, transparent);
     border-radius: 999px;
@@ -1305,8 +1306,8 @@ body.speed-page.alert-panel-open .speed-main{
 
 .speed-alert-section{
     display: grid;
-    gap: 10px;
-    padding: 12px;
+    gap: 8px;
+    padding: 10px;
     border: 1px solid color-mix(in srgb, var(--speed-panel-border) 76%, transparent);
     border-radius: calc(var(--radius-sm) + 6px);
     background: color-mix(in srgb, var(--speed-surface-strong) 62%, transparent);
@@ -1314,14 +1315,14 @@ body.speed-page.alert-panel-open .speed-main{
 }
 
 .speed-alert-section + .speed-alert-section{
-    padding-top: 12px;
+    padding-top: 10px;
 }
 
 .speed-alert-settings{
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-    padding: 12px;
+    gap: 6px;
+    padding: 9px 10px;
     border: 1px solid color-mix(in srgb, var(--speed-panel-border) 76%, transparent);
     border-radius: calc(var(--radius-sm) + 6px);
     background: color-mix(in srgb, var(--speed-surface-strong) 54%, transparent);
@@ -1339,13 +1340,13 @@ body.speed-page.alert-panel-open .speed-main{
 
 .speed-alert-setting{
     display: grid;
-    gap: 6px;
+    gap: 4px;
 }
 
 .speed-alert-sound-setting{
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
 }
 
 .speed-alert-sound-setting .speed-alert-switch{
@@ -1377,7 +1378,7 @@ body.speed-page.alert-panel-open .speed-main{
 .speed-alert-switch button{
     flex: 1 1 0;
     min-width: 0;
-    min-height: 42px;
+    min-height: 38px;
     border-radius: 12px;
     transition:
       background-color 160ms ease,
@@ -1407,12 +1408,12 @@ body.speed-page.alert-panel-open .speed-main{
 .speed-alert-actions{
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
+    gap: 6px;
 }
 
 .speed-alert-panel button:not(.speed-alert-close){
-    min-height: 44px;
-    border-radius: 14px;
+    min-height: 40px;
+    border-radius: 13px;
     transition:
       background-color 160ms ease,
       border-color 160ms ease,
@@ -1450,19 +1451,19 @@ body.speed-page.alert-panel-open .speed-main{
 
 .speed-alert-stepper{
     display: grid;
-    grid-template-columns: 54px minmax(0, 1fr) 54px;
-    gap: 8px;
+    grid-template-columns: 50px minmax(0, 1fr) 50px;
+    gap: 6px;
     align-items: center;
 }
 
 .speed-alert-stepper button{
-    width: 54px;
-    height: 54px;
+    width: 50px;
+    height: 50px;
     padding: 0;
-    border-radius: 16px;
+    border-radius: 15px;
     background: color-mix(in srgb, var(--speed-surface-strong) 72%, transparent);
     border-color: color-mix(in srgb, var(--speed-panel-border) 82%, transparent);
-    font-size: 30px;
+    font-size: 28px;
     line-height: 1;
     touch-action: manipulation;
 }
@@ -1477,8 +1478,8 @@ body.speed-page.alert-panel-open .speed-main{
     justify-items: center;
     align-content: center;
     gap: 2px;
-    min-height: 72px;
-    padding: 10px 12px;
+    min-height: 64px;
+    padding: 8px 10px;
     border: 1px solid color-mix(in srgb, var(--speed-panel-border) 78%, transparent);
     border-radius: 18px;
     background:
@@ -1493,7 +1494,7 @@ body.speed-page.alert-panel-open .speed-main{
 }
 
 #alertValue{
-    font-size: 42px;
+    font-size: 38px;
     line-height: 0.9;
     font-weight: 900;
     letter-spacing: 0;
@@ -1509,12 +1510,12 @@ body.speed-page.alert-panel-open .speed-main{
 .speed-alert-presets{
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
+    gap: 6px;
 }
 
 .speed-alert-presets button{
-    min-height: 48px;
-    padding: 10px 8px;
+    min-height: 42px;
+    padding: 8px 8px;
     font-size: 13px;
     line-height: 1.2;
     border-color: color-mix(in srgb, var(--speed-panel-border) 82%, transparent);
@@ -2061,15 +2062,16 @@ body.speed-page.alert-panel-open .speed-main{
 
     .speed-alert-panel{
         position: fixed;
-        inset:
-          max(10px, calc(env(safe-area-inset-top) + 10px))
-          10px
-          max(10px, calc(env(safe-area-inset-bottom) + 10px));
+        top: max(8px, calc(env(safe-area-inset-top) + 8px));
+        right: 8px;
+        bottom: auto;
+        left: max(8px, calc(env(safe-area-inset-left) + 8px));
         z-index: 40;
         width: auto;
-        gap: 10px;
-        padding: 12px;
-        max-height: none;
+        gap: 8px;
+        padding: 10px;
+        max-height: calc(100vh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+        max-height: calc(100dvh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
         border-radius: calc(var(--radius) + 6px);
     }
 
@@ -2077,8 +2079,8 @@ body.speed-page.alert-panel-open .speed-main{
         position: sticky;
         top: 0;
         z-index: 1;
-        margin: -12px -12px 0;
-        padding: 12px 12px 10px;
+        margin: -10px -10px 0;
+        padding: 10px 10px 8px;
         background:
           linear-gradient(
             180deg,
@@ -2088,8 +2090,8 @@ body.speed-page.alert-panel-open .speed-main{
     }
 
     .speed-alert-section{
-        gap: 8px;
-        padding: 10px;
+        gap: 7px;
+        padding: 9px;
     }
 
     .speed-alert-panel-header strong{
@@ -2097,34 +2099,34 @@ body.speed-page.alert-panel-open .speed-main{
     }
 
     .speed-alert-settings{
-        gap: 8px;
-        padding: 10px;
+        gap: 6px;
+        padding: 8px 9px;
     }
 
     .speed-alert-stepper{
-        grid-template-columns: 46px minmax(0, 1fr) 46px;
-        gap: 8px;
+        grid-template-columns: 44px minmax(0, 1fr) 44px;
+        gap: 6px;
     }
 
     .speed-alert-stepper button{
-        width: 46px;
-        height: 46px;
+        width: 44px;
+        height: 44px;
         border-radius: 14px;
-        font-size: 28px;
+        font-size: 26px;
     }
 
     .speed-alert-limit-display{
-        min-height: 64px;
-        padding: 10px 12px;
+        min-height: 58px;
+        padding: 8px 10px;
     }
 
     #alertValue{
-        font-size: 36px;
+        font-size: 34px;
     }
 
     .speed-alert-presets{
         display: flex;
-        gap: 8px;
+        gap: 6px;
         overflow-x: auto;
         padding-bottom: 2px;
         scroll-snap-type: x proximity;
@@ -2133,14 +2135,14 @@ body.speed-page.alert-panel-open .speed-main{
 
     .speed-alert-presets button{
         flex: 0 0 auto;
-        min-width: 84px;
-        min-height: 40px;
-        padding: 8px 10px;
+        min-width: 78px;
+        min-height: 38px;
+        padding: 7px 9px;
         scroll-snap-align: start;
     }
 
     .speed-alert-switch button{
-        min-height: 42px;
+        min-height: 38px;
     }
 
     .speed-alert-note{

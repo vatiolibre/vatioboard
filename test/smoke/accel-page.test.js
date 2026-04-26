@@ -389,6 +389,8 @@ describe('accel.html smoke', () => {
     await settleAsyncWork();
     expect(document.querySelector('#accelToolbarSetup .btn-icon svg')).toBeTruthy();
     expect(document.querySelector('#accelToolbarResults .btn-icon svg')).toBeTruthy();
+    expect(document.getElementById('closeSetupPanel').getAttribute('aria-label')).toBe('Close');
+    expect(document.querySelector('#closeSetupPanel.accel-sheet-close-icon svg')).toBeTruthy();
     expect(document.getElementById('accelToolbarResults').disabled).toBe(true);
     expect(document.getElementById('accelToolsMenuList').hidden).toBe(false);
     expect(document.getElementById('accelToolsMenuBtn').getAttribute('aria-expanded')).toBe('true');
