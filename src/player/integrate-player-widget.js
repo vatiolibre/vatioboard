@@ -50,6 +50,13 @@ function readInitialAuth(toolsMenuList) {
   return root.dataset.authState === "authenticated";
 }
 
+function insertPlayerButton(toolsMenuList, button) {
+  const anchor = toolsMenuList?.querySelector("[data-player-toggle-anchor]")
+    || toolsMenuList?.querySelector("[data-backend-auth]");
+  if (anchor) toolsMenuList.insertBefore(button, anchor);
+  else toolsMenuList?.append(button);
+}
+
 // ── Public API ───────────────────────────────────────────────────────
 
 /**
@@ -94,9 +101,7 @@ export function integratePlayerWidget({
       label.textContent = t("audioPlayer");
 
       button.append(iconSpan, label);
-      const authForm = toolsMenuList.querySelector("[data-backend-auth]");
-      if (authForm) toolsMenuList.insertBefore(button, authForm);
-      else toolsMenuList.append(button);
+      insertPlayerButton(toolsMenuList, button);
 
       button.addEventListener("click", () => {
         window.__vatioboardPlayerWidget.open?.();
@@ -136,14 +141,7 @@ export function integratePlayerWidget({
     label.textContent = t("audioPlayer");
 
     button.append(iconSpan, label);
-
-    // Insert before the backend-auth form (same position as other launchers)
-    const authForm = toolsMenuList.querySelector("[data-backend-auth]");
-    if (authForm) {
-      toolsMenuList.insertBefore(button, authForm);
-    } else {
-      toolsMenuList.append(button);
-    }
+    insertPlayerButton(toolsMenuList, button);
   }
 
   // ── Widget (with floating FAB + external button) ───────────────

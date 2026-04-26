@@ -224,6 +224,19 @@ describe("integratePlayerWidget", () => {
     expect(button.nextElementSibling).toBe(form);
   });
 
+  it("injects the menu button before an explicit player anchor when present", () => {
+    const list = makeToolsMenuList();
+    const anchor = document.createElement("span");
+    anchor.dataset.playerToggleAnchor = "";
+    list.append(anchor);
+
+    const { button } = integratePlayerWidget({ toolsMenuList: list, toolsMenu: { close: vi.fn() } });
+
+    const form = list.querySelector("[data-backend-auth]");
+    expect(button.previousElementSibling).toBe(form);
+    expect(button.nextElementSibling).toBe(anchor);
+  });
+
   it("does not wrap the button in a <li>", () => {
     const list = makeToolsMenuList();
     const { button } = integratePlayerWidget({ toolsMenuList: list, toolsMenu: { close: vi.fn() } });

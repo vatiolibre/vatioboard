@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 
 import {
   buildBoardDocumentPreviewBffUrl,
   buildMediaBffUrl,
   clearBackendAccessCache,
+  createBackendAuthController,
   downloadSyncPayloadFromBackend,
   getBackendAccelRunDetail,
   getBackendFeatureAccessState,
@@ -37,6 +39,7 @@ const PROD_BFF_ORIGIN = 'https://api.vatioboard.com';
 
 afterEach(() => {
   clearBackendAccessCache();
+  document.body.innerHTML = '';
 });
 
 function createDeferred() {
@@ -62,6 +65,59 @@ function jsonResponse(body, status = 200) {
     },
   });
 }
+
+describe('backend auth controller layout', () => {
+  it('normalizes legacy auth form markup into the shared compact structure', () => {
+    document.body.innerHTML = `
+      <form class="backend-auth" data-backend-auth novalidate>
+        <p class="backend-auth-title" data-i18n="authTitle">VatioLibre account</p>
+        <p class="backend-auth-status" data-backend-auth-status role="status" aria-live="polite" data-i18n="authCheckingSession">Checking session...</p>
+        <input class="backend-auth-input" data-backend-auth-user data-backend-auth-guest type="text" />
+        <input class="backend-auth-input" data-backend-auth-password data-backend-auth-guest type="password" />
+        <button type="submit" data-backend-auth-login data-backend-auth-guest data-i18n="authLogin">Log in</button>
+        <button type="button" data-backend-auth-logout data-backend-auth-authenticated data-i18n="authLogout">Log out</button>
+        <a class="backend-auth-link" data-backend-auth-guest data-backend-auth-signup href="#">Create account</a>
+        <a class="backend-auth-link" data-backend-auth-guest data-backend-auth-forgot href="#">Forgot password</a>
+      </form>
+    `;
+
+    const form = document.querySelector('[data-backend-auth]');
+    const controller = createBackendAuthController({
+      root: form,
+      config: TEST_CONFIG,
+      fetchImpl: vi.fn().mockResolvedValue(jsonResponse({ message: { is_guest: true } })),
+    });
+
+    expect(form.dataset.authLayout).toBe('normalized');
+    expect(form.querySelector('.backend-auth-header .backend-auth-copy .backend-auth-title')).toBeTruthy();
+    expect(form.querySelector('.backend-auth-header .backend-auth-logout-button')).toBeTruthy();
+    expect(form.querySelector('.backend-auth-fields [data-backend-auth-user]')).toBeTruthy();
+    expect(form.querySelector('.backend-auth-fields .backend-auth-password-wrap [data-backend-auth-password]')).toBeTruthy();
+    expect(form.querySelector('.backend-auth-actions .backend-auth-login-button .backend-auth-action-icon svg')).toBeTruthy();
+    expect(form.querySelector('.backend-auth-actions .backend-auth-links [data-backend-auth-forgot]')).toBeTruthy();
+
+    const loginButton = form.querySelector('[data-backend-auth-login]');
+    const logoutButton = form.querySelector('[data-backend-auth-logout]');
+    expect(loginButton.getAttribute('data-i18n')).toBeNull();
+    expect(loginButton.querySelector("[data-i18n='authLogin']")).toBeTruthy();
+    expect(logoutButton.getAttribute('aria-label')).toBe('Log out');
+    expect(logoutButton.querySelector("[data-i18n='authLogout']")).toBeTruthy();
+
+    controller.destroy();
+  });
+
+  it('keeps the icon logout button out of the full-width auth button selector', () => {
+    const css = readFileSync('src/styles/backend-auth.less', 'utf8');
+
+    expect(css).toContain(
+      '.backend-auth button:not(.backend-auth-password-toggle):not(.backend-auth-logout-button)'
+    );
+    expect(css).toContain('.backend-auth .backend-auth-header .backend-auth-logout-button');
+    expect(css).toContain('justify-content: center;');
+    expect(css).toContain('grid-template-columns: minmax(0, 1fr) auto;');
+    expect(css).toContain('.backend-auth .sr-only');
+  });
+});
 
 async function gzipText(text) {
   const sourceStream = new Response(text, {

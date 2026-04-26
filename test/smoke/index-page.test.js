@@ -144,6 +144,16 @@ describe("index.html SPA shell", () => {
     expect(sharedList.querySelector("[data-backend-auth]")).toBeTruthy();
     expect(sharedList.querySelector("[data-player-toggle]")).toBeTruthy();
 
+    const children = Array.from(sharedList.children);
+    const brand = sharedList.querySelector(".app-start-menu-brand");
+    const authForm = sharedList.querySelector("[data-backend-auth]");
+    const firstRoute = sharedList.querySelector("[data-start-route]");
+    const playerButton = sharedList.querySelector("[data-player-toggle]");
+    expect(children.indexOf(authForm)).toBe(children.indexOf(brand) + 1);
+    expect(children.indexOf(authForm)).toBeLessThan(children.indexOf(firstRoute));
+    expect(children.indexOf(playerButton)).toBeGreaterThan(children.indexOf(authForm));
+    expect(authForm.querySelector(".backend-auth-logout-button svg")).toBeTruthy();
+
     menu.close();
     expect(sharedList.hidden).toBe(true);
   });

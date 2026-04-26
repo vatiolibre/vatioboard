@@ -6,6 +6,8 @@ import {
   IconBoard,
   IconCalculator,
   IconEnergy,
+  IconLogin,
+  IconLogout,
   IconReplay,
   IconSpeed,
   IconWorld,
@@ -90,35 +92,49 @@ function buildBackendAuthForm() {
   form.noValidate = true;
 
   form.innerHTML = `
-    <p class="backend-auth-title" data-i18n="authTitle">VatioLibre account</p>
-    <p class="backend-auth-status" data-backend-auth-status role="status" aria-live="polite" data-i18n="authCheckingSession">Checking session...</p>
-    <input
-      class="backend-auth-input"
-      data-backend-auth-user
-      data-backend-auth-guest
-      type="text"
-      autocomplete="username"
-      spellcheck="false"
-      aria-label="Email / username"
-      data-i18n-aria="authUsername"
-      placeholder="Email / username"
-      data-i18n-placeholder="authUsername"
-    />
-    <input
-      class="backend-auth-input"
-      data-backend-auth-password
-      data-backend-auth-guest
-      type="password"
-      autocomplete="current-password"
-      aria-label="Password"
-      data-i18n-aria="authPassword"
-      placeholder="Password"
-      data-i18n-placeholder="authPassword"
-    />
-    <button type="submit" data-backend-auth-login data-backend-auth-guest data-i18n="authLogin">Log in</button>
-    <button type="button" data-backend-auth-logout data-backend-auth-authenticated data-i18n="authLogout">Log out</button>
-    <a class="backend-auth-link" data-backend-auth-guest data-backend-auth-signup href="https://www.vatiolibre.com/login#signup" rel="noreferrer" data-i18n="authCreateAccount">Create account</a>
-    <a class="backend-auth-link" data-backend-auth-guest data-backend-auth-forgot href="https://www.vatiolibre.com/login#forgot" rel="noreferrer" data-i18n="authForgotPassword">Forgot password</a>
+    <div class="backend-auth-header">
+      <div class="backend-auth-copy">
+        <p class="backend-auth-title" data-i18n="authTitle">VatioLibre account</p>
+        <p class="backend-auth-status" data-backend-auth-status role="status" aria-live="polite" data-i18n="authCheckingSession">Checking session...</p>
+      </div>
+      <button class="backend-auth-logout-button" type="button" data-backend-auth-logout data-backend-auth-authenticated aria-label="Log out" title="Log out" data-i18n-aria="authLogout" data-i18n-title="authLogout">
+        <span class="backend-auth-action-icon" aria-hidden="true">${IconLogout}</span>
+        <span class="sr-only" data-i18n="authLogout">Log out</span>
+      </button>
+    </div>
+    <div class="backend-auth-fields" data-backend-auth-guest>
+      <input
+        class="backend-auth-input"
+        data-backend-auth-user
+        type="text"
+        autocomplete="username"
+        spellcheck="false"
+        aria-label="Email / username"
+        data-i18n-aria="authUsername"
+        placeholder="Email / username"
+        data-i18n-placeholder="authUsername"
+      />
+      <input
+        class="backend-auth-input"
+        data-backend-auth-password
+        type="password"
+        autocomplete="current-password"
+        aria-label="Password"
+        data-i18n-aria="authPassword"
+        placeholder="Password"
+        data-i18n-placeholder="authPassword"
+      />
+    </div>
+    <div class="backend-auth-actions" data-backend-auth-guest>
+      <button class="backend-auth-login-button" type="submit" data-backend-auth-login>
+        <span class="backend-auth-action-icon" aria-hidden="true">${IconLogin}</span>
+        <span data-i18n="authLogin">Log in</span>
+      </button>
+      <div class="backend-auth-links">
+        <a class="backend-auth-link" data-backend-auth-signup href="https://www.vatiolibre.com/login#signup" rel="noreferrer" data-i18n="authCreateAccount">Create account</a>
+        <a class="backend-auth-link" data-backend-auth-forgot href="https://www.vatiolibre.com/login#forgot" rel="noreferrer" data-i18n="authForgotPassword">Forgot password</a>
+      </div>
+    </div>
   `;
 
   return form;
@@ -153,6 +169,7 @@ function buildStartMenu() {
   brand.append(langButton);
 
   list.append(brand);
+  list.append(buildBackendAuthForm());
 
   for (const item of NAV_ITEMS) {
     list.append(createIconButton({
@@ -180,7 +197,10 @@ function buildStartMenu() {
     dataset: { startAction: "energy" },
   }));
 
-  list.append(buildBackendAuthForm());
+  const playerAnchor = document.createElement("span");
+  playerAnchor.dataset.playerToggleAnchor = "";
+  playerAnchor.hidden = true;
+  list.append(playerAnchor);
 
   return { langButton, list };
 }

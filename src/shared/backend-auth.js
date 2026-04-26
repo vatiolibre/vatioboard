@@ -1,4 +1,5 @@
 import { t } from "../i18n.js";
+import { IconLogin, IconLogout } from "../icons.js";
 import { getEnvironmentConfig } from "./environment.js";
 
 export const BACKEND_AUTH_SIGNUP_URL = "https://www.vatiolibre.com/login#signup";
@@ -100,6 +101,126 @@ const DEFAULT_BACKEND_AUTH_STATE = Object.freeze({
 
 let backendAuthStateListenerInstalled = false;
 let backendAuthStateSnapshot = { ...DEFAULT_BACKEND_AUTH_STATE };
+
+function getDirectChildByClass(root, className) {
+  return Array.from(root?.children || []).find((child) =>
+    child.classList?.contains(className)
+  ) || null;
+}
+
+function wrapBackendAuthChildren(root, className, children, datasetKey) {
+  const existing = getDirectChildByClass(root, className);
+  if (existing) return existing;
+
+  const items = children.filter((child) => child?.parentElement === root);
+  if (!items.length) return null;
+
+  const wrapper = document.createElement("div");
+  wrapper.className = className;
+  if (datasetKey) wrapper.dataset[datasetKey] = "";
+
+  root.insertBefore(wrapper, items[0]);
+  items.forEach((child) => wrapper.append(child));
+  return wrapper;
+}
+
+function enhanceBackendAuthButton(button, {
+  icon,
+  iconOnly = false,
+  labelKey,
+  className,
+} = {}) {
+  if (!button || button.dataset.authLayoutEnhanced === "true") return;
+
+  const labelText = button.textContent.trim() || t(labelKey);
+  button.classList.add(className);
+  button.removeAttribute("data-i18n");
+  button.dataset.authLayoutEnhanced = "true";
+
+  if (iconOnly) {
+    button.dataset.i18nAria = labelKey;
+    button.dataset.i18nTitle = labelKey;
+    button.setAttribute("aria-label", t(labelKey));
+    button.setAttribute("title", t(labelKey));
+    button.innerHTML = `
+      <span class="backend-auth-action-icon" aria-hidden="true">${icon}</span>
+      <span class="sr-only" data-i18n="${labelKey}">${labelText}</span>
+    `;
+    return;
+  }
+
+  button.innerHTML = `
+    <span class="backend-auth-action-icon" aria-hidden="true">${icon}</span>
+    <span data-i18n="${labelKey}">${labelText}</span>
+  `;
+}
+
+function normalizeBackendAuthLayout(root) {
+  if (!root || root.dataset.authLayout === "normalized") return;
+
+  const titleEl = root.querySelector(".backend-auth-title");
+  const statusEl = root.querySelector("[data-backend-auth-status]");
+  const usernameInput = root.querySelector("[data-backend-auth-user]");
+  const passwordInput = root.querySelector("[data-backend-auth-password]");
+  const loginButton = root.querySelector("[data-backend-auth-login]");
+  const logoutButton = root.querySelector("[data-backend-auth-logout]");
+  const signupLink = root.querySelector("[data-backend-auth-signup]");
+  const forgotLink = root.querySelector("[data-backend-auth-forgot]");
+
+  enhanceBackendAuthButton(loginButton, {
+    icon: IconLogin,
+    labelKey: "authLogin",
+    className: "backend-auth-login-button",
+  });
+  enhanceBackendAuthButton(logoutButton, {
+    icon: IconLogout,
+    iconOnly: true,
+    labelKey: "authLogout",
+    className: "backend-auth-logout-button",
+  });
+
+  const header = wrapBackendAuthChildren(
+    root,
+    "backend-auth-header",
+    [titleEl, statusEl, logoutButton],
+  );
+
+  if (header && !getDirectChildByClass(header, "backend-auth-copy")) {
+    const copy = document.createElement("div");
+    copy.className = "backend-auth-copy";
+    const firstCopyChild = [titleEl, statusEl].find((child) => child?.parentElement === header);
+    if (firstCopyChild) header.insertBefore(copy, firstCopyChild);
+    [titleEl, statusEl].forEach((child) => {
+      if (child?.parentElement === header) copy.append(child);
+    });
+  }
+
+  wrapBackendAuthChildren(
+    root,
+    "backend-auth-fields",
+    [usernameInput, passwordInput],
+    "backendAuthGuest",
+  );
+
+  const actions = wrapBackendAuthChildren(
+    root,
+    "backend-auth-actions",
+    [loginButton, signupLink, forgotLink],
+    "backendAuthGuest",
+  );
+
+  if (actions && !getDirectChildByClass(actions, "backend-auth-links")) {
+    const links = document.createElement("div");
+    links.className = "backend-auth-links";
+    const firstLink = [signupLink, forgotLink].find((child) => child?.parentElement === actions);
+    if (firstLink) actions.insertBefore(links, firstLink);
+    [signupLink, forgotLink].forEach((child) => {
+      if (child?.parentElement === actions) links.append(child);
+    });
+  }
+
+  root.dataset.authLayout = "normalized";
+}
 
 function getFetch(fetchImpl) {
   if (typeof fetchImpl === "function") return fetchImpl;
@@ -2101,6 +2222,8 @@ export function createBackendAuthController({
 } = {}) {
   if (!root) return null;
 
+  normalizeBackendAuthLayout(root);
+
   const form = root.matches("form") ? root : root.querySelector("form");
   const statusEl = root.querySelector("[data-backend-auth-status]");
   const usernameInput = root.querySelector("[data-backend-auth-user]");
@@ -2113,7 +2236,7 @@ export function createBackendAuthController({
   const authenticatedElements = Array.from(root.querySelectorAll("[data-backend-auth-authenticated]"));
 
   // ── Password reveal toggle ──────────────────────────────────────
-  if (passwordInput) {
+  if (passwordInput && !passwordInput.closest(".backend-auth-password-wrap")) {
     const wrap = document.createElement("div");
     wrap.className = "backend-auth-password-wrap";
     passwordInput.parentNode.insertBefore(wrap, passwordInput);

@@ -68,6 +68,22 @@ export const IconEnergy = `
   </svg>
 `;
 
+export const IconLogin = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M14 5h3a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M4.75 12h9.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    <path d="m10.75 8.5 3.5 3.5-3.5 3.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`;
+
+export const IconLogout = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M5 4.75h7.25a2 2 0 0 1 2 2v10.5a2 2 0 0 1-2 2H5V4.75Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="M9 12h10.25" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    <path d="m16 8.75 3.25 3.25L16 15.25" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`;
+
 export const IconSpeed = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path d="M4 15a8 8 0 1 1 16 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
