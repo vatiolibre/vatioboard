@@ -36,7 +36,7 @@ import {
 } from '../shared/repositories/accel-repository.js';
 import { formatRouteString } from '../shared/route-string.js';
 import { hasStoredValue } from '../shared/storage.js';
-import { applyButtonIcon, initToolsMenu } from '../shared/tools-menu.js';
+import { applyButtonIcon, getActiveToolsMenuList, initToolsMenu } from '../shared/tools-menu.js';
 import { integratePlayerWidget } from '../player/integrate-player-widget.js';
 import {
   hasConfiguredUnitPreferences,
@@ -48,7 +48,6 @@ import {
   IconBoard,
   IconClose,
   IconDistance,
-  IconGpsLab,
   IconPages,
   IconPause,
   IconPlay,
@@ -142,8 +141,8 @@ export function onLegacyViewUnmount() {
 }
 
 export const initPromise = (function () {
-  initBackendAuthControllers();
   const isSpaRuntime = Boolean(window.__vatioboardSpa);
+  if (!isSpaRuntime) initBackendAuthControllers();
   const singleTabOwnershipPromise = isSpaRuntime ? Promise.resolve(true) : ensureSingleTabOwnership();
 
   var finishAudio = typeof Audio === 'function' ? new Audio(FINISH_SOUND_URL) : null;
@@ -163,7 +162,6 @@ export const initPromise = (function () {
     toolsMenuBtn: document.getElementById('accelToolsMenuBtn'),
     toolsMenuList: document.getElementById('accelToolsMenuList'),
     openSpeedMenu: document.getElementById('openAccelSpeedMenu'),
-    openGpsLabMenu: document.getElementById('openAccelGpsLabMenu'),
     openLibraryMenu: document.getElementById('openAccelLibraryMenu'),
     openBoardMenu: document.getElementById('openAccelBoardMenu'),
     sheetBackdrop: document.getElementById('accelSheetBackdrop'),
@@ -326,7 +324,6 @@ export const initPromise = (function () {
   applyButtonIcon(elements.toolbarSetup, IconSettings);
   applyButtonIcon(elements.toolbarResults, IconReplay);
   applyButtonIcon(elements.openSpeedMenu, IconSpeed);
-  applyButtonIcon(elements.openGpsLabMenu, IconGpsLab);
   applyButtonIcon(elements.openLibraryMenu, IconWorld);
   applyButtonIcon(elements.openBoardMenu, IconBoard);
   applyButtonIcon(elements.resultReplayToggle, IconPlay);
@@ -702,10 +699,11 @@ export const initPromise = (function () {
       button.addEventListener('click', handleLangToggle);
     });
     bindMenuNavigation(elements.openSpeedMenu, '#/speed');
-    bindMenuNavigation(elements.openGpsLabMenu, '/gps-rate.html');
     bindMenuNavigation(elements.openLibraryMenu, '#/library?tab=accel');
     bindMenuNavigation(elements.openBoardMenu, '#/board');
-    integratePlayerWidget({ toolsMenuList: elements.toolsMenuList, toolsMenu });
+    if (!isSpaRuntime) {
+      integratePlayerWidget({ toolsMenuList: elements.toolsMenuList, toolsMenu });
+    }
     window.__vatioboardCanLeaveAccel = function () {
       if (!isRunActive(state.run)) return true;
       return window.confirm(t('accelLeaveActiveRunConfirm'));
@@ -952,12 +950,13 @@ export const initPromise = (function () {
   }
 
   function getCloudSyncLauncherFocusTarget() {
+    var menuList = getActiveToolsMenuList(elements.toolsMenuList);
     var candidates = [
-      elements.toolsMenuList?.querySelector('[data-backend-auth-user]'),
-      elements.toolsMenuList?.querySelector('[data-backend-auth-password]'),
-      elements.toolsMenuList?.querySelector('[data-backend-auth-login]'),
-      elements.toolsMenuList?.querySelector('[data-backend-auth-logout]'),
-      elements.toolsMenuList?.querySelector('[data-backend-auth-status]'),
+      menuList?.querySelector('[data-backend-auth-user]'),
+      menuList?.querySelector('[data-backend-auth-password]'),
+      menuList?.querySelector('[data-backend-auth-login]'),
+      menuList?.querySelector('[data-backend-auth-logout]'),
+      menuList?.querySelector('[data-backend-auth-status]'),
     ];
 
     return candidates.find(isVisibleForFocus) || null;

@@ -147,8 +147,7 @@ applyButtonIcon(openEnergyBtn, IconEnergy);
 applyButtonIcon(toolsMenuBtn, IconPages);
 
 const toolsMenu = initToolsMenu({ button: toolsMenuBtn, list: toolsMenuList });
-initBackendAuthControllers();
-toolsMenu.setOpen(true);
+if (!isSpaRuntime) initBackendAuthControllers();
 
 // Shared floating tools live outside route-owned DOM in the SPA shell.
 const { calcWidget, energyWidget } = initFloatingTools();
@@ -177,7 +176,9 @@ bindNavigation(openSpeedMenuBtn, "#/speed");
 bindNavigation(openAccelMenuBtn, "#/accel");
 bindNavigation(openLibraryMenuBtn, "#/library?tab=board_documents");
 
-integratePlayerWidget({ toolsMenuList, toolsMenu });
+if (!isSpaRuntime) {
+  integratePlayerWidget({ toolsMenuList, toolsMenu });
+}
 
   (function(){
     const canvas = document.getElementById("pad");

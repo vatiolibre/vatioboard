@@ -8,7 +8,6 @@ import {
   IconAccel,
   IconBoard,
   IconDownload,
-  IconGpsLab,
   IconMedia,
   IconMore,
   IconMuted,
@@ -87,14 +86,14 @@ import {
   openCloudReplaySession,
 } from "../shared/cloud-library-open.js";
 import * as audioRuntime from "../shared/audio-runtime.js";
-import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
+import { applyButtonIcon, getActiveToolsMenuList, initToolsMenu } from "../shared/tools-menu.js";
 import { integratePlayerWidget } from "../player/integrate-player-widget.js";
 import { initCloudSyncStatusIndicator } from "../shared/cloud-sync-status-indicator.js";
 
 applyTranslations();
-initBackendAuthControllers();
 
 const isSpaRuntime = Boolean(window.__vatioboardSpa);
+if (!isSpaRuntime) initBackendAuthControllers();
 const PAGE_SIZE = 24;
 const SORT_OPTIONS = new Set(["newest", "oldest", "title_asc", "title_desc"]);
 const TAB_ORDER = [
@@ -139,7 +138,6 @@ const elements = {
   openSpeedPage: document.getElementById("openLibrarySpeedMenu"),
   openReplayPage: document.getElementById("openLibraryReplayMenu"),
   openAccelPage: document.getElementById("openLibraryAccelMenu"),
-  openGpsLabPage: document.getElementById("openLibraryGpsLabMenu"),
   openCurrentPage: document.getElementById("openLibraryCurrentMenu"),
 };
 
@@ -167,12 +165,13 @@ function isVisibleForFocus(element) {
 }
 
 function getCloudSyncLauncherFocusTarget() {
+  const menuList = getActiveToolsMenuList(elements.toolsMenuList);
   const candidates = [
-    elements.toolsMenuList?.querySelector("[data-backend-auth-user]"),
-    elements.toolsMenuList?.querySelector("[data-backend-auth-password]"),
-    elements.toolsMenuList?.querySelector("[data-backend-auth-login]"),
-    elements.toolsMenuList?.querySelector("[data-backend-auth-logout]"),
-    elements.toolsMenuList?.querySelector("[data-backend-auth-status]"),
+    menuList?.querySelector("[data-backend-auth-user]"),
+    menuList?.querySelector("[data-backend-auth-password]"),
+    menuList?.querySelector("[data-backend-auth-login]"),
+    menuList?.querySelector("[data-backend-auth-logout]"),
+    menuList?.querySelector("[data-backend-auth-status]"),
   ];
 
   return candidates.find(isVisibleForFocus) || null;
@@ -2548,8 +2547,9 @@ function bindEvents() {
   bindMenuNavigation(elements.openSpeedPage, "#/speed");
   bindMenuNavigation(elements.openReplayPage, "#/replay");
   bindMenuNavigation(elements.openAccelPage, "#/accel");
-  bindMenuNavigation(elements.openGpsLabPage, "/gps-rate.html");
-  integratePlayerWidget({ toolsMenuList: elements.toolsMenuList, toolsMenu });
+  if (!isSpaRuntime) {
+    integratePlayerWidget({ toolsMenuList: elements.toolsMenuList, toolsMenu });
+  }
 
   window.addEventListener(ROUTE_VISIBLE_EVENT, (event) => {
     if (event?.detail?.path !== "/library") return;
@@ -2597,7 +2597,6 @@ applyButtonIcon(elements.openBoardPage, IconBoard);
 applyButtonIcon(elements.openSpeedPage, IconSpeed);
 applyButtonIcon(elements.openReplayPage, IconReplay);
 applyButtonIcon(elements.openAccelPage, IconAccel);
-applyButtonIcon(elements.openGpsLabPage, IconGpsLab);
 applyButtonIcon(elements.openCurrentPage, IconWorld);
 applyButtonIcon(elements.actionOpen, IconWorld);
 applyButtonIcon(elements.actionDownload, IconDownload);

@@ -118,6 +118,43 @@ describe("index.html SPA shell", () => {
     expect(routeState.unmounted).toContain("library");
   });
 
+  it("binds route menu buttons to one shared start menu in the SPA", async () => {
+    await bootSpa();
+
+    const { initToolsMenu } = await import("../../src/shared/tools-menu.js");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "tools-menu-btn";
+    const localList = document.createElement("div");
+    localList.id = "mockToolsMenuList";
+    localList.className = "tools-menu-list";
+    localList.hidden = true;
+    document.body.append(button, localList);
+
+    const menu = initToolsMenu({ button, list: localList });
+    button.click();
+
+    const sharedList = document.getElementById("appStartMenuList");
+    expect(sharedList).toBeTruthy();
+    expect(sharedList.hidden).toBe(false);
+    expect(localList.hidden).toBe(true);
+    expect(sharedList.querySelector("[data-start-route='/board']")).toBeTruthy();
+    expect(sharedList.querySelector("[data-start-route='/replay']")).toBeTruthy();
+    expect(sharedList.querySelector("[data-backend-auth]")).toBeTruthy();
+    expect(sharedList.querySelector("[data-player-toggle]")).toBeTruthy();
+
+    menu.close();
+    expect(sharedList.hidden).toBe(true);
+  });
+
+  it("opens the shared start menu navigation without a local GPS Lab item", async () => {
+    await bootSpa();
+
+    const sharedList = document.getElementById("appStartMenuList");
+    expect(sharedList.textContent).not.toContain("GPS Lab");
+    expect(sharedList.querySelector("[data-start-route='/library']")).toBeTruthy();
+  });
+
   it("keeps calculator and energy panels in the persistent layer across routes", async () => {
     await bootSpa();
 

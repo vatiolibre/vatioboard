@@ -6,6 +6,7 @@ import { createPlayerWidget } from "../player/player-widget.js";
 import { initBackendAuthControllers } from "../shared/backend-auth.js";
 import { startCloudSyncLoop } from "../shared/cloud-sync.js";
 import { initFloatingTools } from "../shared/floating-tools.js";
+import { initSharedStartMenu } from "../shared/start-menu.js";
 import { ensureSingleTabOwnership } from "../shared/single-tab.js";
 import { createHashRouter, emitRouteVisible, navigateToAppRoute } from "./router.js";
 import { routes } from "./routes.js";
@@ -53,6 +54,7 @@ export async function startAppShell({
   });
   window.__vatioboardPlayerWidget = playerWidget;
   const floatingTools = initFloatingTools({ mount: persistentLayer });
+  const startMenu = initSharedStartMenu({ floatingTools, mount: persistentLayer });
 
   installLinkInterceptor();
 
@@ -102,6 +104,7 @@ export async function startAppShell({
     router,
     floatingTools,
     playerWidget,
+    startMenu,
     context,
   };
 }

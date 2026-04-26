@@ -13,7 +13,7 @@ import {
   isValidGeoSample,
   reverseGeocodeBoundarySample,
 } from '../shared/route-boundary.js';
-import { applyButtonIcon, initToolsMenu } from '../shared/tools-menu.js';
+import { applyButtonIcon, getActiveToolsMenuList, initToolsMenu } from '../shared/tools-menu.js';
 import { integratePlayerWidget } from '../player/integrate-player-widget.js';
 import {
   hasConfiguredUnitPreferences,
@@ -24,7 +24,6 @@ import '../styles/backend-auth.less';
 import {
   IconAccel,
   IconBoard,
-  IconGpsLab,
   IconPages,
   IconReplay,
   IconRestart,
@@ -113,12 +112,10 @@ const elements = {
   toolbar: document.querySelector('.speed-toolbar'),
   toolsMenuBtn: document.getElementById('speedToolsMenuBtn'),
   toolsMenuList: document.getElementById('speedToolsMenuList'),
-  openReplayMenu: document.getElementById('openSpeedReplayMenu'),
   openReplayQuick: document.getElementById('openReplayQuick'),
   openLibraryMenu: document.getElementById('openSpeedLibraryMenu'),
   quickAlertConfig: document.getElementById('quickAlertConfig'),
   openAccelMenu: document.getElementById('openSpeedAccelMenu'),
-  openGpsLabMenu: document.getElementById('openSpeedGpsLabMenu'),
   openBoardMenu: document.getElementById('openSpeedBoardMenu'),
   primaryViewButtons: Array.from(document.querySelectorAll('.speed-view-btn')),
   speedPrimaryStage: document.getElementById('speedPrimaryStage'),
@@ -188,8 +185,8 @@ const elements = {
   globeStatus: document.getElementById('globeStatus'),
 };
 
-initBackendAuthControllers();
 const isSpaRuntime = Boolean(window.__vatioboardSpa);
+if (!isSpaRuntime) initBackendAuthControllers();
 const singleTabOwnershipPromise = isSpaRuntime ? Promise.resolve(true) : ensureSingleTabOwnership();
 
 let speedLegacyLifecycle = {
@@ -225,12 +222,13 @@ function isVisibleForFocus(element) {
 }
 
 function getCloudSyncLauncherFocusTarget() {
+  const menuList = getActiveToolsMenuList(elements.toolsMenuList);
   const candidates = [
-    elements.toolsMenuList?.querySelector('[data-backend-auth-user]'),
-    elements.toolsMenuList?.querySelector('[data-backend-auth-password]'),
-    elements.toolsMenuList?.querySelector('[data-backend-auth-login]'),
-    elements.toolsMenuList?.querySelector('[data-backend-auth-logout]'),
-    elements.toolsMenuList?.querySelector('[data-backend-auth-status]'),
+    menuList?.querySelector('[data-backend-auth-user]'),
+    menuList?.querySelector('[data-backend-auth-password]'),
+    menuList?.querySelector('[data-backend-auth-login]'),
+    menuList?.querySelector('[data-backend-auth-logout]'),
+    menuList?.querySelector('[data-backend-auth-status]'),
   ];
 
   return candidates.find(isVisibleForFocus) || null;
@@ -265,10 +263,8 @@ initCloudSyncStatusIndicator({
 });
 
 applyButtonIcon(elements.openAccelMenu, IconAccel);
-applyButtonIcon(elements.openGpsLabMenu, IconGpsLab);
 applyButtonIcon(elements.openLibraryMenu, IconWorld);
 applyButtonIcon(elements.openBoardMenu, IconBoard);
-applyButtonIcon(elements.openReplayMenu, IconReplay);
 applyButtonIcon(elements.openReplayQuick, IconReplay);
 applyButtonIcon(elements.quickAlertConfig, IconSettings);
 applyButtonIcon(elements.resetTrip, IconRestart);
@@ -1770,13 +1766,13 @@ function bindEvents() {
       toggleLang();
     });
   });
-  bindMenuNavigation(elements.openReplayMenu, '#/replay');
   bindMenuNavigation(elements.openReplayQuick, '#/replay');
   bindMenuNavigation(elements.openLibraryMenu, '#/library?tab=speed');
   bindMenuNavigation(elements.openAccelMenu, '#/accel');
-  bindMenuNavigation(elements.openGpsLabMenu, '/gps-rate.html');
   bindMenuNavigation(elements.openBoardMenu, '/');
-  integratePlayerWidget({ toolsMenuList: elements.toolsMenuList, toolsMenu });
+  if (!isSpaRuntime) {
+    integratePlayerWidget({ toolsMenuList: elements.toolsMenuList, toolsMenu });
+  }
   elements.retryGps.addEventListener('click', () => restartTrip({ fromUserGesture: true }));
   elements.resetTrip.addEventListener('click', () => restartTrip({ fromUserGesture: true }));
   elements.toggleRecording?.addEventListener('click', () => {

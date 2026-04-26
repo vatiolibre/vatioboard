@@ -47,7 +47,7 @@ import {
   releaseSingleTabOwnership,
   SINGLE_TAB_OWNERSHIP_EVENT,
 } from '../shared/single-tab.js';
-import { applyButtonIcon, initToolsMenu } from '../shared/tools-menu.js';
+import { applyButtonIcon, getActiveToolsMenuList, initToolsMenu } from '../shared/tools-menu.js';
 import { integratePlayerWidget } from '../player/integrate-player-widget.js';
 import {
   getReplayAxisRange,
@@ -66,7 +66,7 @@ import { isReplayPayloadComplete } from './session.js';
 applyTranslations();
 const isSpaRuntime = Boolean(window.__vatioboardSpa);
 const singleTabOwnershipPromise = isSpaRuntime ? Promise.resolve(true) : ensureSingleTabOwnership();
-initBackendAuthControllers();
+if (!isSpaRuntime) initBackendAuthControllers();
 
 const elements = {
   langToggle: document.getElementById('langToggle'),
@@ -167,12 +167,13 @@ function isVisibleForFocus(element) {
 }
 
 function getCloudSyncLauncherFocusTarget() {
+  const menuList = getActiveToolsMenuList(elements.replayToolsMenuList);
   const candidates = [
-    elements.replayToolsMenuList?.querySelector('[data-backend-auth-user]'),
-    elements.replayToolsMenuList?.querySelector('[data-backend-auth-password]'),
-    elements.replayToolsMenuList?.querySelector('[data-backend-auth-login]'),
-    elements.replayToolsMenuList?.querySelector('[data-backend-auth-logout]'),
-    elements.replayToolsMenuList?.querySelector('[data-backend-auth-status]'),
+    menuList?.querySelector('[data-backend-auth-user]'),
+    menuList?.querySelector('[data-backend-auth-password]'),
+    menuList?.querySelector('[data-backend-auth-login]'),
+    menuList?.querySelector('[data-backend-auth-logout]'),
+    menuList?.querySelector('[data-backend-auth-status]'),
   ];
 
   return candidates.find(isVisibleForFocus) || null;
@@ -1222,7 +1223,9 @@ function bindEvents() {
   bindMenuNavigation(elements.openReplayAccelMenu, '#/accel');
   bindMenuNavigation(elements.openReplayLibraryMenu, '#/library?tab=speed');
   bindMenuNavigation(elements.openReplayBoardMenu, '#/board');
-  integratePlayerWidget({ toolsMenuList: elements.replayToolsMenuList, toolsMenu });
+  if (!isSpaRuntime) {
+    integratePlayerWidget({ toolsMenuList: elements.replayToolsMenuList, toolsMenu });
+  }
 
   elements.replayOpenSpeed?.addEventListener('click', () => {
     navigateToAppRoute('#/speed');

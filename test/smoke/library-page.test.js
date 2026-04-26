@@ -453,7 +453,7 @@ describe("library.html smoke", () => {
     expect(document.querySelector("#libraryToolsMenuList [data-backend-auth]")).toBeTruthy();
     expect(document.querySelector("#libraryToolsMenuList [data-backend-auth]")?.dataset.authState).toBe("authenticated");
     expect(document.getElementById("openLibraryReplayMenu")).toBeTruthy();
-    expect(document.getElementById("openLibraryGpsLabMenu")).toBeTruthy();
+    expect(document.getElementById("openLibraryGpsLabMenu")).toBeNull();
     expect(document.getElementById("openLibraryCurrentMenu")?.disabled).toBe(true);
   });
 
