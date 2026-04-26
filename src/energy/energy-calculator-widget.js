@@ -37,6 +37,9 @@ export function createEnergyCalculatorWidget(options = {}) {
   const {
     mount = document.body,
     button = null,
+    persistVisibility = false,
+    restoreVisibility = false,
+    visibilityKey = "energy_calc_visibility_v1",
   } = options;
 
   // Load persisted state
@@ -58,6 +61,24 @@ export function createEnergyCalculatorWidget(options = {}) {
   function savePos(pos) {
     try {
       localStorage.setItem(POS_KEY, JSON.stringify(pos));
+    } catch {
+      // ignore
+    }
+  }
+
+  function loadVisibility() {
+    if (!restoreVisibility) return false;
+    try {
+      return localStorage.getItem(visibilityKey) === "open";
+    } catch {
+      return false;
+    }
+  }
+
+  function saveVisibility(isOpen) {
+    if (!persistVisibility) return;
+    try {
+      localStorage.setItem(visibilityKey, isOpen ? "open" : "closed");
     } catch {
       // ignore
     }
@@ -234,6 +255,7 @@ export function createEnergyCalculatorWidget(options = {}) {
     core.setFormatSettings(formatSettings);
 
     panel.hidden = false;
+    saveVisibility(true);
     if (panel.style.left && panel.style.top) {
       clampElementToViewport(panel);
     }
@@ -247,6 +269,7 @@ export function createEnergyCalculatorWidget(options = {}) {
 
   function close() {
     panel.hidden = true;
+    saveVisibility(false);
     settingsApi.setSettingsSheetOpen(false);
   }
 
@@ -277,11 +300,16 @@ export function createEnergyCalculatorWidget(options = {}) {
   setMode(tripSettings.mode);
   refreshI18n();
 
+  if (loadVisibility()) {
+    open();
+  }
+
   document.addEventListener("i18n:change", refreshI18n);
 
   return {
     open,
     close,
+    isOpen: () => !panel.hidden,
     toggle,
   };
 }

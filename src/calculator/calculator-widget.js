@@ -33,6 +33,9 @@ export function createCalculatorWidget(options = {}) {
     button = null,
     onResult = null,
     onOpenEnergy = null,
+    persistVisibility = false,
+    restoreVisibility = false,
+    visibilityKey = "embeddable_calc_visibility_v1",
   } = options;
 
   const isTouchLike =
@@ -61,6 +64,24 @@ export function createCalculatorWidget(options = {}) {
   function savePos(pos) {
     try {
       localStorage.setItem(POS_KEY, JSON.stringify(pos));
+    } catch {
+      // ignore
+    }
+  }
+
+  function loadVisibility() {
+    if (!restoreVisibility) return false;
+    try {
+      return localStorage.getItem(visibilityKey) === "open";
+    } catch {
+      return false;
+    }
+  }
+
+  function saveVisibility(isOpen) {
+    if (!persistVisibility) return;
+    try {
+      localStorage.setItem(visibilityKey, isOpen ? "open" : "closed");
     } catch {
       // ignore
     }
@@ -196,6 +217,7 @@ export function createCalculatorWidget(options = {}) {
 
   function open() {
     panel.hidden = false;
+    saveVisibility(true);
     render({ keepEnd: true });
 
     // If user dragged panel previously, ensure it stays visible
@@ -210,6 +232,7 @@ export function createCalculatorWidget(options = {}) {
 
   function close() {
     panel.hidden = true;
+    saveVisibility(false);
   }
 
   function toggle() {
@@ -362,10 +385,15 @@ export function createCalculatorWidget(options = {}) {
   mount.appendChild(panel);
   render();
 
+  if (loadVisibility()) {
+    open();
+  }
+
   return {
     open,
     close,
     toggle,
+    isOpen: () => !panel.hidden,
     setExpression: (s) => {
       core.setExpr(String(s ?? ""));
       render();

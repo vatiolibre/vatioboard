@@ -82,6 +82,8 @@ describe("index.html SPA shell", () => {
     expect(document.getElementById("app-view")).toBeTruthy();
     expect(document.getElementById("app-persistent-layer")).toBeTruthy();
     expect(document.querySelector("[data-mock-view='speed']")).toBeTruthy();
+    expect(document.querySelector(".floating-dock")).toBeTruthy();
+    expect(window.__vatioboardFloatingTools).toBeTruthy();
     expect(routeState.createPlayerWidget).toHaveBeenCalledWith(
       expect.objectContaining({
         floating: true,
@@ -114,5 +116,47 @@ describe("index.html SPA shell", () => {
 
     expect(document.querySelector("[data-mock-view='accel']")).toBeTruthy();
     expect(routeState.unmounted).toContain("library");
+  });
+
+  it("keeps calculator and energy panels in the persistent layer across routes", async () => {
+    await bootSpa();
+
+    const persistentLayer = document.getElementById("app-persistent-layer");
+    const calcButton = persistentLayer.querySelector(".dock-btn-calc");
+    const calcPanel = persistentLayer.querySelector(".calc-panel");
+    const energyPanel = persistentLayer.querySelector(".energy-panel");
+
+    expect(calcPanel.hidden).toBe(true);
+    expect(energyPanel.hidden).toBe(true);
+
+    calcButton.click();
+    window.__vatioboardFloatingTools.openEnergy();
+
+    expect(calcPanel.hidden).toBe(false);
+    expect(energyPanel.hidden).toBe(false);
+    expect(localStorage.getItem("vatioboard.calc_panel.visible_v1")).toBe("open");
+    expect(localStorage.getItem("vatioboard.energy_panel.visible_v1")).toBe("open");
+
+    window.location.hash = "#/library";
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+    for (let index = 0; index < 8; index += 1) {
+      await flushTasks();
+    }
+
+    expect(document.querySelector("[data-mock-view='library']")).toBeTruthy();
+    expect(persistentLayer.querySelector(".calc-panel")).toBe(calcPanel);
+    expect(persistentLayer.querySelector(".energy-panel")).toBe(energyPanel);
+    expect(calcPanel.hidden).toBe(false);
+    expect(energyPanel.hidden).toBe(false);
+  });
+
+  it("restores persisted calculator and energy visibility on boot", async () => {
+    localStorage.setItem("vatioboard.calc_panel.visible_v1", "open");
+    localStorage.setItem("vatioboard.energy_panel.visible_v1", "open");
+
+    await bootSpa();
+
+    expect(document.querySelector(".calc-panel")?.hidden).toBe(false);
+    expect(document.querySelector(".energy-panel")?.hidden).toBe(false);
   });
 });

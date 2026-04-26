@@ -5,7 +5,6 @@ import "../styles/energy.less";
 import "../styles/dock.less";
 import "../shared/ui/confirm-dialog.less";
 
-import { createCalculatorWidget } from "../calculator/calculator-widget.js";
 import { integratePlayerWidget } from "../player/integrate-player-widget.js";
 import { navigateToAppRoute } from "../app/router.js";
 import {
@@ -19,8 +18,6 @@ import {
   consumeBoardDocumentOpen,
   persistBoardDocumentSelection,
 } from "../shared/repositories/board-document-repository.js";
-import { createEnergyCalculatorWidget } from "../energy/energy-calculator-widget.js";
-import { createFloatingDock } from "../dock/floating-dock.js";
 import {
   BACKEND_AUTH_STATE_EVENT,
   deleteBoardDocumentFromBackend,
@@ -42,6 +39,7 @@ import {
   cloudLibraryResources,
 } from "../shared/cloud-library-resources.js";
 import { ensureSingleTabOwnership, SINGLE_TAB_OWNERSHIP_EVENT } from "../shared/single-tab.js";
+import { initFloatingTools } from "../shared/floating-tools.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
 import { showConfirmDialog, showPromptDialog } from "../shared/ui/confirm-dialog.js";
 import {
@@ -148,18 +146,12 @@ applyButtonIcon(openSpeedMenuBtn, IconSpeed);
 applyButtonIcon(openEnergyBtn, IconEnergy);
 applyButtonIcon(toolsMenuBtn, IconPages);
 
-// Floating dock with tool buttons
-const { calcBtn } = createFloatingDock();
 const toolsMenu = initToolsMenu({ button: toolsMenuBtn, list: toolsMenuList });
 initBackendAuthControllers();
 toolsMenu.setOpen(true);
 
-// Create widgets - all buttons toggle the same instance
-const energyWidget = createEnergyCalculatorWidget({ button: null });
-const calcWidget = createCalculatorWidget({
-  floating: false,
-  onOpenEnergy: () => energyWidget.toggle(),
-});
+// Shared floating tools live outside route-owned DOM in the SPA shell.
+const { calcWidget, energyWidget } = initFloatingTools();
 
 const bindToggle = (btn, widget) => {
   btn?.addEventListener("click", () => {
@@ -177,7 +169,6 @@ const bindNavigation = (btn, href) => {
 
 bindToggle(openCalcBtn, calcWidget);
 bindToggle(openCalcMenuBtn, calcWidget);
-bindToggle(calcBtn, calcWidget);
 
 bindToggle(openEnergyBtn, energyWidget);
 
@@ -1213,8 +1204,10 @@ integratePlayerWidget({ toolsMenuList, toolsMenu });
       finishStroke({ commit: false });
       closeColorPopup();
       toolsMenu.close();
-      calcWidget.close?.();
-      energyWidget.close?.();
+      if (!isSpaRuntime) {
+        calcWidget.close?.();
+        energyWidget.close?.();
+      }
       setDrawingSelectionLock(false);
       viewMounted = false;
     }
