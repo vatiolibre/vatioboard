@@ -646,6 +646,154 @@ describe('speed.html smoke', () => {
     expect(finalArchivedSession.startPlace).not.toEqual(finalArchivedSession.endPlace);
   });
 
+  it('enriches stopped replay places from the hydrated archive when active samples are tail-only', async () => {
+    const firstSample = {
+      timestampMs: 1000,
+      latitude: 40.8501,
+      longitude: -73.97,
+      speedMs: 5,
+      altitudeM: 42,
+      accuracyM: 5,
+      headingDeg: null,
+      totalDistanceM: 0,
+    };
+    const lastSample = {
+      timestampMs: 2000,
+      latitude: 40.787,
+      longitude: -74.014,
+      speedMs: 7,
+      altitudeM: 41,
+      accuracyM: 5,
+      headingDeg: null,
+      totalDistanceM: 100,
+    };
+
+    reversePlaceSpy.mockImplementation(async ({ latitude }) => {
+      if (latitude > 40.82) {
+        return {
+          place: {
+            label: 'Fort Lee',
+            city: 'Fort Lee',
+            state: 'New Jersey',
+            houseNumber: '6312',
+            road: 'Hilltop Court',
+            countryCode: 'us',
+          },
+          data: null,
+          meta: null,
+        };
+      }
+
+      return {
+        place: {
+          label: 'West New York',
+          city: 'West New York',
+          state: 'New Jersey',
+          houseNumber: '119',
+          road: '58th Street',
+          countryCode: 'us',
+        },
+        data: null,
+        meta: null,
+      };
+    });
+
+    saveActiveReplaySessionSpy.mockImplementation(async (session) => {
+      if ((session?.sampleCount ?? 0) < 2) return session;
+      return {
+        ...session,
+        firstSample: lastSample,
+        lastSample,
+        samples: [lastSample],
+        sampleCount: 2,
+        persistedSampleCount: 1,
+        chunkCount: 1,
+      };
+    });
+
+    let archiveCallCount = 0;
+    archiveReplaySessionSpy.mockImplementation(async (session) => {
+      archiveCallCount += 1;
+      if (archiveCallCount === 1) {
+        return {
+          ...session,
+          firstSample,
+          lastSample,
+          samples: [firstSample, lastSample],
+          sampleCount: 2,
+          persistedSampleCount: 2,
+          chunkCount: 1,
+        };
+      }
+      return session;
+    });
+
+    const speedPage = await import('../../src/speed/speed.js');
+    await speedPage.initPromise;
+    await flushTasks();
+
+    document.getElementById('toggleRecording').click();
+    await flushTasks();
+
+    emitGeolocationSuccess({
+      timestamp: firstSample.timestampMs,
+      coords: {
+        latitude: firstSample.latitude,
+        longitude: firstSample.longitude,
+        speed: firstSample.speedMs,
+        accuracy: firstSample.accuracyM,
+        altitude: firstSample.altitudeM,
+      },
+    });
+    await flushTasks();
+
+    emitGeolocationSuccess({
+      timestamp: lastSample.timestampMs,
+      coords: {
+        latitude: lastSample.latitude,
+        longitude: lastSample.longitude,
+        speed: lastSample.speedMs,
+        accuracy: lastSample.accuracyM,
+        altitude: lastSample.altitudeM,
+      },
+    });
+    await flushTasks();
+
+    document.getElementById('toggleRecording').click();
+    await settleAsyncWork(40);
+    document.getElementById('stopRecording').click();
+
+    let enrichedArchiveSession = null;
+    for (let index = 0; index < 80; index += 1) {
+      await flushTasks();
+      enrichedArchiveSession = archiveReplaySessionSpy.mock.calls.find(
+        ([session], callIndex) =>
+          callIndex > 0 &&
+          session?.startPlace?.raw?.houseNumber === '6312' &&
+          session?.endPlace?.raw?.houseNumber === '119'
+      )?.[0];
+      if (enrichedArchiveSession) break;
+    }
+
+    expect(enrichedArchiveSession).toMatchObject({
+      startBoundaryPoint: {
+        latitude: firstSample.latitude,
+        sampleIndex: 0,
+      },
+      endBoundaryPoint: {
+        latitude: lastSample.latitude,
+        sampleIndex: 1,
+      },
+      startPlace: {
+        raw: expect.objectContaining({ houseNumber: '6312' }),
+      },
+      endPlace: {
+        raw: expect.objectContaining({ houseNumber: '119' }),
+      },
+    });
+    expect(enrichedArchiveSession.startPlace).not.toEqual(enrichedArchiveSession.endPlace);
+  });
+
   it("keeps the Player launcher available for guests and after login", async () => {
     await import("../../src/speed/speed.js");
     await settleAsyncWork();

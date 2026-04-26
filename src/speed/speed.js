@@ -10,8 +10,7 @@ import { navigateToAppRoute } from '../app/router.js';
 import { createPlaceResolver } from '../shared/place-resolver.js';
 import {
   enrichRouteBoundaryPlaces,
-  getRouteBoundarySamples,
-  isValidGeoSample,
+  getRouteBoundaryInputSamples,
   reverseGeocodeBoundarySample,
 } from '../shared/route-boundary.js';
 import { applyButtonIcon, getActiveToolsMenuList, initToolsMenu } from '../shared/tools-menu.js';
@@ -632,35 +631,7 @@ function maybeApplyAutoConfiguredUnits(countryCode) {
 
 
 function getReplayBoundaryInputSamples(session) {
-  if (!session) return [];
-  const samples = Array.isArray(session.samples) ? session.samples : [];
-  if (samples.length > 0) return samples;
-
-  var first = session.firstSample;
-  var last = session.lastSample;
-  if (!first && !last) return [];
-
-  if (!first || !isValidGeoSample(first)) return last && isValidGeoSample(last) ? [last] : [];
-  if (!last || !isValidGeoSample(last)) return [first];
-
-  // Avoid duplicates when both samples are effectively the same point
-  if (
-    first.latitude === last.latitude &&
-    first.longitude === last.longitude &&
-    first.timestampMs === last.timestampMs
-  ) {
-    return [first];
-  }
-
-  // Chronological order
-  if (
-    Number.isFinite(first.timestampMs) &&
-    Number.isFinite(last.timestampMs) &&
-    first.timestampMs > last.timestampMs
-  ) {
-    return [last, first];
-  }
-  return [first, last];
+  return getRouteBoundaryInputSamples(session);
 }
 
 async function maybeResolveReplayStartPlace(sample) {
@@ -763,8 +734,9 @@ function archiveReplaySessionWithPlaces(session, options = {}) {
         payload: archivedSession,
       });
     }
-    const sessionWithPlaces = await enrichReplaySessionPlaces(session);
-    if (sessionWithPlaces !== session) {
+    const enrichmentSourceSession = archivedSession ?? session;
+    const sessionWithPlaces = await enrichReplaySessionPlaces(enrichmentSourceSession);
+    if (sessionWithPlaces !== enrichmentSourceSession) {
       const enrichedArchivedSession = await archiveReplaySession(sessionWithPlaces, options);
       if (enrichedArchivedSession) {
         await queueCloudSyncChange({

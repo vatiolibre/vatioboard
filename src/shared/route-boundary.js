@@ -73,6 +73,53 @@ function hasMinimumSpeed(sample, thresholdMs) {
   return sample.speedMs >= thresholdMs;
 }
 
+function haveSameCoordinates(left, right) {
+  return Boolean(
+    left &&
+    right &&
+    left.latitude === right.latitude &&
+    left.longitude === right.longitude
+  );
+}
+
+function haveSameRecordedPoint(left, right) {
+  if (!haveSameCoordinates(left, right)) return false;
+  const leftTimestamp = left.timestampMs;
+  const rightTimestamp = right.timestampMs;
+  if (isFiniteNumber(leftTimestamp) || isFiniteNumber(rightTimestamp)) {
+    return leftTimestamp === rightTimestamp;
+  }
+  return true;
+}
+
+function sampleDedupeKey(sample) {
+  const timestamp = isFiniteNumber(sample.timestampMs) ? sample.timestampMs : '';
+  return `${sample.latitude}:${sample.longitude}:${timestamp}`;
+}
+
+function buildBoundaryResult(indexed, startValidIndex, endValidIndex, strategy) {
+  const start = indexed[startValidIndex];
+  const end = indexed[endValidIndex];
+  const sameBoundaryCoordinates = haveSameCoordinates(start.sample, end.sample);
+  const sameBoundarySample =
+    startValidIndex === endValidIndex || haveSameRecordedPoint(start.sample, end.sample);
+
+  return {
+    startSample: start.sample,
+    endSample: end.sample,
+    startIndex: start.originalIndex,
+    endIndex: end.originalIndex,
+    strategy,
+    sameBoundaryCoordinates,
+    sameBoundarySample,
+    canReuseBoundaryPlace: sameBoundaryCoordinates,
+  };
+}
+
+function buildFallbackBoundary(indexed) {
+  return buildBoundaryResult(indexed, 0, indexed.length - 1, 'fallback');
+}
+
 // ---------------------------------------------------------------------------
 // Boundary selection
 // ---------------------------------------------------------------------------
@@ -105,8 +152,7 @@ function findForwardMovementStart(validSamples, anchor, {
     }
   }
 
-  // Accept partial window if we saw at least one moving sample
-  return windowStartIndex >= 0 ? windowStartIndex : -1;
+  return -1;
 }
 
 /**
@@ -137,7 +183,53 @@ function findBackwardMovementEnd(validSamples, anchor, {
     }
   }
 
-  return windowEndIndex >= 0 ? windowEndIndex : -1;
+  return -1;
+}
+
+/**
+ * Build a boundary-selection input from a recording/session object that may
+ * carry full samples, firstSample/lastSample metadata, or a tail-only buffer.
+ */
+export function getRouteBoundaryInputSamples(recording) {
+  if (Array.isArray(recording)) return recording.slice();
+  if (!recording || typeof recording !== 'object') return [];
+
+  const embeddedSamples = Array.isArray(recording.samples)
+    ? recording.samples
+    : Array.isArray(recording.sampleLog)
+      ? recording.sampleLog
+      : [];
+  const candidates = [];
+
+  if (isValidGeoSample(recording.firstSample)) {
+    candidates.push(recording.firstSample);
+  }
+
+  for (const sample of embeddedSamples) {
+    if (isValidGeoSample(sample)) candidates.push(sample);
+  }
+
+  if (isValidGeoSample(recording.lastSample)) {
+    candidates.push(recording.lastSample);
+  }
+
+  if (
+    candidates.length > 1 &&
+    candidates.every((sample) => isFiniteNumber(sample.timestampMs))
+  ) {
+    candidates.sort((left, right) => left.timestampMs - right.timestampMs);
+  }
+
+  const seen = new Set();
+  const deduped = [];
+  for (const sample of candidates) {
+    const key = sampleDedupeKey(sample);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(sample);
+  }
+
+  return deduped;
 }
 
 /**
@@ -184,6 +276,10 @@ export function getRouteBoundarySamples(samples, options = {}) {
     ? Math.max(1, options.lookaheadWindow)
     : DEFAULT_LOOKAHEAD_WINDOW;
 
+  if (indexed.length < lookaheadWindow) {
+    return buildFallbackBoundary(indexed);
+  }
+
   // 2. Find start boundary – first sample where sustained movement begins
   //    Anchor = first valid sample (the parked position to measure displacement from)
   const anchor = validSamples[0];
@@ -204,23 +300,19 @@ export function getRouteBoundarySamples(samples, options = {}) {
 
   // 4. Validate boundaries
   if (startValidIndex >= 0 && endValidIndex >= 0 && startValidIndex <= endValidIndex) {
-    return {
-      startSample: indexed[startValidIndex].sample,
-      endSample: indexed[endValidIndex].sample,
-      startIndex: indexed[startValidIndex].originalIndex,
-      endIndex: indexed[endValidIndex].originalIndex,
-      strategy: 'movement',
-    };
+    const collapsedDistinctRoute = Boolean(
+      startValidIndex === endValidIndex &&
+      indexed.length > 1 &&
+      !haveSameCoordinates(indexed[0].sample, indexed[indexed.length - 1].sample)
+    );
+
+    if (!collapsedDistinctRoute) {
+      return buildBoundaryResult(indexed, startValidIndex, endValidIndex, 'movement');
+    }
   }
 
   // 5. Fallback – movement heuristics didn't converge; use first/last valid
-  return {
-    startSample: indexed[0].sample,
-    endSample: indexed[indexed.length - 1].sample,
-    startIndex: indexed[0].originalIndex,
-    endIndex: indexed[indexed.length - 1].originalIndex,
-    strategy: 'fallback',
-  };
+  return buildFallbackBoundary(indexed);
 }
 
 // ---------------------------------------------------------------------------
@@ -458,14 +550,7 @@ export async function enrichRouteBoundaryPlaces(samples, placeResolver, options 
 
   // Reverse geocode end – reuse start if coordinates are identical
   if (boundary.endSample) {
-    const sameCoordinates = Boolean(
-      boundary.startSample &&
-      boundary.endSample &&
-      boundary.startSample.latitude === boundary.endSample.latitude &&
-      boundary.startSample.longitude === boundary.endSample.longitude
-    );
-
-    if (sameCoordinates && startPlace) {
+    if (boundary.canReuseBoundaryPlace && startPlace) {
       endPlace = { ...startPlace };
     } else {
       if (isStale()) return null;
@@ -490,5 +575,10 @@ export async function enrichRouteBoundaryPlaces(samples, placeResolver, options 
     startPlace,
     endPlace,
     boundaryStrategy: boundary.strategy,
+    boundaryStartIndex: boundary.startIndex,
+    boundaryEndIndex: boundary.endIndex,
+    sameBoundaryCoordinates: boundary.sameBoundaryCoordinates,
+    sameBoundarySample: boundary.sameBoundarySample,
+    canReuseBoundaryPlace: boundary.canReuseBoundaryPlace,
   };
 }

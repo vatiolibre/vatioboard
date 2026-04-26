@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   enrichRouteBoundaryPlaces,
+  getRouteBoundaryInputSamples,
   getRouteBoundarySamples,
   isValidGeoSample,
 } from '../../src/shared/route-boundary.js';
@@ -199,41 +200,10 @@ describe('enrichRouteBoundaryPlaces – metadata-only replay session', () => {
 // ---------------------------------------------------------------------------
 
 describe('replay boundary input sample selection', () => {
-  // Replicate the getReplayBoundaryInputSamples logic for unit testing
-  function getReplayBoundaryInputSamples(session) {
-    if (!session) return [];
-    const samples = Array.isArray(session.samples) ? session.samples : [];
-    if (samples.length > 0) return samples;
-
-    var first = session.firstSample;
-    var last = session.lastSample;
-    if (!first && !last) return [];
-
-    if (!first || !isValidGeoSample(first)) return last && isValidGeoSample(last) ? [last] : [];
-    if (!last || !isValidGeoSample(last)) return [first];
-
-    if (
-      first.latitude === last.latitude &&
-      first.longitude === last.longitude &&
-      first.timestampMs === last.timestampMs
-    ) {
-      return [first];
-    }
-
-    if (
-      Number.isFinite(first.timestampMs) &&
-      Number.isFinite(last.timestampMs) &&
-      first.timestampMs > last.timestampMs
-    ) {
-      return [last, first];
-    }
-    return [first, last];
-  }
-
   it('returns full samples when available', () => {
     const samples = [makeSample(40.85, -73.97), makeSample(40.78, -74.01)];
     const session = { samples, firstSample: samples[0], lastSample: samples[1] };
-    expect(getReplayBoundaryInputSamples(session)).toBe(samples);
+    expect(getRouteBoundaryInputSamples(session)).toEqual(samples);
   });
 
   it('falls back to firstSample and lastSample when samples is empty', () => {
@@ -241,7 +211,16 @@ describe('replay boundary input sample selection', () => {
     const last = makeSample(40.78, -74.01, { timestampMs: 5000 });
     const session = { samples: [], firstSample: first, lastSample: last };
 
-    const result = getReplayBoundaryInputSamples(session);
+    const result = getRouteBoundaryInputSamples(session);
+    expect(result).toEqual([first, last]);
+  });
+
+  it('adds firstSample back when persisted replay samples only contain the tail', () => {
+    const first = makeSample(40.85, -73.97, { timestampMs: 1000 });
+    const last = makeSample(40.78, -74.01, { timestampMs: 5000 });
+    const session = { samples: [last], firstSample: first, lastSample: last };
+
+    const result = getRouteBoundaryInputSamples(session);
     expect(result).toEqual([first, last]);
   });
 
@@ -249,7 +228,7 @@ describe('replay boundary input sample selection', () => {
     const sample = makeSample(40.85, -73.97, { timestampMs: 1000 });
     const session = { samples: [], firstSample: sample, lastSample: sample };
 
-    const result = getReplayBoundaryInputSamples(session);
+    const result = getRouteBoundaryInputSamples(session);
     expect(result).toEqual([sample]);
   });
 
@@ -258,7 +237,7 @@ describe('replay boundary input sample selection', () => {
     const last = makeSample(40.85, -73.97, { timestampMs: 5000 });
     const session = { samples: [], firstSample: first, lastSample: last };
 
-    const result = getReplayBoundaryInputSamples(session);
+    const result = getRouteBoundaryInputSamples(session);
     expect(result).toEqual([first, last]);
   });
 
@@ -267,14 +246,14 @@ describe('replay boundary input sample selection', () => {
     const last = makeSample(40.78, -74.01, { timestampMs: 1000 });
     const session = { samples: [], firstSample: first, lastSample: last };
 
-    const result = getReplayBoundaryInputSamples(session);
+    const result = getRouteBoundaryInputSamples(session);
     expect(result).toEqual([last, first]);
   });
 
   it('returns only firstSample when lastSample is missing', () => {
     const first = makeSample(40.85, -73.97);
     const session = { samples: [], firstSample: first, lastSample: null };
-    expect(getReplayBoundaryInputSamples(session)).toEqual([first]);
+    expect(getRouteBoundaryInputSamples(session)).toEqual([first]);
   });
 
   it('returns only lastSample when firstSample is invalid', () => {
@@ -284,16 +263,16 @@ describe('replay boundary input sample selection', () => {
       firstSample: { latitude: null, longitude: null },
       lastSample: last,
     };
-    expect(getReplayBoundaryInputSamples(session)).toEqual([last]);
+    expect(getRouteBoundaryInputSamples(session)).toEqual([last]);
   });
 
   it('returns empty when both samples are missing', () => {
     const session = { samples: [], firstSample: null, lastSample: null };
-    expect(getReplayBoundaryInputSamples(session)).toEqual([]);
+    expect(getRouteBoundaryInputSamples(session)).toEqual([]);
   });
 
   it('returns empty for null session', () => {
-    expect(getReplayBoundaryInputSamples(null)).toEqual([]);
+    expect(getRouteBoundaryInputSamples(null)).toEqual([]);
   });
 });
 

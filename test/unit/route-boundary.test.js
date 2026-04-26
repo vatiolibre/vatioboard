@@ -3,6 +3,7 @@ import {
   buildBoundaryPoint,
   buildRouteBoundaryPlaceDisplay,
   enrichRouteBoundaryPlaces,
+  getRouteBoundaryInputSamples,
   getRouteBoundarySamples,
   isValidGeoSample,
   reverseGeocodeBoundarySample,
@@ -47,6 +48,30 @@ function movingSamples(startLat, startLon, count, opts = {}) {
   return samples;
 }
 
+function makePlaceResponse(label, city) {
+  return {
+    place: {
+      label,
+      city,
+      locality: city,
+      state: 'New Jersey',
+      countryCode: 'us',
+    },
+    data: null,
+    meta: null,
+  };
+}
+
+function mockPlaceResolver() {
+  return {
+    reversePlace: vi.fn(async ({ latitude }) => (
+      latitude > 40.82
+        ? makePlaceResponse('Fort Lee', 'Fort Lee')
+        : makePlaceResponse('West New York', 'West New York')
+    )),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // isValidGeoSample
 // ---------------------------------------------------------------------------
@@ -85,6 +110,36 @@ describe('isValidGeoSample', () => {
 // ---------------------------------------------------------------------------
 
 describe('getRouteBoundarySamples – parked lead-in', () => {
+  it('falls back to distinct first and last samples for a sparse start/end pair', () => {
+    const first = makeSample(40.8501, -73.9700, { speedMs: 0, timestampMs: 1000 });
+    const last = makeSample(40.7870, -74.0140, { speedMs: 7, timestampMs: 2000 });
+
+    const result = getRouteBoundarySamples([first, last]);
+
+    expect(result.strategy).toBe('fallback');
+    expect(result.startSample).toBe(first);
+    expect(result.endSample).toBe(last);
+    expect(result.startSample).not.toBe(result.endSample);
+    expect(result.startIndex).toBe(0);
+    expect(result.endIndex).toBe(1);
+  });
+
+  it('does not use a partial lookahead window when samples are shorter than requested', () => {
+    const samples = [
+      makeSample(40.8501, -73.9700, { speedMs: 0, timestampMs: 1000 }),
+      makeSample(40.8200, -73.9900, { speedMs: 6, timestampMs: 2000 }),
+      makeSample(40.7870, -74.0140, { speedMs: 8, timestampMs: 3000 }),
+    ];
+
+    const result = getRouteBoundarySamples(samples, { lookaheadWindow: 4 });
+
+    expect(result.strategy).toBe('fallback');
+    expect(result.startSample).toBe(samples[0]);
+    expect(result.endSample).toBe(samples[2]);
+    expect(result.startIndex).toBe(0);
+    expect(result.endIndex).toBe(2);
+  });
+
   it('skips stationary lead-in and picks the first moving sample', () => {
     const samples = [
       ...parkedSamples(4.600, -74.100, 5),
@@ -277,6 +332,23 @@ describe('buildBoundaryPoint', () => {
 // ---------------------------------------------------------------------------
 
 describe('getRouteBoundarySamples – accel boundary selection', () => {
+  it('falls back to launch and finish for very short distinct accel runs', () => {
+    const launch = makeSample(40.8501, -73.9700, { speedMs: 0, timestampMs: 1000 });
+    const finish = makeSample(40.7870, -74.0140, { speedMs: 30, timestampMs: 3000 });
+
+    const result = getRouteBoundarySamples([launch, finish], {
+      mode: 'accel',
+      movementThresholdM: 10,
+      speedThresholdMs: 0.5,
+      lookaheadWindow: 2,
+    });
+
+    expect(result.strategy).toBe('fallback');
+    expect(result.startSample).toBe(launch);
+    expect(result.endSample).toBe(finish);
+    expect(result.startSample).not.toBe(result.endSample);
+  });
+
   it('uses actual launch/finish boundary points for short accel runs', () => {
     // Simulate: short idle → fast acceleration → idle
     const samples = [
@@ -304,6 +376,70 @@ describe('getRouteBoundarySamples – accel boundary selection', () => {
     expect(result.startIndex).toBeGreaterThanOrEqual(2);
     // End should skip the coasting tail
     expect(result.endIndex).toBeLessThan(7);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getRouteBoundaryInputSamples – replay metadata and tail buffers
+// ---------------------------------------------------------------------------
+
+describe('getRouteBoundaryInputSamples', () => {
+  it('combines firstSample and lastSample with a tail-only sample buffer', () => {
+    const first = makeSample(40.8501, -73.9700, { speedMs: 0, timestampMs: 1000 });
+    const last = makeSample(40.7870, -74.0140, { speedMs: 7, timestampMs: 5000 });
+
+    const result = getRouteBoundaryInputSamples({
+      firstSample: first,
+      samples: [last],
+      lastSample: last,
+    });
+
+    expect(result).toEqual([first, last]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// enrichRouteBoundaryPlaces – sparse and tail-only route endpoints
+// ---------------------------------------------------------------------------
+
+describe('enrichRouteBoundaryPlaces – sparse distinct endpoints', () => {
+  it('reverse geocodes separate places for a stationary start and moving end sample', async () => {
+    const first = makeSample(40.8501, -73.9700, { speedMs: 0, timestampMs: 1000 });
+    const last = makeSample(40.7870, -74.0140, { speedMs: 7, timestampMs: 2000 });
+    const resolver = mockPlaceResolver();
+
+    const result = await enrichRouteBoundaryPlaces([first, last], resolver, {
+      mode: 'speed',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result.startPlace.raw.city).toBe('Fort Lee');
+    expect(result.endPlace.raw.city).toBe('West New York');
+    expect(result.startBoundaryPoint).toMatchObject({ latitude: first.latitude, sampleIndex: 0 });
+    expect(result.endBoundaryPoint).toMatchObject({ latitude: last.latitude, sampleIndex: 1 });
+    expect(result.canReuseBoundaryPlace).toBe(false);
+    expect(resolver.reversePlace).toHaveBeenCalledTimes(2);
+  });
+
+  it('enriches firstSample to lastSample when replay samples only contain the tail', async () => {
+    const first = makeSample(40.8501, -73.9700, { speedMs: 0, timestampMs: 1000 });
+    const last = makeSample(40.7870, -74.0140, { speedMs: 7, timestampMs: 5000 });
+    const resolver = mockPlaceResolver();
+    const samples = getRouteBoundaryInputSamples({
+      firstSample: first,
+      samples: [last],
+      lastSample: last,
+    });
+
+    const result = await enrichRouteBoundaryPlaces(samples, resolver, {
+      mode: 'speed',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result.startPlace.raw.city).toBe('Fort Lee');
+    expect(result.endPlace.raw.city).toBe('West New York');
+    expect(result.startPlace).not.toEqual(result.endPlace);
+    expect(resolver.reversePlace).toHaveBeenCalledTimes(2);
   });
 });
 

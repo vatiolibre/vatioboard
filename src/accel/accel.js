@@ -26,7 +26,6 @@ import {
 } from '../shared/cloud-sync.js';
 import { createPlaceResolver } from '../shared/place-resolver.js';
 import {
-  enrichRouteBoundaryPlaces,
   getRouteBoundarySamples,
   reverseGeocodeBoundarySample,
 } from '../shared/route-boundary.js';
@@ -1238,10 +1237,7 @@ export const initPromise = (function () {
         if (!nextRun.endPlace && boundarySamples.endSample) {
           var sameCoords = Boolean(
             nextRun.startPlace &&
-            boundarySamples.startSample &&
-            boundarySamples.endSample &&
-            boundarySamples.startSample.latitude === boundarySamples.endSample.latitude &&
-            boundarySamples.startSample.longitude === boundarySamples.endSample.longitude
+            boundarySamples.canReuseBoundaryPlace
           );
 
           if (sameCoords) {
