@@ -56,8 +56,8 @@ body.replay-page{
     touch-action: pan-y pinch-zoom;
 }
 
-html.replay-page *,
-body.replay-page *{
+.replay-app,
+.replay-app *{
     touch-action: auto;
 }
 
@@ -77,6 +77,12 @@ body.replay-page{
 
 body.replay-page.replay-graph-sheet-open{
     overflow: hidden;
+}
+
+body.replay-page .vb-floating-drag-handle,
+body.replay-page .floating-dock,
+body.replay-page .milkdrop-resize-handle{
+    touch-action: none;
 }
 
 .replay-app{

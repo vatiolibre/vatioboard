@@ -69,8 +69,8 @@ body.accel-page{
     touch-action: pan-y pinch-zoom;
 }
 
-html.accel-page *,
-body.accel-page *{
+.accel-app,
+.accel-app *{
     touch-action: auto;
 }
 
@@ -82,6 +82,12 @@ body.accel-page{
     user-select: none;
     -webkit-user-select: none;
     -webkit-touch-callout: none;
+}
+
+body.accel-page .vb-floating-drag-handle,
+body.accel-page .floating-dock,
+body.accel-page .milkdrop-resize-handle{
+    touch-action: none;
 }
 
 .accel-app{
