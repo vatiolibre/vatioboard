@@ -52,8 +52,8 @@ body.library-page{
     touch-action: pan-y pinch-zoom;
 }
 
-html.library-page *,
-body.library-page *{
+.library-app,
+.library-app *{
     touch-action: auto;
 }
 
@@ -71,17 +71,23 @@ body.library-page{
     -webkit-touch-callout: none;
 }
 
-body.library-page button,
-body.library-page a,
-body.library-page summary{
+.library-app button,
+.library-app a,
+.library-app summary{
     touch-action: manipulation;
 }
 
-body.library-page input,
-body.library-page textarea,
-body.library-page select{
+.library-app input,
+.library-app textarea,
+.library-app select{
     user-select: text;
     -webkit-user-select: text;
+}
+
+body.library-page .vb-floating-drag-handle,
+body.library-page .floating-dock,
+body.library-page .milkdrop-resize-handle{
+    touch-action: none;
 }
 
 .library-app{
