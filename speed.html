@@ -517,7 +517,21 @@
                     <span class="speed-alert-panel-kicker" data-i18n="alerts">Alerts</span>
                     <strong id="alertPanelStatus">Off</strong>
                   </div>
-                  <button id="closeAlertPanel" type="button" class="speed-alert-done" data-i18n="done">Done</button>
+                  <button
+                    id="closeAlertPanel"
+                    type="button"
+                    class="speed-alert-close"
+                    aria-label="Close"
+                    title="Close"
+                    data-i18n-aria="close"
+                    data-i18n-title="close"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M18 6L6 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M6 6l12 12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <span class="sr-only" data-i18n="close">Close</span>
+                  </button>
                 </div>
               </div>
 

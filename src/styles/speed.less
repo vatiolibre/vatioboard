@@ -1158,14 +1158,15 @@ body.speed-page.alert-panel-open .speed-main{
 }
 
 .speed-alert-backdrop{
-    position: absolute;
+    position: fixed;
     inset: 0;
-    z-index: 4;
-    border-radius: inherit;
+    z-index: 39;
+    border-radius: 0;
     background:
-      linear-gradient(180deg, rgba(7, 12, 24, 0.12), rgba(7, 12, 24, 0.3));
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
+      radial-gradient(circle at 72% 18%, rgba(16, 185, 129, 0.16), transparent 30%),
+      linear-gradient(180deg, rgba(7, 12, 24, 0.18), rgba(7, 12, 24, 0.38));
+    backdrop-filter: blur(10px) saturate(1.08);
+    -webkit-backdrop-filter: blur(10px) saturate(1.08);
 }
 
 .speed-alert-backdrop[hidden]{
@@ -1173,26 +1174,50 @@ body.speed-page.alert-panel-open .speed-main{
 }
 
 .speed-alert-panel{
-    position: absolute;
-    left: 18px;
-    right: 18px;
-    bottom: 18px;
-    z-index: 5;
+    position: fixed;
+    top: max(72px, calc(env(safe-area-inset-top) + 72px));
+    right: max(16px, calc(env(safe-area-inset-right) + 16px));
+    bottom: max(16px, calc(env(safe-area-inset-bottom) + 16px));
+    left: auto;
+    z-index: 40;
     display: grid;
-    gap: 12px;
-    padding: 14px;
-    max-height: calc(100% - 36px);
-    border: 1px solid color-mix(in srgb, var(--speed-panel-border) 92%, transparent);
-    border-radius: calc(var(--radius-sm) + 6px);
-    background: var(--speed-alert-panel);
+    gap: 10px;
+    align-content: start;
+    width: min(430px, calc(100vw - 32px));
+    padding: 10px;
+    max-height: none;
+    border: 1px solid color-mix(in srgb, var(--speed-panel-border) 72%, rgba(255, 255, 255, 0.24));
+    border-radius: calc(var(--radius) + 8px);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--speed-alert-panel) 96%, var(--speed-surface-strong) 4%),
+        color-mix(in srgb, var(--speed-alert-panel) 100%, transparent)
+      );
     box-shadow:
-      0 24px 50px rgba(15, 23, 42, 0.18),
+      0 24px 56px rgba(15, 23, 42, 0.24),
       inset 0 0 0 1px var(--inner-ring);
     overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(22px) saturate(1.08);
+    -webkit-backdrop-filter: blur(22px) saturate(1.08);
+    -webkit-tap-highlight-color: transparent;
+}
+
+.speed-alert-panel::-webkit-scrollbar{
+    width: 8px;
+}
+
+.speed-alert-panel::-webkit-scrollbar-track{
+    background: transparent;
+}
+
+.speed-alert-panel::-webkit-scrollbar-thumb{
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--muted) 28%, transparent);
+    background-clip: padding-box;
 }
 
 .speed-alert-panel[hidden]{
@@ -1200,10 +1225,13 @@ body.speed-page.alert-panel-open .speed-main{
 }
 
 .speed-alert-panel-header{
+    position: relative;
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: 12px;
+    min-height: 40px;
+    padding: 2px 44px 2px 2px;
 }
 
 .speed-alert-copy{
@@ -1214,15 +1242,15 @@ body.speed-page.alert-panel-open .speed-main{
 .speed-alert-panel-kicker{
     font-size: 11px;
     font-weight: 800;
-    letter-spacing: 0.12em;
+    letter-spacing: 0;
     text-transform: uppercase;
     color: var(--muted);
 }
 
 .speed-alert-panel-header strong{
-    font-size: 24px;
+    font-size: 23px;
     line-height: 1;
-    letter-spacing: -0.03em;
+    letter-spacing: 0;
     color: var(--btn-fg);
 }
 
@@ -1231,29 +1259,80 @@ body.speed-page.alert-panel-open .speed-main{
     gap: 0;
 }
 
+.speed-alert-close{
+    position: absolute;
+    top: 0;
+    right: 0;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    min-width: 36px;
+    height: 36px;
+    min-height: 36px;
+    padding: 0;
+    border: 1px solid color-mix(in srgb, var(--speed-panel-border) 88%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--speed-surface-strong) 68%, transparent);
+    color: color-mix(in srgb, var(--muted) 78%, var(--btn-fg) 22%);
+    box-shadow: 0 10px 20px rgba(15, 23, 42, 0.14);
+    transition:
+      background-color 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease,
+      box-shadow 180ms ease,
+      opacity 160ms ease;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.speed-alert-close:hover{
+    border-color: color-mix(in srgb, var(--speed-accent) 36%, var(--speed-panel-border));
+    background: color-mix(in srgb, var(--speed-surface-strong) 84%, var(--speed-accent-soft) 16%);
+    color: var(--btn-fg);
+}
+
+.speed-alert-close:focus-visible{
+    outline: none;
+    box-shadow:
+      0 0 0 3px color-mix(in srgb, var(--speed-accent) 22%, transparent),
+      0 10px 20px rgba(15, 23, 42, 0.14);
+}
+
+.speed-alert-close svg{
+    width: 16px;
+    height: 16px;
+}
+
 .speed-alert-section{
     display: grid;
     gap: 10px;
+    padding: 12px;
+    border: 1px solid color-mix(in srgb, var(--speed-panel-border) 76%, transparent);
+    border-radius: calc(var(--radius-sm) + 6px);
+    background: color-mix(in srgb, var(--speed-surface-strong) 62%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--inner-ring) 70%, transparent);
 }
 
 .speed-alert-section + .speed-alert-section{
     padding-top: 12px;
-    border-top: 1px solid color-mix(in srgb, var(--speed-panel-border) 88%, transparent);
 }
 
 .speed-alert-settings{
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
-    padding-top: 12px;
-    border-top: 1px solid color-mix(in srgb, var(--speed-panel-border) 88%, transparent);
+    padding: 12px;
+    border: 1px solid color-mix(in srgb, var(--speed-panel-border) 76%, transparent);
+    border-radius: calc(var(--radius-sm) + 6px);
+    background: color-mix(in srgb, var(--speed-surface-strong) 54%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--inner-ring) 70%, transparent);
 }
 
 .speed-alert-settings-title{
     grid-column: 1 / -1;
     font-size: 11px;
     font-weight: 800;
-    letter-spacing: 0.14em;
+    letter-spacing: 0;
     text-transform: uppercase;
     color: var(--muted);
 }
@@ -1277,7 +1356,7 @@ body.speed-page.alert-panel-open .speed-main{
 .speed-alert-setting-label{
     font-size: 10px;
     font-weight: 800;
-    letter-spacing: 0.12em;
+    letter-spacing: 0;
     text-transform: uppercase;
     color: var(--muted);
     justify-self: center;
@@ -1291,11 +1370,19 @@ body.speed-page.alert-panel-open .speed-main{
 
 .speed-alert-switch{
     width: 100%;
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--speed-chip-bg) 86%, transparent);
 }
 
 .speed-alert-switch button{
     flex: 1 1 0;
     min-width: 0;
+    min-height: 42px;
+    border-radius: 12px;
+    transition:
+      background-color 160ms ease,
+      color 160ms ease,
+      box-shadow 180ms ease;
 }
 
 .speed-alert-note{
@@ -1323,50 +1410,93 @@ body.speed-page.alert-panel-open .speed-main{
     gap: 8px;
 }
 
+.speed-alert-panel button:not(.speed-alert-close){
+    min-height: 44px;
+    border-radius: 14px;
+    transition:
+      background-color 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease,
+      box-shadow 180ms ease,
+      opacity 160ms ease;
+}
+
 .speed-alert-toggle{
-    background: var(--btn-active-bg);
-    color: var(--btn-active-fg);
-    border-color: color-mix(in srgb, var(--btn-active-bg) 35%, var(--speed-panel-border));
+    background: linear-gradient(135deg, var(--speed-accent), color-mix(in srgb, var(--speed-accent) 72%, #0ea5e9 28%));
+    color: #ffffff;
+    border-color: color-mix(in srgb, var(--speed-accent) 44%, transparent);
+    box-shadow: 0 10px 22px color-mix(in srgb, var(--speed-accent) 22%, transparent);
+}
+
+.speed-alert-toggle:hover{
+    background: linear-gradient(135deg, color-mix(in srgb, var(--speed-accent) 90%, #ffffff 10%), color-mix(in srgb, var(--speed-accent) 66%, #0ea5e9 34%));
+}
+
+.speed-alert-toggle[aria-pressed="true"]{
+    background: linear-gradient(135deg, var(--speed-alert), color-mix(in srgb, var(--speed-alert) 72%, #f59e0b 28%));
+    border-color: color-mix(in srgb, var(--speed-alert) 44%, transparent);
+    color: #ffffff;
+    box-shadow: 0 10px 22px color-mix(in srgb, var(--speed-alert) 22%, transparent);
+}
+
+.speed-alert-toggle[aria-pressed="true"]:hover{
+    background: linear-gradient(135deg, color-mix(in srgb, var(--speed-alert) 90%, #ffffff 10%), color-mix(in srgb, var(--speed-alert) 68%, #f59e0b 32%));
 }
 
 .speed-alert-secondary{
-    background: color-mix(in srgb, var(--speed-surface) 92%, transparent);
+    background: color-mix(in srgb, var(--speed-surface-strong) 66%, transparent);
+    border-color: color-mix(in srgb, var(--speed-panel-border) 82%, transparent);
 }
 
 .speed-alert-stepper{
     display: grid;
-    grid-template-columns: 56px minmax(0, 1fr) 56px;
-    gap: 10px;
+    grid-template-columns: 54px minmax(0, 1fr) 54px;
+    gap: 8px;
     align-items: center;
 }
 
 .speed-alert-stepper button{
-    width: 56px;
-    height: 56px;
+    width: 54px;
+    height: 54px;
     padding: 0;
-    border-radius: 18px;
-    font-size: 32px;
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--speed-surface-strong) 72%, transparent);
+    border-color: color-mix(in srgb, var(--speed-panel-border) 82%, transparent);
+    font-size: 30px;
     line-height: 1;
     touch-action: manipulation;
+}
+
+.speed-alert-stepper button:hover{
+    border-color: color-mix(in srgb, var(--speed-accent) 34%, var(--speed-panel-border));
+    background: color-mix(in srgb, var(--speed-surface-strong) 80%, var(--speed-accent-soft) 20%);
 }
 
 .speed-alert-limit-display{
     display: grid;
     justify-items: center;
-    gap: 4px;
-    min-height: 78px;
-    padding: 12px 14px;
-    border: 1px solid var(--speed-panel-border);
-    border-radius: calc(var(--radius-sm) + 6px);
-    background: color-mix(in srgb, var(--speed-surface-strong) 94%, transparent);
-    box-shadow: inset 0 0 0 1px var(--inner-ring);
+    align-content: center;
+    gap: 2px;
+    min-height: 72px;
+    padding: 10px 12px;
+    border: 1px solid color-mix(in srgb, var(--speed-panel-border) 78%, transparent);
+    border-radius: 18px;
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--speed-surface-strong) 88%, transparent),
+        color-mix(in srgb, var(--speed-surface) 76%, transparent)
+      );
+    box-shadow:
+      inset 0 0 0 1px var(--inner-ring),
+      0 12px 24px rgba(15, 23, 42, 0.08);
 }
 
 #alertValue{
-    font-size: clamp(34px, 7vw, 46px);
+    font-size: 42px;
     line-height: 0.9;
     font-weight: 900;
-    letter-spacing: -0.05em;
+    letter-spacing: 0;
     color: var(--btn-fg);
 }
 
@@ -1387,6 +1517,8 @@ body.speed-page.alert-panel-open .speed-main{
     padding: 10px 8px;
     font-size: 13px;
     line-height: 1.2;
+    border-color: color-mix(in srgb, var(--speed-panel-border) 82%, transparent);
+    background: color-mix(in srgb, var(--speed-surface-strong) 62%, transparent);
     touch-action: manipulation;
 }
 
@@ -1834,6 +1966,7 @@ body.speed-page.alert-panel-open .speed-main{
         left: 12px;
         right: 12px;
         bottom: 12px;
+        width: auto;
         padding: 12px;
         gap: 10px;
     }
@@ -1933,6 +2066,7 @@ body.speed-page.alert-panel-open .speed-main{
           10px
           max(10px, calc(env(safe-area-inset-bottom) + 10px));
         z-index: 40;
+        width: auto;
         gap: 10px;
         padding: 12px;
         max-height: none;
@@ -1955,6 +2089,7 @@ body.speed-page.alert-panel-open .speed-main{
 
     .speed-alert-section{
         gap: 8px;
+        padding: 10px;
     }
 
     .speed-alert-panel-header strong{
@@ -1963,7 +2098,7 @@ body.speed-page.alert-panel-open .speed-main{
 
     .speed-alert-settings{
         gap: 8px;
-        padding-top: 10px;
+        padding: 10px;
     }
 
     .speed-alert-stepper{
@@ -1984,7 +2119,7 @@ body.speed-page.alert-panel-open .speed-main{
     }
 
     #alertValue{
-        font-size: clamp(28px, 8vw, 38px);
+        font-size: 36px;
     }
 
     .speed-alert-presets{

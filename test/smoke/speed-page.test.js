@@ -193,6 +193,8 @@ describe('speed.html smoke', () => {
     expect(document.getElementById('quickAlertConfig').getAttribute('aria-label')).toBe(
       'Configure alerts'
     );
+    expect(document.getElementById('closeAlertPanel').getAttribute('aria-label')).toBe('Close');
+    expect(document.querySelector('#closeAlertPanel.speed-alert-close svg')).toBeTruthy();
     expect(document.querySelector('#quickAlertConfig .toolbar-recording-glyph svg')).toBeTruthy();
     expect(document.getElementById('resetTrip').getAttribute('aria-label')).toBe('Reset trip');
     expect(document.querySelector('#resetTrip .toolbar-recording-glyph svg')).toBeTruthy();
