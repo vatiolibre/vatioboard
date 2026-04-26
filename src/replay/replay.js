@@ -247,7 +247,7 @@ const state = {
   initialSelectionPending: true,
   summary: getReplaySummary(null),
   highlights: getReplayHighlights(null),
-  playbackRate: 4,
+  playbackRate: 1000,
   dashboardAxis: 'time',
   elapsedMs: 0,
   playing: false,
