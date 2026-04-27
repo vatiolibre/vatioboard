@@ -90,9 +90,16 @@ body.accel-page .milkdrop-resize-handle{
     touch-action: none;
 }
 
+body.accel-page #app,
+body.accel-page #app-view,
+body.accel-page .accel-app{
+    overflow: visible;
+}
+
 .accel-app{
     min-height: 100vh;
     min-height: 100dvh;
+    height: auto;
 }
 
 .accel-app > header{
@@ -283,10 +290,15 @@ body.accel-page .milkdrop-resize-handle{
 }
 
 .accel-main{
-    flex: 1;
+    flex: 1 0 auto;
     display: flex;
     flex-direction: column;
     gap: 12px;
+    min-height: auto;
+    overflow: visible;
+    overscroll-behavior-y: auto;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
     padding-top: clamp(10px, 1.2vw, 16px);
     padding-left: max(12px, env(safe-area-inset-left));
     padding-right: max(12px, env(safe-area-inset-right));
@@ -2411,6 +2423,35 @@ button:disabled{
     .accel-sheet-setup .accel-sheet-section:first-child,
     .accel-sheet-results .accel-sheet-section:first-child{
         grid-column: auto;
+    }
+}
+
+@media (max-width: 799.98px){
+    html.accel-page,
+    body.accel-page{
+        height: 100%;
+        min-height: 100%;
+        overflow: hidden;
+        overscroll-behavior: none;
+    }
+
+    body.accel-page #app,
+    body.accel-page #app-view,
+    body.accel-page .accel-app{
+        height: 100vh;
+        height: 100dvh;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .accel-main{
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-x: hidden;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-y;
     }
 }
 
