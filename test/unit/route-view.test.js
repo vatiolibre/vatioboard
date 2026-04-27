@@ -104,6 +104,45 @@ describe("createRouteView", () => {
     secondMount.unmount();
   });
 
+  it("can preserve stateful route DOM across remounts for singleton controllers", async () => {
+    const root = document.getElementById("root");
+    const controller = {
+      mountRoute: vi.fn(),
+      unmountRoute: vi.fn(),
+    };
+    const loadModule = vi.fn(() => Promise.resolve(controller));
+    const view = createRouteView({
+      pageName: "stateful",
+      template: '<button id="stable-button" type="button">Stable</button>',
+      meta: { bodyClass: "stateful-page" },
+      loadModule,
+      mountController: (module) => module.mountRoute(),
+      unmountController: (module) => module.unmountRoute(),
+      preserveDom: true,
+    });
+
+    const firstMount = await view.mount(root, {});
+    const firstButton = root.querySelector("#stable-button");
+    firstButton.dataset.bound = "true";
+    firstButton.textContent = "Still wired";
+    firstMount.unmount();
+
+    expect(root.children).toHaveLength(0);
+    expect(document.body.classList.contains("stateful-page")).toBe(false);
+
+    const secondMount = await view.mount(root, {});
+    const secondButton = root.querySelector("#stable-button");
+
+    expect(secondButton).toBe(firstButton);
+    expect(secondButton.dataset.bound).toBe("true");
+    expect(secondButton.textContent).toBe("Still wired");
+    expect(loadModule).toHaveBeenCalledTimes(1);
+    expect(controller.mountRoute).toHaveBeenCalledTimes(2);
+    expect(controller.unmountRoute).toHaveBeenCalledTimes(1);
+
+    secondMount.unmount();
+  });
+
   it("skips controller mount and clears inserted DOM when a route is aborted during import", async () => {
     const root = document.getElementById("root");
     const controller = {
@@ -138,6 +177,40 @@ describe("createRouteView", () => {
     expect(root.children).toHaveLength(0);
   });
 
+  it("does not let stale async cleanup remove a newer route's DOM", async () => {
+    const root = document.getElementById("root");
+    const controller = {
+      mountRoute: vi.fn(),
+      unmountRoute: vi.fn(),
+    };
+    const loadModule = createDeferred();
+    const routeController = new AbortController();
+    const view = createRouteView({
+      pageName: "slow",
+      template: '<section id="slow-route">Slow route</section>',
+      meta: { bodyClass: "slow-page" },
+      loadModule: () => loadModule.promise,
+      mountController: (module) => module.mountRoute(),
+      unmountController: (module) => module.unmountRoute(),
+    });
+
+    const mountedPromise = view.mount(root, { routeSignal: routeController.signal });
+    expect(root.querySelector("#slow-route")).toBeTruthy();
+
+    const nextRoute = document.createElement("section");
+    nextRoute.id = "next-route";
+    nextRoute.textContent = "Next route";
+    root.replaceChildren(nextRoute);
+
+    routeController.abort();
+    loadModule.resolve(controller);
+    await mountedPromise;
+
+    expect(root.querySelector("#next-route")?.textContent).toBe("Next route");
+    expect(controller.mountRoute).not.toHaveBeenCalled();
+    expect(controller.unmountRoute).not.toHaveBeenCalled();
+  });
+
   it("runs controller result unmount and configured unmount once", async () => {
     const root = document.getElementById("root");
     const resultUnmount = vi.fn();
@@ -159,6 +232,44 @@ describe("createRouteView", () => {
 
     expect(resultUnmount).toHaveBeenCalledTimes(1);
     expect(controller.unmountRoute).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes route context fields to mount and unmount controllers", async () => {
+    const root = document.getElementById("root");
+    const routeSignal = new AbortController().signal;
+    const controller = {
+      mountRoute: vi.fn(),
+      unmountRoute: vi.fn(),
+    };
+    const view = createRouteView({
+      pageName: "context-route",
+      template: '<section id="route-panel">Route panel</section>',
+      loadModule: () => Promise.resolve(controller),
+      mountController: (module, routeContext) => module.mountRoute(routeContext),
+      unmountController: (module, routeContext) => module.unmountRoute(routeContext),
+    });
+
+    const mounted = await view.mount(root, {
+      routeSignal,
+      route: { path: "/context" },
+    });
+    mounted.unmount();
+
+    expect(controller.mountRoute).toHaveBeenCalledWith(expect.objectContaining({
+      root,
+      signal: routeSignal,
+      pageName: "context-route",
+      context: expect.objectContaining({
+        route: { path: "/context" },
+        routeSignal,
+      }),
+    }));
+    expect(controller.mountRoute.mock.calls[0][0].cleanup).toEqual(expect.objectContaining({
+      add: expect.any(Function),
+      addEventListener: expect.any(Function),
+      run: expect.any(Function),
+    }));
+    expect(controller.unmountRoute.mock.calls[0][0]).toBe(controller.mountRoute.mock.calls[0][0]);
   });
 
   it("cleans route DOM and metadata when controller mount fails", async () => {

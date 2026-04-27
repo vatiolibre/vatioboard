@@ -102,8 +102,10 @@ export function createRouteView({
   loadModule,
   mountController,
   unmountController,
+  preserveDom = false,
 }) {
   let modulePromise = null;
+  let preservedDom = null;
 
   return {
     async mount(root, context = {}) {
@@ -113,6 +115,7 @@ export function createRouteView({
       const cleanup = createCleanupStack();
       let routeModule = null;
       let controllerResult = null;
+      let routeNodes = [];
       const mountContext = {
         root,
         context,
@@ -121,10 +124,31 @@ export function createRouteView({
         pageName,
       };
 
-      cleanup.add(() => root.replaceChildren());
+      function cleanupRouteDom() {
+        const ownedNodes = routeNodes.filter((node) => node.parentNode === root);
+        if (!ownedNodes.length) return;
+
+        if (preserveDom) {
+          preservedDom = document.createDocumentFragment();
+          for (const node of ownedNodes) {
+            preservedDom.append(node);
+          }
+          return;
+        }
+
+        for (const node of ownedNodes) {
+          node.remove();
+        }
+      }
+
+      cleanup.add(cleanupRouteDom);
       cleanup.add(setRouteMeta(meta));
       const templateElement = getTemplate(pageName, template);
-      root.replaceChildren(templateElement.content.cloneNode(true));
+      const nextRouteDom =
+        preserveDom && preservedDom ? preservedDom : templateElement.content.cloneNode(true);
+      root.replaceChildren(nextRouteDom);
+      preservedDom = null;
+      routeNodes = Array.from(root.childNodes);
 
       try {
         if (!modulePromise) {

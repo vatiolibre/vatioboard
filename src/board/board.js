@@ -33,14 +33,13 @@ import {
   CLOUD_SYNC_ENTITY_TYPES,
   queueCloudSyncChange,
   startCloudSyncLoop,
-  syncCloudRecords,
 } from "../shared/cloud-sync.js";
 import {
   CLOUD_LIBRARY_TAB_KEYS,
   cloudLibraryResources,
 } from "../shared/cloud-library-resources.js";
 import { ensureSingleTabOwnership, SINGLE_TAB_OWNERSHIP_EVENT } from "../shared/single-tab.js";
-import { initFloatingTools } from "../shared/floating-tools.js";
+import { getFloatingTools, initFloatingTools } from "../shared/floating-tools.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
 import { showConfirmDialog, showPromptDialog } from "../shared/ui/confirm-dialog.js";
 import {
@@ -101,6 +100,7 @@ export function unmountBoardRoute() {
 function createMountedBoardController({
   root = document,
   cleanup: routeCleanup = null,
+  signal,
 } = {}) {
   const cleanup = createCleanupStack();
   routeCleanup?.add(() => cleanup.run());
@@ -125,7 +125,7 @@ function syncLangToggleButtons(langCode){
 
 syncLangToggleButtons(getLang());
 langToggleButtons.forEach((button) => {
-  button.addEventListener("click", () => {
+  cleanup.addEventListener(button, "click", () => {
     const newLang = toggleLang();
     syncLangToggleButtons(newLang);
   });
@@ -159,20 +159,24 @@ applyButtonIcon(openEnergyBtn, IconEnergy);
 applyButtonIcon(toolsMenuBtn, IconPages);
 
 const toolsMenu = initToolsMenu({ button: toolsMenuBtn, list: toolsMenuList });
+cleanup.addDisposable(toolsMenu);
 if (!isSpaRuntime) initBackendAuthControllers();
 
 // Shared floating tools live outside route-owned DOM in the SPA shell.
-const { calcWidget, energyWidget } = initFloatingTools();
+const floatingTools = isSpaRuntime ? getFloatingTools() : initFloatingTools();
+const calcWidget = floatingTools?.calcWidget || null;
+const energyWidget = floatingTools?.energyWidget || null;
 
 const bindToggle = (btn, widget) => {
-  btn?.addEventListener("click", () => {
-    widget.toggle();
+  if (!btn || !widget) return;
+  cleanup.addEventListener(btn, "click", () => {
+    widget.toggle?.();
     toolsMenu.close();
   });
 };
 
 const bindNavigation = (btn, href) => {
-  btn?.addEventListener("click", () => {
+  cleanup.addEventListener(btn, "click", () => {
     toolsMenu.close();
     navigateToAppRoute(href);
   });
@@ -288,20 +292,20 @@ if (!isSpaRuntime) {
       if (colorPopup) colorPopup.hidden = true;
     }
 
-    colorTriggerBtn?.addEventListener("click", openColorPopup);
-    colorPopupClose?.addEventListener("click", closeColorPopup);
-    colorPopup?.addEventListener("click", (e) => {
+    cleanup.addEventListener(colorTriggerBtn, "click", openColorPopup);
+    cleanup.addEventListener(colorPopupClose, "click", closeColorPopup);
+    cleanup.addEventListener(colorPopup, "click", (e) => {
     if (e.target === colorPopup) closeColorPopup();
     });
-    swatchesEl?.addEventListener("click", (event) => {
+    cleanup.addEventListener(swatchesEl, "click", (event) => {
       if (!event.target?.closest?.(".swatch")) return;
       event.preventDefault();
       event.stopPropagation();
     });
 
-    [rRange, gRange, bRange].forEach((el) => el?.addEventListener("input", setInkFromSliders));
+    [rRange, gRange, bRange].forEach((el) => cleanup.addEventListener(el, "input", setInkFromSliders));
 
-    hexInput?.addEventListener("change", () => {
+    cleanup.addEventListener(hexInput, "change", () => {
       const h = normalizeHex(hexInput.value);
       if (h) {
         setInkRaw(h);
@@ -324,6 +328,10 @@ if (!isSpaRuntime) {
     let initialized = false;
     const commandHistory = [];
     const redoHistory = [];
+
+    function isRouteInactive(){
+      return Boolean(signal?.aborted || (isSpaRuntime && !viewMounted));
+    }
 
     // Theme-aware colors from CSS variables
     function cssVar(name){
@@ -501,9 +509,12 @@ if (!isSpaRuntime) {
     }
 
     async function hydrateBoardDrawing(){
+      if (isRouteInactive()) return;
       const restoreRevision = boardStateRevision;
       const pendingOpen = await consumeBoardDocumentOpen();
+      if (isRouteInactive()) return;
       const storedDrawing = pendingOpen?.payload || await loadBoardDrawing();
+      if (isRouteInactive()) return;
 
       if (boardStateRevision !== restoreRevision || drawing || commandHistory.length > 0 || redoHistory.length > 0) {
         return;
@@ -840,7 +851,7 @@ if (!isSpaRuntime) {
 
         b.style.background = hex;
 
-        b.addEventListener("click", () => {
+        cleanup.addEventListener(b, "click", () => {
           setInkRaw(hex);
         });
 
@@ -1365,30 +1376,30 @@ if (!isSpaRuntime) {
     }
 
     // Events
-    canvas.addEventListener("pointerdown", (e)=>{ e.preventDefault(); start(e); });
-    canvas.addEventListener("pointermove", (e)=>{ e.preventDefault(); move(e); });
-    canvas.addEventListener("pointerup",   (e)=>{ e.preventDefault(); end(e); });
-    canvas.addEventListener("pointercancel",(e)=>{ e.preventDefault(); end(e); });
-    canvas.addEventListener("lostpointercapture", (e) => { end(e); });
-    canvas.addEventListener("contextmenu",(e)=>e.preventDefault());
-    canvas.addEventListener("selectstart", (e) => e.preventDefault());
-    canvas.addEventListener("dragstart", (e) => e.preventDefault());
+    cleanup.addEventListener(canvas, "pointerdown", (e)=>{ e.preventDefault(); start(e); });
+    cleanup.addEventListener(canvas, "pointermove", (e)=>{ e.preventDefault(); move(e); });
+    cleanup.addEventListener(canvas, "pointerup",   (e)=>{ e.preventDefault(); end(e); });
+    cleanup.addEventListener(canvas, "pointercancel",(e)=>{ e.preventDefault(); end(e); });
+    cleanup.addEventListener(canvas, "lostpointercapture", (e) => { end(e); });
+    cleanup.addEventListener(canvas, "contextmenu",(e)=>e.preventDefault());
+    cleanup.addEventListener(canvas, "selectstart", (e) => e.preventDefault());
+    cleanup.addEventListener(canvas, "dragstart", (e) => e.preventDefault());
     cleanup.addEventListener(document, "selectstart", preventSelectionWhileDrawing);
 
-    penBtn.addEventListener("click", ()=>{ tool="pen"; setActive(); });
-    eraseBtn.addEventListener("click", ()=>{ tool="eraser"; setActive(); });
-    undoBtn?.addEventListener("click", undo);
-    redoBtn?.addEventListener("click", redo);
+    cleanup.addEventListener(penBtn, "click", ()=>{ tool="pen"; setActive(); });
+    cleanup.addEventListener(eraseBtn, "click", ()=>{ tool="eraser"; setActive(); });
+    cleanup.addEventListener(undoBtn, "click", undo);
+    cleanup.addEventListener(redoBtn, "click", redo);
 
-    sizeEl.addEventListener("input", syncSizePreview);
+    cleanup.addEventListener(sizeEl, "input", syncSizePreview);
 
-    createNewBtn?.addEventListener("click", () => {
+    cleanup.addEventListener(createNewBtn, "click", () => {
       void createNewBoard();
     });
-    saveBtn?.addEventListener("click", () => {
+    cleanup.addEventListener(saveBtn, "click", () => {
       void saveBoardDocument();
     });
-    deleteBoardBtn?.addEventListener("click", () => {
+    cleanup.addEventListener(deleteBoardBtn, "click", () => {
       void deleteBoardDocument();
     });
     cleanup.addEventListener(window, BACKEND_AUTH_STATE_EVENT, handleBackendAuthStateChange);
@@ -1427,6 +1438,7 @@ if (!isSpaRuntime) {
     });
 
     cleanup.addEventListener(window, CLOUD_SYNC_APPLIED_EVENT, (event) => {
+      if (isRouteInactive()) return;
       if (event?.detail?.entityType !== CLOUD_SYNC_ENTITY_TYPES.boardDrawing) return;
       void hydrateBoardDrawing();
     });
@@ -1450,10 +1462,7 @@ if (!isSpaRuntime) {
       }
 
       await hydrateBoardDrawing();
-      if (!isSpaRuntime) startCloudSyncLoop({ immediate: false });
-      void syncCloudRecords().catch(() => {
-        // Keep the page usable with the local drawing if sync is temporarily unavailable.
-      });
+      if (!isSpaRuntime) startCloudSyncLoop({ immediate: true });
     })();
     mountBoardController();
 

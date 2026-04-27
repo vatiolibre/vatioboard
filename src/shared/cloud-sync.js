@@ -21,7 +21,7 @@ import {
 } from "./backend-auth.js";
 import { hasSingleTabOwnership, SINGLE_TAB_OWNERSHIP_EVENT } from "./single-tab.js";
 import { createStorageCapability } from "./storage-capability.js";
-import { loadJson, loadText, saveJson, saveText } from "./storage.js";
+import { loadJson, loadText, removeStoredValue, saveJson, saveText } from "./storage.js";
 
 export const CLOUD_SYNC_ENTITY_TYPES = Object.freeze({
   accelRun: "accel_run",
@@ -53,6 +53,8 @@ const CLOUD_SYNC_PULL_LIMIT = 100;
 const CLOUD_SYNC_PUSH_BATCH_SIZE = 25;
 const CLOUD_SYNC_RETRY_MS = 5000;
 const CLOUD_SYNC_BOARD_RECORD_ID = "primary";
+const MAX_PULL_PAGES_PER_PASS = 20;
+const CLOUD_SYNC_IMMEDIATE_REQUEST_THROTTLE_MS = 1000;
 
 const syncStore = createIndexedJsonKeyValueStore({
   dbName: CLOUD_SYNC_DB_NAME,
@@ -76,6 +78,8 @@ let releaseSyncLock = null;
 let activeSyncAbortController = null;
 let backendAuthenticated = null;
 let logoutPending = false;
+const suppressedPayloadDownloadWarnings = new Set();
+let lastImmediateSyncRequestAtMs = 0;
 let cloudSyncStatus = {
   state: CLOUD_SYNC_STATUS_STATES.syncing,
   reason: "starting",
@@ -100,6 +104,22 @@ function normalizePositiveInteger(value, fallback = 0) {
 
 function getEntityKey(entityType, recordId) {
   return `${String(entityType || "").trim()}:${String(recordId || "").trim()}`;
+}
+
+function isCloudSyncDevMode() {
+  return Boolean(
+    import.meta.env?.DEV
+    || import.meta.env?.MODE === "test"
+    || globalThis.process?.env?.NODE_ENV === "test"
+  );
+}
+
+function warnRepeatedPayloadDownloadSuppressed(name) {
+  if (!isCloudSyncDevMode()) return;
+  const normalizedName = String(name || "").trim();
+  if (!normalizedName || suppressedPayloadDownloadWarnings.has(normalizedName)) return;
+  suppressedPayloadDownloadWarnings.add(normalizedName);
+  console.warn(`[cloud-sync] repeated payload download suppressed: ${normalizedName}`);
 }
 
 function hashString(value) {
@@ -301,37 +321,87 @@ function settleCloudSyncAccessBlocked(result) {
   };
 }
 
+function getStateRecords(state) {
+  return state?.records && typeof state.records === "object" && !Array.isArray(state.records)
+    ? state.records
+    : {};
+}
+
+function normalizeStateRecords(records) {
+  const normalizedRecords = {};
+
+  for (const record of Object.values(getStateRecords({ records }))) {
+    const meta = normalizeRecordMeta(record);
+    if (!meta) continue;
+    normalizedRecords[getEntityKey(meta.entityType, meta.clientRecordId)] = meta;
+  }
+
+  return normalizedRecords;
+}
+
+function compareCloudRecordMetaFreshness(left, right) {
+  const leftServerVersion = normalizePositiveInteger(Number(left?.serverVersion), 0);
+  const rightServerVersion = normalizePositiveInteger(Number(right?.serverVersion), 0);
+  if (leftServerVersion !== rightServerVersion) return leftServerVersion - rightServerVersion;
+
+  const leftClientUpdatedAtMs = normalizePositiveInteger(Number(left?.clientUpdatedAtMs), 0);
+  const rightClientUpdatedAtMs = normalizePositiveInteger(Number(right?.clientUpdatedAtMs), 0);
+  if (leftClientUpdatedAtMs !== rightClientUpdatedAtMs) {
+    return leftClientUpdatedAtMs - rightClientUpdatedAtMs;
+  }
+
+  const leftModified = String(left?.modified || "");
+  const rightModified = String(right?.modified || "");
+  if (leftModified === rightModified) return 0;
+  return leftModified > rightModified ? 1 : -1;
+}
+
+function mergeCloudSyncRecords(indexedRecords, fallbackRecords) {
+  const merged = { ...normalizeStateRecords(indexedRecords) };
+
+  for (const [key, fallbackMeta] of Object.entries(normalizeStateRecords(fallbackRecords))) {
+    const indexedMeta = merged[key];
+    if (!indexedMeta || compareCloudRecordMetaFreshness(indexedMeta, fallbackMeta) < 0) {
+      merged[key] = fallbackMeta;
+    }
+  }
+
+  return merged;
+}
+
+function isValidCloudSyncState(value) {
+  return Boolean(
+    value
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && (
+      typeof value.cursor === "string"
+      || Number.isFinite(Number(value.bootstrapVersion))
+      || (value.records && typeof value.records === "object" && !Array.isArray(value.records))
+    )
+  );
+}
+
 async function loadCloudSyncState() {
-  const indexedValue = await syncStoreCapability.isIndexedDbUsable()
+  const indexedDbUsable = await syncStoreCapability.isIndexedDbUsable();
+  const indexedValue = indexedDbUsable
     ? await syncStore.getValue(CLOUD_SYNC_STATE_KEY)
     : undefined;
   const fallbackValue = loadJson(CLOUD_SYNC_STATE_FALLBACK_KEY, {});
-  const indexedState = indexedValue && typeof indexedValue === "object" ? indexedValue : {};
-  const fallbackState = fallbackValue && typeof fallbackValue === "object" ? fallbackValue : {};
-  const indexedRecords =
-    indexedState.records && typeof indexedState.records === "object" && !Array.isArray(indexedState.records)
-      ? indexedState.records
-      : {};
-  const fallbackRecords =
-    fallbackState.records && typeof fallbackState.records === "object" && !Array.isArray(fallbackState.records)
-      ? fallbackState.records
-      : {};
-  const state = {
-    ...indexedState,
-    ...fallbackState,
-    records: {
-      ...indexedRecords,
-      ...fallbackRecords,
-    },
-  };
+  const hasIndexedState = indexedDbUsable && isValidCloudSyncState(indexedValue);
+  const indexedState = hasIndexedState ? indexedValue : {};
+  const fallbackState = isValidCloudSyncState(fallbackValue) ? fallbackValue : {};
+  const cursor = hasIndexedState
+    ? (typeof indexedState.cursor === "string" ? indexedState.cursor : "")
+    : (typeof fallbackState.cursor === "string" ? fallbackState.cursor : "");
 
   return {
-    cursor: typeof state.cursor === "string" ? state.cursor : "",
-    bootstrapVersion: normalizePositiveInteger(state.bootstrapVersion, 0),
-    records:
-      state.records && typeof state.records === "object" && !Array.isArray(state.records)
-        ? state.records
-        : {},
+    cursor,
+    bootstrapVersion: Math.max(
+      normalizePositiveInteger(Number(indexedState.bootstrapVersion), 0),
+      normalizePositiveInteger(Number(fallbackState.bootstrapVersion), 0)
+    ),
+    records: mergeCloudSyncRecords(indexedState.records, fallbackState.records),
   };
 }
 
@@ -340,10 +410,7 @@ async function saveCloudSyncState(state) {
     {
       cursor: typeof state?.cursor === "string" ? state.cursor : "",
       bootstrapVersion: normalizePositiveInteger(state?.bootstrapVersion, 0),
-      records:
-        state?.records && typeof state.records === "object" && !Array.isArray(state.records)
-          ? state.records
-          : {},
+      records: normalizeStateRecords(state?.records),
     },
     {
       cursor: "",
@@ -356,6 +423,8 @@ async function saveCloudSyncState(state) {
     : false;
   if (!stored) {
     saveJson(CLOUD_SYNC_STATE_FALLBACK_KEY, snapshot);
+  } else {
+    removeStoredValue(CLOUD_SYNC_STATE_FALLBACK_KEY);
   }
 }
 
@@ -471,6 +540,18 @@ function normalizeRecordMeta(record) {
     payloadSize: normalizePositiveInteger(Number(record.payload_size || record.payloadSize), 0),
     modified: String(record.modified || "").trim(),
   };
+}
+
+function isSameAppliedCloudRecord(previousMeta, nextMeta) {
+  return Boolean(
+    previousMeta
+    && nextMeta
+    && previousMeta.name === nextMeta.name
+    && Number(previousMeta.serverVersion) === Number(nextMeta.serverVersion)
+    && String(previousMeta.contentHash || "") === String(nextMeta.contentHash || "")
+    && String(previousMeta.clientUpdatedAtMs || "") === String(nextMeta.clientUpdatedAtMs || "")
+    && Number(previousMeta.deletedAtMs || 0) === Number(nextMeta.deletedAtMs || 0)
+  );
 }
 
 async function findCloudSyncRecordMeta(entityType, recordId) {
@@ -1126,7 +1207,7 @@ async function pushCloudSyncOutbox({
       throw new Error(`Cloud sync push failed with status ${result.status}.`);
     }
 
-    for (const record of result.records) {
+    for (const record of Array.isArray(result.records) ? result.records : []) {
       const meta = normalizeRecordMeta(record);
       if (!meta) continue;
       state.records[getEntityKey(meta.entityType, meta.clientRecordId)] = meta;
@@ -1151,8 +1232,27 @@ async function pullCloudSyncRecords({ signal } = {}) {
   const state = await loadCloudSyncState();
   let cursor = state.cursor;
   let keepPulling = true;
+  let pageCount = 0;
+  const seenPageCursors = new Set();
 
   while (keepPulling) {
+    if (signal?.aborted) {
+      throw Object.assign(new Error("Cloud sync aborted."), { name: "AbortError" });
+    }
+    pageCount += 1;
+    if (pageCount > MAX_PULL_PAGES_PER_PASS) {
+      setCloudSyncStatus({
+        state: CLOUD_SYNC_STATUS_STATES.paused,
+        reason: "pull_page_limit",
+        lastFailureAtMs: Date.now(),
+        lastFailureMessage: "Cloud sync pull paused after too many pages in one pass.",
+      });
+      return {
+        halted: true,
+        reason: "pull_page_limit",
+      };
+    }
+
     if (!hasSingleTabOwnership() || !isCloudSyncAuthAllowed()) return;
     const result = await pullSyncChangesFromBackend({
       cursor,
@@ -1167,10 +1267,55 @@ async function pullCloudSyncRecords({ signal } = {}) {
       throw new Error(`Cloud sync pull failed with status ${result.status}.`);
     }
 
-    for (const record of result.records) {
+    const pageSignature = JSON.stringify({
+      cursor,
+      nextCursor: result.nextCursor || "",
+      hasMore: result.hasMore === true,
+      records: (Array.isArray(result.records) ? result.records : []).map((record) => {
+        const meta = normalizeRecordMeta(record);
+        return meta
+          ? [
+            meta.name,
+            meta.entityType,
+            meta.clientRecordId,
+            meta.serverVersion,
+            meta.contentHash,
+            meta.clientUpdatedAtMs,
+            meta.deletedAtMs,
+          ]
+          : null;
+      }),
+    });
+    if (seenPageCursors.has(pageSignature)) {
+      setCloudSyncStatus({
+        state: CLOUD_SYNC_STATUS_STATES.paused,
+        reason: "pull_cursor_repeat",
+        lastFailureAtMs: Date.now(),
+        lastFailureMessage: "Cloud sync pull paused after receiving a repeated page cursor.",
+      });
+      return {
+        halted: true,
+        reason: "pull_cursor_repeat",
+      };
+    }
+    seenPageCursors.add(pageSignature);
+
+    for (const record of Array.isArray(result.records) ? result.records : []) {
+      if (signal?.aborted) {
+        throw Object.assign(new Error("Cloud sync aborted."), { name: "AbortError" });
+      }
       if (!hasSingleTabOwnership() || !isCloudSyncAuthAllowed()) return;
       const meta = normalizeRecordMeta(record);
       if (!meta) continue;
+      const entityKey = getEntityKey(meta.entityType, meta.clientRecordId);
+      const previousMeta = normalizeRecordMeta(state.records[entityKey]);
+
+      if (isSameAppliedCloudRecord(previousMeta, meta)) {
+        state.records[entityKey] = meta;
+        warnRepeatedPayloadDownloadSuppressed(meta.name);
+        continue;
+      }
+
       let appliedPayload = null;
 
       if (meta.deletedAtMs > 0) {
@@ -1191,7 +1336,7 @@ async function pullCloudSyncRecords({ signal } = {}) {
         await applyRemoteCloudRecord(meta, appliedPayload);
       }
 
-      state.records[getEntityKey(meta.entityType, meta.clientRecordId)] = meta;
+      state.records[entityKey] = meta;
       emitCloudSyncApplied({
         entityType: meta.entityType,
         recordId: meta.clientRecordId,
@@ -1200,11 +1345,31 @@ async function pullCloudSyncRecords({ signal } = {}) {
       });
     }
 
-    cursor = result.nextCursor || cursor;
+    const nextCursor = typeof result.nextCursor === "string" ? result.nextCursor : cursor;
+    if (result.hasMore === true && nextCursor === cursor) {
+      state.cursor = cursor;
+      await saveCloudSyncState(state);
+      setCloudSyncStatus({
+        state: CLOUD_SYNC_STATUS_STATES.paused,
+        reason: "pull_cursor_stalled",
+        lastFailureAtMs: Date.now(),
+        lastFailureMessage: "Cloud sync pull paused after the backend repeated the same cursor.",
+      });
+      return {
+        halted: true,
+        reason: "pull_cursor_stalled",
+      };
+    }
+
+    cursor = nextCursor;
     state.cursor = cursor;
     await saveCloudSyncState(state);
     keepPulling = result.hasMore === true;
   }
+
+  return {
+    halted: false,
+  };
 }
 
 async function resolveCloudSyncCapability({ signal } = {}) {
@@ -1295,6 +1460,46 @@ function scheduleCloudSync({ immediate = false } = {}) {
     syncTimerId = null;
     syncChain = syncChain.catch(() => {}).then(() => syncCloudRecords());
   }, CLOUD_SYNC_RETRY_MS);
+}
+
+export function requestCloudSync({
+  reason = "requested",
+  immediate = false,
+  signal,
+} = {}) {
+  if (signal?.aborted) {
+    return false;
+  }
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const runImmediate = Boolean(immediate);
+  if (runImmediate) {
+    const now = Date.now();
+    if (
+      syncScheduled
+      || syncInFlight
+      || (lastImmediateSyncRequestAtMs > 0
+        && now - lastImmediateSyncRequestAtMs < CLOUD_SYNC_IMMEDIATE_REQUEST_THROTTLE_MS)
+    ) {
+      syncRetryRequested = syncInFlight || syncRetryRequested;
+      setCloudSyncStatus({
+        state: CLOUD_SYNC_STATUS_STATES.syncing,
+        reason: `${reason || "requested"}_deduped`,
+      });
+      return true;
+    }
+    lastImmediateSyncRequestAtMs = now;
+  }
+
+  const schedule = () => {
+    if (signal?.aborted) return;
+    scheduleCloudSync({ immediate: runImmediate });
+  };
+
+  schedule();
+  return true;
 }
 
 export async function queueCloudSyncChange(change) {
@@ -1445,6 +1650,13 @@ export function syncCloudRecords() {
           ok: true,
           skipped: true,
           reason: pullResult.reason || "disabled",
+        };
+      }
+      if (pullResult?.halted) {
+        return {
+          ok: false,
+          skipped: true,
+          reason: pullResult.reason || "pull_paused",
         };
       }
 

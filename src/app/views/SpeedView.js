@@ -15,6 +15,7 @@ const view = createRouteView({
   loadModule: () => import("../../speed/speed.js"),
   mountController: (module, routeContext) => module.mountSpeedRoute?.(routeContext),
   unmountController: (module, routeContext) => module.unmountSpeedRoute?.(routeContext),
+  preserveDom: true,
 });
 
 export function mount(root, context) {

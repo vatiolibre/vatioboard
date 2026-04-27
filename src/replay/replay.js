@@ -27,7 +27,6 @@ import {
   CLOUD_SYNC_ENTITY_TYPES,
   queueCloudSyncDeletion,
   startCloudSyncLoop,
-  syncCloudRecords,
 } from '../shared/cloud-sync.js';
 import {
   clearReplayRestoreFailure,
@@ -1547,16 +1546,11 @@ async function init() {
         mapController.resize();
       }
     }
-    if (!isSpaRuntime) startCloudSyncLoop({ immediate: false });
-    const syncSelectionRequestVersion = replaySelectionRequestVersion;
-    void syncCloudRecords()
-      .catch(() => {
-        // Keep the page usable with local data if sync is temporarily unavailable.
-      })
-      .finally(() => {
-        if (replaySelectionRequestVersion !== syncSelectionRequestVersion) return;
-        maybeFallbackMissingReplaySelection();
-      });
+    if (!isSpaRuntime) {
+      startCloudSyncLoop({ immediate: true });
+    } else {
+      maybeFallbackMissingReplaySelection();
+    }
     state.initialized = true;
     if (state.viewMounted) {
       void runReplayApproach();

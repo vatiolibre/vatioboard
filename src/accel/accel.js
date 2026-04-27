@@ -22,7 +22,6 @@ import {
   queueCloudSyncChange,
   queueCloudSyncDeletion,
   startCloudSyncLoop,
-  syncCloudRecords,
 } from '../shared/cloud-sync.js';
 import { createPlaceResolver } from '../shared/place-resolver.js';
 import {
@@ -501,7 +500,7 @@ export const initPromise = (function () {
   });
   var replayMapIntroPromise = null;
   var replayMapIntroToken = 0;
-  var storedRunsRefreshVersion = 0;
+  var pendingMissingSelectionId = '';
 
   function applyStoredRuns(runs, preferredResultId, { preserveMissingPreferred = false } = {}) {
     state.runs = Array.isArray(runs) ? runs : [];
@@ -569,6 +568,8 @@ export const initPromise = (function () {
 
   function maybeFallbackMissingSelectedResult(runId = state.selectedResultId) {
     if (!hasMissingSelectedResult(runId)) return;
+    pendingMissingSelectionId =
+      typeof runId === 'string' && runId.trim() ? runId.trim() : pendingMissingSelectionId;
     refreshStoredRuns({
       preferredResultId: '',
       preserveMissingPreferred: false,
@@ -609,21 +610,20 @@ export const initPromise = (function () {
     setupResultGraphObservers();
     renderAll();
     publishAccelActivity();
-    void ensureSelectedResultTelemetry(initialRunId || state.selectedResultId, {
+    var initialTelemetryPromise = ensureSelectedResultTelemetry(initialRunId || state.selectedResultId, {
       selectionSnapshotId: state.selectedResultId || '',
     }).then(function (restored) {
       if (restored) renderAll();
+      return restored;
+    }).catch(function () {
+      return false;
     });
-    if (!isSpaRuntime) startCloudSyncLoop({ immediate: false });
-    var syncStoredRunsRefreshVersion = storedRunsRefreshVersion;
-    void syncCloudRecords()
-      .catch(function () {
-        // Keep the page usable with local data if sync is temporarily unavailable.
-      })
-      .finally(function () {
-        if (storedRunsRefreshVersion !== syncStoredRunsRefreshVersion) return;
-        maybeFallbackMissingSelectedResult();
-      });
+    if (!isSpaRuntime) {
+      startCloudSyncLoop({ immediate: true });
+    }
+    void initialTelemetryPromise.finally(function () {
+      maybeFallbackMissingSelectedResult();
+    });
     state.initialized = true;
     if (state.viewMounted) {
       startUiTimer();
@@ -803,6 +803,21 @@ export const initPromise = (function () {
         });
         void ensureSelectedResultTelemetry(event.detail.recordId, {
           selectionSnapshotId: event.detail.recordId,
+        }).then(function (restored) {
+          if (restored) renderAll();
+        });
+        return;
+      }
+      if (event?.detail?.recordId && pendingMissingSelectionId) {
+        var syncedRecordId = event.detail.recordId;
+        pendingMissingSelectionId = '';
+        clearAccelRestoreFailure(syncedRecordId);
+        refreshStoredRuns({
+          preferredResultId: syncedRecordId,
+          preserveMissingPreferred: true,
+        });
+        void ensureSelectedResultTelemetry(syncedRecordId, {
+          selectionSnapshotId: syncedRecordId,
         }).then(function (restored) {
           if (restored) renderAll();
         });
@@ -1076,7 +1091,6 @@ export const initPromise = (function () {
     preferredResultId = state.selectedResultId || '',
     preserveMissingPreferred = false,
   } = {}) {
-    storedRunsRefreshVersion += 1;
     void (async function () {
       var normalizedPreferredResultId =
         typeof preferredResultId === 'string' && preferredResultId.trim() ? preferredResultId.trim() : '';
