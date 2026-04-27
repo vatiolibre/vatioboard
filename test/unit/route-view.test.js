@@ -211,6 +211,132 @@ describe("createRouteView", () => {
     expect(controller.unmountRoute).not.toHaveBeenCalled();
   });
 
+  it("keeps aborted preserved DOM connected until singleton imports settle", async () => {
+    const root = document.getElementById("root");
+    const controller = {
+      mountRoute: vi.fn(),
+      unmountRoute: vi.fn(),
+    };
+    const importGate = createDeferred();
+    const routeController = new AbortController();
+    let sawRouteDomDuringImport = false;
+    const view = createRouteView({
+      pageName: "stateful-slow",
+      template: '<section id="slow-route"><button id="stable-button" type="button">Stable</button></section>',
+      meta: { bodyClass: "slow-page" },
+      loadModule: () => importGate.promise.then(() => {
+        sawRouteDomDuringImport = Boolean(document.getElementById("slow-route"));
+        return controller;
+      }),
+      mountController: (module) => module.mountRoute(),
+      unmountController: (module) => module.unmountRoute(),
+      preserveDom: true,
+    });
+
+    const mountedPromise = view.mount(root, { routeSignal: routeController.signal });
+    const firstRouteNode = root.querySelector("#slow-route");
+    expect(firstRouteNode).toBeTruthy();
+
+    routeController.abort();
+    const nextRoute = document.createElement("section");
+    nextRoute.id = "next-route";
+    nextRoute.textContent = "Next route";
+    root.replaceChildren(nextRoute);
+
+    importGate.resolve();
+    await mountedPromise;
+
+    expect(sawRouteDomDuringImport).toBe(true);
+    expect(document.querySelector("[data-route-view-parking]")).toBeNull();
+    expect(root.querySelector("#next-route")?.textContent).toBe("Next route");
+    expect(controller.mountRoute).not.toHaveBeenCalled();
+    expect(controller.unmountRoute).toHaveBeenCalledTimes(1);
+
+    const secondMount = await view.mount(root, {});
+    expect(root.querySelector("#slow-route")).toBe(firstRouteNode);
+    expect(controller.mountRoute).toHaveBeenCalledTimes(1);
+
+    secondMount.unmount();
+  });
+
+  it("deactivates preserved singleton modules imported after their route was aborted", async () => {
+    const root = document.getElementById("root");
+    const controller = {
+      mountRoute: vi.fn(),
+      unmountRoute: vi.fn(),
+    };
+    const importGate = createDeferred();
+    const routeController = new AbortController();
+    const view = createRouteView({
+      pageName: "stateful-aborted",
+      template: '<section id="slow-route">Slow route</section>',
+      loadModule: () => importGate.promise.then(() => controller),
+      mountController: (module) => module.mountRoute(),
+      unmountController: (module) => module.unmountRoute(),
+      preserveDom: true,
+    });
+
+    const mountedPromise = view.mount(root, { routeSignal: routeController.signal });
+    routeController.abort();
+    importGate.resolve();
+    await mountedPromise;
+
+    expect(controller.mountRoute).not.toHaveBeenCalled();
+    expect(controller.unmountRoute).toHaveBeenCalledTimes(1);
+
+    const secondMount = await view.mount(root, {});
+    expect(controller.mountRoute).toHaveBeenCalledTimes(1);
+
+    secondMount.unmount();
+    expect(controller.unmountRoute).toHaveBeenCalledTimes(2);
+  });
+
+  it("preserves the DOM instance a singleton import saw after repeated aborted mounts", async () => {
+    const root = document.getElementById("root");
+    const controller = {
+      mountRoute: vi.fn(),
+      unmountRoute: vi.fn(),
+    };
+    const importGate = createDeferred();
+    let routeNodeDuringImport = null;
+    const view = createRouteView({
+      pageName: "stateful-repeat-abort",
+      template: '<section id="slow-route">Slow route</section>',
+      loadModule: () => importGate.promise.then(() => {
+        routeNodeDuringImport = document.getElementById("slow-route");
+        return controller;
+      }),
+      mountController: (module) => module.mountRoute(),
+      unmountController: (module) => module.unmountRoute(),
+      preserveDom: true,
+    });
+
+    const firstController = new AbortController();
+    const firstMountPromise = view.mount(root, { routeSignal: firstController.signal });
+    const firstRouteNode = root.querySelector("#slow-route");
+    firstController.abort();
+
+    const secondController = new AbortController();
+    const secondMountPromise = view.mount(root, { routeSignal: secondController.signal });
+    const secondRouteNode = root.querySelector("#slow-route");
+    expect(secondRouteNode).not.toBe(firstRouteNode);
+    secondController.abort();
+
+    root.replaceChildren(document.createElement("section"));
+    importGate.resolve();
+    await Promise.all([firstMountPromise, secondMountPromise]);
+
+    expect(routeNodeDuringImport).toBe(firstRouteNode);
+    expect(controller.mountRoute).not.toHaveBeenCalled();
+    expect(controller.unmountRoute).toHaveBeenCalledTimes(2);
+
+    const thirdMount = await view.mount(root, {});
+    expect(root.querySelector("#slow-route")).toBe(firstRouteNode);
+    expect(root.querySelector("#slow-route")).not.toBe(secondRouteNode);
+
+    thirdMount.unmount();
+  });
+
   it("runs controller result unmount and configured unmount once", async () => {
     const root = document.getElementById("root");
     const resultUnmount = vi.fn();
