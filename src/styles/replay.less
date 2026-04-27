@@ -85,9 +85,16 @@ body.replay-page .milkdrop-resize-handle{
     touch-action: none;
 }
 
+body.replay-page #app,
+body.replay-page #app-view,
+body.replay-page .replay-app{
+    overflow: visible;
+}
+
 .replay-app{
     min-height: 100vh;
     min-height: 100dvh;
+    height: auto;
 }
 
 .replay-page header{
@@ -297,10 +304,15 @@ body.replay-page .milkdrop-resize-handle{
 }
 
 .replay-main{
-    flex: 1;
+    flex: 1 0 auto;
     display: flex;
     flex-direction: column;
     gap: 12px;
+    min-height: auto;
+    overflow: visible;
+    overscroll-behavior-y: auto;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
     padding-top: clamp(10px, 1.2vw, 16px);
     padding-left: max(12px, env(safe-area-inset-left));
     padding-right: max(12px, env(safe-area-inset-right));
@@ -1152,6 +1164,35 @@ body.replay-page .milkdrop-resize-handle{
 
     .replay-graphs-grid{
         grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 799.98px){
+    html.replay-page,
+    body.replay-page{
+        height: 100%;
+        min-height: 100%;
+        overflow: hidden;
+        overscroll-behavior: none;
+    }
+
+    body.replay-page #app,
+    body.replay-page #app-view,
+    body.replay-page .replay-app{
+        height: 100vh;
+        height: 100dvh;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .replay-main{
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-x: hidden;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-y;
     }
 }
 
