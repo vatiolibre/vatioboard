@@ -401,6 +401,9 @@
       </main>
     </div>
 
-    <script type="module" src="/src/library/library.js"></script>
+    <script type="module">
+      import { mountLibraryRoute } from "/src/library/library.js";
+      mountLibraryRoute({ root: document });
+    </script>
   </body>
 </html>

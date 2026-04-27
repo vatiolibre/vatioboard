@@ -106,24 +106,19 @@ describe("SPA architecture guard", () => {
   });
 
   it("keeps converted feature modules free of import-time route side effects", async () => {
-    // TODO: shrink this debt list as Library, Replay, Speed, and Accel move
-    // DOM lookup/listener/timer setup fully behind their route mount functions.
-    const pendingConversion = new Set([
-      "src/library/library.js",
-      "src/replay/replay.js",
-      "src/speed/speed.js",
-      "src/accel/accel.js",
-    ]);
-    expect(pendingConversion).toEqual(new Set([
-      "src/library/library.js",
-      "src/replay/replay.js",
-      "src/speed/speed.js",
-      "src/accel/accel.js",
-    ]));
+    const convertedModules = [
+      () => import("../../src/library/library.js"),
+      () => import("../../src/replay/replay.js"),
+      () => import("../../src/speed/speed.js"),
+      () => import("../../src/accel/accel.js"),
+    ];
 
     vi.resetModules();
     const watchPosition = vi.spyOn(navigator.geolocation, "watchPosition");
-    const addEventListener = vi.spyOn(window, "addEventListener");
+    const windowAddEventListener = vi.spyOn(window, "addEventListener");
+    const documentAddEventListener = vi.spyOn(document, "addEventListener");
+    const documentQuerySelector = vi.spyOn(document, "querySelector");
+    const documentGetElementById = vi.spyOn(document, "getElementById");
     const setIntervalSpy = vi.spyOn(window, "setInterval");
     const requestAnimationFrameSpy = vi.spyOn(window, "requestAnimationFrame");
     const bodyClassAdd = vi.spyOn(document.body.classList, "add");
@@ -131,10 +126,15 @@ describe("SPA architecture guard", () => {
     const bodyClassToggle = vi.spyOn(document.body.classList, "toggle");
 
     try {
-      await import("../../src/board/board.js");
+      for (const loadModule of convertedModules) {
+        await loadModule();
+      }
 
       expect(watchPosition).not.toHaveBeenCalled();
-      expect(addEventListener).not.toHaveBeenCalled();
+      expect(windowAddEventListener).not.toHaveBeenCalled();
+      expect(documentAddEventListener).not.toHaveBeenCalled();
+      expect(documentQuerySelector).not.toHaveBeenCalled();
+      expect(documentGetElementById).not.toHaveBeenCalled();
       expect(setIntervalSpy).not.toHaveBeenCalled();
       expect(requestAnimationFrameSpy).not.toHaveBeenCalled();
       expect(bodyClassAdd).not.toHaveBeenCalled();

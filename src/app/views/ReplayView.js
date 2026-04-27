@@ -15,7 +15,6 @@ const view = createRouteView({
   loadModule: () => import("../../replay/replay.js"),
   mountController: (module, routeContext) => module.mountReplayRoute?.(routeContext),
   unmountController: (module, routeContext) => module.unmountReplayRoute?.(routeContext),
-  preserveDom: true,
 });
 
 export function mount(root, context) {

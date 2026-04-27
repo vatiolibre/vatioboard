@@ -4,6 +4,7 @@ import "../styles/backend-auth.less";
 import "../styles/cloud-sync-status.less";
 import "../shared/ui/confirm-dialog.less";
 
+import { createCleanupStack } from "../app/view-cleanup.js";
 import {
   IconAccel,
   IconBoard,
@@ -89,10 +90,7 @@ import { applyButtonIcon, getActiveToolsMenuList, initToolsMenu } from "../share
 import { integratePlayerWidget } from "../player/integrate-player-widget.js";
 import { initCloudSyncStatusIndicator } from "../shared/cloud-sync-status-indicator.js";
 
-applyTranslations();
-
 const isSpaRuntime = Boolean(window.__vatioboardSpa);
-if (!isSpaRuntime) initBackendAuthControllers();
 const PAGE_SIZE = 24;
 const SORT_OPTIONS = new Set(["newest", "oldest", "title_asc", "title_desc"]);
 const TAB_ORDER = [
@@ -101,55 +99,86 @@ const TAB_ORDER = [
   CLOUD_LIBRARY_TAB_KEYS.boardDocuments,
   CLOUD_LIBRARY_TAB_KEYS.media,
 ];
-const initialRouteQuery = getCurrentAppRouteQuery();
 
-const elements = {
-  langToggleButtons: Array.from(document.querySelectorAll("[data-lang-toggle], #langToggle")),
-  libraryTabs: Array.from(document.querySelectorAll(".library-tab[data-tab]")),
-  searchForm: document.getElementById("librarySearchForm"),
-  searchInput: document.getElementById("librarySearch"),
-  sortSelect: document.getElementById("librarySort"),
-  refreshButton: document.getElementById("libraryRefresh"),
-  toolsMenuButton: document.getElementById("libraryToolsMenuBtn"),
-  toolsMenuList: document.getElementById("libraryToolsMenuList"),
-  toolbar: document.querySelector(".library-toolbar"),
-  status: document.getElementById("libraryStatus"),
-  listEmpty: document.getElementById("libraryListEmpty"),
-  listPanel: document.getElementById("libraryList"),
-  loadMoreButton: document.getElementById("libraryLoadMore"),
-  detailEmpty: document.getElementById("libraryDetailEmpty"),
-  detailCard: document.getElementById("libraryDetailCard"),
-  detailPreview: document.getElementById("libraryDetailPreview"),
-  detailTitle: document.getElementById("libraryDetailTitle"),
-  detailSubtitle: document.getElementById("libraryDetailSubtitle"),
-  detailMeta: document.getElementById("libraryDetailMeta"),
-  actionOpen: document.getElementById("libraryActionOpen"),
-  actionDownload: document.getElementById("libraryActionDownload"),
-  actionRename: document.getElementById("libraryActionRename"),
-  actionDelete: document.getElementById("libraryActionDelete"),
-  actionPin: document.getElementById("libraryActionPin"),
-  overflowBtn: document.getElementById("libraryOverflowBtn"),
-  overflowList: document.getElementById("libraryOverflowList"),
-  toolbarVolume: document.getElementById("libraryToolbarVolume"),
-  toolbarMuteBtn: document.getElementById("libraryToolbarMute"),
-  toolbarVolumeSlider: document.getElementById("libraryToolbarVolumeSlider"),
-  openBoardPage: document.getElementById("openLibraryBoardMenu"),
-  openSpeedPage: document.getElementById("openLibrarySpeedMenu"),
-  openReplayPage: document.getElementById("openLibraryReplayMenu"),
-  openAccelPage: document.getElementById("openLibraryAccelMenu"),
-  openCurrentPage: document.getElementById("openLibraryCurrentMenu"),
-};
+function queryAll(root, selector) {
+  return root?.querySelectorAll ? Array.from(root.querySelectorAll(selector)) : [];
+}
 
-const toolsMenu = initToolsMenu({
-  button: elements.toolsMenuButton,
-  list: elements.toolsMenuList,
-});
-toolsMenu.setOpen(false);
+function queryOne(root, selector) {
+  return root?.querySelector ? root.querySelector(selector) : null;
+}
 
-const overflowMenu = initToolsMenu({
-  button: elements.overflowBtn,
-  list: elements.overflowList,
-});
+export function getLibraryElements(root) {
+  return {
+    langToggleButtons: queryAll(root, "[data-lang-toggle], #langToggle"),
+    libraryTabs: queryAll(root, ".library-tab[data-tab]"),
+    searchForm: queryOne(root, "#librarySearchForm"),
+    searchInput: queryOne(root, "#librarySearch"),
+    sortSelect: queryOne(root, "#librarySort"),
+    refreshButton: queryOne(root, "#libraryRefresh"),
+    toolsMenuButton: queryOne(root, "#libraryToolsMenuBtn"),
+    toolsMenuList: queryOne(root, "#libraryToolsMenuList"),
+    toolbar: queryOne(root, ".library-toolbar"),
+    status: queryOne(root, "#libraryStatus"),
+    listEmpty: queryOne(root, "#libraryListEmpty"),
+    listPanel: queryOne(root, "#libraryList"),
+    loadMoreButton: queryOne(root, "#libraryLoadMore"),
+    detailEmpty: queryOne(root, "#libraryDetailEmpty"),
+    detailCard: queryOne(root, "#libraryDetailCard"),
+    detailPreview: queryOne(root, "#libraryDetailPreview"),
+    detailTitle: queryOne(root, "#libraryDetailTitle"),
+    detailSubtitle: queryOne(root, "#libraryDetailSubtitle"),
+    detailMeta: queryOne(root, "#libraryDetailMeta"),
+    actionOpen: queryOne(root, "#libraryActionOpen"),
+    actionDownload: queryOne(root, "#libraryActionDownload"),
+    actionRename: queryOne(root, "#libraryActionRename"),
+    actionDelete: queryOne(root, "#libraryActionDelete"),
+    actionPin: queryOne(root, "#libraryActionPin"),
+    overflowBtn: queryOne(root, "#libraryOverflowBtn"),
+    overflowList: queryOne(root, "#libraryOverflowList"),
+    toolbarVolume: queryOne(root, "#libraryToolbarVolume"),
+    toolbarMuteBtn: queryOne(root, "#libraryToolbarMute"),
+    toolbarVolumeSlider: queryOne(root, "#libraryToolbarVolumeSlider"),
+    openBoardPage: queryOne(root, "#openLibraryBoardMenu"),
+    openSpeedPage: queryOne(root, "#openLibrarySpeedMenu"),
+    openReplayPage: queryOne(root, "#openLibraryReplayMenu"),
+    openAccelPage: queryOne(root, "#openLibraryAccelMenu"),
+    openCurrentPage: queryOne(root, "#openLibraryCurrentMenu"),
+  };
+}
+
+function createEmptyLibraryElements() {
+  return getLibraryElements(null);
+}
+
+function createInactiveLibraryMediaPlayer() {
+  return {
+    destroy() {},
+    getMediaElement() {
+      return null;
+    },
+    mount() {
+      return false;
+    },
+  };
+}
+
+function createInactiveToolsMenu() {
+  return {
+    close() {},
+    destroy() {},
+    setOpen() {},
+  };
+}
+
+let elements = createEmptyLibraryElements();
+let toolsMenu = createInactiveToolsMenu();
+let overflowMenu = createInactiveToolsMenu();
+let libraryMediaPlayer = createInactiveLibraryMediaPlayer();
+let libraryRouteGeneration = 0;
+let activeLibraryRoute = null;
+let standaloneCleanup = null;
+let standaloneBackendAuthInitialized = false;
 
 function focusElement(element) {
   try {
@@ -199,22 +228,16 @@ function openCloudSyncLauncher() {
   });
 }
 
-initCloudSyncStatusIndicator({
-  mount: elements.toolbar,
-  alignEnd: true,
-  openLauncher: openCloudSyncLauncher,
-});
-
 const state = {
-  viewMounted: true,
+  viewMounted: false,
   initialized: false,
-  activeTab: normalizeTabKey(initialRouteQuery.get("tab")),
+  activeTab: CLOUD_LIBRARY_TAB_KEYS.speed,
   featureAccess: null,
   session: null,
   authLoading: true,
   query: {
-    search: normalizeSearch(initialRouteQuery.get("search")),
-    sort: normalizeSort(initialRouteQuery.get("sort")),
+    search: "",
+    sort: "newest",
   },
   items: [],
   totalCount: 0,
@@ -240,7 +263,6 @@ const state = {
 
 let mapPreview = null;
 let previewObjectUrl = null;
-const libraryMediaPlayer = createLibraryMediaPlayer();
 
 /**
  * Tracks an active remote playback session by asset name.  Set when the
@@ -272,16 +294,24 @@ let libraryRouteLifecycle = {
   unmount() {},
 };
 
-export function mountLibraryRoute() {
-  libraryRouteLifecycle.mount();
+export function mountLibraryRoute(routeContext = {}) {
+  return libraryRouteLifecycle.mount(routeContext);
 }
 
 export function unmountLibraryRoute() {
   libraryRouteLifecycle.unmount();
 }
 
+function isLibraryRouteActive(generation = activeLibraryRoute?.generation) {
+  return (
+    state.viewMounted === true
+    && activeLibraryRoute?.generation === generation
+    && activeLibraryRoute?.signal?.aborted !== true
+  );
+}
+
 function canRenderView() {
-  return !isSpaRuntime || state.viewMounted;
+  return state.viewMounted && activeLibraryRoute?.signal?.aborted !== true;
 }
 
 function revokePreviewObjectUrl() {
@@ -860,6 +890,27 @@ function buildRecordSubtitle(item = {}) {
   return config.buildSubtitle(item);
 }
 
+function selectLibraryListItem(itemName) {
+  const item = state.items.find((entry) => entry.name === itemName);
+  if (!item) return;
+  if (state.selectedName === item.name && state.selectedDetail && !state.detailLoading) {
+    return;
+  }
+
+  state.selectedName = item.name;
+  const config = getResourceConfig(state.activeTab);
+  if (state.activeTab === CLOUD_LIBRARY_TAB_KEYS.media || config.detailFromList) {
+    state.selectedDetail = item;
+  } else {
+    state.selectedDetail = null;
+  }
+  renderList();
+  renderDetail();
+  if (state.activeTab !== CLOUD_LIBRARY_TAB_KEYS.media && !config.detailFromList) {
+    void loadDetail(item.name);
+  }
+}
+
 function renderList() {
   if (!canRenderView()) return;
   if (!elements.listPanel || !elements.listEmpty || !elements.loadMoreButton) return;
@@ -878,6 +929,7 @@ function renderList() {
       button.type = "button";
       button.className = "library-record";
       button.dataset.selected = item.name === state.selectedName ? "true" : "false";
+      button.dataset.libraryRecordName = item.name;
 
       const title = document.createElement("strong");
       title.className = "library-record-title";
@@ -918,24 +970,6 @@ function renderList() {
         button.append(badgeRow);
       }
 
-      button.addEventListener("click", () => {
-        if (state.selectedName === item.name && state.selectedDetail && !state.detailLoading) {
-          return;
-        }
-
-        state.selectedName = item.name;
-        const config = getResourceConfig(state.activeTab);
-        if (state.activeTab === CLOUD_LIBRARY_TAB_KEYS.media || config.detailFromList) {
-          state.selectedDetail = item;
-        } else {
-          state.selectedDetail = null;
-        }
-        renderList();
-        renderDetail();
-        if (state.activeTab !== CLOUD_LIBRARY_TAB_KEYS.media && !config.detailFromList) {
-          void loadDetail(item.name);
-        }
-      });
       fragment.append(button);
     });
 
@@ -972,6 +1006,7 @@ function buildDetailMetaEntries(item = {}) {
  * access resolution have failed.
  */
 function renderPreviewPlaceholder(item, config) {
+  if (!canRenderView()) return;
   if (!elements.detailPreview) return;
   elements.detailPreview.replaceChildren();
   elements.detailPreview.dataset.previewKind = "unavailable-fallback";
@@ -1000,6 +1035,7 @@ async function playMediaItemInGlobalRuntime(item) {
 }
 
 function renderDetailPreview(item = {}, { isOfflineItem = false, isPinned = false, localPreviewUrl = "" } = {}) {
+  if (!canRenderView()) return;
   if (!elements.detailPreview) return;
 
   // A new preview mount ends any active remote playback session.
@@ -1058,7 +1094,7 @@ function renderDetailPreview(item = {}, { isOfflineItem = false, isPinned = fals
       playButton.type = "button";
       playButton.className = "btn-with-icon";
       playButton.innerHTML = `<span class="btn-icon" aria-hidden="true">${IconVolume}</span><span>${t("audioPlayer")}</span>`;
-      playButton.addEventListener("click", () => {
+      activeLibraryRoute?.cleanup?.addEventListener(playButton, "click", () => {
         void playMediaItemInGlobalRuntime(item).catch((error) => {
           applyLibraryRequestError(error, { genericKey: "cloudLibraryOpenFailed" });
         });
@@ -1100,8 +1136,10 @@ function renderDetailPreview(item = {}, { isOfflineItem = false, isPinned = fals
         // demand and render a cover image above the player stage.
         // Deduped via resolveMediaAccess's internal cache.
         if (mediaKindLower === "audio" && item.has_artwork && item.name && !hasLocalBlob) {
+          const renderGeneration = activeLibraryRoute?.generation;
           resolveMediaAccess(item.name, item.content_hash, { intent: "artwork" })
             .then((access) => {
+              if (!isLibraryRouteActive(renderGeneration)) return;
               const artUrl = access?.artwork_url;
               if (!artUrl || state.selectedName !== item.name) return;
               const existing = elements.detailPreview.querySelector(".media-player-artwork");
@@ -1171,10 +1209,12 @@ function renderDetailPreview(item = {}, { isOfflineItem = false, isPinned = fals
     // subresource), attempt a single on-demand fallback via signed URL.
     // Local blob URLs (blob:) never trigger this path.
     if (!hasLocalBlob && item.name && !imageUrl.startsWith("blob:")) {
+      const renderGeneration = activeLibraryRoute?.generation;
       image.onerror = () => {
         image.onerror = null; // prevent re-entry during first fallback
         resolveMediaAccess(item.name, item.content_hash, { intent: "preview" })
           .then((access) => {
+            if (!isLibraryRouteActive(renderGeneration)) return;
             const fallbackUrl = access?.image_url || access?.preview_image_url || access?.download_url;
             if (fallbackUrl && image.parentNode) {
               // If the signed fallback URL also fails, show placeholder.
@@ -1188,6 +1228,7 @@ function renderDetailPreview(item = {}, { isOfflineItem = false, isPinned = fals
             }
           })
           .catch(() => {
+            if (!isLibraryRouteActive(renderGeneration)) return;
             renderPreviewPlaceholder(item, config);
           });
       };
@@ -1357,7 +1398,9 @@ function renderDetail() {
     && (selectedMediaKind === "audio" || selectedMediaKind === "video");
   if (hasAnyFreshLocal && !skipBlobForActiveRemoteSession && (selectedMediaKind === "image" || selectedMediaKind === "audio" || selectedMediaKind === "video")) {
     const localName = state.selectedName;
+    const renderGeneration = activeLibraryRoute?.generation;
     Promise.resolve(getLocalMediaBlob(localName)).then((result) => {
+      if (!isLibraryRouteActive(renderGeneration)) return;
       if (!result?.blob || state.selectedName !== localName) return;
       // Stale local blobs should not be used for preview when online.
       if (result.contentHash && selectedItem.content_hash && result.contentHash !== selectedItem.content_hash) return;
@@ -1381,7 +1424,9 @@ function renderDetail() {
   if (!isOfflineItem && !hasFreshLocal && isMediaTab && (selectedMediaKind === "audio" || selectedMediaKind === "video" || selectedMediaKind === "image")) {
     const accessName = selectedItem.name;
     const accessHash = selectedItem.content_hash;
+    const renderGeneration = activeLibraryRoute?.generation;
     Promise.resolve(getLocalMediaBlob(accessName)).then((localCheck) => {
+      if (!isLibraryRouteActive(renderGeneration)) return null;
       // A local blob exists (may not be in cachedBlobNames yet) — skip.
       if (localCheck?.blob) return null;
       // Fresh pinned/cached items don't need access; stale ones do.
@@ -1391,6 +1436,7 @@ function renderDetail() {
       if (state.selectedName !== accessName) return null;
       return resolveMediaAccess(accessName, accessHash);
     }).then((access) => {
+      if (!isLibraryRouteActive(renderGeneration)) return;
       // Abort if selection changed or a fresh local blob arrived in the meantime.
       if (!access || state.selectedName !== accessName) return;
       const freshPin = state.pinnedNames.has(accessName) && !state.stalePinnedNames.has(accessName);
@@ -2444,14 +2490,111 @@ function handleLanguageChange() {
   renderDetail();
 }
 
-function bindMenuNavigation(button, href) {
-  button?.addEventListener("click", () => {
+function bindMenuNavigation(button, href, cleanup) {
+  cleanup.addEventListener(button, "click", () => {
     toolsMenu.close();
     navigateToAppRoute(href);
   });
 }
 
-function mountLibraryController() {
+function syncStateFromRouteQuery() {
+  const routeQuery = getCurrentAppRouteQuery();
+  state.activeTab = normalizeTabKey(routeQuery.get("tab"));
+  state.query.search = normalizeSearch(routeQuery.get("search"));
+  state.query.sort = normalizeSort(routeQuery.get("sort"));
+  if (elements.searchInput) elements.searchInput.value = state.query.search;
+  if (elements.sortSelect) elements.sortSelect.value = state.query.sort;
+}
+
+function applyLibraryIcons(routeElements = elements) {
+  applyButtonIcon(routeElements.toolsMenuButton, IconPages);
+  applyButtonIcon(routeElements.refreshButton, IconRestart);
+  applyButtonIcon(routeElements.openBoardPage, IconBoard);
+  applyButtonIcon(routeElements.openSpeedPage, IconSpeed);
+  applyButtonIcon(routeElements.openReplayPage, IconReplay);
+  applyButtonIcon(routeElements.openAccelPage, IconAccel);
+  applyButtonIcon(routeElements.openCurrentPage, IconWorld);
+  applyButtonIcon(routeElements.actionOpen, IconWorld);
+  applyButtonIcon(routeElements.actionDownload, IconDownload);
+  applyButtonIcon(routeElements.actionRename, IconBoard);
+  applyButtonIcon(routeElements.actionDelete, IconTrash);
+  applyButtonIcon(routeElements.actionPin, IconPin);
+  applyButtonIcon(routeElements.overflowBtn, IconMore);
+  applyButtonIcon(routeElements.toolbarMuteBtn, IconVolume);
+  routeElements.libraryTabs.forEach((button) => {
+    const tabKey = normalizeTabKey(button.dataset.tab);
+    const config = getResourceConfig(tabKey);
+    applyButtonIcon(button, config.tabIcon);
+  });
+}
+
+function destroyLibraryRouteResources(route = activeLibraryRoute) {
+  if (!route || route.destroyed) return;
+  route.destroyed = true;
+  route.syncIndicator?.destroy?.();
+  route.toolsMenu?.destroy?.();
+  route.overflowMenu?.destroy?.();
+  route.mediaPlayer?.destroy?.();
+
+  if (activeLibraryRoute === route) {
+    activeLibraryRoute = null;
+    elements = createEmptyLibraryElements();
+    toolsMenu = createInactiveToolsMenu();
+    overflowMenu = createInactiveToolsMenu();
+    libraryMediaPlayer = createInactiveLibraryMediaPlayer();
+  }
+}
+
+function mountLibraryController(routeContext = {}) {
+  if (routeContext.signal?.aborted) return Promise.resolve();
+  unmountLibraryController();
+  const ownsCleanup = !routeContext.cleanup;
+  const cleanup = routeContext.cleanup || createCleanupStack();
+  const root = routeContext.root || document;
+  const route = {
+    cleanup,
+    destroyed: false,
+    generation: libraryRouteGeneration + 1,
+    ownsCleanup,
+    root,
+    signal: routeContext.signal || null,
+  };
+  libraryRouteGeneration = route.generation;
+  activeLibraryRoute = route;
+  elements = getLibraryElements(root);
+  toolsMenu = initToolsMenu({
+    button: elements.toolsMenuButton,
+    list: elements.toolsMenuList,
+  });
+  toolsMenu.setOpen(false);
+  overflowMenu = initToolsMenu({
+    button: elements.overflowBtn,
+    list: elements.overflowList,
+  });
+  libraryMediaPlayer = createLibraryMediaPlayer();
+  route.toolsMenu = toolsMenu;
+  route.overflowMenu = overflowMenu;
+  route.mediaPlayer = libraryMediaPlayer;
+  route.syncIndicator = initCloudSyncStatusIndicator({
+    mount: elements.toolbar,
+    alignEnd: true,
+    openLauncher: openCloudSyncLauncher,
+  });
+
+  cleanup.add(() => {
+    destroyLibraryRouteResources(route);
+  });
+
+  if (!isSpaRuntime && !standaloneBackendAuthInitialized) {
+    standaloneBackendAuthInitialized = true;
+    initBackendAuthControllers();
+  }
+
+  applyTranslations();
+  syncStateFromRouteQuery();
+  applyLibraryIcons(elements);
+  bindEvents({ elements, cleanup, signal: route.signal });
+
   state.viewMounted = true;
   renderStatus();
   renderTabs();
@@ -2460,14 +2603,24 @@ function mountLibraryController() {
   syncToolbarVolume();
 
   if (state.initialized && !state.listLoading && state.items.length === 0) {
-    void refreshAuthState();
+    return refreshAuthState();
   }
+
+  if (!state.initialized) {
+    return startLibraryInit();
+  }
+
+  return Promise.resolve();
 }
 
 function unmountLibraryController() {
-  if (isSpaRuntime && !state.viewMounted) return;
+  if (!state.viewMounted && !activeLibraryRoute) return;
 
+  const route = activeLibraryRoute;
   state.viewMounted = false;
+  libraryRouteGeneration += 1;
+  authGeneration += 1;
+  pendingAuthRefresh = null;
   stopRequest(listRequestState);
   stopRequest(detailRequestState);
   toolsMenu.close();
@@ -2481,80 +2634,110 @@ function unmountLibraryController() {
   remotePlaybackSessionName = "";
   lastPreviewSignature = "";
   if (elements.toolbarVolume) elements.toolbarVolume.hidden = true;
+  destroyLibraryRouteResources(route);
+  if (route?.ownsCleanup) {
+    route.cleanup?.run?.();
+  }
 }
 
-function bindEvents() {
+function bindEvents({ elements: routeElements = elements, cleanup, signal } = {}) {
+  if (!cleanup) return;
+  if (signal?.aborted) return;
+
   syncLangToggleButtons(getLang());
-  elements.langToggleButtons.forEach((button) => {
-    button.addEventListener("click", () => {
+  routeElements.langToggleButtons.forEach((button) => {
+    cleanup.addEventListener(button, "click", () => {
       const nextLang = toggleLang();
       syncLangToggleButtons(nextLang);
       handleLanguageChange();
     });
   });
 
-  elements.libraryTabs.forEach((button) => {
-    button.addEventListener("click", () => {
+  routeElements.libraryTabs.forEach((button) => {
+    cleanup.addEventListener(button, "click", () => {
       handleTabSelection(button.dataset.tab);
     });
   });
 
-  elements.searchInput.value = state.query.search;
-  elements.sortSelect.value = state.query.sort;
+  if (routeElements.searchInput) routeElements.searchInput.value = state.query.search;
+  if (routeElements.sortSelect) routeElements.sortSelect.value = state.query.sort;
 
-  elements.searchForm?.addEventListener("submit", (event) => {
+  cleanup.addEventListener(routeElements.searchForm, "submit", (event) => {
     event.preventDefault();
-    state.query.search = normalizeSearch(elements.searchInput?.value);
-    state.query.sort = normalizeSort(elements.sortSelect?.value);
+    state.query.search = normalizeSearch(routeElements.searchInput?.value);
+    state.query.sort = normalizeSort(routeElements.sortSelect?.value);
     updateLocationState();
     void loadList();
   });
 
-  elements.sortSelect?.addEventListener("change", () => {
-    state.query.sort = normalizeSort(elements.sortSelect.value);
+  cleanup.addEventListener(routeElements.sortSelect, "change", () => {
+    state.query.sort = normalizeSort(routeElements.sortSelect.value);
     updateLocationState();
     void loadList();
   });
 
-  elements.refreshButton?.addEventListener("click", () => {
+  cleanup.addEventListener(routeElements.refreshButton, "click", () => {
     toolsMenu.close();
     void refreshAuthState({ force: true });
   });
 
-  elements.loadMoreButton?.addEventListener("click", () => {
+  cleanup.addEventListener(routeElements.loadMoreButton, "click", () => {
     if (!state.hasMore || state.listLoading) return;
     void loadList({ append: true });
   });
 
-  elements.actionOpen?.addEventListener("click", () => {
+  cleanup.addEventListener(routeElements.listPanel, "click", (event) => {
+    const button = event.target?.closest?.("button[data-library-record-name]");
+    if (!button || !routeElements.listPanel?.contains(button)) return;
+    selectLibraryListItem(button.dataset.libraryRecordName);
+  });
+
+  cleanup.addEventListener(routeElements.actionOpen, "click", () => {
     void openSelectedItem();
   });
-  elements.actionDownload?.addEventListener("click", () => {
+  cleanup.addEventListener(routeElements.actionDownload, "click", () => {
     downloadSelectedMedia();
   });
-  elements.actionRename?.addEventListener("click", () => {
+  cleanup.addEventListener(routeElements.actionRename, "click", () => {
     if (state.activeTab === CLOUD_LIBRARY_TAB_KEYS.media) {
       void renameSelectedMediaAsset();
     } else {
       void renameSelectedBoardDocument();
     }
   });
-  elements.actionDelete?.addEventListener("click", () => {
+  cleanup.addEventListener(routeElements.actionDelete, "click", () => {
     void deleteSelectedItem();
   });
-  elements.actionPin?.addEventListener("click", () => {
+  cleanup.addEventListener(routeElements.actionPin, "click", () => {
     void togglePinSelectedMedia();
   });
 
-  bindMenuNavigation(elements.openBoardPage, "#/board");
-  bindMenuNavigation(elements.openSpeedPage, "#/speed");
-  bindMenuNavigation(elements.openReplayPage, "#/replay");
-  bindMenuNavigation(elements.openAccelPage, "#/accel");
+  cleanup.addEventListener(routeElements.toolbarMuteBtn, "click", () => {
+    const mediaEl = libraryMediaPlayer.getMediaElement();
+    if (mediaEl) {
+      mediaEl.muted = !mediaEl.muted;
+      syncToolbarVolume();
+    }
+  });
+
+  cleanup.addEventListener(routeElements.toolbarVolumeSlider, "input", () => {
+    const mediaEl = libraryMediaPlayer.getMediaElement();
+    if (mediaEl) {
+      mediaEl.volume = Number(routeElements.toolbarVolumeSlider.value) / 100;
+      if (mediaEl.muted && mediaEl.volume > 0) mediaEl.muted = false;
+      syncToolbarVolume();
+    }
+  });
+
+  bindMenuNavigation(routeElements.openBoardPage, "#/board", cleanup);
+  bindMenuNavigation(routeElements.openSpeedPage, "#/speed", cleanup);
+  bindMenuNavigation(routeElements.openReplayPage, "#/replay", cleanup);
+  bindMenuNavigation(routeElements.openAccelPage, "#/accel", cleanup);
   if (!isSpaRuntime) {
-    integratePlayerWidget({ toolsMenuList: elements.toolsMenuList, toolsMenu });
+    integratePlayerWidget({ toolsMenuList: routeElements.toolsMenuList, toolsMenu });
   }
 
-  window.addEventListener(ROUTE_VISIBLE_EVENT, (event) => {
+  cleanup.addEventListener(window, ROUTE_VISIBLE_EVENT, (event) => {
     if (event?.detail?.path !== "/library") return;
     const routeQuery = getCurrentAppRouteQuery();
     const nextTab = normalizeTabKey(routeQuery.get("tab"));
@@ -2564,8 +2747,8 @@ function bindEvents() {
 
     state.query.search = nextSearch;
     state.query.sort = nextSort;
-    if (elements.searchInput) elements.searchInput.value = nextSearch;
-    if (elements.sortSelect) elements.sortSelect.value = nextSort;
+    if (routeElements.searchInput) routeElements.searchInput.value = nextSearch;
+    if (routeElements.sortSelect) routeElements.sortSelect.value = nextSort;
 
     if (nextTab !== state.activeTab) {
       handleTabSelection(nextTab);
@@ -2574,7 +2757,7 @@ function bindEvents() {
     }
   });
 
-  window.addEventListener(BACKEND_AUTH_STATE_EVENT, (event) => {
+  cleanup.addEventListener(window, BACKEND_AUTH_STATE_EVENT, (event) => {
     const detail = event?.detail || {};
     const opts = { force: true, pendingLogout: Boolean(detail.pendingLogout) };
     // Logout events are always processed immediately.
@@ -2591,28 +2774,8 @@ function bindEvents() {
     }
     void refreshAuthState(opts);
   });
-  document.addEventListener("i18n:change", handleLanguageChange);
+  cleanup.addEventListener(document, "i18n:change", handleLanguageChange);
 }
-
-applyButtonIcon(elements.toolsMenuButton, IconPages);
-applyButtonIcon(elements.refreshButton, IconRestart);
-applyButtonIcon(elements.openBoardPage, IconBoard);
-applyButtonIcon(elements.openSpeedPage, IconSpeed);
-applyButtonIcon(elements.openReplayPage, IconReplay);
-applyButtonIcon(elements.openAccelPage, IconAccel);
-applyButtonIcon(elements.openCurrentPage, IconWorld);
-applyButtonIcon(elements.actionOpen, IconWorld);
-applyButtonIcon(elements.actionDownload, IconDownload);
-applyButtonIcon(elements.actionRename, IconBoard);
-applyButtonIcon(elements.actionDelete, IconTrash);
-applyButtonIcon(elements.actionPin, IconPin);
-applyButtonIcon(elements.overflowBtn, IconMore);
-applyButtonIcon(elements.toolbarMuteBtn, IconVolume);
-elements.libraryTabs.forEach((button) => {
-  const tabKey = normalizeTabKey(button.dataset.tab);
-  const config = getResourceConfig(tabKey);
-  applyButtonIcon(button, config.tabIcon);
-});
 
 // ── Toolbar volume controls ──────────────────────────────────────────
 
@@ -2630,33 +2793,17 @@ function syncToolbarVolume() {
   applyButtonIcon(elements.toolbarMuteBtn, mediaEl.muted ? IconMuted : IconVolume);
 }
 
-if (elements.toolbarMuteBtn) {
-  elements.toolbarMuteBtn.addEventListener("click", () => {
-    const mediaEl = libraryMediaPlayer.getMediaElement();
-    if (mediaEl) {
-      mediaEl.muted = !mediaEl.muted;
-      syncToolbarVolume();
-    }
-  });
-}
-
-if (elements.toolbarVolumeSlider) {
-  elements.toolbarVolumeSlider.addEventListener("input", () => {
-    const mediaEl = libraryMediaPlayer.getMediaElement();
-    if (mediaEl) {
-      mediaEl.volume = Number(elements.toolbarVolumeSlider.value) / 100;
-      if (mediaEl.muted && mediaEl.volume > 0) mediaEl.muted = false;
-      syncToolbarVolume();
-    }
-  });
-}
-
-bindEvents();
-
 libraryRouteLifecycle = {
   mount: mountLibraryController,
   unmount: unmountLibraryController,
 };
+
+let libraryInitPromise = Promise.resolve();
+
+function startLibraryInit() {
+  libraryInitPromise = initLibrary();
+  return libraryInitPromise;
+}
 
 async function initLibrary() {
   try {
@@ -2666,4 +2813,26 @@ async function initLibrary() {
   }
 }
 
-export const initPromise = initLibrary();
+function ensureStandaloneLibraryMounted() {
+  if (!isSpaRuntime && !activeLibraryRoute) {
+    standaloneCleanup?.run();
+    mountLibraryRoute({
+      root: document,
+      signal: null,
+    });
+    standaloneCleanup = activeLibraryRoute?.cleanup || null;
+  }
+  return libraryInitPromise;
+}
+
+export const initPromise = {
+  then(onFulfilled, onRejected) {
+    return ensureStandaloneLibraryMounted().then(onFulfilled, onRejected);
+  },
+  catch(onRejected) {
+    return ensureStandaloneLibraryMounted().catch(onRejected);
+  },
+  finally(onFinally) {
+    return ensureStandaloneLibraryMounted().finally(onFinally);
+  },
+};

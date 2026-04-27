@@ -582,13 +582,9 @@ describe('replay.html smoke', () => {
     await bootHtmlPage('replay.html');
 
     const replayPage = await import('../../src/replay/replay.js');
-    let initResolved = false;
-    replayPage.initPromise.then(() => {
-      initResolved = true;
-    });
+    await replayPage.initPromise;
     await settleAsyncWork();
 
-    expect(initResolved).toBe(true);
     expect(document.getElementById('replayShell').hidden).toBe(false);
 
     resolveDownload(new Response(JSON.stringify({
@@ -1241,6 +1237,7 @@ describe('replay.html smoke', () => {
     await bootHtmlPage('replay.html');
 
     const replayPage = await import('../../src/replay/replay.js');
+    void replayPage.initPromise.then(() => {});
 
     expect(document.getElementById('replayEmptyState').hidden).toBe(true);
     expect(document.getElementById('replayShell').hidden).toBe(true);
@@ -1273,6 +1270,7 @@ describe('replay.html smoke', () => {
     await bootHtmlPage('replay.html');
 
     const replayPage = await import('../../src/replay/replay.js');
+    void replayPage.initPromise.then(() => {});
 
     expect(document.getElementById('replayEmptyState').hidden).toBe(true);
     expect(document.getElementById('replayShell').hidden).toBe(true);
@@ -1332,6 +1330,7 @@ describe('replay.html smoke', () => {
     await bootHtmlPage('replay.html');
 
     const replayPage = await import('../../src/replay/replay.js');
+    void replayPage.initPromise.then(() => {});
 
     await vi.advanceTimersByTimeAsync(3500);
     for (let index = 0; index < 30; index += 1) {
@@ -1367,6 +1366,7 @@ describe('replay.html smoke', () => {
     await bootHtmlPage('replay.html');
 
     const replayPage = await import('../../src/replay/replay.js');
+    void replayPage.initPromise.then(() => {});
 
     expect(document.getElementById('replayEmptyState').hidden).toBe(true);
     expect(document.getElementById('replayShell').hidden).toBe(true);
@@ -1388,7 +1388,8 @@ describe('replay.html smoke', () => {
   });
 
   it("keeps the Player launcher available for guests and after login", async () => {
-    await import("../../src/replay/replay.js");
+    const replayPage = await import("../../src/replay/replay.js");
+    await replayPage.initPromise;
     await settleAsyncWork();
 
     const btn = document.querySelector("#replayToolsMenuList [data-player-toggle]");

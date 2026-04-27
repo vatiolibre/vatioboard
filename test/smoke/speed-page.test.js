@@ -795,7 +795,8 @@ describe('speed.html smoke', () => {
   });
 
   it("keeps the Player launcher available for guests and after login", async () => {
-    await import("../../src/speed/speed.js");
+    const speedPage = await import("../../src/speed/speed.js");
+    await speedPage.initPromise;
     await settleAsyncWork();
 
     // Guest demo playback is available, so the launcher should be visible.

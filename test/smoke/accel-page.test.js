@@ -14,6 +14,13 @@ async function settleAsyncWork(iterations = 20) {
   }
 }
 
+async function settleDeferredImports(iterations = 4) {
+  for (let index = 0; index < iterations; index += 1) {
+    await vi.dynamicImportSettled();
+    await flushTasks();
+  }
+}
+
 function createActiveSubscriberFetch() {
   return vi.fn(async (input) => {
     const url = typeof input === 'string' ? input : String(input?.url ?? '');
@@ -757,7 +764,7 @@ describe('accel.html smoke', () => {
     expect(fakeMaps[0].stop).toHaveBeenCalledTimes(2);
 
     document.getElementById('resultReplayChartsBtn').click();
-    await flushTasks();
+    await settleDeferredImports();
 
     expect(document.getElementById('resultReplayChartSheet').closest('#resultsPanel')).toBeNull();
     expect(document.getElementById('resultReplayChartSheet').hidden).toBe(false);
@@ -801,7 +808,7 @@ describe('accel.html smoke', () => {
 
     const destroyedAfterSheetClose = destroyedChartCount;
     document.getElementById('resultReplayChartsBtn').click();
-    await flushTasks();
+    await settleDeferredImports();
     expect(createdChartCount).toBeGreaterThan(destroyedAfterSheetClose);
 
     document.getElementById('closeResultsPanel').click();
@@ -1444,7 +1451,8 @@ describe('accel.html smoke', () => {
   });
 
   it("keeps the Player launcher available for guests and after login", async () => {
-    await import("../../src/accel/accel.js");
+    const accelPage = await import("../../src/accel/accel.js");
+    await accelPage.initPromise;
     await settleAsyncWork();
 
     const btn = document.querySelector("#accelToolsMenuList [data-player-toggle]");

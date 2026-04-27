@@ -3,8 +3,7 @@ import '@stanko/dual-range-input/dist/index.css';
 import '../styles/accel.less';
 import '../styles/cloud-sync-status.less';
 import '../styles/backend-auth.less';
-import Chart from 'chart.js/auto';
-import DualRangeInput from '@stanko/dual-range-input';
+import { createCleanupStack } from '../app/view-cleanup.js';
 import {
   applyTranslations as applySharedTranslations,
   getLang,
@@ -133,8 +132,8 @@ let accelRouteLifecycle = {
   unmount() {},
 };
 
-export function mountAccelRoute() {
-  accelRouteLifecycle.mount();
+export function mountAccelRoute(routeContext = {}) {
+  return accelRouteLifecycle.mount(routeContext);
 }
 
 export function unmountAccelRoute() {
@@ -143,8 +142,34 @@ export function unmountAccelRoute() {
 
 export const initPromise = (function () {
   const isSpaRuntime = Boolean(window.__vatioboardSpa);
-  if (!isSpaRuntime) initBackendAuthControllers();
-  const singleTabOwnershipPromise = isSpaRuntime ? Promise.resolve(true) : ensureSingleTabOwnership();
+  var singleTabOwnershipPromise = Promise.resolve(true);
+  var activeAccelRoute = null;
+  var standaloneCleanup = null;
+  var standaloneBackendAuthInitialized = false;
+  var Chart = null;
+  var chartLoadPromise = null;
+  var DualRangeInput = null;
+  var dualRangeInputLoadPromise = null;
+
+  function loadChart() {
+    if (!chartLoadPromise) {
+      chartLoadPromise = import('chart.js/auto').then(function (module) {
+        Chart = module.default || module;
+        return Chart;
+      });
+    }
+    return chartLoadPromise;
+  }
+
+  function loadDualRangeInput() {
+    if (!dualRangeInputLoadPromise) {
+      dualRangeInputLoadPromise = import('@stanko/dual-range-input').then(function (module) {
+        DualRangeInput = module.default || module;
+        return DualRangeInput;
+      });
+    }
+    return dualRangeInputLoadPromise;
+  }
 
   var finishAudio = typeof Audio === 'function' ? new Audio(FINISH_SOUND_URL) : null;
   var finishAudioPrimePromise = null;
@@ -155,162 +180,184 @@ export const initPromise = (function () {
     finishAudio.loop = false;
   }
 
-  function getAccelElements() {
+  function getAccelElements(root) {
+    var queryOne = function (selector) {
+      return root?.querySelector ? root.querySelector(selector) : null;
+    };
+    var queryAll = function (selector) {
+      return root?.querySelectorAll ? Array.from(root.querySelectorAll(selector)) : [];
+    };
+    var byId = function (id) {
+      return queryOne('#' + id);
+    };
+
     return {
-    langToggle: document.getElementById('langToggle'),
-    langToggleButtons: Array.from(document.querySelectorAll('[data-lang-toggle], #langToggle')),
-    pageDescriptionMeta: document.querySelector('meta[name="description"]'),
-    toolbar: document.querySelector('.accel-toolbar'),
-    toolsMenuBtn: document.getElementById('accelToolsMenuBtn'),
-    toolsMenuList: document.getElementById('accelToolsMenuList'),
-    openSpeedMenu: document.getElementById('openAccelSpeedMenu'),
-    openLibraryMenu: document.getElementById('openAccelLibraryMenu'),
-    openBoardMenu: document.getElementById('openAccelBoardMenu'),
-    sheetBackdrop: document.getElementById('accelSheetBackdrop'),
-    setupTrigger: document.getElementById('setupTrigger'),
-    setupTriggerValue: document.getElementById('setupTriggerValue'),
-    setupTriggerMeta: document.getElementById('setupTriggerMeta'),
-    resultsTrigger: document.getElementById('resultsTrigger'),
-    resultsTriggerValue: document.getElementById('resultsTriggerValue'),
-    resultsTriggerMeta: document.getElementById('resultsTriggerMeta'),
-    toolbarSetup: document.getElementById('accelToolbarSetup'),
-    toolbarResults: document.getElementById('accelToolbarResults'),
-    toolbarPermissionValue: document.getElementById('toolbarPermissionValue'),
-    toolbarQualityValue: document.getElementById('toolbarQualityValue'),
-    toolbarStateValue: document.getElementById('toolbarStateValue'),
-    setupPanel: document.getElementById('setupPanel'),
-    closeSetupPanel: document.getElementById('closeSetupPanel'),
-    setupPanelStatus: document.getElementById('setupPanelStatus'),
-    resultsPanel: document.getElementById('resultsPanel'),
-    closeResultsPanel: document.getElementById('closeResultsPanel'),
-    resultsPanelStatus: document.getElementById('resultsPanelStatus'),
-    permissionValue: document.getElementById('permissionValue'),
-    gpsReadyValue: document.getElementById('gpsReadyValue'),
-    latestAccuracyValue: document.getElementById('latestAccuracyValue'),
-    observedHzValue: document.getElementById('observedHzValue'),
-    statusSpeedValue: document.getElementById('statusSpeedValue'),
-    statusHeadingValue: document.getElementById('statusHeadingValue'),
-    statusAltitudeValue: document.getElementById('statusAltitudeValue'),
-    speedSourceValue: document.getElementById('speedSourceValue'),
-    presetGrid: document.getElementById('presetGrid'),
-    customRangePanel: document.getElementById('customRangePanel'),
-    customStartInput: document.getElementById('customStartInput'),
-    customEndInput: document.getElementById('customEndInput'),
-    speedUnitMph: document.getElementById('speedUnitMph'),
-    speedUnitKmh: document.getElementById('speedUnitKmh'),
-    distanceUnitFt: document.getElementById('distanceUnitFt'),
-    distanceUnitM: document.getElementById('distanceUnitM'),
-    customRangeNotice: document.getElementById('customRangeNotice'),
-    armRun: document.getElementById('armRun'),
-    rolloutOff: document.getElementById('rolloutOff'),
-    rolloutOn: document.getElementById('rolloutOn'),
-    launchThresholdHalf: document.getElementById('launchThresholdHalf'),
-    launchThresholdOne: document.getElementById('launchThresholdOne'),
-    runNotes: document.getElementById('runNotes'),
-    actionNotice: document.getElementById('actionNotice'),
-    liveElapsedValue: document.getElementById('liveElapsedValue'),
-    liveSpeedGaugeStage: document.getElementById('liveSpeedGaugeStage'),
-    liveSpeedGaugeInner: document.getElementById('liveSpeedGaugeInner'),
-    liveSpeedDial: document.getElementById('liveSpeedDial'),
-    liveSpeedNeedle: document.getElementById('liveSpeedNeedle'),
-    liveSpeedValue: document.getElementById('liveSpeedValue'),
-    liveSpeedUnit: document.getElementById('liveSpeedUnit'),
-    liveSpeedSubstatus: document.getElementById('liveSpeedSubstatus'),
-    liveDistanceValue: document.getElementById('liveDistanceValue'),
-    liveSlopeValue: document.getElementById('liveSlopeValue'),
-    liveTargetValue: document.getElementById('liveTargetValue'),
-    liveStateValue: document.getElementById('liveStateValue'),
-    liveQualityValue: document.getElementById('liveQualityValue'),
-    livePartialsSection: document.getElementById('livePartialsSection'),
-    livePartialsList: document.getElementById('livePartialsList'),
-    progressLabel: document.getElementById('progressLabel'),
-    progressFill: document.getElementById('progressFill'),
-    resultEmptyState: document.getElementById('resultEmptyState'),
-    resultContent: document.getElementById('resultContent'),
-    resultPrimaryHeader: document.getElementById('resultPrimaryHeader'),
-    resultElapsedValue: document.getElementById('resultElapsedValue'),
-    resultGraphMeta: document.getElementById('resultGraphMeta'),
-    resultGraphEmptyState: document.getElementById('resultGraphEmptyState'),
-    resultGraphFrame: document.getElementById('resultGraphFrame'),
-    resultGraphCanvas: document.getElementById('resultGraphCanvas'),
-    resultReplayControls: document.getElementById('resultReplayControls'),
-    resultReplayToggle: document.getElementById('resultReplayToggle'),
-    resultReplayRestart: document.getElementById('resultReplayRestart'),
-    resultReplayProgress: document.getElementById('resultReplayProgress'),
-    resultReplayCurrentValue: document.getElementById('resultReplayCurrentValue'),
-    resultReplayMaxValue: document.getElementById('resultReplayMaxValue'),
-    resultReplayAxisTime: document.getElementById('resultReplayAxisTime'),
-    resultReplayAxisDistance: document.getElementById('resultReplayAxisDistance'),
-    resultReplayChartsBtn: document.getElementById('resultReplayChartsBtn'),
-    resultReplayMapShell: document.getElementById('resultReplayMapShell'),
-    resultReplayMap: document.getElementById('resultReplayMap'),
-    resultReplayChartSheet: document.getElementById('resultReplayChartSheet'),
-    resultReplayChartSheetBackdrop: document.getElementById('resultReplayChartSheetBackdrop'),
-    closeResultReplayChartSheet: document.getElementById('closeResultReplayChartSheet'),
-    resultReplaySheetAxisTime: document.getElementById('resultReplaySheetAxisTime'),
-    resultReplaySheetAxisDistance: document.getElementById('resultReplaySheetAxisDistance'),
-    resultReplaySheetFilterSlider: document.getElementById('resultReplaySheetFilterSlider'),
-    resultReplaySheetFilterStart: document.getElementById('resultReplaySheetFilterStart'),
-    resultReplaySheetFilterEnd: document.getElementById('resultReplaySheetFilterEnd'),
-    resultReplaySheetFilterStartValue: document.getElementById('resultReplaySheetFilterStartValue'),
-    resultReplaySheetFilterEndValue: document.getElementById('resultReplaySheetFilterEndValue'),
-    resultReplaySheetSpeedStage: document.getElementById('resultReplaySheetSpeedStage'),
-    resultReplaySheetSpeedValue: document.getElementById('resultReplaySheetSpeedValue'),
-    resultReplaySheetSpeedCanvas: document.getElementById('resultReplaySheetSpeedCanvas'),
-    resultReplaySheetAltitudeStage: document.getElementById('resultReplaySheetAltitudeStage'),
-    resultReplaySheetAltitudeValue: document.getElementById('resultReplaySheetAltitudeValue'),
-    resultReplaySheetAltitudeCanvas: document.getElementById('resultReplaySheetAltitudeCanvas'),
-    resultReplaySheetHeadingStage: document.getElementById('resultReplaySheetHeadingStage'),
-    resultReplaySheetHeadingValue: document.getElementById('resultReplaySheetHeadingValue'),
-    resultReplaySheetHeadingCanvas: document.getElementById('resultReplaySheetHeadingCanvas'),
-    resultGraphTimeValue: document.getElementById('resultGraphTimeValue'),
-    resultGraphSpeedValue: document.getElementById('resultGraphSpeedValue'),
-    resultGraphDistanceValue: document.getElementById('resultGraphDistanceValue'),
-    resultGraphAltitudeValue: document.getElementById('resultGraphAltitudeValue'),
-    resultGraphAccuracyValue: document.getElementById('resultGraphAccuracyValue'),
-    resultGraphSlopeValue: document.getElementById('resultGraphSlopeValue'),
-    debugRawSection: document.getElementById('debugRawSection'),
-    debugRawEmptyState: document.getElementById('debugRawEmptyState'),
-    debugRawTableWrap: document.getElementById('debugRawTableWrap'),
-    debugRawTableBody: document.getElementById('debugRawTableBody'),
-    debugGraphSection: document.getElementById('debugGraphSection'),
-    debugGraphEmptyState: document.getElementById('debugGraphEmptyState'),
-    debugGraphTableWrap: document.getElementById('debugGraphTableWrap'),
-    debugGraphTableBody: document.getElementById('debugGraphTableBody'),
-    resultPartialsSection: document.getElementById('resultPartialsSection'),
-    resultPartialsList: document.getElementById('resultPartialsList'),
-    resultPresetValue: document.getElementById('resultPresetValue'),
-    resultFinishSpeedValue: document.getElementById('resultFinishSpeedValue'),
-    resultRolloutValue: document.getElementById('resultRolloutValue'),
-    resultAccuracyValue: document.getElementById('resultAccuracyValue'),
-    resultSlopeValue: document.getElementById('resultSlopeValue'),
-    resultElevationValue: document.getElementById('resultElevationValue'),
-    resultHzValue: document.getElementById('resultHzValue'),
-    resultQualityValue: document.getElementById('resultQualityValue'),
-    resultTimestampValue: document.getElementById('resultTimestampValue'),
-    resultLocationValue: document.getElementById('resultLocationValue'),
-    resultComparisonValue: document.getElementById('resultComparisonValue'),
-    resultNotesRow: document.getElementById('resultNotesRow'),
-    resultNotesValue: document.getElementById('resultNotesValue'),
-    warningBadges: document.getElementById('warningBadges'),
-    diagnosticAverageIntervalValue: document.getElementById('diagnosticAverageIntervalValue'),
-    diagnosticJitterValue: document.getElementById('diagnosticJitterValue'),
-    diagnosticSparseValue: document.getElementById('diagnosticSparseValue'),
-    diagnosticStaleValue: document.getElementById('diagnosticStaleValue'),
-    diagnosticSpeedSourceValue: document.getElementById('diagnosticSpeedSourceValue'),
-    diagnosticSamplesValue: document.getElementById('diagnosticSamplesValue'),
-    clearHistory: document.getElementById('clearHistory'),
-    historyEmptyState: document.getElementById('historyEmptyState'),
-      historyList: document.getElementById('historyList'),
+      langToggle: byId('langToggle'),
+      langToggleButtons: queryAll('[data-lang-toggle], #langToggle'),
+      pageDescriptionMeta: root ? document.querySelector('meta[name="description"]') : null,
+      toolbar: queryOne('.accel-toolbar'),
+      toolsMenuBtn: byId('accelToolsMenuBtn'),
+      toolsMenuList: byId('accelToolsMenuList'),
+      openSpeedMenu: byId('openAccelSpeedMenu'),
+      openLibraryMenu: byId('openAccelLibraryMenu'),
+      openBoardMenu: byId('openAccelBoardMenu'),
+      sheetBackdrop: byId('accelSheetBackdrop'),
+      setupTrigger: byId('setupTrigger'),
+      setupTriggerValue: byId('setupTriggerValue'),
+      setupTriggerMeta: byId('setupTriggerMeta'),
+      resultsTrigger: byId('resultsTrigger'),
+      resultsTriggerValue: byId('resultsTriggerValue'),
+      resultsTriggerMeta: byId('resultsTriggerMeta'),
+      toolbarSetup: byId('accelToolbarSetup'),
+      toolbarResults: byId('accelToolbarResults'),
+      toolbarPermissionValue: byId('toolbarPermissionValue'),
+      toolbarQualityValue: byId('toolbarQualityValue'),
+      toolbarStateValue: byId('toolbarStateValue'),
+      setupPanel: byId('setupPanel'),
+      closeSetupPanel: byId('closeSetupPanel'),
+      setupPanelStatus: byId('setupPanelStatus'),
+      resultsPanel: byId('resultsPanel'),
+      closeResultsPanel: byId('closeResultsPanel'),
+      resultsPanelStatus: byId('resultsPanelStatus'),
+      permissionValue: byId('permissionValue'),
+      gpsReadyValue: byId('gpsReadyValue'),
+      latestAccuracyValue: byId('latestAccuracyValue'),
+      observedHzValue: byId('observedHzValue'),
+      statusSpeedValue: byId('statusSpeedValue'),
+      statusHeadingValue: byId('statusHeadingValue'),
+      statusAltitudeValue: byId('statusAltitudeValue'),
+      speedSourceValue: byId('speedSourceValue'),
+      presetGrid: byId('presetGrid'),
+      customRangePanel: byId('customRangePanel'),
+      customStartInput: byId('customStartInput'),
+      customEndInput: byId('customEndInput'),
+      speedUnitMph: byId('speedUnitMph'),
+      speedUnitKmh: byId('speedUnitKmh'),
+      distanceUnitFt: byId('distanceUnitFt'),
+      distanceUnitM: byId('distanceUnitM'),
+      customRangeNotice: byId('customRangeNotice'),
+      armRun: byId('armRun'),
+      rolloutOff: byId('rolloutOff'),
+      rolloutOn: byId('rolloutOn'),
+      launchThresholdHalf: byId('launchThresholdHalf'),
+      launchThresholdOne: byId('launchThresholdOne'),
+      runNotes: byId('runNotes'),
+      actionNotice: byId('actionNotice'),
+      liveElapsedValue: byId('liveElapsedValue'),
+      liveSpeedGaugeStage: byId('liveSpeedGaugeStage'),
+      liveSpeedGaugeInner: byId('liveSpeedGaugeInner'),
+      liveSpeedDial: byId('liveSpeedDial'),
+      liveSpeedNeedle: byId('liveSpeedNeedle'),
+      liveSpeedValue: byId('liveSpeedValue'),
+      liveSpeedUnit: byId('liveSpeedUnit'),
+      liveSpeedSubstatus: byId('liveSpeedSubstatus'),
+      liveDistanceValue: byId('liveDistanceValue'),
+      liveSlopeValue: byId('liveSlopeValue'),
+      liveTargetValue: byId('liveTargetValue'),
+      liveStateValue: byId('liveStateValue'),
+      liveQualityValue: byId('liveQualityValue'),
+      livePartialsSection: byId('livePartialsSection'),
+      livePartialsList: byId('livePartialsList'),
+      progressLabel: byId('progressLabel'),
+      progressFill: byId('progressFill'),
+      resultEmptyState: byId('resultEmptyState'),
+      resultContent: byId('resultContent'),
+      resultPrimaryHeader: byId('resultPrimaryHeader'),
+      resultElapsedValue: byId('resultElapsedValue'),
+      resultGraphMeta: byId('resultGraphMeta'),
+      resultGraphEmptyState: byId('resultGraphEmptyState'),
+      resultGraphFrame: byId('resultGraphFrame'),
+      resultGraphCanvas: byId('resultGraphCanvas'),
+      resultReplayControls: byId('resultReplayControls'),
+      resultReplayToggle: byId('resultReplayToggle'),
+      resultReplayRestart: byId('resultReplayRestart'),
+      resultReplayProgress: byId('resultReplayProgress'),
+      resultReplayCurrentValue: byId('resultReplayCurrentValue'),
+      resultReplayMaxValue: byId('resultReplayMaxValue'),
+      resultReplayAxisTime: byId('resultReplayAxisTime'),
+      resultReplayAxisDistance: byId('resultReplayAxisDistance'),
+      resultReplayChartsBtn: byId('resultReplayChartsBtn'),
+      resultReplayMapShell: byId('resultReplayMapShell'),
+      resultReplayMap: byId('resultReplayMap'),
+      resultReplayChartSheet: byId('resultReplayChartSheet'),
+      resultReplayChartSheetBackdrop: byId('resultReplayChartSheetBackdrop'),
+      closeResultReplayChartSheet: byId('closeResultReplayChartSheet'),
+      resultReplaySheetAxisTime: byId('resultReplaySheetAxisTime'),
+      resultReplaySheetAxisDistance: byId('resultReplaySheetAxisDistance'),
+      resultReplaySheetFilterSlider: byId('resultReplaySheetFilterSlider'),
+      resultReplaySheetFilterStart: byId('resultReplaySheetFilterStart'),
+      resultReplaySheetFilterEnd: byId('resultReplaySheetFilterEnd'),
+      resultReplaySheetFilterStartValue: byId('resultReplaySheetFilterStartValue'),
+      resultReplaySheetFilterEndValue: byId('resultReplaySheetFilterEndValue'),
+      resultReplaySheetSpeedStage: byId('resultReplaySheetSpeedStage'),
+      resultReplaySheetSpeedValue: byId('resultReplaySheetSpeedValue'),
+      resultReplaySheetSpeedCanvas: byId('resultReplaySheetSpeedCanvas'),
+      resultReplaySheetAltitudeStage: byId('resultReplaySheetAltitudeStage'),
+      resultReplaySheetAltitudeValue: byId('resultReplaySheetAltitudeValue'),
+      resultReplaySheetAltitudeCanvas: byId('resultReplaySheetAltitudeCanvas'),
+      resultReplaySheetHeadingStage: byId('resultReplaySheetHeadingStage'),
+      resultReplaySheetHeadingValue: byId('resultReplaySheetHeadingValue'),
+      resultReplaySheetHeadingCanvas: byId('resultReplaySheetHeadingCanvas'),
+      resultGraphTimeValue: byId('resultGraphTimeValue'),
+      resultGraphSpeedValue: byId('resultGraphSpeedValue'),
+      resultGraphDistanceValue: byId('resultGraphDistanceValue'),
+      resultGraphAltitudeValue: byId('resultGraphAltitudeValue'),
+      resultGraphAccuracyValue: byId('resultGraphAccuracyValue'),
+      resultGraphSlopeValue: byId('resultGraphSlopeValue'),
+      debugRawSection: byId('debugRawSection'),
+      debugRawEmptyState: byId('debugRawEmptyState'),
+      debugRawTableWrap: byId('debugRawTableWrap'),
+      debugRawTableBody: byId('debugRawTableBody'),
+      debugGraphSection: byId('debugGraphSection'),
+      debugGraphEmptyState: byId('debugGraphEmptyState'),
+      debugGraphTableWrap: byId('debugGraphTableWrap'),
+      debugGraphTableBody: byId('debugGraphTableBody'),
+      resultPartialsSection: byId('resultPartialsSection'),
+      resultPartialsList: byId('resultPartialsList'),
+      resultPresetValue: byId('resultPresetValue'),
+      resultFinishSpeedValue: byId('resultFinishSpeedValue'),
+      resultRolloutValue: byId('resultRolloutValue'),
+      resultAccuracyValue: byId('resultAccuracyValue'),
+      resultSlopeValue: byId('resultSlopeValue'),
+      resultElevationValue: byId('resultElevationValue'),
+      resultHzValue: byId('resultHzValue'),
+      resultQualityValue: byId('resultQualityValue'),
+      resultTimestampValue: byId('resultTimestampValue'),
+      resultLocationValue: byId('resultLocationValue'),
+      resultComparisonValue: byId('resultComparisonValue'),
+      resultNotesRow: byId('resultNotesRow'),
+      resultNotesValue: byId('resultNotesValue'),
+      warningBadges: byId('warningBadges'),
+      diagnosticAverageIntervalValue: byId('diagnosticAverageIntervalValue'),
+      diagnosticJitterValue: byId('diagnosticJitterValue'),
+      diagnosticSparseValue: byId('diagnosticSparseValue'),
+      diagnosticStaleValue: byId('diagnosticStaleValue'),
+      diagnosticSpeedSourceValue: byId('diagnosticSpeedSourceValue'),
+      diagnosticSamplesValue: byId('diagnosticSamplesValue'),
+      clearHistory: byId('clearHistory'),
+      historyEmptyState: byId('historyEmptyState'),
+      historyList: byId('historyList'),
     };
   }
 
-  var elements = getAccelElements();
+  function createInactiveToolsMenu() {
+    return {
+      close: function () {},
+      destroy: function () {},
+      setOpen: function () {},
+    };
+  }
 
-  var toolsMenu = initToolsMenu({
-    button: elements.toolsMenuBtn,
-    list: elements.toolsMenuList,
-  });
+  function createInactiveSpeedometer() {
+    return {
+      destroy: function () {},
+      render: function () {},
+      resize: function () {},
+    };
+  }
+
+  var elements = {};
+  var toolsMenu = createInactiveToolsMenu();
 
   function openCloudSyncLauncher() {
     Promise.resolve().then(function () {
@@ -318,53 +365,34 @@ export const initPromise = (function () {
     });
   }
 
-  initCloudSyncStatusIndicator({
-    mount: elements.toolbar,
-    alignEnd: true,
-    openLauncher: openCloudSyncLauncher,
-  });
+  function applyAccelIcons() {
+    applyButtonIcon(elements.armRun, IconPlay);
+    applyButtonIcon(elements.toolsMenuBtn, IconPages);
+    applyButtonIcon(elements.toolbarSetup, IconSettings);
+    applyButtonIcon(elements.toolbarResults, IconReplay);
+    applyButtonIcon(elements.openSpeedMenu, IconSpeed);
+    applyButtonIcon(elements.openLibraryMenu, IconWorld);
+    applyButtonIcon(elements.openBoardMenu, IconBoard);
+    applyButtonIcon(elements.resultReplayToggle, IconPlay);
+    applyButtonIcon(elements.resultReplayRestart, IconRestart);
+    applyButtonIcon(elements.resultReplayAxisTime, IconTime);
+    applyButtonIcon(elements.resultReplayAxisDistance, IconDistance);
+    applyButtonIcon(elements.resultReplaySheetAxisTime, IconTime);
+    applyButtonIcon(elements.resultReplaySheetAxisDistance, IconDistance);
+  }
 
-  applyButtonIcon(elements.armRun, IconPlay);
-  applyButtonIcon(elements.toolsMenuBtn, IconPages);
-  applyButtonIcon(elements.toolbarSetup, IconSettings);
-  applyButtonIcon(elements.toolbarResults, IconReplay);
-  applyButtonIcon(elements.openSpeedMenu, IconSpeed);
-  applyButtonIcon(elements.openLibraryMenu, IconWorld);
-  applyButtonIcon(elements.openBoardMenu, IconBoard);
-  applyButtonIcon(elements.resultReplayToggle, IconPlay);
-  applyButtonIcon(elements.resultReplayRestart, IconRestart);
-  applyButtonIcon(elements.resultReplayAxisTime, IconTime);
-  applyButtonIcon(elements.resultReplayAxisDistance, IconDistance);
-  applyButtonIcon(elements.resultReplaySheetAxisTime, IconTime);
-  applyButtonIcon(elements.resultReplaySheetAxisDistance, IconDistance);
   var placeResolver = createPlaceResolver({ getLanguage: getLang });
   var unitBootstrapPending = false;
   var runPlaceEnrichmentIds = new Set();
 
-  var replayChartFilterController =
-    elements.resultReplaySheetFilterStart && elements.resultReplaySheetFilterEnd
-      ? new DualRangeInput(
-          elements.resultReplaySheetFilterStart,
-          elements.resultReplaySheetFilterEnd
-        )
-      : null;
-
-  var liveSpeedometer = createAnalogSpeedometer({
-    stageElement: elements.liveSpeedGaugeStage,
-    stageInnerElement: elements.liveSpeedGaugeInner,
-    dialCanvas: elements.liveSpeedDial,
-    needleCanvas: elements.liveSpeedNeedle,
-    valueElement: elements.liveSpeedValue,
-    unitElement: elements.liveSpeedUnit,
-    substatusElement: elements.liveSpeedSubstatus,
-    styleSourceElement: elements.liveSpeedGaugeStage,
-  });
+  var replayChartFilterController = null;
+  var liveSpeedometer = createInactiveSpeedometer();
 
   var state = {
     permissionState: 'prompt',
     permissionStatus: null,
     geolocationSupported: Boolean(navigator.geolocation),
-    viewMounted: true,
+    viewMounted: false,
     initialized: false,
     watchId: null,
     uiTimerId: null,
@@ -452,52 +480,136 @@ export const initPromise = (function () {
   });
   var buildComparisonText = historyHelpers.buildComparisonText;
 
-  var resultGraph = createAccelResultGraph({
-    Chart: Chart,
-    elements: elements,
-    getDisplayedResult: getDisplayedResult,
-    getLang: getLang,
-    getState: function () {
-      return state;
-    },
-    isFiniteNumber: isFiniteNumber,
-    compactSpeedTrace: compactSpeedTrace,
-    msToSpeedUnit: msToSpeedUnit,
-    convertDistanceMeasurement: convertDistanceMeasurement,
-    formatDistanceMeasurement: formatDistanceMeasurement,
-    formatNumber: formatNumber,
-    formatRunDistance: formatRunDistance,
-    formatRunSeconds: formatRunSeconds,
-    formatSlopePercent: formatSlopePercent,
-    formatSpeedValue: formatSpeedValue,
-    getDistanceUnitLabel: getDistanceUnitLabel,
-    getSpeedUnitLabel: getSpeedUnitLabel,
-    t: t,
-    resultGraphHeight: RESULT_GRAPH_HEIGHT,
-  });
-  var replayCharts = createAccelReplayChartsController({
-    Chart: Chart,
-    elements: {
-      replayDetailSpeedCanvas: elements.resultReplaySheetSpeedCanvas,
-      replayDetailAltitudeCanvas: elements.resultReplaySheetAltitudeCanvas,
-      replayDetailHeadingCanvas: elements.resultReplaySheetHeadingCanvas,
-    },
-    convertDistanceMeasurement: convertDistanceMeasurement,
-    formatNumber: formatNumber,
-    getDistanceUnit: function () {
-      return state.settings.distanceUnit;
-    },
-    getDistanceUnitLabel: getDistanceUnitLabel,
-    getSpeedUnit: function () {
-      return state.settings.speedUnit;
-    },
-    getSpeedUnitLabel: getSpeedUnitLabel,
-    isFiniteNumber: isFiniteNumber,
-    msToSpeedUnit: msToSpeedUnit,
-  });
-  var replayMap = createAccelReplayMapController({
-    element: elements.resultReplayMap,
-  });
+  function createInactiveResultGraph() {
+    return {
+      buildGraphDataFromTraceSource: function () { return []; },
+      destroy: function () {},
+      noteResultsPanelWidth: function () {},
+      render: function () {},
+      requestRefresh: function () {},
+      setupObservers: function () {},
+    };
+  }
+
+  function createInactiveReplayCharts() {
+    return {
+      destroy: function () {},
+      getAxisValueFromClientX: function () { return null; },
+      hasMetricData: function () { return false; },
+      renderSource: function () {},
+      updatePlayback: function () {},
+    };
+  }
+
+  function createInactiveReplayMap() {
+    return {
+      cancelApproachAnimation: function () {},
+      clear: function () {},
+      destroy: function () {},
+      init: function () { return Promise.resolve(); },
+      renderPlaybackFrame: function () {},
+      runApproachAnimation: function () { return Promise.resolve(); },
+      setSource: function () {},
+    };
+  }
+
+  var resultGraph = createInactiveResultGraph();
+  var replayCharts = createInactiveReplayCharts();
+  var replayMap = createInactiveReplayMap();
+
+  function createAccelChartRouteControllers() {
+    replayChartFilterController?.destroy?.();
+    replayChartFilterController =
+      DualRangeInput && elements.resultReplaySheetFilterStart && elements.resultReplaySheetFilterEnd
+        ? new DualRangeInput(
+            elements.resultReplaySheetFilterStart,
+            elements.resultReplaySheetFilterEnd
+          )
+        : null;
+
+    resultGraph.destroy();
+    resultGraph = createAccelResultGraph({
+      Chart: Chart,
+      elements: elements,
+      getDisplayedResult: getDisplayedResult,
+      getLang: getLang,
+      getState: function () {
+        return state;
+      },
+      isFiniteNumber: isFiniteNumber,
+      compactSpeedTrace: compactSpeedTrace,
+      msToSpeedUnit: msToSpeedUnit,
+      convertDistanceMeasurement: convertDistanceMeasurement,
+      formatDistanceMeasurement: formatDistanceMeasurement,
+      formatNumber: formatNumber,
+      formatRunDistance: formatRunDistance,
+      formatRunSeconds: formatRunSeconds,
+      formatSlopePercent: formatSlopePercent,
+      formatSpeedValue: formatSpeedValue,
+      getDistanceUnitLabel: getDistanceUnitLabel,
+      getSpeedUnitLabel: getSpeedUnitLabel,
+      t: t,
+      resultGraphHeight: RESULT_GRAPH_HEIGHT,
+    });
+
+    replayCharts.destroy();
+    replayCharts = createAccelReplayChartsController({
+      Chart: Chart,
+      elements: {
+        replayDetailSpeedCanvas: elements.resultReplaySheetSpeedCanvas,
+        replayDetailAltitudeCanvas: elements.resultReplaySheetAltitudeCanvas,
+        replayDetailHeadingCanvas: elements.resultReplaySheetHeadingCanvas,
+      },
+      convertDistanceMeasurement: convertDistanceMeasurement,
+      formatNumber: formatNumber,
+      getDistanceUnit: function () {
+        return state.settings.distanceUnit;
+      },
+      getDistanceUnitLabel: getDistanceUnitLabel,
+      getSpeedUnit: function () {
+        return state.settings.speedUnit;
+      },
+      getSpeedUnitLabel: getSpeedUnitLabel,
+      isFiniteNumber: isFiniteNumber,
+      msToSpeedUnit: msToSpeedUnit,
+    });
+  }
+
+  function createAccelLiveRouteControllers() {
+    liveSpeedometer.destroy?.();
+    liveSpeedometer = createAnalogSpeedometer({
+      stageElement: elements.liveSpeedGaugeStage,
+      stageInnerElement: elements.liveSpeedGaugeInner,
+      dialCanvas: elements.liveSpeedDial,
+      needleCanvas: elements.liveSpeedNeedle,
+      valueElement: elements.liveSpeedValue,
+      unitElement: elements.liveSpeedUnit,
+      substatusElement: elements.liveSpeedSubstatus,
+      styleSourceElement: elements.liveSpeedGaugeStage,
+    });
+
+    replayMap.destroy();
+    replayMap = createAccelReplayMapController({
+      element: elements.resultReplayMap,
+    });
+  }
+
+  function loadDeferredAccelRouteControllers(route) {
+    return Promise.allSettled([loadChart(), loadDualRangeInput()])
+      .then(function (results) {
+        if (!route || route.destroyed || route.signal?.aborted || activeAccelRoute !== route) {
+          return false;
+        }
+        if (results[0]?.status !== 'fulfilled') return false;
+        createAccelChartRouteControllers();
+        setupResultGraphObservers();
+        renderAll();
+        return true;
+      })
+      .catch(function () {
+        return false;
+      });
+  }
   var replayMapIntroPromise = null;
   var replayMapIntroToken = 0;
   var pendingMissingSelectionId = '';
@@ -606,8 +718,6 @@ export const initPromise = (function () {
     if (syncSelectedPresetForUnits()) saveSettings();
     renderPresetButtons();
     renderControlSelections();
-    bindEvents();
-    setupResultGraphObservers();
     renderAll();
     publishAccelActivity();
     var initialTelemetryPromise = ensureSelectedResultTelemetry(initialRunId || state.selectedResultId, {
@@ -618,7 +728,7 @@ export const initPromise = (function () {
     }).catch(function () {
       return false;
     });
-    if (!isSpaRuntime) {
+    if (!isSpaRuntime && import.meta.env?.MODE !== 'test') {
       startCloudSyncLoop({ immediate: true });
     }
     void initialTelemetryPromise.finally(function () {
@@ -630,6 +740,14 @@ export const initPromise = (function () {
       updatePermissionState();
       ensureWatch();
     }
+  }
+
+  var accelInitPromise = Promise.resolve();
+
+  function startAccelInit() {
+    singleTabOwnershipPromise = isSpaRuntime ? Promise.resolve(true) : ensureSingleTabOwnership();
+    accelInitPromise = init();
+    return accelInitPromise;
   }
 
   function primeFinishAudio() {
@@ -702,12 +820,17 @@ export const initPromise = (function () {
   }
 
   function bindEvents() {
+    var cleanup = activeAccelRoute?.cleanup;
+    function add(target, type, listener, options) {
+      cleanup?.addEventListener(target, type, listener, options);
+    }
+
     elements.langToggleButtons.forEach(function (button) {
-      button.addEventListener('click', handleLangToggle);
+      add(button, 'click', handleLangToggle);
     });
-    bindMenuNavigation(elements.openSpeedMenu, '#/speed');
-    bindMenuNavigation(elements.openLibraryMenu, '#/library?tab=accel');
-    bindMenuNavigation(elements.openBoardMenu, '#/board');
+    bindMenuNavigation(elements.openSpeedMenu, '#/speed', cleanup);
+    bindMenuNavigation(elements.openLibraryMenu, '#/library?tab=accel', cleanup);
+    bindMenuNavigation(elements.openBoardMenu, '#/board', cleanup);
     if (!isSpaRuntime) {
       integratePlayerWidget({ toolsMenuList: elements.toolsMenuList, toolsMenu });
     }
@@ -716,7 +839,10 @@ export const initPromise = (function () {
       if (isSpaRuntime) return true;
       return window.confirm(t('accelLeaveActiveRunConfirm'));
     };
-    window.addEventListener(ROUTE_VISIBLE_EVENT, function (event) {
+    cleanup?.add(function () {
+      delete window.__vatioboardCanLeaveAccel;
+    });
+    add(window, ROUTE_VISIBLE_EVENT, function (event) {
       if (event?.detail?.path !== '/accel') return;
       var routeRunId = getCurrentAppRouteQuery().get('run') || '';
       if (!routeRunId || routeRunId === state.selectedResultId) return;
@@ -725,67 +851,67 @@ export const initPromise = (function () {
         preserveMissingPreferred: true,
       });
     });
-    elements.setupTrigger.addEventListener('click', function () {
+    add(elements.setupTrigger, 'click', function () {
       togglePanel('setup', elements.setupTrigger);
     });
-    elements.resultsTrigger.addEventListener('click', function () {
+    add(elements.resultsTrigger, 'click', function () {
       togglePanel('results', elements.resultsTrigger);
     });
-    elements.toolbarSetup.addEventListener('click', function () {
+    add(elements.toolbarSetup, 'click', function () {
       togglePanel('setup', elements.toolbarSetup);
     });
-    elements.toolbarResults.addEventListener('click', function () {
+    add(elements.toolbarResults, 'click', function () {
       if (!getDisplayedResult()) return;
       togglePanel('results', elements.toolbarResults);
     });
-    elements.closeSetupPanel.addEventListener('click', function () {
+    add(elements.closeSetupPanel, 'click', function () {
       closePanel();
     });
-    elements.closeResultsPanel.addEventListener('click', function () {
+    add(elements.closeResultsPanel, 'click', function () {
       closePanel();
     });
-    elements.sheetBackdrop.addEventListener('click', function () {
+    add(elements.sheetBackdrop, 'click', function () {
       closePanel();
     });
-    elements.presetGrid.addEventListener('click', handlePresetClick);
-    elements.customStartInput.addEventListener('input', handleCustomInput);
-    elements.customEndInput.addEventListener('input', handleCustomInput);
-    elements.speedUnitMph.addEventListener('click', handleSpeedUnitClick);
-    elements.speedUnitKmh.addEventListener('click', handleSpeedUnitClick);
-    elements.distanceUnitFt.addEventListener('click', handleDistanceUnitClick);
-    elements.distanceUnitM.addEventListener('click', handleDistanceUnitClick);
-    elements.armRun.addEventListener('click', handleRunPrimaryAction);
-    elements.rolloutOff.addEventListener('click', handleRolloutClick);
-    elements.rolloutOn.addEventListener('click', handleRolloutClick);
-    elements.launchThresholdHalf.addEventListener('click', handleThresholdClick);
-    elements.launchThresholdOne.addEventListener('click', handleThresholdClick);
-    elements.runNotes.addEventListener('input', handleNotesInput);
-    elements.clearHistory.addEventListener('click', handleClearHistory);
-    elements.historyList.addEventListener('click', handleHistoryClick);
-    elements.resultReplayToggle.addEventListener('click', handleReplayToggle);
-    elements.resultReplayRestart.addEventListener('click', handleReplayRestart);
-    elements.resultReplayProgress.addEventListener('input', handleReplayProgressInput);
-    elements.resultReplayAxisTime.addEventListener('click', handleReplayAxisClick);
-    elements.resultReplayAxisDistance.addEventListener('click', handleReplayAxisClick);
-    elements.resultReplayChartsBtn.addEventListener('click', handleReplayChartsOpen);
-    elements.closeResultReplayChartSheet.addEventListener('click', handleReplayChartsClose);
-    elements.resultReplayChartSheetBackdrop.addEventListener('click', handleReplayChartsClose);
-    elements.resultReplaySheetAxisTime.addEventListener('click', handleReplayAxisClick);
-    elements.resultReplaySheetAxisDistance.addEventListener('click', handleReplayAxisClick);
-    elements.resultReplaySheetFilterStart.addEventListener('input', handleReplayChartFilterInput);
-    elements.resultReplaySheetFilterEnd.addEventListener('input', handleReplayChartFilterInput);
+    add(elements.presetGrid, 'click', handlePresetClick);
+    add(elements.customStartInput, 'input', handleCustomInput);
+    add(elements.customEndInput, 'input', handleCustomInput);
+    add(elements.speedUnitMph, 'click', handleSpeedUnitClick);
+    add(elements.speedUnitKmh, 'click', handleSpeedUnitClick);
+    add(elements.distanceUnitFt, 'click', handleDistanceUnitClick);
+    add(elements.distanceUnitM, 'click', handleDistanceUnitClick);
+    add(elements.armRun, 'click', handleRunPrimaryAction);
+    add(elements.rolloutOff, 'click', handleRolloutClick);
+    add(elements.rolloutOn, 'click', handleRolloutClick);
+    add(elements.launchThresholdHalf, 'click', handleThresholdClick);
+    add(elements.launchThresholdOne, 'click', handleThresholdClick);
+    add(elements.runNotes, 'input', handleNotesInput);
+    add(elements.clearHistory, 'click', handleClearHistory);
+    add(elements.historyList, 'click', handleHistoryClick);
+    add(elements.resultReplayToggle, 'click', handleReplayToggle);
+    add(elements.resultReplayRestart, 'click', handleReplayRestart);
+    add(elements.resultReplayProgress, 'input', handleReplayProgressInput);
+    add(elements.resultReplayAxisTime, 'click', handleReplayAxisClick);
+    add(elements.resultReplayAxisDistance, 'click', handleReplayAxisClick);
+    add(elements.resultReplayChartsBtn, 'click', handleReplayChartsOpen);
+    add(elements.closeResultReplayChartSheet, 'click', handleReplayChartsClose);
+    add(elements.resultReplayChartSheetBackdrop, 'click', handleReplayChartsClose);
+    add(elements.resultReplaySheetAxisTime, 'click', handleReplayAxisClick);
+    add(elements.resultReplaySheetAxisDistance, 'click', handleReplayAxisClick);
+    add(elements.resultReplaySheetFilterStart, 'input', handleReplayChartFilterInput);
+    add(elements.resultReplaySheetFilterEnd, 'input', handleReplayChartFilterInput);
     bindReplayChartScrub(elements.resultReplaySheetSpeedCanvas);
     bindReplayChartScrub(elements.resultReplaySheetAltitudeCanvas);
     bindReplayChartScrub(elements.resultReplaySheetHeadingCanvas);
-    document.addEventListener('visibilitychange', renderAll);
-    document.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('pagehide', destroyResultGraph);
-    window.addEventListener('pageshow', (event) => {
+    add(document, 'visibilitychange', renderAll);
+    add(document, 'keydown', handleKeyDown);
+    add(window, 'pagehide', destroyResultGraph);
+    add(window, 'pageshow', (event) => {
       void restoreAfterPageShow(event);
     });
-    window.addEventListener('resize', handleWindowResize);
-    window.addEventListener(SINGLE_TAB_OWNERSHIP_EVENT, handleSingleTabOwnershipChange);
-    window.addEventListener(CLOUD_SYNC_APPLIED_EVENT, function (event) {
+    add(window, 'resize', handleWindowResize);
+    add(window, SINGLE_TAB_OWNERSHIP_EVENT, handleSingleTabOwnershipChange);
+    add(window, CLOUD_SYNC_APPLIED_EVENT, function (event) {
       if (event?.detail?.entityType !== CLOUD_SYNC_ENTITY_TYPES.accelRun) return;
       if (event?.detail?.deleted === true && event?.detail?.recordId === state.selectedResultId) {
         clearAccelRestoreFailure(event.detail.recordId);
@@ -940,9 +1066,9 @@ export const initPromise = (function () {
     queueResultLocationOverflowSync();
   }
 
-  function bindMenuNavigation(element, href) {
+  function bindMenuNavigation(element, href, cleanup) {
     if (!element) return;
-    element.addEventListener('click', function () {
+    cleanup?.addEventListener(element, 'click', function () {
       toolsMenu.close();
       navigateToAppRoute(href);
     });
@@ -1500,11 +1626,62 @@ export const initPromise = (function () {
     }
   }
 
-  function mountAccelController() {
-    state.viewMounted = true;
-    if (!state.initialized) return;
+  function destroyAccelRouteResources(route = activeAccelRoute) {
+    if (!route || route.destroyed) return;
+    route.destroyed = true;
+    route.syncIndicator?.destroy?.();
+    route.toolsMenu?.destroy?.();
+    replayChartFilterController?.destroy?.();
+    replayChartFilterController = null;
+    liveSpeedometer.destroy?.();
+    liveSpeedometer = createInactiveSpeedometer();
+    destroyResultGraph();
+    replayMap.destroy?.();
+    replayMap = createInactiveReplayMap();
+    toolsMenu = createInactiveToolsMenu();
+    if (activeAccelRoute === route) {
+      activeAccelRoute = null;
+    }
+  }
 
-    elements = getAccelElements();
+  async function mountAccelController(routeContext = {}) {
+    if (routeContext.signal?.aborted) return Promise.resolve();
+    unmountAccelController();
+    var ownsCleanup = !routeContext.cleanup;
+    var cleanup = routeContext.cleanup || createCleanupStack();
+    var route = {
+      cleanup: cleanup,
+      destroyed: false,
+      ownsCleanup: ownsCleanup,
+      signal: routeContext.signal || null,
+    };
+    activeAccelRoute = route;
+    elements = getAccelElements(routeContext.root || document);
+    toolsMenu = initToolsMenu({
+      button: elements.toolsMenuBtn,
+      list: elements.toolsMenuList,
+    });
+    route.toolsMenu = toolsMenu;
+    createAccelLiveRouteControllers();
+    void loadDeferredAccelRouteControllers(route);
+    route.syncIndicator = initCloudSyncStatusIndicator({
+      mount: elements.toolbar,
+      alignEnd: true,
+      openLauncher: openCloudSyncLauncher,
+    });
+    cleanup.add(function () {
+      destroyAccelRouteResources(route);
+    });
+    if (!isSpaRuntime && !standaloneBackendAuthInitialized) {
+      standaloneBackendAuthInitialized = true;
+      initBackendAuthControllers();
+    }
+    applySharedTranslations();
+    applyAccelIcons();
+    bindEvents();
+    state.viewMounted = true;
+    if (!state.initialized) return startAccelInit();
+
     applyTranslations();
     liveSpeedometer.resize();
     handleWindowResize();
@@ -1512,11 +1689,13 @@ export const initPromise = (function () {
     startUiTimer();
     updatePermissionState();
     ensureWatch();
+    return Promise.resolve();
   }
 
   function unmountAccelController() {
-    if (!state.viewMounted && isSpaRuntime) return;
+    if (!state.viewMounted && !activeAccelRoute) return;
 
+    var route = activeAccelRoute;
     var keepRealtimeTrackingInBackground = isRunActive(state.run);
     closePanel();
     if (keepRealtimeTrackingInBackground) {
@@ -1533,6 +1712,11 @@ export const initPromise = (function () {
     }
     state.viewMounted = false;
     document.body.classList.remove('accel-sheet-open');
+    document.body.classList.remove('accel-replay-chart-sheet-open');
+    destroyAccelRouteResources(route);
+    if (route?.ownsCleanup) {
+      route.cleanup?.run?.();
+    }
   }
 
   function handleSingleTabOwnershipChange(event) {
@@ -1843,11 +2027,12 @@ export const initPromise = (function () {
 
   function bindReplayChartScrub(canvas) {
     if (!canvas) return;
-    canvas.addEventListener('pointerdown', handleReplayChartPointerDown);
-    canvas.addEventListener('pointermove', handleReplayChartPointerMove);
-    canvas.addEventListener('pointerup', handleReplayChartPointerUp);
-    canvas.addEventListener('pointercancel', handleReplayChartPointerUp);
-    canvas.addEventListener('lostpointercapture', handleReplayChartPointerUp);
+    var cleanup = activeAccelRoute?.cleanup;
+    cleanup?.addEventListener(canvas, 'pointerdown', handleReplayChartPointerDown);
+    cleanup?.addEventListener(canvas, 'pointermove', handleReplayChartPointerMove);
+    cleanup?.addEventListener(canvas, 'pointerup', handleReplayChartPointerUp);
+    cleanup?.addEventListener(canvas, 'pointercancel', handleReplayChartPointerUp);
+    cleanup?.addEventListener(canvas, 'lostpointercapture', handleReplayChartPointerUp);
   }
 
   function setReplayChartSheetOpen(nextOpen) {
@@ -1873,6 +2058,9 @@ export const initPromise = (function () {
     var result = getDisplayedResult();
     var source = ensureReplaySource(result);
     if (!source) return;
+    void loadDeferredAccelRouteControllers(activeAccelRoute).then(function (loaded) {
+      if (loaded && state.replay.chartSheetOpen) renderResultCard();
+    });
     setReplayChartSheetOpen(true);
     renderResultCard();
   }
@@ -1890,11 +2078,35 @@ export const initPromise = (function () {
 
   function scrubReplayChartAtClientX(metricKey, clientX) {
     var axisValue = replayCharts.getAxisValueFromClientX(metricKey, clientX);
+    if (!isFiniteNumber(axisValue)) {
+      axisValue = getFallbackReplayChartAxisValueFromClientX(metricKey, clientX);
+    }
     if (!isFiniteNumber(axisValue)) return;
     pauseReplayPlayback();
     cancelReplayMapApproach({ markPlayed: true });
     setReplayPositionFromAxisValue(axisValue);
     renderResultCard();
+  }
+
+  function getFallbackReplayChartAxisValueFromClientX(metricKey, clientX) {
+    var result = getDisplayedResult();
+    var source = ensureReplaySource(result);
+    if (!source) return null;
+
+    var canvas =
+      metricKey === 'altitudeM'
+        ? elements.resultReplaySheetAltitudeCanvas
+        : metricKey === 'headingDeg'
+          ? elements.resultReplaySheetHeadingCanvas
+          : elements.resultReplaySheetSpeedCanvas;
+    var rect = canvas?.getBoundingClientRect?.();
+    var width = Number(rect?.width) || Number(canvas?.clientWidth) || Number(canvas?.width) || 0;
+    if (!width) return null;
+
+    var axisRange = getReplayChartRangeForSource(source, getReplayAxisModeForSource(source));
+    var left = Number(rect?.left) || 0;
+    var ratio = clamp((Number(clientX) - left) / width, 0, 1);
+    return axisRange.min + (axisRange.max - axisRange.min) * ratio;
   }
 
   function handleReplayChartPointerDown(event) {
@@ -2270,8 +2482,13 @@ export const initPromise = (function () {
         };
 
         if (typeof status.addEventListener === 'function')
-          status.addEventListener('change', handler);
-        else status.onchange = handler;
+          activeAccelRoute?.cleanup?.addEventListener(status, 'change', handler);
+        else {
+          status.onchange = handler;
+          activeAccelRoute?.cleanup?.add(function () {
+            if (status.onchange === handler) status.onchange = null;
+          });
+        }
       })
       .catch(function () {
         if (isSpaRuntime && !state.viewMounted) return;
@@ -2945,6 +3162,13 @@ export const initPromise = (function () {
     }
   }
 
+  function replaySourceHasMetricData(replaySource, metricKey) {
+    if (!Array.isArray(replaySource?.frames)) return false;
+    return replaySource.frames.some(function (frame) {
+      return isFiniteNumber(frame?.[metricKey]);
+    });
+  }
+
   function renderReplayChartSheet(result, replaySource, replayPoint) {
     if (!elements.resultReplayChartSheet) return;
 
@@ -2980,8 +3204,10 @@ export const initPromise = (function () {
       state.replay.chartFilterEndRatio
     );
 
-    var showAltitude = replayCharts.hasMetricData('altitudeM');
-    var showHeading = replayCharts.hasMetricData('headingDeg');
+    var showAltitude =
+      replayCharts.hasMetricData('altitudeM') || replaySourceHasMetricData(replaySource, 'altitudeM');
+    var showHeading =
+      replayCharts.hasMetricData('headingDeg') || replaySourceHasMetricData(replaySource, 'headingDeg');
     if (elements.resultReplaySheetAltitudeStage)
       elements.resultReplaySheetAltitudeStage.hidden = !showAltitude;
     if (elements.resultReplaySheetHeadingStage)
@@ -3085,6 +3311,13 @@ export const initPromise = (function () {
   }
 
   function renderResultGraph(result, replaySource, replayPoint) {
+    var axisMode = getReplayAxisModeForSource(replaySource);
+    if (elements.resultGraphMeta) {
+      elements.resultGraphMeta.textContent =
+        t(axisMode === 'distance' ? 'accelSpeedGraphLeadDistance' : 'accelSpeedGraphLead') +
+        ' · ' +
+        getSpeedUnitLabel(state.settings.speedUnit);
+    }
     var markerPoints =
       result && replaySource
         ? buildAccelReplayMarkers(result, replaySource, {
@@ -3093,7 +3326,7 @@ export const initPromise = (function () {
           })
         : [];
     resultGraph.render(result, {
-      axisMode: getReplayAxisModeForSource(replaySource),
+      axisMode: axisMode,
       markerPoints: markerPoints,
       playbackPoint: replayPoint,
     });
@@ -3603,5 +3836,30 @@ export const initPromise = (function () {
     });
   }
 
-  return init();
+  function ensureStandaloneAccelMounted() {
+    if (!isSpaRuntime && !activeAccelRoute) {
+      standaloneCleanup?.run();
+      var mountPromise = mountAccelRoute({
+        root: document,
+        signal: null,
+      });
+      standaloneCleanup = activeAccelRoute?.cleanup || null;
+      return Promise.resolve(mountPromise).then(function () {
+        return accelInitPromise;
+      });
+    }
+    return accelInitPromise;
+  }
+
+  return {
+    then: function (onFulfilled, onRejected) {
+      return ensureStandaloneAccelMounted().then(onFulfilled, onRejected);
+    },
+    catch: function (onRejected) {
+      return ensureStandaloneAccelMounted().catch(onRejected);
+    },
+    finally: function (onFinally) {
+      return ensureStandaloneAccelMounted().finally(onFinally);
+    },
+  };
 })();

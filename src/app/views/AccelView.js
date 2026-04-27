@@ -15,7 +15,6 @@ const view = createRouteView({
   loadModule: () => import("../../accel/accel.js"),
   mountController: (module, routeContext) => module.mountAccelRoute?.(routeContext),
   unmountController: (module, routeContext) => module.unmountAccelRoute?.(routeContext),
-  preserveDom: true,
 });
 
 export function mount(root, context) {

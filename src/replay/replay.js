@@ -3,7 +3,7 @@ import '@stanko/dual-range-input/dist/index.css';
 import '../styles/replay.less';
 import '../styles/cloud-sync-status.less';
 import '../styles/backend-auth.less';
-import DualRangeInput from '@stanko/dual-range-input';
+import { createCleanupStack } from '../app/view-cleanup.js';
 import { applyTranslations, getLang, t, toggleLang } from '../i18n.js';
 import {
   IconAccel,
@@ -61,94 +61,176 @@ import { createReplayChartsController } from './charts.js';
 import { createReplayMapController } from './map.js';
 import { isReplayPayloadComplete } from './session.js';
 
-applyTranslations();
 const isSpaRuntime = Boolean(window.__vatioboardSpa);
-const singleTabOwnershipPromise = isSpaRuntime ? Promise.resolve(true) : ensureSingleTabOwnership();
-if (!isSpaRuntime) initBackendAuthControllers();
 
-const elements = {
-  langToggle: document.getElementById('langToggle'),
-  langToggleButtons: Array.from(document.querySelectorAll('[data-lang-toggle], #langToggle')),
-  pageDescriptionMeta: document.querySelector('meta[name="description"]'),
-  toolbar: document.querySelector('.replay-toolbar'),
-  replaySessionChip: document.getElementById('replaySessionChip'),
-  replayAxisButtons: Array.from(document.querySelectorAll('.replay-axis-btn')),
-  replayGraphTriggers: Array.from(document.querySelectorAll('.replay-graph-trigger')),
-  replayToolsMenuBtn: document.getElementById('replayToolsMenuBtn'),
-  replayToolsMenuList: document.getElementById('replayToolsMenuList'),
-  openReplaySpeedMenu: document.getElementById('openReplaySpeedMenu'),
-  openReplayAccelMenu: document.getElementById('openReplayAccelMenu'),
-  openReplayLibraryMenu: document.getElementById('openReplayLibraryMenu'),
-  openReplayBoardMenu: document.getElementById('openReplayBoardMenu'),
-  replayRecordedAtValue: document.getElementById('replayRecordedAtValue'),
-  replaySampleCountValue: document.getElementById('replaySampleCountValue'),
-  replayEmptyState: document.getElementById('replayEmptyState'),
-  replayOpenSpeed: document.getElementById('replayOpenSpeed'),
-  replayShell: document.getElementById('replayShell'),
-  replayMap: document.getElementById('replayMap'),
-  replayPlayPause: document.getElementById('replayPlayPause'),
-  replayPlayPauseIcon: document.getElementById('replayPlayPauseIcon'),
-  replayPlayPauseText: document.getElementById('replayPlayPauseText'),
-  replayRestart: document.getElementById('replayRestart'),
-  replayRestartIcon: document.getElementById('replayRestartIcon'),
-  replayApproach: document.getElementById('replayApproach'),
-  replayApproachIcon: document.getElementById('replayApproachIcon'),
-  replayProgress: document.getElementById('replayProgress'),
-  replayElapsedValue: document.getElementById('replayElapsedValue'),
-  replayDurationValue: document.getElementById('replayDurationValue'),
-  replayPeakSpeedValue: document.getElementById('replayPeakSpeedValue'),
-  replayAverageSpeedValue: document.getElementById('replayAverageSpeedValue'),
-  replaySummaryDistanceValue: document.getElementById('replaySummaryDistanceValue'),
-  replaySummaryDurationValue: document.getElementById('replaySummaryDurationValue'),
-  replayAltitudeRangeValue: document.getElementById('replayAltitudeRangeValue'),
-  replayRouteValue: document.getElementById('replayRouteValue'),
-  replayHighlightsList: document.getElementById('replayHighlightsList'),
-  replayRecordingsList: document.getElementById('replayRecordingsList'),
-  replayRateButtons: Array.from(document.querySelectorAll('.replay-rate-btn')),
-  replayGraphSheet: document.getElementById('replayGraphSheet'),
-  replayGraphSheetBackdrop: document.getElementById('replayGraphSheetBackdrop'),
-  closeReplayGraphSheet: document.getElementById('closeReplayGraphSheet'),
-  replayGraphSheetTitle: document.getElementById('replayGraphSheetTitle'),
-  replayFilterSlider: document.getElementById('replayFilterSlider'),
-  replayFilterStart: document.getElementById('replayFilterStart'),
-  replayFilterEnd: document.getElementById('replayFilterEnd'),
-  replayFilterStartValue: document.getElementById('replayFilterStartValue'),
-  replayFilterEndValue: document.getElementById('replayFilterEndValue'),
-};
+function queryAll(root, selector) {
+  return root?.querySelectorAll ? Array.from(root.querySelectorAll(selector)) : [];
+}
 
-const graphElements = {
-  speed: {
-    current: document.getElementById('replayGraphSpeedCurrent'),
-    canvas: document.getElementById('replayGraphSpeedCanvas'),
-  },
-  altitude: {
-    current: document.getElementById('replayGraphAltitudeCurrent'),
-    canvas: document.getElementById('replayGraphAltitudeCanvas'),
-  },
-  heading: {
-    current: document.getElementById('replayGraphHeadingCurrent'),
-    canvas: document.getElementById('replayGraphHeadingCanvas'),
-  },
-  expanded: {
+function queryOne(root, selector) {
+  return root?.querySelector ? root.querySelector(selector) : null;
+}
+
+export function getReplayElements(root) {
+  return {
+    langToggle: queryOne(root, '#langToggle'),
+    langToggleButtons: queryAll(root, '[data-lang-toggle], #langToggle'),
+    pageDescriptionMeta: root ? document.querySelector('meta[name="description"]') : null,
+    toolbar: queryOne(root, '.replay-toolbar'),
+    replaySessionChip: queryOne(root, '#replaySessionChip'),
+    replayAxisButtons: queryAll(root, '.replay-axis-btn'),
+    replayGraphTriggers: queryAll(root, '.replay-graph-trigger'),
+    replayToolsMenuBtn: queryOne(root, '#replayToolsMenuBtn'),
+    replayToolsMenuList: queryOne(root, '#replayToolsMenuList'),
+    openReplaySpeedMenu: queryOne(root, '#openReplaySpeedMenu'),
+    openReplayAccelMenu: queryOne(root, '#openReplayAccelMenu'),
+    openReplayLibraryMenu: queryOne(root, '#openReplayLibraryMenu'),
+    openReplayBoardMenu: queryOne(root, '#openReplayBoardMenu'),
+    replayRecordedAtValue: queryOne(root, '#replayRecordedAtValue'),
+    replaySampleCountValue: queryOne(root, '#replaySampleCountValue'),
+    replayEmptyState: queryOne(root, '#replayEmptyState'),
+    replayOpenSpeed: queryOne(root, '#replayOpenSpeed'),
+    replayShell: queryOne(root, '#replayShell'),
+    replayMap: queryOne(root, '#replayMap'),
+    replayPlayPause: queryOne(root, '#replayPlayPause'),
+    replayPlayPauseIcon: queryOne(root, '#replayPlayPauseIcon'),
+    replayPlayPauseText: queryOne(root, '#replayPlayPauseText'),
+    replayRestart: queryOne(root, '#replayRestart'),
+    replayRestartIcon: queryOne(root, '#replayRestartIcon'),
+    replayApproach: queryOne(root, '#replayApproach'),
+    replayApproachIcon: queryOne(root, '#replayApproachIcon'),
+    replayProgress: queryOne(root, '#replayProgress'),
+    replayElapsedValue: queryOne(root, '#replayElapsedValue'),
+    replayDurationValue: queryOne(root, '#replayDurationValue'),
+    replayPeakSpeedValue: queryOne(root, '#replayPeakSpeedValue'),
+    replayAverageSpeedValue: queryOne(root, '#replayAverageSpeedValue'),
+    replaySummaryDistanceValue: queryOne(root, '#replaySummaryDistanceValue'),
+    replaySummaryDurationValue: queryOne(root, '#replaySummaryDurationValue'),
+    replayAltitudeRangeValue: queryOne(root, '#replayAltitudeRangeValue'),
+    replayRouteValue: queryOne(root, '#replayRouteValue'),
+    replayHighlightsList: queryOne(root, '#replayHighlightsList'),
+    replayRecordingsList: queryOne(root, '#replayRecordingsList'),
+    replayRateButtons: queryAll(root, '.replay-rate-btn'),
+    replayGraphSheet: queryOne(root, '#replayGraphSheet'),
+    replayGraphSheetBackdrop: queryOne(root, '#replayGraphSheetBackdrop'),
+    closeReplayGraphSheet: queryOne(root, '#closeReplayGraphSheet'),
+    replayGraphSheetTitle: queryOne(root, '#replayGraphSheetTitle'),
+    replayFilterSlider: queryOne(root, '#replayFilterSlider'),
+    replayFilterStart: queryOne(root, '#replayFilterStart'),
+    replayFilterEnd: queryOne(root, '#replayFilterEnd'),
+    replayFilterStartValue: queryOne(root, '#replayFilterStartValue'),
+    replayFilterEndValue: queryOne(root, '#replayFilterEndValue'),
+  };
+}
+
+export function getReplayGraphElements(root) {
+  return {
     speed: {
-      current: document.getElementById('replayExpandedSpeedCurrent'),
-      canvas: document.getElementById('replayExpandedSpeedCanvas'),
+      current: queryOne(root, '#replayGraphSpeedCurrent'),
+      canvas: queryOne(root, '#replayGraphSpeedCanvas'),
     },
     altitude: {
-      current: document.getElementById('replayExpandedAltitudeCurrent'),
-      canvas: document.getElementById('replayExpandedAltitudeCanvas'),
+      current: queryOne(root, '#replayGraphAltitudeCurrent'),
+      canvas: queryOne(root, '#replayGraphAltitudeCanvas'),
     },
     heading: {
-      current: document.getElementById('replayExpandedHeadingCurrent'),
-      canvas: document.getElementById('replayExpandedHeadingCanvas'),
+      current: queryOne(root, '#replayGraphHeadingCurrent'),
+      canvas: queryOne(root, '#replayGraphHeadingCanvas'),
     },
-  },
-};
+    expanded: {
+      speed: {
+        current: queryOne(root, '#replayExpandedSpeedCurrent'),
+        canvas: queryOne(root, '#replayExpandedSpeedCanvas'),
+      },
+      altitude: {
+        current: queryOne(root, '#replayExpandedAltitudeCurrent'),
+        canvas: queryOne(root, '#replayExpandedAltitudeCanvas'),
+      },
+      heading: {
+        current: queryOne(root, '#replayExpandedHeadingCurrent'),
+        canvas: queryOne(root, '#replayExpandedHeadingCanvas'),
+      },
+    },
+  };
+}
 
-const toolsMenu = initToolsMenu({
-  button: elements.replayToolsMenuBtn,
-  list: elements.replayToolsMenuList,
-});
+function createInactiveReplayElements() {
+  return getReplayElements(null);
+}
+
+function createInactiveReplayGraphElements() {
+  return getReplayGraphElements(null);
+}
+
+function createInactiveToolsMenu() {
+  return {
+    close() {},
+    destroy() {},
+    setOpen() {},
+  };
+}
+
+function createInactiveReplayChartsController() {
+  return {
+    destroy() {},
+    renderSession() {},
+    setDetailOpen() {},
+    setDetailRange() {},
+    updatePlayback() {},
+  };
+}
+
+function createInactiveReplayMapController() {
+  return {
+    cancelApproachAnimation() {},
+    destroy() {},
+    init() {
+      return Promise.resolve();
+    },
+    renderPlaybackFrame() {},
+    resize() {},
+    runApproachAnimation() {
+      return Promise.resolve();
+    },
+    setSession() {},
+  };
+}
+
+let elements = createInactiveReplayElements();
+let graphElements = createInactiveReplayGraphElements();
+let toolsMenu = createInactiveToolsMenu();
+let replayFilterController = null;
+let chartsController = createInactiveReplayChartsController();
+let mapController = createInactiveReplayMapController();
+let singleTabOwnershipPromise = Promise.resolve(true);
+let replayRouteGeneration = 0;
+let activeReplayRoute = null;
+let standaloneCleanup = null;
+let standaloneBackendAuthInitialized = false;
+let DualRangeInput = null;
+let dualRangeInputLoadPromise = null;
+let Chart = null;
+let chartLoadPromise = null;
+
+function loadDualRangeInput() {
+  if (!dualRangeInputLoadPromise) {
+    dualRangeInputLoadPromise = import('@stanko/dual-range-input').then((module) => {
+      DualRangeInput = module.default || module;
+      return DualRangeInput;
+    });
+  }
+  return dualRangeInputLoadPromise;
+}
+
+function loadChart() {
+  if (!chartLoadPromise) {
+    chartLoadPromise = import('chart.js/auto').then((module) => {
+      Chart = module.default || module;
+      return Chart;
+    });
+  }
+  return chartLoadPromise;
+}
 
 function focusElement(element) {
   if (!element || typeof element.focus !== 'function') return;
@@ -199,36 +281,13 @@ function openCloudSyncLauncher() {
   });
 }
 
-initCloudSyncStatusIndicator({
-  mount: elements.toolbar,
-  alignEnd: true,
-  openLauncher: openCloudSyncLauncher,
-});
-
-applyButtonIcon(elements.openReplaySpeedMenu, IconSpeed);
-applyButtonIcon(elements.openReplayAccelMenu, IconAccel);
-applyButtonIcon(elements.openReplayLibraryMenu, IconWorld);
-applyButtonIcon(elements.openReplayBoardMenu, IconBoard);
-applyButtonIcon(elements.replayToolsMenuBtn, IconPages);
-for (const button of document.querySelectorAll('.replay-axis-btn[data-axis="time"]')) {
-  applyButtonIcon(button, IconTime);
-}
-for (const button of document.querySelectorAll('.replay-axis-btn[data-axis="distance"]')) {
-  applyButtonIcon(button, IconDistance);
-}
-
-const replayFilterController =
-  elements.replayFilterStart && elements.replayFilterEnd
-    ? new DualRangeInput(elements.replayFilterStart, elements.replayFilterEnd)
-    : null;
-
 let replayRouteLifecycle = {
   mount() {},
   unmount() {},
 };
 
-export function mountReplayRoute() {
-  replayRouteLifecycle.mount();
+export function mountReplayRoute(routeContext = {}) {
+  return replayRouteLifecycle.mount(routeContext);
 }
 
 export function unmountReplayRoute() {
@@ -250,7 +309,7 @@ const state = {
   playPending: false,
   frameId: null,
   lastFrameAt: null,
-  viewMounted: true,
+  viewMounted: false,
   initialized: false,
   introPlayed: false,
   expandedGraphOpen: false,
@@ -268,24 +327,6 @@ let recordingsDetailMeasureFrame = null;
 let pendingReplayRecoveryRecordingId = null;
 
 refreshDerivedState();
-
-const chartsController = createReplayChartsController({
-  elements: {
-    speedCanvas: graphElements.speed.canvas,
-    altitudeCanvas: graphElements.altitude.canvas,
-    headingCanvas: graphElements.heading.canvas,
-    detailSpeedCanvas: graphElements.expanded.speed.canvas,
-    detailAltitudeCanvas: graphElements.expanded.altitude.canvas,
-    detailHeadingCanvas: graphElements.expanded.heading.canvas,
-  },
-  getSpeedUnit,
-  getDistanceUnit,
-});
-
-const mapController = createReplayMapController({
-  element: elements.replayMap,
-  session: state.session,
-});
 
 function cancelReplayApproach({ markPlayed = false } = {}) {
   introApproachToken += 1;
@@ -318,10 +359,10 @@ function runReplayApproach({ force = false } = {}) {
   return introApproachPromise;
 }
 
-function bindMenuNavigation(element, href) {
+function bindMenuNavigation(element, href, cleanup) {
   if (!element) return;
 
-  element.addEventListener('click', () => {
+  cleanup.addEventListener(element, 'click', () => {
     toolsMenu.close();
     navigateToAppRoute(href);
   });
@@ -879,20 +920,127 @@ function stopPlayback() {
   renderPlaybackButtons();
 }
 
-function mountReplayController() {
+function applyReplayIcons(routeElements = elements) {
+  applyButtonIcon(routeElements.openReplaySpeedMenu, IconSpeed);
+  applyButtonIcon(routeElements.openReplayAccelMenu, IconAccel);
+  applyButtonIcon(routeElements.openReplayLibraryMenu, IconWorld);
+  applyButtonIcon(routeElements.openReplayBoardMenu, IconBoard);
+  applyButtonIcon(routeElements.replayToolsMenuBtn, IconPages);
+  for (const button of routeElements.replayAxisButtons) {
+    if (button.dataset.axis === 'time') {
+      applyButtonIcon(button, IconTime);
+    } else if (button.dataset.axis === 'distance') {
+      applyButtonIcon(button, IconDistance);
+    }
+  }
+}
+
+function createReplayRouteControllers(routeElements = elements, routeGraphElements = graphElements) {
+  replayFilterController =
+    routeElements.replayFilterStart && routeElements.replayFilterEnd
+      ? new DualRangeInput(routeElements.replayFilterStart, routeElements.replayFilterEnd)
+      : null;
+  chartsController = createReplayChartsController({
+    Chart,
+    elements: {
+      speedCanvas: routeGraphElements.speed.canvas,
+      altitudeCanvas: routeGraphElements.altitude.canvas,
+      headingCanvas: routeGraphElements.heading.canvas,
+      detailSpeedCanvas: routeGraphElements.expanded.speed.canvas,
+      detailAltitudeCanvas: routeGraphElements.expanded.altitude.canvas,
+      detailHeadingCanvas: routeGraphElements.expanded.heading.canvas,
+    },
+    getSpeedUnit,
+    getDistanceUnit,
+  });
+  mapController = createReplayMapController({
+    element: routeElements.replayMap,
+    session: state.session,
+  });
+}
+
+function destroyReplayRouteResources(route = activeReplayRoute) {
+  if (!route || route.destroyed) return;
+  route.destroyed = true;
+  route.syncIndicator?.destroy?.();
+  route.toolsMenu?.destroy?.();
+  route.filterController?.destroy?.();
+  route.chartsController?.destroy?.();
+  route.mapController?.destroy?.();
+
+  if (activeReplayRoute === route) {
+    activeReplayRoute = null;
+    elements = createInactiveReplayElements();
+    graphElements = createInactiveReplayGraphElements();
+    toolsMenu = createInactiveToolsMenu();
+    replayFilterController = null;
+    chartsController = createInactiveReplayChartsController();
+    mapController = createInactiveReplayMapController();
+  }
+}
+
+async function mountReplayController(routeContext = {}) {
+  if (routeContext.signal?.aborted) return Promise.resolve();
+  unmountReplayController();
+  const ownsCleanup = !routeContext.cleanup;
+  const cleanup = routeContext.cleanup || createCleanupStack();
+  const route = {
+    cleanup,
+    destroyed: false,
+    generation: replayRouteGeneration + 1,
+    ownsCleanup,
+    signal: routeContext.signal || null,
+  };
+  replayRouteGeneration = route.generation;
+  activeReplayRoute = route;
+  elements = getReplayElements(routeContext.root || document);
+  graphElements = getReplayGraphElements(routeContext.root || document);
+  toolsMenu = initToolsMenu({
+    button: elements.replayToolsMenuBtn,
+    list: elements.replayToolsMenuList,
+  });
+  route.toolsMenu = toolsMenu;
+  await Promise.all([loadDualRangeInput(), loadChart()]);
+  if (route.signal?.aborted) {
+    destroyReplayRouteResources(route);
+    return Promise.resolve();
+  }
+  createReplayRouteControllers(elements, graphElements);
+  route.filterController = replayFilterController;
+  route.chartsController = chartsController;
+  route.mapController = mapController;
+  route.syncIndicator = initCloudSyncStatusIndicator({
+    mount: elements.toolbar,
+    alignEnd: true,
+    openLauncher: openCloudSyncLauncher,
+  });
+  cleanup.add(() => {
+    destroyReplayRouteResources(route);
+  });
+
+  if (!isSpaRuntime && !standaloneBackendAuthInitialized) {
+    standaloneBackendAuthInitialized = true;
+    initBackendAuthControllers();
+  }
+
+  applyTranslations();
+  applyReplayIcons(elements);
+  bindEvents({ elements, graphElements, cleanup, signal: route.signal });
   state.viewMounted = true;
-  if (!state.initialized) return;
+  if (!state.initialized) return startReplayInit();
 
   renderSessionStateView();
   renderSessionState();
   renderPlaybackFrame();
   queueRecordingDetailOverflowSync();
   mapController.resize();
+  return Promise.resolve();
 }
 
 function unmountReplayController() {
-  if (isSpaRuntime && !state.viewMounted) return;
+  if (!state.viewMounted && !activeReplayRoute) return;
 
+  const route = activeReplayRoute;
   stopPlayback();
   cancelReplayApproach({ markPlayed: true });
   closeExpandedGraph();
@@ -901,7 +1049,13 @@ function unmountReplayController() {
     recordingsDetailMeasureFrame = null;
   }
   state.viewMounted = false;
+  replayRouteGeneration += 1;
+  replaySelectionRequestVersion += 1;
   document.body.classList.remove('replay-graph-sheet-open');
+  destroyReplayRouteResources(route);
+  if (route?.ownsCleanup) {
+    route.cleanup?.run?.();
+  }
 }
 
 function tick(now) {
@@ -1207,26 +1361,29 @@ function syncLanguage() {
   renderPlaybackFrame();
 }
 
-function bindEvents() {
-  elements.langToggleButtons.forEach((button) => {
-    button.addEventListener('click', () => {
+function bindEvents({ elements: routeElements = elements, graphElements: routeGraphElements = graphElements, cleanup, signal } = {}) {
+  if (!cleanup) return;
+  if (signal?.aborted) return;
+
+  routeElements.langToggleButtons.forEach((button) => {
+    cleanup.addEventListener(button, 'click', () => {
       toggleLang();
     });
   });
 
-  bindMenuNavigation(elements.openReplaySpeedMenu, '#/speed');
-  bindMenuNavigation(elements.openReplayAccelMenu, '#/accel');
-  bindMenuNavigation(elements.openReplayLibraryMenu, '#/library?tab=speed');
-  bindMenuNavigation(elements.openReplayBoardMenu, '#/board');
+  bindMenuNavigation(routeElements.openReplaySpeedMenu, '#/speed', cleanup);
+  bindMenuNavigation(routeElements.openReplayAccelMenu, '#/accel', cleanup);
+  bindMenuNavigation(routeElements.openReplayLibraryMenu, '#/library?tab=speed', cleanup);
+  bindMenuNavigation(routeElements.openReplayBoardMenu, '#/board', cleanup);
   if (!isSpaRuntime) {
-    integratePlayerWidget({ toolsMenuList: elements.replayToolsMenuList, toolsMenu });
+    integratePlayerWidget({ toolsMenuList: routeElements.replayToolsMenuList, toolsMenu });
   }
 
-  elements.replayOpenSpeed?.addEventListener('click', () => {
+  cleanup.addEventListener(routeElements.replayOpenSpeed, 'click', () => {
     navigateToAppRoute('#/speed');
   });
 
-  window.addEventListener(ROUTE_VISIBLE_EVENT, (event) => {
+  cleanup.addEventListener(window, ROUTE_VISIBLE_EVENT, (event) => {
     if (event?.detail?.path !== '/replay') return;
     const routeParams = getCurrentAppRouteQuery();
     const recordingId = routeParams.get('record');
@@ -1239,27 +1396,27 @@ function bindEvents() {
     }
   });
 
-  for (const trigger of elements.replayGraphTriggers) {
-    trigger.addEventListener('click', () => {
+  for (const trigger of routeElements.replayGraphTriggers) {
+    cleanup.addEventListener(trigger, 'click', () => {
       openExpandedGraph();
     });
   }
 
-  elements.replayPlayPause?.addEventListener('click', togglePlayback);
+  cleanup.addEventListener(routeElements.replayPlayPause, 'click', togglePlayback);
 
-  elements.replayRestart?.addEventListener('click', () => {
+  cleanup.addEventListener(routeElements.replayRestart, 'click', () => {
     resetPlayback();
   });
 
-  elements.replayApproach?.addEventListener('click', async () => {
+  cleanup.addEventListener(routeElements.replayApproach, 'click', async () => {
     stopPlayback();
     await runReplayApproach({ force: true });
   });
 
-  elements.closeReplayGraphSheet?.addEventListener('click', closeExpandedGraph);
-  elements.replayGraphSheetBackdrop?.addEventListener('click', closeExpandedGraph);
+  cleanup.addEventListener(routeElements.closeReplayGraphSheet, 'click', closeExpandedGraph);
+  cleanup.addEventListener(routeElements.replayGraphSheetBackdrop, 'click', closeExpandedGraph);
 
-  elements.replayProgress?.addEventListener('input', (event) => {
+  cleanup.addEventListener(routeElements.replayProgress, 'input', (event) => {
     if (!state.session) return;
     stopPlayback();
     cancelReplayApproach({ markPlayed: true });
@@ -1273,19 +1430,19 @@ function bindEvents() {
     renderPlaybackFrame();
   });
 
-  elements.replayFilterStart?.addEventListener('input', (event) => {
+  cleanup.addEventListener(routeElements.replayFilterStart, 'input', (event) => {
     const startRatio = Number(event.target.value) / 1000;
-    const endRatio = Number(elements.replayFilterEnd?.value ?? 1000) / 1000;
+    const endRatio = Number(routeElements.replayFilterEnd?.value ?? 1000) / 1000;
     setExpandedGraphRange(startRatio, endRatio);
   });
 
-  elements.replayFilterEnd?.addEventListener('input', (event) => {
-    const startRatio = Number(elements.replayFilterStart?.value ?? 0) / 1000;
+  cleanup.addEventListener(routeElements.replayFilterEnd, 'input', (event) => {
+    const startRatio = Number(routeElements.replayFilterStart?.value ?? 0) / 1000;
     const endRatio = Number(event.target.value) / 1000;
     setExpandedGraphRange(startRatio, endRatio);
   });
 
-  elements.replayRecordingsList?.addEventListener('click', async (event) => {
+  cleanup.addEventListener(routeElements.replayRecordingsList, 'click', async (event) => {
     const deleteButton = event.target.closest('button[data-delete-recording-id]');
     if (deleteButton) {
       const { deleteRecordingId } = deleteButton.dataset;
@@ -1331,24 +1488,24 @@ function bindEvents() {
     await requestReplaySelection(button.dataset.recordingId);
   });
 
-  for (const button of elements.replayRateButtons) {
-    button.addEventListener('click', () => {
+  for (const button of routeElements.replayRateButtons) {
+    cleanup.addEventListener(button, 'click', () => {
       setPlaybackRate(Number(button.dataset.rate));
     });
   }
 
-  for (const button of elements.replayAxisButtons) {
-    button.addEventListener('click', () => {
+  for (const button of routeElements.replayAxisButtons) {
+    cleanup.addEventListener(button, 'click', () => {
       setDashboardAxis(button.dataset.axis);
     });
   }
 
   for (const canvas of [
-    graphElements.expanded.speed.canvas,
-    graphElements.expanded.altitude.canvas,
-    graphElements.expanded.heading.canvas,
+    routeGraphElements.expanded.speed.canvas,
+    routeGraphElements.expanded.altitude.canvas,
+    routeGraphElements.expanded.heading.canvas,
   ]) {
-    canvas?.addEventListener('pointerdown', (event) => {
+    cleanup.addEventListener(canvas, 'pointerdown', (event) => {
       if (!state.expandedGraphOpen) return;
       state.expandedGraphPointerId = event.pointerId;
       event.preventDefault();
@@ -1356,46 +1513,46 @@ function bindEvents() {
       scrubExpandedGraph(event.currentTarget.dataset.graphSheetScrub, event.clientX);
     });
 
-    canvas?.addEventListener('pointermove', (event) => {
+    cleanup.addEventListener(canvas, 'pointermove', (event) => {
       if (state.expandedGraphPointerId !== event.pointerId) return;
       event.preventDefault();
       scrubExpandedGraph(event.currentTarget.dataset.graphSheetScrub, event.clientX);
     });
 
-    canvas?.addEventListener('pointerup', (event) => {
+    cleanup.addEventListener(canvas, 'pointerup', (event) => {
       if (state.expandedGraphPointerId !== event.pointerId) return;
       event.currentTarget.releasePointerCapture?.(event.pointerId);
       state.expandedGraphPointerId = null;
     });
 
-    canvas?.addEventListener('pointercancel', (event) => {
+    cleanup.addEventListener(canvas, 'pointercancel', (event) => {
       if (state.expandedGraphPointerId !== event.pointerId) return;
       event.currentTarget.releasePointerCapture?.(event.pointerId);
       state.expandedGraphPointerId = null;
     });
   }
 
-  document.addEventListener('visibilitychange', () => {
+  cleanup.addEventListener(document, 'visibilitychange', () => {
     if (document.hidden) {
       stopPlayback();
     }
   });
 
-  document.addEventListener('keydown', (event) => {
+  cleanup.addEventListener(document, 'keydown', (event) => {
     if (event.target.closest('.player-panel, .player-fab')) return;
     if (event.key === 'Escape' && state.expandedGraphOpen) {
       closeExpandedGraph();
     }
   });
 
-  document.addEventListener('i18n:change', syncLanguage);
-  window.addEventListener('pagehide', stopPlayback);
-  window.addEventListener('resize', queueRecordingDetailOverflowSync);
-  window.addEventListener(SINGLE_TAB_OWNERSHIP_EVENT, (event) => {
+  cleanup.addEventListener(document, 'i18n:change', syncLanguage);
+  cleanup.addEventListener(window, 'pagehide', stopPlayback);
+  cleanup.addEventListener(window, 'resize', queueRecordingDetailOverflowSync);
+  cleanup.addEventListener(window, SINGLE_TAB_OWNERSHIP_EVENT, (event) => {
     if (event?.detail?.owned !== false) return;
     stopPlayback();
   });
-  window.addEventListener(CLOUD_SYNC_APPLIED_EVENT, (event) => {
+  cleanup.addEventListener(window, CLOUD_SYNC_APPLIED_EVENT, (event) => {
     if (event?.detail?.entityType !== CLOUD_SYNC_ENTITY_TYPES.replaySession) return;
     if (state.initialSelectionPending) return;
     if (
@@ -1484,24 +1641,10 @@ async function raceOwnershipWithTimeout() {
 }
 
 async function init() {
-  console.debug('[replay] bootstrap start');
-
-  console.debug('[replay] requesting ownership');
   const ownership = await raceOwnershipWithTimeout();
-  const ownershipStatus = ownership.owned
-    ? 'owned'
-    : ownership.degraded
-      ? 'degraded'
-      : 'blocked';
-  console.debug('[replay] ownership:', ownershipStatus);
 
   if (!ownership.owned && !ownership.degraded) {
-    console.debug('[replay] blocked by another tab, deferring to single-tab guard');
     return;
-  }
-
-  if (ownership.degraded) {
-    console.debug('[replay] continuing in degraded mode after ownership timeout/error');
   }
 
   try {
@@ -1529,7 +1672,6 @@ async function init() {
 
     const selectionSafetyTimeoutId = setTimeout(() => {
       if (state.initialSelectionPending) {
-        console.debug('[replay] safety timeout: revealing UI after storage stall');
         state.initialSelectionPending = false;
         renderSessionStateView();
       }
@@ -1541,7 +1683,6 @@ async function init() {
       clearTimeout(selectionSafetyTimeoutId);
       state.initialSelectionPending = false;
       renderSessionStateView();
-      console.debug('[replay] session selected, UI state:', state.session ? 'shell' : 'empty');
       if (state.session) {
         mapController.resize();
       }
@@ -1559,10 +1700,20 @@ async function init() {
     if (state.initialSelectionPending) {
       state.initialSelectionPending = false;
       renderSessionStateView();
-      console.debug('[replay] fallback UI reveal after init error');
     }
-    console.debug('[replay] bootstrap complete');
   }
+}
+
+let replayInitPromise = Promise.resolve();
+
+function startReplayInit() {
+  if (!isSpaRuntime) {
+    singleTabOwnershipPromise = ensureSingleTabOwnership();
+  } else {
+    singleTabOwnershipPromise = Promise.resolve(true);
+  }
+  replayInitPromise = init();
+  return replayInitPromise;
 }
 
 replayRouteLifecycle = {
@@ -1583,5 +1734,27 @@ if (import.meta.hot) {
   });
 }
 
-bindEvents();
-export const initPromise = init();
+function ensureStandaloneReplayMounted() {
+  if (!isSpaRuntime && !activeReplayRoute) {
+    standaloneCleanup?.run();
+    const mountPromise = mountReplayRoute({
+      root: document,
+      signal: null,
+    });
+    standaloneCleanup = activeReplayRoute?.cleanup || null;
+    return Promise.resolve(mountPromise).then(() => replayInitPromise);
+  }
+  return replayInitPromise;
+}
+
+export const initPromise = {
+  then(onFulfilled, onRejected) {
+    return ensureStandaloneReplayMounted().then(onFulfilled, onRejected);
+  },
+  catch(onRejected) {
+    return ensureStandaloneReplayMounted().catch(onRejected);
+  },
+  finally(onFinally) {
+    return ensureStandaloneReplayMounted().finally(onFinally);
+  },
+};

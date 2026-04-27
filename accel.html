@@ -1507,6 +1507,9 @@
       </main>
     </div>
 
-    <script type="module" src="/src/accel/accel.js"></script>
+    <script type="module">
+      import { mountAccelRoute } from "/src/accel/accel.js";
+      mountAccelRoute({ root: document });
+    </script>
   </body>
 </html>

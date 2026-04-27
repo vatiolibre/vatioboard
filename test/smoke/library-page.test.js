@@ -1305,7 +1305,8 @@ describe("library.html smoke", () => {
   });
 
   it("hides the Player launcher for guests and shows it after login", async () => {
-    await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/library.js");
+    await libraryPage.initPromise;
     await settleLibraryTasks();
 
     const btn = document.querySelector("#libraryToolsMenuList [data-player-toggle]");

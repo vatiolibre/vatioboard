@@ -754,6 +754,9 @@
       </section>
     </section>
 
-    <script type="module" src="/src/replay/replay.js"></script>
+    <script type="module">
+      import { mountReplayRoute } from "/src/replay/replay.js";
+      mountReplayRoute({ root: document });
+    </script>
   </body>
 </html>
