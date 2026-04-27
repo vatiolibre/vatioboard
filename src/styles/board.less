@@ -114,6 +114,20 @@ html.vb-floating-drag-active body{
     flex-direction:column;
 }
 
+body.board-page{
+    overflow: hidden;
+}
+
+body.board-page #app,
+body.board-page #app-view,
+body.board-page .app{
+    height: 100vh;
+    height: 100svh;
+    height: var(--board-viewport-height, 100svh);
+    min-height: 0;
+    overflow: hidden;
+}
+
 header{
     position: sticky;
     top: 0;
@@ -711,6 +725,7 @@ main{
     flex:1;
     display:flex;
     min-height: 0; /* allow canvas to fill */
+    overflow: hidden;
 }
 
 .canvas-shell{
@@ -718,6 +733,7 @@ main{
     display:flex;
     padding: 0;
     min-height: 0;
+    overflow: hidden;
 }
 
 .canvas-frame{

@@ -55,6 +55,11 @@ import {
   markDeleted,
 } from "./document-session.js";
 import {
+  measureDrawableSurface,
+  measureVisibleViewport,
+  pointFromPointerEvent,
+} from "./drawing-surface.js";
+import {
   queueCreateMutation,
   queueUpdateMutation,
   queueDeleteMutation,
@@ -198,6 +203,7 @@ if (!isSpaRuntime) {
 
   return (function(){
     const canvas = byId("pad");
+    const canvasFrame = query(".canvas-frame") || canvas.parentElement || canvas;
     const ctx = canvas.getContext("2d", { alpha: true });
     const historyCanvas = document.createElement("canvas");
     const historyCtx = historyCanvas.getContext("2d", { alpha: true });
@@ -318,6 +324,7 @@ if (!isSpaRuntime) {
     let tool = "pen"; // "pen" | "eraser"
     let drawing = false;
     let activePointerId = null;
+    let activePointerCaptureTarget = null;
     let last = null;
     let currentStroke = null;
     let boardStateRevision = 0;
@@ -898,13 +905,35 @@ if (!isSpaRuntime) {
     function resize(){
       if (isSpaRuntime && !viewMounted) return;
 
-      const rect = canvas.getBoundingClientRect();
+      canvas.style.removeProperty("width");
+      canvas.style.removeProperty("height");
+      if (canvasFrame && canvasFrame !== canvas) {
+        canvasFrame.style.removeProperty("height");
+      }
+
+      const viewport = measureVisibleViewport({ doc: document, win: window });
+      if (viewport.height > 0) {
+        document.documentElement.style.setProperty("--board-viewport-height", `${viewport.height}px`);
+      }
+
+      const rect = measureDrawableSurface({
+        canvas,
+        frame: canvasFrame,
+        doc: document,
+        win: window,
+      });
       if (rect.width < 1 || rect.height < 1) return;
 
       const dpr = Math.max(1, window.devicePixelRatio || 1);
       canvasCssWidth = rect.width;
       canvasCssHeight = rect.height;
       canvasDpr = dpr;
+
+      canvas.style.width = `${rect.width}px`;
+      canvas.style.height = `${rect.height}px`;
+      if (canvasFrame && canvasFrame !== canvas) {
+        canvasFrame.style.height = `${rect.height}px`;
+      }
 
       canvas.width = Math.floor(rect.width * dpr);
       canvas.height = Math.floor(rect.height * dpr);
@@ -916,8 +945,12 @@ if (!isSpaRuntime) {
     }
 
     function pos(ev){
-      const r = canvas.getBoundingClientRect();
-      return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+      return pointFromPointerEvent(ev, measureDrawableSurface({
+        canvas,
+        frame: canvasFrame,
+        doc: document,
+        win: window,
+      }));
     }
 
     function start(ev){
@@ -927,9 +960,10 @@ if (!isSpaRuntime) {
       clearNativeSelection();
       drawing = true;
       activePointerId = ev.pointerId;
+      activePointerCaptureTarget = canvasFrame || canvas;
       setDrawingSelectionLock(true);
       try {
-        canvas.setPointerCapture?.(ev.pointerId);
+        activePointerCaptureTarget.setPointerCapture?.(ev.pointerId);
       } catch {
         // Some browsers reject capture during transient gesture states.
       }
@@ -964,14 +998,16 @@ if (!isSpaRuntime) {
       if (!drawing) return false;
       if (activePointerId !== null && ev?.pointerId !== undefined && ev.pointerId !== activePointerId) return false;
       const pointerId = activePointerId;
+      const captureTarget = activePointerCaptureTarget;
       drawing = false;
       activePointerId = null;
+      activePointerCaptureTarget = null;
       setDrawingSelectionLock(false);
       last = null;
 
       if (pointerId !== null && pointerId !== undefined) {
         try {
-          canvas.releasePointerCapture?.(pointerId);
+          captureTarget?.releasePointerCapture?.(pointerId);
         } catch {
           // Pointer capture may already be released when pointerup/cancel fires.
         }
@@ -1233,6 +1269,7 @@ if (!isSpaRuntime) {
         energyWidget.close?.();
       }
       setDrawingSelectionLock(false);
+      document.documentElement.style.removeProperty("--board-viewport-height");
       viewMounted = false;
     }
 
@@ -1376,14 +1413,14 @@ if (!isSpaRuntime) {
     }
 
     // Events
-    cleanup.addEventListener(canvas, "pointerdown", (e)=>{ e.preventDefault(); start(e); });
-    cleanup.addEventListener(canvas, "pointermove", (e)=>{ e.preventDefault(); move(e); });
-    cleanup.addEventListener(canvas, "pointerup",   (e)=>{ e.preventDefault(); end(e); });
-    cleanup.addEventListener(canvas, "pointercancel",(e)=>{ e.preventDefault(); end(e); });
-    cleanup.addEventListener(canvas, "lostpointercapture", (e) => { end(e); });
-    cleanup.addEventListener(canvas, "contextmenu",(e)=>e.preventDefault());
-    cleanup.addEventListener(canvas, "selectstart", (e) => e.preventDefault());
-    cleanup.addEventListener(canvas, "dragstart", (e) => e.preventDefault());
+    cleanup.addEventListener(canvasFrame, "pointerdown", (e)=>{ e.preventDefault(); start(e); });
+    cleanup.addEventListener(canvasFrame, "pointermove", (e)=>{ e.preventDefault(); move(e); });
+    cleanup.addEventListener(canvasFrame, "pointerup",   (e)=>{ e.preventDefault(); end(e); });
+    cleanup.addEventListener(canvasFrame, "pointercancel",(e)=>{ e.preventDefault(); end(e); });
+    cleanup.addEventListener(canvasFrame, "lostpointercapture", (e) => { end(e); });
+    cleanup.addEventListener(canvasFrame, "contextmenu",(e)=>e.preventDefault());
+    cleanup.addEventListener(canvasFrame, "selectstart", (e) => e.preventDefault());
+    cleanup.addEventListener(canvasFrame, "dragstart", (e) => e.preventDefault());
     cleanup.addEventListener(document, "selectstart", preventSelectionWhileDrawing);
 
     cleanup.addEventListener(penBtn, "click", ()=>{ tool="pen"; setActive(); });
@@ -1416,6 +1453,8 @@ if (!isSpaRuntime) {
     }
 
     cleanup.addEventListener(window, "resize", resize);
+    cleanup.addEventListener(window.visualViewport, "resize", resize);
+    cleanup.addEventListener(window.visualViewport, "scroll", resize);
     cleanup.addEventListener(document, "keydown", (event) => {
       if (isEditableElement(document.activeElement)) return;
       if (!(event.ctrlKey || event.metaKey)) return;
