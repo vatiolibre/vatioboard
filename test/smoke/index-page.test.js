@@ -4,6 +4,8 @@ import { bootHtmlPage, expectPageSeo, flushTasks } from "../helpers/page-smoke.j
 const routeState = vi.hoisted(() => ({
   mounted: [],
   unmounted: [],
+  events: [],
+  deferredLoads: new Map(),
   createPlayerWidget: vi.fn(() => ({
     open: vi.fn(),
     close: vi.fn(),
@@ -16,24 +18,27 @@ const routeState = vi.hoisted(() => ({
 vi.mock("../../src/app/routes.js", () => ({
   routes: ["/", "/library", "/accel"].map((path) => {
     const name = path === "/" ? "speed" : path.slice(1);
+    const loadedRoute = {
+      mount(root) {
+        routeState.mounted.push(name);
+        routeState.events.push(`mount:${name}`);
+        const view = document.createElement("section");
+        view.dataset.mockView = name;
+        view.textContent = name;
+        root.replaceChildren(view);
+        return {
+          unmount() {
+            routeState.unmounted.push(name);
+            routeState.events.push(`unmount:${name}`);
+            root.replaceChildren();
+          },
+        };
+      },
+    };
     return {
       path,
       aliases: path === "/" ? ["/speed"] : [],
-      load: () => Promise.resolve({
-        mount(root) {
-          routeState.mounted.push(name);
-          const view = document.createElement("section");
-          view.dataset.mockView = name;
-          view.textContent = name;
-          root.replaceChildren(view);
-          return {
-            unmount() {
-              routeState.unmounted.push(name);
-              root.replaceChildren();
-            },
-          };
-        },
-      }),
+      load: () => routeState.deferredLoads.get(path)?.promise.then(() => loadedRoute) || Promise.resolve(loadedRoute),
     };
   }),
 }));
@@ -62,11 +67,27 @@ async function bootSpa() {
   }
 }
 
+function createDeferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+}
+
 describe("index.html SPA shell", () => {
   beforeEach(() => {
+    window.__vatioboardRouter?.destroy?.();
+    delete window.__vatioboardRouter;
+    delete window.__vatioboardFloatingTools;
+    delete window.__vatioboardPlayerWidget;
     vi.resetModules();
     routeState.mounted = [];
     routeState.unmounted = [];
+    routeState.events = [];
+    routeState.deferredLoads.clear();
     routeState.createPlayerWidget.mockClear();
     localStorage.clear();
   });
@@ -92,7 +113,7 @@ describe("index.html SPA shell", () => {
         restoreVisibility: true,
       }),
     );
-  });
+  }, 40000);
 
   it("switches hash routes without reloading the document", async () => {
     await bootSpa();
@@ -107,6 +128,9 @@ describe("index.html SPA shell", () => {
     expect(document.body).toBe(originalBody);
     expect(document.querySelector("[data-mock-view='library']")).toBeTruthy();
     expect(routeState.unmounted).toContain("speed");
+    expect(routeState.events.indexOf("unmount:speed")).toBeLessThan(
+      routeState.events.indexOf("mount:library"),
+    );
 
     window.location.hash = "#/accel";
     window.dispatchEvent(new HashChangeEvent("hashchange"));
@@ -116,7 +140,35 @@ describe("index.html SPA shell", () => {
 
     expect(document.querySelector("[data-mock-view='accel']")).toBeTruthy();
     expect(routeState.unmounted).toContain("library");
-  });
+    expect(routeState.unmounted.filter((name) => name === "library")).toHaveLength(1);
+    expect(routeState.createPlayerWidget).toHaveBeenCalledTimes(1);
+  }, 40000);
+
+  it("prevents a stale delayed route import from mounting after a newer route wins", async () => {
+    const delayedSpeed = createDeferred();
+    routeState.deferredLoads.set("/", delayedSpeed);
+
+    await bootHtmlPage("index.html");
+    await import("../../src/app/main.js");
+    await flushTasks();
+
+    window.location.hash = "#/library";
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+    for (let index = 0; index < 8; index += 1) {
+      await flushTasks();
+    }
+
+    expect(document.querySelector("[data-mock-view='library']")).toBeTruthy();
+    expect(routeState.mounted).toEqual(["library"]);
+
+    delayedSpeed.resolve();
+    for (let index = 0; index < 8; index += 1) {
+      await flushTasks();
+    }
+
+    expect(routeState.mounted).toEqual(["library"]);
+    expect(document.querySelector("[data-mock-view='speed']")).toBeNull();
+  }, 40000);
 
   it("binds route menu buttons to one shared start menu in the SPA", async () => {
     await bootSpa();

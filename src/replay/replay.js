@@ -880,7 +880,7 @@ function stopPlayback() {
   renderPlaybackButtons();
 }
 
-function handleLegacyViewMount() {
+function mountReplayController() {
   state.viewMounted = true;
   if (!state.initialized) return;
 
@@ -891,7 +891,7 @@ function handleLegacyViewMount() {
   mapController.resize();
 }
 
-function handleLegacyViewUnmount() {
+function unmountReplayController() {
   if (isSpaRuntime && !state.viewMounted) return;
 
   stopPlayback();
@@ -1572,8 +1572,8 @@ async function init() {
 }
 
 replayRouteLifecycle = {
-  mount: handleLegacyViewMount,
-  unmount: handleLegacyViewUnmount,
+  mount: mountReplayController,
+  unmount: unmountReplayController,
 };
 
 if (import.meta.hot) {

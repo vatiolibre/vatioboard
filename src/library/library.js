@@ -1641,6 +1641,10 @@ async function loadList({ append = false, force = false, offlineBootstrap = fals
     search: state.query.search,
     sort: state.query.sort,
   });
+  if (!append && !force && listRequestState.requestKey === requestKey && state.listLoading) {
+    return;
+  }
+
   const generation = listRequestState.generation + 1;
   listRequestState.generation = generation;
   const requestId = stopRequest(listRequestState);
@@ -2447,7 +2451,7 @@ function bindMenuNavigation(button, href) {
   });
 }
 
-function handleLegacyViewMount() {
+function mountLibraryController() {
   state.viewMounted = true;
   renderStatus();
   renderTabs();
@@ -2460,7 +2464,7 @@ function handleLegacyViewMount() {
   }
 }
 
-function handleLegacyViewUnmount() {
+function unmountLibraryController() {
   if (isSpaRuntime && !state.viewMounted) return;
 
   state.viewMounted = false;
@@ -2650,8 +2654,8 @@ if (elements.toolbarVolumeSlider) {
 bindEvents();
 
 libraryRouteLifecycle = {
-  mount: handleLegacyViewMount,
-  unmount: handleLegacyViewUnmount,
+  mount: mountLibraryController,
+  unmount: unmountLibraryController,
 };
 
 async function initLibrary() {

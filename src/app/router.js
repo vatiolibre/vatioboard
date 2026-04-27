@@ -5,6 +5,7 @@ let activeRoute = null;
 let activeRouteHash = "";
 let routeChangeHandler = null;
 let restoringHash = false;
+let pendingRouteHash = "";
 
 function normalizePath(path) {
   const value = String(path || "").trim();
@@ -87,7 +88,6 @@ export function toAppRouteHash(href) {
   if (pathname === "/accel") return `#/accel${search}`;
   if (pathname === "/replay") return `#/replay${search}`;
   if (pathname === "/board") return `#/board${search}`;
-  if (pathname === "/player") return `#/player${search}`;
 
   return "";
 }
@@ -163,6 +163,9 @@ export function createHashRouter({ routes, onRouteChange }) {
     }
 
     const nextRoute = parseAppHash(window.location.hash || "#/");
+    if (activeRoute && nextRoute.hash === activeRouteHash) return;
+    if (pendingRouteHash === nextRoute.hash) return;
+
     if (activeRoute && nextRoute.hash !== activeRouteHash && !canNavigateAway(activeRoute)) {
       restoringHash = true;
       window.location.hash = activeRouteHash || "#/";
@@ -184,8 +187,13 @@ export function createHashRouter({ routes, onRouteChange }) {
 
     activeRoute = resolvedRoute;
     activeRouteHash = nextRoute.hash;
+    pendingRouteHash = nextRoute.hash;
     window.dispatchEvent(new CustomEvent(ROUTE_CHANGE_EVENT, { detail: resolvedRoute }));
-    await onRouteChange(resolvedRoute);
+    try {
+      await onRouteChange(resolvedRoute);
+    } finally {
+      if (pendingRouteHash === nextRoute.hash) pendingRouteHash = "";
+    }
   };
 
   if (!window.location.hash) {
@@ -200,6 +208,7 @@ export function createHashRouter({ routes, onRouteChange }) {
     destroy() {
       window.removeEventListener("hashchange", routeChangeHandler);
       routeChangeHandler = null;
+      pendingRouteHash = "";
     },
   };
 }

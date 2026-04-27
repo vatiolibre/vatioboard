@@ -12,8 +12,8 @@ const view = createRouteView({
     bodyClass: "library-page",
   },
   loadModule: () => import("../../library/library.js"),
-  mountController: (module) => module.mountLibraryRoute?.(),
-  unmountController: (module) => module.unmountLibraryRoute?.(),
+  mountController: (module, routeContext) => module.mountLibraryRoute?.(routeContext),
+  unmountController: (module, routeContext) => module.unmountLibraryRoute?.(routeContext),
 });
 
 export function mount(root, context) {

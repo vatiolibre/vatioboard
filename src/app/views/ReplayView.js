@@ -13,8 +13,8 @@ const view = createRouteView({
     cleanupBodyClasses: ["replay-graph-sheet-open"],
   },
   loadModule: () => import("../../replay/replay.js"),
-  mountController: (module) => module.mountReplayRoute?.(),
-  unmountController: (module) => module.unmountReplayRoute?.(),
+  mountController: (module, routeContext) => module.mountReplayRoute?.(routeContext),
+  unmountController: (module, routeContext) => module.unmountReplayRoute?.(routeContext),
 });
 
 export function mount(root, context) {

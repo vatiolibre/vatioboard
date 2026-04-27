@@ -1,3 +1,5 @@
+import { createCleanupStack } from "../view-cleanup.js";
+
 const templateCache = new Map();
 
 function normalizeClassList(value) {
@@ -77,6 +79,22 @@ export function setRouteMeta({
   };
 }
 
+function getTemplate(pageName, template) {
+  const cacheKey = `${pageName || "route"}:${String(template || "")}`;
+  if (templateCache.has(cacheKey)) return templateCache.get(cacheKey);
+
+  const templateElement = document.createElement("template");
+  templateElement.innerHTML = String(template || "").trim();
+  templateCache.set(cacheKey, templateElement);
+  return templateElement;
+}
+
+function createNoopMountedView() {
+  return {
+    unmount() {},
+  };
+}
+
 export function createRouteView({
   pageName,
   template,
@@ -85,47 +103,66 @@ export function createRouteView({
   mountController,
   unmountController,
 }) {
-  let routeNodes = null;
   let modulePromise = null;
-  let loadedModule = null;
-  let mounted = false;
-
-  function ensureRouteNodes() {
-    if (routeNodes) return routeNodes;
-    if (templateCache.has(template)) {
-      routeNodes = templateCache.get(template).map((node) => node.cloneNode(true));
-      return routeNodes;
-    }
-
-    const templateElement = document.createElement("template");
-    templateElement.innerHTML = String(template || "").trim();
-    const cachedNodes = Array.from(templateElement.content.childNodes);
-    templateCache.set(template, cachedNodes.map((node) => node.cloneNode(true)));
-    routeNodes = cachedNodes;
-    return routeNodes;
-  }
 
   return {
-    async mount(root, context) {
-      mounted = true;
-      const routeMetaCleanup = setRouteMeta(meta);
-      const nodes = ensureRouteNodes();
-      root.replaceChildren(...nodes);
+    async mount(root, context = {}) {
+      const signal = context.routeSignal;
+      if (signal?.aborted) return createNoopMountedView();
 
-      if (!modulePromise) {
-        modulePromise = Promise.resolve().then(loadModule).then((module) => {
-          loadedModule = module;
-          return module;
+      const cleanup = createCleanupStack();
+      let routeModule = null;
+      let controllerResult = null;
+      const mountContext = {
+        root,
+        context,
+        cleanup,
+        signal,
+        pageName,
+      };
+
+      cleanup.add(() => root.replaceChildren());
+      cleanup.add(setRouteMeta(meta));
+      const templateElement = getTemplate(pageName, template);
+      root.replaceChildren(templateElement.content.cloneNode(true));
+
+      try {
+        if (!modulePromise) {
+          modulePromise = Promise.resolve().then(loadModule);
+        }
+
+        routeModule = await modulePromise;
+
+        if (signal?.aborted) {
+          cleanup.run();
+          return createNoopMountedView();
+        }
+
+        controllerResult = await mountController?.(routeModule, mountContext);
+        cleanup.add(() => {
+          unmountController?.(routeModule, mountContext);
         });
-      }
+        cleanup.add(() => {
+          controllerResult?.unmount?.();
+        });
 
-      const routeModule = await modulePromise;
+        if (signal?.aborted) {
+          cleanup.run();
+          return createNoopMountedView();
+        }
 
-      if (mounted) {
-        mountController?.(routeModule, { root, context, pageName });
         window.dispatchEvent(new Event("resize"));
-      } else {
-        unmountController?.(routeModule, { root, context, pageName });
+      } catch (error) {
+        if (!routeModule) modulePromise = null;
+        if (routeModule) {
+          try {
+            unmountController?.(routeModule, mountContext);
+          } catch {
+            // The cleanup stack below still owns route DOM and metadata cleanup.
+          }
+        }
+        cleanup.run();
+        throw error;
       }
 
       let disposed = false;
@@ -133,10 +170,7 @@ export function createRouteView({
         unmount() {
           if (disposed) return;
           disposed = true;
-          mounted = false;
-          unmountController?.(loadedModule, { root, context, pageName });
-          routeMetaCleanup();
-          root.replaceChildren();
+          cleanup.run();
         },
       };
     },

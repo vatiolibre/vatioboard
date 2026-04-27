@@ -13,8 +13,8 @@ const view = createRouteView({
     cleanupBodyClasses: ["accel-sheet-open", "accel-replay-chart-sheet-open"],
   },
   loadModule: () => import("../../accel/accel.js"),
-  mountController: (module) => module.mountAccelRoute?.(),
-  unmountController: (module) => module.unmountAccelRoute?.(),
+  mountController: (module, routeContext) => module.mountAccelRoute?.(routeContext),
+  unmountController: (module, routeContext) => module.unmountAccelRoute?.(routeContext),
 });
 
 export function mount(root, context) {

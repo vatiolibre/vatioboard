@@ -12,8 +12,8 @@ const view = createRouteView({
     bodyClass: "board-page",
   },
   loadModule: () => import("../../board/board.js"),
-  mountController: (module) => module.mountBoardRoute?.(),
-  unmountController: (module) => module.unmountBoardRoute?.(),
+  mountController: (module, routeContext) => module.mountBoardRoute?.(routeContext),
+  unmountController: (module, routeContext) => module.unmountBoardRoute?.(routeContext),
 });
 
 export function mount(root, context) {

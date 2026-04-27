@@ -25,9 +25,4 @@ export const routes = [
     title: "Vatio Board",
     load: () => import("./views/BoardView.js"),
   },
-  {
-    path: "/player",
-    title: "Audio Player",
-    load: () => import("./views/PlayerDebugView.js"),
-  },
 ];

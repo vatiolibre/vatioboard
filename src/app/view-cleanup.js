@@ -2,10 +2,18 @@ export function createCleanupStack() {
   const cleanups = [];
   let disposed = false;
 
+  function runCleanup(cleanup) {
+    try {
+      cleanup();
+    } catch {
+      // Keep teardown best-effort so one stale listener never strands a route.
+    }
+  }
+
   function add(cleanup) {
     if (typeof cleanup !== "function") return cleanup;
     if (disposed) {
-      cleanup();
+      runCleanup(cleanup);
       return cleanup;
     }
     cleanups.push(cleanup);
@@ -13,10 +21,20 @@ export function createCleanupStack() {
   }
 
   function addEventListener(target, type, listener, options) {
-    if (!target || typeof target.addEventListener !== "function") return;
-    target.addEventListener(type, listener, options);
+    if (!target) return;
+
+    if (typeof target.addEventListener === "function") {
+      target.addEventListener(type, listener, options);
+      add(() => {
+        target.removeEventListener(type, listener, options);
+      });
+      return;
+    }
+
+    if (typeof target.addListener !== "function") return;
+    target.addListener(listener);
     add(() => {
-      target.removeEventListener(type, listener, options);
+      target.removeListener?.(listener);
     });
   }
 
@@ -52,16 +70,20 @@ export function createCleanupStack() {
     return controller;
   }
 
+  function addDisposable(object, methodName = "destroy") {
+    if (!object || typeof object[methodName] !== "function") return object;
+    add(() => {
+      object[methodName]();
+    });
+    return object;
+  }
+
   function run() {
     if (disposed) return;
     disposed = true;
     while (cleanups.length) {
       const cleanup = cleanups.pop();
-      try {
-        cleanup();
-      } catch {
-        // Keep teardown best-effort so one stale listener never strands a route.
-      }
+      runCleanup(cleanup);
     }
   }
 
@@ -72,6 +94,7 @@ export function createCleanupStack() {
     setInterval: setIntervalCleanup,
     requestAnimationFrame: requestAnimationFrameCleanup,
     abortController,
+    addDisposable,
     run,
   };
 }

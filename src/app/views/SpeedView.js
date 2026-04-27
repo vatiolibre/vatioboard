@@ -13,8 +13,8 @@ const view = createRouteView({
     cleanupBodyClasses: ["alert-panel-open"],
   },
   loadModule: () => import("../../speed/speed.js"),
-  mountController: (module) => module.mountSpeedRoute?.(),
-  unmountController: (module) => module.unmountSpeedRoute?.(),
+  mountController: (module, routeContext) => module.mountSpeedRoute?.(routeContext),
+  unmountController: (module, routeContext) => module.unmountSpeedRoute?.(routeContext),
 });
 
 export function mount(root, context) {

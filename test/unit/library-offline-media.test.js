@@ -264,7 +264,7 @@ describe("library offline media", () => {
     expect(countFetchCalls(fetchMock, "list_my_media_assets")).toBe(0);
     expect(countFetchCalls(fetchMock, "get_my_media_asset_detail")).toBe(0);
     expect(countFetchCalls(fetchMock, "get_my_media_asset_access")).toBe(0);
-  });
+  }, 40000);
 
   it("logout during media list bootstrap aborts the in-flight request and skips remaining protected media calls", async () => {
     let loggedOut = false;

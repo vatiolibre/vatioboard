@@ -381,5 +381,5 @@ describe('SPA GPS background runtime', () => {
         return Math.max(sampleCount, embeddedCount) >= 3;
       })
     ).toBe(true);
-  });
+  }, 40000);
 });

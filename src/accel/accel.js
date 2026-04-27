@@ -156,7 +156,8 @@ export const initPromise = (function () {
     finishAudio.loop = false;
   }
 
-  var elements = {
+  function getAccelElements() {
+    return {
     langToggle: document.getElementById('langToggle'),
     langToggleButtons: Array.from(document.querySelectorAll('[data-lang-toggle], #langToggle')),
     pageDescriptionMeta: document.querySelector('meta[name="description"]'),
@@ -301,8 +302,11 @@ export const initPromise = (function () {
     diagnosticSamplesValue: document.getElementById('diagnosticSamplesValue'),
     clearHistory: document.getElementById('clearHistory'),
     historyEmptyState: document.getElementById('historyEmptyState'),
-    historyList: document.getElementById('historyList'),
-  };
+      historyList: document.getElementById('historyList'),
+    };
+  }
+
+  var elements = getAccelElements();
 
   var toolsMenu = initToolsMenu({
     button: elements.toolsMenuBtn,
@@ -1482,10 +1486,12 @@ export const initPromise = (function () {
     }
   }
 
-  function handleLegacyViewMount() {
+  function mountAccelController() {
     state.viewMounted = true;
     if (!state.initialized) return;
 
+    elements = getAccelElements();
+    applyTranslations();
     liveSpeedometer.resize();
     handleWindowResize();
     renderAll();
@@ -1494,7 +1500,7 @@ export const initPromise = (function () {
     ensureWatch();
   }
 
-  function handleLegacyViewUnmount() {
+  function unmountAccelController() {
     if (!state.viewMounted && isSpaRuntime) return;
 
     var keepRealtimeTrackingInBackground = isRunActive(state.run);
@@ -3573,8 +3579,8 @@ export const initPromise = (function () {
   }
 
   accelRouteLifecycle = {
-    mount: handleLegacyViewMount,
-    unmount: handleLegacyViewUnmount,
+    mount: mountAccelController,
+    unmount: unmountAccelController,
   };
 
   if (import.meta.hot) {

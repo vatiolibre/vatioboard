@@ -87,6 +87,7 @@ export async function startAppShell({
   installLinkInterceptor();
 
   let activeView = null;
+  let activeRouteController = null;
   let routeVersion = 0;
 
   const router = createHashRouter({
@@ -95,21 +96,26 @@ export async function startAppShell({
       const version = routeVersion + 1;
       routeVersion = version;
 
+      activeRouteController?.abort();
+      const routeController = new AbortController();
+      activeRouteController = routeController;
+
       if (activeView?.unmount) {
         activeView.unmount();
         activeView = null;
       }
 
       const loaded = await route.config.load();
-      if (version !== routeVersion) return;
+      if (version !== routeVersion || routeController.signal.aborted) return;
 
       const view = await loaded.mount(viewRoot, {
         ...context,
         route,
+        routeSignal: routeController.signal,
         navigate: navigateToAppRoute,
         emitRouteVisible: () => emitRouteVisible(route),
       });
-      if (version !== routeVersion) {
+      if (version !== routeVersion || routeController.signal.aborted) {
         view?.unmount?.();
         return;
       }

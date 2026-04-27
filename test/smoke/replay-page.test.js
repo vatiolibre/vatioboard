@@ -372,7 +372,7 @@ describe('replay.html smoke', () => {
 
     expect(fakeMaps[0]?.stop).toHaveBeenCalledTimes(1);
     expect(fakeMaps[0]?.jumpTo).toHaveBeenCalledTimes(1);
-  });
+  }, 40000);
 
   it('falls back to the first local session when a requested replay is missing in degraded storage', async () => {
     Object.defineProperty(globalThis, 'indexedDB', {

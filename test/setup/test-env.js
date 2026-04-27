@@ -134,6 +134,13 @@ function createGeolocationMock() {
 }
 
 beforeEach(() => {
+  window.__vatioboardRouter?.destroy?.();
+  delete window.__vatioboardRouter;
+  delete window.__vatioboardSpa;
+  delete window.__vatioboardPlayerWidget;
+  delete window.__vatioboardFloatingTools;
+  delete window.__vatioboardStartMenu;
+
   const canvasContexts = new WeakMap();
   const geolocation = createGeolocationMock();
   const mediaSession = {
@@ -431,6 +438,13 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  window.__vatioboardRouter?.destroy?.();
+  delete window.__vatioboardRouter;
+  delete window.__vatioboardSpa;
+  delete window.__vatioboardPlayerWidget;
+  delete window.__vatioboardFloatingTools;
+  delete window.__vatioboardStartMenu;
+
   localStorage.clear();
   sessionStorage.clear();
   document.open();

@@ -5,6 +5,7 @@ import "../styles/energy.less";
 import "../styles/dock.less";
 import "../shared/ui/confirm-dialog.less";
 
+import { createCleanupStack } from "../app/view-cleanup.js";
 import { integratePlayerWidget } from "../player/integrate-player-widget.js";
 import { navigateToAppRoute } from "../app/router.js";
 import {
@@ -84,25 +85,36 @@ import {
   IconWorld,
 } from "../icons.js";
 
+let activeBoardRoute = null;
+
+export function mountBoardRoute(routeContext = {}) {
+  unmountBoardRoute();
+  activeBoardRoute = createMountedBoardController(routeContext);
+  return activeBoardRoute;
+}
+
+export function unmountBoardRoute() {
+  activeBoardRoute?.unmount?.();
+  activeBoardRoute = null;
+}
+
+function createMountedBoardController({
+  root = document,
+  cleanup: routeCleanup = null,
+} = {}) {
+  const cleanup = createCleanupStack();
+  routeCleanup?.add(() => cleanup.run());
+  const routeRoot = root && typeof root.querySelector === "function" ? root : document;
+  const byId = (id) => routeRoot.querySelector(`#${id}`);
+  const query = (selector) => routeRoot.querySelector(selector);
+  const queryAll = (selector) => Array.from(routeRoot.querySelectorAll(selector));
+
 // Apply translations immediately
 applyTranslations();
 const isSpaRuntime = Boolean(window.__vatioboardSpa);
 const singleTabOwnershipPromise = isSpaRuntime ? Promise.resolve(true) : ensureSingleTabOwnership();
 
-let boardRouteLifecycle = {
-  mount() {},
-  unmount() {},
-};
-
-export function mountBoardRoute() {
-  boardRouteLifecycle.mount();
-}
-
-export function unmountBoardRoute() {
-  boardRouteLifecycle.unmount();
-}
-
-const langToggleButtons = Array.from(document.querySelectorAll("[data-lang-toggle], #langToggle"));
+const langToggleButtons = queryAll("[data-lang-toggle], #langToggle");
 
 function syncLangToggleButtons(langCode){
   const nextLabel = String(langCode || getLang()).toUpperCase();
@@ -120,23 +132,23 @@ langToggleButtons.forEach((button) => {
 });
 
 // Toolbar buttons
-const openCalcBtn = document.getElementById("openCalc");
-const openSpeedBtn = document.getElementById("openSpeed");
-const openEnergyBtn = document.getElementById("openEnergy");
-const openAccelMenuBtn = document.getElementById("openAccelMenu");
-const openCalcMenuBtn = document.getElementById("openCalcMenu");
-const openLibraryMenuBtn = document.getElementById("openLibraryMenu");
-const openSpeedMenuBtn = document.getElementById("openSpeedMenu");
-const toolsMenuBtn = document.getElementById("toolsMenuBtn");
-const toolsMenuList = document.getElementById("toolsMenuList");
+const openCalcBtn = byId("openCalc");
+const openSpeedBtn = byId("openSpeed");
+const openEnergyBtn = byId("openEnergy");
+const openAccelMenuBtn = byId("openAccelMenu");
+const openCalcMenuBtn = byId("openCalcMenu");
+const openLibraryMenuBtn = byId("openLibraryMenu");
+const openSpeedMenuBtn = byId("openSpeedMenu");
+const toolsMenuBtn = byId("toolsMenuBtn");
+const toolsMenuList = byId("toolsMenuList");
 
-applyButtonIcon(document.getElementById("pen"), IconPen);
-applyButtonIcon(document.getElementById("erase"), IconEraser);
-applyButtonIcon(document.getElementById("undo"), IconUndo);
-applyButtonIcon(document.getElementById("redo"), IconRedo);
-applyButtonIcon(document.getElementById("createNew"), IconFilePlus);
-applyButtonIcon(document.getElementById("save"), IconSave);
-applyButtonIcon(document.getElementById("deleteBoard"), IconTrash);
+applyButtonIcon(byId("pen"), IconPen);
+applyButtonIcon(byId("erase"), IconEraser);
+applyButtonIcon(byId("undo"), IconUndo);
+applyButtonIcon(byId("redo"), IconRedo);
+applyButtonIcon(byId("createNew"), IconFilePlus);
+applyButtonIcon(byId("save"), IconSave);
+applyButtonIcon(byId("deleteBoard"), IconTrash);
 applyButtonIcon(openCalcBtn, IconCalculator);
 applyButtonIcon(openCalcMenuBtn, IconCalculator);
 applyButtonIcon(openAccelMenuBtn, IconAccel);
@@ -180,26 +192,26 @@ if (!isSpaRuntime) {
   integratePlayerWidget({ toolsMenuList, toolsMenu });
 }
 
-  (function(){
-    const canvas = document.getElementById("pad");
+  return (function(){
+    const canvas = byId("pad");
     const ctx = canvas.getContext("2d", { alpha: true });
     const historyCanvas = document.createElement("canvas");
     const historyCtx = historyCanvas.getContext("2d", { alpha: true });
-    const statusEl = document.getElementById("status");
+    const statusEl = byId("status");
 
-    const penBtn = document.getElementById("pen");
-    const eraseBtn = document.getElementById("erase");
-    const undoBtn = document.getElementById("undo");
-    const redoBtn = document.getElementById("redo");
-    const sizeEl = document.getElementById("size");
-    const sizePreview = document.getElementById("sizePreview");
-    const createNewBtn = document.getElementById("createNew");
-    const saveBtn = document.getElementById("save");
-    const deleteBoardBtn = document.getElementById("deleteBoard");
-    const backendAuthUserInput = document.querySelector("[data-backend-auth-user]");
+    const penBtn = byId("pen");
+    const eraseBtn = byId("erase");
+    const undoBtn = byId("undo");
+    const redoBtn = byId("redo");
+    const sizeEl = byId("size");
+    const sizePreview = byId("sizePreview");
+    const createNewBtn = byId("createNew");
+    const saveBtn = byId("save");
+    const deleteBoardBtn = byId("deleteBoard");
+    const backendAuthUserInput = query("[data-backend-auth-user]");
 
     // NEW: color UI
-    const swatchesEl = document.getElementById("swatches");
+    const swatchesEl = byId("swatches");
 
     const LS_INK_RAW = "vatio_board_ink_raw";
     let saveBusy = false;
@@ -222,19 +234,19 @@ if (!isSpaRuntime) {
     (isDarkMode() ? "#e5e7eb" : "#111827");
 
     // Popup UI
-    const colorTriggerBtn = document.getElementById("sizePreview");
-    const colorPopup = document.getElementById("colorPopup");
-    const colorPopupClose = document.getElementById("colorPopupClose");
+    const colorTriggerBtn = byId("sizePreview");
+    const colorPopup = byId("colorPopup");
+    const colorPopupClose = byId("colorPopupClose");
 
-    const hexInput = document.getElementById("hexInput");
-    const rRange = document.getElementById("rRange");
-    const gRange = document.getElementById("gRange");
-    const bRange = document.getElementById("bRange");
-    const rVal = document.getElementById("rVal");
-    const gVal = document.getElementById("gVal");
-    const bVal = document.getElementById("bVal");
+    const hexInput = byId("hexInput");
+    const rRange = byId("rRange");
+    const gRange = byId("gRange");
+    const bRange = byId("bRange");
+    const rVal = byId("rVal");
+    const gVal = byId("gVal");
+    const bVal = byId("bVal");
 
-    const iroPickerEl = document.getElementById("iroPicker");
+    const iroPickerEl = byId("iroPicker");
 
     let iroPicker = null;
     let syncingFromIro = false;
@@ -1191,7 +1203,7 @@ if (!isSpaRuntime) {
       clearNativeSelection();
     }
 
-    function handleLegacyViewMount(){
+    function mountBoardController(){
       viewMounted = true;
       if (!initialized) return;
       resize();
@@ -1200,7 +1212,7 @@ if (!isSpaRuntime) {
       setActive({ announce: false });
     }
 
-    function handleLegacyViewUnmount(){
+    function unmountBoardController(){
       if (isSpaRuntime && !viewMounted) return;
       finishStroke({ commit: false });
       closeColorPopup();
@@ -1361,7 +1373,7 @@ if (!isSpaRuntime) {
     canvas.addEventListener("contextmenu",(e)=>e.preventDefault());
     canvas.addEventListener("selectstart", (e) => e.preventDefault());
     canvas.addEventListener("dragstart", (e) => e.preventDefault());
-    document.addEventListener("selectstart", preventSelectionWhileDrawing);
+    cleanup.addEventListener(document, "selectstart", preventSelectionWhileDrawing);
 
     penBtn.addEventListener("click", ()=>{ tool="pen"; setActive(); });
     eraseBtn.addEventListener("click", ()=>{ tool="eraser"; setActive(); });
@@ -1379,11 +1391,11 @@ if (!isSpaRuntime) {
     deleteBoardBtn?.addEventListener("click", () => {
       void deleteBoardDocument();
     });
-    window.addEventListener(BACKEND_AUTH_STATE_EVENT, handleBackendAuthStateChange);
+    cleanup.addEventListener(window, BACKEND_AUTH_STATE_EVENT, handleBackendAuthStateChange);
 
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     if (mq && mq.addEventListener){
-      mq.addEventListener("change", () => {
+      cleanup.addEventListener(mq, "change", () => {
         // recompute presets + apply ink contrast for new background
         renderSwatches();
         applyInk();
@@ -1392,8 +1404,8 @@ if (!isSpaRuntime) {
       });
     }
 
-    window.addEventListener("resize", resize);
-    document.addEventListener("keydown", (event) => {
+    cleanup.addEventListener(window, "resize", resize);
+    cleanup.addEventListener(document, "keydown", (event) => {
       if (isEditableElement(document.activeElement)) return;
       if (!(event.ctrlKey || event.metaKey)) return;
 
@@ -1414,11 +1426,11 @@ if (!isSpaRuntime) {
       }
     });
 
-    window.addEventListener(CLOUD_SYNC_APPLIED_EVENT, (event) => {
+    cleanup.addEventListener(window, CLOUD_SYNC_APPLIED_EVENT, (event) => {
       if (event?.detail?.entityType !== CLOUD_SYNC_ENTITY_TYPES.boardDrawing) return;
       void hydrateBoardDrawing();
     });
-    window.addEventListener(SINGLE_TAB_OWNERSHIP_EVENT, handleSingleTabOwnershipChange);
+    cleanup.addEventListener(window, SINGLE_TAB_OWNERSHIP_EVENT, handleSingleTabOwnershipChange);
 
     // Init
     syncSizePreview();
@@ -1431,10 +1443,6 @@ if (!isSpaRuntime) {
 
     resize();
     initialized = true;
-    boardRouteLifecycle = {
-      mount: handleLegacyViewMount,
-      unmount: handleLegacyViewUnmount,
-    };
     setStatus(t("ready"));
     void (async () => {
       if (!(await singleTabOwnershipPromise)) {
@@ -1447,4 +1455,16 @@ if (!isSpaRuntime) {
         // Keep the page usable with the local drawing if sync is temporarily unavailable.
       });
     })();
+    mountBoardController();
+
+    let disposed = false;
+    return {
+      unmount() {
+        if (disposed) return;
+        disposed = true;
+        unmountBoardController();
+        cleanup.run();
+      },
+    };
   })();
+}

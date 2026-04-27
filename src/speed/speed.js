@@ -105,85 +105,89 @@ import {
   updateNearestTrap,
 } from './traps.js';
 
-const elements = {
-  gaugeCard: document.querySelector('.gauge-card'),
-  langToggle: document.getElementById('langToggle'),
-  langToggleButtons: Array.from(document.querySelectorAll('[data-lang-toggle], #langToggle')),
-  toolbar: document.querySelector('.speed-toolbar'),
-  toolsMenuBtn: document.getElementById('speedToolsMenuBtn'),
-  toolsMenuList: document.getElementById('speedToolsMenuList'),
-  openReplayQuick: document.getElementById('openReplayQuick'),
-  openLibraryMenu: document.getElementById('openSpeedLibraryMenu'),
-  quickAlertConfig: document.getElementById('quickAlertConfig'),
-  openAccelMenu: document.getElementById('openSpeedAccelMenu'),
-  openBoardMenu: document.getElementById('openSpeedBoardMenu'),
-  primaryViewButtons: Array.from(document.querySelectorAll('.speed-view-btn')),
-  speedPrimaryStage: document.getElementById('speedPrimaryStage'),
-  gaugeStage: document.getElementById('gaugeStage'),
-  gaugeStageInner: document.querySelector('.gauge-stage-inner'),
-  wazeStage: document.getElementById('wazeStage'),
-  wazeFrame: document.getElementById('wazeFrame'),
-  wazePlaceholder: document.getElementById('wazePlaceholder'),
-  wazePlaceholderText: document.getElementById('wazePlaceholderText'),
-  wazeSpeedPill: document.getElementById('wazeSpeedPill'),
-  wazeSpeedValue: document.getElementById('wazeSpeedValue'),
-  wazeSpeedUnit: document.getElementById('wazeSpeedUnit'),
-  wazeSpeedLimitLabel: document.getElementById('wazeSpeedLimitLabel'),
-  wazeSpeedLimitValue: document.getElementById('wazeSpeedLimitValue'),
-  wazeSpeedNote: document.getElementById('wazeSpeedNote'),
-  wazeLocationPrompt: document.getElementById('wazeLocationPrompt'),
-  wazeRecenter: document.getElementById('wazeRecenter'),
-  alertBackdrop: document.getElementById('speedAlertBackdrop'),
-  dialCanvas: document.getElementById('speedDial'),
-  needleCanvas: document.getElementById('speedNeedle'),
-  speedValue: document.getElementById('speedValue'),
-  speedUnit: document.getElementById('speedUnit'),
-  status: document.getElementById('status'),
-  subStatus: document.getElementById('subStatus'),
-  maxSpeed: document.getElementById('maxSpeed'),
-  maxSpeedUnit: document.getElementById('maxSpeedUnit'),
-  avgSpeed: document.getElementById('avgSpeed'),
-  avgSpeedUnit: document.getElementById('avgSpeedUnit'),
-  distanceValue: document.getElementById('distanceValue'),
-  distanceUnit: document.getElementById('distanceUnit'),
-  nearestTrapDistance: document.getElementById('nearestTrapDistance'),
-  nearestTrapUnit: document.getElementById('nearestTrapUnit'),
-  durationValue: document.getElementById('durationValue'),
-  altitudeValue: document.getElementById('altitudeValue'),
-  altitudeUnit: document.getElementById('altitudeUnit'),
-  maxAltitude: document.getElementById('maxAltitude'),
-  maxAltitudeUnit: document.getElementById('maxAltitudeUnit'),
-  minAltitude: document.getElementById('minAltitude'),
-  minAltitudeUnit: document.getElementById('minAltitudeUnit'),
-  notice: document.getElementById('notice'),
-  noticeText: document.getElementById('noticeText'),
-  retryGps: document.getElementById('retryGps'),
-  resetTrip: document.getElementById('resetTrip'),
-  toggleRecording: document.getElementById('toggleRecording'),
-  stopRecording: document.getElementById('stopRecording'),
-  alertTrigger: document.getElementById('alertTrigger'),
-  alertTriggerValue: document.getElementById('alertTriggerValue'),
-  alertTriggerHint: document.getElementById('alertTriggerHint'),
-  alertPanel: document.getElementById('speedAlertPanel'),
-  alertPanelStatus: document.getElementById('alertPanelStatus'),
-  closeAlertPanel: document.getElementById('closeAlertPanel'),
-  alertToggle: document.getElementById('alertToggle'),
-  alertUseCurrent: document.getElementById('alertUseCurrent'),
-  alertDecrease: document.getElementById('alertDecrease'),
-  alertIncrease: document.getElementById('alertIncrease'),
-  alertValue: document.getElementById('alertValue'),
-  alertUnit: document.getElementById('alertUnit'),
-  alertPresets: document.getElementById('alertPresets'),
-  alertSoundButtons: Array.from(document.querySelectorAll('.alert-sound-btn')),
-  trapAlertButtons: Array.from(document.querySelectorAll('.trap-alert-btn')),
-  trapDistancePresets: document.getElementById('trapDistancePresets'),
-  trapSoundButtons: Array.from(document.querySelectorAll('.trap-sound-btn')),
-  quickAudioToggle: document.getElementById('quickAudioToggle'),
-  unitButtons: Array.from(document.querySelectorAll('.unit-btn')),
-  distanceUnitButtons: Array.from(document.querySelectorAll('.distance-unit-btn')),
-  globeMount: document.getElementById('speedGlobe'),
-  globeStatus: document.getElementById('globeStatus'),
-};
+function getSpeedElements() {
+  return {
+    gaugeCard: document.querySelector('.gauge-card'),
+    langToggle: document.getElementById('langToggle'),
+    langToggleButtons: Array.from(document.querySelectorAll('[data-lang-toggle], #langToggle')),
+    toolbar: document.querySelector('.speed-toolbar'),
+    toolsMenuBtn: document.getElementById('speedToolsMenuBtn'),
+    toolsMenuList: document.getElementById('speedToolsMenuList'),
+    openReplayQuick: document.getElementById('openReplayQuick'),
+    openLibraryMenu: document.getElementById('openSpeedLibraryMenu'),
+    quickAlertConfig: document.getElementById('quickAlertConfig'),
+    openAccelMenu: document.getElementById('openSpeedAccelMenu'),
+    openBoardMenu: document.getElementById('openSpeedBoardMenu'),
+    primaryViewButtons: Array.from(document.querySelectorAll('.speed-view-btn')),
+    speedPrimaryStage: document.getElementById('speedPrimaryStage'),
+    gaugeStage: document.getElementById('gaugeStage'),
+    gaugeStageInner: document.querySelector('.gauge-stage-inner'),
+    wazeStage: document.getElementById('wazeStage'),
+    wazeFrame: document.getElementById('wazeFrame'),
+    wazePlaceholder: document.getElementById('wazePlaceholder'),
+    wazePlaceholderText: document.getElementById('wazePlaceholderText'),
+    wazeSpeedPill: document.getElementById('wazeSpeedPill'),
+    wazeSpeedValue: document.getElementById('wazeSpeedValue'),
+    wazeSpeedUnit: document.getElementById('wazeSpeedUnit'),
+    wazeSpeedLimitLabel: document.getElementById('wazeSpeedLimitLabel'),
+    wazeSpeedLimitValue: document.getElementById('wazeSpeedLimitValue'),
+    wazeSpeedNote: document.getElementById('wazeSpeedNote'),
+    wazeLocationPrompt: document.getElementById('wazeLocationPrompt'),
+    wazeRecenter: document.getElementById('wazeRecenter'),
+    alertBackdrop: document.getElementById('speedAlertBackdrop'),
+    dialCanvas: document.getElementById('speedDial'),
+    needleCanvas: document.getElementById('speedNeedle'),
+    speedValue: document.getElementById('speedValue'),
+    speedUnit: document.getElementById('speedUnit'),
+    status: document.getElementById('status'),
+    subStatus: document.getElementById('subStatus'),
+    maxSpeed: document.getElementById('maxSpeed'),
+    maxSpeedUnit: document.getElementById('maxSpeedUnit'),
+    avgSpeed: document.getElementById('avgSpeed'),
+    avgSpeedUnit: document.getElementById('avgSpeedUnit'),
+    distanceValue: document.getElementById('distanceValue'),
+    distanceUnit: document.getElementById('distanceUnit'),
+    nearestTrapDistance: document.getElementById('nearestTrapDistance'),
+    nearestTrapUnit: document.getElementById('nearestTrapUnit'),
+    durationValue: document.getElementById('durationValue'),
+    altitudeValue: document.getElementById('altitudeValue'),
+    altitudeUnit: document.getElementById('altitudeUnit'),
+    maxAltitude: document.getElementById('maxAltitude'),
+    maxAltitudeUnit: document.getElementById('maxAltitudeUnit'),
+    minAltitude: document.getElementById('minAltitude'),
+    minAltitudeUnit: document.getElementById('minAltitudeUnit'),
+    notice: document.getElementById('notice'),
+    noticeText: document.getElementById('noticeText'),
+    retryGps: document.getElementById('retryGps'),
+    resetTrip: document.getElementById('resetTrip'),
+    toggleRecording: document.getElementById('toggleRecording'),
+    stopRecording: document.getElementById('stopRecording'),
+    alertTrigger: document.getElementById('alertTrigger'),
+    alertTriggerValue: document.getElementById('alertTriggerValue'),
+    alertTriggerHint: document.getElementById('alertTriggerHint'),
+    alertPanel: document.getElementById('speedAlertPanel'),
+    alertPanelStatus: document.getElementById('alertPanelStatus'),
+    closeAlertPanel: document.getElementById('closeAlertPanel'),
+    alertToggle: document.getElementById('alertToggle'),
+    alertUseCurrent: document.getElementById('alertUseCurrent'),
+    alertDecrease: document.getElementById('alertDecrease'),
+    alertIncrease: document.getElementById('alertIncrease'),
+    alertValue: document.getElementById('alertValue'),
+    alertUnit: document.getElementById('alertUnit'),
+    alertPresets: document.getElementById('alertPresets'),
+    alertSoundButtons: Array.from(document.querySelectorAll('.alert-sound-btn')),
+    trapAlertButtons: Array.from(document.querySelectorAll('.trap-alert-btn')),
+    trapDistancePresets: document.getElementById('trapDistancePresets'),
+    trapSoundButtons: Array.from(document.querySelectorAll('.trap-sound-btn')),
+    quickAudioToggle: document.getElementById('quickAudioToggle'),
+    unitButtons: Array.from(document.querySelectorAll('.unit-btn')),
+    distanceUnitButtons: Array.from(document.querySelectorAll('.distance-unit-btn')),
+    globeMount: document.getElementById('speedGlobe'),
+    globeStatus: document.getElementById('globeStatus'),
+  };
+}
+
+const elements = getSpeedElements();
 
 const isSpaRuntime = Boolean(window.__vatioboardSpa);
 if (!isSpaRuntime) initBackendAuthControllers();
@@ -1749,16 +1753,19 @@ function resumeVisibleRuntime() {
   return true;
 }
 
-function handleLegacyViewMount() {
+function mountSpeedController() {
   state.viewMounted = true;
   if (!state.initialized) return;
 
+  Object.assign(elements, getSpeedElements());
+  bindRemountedSpeedControls();
+  renderRecordingControls();
   resizeCanvas();
   if (state.watchId === null) startTracking();
   resumeVisibleRuntime();
 }
 
-function handleLegacyViewUnmount() {
+function unmountSpeedController() {
   if (isSpaRuntime && !state.viewMounted) return;
 
   const keepTrackingInBackground = state.recordingState === 'recording';
@@ -1950,6 +1957,15 @@ function bindEvents() {
   window.addEventListener(SINGLE_TAB_OWNERSHIP_EVENT, handleSingleTabOwnershipChange);
 }
 
+function bindRemountedSpeedControls() {
+  if (elements.stopRecording && elements.stopRecording.dataset.routeBound !== 'true') {
+    elements.stopRecording.dataset.routeBound = 'true';
+    elements.stopRecording.addEventListener('click', () => {
+      stopRecordingSession({ fromUserGesture: true });
+    });
+  }
+}
+
 async function init() {
   if (!(await singleTabOwnershipPromise)) {
     return;
@@ -2023,8 +2039,8 @@ async function init() {
 }
 
 speedRouteLifecycle = {
-  mount: handleLegacyViewMount,
-  unmount: handleLegacyViewUnmount,
+  mount: mountSpeedController,
+  unmount: unmountSpeedController,
 };
 
 if (import.meta.hot) {
