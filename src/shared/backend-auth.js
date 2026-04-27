@@ -2240,6 +2240,7 @@ export function createBackendAuthController({
   const forgotLink = root.querySelector("[data-backend-auth-forgot]");
   const guestElements = Array.from(root.querySelectorAll("[data-backend-auth-guest]"));
   const authenticatedElements = Array.from(root.querySelectorAll("[data-backend-auth-authenticated]"));
+  statusEl?.removeAttribute("data-i18n");
 
   // ── Password reveal toggle ──────────────────────────────────────
   if (passwordInput && !passwordInput.closest(".backend-auth-password-wrap")) {

@@ -22,6 +22,7 @@ import {
   normalizeBackendOwnedUrl,
   pushSyncChangesToBackend,
 } from '../../src/shared/backend-auth.js';
+import { applyTranslations } from '../../src/i18n.js';
 
 const TEST_CONFIG = {
   apiBase: 'https://api.test.example',
@@ -108,6 +109,46 @@ describe('backend auth controller layout', () => {
     expect(signupLink.getAttribute('rel')).toBe('noopener noreferrer');
     expect(forgotLink.getAttribute('target')).toBe('_blank');
     expect(forgotLink.getAttribute('rel')).toBe('noopener noreferrer');
+
+    controller.destroy();
+  });
+
+  it('keeps dynamic auth status from being reset by later global translation passes', async () => {
+    document.body.innerHTML = `
+      <form class="backend-auth" data-backend-auth novalidate>
+        <p class="backend-auth-title" data-i18n="authTitle">VatioLibre account</p>
+        <p class="backend-auth-status" data-backend-auth-status role="status" aria-live="polite" data-i18n="authCheckingSession">Checking session...</p>
+        <input class="backend-auth-input" data-backend-auth-user data-backend-auth-guest type="text" />
+        <input class="backend-auth-input" data-backend-auth-password data-backend-auth-guest type="password" />
+        <button type="submit" data-backend-auth-login data-backend-auth-guest data-i18n="authLogin">Log in</button>
+        <button type="button" data-backend-auth-logout data-backend-auth-authenticated data-i18n="authLogout">Log out</button>
+      </form>
+    `;
+
+    const fetchImpl = vi.fn(async (url) => {
+      if (String(url).includes('frappe.auth.get_logged_user')) {
+        return jsonResponse({ message: 'Administrator' });
+      }
+      return jsonResponse({ message: { is_guest: false } });
+    });
+    const form = document.querySelector('[data-backend-auth]');
+    const controller = createBackendAuthController({
+      root: form,
+      config: TEST_CONFIG,
+      fetchImpl,
+    });
+
+    await controller.refreshSession({ force: true });
+    const status = form.querySelector('[data-backend-auth-status]');
+
+    expect(status.textContent).toBe('Signed in as Administrator');
+    expect(status.dataset.tone).toBe('success');
+    expect(status.getAttribute('data-i18n')).toBeNull();
+
+    applyTranslations();
+
+    expect(status.textContent).toBe('Signed in as Administrator');
+    expect(status.dataset.tone).toBe('success');
 
     controller.destroy();
   });
