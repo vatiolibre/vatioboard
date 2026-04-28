@@ -1,4 +1,3 @@
-import 'maplibre-gl/dist/maplibre-gl.css';
 import '../styles/speed.less';
 import '../styles/cloud-sync-status.less';
 import { createCleanupStack } from '../app/view-cleanup.js';
@@ -362,6 +361,7 @@ const state = {
   wazeCenterLatitude: null,
   wazeCenterLongitude: null,
   globeMap: null,
+  globeInitToken: 0,
   globeReady: false,
   globeError: null,
   globeResizeObserver: null,
@@ -1893,6 +1893,7 @@ function destroySpeedRouteResources(route = activeSpeedRoute) {
   route.syncIndicator?.destroy?.();
   route.toolsMenu?.destroy?.();
   analogSpeedometer.destroy?.();
+  state.globeInitToken += 1;
   globeController.stopGlobeSolarUpdates();
   globeController.clearGlobeFollowResumeTimeout();
   state.globeResizeObserver?.disconnect?.();

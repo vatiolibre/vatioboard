@@ -741,6 +741,7 @@ describe('accel.html smoke', () => {
       document.querySelector('#resultLocationValue .accel-result-location-text')
     ).toBeTruthy();
     expect(Number(document.getElementById('resultReplayProgress').max)).toBeGreaterThan(0);
+    await settleDeferredImports();
     expect(fakeMaps).toHaveLength(1);
     expect(fakeMaps[0].jumpTo).toHaveBeenCalledTimes(1);
     expect(fakeMaps[0].fitBounds).not.toHaveBeenCalled();
@@ -896,6 +897,7 @@ describe('accel.html smoke', () => {
 
     expect(document.getElementById('resultReplayControls').hidden).toBe(false);
     expect(document.getElementById('resultReplayMapShell').hidden).toBe(false);
+    await settleDeferredImports();
     expect(fakeMaps).toHaveLength(1);
   });
 
@@ -1414,6 +1416,7 @@ describe('accel.html smoke', () => {
 
     expect(document.getElementById('resultsPanel').hidden).toBe(false);
     expect(document.getElementById('resultReplayMapShell').hidden).toBe(false);
+    await settleDeferredImports();
     expect(fakeMaps).toHaveLength(1);
     expect(fakeMaps[0].jumpTo).toHaveBeenCalledTimes(1);
     expect(fakeMaps[0].fitBounds).not.toHaveBeenCalled();
@@ -1437,6 +1440,7 @@ describe('accel.html smoke', () => {
 
     expect(document.getElementById('resultsPanel').hidden).toBe(false);
     expect(document.getElementById('resultReplayChartSheet').hidden).toBe(false);
+    await settleDeferredImports();
     expect(fakeMaps).toHaveLength(1);
 
     document.getElementById('accelToolbarSetup').click();

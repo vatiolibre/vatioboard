@@ -1,4 +1,3 @@
-import maplibregl from "maplibre-gl";
 import {
   GLOBE_HORIZON_COLOR,
   GLOBE_NIGHT_SOURCE_ID,
@@ -9,6 +8,7 @@ import {
   GLOBE_SKY_HORIZON_BLEND,
   GLOBE_TERMINATOR_SOURCE_ID,
 } from "../speed/constants.js";
+import { loadMapLibre } from "../shared/maplibre-loader.js";
 import { getSolarNightData, getSolarTerminatorData, getSunVectorAtTime } from "../speed/navigation.js";
 import { getReplayBounds, getReplayPathCoordinates } from "./logic.js";
 
@@ -87,6 +87,7 @@ export function createReplayMapController({
   let resolveReadyPromise = null;
   let approachToken = 0;
   let approachActive = false;
+  let initToken = 0;
 
   function createReadyPromise() {
     readyPromise = new Promise((resolve) => {
@@ -307,13 +308,22 @@ export function createReplayMapController({
     }
   }
 
-  function init() {
+  async function init() {
     if (!element) return Promise.resolve();
     if (ready) return Promise.resolve();
     if (map) return readyPromise ?? Promise.resolve();
 
+    const token = initToken + 1;
+    initToken = token;
+    createReadyPromise();
+
     try {
-      createReadyPromise();
+      const maplibregl = await loadMapLibre();
+      if (token !== initToken || map || !element) {
+        resolveReady();
+        return readyPromise ?? Promise.resolve();
+      }
+
       const initialSunVector = getSunVectorAtTime().vector;
 
       map = new maplibregl.Map({
@@ -556,6 +566,7 @@ export function createReplayMapController({
   }
 
   function destroy() {
+    initToken += 1;
     cancelApproachAnimation();
     resolveReady();
     if (!map) return;

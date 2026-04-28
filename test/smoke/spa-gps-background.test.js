@@ -382,4 +382,72 @@ describe('SPA GPS background runtime', () => {
       })
     ).toBe(true);
   }, 40000);
+
+  it('keeps an active accel run subscribed across board remounts without duplicating GPS watchers', async () => {
+    await bootHtmlPage('index.html');
+    const geolocation = getBrowserMocks().geolocation;
+    const nativeWatchPosition = geolocation.watchPosition;
+    const nativeClearWatch = geolocation.clearWatch;
+
+    await import('../../src/app/main.js');
+    await settleAsyncWork();
+
+    await navigateHash('#/accel');
+    await import('../../src/accel/accel.js').then((module) => module.initPromise);
+    await settleAsyncWork();
+
+    expect(nativeWatchPosition).toHaveBeenCalledTimes(1);
+
+    emitGeolocationSuccess({
+      timestamp: 200000,
+      coords: {
+        latitude: 40.7128,
+        longitude: -74.006,
+        speed: 0,
+      },
+    });
+    await settleAsyncWork();
+
+    const armRun = document.getElementById('armRun');
+    expect(armRun.disabled).toBe(false);
+    armRun.click();
+    await settleAsyncWork();
+    expect(document.querySelector('[data-activity-id="accel.run"]')).toBeTruthy();
+
+    window.confirm.mockClear();
+    await navigateHash('#/board');
+
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-activity-id="accel.run"]')).toBeTruthy();
+    expect(nativeClearWatch).not.toHaveBeenCalled();
+    expect(nativeWatchPosition).toHaveBeenCalledTimes(1);
+
+    emitGeolocationSuccess({
+      timestamp: 201000,
+      coords: {
+        latitude: 40.713,
+        longitude: -74.0058,
+        speed: 22,
+      },
+    });
+    await settleAsyncWork();
+
+    await navigateHash('#/accel');
+    await settleAsyncWork();
+
+    expect(nativeWatchPosition).toHaveBeenCalledTimes(1);
+    expect(getNumericText(document.getElementById('statusSpeedValue'))).toBeGreaterThan(0);
+    expect(
+      getNumericText(document.getElementById('diagnosticSamplesValue'))
+    ).toBeGreaterThanOrEqual(1);
+
+    document.getElementById('armRun').click();
+    await settleAsyncWork();
+    expect(document.querySelector('[data-activity-id="accel.run"]')).toBeFalsy();
+
+    const clearCallsBeforeIdleUnmount = nativeClearWatch.mock.calls.length;
+    await navigateHash('#/board');
+
+    expect(nativeClearWatch.mock.calls.length).toBeGreaterThan(clearCallsBeforeIdleUnmount);
+  }, 40000);
 });

@@ -1,9 +1,8 @@
-import maplibregl from "maplibre-gl";
+import { loadMapLibre } from "../shared/maplibre-loader.js";
 
 const PREVIEW_SOURCE_ID = "library-preview-route";
 const PREVIEW_BASE_SATELLITE_SOURCE_ID = "library-satellite-base";
 const SATELLITE_ATTRIBUTION = "Imagery © EOX, Sentinel-2, Esri";
-const CLOSEUP_ZOOM = 12;
 
 function getEmptyFeatureCollection() {
   return { type: "FeatureCollection", features: [] };
@@ -61,25 +60,56 @@ function prefersReducedMotion() {
 export function createLibraryMapPreview({ element }) {
   let map = null;
   let ready = false;
+  let readyPromise = null;
+  let resolveReadyPromise = null;
+  let initToken = 0;
   let approachToken = 0;
   let currentCoordinates = null;
   let lastRouteSignature = "";
 
+  function createReadyPromise() {
+    readyPromise = new Promise((resolve) => {
+      resolveReadyPromise = resolve;
+    });
+    return readyPromise;
+  }
+
+  function resolveReady() {
+    resolveReadyPromise?.();
+    resolveReadyPromise = null;
+    if (!readyPromise) readyPromise = Promise.resolve();
+  }
+
   function destroy() {
+    initToken += 1;
     approachToken += 1;
+    resolveReady();
     if (map && typeof map.remove === "function") {
       map.remove();
     }
     map = null;
     ready = false;
+    readyPromise = null;
+    resolveReadyPromise = null;
     currentCoordinates = null;
     lastRouteSignature = "";
   }
 
-  function init() {
-    if (!element || map) return;
+  async function init() {
+    if (!element) return Promise.resolve();
+    if (ready) return Promise.resolve();
+    if (map) return readyPromise ?? Promise.resolve();
 
+    const token = initToken + 1;
+    initToken = token;
+    createReadyPromise();
     try {
+      const maplibregl = await loadMapLibre();
+      if (token !== initToken || map || !element) {
+        resolveReady();
+        return readyPromise ?? Promise.resolve();
+      }
+
       map = new maplibregl.Map({
         container: element,
         antialias: true,
@@ -160,11 +190,15 @@ export function createLibraryMapPreview({ element }) {
           attrCtrl.classList.remove("maplibregl-compact-show");
           attrCtrl.removeAttribute("open");
         }
+        resolveReady();
       });
     } catch (error) {
       console.error("Library map preview init failed", error);
       ready = false;
+      resolveReady();
     }
+
+    return readyPromise ?? Promise.resolve();
   }
 
   function updateRoute(coordinates) {
@@ -301,15 +335,7 @@ export function createLibraryMapPreview({ element }) {
     lastRouteSignature = sig;
 
     if (!map) {
-      init();
-      // Wait for load
-      await new Promise((resolve) => {
-        if (ready) return resolve();
-        const check = setInterval(() => {
-          if (ready) { clearInterval(check); resolve(); }
-        }, 50);
-        setTimeout(() => { clearInterval(check); resolve(); }, 3000);
-      });
+      await init();
     }
 
     await runPreviewAnimation(coordinates);

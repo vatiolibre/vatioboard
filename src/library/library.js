@@ -1,4 +1,3 @@
-import "maplibre-gl/dist/maplibre-gl.css";
 import "../styles/library.less";
 import "../styles/backend-auth.less";
 import "../styles/cloud-sync-status.less";

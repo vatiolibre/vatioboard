@@ -1,4 +1,3 @@
-import 'maplibre-gl/dist/maplibre-gl.css';
 import '@stanko/dual-range-input/dist/index.css';
 import '../styles/accel.less';
 import '../styles/cloud-sync-status.less';
@@ -171,13 +170,17 @@ export const initPromise = (function () {
     return dualRangeInputLoadPromise;
   }
 
-  var finishAudio = typeof Audio === 'function' ? new Audio(FINISH_SOUND_URL) : null;
+  var finishAudio = null;
   var finishAudioPrimePromise = null;
   var finishAudioPrimed = false;
 
-  if (finishAudio) {
+  function getFinishAudio() {
+    if (finishAudio) return finishAudio;
+    if (typeof Audio !== 'function') return null;
+    finishAudio = new Audio(FINISH_SOUND_URL);
     finishAudio.preload = 'auto';
     finishAudio.loop = false;
+    return finishAudio;
   }
 
   function getAccelElements(root) {
@@ -386,6 +389,8 @@ export const initPromise = (function () {
   var runPlaceEnrichmentIds = new Set();
 
   var replayChartFilterController = null;
+  var accelChartControllersReady = false;
+  var accelChartControllersLoadPromise = null;
   var liveSpeedometer = createInactiveSpeedometer();
 
   var state = {
@@ -573,6 +578,7 @@ export const initPromise = (function () {
       isFiniteNumber: isFiniteNumber,
       msToSpeedUnit: msToSpeedUnit,
     });
+    accelChartControllersReady = true;
   }
 
   function createAccelLiveRouteControllers() {
@@ -594,8 +600,12 @@ export const initPromise = (function () {
     });
   }
 
-  function loadDeferredAccelRouteControllers(route) {
-    return Promise.allSettled([loadChart(), loadDualRangeInput()])
+  function ensureAccelChartRouteControllers() {
+    if (accelChartControllersReady) return Promise.resolve(true);
+    if (accelChartControllersLoadPromise) return accelChartControllersLoadPromise;
+
+    var route = activeAccelRoute;
+    accelChartControllersLoadPromise = Promise.allSettled([loadChart(), loadDualRangeInput()])
       .then(function (results) {
         if (!route || route.destroyed || route.signal?.aborted || activeAccelRoute !== route) {
           return false;
@@ -603,12 +613,16 @@ export const initPromise = (function () {
         if (results[0]?.status !== 'fulfilled') return false;
         createAccelChartRouteControllers();
         setupResultGraphObservers();
-        renderAll();
         return true;
       })
       .catch(function () {
         return false;
+      })
+      .finally(function () {
+        accelChartControllersLoadPromise = null;
       });
+
+    return accelChartControllersLoadPromise;
   }
   var replayMapIntroPromise = null;
   var replayMapIntroToken = 0;
@@ -759,35 +773,36 @@ export const initPromise = (function () {
   }
 
   function primeFinishAudio() {
-    if (!finishAudio) return Promise.resolve(false);
+    var audio = getFinishAudio();
+    if (!audio) return Promise.resolve(false);
     if (finishAudioPrimed) return Promise.resolve(true);
     if (finishAudioPrimePromise) return finishAudioPrimePromise;
 
     finishAudioPrimePromise = (async function () {
-      var previousMuted = finishAudio.muted;
-      var previousVolume = finishAudio.volume;
-      var previousLoop = finishAudio.loop;
+      var previousMuted = audio.muted;
+      var previousVolume = audio.volume;
+      var previousLoop = audio.loop;
 
       try {
-        finishAudio.muted = true;
-        finishAudio.volume = 0;
-        finishAudio.loop = false;
-        finishAudio.currentTime = 0;
-        var playPromise = finishAudio.play();
+        audio.muted = true;
+        audio.volume = 0;
+        audio.loop = false;
+        audio.currentTime = 0;
+        var playPromise = audio.play();
         if (playPromise && typeof playPromise.then === 'function') await playPromise;
-        finishAudio.pause();
-        finishAudio.currentTime = 0;
+        audio.pause();
+        audio.currentTime = 0;
         finishAudioPrimed = true;
         return true;
       } catch (error) {
-        finishAudio.pause();
-        finishAudio.currentTime = 0;
+        audio.pause();
+        audio.currentTime = 0;
         finishAudioPrimed = false;
         return false;
       } finally {
-        finishAudio.muted = previousMuted;
-        finishAudio.volume = previousVolume;
-        finishAudio.loop = previousLoop;
+        audio.muted = previousMuted;
+        audio.volume = previousVolume;
+        audio.loop = previousLoop;
         finishAudioPrimePromise = null;
       }
     })();
@@ -796,12 +811,13 @@ export const initPromise = (function () {
   }
 
   function playFinishAudio() {
-    if (!finishAudio) return;
+    var audio = getFinishAudio();
+    if (!audio) return;
 
     try {
-      finishAudio.pause();
-      finishAudio.currentTime = 0;
-      var playPromise = finishAudio.play();
+      audio.pause();
+      audio.currentTime = 0;
+      var playPromise = audio.play();
       if (playPromise && typeof playPromise.catch === 'function') {
         playPromise.catch(function () {
           // Ignore autoplay or playback failures.
@@ -1641,6 +1657,8 @@ export const initPromise = (function () {
     route.toolsMenu?.destroy?.();
     replayChartFilterController?.destroy?.();
     replayChartFilterController = null;
+    accelChartControllersReady = false;
+    accelChartControllersLoadPromise = null;
     liveSpeedometer.destroy?.();
     liveSpeedometer = createInactiveSpeedometer();
     destroyResultGraph();
@@ -1671,7 +1689,6 @@ export const initPromise = (function () {
     });
     route.toolsMenu = toolsMenu;
     createAccelLiveRouteControllers();
-    void loadDeferredAccelRouteControllers(route);
     route.syncIndicator = initCloudSyncStatusIndicator({
       mount: elements.toolbar,
       alignEnd: true,
@@ -2063,8 +2080,8 @@ export const initPromise = (function () {
     var result = getDisplayedResult();
     var source = ensureReplaySource(result);
     if (!source) return;
-    void loadDeferredAccelRouteControllers(activeAccelRoute).then(function (loaded) {
-      if (loaded && state.replay.chartSheetOpen) renderResultCard();
+    void ensureAccelChartRouteControllers().then(function (loaded) {
+      if (loaded && state.replay.chartSheetOpen && state.viewMounted) renderResultCard();
     });
     setReplayChartSheetOpen(true);
     renderResultCard();
@@ -3190,6 +3207,13 @@ export const initPromise = (function () {
       return;
     }
 
+    if (!accelChartControllersReady) {
+      void ensureAccelChartRouteControllers().then(function (ready) {
+        if (ready && state.viewMounted) renderAll();
+      });
+      return;
+    }
+
     var axisMode = getReplayAxisModeForSource(replaySource);
     var displayPoint = replayPoint || getReplayDisplayPoint(replaySource);
 
@@ -3330,6 +3354,14 @@ export const initPromise = (function () {
             getPartialLabel: getPartialLabel,
           })
         : [];
+
+    if (result && state.openPanel === 'results' && !accelChartControllersReady) {
+      void ensureAccelChartRouteControllers().then(function (ready) {
+        if (ready && state.viewMounted) renderAll();
+      });
+      return;
+    }
+
     resultGraph.render(result, {
       axisMode: axisMode,
       markerPoints: markerPoints,

@@ -18,10 +18,7 @@ import { t } from "../i18n.js";
 import { createMiniAudioVisualizer } from "../shared/audio-mini-visualizer.js";
 import { isVisualizerSafeSource } from "../shared/audio-visualizer.js";
 import { primeAudioContext } from "../shared/audio-graph-registry.js";
-import {
-  createMilkdropPanel,
-  loadMilkdropPanelVisibility,
-} from "./milkdrop-panel.js";
+import { loadMilkdropPanelVisibility } from "./milkdrop-panel-prefs.js";
 import * as runtime from "../shared/audio-runtime.js";
 import { loadText, saveText } from "../shared/storage.js";
 import { loadPlaylists, loadPlaylistDetail } from "../shared/playlist-loader.js";
@@ -1578,6 +1575,14 @@ export function createPlayerShell({ container }) {
 
   // ── Milkdrop panel (lazy) ──────────────────────────────────────
   let milkdropPanel = null;
+  let milkdropPanelModulePromise = null;
+
+  function loadMilkdropPanelModule() {
+    if (!milkdropPanelModulePromise) {
+      milkdropPanelModulePromise = import("./milkdrop-panel.js");
+    }
+    return milkdropPanelModulePromise;
+  }
 
   function syncMilkdropToggle() {
     const isOpen = milkdropPanel?.isOpen?.() === true;
@@ -1585,8 +1590,10 @@ export function createPlayerShell({ container }) {
     milkdropToggleBtn.setAttribute("aria-pressed", String(isOpen));
   }
 
-  function ensureMilkdropPanel() {
+  async function ensureMilkdropPanel() {
     if (!milkdropPanel) {
+      const { createMilkdropPanel } = await loadMilkdropPanelModule();
+      if (milkdropPanel) return milkdropPanel;
       milkdropPanel = createMilkdropPanel({
         mount: container,
         onOpen: syncMilkdropToggle,
@@ -1601,13 +1608,15 @@ export function createPlayerShell({ container }) {
   milkdropToggleBtn.addEventListener("pointerup", (e) => e.stopPropagation());
   milkdropToggleBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    ensureMilkdropPanel().toggle();
-    syncMilkdropToggle();
+    void ensureMilkdropPanel().then((panel) => {
+      panel?.toggle?.();
+      syncMilkdropToggle();
+    });
   });
 
   syncMilkdropToggle();
   if (loadMilkdropPanelVisibility()) {
-    ensureMilkdropPanel();
+    void ensureMilkdropPanel();
   }
 
   // ── Event wiring ───────────────────────────────────────────────

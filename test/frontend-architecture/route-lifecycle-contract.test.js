@@ -159,23 +159,52 @@ describe("route lifecycle contract", () => {
     const bodyClassAdd = vi.spyOn(document.body.classList, "add");
     const bodyClassRemove = vi.spyOn(document.body.classList, "remove");
     const bodyClassToggle = vi.spyOn(document.body.classList, "toggle");
+    const OriginalAudio = window.Audio;
+    const AudioSpy = vi.fn(function AudioMock(src = "") {
+      this.src = src;
+      this.loop = false;
+      this.preload = "";
+      this.currentTime = 0;
+      this.muted = false;
+      this.volume = 1;
+      this.addEventListener = vi.fn();
+      this.removeEventListener = vi.fn();
+      this.pause = vi.fn();
+      this.play = vi.fn(() => Promise.resolve());
+    });
+    Object.defineProperty(window, "Audio", {
+      configurable: true,
+      writable: true,
+      value: AudioSpy,
+    });
 
-    for (const feature of FEATURE_MODULES) {
-      await feature.importModule();
+    try {
+      for (const feature of FEATURE_MODULES) {
+        await feature.importModule();
+      }
+
+      expect(documentGetElementById).not.toHaveBeenCalled();
+      expect(documentQuerySelector).not.toHaveBeenCalled();
+      expect(windowAddEventListener).not.toHaveBeenCalled();
+      expect(documentAddEventListener).not.toHaveBeenCalled();
+      expect(watchPosition).not.toHaveBeenCalled();
+      expect(setIntervalSpy).not.toHaveBeenCalled();
+      expect(requestAnimationFrameSpy).not.toHaveBeenCalled();
+      expect(AudioSpy.mock.calls.map(([src]) => String(src ?? ""))).not.toContain(
+        "/audio/finish.m4a"
+      );
+      expect(bodyClassAdd).not.toHaveBeenCalled();
+      expect(bodyClassRemove).not.toHaveBeenCalled();
+      expect(bodyClassToggle).not.toHaveBeenCalled();
+      expect(cloudSyncSpies.syncCloudRecords).not.toHaveBeenCalled();
+      expect(cloudSyncSpies.startCloudSyncLoop).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(window, "Audio", {
+        configurable: true,
+        writable: true,
+        value: OriginalAudio,
+      });
     }
-
-    expect(documentGetElementById).not.toHaveBeenCalled();
-    expect(documentQuerySelector).not.toHaveBeenCalled();
-    expect(windowAddEventListener).not.toHaveBeenCalled();
-    expect(documentAddEventListener).not.toHaveBeenCalled();
-    expect(watchPosition).not.toHaveBeenCalled();
-    expect(setIntervalSpy).not.toHaveBeenCalled();
-    expect(requestAnimationFrameSpy).not.toHaveBeenCalled();
-    expect(bodyClassAdd).not.toHaveBeenCalled();
-    expect(bodyClassRemove).not.toHaveBeenCalled();
-    expect(bodyClassToggle).not.toHaveBeenCalled();
-    expect(cloudSyncSpies.syncCloudRecords).not.toHaveBeenCalled();
-    expect(cloudSyncSpies.startCloudSyncLoop).not.toHaveBeenCalled();
   });
 
   it("keeps lifecycle-sensitive route code using cleanup-owned listeners", () => {
@@ -196,5 +225,22 @@ describe("route lifecycle contract", () => {
       expect(source, file).not.toMatch(/\bsyncCloudRecords\s*\(/);
       expect(source, file).not.toContain("download_my_sync_payload");
     }
+  });
+
+  it("keeps heavy map, chart, and visualizer modules out of eager feature imports", () => {
+    const sourceFiles = listFiles("src", (file) => file.endsWith(".js"));
+
+    for (const file of sourceFiles) {
+      const source = readProjectFile(file);
+      if (file !== "src/shared/maplibre-loader.js") {
+        expect(source, file).not.toContain("maplibre-gl");
+        expect(source, file).not.toContain("maplibre-gl/dist/maplibre-gl.css");
+      }
+      expect(source, file).not.toMatch(/from\s+["']chart\.js\/auto["']/);
+    }
+
+    expect(readProjectFile("src/player/player-shell.js")).not.toMatch(
+      /from\s+["']\.\/milkdrop-panel\.js["']/
+    );
   });
 });

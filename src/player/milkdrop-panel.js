@@ -17,6 +17,12 @@ import { isVisualizerSafeSource } from "../shared/audio-visualizer.js";
 import * as runtime from "../shared/audio-runtime.js";
 import { loadText, saveText } from "../shared/storage.js";
 import {
+  loadMilkdropPanelVisibility,
+  saveMilkdropPanelVisibility,
+} from "./milkdrop-panel-prefs.js";
+
+export { loadMilkdropPanelVisibility };
+import {
   makePanelDraggable,
   clampElementToViewport,
 } from "../calculator/widget/drag.js";
@@ -26,7 +32,6 @@ import {
 const POS_KEY = "milkdrop_panel_pos_v1";
 const PRESET_KEY = "milkdrop_preset_name_v1";
 const SIZE_KEY = "milkdrop_panel_size_v1";
-const VISIBILITY_KEY = "milkdrop_panel_visible_v1";
 
 // ── Icons ─────────────────────────────────────────────────────────
 
@@ -92,18 +97,8 @@ function saveSize(w, h) {
   try { localStorage.setItem(SIZE_KEY, JSON.stringify({ w, h })); } catch { /* ignore */ }
 }
 
-export function loadMilkdropPanelVisibility() {
-  try {
-    return localStorage.getItem(VISIBILITY_KEY) === "true";
-  } catch {
-    return false;
-  }
-}
-
 function saveVisibility(isOpen) {
-  try {
-    localStorage.setItem(VISIBILITY_KEY, isOpen ? "true" : "false");
-  } catch { /* ignore */ }
+  saveMilkdropPanelVisibility(isOpen);
 }
 
 function clamp(n, min, max) {

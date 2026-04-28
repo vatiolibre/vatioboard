@@ -147,6 +147,14 @@ function createVisualizerMockState() {
   return { calls, createVisualizerSpy };
 }
 
+async function flushDynamicImports() {
+  await Promise.resolve();
+  if (typeof vi.dynamicImportSettled === "function") {
+    await vi.dynamicImportSettled();
+  }
+  await Promise.resolve();
+}
+
 // ── Tests: audio-source-resolver ─────────────────────────────────────
 
 describe("audio-source-resolver", () => {
@@ -2312,6 +2320,10 @@ describe("player-shell", () => {
         destroy: vi.fn(),
       };
     });
+    vi.doMock("../../src/player/milkdrop-panel-prefs.js", () => ({
+      loadMilkdropPanelVisibility: loadMilkdropPanelVisibilityMock,
+      saveMilkdropPanelVisibility: vi.fn(),
+    }));
     vi.doMock("../../src/player/milkdrop-panel.js", () => ({
       createMilkdropPanel: createMilkdropPanelMock,
       loadMilkdropPanelVisibility: loadMilkdropPanelVisibilityMock,
@@ -2420,7 +2432,7 @@ describe("player-shell", () => {
     shell.destroy();
   });
 
-  it("toggles the milkdrop panel from the utility button", () => {
+  it("toggles the milkdrop panel from the utility button", async () => {
     const container = document.createElement("div");
     const shell = createPlayerShell({ container });
     const toggleBtn = container.querySelector(".player-milkdrop-toggle-btn");
@@ -2428,11 +2440,13 @@ describe("player-shell", () => {
     expect(toggleBtn.classList.contains("active")).toBe(false);
 
     toggleBtn.click();
+    await flushDynamicImports();
     expect(createMilkdropPanelMock).toHaveBeenCalledTimes(1);
     expect(toggleBtn.classList.contains("active")).toBe(true);
     expect(toggleBtn.getAttribute("aria-pressed")).toBe("true");
 
     toggleBtn.click();
+    await flushDynamicImports();
     expect(createMilkdropPanelMock).toHaveBeenCalledTimes(1);
     expect(toggleBtn.classList.contains("active")).toBe(false);
     expect(toggleBtn.getAttribute("aria-pressed")).toBe("false");
@@ -2440,12 +2454,13 @@ describe("player-shell", () => {
     shell.destroy();
   });
 
-  it("restores the milkdrop panel active state from persisted visibility", () => {
+  it("restores the milkdrop panel active state from persisted visibility", async () => {
     loadMilkdropPanelVisibilityMock.mockReturnValue(true);
 
     const container = document.createElement("div");
     const shell = createPlayerShell({ container });
     const toggleBtn = container.querySelector(".player-milkdrop-toggle-btn");
+    await flushDynamicImports();
 
     expect(createMilkdropPanelMock).toHaveBeenCalledWith(expect.objectContaining({
       mount: container,

@@ -1,4 +1,3 @@
-import 'maplibre-gl/dist/maplibre-gl.css';
 import '@stanko/dual-range-input/dist/index.css';
 import '../styles/replay.less';
 import '../styles/cloud-sync-status.less';
@@ -202,6 +201,8 @@ let toolsMenu = createInactiveToolsMenu();
 let replayFilterController = null;
 let chartsController = createInactiveReplayChartsController();
 let mapController = createInactiveReplayMapController();
+let replayChartsReady = false;
+let replayChartsLoadPromise = null;
 let singleTabOwnershipPromise = Promise.resolve(true);
 let replayRouteGeneration = 0;
 let activeReplayRoute = null;
@@ -357,6 +358,18 @@ function runReplayApproach({ force = false } = {}) {
   });
 
   return introApproachPromise;
+}
+
+function initReplayMapForSession() {
+  if (!state.session) return Promise.resolve();
+  const route = activeReplayRoute;
+  const initPromise = mapController.init();
+  void initPromise.then(() => {
+    if (route && (route.destroyed || activeReplayRoute !== route)) return;
+    if (isSpaRuntime && !state.viewMounted) return;
+    mapController.resize();
+  });
+  return initPromise;
 }
 
 function bindMenuNavigation(element, href, cleanup) {
@@ -624,6 +637,15 @@ function renderExpandedGraphSheet() {
     return;
   }
 
+  if (!replayChartsReady) {
+    void ensureReplayChartRouteControllers().then((ready) => {
+      if (ready && state.viewMounted) renderGraphs();
+    });
+    renderExpandedGraphControls();
+    renderExpandedGraphPlayback(getReplaySampleAtElapsedMs(state.session, state.elapsedMs));
+    return;
+  }
+
   chartsController.setDetailRange(
     state.expandedGraphFilterStartRatio,
     state.expandedGraphFilterEndRatio
@@ -810,6 +832,16 @@ function renderRecordings() {
 }
 
 function renderGraphs() {
+  if (state.session && !replayChartsReady) {
+    void ensureReplayChartRouteControllers().then((ready) => {
+      if (!ready || !state.viewMounted) return;
+      renderGraphs();
+      renderPlaybackFrame();
+    });
+    renderExpandedGraphSheet();
+    return;
+  }
+
   chartsController.renderSession(state.session, state.dashboardAxis);
   renderExpandedGraphSheet();
 }
@@ -935,7 +967,7 @@ function applyReplayIcons(routeElements = elements) {
   }
 }
 
-function createReplayRouteControllers(routeElements = elements, routeGraphElements = graphElements) {
+function createReplayChartRouteControllers(routeElements = elements, routeGraphElements = graphElements) {
   replayFilterController =
     routeElements.replayFilterStart && routeElements.replayFilterEnd
       ? new DualRangeInput(routeElements.replayFilterStart, routeElements.replayFilterEnd)
@@ -953,10 +985,37 @@ function createReplayRouteControllers(routeElements = elements, routeGraphElemen
     getSpeedUnit,
     getDistanceUnit,
   });
+  replayChartsReady = true;
+}
+
+function createReplayMapRouteController(routeElements = elements) {
   mapController = createReplayMapController({
     element: routeElements.replayMap,
     session: state.session,
   });
+}
+
+function ensureReplayChartRouteControllers() {
+  if (replayChartsReady) return Promise.resolve(true);
+  if (replayChartsLoadPromise) return replayChartsLoadPromise;
+
+  const route = activeReplayRoute;
+  replayChartsLoadPromise = Promise.all([loadDualRangeInput(), loadChart()])
+    .then(() => {
+      if (!route || route.destroyed || route.signal?.aborted || activeReplayRoute !== route) {
+        return false;
+      }
+      createReplayChartRouteControllers(elements, graphElements);
+      route.filterController = replayFilterController;
+      route.chartsController = chartsController;
+      return true;
+    })
+    .catch(() => false)
+    .finally(() => {
+      replayChartsLoadPromise = null;
+    });
+
+  return replayChartsLoadPromise;
 }
 
 function destroyReplayRouteResources(route = activeReplayRoute) {
@@ -976,6 +1035,8 @@ function destroyReplayRouteResources(route = activeReplayRoute) {
     replayFilterController = null;
     chartsController = createInactiveReplayChartsController();
     mapController = createInactiveReplayMapController();
+    replayChartsReady = false;
+    replayChartsLoadPromise = null;
   }
 }
 
@@ -999,9 +1060,7 @@ function syncMountedReplayRouteUi() {
   renderPlaybackFrame();
   queueRecordingDetailOverflowSync();
 
-  if (state.session) {
-    void mapController.init();
-  }
+  initReplayMapForSession();
   mapController.setSession(state.session, { resetCamera: false });
   mapController.resize();
 }
@@ -1027,14 +1086,7 @@ async function mountReplayController(routeContext = {}) {
     list: elements.replayToolsMenuList,
   });
   route.toolsMenu = toolsMenu;
-  await Promise.all([loadDualRangeInput(), loadChart()]);
-  if (route.signal?.aborted) {
-    destroyReplayRouteResources(route);
-    return Promise.resolve();
-  }
-  createReplayRouteControllers(elements, graphElements);
-  route.filterController = replayFilterController;
-  route.chartsController = chartsController;
+  createReplayMapRouteController(elements);
   route.mapController = mapController;
   route.syncIndicator = initCloudSyncStatusIndicator({
     mount: elements.toolbar,
@@ -1174,7 +1226,7 @@ function scrubExpandedGraph(metricKey, clientX) {
 function openExpandedGraph() {
   if (!state.session) return;
   state.expandedGraphOpen = true;
-  renderExpandedGraphSheet();
+  renderGraphs();
 }
 
 function closeExpandedGraph() {
@@ -1251,9 +1303,7 @@ function applyReplaySelectionState(selection) {
   renderAxisButtons();
   renderPlaybackFrame();
 
-  if (state.session) {
-    mapController.init();
-  }
+  initReplayMapForSession();
   mapController.setSession(state.session, {
     resetCamera: hasHydratedInitialSelection,
   });

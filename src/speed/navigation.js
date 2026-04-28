@@ -1,4 +1,4 @@
-import maplibregl from "maplibre-gl";
+import { loadMapLibre } from "../shared/maplibre-loader.js";
 import {
   GEO_ERROR_CODE,
   GLOBE_DEFAULT_CENTER,
@@ -765,10 +765,16 @@ export function createGlobeController({
     });
   }
 
-  function initGlobe() {
+  async function initGlobe() {
     if (!elements.globeMount || state.globeMap) return;
 
+    const initToken = (state.globeInitToken ?? 0) + 1;
+    state.globeInitToken = initToken;
+
     try {
+      const maplibregl = await loadMapLibre();
+      if (state.globeInitToken !== initToken || !elements.globeMount || state.globeMap) return;
+
       const initialSunVector = getSunVectorAtTime().vector;
       const globeMap = new maplibregl.Map({
         container: elements.globeMount,
@@ -940,6 +946,7 @@ export function createGlobeController({
         state.globeResizeObserver.observe(elements.globeMount);
       }
     } catch (error) {
+      if (state.globeInitToken !== initToken) return;
       state.globeError = error;
       state.globeReady = false;
       renderGlobeStatus();

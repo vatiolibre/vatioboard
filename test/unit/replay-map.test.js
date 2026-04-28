@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const fakeMaps = [];
+const mapLibreTestDouble = vi.hoisted(() => {
+  const fakeMaps = [];
 
-vi.mock("maplibre-gl", () => {
   class FakeMap {
     constructor() {
       this.handlers = {};
@@ -39,12 +39,24 @@ vi.mock("maplibre-gl", () => {
   class FakeAttributionControl {}
 
   return {
-    default: {
+    fakeMaps,
+    module: {
       Map: FakeMap,
       AttributionControl: FakeAttributionControl,
     },
   };
 });
+
+const fakeMaps = mapLibreTestDouble.fakeMaps;
+
+vi.mock("../../src/shared/maplibre-loader.js", () => ({
+  loadMapLibre: vi.fn(() => Promise.resolve(mapLibreTestDouble.module)),
+}));
+
+async function flushAsyncWork() {
+  await Promise.resolve();
+  await Promise.resolve();
+}
 
 describe("replay map controller", () => {
   beforeEach(() => {
@@ -81,6 +93,7 @@ describe("replay map controller", () => {
     });
 
     const initPromise = controller.init();
+    await flushAsyncWork();
     for (const handler of fakeMaps[0].handlers.load ?? []) {
       handler();
     }

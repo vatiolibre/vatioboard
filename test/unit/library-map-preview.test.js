@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const fakeMaps = [];
+const mapLibreTestDouble = vi.hoisted(() => {
+  const fakeMaps = [];
 
-vi.mock("maplibre-gl", () => {
   class FakeMap {
     constructor() {
       this.handlers = {};
@@ -46,15 +46,39 @@ vi.mock("maplibre-gl", () => {
   class FakeAttributionControl {}
 
   return {
-    default: {
+    fakeMaps,
+    module: {
       Map: FakeMap,
       AttributionControl: FakeAttributionControl,
     },
   };
 });
 
+const fakeMaps = mapLibreTestDouble.fakeMaps;
+
+vi.mock("../../src/shared/maplibre-loader.js", () => ({
+  loadMapLibre: vi.fn(() => Promise.resolve(mapLibreTestDouble.module)),
+}));
+
 function fireLoad(fakeMap) {
   for (const handler of fakeMap.handlers.load ?? []) handler();
+}
+
+async function flushAsyncWork() {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+async function startInit(preview) {
+  const initPromise = preview.init();
+  await flushAsyncWork();
+  return { initPromise };
+}
+
+async function initAndLoad(preview, mapIndex = 0) {
+  const { initPromise } = await startInit(preview);
+  fireLoad(fakeMaps[mapIndex]);
+  await initPromise;
 }
 
 describe("createLibraryMapPreview", () => {
@@ -69,18 +93,20 @@ describe("createLibraryMapPreview", () => {
     ));
   });
 
-  it("creates a map on init", () => {
+  it("creates a map on init", async () => {
     const element = document.getElementById("mapContainer");
     const preview = createLibraryMapPreview({ element });
-    preview.init();
+    const { initPromise } = await startInit(preview);
 
     expect(fakeMaps).toHaveLength(1);
+    fireLoad(fakeMaps[0]);
+    await initPromise;
   });
 
-  it("disables all interactive controls", () => {
+  it("disables all interactive controls", async () => {
     const element = document.getElementById("mapContainer");
     const preview = createLibraryMapPreview({ element });
-    preview.init();
+    const { initPromise } = await startInit(preview);
 
     const map = fakeMaps[0];
     expect(map.scrollZoom.disable).toHaveBeenCalled();
@@ -90,67 +116,74 @@ describe("createLibraryMapPreview", () => {
     expect(map.dragRotate.disable).toHaveBeenCalled();
     expect(map.keyboard.disable).toHaveBeenCalled();
     expect(map.touchZoomRotate.disable).toHaveBeenCalled();
+    fireLoad(map);
+    await initPromise;
   });
 
-  it("does not create a map if element is null", () => {
+  it("does not create a map if element is null", async () => {
     const preview = createLibraryMapPreview({ element: null });
-    preview.init();
+    await preview.init();
     expect(fakeMaps).toHaveLength(0);
   });
 
-  it("does not create a second map on repeated init()", () => {
+  it("does not create a second map on repeated init()", async () => {
     const element = document.getElementById("mapContainer");
     const preview = createLibraryMapPreview({ element });
-    preview.init();
-    preview.init();
+    const firstInit = preview.init();
+    const secondInit = preview.init();
+    await flushAsyncWork();
     expect(fakeMaps).toHaveLength(1);
+    fireLoad(fakeMaps[0]);
+    await firstInit;
+    await secondInit;
   });
 
-  it("destroy removes the map", () => {
+  it("destroy removes the map", async () => {
     const element = document.getElementById("mapContainer");
     const preview = createLibraryMapPreview({ element });
-    preview.init();
+    await initAndLoad(preview);
 
     const map = fakeMaps[0];
     preview.destroy();
     expect(map.remove).toHaveBeenCalled();
   });
 
-  it("can re-init after destroy", () => {
+  it("can re-init after destroy", async () => {
     const element = document.getElementById("mapContainer");
     const preview = createLibraryMapPreview({ element });
-    preview.init();
+    await initAndLoad(preview);
     preview.destroy();
-    preview.init();
+    const { initPromise: secondInit } = await startInit(preview);
     expect(fakeMaps).toHaveLength(2);
+    fireLoad(fakeMaps[1]);
+    await secondInit;
   });
 
-  it("ready becomes true after load event", () => {
+  it("ready becomes true after load event", async () => {
     const element = document.getElementById("mapContainer");
     const preview = createLibraryMapPreview({ element });
-    preview.init();
+    const { initPromise } = await startInit(preview);
     expect(preview.ready).toBe(false);
 
     fireLoad(fakeMaps[0]);
+    await initPromise;
     expect(preview.ready).toBe(true);
   });
 
   it("showRoute with empty coordinates hides route", async () => {
     const element = document.getElementById("mapContainer");
     const preview = createLibraryMapPreview({ element });
-    preview.init();
-    fireLoad(fakeMaps[0]);
+    await initAndLoad(preview);
 
     await preview.showRoute(null);
     // Should not throw, just return
   });
 
   it("showRoute with valid coordinates updates the source", async () => {
-    vi.useFakeTimers();
     const element = document.getElementById("mapContainer");
     const preview = createLibraryMapPreview({ element });
-    preview.init();
-    fireLoad(fakeMaps[0]);
+    await initAndLoad(preview);
+    vi.useFakeTimers();
 
     const coords = [[-74.0, 40.7], [-74.1, 40.8]];
     const routePromise = preview.showRoute(coords);
@@ -166,11 +199,10 @@ describe("createLibraryMapPreview", () => {
   });
 
   it("cancelAnimation prevents later animation steps", async () => {
-    vi.useFakeTimers();
     const element = document.getElementById("mapContainer");
     const preview = createLibraryMapPreview({ element });
-    preview.init();
-    fireLoad(fakeMaps[0]);
+    await initAndLoad(preview);
+    vi.useFakeTimers();
 
     // Spy on the reduced-motion check: ensure animation path is taken
     const matchMediaSpy = vi.spyOn(window, "matchMedia").mockReturnValue({ matches: false });
@@ -203,7 +235,6 @@ describe("createLibraryMapPreview", () => {
   });
 
   it("showRoute auto-inits if map was not init'd", async () => {
-    vi.useFakeTimers();
     const element = document.getElementById("mapContainer");
     const preview = createLibraryMapPreview({ element });
 
@@ -211,10 +242,12 @@ describe("createLibraryMapPreview", () => {
     const routePromise = preview.showRoute(coords);
 
     // Map should have been created
+    await flushAsyncWork();
     expect(fakeMaps).toHaveLength(1);
 
     // Fire load to unblock the wait
     fireLoad(fakeMaps[0]);
+    vi.useFakeTimers();
 
     await vi.advanceTimersByTimeAsync(4000);
     await routePromise;
@@ -223,11 +256,10 @@ describe("createLibraryMapPreview", () => {
   });
 
   it("destroy during showRoute stops animation gracefully", async () => {
-    vi.useFakeTimers();
     const element = document.getElementById("mapContainer");
     const preview = createLibraryMapPreview({ element });
-    preview.init();
-    fireLoad(fakeMaps[0]);
+    await initAndLoad(preview);
+    vi.useFakeTimers();
 
     const coords = [[-74.0, 40.7], [-74.1, 40.8]];
     const routePromise = preview.showRoute(coords);
@@ -243,11 +275,10 @@ describe("createLibraryMapPreview", () => {
   });
 
   it("does not restart animation when showRoute is called with the same coordinates", async () => {
-    vi.useFakeTimers();
     const element = document.getElementById("mapContainer");
     const preview = createLibraryMapPreview({ element });
-    preview.init();
-    fireLoad(fakeMaps[0]);
+    await initAndLoad(preview);
+    vi.useFakeTimers();
 
     const coords = [[-74.0, 40.7], [-74.1, 40.8]];
 
@@ -270,11 +301,10 @@ describe("createLibraryMapPreview", () => {
   });
 
   it("animates again when showRoute is called with different coordinates", async () => {
-    vi.useFakeTimers();
     const element = document.getElementById("mapContainer");
     const preview = createLibraryMapPreview({ element });
-    preview.init();
-    fireLoad(fakeMaps[0]);
+    await initAndLoad(preview);
+    vi.useFakeTimers();
 
     const coordsA = [[-74.0, 40.7], [-74.1, 40.8]];
     const coordsB = [[-73.9, 40.6], [-73.8, 40.5]];
@@ -296,11 +326,10 @@ describe("createLibraryMapPreview", () => {
   });
 
   it("allows re-animation after destroy resets the route signature", async () => {
-    vi.useFakeTimers();
     const element = document.getElementById("mapContainer");
     const preview = createLibraryMapPreview({ element });
-    preview.init();
-    fireLoad(fakeMaps[0]);
+    await initAndLoad(preview);
+    vi.useFakeTimers();
 
     const coords = [[-74.0, 40.7], [-74.1, 40.8]];
 
@@ -309,8 +338,11 @@ describe("createLibraryMapPreview", () => {
     await firstPromise;
 
     preview.destroy();
-    preview.init();
+    vi.useRealTimers();
+    const { initPromise: reinitPromise } = await startInit(preview);
     fireLoad(fakeMaps[1]);
+    await reinitPromise;
+    vi.useFakeTimers();
 
     const secondPromise = preview.showRoute(coords);
     await vi.advanceTimersByTimeAsync(4000);

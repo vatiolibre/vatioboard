@@ -10,6 +10,13 @@ async function settleAsyncWork(iterations = 20) {
   }
 }
 
+async function settleDeferredImports(iterations = 4) {
+  for (let index = 0; index < iterations; index += 1) {
+    await vi.dynamicImportSettled();
+    await flushTasks();
+  }
+}
+
 async function waitForRecordingButton(recordingId, iterations = 60) {
   for (let index = 0; index < iterations; index += 1) {
     const button = document.querySelector(`button[data-recording-id="${recordingId}"]`);
@@ -329,6 +336,7 @@ describe('replay.html smoke', () => {
     expect(document.getElementById('replayAxisTime').getAttribute('aria-pressed')).toBe('true');
     expect(document.getElementById('replayProgress').max).toBe('3000');
     expect(document.querySelectorAll('.replay-rate-btn')).toHaveLength(5);
+    await settleDeferredImports();
     expect(fakeMaps[0]?.fitBounds).not.toHaveBeenCalled();
     expect(fakeMaps[0]?.jumpTo).toHaveBeenCalledTimes(1);
     expect(fakeMaps[0]?.resize).toHaveBeenCalledTimes(1);
@@ -457,6 +465,7 @@ describe('replay.html smoke', () => {
     const replayPage = await import('../../src/replay/replay.js');
     await replayPage.initPromise;
     await flushTasks();
+    await settleDeferredImports();
 
     expect(fakeMaps[0]?.stop).toHaveBeenCalledTimes(1);
 
