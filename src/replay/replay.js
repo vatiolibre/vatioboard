@@ -979,6 +979,33 @@ function destroyReplayRouteResources(route = activeReplayRoute) {
   }
 }
 
+function syncMountedReplayRouteUi() {
+  if (!state.viewMounted) return;
+
+  updatePageMeta();
+  elements.langToggleButtons.forEach((button) => {
+    button.textContent = getLang().toUpperCase();
+  });
+  renderSessionStateView();
+  renderSessionState();
+  renderAxisButtons();
+  renderRateButtons();
+  renderPlaybackButtons();
+  renderActionIcons();
+  renderRecordings();
+  renderStaticSummary();
+  renderHighlights();
+  renderGraphs();
+  renderPlaybackFrame();
+  queueRecordingDetailOverflowSync();
+
+  if (state.session) {
+    void mapController.init();
+  }
+  mapController.setSession(state.session, { resetCamera: false });
+  mapController.resize();
+}
+
 async function mountReplayController(routeContext = {}) {
   if (routeContext.signal?.aborted) return Promise.resolve();
   unmountReplayController();
@@ -1029,11 +1056,7 @@ async function mountReplayController(routeContext = {}) {
   state.viewMounted = true;
   if (!state.initialized) return startReplayInit();
 
-  renderSessionStateView();
-  renderSessionState();
-  renderPlaybackFrame();
-  queueRecordingDetailOverflowSync();
-  mapController.resize();
+  syncMountedReplayRouteUi();
   return Promise.resolve();
 }
 
@@ -1655,19 +1678,7 @@ async function init() {
       registerLinkedReplayCloudRecord(initialRecordingId, initialCloudRecordName);
     }
 
-    updatePageMeta();
-    renderSessionStateView();
-
-    elements.langToggleButtons.forEach((button) => {
-      button.textContent = getLang().toUpperCase();
-    });
-
-    renderSessionState();
-    renderAxisButtons();
-    renderRateButtons();
-    renderPlaybackButtons();
-    renderActionIcons();
-    renderRecordings();
+    syncMountedReplayRouteUi();
     updateGraphPlayback(null);
 
     const selectionSafetyTimeoutId = setTimeout(() => {

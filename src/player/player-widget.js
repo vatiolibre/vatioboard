@@ -450,6 +450,7 @@ export function createPlayerWidget(options = {}) {
   // ── Floating launcher (FAB) ──────────────────────────────────
   let launcher = null;
   let launcherUnsubscribe = null;
+  let launcherMoved = null;
 
   if (floating) {
     launcher = document.createElement("button");
@@ -471,7 +472,7 @@ export function createPlayerWidget(options = {}) {
     }
 
     // Draggable launcher (guards toggle on drag)
-    const launcherMoved = makeLauncherDraggable({
+    launcherMoved = makeLauncherDraggable({
       launcherEl: launcher,
       dragThresholdPx: DRAG_THRESHOLD_PX,
       savePos,
@@ -535,6 +536,7 @@ export function createPlayerWidget(options = {}) {
     window.removeEventListener(BACKEND_AUTH_STATE_EVENT, onAuthChange);
     shell.destroy();
     if (launcher) {
+      launcherMoved?.destroy?.();
       launcher.remove();
       if (launcherUnsubscribe) launcherUnsubscribe();
     }

@@ -249,6 +249,7 @@ export function initActivityIndicator({ mount = document.body } = {}) {
       clearRenderTimer();
       unsubscribe();
       document.removeEventListener("i18n:change", handleI18nChange);
+      rootMoved.destroy?.();
       root.remove();
     },
   };

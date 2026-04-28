@@ -1,11 +1,16 @@
 import { expect, vi } from "vitest";
 import { bootHtmlPage, flushTasks } from "./page-smoke.js";
 
+const maplibreMocks = vi.hoisted(() => ({
+  maps: [],
+}));
+
 vi.mock("maplibre-gl", () => {
   class FakeMap {
-    constructor() {
+    constructor(options = {}) {
       this.handlers = {};
       this.sources = new Map();
+      this.options = options;
       this.scrollZoom = { disable: vi.fn() };
       this.boxZoom = { disable: vi.fn() };
       this.doubleClickZoom = { disable: vi.fn() };
@@ -21,6 +26,7 @@ vi.mock("maplibre-gl", () => {
       Promise.resolve().then(() => {
         for (const handler of this.handlers.load ?? []) handler();
       });
+      maplibreMocks.maps.push(this);
     }
     on(event, handler) {
       (this.handlers[event] ??= []).push(handler);
@@ -132,12 +138,20 @@ export async function resetRealSpaSmoke() {
   cloudSyncMocks.requestCloudSync.mockClear();
   cloudSyncMocks.startCloudSyncLoop.mockClear();
   cloudSyncMocks.syncCloudRecords.mockClear();
+  maplibreMocks.maps = [];
   vi.resetModules();
   localStorage.clear();
   sessionStorage.clear();
   document.body.innerHTML = "";
   document.head.innerHTML = "";
   installBrowserStubs();
+}
+
+export function getRealSpaSmokeMocks() {
+  return {
+    cloudSync: cloudSyncMocks,
+    maplibre: maplibreMocks,
+  };
 }
 
 async function settle(iterations = 16) {

@@ -713,12 +713,8 @@ export const initPromise = (function () {
       });
     }
 
-    applyTranslations();
-    elements.runNotes.value = state.settings.notes;
     if (syncSelectedPresetForUnits()) saveSettings();
-    renderPresetButtons();
-    renderControlSelections();
-    renderAll();
+    syncMountedAccelRouteUi();
     publishAccelActivity();
     var initialTelemetryPromise = ensureSelectedResultTelemetry(initialRunId || state.selectedResultId, {
       selectionSnapshotId: state.selectedResultId || '',
@@ -748,6 +744,18 @@ export const initPromise = (function () {
     singleTabOwnershipPromise = isSpaRuntime ? Promise.resolve(true) : ensureSingleTabOwnership();
     accelInitPromise = init();
     return accelInitPromise;
+  }
+
+  function syncMountedAccelRouteUi() {
+    if (!state.viewMounted) return;
+
+    applyTranslations();
+    elements.runNotes.value = state.settings.notes;
+    renderPresetButtons();
+    renderControlSelections();
+    liveSpeedometer.resize();
+    handleWindowResize();
+    renderAll();
   }
 
   function primeFinishAudio() {
@@ -1682,10 +1690,7 @@ export const initPromise = (function () {
     state.viewMounted = true;
     if (!state.initialized) return startAccelInit();
 
-    applyTranslations();
-    liveSpeedometer.resize();
-    handleWindowResize();
-    renderAll();
+    syncMountedAccelRouteUi();
     startUiTimer();
     updatePermissionState();
     ensureWatch();

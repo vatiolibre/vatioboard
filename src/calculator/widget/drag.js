@@ -2,6 +2,18 @@ function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
 
+function firstPositiveNumber(...values) {
+  return values.find((value) => Number.isFinite(value) && value > 0) ?? 0;
+}
+
+function getElementBoxSize(elm, rect = elm.getBoundingClientRect()) {
+  const style = typeof getComputedStyle === "function" ? getComputedStyle(elm) : null;
+  return {
+    width: firstPositiveNumber(rect.width, elm.offsetWidth, parseFloat(style?.width)),
+    height: firstPositiveNumber(rect.height, elm.offsetHeight, parseFloat(style?.height)),
+  };
+}
+
 function ensureFixedTopLeft(elm) {
   // Convert an element to fixed top/left positioning (from right/bottom)
   const r = elm.getBoundingClientRect();
@@ -18,6 +30,7 @@ function ensureFixedTopLeft(elm) {
 export function clampElementToViewport(elm, margin = 8) {
   // Assumes fixed position with left/top set (or at least measurable via rect)
   const r = elm.getBoundingClientRect();
+  const box = getElementBoxSize(elm, r);
   const vw = window.innerWidth;
   const vh = window.innerHeight;
 
@@ -26,8 +39,8 @@ export function clampElementToViewport(elm, margin = 8) {
   const curLeft = parseFloat(elm.style.left) || r.left;
   const curTop = parseFloat(elm.style.top) || r.top;
 
-  const nextLeft = clamp(curLeft, margin, vw - r.width - margin);
-  const nextTop = clamp(curTop, margin, vh - r.height - margin);
+  const nextLeft = clamp(curLeft, margin, vw - box.width - margin);
+  const nextTop = clamp(curTop, margin, vh - box.height - margin);
 
   elm.style.left = `${nextLeft}px`;
   elm.style.top = `${nextTop}px`;
@@ -329,6 +342,27 @@ export function makeLauncherDraggable({ launcherEl, dragThresholdPx, savePos, lo
 
   launcherEl.addEventListener("pointercancel", endDrag);
 
+  function handleResize() {
+    if (!launcherEl.isConnected) return;
+    if (launcherEl.hidden && (!launcherEl.style.left || !launcherEl.style.top)) return;
+
+    clampElementToViewport(launcherEl);
+    savePos({
+      ...(loadPos() || {}),
+      launcher: { left: launcherEl.style.left, top: launcherEl.style.top },
+    });
+  }
+
+  window.addEventListener("resize", handleResize);
+
   // Return a function for checking if last interaction moved
-  return () => moved;
+  function wasMoved() {
+    return moved;
+  }
+
+  wasMoved.destroy = function destroyLauncherDrag() {
+    window.removeEventListener("resize", handleResize);
+  };
+
+  return wasMoved;
 }

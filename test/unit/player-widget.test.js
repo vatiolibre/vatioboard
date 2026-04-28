@@ -458,6 +458,40 @@ describe("createPlayerWidget", () => {
     widget.destroy();
   });
 
+  it("keeps the floating launcher inside the viewport after resize", () => {
+    vi.stubGlobal("innerWidth", 320);
+    vi.stubGlobal("innerHeight", 240);
+    localStorage.setItem("player_widget_pos_v1", JSON.stringify({
+      launcher: { left: "900px", top: "700px" },
+    }));
+
+    const widget = createPlayerWidget({ floating: true });
+    const launcher = document.querySelector(".player-fab");
+    vi.spyOn(launcher, "getBoundingClientRect").mockReturnValue({
+      x: 900,
+      y: 700,
+      top: 700,
+      left: 900,
+      right: 952,
+      bottom: 752,
+      width: 52,
+      height: 52,
+      toJSON() {
+        return this;
+      },
+    });
+
+    window.dispatchEvent(new Event("resize"));
+
+    expect(launcher.style.left).toBe("260px");
+    expect(launcher.style.top).toBe("180px");
+    expect(JSON.parse(localStorage.getItem("player_widget_pos_v1"))).toMatchObject({
+      launcher: { left: "260px", top: "180px" },
+    });
+
+    widget.destroy();
+  });
+
   // ── Panel has header with close button ───────────────────────
 
   it("panel has a header and close button", () => {

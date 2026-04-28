@@ -1859,6 +1859,24 @@ function resumeVisibleRuntime() {
   return true;
 }
 
+function syncMountedSpeedRouteUi() {
+  if (!state.viewMounted) return;
+
+  renderPrimaryView();
+  renderMetrics();
+  renderRecordingControls();
+  speedRenderer.drawGauge();
+  globeController.initGlobe();
+  resizeCanvas();
+
+  if (
+    state.primaryView === 'waze' &&
+    (!state.wazeLoaded || !elements.wazeFrame?.getAttribute('src'))
+  ) {
+    wazeController.syncWazeEmbed();
+  }
+}
+
 function applySpeedIcons() {
   applyButtonIcon(elements.openAccelMenu, IconAccel);
   applyButtonIcon(elements.openLibraryMenu, IconWorld);
@@ -1934,8 +1952,7 @@ function mountSpeedController(routeContext = {}) {
   state.viewMounted = true;
   if (!state.initialized) return startSpeedInit();
 
-  renderRecordingControls();
-  resizeCanvas();
+  syncMountedSpeedRouteUi();
   if (state.watchId === null) startTracking();
   resumeVisibleRuntime();
   return Promise.resolve();
@@ -2200,15 +2217,11 @@ async function init() {
       }
     },
   });
-  renderPrimaryView();
-  renderMetrics();
-  renderRecordingControls();
-  globeController.initGlobe();
-  resizeCanvas();
   trapLoader.loadTrapArtifacts();
   if (!isSpaRuntime) startCloudSyncLoop();
   state.initialized = true;
   if (state.viewMounted) {
+    syncMountedSpeedRouteUi();
     startTracking();
     startRenderLoop();
   }
