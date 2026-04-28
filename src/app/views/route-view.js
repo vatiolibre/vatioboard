@@ -102,10 +102,8 @@ export function createRouteView({
   loadModule,
   mountController,
   unmountController,
-  preserveDom = false,
 }) {
   let modulePromise = null;
-  let preservedDom = null;
 
   return {
     async mount(root, context = {}) {
@@ -116,7 +114,6 @@ export function createRouteView({
       let routeModule = null;
       let controllerResult = null;
       let routeNodes = [];
-      let parkingContainer = null;
       const mountContext = {
         root,
         context,
@@ -127,66 +124,13 @@ export function createRouteView({
 
       function getOwnedRouteNodes() {
         return routeNodes.filter((node) =>
-          node.parentNode === root || (parkingContainer && node.parentNode === parkingContainer)
+          node.parentNode === root
         );
-      }
-
-      function preserveRouteNodes(nodes, { replace = true } = {}) {
-        if (!nodes.length) return;
-        if (!replace && preservedDom) {
-          for (const node of nodes) {
-            node.remove();
-          }
-          return;
-        }
-        preservedDom = document.createDocumentFragment();
-        for (const node of nodes) {
-          preservedDom.append(node);
-        }
-      }
-
-      function parkRouteNodes(nodes) {
-        if (!nodes.length || parkingContainer || !document.body) return false;
-
-        parkingContainer = document.createElement("div");
-        parkingContainer.hidden = true;
-        parkingContainer.dataset.routeViewParking = pageName || "route";
-        parkingContainer.setAttribute("aria-hidden", "true");
-        parkingContainer.style.display = "none";
-        for (const node of nodes) {
-          parkingContainer.append(node);
-        }
-        document.body.append(parkingContainer);
-        return true;
-      }
-
-      function finalizeParkedRouteDom({ preserve = true, replacePreserved = true } = {}) {
-        if (!parkingContainer) return;
-
-        const parkedNodes = routeNodes.filter((node) => node.parentNode === parkingContainer);
-        if (preserve) {
-          preserveRouteNodes(parkedNodes, { replace: replacePreserved });
-        } else {
-          for (const node of parkedNodes) {
-            node.remove();
-          }
-        }
-        parkingContainer.remove();
-        parkingContainer = null;
       }
 
       function cleanupRouteDom() {
         const ownedNodes = getOwnedRouteNodes();
         if (!ownedNodes.length) return;
-
-        if (preserveDom) {
-          if (!routeModule && parkRouteNodes(ownedNodes)) {
-            return;
-          }
-          preserveRouteNodes(ownedNodes);
-          if (parkingContainer) finalizeParkedRouteDom({ preserve: true });
-          return;
-        }
 
         for (const node of ownedNodes) {
           node.remove();
@@ -196,10 +140,7 @@ export function createRouteView({
       cleanup.add(cleanupRouteDom);
       cleanup.add(setRouteMeta(meta));
       const templateElement = getTemplate(pageName, template);
-      const nextRouteDom =
-        preserveDom && preservedDom ? preservedDom : templateElement.content.cloneNode(true);
-      root.replaceChildren(nextRouteDom);
-      preservedDom = null;
+      root.replaceChildren(templateElement.content.cloneNode(true));
       routeNodes = Array.from(root.childNodes);
       if (signal?.addEventListener) {
         const handleAbort = () => {
@@ -217,16 +158,8 @@ export function createRouteView({
         }
 
         routeModule = await modulePromise;
-        finalizeParkedRouteDom({ preserve: true, replacePreserved: false });
 
         if (signal?.aborted) {
-          if (preserveDom) {
-            try {
-              unmountController?.(routeModule, mountContext);
-            } catch {
-              // The route was already abandoned; cleanup below still owns DOM and metadata.
-            }
-          }
           cleanup.run();
           return createNoopMountedView();
         }
@@ -247,7 +180,6 @@ export function createRouteView({
         window.dispatchEvent(new Event("resize"));
       } catch (error) {
         if (!routeModule) modulePromise = null;
-        finalizeParkedRouteDom({ preserve: false });
         if (routeModule) {
           try {
             unmountController?.(routeModule, mountContext);

@@ -1234,9 +1234,7 @@ describe('accel.html smoke', () => {
     await storage.saveRuns([localRun]);
     window.history.replaceState({}, '', 'https://vatioboard.com/accel.html?run=missing-run');
 
-    window.fetch = vi.fn(async (input) => {
-      const url = typeof input === 'string' ? input : String(input?.url ?? '');
-
+    window.fetch = vi.fn(async () => {
       return new Response('{}', {
         status: 200,
         headers: { 'Content-Type': 'application/json' },

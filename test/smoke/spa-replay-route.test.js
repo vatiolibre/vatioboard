@@ -8,6 +8,7 @@ describe("SPA Replay route real-controller smoke", () => {
     await expectRealSpaRouteRemount({
       targetHash: "#/replay",
       targetSelector: "#replayShell",
+      sequence: ["#/board", "#/replay", "#/board", "#/replay"],
     });
   }, 40000);
 });

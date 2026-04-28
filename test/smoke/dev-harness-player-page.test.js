@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { bootHtmlPage, expectPageSeo, flushTasks } from "../helpers/page-smoke.js";
+import { bootHtmlPage, expectPageSeo } from "../helpers/page-smoke.js";
 
 describe("player.html smoke", () => {
   beforeEach(async () => {

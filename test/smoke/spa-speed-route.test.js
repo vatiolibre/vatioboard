@@ -8,6 +8,7 @@ describe("SPA Speed route real-controller smoke", () => {
     await expectRealSpaRouteRemount({
       targetHash: "#/speed",
       targetSelector: "#speedValue",
+      sequence: ["#/board", "#/speed", "#/library", "#/speed", "#/board", "#/speed"],
     });
   }, 40000);
 });

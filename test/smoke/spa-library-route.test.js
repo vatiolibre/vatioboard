@@ -8,6 +8,7 @@ describe("SPA Library route real-controller smoke", () => {
     await expectRealSpaRouteRemount({
       targetHash: "#/library",
       targetSelector: "#libraryList",
+      sequence: ["#/board", "#/library", "#/replay", "#/accel", "#/board", "#/library"],
     });
   }, 40000);
 });

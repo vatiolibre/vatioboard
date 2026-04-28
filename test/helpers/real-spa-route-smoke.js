@@ -44,6 +44,40 @@ vi.mock("../../src/shared/single-tab.js", () => ({
   SINGLE_TAB_OWNERSHIP_EVENT: "vatioboard:single-tab-ownership",
 }));
 
+const cloudSyncMocks = vi.hoisted(() => ({
+  queueCloudSyncChange: vi.fn(async () => true),
+  queueCloudSyncDeletion: vi.fn(async () => true),
+  requestCloudSync: vi.fn(() => true),
+  startCloudSyncLoop: vi.fn(),
+  syncCloudRecords: vi.fn(async () => ({ ok: true })),
+}));
+
+vi.mock("../../src/shared/cloud-sync.js", () => ({
+  CLOUD_SYNC_APPLIED_EVENT: "vatioboard:cloud-sync-applied",
+  CLOUD_SYNC_ENTITY_TYPES: {
+    accelRun: "accel_run",
+    boardDrawing: "board_drawing",
+    replaySession: "replay_session",
+  },
+  CLOUD_SYNC_STATUS_EVENT: "vatioboard:cloud-sync-status",
+  CLOUD_SYNC_STATUS_STATES: {
+    failed: "failed",
+    localOnly: "local-only",
+    paused: "paused",
+    scheduled: "scheduled",
+    synced: "synced",
+    syncing: "syncing",
+  },
+  getCloudSyncStatus: vi.fn(() => ({ state: "idle" })),
+  isCloudSyncScheduled: vi.fn(() => false),
+  queueCloudSyncChange: cloudSyncMocks.queueCloudSyncChange,
+  queueCloudSyncDeletion: cloudSyncMocks.queueCloudSyncDeletion,
+  requestCloudSync: cloudSyncMocks.requestCloudSync,
+  startCloudSyncLoop: cloudSyncMocks.startCloudSyncLoop,
+  stopCloudSyncLoop: vi.fn(),
+  syncCloudRecords: cloudSyncMocks.syncCloudRecords,
+}));
+
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -92,6 +126,12 @@ export async function resetRealSpaSmoke() {
   delete window.__vatioboardFloatingTools;
   delete window.__vatioboardPlayerWidget;
   delete window.__vatioboardStartMenu;
+  delete window.__vatioboardSpa;
+  cloudSyncMocks.queueCloudSyncChange.mockClear();
+  cloudSyncMocks.queueCloudSyncDeletion.mockClear();
+  cloudSyncMocks.requestCloudSync.mockClear();
+  cloudSyncMocks.startCloudSyncLoop.mockClear();
+  cloudSyncMocks.syncCloudRecords.mockClear();
   vi.resetModules();
   localStorage.clear();
   sessionStorage.clear();
@@ -103,55 +143,107 @@ export async function resetRealSpaSmoke() {
 async function settle(iterations = 16) {
   for (let index = 0; index < iterations; index += 1) {
     await flushTasks();
+    await vi.dynamicImportSettled?.();
   }
 }
 
 async function bootSpa(hash = "#/board") {
   await bootHtmlPage("index.html");
+  expect(document.getElementById("app-view"), "index.html should provide #app-view").toBeTruthy();
   window.history.replaceState({}, "", `https://vatioboard.com/${hash}`);
-  window.__vatioboardSpa = true;
-  activeView = null;
-  activeRouteController = null;
-  await navigate(hash);
+  const { startAppShell } = await import("../../src/app/app-shell.js");
+  await startAppShell();
+  await waitForRoute(hash);
 }
 
-const routeViews = {
-  "#/board": () => import("../../src/app/views/BoardView.js"),
-  "#/speed": () => import("../../src/app/views/SpeedView.js"),
-  "#/replay": () => import("../../src/app/views/ReplayView.js"),
-  "#/accel": () => import("../../src/app/views/AccelView.js"),
-  "#/library": () => import("../../src/app/views/LibraryView.js"),
+const routeConfig = {
+  "#/board": {
+    bodyClass: "board-page",
+    selector: "#pad",
+  },
+  "#/speed": {
+    bodyClass: "speed-page",
+    selector: "#speedValue",
+  },
+  "#/replay": {
+    bodyClass: "replay-page",
+    selector: "#replayShell",
+  },
+  "#/accel": {
+    bodyClass: "accel-page",
+    selector: "#armRun",
+  },
+  "#/library": {
+    bodyClass: "library-page",
+    selector: "#libraryList",
+  },
 };
 
-let activeView = null;
-let activeRouteController = null;
-
 async function navigate(hash) {
-  activeRouteController?.abort();
-  activeView?.unmount?.();
-  activeView = null;
-  activeRouteController = new AbortController();
   window.location.hash = hash;
-  const loaded = await routeViews[hash]();
-  activeView = await loaded.mount(document.getElementById("app-view"), {
-    route: { path: hash.replace(/^#/, "") },
-    routeSignal: activeRouteController.signal,
-    navigate: vi.fn(),
-    emitRouteVisible: vi.fn(),
-  });
-  await settle(24);
+  window.dispatchEvent(new HashChangeEvent("hashchange"));
+  await waitForRoute(hash);
 }
 
-export async function expectRealSpaRouteRemount({ targetHash, targetSelector }) {
+async function waitForRoute(hash) {
+  const selector = routeConfig[hash]?.selector;
+  if (!selector) throw new Error(`Unknown route hash ${hash}`);
+
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    await settle(4);
+    if (document.querySelector(selector)) return;
+  }
+
+  const rootHtml = document.getElementById("app-view")?.innerHTML;
+  expect(
+    document.querySelector(selector),
+    `Expected ${selector} for ${hash}. app-view: ${rootHtml ? rootHtml.slice(0, 500) : "<empty or missing>"}`
+  ).toBeTruthy();
+}
+
+async function expectPersistentShellReady() {
+  expect(document.querySelectorAll(".floating-dock")).toHaveLength(1);
+  expect(document.querySelectorAll(".player-panel")).toHaveLength(1);
+  expect(document.querySelectorAll(".player-fab")).toHaveLength(1);
+
+  const routeToolsButton = document.querySelector(
+    "#speedToolsMenuBtn, #replayToolsMenuBtn, #accelToolsMenuBtn, #libraryToolsMenuBtn, #toolsMenuBtn"
+  );
+  routeToolsButton?.click();
+  await settle();
+  expect(document.getElementById("appStartMenuList")).toBeTruthy();
+  expect(document.querySelector("[data-start-route='/board']")).toBeTruthy();
+}
+
+async function expectRouteUsable(hash) {
+  const config = routeConfig[hash];
+  expect(document.querySelector(config.selector)).toBeTruthy();
+  expect(document.body.classList.contains(config.bodyClass)).toBe(true);
+
+  for (const [otherHash, otherConfig] of Object.entries(routeConfig)) {
+    if (otherHash === hash) continue;
+    expect(document.body.classList.contains(otherConfig.bodyClass)).toBe(false);
+  }
+
+  await expectPersistentShellReady();
+}
+
+export async function expectRealSpaRouteRemount({
+  targetHash,
+  targetSelector,
+  sequence,
+}) {
   await bootSpa("#/board");
-  expect(document.querySelector("#pad")).toBeTruthy();
+  await expectRouteUsable("#/board");
 
-  await navigate(targetHash);
+  const routeSequence = sequence || ["#/board", targetHash, "#/board", targetHash];
+
+  for (const hash of routeSequence.slice(1)) {
+    await navigate(hash);
+    await expectRouteUsable(hash);
+  }
+
   expect(document.querySelector(targetSelector)).toBeTruthy();
-
-  await navigate("#/board");
-  expect(document.querySelector("#pad")).toBeTruthy();
-
-  await navigate(targetHash);
-  expect(document.querySelector(targetSelector)).toBeTruthy();
+  expect(cloudSyncMocks.startCloudSyncLoop).toHaveBeenCalledTimes(1);
+  expect(cloudSyncMocks.syncCloudRecords).not.toHaveBeenCalled();
 }

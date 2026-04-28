@@ -8,6 +8,7 @@ describe("SPA Accel route real-controller smoke", () => {
     await expectRealSpaRouteRemount({
       targetHash: "#/accel",
       targetSelector: "#armRun",
+      sequence: ["#/board", "#/accel", "#/board", "#/accel"],
     });
   }, 40000);
 });

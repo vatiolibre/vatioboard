@@ -1,6 +1,6 @@
 # VatioBoard
 
-VatioBoard is a multi-page Vite app of touch-first browser tools built for Tesla-sized screens and regular mobile/desktop browsers. The repo is mostly local-first: drawings, calculator state, trip estimates, replay sessions, and acceleration runs are stored in the browser, while some account-aware actions are optionally wired to the VatioLibre backend. Recent location-aware features also reuse a shared Nominatim client for lightweight reverse geocoding and first-run regional unit defaults.
+VatioBoard is an `index.html` Vite SPA of touch-first browser tools built for Tesla-sized screens and regular mobile/desktop browsers. Product navigation uses hash routes such as `#/speed`, `#/board`, `#/library`, `#/replay`, and `#/accel`; the root standalone HTML files are legacy dev/test harnesses only. The repo is mostly local-first: drawings, calculator state, trip estimates, replay sessions, and acceleration runs are stored in the browser, while some account-aware actions are optionally wired to the VatioLibre backend. Recent location-aware features also reuse a shared Nominatim client for lightweight reverse geocoding and first-run regional unit defaults.
 
 The project is part of the VatioLibre community and is published for educational use.
 
@@ -13,7 +13,7 @@ The project is part of the VatioLibre community and is published for educational
 
 ### Board
 
-`index.html` loads the main board from [`src/board/board.js`](src/board/board.js).
+`index.html` boots the SPA. Board is available at `#/board` through [`src/app/views/BoardView.js`](src/app/views/BoardView.js) and [`src/board/board.js`](src/board/board.js).
 
 What it does:
 
@@ -27,7 +27,7 @@ What it does:
 
 ### Calculator Demo
 
-`calculator.html` loads the standalone calculator demo from [`src/calculator/calculator-demo.js`](src/calculator/calculator-demo.js).
+`calculator.html` is a legacy standalone test/dev harness for [`src/calculator/calculator-demo.js`](src/calculator/calculator-demo.js). Production uses the calculator through SPA-owned floating tools.
 
 What it does:
 
@@ -38,7 +38,7 @@ What it does:
 
 ### Vatio Speed
 
-`speed.html` loads the live speedometer from [`src/speed/speed.js`](src/speed/speed.js).
+Production Speed runs at `#/speed` through [`src/app/views/SpeedView.js`](src/app/views/SpeedView.js) and [`src/speed/speed.js`](src/speed/speed.js). `speed.html` is a legacy standalone test/dev harness.
 
 What it does:
 
@@ -54,7 +54,7 @@ What it does:
 
 ### Drive Replay
 
-`replay.html` loads the replay experience from [`src/replay/replay.js`](src/replay/replay.js).
+Production Replay runs at `#/replay` through [`src/app/views/ReplayView.js`](src/app/views/ReplayView.js) and [`src/replay/replay.js`](src/replay/replay.js). `replay.html` is a legacy standalone test/dev harness.
 
 What it does:
 
@@ -68,7 +68,7 @@ What it does:
 
 ### Vatio GPS Rate Lab
 
-`gps-rate.html` loads the diagnostics page from [`src/gps-rate/gps-rate.js`](src/gps-rate/gps-rate.js).
+`gps-rate.html` is a legacy standalone test/dev harness for the diagnostics page in [`src/gps-rate/gps-rate.js`](src/gps-rate/gps-rate.js). It is not a production SPA route.
 
 What it does:
 
@@ -82,7 +82,7 @@ What it does:
 
 ### Vatio Accel
 
-`accel.html` loads the browser-based acceleration timer from [`src/accel/accel.js`](src/accel/accel.js).
+Production Accel runs at `#/accel` through [`src/app/views/AccelView.js`](src/app/views/AccelView.js) and [`src/accel/accel.js`](src/accel/accel.js). `accel.html` is a legacy standalone test/dev harness.
 
 What it does:
 
@@ -96,7 +96,7 @@ What it does:
 
 ### Backend Login Test
 
-`login.html` is a simple manual integration page for backend auth checks.
+`login.html` is a legacy standalone test/dev harness for backend auth checks.
 
 What it does:
 
@@ -125,7 +125,7 @@ What it does:
 
 ## Stack
 
-- Vite 7 multi-page build
+- Vite 7 SPA build with `index.html` as the production HTML entry
 - Vanilla JavaScript ES modules
 - LESS for styling
 - `mathjs` for calculator evaluation
@@ -143,12 +143,12 @@ What it does:
 ```txt
 .
 ├─ index.html
-├─ calculator.html
-├─ speed.html
-├─ replay.html
-├─ gps-rate.html
-├─ accel.html
-├─ login.html
+├─ calculator.html            # Legacy standalone test/dev harness
+├─ speed.html                 # Legacy standalone test/dev harness
+├─ replay.html                # Legacy standalone test/dev harness
+├─ gps-rate.html              # Legacy standalone test/dev harness
+├─ accel.html                 # Legacy standalone test/dev harness
+├─ login.html                 # Legacy standalone test/dev harness
 ├─ data-src/                 # Source/reference datasets
 ├─ public/
 │  ├─ audio/                 # Alert and finish sounds
@@ -201,9 +201,17 @@ Vite is configured with `strictPort: true`, so local development runs at:
 
 - `http://localhost:5174/`
 
-Entry pages during development:
+Production SPA routes during development:
 
 - `http://localhost:5174/`
+- `http://localhost:5174/#/speed`
+- `http://localhost:5174/#/board`
+- `http://localhost:5174/#/library`
+- `http://localhost:5174/#/replay`
+- `http://localhost:5174/#/accel`
+
+Legacy standalone test/dev harnesses remain available at:
+
 - `http://localhost:5174/calculator.html`
 - `http://localhost:5174/speed.html`
 - `http://localhost:5174/replay.html`
@@ -255,17 +263,18 @@ Behavior:
 
 - production hosts use `https://api.vatioboard.com`
 - non-production hosts use `https://api.dev.vatioboard.com`
-- board, speed, replay, GPS Rate Lab, and accel surfaces all mount the shared auth controls
+- board, speed, replay, and accel SPA routes mount shared auth controls where needed; GPS Rate Lab keeps its auth coverage in the standalone dev/test harness
 - saving a board document to the backend depends on authenticated feature access and the `cloud_sync` capability
 - uploading media assets depends on the `media_assets` capability
-- `login.html` is a plain manual test page for backend session and CORS troubleshooting
+- `login.html` is a standalone dev/test harness for backend session and CORS troubleshooting
 
 ## Testing
 
 The repo has both unit and smoke coverage.
 
 - unit tests cover storage, calculations, formatting, i18n, replay logic, GPS helpers, and related modules
-- smoke tests boot the real HTML entry pages in jsdom and assert SEO metadata, control wiring, and key flows with mocked browser APIs
+- product smoke tests boot `index.html`, navigate SPA hash routes, and assert route remount behavior with mocked browser APIs
+- legacy standalone smoke tests use `dev-harness-*` filenames and cover harness-only behavior
 
 ## Automation
 
@@ -279,6 +288,8 @@ The repo has both unit and smoke coverage.
 - the first successful place lookup can initialize shared regional units unless the user already chose units manually
 - reverse geocoding is intentionally lightweight, cached, and non-blocking for recording flows
 - some audio paths require a user gesture before playback is allowed by the browser
+- route controllers are expected to create DOM-owned listeners, timers, maps, charts, RAFs, and route async work during mount, then clean them during unmount
+- new production route views should clone templates on each mount; do not add `preserveDom` routes or route-level raw sync loops
 - Vatio GPS Rate Lab reports observed browser callback behavior, not guaranteed GPS hardware frequency
 - Vatio Accel is an estimate-oriented browser timer, not a certified timing system
 
