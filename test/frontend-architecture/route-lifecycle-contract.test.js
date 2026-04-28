@@ -187,4 +187,14 @@ describe("route lifecycle contract", () => {
       expect(source, file).not.toMatch(directListenerPattern);
     }
   });
+
+  it("keeps raw cloud sync pull loops out of route controllers", () => {
+    const routeModules = FEATURE_MODULES.map((feature) => feature.path);
+
+    for (const file of routeModules) {
+      const source = readProjectFile(file);
+      expect(source, file).not.toMatch(/\bsyncCloudRecords\s*\(/);
+      expect(source, file).not.toContain("download_my_sync_payload");
+    }
+  });
 });

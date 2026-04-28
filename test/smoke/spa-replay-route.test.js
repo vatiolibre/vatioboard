@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   expectRealSpaRouteRemount,
   getRealSpaSmokeMocks,
+  navigateRealSpaSmoke,
   resetRealSpaSmoke,
+  settleRealSpaSmoke,
 } from "../helpers/real-spa-route-smoke.js";
 
 async function saveReplaySmokeSession() {
@@ -47,17 +49,41 @@ describe("SPA Replay route real-controller smoke", () => {
 
   it("stays usable after Board remount cycles", async () => {
     await saveReplaySmokeSession();
-    const { maplibre } = getRealSpaSmokeMocks();
+    const { charts, maplibre } = getRealSpaSmokeMocks();
 
-    await expectRealSpaRouteRemount({
+    const { snapshots, targetSnapshots } = await expectRealSpaRouteRemount({
       targetHash: "#/replay",
       targetSelector: "#replayShell:not([hidden]) #replayMap",
       sequence: ["#/board", "#/replay", "#/board", "#/replay"],
     });
+    const firstReplay = targetSnapshots[0];
+    const secondReplay = targetSnapshots[1];
+    const boardAfterFirstReplay = snapshots[2];
 
     expect(
       document.querySelector("#replayRecordingsList [data-recording-id='replay-remount-session']")
     ).toBeTruthy();
     expect(maplibre.maps).toHaveLength(2);
+    expect(maplibre.maps.filter((map) => !map.removed)).toHaveLength(1);
+    expect(maplibre.maps[0].remove).toHaveBeenCalledTimes(1);
+    expect(boardAfterFirstReplay.activeMapCount).toBe(0);
+    expect(boardAfterFirstReplay.activeChartCount).toBe(0);
+    expect(secondReplay.activeMapCount).toBe(1);
+    expect(secondReplay.activeChartCount).toBeLessThanOrEqual(firstReplay.activeChartCount);
+    expect(secondReplay.listeners.windowRouteVisible).toBe(firstReplay.listeners.windowRouteVisible);
+    expect(secondReplay.listeners.windowCloudSyncApplied).toBe(
+      firstReplay.listeners.windowCloudSyncApplied
+    );
+
+    document.querySelector(".replay-graph-trigger")?.click();
+    await settleRealSpaSmoke();
+    expect(document.body.classList.contains("replay-graph-sheet-open")).toBe(true);
+    expect(charts.charts.filter((chart) => !chart.destroyed).length).toBeGreaterThan(0);
+
+    const boardAfterGraph = await navigateRealSpaSmoke("#/board");
+    expect(boardAfterGraph.activeMapCount).toBe(0);
+    expect(boardAfterGraph.activeChartCount).toBe(0);
+    expect(boardAfterGraph.activeRafCount).toBe(0);
+    expect(document.body.classList.contains("replay-graph-sheet-open")).toBe(false);
   }, 40000);
 });

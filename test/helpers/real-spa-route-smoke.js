@@ -5,12 +5,33 @@ const maplibreMocks = vi.hoisted(() => ({
   maps: [],
 }));
 
+const chartMocks = vi.hoisted(() => ({
+  charts: [],
+}));
+
+const lifecycleMocks = vi.hoisted(() => ({
+  activeWatchIds: new Set(),
+  activeIntervalIds: new Set(),
+  activeRafIds: new Set(),
+  activeTimeoutIds: new Set(),
+  downloadMySyncPayloadRequests: [],
+  listenerRegistry: {
+    window: new Map(),
+    document: new Map(),
+  },
+  nextWatchId: 1,
+  nextIntervalId: 1,
+  nextRafId: 1,
+  nextTimeoutId: 1,
+}));
+
 vi.mock("maplibre-gl", () => {
   class FakeMap {
     constructor(options = {}) {
       this.handlers = {};
       this.sources = new Map();
       this.options = options;
+      this.removed = false;
       this.scrollZoom = { disable: vi.fn() };
       this.boxZoom = { disable: vi.fn() };
       this.doubleClickZoom = { disable: vi.fn() };
@@ -21,8 +42,11 @@ vi.mock("maplibre-gl", () => {
       this.jumpTo = vi.fn();
       this.easeTo = vi.fn();
       this.fitBounds = vi.fn();
+      this.stop = vi.fn();
       this.resize = vi.fn();
-      this.remove = vi.fn();
+      this.remove = vi.fn(() => {
+        this.removed = true;
+      });
       Promise.resolve().then(() => {
         for (const handler of this.handlers.load ?? []) handler();
       });
@@ -33,6 +57,7 @@ vi.mock("maplibre-gl", () => {
       return this;
     }
     addControl() { return this; }
+    getZoom() { return 0; }
     getCenter() { return { lng: 0, lat: 0 }; }
     getSource(id) {
       if (!this.sources.has(id)) this.sources.set(id, { setData: vi.fn() });
@@ -41,6 +66,55 @@ vi.mock("maplibre-gl", () => {
     setPaintProperty() {}
   }
   return { default: { Map: FakeMap, AttributionControl: class {} } };
+});
+
+vi.mock("chart.js/auto", () => {
+  class FakeChart {
+    constructor(canvas, config = {}) {
+      this.canvas = canvas;
+      this.config = config;
+      this.ctx = canvas?.getContext?.("2d") ?? {};
+      this.data = config.data ?? { datasets: [] };
+      this.options = config.options ?? {};
+      this.destroyed = false;
+      this.chartArea = { left: 0, right: 320, top: 0, bottom: 180 };
+      this.scales = {
+        x: {
+          getPixelForValue: vi.fn((value) => Number(value) || 0),
+          getValueForPixel: vi.fn((value) => Number(value) || 0),
+        },
+        y: {
+          getPixelForValue: vi.fn((value) => Number(value) || 0),
+          getValueForPixel: vi.fn((value) => Number(value) || 0),
+        },
+      };
+      this.tooltip = {
+        getActiveElements: vi.fn(() => []),
+        setActiveElements: vi.fn(),
+      };
+      chartMocks.charts.push(this);
+    }
+
+    destroy = vi.fn(() => {
+      this.destroyed = true;
+    });
+    draw = vi.fn();
+    resize = vi.fn();
+    setActiveElements = vi.fn();
+    update = vi.fn();
+
+    getDatasetMeta(index) {
+      const dataset = this.data?.datasets?.[index] ?? { data: [] };
+      return {
+        data: (dataset.data ?? []).map((point, pointIndex) => ({
+          x: Number(point?.x ?? pointIndex) || 0,
+          y: Number(point?.y ?? 0) || 0,
+        })),
+      };
+    }
+  }
+
+  return { default: FakeChart };
 });
 
 vi.mock("../../src/shared/single-tab.js", () => ({
@@ -94,6 +168,10 @@ function jsonResponse(body, status = 200) {
 function installFetchStub() {
   window.fetch = vi.fn(async (input) => {
     const url = typeof input === "string" ? input : String(input?.url ?? "");
+    if (url.includes("download_my_sync_payload")) {
+      lifecycleMocks.downloadMySyncPayloadRequests.push(url);
+      return jsonResponse({ message: { records: [], has_more: false, next_cursor: "" } });
+    }
     if (url.includes("tesla_connection_status")) {
       return jsonResponse({ message: { connected: false, is_guest: true } });
     }
@@ -119,15 +197,108 @@ function installFetchStub() {
   });
 }
 
+function resetLifecycleMocks() {
+  lifecycleMocks.activeWatchIds.clear();
+  lifecycleMocks.activeIntervalIds.clear();
+  lifecycleMocks.activeRafIds.clear();
+  lifecycleMocks.activeTimeoutIds.clear();
+  lifecycleMocks.downloadMySyncPayloadRequests = [];
+  lifecycleMocks.listenerRegistry.window = new Map();
+  lifecycleMocks.listenerRegistry.document = new Map();
+  lifecycleMocks.nextWatchId = 1;
+  lifecycleMocks.nextIntervalId = 1;
+  lifecycleMocks.nextRafId = 1;
+  lifecycleMocks.nextTimeoutId = 1;
+}
+
+function getListenerSet(targetName, type) {
+  const registry = lifecycleMocks.listenerRegistry[targetName];
+  if (!registry.has(type)) registry.set(type, new Set());
+  return registry.get(type);
+}
+
+function installListenerTracker(target, targetName) {
+  const originalAddEventListener = target.addEventListener.bind(target);
+  const originalRemoveEventListener = target.removeEventListener.bind(target);
+
+  vi.spyOn(target, "addEventListener").mockImplementation((type, listener, options) => {
+    getListenerSet(targetName, type).add(listener);
+    return originalAddEventListener(type, listener, options);
+  });
+
+  vi.spyOn(target, "removeEventListener").mockImplementation((type, listener, options) => {
+    getListenerSet(targetName, type).delete(listener);
+    return originalRemoveEventListener(type, listener, options);
+  });
+}
+
+function getActiveListenerCount(targetName, type) {
+  return lifecycleMocks.listenerRegistry[targetName]?.get(type)?.size ?? 0;
+}
+
+function installResourceStubs() {
+  const geolocation = navigator.geolocation;
+
+  vi.spyOn(geolocation, "watchPosition").mockImplementation((success, error, options) => {
+    const watchId = lifecycleMocks.nextWatchId;
+    lifecycleMocks.nextWatchId += 1;
+    lifecycleMocks.activeWatchIds.add(watchId);
+    geolocation.success = success;
+    geolocation.error = error;
+    geolocation.options = options;
+    return watchId;
+  });
+
+  vi.spyOn(geolocation, "clearWatch").mockImplementation((watchId) => {
+    lifecycleMocks.activeWatchIds.delete(watchId);
+  });
+
+  vi.spyOn(window, "setInterval").mockImplementation(() => {
+    const intervalId = lifecycleMocks.nextIntervalId;
+    lifecycleMocks.nextIntervalId += 1;
+    lifecycleMocks.activeIntervalIds.add(intervalId);
+    return intervalId;
+  });
+
+  vi.spyOn(window, "clearInterval").mockImplementation((intervalId) => {
+    lifecycleMocks.activeIntervalIds.delete(intervalId);
+  });
+
+  vi.spyOn(window, "requestAnimationFrame").mockImplementation(() => {
+    const frameId = lifecycleMocks.nextRafId;
+    lifecycleMocks.nextRafId += 1;
+    lifecycleMocks.activeRafIds.add(frameId);
+    return frameId;
+  });
+
+  vi.spyOn(window, "cancelAnimationFrame").mockImplementation((frameId) => {
+    lifecycleMocks.activeRafIds.delete(frameId);
+  });
+
+  vi.spyOn(window, "setTimeout").mockImplementation(() => {
+    const timeoutId = lifecycleMocks.nextTimeoutId;
+    lifecycleMocks.nextTimeoutId += 1;
+    lifecycleMocks.activeTimeoutIds.add(timeoutId);
+    return timeoutId;
+  });
+
+  vi.spyOn(window, "clearTimeout").mockImplementation((timeoutId) => {
+    lifecycleMocks.activeTimeoutIds.delete(timeoutId);
+  });
+}
+
 function installBrowserStubs() {
   installFetchStub();
-  vi.spyOn(navigator.geolocation, "watchPosition").mockReturnValue(1);
-  vi.spyOn(navigator.geolocation, "clearWatch").mockImplementation(() => {});
+  installResourceStubs();
+  installListenerTracker(window, "window");
+  installListenerTracker(document, "document");
   vi.spyOn(window, "open").mockImplementation(() => null);
 }
 
 export async function resetRealSpaSmoke() {
   window.__vatioboardRouter?.destroy?.();
+  vi.restoreAllMocks();
+  resetLifecycleMocks();
   delete window.__vatioboardRouter;
   delete window.__vatioboardFloatingTools;
   delete window.__vatioboardPlayerWidget;
@@ -139,6 +310,7 @@ export async function resetRealSpaSmoke() {
   cloudSyncMocks.startCloudSyncLoop.mockClear();
   cloudSyncMocks.syncCloudRecords.mockClear();
   maplibreMocks.maps = [];
+  chartMocks.charts = [];
   vi.resetModules();
   localStorage.clear();
   sessionStorage.clear();
@@ -149,8 +321,33 @@ export async function resetRealSpaSmoke() {
 
 export function getRealSpaSmokeMocks() {
   return {
+    charts: chartMocks,
     cloudSync: cloudSyncMocks,
+    lifecycle: lifecycleMocks,
     maplibre: maplibreMocks,
+  };
+}
+
+export function getRealSpaResourceSnapshot() {
+  return {
+    activeChartCount: chartMocks.charts.filter((chart) => !chart.destroyed).length,
+    activeIntervalCount: lifecycleMocks.activeIntervalIds.size,
+    activeMapCount: maplibreMocks.maps.filter((map) => !map.removed).length,
+    activeRafCount: lifecycleMocks.activeRafIds.size,
+    activeTimeoutCount: lifecycleMocks.activeTimeoutIds.size,
+    activeWatchCount: lifecycleMocks.activeWatchIds.size,
+    chartCount: chartMocks.charts.length,
+    downloadMySyncPayloadCount: lifecycleMocks.downloadMySyncPayloadRequests.length,
+    mapCount: maplibreMocks.maps.length,
+    listeners: {
+      documentI18nChange: getActiveListenerCount("document", "i18n:change"),
+      documentKeydown: getActiveListenerCount("document", "keydown"),
+      documentVisibilityChange: getActiveListenerCount("document", "visibilitychange"),
+      windowBackendAuth: getActiveListenerCount("window", "vatioboard:backend-auth-state"),
+      windowCloudSyncApplied: getActiveListenerCount("window", "vatioboard:cloud-sync-applied"),
+      windowRouteVisible: getActiveListenerCount("window", "vatioboard:route-visible"),
+      windowSingleTabOwnership: getActiveListenerCount("window", "vatioboard:single-tab-ownership"),
+    },
   };
 }
 
@@ -159,6 +356,10 @@ async function settle(iterations = 16) {
     await flushTasks();
     await vi.dynamicImportSettled?.();
   }
+}
+
+export async function settleRealSpaSmoke(iterations = 16) {
+  await settle(iterations);
 }
 
 async function bootSpa(hash = "#/board") {
@@ -197,6 +398,15 @@ async function navigate(hash) {
   window.location.hash = hash;
   window.dispatchEvent(new HashChangeEvent("hashchange"));
   await waitForRoute(hash);
+}
+
+export async function navigateRealSpaSmoke(hash) {
+  await navigate(hash);
+  await expectRouteUsable(hash);
+  return {
+    hash,
+    ...getRealSpaResourceSnapshot(),
+  };
 }
 
 async function waitForRoute(hash) {
@@ -249,15 +459,30 @@ export async function expectRealSpaRouteRemount({
 }) {
   await bootSpa("#/board");
   await expectRouteUsable("#/board");
+  const snapshots = [{
+    hash: "#/board",
+    ...getRealSpaResourceSnapshot(),
+  }];
 
   const routeSequence = sequence || ["#/board", targetHash, "#/board", targetHash];
 
   for (const hash of routeSequence.slice(1)) {
     await navigate(hash);
     await expectRouteUsable(hash);
+    snapshots.push({
+      hash,
+      ...getRealSpaResourceSnapshot(),
+    });
   }
 
   expect(document.querySelector(targetSelector)).toBeTruthy();
   expect(cloudSyncMocks.startCloudSyncLoop).toHaveBeenCalledTimes(1);
   expect(cloudSyncMocks.syncCloudRecords).not.toHaveBeenCalled();
+  expect(lifecycleMocks.downloadMySyncPayloadRequests).toHaveLength(0);
+
+  return {
+    finalSnapshot: snapshots.at(-1),
+    snapshots,
+    targetSnapshots: snapshots.filter((snapshot) => snapshot.hash === targetHash),
+  };
 }
