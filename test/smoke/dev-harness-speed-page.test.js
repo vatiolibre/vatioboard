@@ -180,7 +180,7 @@ describe('speed.html smoke', () => {
   });
 
   it('boots the speedometer and reacts to a mocked geolocation fix', async () => {
-    const speedPage = await import('../../src/speed/speed.js');
+    const speedPage = await import('../../src/speed/dev-harness.js');
     await speedPage.initPromise;
     await settleAsyncWork();
     await flushTasks();
@@ -297,7 +297,7 @@ describe('speed.html smoke', () => {
   it('hides the cloud sync login action for active subscribers', async () => {
     window.fetch = createActiveSubscriberFetch();
 
-    const speedPage = await import('../../src/speed/speed.js');
+    const speedPage = await import('../../src/speed/dev-harness.js');
     await speedPage.initPromise;
     await settleAsyncWork();
 
@@ -313,7 +313,7 @@ describe('speed.html smoke', () => {
   });
 
   it('enables background audio as an internal policy when route recording starts', async () => {
-    const speedPage = await import('../../src/speed/speed.js');
+    const speedPage = await import('../../src/speed/dev-harness.js');
     await speedPage.initPromise;
     await settleAsyncWork();
 
@@ -386,7 +386,7 @@ describe('speed.html smoke', () => {
       value: PendingAlertAudio,
     });
 
-    const speedPage = await import('../../src/speed/speed.js');
+    const speedPage = await import('../../src/speed/dev-harness.js');
     await speedPage.initPromise;
     await settleAsyncWork();
 
@@ -450,7 +450,7 @@ describe('speed.html smoke', () => {
       value: PendingAlertAudio,
     });
 
-    const speedPage = await import('../../src/speed/speed.js');
+    const speedPage = await import('../../src/speed/dev-harness.js');
     await speedPage.initPromise;
     await settleAsyncWork();
 
@@ -487,7 +487,7 @@ describe('speed.html smoke', () => {
   });
 
   it('coalesces replay persistence under high-frequency recording bursts', async () => {
-    const speedPage = await import('../../src/speed/speed.js');
+    const speedPage = await import('../../src/speed/dev-harness.js');
     await speedPage.initPromise;
     await flushTasks();
 
@@ -514,7 +514,7 @@ describe('speed.html smoke', () => {
   it('archives a stopped replay before reverse geocoding finishes', async () => {
     reversePlaceSpy.mockImplementation(() => new Promise(() => {}));
 
-    const speedPage = await import('../../src/speed/speed.js');
+    const speedPage = await import('../../src/speed/dev-harness.js');
     await speedPage.initPromise;
     await flushTasks();
 
@@ -582,7 +582,7 @@ describe('speed.html smoke', () => {
       };
     });
 
-    const speedPage = await import('../../src/speed/speed.js');
+    const speedPage = await import('../../src/speed/dev-harness.js');
     await speedPage.initPromise;
     await flushTasks();
 
@@ -728,7 +728,7 @@ describe('speed.html smoke', () => {
       return session;
     });
 
-    const speedPage = await import('../../src/speed/speed.js');
+    const speedPage = await import('../../src/speed/dev-harness.js');
     await speedPage.initPromise;
     await flushTasks();
 
@@ -795,7 +795,7 @@ describe('speed.html smoke', () => {
   });
 
   it("keeps the Player launcher available for guests and after login", async () => {
-    const speedPage = await import("../../src/speed/speed.js");
+    const speedPage = await import("../../src/speed/dev-harness.js");
     await speedPage.initPromise;
     await settleAsyncWork();
 

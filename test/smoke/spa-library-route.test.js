@@ -18,11 +18,30 @@ describe("SPA Library route real-controller smoke", () => {
     expect(finalSnapshot.activeWatchCount).toBe(0);
     expect(finalSnapshot.activeIntervalCount).toBe(0);
     expect(finalSnapshot.activeRafCount).toBe(0);
+    expect(finalSnapshot.activeResizeObserverCount).toBe(0);
     expect(finalSnapshot.activeMapCount).toBe(0);
     expect(finalSnapshot.activeChartCount).toBe(0);
     expect(secondLibrary.listeners.windowRouteVisible).toBe(
       firstLibrary.listeners.windowRouteVisible
     );
     expect(secondLibrary.listeners.windowBackendAuth).toBe(firstLibrary.listeners.windowBackendAuth);
+  }, 40000);
+
+  it("keeps the mixed Speed to Library to Replay to Accel to Board route chain stable", async () => {
+    const { finalSnapshot } = await expectRealSpaRouteRemount({
+      targetHash: "#/board",
+      targetSelector: "#pad",
+      sequence: ["#/board", "#/speed", "#/library", "#/replay", "#/accel", "#/board"],
+    });
+
+    expect(finalSnapshot.activeWatchCount).toBe(0);
+    expect(finalSnapshot.activeIntervalCount).toBe(0);
+    expect(finalSnapshot.activeRafCount).toBe(0);
+    expect(finalSnapshot.activeResizeObserverCount).toBe(0);
+    expect(finalSnapshot.activeMapCount).toBe(0);
+    expect(finalSnapshot.activeChartCount).toBe(0);
+    expect(document.querySelectorAll(".floating-dock")).toHaveLength(1);
+    expect(document.querySelectorAll(".player-panel")).toHaveLength(1);
+    expect(document.querySelectorAll(".player-fab")).toHaveLength(1);
   }, 40000);
 });

@@ -19,7 +19,6 @@ import {
   CLOUD_SYNC_ENTITY_TYPES,
   queueCloudSyncChange,
   queueCloudSyncDeletion,
-  startCloudSyncLoop,
 } from '../shared/cloud-sync.js';
 import { createPlaceResolver } from '../shared/place-resolver.js';
 import {
@@ -738,9 +737,6 @@ export const initPromise = (function () {
     }).catch(function () {
       return false;
     });
-    if (!isSpaRuntime && import.meta.env?.MODE !== 'test') {
-      startCloudSyncLoop({ immediate: true });
-    }
     void initialTelemetryPromise.finally(function () {
       maybeFallbackMissingSelectedResult();
     });

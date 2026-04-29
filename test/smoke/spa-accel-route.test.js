@@ -120,8 +120,13 @@ describe("SPA Accel route real-controller smoke", () => {
     expect(document.querySelectorAll("#presetGrid .accel-preset-btn").length).toBeGreaterThan(1);
     expect(boardAfterFirstAccel.activeWatchCount).toBe(0);
     expect(boardAfterFirstAccel.activeIntervalCount).toBe(0);
+    expect(boardAfterFirstAccel.activeRafCount).toBe(0);
+    expect(boardAfterFirstAccel.activeResizeObserverCount).toBe(0);
     expect(secondAccel.activeWatchCount).toBe(1);
     expect(secondAccel.activeIntervalCount).toBe(1);
+    expect(secondAccel.activeResizeObserverCount).toBeLessThanOrEqual(
+      firstAccel.activeResizeObserverCount
+    );
     expect(secondAccel.listeners.windowRouteVisible).toBe(firstAccel.listeners.windowRouteVisible);
     expect(secondAccel.listeners.windowCloudSyncApplied).toBe(
       firstAccel.listeners.windowCloudSyncApplied
@@ -146,9 +151,54 @@ describe("SPA Accel route real-controller smoke", () => {
     const boardAfterResults = await navigateRealSpaSmoke("#/board");
     expect(boardAfterResults.activeWatchCount).toBe(0);
     expect(boardAfterResults.activeIntervalCount).toBe(0);
+    expect(boardAfterResults.activeRafCount).toBe(0);
+    expect(boardAfterResults.activeResizeObserverCount).toBe(0);
     expect(boardAfterResults.activeMapCount).toBe(0);
     expect(boardAfterResults.activeChartCount).toBe(0);
     expect(document.body.classList.contains("accel-sheet-open")).toBe(false);
     expect(document.body.classList.contains("accel-replay-chart-sheet-open")).toBe(false);
+  }, 40000);
+
+  it("keeps an active run subscribed in the background without route DOM resources", async () => {
+    await expectRealSpaRouteRemount({
+      targetHash: "#/accel",
+      targetSelector: "#armRun",
+      sequence: ["#/board", "#/accel"],
+    });
+
+    navigator.geolocation.success?.({
+      timestamp: Date.now(),
+      coords: {
+        latitude: 40.7484,
+        longitude: -73.9857,
+        speed: 0,
+        accuracy: 4,
+        altitude: 12,
+        heading: 0,
+      },
+    });
+    await settleRealSpaSmoke();
+
+    const armRun = document.getElementById("armRun");
+    expect(armRun?.disabled).toBe(false);
+    armRun?.click();
+    await settleRealSpaSmoke();
+
+    const boardWhileActive = await navigateRealSpaSmoke("#/board");
+    expect(boardWhileActive.activeWatchCount).toBe(1);
+    expect(boardWhileActive.activeIntervalCount).toBe(0);
+    expect(boardWhileActive.activeMapCount).toBe(0);
+    expect(boardWhileActive.activeChartCount).toBe(0);
+    expect(boardWhileActive.activeResizeObserverCount).toBe(0);
+    expect(document.body.classList.contains("accel-sheet-open")).toBe(false);
+    expect(document.body.classList.contains("accel-replay-chart-sheet-open")).toBe(false);
+
+    const accelAgain = await navigateRealSpaSmoke("#/accel");
+    expect(accelAgain.activeWatchCount).toBe(1);
+    document.getElementById("armRun")?.click();
+    await settleRealSpaSmoke();
+
+    const boardAfterCancel = await navigateRealSpaSmoke("#/board");
+    expect(boardAfterCancel.activeWatchCount).toBe(0);
   }, 40000);
 });

@@ -223,6 +223,7 @@ describe("route lifecycle contract", () => {
     for (const file of routeModules) {
       const source = readProjectFile(file);
       expect(source, file).not.toMatch(/\bsyncCloudRecords\s*\(/);
+      expect(source, file).not.toMatch(/\bstartCloudSyncLoop\s*\(/);
       expect(source, file).not.toContain("download_my_sync_payload");
     }
   });

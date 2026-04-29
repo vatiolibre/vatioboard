@@ -176,7 +176,6 @@ let overflowMenu = createInactiveToolsMenu();
 let libraryMediaPlayer = createInactiveLibraryMediaPlayer();
 let libraryRouteGeneration = 0;
 let activeLibraryRoute = null;
-let standaloneCleanup = null;
 let standaloneBackendAuthInitialized = false;
 
 function focusElement(element) {
@@ -2812,26 +2811,14 @@ async function initLibrary() {
   }
 }
 
-function ensureStandaloneLibraryMounted() {
-  if (!isSpaRuntime && !activeLibraryRoute) {
-    standaloneCleanup?.run();
-    mountLibraryRoute({
-      root: document,
-      signal: null,
-    });
-    standaloneCleanup = activeLibraryRoute?.cleanup || null;
-  }
-  return libraryInitPromise;
-}
-
 export const initPromise = {
   then(onFulfilled, onRejected) {
-    return ensureStandaloneLibraryMounted().then(onFulfilled, onRejected);
+    return libraryInitPromise.then(onFulfilled, onRejected);
   },
   catch(onRejected) {
-    return ensureStandaloneLibraryMounted().catch(onRejected);
+    return libraryInitPromise.catch(onRejected);
   },
   finally(onFinally) {
-    return ensureStandaloneLibraryMounted().finally(onFinally);
+    return libraryInitPromise.finally(onFinally);
   },
 };

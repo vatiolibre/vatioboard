@@ -25,7 +25,6 @@ import {
   CLOUD_SYNC_APPLIED_EVENT,
   CLOUD_SYNC_ENTITY_TYPES,
   queueCloudSyncDeletion,
-  startCloudSyncLoop,
 } from '../shared/cloud-sync.js';
 import {
   clearReplayRestoreFailure,
@@ -1748,9 +1747,7 @@ async function init() {
         mapController.resize();
       }
     }
-    if (!isSpaRuntime) {
-      startCloudSyncLoop({ immediate: true });
-    } else {
+    if (isSpaRuntime) {
       maybeFallbackMissingReplaySelection();
     }
     state.initialized = true;

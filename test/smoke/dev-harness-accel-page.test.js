@@ -369,7 +369,7 @@ describe('accel.html smoke', () => {
   });
 
   it('boots the acceleration page and enables the test after a mocked fix', async () => {
-    const accelPage = await import('../../src/accel/accel.js');
+    const accelPage = await import('../../src/accel/dev-harness.js');
     await accelPage.initPromise;
     await flushTasks();
 
@@ -473,7 +473,7 @@ describe('accel.html smoke', () => {
   it('hides the cloud sync login action for active subscribers', async () => {
     window.fetch = createActiveSubscriberFetch();
 
-    const accelPage = await import('../../src/accel/accel.js');
+    const accelPage = await import('../../src/accel/dev-harness.js');
     await accelPage.initPromise;
     await settleAsyncWork();
 
@@ -519,7 +519,7 @@ describe('accel.html smoke', () => {
         meta: null,
       });
 
-    const accelPage = await import('../../src/accel/accel.js');
+    const accelPage = await import('../../src/accel/dev-harness.js');
     await accelPage.initPromise;
     await flushTasks();
 
@@ -615,7 +615,7 @@ describe('accel.html smoke', () => {
   });
 
   it('reuses start place for end when boundary coordinates match', async () => {
-    const accelPage = await import('../../src/accel/accel.js');
+    const accelPage = await import('../../src/accel/dev-harness.js');
     await accelPage.initPromise;
     await flushTasks();
 
@@ -703,7 +703,7 @@ describe('accel.html smoke', () => {
     const storage = await import('../../src/accel/storage.js');
     await storage.saveRuns([createStoredRun()]);
 
-    const accelPage = await import('../../src/accel/accel.js');
+    const accelPage = await import('../../src/accel/dev-harness.js');
     await accelPage.initPromise;
     await flushTasks();
 
@@ -884,7 +884,7 @@ describe('accel.html smoke', () => {
       });
     });
 
-    const accelPage = await import('../../src/accel/accel.js');
+    const accelPage = await import('../../src/accel/dev-harness.js');
     await accelPage.initPromise;
     await settleAsyncWork();
 
@@ -948,7 +948,7 @@ describe('accel.html smoke', () => {
       });
     });
 
-    const accelPage = await import('../../src/accel/accel.js');
+    const accelPage = await import('../../src/accel/dev-harness.js');
     await accelPage.initPromise;
     await settleAsyncWork();
 
@@ -1053,7 +1053,7 @@ describe('accel.html smoke', () => {
       });
     });
 
-    const accelPage = await import('../../src/accel/accel.js');
+    const accelPage = await import('../../src/accel/dev-harness.js');
     var initResolved = false;
     accelPage.initPromise.then(function () {
       initResolved = true;
@@ -1144,7 +1144,7 @@ describe('accel.html smoke', () => {
       });
     });
 
-    const accelPage = await import('../../src/accel/accel.js');
+    const accelPage = await import('../../src/accel/dev-harness.js');
     await accelPage.initPromise;
     await settleAsyncWork();
 
@@ -1207,7 +1207,7 @@ describe('accel.html smoke', () => {
       });
     });
 
-    const accelPage = await import('../../src/accel/accel.js');
+    const accelPage = await import('../../src/accel/dev-harness.js');
     await accelPage.initPromise;
     await settleAsyncWork();
 
@@ -1243,7 +1243,7 @@ describe('accel.html smoke', () => {
       });
     });
 
-    const accelPage = await import('../../src/accel/accel.js');
+    const accelPage = await import('../../src/accel/dev-harness.js');
     await accelPage.initPromise;
     await settleAsyncWork();
 
@@ -1295,7 +1295,7 @@ describe('accel.html smoke', () => {
       });
     });
 
-    const accelPage = await import('../../src/accel/accel.js');
+    const accelPage = await import('../../src/accel/dev-harness.js');
     await accelPage.initPromise;
     await settleAsyncWork();
 
@@ -1388,7 +1388,7 @@ describe('accel.html smoke', () => {
       });
     });
 
-    const accelPage = await import('../../src/accel/accel.js');
+    const accelPage = await import('../../src/accel/dev-harness.js');
     await accelPage.initPromise;
     await settleAsyncWork();
 
@@ -1406,7 +1406,7 @@ describe('accel.html smoke', () => {
     const storage = await import('../../src/accel/storage.js');
     await storage.saveRuns([createStoredRun()]);
 
-    const accelPage = await import('../../src/accel/accel.js');
+    const accelPage = await import('../../src/accel/dev-harness.js');
     await accelPage.initPromise;
     await flushTasks();
 
@@ -1429,7 +1429,7 @@ describe('accel.html smoke', () => {
     const storage = await import('../../src/accel/storage.js');
     await storage.saveRuns([createStoredRun()]);
 
-    const accelPage = await import('../../src/accel/accel.js');
+    const accelPage = await import('../../src/accel/dev-harness.js');
     await accelPage.initPromise;
     await flushTasks();
 
@@ -1453,7 +1453,7 @@ describe('accel.html smoke', () => {
   });
 
   it("keeps the Player launcher available for guests and after login", async () => {
-    const accelPage = await import("../../src/accel/accel.js");
+    const accelPage = await import("../../src/accel/dev-harness.js");
     await accelPage.initPromise;
     await settleAsyncWork();
 

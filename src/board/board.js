@@ -32,7 +32,6 @@ import {
   CLOUD_SYNC_APPLIED_EVENT,
   CLOUD_SYNC_ENTITY_TYPES,
   queueCloudSyncChange,
-  startCloudSyncLoop,
 } from "../shared/cloud-sync.js";
 import {
   CLOUD_LIBRARY_TAB_KEYS,
@@ -1501,7 +1500,6 @@ if (!isSpaRuntime) {
       }
 
       await hydrateBoardDrawing();
-      if (!isSpaRuntime) startCloudSyncLoop({ immediate: true });
     })();
     mountBoardController();
 

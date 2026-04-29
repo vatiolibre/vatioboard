@@ -45,6 +45,21 @@ describe("standalone HTML production-surface guard", () => {
     }
   });
 
+  it("keeps standalone page bootstraps in dev-harness adapters", () => {
+    const expectedAdapters = {
+      "speed.html": "/src/speed/dev-harness.js",
+      "accel.html": "/src/accel/dev-harness.js",
+      "library.html": "/src/library/dev-harness.js",
+      "replay.html": "/src/replay/dev-harness.js",
+    };
+
+    for (const [page, adapter] of Object.entries(expectedAdapters)) {
+      const source = readProjectFile(page);
+      expect(source, page).toContain(adapter);
+      expect(source, page).not.toMatch(/mount(?:Speed|Accel|Library|Replay)Route\(\{ root: document/);
+    }
+  });
+
   it("keeps production source from linking to standalone root pages", () => {
     const productionFiles = listFiles("src", (file) => [".js", ".mjs", ".less", ".css"].includes(extname(file)));
     const pagePattern = new RegExp(`(?:${STANDALONE_PAGES.map((page) => page.replace(".", "\\.")).join("|")})["'#?]`);

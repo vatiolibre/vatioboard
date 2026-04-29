@@ -251,7 +251,7 @@ describe('replay.html smoke', () => {
   });
 
   it('boots the replay page and renders the stored session', async () => {
-    const replayPage = await import('../../src/replay/replay.js');
+    const replayPage = await import('../../src/replay/dev-harness.js');
     expect(document.getElementById('replayEmptyState').hidden).toBe(true);
     expect(document.getElementById('replayShell').hidden).toBe(true);
     await replayPage.initPromise;
@@ -405,7 +405,7 @@ describe('replay.html smoke', () => {
     });
     window.history.replaceState({}, '', '/replay.html?record=missing-replay');
 
-    const replayPage = await import('../../src/replay/replay.js');
+    const replayPage = await import('../../src/replay/dev-harness.js');
     await replayPage.initPromise;
     await settleAsyncWork();
 
@@ -415,7 +415,7 @@ describe('replay.html smoke', () => {
   });
 
   it('opens the expanded graph sheet with stacked charts and a dual-range filter', async () => {
-    const replayPage = await import('../../src/replay/replay.js');
+    const replayPage = await import('../../src/replay/dev-harness.js');
     await replayPage.initPromise;
     await flushTasks();
 
@@ -462,7 +462,7 @@ describe('replay.html smoke', () => {
   });
 
   it('cancels the intro when the user switches recordings mid-approach', async () => {
-    const replayPage = await import('../../src/replay/replay.js');
+    const replayPage = await import('../../src/replay/dev-harness.js');
     await replayPage.initPromise;
     await flushTasks();
     await settleDeferredImports();
@@ -478,7 +478,7 @@ describe('replay.html smoke', () => {
   });
 
   it('lets the user delete saved recordings while keeping the active session', async () => {
-    const replayPage = await import('../../src/replay/replay.js');
+    const replayPage = await import('../../src/replay/dev-harness.js');
     await replayPage.initPromise;
     const { loadReplayLibrary } = await import('../../src/replay/session.js');
     await flushTasks();
@@ -507,7 +507,7 @@ describe('replay.html smoke', () => {
     vi.resetModules();
     await bootHtmlPage('replay.html');
 
-    const replayPage = await import('../../src/replay/replay.js');
+    const replayPage = await import('../../src/replay/dev-harness.js');
     await replayPage.initPromise;
     await flushTasks();
 
@@ -590,7 +590,7 @@ describe('replay.html smoke', () => {
     vi.resetModules();
     await bootHtmlPage('replay.html');
 
-    const replayPage = await import('../../src/replay/replay.js');
+    const replayPage = await import('../../src/replay/dev-harness.js');
     await replayPage.initPromise;
     await settleAsyncWork();
 
@@ -745,7 +745,7 @@ describe('replay.html smoke', () => {
     vi.resetModules();
     await bootHtmlPage('replay.html');
 
-    const replayPage = await import('../../src/replay/replay.js');
+    const replayPage = await import('../../src/replay/dev-harness.js');
     await replayPage.initPromise;
     await settleAsyncWork();
 
@@ -823,7 +823,7 @@ describe('replay.html smoke', () => {
     await bootHtmlPage('replay.html');
     window.history.replaceState({}, '', 'https://vatioboard.com/replay.html?record=missing-session');
 
-    const replayPage = await import('../../src/replay/replay.js');
+    const replayPage = await import('../../src/replay/dev-harness.js');
     await replayPage.initPromise;
     await settleAsyncWork();
 
@@ -859,7 +859,7 @@ describe('replay.html smoke', () => {
     vi.resetModules();
     await bootHtmlPage('replay.html');
 
-    const replayPage = await import('../../src/replay/replay.js');
+    const replayPage = await import('../../src/replay/dev-harness.js');
     await replayPage.initPromise;
     await settleAsyncWork();
 
@@ -909,7 +909,7 @@ describe('replay.html smoke', () => {
     vi.resetModules();
     await bootHtmlPage('replay.html');
 
-    const replayPage = await import('../../src/replay/replay.js');
+    const replayPage = await import('../../src/replay/dev-harness.js');
     await replayPage.initPromise;
     await settleAsyncWork();
 
@@ -1089,7 +1089,7 @@ describe('replay.html smoke', () => {
     await bootHtmlPage('replay.html');
     window.history.replaceState({}, '', 'https://vatioboard.com/replay.html?record=missing-session');
 
-    const replayPage = await import('../../src/replay/replay.js');
+    const replayPage = await import('../../src/replay/dev-harness.js');
     await replayPage.initPromise;
     await settleAsyncWork();
 
@@ -1215,7 +1215,7 @@ describe('replay.html smoke', () => {
     await bootHtmlPage('replay.html');
     window.history.replaceState({}, '', 'https://vatioboard.com/replay.html?record=remote-session');
 
-    const replayPage = await import('../../src/replay/replay.js');
+    const replayPage = await import('../../src/replay/dev-harness.js');
     await replayPage.initPromise;
     await settleAsyncWork();
 
@@ -1245,7 +1245,7 @@ describe('replay.html smoke', () => {
     vi.resetModules();
     await bootHtmlPage('replay.html');
 
-    const replayPage = await import('../../src/replay/replay.js');
+    const replayPage = await import('../../src/replay/dev-harness.js');
     void replayPage.initPromise.then(() => {});
 
     expect(document.getElementById('replayEmptyState').hidden).toBe(true);
@@ -1278,7 +1278,7 @@ describe('replay.html smoke', () => {
     vi.resetModules();
     await bootHtmlPage('replay.html');
 
-    const replayPage = await import('../../src/replay/replay.js');
+    const replayPage = await import('../../src/replay/dev-harness.js');
     void replayPage.initPromise.then(() => {});
 
     expect(document.getElementById('replayEmptyState').hidden).toBe(true);
@@ -1307,7 +1307,7 @@ describe('replay.html smoke', () => {
     vi.resetModules();
     await bootHtmlPage('replay.html');
 
-    const replayPage = await import('../../src/replay/replay.js');
+    const replayPage = await import('../../src/replay/dev-harness.js');
     await replayPage.initPromise;
     await settleAsyncWork();
 
@@ -1338,7 +1338,7 @@ describe('replay.html smoke', () => {
     vi.resetModules();
     await bootHtmlPage('replay.html');
 
-    const replayPage = await import('../../src/replay/replay.js');
+    const replayPage = await import('../../src/replay/dev-harness.js');
     void replayPage.initPromise.then(() => {});
 
     await vi.advanceTimersByTimeAsync(3500);
@@ -1374,7 +1374,7 @@ describe('replay.html smoke', () => {
     vi.resetModules();
     await bootHtmlPage('replay.html');
 
-    const replayPage = await import('../../src/replay/replay.js');
+    const replayPage = await import('../../src/replay/dev-harness.js');
     void replayPage.initPromise.then(() => {});
 
     expect(document.getElementById('replayEmptyState').hidden).toBe(true);
@@ -1397,7 +1397,7 @@ describe('replay.html smoke', () => {
   });
 
   it("keeps the Player launcher available for guests and after login", async () => {
-    const replayPage = await import("../../src/replay/replay.js");
+    const replayPage = await import("../../src/replay/dev-harness.js");
     await replayPage.initPromise;
     await settleAsyncWork();
 

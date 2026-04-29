@@ -68,6 +68,8 @@ describe("SPA Replay route real-controller smoke", () => {
     expect(maplibre.maps[0].remove).toHaveBeenCalledTimes(1);
     expect(boardAfterFirstReplay.activeMapCount).toBe(0);
     expect(boardAfterFirstReplay.activeChartCount).toBe(0);
+    expect(boardAfterFirstReplay.activeRafCount).toBe(0);
+    expect(boardAfterFirstReplay.activeResizeObserverCount).toBe(0);
     expect(secondReplay.activeMapCount).toBe(1);
     expect(secondReplay.activeChartCount).toBeLessThanOrEqual(firstReplay.activeChartCount);
     expect(secondReplay.listeners.windowRouteVisible).toBe(firstReplay.listeners.windowRouteVisible);
@@ -80,10 +82,17 @@ describe("SPA Replay route real-controller smoke", () => {
     expect(document.body.classList.contains("replay-graph-sheet-open")).toBe(true);
     expect(charts.charts.filter((chart) => !chart.destroyed).length).toBeGreaterThan(0);
 
+    document.getElementById("replayRestart")?.click();
+    await settleRealSpaSmoke();
+    document.getElementById("replayPlayPause")?.click();
+    await settleRealSpaSmoke();
+    expect(getRealSpaSmokeMocks().lifecycle.activeRafIds.size).toBeGreaterThan(0);
+
     const boardAfterGraph = await navigateRealSpaSmoke("#/board");
     expect(boardAfterGraph.activeMapCount).toBe(0);
     expect(boardAfterGraph.activeChartCount).toBe(0);
     expect(boardAfterGraph.activeRafCount).toBe(0);
+    expect(boardAfterGraph.activeResizeObserverCount).toBe(0);
     expect(document.body.classList.contains("replay-graph-sheet-open")).toBe(false);
   }, 40000);
 });

@@ -344,7 +344,7 @@ describe("library.html smoke", () => {
   });
 
   it("loads cloud library summaries using list row as detail for speed recordings", async () => {
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -372,7 +372,7 @@ describe("library.html smoke", () => {
   });
 
   it("disables open when a replay only has summary metadata", async () => {
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -386,7 +386,7 @@ describe("library.html smoke", () => {
   });
 
   it("renders speed and distance meta with human-readable formatting", async () => {
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -410,7 +410,7 @@ describe("library.html smoke", () => {
   });
 
   it("uses the shared launcher chrome and keeps auth controls inside the menu", async () => {
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
     const pageHeader = document.querySelector("header");
@@ -458,7 +458,7 @@ describe("library.html smoke", () => {
   });
 
   it("switches to board documents and renders their summary-first detail", async () => {
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -487,7 +487,7 @@ describe("library.html smoke", () => {
       });
 
     try {
-      const libraryPage = await import("../../src/library/library.js");
+      const libraryPage = await import("../../src/library/dev-harness.js");
       await libraryPage.initPromise;
       await settleLibraryTasks();
 
@@ -566,7 +566,7 @@ describe("library.html smoke", () => {
       return jsonResponse({});
     });
 
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -623,7 +623,7 @@ describe("library.html smoke", () => {
       return jsonResponse({});
     });
 
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -645,7 +645,7 @@ describe("library.html smoke", () => {
       return jsonResponse({});
     });
 
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -685,7 +685,7 @@ describe("library.html smoke", () => {
       return jsonResponse({});
     });
 
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -755,7 +755,7 @@ describe("library.html smoke", () => {
       return jsonResponse({});
     });
 
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -831,7 +831,7 @@ describe("library.html smoke", () => {
       return jsonResponse({});
     });
 
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -912,7 +912,7 @@ describe("library.html smoke", () => {
       return jsonResponse({});
     });
 
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -988,7 +988,7 @@ describe("library.html smoke", () => {
       return jsonResponse({});
     });
 
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -1066,7 +1066,7 @@ describe("library.html smoke", () => {
       return jsonResponse({});
     });
 
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -1106,7 +1106,7 @@ describe("library.html smoke", () => {
       return jsonResponse({});
     });
 
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -1190,7 +1190,7 @@ describe("library.html smoke", () => {
       return jsonResponse({});
     });
 
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -1258,7 +1258,7 @@ describe("library.html smoke", () => {
         return jsonResponse({});
       });
 
-      const libraryPage = await import("../../src/library/library.js");
+      const libraryPage = await import("../../src/library/dev-harness.js");
       await libraryPage.initPromise;
       await settleLibraryTasks();
 
@@ -1305,7 +1305,7 @@ describe("library.html smoke", () => {
   });
 
   it("hides the Player launcher for guests and shows it after login", async () => {
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 

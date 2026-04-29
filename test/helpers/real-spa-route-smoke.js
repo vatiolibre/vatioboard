@@ -13,12 +13,15 @@ const lifecycleMocks = vi.hoisted(() => ({
   activeWatchIds: new Set(),
   activeIntervalIds: new Set(),
   activeRafIds: new Set(),
+  activeResizeObservers: new Set(),
   activeTimeoutIds: new Set(),
+  audioInstances: [],
   downloadMySyncPayloadRequests: [],
   listenerRegistry: {
     window: new Map(),
     document: new Map(),
   },
+  mediaSessionActionHandlers: new Map(),
   nextWatchId: 1,
   nextIntervalId: 1,
   nextRafId: 1,
@@ -201,10 +204,13 @@ function resetLifecycleMocks() {
   lifecycleMocks.activeWatchIds.clear();
   lifecycleMocks.activeIntervalIds.clear();
   lifecycleMocks.activeRafIds.clear();
+  lifecycleMocks.activeResizeObservers.clear();
   lifecycleMocks.activeTimeoutIds.clear();
+  lifecycleMocks.audioInstances = [];
   lifecycleMocks.downloadMySyncPayloadRequests = [];
   lifecycleMocks.listenerRegistry.window = new Map();
   lifecycleMocks.listenerRegistry.document = new Map();
+  lifecycleMocks.mediaSessionActionHandlers = new Map();
   lifecycleMocks.nextWatchId = 1;
   lifecycleMocks.nextIntervalId = 1;
   lifecycleMocks.nextRafId = 1;
@@ -285,6 +291,76 @@ function installResourceStubs() {
   vi.spyOn(window, "clearTimeout").mockImplementation((timeoutId) => {
     lifecycleMocks.activeTimeoutIds.delete(timeoutId);
   });
+
+  const OriginalResizeObserver = window.ResizeObserver;
+  class TrackedResizeObserver extends OriginalResizeObserver {
+    constructor(callback) {
+      super(callback);
+      this.__active = false;
+    }
+
+    observe(target, options) {
+      this.__active = true;
+      lifecycleMocks.activeResizeObservers.add(this);
+      return super.observe(target, options);
+    }
+
+    disconnect() {
+      this.__active = false;
+      lifecycleMocks.activeResizeObservers.delete(this);
+      return super.disconnect();
+    }
+  }
+  Object.defineProperty(window, "ResizeObserver", {
+    configurable: true,
+    writable: true,
+    value: TrackedResizeObserver,
+  });
+  Object.defineProperty(globalThis, "ResizeObserver", {
+    configurable: true,
+    writable: true,
+    value: TrackedResizeObserver,
+  });
+
+  const OriginalAudio = window.Audio;
+  class TrackedAudio extends OriginalAudio {
+    constructor(src = "") {
+      super(src);
+      this.__listenerRegistry = new Map();
+      lifecycleMocks.audioInstances.push(this);
+    }
+
+    addEventListener(type, listener, options) {
+      if (!this.__listenerRegistry.has(type)) this.__listenerRegistry.set(type, new Set());
+      this.__listenerRegistry.get(type).add(listener);
+      return super.addEventListener(type, listener, options);
+    }
+
+    removeEventListener(type, listener, options) {
+      this.__listenerRegistry.get(type)?.delete(listener);
+      return super.removeEventListener(type, listener, options);
+    }
+  }
+  Object.defineProperty(window, "Audio", {
+    configurable: true,
+    writable: true,
+    value: TrackedAudio,
+  });
+  Object.defineProperty(globalThis, "Audio", {
+    configurable: true,
+    writable: true,
+    value: TrackedAudio,
+  });
+}
+
+function getAudioEventListenerCount() {
+  return lifecycleMocks.audioInstances.reduce((total, audio) => {
+    let audioTotal = 0;
+    for (const listeners of audio.__listenerRegistry?.values?.() ?? []) {
+      audioTotal += listeners.size;
+    }
+    return total + audioTotal;
+  }, 0);
 }
 
 function installBrowserStubs() {
@@ -292,6 +368,14 @@ function installBrowserStubs() {
   installResourceStubs();
   installListenerTracker(window, "window");
   installListenerTracker(document, "document");
+  const originalSetActionHandler = navigator.mediaSession?.setActionHandler;
+  if (typeof originalSetActionHandler === "function") {
+    vi.spyOn(navigator.mediaSession, "setActionHandler").mockImplementation((action, handler) => {
+      if (handler) lifecycleMocks.mediaSessionActionHandlers.set(action, handler);
+      else lifecycleMocks.mediaSessionActionHandlers.delete(action);
+      return originalSetActionHandler(action, handler);
+    });
+  }
   vi.spyOn(window, "open").mockImplementation(() => null);
 }
 
@@ -334,11 +418,16 @@ export function getRealSpaResourceSnapshot() {
     activeIntervalCount: lifecycleMocks.activeIntervalIds.size,
     activeMapCount: maplibreMocks.maps.filter((map) => !map.removed).length,
     activeRafCount: lifecycleMocks.activeRafIds.size,
+    activeResizeObserverCount: lifecycleMocks.activeResizeObservers.size,
     activeTimeoutCount: lifecycleMocks.activeTimeoutIds.size,
     activeWatchCount: lifecycleMocks.activeWatchIds.size,
+    audioEventListenerCount: getAudioEventListenerCount(),
+    audioInstanceCount: lifecycleMocks.audioInstances.length,
     chartCount: chartMocks.charts.length,
     downloadMySyncPayloadCount: lifecycleMocks.downloadMySyncPayloadRequests.length,
     mapCount: maplibreMocks.maps.length,
+    mediaSessionActionHandlerCallCount: navigator.mediaSession?.setActionHandler?.mock?.calls?.length ?? 0,
+    mediaSessionActionHandlerCount: lifecycleMocks.mediaSessionActionHandlers.size,
     listeners: {
       documentI18nChange: getActiveListenerCount("document", "i18n:change"),
       documentKeydown: getActiveListenerCount("document", "keydown"),

@@ -190,7 +190,7 @@ async function bootMediaTab() {
   await bootHtmlPage("library.html");
   window.fetch = createDefaultFetch();
 
-  const libraryPage = await import("../../src/library/library.js");
+  const libraryPage = await import("../../src/library/dev-harness.js");
   await libraryPage.initPromise;
   await settleLibraryTasks();
 
@@ -250,7 +250,7 @@ describe("library offline media", () => {
     window.fetch = fetchMock;
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -334,7 +334,7 @@ describe("library offline media", () => {
     window.fetch = fetchMock;
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -413,7 +413,7 @@ describe("library offline media", () => {
     });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -495,7 +495,7 @@ describe("library offline media", () => {
     });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -574,7 +574,7 @@ describe("library offline media", () => {
     });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -634,7 +634,7 @@ describe("library offline media", () => {
     });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -742,7 +742,7 @@ describe("library offline media", () => {
     });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -780,7 +780,7 @@ describe("library offline media", () => {
     });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -835,7 +835,7 @@ describe("library offline media", () => {
     });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -891,7 +891,7 @@ describe("library offline media", () => {
       });
 
       await bootHtmlPage("library.html");
-      const libraryPage = await import("../../src/library/library.js");
+      const libraryPage = await import("../../src/library/dev-harness.js");
       await libraryPage.initPromise;
       await settleLibraryTasks();
 
@@ -967,7 +967,7 @@ describe("library offline media", () => {
     });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -1026,7 +1026,7 @@ describe("library offline media", () => {
     });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -1070,7 +1070,7 @@ describe("library offline media", () => {
     });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks(32);
 
@@ -1140,7 +1140,7 @@ describe("library offline media", () => {
     });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -1195,7 +1195,7 @@ describe("library offline media", () => {
     });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -1236,7 +1236,7 @@ describe("library offline media", () => {
     });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -1271,7 +1271,7 @@ describe("library offline media", () => {
     });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -1311,7 +1311,7 @@ describe("library offline media", () => {
     });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -1368,7 +1368,7 @@ describe("library offline media", () => {
     });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks(32);
 
@@ -1427,7 +1427,7 @@ describe("library offline media", () => {
     });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks(32);
 
@@ -1505,7 +1505,7 @@ describe("library offline media", () => {
       });
 
       await bootHtmlPage("library.html");
-      const libraryPage = await import("../../src/library/library.js");
+      const libraryPage = await import("../../src/library/dev-harness.js");
       await libraryPage.initPromise;
       await settleLibraryTasks();
 
@@ -1553,7 +1553,7 @@ describe("library offline media", () => {
     window.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks(32);
 
@@ -1610,7 +1610,7 @@ describe("library offline media", () => {
     });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -1655,7 +1655,7 @@ describe("library offline media", () => {
     window.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks(32);
 
@@ -1717,7 +1717,7 @@ describe("library offline media", () => {
     window.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks(32);
 
@@ -1812,7 +1812,7 @@ describe("library offline media", () => {
       });
 
       await bootHtmlPage("library.html");
-      const libraryPage = await import("../../src/library/library.js");
+      const libraryPage = await import("../../src/library/dev-harness.js");
       await libraryPage.initPromise;
       await settleLibraryTasks();
 
@@ -1869,7 +1869,7 @@ describe("library offline media", () => {
     window.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks(32);
 
@@ -1951,7 +1951,7 @@ describe("library offline media", () => {
     });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -1985,7 +1985,7 @@ describe("library offline media", () => {
     window.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks(32);
 
@@ -2083,7 +2083,7 @@ describe("library offline media", () => {
     window.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks(32);
 
@@ -2171,7 +2171,7 @@ describe("library offline media", () => {
     window.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks(32);
 
@@ -2263,7 +2263,7 @@ describe("library offline media", () => {
     window.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks(32);
 
@@ -2356,7 +2356,7 @@ describe("library offline media", () => {
     // Phase 1: offline-limited mode
     window.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks(32);
     expect(document.querySelector('[data-tab="speed"]').disabled).toBe(true);
@@ -2445,7 +2445,7 @@ describe("library offline media", () => {
     // Phase 1: offline-limited
     window.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks(32);
 
@@ -2523,7 +2523,7 @@ describe("library offline media", () => {
     // Phase 1: offline-limited
     window.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks(32);
     expect(document.querySelector('[data-tab="speed"]').disabled).toBe(true);
@@ -2587,7 +2587,7 @@ describe("library offline media", () => {
     // Phase 1: offline-limited mode
     window.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks(32);
 
@@ -2679,7 +2679,7 @@ describe("library offline media", () => {
     // Phase 1: offline-limited
     window.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks(32);
 
@@ -2767,7 +2767,7 @@ describe("library offline media", () => {
     // Phase 1: offline-limited mode with one cached item
     window.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks(32);
 
@@ -2855,7 +2855,7 @@ describe("library offline media", () => {
     // Phase 1: offline-limited
     window.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks(32);
 
@@ -2967,7 +2967,7 @@ describe("library offline media", () => {
     // Phase 1: offline-limited
     window.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks(32);
 
@@ -3058,7 +3058,7 @@ describe("library offline media", () => {
     // Phase 1: offline-limited with one cached item that has no preview
     window.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks(32);
 
@@ -3188,7 +3188,7 @@ describe("library offline media", () => {
     window.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks(32);
 
@@ -3412,7 +3412,7 @@ describe("library offline media", () => {
     });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -3479,7 +3479,7 @@ describe("library offline media", () => {
     });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -3560,7 +3560,7 @@ describe("library offline media", () => {
     });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -3618,7 +3618,7 @@ describe("library offline media", () => {
     });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -3656,7 +3656,7 @@ describe("library offline media", () => {
     window.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks(32);
 
@@ -3695,7 +3695,7 @@ describe("library offline media", () => {
     window.fetch = vi.fn(async () => { throw new TypeError("Failed to fetch"); });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks(32);
 
@@ -3756,7 +3756,7 @@ describe("library offline media", () => {
     });
 
     await bootHtmlPage("library.html");
-    const libraryPage = await import("../../src/library/library.js");
+    const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
@@ -3847,7 +3847,7 @@ describe("library offline media", () => {
 
       try {
         await bootHtmlPage("library.html");
-        const libraryPage = await import("../../src/library/library.js");
+        const libraryPage = await import("../../src/library/dev-harness.js");
         await libraryPage.initPromise;
         await settleLibraryTasks();
 
@@ -3912,7 +3912,7 @@ describe("library offline media", () => {
       try {
         window.fetch = createAutoCacheFetch();
         await bootHtmlPage("library.html");
-        const libraryPage = await import("../../src/library/library.js");
+        const libraryPage = await import("../../src/library/dev-harness.js");
         await libraryPage.initPromise;
         await settleLibraryTasks();
 
@@ -3976,7 +3976,7 @@ describe("library offline media", () => {
       try {
         window.fetch = createAutoCacheFetch({ assetOverride: imageAsset });
         await bootHtmlPage("library.html");
-        const libraryPage = await import("../../src/library/library.js");
+        const libraryPage = await import("../../src/library/dev-harness.js");
         await libraryPage.initPromise;
         await settleLibraryTasks();
 
@@ -4026,7 +4026,7 @@ describe("library offline media", () => {
         // Boot online first so the list loads normally.
         window.fetch = createAutoCacheFetch({ assetOverride: audioAsset });
         await bootHtmlPage("library.html");
-        const libraryPage = await import("../../src/library/library.js");
+        const libraryPage = await import("../../src/library/dev-harness.js");
         await libraryPage.initPromise;
         await settleLibraryTasks();
 
@@ -4081,7 +4081,7 @@ describe("library offline media", () => {
       try {
         window.fetch = createAutoCacheFetch({ assetOverride: updatedAsset });
         await bootHtmlPage("library.html");
-        const libraryPage = await import("../../src/library/library.js");
+        const libraryPage = await import("../../src/library/dev-harness.js");
         await libraryPage.initPromise;
         await settleLibraryTasks();
 
@@ -4136,7 +4136,7 @@ describe("library offline media", () => {
 
       window.fetch = createAutoCacheFetch({ assetOverride: assetWithHash });
       await bootHtmlPage("library.html");
-      const libraryPage = await import("../../src/library/library.js");
+      const libraryPage = await import("../../src/library/dev-harness.js");
       await libraryPage.initPromise;
       await settleLibraryTasks();
 
@@ -4172,7 +4172,7 @@ describe("library offline media", () => {
 
       window.fetch = createAutoCacheFetch({ assetOverride: imageAsset });
       await bootHtmlPage("library.html");
-      let libraryPage = await import("../../src/library/library.js");
+      let libraryPage = await import("../../src/library/dev-harness.js");
       await libraryPage.initPromise;
       await settleLibraryTasks();
 
@@ -4204,7 +4204,7 @@ describe("library offline media", () => {
 
       window.fetch = createAutoCacheFetch({ assetOverride: imageAsset });
       await bootHtmlPage("library.html");
-      const libraryPage = await import("../../src/library/library.js");
+      const libraryPage = await import("../../src/library/dev-harness.js");
       await libraryPage.initPromise;
       await settleLibraryTasks();
 
@@ -4241,7 +4241,7 @@ describe("library offline media", () => {
       try {
         window.fetch = createAutoCacheFetch();
         await bootHtmlPage("library.html");
-        const libraryPage = await import("../../src/library/library.js");
+        const libraryPage = await import("../../src/library/dev-harness.js");
         await libraryPage.initPromise;
         await settleLibraryTasks();
 
@@ -4282,7 +4282,7 @@ describe("library offline media", () => {
 
       window.fetch = createAutoCacheFetch();
       await bootHtmlPage("library.html");
-      const libraryPage = await import("../../src/library/library.js");
+      const libraryPage = await import("../../src/library/dev-harness.js");
       await libraryPage.initPromise;
       await settleLibraryTasks();
 
@@ -4313,7 +4313,7 @@ describe("library offline media", () => {
 
       try {
         await bootHtmlPage("library.html");
-        const libraryPage = await import("../../src/library/library.js");
+        const libraryPage = await import("../../src/library/dev-harness.js");
         await libraryPage.initPromise;
         await settleLibraryTasks();
 
@@ -4386,7 +4386,7 @@ describe("library offline media", () => {
       });
 
       await bootHtmlPage("library.html");
-      const libraryPage = await import("../../src/library/library.js");
+      const libraryPage = await import("../../src/library/dev-harness.js");
       await libraryPage.initPromise;
       await settleLibraryTasks();
 
@@ -4429,7 +4429,7 @@ describe("library offline media", () => {
       try {
         window.fetch = createAutoCacheFetch();
         await bootHtmlPage("library.html");
-        const libraryPage = await import("../../src/library/library.js");
+        const libraryPage = await import("../../src/library/dev-harness.js");
         await libraryPage.initPromise;
         await settleLibraryTasks();
 
@@ -4487,7 +4487,7 @@ describe("library offline media", () => {
       try {
         window.fetch = createAutoCacheFetch({ assetOverride: updatedAsset });
         await bootHtmlPage("library.html");
-        const libraryPage = await import("../../src/library/library.js");
+        const libraryPage = await import("../../src/library/dev-harness.js");
         await libraryPage.initPromise;
         await settleLibraryTasks();
 
@@ -4529,7 +4529,7 @@ describe("library offline media", () => {
 
       window.fetch = createAutoCacheFetch();
       await bootHtmlPage("library.html");
-      const libraryPage = await import("../../src/library/library.js");
+      const libraryPage = await import("../../src/library/dev-harness.js");
       await libraryPage.initPromise;
       await settleLibraryTasks();
 
@@ -4571,7 +4571,7 @@ describe("library offline media", () => {
       try {
         window.fetch = createAutoCacheFetch();
         await bootHtmlPage("library.html");
-        const libraryPage = await import("../../src/library/library.js");
+        const libraryPage = await import("../../src/library/dev-harness.js");
         await libraryPage.initPromise;
         await settleLibraryTasks();
 
@@ -4619,7 +4619,7 @@ describe("library offline media", () => {
 
       window.fetch = createAutoCacheFetch();
       await bootHtmlPage("library.html");
-      const libraryPage = await import("../../src/library/library.js");
+      const libraryPage = await import("../../src/library/dev-harness.js");
       await libraryPage.initPromise;
       await settleLibraryTasks();
 
@@ -4672,7 +4672,7 @@ describe("library offline media", () => {
       try {
         window.fetch = createAutoCacheFetch();
         await bootHtmlPage("library.html");
-        const libraryPage = await import("../../src/library/library.js");
+        const libraryPage = await import("../../src/library/dev-harness.js");
         await libraryPage.initPromise;
         await settleLibraryTasks();
 
@@ -4704,7 +4704,7 @@ describe("library offline media", () => {
 
       window.fetch = createAutoCacheFetch();
       await bootHtmlPage("library.html");
-      const libraryPage = await import("../../src/library/library.js");
+      const libraryPage = await import("../../src/library/dev-harness.js");
       await libraryPage.initPromise;
       await settleLibraryTasks();
 
@@ -4782,7 +4782,7 @@ describe("library offline media", () => {
 
       window.fetch = createAutoCacheFetch();
       await bootHtmlPage("library.html");
-      const libraryPage = await import("../../src/library/library.js");
+      const libraryPage = await import("../../src/library/dev-harness.js");
       await libraryPage.initPromise;
       await settleLibraryTasks();
 
@@ -5058,7 +5058,7 @@ describe("library offline media", () => {
 
       window.fetch = createPinFetch();
       await bootHtmlPage("library.html");
-      const libraryPage = await import("../../src/library/library.js");
+      const libraryPage = await import("../../src/library/dev-harness.js");
       await libraryPage.initPromise;
       await settleLibraryTasks();
 
@@ -5141,7 +5141,7 @@ describe("library offline media", () => {
       });
 
       await bootHtmlPage("library.html");
-      const libraryPage = await import("../../src/library/library.js");
+      const libraryPage = await import("../../src/library/dev-harness.js");
       await libraryPage.initPromise;
       await settleLibraryTasks();
 
@@ -5189,7 +5189,7 @@ describe("library offline media", () => {
 
       window.fetch = createPinFetch();
       await bootHtmlPage("library.html");
-      const libraryPage = await import("../../src/library/library.js");
+      const libraryPage = await import("../../src/library/dev-harness.js");
       await libraryPage.initPromise;
       await settleLibraryTasks();
 
@@ -5243,7 +5243,7 @@ describe("library offline media", () => {
 
       window.fetch = createPinFetch({ assetOverride: updatedAsset });
       await bootHtmlPage("library.html");
-      const libraryPage = await import("../../src/library/library.js");
+      const libraryPage = await import("../../src/library/dev-harness.js");
       await libraryPage.initPromise;
       await settleLibraryTasks();
 
@@ -5328,7 +5328,7 @@ describe("library offline media", () => {
         });
 
         await bootHtmlPage("library.html");
-        const libraryPage = await import("../../src/library/library.js");
+        const libraryPage = await import("../../src/library/dev-harness.js");
         await libraryPage.initPromise;
         await settleLibraryTasks();
 
@@ -5410,7 +5410,7 @@ describe("library offline media", () => {
         });
 
         await bootHtmlPage("library.html");
-        const libraryPage = await import("../../src/library/library.js");
+        const libraryPage = await import("../../src/library/dev-harness.js");
         await libraryPage.initPromise;
         await settleLibraryTasks();
 
@@ -5502,7 +5502,7 @@ describe("library offline media", () => {
       });
 
       await bootHtmlPage("library.html");
-      const libraryPage = await import("../../src/library/library.js");
+      const libraryPage = await import("../../src/library/dev-harness.js");
       await libraryPage.initPromise;
       await settleLibraryTasks();
 
@@ -5578,7 +5578,7 @@ describe("library offline media", () => {
       });
 
       await bootHtmlPage("library.html");
-      const libraryPage = await import("../../src/library/library.js");
+      const libraryPage = await import("../../src/library/dev-harness.js");
       await libraryPage.initPromise;
       await settleLibraryTasks();
 
@@ -5673,7 +5673,7 @@ describe("library offline media", () => {
       });
 
       await bootHtmlPage("library.html");
-      const libraryPage = await import("../../src/library/library.js");
+      const libraryPage = await import("../../src/library/dev-harness.js");
       await libraryPage.initPromise;
       await settleLibraryTasks();
 
@@ -5726,7 +5726,7 @@ describe("library offline media", () => {
       });
 
       await bootHtmlPage("library.html");
-      const libraryPage = await import("../../src/library/library.js");
+      const libraryPage = await import("../../src/library/dev-harness.js");
       await libraryPage.initPromise;
       await settleLibraryTasks();
 

@@ -42,7 +42,6 @@ import {
 import {
   CLOUD_SYNC_ENTITY_TYPES,
   queueCloudSyncChange,
-  startCloudSyncLoop,
 } from '../shared/cloud-sync.js';
 import {
   ensureSingleTabOwnership,
@@ -2219,7 +2218,6 @@ async function init() {
     },
   });
   trapLoader.loadTrapArtifacts();
-  if (!isSpaRuntime) startCloudSyncLoop();
   state.initialized = true;
   if (state.viewMounted) {
     syncMountedSpeedRouteUi();
