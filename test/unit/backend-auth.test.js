@@ -359,6 +359,38 @@ describe('backend auth transport helpers', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps rejected cached session probes observed while still rejecting callers', async () => {
+    clearBackendAccessCache();
+    const unhandled = [];
+    const handleUnhandled = (reason) => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', handleUnhandled);
+
+    try {
+      const fetchImpl = vi.fn(async () => {
+        throw new TypeError('Failed to fetch');
+      });
+
+      const sessionPromise = getBackendSessionState({
+        fetchImpl,
+        config: TEST_CONFIG,
+      });
+      const handledSessionPromise = sessionPromise.catch((error) => error);
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      const result = await handledSessionPromise;
+      expect(result).toBeInstanceOf(TypeError);
+      expect(result.message).toBe('Failed to fetch');
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(unhandled).toHaveLength(0);
+    } finally {
+      process.off('unhandledRejection', handleUnhandled);
+    }
+  });
+
   it('dedupes concurrent feature access probes', async () => {
     clearBackendAccessCache();
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({

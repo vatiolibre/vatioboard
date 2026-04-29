@@ -1449,16 +1449,21 @@ function scheduleCloudSync({ immediate = false } = {}) {
     return;
   }
 
+  const queueSyncPass = () => {
+    syncChain = syncChain.catch(() => {}).then(() => syncCloudRecords());
+    syncChain.catch(() => {});
+  };
+
   if (immediate) {
     clearScheduledSyncTimer();
-    syncChain = syncChain.catch(() => {}).then(() => syncCloudRecords());
+    queueSyncPass();
     return;
   }
 
   if (syncTimerId !== null) return;
   syncTimerId = window.setTimeout(() => {
     syncTimerId = null;
-    syncChain = syncChain.catch(() => {}).then(() => syncCloudRecords());
+    queueSyncPass();
   }, CLOUD_SYNC_RETRY_MS);
 }
 

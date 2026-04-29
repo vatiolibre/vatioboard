@@ -42,6 +42,7 @@ function createMemoryStore(initialValues = {}) {
 }
 
 function mockCloudSyncDependencies({
+  getBackendSessionStateImpl,
   pullImpl,
   pullRecords = [UNCHANGED_BOARD_RECORD],
   indexedStore = null,
@@ -109,10 +110,10 @@ function mockCloudSyncDependencies({
         csrfToken: 'csrf-token',
       },
     })),
-    getBackendSessionState: vi.fn(async () => ({
+    getBackendSessionState: vi.fn(getBackendSessionStateImpl || (async () => ({
       ok: true,
       isGuest: false,
-    })),
+    }))),
     getProtectedCloudSyncRequestGate: vi.fn(async () => ({
       allowed: true,
       cleanup: vi.fn(),
@@ -241,6 +242,40 @@ describe('cloud sync idempotence', () => {
       state: 'paused',
       reason: 'pull_cursor_stalled',
     });
+  });
+
+  it('observes scheduled background sync failures without unhandled rejections', async () => {
+    const unhandled = [];
+    const handleUnhandled = (reason) => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', handleUnhandled);
+
+    const sessionError = new TypeError('Failed to fetch');
+    const getBackendSessionStateImpl = vi.fn(async () => {
+      throw sessionError;
+    });
+    mockCloudSyncDependencies({ getBackendSessionStateImpl });
+
+    try {
+      const { getCloudSyncStatus, startCloudSyncLoop, stopCloudSyncLoop } = await importCloudSyncModule();
+      startCloudSyncLoop({ immediate: true });
+
+      for (let index = 0; index < 20; index += 1) {
+        await Promise.resolve();
+      }
+
+      expect(getBackendSessionStateImpl).toHaveBeenCalledTimes(1);
+      expect(getCloudSyncStatus()).toMatchObject({
+        state: 'syncing',
+        reason: 'scheduled',
+        lastFailureMessage: 'Failed to fetch',
+      });
+      expect(unhandled).toHaveLength(0);
+      stopCloudSyncLoop();
+    } finally {
+      process.off('unhandledRejection', handleUnhandled);
+    }
   });
 
   it('uses IndexedDB cursor when fallback localStorage is stale', async () => {

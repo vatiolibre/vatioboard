@@ -228,6 +228,11 @@ function getFetch(fetchImpl) {
   throw new Error("Fetch API is unavailable.");
 }
 
+function observeRequestPromise(promise) {
+  promise?.catch?.(() => {});
+  return promise;
+}
+
 function getMethodUrl(methodName, config) {
   return `${config.apiBase}/api/method/${methodName}`;
 }
@@ -899,6 +904,7 @@ async function loadCachedBackendRequest(cache, loader, {
         cache.promise = null;
       }
     });
+  cache.promise.catch(() => {});
 
   return cloneCachedResult(await waitForAbort(cache.promise, signal));
 }
@@ -1026,13 +1032,13 @@ async function fetchBackendJson(methodName, {
   config = getBackendAuthConfig(),
 } = {}) {
   const request = getFetch(fetchImpl);
-  const response = await request(getMethodUrl(methodName, config), {
+  const response = await observeRequestPromise(request(getMethodUrl(methodName, config), {
     method,
     credentials: "include",
     headers,
     body,
     signal,
-  });
+  }));
 
   return {
     response,
@@ -1064,13 +1070,13 @@ async function fetchBackendMethodJson(methodName, {
     requestHeaders["Content-Type"] = "application/x-www-form-urlencoded";
   }
 
-  const response = await request(requestUrl, {
+  const response = await observeRequestPromise(request(requestUrl, {
     method: upperMethod,
     credentials: "include",
     headers: requestHeaders,
     body: requestBody,
     signal,
-  });
+  }));
 
   return {
     response,
@@ -1206,14 +1212,14 @@ export async function loginToBackend({
   body.set("pwd", String(password || ""));
 
   const request = getFetch(fetchImpl);
-  const response = await request(getMethodUrl("login", config), {
+  const response = await observeRequestPromise(request(getMethodUrl("login", config), {
     method: "POST",
     credentials: "include",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body: body.toString(),
-  });
+  }));
 
   return {
     ok: response.ok,
@@ -1558,11 +1564,11 @@ export async function fetchBackendMediaAssetBlob({
 } = {}) {
   const request = getFetch(fetchImpl);
   const url = buildMethodUrl(STREAM_MEDIA_ASSET_BLOB_METHOD, { name }, config);
-  return request(url, {
+  return observeRequestPromise(request(url, {
     method: "GET",
     credentials: "include",
     signal,
-  });
+  }));
 }
 
 export async function listBackendBoardDocuments({
