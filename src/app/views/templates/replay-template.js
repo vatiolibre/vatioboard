@@ -375,13 +375,6 @@ const replayTemplate = String.raw`
               </div>
 
               <section class="replay-recordings-section">
-                <section class="replay-card-copy">
-                  <span class="replay-card-kicker" data-i18n="replayRecordings">Recordings</span>
-                  <p class="replay-card-lead" data-i18n="replayRecordingsLead">
-                    Pick an active or saved drive to replay.
-                  </p>
-                </section>
-
                 <section
                   id="replayRecordingsList"
                   class="replay-recordings-list"
@@ -391,14 +384,7 @@ const replayTemplate = String.raw`
             </article>
 
             <aside class="replay-side-panel" aria-label="Replay details">
-              <article class="replay-card">
-                <section class="replay-card-copy">
-                  <span class="replay-card-kicker" data-i18n="replaySummary">Summary</span>
-                  <p class="replay-card-lead" data-i18n="replaySummaryLead">
-                    Static trip totals from the recorded drive.
-                  </p>
-                </section>
-
+              <article class="replay-card replay-details-card">
                 <section class="replay-summary-grid" aria-label="Replay summary metrics">
                   <article class="replay-metric">
                     <span class="replay-metric-label" data-i18n="replayRecordedAt">Recorded</span>
@@ -435,15 +421,6 @@ const replayTemplate = String.raw`
                     <strong id="replayAltitudeRangeValue" class="replay-metric-value">—</strong>
                   </article>
                 </section>
-              </article>
-
-              <article class="replay-card">
-                <section class="replay-card-copy">
-                  <span class="replay-card-kicker" data-i18n="replayHighlights">Highlights</span>
-                  <p class="replay-card-lead" data-i18n="replayHighlightsLead">
-                    Fast checkpoints extracted from the recorded drive.
-                  </p>
-                </section>
 
                 <section
                   id="replayHighlightsList"
@@ -475,11 +452,12 @@ const replayTemplate = String.raw`
         <header class="replay-graph-sheet-header">
           <h2
             id="replayGraphSheetTitle"
-            class="replay-graph-sheet-title"
+            class="sr-only"
             data-i18n="replayExploreCharts"
           >
             Explore charts
           </h2>
+          <div class="replay-graph-sheet-grip" aria-hidden="true"></div>
           <section
             class="replay-axis-group replay-sheet-axis-group"
             role="group"
@@ -514,10 +492,13 @@ const replayTemplate = String.raw`
           <button
             id="closeReplayGraphSheet"
             type="button"
-            class="replay-action-btn replay-action-btn-secondary"
-            data-i18n="close"
+            class="replay-graph-sheet-close"
+            data-i18n-aria="close"
+            data-i18n-title="close"
+            aria-label="Close"
+            title="Close"
           >
-            Close
+            <span class="btn-icon" aria-hidden="true"></span>
           </button>
         </header>
 

@@ -63,7 +63,7 @@ describe("accel scroll policy", () => {
     expect(boardCss).toContain("min-height: 0;");
   });
 
-  it("leaves Speed, Replay, and Library scroll policies intact", () => {
+  it("leaves Speed, Replay, and Library scroll policies explicit", () => {
     const speedCss = readStyle("src/styles/speed.less");
     const replayCss = readStyle("src/styles/replay.less");
     const libraryCss = readStyle("src/styles/library.less");
@@ -73,8 +73,10 @@ describe("accel scroll policy", () => {
     expect(speedCss).toContain("touch-action: pan-y;");
 
     expect(replayCss).toContain("html.replay-page,\nbody.replay-page");
-    expect(replayCss).toContain("overflow-y: auto;");
-    expect(replayCss).toContain("touch-action: pan-y pinch-zoom;");
+    expect(replayCss).toContain("overflow: hidden;");
+    expect(replayCss).toContain("overscroll-behavior: none;");
+    expect(replayCss).toContain(".replay-recordings-list{\n    position: relative;");
+    expect(replayCss).toContain("touch-action: pan-y;");
 
     expect(libraryCss).toContain("html.library-page,\nbody.library-page");
     expect(libraryCss).toContain("overflow-y: auto;");

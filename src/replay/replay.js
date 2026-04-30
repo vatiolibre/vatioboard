@@ -7,6 +7,7 @@ import { applyTranslations, getLang, t, toggleLang } from '../i18n.js';
 import {
   IconAccel,
   IconBoard,
+  IconClose,
   IconDistance,
   IconPages,
   IconPause,
@@ -964,6 +965,7 @@ function applyReplayIcons(routeElements = elements) {
       applyButtonIcon(button, IconDistance);
     }
   }
+  applyButtonIcon(routeElements.closeReplayGraphSheet, IconClose);
 }
 
 function createReplayChartRouteControllers(routeElements = elements, routeGraphElements = graphElements) {
