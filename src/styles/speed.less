@@ -2312,6 +2312,130 @@ body.speed-page.alert-panel-open .speed-main{
     }
 }
 
+@media (min-width: 800px) and (max-height: 860px){
+    .speed-main{
+        align-items: stretch;
+        padding-top: 8px;
+        padding-bottom: max(8px, env(safe-area-inset-bottom));
+    }
+
+    .speed-shell{
+        height: 100%;
+        min-height: 0;
+    }
+
+    .speed-stage{
+        height: 100%;
+        min-height: 0;
+        gap: 8px;
+    }
+
+    .gauge-card{
+        --speed-floating-control-offset: 14px;
+        --speed-floating-control-height: 46px;
+        --speed-primary-stage-side-padding: 14px;
+        --speed-primary-stage-bottom-padding: 10px;
+        min-height: 0;
+        border-radius: calc(var(--radius) + 4px);
+    }
+
+    .gauge-card::after{
+        inset: 12px;
+    }
+
+    .speed-view-switch{
+        border-radius: 16px;
+    }
+
+    .speed-view-btn{
+        min-width: 96px;
+        padding: 8px 12px;
+        font-size: 11px;
+    }
+
+    .speed-alert-trigger{
+        min-width: 154px;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 16px;
+    }
+
+    .speed-alert-trigger-icon{
+        width: 26px;
+        height: 26px;
+    }
+
+    .speed-alert-trigger-hint{
+        top: 64px;
+        right: 14px;
+        max-width: 210px;
+        padding: 6px 9px;
+        font-size: 11px;
+    }
+
+    .speed-primary-stage{
+        width: min(100%, 660px, calc(100vh - 120px));
+        width: min(100%, 660px, calc(100svh - 120px));
+    }
+
+    .gauge-card[data-primary-view="waze"] .speed-primary-stage{
+        width: 100%;
+        max-width: none;
+        height: 100%;
+    }
+
+    .speed-side-panel{
+        grid-template-rows: auto minmax(0, 1fr);
+        height: 100%;
+        min-height: 0;
+        gap: 8px;
+        align-content: stretch;
+    }
+
+    .stats-grid{
+        gap: 6px;
+    }
+
+    .metric-card{
+        min-height: 74px;
+        gap: 4px;
+        padding: 9px 10px;
+    }
+
+    .metric-card strong{
+        font-size: clamp(17px, 1.85vw, 24px);
+    }
+
+    .metric-label,
+    .metric-unit{
+        font-size: 10px;
+    }
+
+    .globe-card{
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        gap: 8px;
+        min-height: 0;
+        padding: 9px;
+    }
+
+    .globe-card-header{
+        gap: 3px;
+    }
+
+    .globe-card-kicker,
+    .globe-card-status{
+        font-size: 10px;
+    }
+
+    .speed-globe{
+        height: 100%;
+        min-height: 0;
+        max-height: none;
+        aspect-ratio: auto;
+    }
+}
+
 @media (max-width: 520px), (max-width: 799.98px) and (max-height: 760px){
     .speed-primary-stage{
         width: min(100%, 560px);
