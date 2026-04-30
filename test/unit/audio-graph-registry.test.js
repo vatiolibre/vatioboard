@@ -79,6 +79,48 @@ describe("audio-graph-registry", () => {
       expect(fakeAudioContext.createMediaElementSource).toHaveBeenCalledTimes(1);
     });
 
+    it("shares an in-flight graph creation between concurrent callers", async () => {
+      let resumeContext;
+      fakeAudioContext.state = "suspended";
+      fakeAudioContext.resume = vi.fn(() => new Promise((resolve) => {
+        resumeContext = () => {
+          fakeAudioContext.state = "running";
+          resolve("running");
+        };
+      }));
+
+      const firstAcquire = acquireGraph(mediaElement);
+      const secondAcquire = acquireGraph(mediaElement);
+
+      expect(fakeAudioContext.createMediaElementSource).not.toHaveBeenCalled();
+      resumeContext();
+
+      const [entry1, entry2] = await Promise.all([firstAcquire, secondAcquire]);
+      expect(entry1).toBe(entry2);
+      expect(entry1.refCount).toBe(2);
+      expect(fakeAudioContext.createMediaElementSource).toHaveBeenCalledTimes(1);
+    });
+
+    it("cancels an in-flight graph when the media element is destroyed", async () => {
+      let resumeContext;
+      fakeAudioContext.state = "suspended";
+      fakeAudioContext.resume = vi.fn(() => new Promise((resolve) => {
+        resumeContext = () => {
+          fakeAudioContext.state = "running";
+          resolve("running");
+        };
+      }));
+
+      const pendingAcquire = acquireGraph(mediaElement);
+      expect(destroyGraphForElement(mediaElement)).toBe(true);
+      resumeContext();
+
+      await expect(pendingAcquire).resolves.toBeNull();
+      expect(getGraph(mediaElement)).toBeNull();
+      expect(fakeAudioContext.createMediaElementSource).not.toHaveBeenCalled();
+      expect(fakeAudioContext.close).toHaveBeenCalled();
+    });
+
     it("returns null when createMediaElementSource throws", async () => {
       fakeAudioContext.createMediaElementSource = vi.fn(() => {
         throw new Error("CORS tainted");
@@ -108,12 +150,23 @@ describe("audio-graph-registry", () => {
       expect(getGraph(mediaElement).refCount).toBe(1);
     });
 
-    it("tears down graph when last ref is released", async () => {
-      await acquireGraph(mediaElement);
+    it("keeps an idle graph cached when the last ref is released", async () => {
+      const entry = await acquireGraph(mediaElement);
       releaseGraph(mediaElement);
-      expect(getGraph(mediaElement)).toBeNull();
-      expect(fakeAudioContext.close).toHaveBeenCalled();
-      expect(fakeSourceNode.disconnect).toHaveBeenCalled();
+      expect(getGraph(mediaElement)).toBe(entry);
+      expect(entry.refCount).toBe(0);
+      expect(fakeAudioContext.close).not.toHaveBeenCalled();
+      expect(fakeSourceNode.disconnect).not.toHaveBeenCalled();
+    });
+
+    it("reuses an idle graph without creating another source node", async () => {
+      const entry1 = await acquireGraph(mediaElement);
+      releaseGraph(mediaElement);
+
+      const entry2 = await acquireGraph(mediaElement);
+      expect(entry2).toBe(entry1);
+      expect(entry2.refCount).toBe(1);
+      expect(fakeAudioContext.createMediaElementSource).toHaveBeenCalledTimes(1);
     });
 
     it("disconnects consumer node when provided", async () => {

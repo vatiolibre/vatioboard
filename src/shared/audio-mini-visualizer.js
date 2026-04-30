@@ -1,7 +1,6 @@
 import {
   acquireGraph,
   releaseGraph,
-  getGraph,
   destroyGraphForElement,
 } from "./audio-graph-registry.js";
 
@@ -28,19 +27,6 @@ function createUnavailableController() {
 
 function getAudioContextCtor() {
   return window.AudioContext || window.webkitAudioContext || null;
-}
-
-function teardownGraphEntry(graphEntry) {
-  // Legacy cleanup: disconnect consumers tracked by this module.
-  if (!graphEntry) return;
-  // NOTE: actual AudioContext teardown is now handled by the shared
-  // audio-graph-registry via releaseGraph / destroyGraphForElement.
-  if (graphEntry.analysers instanceof Set) {
-    for (const analyserNode of graphEntry.analysers) {
-      try { analyserNode?.disconnect?.(); } catch { /* ignore */ }
-    }
-    graphEntry.analysers.clear();
-  }
 }
 
 export function destroyVisualizerGraphForElement(mediaElement) {
@@ -238,6 +224,7 @@ export function createMiniAudioVisualizer({ mediaElement, mount, mode = "spectru
   let animationFrameId = 0;
   let modeValue = normalizeMode(mode);
   let graphEntry = null;
+  let analyserPromise = null;
   let analyser = null;
   let frequencyData = null;
   let timeDomainData = null;
@@ -284,42 +271,46 @@ export function createMiniAudioVisualizer({ mediaElement, mount, mode = "spectru
   async function ensureAnalyser() {
     if (destroyed || !available) return false;
     if (analyser) return true;
+    if (analyserPromise) return analyserPromise;
 
-    let currentGraph = getGraph(mediaElement);
-
-    if (!currentGraph) {
-      currentGraph = await acquireGraph(mediaElement);
+    analyserPromise = (async () => {
+      const currentGraph = await acquireGraph(mediaElement);
       if (!currentGraph) {
         markUnavailable();
         return false;
       }
-      // Wrap in legacy shape expected by local code
-      currentGraph.analysers = currentGraph.consumers;
-    } else {
-      // Existing graph — still bump refCount for this consumer
-      currentGraph.refCount = (currentGraph.refCount || 0) + 1;
-      if (currentGraph.audioContext?.state === "suspended") {
-        try { await currentGraph.audioContext.resume(); } catch { markUnavailable(); return false; }
+
+      if (destroyed || !available) {
+        releaseGraph(mediaElement);
+        return false;
       }
+
+      // Wrap in legacy shape expected by local code.
       if (!currentGraph.analysers) currentGraph.analysers = currentGraph.consumers;
-    }
+
+      try {
+        analyser = currentGraph.audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.62;
+        analyser.minDecibels = -88;
+        analyser.maxDecibels = -20;
+        currentGraph.sourceNode.connect(analyser);
+        currentGraph.analysers?.add(analyser);
+        frequencyData = new Uint8Array(analyser.frequencyBinCount);
+        timeDomainData = new Uint8Array(analyser.fftSize);
+        graphEntry = currentGraph;
+        return true;
+      } catch {
+        releaseGraph(mediaElement);
+        markUnavailable();
+        return false;
+      }
+    })();
 
     try {
-      analyser = currentGraph.audioContext.createAnalyser();
-      analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.62;
-      analyser.minDecibels = -88;
-      analyser.maxDecibels = -20;
-      currentGraph.sourceNode.connect(analyser);
-      currentGraph.analysers?.add(analyser);
-      frequencyData = new Uint8Array(analyser.frequencyBinCount);
-      timeDomainData = new Uint8Array(analyser.fftSize);
-      graphEntry = currentGraph;
-      return true;
-    } catch {
-      graphEntry = currentGraph;
-      markUnavailable();
-      return false;
+      return await analyserPromise;
+    } finally {
+      analyserPromise = null;
     }
   }
 
@@ -395,10 +386,12 @@ export function createMiniAudioVisualizer({ mediaElement, mount, mode = "spectru
       if (graphEntry?.consumers) graphEntry.consumers.delete(analyser);
     }
 
-    // Release our ref on the shared graph (tears down when last consumer leaves)
+    // Release our ref on the shared graph; the registry keeps the source
+    // reusable for this media element until the element itself is replaced.
     releaseGraph(mediaElement);
 
     graphEntry = null;
+    analyserPromise = null;
     analyser = null;
     frequencyData = null;
     timeDomainData = null;

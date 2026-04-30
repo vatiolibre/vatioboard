@@ -141,7 +141,7 @@ describe("createMiniAudioVisualizer", () => {
     controller.destroy();
   });
 
-  it("creates a canvas visualizer and cleans up the audio graph on destroy", async () => {
+  it("creates a canvas visualizer and releases its analyser on destroy", async () => {
     const mount = document.createElement("div");
     Object.defineProperty(mount, "getBoundingClientRect", {
       value: () => ({ width: 240, height: 72 }),
@@ -168,13 +168,40 @@ describe("createMiniAudioVisualizer", () => {
     expect(window.cancelAnimationFrame).toHaveBeenCalled();
 
     controller.destroy();
-    expect(fakeSourceNode.disconnect).toHaveBeenCalled();
     expect(fakeAnalyser.disconnect).toHaveBeenCalled();
-    expect(fakeAudioContext.close).toHaveBeenCalled();
+    expect(fakeSourceNode.disconnect).not.toHaveBeenCalled();
+    expect(fakeAudioContext.close).not.toHaveBeenCalled();
     expect(mount.querySelector("canvas")).toBeNull();
+
+    expect(destroyVisualizerGraphForElement(media)).toBe(true);
+    expect(fakeSourceNode.disconnect).toHaveBeenCalled();
+    expect(fakeAudioContext.close).toHaveBeenCalled();
   });
 
-  it("tears down a shared media graph for an element and removes it from reuse", async () => {
+  it("shares one analyser setup when start is called concurrently", async () => {
+    const mount = document.createElement("div");
+    Object.defineProperty(mount, "getBoundingClientRect", {
+      value: () => ({ width: 240, height: 72 }),
+    });
+    document.body.append(mount);
+
+    const media = document.createElement("audio");
+    const controller = createMiniAudioVisualizer({
+      mediaElement: media,
+      mount,
+      mode: "spectrum",
+    });
+
+    await expect(Promise.all([controller.start(), controller.start()]))
+      .resolves.toEqual([true, true]);
+    expect(fakeAudioContext.createMediaElementSource).toHaveBeenCalledTimes(1);
+    expect(fakeAudioContext.createAnalyser).toHaveBeenCalledTimes(1);
+
+    controller.destroy();
+    destroyVisualizerGraphForElement(media);
+  });
+
+  it("force-destroys a shared media graph when the media element is replaced", async () => {
     const mount = document.createElement("div");
     Object.defineProperty(mount, "getBoundingClientRect", {
       value: () => ({ width: 240, height: 72 }),
@@ -203,17 +230,20 @@ describe("createMiniAudioVisualizer", () => {
     });
     document.body.append(secondMount);
 
+    const secondMedia = document.createElement("audio");
     const secondController = createMiniAudioVisualizer({
-      mediaElement: media,
+      mediaElement: secondMedia,
       mount: secondMount,
       mode: "spectrum",
     });
 
     await expect(secondController.start()).resolves.toBe(true);
     expect(fakeAudioContext.createMediaElementSource).toHaveBeenCalledTimes(2);
+    expect(fakeAudioContext.createMediaElementSource).toHaveBeenLastCalledWith(secondMedia);
 
     controller.destroy();
     secondController.destroy();
+    destroyVisualizerGraphForElement(secondMedia);
   });
 
   it("renders 20 stacked spectrum bars with a delayed peak cap", async () => {

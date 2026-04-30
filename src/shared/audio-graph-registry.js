@@ -7,8 +7,9 @@
  * createMediaElementSource() is only called once per element.
  *
  * Consumers register themselves via acquireGraph() and release via
- * releaseGraph().  The graph (AudioContext + source) is torn down only
- * when the last consumer releases.
+ * releaseGraph().  A MediaElementAudioSourceNode cannot be recreated for
+ * the same media element in WebKit, so normal release only marks the graph
+ * idle; force-destroy it when the media element itself is being replaced.
  *
  * iOS Safari requires a user-gesture to transition an AudioContext from
  * "suspended" to "running".  To avoid race conditions where
@@ -22,6 +23,9 @@
 
 /** @type {WeakMap<HTMLMediaElement, GraphEntry>} */
 const MEDIA_GRAPH_BY_ELEMENT = new WeakMap();
+
+/** @type {WeakMap<HTMLMediaElement, { promise: Promise<GraphEntry|null>, cancelled: boolean }>} */
+const MEDIA_GRAPH_CREATION_BY_ELEMENT = new WeakMap();
 
 /**
  * Shared pre-warmed AudioContext.
@@ -50,6 +54,19 @@ let _primedAudioContext = null;
  */
 export function getGraph(mediaElement) {
   return MEDIA_GRAPH_BY_ELEMENT.get(mediaElement) || null;
+}
+
+async function resumeGraphContext(entry) {
+  if (entry?.audioContext?.state === "suspended") {
+    try { await entry.audioContext.resume(); } catch { /* best effort */ }
+  }
+}
+
+async function retainGraph(entry) {
+  if (!entry) return null;
+  entry.refCount += 1;
+  await resumeGraphContext(entry);
+  return entry;
 }
 
 /**
@@ -93,8 +110,9 @@ export function primeAudioContext() {
  * Get or create a shared audio graph for a media element.
  *
  * On first call for an element, creates an AudioContext and
- * MediaElementSourceNode.  Subsequent calls return the same entry
- * and increment refCount.
+ * MediaElementSourceNode.  Concurrent and subsequent calls return the same
+ * entry and increment refCount, ensuring createMediaElementSource() is only
+ * ever attempted once for a given element.
  *
  * @param {HTMLMediaElement} mediaElement
  * @returns {Promise<GraphEntry|null>} null on failure (CORS, no AudioContext, etc.)
@@ -102,55 +120,87 @@ export function primeAudioContext() {
 export async function acquireGraph(mediaElement) {
   const existing = MEDIA_GRAPH_BY_ELEMENT.get(mediaElement);
   if (existing) {
-    existing.refCount += 1;
-    if (existing.audioContext?.state === "suspended") {
-      try { await existing.audioContext.resume(); } catch { /* best effort */ }
-    }
-    return existing;
+    return retainGraph(existing);
+  }
+
+  const pending = MEDIA_GRAPH_CREATION_BY_ELEMENT.get(mediaElement);
+  if (pending) {
+    return retainGraph(await pending.promise);
   }
 
   const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextCtor) return null;
 
-  // Prefer the pre-warmed context (created during a user gesture).
-  const hasPrimedContext = _primedAudioContext && _primedAudioContext.state !== "closed";
-  const audioContext = hasPrimedContext ? _primedAudioContext : new AudioContextCtor();
-  if (hasPrimedContext) {
-    _primedAudioContext = null;  // consumed — next acquireGraph needs a fresh prime
-  }
+  const creationRecord = {
+    cancelled: false,
+    promise: null,
+  };
 
-  try {
-    if (audioContext.state === "suspended") await audioContext.resume();
-  } catch {
-    try { await audioContext.close(); } catch { /* ignore */ }
-    return null;
-  }
-  if (audioContext.state !== "running") {
-    try { await audioContext.close(); } catch { /* ignore */ }
-    return null;
-  }
-
-  let sourceNode;
-  try {
-    sourceNode = audioContext.createMediaElementSource(mediaElement);
-    sourceNode.connect(audioContext.destination);
-  } catch (err) {
-    if (typeof console !== "undefined" && console.warn) {
-      console.warn("[audio-graph-registry] createMediaElementSource failed:", err);
+  const creation = (async () => {
+    // Prefer the pre-warmed context (created during a user gesture).
+    const hasPrimedContext = _primedAudioContext && _primedAudioContext.state !== "closed";
+    const audioContext = hasPrimedContext ? _primedAudioContext : new AudioContextCtor();
+    if (hasPrimedContext) {
+      _primedAudioContext = null;  // consumed — next acquireGraph needs a fresh prime
     }
-    try { await audioContext.close(); } catch { /* ignore */ }
-    return null;
-  }
 
-  /** @type {GraphEntry} */
-  const entry = { audioContext, sourceNode, consumers: new Set(), refCount: 1 };
-  MEDIA_GRAPH_BY_ELEMENT.set(mediaElement, entry);
-  return entry;
+    try {
+      if (audioContext.state === "suspended") await audioContext.resume();
+    } catch {
+      try { await audioContext.close(); } catch { /* ignore */ }
+      return null;
+    }
+    if (audioContext.state !== "running") {
+      try { await audioContext.close(); } catch { /* ignore */ }
+      return null;
+    }
+    if (creationRecord.cancelled) {
+      try { await audioContext.close(); } catch { /* ignore */ }
+      return null;
+    }
+
+    let sourceNode;
+    try {
+      sourceNode = audioContext.createMediaElementSource(mediaElement);
+      sourceNode.connect(audioContext.destination);
+    } catch (err) {
+      if (typeof console !== "undefined" && console.warn) {
+        console.warn("[audio-graph-registry] createMediaElementSource failed:", err);
+      }
+      try { await audioContext.close(); } catch { /* ignore */ }
+      return null;
+    }
+
+    if (creationRecord.cancelled) {
+      try { sourceNode.disconnect(); } catch { /* ignore */ }
+      try { await audioContext.close(); } catch { /* ignore */ }
+      return null;
+    }
+
+    /** @type {GraphEntry} */
+    const entry = { audioContext, sourceNode, consumers: new Set(), refCount: 0 };
+    MEDIA_GRAPH_BY_ELEMENT.set(mediaElement, entry);
+    return entry;
+  })();
+
+  creationRecord.promise = creation;
+  MEDIA_GRAPH_CREATION_BY_ELEMENT.set(mediaElement, creationRecord);
+
+  try {
+    return retainGraph(await creation);
+  } finally {
+    if (MEDIA_GRAPH_CREATION_BY_ELEMENT.get(mediaElement) === creationRecord) {
+      MEDIA_GRAPH_CREATION_BY_ELEMENT.delete(mediaElement);
+    }
+  }
 }
 
 /**
  * Decrement the refCount for a graph entry.  When refCount reaches 0 the
- * AudioContext and source node are torn down and the entry is removed.
+ * source remains cached and connected to the destination because Safari
+ * keeps the media element associated with that source for the element's
+ * lifetime.  Use destroyGraphForElement() when replacing/removing the media
+ * element.
  *
  * @param {HTMLMediaElement} mediaElement
  * @param {AudioNode} [consumerNode] - optional analyser/node to disconnect & remove
@@ -166,18 +216,7 @@ export function releaseGraph(mediaElement, consumerNode) {
 
   entry.refCount = Math.max(0, entry.refCount - 1);
 
-  if (entry.refCount <= 0) {
-    MEDIA_GRAPH_BY_ELEMENT.delete(mediaElement);
-    try { entry.sourceNode?.disconnect(); } catch { /* ignore */ }
-    for (const node of entry.consumers) {
-      try { node.disconnect(); } catch { /* ignore */ }
-    }
-    entry.consumers.clear();
-    try {
-      const p = entry.audioContext?.close?.();
-      p?.catch?.(() => {});
-    } catch { /* ignore */ }
-  }
+  if (entry.refCount <= 0) entry.refCount = 0;
 }
 
 /**
@@ -188,8 +227,14 @@ export function releaseGraph(mediaElement, consumerNode) {
  * @returns {boolean} true if a graph was found and destroyed
  */
 export function destroyGraphForElement(mediaElement) {
+  const pending = MEDIA_GRAPH_CREATION_BY_ELEMENT.get(mediaElement);
+  if (pending) {
+    pending.cancelled = true;
+    MEDIA_GRAPH_CREATION_BY_ELEMENT.delete(mediaElement);
+  }
+
   const entry = MEDIA_GRAPH_BY_ELEMENT.get(mediaElement);
-  if (!entry) return false;
+  if (!entry) return Boolean(pending);
 
   MEDIA_GRAPH_BY_ELEMENT.delete(mediaElement);
   try { entry.sourceNode?.disconnect(); } catch { /* ignore */ }
