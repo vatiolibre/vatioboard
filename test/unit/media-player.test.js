@@ -52,6 +52,8 @@ vi.mock("../../src/i18n.js", () => ({
 
 vi.mock("../../src/shared/audio-mini-visualizer.js", () => ({
   createMiniAudioVisualizer: visualizerMockState.createVisualizerSpy,
+  destroyVisualizerGraphForElement: vi.fn().mockReturnValue(false),
+  resumeVisualizerGraphForElement: vi.fn().mockResolvedValue(false),
 }));
 
 const {

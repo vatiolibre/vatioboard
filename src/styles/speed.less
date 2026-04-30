@@ -1708,6 +1708,7 @@ body.speed-page.alert-panel-open .speed-main{
 }
 
 .speed-globe .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-button{
+    position: relative;
     display: grid;
     place-items: center;
     width: 20px;
@@ -1715,9 +1716,16 @@ body.speed-page.alert-panel-open .speed-main{
     padding: 0;
     border: 0;
     border-radius: 999px;
+    appearance: none;
+    -webkit-appearance: none;
+    list-style: none;
+    overflow: hidden;
     background: color-mix(in srgb, var(--speed-surface-strong) 84%, transparent);
     background-image: none;
     color: color-mix(in srgb, var(--btn-fg) 88%, transparent);
+    font-size: 0;
+    line-height: 0;
+    text-indent: 0;
     box-shadow:
       0 8px 18px rgba(15, 23, 42, 0.18),
       inset 0 0 0 1px color-mix(in srgb, var(--speed-panel-border) 88%, transparent);
@@ -1725,11 +1733,27 @@ body.speed-page.alert-panel-open .speed-main{
     -webkit-backdrop-filter: blur(12px);
 }
 
+.speed-globe .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-button::-webkit-details-marker{
+    display: none;
+}
+
+.speed-globe .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-button::marker{
+    content: "";
+    font-size: 0;
+}
+
 .speed-globe .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-button::before{
     content: "i";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    display: block;
+    width: 1em;
     font-size: 11px;
     font-weight: 800;
     line-height: 1;
+    text-align: center;
+    transform: translate(-50%, -50%);
 }
 
 .speed-globe .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-button:hover{

@@ -20,6 +20,7 @@ import {
 } from "./media-session-adapter.js";
 import {
   primeAudioElement as primeManagedAudioElement,
+  resetAudioElementPlaybackRate,
 } from "./audio-channel-retainer.js";
 import {
   acquireBackgroundAudioLease,
@@ -28,7 +29,10 @@ import {
   releaseBackgroundAudioLease,
 } from "./audio-system.js";
 import { setMainAudioElement } from "./audio-cue.js";
-import { destroyVisualizerGraphForElement } from "./audio-mini-visualizer.js";
+import {
+  destroyVisualizerGraphForElement,
+  resumeVisualizerGraphForElement,
+} from "./audio-mini-visualizer.js";
 import { loadPlayerSession, savePlayerSession } from "./player-session.js";
 
 function isArtworkUrl(ref) {
@@ -158,6 +162,7 @@ function unbindAudioElement(el) {
 function createManagedAudioElement() {
   bindLifecyclePersistence();
   const el = new Audio();
+  resetAudioElementPlaybackRate(el);
   el.preload = "metadata";
   el.playsInline = true;
   // Set crossOrigin early so iOS Safari includes the Origin header on the
@@ -218,10 +223,12 @@ export function primeAudio() {
   if (primeInFlight) return primeInFlight;
 
   const el = getAudio();
+  resetAudioElementPlaybackRate(el);
   if (!el.src) return Promise.resolve(false);
 
   primeInFlight = (async () => {
     try {
+      await resumeVisualizerGraphForElement(el);
       const audioPrimed = await primeManagedAudioElement(el, {
         getResumeTime: () => getCurrentPlaybackTime(),
         beforePlay: () => applyPendingSeek(),
@@ -990,7 +997,9 @@ async function loadTrack(index, { startTime = 0, autoplay = true, suppressAutopl
   // attribute is harmless — the browser skips CORS negotiation.
   el.crossOrigin = "anonymous";
 
+  resetAudioElementPlaybackRate(el);
   el.src = resolved.src;
+  resetAudioElementPlaybackRate(el);
   el.volume = state.muted ? 0 : state.volume;
   el.muted = state.muted;
 
@@ -1012,6 +1021,8 @@ async function loadTrack(index, { startTime = 0, autoplay = true, suppressAutopl
       void armBackgroundModeKeepAlive();
     }
     await primeAudio();
+    resetAudioElementPlaybackRate(el);
+    await resumeVisualizerGraphForElement(el);
     el.play().catch((err) => {
       if (suppressAutoplayError && isAutoplayBlockedError(err)) {
         state.paused = true;
@@ -1133,6 +1144,8 @@ export async function play() {
     applyPendingSeek();
     await primeAudio();
     applyPendingSeek();
+    resetAudioElementPlaybackRate(el);
+    await resumeVisualizerGraphForElement(el);
     el.play().catch((err) => {
       if (err?.name !== "AbortError") {
         state.error = "playback-failed";

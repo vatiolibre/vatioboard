@@ -5,6 +5,7 @@ import {
   releaseGraph,
   getGraph,
   destroyGraphForElement,
+  resumeGraphForElement,
   primeAudioContext,
   _resetPrimedForTesting,
 } from "../../src/shared/audio-graph-registry.js";
@@ -138,6 +139,26 @@ describe("audio-graph-registry", () => {
     it("returns the graph after acquire", async () => {
       await acquireGraph(mediaElement);
       expect(getGraph(mediaElement)).not.toBeNull();
+    });
+  });
+
+  describe("resumeGraphForElement", () => {
+    it("returns false when no graph exists for the element", async () => {
+      await expect(resumeGraphForElement(mediaElement)).resolves.toBe(false);
+    });
+
+    it("resumes an idle graph without changing ownership refs", async () => {
+      const entry = await acquireGraph(mediaElement);
+      releaseGraph(mediaElement);
+      fakeAudioContext.state = "suspended";
+      fakeAudioContext.resume = vi.fn(async () => {
+        fakeAudioContext.state = "running";
+      });
+
+      await expect(resumeGraphForElement(mediaElement)).resolves.toBe(true);
+
+      expect(fakeAudioContext.resume).toHaveBeenCalled();
+      expect(entry.refCount).toBe(0);
     });
   });
 

@@ -9,7 +9,7 @@ function isPromiseLike(value) {
 }
 
 export function createSilentLoopAudioUrl({
-  sampleRate = 22050,
+  sampleRate = 44100,
   durationSeconds = 2,
 } = {}) {
   const sampleCount = sampleRate * durationSeconds;
@@ -39,8 +39,19 @@ export function silenceAudioElement(audio) {
   audio.volume = 0;
 }
 
+export function resetAudioElementPlaybackRate(audio) {
+  if (!audio) return;
+
+  try { audio.defaultPlaybackRate = 1; } catch { /* ignore */ }
+  try { audio.playbackRate = 1; } catch { /* ignore */ }
+  try { audio.preservesPitch = true; } catch { /* ignore */ }
+  try { audio.webkitPreservesPitch = true; } catch { /* ignore */ }
+  try { audio.mozPreservesPitch = true; } catch { /* ignore */ }
+}
+
 export function activateAudioElement(audio, volume = 1) {
   if (!audio) return;
+  resetAudioElementPlaybackRate(audio);
   audio.muted = false;
   audio.volume = volume;
 }
@@ -54,6 +65,7 @@ export async function primeAudioElement(
   } = {},
 ) {
   if (!audio) return false;
+  resetAudioElementPlaybackRate(audio);
   if (!audio.paused) return true;
 
   const previousMuted = audio.muted;
@@ -97,7 +109,7 @@ export async function primeAudioElement(
 }
 
 export function createAudioChannelRetainer({
-  keepAliveSampleRate = 22050,
+  keepAliveSampleRate = 44100,
   keepAliveDurationSeconds = 2,
 } = {}) {
   let keepAliveAudioUrl = createSilentLoopAudioUrl({
@@ -109,6 +121,7 @@ export function createAudioChannelRetainer({
   keepAliveAudio.loop = true;
   keepAliveAudio.preload = "auto";
   keepAliveAudio.playsInline = true;
+  resetAudioElementPlaybackRate(keepAliveAudio);
 
   function stopAudioElementPlayback(audio) {
     if (!audio) return;
@@ -117,6 +130,7 @@ export function createAudioChannelRetainer({
   }
 
   async function ensureKeepAlivePlaying({ shouldContinue = null } = {}) {
+    resetAudioElementPlaybackRate(keepAliveAudio);
     keepAliveAudio.loop = true;
     keepAliveAudio.muted = false;
     keepAliveAudio.volume = 1;
@@ -142,6 +156,7 @@ export function createAudioChannelRetainer({
   async function ensureAudioElementLooping(audio, { shouldContinue = null } = {}) {
     if (!audio) return false;
 
+    resetAudioElementPlaybackRate(audio);
     audio.loop = true;
 
     if (!audio.paused) {

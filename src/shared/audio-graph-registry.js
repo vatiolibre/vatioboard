@@ -70,6 +70,23 @@ async function retainGraph(entry) {
 }
 
 /**
+ * Resume an existing graph for a media element without changing ownership.
+ *
+ * Safari can suspend an idle AudioContext while the MediaElementSourceNode
+ * remains the media element's audio route.  Waking that context before
+ * priming/play keeps routed media from starting through a stale graph.
+ *
+ * @param {HTMLMediaElement} mediaElement
+ * @returns {Promise<boolean>} true when an existing graph is running
+ */
+export async function resumeGraphForElement(mediaElement) {
+  const entry = MEDIA_GRAPH_BY_ELEMENT.get(mediaElement);
+  if (!entry) return false;
+  await resumeGraphContext(entry);
+  return entry.audioContext?.state === "running";
+}
+
+/**
  * Pre-warm a shared AudioContext from a user-gesture handler.
  *
  * Must be called **synchronously** inside a click / tap / keydown handler so

@@ -1024,6 +1024,24 @@ describe("audio-runtime", () => {
     expect(runtime.getState().paused).toBe(true);
   });
 
+  it("normalizes playback speed before resuming the managed audio element", async () => {
+    runtime.setQueue([TRACK_A], { autoplay: false });
+    await vi.waitFor(() => {
+      expect(runtime.getAudioElement()?.src).toBeTruthy();
+    });
+
+    const audio = runtime.getAudioElement();
+    audio.defaultPlaybackRate = 0.65;
+    audio.playbackRate = 0.65;
+    audio.webkitPreservesPitch = false;
+
+    await runtime.play();
+
+    expect(audio.defaultPlaybackRate).toBe(1);
+    expect(audio.playbackRate).toBe(1);
+    expect(audio.webkitPreservesPitch).toBe(true);
+  });
+
   it("subscribe delivers state updates", async () => {
     const listener = vi.fn();
     const unsub = runtime.subscribe(listener);
@@ -1931,6 +1949,7 @@ describe("audio-runtime local-to-remote transitions", () => {
 
     vi.doMock("../../src/shared/audio-mini-visualizer.js", () => ({
       destroyVisualizerGraphForElement,
+      resumeVisualizerGraphForElement: vi.fn().mockResolvedValue(false),
     }));
 
     const runtime = await import("../../src/shared/audio-runtime.js");
@@ -1985,6 +2004,7 @@ describe("audio-runtime local-to-remote transitions", () => {
 
     vi.doMock("../../src/shared/audio-mini-visualizer.js", () => ({
       destroyVisualizerGraphForElement,
+      resumeVisualizerGraphForElement: vi.fn().mockResolvedValue(false),
     }));
 
     const runtime = await import("../../src/shared/audio-runtime.js");
@@ -2031,6 +2051,7 @@ describe("audio-runtime local-to-remote transitions", () => {
 
     vi.doMock("../../src/shared/audio-mini-visualizer.js", () => ({
       destroyVisualizerGraphForElement,
+      resumeVisualizerGraphForElement: vi.fn().mockResolvedValue(false),
     }));
 
     const runtime = await import("../../src/shared/audio-runtime.js");
@@ -2294,6 +2315,7 @@ describe("player-shell", () => {
     vi.doMock("../../src/shared/audio-mini-visualizer.js", () => ({
       createMiniAudioVisualizer: visualizerMockState.createVisualizerSpy,
       destroyVisualizerGraphForElement: vi.fn().mockReturnValue(false),
+      resumeVisualizerGraphForElement: vi.fn().mockResolvedValue(false),
     }));
 
     loadMilkdropPanelVisibilityMock = vi.fn(() => false);
@@ -2833,6 +2855,7 @@ describe("audio-runtime auto-skip resilience", () => {
     }));
     vi.doMock("../../src/shared/audio-mini-visualizer.js", () => ({
       destroyVisualizerGraphForElement: vi.fn().mockReturnValue(false),
+      resumeVisualizerGraphForElement: vi.fn().mockResolvedValue(false),
     }));
 
     const runtime = await import("../../src/shared/audio-runtime.js");
@@ -2905,6 +2928,7 @@ describe("player-shell queue remove action", () => {
         stop: vi.fn(), destroy: vi.fn(),
       })),
       destroyVisualizerGraphForElement: vi.fn().mockReturnValue(false),
+      resumeVisualizerGraphForElement: vi.fn().mockResolvedValue(false),
     }));
 
     const mod = await import("../../src/player/player-shell.js");
@@ -3022,6 +3046,7 @@ describe("player-shell library sheet", () => {
         stop: vi.fn(), destroy: vi.fn(),
       })),
       destroyVisualizerGraphForElement: vi.fn().mockReturnValue(false),
+      resumeVisualizerGraphForElement: vi.fn().mockResolvedValue(false),
     }));
 
     const mod = await import("../../src/player/player-shell.js");
@@ -3208,6 +3233,7 @@ describe("player-shell save queue as playlist", () => {
         stop: vi.fn(), destroy: vi.fn(),
       })),
       destroyVisualizerGraphForElement: vi.fn().mockReturnValue(false),
+      resumeVisualizerGraphForElement: vi.fn().mockResolvedValue(false),
     }));
 
     const mod = await import("../../src/player/player-shell.js");
@@ -3552,6 +3578,7 @@ describe("player-shell playlist track actions", () => {
         stop: vi.fn(), destroy: vi.fn(),
       })),
       destroyVisualizerGraphForElement: vi.fn().mockReturnValue(false),
+      resumeVisualizerGraphForElement: vi.fn().mockResolvedValue(false),
     }));
     vi.doMock("../../src/shared/playlist-loader.js", () => playlistLoaderMock);
     vi.doMock("../../src/shared/audio-source-resolver.js", () => ({
@@ -3876,6 +3903,7 @@ describe("player-shell local (demo) playlist", () => {
         stop: vi.fn(), destroy: vi.fn(),
       })),
       destroyVisualizerGraphForElement: vi.fn().mockReturnValue(false),
+      resumeVisualizerGraphForElement: vi.fn().mockResolvedValue(false),
     }));
     vi.doMock("../../src/shared/playlist-loader.js", () => ({
       loadPlaylists: vi.fn().mockResolvedValue({ playlists: [], total: 0 }),

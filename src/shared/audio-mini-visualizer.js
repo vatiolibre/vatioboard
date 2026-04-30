@@ -2,6 +2,7 @@ import {
   acquireGraph,
   releaseGraph,
   destroyGraphForElement,
+  resumeGraphForElement,
 } from "./audio-graph-registry.js";
 
 const VALID_MODES = new Set(["spectrum", "scope", "off"]);
@@ -34,6 +35,13 @@ export function destroyVisualizerGraphForElement(mediaElement) {
     return false;
   }
   return destroyGraphForElement(mediaElement);
+}
+
+export function resumeVisualizerGraphForElement(mediaElement) {
+  if (!mediaElement || (typeof mediaElement !== "object" && typeof mediaElement !== "function")) {
+    return Promise.resolve(false);
+  }
+  return resumeGraphForElement(mediaElement);
 }
 
 function readVisualizerPalette(target) {
