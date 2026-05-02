@@ -28,12 +28,12 @@ function createFakeIndexedDb({ shouldFailPut = () => false } = {}) {
   let putCounter = 0;
   let failPut = shouldFailPut;
 
-  function createRequest(executor) {
-    const request = {
-      result: undefined,
-      error: null,
-      onsuccess: null,
-      onerror: null,
+function createRequest(transaction, executor) {
+  const request = {
+    result: undefined,
+    error: null,
+    onsuccess: null,
+    onerror: null,
     };
 
     queueMicrotask(() => {
@@ -42,15 +42,26 @@ function createFakeIndexedDb({ shouldFailPut = () => false } = {}) {
           resolve(value) {
             request.result = cloneJson(value);
             request.onsuccess?.({ target: request });
+            queueMicrotask(() => {
+              transaction.oncomplete?.({ target: transaction });
+            });
           },
           reject(error) {
             request.error = error;
             request.onerror?.({ target: request });
+            queueMicrotask(() => {
+              transaction.error = error;
+              transaction.onabort?.({ target: transaction });
+            });
           },
         });
       } catch (error) {
         request.error = error;
         request.onerror?.({ target: request });
+        queueMicrotask(() => {
+          transaction.error = error;
+          transaction.onabort?.({ target: transaction });
+        });
       }
     });
 
@@ -70,16 +81,17 @@ function createFakeIndexedDb({ shouldFailPut = () => false } = {}) {
     transaction() {
       const transaction = {
         onabort: null,
+        oncomplete: null,
         error: null,
         objectStore() {
           return {
             get(key) {
-              return createRequest(({ resolve }) => {
+              return createRequest(transaction, ({ resolve }) => {
                 resolve(records.has(key) ? records.get(key) : undefined);
               });
             },
             put(value, key) {
-              return createRequest(({ resolve, reject }) => {
+              return createRequest(transaction, ({ resolve, reject }) => {
                 putCounter += 1;
                 if (failPut(key, cloneJson(value), putCounter)) {
                   const error = new Error(`Failed to store ${key}`);
@@ -93,7 +105,7 @@ function createFakeIndexedDb({ shouldFailPut = () => false } = {}) {
               });
             },
             delete(key) {
-              return createRequest(({ resolve }) => {
+              return createRequest(transaction, ({ resolve }) => {
                 records.delete(key);
                 resolve(undefined);
               });
@@ -351,5 +363,66 @@ describe("board storage", () => {
       });
       vi.resetModules();
     }
+  });
+
+  it("stores current cloud document metadata and consumes pending opens once", async () => {
+    const boardStorage = await import("../../src/board/storage.js");
+
+    boardStorage.saveCurrentBoardDocumentMeta({
+      name: "BOARD-DOC-1",
+      title: "Skidpad",
+      updatedAtMs: 1712163600000,
+    });
+
+    expect(boardStorage.loadCurrentBoardDocumentMeta()).toEqual({
+      name: "BOARD-DOC-1",
+      title: "Skidpad",
+      updatedAtMs: 1712163600000,
+    });
+
+    boardStorage.queuePendingBoardDocumentOpen({
+      document: {
+        name: "BOARD-DOC-1",
+        title: "Skidpad",
+      },
+      payload: {
+        updatedAtMs: 1712163600000,
+        commands: [
+          {
+            type: "stroke",
+            tool: "pen",
+            size: 6,
+            inkRaw: "#111827",
+            points: [createPoint(1, 2), createPoint(1.5, 2.5)],
+          },
+        ],
+        redoCommands: [],
+      },
+    });
+
+    expect(boardStorage.consumePendingBoardDocumentOpen()).toEqual({
+      document: {
+        name: "BOARD-DOC-1",
+        title: "Skidpad",
+      },
+      payload: {
+        version: boardStorage.BOARD_SCHEMA_VERSION,
+        updatedAtMs: 1712163600000,
+        commands: [
+          {
+            type: "stroke",
+            tool: "pen",
+            size: 6,
+            inkRaw: "#111827",
+            points: [createPoint(1, 2), createPoint(1.5, 2.5)],
+          },
+        ],
+        redoCommands: [],
+      },
+    });
+    expect(boardStorage.consumePendingBoardDocumentOpen()).toBeNull();
+
+    boardStorage.clearCurrentBoardDocumentMeta();
+    expect(boardStorage.loadCurrentBoardDocumentMeta()).toBeNull();
   });
 });

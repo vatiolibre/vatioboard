@@ -1,4 +1,3 @@
-import Chart from "chart.js/auto";
 import {
   buildReplayMetricSeries,
   formatReplayDistanceValue,
@@ -56,6 +55,7 @@ function normalizeHeadingTickValue(value) {
 }
 
 export function createReplayChartsController({
+  Chart,
   elements,
   getSpeedUnit,
   getDistanceUnit,

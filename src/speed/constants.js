@@ -8,12 +8,12 @@ export const STORAGE_TRAP_ALERT_ENABLED_KEY = "vatio_speed_trap_alert_enabled";
 export const STORAGE_TRAP_ALERT_DISTANCE_KEY = "vatio_speed_trap_alert_distance_m";
 export const STORAGE_TRAP_SOUND_ENABLED_KEY = "vatio_speed_trap_sound_enabled";
 export const STORAGE_AUDIO_MUTED_KEY = "vatio_speed_audio_muted";
-export const STORAGE_BACKGROUND_AUDIO_ENABLED_KEY = "vatio_speed_background_audio_enabled";
 export const STORAGE_ALERT_TRIGGER_DISCOVERED_KEY = "vatio_speed_alert_trigger_discovered";
 export const STORAGE_PRIMARY_VIEW_KEY = "vatio_speed_primary_view";
 
 export const OVERSPEED_SOUND_URL = "/audio/overspeed_notification.m4a";
 export const TRAP_SOUND_URL = "/audio/near_camera_notification.m4a";
+export const START_RECORDING_SOUND_URL = "/audio/start_recording.m4a";
 export const TRAP_DATA_URL = "/geo/ansv_cameras_compact.min.json";
 export const TRAP_INDEX_URL = "/geo/ansv_cameras_compact.kdbush";
 

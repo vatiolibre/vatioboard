@@ -21,6 +21,13 @@ describe("calculator.html smoke", () => {
     const input = panel.querySelector(".calc-expr");
 
     expect(panel.hidden).toBe(false);
+    expect(panel.querySelector(".calc-title")).toBeNull();
+    expect(panel.querySelector(".calc-header-grip")).toBeTruthy();
+    expect(panel.querySelector(".calc-close svg")).toBeTruthy();
+    expect(
+      Array.from(panel.querySelectorAll(".calc-utility-btn-label")).map((node) => node.textContent.trim()),
+    ).toEqual(["History", "Settings"]);
+    expect(panel.querySelector(".calc-energy-btn")).toBeNull();
 
     input.value = "2+2";
     input.dispatchEvent(new Event("input", { bubbles: true }));

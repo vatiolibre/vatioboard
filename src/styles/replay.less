@@ -48,16 +48,14 @@
 
 html.replay-page,
 body.replay-page{
+    height: 100%;
     min-height: 100%;
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior-y: auto;
-    -webkit-overflow-scrolling: touch;
-    touch-action: pan-y pinch-zoom;
+    overflow: hidden;
+    overscroll-behavior: none;
 }
 
-html.replay-page *,
-body.replay-page *{
+.replay-app,
+.replay-app *{
     touch-action: auto;
 }
 
@@ -79,9 +77,25 @@ body.replay-page.replay-graph-sheet-open{
     overflow: hidden;
 }
 
+body.replay-page .vb-floating-drag-handle,
+body.replay-page .floating-dock,
+body.replay-page .milkdrop-resize-handle{
+    touch-action: none;
+}
+
+body.replay-page #app,
+body.replay-page #app-view,
+body.replay-page .replay-app{
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+}
+
 .replay-app{
-    min-height: 100vh;
-    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
 }
 
 .replay-page header{
@@ -291,14 +305,17 @@ body.replay-page.replay-graph-sheet-open{
 }
 
 .replay-main{
-    flex: 1;
+    flex: 1 1 auto;
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding-top: clamp(10px, 1.2vw, 16px);
+    gap: 10px;
+    min-height: 0;
+    overflow: hidden;
+    overscroll-behavior: contain;
+    padding-top: clamp(8px, 1vw, 12px);
     padding-left: max(12px, env(safe-area-inset-left));
     padding-right: max(12px, env(safe-area-inset-right));
-    padding-bottom: max(18px, env(safe-area-inset-bottom));
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
 }
 
 .replay-main > *{
@@ -362,22 +379,6 @@ body.replay-page.replay-graph-sheet-open{
     line-height: 1.5;
 }
 
-.replay-card-copy{
-    position: relative;
-    z-index: 1;
-    padding: 18px 18px 4px;
-}
-
-.replay-card-copy{
-    display: grid;
-    gap: 8px;
-    min-width: 0;
-}
-
-.replay-card-copy .replay-card-lead{
-    margin: 0;
-}
-
 .replay-empty-card{
     display: grid;
     justify-items: start;
@@ -387,8 +388,13 @@ body.replay-page.replay-graph-sheet-open{
 
 .replay-shell{
     width: 100%;
+    flex: 1 1 auto;
+    height: 100%;
+    min-height: 0;
     display: grid;
-    gap: 12px;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 10px;
+    overflow: hidden;
 }
 
 .replay-graphs-card{
@@ -408,34 +414,47 @@ body.replay-page.replay-graph-sheet-open{
 .replay-stage{
     display: grid;
     grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
-    gap: 14px;
-    align-items: start;
+    gap: 10px;
+    align-items: stretch;
+    min-height: 0;
+    overflow: hidden;
 }
 
 .replay-side-panel{
     display: grid;
-    gap: 14px;
+    grid-template-rows: minmax(0, 1fr);
+    min-height: 0;
+    overflow: hidden;
+}
+
+.replay-details-card{
+    min-height: 0;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
 }
 
 .replay-map-card{
     display: grid;
-    gap: 14px;
-    padding-bottom: 18px;
+    grid-template-rows: minmax(0, 1fr) auto minmax(0, clamp(132px, 20vh, 230px));
+    gap: 10px;
+    min-height: 0;
+    overflow: hidden;
+    padding-bottom: 0;
 }
 
 .replay-recordings-section{
     display: grid;
+    grid-template-rows: minmax(0, 1fr);
     gap: 0;
+    min-height: 0;
+    overflow: hidden;
     border-top: 1px solid color-mix(in srgb, var(--replay-border) 46%, transparent);
-}
-
-.replay-recordings-section .replay-card-copy{
-    padding-top: 14px;
 }
 
 .replay-map{
     position: relative;
-    min-height: 480px;
+    min-height: 0;
+    height: 100%;
     width: 100%;
     margin: 0;
     border-radius: 0;
@@ -466,7 +485,7 @@ body.replay-page.replay-graph-sheet-open{
     grid-template-columns: minmax(0, 1fr);
     gap: 0;
     align-items: center;
-    padding: 0 18px;
+    padding: 0 14px;
 }
 
 .replay-action-btn{
@@ -531,7 +550,7 @@ body.replay-page.replay-graph-sheet-open{
 .replay-progress-wrap{
     display: grid;
     align-items: stretch;
-    gap: 4px;
+    gap: 3px;
     min-width: 0;
     padding: 0;
     border: 0;
@@ -549,7 +568,7 @@ body.replay-page.replay-graph-sheet-open{
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: 8px;
     min-width: 0;
 }
 
@@ -605,26 +624,26 @@ body.replay-page.replay-graph-sheet-open{
     position: relative;
     z-index: 1;
     display: grid;
-    gap: 8px;
-    padding: 18px;
+    gap: 4px 10px;
+    min-height: 0;
+    padding: 10px 14px 8px;
+    border-bottom: 1px solid color-mix(in srgb, var(--replay-border) 46%, transparent);
 }
 
 .replay-summary-grid{
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px 12px;
-    padding-top: 14px;
 }
 
 .replay-metric{
     display: grid;
-    gap: 6px;
+    gap: 4px;
     min-width: 0;
     padding: 14px 16px;
     border: 0;
 }
 
 .replay-metric{
-    padding: 10px 2px;
+    padding: 7px 2px;
     border-radius: 0;
     background: none;
     box-shadow: none;
@@ -654,9 +673,15 @@ body.replay-page.replay-graph-sheet-open{
     position: relative;
     z-index: 1;
     display: grid;
-    gap: 0;
-    padding: 18px;
-    padding-top: 14px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-content: start;
+    gap: 0 14px;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    padding: 8px 14px 10px;
 }
 
 .replay-recordings-list{
@@ -664,13 +689,18 @@ body.replay-page.replay-graph-sheet-open{
     z-index: 1;
     display: grid;
     gap: 6px;
-    padding: 18px;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    padding: 10px 14px;
 }
 
 .replay-recording-item{
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px;
+    gap: 6px;
     align-items: center;
 }
 
@@ -678,9 +708,9 @@ body.replay-page.replay-graph-sheet-open{
     appearance: none;
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, clamp(14ch, 38vw, 30ch));
-    gap: 2px 10px;
+    gap: 2px 8px;
     width: 100%;
-    padding: 10px 12px;
+    padding: 8px 10px;
     border: 1px solid var(--replay-border);
     border-radius: calc(var(--radius-sm) + 2px);
     background: color-mix(in srgb, var(--replay-surface-muted) 92%, transparent);
@@ -714,7 +744,7 @@ body.replay-page.replay-graph-sheet-open{
     align-self: center;
     appearance: none;
     min-width: 68px;
-    min-height: 34px;
+    min-height: 32px;
     padding: 0 10px;
     border: 1px solid color-mix(in srgb, #ef4444 28%, var(--replay-border));
     border-radius: calc(var(--radius-sm) + 2px);
@@ -803,15 +833,19 @@ body.replay-page.replay-graph-sheet-open{
 
 .replay-highlight{
     display: grid;
-    gap: 6px;
-    padding: 14px 2px;
+    gap: 4px;
+    padding: 9px 2px;
     border: 0;
     border-radius: 0;
     background: none;
 }
 
-.replay-highlight + .replay-highlight{
+.replay-highlight:nth-child(n + 3){
     border-top: 1px solid color-mix(in srgb, var(--replay-border) 46%, transparent);
+}
+
+.replay-highlight:only-child{
+    grid-column: 1 / -1;
 }
 
 .replay-highlight-label{
@@ -901,7 +935,7 @@ body.replay-page.replay-graph-sheet-open{
 .replay-graph-canvas{
     display: block;
     width: 100% !important;
-    height: 250px !important;
+    height: clamp(80px, 11vh, 136px) !important;
 }
 
 .replay-graph-sheet{
@@ -927,12 +961,12 @@ body.replay-page.replay-graph-sheet-open{
     z-index: 1;
     display: grid;
     grid-template-rows: auto auto minmax(0, 1fr) auto;
-    gap: 14px;
-    width: min(100%, 1080px);
+    gap: 12px;
+    width: min(100%, 1120px);
     margin: 0 auto;
-    padding: 16px;
+    padding: 0 14px 14px;
     border: 1px solid color-mix(in srgb, var(--replay-border) 92%, transparent);
-    border-radius: calc(var(--radius) + 10px);
+    border-radius: calc(var(--radius) + 12px);
     background:
       linear-gradient(
         180deg,
@@ -947,24 +981,90 @@ body.replay-page.replay-graph-sheet-open{
 }
 
 .replay-graph-sheet-header{
-    display: flex;
+    position: relative;
+    display: grid;
+    justify-items: center;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding-bottom: 2px;
-    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 58px;
+    margin: 0 -14px;
+    padding: 8px 56px 10px;
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--replay-surface-strong) 96%, #ffffff 4%) 0%,
+        color-mix(in srgb, var(--replay-surface) 92%, var(--btn-bg) 8%) 58%,
+        color-mix(in srgb, var(--replay-surface) 100%, transparent) 100%
+      );
 }
 
-.replay-graph-sheet-header .replay-action-btn{
-    align-self: center;
-    margin-left: auto;
+.replay-graph-sheet-header::after{
+    content: "";
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    bottom: -12px;
+    height: 18px;
+    pointer-events: none;
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--replay-surface) 72%, var(--btn-bg) 28%) 0%,
+        color-mix(in srgb, var(--replay-surface) 92%, transparent) 58%,
+        transparent 100%
+      );
 }
 
-.replay-graph-sheet-title{
-    margin: 0;
-    font-size: clamp(22px, 2.4vw, 30px);
-    line-height: 1.04;
-    letter-spacing: -0.04em;
+.replay-graph-sheet-grip{
+    width: 40px;
+    height: 4px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--replay-muted) 36%, transparent);
+}
+
+.replay-graph-sheet-close{
+    appearance: none;
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    z-index: 3;
+    width: 34px;
+    min-height: 34px;
+    padding: 0;
+    border: 1px solid color-mix(in srgb, var(--replay-border) 96%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--replay-surface) 68%, transparent);
+    color: color-mix(in srgb, var(--replay-muted) 76%, var(--btn-fg) 24%);
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14);
+    opacity: 0.84;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    transition:
+      background 0.16s ease,
+      color 0.16s ease,
+      border-color 0.16s ease,
+      box-shadow 0.18s ease,
+      opacity 0.16s ease;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.replay-graph-sheet-close:hover{
+    background: color-mix(in srgb, var(--replay-surface) 82%, var(--btn-hover-bg) 18%);
+    color: var(--btn-fg);
+    opacity: 1;
+}
+
+.replay-graph-sheet-close:focus-visible{
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--replay-accent) 20%, transparent);
+}
+
+.replay-graph-sheet-close svg{
+    width: 16px;
+    height: 16px;
 }
 
 .replay-graph-sheet-controls{
@@ -1137,15 +1237,48 @@ body.replay-page.replay-graph-sheet-open{
 
 @media (max-width: 1080px){
     .replay-stage{
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr) minmax(270px, 0.82fr);
+        gap: 10px;
     }
 
-    .replay-map{
-        min-height: 420px;
+    .replay-map-card{
+        gap: 10px;
+        grid-template-rows: minmax(0, 1fr) auto minmax(0, clamp(124px, 19vh, 196px));
     }
 
     .replay-graphs-grid{
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .replay-graph-canvas{
+        height: clamp(66px, 9vh, 104px) !important;
+    }
+
+    .replay-side-panel{
+        gap: 0;
+    }
+}
+
+@media (max-width: 799.98px){
+    html.replay-page,
+    body.replay-page{
+        height: 100%;
+        min-height: 100%;
+        overflow: hidden;
+        overscroll-behavior: none;
+    }
+
+    body.replay-page #app,
+    body.replay-page #app-view,
+    body.replay-page .replay-app{
+        height: 100vh;
+        height: 100dvh;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .replay-main{
+        overflow: hidden;
     }
 }
 
@@ -1168,8 +1301,37 @@ body.replay-page.replay-graph-sheet-open{
         margin-left: 0;
     }
 
+    .replay-main{
+        gap: 8px;
+        padding-top: 8px;
+        padding-bottom: max(8px, env(safe-area-inset-bottom));
+    }
+
+    .replay-shell{
+        gap: 8px;
+    }
+
+    .replay-stage{
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr) minmax(0, clamp(300px, 38vh, 330px));
+        gap: 8px;
+    }
+
+    .replay-side-panel{
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr);
+    }
+
+    .replay-map-card{
+        gap: 8px;
+        grid-template-rows: minmax(150px, 1fr) auto minmax(82px, 12vh);
+    }
+
     .replay-summary-grid{
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 4px 8px;
+        padding-top: 8px;
+        padding-bottom: 8px;
     }
 
     .replay-toolbar{
@@ -1195,36 +1357,87 @@ body.replay-page.replay-graph-sheet-open{
         display: none;
     }
 
-    .replay-map{
-        min-height: 360px;
-    }
-
     .replay-transport-row{
-        gap: 10px;
-        padding-left: 14px;
-        padding-right: 14px;
+        padding-left: 12px;
+        padding-right: 12px;
     }
 
     .replay-progress-meta{
-        flex-wrap: wrap;
+        gap: 6px;
     }
 
     .replay-rate-group{
         margin-left: 0;
     }
 
-    .replay-card-copy,
     .replay-summary-grid,
     .replay-highlights-list,
     .replay-recordings-list{
-        padding-left: 14px;
-        padding-right: 14px;
+        padding-left: 12px;
+        padding-right: 12px;
+    }
+
+    .replay-metric{
+        gap: 3px;
+        padding: 5px 0;
+    }
+
+    .replay-metric-wide{
+        grid-column: auto;
+    }
+
+    .replay-metric-label{
+        font-size: 9px;
+    }
+
+    .replay-metric-value{
+        font-size: clamp(12px, 3.3vw, 15px);
+    }
+
+    .replay-highlight{
+        gap: 3px;
+        padding: 7px 0;
+    }
+
+    .replay-highlight-label,
+    .replay-highlight-detail{
+        font-size: 10px;
+    }
+
+    .replay-highlight-value{
+        font-size: 13px;
+    }
+
+    .replay-recording-item{
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .replay-recording-btn{
+        grid-template-columns: minmax(0, 1fr);
+        padding: 8px 10px;
+    }
+
+    .replay-recording-delete{
+        width: 100%;
+        min-height: 30px;
+    }
+
+    .replay-recording-detail{
+        justify-self: start;
     }
 
     .replay-graphs-grid{
         padding-left: 0;
         padding-right: 0;
-        gap: 6px;
+        gap: 4px;
+    }
+
+    .replay-graph-current{
+        font-size: 12px;
+    }
+
+    .replay-graph-canvas{
+        height: clamp(50px, 7vh, 76px) !important;
     }
 
     .replay-graph-sheet{
@@ -1233,16 +1446,15 @@ body.replay-page.replay-graph-sheet-open{
 
     .replay-graph-sheet-panel{
         gap: 10px;
-        padding: 14px;
+        padding: 0 12px 12px;
         border-radius: calc(var(--radius) + 6px);
     }
 
     .replay-graph-sheet-header{
-        align-items: stretch;
-    }
-
-    .replay-graph-sheet-header .replay-action-btn{
-        margin-left: 0;
+        margin-left: -12px;
+        margin-right: -12px;
+        padding-left: 48px;
+        padding-right: 48px;
     }
 
     .replay-sheet-axis-group .replay-axis-btn{
@@ -1272,5 +1484,49 @@ body.replay-page.replay-graph-sheet-open{
 
     .replay-expanded-graph-canvas{
         height: clamp(164px, 22vh, 210px) !important;
+    }
+}
+
+@media (max-height: 720px){
+    .replay-main{
+        gap: 8px;
+        padding-top: 8px;
+        padding-bottom: max(8px, env(safe-area-inset-bottom));
+    }
+
+    .replay-shell,
+    .replay-stage,
+    .replay-map-card{
+        gap: 8px;
+    }
+
+    .replay-map-card{
+        grid-template-rows: minmax(0, 1fr) auto minmax(0, clamp(118px, 22vh, 176px));
+    }
+
+    .replay-summary-grid,
+    .replay-highlights-list,
+    .replay-recordings-list{
+        padding-top: 8px;
+        padding-bottom: 8px;
+    }
+
+    .replay-metric{
+        gap: 3px;
+        padding: 5px 0;
+    }
+
+    .replay-highlight{
+        gap: 3px;
+        padding: 7px 0;
+    }
+
+    .replay-graph-canvas{
+        height: clamp(48px, 8vh, 84px) !important;
+    }
+
+    .replay-rate-btn{
+        min-width: 34px;
+        padding: 0 5px;
     }
 }

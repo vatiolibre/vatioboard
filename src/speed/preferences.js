@@ -17,7 +17,6 @@ import {
   STORAGE_ALERT_SOUND_ENABLED_KEY,
   STORAGE_ALERT_TRIGGER_DISCOVERED_KEY,
   STORAGE_AUDIO_MUTED_KEY,
-  STORAGE_BACKGROUND_AUDIO_ENABLED_KEY,
   STORAGE_DISTANCE_UNIT_KEY,
   STORAGE_PRIMARY_VIEW_KEY,
   STORAGE_TRAP_ALERT_DISTANCE_KEY,
@@ -89,14 +88,6 @@ export function loadAudioMutedPreference() {
 
 export function saveAudioMutedPreference(muted) {
   saveBoolean(STORAGE_AUDIO_MUTED_KEY, muted);
-}
-
-export function loadBackgroundAudioEnabledPreference() {
-  return loadBoolean(STORAGE_BACKGROUND_AUDIO_ENABLED_KEY, false);
-}
-
-export function saveBackgroundAudioEnabledPreference(enabled) {
-  saveBoolean(STORAGE_BACKGROUND_AUDIO_ENABLED_KEY, enabled);
 }
 
 export function getTrapAlertPresets(unit) {
@@ -171,28 +162,10 @@ export function loadInitialPreferences() {
     alertLimitMs: loadAlertLimitPreference(),
     alertSoundEnabled: loadAlertSoundEnabledPreference(),
     audioMuted: loadAudioMutedPreference(),
-    backgroundAudioEnabled: loadBackgroundAudioEnabledPreference(),
     trapAlertEnabled: loadTrapAlertEnabledPreference(),
     trapAlertDistanceM: loadTrapAlertDistancePreference(distanceUnit),
     trapSoundEnabled: loadTrapSoundEnabledPreference(),
     alertTriggerDiscovered: loadAlertTriggerDiscoveredPreference(),
-  };
-}
-
-export function normalizeInitialAudioPreferences(preferences) {
-  if (!preferences.audioMuted || !preferences.backgroundAudioEnabled) {
-    return {
-      preferences,
-      changed: false,
-    };
-  }
-
-  return {
-    preferences: {
-      ...preferences,
-      backgroundAudioEnabled: false,
-    },
-    changed: true,
   };
 }
 

@@ -1,0 +1,927 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { emitGeolocationSuccess, getBrowserMocks } from '../helpers/browser-mocks.js';
+import { bootHtmlPage, expectPageSeo, flushTasks } from '../helpers/page-smoke.js';
+
+const archiveReplaySessionSpy = vi.fn();
+const reversePlaceSpy = vi.fn(async () => ({ place: null, data: null, meta: null }));
+const saveActiveReplaySessionSpy = vi.fn();
+
+async function settleAsyncWork(iterations = 20) {
+  for (let index = 0; index < iterations; index += 1) {
+    await flushTasks();
+  }
+}
+
+function createActiveSubscriberFetch() {
+  return vi.fn(async (input) => {
+    const url = typeof input === 'string' ? input : String(input?.url ?? '');
+
+    if (url.endsWith('.json')) {
+      return new Response(JSON.stringify({ traps: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (url.endsWith('.kdbush')) {
+      return new Response('', { status: 404 });
+    }
+
+    if (url.includes('vatiolibre.services.tesla_connection_status')) {
+      return new Response(JSON.stringify({ message: { is_guest: false } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (url.includes('frappe.auth.get_logged_user')) {
+      return new Response(JSON.stringify({ message: 'Administrator' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (url.includes('vatiolibre.vatiolibre.feature_access.get_my_feature_access')) {
+      return new Response(JSON.stringify({
+        message: {
+          csrf_token: 'csrf-token',
+          has_active_subscription: true,
+          features: {
+            cloud_sync: {
+              enabled: true,
+              reason: '',
+            },
+          },
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_changes')) {
+      return new Response(JSON.stringify({
+        message: {
+          records: [],
+          has_more: false,
+          next_cursor: '',
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    return new Response('{}', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  });
+}
+
+function getCloudSyncLoginButton() {
+  return Array.from(document.querySelectorAll('.cloud-sync-indicator-action'))
+    .find((button) => !button.classList.contains('cloud-sync-indicator-close'));
+}
+
+vi.mock('../../src/shared/analog-speedometer.js', () => ({
+  createAnalogSpeedometer: () => ({
+    render: vi.fn(),
+    resize: vi.fn(),
+    destroy: vi.fn(),
+  }),
+}));
+
+vi.mock('../../src/shared/place-resolver.js', async () => {
+  const actual = await vi.importActual('../../src/shared/place-resolver.js');
+  return {
+    ...actual,
+    createPlaceResolver: () => ({
+      reversePlace: reversePlaceSpy,
+      reverseCountry: vi.fn(async () => ({ place: null, data: null, meta: null, countryCode: '' })),
+    }),
+  };
+});
+
+vi.mock('../../src/replay/session.js', async () => {
+  const actual = await vi.importActual('../../src/replay/session.js');
+  archiveReplaySessionSpy.mockImplementation(actual.archiveReplaySession);
+  saveActiveReplaySessionSpy.mockImplementation(actual.saveActiveReplaySession);
+  return {
+    ...actual,
+    archiveReplaySession: archiveReplaySessionSpy,
+    saveActiveReplaySession: saveActiveReplaySessionSpy,
+  };
+});
+
+vi.mock('maplibre-gl', () => {
+  class FakeMap {
+    constructor() {
+      this.handlers = {};
+      this.sources = new Map();
+      this.scrollZoom = { disable: vi.fn() };
+      this.boxZoom = { disable: vi.fn() };
+      this.doubleClickZoom = { disable: vi.fn() };
+      this.keyboard = { disable: vi.fn() };
+      queueMicrotask(() => {
+        for (const handler of this.handlers.load ?? []) handler();
+      });
+    }
+
+    on(event, handler) {
+      (this.handlers[event] ??= []).push(handler);
+      return this;
+    }
+
+    addControl() {
+      return this;
+    }
+
+    getSource(id) {
+      if (!this.sources.has(id)) {
+        this.sources.set(id, { setData: vi.fn() });
+      }
+      return this.sources.get(id);
+    }
+
+    getCenter() {
+      return { lng: 0, lat: 0 };
+    }
+
+    resize() {}
+    jumpTo() {}
+    easeTo() {}
+    remove() {}
+  }
+
+  class FakeAttributionControl {}
+
+  return {
+    default: {
+      Map: FakeMap,
+      AttributionControl: FakeAttributionControl,
+    },
+  };
+});
+
+describe('speed.html smoke', () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    archiveReplaySessionSpy.mockClear();
+    reversePlaceSpy.mockReset();
+    reversePlaceSpy.mockImplementation(async () => ({ place: null, data: null, meta: null }));
+    saveActiveReplaySessionSpy.mockClear();
+    await bootHtmlPage('speed.html');
+  });
+
+  afterEach(async () => {
+    window.dispatchEvent(new Event('pagehide'));
+    await settleAsyncWork(40);
+  });
+
+  it('boots the speedometer and reacts to a mocked geolocation fix', async () => {
+    const speedPage = await import('../../src/speed/dev-harness.js');
+    await speedPage.initPromise;
+    await settleAsyncWork();
+    await flushTasks();
+
+    expectPageSeo({
+      titleIncludes: 'Vatio Speed',
+      canonical: 'https://vatioboard.com/speed.html',
+    });
+    expect(getBrowserMocks().geolocation.watchPosition).toHaveBeenCalledTimes(1);
+    expect(document.getElementById('quickAlertConfig').getAttribute('aria-label')).toBe(
+      'Configure alerts'
+    );
+    expect(document.getElementById('closeAlertPanel').getAttribute('aria-label')).toBe('Close');
+    expect(document.querySelector('#closeAlertPanel.speed-alert-close svg')).toBeTruthy();
+    expect(document.querySelector('#quickAlertConfig .toolbar-recording-glyph svg')).toBeTruthy();
+    expect(document.getElementById('resetTrip').getAttribute('aria-label')).toBe('Reset trip');
+    expect(document.querySelector('#resetTrip .toolbar-recording-glyph svg')).toBeTruthy();
+    expect(document.getElementById('toggleRecording').getAttribute('aria-label')).toBe(
+      'Start recording'
+    );
+    expect(document.querySelector('#toggleRecording .toolbar-recording-glyph')).toBeTruthy();
+    expect(document.getElementById('openReplayQuick').getAttribute('aria-label')).toBe(
+      'Drive Replay'
+    );
+    expect(document.querySelector('#openReplayQuick .toolbar-recording-glyph svg')).toBeTruthy();
+    expect(document.querySelector('#stopRecording .toolbar-recording-glyph')).toBeTruthy();
+    expect(document.getElementById('quickAudioToggle').getAttribute('aria-label')).toBe(
+      'Mute alert audio'
+    );
+    expect(document.querySelector('#quickAudioToggle .toolbar-recording-glyph svg')).toBeTruthy();
+    expect(document.getElementById('quickBackgroundAudioToggle')).toBeNull();
+    expect(document.querySelector('.background-audio-btn')).toBeNull();
+    expect(document.getElementById('speedToolsMenuBtn').getAttribute('aria-label')).toBe('Pages');
+    expect(document.querySelector('#speedToolsMenuBtn .btn-icon svg')).toBeTruthy();
+    expect(document.getElementById('speedToolsMenuList').hidden).toBe(true);
+    expect(['Local only', 'Syncing']).toContain(
+      document.querySelector('.cloud-sync-indicator-btn')?.textContent
+    );
+
+    document.querySelector('.cloud-sync-indicator-btn')?.click();
+    await flushTasks();
+
+    expect(document.querySelector('.cloud-sync-indicator-panel')?.hidden).toBe(false);
+    expect(document.querySelector('.cloud-sync-indicator-link')?.getAttribute('href')).toBe(
+      'https://www.vatiolibre.com/login#signup'
+    );
+    expect(document.querySelector('.cloud-sync-indicator-link')?.getAttribute('target')).toBe('_blank');
+    expect(document.querySelector('.cloud-sync-indicator-link')?.getAttribute('rel')).toBe('noopener noreferrer');
+    document.querySelector('.cloud-sync-indicator-link')?.click();
+    await flushTasks();
+    expect(document.querySelector('.cloud-sync-indicator-panel')?.hidden).toBe(true);
+
+    document.querySelector('.cloud-sync-indicator-btn')?.click();
+    await flushTasks();
+    document.querySelector('.cloud-sync-indicator-close')?.click();
+    await flushTasks();
+    expect(document.querySelector('.cloud-sync-indicator-panel')?.hidden).toBe(true);
+
+    document.querySelector('.cloud-sync-indicator-btn')?.click();
+    await flushTasks();
+    document.querySelector('.cloud-sync-indicator-action')?.click();
+    await settleAsyncWork();
+
+    expect(document.getElementById('speedToolsMenuList').hidden).toBe(false);
+    expect(document.getElementById('speedToolsMenuBtn').getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(
+      document.querySelector('#speedToolsMenuList [data-backend-auth-user]')
+    );
+    expect(document.getElementById('speedLangToggleMenu').textContent).toBe('EN');
+    expect(document.querySelector('#speedToolsMenuList [data-backend-auth]')).toBeTruthy();
+    expect(
+      document.querySelector('#speedToolsMenuList [data-backend-auth-signup]')?.getAttribute('href')
+    ).toBe('https://www.vatiolibre.com/login#signup');
+    expect(
+      document.querySelector('#speedToolsMenuList [data-backend-auth-forgot]')?.getAttribute('href')
+    ).toBe('https://www.vatiolibre.com/login#forgot');
+    expect(
+      document.querySelector('#speedToolsMenuList [data-backend-auth-signup]')?.getAttribute('target')
+    ).toBe('_blank');
+    expect(
+      document.querySelector('#speedToolsMenuList [data-backend-auth-forgot]')?.getAttribute('target')
+    ).toBe('_blank');
+    expect(
+      document.querySelector('#speedToolsMenuList [data-backend-auth-signup]')?.getAttribute('rel')
+    ).toBe('noopener noreferrer');
+    expect(
+      document.querySelector('#speedToolsMenuList [data-backend-auth-forgot]')?.getAttribute('rel')
+    ).toBe('noopener noreferrer');
+    document.getElementById('speedToolsMenuBtn').click();
+    await flushTasks();
+    expect(document.getElementById('speedToolsMenuList').hidden).toBe(true);
+    document.getElementById('quickAlertConfig').click();
+    await flushTasks();
+    expect(document.getElementById('speedAlertPanel').hidden).toBe(false);
+    expect(document.getElementById('quickAlertConfig').getAttribute('aria-pressed')).toBe('true');
+    document.getElementById('quickAlertConfig').click();
+    await flushTasks();
+    expect(document.getElementById('speedAlertPanel').hidden).toBe(true);
+    expect(document.getElementById('quickAlertConfig').getAttribute('aria-pressed')).toBe('false');
+
+    emitGeolocationSuccess({
+      coords: {
+        speed: 10,
+        accuracy: 5,
+        altitude: 42,
+      },
+    });
+    await flushTasks();
+
+    expect(document.getElementById('speedValue').textContent).toBe('36');
+    expect(document.getElementById('altitudeValue').textContent).toBe('42');
+  });
+
+  it('hides the cloud sync login action for active subscribers', async () => {
+    window.fetch = createActiveSubscriberFetch();
+
+    const speedPage = await import('../../src/speed/dev-harness.js');
+    await speedPage.initPromise;
+    await settleAsyncWork();
+
+    document.querySelector('.cloud-sync-indicator-btn')?.click();
+    await settleAsyncWork();
+
+    const loginButton = getCloudSyncLoginButton();
+    const subscribeLink = document.querySelector('.cloud-sync-indicator-link');
+
+    expect(subscribeLink?.textContent).toBe('Manage subscription');
+    expect(loginButton?.hidden).toBe(true);
+    expect(window.getComputedStyle(loginButton).display).toBe('none');
+  });
+
+  it('starts and stops the recording keep-alive when route recording changes', async () => {
+    const speedPage = await import('../../src/speed/dev-harness.js');
+    const audioSystem = await import('../../src/shared/audio-system.js');
+    const audioModule = await import('../../src/speed/audio.js');
+    await speedPage.initPromise;
+    await settleAsyncWork();
+
+    expect(getBrowserMocks().mediaSession.playbackState).not.toBe('playing');
+
+    document.getElementById('toggleRecording').click();
+    await settleAsyncWork();
+
+    expect(document.getElementById('toggleRecording').getAttribute('aria-label')).toBe(
+      'Pause recording'
+    );
+    expect(getBrowserMocks().mediaSession.playbackState).toBe('playing');
+    expect(
+      audioSystem.isBackgroundAudioLeaseActive(
+        audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
+      )
+    ).toBe(true);
+    expect(audioSystem.isBackgroundAudioLeaseActive(audioModule.SPEED_BACKGROUND_AUDIO_LEASE)).toBe(false);
+
+    document.getElementById('toggleRecording').click();
+    await settleAsyncWork();
+
+    expect(document.getElementById('toggleRecording').getAttribute('aria-label')).toBe(
+      'Resume recording'
+    );
+    expect(getBrowserMocks().mediaSession.playbackState).not.toBe('playing');
+    expect(
+      audioSystem.isBackgroundAudioLeaseActive(
+        audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
+      )
+    ).toBe(false);
+  });
+
+  it('starts the recording keep-alive and cue without priming alert audio', async () => {
+    const audioInstances = [];
+    const pendingAlertPrime = new Promise(() => {});
+
+    class PendingAlertAudio extends EventTarget {
+      constructor(src = '') {
+        super();
+        this.src = src;
+        this.loop = false;
+        this.preload = 'auto';
+        this.playsInline = true;
+        this.currentTime = 0;
+        this.duration = 0.5;
+        this.paused = true;
+        this.playCalls = 0;
+        audioInstances.push(this);
+      }
+
+      play() {
+        this.playCalls += 1;
+        this.paused = false;
+        this.dispatchEvent(new Event('play'));
+        if (
+          this.src.includes('overspeed_notification')
+          || this.src.includes('near_camera_notification')
+        ) {
+          return pendingAlertPrime;
+        }
+        return Promise.resolve();
+      }
+
+      pause() {
+        this.paused = true;
+        this.dispatchEvent(new Event('pause'));
+      }
+
+      load() {}
+    }
+
+    Object.defineProperty(window, 'Audio', {
+      configurable: true,
+      writable: true,
+      value: PendingAlertAudio,
+    });
+    Object.defineProperty(globalThis, 'Audio', {
+      configurable: true,
+      writable: true,
+      value: PendingAlertAudio,
+    });
+
+    const speedPage = await import('../../src/speed/dev-harness.js');
+    await speedPage.initPromise;
+    await settleAsyncWork();
+
+    document.getElementById('toggleRecording').click();
+    await flushTasks();
+
+    const keepAliveAudioStarted = audioInstances.some((audio) =>
+      audio.src === 'blob:test-url' && audio.playCalls > 0
+    );
+    const overspeedAudio = audioInstances.find((audio) =>
+      audio.src.includes('/audio/overspeed_notification.m4a')
+    );
+    const trapAlertAudio = audioInstances.find((audio) =>
+      audio.src.includes('/audio/near_camera_notification.m4a')
+    );
+    const startRecordingAudio = audioInstances.find((audio) =>
+      audio.src.includes('/audio/start_recording.m4a')
+    );
+
+    expect(keepAliveAudioStarted).toBe(true);
+    expect(overspeedAudio?.playCalls).toBe(0);
+    expect(trapAlertAudio?.playCalls).toBe(0);
+    expect(startRecordingAudio?.playCalls).toBe(1);
+    expect(getBrowserMocks().mediaSession.playbackState).toBe('playing');
+  });
+
+  it('quick audio toggle claims background audio and plays a confirmation sound when enabling alerts', async () => {
+    const audioInstances = [];
+    const pendingAlertPrime = new Promise(() => {});
+
+    class PendingAlertAudio extends EventTarget {
+      constructor(src = '') {
+        super();
+        this.src = src;
+        this.loop = false;
+        this.preload = 'auto';
+        this.playsInline = true;
+        this.currentTime = 0;
+        this.duration = 0.5;
+        this.paused = true;
+        this.playCalls = 0;
+        this.blockPlayback = false;
+        audioInstances.push(this);
+      }
+
+      play() {
+        this.playCalls += 1;
+        this.paused = false;
+        this.dispatchEvent(new Event('play'));
+        return this.blockPlayback ? pendingAlertPrime : Promise.resolve();
+      }
+
+      pause() {
+        this.paused = true;
+        this.dispatchEvent(new Event('pause'));
+      }
+
+      load() {}
+    }
+
+    Object.defineProperty(window, 'Audio', {
+      configurable: true,
+      writable: true,
+      value: PendingAlertAudio,
+    });
+    Object.defineProperty(globalThis, 'Audio', {
+      configurable: true,
+      writable: true,
+      value: PendingAlertAudio,
+    });
+
+    const speedPage = await import('../../src/speed/dev-harness.js');
+    await speedPage.initPromise;
+    await settleAsyncWork();
+
+    const overspeedAudio = audioInstances.find((audio) =>
+      audio.src.includes('/audio/overspeed_notification.m4a')
+    );
+    const nearCameraAudios = audioInstances.filter((audio) =>
+      audio.src.includes('/audio/near_camera_notification.m4a')
+    );
+    const trapAlertAudio = nearCameraAudios[0];
+    const alertAudioEnabledAudio = nearCameraAudios[1];
+    overspeedAudio.blockPlayback = true;
+    trapAlertAudio.blockPlayback = true;
+
+    document.getElementById('quickAudioToggle').click();
+    await flushTasks();
+    expect(document.getElementById('quickAudioToggle').getAttribute('aria-label')).toBe(
+      'Unmute alert audio'
+    );
+
+    document.getElementById('quickAudioToggle').click();
+    await flushTasks();
+
+    const keepAliveAudioStarted = audioInstances.some((audio) =>
+      audio.src === 'blob:test-url' && audio.playCalls > 0
+    );
+
+    expect(keepAliveAudioStarted).toBe(true);
+    expect(alertAudioEnabledAudio.playCalls).toBe(1);
+    expect(document.getElementById('quickAudioToggle').getAttribute('aria-label')).toBe(
+      'Mute alert audio'
+    );
+    expect(getBrowserMocks().mediaSession.playbackState).toBe('playing');
+  });
+
+  it('offers recovery after recording GPS goes stale while the page is hidden', async () => {
+    vi.useFakeTimers();
+    try {
+      const speedPage = await import('../../src/speed/dev-harness.js');
+      const audioSystem = await import('../../src/shared/audio-system.js');
+      const audioModule = await import('../../src/speed/audio.js');
+      await speedPage.initPromise;
+      await settleAsyncWork();
+
+      const geolocation = getBrowserMocks().geolocation;
+
+      document.getElementById('toggleRecording').click();
+      await settleAsyncWork();
+      emitGeolocationSuccess({
+        timestamp: 1000,
+        coords: {
+          latitude: 40.7128,
+          longitude: -74.006,
+          speed: 10,
+          accuracy: 5,
+        },
+      });
+      await settleAsyncWork();
+
+      expect(
+        audioSystem.isBackgroundAudioLeaseActive(
+          audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
+        )
+      ).toBe(true);
+
+      Object.defineProperty(document, 'hidden', {
+        configurable: true,
+        writable: true,
+        value: true,
+      });
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('pagehide'));
+      audioSystem.releaseBackgroundAudioLease(audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE);
+      expect(
+        audioSystem.isBackgroundAudioLeaseActive(
+          audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
+        )
+      ).toBe(false);
+      await vi.advanceTimersByTimeAsync(13000);
+
+      Object.defineProperty(document, 'hidden', {
+        configurable: true,
+        writable: true,
+        value: false,
+      });
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(2500);
+      await settleAsyncWork();
+
+      const dialogs = Array.from(document.querySelectorAll('.vb-confirm-card[role="alertdialog"]'));
+      const dialog = dialogs.at(-1);
+      expect(dialog?.textContent).toContain('Resume driving tools?');
+      expect(dialog?.textContent).toContain('background keep-alive may need to be resumed');
+
+      const watchCallsBefore = geolocation.watchPosition.mock.calls.length;
+      dialog.querySelector('.vb-confirm-btn--confirm').click();
+      await settleAsyncWork();
+
+      expect(geolocation.clearWatch).toHaveBeenCalled();
+      expect(geolocation.watchPosition.mock.calls.length).toBe(watchCallsBefore + 1);
+      const recordingLeaseActiveAfterRecovery = audioSystem.isBackgroundAudioLeaseActive(
+        audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
+      );
+      expect(
+        recordingLeaseActiveAfterRecovery,
+        `lease count ${audioSystem.getBackgroundAudioLeaseCount()}`
+      ).toBe(true);
+      expect(audioSystem.getBackgroundAudioLeaseCount()).toBe(1);
+      expect(document.getElementById('toggleRecording').getAttribute('aria-label')).toBe(
+        'Pause recording'
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('coalesces replay persistence under high-frequency recording bursts', async () => {
+    const speedPage = await import('../../src/speed/dev-harness.js');
+    await speedPage.initPromise;
+    await flushTasks();
+
+    for (let index = 0; index < 205; index += 1) {
+      emitGeolocationSuccess({
+        timestamp: 1000 + index * 100,
+        coords: {
+          latitude: 40.7128 + index / 100000,
+          longitude: -74.006 + index / 100000,
+          speed: 10,
+          accuracy: 5,
+          altitude: 42,
+        },
+      });
+    }
+
+    await flushTasks();
+    await flushTasks();
+    await flushTasks();
+
+    expect(saveActiveReplaySessionSpy.mock.calls.length).toBeLessThanOrEqual(3);
+  });
+
+  it('archives a stopped replay before reverse geocoding finishes', async () => {
+    reversePlaceSpy.mockImplementation(() => new Promise(() => {}));
+
+    const speedPage = await import('../../src/speed/dev-harness.js');
+    await speedPage.initPromise;
+    await flushTasks();
+
+    // Default state is stopped — start recording first
+    document.getElementById('toggleRecording').click();
+    await flushTasks();
+
+    emitGeolocationSuccess({
+      timestamp: 1000,
+      coords: {
+        latitude: 40.7128,
+        longitude: -74.006,
+        speed: 10,
+        accuracy: 5,
+        altitude: 42,
+      },
+    });
+    await flushTasks();
+
+    document.getElementById('stopRecording').click();
+    await flushTasks();
+
+    expect(archiveReplaySessionSpy).toHaveBeenCalledTimes(1);
+    expect(archiveReplaySessionSpy.mock.calls[0]?.[0]).toMatchObject({
+      sampleCount: 1,
+      lastSample: {
+        latitude: 40.7128,
+        longitude: -74.006,
+      },
+    });
+  });
+
+  it('keeps distinct start and end places when the trip ends elsewhere', async () => {
+    reversePlaceSpy.mockImplementation(async ({ latitude }) => {
+      if (latitude > 40.82) {
+        return {
+          place: {
+            label: 'Fort Lee',
+            city: 'Fort Lee',
+            locality: 'Fort Lee',
+            state: 'New Jersey',
+            stateCode: 'NJ',
+            houseNumber: '6312',
+            road: 'Hilltop Court',
+            countryCode: 'us',
+          },
+          data: null,
+          meta: null,
+        };
+      }
+
+      return {
+        place: {
+          label: 'West New York',
+          city: 'West New York',
+          locality: 'West New York',
+          state: 'New Jersey',
+          stateCode: 'NJ',
+          houseNumber: '119',
+          road: '58th Street',
+          countryCode: 'us',
+        },
+        data: null,
+        meta: null,
+      };
+    });
+
+    const speedPage = await import('../../src/speed/dev-harness.js');
+    await speedPage.initPromise;
+    await flushTasks();
+
+    // Default state is stopped — start recording first
+    document.getElementById('toggleRecording').click();
+    await flushTasks();
+
+    emitGeolocationSuccess({
+      timestamp: 1000,
+      coords: {
+        latitude: 40.8501,
+        longitude: -73.97,
+        speed: 5,
+        accuracy: 5,
+        altitude: 42,
+      },
+    });
+    await flushTasks();
+
+    emitGeolocationSuccess({
+      timestamp: 2000,
+      coords: {
+        latitude: 40.787,
+        longitude: -74.014,
+        speed: 7,
+        accuracy: 5,
+        altitude: 41,
+      },
+    });
+    await flushTasks();
+
+    document.getElementById('stopRecording').click();
+    let finalArchivedSession = archiveReplaySessionSpy.mock.calls.find(
+      ([session]) =>
+        session?.startPlace?.raw?.houseNumber === '6312' && session?.endPlace?.raw?.houseNumber === '119'
+    )?.[0];
+    for (let index = 0; index < 80; index += 1) {
+      if (finalArchivedSession) {
+        break;
+      }
+      await flushTasks();
+      finalArchivedSession = archiveReplaySessionSpy.mock.calls.find(
+        ([session]) =>
+          session?.startPlace?.raw?.houseNumber === '6312' && session?.endPlace?.raw?.houseNumber === '119'
+      )?.[0];
+    }
+    expect(finalArchivedSession).toMatchObject({
+      startPlace: {
+        raw: expect.objectContaining({
+          houseNumber: '6312',
+          road: 'Hilltop Court',
+        }),
+      },
+      endPlace: {
+        raw: expect.objectContaining({
+          houseNumber: '119',
+          road: '58th Street',
+        }),
+      },
+    });
+    expect(finalArchivedSession.startPlace).not.toEqual(finalArchivedSession.endPlace);
+  });
+
+  it('enriches stopped replay places from the hydrated archive when active samples are tail-only', async () => {
+    const firstSample = {
+      timestampMs: 1000,
+      latitude: 40.8501,
+      longitude: -73.97,
+      speedMs: 5,
+      altitudeM: 42,
+      accuracyM: 5,
+      headingDeg: null,
+      totalDistanceM: 0,
+    };
+    const lastSample = {
+      timestampMs: 2000,
+      latitude: 40.787,
+      longitude: -74.014,
+      speedMs: 7,
+      altitudeM: 41,
+      accuracyM: 5,
+      headingDeg: null,
+      totalDistanceM: 100,
+    };
+
+    reversePlaceSpy.mockImplementation(async ({ latitude }) => {
+      if (latitude > 40.82) {
+        return {
+          place: {
+            label: 'Fort Lee',
+            city: 'Fort Lee',
+            state: 'New Jersey',
+            houseNumber: '6312',
+            road: 'Hilltop Court',
+            countryCode: 'us',
+          },
+          data: null,
+          meta: null,
+        };
+      }
+
+      return {
+        place: {
+          label: 'West New York',
+          city: 'West New York',
+          state: 'New Jersey',
+          houseNumber: '119',
+          road: '58th Street',
+          countryCode: 'us',
+        },
+        data: null,
+        meta: null,
+      };
+    });
+
+    saveActiveReplaySessionSpy.mockImplementation(async (session) => {
+      if ((session?.sampleCount ?? 0) < 2) return session;
+      return {
+        ...session,
+        firstSample: lastSample,
+        lastSample,
+        samples: [lastSample],
+        sampleCount: 2,
+        persistedSampleCount: 1,
+        chunkCount: 1,
+      };
+    });
+
+    let archiveCallCount = 0;
+    archiveReplaySessionSpy.mockImplementation(async (session) => {
+      archiveCallCount += 1;
+      if (archiveCallCount === 1) {
+        return {
+          ...session,
+          firstSample,
+          lastSample,
+          samples: [firstSample, lastSample],
+          sampleCount: 2,
+          persistedSampleCount: 2,
+          chunkCount: 1,
+        };
+      }
+      return session;
+    });
+
+    const speedPage = await import('../../src/speed/dev-harness.js');
+    await speedPage.initPromise;
+    await flushTasks();
+
+    document.getElementById('toggleRecording').click();
+    await flushTasks();
+
+    emitGeolocationSuccess({
+      timestamp: firstSample.timestampMs,
+      coords: {
+        latitude: firstSample.latitude,
+        longitude: firstSample.longitude,
+        speed: firstSample.speedMs,
+        accuracy: firstSample.accuracyM,
+        altitude: firstSample.altitudeM,
+      },
+    });
+    await flushTasks();
+
+    emitGeolocationSuccess({
+      timestamp: lastSample.timestampMs,
+      coords: {
+        latitude: lastSample.latitude,
+        longitude: lastSample.longitude,
+        speed: lastSample.speedMs,
+        accuracy: lastSample.accuracyM,
+        altitude: lastSample.altitudeM,
+      },
+    });
+    await flushTasks();
+
+    document.getElementById('toggleRecording').click();
+    await settleAsyncWork(40);
+    document.getElementById('stopRecording').click();
+
+    let enrichedArchiveSession = null;
+    for (let index = 0; index < 80; index += 1) {
+      await flushTasks();
+      enrichedArchiveSession = archiveReplaySessionSpy.mock.calls.find(
+        ([session], callIndex) =>
+          callIndex > 0 &&
+          session?.startPlace?.raw?.houseNumber === '6312' &&
+          session?.endPlace?.raw?.houseNumber === '119'
+      )?.[0];
+      if (enrichedArchiveSession) break;
+    }
+
+    expect(enrichedArchiveSession).toMatchObject({
+      startBoundaryPoint: {
+        latitude: firstSample.latitude,
+        sampleIndex: 0,
+      },
+      endBoundaryPoint: {
+        latitude: lastSample.latitude,
+        sampleIndex: 1,
+      },
+      startPlace: {
+        raw: expect.objectContaining({ houseNumber: '6312' }),
+      },
+      endPlace: {
+        raw: expect.objectContaining({ houseNumber: '119' }),
+      },
+    });
+    expect(enrichedArchiveSession.startPlace).not.toEqual(enrichedArchiveSession.endPlace);
+  });
+
+  it("keeps the Player launcher available for guests and after login", async () => {
+    const speedPage = await import("../../src/speed/dev-harness.js");
+    await speedPage.initPromise;
+    await settleAsyncWork();
+
+    // Guest demo playback is available, so the launcher should be visible.
+    const btn = document.querySelector("#speedToolsMenuList [data-player-toggle]");
+    expect(btn).toBeTruthy();
+    expect(btn.hidden).toBe(false);
+    expect(btn.className).toBe("btn-with-icon");
+    expect(btn.querySelector(".btn-icon[aria-hidden='true'] svg")).toBeTruthy();
+    expect(btn.querySelector("[data-i18n='audioPlayer']")).toBeTruthy();
+    const fab = document.querySelector(".player-fab");
+    expect(fab).toBeTruthy();
+    expect(fab.hidden).toBe(false);
+
+    // Log in → launcher stays available.
+    const authForm = document.querySelector("#speedToolsMenuList [data-backend-auth]");
+    const authUser = authForm.querySelector("[data-backend-auth-user]");
+    const authPassword = authForm.querySelector("[data-backend-auth-password]");
+    authUser.value = "test@vatiolibre.com";
+    authPassword.value = "secret123";
+    authForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await settleAsyncWork();
+
+    expect(btn.hidden).toBe(false);
+    expect(fab.hidden).toBe(false);
+  });
+});

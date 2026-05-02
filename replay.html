@@ -1,4 +1,5 @@
 <!doctype html>
+<!-- Legacy standalone test/dev harness. Production ships through index.html SPA routes. -->
 <html lang="en" class="replay-page">
   <head>
     <meta charset="utf-8" />
@@ -224,6 +225,10 @@
                       <span class="btn-icon" aria-hidden="true"></span>
                       <span data-i18n="accelerationTest">Acceleration Test</span>
                     </button>
+                    <button id="openReplayLibraryMenu" type="button" class="btn-with-icon">
+                      <span class="btn-icon" aria-hidden="true"></span>
+                      <span data-i18n="cloudLibrary">Cloud library</span>
+                    </button>
                     <button id="openReplayBoardMenu" type="button" class="btn-with-icon">
                       <span class="btn-icon" aria-hidden="true"></span>
                       <span data-i18n="openBoard">Open board</span>
@@ -283,7 +288,8 @@
                         data-backend-auth-guest
                         data-backend-auth-signup
                         href="https://www.vatiolibre.com/login#signup"
-                        rel="noreferrer"
+                        target="_blank"
+                        rel="noopener noreferrer"
                         data-i18n="authCreateAccount"
                         >Create account</a
                       >
@@ -292,7 +298,8 @@
                         data-backend-auth-guest
                         data-backend-auth-forgot
                         href="https://www.vatiolibre.com/login#forgot"
-                        rel="noreferrer"
+                        target="_blank"
+                        rel="noopener noreferrer"
                         data-i18n="authForgotPassword"
                         >Forgot password</a
                       >
@@ -747,6 +754,8 @@
       </section>
     </section>
 
-    <script type="module" src="/src/replay/replay.js"></script>
+    <script type="module">
+      import "/src/replay/dev-harness.js";
+    </script>
   </body>
 </html>

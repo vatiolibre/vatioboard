@@ -1,487 +1,266 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BOARD_DRAWING_KEY } from "../../src/board/storage.js";
 import { bootHtmlPage, expectPageSeo, flushTasks } from "../helpers/page-smoke.js";
 
-vi.mock("@jaames/iro", () => ({
-  default: {
-    ColorPicker: class {
-      constructor() {
-        this.color = { hexString: "#111111" };
-      }
-
-      on() {}
-      off() {}
-    },
-  },
+const routeState = vi.hoisted(() => ({
+  mounted: [],
+  unmounted: [],
+  events: [],
+  deferredLoads: new Map(),
+  createPlayerWidget: vi.fn(() => ({
+    open: vi.fn(),
+    close: vi.fn(),
+    toggle: vi.fn(),
+    restoreVisibility: vi.fn(),
+    destroy: vi.fn(),
+  })),
 }));
 
-async function flushBoardTasks(iterations = 8) {
-  for (let index = 0; index < iterations; index += 1) {
+vi.mock("../../src/app/routes.js", () => ({
+  routes: ["/", "/library", "/accel"].map((path) => {
+    const name = path === "/" ? "speed" : path.slice(1);
+    const loadedRoute = {
+      mount(root) {
+        routeState.mounted.push(name);
+        routeState.events.push(`mount:${name}`);
+        const view = document.createElement("section");
+        view.dataset.mockView = name;
+        view.textContent = name;
+        root.replaceChildren(view);
+        return {
+          unmount() {
+            routeState.unmounted.push(name);
+            routeState.events.push(`unmount:${name}`);
+            root.replaceChildren();
+          },
+        };
+      },
+    };
+    return {
+      path,
+      aliases: path === "/" ? ["/speed"] : [],
+      load: () => routeState.deferredLoads.get(path)?.promise.then(() => loadedRoute) || Promise.resolve(loadedRoute),
+    };
+  }),
+}));
+
+vi.mock("../../src/player/player-widget.js", () => ({
+  createPlayerWidget: routeState.createPlayerWidget,
+}));
+
+vi.mock("../../src/shared/backend-auth.js", () => ({
+  initBackendAuthControllers: vi.fn(),
+}));
+
+vi.mock("../../src/shared/cloud-sync.js", () => ({
+  startCloudSyncLoop: vi.fn(),
+}));
+
+vi.mock("../../src/shared/single-tab.js", () => ({
+  ensureSingleTabOwnership: vi.fn(() => Promise.resolve(true)),
+}));
+
+async function bootSpa() {
+  await bootHtmlPage("index.html");
+  await import("../../src/app/main.js");
+  for (let index = 0; index < 8; index += 1) {
     await flushTasks();
   }
 }
 
-function dispatchBoardStroke(canvas, pointerId, clientX, clientY) {
-  const pointerDown = new MouseEvent("pointerdown", { bubbles: true, clientX, clientY });
-  const pointerUp = new MouseEvent("pointerup", { bubbles: true, clientX, clientY });
-  Object.defineProperty(pointerDown, "pointerId", { value: pointerId });
-  Object.defineProperty(pointerUp, "pointerId", { value: pointerId });
-  canvas.dispatchEvent(pointerDown);
-  canvas.dispatchEvent(pointerUp);
+function createDeferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
 }
 
-describe("index.html smoke", () => {
-  let sessionUser;
-  let hasActiveSubscription;
-  let savedDrawingsEnabled;
-  let savedDrawingsReason;
-  let csrfToken;
-
-  beforeEach(async () => {
+describe("index.html SPA shell", () => {
+  beforeEach(() => {
+    window.__vatioboardRouter?.destroy?.();
+    delete window.__vatioboardRouter;
+    delete window.__vatioboardFloatingTools;
+    delete window.__vatioboardPlayerWidget;
     vi.resetModules();
-
-    sessionUser = "Guest";
-    hasActiveSubscription = false;
-    savedDrawingsEnabled = false;
-    savedDrawingsReason = "";
-    csrfToken = "csrf-test-token";
-
-    window.fetch = vi.fn(async (input, init = {}) => {
-      const url = typeof input === "string" ? input : String(input?.url ?? "");
-
-      if (url.endsWith("/api/method/vatiolibre.services.tesla_connection_status")) {
-        return new Response(JSON.stringify({
-          message: sessionUser === "Guest"
-            ? { connected: false, is_guest: true }
-            : { connected: false },
-        }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
-      if (url.endsWith("/api/method/frappe.auth.get_logged_user")) {
-        return new Response(JSON.stringify({ message: sessionUser }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
-      if (url.endsWith("/api/method/login")) {
-        const body = String(init.body || "");
-        if (body.includes("usr=test%40vatiolibre.com") && body.includes("pwd=secret123")) {
-          sessionUser = "test@vatiolibre.com";
-          return new Response(JSON.stringify({ message: "Logged In" }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-
-        return new Response(JSON.stringify({ message: "Invalid login" }), {
-          status: 401,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
-      if (url.endsWith("/api/method/logout")) {
-        sessionUser = "Guest";
-        return new Response(JSON.stringify({ message: "Logged out" }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
-      if (url.endsWith("/api/method/vatiolibre.vatiolibre.feature_access.get_my_feature_access")) {
-        if (sessionUser === "Guest") {
-          return new Response(JSON.stringify({ message: "Guest" }), {
-            status: 403,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-
-        return new Response(JSON.stringify({
-          message: {
-            has_active_subscription: hasActiveSubscription,
-            features: {
-              saved_drawings: {
-                enabled: savedDrawingsEnabled,
-                reason: savedDrawingsReason,
-              },
-            },
-            csrf_token: csrfToken,
-          },
-        }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
-      if (url.endsWith("/api/method/vatiolibre.vatiolibre.drawings.save_my_saved_drawing")) {
-        if (sessionUser === "Guest") {
-          return new Response(JSON.stringify({ message: "Guest" }), {
-            status: 403,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-
-        return new Response(JSON.stringify({
-          message: {
-            drawing: {
-              name: "DRAW-0001",
-            },
-          },
-        }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
-      return new Response("{}", {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    });
-
-    await bootHtmlPage("index.html");
+    routeState.mounted = [];
+    routeState.unmounted = [];
+    routeState.events = [];
+    routeState.deferredLoads.clear();
+    routeState.createPlayerWidget.mockClear();
+    localStorage.clear();
   });
 
-  it("boots the board page and mounts its widgets", async () => {
-    await import("../../src/board/board.js");
-    await flushBoardTasks();
+  it("boots the hash-routed app with Speed as the default route", async () => {
+    await bootSpa();
 
     expectPageSeo({
-      title: "Vatio Board – Free Drawing Board + Calculator (Tesla-Friendly)",
+      title: "VatioBoard",
       canonical: "https://vatioboard.com/",
     });
-    expect(document.documentElement.lang).toBe("en");
-    expect(document.getElementById("langToggleMenu").textContent).toBe("EN");
-    expect(document.getElementById("pen").getAttribute("aria-label")).toBe("Pen");
-    expect(document.querySelector("#pen .btn-icon svg")).toBeTruthy();
-    expect(document.getElementById("erase").getAttribute("aria-label")).toBe("Eraser");
-    expect(document.querySelector("#erase .btn-icon svg")).toBeTruthy();
-    expect(document.getElementById("undo").getAttribute("aria-label")).toBe("Undo");
-    expect(document.querySelector("#undo .btn-icon svg")).toBeTruthy();
-    expect(document.getElementById("redo").getAttribute("aria-label")).toBe("Redo");
-    expect(document.querySelector("#redo .btn-icon svg")).toBeTruthy();
-    expect(document.getElementById("undo").disabled).toBe(true);
-    expect(document.getElementById("redo").disabled).toBe(true);
-    expect(document.getElementById("clear").getAttribute("aria-label")).toBe("Clear");
-    expect(document.querySelector("#clear .btn-icon svg")).toBeTruthy();
-    expect(document.getElementById("save").getAttribute("aria-label")).toBe("Save to VatioLibre");
-    expect(document.querySelector("#save .btn-icon svg")).toBeTruthy();
-    expect(document.getElementById("toolsMenuBtn").getAttribute("aria-label")).toBe("Pages");
-    expect(document.querySelector("#toolsMenuBtn .btn-icon svg")).toBeTruthy();
-    expect(document.getElementById("toolsMenuList").hidden).toBe(false);
-    expect(document.getElementById("toolsMenuBtn").getAttribute("aria-expanded")).toBe("true");
-    expect(document.querySelector("[data-backend-auth]")).toBeTruthy();
-    expect(document.querySelector("[data-backend-auth-signup]").getAttribute("href")).toBe("https://www.vatiolibre.com/login#signup");
-    expect(document.querySelector("[data-backend-auth-forgot]").getAttribute("href")).toBe("https://www.vatiolibre.com/login#forgot");
-    expect(document.getElementById("sizeVal")).toBeNull();
-    expect(document.getElementById("sizePreview")).toBeTruthy();
-    expect(document.getElementById("colorChip")).toBeNull();
-    const sizeLabel = document.querySelector(".size-label");
-    expect(sizeLabel).toBeTruthy();
-    expect(sizeLabel.tagName).toBe("DIV");
-    expect(sizeLabel.getAttribute("role")).toBeNull();
-    expect(sizeLabel.children).toHaveLength(3);
-    expect(sizeLabel.children[0].id).toBe("sizePreview");
-    expect(sizeLabel.children[1].id).toBe("size");
-    expect(sizeLabel.children[2].id).toBe("swatches");
-    expect(document.querySelector(".size-label #swatches")).toBeTruthy();
-    expect(document.getElementById("sizePreview").style.getPropertyValue("--board-size-preview")).toBe("6px");
-    expect(document.querySelector(".calc-panel")).toBeTruthy();
-    expect(document.querySelector(".energy-panel")).toBeTruthy();
+    expect(window.location.hash).toBe("#/");
+    expect(document.getElementById("app-view")).toBeTruthy();
+    expect(document.getElementById("app-persistent-layer")).toBeTruthy();
+    expect(document.querySelector("[data-mock-view='speed']")).toBeTruthy();
     expect(document.querySelector(".floating-dock")).toBeTruthy();
-    expect(document.querySelector(".canvas-frame .board-canvas-meta")).toBeTruthy();
-    expect(document.querySelector("header .board-canvas-meta")).toBeNull();
-    expect(document.querySelector("[data-backend-auth]").dataset.authState).toBe("guest");
-    expect(document.querySelector("[data-backend-auth-status]").textContent).toBe("Signed out");
-    expect(document.querySelector("[data-backend-auth-logout]").hidden).toBe(true);
-    expect(document.querySelector("[data-backend-auth-signup]").hidden).toBe(false);
-    expect(document.querySelector("[data-backend-auth-forgot]").hidden).toBe(false);
-    expect(window.fetch).not.toHaveBeenCalledWith(
-      "https://api.vatioboard.com/api/method/frappe.auth.get_logged_user",
-      expect.anything()
-    );
-
-    document.getElementById("size").value = "12";
-    document.getElementById("size").dispatchEvent(new Event("input", { bubbles: true }));
-    expect(document.getElementById("sizePreview").style.getPropertyValue("--board-size-preview")).toBe("12px");
-
-    document.getElementById("erase").click();
-    expect(document.getElementById("erase").getAttribute("aria-pressed")).toBe("true");
-    expect(document.getElementById("colorPopup").hidden).toBe(true);
-    document.querySelector('#swatches .swatch')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(document.getElementById("colorPopup").hidden).toBe(true);
-    expect(document.getElementById("pen").getAttribute("aria-pressed")).toBe("true");
-
-    document.getElementById("sizePreview").click();
-    expect(document.getElementById("colorPopup").hidden).toBe(false);
-
-    document.getElementById("erase").click();
-    expect(document.getElementById("erase").getAttribute("aria-pressed")).toBe("true");
-    document.getElementById("size").value = "10";
-    document.getElementById("size").dispatchEvent(new Event("input", { bubbles: true }));
-    expect(document.getElementById("pen").getAttribute("aria-pressed")).toBe("true");
-
-    const canvas = document.getElementById("pad");
-    const pointerDown = new MouseEvent("pointerdown", { bubbles: true, clientX: 12, clientY: 12 });
-    const pointerMove = new MouseEvent("pointermove", { bubbles: true, clientX: 42, clientY: 32 });
-    const pointerUp = new MouseEvent("pointerup", { bubbles: true, clientX: 42, clientY: 32 });
-    Object.defineProperty(pointerDown, "pointerId", { value: 1 });
-    Object.defineProperty(pointerMove, "pointerId", { value: 1 });
-    Object.defineProperty(pointerUp, "pointerId", { value: 1 });
-
-    canvas.dispatchEvent(pointerDown);
-    expect(document.getElementById("toolsMenuList").hidden).toBe(true);
-    canvas.dispatchEvent(pointerMove);
-    canvas.dispatchEvent(pointerUp);
-
-    expect(document.getElementById("undo").disabled).toBe(false);
-    expect(document.getElementById("redo").disabled).toBe(true);
-
-    document.getElementById("undo").click();
-    expect(document.getElementById("status").textContent).toBe("Undo");
-    expect(document.getElementById("undo").disabled).toBe(true);
-    expect(document.getElementById("redo").disabled).toBe(false);
-
-    document.getElementById("redo").click();
-    expect(document.getElementById("status").textContent).toBe("Redo");
-    expect(document.getElementById("undo").disabled).toBe(false);
-    expect(document.getElementById("redo").disabled).toBe(true);
-
-    document.getElementById("openCalc").click();
-    expect(document.querySelector(".calc-panel").hidden).toBe(false);
-
-    const authUser = document.querySelector("[data-backend-auth-user]");
-    const authPassword = document.querySelector("[data-backend-auth-password]");
-    const authForm = document.querySelector("[data-backend-auth]");
-
-    authUser.value = "test@vatiolibre.com";
-    authPassword.value = "secret123";
-    authForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-    await flushBoardTasks();
-
-    expect(document.querySelector("[data-backend-auth]").dataset.authState).toBe("authenticated");
-    expect(document.querySelector("[data-backend-auth-status]").textContent).toBe("Signed in as test@vatiolibre.com");
-    expect(document.querySelector("[data-backend-auth-user]").hidden).toBe(true);
-    expect(document.querySelector("[data-backend-auth-logout]").hidden).toBe(false);
-    expect(document.querySelector("[data-backend-auth-signup]").hidden).toBe(true);
-    expect(document.querySelector("[data-backend-auth-forgot]").hidden).toBe(true);
-
-    document.querySelector("[data-backend-auth-logout]").click();
-    await flushBoardTasks();
-
-    expect(document.querySelector("[data-backend-auth]").dataset.authState).toBe("guest");
-    expect(document.querySelector("[data-backend-auth-status]").textContent).toBe("Signed out");
-    expect(document.querySelector("[data-backend-auth-user]").hidden).toBe(false);
-    expect(window.fetch).toHaveBeenCalledWith(
-      "https://api.vatioboard.com/api/method/login",
+    expect(window.__vatioboardFloatingTools).toBeTruthy();
+    expect(routeState.createPlayerWidget).toHaveBeenCalledWith(
       expect.objectContaining({
-        method: "POST",
-        credentials: "include",
-        body: "usr=test%40vatiolibre.com&pwd=secret123",
-      })
+        floating: true,
+        preload: "immediate",
+        persistVisibility: true,
+        restoreVisibility: true,
+      }),
     );
-    expect(window.fetch).toHaveBeenCalledWith(
-      "https://api.vatioboard.com/api/method/logout",
-      expect.objectContaining({
-        method: "POST",
-        credentials: "include",
-      })
-    );
+  }, 40000);
 
-    document.getElementById("langToggleMenu").click();
-    expect(document.documentElement.lang).toBe("es");
-    expect(document.getElementById("langToggle").textContent).toBe("ES");
-    expect(document.getElementById("langToggleMenu").textContent).toBe("ES");
-    expect(document.querySelector(".backend-auth-title").textContent).toBe("Cuenta de VatioLibre");
-  });
+  it("switches hash routes without reloading the document", async () => {
+    await bootSpa();
+    const originalBody = document.body;
 
-  it("keeps drawing locked to one pointer and suppresses native selection", async () => {
-    await import("../../src/board/board.js");
-    await flushBoardTasks();
-
-    const canvas = document.getElementById("pad");
-    const ctx = canvas.getContext("2d");
-    ctx.quadraticCurveTo.mockClear();
-
-    const selectStart = new Event("selectstart", { bubbles: true, cancelable: true });
-    expect(canvas.dispatchEvent(selectStart)).toBe(false);
-
-    const pointerDown = new MouseEvent("pointerdown", { bubbles: true, clientX: 12, clientY: 12 });
-    Object.defineProperty(pointerDown, "pointerId", { value: 1 });
-    canvas.dispatchEvent(pointerDown);
-
-    expect(document.body.classList.contains("board-is-drawing")).toBe(true);
-
-    const foreignMove = new MouseEvent("pointermove", { bubbles: true, clientX: 60, clientY: 60 });
-    Object.defineProperty(foreignMove, "pointerId", { value: 2 });
-    canvas.dispatchEvent(foreignMove);
-    expect(ctx.quadraticCurveTo).not.toHaveBeenCalled();
-
-    const activeMove = new MouseEvent("pointermove", { bubbles: true, clientX: 42, clientY: 32 });
-    Object.defineProperty(activeMove, "pointerId", { value: 1 });
-    canvas.dispatchEvent(activeMove);
-    expect(ctx.quadraticCurveTo).toHaveBeenCalledTimes(1);
-
-    const selectWhileDrawing = new Event("selectstart", { bubbles: true, cancelable: true });
-    expect(document.dispatchEvent(selectWhileDrawing)).toBe(false);
-
-    const lostCapture = new Event("lostpointercapture", { bubbles: true });
-    Object.defineProperty(lostCapture, "pointerId", { value: 1 });
-    canvas.dispatchEvent(lostCapture);
-
-    expect(document.body.classList.contains("board-is-drawing")).toBe(false);
-    expect(document.getElementById("undo").disabled).toBe(false);
-  });
-
-  it("cancels an active stroke before redoing history", async () => {
-    await import("../../src/board/board.js");
-    await flushBoardTasks();
-
-    const canvas = document.getElementById("pad");
-    dispatchBoardStroke(canvas, 1, 24, 24);
-
-    document.getElementById("undo").click();
-    await flushBoardTasks();
-    expect(document.getElementById("redo").disabled).toBe(false);
-
-    const pointerDown = new MouseEvent("pointerdown", { bubbles: true, clientX: 48, clientY: 48 });
-    Object.defineProperty(pointerDown, "pointerId", { value: 2 });
-    canvas.dispatchEvent(pointerDown);
-    expect(document.body.classList.contains("board-is-drawing")).toBe(true);
-
-    document.getElementById("redo").click();
-    expect(document.body.classList.contains("board-is-drawing")).toBe(false);
-    expect(document.getElementById("redo").disabled).toBe(true);
-
-    const pointerUp = new MouseEvent("pointerup", { bubbles: true, clientX: 48, clientY: 48 });
-    Object.defineProperty(pointerUp, "pointerId", { value: 2 });
-    canvas.dispatchEvent(pointerUp);
-
-    document.getElementById("undo").click();
-    expect(document.getElementById("undo").disabled).toBe(true);
-    expect(document.getElementById("redo").disabled).toBe(false);
-  });
-
-  it("restores large saved drafts after reload without dropping older strokes", async () => {
-    await import("../../src/board/board.js");
-    await flushBoardTasks();
-
-    const canvas = document.getElementById("pad");
-    const ctx = canvas.getContext("2d");
-    ctx.fillRect.mockClear();
-    ctx.drawImage.mockClear();
-
-    for (let index = 0; index < 125; index += 1) {
-      dispatchBoardStroke(canvas, index + 1, 12 + (index % 40), 18 + (index % 50));
+    window.location.hash = "#/library?tab=media";
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+    for (let index = 0; index < 8; index += 1) {
+      await flushTasks();
     }
 
-    await flushBoardTasks();
+    expect(document.body).toBe(originalBody);
+    expect(document.querySelector("[data-mock-view='library']")).toBeTruthy();
+    expect(routeState.unmounted).toContain("speed");
+    expect(routeState.events.indexOf("unmount:speed")).toBeLessThan(
+      routeState.events.indexOf("mount:library"),
+    );
 
-    expect(ctx.fillRect).not.toHaveBeenCalled();
-    expect(ctx.drawImage).toHaveBeenCalledTimes(125);
+    window.location.hash = "#/accel";
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+    for (let index = 0; index < 8; index += 1) {
+      await flushTasks();
+    }
 
-    const storedBeforeReload = JSON.parse(localStorage.getItem(BOARD_DRAWING_KEY));
-    expect(storedBeforeReload.commandCount).toBe(125);
-    expect(storedBeforeReload.commands).toHaveLength(125);
+    expect(document.querySelector("[data-mock-view='accel']")).toBeTruthy();
+    expect(routeState.unmounted).toContain("library");
+    expect(routeState.unmounted.filter((name) => name === "library")).toHaveLength(1);
+    expect(routeState.createPlayerWidget).toHaveBeenCalledTimes(1);
+  }, 40000);
 
-    vi.resetModules();
+  it("prevents a stale delayed route import from mounting after a newer route wins", async () => {
+    const delayedSpeed = createDeferred();
+    routeState.deferredLoads.set("/", delayedSpeed);
+
     await bootHtmlPage("index.html");
-    await import("../../src/board/board.js");
-    await flushBoardTasks();
+    await import("../../src/app/main.js");
+    await flushTasks();
 
-    expect(document.getElementById("undo").disabled).toBe(false);
+    window.location.hash = "#/library";
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+    for (let index = 0; index < 8; index += 1) {
+      await flushTasks();
+    }
 
-    document.getElementById("undo").click();
-    await flushBoardTasks();
+    expect(document.querySelector("[data-mock-view='library']")).toBeTruthy();
+    expect(routeState.mounted).toEqual(["library"]);
 
-    const storedAfterUndo = JSON.parse(localStorage.getItem(BOARD_DRAWING_KEY));
-    expect(storedAfterUndo.commandCount).toBe(124);
-    expect(storedAfterUndo.redoCount).toBe(1);
+    delayedSpeed.resolve();
+    for (let index = 0; index < 8; index += 1) {
+      await flushTasks();
+    }
+
+    expect(routeState.mounted).toEqual(["library"]);
+    expect(document.querySelector("[data-mock-view='speed']")).toBeNull();
+  }, 40000);
+
+  it("binds route menu buttons to one shared start menu in the SPA", async () => {
+    await bootSpa();
+
+    const { initToolsMenu } = await import("../../src/shared/tools-menu.js");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "tools-menu-btn";
+    const localList = document.createElement("div");
+    localList.id = "mockToolsMenuList";
+    localList.className = "tools-menu-list";
+    localList.hidden = true;
+    document.body.append(button, localList);
+
+    const menu = initToolsMenu({ button, list: localList });
+    button.click();
+
+    const sharedList = document.getElementById("appStartMenuList");
+    expect(sharedList).toBeTruthy();
+    expect(sharedList.hidden).toBe(false);
+    expect(localList.hidden).toBe(true);
+    expect(sharedList.querySelector("[data-start-route]")?.dataset.startRoute).toBe("/");
+    expect(sharedList.querySelector("[data-start-route='/board']")).toBeTruthy();
+    expect(sharedList.querySelector("[data-start-route='/replay']")).toBeTruthy();
+    expect(sharedList.querySelector("[data-backend-auth]")).toBeTruthy();
+    expect(sharedList.querySelector("[data-player-toggle]")).toBeTruthy();
+
+    const children = Array.from(sharedList.children);
+    const brand = sharedList.querySelector(".app-start-menu-brand");
+    const authForm = sharedList.querySelector("[data-backend-auth]");
+    const firstRoute = sharedList.querySelector("[data-start-route]");
+    const playerButton = sharedList.querySelector("[data-player-toggle]");
+    expect(children.indexOf(authForm)).toBe(children.indexOf(brand) + 1);
+    expect(children.indexOf(authForm)).toBeLessThan(children.indexOf(firstRoute));
+    expect(children.indexOf(playerButton)).toBeGreaterThan(children.indexOf(authForm));
+    expect(authForm.querySelector(".backend-auth-logout-button svg")).toBeTruthy();
+    expect(authForm.querySelector("[data-backend-auth-signup]")?.getAttribute("target")).toBe("_blank");
+    expect(authForm.querySelector("[data-backend-auth-forgot]")?.getAttribute("target")).toBe("_blank");
+    expect(authForm.querySelector("[data-backend-auth-signup]")?.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(authForm.querySelector("[data-backend-auth-forgot]")?.getAttribute("rel")).toBe("noopener noreferrer");
+
+    menu.close();
+    expect(sharedList.hidden).toBe(true);
   });
 
-  it("guides guests to log in before saving", async () => {
-    await import("../../src/board/board.js");
-    await flushBoardTasks();
+  it("opens the shared start menu navigation without a local GPS Lab item", async () => {
+    await bootSpa();
 
-    document.getElementById("toolsMenuBtn").click();
-    expect(document.getElementById("toolsMenuList").hidden).toBe(true);
-
-    document.getElementById("save").click();
-    await flushBoardTasks();
-
-    expect(document.getElementById("toolsMenuList").hidden).toBe(false);
-    expect(document.getElementById("status").textContent).toBe("Log in to save drawings to VatioLibre.");
-    expect(window.fetch).not.toHaveBeenCalledWith(
-      "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.feature_access.get_my_feature_access",
-      expect.anything()
-    );
+    const sharedList = document.getElementById("appStartMenuList");
+    expect(sharedList.textContent).not.toContain("GPS Lab");
+    expect(sharedList.querySelector("[data-start-route='/library']")).toBeTruthy();
   });
 
-  it("blocks save for signed-in users without the saved drawings feature", async () => {
-    sessionUser = "member@vatiolibre.com";
-    hasActiveSubscription = false;
-    savedDrawingsEnabled = false;
-    savedDrawingsReason = "Saved drawings need an active VatioLibre subscription.";
+  it("keeps calculator and energy panels in the persistent layer across routes", async () => {
+    await bootSpa();
 
-    await import("../../src/board/board.js");
-    await flushBoardTasks();
+    const persistentLayer = document.getElementById("app-persistent-layer");
+    const calcButton = persistentLayer.querySelector(".dock-btn-calc");
+    const calcPanel = persistentLayer.querySelector(".calc-panel");
+    const energyPanel = persistentLayer.querySelector(".energy-panel");
 
-    document.getElementById("save").click();
-    await flushBoardTasks();
+    expect(calcPanel.hidden).toBe(true);
+    expect(energyPanel.hidden).toBe(true);
 
-    expect(document.getElementById("status").textContent).toBe("Saved drawings need an active VatioLibre subscription.");
-    expect(window.fetch).toHaveBeenCalledWith(
-      "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.feature_access.get_my_feature_access",
-      expect.objectContaining({
-        method: "GET",
-        credentials: "include",
-      })
-    );
-    expect(window.fetch).not.toHaveBeenCalledWith(
-      "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.drawings.save_my_saved_drawing",
-      expect.anything()
-    );
+    calcButton.click();
+    window.__vatioboardFloatingTools.openEnergy();
+
+    expect(calcPanel.hidden).toBe(false);
+    expect(energyPanel.hidden).toBe(false);
+    expect(localStorage.getItem("vatioboard.calc_panel.visible_v1")).toBe("open");
+    expect(localStorage.getItem("vatioboard.energy_panel.visible_v1")).toBe("open");
+
+    window.location.hash = "#/library";
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+    for (let index = 0; index < 8; index += 1) {
+      await flushTasks();
+    }
+
+    expect(document.querySelector("[data-mock-view='library']")).toBeTruthy();
+    expect(persistentLayer.querySelector(".calc-panel")).toBe(calcPanel);
+    expect(persistentLayer.querySelector(".energy-panel")).toBe(energyPanel);
+    expect(calcPanel.hidden).toBe(false);
+    expect(energyPanel.hidden).toBe(false);
   });
 
-  it("saves drawings to the backend for active subscribers", async () => {
-    sessionUser = "member@vatiolibre.com";
-    hasActiveSubscription = true;
-    savedDrawingsEnabled = true;
-    savedDrawingsReason = "";
-    csrfToken = "csrf-active-token";
+  it("restores persisted calculator and energy visibility on boot", async () => {
+    localStorage.setItem("vatioboard.calc_panel.visible_v1", "open");
+    localStorage.setItem("vatioboard.energy_panel.visible_v1", "open");
 
-    await import("../../src/board/board.js");
-    await flushBoardTasks();
+    await bootSpa();
 
-    document.getElementById("save").click();
-    await flushBoardTasks();
-
-    expect(document.getElementById("status").textContent).toBe("Saved to VatioLibre");
-    const saveCall = window.fetch.mock.calls.find(([url]) =>
-      url === "https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.drawings.save_my_saved_drawing"
-    );
-
-    expect(saveCall).toBeTruthy();
-
-    const [, saveRequest] = saveCall;
-    expect(saveRequest).toEqual(expect.objectContaining({
-      method: "POST",
-      credentials: "include",
-      headers: expect.objectContaining({
-        "X-Frappe-CSRF-Token": "csrf-active-token",
-      }),
-    }));
-    expect(saveRequest.headers["Content-Type"]).toBeUndefined();
-    expect(saveRequest.body).toBeInstanceOf(FormData);
-    expect(saveRequest.body.get("image_width")).toBe("320");
-    expect(saveRequest.body.get("image_height")).toBe("320");
-
-    const uploadedFile = saveRequest.body.get("file");
-    expect(uploadedFile).toBeInstanceOf(File);
-    expect(uploadedFile.name).toBe("drawing.png");
-    expect(uploadedFile.type).toBe("image/png");
+    expect(document.querySelector(".calc-panel")?.hidden).toBe(false);
+    expect(document.querySelector(".energy-panel")?.hidden).toBe(false);
   });
 });

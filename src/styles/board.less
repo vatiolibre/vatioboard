@@ -33,6 +33,11 @@
     --inner-highlight: rgba(255,255,255,.22);
     --inner-ring: rgba(0,0,0,.06);
 
+    --vb-z-floating: 1000;
+    --vb-z-floating-secondary: 990;
+    --vb-z-modal: 2000;
+    --vb-z-emergency: 2147483647;
+
 }
 
 @media (prefers-color-scheme: dark){
@@ -87,11 +92,40 @@ body.board-is-drawing *{
     -webkit-touch-callout: none;
 }
 
+.vb-floating-drag-handle{
+    touch-action: none;
+}
+
+html.vb-floating-drag-active,
+html.vb-floating-drag-active body{
+    overscroll-behavior: none;
+}
+
+html.vb-floating-drag-active body{
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+}
+
 /* Full-page layout */
 .app{
     min-height:100%;
     display:flex;
     flex-direction:column;
+}
+
+body.board-page{
+    overflow: hidden;
+}
+
+body.board-page #app,
+body.board-page #app-view,
+body.board-page .app{
+    height: 100vh;
+    height: 100svh;
+    height: var(--board-viewport-height, 100svh);
+    min-height: 0;
+    overflow: hidden;
 }
 
 header{
@@ -105,6 +139,10 @@ header{
     -webkit-backdrop-filter: blur(12px);
 
     border-bottom: 1px solid var(--border);
+}
+
+header.tools-menu-layer-open{
+    z-index: calc(var(--vb-z-floating, 1000) + 5);
 }
 
 .header-inner{
@@ -270,7 +308,7 @@ header{
     border: 1px solid var(--border);
     background: var(--surface);
     box-shadow: 0 12px 24px rgba(0, 0, 0, 0.25);
-    z-index: 20;
+    z-index: calc(var(--vb-z-floating, 1000) + 6);
 }
 
 .tools-menu-list button{
@@ -344,7 +382,11 @@ header{
     border-color: transparent;
 }
 
-.board-action-btn-clear{
+.board-action-btn-create{
+    color: var(--btn-fg);
+}
+
+.board-action-btn-delete{
     color: var(--danger-fg);
 }
 
@@ -683,6 +725,7 @@ main{
     flex:1;
     display:flex;
     min-height: 0; /* allow canvas to fill */
+    overflow: hidden;
 }
 
 .canvas-shell{
@@ -690,6 +733,7 @@ main{
     display:flex;
     padding: 0;
     min-height: 0;
+    overflow: hidden;
 }
 
 .canvas-frame{

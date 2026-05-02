@@ -2,6 +2,18 @@ function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
 
+function firstPositiveNumber(...values) {
+  return values.find((value) => Number.isFinite(value) && value > 0) ?? 0;
+}
+
+function getElementBoxSize(elm, rect = elm.getBoundingClientRect()) {
+  const style = typeof getComputedStyle === "function" ? getComputedStyle(elm) : null;
+  return {
+    width: firstPositiveNumber(rect.width, elm.offsetWidth, parseFloat(style?.width)),
+    height: firstPositiveNumber(rect.height, elm.offsetHeight, parseFloat(style?.height)),
+  };
+}
+
 function ensureFixedTopLeft(elm) {
   // Convert an element to fixed top/left positioning (from right/bottom)
   const r = elm.getBoundingClientRect();
@@ -18,6 +30,7 @@ function ensureFixedTopLeft(elm) {
 export function clampElementToViewport(elm, margin = 8) {
   // Assumes fixed position with left/top set (or at least measurable via rect)
   const r = elm.getBoundingClientRect();
+  const box = getElementBoxSize(elm, r);
   const vw = window.innerWidth;
   const vh = window.innerHeight;
 
@@ -26,17 +39,22 @@ export function clampElementToViewport(elm, margin = 8) {
   const curLeft = parseFloat(elm.style.left) || r.left;
   const curTop = parseFloat(elm.style.top) || r.top;
 
-  const nextLeft = clamp(curLeft, margin, vw - r.width - margin);
-  const nextTop = clamp(curTop, margin, vh - r.height - margin);
+  const nextLeft = clamp(curLeft, margin, vw - box.width - margin);
+  const nextTop = clamp(curTop, margin, vh - box.height - margin);
 
   elm.style.left = `${nextLeft}px`;
   elm.style.top = `${nextTop}px`;
 }
 
 export function makePanelDraggable({ panel, header, dragThresholdPx, savePos, loadPos }) {
+  const handles = (Array.isArray(header) ? header : [header]).filter(Boolean);
   let pointerDown = false;
   let dragging = false;
   let pointerId = null;
+
+  for (const handle of handles) {
+    handle.classList.add("vb-floating-drag-handle");
+  }
 
   let startX = 0,
     startY = 0;
@@ -65,6 +83,7 @@ export function makePanelDraggable({ panel, header, dragThresholdPx, savePos, lo
 
     dragging = true;
     panel.classList.add("is-dragging");
+    document.documentElement.classList.add("vb-floating-drag-active");
   }
 
   function applyMove() {
@@ -103,6 +122,7 @@ export function makePanelDraggable({ panel, header, dragThresholdPx, savePos, lo
     if (dragging) {
       dragging = false;
       panel.classList.remove("is-dragging");
+      document.documentElement.classList.remove("vb-floating-drag-active");
       clampElementToViewport(panel);
 
       savePos({
@@ -114,7 +134,7 @@ export function makePanelDraggable({ panel, header, dragThresholdPx, savePos, lo
     pointerId = null;
   }
 
-  header.addEventListener("pointerdown", (e) => {
+  function onPointerDown(e) {
     if (e.target?.closest?.(".calc-close, .calc-settings-btn")) return;
 
     // Mouse: left button only
@@ -127,7 +147,7 @@ export function makePanelDraggable({ panel, header, dragThresholdPx, savePos, lo
     startY = lastY = e.clientY;
 
     try {
-      header.setPointerCapture(pointerId);
+      e.currentTarget?.setPointerCapture?.(pointerId);
     } catch {
       // ignore
     }
@@ -138,11 +158,11 @@ export function makePanelDraggable({ panel, header, dragThresholdPx, savePos, lo
       return;
     }
 
-    // Touch/Pen: wait until movement threshold, but prevent scroll jitter
-    e.preventDefault();
-  });
+    // Touch/Pen: the handle's touch-action keeps the page from stealing
+    // this pointer before the drag threshold is crossed.
+  }
 
-  header.addEventListener("pointermove", (e) => {
+  function onPointerMove(e) {
     if (!pointerDown) return;
 
     lastX = e.clientX;
@@ -161,10 +181,14 @@ export function makePanelDraggable({ panel, header, dragThresholdPx, savePos, lo
     // While dragging, keep it smooth and avoid excessive style writes
     if (e.pointerType !== "mouse") e.preventDefault();
     scheduleMove();
-  }, { passive: false });
+  }
 
-  header.addEventListener("pointerup", endDrag);
-  header.addEventListener("pointercancel", endDrag);
+  for (const handle of handles) {
+    handle.addEventListener("pointerdown", onPointerDown);
+    handle.addEventListener("pointermove", onPointerMove, { passive: false });
+    handle.addEventListener("pointerup", endDrag);
+    handle.addEventListener("pointercancel", endDrag);
+  }
 
   // Keep in bounds on resize
   window.addEventListener("resize", () => {
@@ -194,6 +218,8 @@ export function makeLauncherDraggable({ launcherEl, dragThresholdPx, savePos, lo
   let moved = false;
   let rafId = 0;
 
+  launcherEl.classList.add("vb-floating-drag-handle");
+
   function startDragNow() {
     if (dragging) return;
 
@@ -208,6 +234,7 @@ export function makeLauncherDraggable({ launcherEl, dragThresholdPx, savePos, lo
 
     dragging = true;
     launcherEl.classList.add("is-dragging");
+    document.documentElement.classList.add("vb-floating-drag-active");
   }
 
   function applyMove() {
@@ -248,6 +275,7 @@ export function makeLauncherDraggable({ launcherEl, dragThresholdPx, savePos, lo
     if (dragging) {
       dragging = false;
       launcherEl.classList.remove("is-dragging");
+      document.documentElement.classList.remove("vb-floating-drag-active");
 
       clampElementToViewport(launcherEl);
 
@@ -279,8 +307,7 @@ export function makeLauncherDraggable({ launcherEl, dragThresholdPx, savePos, lo
       return;
     }
 
-    // Touch/Pen: only begin after threshold to keep tap-to-open reliable
-    e.preventDefault();
+    // Touch/Pen: only begin after threshold to keep tap-to-open reliable.
   });
 
   launcherEl.addEventListener("pointermove", (e) => {
@@ -315,6 +342,27 @@ export function makeLauncherDraggable({ launcherEl, dragThresholdPx, savePos, lo
 
   launcherEl.addEventListener("pointercancel", endDrag);
 
+  function handleResize() {
+    if (!launcherEl.isConnected) return;
+    if (launcherEl.hidden && (!launcherEl.style.left || !launcherEl.style.top)) return;
+
+    clampElementToViewport(launcherEl);
+    savePos({
+      ...(loadPos() || {}),
+      launcher: { left: launcherEl.style.left, top: launcherEl.style.top },
+    });
+  }
+
+  window.addEventListener("resize", handleResize);
+
   // Return a function for checking if last interaction moved
-  return () => moved;
+  function wasMoved() {
+    return moved;
+  }
+
+  wasMoved.destroy = function destroyLauncherDrag() {
+    window.removeEventListener("resize", handleResize);
+  };
+
+  return wasMoved;
 }

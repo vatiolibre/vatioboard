@@ -134,6 +134,13 @@ function createGeolocationMock() {
 }
 
 beforeEach(() => {
+  window.__vatioboardRouter?.destroy?.();
+  delete window.__vatioboardRouter;
+  delete window.__vatioboardSpa;
+  delete window.__vatioboardPlayerWidget;
+  delete window.__vatioboardFloatingTools;
+  delete window.__vatioboardStartMenu;
+
   const canvasContexts = new WeakMap();
   const geolocation = createGeolocationMock();
   const mediaSession = {
@@ -164,7 +171,7 @@ beforeEach(() => {
     configurable: true,
     writable: true,
     value: vi.fn((query) => ({
-      matches: false,
+      matches: query === "(prefers-reduced-motion: reduce)",
       media: query,
       onchange: null,
       addListener: vi.fn(),
@@ -210,6 +217,14 @@ beforeEach(() => {
     value: mediaSession,
   });
 
+  Object.defineProperty(window.navigator, "locks", {
+    configurable: true,
+    writable: true,
+    value: {
+      request: vi.fn((_name, _options, callback) => Promise.resolve(callback({ name: "test-lock" }))),
+    },
+  });
+
   Object.defineProperty(window, "MediaMetadata", {
     configurable: true,
     writable: true,
@@ -221,6 +236,30 @@ beforeEach(() => {
     writable: true,
     value: FakeAudio,
   });
+  Object.defineProperty(globalThis, "Audio", {
+    configurable: true,
+    writable: true,
+    value: FakeAudio,
+  });
+
+  // Stub HTMLMediaElement methods that jsdom does not implement to suppress
+  // noisy "Not implemented" warnings from media element lifecycle cleanup
+  // (pause/load calls in destroy paths).
+  for (const method of ["play", "pause", "load"]) {
+    if (!HTMLMediaElement.prototype[method].__stubbed) {
+      const original = HTMLMediaElement.prototype[method];
+      Object.defineProperty(HTMLMediaElement.prototype, method, {
+        configurable: true,
+        writable: true,
+        value: Object.assign(function stubbed() {
+          if (method === "play") {
+            this.dispatchEvent?.(new Event("play"));
+            return Promise.resolve();
+          }
+        }, { __stubbed: true, __original: original }),
+      });
+    }
+  }
 
   Object.defineProperty(window, "ResizeObserver", {
     configurable: true,
@@ -404,6 +443,13 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  window.__vatioboardRouter?.destroy?.();
+  delete window.__vatioboardRouter;
+  delete window.__vatioboardSpa;
+  delete window.__vatioboardPlayerWidget;
+  delete window.__vatioboardFloatingTools;
+  delete window.__vatioboardStartMenu;
+
   localStorage.clear();
   sessionStorage.clear();
   document.open();

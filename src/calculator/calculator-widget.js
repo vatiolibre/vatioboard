@@ -32,6 +32,10 @@ export function createCalculatorWidget(options = {}) {
     floating = options.button ? false : true,
     button = null,
     onResult = null,
+    onOpenEnergy = null,
+    persistVisibility = false,
+    restoreVisibility = false,
+    visibilityKey = "embeddable_calc_visibility_v1",
   } = options;
 
   const isTouchLike =
@@ -65,11 +69,30 @@ export function createCalculatorWidget(options = {}) {
     }
   }
 
+  function loadVisibility() {
+    if (!restoreVisibility) return false;
+    try {
+      return localStorage.getItem(visibilityKey) === "open";
+    } catch {
+      return false;
+    }
+  }
+
+  function saveVisibility(isOpen) {
+    if (!persistVisibility) return;
+    try {
+      localStorage.setItem(visibilityKey, isOpen ? "open" : "closed");
+    } catch {
+      // ignore
+    }
+  }
+
   const {
     panel,
     exprInput,
     historyEl,
     historyBtn,
+    energyBtn,
     historySheet,
     historyList,
     historyClearBtn,
@@ -84,7 +107,11 @@ export function createCalculatorWidget(options = {}) {
     closeBtn,
     keys,
     header,
-  } = buildPanel({ t, isTouchLike });
+  } = buildPanel({
+    t,
+    isTouchLike,
+    showEnergyTool: typeof onOpenEnergy === "function",
+  });
 
   // Apply stored panel position (if any)
   {
@@ -190,6 +217,7 @@ export function createCalculatorWidget(options = {}) {
 
   function open() {
     panel.hidden = false;
+    saveVisibility(true);
     render({ keepEnd: true });
 
     // If user dragged panel previously, ensure it stays visible
@@ -204,6 +232,7 @@ export function createCalculatorWidget(options = {}) {
 
   function close() {
     panel.hidden = true;
+    saveVisibility(false);
   }
 
   function toggle() {
@@ -297,6 +326,14 @@ export function createCalculatorWidget(options = {}) {
     close();
   });
 
+  if (energyBtn && typeof onOpenEnergy === "function") {
+    energyBtn.addEventListener("click", () => {
+      historyApi?.setHistorySheetOpen(false);
+      settingsApi?.setSettingsSheetOpen(false);
+      onOpenEnergy();
+    });
+  }
+
   // launcher (floating button) unless user provided their own button
   let launcher;
 
@@ -348,10 +385,15 @@ export function createCalculatorWidget(options = {}) {
   mount.appendChild(panel);
   render();
 
+  if (loadVisibility()) {
+    open();
+  }
+
   return {
     open,
     close,
     toggle,
+    isOpen: () => !panel.hidden,
     setExpression: (s) => {
       core.setExpr(String(s ?? ""));
       render();

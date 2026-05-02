@@ -1,44 +1,36 @@
 import {
-  BACKGROUND_KEEPALIVE_DURATION_SECONDS,
-  BACKGROUND_KEEPALIVE_SAMPLE_RATE,
   MEDIA_METADATA_MIN_UPDATE_INTERVAL_MS,
   MEDIA_SESSION_FALLBACK_ARTWORK,
   OVERSPEED_SOUND_URL,
   RUNTIME_ARTWORK_SIZE,
   SPEED_APP_NAME,
+  START_RECORDING_SOUND_URL,
   TRAP_SOUND_URL,
   UNIT_CONFIG,
 } from "./constants.js";
+import {
+  activateAudioElement,
+  primeAudioElement,
+  silenceAudioElement,
+} from "../shared/audio-channel-retainer.js";
+import {
+  acquireBackgroundAudioLease,
+  getBackgroundKeepAliveAudio,
+  isBackgroundAudioLeaseActive,
+  releaseBackgroundAudioLease,
+} from "../shared/audio-system.js";
+import {
+  clearMediaSessionClient,
+  updateMediaSessionClient,
+} from "../shared/media-session-adapter.js";
 import { shouldPlayOverspeedSound } from "./alerts.js";
 import { capitalizeText, escapeSvgText, getDistanceDisplay, truncateText } from "./render.js";
 
-export function writeAsciiString(view, offset, value) {
-  for (let index = 0; index < value.length; index += 1) {
-    view.setUint8(offset + index, value.charCodeAt(index));
-  }
-}
-
-export function createSilentLoopAudioUrl() {
-  const sampleCount = BACKGROUND_KEEPALIVE_SAMPLE_RATE * BACKGROUND_KEEPALIVE_DURATION_SECONDS;
-  const buffer = new ArrayBuffer(44 + (sampleCount * 2));
-  const view = new DataView(buffer);
-
-  writeAsciiString(view, 0, "RIFF");
-  view.setUint32(4, 36 + (sampleCount * 2), true);
-  writeAsciiString(view, 8, "WAVE");
-  writeAsciiString(view, 12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, BACKGROUND_KEEPALIVE_SAMPLE_RATE, true);
-  view.setUint32(28, BACKGROUND_KEEPALIVE_SAMPLE_RATE * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  writeAsciiString(view, 36, "data");
-  view.setUint32(40, sampleCount * 2, true);
-
-  return URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
-}
+export const SPEED_BACKGROUND_AUDIO_LEASE = "speed-alerts";
+export const SPEED_RECORDING_BACKGROUND_AUDIO_LEASE = "speed-recording";
+const SPEED_MEDIA_SESSION_OWNER = "speed";
+// Keep Speed below the audible player runtime so transport controls remain player-owned.
+const SPEED_MEDIA_SESSION_PRIORITY = 5;
 
 export function createSpeedAudioController({
   state,
@@ -49,6 +41,7 @@ export function createSpeedAudioController({
   getAlertLimitDisplayValue,
   getSubStatusText,
   getCriticalAlertText,
+  onStateChange,
 }) {
   const overspeedAudio = new Audio(OVERSPEED_SOUND_URL);
   overspeedAudio.loop = true;
@@ -60,27 +53,35 @@ export function createSpeedAudioController({
   trapAlertAudio.preload = "auto";
   trapAlertAudio.playsInline = true;
 
-  let backgroundKeepAliveAudioUrl = createSilentLoopAudioUrl();
-  const backgroundKeepAliveAudio = new Audio(backgroundKeepAliveAudioUrl);
-  backgroundKeepAliveAudio.loop = true;
-  backgroundKeepAliveAudio.preload = "auto";
-  backgroundKeepAliveAudio.playsInline = true;
+  const alertAudioEnabledAudio = new Audio(TRAP_SOUND_URL);
+  alertAudioEnabledAudio.loop = false;
+  alertAudioEnabledAudio.preload = "auto";
+  alertAudioEnabledAudio.playsInline = true;
+
+  const startRecordingAudio = new Audio(START_RECORDING_SOUND_URL);
+  startRecordingAudio.loop = false;
+  startRecordingAudio.preload = "auto";
+  startRecordingAudio.playsInline = true;
+
+  const backgroundKeepAliveAudio = getBackgroundKeepAliveAudio();
 
   let audioPrimePromise = null;
+  let recordingKeepAliveArmPromise = null;
+
+  function notifyStateChange() {
+    if (typeof onStateChange !== "function") return;
+    try {
+      onStateChange();
+    } catch {
+      // Audio state changes should not be blocked by advisory UI.
+    }
+  }
 
   trapAlertAudio.addEventListener("ended", () => {
     state.trapSoundPending = false;
     state.trapAudible = false;
     state.trapSoundDeadlineAt = 0;
   });
-
-  function supportsMediaSession() {
-    return "mediaSession" in navigator;
-  }
-
-  function supportsMediaMetadata() {
-    return supportsMediaSession() && typeof window.MediaMetadata === "function";
-  }
 
   function getRuntimeSpeedLabel() {
     return `${Math.round(convertSpeed(state.currentSpeedMs, state.unit))} ${UNIT_CONFIG[state.unit].label}`;
@@ -92,7 +93,7 @@ export function createSpeedAudioController({
   }
 
   function getRuntimeBackgroundAudioLabel() {
-    return `${t("backgroundAudio")}: ${state.backgroundAudioEnabled ? t("on") : t("off")}`;
+    return `${t("backgroundAudio")}: ${state.backgroundMode ? t("on") : t("off")}`;
   }
 
   function getRuntimeArtworkStatusBadgeText() {
@@ -163,12 +164,18 @@ export function createSpeedAudioController({
   }
 
   function getRuntimeMediaPlaybackState() {
-    if (!backgroundKeepAliveAudio.paused || !overspeedAudio.paused || !trapAlertAudio.paused) {
+    if (
+      isBackgroundAudioLeaseActive(SPEED_RECORDING_BACKGROUND_AUDIO_LEASE)
+      || isBackgroundAudioLeaseActive(SPEED_BACKGROUND_AUDIO_LEASE)
+      || !overspeedAudio.paused
+      || !trapAlertAudio.paused
+    ) {
       return "playing";
     }
 
     if (
-      state.backgroundAudioEnabled
+      state.backgroundMode
+      || state.alertAudioControlActive
       || state.backgroundAudioArmPending
       || state.alertSoundPending
       || state.trapSoundPending
@@ -242,7 +249,7 @@ export function createSpeedAudioController({
       alertLabel: t("alerts"),
       alertValue: truncateText(getRuntimeArtworkAlertValue(alertState), 22),
       backgroundLabel: t("backgroundCompact"),
-      backgroundValue: truncateText(state.backgroundAudioEnabled ? t("on") : t("off"), 12),
+      backgroundValue: truncateText(state.backgroundMode ? t("on") : t("off"), 12),
       palette: getRuntimeArtworkPalette(alertState),
     };
   }
@@ -363,22 +370,14 @@ export function createSpeedAudioController({
       state.runtimePageTitle = nextPageTitle;
     }
 
-    if (!supportsMediaSession()) {
-      return;
-    }
-
     const nextPlaybackState = getRuntimeMediaPlaybackState();
     if (state.runtimeMediaPlaybackState !== nextPlaybackState) {
-      try {
-        navigator.mediaSession.playbackState = nextPlaybackState;
-      } catch {
-        // Ignore partial media session implementations.
-      }
+      updateMediaSessionClient(SPEED_MEDIA_SESSION_OWNER, {
+        active: true,
+        priority: SPEED_MEDIA_SESSION_PRIORITY,
+        playbackState: nextPlaybackState,
+      });
       state.runtimeMediaPlaybackState = nextPlaybackState;
-    }
-
-    if (!supportsMediaMetadata()) {
-      return;
     }
 
     const artworkSignature = state.runtimeDynamicArtworkBlocked
@@ -396,7 +395,7 @@ export function createSpeedAudioController({
     const metadataUrgencySignature = JSON.stringify([
       state.statusKind,
       state.audioMuted,
-      state.backgroundAudioEnabled,
+      state.backgroundMode,
       state.lastFixAt > 0,
       alertState.source,
       alertState.over,
@@ -423,71 +422,205 @@ export function createSpeedAudioController({
       artwork: state.runtimeDynamicArtworkBlocked
         ? MEDIA_SESSION_FALLBACK_ARTWORK
         : getRuntimeMediaArtwork(alertState),
+      fallbackArtwork: MEDIA_SESSION_FALLBACK_ARTWORK,
     };
 
-    try {
-      navigator.mediaSession.metadata = new window.MediaMetadata(metadataInit);
-    } catch {
-      if (!state.runtimeDynamicArtworkBlocked) {
-        state.runtimeDynamicArtworkBlocked = true;
-        try {
-          navigator.mediaSession.metadata = new window.MediaMetadata({
-            ...metadataInit,
-            artwork: MEDIA_SESSION_FALLBACK_ARTWORK,
-          });
-        } catch {
-          // Ignore browsers that reject metadata construction.
-        }
-      }
-    }
+    updateMediaSessionClient(SPEED_MEDIA_SESSION_OWNER, {
+      active: true,
+      priority: SPEED_MEDIA_SESSION_PRIORITY,
+      metadata: metadataInit,
+    });
     state.runtimeMediaMetadataSignature = metadataSignature;
     state.runtimeMediaMetadataUrgencySignature = metadataUrgencySignature;
     state.runtimeMediaMetadataUpdatedAt = now;
   }
 
-  function setMediaSessionActionHandler(action, handler) {
-    if (!supportsMediaSession() || typeof navigator.mediaSession.setActionHandler !== "function") {
-      return;
-    }
-
-    try {
-      navigator.mediaSession.setActionHandler(action, handler);
-    } catch {
-      // Ignore unsupported actions.
-    }
-  }
-
   function installMediaSessionActionHandlers(handlers) {
-    setMediaSessionActionHandler("play", () => {
-      handlers.setBackgroundAudioEnabled(true, { fromUserGesture: true });
+    updateMediaSessionClient(SPEED_MEDIA_SESSION_OWNER, {
+      active: true,
+      priority: SPEED_MEDIA_SESSION_PRIORITY,
+      handlers: {
+        play: () => {
+          handlers.handleRecordingMediaSessionPlay?.({
+            source: "media-session-play",
+            fromUserGesture: true,
+          });
+        },
+        pause: () => {
+          handlers.handleSpeedMediaSessionPause?.({
+            source: "media-session-pause",
+            reason: "speed-media-session-pause-ignored-for-keep-alive",
+          });
+        },
+        stop: () => {
+          handlers.handleSpeedMediaSessionStop?.({
+            source: "media-session-stop",
+            reason: "speed-media-session-stop-ignored-for-keep-alive",
+          });
+        },
+      },
     });
-    setMediaSessionActionHandler("pause", () => {
-      handlers.setBackgroundAudioEnabled(false, { fromUserGesture: true });
-    });
-    setMediaSessionActionHandler("stop", () => {
-      handlers.setBackgroundAudioEnabled(false, { fromUserGesture: true });
-      handlers.setAudioMuted(true, { fromUserGesture: true });
-    });
-  }
-
-  function silenceAudioElement(audio) {
-    audio.muted = true;
-    audio.volume = 0;
-  }
-
-  function activateAudioElement(audio) {
-    audio.muted = false;
-    audio.volume = 1;
   }
 
   function wantsBackgroundAudio() {
-    return state.backgroundAudioEnabled && !state.audioMuted && !state.backgroundAudioSuppressed;
+    return (
+      (state.backgroundMode || state.alertAudioControlActive) &&
+      !state.backgroundAudioSuppressed
+    );
+  }
+
+  function wantsRecordingKeepAliveAudio() {
+    return state.recordingKeepAliveIntended && !state.recordingKeepAliveSuppressed;
+  }
+
+  function isMediaSessionSource(source = "") {
+    return String(source).startsWith("media-session");
+  }
+
+  function isMediaSessionReason(reason = "") {
+    return String(reason).includes("media-session");
+  }
+
+  function shouldIgnoreMediaSessionKeepAliveDisarm({ source = "", reason = "" } = {}) {
+    return isMediaSessionSource(source) || isMediaSessionReason(reason);
+  }
+
+  function isStaleRecordingKeepAliveArm(revision) {
+    return revision !== state.recordingKeepAliveRevision || !wantsRecordingKeepAliveAudio();
+  }
+
+  function isRecordingKeepAliveArmed() {
+    return (
+      state.recordingKeepAliveArmed
+      && !state.recordingKeepAlivePending
+      && isBackgroundAudioLeaseActive(SPEED_RECORDING_BACKGROUND_AUDIO_LEASE)
+    );
+  }
+
+  function isBackgroundAlertAudioArmed() {
+    return (
+      state.backgroundAudioArmed
+      && !state.backgroundAudioArmPending
+      && isBackgroundAudioLeaseActive(SPEED_BACKGROUND_AUDIO_LEASE)
+    );
+  }
+
+  async function armRecordingKeepAliveAudio({ fromUserGesture = false } = {}) {
+    if (!state.recordingKeepAliveIntended) {
+      state.recordingKeepAliveIntended = true;
+      state.recordingKeepAliveRevision = (state.recordingKeepAliveRevision || 0) + 1;
+    }
+
+    if (fromUserGesture) {
+      state.recordingKeepAliveSuppressed = false;
+      state.recordingKeepAliveBlocked = false;
+    }
+
+    if (isRecordingKeepAliveArmed()) {
+      state.recordingKeepAliveSuppressed = false;
+      state.recordingKeepAliveBlocked = false;
+      notifyStateChange();
+      return true;
+    }
+
+    if (state.recordingKeepAlivePending) {
+      return recordingKeepAliveArmPromise ?? false;
+    }
+
+    const recordingKeepAliveRevision = state.recordingKeepAliveRevision;
+    state.recordingKeepAlivePending = true;
+    notifyStateChange();
+
+    recordingKeepAliveArmPromise = acquireBackgroundAudioLease(
+      SPEED_RECORDING_BACKGROUND_AUDIO_LEASE,
+      {
+        shouldContinue: () => !isStaleRecordingKeepAliveArm(recordingKeepAliveRevision),
+      },
+    ).then(Boolean, () => false);
+
+    try {
+      const armed = await recordingKeepAliveArmPromise;
+      if (isStaleRecordingKeepAliveArm(recordingKeepAliveRevision)) {
+        releaseBackgroundAudioLease(SPEED_RECORDING_BACKGROUND_AUDIO_LEASE);
+        return false;
+      }
+
+      state.recordingKeepAliveArmed =
+        armed && isBackgroundAudioLeaseActive(SPEED_RECORDING_BACKGROUND_AUDIO_LEASE);
+      state.recordingKeepAliveSuppressed = !state.recordingKeepAliveArmed;
+      state.recordingKeepAliveBlocked = !state.recordingKeepAliveArmed;
+      if (!state.recordingKeepAliveArmed) {
+        releaseBackgroundAudioLease(SPEED_RECORDING_BACKGROUND_AUDIO_LEASE);
+      }
+      return state.recordingKeepAliveArmed;
+    } finally {
+      state.recordingKeepAlivePending = false;
+      recordingKeepAliveArmPromise = null;
+      notifyStateChange();
+    }
+  }
+
+  function disarmRecordingKeepAliveAudio({
+    retainIntent = false,
+    suppressed = false,
+    blocked = false,
+    source = "",
+    reason = "",
+  } = {}) {
+    if (shouldIgnoreMediaSessionKeepAliveDisarm({ source, reason })) {
+      return false;
+    }
+
+    state.recordingKeepAliveRevision = (state.recordingKeepAliveRevision || 0) + 1;
+    state.recordingKeepAliveIntended = retainIntent;
+    state.recordingKeepAliveArmed = false;
+    state.recordingKeepAlivePending = false;
+    state.recordingKeepAliveSuppressed = Boolean(retainIntent && suppressed);
+    state.recordingKeepAliveBlocked = Boolean(retainIntent && blocked);
+    releaseBackgroundAudioLease(SPEED_RECORDING_BACKGROUND_AUDIO_LEASE);
+    notifyStateChange();
+    return true;
+  }
+
+  function suppressRecordingKeepAliveAudio({ blocked = false, source = "", reason = "" } = {}) {
+    if (shouldIgnoreMediaSessionKeepAliveDisarm({ source, reason })) {
+      return false;
+    }
+
+    return disarmRecordingKeepAliveAudio({
+      retainIntent: state.recordingKeepAliveIntended,
+      suppressed: state.recordingKeepAliveIntended,
+      blocked,
+      source,
+      reason,
+    });
+  }
+
+  function maybeRecoverRecordingKeepAliveAudio({ fromUserGesture = false } = {}) {
+    if (!state.recordingKeepAliveIntended) {
+      return false;
+    }
+
+    if (isRecordingKeepAliveArmed()) {
+      state.recordingKeepAliveSuppressed = false;
+      state.recordingKeepAliveBlocked = false;
+      notifyStateChange();
+      return true;
+    }
+
+    if (!fromUserGesture) {
+      return false;
+    }
+
+    state.recordingKeepAliveSuppressed = false;
+    state.recordingKeepAliveBlocked = false;
+    void armRecordingKeepAliveAudio({ fromUserGesture });
+    return true;
   }
 
   function canRecoverSuppressedBackgroundAudio() {
     return state.backgroundAudioSuppressed
-      && state.backgroundAudioEnabled
-      && !state.audioMuted
+      && (state.backgroundMode || state.alertAudioControlActive)
       && state.lastFixAt > 0;
   }
 
@@ -502,6 +635,7 @@ export function createSpeedAudioController({
           return;
         }
         state.backgroundAudioSuppressed = false;
+        notifyStateChange();
         void armBackgroundAlertAudio();
       })
       .catch(() => {});
@@ -520,81 +654,77 @@ export function createSpeedAudioController({
     }
 
     state.backgroundAudioSuppressed = false;
-    void armBackgroundAlertAudio();
+    notifyStateChange();
+    void armBackgroundAlertAudio({ fromUserGesture });
     return true;
   }
 
   function handleUserGestureAudioActivation() {
+    void maybeRecoverRecordingKeepAliveAudio({ fromUserGesture: true });
+
     if (maybeRecoverSuppressedBackgroundAudio({ fromUserGesture: true })) {
       return;
     }
 
     if (wantsBackgroundAudio()) {
-      void armBackgroundAlertAudio();
+      void armBackgroundAlertAudio({ fromUserGesture: true });
     } else if (!state.audioMuted) {
       void primeAlertAudio();
     }
   }
 
-  function suppressBackgroundAudioRuntime() {
+  function suppressBackgroundAudioRuntime({ source = "", reason = "" } = {}) {
+    if (shouldIgnoreMediaSessionKeepAliveDisarm({ source, reason })) {
+      return false;
+    }
+
     state.backgroundAudioRevision += 1;
     state.backgroundAudioSuppressed = true;
     state.backgroundAudioArmed = false;
     state.backgroundAudioArmPending = false;
+    state.alertAudioControlActive = false;
     clearTrapMuteTimeout();
-    stopBackgroundKeepAliveAudio();
+    releaseBackgroundAudioLease(SPEED_BACKGROUND_AUDIO_LEASE);
+    notifyStateChange();
+    return true;
   }
 
-  function isStaleBackgroundAudioArm(revision) {
-    return revision !== state.backgroundAudioRevision || !wantsBackgroundAudio();
+  function playOneShotAudio(audio) {
+    try {
+      audio.pause();
+      audio.currentTime = 0;
+      activateAudioElement(audio);
+      const playPromise = audio.play();
+      if (playPromise && typeof playPromise.catch === "function") {
+        playPromise.catch(() => {});
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function playAlertAudioEnabledSound() {
+    return playOneShotAudio(alertAudioEnabledAudio);
+  }
+
+  function playStartRecordingSound() {
+    return playOneShotAudio(startRecordingAudio);
   }
 
   function stopAudioElementPlayback(audio) {
+    if (!audio) return;
     audio.pause();
     audio.currentTime = 0;
   }
 
-  async function ensureBackgroundKeepAliveAudio(revision = state.backgroundAudioRevision) {
-    backgroundKeepAliveAudio.loop = true;
-    backgroundKeepAliveAudio.muted = false;
-    backgroundKeepAliveAudio.volume = 1;
+  async function ensureAudioElementLooping(audio, { shouldContinue = null } = {}) {
+    if (!audio) return false;
 
-    if (!backgroundKeepAliveAudio.paused) {
-      return !isStaleBackgroundAudioArm(revision);
-    }
-
-    backgroundKeepAliveAudio.currentTime = 0;
-    const playPromise = backgroundKeepAliveAudio.play();
-    if (playPromise && typeof playPromise.then === "function") {
-      await playPromise;
-    }
-
-    if (isStaleBackgroundAudioArm(revision)) {
-      if (!wantsBackgroundAudio()) {
-        stopBackgroundKeepAliveAudio();
-      }
-      return false;
-    }
-
-    return true;
-  }
-
-  function stopBackgroundKeepAliveAudio() {
-    backgroundKeepAliveAudio.pause();
-    backgroundKeepAliveAudio.currentTime = 0;
-  }
-
-  function revokeBackgroundKeepAliveAudioUrl() {
-    if (!backgroundKeepAliveAudioUrl) return;
-    URL.revokeObjectURL(backgroundKeepAliveAudioUrl);
-    backgroundKeepAliveAudioUrl = "";
-  }
-
-  async function ensureAudioElementLooping(audio, revision = state.backgroundAudioRevision) {
     audio.loop = true;
 
     if (!audio.paused) {
-      return !isStaleBackgroundAudioArm(revision);
+      return typeof shouldContinue === "function" ? shouldContinue() : true;
     }
 
     silenceAudioElement(audio);
@@ -604,14 +734,35 @@ export function createSpeedAudioController({
       await playPromise;
     }
 
-    if (isStaleBackgroundAudioArm(revision)) {
-      if (!wantsBackgroundAudio()) {
-        stopAudioElementPlayback(audio);
-      }
+    if (typeof shouldContinue === "function" && !shouldContinue()) {
+      stopAudioElementPlayback(audio);
       return false;
     }
 
     return true;
+  }
+
+  function ensureBackgroundAlertLooping(audio, backgroundAudioRevision) {
+    if (!audio || !audio.paused) {
+      return Promise.resolve(
+        !audio || !isStaleBackgroundAudioArm(backgroundAudioRevision)
+      );
+    }
+
+    return ensureAudioElementLooping(audio, {
+      shouldContinue: () => !isStaleBackgroundAudioArm(backgroundAudioRevision),
+    }).then(Boolean, () => false);
+  }
+
+  function startBackgroundAlertLoops(backgroundAudioRevision) {
+    return Promise.all([
+      ensureBackgroundAlertLooping(overspeedAudio, backgroundAudioRevision),
+      ensureBackgroundAlertLooping(trapAlertAudio, backgroundAudioRevision),
+    ]);
+  }
+
+  function isStaleBackgroundAudioArm(revision) {
+    return revision !== state.backgroundAudioRevision || !wantsBackgroundAudio();
   }
 
   function invalidateOverspeedSoundRequest() {
@@ -644,7 +795,9 @@ export function createSpeedAudioController({
     }
 
     if (state.backgroundAudioArmed) {
-      void ensureAudioElementLooping(overspeedAudio, state.backgroundAudioRevision).catch(() => {});
+      void ensureAudioElementLooping(overspeedAudio, {
+        shouldContinue: () => !isStaleBackgroundAudioArm(state.backgroundAudioRevision),
+      }).catch(() => {});
     }
   }
 
@@ -680,21 +833,25 @@ export function createSpeedAudioController({
     if (!playPromise || typeof playPromise.then !== "function") {
       state.alertSoundBlocked = false;
       state.overspeedAudible = true;
+      notifyStateChange();
       return;
     }
 
     state.alertSoundPending = true;
+    notifyStateChange();
     playPromise
       .then(() => {
         if (overspeedSoundRequestId !== state.overspeedSoundRequestId) return;
         state.alertSoundPending = false;
         state.alertSoundBlocked = false;
         state.overspeedAudible = true;
+        notifyStateChange();
       })
       .catch(() => {
         if (overspeedSoundRequestId !== state.overspeedSoundRequestId) return;
         state.alertSoundPending = false;
         state.alertSoundBlocked = true;
+        notifyStateChange();
         stopOverspeedSound();
       });
   }
@@ -736,7 +893,9 @@ export function createSpeedAudioController({
     }
 
     if (state.backgroundAudioArmed) {
-      void ensureAudioElementLooping(trapAlertAudio, state.backgroundAudioRevision).catch(() => {});
+      void ensureAudioElementLooping(trapAlertAudio, {
+        shouldContinue: () => !isStaleBackgroundAudioArm(state.backgroundAudioRevision),
+      }).catch(() => {});
     }
   }
 
@@ -757,38 +916,6 @@ export function createSpeedAudioController({
     state.trapMuteTimeoutId = window.setTimeout(() => {
       keepTrapAudioAlive();
     }, Math.max(0, delayMs));
-  }
-
-  async function primeAudioElement(audio) {
-    if (!audio.paused) {
-      return true;
-    }
-
-    const previousMuted = audio.muted;
-    const previousVolume = audio.volume;
-    const previousLoop = audio.loop;
-
-    audio.muted = true;
-    audio.volume = 0;
-    audio.currentTime = 0;
-
-    try {
-      const playPromise = audio.play();
-      if (playPromise && typeof playPromise.then === "function") {
-        await playPromise;
-      }
-      audio.pause();
-      audio.currentTime = 0;
-      return true;
-    } catch {
-      audio.pause();
-      audio.currentTime = 0;
-      return false;
-    } finally {
-      audio.muted = previousMuted;
-      audio.volume = previousVolume;
-      audio.loop = previousLoop;
-    }
   }
 
   function primeAlertAudio() {
@@ -813,23 +940,25 @@ export function createSpeedAudioController({
           state.alertSoundBlocked = false;
           state.trapSoundBlocked = false;
         }
+        notifyStateChange();
 
         return state.audioPrimed;
       } finally {
         state.audioPrimePending = false;
         audioPrimePromise = null;
+        notifyStateChange();
       }
     })();
 
     return audioPrimePromise;
   }
 
-  async function armBackgroundAlertAudio() {
+  async function armBackgroundAlertAudio({ fromUserGesture = false } = {}) {
     if (!wantsBackgroundAudio()) return;
     if (
       state.backgroundAudioArmed
       && !state.backgroundAudioArmPending
-      && !backgroundKeepAliveAudio.paused
+      && isBackgroundAudioLeaseActive(SPEED_BACKGROUND_AUDIO_LEASE)
       && !overspeedAudio.paused
       && !trapAlertAudio.paused
     ) {
@@ -840,38 +969,48 @@ export function createSpeedAudioController({
     const backgroundAudioRevision = state.backgroundAudioRevision;
     let shouldRetry = false;
     state.backgroundAudioArmPending = true;
+    notifyStateChange();
+    const keepAlivePromise = acquireBackgroundAudioLease(SPEED_BACKGROUND_AUDIO_LEASE, {
+      shouldContinue: () => !isStaleBackgroundAudioArm(backgroundAudioRevision),
+    }).then(Boolean, () => false);
 
     try {
-      const audioPrimed = await primeAlertAudio();
+      // Touch browsers can drop transient activation before a later replay, so
+      // the gesture path starts the durable muted alert loops immediately.
+      const alertLoopPromise = fromUserGesture
+        ? startBackgroundAlertLoops(backgroundAudioRevision)
+        : null;
+      if (!fromUserGesture) {
+        await primeAlertAudio();
+      }
       if (isStaleBackgroundAudioArm(backgroundAudioRevision)) {
         shouldRetry = wantsBackgroundAudio();
-        return;
-      }
-      if (!audioPrimed) {
         return;
       }
 
-      await ensureBackgroundKeepAliveAudio(backgroundAudioRevision);
+      const keepAliveStarted = await keepAlivePromise;
       if (isStaleBackgroundAudioArm(backgroundAudioRevision)) {
         shouldRetry = wantsBackgroundAudio();
         return;
       }
-      await Promise.all([
-        overspeedAudio.paused
-          ? ensureAudioElementLooping(overspeedAudio, backgroundAudioRevision)
-          : Promise.resolve(true),
-        trapAlertAudio.paused
-          ? ensureAudioElementLooping(trapAlertAudio, backgroundAudioRevision)
-          : Promise.resolve(true),
-      ]);
-      if (isStaleBackgroundAudioArm(backgroundAudioRevision)) {
-        shouldRetry = wantsBackgroundAudio();
-        return;
-      }
+      if (!keepAliveStarted) return;
 
       state.backgroundAudioArmed = true;
-      state.alertSoundBlocked = false;
-      state.trapSoundBlocked = false;
+      state.backgroundAudioSuppressed = false;
+      notifyStateChange();
+
+      const alertLoopsStarted = alertLoopPromise
+        ? await alertLoopPromise
+        : await startBackgroundAlertLoops(backgroundAudioRevision);
+      if (isStaleBackgroundAudioArm(backgroundAudioRevision)) {
+        shouldRetry = wantsBackgroundAudio();
+        return;
+      }
+
+      state.audioPrimed = alertLoopsStarted.every(Boolean);
+      state.alertSoundBlocked = !alertLoopsStarted[0];
+      state.trapSoundBlocked = !alertLoopsStarted[1];
+      notifyStateChange();
       if (trapAlertAudio.paused) {
         keepTrapAudioAlive();
       } else if (state.trapAudible || state.trapSoundPending) {
@@ -885,17 +1024,27 @@ export function createSpeedAudioController({
       }
     } finally {
       state.backgroundAudioArmPending = false;
+      notifyStateChange();
       if (shouldRetry && !state.backgroundAudioArmed && !state.backgroundAudioArmPending) {
         void armBackgroundAlertAudio();
       }
     }
   }
 
-  function disarmBackgroundAlertAudio({ fromUserGesture = false } = {}) {
+  function disarmBackgroundAlertAudio({
+    fromUserGesture = false,
+    source = "",
+    reason = "",
+  } = {}) {
+    if (shouldIgnoreMediaSessionKeepAliveDisarm({ source, reason })) {
+      return false;
+    }
+
     state.backgroundAudioArmed = false;
     state.backgroundAudioArmPending = false;
     clearTrapMuteTimeout();
-    stopBackgroundKeepAliveAudio();
+    releaseBackgroundAudioLease(SPEED_BACKGROUND_AUDIO_LEASE);
+    notifyStateChange();
 
     if (shouldPlayOverspeedSound(getAlertUiState(), state.alertSoundEnabled, state.audioMuted)) {
       overspeedAudio.loop = true;
@@ -922,11 +1071,13 @@ export function createSpeedAudioController({
         state.trapAudible = false;
         state.lastTrapSoundedId = null;
         syncTrapSound({ fromUserGesture });
-        return;
+        return true;
       }
     } else {
       stopTrapSound();
     }
+
+    return true;
   }
 
   function syncTrapSound({ fromUserGesture = false } = {}) {
@@ -985,6 +1136,7 @@ export function createSpeedAudioController({
       state.trapSoundBlocked = false;
       state.trapAudible = true;
       state.lastTrapSoundedId = activeTrap.id;
+      notifyStateChange();
       if (state.backgroundAudioArmed) {
         scheduleTrapAudioMute();
       }
@@ -992,6 +1144,7 @@ export function createSpeedAudioController({
     }
 
     state.trapSoundPending = true;
+    notifyStateChange();
     playPromise
       .then(() => {
         if (trapSoundRequestId !== state.trapSoundRequestId) return;
@@ -999,6 +1152,7 @@ export function createSpeedAudioController({
         state.trapSoundBlocked = false;
         state.trapAudible = true;
         state.lastTrapSoundedId = activeTrap.id;
+        notifyStateChange();
         if (state.backgroundAudioArmed) {
           scheduleTrapAudioMute();
         }
@@ -1007,12 +1161,17 @@ export function createSpeedAudioController({
         if (trapSoundRequestId !== state.trapSoundRequestId) return;
         state.trapSoundPending = false;
         state.trapSoundBlocked = true;
+        notifyStateChange();
         stopTrapSound();
       });
   }
 
   function attachRuntimeAudioEventListeners() {
-    for (const audio of [overspeedAudio, trapAlertAudio, backgroundKeepAliveAudio]) {
+    for (const audio of [
+      overspeedAudio,
+      trapAlertAudio,
+      backgroundKeepAliveAudio,
+    ]) {
       audio.addEventListener("play", syncRuntimePagePresentation);
       audio.addEventListener("pause", syncRuntimePagePresentation);
       audio.addEventListener("ended", syncRuntimePagePresentation);
@@ -1020,22 +1179,31 @@ export function createSpeedAudioController({
   }
 
   function dispose() {
-    stopBackgroundKeepAliveAudio();
-    revokeBackgroundKeepAliveAudioUrl();
+    releaseBackgroundAudioLease(SPEED_RECORDING_BACKGROUND_AUDIO_LEASE);
+    releaseBackgroundAudioLease(SPEED_BACKGROUND_AUDIO_LEASE);
+    clearMediaSessionClient(SPEED_MEDIA_SESSION_OWNER);
   }
 
   return {
     armBackgroundAlertAudio,
+    armRecordingKeepAliveAudio,
     attachRuntimeAudioEventListeners,
     disarmBackgroundAlertAudio,
+    disarmRecordingKeepAliveAudio,
     dispose,
     handleUserGestureAudioActivation,
+    isBackgroundAlertAudioArmed,
     installMediaSessionActionHandlers,
+    isRecordingKeepAliveArmed,
+    maybeRecoverRecordingKeepAliveAudio,
     maybeRecoverSuppressedBackgroundAudio,
+    playAlertAudioEnabledSound,
+    playStartRecordingSound,
     primeAlertAudio,
     stopOverspeedSound,
     stopTrapSound,
     suppressBackgroundAudioRuntime,
+    suppressRecordingKeepAliveAudio,
     syncOverspeedSound,
     syncRuntimePagePresentation,
     syncTrapSound,

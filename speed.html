@@ -1,4 +1,5 @@
 <!doctype html>
+<!-- Legacy standalone test/dev harness. Production ships through index.html SPA routes. -->
 <html lang="en" class="speed-page">
 <head>
   <meta charset="utf-8" />
@@ -232,17 +233,13 @@
                   <span class="sr-only" data-i18n="brand">Vatio Board</span>
                   <button id="speedLangToggleMenu" type="button" class="lang-toggle" data-i18n-aria="changeLanguage" aria-label="Change language" data-lang-toggle>EN</button>
                 </div>
-                <button id="openSpeedReplayMenu" type="button" class="btn-with-icon">
-                  <span class="btn-icon" aria-hidden="true"></span>
-                  <span data-i18n="driveReplay">Drive Replay</span>
-                </button>
                 <button id="openSpeedAccelMenu" type="button" class="btn-with-icon">
                   <span class="btn-icon" aria-hidden="true"></span>
                   <span data-i18n="accelerationTest">Acceleration Test</span>
                 </button>
-                <button id="openSpeedGpsLabMenu" type="button" class="btn-with-icon">
+                <button id="openSpeedLibraryMenu" type="button" class="btn-with-icon">
                   <span class="btn-icon" aria-hidden="true"></span>
-                  <span data-i18n="gpsLab">GPS Lab</span>
+                  <span data-i18n="cloudLibrary">Cloud library</span>
                 </button>
                 <button id="openSpeedBoardMenu" type="button" class="btn-with-icon">
                   <span class="btn-icon" aria-hidden="true"></span>
@@ -281,7 +278,8 @@
                     data-backend-auth-guest
                     data-backend-auth-signup
                     href="https://www.vatiolibre.com/login#signup"
-                    rel="noreferrer"
+                    target="_blank"
+                    rel="noopener noreferrer"
                     data-i18n="authCreateAccount"
                   >Create account</a>
                   <a
@@ -289,7 +287,8 @@
                     data-backend-auth-guest
                     data-backend-auth-forgot
                     href="https://www.vatiolibre.com/login#forgot"
-                    rel="noreferrer"
+                    target="_blank"
+                    rel="noopener noreferrer"
                     data-i18n="authForgotPassword"
                   >Forgot password</a>
                 </form>
@@ -370,23 +369,6 @@
               </span>
             </button>
 
-            <button
-              id="quickBackgroundAudioToggle"
-              type="button"
-              class="toolbar-recording-btn toolbar-recording-btn-background"
-              data-i18n-aria="toggleBackgroundAudio"
-              data-i18n-title="toggleBackgroundAudio"
-              aria-label="Toggle background audio"
-              title="Toggle background audio"
-            >
-              <span class="toolbar-recording-glyph toolbar-quick-icon" aria-hidden="true">
-                <svg viewBox="0 0 20 20" focusable="false">
-                  <rect x="4" y="5" width="8" height="10" rx="2" />
-                  <path d="M14.5 7.5a3.5 3.5 0 0 1 0 5" />
-                  <path d="M16.25 5.5a6 6 0 0 1 0 9" />
-                </svg>
-              </span>
-            </button>
           </div>
 
           <div class="right-stack" data-i18n-aria="connectionStatus" aria-label="Connection status">
@@ -538,7 +520,21 @@
                     <span class="speed-alert-panel-kicker" data-i18n="alerts">Alerts</span>
                     <strong id="alertPanelStatus">Off</strong>
                   </div>
-                  <button id="closeAlertPanel" type="button" class="speed-alert-done" data-i18n="done">Done</button>
+                  <button
+                    id="closeAlertPanel"
+                    type="button"
+                    class="speed-alert-close"
+                    aria-label="Close"
+                    title="Close"
+                    data-i18n-aria="close"
+                    data-i18n-title="close"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M18 6L6 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M6 6l12 12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <span class="sr-only" data-i18n="close">Close</span>
+                  </button>
                 </div>
               </div>
 
@@ -596,17 +592,6 @@
                     <button type="button" class="trap-sound-btn" data-trap-sound="off" data-i18n="off">Off</button>
                     <button type="button" class="trap-sound-btn" data-trap-sound="on" data-i18n="on">On</button>
                   </div>
-                </div>
-              </div>
-
-              <div class="speed-alert-section">
-                <div class="speed-alert-setting speed-alert-sound-setting speed-alert-background-setting">
-                  <span class="speed-alert-setting-label" data-i18n="backgroundAudio">Background audio</span>
-                  <div class="unit-switch speed-alert-switch" role="group" data-i18n-aria="backgroundAudio" aria-label="Background audio">
-                    <button type="button" class="background-audio-btn" data-background-audio="off" data-i18n="off">Off</button>
-                    <button type="button" class="background-audio-btn" data-background-audio="on" data-i18n="on">On</button>
-                  </div>
-                  <p class="speed-alert-setting-note" data-i18n="backgroundAudioHelp">Keeps alerts ready when the browser is hidden.</p>
                 </div>
               </div>
 
@@ -701,6 +686,8 @@
     </main>
   </div>
 
-  <script type="module" src="/src/speed/speed.js"></script>
+  <script type="module">
+    import "/src/speed/dev-harness.js";
+  </script>
 </body>
 </html>

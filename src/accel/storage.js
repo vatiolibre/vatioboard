@@ -1,5 +1,7 @@
 import { createIndexedJsonKeyValueStore } from '../shared/indexed-storage.js';
 import { normalizePlace } from '../shared/place-resolver.js';
+import { buildRouteBoundaryPlaceDisplay } from '../shared/route-boundary.js';
+import { createStorageCapability } from '../shared/storage-capability.js';
 import { loadJson, loadText, removeStoredValue, saveJson } from '../shared/storage.js';
 import { loadConfiguredDistanceUnit, loadConfiguredSpeedUnit } from '../shared/unit-bootstrap.js';
 import {
@@ -31,6 +33,20 @@ import {
 
 const ACCEL_DB_NAME = 'vatio-accel-storage';
 const ACCEL_DB_VERSION = 1;
+
+function normalizeBoundaryPlace(place) {
+  if (!place || typeof place !== 'object') return null;
+  if (typeof place.label === 'string' && place.raw && typeof place.raw === 'object') {
+    return {
+      label: place.label.trim(),
+      detail: typeof place.detail === 'string' ? place.detail.trim() : '',
+      raw: normalizePlace(place.raw),
+    };
+  }
+  const legacy = normalizePlace(place);
+  if (!legacy) return null;
+  return buildRouteBoundaryPlaceDisplay(legacy);
+}
 const ACCEL_DB_STORE = 'accelRecords';
 const ACCEL_STORAGE_KEYS = [STORAGE_KEYS.settings, STORAGE_KEYS.runs];
 
@@ -39,10 +55,18 @@ const accelStore = createIndexedJsonKeyValueStore({
   dbVersion: ACCEL_DB_VERSION,
   storeName: ACCEL_DB_STORE,
 });
+const accelStorageCapability = createStorageCapability({
+  namespace: 'accel-storage',
+  store: accelStore,
+});
 
 let accelMigrationPromise = null;
 let settingsSavePromise = Promise.resolve();
 let runsSavePromise = Promise.resolve();
+
+export function getAccelStorageCapability() {
+  return accelStorageCapability;
+}
 
 export function loadSharedSpeedUnitPreference() {
   const unit = loadText(SHARED_SPEED_UNIT_KEY, '');
@@ -115,7 +139,7 @@ function queuePersistence(previousPromise, task) {
 }
 
 async function migrateLegacyAccelStorage() {
-  if (!accelStore.hasSupport()) return;
+  if (!(await accelStorageCapability.isIndexedDbUsable())) return;
 
   if (!accelMigrationPromise) {
     accelMigrationPromise = (async () => {
@@ -256,8 +280,8 @@ export function normalizeStoredRun(run) {
     speedSource: typeof run.speedSource === 'string' ? run.speedSource : 'reported',
     startSpeedSource: typeof run.startSpeedSource === 'string' ? run.startSpeedSource : null,
     notes: typeof run.notes === 'string' ? run.notes : '',
-    startPlace: normalizePlace(run.startPlace),
-    endPlace: normalizePlace(run.endPlace),
+    startPlace: normalizeBoundaryPlace(run.startPlace),
+    endPlace: normalizeBoundaryPlace(run.endPlace),
   };
 
   normalizedRun.speedTrace = sampleLog.length
@@ -270,6 +294,33 @@ export function normalizeStoredRun(run) {
   }
 
   return normalizedRun;
+}
+
+export function getAccelPayloadCompleteness(run, { minPoints = 2 } = {}) {
+  const normalizedRun = normalizeStoredRun(run);
+  const requiredPoints = Math.max(1, Math.round(Number(minPoints) || 2));
+  const hasSampleLogPayload = Boolean(
+    normalizedRun
+    && Array.isArray(normalizedRun.sampleLog)
+    && normalizedRun.sampleLog.length >= requiredPoints
+  );
+  const hasSpeedTracePayload = Boolean(
+    normalizedRun
+    && Array.isArray(normalizedRun.speedTrace)
+    && normalizedRun.speedTrace.length >= requiredPoints
+  );
+  const payloadComplete = hasSampleLogPayload || hasSpeedTracePayload;
+
+  return {
+    hasSampleLogPayload,
+    hasSpeedTracePayload,
+    payloadComplete,
+    canOpen: payloadComplete,
+  };
+}
+
+export function isAccelPayloadComplete(run, options = {}) {
+  return getAccelPayloadCompleteness(run, options).payloadComplete;
 }
 
 export async function loadRuns() {
@@ -292,4 +343,16 @@ export function saveRuns(runs) {
     saveAccelValue(STORAGE_KEYS.runs, snapshot)
   );
   return runsSavePromise;
+}
+
+export async function importRun(run, options = {}) {
+  const normalizedRun = normalizeStoredRun(run);
+  if (!normalizedRun || !isAccelPayloadComplete(normalizedRun, options)) {
+    return null;
+  }
+
+  const nextRuns = (await loadRuns()).filter((entry) => entry.id !== normalizedRun.id);
+  nextRuns.unshift(normalizedRun);
+  await saveRuns(nextRuns.slice(0, options.maxRuns ?? MAX_RUNS));
+  return normalizedRun;
 }

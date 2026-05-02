@@ -527,6 +527,10 @@ export function createAccelResultGraph({
       window.cancelAnimationFrame(resultGraphRefreshFrame);
       resultGraphRefreshFrame = 0;
     }
+    if (resultGraphResizeObserver) {
+      resultGraphResizeObserver.disconnect();
+      resultGraphResizeObserver = null;
+    }
     if (resultGraphChart) {
       resultGraphChart.destroy();
       resultGraphChart = null;
@@ -652,6 +656,7 @@ export function createAccelResultGraph({
 
   function setupObservers() {
     if (!elements.resultsPanel || typeof ResizeObserver !== "function") return;
+    if (resultGraphResizeObserver) resultGraphResizeObserver.disconnect();
 
     resultGraphResizeObserver = new ResizeObserver(() => {
       const panelWidth = Math.floor(elements.resultsPanel.clientWidth || elements.resultsPanel.getBoundingClientRect().width || 0);

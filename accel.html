@@ -1,4 +1,5 @@
 <!doctype html>
+<!-- Legacy standalone test/dev harness. Production ships through index.html SPA routes. -->
 <html lang="en" class="accel-page">
   <head>
     <meta charset="utf-8" />
@@ -320,9 +321,9 @@
                       <span class="btn-icon" aria-hidden="true"></span>
                       <span data-i18n="accelSpeedometer">Speedometer</span>
                     </button>
-                    <button id="openAccelGpsLabMenu" type="button" class="btn-with-icon">
+                    <button id="openAccelLibraryMenu" type="button" class="btn-with-icon">
                       <span class="btn-icon" aria-hidden="true"></span>
-                      <span data-i18n="accelGpsLab">GPS Lab</span>
+                      <span data-i18n="cloudLibrary">Cloud library</span>
                     </button>
                     <button id="openAccelBoardMenu" type="button" class="btn-with-icon">
                       <span class="btn-icon" aria-hidden="true"></span>
@@ -383,7 +384,8 @@
                         data-backend-auth-guest
                         data-backend-auth-signup
                         href="https://www.vatiolibre.com/login#signup"
-                        rel="noreferrer"
+                        target="_blank"
+                        rel="noopener noreferrer"
                         data-i18n="authCreateAccount"
                         >Create account</a
                       >
@@ -392,7 +394,8 @@
                         data-backend-auth-guest
                         data-backend-auth-forgot
                         href="https://www.vatiolibre.com/login#forgot"
-                        rel="noreferrer"
+                        target="_blank"
+                        rel="noopener noreferrer"
                         data-i18n="authForgotPassword"
                         >Forgot password</a
                       >
@@ -606,8 +609,20 @@
               <h2 id="setupPanelTitle" class="accel-sheet-title" data-i18n="accelSetup">Setup</h2>
               <p id="setupPanelStatus" class="accel-card-lead">—</p>
             </div>
-            <button id="closeSetupPanel" type="button" class="accel-sheet-close" data-i18n="done">
-              Done
+            <button
+              id="closeSetupPanel"
+              type="button"
+              class="accel-sheet-close accel-sheet-close-icon"
+              aria-label="Close"
+              title="Close"
+              data-i18n-aria="close"
+              data-i18n-title="close"
+            >
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M18 6L6 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M6 6l12 12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span class="sr-only" data-i18n="close">Close</span>
             </button>
           </div>
 
@@ -898,8 +913,20 @@
                 </span>
               </p>
             </header>
-            <button id="closeResultsPanel" type="button" class="accel-sheet-close" data-i18n="done">
-              Done
+            <button
+              id="closeResultsPanel"
+              type="button"
+              class="accel-sheet-close accel-sheet-close-icon"
+              aria-label="Close"
+              title="Close"
+              data-i18n-aria="close"
+              data-i18n-title="close"
+            >
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M18 6L6 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M6 6l12 12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span class="sr-only" data-i18n="close">Close</span>
             </button>
           </div>
 
@@ -1480,6 +1507,8 @@
       </main>
     </div>
 
-    <script type="module" src="/src/accel/accel.js"></script>
+    <script type="module">
+      import "/src/accel/dev-harness.js";
+    </script>
   </body>
 </html>

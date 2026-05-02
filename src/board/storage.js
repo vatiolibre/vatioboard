@@ -1,7 +1,10 @@
 import { createIndexedJsonKeyValueStore } from "../shared/indexed-storage.js";
+import { createStorageCapability } from "../shared/storage-capability.js";
 import { loadJson, removeStoredValue, saveJson } from "../shared/storage.js";
 
 export const BOARD_DRAWING_KEY = "vatio_board_drawing_v1";
+export const BOARD_CURRENT_DOCUMENT_KEY = "vatio_board_document_current_v1";
+export const BOARD_PENDING_OPEN_DOCUMENT_KEY = "vatio_board_document_pending_open_v1";
 export const BOARD_SCHEMA_VERSION = 1;
 export const BOARD_PERSIST_CHUNK_SIZE = 100;
 
@@ -16,6 +19,10 @@ const boardStore = createIndexedJsonKeyValueStore({
   dbName: BOARD_DB_NAME,
   dbVersion: BOARD_DB_VERSION,
   storeName: BOARD_DB_STORE,
+});
+const boardStorageCapability = createStorageCapability({
+  namespace: "board-storage",
+  store: boardStore,
 });
 
 let boardMigrationPromise = null;
@@ -106,6 +113,11 @@ export function createEmptyBoardDrawing() {
   };
 }
 
+export function hasBoardDrawingContent(document) {
+  const normalized = toBoardDrawing(document);
+  return normalized.commands.length > 0 || normalized.redoCommands.length > 0;
+}
+
 function toBoardDrawing(document) {
   const normalized = createStoredDocument(document);
   return {
@@ -141,13 +153,17 @@ function createGenerationId() {
 }
 
 async function openBoardDatabase() {
-  if (!boardStore.hasSupport()) return null;
+  if (!(await boardStorageCapability.isIndexedDbUsable())) return null;
 
   try {
     return await boardStore.openDatabase();
   } catch {
     return null;
   }
+}
+
+export function getBoardStorageCapability() {
+  return boardStorageCapability;
 }
 
 function createSnapshotReference(document, { previous = false } = {}) {
@@ -257,7 +273,7 @@ async function loadCommandChunks(generation, section, chunkCount, expectedCount)
 async function persistBoardDocument(document) {
   const normalized = toBoardDrawing({
     ...document,
-    updatedAtMs: Date.now(),
+    updatedAtMs: isFiniteNumber(document?.updatedAtMs) ? document.updatedAtMs : Date.now(),
   });
 
   const database = await openBoardDatabase();
@@ -452,4 +468,57 @@ export function saveBoardDrawing(document) {
   });
 
   return saveLoopPromise;
+}
+
+export function loadCurrentBoardDocumentMeta() {
+  const storedValue = loadJson(BOARD_CURRENT_DOCUMENT_KEY, null);
+  if (!storedValue || typeof storedValue !== "object") return null;
+
+  const name = typeof storedValue.name === "string" ? storedValue.name : "";
+  if (!name) return null;
+
+  return {
+    name,
+    title: typeof storedValue.title === "string" ? storedValue.title : "",
+    updatedAtMs: normalizePositiveInteger(storedValue.updatedAtMs, 0),
+  };
+}
+
+export function saveCurrentBoardDocumentMeta(meta) {
+  const normalizedMeta = meta && typeof meta === "object" ? meta : {};
+  const name = typeof normalizedMeta.name === "string" ? normalizedMeta.name : "";
+  if (!name) {
+    removeStoredValue(BOARD_CURRENT_DOCUMENT_KEY);
+    return;
+  }
+
+  saveJson(BOARD_CURRENT_DOCUMENT_KEY, {
+    name,
+    title: typeof normalizedMeta.title === "string" ? normalizedMeta.title : "",
+    updatedAtMs: normalizePositiveInteger(normalizedMeta.updatedAtMs, Date.now()),
+  });
+}
+
+export function clearCurrentBoardDocumentMeta() {
+  removeStoredValue(BOARD_CURRENT_DOCUMENT_KEY);
+}
+
+export function queuePendingBoardDocumentOpen(payload) {
+  saveJson(BOARD_PENDING_OPEN_DOCUMENT_KEY, payload && typeof payload === "object" ? payload : null);
+}
+
+export function consumePendingBoardDocumentOpen() {
+  const pendingOpen = loadJson(BOARD_PENDING_OPEN_DOCUMENT_KEY, null);
+  removeStoredValue(BOARD_PENDING_OPEN_DOCUMENT_KEY);
+
+  if (!pendingOpen || typeof pendingOpen !== "object") return null;
+  const drawing = toBoardDrawing(pendingOpen.payload);
+  if (!drawing) return null;
+
+  return {
+    document: pendingOpen.document && typeof pendingOpen.document === "object"
+      ? pendingOpen.document
+      : null,
+    payload: drawing,
+  };
 }

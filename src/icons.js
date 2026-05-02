@@ -1,3 +1,11 @@
+export const IconFilePlus = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="M14 3v5h5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="M12 12v5M9.5 14.5h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+  </svg>
+`;
+
 export const IconCalculator = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path d="M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" stroke="currentColor" stroke-width="1.6"/>
@@ -57,6 +65,22 @@ export const IconClose = `
 export const IconEnergy = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`;
+
+export const IconLogin = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M14 5h3a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M4.75 12h9.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    <path d="m10.75 8.5 3.5 3.5-3.5 3.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`;
+
+export const IconLogout = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M5 4.75h7.25a2 2 0 0 1 2 2v10.5a2 2 0 0 1-2 2H5V4.75Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="M9 12h10.25" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+    <path d="m16 8.75 3.25 3.25L16 15.25" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>
 `;
 
@@ -187,5 +211,124 @@ export const IconWorld = `
     <circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.6"/>
     <path d="M4.5 12h15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
     <path d="M12 4.25c2.15 2.1 3.25 4.7 3.25 7.75S14.15 17.65 12 19.75c-2.15-2.1-3.25-4.7-3.25-7.75S9.85 6.35 12 4.25Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+  </svg>
+`;
+
+export const IconMedia = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <rect x="4" y="4" width="16" height="16" rx="3" stroke="currentColor" stroke-width="1.6"/>
+    <circle cx="9" cy="10" r="2" stroke="currentColor" stroke-width="1.4"/>
+    <path d="M4 16l4-4 3 3 4-5 5 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`;
+
+export const IconUpload = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M12 16V6m0 0l-4 4m4-4l4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M4 17v1a2 2 0 002 2h12a2 2 0 002-2v-1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+  </svg>
+`;
+
+export const IconPin = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M15 4.5l-3.2 3.2L8 9.5l-.5 3L11 16l3-3.5 1.8-3.8L19 5.5l-4-1z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M5 19l4.5-4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  </svg>
+`;
+
+export const IconMore = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
+    <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+    <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
+  </svg>
+`;
+
+export const IconVolume = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M11 5L6 9H2v6h4l5 4V5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="M15.54 8.46a5 5 0 0 1 0 7.07" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M19.07 4.93a10 10 0 0 1 0 14.14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+  </svg>
+`;
+
+export const IconMuted = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M11 5L6 9H2v6h4l5 4V5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="M23 9l-6 6M17 9l6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+  </svg>
+`;
+
+export const IconFullscreen = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M16 21h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`;
+
+export const IconFullscreenExit = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M4 14h4v4M20 10h-4V6M14 10h4V6M4 14h4v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M14 10l5-5M4 20l6-6M14 10l5-5M10 14l-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+  </svg>
+`;
+
+export const IconSkipBack = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M19 20L9 12l10-8v16Z" fill="currentColor"/>
+    <path d="M5 19V5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  </svg>
+`;
+
+export const IconSkipForward = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M5 4l10 8-10 8V4Z" fill="currentColor"/>
+    <path d="M19 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  </svg>
+`;
+
+export const IconRepeat = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M17 1l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M3 11V9a4 4 0 0 1 4-4h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M7 23l-4-4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M21 13v2a4 4 0 0 1-4 4H3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`;
+
+export const IconShuffle = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`;
+
+export const IconQueue = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M8 6h13M8 12h13M8 18h13M3 6h0M3 12h0M3 18h0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`;
+
+export const IconPlaylist = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M8 6h13M8 12h9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    <path d="M3 6h0M3 12h0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    <path d="M16 16V12l5-1v5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="14" cy="16" r="2" stroke="currentColor" stroke-width="1.4"/>
+    <circle cx="19" cy="15" r="2" stroke="currentColor" stroke-width="1.4"/>
+  </svg>
+`;
+
+export const IconMusic = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M9 18V5l12-2v13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="6" cy="18" r="3" stroke="currentColor" stroke-width="1.6"/>
+    <circle cx="18" cy="16" r="3" stroke="currentColor" stroke-width="1.6"/>
+  </svg>
+`;
+
+export const IconLibrary = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M4 6h16M4 10h16M4 14h10M4 18h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    <circle cx="18" cy="16" r="2.5" stroke="currentColor" stroke-width="1.4"/>
+    <path d="M20.5 16V11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
   </svg>
 `;

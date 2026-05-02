@@ -1,31 +1,49 @@
-import 'maplibre-gl/dist/maplibre-gl.css';
 import '@stanko/dual-range-input/dist/index.css';
 import '../styles/accel.less';
+import '../styles/cloud-sync-status.less';
 import '../styles/backend-auth.less';
-import Chart from 'chart.js/auto';
-import DualRangeInput from '@stanko/dual-range-input';
+import { createCleanupStack } from '../app/view-cleanup.js';
 import {
   applyTranslations as applySharedTranslations,
   getLang,
   t as sharedT,
   toggleLang,
 } from '../i18n.js';
+import { getCurrentAppRouteQuery, navigateToAppRoute, ROUTE_VISIBLE_EVENT } from '../app/router.js';
+import { clearActivity, setActivity } from '../shared/activity-state.js';
 import { initBackendAuthControllers } from '../shared/backend-auth.js';
 import { createAnalogSpeedometer } from '../shared/analog-speedometer.js';
+import { initCloudSyncStatusIndicator } from '../shared/cloud-sync-status-indicator.js';
+import {
+  CLOUD_SYNC_APPLIED_EVENT,
+  CLOUD_SYNC_ENTITY_TYPES,
+  queueCloudSyncChange,
+  queueCloudSyncDeletion,
+} from '../shared/cloud-sync.js';
 import { createPlaceResolver } from '../shared/place-resolver.js';
+import {
+  getRouteBoundarySamples,
+  reverseGeocodeBoundarySample,
+} from '../shared/route-boundary.js';
+import {
+  clearAccelRestoreFailure,
+  ensureAccelTelemetry,
+  getAccelSelection,
+} from '../shared/repositories/accel-repository.js';
 import { formatRouteString } from '../shared/route-string.js';
 import { hasStoredValue } from '../shared/storage.js';
-import { applyButtonIcon, initToolsMenu } from '../shared/tools-menu.js';
+import { applyButtonIcon, getActiveToolsMenuList, initToolsMenu } from '../shared/tools-menu.js';
+import { integratePlayerWidget } from '../player/integrate-player-widget.js';
 import {
   hasConfiguredUnitPreferences,
   markUnitBootstrapManualSelection,
   maybeInitializeUnitsFromCountry,
 } from '../shared/unit-bootstrap.js';
+import { ensureSingleTabOwnership, SINGLE_TAB_OWNERSHIP_EVENT } from '../shared/single-tab.js';
 import {
   IconBoard,
   IconClose,
   IconDistance,
-  IconGpsLab,
   IconPages,
   IconPause,
   IconPlay,
@@ -34,6 +52,7 @@ import {
   IconSettings,
   IconSpeed,
   IconTime,
+  IconWorld,
 } from '../icons.js';
 import {
   FINISH_SOUND_URL,
@@ -97,216 +116,288 @@ import { createAccelReplayChartsController } from './replay-charts.js';
 import { createAccelResultGraph } from './result-graph.js';
 import {
   createDefaultSettings,
+  isAccelPayloadComplete,
   loadRuns,
   loadSettings,
   saveRuns as persistRuns,
   saveSettings as persistSettings,
 } from './storage.js';
 
-export const initPromise = (function () {
-  initBackendAuthControllers();
+const ACCEL_ACTIVITY_ID = 'accel.run';
 
-  var finishAudio = typeof Audio === 'function' ? new Audio(FINISH_SOUND_URL) : null;
+let accelRouteLifecycle = {
+  mount() {},
+  unmount() {},
+};
+
+export function mountAccelRoute(routeContext = {}) {
+  return accelRouteLifecycle.mount(routeContext);
+}
+
+export function unmountAccelRoute() {
+  accelRouteLifecycle.unmount();
+}
+
+export const initPromise = (function () {
+  const isSpaRuntime = Boolean(window.__vatioboardSpa);
+  var singleTabOwnershipPromise = Promise.resolve(true);
+  var activeAccelRoute = null;
+  var standaloneCleanup = null;
+  var standaloneBackendAuthInitialized = false;
+  var Chart = null;
+  var chartLoadPromise = null;
+  var DualRangeInput = null;
+  var dualRangeInputLoadPromise = null;
+
+  function loadChart() {
+    if (!chartLoadPromise) {
+      chartLoadPromise = import('chart.js/auto').then(function (module) {
+        Chart = module.default || module;
+        return Chart;
+      });
+    }
+    return chartLoadPromise;
+  }
+
+  function loadDualRangeInput() {
+    if (!dualRangeInputLoadPromise) {
+      dualRangeInputLoadPromise = import('@stanko/dual-range-input').then(function (module) {
+        DualRangeInput = module.default || module;
+        return DualRangeInput;
+      });
+    }
+    return dualRangeInputLoadPromise;
+  }
+
+  var finishAudio = null;
   var finishAudioPrimePromise = null;
   var finishAudioPrimed = false;
 
-  if (finishAudio) {
+  function getFinishAudio() {
+    if (finishAudio) return finishAudio;
+    if (typeof Audio !== 'function') return null;
+    finishAudio = new Audio(FINISH_SOUND_URL);
     finishAudio.preload = 'auto';
     finishAudio.loop = false;
+    return finishAudio;
   }
 
-  var elements = {
-    langToggle: document.getElementById('langToggle'),
-    langToggleButtons: Array.from(document.querySelectorAll('[data-lang-toggle], #langToggle')),
-    pageDescriptionMeta: document.querySelector('meta[name="description"]'),
-    toolsMenuBtn: document.getElementById('accelToolsMenuBtn'),
-    toolsMenuList: document.getElementById('accelToolsMenuList'),
-    openSpeedMenu: document.getElementById('openAccelSpeedMenu'),
-    openGpsLabMenu: document.getElementById('openAccelGpsLabMenu'),
-    openBoardMenu: document.getElementById('openAccelBoardMenu'),
-    sheetBackdrop: document.getElementById('accelSheetBackdrop'),
-    setupTrigger: document.getElementById('setupTrigger'),
-    setupTriggerValue: document.getElementById('setupTriggerValue'),
-    setupTriggerMeta: document.getElementById('setupTriggerMeta'),
-    resultsTrigger: document.getElementById('resultsTrigger'),
-    resultsTriggerValue: document.getElementById('resultsTriggerValue'),
-    resultsTriggerMeta: document.getElementById('resultsTriggerMeta'),
-    toolbarSetup: document.getElementById('accelToolbarSetup'),
-    toolbarResults: document.getElementById('accelToolbarResults'),
-    toolbarPermissionValue: document.getElementById('toolbarPermissionValue'),
-    toolbarQualityValue: document.getElementById('toolbarQualityValue'),
-    toolbarStateValue: document.getElementById('toolbarStateValue'),
-    setupPanel: document.getElementById('setupPanel'),
-    closeSetupPanel: document.getElementById('closeSetupPanel'),
-    setupPanelStatus: document.getElementById('setupPanelStatus'),
-    resultsPanel: document.getElementById('resultsPanel'),
-    closeResultsPanel: document.getElementById('closeResultsPanel'),
-    resultsPanelStatus: document.getElementById('resultsPanelStatus'),
-    permissionValue: document.getElementById('permissionValue'),
-    gpsReadyValue: document.getElementById('gpsReadyValue'),
-    latestAccuracyValue: document.getElementById('latestAccuracyValue'),
-    observedHzValue: document.getElementById('observedHzValue'),
-    statusSpeedValue: document.getElementById('statusSpeedValue'),
-    statusHeadingValue: document.getElementById('statusHeadingValue'),
-    statusAltitudeValue: document.getElementById('statusAltitudeValue'),
-    speedSourceValue: document.getElementById('speedSourceValue'),
-    presetGrid: document.getElementById('presetGrid'),
-    customRangePanel: document.getElementById('customRangePanel'),
-    customStartInput: document.getElementById('customStartInput'),
-    customEndInput: document.getElementById('customEndInput'),
-    speedUnitMph: document.getElementById('speedUnitMph'),
-    speedUnitKmh: document.getElementById('speedUnitKmh'),
-    distanceUnitFt: document.getElementById('distanceUnitFt'),
-    distanceUnitM: document.getElementById('distanceUnitM'),
-    customRangeNotice: document.getElementById('customRangeNotice'),
-    armRun: document.getElementById('armRun'),
-    rolloutOff: document.getElementById('rolloutOff'),
-    rolloutOn: document.getElementById('rolloutOn'),
-    launchThresholdHalf: document.getElementById('launchThresholdHalf'),
-    launchThresholdOne: document.getElementById('launchThresholdOne'),
-    runNotes: document.getElementById('runNotes'),
-    actionNotice: document.getElementById('actionNotice'),
-    liveElapsedValue: document.getElementById('liveElapsedValue'),
-    liveSpeedGaugeStage: document.getElementById('liveSpeedGaugeStage'),
-    liveSpeedGaugeInner: document.getElementById('liveSpeedGaugeInner'),
-    liveSpeedDial: document.getElementById('liveSpeedDial'),
-    liveSpeedNeedle: document.getElementById('liveSpeedNeedle'),
-    liveSpeedValue: document.getElementById('liveSpeedValue'),
-    liveSpeedUnit: document.getElementById('liveSpeedUnit'),
-    liveSpeedSubstatus: document.getElementById('liveSpeedSubstatus'),
-    liveDistanceValue: document.getElementById('liveDistanceValue'),
-    liveSlopeValue: document.getElementById('liveSlopeValue'),
-    liveTargetValue: document.getElementById('liveTargetValue'),
-    liveStateValue: document.getElementById('liveStateValue'),
-    liveQualityValue: document.getElementById('liveQualityValue'),
-    livePartialsSection: document.getElementById('livePartialsSection'),
-    livePartialsList: document.getElementById('livePartialsList'),
-    progressLabel: document.getElementById('progressLabel'),
-    progressFill: document.getElementById('progressFill'),
-    resultEmptyState: document.getElementById('resultEmptyState'),
-    resultContent: document.getElementById('resultContent'),
-    resultPrimaryHeader: document.getElementById('resultPrimaryHeader'),
-    resultElapsedValue: document.getElementById('resultElapsedValue'),
-    resultGraphMeta: document.getElementById('resultGraphMeta'),
-    resultGraphEmptyState: document.getElementById('resultGraphEmptyState'),
-    resultGraphFrame: document.getElementById('resultGraphFrame'),
-    resultGraphCanvas: document.getElementById('resultGraphCanvas'),
-    resultReplayControls: document.getElementById('resultReplayControls'),
-    resultReplayToggle: document.getElementById('resultReplayToggle'),
-    resultReplayRestart: document.getElementById('resultReplayRestart'),
-    resultReplayProgress: document.getElementById('resultReplayProgress'),
-    resultReplayCurrentValue: document.getElementById('resultReplayCurrentValue'),
-    resultReplayMaxValue: document.getElementById('resultReplayMaxValue'),
-    resultReplayAxisTime: document.getElementById('resultReplayAxisTime'),
-    resultReplayAxisDistance: document.getElementById('resultReplayAxisDistance'),
-    resultReplayChartsBtn: document.getElementById('resultReplayChartsBtn'),
-    resultReplayMapShell: document.getElementById('resultReplayMapShell'),
-    resultReplayMap: document.getElementById('resultReplayMap'),
-    resultReplayChartSheet: document.getElementById('resultReplayChartSheet'),
-    resultReplayChartSheetBackdrop: document.getElementById('resultReplayChartSheetBackdrop'),
-    closeResultReplayChartSheet: document.getElementById('closeResultReplayChartSheet'),
-    resultReplaySheetAxisTime: document.getElementById('resultReplaySheetAxisTime'),
-    resultReplaySheetAxisDistance: document.getElementById('resultReplaySheetAxisDistance'),
-    resultReplaySheetFilterSlider: document.getElementById('resultReplaySheetFilterSlider'),
-    resultReplaySheetFilterStart: document.getElementById('resultReplaySheetFilterStart'),
-    resultReplaySheetFilterEnd: document.getElementById('resultReplaySheetFilterEnd'),
-    resultReplaySheetFilterStartValue: document.getElementById('resultReplaySheetFilterStartValue'),
-    resultReplaySheetFilterEndValue: document.getElementById('resultReplaySheetFilterEndValue'),
-    resultReplaySheetSpeedStage: document.getElementById('resultReplaySheetSpeedStage'),
-    resultReplaySheetSpeedValue: document.getElementById('resultReplaySheetSpeedValue'),
-    resultReplaySheetSpeedCanvas: document.getElementById('resultReplaySheetSpeedCanvas'),
-    resultReplaySheetAltitudeStage: document.getElementById('resultReplaySheetAltitudeStage'),
-    resultReplaySheetAltitudeValue: document.getElementById('resultReplaySheetAltitudeValue'),
-    resultReplaySheetAltitudeCanvas: document.getElementById('resultReplaySheetAltitudeCanvas'),
-    resultReplaySheetHeadingStage: document.getElementById('resultReplaySheetHeadingStage'),
-    resultReplaySheetHeadingValue: document.getElementById('resultReplaySheetHeadingValue'),
-    resultReplaySheetHeadingCanvas: document.getElementById('resultReplaySheetHeadingCanvas'),
-    resultGraphTimeValue: document.getElementById('resultGraphTimeValue'),
-    resultGraphSpeedValue: document.getElementById('resultGraphSpeedValue'),
-    resultGraphDistanceValue: document.getElementById('resultGraphDistanceValue'),
-    resultGraphAltitudeValue: document.getElementById('resultGraphAltitudeValue'),
-    resultGraphAccuracyValue: document.getElementById('resultGraphAccuracyValue'),
-    resultGraphSlopeValue: document.getElementById('resultGraphSlopeValue'),
-    debugRawSection: document.getElementById('debugRawSection'),
-    debugRawEmptyState: document.getElementById('debugRawEmptyState'),
-    debugRawTableWrap: document.getElementById('debugRawTableWrap'),
-    debugRawTableBody: document.getElementById('debugRawTableBody'),
-    debugGraphSection: document.getElementById('debugGraphSection'),
-    debugGraphEmptyState: document.getElementById('debugGraphEmptyState'),
-    debugGraphTableWrap: document.getElementById('debugGraphTableWrap'),
-    debugGraphTableBody: document.getElementById('debugGraphTableBody'),
-    resultPartialsSection: document.getElementById('resultPartialsSection'),
-    resultPartialsList: document.getElementById('resultPartialsList'),
-    resultPresetValue: document.getElementById('resultPresetValue'),
-    resultFinishSpeedValue: document.getElementById('resultFinishSpeedValue'),
-    resultRolloutValue: document.getElementById('resultRolloutValue'),
-    resultAccuracyValue: document.getElementById('resultAccuracyValue'),
-    resultSlopeValue: document.getElementById('resultSlopeValue'),
-    resultElevationValue: document.getElementById('resultElevationValue'),
-    resultHzValue: document.getElementById('resultHzValue'),
-    resultQualityValue: document.getElementById('resultQualityValue'),
-    resultTimestampValue: document.getElementById('resultTimestampValue'),
-    resultLocationValue: document.getElementById('resultLocationValue'),
-    resultComparisonValue: document.getElementById('resultComparisonValue'),
-    resultNotesRow: document.getElementById('resultNotesRow'),
-    resultNotesValue: document.getElementById('resultNotesValue'),
-    warningBadges: document.getElementById('warningBadges'),
-    diagnosticAverageIntervalValue: document.getElementById('diagnosticAverageIntervalValue'),
-    diagnosticJitterValue: document.getElementById('diagnosticJitterValue'),
-    diagnosticSparseValue: document.getElementById('diagnosticSparseValue'),
-    diagnosticStaleValue: document.getElementById('diagnosticStaleValue'),
-    diagnosticSpeedSourceValue: document.getElementById('diagnosticSpeedSourceValue'),
-    diagnosticSamplesValue: document.getElementById('diagnosticSamplesValue'),
-    clearHistory: document.getElementById('clearHistory'),
-    historyEmptyState: document.getElementById('historyEmptyState'),
-    historyList: document.getElementById('historyList'),
-  };
+  function getAccelElements(root) {
+    var queryOne = function (selector) {
+      return root?.querySelector ? root.querySelector(selector) : null;
+    };
+    var queryAll = function (selector) {
+      return root?.querySelectorAll ? Array.from(root.querySelectorAll(selector)) : [];
+    };
+    var byId = function (id) {
+      return queryOne('#' + id);
+    };
 
-  var toolsMenu = initToolsMenu({
-    button: elements.toolsMenuBtn,
-    list: elements.toolsMenuList,
-  });
+    return {
+      langToggle: byId('langToggle'),
+      langToggleButtons: queryAll('[data-lang-toggle], #langToggle'),
+      pageDescriptionMeta: root ? document.querySelector('meta[name="description"]') : null,
+      toolbar: queryOne('.accel-toolbar'),
+      toolsMenuBtn: byId('accelToolsMenuBtn'),
+      toolsMenuList: byId('accelToolsMenuList'),
+      openSpeedMenu: byId('openAccelSpeedMenu'),
+      openLibraryMenu: byId('openAccelLibraryMenu'),
+      openBoardMenu: byId('openAccelBoardMenu'),
+      sheetBackdrop: byId('accelSheetBackdrop'),
+      setupTrigger: byId('setupTrigger'),
+      setupTriggerValue: byId('setupTriggerValue'),
+      setupTriggerMeta: byId('setupTriggerMeta'),
+      resultsTrigger: byId('resultsTrigger'),
+      resultsTriggerValue: byId('resultsTriggerValue'),
+      resultsTriggerMeta: byId('resultsTriggerMeta'),
+      toolbarSetup: byId('accelToolbarSetup'),
+      toolbarResults: byId('accelToolbarResults'),
+      toolbarPermissionValue: byId('toolbarPermissionValue'),
+      toolbarQualityValue: byId('toolbarQualityValue'),
+      toolbarStateValue: byId('toolbarStateValue'),
+      setupPanel: byId('setupPanel'),
+      closeSetupPanel: byId('closeSetupPanel'),
+      setupPanelStatus: byId('setupPanelStatus'),
+      resultsPanel: byId('resultsPanel'),
+      closeResultsPanel: byId('closeResultsPanel'),
+      resultsPanelStatus: byId('resultsPanelStatus'),
+      permissionValue: byId('permissionValue'),
+      gpsReadyValue: byId('gpsReadyValue'),
+      latestAccuracyValue: byId('latestAccuracyValue'),
+      observedHzValue: byId('observedHzValue'),
+      statusSpeedValue: byId('statusSpeedValue'),
+      statusHeadingValue: byId('statusHeadingValue'),
+      statusAltitudeValue: byId('statusAltitudeValue'),
+      speedSourceValue: byId('speedSourceValue'),
+      presetGrid: byId('presetGrid'),
+      customRangePanel: byId('customRangePanel'),
+      customStartInput: byId('customStartInput'),
+      customEndInput: byId('customEndInput'),
+      speedUnitMph: byId('speedUnitMph'),
+      speedUnitKmh: byId('speedUnitKmh'),
+      distanceUnitFt: byId('distanceUnitFt'),
+      distanceUnitM: byId('distanceUnitM'),
+      customRangeNotice: byId('customRangeNotice'),
+      armRun: byId('armRun'),
+      rolloutOff: byId('rolloutOff'),
+      rolloutOn: byId('rolloutOn'),
+      launchThresholdHalf: byId('launchThresholdHalf'),
+      launchThresholdOne: byId('launchThresholdOne'),
+      runNotes: byId('runNotes'),
+      actionNotice: byId('actionNotice'),
+      liveElapsedValue: byId('liveElapsedValue'),
+      liveSpeedGaugeStage: byId('liveSpeedGaugeStage'),
+      liveSpeedGaugeInner: byId('liveSpeedGaugeInner'),
+      liveSpeedDial: byId('liveSpeedDial'),
+      liveSpeedNeedle: byId('liveSpeedNeedle'),
+      liveSpeedValue: byId('liveSpeedValue'),
+      liveSpeedUnit: byId('liveSpeedUnit'),
+      liveSpeedSubstatus: byId('liveSpeedSubstatus'),
+      liveDistanceValue: byId('liveDistanceValue'),
+      liveSlopeValue: byId('liveSlopeValue'),
+      liveTargetValue: byId('liveTargetValue'),
+      liveStateValue: byId('liveStateValue'),
+      liveQualityValue: byId('liveQualityValue'),
+      livePartialsSection: byId('livePartialsSection'),
+      livePartialsList: byId('livePartialsList'),
+      progressLabel: byId('progressLabel'),
+      progressFill: byId('progressFill'),
+      resultEmptyState: byId('resultEmptyState'),
+      resultContent: byId('resultContent'),
+      resultPrimaryHeader: byId('resultPrimaryHeader'),
+      resultElapsedValue: byId('resultElapsedValue'),
+      resultGraphMeta: byId('resultGraphMeta'),
+      resultGraphEmptyState: byId('resultGraphEmptyState'),
+      resultGraphFrame: byId('resultGraphFrame'),
+      resultGraphCanvas: byId('resultGraphCanvas'),
+      resultReplayControls: byId('resultReplayControls'),
+      resultReplayToggle: byId('resultReplayToggle'),
+      resultReplayRestart: byId('resultReplayRestart'),
+      resultReplayProgress: byId('resultReplayProgress'),
+      resultReplayCurrentValue: byId('resultReplayCurrentValue'),
+      resultReplayMaxValue: byId('resultReplayMaxValue'),
+      resultReplayAxisTime: byId('resultReplayAxisTime'),
+      resultReplayAxisDistance: byId('resultReplayAxisDistance'),
+      resultReplayChartsBtn: byId('resultReplayChartsBtn'),
+      resultReplayMapShell: byId('resultReplayMapShell'),
+      resultReplayMap: byId('resultReplayMap'),
+      resultReplayChartSheet: byId('resultReplayChartSheet'),
+      resultReplayChartSheetBackdrop: byId('resultReplayChartSheetBackdrop'),
+      closeResultReplayChartSheet: byId('closeResultReplayChartSheet'),
+      resultReplaySheetAxisTime: byId('resultReplaySheetAxisTime'),
+      resultReplaySheetAxisDistance: byId('resultReplaySheetAxisDistance'),
+      resultReplaySheetFilterSlider: byId('resultReplaySheetFilterSlider'),
+      resultReplaySheetFilterStart: byId('resultReplaySheetFilterStart'),
+      resultReplaySheetFilterEnd: byId('resultReplaySheetFilterEnd'),
+      resultReplaySheetFilterStartValue: byId('resultReplaySheetFilterStartValue'),
+      resultReplaySheetFilterEndValue: byId('resultReplaySheetFilterEndValue'),
+      resultReplaySheetSpeedStage: byId('resultReplaySheetSpeedStage'),
+      resultReplaySheetSpeedValue: byId('resultReplaySheetSpeedValue'),
+      resultReplaySheetSpeedCanvas: byId('resultReplaySheetSpeedCanvas'),
+      resultReplaySheetAltitudeStage: byId('resultReplaySheetAltitudeStage'),
+      resultReplaySheetAltitudeValue: byId('resultReplaySheetAltitudeValue'),
+      resultReplaySheetAltitudeCanvas: byId('resultReplaySheetAltitudeCanvas'),
+      resultReplaySheetHeadingStage: byId('resultReplaySheetHeadingStage'),
+      resultReplaySheetHeadingValue: byId('resultReplaySheetHeadingValue'),
+      resultReplaySheetHeadingCanvas: byId('resultReplaySheetHeadingCanvas'),
+      resultGraphTimeValue: byId('resultGraphTimeValue'),
+      resultGraphSpeedValue: byId('resultGraphSpeedValue'),
+      resultGraphDistanceValue: byId('resultGraphDistanceValue'),
+      resultGraphAltitudeValue: byId('resultGraphAltitudeValue'),
+      resultGraphAccuracyValue: byId('resultGraphAccuracyValue'),
+      resultGraphSlopeValue: byId('resultGraphSlopeValue'),
+      debugRawSection: byId('debugRawSection'),
+      debugRawEmptyState: byId('debugRawEmptyState'),
+      debugRawTableWrap: byId('debugRawTableWrap'),
+      debugRawTableBody: byId('debugRawTableBody'),
+      debugGraphSection: byId('debugGraphSection'),
+      debugGraphEmptyState: byId('debugGraphEmptyState'),
+      debugGraphTableWrap: byId('debugGraphTableWrap'),
+      debugGraphTableBody: byId('debugGraphTableBody'),
+      resultPartialsSection: byId('resultPartialsSection'),
+      resultPartialsList: byId('resultPartialsList'),
+      resultPresetValue: byId('resultPresetValue'),
+      resultFinishSpeedValue: byId('resultFinishSpeedValue'),
+      resultRolloutValue: byId('resultRolloutValue'),
+      resultAccuracyValue: byId('resultAccuracyValue'),
+      resultSlopeValue: byId('resultSlopeValue'),
+      resultElevationValue: byId('resultElevationValue'),
+      resultHzValue: byId('resultHzValue'),
+      resultQualityValue: byId('resultQualityValue'),
+      resultTimestampValue: byId('resultTimestampValue'),
+      resultLocationValue: byId('resultLocationValue'),
+      resultComparisonValue: byId('resultComparisonValue'),
+      resultNotesRow: byId('resultNotesRow'),
+      resultNotesValue: byId('resultNotesValue'),
+      warningBadges: byId('warningBadges'),
+      diagnosticAverageIntervalValue: byId('diagnosticAverageIntervalValue'),
+      diagnosticJitterValue: byId('diagnosticJitterValue'),
+      diagnosticSparseValue: byId('diagnosticSparseValue'),
+      diagnosticStaleValue: byId('diagnosticStaleValue'),
+      diagnosticSpeedSourceValue: byId('diagnosticSpeedSourceValue'),
+      diagnosticSamplesValue: byId('diagnosticSamplesValue'),
+      clearHistory: byId('clearHistory'),
+      historyEmptyState: byId('historyEmptyState'),
+      historyList: byId('historyList'),
+    };
+  }
 
-  applyButtonIcon(elements.armRun, IconPlay);
-  applyButtonIcon(elements.toolsMenuBtn, IconPages);
-  applyButtonIcon(elements.toolbarSetup, IconSettings);
-  applyButtonIcon(elements.toolbarResults, IconReplay);
-  applyButtonIcon(elements.openSpeedMenu, IconSpeed);
-  applyButtonIcon(elements.openGpsLabMenu, IconGpsLab);
-  applyButtonIcon(elements.openBoardMenu, IconBoard);
-  applyButtonIcon(elements.resultReplayToggle, IconPlay);
-  applyButtonIcon(elements.resultReplayRestart, IconRestart);
-  applyButtonIcon(elements.resultReplayAxisTime, IconTime);
-  applyButtonIcon(elements.resultReplayAxisDistance, IconDistance);
-  applyButtonIcon(elements.resultReplaySheetAxisTime, IconTime);
-  applyButtonIcon(elements.resultReplaySheetAxisDistance, IconDistance);
+  function createInactiveToolsMenu() {
+    return {
+      close: function () {},
+      destroy: function () {},
+      setOpen: function () {},
+    };
+  }
+
+  function createInactiveSpeedometer() {
+    return {
+      destroy: function () {},
+      render: function () {},
+      resize: function () {},
+    };
+  }
+
+  var elements = {};
+  var toolsMenu = createInactiveToolsMenu();
+
+  function openCloudSyncLauncher() {
+    Promise.resolve().then(function () {
+      focusCloudSyncLauncherTarget();
+    });
+  }
+
+  function applyAccelIcons() {
+    applyButtonIcon(elements.armRun, IconPlay);
+    applyButtonIcon(elements.toolsMenuBtn, IconPages);
+    applyButtonIcon(elements.toolbarSetup, IconSettings);
+    applyButtonIcon(elements.toolbarResults, IconReplay);
+    applyButtonIcon(elements.openSpeedMenu, IconSpeed);
+    applyButtonIcon(elements.openLibraryMenu, IconWorld);
+    applyButtonIcon(elements.openBoardMenu, IconBoard);
+    applyButtonIcon(elements.resultReplayToggle, IconPlay);
+    applyButtonIcon(elements.resultReplayRestart, IconRestart);
+    applyButtonIcon(elements.resultReplayAxisTime, IconTime);
+    applyButtonIcon(elements.resultReplayAxisDistance, IconDistance);
+    applyButtonIcon(elements.resultReplaySheetAxisTime, IconTime);
+    applyButtonIcon(elements.resultReplaySheetAxisDistance, IconDistance);
+  }
+
   var placeResolver = createPlaceResolver({ getLanguage: getLang });
   var unitBootstrapPending = false;
   var runPlaceEnrichmentIds = new Set();
 
-  var replayChartFilterController =
-    elements.resultReplaySheetFilterStart && elements.resultReplaySheetFilterEnd
-      ? new DualRangeInput(
-          elements.resultReplaySheetFilterStart,
-          elements.resultReplaySheetFilterEnd
-        )
-      : null;
-
-  var liveSpeedometer = createAnalogSpeedometer({
-    stageElement: elements.liveSpeedGaugeStage,
-    stageInnerElement: elements.liveSpeedGaugeInner,
-    dialCanvas: elements.liveSpeedDial,
-    needleCanvas: elements.liveSpeedNeedle,
-    valueElement: elements.liveSpeedValue,
-    unitElement: elements.liveSpeedUnit,
-    substatusElement: elements.liveSpeedSubstatus,
-    styleSourceElement: elements.liveSpeedGaugeStage,
-  });
+  var replayChartFilterController = null;
+  var accelChartControllersReady = false;
+  var accelChartControllersLoadPromise = null;
+  var liveSpeedometer = createInactiveSpeedometer();
 
   var state = {
     permissionState: 'prompt',
     permissionStatus: null,
     geolocationSupported: Boolean(navigator.geolocation),
+    viewMounted: false,
+    initialized: false,
     watchId: null,
     uiTimerId: null,
     sessionSampleCount: 0,
@@ -393,62 +484,240 @@ export const initPromise = (function () {
   });
   var buildComparisonText = historyHelpers.buildComparisonText;
 
-  var resultGraph = createAccelResultGraph({
-    Chart: Chart,
-    elements: elements,
-    getDisplayedResult: getDisplayedResult,
-    getLang: getLang,
-    getState: function () {
-      return state;
-    },
-    isFiniteNumber: isFiniteNumber,
-    compactSpeedTrace: compactSpeedTrace,
-    msToSpeedUnit: msToSpeedUnit,
-    convertDistanceMeasurement: convertDistanceMeasurement,
-    formatDistanceMeasurement: formatDistanceMeasurement,
-    formatNumber: formatNumber,
-    formatRunDistance: formatRunDistance,
-    formatRunSeconds: formatRunSeconds,
-    formatSlopePercent: formatSlopePercent,
-    formatSpeedValue: formatSpeedValue,
-    getDistanceUnitLabel: getDistanceUnitLabel,
-    getSpeedUnitLabel: getSpeedUnitLabel,
-    t: t,
-    resultGraphHeight: RESULT_GRAPH_HEIGHT,
-  });
-  var replayCharts = createAccelReplayChartsController({
-    Chart: Chart,
-    elements: {
-      replayDetailSpeedCanvas: elements.resultReplaySheetSpeedCanvas,
-      replayDetailAltitudeCanvas: elements.resultReplaySheetAltitudeCanvas,
-      replayDetailHeadingCanvas: elements.resultReplaySheetHeadingCanvas,
-    },
-    convertDistanceMeasurement: convertDistanceMeasurement,
-    formatNumber: formatNumber,
-    getDistanceUnit: function () {
-      return state.settings.distanceUnit;
-    },
-    getDistanceUnitLabel: getDistanceUnitLabel,
-    getSpeedUnit: function () {
-      return state.settings.speedUnit;
-    },
-    getSpeedUnitLabel: getSpeedUnitLabel,
-    isFiniteNumber: isFiniteNumber,
-    msToSpeedUnit: msToSpeedUnit,
-  });
-  var replayMap = createAccelReplayMapController({
-    element: elements.resultReplayMap,
-  });
+  function createInactiveResultGraph() {
+    return {
+      buildGraphDataFromTraceSource: function () { return []; },
+      destroy: function () {},
+      noteResultsPanelWidth: function () {},
+      render: function () {},
+      requestRefresh: function () {},
+      setupObservers: function () {},
+    };
+  }
+
+  function createInactiveReplayCharts() {
+    return {
+      destroy: function () {},
+      getAxisValueFromClientX: function () { return null; },
+      hasMetricData: function () { return false; },
+      renderSource: function () {},
+      updatePlayback: function () {},
+    };
+  }
+
+  function createInactiveReplayMap() {
+    return {
+      cancelApproachAnimation: function () {},
+      clear: function () {},
+      destroy: function () {},
+      init: function () { return Promise.resolve(); },
+      renderPlaybackFrame: function () {},
+      runApproachAnimation: function () { return Promise.resolve(); },
+      setSource: function () {},
+    };
+  }
+
+  var resultGraph = createInactiveResultGraph();
+  var replayCharts = createInactiveReplayCharts();
+  var replayMap = createInactiveReplayMap();
+
+  function createAccelChartRouteControllers() {
+    replayChartFilterController?.destroy?.();
+    replayChartFilterController =
+      DualRangeInput && elements.resultReplaySheetFilterStart && elements.resultReplaySheetFilterEnd
+        ? new DualRangeInput(
+            elements.resultReplaySheetFilterStart,
+            elements.resultReplaySheetFilterEnd
+          )
+        : null;
+
+    resultGraph.destroy();
+    resultGraph = createAccelResultGraph({
+      Chart: Chart,
+      elements: elements,
+      getDisplayedResult: getDisplayedResult,
+      getLang: getLang,
+      getState: function () {
+        return state;
+      },
+      isFiniteNumber: isFiniteNumber,
+      compactSpeedTrace: compactSpeedTrace,
+      msToSpeedUnit: msToSpeedUnit,
+      convertDistanceMeasurement: convertDistanceMeasurement,
+      formatDistanceMeasurement: formatDistanceMeasurement,
+      formatNumber: formatNumber,
+      formatRunDistance: formatRunDistance,
+      formatRunSeconds: formatRunSeconds,
+      formatSlopePercent: formatSlopePercent,
+      formatSpeedValue: formatSpeedValue,
+      getDistanceUnitLabel: getDistanceUnitLabel,
+      getSpeedUnitLabel: getSpeedUnitLabel,
+      t: t,
+      resultGraphHeight: RESULT_GRAPH_HEIGHT,
+    });
+
+    replayCharts.destroy();
+    replayCharts = createAccelReplayChartsController({
+      Chart: Chart,
+      elements: {
+        replayDetailSpeedCanvas: elements.resultReplaySheetSpeedCanvas,
+        replayDetailAltitudeCanvas: elements.resultReplaySheetAltitudeCanvas,
+        replayDetailHeadingCanvas: elements.resultReplaySheetHeadingCanvas,
+      },
+      convertDistanceMeasurement: convertDistanceMeasurement,
+      formatNumber: formatNumber,
+      getDistanceUnit: function () {
+        return state.settings.distanceUnit;
+      },
+      getDistanceUnitLabel: getDistanceUnitLabel,
+      getSpeedUnit: function () {
+        return state.settings.speedUnit;
+      },
+      getSpeedUnitLabel: getSpeedUnitLabel,
+      isFiniteNumber: isFiniteNumber,
+      msToSpeedUnit: msToSpeedUnit,
+    });
+    accelChartControllersReady = true;
+  }
+
+  function createAccelLiveRouteControllers() {
+    liveSpeedometer.destroy?.();
+    liveSpeedometer = createAnalogSpeedometer({
+      stageElement: elements.liveSpeedGaugeStage,
+      stageInnerElement: elements.liveSpeedGaugeInner,
+      dialCanvas: elements.liveSpeedDial,
+      needleCanvas: elements.liveSpeedNeedle,
+      valueElement: elements.liveSpeedValue,
+      unitElement: elements.liveSpeedUnit,
+      substatusElement: elements.liveSpeedSubstatus,
+      styleSourceElement: elements.liveSpeedGaugeStage,
+    });
+
+    replayMap.destroy();
+    replayMap = createAccelReplayMapController({
+      element: elements.resultReplayMap,
+    });
+  }
+
+  function ensureAccelChartRouteControllers() {
+    if (accelChartControllersReady) return Promise.resolve(true);
+    if (accelChartControllersLoadPromise) return accelChartControllersLoadPromise;
+
+    var route = activeAccelRoute;
+    accelChartControllersLoadPromise = Promise.allSettled([loadChart(), loadDualRangeInput()])
+      .then(function (results) {
+        if (!route || route.destroyed || route.signal?.aborted || activeAccelRoute !== route) {
+          return false;
+        }
+        if (results[0]?.status !== 'fulfilled') return false;
+        createAccelChartRouteControllers();
+        setupResultGraphObservers();
+        return true;
+      })
+      .catch(function () {
+        return false;
+      })
+      .finally(function () {
+        accelChartControllersLoadPromise = null;
+      });
+
+    return accelChartControllersLoadPromise;
+  }
   var replayMapIntroPromise = null;
   var replayMapIntroToken = 0;
+  var pendingMissingSelectionId = '';
+
+  function applyStoredRuns(runs, preferredResultId, { preserveMissingPreferred = false } = {}) {
+    state.runs = Array.isArray(runs) ? runs : [];
+    state.latestResult = state.runs.length ? state.runs[0] : null;
+
+    var requestedResultId =
+      typeof preferredResultId === 'string' && preferredResultId.trim()
+        ? preferredResultId.trim()
+        : state.selectedResultId || '';
+    var selectedRun = requestedResultId ? state.runs.find((entry) => entry.id === requestedResultId) : null;
+    if (selectedRun) {
+      state.selectedResultId = selectedRun.id;
+      return;
+    }
+
+    if (preserveMissingPreferred && requestedResultId) {
+      state.selectedResultId = requestedResultId;
+      return;
+    }
+
+    state.selectedResultId = state.latestResult ? state.latestResult.id : '';
+  }
+
+  async function ensureSelectedResultTelemetry(runId, { selectionSnapshotId = null } = {}) {
+    var normalizedRunId =
+      typeof runId === 'string' && runId.trim() ? runId.trim() : state.selectedResultId || state.latestResult?.id || '';
+    var selectedRun = normalizedRunId ? findRunById(normalizedRunId) : state.latestResult;
+
+    var restoreResult = await ensureAccelTelemetry(normalizedRunId, { run: selectedRun });
+    if (!restoreResult?.restored) {
+      return false;
+    }
+
+    if (
+      typeof selectionSnapshotId === 'string'
+      && selectionSnapshotId
+      && state.selectedResultId !== selectionSnapshotId
+    ) {
+      return false;
+    }
+    var selection = await getAccelSelection(normalizedRunId, {
+      preserveMissingSelection: true,
+    });
+    applyStoredRuns(selection.runs, normalizedRunId, {
+      preserveMissingPreferred: true,
+    });
+    return true;
+  }
+
+  function hasSelectedResultSelection(runId = state.selectedResultId) {
+    return Boolean(
+      typeof runId === 'string'
+      && runId
+      && findRunById(runId)
+    );
+  }
+
+  function hasMissingSelectedResult(runId = state.selectedResultId) {
+    return Boolean(
+      typeof runId === 'string'
+      && runId
+      && !hasSelectedResultSelection(runId)
+    );
+  }
+
+  function maybeFallbackMissingSelectedResult(runId = state.selectedResultId) {
+    if (!hasMissingSelectedResult(runId)) return;
+    pendingMissingSelectionId =
+      typeof runId === 'string' && runId.trim() ? runId.trim() : pendingMissingSelectionId;
+    refreshStoredRuns({
+      preferredResultId: '',
+      preserveMissingPreferred: false,
+    });
+  }
 
   async function init() {
-    var loadedState = await Promise.all([loadSettings(), loadRuns()]);
+    if (!(await singleTabOwnershipPromise)) {
+      return;
+    }
+    var initialRunId = getCurrentAppRouteQuery().get('run') || '';
+
+    var loadedState = await Promise.all([
+      loadSettings(),
+      getAccelSelection(initialRunId, {
+        preserveMissingSelection: Boolean(initialRunId),
+      }),
+    ]);
 
     state.settings = loadedState[0];
-    state.runs = loadedState[1];
-    state.latestResult = state.runs.length ? state.runs[0] : null;
-    state.selectedResultId = state.latestResult ? state.latestResult.id : '';
+    applyStoredRuns(loadedState[1].runs, initialRunId, {
+      preserveMissingPreferred: Boolean(initialRunId),
+    });
 
     if (hasStoredValue(STORAGE_KEYS.settings) && !hasConfiguredUnitPreferences()) {
       markUnitBootstrapManualSelection({
@@ -457,49 +726,79 @@ export const initPromise = (function () {
       });
     }
 
+    if (syncSelectedPresetForUnits()) saveSettings();
+    syncMountedAccelRouteUi();
+    publishAccelActivity();
+    var initialTelemetryPromise = ensureSelectedResultTelemetry(initialRunId || state.selectedResultId, {
+      selectionSnapshotId: state.selectedResultId || '',
+    }).then(function (restored) {
+      if (restored) renderAll();
+      return restored;
+    }).catch(function () {
+      return false;
+    });
+    void initialTelemetryPromise.finally(function () {
+      maybeFallbackMissingSelectedResult();
+    });
+    state.initialized = true;
+    if (state.viewMounted) {
+      startUiTimer();
+      updatePermissionState();
+      ensureWatch();
+    }
+  }
+
+  var accelInitPromise = Promise.resolve();
+
+  function startAccelInit() {
+    singleTabOwnershipPromise = isSpaRuntime ? Promise.resolve(true) : ensureSingleTabOwnership();
+    accelInitPromise = init();
+    return accelInitPromise;
+  }
+
+  function syncMountedAccelRouteUi() {
+    if (!state.viewMounted) return;
+
     applyTranslations();
     elements.runNotes.value = state.settings.notes;
-    if (syncSelectedPresetForUnits()) saveSettings();
     renderPresetButtons();
     renderControlSelections();
-    bindEvents();
-    setupResultGraphObservers();
+    liveSpeedometer.resize();
+    handleWindowResize();
     renderAll();
-    startUiTimer();
-    updatePermissionState();
-    ensureWatch();
   }
 
   function primeFinishAudio() {
-    if (!finishAudio) return Promise.resolve(false);
+    var audio = getFinishAudio();
+    if (!audio) return Promise.resolve(false);
     if (finishAudioPrimed) return Promise.resolve(true);
     if (finishAudioPrimePromise) return finishAudioPrimePromise;
 
     finishAudioPrimePromise = (async function () {
-      var previousMuted = finishAudio.muted;
-      var previousVolume = finishAudio.volume;
-      var previousLoop = finishAudio.loop;
+      var previousMuted = audio.muted;
+      var previousVolume = audio.volume;
+      var previousLoop = audio.loop;
 
       try {
-        finishAudio.muted = true;
-        finishAudio.volume = 0;
-        finishAudio.loop = false;
-        finishAudio.currentTime = 0;
-        var playPromise = finishAudio.play();
+        audio.muted = true;
+        audio.volume = 0;
+        audio.loop = false;
+        audio.currentTime = 0;
+        var playPromise = audio.play();
         if (playPromise && typeof playPromise.then === 'function') await playPromise;
-        finishAudio.pause();
-        finishAudio.currentTime = 0;
+        audio.pause();
+        audio.currentTime = 0;
         finishAudioPrimed = true;
         return true;
       } catch (error) {
-        finishAudio.pause();
-        finishAudio.currentTime = 0;
+        audio.pause();
+        audio.currentTime = 0;
         finishAudioPrimed = false;
         return false;
       } finally {
-        finishAudio.muted = previousMuted;
-        finishAudio.volume = previousVolume;
-        finishAudio.loop = previousLoop;
+        audio.muted = previousMuted;
+        audio.volume = previousVolume;
+        audio.loop = previousLoop;
         finishAudioPrimePromise = null;
       }
     })();
@@ -508,12 +807,13 @@ export const initPromise = (function () {
   }
 
   function playFinishAudio() {
-    if (!finishAudio) return;
+    var audio = getFinishAudio();
+    if (!audio) return;
 
     try {
-      finishAudio.pause();
-      finishAudio.currentTime = 0;
-      var playPromise = finishAudio.play();
+      audio.pause();
+      audio.currentTime = 0;
+      var playPromise = audio.play();
       if (playPromise && typeof playPromise.catch === 'function') {
         playPromise.catch(function () {
           // Ignore autoplay or playback failures.
@@ -540,68 +840,147 @@ export const initPromise = (function () {
   }
 
   function bindEvents() {
+    var cleanup = activeAccelRoute?.cleanup;
+    function add(target, type, listener, options) {
+      cleanup?.addEventListener(target, type, listener, options);
+    }
+
     elements.langToggleButtons.forEach(function (button) {
-      button.addEventListener('click', handleLangToggle);
+      add(button, 'click', handleLangToggle);
     });
-    bindMenuNavigation(elements.openSpeedMenu, '/speed');
-    bindMenuNavigation(elements.openGpsLabMenu, '/gps-rate');
-    bindMenuNavigation(elements.openBoardMenu, '/');
-    elements.setupTrigger.addEventListener('click', function () {
+    bindMenuNavigation(elements.openSpeedMenu, '#/speed', cleanup);
+    bindMenuNavigation(elements.openLibraryMenu, '#/library?tab=accel', cleanup);
+    bindMenuNavigation(elements.openBoardMenu, '#/board', cleanup);
+    if (!isSpaRuntime) {
+      integratePlayerWidget({ toolsMenuList: elements.toolsMenuList, toolsMenu });
+    }
+    window.__vatioboardCanLeaveAccel = function () {
+      if (!isRunActive(state.run)) return true;
+      if (isSpaRuntime) return true;
+      return window.confirm(t('accelLeaveActiveRunConfirm'));
+    };
+    cleanup?.add(function () {
+      delete window.__vatioboardCanLeaveAccel;
+    });
+    add(window, ROUTE_VISIBLE_EVENT, function (event) {
+      if (event?.detail?.path !== '/accel') return;
+      var routeRunId = getCurrentAppRouteQuery().get('run') || '';
+      if (!routeRunId || routeRunId === state.selectedResultId) return;
+      refreshStoredRuns({
+        preferredResultId: routeRunId,
+        preserveMissingPreferred: true,
+      });
+    });
+    add(elements.setupTrigger, 'click', function () {
       togglePanel('setup', elements.setupTrigger);
     });
-    elements.resultsTrigger.addEventListener('click', function () {
+    add(elements.resultsTrigger, 'click', function () {
       togglePanel('results', elements.resultsTrigger);
     });
-    elements.toolbarSetup.addEventListener('click', function () {
+    add(elements.toolbarSetup, 'click', function () {
       togglePanel('setup', elements.toolbarSetup);
     });
-    elements.toolbarResults.addEventListener('click', function () {
+    add(elements.toolbarResults, 'click', function () {
       if (!getDisplayedResult()) return;
       togglePanel('results', elements.toolbarResults);
     });
-    elements.closeSetupPanel.addEventListener('click', function () {
+    add(elements.closeSetupPanel, 'click', function () {
       closePanel();
     });
-    elements.closeResultsPanel.addEventListener('click', function () {
+    add(elements.closeResultsPanel, 'click', function () {
       closePanel();
     });
-    elements.sheetBackdrop.addEventListener('click', function () {
+    add(elements.sheetBackdrop, 'click', function () {
       closePanel();
     });
-    elements.presetGrid.addEventListener('click', handlePresetClick);
-    elements.customStartInput.addEventListener('input', handleCustomInput);
-    elements.customEndInput.addEventListener('input', handleCustomInput);
-    elements.speedUnitMph.addEventListener('click', handleSpeedUnitClick);
-    elements.speedUnitKmh.addEventListener('click', handleSpeedUnitClick);
-    elements.distanceUnitFt.addEventListener('click', handleDistanceUnitClick);
-    elements.distanceUnitM.addEventListener('click', handleDistanceUnitClick);
-    elements.armRun.addEventListener('click', handleRunPrimaryAction);
-    elements.rolloutOff.addEventListener('click', handleRolloutClick);
-    elements.rolloutOn.addEventListener('click', handleRolloutClick);
-    elements.launchThresholdHalf.addEventListener('click', handleThresholdClick);
-    elements.launchThresholdOne.addEventListener('click', handleThresholdClick);
-    elements.runNotes.addEventListener('input', handleNotesInput);
-    elements.clearHistory.addEventListener('click', handleClearHistory);
-    elements.historyList.addEventListener('click', handleHistoryClick);
-    elements.resultReplayToggle.addEventListener('click', handleReplayToggle);
-    elements.resultReplayRestart.addEventListener('click', handleReplayRestart);
-    elements.resultReplayProgress.addEventListener('input', handleReplayProgressInput);
-    elements.resultReplayAxisTime.addEventListener('click', handleReplayAxisClick);
-    elements.resultReplayAxisDistance.addEventListener('click', handleReplayAxisClick);
-    elements.resultReplayChartsBtn.addEventListener('click', handleReplayChartsOpen);
-    elements.closeResultReplayChartSheet.addEventListener('click', handleReplayChartsClose);
-    elements.resultReplayChartSheetBackdrop.addEventListener('click', handleReplayChartsClose);
-    elements.resultReplaySheetAxisTime.addEventListener('click', handleReplayAxisClick);
-    elements.resultReplaySheetAxisDistance.addEventListener('click', handleReplayAxisClick);
-    elements.resultReplaySheetFilterStart.addEventListener('input', handleReplayChartFilterInput);
-    elements.resultReplaySheetFilterEnd.addEventListener('input', handleReplayChartFilterInput);
+    add(elements.presetGrid, 'click', handlePresetClick);
+    add(elements.customStartInput, 'input', handleCustomInput);
+    add(elements.customEndInput, 'input', handleCustomInput);
+    add(elements.speedUnitMph, 'click', handleSpeedUnitClick);
+    add(elements.speedUnitKmh, 'click', handleSpeedUnitClick);
+    add(elements.distanceUnitFt, 'click', handleDistanceUnitClick);
+    add(elements.distanceUnitM, 'click', handleDistanceUnitClick);
+    add(elements.armRun, 'click', handleRunPrimaryAction);
+    add(elements.rolloutOff, 'click', handleRolloutClick);
+    add(elements.rolloutOn, 'click', handleRolloutClick);
+    add(elements.launchThresholdHalf, 'click', handleThresholdClick);
+    add(elements.launchThresholdOne, 'click', handleThresholdClick);
+    add(elements.runNotes, 'input', handleNotesInput);
+    add(elements.clearHistory, 'click', handleClearHistory);
+    add(elements.historyList, 'click', handleHistoryClick);
+    add(elements.resultReplayToggle, 'click', handleReplayToggle);
+    add(elements.resultReplayRestart, 'click', handleReplayRestart);
+    add(elements.resultReplayProgress, 'input', handleReplayProgressInput);
+    add(elements.resultReplayAxisTime, 'click', handleReplayAxisClick);
+    add(elements.resultReplayAxisDistance, 'click', handleReplayAxisClick);
+    add(elements.resultReplayChartsBtn, 'click', handleReplayChartsOpen);
+    add(elements.closeResultReplayChartSheet, 'click', handleReplayChartsClose);
+    add(elements.resultReplayChartSheetBackdrop, 'click', handleReplayChartsClose);
+    add(elements.resultReplaySheetAxisTime, 'click', handleReplayAxisClick);
+    add(elements.resultReplaySheetAxisDistance, 'click', handleReplayAxisClick);
+    add(elements.resultReplaySheetFilterStart, 'input', handleReplayChartFilterInput);
+    add(elements.resultReplaySheetFilterEnd, 'input', handleReplayChartFilterInput);
     bindReplayChartScrub(elements.resultReplaySheetSpeedCanvas);
     bindReplayChartScrub(elements.resultReplaySheetAltitudeCanvas);
     bindReplayChartScrub(elements.resultReplaySheetHeadingCanvas);
-    document.addEventListener('visibilitychange', renderAll);
-    document.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('pagehide', destroyResultGraph);
-    window.addEventListener('resize', handleWindowResize);
+    add(document, 'visibilitychange', renderAll);
+    add(document, 'keydown', handleKeyDown);
+    add(window, 'pagehide', destroyResultGraph);
+    add(window, 'pageshow', (event) => {
+      void restoreAfterPageShow(event);
+    });
+    add(window, 'resize', handleWindowResize);
+    add(window, SINGLE_TAB_OWNERSHIP_EVENT, handleSingleTabOwnershipChange);
+    add(window, CLOUD_SYNC_APPLIED_EVENT, function (event) {
+      if (event?.detail?.entityType !== CLOUD_SYNC_ENTITY_TYPES.accelRun) return;
+      if (event?.detail?.deleted === true && event?.detail?.recordId === state.selectedResultId) {
+        clearAccelRestoreFailure(event.detail.recordId);
+        refreshStoredRuns({
+          preferredResultId: '',
+          preserveMissingPreferred: false,
+        });
+        return;
+      }
+      if (event?.detail?.recordId && event.detail.recordId === state.selectedResultId) {
+        clearAccelRestoreFailure(event.detail.recordId);
+        refreshStoredRuns({
+          preferredResultId: event.detail.recordId,
+          preserveMissingPreferred: true,
+        });
+        void ensureSelectedResultTelemetry(event.detail.recordId, {
+          selectionSnapshotId: event.detail.recordId,
+        }).then(function (restored) {
+          if (restored) renderAll();
+        });
+        return;
+      }
+      if (event?.detail?.recordId && pendingMissingSelectionId) {
+        var syncedRecordId = event.detail.recordId;
+        pendingMissingSelectionId = '';
+        clearAccelRestoreFailure(syncedRecordId);
+        refreshStoredRuns({
+          preferredResultId: syncedRecordId,
+          preserveMissingPreferred: true,
+        });
+        void ensureSelectedResultTelemetry(syncedRecordId, {
+          selectionSnapshotId: syncedRecordId,
+        }).then(function (restored) {
+          if (restored) renderAll();
+        });
+        return;
+      }
+      if (hasSelectedResultSelection()) {
+        refreshStoredRuns({
+          preferredResultId: state.selectedResultId,
+          preserveMissingPreferred: false,
+        });
+        return;
+      }
+      refreshStoredRuns({
+        preferredResultId: event?.detail?.recordId || '',
+        preserveMissingPreferred: event?.detail?.deleted !== true,
+      });
+    });
   }
 
   function syncResultLocationOverflow() {
@@ -707,11 +1086,11 @@ export const initPromise = (function () {
     queueResultLocationOverflowSync();
   }
 
-  function bindMenuNavigation(element, href) {
+  function bindMenuNavigation(element, href, cleanup) {
     if (!element) return;
-    element.addEventListener('click', function () {
+    cleanup?.addEventListener(element, 'click', function () {
       toolsMenu.close();
-      window.location.href = href;
+      navigateToAppRoute(href);
     });
   }
 
@@ -724,6 +1103,7 @@ export const initPromise = (function () {
     applyTranslations();
     renderPresetButtons();
     renderAll();
+    publishAccelActivity();
   }
 
   function focusElement(element) {
@@ -735,7 +1115,43 @@ export const initPromise = (function () {
     }
   }
 
+  function isVisibleForFocus(element) {
+    return Boolean(element && element.hidden !== true && !element.closest('[hidden]'));
+  }
+
+  function getCloudSyncLauncherFocusTarget() {
+    var menuList = getActiveToolsMenuList(elements.toolsMenuList);
+    var candidates = [
+      menuList?.querySelector('[data-backend-auth-user]'),
+      menuList?.querySelector('[data-backend-auth-password]'),
+      menuList?.querySelector('[data-backend-auth-login]'),
+      menuList?.querySelector('[data-backend-auth-logout]'),
+      menuList?.querySelector('[data-backend-auth-status]'),
+    ];
+
+    return candidates.find(isVisibleForFocus) || null;
+  }
+
+  function focusCloudSyncLauncherTarget(attempt) {
+    var nextAttempt = Number.isFinite(attempt) ? attempt : 0;
+    toolsMenu.setOpen(true);
+    var target = getCloudSyncLauncherFocusTarget();
+    if (target) {
+      focusElement(target);
+      if (target.matches?.('input') && typeof target.select === 'function') {
+        target.select();
+      }
+      return;
+    }
+
+    if (nextAttempt >= 6) return;
+    Promise.resolve().then(function () {
+      focusCloudSyncLauncherTarget(nextAttempt + 1);
+    });
+  }
+
   function handleKeyDown(event) {
+    if (event.target.closest('.player-panel, .player-fab')) return;
     if (event.key !== 'Escape' || !state.openPanel) return;
     event.preventDefault();
     if (state.replay.chartSheetOpen) {
@@ -805,6 +1221,42 @@ export const initPromise = (function () {
     void persistRuns(state.runs);
   }
 
+  function queueRunForCloudSync(run) {
+    if (!run || !run.id) return;
+
+    void queueCloudSyncChange({
+      entityType: CLOUD_SYNC_ENTITY_TYPES.accelRun,
+      recordId: run.id,
+      recordTitle: run.presetId || run.id,
+      updatedAtMs: run.savedAtMs || Date.now(),
+      payload: run,
+    });
+  }
+
+  function refreshStoredRuns({
+    preferredResultId = state.selectedResultId || '',
+    preserveMissingPreferred = false,
+  } = {}) {
+    void (async function () {
+      var normalizedPreferredResultId =
+        typeof preferredResultId === 'string' && preferredResultId.trim() ? preferredResultId.trim() : '';
+      var currentSelectedResultId =
+        typeof state.selectedResultId === 'string' && state.selectedResultId.trim() ? state.selectedResultId.trim() : '';
+      var livePreferredResultId = normalizedPreferredResultId || currentSelectedResultId;
+      var selection = await getAccelSelection(livePreferredResultId, {
+        preserveMissingSelection: preserveMissingPreferred && Boolean(livePreferredResultId),
+      });
+      applyStoredRuns(selection.runs, livePreferredResultId, {
+        preserveMissingPreferred: preserveMissingPreferred && Boolean(livePreferredResultId),
+      });
+      var selectedResultId = state.selectedResultId || livePreferredResultId || '';
+      await ensureSelectedResultTelemetry(selectedResultId, {
+        selectionSnapshotId: selectedResultId,
+      });
+      renderAll();
+    })();
+  }
+
   function applyAutoConfiguredUnits(countryCode) {
     if (hasConfiguredUnitPreferences()) return false;
 
@@ -863,58 +1315,9 @@ export const initPromise = (function () {
   }
 
   function getRunLocationLabel(run) {
-    return formatRouteString(run && run.startPlace, run && run.endPlace, t('accelUnavailable'));
-  }
-
-  function hasMatchingSampleCoordinates(left, right) {
-    return Boolean(
-      left &&
-        right &&
-        isFiniteNumber(left.latitude) &&
-        isFiniteNumber(left.longitude) &&
-        isFiniteNumber(right.latitude) &&
-        isFiniteNumber(right.longitude) &&
-        left.latitude === right.latitude &&
-        left.longitude === right.longitude
-    );
-  }
-
-  function findClosestElapsedSample(samples, targetElapsedMs) {
-    if (!Array.isArray(samples) || !samples.length || !isFiniteNumber(targetElapsedMs)) return null;
-
-    var bestSample = null;
-    var bestDeltaMs = Infinity;
-    for (var index = 0; index < samples.length; index += 1) {
-      var sample = samples[index];
-      if (!sample || !isFiniteNumber(sample.elapsedFromStartMs)) continue;
-
-      var deltaMs = Math.abs(sample.elapsedFromStartMs - targetElapsedMs);
-      if (
-        bestSample === null ||
-        deltaMs < bestDeltaMs ||
-        (deltaMs === bestDeltaMs && sample.elapsedFromStartMs > bestSample.elapsedFromStartMs)
-      ) {
-        bestSample = sample;
-        bestDeltaMs = deltaMs;
-      }
-    }
-
-    return bestSample;
-  }
-
-  function findDistinctCoordinateSample(samples, referenceSample, fromEnd) {
-    if (!Array.isArray(samples) || !samples.length) return null;
-
-    var startIndex = fromEnd ? samples.length - 1 : 0;
-    var endIndex = fromEnd ? -1 : samples.length;
-    var step = fromEnd ? -1 : 1;
-    for (var index = startIndex; index !== endIndex; index += step) {
-      var sample = samples[index];
-      if (!sample || !isFiniteNumber(sample.latitude) || !isFiniteNumber(sample.longitude)) continue;
-      if (!hasMatchingSampleCoordinates(sample, referenceSample)) return sample;
-    }
-
-    return null;
+    var startPlace = run && run.startPlace ? (run.startPlace.raw || run.startPlace) : null;
+    var endPlace = run && run.endPlace ? (run.endPlace.raw || run.endPlace) : null;
+    return formatRouteString(startPlace, endPlace, t('accelUnavailable'));
   }
 
   function getRunPlaceBoundarySamples(run) {
@@ -922,48 +1325,25 @@ export const initPromise = (function () {
       return {
         startSample: null,
         endSample: null,
+        startIndex: -1,
+        endIndex: -1,
+        strategy: 'empty',
       };
     }
 
-    var geoSamples = run.sampleLog.filter(function (sample) {
-      return isFiniteNumber(sample.latitude) && isFiniteNumber(sample.longitude);
+    // Use the shared route-boundary module with accel-specific options.
+    // Accel runs are typically short and fast, so use a smaller lookahead
+    // window and lower movement threshold.
+    return getRouteBoundarySamples(run.sampleLog, {
+      mode: 'accel',
+      movementThresholdM: 10,
+      speedThresholdMs: 0.5,
+      lookaheadWindow: 2,
     });
-
-    var startedGeoSamples = geoSamples.filter(function (sample) {
-      return isFiniteNumber(sample.elapsedFromStartMs);
-    });
-    var preferredSamples = startedGeoSamples.length ? startedGeoSamples : geoSamples;
-    var startSample =
-      findClosestElapsedSample(startedGeoSamples, 0) || preferredSamples[0] || geoSamples[0] || null;
-    var endSample =
-      findClosestElapsedSample(startedGeoSamples, run.elapsedMs) ||
-      preferredSamples[preferredSamples.length - 1] ||
-      geoSamples[geoSamples.length - 1] ||
-      null;
-
-    if (hasMatchingSampleCoordinates(startSample, endSample)) {
-      endSample =
-        findDistinctCoordinateSample(preferredSamples, startSample, true) ||
-        findDistinctCoordinateSample(geoSamples, startSample, true) ||
-        endSample;
-    }
-
-    return {
-      startSample: startSample,
-      endSample: endSample,
-    };
   }
 
   function reversePlaceForRunSample(sample) {
-    if (!sample || !isFiniteNumber(sample.latitude) || !isFiniteNumber(sample.longitude)) {
-      return Promise.resolve({ place: null, data: null, meta: null });
-    }
-
-    return placeResolver.reversePlace({
-      latitude: sample.latitude,
-      longitude: sample.longitude,
-      zoom: 18,
-    });
+    return reverseGeocodeBoundarySample(sample, placeResolver);
   }
 
   function updateRunInState(updatedRun) {
@@ -996,14 +1376,24 @@ export const initPromise = (function () {
 
       try {
         if (!nextRun.startPlace && boundarySamples.startSample) {
-          var startResponse = await reversePlaceForRunSample(boundarySamples.startSample);
-          if (startResponse.place?.countryCode) {
-            applyAutoConfiguredUnits(startResponse.place.countryCode);
+          var startResult = await reversePlaceForRunSample(boundarySamples.startSample);
+          if (startResult?.countryCode) {
+            applyAutoConfiguredUnits(startResult.countryCode);
           }
-          if (startResponse.place) {
+          if (startResult?.place) {
             nextRun = {
               ...nextRun,
-              startPlace: startResponse.place,
+              startBoundaryPoint: {
+                latitude: boundarySamples.startSample.latitude,
+                longitude: boundarySamples.startSample.longitude,
+                timestampMs: boundarySamples.startSample.timestampMs ?? null,
+                sampleIndex: boundarySamples.startIndex,
+              },
+              startPlace: {
+                label: startResult.boundaryDisplay.label,
+                detail: startResult.boundaryDisplay.detail,
+                raw: startResult.place,
+              },
             };
           }
         }
@@ -1011,23 +1401,39 @@ export const initPromise = (function () {
         if (!nextRun.endPlace && boundarySamples.endSample) {
           var sameCoords = Boolean(
             nextRun.startPlace &&
-              hasMatchingSampleCoordinates(boundarySamples.startSample, boundarySamples.endSample)
+            boundarySamples.canReuseBoundaryPlace
           );
 
           if (sameCoords) {
             nextRun = {
               ...nextRun,
-              endPlace: nextRun.startPlace,
+              endBoundaryPoint: {
+                latitude: boundarySamples.endSample.latitude,
+                longitude: boundarySamples.endSample.longitude,
+                timestampMs: boundarySamples.endSample.timestampMs ?? null,
+                sampleIndex: boundarySamples.endIndex,
+              },
+              endPlace: { ...nextRun.startPlace },
             };
           } else {
-            var endResponse = await reversePlaceForRunSample(boundarySamples.endSample);
-            if (endResponse.place?.countryCode) {
-              applyAutoConfiguredUnits(endResponse.place.countryCode);
+            var endResult = await reversePlaceForRunSample(boundarySamples.endSample);
+            if (endResult?.countryCode) {
+              applyAutoConfiguredUnits(endResult.countryCode);
             }
-            if (endResponse.place) {
+            if (endResult?.place) {
               nextRun = {
                 ...nextRun,
-                endPlace: endResponse.place,
+                endBoundaryPoint: {
+                  latitude: boundarySamples.endSample.latitude,
+                  longitude: boundarySamples.endSample.longitude,
+                  timestampMs: boundarySamples.endSample.timestampMs ?? null,
+                  sampleIndex: boundarySamples.endIndex,
+                },
+                endPlace: {
+                  label: endResult.boundaryDisplay.label,
+                  detail: endResult.boundaryDisplay.detail,
+                  raw: endResult.place,
+                },
               };
             }
           }
@@ -1042,6 +1448,7 @@ export const initPromise = (function () {
 
       updateRunInState(nextRun);
       saveRuns();
+      queueRunForCloudSync(nextRun);
       renderAll();
     })();
   }
@@ -1097,6 +1504,41 @@ export const initPromise = (function () {
     if (presetOrRun.type === 'distance' || presetOrRun.presetKind === 'distance')
       return t('accelDistanceTest');
     return presetOrRun.standingStart ? t('accelStandingStart') : t('accelRollingStart');
+  }
+
+  function getAccelActivityDetail(run) {
+    var preset = run?.preset;
+    if (!preset) return {};
+    var detailKey = preset.labelKey || presetKeyFromId(preset.presetId || preset.id);
+    if (detailKey) return { detailKey: detailKey };
+    return { detail: getPresetLabel(preset) };
+  }
+
+  function getAccelActivityStartedAtMs(run) {
+    if (!run || !isFiniteNumber(run.startPerfMs)) return null;
+    return Date.now() - Math.max(0, performance.now() - run.startPerfMs);
+  }
+
+  function publishAccelActivity() {
+    if (!isRunActive(state.run)) {
+      clearActivity(ACCEL_ACTIVITY_ID);
+      return;
+    }
+
+    var run = state.run;
+    var isRunning = run.stage === 'running';
+    var detail = getAccelActivityDetail(run);
+
+    setActivity(ACCEL_ACTIVITY_ID, {
+      kind: 'accel',
+      order: 20,
+      route: '#/accel',
+      state: isRunning ? 'running' : run.stage,
+      labelKey: isRunning ? 'activityAccelRunning' : 'activityAccelArmed',
+      sampleCount: Number.isFinite(run.sampleCount) ? run.sampleCount : 0,
+      startedAtMs: getAccelActivityStartedAtMs(run),
+      ...detail,
+    });
   }
 
   function renderPresetButtons() {
@@ -1164,11 +1606,158 @@ export const initPromise = (function () {
   }
 
   function startUiTimer() {
+    if (isSpaRuntime && !state.viewMounted) return;
     if (state.uiTimerId) window.clearInterval(state.uiTimerId);
     state.uiTimerId = window.setInterval(renderRealtimeUi, TIMER_TICK_MS);
   }
 
+  function stopUiTimer() {
+    if (!state.uiTimerId) return;
+    window.clearInterval(state.uiTimerId);
+    state.uiTimerId = null;
+  }
+
+  function stopRealtimeTracking() {
+    if (state.watchId !== null) {
+      navigator.geolocation.clearWatch(state.watchId);
+      state.watchId = null;
+    }
+    stopUiTimer();
+    pauseReplayPlayback();
+  }
+
+  function shouldKeepRealtimeTrackingInBackground() {
+    return isSpaRuntime && !state.viewMounted && isRunActive(state.run);
+  }
+
+  function stopHiddenRealtimeTrackingIfIdle() {
+    if (!isSpaRuntime || state.viewMounted || shouldKeepRealtimeTrackingInBackground()) return;
+    stopRealtimeTracking();
+  }
+
+  function cancelPendingMeasurementFrames() {
+    if (resultLocationMeasureFrame !== null) {
+      window.cancelAnimationFrame(resultLocationMeasureFrame);
+      resultLocationMeasureFrame = null;
+    }
+    if (historyDetailMeasureFrame !== null) {
+      window.cancelAnimationFrame(historyDetailMeasureFrame);
+      historyDetailMeasureFrame = null;
+    }
+  }
+
+  function destroyAccelRouteResources(route = activeAccelRoute) {
+    if (!route || route.destroyed) return;
+    route.destroyed = true;
+    route.syncIndicator?.destroy?.();
+    route.toolsMenu?.destroy?.();
+    replayChartFilterController?.destroy?.();
+    replayChartFilterController = null;
+    accelChartControllersReady = false;
+    accelChartControllersLoadPromise = null;
+    liveSpeedometer.destroy?.();
+    liveSpeedometer = createInactiveSpeedometer();
+    destroyResultGraph();
+    replayMap.destroy?.();
+    replayMap = createInactiveReplayMap();
+    toolsMenu = createInactiveToolsMenu();
+    if (activeAccelRoute === route) {
+      activeAccelRoute = null;
+    }
+  }
+
+  async function mountAccelController(routeContext = {}) {
+    if (routeContext.signal?.aborted) return Promise.resolve();
+    unmountAccelController();
+    var ownsCleanup = !routeContext.cleanup;
+    var cleanup = routeContext.cleanup || createCleanupStack();
+    var route = {
+      cleanup: cleanup,
+      destroyed: false,
+      ownsCleanup: ownsCleanup,
+      signal: routeContext.signal || null,
+    };
+    activeAccelRoute = route;
+    elements = getAccelElements(routeContext.root || document);
+    toolsMenu = initToolsMenu({
+      button: elements.toolsMenuBtn,
+      list: elements.toolsMenuList,
+    });
+    route.toolsMenu = toolsMenu;
+    createAccelLiveRouteControllers();
+    route.syncIndicator = initCloudSyncStatusIndicator({
+      mount: elements.toolbar,
+      alignEnd: true,
+      openLauncher: openCloudSyncLauncher,
+    });
+    cleanup.add(function () {
+      destroyAccelRouteResources(route);
+    });
+    if (!isSpaRuntime && !standaloneBackendAuthInitialized) {
+      standaloneBackendAuthInitialized = true;
+      initBackendAuthControllers();
+    }
+    applySharedTranslations();
+    applyAccelIcons();
+    bindEvents();
+    state.viewMounted = true;
+    if (!state.initialized) return startAccelInit();
+
+    syncMountedAccelRouteUi();
+    startUiTimer();
+    updatePermissionState();
+    ensureWatch();
+    return Promise.resolve();
+  }
+
+  function unmountAccelController() {
+    if (!state.viewMounted && !activeAccelRoute) return;
+
+    var route = activeAccelRoute;
+    var keepRealtimeTrackingInBackground = isRunActive(state.run);
+    closePanel();
+    if (keepRealtimeTrackingInBackground) {
+      stopUiTimer();
+      pauseReplayPlayback();
+    } else {
+      stopRealtimeTracking();
+    }
+    destroyResultGraph();
+    cancelPendingMeasurementFrames();
+    if (state.actionNoticeTimerId) {
+      window.clearTimeout(state.actionNoticeTimerId);
+      state.actionNoticeTimerId = null;
+    }
+    state.viewMounted = false;
+    document.body.classList.remove('accel-sheet-open');
+    document.body.classList.remove('accel-replay-chart-sheet-open');
+    destroyAccelRouteResources(route);
+    if (route?.ownsCleanup) {
+      route.cleanup?.run?.();
+    }
+  }
+
+  function handleSingleTabOwnershipChange(event) {
+    if (event?.detail?.owned !== false) return;
+    stopRealtimeTracking();
+    clearActivity(ACCEL_ACTIVITY_ID);
+  }
+
+  async function restoreAfterPageShow(event) {
+    if (isSpaRuntime && !state.viewMounted) return;
+    if (event?.persisted !== true) return;
+    if (!isSpaRuntime && !(await ensureSingleTabOwnership())) {
+      return;
+    }
+
+    startUiTimer();
+    updatePermissionState();
+    ensureWatch();
+    renderAll();
+  }
+
   function renderRealtimeUi() {
+    if (isSpaRuntime && !state.viewMounted) return;
     var replayChanged = updateReplayPlaybackClock();
     renderControlState();
     renderStatusPanel();
@@ -1291,6 +1880,7 @@ export const initPromise = (function () {
 
     state.run = createRun(preset);
     setActionNotice(preset.standingStart ? 'accelArmedStandingNotice' : 'accelArmedRollingNotice');
+    publishAccelActivity();
     renderAll();
   }
 
@@ -1298,6 +1888,7 @@ export const initPromise = (function () {
     if (!state.run || state.run.stage === 'completed') return;
     state.run = null;
     setActionNotice('accelRunCancelledNotice');
+    publishAccelActivity();
     renderAll();
   }
 
@@ -1313,6 +1904,13 @@ export const initPromise = (function () {
   function handleClearHistory() {
     if (!state.runs.length) return;
     if (!window.confirm(t('accelClearHistoryConfirm'))) return;
+
+    state.runs.forEach(function (run) {
+      void queueCloudSyncDeletion({
+        entityType: CLOUD_SYNC_ENTITY_TYPES.accelRun,
+        recordId: run.id,
+      });
+    });
 
     resetReplayState({ preserveAxisMode: true });
     state.runs = [];
@@ -1343,11 +1941,18 @@ export const initPromise = (function () {
     }
 
     if (action === 'replay') {
-      selectResult(runId);
-      openPanel('results');
-      scrollResultsPanelToTop();
-      void startReplayPlayback({ restart: true });
-      renderAll();
+      void (async function () {
+        selectResult(runId);
+        openPanel('results');
+        scrollResultsPanelToTop();
+        renderAll();
+        if (await ensureSelectedResultTelemetry(runId, { selectionSnapshotId: runId })) {
+          renderAll();
+        }
+        if (state.selectedResultId !== runId) return;
+        await startReplayPlayback({ restart: true });
+        renderAll();
+      })();
       return;
     }
 
@@ -1360,6 +1965,10 @@ export const initPromise = (function () {
     state.latestResult = state.runs.length ? state.runs[0] : null;
     if (state.selectedResultId === runId) selectResult(null);
     saveRuns();
+    void queueCloudSyncDeletion({
+      entityType: CLOUD_SYNC_ENTITY_TYPES.accelRun,
+      recordId: runId,
+    });
     renderAll();
   }
 
@@ -1372,8 +1981,7 @@ export const initPromise = (function () {
 
   function getDisplayedResult() {
     if (state.selectedResultId) {
-      var selectedRun = findRunById(state.selectedResultId);
-      if (selectedRun) return selectedRun;
+      return findRunById(state.selectedResultId);
     }
     return state.latestResult;
   }
@@ -1385,6 +1993,14 @@ export const initPromise = (function () {
       resetReplayState({ preserveAxisMode: true });
     }
     state.selectedResultId = nextResultId;
+
+    if (nextResultId) {
+      void ensureSelectedResultTelemetry(nextResultId, {
+        selectionSnapshotId: nextResultId,
+      }).then(function (restored) {
+        if (restored) renderAll();
+      });
+    }
   }
 
   function handleReplayToggle() {
@@ -1429,11 +2045,12 @@ export const initPromise = (function () {
 
   function bindReplayChartScrub(canvas) {
     if (!canvas) return;
-    canvas.addEventListener('pointerdown', handleReplayChartPointerDown);
-    canvas.addEventListener('pointermove', handleReplayChartPointerMove);
-    canvas.addEventListener('pointerup', handleReplayChartPointerUp);
-    canvas.addEventListener('pointercancel', handleReplayChartPointerUp);
-    canvas.addEventListener('lostpointercapture', handleReplayChartPointerUp);
+    var cleanup = activeAccelRoute?.cleanup;
+    cleanup?.addEventListener(canvas, 'pointerdown', handleReplayChartPointerDown);
+    cleanup?.addEventListener(canvas, 'pointermove', handleReplayChartPointerMove);
+    cleanup?.addEventListener(canvas, 'pointerup', handleReplayChartPointerUp);
+    cleanup?.addEventListener(canvas, 'pointercancel', handleReplayChartPointerUp);
+    cleanup?.addEventListener(canvas, 'lostpointercapture', handleReplayChartPointerUp);
   }
 
   function setReplayChartSheetOpen(nextOpen) {
@@ -1459,6 +2076,9 @@ export const initPromise = (function () {
     var result = getDisplayedResult();
     var source = ensureReplaySource(result);
     if (!source) return;
+    void ensureAccelChartRouteControllers().then(function (loaded) {
+      if (loaded && state.replay.chartSheetOpen && state.viewMounted) renderResultCard();
+    });
     setReplayChartSheetOpen(true);
     renderResultCard();
   }
@@ -1476,11 +2096,35 @@ export const initPromise = (function () {
 
   function scrubReplayChartAtClientX(metricKey, clientX) {
     var axisValue = replayCharts.getAxisValueFromClientX(metricKey, clientX);
+    if (!isFiniteNumber(axisValue)) {
+      axisValue = getFallbackReplayChartAxisValueFromClientX(metricKey, clientX);
+    }
     if (!isFiniteNumber(axisValue)) return;
     pauseReplayPlayback();
     cancelReplayMapApproach({ markPlayed: true });
     setReplayPositionFromAxisValue(axisValue);
     renderResultCard();
+  }
+
+  function getFallbackReplayChartAxisValueFromClientX(metricKey, clientX) {
+    var result = getDisplayedResult();
+    var source = ensureReplaySource(result);
+    if (!source) return null;
+
+    var canvas =
+      metricKey === 'altitudeM'
+        ? elements.resultReplaySheetAltitudeCanvas
+        : metricKey === 'headingDeg'
+          ? elements.resultReplaySheetHeadingCanvas
+          : elements.resultReplaySheetSpeedCanvas;
+    var rect = canvas?.getBoundingClientRect?.();
+    var width = Number(rect?.width) || Number(canvas?.clientWidth) || Number(canvas?.width) || 0;
+    if (!width) return null;
+
+    var axisRange = getReplayChartRangeForSource(source, getReplayAxisModeForSource(source));
+    var left = Number(rect?.left) || 0;
+    var ratio = clamp((Number(clientX) - left) / width, 0, 1);
+    return axisRange.min + (axisRange.max - axisRange.min) * ratio;
   }
 
   function handleReplayChartPointerDown(event) {
@@ -1818,6 +2462,7 @@ export const initPromise = (function () {
   }
 
   function ensureWatch() {
+    if (isSpaRuntime && !state.viewMounted) return;
     if (!state.geolocationSupported || state.watchId !== null) return;
 
     try {
@@ -1833,6 +2478,7 @@ export const initPromise = (function () {
   }
 
   function updatePermissionState() {
+    if (isSpaRuntime && !state.viewMounted) return;
     if (!navigator.permissions || typeof navigator.permissions.query !== 'function') {
       state.permissionState = state.geolocationSupported ? 'unknown' : 'unsupported';
       renderAll();
@@ -1842,26 +2488,35 @@ export const initPromise = (function () {
     navigator.permissions
       .query({ name: 'geolocation' })
       .then(function (status) {
+        if (isSpaRuntime && !state.viewMounted) return;
         state.permissionStatus = status;
         state.permissionState = status.state;
         renderAll();
 
         var handler = function () {
+          if (isSpaRuntime && !state.viewMounted) return;
           state.permissionState = status.state;
           renderAll();
         };
 
         if (typeof status.addEventListener === 'function')
-          status.addEventListener('change', handler);
-        else status.onchange = handler;
+          activeAccelRoute?.cleanup?.addEventListener(status, 'change', handler);
+        else {
+          status.onchange = handler;
+          activeAccelRoute?.cleanup?.add(function () {
+            if (status.onchange === handler) status.onchange = null;
+          });
+        }
       })
       .catch(function () {
+        if (isSpaRuntime && !state.viewMounted) return;
         state.permissionState = state.geolocationSupported ? 'unknown' : 'unsupported';
         renderAll();
       });
   }
 
   function handleGeoError(error) {
+    if (isSpaRuntime && !state.viewMounted) return;
     if (!error) return;
 
     if (error.code === GEO_ERROR_CODE.PERMISSION_DENIED) state.permissionState = 'denied';
@@ -1904,6 +2559,7 @@ export const initPromise = (function () {
         state.run.stage === 'running')
     ) {
       processRunSample(sample);
+      publishAccelActivity();
     }
 
     renderAll();
@@ -2138,19 +2794,23 @@ export const initPromise = (function () {
     });
     run.stage = 'completed';
     run.result = result;
+    publishAccelActivity();
     state.latestResult = result;
     state.runs.unshift(result);
     if (state.runs.length > MAX_RUNS) state.runs = state.runs.slice(0, MAX_RUNS);
     resetReplayState({ preserveAxisMode: true });
     state.selectedResultId = result.id;
     saveRuns();
+    queueRunForCloudSync(result);
     enrichRunPlaces(result.id);
     playFinishAudio();
     setActionNotice('accelRunSavedNotice');
     renderAll();
+    stopHiddenRealtimeTrackingIfIdle();
   }
 
   function renderAll() {
+    if (isSpaRuntime && !state.viewMounted) return;
     renderControlSelections();
     renderControlState();
     renderStatusPanel();
@@ -2520,6 +3180,13 @@ export const initPromise = (function () {
     }
   }
 
+  function replaySourceHasMetricData(replaySource, metricKey) {
+    if (!Array.isArray(replaySource?.frames)) return false;
+    return replaySource.frames.some(function (frame) {
+      return isFiniteNumber(frame?.[metricKey]);
+    });
+  }
+
   function renderReplayChartSheet(result, replaySource, replayPoint) {
     if (!elements.resultReplayChartSheet) return;
 
@@ -2533,6 +3200,13 @@ export const initPromise = (function () {
     if (!state.replay.chartSheetOpen) {
       elements.resultReplayChartSheet.hidden = true;
       replayCharts.destroy();
+      return;
+    }
+
+    if (!accelChartControllersReady) {
+      void ensureAccelChartRouteControllers().then(function (ready) {
+        if (ready && state.viewMounted) renderAll();
+      });
       return;
     }
 
@@ -2555,8 +3229,10 @@ export const initPromise = (function () {
       state.replay.chartFilterEndRatio
     );
 
-    var showAltitude = replayCharts.hasMetricData('altitudeM');
-    var showHeading = replayCharts.hasMetricData('headingDeg');
+    var showAltitude =
+      replayCharts.hasMetricData('altitudeM') || replaySourceHasMetricData(replaySource, 'altitudeM');
+    var showHeading =
+      replayCharts.hasMetricData('headingDeg') || replaySourceHasMetricData(replaySource, 'headingDeg');
     if (elements.resultReplaySheetAltitudeStage)
       elements.resultReplaySheetAltitudeStage.hidden = !showAltitude;
     if (elements.resultReplaySheetHeadingStage)
@@ -2660,6 +3336,13 @@ export const initPromise = (function () {
   }
 
   function renderResultGraph(result, replaySource, replayPoint) {
+    var axisMode = getReplayAxisModeForSource(replaySource);
+    if (elements.resultGraphMeta) {
+      elements.resultGraphMeta.textContent =
+        t(axisMode === 'distance' ? 'accelSpeedGraphLeadDistance' : 'accelSpeedGraphLead') +
+        ' · ' +
+        getSpeedUnitLabel(state.settings.speedUnit);
+    }
     var markerPoints =
       result && replaySource
         ? buildAccelReplayMarkers(result, replaySource, {
@@ -2667,8 +3350,16 @@ export const initPromise = (function () {
             getPartialLabel: getPartialLabel,
           })
         : [];
+
+    if (result && state.openPanel === 'results' && !accelChartControllersReady) {
+      void ensureAccelChartRouteControllers().then(function (ready) {
+        if (ready && state.viewMounted) renderAll();
+      });
+      return;
+    }
+
     resultGraph.render(result, {
-      axisMode: getReplayAxisModeForSource(replaySource),
+      axisMode: axisMode,
       markerPoints: markerPoints,
       playbackPoint: replayPoint,
     });
@@ -3167,16 +3858,41 @@ export const initPromise = (function () {
     return state.latestSample.perfMs + deltaMs;
   }
 
+  accelRouteLifecycle = {
+    mount: mountAccelController,
+    unmount: unmountAccelController,
+  };
+
   if (import.meta.hot) {
     import.meta.hot.dispose(function () {
-      if (resultLocationMeasureFrame !== null) {
-        window.cancelAnimationFrame(resultLocationMeasureFrame);
-      }
-      if (historyDetailMeasureFrame !== null) {
-        window.cancelAnimationFrame(historyDetailMeasureFrame);
-      }
+      cancelPendingMeasurementFrames();
     });
   }
 
-  return init();
+  function ensureStandaloneAccelMounted() {
+    if (!isSpaRuntime && !activeAccelRoute) {
+      standaloneCleanup?.run();
+      var mountPromise = mountAccelRoute({
+        root: document,
+        signal: null,
+      });
+      standaloneCleanup = activeAccelRoute?.cleanup || null;
+      return Promise.resolve(mountPromise).then(function () {
+        return accelInitPromise;
+      });
+    }
+    return accelInitPromise;
+  }
+
+  return {
+    then: function (onFulfilled, onRejected) {
+      return ensureStandaloneAccelMounted().then(onFulfilled, onRejected);
+    },
+    catch: function (onRejected) {
+      return ensureStandaloneAccelMounted().catch(onRejected);
+    },
+    finally: function (onFinally) {
+      return ensureStandaloneAccelMounted().finally(onFinally);
+    },
+  };
 })();

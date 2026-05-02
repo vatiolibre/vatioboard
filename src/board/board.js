@@ -3,18 +3,73 @@ import "../styles/backend-auth.less";
 import "../styles/calculator.less";
 import "../styles/energy.less";
 import "../styles/dock.less";
+import "../shared/ui/confirm-dialog.less";
 
-import { createCalculatorWidget } from "../calculator/calculator-widget.js";
-import { loadBoardDrawing, saveBoardDrawing } from "./storage.js";
-import { createEnergyCalculatorWidget } from "../energy/energy-calculator-widget.js";
-import { createFloatingDock } from "../dock/floating-dock.js";
+import { createCleanupStack } from "../app/view-cleanup.js";
+import { integratePlayerWidget } from "../player/integrate-player-widget.js";
+import { navigateToAppRoute } from "../app/router.js";
 import {
-  fetchBackendFeatureAccess,
-  fetchBackendSession,
+  clearCurrentBoardDocumentMeta,
+  loadBoardDrawing,
+  loadCurrentBoardDocumentMeta,
+  saveBoardDrawing,
+  saveCurrentBoardDocumentMeta,
+} from "./storage.js";
+import {
+  consumeBoardDocumentOpen,
+  persistBoardDocumentSelection,
+} from "../shared/repositories/board-document-repository.js";
+import {
+  BACKEND_AUTH_STATE_EVENT,
+  deleteBoardDocumentFromBackend,
+  getBackendFeatureAccessState,
+  getBackendSessionState,
   initBackendAuthControllers,
-  saveDrawingToBackend,
+  saveBoardDocumentToBackend,
+  updateBoardDocumentInBackend,
 } from "../shared/backend-auth.js";
+import {
+  CLOUD_SYNC_APPLIED_EVENT,
+  CLOUD_SYNC_ENTITY_TYPES,
+  queueCloudSyncChange,
+} from "../shared/cloud-sync.js";
+import {
+  CLOUD_LIBRARY_TAB_KEYS,
+  cloudLibraryResources,
+} from "../shared/cloud-library-resources.js";
+import { ensureSingleTabOwnership, SINGLE_TAB_OWNERSHIP_EVENT } from "../shared/single-tab.js";
+import { getFloatingTools, initFloatingTools } from "../shared/floating-tools.js";
 import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
+import { showConfirmDialog, showPromptDialog } from "../shared/ui/confirm-dialog.js";
+import {
+  createBlankSession,
+  createOpenedDocumentSession,
+  createRestoredSession,
+  isCloudEligible,
+  isNamedDocument,
+  hasUnsavedWork,
+  needsTitleForSave,
+  markContentModified,
+  markSaved,
+  markDeleted,
+} from "./document-session.js";
+import {
+  measureDrawableSurface,
+  measureVisibleViewport,
+  pointFromPointerEvent,
+} from "./drawing-surface.js";
+import {
+  queueCreateMutation,
+  queueUpdateMutation,
+  queueDeleteMutation,
+  removeMutation,
+  markMutationFailed,
+  markMutationReplaying,
+  getPendingMutations,
+  hasPendingMutations,
+  clearMutationQueue,
+  reconcileLocalToRemote,
+} from "./offline-mutations.js";
 import iro from "@jaames/iro";
 import { t, applyTranslations, toggleLang, getLang } from "../i18n.js";
 import {
@@ -22,6 +77,7 @@ import {
   IconCalculator,
   IconEnergy,
   IconEraser,
+  IconFilePlus,
   IconPages,
   IconPen,
   IconRedo,
@@ -29,12 +85,40 @@ import {
   IconSpeed,
   IconTrash,
   IconUndo,
+  IconWorld,
 } from "../icons.js";
+
+let activeBoardRoute = null;
+
+export function mountBoardRoute(routeContext = {}) {
+  unmountBoardRoute();
+  activeBoardRoute = createMountedBoardController(routeContext);
+  return activeBoardRoute;
+}
+
+export function unmountBoardRoute() {
+  activeBoardRoute?.unmount?.();
+  activeBoardRoute = null;
+}
+
+function createMountedBoardController({
+  root = document,
+  cleanup: routeCleanup = null,
+  signal,
+} = {}) {
+  const cleanup = createCleanupStack();
+  routeCleanup?.add(() => cleanup.run());
+  const routeRoot = root && typeof root.querySelector === "function" ? root : document;
+  const byId = (id) => routeRoot.querySelector(`#${id}`);
+  const query = (selector) => routeRoot.querySelector(selector);
+  const queryAll = (selector) => Array.from(routeRoot.querySelectorAll(selector));
 
 // Apply translations immediately
 applyTranslations();
+const isSpaRuntime = Boolean(window.__vatioboardSpa);
+const singleTabOwnershipPromise = isSpaRuntime ? Promise.resolve(true) : ensureSingleTabOwnership();
 
-const langToggleButtons = Array.from(document.querySelectorAll("[data-lang-toggle], #langToggle"));
+const langToggleButtons = queryAll("[data-lang-toggle], #langToggle");
 
 function syncLangToggleButtons(langCode){
   const nextLabel = String(langCode || getLang()).toUpperCase();
@@ -45,96 +129,110 @@ function syncLangToggleButtons(langCode){
 
 syncLangToggleButtons(getLang());
 langToggleButtons.forEach((button) => {
-  button.addEventListener("click", () => {
+  cleanup.addEventListener(button, "click", () => {
     const newLang = toggleLang();
     syncLangToggleButtons(newLang);
   });
 });
 
 // Toolbar buttons
-const openCalcBtn = document.getElementById("openCalc");
-const openSpeedBtn = document.getElementById("openSpeed");
-const openEnergyBtn = document.getElementById("openEnergy");
-const openAccelMenuBtn = document.getElementById("openAccelMenu");
-const openCalcMenuBtn = document.getElementById("openCalcMenu");
-const openSpeedMenuBtn = document.getElementById("openSpeedMenu");
-const openEnergyMenuBtn = document.getElementById("openEnergyMenu");
-const toolsMenuBtn = document.getElementById("toolsMenuBtn");
-const toolsMenuList = document.getElementById("toolsMenuList");
+const openCalcBtn = byId("openCalc");
+const openSpeedBtn = byId("openSpeed");
+const openEnergyBtn = byId("openEnergy");
+const openAccelMenuBtn = byId("openAccelMenu");
+const openCalcMenuBtn = byId("openCalcMenu");
+const openLibraryMenuBtn = byId("openLibraryMenu");
+const openSpeedMenuBtn = byId("openSpeedMenu");
+const toolsMenuBtn = byId("toolsMenuBtn");
+const toolsMenuList = byId("toolsMenuList");
 
-applyButtonIcon(document.getElementById("pen"), IconPen);
-applyButtonIcon(document.getElementById("erase"), IconEraser);
-applyButtonIcon(document.getElementById("undo"), IconUndo);
-applyButtonIcon(document.getElementById("redo"), IconRedo);
-applyButtonIcon(document.getElementById("clear"), IconTrash);
-applyButtonIcon(document.getElementById("save"), IconSave);
+applyButtonIcon(byId("pen"), IconPen);
+applyButtonIcon(byId("erase"), IconEraser);
+applyButtonIcon(byId("undo"), IconUndo);
+applyButtonIcon(byId("redo"), IconRedo);
+applyButtonIcon(byId("createNew"), IconFilePlus);
+applyButtonIcon(byId("save"), IconSave);
+applyButtonIcon(byId("deleteBoard"), IconTrash);
 applyButtonIcon(openCalcBtn, IconCalculator);
 applyButtonIcon(openCalcMenuBtn, IconCalculator);
 applyButtonIcon(openAccelMenuBtn, IconAccel);
+applyButtonIcon(openLibraryMenuBtn, IconWorld);
 applyButtonIcon(openSpeedBtn, IconSpeed);
 applyButtonIcon(openSpeedMenuBtn, IconSpeed);
 applyButtonIcon(openEnergyBtn, IconEnergy);
-applyButtonIcon(openEnergyMenuBtn, IconEnergy);
 applyButtonIcon(toolsMenuBtn, IconPages);
 
-// Floating dock with tool buttons
-const { calcBtn, energyBtn } = createFloatingDock();
 const toolsMenu = initToolsMenu({ button: toolsMenuBtn, list: toolsMenuList });
-initBackendAuthControllers();
-toolsMenu.setOpen(true);
+cleanup.addDisposable(toolsMenu);
+if (!isSpaRuntime) initBackendAuthControllers();
 
-// Create widgets - all buttons toggle the same instance
-const calcWidget = createCalculatorWidget({ floating: false });
-const energyWidget = createEnergyCalculatorWidget({ button: null });
+// Shared floating tools live outside route-owned DOM in the SPA shell.
+const floatingTools = isSpaRuntime ? getFloatingTools() : initFloatingTools();
+const calcWidget = floatingTools?.calcWidget || null;
+const energyWidget = floatingTools?.energyWidget || null;
 
 const bindToggle = (btn, widget) => {
-  btn?.addEventListener("click", () => {
-    widget.toggle();
+  if (!btn || !widget) return;
+  cleanup.addEventListener(btn, "click", () => {
+    widget.toggle?.();
     toolsMenu.close();
   });
 };
 
 const bindNavigation = (btn, href) => {
-  btn?.addEventListener("click", () => {
+  cleanup.addEventListener(btn, "click", () => {
     toolsMenu.close();
-    window.location.href = href;
+    navigateToAppRoute(href);
   });
 };
 
 bindToggle(openCalcBtn, calcWidget);
 bindToggle(openCalcMenuBtn, calcWidget);
-bindToggle(calcBtn, calcWidget);
 
 bindToggle(openEnergyBtn, energyWidget);
-bindToggle(openEnergyMenuBtn, energyWidget);
-bindToggle(energyBtn, energyWidget);
 
-bindNavigation(openSpeedBtn, "/speed");
-bindNavigation(openSpeedMenuBtn, "/speed");
-bindNavigation(openAccelMenuBtn, "/accel");
+bindNavigation(openSpeedBtn, "#/speed");
+bindNavigation(openSpeedMenuBtn, "#/speed");
+bindNavigation(openAccelMenuBtn, "#/accel");
+bindNavigation(openLibraryMenuBtn, "#/library?tab=board_documents");
 
-  (function(){
-    const canvas = document.getElementById("pad");
+if (!isSpaRuntime) {
+  integratePlayerWidget({ toolsMenuList, toolsMenu });
+}
+
+  return (function(){
+    const canvas = byId("pad");
+    const canvasFrame = query(".canvas-frame") || canvas.parentElement || canvas;
     const ctx = canvas.getContext("2d", { alpha: true });
     const historyCanvas = document.createElement("canvas");
     const historyCtx = historyCanvas.getContext("2d", { alpha: true });
-    const statusEl = document.getElementById("status");
+    const statusEl = byId("status");
 
-    const penBtn = document.getElementById("pen");
-    const eraseBtn = document.getElementById("erase");
-    const undoBtn = document.getElementById("undo");
-    const redoBtn = document.getElementById("redo");
-    const sizeEl = document.getElementById("size");
-    const sizePreview = document.getElementById("sizePreview");
-    const clearBtn = document.getElementById("clear");
-    const saveBtn = document.getElementById("save");
-    const backendAuthUserInput = document.querySelector("[data-backend-auth-user]");
+    const penBtn = byId("pen");
+    const eraseBtn = byId("erase");
+    const undoBtn = byId("undo");
+    const redoBtn = byId("redo");
+    const sizeEl = byId("size");
+    const sizePreview = byId("sizePreview");
+    const createNewBtn = byId("createNew");
+    const saveBtn = byId("save");
+    const deleteBoardBtn = byId("deleteBoard");
+    const backendAuthUserInput = query("[data-backend-auth-user]");
 
     // NEW: color UI
-    const swatchesEl = document.getElementById("swatches");
+    const swatchesEl = byId("swatches");
 
     const LS_INK_RAW = "vatio_board_ink_raw";
     let saveBusy = false;
+    let currentBoardDocument = loadCurrentBoardDocumentMeta();
+    let documentSession = currentBoardDocument
+      ? createRestoredSession({
+        name: currentBoardDocument.name,
+        title: currentBoardDocument.title,
+        hasContent: false,
+      })
+      : createBlankSession();
+    let activeBackendUser = null;
 
     function isDarkMode(){
       return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -145,19 +243,19 @@ bindNavigation(openAccelMenuBtn, "/accel");
     (isDarkMode() ? "#e5e7eb" : "#111827");
 
     // Popup UI
-    const colorTriggerBtn = document.getElementById("sizePreview");
-    const colorPopup = document.getElementById("colorPopup");
-    const colorPopupClose = document.getElementById("colorPopupClose");
+    const colorTriggerBtn = byId("sizePreview");
+    const colorPopup = byId("colorPopup");
+    const colorPopupClose = byId("colorPopupClose");
 
-    const hexInput = document.getElementById("hexInput");
-    const rRange = document.getElementById("rRange");
-    const gRange = document.getElementById("gRange");
-    const bRange = document.getElementById("bRange");
-    const rVal = document.getElementById("rVal");
-    const gVal = document.getElementById("gVal");
-    const bVal = document.getElementById("bVal");
+    const hexInput = byId("hexInput");
+    const rRange = byId("rRange");
+    const gRange = byId("gRange");
+    const bRange = byId("bRange");
+    const rVal = byId("rVal");
+    const gVal = byId("gVal");
+    const bVal = byId("bVal");
 
-    const iroPickerEl = document.getElementById("iroPicker");
+    const iroPickerEl = byId("iroPicker");
 
     let iroPicker = null;
     let syncingFromIro = false;
@@ -199,20 +297,20 @@ bindNavigation(openAccelMenuBtn, "/accel");
       if (colorPopup) colorPopup.hidden = true;
     }
 
-    colorTriggerBtn?.addEventListener("click", openColorPopup);
-    colorPopupClose?.addEventListener("click", closeColorPopup);
-    colorPopup?.addEventListener("click", (e) => {
+    cleanup.addEventListener(colorTriggerBtn, "click", openColorPopup);
+    cleanup.addEventListener(colorPopupClose, "click", closeColorPopup);
+    cleanup.addEventListener(colorPopup, "click", (e) => {
     if (e.target === colorPopup) closeColorPopup();
     });
-    swatchesEl?.addEventListener("click", (event) => {
+    cleanup.addEventListener(swatchesEl, "click", (event) => {
       if (!event.target?.closest?.(".swatch")) return;
       event.preventDefault();
       event.stopPropagation();
     });
 
-    [rRange, gRange, bRange].forEach((el) => el?.addEventListener("input", setInkFromSliders));
+    [rRange, gRange, bRange].forEach((el) => cleanup.addEventListener(el, "input", setInkFromSliders));
 
-    hexInput?.addEventListener("change", () => {
+    cleanup.addEventListener(hexInput, "change", () => {
       const h = normalizeHex(hexInput.value);
       if (h) {
         setInkRaw(h);
@@ -225,14 +323,21 @@ bindNavigation(openAccelMenuBtn, "/accel");
     let tool = "pen"; // "pen" | "eraser"
     let drawing = false;
     let activePointerId = null;
+    let activePointerCaptureTarget = null;
     let last = null;
     let currentStroke = null;
     let boardStateRevision = 0;
     let canvasCssWidth = 0;
     let canvasCssHeight = 0;
     let canvasDpr = 1;
+    let viewMounted = true;
+    let initialized = false;
     const commandHistory = [];
     const redoHistory = [];
+
+    function isRouteInactive(){
+      return Boolean(signal?.aborted || (isSpaRuntime && !viewMounted));
+    }
 
     // Theme-aware colors from CSS variables
     function cssVar(name){
@@ -242,9 +347,84 @@ bindNavigation(openAccelMenuBtn, "/accel");
 
     function setStatus(s){ statusEl.textContent = s; }
 
-    function syncSaveButton(){
+    function syncToolbarButtons(){
       if (!saveBtn) return;
-      saveBtn.disabled = saveBusy;
+      const busy = saveBusy || documentSession.saveState === "saving";
+      saveBtn.disabled = busy;
+      if (deleteBoardBtn) {
+        deleteBoardBtn.disabled = busy || documentSession.deleteState === "deleting";
+      }
+    }
+
+    function normalizeBackendUser(value){
+      const normalized = typeof value === "string" ? value.trim() : "";
+      return normalized || null;
+    }
+
+    function clearRemoteBoardDocumentReference({ preserveTitle = true } = {}){
+      const nextTitle = preserveTitle
+        ? (documentSession.documentTitle || currentBoardDocument?.title || "")
+        : "";
+
+      documentSession.remoteDocumentName = null;
+      documentSession.documentTitle = nextTitle;
+      documentSession.lastSavedAtMs = 0;
+      documentSession.materializedRemotely = false;
+      documentSession.openedFromCloud = false;
+      currentBoardDocument = null;
+      clearCurrentBoardDocumentMeta();
+    }
+
+    async function saveBoardDocumentWithFallback({
+      title,
+      snapshot,
+      previewImage,
+      csrfToken,
+    }){
+      if (!isNamedDocument(documentSession)) {
+        return saveBoardDocumentToBackend({
+          title,
+          payload: snapshot,
+          previewImage,
+          csrfToken,
+        });
+      }
+
+      const updateResponse = await updateBoardDocumentInBackend({
+        name: documentSession.remoteDocumentName,
+        payload: snapshot,
+        previewImage,
+        csrfToken,
+      });
+
+      if (updateResponse?.status !== 404) {
+        return updateResponse;
+      }
+
+      clearRemoteBoardDocumentReference({ preserveTitle: true });
+      const fallbackTitle = String(title || documentSession.documentTitle || "").trim();
+
+      return saveBoardDocumentToBackend({
+        title: fallbackTitle,
+        payload: snapshot,
+        previewImage,
+        csrfToken,
+      });
+    }
+
+    function handleBackendAuthStateChange(event){
+      if (event?.detail?.pendingLogout === true) return;
+      if (event?.detail?.isGuest === true || event?.detail?.authenticated !== true) {
+        return;
+      }
+
+      const nextUser = normalizeBackendUser(event?.detail?.user);
+      if (activeBackendUser && nextUser && activeBackendUser !== nextUser) {
+        clearRemoteBoardDocumentReference({ preserveTitle: true });
+      }
+      if (nextUser) {
+        activeBackendUser = nextUser;
+      }
     }
 
     function setActive(options = {}){
@@ -316,12 +496,31 @@ bindNavigation(openAccelMenuBtn, "/accel");
 
     function queueBoardPersistence(){
       boardStateRevision += 1;
-      void saveBoardDrawing(createBoardDrawingSnapshot());
+      markContentModified(documentSession);
+      const updatedAtMs = Date.now();
+      const snapshot = {
+        ...createBoardDrawingSnapshot(),
+        updatedAtMs,
+      };
+      void saveBoardDrawing(snapshot);
+      if (isCloudEligible(documentSession)) {
+        void queueCloudSyncChange({
+          entityType: CLOUD_SYNC_ENTITY_TYPES.boardDrawing,
+          recordId: "primary",
+          recordTitle: documentSession.documentTitle || "Board",
+          updatedAtMs,
+          payload: snapshot,
+        });
+      }
     }
 
     async function hydrateBoardDrawing(){
+      if (isRouteInactive()) return;
       const restoreRevision = boardStateRevision;
-      const storedDrawing = await loadBoardDrawing();
+      const pendingOpen = await consumeBoardDocumentOpen();
+      if (isRouteInactive()) return;
+      const storedDrawing = pendingOpen?.payload || await loadBoardDrawing();
+      if (isRouteInactive()) return;
 
       if (boardStateRevision !== restoreRevision || drawing || commandHistory.length > 0 || redoHistory.length > 0) {
         return;
@@ -334,14 +533,43 @@ bindNavigation(openAccelMenuBtn, "/accel");
         ? storedDrawing.redoCommands.map(cloneCommand).filter(Boolean)
         : [];
 
-      if (restoredCommands.length === 0 && restoredRedoCommands.length === 0) {
+      if (!pendingOpen && restoredCommands.length === 0 && restoredRedoCommands.length === 0) {
         return;
       }
 
+      commandHistory.length = 0;
+      redoHistory.length = 0;
       commandHistory.push(...restoredCommands);
       redoHistory.push(...restoredRedoCommands);
       syncHistoryButtons();
       redrawCanvas();
+
+      if (pendingOpen?.document) {
+        currentBoardDocument = {
+          name: pendingOpen.document.name,
+          title: pendingOpen.document.title,
+          updatedAtMs: pendingOpen.document.updated_at_ms || storedDrawing.updatedAtMs || Date.now(),
+        };
+        documentSession = createOpenedDocumentSession({
+          name: pendingOpen.document.name,
+          title: pendingOpen.document.title,
+          hasContent: restoredCommands.length > 0,
+          linkedPngName: pendingOpen.document.preview_image_file || null,
+        });
+        await persistBoardDocumentSelection({
+          document: pendingOpen.document,
+          payload: {
+            ...storedDrawing,
+            updatedAtMs: storedDrawing.updatedAtMs || Date.now(),
+          },
+        });
+        syncToolbarButtons();
+        setStatus(t("boardDocumentOpened", {
+          title: currentBoardDocument.title || t("boardDocumentUntitled"),
+        }));
+      } else if (restoredCommands.length > 0 && !isNamedDocument(documentSession)) {
+        documentSession.hasUserContent = true;
+      }
     }
 
     function pushHistoryCommand(command, { clearRedo = true } = {}){
@@ -520,6 +748,7 @@ bindNavigation(openAccelMenuBtn, "/accel");
     }
 
     function copyHistorySurfaceToVisible(){
+      if (!canvas.width || !canvas.height || !historyCanvas.width || !historyCanvas.height) return;
       ctx.save();
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -628,7 +857,7 @@ bindNavigation(openAccelMenuBtn, "/accel");
 
         b.style.background = hex;
 
-        b.addEventListener("click", () => {
+        cleanup.addEventListener(b, "click", () => {
           setInkRaw(hex);
         });
 
@@ -673,11 +902,37 @@ bindNavigation(openAccelMenuBtn, "/accel");
 
     // Preserve drawings across resize by snapshotting pixels
     function resize(){
-      const rect = canvas.getBoundingClientRect();
+      if (isSpaRuntime && !viewMounted) return;
+
+      canvas.style.removeProperty("width");
+      canvas.style.removeProperty("height");
+      if (canvasFrame && canvasFrame !== canvas) {
+        canvasFrame.style.removeProperty("height");
+      }
+
+      const viewport = measureVisibleViewport({ doc: document, win: window });
+      if (viewport.height > 0) {
+        document.documentElement.style.setProperty("--board-viewport-height", `${viewport.height}px`);
+      }
+
+      const rect = measureDrawableSurface({
+        canvas,
+        frame: canvasFrame,
+        doc: document,
+        win: window,
+      });
+      if (rect.width < 1 || rect.height < 1) return;
+
       const dpr = Math.max(1, window.devicePixelRatio || 1);
       canvasCssWidth = rect.width;
       canvasCssHeight = rect.height;
       canvasDpr = dpr;
+
+      canvas.style.width = `${rect.width}px`;
+      canvas.style.height = `${rect.height}px`;
+      if (canvasFrame && canvasFrame !== canvas) {
+        canvasFrame.style.height = `${rect.height}px`;
+      }
 
       canvas.width = Math.floor(rect.width * dpr);
       canvas.height = Math.floor(rect.height * dpr);
@@ -689,8 +944,12 @@ bindNavigation(openAccelMenuBtn, "/accel");
     }
 
     function pos(ev){
-      const r = canvas.getBoundingClientRect();
-      return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+      return pointFromPointerEvent(ev, measureDrawableSurface({
+        canvas,
+        frame: canvasFrame,
+        doc: document,
+        win: window,
+      }));
     }
 
     function start(ev){
@@ -700,9 +959,10 @@ bindNavigation(openAccelMenuBtn, "/accel");
       clearNativeSelection();
       drawing = true;
       activePointerId = ev.pointerId;
+      activePointerCaptureTarget = canvasFrame || canvas;
       setDrawingSelectionLock(true);
       try {
-        canvas.setPointerCapture?.(ev.pointerId);
+        activePointerCaptureTarget.setPointerCapture?.(ev.pointerId);
       } catch {
         // Some browsers reject capture during transient gesture states.
       }
@@ -737,14 +997,16 @@ bindNavigation(openAccelMenuBtn, "/accel");
       if (!drawing) return false;
       if (activePointerId !== null && ev?.pointerId !== undefined && ev.pointerId !== activePointerId) return false;
       const pointerId = activePointerId;
+      const captureTarget = activePointerCaptureTarget;
       drawing = false;
       activePointerId = null;
+      activePointerCaptureTarget = null;
       setDrawingSelectionLock(false);
       last = null;
 
       if (pointerId !== null && pointerId !== undefined) {
         try {
-          canvas.releasePointerCapture?.(pointerId);
+          captureTarget?.releasePointerCapture?.(pointerId);
         } catch {
           // Pointer capture may already be released when pointerup/cancel fires.
         }
@@ -768,22 +1030,189 @@ bindNavigation(openAccelMenuBtn, "/accel");
       setStatus(t("draftUpdated"));
     }
 
-    function clear(){
+    function handleSingleTabOwnershipChange(event){
+      if (event?.detail?.owned !== false) return;
       finishStroke({ commit: false });
+    }
 
-      if (commandHistory.length === 0) {
-        redoHistory.length = 0;
-        fillCanvasBackground(historyCtx);
-        copyHistorySurfaceToVisible();
-        syncHistoryButtons();
-        queueBoardPersistence();
+    function resetCanvasToBlank(){
+      finishStroke({ commit: false });
+      commandHistory.length = 0;
+      redoHistory.length = 0;
+      fillCanvasBackground(historyCtx);
+      copyHistorySurfaceToVisible();
+      syncHistoryButtons();
+    }
+
+    function invalidateBoardDocumentCache(){
+      try {
+        cloudLibraryResources[CLOUD_LIBRARY_TAB_KEYS.boardDocuments]?.resource?.invalidateList?.();
+      } catch {
+        // Non-critical: cloud library cache refresh can silently fail.
+      }
+    }
+
+    async function saveBoardDocument(){
+      if (saveBusy) return;
+
+      saveBusy = true;
+      documentSession.saveState = "saving";
+      syncToolbarButtons();
+      setStatus(t("saveCheckingAccess"));
+
+      try {
+        const capability = await resolveCloudSyncAccess();
+        if (!capability) return;
+
+        // Prompt for title on first save
+        let title = documentSession.documentTitle;
+        if (needsTitleForSave(documentSession)) {
+          title = await showPromptDialog({
+            title: t("boardTitlePrompt"),
+            placeholder: t("boardTitlePlaceholder"),
+            value: title || "",
+            confirmLabel: t("saveBoard"),
+          });
+          if (title === null) return;
+          title = String(title || "").trim();
+          if (!title) {
+            setStatus(t("boardDocumentTitleRequired"));
+            return;
+          }
+        }
+
+        setStatus(t("boardSaving"));
+        const snapshot = createBoardDocumentSnapshot();
+
+        // Export PNG preview
+        let pngBlob = null;
+        try {
+          const exported = await exportCanvasAsPng();
+          pngBlob = exported.fileBlob;
+        } catch {
+          // Non-critical: save the document without a preview image.
+        }
+
+        const response = await saveBoardDocumentWithFallback({
+          title,
+          snapshot,
+          previewImage: pngBlob,
+          csrfToken: capability.csrfToken,
+        });
+
+        if (!response?.ok || !response.document) {
+          if (response?.status === 401 || response?.status === 403) {
+            openBackendAuth();
+            setStatus(t("saveLoginRequired"));
+          } else {
+            setStatus(t("boardCouldNotSave"));
+          }
+          return;
+        }
+
+
+
+        // Update session & persisted metadata
+        markSaved(documentSession, {
+          name: response.document.name,
+          title: response.document.title,
+        });
+        currentBoardDocument = {
+          name: response.document.name,
+          title: response.document.title,
+          updatedAtMs: response.document.updated_at_ms || snapshot.updatedAtMs,
+        };
+        saveCurrentBoardDocumentMeta(currentBoardDocument);
+        invalidateBoardDocumentCache();
+        setStatus(t("boardSaved", { title: currentBoardDocument.title || t("boardDocumentUntitled") }));
+      } catch {
+        setStatus(t("saveNetworkError"));
+      } finally {
+        saveBusy = false;
+        documentSession.saveState = "idle";
+        syncToolbarButtons();
+      }
+    }
+
+    async function deleteBoardDocument(){
+      if (saveBusy || documentSession.deleteState === "deleting") return;
+
+      const named = isNamedDocument(documentSession);
+      const hasContent = commandHistory.length > 0 || documentSession.hasUserContent;
+
+      // Nothing to delete or discard
+      if (!named && !hasContent) {
         setStatus(t("cleared"));
         return;
       }
 
-      pushHistoryCommand({ type: "clear" });
-      drawCommandToContext(historyCtx, { type: "clear" });
-      copyHistorySurfaceToVisible();
+      // Confirm before destructive action
+      const confirmed = await showConfirmDialog({
+        title: named
+          ? t("deleteBoardConfirmTitle")
+          : t("deleteBoardConfirmLocalTitle"),
+        message: named
+          ? t("deleteBoardConfirmMessage", {
+            title: documentSession.documentTitle || t("boardDocumentUntitled"),
+          })
+          : t("deleteBoardConfirmLocalMessage"),
+        confirmLabel: named ? t("deleteBoard") : t("discard"),
+        destructive: true,
+      });
+      if (!confirmed) return;
+
+      if (named) {
+        documentSession.deleteState = "deleting";
+        syncToolbarButtons();
+        setStatus(t("boardDeleting"));
+
+        try {
+          const capability = await resolveCloudSyncAccess();
+          if (!capability) return;
+
+          const response = await deleteBoardDocumentFromBackend({
+            name: documentSession.remoteDocumentName,
+            csrfToken: capability.csrfToken,
+          });
+          if (!response.ok) {
+            setStatus(t("boardDocumentDeleteFailed", { status: response.status || 0 }));
+            return;
+          }
+        } catch {
+          setStatus(t("saveNetworkError"));
+          return;
+        } finally {
+          documentSession.deleteState = "idle";
+          syncToolbarButtons();
+        }
+      }
+
+      // Reset to blank
+      resetCanvasToBlank();
+      markDeleted(documentSession);
+      currentBoardDocument = null;
+      clearCurrentBoardDocumentMeta();
+      documentSession = createBlankSession();
+      invalidateBoardDocumentCache();
+      queueBoardPersistence();
+      setStatus(t("boardDeleted"));
+    }
+
+    async function createNewBoard(){
+      // If there's unsaved work, offer to save first
+      if (hasUnsavedWork(documentSession) && commandHistory.length > 0) {
+        const confirmed = await showConfirmDialog({
+          title: t("createNewConfirmTitle"),
+          message: t("createNewConfirmMessage"),
+          confirmLabel: t("createNew"),
+        });
+        if (!confirmed) return;
+      }
+
+      resetCanvasToBlank();
+      currentBoardDocument = null;
+      clearCurrentBoardDocumentMeta();
+      documentSession = createBlankSession();
       queueBoardPersistence();
       setStatus(t("cleared"));
     }
@@ -818,6 +1247,29 @@ bindNavigation(openAccelMenuBtn, "/accel");
       if (!drawing || isEditableElement(event.target)) return;
       event.preventDefault();
       clearNativeSelection();
+    }
+
+    function mountBoardController(){
+      viewMounted = true;
+      if (!initialized) return;
+      resize();
+      syncToolbarButtons();
+      syncHistoryButtons();
+      setActive({ announce: false });
+    }
+
+    function unmountBoardController(){
+      if (isSpaRuntime && !viewMounted) return;
+      finishStroke({ commit: false });
+      closeColorPopup();
+      toolsMenu.close();
+      if (!isSpaRuntime) {
+        calcWidget.close?.();
+        energyWidget.close?.();
+      }
+      setDrawingSelectionLock(false);
+      document.documentElement.style.removeProperty("--board-viewport-height");
+      viewMounted = false;
     }
 
     function dataUrlToBlob(dataUrl){
@@ -905,109 +1357,92 @@ bindNavigation(openAccelMenuBtn, "/accel");
       return t("saveSubscriptionRequired");
     }
 
-    async function saveToVatioLibre(){
-      if (saveBusy) return;
+    async function resolveCloudSyncAccess(){
+      const session = await getBackendSessionState();
 
-      saveBusy = true;
-      syncSaveButton();
-      setStatus(t("saveCheckingAccess"));
-
-      try {
-        const session = await fetchBackendSession();
-
-        if (!session.ok) {
-          if (session.isGuest) {
-            openBackendAuth();
-            setStatus(t("saveLoginRequired"));
-          } else {
-            setStatus(t("saveSessionCheckFailed", { status: session.status }));
-          }
-          return;
-        }
-
+      if (!session.ok) {
         if (session.isGuest) {
           openBackendAuth();
           setStatus(t("saveLoginRequired"));
-          return;
+        } else {
+          setStatus(t("saveSessionCheckFailed", { status: session.status }));
         }
-
-        const featureAccess = await fetchBackendFeatureAccess();
-
-        if (!featureAccess.ok) {
-          if (featureAccess.isGuest) {
-            openBackendAuth();
-            setStatus(t("saveLoginRequired"));
-          } else {
-            setStatus(t("saveFeatureAccessFailed", { status: featureAccess.status }));
-          }
-          return;
-        }
-
-        if (!featureAccess.capability.enabled) {
-          setStatus(getBlockedSaveMessage(featureAccess.capability));
-          return;
-        }
-
-        if (!featureAccess.capability.csrfToken) {
-          setStatus(t("saveUnavailable"));
-          return;
-        }
-
-        setStatus(t("savingToVatioLibre"));
-        const exportedDrawing = await exportCanvasAsPng();
-        const saveResult = await saveDrawingToBackend({
-          fileBlob: exportedDrawing.fileBlob,
-          fileName: exportedDrawing.fileName,
-          imageWidth: exportedDrawing.imageWidth,
-          imageHeight: exportedDrawing.imageHeight,
-          csrfToken: featureAccess.capability.csrfToken,
-        });
-
-        if (!saveResult.ok) {
-          if (saveResult.status === 401 || saveResult.status === 403) {
-            openBackendAuth();
-            setStatus(t("saveLoginRequired"));
-          } else {
-            setStatus(t("saveFailed", { status: saveResult.status }));
-          }
-          return;
-        }
-
-        setStatus(t("savedToVatioLibre"));
-      } catch {
-        setStatus(t("saveNetworkError"));
-      } finally {
-        saveBusy = false;
-        syncSaveButton();
+        return null;
       }
+
+      if (session.isGuest) {
+        openBackendAuth();
+        setStatus(t("saveLoginRequired"));
+        return null;
+      }
+
+      const featureAccess = await getBackendFeatureAccessState();
+
+      if (!featureAccess.ok) {
+        if (featureAccess.isGuest) {
+          openBackendAuth();
+          setStatus(t("saveLoginRequired"));
+        } else {
+          setStatus(t("saveFeatureAccessFailed", { status: featureAccess.status }));
+        }
+        return null;
+      }
+
+      // Board document saves require the cloud_sync capability.
+      const cloudSync = featureAccess.cloudSyncCapability;
+
+      if (!cloudSync?.enabled) {
+        setStatus(getBlockedSaveMessage(cloudSync));
+        return null;
+      }
+
+      if (!cloudSync.csrfToken) {
+        setStatus(t("saveUnavailable"));
+        return null;
+      }
+
+      return cloudSync;
+    }
+
+    function createBoardDocumentSnapshot(){
+      return {
+        ...createBoardDrawingSnapshot(),
+        updatedAtMs: Date.now(),
+      };
     }
 
     // Events
-    canvas.addEventListener("pointerdown", (e)=>{ e.preventDefault(); start(e); });
-    canvas.addEventListener("pointermove", (e)=>{ e.preventDefault(); move(e); });
-    canvas.addEventListener("pointerup",   (e)=>{ e.preventDefault(); end(e); });
-    canvas.addEventListener("pointercancel",(e)=>{ e.preventDefault(); end(e); });
-    canvas.addEventListener("lostpointercapture", (e) => { end(e); });
-    canvas.addEventListener("contextmenu",(e)=>e.preventDefault());
-    canvas.addEventListener("selectstart", (e) => e.preventDefault());
-    canvas.addEventListener("dragstart", (e) => e.preventDefault());
-    document.addEventListener("selectstart", preventSelectionWhileDrawing);
+    cleanup.addEventListener(canvasFrame, "pointerdown", (e)=>{ e.preventDefault(); start(e); });
+    cleanup.addEventListener(canvasFrame, "pointermove", (e)=>{ e.preventDefault(); move(e); });
+    cleanup.addEventListener(canvasFrame, "pointerup",   (e)=>{ e.preventDefault(); end(e); });
+    cleanup.addEventListener(canvasFrame, "pointercancel",(e)=>{ e.preventDefault(); end(e); });
+    cleanup.addEventListener(canvasFrame, "lostpointercapture", (e) => { end(e); });
+    cleanup.addEventListener(canvasFrame, "contextmenu",(e)=>e.preventDefault());
+    cleanup.addEventListener(canvasFrame, "selectstart", (e) => e.preventDefault());
+    cleanup.addEventListener(canvasFrame, "dragstart", (e) => e.preventDefault());
+    cleanup.addEventListener(document, "selectstart", preventSelectionWhileDrawing);
 
-    penBtn.addEventListener("click", ()=>{ tool="pen"; setActive(); });
-    eraseBtn.addEventListener("click", ()=>{ tool="eraser"; setActive(); });
-    undoBtn?.addEventListener("click", undo);
-    redoBtn?.addEventListener("click", redo);
+    cleanup.addEventListener(penBtn, "click", ()=>{ tool="pen"; setActive(); });
+    cleanup.addEventListener(eraseBtn, "click", ()=>{ tool="eraser"; setActive(); });
+    cleanup.addEventListener(undoBtn, "click", undo);
+    cleanup.addEventListener(redoBtn, "click", redo);
 
-    sizeEl.addEventListener("input", syncSizePreview);
+    cleanup.addEventListener(sizeEl, "input", syncSizePreview);
 
-    clearBtn.addEventListener("click", clear);
-    saveBtn.addEventListener("click", () => {
-      void saveToVatioLibre();
+    cleanup.addEventListener(createNewBtn, "click", () => {
+      void createNewBoard();
     });
+    cleanup.addEventListener(saveBtn, "click", () => {
+      void saveBoardDocument();
+    });
+    cleanup.addEventListener(deleteBoardBtn, "click", () => {
+      void deleteBoardDocument();
+    });
+    cleanup.addEventListener(window, BACKEND_AUTH_STATE_EVENT, handleBackendAuthStateChange);
 
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     if (mq && mq.addEventListener){
-      mq.addEventListener("change", () => {
+      cleanup.addEventListener(mq, "change", () => {
         // recompute presets + apply ink contrast for new background
         renderSwatches();
         applyInk();
@@ -1016,8 +1451,10 @@ bindNavigation(openAccelMenuBtn, "/accel");
       });
     }
 
-    window.addEventListener("resize", resize);
-    document.addEventListener("keydown", (event) => {
+    cleanup.addEventListener(window, "resize", resize);
+    cleanup.addEventListener(window.visualViewport, "resize", resize);
+    cleanup.addEventListener(window.visualViewport, "scroll", resize);
+    cleanup.addEventListener(document, "keydown", (event) => {
       if (isEditableElement(document.activeElement)) return;
       if (!(event.ctrlKey || event.metaKey)) return;
 
@@ -1038,16 +1475,42 @@ bindNavigation(openAccelMenuBtn, "/accel");
       }
     });
 
+    cleanup.addEventListener(window, CLOUD_SYNC_APPLIED_EVENT, (event) => {
+      if (isRouteInactive()) return;
+      if (event?.detail?.entityType !== CLOUD_SYNC_ENTITY_TYPES.boardDrawing) return;
+      void hydrateBoardDrawing();
+    });
+    cleanup.addEventListener(window, SINGLE_TAB_OWNERSHIP_EVENT, handleSingleTabOwnershipChange);
+
     // Init
     syncSizePreview();
     syncHistoryButtons();
-    syncSaveButton();
+    syncToolbarButtons();
     setActive();
 
     renderSwatches();
     applyInk();
 
     resize();
+    initialized = true;
     setStatus(t("ready"));
-    void hydrateBoardDrawing();
+    void (async () => {
+      if (!(await singleTabOwnershipPromise)) {
+        return;
+      }
+
+      await hydrateBoardDrawing();
+    })();
+    mountBoardController();
+
+    let disposed = false;
+    return {
+      unmount() {
+        if (disposed) return;
+        disposed = true;
+        unmountBoardController();
+        cleanup.run();
+      },
+    };
   })();
+}

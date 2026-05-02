@@ -1,3 +1,5 @@
+const INDEXED_DB_OPEN_TIMEOUT_MS = 3000;
+
 export function hasIndexedDbSupport() {
   return typeof indexedDB !== "undefined" && typeof indexedDB.open === "function";
 }
@@ -8,18 +10,79 @@ export function createIndexedJsonKeyValueStore({
   storeName,
 }) {
   let dbPromise = null;
+  let databaseRef = null;
+
+  function clearCachedDatabase(target = databaseRef) {
+    if (databaseRef === target) {
+      databaseRef = null;
+    }
+  }
+
+  function cacheDatabase(database) {
+    if (!database) return null;
+    if (databaseRef === database) return database;
+
+    const clear = () => {
+      clearCachedDatabase(database);
+    };
+
+    try {
+      database.onclose = clear;
+    } catch {
+      // Ignore environments that do not expose onclose.
+    }
+
+    try {
+      database.onversionchange = () => {
+        clear();
+        try {
+          database.close();
+        } catch {
+          // Ignore close failures while cleaning up stale handles.
+        }
+      };
+    } catch {
+      // Ignore environments that do not expose onversionchange.
+    }
+
+    databaseRef = database;
+    return database;
+  }
 
   async function openDatabase() {
     if (!hasIndexedDbSupport()) {
       return null;
     }
 
+    if (databaseRef) {
+      return databaseRef;
+    }
+
     if (!dbPromise) {
       dbPromise = new Promise((resolve) => {
+        let settled = false;
+        let openTimeoutId;
+        let timedOut = false;
+
+        const finish = (database) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(openTimeoutId);
+          // When the open succeeds, clear dbPromise so future calls use databaseRef.
+          // When it fails via error/blocked, clear dbPromise to allow a retry.
+          // When it times out, keep dbPromise cached so subsequent calls return
+          // the resolved null immediately instead of triggering repeated timeouts.
+          if (!timedOut) {
+            dbPromise = null;
+          }
+          resolve(database);
+        };
+
         try {
           const request = indexedDB.open(dbName, dbVersion);
 
           request.onupgradeneeded = () => {
+            if (settled) return;
             const database = request.result;
             if (!database.objectStoreNames.contains(storeName)) {
               database.createObjectStore(storeName);
@@ -27,21 +90,24 @@ export function createIndexedJsonKeyValueStore({
           };
 
           request.onsuccess = () => {
-            resolve(request.result);
+            if (settled) return;
+            finish(cacheDatabase(request.result));
           };
 
           request.onerror = () => {
-            dbPromise = Promise.resolve(null);
-            resolve(null);
+            finish(null);
           };
 
           request.onblocked = () => {
-            dbPromise = Promise.resolve(null);
-            resolve(null);
+            finish(null);
           };
+
+          openTimeoutId = setTimeout(() => {
+            timedOut = true;
+            finish(null);
+          }, INDEXED_DB_OPEN_TIMEOUT_MS);
         } catch {
-          dbPromise = Promise.resolve(null);
-          resolve(null);
+          finish(null);
         }
       });
     }
@@ -57,8 +123,13 @@ export function createIndexedJsonKeyValueStore({
       return await new Promise((resolve, reject) => {
         const transaction = database.transaction(storeName, "readonly");
         const request = transaction.objectStore(storeName).get(key);
-        request.onsuccess = () => resolve(request.result ?? undefined);
+        let result = undefined;
+        request.onsuccess = () => {
+          result = request.result ?? undefined;
+        };
         request.onerror = () => reject(request.error);
+        transaction.oncomplete = () => resolve(result);
+        transaction.onerror = () => reject(transaction.error ?? request.error);
         transaction.onabort = () => reject(transaction.error ?? request.error);
       });
     } catch {
@@ -74,8 +145,10 @@ export function createIndexedJsonKeyValueStore({
       await new Promise((resolve, reject) => {
         const transaction = database.transaction(storeName, "readwrite");
         const request = transaction.objectStore(storeName).put(value, key);
-        request.onsuccess = () => resolve();
+        request.onsuccess = () => {};
         request.onerror = () => reject(request.error);
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error ?? request.error);
         transaction.onabort = () => reject(transaction.error ?? request.error);
       });
       return true;
@@ -92,8 +165,10 @@ export function createIndexedJsonKeyValueStore({
       await new Promise((resolve, reject) => {
         const transaction = database.transaction(storeName, "readwrite");
         const request = transaction.objectStore(storeName).delete(key);
-        request.onsuccess = () => resolve();
+        request.onsuccess = () => {};
         request.onerror = () => reject(request.error);
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error ?? request.error);
         transaction.onabort = () => reject(transaction.error ?? request.error);
       });
       return true;

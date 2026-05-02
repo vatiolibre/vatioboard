@@ -7,6 +7,34 @@ import { el } from "../../calculator/dom.js";
 import { t } from "../../i18n.js";
 import { IconSettings, IconClose } from "../../icons.js";
 
+function makeToolbarButton({ className, icon = "", ariaLabel, ariaKey, label, labelKey, mode = null }) {
+  const attrs = {
+    class: `energy-toolbar-btn ${className}`,
+    type: "button",
+  };
+
+  if (ariaLabel) {
+    attrs["aria-label"] = ariaLabel;
+  }
+
+  if (ariaKey) {
+    attrs["data-i18n-aria"] = ariaKey;
+  }
+
+  if (mode) {
+    attrs["data-mode"] = mode;
+  }
+
+  return el(
+    "button",
+    attrs,
+    icon
+      ? el("span", { class: "energy-toolbar-btn-icon", "aria-hidden": "true", html: icon })
+      : null,
+    el("span", { class: "energy-toolbar-btn-label", "data-i18n": labelKey }, label)
+  );
+}
+
 /**
  * buildPanel - Construye el panel completo y retorna referencias a elementos
  * @returns {Object} Referencias a todos los elementos del panel
@@ -25,39 +53,44 @@ export function buildPanel() {
     el(
       "div",
       { class: "energy-header" },
-      el("div", { class: "energy-title", "data-i18n": "energyTitle" }, t("energyTitle")),
+      el(
+        "div",
+        { class: "energy-header-main" },
+        el("div", { class: "energy-header-grip", "aria-hidden": "true" })
+      ),
       el("button", {
-        class: "energy-icon-btn energy-settings-btn",
-        type: "button",
-        "aria-label": t("settings"),
-        "data-i18n-aria": "settings",
-        html: IconSettings,
-      }),
-      el("div", { class: "energy-spacer" }),
-      el("button", {
-        class: "energy-icon-btn energy-close",
+        class: "energy-close",
         type: "button",
         "aria-label": t("close"),
         "data-i18n-aria": "close",
+        title: t("close"),
         html: IconClose,
       })
     ),
-    // Mode switch
+    // Toolbar row
     el(
       "div",
-      { class: "energy-mode-switch" },
-      el("button", {
-        class: "energy-mode-btn",
-        type: "button",
-        "data-mode": "simple",
-        "data-i18n": "simple",
-      }, t("simple") || "Simple"),
-      el("button", {
-        class: "energy-mode-btn",
-        type: "button",
-        "data-mode": "multi",
-        "data-i18n": "multiTrip",
-      }, t("multiTrip") || "Multi-tramo")
+      { class: "energy-toolbar-row" },
+      makeToolbarButton({
+        className: "energy-mode-btn",
+        label: t("simple") || "Simple",
+        labelKey: "simple",
+        mode: "simple",
+      }),
+      makeToolbarButton({
+        className: "energy-mode-btn",
+        label: t("multiTrip") || "Multi-tramo",
+        labelKey: "multiTrip",
+        mode: "multi",
+      }),
+      makeToolbarButton({
+        className: "energy-settings-btn",
+        icon: IconSettings,
+        ariaLabel: t("settings"),
+        ariaKey: "settings",
+        label: t("settings"),
+        labelKey: "settings",
+      })
     ),
     // Simple mode view
     el("div", { class: "energy-simple-view" },
