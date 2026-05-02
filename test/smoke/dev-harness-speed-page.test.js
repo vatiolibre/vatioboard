@@ -312,8 +312,10 @@ describe('speed.html smoke', () => {
     expect(window.getComputedStyle(loginButton).display).toBe('none');
   });
 
-  it('enables background audio as an internal policy when route recording starts', async () => {
+  it('starts and stops the recording keep-alive when route recording changes', async () => {
     const speedPage = await import('../../src/speed/dev-harness.js');
+    const audioSystem = await import('../../src/shared/audio-system.js');
+    const audioModule = await import('../../src/speed/audio.js');
     await speedPage.initPromise;
     await settleAsyncWork();
 
@@ -326,6 +328,12 @@ describe('speed.html smoke', () => {
       'Pause recording'
     );
     expect(getBrowserMocks().mediaSession.playbackState).toBe('playing');
+    expect(
+      audioSystem.isBackgroundAudioLeaseActive(
+        audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
+      )
+    ).toBe(true);
+    expect(audioSystem.isBackgroundAudioLeaseActive(audioModule.SPEED_BACKGROUND_AUDIO_LEASE)).toBe(false);
 
     document.getElementById('toggleRecording').click();
     await settleAsyncWork();
@@ -334,9 +342,14 @@ describe('speed.html smoke', () => {
       'Resume recording'
     );
     expect(getBrowserMocks().mediaSession.playbackState).not.toBe('playing');
+    expect(
+      audioSystem.isBackgroundAudioLeaseActive(
+        audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
+      )
+    ).toBe(false);
   });
 
-  it('starts the recording keep-alive and cue before alert audio priming settles', async () => {
+  it('starts the recording keep-alive and cue without priming alert audio', async () => {
     const audioInstances = [];
     const pendingAlertPrime = new Promise(() => {});
 
@@ -396,11 +409,19 @@ describe('speed.html smoke', () => {
     const keepAliveAudioStarted = audioInstances.some((audio) =>
       audio.src === 'blob:test-url' && audio.playCalls > 0
     );
+    const overspeedAudio = audioInstances.find((audio) =>
+      audio.src.includes('/audio/overspeed_notification.m4a')
+    );
+    const trapAlertAudio = audioInstances.find((audio) =>
+      audio.src.includes('/audio/near_camera_notification.m4a')
+    );
     const startRecordingAudio = audioInstances.find((audio) =>
       audio.src.includes('/audio/start_recording.m4a')
     );
 
     expect(keepAliveAudioStarted).toBe(true);
+    expect(overspeedAudio?.playCalls).toBe(0);
+    expect(trapAlertAudio?.playCalls).toBe(0);
     expect(startRecordingAudio?.playCalls).toBe(1);
     expect(getBrowserMocks().mediaSession.playbackState).toBe('playing');
   });
@@ -484,6 +505,87 @@ describe('speed.html smoke', () => {
       'Mute alert audio'
     );
     expect(getBrowserMocks().mediaSession.playbackState).toBe('playing');
+  });
+
+  it('offers recovery after recording GPS goes stale while the page is hidden', async () => {
+    vi.useFakeTimers();
+    try {
+      const speedPage = await import('../../src/speed/dev-harness.js');
+      const audioSystem = await import('../../src/shared/audio-system.js');
+      const audioModule = await import('../../src/speed/audio.js');
+      await speedPage.initPromise;
+      await settleAsyncWork();
+
+      const geolocation = getBrowserMocks().geolocation;
+
+      document.getElementById('toggleRecording').click();
+      await settleAsyncWork();
+      emitGeolocationSuccess({
+        timestamp: 1000,
+        coords: {
+          latitude: 40.7128,
+          longitude: -74.006,
+          speed: 10,
+          accuracy: 5,
+        },
+      });
+      await settleAsyncWork();
+
+      expect(
+        audioSystem.isBackgroundAudioLeaseActive(
+          audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
+        )
+      ).toBe(true);
+
+      Object.defineProperty(document, 'hidden', {
+        configurable: true,
+        writable: true,
+        value: true,
+      });
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('pagehide'));
+      audioSystem.releaseBackgroundAudioLease(audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE);
+      expect(
+        audioSystem.isBackgroundAudioLeaseActive(
+          audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
+        )
+      ).toBe(false);
+      await vi.advanceTimersByTimeAsync(13000);
+
+      Object.defineProperty(document, 'hidden', {
+        configurable: true,
+        writable: true,
+        value: false,
+      });
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(2500);
+      await settleAsyncWork();
+
+      const dialogs = Array.from(document.querySelectorAll('.vb-confirm-card[role="alertdialog"]'));
+      const dialog = dialogs.at(-1);
+      expect(dialog?.textContent).toContain('Resume driving tools?');
+      expect(dialog?.textContent).toContain('background keep-alive may need to be resumed');
+
+      const watchCallsBefore = geolocation.watchPosition.mock.calls.length;
+      dialog.querySelector('.vb-confirm-btn--confirm').click();
+      await settleAsyncWork();
+
+      expect(geolocation.clearWatch).toHaveBeenCalled();
+      expect(geolocation.watchPosition.mock.calls.length).toBe(watchCallsBefore + 1);
+      const recordingLeaseActiveAfterRecovery = audioSystem.isBackgroundAudioLeaseActive(
+        audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
+      );
+      expect(
+        recordingLeaseActiveAfterRecovery,
+        `lease count ${audioSystem.getBackgroundAudioLeaseCount()}`
+      ).toBe(true);
+      expect(audioSystem.getBackgroundAudioLeaseCount()).toBe(1);
+      expect(document.getElementById('toggleRecording').getAttribute('aria-label')).toBe(
+        'Pause recording'
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('coalesces replay persistence under high-frequency recording bursts', async () => {

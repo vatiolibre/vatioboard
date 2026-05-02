@@ -268,6 +268,8 @@ describe('SPA GPS background runtime', () => {
     await import('../../src/app/main.js');
     await settleAsyncWork();
     await import('../../src/speed/speed.js').then((module) => module.initPromise);
+    const audioSystem = await import('../../src/shared/audio-system.js');
+    const audioModule = await import('../../src/speed/audio.js');
     await settleAsyncWork();
 
     expect(nativeWatchPosition).toHaveBeenCalledTimes(1);
@@ -294,6 +296,13 @@ describe('SPA GPS background runtime', () => {
     document.getElementById('toggleRecording').click();
     await settleAsyncWork();
     expect(document.querySelector('[data-activity-id="speed.recording"]')).toBeTruthy();
+    expect(document.querySelector('[data-activity-id="speed.alerts"]')).toBeFalsy();
+    expect(
+      audioSystem.isBackgroundAudioLeaseActive(
+        audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
+      )
+    ).toBe(true);
+    expect(audioSystem.isBackgroundAudioLeaseActive(audioModule.SPEED_BACKGROUND_AUDIO_LEASE)).toBe(false);
     emitGeolocationSuccess({
       timestamp: 100000,
       coords: {
@@ -335,14 +344,26 @@ describe('SPA GPS background runtime', () => {
     await settleAsyncWork();
     expect(armRun.getAttribute('aria-label')).toBe('Cancel test');
     expect(document.querySelector('[data-activity-id="speed.recording"]')).toBeTruthy();
+    expect(document.querySelector('[data-activity-id="speed.alerts"]')).toBeFalsy();
     expect(document.querySelector('[data-activity-id="accel.run"]')).toBeTruthy();
+    expect(
+      audioSystem.isBackgroundAudioLeaseActive(
+        audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
+      )
+    ).toBe(true);
 
     window.confirm.mockClear();
     await navigateHash('#/board');
 
     expect(window.confirm).not.toHaveBeenCalled();
     expect(document.querySelector('[data-activity-id="speed.recording"]')).toBeTruthy();
+    expect(document.querySelector('[data-activity-id="speed.alerts"]')).toBeFalsy();
     expect(document.querySelector('[data-activity-id="accel.run"]')).toBeTruthy();
+    expect(
+      audioSystem.isBackgroundAudioLeaseActive(
+        audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
+      )
+    ).toBe(true);
     expect(nativeClearWatch).not.toHaveBeenCalled();
     expect(serviceClearWatch).not.toHaveBeenCalled();
     expect(nativeWatchPosition).toHaveBeenCalledTimes(1);
@@ -381,6 +402,44 @@ describe('SPA GPS background runtime', () => {
         return Math.max(sampleCount, embeddedCount) >= 3;
       })
     ).toBe(true);
+  }, 40000);
+
+  it('shows speed alert activity only after alert audio is explicitly armed', async () => {
+    await bootHtmlPage('index.html');
+    await import('../../src/app/main.js');
+    await settleAsyncWork();
+    await import('../../src/speed/speed.js').then((module) => module.initPromise);
+    const audioSystem = await import('../../src/shared/audio-system.js');
+    const audioModule = await import('../../src/speed/audio.js');
+    await settleAsyncWork();
+
+    document.getElementById('toggleRecording').click();
+    await settleAsyncWork();
+
+    expect(document.querySelector('[data-activity-id="speed.recording"]')).toBeTruthy();
+    expect(document.querySelector('[data-activity-id="speed.alerts"]')).toBeFalsy();
+    expect(
+      audioSystem.isBackgroundAudioLeaseActive(
+        audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
+      )
+    ).toBe(true);
+    expect(audioSystem.isBackgroundAudioLeaseActive(audioModule.SPEED_BACKGROUND_AUDIO_LEASE)).toBe(false);
+
+    document.getElementById('quickAudioToggle').click();
+    await settleAsyncWork();
+    expect(document.querySelector('[data-activity-id="speed.alerts"]')).toBeFalsy();
+
+    document.getElementById('quickAudioToggle').click();
+    await settleAsyncWork();
+
+    expect(document.querySelector('[data-activity-id="speed.alerts"]')).toBeTruthy();
+    expect(
+      audioSystem.isBackgroundAudioLeaseActive(
+        audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
+      )
+    ).toBe(true);
+    expect(audioSystem.isBackgroundAudioLeaseActive(audioModule.SPEED_BACKGROUND_AUDIO_LEASE)).toBe(true);
+    expect(audioSystem.getBackgroundAudioLeaseCount()).toBe(2);
   }, 40000);
 
   it('keeps an active accel run subscribed across board remounts without duplicating GPS watchers', async () => {

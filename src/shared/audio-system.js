@@ -59,6 +59,11 @@ export function hasBackgroundAudioLease(id) {
   return backgroundAudioLeases.has(normalizeLeaseId(id));
 }
 
+export function getBackgroundAudioLeaseCount() {
+  pruneInactiveBackgroundAudioLeases();
+  return backgroundAudioLeases.size;
+}
+
 export function isBackgroundAudioLeaseActive(id) {
   return hasBackgroundAudioLease(id) && isBackgroundAudioActive();
 }

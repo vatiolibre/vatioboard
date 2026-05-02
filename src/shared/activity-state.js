@@ -1,4 +1,5 @@
 export const ACTIVITY_STATE_CHANGE_EVENT = "vatioboard:activity-state-change";
+export const ACTIVITY_OPEN_EVENT = "vatioboard:activity-open";
 
 const GLOBAL_KEY = "__vatioboardActivityState";
 

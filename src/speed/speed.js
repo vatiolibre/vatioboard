@@ -1,12 +1,14 @@
 import '../styles/speed.less';
 import '../styles/cloud-sync-status.less';
+import '../shared/ui/confirm-dialog.less';
 import { createCleanupStack } from '../app/view-cleanup.js';
 import { applyTranslations, getLang, t, toggleLang } from '../i18n.js';
 import { createAnalogSpeedometer } from '../shared/analog-speedometer.js';
-import { clearActivity, setActivity } from '../shared/activity-state.js';
+import { ACTIVITY_OPEN_EVENT } from '../shared/activity-state.js';
 import { initBackendAuthControllers } from '../shared/backend-auth.js';
 import { initCloudSyncStatusIndicator } from '../shared/cloud-sync-status-indicator.js';
 import { navigateToAppRoute } from '../app/router.js';
+import { showConfirmDialog } from '../shared/ui/confirm-dialog.js';
 import { createPlaceResolver } from '../shared/place-resolver.js';
 import {
   enrichRouteBoundaryPlaces,
@@ -83,6 +85,7 @@ import {
   normalizeAlertDisplayValue,
 } from './alerts.js';
 import { createSpeedAudioController } from './audio.js';
+import { SPEED_ALERTS_ACTIVITY_ID, SPEED_RECORDING_ACTIVITY_ID, speedRuntime } from './runtime.js';
 import {
   createGlobeController,
   createWazeController,
@@ -288,7 +291,6 @@ const initialReplaySession = createReplaySession({
   recordingState: 'stopped',
 });
 const ACTIVE_REPLAY_PERSIST_INTERVAL_MS = 5000;
-const SPEED_RECORDING_ACTIVITY_ID = 'speed.recording';
 
 const state = {
   unit: initialPreferences.unit,
@@ -306,6 +308,12 @@ const state = {
   backgroundAudioRevision: 0,
   backgroundAudioSuppressed: false,
   alertAudioControlActive: false,
+  recordingKeepAliveIntended: false,
+  recordingKeepAliveArmed: false,
+  recordingKeepAlivePending: false,
+  recordingKeepAliveRevision: 0,
+  recordingKeepAliveSuppressed: false,
+  recordingKeepAliveBlocked: false,
   overspeedSoundRequestId: 0,
   alertSoundBlocked: false,
   alertSoundPending: false,
@@ -436,11 +444,15 @@ function createInactiveWazeController() {
 function createInactiveAudioController() {
   return {
     armBackgroundAlertAudio: () => Promise.resolve(false),
+    armRecordingKeepAliveAudio: () => Promise.resolve(false),
     attachRuntimeAudioEventListeners() {},
     disarmBackgroundAlertAudio() {},
+    disarmRecordingKeepAliveAudio() {},
     dispose() {},
     handleUserGestureAudioActivation() {},
     installMediaSessionActionHandlers() {},
+    isRecordingKeepAliveArmed: () => false,
+    maybeRecoverRecordingKeepAliveAudio: () => false,
     maybeRecoverSuppressedBackgroundAudio() {},
     playAlertAudioEnabledSound() {},
     playStartRecordingSound() {},
@@ -448,6 +460,7 @@ function createInactiveAudioController() {
     stopOverspeedSound() {},
     stopTrapSound() {},
     suppressBackgroundAudioRuntime() {},
+    suppressRecordingKeepAliveAudio() {},
     syncOverspeedSound() {},
     syncRuntimePagePresentation() {},
     syncTrapSound() {},
@@ -461,6 +474,8 @@ let globeController = createInactiveGlobeController();
 let wazeController = createInactiveWazeController();
 let audioController = createInactiveAudioController();
 let audioControllerInitialized = false;
+let speedRuntimeLifecycleCleanup = null;
+let speedRecoveryDialogOpen = false;
 let replayPersistTimerId = null;
 let replayPersistChain = Promise.resolve();
 let replayPersistInFlight = false;
@@ -484,23 +499,56 @@ function getReplayActivityStartedAtMs(session) {
   return candidates.find((value) => Number.isFinite(value) && value > 0) ?? null;
 }
 
-function publishSpeedRecordingActivity() {
-  const trackingActive = state.watchId !== null || (isSpaRuntime && !state.viewMounted);
-  if (state.recordingState !== 'recording' || !trackingActive) {
-    clearActivity(SPEED_RECORDING_ACTIVITY_ID);
-    return;
+function syncSpeedRuntime({ persist = false, reason = 'sync' } = {}) {
+  const trackingRetained =
+    state.watchId !== null ||
+    (isSpaRuntime && !state.viewMounted && state.recordingState === 'recording');
+  const recordingKeepAliveArmed = audioController.isRecordingKeepAliveArmed();
+
+  if (
+    state.recordingKeepAliveArmed &&
+    !recordingKeepAliveArmed &&
+    state.recordingKeepAliveIntended &&
+    !state.recordingKeepAlivePending
+  ) {
+    state.recordingKeepAliveArmed = false;
+    state.recordingKeepAliveSuppressed = true;
   }
 
-  setActivity(SPEED_RECORDING_ACTIVITY_ID, {
-    kind: 'speed',
-    order: 10,
-    route: '#/speed',
-    state: 'recording',
-    labelKey: 'activitySpeedRecording',
-    fallbackDetailKey: 'activityGpsActive',
-    sampleCount: getReplayActivitySampleCount(state.replaySession),
-    startedAtMs: getReplayActivityStartedAtMs(state.replaySession),
-  });
+  return speedRuntime.sync(
+    {
+      isSpaRuntime,
+      viewMounted: state.viewMounted,
+      recordingState: state.recordingState,
+      recordingActive: state.recordingState === 'recording',
+      watchActive: state.watchId !== null,
+      trackingRetained,
+      sampleCount: getReplayActivitySampleCount(state.replaySession),
+      startedAtMs: getReplayActivityStartedAtMs(state.replaySession),
+      lastFixAt: state.lastFixAt,
+      lastPositionTimestamp: state.lastPositionTimestamp,
+      recordingKeepAliveIntended:
+        state.recordingKeepAliveIntended || state.recordingState === 'recording',
+      recordingKeepAliveArmed,
+      recordingKeepAlivePending: state.recordingKeepAlivePending,
+      recordingKeepAliveSuppressed: state.recordingKeepAliveSuppressed,
+      recordingKeepAliveBlocked: state.recordingKeepAliveBlocked,
+      manualAlertActive: isManualAlertActive(state.alertEnabled, state.alertLimitMs),
+      trapAlertActive: state.trapAlertEnabled,
+      speedAlertAudioIntended: state.backgroundMode || state.alertAudioControlActive,
+      backgroundAudioArmed: state.backgroundAudioArmed,
+      backgroundAudioArmPending: state.backgroundAudioArmPending,
+      backgroundAudioSuppressed: state.backgroundAudioSuppressed,
+      alertSoundBlocked: state.alertSoundBlocked,
+      trapSoundBlocked: state.trapSoundBlocked,
+      audioMuted: state.audioMuted,
+    },
+    { persist, reason }
+  );
+}
+
+function publishSpeedRecordingActivity(options = {}) {
+  syncSpeedRuntime(options);
 }
 
 function clearReplayPersistTimer() {
@@ -835,7 +883,12 @@ async function hydrateReplaySession() {
   if (!restoredReplaySession) return;
 
   state.recordingState = restoredReplaySession.recordingState;
-  state.backgroundMode = state.recordingState === 'recording';
+  state.backgroundMode = false;
+  state.recordingKeepAliveIntended = state.recordingState === 'recording';
+  state.recordingKeepAliveArmed = false;
+  state.recordingKeepAlivePending = false;
+  state.recordingKeepAliveSuppressed = state.recordingKeepAliveIntended;
+  state.recordingKeepAliveBlocked = false;
   state.replaySession = {
     ...restoredReplaySession,
     unit: state.unit,
@@ -966,6 +1019,9 @@ function createSpeedRouteControllers() {
       getAlertLimitDisplayValue,
       getSubStatusText: (alertState) => speedRenderer.getSubStatusText(alertState),
       getCriticalAlertText: (alertState) => speedRenderer.getCriticalAlertText(alertState),
+      onStateChange: () => {
+        syncSpeedRuntime();
+      },
     });
     audioControllerInitialized = true;
   }
@@ -1015,7 +1071,7 @@ function syncReplaySessionPreferences() {
   };
   scheduleReplaySessionPersist({ immediate: true });
   renderRecordingControls();
-  publishSpeedRecordingActivity();
+  publishSpeedRecordingActivity({ persist: true, reason: 'replay-preferences' });
 }
 
 function resetReplaySession({
@@ -1038,7 +1094,7 @@ function resetReplaySession({
   });
   scheduleReplaySessionPersist({ immediate: true });
   renderRecordingControls();
-  publishSpeedRecordingActivity();
+  publishSpeedRecordingActivity({ persist: true, reason: 'recording-reset' });
 }
 
 function setRecordingState(recordingState) {
@@ -1051,7 +1107,7 @@ function setRecordingState(recordingState) {
   };
   scheduleReplaySessionPersist({ immediate: true });
   renderRecordingControls();
-  publishSpeedRecordingActivity();
+  publishSpeedRecordingActivity({ persist: true, reason: 'recording-state' });
 }
 
 function toggleRecording() {
@@ -1065,7 +1121,7 @@ function toggleRecording() {
 
 function startRecordingSession({ fromUserGesture = false } = {}) {
   if (state.recordingState === 'recording') {
-    syncBackgroundModeWithRecordingState({ fromUserGesture });
+    syncRecordingKeepAliveWithRecordingState({ fromUserGesture });
     return;
   }
 
@@ -1080,7 +1136,7 @@ function startRecordingSession({ fromUserGesture = false } = {}) {
     setRecordingState('recording');
   }
 
-  syncBackgroundModeWithRecordingState({ fromUserGesture });
+  syncRecordingKeepAliveWithRecordingState({ fromUserGesture });
   if (shouldPlayStartCue) {
     audioController.playStartRecordingSound();
   }
@@ -1089,7 +1145,7 @@ function startRecordingSession({ fromUserGesture = false } = {}) {
 function pauseRecordingSession({ fromUserGesture = false } = {}) {
   if (state.recordingState !== 'recording') return;
   setRecordingState('paused');
-  syncBackgroundModeWithRecordingState({ fromUserGesture });
+  syncRecordingKeepAliveWithRecordingState({ fromUserGesture });
   stopHiddenTrackingIfIdle({ disarmBackgroundAudio: true });
 }
 
@@ -1102,7 +1158,7 @@ function stopRecordingSession({ fromUserGesture = false } = {}) {
     recordingState: 'stopped',
     minSamples: 1,
   });
-  syncBackgroundModeWithRecordingState({ fromUserGesture });
+  syncRecordingKeepAliveWithRecordingState({ fromUserGesture });
   stopHiddenTrackingIfIdle({ disarmBackgroundAudio: true });
 }
 
@@ -1314,12 +1370,14 @@ function setAlertEnabled(enabled, options = {}) {
   saveAlertEnabledPreference(enabled);
   renderAlertUi(options);
   speedRenderer.drawGauge();
+  publishSpeedRecordingActivity({ persist: true, reason: 'manual-alert-toggle' });
 }
 
 function setAlertSoundEnabled(enabled, options = {}) {
   state.alertSoundEnabled = enabled;
   saveAlertSoundEnabledPreference(enabled);
   renderAlertUi(options);
+  publishSpeedRecordingActivity({ persist: true, reason: 'manual-alert-sound-toggle' });
 }
 
 function setAudioMuted(muted, { fromUserGesture = false } = {}) {
@@ -1354,6 +1412,7 @@ function setAudioMuted(muted, { fromUserGesture = false } = {}) {
   }
 
   renderAlertUi({ fromUserGesture });
+  publishSpeedRecordingActivity({ persist: true, reason: 'alert-audio-toggle' });
 }
 
 function setAlertLimitDisplay(value, { enable = true, fromUserGesture = false } = {}) {
@@ -1368,6 +1427,7 @@ function setAlertLimitDisplay(value, { enable = true, fromUserGesture = false } 
 
   renderAlertUi({ fromUserGesture });
   speedRenderer.drawGauge();
+  publishSpeedRecordingActivity({ persist: true, reason: 'manual-alert-limit' });
 }
 
 function adjustAlertLimit(stepDirection, options = {}) {
@@ -1402,6 +1462,7 @@ function setTrapAlertEnabled(enabled, options = {}) {
   }
   renderAlertUi(options);
   speedRenderer.drawGauge();
+  publishSpeedRecordingActivity({ persist: true, reason: 'trap-alert-toggle' });
 }
 
 function setTrapAlertDistance(distanceM, { enable = true, fromUserGesture = false } = {}) {
@@ -1417,6 +1478,7 @@ function setTrapAlertDistance(distanceM, { enable = true, fromUserGesture = fals
   state.lastTrapSoundedId = null;
   renderAlertUi({ fromUserGesture });
   speedRenderer.drawGauge();
+  publishSpeedRecordingActivity({ persist: true, reason: 'trap-alert-distance' });
 }
 
 function setTrapSoundEnabled(enabled, options = {}) {
@@ -1426,36 +1488,30 @@ function setTrapSoundEnabled(enabled, options = {}) {
   }
   saveTrapSoundEnabledPreference(enabled);
   renderAlertUi(options);
+  publishSpeedRecordingActivity({ persist: true, reason: 'trap-alert-sound-toggle' });
 }
 
-function setBackgroundMode(enabled, { fromUserGesture = false } = {}) {
-  const nextEnabled = Boolean(enabled);
-  const changed = state.backgroundMode !== nextEnabled;
+function syncRecordingKeepAliveWithRecordingState({ fromUserGesture = false } = {}) {
+  const recordingActive = state.recordingState === 'recording';
 
-  if (changed) {
-    state.backgroundMode = nextEnabled;
-    state.backgroundAudioRevision += 1;
-    if (nextEnabled) {
-      state.backgroundAudioSuppressed = false;
+  if (recordingActive) {
+    if (!state.recordingKeepAliveIntended) {
+      state.recordingKeepAliveIntended = true;
+      state.recordingKeepAliveRevision = (state.recordingKeepAliveRevision || 0) + 1;
     }
-  }
-
-  if (nextEnabled) {
     if (fromUserGesture) {
-      audioController.handleUserGestureAudioActivation();
-    } else {
-      audioController.maybeRecoverSuppressedBackgroundAudio();
+      state.recordingKeepAliveSuppressed = false;
+      state.recordingKeepAliveBlocked = false;
     }
-  } else if (changed || state.backgroundAudioArmed || state.backgroundAudioArmPending) {
-    state.backgroundAudioSuppressed = false;
-    audioController.disarmBackgroundAlertAudio({ fromUserGesture });
+
+    void audioController.armRecordingKeepAliveAudio({ fromUserGesture }).then(() => {
+      publishSpeedRecordingActivity({ persist: true, reason: 'recording-keep-alive' });
+    });
+  } else {
+    audioController.disarmRecordingKeepAliveAudio();
   }
 
-  renderAlertUi({ fromUserGesture });
-}
-
-function syncBackgroundModeWithRecordingState({ fromUserGesture = false } = {}) {
-  setBackgroundMode(state.recordingState === 'recording', { fromUserGesture });
+  publishSpeedRecordingActivity({ persist: true, reason: 'recording-keep-alive-intent' });
 }
 
 function shouldKeepTrackingInBackground() {
@@ -1574,6 +1630,7 @@ function stopTracking({ disarmBackgroundAudio = false } = {}) {
   }
   clearLiveFixState();
   if (disarmBackgroundAudio) {
+    audioController.suppressRecordingKeepAliveAudio();
     audioController.suppressBackgroundAudioRuntime();
   }
   audioController.stopOverspeedSound();
@@ -1586,6 +1643,7 @@ function startTracking({ fromUserGesture = false } = {}) {
 
   if (!('geolocation' in navigator)) {
     clearLiveFixState();
+    audioController.suppressRecordingKeepAliveAudio({ blocked: true });
     audioController.suppressBackgroundAudioRuntime();
     audioController.stopOverspeedSound();
     audioController.stopTrapSound();
@@ -1852,10 +1910,111 @@ function resumeVisibleRuntime() {
   if (audioController.wantsBackgroundAudio()) {
     void audioController.armBackgroundAlertAudio();
   }
+  if (state.recordingState === 'recording') {
+    audioController.maybeRecoverRecordingKeepAliveAudio();
+  }
   audioController.syncOverspeedSound();
   audioController.syncTrapSound();
   audioController.syncRuntimePagePresentation();
   return true;
+}
+
+function getRecoveryConfirmLabel(recovery) {
+  if (recovery?.recording && recovery?.alerts) return t('speedRecoveryResumeAndRearm');
+  if (recovery?.alerts) return t('speedRecoveryRearmAlerts');
+  return t('speedRecoveryResumeRecording');
+}
+
+function getRecoveryMessage(recovery) {
+  if (recovery?.recording && recovery?.alerts) {
+    return t('speedRecoveryRecordingAndAlertsMessage');
+  }
+  if (recovery?.alerts) return t('speedRecoveryAlertsMessage');
+  return t('speedRecoveryRecordingMessage');
+}
+
+function restartGpsSubscriptionForRecovery({ fromUserGesture = false } = {}) {
+  if (state.watchId !== null) {
+    navigator.geolocation.clearWatch(state.watchId);
+    state.watchId = null;
+  }
+  startTracking({ fromUserGesture });
+}
+
+function resumeRecordingFromRecovery(recovery) {
+  if (state.recordingState !== 'recording') {
+    startRecordingSession({ fromUserGesture: true });
+  } else {
+    syncRecordingKeepAliveWithRecordingState({ fromUserGesture: true });
+  }
+
+  audioController.maybeRecoverRecordingKeepAliveAudio({ fromUserGesture: true });
+
+  if (
+    recovery?.watchInactive ||
+    recovery?.gpsStale ||
+    recovery?.sampleCountStalled ||
+    state.watchId === null
+  ) {
+    restartGpsSubscriptionForRecovery({ fromUserGesture: true });
+  }
+
+  renderRecordingControls();
+  publishSpeedRecordingActivity({ persist: true, reason: 'recovery-recording' });
+}
+
+function rearmAlertsFromRecovery() {
+  audioController.handleUserGestureAudioActivation();
+  audioController.maybeRecoverSuppressedBackgroundAudio({ fromUserGesture: true });
+  if ((state.backgroundMode || state.alertAudioControlActive) && !state.backgroundAudioArmed) {
+    void audioController.armBackgroundAlertAudio();
+  }
+  audioController.syncOverspeedSound({ fromUserGesture: true });
+  audioController.syncTrapSound({ fromUserGesture: true });
+  publishSpeedRecordingActivity({ persist: true, reason: 'recovery-alert-audio' });
+}
+
+function showSpeedRecoveryDialog(recovery = speedRuntime.getRecoveryState()) {
+  if (!state.viewMounted || speedRecoveryDialogOpen || !recovery?.needed) return;
+
+  speedRecoveryDialogOpen = true;
+  void showConfirmDialog({
+    title: t('speedRecoveryTitle'),
+    message: getRecoveryMessage(recovery),
+    description: t('speedRecoveryBackgroundLimit'),
+    confirmLabel: getRecoveryConfirmLabel(recovery),
+    cancelLabel: t('notNow'),
+    onConfirm: () => {
+      if (recovery.recording) {
+        resumeRecordingFromRecovery(recovery);
+      }
+      if (recovery.alerts) {
+        rearmAlertsFromRecovery();
+      }
+      speedRuntime.clearRecoveryNeeded();
+    },
+  }).then((confirmed) => {
+    speedRecoveryDialogOpen = false;
+    if (confirmed) return;
+    speedRuntime.dismissRecoveryPrompt();
+  });
+}
+
+function handleSpeedRuntimeRecoveryNeeded(recovery) {
+  if (!state.viewMounted) return;
+  showSpeedRecoveryDialog(recovery);
+}
+
+function handleActivityOpen(event) {
+  const activityId = event?.detail?.activity?.id;
+  if (activityId !== SPEED_ALERTS_ACTIVITY_ID && activityId !== SPEED_RECORDING_ACTIVITY_ID) return;
+  if (state.viewMounted && activityId === SPEED_ALERTS_ACTIVITY_ID) {
+    openAlertPanel();
+  }
+  const recovery = speedRuntime.getRecoveryState();
+  if (recovery.needed) {
+    showSpeedRecoveryDialog(recovery);
+  }
 }
 
 function syncMountedSpeedRouteUi() {
@@ -1955,6 +2114,8 @@ function mountSpeedController(routeContext = {}) {
   syncMountedSpeedRouteUi();
   if (state.watchId === null) startTracking();
   resumeVisibleRuntime();
+  publishSpeedRecordingActivity();
+  speedRuntime.handleAppReturn();
   return Promise.resolve();
 }
 
@@ -1966,6 +2127,7 @@ function unmountSpeedController() {
   state.viewMounted = false;
   speedRouteGeneration += 1;
   void persistReplaySessionNow();
+  speedRuntime.persistIntent('route-unmount');
   if (!keepTrackingInBackground) {
     stopTracking();
   }
@@ -2118,6 +2280,8 @@ function bindEvents({ cleanup, signal } = {}) {
     }
     if (state.watchId === null) startTracking();
     resumeVisibleRuntime();
+    publishSpeedRecordingActivity();
+    speedRuntime.handleAppReturn();
   });
   cleanup.addEventListener(document, 'pointerdown', (event) => {
     if (event.target.closest('.player-panel, .player-fab')) return;
@@ -2145,6 +2309,7 @@ function bindEvents({ cleanup, signal } = {}) {
   cleanup.addEventListener(document, 'visibilitychange', () => {
     if (document.hidden) {
       void persistReplaySessionNow();
+      speedRuntime.persistIntent('visibility-hidden-route');
       globeController.stopGlobeSolarUpdates();
       stopRenderLoop();
       audioController.syncRuntimePagePresentation();
@@ -2152,11 +2317,18 @@ function bindEvents({ cleanup, signal } = {}) {
     }
 
     resumeVisibleRuntime();
+    publishSpeedRecordingActivity();
+    speedRuntime.handleAppReturn();
   });
   cleanup.addEventListener(document, 'i18n:change', syncLanguage);
   cleanup.addEventListener(window, 'pagehide', () => {
     void persistReplaySessionNow();
+    speedRuntime.persistIntent('pagehide-route');
   });
+  cleanup.addEventListener(window, 'beforeunload', () => {
+    speedRuntime.persistIntent('beforeunload-route');
+  });
+  cleanup.addEventListener(window, ACTIVITY_OPEN_EVENT, handleActivityOpen);
   cleanup.addEventListener(window, SINGLE_TAB_OWNERSHIP_EVENT, handleSingleTabOwnershipChange);
 }
 
@@ -2217,12 +2389,19 @@ async function init() {
       }
     },
   });
+  speedRuntimeLifecycleCleanup = speedRuntime.installLifecycleListeners({
+    recoveryHandler: handleSpeedRuntimeRecoveryNeeded,
+    persistHandler: () => {
+      void persistReplaySessionNow();
+    },
+  });
   trapLoader.loadTrapArtifacts();
   state.initialized = true;
   if (state.viewMounted) {
     syncMountedSpeedRouteUi();
     startTracking();
     startRenderLoop();
+    speedRuntime.handleAppReturn();
   }
 }
 
@@ -2243,6 +2422,8 @@ if (import.meta.hot) {
   import.meta.hot.dispose(() => {
     releaseSingleTabOwnership();
     clearReplayPersistTimer();
+    speedRuntimeLifecycleCleanup?.();
+    speedRuntimeLifecycleCleanup = null;
     audioController.dispose();
     globeController.stopGlobeSolarUpdates();
     globeController.clearGlobeFollowResumeTimeout();

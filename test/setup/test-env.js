@@ -236,6 +236,11 @@ beforeEach(() => {
     writable: true,
     value: FakeAudio,
   });
+  Object.defineProperty(globalThis, "Audio", {
+    configurable: true,
+    writable: true,
+    value: FakeAudio,
+  });
 
   // Stub HTMLMediaElement methods that jsdom does not implement to suppress
   // noisy "Not implemented" warnings from media element lifecycle cleanup

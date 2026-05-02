@@ -2,7 +2,7 @@ import { navigateToAppRoute } from "../app/router.js";
 import { clampElementToViewport, makeLauncherDraggable } from "../calculator/widget/drag.js";
 import { IconAccel, IconSpeed } from "../icons.js";
 import { t } from "../i18n.js";
-import { subscribeActivities } from "./activity-state.js";
+import { ACTIVITY_OPEN_EVENT, subscribeActivities } from "./activity-state.js";
 
 const POS_KEY = "vatioboard.activity_indicator_pos_v1";
 const DRAG_THRESHOLD_PX = 6;
@@ -72,7 +72,9 @@ function getActivityDetail(activity, nowMs = Date.now()) {
 }
 
 function getActivityAriaLabel(activity, label, detail) {
-  const openLabel = activity.kind === "accel"
+  const openLabel = activity.openLabelKey
+    ? t(activity.openLabelKey)
+    : activity.kind === "accel"
     ? t("activityOpenAccelTest")
     : t("activityOpenSpeedRecording");
   return detail ? `${openLabel}: ${label}, ${detail}` : `${openLabel}: ${label}`;
@@ -231,6 +233,11 @@ export function initActivityIndicator({ mount = document.body } = {}) {
 
     const activity = activities.find((entry) => entry.id === button.dataset.activityId);
     if (!activity?.route) return;
+    window.dispatchEvent(
+      new CustomEvent(ACTIVITY_OPEN_EVENT, {
+        detail: { activity },
+      })
+    );
     navigateToAppRoute(activity.route);
   });
 

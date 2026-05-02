@@ -77,6 +77,7 @@ function trapFocus(container, event) {
  * @param {string}  [options.cancelLabel]  - Cancel button label (default: "Cancel")
  * @param {boolean} [options.destructive]  - Red/destructive visual variant
  * @param {string}  [options.icon]         - SVG icon HTML string
+ * @param {Function} [options.onConfirm]   - Runs immediately inside the confirm click gesture
  * @returns {Promise<boolean>} true if confirmed, false if cancelled
  */
 export function showConfirmDialog({
@@ -87,6 +88,7 @@ export function showConfirmDialog({
   cancelLabel = "Cancel",
   destructive = false,
   icon = "",
+  onConfirm = null,
 } = {}) {
   // Dismiss any existing dialog first
   if (activeDialog) {
@@ -194,7 +196,16 @@ export function showConfirmDialog({
       }
     }
 
-    confirmBtn.addEventListener("click", () => dismiss(true));
+    confirmBtn.addEventListener("click", () => {
+      if (typeof onConfirm === "function") {
+        try {
+          onConfirm();
+        } catch {
+          // The dialog still resolves; callers can surface recovery failures separately.
+        }
+      }
+      dismiss(true);
+    });
     cancelBtn.addEventListener("click", () => dismiss(false));
 
     backdrop.addEventListener("click", (e) => {
