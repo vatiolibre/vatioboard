@@ -288,10 +288,11 @@ function getDesiredPlaybackState() {
 
 function syncMediaSessionPlaybackState() {
   if (!mediaSessionEnabled) return;
+  const playbackState = getDesiredPlaybackState();
   updateMediaSessionClient(PLAYER_MEDIA_SESSION_OWNER, {
-    active: true,
+    active: playbackState !== "none",
     priority: PLAYER_MEDIA_SESSION_PRIORITY,
-    playbackState: getDesiredPlaybackState(),
+    playbackState,
   });
 }
 

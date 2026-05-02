@@ -109,30 +109,48 @@ function createIntentFromSnapshot(snapshot, reason = "sync") {
 function getRecoverySignature(recovery) {
   if (!recovery?.needed) return "";
   return JSON.stringify([
+    recovery.severity,
     recovery.recording,
+    recovery.recordingKeepAlive,
+    recovery.keepAliveOnly,
     recovery.alerts,
+    recovery.recordingInactive,
+    recovery.trackingNotRetained,
     recovery.recordingKeepAliveSuppressed,
     recovery.recordingKeepAliveBlocked,
     recovery.recordingKeepAliveMissing,
     recovery.audioSuppressed,
     recovery.audioBlocked,
+    recovery.audioMissing,
     recovery.gpsStale,
     recovery.watchInactive,
   ]);
 }
 
-function createSpeedRuntime() {
-  let actual = normalizeSnapshot();
-  let intent = readStoredIntent() || createIntentFromSnapshot(actual, "initial");
-  let recovery = {
+function createEmptyRecovery() {
+  return {
     needed: false,
+    severity: "none",
     recording: false,
+    recordingKeepAlive: false,
+    keepAliveOnly: false,
     alerts: false,
+    recordingInactive: false,
+    trackingNotRetained: false,
     recordingKeepAliveSuppressed: false,
     recordingKeepAliveBlocked: false,
     recordingKeepAliveMissing: false,
+    audioSuppressed: false,
+    audioBlocked: false,
+    audioMissing: false,
     reasons: [],
   };
+}
+
+function createSpeedRuntime() {
+  let actual = normalizeSnapshot();
+  let intent = readStoredIntent() || createIntentFromSnapshot(actual, "initial");
+  let recovery = createEmptyRecovery();
   let recoveryTimerId = null;
   let recoveryBaseline = null;
   let onRecoveryNeeded = null;
@@ -175,15 +193,7 @@ function createSpeedRuntime() {
   }
 
   function clearRecoveryNeeded() {
-    recovery = {
-      needed: false,
-      recording: false,
-      alerts: false,
-      recordingKeepAliveSuppressed: false,
-      recordingKeepAliveBlocked: false,
-      recordingKeepAliveMissing: false,
-      reasons: [],
-    };
+    recovery = createEmptyRecovery();
     dismissedRecoverySignature = "";
   }
 
@@ -196,7 +206,11 @@ function createSpeedRuntime() {
     const staleFix =
       actual.lastFixAt > 0 &&
       nowMs() - actual.lastFixAt > SPEED_GPS_STALE_MS;
-    const watchInactive = intended && !actual.watchActive;
+    const recordingInactive = intended && intent.recordingShouldBeActive && !actual.recordingActive;
+    const trackingNotRetained =
+      intended && intent.recordingShouldBeActive && !actual.trackingRetained;
+    const watchInactive =
+      intended && intent.recordingShouldBeActive && !actual.watchActive && !actual.trackingRetained;
     const keepAliveNeedsRearm =
       intended &&
       (
@@ -205,7 +219,7 @@ function createSpeedRuntime() {
         (!actual.recordingKeepAliveArmed && !actual.recordingKeepAlivePending)
       );
 
-    if (watchInactive || staleFix) {
+    if (recordingInactive || trackingNotRetained || watchInactive || staleFix) {
       return {
         state: "blocked",
         detailKey: "activitySpeedRecordingMayNeedResume",
@@ -287,6 +301,14 @@ function createSpeedRuntime() {
       blocked ||
       (intended && !actual.backgroundAudioArmed && !actual.backgroundAudioArmPending)
     ) {
+      if (blocked && actual.backgroundAudioArmed) {
+        return {
+          state: "armed",
+          labelKey: "activitySpeedAlertsArmed",
+          detailKey: "activitySpeedAlertsSoundMayNeedTap",
+        };
+      }
+
       return {
         state: "blocked",
         labelKey: "activitySpeedAlertsBlocked",
@@ -351,18 +373,24 @@ function createSpeedRuntime() {
 
     if (recovery.needed) {
       const healthyRecording =
-        (!intent.recordingShouldBeActive ||
-          (actual.watchActive && actual.lastFixAt > 0 && nowMs() - actual.lastFixAt <= SPEED_GPS_STALE_MS)) &&
-        (!intent.recordingKeepAliveShouldBeArmed ||
-          (
-            actual.recordingKeepAliveArmed &&
-            !actual.recordingKeepAliveSuppressed &&
-            !actual.recordingKeepAliveBlocked
-          ));
+        !intent.recordingShouldBeActive ||
+        (
+          actual.recordingActive &&
+          (actual.watchActive || actual.trackingRetained) &&
+          actual.lastFixAt > 0 &&
+          nowMs() - actual.lastFixAt <= SPEED_GPS_STALE_MS
+        );
+      const healthyRecordingKeepAlive =
+        !intent.recordingKeepAliveShouldBeArmed ||
+        (
+          actual.recordingKeepAliveArmed &&
+          !actual.recordingKeepAliveSuppressed &&
+          !actual.recordingKeepAliveBlocked
+        );
       const healthyAlerts =
         !intent.speedAlertAudioShouldBeArmed ||
         (actual.backgroundAudioArmed && !actual.backgroundAudioSuppressed);
-      if (healthyRecording && healthyAlerts) {
+      if (healthyRecording && healthyRecordingKeepAlive && healthyAlerts) {
         clearRecoveryNeeded();
       }
     }
@@ -398,16 +426,21 @@ function createSpeedRuntime() {
       !recoveryBaseline ||
       currentTime - recoveryBaseline.checkedAtMs >= SPEED_RECOVERY_GRACE_MS;
     const reasons = [];
-    const watchInactive = intent.recordingShouldBeActive && !actual.watchActive;
+    const recordingInactive = intent.recordingShouldBeActive && !actual.recordingActive;
+    const trackingNotRetained =
+      intent.recordingShouldBeActive && !actual.trackingRetained;
+    const watchInactive =
+      intent.recordingShouldBeActive && !actual.watchActive && !actual.trackingRetained;
     const gpsStale =
       intent.recordingShouldBeActive &&
       (!actual.lastFixAt || currentTime - actual.lastFixAt > SPEED_GPS_STALE_MS);
-    const sampleCountStalled =
+    const sampleCountStalled = Boolean(
       intent.recordingShouldBeActive &&
       graceElapsed &&
       recoveryBaseline &&
       actual.sampleCount <= recoveryBaseline.sampleCount &&
-      actual.lastFixAt <= recoveryBaseline.lastFixAt;
+      actual.lastFixAt <= recoveryBaseline.lastFixAt
+    );
     const recordingKeepAliveSuppressed =
       intent.recordingKeepAliveShouldBeArmed && actual.recordingKeepAliveSuppressed;
     const recordingKeepAliveBlocked =
@@ -417,14 +450,19 @@ function createSpeedRuntime() {
       graceElapsed &&
       !actual.recordingKeepAliveArmed &&
       !actual.recordingKeepAlivePending;
-    const recordingNeedsRecovery =
-      watchInactive ||
-      gpsStale ||
-      sampleCountStalled ||
+    const recordingKeepAliveNeedsRecovery =
       recordingKeepAliveSuppressed ||
       recordingKeepAliveBlocked ||
       recordingKeepAliveMissing;
+    const recordingNeedsRecovery =
+      recordingInactive ||
+      trackingNotRetained ||
+      watchInactive ||
+      gpsStale ||
+      sampleCountStalled;
 
+    if (recordingInactive) reasons.push("recording-inactive");
+    if (trackingNotRetained) reasons.push("tracking-not-retained");
     if (watchInactive) reasons.push("gps-watch-inactive");
     if (gpsStale) reasons.push("gps-stale");
     if (sampleCountStalled) reasons.push("samples-stalled");
@@ -436,6 +474,7 @@ function createSpeedRuntime() {
       intent.speedAlertAudioShouldBeArmed && actual.backgroundAudioSuppressed;
     const audioBlocked =
       intent.speedAlertAudioShouldBeArmed &&
+      !actual.backgroundAudioArmed &&
       (actual.alertSoundBlocked || actual.trapSoundBlocked);
     const audioMissing =
       intent.speedAlertAudioShouldBeArmed &&
@@ -448,11 +487,26 @@ function createSpeedRuntime() {
     if (audioBlocked) reasons.push("audio-blocked");
     if (audioMissing) reasons.push("audio-not-armed");
 
+    const keepAliveOnly =
+      recordingKeepAliveNeedsRecovery && !recordingNeedsRecovery;
+    const severity = recordingNeedsRecovery
+      ? "recording"
+      : keepAliveOnly
+        ? "keep-alive"
+        : alertsNeedRecovery
+          ? "alerts"
+          : "none";
+
     recovery = {
-      needed: recordingNeedsRecovery || alertsNeedRecovery,
+      needed: recordingNeedsRecovery || recordingKeepAliveNeedsRecovery || alertsNeedRecovery,
+      severity,
       recording: recordingNeedsRecovery,
+      recordingKeepAlive: recordingKeepAliveNeedsRecovery,
+      keepAliveOnly,
       alerts: alertsNeedRecovery,
       reasons,
+      recordingInactive,
+      trackingNotRetained,
       watchInactive,
       gpsStale,
       sampleCountStalled,

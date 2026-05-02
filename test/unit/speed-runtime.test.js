@@ -92,6 +92,26 @@ describe("speed runtime", () => {
     });
   });
 
+  it("reports armed alert keep-alive separately from an individual sound retry", () => {
+    runtimeModule.speedRuntime.sync({
+      speedAlertAudioIntended: true,
+      backgroundAudioArmed: true,
+      alertSoundBlocked: true,
+      lastFixAt: Date.now(),
+    });
+
+    expect(activityState.getActivities()[0]).toMatchObject({
+      id: "speed.alerts",
+      state: "armed",
+      labelKey: "activitySpeedAlertsArmed",
+      detailKey: "activitySpeedAlertsSoundMayNeedTap",
+    });
+
+    const recovery = runtimeModule.speedRuntime.runRecoveryCheck({ force: true });
+    expect(recovery.alerts).toBe(false);
+    expect(recovery.reasons).not.toContain("audio-blocked");
+  });
+
   it("does not show alert activity when alerts are disabled and audio is muted", () => {
     runtimeModule.speedRuntime.sync({
       speedAlertAudioIntended: false,
@@ -104,7 +124,7 @@ describe("speed runtime", () => {
     expect(activityState.getActivities()).toEqual([]);
   });
 
-  it("marks active recording as needing rearm when its keep-alive is missing", () => {
+  it("marks active recording keep-alive loss as non-critical when GPS is fresh", () => {
     runtimeModule.speedRuntime.sync({
       recordingState: "recording",
       watchActive: true,
@@ -126,7 +146,10 @@ describe("speed runtime", () => {
 
     expect(recovery).toMatchObject({
       needed: true,
-      recording: true,
+      severity: "keep-alive",
+      recording: false,
+      recordingKeepAlive: true,
+      keepAliveOnly: true,
       alerts: false,
       recordingKeepAliveMissing: true,
     });
@@ -175,7 +198,10 @@ describe("speed runtime", () => {
 
     expect(recovery).toMatchObject({
       needed: true,
+      severity: "recording",
       recording: true,
+      recordingKeepAlive: true,
+      keepAliveOnly: false,
       alerts: true,
       gpsStale: true,
       recordingKeepAliveSuppressed: true,

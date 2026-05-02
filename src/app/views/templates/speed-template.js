@@ -489,6 +489,36 @@ const speedTemplate = String.raw`
             </article>
           </div>
 
+          <section
+            id="drivingAudioPrompt"
+            class="speed-audio-banner"
+            aria-live="polite"
+            hidden
+          >
+            <div class="speed-audio-banner-copy">
+              <strong id="drivingAudioPromptTitle" data-i18n="drivingAlertsPromptTitle">Enable driving alerts</strong>
+              <p id="drivingAudioPromptBody" data-i18n="drivingAlertsPromptBody">Speed and camera alerts need one tap before the browser can play audio while driving.</p>
+            </div>
+            <div class="speed-audio-banner-actions">
+              <button
+                id="drivingAudioPromptPrimary"
+                type="button"
+                class="speed-audio-banner-primary"
+                data-i18n="enableDrivingAlerts"
+              >
+                Enable alerts
+              </button>
+              <button
+                id="drivingAudioPromptSecondary"
+                type="button"
+                class="speed-audio-banner-secondary"
+                data-i18n="keepAlertsOff"
+              >
+                Keep alerts off
+              </button>
+            </div>
+          </section>
+
           <div id="notice" class="notice" hidden aria-live="polite">
             <p id="noticeText" data-i18n="allowLocationAccess">Allow location access to measure speed.</p>
             <button id="retryGps" type="button" data-i18n="retryGps">Retry GPS</button>

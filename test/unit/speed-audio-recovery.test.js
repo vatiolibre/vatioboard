@@ -67,6 +67,81 @@ function createController(controllerModule, state, onStateChange = vi.fn()) {
   });
 }
 
+function getLatestMediaSessionActionHandler(action) {
+  const calls = navigator.mediaSession.setActionHandler.mock.calls;
+  for (let index = calls.length - 1; index >= 0; index -= 1) {
+    const [registeredAction, handler] = calls[index];
+    if (registeredAction === action) return handler;
+  }
+  return null;
+}
+
+function installSelectiveAudio({ rejectSource = () => false } = {}) {
+  const OriginalAudio = globalThis.Audio;
+  const audioInstances = [];
+
+  class SelectiveAudio extends EventTarget {
+    constructor(src = "") {
+      super();
+      this.src = src;
+      this.loop = false;
+      this.preload = "auto";
+      this.playsInline = true;
+      this.currentTime = 0;
+      this.duration = 0.5;
+      this.paused = true;
+      this.muted = false;
+      this.volume = 1;
+      this.playCalls = 0;
+      audioInstances.push(this);
+    }
+
+    play() {
+      this.playCalls += 1;
+      if (rejectSource(this.src)) {
+        return Promise.reject(new DOMException("Audio requires user interaction", "NotAllowedError"));
+      }
+      this.paused = false;
+      this.dispatchEvent(new Event("play"));
+      return Promise.resolve();
+    }
+
+    pause() {
+      this.paused = true;
+      this.dispatchEvent(new Event("pause"));
+    }
+
+    load() {}
+  }
+
+  Object.defineProperty(window, "Audio", {
+    configurable: true,
+    writable: true,
+    value: SelectiveAudio,
+  });
+  Object.defineProperty(globalThis, "Audio", {
+    configurable: true,
+    writable: true,
+    value: SelectiveAudio,
+  });
+
+  return {
+    audioInstances,
+    restore() {
+      Object.defineProperty(window, "Audio", {
+        configurable: true,
+        writable: true,
+        value: OriginalAudio,
+      });
+      Object.defineProperty(globalThis, "Audio", {
+        configurable: true,
+        writable: true,
+        value: OriginalAudio,
+      });
+    },
+  };
+}
+
 describe("speed audio recovery", () => {
   let audioSystem;
   let audioModule;
@@ -99,6 +174,8 @@ describe("speed audio recovery", () => {
 
   it("uses the recovery path from user gesture activation", async () => {
     const state = createState({
+      backgroundMode: false,
+      alertAudioControlActive: true,
       backgroundAudioSuppressed: true,
       backgroundAudioArmed: false,
     });
@@ -120,6 +197,114 @@ describe("speed audio recovery", () => {
 
     expect(audioSystem.getBackgroundAudioLeaseCount()).toBe(1);
     expect(audioSystem.isBackgroundAudioLeaseActive(audioModule.SPEED_BACKGROUND_AUDIO_LEASE)).toBe(true);
+  });
+
+  it("ignores media-session pause and stop for silent keep-alive leases", async () => {
+    const state = createState({
+      alertAudioControlActive: true,
+      recordingKeepAliveIntended: true,
+    });
+    const controller = createController(audioModule, state);
+    const setRecordingActive = vi.fn();
+    const handleRecordingAudioInterrupted = vi.fn();
+    const handleRecordingMediaSessionPlay = vi.fn();
+    const handleSpeedMediaSessionPause = vi.fn();
+    const handleSpeedMediaSessionStop = vi.fn();
+
+    await controller.armRecordingKeepAliveAudio({ fromUserGesture: true });
+    await controller.armBackgroundAlertAudio({ fromUserGesture: true });
+
+    expect(
+      audioSystem.isBackgroundAudioLeaseActive(
+        audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
+      )
+    ).toBe(true);
+    expect(audioSystem.isBackgroundAudioLeaseActive(audioModule.SPEED_BACKGROUND_AUDIO_LEASE)).toBe(true);
+
+    controller.installMediaSessionActionHandlers({
+      setRecordingActive,
+      handleRecordingAudioInterrupted,
+      handleRecordingMediaSessionPlay,
+      handleSpeedMediaSessionPause,
+      handleSpeedMediaSessionStop,
+    });
+
+    getLatestMediaSessionActionHandler("pause")();
+    getLatestMediaSessionActionHandler("stop")();
+    getLatestMediaSessionActionHandler("play")();
+
+    expect(setRecordingActive).not.toHaveBeenCalled();
+    expect(handleRecordingAudioInterrupted).not.toHaveBeenCalled();
+    expect(handleSpeedMediaSessionPause).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "media-session-pause" })
+    );
+    expect(handleSpeedMediaSessionStop).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "media-session-stop" })
+    );
+    expect(handleRecordingMediaSessionPlay).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "media-session-play" })
+    );
+    expect(state.recordingKeepAliveSuppressed).toBe(false);
+    expect(state.backgroundAudioSuppressed).toBe(false);
+    expect(
+      audioSystem.isBackgroundAudioLeaseActive(
+        audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
+      )
+    ).toBe(true);
+    expect(audioSystem.isBackgroundAudioLeaseActive(audioModule.SPEED_BACKGROUND_AUDIO_LEASE)).toBe(true);
+  });
+
+  it("guards silent keep-alive disarm paths from media-session sources", async () => {
+    const state = createState({
+      alertAudioControlActive: true,
+      recordingKeepAliveIntended: true,
+    });
+    const controller = createController(audioModule, state);
+
+    await controller.armRecordingKeepAliveAudio({ fromUserGesture: true });
+    await controller.armBackgroundAlertAudio({ fromUserGesture: true });
+
+    expect(controller.suppressRecordingKeepAliveAudio({ source: "media-session-pause" })).toBe(false);
+    expect(controller.disarmBackgroundAlertAudio({ source: "media-session-stop" })).toBe(false);
+    expect(controller.suppressBackgroundAudioRuntime({ reason: "external-media-session-stop" })).toBe(false);
+    expect(state.recordingKeepAliveSuppressed).toBe(false);
+    expect(state.backgroundAudioSuppressed).toBe(false);
+    expect(
+      audioSystem.isBackgroundAudioLeaseActive(
+        audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
+      )
+    ).toBe(true);
+    expect(audioSystem.isBackgroundAudioLeaseActive(audioModule.SPEED_BACKGROUND_AUDIO_LEASE)).toBe(true);
+  });
+
+  it("keeps the silent alert lease armed when an alert loop fails", async () => {
+    vi.resetModules();
+    const selectiveAudio = installSelectiveAudio({
+      rejectSource: (src) => String(src).includes("near_camera_notification"),
+    });
+
+    try {
+      const freshAudioSystem = await import("../../src/shared/audio-system.js");
+      const freshAudioModule = await import("../../src/speed/audio.js");
+      const state = createState();
+      const controller = createController(freshAudioModule, state);
+
+      await controller.armBackgroundAlertAudio({ fromUserGesture: true });
+      await flushMicrotasks();
+
+      expect(
+        freshAudioSystem.isBackgroundAudioLeaseActive(
+          freshAudioModule.SPEED_BACKGROUND_AUDIO_LEASE
+        )
+      ).toBe(true);
+      expect(controller.isBackgroundAlertAudioArmed()).toBe(true);
+      expect(state.backgroundAudioArmed).toBe(true);
+      expect(state.audioPrimed).toBe(false);
+      expect(state.alertSoundBlocked).toBe(false);
+      expect(state.trapSoundBlocked).toBe(true);
+    } finally {
+      selectiveAudio.restore();
+    }
   });
 
   it("arms recording keep-alive independently from alert audio", async () => {

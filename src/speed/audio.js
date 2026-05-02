@@ -29,7 +29,8 @@ import { capitalizeText, escapeSvgText, getDistanceDisplay, truncateText } from 
 export const SPEED_BACKGROUND_AUDIO_LEASE = "speed-alerts";
 export const SPEED_RECORDING_BACKGROUND_AUDIO_LEASE = "speed-recording";
 const SPEED_MEDIA_SESSION_OWNER = "speed";
-const SPEED_MEDIA_SESSION_PRIORITY = 50;
+// Keep Speed below the audible player runtime so transport controls remain player-owned.
+const SPEED_MEDIA_SESSION_PRIORITY = 5;
 
 export function createSpeedAudioController({
   state,
@@ -440,14 +441,22 @@ export function createSpeedAudioController({
       priority: SPEED_MEDIA_SESSION_PRIORITY,
       handlers: {
         play: () => {
-          handlers.setRecordingActive?.(true, { fromUserGesture: true });
+          handlers.handleRecordingMediaSessionPlay?.({
+            source: "media-session-play",
+            fromUserGesture: true,
+          });
         },
         pause: () => {
-          handlers.setRecordingActive?.(false, { fromUserGesture: true });
+          handlers.handleSpeedMediaSessionPause?.({
+            source: "media-session-pause",
+            reason: "speed-media-session-pause-ignored-for-keep-alive",
+          });
         },
         stop: () => {
-          handlers.setRecordingActive?.(false, { fromUserGesture: true });
-          handlers.setAudioMuted(true, { fromUserGesture: true });
+          handlers.handleSpeedMediaSessionStop?.({
+            source: "media-session-stop",
+            reason: "speed-media-session-stop-ignored-for-keep-alive",
+          });
         },
       },
     });
@@ -464,6 +473,18 @@ export function createSpeedAudioController({
     return state.recordingKeepAliveIntended && !state.recordingKeepAliveSuppressed;
   }
 
+  function isMediaSessionSource(source = "") {
+    return String(source).startsWith("media-session");
+  }
+
+  function isMediaSessionReason(reason = "") {
+    return String(reason).includes("media-session");
+  }
+
+  function shouldIgnoreMediaSessionKeepAliveDisarm({ source = "", reason = "" } = {}) {
+    return isMediaSessionSource(source) || isMediaSessionReason(reason);
+  }
+
   function isStaleRecordingKeepAliveArm(revision) {
     return revision !== state.recordingKeepAliveRevision || !wantsRecordingKeepAliveAudio();
   }
@@ -473,6 +494,14 @@ export function createSpeedAudioController({
       state.recordingKeepAliveArmed
       && !state.recordingKeepAlivePending
       && isBackgroundAudioLeaseActive(SPEED_RECORDING_BACKGROUND_AUDIO_LEASE)
+    );
+  }
+
+  function isBackgroundAlertAudioArmed() {
+    return (
+      state.backgroundAudioArmed
+      && !state.backgroundAudioArmPending
+      && isBackgroundAudioLeaseActive(SPEED_BACKGROUND_AUDIO_LEASE)
     );
   }
 
@@ -535,7 +564,13 @@ export function createSpeedAudioController({
     retainIntent = false,
     suppressed = false,
     blocked = false,
+    source = "",
+    reason = "",
   } = {}) {
+    if (shouldIgnoreMediaSessionKeepAliveDisarm({ source, reason })) {
+      return false;
+    }
+
     state.recordingKeepAliveRevision = (state.recordingKeepAliveRevision || 0) + 1;
     state.recordingKeepAliveIntended = retainIntent;
     state.recordingKeepAliveArmed = false;
@@ -544,13 +579,20 @@ export function createSpeedAudioController({
     state.recordingKeepAliveBlocked = Boolean(retainIntent && blocked);
     releaseBackgroundAudioLease(SPEED_RECORDING_BACKGROUND_AUDIO_LEASE);
     notifyStateChange();
+    return true;
   }
 
-  function suppressRecordingKeepAliveAudio({ blocked = false } = {}) {
-    disarmRecordingKeepAliveAudio({
+  function suppressRecordingKeepAliveAudio({ blocked = false, source = "", reason = "" } = {}) {
+    if (shouldIgnoreMediaSessionKeepAliveDisarm({ source, reason })) {
+      return false;
+    }
+
+    return disarmRecordingKeepAliveAudio({
       retainIntent: state.recordingKeepAliveIntended,
       suppressed: state.recordingKeepAliveIntended,
       blocked,
+      source,
+      reason,
     });
   }
 
@@ -578,7 +620,7 @@ export function createSpeedAudioController({
 
   function canRecoverSuppressedBackgroundAudio() {
     return state.backgroundAudioSuppressed
-      && state.backgroundMode
+      && (state.backgroundMode || state.alertAudioControlActive)
       && state.lastFixAt > 0;
   }
 
@@ -613,7 +655,7 @@ export function createSpeedAudioController({
 
     state.backgroundAudioSuppressed = false;
     notifyStateChange();
-    void armBackgroundAlertAudio();
+    void armBackgroundAlertAudio({ fromUserGesture });
     return true;
   }
 
@@ -625,13 +667,17 @@ export function createSpeedAudioController({
     }
 
     if (wantsBackgroundAudio()) {
-      void armBackgroundAlertAudio();
+      void armBackgroundAlertAudio({ fromUserGesture: true });
     } else if (!state.audioMuted) {
       void primeAlertAudio();
     }
   }
 
-  function suppressBackgroundAudioRuntime() {
+  function suppressBackgroundAudioRuntime({ source = "", reason = "" } = {}) {
+    if (shouldIgnoreMediaSessionKeepAliveDisarm({ source, reason })) {
+      return false;
+    }
+
     state.backgroundAudioRevision += 1;
     state.backgroundAudioSuppressed = true;
     state.backgroundAudioArmed = false;
@@ -640,6 +686,7 @@ export function createSpeedAudioController({
     clearTrapMuteTimeout();
     releaseBackgroundAudioLease(SPEED_BACKGROUND_AUDIO_LEASE);
     notifyStateChange();
+    return true;
   }
 
   function playOneShotAudio(audio) {
@@ -693,6 +740,25 @@ export function createSpeedAudioController({
     }
 
     return true;
+  }
+
+  function ensureBackgroundAlertLooping(audio, backgroundAudioRevision) {
+    if (!audio || !audio.paused) {
+      return Promise.resolve(
+        !audio || !isStaleBackgroundAudioArm(backgroundAudioRevision)
+      );
+    }
+
+    return ensureAudioElementLooping(audio, {
+      shouldContinue: () => !isStaleBackgroundAudioArm(backgroundAudioRevision),
+    }).then(Boolean, () => false);
+  }
+
+  function startBackgroundAlertLoops(backgroundAudioRevision) {
+    return Promise.all([
+      ensureBackgroundAlertLooping(overspeedAudio, backgroundAudioRevision),
+      ensureBackgroundAlertLooping(trapAlertAudio, backgroundAudioRevision),
+    ]);
   }
 
   function isStaleBackgroundAudioArm(revision) {
@@ -887,7 +953,7 @@ export function createSpeedAudioController({
     return audioPrimePromise;
   }
 
-  async function armBackgroundAlertAudio() {
+  async function armBackgroundAlertAudio({ fromUserGesture = false } = {}) {
     if (!wantsBackgroundAudio()) return;
     if (
       state.backgroundAudioArmed
@@ -909,12 +975,16 @@ export function createSpeedAudioController({
     }).then(Boolean, () => false);
 
     try {
-      const audioPrimed = await primeAlertAudio();
+      // Touch browsers can drop transient activation before a later replay, so
+      // the gesture path starts the durable muted alert loops immediately.
+      const alertLoopPromise = fromUserGesture
+        ? startBackgroundAlertLoops(backgroundAudioRevision)
+        : null;
+      if (!fromUserGesture) {
+        await primeAlertAudio();
+      }
       if (isStaleBackgroundAudioArm(backgroundAudioRevision)) {
         shouldRetry = wantsBackgroundAudio();
-        return;
-      }
-      if (!audioPrimed) {
         return;
       }
 
@@ -923,29 +993,23 @@ export function createSpeedAudioController({
         shouldRetry = wantsBackgroundAudio();
         return;
       }
-      if (!keepAliveStarted) {
-        return;
-      }
-      await Promise.all([
-        overspeedAudio.paused
-          ? ensureAudioElementLooping(overspeedAudio, {
-              shouldContinue: () => !isStaleBackgroundAudioArm(backgroundAudioRevision),
-          })
-          : Promise.resolve(true),
-        trapAlertAudio.paused
-          ? ensureAudioElementLooping(trapAlertAudio, {
-              shouldContinue: () => !isStaleBackgroundAudioArm(backgroundAudioRevision),
-          })
-          : Promise.resolve(true),
-      ]);
+      if (!keepAliveStarted) return;
+
+      state.backgroundAudioArmed = true;
+      state.backgroundAudioSuppressed = false;
+      notifyStateChange();
+
+      const alertLoopsStarted = alertLoopPromise
+        ? await alertLoopPromise
+        : await startBackgroundAlertLoops(backgroundAudioRevision);
       if (isStaleBackgroundAudioArm(backgroundAudioRevision)) {
         shouldRetry = wantsBackgroundAudio();
         return;
       }
 
-      state.backgroundAudioArmed = true;
-      state.alertSoundBlocked = false;
-      state.trapSoundBlocked = false;
+      state.audioPrimed = alertLoopsStarted.every(Boolean);
+      state.alertSoundBlocked = !alertLoopsStarted[0];
+      state.trapSoundBlocked = !alertLoopsStarted[1];
       notifyStateChange();
       if (trapAlertAudio.paused) {
         keepTrapAudioAlive();
@@ -967,7 +1031,15 @@ export function createSpeedAudioController({
     }
   }
 
-  function disarmBackgroundAlertAudio({ fromUserGesture = false } = {}) {
+  function disarmBackgroundAlertAudio({
+    fromUserGesture = false,
+    source = "",
+    reason = "",
+  } = {}) {
+    if (shouldIgnoreMediaSessionKeepAliveDisarm({ source, reason })) {
+      return false;
+    }
+
     state.backgroundAudioArmed = false;
     state.backgroundAudioArmPending = false;
     clearTrapMuteTimeout();
@@ -999,11 +1071,13 @@ export function createSpeedAudioController({
         state.trapAudible = false;
         state.lastTrapSoundedId = null;
         syncTrapSound({ fromUserGesture });
-        return;
+        return true;
       }
     } else {
       stopTrapSound();
     }
+
+    return true;
   }
 
   function syncTrapSound({ fromUserGesture = false } = {}) {
@@ -1118,6 +1192,7 @@ export function createSpeedAudioController({
     disarmRecordingKeepAliveAudio,
     dispose,
     handleUserGestureAudioActivation,
+    isBackgroundAlertAudioArmed,
     installMediaSessionActionHandlers,
     isRecordingKeepAliveArmed,
     maybeRecoverRecordingKeepAliveAudio,

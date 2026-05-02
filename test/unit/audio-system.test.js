@@ -87,4 +87,46 @@ describe("media-session-adapter clients", () => {
     expect(navigator.mediaSession.playbackState).toBe("playing");
     expect(navigator.mediaSession.metadata.title).toBe("Player Track");
   });
+
+  it("keeps player transport handlers above Speed keep-alive metadata", () => {
+    const playerPause = vi.fn();
+    const speedPause = vi.fn();
+
+    adapter.updateMediaSessionClient("speed", {
+      active: true,
+      priority: 5,
+      playbackState: "playing",
+      metadata: {
+        title: "88 km/h",
+        artist: "GPS live",
+        album: "Vatio Speed",
+      },
+      handlers: {
+        pause: speedPause,
+      },
+    });
+
+    adapter.updateMediaSessionClient("player", {
+      active: true,
+      priority: 10,
+      playbackState: "playing",
+      metadata: {
+        title: "Player Track",
+        artist: "Player",
+        album: "VatioBoard",
+      },
+      handlers: {
+        pause: playerPause,
+      },
+    });
+
+    const pauseHandler = navigator.mediaSession.setActionHandler.mock.calls
+      .filter(([action]) => action === "pause")
+      .at(-1)?.[1];
+
+    expect(navigator.mediaSession.metadata.title).toBe("Player Track");
+    pauseHandler();
+    expect(playerPause).toHaveBeenCalledTimes(1);
+    expect(speedPause).not.toHaveBeenCalled();
+  });
 });

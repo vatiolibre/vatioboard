@@ -95,6 +95,15 @@ const PLAYER_SESSION_STORAGE_KEY = "vatioboard_player_session_v2";
 
 let sessionEntrySeed = 0;
 
+function getLatestMediaSessionActionHandler(action) {
+  const calls = navigator.mediaSession.setActionHandler.mock.calls;
+  for (let index = calls.length - 1; index >= 0; index -= 1) {
+    const [registeredAction, handler] = calls[index];
+    if (registeredAction === action) return handler;
+  }
+  return null;
+}
+
 function makeSessionEntry(trackLike, overrides = {}) {
   sessionEntrySeed += 1;
   const base = typeof trackLike === "string"
@@ -1204,6 +1213,60 @@ describe("audio-runtime", () => {
     expect(s.currentIndex).toBe(-1);
     expect(s.paused).toBe(true);
     expect(navigator.mediaSession.playbackState).toBe("none");
+  });
+
+  it("Media Session pause and stop stay owned by audible player over Speed keep-alive", async () => {
+    const audioSystem = await import("../../src/shared/audio-system.js");
+    const audioModule = await import("../../src/speed/audio.js");
+    const mediaSessionAdapter = await import("../../src/shared/media-session-adapter.js");
+    const speedPause = vi.fn();
+    const speedStop = vi.fn();
+
+    await audioSystem.acquireBackgroundAudioLease(
+      audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE,
+      { shouldContinue: () => true }
+    );
+    await audioSystem.acquireBackgroundAudioLease(
+      audioModule.SPEED_BACKGROUND_AUDIO_LEASE,
+      { shouldContinue: () => true }
+    );
+    mediaSessionAdapter.updateMediaSessionClient("speed", {
+      active: true,
+      priority: 5,
+      playbackState: "playing",
+      handlers: {
+        pause: speedPause,
+        stop: speedStop,
+      },
+    });
+
+    runtime.setQueue([TRACK_A], { autoplay: false });
+    await vi.waitFor(() => {
+      expect(runtime.getState().currentTrack?.name).toBe("asset_a");
+    });
+    await runtime.play();
+
+    getLatestMediaSessionActionHandler("pause")();
+    expect(runtime.getState().paused).toBe(true);
+    expect(speedPause).not.toHaveBeenCalled();
+    expect(
+      audioSystem.isBackgroundAudioLeaseActive(
+        audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
+      )
+    ).toBe(true);
+    expect(audioSystem.isBackgroundAudioLeaseActive(audioModule.SPEED_BACKGROUND_AUDIO_LEASE)).toBe(true);
+
+    await runtime.play();
+    getLatestMediaSessionActionHandler("stop")();
+    expect(runtime.getState().currentTrack).toBeNull();
+    expect(runtime.getState().paused).toBe(true);
+    expect(speedStop).not.toHaveBeenCalled();
+    expect(
+      audioSystem.isBackgroundAudioLeaseActive(
+        audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
+      )
+    ).toBe(true);
+    expect(audioSystem.isBackgroundAudioLeaseActive(audioModule.SPEED_BACKGROUND_AUDIO_LEASE)).toBe(true);
   });
 
   it("Media Session uses artwork_ref when it is a URL", async () => {

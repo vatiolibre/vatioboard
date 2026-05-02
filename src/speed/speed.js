@@ -85,7 +85,12 @@ import {
   normalizeAlertDisplayValue,
 } from './alerts.js';
 import { createSpeedAudioController } from './audio.js';
-import { SPEED_ALERTS_ACTIVITY_ID, SPEED_RECORDING_ACTIVITY_ID, speedRuntime } from './runtime.js';
+import {
+  SPEED_ALERTS_ACTIVITY_ID,
+  SPEED_GPS_STALE_MS,
+  SPEED_RECORDING_ACTIVITY_ID,
+  speedRuntime,
+} from './runtime.js';
 import {
   createGlobeController,
   createWazeController,
@@ -107,6 +112,17 @@ import {
   updateNearestTrap,
 } from './traps.js';
 
+const DRIVING_AUDIO_OPPORTUNISTIC_IGNORE_SELECTOR = [
+  '.player-panel',
+  '.player-fab',
+  '#quickAudioToggle',
+  '#alertToggle',
+  '#drivingAudioPrompt',
+  '[data-alert-sound="off"]',
+  '[data-trap-alert="off"]',
+  '[data-trap-sound="off"]',
+].join(', ');
+
 function queryAll(root, selector) {
   return root?.querySelectorAll ? Array.from(root.querySelectorAll(selector)) : [];
 }
@@ -117,6 +133,8 @@ function queryOne(root, selector) {
 
 export function getSpeedElements(root) {
   return {
+    speedApp: queryOne(root, '.speed-app'),
+    speedShell: queryOne(root, '.speed-shell'),
     gaugeCard: queryOne(root, '.gauge-card'),
     langToggle: queryOne(root, '#langToggle'),
     langToggleButtons: queryAll(root, '[data-lang-toggle], #langToggle'),
@@ -191,6 +209,11 @@ export function getSpeedElements(root) {
     trapDistancePresets: queryOne(root, '#trapDistancePresets'),
     trapSoundButtons: queryAll(root, '.trap-sound-btn'),
     quickAudioToggle: queryOne(root, '#quickAudioToggle'),
+    drivingAudioPrompt: queryOne(root, '#drivingAudioPrompt'),
+    drivingAudioPromptTitle: queryOne(root, '#drivingAudioPromptTitle'),
+    drivingAudioPromptBody: queryOne(root, '#drivingAudioPromptBody'),
+    drivingAudioPromptPrimary: queryOne(root, '#drivingAudioPromptPrimary'),
+    drivingAudioPromptSecondary: queryOne(root, '#drivingAudioPromptSecondary'),
     unitButtons: queryAll(root, '.unit-btn'),
     distanceUnitButtons: queryAll(root, '.distance-unit-btn'),
     globeMount: queryOne(root, '#speedGlobe'),
@@ -451,6 +474,7 @@ function createInactiveAudioController() {
     dispose() {},
     handleUserGestureAudioActivation() {},
     installMediaSessionActionHandlers() {},
+    isBackgroundAlertAudioArmed: () => false,
     isRecordingKeepAliveArmed: () => false,
     maybeRecoverRecordingKeepAliveAudio: () => false,
     maybeRecoverSuppressedBackgroundAudio() {},
@@ -483,6 +507,10 @@ let replayPersistRequested = false;
 let replayPersistScheduled = false;
 let replayStartPlacePendingSessionId = '';
 let replayEndPlacePendingSessionId = '';
+let drivingAudioPromptActivationInFlight = false;
+let drivingAudioPromptLastPointerActivationAt = 0;
+
+const DRIVING_AUDIO_PROMPT_POINTER_CLICK_SUPPRESS_MS = 800;
 
 function getReplayActivitySampleCount(session) {
   if (Number.isFinite(session?.sampleCount)) return Math.max(0, Math.round(session.sampleCount));
@@ -503,7 +531,18 @@ function syncSpeedRuntime({ persist = false, reason = 'sync' } = {}) {
   const trackingRetained =
     state.watchId !== null ||
     (isSpaRuntime && !state.viewMounted && state.recordingState === 'recording');
+  const backgroundAlertAudioArmed = audioController.isBackgroundAlertAudioArmed();
   const recordingKeepAliveArmed = audioController.isRecordingKeepAliveArmed();
+
+  if (
+    state.backgroundAudioArmed &&
+    !backgroundAlertAudioArmed &&
+    (state.backgroundMode || state.alertAudioControlActive) &&
+    !state.backgroundAudioArmPending
+  ) {
+    state.backgroundAudioArmed = false;
+    state.backgroundAudioSuppressed = true;
+  }
 
   if (
     state.recordingKeepAliveArmed &&
@@ -536,7 +575,7 @@ function syncSpeedRuntime({ persist = false, reason = 'sync' } = {}) {
       manualAlertActive: isManualAlertActive(state.alertEnabled, state.alertLimitMs),
       trapAlertActive: state.trapAlertEnabled,
       speedAlertAudioIntended: state.backgroundMode || state.alertAudioControlActive,
-      backgroundAudioArmed: state.backgroundAudioArmed,
+      backgroundAudioArmed: backgroundAlertAudioArmed,
       backgroundAudioArmPending: state.backgroundAudioArmPending,
       backgroundAudioSuppressed: state.backgroundAudioSuppressed,
       alertSoundBlocked: state.alertSoundBlocked,
@@ -549,6 +588,236 @@ function syncSpeedRuntime({ persist = false, reason = 'sync' } = {}) {
 
 function publishSpeedRecordingActivity(options = {}) {
   syncSpeedRuntime(options);
+  renderDrivingAudioPrompt();
+}
+
+function hasEnabledAlertAudioFeature() {
+  return (
+    (isManualAlertActive(state.alertEnabled, state.alertLimitMs) && state.alertSoundEnabled) ||
+    (state.trapAlertEnabled && state.trapSoundEnabled)
+  );
+}
+
+function shouldActivateAlertAudioFromGesture() {
+  return !state.audioMuted && hasEnabledAlertAudioFeature();
+}
+
+function wantsRecordingKeepAliveFromGesture() {
+  return state.recordingState === 'recording' || state.recordingKeepAliveIntended;
+}
+
+function isRecordingGpsContinuityHealthy() {
+  return (
+    state.recordingState === 'recording' &&
+    state.watchId !== null &&
+    state.lastFixAt > 0 &&
+    Date.now() - state.lastFixAt <= SPEED_GPS_STALE_MS
+  );
+}
+
+function recordingKeepAliveNeedsRearm() {
+  if (!state.recordingKeepAliveIntended && state.recordingState !== 'recording') return false;
+  if (state.recordingKeepAlivePending) return false;
+  return (
+    state.recordingKeepAliveSuppressed ||
+    state.recordingKeepAliveBlocked ||
+    !state.recordingKeepAliveArmed ||
+    !audioController.isRecordingKeepAliveArmed()
+  );
+}
+
+function shouldShowRecordingKeepAlivePrompt() {
+  const recovery = speedRuntime.getRecoveryState();
+  if (recovery.keepAliveOnly) return true;
+  return isRecordingGpsContinuityHealthy() && recordingKeepAliveNeedsRearm();
+}
+
+function shouldShowDrivingAlertsPrompt() {
+  if (state.audioMuted || !hasEnabledAlertAudioFeature()) return false;
+
+  const alertAudioIntended = state.backgroundMode || state.alertAudioControlActive;
+  const backgroundAlertAudioArmed = audioController.isBackgroundAlertAudioArmed();
+  if (backgroundAlertAudioArmed) return false;
+
+  const blocked = state.alertSoundBlocked || state.trapSoundBlocked;
+  const missing =
+    alertAudioIntended &&
+    !backgroundAlertAudioArmed &&
+    !state.backgroundAudioArmPending;
+
+  return blocked || missing;
+}
+
+function renderDrivingAudioPrompt() {
+  if (!state.viewMounted || !elements.drivingAudioPrompt) return;
+
+  const showKeepAlivePrompt = shouldShowRecordingKeepAlivePrompt();
+  const showAlertsPrompt = !showKeepAlivePrompt && shouldShowDrivingAlertsPrompt();
+
+  if (!showKeepAlivePrompt && !showAlertsPrompt) {
+    elements.drivingAudioPrompt.hidden = true;
+    elements.drivingAudioPrompt.dataset.prompt = '';
+    return;
+  }
+
+  elements.drivingAudioPrompt.hidden = false;
+
+  if (showKeepAlivePrompt) {
+    elements.drivingAudioPrompt.dataset.prompt = 'recording-keep-alive';
+    elements.drivingAudioPromptTitle.textContent = t('recordingKeepAlivePromptTitle');
+    elements.drivingAudioPromptBody.textContent = t('recordingKeepAlivePromptBody');
+    elements.drivingAudioPromptPrimary.textContent = t('rearmKeepAliveAudio');
+    elements.drivingAudioPromptSecondary.hidden = true;
+    return;
+  }
+
+  elements.drivingAudioPrompt.dataset.prompt = 'driving-alerts';
+  elements.drivingAudioPromptTitle.textContent = t('drivingAlertsPromptTitle');
+  elements.drivingAudioPromptBody.textContent = t('drivingAlertsPromptBody');
+  elements.drivingAudioPromptPrimary.textContent = t('enableDrivingAlerts');
+  elements.drivingAudioPromptSecondary.textContent = t('keepAlertsOff');
+  elements.drivingAudioPromptSecondary.hidden = false;
+}
+
+function armDrivingAudioFromUserGesture(
+  reason = 'speed-shell-user-gesture',
+  { activateAlertAudio = true } = {}
+) {
+  const wantsAlertAudio = activateAlertAudio && shouldActivateAlertAudioFromGesture();
+  const wantsRecordingKeepAlive = wantsRecordingKeepAliveFromGesture();
+
+  if (!wantsAlertAudio && !wantsRecordingKeepAlive) {
+    return false;
+  }
+
+  if (wantsAlertAudio && !state.alertAudioControlActive) {
+    state.alertAudioControlActive = true;
+    state.backgroundAudioRevision += 1;
+  }
+
+  if (wantsAlertAudio && state.backgroundAudioSuppressed) {
+    audioController.maybeRecoverSuppressedBackgroundAudio({ fromUserGesture: true });
+  }
+
+  audioController.handleUserGestureAudioActivation();
+
+  if (wantsAlertAudio) {
+    audioController.syncOverspeedSound({ fromUserGesture: true });
+    audioController.syncTrapSound({ fromUserGesture: true });
+  }
+
+  publishSpeedRecordingActivity({ persist: true, reason });
+  return true;
+}
+
+function rearmRecordingKeepAliveFromUserGesture(reason = 'recording-keep-alive-user-rearm') {
+  audioController.handleUserGestureAudioActivation();
+  audioController.maybeRecoverRecordingKeepAliveAudio({ fromUserGesture: true });
+  publishSpeedRecordingActivity({ persist: true, reason });
+  return true;
+}
+
+function isMediaSessionSource(source = '') {
+  return String(source).startsWith('media-session');
+}
+
+function handleRecordingKeepAliveLeaseLost({
+  blocked = false,
+  source = '',
+  reason = 'recording-keep-alive-interrupted',
+} = {}) {
+  if (isMediaSessionSource(source)) {
+    publishSpeedRecordingActivity({
+      persist: true,
+      reason: 'media-session-ignored-recording-keep-alive',
+    });
+    return false;
+  }
+
+  const retainIntent = state.recordingState === 'recording' || state.recordingKeepAliveIntended;
+  if (!retainIntent) return false;
+
+  state.recordingKeepAliveIntended = true;
+  audioController.suppressRecordingKeepAliveAudio({ blocked });
+  publishSpeedRecordingActivity({ persist: true, reason });
+  return true;
+}
+
+function reconcileRecordingKeepAliveAfterAudioInterruption(
+  reason = 'recording-keep-alive-interrupted'
+) {
+  if (state.recordingState !== 'recording' && !state.recordingKeepAliveIntended) {
+    return false;
+  }
+  if (state.recordingKeepAlivePending || audioController.isRecordingKeepAliveArmed()) {
+    return false;
+  }
+
+  return handleRecordingKeepAliveLeaseLost({ reason });
+}
+
+function handleRecordingMediaSessionPlay({
+  fromUserGesture = true,
+  reason = 'recording-keep-alive-media-session-play',
+} = {}) {
+  if (!wantsRecordingKeepAliveFromGesture()) return false;
+
+  if (state.recordingState === 'recording') {
+    syncRecordingKeepAliveWithRecordingState({ fromUserGesture });
+  } else {
+    audioController.maybeRecoverRecordingKeepAliveAudio({ fromUserGesture });
+  }
+  publishSpeedRecordingActivity({ persist: true, reason });
+  return true;
+}
+
+function handleSpeedMediaSessionPause({
+  reason = 'speed-media-session-pause-ignored-for-keep-alive',
+} = {}) {
+  publishSpeedRecordingActivity({ persist: true, reason });
+  return false;
+}
+
+function handleSpeedMediaSessionStop({
+  reason = 'speed-media-session-stop-ignored-for-keep-alive',
+} = {}) {
+  publishSpeedRecordingActivity({ persist: true, reason });
+  return false;
+}
+
+function shouldIgnoreOpportunisticDrivingAudioGesture(target) {
+  return Boolean(target?.closest?.(DRIVING_AUDIO_OPPORTUNISTIC_IGNORE_SELECTOR));
+}
+
+function maybeArmDrivingAudioFromTrustedGesture(event) {
+  if (event?.isTrusted !== true) return false;
+  if (shouldIgnoreOpportunisticDrivingAudioGesture(event.target)) return false;
+
+  const wantsAlertAudio = shouldActivateAlertAudioFromGesture();
+  const wantsRecordingKeepAlive = wantsRecordingKeepAliveFromGesture();
+  const alertNeedsArming =
+    wantsAlertAudio &&
+    (
+      !state.alertAudioControlActive ||
+      state.backgroundAudioSuppressed ||
+      state.alertSoundBlocked ||
+      state.trapSoundBlocked ||
+      (!audioController.isBackgroundAlertAudioArmed() && !state.backgroundAudioArmPending)
+    );
+  const recordingNeedsArming =
+    wantsRecordingKeepAlive &&
+    !state.recordingKeepAlivePending &&
+    (
+      state.recordingKeepAliveSuppressed ||
+      state.recordingKeepAliveBlocked ||
+      !audioController.isRecordingKeepAliveArmed()
+    );
+
+  if (!alertNeedsArming && !recordingNeedsArming) return false;
+
+  return armDrivingAudioFromUserGesture('speed-shell-trusted-gesture', {
+    activateAlertAudio: alertNeedsArming,
+  });
 }
 
 function clearReplayPersistTimer() {
@@ -1020,7 +1289,7 @@ function createSpeedRouteControllers() {
       getSubStatusText: (alertState) => speedRenderer.getSubStatusText(alertState),
       getCriticalAlertText: (alertState) => speedRenderer.getCriticalAlertText(alertState),
       onStateChange: () => {
-        syncSpeedRuntime();
+        publishSpeedRecordingActivity();
       },
     });
     audioControllerInitialized = true;
@@ -1369,6 +1638,9 @@ function setAlertEnabled(enabled, options = {}) {
 
   saveAlertEnabledPreference(enabled);
   renderAlertUi(options);
+  if (enabled && options.fromUserGesture) {
+    armDrivingAudioFromUserGesture('manual-alert-toggle');
+  }
   speedRenderer.drawGauge();
   publishSpeedRecordingActivity({ persist: true, reason: 'manual-alert-toggle' });
 }
@@ -1377,10 +1649,13 @@ function setAlertSoundEnabled(enabled, options = {}) {
   state.alertSoundEnabled = enabled;
   saveAlertSoundEnabledPreference(enabled);
   renderAlertUi(options);
+  if (enabled && options.fromUserGesture) {
+    armDrivingAudioFromUserGesture('manual-alert-sound-toggle');
+  }
   publishSpeedRecordingActivity({ persist: true, reason: 'manual-alert-sound-toggle' });
 }
 
-function setAudioMuted(muted, { fromUserGesture = false } = {}) {
+function setAudioMuted(muted, { fromUserGesture = false, reason = 'alert-audio-toggle' } = {}) {
   const nextMuted = Boolean(muted);
   const wasMuted = state.audioMuted;
   const nextAlertAudioControlActive = fromUserGesture && !nextMuted
@@ -1402,9 +1677,9 @@ function setAudioMuted(muted, { fromUserGesture = false } = {}) {
     if (nextMuted && !audioController.wantsBackgroundAudio()) {
       audioController.disarmBackgroundAlertAudio({ fromUserGesture });
     } else {
-      audioController.handleUserGestureAudioActivation();
+      armDrivingAudioFromUserGesture(reason);
     }
-    if (wasMuted && !nextMuted) {
+    if (wasMuted && !nextMuted && hasEnabledAlertAudioFeature()) {
       audioController.playAlertAudioEnabledSound();
     }
   } else if (nextMuted && !audioController.wantsBackgroundAudio()) {
@@ -1412,7 +1687,7 @@ function setAudioMuted(muted, { fromUserGesture = false } = {}) {
   }
 
   renderAlertUi({ fromUserGesture });
-  publishSpeedRecordingActivity({ persist: true, reason: 'alert-audio-toggle' });
+  publishSpeedRecordingActivity({ persist: true, reason });
 }
 
 function setAlertLimitDisplay(value, { enable = true, fromUserGesture = false } = {}) {
@@ -1426,6 +1701,9 @@ function setAlertLimitDisplay(value, { enable = true, fromUserGesture = false } 
   }
 
   renderAlertUi({ fromUserGesture });
+  if (enable && fromUserGesture) {
+    armDrivingAudioFromUserGesture('manual-alert-limit');
+  }
   speedRenderer.drawGauge();
   publishSpeedRecordingActivity({ persist: true, reason: 'manual-alert-limit' });
 }
@@ -1461,6 +1739,9 @@ function setTrapAlertEnabled(enabled, options = {}) {
     trapLoader.ensureTrapArtifactsLoaded();
   }
   renderAlertUi(options);
+  if (enabled && options.fromUserGesture) {
+    armDrivingAudioFromUserGesture('trap-alert-toggle');
+  }
   speedRenderer.drawGauge();
   publishSpeedRecordingActivity({ persist: true, reason: 'trap-alert-toggle' });
 }
@@ -1477,6 +1758,9 @@ function setTrapAlertDistance(distanceM, { enable = true, fromUserGesture = fals
 
   state.lastTrapSoundedId = null;
   renderAlertUi({ fromUserGesture });
+  if (enable && fromUserGesture) {
+    armDrivingAudioFromUserGesture('trap-alert-distance');
+  }
   speedRenderer.drawGauge();
   publishSpeedRecordingActivity({ persist: true, reason: 'trap-alert-distance' });
 }
@@ -1488,6 +1772,9 @@ function setTrapSoundEnabled(enabled, options = {}) {
   }
   saveTrapSoundEnabledPreference(enabled);
   renderAlertUi(options);
+  if (enabled && options.fromUserGesture) {
+    armDrivingAudioFromUserGesture('trap-alert-sound-toggle');
+  }
   publishSpeedRecordingActivity({ persist: true, reason: 'trap-alert-sound-toggle' });
 }
 
@@ -1886,6 +2173,15 @@ function handleSingleTabOwnershipChange(event) {
   if (event?.detail?.owned !== false) return;
 
   void persistReplaySessionNow();
+  if (state.recordingState === 'recording' && event?.detail?.reason === 'released') {
+    speedRuntime.persistIntent('single-tab-released-recording-retained');
+    stopRenderLoop();
+    globeController.stopGlobeSolarUpdates();
+    audioController.syncRuntimePagePresentation();
+    closeAlertPanel();
+    return;
+  }
+
   stopTracking({ disarmBackgroundAudio: true });
   stopRenderLoop();
   globeController.stopGlobeSolarUpdates();
@@ -1911,6 +2207,9 @@ function resumeVisibleRuntime() {
     void audioController.armBackgroundAlertAudio();
   }
   if (state.recordingState === 'recording') {
+    reconcileRecordingKeepAliveAfterAudioInterruption(
+      'recording-keep-alive-visible-return'
+    );
     audioController.maybeRecoverRecordingKeepAliveAudio();
   }
   audioController.syncOverspeedSound();
@@ -1964,18 +2263,13 @@ function resumeRecordingFromRecovery(recovery) {
 }
 
 function rearmAlertsFromRecovery() {
-  audioController.handleUserGestureAudioActivation();
-  audioController.maybeRecoverSuppressedBackgroundAudio({ fromUserGesture: true });
-  if ((state.backgroundMode || state.alertAudioControlActive) && !state.backgroundAudioArmed) {
-    void audioController.armBackgroundAlertAudio();
-  }
-  audioController.syncOverspeedSound({ fromUserGesture: true });
-  audioController.syncTrapSound({ fromUserGesture: true });
-  publishSpeedRecordingActivity({ persist: true, reason: 'recovery-alert-audio' });
+  armDrivingAudioFromUserGesture('recovery-alert-audio');
 }
 
 function showSpeedRecoveryDialog(recovery = speedRuntime.getRecoveryState()) {
-  if (!state.viewMounted || speedRecoveryDialogOpen || !recovery?.needed) return;
+  if (!state.viewMounted || speedRecoveryDialogOpen || !recovery?.needed || !recovery.recording) {
+    return;
+  }
 
   speedRecoveryDialogOpen = true;
   void showConfirmDialog({
@@ -2002,7 +2296,11 @@ function showSpeedRecoveryDialog(recovery = speedRuntime.getRecoveryState()) {
 
 function handleSpeedRuntimeRecoveryNeeded(recovery) {
   if (!state.viewMounted) return;
-  showSpeedRecoveryDialog(recovery);
+  if (recovery?.recording) {
+    showSpeedRecoveryDialog(recovery);
+    return;
+  }
+  renderDrivingAudioPrompt();
 }
 
 function handleActivityOpen(event) {
@@ -2012,8 +2310,114 @@ function handleActivityOpen(event) {
     openAlertPanel();
   }
   const recovery = speedRuntime.getRecoveryState();
-  if (recovery.needed) {
+  if (recovery.needed && recovery.recording) {
     showSpeedRecoveryDialog(recovery);
+  } else {
+    renderDrivingAudioPrompt();
+  }
+}
+
+function enableDrivingAlertsFromPrompt(reason = 'driving-alerts-user-arm') {
+  setAudioMuted(false, {
+    fromUserGesture: true,
+    reason,
+  });
+}
+
+function keepDrivingAlertsOffFromPrompt() {
+  setAudioMuted(true, {
+    fromUserGesture: true,
+    reason: 'driving-alerts-user-disable',
+  });
+  state.alertAudioControlActive = false;
+  audioController.disarmBackgroundAlertAudio({ fromUserGesture: true });
+  publishSpeedRecordingActivity({
+    persist: true,
+    reason: 'driving-alerts-user-disable',
+  });
+}
+
+function handleDrivingAudioPromptPrimary(reason = 'driving-audio-prompt-primary') {
+  if (elements.drivingAudioPrompt?.dataset.prompt === 'recording-keep-alive') {
+    rearmRecordingKeepAliveFromUserGesture(reason);
+    return;
+  }
+
+  enableDrivingAlertsFromPrompt(reason);
+}
+
+function isPrimaryDrivingAudioPointerActivation(event) {
+  if (!event) return true;
+  if (event.button !== undefined && event.button !== 0) return false;
+  if (event.isPrimary === false) return false;
+  return true;
+}
+
+function shouldSuppressDrivingAudioPromptClickAfterPointer(event) {
+  if (event?.type !== 'click') return false;
+  if (!drivingAudioPromptLastPointerActivationAt) return false;
+  return Date.now() - drivingAudioPromptLastPointerActivationAt <
+    DRIVING_AUDIO_PROMPT_POINTER_CLICK_SUPPRESS_MS;
+}
+
+function runDrivingAudioPromptPrimaryFromTrustedGesture(
+  event,
+  reason = 'driving-audio-prompt-primary'
+) {
+  if (event && event.isTrusted === false) return false;
+  if (event?.type === 'pointerdown' && !isPrimaryDrivingAudioPointerActivation(event)) {
+    return false;
+  }
+
+  event?.preventDefault?.();
+
+  if (shouldSuppressDrivingAudioPromptClickAfterPointer(event)) {
+    return true;
+  }
+
+  if (drivingAudioPromptActivationInFlight) return true;
+  drivingAudioPromptActivationInFlight = true;
+  if (event?.type === 'pointerdown') {
+    drivingAudioPromptLastPointerActivationAt = Date.now();
+  }
+
+  try {
+    handleDrivingAudioPromptPrimary(reason);
+  } finally {
+    window.setTimeout(() => {
+      drivingAudioPromptActivationInFlight = false;
+    }, 0);
+  }
+
+  return true;
+}
+
+function handleDrivingAudioPromptPrimaryKeydown(event) {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  runDrivingAudioPromptPrimaryFromTrustedGesture(event, 'driving-audio-prompt-keydown');
+}
+
+function handleDrivingAudioPromptSecondary() {
+  keepDrivingAlertsOffFromPrompt();
+}
+
+function recheckSpeedRouteRecovery({
+  reason = 'speed-remount-recheck',
+  scheduleRecoveryCheck = true,
+} = {}) {
+  if (state.recordingState === 'recording') {
+    audioController.maybeRecoverRecordingKeepAliveAudio({ fromUserGesture: false });
+  }
+
+  publishSpeedRecordingActivity({ persist: true, reason });
+
+  const recovery = speedRuntime.getRecoveryState();
+  if (recovery.needed) {
+    handleSpeedRuntimeRecoveryNeeded(recovery);
+  }
+
+  if (scheduleRecoveryCheck) {
+    speedRuntime.handleAppReturn();
   }
 }
 
@@ -2114,8 +2518,7 @@ function mountSpeedController(routeContext = {}) {
   syncMountedSpeedRouteUi();
   if (state.watchId === null) startTracking();
   resumeVisibleRuntime();
-  publishSpeedRecordingActivity();
-  speedRuntime.handleAppReturn();
+  recheckSpeedRouteRecovery();
   return Promise.resolve();
 }
 
@@ -2158,11 +2561,26 @@ function syncLanguage() {
     renderMetrics,
   });
   renderRecordingControls();
+  renderDrivingAudioPrompt();
 }
 
 function bindEvents({ cleanup, signal } = {}) {
   if (!cleanup) return;
   if (signal?.aborted) return;
+
+  const drivingAudioGestureTarget = elements.speedApp || elements.speedShell;
+  cleanup.addEventListener(
+    drivingAudioGestureTarget,
+    'pointerdown',
+    maybeArmDrivingAudioFromTrustedGesture,
+    { capture: true, passive: true }
+  );
+  cleanup.addEventListener(
+    drivingAudioGestureTarget,
+    'keydown',
+    maybeArmDrivingAudioFromTrustedGesture,
+    { capture: true }
+  );
 
   elements.langToggleButtons.forEach((button) => {
     cleanup.addEventListener(button, 'click', () => {
@@ -2254,6 +2672,29 @@ function bindEvents({ cleanup, signal } = {}) {
   cleanup.addEventListener(elements.quickAudioToggle, 'click', () => {
     setAudioMuted(!state.audioMuted, { fromUserGesture: true });
   });
+  cleanup.addEventListener(
+    elements.drivingAudioPromptPrimary,
+    'pointerdown',
+    (event) => runDrivingAudioPromptPrimaryFromTrustedGesture(
+      event,
+      'driving-audio-prompt-pointerdown'
+    ),
+    { capture: true }
+  );
+  cleanup.addEventListener(
+    elements.drivingAudioPromptPrimary,
+    'keydown',
+    handleDrivingAudioPromptPrimaryKeydown
+  );
+  cleanup.addEventListener(
+    elements.drivingAudioPromptPrimary,
+    'click',
+    (event) => runDrivingAudioPromptPrimaryFromTrustedGesture(
+      event,
+      'driving-audio-prompt-click'
+    )
+  );
+  cleanup.addEventListener(elements.drivingAudioPromptSecondary, 'click', handleDrivingAudioPromptSecondary);
 
   for (const button of elements.unitButtons) {
     cleanup.addEventListener(button, 'click', () => setUnit(button.dataset.unit));
@@ -2280,29 +2721,20 @@ function bindEvents({ cleanup, signal } = {}) {
     }
     if (state.watchId === null) startTracking();
     resumeVisibleRuntime();
-    publishSpeedRecordingActivity();
-    speedRuntime.handleAppReturn();
+    recheckSpeedRouteRecovery({ reason: 'pageshow-recheck' });
   });
   cleanup.addEventListener(document, 'pointerdown', (event) => {
     if (event.target.closest('.player-panel, .player-fab')) return;
-    audioController.handleUserGestureAudioActivation();
     const insideAlertUi =
       elements.alertPanel.contains(event.target) ||
       elements.alertTrigger.contains(event.target) ||
       elements.quickAlertConfig?.contains(event.target);
-    if (!insideAlertUi) {
-      audioController.syncOverspeedSound({ fromUserGesture: true });
-      audioController.syncTrapSound({ fromUserGesture: true });
-    }
     if (elements.alertPanel.hidden) return;
     if (insideAlertUi) return;
     closeAlertPanel();
   });
   cleanup.addEventListener(document, 'keydown', (event) => {
     if (event.target.closest('.player-panel, .player-fab')) return;
-    audioController.handleUserGestureAudioActivation();
-    audioController.syncOverspeedSound({ fromUserGesture: true });
-    audioController.syncTrapSound({ fromUserGesture: true });
     if (event.key === 'Escape') closeAlertPanel();
   });
 
@@ -2317,8 +2749,7 @@ function bindEvents({ cleanup, signal } = {}) {
     }
 
     resumeVisibleRuntime();
-    publishSpeedRecordingActivity();
-    speedRuntime.handleAppReturn();
+    recheckSpeedRouteRecovery({ reason: 'visibility-visible-recheck' });
   });
   cleanup.addEventListener(document, 'i18n:change', syncLanguage);
   cleanup.addEventListener(window, 'pagehide', () => {
@@ -2380,14 +2811,9 @@ async function init() {
 
   audioController.attachRuntimeAudioEventListeners();
   audioController.installMediaSessionActionHandlers({
-    setAudioMuted,
-    setRecordingActive: (active, options) => {
-      if (active) {
-        startRecordingSession(options);
-      } else {
-        pauseRecordingSession(options);
-      }
-    },
+    handleRecordingMediaSessionPlay,
+    handleSpeedMediaSessionPause,
+    handleSpeedMediaSessionStop,
   });
   speedRuntimeLifecycleCleanup = speedRuntime.installLifecycleListeners({
     recoveryHandler: handleSpeedRuntimeRecoveryNeeded,
@@ -2428,6 +2854,34 @@ if (import.meta.hot) {
     globeController.stopGlobeSolarUpdates();
     globeController.clearGlobeFollowResumeTimeout();
   });
+}
+
+export function __testMaybeArmDrivingAudioFromTrustedGesture(event) {
+  return maybeArmDrivingAudioFromTrustedGesture(event);
+}
+
+export function __testRunDrivingAudioPromptPrimaryFromTrustedGesture(
+  event,
+  reason = 'driving-audio-prompt-test'
+) {
+  return runDrivingAudioPromptPrimaryFromTrustedGesture(event, reason);
+}
+
+export function __testGetSpeedStateSnapshot() {
+  return {
+    recordingState: state.recordingState,
+    recordingKeepAliveIntended: state.recordingKeepAliveIntended,
+    recordingKeepAliveArmed: state.recordingKeepAliveArmed,
+    recordingKeepAlivePending: state.recordingKeepAlivePending,
+    recordingKeepAliveSuppressed: state.recordingKeepAliveSuppressed,
+    recordingKeepAliveBlocked: state.recordingKeepAliveBlocked,
+    backgroundAudioArmed: state.backgroundAudioArmed,
+    backgroundAudioSuppressed: state.backgroundAudioSuppressed,
+    alertAudioControlActive: state.alertAudioControlActive,
+    watchId: state.watchId,
+    sampleCount: getReplayActivitySampleCount(state.replaySession),
+    replaySessionId: state.replaySession?.id ?? '',
+  };
 }
 
 function ensureStandaloneSpeedMounted() {
