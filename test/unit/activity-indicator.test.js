@@ -12,23 +12,23 @@ vi.mock("../../src/i18n.js", () => ({
   t: (key, params) => {
     const translations = {
       activityStatusLabel: "Active driving activity",
-      activitySpeedRecording: "Recording drive",
-      activitySpeedAlertsArmed: "Speed alerts armed",
-      activitySpeedAlertsArming: "Arming speed alerts",
-      activitySpeedAlertsSuppressed: "Speed alerts need rearm",
-      activitySpeedAlertsBlocked: "Speed alert audio blocked",
-      activitySpeedRecordingKeepAliveActive: "Background keep-alive active",
+      activitySpeedRecording: "Recording",
+      activitySpeedAlertsArmed: "Alerts armed",
+      activitySpeedAlertsArming: "Arming alerts",
+      activitySpeedAlertsSuppressed: "Alerts need rearm",
+      activitySpeedAlertsBlocked: "Alert audio blocked",
+      activitySpeedRecordingKeepAliveActive: "Keep-alive on",
       activitySpeedRecordingKeepAliveArming: "Arming keep-alive",
-      activitySpeedRecordingKeepAliveNeedsRearm: "Keep-alive needs rearm",
-      activitySpeedRecordingMayNeedResume: "Recording may need resume",
+      activitySpeedRecordingKeepAliveNeedsRearm: "Needs rearm",
+      activitySpeedRecordingMayNeedResume: "Resume needed",
       activityAccelArmed: "Accel armed",
       activityAccelRunning: "Accel running",
       activityOpenSpeedRecording: "Open speed recording",
       activityOpenSpeedAlerts: "Open speed alerts",
       activityOpenAccelTest: "Open acceleration test",
-      activitySamplesShort: "{count} samples",
-      activityGpsActive: "GPS active",
-      activitySpeedAlertsReady: "Alert audio ready",
+      activitySamplesShort: "{count} pts",
+      activityGpsActive: "GPS on",
+      activitySpeedAlertsReady: "Audio ready",
       activitySpeedAlertsTapToRearm: "Tap to rearm",
       activitySpeedAlertsUserAction: "Audio requires user action",
       activitySpeedAlertsGpsRequired: "GPS required",
@@ -82,8 +82,8 @@ describe("activity indicator", () => {
     });
 
     expect(root.hidden).toBe(false);
-    expect(root.textContent).toContain("Recording drive");
-    expect(root.textContent).toContain("3 samples");
+    expect(root.textContent).toContain("Recording");
+    expect(root.textContent).toContain("3 pts");
     expect(root.querySelector(".activity-indicator-close")).toBeNull();
     expect(root.querySelector("[aria-label='Close']")).toBeNull();
 
@@ -112,7 +112,7 @@ describe("activity indicator", () => {
     expect(rows).toHaveLength(2);
     expect(rows[0].dataset.activityId).toBe("speed.recording");
     expect(rows[1].dataset.activityId).toBe("accel.run");
-    expect(document.body.textContent).toContain("Recording drive");
+    expect(document.body.textContent).toContain("Recording");
     expect(document.body.textContent).toContain("Accel armed");
     expect(document.body.textContent).toContain("0-60 mph");
   });
@@ -142,8 +142,8 @@ describe("activity indicator", () => {
     expect(rows[1].dataset.activityId).toBe("speed.alerts");
     expect(rows[1].dataset.activityState).toBe("armed");
     expect(rows[1].getAttribute("aria-label")).toContain("Open speed alerts");
-    expect(document.body.textContent).toContain("Speed alerts armed");
-    expect(document.body.textContent).toContain("Alert audio ready");
+    expect(document.body.textContent).toContain("Alerts armed");
+    expect(document.body.textContent).toContain("Audio ready");
   });
 
   it("shows speed alert arming and suppressed states", () => {
@@ -158,7 +158,7 @@ describe("activity indicator", () => {
 
     let row = document.querySelector('[data-activity-id="speed.alerts"]');
     expect(row.dataset.activityState).toBe("arming");
-    expect(document.body.textContent).toContain("Arming speed alerts");
+    expect(document.body.textContent).toContain("Arming alerts");
 
     setActivity("speed.alerts", {
       kind: "speed",
@@ -171,7 +171,7 @@ describe("activity indicator", () => {
 
     row = document.querySelector('[data-activity-id="speed.alerts"]');
     expect(row.dataset.activityState).toBe("suppressed");
-    expect(document.body.textContent).toContain("Speed alerts need rearm");
+    expect(document.body.textContent).toContain("Alerts need rearm");
     expect(document.body.textContent).toContain("Tap to rearm");
   });
 

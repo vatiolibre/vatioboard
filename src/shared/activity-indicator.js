@@ -34,9 +34,9 @@ function formatElapsed(ms) {
   const totalMinutes = Math.floor(totalSeconds / 60);
   const minutes = totalMinutes % 60;
   const hours = Math.floor(totalMinutes / 60);
-  const paddedSeconds = String(seconds).padStart(2, "0");
-  if (hours > 0) return `${hours}:${String(minutes).padStart(2, "0")}:${paddedSeconds}`;
-  return `${minutes}:${paddedSeconds}`;
+  if (hours > 0) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  if (minutes > 0) return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  return `${seconds}s`;
 }
 
 function getActivityIcon(activity) {
