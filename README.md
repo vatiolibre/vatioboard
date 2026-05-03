@@ -268,6 +268,35 @@ Behavior:
 - uploading media assets depends on the `media_assets` capability
 - `login.html` is a standalone dev/test harness for backend session and CORS troubleshooting
 
+### Cross-Domain SSO
+
+VatioBoard only initiates SSO with a top-level redirect to Frappe. It does not
+store OAuth client secrets, authorization codes, access tokens, or refresh
+tokens in the static app.
+
+API host mapping:
+
+- production frontend hosts use `https://api.vatioboard.com`
+- non-production frontend hosts use `https://api.dev.vatioboard.com`
+
+Expected SSO start shape:
+
+```txt
+https://api.dev.vatioboard.com/api/method/vatiolibre.vatiolibre.sso.start?target=libre&redirect_to=https%3A%2F%2Fdev.vatiolibre.com%2Ffleet
+```
+
+`target=board` preserves the current VatioBoard hash route in `redirect_to`.
+`target=libre`, used by Open VatioLibre, sends
+`redirect_to=https://dev.vatiolibre.com/fleet` in development and the matching
+production VatioLibre fleet URL in production.
+
+The VatioLibre README is the source of truth for Frappe OAuth Client and Social
+Login Key rows, including exact redirect URIs for dev and production.
+
+Logout from VatioBoard currently clears the active API host session only. It
+does not guarantee logout from VatioLibre or another sibling domain unless a
+global logout orchestration flow is added.
+
 ## Testing
 
 The repo has both unit and smoke coverage.

@@ -16,12 +16,16 @@ import {
   getBackendPlaylistsManifest,
   getBackendPlaylistsManifestVersion,
   getBackendSessionState,
+  getSsoStartUrl,
+  getVatioLibreOrigin,
   getProtectedMediaRequestGate,
   listBackendMediaAssets,
   listBackendPlaylists,
   normalizeBackendOwnedUrl,
   pushSyncChangesToBackend,
+  startSso,
 } from '../../src/shared/backend-auth.js';
+import { getEnvironmentConfig } from '../../src/shared/environment.js';
 import { applyTranslations } from '../../src/i18n.js';
 
 const TEST_CONFIG = {
@@ -41,6 +45,122 @@ const PROD_BFF_ORIGIN = 'https://api.vatioboard.com';
 afterEach(() => {
   clearBackendAccessCache();
   document.body.innerHTML = '';
+});
+
+describe('environment configuration', () => {
+  it('maps production frontend hosts to the production API host', () => {
+    expect(getEnvironmentConfig({
+      hostname: 'vatioboard.com',
+      origin: 'https://vatioboard.com',
+    }).apiBase).toBe('https://api.vatioboard.com');
+
+    expect(getEnvironmentConfig({
+      hostname: 'www.vatioboard.com',
+      origin: 'https://www.vatioboard.com',
+    }).apiBase).toBe('https://api.vatioboard.com');
+  });
+
+  it('maps development and local hosts to the development API host', () => {
+    expect(getEnvironmentConfig({
+      hostname: 'dev.vatioboard.com',
+      origin: 'https://dev.vatioboard.com',
+    }).apiBase).toBe('https://api.dev.vatioboard.com');
+
+    expect(getEnvironmentConfig({
+      hostname: 'localhost',
+      origin: 'http://localhost:5173',
+    }).apiBase).toBe('https://api.dev.vatioboard.com');
+  });
+});
+
+describe('backend auth SSO helpers', () => {
+  const PROD_CONFIG = {
+    apiBase: 'https://api.vatioboard.com',
+    frontendOrigin: 'https://vatioboard.com',
+    isProduction: true,
+  };
+  const DEV_CONFIG = {
+    apiBase: 'https://api.dev.vatioboard.com',
+    frontendOrigin: 'https://dev.vatioboard.com',
+    isProduction: false,
+  };
+
+  it('builds the VatioLibre-backed board SSO URL', () => {
+    const url = new URL(getSsoStartUrl(
+      'board',
+      'https://vatioboard.com/#/board',
+      PROD_CONFIG
+    ));
+
+    expect(url.origin).toBe('https://api.vatioboard.com');
+    expect(url.pathname).toBe('/api/method/vatiolibre.vatiolibre.sso.start');
+    expect(url.searchParams.get('target')).toBe('board');
+    expect(url.searchParams.get('redirect_to')).toBe('https://vatioboard.com/#/board');
+  });
+
+  it('preserves hash routes in redirect_to', () => {
+    const url = new URL(getSsoStartUrl(
+      'board',
+      'https://vatioboard.com/#/library',
+      PROD_CONFIG
+    ));
+
+    expect(url.searchParams.get('redirect_to')).toBe('https://vatioboard.com/#/library');
+  });
+
+  it('builds the VatioLibre target SSO URL for the development API host', () => {
+    const url = new URL(getSsoStartUrl(
+      'libre',
+      'https://dev.vatiolibre.com/fleet',
+      DEV_CONFIG
+    ));
+
+    expect(url.origin).toBe('https://api.dev.vatioboard.com');
+    expect(url.searchParams.get('target')).toBe('libre');
+    expect(url.searchParams.get('redirect_to')).toBe('https://dev.vatiolibre.com/fleet');
+    expect(getVatioLibreOrigin(DEV_CONFIG)).toBe('https://dev.vatiolibre.com');
+  });
+
+  it('does not construct SSO URLs for unsafe redirect targets', () => {
+    expect(getSsoStartUrl('board', 'javascript:alert(1)', PROD_CONFIG)).toBe('');
+    expect(getSsoStartUrl('board', '//evil.example/#/board', PROD_CONFIG)).toBe('');
+    expect(getSsoStartUrl('board', 'https://evil.example/#/board', PROD_CONFIG)).toBe('');
+    expect(getSsoStartUrl('libre', 'https://vatioboard.com/#/board', PROD_CONFIG)).toBe('');
+  });
+
+  it('uses top-level navigation for SSO starts', () => {
+    const location = {
+      href: 'https://vatioboard.com/#/board',
+      assign: vi.fn(),
+    };
+
+    expect(startSso('board', 'https://vatioboard.com/#/board', {
+      config: PROD_CONFIG,
+      location,
+    })).toBe(true);
+    expect(location.assign).toHaveBeenCalledTimes(1);
+    expect(location.assign.mock.calls[0][0]).toContain(
+      '/api/method/vatiolibre.vatiolibre.sso.start'
+    );
+  });
+
+  it('opens VatioLibre through the dev SSO bridge with the fleet redirect', () => {
+    const location = {
+      href: 'https://dev.vatioboard.com/#/board',
+      assign: vi.fn(),
+    };
+
+    expect(startSso('libre', 'https://dev.vatiolibre.com/fleet', {
+      config: DEV_CONFIG,
+      location,
+    })).toBe(true);
+
+    const url = new URL(location.assign.mock.calls[0][0]);
+    expect(url.origin).toBe('https://api.dev.vatioboard.com');
+    expect(url.pathname).toBe('/api/method/vatiolibre.vatiolibre.sso.start');
+    expect(url.searchParams.get('target')).toBe('libre');
+    expect(url.searchParams.get('redirect_to')).toBe('https://dev.vatiolibre.com/fleet');
+  });
 });
 
 function createDeferred() {
@@ -94,7 +214,10 @@ describe('backend auth controller layout', () => {
     expect(form.querySelector('.backend-auth-header .backend-auth-logout-button')).toBeTruthy();
     expect(form.querySelector('.backend-auth-fields [data-backend-auth-user]')).toBeTruthy();
     expect(form.querySelector('.backend-auth-fields .backend-auth-password-wrap [data-backend-auth-password]')).toBeTruthy();
+    expect(form.querySelector('.backend-auth-actions .backend-auth-sso-button [data-i18n="authContinueWithVatioLibre"]')).toBeTruthy();
     expect(form.querySelector('.backend-auth-actions .backend-auth-login-button .backend-auth-action-icon svg')).toBeTruthy();
+    expect(form.querySelector('.backend-auth-authenticated-actions [data-backend-auth-open-libre]')).toBeTruthy();
+    expect(form.querySelector('.backend-auth-authenticated-actions [data-backend-auth-open-board]')).toBeTruthy();
     expect(form.querySelector('.backend-auth-actions .backend-auth-links [data-backend-auth-forgot]')).toBeTruthy();
 
     const loginButton = form.querySelector('[data-backend-auth-login]');
