@@ -141,6 +141,14 @@ describe("SPA Accel route real-controller smoke", () => {
     await settleRealSpaSmoke();
     expect(document.getElementById("resultsPanel")?.hidden).toBe(false);
     expect(maplibre.maps.filter((map) => !map.removed)).toHaveLength(1);
+    const accelMap = maplibre.maps.find((map) => !map.removed);
+    const routeSource = accelMap?.sources.get("replay-route-full");
+    const pointSource = accelMap?.sources.get("replay-route-point");
+    const routeData = routeSource?.setData.mock.calls.at(-1)?.[0];
+    const pointData = pointSource?.setData.mock.calls.at(-1)?.[0];
+    expect(routeData.features[0].geometry.coordinates).toHaveLength(3);
+    expect(routeData.features[0].geometry.coordinates[0]).toEqual([-73.9857, 40.7484]);
+    expect(pointData.features[0].geometry.coordinates).toEqual([-73.9857, 40.7484]);
     expect(charts.charts.filter((chart) => !chart.destroyed).length).toBeGreaterThan(0);
 
     document.getElementById("resultReplayChartsBtn")?.click();

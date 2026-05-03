@@ -110,6 +110,9 @@ import {
   buildAccelReplaySource,
   getAccelReplayFrameAtDistanceM,
   getAccelReplayFrameAtElapsedMs,
+  getAccelReplayMapDisplayFrame,
+  getAccelReplayPathCoordinates,
+  getAccelReplayPlayedCoordinates,
 } from './replay.js';
 import { createAccelReplayMapController } from './replay-map.js';
 import { createAccelReplayChartsController } from './replay-charts.js';
@@ -512,6 +515,7 @@ export const initPromise = (function () {
       destroy: function () {},
       init: function () { return Promise.resolve(); },
       renderPlaybackFrame: function () {},
+      resize: function () {},
       runApproachAnimation: function () { return Promise.resolve(); },
       setSource: function () {},
     };
@@ -625,6 +629,8 @@ export const initPromise = (function () {
   }
   var replayMapIntroPromise = null;
   var replayMapIntroToken = 0;
+  var replayMapRenderToken = 0;
+  var replayMapResizeFrame = null;
   var pendingMissingSelectionId = '';
 
   function applyStoredRuns(runs, preferredResultId, { preserveMissingPreferred = false } = {}) {
@@ -1165,6 +1171,8 @@ export const initPromise = (function () {
     if (panelName !== 'results') return;
     pauseReplayPlayback();
     resetReplayMapIntroState();
+    cancelReplayMapResize();
+    replayMapRenderToken += 1;
     replayMap.destroy();
     setReplayChartSheetOpen(false);
   }
@@ -1658,6 +1666,8 @@ export const initPromise = (function () {
     liveSpeedometer.destroy?.();
     liveSpeedometer = createInactiveSpeedometer();
     destroyResultGraph();
+    cancelReplayMapResize();
+    replayMapRenderToken += 1;
     replayMap.destroy?.();
     replayMap = createInactiveReplayMap();
     toolsMenu = createInactiveToolsMenu();
@@ -2179,6 +2189,20 @@ export const initPromise = (function () {
     cancelReplayMapApproach();
   }
 
+  function cancelReplayMapResize() {
+    if (replayMapResizeFrame === null) return;
+    window.cancelAnimationFrame(replayMapResizeFrame);
+    replayMapResizeFrame = null;
+  }
+
+  function requestReplayMapResize() {
+    cancelReplayMapResize();
+    replayMapResizeFrame = window.requestAnimationFrame(function () {
+      replayMapResizeFrame = null;
+      replayMap.resize?.();
+    });
+  }
+
   function cancelReplayMapApproach(options) {
     var markPlayed = Boolean(options && options.markPlayed);
     replayMapIntroToken += 1;
@@ -2206,6 +2230,7 @@ export const initPromise = (function () {
       }
 
       replayMap.setSource(replaySource, { resetCamera: false });
+      replayMap.resize?.();
       await replayMap.runApproachAnimation();
 
       if (
@@ -3365,6 +3390,43 @@ export const initPromise = (function () {
     });
   }
 
+  function debugReplayMapRender(result, replaySource, replayPoint, displayPoint, mapDisplayPoint) {
+    if (!window.__VATIO_ACCEL_REPLAY_DEBUG) return;
+    var playbackElapsedMs =
+      mapDisplayPoint && isFiniteNumber(mapDisplayPoint.elapsedMs)
+        ? mapDisplayPoint.elapsedMs
+        : state.replay.positionMs;
+    console.warn('[accel replay render]', {
+      resultId: result?.id,
+      hasGeoPath: Boolean(replaySource?.hasGeoPath),
+      frameCount: Array.isArray(replaySource?.frames) ? replaySource.frames.length : 0,
+      pathCoordinateCount: getAccelReplayPathCoordinates(replaySource).length,
+      positionMs: state.replay.positionMs,
+      replayPoint: replayPoint
+        ? {
+            elapsedMs: replayPoint.elapsedMs,
+            latitude: replayPoint.latitude,
+            longitude: replayPoint.longitude,
+          }
+        : null,
+      displayPoint: displayPoint
+        ? {
+            elapsedMs: displayPoint.elapsedMs,
+            latitude: displayPoint.latitude,
+            longitude: displayPoint.longitude,
+          }
+        : null,
+      mapDisplayPoint: mapDisplayPoint
+        ? {
+            elapsedMs: mapDisplayPoint.elapsedMs,
+            latitude: mapDisplayPoint.latitude,
+            longitude: mapDisplayPoint.longitude,
+          }
+        : null,
+      playedCoordinateCount: getAccelReplayPlayedCoordinates(replaySource, playbackElapsedMs).length,
+    });
+  }
+
   function renderReplayMap(result, replaySource, replayPoint) {
     if (!elements.resultReplayMapShell || !elements.resultReplayMap) return;
 
@@ -3375,25 +3437,55 @@ export const initPromise = (function () {
     elements.resultReplayMapShell.hidden = !hasReplayMap;
 
     if (!hasReplayMap) {
+      cancelReplayMapResize();
+      replayMapRenderToken += 1;
       replayMap.clear();
       return;
     }
 
-    replayMap.init();
+    var initPromise = replayMap.init();
     replayMap.setSource(replaySource, {
       resetCamera: state.replay.introPlayed,
     });
+    requestReplayMapResize();
 
     var displayPoint = replayPoint || getReplayDisplayPoint(replaySource);
-    replayMap.renderPlaybackFrame(
+    var mapDisplayPoint = getAccelReplayMapDisplayFrame(
       replaySource,
       displayPoint,
-      displayPoint ? displayPoint.elapsedMs : state.replay.positionMs
+      displayPoint && isFiniteNumber(displayPoint.elapsedMs)
+        ? displayPoint.elapsedMs
+        : state.replay.positionMs
+    );
+    var mapPlaybackElapsedMs =
+      displayPoint && isFiniteNumber(displayPoint.elapsedMs)
+        ? displayPoint.elapsedMs
+        : state.replay.positionMs;
+    debugReplayMapRender(result, replaySource, replayPoint, displayPoint, mapDisplayPoint);
+    replayMap.renderPlaybackFrame(
+      replaySource,
+      mapDisplayPoint,
+      mapPlaybackElapsedMs
     );
 
-    if (!state.replay.introPlayed) {
-      void runReplayMapApproach(result, replaySource);
-    }
+    var renderToken = replayMapRenderToken + 1;
+    replayMapRenderToken = renderToken;
+    void initPromise.then(function () {
+      if (
+        renderToken !== replayMapRenderToken ||
+        state.openPanel !== 'results' ||
+        !state.replay.source ||
+        state.replay.sourceResultId !== result.id
+      ) {
+        return;
+      }
+
+      replayMap.resize?.();
+      replayMap.renderPlaybackFrame(replaySource, mapDisplayPoint, mapPlaybackElapsedMs);
+      if (!state.replay.introPlayed) {
+        void runReplayMapApproach(result, replaySource);
+      }
+    });
   }
 
   function buildResultGraphData(result) {
@@ -3536,6 +3628,8 @@ export const initPromise = (function () {
   function destroyResultGraph() {
     resultGraph.destroy();
     replayCharts.destroy();
+    cancelReplayMapResize();
+    replayMapRenderToken += 1;
     replayMap.destroy();
   }
 
