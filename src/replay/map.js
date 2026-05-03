@@ -75,6 +75,15 @@ function shouldEnableWheelZoom() {
   return Boolean(window.matchMedia?.("(pointer: fine)").matches);
 }
 
+function shouldDebugReplayMap() {
+  return Boolean(window.__VATIO_REPLAY_MAP_DEBUG || window.__VATIO_ACCEL_REPLAY_DEBUG);
+}
+
+function debugReplayMapSources(payload) {
+  if (!shouldDebugReplayMap()) return;
+  console.warn("[replay map sources]", payload);
+}
+
 export function createReplayMapController({
   element,
   session,
@@ -82,6 +91,10 @@ export function createReplayMapController({
   let map = null;
   let ready = false;
   let activeSession = session;
+  let playbackState = {
+    sample: null,
+    playedCoordinates: [],
+  };
   let shouldAutoFitOnReady = true;
   let readyPromise = null;
   let resolveReadyPromise = null;
@@ -128,23 +141,32 @@ export function createReplayMapController({
     }
   }
 
-  function updateSources({ sample = null, playedCoordinates = [] } = {}) {
+  function updateSources(playback = playbackState) {
     if (!map || !ready) return;
 
     const routeSource = map.getSource(REPLAY_SOURCE_ID);
     const playedSource = map.getSource(REPLAY_PLAYED_SOURCE_ID);
     const pointSource = map.getSource(REPLAY_POINT_SOURCE_ID);
+    const routeData = getLineFeatureCollection(getReplayPathCoordinates(activeSession));
+    const playedData = getLineFeatureCollection(playback.playedCoordinates);
+    const pointData = getPointFeatureCollection(playback.sample);
+
+    debugReplayMapSources({
+      routeData,
+      playedData,
+      pointData,
+    });
 
     if (routeSource && typeof routeSource.setData === "function") {
-      routeSource.setData(getLineFeatureCollection(getReplayPathCoordinates(activeSession)));
+      routeSource.setData(routeData);
     }
 
     if (playedSource && typeof playedSource.setData === "function") {
-      playedSource.setData(getLineFeatureCollection(playedCoordinates));
+      playedSource.setData(playedData);
     }
 
     if (pointSource && typeof pointSource.setData === "function") {
-      pointSource.setData(getPointFeatureCollection(sample));
+      pointSource.setData(pointData);
     }
   }
 
@@ -285,7 +307,11 @@ export function createReplayMapController({
   }
 
   function renderPlaybackFrame({ sample = null, playedCoordinates = [] } = {}) {
-    updateSources({ sample, playedCoordinates });
+    playbackState = {
+      sample,
+      playedCoordinates: Array.isArray(playedCoordinates) ? playedCoordinates : [],
+    };
+    updateSources(playbackState);
   }
 
   function resize() {
@@ -297,8 +323,16 @@ export function createReplayMapController({
 
   function setSession(nextSession, options = {}) {
     const shouldResetCamera = options.resetCamera !== false;
+    const shouldPreservePlayback = options.preservePlayback === true;
+    const sessionChanged = nextSession !== activeSession;
     cancelApproachAnimation();
     activeSession = nextSession;
+    if (sessionChanged && !shouldPreservePlayback) {
+      playbackState = {
+        sample: null,
+        playedCoordinates: [],
+      };
+    }
     shouldAutoFitOnReady = shouldResetCamera;
 
     if (!ready) return;

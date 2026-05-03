@@ -118,10 +118,143 @@ function normalizeReplayFrames(frames, startAltitudeM) {
   return normalizedFrames;
 }
 
+function findLastFrameAtOrBefore(frames, elapsedMs) {
+  let found = null;
+  for (let index = 0; index < frames.length; index += 1) {
+    const frame = frames[index];
+    if (!frame || !isFiniteNumber(frame.elapsedMs)) continue;
+    if (frame.elapsedMs > elapsedMs + REPLAY_EPSILON_MS) break;
+    found = frame;
+  }
+  return found;
+}
+
+function findFirstFrameAtOrAfter(frames, elapsedMs) {
+  for (let index = 0; index < frames.length; index += 1) {
+    const frame = frames[index];
+    if (!frame || !isFiniteNumber(frame.elapsedMs)) continue;
+    if (frame.elapsedMs >= elapsedMs - REPLAY_EPSILON_MS) return frame;
+  }
+  return null;
+}
+
+function findLastGeoFrameAtOrBefore(frames, elapsedMs) {
+  let found = null;
+  for (let index = 0; index < frames.length; index += 1) {
+    const frame = frames[index];
+    if (!frame || !isFiniteNumber(frame.elapsedMs)) continue;
+    if (frame.elapsedMs > elapsedMs + REPLAY_EPSILON_MS) break;
+    if (hasGeoPoint(frame)) found = frame;
+  }
+  return found;
+}
+
+function findFirstGeoFrameAtOrAfter(frames, elapsedMs) {
+  for (let index = 0; index < frames.length; index += 1) {
+    const frame = frames[index];
+    if (!frame || !isFiniteNumber(frame.elapsedMs)) continue;
+    if (frame.elapsedMs < elapsedMs - REPLAY_EPSILON_MS) continue;
+    if (hasGeoPoint(frame)) return frame;
+  }
+  return null;
+}
+
+function getElapsedRatio(leftFrame, rightFrame, elapsedMs) {
+  if (!leftFrame || !rightFrame) return null;
+  const spanMs = rightFrame.elapsedMs - leftFrame.elapsedMs;
+  if (!isFiniteNumber(spanMs) || Math.abs(spanMs) <= REPLAY_EPSILON_MS) return 0;
+  return clamp((elapsedMs - leftFrame.elapsedMs) / spanMs, 0, 1);
+}
+
+function interpolateFrameValue(leftFrame, rightFrame, ratio, key) {
+  const leftValue = leftFrame && isFiniteNumber(leftFrame[key]) ? leftFrame[key] : null;
+  const rightValue = rightFrame && isFiniteNumber(rightFrame[key]) ? rightFrame[key] : null;
+
+  if (leftValue === null && rightValue === null) return null;
+  if (leftValue === null) return rightValue;
+  if (rightValue === null) return leftValue;
+  return interpolateValue(leftValue, rightValue, ratio);
+}
+
+function getInterpolatedFinishCoordinate(frames, elapsedMs) {
+  const leftGeoFrame = findLastGeoFrameAtOrBefore(frames, elapsedMs);
+  const rightGeoFrame = findFirstGeoFrameAtOrAfter(frames, elapsedMs);
+
+  if (!leftGeoFrame && !rightGeoFrame) {
+    return {
+      latitude: null,
+      longitude: null,
+      headingDeg: null,
+    };
+  }
+
+  if (!leftGeoFrame) {
+    return {
+      latitude: null,
+      longitude: null,
+      headingDeg: null,
+    };
+  }
+
+  if (!rightGeoFrame) {
+    return {
+      latitude: leftGeoFrame.latitude,
+      longitude: leftGeoFrame.longitude,
+      headingDeg: isFiniteNumber(leftGeoFrame.headingDeg) ? leftGeoFrame.headingDeg : null,
+    };
+  }
+
+  const ratio = getElapsedRatio(leftGeoFrame, rightGeoFrame, elapsedMs) ?? 0;
+  return {
+    latitude: interpolateValue(leftGeoFrame.latitude, rightGeoFrame.latitude, ratio),
+    longitude: interpolateValue(leftGeoFrame.longitude, rightGeoFrame.longitude, ratio),
+    headingDeg: interpolateHeadingDegrees(leftGeoFrame.headingDeg, rightGeoFrame.headingDeg, ratio),
+  };
+}
+
+function buildExpectedFinishFrame(result, frames, finish) {
+  const leftFrame = findLastFrameAtOrBefore(frames, finish.elapsedMs);
+  const rightFrame = findFirstFrameAtOrAfter(frames, finish.elapsedMs);
+  const ratio = getElapsedRatio(leftFrame, rightFrame, finish.elapsedMs) ?? 0;
+  const coordinate = getInterpolatedFinishCoordinate(frames, finish.elapsedMs);
+  const altitudeM = isFiniteNumber(finish.altitudeM)
+    ? finish.altitudeM
+    : interpolateFrameValue(leftFrame, rightFrame, ratio, "altitudeM");
+  const accuracyM = isFiniteNumber(finish.accuracyM)
+    ? Math.max(0, finish.accuracyM)
+    : interpolateFrameValue(leftFrame, rightFrame, ratio, "accuracyM");
+  const slopePercent = isFiniteNumber(result.startAltitudeM)
+    && isFiniteNumber(altitudeM)
+    && isFiniteNumber(finish.distanceM)
+    && finish.distanceM > 0
+    ? ((altitudeM - result.startAltitudeM) / finish.distanceM) * 100
+    : (leftFrame && isFiniteNumber(leftFrame.slopePercent) ? leftFrame.slopePercent : null);
+
+  return {
+    key: `finish-${getReplayPointKey(finish.elapsedMs)}`,
+    source: "resultFinish",
+    elapsedMs: finish.elapsedMs,
+    speedMs: finish.speedMs,
+    distanceM: finish.distanceM,
+    latitude: coordinate.latitude,
+    longitude: coordinate.longitude,
+    altitudeM,
+    accuracyM,
+    headingDeg: coordinate.headingDeg,
+    speedSource: finish.speedSource,
+    slopePercent,
+  };
+}
+
 function appendFinishReplayFrame(result, frames) {
   if (!result || !Array.isArray(frames) || !frames.length) return frames ? frames.slice() : [];
 
-  const normalizedFrames = frames.slice();
+  const normalizedFrames = frames
+    .slice()
+    .filter((frame) => frame && isFiniteNumber(frame.elapsedMs))
+    .sort((left, right) => left.elapsedMs - right.elapsedMs);
+  if (!normalizedFrames.length) return [];
+
   const lastFrame = normalizedFrames[normalizedFrames.length - 1];
   const expectedElapsedMs = isFiniteNumber(result.elapsedMs) ? Math.max(0, result.elapsedMs) : lastFrame.elapsedMs;
   const expectedDistanceM = isFiniteNumber(result.runDistanceM)
@@ -138,24 +271,22 @@ function appendFinishReplayFrame(result, frames) {
   const elapsedMatches = Math.abs(lastFrame.elapsedMs - expectedElapsedMs) <= REPLAY_EPSILON_MS;
   const distanceMatches = !isFiniteNumber(expectedDistanceM)
     || Math.abs((lastFrame.distanceM ?? 0) - expectedDistanceM) <= 0.01;
-  const needsFinishFrame = !elapsedMatches;
+  const hasPostFinishFrames = normalizedFrames.some((frame) => frame.elapsedMs > expectedElapsedMs + REPLAY_EPSILON_MS);
+  const finish = {
+    elapsedMs: expectedElapsedMs,
+    speedMs: expectedSpeedMs,
+    distanceM: expectedDistanceM,
+    altitudeM: expectedAltitudeM,
+    accuracyM: expectedAccuracyM,
+    speedSource: finishSource,
+  };
 
-  if (needsFinishFrame) {
-    normalizedFrames.push({
-      key: `finish-${getReplayPointKey(expectedElapsedMs)}`,
-      source: "resultFinish",
-      elapsedMs: expectedElapsedMs,
-      speedMs: expectedSpeedMs,
-      distanceM: expectedDistanceM,
-      latitude: lastFrame.latitude ?? null,
-      longitude: lastFrame.longitude ?? null,
-      altitudeM: expectedAltitudeM,
-      accuracyM: expectedAccuracyM,
-      headingDeg: lastFrame.headingDeg,
-      speedSource: finishSource,
-      slopePercent: lastFrame.slopePercent,
-    });
-    return normalizedFrames;
+  if (hasPostFinishFrames || !elapsedMatches) {
+    const retainedFrames = normalizedFrames.filter(
+      (frame) => frame.elapsedMs < expectedElapsedMs - REPLAY_EPSILON_MS,
+    );
+    retainedFrames.push(buildExpectedFinishFrame(result, normalizedFrames, finish));
+    return retainedFrames;
   }
 
   if (!distanceMatches || lastFrame.speedMs !== expectedSpeedMs || lastFrame.altitudeM !== expectedAltitudeM) {
@@ -398,6 +529,55 @@ export function getAccelReplayFrameAtDistanceM(source, distanceM) {
     ...frames[frames.length - 1],
     elapsedMs: source.durationMs,
     distanceM: source.totalDistanceM,
+  };
+}
+
+export function getAccelReplayNearestGeoFrame(source, elapsedMs) {
+  if (!source || !Array.isArray(source.frames) || !source.frames.length) return null;
+
+  const targetElapsedMs = isFiniteNumber(elapsedMs) ? clamp(elapsedMs, 0, source.durationMs) : 0;
+  let previousGeoFrame = null;
+  let nextGeoFrame = null;
+
+  for (let index = 0; index < source.frames.length; index += 1) {
+    const frame = source.frames[index];
+    if (!hasGeoPoint(frame)) continue;
+
+    if (frame.elapsedMs <= targetElapsedMs) {
+      previousGeoFrame = frame;
+      continue;
+    }
+
+    nextGeoFrame = frame;
+    break;
+  }
+
+  if (!previousGeoFrame) return nextGeoFrame;
+  if (!nextGeoFrame) return previousGeoFrame;
+
+  const previousDeltaMs = Math.abs(targetElapsedMs - previousGeoFrame.elapsedMs);
+  const nextDeltaMs = Math.abs(nextGeoFrame.elapsedMs - targetElapsedMs);
+  return nextDeltaMs < previousDeltaMs ? nextGeoFrame : previousGeoFrame;
+}
+
+export function getAccelReplayMapDisplayFrame(source, playbackFrame, elapsedMs) {
+  if (hasGeoPoint(playbackFrame)) return playbackFrame;
+
+  const targetElapsedMs = isFiniteNumber(elapsedMs)
+    ? elapsedMs
+    : (isFiniteNumber(playbackFrame?.elapsedMs) ? playbackFrame.elapsedMs : 0);
+  const geoFrame = getAccelReplayNearestGeoFrame(source, targetElapsedMs);
+  if (!geoFrame) return playbackFrame || null;
+
+  if (!playbackFrame) return geoFrame;
+
+  return {
+    ...playbackFrame,
+    latitude: geoFrame.latitude,
+    longitude: geoFrame.longitude,
+    altitudeM: isFiniteNumber(playbackFrame.altitudeM) ? playbackFrame.altitudeM : geoFrame.altitudeM,
+    accuracyM: isFiniteNumber(playbackFrame.accuracyM) ? playbackFrame.accuracyM : geoFrame.accuracyM,
+    headingDeg: isFiniteNumber(playbackFrame.headingDeg) ? playbackFrame.headingDeg : geoFrame.headingDeg,
   };
 }
 

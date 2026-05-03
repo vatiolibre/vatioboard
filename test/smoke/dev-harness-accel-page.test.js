@@ -184,6 +184,7 @@ vi.mock('maplibre-gl', () => {
       this.easeTo = vi.fn();
       this.fitBounds = vi.fn();
       this.stop = vi.fn();
+      this.resize = vi.fn();
       this.remove = vi.fn();
       fakeMaps.push(this);
       queueMicrotask(() => {
@@ -697,6 +698,148 @@ describe('accel.html smoke', () => {
         zoom: 18,
       })
     );
+  });
+
+  it('draws and plays the replay map for a freshly completed GPS accel run', async () => {
+    const basePerfMs = 1000;
+    const baseWallMs = Date.UTC(2026, 2, 29, 10, 0, 0);
+    let currentPerfMs = basePerfMs;
+    let currentWallMs = baseWallMs;
+    const performanceNowSpy = vi.spyOn(performance, 'now').mockImplementation(() => currentPerfMs);
+    const dateNowSpy = vi.spyOn(Date, 'now').mockImplementation(() => currentWallMs);
+
+    function setClock(perfMs) {
+      currentPerfMs = perfMs;
+      currentWallMs = baseWallMs + Math.max(0, perfMs - basePerfMs);
+    }
+
+    async function emitTimedSample({ perfMs, latitude, longitude, speed, altitude = 15 }) {
+      setClock(perfMs);
+      emitGeolocationSuccess({
+        timestamp: currentWallMs,
+        coords: {
+          latitude,
+          longitude,
+          speed,
+          accuracy: 5,
+          altitude,
+          heading: 180,
+        },
+      });
+      await flushTasks();
+    }
+
+    try {
+      const accelPage = await import('../../src/accel/dev-harness.js');
+      await accelPage.initPromise;
+      await flushTasks();
+
+      await emitTimedSample({
+        perfMs: 1000,
+        latitude: 40.7484,
+        longitude: -73.9857,
+        speed: 0,
+      });
+
+      expect(document.getElementById('armRun').disabled).toBe(false);
+      setClock(1100);
+      document.getElementById('armRun').click();
+      await flushTasks();
+
+      await emitTimedSample({
+        perfMs: 1200,
+        latitude: 40.7484,
+        longitude: -73.9857,
+        speed: 0,
+      });
+      await emitTimedSample({
+        perfMs: 2200,
+        latitude: 40.7489,
+        longitude: -73.9851,
+        speed: 5,
+      });
+      await emitTimedSample({
+        perfMs: 3200,
+        latitude: 40.7494,
+        longitude: -73.9845,
+        speed: 15,
+      });
+      await emitTimedSample({
+        perfMs: 4200,
+        latitude: 40.7499,
+        longitude: -73.9839,
+        speed: 25,
+      });
+      await emitTimedSample({
+        perfMs: 5200,
+        latitude: 40.7504,
+        longitude: -73.9833,
+        speed: 30,
+      });
+      await settleAsyncWork();
+
+      const storage = await import('../../src/accel/storage.js');
+      const { buildAccelReplaySource, getAccelReplayPathCoordinates } = await import(
+        '../../src/accel/replay.js'
+      );
+      const runs = await storage.loadRuns();
+      const completedResult = runs[0];
+
+      expect(completedResult?.sampleLog?.some((sample) =>
+        Number.isFinite(sample.latitude) && Number.isFinite(sample.longitude)
+      )).toBe(true);
+
+      const replaySource = buildAccelReplaySource(completedResult);
+      expect(replaySource?.hasGeoPath).toBe(true);
+      expect(getAccelReplayPathCoordinates(replaySource).length).toBeGreaterThanOrEqual(2);
+
+      document.getElementById('accelToolbarResults').click();
+      await flushTasks();
+
+      expect(document.getElementById('resultsPanel').hidden).toBe(false);
+      expect(document.getElementById('resultReplayMapShell').hidden).toBe(false);
+      await settleDeferredImports();
+
+      expect(fakeMaps).toHaveLength(1);
+      expect(fakeMaps[0].jumpTo).toHaveBeenCalledTimes(1);
+      expect(fakeMaps[0].easeTo).toHaveBeenCalled();
+
+      const routeSource = fakeMaps[0].sources.get('replay-route-full');
+      const pointSource = fakeMaps[0].sources.get('replay-route-point');
+      expect(routeSource?.setData).toHaveBeenCalled();
+      const routeUpdate = routeSource.setData.mock.calls.at(-1)?.[0];
+      const routeCoordinates = routeUpdate.features[0].geometry.coordinates;
+      expect(routeCoordinates.length).toBeGreaterThanOrEqual(2);
+      expect(routeCoordinates[0][0]).toBeLessThan(-73);
+      expect(routeCoordinates[0][0]).toBeGreaterThan(-74);
+      expect(routeCoordinates[0][1]).toBeGreaterThan(40);
+      expect(routeCoordinates[0][1]).toBeLessThan(41);
+
+      expect(pointSource?.setData).toHaveBeenCalled();
+      const initialPointUpdate = pointSource.setData.mock.calls.at(-1)?.[0];
+      expect(initialPointUpdate.features[0].geometry.type).toBe('Point');
+      expect(initialPointUpdate.features[0].geometry.coordinates).toHaveLength(2);
+      expect(initialPointUpdate.features[0].geometry.coordinates.every(Number.isFinite)).toBe(
+        true
+      );
+
+      const progress = document.getElementById('resultReplayProgress');
+      progress.value = progress.max;
+      progress.dispatchEvent(new Event('input', { bubbles: true }));
+      await flushTasks();
+
+      const playedSource = fakeMaps[0].sources.get('replay-route-played');
+      expect(playedSource?.setData).toHaveBeenCalled();
+      expect(pointSource?.setData).toHaveBeenCalled();
+
+      const playbackUpdate = playedSource.setData.mock.calls.at(-1)?.[0];
+      const pointUpdate = pointSource.setData.mock.calls.at(-1)?.[0];
+      expect(playbackUpdate.features[0].geometry.coordinates.length).toBeGreaterThanOrEqual(2);
+      expect(pointUpdate.features[0].geometry.coordinates).toHaveLength(2);
+    } finally {
+      performanceNowSpy.mockRestore();
+      dateNowSpy.mockRestore();
+    }
   });
 
   it('loads an accel result from history into the results panel', async () => {
