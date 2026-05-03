@@ -17,12 +17,15 @@ import {
   getBackendPlaylistsManifestVersion,
   getBackendSessionState,
   getSsoStartUrl,
+  getSsoSubscribeUrl,
   getVatioLibreOrigin,
+  getVatioLibreSubscribeUrl,
   getProtectedMediaRequestGate,
   listBackendMediaAssets,
   listBackendPlaylists,
   normalizeBackendOwnedUrl,
   pushSyncChangesToBackend,
+  startSubscriptionSso,
   startSso,
 } from '../../src/shared/backend-auth.js';
 import { getEnvironmentConfig } from '../../src/shared/environment.js';
@@ -121,6 +124,24 @@ describe('backend auth SSO helpers', () => {
     expect(getVatioLibreOrigin(DEV_CONFIG)).toBe('https://dev.vatiolibre.com');
   });
 
+  it('builds direct subscribe URLs from the VatioLibre origin', () => {
+    expect(getVatioLibreSubscribeUrl(DEV_CONFIG)).toBe('https://dev.vatiolibre.com/subscribe');
+    expect(getVatioLibreSubscribeUrl(PROD_CONFIG)).toBe('https://vatiolibre.com/subscribe');
+    expect(getVatioLibreSubscribeUrl({
+      ...PROD_CONFIG,
+      vatioLibreOrigin: 'https://www.vatiolibre.com',
+    })).toBe('https://www.vatiolibre.com/subscribe');
+  });
+
+  it('builds the VatioLibre subscribe SSO URL', () => {
+    const url = new URL(getSsoSubscribeUrl(DEV_CONFIG));
+
+    expect(url.origin).toBe('https://api.dev.vatioboard.com');
+    expect(url.pathname).toBe('/api/method/vatiolibre.vatiolibre.sso.start');
+    expect(url.searchParams.get('target')).toBe('libre');
+    expect(url.searchParams.get('redirect_to')).toBe('https://dev.vatiolibre.com/subscribe');
+  });
+
   it('does not construct SSO URLs for unsafe redirect targets', () => {
     expect(getSsoStartUrl('board', 'javascript:alert(1)', PROD_CONFIG)).toBe('');
     expect(getSsoStartUrl('board', '//evil.example/#/board', PROD_CONFIG)).toBe('');
@@ -160,6 +181,23 @@ describe('backend auth SSO helpers', () => {
     expect(url.pathname).toBe('/api/method/vatiolibre.vatiolibre.sso.start');
     expect(url.searchParams.get('target')).toBe('libre');
     expect(url.searchParams.get('redirect_to')).toBe('https://dev.vatiolibre.com/fleet');
+  });
+
+  it('starts subscription SSO with top-level navigation', () => {
+    const location = {
+      href: 'https://dev.vatioboard.com/#/board',
+      assign: vi.fn(),
+    };
+
+    expect(startSubscriptionSso({
+      config: DEV_CONFIG,
+      location,
+    })).toBe(true);
+
+    const url = new URL(location.assign.mock.calls[0][0]);
+    expect(url.origin).toBe('https://api.dev.vatioboard.com');
+    expect(url.searchParams.get('target')).toBe('libre');
+    expect(url.searchParams.get('redirect_to')).toBe('https://dev.vatiolibre.com/subscribe');
   });
 });
 

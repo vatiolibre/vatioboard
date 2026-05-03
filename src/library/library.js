@@ -40,6 +40,7 @@ import {
   getProtectedMediaRequestGate,
   getBackendSessionState,
   initBackendAuthControllers,
+  startSubscriptionSso,
   updateBoardDocumentInBackend,
   updateMediaAssetInBackend,
 } from "../shared/backend-auth.js";
@@ -119,6 +120,7 @@ export function getLibraryElements(root) {
     toolsMenuList: queryOne(root, "#libraryToolsMenuList"),
     toolbar: queryOne(root, ".library-toolbar"),
     status: queryOne(root, "#libraryStatus"),
+    subscriptionCta: queryOne(root, "#librarySubscriptionCta"),
     listEmpty: queryOne(root, "#libraryListEmpty"),
     listPanel: queryOne(root, "#libraryList"),
     loadMoreButton: queryOne(root, "#libraryLoadMore"),
@@ -636,6 +638,7 @@ function setStatusText(statusText = "", statusTone = "muted") {
 
 function renderStatus() {
   if (!canRenderView()) return;
+  renderSubscriptionCta();
   if (!elements.status) return;
 
   const hasMessage = Boolean(state.statusText || state.statusKey);
@@ -643,6 +646,22 @@ function renderStatus() {
   elements.status.dataset.tone = state.statusTone;
   elements.status.textContent = state.statusText
     || (hasMessage ? t(state.statusKey, state.statusParams || undefined) : "");
+}
+
+function shouldShowSubscriptionCta() {
+  if (!state.session?.authenticated || state.featureAccess?.ok !== true) return false;
+  const capability = getCurrentCapability();
+  return (
+    state.featureAccess?.featureAccess?.has_active_subscription === false
+    && capability?.enabled !== true
+    && capability?.hasActiveSubscription === false
+  );
+}
+
+function renderSubscriptionCta() {
+  if (!elements.subscriptionCta) return;
+  elements.subscriptionCta.hidden = !shouldShowSubscriptionCta();
+  elements.subscriptionCta.textContent = t("saveActivateSubscription");
 }
 
 function renderTabs() {
@@ -2677,6 +2696,12 @@ function bindEvents({ elements: routeElements = elements, cleanup, signal } = {}
   cleanup.addEventListener(routeElements.refreshButton, "click", () => {
     toolsMenu.close();
     void refreshAuthState({ force: true });
+  });
+
+  cleanup.addEventListener(routeElements.subscriptionCta, "click", () => {
+    if (!startSubscriptionSso()) {
+      setStatus("cloudLibraryAccessUnavailable", null, "danger");
+    }
   });
 
   cleanup.addEventListener(routeElements.loadMoreButton, "click", () => {

@@ -10,6 +10,8 @@ let sessionStateMock;
 let featureAccessStateMock;
 let getBackendFeatureAccessStateMock;
 let getBackendSessionStateMock;
+let getSsoSubscribeUrlMock;
+let getVatioLibreSubscribeUrlMock;
 
 function buildCloudSyncStateModule() {
   const CLOUD_SYNC_STATUS_STATES = Object.freeze({
@@ -73,12 +75,15 @@ describe("cloud sync status indicator", () => {
     };
     getBackendFeatureAccessStateMock = vi.fn(() => Promise.resolve(featureAccessStateMock));
     getBackendSessionStateMock = vi.fn(() => Promise.resolve(sessionStateMock));
+    getSsoSubscribeUrlMock = vi.fn(() => "https://api.example.com/api/method/vatiolibre.vatiolibre.sso.start?target=libre&redirect_to=https%3A%2F%2Fexample.com%2Fsubscribe");
+    getVatioLibreSubscribeUrlMock = vi.fn(() => "https://example.com/subscribe");
     vi.doMock(BACKEND_AUTH_MODULE, () => ({
       BACKEND_AUTH_STATE_EVENT: "vatioboard:backend-auth-state",
       BACKEND_AUTH_SIGNUP_URL: "https://example.com/signup",
-      BACKEND_SUBSCRIBE_URL: "https://example.com/subscribe",
       getBackendFeatureAccessState: getBackendFeatureAccessStateMock,
       getBackendSessionState: getBackendSessionStateMock,
+      getSsoSubscribeUrl: getSsoSubscribeUrlMock,
+      getVatioLibreSubscribeUrl: getVatioLibreSubscribeUrlMock,
     }));
     vi.doMock(CLOUD_SYNC_MODULE, () => buildCloudSyncStateModule());
   });
@@ -188,10 +193,49 @@ describe("cloud sync status indicator", () => {
     expect(message.textContent).toBe("cloudSyncPanelNoSubscription");
     expect(subscribeLink.hidden).toBe(false);
     expect(subscribeLink.textContent).toBe("cloudSyncSubscribe");
-    expect(subscribeLink.getAttribute("href")).toBe("https://example.com/subscribe");
-    expect(subscribeLink.getAttribute("target")).toBe("_blank");
-    expect(subscribeLink.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(subscribeLink.getAttribute("href")).toBe("https://api.example.com/api/method/vatiolibre.vatiolibre.sso.start?target=libre&redirect_to=https%3A%2F%2Fexample.com%2Fsubscribe");
+    expect(subscribeLink.getAttribute("target")).toBe("_self");
+    expect(subscribeLink.getAttribute("rel")).toBeNull();
     expect(loginButton.hidden).toBe(true);
+
+    indicator.destroy();
+  });
+
+  it("falls back to the direct subscribe URL when SSO URL generation is unavailable", async () => {
+    getSsoSubscribeUrlMock.mockReturnValue("");
+    cloudSyncStatusMock = {
+      state: "localOnly",
+      reason: "disabled",
+    };
+    sessionStateMock = {
+      authenticated: true,
+      isGuest: false,
+      ok: true,
+      status: 200,
+    };
+    featureAccessStateMock = {
+      cloudSyncCapability: {
+        enabled: false,
+        hasActiveSubscription: false,
+        reason: "An active subscription is required.",
+      },
+      isGuest: false,
+      ok: true,
+      status: 200,
+    };
+
+    const { initCloudSyncStatusIndicator } = await importIndicatorModule();
+    const mount = document.getElementById("mount");
+    const indicator = initCloudSyncStatusIndicator({ mount });
+    const toggle = mount.querySelector(".cloud-sync-indicator-btn");
+    const subscribeLink = mount.querySelector(".cloud-sync-indicator-link");
+
+    toggle.click();
+    await flushAsyncWork();
+
+    expect(subscribeLink.getAttribute("href")).toBe("https://example.com/subscribe");
+    expect(subscribeLink.getAttribute("target")).toBe("_self");
+    expect(subscribeLink.getAttribute("rel")).toBeNull();
 
     indicator.destroy();
   });
@@ -232,6 +276,9 @@ describe("cloud sync status indicator", () => {
     expect(message.textContent).toBe("cloudSyncPanelSubscriberSynced");
     expect(subscribeLink.hidden).toBe(false);
     expect(subscribeLink.textContent).toBe("cloudSyncManageSubscription");
+    expect(subscribeLink.getAttribute("href")).toBe("https://api.example.com/api/method/vatiolibre.vatiolibre.sso.start?target=libre&redirect_to=https%3A%2F%2Fexample.com%2Fsubscribe");
+    expect(subscribeLink.getAttribute("target")).toBe("_self");
+    expect(subscribeLink.getAttribute("rel")).toBeNull();
     expect(loginButton.hidden).toBe(true);
     expect(getBackendSessionStateMock).toHaveBeenCalledWith({ force: true });
     expect(getBackendFeatureAccessStateMock).toHaveBeenCalledWith({ force: true });

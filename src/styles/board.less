@@ -710,6 +710,37 @@ input[type="range"]{
     max-width: 100%;
 }
 
+.board-subscription-cta{
+    pointer-events: auto;
+    max-width: 100%;
+    min-height: 28px;
+    padding: 6px 8px;
+    border: 1px solid color-mix(in srgb, var(--success-bg) 42%, var(--inner-ring));
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--success-bg) 22%, var(--surface));
+    color: var(--btn-fg);
+    font: inherit;
+    font-size: 10px;
+    font-weight: 900;
+    line-height: 1.1;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+}
+
+.board-subscription-cta:hover{
+    background: color-mix(in srgb, var(--success-bg) 30%, var(--surface));
+}
+
+.board-subscription-cta:focus-visible{
+    outline: 3px solid color-mix(in srgb, var(--success-bg) 28%, transparent);
+    outline-offset: 2px;
+}
+
+.board-subscription-cta[hidden]{
+    display: none;
+}
+
 .attribution{
     font-size: 9px;
     color: var(--muted);

@@ -4,7 +4,6 @@ import { getEnvironmentConfig } from "./environment.js";
 
 export const BACKEND_AUTH_SIGNUP_URL = "https://www.vatiolibre.com/login#signup";
 export const BACKEND_AUTH_FORGOT_URL = "https://www.vatiolibre.com/login#forgot";
-export const BACKEND_SUBSCRIBE_URL = "https://www.vatiolibre.com/subscribe";
 export const VATIOLIBRE_PROD_ORIGIN = "https://vatiolibre.com";
 export const VATIOLIBRE_WWW_PROD_ORIGIN = "https://www.vatiolibre.com";
 export const VATIOLIBRE_DEV_ORIGIN = "https://dev.vatiolibre.com";
@@ -451,6 +450,10 @@ export function getVatioLibreOrigin(config = getBackendAuthConfig()) {
   return isProductionApiBase(config) ? VATIOLIBRE_PROD_ORIGIN : VATIOLIBRE_DEV_ORIGIN;
 }
 
+export function getVatioLibreSubscribeUrl(config = getBackendAuthConfig()) {
+  return `${getVatioLibreOrigin(config)}/subscribe`;
+}
+
 export function getSsoStartUrl(target, redirectTo, config = getBackendAuthConfig()) {
   const normalizedTarget = normalizeSsoTarget(target);
   if (!normalizedTarget) return "";
@@ -466,6 +469,10 @@ export function getSsoStartUrl(target, redirectTo, config = getBackendAuthConfig
   } catch {
     return "";
   }
+}
+
+export function getSsoSubscribeUrl(config = getBackendAuthConfig()) {
+  return getSsoStartUrl("libre", getVatioLibreSubscribeUrl(config), config);
 }
 
 export function startSso(target, redirectTo, {
@@ -487,6 +494,24 @@ export function startSso(target, redirectTo, {
     location.assign(url);
   } else {
     location.href = url;
+  }
+  return true;
+}
+
+export function startSubscriptionSso({
+  config = getBackendAuthConfig(),
+  location = window.location,
+} = {}) {
+  const subscribeUrl = getVatioLibreSubscribeUrl(config);
+  if (startSso("libre", subscribeUrl, { config, location })) {
+    return true;
+  }
+
+  if (!subscribeUrl) return false;
+  if (typeof location?.assign === "function") {
+    location.assign(subscribeUrl);
+  } else {
+    location.href = subscribeUrl;
   }
   return true;
 }
