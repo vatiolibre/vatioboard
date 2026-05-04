@@ -23,7 +23,7 @@ What it does:
 - local autosave of drawing history
 - embedded calculator widget and EV trip cost widget
 - shared English/Spanish toggle
-- optional VatioLibre login and save-to-backend flow for eligible accounts
+- optional VatioLibre account auth and save-to-backend flow for eligible accounts
 
 ### Calculator Demo
 
@@ -266,6 +266,7 @@ Behavior:
 - board, speed, replay, and accel SPA routes mount shared auth controls where needed; GPS Rate Lab keeps its auth coverage in the standalone dev/test harness
 - saving a board document to the backend depends on authenticated feature access and the `cloud_sync` capability
 - uploading media assets depends on the `media_assets` capability
+- the shared auth widget uses email/password login by default and does not expose first-time SSO as a normal login choice
 - `login.html` is a standalone dev/test harness for backend session and CORS troubleshooting
 
 ### Cross-Domain SSO
@@ -273,6 +274,24 @@ Behavior:
 VatioBoard only initiates SSO with a top-level redirect to Frappe. It does not
 store OAuth client secrets, authorization codes, access tokens, or refresh
 tokens in the static app.
+
+The shared auth widget intentionally hides "Continue with VatioLibre" by
+default. The authenticated "Open VatioLibre" and "Open VatioBoard" actions are
+also hidden by default because they duplicate normal app navigation. The SSO
+helpers remain available for contextual product links such as subscription
+management, including `getSsoSubscribeUrl()` and `startSubscriptionSso()`.
+
+Local debug builds can opt those controls back into the DOM without rewriting
+the widget:
+
+```js
+initBackendAuthControllers({
+  ssoUi: {
+    showGuestSsoLogin: true,
+    showAuthenticatedCrossOpenActions: true,
+  },
+});
+```
 
 API host mapping:
 
@@ -286,9 +305,11 @@ https://api.dev.vatioboard.com/api/method/vatiolibre.vatiolibre.sso.start?target
 ```
 
 `target=board` preserves the current VatioBoard hash route in `redirect_to`.
-`target=libre`, used by Open VatioLibre, sends
+`target=libre`, used by contextual links and the hidden debug Open VatioLibre
+action, sends
 `redirect_to=https://dev.vatiolibre.com/fleet` in development and the matching
-production VatioLibre fleet URL in production.
+production VatioLibre fleet URL in production. Subscription links send the
+matching `/subscribe` URL instead.
 
 The VatioLibre README is the source of truth for Frappe OAuth Client and Social
 Login Key rows, including exact redirect URIs for dev and production.

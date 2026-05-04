@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 import {
+  BACKEND_AUTH_SSO_UI_DEFAULTS,
   buildBoardDocumentPreviewBffUrl,
   buildMediaBffUrl,
   clearBackendAccessCache,
@@ -225,6 +226,21 @@ function jsonResponse(body, status = 200) {
   });
 }
 
+async function waitForExpect(assertion, attempts = 25) {
+  let lastError;
+  for (let index = 0; index < attempts; index += 1) {
+    try {
+      assertion();
+      return;
+    } catch (error) {
+      lastError = error;
+      await Promise.resolve();
+      await Promise.resolve();
+    }
+  }
+  throw lastError;
+}
+
 describe('backend auth controller layout', () => {
   it('normalizes legacy auth form markup into the shared compact structure', () => {
     document.body.innerHTML = `
@@ -248,15 +264,24 @@ describe('backend auth controller layout', () => {
     });
 
     expect(form.dataset.authLayout).toBe('normalized');
+    expect(BACKEND_AUTH_SSO_UI_DEFAULTS).toEqual({
+      showGuestSsoLogin: false,
+      showAuthenticatedCrossOpenActions: false,
+    });
     expect(form.querySelector('.backend-auth-header .backend-auth-copy .backend-auth-title')).toBeTruthy();
     expect(form.querySelector('.backend-auth-header .backend-auth-logout-button')).toBeTruthy();
     expect(form.querySelector('.backend-auth-fields [data-backend-auth-user]')).toBeTruthy();
     expect(form.querySelector('.backend-auth-fields .backend-auth-password-wrap [data-backend-auth-password]')).toBeTruthy();
-    expect(form.querySelector('.backend-auth-actions .backend-auth-sso-button [data-i18n="authContinueWithVatioLibre"]')).toBeTruthy();
     expect(form.querySelector('.backend-auth-actions .backend-auth-login-button .backend-auth-action-icon svg')).toBeTruthy();
-    expect(form.querySelector('.backend-auth-authenticated-actions [data-backend-auth-open-libre]')).toBeTruthy();
-    expect(form.querySelector('.backend-auth-authenticated-actions [data-backend-auth-open-board]')).toBeTruthy();
     expect(form.querySelector('.backend-auth-actions .backend-auth-links [data-backend-auth-forgot]')).toBeTruthy();
+    expect(form.querySelector('.backend-auth-sso-button')).toBeNull();
+    expect(form.querySelector('[data-backend-auth-sso-board]')).toBeNull();
+    expect(form.textContent).not.toContain('Continue with VatioLibre');
+    expect(form.querySelector('.backend-auth-open-libre-button')).toBeNull();
+    expect(form.querySelector('.backend-auth-open-board-button')).toBeNull();
+    expect(form.querySelector('[data-backend-auth-open-libre]')).toBeNull();
+    expect(form.querySelector('[data-backend-auth-open-board]')).toBeNull();
+    expect(form.querySelector('.backend-auth-authenticated-actions')).toBeNull();
 
     const loginButton = form.querySelector('[data-backend-auth-login]');
     const logoutButton = form.querySelector('[data-backend-auth-logout]');
@@ -270,6 +295,218 @@ describe('backend auth controller layout', () => {
     expect(signupLink.getAttribute('rel')).toBe('noopener noreferrer');
     expect(forgotLink.getAttribute('target')).toBe('_blank');
     expect(forgotLink.getAttribute('rel')).toBe('noopener noreferrer');
+
+    controller.destroy();
+  });
+
+  it('removes legacy SSO controls when the default display policy hides them', () => {
+    document.body.innerHTML = `
+      <form class="backend-auth" data-backend-auth novalidate>
+        <p class="backend-auth-title" data-i18n="authTitle">VatioLibre account</p>
+        <p class="backend-auth-status" data-backend-auth-status role="status" aria-live="polite" data-i18n="authCheckingSession">Checking session...</p>
+        <input class="backend-auth-input" data-backend-auth-user data-backend-auth-guest type="text" />
+        <input class="backend-auth-input" data-backend-auth-password data-backend-auth-guest type="password" />
+        <div class="backend-auth-actions" data-backend-auth-guest>
+          <button type="button" class="backend-auth-sso-button" data-backend-auth-sso-board data-backend-auth-guest>Continue with VatioLibre</button>
+          <button type="submit" data-backend-auth-login data-backend-auth-guest data-i18n="authLogin">Log in</button>
+        </div>
+        <button type="button" data-backend-auth-logout data-backend-auth-authenticated data-i18n="authLogout">Log out</button>
+        <div class="backend-auth-authenticated-actions" data-backend-auth-authenticated>
+          <button type="button" class="backend-auth-open-libre-button" data-backend-auth-open-libre>Open VatioLibre</button>
+          <button type="button" class="backend-auth-open-board-button" data-backend-auth-open-board>Open VatioBoard</button>
+        </div>
+      </form>
+    `;
+
+    const form = document.querySelector('[data-backend-auth]');
+    const controller = createBackendAuthController({
+      root: form,
+      config: TEST_CONFIG,
+      fetchImpl: vi.fn().mockResolvedValue(jsonResponse({ message: { is_guest: true } })),
+    });
+
+    expect(form.querySelector('[data-backend-auth-sso-board]')).toBeNull();
+    expect(form.querySelector('[data-backend-auth-open-libre]')).toBeNull();
+    expect(form.querySelector('[data-backend-auth-open-board]')).toBeNull();
+    expect(form.querySelector('.backend-auth-authenticated-actions')).toBeNull();
+
+    controller.destroy();
+  });
+
+  it('renders and submits username/password login without first-login SSO controls', async () => {
+    document.body.innerHTML = `
+      <form class="backend-auth" data-backend-auth novalidate>
+        <p class="backend-auth-title" data-i18n="authTitle">VatioLibre account</p>
+        <p class="backend-auth-status" data-backend-auth-status role="status" aria-live="polite" data-i18n="authCheckingSession">Checking session...</p>
+        <input class="backend-auth-input" data-backend-auth-user data-backend-auth-guest type="text" />
+        <input class="backend-auth-input" data-backend-auth-password data-backend-auth-guest type="password" />
+        <button type="submit" data-backend-auth-login data-backend-auth-guest data-i18n="authLogin">Log in</button>
+        <button type="button" data-backend-auth-logout data-backend-auth-authenticated data-i18n="authLogout">Log out</button>
+      </form>
+    `;
+
+    let loggedIn = false;
+    const fetchImpl = vi.fn(async (url, options = {}) => {
+      const requestUrl = String(url);
+      if (requestUrl.includes('/api/method/login')) {
+        expect(options.method).toBe('POST');
+        expect(String(options.body)).toContain('usr=driver%40example.com');
+        loggedIn = true;
+        return jsonResponse({ message: 'Logged In' });
+      }
+      if (requestUrl.includes('frappe.auth.get_logged_user')) {
+        return jsonResponse({ message: 'driver@example.com' });
+      }
+      if (requestUrl.includes('vatiolibre.services.tesla_connection_status')) {
+        return jsonResponse({ message: { is_guest: !loggedIn } });
+      }
+      throw new Error(`Unexpected request: ${requestUrl}`);
+    });
+    const form = document.querySelector('[data-backend-auth]');
+    const controller = createBackendAuthController({
+      root: form,
+      config: TEST_CONFIG,
+      fetchImpl,
+    });
+
+    await waitForExpect(() => {
+      expect(form.querySelector('[data-backend-auth-status]').textContent).toBe('Signed out');
+    });
+
+    expect(form.querySelector('[data-backend-auth-login]')).toBeTruthy();
+    expect(form.querySelector('[data-backend-auth-sso-board]')).toBeNull();
+
+    form.querySelector('[data-backend-auth-user]').value = 'driver@example.com';
+    form.querySelector('[data-backend-auth-password]').value = 'secret';
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    await waitForExpect(() => {
+      expect(form.querySelector('[data-backend-auth-status]').textContent).toBe(
+        'Signed in as driver@example.com'
+      );
+    });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://api.test.example/api/method/login',
+      expect.objectContaining({ method: 'POST' })
+    );
+
+    controller.destroy();
+  });
+
+  it('renders logout for authenticated sessions and logs out without cross-open controls', async () => {
+    document.body.innerHTML = `
+      <form class="backend-auth" data-backend-auth novalidate>
+        <p class="backend-auth-title" data-i18n="authTitle">VatioLibre account</p>
+        <p class="backend-auth-status" data-backend-auth-status role="status" aria-live="polite" data-i18n="authCheckingSession">Checking session...</p>
+        <input class="backend-auth-input" data-backend-auth-user data-backend-auth-guest type="text" />
+        <input class="backend-auth-input" data-backend-auth-password data-backend-auth-guest type="password" />
+        <button type="submit" data-backend-auth-login data-backend-auth-guest data-i18n="authLogin">Log in</button>
+        <button type="button" data-backend-auth-logout data-backend-auth-authenticated data-i18n="authLogout">Log out</button>
+      </form>
+    `;
+
+    let loggedIn = true;
+    const fetchImpl = vi.fn(async (url) => {
+      const requestUrl = String(url);
+      if (requestUrl.includes('/api/method/logout')) {
+        loggedIn = false;
+        return jsonResponse({ message: 'Logged Out' });
+      }
+      if (requestUrl.includes('frappe.auth.get_logged_user')) {
+        return jsonResponse({ message: 'driver@example.com' });
+      }
+      if (requestUrl.includes('vatiolibre.services.tesla_connection_status')) {
+        return jsonResponse({ message: { is_guest: !loggedIn } });
+      }
+      throw new Error(`Unexpected request: ${requestUrl}`);
+    });
+    const form = document.querySelector('[data-backend-auth]');
+    const controller = createBackendAuthController({
+      root: form,
+      config: TEST_CONFIG,
+      fetchImpl,
+    });
+
+    await waitForExpect(() => {
+      expect(form.querySelector('[data-backend-auth-status]').textContent).toBe(
+        'Signed in as driver@example.com'
+      );
+    });
+
+    const logoutButton = form.querySelector('[data-backend-auth-logout]');
+    expect(logoutButton.hidden).toBe(false);
+    expect(form.querySelector('[data-backend-auth-open-libre]')).toBeNull();
+    expect(form.querySelector('[data-backend-auth-open-board]')).toBeNull();
+
+    logoutButton.click();
+
+    await waitForExpect(() => {
+      expect(form.querySelector('[data-backend-auth-status]').textContent).toBe('Signed out');
+    });
+    expect(logoutButton.hidden).toBe(true);
+
+    controller.destroy();
+  });
+
+  it('renders debug SSO controls when explicitly enabled and keeps handlers wired', async () => {
+    document.body.innerHTML = `
+      <form class="backend-auth" data-backend-auth novalidate>
+        <p class="backend-auth-title" data-i18n="authTitle">VatioLibre account</p>
+        <p class="backend-auth-status" data-backend-auth-status role="status" aria-live="polite" data-i18n="authCheckingSession">Checking session...</p>
+        <input class="backend-auth-input" data-backend-auth-user data-backend-auth-guest type="text" />
+        <input class="backend-auth-input" data-backend-auth-password data-backend-auth-guest type="password" />
+        <button type="submit" data-backend-auth-login data-backend-auth-guest data-i18n="authLogin">Log in</button>
+        <button type="button" data-backend-auth-logout data-backend-auth-authenticated data-i18n="authLogout">Log out</button>
+      </form>
+    `;
+
+    const location = {
+      assign: vi.fn(),
+      hash: '#/library',
+      href: 'https://vatioboard.com/#/library',
+      pathname: '/',
+      search: '',
+    };
+    const config = {
+      apiBase: 'https://api.vatioboard.com',
+      frontendOrigin: 'https://vatioboard.com',
+      isProduction: true,
+    };
+    const form = document.querySelector('[data-backend-auth]');
+    const controller = createBackendAuthController({
+      root: form,
+      config,
+      fetchImpl: vi.fn().mockResolvedValue(jsonResponse({ message: { is_guest: true } })),
+      location,
+      ssoUi: {
+        showGuestSsoLogin: true,
+        showAuthenticatedCrossOpenActions: true,
+      },
+    });
+
+    await waitForExpect(() => {
+      expect(form.querySelector('[data-backend-auth-status]').textContent).toBe('Signed out');
+    });
+
+    expect(form.querySelector('.backend-auth-sso-button [data-i18n="authContinueWithVatioLibre"]')).toBeTruthy();
+    expect(form.querySelector('.backend-auth-authenticated-actions [data-backend-auth-open-libre]')).toBeTruthy();
+    expect(form.querySelector('.backend-auth-authenticated-actions [data-backend-auth-open-board]')).toBeTruthy();
+
+    form.querySelector('[data-backend-auth-sso-board]').click();
+    let url = new URL(location.assign.mock.calls.at(-1)[0]);
+    expect(url.pathname).toBe('/api/method/vatiolibre.vatiolibre.sso.start');
+    expect(url.searchParams.get('target')).toBe('board');
+    expect(url.searchParams.get('redirect_to')).toBe('https://vatioboard.com/#/library');
+
+    form.querySelector('[data-backend-auth-open-libre]').click();
+    url = new URL(location.assign.mock.calls.at(-1)[0]);
+    expect(url.searchParams.get('target')).toBe('libre');
+    expect(url.searchParams.get('redirect_to')).toBe('https://vatiolibre.com/fleet');
+
+    form.querySelector('[data-backend-auth-open-board]').click();
+    url = new URL(location.assign.mock.calls.at(-1)[0]);
+    expect(url.searchParams.get('target')).toBe('board');
+    expect(url.searchParams.get('redirect_to')).toBe('https://vatioboard.com/#/library');
 
     controller.destroy();
   });

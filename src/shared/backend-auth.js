@@ -10,6 +10,10 @@ export const VATIOLIBRE_DEV_ORIGIN = "https://dev.vatiolibre.com";
 export const VATIOBOARD_PROD_ORIGIN = "https://vatioboard.com";
 export const VATIOBOARD_WWW_PROD_ORIGIN = "https://www.vatioboard.com";
 export const VATIOBOARD_DEV_ORIGIN = "https://dev.vatioboard.com";
+export const BACKEND_AUTH_SSO_UI_DEFAULTS = Object.freeze({
+  showGuestSsoLogin: false,
+  showAuthenticatedCrossOpenActions: false,
+});
 
 // Use an allow_guest endpoint first so guest sessions do not trigger a visible 403.
 const SESSION_PROBE_METHOD = "vatiolibre.services.tesla_connection_status";
@@ -190,10 +194,36 @@ function createBackendAuthActionButton({
   return button;
 }
 
-function ensureBackendAuthSsoActions(root) {
+function normalizeBackendAuthSsoUiOptions(options = {}) {
+  return {
+    showGuestSsoLogin: options?.showGuestSsoLogin === true,
+    showAuthenticatedCrossOpenActions:
+      options?.showAuthenticatedCrossOpenActions === true,
+  };
+}
+
+function removeBackendAuthControls(root, selector) {
+  root.querySelectorAll(selector).forEach((element) => element.remove());
+}
+
+function removeEmptyAuthenticatedActions(root) {
+  root.querySelectorAll(".backend-auth-authenticated-actions").forEach((element) => {
+    if (!element.children.length) element.remove();
+  });
+}
+
+function ensureBackendAuthSsoActions(root, options = {}) {
+  const {
+    showGuestSsoLogin,
+    showAuthenticatedCrossOpenActions,
+  } = normalizeBackendAuthSsoUiOptions(options);
+
   const actions = getDirectChildByClass(root, "backend-auth-actions")
     || root.querySelector(".backend-auth-actions");
-  if (actions && !root.querySelector("[data-backend-auth-sso-board]")) {
+
+  if (!showGuestSsoLogin) {
+    removeBackendAuthControls(root, "[data-backend-auth-sso-board]");
+  } else if (actions && !root.querySelector("[data-backend-auth-sso-board]")) {
     const ssoButton = createBackendAuthActionButton({
       className: "backend-auth-sso-button",
       datasetKey: "backendAuthSsoBoard",
@@ -202,6 +232,15 @@ function ensureBackendAuthSsoActions(root) {
     });
     ssoButton.dataset.backendAuthGuest = "";
     actions.insertBefore(ssoButton, actions.firstChild);
+  }
+
+  if (!showAuthenticatedCrossOpenActions) {
+    removeBackendAuthControls(
+      root,
+      "[data-backend-auth-open-libre], [data-backend-auth-open-board]"
+    );
+    removeEmptyAuthenticatedActions(root);
+    return;
   }
 
   let authenticatedActions = getDirectChildByClass(
@@ -238,8 +277,13 @@ function ensureBackendAuthSsoActions(root) {
   }
 }
 
-function normalizeBackendAuthLayout(root) {
-  if (!root || root.dataset.authLayout === "normalized") return;
+function normalizeBackendAuthLayout(root, ssoUi = BACKEND_AUTH_SSO_UI_DEFAULTS) {
+  if (!root) return;
+
+  if (root.dataset.authLayout === "normalized") {
+    ensureBackendAuthSsoActions(root, ssoUi);
+    return;
+  }
 
   const titleEl = root.querySelector(".backend-auth-title");
   const statusEl = root.querySelector("[data-backend-auth-status]");
@@ -302,7 +346,7 @@ function normalizeBackendAuthLayout(root) {
     });
   }
 
-  ensureBackendAuthSsoActions(root);
+  ensureBackendAuthSsoActions(root, ssoUi);
 
   root.dataset.authLayout = "normalized";
 }
@@ -2500,10 +2544,12 @@ export function createBackendAuthController({
   root,
   fetchImpl,
   config = getBackendAuthConfig(),
+  location = window.location,
+  ssoUi = BACKEND_AUTH_SSO_UI_DEFAULTS,
 } = {}) {
   if (!root) return null;
 
-  normalizeBackendAuthLayout(root);
+  normalizeBackendAuthLayout(root, ssoUi);
 
   const form = root.matches("form") ? root : root.querySelector("form");
   const statusEl = root.querySelector("[data-backend-auth-status]");
@@ -2739,15 +2785,24 @@ export function createBackendAuthController({
   }
 
   function handleSsoBoard() {
-    startSso("board", getCurrentBoardRedirectTo({ config }), { config });
+    startSso("board", getCurrentBoardRedirectTo({ config, location }), {
+      config,
+      location,
+    });
   }
 
   function handleOpenLibre() {
-    startSso("libre", `${getVatioLibreOrigin(config)}/fleet`, { config });
+    startSso("libre", `${getVatioLibreOrigin(config)}/fleet`, {
+      config,
+      location,
+    });
   }
 
   function handleOpenBoard() {
-    startSso("board", getCurrentBoardRedirectTo({ config }), { config });
+    startSso("board", getCurrentBoardRedirectTo({ config, location }), {
+      config,
+      location,
+    });
   }
 
   function handleLanguageChange() {
@@ -2782,8 +2837,16 @@ export function initBackendAuthControllers({
   root = document,
   fetchImpl,
   config = getBackendAuthConfig(),
+  location = window.location,
+  ssoUi = BACKEND_AUTH_SSO_UI_DEFAULTS,
 } = {}) {
   return Array.from(root.querySelectorAll("[data-backend-auth]"))
-    .map((element) => createBackendAuthController({ root: element, fetchImpl, config }))
+    .map((element) => createBackendAuthController({
+      root: element,
+      fetchImpl,
+      config,
+      location,
+      ssoUi,
+    }))
     .filter(Boolean);
 }
