@@ -528,6 +528,33 @@ body.library-page .milkdrop-resize-handle{
     color: color-mix(in srgb, var(--library-accent) 88%, var(--btn-fg));
 }
 
+.library-subscription-cta{
+    justify-self: start;
+    min-height: 34px;
+    padding: 0 12px;
+    border: 1px solid color-mix(in srgb, var(--library-accent) 42%, var(--library-border));
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--library-accent-soft) 78%, var(--library-surface));
+    color: var(--btn-fg);
+    font-size: 12px;
+    font-weight: 900;
+    line-height: 1.1;
+    cursor: pointer;
+}
+
+.library-subscription-cta:hover{
+    background: color-mix(in srgb, var(--library-accent-soft) 100%, var(--library-surface));
+}
+
+.library-subscription-cta:focus-visible{
+    outline: 3px solid color-mix(in srgb, var(--library-accent) 26%, transparent);
+    outline-offset: 2px;
+}
+
+.library-subscription-cta[hidden]{
+    display: none;
+}
+
 .library-shell{
     display: grid;
     grid-template-columns: minmax(320px, 0.92fr) minmax(0, 1.08fr);

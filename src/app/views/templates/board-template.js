@@ -243,6 +243,15 @@ const boardTemplate = String.raw`
           <canvas id="pad" aria-label="Drawing canvas"></canvas>
           <div class="right-stack board-canvas-meta" aria-label="Status and attribution">
             <span id="status" class="status" data-i18n="ready">Ready</span>
+            <button
+              id="subscriptionCta"
+              type="button"
+              class="board-subscription-cta"
+              data-i18n="saveActivateSubscription"
+              hidden
+            >
+              Activate subscription
+            </button>
             <span class="attribution" aria-label="Creator attribution">
               <span data-i18n="poweredBy">Powered by</span> <strong>VatioLibre.com</strong>
             </span>

@@ -64,6 +64,8 @@
 
     <button id="login-btn" type="button">Login</button>
     <button id="whoami-btn" type="button">Check Current Session</button>
+    <button id="sso-board-btn" type="button">SSO to Board via VatioLibre</button>
+    <button id="sso-libre-btn" type="button">Open VatioLibre via SSO</button>
     <button id="logout-btn" type="button">Logout</button>
   </div>
 
@@ -123,6 +125,40 @@
       }
     }
 
+    function getVatioLibreOrigin() {
+      return config.apiBase === "https://api.vatioboard.com"
+        ? "https://vatiolibre.com"
+        : "https://dev.vatiolibre.com";
+    }
+
+    function getBoardOrigin() {
+      if (
+        window.location.origin === "https://vatioboard.com" ||
+        window.location.origin === "https://www.vatioboard.com" ||
+        window.location.origin === "https://dev.vatioboard.com"
+      ) {
+        return window.location.origin;
+      }
+      return config.apiBase === "https://api.vatioboard.com"
+        ? "https://vatioboard.com"
+        : "https://dev.vatioboard.com";
+    }
+
+    function getSsoStartUrl(target, redirectTo) {
+      const url = new URL(`${config.apiBase}/api/method/vatiolibre.vatiolibre.sso.start`);
+      url.searchParams.set("target", target);
+      url.searchParams.set("redirect_to", redirectTo);
+      return url.toString();
+    }
+
+    function ssoToBoard() {
+      window.location.assign(getSsoStartUrl("board", `${getBoardOrigin()}/#/board`));
+    }
+
+    function ssoToLibre() {
+      window.location.assign(getSsoStartUrl("libre", `${getVatioLibreOrigin()}/fleet`));
+    }
+
     async function login() {
       const usr = document.getElementById("usr").value.trim();
       const pwd = document.getElementById("pwd").value;
@@ -173,24 +209,36 @@
       setOutput("");
 
       try {
-        const response = await fetch(
-          `${config.apiBase}/api/method/frappe.auth.get_logged_user`,
+        const checks = [];
+        for (const check of [
           {
+            name: "frappe.auth.get_logged_user",
+            url: `${config.apiBase}/api/method/frappe.auth.get_logged_user`
+          },
+          {
+            name: "vatiolibre.services.tesla_connection_status",
+            url: `${config.apiBase}/api/method/vatiolibre.services.tesla_connection_status`
+          }
+        ]) {
+          const response = await fetch(check.url, {
             method: "GET",
             credentials: "include"
-          }
-        );
-
-        const data = await safeJson(response);
-
-        if (!response.ok) {
-          setStatus(`Session check failed (${response.status})`, true);
-          setOutput(data);
-          return;
+          });
+          checks.push({
+            name: check.name,
+            ok: response.ok,
+            status: response.status,
+            data: await safeJson(response)
+          });
         }
 
-        setStatus("Session is active.");
-        setOutput(data);
+        const loggedUser = checks[0];
+        if (!loggedUser.ok) {
+          setStatus(`Session check failed (${loggedUser.status})`, true);
+        } else {
+          setStatus("Session check completed.");
+        }
+        setOutput({ checks });
       } catch (error) {
         setStatus("Network or CORS error during session check.", true);
         setOutput({ message: error.message });
@@ -228,6 +276,8 @@
 
     document.getElementById("login-btn").addEventListener("click", login);
     document.getElementById("whoami-btn").addEventListener("click", whoAmI);
+    document.getElementById("sso-board-btn").addEventListener("click", ssoToBoard);
+    document.getElementById("sso-libre-btn").addEventListener("click", ssoToLibre);
     document.getElementById("logout-btn").addEventListener("click", logout);
   </script>
 </body>

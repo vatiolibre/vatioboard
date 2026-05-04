@@ -240,6 +240,15 @@ const libraryTemplate = String.raw`
         </section>
 
         <p id="libraryStatus" class="library-status" hidden aria-live="polite"></p>
+        <button
+          id="librarySubscriptionCta"
+          type="button"
+          class="library-subscription-cta"
+          data-i18n="saveActivateSubscription"
+          hidden
+        >
+          Activate subscription
+        </button>
 
         <section class="library-shell">
           <section class="library-list-panel" aria-live="polite">

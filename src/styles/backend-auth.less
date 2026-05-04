@@ -181,6 +181,20 @@
   gap: 8px;
 }
 
+.backend-auth-sso-button{
+  grid-column: 1 / -1;
+  min-height: 42px;
+  border-color: color-mix(in srgb, var(--backend-auth-accent) 48%, var(--backend-auth-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--backend-auth-accent) 24%, var(--backend-auth-control-bg));
+  color: var(--backend-auth-text);
+  font-weight: 850;
+}
+
+.backend-auth-sso-button:hover{
+  background: color-mix(in srgb, var(--backend-auth-accent) 30%, var(--backend-auth-control-bg));
+}
+
 .backend-auth button:not(.backend-auth-password-toggle):not(.backend-auth-logout-button){
   display: inline-flex;
   align-items: center;
@@ -243,6 +257,18 @@
   display: block;
   width: 18px;
   height: 18px;
+}
+
+.backend-auth-authenticated-actions{
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.backend-auth-authenticated-actions button{
+  min-height: 38px;
+  border-radius: 8px;
+  font-weight: 800;
 }
 
 .backend-auth-links{

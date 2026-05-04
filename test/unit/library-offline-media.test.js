@@ -186,6 +186,38 @@ function createGuestLibraryFetch() {
   });
 }
 
+function createNoSubscriptionLibraryFetch() {
+  return vi.fn(async (input) => {
+    const url = getFetchUrl(input);
+
+    if (url.includes("/api/method/vatiolibre.services.tesla_connection_status")) {
+      return jsonResponse({ message: { connected: false, is_guest: false } }, 200);
+    }
+    if (url.includes("/api/method/frappe.auth.get_logged_user")) {
+      return jsonResponse({ message: "library-user@vatiolibre.com" });
+    }
+    if (url.includes("/api/method/vatiolibre.vatiolibre.feature_access.get_my_feature_access")) {
+      return jsonResponse({
+        message: {
+          has_active_subscription: false,
+          csrf_token: "csrf-test-token",
+          features: {
+            cloud_sync: {
+              enabled: false,
+              reason: "Subscription required.",
+            },
+            media_assets: {
+              enabled: false,
+              reason: "Subscription required.",
+            },
+          },
+        },
+      });
+    }
+    return jsonResponse({ message: "Forbidden" }, 403);
+  });
+}
+
 async function bootMediaTab() {
   await bootHtmlPage("library.html");
   window.fetch = createDefaultFetch();
@@ -264,6 +296,23 @@ describe("library offline media", () => {
     expect(countFetchCalls(fetchMock, "list_my_media_assets")).toBe(0);
     expect(countFetchCalls(fetchMock, "get_my_media_asset_detail")).toBe(0);
     expect(countFetchCalls(fetchMock, "get_my_media_asset_access")).toBe(0);
+  }, 40000);
+
+  it("shows an activation CTA when authenticated library access is subscription-blocked", async () => {
+    const fetchMock = createNoSubscriptionLibraryFetch();
+    window.fetch = fetchMock;
+
+    await bootHtmlPage("library.html");
+    const libraryPage = await import("../../src/library/dev-harness.js");
+    await libraryPage.initPromise;
+    await settleLibraryTasks();
+
+    const cta = document.getElementById("librarySubscriptionCta");
+    expect(cta).toBeTruthy();
+    expect(cta.hidden).toBe(false);
+    expect(cta.textContent.trim()).toBe("Activate subscription");
+    expect(countFetchCalls(fetchMock, "list_my_speed_recordings")).toBe(0);
+    expect(countFetchCalls(fetchMock, "list_my_media_assets")).toBe(0);
   }, 40000);
 
   it("logout during media list bootstrap aborts the in-flight request and skips remaining protected media calls", async () => {

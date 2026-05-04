@@ -3,9 +3,10 @@ import { IconClose } from "../icons.js";
 import {
   BACKEND_AUTH_SIGNUP_URL,
   BACKEND_AUTH_STATE_EVENT,
-  BACKEND_SUBSCRIBE_URL,
   getBackendFeatureAccessState,
   getBackendSessionState,
+  getSsoSubscribeUrl,
+  getVatioLibreSubscribeUrl,
 } from "./backend-auth.js";
 import {
   CLOUD_SYNC_STATUS_EVENT,
@@ -237,6 +238,14 @@ function bindPanelAction(element, closePanel, handler = null, { allowDefault = f
   });
 }
 
+function getSubscribeLinkHref() {
+  try {
+    return getSsoSubscribeUrl() || getVatioLibreSubscribeUrl();
+  } catch {
+    return getVatioLibreSubscribeUrl();
+  }
+}
+
 export function initCloudSyncStatusIndicator({
   mount,
   alignEnd = false,
@@ -415,12 +424,18 @@ export function initCloudSyncStatusIndicator({
 
     if (audience === PANEL_AUDIENCES.guest) {
       subscribeLink.href = BACKEND_AUTH_SIGNUP_URL;
+      subscribeLink.target = "_blank";
+      subscribeLink.rel = "noopener noreferrer";
       subscribeLink.textContent = t("cloudSyncCreateAccount");
     } else if (audience === PANEL_AUDIENCES.noSubscription) {
-      subscribeLink.href = BACKEND_SUBSCRIBE_URL;
+      subscribeLink.href = getSubscribeLinkHref();
+      subscribeLink.target = "_self";
+      subscribeLink.removeAttribute("rel");
       subscribeLink.textContent = t("cloudSyncSubscribe");
     } else {
-      subscribeLink.href = BACKEND_SUBSCRIBE_URL;
+      subscribeLink.href = getSubscribeLinkHref();
+      subscribeLink.target = "_self";
+      subscribeLink.removeAttribute("rel");
       subscribeLink.textContent = t("cloudSyncManageSubscription");
     }
 

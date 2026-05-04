@@ -26,6 +26,7 @@ import {
   getBackendSessionState,
   initBackendAuthControllers,
   saveBoardDocumentToBackend,
+  startSubscriptionSso,
   updateBoardDocumentInBackend,
 } from "../shared/backend-auth.js";
 import {
@@ -217,6 +218,7 @@ if (!isSpaRuntime) {
     const createNewBtn = byId("createNew");
     const saveBtn = byId("save");
     const deleteBoardBtn = byId("deleteBoard");
+    const subscriptionCta = byId("subscriptionCta");
     const backendAuthUserInput = query("[data-backend-auth-user]");
 
     // NEW: color UI
@@ -345,7 +347,15 @@ if (!isSpaRuntime) {
     }
     function currentCanvasBg(){ return cssVar("--canvas-bg") || "#ffffff"; }
 
-    function setStatus(s){ statusEl.textContent = s; }
+    function setSubscriptionCtaVisible(visible){
+      if (!subscriptionCta) return;
+      subscriptionCta.hidden = !visible;
+    }
+
+    function setStatus(s, { showSubscriptionCta = false } = {}){
+      statusEl.textContent = s;
+      setSubscriptionCtaVisible(showSubscriptionCta);
+    }
 
     function syncToolbarButtons(){
       if (!saveBtn) return;
@@ -1357,6 +1367,15 @@ if (!isSpaRuntime) {
       return t("saveSubscriptionRequired");
     }
 
+    function shouldShowSubscriptionCta(featureAccess, capability){
+      return (
+        featureAccess?.ok === true
+        && featureAccess?.featureAccess?.has_active_subscription === false
+        && capability?.enabled !== true
+        && capability?.hasActiveSubscription === false
+      );
+    }
+
     async function resolveCloudSyncAccess(){
       const session = await getBackendSessionState();
 
@@ -1392,7 +1411,9 @@ if (!isSpaRuntime) {
       const cloudSync = featureAccess.cloudSyncCapability;
 
       if (!cloudSync?.enabled) {
-        setStatus(getBlockedSaveMessage(cloudSync));
+        setStatus(getBlockedSaveMessage(cloudSync), {
+          showSubscriptionCta: shouldShowSubscriptionCta(featureAccess, cloudSync),
+        });
         return null;
       }
 
@@ -1434,6 +1455,11 @@ if (!isSpaRuntime) {
     });
     cleanup.addEventListener(saveBtn, "click", () => {
       void saveBoardDocument();
+    });
+    cleanup.addEventListener(subscriptionCta, "click", () => {
+      if (!startSubscriptionSso()) {
+        setStatus(t("saveUnavailable"));
+      }
     });
     cleanup.addEventListener(deleteBoardBtn, "click", () => {
       void deleteBoardDocument();
