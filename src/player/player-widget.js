@@ -37,6 +37,10 @@ import {
   clearPersistedMediaCacheUser,
 } from "../shared/media-cache.js";
 import { isPublicStaticTrack } from "../shared/track-source-policy.js";
+import {
+  bringFloatingPanelToFront,
+  registerFloatingPanel,
+} from "../shared/floating-layer-manager.js";
 
 // ── Deduped bootstrap (shared across all widget instances) ───────────
 
@@ -366,6 +370,7 @@ export function createPlayerWidget(options = {}) {
 
   // ── Create player shell ──────────────────────────────────────
   const shell = createPlayerShell({ container: mount });
+  const cleanupLayer = registerFloatingPanel(shell.root);
 
   // Apply stored panel position, or use the first-visit default.
   {
@@ -417,6 +422,7 @@ export function createPlayerWidget(options = {}) {
   // ── Open / Close / Toggle ────────────────────────────────────
   function open({ persist = true } = {}) {
     shell.root.hidden = false;
+    bringFloatingPanelToFront(shell.root);
     if (persist) saveVisibility(true);
 
     // Lazy bootstrap on first open
@@ -534,6 +540,7 @@ export function createPlayerWidget(options = {}) {
   // ── Destroy ──────────────────────────────────────────────────
   function destroy() {
     window.removeEventListener(BACKEND_AUTH_STATE_EVENT, onAuthChange);
+    cleanupLayer();
     shell.destroy();
     if (launcher) {
       launcherMoved?.destroy?.();

@@ -17,6 +17,10 @@ import { isVisualizerSafeSource } from "../shared/audio-visualizer.js";
 import * as runtime from "../shared/audio-runtime.js";
 import { loadText, saveText } from "../shared/storage.js";
 import {
+  bringFloatingPanelToFront,
+  registerFloatingPanel,
+} from "../shared/floating-layer-manager.js";
+import {
   loadMilkdropPanelVisibility,
   saveMilkdropPanelVisibility,
 } from "./milkdrop-panel-prefs.js";
@@ -175,6 +179,7 @@ export function createMilkdropPanel(options = {}) {
   root.hidden = true;
   root.setAttribute("role", "dialog");
   root.setAttribute("aria-label", t("milkdropTitle"));
+  const cleanupLayer = registerFloatingPanel(root);
 
   const header = document.createElement("div");
   header.className = "milkdrop-header";
@@ -496,6 +501,7 @@ export function createMilkdropPanel(options = {}) {
     if (destroyed) return;
     const wasOpen = !root.hidden;
     root.hidden = false;
+    bringFloatingPanelToFront(root);
     saveVisibility(true);
 
     // Always clamp to viewport on open to prevent overflow
@@ -834,6 +840,7 @@ export function createMilkdropPanel(options = {}) {
     if (runtimeUnsub) { runtimeUnsub(); runtimeUnsub = null; }
     if (panelResizeObserver) { panelResizeObserver.disconnect(); panelResizeObserver = null; }
     document.removeEventListener("fullscreenchange", onFullscreenChange);
+    cleanupLayer();
 
     teardownAudioWiring();
     root.remove();

@@ -16,6 +16,10 @@ import {
 import {
   loadSettings as loadCalcSettings,
 } from "../calculator/storage.js";
+import {
+  bringFloatingPanelToFront,
+  registerFloatingPanel,
+} from "../shared/floating-layer-manager.js";
 
 // Widget components
 import { buildPanel } from "./widget/panel.js";
@@ -87,6 +91,7 @@ export function createEnergyCalculatorWidget(options = {}) {
   // Build panel and get all refs
   const refs = buildPanel();
   const { panel, header, closeBtn } = refs;
+  const cleanupLayer = registerFloatingPanel(panel);
 
   // Apply stored panel position
   {
@@ -255,6 +260,7 @@ export function createEnergyCalculatorWidget(options = {}) {
     core.setFormatSettings(formatSettings);
 
     panel.hidden = false;
+    bringFloatingPanelToFront(panel);
     saveVisibility(true);
     if (panel.style.left && panel.style.top) {
       clampElementToViewport(panel);
@@ -309,6 +315,11 @@ export function createEnergyCalculatorWidget(options = {}) {
   return {
     open,
     close,
+    destroy: () => {
+      cleanupLayer();
+      if (button) button.removeEventListener("click", toggle);
+      panel.remove();
+    },
     isOpen: () => !panel.hidden,
     toggle,
   };

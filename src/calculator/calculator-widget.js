@@ -9,6 +9,10 @@ import { clampElementToViewport, makePanelDraggable, makeLauncherDraggable } fro
 import { initSettingsSheet } from "./widget/settings-sheet.js";
 import { toRaw, toDisplay, mapCursorPosition } from "./widget/number-format.js";
 import { IconCalculator } from "../icons.js";
+import {
+  bringFloatingPanelToFront,
+  registerFloatingPanel,
+} from "../shared/floating-layer-manager.js";
 
 /**
  * createCalculatorWidget(options)
@@ -112,6 +116,7 @@ export function createCalculatorWidget(options = {}) {
     isTouchLike,
     showEnergyTool: typeof onOpenEnergy === "function",
   });
+  const cleanupLayer = registerFloatingPanel(panel);
 
   // Apply stored panel position (if any)
   {
@@ -217,6 +222,7 @@ export function createCalculatorWidget(options = {}) {
 
   function open() {
     panel.hidden = false;
+    bringFloatingPanelToFront(panel);
     saveVisibility(true);
     render({ keepEnd: true });
 
@@ -336,6 +342,7 @@ export function createCalculatorWidget(options = {}) {
 
   // launcher (floating button) unless user provided their own button
   let launcher;
+  let launcherMoved = null;
 
   if (floating) {
     launcher = el("button", {
@@ -358,7 +365,7 @@ export function createCalculatorWidget(options = {}) {
     }
 
     // Make launcher draggable and guard toggle on drag
-    const launcherMoved = makeLauncherDraggable({
+    launcherMoved = makeLauncherDraggable({
       launcherEl: launcher,
       dragThresholdPx: DRAG_THRESHOLD_PX,
       savePos,
@@ -393,6 +400,13 @@ export function createCalculatorWidget(options = {}) {
     open,
     close,
     toggle,
+    destroy: () => {
+      cleanupLayer();
+      launcherMoved?.destroy?.();
+      if (button) button.removeEventListener("click", toggle);
+      panel.remove();
+      launcher?.remove();
+    },
     isOpen: () => !panel.hidden,
     setExpression: (s) => {
       core.setExpr(String(s ?? ""));
