@@ -374,18 +374,20 @@ describe("shell window integration", () => {
   });
 
   it("confirm dialog layer remains above shell windows", async () => {
-    const { createShellWindowManager, createCalculatorWidget } = await loadModules();
+    const { createShellWindowManager } = await loadModules();
     const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
-    const calc = createCalculatorWidget({ floating: false, restoreVisibility: false, shellManager: manager });
+    const panel = document.createElement("section");
+    panel.hidden = true;
+    document.body.append(panel);
+    manager.registerWindow({ id: "calculator", title: "Calculator", element: panel });
 
     for (let index = 0; index < 1200; index += 1) {
       manager.openWindow("calculator");
     }
 
-    expect(Number(document.querySelector(".calc-panel").style.zIndex)).toBeLessThan(2000);
+    expect(Number(panel.style.zIndex)).toBeLessThan(2000);
 
-    calc.destroy();
+    panel.remove();
     manager.destroy();
   });
 });
-

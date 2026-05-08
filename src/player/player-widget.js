@@ -351,6 +351,8 @@ export function createPlayerWidget(options = {}) {
       shellManager.updateWindowBounds(PLAYER_WINDOW_ID, {
         left: parseFloat(pos.panel.left),
         top: parseFloat(pos.panel.top),
+      }, {
+        preserveSnap: Boolean(shellManager.getWindow(PLAYER_WINDOW_ID)?.snap),
       });
     }
   }
@@ -406,7 +408,7 @@ export function createPlayerWidget(options = {}) {
     lazy: preload !== "immediate",
     capabilities: {
       draggable: true,
-      resizable: false,
+      resizable: true,
       minimizable: true,
       closable: true,
       restorable: true,
@@ -426,6 +428,9 @@ export function createPlayerWidget(options = {}) {
     dragThresholdPx: DRAG_THRESHOLD_PX,
     savePos,
     loadPos,
+    shellWindowId: PLAYER_WINDOW_ID,
+    shellManager,
+    enableSnapPreview: shellManager.getShellPreference?.("snapEnabled") !== false,
   });
 
   // ── Close button (must NOT stop playback) ────────────────────

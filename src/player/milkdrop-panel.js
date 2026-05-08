@@ -266,6 +266,8 @@ export function createMilkdropPanel(options = {}) {
       shellManager.updateWindowBounds(MILKDROP_WINDOW_ID, {
         left: parseFloat(pos.panel.left),
         top: parseFloat(pos.panel.top),
+      }, {
+        preserveSnap: Boolean(shellManager.getWindow(MILKDROP_WINDOW_ID)?.snap),
       });
     }
   }
@@ -276,6 +278,9 @@ export function createMilkdropPanel(options = {}) {
     dragThresholdPx: 6,
     savePos: savePanelPos,
     loadPos,
+    shellWindowId: MILKDROP_WINDOW_ID,
+    shellManager,
+    enableSnapPreview: shellManager.getShellPreference?.("snapEnabled") !== false,
   });
 
   function getVisiblePlayerRect() {

@@ -78,6 +78,8 @@ export function createCalculatorWidget(options = {}) {
       shellManager.updateWindowBounds(CALCULATOR_WINDOW_ID, {
         left: parseFloat(pos.panel.left),
         top: parseFloat(pos.panel.top),
+      }, {
+        preserveSnap: Boolean(shellManager.getWindow(CALCULATOR_WINDOW_ID)?.snap),
       });
     }
   }
@@ -147,7 +149,7 @@ export function createCalculatorWidget(options = {}) {
     storageKey: visibilityKey,
     capabilities: {
       draggable: true,
-      resizable: false,
+      resizable: true,
       minimizable: true,
       closable: true,
       restorable: true,
@@ -169,6 +171,9 @@ export function createCalculatorWidget(options = {}) {
     dragThresholdPx: DRAG_THRESHOLD_PX,
     savePos,
     loadPos,
+    shellWindowId: CALCULATOR_WINDOW_ID,
+    shellManager,
+    enableSnapPreview: shellManager.getShellPreference?.("snapEnabled") !== false,
   });
 
   function keepInputEndVisible(input) {

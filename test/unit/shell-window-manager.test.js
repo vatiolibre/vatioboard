@@ -186,5 +186,22 @@ describe("shell-window-manager", () => {
     expect(Math.max(...panels.map((panel) => Number(panel.style.zIndex)))).toBeLessThan(2000);
     manager.destroy();
   });
-});
 
+  it("persists shell preferences and applies root attributes", () => {
+    const root = document.createElement("div");
+    document.body.append(root);
+    const manager = createShellWindowManager({
+      root,
+      storeOptions: { storage: localStorage, migrateLegacy: false },
+      preferenceStorage: localStorage,
+    });
+
+    manager.setShellPreference("taskbarPosition", "left");
+    manager.setShellPreference("windowDensity", "compact");
+
+    expect(manager.getShellPreference("taskbarPosition")).toBe("left");
+    expect(root.getAttribute("data-vb-shell-taskbar-position")).toBe("left");
+    expect(root.getAttribute("data-vb-shell-density")).toBe("compact");
+    manager.destroy();
+  });
+});

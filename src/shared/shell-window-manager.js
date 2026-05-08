@@ -4,6 +4,21 @@ import { getBoundsForSnapZone } from "./shell-snap.js";
 const BASE_Z_INDEX = 1000;
 const MAX_Z_INDEX = 1900;
 const VALID_STATES = new Set(["closed", "open", "minimized", "hidden"]);
+const SHELL_PREFERENCES_STORAGE_KEY = "vatioboard.shell.preferences.v1";
+const DEFAULT_SHELL_PREFERENCES = {
+  taskbarPosition: "bottom",
+  windowDensity: "comfortable",
+  snapEnabled: true,
+  restoreOnBoot: true,
+  reduceMotion: "system",
+};
+const PREFERENCE_VALIDATORS = {
+  taskbarPosition: (value) => ["bottom", "left", "right"].includes(value),
+  windowDensity: (value) => ["comfortable", "compact"].includes(value),
+  snapEnabled: (value) => typeof value === "boolean",
+  restoreOnBoot: (value) => typeof value === "boolean",
+  reduceMotion: (value) => value === "system" || value === true || value === false,
+};
 
 let defaultShellWindowManager = null;
 
@@ -107,6 +122,69 @@ function shallowRecord(record) {
   };
 }
 
+function getPreferenceStorage(storage) {
+  if (storage) return storage;
+  try {
+    return globalThis.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeShellPreferences(value = {}) {
+  const next = { ...DEFAULT_SHELL_PREFERENCES };
+  if (!value || typeof value !== "object") return next;
+  for (const key of Object.keys(DEFAULT_SHELL_PREFERENCES)) {
+    if (PREFERENCE_VALIDATORS[key]?.(value[key])) {
+      next[key] = value[key];
+    }
+  }
+  return next;
+}
+
+function readShellPreferences(storage) {
+  const target = getPreferenceStorage(storage);
+  if (!target) return { ...DEFAULT_SHELL_PREFERENCES };
+  try {
+    const parsed = JSON.parse(target.getItem(SHELL_PREFERENCES_STORAGE_KEY) || "{}");
+    return normalizeShellPreferences(parsed.preferences || parsed);
+  } catch {
+    try {
+      target.removeItem(SHELL_PREFERENCES_STORAGE_KEY);
+    } catch {
+      // best effort only
+    }
+    return { ...DEFAULT_SHELL_PREFERENCES };
+  }
+}
+
+function writeShellPreferences(storage, preferences) {
+  const target = getPreferenceStorage(storage);
+  if (!target) return false;
+  try {
+    target.setItem(SHELL_PREFERENCES_STORAGE_KEY, JSON.stringify({
+      version: 1,
+      preferences: normalizeShellPreferences(preferences),
+    }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getPreferenceAttributeTarget(root) {
+  if (isElement(root)) return root;
+  return document?.documentElement || null;
+}
+
+function applyShellPreferenceAttributes(root, preferences) {
+  const target = getPreferenceAttributeTarget(root);
+  if (!target) return;
+  target.setAttribute("data-vb-shell-taskbar-position", preferences.taskbarPosition);
+  target.setAttribute("data-vb-shell-density", preferences.windowDensity);
+  target.setAttribute("data-vb-shell-reduce-motion", String(preferences.reduceMotion));
+}
+
 export function createShellWindowManager(options = {}) {
   const store = options.store || createShellLayoutStore(options.storeOptions || {});
   const eventTarget = options.eventTarget || document;
@@ -115,10 +193,14 @@ export function createShellWindowManager(options = {}) {
   const elementToId = new WeakMap();
   const listenerCleanups = new Map();
   const subscribers = new Set();
+  const preferenceSubscribers = new Set();
+  const preferenceStorage = getPreferenceStorage(options.preferenceStorage || options.storage);
+  let preferences = readShellPreferences(preferenceStorage);
   let layout = store.read();
   let activeWindowId = layout.activeWindowId || null;
   let nextZIndex = Math.max(BASE_Z_INDEX, ...Object.values(layout.windows || {}).map((entry) => entry?.zIndex || 0));
   let destroyed = false;
+  applyShellPreferenceAttributes(root, preferences);
 
   function emit(type, detail = {}) {
     try {
@@ -135,6 +217,17 @@ export function createShellWindowManager(options = {}) {
         listener({ event, record: snapshot, manager: api });
       } catch {
         // Subscriber errors should not break shell state.
+      }
+    }
+  }
+
+  function notifyPreferences() {
+    const snapshot = { ...preferences };
+    for (const listener of preferenceSubscribers) {
+      try {
+        listener(snapshot);
+      } catch {
+        // Preference observers are optional UI hooks.
       }
     }
   }
@@ -505,11 +598,33 @@ export function createShellWindowManager(options = {}) {
     return () => subscribers.delete(listener);
   }
 
+  function setShellPreference(key, value) {
+    if (!PREFERENCE_VALIDATORS[key]?.(value)) return getShellPreference(key);
+    preferences = normalizeShellPreferences({ ...preferences, [key]: value });
+    writeShellPreferences(preferenceStorage, preferences);
+    applyShellPreferenceAttributes(root, preferences);
+    notifyPreferences();
+    return preferences[key];
+  }
+
+  function getShellPreference(key) {
+    if (!key) return { ...preferences };
+    return preferences[key];
+  }
+
+  function subscribeShellPreferences(listener) {
+    if (typeof listener !== "function") return () => {};
+    preferenceSubscribers.add(listener);
+    listener({ ...preferences });
+    return () => preferenceSubscribers.delete(listener);
+  }
+
   function destroy() {
     destroyed = true;
     for (const cleanup of listenerCleanups.values()) cleanup();
     listenerCleanups.clear();
     subscribers.clear();
+    preferenceSubscribers.clear();
     windows.clear();
     store.flush?.();
     store.destroy?.();
@@ -535,6 +650,9 @@ export function createShellWindowManager(options = {}) {
     restoreShellLayout,
     persistShellLayout,
     subscribe,
+    setShellPreference,
+    getShellPreference,
+    subscribeShellPreferences,
     destroy,
     get root() {
       return root;
@@ -619,7 +737,18 @@ export function subscribe(listener) {
   return getDefaultShellWindowManager().subscribe(listener);
 }
 
+export function setShellPreference(key, value) {
+  return getDefaultShellWindowManager().setShellPreference(key, value);
+}
+
+export function getShellPreference(key) {
+  return getDefaultShellWindowManager().getShellPreference(key);
+}
+
+export function subscribeShellPreferences(listener) {
+  return getDefaultShellWindowManager().subscribeShellPreferences(listener);
+}
+
 export function destroy() {
   return getDefaultShellWindowManager().destroy();
 }
-

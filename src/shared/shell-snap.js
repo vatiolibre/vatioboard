@@ -153,10 +153,12 @@ export function getBoundsForSnapZone(zone, viewport, options = {}) {
 
 export function applySnapPreview(panelEl, zone) {
   if (!panelEl) return;
-  panelEl.setAttribute("data-vb-shell-snap-preview", SNAP_ZONES.has(zone) ? zone : "center");
+  const normalizedZone = SNAP_ZONES.has(zone) ? zone : "center";
+  panelEl.setAttribute("data-vb-shell-snap-preview", normalizedZone);
+  panelEl.setAttribute("data-vb-shell-snap-zone", normalizedZone);
 }
 
 export function clearSnapPreview(panelEl) {
   panelEl?.removeAttribute?.("data-vb-shell-snap-preview");
+  panelEl?.removeAttribute?.("data-vb-shell-snap-zone");
 }
-

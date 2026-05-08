@@ -289,6 +289,8 @@ export function createShellLayoutStore(options = {}) {
       return readShellLayout({ storage, storageKey, migrateLegacy: options.migrateLegacy, now: options.now });
     },
     write(layout) {
+      pendingLayout = null;
+      cancelPending();
       return writeShellLayout(layout, { storage, storageKey });
     },
     scheduleWrite,

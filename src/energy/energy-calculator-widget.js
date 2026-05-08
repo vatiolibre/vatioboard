@@ -74,6 +74,8 @@ export function createEnergyCalculatorWidget(options = {}) {
       shellManager.updateWindowBounds(ENERGY_WINDOW_ID, {
         left: parseFloat(pos.panel.left),
         top: parseFloat(pos.panel.top),
+      }, {
+        preserveSnap: Boolean(shellManager.getWindow(ENERGY_WINDOW_ID)?.snap),
       });
     }
   }
@@ -121,7 +123,7 @@ export function createEnergyCalculatorWidget(options = {}) {
     storageKey: visibilityKey,
     capabilities: {
       draggable: true,
-      resizable: false,
+      resizable: true,
       minimizable: true,
       closable: true,
       restorable: true,
@@ -141,6 +143,9 @@ export function createEnergyCalculatorWidget(options = {}) {
     dragThresholdPx: DRAG_THRESHOLD_PX,
     savePos,
     loadPos,
+    shellWindowId: ENERGY_WINDOW_ID,
+    shellManager,
+    enableSnapPreview: shellManager.getShellPreference?.("snapEnabled") !== false,
   });
 
   // Initialize core
