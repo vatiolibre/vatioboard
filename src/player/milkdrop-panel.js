@@ -17,9 +17,9 @@ import { isVisualizerSafeSource } from "../shared/audio-visualizer.js";
 import * as runtime from "../shared/audio-runtime.js";
 import { loadText, saveText } from "../shared/storage.js";
 import {
-  bringFloatingPanelToFront,
   registerFloatingPanel,
 } from "../shared/floating-layer-manager.js";
+import { getDefaultShellWindowManager } from "../shared/shell-window-manager.js";
 import {
   loadMilkdropPanelVisibility,
   saveMilkdropPanelVisibility,
@@ -36,6 +36,7 @@ import {
 const POS_KEY = "milkdrop_panel_pos_v1";
 const PRESET_KEY = "milkdrop_preset_name_v1";
 const SIZE_KEY = "milkdrop_panel_size_v1";
+const MILKDROP_WINDOW_ID = "milkdrop";
 
 // ── Icons ─────────────────────────────────────────────────────────
 
@@ -171,6 +172,7 @@ export function createMilkdropPanel(options = {}) {
     onOpen = null,
     onClose = null,
     restoreVisibility = true,
+    shellManager = getDefaultShellWindowManager(),
   } = options;
 
   // ── DOM ────────────────────────────────────────────────────────
@@ -179,7 +181,7 @@ export function createMilkdropPanel(options = {}) {
   root.hidden = true;
   root.setAttribute("role", "dialog");
   root.setAttribute("aria-label", t("milkdropTitle"));
-  const cleanupLayer = registerFloatingPanel(root);
+  let cleanupLayer = () => {};
 
   const header = document.createElement("div");
   header.className = "milkdrop-header";
@@ -235,12 +237,44 @@ export function createMilkdropPanel(options = {}) {
     placeInitialPanel();
   }
 
+  cleanupLayer = registerFloatingPanel(root, {
+    id: MILKDROP_WINDOW_ID,
+    kind: "visualizer",
+    title: "Milkdrop",
+    shellManager,
+    storageKey: "milkdrop_panel_visible_v1",
+    capabilities: {
+      draggable: true,
+      resizable: true,
+      minimizable: true,
+      closable: true,
+      restorable: true,
+      fullscreen: true,
+    },
+    lifecycle: {
+      open: showPanel,
+      close: hidePanel,
+      minimize: minimizePanel,
+      restore: showPanel,
+    },
+  });
+
   // ── Drag ────────────────────────────────────────────────────
+  function savePanelPos(pos) {
+    savePos(pos);
+    if (pos?.panel?.left && pos?.panel?.top) {
+      shellManager.updateWindowBounds(MILKDROP_WINDOW_ID, {
+        left: parseFloat(pos.panel.left),
+        top: parseFloat(pos.panel.top),
+      });
+    }
+  }
+
   makePanelDraggable({
     panel: root,
     header,
     dragThresholdPx: 6,
-    savePos,
+    savePos: savePanelPos,
     loadPos,
   });
 
@@ -497,12 +531,11 @@ export function createMilkdropPanel(options = {}) {
   }
 
   // ── Open / Close ────────────────────────────────────────────
-  async function open() {
+  async function showPanel({ persist = true } = {}) {
     if (destroyed) return;
     const wasOpen = !root.hidden;
     root.hidden = false;
-    bringFloatingPanelToFront(root);
-    saveVisibility(true);
+    if (persist) saveVisibility(true);
 
     // Always clamp to viewport on open to prevent overflow
     clampPanelToWindow();
@@ -522,7 +555,7 @@ export function createMilkdropPanel(options = {}) {
     }
   }
 
-  function close() {
+  function hidePanel({ persist = true } = {}) {
     const wasOpen = !root.hidden;
     endHandleResize();
 
@@ -538,7 +571,7 @@ export function createMilkdropPanel(options = {}) {
     }
 
     root.hidden = true;
-    saveVisibility(false);
+    if (persist) saveVisibility(false);
     stopRenderLoop();
 
     // Unsubscribe while closed to avoid unnecessary work
@@ -551,6 +584,26 @@ export function createMilkdropPanel(options = {}) {
     if (wasOpen && typeof onClose === "function") {
       onClose();
     }
+  }
+
+  function minimizePanel() {
+    endHandleResize();
+    root.hidden = true;
+    stopRenderLoop();
+    if (runtimeUnsub) {
+      runtimeUnsub();
+      runtimeUnsub = null;
+    }
+  }
+
+  async function open(options = {}) {
+    await showPanel(options);
+    shellManager.openWindow(MILKDROP_WINDOW_ID, { ...options, invokeLifecycle: false });
+  }
+
+  function close(options = {}) {
+    hidePanel(options);
+    shellManager.closeWindow(MILKDROP_WINDOW_ID, { ...options, invokeLifecycle: false });
   }
 
   function toggle() {
@@ -742,6 +795,12 @@ export function createMilkdropPanel(options = {}) {
     const nextH = clamp(resizeStartH + dy, 240, maxH);
     root.style.width = `${Math.round(nextW)}px`;
     root.style.height = `${Math.round(nextH)}px`;
+    shellManager.updateWindowBounds(MILKDROP_WINDOW_ID, {
+      left: parseFloat(root.style.left) || root.getBoundingClientRect().left || 0,
+      top: parseFloat(root.style.top) || root.getBoundingClientRect().top || 0,
+      width: Math.round(nextW),
+      height: Math.round(nextH),
+    });
     resizeAfterFullscreenTransition();
   }
 

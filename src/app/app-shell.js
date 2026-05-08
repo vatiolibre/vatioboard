@@ -10,6 +10,7 @@ import { initActivityIndicator } from "../shared/activity-indicator.js";
 import { initFloatingTools } from "../shared/floating-tools.js";
 import { initSharedStartMenu } from "../shared/start-menu.js";
 import { ensureSingleTabOwnership } from "../shared/single-tab.js";
+import { getDefaultShellWindowManager } from "../shared/shell-window-manager.js";
 import { createHashRouter, emitRouteVisible, navigateToAppRoute } from "./router.js";
 import { routes } from "./routes.js";
 import { createRuntimeContext } from "./runtime-context.js";
@@ -72,17 +73,20 @@ export async function startAppShell({
   void ensureSingleTabOwnership();
   startCloudSyncLoop();
 
+  const shellManager = getDefaultShellWindowManager({ root: persistentLayer });
   const playerWidget = createPlayerWidget({
     mount: persistentLayer,
     floating: true,
     preload: "immediate",
     persistVisibility: true,
     restoreVisibility: true,
+    shellManager,
   });
   window.__vatioboardPlayerWidget = playerWidget;
-  const floatingTools = initFloatingTools({ mount: persistentLayer });
+  const floatingTools = initFloatingTools({ mount: persistentLayer, shellManager });
   const startMenu = initSharedStartMenu({ floatingTools, mount: persistentLayer });
   const activityIndicator = initActivityIndicator({ mount: persistentLayer });
+  shellManager.restoreShellLayout();
 
   installLinkInterceptor();
 
@@ -132,6 +136,7 @@ export async function startAppShell({
     router,
     floatingTools,
     playerWidget,
+    shellManager,
     startMenu,
     activityIndicator,
     context,

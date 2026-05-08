@@ -10,9 +10,11 @@ import { initSettingsSheet } from "./widget/settings-sheet.js";
 import { toRaw, toDisplay, mapCursorPosition } from "./widget/number-format.js";
 import { IconCalculator } from "../icons.js";
 import {
-  bringFloatingPanelToFront,
   registerFloatingPanel,
 } from "../shared/floating-layer-manager.js";
+import { getDefaultShellWindowManager } from "../shared/shell-window-manager.js";
+
+const CALCULATOR_WINDOW_ID = "calculator";
 
 /**
  * createCalculatorWidget(options)
@@ -40,6 +42,7 @@ export function createCalculatorWidget(options = {}) {
     persistVisibility = false,
     restoreVisibility = false,
     visibilityKey = "embeddable_calc_visibility_v1",
+    shellManager = getDefaultShellWindowManager(),
   } = options;
 
   const isTouchLike =
@@ -70,6 +73,12 @@ export function createCalculatorWidget(options = {}) {
       localStorage.setItem(POS_KEY, JSON.stringify(pos));
     } catch {
       // ignore
+    }
+    if (pos?.panel?.left && pos?.panel?.top) {
+      shellManager.updateWindowBounds(CALCULATOR_WINDOW_ID, {
+        left: parseFloat(pos.panel.left),
+        top: parseFloat(pos.panel.top),
+      });
     }
   }
 
@@ -116,7 +125,7 @@ export function createCalculatorWidget(options = {}) {
     isTouchLike,
     showEnergyTool: typeof onOpenEnergy === "function",
   });
-  const cleanupLayer = registerFloatingPanel(panel);
+  let cleanupLayer = () => {};
 
   // Apply stored panel position (if any)
   {
@@ -129,6 +138,27 @@ export function createCalculatorWidget(options = {}) {
       panel.style.bottom = "auto";
     }
   }
+
+  cleanupLayer = registerFloatingPanel(panel, {
+    id: CALCULATOR_WINDOW_ID,
+    kind: "tool",
+    title: "Calculator",
+    shellManager,
+    storageKey: visibilityKey,
+    capabilities: {
+      draggable: true,
+      resizable: false,
+      minimizable: true,
+      closable: true,
+      restorable: true,
+    },
+    lifecycle: {
+      open: showPanel,
+      close: hidePanel,
+      minimize: minimizePanel,
+      restore: showPanel,
+    },
+  });
 
   // -------------------------
   // Panel drag implementation
@@ -220,10 +250,9 @@ export function createCalculatorWidget(options = {}) {
     if (keepEnd) keepInputEndVisible(exprInput);
   }
 
-  function open() {
+  function showPanel({ persist = true, focus = true } = {}) {
     panel.hidden = false;
-    bringFloatingPanelToFront(panel);
-    saveVisibility(true);
+    if (persist) saveVisibility(true);
     render({ keepEnd: true });
 
     // If user dragged panel previously, ensure it stays visible
@@ -231,14 +260,28 @@ export function createCalculatorWidget(options = {}) {
       clampElementToViewport(panel);
     }
 
-    if (!isTouchLike) {
+    if (focus && !isTouchLike) {
       setTimeout(() => exprInput.focus({ preventScroll: true }), 0);
     }
   }
 
-  function close() {
+  function hidePanel({ persist = true } = {}) {
     panel.hidden = true;
-    saveVisibility(false);
+    if (persist) saveVisibility(false);
+  }
+
+  function minimizePanel() {
+    panel.hidden = true;
+  }
+
+  function open(options = {}) {
+    showPanel(options);
+    shellManager.openWindow(CALCULATOR_WINDOW_ID, { ...options, invokeLifecycle: false });
+  }
+
+  function close(options = {}) {
+    hidePanel(options);
+    shellManager.closeWindow(CALCULATOR_WINDOW_ID, { ...options, invokeLifecycle: false });
   }
 
   function toggle() {

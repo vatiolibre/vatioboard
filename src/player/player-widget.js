@@ -38,9 +38,9 @@ import {
 } from "../shared/media-cache.js";
 import { isPublicStaticTrack } from "../shared/track-source-policy.js";
 import {
-  bringFloatingPanelToFront,
   registerFloatingPanel,
 } from "../shared/floating-layer-manager.js";
+import { getDefaultShellWindowManager } from "../shared/shell-window-manager.js";
 
 // ── Deduped bootstrap (shared across all widget instances) ───────────
 
@@ -67,6 +67,7 @@ async function bootstrapAuth() {
 
 const DEMO_PLAYLIST_NAME = "demo:playlist";
 const DEMO_PLAYLIST_TITLE = "Demo Playlist";
+const PLAYER_WINDOW_ID = "player";
 
 async function loadAnnotatedDemoPlaylist() {
   const result = await loadDemoPlaylist();
@@ -321,6 +322,7 @@ export function createPlayerWidget(options = {}) {
     restoreVisibility = true,
     onOpen = null,
     onClose = null,
+    shellManager = getDefaultShellWindowManager(),
   } = options;
 
   const DRAG_THRESHOLD_PX = 6;
@@ -344,6 +346,12 @@ export function createPlayerWidget(options = {}) {
       localStorage.setItem(POS_KEY, JSON.stringify(pos));
     } catch {
       // ignore
+    }
+    if (pos?.panel?.left && pos?.panel?.top) {
+      shellManager.updateWindowBounds(PLAYER_WINDOW_ID, {
+        left: parseFloat(pos.panel.left),
+        top: parseFloat(pos.panel.top),
+      });
     }
   }
 
@@ -370,7 +378,7 @@ export function createPlayerWidget(options = {}) {
 
   // ── Create player shell ──────────────────────────────────────
   const shell = createPlayerShell({ container: mount });
-  const cleanupLayer = registerFloatingPanel(shell.root);
+  let cleanupLayer = () => {};
 
   // Apply stored panel position, or use the first-visit default.
   {
@@ -388,6 +396,28 @@ export function createPlayerWidget(options = {}) {
       shell.root.style.bottom = DEFAULT_PANEL_BOTTOM;
     }
   }
+
+  cleanupLayer = registerFloatingPanel(shell.root, {
+    id: PLAYER_WINDOW_ID,
+    kind: "media",
+    title: "Player",
+    shellManager,
+    storageKey: VISIBILITY_KEY,
+    lazy: preload !== "immediate",
+    capabilities: {
+      draggable: true,
+      resizable: false,
+      minimizable: true,
+      closable: true,
+      restorable: true,
+    },
+    lifecycle: {
+      open: showPanel,
+      close: hidePanel,
+      minimize: minimizePanel,
+      restore: showPanel,
+    },
+  });
 
   // ── Panel drag ───────────────────────────────────────────────
   makePanelDraggable({
@@ -420,9 +450,8 @@ export function createPlayerWidget(options = {}) {
   }
 
   // ── Open / Close / Toggle ────────────────────────────────────
-  function open({ persist = true } = {}) {
+  function showPanel({ persist = true } = {}) {
     shell.root.hidden = false;
-    bringFloatingPanelToFront(shell.root);
     if (persist) saveVisibility(true);
 
     // Lazy bootstrap on first open
@@ -436,11 +465,25 @@ export function createPlayerWidget(options = {}) {
     if (typeof onOpen === "function") onOpen();
   }
 
-  function close({ persist = true } = {}) {
+  function hidePanel({ persist = true } = {}) {
     shell.root.hidden = true;
     if (persist) saveVisibility(false);
     // Playback continues — closing the panel does NOT stop audio
     if (typeof onClose === "function") onClose();
+  }
+
+  function minimizePanel() {
+    shell.root.hidden = true;
+  }
+
+  function open(options = {}) {
+    showPanel(options);
+    shellManager.openWindow(PLAYER_WINDOW_ID, { ...options, invokeLifecycle: false });
+  }
+
+  function close(options = {}) {
+    hidePanel(options);
+    shellManager.closeWindow(PLAYER_WINDOW_ID, { ...options, invokeLifecycle: false });
   }
 
   function toggle() {

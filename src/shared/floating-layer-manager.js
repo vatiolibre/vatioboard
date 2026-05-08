@@ -1,3 +1,5 @@
+import { getDefaultShellWindowManager } from "./shell-window-manager.js";
+
 const FLOATING_PANEL_SELECTOR = "[data-vb-floating-panel]";
 const ACTIVE_ATTR = "data-vb-floating-active";
 const BASE_Z_INDEX = 1000;
@@ -5,6 +7,7 @@ const MAX_Z_INDEX = 1900;
 
 let nextZIndex = BASE_Z_INDEX;
 const registrations = new WeakMap();
+const shellRegistrations = new WeakMap();
 
 function isElement(value) {
   return value instanceof Element;
@@ -59,6 +62,13 @@ export function compactFloatingPanelZOrder(root = document) {
 export function bringFloatingPanelToFront(panelEl) {
   if (!isElement(panelEl)) return;
 
+  const shellManager = getDefaultShellWindowManager();
+  const shellWindowId = shellManager.getWindowIdForElement?.(panelEl);
+  if (shellWindowId && shellManager.getWindow(shellWindowId)) {
+    shellManager.activateWindow(shellWindowId);
+    return;
+  }
+
   panelEl.setAttribute("data-vb-floating-panel", "");
   prepareZIndex(panelEl.ownerDocument || document);
   nextZIndex = Math.min(nextZIndex + 1, MAX_Z_INDEX);
@@ -68,6 +78,41 @@ export function bringFloatingPanelToFront(panelEl) {
 
 export function registerFloatingPanel(panelEl, options = {}) {
   if (!isElement(panelEl)) return () => {};
+
+  if (options.id) {
+    const shellManager = options.shellManager || getDefaultShellWindowManager();
+    const existing = shellRegistrations.get(panelEl);
+    if (existing) {
+      existing.count += 1;
+      shellManager.registerWindow({
+        ...options,
+        element: panelEl,
+      });
+      return () => {
+        existing.count -= 1;
+        if (existing.count <= 0) {
+          shellManager.unregisterWindow(existing.id);
+          shellRegistrations.delete(panelEl);
+        }
+      };
+    }
+
+    panelEl.setAttribute("data-vb-floating-panel", "");
+    shellManager.registerWindow({
+      ...options,
+      element: panelEl,
+    });
+    shellRegistrations.set(panelEl, { count: 1, id: options.id });
+    return () => {
+      const current = shellRegistrations.get(panelEl);
+      if (!current) return;
+      current.count -= 1;
+      if (current.count <= 0) {
+        shellManager.unregisterWindow(current.id);
+        shellRegistrations.delete(panelEl);
+      }
+    };
+  }
 
   const existing = registrations.get(panelEl);
   if (existing) {
@@ -109,4 +154,3 @@ export function registerFloatingPanel(panelEl, options = {}) {
     }
   };
 }
-
