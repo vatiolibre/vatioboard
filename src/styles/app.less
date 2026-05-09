@@ -109,10 +109,13 @@ main#app-view {
   align-items: center;
   justify-content: center;
   gap: 8px;
+  width: max-content;
   max-width: min(520px, calc(100vw - 24px));
   min-height: 58px;
   overflow-x: auto;
-  padding: 5px;
+  overscroll-behavior: contain;
+  padding: 6px 12px;
+  box-sizing: border-box;
   border: 1px solid color-mix(in srgb, var(--calc-border, rgba(0, 0, 0, 0.14)) 80%, transparent);
   border-radius: 999px;
   background: color-mix(in srgb, var(--calc-surface, #fff) 86%, transparent);
@@ -122,6 +125,7 @@ main#app-view {
   touch-action: none;
   user-select: none;
   -webkit-overflow-scrolling: touch;
+  contain: layout paint;
 }
 
 .vb-shell-taskbar[hidden] {
@@ -138,6 +142,8 @@ main#app-view {
 
 .vb-shell-taskbar.is-dragging {
   cursor: grabbing;
+  transition: none;
+  will-change: transform;
 }
 
 .vb-shell-taskbar[data-vb-shell-taskbar-position="left"],
@@ -230,10 +236,10 @@ main#app-view {
 @media (max-width: 640px) {
   .vb-shell-taskbar {
     left: 8px;
-    right: 8px;
+    right: auto;
     bottom: max(8px, env(safe-area-inset-bottom));
     transform: none;
-    max-width: none;
+    max-width: calc(100vw - 16px);
   }
 }
 

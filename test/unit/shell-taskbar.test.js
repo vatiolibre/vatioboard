@@ -238,7 +238,7 @@ describe("shell-taskbar", () => {
     const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
     manager.openWindow("calculator");
 
-    vi.spyOn(taskbar.getElement(), "getBoundingClientRect").mockReturnValue({
+    const rectSpy = vi.spyOn(taskbar.getElement(), "getBoundingClientRect").mockReturnValue({
       left: 120,
       top: 690,
       right: 240,
@@ -251,9 +251,12 @@ describe("shell-taskbar", () => {
     });
 
     taskbar.getElement().dispatchEvent(pointer("pointerdown", { clientX: 225, clientY: 724 }));
-    window.dispatchEvent(pointer("pointermove", { clientX: 325, clientY: 584 }));
-    window.dispatchEvent(pointer("pointerup", { clientX: 325, clientY: 584 }));
+    taskbar.getElement().dispatchEvent(pointer("pointermove", { clientX: 260, clientY: 650 }));
+    taskbar.getElement().dispatchEvent(pointer("pointermove", { clientX: 300, clientY: 610 }));
+    taskbar.getElement().dispatchEvent(pointer("pointermove", { clientX: 325, clientY: 584 }));
+    taskbar.getElement().dispatchEvent(pointer("pointerup", { clientX: 325, clientY: 584 }));
 
+    expect(rectSpy.mock.calls.length).toBeLessThan(3);
     expect(taskbar.getElement().getAttribute("data-vb-shell-taskbar-floating")).toBe("true");
     expect(taskbar.getElement().style.position).toBe("fixed");
     expect(taskbar.getElement().style.left).toBe("220px");
@@ -270,6 +273,69 @@ describe("shell-taskbar", () => {
 
     nextTaskbar.destroy();
     manager.destroy();
+  });
+
+  it("uses compositor transform while dragging the taskbar tray", () => {
+    const originalRaf = globalThis.requestAnimationFrame;
+    const originalCancelRaf = globalThis.cancelAnimationFrame;
+    globalThis.requestAnimationFrame = (callback) => {
+      callback(performance.now());
+      return 1;
+    };
+    globalThis.cancelAnimationFrame = () => {};
+
+    const manager = makeManager();
+    const taskbarCleanup = [];
+
+    try {
+      manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
+      const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+      taskbarCleanup.push(() => taskbar.destroy());
+      manager.openWindow("calculator");
+
+      vi.spyOn(taskbar.getElement(), "getBoundingClientRect").mockReturnValue({
+        left: 120,
+        top: 690,
+        right: 240,
+        bottom: 760,
+        width: 120,
+        height: 70,
+        x: 120,
+        y: 690,
+        toJSON: () => {},
+      });
+
+      taskbar.getElement().dispatchEvent(pointer("pointerdown", {
+        pointerType: "touch",
+        clientX: 225,
+        clientY: 724,
+      }));
+      taskbar.getElement().dispatchEvent(pointer("pointermove", {
+        pointerType: "touch",
+        clientX: 265,
+        clientY: 684,
+      }));
+
+      expect(taskbar.getElement().style.left).toBe("120px");
+      expect(taskbar.getElement().style.top).toBe("690px");
+      expect(taskbar.getElement().style.transform).toContain("translate3d");
+      expect(taskbar.getElement().style.willChange).toBe("transform");
+
+      taskbar.getElement().dispatchEvent(pointer("pointerup", {
+        pointerType: "touch",
+        clientX: 265,
+        clientY: 684,
+      }));
+
+      expect(taskbar.getElement().style.transform).toBe("none");
+      expect(taskbar.getElement().style.left).toBe("160px");
+      expect(taskbar.getElement().style.top).toBe("650px");
+    } finally {
+      for (const cleanup of taskbarCleanup) cleanup();
+      manager.destroy();
+      globalThis.requestAnimationFrame = originalRaf;
+      globalThis.cancelAnimationFrame = originalCancelRaf;
+    }
   });
 
   it("cleanup removes subscriptions and DOM", () => {

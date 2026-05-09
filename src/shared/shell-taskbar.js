@@ -192,14 +192,7 @@ export function createShellTaskbar({
     if (taskbarPosition?.detached === true) {
       const position = clampElementPosition(taskbarPosition, element, 64, 64);
       taskbarPosition = { detached: true, ...position };
-      element.classList.add("is-detached");
-      element.setAttribute("data-vb-shell-taskbar-floating", "true");
-      element.style.position = "fixed";
-      element.style.left = `${Math.round(position.left)}px`;
-      element.style.top = `${Math.round(position.top)}px`;
-      element.style.right = "auto";
-      element.style.bottom = "auto";
-      element.style.transform = "none";
+      setTaskbarFixedPosition(position);
       return;
     }
 
@@ -211,6 +204,44 @@ export function createShellTaskbar({
     element.style.right = "";
     element.style.bottom = "";
     element.style.transform = "";
+    element.style.willChange = "";
+  }
+
+  function setTaskbarFixedPosition(position, { transform = "none", dragging = false } = {}) {
+    element.classList.add("is-detached");
+    element.setAttribute("data-vb-shell-taskbar-floating", "true");
+    element.style.position = "fixed";
+    element.style.left = `${Math.round(position.left)}px`;
+    element.style.top = `${Math.round(position.top)}px`;
+    element.style.right = "auto";
+    element.style.bottom = "auto";
+    element.style.transform = transform;
+    element.style.willChange = dragging ? "transform" : "";
+  }
+
+  function ensureTaskbarFixedTopLeft() {
+    const rect = element.getBoundingClientRect();
+    const left = element.style.left ? parseFloat(element.style.left) : rect.left;
+    const top = element.style.top ? parseFloat(element.style.top) : rect.top;
+    setTaskbarFixedPosition({ left, top }, { transform: "none", dragging: false });
+    return { rect, left, top };
+  }
+
+  function clampTaskbarToViewport(width = 64, height = 64) {
+    const viewportWidth = globalThis.innerWidth || document.documentElement?.clientWidth || 1024;
+    const viewportHeight = globalThis.innerHeight || document.documentElement?.clientHeight || 768;
+    const currentLeft = parseFloat(element.style.left) || 0;
+    const currentTop = parseFloat(element.style.top) || 0;
+    const nextLeft = Math.min(
+      Math.max(VIEWPORT_MARGIN_PX, currentLeft),
+      Math.max(VIEWPORT_MARGIN_PX, viewportWidth - width - VIEWPORT_MARGIN_PX)
+    );
+    const nextTop = Math.min(
+      Math.max(VIEWPORT_MARGIN_PX, currentTop),
+      Math.max(VIEWPORT_MARGIN_PX, viewportHeight - height - VIEWPORT_MARGIN_PX)
+    );
+    setTaskbarFixedPosition({ left: nextLeft, top: nextTop });
+    taskbarPosition = { detached: true, left: nextLeft, top: nextTop };
   }
 
   function rememberWindow(id) {
@@ -374,66 +405,135 @@ export function createShellTaskbar({
     if (element.hidden) return;
     if (dragCleanup) dragCleanup();
 
-    const rect = element.getBoundingClientRect();
-    const startLeft = taskbarPosition?.detached ? taskbarPosition.left : rect.left;
-    const startTop = taskbarPosition?.detached ? taskbarPosition.top : rect.top;
+    let pointerDown = true;
+    let dragging = false;
+    let rafId = 0;
+    let boxW = 64;
+    let boxH = 64;
     const drag = {
       moved: false,
       startX: event.clientX,
       startY: event.clientY,
-      startLeft,
-      startTop,
-      lastLeft: startLeft,
-      lastTop: startTop,
+      lastX: event.clientX,
+      lastY: event.clientY,
+      originLeft: 0,
+      originTop: 0,
+      nextLeft: 0,
+      nextTop: 0,
+    };
+
+    const startDragNow = () => {
+      if (dragging) return;
+
+      const { rect, left, top } = ensureTaskbarFixedTopLeft();
+      boxW = rect.width || element.offsetWidth || 64;
+      boxH = rect.height || element.offsetHeight || 64;
+      drag.originLeft = parseFloat(element.style.left) || left;
+      drag.originTop = parseFloat(element.style.top) || top;
+      drag.nextLeft = drag.originLeft;
+      drag.nextTop = drag.originTop;
+      dragging = true;
+      element.classList.add("is-dragging");
+      document.documentElement.classList.add("vb-floating-drag-active");
+      element.style.willChange = "transform";
+    };
+
+    const applyMove = () => {
+      rafId = 0;
+      if (!pointerDown || !dragging) return;
+      const tx = Math.round(drag.nextLeft - drag.originLeft);
+      const ty = Math.round(drag.nextTop - drag.originTop);
+      element.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
+    };
+
+    const scheduleMove = () => {
+      if (rafId) return;
+      rafId = requestAnimationFrame(applyMove);
+    };
+
+    const updateNextPosition = () => {
+      const dx = drag.lastX - drag.startX;
+      const dy = drag.lastY - drag.startY;
+      const viewportWidth = globalThis.innerWidth || document.documentElement?.clientWidth || 1024;
+      const viewportHeight = globalThis.innerHeight || document.documentElement?.clientHeight || 768;
+      drag.nextLeft = Math.min(
+        Math.max(VIEWPORT_MARGIN_PX, drag.originLeft + dx),
+        Math.max(VIEWPORT_MARGIN_PX, viewportWidth - boxW - VIEWPORT_MARGIN_PX)
+      );
+      drag.nextTop = Math.min(
+        Math.max(VIEWPORT_MARGIN_PX, drag.originTop + dy),
+        Math.max(VIEWPORT_MARGIN_PX, viewportHeight - boxH - VIEWPORT_MARGIN_PX)
+      );
+    };
+
+    const finishDrag = (endEvent = null) => {
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
+
+      if (!pointerDown) return;
+      pointerDown = false;
+      dragCleanup = null;
+
+      if (dragging) {
+        updateNextPosition();
+        setTaskbarFixedPosition({ left: drag.nextLeft, top: drag.nextTop });
+        element.classList.remove("is-dragging");
+        document.documentElement.classList.remove("vb-floating-drag-active");
+        element.style.willChange = "";
+        clampTaskbarToViewport(boxW, boxH);
+        saveState();
+        endEvent?.preventDefault?.();
+      }
     };
 
     const onMove = (moveEvent) => {
-      const dx = moveEvent.clientX - drag.startX;
-      const dy = moveEvent.clientY - drag.startY;
-      if (!drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+      if (!pointerDown) return;
+
+      drag.lastX = moveEvent.clientX;
+      drag.lastY = moveEvent.clientY;
+
+      if (!dragging) {
+        const dx = Math.abs(drag.lastX - drag.startX);
+        const dy = Math.abs(drag.lastY - drag.startY);
+        if (dx > DRAG_THRESHOLD_PX || dy > DRAG_THRESHOLD_PX) {
+          startDragNow();
+        } else {
+          return;
+        }
+      }
 
       drag.moved = true;
-      element.classList.add("is-dragging");
-      const position = clampElementPosition({
-        left: drag.startLeft + dx,
-        top: drag.startTop + dy,
-      }, element, 64, 64);
-      drag.lastLeft = position.left;
-      drag.lastTop = position.top;
-      taskbarPosition = { detached: true, ...position };
-      applyTaskbarPosition();
-      moveEvent.preventDefault?.();
+      updateNextPosition();
+      if (moveEvent.pointerType !== "mouse") moveEvent.preventDefault();
+      scheduleMove();
     };
 
     const onEnd = (endEvent) => {
-      window.removeEventListener("pointermove", onMove, true);
-      window.removeEventListener("pointerup", onEnd, true);
-      window.removeEventListener("pointercancel", onEnd, true);
-      dragCleanup = null;
-
-      if (!drag.moved) return;
-
-      taskbarPosition = {
-        detached: true,
-        left: drag.lastLeft,
-        top: drag.lastTop,
-      };
-      element.classList.remove("is-dragging");
-      applyTaskbarPosition();
-      saveState();
-      endEvent.preventDefault?.();
+      finishDrag(endEvent);
+      element.removeEventListener("pointermove", onMove, { passive: false });
+      element.removeEventListener("pointerup", onEnd);
+      element.removeEventListener("pointercancel", onEnd);
     };
 
-    window.addEventListener("pointermove", onMove, true);
-    window.addEventListener("pointerup", onEnd, true);
-    window.addEventListener("pointercancel", onEnd, true);
+    element.addEventListener("pointermove", onMove, { passive: false });
+    element.addEventListener("pointerup", onEnd);
+    element.addEventListener("pointercancel", onEnd);
     dragCleanup = () => {
-      window.removeEventListener("pointermove", onMove, true);
-      window.removeEventListener("pointerup", onEnd, true);
-      window.removeEventListener("pointercancel", onEnd, true);
+      finishDrag();
+      element.removeEventListener("pointermove", onMove, { passive: false });
+      element.removeEventListener("pointerup", onEnd);
+      element.removeEventListener("pointercancel", onEnd);
     };
 
-    element.setPointerCapture?.(event.pointerId);
+    try {
+      element.setPointerCapture?.(event.pointerId);
+    } catch {
+      // ignore
+    }
+
+    if (event.pointerType === "mouse") startDragNow();
   }
 
   function createTaskbarItem(record, state, docked) {
