@@ -157,6 +157,15 @@ function clearDetachedStyle(item) {
   item.style.bottom = "";
 }
 
+function releasePointerCapture(element, pointerId) {
+  if (pointerId == null) return;
+  try {
+    element?.releasePointerCapture?.(pointerId);
+  } catch {
+    // The browser may already have released or canceled capture.
+  }
+}
+
 export function createShellTaskbar({
   shellManager,
   root = document.body,
@@ -329,14 +338,18 @@ export function createShellTaskbar({
     if (event.button !== undefined && event.button !== 0) return;
     if (dragCleanup) dragCleanup();
 
+    const pointerId = event.pointerId;
     const saved = itemPositions.get(record.id);
     const rect = item.getBoundingClientRect();
     const startLeft = saved?.detached ? saved.left : rect.left;
     const startTop = saved?.detached ? saved.top : rect.top;
+    let pointerDown = true;
     const drag = {
       moved: false,
       startX: event.clientX,
       startY: event.clientY,
+      lastX: event.clientX,
+      lastY: event.clientY,
       startLeft,
       startTop,
       lastLeft: startLeft,
@@ -344,12 +357,17 @@ export function createShellTaskbar({
     };
 
     const onMove = (moveEvent) => {
+      if (!pointerDown) return;
+      if (pointerId != null && moveEvent.pointerId != null && moveEvent.pointerId !== pointerId) return;
+      drag.lastX = moveEvent.clientX;
+      drag.lastY = moveEvent.clientY;
       const dx = moveEvent.clientX - drag.startX;
       const dy = moveEvent.clientY - drag.startY;
       if (!drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
 
       drag.moved = true;
       item.classList.add("is-dragging");
+      document.documentElement.classList.add("vb-floating-drag-active");
       detachItemForDrag(record, item, drag.startLeft, drag.startTop);
       const position = clampFabPosition({
         left: drag.startLeft + dx,
@@ -362,18 +380,31 @@ export function createShellTaskbar({
       moveEvent.preventDefault?.();
     };
 
-    const onEnd = (endEvent) => {
+    const cleanupListeners = () => {
       window.removeEventListener("pointermove", onMove, true);
-      window.removeEventListener("pointerup", onEnd, true);
-      window.removeEventListener("pointercancel", onEnd, true);
+      window.removeEventListener("pointerup", onPointerEnd, true);
+      window.removeEventListener("pointercancel", onPointerEnd, true);
+      item.removeEventListener("lostpointercapture", onLostPointerCapture);
+    };
+
+    const finishDrag = (endEvent = null) => {
+      cleanupListeners();
       dragCleanup = null;
+      if (!pointerDown) return;
+      pointerDown = false;
+      releasePointerCapture(item, pointerId);
+      item.classList.remove("is-dragging");
+      document.documentElement.classList.remove("vb-floating-drag-active");
 
       if (!drag.moved) return;
 
       suppressedClicks.add(record.id);
       setTimeout(() => suppressedClicks.delete(record.id), 0);
 
-      if (isPointerNearTaskbar(endEvent)) {
+      const pointerEvent = endEvent?.clientX != null && endEvent?.clientY != null
+        ? endEvent
+        : { clientX: drag.lastX, clientY: drag.lastY };
+      if (isPointerNearTaskbar(pointerEvent)) {
         itemPositions.delete(record.id);
       } else {
         itemPositions.set(record.id, {
@@ -384,19 +415,32 @@ export function createShellTaskbar({
       }
       saveState();
       render();
-      endEvent.preventDefault?.();
+      endEvent?.preventDefault?.();
+    };
+
+    const onPointerEnd = (endEvent) => {
+      if (pointerId != null && endEvent.pointerId != null && endEvent.pointerId !== pointerId) return;
+      finishDrag(endEvent);
+    };
+
+    const onLostPointerCapture = (lostEvent) => {
+      if (pointerId != null && lostEvent.pointerId != null && lostEvent.pointerId !== pointerId) return;
+      finishDrag(lostEvent);
     };
 
     window.addEventListener("pointermove", onMove, true);
-    window.addEventListener("pointerup", onEnd, true);
-    window.addEventListener("pointercancel", onEnd, true);
+    window.addEventListener("pointerup", onPointerEnd, true);
+    window.addEventListener("pointercancel", onPointerEnd, true);
+    item.addEventListener("lostpointercapture", onLostPointerCapture);
     dragCleanup = () => {
-      window.removeEventListener("pointermove", onMove, true);
-      window.removeEventListener("pointerup", onEnd, true);
-      window.removeEventListener("pointercancel", onEnd, true);
+      finishDrag();
     };
 
-    item.setPointerCapture?.(event.pointerId);
+    try {
+      item.setPointerCapture?.(pointerId);
+    } catch {
+      // ignore
+    }
   }
 
   function beginTaskbarDrag(event) {
@@ -410,6 +454,7 @@ export function createShellTaskbar({
     let rafId = 0;
     let boxW = 64;
     let boxH = 64;
+    const pointerId = event.pointerId;
     const drag = {
       moved: false,
       startX: event.clientX,
@@ -466,30 +511,42 @@ export function createShellTaskbar({
       );
     };
 
+    const clearDragAffordances = () => {
+      element.classList.remove("is-dragging");
+      document.documentElement.classList.remove("vb-floating-drag-active");
+      element.style.willChange = "";
+    };
+
     const finishDrag = (endEvent = null) => {
       if (rafId) {
         cancelAnimationFrame(rafId);
         rafId = 0;
       }
 
-      if (!pointerDown) return;
+      if (!pointerDown) {
+        clearDragAffordances();
+        dragCleanup = null;
+        return;
+      }
       pointerDown = false;
       dragCleanup = null;
+      releasePointerCapture(element, pointerId);
 
       if (dragging) {
         updateNextPosition();
         setTaskbarFixedPosition({ left: drag.nextLeft, top: drag.nextTop });
-        element.classList.remove("is-dragging");
-        document.documentElement.classList.remove("vb-floating-drag-active");
-        element.style.willChange = "";
+        clearDragAffordances();
         clampTaskbarToViewport(boxW, boxH);
         saveState();
         endEvent?.preventDefault?.();
+      } else {
+        clearDragAffordances();
       }
     };
 
     const onMove = (moveEvent) => {
       if (!pointerDown) return;
+      if (pointerId != null && moveEvent.pointerId != null && moveEvent.pointerId !== pointerId) return;
 
       drag.lastX = moveEvent.clientX;
       drag.lastY = moveEvent.clientY;
@@ -511,24 +568,28 @@ export function createShellTaskbar({
     };
 
     const onEnd = (endEvent) => {
+      if (pointerId != null && endEvent.pointerId != null && endEvent.pointerId !== pointerId) return;
       finishDrag(endEvent);
       element.removeEventListener("pointermove", onMove, { passive: false });
       element.removeEventListener("pointerup", onEnd);
       element.removeEventListener("pointercancel", onEnd);
+      element.removeEventListener("lostpointercapture", onEnd);
     };
 
     element.addEventListener("pointermove", onMove, { passive: false });
     element.addEventListener("pointerup", onEnd);
     element.addEventListener("pointercancel", onEnd);
+    element.addEventListener("lostpointercapture", onEnd);
     dragCleanup = () => {
       finishDrag();
       element.removeEventListener("pointermove", onMove, { passive: false });
       element.removeEventListener("pointerup", onEnd);
       element.removeEventListener("pointercancel", onEnd);
+      element.removeEventListener("lostpointercapture", onEnd);
     };
 
     try {
-      element.setPointerCapture?.(event.pointerId);
+      element.setPointerCapture?.(pointerId);
     } catch {
       // ignore
     }

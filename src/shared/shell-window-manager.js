@@ -400,6 +400,9 @@ export function createShellWindowManager(options = {}) {
   function activateWindow(id, options = {}) {
     const record = windows.get(id);
     if (!record) return null;
+    if (record.active === true && activeWindowId === id) {
+      return shallowRecord(record);
+    }
     record.zIndex = nextLayer();
     record.active = true;
     setActiveRecord(record);

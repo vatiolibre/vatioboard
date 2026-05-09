@@ -68,6 +68,31 @@ async function loadAppShellWithMocks() {
   return import("../../src/app/app-shell.js");
 }
 
+function dispatchTouchControl(target) {
+  target.dispatchEvent(new PointerEvent("pointerdown", {
+    pointerId: 7,
+    pointerType: "touch",
+    button: 0,
+    clientX: 60,
+    clientY: 60,
+    bubbles: true,
+    cancelable: true,
+  }));
+  target.dispatchEvent(new PointerEvent("pointerup", {
+    pointerId: 7,
+    pointerType: "touch",
+    button: 0,
+    clientX: 60,
+    clientY: 60,
+    bubbles: true,
+    cancelable: true,
+  }));
+  target.dispatchEvent(new MouseEvent("click", {
+    bubbles: true,
+    cancelable: true,
+  }));
+}
+
 describe("shell UI integration", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
@@ -186,6 +211,75 @@ describe("shell UI integration", () => {
     manager.destroy();
   });
 
+  it("calculator controls receive touch clicks with the taskbar present", async () => {
+    const { createShellWindowManager, createShellTaskbar } = await loadShell();
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const { panel } = makePanel("calc-panel");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "calc-btn";
+    const onClick = vi.fn();
+    button.addEventListener("click", onClick);
+    panel.append(button);
+    manager.registerWindow({ id: "calculator", title: "Calculator", element: panel });
+    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+
+    manager.openWindow("calculator");
+    dispatchTouchControl(button);
+
+    expect(onClick).toHaveBeenCalledTimes(1);
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("the first touch on an inactive panel child activates it and still clicks the child", async () => {
+    const { createShellWindowManager, createShellTaskbar } = await loadShell();
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const { panel: calcPanel } = makePanel("calc-panel");
+    const { panel: playerPanel } = makePanel("player-panel");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "calc-btn";
+    const onClick = vi.fn();
+    button.addEventListener("click", onClick);
+    calcPanel.append(button);
+    manager.registerWindow({ id: "calculator", title: "Calculator", element: calcPanel });
+    manager.registerWindow({ id: "player", title: "Player", element: playerPanel });
+    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+
+    manager.openWindow("calculator");
+    manager.openWindow("player");
+    expect(manager.getActiveWindow().id).toBe("player");
+
+    dispatchTouchControl(button);
+
+    expect(manager.getActiveWindow().id).toBe("calculator");
+    expect(onClick).toHaveBeenCalledTimes(1);
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("player controls receive touch clicks with the taskbar present", async () => {
+    const { createShellWindowManager, createShellTaskbar } = await loadShell();
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const { panel } = makePanel("player-panel");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "player-btn-play-main";
+    const onClick = vi.fn();
+    button.addEventListener("click", onClick);
+    panel.append(button);
+    manager.registerWindow({ id: "player", title: "Player", element: panel });
+    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+
+    manager.openWindow("player");
+    dispatchTouchControl(button);
+
+    expect(onClick).toHaveBeenCalledTimes(1);
+    taskbar.destroy();
+    manager.destroy();
+  });
+
   it("snap preview appears during drag and clears on release", async () => {
     const { createShellWindowManager, makePanelDraggable } = await loadShell();
     const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
@@ -282,6 +376,26 @@ describe("shell UI integration", () => {
 
     expect(appCss).not.toContain("[data-vb-shell-snap-preview]::before");
     expect(appCss).not.toContain("[data-vb-shell-snap-zone=\"left\"]::before");
+    expect(getCssBlock(appCss, "[data-vb-shell-snap-preview]")).not.toContain("position: fixed");
+    expect(getCssBlock(appCss, "[data-vb-shell-snap-preview]")).not.toContain("inset: 0");
+  });
+
+  it("shell CSS keeps panel controls touchable under board and taskbar styles", () => {
+    const appCss = readProjectFile("src/styles/app.less");
+
+    expect(getCssBlock(appCss, "[data-vb-shell-window] *")).toContain("touch-action: auto");
+    expect(appCss).not.toMatch(/\[data-vb-shell-window\]\s+\*\s*\{[^}]*touch-action:\s*none/s);
+    expect(getCssBlock(appCss, ".vb-shell-taskbar")).not.toContain("contain: layout paint");
+  });
+
+  it("taskbar and detached FABs stay below shell windows except while dragging", () => {
+    const appCss = readProjectFile("src/styles/app.less");
+
+    expect(getCssBlock(appCss, ".vb-shell-taskbar")).toContain("z-index: calc(var(--vb-z-floating, 1000) - 1)");
+    expect(getCssBlock(appCss, ".vb-shell-taskbar.is-detached")).toContain("z-index: calc(var(--vb-z-floating, 1000) - 1)");
+    expect(getCssBlock(appCss, ".vb-shell-taskbar-item.is-detached")).toContain("z-index: calc(var(--vb-z-floating, 1000) - 1)");
+    expect(getCssBlock(appCss, ".vb-shell-taskbar.is-dragging")).toContain("z-index: calc(var(--vb-z-floating, 1000) + 850)");
+    expect(getCssBlock(appCss, ".vb-shell-taskbar-item.is-dragging")).toContain("z-index: calc(var(--vb-z-floating, 1000) + 850)");
   });
 
   it("confirm dialog layer remains above shell windows and taskbar", () => {
@@ -331,4 +445,9 @@ describe("shell UI integration", () => {
 
 function readProjectFile(path) {
   return readFileSync(resolve(process.cwd(), path), "utf8");
+}
+
+function getCssBlock(css, selector) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return css.match(new RegExp(`${escaped}\\s*\\{[^}]*\\}`, "s"))?.[0] || "";
 }

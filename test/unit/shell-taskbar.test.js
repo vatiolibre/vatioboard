@@ -232,6 +232,42 @@ describe("shell-taskbar", () => {
     manager.destroy();
   });
 
+  it("cleans up a detached FAB drag when pointer capture is lost", () => {
+    const manager = makeManager();
+    manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
+    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+    manager.openWindow("calculator");
+
+    const item = taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']");
+    item.setPointerCapture = vi.fn();
+    item.releasePointerCapture = vi.fn();
+    vi.spyOn(item, "getBoundingClientRect").mockReturnValue({
+      left: 100,
+      top: 600,
+      right: 152,
+      bottom: 652,
+      width: 52,
+      height: 52,
+      x: 100,
+      y: 600,
+      toJSON: () => {},
+    });
+
+    item.dispatchEvent(pointer("pointerdown", { pointerType: "touch", clientX: 110, clientY: 610 }));
+    window.dispatchEvent(pointer("pointermove", { pointerType: "touch", clientX: 170, clientY: 550 }));
+    expect(item.classList.contains("is-dragging")).toBe(true);
+
+    item.dispatchEvent(pointer("lostpointercapture", { pointerType: "touch", clientX: 170, clientY: 550 }));
+
+    const currentItem = document.querySelector("[data-vb-shell-taskbar-item='calculator']");
+    expect(currentItem.classList.contains("is-dragging")).toBe(false);
+    expect(document.documentElement.classList.contains("vb-floating-drag-active")).toBe(false);
+    expect(item.releasePointerCapture).toHaveBeenCalledWith(1);
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
   it("moves the taskbar tray from empty tray space and persists the position", () => {
     const manager = makeManager();
     manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
@@ -336,6 +372,43 @@ describe("shell-taskbar", () => {
       globalThis.requestAnimationFrame = originalRaf;
       globalThis.cancelAnimationFrame = originalCancelRaf;
     }
+  });
+
+  it("cleans up taskbar tray drag state when pointer capture is lost", () => {
+    const manager = makeManager();
+    manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
+    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+    manager.openWindow("calculator");
+
+    const element = taskbar.getElement();
+    element.setPointerCapture = vi.fn();
+    element.releasePointerCapture = vi.fn();
+    vi.spyOn(element, "getBoundingClientRect").mockReturnValue({
+      left: 120,
+      top: 690,
+      right: 240,
+      bottom: 760,
+      width: 120,
+      height: 70,
+      x: 120,
+      y: 690,
+      toJSON: () => {},
+    });
+
+    element.dispatchEvent(pointer("pointerdown", { pointerType: "touch", clientX: 225, clientY: 724 }));
+    element.dispatchEvent(pointer("pointermove", { pointerType: "touch", clientX: 265, clientY: 684 }));
+    expect(element.classList.contains("is-dragging")).toBe(true);
+
+    element.dispatchEvent(pointer("lostpointercapture", { pointerType: "touch", clientX: 265, clientY: 684 }));
+
+    expect(element.classList.contains("is-dragging")).toBe(false);
+    expect(document.documentElement.classList.contains("vb-floating-drag-active")).toBe(false);
+    expect(element.style.willChange).toBe("");
+    expect(element.style.zIndex).toBe("");
+    expect(element.releasePointerCapture).toHaveBeenCalledWith(1);
+
+    taskbar.destroy();
+    manager.destroy();
   });
 
   it("cleanup removes subscriptions and DOM", () => {
