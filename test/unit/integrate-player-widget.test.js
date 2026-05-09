@@ -200,7 +200,7 @@ describe("integratePlayerWidget", () => {
   });
 
   afterEach(() => {
-    document.querySelectorAll(".player-panel, .player-fab").forEach((el) => el.remove());
+    document.querySelectorAll(".player-panel").forEach((el) => el.remove());
     localStorage.removeItem("player_widget_visible_v1");
   });
 
@@ -245,16 +245,14 @@ describe("integratePlayerWidget", () => {
 
   // ── Auth gating: guest state ─────────────────────────────────
 
-  it("shows the launcher and FAB when auth state is guest", () => {
+  it("shows the tools-menu launcher when auth state is guest", () => {
     const list = makeToolsMenuList("guest");
     const menu = { close: vi.fn() };
 
     const { button } = integratePlayerWidget({ toolsMenuList: list, toolsMenu: menu });
 
     expect(button.hidden).toBe(false);
-    const fab = document.querySelector(".player-fab");
-    expect(fab).toBeTruthy();
-    expect(fab.hidden).toBe(false);
+    expect(document.querySelector(".player-fab")).toBeNull();
     expect(runtimeMock.stopPlayback).not.toHaveBeenCalled();
   });
 
@@ -265,7 +263,7 @@ describe("integratePlayerWidget", () => {
 
     integratePlayerWidget({ toolsMenuList: list, toolsMenu: { close: vi.fn() } });
 
-    expect(document.querySelector(".player-fab").hidden).toBe(true);
+    expect(document.querySelector(".player-fab")).toBeNull();
     expect(runtimeMock.stopPlayback).not.toHaveBeenCalled();
   });
 
@@ -280,15 +278,14 @@ describe("integratePlayerWidget", () => {
 
   // ── Auth gating: authenticated state ─────────────────────────
 
-  it("shows the launcher and FAB when initial auth state is authenticated", () => {
+  it("shows the tools-menu launcher when initial auth state is authenticated", () => {
     const list = makeToolsMenuList("authenticated");
     const menu = { close: vi.fn() };
 
     const { button } = integratePlayerWidget({ toolsMenuList: list, toolsMenu: menu });
 
     expect(button.hidden).toBe(false);
-    const fab = document.querySelector(".player-fab");
-    expect(fab.hidden).toBe(false);
+    expect(document.querySelector(".player-fab")).toBeNull();
   });
 
   it("restores visible panel state when initial auth state is authenticated", () => {
@@ -394,7 +391,7 @@ describe("integratePlayerWidget", () => {
 
   // ── Auth transitions ─────────────────────────────────────────
 
-  it("shows launcher and FAB when auth transitions from guest to authenticated", () => {
+  it("shows the tools-menu launcher when auth transitions from guest to authenticated", () => {
     const list = makeToolsMenuList("guest");
     const menu = { close: vi.fn() };
 
@@ -405,7 +402,7 @@ describe("integratePlayerWidget", () => {
     emitAuthState({ authenticated: true, isGuest: false, pendingLogout: false });
 
     expect(button.hidden).toBe(false);
-    expect(document.querySelector(".player-fab").hidden).toBe(false);
+    expect(document.querySelector(".player-fab")).toBeNull();
   });
 
   it("keeps launcher available for guests and stops playback on logout", () => {
@@ -418,7 +415,7 @@ describe("integratePlayerWidget", () => {
     emitAuthState({ authenticated: false, isGuest: true, pendingLogout: false });
 
     expect(button.hidden).toBe(false);
-    expect(document.querySelector(".player-fab").hidden).toBe(false);
+    expect(document.querySelector(".player-fab")).toBeNull();
     expect(runtimeMock.stopPlayback).toHaveBeenCalled();
   });
 
@@ -434,16 +431,15 @@ describe("integratePlayerWidget", () => {
     expect(runtimeMock.stopPlayback).toHaveBeenCalled();
   });
 
-  // ── FAB presence ─────────────────────────────────────────────
+  // ── Legacy FAB presence ──────────────────────────────────────
 
-  it("creates a floating FAB via the widget", () => {
+  it("does not create the legacy player FAB", () => {
     const list = makeToolsMenuList("authenticated");
     const menu = { close: vi.fn() };
 
     integratePlayerWidget({ toolsMenuList: list, toolsMenu: menu });
 
-    const fab = document.querySelector(".player-fab");
-    expect(fab).toBeTruthy();
+    expect(document.querySelector(".player-fab")).toBeNull();
   });
 
   // ── Media Session ────────────────────────────────────────────

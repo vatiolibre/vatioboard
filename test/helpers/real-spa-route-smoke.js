@@ -515,9 +515,10 @@ async function waitForRoute(hash) {
 }
 
 async function expectPersistentShellReady() {
-  expect(document.querySelectorAll(".floating-dock")).toHaveLength(1);
+  expect(document.querySelectorAll(".floating-dock")).toHaveLength(0);
   expect(document.querySelectorAll(".player-panel")).toHaveLength(1);
-  expect(document.querySelectorAll(".player-fab")).toHaveLength(1);
+  expect(document.querySelectorAll(".player-fab")).toHaveLength(0);
+  expect(document.querySelectorAll("[data-vb-shell-taskbar]")).toHaveLength(1);
 
   const routeToolsButton = document.querySelector(
     "#speedToolsMenuBtn, #replayToolsMenuBtn, #accelToolsMenuBtn, #libraryToolsMenuBtn, #toolsMenuBtn"

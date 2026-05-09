@@ -16,6 +16,10 @@ import {
 import {
   loadSettings as loadCalcSettings,
 } from "../calculator/storage.js";
+import {
+  registerFloatingPanel,
+} from "../shared/floating-layer-manager.js";
+import { getDefaultShellWindowManager } from "../shared/shell-window-manager.js";
 
 // Widget components
 import { buildPanel } from "./widget/panel.js";
@@ -27,6 +31,7 @@ import { EnergyCore } from "./energy-core.js";
 
 const DRAG_THRESHOLD_PX = 6;
 const POS_KEY = "energy_calc_pos_v1";
+const ENERGY_WINDOW_ID = "energy";
 
 /**
  * createEnergyCalculatorWidget(options)
@@ -40,6 +45,7 @@ export function createEnergyCalculatorWidget(options = {}) {
     persistVisibility = false,
     restoreVisibility = false,
     visibilityKey = "energy_calc_visibility_v1",
+    shellManager = getDefaultShellWindowManager(),
   } = options;
 
   // Load persisted state
@@ -64,6 +70,14 @@ export function createEnergyCalculatorWidget(options = {}) {
     } catch {
       // ignore
     }
+    if (pos?.panel?.left && pos?.panel?.top) {
+      shellManager.updateWindowBounds(ENERGY_WINDOW_ID, {
+        left: parseFloat(pos.panel.left),
+        top: parseFloat(pos.panel.top),
+      }, {
+        preserveSnap: Boolean(shellManager.getWindow(ENERGY_WINDOW_ID)?.snap),
+      });
+    }
   }
 
   function loadVisibility() {
@@ -87,6 +101,7 @@ export function createEnergyCalculatorWidget(options = {}) {
   // Build panel and get all refs
   const refs = buildPanel();
   const { panel, header, closeBtn } = refs;
+  let cleanupLayer = () => {};
 
   // Apply stored panel position
   {
@@ -100,6 +115,27 @@ export function createEnergyCalculatorWidget(options = {}) {
     }
   }
 
+  cleanupLayer = registerFloatingPanel(panel, {
+    id: ENERGY_WINDOW_ID,
+    kind: "tool",
+    title: "Energy",
+    shellManager,
+    storageKey: visibilityKey,
+    capabilities: {
+      draggable: true,
+      resizable: true,
+      minimizable: true,
+      closable: true,
+      restorable: true,
+    },
+    lifecycle: {
+      open: showPanel,
+      close: hidePanel,
+      minimize: minimizePanel,
+      restore: showPanel,
+    },
+  });
+
   // Make panel draggable
   makePanelDraggable({
     panel,
@@ -107,6 +143,9 @@ export function createEnergyCalculatorWidget(options = {}) {
     dragThresholdPx: DRAG_THRESHOLD_PX,
     savePos,
     loadPos,
+    shellWindowId: ENERGY_WINDOW_ID,
+    shellManager,
+    enableSnapPreview: shellManager.getShellPreference?.("snapEnabled") !== false,
   });
 
   // Initialize core
@@ -249,13 +288,13 @@ export function createEnergyCalculatorWidget(options = {}) {
   }
 
   // Open / Close
-  function open() {
+  function showPanel({ persist = true } = {}) {
     // Reload format settings in case they changed in calculator
     formatSettings = loadCalcSettings();
     core.setFormatSettings(formatSettings);
 
     panel.hidden = false;
-    saveVisibility(true);
+    if (persist) saveVisibility(true);
     if (panel.style.left && panel.style.top) {
       clampElementToViewport(panel);
     }
@@ -267,10 +306,24 @@ export function createEnergyCalculatorWidget(options = {}) {
     setMode(tripSettings.mode);
   }
 
-  function close() {
+  function hidePanel({ persist = true } = {}) {
     panel.hidden = true;
-    saveVisibility(false);
+    if (persist) saveVisibility(false);
     settingsApi.setSettingsSheetOpen(false);
+  }
+
+  function minimizePanel() {
+    panel.hidden = true;
+  }
+
+  function open(options = {}) {
+    showPanel(options);
+    shellManager.openWindow(ENERGY_WINDOW_ID, { ...options, invokeLifecycle: false });
+  }
+
+  function close(options = {}) {
+    hidePanel(options);
+    shellManager.closeWindow(ENERGY_WINDOW_ID, { ...options, invokeLifecycle: false });
   }
 
   function toggle() {
@@ -309,6 +362,11 @@ export function createEnergyCalculatorWidget(options = {}) {
   return {
     open,
     close,
+    destroy: () => {
+      cleanupLayer();
+      if (button) button.removeEventListener("click", toggle);
+      panel.remove();
+    },
     isOpen: () => !panel.hidden,
     toggle,
   };

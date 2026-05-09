@@ -60,7 +60,6 @@
  * (queue sheet) and normal tap/drag behaviour, so we opt back in here.
  * The class-based selector beats the `*` universal rule.
  */
-.player-fab,
 .player-panel,
 .player-panel * {
   touch-action: auto;
@@ -84,44 +83,6 @@ html.vb-floating-drag-active body {
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
-}
-
-/* ── Floating launcher (FAB) ──────────────────────────────────────── */
-
-.player-fab {
-  position: fixed;
-  left: 16px;
-  bottom: 16px;
-  z-index: var(--vb-z-floating, 1000);
-  width: 52px;
-  height: 52px;
-  border-radius: 999px;
-  border: 1px solid var(--player-border);
-  background: var(--player-surface);
-  color: var(--player-text);
-  box-shadow: var(--player-shadow);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  user-select: none;
-  font-family: var(--player-font);
-  -webkit-tap-highlight-color: transparent;
-  transition: box-shadow 0.2s ease;
-}
-
-.player-fab:active {
-  transform: translateY(1px);
-}
-
-.player-fab svg {
-  width: 22px;
-  height: 22px;
-  opacity: 0.9;
-}
-
-/* Subtle pulse when playback is active and panel is hidden */
-.player-fab.is-playing {
-  box-shadow: 0 0 0 3px var(--player-accent-soft), var(--player-shadow);
 }
 
 /* ── Panel ────────────────────────────────────────────────────────── */
@@ -1363,11 +1324,6 @@ html.vb-floating-drag-active body {
 
 .player-panel.is-dragging {
   opacity: 0.92;
-  transition: none;
-}
-
-.player-fab.is-dragging {
-  opacity: 0.85;
   transition: none;
 }
 

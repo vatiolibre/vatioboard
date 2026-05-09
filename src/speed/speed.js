@@ -114,7 +114,6 @@ import {
 
 const DRIVING_AUDIO_OPPORTUNISTIC_IGNORE_SELECTOR = [
   '.player-panel',
-  '.player-fab',
   '#quickAudioToggle',
   '#alertToggle',
   '#drivingAudioPrompt',
@@ -2724,7 +2723,7 @@ function bindEvents({ cleanup, signal } = {}) {
     recheckSpeedRouteRecovery({ reason: 'pageshow-recheck' });
   });
   cleanup.addEventListener(document, 'pointerdown', (event) => {
-    if (event.target.closest('.player-panel, .player-fab')) return;
+    if (event.target.closest('.player-panel')) return;
     const insideAlertUi =
       elements.alertPanel.contains(event.target) ||
       elements.alertTrigger.contains(event.target) ||
@@ -2734,7 +2733,7 @@ function bindEvents({ cleanup, signal } = {}) {
     closeAlertPanel();
   });
   cleanup.addEventListener(document, 'keydown', (event) => {
-    if (event.target.closest('.player-panel, .player-fab')) return;
+    if (event.target.closest('.player-panel')) return;
     if (event.key === 'Escape') closeAlertPanel();
   });
 

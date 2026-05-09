@@ -1,3 +1,9 @@
+import {
+  applySnapPreview,
+  clearSnapPreview,
+  getSnapZoneForPointer,
+} from "../../shared/shell-snap.js";
+
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
@@ -46,11 +52,34 @@ export function clampElementToViewport(elm, margin = 8) {
   elm.style.top = `${nextTop}px`;
 }
 
-export function makePanelDraggable({ panel, header, dragThresholdPx, savePos, loadPos }) {
+function getDragBounds(panel) {
+  const rect = panel.getBoundingClientRect();
+  return {
+    left: parseFloat(panel.style.left) || rect.left || 0,
+    top: parseFloat(panel.style.top) || rect.top || 0,
+    width: rect.width || panel.offsetWidth || parseFloat(getComputedStyle(panel).width) || 0,
+    height: rect.height || panel.offsetHeight || parseFloat(getComputedStyle(panel).height) || 0,
+  };
+}
+
+export function makePanelDraggable({
+  panel,
+  header,
+  dragThresholdPx,
+  savePos,
+  loadPos,
+  onDragStart = null,
+  onDragMove = null,
+  onDragEnd = null,
+  shellWindowId = null,
+  shellManager = null,
+  enableSnapPreview = false,
+}) {
   const handles = (Array.isArray(header) ? header : [header]).filter(Boolean);
   let pointerDown = false;
   let dragging = false;
   let pointerId = null;
+  let activeSnapZone = null;
 
   for (const handle of handles) {
     handle.classList.add("vb-floating-drag-handle");
@@ -72,6 +101,10 @@ export function makePanelDraggable({ panel, header, dragThresholdPx, savePos, lo
   function startDragNow() {
     if (dragging) return;
 
+    if (shellWindowId && shellManager?.getWindow?.(shellWindowId)?.snap) {
+      shellManager.unsnapWindow(shellWindowId, { preserveSnap: false });
+    }
+
     ensureFixedTopLeft(panel);
 
     const r = panel.getBoundingClientRect();
@@ -84,6 +117,11 @@ export function makePanelDraggable({ panel, header, dragThresholdPx, savePos, lo
     dragging = true;
     panel.classList.add("is-dragging");
     document.documentElement.classList.add("vb-floating-drag-active");
+    onDragStart?.({
+      element: panel,
+      pointer: { x: lastX, y: lastY, pointerId },
+      bounds: getDragBounds(panel),
+    });
   }
 
   function applyMove() {
@@ -102,6 +140,11 @@ export function makePanelDraggable({ panel, header, dragThresholdPx, savePos, lo
 
     panel.style.left = `${nextLeft}px`;
     panel.style.top = `${nextTop}px`;
+    onDragMove?.({
+      element: panel,
+      pointer: { x: lastX, y: lastY, pointerId },
+      bounds: getDragBounds(panel),
+    });
   }
 
   function scheduleMove() {
@@ -109,28 +152,66 @@ export function makePanelDraggable({ panel, header, dragThresholdPx, savePos, lo
     rafId = requestAnimationFrame(applyMove);
   }
 
-  function endDrag() {
+  function updateSnapPreview() {
+    if (!enableSnapPreview || !shellWindowId || !shellManager) return;
+    const zone = getSnapZoneForPointer({
+      x: lastX,
+      y: lastY,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+    });
+    activeSnapZone = zone === "center" ? null : zone;
+    if (activeSnapZone) {
+      applySnapPreview(panel, activeSnapZone);
+    } else {
+      clearSnapPreview(panel);
+    }
+  }
+
+  function clearDragAffordances() {
+    panel.classList.remove("is-dragging");
+    document.documentElement.classList.remove("vb-floating-drag-active");
+    clearSnapPreview(panel);
+  }
+
+  function endDrag(e = null) {
     if (rafId) {
       cancelAnimationFrame(rafId);
       rafId = 0;
     }
 
-    if (!pointerDown) return;
+    if (!pointerDown) {
+      clearDragAffordances();
+      activeSnapZone = null;
+      pointerId = null;
+      return;
+    }
 
     pointerDown = false;
 
     if (dragging) {
       dragging = false;
-      panel.classList.remove("is-dragging");
-      document.documentElement.classList.remove("vb-floating-drag-active");
-      clampElementToViewport(panel);
+      clearDragAffordances();
+
+      if (activeSnapZone && shellWindowId && shellManager) {
+        shellManager.snapWindow(shellWindowId, activeSnapZone);
+      } else {
+        clampElementToViewport(panel);
+      }
 
       savePos({
         ...(loadPos() || {}),
         panel: { left: panel.style.left, top: panel.style.top },
       });
+      onDragEnd?.({
+        element: panel,
+        pointer: { x: e?.clientX ?? lastX, y: e?.clientY ?? lastY, pointerId },
+        bounds: getDragBounds(panel),
+        snapZone: activeSnapZone,
+      });
     }
 
+    activeSnapZone = null;
     pointerId = null;
   }
 
@@ -139,6 +220,10 @@ export function makePanelDraggable({ panel, header, dragThresholdPx, savePos, lo
 
     // Mouse: left button only
     if (e.pointerType === "mouse" && e.button !== 0) return;
+
+    if (pointerDown) endDrag(e);
+    clearSnapPreview(panel);
+    activeSnapZone = null;
 
     pointerDown = true;
     pointerId = e.pointerId;
@@ -180,6 +265,7 @@ export function makePanelDraggable({ panel, header, dragThresholdPx, savePos, lo
 
     // While dragging, keep it smooth and avoid excessive style writes
     if (e.pointerType !== "mouse") e.preventDefault();
+    updateSnapPreview();
     scheduleMove();
   }
 
@@ -188,6 +274,8 @@ export function makePanelDraggable({ panel, header, dragThresholdPx, savePos, lo
     handle.addEventListener("pointermove", onPointerMove, { passive: false });
     handle.addEventListener("pointerup", endDrag);
     handle.addEventListener("pointercancel", endDrag);
+    handle.addEventListener("lostpointercapture", endDrag);
+    handle.addEventListener("touchcancel", endDrag, { passive: true });
   }
 
   // Keep in bounds on resize

@@ -144,9 +144,9 @@ export function integratePlayerWidget({
     insertPlayerButton(toolsMenuList, button);
   }
 
-  // ── Widget (with floating FAB + external button) ───────────────
+  // ── Widget (shell taskbar launcher + external button) ──────────
   const widget = createPlayerWidget({
-    floating: true,
+    floating: false,
     button,
     preload,
     mount,
@@ -157,9 +157,6 @@ export function integratePlayerWidget({
       }
     },
   });
-
-  // ── FAB element (created by the widget) ────────────────────────
-  const fab = mount.querySelector(".player-fab");
 
   // ── Auth gating ────────────────────────────────────────────────
   function syncVisibility({
@@ -172,7 +169,6 @@ export function integratePlayerWidget({
     if (known) authStateKnown = true;
     authenticated = loggedIn === true;
     if (button) button.hidden = !available;
-    if (fab) fab.hidden = !available;
 
     if (stop) {
       stopPlayback();

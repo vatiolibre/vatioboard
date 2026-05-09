@@ -103,11 +103,12 @@ describe("index.html SPA shell", () => {
     expect(document.getElementById("app-view")).toBeTruthy();
     expect(document.getElementById("app-persistent-layer")).toBeTruthy();
     expect(document.querySelector("[data-mock-view='speed']")).toBeTruthy();
-    expect(document.querySelector(".floating-dock")).toBeTruthy();
+    expect(document.querySelector(".floating-dock")).toBeNull();
+    expect(document.querySelector("[data-vb-shell-taskbar]")).toBeTruthy();
     expect(window.__vatioboardFloatingTools).toBeTruthy();
     expect(routeState.createPlayerWidget).toHaveBeenCalledWith(
       expect.objectContaining({
-        floating: true,
+        floating: false,
         preload: "immediate",
         persistVisibility: true,
         restoreVisibility: true,
@@ -226,18 +227,19 @@ describe("index.html SPA shell", () => {
     await bootSpa();
 
     const persistentLayer = document.getElementById("app-persistent-layer");
-    const calcButton = persistentLayer.querySelector(".dock-btn-calc");
     const calcPanel = persistentLayer.querySelector(".calc-panel");
     const energyPanel = persistentLayer.querySelector(".energy-panel");
 
     expect(calcPanel.hidden).toBe(true);
     expect(energyPanel.hidden).toBe(true);
 
-    calcButton.click();
+    window.__vatioboardFloatingTools.openCalculator();
     window.__vatioboardFloatingTools.openEnergy();
 
     expect(calcPanel.hidden).toBe(false);
     expect(energyPanel.hidden).toBe(false);
+    expect(persistentLayer.querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeTruthy();
+    expect(persistentLayer.querySelector("[data-vb-shell-taskbar-item='energy']")).toBeTruthy();
     expect(localStorage.getItem("vatioboard.calc_panel.visible_v1")).toBe("open");
     expect(localStorage.getItem("vatioboard.energy_panel.visible_v1")).toBe("open");
 

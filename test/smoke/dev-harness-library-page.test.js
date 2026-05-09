@@ -1314,12 +1314,11 @@ describe("library.html smoke", () => {
     expect(btn.className).toBe("btn-with-icon");
     expect(btn.querySelector(".btn-icon[aria-hidden='true'] svg")).toBeTruthy();
     expect(btn.querySelector("[data-i18n='audioPlayer']")).toBeTruthy();
-    const fab = document.querySelector(".player-fab");
-    expect(fab).toBeTruthy();
+    expect(document.querySelector(".player-fab")).toBeNull();
 
     // Library boots authenticated by default in its fixture, so check visible
     // The auth state depends on the library test fixture setup.
-    // Just verify the button and FAB exist + have correct formatting.
+    // Just verify the button exists + has correct formatting.
     expect(btn.parentElement.id).toBe("libraryToolsMenuList");
     const authForm = document.querySelector("#libraryToolsMenuList [data-backend-auth]");
     expect(btn.nextElementSibling).toBe(authForm);

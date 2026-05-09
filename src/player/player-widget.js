@@ -2,14 +2,13 @@
  * Player widget — draggable floating embeddable audio player.
  *
  * API mirrors createCalculatorWidget():
- *  - Floating launcher FAB (optional)
  *  - Draggable panel with header (drag by header)
  *  - External button support
  *  - Local-first lazy bootstrap (catalog loaded on first open)
  *  - Singleton runtime via audio-runtime.js (no duplicate audio engines)
  *
  * Usage:
- *   const widget = createPlayerWidget({ floating: true });
+ *   const widget = createPlayerWidget();
  *   widget.open();
  *
  * Multiple instances share the same runtime and deduped catalog bootstrap.
@@ -19,9 +18,7 @@ import { createPlayerShell } from "./player-shell.js";
 import {
   clampElementToViewport,
   makePanelDraggable,
-  makeLauncherDraggable,
 } from "../calculator/widget/drag.js";
-import { IconMusic } from "../icons.js";
 import { loadAudioCatalog, syncAudioCatalog, annotateOfflineAvailability } from "../shared/audio-catalog.js";
 import { loadPlaylists, syncPlaylistsManifest } from "../shared/playlist-loader.js";
 import { loadDemoPlaylist, syncDemoPlaylist } from "../shared/demo-cache.js";
@@ -37,6 +34,10 @@ import {
   clearPersistedMediaCacheUser,
 } from "../shared/media-cache.js";
 import { isPublicStaticTrack } from "../shared/track-source-policy.js";
+import {
+  registerFloatingPanel,
+} from "../shared/floating-layer-manager.js";
+import { getDefaultShellWindowManager } from "../shared/shell-window-manager.js";
 
 // ── Deduped bootstrap (shared across all widget instances) ───────────
 
@@ -63,6 +64,7 @@ async function bootstrapAuth() {
 
 const DEMO_PLAYLIST_NAME = "demo:playlist";
 const DEMO_PLAYLIST_TITLE = "Demo Playlist";
+const PLAYER_WINDOW_ID = "player";
 
 async function loadAnnotatedDemoPlaylist() {
   const result = await loadDemoPlaylist();
@@ -298,7 +300,7 @@ export function _getBootstrapPromise() {
  *
  * @param {object} [options]
  * @param {HTMLElement} [options.mount=document.body]
- * @param {boolean} [options.floating] - Show floating launcher (default: true unless button provided)
+ * @param {boolean} [options.floating] - Deprecated; shell taskbar owns launchers.
  * @param {HTMLElement|null} [options.button] - External button that toggles the player
  * @param {"on-open"|"immediate"} [options.preload="on-open"] - When to bootstrap catalog
  * @param {boolean} [options.persistVisibility=true] - Save open/closed panel state
@@ -310,13 +312,13 @@ export function _getBootstrapPromise() {
 export function createPlayerWidget(options = {}) {
   const {
     mount = document.body,
-    floating = options.button ? false : true,
     button = null,
     preload = "on-open",
     persistVisibility = true,
     restoreVisibility = true,
     onOpen = null,
     onClose = null,
+    shellManager = getDefaultShellWindowManager(),
   } = options;
 
   const DRAG_THRESHOLD_PX = 6;
@@ -340,6 +342,14 @@ export function createPlayerWidget(options = {}) {
       localStorage.setItem(POS_KEY, JSON.stringify(pos));
     } catch {
       // ignore
+    }
+    if (pos?.panel?.left && pos?.panel?.top) {
+      shellManager.updateWindowBounds(PLAYER_WINDOW_ID, {
+        left: parseFloat(pos.panel.left),
+        top: parseFloat(pos.panel.top),
+      }, {
+        preserveSnap: Boolean(shellManager.getWindow(PLAYER_WINDOW_ID)?.snap),
+      });
     }
   }
 
@@ -366,6 +376,7 @@ export function createPlayerWidget(options = {}) {
 
   // ── Create player shell ──────────────────────────────────────
   const shell = createPlayerShell({ container: mount });
+  let cleanupLayer = () => {};
 
   // Apply stored panel position, or use the first-visit default.
   {
@@ -384,6 +395,28 @@ export function createPlayerWidget(options = {}) {
     }
   }
 
+  cleanupLayer = registerFloatingPanel(shell.root, {
+    id: PLAYER_WINDOW_ID,
+    kind: "media",
+    title: "Player",
+    shellManager,
+    storageKey: VISIBILITY_KEY,
+    lazy: preload !== "immediate",
+    capabilities: {
+      draggable: true,
+      resizable: true,
+      minimizable: true,
+      closable: true,
+      restorable: true,
+    },
+    lifecycle: {
+      open: showPanel,
+      close: hidePanel,
+      minimize: minimizePanel,
+      restore: showPanel,
+    },
+  });
+
   // ── Panel drag ───────────────────────────────────────────────
   makePanelDraggable({
     panel: shell.root,
@@ -391,6 +424,9 @@ export function createPlayerWidget(options = {}) {
     dragThresholdPx: DRAG_THRESHOLD_PX,
     savePos,
     loadPos,
+    shellWindowId: PLAYER_WINDOW_ID,
+    shellManager,
+    enableSnapPreview: shellManager.getShellPreference?.("snapEnabled") !== false,
   });
 
   // ── Close button (must NOT stop playback) ────────────────────
@@ -415,7 +451,7 @@ export function createPlayerWidget(options = {}) {
   }
 
   // ── Open / Close / Toggle ────────────────────────────────────
-  function open({ persist = true } = {}) {
+  function showPanel({ persist = true } = {}) {
     shell.root.hidden = false;
     if (persist) saveVisibility(true);
 
@@ -430,11 +466,25 @@ export function createPlayerWidget(options = {}) {
     if (typeof onOpen === "function") onOpen();
   }
 
-  function close({ persist = true } = {}) {
+  function hidePanel({ persist = true } = {}) {
     shell.root.hidden = true;
     if (persist) saveVisibility(false);
     // Playback continues — closing the panel does NOT stop audio
     if (typeof onClose === "function") onClose();
+  }
+
+  function minimizePanel() {
+    shell.root.hidden = true;
+  }
+
+  function open(options = {}) {
+    showPanel(options);
+    shellManager.openWindow(PLAYER_WINDOW_ID, { ...options, invokeLifecycle: false });
+  }
+
+  function close(options = {}) {
+    hidePanel(options);
+    shellManager.closeWindow(PLAYER_WINDOW_ID, { ...options, invokeLifecycle: false });
   }
 
   function toggle() {
@@ -445,54 +495,6 @@ export function createPlayerWidget(options = {}) {
     if (loadVisibility() === true) {
       open({ persist: false });
     }
-  }
-
-  // ── Floating launcher (FAB) ──────────────────────────────────
-  let launcher = null;
-  let launcherUnsubscribe = null;
-  let launcherMoved = null;
-
-  if (floating) {
-    launcher = document.createElement("button");
-    launcher.type = "button";
-    launcher.className = "player-fab";
-    launcher.setAttribute("aria-label", "Open Player");
-    launcher.innerHTML = IconMusic;
-
-    // Apply stored launcher position
-    {
-      const pos = loadPos();
-      if (pos?.launcher?.left && pos?.launcher?.top) {
-        launcher.style.position = "fixed";
-        launcher.style.left = pos.launcher.left;
-        launcher.style.top = pos.launcher.top;
-        launcher.style.right = "auto";
-        launcher.style.bottom = "auto";
-      }
-    }
-
-    // Draggable launcher (guards toggle on drag)
-    launcherMoved = makeLauncherDraggable({
-      launcherEl: launcher,
-      dragThresholdPx: DRAG_THRESHOLD_PX,
-      savePos,
-      loadPos,
-    });
-
-    launcher.addEventListener("click", (e) => {
-      if (launcherMoved()) {
-        e.preventDefault();
-        return;
-      }
-      toggle();
-    });
-
-    // Active-state indicator when playback is active and panel is hidden
-    launcherUnsubscribe = runtime.subscribe((s) => {
-      launcher.classList.toggle("is-playing", s.playing && shell.root.hidden);
-    });
-
-    mount.appendChild(launcher);
   }
 
   // ── External button ──────────────────────────────────────────
@@ -534,12 +536,8 @@ export function createPlayerWidget(options = {}) {
   // ── Destroy ──────────────────────────────────────────────────
   function destroy() {
     window.removeEventListener(BACKEND_AUTH_STATE_EVENT, onAuthChange);
+    cleanupLayer();
     shell.destroy();
-    if (launcher) {
-      launcherMoved?.destroy?.();
-      launcher.remove();
-      if (launcherUnsubscribe) launcherUnsubscribe();
-    }
     if (button) {
       button.removeEventListener("click", toggle);
     }

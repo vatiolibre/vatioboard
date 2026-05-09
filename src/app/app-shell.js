@@ -10,6 +10,9 @@ import { initActivityIndicator } from "../shared/activity-indicator.js";
 import { initFloatingTools } from "../shared/floating-tools.js";
 import { initSharedStartMenu } from "../shared/start-menu.js";
 import { ensureSingleTabOwnership } from "../shared/single-tab.js";
+import { getDefaultShellWindowManager } from "../shared/shell-window-manager.js";
+import { createShellTaskbar } from "../shared/shell-taskbar.js";
+import { installShellKeyboardShortcuts } from "../shared/shell-keyboard.js";
 import { createHashRouter, emitRouteVisible, navigateToAppRoute } from "./router.js";
 import { routes } from "./routes.js";
 import { createRuntimeContext } from "./runtime-context.js";
@@ -72,17 +75,23 @@ export async function startAppShell({
   void ensureSingleTabOwnership();
   startCloudSyncLoop();
 
+  const shellManager = getDefaultShellWindowManager({ root: persistentLayer });
   const playerWidget = createPlayerWidget({
     mount: persistentLayer,
-    floating: true,
+    floating: false,
     preload: "immediate",
     persistVisibility: true,
     restoreVisibility: true,
+    shellManager,
   });
   window.__vatioboardPlayerWidget = playerWidget;
-  const floatingTools = initFloatingTools({ mount: persistentLayer });
+  const floatingTools = initFloatingTools({ mount: persistentLayer, shellManager });
   const startMenu = initSharedStartMenu({ floatingTools, mount: persistentLayer });
   const activityIndicator = initActivityIndicator({ mount: persistentLayer });
+  const shellTaskbar = createShellTaskbar({ shellManager, root: persistentLayer });
+  const shellKeyboard = installShellKeyboardShortcuts({ shellManager });
+  floatingTools.taskbar = shellTaskbar;
+  shellManager.restoreShellLayout();
 
   installLinkInterceptor();
 
@@ -126,12 +135,21 @@ export async function startAppShell({
   });
 
   window.__vatioboardRouter = router;
+  const originalRouterDestroy = router.destroy;
+  router.destroy = () => {
+    shellKeyboard.uninstall();
+    shellTaskbar.destroy();
+    originalRouterDestroy.call(router);
+  };
   scheduleRoutePreload({ router, routes });
 
   return {
     router,
     floatingTools,
     playerWidget,
+    shellManager,
+    shellTaskbar,
+    shellKeyboard,
     startMenu,
     activityIndicator,
     context,

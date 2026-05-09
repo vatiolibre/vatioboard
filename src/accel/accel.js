@@ -1157,7 +1157,7 @@ export const initPromise = (function () {
   }
 
   function handleKeyDown(event) {
-    if (event.target.closest('.player-panel, .player-fab')) return;
+    if (event.target.closest('.player-panel')) return;
     if (event.key !== 'Escape' || !state.openPanel) return;
     event.preventDefault();
     if (state.replay.chartSheetOpen) {

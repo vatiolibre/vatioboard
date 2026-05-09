@@ -2,7 +2,6 @@ import "../styles/board.less";
 import "../styles/backend-auth.less";
 import "../styles/calculator.less";
 import "../styles/energy.less";
-import "../styles/dock.less";
 import "../shared/ui/confirm-dialog.less";
 
 import { createCleanupStack } from "../app/view-cleanup.js";

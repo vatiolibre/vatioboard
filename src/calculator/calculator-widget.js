@@ -9,6 +9,12 @@ import { clampElementToViewport, makePanelDraggable, makeLauncherDraggable } fro
 import { initSettingsSheet } from "./widget/settings-sheet.js";
 import { toRaw, toDisplay, mapCursorPosition } from "./widget/number-format.js";
 import { IconCalculator } from "../icons.js";
+import {
+  registerFloatingPanel,
+} from "../shared/floating-layer-manager.js";
+import { getDefaultShellWindowManager } from "../shared/shell-window-manager.js";
+
+const CALCULATOR_WINDOW_ID = "calculator";
 
 /**
  * createCalculatorWidget(options)
@@ -36,6 +42,7 @@ export function createCalculatorWidget(options = {}) {
     persistVisibility = false,
     restoreVisibility = false,
     visibilityKey = "embeddable_calc_visibility_v1",
+    shellManager = getDefaultShellWindowManager(),
   } = options;
 
   const isTouchLike =
@@ -66,6 +73,14 @@ export function createCalculatorWidget(options = {}) {
       localStorage.setItem(POS_KEY, JSON.stringify(pos));
     } catch {
       // ignore
+    }
+    if (pos?.panel?.left && pos?.panel?.top) {
+      shellManager.updateWindowBounds(CALCULATOR_WINDOW_ID, {
+        left: parseFloat(pos.panel.left),
+        top: parseFloat(pos.panel.top),
+      }, {
+        preserveSnap: Boolean(shellManager.getWindow(CALCULATOR_WINDOW_ID)?.snap),
+      });
     }
   }
 
@@ -112,6 +127,7 @@ export function createCalculatorWidget(options = {}) {
     isTouchLike,
     showEnergyTool: typeof onOpenEnergy === "function",
   });
+  let cleanupLayer = () => {};
 
   // Apply stored panel position (if any)
   {
@@ -125,6 +141,27 @@ export function createCalculatorWidget(options = {}) {
     }
   }
 
+  cleanupLayer = registerFloatingPanel(panel, {
+    id: CALCULATOR_WINDOW_ID,
+    kind: "tool",
+    title: "Calculator",
+    shellManager,
+    storageKey: visibilityKey,
+    capabilities: {
+      draggable: true,
+      resizable: true,
+      minimizable: true,
+      closable: true,
+      restorable: true,
+    },
+    lifecycle: {
+      open: showPanel,
+      close: hidePanel,
+      minimize: minimizePanel,
+      restore: showPanel,
+    },
+  });
+
   // -------------------------
   // Panel drag implementation
   // -------------------------
@@ -134,6 +171,9 @@ export function createCalculatorWidget(options = {}) {
     dragThresholdPx: DRAG_THRESHOLD_PX,
     savePos,
     loadPos,
+    shellWindowId: CALCULATOR_WINDOW_ID,
+    shellManager,
+    enableSnapPreview: shellManager.getShellPreference?.("snapEnabled") !== false,
   });
 
   function keepInputEndVisible(input) {
@@ -215,9 +255,9 @@ export function createCalculatorWidget(options = {}) {
     if (keepEnd) keepInputEndVisible(exprInput);
   }
 
-  function open() {
+  function showPanel({ persist = true, focus = true } = {}) {
     panel.hidden = false;
-    saveVisibility(true);
+    if (persist) saveVisibility(true);
     render({ keepEnd: true });
 
     // If user dragged panel previously, ensure it stays visible
@@ -225,14 +265,28 @@ export function createCalculatorWidget(options = {}) {
       clampElementToViewport(panel);
     }
 
-    if (!isTouchLike) {
+    if (focus && !isTouchLike) {
       setTimeout(() => exprInput.focus({ preventScroll: true }), 0);
     }
   }
 
-  function close() {
+  function hidePanel({ persist = true } = {}) {
     panel.hidden = true;
-    saveVisibility(false);
+    if (persist) saveVisibility(false);
+  }
+
+  function minimizePanel() {
+    panel.hidden = true;
+  }
+
+  function open(options = {}) {
+    showPanel(options);
+    shellManager.openWindow(CALCULATOR_WINDOW_ID, { ...options, invokeLifecycle: false });
+  }
+
+  function close(options = {}) {
+    hidePanel(options);
+    shellManager.closeWindow(CALCULATOR_WINDOW_ID, { ...options, invokeLifecycle: false });
   }
 
   function toggle() {
@@ -336,6 +390,7 @@ export function createCalculatorWidget(options = {}) {
 
   // launcher (floating button) unless user provided their own button
   let launcher;
+  let launcherMoved = null;
 
   if (floating) {
     launcher = el("button", {
@@ -358,7 +413,7 @@ export function createCalculatorWidget(options = {}) {
     }
 
     // Make launcher draggable and guard toggle on drag
-    const launcherMoved = makeLauncherDraggable({
+    launcherMoved = makeLauncherDraggable({
       launcherEl: launcher,
       dragThresholdPx: DRAG_THRESHOLD_PX,
       savePos,
@@ -393,6 +448,13 @@ export function createCalculatorWidget(options = {}) {
     open,
     close,
     toggle,
+    destroy: () => {
+      cleanupLayer();
+      launcherMoved?.destroy?.();
+      if (button) button.removeEventListener("click", toggle);
+      panel.remove();
+      launcher?.remove();
+    },
     isOpen: () => !panel.hidden,
     setExpression: (s) => {
       core.setExpr(String(s ?? ""));

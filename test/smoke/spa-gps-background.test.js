@@ -663,6 +663,12 @@ describe('SPA GPS background runtime', () => {
   }, 40000);
 
   it('retains GPS recording while hidden after recording keep-alive interruption', async () => {
+    let now = 1_700_000_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const advanceClock = (ms = 1000) => {
+      now += ms;
+    };
+
     await bootHtmlPage('index.html');
     await import('../../src/app/main.js');
     await settleAsyncWork();
@@ -683,6 +689,7 @@ describe('SPA GPS background runtime', () => {
       },
     });
     await settleAsyncWork();
+    advanceClock();
 
     const before = speedModule.__testGetSpeedStateSnapshot();
     Object.defineProperty(document, 'hidden', {
@@ -705,6 +712,7 @@ describe('SPA GPS background runtime', () => {
       },
     });
     await settleAsyncWork();
+    advanceClock();
 
     const hiddenSnapshot = speedModule.__testGetSpeedStateSnapshot();
     expect(hiddenSnapshot.recordingState).toBe('recording');

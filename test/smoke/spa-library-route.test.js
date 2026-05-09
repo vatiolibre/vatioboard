@@ -40,8 +40,9 @@ describe("SPA Library route real-controller smoke", () => {
     expect(finalSnapshot.activeResizeObserverCount).toBe(0);
     expect(finalSnapshot.activeMapCount).toBe(0);
     expect(finalSnapshot.activeChartCount).toBe(0);
-    expect(document.querySelectorAll(".floating-dock")).toHaveLength(1);
+    expect(document.querySelectorAll(".floating-dock")).toHaveLength(0);
     expect(document.querySelectorAll(".player-panel")).toHaveLength(1);
-    expect(document.querySelectorAll(".player-fab")).toHaveLength(1);
+    expect(document.querySelectorAll(".player-fab")).toHaveLength(0);
+    expect(document.querySelectorAll("[data-vb-shell-taskbar]")).toHaveLength(1);
   }, 40000);
 });

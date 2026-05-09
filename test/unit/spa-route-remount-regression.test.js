@@ -241,7 +241,9 @@ describe('SPA route remount regression coverage', () => {
       expect(document.body.classList.contains(routeBodyClasses[previousRoute])).toBe(false);
     }
 
-    expect(document.querySelectorAll('.floating-dock')).toHaveLength(1);
+    expect(document.querySelectorAll('.floating-dock')).toHaveLength(0);
+    expect(document.querySelectorAll('.calc-panel')).toHaveLength(1);
+    expect(document.querySelectorAll('.energy-panel')).toHaveLength(1);
     expect(routeState.contexts.every((context) => (
       context.hasRoot
       && context.hasCleanup

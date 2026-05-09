@@ -1613,7 +1613,7 @@ function bindEvents({ elements: routeElements = elements, graphElements: routeGr
   });
 
   cleanup.addEventListener(document, 'keydown', (event) => {
-    if (event.target.closest('.player-panel, .player-fab')) return;
+    if (event.target.closest('.player-panel')) return;
     if (event.key === 'Escape' && state.expandedGraphOpen) {
       closeExpandedGraph();
     }
