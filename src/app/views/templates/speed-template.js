@@ -182,10 +182,6 @@ const speedTemplate = String.raw`
             </button>
 
           </div>
-
-          <div class="right-stack" data-i18n-aria="connectionStatus" aria-label="Connection status">
-            <span id="status" class="status" aria-live="polite" data-i18n="requestingGps">Requesting GPS...</span>
-          </div>
         </div>
 
         <span class="route-chip" aria-hidden="true" data-i18n="speedRoute">SPEED</span>

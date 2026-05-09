@@ -411,7 +411,7 @@ export function createSpeedRenderer({
   function syncLanguage({ applyTranslations, renderPrimaryView, renderMetrics: rerenderMetrics }) {
     applyTranslations();
     state.statusText = getStatusText(state.statusKind, state.statusParams, t, state.distanceUnit);
-    elements.status.textContent = state.statusText;
+    if (elements.status) elements.status.textContent = state.statusText;
 
     if (!elements.notice.hidden && state.noticeKey) {
       elements.noticeText.textContent = tf(t, state.noticeKey, state.noticeParams ?? {});
