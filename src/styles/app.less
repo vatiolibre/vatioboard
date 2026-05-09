@@ -51,52 +51,9 @@ main#app-view {
 [data-vb-shell-snap-preview] {
   outline: 2px solid color-mix(in srgb, var(--calc-accent, #10b981) 48%, transparent);
   outline-offset: 2px;
-}
-
-[data-vb-shell-snap-preview]::before {
-  content: "";
-  position: fixed;
-  inset: 16px;
-  z-index: calc(var(--vb-z-modal, 2000) - 40);
-  border: 1px dashed color-mix(in srgb, var(--calc-accent, #10b981) 58%, transparent);
-  background: color-mix(in srgb, var(--calc-accent, #10b981) 9%, transparent);
-  pointer-events: none;
-}
-
-[data-vb-shell-snap-zone="left"]::before {
-  right: 50vw;
-}
-
-[data-vb-shell-snap-zone="right"]::before {
-  left: 50vw;
-}
-
-[data-vb-shell-snap-zone="top"]::before {
-  bottom: 50vh;
-}
-
-[data-vb-shell-snap-zone="bottom"]::before {
-  top: 50vh;
-}
-
-[data-vb-shell-snap-zone="top-left"]::before {
-  right: 50vw;
-  bottom: 50vh;
-}
-
-[data-vb-shell-snap-zone="top-right"]::before {
-  left: 50vw;
-  bottom: 50vh;
-}
-
-[data-vb-shell-snap-zone="bottom-left"]::before {
-  right: 50vw;
-  top: 50vh;
-}
-
-[data-vb-shell-snap-zone="bottom-right"]::before {
-  left: 50vw;
-  top: 50vh;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--calc-accent, #10b981) 28%, transparent),
+    var(--calc-shadow, var(--player-shadow, 0 18px 50px rgba(0, 0, 0, 0.2)));
 }
 
 .vb-shell-taskbar {
@@ -104,7 +61,7 @@ main#app-view {
   left: 50%;
   bottom: max(10px, env(safe-area-inset-bottom));
   transform: translateX(-50%);
-  z-index: calc(var(--vb-z-modal, 2000) - 20);
+  z-index: calc(var(--vb-z-floating, 1000) - 1);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -137,13 +94,14 @@ main#app-view {
 }
 
 .vb-shell-taskbar.is-detached {
-  z-index: calc(var(--vb-z-modal, 2000) - 20);
+  z-index: calc(var(--vb-z-floating, 1000) - 1);
 }
 
 .vb-shell-taskbar.is-dragging {
   cursor: grabbing;
   transition: none;
   will-change: transform;
+  z-index: calc(var(--vb-z-floating, 1000) + 850);
 }
 
 .vb-shell-taskbar[data-vb-shell-taskbar-position="left"],
@@ -201,11 +159,12 @@ main#app-view {
 }
 
 .vb-shell-taskbar-item.is-detached {
-  z-index: calc(var(--vb-z-modal, 2000) - 20);
+  z-index: calc(var(--vb-z-floating, 1000) - 1);
 }
 
 .vb-shell-taskbar-item.is-dragging {
   cursor: grabbing;
+  z-index: calc(var(--vb-z-floating, 1000) + 850);
 }
 
 .vb-shell-taskbar-icon,

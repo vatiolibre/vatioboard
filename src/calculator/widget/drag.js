@@ -168,21 +168,30 @@ export function makePanelDraggable({
     }
   }
 
+  function clearDragAffordances() {
+    panel.classList.remove("is-dragging");
+    document.documentElement.classList.remove("vb-floating-drag-active");
+    clearSnapPreview(panel);
+  }
+
   function endDrag(e = null) {
     if (rafId) {
       cancelAnimationFrame(rafId);
       rafId = 0;
     }
 
-    if (!pointerDown) return;
+    if (!pointerDown) {
+      clearDragAffordances();
+      activeSnapZone = null;
+      pointerId = null;
+      return;
+    }
 
     pointerDown = false;
 
     if (dragging) {
       dragging = false;
-      panel.classList.remove("is-dragging");
-      document.documentElement.classList.remove("vb-floating-drag-active");
-      clearSnapPreview(panel);
+      clearDragAffordances();
 
       if (activeSnapZone && shellWindowId && shellManager) {
         shellManager.snapWindow(shellWindowId, activeSnapZone);
@@ -211,6 +220,10 @@ export function makePanelDraggable({
 
     // Mouse: left button only
     if (e.pointerType === "mouse" && e.button !== 0) return;
+
+    if (pointerDown) endDrag(e);
+    clearSnapPreview(panel);
+    activeSnapZone = null;
 
     pointerDown = true;
     pointerId = e.pointerId;
@@ -261,6 +274,8 @@ export function makePanelDraggable({
     handle.addEventListener("pointermove", onPointerMove, { passive: false });
     handle.addEventListener("pointerup", endDrag);
     handle.addEventListener("pointercancel", endDrag);
+    handle.addEventListener("lostpointercapture", endDrag);
+    handle.addEventListener("touchcancel", endDrag, { passive: true });
   }
 
   // Keep in bounds on resize

@@ -233,12 +233,64 @@ describe("shell UI integration", () => {
     manager.destroy();
   });
 
+  it("snap preview clears if pointer capture is lost", async () => {
+    const { createShellWindowManager, makePanelDraggable } = await loadShell();
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const { panel, header } = makePanel("calculator");
+    panel.hidden = false;
+    manager.registerWindow({ id: "calculator", title: "Calculator", element: panel });
+    makePanelDraggable({
+      panel,
+      header,
+      dragThresholdPx: 1,
+      savePos: vi.fn(),
+      loadPos: vi.fn(() => ({})),
+      shellWindowId: "calculator",
+      shellManager: manager,
+      enableSnapPreview: true,
+    });
+
+    header.dispatchEvent(new PointerEvent("pointerdown", {
+      clientX: 100,
+      clientY: 100,
+      pointerId: 1,
+      pointerType: "touch",
+      button: 0,
+      bubbles: true,
+    }));
+    header.dispatchEvent(new PointerEvent("pointermove", {
+      clientX: 2,
+      clientY: 200,
+      pointerId: 1,
+      pointerType: "touch",
+      bubbles: true,
+    }));
+    expect(panel.getAttribute("data-vb-shell-snap-preview")).toBe("left");
+
+    header.dispatchEvent(new PointerEvent("lostpointercapture", {
+      pointerId: 1,
+      pointerType: "touch",
+      bubbles: true,
+    }));
+
+    expect(panel.hasAttribute("data-vb-shell-snap-preview")).toBe(false);
+    manager.destroy();
+  });
+
+  it("snap preview CSS avoids a fixed viewport overlay for iPhone Safari hit testing", () => {
+    const appCss = readProjectFile("src/styles/app.less");
+
+    expect(appCss).not.toContain("[data-vb-shell-snap-preview]::before");
+    expect(appCss).not.toContain("[data-vb-shell-snap-zone=\"left\"]::before");
+  });
+
   it("confirm dialog layer remains above shell windows and taskbar", () => {
     const appCss = readProjectFile("src/styles/app.less");
     const confirmCss = readProjectFile("src/shared/ui/confirm-dialog.less");
 
     expect(confirmCss).toContain("z-index: var(--vb-z-modal, 2000)");
-    expect(appCss).toContain("z-index: calc(var(--vb-z-modal, 2000) - 20)");
+    expect(appCss).toContain("z-index: calc(var(--vb-z-floating, 1000) - 1)");
+    expect(appCss).toContain("z-index: calc(var(--vb-z-floating, 1000) + 850)");
   });
 
   it("shell layout restores locally after simulated reload", async () => {
