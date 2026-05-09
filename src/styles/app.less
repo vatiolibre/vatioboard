@@ -117,7 +117,10 @@ main#app-view {
   border-radius: 999px;
   background: color-mix(in srgb, var(--calc-surface, #fff) 86%, transparent);
   box-shadow: 0 8px 22px rgba(15, 23, 42, 0.14);
+  cursor: grab;
   font-family: var(--calc-font, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial);
+  touch-action: none;
+  user-select: none;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -127,6 +130,14 @@ main#app-view {
 
 .vb-shell-taskbar[data-vb-shell-taskbar-empty="true"] {
   min-width: 58px;
+}
+
+.vb-shell-taskbar.is-detached {
+  z-index: calc(var(--vb-z-modal, 2000) - 20);
+}
+
+.vb-shell-taskbar.is-dragging {
+  cursor: grabbing;
 }
 
 .vb-shell-taskbar[data-vb-shell-taskbar-position="left"],
@@ -167,7 +178,7 @@ main#app-view {
   background: var(--calc-surface, #fff);
   color: var(--calc-text, #111827);
   box-shadow: 0 10px 22px rgba(15, 23, 42, 0.16);
-  cursor: grab;
+  cursor: pointer;
   font: inherit;
   touch-action: none;
   user-select: none;

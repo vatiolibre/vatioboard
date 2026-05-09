@@ -10,7 +10,7 @@ describe("accel floating drag policy", () => {
     expect(accelCss).not.toContain("body.accel-page *");
     expect(accelCss).not.toContain("body.accel-page button");
     expect(accelCss).toContain("body.accel-page .vb-floating-drag-handle");
-    expect(accelCss).toContain("body.accel-page .floating-dock");
+    expect(accelCss).toContain("body.accel-page .vb-shell-taskbar");
     expect(accelCss).toContain("body.accel-page .milkdrop-resize-handle");
   });
 });

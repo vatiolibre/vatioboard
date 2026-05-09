@@ -397,99 +397,21 @@ describe("createPlayerWidget", () => {
     btn.remove();
   });
 
-  // ── Floating launcher ────────────────────────────────────────
+  // ── Legacy floating launcher ─────────────────────────────────
 
-  it("creates floating launcher when floating=true", () => {
+  it("does not create the legacy player FAB; shell taskbar owns launchers", () => {
     const widget = createPlayerWidget({ floating: true });
-    const launcher = document.querySelector(".player-fab");
-    expect(launcher).toBeTruthy();
+    expect(document.querySelector(".player-fab")).toBeFalsy();
     widget.destroy();
   });
 
-  it("launcher click opens/closes panel", () => {
-    const widget = createPlayerWidget({ floating: true });
-    const launcher = document.querySelector(".player-fab");
-
-    launcher.click();
-    expect(document.querySelector(".player-panel").hidden).toBe(false);
-
-    launcher.click();
-    expect(document.querySelector(".player-panel").hidden).toBe(true);
-
-    widget.destroy();
-  });
-
-  it("no launcher when floating=false", () => {
+  it("does not create a launcher when floating=false", () => {
     const btn = document.createElement("button");
     document.body.appendChild(btn);
     const widget = createPlayerWidget({ button: btn, floating: false });
     expect(document.querySelector(".player-fab")).toBeFalsy();
     widget.destroy();
     btn.remove();
-  });
-
-  it("destroy() removes launcher from DOM", () => {
-    const widget = createPlayerWidget({ floating: true });
-    expect(document.querySelector(".player-fab")).toBeTruthy();
-    widget.destroy();
-    expect(document.querySelector(".player-fab")).toBeFalsy();
-  });
-
-  // ── Dragging launcher does not toggle ────────────────────────
-
-  it("dragging launcher does not accidentally toggle", () => {
-    const widget = createPlayerWidget({ floating: true });
-    const launcher = document.querySelector(".player-fab");
-
-    // Simulate a drag sequence: pointerdown → pointermove → pointerup
-    launcher.dispatchEvent(new PointerEvent("pointerdown", {
-      clientX: 100, clientY: 100, pointerId: 1, pointerType: "mouse", button: 0, bubbles: true,
-    }));
-    launcher.dispatchEvent(new PointerEvent("pointermove", {
-      clientX: 200, clientY: 200, pointerId: 1, pointerType: "mouse", bubbles: true,
-    }));
-    launcher.dispatchEvent(new PointerEvent("pointerup", {
-      clientX: 200, clientY: 200, pointerId: 1, pointerType: "mouse", bubbles: true,
-    }));
-
-    // Panel should remain hidden (drag, not click)
-    expect(document.querySelector(".player-panel").hidden).toBe(true);
-
-    widget.destroy();
-  });
-
-  it("keeps the floating launcher inside the viewport after resize", () => {
-    vi.stubGlobal("innerWidth", 320);
-    vi.stubGlobal("innerHeight", 240);
-    localStorage.setItem("player_widget_pos_v1", JSON.stringify({
-      launcher: { left: "900px", top: "700px" },
-    }));
-
-    const widget = createPlayerWidget({ floating: true });
-    const launcher = document.querySelector(".player-fab");
-    vi.spyOn(launcher, "getBoundingClientRect").mockReturnValue({
-      x: 900,
-      y: 700,
-      top: 700,
-      left: 900,
-      right: 952,
-      bottom: 752,
-      width: 52,
-      height: 52,
-      toJSON() {
-        return this;
-      },
-    });
-
-    window.dispatchEvent(new Event("resize"));
-
-    expect(launcher.style.left).toBe("260px");
-    expect(launcher.style.top).toBe("180px");
-    expect(JSON.parse(localStorage.getItem("player_widget_pos_v1"))).toMatchObject({
-      launcher: { left: "260px", top: "180px" },
-    });
-
-    widget.destroy();
   });
 
   // ── Panel has header with close button ───────────────────────

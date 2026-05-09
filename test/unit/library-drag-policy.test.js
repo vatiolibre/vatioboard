@@ -10,7 +10,7 @@ describe("library floating drag policy", () => {
     expect(libraryCss).not.toContain("body.library-page *");
     expect(libraryCss).not.toContain("body.library-page button");
     expect(libraryCss).toContain("body.library-page .vb-floating-drag-handle");
-    expect(libraryCss).toContain("body.library-page .floating-dock");
+    expect(libraryCss).toContain("body.library-page .vb-shell-taskbar");
     expect(libraryCss).toContain("body.library-page .milkdrop-resize-handle");
   });
 });

@@ -232,6 +232,46 @@ describe("shell-taskbar", () => {
     manager.destroy();
   });
 
+  it("moves the taskbar tray from empty tray space and persists the position", () => {
+    const manager = makeManager();
+    manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
+    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+    manager.openWindow("calculator");
+
+    vi.spyOn(taskbar.getElement(), "getBoundingClientRect").mockReturnValue({
+      left: 120,
+      top: 690,
+      right: 240,
+      bottom: 760,
+      width: 120,
+      height: 70,
+      x: 120,
+      y: 690,
+      toJSON: () => {},
+    });
+
+    taskbar.getElement().dispatchEvent(pointer("pointerdown", { clientX: 225, clientY: 724 }));
+    window.dispatchEvent(pointer("pointermove", { clientX: 325, clientY: 584 }));
+    window.dispatchEvent(pointer("pointerup", { clientX: 325, clientY: 584 }));
+
+    expect(taskbar.getElement().getAttribute("data-vb-shell-taskbar-floating")).toBe("true");
+    expect(taskbar.getElement().style.position).toBe("fixed");
+    expect(taskbar.getElement().style.left).toBe("220px");
+    expect(taskbar.getElement().style.top).toBe("550px");
+    expect(JSON.parse(localStorage.getItem("vatioboard.shell.taskbar_fabs.v1")).taskbar)
+      .toMatchObject({ detached: true, left: 220, top: 550 });
+
+    taskbar.destroy();
+    const nextTaskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+
+    expect(nextTaskbar.getElement().style.position).toBe("fixed");
+    expect(nextTaskbar.getElement().style.left).toBe("220px");
+    expect(nextTaskbar.getElement().style.top).toBe("550px");
+
+    nextTaskbar.destroy();
+    manager.destroy();
+  });
+
   it("cleanup removes subscriptions and DOM", () => {
     const manager = makeManager();
     manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });

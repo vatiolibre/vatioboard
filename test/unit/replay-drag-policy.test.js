@@ -10,7 +10,7 @@ describe("replay floating drag policy", () => {
     expect(replayCss).not.toContain("body.replay-page *");
     expect(replayCss).not.toContain("body.replay-page button");
     expect(replayCss).toContain("body.replay-page .vb-floating-drag-handle");
-    expect(replayCss).toContain("body.replay-page .floating-dock");
+    expect(replayCss).toContain("body.replay-page .vb-shell-taskbar");
     expect(replayCss).toContain("body.replay-page .milkdrop-resize-handle");
   });
 });

@@ -1407,9 +1407,7 @@ describe('replay.html smoke', () => {
     expect(btn.className).toBe("btn-with-icon");
     expect(btn.querySelector(".btn-icon[aria-hidden='true'] svg")).toBeTruthy();
     expect(btn.querySelector("[data-i18n='audioPlayer']")).toBeTruthy();
-    const fab = document.querySelector(".player-fab");
-    expect(fab).toBeTruthy();
-    expect(fab.hidden).toBe(false);
+    expect(document.querySelector(".player-fab")).toBeNull();
 
     // Log in → launcher stays available.
     const authForm = document.querySelector("#replayToolsMenuList [data-backend-auth]");
@@ -1421,6 +1419,6 @@ describe('replay.html smoke', () => {
     await settleAsyncWork();
 
     expect(btn.hidden).toBe(false);
-    expect(fab.hidden).toBe(false);
+    expect(document.querySelector(".player-fab")).toBeNull();
   });
 });

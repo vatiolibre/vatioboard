@@ -78,7 +78,7 @@ export async function startAppShell({
   const shellManager = getDefaultShellWindowManager({ root: persistentLayer });
   const playerWidget = createPlayerWidget({
     mount: persistentLayer,
-    floating: true,
+    floating: false,
     preload: "immediate",
     persistVisibility: true,
     restoreVisibility: true,

@@ -33,8 +33,16 @@ function getStorage(storage) {
   }
 }
 
+function normalizeStoredPosition(value, { requireDetached = true } = {}) {
+  const left = Number.parseFloat(String(value?.left));
+  const top = Number.parseFloat(String(value?.top));
+  if (!Number.isFinite(left) || !Number.isFinite(top)) return null;
+  if (requireDetached && value?.detached !== true) return null;
+  return { detached: true, left, top };
+}
+
 function readTaskbarState(storage) {
-  if (!storage) return { knownWindowIds: [], positions: {} };
+  if (!storage) return { knownWindowIds: [], positions: {}, taskbar: null };
   try {
     const parsed = JSON.parse(storage.getItem(TASKBAR_STATE_KEY) || "{}");
     const knownWindowIds = Array.isArray(parsed.knownWindowIds)
@@ -43,25 +51,26 @@ function readTaskbarState(storage) {
     const positions = {};
     if (parsed.positions && typeof parsed.positions === "object") {
       for (const [id, value] of Object.entries(parsed.positions)) {
-        const left = Number.parseFloat(String(value?.left));
-        const top = Number.parseFloat(String(value?.top));
-        if (typeof id === "string" && value?.detached === true && Number.isFinite(left) && Number.isFinite(top)) {
-          positions[id] = { detached: true, left, top };
-        }
+        const position = normalizeStoredPosition(value);
+        if (typeof id === "string" && position) positions[id] = position;
       }
     }
-    return { knownWindowIds, positions };
+    return {
+      knownWindowIds,
+      positions,
+      taskbar: normalizeStoredPosition(parsed.taskbar),
+    };
   } catch {
     try {
       storage.removeItem(TASKBAR_STATE_KEY);
     } catch {
       // best effort only
     }
-    return { knownWindowIds: [], positions: {} };
+    return { knownWindowIds: [], positions: {}, taskbar: null };
   }
 }
 
-function writeTaskbarState(storage, knownWindowIds, itemPositions) {
+function writeTaskbarState(storage, knownWindowIds, itemPositions, taskbarPosition) {
   if (!storage) return;
   try {
     const positions = {};
@@ -78,6 +87,13 @@ function writeTaskbarState(storage, knownWindowIds, itemPositions) {
       version: 1,
       knownWindowIds: Array.from(knownWindowIds),
       positions,
+      taskbar: taskbarPosition?.detached === true
+        ? {
+            detached: true,
+            left: Math.round(taskbarPosition.left),
+            top: Math.round(taskbarPosition.top),
+          }
+        : null,
     }));
   } catch {
     // taskbar placement is convenience state only
@@ -102,6 +118,24 @@ function clampFabPosition(position, item) {
   return {
     left: Math.min(Math.max(VIEWPORT_MARGIN_PX, position.left), maxLeft),
     top: Math.min(Math.max(VIEWPORT_MARGIN_PX, position.top), maxTop),
+  };
+}
+
+function clampElementPosition(position, element, fallbackWidth = FAB_SIZE_PX, fallbackHeight = FAB_SIZE_PX) {
+  const rect = element?.getBoundingClientRect?.() || {};
+  const width = rect.width || element?.offsetWidth || fallbackWidth;
+  const height = rect.height || element?.offsetHeight || fallbackHeight;
+  const viewportWidth = globalThis.innerWidth || document.documentElement?.clientWidth || 1024;
+  const viewportHeight = globalThis.innerHeight || document.documentElement?.clientHeight || 768;
+  return {
+    left: Math.min(
+      Math.max(VIEWPORT_MARGIN_PX, position.left),
+      Math.max(VIEWPORT_MARGIN_PX, viewportWidth - width - VIEWPORT_MARGIN_PX)
+    ),
+    top: Math.min(
+      Math.max(VIEWPORT_MARGIN_PX, position.top),
+      Math.max(VIEWPORT_MARGIN_PX, viewportHeight - height - VIEWPORT_MARGIN_PX)
+    ),
   };
 }
 
@@ -136,6 +170,7 @@ export function createShellTaskbar({
   const savedState = readTaskbarState(storageTarget);
   const knownWindowIds = new Set(savedState.knownWindowIds);
   const itemPositions = new Map(Object.entries(savedState.positions));
+  let taskbarPosition = savedState.taskbar;
   const itemElements = new Map();
   const suppressedClicks = new Set();
 
@@ -150,7 +185,32 @@ export function createShellTaskbar({
   let dragCleanup = null;
 
   function saveState() {
-    writeTaskbarState(storageTarget, knownWindowIds, itemPositions);
+    writeTaskbarState(storageTarget, knownWindowIds, itemPositions, taskbarPosition);
+  }
+
+  function applyTaskbarPosition() {
+    if (taskbarPosition?.detached === true) {
+      const position = clampElementPosition(taskbarPosition, element, 64, 64);
+      taskbarPosition = { detached: true, ...position };
+      element.classList.add("is-detached");
+      element.setAttribute("data-vb-shell-taskbar-floating", "true");
+      element.style.position = "fixed";
+      element.style.left = `${Math.round(position.left)}px`;
+      element.style.top = `${Math.round(position.top)}px`;
+      element.style.right = "auto";
+      element.style.bottom = "auto";
+      element.style.transform = "none";
+      return;
+    }
+
+    element.classList.remove("is-detached", "is-dragging");
+    element.setAttribute("data-vb-shell-taskbar-floating", "false");
+    element.style.position = "";
+    element.style.left = "";
+    element.style.top = "";
+    element.style.right = "";
+    element.style.bottom = "";
+    element.style.transform = "";
   }
 
   function rememberWindow(id) {
@@ -308,6 +368,74 @@ export function createShellTaskbar({
     item.setPointerCapture?.(event.pointerId);
   }
 
+  function beginTaskbarDrag(event) {
+    if (event.button !== undefined && event.button !== 0) return;
+    if (event.target?.closest?.("[data-vb-shell-taskbar-item]")) return;
+    if (element.hidden) return;
+    if (dragCleanup) dragCleanup();
+
+    const rect = element.getBoundingClientRect();
+    const startLeft = taskbarPosition?.detached ? taskbarPosition.left : rect.left;
+    const startTop = taskbarPosition?.detached ? taskbarPosition.top : rect.top;
+    const drag = {
+      moved: false,
+      startX: event.clientX,
+      startY: event.clientY,
+      startLeft,
+      startTop,
+      lastLeft: startLeft,
+      lastTop: startTop,
+    };
+
+    const onMove = (moveEvent) => {
+      const dx = moveEvent.clientX - drag.startX;
+      const dy = moveEvent.clientY - drag.startY;
+      if (!drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+
+      drag.moved = true;
+      element.classList.add("is-dragging");
+      const position = clampElementPosition({
+        left: drag.startLeft + dx,
+        top: drag.startTop + dy,
+      }, element, 64, 64);
+      drag.lastLeft = position.left;
+      drag.lastTop = position.top;
+      taskbarPosition = { detached: true, ...position };
+      applyTaskbarPosition();
+      moveEvent.preventDefault?.();
+    };
+
+    const onEnd = (endEvent) => {
+      window.removeEventListener("pointermove", onMove, true);
+      window.removeEventListener("pointerup", onEnd, true);
+      window.removeEventListener("pointercancel", onEnd, true);
+      dragCleanup = null;
+
+      if (!drag.moved) return;
+
+      taskbarPosition = {
+        detached: true,
+        left: drag.lastLeft,
+        top: drag.lastTop,
+      };
+      element.classList.remove("is-dragging");
+      applyTaskbarPosition();
+      saveState();
+      endEvent.preventDefault?.();
+    };
+
+    window.addEventListener("pointermove", onMove, true);
+    window.addEventListener("pointerup", onEnd, true);
+    window.addEventListener("pointercancel", onEnd, true);
+    dragCleanup = () => {
+      window.removeEventListener("pointermove", onMove, true);
+      window.removeEventListener("pointerup", onEnd, true);
+      window.removeEventListener("pointercancel", onEnd, true);
+    };
+
+    element.setPointerCapture?.(event.pointerId);
+  }
+
   function createTaskbarItem(record, state, docked) {
     const item = document.createElement("button");
     item.type = "button";
@@ -371,6 +499,7 @@ export function createShellTaskbar({
     }
 
     element.setAttribute("data-vb-shell-taskbar-empty", dockedCount === 0 ? "true" : "false");
+    applyTaskbarPosition();
   }
 
   function focusWindow(id) {
@@ -394,6 +523,7 @@ export function createShellTaskbar({
   }
 
   root.appendChild(element);
+  element.addEventListener("pointerdown", beginTaskbarDrag);
   unsubscribe = shellManager.subscribe(({ event, record }) => {
     if (record && ["opened", "restored", "minimized"].includes(event)) {
       rememberWindow(record.id);

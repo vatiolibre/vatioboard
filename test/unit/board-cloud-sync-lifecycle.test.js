@@ -95,7 +95,8 @@ describe('Board cloud sync lifecycle', () => {
     await settle();
 
     expect(root.querySelector('#pad')).toBeTruthy();
-    expect(document.querySelectorAll('.floating-dock')).toHaveLength(1);
+    expect(document.querySelectorAll('.floating-dock')).toHaveLength(0);
+    expect(document.querySelectorAll('.calc-panel')).toHaveLength(1);
     expect(cloudSyncMocks.startCloudSyncLoop).not.toHaveBeenCalled();
     expect(cloudSyncMocks.syncCloudRecords).not.toHaveBeenCalled();
 
@@ -126,7 +127,8 @@ describe('Board cloud sync lifecycle', () => {
     });
     await settle();
     expect(root.querySelector('#pad')).toBeTruthy();
-    expect(document.querySelectorAll('.floating-dock')).toHaveLength(1);
+    expect(document.querySelectorAll('.floating-dock')).toHaveLength(0);
+    expect(document.querySelectorAll('.calc-panel')).toHaveLength(1);
 
     boardStorageMocks.loadBoardDrawing.mockClear();
     window.dispatchEvent(new CustomEvent('vatioboard:cloud-sync-applied', {

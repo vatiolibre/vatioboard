@@ -2,14 +2,13 @@
  * Player widget — draggable floating embeddable audio player.
  *
  * API mirrors createCalculatorWidget():
- *  - Floating launcher FAB (optional)
  *  - Draggable panel with header (drag by header)
  *  - External button support
  *  - Local-first lazy bootstrap (catalog loaded on first open)
  *  - Singleton runtime via audio-runtime.js (no duplicate audio engines)
  *
  * Usage:
- *   const widget = createPlayerWidget({ floating: true });
+ *   const widget = createPlayerWidget();
  *   widget.open();
  *
  * Multiple instances share the same runtime and deduped catalog bootstrap.
@@ -19,9 +18,7 @@ import { createPlayerShell } from "./player-shell.js";
 import {
   clampElementToViewport,
   makePanelDraggable,
-  makeLauncherDraggable,
 } from "../calculator/widget/drag.js";
-import { IconMusic } from "../icons.js";
 import { loadAudioCatalog, syncAudioCatalog, annotateOfflineAvailability } from "../shared/audio-catalog.js";
 import { loadPlaylists, syncPlaylistsManifest } from "../shared/playlist-loader.js";
 import { loadDemoPlaylist, syncDemoPlaylist } from "../shared/demo-cache.js";
@@ -303,7 +300,7 @@ export function _getBootstrapPromise() {
  *
  * @param {object} [options]
  * @param {HTMLElement} [options.mount=document.body]
- * @param {boolean} [options.floating] - Show floating launcher (default: true unless button provided)
+ * @param {boolean} [options.floating] - Deprecated; shell taskbar owns launchers.
  * @param {HTMLElement|null} [options.button] - External button that toggles the player
  * @param {"on-open"|"immediate"} [options.preload="on-open"] - When to bootstrap catalog
  * @param {boolean} [options.persistVisibility=true] - Save open/closed panel state
@@ -315,7 +312,6 @@ export function _getBootstrapPromise() {
 export function createPlayerWidget(options = {}) {
   const {
     mount = document.body,
-    floating = options.button ? false : true,
     button = null,
     preload = "on-open",
     persistVisibility = true,
@@ -501,54 +497,6 @@ export function createPlayerWidget(options = {}) {
     }
   }
 
-  // ── Floating launcher (FAB) ──────────────────────────────────
-  let launcher = null;
-  let launcherUnsubscribe = null;
-  let launcherMoved = null;
-
-  if (floating) {
-    launcher = document.createElement("button");
-    launcher.type = "button";
-    launcher.className = "player-fab";
-    launcher.setAttribute("aria-label", "Open Player");
-    launcher.innerHTML = IconMusic;
-
-    // Apply stored launcher position
-    {
-      const pos = loadPos();
-      if (pos?.launcher?.left && pos?.launcher?.top) {
-        launcher.style.position = "fixed";
-        launcher.style.left = pos.launcher.left;
-        launcher.style.top = pos.launcher.top;
-        launcher.style.right = "auto";
-        launcher.style.bottom = "auto";
-      }
-    }
-
-    // Draggable launcher (guards toggle on drag)
-    launcherMoved = makeLauncherDraggable({
-      launcherEl: launcher,
-      dragThresholdPx: DRAG_THRESHOLD_PX,
-      savePos,
-      loadPos,
-    });
-
-    launcher.addEventListener("click", (e) => {
-      if (launcherMoved()) {
-        e.preventDefault();
-        return;
-      }
-      toggle();
-    });
-
-    // Active-state indicator when playback is active and panel is hidden
-    launcherUnsubscribe = runtime.subscribe((s) => {
-      launcher.classList.toggle("is-playing", s.playing && shell.root.hidden);
-    });
-
-    mount.appendChild(launcher);
-  }
-
   // ── External button ──────────────────────────────────────────
   if (button) {
     button.addEventListener("click", toggle);
@@ -590,11 +538,6 @@ export function createPlayerWidget(options = {}) {
     window.removeEventListener(BACKEND_AUTH_STATE_EVENT, onAuthChange);
     cleanupLayer();
     shell.destroy();
-    if (launcher) {
-      launcherMoved?.destroy?.();
-      launcher.remove();
-      if (launcherUnsubscribe) launcherUnsubscribe();
-    }
     if (button) {
       button.removeEventListener("click", toggle);
     }

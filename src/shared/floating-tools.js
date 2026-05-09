@@ -1,10 +1,8 @@
 import "../styles/calculator.less";
 import "../styles/energy.less";
-import "../styles/dock.less";
 
 import { createCalculatorWidget } from "../calculator/calculator-widget.js";
 import { createEnergyCalculatorWidget } from "../energy/energy-calculator-widget.js";
-import { createFloatingDock } from "../dock/floating-dock.js";
 import { getDefaultShellWindowManager } from "./shell-window-manager.js";
 
 const GLOBAL_TOOLS_KEY = "__vatioboardFloatingTools";
@@ -17,7 +15,8 @@ export function getFloatingTools() {
 
 export function initFloatingTools({ mount = document.body, shellManager = getDefaultShellWindowManager({ root: mount }) } = {}) {
   const existing = getFloatingTools();
-  if (existing?.dock?.isConnected) return existing;
+  const existingCalculator = existing?.shellManager?.getWindow?.("calculator");
+  if (existingCalculator?.element?.isConnected) return existing;
   if (existing) {
     delete window[GLOBAL_TOOLS_KEY];
   }
@@ -40,13 +39,10 @@ export function initFloatingTools({ mount = document.body, shellManager = getDef
     shellManager,
   });
 
-  const { dock, calcBtn } = createFloatingDock({ mount });
-  calcBtn?.addEventListener("click", () => shellManager.toggleWindow("calculator"));
-
   const tools = {
-    calcBtn,
+    calcBtn: null,
     calcWidget,
-    dock,
+    dock: null,
     energyWidget,
     shellManager,
     closeCalculator: () => shellManager.closeWindow("calculator"),

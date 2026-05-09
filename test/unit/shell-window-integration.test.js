@@ -333,7 +333,9 @@ describe("shell window integration", () => {
     initFloatingTools({ mount, shellManager: manager });
     initFloatingTools({ mount, shellManager: manager });
 
-    expect(document.querySelectorAll(".floating-dock")).toHaveLength(1);
+    expect(document.querySelectorAll(".floating-dock")).toHaveLength(0);
+    expect(document.querySelectorAll(".calc-panel")).toHaveLength(1);
+    expect(document.querySelectorAll(".energy-panel")).toHaveLength(1);
     expect(manager.listWindows().filter((record) => ["calculator", "energy"].includes(record.id))).toHaveLength(2);
     manager.destroy();
   });
@@ -361,12 +363,13 @@ describe("shell window integration", () => {
     nextManager.destroy();
   });
 
-  it("dock button toggles calculator via shell manager", async () => {
+  it("floating tools open calculator through the shell manager without a legacy dock", async () => {
     const { createShellWindowManager, initFloatingTools } = await loadModules();
     const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
     const tools = initFloatingTools({ mount: document.body, shellManager: manager });
 
-    tools.calcBtn.click();
+    expect(document.querySelector(".floating-dock")).toBeNull();
+    tools.openCalculator();
 
     expect(manager.getWindow("calculator").state).toBe("open");
     expect(document.querySelector(".calc-panel").hidden).toBe(false);
