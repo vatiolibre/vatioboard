@@ -128,9 +128,13 @@ describe("createCameraMapWidget", () => {
   let createCameraMapWidget;
   let createShellWindowManager;
   let loadMapLibre;
+  let originalRequestFullscreen;
+  let originalExitFullscreen;
 
   beforeEach(async () => {
     vi.useFakeTimers();
+    originalRequestFullscreen = HTMLElement.prototype.requestFullscreen;
+    originalExitFullscreen = document.exitFullscreen;
     document.body.innerHTML = "";
     localStorage.clear();
     mapLibreDouble.maps.length = 0;
@@ -143,6 +147,8 @@ describe("createCameraMapWidget", () => {
   });
 
   afterEach(() => {
+    HTMLElement.prototype.requestFullscreen = originalRequestFullscreen;
+    document.exitFullscreen = originalExitFullscreen;
     vi.useRealTimers();
   });
 
@@ -156,6 +162,7 @@ describe("createCameraMapWidget", () => {
     expect(manager.getWindow("camera-map")).toMatchObject({
       id: "camera-map",
       title: "Camera Map",
+      capabilities: expect.objectContaining({ fullscreen: true }),
     });
 
     widget.destroy();
@@ -252,6 +259,104 @@ describe("createCameraMapWidget", () => {
       zoom: 8,
     }));
     expect(document.querySelector(".camera-map-status").textContent).toBe("cameraMapReady:1");
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("uses a fixed-window fullscreen fallback when native fullscreen is unavailable", async () => {
+    HTMLElement.prototype.requestFullscreen = undefined;
+    document.exitFullscreen = vi.fn(() => Promise.resolve());
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    await openAndLoad(widget);
+    const panel = document.querySelector(".camera-map-panel");
+    const fullscreenBtn = document.querySelector(".camera-map-fullscreen");
+
+    fullscreenBtn.click();
+    await Promise.resolve();
+
+    expect(panel.classList.contains("is-fullscreen")).toBe(true);
+    expect(panel.classList.contains("is-window-fullscreen")).toBe(true);
+    expect(fullscreenBtn.getAttribute("aria-label")).toBe("cameraMapExitFullscreen");
+    expect(widget.isFullscreen()).toBe(true);
+
+    fullscreenBtn.click();
+    await Promise.resolve();
+
+    expect(panel.classList.contains("is-fullscreen")).toBe(false);
+    expect(panel.classList.contains("is-window-fullscreen")).toBe(false);
+    expect(fullscreenBtn.getAttribute("aria-label")).toBe("cameraMapFullscreen");
+    expect(widget.isFullscreen()).toBe(false);
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("falls back to fixed-window fullscreen when native fullscreen rejects", async () => {
+    HTMLElement.prototype.requestFullscreen = vi.fn(() => Promise.reject(new Error("denied")));
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    await openAndLoad(widget);
+    const panel = document.querySelector(".camera-map-panel");
+
+    document.querySelector(".camera-map-fullscreen").click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(HTMLElement.prototype.requestFullscreen).toHaveBeenCalled();
+    expect(panel.classList.contains("is-fullscreen")).toBe(true);
+    expect(panel.classList.contains("is-window-fullscreen")).toBe(true);
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("exits fallback fullscreen on close, minimize, and destroy", async () => {
+    HTMLElement.prototype.requestFullscreen = undefined;
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    await openAndLoad(widget);
+    const panel = document.querySelector(".camera-map-panel");
+    const fullscreenBtn = document.querySelector(".camera-map-fullscreen");
+
+    fullscreenBtn.click();
+    await Promise.resolve();
+    widget.close();
+
+    expect(panel.hidden).toBe(true);
+    expect(panel.classList.contains("is-fullscreen")).toBe(false);
+
+    widget.open();
+    await flushTimers();
+    fullscreenBtn.click();
+    await Promise.resolve();
+    widget.minimize();
+
+    expect(panel.hidden).toBe(true);
+    expect(panel.classList.contains("is-fullscreen")).toBe(false);
+
+    widget.restore();
+    await flushTimers();
+    fullscreenBtn.click();
+    await Promise.resolve();
+    widget.destroy();
+
+    expect(document.querySelector(".camera-map-panel")).toBeNull();
+    manager.destroy();
+  });
+
+  it("resizes the map after fullscreen transitions", async () => {
+    HTMLElement.prototype.requestFullscreen = undefined;
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+    map.resize.mockClear();
+
+    document.querySelector(".camera-map-fullscreen").click();
+    await flushTimers();
+
+    expect(map.resize).toHaveBeenCalled();
 
     widget.destroy();
     manager.destroy();

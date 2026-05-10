@@ -1,6 +1,8 @@
 import { t } from "../i18n.js";
 import {
   IconClose,
+  IconFullscreen,
+  IconFullscreenExit,
   IconGpsLab,
   IconRestart,
 } from "../icons.js";
@@ -125,6 +127,11 @@ function getInitialView(getCurrentPosition) {
   };
 }
 
+function pxToNumber(value, fallback = 0) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function buildPanel() {
   const title = createElement("span", {
     class: "camera-map-title",
@@ -142,6 +149,16 @@ function buildPanel() {
     html: IconMinimize,
   });
 
+  const fullscreenBtn = createElement("button", {
+    type: "button",
+    class: "camera-map-action camera-map-fullscreen",
+    "aria-label": t("cameraMapFullscreen"),
+    title: t("cameraMapFullscreen"),
+    "data-i18n-aria": "cameraMapFullscreen",
+    "data-i18n-title": "cameraMapFullscreen",
+    html: `<span class="btn-icon">${IconFullscreen}</span>`,
+  });
+
   const closeBtn = createElement("button", {
     type: "button",
     class: "camera-map-action camera-map-close calc-close",
@@ -152,7 +169,11 @@ function buildPanel() {
     html: IconClose,
   });
 
-  const actions = createElement("div", { class: "camera-map-actions" }, [minimizeBtn, closeBtn]);
+  const actions = createElement("div", { class: "camera-map-actions" }, [
+    fullscreenBtn,
+    minimizeBtn,
+    closeBtn,
+  ]);
   const header = createElement("div", { class: "camera-map-header" }, [
     createElement("span", { class: "camera-map-header-grip", "aria-hidden": "true" }),
     title,
@@ -221,6 +242,7 @@ function buildPanel() {
     panel,
     header,
     closeBtn,
+    fullscreenBtn,
     minimizeBtn,
     recenterBtn,
     refreshBtn,
@@ -248,6 +270,7 @@ export function createCameraMapWidget(options = {}) {
     panel,
     header,
     closeBtn,
+    fullscreenBtn,
     minimizeBtn,
     recenterBtn,
     refreshBtn,
@@ -270,6 +293,13 @@ export function createCameraMapWidget(options = {}) {
   let destroyed = false;
   let refreshController = null;
   let refreshTimer = 0;
+  let fullscreenResizeTimer = 0;
+  let isNativeFullscreen = false;
+  let isFallbackFullscreen = false;
+  let preFullscreenWidth = null;
+  let preFullscreenHeight = null;
+  let preFullscreenLeft = null;
+  let preFullscreenTop = null;
 
   function loadPos() {
     try {
@@ -339,6 +369,155 @@ export function createCameraMapWidget(options = {}) {
       map.resize?.();
     } catch {
       // Resize is best effort across synthetic test maps.
+    }
+  }
+
+  function isFullscreenActive() {
+    return isNativeFullscreen || isFallbackFullscreen;
+  }
+
+  function updateFullscreenButton() {
+    const active = isFullscreenActive();
+    const label = active ? t("cameraMapExitFullscreen") : t("cameraMapFullscreen");
+    const iconEl = fullscreenBtn.querySelector(".btn-icon");
+    if (iconEl) iconEl.innerHTML = active ? IconFullscreenExit : IconFullscreen;
+    fullscreenBtn.setAttribute("aria-label", label);
+    fullscreenBtn.setAttribute("title", label);
+    fullscreenBtn.dataset.fullscreen = active ? "true" : "false";
+  }
+
+  function savePreFullscreenGeometry() {
+    if (preFullscreenWidth && preFullscreenHeight) return;
+    const rect = panel.getBoundingClientRect();
+    preFullscreenWidth = Math.round(rect.width || pxToNumber(panel.style.width, 720));
+    preFullscreenHeight = Math.round(rect.height || pxToNumber(panel.style.height, 520));
+    preFullscreenLeft = panel.style.left || `${Math.round(rect.left || 18)}px`;
+    preFullscreenTop = panel.style.top || `${Math.round(rect.top || 78)}px`;
+  }
+
+  function restorePreFullscreenGeometry() {
+    if (preFullscreenWidth && preFullscreenHeight) {
+      panel.style.width = `${preFullscreenWidth}px`;
+      panel.style.height = `${preFullscreenHeight}px`;
+    }
+    if (preFullscreenLeft && preFullscreenTop) {
+      panel.style.left = preFullscreenLeft;
+      panel.style.top = preFullscreenTop;
+      panel.style.right = "auto";
+      panel.style.bottom = "auto";
+    }
+    preFullscreenWidth = null;
+    preFullscreenHeight = null;
+    preFullscreenLeft = null;
+    preFullscreenTop = null;
+  }
+
+  function resizeAfterFullscreenTransition() {
+    resizeMap();
+    window.clearTimeout(fullscreenResizeTimer);
+    fullscreenResizeTimer = window.setTimeout(() => {
+      resizeMap();
+      queueRefresh();
+    }, 120);
+  }
+
+  function enterFallbackFullscreen() {
+    savePreFullscreenGeometry();
+    isFallbackFullscreen = true;
+    panel.classList.add("is-fullscreen", "is-window-fullscreen");
+    updateFullscreenButton();
+    resizeAfterFullscreenTransition();
+  }
+
+  function exitFallbackFullscreen({ restore = true } = {}) {
+    if (!isFallbackFullscreen) return;
+    isFallbackFullscreen = false;
+    panel.classList.remove("is-window-fullscreen");
+    if (!isNativeFullscreen) {
+      panel.classList.remove("is-fullscreen");
+      if (restore) restorePreFullscreenGeometry();
+    }
+    updateFullscreenButton();
+    resizeAfterFullscreenTransition();
+  }
+
+  async function enterFullscreen() {
+    savePreFullscreenGeometry();
+    if (typeof panel.requestFullscreen === "function") {
+      try {
+        await panel.requestFullscreen();
+        if (document.fullscreenElement === panel) {
+          isNativeFullscreen = true;
+          isFallbackFullscreen = false;
+          panel.classList.add("is-fullscreen");
+          panel.classList.remove("is-window-fullscreen");
+          updateFullscreenButton();
+          resizeAfterFullscreenTransition();
+          return;
+        }
+      } catch {
+        // Fall back to a fixed viewport-sized shell window.
+      }
+    }
+    enterFallbackFullscreen();
+  }
+
+  async function exitFullscreenMode() {
+    if (isFallbackFullscreen) {
+      exitFallbackFullscreen();
+      return;
+    }
+    if (document.fullscreenElement === panel && typeof document.exitFullscreen === "function") {
+      try {
+        await document.exitFullscreen();
+      } catch {
+        // Manual state reset below keeps the shell usable if the browser rejects.
+      }
+    }
+    if (isNativeFullscreen) {
+      isNativeFullscreen = false;
+      panel.classList.remove("is-fullscreen");
+      restorePreFullscreenGeometry();
+      updateFullscreenButton();
+      resizeAfterFullscreenTransition();
+    }
+  }
+
+  async function toggleFullscreen() {
+    if (isFullscreenActive() || document.fullscreenElement === panel) {
+      await exitFullscreenMode();
+      return;
+    }
+    await enterFullscreen();
+  }
+
+  function onFullscreenChange() {
+    const wasNativeFullscreen = isNativeFullscreen;
+    isNativeFullscreen = document.fullscreenElement === panel;
+    if (isNativeFullscreen) {
+      isFallbackFullscreen = false;
+      panel.classList.remove("is-window-fullscreen");
+    }
+    panel.classList.toggle("is-fullscreen", isNativeFullscreen || isFallbackFullscreen);
+    if (wasNativeFullscreen && !isNativeFullscreen && !isFallbackFullscreen) {
+      restorePreFullscreenGeometry();
+    }
+    updateFullscreenButton();
+    resizeAfterFullscreenTransition();
+  }
+
+  function exitFullscreenBeforeHide({ restore = true } = {}) {
+    if (isFallbackFullscreen) {
+      exitFallbackFullscreen({ restore });
+    }
+    if (document.fullscreenElement === panel && typeof document.exitFullscreen === "function") {
+      document.exitFullscreen().catch(() => {});
+    } else if (isNativeFullscreen) {
+      isNativeFullscreen = false;
+      panel.classList.remove("is-fullscreen");
+      if (restore) restorePreFullscreenGeometry();
+      updateFullscreenButton();
+      resizeAfterFullscreenTransition();
     }
   }
 
@@ -592,15 +771,19 @@ export function createCameraMapWidget(options = {}) {
   }
 
   function hidePanel({ persist = true } = {}) {
+    exitFullscreenBeforeHide();
     panel.hidden = true;
     if (persist) saveVisibility(false);
     window.clearTimeout(refreshTimer);
+    window.clearTimeout(fullscreenResizeTimer);
     refreshController?.abort();
   }
 
   function minimizePanel() {
+    exitFullscreenBeforeHide();
     panel.hidden = true;
     window.clearTimeout(refreshTimer);
+    window.clearTimeout(fullscreenResizeTimer);
     refreshController?.abort();
   }
 
@@ -630,8 +813,11 @@ export function createCameraMapWidget(options = {}) {
 
   function destroy() {
     destroyed = true;
+    exitFullscreenBeforeHide({ restore: false });
     window.clearTimeout(refreshTimer);
+    window.clearTimeout(fullscreenResizeTimer);
     window.removeEventListener("resize", resizeMap);
+    document.removeEventListener("fullscreenchange", onFullscreenChange);
     refreshController?.abort();
     cleanupLayer();
     if (button) button.removeEventListener("click", toggle);
@@ -669,6 +855,7 @@ export function createCameraMapWidget(options = {}) {
       minimizable: true,
       closable: true,
       restorable: true,
+      fullscreen: true,
     },
     lifecycle: {
       open: showPanel,
@@ -696,6 +883,13 @@ export function createCameraMapWidget(options = {}) {
     close();
   });
 
+  fullscreenBtn.addEventListener("pointerdown", (event) => event.stopPropagation());
+  fullscreenBtn.addEventListener("pointerup", (event) => event.stopPropagation());
+  fullscreenBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleFullscreen().catch(() => {});
+  });
+
   minimizeBtn.addEventListener("pointerdown", (event) => event.stopPropagation());
   minimizeBtn.addEventListener("pointerup", (event) => event.stopPropagation());
   minimizeBtn.addEventListener("click", (event) => {
@@ -709,6 +903,7 @@ export function createCameraMapWidget(options = {}) {
   });
 
   window.addEventListener("resize", resizeMap, { passive: true });
+  document.addEventListener("fullscreenchange", onFullscreenChange);
 
   if (button) {
     button.addEventListener("click", toggle);
@@ -734,6 +929,8 @@ export function createCameraMapWidget(options = {}) {
     restore,
     destroy,
     isOpen: () => !panel.hidden,
+    isFullscreen: isFullscreenActive,
+    toggleFullscreen,
     refresh,
     focusCurrentLocation,
   };

@@ -23,6 +23,25 @@
   display: none;
 }
 
+.camera-map-panel.is-fullscreen,
+.camera-map-panel.is-window-fullscreen {
+  left: 0 !important;
+  top: 0 !important;
+  right: auto !important;
+  bottom: auto !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  max-width: none;
+  max-height: none;
+  min-width: 0;
+  min-height: 0;
+  border-radius: 0;
+  border-color: transparent;
+  box-shadow: none;
+  z-index: var(--vb-z-floating-fullscreen, 1900);
+}
+
 .camera-map-header {
   position: relative;
   display: grid;
@@ -110,6 +129,11 @@
   height: 17px;
 }
 
+.camera-map-action .btn-icon {
+  display: inline-grid;
+  place-items: center;
+}
+
 .camera-map-body {
   min-height: 0;
   flex: 1 1 auto;
@@ -169,6 +193,11 @@
     linear-gradient(135deg, rgba(16, 185, 129, 0.12), transparent 42%),
     color-mix(in srgb, var(--calc-btn, rgba(0, 0, 0, 0.06)) 78%, var(--calc-surface, #ffffff));
   touch-action: pan-x pan-y pinch-zoom;
+}
+
+.camera-map-panel.is-fullscreen .camera-map-container,
+.camera-map-panel.is-window-fullscreen .camera-map-container {
+  min-height: 0;
 }
 
 .camera-map-footer {
