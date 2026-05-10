@@ -106,11 +106,12 @@ import {
   tf,
 } from './render.js';
 import {
-  createTrapLoader,
   formatTrapDistance,
   formatTrapSpeed,
   updateNearestTrap,
+  updateNearestTrapAcrossDatasets,
 } from './traps.js';
+import { createCameraDatabase } from './camera-database.js';
 
 const DRIVING_AUDIO_OPPORTUNISTIC_IGNORE_SELECTOR = [
   '.player-panel',
@@ -207,6 +208,7 @@ export function getSpeedElements(root) {
     trapAlertButtons: queryAll(root, '.trap-alert-btn'),
     trapDistancePresets: queryOne(root, '#trapDistancePresets'),
     trapSoundButtons: queryAll(root, '.trap-sound-btn'),
+    cameraDatabaseStatus: queryOne(root, '#cameraDatabaseStatus'),
     quickAudioToggle: queryOne(root, '#quickAudioToggle'),
     drivingAudioPrompt: queryOne(root, '#drivingAudioPrompt'),
     drivingAudioPromptTitle: queryOne(root, '#drivingAudioPromptTitle'),
@@ -370,11 +372,25 @@ const state = {
   lastPoint: null,
   trapRecords: [],
   trapIndex: null,
+  trapDatasets: [],
   nearestTrapId: null,
   nearestTrapDistanceM: null,
   nearestTrapSpeedKph: null,
-  trapLoadPending: true,
+  trapLoadPending: false,
   trapLoadError: null,
+  cameraDatabaseStatus: {
+    status: 'idle',
+    activeCountryCode: '',
+    activeCountryName: '',
+    cameraCount: 0,
+    loadedCameraCount: 0,
+    lastUpdated: null,
+    cacheHit: false,
+    offline: false,
+    error: null,
+    unavailable: false,
+    updating: false,
+  },
   lastTrapSoundedId: null,
   recentSpeeds: [],
   lastAccuracyM: null,
@@ -497,6 +513,7 @@ let globeController = createInactiveGlobeController();
 let wazeController = createInactiveWazeController();
 let audioController = createInactiveAudioController();
 let audioControllerInitialized = false;
+let cameraDatabase = null;
 let speedRuntimeLifecycleCleanup = null;
 let speedRecoveryDialogOpen = false;
 let replayPersistTimerId = null;
@@ -1199,6 +1216,61 @@ function getConfiguredTrapAlertDistanceLabel(
   return matchingPreset?.label ?? getTrapAlertDistanceLabel(distanceM);
 }
 
+function formatCameraDatabaseDate(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  try {
+    return new Intl.DateTimeFormat(getLang(), { month: 'short', day: 'numeric' }).format(date);
+  } catch {
+    return date.toISOString().slice(0, 10);
+  }
+}
+
+function formatCameraDatabaseCount(value) {
+  const count = Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
+  try {
+    return count.toLocaleString(getLang());
+  } catch {
+    return String(count);
+  }
+}
+
+function renderCameraDatabaseStatus() {
+  if (!elements.cameraDatabaseStatus) return;
+
+  const cameraStatus = state.cameraDatabaseStatus || {};
+  const country = cameraStatus.activeCountryName || cameraStatus.activeCountryCode?.toUpperCase?.() || '';
+  const count = formatCameraDatabaseCount(cameraStatus.cameraCount);
+  const date = formatCameraDatabaseDate(cameraStatus.lastUpdated);
+  let text = t('cameraDatabaseWaitingGps');
+
+  if (cameraStatus.status === 'loading' || (cameraStatus.updating && !cameraStatus.cameraCount)) {
+    text = t('cameraDatabaseUpdating');
+  } else if (cameraStatus.status === 'offline' && cameraStatus.cacheHit) {
+    text = date
+      ? tf(t, 'cameraDatabaseOfflineCachedDate', { date })
+      : t('cameraDatabaseOfflineCached');
+  } else if (cameraStatus.status === 'ready' || cameraStatus.status === 'stale') {
+    if (country && cameraStatus.cameraCount > 0) {
+      text = cameraStatus.cacheHit
+        ? tf(t, 'cameraDatabaseSummaryCached', { country, count })
+        : tf(t, 'cameraDatabaseSummary', { country, count });
+    } else if (cameraStatus.updating) {
+      text = t('cameraDatabaseUpdating');
+    } else {
+      text = t('cameraDatabaseUnavailableRegion');
+    }
+  } else if (cameraStatus.unavailable || cameraStatus.status === 'error') {
+    text = t('cameraDatabaseUnavailableRegion');
+  }
+
+  elements.cameraDatabaseStatus.textContent = text;
+  elements.cameraDatabaseStatus.dataset.status = cameraStatus.status || 'idle';
+  elements.cameraDatabaseStatus.classList.toggle('is-offline', Boolean(cameraStatus.offline));
+  elements.cameraDatabaseStatus.classList.toggle('is-updating', Boolean(cameraStatus.updating));
+}
+
 function getAlertLimitDisplayValue(unit = state.unit) {
   return computeAlertLimitDisplayValue(state.alertLimitMs, unit, convertSpeed);
 }
@@ -1431,23 +1503,94 @@ function stopRecordingSession({ fromUserGesture = false } = {}) {
 }
 
 function updateNearestTrapState(longitude, latitude) {
-  const nextTrapState = updateNearestTrap(state.trapIndex, state.trapRecords, longitude, latitude);
+  const datasets = Array.isArray(state.trapDatasets) ? state.trapDatasets : [];
+  const nextTrapState = datasets.length > 0
+    ? updateNearestTrapAcrossDatasets(datasets, longitude, latitude)
+    : updateNearestTrap(state.trapIndex, state.trapRecords, longitude, latitude);
   state.nearestTrapId = nextTrapState.nearestTrapId;
   state.nearestTrapDistanceM = nextTrapState.nearestTrapDistanceM;
   state.nearestTrapSpeedKph = nextTrapState.nearestTrapSpeedKph;
 }
 
-const trapLoader = createTrapLoader({
-  state,
-  dataUrl: '/geo/ansv_cameras_compact.min.json',
-  indexUrl: '/geo/ansv_cameras_compact.kdbush',
-  renderMetrics,
-  afterLoad: () => {
+function getCameraDatabase() {
+  if (!cameraDatabase) {
+    cameraDatabase = createCameraDatabase({
+      onStatusChange: handleCameraDatabaseStatus,
+    });
+  }
+  return cameraDatabase;
+}
+
+function syncTrapLoadStateFromCameraStatus(status) {
+  const hasLoadedData = Array.isArray(state.trapDatasets) && state.trapDatasets.length > 0;
+  state.trapLoadPending = status.status === 'loading' || (status.updating && !hasLoadedData);
+  state.trapLoadError =
+    status.status === 'error' && !hasLoadedData
+      ? (status.error || new Error(t('trapDataUnavailable')))
+      : null;
+}
+
+function handleCameraDatabaseStatus(nextStatus) {
+  state.cameraDatabaseStatus = {
+    ...state.cameraDatabaseStatus,
+    ...nextStatus,
+  };
+  state.trapDatasets = getCameraDatabase().getLoadedDatasets();
+  syncTrapLoadStateFromCameraStatus(state.cameraDatabaseStatus);
+  if (state.lastPoint) {
+    updateNearestTrapState(state.lastPoint.longitude, state.lastPoint.latitude);
+  }
+  if (!state.viewMounted) return;
+  renderCameraDatabaseStatus();
+  renderMetrics();
+  speedRenderer.drawGauge();
+}
+
+function isCameraTrapDataReady() {
+  return (
+    Array.isArray(state.trapDatasets)
+    && state.trapDatasets.length > 0
+    && !state.trapLoadPending
+    && !state.trapLoadError
+  );
+}
+
+function ensureCameraArtifactsForPoint(longitude, latitude, countryCode = '') {
+  if (!state.trapAlertEnabled) return Promise.resolve(null);
+  if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) return Promise.resolve(null);
+
+  const routeSignal = activeSpeedRoute?.signal || null;
+  return getCameraDatabase()
+    .loadForLocation({ longitude, latitude, countryCode }, { signal: routeSignal })
+    .then((result) => {
+      state.trapDatasets = getCameraDatabase().getLoadedDatasets();
+      syncTrapLoadStateFromCameraStatus(result.status || getCameraDatabase().getStatus());
+      if (state.lastPoint) {
+        updateNearestTrapState(state.lastPoint.longitude, state.lastPoint.latitude);
+      }
+      if (state.viewMounted) {
+        renderCameraDatabaseStatus();
+        renderMetrics();
+      }
+      return result;
+    });
+}
+
+const trapLoader = {
+  ensureTrapArtifactsLoaded() {
+    if (!state.trapAlertEnabled) return;
     if (state.lastPoint) {
-      updateNearestTrapState(state.lastPoint.longitude, state.lastPoint.latitude);
+      void ensureCameraArtifactsForPoint(state.lastPoint.longitude, state.lastPoint.latitude);
     }
   },
-});
+  isTrapDataReady() {
+    return isCameraTrapDataReady();
+  },
+  loadTrapArtifacts() {
+    if (!state.lastPoint) return Promise.resolve(null);
+    return ensureCameraArtifactsForPoint(state.lastPoint.longitude, state.lastPoint.latitude);
+  },
+};
 
 function updatePageMeta() {
   document.documentElement.lang = getLang();
@@ -1622,6 +1765,7 @@ function renderAlertUi(options = {}) {
   elements.gaugeCard.classList.toggle('is-alert-over', alertState.over);
   elements.gaugeCard.classList.toggle('is-trap-active', alertState.trapActive);
 
+  renderCameraDatabaseStatus();
   renderQuickAudioControls();
   syncAlertTriggerDiscovery();
   speedRenderer.renderSubStatus();
@@ -2020,6 +2164,7 @@ function handlePosition(position) {
   state.lastFixAt = Date.now();
   state.lastPositionTimestamp = normalizedTimestamp;
 
+  void ensureCameraArtifactsForPoint(coords.longitude, coords.latitude);
   updateNearestTrapState(coords.longitude, coords.latitude);
   if (shouldRender) {
     globeController.syncGlobePosition(coords.longitude, coords.latitude);
@@ -2453,6 +2598,7 @@ function destroySpeedRouteResources(route = activeSpeedRoute) {
   route.destroyed = true;
   route.syncIndicator?.destroy?.();
   route.toolsMenu?.destroy?.();
+  cameraDatabase?.abortPending?.();
   analogSpeedometer.destroy?.();
   state.globeInitToken += 1;
   globeController.stopGlobeSolarUpdates();
@@ -2559,6 +2705,7 @@ function syncLanguage() {
     renderPrimaryView,
     renderMetrics,
   });
+  renderCameraDatabaseStatus();
   renderRecordingControls();
   renderDrivingAudioPrompt();
 }
@@ -2820,7 +2967,6 @@ async function init() {
       void persistReplaySessionNow();
     },
   });
-  trapLoader.loadTrapArtifacts();
   state.initialized = true;
   if (state.viewMounted) {
     syncMountedSpeedRouteUi();

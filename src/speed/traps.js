@@ -50,6 +50,44 @@ export function updateNearestTrap(trapIndex, trapRecords, longitude, latitude, o
   };
 }
 
+export function updateNearestTrapAcrossDatasets(datasets, longitude, latitude, options = {}) {
+  if (!Array.isArray(datasets) || datasets.length === 0) {
+    return {
+      nearestTrapId: null,
+      nearestTrapDistanceM: null,
+      nearestTrapSpeedKph: null,
+      nearestTrapDataset: null,
+    };
+  }
+
+  let bestTrap = {
+    nearestTrapId: null,
+    nearestTrapDistanceM: null,
+    nearestTrapSpeedKph: null,
+    nearestTrapDataset: null,
+  };
+
+  for (const dataset of datasets) {
+    const trapIndex = dataset?.index ?? dataset?.trapIndex;
+    const trapRecords = dataset?.traps ?? dataset?.trapRecords;
+    const nextTrap = updateNearestTrap(trapIndex, trapRecords, longitude, latitude, options);
+    if (!Number.isFinite(nextTrap.nearestTrapDistanceM)) continue;
+    if (
+      !Number.isFinite(bestTrap.nearestTrapDistanceM)
+      || nextTrap.nearestTrapDistanceM < bestTrap.nearestTrapDistanceM
+    ) {
+      const datasetId = dataset?.key || dataset?.id || dataset?.country || "dataset";
+      bestTrap = {
+        ...nextTrap,
+        nearestTrapId: `${datasetId}:${nextTrap.nearestTrapId}`,
+        nearestTrapDataset: dataset,
+      };
+    }
+  }
+
+  return bestTrap;
+}
+
 export function formatTrapDistance(distanceM, unit, awayLabel = "away") {
   if (!Number.isFinite(distanceM)) {
     return { value: "—", unit: awayLabel };

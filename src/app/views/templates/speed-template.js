@@ -401,6 +401,17 @@ const speedTemplate = String.raw`
                     <button type="button" class="trap-sound-btn" data-trap-sound="on" data-i18n="on">On</button>
                   </div>
                 </div>
+
+                <div class="camera-database-status-row">
+                  <p id="cameraDatabaseStatus" class="camera-database-status" data-i18n="cameraDatabaseWaitingGps">Camera database: waiting for GPS</p>
+                  <a
+                    class="camera-database-attribution"
+                    href="https://www.openstreetmap.org/copyright"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-i18n="cameraDatabaseAttribution"
+                  >OpenStreetMap data</a>
+                </div>
               </div>
 
               <div class="speed-alert-settings" data-i18n-aria="units" aria-label="Units">

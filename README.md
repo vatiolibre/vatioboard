@@ -47,6 +47,7 @@ What it does:
 - supports `km/h` or `mph`, and metric or imperial distance units
 - can auto-configure shared speed and distance units from the detected country on first use
 - offers manual overspeed alerts and nearby speed-trap alerts
+- loads speed-camera data by country/tile from generated OpenStreetMap-style artifacts and caches it in IndexedDB for offline use after the first successful load
 - supports quick audio mute and optional background-audio mode
 - switches between gauge and Waze-style primary views
 - records replay sessions for the replay page
@@ -138,6 +139,33 @@ What it does:
 - Vitest + jsdom for unit and smoke tests
 - ESLint + Prettier for code quality
 
+## Speed Camera Data
+
+Vatio Speed uses generated runtime artifacts in `public/geo/cameras`:
+
+- `manifest.json` lists available countries, counts, hashes, bounding boxes, and country or tile artifact URLs.
+- `countries/<code>.json` stores compact traps as `[lon, lat, speedKphOrNull, osmId?]`.
+- `countries/<code>.kdbush` stores the matching KDBush index.
+- Large countries can be split into `countries/<code>/manifest.json` plus `tiles/<tile-id>.json` and `tiles/<tile-id>.kdbush`.
+
+`npm run prepare:geo` is offline-safe. It builds from `data-src/osm_speed_cameras_overpass.json` when that cached Overpass response exists, otherwise it uses the checked-in Colombia ANSV seed so dev/build never depend on live Overpass. `npm run fetch:cameras` explicitly refreshes `data-src/osm_speed_cameras_overpass.json` from Overpass with:
+
+```txt
+[out:json][timeout:1000];
+node["highway"="speed_camera"];
+out body;
+```
+
+At runtime, Speed does not upload live location to fetch camera alerts. GPS matching happens locally: the app loads the manifest, chooses the current country or nearby tile from the GPS fix, tries IndexedDB first, and revalidates in the background. If the network drops during an update, the last good cached country/tile stays intact. With no cache and no network, the speedometer still works and trap alerts show an unavailable/offline camera database status.
+
+Follow-up tickets:
+
+- Add a daily GitHub Actions workflow that runs `npm run fetch:cameras`, opens a data refresh PR, and reports artifact counts.
+- Add a Help link explaining that missing cameras can be added to OpenStreetMap and will appear after the next artifact refresh.
+- Preserve optional source/debug tags in a separate diagnostics artifact without expanding the runtime payload.
+- Add an optional voice announcement patterned after `src/speed/audio.js`: “speed camera ahead, limit X” in the selected speed unit, while preserving browser audio gesture requirements.
+- Region-first preload: after a stable country is known and the device is idle on a good network, prefetch small neighboring countries.
+
 ## Project Layout
 
 ```txt
@@ -152,10 +180,12 @@ What it does:
 ├─ data-src/                 # Source/reference datasets
 ├─ public/
 │  ├─ audio/                 # Alert and finish sounds
-│  ├─ geo/                   # Generated speed-trap payloads and KDBush index
+│  ├─ geo/                   # Generated speed-camera manifests, payloads, and KDBush indexes
 │  └─ img/                   # Logos and social images
 ├─ scripts/
-│  └─ build-speed-traps.mjs
+│  ├─ build-worldwide-cameras.mjs
+│  ├─ fetch-worldwide-cameras.mjs
+│  └─ build-speed-traps.mjs   # Compatibility wrapper
 ├─ src/
 │  ├─ accel/
 │  ├─ board/
@@ -221,7 +251,8 @@ Legacy standalone test/dev harnesses remain available at:
 
 ## Scripts
 
-- `npm run prepare:geo`: builds the speed-trap artifacts consumed by Vatio Speed
+- `npm run prepare:geo`: builds the speed-camera artifacts consumed by Vatio Speed from local data
+- `npm run fetch:cameras`: refreshes the local Overpass raw source and rebuilds speed-camera artifacts
 - `npm run dev`: runs Vite locally after the `predev` geo preparation step
 - `npm run build`: creates a production build after the `prebuild` geo preparation step
 - `npm run preview`: serves the built app locally
@@ -236,10 +267,12 @@ Legacy standalone test/dev harnesses remain available at:
 
 ## Generated Data
 
-`npm run prepare:geo` reads [`data-src/ansv_cameras_maplibre.geojson`](data-src/ansv_cameras_maplibre.geojson) and generates:
+`npm run prepare:geo` reads `data-src/osm_speed_cameras_overpass.json` when present, otherwise [`data-src/ansv_cameras_maplibre.geojson`](data-src/ansv_cameras_maplibre.geojson), and generates:
 
-- `public/geo/ansv_cameras_compact.min.json`
-- `public/geo/ansv_cameras_compact.kdbush`
+- `public/geo/cameras/manifest.json`
+- `public/geo/cameras/countries/<country-code>.json`
+- `public/geo/cameras/countries/<country-code>.kdbush`
+- optional `public/geo/cameras/countries/<country-code>/tiles/*` files for large countries
 
 `public/geo/` may be missing in a fresh checkout until you run `npm run prepare:geo`, `npm run dev`, or `npm run build`.
 

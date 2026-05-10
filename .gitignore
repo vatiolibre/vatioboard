@@ -13,6 +13,7 @@ dist-ssr
 *.local
 public/geo/ansv_cameras_compact.min.json
 public/geo/ansv_cameras_compact.kdbush
+public/geo/cameras/
 
 # Editor directories and files
 .vscode/*

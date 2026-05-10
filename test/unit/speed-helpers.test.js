@@ -12,7 +12,12 @@ import {
   normalizeTrapAlertDistance,
 } from '../../src/speed/preferences.js';
 import { convertSpeed } from '../../src/speed/render.js';
-import { formatTrapDistance, formatTrapSpeed, updateNearestTrap } from '../../src/speed/traps.js';
+import {
+  formatTrapDistance,
+  formatTrapSpeed,
+  updateNearestTrap,
+  updateNearestTrapAcrossDatasets,
+} from '../../src/speed/traps.js';
 
 describe('speed extracted helpers', () => {
   beforeEach(() => {
@@ -135,6 +140,36 @@ describe('speed extracted helpers', () => {
       nearestTrapDistanceM: 420,
       nearestTrapSpeedKph: 80,
     });
+  });
+
+  it('finds the nearest trap across multiple loaded datasets', () => {
+    const trapState = updateNearestTrapAcrossDatasets(
+      [
+        {
+          key: 'country:us',
+          index: { id: 'us-index' },
+          traps: [[-73.9, 40.7, 50]],
+        },
+        {
+          key: 'country:ca',
+          index: { id: 'ca-index' },
+          traps: [[-73.99, 40.71, 80]],
+        },
+      ],
+      -74,
+      40.72,
+      {
+        around: vi.fn((index) => index.id === 'us-index' ? [0] : [0]),
+        distanceKm: vi.fn((lon, lat, trapLon) => trapLon === -73.9 ? 2 : 0.4),
+      }
+    );
+
+    expect(trapState).toMatchObject({
+      nearestTrapId: 'country:ca:0',
+      nearestTrapDistanceM: 400,
+      nearestTrapSpeedKph: 80,
+    });
+    expect(trapState.nearestTrapDataset.key).toBe('country:ca');
   });
 
   it('derives stable Waze zoom levels and embed URLs', () => {
