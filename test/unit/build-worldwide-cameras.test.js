@@ -72,6 +72,7 @@ describe("build-worldwide-cameras", () => {
       outputDir,
       generatedAt: "2026-05-10T00:00:00.000Z",
       allowLegacyFallback: false,
+      includeLocalSources: false,
     });
 
     const countryJson = await fs.readFile(path.join(outputDir, "countries/us.json"), "utf8");
@@ -106,6 +107,7 @@ describe("build-worldwide-cameras", () => {
       outputDir,
       generatedAt: "2026-05-10T00:00:00.000Z",
       allowLegacyFallback: false,
+      includeLocalSources: false,
     });
 
     const country = JSON.parse(await fs.readFile(path.join(outputDir, "countries/us.json"), "utf8"));
@@ -137,6 +139,7 @@ describe("build-worldwide-cameras", () => {
       outputDir,
       generatedAt: "2026-05-10T00:00:00.000Z",
       allowLegacyFallback: false,
+      includeLocalSources: false,
     });
 
     const country = JSON.parse(await fs.readFile(path.join(outputDir, "countries/us.json"), "utf8"));
@@ -176,6 +179,7 @@ describe("build-worldwide-cameras", () => {
       outputDir,
       generatedAt: "2026-05-10T00:00:00.000Z",
       allowLegacyFallback: false,
+      includeLocalSources: false,
     });
 
     const country = JSON.parse(await fs.readFile(path.join(outputDir, "countries/us.json"), "utf8"));
@@ -200,6 +204,7 @@ describe("build-worldwide-cameras", () => {
       outputDir,
       generatedAt: "2026-05-10T00:00:00.000Z",
       allowLegacyFallback: false,
+      includeLocalSources: false,
     });
 
     const indexBuffer = await fs.readFile(path.join(outputDir, "countries/us.kdbush"));
@@ -208,5 +213,96 @@ describe("build-worldwide-cameras", () => {
     const index = KDBush.from(arrayBuffer);
     expect(index.range(-74, 39, -72, 41)).toEqual([0]);
     expect(index.range(39, -74, 41, -72)).toEqual([]);
+  });
+
+  it("merges OSM, ANSV, NYC, and NYC ticket sources into worldwide artifacts", async () => {
+    const dir = await makeTempDir();
+    const sourcePath = path.join(dir, "overpass.json");
+    const enrichmentPath = path.join(dir, "enrichment.json");
+    const ansvPath = path.join(dir, "ansv.geojson");
+    const nycPath = path.join(dir, "nyc.geojson");
+    const ticketPath = path.join(dir, "nyc-tickets.geojson");
+    const outputDir = path.join(dir, "geo");
+    await fs.writeFile(sourcePath, JSON.stringify({
+      elements: [
+        { type: "node", id: 90, lon: -74.1, lat: 4.6, tags: { "addr:country": "CO" } },
+        { type: "node", id: 91, lon: -73.9098, lat: 40.74218, tags: { "addr:country": "US" } },
+      ],
+    }));
+    await fs.writeFile(enrichmentPath, JSON.stringify({ records: {} }));
+    await fs.writeFile(ansvPath, JSON.stringify({
+      type: "FeatureCollection",
+      features: [{
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [-74.10001, 4.60001] },
+        properties: {
+          request_code: "SOL1",
+          device_name: "C2",
+          operation_status: "Operando",
+          department: "CUNDINAMARCA",
+          municipality: "BOGOTA",
+          address: "RUTA 1 SENTIDO NORTE-SUR",
+          speed: "60.0",
+          infractions: "C29",
+          jurisdiction: "Municipal",
+        },
+      }],
+    }));
+    await fs.writeFile(nycPath, JSON.stringify({
+      type: "FeatureCollection",
+      features: [{
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [-73.9097138, 40.7421843] },
+        properties: {
+          id: 7,
+          name: "Queens Bv b/t 58 St and 53 St",
+          origName: ["WB QUEENS BV 58 ST -53 ST"],
+        },
+      }],
+    }));
+    await fs.writeFile(ticketPath, JSON.stringify({
+      type: "FeatureCollection",
+      features: [{
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [-73.9097138, 40.7421843] },
+        properties: {
+          name: "Queens Bv b/t 58 St and 53 St",
+          origName: ["WB QUEENS BV 58 ST -53 ST"],
+          dates: [{ date: "2014-01-16", tickets: 5 }],
+        },
+      }],
+    }));
+
+    const { manifest } = await buildWorldwideCameraArtifacts({
+      sourcePath,
+      enrichmentPath,
+      outputDir,
+      generatedAt: "2026-05-10T00:00:00.000Z",
+      allowLegacyFallback: false,
+      localSourcePaths: [ansvPath, nycPath, ticketPath],
+    });
+
+    const co = JSON.parse(await fs.readFile(path.join(outputDir, "countries/co.json"), "utf8"));
+    const us = JSON.parse(await fs.readFile(path.join(outputDir, "countries/us.json"), "utf8"));
+    expect(co.traps[0][2]).toBe(60);
+    expect(co.traps[0][4]).toMatchObject({ source: "official:ansv:speed" });
+    expect(co.traps[0][5]).toMatchObject({
+      primarySource: "ansv",
+      sources: expect.arrayContaining(["ansv", "osm"]),
+      official: true,
+    });
+    expect(us.traps[0][5]).toMatchObject({
+      primarySource: "nyc",
+      sources: expect.arrayContaining(["nyc", "nyc-tickets", "osm"]),
+      ticketStats: expect.objectContaining({ totalTickets: 5 }),
+    });
+    expect(manifest.source.sources.map((source) => source.id)).toEqual(
+      expect.arrayContaining(["osm", "osm-maxspeed-enrichment", "ansv", "nyc", "nyc-tickets"]),
+    );
+    expect(manifest.sourceCoverage.byContributingSource).toMatchObject({
+      ansv: 1,
+      nyc: 1,
+      "nyc-tickets": 1,
+    });
   });
 });

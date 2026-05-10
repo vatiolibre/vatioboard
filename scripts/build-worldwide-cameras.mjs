@@ -4,6 +4,14 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import KDBush from "kdbush";
 import { parseMaxspeed } from "./camera-maxspeed-enrichment.mjs";
+import {
+  attachNycTicketStats,
+  normalizeAnsvCameraGeoJson,
+  normalizeNycCameraGeoJson,
+  normalizeNycTicketGeoJson,
+  normalizeOsmCameraElements,
+} from "./camera-source-normalizers.mjs";
+import { mergeCameraRecords } from "./camera-source-merge.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,6 +23,11 @@ export const DEFAULT_MAXSPEED_ENRICHMENT_PATH = path.resolve(
   "data-src/osm_speed_cameras_maxspeed_enrichment.json",
 );
 export const LEGACY_ANSV_PATH = path.resolve(projectRoot, "data-src/ansv_cameras_maplibre.geojson");
+export const DEFAULT_LOCAL_CAMERA_SOURCE_PATHS = [
+  LEGACY_ANSV_PATH,
+  path.resolve(projectRoot, "data-src/nyc/nyc_cameras.geojson"),
+  path.resolve(projectRoot, "data-src/nyc/nyc_tickets.geojson"),
+];
 export const DEFAULT_OUTPUT_DIR = path.resolve(projectRoot, "public/geo/cameras");
 export const OVERPASS_QUERY = `[out:json][timeout:1000];
 node["highway"="speed_camera"];
@@ -400,6 +413,76 @@ export function summarizeSpeedCoverage(traps, { includePercentages = true } = {}
   return coverage;
 }
 
+function getTrapSourceMeta(trap) {
+  const meta = trap?.[5];
+  return meta && typeof meta === "object" ? meta : null;
+}
+
+function getTrapSources(trap) {
+  const sources = getTrapSourceMeta(trap)?.sources;
+  if (Array.isArray(sources) && sources.length > 0) return sources;
+  return ["osm"];
+}
+
+function getTrapPrimarySource(trap) {
+  return getTrapSourceMeta(trap)?.primarySource || getTrapSources(trap)[0] || "osm";
+}
+
+function incrementCounter(target, key, amount = 1) {
+  const normalized = String(key || "unknown");
+  target[normalized] = (target[normalized] || 0) + amount;
+}
+
+export function summarizeSourceCoverage(traps, mergeStats = {}) {
+  const coverage = {
+    total: 0,
+    byPrimarySource: {},
+    byContributingSource: {},
+    addedByOfficialSources: 0,
+    mergedOfficialIntoOsm: 0,
+    speedUpdatedFromOfficial: 0,
+    ticketStatsAttached: 0,
+    duplicateCandidatesSkipped: Number(mergeStats.duplicateCandidatesSkipped) || 0,
+    conflicts: 0,
+  };
+
+  for (const trap of Array.isArray(traps) ? traps : []) {
+    coverage.total += 1;
+    const sourceMeta = getTrapSourceMeta(trap);
+    const sources = getTrapSources(trap);
+    const primarySource = getTrapPrimarySource(trap);
+    incrementCounter(coverage.byPrimarySource, primarySource);
+    for (const source of sources) incrementCounter(coverage.byContributingSource, source);
+
+    const hasOfficial = sources.some((source) => source === "ansv" || source === "nyc");
+    if (hasOfficial && !sources.includes("osm")) coverage.addedByOfficialSources += 1;
+    if (hasOfficial && sources.includes("osm")) coverage.mergedOfficialIntoOsm += 1;
+    if (sourceMeta?.speedUpdatedFromOfficial || String(trap?.[4]?.source || "").startsWith("official:")) {
+      coverage.speedUpdatedFromOfficial += 1;
+    }
+    if (sourceMeta?.ticketStats) coverage.ticketStatsAttached += 1;
+    coverage.conflicts += Array.isArray(sourceMeta?.speedConflicts) ? sourceMeta.speedConflicts.length : 0;
+  }
+
+  if (Number.isFinite(Number(mergeStats.addedByOfficialSources))) {
+    coverage.addedByOfficialSources = Number(mergeStats.addedByOfficialSources);
+  }
+  if (Number.isFinite(Number(mergeStats.mergedOfficialIntoOsm))) {
+    coverage.mergedOfficialIntoOsm = Number(mergeStats.mergedOfficialIntoOsm);
+  }
+  if (Number.isFinite(Number(mergeStats.speedUpdatedFromOfficial))) {
+    coverage.speedUpdatedFromOfficial = Number(mergeStats.speedUpdatedFromOfficial);
+  }
+  if (Number.isFinite(Number(mergeStats.ticketStatsAttached))) {
+    coverage.ticketStatsAttached = Number(mergeStats.ticketStatsAttached);
+  }
+  if (Number.isFinite(Number(mergeStats.conflicts))) {
+    coverage.conflicts = Number(mergeStats.conflicts);
+  }
+
+  return coverage;
+}
+
 function sortTraps(traps) {
   return traps.sort((a, b) => {
     const lon = a[0] - b[0];
@@ -457,6 +540,7 @@ async function writeCountryPayload({ outputDir, code, generatedAt, traps }) {
     generatedAt,
     count: traps.length,
     speedCoverage: summarizeSpeedCoverage(traps),
+    sourceCoverage: summarizeSourceCoverage(traps),
     traps,
   };
   const json = serializeJson(payload);
@@ -479,6 +563,7 @@ async function writeCountryPayload({ outputDir, code, generatedAt, traps }) {
     generatedAt,
     bbox: getBBox(traps),
     speedCoverage: payload.speedCoverage,
+    sourceCoverage: payload.sourceCoverage,
   };
 }
 
@@ -522,6 +607,7 @@ async function writeTiledCountryPayload({ outputDir, code, generatedAt, traps, t
       generatedAt,
       count: tileTraps.length,
       speedCoverage: summarizeSpeedCoverage(tileTraps),
+      sourceCoverage: summarizeSourceCoverage(tileTraps),
       traps: tileTraps,
     };
     const json = serializeJson(payload);
@@ -541,6 +627,7 @@ async function writeTiledCountryPayload({ outputDir, code, generatedAt, traps, t
       sha256: sha256(json),
       bbox: getTileBBox(tileId, tileSize),
       speedCoverage: payload.speedCoverage,
+      sourceCoverage: payload.sourceCoverage,
     };
   }
 
@@ -550,6 +637,7 @@ async function writeTiledCountryPayload({ outputDir, code, generatedAt, traps, t
     generatedAt,
     count: traps.length,
     speedCoverage: summarizeSpeedCoverage(traps),
+    sourceCoverage: summarizeSourceCoverage(traps),
     tileSize,
     tiles,
   };
@@ -568,6 +656,7 @@ async function writeTiledCountryPayload({ outputDir, code, generatedAt, traps, t
     generatedAt,
     bbox: getBBox(traps, 1),
     speedCoverage: tileManifest.speedCoverage,
+    sourceCoverage: tileManifest.sourceCoverage,
     tiled: true,
     tileSize,
     tiles: `/geo/cameras/countries/${code}/manifest.json`,
@@ -601,6 +690,186 @@ async function loadMaxspeedEnrichment(enrichmentPath) {
   }
 }
 
+async function readOptionalJsonFile(filePath) {
+  try {
+    return await readJsonFile(filePath);
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+function sourcePathId(filePath) {
+  const normalized = path.basename(filePath).toLowerCase();
+  if (normalized === "ansv_cameras_maplibre.geojson") return "ansv";
+  if (normalized === "nyc_cameras.geojson") return "nyc";
+  if (normalized === "nyc_tickets.geojson") return "nyc-tickets";
+  if (normalized === "osm_speed_cameras_overpass.json") return "osm";
+  if (normalized === "osm_speed_cameras_maxspeed_enrichment.json") return "osm-maxspeed-enrichment";
+  return normalized.replace(/\.[^.]+$/, "");
+}
+
+function sourceManifestEntry(id, filePath) {
+  const roles = {
+    osm: "global baseline",
+    "osm-maxspeed-enrichment": "nearest-road speed enrichment",
+    ansv: "official Colombia cameras",
+    nyc: "NYC local camera locations",
+    "nyc-tickets": "NYC activity/ticket metadata",
+  };
+  return {
+    id,
+    path: path.relative(projectRoot, filePath),
+    role: roles[id] || "local camera source",
+  };
+}
+
+function isUsefulSourceMeta(record) {
+  const sources = record?.sourceMeta?.sources || [];
+  return sources.length > 1
+    || record?.sourceMeta?.primarySource !== "osm"
+    || record?.sourceMeta?.official
+    || record?.sourceMeta?.ticketStats
+    || record?.sourceMeta?.speedConflicts?.length;
+}
+
+function compactSourceMeta(record) {
+  if (!isUsefulSourceMeta(record)) return null;
+  const meta = record.sourceMeta || {};
+  const compact = {
+    sources: meta.sources,
+    primarySource: meta.primarySource,
+    ids: meta.ids,
+    names: meta.names,
+    aliases: meta.aliases,
+    country: meta.country || record.country,
+    region: meta.region || record.region,
+    locality: meta.locality,
+    address: meta.address,
+    jurisdiction: meta.jurisdiction,
+    official: meta.official,
+    active: meta.active,
+    enforcementTypes: meta.enforcementTypes,
+    infractions: meta.infractions,
+    directions: meta.directions,
+    ticketStats: meta.ticketStats,
+    speedConflicts: meta.speedConflicts,
+    speedUpdatedFromOfficial: meta.speedUpdatedFromOfficial || undefined,
+  };
+
+  for (const key of Object.keys(compact)) {
+    if (compact[key] === null || compact[key] === undefined || compact[key] === "") delete compact[key];
+    else if (Array.isArray(compact[key]) && compact[key].length === 0) delete compact[key];
+    else if (typeof compact[key] === "object" && !Array.isArray(compact[key]) && Object.keys(compact[key]).length === 0) {
+      delete compact[key];
+    }
+  }
+  return compact;
+}
+
+function getCanonicalTrapId(record) {
+  const ids = record?.sourceMeta?.ids || {};
+  const osmId = ids.osm;
+  if (osmId !== null && osmId !== undefined && osmId !== "") {
+    return Array.isArray(osmId) ? osmId[0] : osmId;
+  }
+  const primary = record?.sourceMeta?.primarySource || record?.source || "camera";
+  const primaryId = ids[primary] ?? record?.sourceId ?? record?.id;
+  return `${primary}:${Array.isArray(primaryId) ? primaryId[0] : primaryId}`;
+}
+
+function shouldOmitSpeedMeta(record, sourceMeta) {
+  return !sourceMeta
+    && record?.source === "osm"
+    && record?.speedMeta?.source === "camera:maxspeed";
+}
+
+function cameraRecordToBuildRecord(record) {
+  const lon = roundCoordinate(record.lon);
+  const lat = roundCoordinate(record.lat);
+  if (!isFiniteCoordinate(lon, lat)) return null;
+  const sourceMeta = compactSourceMeta(record);
+  const rawSpeedKph = record.speedKph === null || record.speedKph === undefined || record.speedKph === ""
+    ? null
+    : Number(record.speedKph);
+  const speedKph = Number.isFinite(rawSpeedKph) ? Math.round(rawSpeedKph) : null;
+  const trap = [lon, lat, speedKph, getCanonicalTrapId(record)];
+  const speedMeta = shouldOmitSpeedMeta(record, sourceMeta) ? null : record.speedMeta;
+
+  if (speedMeta || sourceMeta) {
+    trap[4] = speedMeta || null;
+  }
+  if (sourceMeta) trap[5] = sourceMeta;
+
+  return {
+    country: normalizeCountryCode(record.country) || "zz",
+    key: `${trap[3] ?? "camera"}:${lon},${lat}`,
+    trap,
+  };
+}
+
+function normalizeSourceForBuild(rawSource, {
+  resolvedSourcePath,
+  maxspeedEnrichment,
+  defaultCountry = "zz",
+} = {}) {
+  if (Array.isArray(rawSource?.elements)) {
+    return normalizeOsmCameraElements(rawSource.elements, { maxspeedEnrichment });
+  }
+
+  if (path.resolve(resolvedSourcePath || "") === LEGACY_ANSV_PATH) {
+    return normalizeAnsvCameraGeoJson(rawSource);
+  }
+
+  const normalized = normalizeCameraSource(rawSource, {
+    defaultCountry,
+    maxspeedEnrichment,
+  });
+  return normalized.records.map((record) => ({
+    source: "local",
+    sourceId: record.key,
+    lon: record.trap[0],
+    lat: record.trap[1],
+    speedKph: Number.isFinite(record.trap[2]) ? record.trap[2] : null,
+    speedMeta: record.trap[4] || null,
+    country: record.country,
+    sourceMeta: {
+      sources: ["local"],
+      primarySource: "local",
+      ids: { local: record.key },
+      country: record.country,
+    },
+  }));
+}
+
+async function loadLocalCameraSources({ localSourcePaths, resolvedSourcePath } = {}) {
+  const resolvedPrimary = path.resolve(resolvedSourcePath || "");
+  const paths = Array.isArray(localSourcePaths) ? localSourcePaths : [];
+  const sourceEntries = [];
+  let ansvRecords = [];
+  let nycRecords = [];
+  let nycTickets = [];
+
+  for (const sourcePath of paths) {
+    const resolved = path.resolve(sourcePath);
+    if (resolved === resolvedPrimary) continue;
+    const payload = await readOptionalJsonFile(resolved);
+    if (!payload) continue;
+    const id = sourcePathId(resolved);
+    sourceEntries.push(sourceManifestEntry(id, resolved));
+
+    if (id === "ansv") ansvRecords = ansvRecords.concat(normalizeAnsvCameraGeoJson(payload));
+    else if (id === "nyc") nycRecords = nycRecords.concat(normalizeNycCameraGeoJson(payload));
+    else if (id === "nyc-tickets") nycTickets = nycTickets.concat(normalizeNycTicketGeoJson(payload));
+  }
+
+  if (nycTickets.length > 0) nycRecords = attachNycTicketStats(nycRecords, nycTickets);
+  return {
+    records: [...ansvRecords, ...nycRecords],
+    sourceEntries,
+  };
+}
+
 async function chooseSourcePath({ sourcePath = "", allowLegacyFallback = true } = {}) {
   if (sourcePath) return path.resolve(sourcePath);
 
@@ -622,20 +891,45 @@ export async function buildWorldwideCameraArtifacts({
   tileCountThreshold = TILE_COUNT_THRESHOLD,
   tileBytesThreshold = TILE_BYTES_THRESHOLD,
   tileSize = TILE_SIZE_DEGREES,
+  includeLocalSources = true,
+  localSourcePaths = DEFAULT_LOCAL_CAMERA_SOURCE_PATHS,
+  mergeOfficialSources = true,
 } = {}) {
   const resolvedSourcePath = await chooseSourcePath({ sourcePath, allowLegacyFallback });
   const rawSource = await readJsonFile(resolvedSourcePath);
   const maxspeedEnrichment = await loadMaxspeedEnrichment(enrichmentPath);
+  const enrichmentSourcePresent = Boolean(enrichmentPath) && await fs.access(enrichmentPath)
+    .then(() => true)
+    .catch(() => false);
   const isLegacyAnsv = path.resolve(resolvedSourcePath) === LEGACY_ANSV_PATH;
-  const normalized = normalizeCameraSource(rawSource, {
+  const primaryCameraRecords = normalizeSourceForBuild(rawSource, {
+    resolvedSourcePath,
     defaultCountry: isLegacyAnsv ? "co" : "zz",
     maxspeedEnrichment,
-    sourceName: isLegacyAnsv ? "Colombia ANSV local seed" : undefined,
-    sourceQuery: isLegacyAnsv
-      ? "data-src/ansv_cameras_maplibre.geojson; run npm run fetch:cameras to refresh from OpenStreetMap Overpass"
-      : undefined,
   });
-  const groups = groupRecordsByCountry(normalized.records);
+  const primarySourceId = Array.isArray(rawSource?.elements) ? "osm" : sourcePathId(resolvedSourcePath);
+  const sourceEntries = [sourceManifestEntry(primarySourceId, resolvedSourcePath)];
+
+  if (enrichmentSourcePresent) {
+    sourceEntries.push({
+      ...sourceManifestEntry("osm-maxspeed-enrichment", enrichmentPath),
+      records: maxspeedEnrichment.size,
+    });
+  }
+
+  const local = includeLocalSources
+    ? await loadLocalCameraSources({ localSourcePaths, resolvedSourcePath })
+    : { records: [], sourceEntries: [] };
+  sourceEntries.push(...local.sourceEntries);
+
+  const cameraRecords = [...primaryCameraRecords, ...local.records];
+  const merged = mergeOfficialSources
+    ? mergeCameraRecords(cameraRecords)
+    : { records: cameraRecords, stats: {} };
+  const buildRecords = merged.records
+    .map(cameraRecordToBuildRecord)
+    .filter(Boolean);
+  const groups = groupRecordsByCountry(buildRecords);
 
   await fs.rm(outputDir, { recursive: true, force: true });
   await fs.mkdir(path.join(outputDir, "countries"), { recursive: true });
@@ -659,21 +953,20 @@ export async function buildWorldwideCameraArtifacts({
         : await writeCountryPayload({ outputDir, code, generatedAt, traps });
   }
 
-  const source = { ...normalized.source };
-  if (maxspeedEnrichment.size > 0) {
-    source.maxspeedEnrichment = {
-      path: path.relative(projectRoot, enrichmentPath),
-      records: maxspeedEnrichment.size,
-    };
-  }
+  const allTraps = Array.from(groups.values()).flat();
+  const source = {
+    name: sourceEntries.some((entry) => entry.id === "osm")
+      ? "OpenStreetMap + official/local camera sources"
+      : "Official/local camera sources",
+    sources: sourceEntries,
+  };
 
   const manifest = {
     version: 2,
     generatedAt,
     source,
-    speedCoverage: summarizeSpeedCoverage(
-      Array.from(groups.values()).flat(),
-    ),
+    speedCoverage: summarizeSpeedCoverage(allTraps),
+    sourceCoverage: summarizeSourceCoverage(allTraps, merged.stats),
     countries,
   };
   const manifestJson = serializeJson(manifest);
@@ -683,6 +976,7 @@ export async function buildWorldwideCameraArtifacts({
     manifest,
     sourcePath: resolvedSourcePath,
     outputDir,
+    mergeStats: merged.stats,
   };
 }
 

@@ -23,6 +23,27 @@ function getCoverage(entry = {}) {
   };
 }
 
+function getSourceCoverage(entry = {}) {
+  return entry.sourceCoverage || {
+    total: entry.count || 0,
+    byPrimarySource: {},
+    byContributingSource: {},
+    addedByOfficialSources: 0,
+    mergedOfficialIntoOsm: 0,
+    speedUpdatedFromOfficial: 0,
+    ticketStatsAttached: 0,
+    duplicateCandidatesSkipped: 0,
+    conflicts: 0,
+  };
+}
+
+function formatSourceCounts(counts = {}) {
+  const entries = Object.entries(counts)
+    .sort(([, a], [, b]) => b - a)
+    .map(([source, count]) => `${source}:${count}`);
+  return entries.length ? entries.join(", ") : "none";
+}
+
 async function main() {
   const manifestPath = path.resolve(process.argv[2] || DEFAULT_MANIFEST_PATH);
   try {
@@ -33,6 +54,18 @@ async function main() {
     console.warn(`  explicit: ${coverage.explicit ?? 0} (${formatPct(coverage.explicitPct)})`);
     console.warn(`  inferred: ${coverage.inferred ?? 0} (${formatPct(coverage.inferredPct)})`);
     console.warn(`  unknown:  ${coverage.unknown ?? 0} (${formatPct(coverage.unknownPct)})`);
+
+    const sourceCoverage = getSourceCoverage(manifest);
+    console.warn("");
+    console.warn("Camera source coverage:");
+    console.warn(`  by primary source:      ${formatSourceCounts(sourceCoverage.byPrimarySource)}`);
+    console.warn(`  by contributing source: ${formatSourceCounts(sourceCoverage.byContributingSource)}`);
+    console.warn(`  added by official/local sources: ${sourceCoverage.addedByOfficialSources || 0}`);
+    console.warn(`  merged official/local into OSM:  ${sourceCoverage.mergedOfficialIntoOsm || 0}`);
+    console.warn(`  speed updated from official:     ${sourceCoverage.speedUpdatedFromOfficial || 0}`);
+    console.warn(`  ticket stats attached:           ${sourceCoverage.ticketStatsAttached || 0}`);
+    console.warn(`  duplicate candidates merged:     ${sourceCoverage.duplicateCandidatesSkipped || 0}`);
+    console.warn(`  conflicts:                       ${sourceCoverage.conflicts || 0}`);
 
     const countries = Object.entries(manifest.countries || {})
       .map(([code, entry]) => ({

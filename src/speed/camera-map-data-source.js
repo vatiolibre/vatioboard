@@ -295,6 +295,16 @@ function readTrapOsmId(trap) {
   return String(value);
 }
 
+function readTrapSourceMeta(trap) {
+  const meta = trap?.[5];
+  return meta && typeof meta === "object" ? meta : null;
+}
+
+function readSourceList(sourceMeta) {
+  const sources = Array.isArray(sourceMeta?.sources) ? sourceMeta.sources : [];
+  return sources.map((source) => String(source).trim()).filter(Boolean);
+}
+
 export function compactTrapsToCameraFeatures(traps, {
   countryCode = "",
   countryName = "",
@@ -317,6 +327,8 @@ export function compactTrapsToCameraFeatures(traps, {
     const osmId = readTrapOsmId(trap);
     const speedKph = readTrapSpeed(trap);
     const speedMeta = readTrapSpeedMeta(trap);
+    const sourceMeta = readTrapSourceMeta(trap);
+    const cameraSources = readSourceList(sourceMeta);
     const featureIndex = startIndex + features.length;
     features.push({
       type: "Feature",
@@ -335,6 +347,14 @@ export function compactTrapsToCameraFeatures(traps, {
         sourceWayId: readSourceWayId(speedMeta),
         distanceM: readDistanceM(speedMeta),
         osmId,
+        primarySource: sourceMeta?.primarySource || (cameraSources[0] || "osm"),
+        cameraSources,
+        official: sourceMeta?.official === true,
+        jurisdiction: sourceMeta?.jurisdiction || null,
+        cameraName: Array.isArray(sourceMeta?.names) ? sourceMeta.names[0] || null : null,
+        address: sourceMeta?.address || null,
+        ticketStats: sourceMeta?.ticketStats || null,
+        sourceMeta,
       },
     });
   }

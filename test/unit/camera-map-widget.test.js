@@ -447,4 +447,21 @@ describe("createCameraMapWidget", () => {
 
     expect(html).toContain("30 mph");
   });
+
+  it("shows compact official/local source labels in popup HTML", async () => {
+    const { buildPopupHtml } = await import("../../src/speed/camera-map-widget.js");
+
+    const html = buildPopupHtml({
+      properties: {
+        speedKph: null,
+        speedSource: "unknown",
+        cameraSources: ["osm", "nyc"],
+        primarySource: "nyc",
+        country: "us",
+      },
+    });
+
+    expect(html).toContain("Source");
+    expect(html).toContain("OSM + NYC local");
+  });
 });

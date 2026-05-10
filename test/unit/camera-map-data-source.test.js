@@ -243,6 +243,32 @@ describe("camera map data source", () => {
     });
   });
 
+  it("preserves compact trap source metadata in GeoJSON properties", () => {
+    const sourceMeta = {
+      sources: ["osm", "nyc", "nyc-tickets"],
+      primarySource: "nyc",
+      ids: { osm: 1, nyc: 7 },
+      names: ["Queens Bv"],
+      official: true,
+      jurisdiction: "NYC DOT",
+      ticketStats: { totalTickets: 12, firstDate: "2014-01-16", lastDate: "2026-03-18" },
+    };
+    const features = compactTrapsToCameraFeatures(
+      [[-73.9857, 40.7484, null, 1, null, sourceMeta]],
+      { countryCode: "us", countryName: "United States" }
+    );
+
+    expect(features[0].properties).toMatchObject({
+      primarySource: "nyc",
+      cameraSources: ["osm", "nyc", "nyc-tickets"],
+      official: true,
+      jurisdiction: "NYC DOT",
+      cameraName: "Queens Bv",
+      ticketStats: sourceMeta.ticketStats,
+      sourceMeta,
+    });
+  });
+
   it("returns cached data if network fetch fails", async () => {
     const payload = countryPayload("us", [[-73.9857, 40.7484, 48, 1]]);
     const rootManifest = manifest({

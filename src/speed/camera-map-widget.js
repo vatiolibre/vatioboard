@@ -96,6 +96,38 @@ function formatPopupDistance(distanceM, distanceUnit) {
   return `${distance.value} ${distance.unit}`.trim();
 }
 
+function parsePopupSources(value) {
+  if (Array.isArray(value)) return value.map((source) => String(source).trim()).filter(Boolean);
+  if (typeof value === "string" && value.trim().startsWith("[")) {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsePopupSources(parsed);
+    } catch {
+      return [];
+    }
+  }
+  return String(value || "")
+    .split(",")
+    .map((source) => source.trim())
+    .filter(Boolean);
+}
+
+function getPopupSourceLabel(props = {}) {
+  const sourceMeta = props.sourceMeta && typeof props.sourceMeta === "object" ? props.sourceMeta : null;
+  const sources = parsePopupSources(props.cameraSources?.length ? props.cameraSources : sourceMeta?.sources);
+  const labels = [];
+  if (sources.includes("osm")) labels.push("OSM");
+  if (sources.includes("ansv")) labels.push("ANSV official");
+  if (sources.includes("nyc")) labels.push("NYC local");
+  if (!labels.length) {
+    const primary = String(props.primarySource || sourceMeta?.primarySource || "").trim();
+    if (primary === "ansv") labels.push("ANSV official");
+    else if (primary === "nyc") labels.push("NYC local");
+    else if (primary === "osm") labels.push("OSM");
+  }
+  return labels.length ? labels.join(" + ") : null;
+}
+
 export function buildPopupHtml(feature, options = {}) {
   const {
     unit = loadUnitPreference(),
@@ -108,6 +140,7 @@ export function buildPopupHtml(feature, options = {}) {
   const distanceM = readPopupNumber(props.distanceM);
   const speedLabel = formatCameraLimitSpeed(speed, unit);
   const roadDistanceLabel = formatPopupDistance(distanceM, distanceUnit);
+  const sourceLabel = getPopupSourceLabel(props);
   const speedRow = Number.isFinite(speed)
     ? [
       isInferred ? "Estimated limit" : "Speed limit",
@@ -121,6 +154,7 @@ export function buildPopupHtml(feature, options = {}) {
     ...(Number.isFinite(speed) && isInferred && roadDistanceLabel
       ? [["Road distance", roadDistanceLabel]]
       : []),
+    ...(sourceLabel ? [["Source", sourceLabel]] : []),
     ["Country", props.countryName || props.country || "Unknown"],
     ["Tile", props.tile || "country"],
     ["OSM id", props.osmId || "unknown"],
