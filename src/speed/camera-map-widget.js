@@ -13,6 +13,9 @@ import { loadMapLibre } from "../shared/maplibre-loader.js";
 import {
   createCameraMapDataSource,
 } from "./camera-map-data-source.js";
+import { loadDistanceUnitPreference, loadUnitPreference } from "./preferences.js";
+import { formatCameraLimitSpeed } from "./render.js";
+import { formatTrapDistance } from "./traps.js";
 
 export const CAMERA_MAP_WINDOW_ID = "camera-map";
 
@@ -87,15 +90,24 @@ function readPopupNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-export function buildPopupHtml(feature) {
+function formatPopupDistance(distanceM, distanceUnit) {
+  if (!Number.isFinite(distanceM)) return null;
+  const distance = formatTrapDistance(distanceM, distanceUnit, "");
+  return `${distance.value} ${distance.unit}`.trim();
+}
+
+export function buildPopupHtml(feature, options = {}) {
+  const {
+    unit = loadUnitPreference(),
+    distanceUnit = loadDistanceUnitPreference(),
+  } = options;
   const props = feature?.properties || {};
   const speed = readPopupNumber(props.speedKph);
   const speedSource = String(props.speedSource || "");
   const isInferred = speedSource.startsWith("nearest_road:");
   const distanceM = readPopupNumber(props.distanceM);
-  const speedLabel = Number.isFinite(speed)
-    ? `${Math.round(speed)} km/h`
-    : null;
+  const speedLabel = formatCameraLimitSpeed(speed, unit);
+  const roadDistanceLabel = formatPopupDistance(distanceM, distanceUnit);
   const speedRow = Number.isFinite(speed)
     ? [
       isInferred ? "Estimated limit" : "Speed limit",
@@ -106,8 +118,8 @@ export function buildPopupHtml(feature) {
     : ["Speed limit", "Unknown"];
   const rows = [
     speedRow,
-    ...(Number.isFinite(speed) && isInferred && Number.isFinite(distanceM)
-      ? [["Road distance", `${Math.round(distanceM)} m`]]
+    ...(Number.isFinite(speed) && isInferred && roadDistanceLabel
+      ? [["Road distance", roadDistanceLabel]]
       : []),
     ["Country", props.countryName || props.country || "Unknown"],
     ["Tile", props.tile || "country"],

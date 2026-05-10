@@ -362,17 +362,56 @@ describe("createCameraMapWidget", () => {
     manager.destroy();
   });
 
-  it("renders inferred and unknown speed status in popup HTML", async () => {
+  it("formats explicit popup speed limits in km/h", async () => {
     const { buildPopupHtml } = await import("../../src/speed/camera-map-widget.js");
 
-    expect(buildPopupHtml({
+    const html = buildPopupHtml({
       properties: {
         speedKph: 50,
+        speedSource: "camera:maxspeed",
+        country: "us",
+      },
+    }, { unit: "kmh" });
+
+    expect(html).toContain("Speed limit");
+    expect(html).toContain("50 km/h");
+  });
+
+  it("formats explicit popup speed limits in mph", async () => {
+    const { buildPopupHtml } = await import("../../src/speed/camera-map-widget.js");
+
+    const html = buildPopupHtml({
+      properties: {
+        speedKph: 48,
+        speedSource: "camera:maxspeed",
+        country: "us",
+      },
+    }, { unit: "mph" });
+
+    expect(html).toContain("Speed limit");
+    expect(html).toContain("30 mph");
+    expect(html).not.toContain("48 km/h");
+  });
+
+  it("formats inferred popup speed limits and road distance with active units", async () => {
+    const { buildPopupHtml } = await import("../../src/speed/camera-map-widget.js");
+
+    const html = buildPopupHtml({
+      properties: {
+        speedKph: 48,
         speedSource: "nearest_road:maxspeed",
         distanceM: 18,
         country: "us",
       },
-    })).toContain("Estimated limit");
+    }, { unit: "mph", distanceUnit: "ft" });
+
+    expect(html).toContain("Estimated limit");
+    expect(html).toContain("30 mph from nearby OSM road");
+    expect(html).toContain("59 ft");
+  });
+
+  it("renders unknown popup speed status", async () => {
+    const { buildPopupHtml } = await import("../../src/speed/camera-map-widget.js");
 
     expect(buildPopupHtml({
       properties: {
@@ -381,5 +420,31 @@ describe("createCameraMapWidget", () => {
         country: "us",
       },
     })).toContain("Unknown");
+  });
+
+  it("uses the current stored speed unit when popup options do not pass a unit", async () => {
+    const { buildPopupHtml } = await import("../../src/speed/camera-map-widget.js");
+    localStorage.setItem(
+      "vatio_unit_bootstrap_v1",
+      JSON.stringify({
+        initializedAtMs: 100,
+        updatedAtMs: 100,
+        source: "manual",
+        countryCode: "us",
+        speedUnit: "mph",
+        distanceUnit: "ft",
+        tripDistanceUnit: "mi",
+      }),
+    );
+
+    const html = buildPopupHtml({
+      properties: {
+        speedKph: 48,
+        speedSource: "camera:maxspeed",
+        country: "us",
+      },
+    });
+
+    expect(html).toContain("30 mph");
   });
 });
