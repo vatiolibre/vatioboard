@@ -76,6 +76,11 @@ html.vb-floating-drag-active body {
 }
 
 .vb-shell-taskbar {
+  --vb-shell-taskbar-max-width: min(520px, calc(100vw - 24px));
+  --vb-shell-taskbar-padding-x: 12px;
+  --vb-shell-taskbar-padding-inline-total: 24px;
+  --vb-shell-taskbar-handle-width: 44px;
+
   position: fixed;
   left: 50%;
   bottom: max(10px, env(safe-area-inset-bottom));
@@ -84,12 +89,12 @@ html.vb-floating-drag-active body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: max-content;
-  max-width: min(520px, calc(100vw - 24px));
+  width: fit-content;
+  max-width: var(--vb-shell-taskbar-max-width);
   min-height: 58px;
   overflow: visible;
   overscroll-behavior: contain;
-  padding: 6px 12px;
+  padding: 6px var(--vb-shell-taskbar-padding-x);
   box-sizing: border-box;
   border: 1px solid color-mix(in srgb, var(--calc-border, rgba(0, 0, 0, 0.14)) 80%, transparent);
   border-radius: 999px;
@@ -107,23 +112,31 @@ html.vb-floating-drag-active body {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
   gap: 8px;
-  max-width: inherit;
-  max-height: inherit;
+  width: auto;
+  max-width: max(
+    52px,
+    calc(var(--vb-shell-taskbar-max-width) - var(--vb-shell-taskbar-handle-width) - var(--vb-shell-taskbar-padding-inline-total))
+  );
+  max-height: none;
   min-width: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
+  padding: 0;
+  margin: 0;
+  box-sizing: border-box;
+  overflow: visible;
   overscroll-behavior: contain;
   touch-action: none;
-  -webkit-overflow-scrolling: touch;
 }
 
 .vb-shell-taskbar-drag-handle {
   position: relative;
-  flex: 0 0 36px;
+  flex: 0 0 var(--vb-shell-taskbar-handle-width);
   align-self: stretch;
+  min-width: var(--vb-shell-taskbar-handle-width);
   min-height: 40px;
-  margin-left: -8px;
+  margin: 0;
   border-radius: 999px;
   cursor: grab;
   touch-action: none;
@@ -169,7 +182,6 @@ html.vb-floating-drag-active body {
 
 .vb-shell-taskbar.is-dragging .vb-shell-taskbar-tray {
   overflow: visible;
-  -webkit-overflow-scrolling: auto;
 }
 
 .vb-shell-taskbar[data-vb-shell-taskbar-position="left"],
@@ -186,8 +198,13 @@ html.vb-floating-drag-active body {
 .vb-shell-taskbar[data-vb-shell-taskbar-position="left"] .vb-shell-taskbar-tray,
 [data-vb-shell-taskbar-position="left"] .vb-shell-taskbar .vb-shell-taskbar-tray {
   flex-direction: column;
+  flex-wrap: nowrap;
+  width: auto;
+  max-width: 100%;
+  max-height: inherit;
   overflow-x: hidden;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .vb-shell-taskbar[data-vb-shell-taskbar-position="left"] .vb-shell-taskbar-drag-handle,
@@ -224,8 +241,13 @@ html.vb-floating-drag-active body {
 .vb-shell-taskbar[data-vb-shell-taskbar-position="right"] .vb-shell-taskbar-tray,
 [data-vb-shell-taskbar-position="right"] .vb-shell-taskbar .vb-shell-taskbar-tray {
   flex-direction: column;
+  flex-wrap: nowrap;
+  width: auto;
+  max-width: 100%;
+  max-height: inherit;
   overflow-x: hidden;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .vb-shell-taskbar[data-vb-shell-taskbar-position="right"] .vb-shell-taskbar-drag-handle,
@@ -427,11 +449,17 @@ html.vb-floating-drag-active body {
 
 @media (max-width: 640px) {
   .vb-shell-taskbar {
-    left: 8px;
+    --vb-shell-taskbar-safe-left: max(4px, env(safe-area-inset-left));
+    --vb-shell-taskbar-safe-right: max(4px, env(safe-area-inset-right));
+    --vb-shell-taskbar-max-width: calc(100vw - var(--vb-shell-taskbar-safe-left) - var(--vb-shell-taskbar-safe-right));
+    --vb-shell-taskbar-padding-x: 8px;
+    --vb-shell-taskbar-padding-inline-total: 16px;
+    --vb-shell-taskbar-handle-width: 44px;
+
+    left: var(--vb-shell-taskbar-safe-left);
     right: auto;
     bottom: max(8px, env(safe-area-inset-bottom));
     transform: none;
-    max-width: calc(100vw - 16px);
   }
 }
 
