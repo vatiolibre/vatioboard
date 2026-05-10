@@ -148,6 +148,24 @@ function installMocks() {
     isVisualizerSafeSource: vi.fn(() => true),
   }));
 
+  vi.doMock("../../src/shared/maplibre-loader.js", () => ({
+    loadMapLibre: vi.fn().mockResolvedValue({
+      Map: vi.fn(() => ({
+        addControl: vi.fn(),
+        addLayer: vi.fn(),
+        addSource: vi.fn(),
+        getBounds: vi.fn(() => ({ getWest: () => -75, getSouth: () => 39, getEast: () => -72, getNorth: () => 42 })),
+        getSource: vi.fn(() => ({ setData: vi.fn() })),
+        getZoom: vi.fn(() => 8),
+        on: vi.fn(),
+        remove: vi.fn(),
+        resize: vi.fn(),
+      })),
+      AttributionControl: vi.fn(),
+      NavigationControl: vi.fn(),
+    }),
+  }));
+
   vi.doMock("butterchurn", () => ({
     default: {
       createVisualizer: vi.fn(() => ({
@@ -176,6 +194,7 @@ async function loadModules() {
     calculator,
     energy,
     player,
+    cameraMap,
     milkdrop,
     floatingTools,
   ] = await Promise.all([
@@ -183,6 +202,7 @@ async function loadModules() {
     import("../../src/calculator/calculator-widget.js"),
     import("../../src/energy/energy-calculator-widget.js"),
     import("../../src/player/player-widget.js"),
+    import("../../src/speed/camera-map-widget.js"),
     import("../../src/player/milkdrop-panel.js"),
     import("../../src/shared/floating-tools.js"),
   ]);
@@ -191,6 +211,7 @@ async function loadModules() {
     createCalculatorWidget: calculator.createCalculatorWidget,
     createEnergyCalculatorWidget: energy.createEnergyCalculatorWidget,
     createPlayerWidget: player.createPlayerWidget,
+    createCameraMapWidget: cameraMap.createCameraMapWidget,
     createMilkdropPanel: milkdrop.createMilkdropPanel,
     initFloatingTools: floatingTools.initFloatingTools,
   };
@@ -203,23 +224,26 @@ describe("shell window integration", () => {
     vi.restoreAllMocks();
   });
 
-  it("calculator, energy, player, and milkdrop register as shell windows", async () => {
+  it("calculator, energy, camera map, player, and milkdrop register as shell windows", async () => {
     const {
       createShellWindowManager,
       createCalculatorWidget,
       createEnergyCalculatorWidget,
       createPlayerWidget,
+      createCameraMapWidget,
       createMilkdropPanel,
     } = await loadModules();
     const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
 
     const calc = createCalculatorWidget({ floating: false, restoreVisibility: false, shellManager: manager });
     const energy = createEnergyCalculatorWidget({ restoreVisibility: false, shellManager: manager });
+    const cameraMap = createCameraMapWidget({ restoreVisibility: false, shellManager: manager });
     const player = createPlayerWidget({ floating: false, restoreVisibility: false, shellManager: manager });
     const milkdrop = createMilkdropPanel({ restoreVisibility: false, shellManager: manager });
 
     expect(manager.listWindows().map((record) => record.id).sort()).toEqual([
       "calculator",
+      "camera-map",
       "energy",
       "milkdrop",
       "player",
@@ -227,25 +251,29 @@ describe("shell window integration", () => {
 
     milkdrop.destroy();
     player.destroy();
+    cameraMap.destroy();
     energy.destroy();
     calc.destroy();
     manager.destroy();
   });
 
   it("last opened shell window is active/topmost", async () => {
-    const { createShellWindowManager, createCalculatorWidget, createPlayerWidget } = await loadModules();
+    const { createShellWindowManager, createCalculatorWidget, createCameraMapWidget, createPlayerWidget } = await loadModules();
     const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
     const calc = createCalculatorWidget({ floating: false, restoreVisibility: false, shellManager: manager });
+    const cameraMap = createCameraMapWidget({ restoreVisibility: false, shellManager: manager });
     const player = createPlayerWidget({ floating: false, restoreVisibility: false, shellManager: manager });
 
     manager.openWindow("calculator");
     manager.openWindow("player");
+    manager.openWindow("camera-map");
 
-    expect(manager.getActiveWindow().id).toBe("player");
-    expect(Number(document.querySelector(".player-panel").style.zIndex))
-      .toBeGreaterThan(Number(document.querySelector(".calc-panel").style.zIndex));
+    expect(manager.getActiveWindow().id).toBe("camera-map");
+    expect(Number(document.querySelector(".camera-map-panel").style.zIndex))
+      .toBeGreaterThan(Number(document.querySelector(".player-panel").style.zIndex));
 
     player.destroy();
+    cameraMap.destroy();
     calc.destroy();
     manager.destroy();
   });
@@ -335,8 +363,9 @@ describe("shell window integration", () => {
 
     expect(document.querySelectorAll(".floating-dock")).toHaveLength(0);
     expect(document.querySelectorAll(".calc-panel")).toHaveLength(1);
+    expect(document.querySelectorAll(".camera-map-panel")).toHaveLength(1);
     expect(document.querySelectorAll(".energy-panel")).toHaveLength(1);
-    expect(manager.listWindows().filter((record) => ["calculator", "energy"].includes(record.id))).toHaveLength(2);
+    expect(manager.listWindows().filter((record) => ["calculator", "camera-map", "energy"].includes(record.id))).toHaveLength(3);
     manager.destroy();
   });
 
@@ -370,9 +399,12 @@ describe("shell window integration", () => {
 
     expect(document.querySelector(".floating-dock")).toBeNull();
     tools.openCalculator();
+    tools.openCameraMap();
 
     expect(manager.getWindow("calculator").state).toBe("open");
+    expect(manager.getWindow("camera-map").state).toBe("open");
     expect(document.querySelector(".calc-panel").hidden).toBe(false);
+    expect(document.querySelector(".camera-map-panel").hidden).toBe(false);
     manager.destroy();
   });
 
@@ -382,10 +414,10 @@ describe("shell window integration", () => {
     const panel = document.createElement("section");
     panel.hidden = true;
     document.body.append(panel);
-    manager.registerWindow({ id: "calculator", title: "Calculator", element: panel });
+    manager.registerWindow({ id: "camera-map", title: "Camera Map", element: panel });
 
     for (let index = 0; index < 1200; index += 1) {
-      manager.openWindow("calculator");
+      manager.openWindow("camera-map");
     }
 
     expect(Number(panel.style.zIndex)).toBeLessThan(2000);

@@ -214,6 +214,15 @@ export const IconWorld = `
   </svg>
 `;
 
+export const IconCameraMap = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M4.5 6.75l4.5-2 6 2.5 4.5-2v12.5l-4.5 2-6-2.5-4.5 2V6.75Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="M9 4.75v12.5M15 7.25v12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    <circle cx="12" cy="12" r="2.15" stroke="currentColor" stroke-width="1.5"/>
+    <path d="M12 9.85v-1.1M12 15.25v-1.1M14.15 12h1.1M8.75 12h1.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  </svg>
+`;
+
 export const IconMedia = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <rect x="4" y="4" width="16" height="16" rx="3" stroke="currentColor" stroke-width="1.6"/>

@@ -1620,6 +1620,32 @@ body.speed-page.alert-panel-open .speed-main{
     color: var(--muted);
 }
 
+.camera-database-map-button{
+    justify-self: start;
+    min-height: 34px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--speed-panel-border) 82%, transparent);
+    background: color-mix(in srgb, var(--speed-surface-strong) 62%, transparent);
+    color: color-mix(in srgb, var(--speed-accent) 72%, var(--btn-fg));
+    font-size: 12px;
+    line-height: 1.2;
+    font-weight: 900;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.camera-database-map-button:hover,
+.camera-database-map-button:focus-visible{
+    background: var(--btn-hover-bg);
+    color: var(--btn-fg);
+}
+
+.camera-database-map-button:focus-visible{
+    outline: 2px solid color-mix(in srgb, var(--speed-accent) 70%, transparent);
+    outline-offset: 2px;
+}
+
 .camera-database-status.is-offline,
 .camera-database-status[data-status="offline"]{
     color: color-mix(in srgb, var(--speed-trap) 72%, var(--muted));

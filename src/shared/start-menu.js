@@ -5,6 +5,7 @@ import {
   IconAccel,
   IconBoard,
   IconCalculator,
+  IconCameraMap,
   IconEnergy,
   IconLogin,
   IconLogout,
@@ -197,6 +198,13 @@ function buildStartMenu() {
     dataset: { startAction: "energy" },
   }));
 
+  list.append(createIconButton({
+    icon: IconCameraMap,
+    i18nKey: "cameraMapTitle",
+    text: "Camera Map",
+    dataset: { startAction: "camera-map" },
+  }));
+
   const playerAnchor = document.createElement("span");
   playerAnchor.dataset.playerToggleAnchor = "";
   playerAnchor.hidden = true;
@@ -331,6 +339,11 @@ export function initSharedStartMenu({
     }
     if (actionButton?.dataset.startAction === "energy") {
       floatingTools?.toggleEnergy?.();
+      close();
+      return;
+    }
+    if (actionButton?.dataset.startAction === "camera-map") {
+      floatingTools?.toggleCameraMap?.();
       close();
       return;
     }

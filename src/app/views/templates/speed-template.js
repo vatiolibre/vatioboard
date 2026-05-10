@@ -404,6 +404,12 @@ const speedTemplate = String.raw`
 
                 <div class="camera-database-status-row">
                   <p id="cameraDatabaseStatus" class="camera-database-status" data-i18n="cameraDatabaseWaitingGps">Camera database: waiting for GPS</p>
+                  <button
+                    id="openCameraMap"
+                    type="button"
+                    class="camera-database-map-button"
+                    data-i18n="openCameraMap"
+                  >Open camera map</button>
                   <a
                     class="camera-database-attribution"
                     href="https://www.openstreetmap.org/copyright"

@@ -209,6 +209,7 @@ export function getSpeedElements(root) {
     trapDistancePresets: queryOne(root, '#trapDistancePresets'),
     trapSoundButtons: queryAll(root, '.trap-sound-btn'),
     cameraDatabaseStatus: queryOne(root, '#cameraDatabaseStatus'),
+    openCameraMap: queryOne(root, '#openCameraMap'),
     quickAudioToggle: queryOne(root, '#quickAudioToggle'),
     drivingAudioPrompt: queryOne(root, '#drivingAudioPrompt'),
     drivingAudioPromptTitle: queryOne(root, '#drivingAudioPromptTitle'),
@@ -306,6 +307,30 @@ function openCloudSyncLauncher() {
   Promise.resolve().then(() => {
     focusCloudSyncLauncherTarget();
   });
+}
+
+function getCurrentSpeedPosition() {
+  if (!Number.isFinite(state.lastKnownLatitude) || !Number.isFinite(state.lastKnownLongitude)) {
+    return null;
+  }
+  return {
+    latitude: state.lastKnownLatitude,
+    longitude: state.lastKnownLongitude,
+    accuracy: Number.isFinite(state.lastAccuracyM) ? state.lastAccuracyM : null,
+  };
+}
+
+function openCameraMapPanel() {
+  const tools = window.__vatioboardFloatingTools;
+  if (tools?.openCameraMap) {
+    tools.openCameraMap();
+    return;
+  }
+  import('../shared/floating-tools.js')
+    .then(({ initFloatingTools }) => {
+      initFloatingTools({ mount: document.body }).openCameraMap?.();
+    })
+    .catch(() => {});
 }
 
 const initialPreferences = loadInitialPreferences();
@@ -2639,6 +2664,7 @@ function mountSpeedController(routeContext = {}) {
     button: elements.toolsMenuBtn,
     list: elements.toolsMenuList,
   });
+  window.__vatioboardSpeedGetCurrentPosition = getCurrentSpeedPosition;
   route.toolsMenu = toolsMenu;
   createSpeedRouteControllers();
   route.syncIndicator = initCloudSyncStatusIndicator({
@@ -2808,6 +2834,8 @@ function bindEvents({ cleanup, signal } = {}) {
     if (!button) return;
     setTrapAlertDistance(Number(button.dataset.trapDistance), { fromUserGesture: true });
   });
+
+  cleanup.addEventListener(elements.openCameraMap, 'click', openCameraMapPanel);
 
   for (const button of elements.trapSoundButtons) {
     cleanup.addEventListener(button, 'click', () => {

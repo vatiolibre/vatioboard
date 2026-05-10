@@ -1,12 +1,15 @@
 import "../styles/calculator.less";
+import "../styles/camera-map.less";
 import "../styles/energy.less";
 
 import { createCalculatorWidget } from "../calculator/calculator-widget.js";
 import { createEnergyCalculatorWidget } from "../energy/energy-calculator-widget.js";
+import { createCameraMapWidget } from "../speed/camera-map-widget.js";
 import { getDefaultShellWindowManager } from "./shell-window-manager.js";
 
 const GLOBAL_TOOLS_KEY = "__vatioboardFloatingTools";
 const CALC_VISIBILITY_KEY = "vatioboard.calc_panel.visible_v1";
+const CAMERA_MAP_VISIBILITY_KEY = "vatioboard.camera_map_panel.visible_v1";
 const ENERGY_VISIBILITY_KEY = "vatioboard.energy_panel.visible_v1";
 
 export function getFloatingTools() {
@@ -39,16 +42,30 @@ export function initFloatingTools({ mount = document.body, shellManager = getDef
     shellManager,
   });
 
+  const cameraMapWidget = createCameraMapWidget({
+    mount,
+    floating: false,
+    persistVisibility: true,
+    restoreVisibility: true,
+    visibilityKey: CAMERA_MAP_VISIBILITY_KEY,
+    shellManager,
+    getCurrentPosition: () => window.__vatioboardSpeedGetCurrentPosition?.() || null,
+  });
+
   const tools = {
+    cameraMapWidget,
     calcBtn: null,
     calcWidget,
     dock: null,
     energyWidget,
     shellManager,
+    closeCameraMap: () => shellManager.closeWindow("camera-map"),
     closeCalculator: () => shellManager.closeWindow("calculator"),
     closeEnergy: () => shellManager.closeWindow("energy"),
+    openCameraMap: () => shellManager.openWindow("camera-map"),
     openCalculator: () => shellManager.openWindow("calculator"),
     openEnergy: () => shellManager.openWindow("energy"),
+    toggleCameraMap: () => shellManager.toggleWindow("camera-map"),
     toggleCalculator: () => shellManager.toggleWindow("calculator"),
     toggleEnergy: () => shellManager.toggleWindow("energy"),
   };
