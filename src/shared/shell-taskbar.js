@@ -13,6 +13,9 @@ const DEFAULT_ICONS = {
   player: IconMusic,
 };
 
+const TOUCH_MOVE_OPTIONS = { capture: true, passive: false };
+const CAPTURE_OPTIONS = { capture: true };
+
 function getWindowState(record) {
   if (record.minimized || record.state === "minimized") return "minimized";
   if (record.state === "open" && !record.element?.hidden) return "open";
@@ -108,16 +111,24 @@ function getDetachedRoot(root) {
   return root?.appendChild ? root : document.body;
 }
 
-function clampFabPosition(position, item) {
-  const width = item?.offsetWidth || FAB_SIZE_PX;
-  const height = item?.offsetHeight || FAB_SIZE_PX;
-  const viewportWidth = globalThis.innerWidth || document.documentElement?.clientWidth || 1024;
-  const viewportHeight = globalThis.innerHeight || document.documentElement?.clientHeight || 768;
-  const maxLeft = Math.max(VIEWPORT_MARGIN_PX, viewportWidth - width - VIEWPORT_MARGIN_PX);
-  const maxTop = Math.max(VIEWPORT_MARGIN_PX, viewportHeight - height - VIEWPORT_MARGIN_PX);
+function getViewportSize() {
   return {
-    left: Math.min(Math.max(VIEWPORT_MARGIN_PX, position.left), maxLeft),
-    top: Math.min(Math.max(VIEWPORT_MARGIN_PX, position.top), maxTop),
+    width: globalThis.innerWidth || document.documentElement?.clientWidth || 1024,
+    height: globalThis.innerHeight || document.documentElement?.clientHeight || 768,
+  };
+}
+
+function clampPositionToViewport(position, width, height) {
+  const viewport = getViewportSize();
+  return {
+    left: Math.min(
+      Math.max(VIEWPORT_MARGIN_PX, position.left),
+      Math.max(VIEWPORT_MARGIN_PX, viewport.width - width - VIEWPORT_MARGIN_PX)
+    ),
+    top: Math.min(
+      Math.max(VIEWPORT_MARGIN_PX, position.top),
+      Math.max(VIEWPORT_MARGIN_PX, viewport.height - height - VIEWPORT_MARGIN_PX)
+    ),
   };
 }
 
@@ -125,18 +136,7 @@ function clampElementPosition(position, element, fallbackWidth = FAB_SIZE_PX, fa
   const rect = element?.getBoundingClientRect?.() || {};
   const width = rect.width || element?.offsetWidth || fallbackWidth;
   const height = rect.height || element?.offsetHeight || fallbackHeight;
-  const viewportWidth = globalThis.innerWidth || document.documentElement?.clientWidth || 1024;
-  const viewportHeight = globalThis.innerHeight || document.documentElement?.clientHeight || 768;
-  return {
-    left: Math.min(
-      Math.max(VIEWPORT_MARGIN_PX, position.left),
-      Math.max(VIEWPORT_MARGIN_PX, viewportWidth - width - VIEWPORT_MARGIN_PX)
-    ),
-    top: Math.min(
-      Math.max(VIEWPORT_MARGIN_PX, position.top),
-      Math.max(VIEWPORT_MARGIN_PX, viewportHeight - height - VIEWPORT_MARGIN_PX)
-    ),
-  };
+  return clampPositionToViewport(position, width, height);
 }
 
 function applyDetachedStyle(item, position) {
@@ -149,21 +149,328 @@ function applyDetachedStyle(item, position) {
 }
 
 function clearDetachedStyle(item) {
-  item.classList.remove("is-detached", "is-dragging");
+  item.classList.remove("is-detached", "is-dragging", "is-drag-source");
+  item.removeAttribute("data-vb-shell-taskbar-drag-source");
   item.style.position = "";
   item.style.left = "";
   item.style.top = "";
   item.style.right = "";
   item.style.bottom = "";
+  item.style.transform = "";
+  item.style.willChange = "";
 }
 
-function releasePointerCapture(element, pointerId) {
-  if (pointerId == null) return;
-  try {
-    element?.releasePointerCapture?.(pointerId);
-  } catch {
-    // The browser may already have released or canceled capture.
+function suppressNativeDrag(element) {
+  element.draggable = false;
+  element.setAttribute("draggable", "false");
+  element.ondragstart = () => false;
+}
+
+function makePoint(clientX, clientY) {
+  return { clientX, clientY, x: clientX, y: clientY };
+}
+
+function pointFromPointerEvent(event, fallback = null) {
+  const x = Number(event?.clientX);
+  const y = Number(event?.clientY);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return fallback;
+  return makePoint(x, y);
+}
+
+function pointFromTouch(touch, fallback = null) {
+  if (!touch) return fallback;
+  const x = Number(touch.clientX);
+  const y = Number(touch.clientY);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return fallback;
+  return makePoint(x, y);
+}
+
+function findTouch(event, identifier) {
+  const touches = [
+    ...Array.from(event?.changedTouches || []),
+    ...Array.from(event?.touches || []),
+  ];
+  return touches.find((touch) => touch.identifier === identifier) || null;
+}
+
+function distanceBetween(a, b) {
+  if (!a || !b) return 0;
+  return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+}
+
+function buildDragPayload(sensor, point, event, type) {
+  const dx = point.clientX - sensor.startPoint.clientX;
+  const dy = point.clientY - sensor.startPoint.clientY;
+  const movementX = point.clientX - sensor.lastPoint.clientX;
+  const movementY = point.clientY - sensor.lastPoint.clientY;
+  return {
+    type,
+    event,
+    context: sensor.context,
+    pointerType: sensor.pointerType,
+    startX: sensor.startPoint.clientX,
+    startY: sensor.startPoint.clientY,
+    clientX: point.clientX,
+    clientY: point.clientY,
+    dx,
+    dy,
+    movementX,
+    movementY,
+    point,
+  };
+}
+
+function createTouchDragSensor({
+  source,
+  canStart,
+  onStart,
+  onMove,
+  onEnd,
+  onCancel,
+  preventDefaultOnStart = false,
+}) {
+  let active = null;
+
+  function cleanup() {
+    document.removeEventListener("touchmove", handleMove, TOUCH_MOVE_OPTIONS);
+    document.removeEventListener("touchend", handleEnd, TOUCH_MOVE_OPTIONS);
+    document.removeEventListener("touchcancel", handleCancel, TOUCH_MOVE_OPTIONS);
+    window.removeEventListener("blur", handleHardCancel, CAPTURE_OPTIONS);
+    document.removeEventListener("visibilitychange", handleVisibilityChange, CAPTURE_OPTIONS);
+    active = null;
   }
+
+  function finish(event, canceled = false) {
+    const sensor = active;
+    if (!sensor) return;
+    cleanup();
+    if (!sensor.started) {
+      onCancel?.({ context: sensor.context, event, pointerType: sensor.pointerType });
+      return;
+    }
+    const payload = buildDragPayload(sensor, sensor.lastPoint, event, canceled ? "cancel" : "end");
+    if (canceled) {
+      onEnd?.({ ...payload, canceled: true });
+    } else {
+      onEnd?.(payload);
+    }
+  }
+
+  function handleStart(event) {
+    if (active || event.touches?.length > 1) return;
+    const touch = event.changedTouches?.[0] || event.touches?.[0];
+    const point = pointFromTouch(touch);
+    if (!touch || !point) return;
+    const context = canStart?.(event, point);
+    if (!context) return;
+
+    active = {
+      context,
+      identifier: touch.identifier,
+      pointerType: "touch",
+      startPoint: point,
+      lastPoint: point,
+      started: false,
+    };
+
+    document.addEventListener("touchmove", handleMove, TOUCH_MOVE_OPTIONS);
+    document.addEventListener("touchend", handleEnd, TOUCH_MOVE_OPTIONS);
+    document.addEventListener("touchcancel", handleCancel, TOUCH_MOVE_OPTIONS);
+    window.addEventListener("blur", handleHardCancel, CAPTURE_OPTIONS);
+    document.addEventListener("visibilitychange", handleVisibilityChange, CAPTURE_OPTIONS);
+    if (preventDefaultOnStart) event.preventDefault?.();
+  }
+
+  function handleMove(event) {
+    const sensor = active;
+    if (!sensor) return;
+    const touch = findTouch(event, sensor.identifier);
+    const point = pointFromTouch(touch, sensor.lastPoint);
+    if (!point) return;
+    event.preventDefault?.();
+
+    if (!sensor.started) {
+      if (distanceBetween(sensor.startPoint, point) < DRAG_THRESHOLD_PX) {
+        sensor.lastPoint = point;
+        return;
+      }
+      sensor.started = true;
+      onStart?.(buildDragPayload(sensor, point, event, "start"));
+    }
+
+    onMove?.(buildDragPayload(sensor, point, event, "move"));
+    sensor.lastPoint = point;
+  }
+
+  function handleEnd(event) {
+    const sensor = active;
+    if (!sensor) return;
+    const touch = findTouch(event, sensor.identifier);
+    const point = pointFromTouch(touch, sensor.lastPoint);
+    sensor.lastPoint = point;
+    if (sensor.started) event.preventDefault?.();
+    finish(event, false);
+  }
+
+  function handleCancel(event) {
+    const sensor = active;
+    if (!sensor) return;
+    const touch = findTouch(event, sensor.identifier);
+    sensor.lastPoint = pointFromTouch(touch, sensor.lastPoint);
+    if (sensor.started) event.preventDefault?.();
+    finish(event, true);
+  }
+
+  function handleHardCancel(event) {
+    finish(event, true);
+  }
+
+  function handleVisibilityChange(event) {
+    if (document.visibilityState === "hidden") finish(event, true);
+  }
+
+  source.addEventListener("touchstart", handleStart, { passive: false });
+  return {
+    destroy() {
+      cleanup();
+      source.removeEventListener("touchstart", handleStart, { passive: false });
+    },
+    cancel: cleanup,
+  };
+}
+
+function createPointerDragSensor({
+  source,
+  canStart,
+  onStart,
+  onMove,
+  onEnd,
+  onCancel,
+}) {
+  let active = null;
+
+  function cleanup() {
+    window.removeEventListener("pointermove", handleMove, TOUCH_MOVE_OPTIONS);
+    window.removeEventListener("pointerup", handleEnd, CAPTURE_OPTIONS);
+    window.removeEventListener("pointercancel", handleCancel, CAPTURE_OPTIONS);
+    source.removeEventListener("lostpointercapture", handleCancel, CAPTURE_OPTIONS);
+    active = null;
+  }
+
+  function finish(event, canceled = false) {
+    const sensor = active;
+    if (!sensor) return;
+    cleanup();
+    if (!sensor.started) {
+      onCancel?.({ context: sensor.context, event, pointerType: sensor.pointerType });
+      return;
+    }
+    const point = pointFromPointerEvent(event, sensor.lastPoint);
+    sensor.lastPoint = point;
+    const payload = buildDragPayload(sensor, point, event, canceled ? "cancel" : "end");
+    if (canceled) {
+      onCancel?.({ ...payload, canceled: true });
+    } else {
+      onEnd?.(payload);
+    }
+  }
+
+  function handleStart(event) {
+    if (active || event.pointerType === "touch") return;
+    if (event.button !== undefined && event.button !== 0) return;
+    const point = pointFromPointerEvent(event);
+    if (!point) return;
+    const context = canStart?.(event, point);
+    if (!context) return;
+
+    active = {
+      context,
+      pointerId: event.pointerId,
+      pointerType: event.pointerType || "mouse",
+      startPoint: point,
+      lastPoint: point,
+      started: false,
+    };
+
+    window.addEventListener("pointermove", handleMove, TOUCH_MOVE_OPTIONS);
+    window.addEventListener("pointerup", handleEnd, CAPTURE_OPTIONS);
+    window.addEventListener("pointercancel", handleCancel, CAPTURE_OPTIONS);
+    source.addEventListener("lostpointercapture", handleCancel, CAPTURE_OPTIONS);
+    try {
+      source.setPointerCapture?.(event.pointerId);
+    } catch {
+      // best effort for mouse/pen only
+    }
+  }
+
+  function handleMove(event) {
+    const sensor = active;
+    if (!sensor) return;
+    if (sensor.pointerId != null && event.pointerId != null && event.pointerId !== sensor.pointerId) return;
+    const point = pointFromPointerEvent(event, sensor.lastPoint);
+    if (!point) return;
+
+    if (!sensor.started) {
+      if (distanceBetween(sensor.startPoint, point) < DRAG_THRESHOLD_PX) {
+        sensor.lastPoint = point;
+        return;
+      }
+      sensor.started = true;
+      onStart?.(buildDragPayload(sensor, point, event, "start"));
+    }
+
+    onMove?.(buildDragPayload(sensor, point, event, "move"));
+    sensor.lastPoint = point;
+    event.preventDefault?.();
+  }
+
+  function handleEnd(event) {
+    const sensor = active;
+    if (!sensor) return;
+    if (sensor.pointerId != null && event.pointerId != null && event.pointerId !== sensor.pointerId) return;
+    try {
+      source.releasePointerCapture?.(sensor.pointerId);
+    } catch {
+      // ignore
+    }
+    finish(event, false);
+  }
+
+  function handleCancel(event) {
+    const sensor = active;
+    if (!sensor) return;
+    if (sensor.pointerId != null && event.pointerId != null && event.pointerId !== sensor.pointerId) return;
+    try {
+      source.releasePointerCapture?.(sensor.pointerId);
+    } catch {
+      // ignore
+    }
+    finish(event, true);
+  }
+
+  source.addEventListener("pointerdown", handleStart);
+  return {
+    destroy() {
+      cleanup();
+      source.removeEventListener("pointerdown", handleStart);
+    },
+    cancel: cleanup,
+  };
+}
+
+function createDragSensors(options) {
+  const touchSensor = createTouchDragSensor(options);
+  const pointerSensor = createPointerDragSensor(options);
+  return {
+    destroy() {
+      touchSensor.destroy();
+      pointerSensor.destroy();
+    },
+    cancel() {
+      touchSensor.cancel();
+      pointerSensor.cancel();
+    },
+  };
 }
 
 export function createShellTaskbar({
@@ -181,20 +488,135 @@ export function createShellTaskbar({
   const itemPositions = new Map(Object.entries(savedState.positions));
   let taskbarPosition = savedState.taskbar;
   const itemElements = new Map();
+  const itemSensors = new Map();
   const suppressedClicks = new Set();
 
   const element = document.createElement("nav");
   element.className = "vb-shell-taskbar";
   element.setAttribute("data-vb-shell-taskbar", "");
   element.setAttribute("aria-label", labels.taskbar || "Shell windows");
+  suppressNativeDrag(element);
+
+  const dragHandle = document.createElement("div");
+  dragHandle.className = "vb-shell-taskbar-drag-handle";
+  dragHandle.setAttribute("data-vb-shell-taskbar-drag-handle", "");
+  dragHandle.setAttribute("aria-hidden", "true");
+  suppressNativeDrag(dragHandle);
+
+  const trayElement = document.createElement("div");
+  trayElement.className = "vb-shell-taskbar-tray";
+  trayElement.setAttribute("data-vb-shell-taskbar-tray", "");
+  element.append(dragHandle, trayElement);
+
+  const trashElement = document.createElement("div");
+  trashElement.className = "vb-shell-taskbar-trash";
+  trashElement.setAttribute("data-vb-shell-taskbar-trash", "");
+  trashElement.setAttribute("data-vb-shell-taskbar-trash-active", "false");
+  trashElement.setAttribute("aria-hidden", "true");
+  trashElement.setAttribute("aria-label", labels.removeFromTaskbar || "Remove from taskbar");
+  trashElement.hidden = true;
+
+  const trashIcon = document.createElement("span");
+  trashIcon.className = "vb-shell-taskbar-trash-icon";
+  trashIcon.setAttribute("aria-hidden", "true");
+  trashElement.append(trashIcon);
+
+  const trashLabel = document.createElement("span");
+  trashLabel.className = "vb-shell-taskbar-trash-label";
+  trashLabel.textContent = labels.removeFromTaskbar || "Remove";
+  trashElement.append(trashLabel);
 
   let unsubscribe = null;
   let preferenceUnsubscribe = null;
   let destroyed = false;
-  let dragCleanup = null;
+  let taskbarSensor = null;
+  let activeTaskbarDrag = null;
+  let activeItemDrag = null;
+  let dragLayerElement = null;
 
   function saveState() {
     writeTaskbarState(storageTarget, knownWindowIds, itemPositions, taskbarPosition);
+  }
+
+  function ensureDragLayer() {
+    if (dragLayerElement?.isConnected) return dragLayerElement;
+    dragLayerElement = document.createElement("div");
+    dragLayerElement.className = "vb-shell-drag-layer";
+    dragLayerElement.setAttribute("data-vb-shell-drag-layer", "");
+    dragLayerElement.setAttribute("aria-hidden", "true");
+    document.body.append(dragLayerElement);
+    return dragLayerElement;
+  }
+
+  function removeDragLayerIfEmpty() {
+    if (!dragLayerElement) return;
+    if (dragLayerElement.childElementCount > 0) return;
+    dragLayerElement.remove();
+    dragLayerElement = null;
+  }
+
+  function createItemGhost(item, rect) {
+    const layer = ensureDragLayer();
+    const ghost = item.cloneNode(true);
+    ghost.classList.add("vb-shell-drag-ghost", "is-dragging");
+    ghost.classList.remove("is-drag-source");
+    ghost.removeAttribute("data-vb-shell-taskbar-item");
+    ghost.setAttribute("data-vb-shell-drag-ghost", item.getAttribute("data-vb-shell-taskbar-item") || "");
+    ghost.setAttribute("aria-hidden", "true");
+    suppressNativeDrag(ghost);
+    ghost.style.left = `${Math.round(rect.left)}px`;
+    ghost.style.top = `${Math.round(rect.top)}px`;
+    ghost.style.width = `${Math.round(rect.width || FAB_SIZE_PX)}px`;
+    ghost.style.height = `${Math.round(rect.height || FAB_SIZE_PX)}px`;
+    layer.append(ghost);
+    return ghost;
+  }
+
+  function removeItemGhost(ghost) {
+    ghost?.remove();
+    removeDragLayerIfEmpty();
+  }
+
+  function prepareTrashTarget() {
+    const detachedRoot = getDetachedRoot(root);
+    if (trashElement.parentElement !== detachedRoot) detachedRoot.append(trashElement);
+    trashElement.classList.remove("is-visible");
+    trashElement.setAttribute("data-vb-shell-taskbar-trash-active", "false");
+    trashElement.setAttribute("aria-hidden", "true");
+    trashElement.hidden = true;
+  }
+
+  function showTrashTarget() {
+    if (!trashElement.isConnected) prepareTrashTarget();
+    trashElement.hidden = false;
+    trashElement.setAttribute("aria-hidden", "false");
+    trashElement.classList.add("is-visible");
+  }
+
+  function hideTrashTarget() {
+    trashElement.classList.remove("is-visible");
+    trashElement.setAttribute("data-vb-shell-taskbar-trash-active", "false");
+    trashElement.setAttribute("aria-hidden", "true");
+    trashElement.hidden = true;
+    trashElement.remove();
+  }
+
+  function isPointOverTrashTarget(point) {
+    if (!point || trashElement.hidden) return false;
+    const rect = trashElement.getBoundingClientRect();
+    const width = rect.width || rect.right - rect.left;
+    const height = rect.height || rect.bottom - rect.top;
+    if (!width || !height) return false;
+    return point.clientX >= rect.left
+      && point.clientX <= rect.right
+      && point.clientY >= rect.top
+      && point.clientY <= rect.bottom;
+  }
+
+  function updateTrashTarget(point) {
+    const overTrash = isPointOverTrashTarget(point);
+    trashElement.setAttribute("data-vb-shell-taskbar-trash-active", overTrash ? "true" : "false");
+    return overTrash;
   }
 
   function applyTaskbarPosition() {
@@ -232,31 +654,35 @@ export function createShellTaskbar({
     const rect = element.getBoundingClientRect();
     const left = element.style.left ? parseFloat(element.style.left) : rect.left;
     const top = element.style.top ? parseFloat(element.style.top) : rect.top;
-    setTaskbarFixedPosition({ left, top }, { transform: "none", dragging: false });
+    setTaskbarFixedPosition({ left, top }, { transform: "none", dragging: true });
     return { rect, left, top };
   }
 
   function clampTaskbarToViewport(width = 64, height = 64) {
-    const viewportWidth = globalThis.innerWidth || document.documentElement?.clientWidth || 1024;
-    const viewportHeight = globalThis.innerHeight || document.documentElement?.clientHeight || 768;
     const currentLeft = parseFloat(element.style.left) || 0;
     const currentTop = parseFloat(element.style.top) || 0;
-    const nextLeft = Math.min(
-      Math.max(VIEWPORT_MARGIN_PX, currentLeft),
-      Math.max(VIEWPORT_MARGIN_PX, viewportWidth - width - VIEWPORT_MARGIN_PX)
-    );
-    const nextTop = Math.min(
-      Math.max(VIEWPORT_MARGIN_PX, currentTop),
-      Math.max(VIEWPORT_MARGIN_PX, viewportHeight - height - VIEWPORT_MARGIN_PX)
-    );
-    setTaskbarFixedPosition({ left: nextLeft, top: nextTop });
-    taskbarPosition = { detached: true, left: nextLeft, top: nextTop };
+    const position = clampPositionToViewport({ left: currentLeft, top: currentTop }, width, height);
+    setTaskbarFixedPosition(position);
+    taskbarPosition = { detached: true, ...position };
+    return position;
   }
 
   function rememberWindow(id) {
     if (!id || knownWindowIds.has(id)) return;
     knownWindowIds.add(id);
     saveState();
+  }
+
+  function closeWindowFromTaskbarTrash(record) {
+    const id = record?.id;
+    if (!id) return;
+    knownWindowIds.delete(id);
+    itemPositions.delete(id);
+    saveState();
+    shellManager.closeWindow?.(id, {
+      taskbarTrash: true,
+      ...(id === "player" ? { stopPlayback: true } : {}),
+    });
   }
 
   function getTaskbarWindows() {
@@ -303,298 +729,238 @@ export function createShellTaskbar({
     shellManager.openWindow(record.id);
   }
 
-  function isPointerNearTaskbar(event) {
-    const rect = element.getBoundingClientRect();
+  function isPointNearRect(point, rect) {
     const width = rect.width || rect.right - rect.left;
     const height = rect.height || rect.bottom - rect.top;
-    if (width || height) {
-      const isNearMeasuredRect = event.clientX >= rect.left - RETURN_MARGIN_PX
-        && event.clientX <= rect.right + RETURN_MARGIN_PX
-        && event.clientY >= rect.top - RETURN_MARGIN_PX
-        && event.clientY <= rect.bottom + RETURN_MARGIN_PX;
-      if (isNearMeasuredRect) return true;
-    }
+    if (!width && !height) return false;
+    return point.clientX >= rect.left - RETURN_MARGIN_PX
+      && point.clientX <= rect.right + RETURN_MARGIN_PX
+      && point.clientY >= rect.top - RETURN_MARGIN_PX
+      && point.clientY <= rect.bottom + RETURN_MARGIN_PX;
+  }
+
+  function isPointNearTaskbar(point) {
+    if (!point) return false;
+    if (isPointNearRect(point, trayElement.getBoundingClientRect())) return true;
+    if (isPointNearRect(point, element.getBoundingClientRect())) return true;
 
     const position = element.getAttribute("data-vb-shell-taskbar-position") || "bottom";
-    const viewportWidth = globalThis.innerWidth || document.documentElement?.clientWidth || 1024;
-    const viewportHeight = globalThis.innerHeight || document.documentElement?.clientHeight || 768;
+    const viewport = getViewportSize();
     const edgeDistance = RETURN_MARGIN_PX + FAB_SIZE_PX;
-    if (position === "left") return event.clientX <= edgeDistance;
-    if (position === "right") return event.clientX >= viewportWidth - edgeDistance;
-    return event.clientY >= viewportHeight - edgeDistance;
+    if (position === "left") return point.clientX <= edgeDistance;
+    if (position === "right") return point.clientX >= viewport.width - edgeDistance;
+    return point.clientY >= viewport.height - edgeDistance;
   }
 
-  function detachItemForDrag(record, item, startLeft, startTop) {
-    if (item.parentElement !== getDetachedRoot(root)) {
-      getDetachedRoot(root).append(item);
-    }
-    const position = clampFabPosition({ left: startLeft, top: startTop }, item);
-    item.setAttribute("data-vb-shell-taskbar-docked", "false");
-    itemPositions.set(record.id, { detached: true, ...position });
-    applyDetachedStyle(item, position);
+  function beginTaskbarDrag(payload) {
+    if (destroyed || element.hidden) return;
+    const { rect, left, top } = ensureTaskbarFixedTopLeft();
+    activeTaskbarDrag = {
+      width: rect.width || element.offsetWidth || 64,
+      height: rect.height || element.offsetHeight || 64,
+      originLeft: left,
+      originTop: top,
+      nextLeft: left,
+      nextTop: top,
+      rafId: 0,
+    };
+    element.classList.add("is-dragging");
+    document.documentElement.classList.add("vb-floating-drag-active");
+    element.style.willChange = "transform";
+    payload.event?.preventDefault?.();
   }
 
-  function beginItemDrag(event, record, item) {
-    if (event.button !== undefined && event.button !== 0) return;
-    if (dragCleanup) dragCleanup();
-
-    const pointerId = event.pointerId;
-    const saved = itemPositions.get(record.id);
-    const rect = item.getBoundingClientRect();
-    const startLeft = saved?.detached ? saved.left : rect.left;
-    const startTop = saved?.detached ? saved.top : rect.top;
-    let pointerDown = true;
-    const drag = {
-      moved: false,
-      startX: event.clientX,
-      startY: event.clientY,
-      lastX: event.clientX,
-      lastY: event.clientY,
-      startLeft,
-      startTop,
-      lastLeft: startLeft,
-      lastTop: startTop,
-    };
-
-    const onMove = (moveEvent) => {
-      if (!pointerDown) return;
-      if (pointerId != null && moveEvent.pointerId != null && moveEvent.pointerId !== pointerId) return;
-      drag.lastX = moveEvent.clientX;
-      drag.lastY = moveEvent.clientY;
-      const dx = moveEvent.clientX - drag.startX;
-      const dy = moveEvent.clientY - drag.startY;
-      if (!drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
-
-      drag.moved = true;
-      item.classList.add("is-dragging");
-      document.documentElement.classList.add("vb-floating-drag-active");
-      detachItemForDrag(record, item, drag.startLeft, drag.startTop);
-      const position = clampFabPosition({
-        left: drag.startLeft + dx,
-        top: drag.startTop + dy,
-      }, item);
-      drag.lastLeft = position.left;
-      drag.lastTop = position.top;
-      itemPositions.set(record.id, { detached: true, ...position });
-      applyDetachedStyle(item, position);
-      moveEvent.preventDefault?.();
-    };
-
-    const cleanupListeners = () => {
-      window.removeEventListener("pointermove", onMove, true);
-      window.removeEventListener("pointerup", onPointerEnd, true);
-      window.removeEventListener("pointercancel", onPointerEnd, true);
-      item.removeEventListener("lostpointercapture", onLostPointerCapture);
-    };
-
-    const finishDrag = (endEvent = null) => {
-      cleanupListeners();
-      dragCleanup = null;
-      if (!pointerDown) return;
-      pointerDown = false;
-      releasePointerCapture(item, pointerId);
-      item.classList.remove("is-dragging");
-      document.documentElement.classList.remove("vb-floating-drag-active");
-
-      if (!drag.moved) return;
-
-      suppressedClicks.add(record.id);
-      setTimeout(() => suppressedClicks.delete(record.id), 0);
-
-      const pointerEvent = endEvent?.clientX != null && endEvent?.clientY != null
-        ? endEvent
-        : { clientX: drag.lastX, clientY: drag.lastY };
-      if (isPointerNearTaskbar(pointerEvent)) {
-        itemPositions.delete(record.id);
-      } else {
-        itemPositions.set(record.id, {
-          detached: true,
-          left: drag.lastLeft,
-          top: drag.lastTop,
-        });
-      }
-      saveState();
-      render();
-      endEvent?.preventDefault?.();
-    };
-
-    const onPointerEnd = (endEvent) => {
-      if (pointerId != null && endEvent.pointerId != null && endEvent.pointerId !== pointerId) return;
-      finishDrag(endEvent);
-    };
-
-    const onLostPointerCapture = (lostEvent) => {
-      if (pointerId != null && lostEvent.pointerId != null && lostEvent.pointerId !== pointerId) return;
-      finishDrag(lostEvent);
-    };
-
-    window.addEventListener("pointermove", onMove, true);
-    window.addEventListener("pointerup", onPointerEnd, true);
-    window.addEventListener("pointercancel", onPointerEnd, true);
-    item.addEventListener("lostpointercapture", onLostPointerCapture);
-    dragCleanup = () => {
-      finishDrag();
-    };
-
-    try {
-      item.setPointerCapture?.(pointerId);
-    } catch {
-      // ignore
-    }
-  }
-
-  function beginTaskbarDrag(event) {
-    if (event.button !== undefined && event.button !== 0) return;
-    if (event.target?.closest?.("[data-vb-shell-taskbar-item]")) return;
-    if (element.hidden) return;
-    if (dragCleanup) dragCleanup();
-
-    let pointerDown = true;
-    let dragging = false;
-    let rafId = 0;
-    let boxW = 64;
-    let boxH = 64;
-    const pointerId = event.pointerId;
-    const drag = {
-      moved: false,
-      startX: event.clientX,
-      startY: event.clientY,
-      lastX: event.clientX,
-      lastY: event.clientY,
-      originLeft: 0,
-      originTop: 0,
-      nextLeft: 0,
-      nextTop: 0,
-    };
-
-    const startDragNow = () => {
-      if (dragging) return;
-
-      const { rect, left, top } = ensureTaskbarFixedTopLeft();
-      boxW = rect.width || element.offsetWidth || 64;
-      boxH = rect.height || element.offsetHeight || 64;
-      drag.originLeft = parseFloat(element.style.left) || left;
-      drag.originTop = parseFloat(element.style.top) || top;
-      drag.nextLeft = drag.originLeft;
-      drag.nextTop = drag.originTop;
-      dragging = true;
-      element.classList.add("is-dragging");
-      document.documentElement.classList.add("vb-floating-drag-active");
-      element.style.willChange = "transform";
-    };
-
-    const applyMove = () => {
-      rafId = 0;
-      if (!pointerDown || !dragging) return;
+  function scheduleTaskbarMove() {
+    const drag = activeTaskbarDrag;
+    if (!drag || drag.rafId) return;
+    drag.rafId = requestAnimationFrame(() => {
+      drag.rafId = 0;
+      if (!activeTaskbarDrag) return;
       const tx = Math.round(drag.nextLeft - drag.originLeft);
       const ty = Math.round(drag.nextTop - drag.originTop);
       element.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
+    });
+  }
+
+  function moveTaskbarDrag(payload) {
+    const drag = activeTaskbarDrag;
+    if (!drag) return;
+    const position = clampPositionToViewport({
+      left: drag.originLeft + payload.dx,
+      top: drag.originTop + payload.dy,
+    }, drag.width, drag.height);
+    drag.nextLeft = position.left;
+    drag.nextTop = position.top;
+    scheduleTaskbarMove();
+    payload.event?.preventDefault?.();
+  }
+
+  function endTaskbarDrag(payload = {}) {
+    const drag = activeTaskbarDrag;
+    activeTaskbarDrag = null;
+    if (!drag) return;
+    if (drag.rafId) {
+      cancelAnimationFrame(drag.rafId);
+      drag.rafId = 0;
+    }
+    setTaskbarFixedPosition({ left: drag.nextLeft, top: drag.nextTop });
+    clampTaskbarToViewport(drag.width, drag.height);
+    element.classList.remove("is-dragging");
+    document.documentElement.classList.remove("vb-floating-drag-active");
+    element.style.willChange = "";
+    saveState();
+    payload.event?.preventDefault?.();
+  }
+
+  function canStartTaskbarDrag(event) {
+    if (element.hidden || destroyed) return null;
+    if (!event.target?.closest?.("[data-vb-shell-taskbar-drag-handle]")) return null;
+    return {};
+  }
+
+  function beginItemDrag(payload) {
+    const { record, item } = payload.context;
+    if (!record || !item || destroyed) return;
+    suppressNativeDrag(item);
+    prepareTrashTarget();
+
+    const saved = itemPositions.get(record.id);
+    const rect = item.getBoundingClientRect();
+    const width = rect.width || item.offsetWidth || FAB_SIZE_PX;
+    const height = rect.height || item.offsetHeight || FAB_SIZE_PX;
+    const startLeft = saved?.detached === true ? saved.left : rect.left;
+    const startTop = saved?.detached === true ? saved.top : rect.top;
+    const position = clampPositionToViewport({ left: startLeft, top: startTop }, width, height);
+    const ghost = createItemGhost(item, {
+      left: position.left,
+      top: position.top,
+      width,
+      height,
+    });
+
+    activeItemDrag = {
+      record,
+      item,
+      ghost,
+      dockedAtStart: saved?.detached !== true,
+      startLeft: position.left,
+      startTop: position.top,
+      currentLeft: position.left,
+      currentTop: position.top,
+      width,
+      height,
+      overTrash: false,
+      rafId: 0,
+      moved: false,
+      lastPoint: makePoint(payload.clientX, payload.clientY),
     };
 
-    const scheduleMove = () => {
-      if (rafId) return;
-      rafId = requestAnimationFrame(applyMove);
-    };
+    item.classList.add("is-dragging", "is-drag-source");
+    item.setAttribute("data-vb-shell-taskbar-drag-source", "true");
+    document.documentElement.classList.add("vb-floating-drag-active");
+    showTrashTarget();
+    payload.event?.preventDefault?.();
+  }
 
-    const updateNextPosition = () => {
-      const dx = drag.lastX - drag.startX;
-      const dy = drag.lastY - drag.startY;
-      const viewportWidth = globalThis.innerWidth || document.documentElement?.clientWidth || 1024;
-      const viewportHeight = globalThis.innerHeight || document.documentElement?.clientHeight || 768;
-      drag.nextLeft = Math.min(
-        Math.max(VIEWPORT_MARGIN_PX, drag.originLeft + dx),
-        Math.max(VIEWPORT_MARGIN_PX, viewportWidth - boxW - VIEWPORT_MARGIN_PX)
-      );
-      drag.nextTop = Math.min(
-        Math.max(VIEWPORT_MARGIN_PX, drag.originTop + dy),
-        Math.max(VIEWPORT_MARGIN_PX, viewportHeight - boxH - VIEWPORT_MARGIN_PX)
-      );
-    };
+  function scheduleItemGhostMove() {
+    const drag = activeItemDrag;
+    if (!drag || drag.rafId) return;
+    drag.rafId = requestAnimationFrame(() => {
+      drag.rafId = 0;
+      if (!activeItemDrag) return;
+      const tx = Math.round(drag.currentLeft - drag.startLeft);
+      const ty = Math.round(drag.currentTop - drag.startTop);
+      drag.ghost.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
+    });
+  }
 
-    const clearDragAffordances = () => {
-      element.classList.remove("is-dragging");
-      document.documentElement.classList.remove("vb-floating-drag-active");
-      element.style.willChange = "";
-    };
+  function moveItemDrag(payload) {
+    const drag = activeItemDrag;
+    if (!drag) return;
+    const position = clampPositionToViewport({
+      left: drag.startLeft + payload.dx,
+      top: drag.startTop + payload.dy,
+    }, drag.width, drag.height);
+    drag.currentLeft = position.left;
+    drag.currentTop = position.top;
+    drag.lastPoint = makePoint(payload.clientX, payload.clientY);
+    drag.moved = true;
+    drag.overTrash = updateTrashTarget(drag.lastPoint);
+    scheduleItemGhostMove();
+    payload.event?.preventDefault?.();
+  }
 
-    const finishDrag = (endEvent = null) => {
-      if (rafId) {
-        cancelAnimationFrame(rafId);
-        rafId = 0;
-      }
+  function cleanupItemDragVisuals(drag) {
+    if (!drag) return;
+    if (drag.rafId) {
+      cancelAnimationFrame(drag.rafId);
+      drag.rafId = 0;
+    }
+    drag.item.classList.remove("is-dragging", "is-drag-source");
+    drag.item.removeAttribute("data-vb-shell-taskbar-drag-source");
+    removeItemGhost(drag.ghost);
+    hideTrashTarget();
+    document.documentElement.classList.remove("vb-floating-drag-active");
+  }
 
-      if (!pointerDown) {
-        clearDragAffordances();
-        dragCleanup = null;
-        return;
-      }
-      pointerDown = false;
-      dragCleanup = null;
-      releasePointerCapture(element, pointerId);
+  function endItemDrag(payload = {}) {
+    const drag = activeItemDrag;
+    activeItemDrag = null;
+    if (!drag) return;
+    cleanupItemDragVisuals(drag);
 
-      if (dragging) {
-        updateNextPosition();
-        setTaskbarFixedPosition({ left: drag.nextLeft, top: drag.nextTop });
-        clearDragAffordances();
-        clampTaskbarToViewport(boxW, boxH);
-        saveState();
-        endEvent?.preventDefault?.();
-      } else {
-        clearDragAffordances();
-      }
-    };
+    if (!drag.moved) return;
 
-    const onMove = (moveEvent) => {
-      if (!pointerDown) return;
-      if (pointerId != null && moveEvent.pointerId != null && moveEvent.pointerId !== pointerId) return;
+    suppressedClicks.add(drag.record.id);
+    setTimeout(() => suppressedClicks.delete(drag.record.id), 0);
 
-      drag.lastX = moveEvent.clientX;
-      drag.lastY = moveEvent.clientY;
-
-      if (!dragging) {
-        const dx = Math.abs(drag.lastX - drag.startX);
-        const dy = Math.abs(drag.lastY - drag.startY);
-        if (dx > DRAG_THRESHOLD_PX || dy > DRAG_THRESHOLD_PX) {
-          startDragNow();
-        } else {
-          return;
-        }
-      }
-
-      drag.moved = true;
-      updateNextPosition();
-      if (moveEvent.pointerType !== "mouse") moveEvent.preventDefault();
-      scheduleMove();
-    };
-
-    const onEnd = (endEvent) => {
-      if (pointerId != null && endEvent.pointerId != null && endEvent.pointerId !== pointerId) return;
-      finishDrag(endEvent);
-      element.removeEventListener("pointermove", onMove, { passive: false });
-      element.removeEventListener("pointerup", onEnd);
-      element.removeEventListener("pointercancel", onEnd);
-      element.removeEventListener("lostpointercapture", onEnd);
-    };
-
-    element.addEventListener("pointermove", onMove, { passive: false });
-    element.addEventListener("pointerup", onEnd);
-    element.addEventListener("pointercancel", onEnd);
-    element.addEventListener("lostpointercapture", onEnd);
-    dragCleanup = () => {
-      finishDrag();
-      element.removeEventListener("pointermove", onMove, { passive: false });
-      element.removeEventListener("pointerup", onEnd);
-      element.removeEventListener("pointercancel", onEnd);
-      element.removeEventListener("lostpointercapture", onEnd);
-    };
-
-    try {
-      element.setPointerCapture?.(pointerId);
-    } catch {
-      // ignore
+    const point = payload.point || drag.lastPoint;
+    if (drag.overTrash || isPointOverTrashTarget(point)) {
+      closeWindowFromTaskbarTrash(drag.record);
+      render();
+      payload.event?.preventDefault?.();
+      return;
     }
 
-    if (event.pointerType === "mouse") startDragNow();
+    if (isPointNearTaskbar(point)) {
+      itemPositions.delete(drag.record.id);
+    } else {
+      itemPositions.set(drag.record.id, {
+        detached: true,
+        left: drag.currentLeft,
+        top: drag.currentTop,
+      });
+    }
+    saveState();
+    render();
+    payload.event?.preventDefault?.();
+  }
+
+  function cancelItemDrag(payload = {}) {
+    if (payload.canceled && activeItemDrag?.moved) {
+      endItemDrag(payload);
+      return;
+    }
+    const drag = activeItemDrag;
+    activeItemDrag = null;
+    cleanupItemDragVisuals(drag);
+  }
+
+  function setupItemSensor(item, record) {
+    const sensor = createDragSensors({
+      source: item,
+      canStart: () => ({ record, item }),
+      onStart: beginItemDrag,
+      onMove: moveItemDrag,
+      onEnd: endItemDrag,
+      onCancel: cancelItemDrag,
+    });
+    itemSensors.set(record.id, sensor);
+  }
+
+  function destroyItemSensors() {
+    for (const sensor of itemSensors.values()) sensor.destroy();
+    itemSensors.clear();
   }
 
   function createTaskbarItem(record, state, docked) {
@@ -605,6 +971,7 @@ export function createShellTaskbar({
     item.setAttribute("data-vb-shell-taskbar-state", state);
     item.setAttribute("data-vb-shell-taskbar-active", record.active ? "true" : "false");
     item.setAttribute("data-vb-shell-taskbar-docked", docked ? "true" : "false");
+    suppressNativeDrag(item);
 
     const label = labels[record.id] || defaultLabel(record);
     item.setAttribute("aria-label", `${label} ${state}`);
@@ -626,17 +993,22 @@ export function createShellTaskbar({
     text.textContent = label;
     item.append(text);
 
-    item.addEventListener("pointerdown", (event) => beginItemDrag(event, record, item));
+    item.addEventListener("dragstart", (event) => event.preventDefault());
     item.addEventListener("click", (event) => handleItemClick(record, event));
+    setupItemSensor(item, record);
     return item;
   }
 
   function render() {
     if (destroyed) return;
 
+    destroyItemSensors();
     for (const item of itemElements.values()) item.remove();
     itemElements.clear();
-    element.replaceChildren();
+    if (dragHandle.parentElement !== element || trayElement.parentElement !== element) {
+      element.replaceChildren(dragHandle, trayElement);
+    }
+    trayElement.replaceChildren();
 
     const records = getTaskbarWindows();
     let dockedCount = 0;
@@ -654,7 +1026,7 @@ export function createShellTaskbar({
         applyDetachedStyle(item, position);
       } else {
         clearDetachedStyle(item);
-        element.append(item);
+        trayElement.append(item);
         dockedCount += 1;
       }
     }
@@ -675,16 +1047,31 @@ export function createShellTaskbar({
   function destroy() {
     if (destroyed) return;
     destroyed = true;
-    dragCleanup?.();
+    taskbarSensor?.destroy();
+    destroyItemSensors();
+    endTaskbarDrag();
+    cancelItemDrag();
     unsubscribe?.();
     preferenceUnsubscribe?.();
     for (const item of itemElements.values()) item.remove();
     itemElements.clear();
+    hideTrashTarget();
+    dragLayerElement?.remove();
+    dragLayerElement = null;
     element.remove();
   }
 
+  taskbarSensor = createDragSensors({
+    source: dragHandle,
+    canStart: canStartTaskbarDrag,
+    onStart: beginTaskbarDrag,
+    onMove: moveTaskbarDrag,
+    onEnd: endTaskbarDrag,
+    onCancel: endTaskbarDrag,
+    preventDefaultOnStart: true,
+  });
+
   root.appendChild(element);
-  element.addEventListener("pointerdown", beginTaskbarDrag);
   unsubscribe = shellManager.subscribe(({ event, record }) => {
     if (record && ["opened", "restored", "minimized"].includes(event)) {
       rememberWindow(record.id);

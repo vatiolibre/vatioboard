@@ -1,6 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createShellTaskbar } from "../../src/shared/shell-taskbar.js";
 import { createShellWindowManager } from "../../src/shared/shell-window-manager.js";
+
+const TASKBAR_STATE_KEY = "vatioboard.shell.taskbar_fabs.v1";
+const originalRaf = globalThis.requestAnimationFrame;
+const originalCancelRaf = globalThis.cancelAnimationFrame;
 
 function makeManager() {
   return createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
@@ -14,21 +20,70 @@ function makePanel(title = "Panel") {
   return panel;
 }
 
+function rect({ left, top, width = 52, height = 52 }) {
+  return {
+    left,
+    top,
+    right: left + width,
+    bottom: top + height,
+    width,
+    height,
+    x: left,
+    y: top,
+    toJSON: () => {},
+  };
+}
+
+function touchEvent(type, { identifier = 7, clientX, clientY, target = null } = {}) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  const touch = { identifier, clientX, clientY, pageX: clientX, pageY: clientY, target };
+  Object.defineProperty(event, "changedTouches", {
+    configurable: true,
+    value: [touch],
+  });
+  Object.defineProperty(event, "touches", {
+    configurable: true,
+    value: type === "touchend" || type === "touchcancel" ? [] : [touch],
+  });
+  event.preventDefault = vi.fn();
+  return event;
+}
+
 function pointer(type, init) {
   return new PointerEvent(type, {
     pointerId: 1,
     pointerType: "mouse",
     button: 0,
     bubbles: true,
+    cancelable: true,
     ...init,
   });
+}
+
+function setupCalculatorTaskbar() {
+  const manager = makeManager();
+  manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
+  const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+  manager.openWindow("calculator");
+  return { manager, taskbar };
 }
 
 describe("shell-taskbar", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
+    document.documentElement.className = "";
     localStorage.clear();
     vi.restoreAllMocks();
+    globalThis.requestAnimationFrame = (callback) => {
+      callback(performance.now());
+      return 1;
+    };
+    globalThis.cancelAnimationFrame = () => {};
+  });
+
+  afterEach(() => {
+    globalThis.requestAnimationFrame = originalRaf;
+    globalThis.cancelAnimationFrame = originalCancelRaf;
   });
 
   it("does not render registered closed windows before first open", () => {
@@ -37,24 +92,27 @@ describe("shell-taskbar", () => {
     const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
 
     expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeNull();
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-tray]")).toBeTruthy();
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-drag-handle]")).toBeTruthy();
     expect(taskbar.getElement().hidden).toBe(true);
 
     taskbar.destroy();
     manager.destroy();
   });
 
-  it("adds a floating FAB to the taskbar the first time a window opens", () => {
-    const manager = makeManager();
-    manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
-    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+  it("adds a floating FAB to the taskbar tray the first time a window opens", () => {
+    const { manager, taskbar } = setupCalculatorTaskbar();
 
-    manager.openWindow("calculator");
-
+    const tray = taskbar.getElement().querySelector("[data-vb-shell-taskbar-tray]");
     const item = taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']");
     expect(item).toBeTruthy();
+    expect(item.parentElement).toBe(tray);
     expect(item.classList.contains("vb-shell-taskbar-fab")).toBe(true);
     expect(item.classList.contains("dock-btn")).toBe(true);
     expect(item.getAttribute("data-vb-shell-taskbar-docked")).toBe("true");
+    expect(item.draggable).toBe(false);
+    expect(item.getAttribute("draggable")).toBe("false");
+    expect(item.ondragstart()).toBe(false);
     expect(taskbar.getElement().hidden).toBe(false);
 
     taskbar.destroy();
@@ -109,10 +167,7 @@ describe("shell-taskbar", () => {
   });
 
   it("clicking an active item minimizes when allowed", () => {
-    const manager = makeManager();
-    manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
-    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
-    manager.openWindow("calculator");
+    const { manager, taskbar } = setupCalculatorTaskbar();
 
     taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']").click();
 
@@ -141,273 +196,280 @@ describe("shell-taskbar", () => {
     manager.destroy();
   });
 
-  it("lets a taskbar FAB detach and move as a floating FAB", () => {
-    const manager = makeManager();
-    manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
-    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
-    manager.openWindow("calculator");
-
-    const item = taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']");
-    vi.spyOn(item, "getBoundingClientRect").mockReturnValue({
-      left: 100,
-      top: 600,
-      right: 152,
-      bottom: 652,
-      width: 52,
-      height: 52,
-      x: 100,
-      y: 600,
-      toJSON: () => {},
-    });
-
-    item.dispatchEvent(pointer("pointerdown", { clientX: 110, clientY: 610 }));
-    window.dispatchEvent(pointer("pointermove", { clientX: 160, clientY: 560 }));
-    window.dispatchEvent(pointer("pointerup", { clientX: 160, clientY: 560 }));
-
-    const detached = document.querySelector("[data-vb-shell-taskbar-item='calculator']");
-    expect(detached.getAttribute("data-vb-shell-taskbar-docked")).toBe("false");
-    expect(detached.classList.contains("is-detached")).toBe(true);
-    expect(detached.style.position).toBe("fixed");
-    expect(detached.parentElement).toBe(document.body);
-
-    taskbar.destroy();
-    manager.destroy();
-  });
-
-  it("lets a detached FAB return to the taskbar by dropping it on the tray", () => {
-    const manager = makeManager();
-    manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
-    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
-    manager.openWindow("calculator");
-    vi.spyOn(taskbar.getElement(), "getBoundingClientRect").mockReturnValue({
-      left: 0,
-      top: 690,
-      right: 360,
-      bottom: 760,
-      width: 360,
-      height: 70,
-      x: 0,
-      y: 690,
-      toJSON: () => {},
-    });
-
-    let item = taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']");
-    vi.spyOn(item, "getBoundingClientRect").mockReturnValue({
-      left: 100,
-      top: 600,
-      right: 152,
-      bottom: 652,
-      width: 52,
-      height: 52,
-      x: 100,
-      y: 600,
-      toJSON: () => {},
-    });
-    item.dispatchEvent(pointer("pointerdown", { clientX: 110, clientY: 610 }));
-    window.dispatchEvent(pointer("pointermove", { clientX: 180, clientY: 550 }));
-    window.dispatchEvent(pointer("pointerup", { clientX: 180, clientY: 550 }));
-
-    item = document.querySelector("[data-vb-shell-taskbar-item='calculator']");
-    vi.spyOn(item, "getBoundingClientRect").mockReturnValue({
-      left: 170,
-      top: 540,
-      right: 222,
-      bottom: 592,
-      width: 52,
-      height: 52,
-      x: 170,
-      y: 540,
-      toJSON: () => {},
-    });
-    item.dispatchEvent(pointer("pointerdown", { clientX: 180, clientY: 550 }));
-    window.dispatchEvent(pointer("pointermove", { clientX: 30, clientY: 720 }));
-    window.dispatchEvent(pointer("pointerup", { clientX: 30, clientY: 720 }));
-
-    const docked = taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']");
-    expect(docked).toBeTruthy();
-    expect(docked.getAttribute("data-vb-shell-taskbar-docked")).toBe("true");
-    expect(docked.style.position).toBe("");
-
-    taskbar.destroy();
-    manager.destroy();
-  });
-
-  it("cleans up a detached FAB drag when pointer capture is lost", () => {
-    const manager = makeManager();
-    manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
-    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
-    manager.openWindow("calculator");
-
-    const item = taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']");
-    item.setPointerCapture = vi.fn();
-    item.releasePointerCapture = vi.fn();
-    vi.spyOn(item, "getBoundingClientRect").mockReturnValue({
-      left: 100,
-      top: 600,
-      right: 152,
-      bottom: 652,
-      width: 52,
-      height: 52,
-      x: 100,
-      y: 600,
-      toJSON: () => {},
-    });
-
-    item.dispatchEvent(pointer("pointerdown", { pointerType: "touch", clientX: 110, clientY: 610 }));
-    window.dispatchEvent(pointer("pointermove", { pointerType: "touch", clientX: 170, clientY: 550 }));
-    expect(item.classList.contains("is-dragging")).toBe(true);
-
-    item.dispatchEvent(pointer("lostpointercapture", { pointerType: "touch", clientX: 170, clientY: 550 }));
-
-    const currentItem = document.querySelector("[data-vb-shell-taskbar-item='calculator']");
-    expect(currentItem.classList.contains("is-dragging")).toBe(false);
-    expect(document.documentElement.classList.contains("vb-floating-drag-active")).toBe(false);
-    expect(item.releasePointerCapture).toHaveBeenCalledWith(1);
-
-    taskbar.destroy();
-    manager.destroy();
-  });
-
-  it("moves the taskbar tray from empty tray space and persists the position", () => {
-    const manager = makeManager();
-    manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
-    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
-    manager.openWindow("calculator");
-
-    const rectSpy = vi.spyOn(taskbar.getElement(), "getBoundingClientRect").mockReturnValue({
-      left: 120,
-      top: 690,
-      right: 240,
-      bottom: 760,
-      width: 120,
-      height: 70,
-      x: 120,
-      y: 690,
-      toJSON: () => {},
-    });
-
-    taskbar.getElement().dispatchEvent(pointer("pointerdown", { clientX: 225, clientY: 724 }));
-    taskbar.getElement().dispatchEvent(pointer("pointermove", { clientX: 260, clientY: 650 }));
-    taskbar.getElement().dispatchEvent(pointer("pointermove", { clientX: 300, clientY: 610 }));
-    taskbar.getElement().dispatchEvent(pointer("pointermove", { clientX: 325, clientY: 584 }));
-    taskbar.getElement().dispatchEvent(pointer("pointerup", { clientX: 325, clientY: 584 }));
-
-    expect(rectSpy.mock.calls.length).toBeLessThan(3);
-    expect(taskbar.getElement().getAttribute("data-vb-shell-taskbar-floating")).toBe("true");
-    expect(taskbar.getElement().style.position).toBe("fixed");
-    expect(taskbar.getElement().style.left).toBe("220px");
-    expect(taskbar.getElement().style.top).toBe("550px");
-    expect(JSON.parse(localStorage.getItem("vatioboard.shell.taskbar_fabs.v1")).taskbar)
-      .toMatchObject({ detached: true, left: 220, top: 550 });
-
-    taskbar.destroy();
-    const nextTaskbar = createShellTaskbar({ shellManager: manager, root: document.body });
-
-    expect(nextTaskbar.getElement().style.position).toBe("fixed");
-    expect(nextTaskbar.getElement().style.left).toBe("220px");
-    expect(nextTaskbar.getElement().style.top).toBe("550px");
-
-    nextTaskbar.destroy();
-    manager.destroy();
-  });
-
-  it("uses compositor transform while dragging the taskbar tray", () => {
-    const originalRaf = globalThis.requestAnimationFrame;
-    const originalCancelRaf = globalThis.cancelAnimationFrame;
-    globalThis.requestAnimationFrame = (callback) => {
-      callback(performance.now());
-      return 1;
-    };
-    globalThis.cancelAnimationFrame = () => {};
-
-    const manager = makeManager();
-    const taskbarCleanup = [];
-
-    try {
-      manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
-      const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
-      taskbarCleanup.push(() => taskbar.destroy());
-      manager.openWindow("calculator");
-
-      vi.spyOn(taskbar.getElement(), "getBoundingClientRect").mockReturnValue({
-        left: 120,
-        top: 690,
-        right: 240,
-        bottom: 760,
-        width: 120,
-        height: 70,
-        x: 120,
-        y: 690,
-        toJSON: () => {},
-      });
-
-      taskbar.getElement().dispatchEvent(pointer("pointerdown", {
-        pointerType: "touch",
-        clientX: 225,
-        clientY: 724,
-      }));
-      taskbar.getElement().dispatchEvent(pointer("pointermove", {
-        pointerType: "touch",
-        clientX: 265,
-        clientY: 684,
-      }));
-
-      expect(taskbar.getElement().style.left).toBe("120px");
-      expect(taskbar.getElement().style.top).toBe("690px");
-      expect(taskbar.getElement().style.transform).toContain("translate3d");
-      expect(taskbar.getElement().style.willChange).toBe("transform");
-
-      taskbar.getElement().dispatchEvent(pointer("pointerup", {
-        pointerType: "touch",
-        clientX: 265,
-        clientY: 684,
-      }));
-
-      expect(taskbar.getElement().style.transform).toBe("none");
-      expect(taskbar.getElement().style.left).toBe("160px");
-      expect(taskbar.getElement().style.top).toBe("650px");
-    } finally {
-      for (const cleanup of taskbarCleanup) cleanup();
-      manager.destroy();
-      globalThis.requestAnimationFrame = originalRaf;
-      globalThis.cancelAnimationFrame = originalCancelRaf;
-    }
-  });
-
-  it("cleans up taskbar tray drag state when pointer capture is lost", () => {
-    const manager = makeManager();
-    manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
-    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
-    manager.openWindow("calculator");
-
+  it("moves the taskbar from the dedicated handle using document-level touch events", () => {
+    const { manager, taskbar } = setupCalculatorTaskbar();
     const element = taskbar.getElement();
-    element.setPointerCapture = vi.fn();
-    element.releasePointerCapture = vi.fn();
-    vi.spyOn(element, "getBoundingClientRect").mockReturnValue({
+    const handle = element.querySelector("[data-vb-shell-taskbar-drag-handle]");
+    vi.spyOn(element, "getBoundingClientRect").mockReturnValue(rect({
       left: 120,
-      top: 690,
-      right: 240,
-      bottom: 760,
+      top: 620,
       width: 120,
       height: 70,
-      x: 120,
-      y: 690,
-      toJSON: () => {},
-    });
+    }));
 
-    element.dispatchEvent(pointer("pointerdown", { pointerType: "touch", clientX: 225, clientY: 724 }));
-    element.dispatchEvent(pointer("pointermove", { pointerType: "touch", clientX: 265, clientY: 684 }));
+    handle.dispatchEvent(touchEvent("touchstart", { target: handle, clientX: 225, clientY: 650 }));
+    document.dispatchEvent(touchEvent("touchmove", { target: handle, clientX: 228, clientY: 652 }));
+
+    expect(element.classList.contains("is-dragging")).toBe(false);
+    expect(JSON.parse(localStorage.getItem(TASKBAR_STATE_KEY)).taskbar).toBeNull();
+
+    document.dispatchEvent(touchEvent("touchmove", { target: handle, clientX: 525, clientY: 410 }));
+
     expect(element.classList.contains("is-dragging")).toBe(true);
+    expect(element.style.transform).toContain("translate3d(300px, -240px, 0)");
 
-    element.dispatchEvent(pointer("lostpointercapture", { pointerType: "touch", clientX: 265, clientY: 684 }));
+    document.dispatchEvent(touchEvent("touchend", { target: handle, clientX: 525, clientY: 410 }));
 
     expect(element.classList.contains("is-dragging")).toBe(false);
     expect(document.documentElement.classList.contains("vb-floating-drag-active")).toBe(false);
-    expect(element.style.willChange).toBe("");
-    expect(element.style.zIndex).toBe("");
-    expect(element.releasePointerCapture).toHaveBeenCalledWith(1);
+    expect(element.style.position).toBe("fixed");
+    expect(element.style.left).toBe("420px");
+    expect(element.style.top).toBe("380px");
+    expect(JSON.parse(localStorage.getItem(TASKBAR_STATE_KEY)).taskbar)
+      .toMatchObject({ detached: true, left: 420, top: 380 });
 
     taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("does not start whole-taskbar drag from the tray or item buttons", () => {
+    const { manager, taskbar } = setupCalculatorTaskbar();
+    const element = taskbar.getElement();
+    const item = element.querySelector("[data-vb-shell-taskbar-item='calculator']");
+    vi.spyOn(element, "getBoundingClientRect").mockReturnValue(rect({
+      left: 120,
+      top: 620,
+      width: 120,
+      height: 70,
+    }));
+
+    item.dispatchEvent(touchEvent("touchstart", { target: item, clientX: 225, clientY: 650 }));
+    document.dispatchEvent(touchEvent("touchmove", { target: item, clientX: 525, clientY: 410 }));
+
+    expect(element.classList.contains("is-dragging")).toBe(false);
+    expect(element.style.transform).not.toContain("translate3d(300px, -240px, 0)");
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("moves the taskbar from the handle with mouse pointer events", () => {
+    const { manager, taskbar } = setupCalculatorTaskbar();
+    const element = taskbar.getElement();
+    const handle = element.querySelector("[data-vb-shell-taskbar-drag-handle]");
+    vi.spyOn(element, "getBoundingClientRect").mockReturnValue(rect({
+      left: 120,
+      top: 620,
+      width: 120,
+      height: 70,
+    }));
+
+    handle.dispatchEvent(pointer("pointerdown", { clientX: 225, clientY: 650 }));
+    window.dispatchEvent(pointer("pointermove", { clientX: 525, clientY: 410 }));
+    expect(element.style.transform).toContain("translate3d(300px, -240px, 0)");
+    window.dispatchEvent(pointer("pointerup", { clientX: 525, clientY: 410 }));
+
+    expect(element.style.left).toBe("420px");
+    expect(element.style.top).toBe("380px");
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("drags a docked FAB outside the taskbar with a fixed ghost and persists it", () => {
+    const { manager, taskbar } = setupCalculatorTaskbar();
+    const item = taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']");
+    vi.spyOn(item, "getBoundingClientRect").mockReturnValue(rect({ left: 100, top: 600 }));
+
+    item.dispatchEvent(touchEvent("touchstart", { target: item, clientX: 110, clientY: 610 }));
+    document.dispatchEvent(touchEvent("touchmove", { target: item, clientX: 310, clientY: 420 }));
+
+    const ghost = document.querySelector("[data-vb-shell-drag-ghost='calculator']");
+    expect(document.querySelector("[data-vb-shell-drag-layer]")).toBeTruthy();
+    expect(ghost).toBeTruthy();
+    expect(ghost.style.transform).toContain("translate3d(200px, -190px, 0)");
+    expect(item.classList.contains("is-drag-source")).toBe(true);
+
+    document.dispatchEvent(touchEvent("touchend", { target: item, clientX: 310, clientY: 420 }));
+
+    const detached = document.querySelector("[data-vb-shell-taskbar-item='calculator']");
+    expect(document.querySelector("[data-vb-shell-drag-layer]")).toBeNull();
+    expect(detached.getAttribute("data-vb-shell-taskbar-docked")).toBe("false");
+    expect(detached.classList.contains("is-detached")).toBe(true);
+    expect(detached.style.position).toBe("fixed");
+    expect(detached.style.left).toBe("300px");
+    expect(detached.style.top).toBe("410px");
+    expect(detached.parentElement).toBe(document.body);
+    expect(JSON.parse(localStorage.getItem(TASKBAR_STATE_KEY)).positions.calculator)
+      .toMatchObject({ detached: true, left: 300, top: 410 });
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("lets a detached FAB return to the taskbar by touch-dropping near the tray", () => {
+    localStorage.setItem(TASKBAR_STATE_KEY, JSON.stringify({
+      version: 1,
+      knownWindowIds: ["calculator"],
+      positions: { calculator: { detached: true, left: 210, top: 210 } },
+      taskbar: null,
+    }));
+    const { manager, taskbar } = setupCalculatorTaskbar();
+    vi.spyOn(taskbar.getElement(), "getBoundingClientRect").mockReturnValue(rect({
+      left: 0,
+      top: 690,
+      width: 360,
+      height: 70,
+    }));
+    const item = document.querySelector("[data-vb-shell-taskbar-item='calculator']");
+    vi.spyOn(item, "getBoundingClientRect").mockReturnValue(rect({ left: 210, top: 210 }));
+
+    item.dispatchEvent(touchEvent("touchstart", { target: item, clientX: 220, clientY: 220 }));
+    document.dispatchEvent(touchEvent("touchmove", { target: item, clientX: 30, clientY: 720 }));
+    document.dispatchEvent(touchEvent("touchend", { target: item, clientX: 30, clientY: 720 }));
+
+    const docked = taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']");
+    expect(docked).toBeTruthy();
+    expect(docked.parentElement).toBe(taskbar.getElement().querySelector("[data-vb-shell-taskbar-tray]"));
+    expect(docked.getAttribute("data-vb-shell-taskbar-docked")).toBe("true");
+    expect(docked.style.position).toBe("");
+    expect(JSON.parse(localStorage.getItem(TASKBAR_STATE_KEY)).positions.calculator).toBeUndefined();
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("keeps trash behavior when a FAB ghost is dropped into the trash target", () => {
+    const manager = makeManager();
+    const panel = makePanel();
+    const close = vi.fn();
+    manager.registerWindow({
+      id: "calculator",
+      title: "Calculator",
+      element: panel,
+      lifecycle: { close },
+    });
+    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+    manager.openWindow("calculator");
+
+    const item = taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']");
+    vi.spyOn(item, "getBoundingClientRect").mockReturnValue(rect({ left: 100, top: 600 }));
+
+    item.dispatchEvent(touchEvent("touchstart", { target: item, clientX: 110, clientY: 610 }));
+    document.dispatchEvent(touchEvent("touchmove", { target: item, clientX: 180, clientY: 550 }));
+
+    const trash = document.querySelector("[data-vb-shell-taskbar-trash]");
+    expect(trash).toBeTruthy();
+    vi.spyOn(trash, "getBoundingClientRect").mockReturnValue(rect({
+      left: 240,
+      top: 520,
+      width: 120,
+      height: 70,
+    }));
+
+    document.dispatchEvent(touchEvent("touchmove", { target: item, clientX: 300, clientY: 550 }));
+    expect(trash.getAttribute("data-vb-shell-taskbar-trash-active")).toBe("true");
+
+    document.dispatchEvent(touchEvent("touchend", { target: item, clientX: 300, clientY: 550 }));
+
+    expect(document.querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeNull();
+    expect(taskbar.getElement().hidden).toBe(true);
+    expect(trash.isConnected).toBe(false);
+    expect(manager.getWindow("calculator").state).toBe("closed");
+    expect(panel.hidden).toBe(true);
+    expect(close).toHaveBeenCalledWith(expect.objectContaining({ taskbarTrash: true }));
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("asks player windows to stop playback when their FAB is dropped into trash", () => {
+    const manager = makeManager();
+    const close = vi.fn();
+    manager.registerWindow({
+      id: "player",
+      kind: "media",
+      title: "Player",
+      element: makePanel("Player"),
+      lifecycle: { close },
+    });
+    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+    manager.openWindow("player");
+
+    const item = taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='player']");
+    vi.spyOn(item, "getBoundingClientRect").mockReturnValue(rect({ left: 100, top: 600 }));
+
+    item.dispatchEvent(touchEvent("touchstart", { target: item, clientX: 110, clientY: 610 }));
+    document.dispatchEvent(touchEvent("touchmove", { target: item, clientX: 180, clientY: 550 }));
+
+    const trash = document.querySelector("[data-vb-shell-taskbar-trash]");
+    vi.spyOn(trash, "getBoundingClientRect").mockReturnValue(rect({
+      left: 240,
+      top: 520,
+      width: 120,
+      height: 70,
+    }));
+
+    document.dispatchEvent(touchEvent("touchmove", { target: item, clientX: 300, clientY: 550 }));
+    document.dispatchEvent(touchEvent("touchend", { target: item, clientX: 300, clientY: 550 }));
+
+    expect(manager.getWindow("player").state).toBe("closed");
+    expect(close).toHaveBeenCalledWith(expect.objectContaining({
+      taskbarTrash: true,
+      stopPlayback: true,
+    }));
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("touch tap without crossing threshold still allows normal click behavior", () => {
+    const { manager, taskbar } = setupCalculatorTaskbar();
+    const item = taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']");
+
+    item.dispatchEvent(touchEvent("touchstart", { target: item, clientX: 110, clientY: 610 }));
+    document.dispatchEvent(touchEvent("touchend", { target: item, clientX: 110, clientY: 610 }));
+    item.click();
+
+    expect(manager.getWindow("calculator").state).toBe("minimized");
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("suppresses the click immediately following a real drag", () => {
+    const { manager, taskbar } = setupCalculatorTaskbar();
+    const item = taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']");
+    vi.spyOn(item, "getBoundingClientRect").mockReturnValue(rect({ left: 100, top: 600 }));
+
+    item.dispatchEvent(touchEvent("touchstart", { target: item, clientX: 110, clientY: 610 }));
+    document.dispatchEvent(touchEvent("touchmove", { target: item, clientX: 310, clientY: 420 }));
+    document.dispatchEvent(touchEvent("touchend", { target: item, clientX: 310, clientY: 420 }));
+
+    document.querySelector("[data-vb-shell-taskbar-item='calculator']").click();
+
+    expect(manager.getWindow("calculator").state).toBe("open");
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("destroy during an active FAB touch drag removes listeners, ghost, layer, and classes", () => {
+    const { manager, taskbar } = setupCalculatorTaskbar();
+    const item = taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']");
+    vi.spyOn(item, "getBoundingClientRect").mockReturnValue(rect({ left: 100, top: 600 }));
+
+    item.dispatchEvent(touchEvent("touchstart", { target: item, clientX: 110, clientY: 610 }));
+    document.dispatchEvent(touchEvent("touchmove", { target: item, clientX: 310, clientY: 420 }));
+
+    expect(document.querySelector("[data-vb-shell-drag-layer]")).toBeTruthy();
+    expect(document.documentElement.classList.contains("vb-floating-drag-active")).toBe(true);
+
+    taskbar.destroy();
+
+    expect(document.querySelector("[data-vb-shell-drag-layer]")).toBeNull();
+    expect(document.querySelector("[data-vb-shell-taskbar-trash]")).toBeNull();
+    expect(document.documentElement.classList.contains("vb-floating-drag-active")).toBe(false);
     manager.destroy();
   });
 
@@ -423,5 +485,14 @@ describe("shell-taskbar", () => {
     expect(element.isConnected).toBe(false);
     expect(document.querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeNull();
     manager.destroy();
+  });
+
+  it("does not depend on interact.js", () => {
+    const packageJson = readFileSync(resolve(process.cwd(), "package.json"), "utf8");
+    const source = readFileSync(resolve(process.cwd(), "src/shared/shell-taskbar.js"), "utf8");
+
+    expect(packageJson).not.toContain("\"interactjs\"");
+    expect(source).not.toContain("interactjs");
+    expect(source).not.toContain("interact(");
   });
 });
