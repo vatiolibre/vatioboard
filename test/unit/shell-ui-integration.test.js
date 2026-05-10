@@ -397,6 +397,8 @@ describe("shell UI integration", () => {
     expect(taskbarBlock).not.toContain("-webkit-overflow-scrolling");
     expect(trayBlock).toContain("display: flex");
     expect(trayBlock).toContain("overflow-x: auto");
+    expect(handleBlock).toContain("flex: 0 0 36px");
+    expect(handleBlock).toContain("margin-left: -8px");
     expect(handleBlock).toContain("touch-action: none");
     expect(handleBlock).toContain("-webkit-user-drag: none");
     expect(itemBlock).toContain("touch-action: none");

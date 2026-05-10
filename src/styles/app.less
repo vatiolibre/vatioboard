@@ -120,9 +120,10 @@ html.vb-floating-drag-active body {
 
 .vb-shell-taskbar-drag-handle {
   position: relative;
-  flex: 0 0 12px;
+  flex: 0 0 36px;
   align-self: stretch;
   min-height: 40px;
+  margin-left: -8px;
   border-radius: 999px;
   cursor: grab;
   touch-action: none;
@@ -191,9 +192,12 @@ html.vb-floating-drag-active body {
 
 .vb-shell-taskbar[data-vb-shell-taskbar-position="left"] .vb-shell-taskbar-drag-handle,
 [data-vb-shell-taskbar-position="left"] .vb-shell-taskbar .vb-shell-taskbar-drag-handle {
+  flex: 0 0 28px;
   align-self: center;
   width: 40px;
-  min-height: 12px;
+  min-height: 28px;
+  margin-left: 0;
+  margin-top: -6px;
 }
 
 .vb-shell-taskbar[data-vb-shell-taskbar-position="left"] .vb-shell-taskbar-drag-handle::before,
@@ -226,9 +230,12 @@ html.vb-floating-drag-active body {
 
 .vb-shell-taskbar[data-vb-shell-taskbar-position="right"] .vb-shell-taskbar-drag-handle,
 [data-vb-shell-taskbar-position="right"] .vb-shell-taskbar .vb-shell-taskbar-drag-handle {
+  flex: 0 0 28px;
   align-self: center;
   width: 40px;
-  min-height: 12px;
+  min-height: 28px;
+  margin-left: 0;
+  margin-top: -6px;
 }
 
 .vb-shell-taskbar[data-vb-shell-taskbar-position="right"] .vb-shell-taskbar-drag-handle::before,
