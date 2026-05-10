@@ -139,6 +139,69 @@ describe('speed extracted helpers', () => {
       nearestTrapId: 1,
       nearestTrapDistanceM: 420,
       nearestTrapSpeedKph: 80,
+      nearestTrapSpeedMeta: null,
+    });
+  });
+
+  it('returns optional nearest trap speed metadata without changing speed semantics', () => {
+    const meta = { source: 'nearest_road:maxspeed', confidence: 'medium', wayId: 9, distanceM: 18, raw: '50' };
+    const trapState = updateNearestTrap(
+      { fake: true },
+      [[-73.99, 4.71, 50, 123, meta]],
+      -74.1,
+      4.72,
+      {
+        around: vi.fn(() => [0]),
+        distanceKm: vi.fn(() => 0.12),
+      }
+    );
+
+    expect(trapState).toMatchObject({
+      nearestTrapSpeedKph: 50,
+      nearestTrapSpeedMeta: meta,
+    });
+  });
+
+  it('keeps unknown trap speed null instead of zero', () => {
+    const trapState = updateNearestTrap(
+      { fake: true },
+      [[-73.99, 4.71, null, 123]],
+      -74.1,
+      4.72,
+      {
+        around: vi.fn(() => [0]),
+        distanceKm: vi.fn(() => 0.12),
+      }
+    );
+
+    expect(trapState.nearestTrapSpeedKph).toBeNull();
+  });
+
+  it('does not let low-confidence inferred trap speed override the manual alert limit', () => {
+    const alertState = getAlertUiState({
+      unit: 'kmh',
+      currentSpeedMs: 20,
+      alertEnabled: true,
+      alertLimitMs: 30,
+      trapAlertEnabled: true,
+      trapLoadPending: false,
+      trapLoadError: null,
+      nearestTrapId: 7,
+      nearestTrapDistanceM: 100,
+      nearestTrapSpeedKph: 50,
+      nearestTrapSpeedMeta: { source: 'nearest_road:maxspeed', confidence: 'low' },
+      trapAlertDistanceM: 500,
+      convertSpeed,
+      getTrapAlertDistanceLabel: (distanceM) => `${Math.round(distanceM)} m`,
+      formatTrapSpeed: (speedKph) => `${speedKph} km/h`,
+    });
+
+    expect(alertState).toMatchObject({
+      source: 'manual',
+      trapActive: true,
+      trapSpeedLabel: '50 km/h',
+      over: false,
+      limitDisplayValue: 108,
     });
   });
 
@@ -168,6 +231,7 @@ describe('speed extracted helpers', () => {
       nearestTrapId: 'country:ca:0',
       nearestTrapDistanceM: 400,
       nearestTrapSpeedKph: 80,
+      nearestTrapSpeedMeta: null,
     });
     expect(trapState.nearestTrapDataset.key).toBe('country:ca');
   });

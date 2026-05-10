@@ -3,12 +3,17 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import KDBush from "kdbush";
+import { parseMaxspeed } from "./camera-maxspeed-enrichment.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "..");
 
 export const DEFAULT_RAW_OSM_PATH = path.resolve(projectRoot, "data-src/osm_speed_cameras_overpass.json");
+export const DEFAULT_MAXSPEED_ENRICHMENT_PATH = path.resolve(
+  projectRoot,
+  "data-src/osm_speed_cameras_maxspeed_enrichment.json",
+);
 export const LEGACY_ANSV_PATH = path.resolve(projectRoot, "data-src/ansv_cameras_maplibre.geojson");
 export const DEFAULT_OUTPUT_DIR = path.resolve(projectRoot, "public/geo/cameras");
 export const OVERPASS_QUERY = `[out:json][timeout:1000];
@@ -63,21 +68,8 @@ export function roundCoordinate(value) {
 }
 
 export function parseSpeedKph(value) {
-  if (value === null || value === undefined) return null;
-  const text = String(value).trim().toLowerCase();
-  if (!text || text === "none" || text === "signals" || text === "variable") return null;
-
-  const match = text.match(/(-?\d+(?:[.,]\d+)?)/);
-  if (!match) return null;
-
-  const numeric = Number.parseFloat(match[1].replace(",", "."));
-  if (!Number.isFinite(numeric) || numeric <= 0 || numeric > 400) return null;
-
-  if (/\bmph\b/.test(text)) {
-    return Math.round(numeric * 1.609344);
-  }
-
-  return Math.round(numeric);
+  const parsed = parseMaxspeed(value);
+  return parsed.parsed ? parsed.speedKph : null;
 }
 
 export function normalizeCountryCode(value) {
@@ -141,23 +133,107 @@ function isFiniteCoordinate(lon, lat) {
     && lat <= 90;
 }
 
-function normalizeOsmElement(element) {
+function parseCameraMaxspeed(tags = {}) {
+  const candidates = [
+    tags.maxspeed,
+    tags.speed,
+    tags.limit,
+    tags["maxspeed:forward"],
+    tags["maxspeed:backward"],
+  ];
+
+  for (const candidate of candidates) {
+    const parsed = parseMaxspeed(candidate);
+    if (parsed.parsed) return parsed;
+  }
+
+  return { speedKph: null, raw: null, parsed: false, reason: "missing" };
+}
+
+function normalizeSpeedMeta(meta) {
+  if (!meta || typeof meta !== "object") return null;
+  const source = String(meta.source ?? "").trim();
+  const compactSource = String(meta.s ?? "").trim();
+  const normalizedSource = source || (
+    compactSource === "road"
+      ? "nearest_road:maxspeed"
+      : (compactSource === "camera" ? "camera:maxspeed" : "")
+  );
+  if (!normalizedSource) return null;
+
+  const confidence = String(meta.confidence ?? meta.c ?? "low").trim() || "low";
+  const wayId = meta.wayId ?? meta.sourceWayId ?? meta.w;
+  const distanceM = Number(meta.distanceM ?? meta.d);
+  const raw = meta.raw ?? meta.r;
+  const normalized = {
+    source: normalizedSource,
+    confidence,
+  };
+
+  if (wayId !== null && wayId !== undefined && wayId !== "") {
+    normalized.wayId = Number.isFinite(Number(wayId)) ? Math.round(Number(wayId)) : wayId;
+  }
+  if (Number.isFinite(distanceM)) normalized.distanceM = Math.round(distanceM);
+  if (raw !== null && raw !== undefined && raw !== "") normalized.raw = String(raw);
+  return normalized;
+}
+
+function normalizeEnrichmentEntry(entry) {
+  if (!entry || typeof entry !== "object") return null;
+  const speedKph = Number(entry.speedKph);
+  if (!Number.isFinite(speedKph) || speedKph <= 0) return null;
+  const speedMeta = normalizeSpeedMeta(entry.speedMeta ?? entry.meta);
+  if (!speedMeta || !speedMeta.source.startsWith("nearest_road:")) return null;
+  return {
+    speedKph: Math.round(speedKph),
+    speedMeta,
+  };
+}
+
+function getEnrichmentForKey(maxspeedEnrichment, key) {
+  if (!key || !maxspeedEnrichment) return null;
+  if (maxspeedEnrichment instanceof Map) return maxspeedEnrichment.get(key) || null;
+  return normalizeEnrichmentEntry(maxspeedEnrichment[key]);
+}
+
+function buildTrap({ lon, lat, osmId, explicitSpeed, enrichment }) {
+  const trap = osmId ? [lon, lat, null, osmId] : [lon, lat, null];
+  if (explicitSpeed?.parsed) {
+    trap[2] = explicitSpeed.speedKph;
+    return trap;
+  }
+
+  if (enrichment?.speedKph) {
+    trap[2] = enrichment.speedKph;
+    if (enrichment.speedMeta) {
+      trap[4] = enrichment.speedMeta;
+    }
+  }
+
+  return trap;
+}
+
+function normalizeOsmElement(element, options = {}) {
   const lon = roundCoordinate(element?.lon);
   const lat = roundCoordinate(element?.lat);
   if (!isFiniteCoordinate(lon, lat)) return null;
 
   const osmId = Number.isFinite(Number(element.id)) ? Math.round(Number(element.id)) : null;
-  const speedKph = parseSpeedKph(element?.tags?.maxspeed ?? element?.tags?.["maxspeed:forward"] ?? element?.tags?.["maxspeed:backward"]);
+  const key = osmId ? `osm:${osmId}` : `coord:${lon},${lat}`;
+  const explicitSpeed = parseCameraMaxspeed(element?.tags);
+  const enrichment = explicitSpeed.parsed
+    ? null
+    : getEnrichmentForKey(options.maxspeedEnrichment, key);
   const country = getTaggedCountryCode(element?.tags) || inferCountryFromCoordinate(lon, lat, "zz");
 
   return {
     country,
-    key: osmId ? `osm:${osmId}` : `coord:${lon},${lat}`,
-    trap: osmId ? [lon, lat, speedKph, osmId] : [lon, lat, speedKph],
+    key,
+    trap: buildTrap({ lon, lat, osmId, explicitSpeed, enrichment }),
   };
 }
 
-function normalizeGeoJsonFeature(feature, { defaultCountry = "zz" } = {}) {
+function normalizeGeoJsonFeature(feature, { defaultCountry = "zz", maxspeedEnrichment = null } = {}) {
   if (feature?.geometry?.type !== "Point" || !Array.isArray(feature.geometry.coordinates)) {
     return null;
   }
@@ -175,16 +251,20 @@ function normalizeGeoJsonFeature(feature, { defaultCountry = "zz" } = {}) {
     normalizeCountryCode(properties.countryCode ?? properties.country_code ?? properties.country)
     || "";
   const country = taggedCountry || inferCountryFromCoordinate(lon, lat, defaultCountry || "zz");
-  const speedKph = parseSpeedKph(properties.maxspeed ?? properties.speed ?? properties.limit);
+  const key = osmId ? `osm:${osmId}` : `coord:${lon},${lat}`;
+  const explicitSpeed = parseCameraMaxspeed(properties);
+  const enrichment = explicitSpeed.parsed
+    ? null
+    : getEnrichmentForKey(maxspeedEnrichment, key);
 
   return {
     country,
-    key: osmId ? `osm:${osmId}` : `coord:${lon},${lat}`,
-    trap: osmId ? [lon, lat, speedKph, osmId] : [lon, lat, speedKph],
+    key,
+    trap: buildTrap({ lon, lat, osmId, explicitSpeed, enrichment }),
   };
 }
 
-function normalizePlainCamera(camera) {
+function normalizePlainCamera(camera, options = {}) {
   const lon = roundCoordinate(camera?.lon ?? camera?.lng ?? camera?.longitude);
   const lat = roundCoordinate(camera?.lat ?? camera?.latitude);
   if (!isFiniteCoordinate(lon, lat)) return null;
@@ -195,12 +275,16 @@ function normalizePlainCamera(camera) {
   const country =
     normalizeCountryCode(camera.country ?? camera.countryCode ?? camera.country_code)
     || inferCountryFromCoordinate(lon, lat, "zz");
-  const speedKph = parseSpeedKph(camera.maxspeed ?? camera.speed ?? camera.limit);
+  const key = osmId ? `osm:${osmId}` : `coord:${lon},${lat}`;
+  const explicitSpeed = parseCameraMaxspeed(camera);
+  const enrichment = explicitSpeed.parsed
+    ? null
+    : getEnrichmentForKey(options.maxspeedEnrichment, key);
 
   return {
     country,
-    key: osmId ? `osm:${osmId}` : `coord:${lon},${lat}`,
-    trap: osmId ? [lon, lat, speedKph, osmId] : [lon, lat, speedKph],
+    key,
+    trap: buildTrap({ lon, lat, osmId, explicitSpeed, enrichment }),
   };
 }
 
@@ -217,7 +301,7 @@ export function normalizeCameraSource(source, options = {}) {
   if (Array.isArray(source?.elements)) {
     for (const element of source.elements) {
       if (element?.type && element.type !== "node") continue;
-      addRecord(normalizeOsmElement(element));
+      addRecord(normalizeOsmElement(element, options));
     }
     return {
       source: {
@@ -231,7 +315,10 @@ export function normalizeCameraSource(source, options = {}) {
   if (source?.type === "FeatureCollection" && Array.isArray(source.features)) {
     const defaultCountry = options.defaultCountry || "zz";
     for (const feature of source.features) {
-      addRecord(normalizeGeoJsonFeature(feature, { defaultCountry }));
+      addRecord(normalizeGeoJsonFeature(feature, {
+        defaultCountry,
+        maxspeedEnrichment: options.maxspeedEnrichment,
+      }));
     }
     return {
       source: {
@@ -244,7 +331,7 @@ export function normalizeCameraSource(source, options = {}) {
 
   if (Array.isArray(source)) {
     for (const camera of source) {
-      addRecord(normalizePlainCamera(camera));
+      addRecord(normalizePlainCamera(camera, options));
     }
     return {
       source: {
@@ -269,6 +356,48 @@ export function groupRecordsByCountry(records) {
   }
 
   return groups;
+}
+
+function getSpeedMetaSource(meta) {
+  if (!meta || typeof meta !== "object") return "";
+  const source = String(meta.source ?? "").trim();
+  if (source) return source;
+  const compactSource = String(meta.s ?? "").trim();
+  if (compactSource === "road") return "nearest_road:maxspeed";
+  if (compactSource === "camera") return "camera:maxspeed";
+  return "";
+}
+
+function getTrapSpeedCoverageType(trap) {
+  const speedKph = Number(trap?.[2]);
+  if (!Number.isFinite(speedKph) || speedKph <= 0) return "unknown";
+
+  const source = getSpeedMetaSource(trap?.[4]);
+  if (source.startsWith("nearest_road:")) return "inferred";
+  return "explicit";
+}
+
+export function summarizeSpeedCoverage(traps, { includePercentages = true } = {}) {
+  const coverage = {
+    total: 0,
+    explicit: 0,
+    inferred: 0,
+    unknown: 0,
+  };
+
+  for (const trap of Array.isArray(traps) ? traps : []) {
+    coverage.total += 1;
+    coverage[getTrapSpeedCoverageType(trap)] += 1;
+  }
+
+  if (includePercentages) {
+    const denominator = coverage.total || 1;
+    coverage.explicitPct = Number(((coverage.explicit / denominator) * 100).toFixed(1));
+    coverage.inferredPct = Number(((coverage.inferred / denominator) * 100).toFixed(1));
+    coverage.unknownPct = Number(((coverage.unknown / denominator) * 100).toFixed(1));
+  }
+
+  return coverage;
 }
 
 function sortTraps(traps) {
@@ -327,6 +456,7 @@ async function writeCountryPayload({ outputDir, code, generatedAt, traps }) {
     country: code,
     generatedAt,
     count: traps.length,
+    speedCoverage: summarizeSpeedCoverage(traps),
     traps,
   };
   const json = serializeJson(payload);
@@ -348,6 +478,7 @@ async function writeCountryPayload({ outputDir, code, generatedAt, traps }) {
     sha256: sha256(json),
     generatedAt,
     bbox: getBBox(traps),
+    speedCoverage: payload.speedCoverage,
   };
 }
 
@@ -390,6 +521,7 @@ async function writeTiledCountryPayload({ outputDir, code, generatedAt, traps, t
       tile: tileId,
       generatedAt,
       count: tileTraps.length,
+      speedCoverage: summarizeSpeedCoverage(tileTraps),
       traps: tileTraps,
     };
     const json = serializeJson(payload);
@@ -408,6 +540,7 @@ async function writeTiledCountryPayload({ outputDir, code, generatedAt, traps, t
       index: `/geo/cameras/countries/${code}/tiles/${tileId}.kdbush`,
       sha256: sha256(json),
       bbox: getTileBBox(tileId, tileSize),
+      speedCoverage: payload.speedCoverage,
     };
   }
 
@@ -416,6 +549,7 @@ async function writeTiledCountryPayload({ outputDir, code, generatedAt, traps, t
     country: code,
     generatedAt,
     count: traps.length,
+    speedCoverage: summarizeSpeedCoverage(traps),
     tileSize,
     tiles,
   };
@@ -433,6 +567,7 @@ async function writeTiledCountryPayload({ outputDir, code, generatedAt, traps, t
     sha256: sha256(manifestJson),
     generatedAt,
     bbox: getBBox(traps, 1),
+    speedCoverage: tileManifest.speedCoverage,
     tiled: true,
     tileSize,
     tiles: `/geo/cameras/countries/${code}/manifest.json`,
@@ -441,6 +576,29 @@ async function writeTiledCountryPayload({ outputDir, code, generatedAt, traps, t
 
 async function readJsonFile(filePath) {
   return JSON.parse(await fs.readFile(filePath, "utf8"));
+}
+
+async function loadMaxspeedEnrichment(enrichmentPath) {
+  if (!enrichmentPath) return new Map();
+
+  try {
+    const payload = await readJsonFile(enrichmentPath);
+    const rawRecords = payload?.records || payload?.enrichment?.records || {};
+    const entries = rawRecords instanceof Map
+      ? Array.from(rawRecords.entries())
+      : Object.entries(rawRecords);
+    const records = new Map();
+
+    for (const [key, entry] of entries) {
+      const normalized = normalizeEnrichmentEntry(entry);
+      if (normalized) records.set(key, normalized);
+    }
+
+    return records;
+  } catch (error) {
+    if (error?.code === "ENOENT") return new Map();
+    throw error;
+  }
 }
 
 async function chooseSourcePath({ sourcePath = "", allowLegacyFallback = true } = {}) {
@@ -457,6 +615,7 @@ async function chooseSourcePath({ sourcePath = "", allowLegacyFallback = true } 
 
 export async function buildWorldwideCameraArtifacts({
   sourcePath = "",
+  enrichmentPath = DEFAULT_MAXSPEED_ENRICHMENT_PATH,
   outputDir = DEFAULT_OUTPUT_DIR,
   generatedAt = new Date().toISOString(),
   allowLegacyFallback = true,
@@ -466,9 +625,11 @@ export async function buildWorldwideCameraArtifacts({
 } = {}) {
   const resolvedSourcePath = await chooseSourcePath({ sourcePath, allowLegacyFallback });
   const rawSource = await readJsonFile(resolvedSourcePath);
+  const maxspeedEnrichment = await loadMaxspeedEnrichment(enrichmentPath);
   const isLegacyAnsv = path.resolve(resolvedSourcePath) === LEGACY_ANSV_PATH;
   const normalized = normalizeCameraSource(rawSource, {
     defaultCountry: isLegacyAnsv ? "co" : "zz",
+    maxspeedEnrichment,
     sourceName: isLegacyAnsv ? "Colombia ANSV local seed" : undefined,
     sourceQuery: isLegacyAnsv
       ? "data-src/ansv_cameras_maplibre.geojson; run npm run fetch:cameras to refresh from OpenStreetMap Overpass"
@@ -498,10 +659,21 @@ export async function buildWorldwideCameraArtifacts({
         : await writeCountryPayload({ outputDir, code, generatedAt, traps });
   }
 
+  const source = { ...normalized.source };
+  if (maxspeedEnrichment.size > 0) {
+    source.maxspeedEnrichment = {
+      path: path.relative(projectRoot, enrichmentPath),
+      records: maxspeedEnrichment.size,
+    };
+  }
+
   const manifest = {
     version: 2,
     generatedAt,
-    source: normalized.source,
+    source,
+    speedCoverage: summarizeSpeedCoverage(
+      Array.from(groups.values()).flat(),
+    ),
     countries,
   };
   const manifestJson = serializeJson(manifest);

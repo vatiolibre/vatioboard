@@ -253,8 +253,40 @@ function pointInBounds(longitude, latitude, boundsInput) {
 }
 
 function readTrapSpeed(trap) {
+  if (trap?.[2] === null || trap?.[2] === undefined || trap?.[2] === "") return null;
   const speed = Number(trap?.[2]);
   return Number.isFinite(speed) ? speed : null;
+}
+
+function readTrapSpeedMeta(trap) {
+  const meta = trap?.[4];
+  return meta && typeof meta === "object" ? meta : null;
+}
+
+function readSpeedMetaSource(meta, speedKph) {
+  if (!meta) return Number.isFinite(speedKph) ? "camera:maxspeed" : "unknown";
+  const source = String(meta.source ?? "").trim();
+  if (source) return source;
+  if (meta.s === "road") return "nearest_road:maxspeed";
+  if (meta.s === "camera") return "camera:maxspeed";
+  return Number.isFinite(speedKph) ? "camera:maxspeed" : "unknown";
+}
+
+function readSpeedMetaConfidence(meta, speedKph) {
+  const confidence = String(meta?.confidence ?? meta?.c ?? "").trim();
+  if (confidence) return confidence;
+  return Number.isFinite(speedKph) ? "high" : "low";
+}
+
+function readSourceWayId(meta) {
+  const wayId = meta?.wayId ?? meta?.sourceWayId ?? meta?.w;
+  if (wayId === null || wayId === undefined || wayId === "") return null;
+  return String(wayId);
+}
+
+function readDistanceM(meta) {
+  const distanceM = Number(meta?.distanceM ?? meta?.d);
+  return Number.isFinite(distanceM) ? Math.round(distanceM) : null;
 }
 
 function readTrapOsmId(trap) {
@@ -283,6 +315,8 @@ export function compactTrapsToCameraFeatures(traps, {
     if (normalizedBounds && !pointInBounds(longitude, latitude, normalizedBounds)) continue;
 
     const osmId = readTrapOsmId(trap);
+    const speedKph = readTrapSpeed(trap);
+    const speedMeta = readTrapSpeedMeta(trap);
     const featureIndex = startIndex + features.length;
     features.push({
       type: "Feature",
@@ -295,7 +329,11 @@ export function compactTrapsToCameraFeatures(traps, {
         country: countryCode,
         countryName,
         tile: tileId,
-        speedKph: readTrapSpeed(trap),
+        speedKph,
+        speedSource: readSpeedMetaSource(speedMeta, speedKph),
+        speedConfidence: readSpeedMetaConfidence(speedMeta, speedKph),
+        sourceWayId: readSourceWayId(speedMeta),
+        distanceM: readDistanceM(speedMeta),
         osmId,
       },
     });

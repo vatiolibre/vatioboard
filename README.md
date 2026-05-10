@@ -144,17 +144,48 @@ What it does:
 Vatio Speed uses generated runtime artifacts in `public/geo/cameras`:
 
 - `manifest.json` lists available countries, counts, hashes, bounding boxes, and country or tile artifact URLs.
-- `countries/<code>.json` stores compact traps as `[lon, lat, speedKphOrNull, osmId?]`.
+- `countries/<code>.json` stores compact traps as `[lon, lat, speedKphOrNull, osmId?, speedMeta?]`.
 - `countries/<code>.kdbush` stores the matching KDBush index.
 - Large countries can be split into `countries/<code>/manifest.json` plus `tiles/<tile-id>.json` and `tiles/<tile-id>.kdbush`.
 
-`npm run prepare:geo` is offline-safe. It builds from `data-src/osm_speed_cameras_overpass.json` when that cached Overpass response exists, otherwise it uses the checked-in Colombia ANSV seed so dev/build never depend on live Overpass. `npm run fetch:cameras` explicitly refreshes `data-src/osm_speed_cameras_overpass.json` from Overpass with:
+`speedMeta` is optional compact provenance for inferred limits. Explicit camera maxspeed tags stay highest-confidence. Missing camera maxspeed can be enriched at fetch/build time from nearby OSM road ways with `maxspeed`, `maxspeed:forward`, or `maxspeed:backward`; unknown remains `null`, never `0`.
+
+`npm run prepare:geo` is offline-safe. It builds from `data-src/osm_speed_cameras_overpass.json` and the optional `data-src/osm_speed_cameras_maxspeed_enrichment.json` sidecar when they exist, otherwise it uses the checked-in Colombia ANSV seed so dev/build never depend on live Overpass. Browser runtime does not query Overpass or parse road geometry while driving.
+
+`npm run fetch:cameras` is the network/update command. By default it reuses the cached global camera source if `data-src/osm_speed_cameras_overpass.json` already exists, resumes cached road-speed tiles from `data-src/osm-road-speeds/`, fetches only missing road-speed tiles, writes `data-src/osm_speed_cameras_maxspeed_enrichment.json`, and rebuilds `public/geo/cameras`. Set `CAMERA_REFRESH_CACHE=1` only when you intentionally want to refresh the global camera Overpass source.
+
+The global camera query is:
 
 ```txt
 [out:json][timeout:1000];
 node["highway"="speed_camera"];
 out body;
 ```
+
+For a first road-enrichment pass from a partly empty road cache, use a slow, restartable run that is gentle to public Overpass:
+
+```bash
+mkdir -p logs
+CAMERA_ROAD_FETCH_MISSING=1 \
+OVERPASS_MAX_RETRIES=8 \
+OVERPASS_RETRY_INITIAL_DELAY_MS=10000 \
+OVERPASS_RETRY_MAX_DELAY_MS=180000 \
+CAMERA_ROAD_REQUEST_DELAY_MS=8000 \
+CAMERA_ROAD_PROGRESS_EVERY=25 \
+CAMERA_ROAD_SLOW_TILE_MS=5000 \
+OVERPASS_PROGRESS_INTERVAL_MS=30000 \
+npm run fetch:cameras 2>&1 | tee "logs/fetch-cameras-first-pass-$(date +%Y%m%d-%H%M%S).log"
+```
+
+After the first pass, most local work should avoid Overpass entirely:
+
+```bash
+CAMERA_ROAD_FETCH_MISSING=0 npm run fetch:cameras
+npm run prepare:geo
+npm run analyze:cameras:maxspeed
+```
+
+Only use `CAMERA_ROAD_REFRESH_CACHE=1` when you deliberately want to re-download every road-speed tile. That is much heavier than a normal camera refresh and should not be part of routine local development.
 
 At runtime, Speed does not upload live location to fetch camera alerts. GPS matching happens locally: the app loads the manifest, chooses the current country or nearby tile from the GPS fix, tries IndexedDB first, and revalidates in the background. If the network drops during an update, the last good cached country/tile stays intact. With no cache and no network, the speedometer still works and trap alerts show an unavailable/offline camera database status.
 
@@ -252,7 +283,8 @@ Legacy standalone test/dev harnesses remain available at:
 ## Scripts
 
 - `npm run prepare:geo`: builds the speed-camera artifacts consumed by Vatio Speed from local data
-- `npm run fetch:cameras`: refreshes the local Overpass raw source and rebuilds speed-camera artifacts
+- `npm run fetch:cameras`: resumes/fetches local Overpass camera and road-speed data, writes maxspeed enrichment, and rebuilds speed-camera artifacts
+- `npm run analyze:cameras:maxspeed`: prints explicit/inferred/unknown speed coverage from the generated camera manifest
 - `npm run dev`: runs Vite locally after the `predev` geo preparation step
 - `npm run build`: creates a production build after the `prebuild` geo preparation step
 - `npm run preview`: serves the built app locally
@@ -267,12 +299,22 @@ Legacy standalone test/dev harnesses remain available at:
 
 ## Generated Data
 
-`npm run prepare:geo` reads `data-src/osm_speed_cameras_overpass.json` when present, otherwise [`data-src/ansv_cameras_maplibre.geojson`](data-src/ansv_cameras_maplibre.geojson), and generates:
+`npm run prepare:geo` reads `data-src/osm_speed_cameras_overpass.json` when present, applies `data-src/osm_speed_cameras_maxspeed_enrichment.json` when present, otherwise falls back to [`data-src/ansv_cameras_maplibre.geojson`](data-src/ansv_cameras_maplibre.geojson), and generates:
 
 - `public/geo/cameras/manifest.json`
 - `public/geo/cameras/countries/<country-code>.json`
 - `public/geo/cameras/countries/<country-code>.kdbush`
 - optional `public/geo/cameras/countries/<country-code>/tiles/*` files for large countries
+
+Source/cache files have different repository roles:
+
+- Commit `data-src/osm_speed_cameras_overpass.json`; it is the compact raw camera source used by offline builds.
+- Commit `data-src/osm_speed_cameras_maxspeed_enrichment.json`; it is the compact inferred-speed sidecar used by offline builds and GitHub Pages.
+- Do not commit `data-src/osm-road-speeds/`; it is a large restartable Overpass road tile cache used only by `npm run fetch:cameras`.
+- Do not commit `logs/`; fetch logs are local diagnostics.
+- Do not commit `public/geo/cameras/`; `predev`, `prebuild`, and the GitHub Pages workflow regenerate it.
+
+The GitHub Pages workflow runs `npm run build`, and `prebuild` runs `npm run prepare:geo`. That means Pages deployment needs the checked-in source JSON files under `data-src`, not the 5 GB road cache or the generated `public/geo/cameras` directory.
 
 `public/geo/` may be missing in a fresh checkout until you run `npm run prepare:geo`, `npm run dev`, or `npm run build`.
 

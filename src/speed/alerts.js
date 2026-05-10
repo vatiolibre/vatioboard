@@ -22,18 +22,45 @@ export function isTrapDataReady(trapLoadPending, trapLoadError) {
   return !trapLoadPending && !trapLoadError;
 }
 
+function getSpeedMetaSource(meta) {
+  if (!meta || typeof meta !== "object") return "";
+  const source = String(meta.source ?? "").trim();
+  if (source) return source;
+  if (meta.s === "road") return "nearest_road:maxspeed";
+  if (meta.s === "camera") return "camera:maxspeed";
+  return "";
+}
+
+function getSpeedMetaConfidence(meta) {
+  if (!meta || typeof meta !== "object") return "";
+  return String(meta.confidence ?? meta.c ?? "").trim();
+}
+
+function canUseTrapSpeedForOverspeed(meta) {
+  const source = getSpeedMetaSource(meta);
+  if (!source.startsWith("nearest_road:")) return true;
+  const confidence = getSpeedMetaConfidence(meta);
+  return confidence === "high" || confidence === "medium";
+}
+
 export function getActiveTrapAlert(input) {
   if (!isTrapDataReady(input.trapLoadPending, input.trapLoadError)) return null;
   if (!input.trapAlertEnabled) return null;
   if (!Number.isFinite(input.nearestTrapDistanceM) || !Number.isFinite(input.trapAlertDistanceM)) return null;
   if (input.nearestTrapDistanceM > input.trapAlertDistanceM) return null;
 
+  const speedKph = input.nearestTrapSpeedKph;
+  const speedCanOverride = Number.isFinite(speedKph)
+    && speedKph > 0
+    && canUseTrapSpeedForOverspeed(input.nearestTrapSpeedMeta);
+
   return {
     id: input.nearestTrapId,
     distanceM: input.nearestTrapDistanceM,
-    speedKph: input.nearestTrapSpeedKph,
-    speedMs: Number.isFinite(input.nearestTrapSpeedKph) && input.nearestTrapSpeedKph > 0
-      ? input.nearestTrapSpeedKph / 3.6
+    speedKph,
+    speedMeta: input.nearestTrapSpeedMeta || null,
+    speedMs: speedCanOverride
+      ? speedKph / 3.6
       : null,
   };
 }
@@ -67,6 +94,7 @@ export function getAlertUiState(input) {
     trapDistanceM: trapAlert?.distanceM ?? null,
     trapDistanceLabel: trapAlert ? input.getTrapAlertDistanceLabel(trapAlert.distanceM) : null,
     trapSpeedKph: trapAlert?.speedKph ?? null,
+    trapSpeedMeta: trapAlert?.speedMeta ?? null,
     trapSpeedLabel: trapAlert && Number.isFinite(trapAlert.speedKph)
       ? input.formatTrapSpeed(trapAlert.speedKph)
       : null,

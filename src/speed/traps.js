@@ -28,6 +28,7 @@ export function updateNearestTrap(trapIndex, trapRecords, longitude, latitude, o
       nearestTrapId: null,
       nearestTrapDistanceM: null,
       nearestTrapSpeedKph: null,
+      nearestTrapSpeedMeta: null,
     };
   }
 
@@ -37,6 +38,7 @@ export function updateNearestTrap(trapIndex, trapRecords, longitude, latitude, o
       nearestTrapId: null,
       nearestTrapDistanceM: null,
       nearestTrapSpeedKph: null,
+      nearestTrapSpeedMeta: null,
     };
   }
 
@@ -47,6 +49,7 @@ export function updateNearestTrap(trapIndex, trapRecords, longitude, latitude, o
     nearestTrapId,
     nearestTrapDistanceM: distanceKm(longitude, latitude, nearestTrap[0], nearestTrap[1]) * 1000,
     nearestTrapSpeedKph: Number.isFinite(nearestTrap[2]) ? nearestTrap[2] : null,
+    nearestTrapSpeedMeta: nearestTrap[4] || null,
   };
 }
 
@@ -56,6 +59,7 @@ export function updateNearestTrapAcrossDatasets(datasets, longitude, latitude, o
       nearestTrapId: null,
       nearestTrapDistanceM: null,
       nearestTrapSpeedKph: null,
+      nearestTrapSpeedMeta: null,
       nearestTrapDataset: null,
     };
   }
@@ -64,6 +68,7 @@ export function updateNearestTrapAcrossDatasets(datasets, longitude, latitude, o
     nearestTrapId: null,
     nearestTrapDistanceM: null,
     nearestTrapSpeedKph: null,
+    nearestTrapSpeedMeta: null,
     nearestTrapDataset: null,
   };
 
@@ -177,6 +182,7 @@ export function createTrapLoader({
         state.nearestTrapId = null;
         state.nearestTrapDistanceM = null;
         state.nearestTrapSpeedKph = null;
+        state.nearestTrapSpeedMeta = null;
         state.trapLoadError = error;
       } finally {
         state.trapLoadPending = false;

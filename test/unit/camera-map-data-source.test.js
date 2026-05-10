@@ -214,10 +214,33 @@ describe("camera map data source", () => {
           countryName: "United States",
           tile: "tile-a",
           speedKph: 48,
+          speedSource: "camera:maxspeed",
+          speedConfidence: "high",
           osmId: "12345",
         }),
       }),
     ]);
+  });
+
+  it("preserves compact trap speed metadata in GeoJSON properties", () => {
+    const features = compactTrapsToCameraFeatures(
+      [[-73.9857, 40.7484, 50, 12345, {
+        source: "nearest_road:maxspeed",
+        confidence: "medium",
+        wayId: 77,
+        distanceM: 18,
+        raw: "50",
+      }]],
+      { countryCode: "us", countryName: "United States" }
+    );
+
+    expect(features[0].properties).toMatchObject({
+      speedKph: 50,
+      speedSource: "nearest_road:maxspeed",
+      speedConfidence: "medium",
+      sourceWayId: "77",
+      distanceM: 18,
+    });
   });
 
   it("returns cached data if network fetch fails", async () => {

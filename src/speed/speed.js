@@ -401,6 +401,7 @@ const state = {
   nearestTrapId: null,
   nearestTrapDistanceM: null,
   nearestTrapSpeedKph: null,
+  nearestTrapSpeedMeta: null,
   trapLoadPending: false,
   trapLoadError: null,
   cameraDatabaseStatus: {
@@ -1312,6 +1313,7 @@ function getAlertUiState() {
     nearestTrapId: state.nearestTrapId,
     nearestTrapDistanceM: state.nearestTrapDistanceM,
     nearestTrapSpeedKph: state.nearestTrapSpeedKph,
+    nearestTrapSpeedMeta: state.nearestTrapSpeedMeta,
     trapAlertDistanceM: state.trapAlertDistanceM,
     convertSpeed,
     getTrapAlertDistanceLabel,
@@ -1535,6 +1537,7 @@ function updateNearestTrapState(longitude, latitude) {
   state.nearestTrapId = nextTrapState.nearestTrapId;
   state.nearestTrapDistanceM = nextTrapState.nearestTrapDistanceM;
   state.nearestTrapSpeedKph = nextTrapState.nearestTrapSpeedKph;
+  state.nearestTrapSpeedMeta = nextTrapState.nearestTrapSpeedMeta;
 }
 
 function getCameraDatabase() {
@@ -2030,6 +2033,7 @@ function clearLiveFixState({ preserveContinuity = false } = {}) {
   state.nearestTrapId = null;
   state.nearestTrapDistanceM = null;
   state.nearestTrapSpeedKph = null;
+  state.nearestTrapSpeedMeta = null;
   state.recentSpeeds = [];
   state.lastFixAt = 0;
   state.lastPositionTimestamp = null;
@@ -2064,6 +2068,7 @@ function resetTripData() {
   state.nearestTrapId = null;
   state.nearestTrapDistanceM = null;
   state.nearestTrapSpeedKph = null;
+  state.nearestTrapSpeedMeta = null;
   state.lastTrapSoundedId = null;
   state.recentSpeeds = [];
   state.lastAccuracyM = null;

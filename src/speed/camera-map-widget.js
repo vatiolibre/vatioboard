@@ -81,11 +81,34 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
-function buildPopupHtml(feature) {
+function readPopupNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+export function buildPopupHtml(feature) {
   const props = feature?.properties || {};
-  const speed = Number(props.speedKph);
+  const speed = readPopupNumber(props.speedKph);
+  const speedSource = String(props.speedSource || "");
+  const isInferred = speedSource.startsWith("nearest_road:");
+  const distanceM = readPopupNumber(props.distanceM);
+  const speedLabel = Number.isFinite(speed)
+    ? `${Math.round(speed)} km/h`
+    : null;
+  const speedRow = Number.isFinite(speed)
+    ? [
+      isInferred ? "Estimated limit" : "Speed limit",
+      isInferred
+        ? `${speedLabel} from nearby OSM road`
+        : speedLabel,
+    ]
+    : ["Speed limit", "Unknown"];
   const rows = [
-    ["Speed", Number.isFinite(speed) ? `${Math.round(speed)} km/h` : "Unknown"],
+    speedRow,
+    ...(Number.isFinite(speed) && isInferred && Number.isFinite(distanceM)
+      ? [["Road distance", `${Math.round(distanceM)} m`]]
+      : []),
     ["Country", props.countryName || props.country || "Unknown"],
     ["Tile", props.tile || "country"],
     ["OSM id", props.osmId || "unknown"],

@@ -361,4 +361,25 @@ describe("createCameraMapWidget", () => {
     widget.destroy();
     manager.destroy();
   });
+
+  it("renders inferred and unknown speed status in popup HTML", async () => {
+    const { buildPopupHtml } = await import("../../src/speed/camera-map-widget.js");
+
+    expect(buildPopupHtml({
+      properties: {
+        speedKph: 50,
+        speedSource: "nearest_road:maxspeed",
+        distanceM: 18,
+        country: "us",
+      },
+    })).toContain("Estimated limit");
+
+    expect(buildPopupHtml({
+      properties: {
+        speedKph: null,
+        speedSource: "unknown",
+        country: "us",
+      },
+    })).toContain("Unknown");
+  });
 });
