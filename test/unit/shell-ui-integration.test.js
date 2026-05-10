@@ -382,10 +382,32 @@ describe("shell UI integration", () => {
 
   it("shell CSS keeps panel controls touchable under board and taskbar styles", () => {
     const appCss = readProjectFile("src/styles/app.less");
+    const taskbarBlock = getCssBlock(appCss, ".vb-shell-taskbar");
+    const trayBlock = getCssBlock(appCss, ".vb-shell-taskbar-tray");
+    const handleBlock = getCssBlock(appCss, ".vb-shell-taskbar-drag-handle");
+    const itemBlock = getCssBlock(appCss, ".vb-shell-taskbar-item");
+    const dragLayerBlock = getCssBlock(appCss, ".vb-shell-drag-layer");
+    const dragGhostBlock = getCssBlock(appCss, ".vb-shell-drag-ghost");
 
     expect(getCssBlock(appCss, "[data-vb-shell-window] *")).toContain("touch-action: auto");
     expect(appCss).not.toMatch(/\[data-vb-shell-window\]\s+\*\s*\{[^}]*touch-action:\s*none/s);
-    expect(getCssBlock(appCss, ".vb-shell-taskbar")).not.toContain("contain: layout paint");
+    expect(taskbarBlock).toContain("touch-action: none");
+    expect(taskbarBlock).not.toContain("contain: layout paint");
+    expect(taskbarBlock).not.toContain("overflow-x: auto");
+    expect(taskbarBlock).not.toContain("-webkit-overflow-scrolling");
+    expect(trayBlock).toContain("display: flex");
+    expect(trayBlock).toContain("overflow-x: auto");
+    expect(handleBlock).toContain("touch-action: none");
+    expect(handleBlock).toContain("-webkit-user-drag: none");
+    expect(itemBlock).toContain("touch-action: none");
+    expect(itemBlock).toContain("-webkit-user-drag: none");
+    expect(dragLayerBlock).toContain("position: fixed");
+    expect(dragLayerBlock).toContain("inset: 0");
+    expect(dragLayerBlock).toContain("pointer-events: none");
+    expect(dragLayerBlock).toContain("touch-action: none");
+    expect(dragGhostBlock).toContain("position: fixed");
+    expect(dragGhostBlock).toContain("pointer-events: none");
+    expect(dragGhostBlock).toContain("touch-action: none");
   });
 
   it("taskbar and detached FABs stay below shell windows except while dragging", () => {
