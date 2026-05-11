@@ -132,7 +132,7 @@
 
 .camera-map-action:focus-visible,
 .camera-map-toolbar-btn:focus-visible,
-.camera-map-layer-select:focus-visible,
+.camera-map-layer-button:focus-visible,
 .camera-map-attribution:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px var(--camera-map-overlay-focus);
@@ -218,50 +218,20 @@
   color: var(--camera-map-overlay-muted);
   pointer-events: auto;
   touch-action: manipulation;
-  backdrop-filter: blur(12px);
 }
 
-.camera-map-layer-control::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  right: 13px;
-  width: 6px;
-  height: 6px;
-  border: solid currentColor;
-  border-width: 0 1.5px 1.5px 0;
-  transform: translateY(-65%) rotate(45deg);
-  pointer-events: none;
-  z-index: 2;
-}
-
-.camera-map-layer-icon {
-  position: absolute;
-  top: 50%;
-  left: 11px;
-  transform: translateY(-50%);
-  display: inline-grid;
-  place-items: center;
-  pointer-events: none;
-  z-index: 2;
-}
-
-.camera-map-layer-icon svg {
-  width: 17px;
-  height: 17px;
-}
-
-.camera-map-layer-select {
-  display: block;
+.camera-map-layer-button {
+  display: grid;
+  grid-template-columns: 17px minmax(70px, 1fr) 8px;
+  align-items: center;
+  gap: 6px;
   width: 100%;
   min-width: 134px;
   max-width: 174px;
   min-height: 36px;
-  padding: 0 30px 0 34px;
+  padding: 0 12px 0 11px;
   border: 1px solid var(--camera-map-overlay-border);
   border-radius: 999px;
-  appearance: none;
-  -webkit-appearance: none;
   background: var(--camera-map-overlay-bg);
   color: var(--camera-map-overlay-text);
   font: inherit;
@@ -273,26 +243,121 @@
   pointer-events: auto;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+  backdrop-filter: blur(12px);
 }
 
-.camera-map-layer-select:hover {
+.camera-map-layer-button::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border: solid currentColor;
+  border-width: 0 1.5px 1.5px 0;
+  transform: translateY(-2px) rotate(45deg);
+  pointer-events: none;
+  justify-self: end;
+}
+
+.camera-map-layer-icon {
+  display: inline-grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.camera-map-layer-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.camera-map-layer-button-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  text-align: left;
+}
+
+.camera-map-layer-button:hover,
+.camera-map-layer-button[aria-expanded="true"] {
   background: var(--camera-map-overlay-bg-hover);
 }
 
-.camera-map-layer-select option {
-  background: #ffffff;
-  color: #111827;
+.camera-map-layer-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 12;
+  display: grid;
+  gap: 3px;
+  width: min(210px, calc(100vw - 24px));
+  min-width: 100%;
+  max-height: min(280px, 58vh);
+  overflow: auto;
+  padding: 5px;
+  border: 1px solid var(--camera-map-overlay-border);
+  border-radius: 12px;
+  background: var(--camera-map-overlay-bg);
+  color: var(--camera-map-overlay-text);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.22);
+  pointer-events: auto;
+  backdrop-filter: blur(14px);
 }
 
-@media (prefers-color-scheme: dark) {
-  .camera-map-layer-select {
-    color-scheme: dark;
-  }
+.camera-map-layer-menu[hidden] {
+  display: none;
+}
 
-  .camera-map-layer-select option {
-    background: #111827;
-    color: #f9fafb;
-  }
+.camera-map-layer-option {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--camera-map-overlay-text);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.camera-map-layer-option::after {
+  content: "";
+  width: 7px;
+  height: 11px;
+  border: solid currentColor;
+  border-width: 0 2px 2px 0;
+  opacity: 0;
+  transform: rotate(45deg);
+}
+
+.camera-map-layer-option:hover,
+.camera-map-layer-option:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--camera-map-overlay-text) 10%, transparent);
+}
+
+.camera-map-layer-option.is-active {
+  background: color-mix(in srgb, var(--calc-accent, #10b981) 18%, transparent);
+  color: var(--camera-map-overlay-text);
+}
+
+.camera-map-layer-option.is-active::after {
+  opacity: 1;
+}
+
+.camera-map-layer-option-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .camera-map-status {
@@ -422,11 +487,20 @@
     min-width: 150px;
   }
 
-  .camera-map-layer-select {
+  .camera-map-layer-button {
     min-width: 150px;
     max-width: 168px;
     min-height: 44px;
     font-size: 16px;
+  }
+
+  .camera-map-layer-menu {
+    width: min(230px, calc(100vw - 20px));
+  }
+
+  .camera-map-layer-option {
+    min-height: 44px;
+    font-size: 15px;
   }
 
   .camera-map-overlay {

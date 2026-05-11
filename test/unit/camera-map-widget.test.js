@@ -172,6 +172,17 @@ function fireMapEvent(map, eventName) {
   for (const handler of [...(map.handlers[eventName] || [])]) handler();
 }
 
+function getLayerButton() {
+  return document.querySelector(".camera-map-layer-button");
+}
+
+function chooseLayer(layerId) {
+  const layerButton = getLayerButton();
+  layerButton.click();
+  expect(document.querySelector(".camera-map-layer-menu").hidden).toBe(false);
+  document.querySelector(`.camera-map-layer-option[data-layer-id="${layerId}"]`).click();
+}
+
 function createColorSchemeMatchMedia(initialMatches = false) {
   let matches = initialMatches;
   const listeners = new Set();
@@ -270,11 +281,13 @@ describe("createCameraMapWidget", () => {
     expect(topOverlay).not.toBeNull();
     expect(bottomOverlay).not.toBeNull();
     expect(topOverlay.contains(document.querySelector(".camera-map-status"))).toBe(true);
-    expect(topOverlay.contains(document.querySelector(".camera-map-layer-select"))).toBe(true);
+    expect(topOverlay.contains(document.querySelector(".camera-map-layer-button"))).toBe(true);
+    expect(topOverlay.contains(document.querySelector(".camera-map-layer-menu"))).toBe(true);
     expect(bottomOverlay.contains(document.querySelector(".camera-map-attribution"))).toBe(true);
     expect(bottomOverlay.contains(document.querySelector(".camera-map-privacy"))).toBe(true);
     expect(document.querySelector(".camera-map-toolbar")).toBeNull();
     expect(document.querySelector(".camera-map-footer")).toBeNull();
+    expect(document.querySelector(".camera-map-layer-select")).toBeNull();
     expect(document.querySelector(".camera-map-layer-control").tagName).toBe("DIV");
     expect(document.querySelector(".camera-map-minimize")).toBeNull();
     expect(Array.from(document.querySelectorAll(".camera-map-actions .camera-map-action"))
@@ -287,17 +300,54 @@ describe("createCameraMapWidget", () => {
     manager.destroy();
   });
 
-  it("styles the layer selector as a native touch target with light and dark contrast", () => {
+  it("styles the layer picker as a custom touch target with light and dark contrast", () => {
     const css = readFileSync(cameraMapLessPath, "utf8");
 
     expect(css).toContain("--camera-map-overlay-text: #111827;");
     expect(css).toContain("--camera-map-overlay-text: #f9fafb;");
-    expect(css).toContain(".camera-map-layer-select");
+    expect(css).not.toContain(".camera-map-layer-select");
+    expect(css).toContain(".camera-map-layer-button");
+    expect(css).toContain(".camera-map-layer-menu");
+    expect(css).toContain(".camera-map-layer-option");
     expect(css).toContain("min-height: 44px;");
     expect(css).toContain("touch-action: manipulation;");
     expect(css).toContain("pointer-events: auto;");
-    expect(css).toContain("-webkit-appearance: none;");
-    expect(css).toContain("color-scheme: dark;");
+    expect(css).toContain("-webkit-tap-highlight-color: transparent;");
+  });
+
+  it("opens the layer menu without relying on a native dropdown", () => {
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const layerButton = getLayerButton();
+    const layerMenu = document.querySelector(".camera-map-layer-menu");
+
+    expect(document.querySelector(".camera-map-layer-select")).toBeNull();
+    expect(layerButton.getAttribute("aria-haspopup")).toBe("listbox");
+    expect(layerButton.getAttribute("aria-expanded")).toBe("false");
+    expect(layerMenu.hidden).toBe(true);
+
+    layerButton.click();
+
+    expect(layerButton.getAttribute("aria-expanded")).toBe("true");
+    expect(layerMenu.hidden).toBe(false);
+    expect(Array.from(layerMenu.querySelectorAll(".camera-map-layer-option")).map((option) => option.dataset.layerId))
+      .toEqual([
+        "auto",
+        "carto-voyager",
+        "osm-standard",
+        "carto-positron",
+        "carto-dark-matter",
+        "opentopomap",
+        "esri-world-imagery",
+      ]);
+
+    document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+
+    expect(layerButton.getAttribute("aria-expanded")).toBe("false");
+    expect(layerMenu.hidden).toBe(true);
+
+    widget.destroy();
+    manager.destroy();
   });
 
   it("initializes MapLibre lazily on first open", async () => {
@@ -339,7 +389,7 @@ describe("createCameraMapWidget", () => {
 
     expect(map.options.style.sources["camera-map-basemap"].tiles[0]).toContain("basemaps.cartocdn.com");
     expect(map.options.style.sources["camera-map-basemap"].tiles[0]).toContain("voyager");
-    expect(document.querySelector(".camera-map-layer-select").value).toBe("auto");
+    expect(getLayerButton().dataset.layerId).toBe("auto");
 
     widget.destroy();
     manager.destroy();
@@ -351,7 +401,7 @@ describe("createCameraMapWidget", () => {
     const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
     const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
 
-    expect(document.querySelector(".camera-map-layer-select").value).toBe("auto");
+    expect(getLayerButton().dataset.layerId).toBe("auto");
 
     const map = await openAndLoad(widget);
 
@@ -368,16 +418,16 @@ describe("createCameraMapWidget", () => {
     const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
     const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
     const map = await openAndLoad(widget);
-    const layerSelect = document.querySelector(".camera-map-layer-select");
+    const layerButton = getLayerButton();
 
-    expect(layerSelect.value).toBe("auto");
+    expect(layerButton.dataset.layerId).toBe("auto");
     expect(colorScheme.mediaQueryList.addEventListener).toHaveBeenCalledWith("change", expect.any(Function));
 
     map.setStyle.mockClear();
     dataSourceDouble.loadViewport.mockClear();
     colorScheme.setMatches(true);
 
-    expect(layerSelect.value).toBe("auto");
+    expect(layerButton.dataset.layerId).toBe("auto");
     expect(localStorage.getItem(CAMERA_MAP_BASEMAP_STORAGE_KEY)).toBeNull();
     expect(map.setStyle).toHaveBeenCalledWith(expect.objectContaining({
       sources: expect.objectContaining({
@@ -392,8 +442,7 @@ describe("createCameraMapWidget", () => {
     await Promise.resolve();
 
     map.setStyle.mockClear();
-    layerSelect.value = "opentopomap";
-    layerSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    chooseLayer("opentopomap");
 
     expect(localStorage.getItem(CAMERA_MAP_BASEMAP_STORAGE_KEY)).toBe("opentopomap");
 
@@ -403,7 +452,7 @@ describe("createCameraMapWidget", () => {
     map.setStyle.mockClear();
     colorScheme.setMatches(false);
 
-    expect(layerSelect.value).toBe("opentopomap");
+    expect(layerButton.dataset.layerId).toBe("opentopomap");
     expect(map.setStyle).not.toHaveBeenCalled();
 
     widget.destroy();
@@ -420,15 +469,14 @@ describe("createCameraMapWidget", () => {
     const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
     const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
     const map = await openAndLoad(widget);
-    const layerSelect = document.querySelector(".camera-map-layer-select");
+    const layerButton = getLayerButton();
 
-    expect(layerSelect.value).toBe("opentopomap");
+    expect(layerButton.dataset.layerId).toBe("opentopomap");
 
     map.setStyle.mockClear();
-    layerSelect.value = "auto";
-    layerSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    chooseLayer("auto");
 
-    expect(layerSelect.value).toBe("auto");
+    expect(layerButton.dataset.layerId).toBe("auto");
     expect(localStorage.getItem(CAMERA_MAP_BASEMAP_STORAGE_KEY)).toBeNull();
     expect(map.setStyle).toHaveBeenCalledWith(expect.objectContaining({
       sources: expect.objectContaining({
@@ -444,7 +492,7 @@ describe("createCameraMapWidget", () => {
     map.setStyle.mockClear();
     colorScheme.setMatches(true);
 
-    expect(layerSelect.value).toBe("auto");
+    expect(layerButton.dataset.layerId).toBe("auto");
     expect(map.setStyle).toHaveBeenCalledWith(expect.objectContaining({
       sources: expect.objectContaining({
         "camera-map-basemap": expect.objectContaining({
@@ -542,11 +590,9 @@ describe("createCameraMapWidget", () => {
     const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
     const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
     const map = await openAndLoad(widget);
-    const layerSelect = document.querySelector(".camera-map-layer-select");
 
     dataSourceDouble.loadViewport.mockClear();
-    layerSelect.value = "opentopomap";
-    layerSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    chooseLayer("opentopomap");
 
     expect(localStorage.getItem(CAMERA_MAP_BASEMAP_STORAGE_KEY)).toBe("opentopomap");
     expect(map.setStyle).toHaveBeenCalledWith(expect.objectContaining({
@@ -594,7 +640,7 @@ describe("createCameraMapWidget", () => {
     const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
     const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
 
-    expect(document.querySelector(".camera-map-layer-select").value).toBe("carto-dark-matter");
+    expect(getLayerButton().dataset.layerId).toBe("carto-dark-matter");
 
     const map = await openAndLoad(widget);
 

@@ -230,34 +230,85 @@ function clearBasemapPreference() {
   }
 }
 
-function createBasemapSelect(selectedBasemapId, { auto = false } = {}) {
-  const select = createElement("select", {
-    class: "camera-map-layer-select",
+function createLayerOption({ id, labelKey, selected = false }) {
+  return createElement("button", {
+    type: "button",
+    class: `camera-map-layer-option${selected ? " is-active" : ""}`,
+    role: "option",
+    "aria-selected": selected ? "true" : "false",
+    "data-layer-id": id,
+  }, [
+    createElement("span", {
+      class: "camera-map-layer-option-label",
+      text: t(labelKey),
+      "data-i18n": labelKey,
+    }),
+  ]);
+}
+
+function createBasemapLayerControl(selectedBasemapId, { auto = false } = {}) {
+  const selectedBasemap = getCameraMapBasemap(selectedBasemapId);
+  const selectedLabelKey = auto ? "cameraMapLayerAuto" : selectedBasemap.labelKey;
+  const layerButtonText = createElement("span", {
+    class: "camera-map-layer-button-text",
+    text: t(selectedLabelKey),
+    "data-i18n": selectedLabelKey,
+  });
+  const layerButton = createElement("button", {
+    type: "button",
+    class: "camera-map-layer-button",
     "aria-label": t("cameraMapLayers"),
     title: t("cameraMapLayers"),
     "data-i18n-aria": "cameraMapLayers",
     "data-i18n-title": "cameraMapLayers",
-  });
+    "aria-haspopup": "listbox",
+    "aria-expanded": "false",
+    "data-layer-id": auto ? CAMERA_MAP_BASEMAP_AUTO_ID : selectedBasemap.id,
+  }, [
+    createElement("span", {
+      class: "camera-map-layer-icon",
+      "aria-hidden": "true",
+      html: IconWorld,
+    }),
+    layerButtonText,
+  ]);
 
-  const autoOption = createElement("option", {
-    value: CAMERA_MAP_BASEMAP_AUTO_ID,
-    text: t("cameraMapLayerAuto"),
-    "data-i18n": "cameraMapLayerAuto",
+  const layerMenu = createElement("div", {
+    class: "camera-map-layer-menu",
+    role: "listbox",
+    "aria-label": t("cameraMapLayers"),
+    "data-i18n-aria": "cameraMapLayers",
   });
-  autoOption.selected = auto;
-  select.appendChild(autoOption);
+  layerMenu.hidden = true;
+  layerMenu.appendChild(createLayerOption({
+    id: CAMERA_MAP_BASEMAP_AUTO_ID,
+    labelKey: "cameraMapLayerAuto",
+    selected: auto,
+  }));
 
   for (const basemap of CAMERA_MAP_BASEMAPS) {
-    const option = createElement("option", {
-      value: basemap.id,
-      text: t(basemap.labelKey),
-      "data-i18n": basemap.labelKey,
-    });
-    option.selected = !auto && basemap.id === selectedBasemapId;
-    select.appendChild(option);
+    layerMenu.appendChild(createLayerOption({
+      id: basemap.id,
+      labelKey: basemap.labelKey,
+      selected: !auto && basemap.id === selectedBasemap.id,
+    }));
   }
 
-  return select;
+  const layerControl = createElement("div", {
+    class: "camera-map-layer-control",
+    title: t("cameraMapLayers"),
+    "data-i18n-title": "cameraMapLayers",
+  }, [
+    layerButton,
+    layerMenu,
+  ]);
+
+  return {
+    layerControl,
+    layerButton,
+    layerButtonText,
+    layerMenu,
+  };
 }
 
 function buildPanel(selectedBasemapId, { autoBasemap = false } = {}) {
@@ -327,19 +378,12 @@ function buildPanel(selectedBasemapId, { autoBasemap = false } = {}) {
     class: "camera-map-container",
     "aria-label": t("cameraMapTitle"),
   });
-  const layerSelect = createBasemapSelect(selectedBasemapId, { auto: autoBasemap });
-  const layerControl = createElement("div", {
-    class: "camera-map-layer-control",
-    title: t("cameraMapLayers"),
-    "data-i18n-title": "cameraMapLayers",
-  }, [
-    createElement("span", {
-      class: "camera-map-layer-icon",
-      "aria-hidden": "true",
-      html: IconWorld,
-    }),
-    layerSelect,
-  ]);
+  const {
+    layerControl,
+    layerButton,
+    layerButtonText,
+    layerMenu,
+  } = createBasemapLayerControl(selectedBasemapId, { auto: autoBasemap });
   const overlayControls = createElement("div", { class: "camera-map-overlay-controls" }, [
     recenterBtn,
     refreshBtn,
@@ -388,7 +432,9 @@ function buildPanel(selectedBasemapId, { autoBasemap = false } = {}) {
     refreshBtn,
     statusEl,
     mapEl,
-    layerSelect,
+    layerButton,
+    layerButtonText,
+    layerMenu,
     attribution,
   };
 }
@@ -422,7 +468,9 @@ export function createCameraMapWidget(options = {}) {
     refreshBtn,
     statusEl,
     mapEl,
-    layerSelect,
+    layerButton,
+    layerButtonText,
+    layerMenu,
     attribution,
   } = refs;
 
@@ -506,13 +554,49 @@ export function createCameraMapWidget(options = {}) {
     statusEl.dataset.status = safeStatus.status || "idle";
   }
 
-  function updateBasemapUi(basemap = activeBasemap) {
-    const layerSelectValue = hasUserBasemapPreference
-      ? basemap.id
-      : CAMERA_MAP_BASEMAP_AUTO_ID;
-    if (layerSelect.value !== layerSelectValue) {
-      layerSelect.value = layerSelectValue;
+  function setLayerMenuOpen(open) {
+    layerMenu.hidden = !open;
+    layerButton.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  function getLayerOptionElements() {
+    return Array.from(layerMenu.querySelectorAll(".camera-map-layer-option"));
+  }
+
+  function getSelectedLayerValue() {
+    return hasUserBasemapPreference ? activeBasemap.id : CAMERA_MAP_BASEMAP_AUTO_ID;
+  }
+
+  function focusLayerOption(value = getSelectedLayerValue()) {
+    const options = getLayerOptionElements();
+    const selectedOption = options.find((option) => option.dataset.layerId === value) || options[0];
+    selectedOption?.focus();
+  }
+
+  function moveLayerOptionFocus(delta) {
+    const options = getLayerOptionElements();
+    if (!options.length) return;
+    const currentIndex = Math.max(0, options.indexOf(document.activeElement));
+    const nextIndex = (currentIndex + delta + options.length) % options.length;
+    options[nextIndex]?.focus();
+  }
+
+  function updateLayerControlSelection(value = getSelectedLayerValue()) {
+    const labelKey = value === CAMERA_MAP_BASEMAP_AUTO_ID
+      ? "cameraMapLayerAuto"
+      : getCameraMapBasemap(value).labelKey;
+    layerButton.dataset.layerId = value;
+    layerButtonText.textContent = t(labelKey);
+    layerButtonText.dataset.i18n = labelKey;
+    for (const option of getLayerOptionElements()) {
+      const active = option.dataset.layerId === value;
+      option.classList.toggle("is-active", active);
+      option.setAttribute("aria-selected", active ? "true" : "false");
     }
+  }
+
+  function updateBasemapUi(basemap = activeBasemap) {
+    updateLayerControlSelection(hasUserBasemapPreference ? basemap.id : CAMERA_MAP_BASEMAP_AUTO_ID);
     attribution.href = basemap.attributionUrl;
     attribution.textContent = t(basemap.attributionKey);
     attribution.dataset.i18n = basemap.attributionKey;
@@ -940,6 +1024,21 @@ export function createCameraMapWidget(options = {}) {
     }
   }
 
+  function selectLayerValue(layerId) {
+    setLayerMenuOpen(false);
+    if (layerId === CAMERA_MAP_BASEMAP_AUTO_ID) {
+      hasUserBasemapPreference = false;
+      clearBasemapPreference();
+      switchBasemap(getDefaultCameraMapBasemapId(), { persist: false });
+      layerButton.focus();
+      return;
+    }
+
+    hasUserBasemapPreference = true;
+    switchBasemap(layerId);
+    layerButton.focus();
+  }
+
   function queueRefresh() {
     if (destroyed || panel.hidden || basemapSwitchInProgress || suppressViewportRefresh) return;
     window.clearTimeout(refreshTimer);
@@ -1118,6 +1217,12 @@ export function createCameraMapWidget(options = {}) {
     panel.hidden ? open() : close();
   }
 
+  function closeLayerMenuOnDocumentPointerDown(event) {
+    if (!layerMenu.hidden && !layerMenu.parentElement?.contains?.(event.target)) {
+      setLayerMenuOpen(false);
+    }
+  }
+
   function destroy() {
     destroyed = true;
     exitFullscreenBeforeHide({ restore: false });
@@ -1125,6 +1230,7 @@ export function createCameraMapWidget(options = {}) {
     window.clearTimeout(fullscreenResizeTimer);
     window.removeEventListener("resize", resizeMap);
     document.removeEventListener("fullscreenchange", onFullscreenChange);
+    document.removeEventListener("pointerdown", closeLayerMenuOnDocumentPointerDown, true);
     stopResizeObserver();
     cleanupColorSchemeListener();
     cleanupColorSchemeListener = () => {};
@@ -1205,19 +1311,50 @@ export function createCameraMapWidget(options = {}) {
     refresh().catch(() => {});
   });
 
-  layerSelect.addEventListener("change", () => {
-    if (layerSelect.value === CAMERA_MAP_BASEMAP_AUTO_ID) {
-      hasUserBasemapPreference = false;
-      clearBasemapPreference();
-      switchBasemap(getDefaultCameraMapBasemapId(), { persist: false });
-      return;
+  layerButton.addEventListener("pointerdown", (event) => event.stopPropagation());
+  layerButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    setLayerMenuOpen(layerMenu.hidden);
+  });
+  layerButton.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setLayerMenuOpen(true);
+      focusLayerOption();
+    } else if (event.key === "Escape") {
+      setLayerMenuOpen(false);
     }
-    hasUserBasemapPreference = true;
-    switchBasemap(layerSelect.value);
+  });
+  layerMenu.addEventListener("pointerdown", (event) => event.stopPropagation());
+  layerMenu.addEventListener("click", (event) => {
+    const option = event.target?.closest?.(".camera-map-layer-option");
+    if (!option) return;
+    event.stopPropagation();
+    selectLayerValue(option.dataset.layerId);
+  });
+  layerMenu.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setLayerMenuOpen(false);
+      layerButton.focus();
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      moveLayerOptionFocus(1);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveLayerOptionFocus(-1);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      getLayerOptionElements()[0]?.focus();
+    } else if (event.key === "End") {
+      event.preventDefault();
+      getLayerOptionElements().at(-1)?.focus();
+    }
   });
 
   window.addEventListener("resize", resizeMap, { passive: true });
   document.addEventListener("fullscreenchange", onFullscreenChange);
+  document.addEventListener("pointerdown", closeLayerMenuOnDocumentPointerDown, true);
   startColorSchemeListener();
 
   if (button) {
