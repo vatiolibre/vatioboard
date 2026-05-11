@@ -189,6 +189,19 @@ Only use `CAMERA_ROAD_REFRESH_CACHE=1` when you deliberately want to re-download
 
 At runtime, Speed does not upload live location to fetch camera alerts. GPS matching happens locally: the app loads the manifest, chooses the current country or nearby tile from the GPS fix, tries IndexedDB first, and revalidates in the background. If the network drops during an update, the last good cached country/tile stays intact. With no cache and no network, the speedometer still works and trap alerts show an unavailable/offline camera database status.
 
+### Camera Map Basemaps
+
+The Camera Map points come from the same local/static camera artifacts described above. The browser does not call Overpass or any camera API from the map panel.
+
+Basemap imagery and map tiles are loaded from third-party tile services and must keep visible attribution in the map. Included layers:
+
+- CARTO Voyager, Light, and Dark: `© OpenStreetMap contributors © CARTO`
+- OSM Standard: `© OpenStreetMap contributors`
+- OpenTopoMap: `© OpenStreetMap contributors, SRTM | style © OpenTopoMap`
+- Esri World Imagery: `Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community`
+
+Public tile services have fair-use and attribution policies. OSM Standard should follow the [OSM tile usage policy](https://operations.osmfoundation.org/policies/tiles/), CARTO layers should follow [CARTO attribution](https://carto.com/attribution), OpenTopoMap should follow its [usage notes](https://opentopomap.org/about), and Esri imagery attribution should stay visible. Production or high-volume deployments should use an approved commercial/dedicated tile provider or self-hosted tiles.
+
 Follow-up tickets:
 
 - Add a daily GitHub Actions workflow that runs `npm run fetch:cameras`, opens a data refresh PR, and reports artifact counts.

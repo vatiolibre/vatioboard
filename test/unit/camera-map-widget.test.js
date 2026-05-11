@@ -1,4 +1,7 @@
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const cameraMapLessPath = `${process.cwd()}/src/styles/camera-map.less`;
 
 const mapLibreDouble = vi.hoisted(() => {
   const maps = [];
@@ -8,13 +11,17 @@ const mapLibreDouble = vi.hoisted(() => {
       this.options = options;
       this.handlers = {};
       this.sources = new Map();
-      this.layers = [];
+      this.style = options.style || {};
+      this.layers = [...(this.style.layers || [])];
       this.resize = vi.fn();
       this.remove = vi.fn();
       this.easeTo = vi.fn();
       this.jumpTo = vi.fn();
       this.addControl = vi.fn();
       this.getZoom = vi.fn(() => 8);
+      this.getCenter = vi.fn(() => ({ lng: -73.9, lat: 40.7 }));
+      this.getBearing = vi.fn(() => 0);
+      this.getPitch = vi.fn(() => 0);
       this.getBounds = vi.fn(() => ({
         getWest: () => -75,
         getSouth: () => 39,
@@ -22,12 +29,39 @@ const mapLibreDouble = vi.hoisted(() => {
         getNorth: () => 42,
       }));
       this.getCanvas = vi.fn(() => ({ style: {} }));
+      this.setStyle = vi.fn((style, options = {}) => {
+        this.style = style;
+        this.styleOptions = options;
+        this.sources.clear();
+        for (const [id, config] of Object.entries(style.sources || {})) {
+          this.sources.set(id, { id, config });
+        }
+        this.layers = [...(style.layers || [])];
+        return this;
+      });
+      this.getStyle = vi.fn(() => this.style);
+      for (const [id, config] of Object.entries(this.style.sources || {})) {
+        this.sources.set(id, { id, config });
+      }
       maps.push(this);
     }
 
     on(event, layerOrHandler, maybeHandler) {
       const handler = typeof layerOrHandler === "function" ? layerOrHandler : maybeHandler;
       (this.handlers[event] ??= []).push(handler);
+      return this;
+    }
+
+    once(event, handler) {
+      const wrapped = (...args) => {
+        this.off(event, wrapped);
+        handler(...args);
+      };
+      return this.on(event, wrapped);
+    }
+
+    off(event, handler) {
+      this.handlers[event] = (this.handlers[event] || []).filter((candidate) => candidate !== handler);
       return this;
     }
 
@@ -45,8 +79,18 @@ const mapLibreDouble = vi.hoisted(() => {
       return this.sources.get(id) || null;
     }
 
-    addLayer(layer) {
-      this.layers.push(layer);
+    getLayer(id) {
+      return this.layers.find((layer) => layer.id === id) || null;
+    }
+
+    addLayer(layer, beforeId) {
+      if (this.getLayer(layer.id)) return this;
+      const beforeIndex = beforeId ? this.layers.findIndex((candidate) => candidate.id === beforeId) : -1;
+      if (beforeIndex >= 0) {
+        this.layers.splice(beforeIndex, 0, layer);
+      } else {
+        this.layers.push(layer);
+      }
       return this;
     }
   }
@@ -118,10 +162,46 @@ async function openAndLoad(widget) {
   widget.open();
   await flushTimers();
   const map = mapLibreDouble.maps.at(-1);
-  for (const handler of map.handlers.load || []) handler();
+  for (const handler of [...(map.handlers.load || [])]) handler();
   await Promise.resolve();
   await Promise.resolve();
   return map;
+}
+
+function fireMapEvent(map, eventName) {
+  for (const handler of [...(map.handlers[eventName] || [])]) handler();
+}
+
+function createColorSchemeMatchMedia(initialMatches = false) {
+  let matches = initialMatches;
+  const listeners = new Set();
+  const mediaQueryList = {
+    get matches() {
+      return matches;
+    },
+    media: "(prefers-color-scheme: dark)",
+    onchange: null,
+    addEventListener: vi.fn((event, listener) => {
+      if (event === "change") listeners.add(listener);
+    }),
+    removeEventListener: vi.fn((event, listener) => {
+      if (event === "change") listeners.delete(listener);
+    }),
+    addListener: vi.fn((listener) => listeners.add(listener)),
+    removeListener: vi.fn((listener) => listeners.delete(listener)),
+    dispatchEvent: vi.fn(),
+  };
+
+  return {
+    matchMedia: vi.fn(() => mediaQueryList),
+    mediaQueryList,
+    setMatches(nextMatches) {
+      matches = nextMatches;
+      for (const listener of [...listeners]) {
+        listener({ matches, media: mediaQueryList.media });
+      }
+    },
+  };
 }
 
 describe("createCameraMapWidget", () => {
@@ -130,11 +210,13 @@ describe("createCameraMapWidget", () => {
   let loadMapLibre;
   let originalRequestFullscreen;
   let originalExitFullscreen;
+  let originalMatchMedia;
 
   beforeEach(async () => {
     vi.useFakeTimers();
     originalRequestFullscreen = HTMLElement.prototype.requestFullscreen;
     originalExitFullscreen = document.exitFullscreen;
+    originalMatchMedia = globalThis.matchMedia;
     document.body.innerHTML = "";
     localStorage.clear();
     mapLibreDouble.maps.length = 0;
@@ -149,6 +231,11 @@ describe("createCameraMapWidget", () => {
   afterEach(() => {
     HTMLElement.prototype.requestFullscreen = originalRequestFullscreen;
     document.exitFullscreen = originalExitFullscreen;
+    if (originalMatchMedia === undefined) {
+      delete globalThis.matchMedia;
+    } else {
+      globalThis.matchMedia = originalMatchMedia;
+    }
     vi.useRealTimers();
   });
 
@@ -169,6 +256,50 @@ describe("createCameraMapWidget", () => {
     manager.destroy();
   });
 
+  it("uses a map-first layout with compact overlays", () => {
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+
+    const body = document.querySelector(".camera-map-body");
+    const mapContainer = document.querySelector(".camera-map-container");
+    const topOverlay = document.querySelector(".camera-map-overlay--top");
+    const bottomOverlay = document.querySelector(".camera-map-overlay--bottom");
+
+    expect(body).not.toBeNull();
+    expect(mapContainer.parentElement).toBe(body);
+    expect(topOverlay).not.toBeNull();
+    expect(bottomOverlay).not.toBeNull();
+    expect(topOverlay.contains(document.querySelector(".camera-map-status"))).toBe(true);
+    expect(topOverlay.contains(document.querySelector(".camera-map-layer-select"))).toBe(true);
+    expect(bottomOverlay.contains(document.querySelector(".camera-map-attribution"))).toBe(true);
+    expect(bottomOverlay.contains(document.querySelector(".camera-map-privacy"))).toBe(true);
+    expect(document.querySelector(".camera-map-toolbar")).toBeNull();
+    expect(document.querySelector(".camera-map-footer")).toBeNull();
+    expect(document.querySelector(".camera-map-layer-control").tagName).toBe("DIV");
+    expect(document.querySelector(".camera-map-minimize")).toBeNull();
+    expect(Array.from(document.querySelectorAll(".camera-map-actions .camera-map-action"))
+      .map((button) => button.className)).toEqual([
+      "camera-map-action camera-map-fullscreen",
+      "camera-map-action camera-map-close",
+    ]);
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("styles the layer selector as a native touch target with light and dark contrast", () => {
+    const css = readFileSync(cameraMapLessPath, "utf8");
+
+    expect(css).toContain("--camera-map-overlay-text: #111827;");
+    expect(css).toContain("--camera-map-overlay-text: #f9fafb;");
+    expect(css).toContain(".camera-map-layer-select");
+    expect(css).toContain("min-height: 44px;");
+    expect(css).toContain("touch-action: manipulation;");
+    expect(css).toContain("pointer-events: auto;");
+    expect(css).toContain("-webkit-appearance: none;");
+    expect(css).toContain("color-scheme: dark;");
+  });
+
   it("initializes MapLibre lazily on first open", async () => {
     const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
     const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
@@ -179,6 +310,148 @@ describe("createCameraMapWidget", () => {
 
     expect(loadMapLibre).toHaveBeenCalledTimes(1);
     expect(mapLibreDouble.maps).toHaveLength(1);
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("configures only attributed legal basemap providers", async () => {
+    const { CAMERA_MAP_BASEMAPS } = await import("../../src/speed/camera-map-layers.js");
+    const disallowedProviders = /google|gstatic|apple|waze|mapbox/i;
+
+    expect(CAMERA_MAP_BASEMAPS.length).toBeGreaterThan(0);
+    for (const basemap of CAMERA_MAP_BASEMAPS) {
+      expect(basemap).toMatchObject({
+        id: expect.any(String),
+        label: expect.any(String),
+        attribution: expect.any(String),
+      });
+      expect(basemap.tiles).toEqual(expect.arrayContaining([expect.any(String)]));
+      expect(basemap.attribution.trim()).not.toBe("");
+      expect(basemap.tiles.join(" ")).not.toMatch(disallowedProviders);
+    }
+  });
+
+  it("applies the default basemap on first map creation", async () => {
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+
+    expect(map.options.style.sources["camera-map-basemap"].tiles[0]).toContain("basemaps.cartocdn.com");
+    expect(map.options.style.sources["camera-map-basemap"].tiles[0]).toContain("voyager");
+    expect(document.querySelector(".camera-map-layer-select").value).toBe("auto");
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("uses the dark basemap by default when the browser is in dark mode", async () => {
+    const colorScheme = createColorSchemeMatchMedia(true);
+    globalThis.matchMedia = colorScheme.matchMedia;
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+
+    expect(document.querySelector(".camera-map-layer-select").value).toBe("auto");
+
+    const map = await openAndLoad(widget);
+
+    expect(map.options.style.sources["camera-map-basemap"].tiles[0]).toContain("dark_all");
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("tracks browser sunrise and sunset theme changes until the user picks a basemap", async () => {
+    const { CAMERA_MAP_BASEMAP_STORAGE_KEY } = await import("../../src/speed/camera-map-layers.js");
+    const colorScheme = createColorSchemeMatchMedia(false);
+    globalThis.matchMedia = colorScheme.matchMedia;
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+    const layerSelect = document.querySelector(".camera-map-layer-select");
+
+    expect(layerSelect.value).toBe("auto");
+    expect(colorScheme.mediaQueryList.addEventListener).toHaveBeenCalledWith("change", expect.any(Function));
+
+    map.setStyle.mockClear();
+    dataSourceDouble.loadViewport.mockClear();
+    colorScheme.setMatches(true);
+
+    expect(layerSelect.value).toBe("auto");
+    expect(localStorage.getItem(CAMERA_MAP_BASEMAP_STORAGE_KEY)).toBeNull();
+    expect(map.setStyle).toHaveBeenCalledWith(expect.objectContaining({
+      sources: expect.objectContaining({
+        "camera-map-basemap": expect.objectContaining({
+          tiles: ["https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"],
+        }),
+      }),
+    }), { diff: false });
+    expect(dataSourceDouble.loadViewport).not.toHaveBeenCalled();
+
+    fireMapEvent(map, "style.load");
+    await Promise.resolve();
+
+    map.setStyle.mockClear();
+    layerSelect.value = "opentopomap";
+    layerSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(localStorage.getItem(CAMERA_MAP_BASEMAP_STORAGE_KEY)).toBe("opentopomap");
+
+    fireMapEvent(map, "style.load");
+    await Promise.resolve();
+
+    map.setStyle.mockClear();
+    colorScheme.setMatches(false);
+
+    expect(layerSelect.value).toBe("opentopomap");
+    expect(map.setStyle).not.toHaveBeenCalled();
+
+    widget.destroy();
+
+    expect(colorScheme.mediaQueryList.removeEventListener).toHaveBeenCalledWith("change", expect.any(Function));
+    manager.destroy();
+  });
+
+  it("selecting Auto clears the stored basemap and restores theme-based switching", async () => {
+    const { CAMERA_MAP_BASEMAP_STORAGE_KEY } = await import("../../src/speed/camera-map-layers.js");
+    const colorScheme = createColorSchemeMatchMedia(false);
+    globalThis.matchMedia = colorScheme.matchMedia;
+    localStorage.setItem(CAMERA_MAP_BASEMAP_STORAGE_KEY, "opentopomap");
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+    const layerSelect = document.querySelector(".camera-map-layer-select");
+
+    expect(layerSelect.value).toBe("opentopomap");
+
+    map.setStyle.mockClear();
+    layerSelect.value = "auto";
+    layerSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(layerSelect.value).toBe("auto");
+    expect(localStorage.getItem(CAMERA_MAP_BASEMAP_STORAGE_KEY)).toBeNull();
+    expect(map.setStyle).toHaveBeenCalledWith(expect.objectContaining({
+      sources: expect.objectContaining({
+        "camera-map-basemap": expect.objectContaining({
+          tiles: ["https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"],
+        }),
+      }),
+    }), { diff: false });
+
+    fireMapEvent(map, "style.load");
+    await Promise.resolve();
+
+    map.setStyle.mockClear();
+    colorScheme.setMatches(true);
+
+    expect(layerSelect.value).toBe("auto");
+    expect(map.setStyle).toHaveBeenCalledWith(expect.objectContaining({
+      sources: expect.objectContaining({
+        "camera-map-basemap": expect.objectContaining({
+          tiles: ["https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"],
+        }),
+      }),
+    }), { diff: false });
 
     widget.destroy();
     manager.destroy();
@@ -259,6 +532,73 @@ describe("createCameraMapWidget", () => {
       zoom: 8,
     }));
     expect(document.querySelector(".camera-map-status").textContent).toBe("cameraMapReady:1");
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("switches basemaps without reloading camera data and reattaches camera layers above the basemap", async () => {
+    const { CAMERA_MAP_BASEMAP_STORAGE_KEY } = await import("../../src/speed/camera-map-layers.js");
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+    const layerSelect = document.querySelector(".camera-map-layer-select");
+
+    dataSourceDouble.loadViewport.mockClear();
+    layerSelect.value = "opentopomap";
+    layerSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(localStorage.getItem(CAMERA_MAP_BASEMAP_STORAGE_KEY)).toBe("opentopomap");
+    expect(map.setStyle).toHaveBeenCalledWith(expect.objectContaining({
+      sources: expect.objectContaining({
+        "camera-map-basemap": expect.objectContaining({
+          tiles: ["https://tile.opentopomap.org/{z}/{x}/{y}.png"],
+        }),
+      }),
+    }), { diff: false });
+    expect(document.querySelector(".camera-map-attribution").textContent).toBe("cameraMapAttributionOpenTopo");
+    expect(dataSourceDouble.loadViewport).not.toHaveBeenCalled();
+
+    fireMapEvent(map, "style.load");
+    await Promise.resolve();
+
+    const cameraSource = map.getSource("camera-map-cameras");
+    const layerIds = map.layers.map((layer) => layer.id);
+    const basemapIndex = layerIds.indexOf("camera-map-basemap-layer");
+    const cameraLayerIds = layerIds.filter((id) => id.startsWith("camera-map-camera-"));
+
+    expect(cameraSource).not.toBeNull();
+    expect(cameraSource.setData).toHaveBeenCalledWith(expect.objectContaining({
+      features: expect.arrayContaining([
+        expect.objectContaining({
+          geometry: expect.objectContaining({ coordinates: [-73.9, 40.7] }),
+        }),
+      ]),
+    }));
+    expect(cameraLayerIds).toEqual([
+      "camera-map-camera-clusters",
+      "camera-map-camera-cluster-count",
+      "camera-map-camera-points",
+    ]);
+    expect(new Set(cameraLayerIds).size).toBe(cameraLayerIds.length);
+    expect(cameraLayerIds.every((id) => layerIds.indexOf(id) > basemapIndex)).toBe(true);
+    expect(dataSourceDouble.loadViewport).not.toHaveBeenCalled();
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("restores the selected basemap from storage", async () => {
+    const { CAMERA_MAP_BASEMAP_STORAGE_KEY } = await import("../../src/speed/camera-map-layers.js");
+    localStorage.setItem(CAMERA_MAP_BASEMAP_STORAGE_KEY, "carto-dark-matter");
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+
+    expect(document.querySelector(".camera-map-layer-select").value).toBe("carto-dark-matter");
+
+    const map = await openAndLoad(widget);
+
+    expect(map.options.style.sources["camera-map-basemap"].tiles[0]).toContain("dark_all");
 
     widget.destroy();
     manager.destroy();

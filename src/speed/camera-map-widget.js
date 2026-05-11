@@ -5,6 +5,7 @@ import {
   IconFullscreenExit,
   IconGpsLab,
   IconRestart,
+  IconWorld,
 } from "../icons.js";
 import { clampElementToViewport, makePanelDraggable } from "../calculator/widget/drag.js";
 import { registerFloatingPanel } from "../shared/floating-layer-manager.js";
@@ -13,6 +14,16 @@ import { loadMapLibre } from "../shared/maplibre-loader.js";
 import {
   createCameraMapDataSource,
 } from "./camera-map-data-source.js";
+import {
+  CAMERA_MAP_BASEMAP_AUTO_ID,
+  CAMERA_MAP_BASEMAP_STORAGE_KEY,
+  CAMERA_MAP_BASEMAPS,
+  CAMERA_MAP_COLOR_SCHEME_QUERY,
+  createCameraMapStyle,
+  getDefaultCameraMapBasemapId,
+  getCameraMapBasemap,
+  isCameraMapBasemapId,
+} from "./camera-map-layers.js";
 import { loadDistanceUnitPreference, loadUnitPreference } from "./preferences.js";
 import { formatCameraLimitSpeed } from "./render.js";
 import { formatTrapDistance } from "./traps.js";
@@ -28,12 +39,6 @@ const VISIBILITY_KEY = "camera_map_widget_visible_v1";
 const DRAG_THRESHOLD_PX = 6;
 const DEFAULT_CENTER = [0, 20];
 const DEFAULT_ZOOM = 1.5;
-
-const IconMinimize = `
-  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <path d="M6 12h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-  </svg>
-`;
 
 function getEmptyFeatureCollection() {
   return {
@@ -201,21 +206,65 @@ function pxToNumber(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function buildPanel() {
+function loadBasemapPreference() {
+  try {
+    return localStorage.getItem(CAMERA_MAP_BASEMAP_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function saveBasemapPreference(basemapId) {
+  try {
+    localStorage.setItem(CAMERA_MAP_BASEMAP_STORAGE_KEY, basemapId);
+  } catch {
+    // Basemap persistence is convenience only.
+  }
+}
+
+function clearBasemapPreference() {
+  try {
+    localStorage.removeItem(CAMERA_MAP_BASEMAP_STORAGE_KEY);
+  } catch {
+    // Basemap persistence is convenience only.
+  }
+}
+
+function createBasemapSelect(selectedBasemapId, { auto = false } = {}) {
+  const select = createElement("select", {
+    class: "camera-map-layer-select",
+    "aria-label": t("cameraMapLayers"),
+    title: t("cameraMapLayers"),
+    "data-i18n-aria": "cameraMapLayers",
+    "data-i18n-title": "cameraMapLayers",
+  });
+
+  const autoOption = createElement("option", {
+    value: CAMERA_MAP_BASEMAP_AUTO_ID,
+    text: t("cameraMapLayerAuto"),
+    "data-i18n": "cameraMapLayerAuto",
+  });
+  autoOption.selected = auto;
+  select.appendChild(autoOption);
+
+  for (const basemap of CAMERA_MAP_BASEMAPS) {
+    const option = createElement("option", {
+      value: basemap.id,
+      text: t(basemap.labelKey),
+      "data-i18n": basemap.labelKey,
+    });
+    option.selected = !auto && basemap.id === selectedBasemapId;
+    select.appendChild(option);
+  }
+
+  return select;
+}
+
+function buildPanel(selectedBasemapId, { autoBasemap = false } = {}) {
   const title = createElement("span", {
     class: "camera-map-title",
     text: t("cameraMapTitle"),
     "data-i18n": "cameraMapTitle",
-  });
-
-  const minimizeBtn = createElement("button", {
-    type: "button",
-    class: "camera-map-action camera-map-minimize",
-    "aria-label": t("minimizeCameraMap"),
-    title: t("minimizeCameraMap"),
-    "data-i18n-aria": "minimizeCameraMap",
-    "data-i18n-title": "minimizeCameraMap",
-    html: IconMinimize,
   });
 
   const fullscreenBtn = createElement("button", {
@@ -230,7 +279,7 @@ function buildPanel() {
 
   const closeBtn = createElement("button", {
     type: "button",
-    class: "camera-map-action camera-map-close calc-close",
+    class: "camera-map-action camera-map-close",
     "aria-label": t("closeCameraMap"),
     title: t("closeCameraMap"),
     "data-i18n-aria": "closeCameraMap",
@@ -240,11 +289,9 @@ function buildPanel() {
 
   const actions = createElement("div", { class: "camera-map-actions" }, [
     fullscreenBtn,
-    minimizeBtn,
     closeBtn,
   ]);
   const header = createElement("div", { class: "camera-map-header" }, [
-    createElement("span", { class: "camera-map-header-grip", "aria-hidden": "true" }),
     title,
     actions,
   ]);
@@ -276,30 +323,55 @@ function buildPanel() {
     text: t("cameraMapLoading"),
   });
 
-  const toolbar = createElement("div", { class: "camera-map-toolbar" }, [
-    recenterBtn,
-    refreshBtn,
-    statusEl,
-  ]);
   const mapEl = createElement("div", {
     class: "camera-map-container",
     "aria-label": t("cameraMapTitle"),
   });
+  const layerSelect = createBasemapSelect(selectedBasemapId, { auto: autoBasemap });
+  const layerControl = createElement("div", {
+    class: "camera-map-layer-control",
+    title: t("cameraMapLayers"),
+    "data-i18n-title": "cameraMapLayers",
+  }, [
+    createElement("span", {
+      class: "camera-map-layer-icon",
+      "aria-hidden": "true",
+      html: IconWorld,
+    }),
+    layerSelect,
+  ]);
+  const overlayControls = createElement("div", { class: "camera-map-overlay-controls" }, [
+    recenterBtn,
+    refreshBtn,
+    layerControl,
+  ]);
+  const topOverlay = createElement("div", {
+    class: "camera-map-overlay camera-map-overlay--top",
+  }, [
+    overlayControls,
+    statusEl,
+  ]);
+  const activeBasemap = getCameraMapBasemap(selectedBasemapId);
   const attribution = createElement("a", {
     class: "camera-map-attribution",
-    href: "https://www.openstreetmap.org/copyright",
+    href: activeBasemap.attributionUrl,
     target: "_blank",
     rel: "noopener noreferrer",
-    text: t("cameraMapAttribution"),
-    "data-i18n": "cameraMapAttribution",
+    text: t(activeBasemap.attributionKey),
+    "data-i18n": activeBasemap.attributionKey,
   });
   const privacy = createElement("span", {
     class: "camera-map-privacy",
-    text: t("cameraMapPrivacy"),
-    "data-i18n": "cameraMapPrivacy",
+    text: t("cameraMapLocalLookup"),
+    "data-i18n": "cameraMapLocalLookup",
   });
-  const footer = createElement("div", { class: "camera-map-footer" }, [attribution, privacy]);
-  const body = createElement("div", { class: "camera-map-body" }, [toolbar, mapEl, footer]);
+  const bottomOverlay = createElement("div", {
+    class: "camera-map-overlay camera-map-overlay--bottom",
+  }, [
+    attribution,
+    privacy,
+  ]);
+  const body = createElement("div", { class: "camera-map-body" }, [mapEl, topOverlay, bottomOverlay]);
   const panel = createElement("section", {
     class: "camera-map-panel",
     "aria-label": t("cameraMapTitle"),
@@ -312,11 +384,12 @@ function buildPanel() {
     header,
     closeBtn,
     fullscreenBtn,
-    minimizeBtn,
     recenterBtn,
     refreshBtn,
     statusEl,
     mapEl,
+    layerSelect,
+    attribution,
   };
 }
 
@@ -334,17 +407,23 @@ export function createCameraMapWidget(options = {}) {
     dataSource = null,
   } = options;
 
-  const refs = buildPanel();
+  const storedBasemapId = loadBasemapPreference();
+  let hasUserBasemapPreference = isCameraMapBasemapId(storedBasemapId);
+  let activeBasemap = getCameraMapBasemap(hasUserBasemapPreference
+    ? storedBasemapId
+    : getDefaultCameraMapBasemapId());
+  const refs = buildPanel(activeBasemap.id, { autoBasemap: !hasUserBasemapPreference });
   const {
     panel,
     header,
     closeBtn,
     fullscreenBtn,
-    minimizeBtn,
     recenterBtn,
     refreshBtn,
     statusEl,
     mapEl,
+    layerSelect,
+    attribution,
   } = refs;
 
   const cameraDataSource = dataSource || createCameraMapDataSource({
@@ -365,6 +444,14 @@ export function createCameraMapWidget(options = {}) {
   let fullscreenResizeTimer = 0;
   let isNativeFullscreen = false;
   let isFallbackFullscreen = false;
+  let currentCameraFeatures = [];
+  let cameraLayerEventsBound = false;
+  let basemapSwitchInProgress = false;
+  let basemapStyleVersion = 0;
+  let suppressViewportRefresh = false;
+  let resizeObserver = null;
+  let colorSchemeMediaQuery = null;
+  let cleanupColorSchemeListener = () => {};
   let preFullscreenWidth = null;
   let preFullscreenHeight = null;
   let preFullscreenLeft = null;
@@ -419,6 +506,18 @@ export function createCameraMapWidget(options = {}) {
     statusEl.dataset.status = safeStatus.status || "idle";
   }
 
+  function updateBasemapUi(basemap = activeBasemap) {
+    const layerSelectValue = hasUserBasemapPreference
+      ? basemap.id
+      : CAMERA_MAP_BASEMAP_AUTO_ID;
+    if (layerSelect.value !== layerSelectValue) {
+      layerSelect.value = layerSelectValue;
+    }
+    attribution.href = basemap.attributionUrl;
+    attribution.textContent = t(basemap.attributionKey);
+    attribution.dataset.i18n = basemap.attributionKey;
+  }
+
   function createReadyPromise() {
     readyPromise = new Promise((resolve) => {
       resolveReadyPromise = resolve;
@@ -438,6 +537,97 @@ export function createCameraMapWidget(options = {}) {
       map.resize?.();
     } catch {
       // Resize is best effort across synthetic test maps.
+    }
+  }
+
+  function readMapView() {
+    if (!map) return null;
+    const centerValue = map.getCenter?.();
+    const center = Array.isArray(centerValue)
+      ? centerValue
+      : Number.isFinite(Number(centerValue?.lng)) && Number.isFinite(Number(centerValue?.lat))
+        ? [Number(centerValue.lng), Number(centerValue.lat)]
+        : null;
+    const zoom = Number(map.getZoom?.());
+    const bearing = Number(map.getBearing?.());
+    const pitch = Number(map.getPitch?.());
+    return {
+      ...(center ? { center } : {}),
+      ...(Number.isFinite(zoom) ? { zoom } : {}),
+      ...(Number.isFinite(bearing) ? { bearing } : {}),
+      ...(Number.isFinite(pitch) ? { pitch } : {}),
+    };
+  }
+
+  function restoreMapView(view) {
+    if (!map?.jumpTo || !view || Object.keys(view).length === 0) return;
+    suppressViewportRefresh = true;
+    try {
+      map.jumpTo(view);
+    } catch {
+      // The map will usually preserve camera state across setStyle anyway.
+    } finally {
+      window.setTimeout(() => {
+        suppressViewportRefresh = false;
+      }, 0);
+    }
+  }
+
+  function onceMapEvent(eventName, handler) {
+    if (!map?.on) return;
+    if (typeof map.once === "function") {
+      map.once(eventName, handler);
+      return;
+    }
+    const wrapped = (...args) => {
+      map?.off?.(eventName, wrapped);
+      handler(...args);
+    };
+    map.on(eventName, wrapped);
+  }
+
+  function startResizeObserver() {
+    if (resizeObserver || typeof ResizeObserver !== "function") return;
+    resizeObserver = new ResizeObserver(() => resizeMap());
+    resizeObserver.observe(panel);
+    resizeObserver.observe(mapEl);
+  }
+
+  function stopResizeObserver() {
+    resizeObserver?.disconnect?.();
+    resizeObserver = null;
+  }
+
+  function startColorSchemeListener() {
+    if (typeof globalThis.matchMedia !== "function") return;
+
+    try {
+      colorSchemeMediaQuery = globalThis.matchMedia(CAMERA_MAP_COLOR_SCHEME_QUERY);
+    } catch {
+      colorSchemeMediaQuery = null;
+      return;
+    }
+
+    const handleColorSchemeChange = () => {
+      if (destroyed || hasUserBasemapPreference) return;
+      switchBasemap(getDefaultCameraMapBasemapId(), { persist: false });
+    };
+
+    if (typeof colorSchemeMediaQuery.addEventListener === "function") {
+      colorSchemeMediaQuery.addEventListener("change", handleColorSchemeChange);
+      cleanupColorSchemeListener = () => {
+        colorSchemeMediaQuery?.removeEventListener?.("change", handleColorSchemeChange);
+        colorSchemeMediaQuery = null;
+      };
+      return;
+    }
+
+    if (typeof colorSchemeMediaQuery.addListener === "function") {
+      colorSchemeMediaQuery.addListener(handleColorSchemeChange);
+      cleanupColorSchemeListener = () => {
+        colorSchemeMediaQuery?.removeListener?.(handleColorSchemeChange);
+        colorSchemeMediaQuery = null;
+      };
     }
   }
 
@@ -590,77 +780,15 @@ export function createCameraMapWidget(options = {}) {
     }
   }
 
-  function addCameraLayers() {
-    if (!map || map.getSource?.(CAMERA_SOURCE_ID)) return;
+  function hasMapLayer(id) {
+    return Boolean(map?.getLayer?.(id));
+  }
 
-    map.addSource?.(CAMERA_SOURCE_ID, {
-      type: "geojson",
-      data: getEmptyFeatureCollection(),
-      cluster: true,
-      clusterRadius: 45,
-      clusterMaxZoom: 13,
-    });
+  function bindCameraLayerEvents() {
+    if (cameraLayerEventsBound || !map?.on) return;
+    cameraLayerEventsBound = true;
 
-    map.addLayer?.({
-      id: CAMERA_CLUSTER_LAYER_ID,
-      type: "circle",
-      source: CAMERA_SOURCE_ID,
-      filter: ["has", "point_count"],
-      paint: {
-        "circle-color": [
-          "step",
-          ["get", "point_count"],
-          "#fbbf24",
-          50,
-          "#fb923c",
-          200,
-          "#ef4444",
-        ],
-        "circle-radius": [
-          "step",
-          ["get", "point_count"],
-          17,
-          50,
-          22,
-          200,
-          28,
-        ],
-        "circle-opacity": 0.9,
-        "circle-stroke-color": "#111827",
-        "circle-stroke-width": 1.5,
-      },
-    });
-
-    map.addLayer?.({
-      id: CAMERA_CLUSTER_COUNT_LAYER_ID,
-      type: "symbol",
-      source: CAMERA_SOURCE_ID,
-      filter: ["has", "point_count"],
-      layout: {
-        "text-field": ["get", "point_count_abbreviated"],
-        "text-font": ["Open Sans Semibold", "Arial Unicode MS Bold"],
-        "text-size": 12,
-      },
-      paint: {
-        "text-color": "#111827",
-      },
-    });
-
-    map.addLayer?.({
-      id: CAMERA_POINT_LAYER_ID,
-      type: "circle",
-      source: CAMERA_SOURCE_ID,
-      filter: ["!", ["has", "point_count"]],
-      paint: {
-        "circle-color": "#f59e0b",
-        "circle-radius": 6,
-        "circle-opacity": 0.95,
-        "circle-stroke-color": "#111827",
-        "circle-stroke-width": 1.4,
-      },
-    });
-
-    map.on?.("click", CAMERA_POINT_LAYER_ID, (event) => {
+    map.on("click", CAMERA_POINT_LAYER_ID, (event) => {
       const feature = event?.features?.[0];
       const coordinates = feature?.geometry?.coordinates;
       if (!feature || !Array.isArray(coordinates) || !maplibregl?.Popup) return;
@@ -670,24 +798,150 @@ export function createCameraMapWidget(options = {}) {
         .addTo(map);
     });
 
-    map.on?.("mouseenter", CAMERA_POINT_LAYER_ID, () => {
+    map.on("mouseenter", CAMERA_POINT_LAYER_ID, () => {
       if (map?.getCanvas?.()) map.getCanvas().style.cursor = "pointer";
     });
-    map.on?.("mouseleave", CAMERA_POINT_LAYER_ID, () => {
+    map.on("mouseleave", CAMERA_POINT_LAYER_ID, () => {
       if (map?.getCanvas?.()) map.getCanvas().style.cursor = "";
     });
   }
 
-  function setCameraFeatures(features) {
+  function addCameraLayers() {
+    if (!map) return;
+
+    if (!map.getSource?.(CAMERA_SOURCE_ID)) {
+      map.addSource?.(CAMERA_SOURCE_ID, {
+        type: "geojson",
+        data: getEmptyFeatureCollection(),
+        cluster: true,
+        clusterRadius: 45,
+        clusterMaxZoom: 13,
+      });
+    }
+
+    if (!hasMapLayer(CAMERA_CLUSTER_LAYER_ID)) {
+      map.addLayer?.({
+        id: CAMERA_CLUSTER_LAYER_ID,
+        type: "circle",
+        source: CAMERA_SOURCE_ID,
+        filter: ["has", "point_count"],
+        paint: {
+          "circle-color": [
+            "step",
+            ["get", "point_count"],
+            "#fbbf24",
+            50,
+            "#fb923c",
+            200,
+            "#ef4444",
+          ],
+          "circle-radius": [
+            "step",
+            ["get", "point_count"],
+            17,
+            50,
+            22,
+            200,
+            28,
+          ],
+          "circle-opacity": 0.9,
+          "circle-stroke-color": "#111827",
+          "circle-stroke-width": 1.5,
+        },
+      });
+    }
+
+    if (!hasMapLayer(CAMERA_CLUSTER_COUNT_LAYER_ID)) {
+      map.addLayer?.({
+        id: CAMERA_CLUSTER_COUNT_LAYER_ID,
+        type: "symbol",
+        source: CAMERA_SOURCE_ID,
+        filter: ["has", "point_count"],
+        layout: {
+          "text-field": ["get", "point_count_abbreviated"],
+          "text-font": ["Open Sans Semibold", "Arial Unicode MS Bold"],
+          "text-size": 12,
+        },
+        paint: {
+          "text-color": "#111827",
+        },
+      });
+    }
+
+    if (!hasMapLayer(CAMERA_POINT_LAYER_ID)) {
+      map.addLayer?.({
+        id: CAMERA_POINT_LAYER_ID,
+        type: "circle",
+        source: CAMERA_SOURCE_ID,
+        filter: ["!", ["has", "point_count"]],
+        paint: {
+          "circle-color": "#f59e0b",
+          "circle-radius": 6,
+          "circle-opacity": 0.95,
+          "circle-stroke-color": "#111827",
+          "circle-stroke-width": 1.4,
+        },
+      });
+    }
+
+    bindCameraLayerEvents();
+  }
+
+  function setCameraFeatures(features, { cache = true } = {}) {
+    const safeFeatures = Array.isArray(features) ? features : [];
+    if (cache) currentCameraFeatures = safeFeatures;
     const source = map?.getSource?.(CAMERA_SOURCE_ID);
     source?.setData?.({
       type: "FeatureCollection",
-      features: Array.isArray(features) ? features : [],
+      features: safeFeatures,
     });
   }
 
+  function restoreCameraLayersAfterStyle(version, view) {
+    if (destroyed || version !== basemapStyleVersion || !map) return;
+    basemapSwitchInProgress = false;
+    addCameraLayers();
+    setCameraFeatures(currentCameraFeatures, { cache: false });
+    restoreMapView(view);
+    resizeMap();
+  }
+
+  function switchBasemap(nextBasemapId, { persist = true } = {}) {
+    const nextBasemap = getCameraMapBasemap(nextBasemapId);
+    if (nextBasemap.id === activeBasemap.id) {
+      updateBasemapUi(nextBasemap);
+      return;
+    }
+
+    activeBasemap = nextBasemap;
+    updateBasemapUi(nextBasemap);
+    if (persist) saveBasemapPreference(nextBasemap.id);
+
+    if (!map) return;
+
+    const view = readMapView();
+    const version = ++basemapStyleVersion;
+
+    if (typeof map.setStyle !== "function") {
+      addCameraLayers();
+      setCameraFeatures(currentCameraFeatures, { cache: false });
+      resizeMap();
+      return;
+    }
+
+    basemapSwitchInProgress = true;
+    onceMapEvent("style.load", () => restoreCameraLayersAfterStyle(version, view));
+
+    try {
+      map.setStyle(createCameraMapStyle(nextBasemap), { diff: false });
+    } catch (error) {
+      basemapSwitchInProgress = false;
+      updateStatus({ status: "unavailable", error });
+    }
+  }
+
   function queueRefresh() {
-    if (destroyed || panel.hidden) return;
+    if (destroyed || panel.hidden || basemapSwitchInProgress || suppressViewportRefresh) return;
     window.clearTimeout(refreshTimer);
     refreshTimer = window.setTimeout(() => {
       refresh().catch(() => {});
@@ -700,6 +954,7 @@ export function createCameraMapWidget(options = {}) {
     if (initPromise) return initPromise;
     if (panel.hidden) return Promise.resolve();
 
+    startResizeObserver();
     createReadyPromise();
     updateStatus({ status: "loading-manifest" });
 
@@ -718,32 +973,11 @@ export function createCameraMapWidget(options = {}) {
           attributionControl: false,
           center: initialView.center,
           zoom: initialView.zoom,
-          style: {
-            version: 8,
-            glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
-            sources: {
-              "camera-map-osm": {
-                type: "raster",
-                tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-                tileSize: 256,
-                attribution: "© OpenStreetMap contributors",
-              },
-            },
-            layers: [
-              {
-                id: "camera-map-osm-base",
-                type: "raster",
-                source: "camera-map-osm",
-              },
-            ],
-          },
+          style: createCameraMapStyle(activeBasemap),
         });
 
         if (maplibregl.NavigationControl) {
           map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), "top-right");
-        }
-        if (maplibregl.AttributionControl) {
-          map.addControl(new maplibregl.AttributionControl({ compact: true }));
         }
 
         map.on?.("load", () => {
@@ -775,6 +1009,7 @@ export function createCameraMapWidget(options = {}) {
 
   async function refresh() {
     if (destroyed) return null;
+    if (basemapSwitchInProgress) return null;
     if (!map) {
       await initMap();
     }
@@ -826,6 +1061,7 @@ export function createCameraMapWidget(options = {}) {
 
   function showPanel({ persist = true } = {}) {
     panel.hidden = false;
+    startResizeObserver();
     if (persist) saveVisibility(true);
     if (panel.style.left && panel.style.top) {
       clampElementToViewport(panel);
@@ -845,6 +1081,7 @@ export function createCameraMapWidget(options = {}) {
     if (persist) saveVisibility(false);
     window.clearTimeout(refreshTimer);
     window.clearTimeout(fullscreenResizeTimer);
+    stopResizeObserver();
     refreshController?.abort();
   }
 
@@ -853,6 +1090,7 @@ export function createCameraMapWidget(options = {}) {
     panel.hidden = true;
     window.clearTimeout(refreshTimer);
     window.clearTimeout(fullscreenResizeTimer);
+    stopResizeObserver();
     refreshController?.abort();
   }
 
@@ -887,6 +1125,9 @@ export function createCameraMapWidget(options = {}) {
     window.clearTimeout(fullscreenResizeTimer);
     window.removeEventListener("resize", resizeMap);
     document.removeEventListener("fullscreenchange", onFullscreenChange);
+    stopResizeObserver();
+    cleanupColorSchemeListener();
+    cleanupColorSchemeListener = () => {};
     refreshController?.abort();
     cleanupLayer();
     if (button) button.removeEventListener("click", toggle);
@@ -959,20 +1200,25 @@ export function createCameraMapWidget(options = {}) {
     toggleFullscreen().catch(() => {});
   });
 
-  minimizeBtn.addEventListener("pointerdown", (event) => event.stopPropagation());
-  minimizeBtn.addEventListener("pointerup", (event) => event.stopPropagation());
-  minimizeBtn.addEventListener("click", (event) => {
-    event.stopPropagation();
-    minimize();
-  });
-
   recenterBtn.addEventListener("click", () => focusCurrentLocation());
   refreshBtn.addEventListener("click", () => {
     refresh().catch(() => {});
   });
 
+  layerSelect.addEventListener("change", () => {
+    if (layerSelect.value === CAMERA_MAP_BASEMAP_AUTO_ID) {
+      hasUserBasemapPreference = false;
+      clearBasemapPreference();
+      switchBasemap(getDefaultCameraMapBasemapId(), { persist: false });
+      return;
+    }
+    hasUserBasemapPreference = true;
+    switchBasemap(layerSelect.value);
+  });
+
   window.addEventListener("resize", resizeMap, { passive: true });
   document.addEventListener("fullscreenchange", onFullscreenChange);
+  startColorSchemeListener();
 
   if (button) {
     button.addEventListener("click", toggle);
