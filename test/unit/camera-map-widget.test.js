@@ -183,6 +183,32 @@ function chooseLayer(layerId) {
   document.querySelector(`.camera-map-layer-option[data-layer-id="${layerId}"]`).click();
 }
 
+function stubPanelRect(panel, { left = 20, top = 24, width = 520, height = 420 } = {}) {
+  panel.style.left = `${left}px`;
+  panel.style.top = `${top}px`;
+  panel.style.right = "auto";
+  panel.style.bottom = "auto";
+  panel.style.width = `${width}px`;
+  panel.style.height = `${height}px`;
+  panel.getBoundingClientRect = () => {
+    const nextWidth = Number.parseInt(panel.style.width, 10) || width;
+    const nextHeight = Number.parseInt(panel.style.height, 10) || height;
+    const nextLeft = Number.parseInt(panel.style.left, 10) || left;
+    const nextTop = Number.parseInt(panel.style.top, 10) || top;
+    return {
+      left: nextLeft,
+      top: nextTop,
+      right: nextLeft + nextWidth,
+      bottom: nextTop + nextHeight,
+      width: nextWidth,
+      height: nextHeight,
+      x: nextLeft,
+      y: nextTop,
+      toJSON() {},
+    };
+  };
+}
+
 function createColorSchemeMatchMedia(initialMatches = false) {
   let matches = initialMatches;
   const listeners = new Set();
@@ -290,6 +316,8 @@ describe("createCameraMapWidget", () => {
     expect(document.querySelector(".camera-map-layer-select")).toBeNull();
     expect(document.querySelector(".camera-map-layer-control").tagName).toBe("DIV");
     expect(document.querySelector(".camera-map-minimize")).toBeNull();
+    expect(document.querySelector(".camera-map-resize-handle").tagName).toBe("BUTTON");
+    expect(document.querySelector(".camera-map-resize-handle").getAttribute("aria-label")).toBe("cameraMapResize");
     expect(Array.from(document.querySelectorAll(".camera-map-actions .camera-map-action"))
       .map((button) => button.className)).toEqual([
       "camera-map-action camera-map-fullscreen",
@@ -313,6 +341,11 @@ describe("createCameraMapWidget", () => {
     expect(css).toContain("touch-action: manipulation;");
     expect(css).toContain("pointer-events: auto;");
     expect(css).toContain("-webkit-tap-highlight-color: transparent;");
+    expect(css).toContain(".camera-map-resize-handle");
+    expect(css).toContain("width: 48px;");
+    expect(css).toContain("height: 48px;");
+    expect(css).toContain("touch-action: none;");
+    expect(css).toContain("cursor: nwse-resize;");
   });
 
   it("opens the layer menu without relying on a native dropdown", () => {
@@ -746,6 +779,70 @@ describe("createCameraMapWidget", () => {
 
     widget.destroy();
     manager.destroy();
+  });
+
+  it("resizes from the bottom-right touch handle and updates the map", async () => {
+    const originalRequestAnimationFrame = window.requestAnimationFrame;
+    const originalCancelAnimationFrame = window.cancelAnimationFrame;
+    window.requestAnimationFrame = vi.fn((callback) => {
+      callback();
+      return 1;
+    });
+    window.cancelAnimationFrame = vi.fn();
+
+    let manager;
+    let widget;
+    try {
+      manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+      widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+      const map = await openAndLoad(widget);
+      const panel = document.querySelector(".camera-map-panel");
+      const resizeHandle = document.querySelector(".camera-map-resize-handle");
+      stubPanelRect(panel);
+      map.resize.mockClear();
+
+      resizeHandle.dispatchEvent(new PointerEvent("pointerdown", {
+        clientX: 520,
+        clientY: 420,
+        pointerId: 11,
+        pointerType: "touch",
+        bubbles: true,
+      }));
+      resizeHandle.dispatchEvent(new PointerEvent("pointermove", {
+        clientX: 610,
+        clientY: 500,
+        pointerId: 11,
+        pointerType: "touch",
+        bubbles: true,
+      }));
+
+      expect(panel.classList.contains("is-resizing")).toBe(true);
+
+      resizeHandle.dispatchEvent(new PointerEvent("pointerup", {
+        clientX: 610,
+        clientY: 500,
+        pointerId: 11,
+        pointerType: "touch",
+        bubbles: true,
+      }));
+
+      expect(Number.parseInt(panel.style.width, 10)).toBe(610);
+      expect(Number.parseInt(panel.style.height, 10)).toBe(500);
+      expect(panel.classList.contains("is-resizing")).toBe(false);
+      expect(document.documentElement.classList.contains("vb-floating-drag-active")).toBe(false);
+      expect(map.resize).toHaveBeenCalled();
+      expect(manager.getWindow("camera-map").bounds).toMatchObject({
+        left: 20,
+        top: 24,
+        width: 610,
+        height: 500,
+      });
+    } finally {
+      widget?.destroy();
+      manager?.destroy();
+      window.requestAnimationFrame = originalRequestAnimationFrame;
+      window.cancelAnimationFrame = originalCancelAnimationFrame;
+    }
   });
 
   it("formats explicit popup speed limits in km/h", async () => {

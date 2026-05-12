@@ -25,6 +25,11 @@
   flex-direction: column;
   font-family: var(--calc-font, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial);
   -webkit-tap-highlight-color: transparent;
+  resize: both;
+  max-width: calc(100vw - 16px);
+  max-width: calc(100dvw - 16px);
+  max-height: calc(100vh - 16px);
+  max-height: calc(100dvh - 16px);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -58,6 +63,7 @@
   border-radius: 0;
   border-color: transparent;
   box-shadow: none;
+  resize: none;
   z-index: var(--vb-z-floating-fullscreen, 1900);
 }
 
@@ -203,6 +209,7 @@
   bottom: calc(10px + env(safe-area-inset-bottom, 0px));
   align-items: flex-end;
   justify-content: space-between;
+  padding-right: 42px;
 }
 
 .camera-map-overlay-controls {
@@ -422,6 +429,57 @@
   flex: 0 1 auto;
   text-align: right;
   white-space: nowrap;
+}
+
+.camera-map-resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px 0 0 0;
+  background: transparent;
+  color: var(--camera-map-overlay-muted);
+  cursor: nwse-resize;
+  touch-action: none;
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.camera-map-resize-handle::before {
+  content: "";
+  position: absolute;
+  right: 9px;
+  bottom: 9px;
+  width: 18px;
+  height: 18px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  border-radius: 2px;
+  opacity: 0.74;
+}
+
+.camera-map-resize-handle:hover,
+.camera-map-resize-handle:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--camera-map-overlay-text) 8%, transparent);
+  color: var(--camera-map-overlay-text);
+}
+
+.camera-map-resize-handle:focus-visible {
+  box-shadow: inset 0 0 0 3px var(--camera-map-overlay-focus);
+}
+
+.camera-map-panel.is-fullscreen .camera-map-resize-handle,
+.camera-map-panel.is-window-fullscreen .camera-map-resize-handle {
+  display: none;
+}
+
+.camera-map-panel.is-resizing {
+  transition: none;
 }
 
 .camera-map-popup {

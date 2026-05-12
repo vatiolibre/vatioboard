@@ -39,6 +39,9 @@ const VISIBILITY_KEY = "camera_map_widget_visible_v1";
 const DRAG_THRESHOLD_PX = 6;
 const DEFAULT_CENTER = [0, 20];
 const DEFAULT_ZOOM = 1.5;
+const RESIZE_MARGIN_PX = 8;
+const RESIZE_MIN_WIDTH = 320;
+const RESIZE_MIN_HEIGHT = 320;
 
 function getEmptyFeatureCollection() {
   return {
@@ -204,6 +207,10 @@ function getInitialView(getCurrentPosition) {
 function pxToNumber(value, fallback = 0) {
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function clampNumber(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }
 
 function loadBasemapPreference() {
@@ -416,11 +423,19 @@ function buildPanel(selectedBasemapId, { autoBasemap = false } = {}) {
     privacy,
   ]);
   const body = createElement("div", { class: "camera-map-body" }, [mapEl, topOverlay, bottomOverlay]);
+  const resizeHandle = createElement("button", {
+    type: "button",
+    class: "camera-map-resize-handle",
+    "aria-label": t("cameraMapResize"),
+    title: t("cameraMapResize"),
+    "data-i18n-aria": "cameraMapResize",
+    "data-i18n-title": "cameraMapResize",
+  });
   const panel = createElement("section", {
     class: "camera-map-panel",
     "aria-label": t("cameraMapTitle"),
     "data-vb-floating-panel": "",
-  }, [header, body]);
+  }, [header, body, resizeHandle]);
   panel.hidden = true;
 
   return {
@@ -435,6 +450,7 @@ function buildPanel(selectedBasemapId, { autoBasemap = false } = {}) {
     layerButton,
     layerButtonText,
     layerMenu,
+    resizeHandle,
     attribution,
   };
 }
@@ -471,6 +487,7 @@ export function createCameraMapWidget(options = {}) {
     layerButton,
     layerButtonText,
     layerMenu,
+    resizeHandle,
     attribution,
   } = refs;
 
@@ -498,6 +515,15 @@ export function createCameraMapWidget(options = {}) {
   let basemapStyleVersion = 0;
   let suppressViewportRefresh = false;
   let resizeObserver = null;
+  let resizePointerId = null;
+  let resizeStartX = 0;
+  let resizeStartY = 0;
+  let resizeStartWidth = 0;
+  let resizeStartHeight = 0;
+  let resizeLastX = 0;
+  let resizeLastY = 0;
+  let resizeRafId = 0;
+  let resizeInProgress = false;
   let colorSchemeMediaQuery = null;
   let cleanupColorSchemeListener = () => {};
   let preFullscreenWidth = null;
@@ -521,9 +547,12 @@ export function createCameraMapWidget(options = {}) {
       // Position persistence is convenience only.
     }
     if (pos?.panel?.left && pos?.panel?.top) {
+      const bounds = getPanelBounds();
       shellManager.updateWindowBounds(CAMERA_MAP_WINDOW_ID, {
         left: parseFloat(pos.panel.left),
         top: parseFloat(pos.panel.top),
+        width: bounds.width,
+        height: bounds.height,
       }, {
         preserveSnap: Boolean(shellManager.getWindow(CAMERA_MAP_WINDOW_ID)?.snap),
       });
@@ -622,6 +651,88 @@ export function createCameraMapWidget(options = {}) {
     } catch {
       // Resize is best effort across synthetic test maps.
     }
+  }
+
+  function getPanelBounds() {
+    const rect = panel.getBoundingClientRect?.() || {};
+    const width = Math.round(rect.width || panel.offsetWidth || pxToNumber(panel.style.width, 720));
+    const height = Math.round(rect.height || panel.offsetHeight || pxToNumber(panel.style.height, 520));
+    const left = pxToNumber(panel.style.left, Number.isFinite(rect.left) ? rect.left : 0);
+    const top = pxToNumber(panel.style.top, Number.isFinite(rect.top) ? rect.top : 0);
+    return {
+      left,
+      top,
+      width,
+      height,
+    };
+  }
+
+  function clampResizeBounds(width, height, bounds = getPanelBounds()) {
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1024;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 768;
+    const maxWidth = Math.max(240, viewportWidth - bounds.left - RESIZE_MARGIN_PX);
+    const maxHeight = Math.max(240, viewportHeight - bounds.top - RESIZE_MARGIN_PX);
+    const minWidth = Math.min(RESIZE_MIN_WIDTH, maxWidth);
+    const minHeight = Math.min(RESIZE_MIN_HEIGHT, maxHeight);
+    return {
+      left: bounds.left,
+      top: bounds.top,
+      width: Math.round(clampNumber(width, minWidth, maxWidth)),
+      height: Math.round(clampNumber(height, minHeight, maxHeight)),
+    };
+  }
+
+  function applyPanelResize(width, height, { flush = false } = {}) {
+    if (isFullscreenActive()) return;
+    const bounds = clampResizeBounds(width, height);
+    panel.style.position = "fixed";
+    panel.style.left = `${Math.round(bounds.left)}px`;
+    panel.style.top = `${Math.round(bounds.top)}px`;
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
+    panel.style.width = `${bounds.width}px`;
+    panel.style.height = `${bounds.height}px`;
+    shellManager.updateWindowBounds(CAMERA_MAP_WINDOW_ID, bounds, { flush });
+    resizeMap();
+  }
+
+  function applyHandleResize() {
+    resizeRafId = 0;
+    if (!resizeInProgress || isFullscreenActive()) return;
+    const dx = resizeLastX - resizeStartX;
+    const dy = resizeLastY - resizeStartY;
+    applyPanelResize(resizeStartWidth + dx, resizeStartHeight + dy);
+  }
+
+  function scheduleHandleResize() {
+    if (resizeRafId) return;
+    resizeRafId = window.requestAnimationFrame?.(applyHandleResize) || window.setTimeout(applyHandleResize, 0);
+  }
+
+  function endHandleResize(event = null) {
+    if (event && resizePointerId !== null && event.pointerId !== resizePointerId) return;
+    if (resizeRafId) {
+      if (typeof window.cancelAnimationFrame === "function") {
+        window.cancelAnimationFrame(resizeRafId);
+      } else {
+        window.clearTimeout(resizeRafId);
+      }
+      resizeRafId = 0;
+      applyHandleResize();
+    }
+    if (!resizeInProgress) return;
+    resizeInProgress = false;
+    resizePointerId = null;
+    panel.classList.remove("is-resizing");
+    document.documentElement.classList.remove("vb-floating-drag-active");
+    const bounds = getPanelBounds();
+    shellManager.updateWindowBounds(CAMERA_MAP_WINDOW_ID, bounds, { flush: true });
+    resizeMap();
+  }
+
+  function resizePanelBy(deltaWidth, deltaHeight) {
+    const bounds = getPanelBounds();
+    applyPanelResize(bounds.width + deltaWidth, bounds.height + deltaHeight, { flush: true });
   }
 
   function readMapView() {
@@ -1228,6 +1339,7 @@ export function createCameraMapWidget(options = {}) {
     exitFullscreenBeforeHide({ restore: false });
     window.clearTimeout(refreshTimer);
     window.clearTimeout(fullscreenResizeTimer);
+    endHandleResize();
     window.removeEventListener("resize", resizeMap);
     document.removeEventListener("fullscreenchange", onFullscreenChange);
     document.removeEventListener("pointerdown", closeLayerMenuOnDocumentPointerDown, true);
@@ -1349,6 +1461,69 @@ export function createCameraMapWidget(options = {}) {
     } else if (event.key === "End") {
       event.preventDefault();
       getLayerOptionElements().at(-1)?.focus();
+    }
+  });
+
+  resizeHandle.addEventListener("pointerdown", (event) => {
+    if (isFullscreenActive()) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (shellManager.getWindow(CAMERA_MAP_WINDOW_ID)?.snap) {
+      shellManager.unsnapWindow?.(CAMERA_MAP_WINDOW_ID, { preserveSnap: false });
+    }
+    setLayerMenuOpen(false);
+
+    const bounds = getPanelBounds();
+    resizeInProgress = true;
+    resizePointerId = event.pointerId;
+    resizeStartX = resizeLastX = event.clientX;
+    resizeStartY = resizeLastY = event.clientY;
+    resizeStartWidth = bounds.width;
+    resizeStartHeight = bounds.height;
+    panel.classList.add("is-resizing");
+    document.documentElement.classList.add("vb-floating-drag-active");
+
+    try {
+      resizeHandle.setPointerCapture?.(resizePointerId);
+    } catch {
+      // Pointer capture is best effort on older Chromium builds.
+    }
+  }, { passive: false });
+
+  resizeHandle.addEventListener("pointermove", (event) => {
+    if (!resizeInProgress || event.pointerId !== resizePointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    resizeLastX = event.clientX;
+    resizeLastY = event.clientY;
+    scheduleHandleResize();
+  }, { passive: false });
+
+  resizeHandle.addEventListener("pointerup", (event) => {
+    if (event.pointerId !== resizePointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    endHandleResize(event);
+  });
+  resizeHandle.addEventListener("pointercancel", endHandleResize);
+  resizeHandle.addEventListener("lostpointercapture", endHandleResize);
+  resizeHandle.addEventListener("keydown", (event) => {
+    if (isFullscreenActive()) return;
+    const step = event.shiftKey ? 80 : 32;
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      resizePanelBy(step, 0);
+    } else if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      resizePanelBy(-step, 0);
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      resizePanelBy(0, step);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      resizePanelBy(0, -step);
     }
   });
 
