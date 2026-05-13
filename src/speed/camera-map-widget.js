@@ -15,6 +15,17 @@ import {
   createCameraMapDataSource,
 } from "./camera-map-data-source.js";
 import {
+  angularDifferenceDegrees,
+  bearingDegrees,
+  buildUserPositionFeature,
+  computeNavigationCameraUpdate,
+  createNavigationCameraState,
+  distanceMeters,
+  normalizeLivePosition,
+  shouldShowHeading,
+  shouldUseNavigationCamera,
+} from "./camera-map-navigation.js";
+import {
   CAMERA_MAP_BASEMAP_AUTO_ID,
   CAMERA_MAP_BASEMAP_STORAGE_KEY,
   CAMERA_MAP_BASEMAPS,
@@ -34,14 +45,25 @@ const CAMERA_SOURCE_ID = "camera-map-cameras";
 const CAMERA_CLUSTER_LAYER_ID = "camera-map-camera-clusters";
 const CAMERA_CLUSTER_COUNT_LAYER_ID = "camera-map-camera-cluster-count";
 const CAMERA_POINT_LAYER_ID = "camera-map-camera-points";
+const USER_POSITION_SOURCE_ID = "camera-map-user-position";
+const USER_POSITION_ACCURACY_LAYER_ID = "camera-map-user-accuracy";
+const USER_POSITION_GLOW_LAYER_ID = "camera-map-user-glow";
+const USER_POSITION_DOT_LAYER_ID = "camera-map-user-dot";
+const USER_POSITION_HEADING_LAYER_ID = "camera-map-user-heading-arrow";
 const POS_KEY = "camera_map_widget_pos_v1";
 const VISIBILITY_KEY = "camera_map_widget_visible_v1";
+const FOLLOW_STORAGE_KEY = "vatioboard.cameraMap.follow.v1";
+const ORIENTATION_STORAGE_KEY = "vatioboard.cameraMap.orientation.v1";
+const PROJECTION_STORAGE_KEY = "vatioboard.cameraMap.projection.v1";
 const DRAG_THRESHOLD_PX = 6;
 const DEFAULT_CENTER = [0, 20];
 const DEFAULT_ZOOM = 1.5;
 const RESIZE_MARGIN_PX = 8;
 const RESIZE_MIN_WIDTH = 320;
 const RESIZE_MIN_HEIGHT = 320;
+const POSITION_POLL_MS = 1000;
+const CAMERA_LOOKAHEAD_M = 1400;
+const CAMERA_AHEAD_ANGLE_DEGREES = 60;
 
 function getEmptyFeatureCollection() {
   return {
@@ -185,13 +207,22 @@ function getStatusMessage(status = {}) {
   if (status.status === "loading-cameras") return t("cameraMapLoadingCameras");
   if (status.status === "waiting-zoom") return t("cameraMapZoomIn");
   if (status.status === "offline-cached") return t("cameraMapOfflineCached");
+  if (status.status === "gps-live") return t("cameraMapGpsLive");
+  if (status.status === "gps-stale") return t("cameraMapGpsStale");
+  if (status.status === "gps-unavailable") return t("cameraMapGpsUnavailable");
+  if (status.status === "following") return t("cameraMapFollowing");
+  if (status.status === "follow-paused") return t("cameraMapFollowPaused");
+  if (status.status === "heading-unavailable") return t("cameraMapHeadingUnavailable");
+  if (status.status === "camera-ahead") return t("cameraMapCameraAhead", { distance: status.distance || "" });
   if (status.status === "ready") return t("cameraMapReady", { count: status.featureCount || 0 });
   if (status.status === "unavailable" || status.status === "error") return t("cameraMapUnavailable");
   return t("cameraMapLoading");
 }
 
 function getInitialView(getCurrentPosition) {
-  const currentPosition = normalizePosition(getCurrentPosition?.());
+  const currentPosition = normalizePosition(
+    getCurrentPosition?.() || window.__vatioboardSpeedGetCurrentPosition?.()
+  );
   if (currentPosition) {
     return {
       center: [currentPosition.longitude, currentPosition.latitude],
@@ -234,6 +265,51 @@ function clearBasemapPreference() {
     localStorage.removeItem(CAMERA_MAP_BASEMAP_STORAGE_KEY);
   } catch {
     // Basemap persistence is convenience only.
+  }
+}
+
+function loadBooleanPreference(key, fallback = false) {
+  try {
+    const value = localStorage.getItem(key);
+    if (value === "true") return true;
+    if (value === "false") return false;
+  } catch {
+    // Preference persistence is convenience only.
+  }
+  return fallback;
+}
+
+function hasStoredPreference(key) {
+  try {
+    return localStorage.getItem(key) !== null;
+  } catch {
+    return false;
+  }
+}
+
+function saveBooleanPreference(key, value) {
+  try {
+    localStorage.setItem(key, value ? "true" : "false");
+  } catch {
+    // Preference persistence is convenience only.
+  }
+}
+
+function loadEnumPreference(key, allowedValues, fallback) {
+  try {
+    const value = localStorage.getItem(key);
+    if (allowedValues.includes(value)) return value;
+  } catch {
+    // Preference persistence is convenience only.
+  }
+  return fallback;
+}
+
+function saveEnumPreference(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Preference persistence is convenience only.
   }
 }
 
@@ -356,17 +432,27 @@ function buildPanel(selectedBasemapId, { autoBasemap = false } = {}) {
 
   const recenterBtn = createElement("button", {
     type: "button",
-    class: "camera-map-toolbar-btn",
-    "aria-label": t("cameraMapRecenter"),
-    title: t("cameraMapRecenter"),
-    "data-i18n-aria": "cameraMapRecenter",
-    "data-i18n-title": "cameraMapRecenter",
+    class: "camera-map-toolbar-btn camera-map-follow-toggle",
+    "aria-label": t("cameraMapFollow"),
+    title: t("cameraMapFollow"),
+    "data-i18n-aria": "cameraMapFollow",
+    "data-i18n-title": "cameraMapFollow",
     html: IconGpsLab,
+  });
+
+  const orientationBtn = createElement("button", {
+    type: "button",
+    class: "camera-map-toolbar-btn camera-map-orientation-toggle",
+    "aria-label": t("cameraMapNorthUp"),
+    title: t("cameraMapNorthUp"),
+    "data-i18n-aria": "cameraMapNorthUp",
+    "data-i18n-title": "cameraMapNorthUp",
+    text: "N",
   });
 
   const refreshBtn = createElement("button", {
     type: "button",
-    class: "camera-map-toolbar-btn",
+    class: "camera-map-toolbar-btn camera-map-refresh",
     "aria-label": t("cameraMapRefreshArea"),
     title: t("cameraMapRefreshArea"),
     "data-i18n-aria": "cameraMapRefreshArea",
@@ -391,16 +477,21 @@ function buildPanel(selectedBasemapId, { autoBasemap = false } = {}) {
     layerButtonText,
     layerMenu,
   } = createBasemapLayerControl(selectedBasemapId, { auto: autoBasemap });
-  const overlayControls = createElement("div", { class: "camera-map-overlay-controls" }, [
+  const overlayControls = createElement("div", { class: "camera-map-overlay-controls camera-map-nav-controls" }, [
     recenterBtn,
+    orientationBtn,
     refreshBtn,
     layerControl,
   ]);
   const topOverlay = createElement("div", {
     class: "camera-map-overlay camera-map-overlay--top",
   }, [
-    overlayControls,
     statusEl,
+  ]);
+  const navOverlay = createElement("div", {
+    class: "camera-map-overlay camera-map-overlay--nav",
+  }, [
+    overlayControls,
   ]);
   const activeBasemap = getCameraMapBasemap(selectedBasemapId);
   const attribution = createElement("a", {
@@ -422,7 +513,7 @@ function buildPanel(selectedBasemapId, { autoBasemap = false } = {}) {
     attribution,
     privacy,
   ]);
-  const body = createElement("div", { class: "camera-map-body" }, [mapEl, topOverlay, bottomOverlay]);
+  const body = createElement("div", { class: "camera-map-body" }, [mapEl, topOverlay, navOverlay, bottomOverlay]);
   const resizeHandle = createElement("button", {
     type: "button",
     class: "camera-map-resize-handle",
@@ -444,6 +535,7 @@ function buildPanel(selectedBasemapId, { autoBasemap = false } = {}) {
     closeBtn,
     fullscreenBtn,
     recenterBtn,
+    orientationBtn,
     refreshBtn,
     statusEl,
     mapEl,
@@ -467,13 +559,27 @@ export function createCameraMapWidget(options = {}) {
     getCurrentPosition = null,
     getCameraDatabase = null,
     dataSource = null,
+    navigationDefaultMode = "auto",
+    autoEnableFollowFromSpeed = true,
+    autoFrameCamera = true,
   } = options;
 
   const storedBasemapId = loadBasemapPreference();
   let hasUserBasemapPreference = isCameraMapBasemapId(storedBasemapId);
+  let hasUserFollowPreference = hasStoredPreference(FOLLOW_STORAGE_KEY);
+  let hasUserOrientationPreference = hasStoredPreference(ORIENTATION_STORAGE_KEY);
   let activeBasemap = getCameraMapBasemap(hasUserBasemapPreference
     ? storedBasemapId
     : getDefaultCameraMapBasemapId());
+  const initialNavigationDefaultMode = ["drive", "browse", "auto"].includes(navigationDefaultMode)
+    ? navigationDefaultMode
+    : "auto";
+  let followEnabled = loadBooleanPreference(FOLLOW_STORAGE_KEY, false);
+  let followPaused = false;
+  let navigationMode = followEnabled ? "drive" : "browse";
+  let orientationMode = loadEnumPreference(ORIENTATION_STORAGE_KEY, ["north-up", "heading-up"], "north-up");
+  let projectionMode = loadEnumPreference(PROJECTION_STORAGE_KEY, ["auto", "flat", "globe"], "auto");
+  let activeProjection = null;
   const refs = buildPanel(activeBasemap.id, { autoBasemap: !hasUserBasemapPreference });
   const {
     panel,
@@ -481,6 +587,7 @@ export function createCameraMapWidget(options = {}) {
     closeBtn,
     fullscreenBtn,
     recenterBtn,
+    orientationBtn,
     refreshBtn,
     statusEl,
     mapEl,
@@ -507,9 +614,19 @@ export function createCameraMapWidget(options = {}) {
   let refreshController = null;
   let refreshTimer = 0;
   let fullscreenResizeTimer = 0;
+  let positionPollTimer = 0;
   let isNativeFullscreen = false;
   let isFallbackFullscreen = false;
   let currentCameraFeatures = [];
+  let cameraStatus = { status: "idle", featureCount: 0 };
+  let navigationStatus = null;
+  let previousLivePosition = null;
+  let currentLivePosition = null;
+  let lastHeadingState = null;
+  let currentUserPositionFeature = null;
+  let navigationCameraState = createNavigationCameraState();
+  let lastCameraCommand = null;
+  let basemapErrorCount = 0;
   let cameraLayerEventsBound = false;
   let basemapSwitchInProgress = false;
   let basemapStyleVersion = 0;
@@ -530,6 +647,9 @@ export function createCameraMapWidget(options = {}) {
   let preFullscreenHeight = null;
   let preFullscreenLeft = null;
   let preFullscreenTop = null;
+  let programmaticCameraMoveDepth = 0;
+  let suppressManualPauseUntilMs = 0;
+  let speedPositionListenerActive = false;
 
   function loadPos() {
     try {
@@ -577,10 +697,63 @@ export function createCameraMapWidget(options = {}) {
     }
   }
 
-  function updateStatus(nextStatus = cameraDataSource.getStatus?.()) {
-    const safeStatus = nextStatus || {};
+  function renderStatusChip() {
+    const navStatus = navigationStatus?.status || "";
+    const cameraDataStatus = cameraStatus?.status || "";
+    const highPriorityNav = navStatus === "camera-ahead"
+      || navStatus === "follow-paused"
+      || navStatus === "following"
+      || navStatus === "heading-unavailable"
+      || (followEnabled && (navStatus === "gps-stale" || navStatus === "gps-unavailable"));
+    const safeStatus = highPriorityNav
+      ? navigationStatus
+      : (cameraDataStatus === "offline-cached" ? cameraStatus : (navigationStatus || cameraStatus || {}));
     statusEl.textContent = getStatusMessage(safeStatus);
     statusEl.dataset.status = safeStatus.status || "idle";
+  }
+
+  function updateStatus(nextStatus = cameraDataSource.getStatus?.()) {
+    cameraStatus = nextStatus || {};
+    renderStatusChip();
+  }
+
+  function setNavigationStatus(nextStatus = null) {
+    navigationStatus = nextStatus;
+    renderStatusChip();
+  }
+
+  function updateNavigationButtons() {
+    recenterBtn.classList.toggle("is-active", followEnabled && !followPaused);
+    recenterBtn.classList.toggle("is-paused", followEnabled && followPaused);
+    recenterBtn.dataset.follow = followEnabled ? (followPaused ? "paused" : "on") : "off";
+    recenterBtn.dataset.navigationMode = navigationMode;
+    orientationBtn.dataset.mode = orientationMode;
+    orientationBtn.textContent = orientationMode === "heading-up" ? "HDG" : "N";
+    const orientationLabel = orientationMode === "heading-up" ? t("cameraMapHeadingUp") : t("cameraMapNorthUp");
+    orientationBtn.setAttribute("aria-label", orientationLabel);
+    orientationBtn.setAttribute("title", orientationLabel);
+    orientationBtn.dataset.i18nAria = orientationMode === "heading-up" ? "cameraMapHeadingUp" : "cameraMapNorthUp";
+    orientationBtn.dataset.i18nTitle = orientationMode === "heading-up" ? "cameraMapHeadingUp" : "cameraMapNorthUp";
+  }
+
+  function getMapSize() {
+    const panelBounds = getPanelBounds();
+    return {
+      width: Math.round(mapEl.clientWidth || panelBounds.width || 720),
+      height: Math.round(mapEl.clientHeight || Math.max(320, panelBounds.height - 52) || 520),
+    };
+  }
+
+  function runProgrammaticCameraMove(callback) {
+    programmaticCameraMoveDepth += 1;
+    suppressManualPauseUntilMs = Date.now() + 900;
+    try {
+      return callback();
+    } finally {
+      window.setTimeout(() => {
+        programmaticCameraMoveDepth = Math.max(0, programmaticCameraMoveDepth - 1);
+      }, 0);
+    }
   }
 
   function setLayerMenuOpen(open) {
@@ -979,6 +1152,115 @@ export function createCameraMapWidget(options = {}) {
     return Boolean(map?.getLayer?.(id));
   }
 
+  function getUserPositionFeatureCollection() {
+    return {
+      type: "FeatureCollection",
+      features: currentUserPositionFeature ? [currentUserPositionFeature] : [],
+    };
+  }
+
+  function addUserPositionLayers() {
+    if (!map) return;
+
+    if (!map.getSource?.(USER_POSITION_SOURCE_ID)) {
+      map.addSource?.(USER_POSITION_SOURCE_ID, {
+        type: "geojson",
+        data: getUserPositionFeatureCollection(),
+      });
+    }
+
+    if (!hasMapLayer(USER_POSITION_ACCURACY_LAYER_ID)) {
+      map.addLayer?.({
+        id: USER_POSITION_ACCURACY_LAYER_ID,
+        type: "circle",
+        source: USER_POSITION_SOURCE_ID,
+        paint: {
+          "circle-color": ["case", ["get", "stale"], "#f59e0b", "#22c55e"],
+          "circle-radius": [
+            "interpolate",
+            ["linear"],
+            ["coalesce", ["get", "accuracy"], 24],
+            0,
+            18,
+            50,
+            26,
+            200,
+            44,
+            1000,
+            72,
+          ],
+          "circle-opacity": ["case", ["get", "stale"], 0.12, 0.16],
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-opacity": 0.42,
+          "circle-stroke-width": 1,
+        },
+      });
+    }
+
+    if (!hasMapLayer(USER_POSITION_GLOW_LAYER_ID)) {
+      map.addLayer?.({
+        id: USER_POSITION_GLOW_LAYER_ID,
+        type: "circle",
+        source: USER_POSITION_SOURCE_ID,
+        paint: {
+          "circle-color": ["case", ["get", "stale"], "#f59e0b", "#22c55e"],
+          "circle-radius": ["case", ["get", "stale"], 18, 20],
+          "circle-opacity": ["case", ["get", "stale"], 0.34, 0.5],
+          "circle-blur": 0.45,
+        },
+      });
+    }
+
+    if (!hasMapLayer(USER_POSITION_DOT_LAYER_ID)) {
+      map.addLayer?.({
+        id: USER_POSITION_DOT_LAYER_ID,
+        type: "circle",
+        source: USER_POSITION_SOURCE_ID,
+        paint: {
+          "circle-color": ["case", ["get", "stale"], "#9ca3af", "#19e36a"],
+          "circle-radius": 8.5,
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 3,
+          "circle-opacity": ["case", ["get", "stale"], 0.72, 1],
+        },
+      });
+    }
+
+    if (!hasMapLayer(USER_POSITION_HEADING_LAYER_ID)) {
+      map.addLayer?.({
+        id: USER_POSITION_HEADING_LAYER_ID,
+        type: "symbol",
+        source: USER_POSITION_SOURCE_ID,
+        filter: ["==", ["get", "headingAvailable"], true],
+        layout: {
+          "text-field": "▲",
+          "text-size": 28,
+          "text-allow-overlap": true,
+          "text-ignore-placement": true,
+          "text-rotation-alignment": "map",
+          "text-pitch-alignment": "map",
+          "text-rotate": ["get", "heading"],
+          "text-offset": [0, -0.68],
+          "text-anchor": "center",
+        },
+        paint: {
+          "text-color": "#19e36a",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 2.2,
+          "text-opacity": ["case", ["get", "headingAvailable"], 1, 0],
+        },
+      });
+    }
+
+    map.getSource?.(USER_POSITION_SOURCE_ID)?.setData?.(getUserPositionFeatureCollection());
+  }
+
+  function setUserPositionFeature(feature) {
+    currentUserPositionFeature = feature;
+    const source = map?.getSource?.(USER_POSITION_SOURCE_ID);
+    source?.setData?.(getUserPositionFeatureCollection());
+  }
+
   function bindCameraLayerEvents() {
     if (cameraLayerEventsBound || !map?.on) return;
     cameraLayerEventsBound = true;
@@ -1092,12 +1374,238 @@ export function createCameraMapWidget(options = {}) {
     });
   }
 
+  function readCurrentPosition(now = Date.now()) {
+    const reader = getCurrentPosition || (() => window.__vatioboardSpeedGetCurrentPosition?.() || null);
+    return normalizeLivePosition(reader?.(), now);
+  }
+
+  function maybeEnableDriveNavigationFromCurrentPosition({ force = false } = {}) {
+    if (initialNavigationDefaultMode === "browse" && !force) return false;
+    if (!autoEnableFollowFromSpeed && !force) return false;
+    if (hasUserFollowPreference && !followEnabled && !force && initialNavigationDefaultMode !== "drive") return false;
+    const position = readCurrentPosition();
+    if (!position) {
+      if (initialNavigationDefaultMode === "drive" || force) setNavigationStatus({ status: "gps-unavailable" });
+      return false;
+    }
+    navigationMode = "drive";
+    followEnabled = true;
+    followPaused = false;
+    updateNavigationButtons();
+    return true;
+  }
+
+  function handleSpeedPositionEvent(event) {
+    if (destroyed || panel.hidden) return;
+    updatePosition(event.detail, { now: Date.now(), source: "speed-event" });
+  }
+
+  function startSpeedPositionEvents() {
+    if (speedPositionListenerActive) return;
+    speedPositionListenerActive = true;
+    window.addEventListener("vatioboard:speed-position", handleSpeedPositionEvent);
+  }
+
+  function stopSpeedPositionEvents() {
+    if (!speedPositionListenerActive) return;
+    speedPositionListenerActive = false;
+    window.removeEventListener("vatioboard:speed-position", handleSpeedPositionEvent);
+  }
+
+  function featurePosition(feature) {
+    const coordinates = feature?.geometry?.coordinates;
+    if (!Array.isArray(coordinates) || coordinates.length < 2) return null;
+    const longitude = Number(coordinates[0]);
+    const latitude = Number(coordinates[1]);
+    if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) return null;
+    return { longitude, latitude };
+  }
+
+  function cameraFeatureKey(feature, index = 0) {
+    return String(feature?.id || feature?.properties?.osmId || `${feature?.properties?.country || "camera"}:${index}`);
+  }
+
+  function findRelevantCamera(position, headingState) {
+    if (!position || currentCameraFeatures.length === 0) return null;
+    const origin = { latitude: position.latitude, longitude: position.longitude };
+    const heading = headingState?.headingAvailable ? headingState.heading : null;
+    const candidates = currentCameraFeatures
+      .map((feature, index) => {
+        const cameraPosition = featurePosition(feature);
+        if (!cameraPosition) return null;
+        const target = { latitude: cameraPosition.latitude, longitude: cameraPosition.longitude };
+        const distance = distanceMeters(origin, target);
+        const bearing = bearingDegrees(origin, target);
+        const headingDelta = heading === null ? Infinity : angularDifferenceDegrees(heading, bearing);
+        return {
+          feature,
+          index,
+          key: cameraFeatureKey(feature, index),
+          coordinates: [cameraPosition.longitude, cameraPosition.latitude],
+          distance,
+          bearing,
+          ahead: heading !== null && headingDelta <= CAMERA_AHEAD_ANGLE_DEGREES,
+          headingDelta,
+        };
+      })
+      .filter(Boolean)
+      .filter((candidate) => Number.isFinite(candidate.distance));
+
+    const ahead = candidates
+      .filter((candidate) => candidate.ahead && candidate.distance >= 25 && candidate.distance <= CAMERA_LOOKAHEAD_M)
+      .sort((a, b) => a.distance - b.distance)[0];
+    if (ahead) return ahead;
+
+    return candidates
+      .filter((candidate) => candidate.distance >= 25 && candidate.distance <= CAMERA_LOOKAHEAD_M)
+      .sort((a, b) => a.distance - b.distance)[0] || null;
+  }
+
+  function executeNavigationCameraCommand(command) {
+    if (!map || !command || command.method === "none") return command;
+    lastCameraCommand = command;
+    navigationCameraState = {
+      ...navigationCameraState,
+      latestBearingApplied: Number.isFinite(command.bearing) ? command.bearing : navigationCameraState.latestBearingApplied,
+      latestHeading: command.latestHeading ?? navigationCameraState.latestHeading,
+      headingAvailable: command.headingAvailable === true,
+      headingSource: command.headingSource || "none",
+      lastCameraCommandReason: command.reason || "following",
+      lastCommandAtMs: Date.now(),
+      lastCameraKey: command.relevantCameraKey || navigationCameraState.lastCameraKey,
+      lastCameraDistance: Number.isFinite(command.relevantCameraDistance)
+        ? command.relevantCameraDistance
+        : navigationCameraState.lastCameraDistance,
+    };
+
+    const movement = {
+      center: command.center,
+      zoom: command.zoom,
+      bearing: command.bearing,
+      pitch: command.pitch ?? 0,
+      offset: command.offset,
+      duration: command.duration,
+      essential: true,
+      ...(command.padding ? { padding: command.padding } : {}),
+    };
+
+    runProgrammaticCameraMove(() => {
+      if (command.method === "jumpTo" && map.jumpTo) {
+        map.jumpTo(movement);
+      } else if (map.easeTo) {
+        map.easeTo(movement);
+      } else if (map.jumpTo) {
+        map.jumpTo(movement);
+      }
+    });
+
+    if (command.reason === "heading-unavailable") {
+      setNavigationStatus({ status: "heading-unavailable" });
+    } else if (command.reason === "camera-ahead") {
+      setNavigationStatus({ status: "camera-ahead", distance: `${Math.round(command.relevantCameraDistance || 0)} m` });
+    } else {
+      setNavigationStatus({ status: "following" });
+    }
+
+    if (command.shouldRefreshViewport) queueRefresh();
+    return command;
+  }
+
+  function maybeAutoSelectHeadingUp(position, headingState) {
+    if (hasUserOrientationPreference || orientationMode === "heading-up") return;
+    if (navigationMode !== "drive" || !followEnabled || followPaused) return;
+    if (headingState?.headingAvailable !== true) return;
+    if ((position?.speedMs ?? 0) < 1.5) return;
+    orientationMode = "heading-up";
+    updateNavigationButtons();
+  }
+
+  function applyFollowCamera(position, headingState, { now = Date.now() } = {}) {
+    if (!map || currentUserPositionFeature?.properties?.stale) return null;
+    if (!shouldUseNavigationCamera({
+      followEnabled,
+      followPaused,
+      panelVisible: !panel.hidden,
+      mapReady,
+      position,
+      navigationMode,
+    })) return null;
+
+    const relevantCamera = autoFrameCamera ? findRelevantCamera(position, headingState) : null;
+    const command = computeNavigationCameraUpdate({
+      position,
+      headingState,
+      previousCameraState: navigationCameraState,
+      orientationMode,
+      navigationMode,
+      relevantCamera,
+      mapSize: getMapSize(),
+      currentZoom: map.getZoom?.(),
+      currentBearing: map.getBearing?.(),
+      currentPitch: map.getPitch?.(),
+      now,
+    });
+    return executeNavigationCameraCommand(command);
+  }
+
+  function updatePosition(input, { now = Date.now(), source = "manual" } = {}) {
+    const position = normalizeLivePosition(input === undefined ? readCurrentPosition(now) : input, now);
+    if (!position) {
+      if (followEnabled) setNavigationStatus({ status: "gps-unavailable" });
+      return null;
+    }
+
+    const headingState = shouldShowHeading(position, previousLivePosition, lastHeadingState, now);
+    if (headingState.headingAvailable) lastHeadingState = headingState;
+    const feature = buildUserPositionFeature(position, headingState, now);
+    previousLivePosition = currentLivePosition || position;
+    currentLivePosition = position;
+    setUserPositionFeature(feature);
+    maybeAutoSelectHeadingUp(position, headingState);
+
+    if (feature?.properties?.stale) {
+      setNavigationStatus({ status: "gps-stale" });
+      return feature;
+    }
+
+    if (followEnabled && !followPaused) {
+      applyFollowCamera(position, headingState, { now });
+    } else if (!navigationStatus || ["gps-stale", "gps-unavailable", "following", "heading-unavailable"].includes(navigationStatus.status)) {
+      setNavigationStatus({ status: "gps-live" });
+    }
+    return feature;
+  }
+
+  function applyProjection() {
+    if (!map?.setProjection) return;
+    const zoom = Number(map.getZoom?.());
+    let nextProjection = activeProjection || "mercator";
+    if (projectionMode === "globe") nextProjection = "globe";
+    else if (projectionMode === "flat") nextProjection = "mercator";
+    else if (Number.isFinite(zoom)) {
+      if (zoom <= 3.5) nextProjection = "globe";
+      else if (zoom >= 4.5) nextProjection = "mercator";
+    }
+    if (nextProjection === activeProjection) return;
+    activeProjection = nextProjection;
+    try {
+      map.setProjection(nextProjection);
+      addCameraLayers();
+      setCameraFeatures(currentCameraFeatures, { cache: false });
+      addUserPositionLayers();
+    } catch {
+      // Projection support varies by MapLibre build; navigation remains usable.
+    }
+  }
+
   function restoreCameraLayersAfterStyle(version, view) {
     if (destroyed || version !== basemapStyleVersion || !map) return;
     basemapSwitchInProgress = false;
     addCameraLayers();
     setCameraFeatures(currentCameraFeatures, { cache: false });
+    addUserPositionLayers();
     restoreMapView(view);
+    applyProjection();
     resizeMap();
   }
 
@@ -1120,6 +1628,7 @@ export function createCameraMapWidget(options = {}) {
     if (typeof map.setStyle !== "function") {
       addCameraLayers();
       setCameraFeatures(currentCameraFeatures, { cache: false });
+      addUserPositionLayers();
       resizeMap();
       return;
     }
@@ -1156,6 +1665,26 @@ export function createCameraMapWidget(options = {}) {
     refreshTimer = window.setTimeout(() => {
       refresh().catch(() => {});
     }, 220);
+  }
+
+  function stopPositionPolling() {
+    window.clearTimeout(positionPollTimer);
+    positionPollTimer = 0;
+  }
+
+  function schedulePositionPoll() {
+    if (destroyed || panel.hidden || positionPollTimer) return;
+    positionPollTimer = window.setTimeout(() => {
+      positionPollTimer = 0;
+      updatePosition(readCurrentPosition(), { now: Date.now(), source: "poll" });
+      schedulePositionPoll();
+    }, POSITION_POLL_MS);
+  }
+
+  function startPositionPolling() {
+    if (destroyed || panel.hidden) return;
+    updatePosition(readCurrentPosition(), { now: Date.now(), source: "poll" });
+    schedulePositionPoll();
   }
 
   async function initMap() {
@@ -1197,13 +1726,43 @@ export function createCameraMapWidget(options = {}) {
           }
           mapReady = true;
           addCameraLayers();
+          addUserPositionLayers();
+          applyProjection();
+          updatePosition(readCurrentPosition(), { now: Date.now(), source: "load" });
           resizeMap();
           refresh().catch(() => {});
           resolveReady();
         });
 
         map.on?.("moveend", queueRefresh);
-        map.on?.("zoomend", queueRefresh);
+        map.on?.("zoomend", () => {
+          applyProjection();
+          queueRefresh();
+        });
+        const pauseFollowForManualMove = () => {
+          if (programmaticCameraMoveDepth > 0 || Date.now() < suppressManualPauseUntilMs) return;
+          if (!followEnabled || followPaused) return;
+          followPaused = true;
+          navigationMode = "browse";
+          updateNavigationButtons();
+          setNavigationStatus({ status: "follow-paused" });
+        };
+        map.on?.("dragstart", pauseFollowForManualMove);
+        map.on?.("rotatestart", pauseFollowForManualMove);
+        map.on?.("pitchstart", pauseFollowForManualMove);
+        map.on?.("zoomstart", pauseFollowForManualMove);
+        map.on?.("error", () => {
+          basemapErrorCount += 1;
+          if (basemapErrorCount >= 3) {
+            updateStatus({
+              ...(cameraStatus || {}),
+              status: "offline-cached",
+              featureCount: currentCameraFeatures.length,
+              cacheHit: currentCameraFeatures.length > 0,
+              offline: true,
+            });
+          }
+        });
       } catch (error) {
         if (!destroyed) {
           updateStatus({ status: "unavailable", error });
@@ -1234,21 +1793,34 @@ export function createCameraMapWidget(options = {}) {
         zoom: map.getZoom?.() ?? 0,
         signal: refreshController.signal,
       });
-      setCameraFeatures(result?.features || []);
-      updateStatus(result?.status || cameraDataSource.getStatus?.());
+      const nextStatus = result?.status || cameraDataSource.getStatus?.();
+      const nextFeatures = Array.isArray(result?.features) ? result.features : [];
+      const shouldPreserveExisting = currentCameraFeatures.length > 0
+        && nextFeatures.length === 0
+        && (nextStatus?.offline || nextStatus?.status === "offline-cached" || nextStatus?.status === "unavailable");
+      if (!shouldPreserveExisting) {
+        setCameraFeatures(nextFeatures);
+      }
+      updateStatus(nextStatus);
       return result;
     } catch (error) {
       if (error?.name !== "AbortError") {
-        updateStatus({ status: "unavailable", error });
+        updateStatus({
+          status: currentCameraFeatures.length > 0 ? "offline-cached" : "unavailable",
+          featureCount: currentCameraFeatures.length,
+          cacheHit: currentCameraFeatures.length > 0,
+          offline: true,
+          error,
+        });
       }
       return null;
     }
   }
 
   function focusCurrentLocation() {
-    const currentPosition = normalizePosition(getCurrentPosition?.());
+    const currentPosition = readCurrentPosition();
     if (!currentPosition) {
-      updateStatus({ status: "unavailable" });
+      setNavigationStatus({ status: "gps-unavailable" });
       return false;
     }
 
@@ -1260,18 +1832,73 @@ export function createCameraMapWidget(options = {}) {
     const currentZoom = Number(map?.getZoom?.());
     const zoom = Number.isFinite(currentZoom) ? Math.max(currentZoom, 12) : 12;
 
-    if (map?.easeTo) {
-      map.easeTo({ center, zoom, duration: 450, essential: true });
-    } else if (map?.jumpTo) {
-      map.jumpTo({ center, zoom });
-    }
+    runProgrammaticCameraMove(() => {
+      if (map?.easeTo) {
+        map.easeTo({ center, zoom, duration: 450, essential: true });
+      } else if (map?.jumpTo) {
+        map.jumpTo({ center, zoom });
+      }
+    });
     queueRefresh();
     return true;
+  }
+
+  function resumeFollow() {
+    const position = readCurrentPosition();
+    if (!position) {
+      setNavigationStatus({ status: "gps-unavailable" });
+      return false;
+    }
+    navigationMode = "drive";
+    followEnabled = true;
+    followPaused = false;
+    hasUserFollowPreference = true;
+    saveBooleanPreference(FOLLOW_STORAGE_KEY, true);
+    updateNavigationButtons();
+    updatePosition(position, { now: Date.now(), source: "follow" });
+    return true;
+  }
+
+  function toggleFollow() {
+    if (!followEnabled || followPaused) {
+      resumeFollow();
+      return;
+    }
+    followEnabled = false;
+    followPaused = false;
+    navigationMode = "browse";
+    hasUserFollowPreference = true;
+    saveBooleanPreference(FOLLOW_STORAGE_KEY, false);
+    navigationCameraState = createNavigationCameraState();
+    updateNavigationButtons();
+    setNavigationStatus(currentLivePosition ? { status: "gps-live" } : null);
+  }
+
+  function cycleOrientationMode() {
+    orientationMode = orientationMode === "heading-up" ? "north-up" : "heading-up";
+    hasUserOrientationPreference = true;
+    saveEnumPreference(ORIENTATION_STORAGE_KEY, orientationMode);
+    updateNavigationButtons();
+    if (followEnabled && currentLivePosition) {
+      updatePosition(currentLivePosition, { now: Date.now(), source: "orientation" });
+    }
+  }
+
+  function setProjectionMode(nextMode) {
+    if (!["auto", "flat", "globe"].includes(nextMode)) return projectionMode;
+    projectionMode = nextMode;
+    saveEnumPreference(PROJECTION_STORAGE_KEY, projectionMode);
+    activeProjection = null;
+    applyProjection();
+    return projectionMode;
   }
 
   function showPanel({ persist = true } = {}) {
     panel.hidden = false;
     startResizeObserver();
+    maybeEnableDriveNavigationFromCurrentPosition();
+    startSpeedPositionEvents();
+    startPositionPolling();
     if (persist) saveVisibility(true);
     if (panel.style.left && panel.style.top) {
       clampElementToViewport(panel);
@@ -1292,6 +1919,8 @@ export function createCameraMapWidget(options = {}) {
     window.clearTimeout(refreshTimer);
     window.clearTimeout(fullscreenResizeTimer);
     stopResizeObserver();
+    stopPositionPolling();
+    stopSpeedPositionEvents();
     refreshController?.abort();
   }
 
@@ -1301,6 +1930,8 @@ export function createCameraMapWidget(options = {}) {
     window.clearTimeout(refreshTimer);
     window.clearTimeout(fullscreenResizeTimer);
     stopResizeObserver();
+    stopPositionPolling();
+    stopSpeedPositionEvents();
     refreshController?.abort();
   }
 
@@ -1339,6 +1970,8 @@ export function createCameraMapWidget(options = {}) {
     exitFullscreenBeforeHide({ restore: false });
     window.clearTimeout(refreshTimer);
     window.clearTimeout(fullscreenResizeTimer);
+    stopPositionPolling();
+    stopSpeedPositionEvents();
     endHandleResize();
     window.removeEventListener("resize", resizeMap);
     document.removeEventListener("fullscreenchange", onFullscreenChange);
@@ -1418,7 +2051,8 @@ export function createCameraMapWidget(options = {}) {
     toggleFullscreen().catch(() => {});
   });
 
-  recenterBtn.addEventListener("click", () => focusCurrentLocation());
+  recenterBtn.addEventListener("click", () => toggleFollow());
+  orientationBtn.addEventListener("click", () => cycleOrientationMode());
   refreshBtn.addEventListener("click", () => {
     refresh().catch(() => {});
   });
@@ -1537,6 +2171,7 @@ export function createCameraMapWidget(options = {}) {
   }
 
   mount.appendChild(panel);
+  updateNavigationButtons();
   updateStatus({ status: "idle" });
 
   if (floating) {
@@ -1560,5 +2195,23 @@ export function createCameraMapWidget(options = {}) {
     toggleFullscreen,
     refresh,
     focusCurrentLocation,
+    updatePosition,
+    setProjectionMode,
+    getNavigationState: () => ({
+      followEnabled,
+      followPaused,
+      navigationMode,
+      orientationMode,
+      projectionMode,
+      currentLivePosition,
+      position: currentLivePosition,
+      latestHeading: navigationCameraState.latestHeading ?? lastHeadingState?.heading ?? null,
+      headingAvailable: navigationCameraState.headingAvailable || lastHeadingState?.headingAvailable === true,
+      headingSource: navigationCameraState.headingSource || lastHeadingState?.source || "none",
+      latestBearingApplied: navigationCameraState.latestBearingApplied,
+      lastCameraCommandReason: navigationCameraState.lastCameraCommandReason,
+      lastCameraCommand,
+      heading: lastHeadingState,
+    }),
   };
 }

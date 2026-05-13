@@ -136,6 +136,17 @@
   color: var(--camera-map-overlay-text);
 }
 
+.camera-map-toolbar-btn.is-active {
+  border-color: color-mix(in srgb, var(--calc-accent, #10b981) 72%, var(--camera-map-overlay-border));
+  background: color-mix(in srgb, var(--calc-accent, #10b981) 22%, var(--camera-map-overlay-bg));
+  color: var(--camera-map-overlay-text);
+}
+
+.camera-map-toolbar-btn.is-paused {
+  border-color: color-mix(in srgb, #f59e0b 58%, var(--camera-map-overlay-border));
+  color: color-mix(in srgb, #f59e0b 80%, var(--camera-map-overlay-text));
+}
+
 .camera-map-action:focus-visible,
 .camera-map-toolbar-btn:focus-visible,
 .camera-map-layer-button:focus-visible,
@@ -202,7 +213,14 @@
   top: 10px;
   align-items: flex-start;
   justify-content: flex-start;
-  flex-wrap: wrap;
+}
+
+.camera-map-overlay--nav {
+  right: 10px;
+  bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  left: auto;
+  align-items: flex-end;
+  justify-content: flex-end;
 }
 
 .camera-map-overlay--bottom {
@@ -215,13 +233,26 @@
 .camera-map-overlay-controls {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
   pointer-events: auto;
 }
 
+.camera-map-nav-controls {
+  flex-direction: column;
+}
+
+.camera-map-overlay-controls .camera-map-toolbar-btn {
+  width: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 12px;
+  font-weight: 950;
+}
+
 .camera-map-layer-control {
   position: relative;
-  min-width: 134px;
+  min-width: 44px;
   color: var(--camera-map-overlay-muted);
   pointer-events: auto;
   touch-action: manipulation;
@@ -229,14 +260,14 @@
 
 .camera-map-layer-button {
   display: grid;
-  grid-template-columns: 17px minmax(70px, 1fr) 8px;
+  grid-template-columns: 1fr;
   align-items: center;
-  gap: 6px;
-  width: 100%;
-  min-width: 134px;
-  max-width: 174px;
-  min-height: 36px;
-  padding: 0 12px 0 11px;
+  justify-items: center;
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+  min-height: 44px;
+  padding: 0;
   border: 1px solid var(--camera-map-overlay-border);
   border-radius: 999px;
   background: var(--camera-map-overlay-bg);
@@ -253,15 +284,21 @@
   backdrop-filter: blur(12px);
 }
 
+.camera-map-overlay-controls .camera-map-layer-button {
+  min-height: 44px;
+}
+
 .camera-map-layer-button::after {
   content: "";
+  position: absolute;
+  right: 9px;
+  bottom: 9px;
   width: 6px;
   height: 6px;
   border: solid currentColor;
   border-width: 0 1.5px 1.5px 0;
-  transform: translateY(-2px) rotate(45deg);
+  transform: rotate(45deg);
   pointer-events: none;
-  justify-self: end;
 }
 
 .camera-map-layer-icon {
@@ -276,12 +313,17 @@
 }
 
 .camera-map-layer-button-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
   min-width: 0;
+  margin: -1px;
+  padding: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
+  clip: rect(0 0 0 0);
   white-space: nowrap;
+  border: 0;
   pointer-events: none;
-  text-align: left;
 }
 
 .camera-map-layer-button:hover,
@@ -291,7 +333,8 @@
 
 .camera-map-layer-menu {
   position: absolute;
-  top: calc(100% + 6px);
+  top: auto;
+  bottom: calc(100% + 6px);
   right: 0;
   z-index: 12;
   display: grid;
@@ -388,6 +431,18 @@
 
 .camera-map-status[data-status="ready"] {
   color: color-mix(in srgb, var(--calc-accent, #10b981) 76%, var(--calc-text, #111827));
+}
+
+.camera-map-status[data-status="gps-live"],
+.camera-map-status[data-status="following"],
+.camera-map-status[data-status="camera-ahead"] {
+  color: color-mix(in srgb, var(--calc-accent, #10b981) 82%, var(--calc-text, #111827));
+}
+
+.camera-map-status[data-status="follow-paused"],
+.camera-map-status[data-status="gps-stale"],
+.camera-map-status[data-status="heading-unavailable"] {
+  color: color-mix(in srgb, #f59e0b 82%, var(--calc-text, #111827));
 }
 
 .camera-map-status[data-status="offline-cached"],
@@ -542,12 +597,13 @@
   }
 
   .camera-map-layer-control {
-    min-width: 150px;
+    min-width: 44px;
   }
 
   .camera-map-layer-button {
-    min-width: 150px;
-    max-width: 168px;
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
     min-height: 44px;
     font-size: 16px;
   }
@@ -565,6 +621,12 @@
     left: 8px;
     right: 8px;
     gap: 6px;
+  }
+
+  .camera-map-overlay--nav {
+    right: 8px;
+    bottom: calc(68px + env(safe-area-inset-bottom, 0px));
+    left: auto;
   }
 
   .camera-map-overlay--top {

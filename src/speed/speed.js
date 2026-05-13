@@ -18,6 +18,10 @@ import {
 import { applyButtonIcon, getActiveToolsMenuList, initToolsMenu } from '../shared/tools-menu.js';
 import { integratePlayerWidget } from '../player/integrate-player-widget.js';
 import {
+  deriveHeadingFromPositions,
+  normalizeHeading,
+} from '../shared/geo-heading.js';
+import {
   hasConfiguredUnitPreferences,
   markUnitBootstrapManualSelection,
   maybeInitializeUnitsFromCountry,
@@ -122,6 +126,7 @@ const DRIVING_AUDIO_OPPORTUNISTIC_IGNORE_SELECTOR = [
   '[data-trap-alert="off"]',
   '[data-trap-sound="off"]',
 ].join(', ');
+const SPEED_HEADING_TTL_MS = 5000;
 
 function queryAll(root, selector) {
   return root?.querySelectorAll ? Array.from(root.querySelectorAll(selector)) : [];
@@ -313,11 +318,30 @@ function getCurrentSpeedPosition() {
   if (!Number.isFinite(state.lastKnownLatitude) || !Number.isFinite(state.lastKnownLongitude)) {
     return null;
   }
+  const now = Date.now();
+  const headingFresh = Number.isFinite(state.lastHeadingDeg)
+    && state.lastHeadingAtMs > 0
+    && now - state.lastHeadingAtMs <= SPEED_HEADING_TTL_MS;
+  const headingDeg = headingFresh ? state.lastHeadingDeg : null;
   return {
     latitude: state.lastKnownLatitude,
     longitude: state.lastKnownLongitude,
     accuracy: Number.isFinite(state.lastAccuracyM) ? state.lastAccuracyM : null,
+    speedMs: Number.isFinite(state.currentSpeedMs) ? state.currentSpeedMs : null,
+    heading: headingDeg,
+    headingDeg,
+    timestampMs: Number.isFinite(state.lastPositionTimestamp) ? state.lastPositionTimestamp : null,
+    receivedAtMs: Number.isFinite(state.lastFixAt) ? state.lastFixAt : null,
+    stale: !(state.lastFixAt > 0 && now - state.lastFixAt <= SPEED_GPS_STALE_MS),
   };
+}
+
+function dispatchSpeedPositionUpdate() {
+  if (typeof window === 'undefined') return;
+  if (window.__vatioboardSpeedGetCurrentPosition !== getCurrentSpeedPosition) return;
+  const detail = getCurrentSpeedPosition();
+  if (!detail) return;
+  window.dispatchEvent(new CustomEvent('vatioboard:speed-position', { detail }));
 }
 
 function openCameraMapPanel() {
@@ -422,6 +446,8 @@ const state = {
   lastAccuracyM: null,
   lastFixAt: 0,
   lastPositionTimestamp: null,
+  lastHeadingDeg: null,
+  lastHeadingAtMs: 0,
   lastKnownLatitude: null,
   lastKnownLongitude: null,
   renderFrameId: null,
@@ -2043,6 +2069,8 @@ function clearLiveFixState({ preserveContinuity = false } = {}) {
     state.lastPoint = null;
     state.lastTrapSoundedId = null;
     state.lastAccuracyM = null;
+    state.lastHeadingDeg = null;
+    state.lastHeadingAtMs = 0;
     wazeController.resetWazeEmbed({ clearFrame: true });
   }
   globeController.clearGlobePosition();
@@ -2074,6 +2102,8 @@ function resetTripData() {
   state.lastAccuracyM = null;
   state.lastFixAt = 0;
   state.lastPositionTimestamp = null;
+  state.lastHeadingDeg = null;
+  state.lastHeadingAtMs = 0;
 
   globeController.resetGlobe();
   hideNotice();
@@ -2155,7 +2185,15 @@ function handlePosition(position) {
     latitude: coords.latitude,
     longitude: coords.longitude,
     timestamp: normalizedTimestamp,
+    timestampMs: normalizedTimestamp,
   };
+  const previousPoint = state.lastPoint
+    ? {
+      latitude: state.lastPoint.latitude,
+      longitude: state.lastPoint.longitude,
+      timestampMs: state.lastPoint.timestamp,
+    }
+    : null;
 
   let speedMs = Number.isFinite(coords.speed) && coords.speed >= 0 ? coords.speed : null;
 
@@ -2193,6 +2231,20 @@ function handlePosition(position) {
   state.lastAccuracyM = currentAccuracyM;
   state.lastFixAt = Date.now();
   state.lastPositionTimestamp = normalizedTimestamp;
+  const gpsHeading = normalizeHeading(coords.heading);
+  const derivedHeading = gpsHeading === null && state.currentSpeedMs >= MIN_MOVING_SPEED_MS
+    ? deriveHeadingFromPositions(previousPoint, nextPoint)
+    : null;
+  const nextHeading = gpsHeading ?? derivedHeading;
+  if (nextHeading !== null) {
+    state.lastHeadingDeg = nextHeading;
+    state.lastHeadingAtMs = state.lastFixAt;
+  }
+  const freshSampleHeadingDeg = Number.isFinite(state.lastHeadingDeg)
+    && state.lastHeadingAtMs > 0
+    && state.lastFixAt - state.lastHeadingAtMs <= SPEED_HEADING_TTL_MS
+    ? state.lastHeadingDeg
+    : null;
 
   void ensureCameraArtifactsForPoint(coords.longitude, coords.latitude);
   updateNearestTrapState(coords.longitude, coords.latitude);
@@ -2226,7 +2278,7 @@ function handlePosition(position) {
         speedMs: state.currentSpeedMs,
         altitudeM: Number.isFinite(coords.altitude) ? coords.altitude : null,
         accuracyM: currentAccuracyM,
-        headingDeg: Number.isFinite(coords.heading) ? coords.heading : null,
+        headingDeg: freshSampleHeadingDeg,
         totalDistanceM: state.totalDistanceM,
       },
       {
@@ -2256,6 +2308,7 @@ function handlePosition(position) {
     state.statusKind = 'accuracy';
     state.statusParams = { accuracyM: coords.accuracy };
   }
+  dispatchSpeedPositionUpdate();
   audioController.maybeRecoverSuppressedBackgroundAudio();
 }
 
@@ -2644,6 +2697,9 @@ function destroySpeedRouteResources(route = activeSpeedRoute) {
   globeController = createInactiveGlobeController();
   wazeController = createInactiveWazeController();
   toolsMenu = createInactiveToolsMenu();
+  if (window.__vatioboardSpeedGetCurrentPosition === getCurrentSpeedPosition) {
+    delete window.__vatioboardSpeedGetCurrentPosition;
+  }
 
   if (activeSpeedRoute === route) {
     activeSpeedRoute = null;

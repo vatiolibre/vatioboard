@@ -189,9 +189,15 @@ Only use `CAMERA_ROAD_REFRESH_CACHE=1` when you deliberately want to re-download
 
 At runtime, Speed does not upload live location to fetch camera alerts. GPS matching happens locally: the app loads the manifest, chooses the current country or nearby tile from the GPS fix, tries IndexedDB first, and revalidates in the background. If the network drops during an update, the last good cached country/tile stays intact. With no cache and no network, the speedometer still works and trap alerts show an unavailable/offline camera database status.
 
-### Camera Map Basemaps
+### Camera Map
 
 The Camera Map points come from the same local/static camera artifacts described above. The browser does not call Overpass or any camera API from the map panel.
+
+The panel is designed as an in-car navigation display: the map takes nearly the whole window, controls are compact touch targets, and the live position is shown as a bright green vehicle puck. Native MapLibre zoom controls stay in the top-right, while Camera Map follow/orientation/layer controls are compact and offset so they remain usable on touch screens and fullscreen displays.
+
+Heading comes from browser GPS `coords.heading` when available and is exposed through the Speed shell as `headingDeg`; when GPS heading is missing, Camera Map can derive a bearing from meaningful recent movement. Follow mode keeps the vehicle visible and can frame a nearby relevant camera from the currently loaded camera features. The orientation control cycles between north-up and heading-up; heading-up falls back gracefully to north-up behavior when heading is unavailable or stale. Camera-aware framing uses only loaded local/static artifacts and does not fetch live camera APIs.
+
+Offline behavior is local-first. If a camera refresh fails, the map keeps the last successful camera GeoJSON in memory and reports cached/offline status rather than clearing the markers. Basemap tile failures can make the visual map incomplete, but they do not remove the local camera layers or the user-position puck.
 
 Basemap imagery and map tiles are loaded from third-party tile services and must keep visible attribution in the map. Included layers:
 

@@ -406,6 +406,7 @@ export function createCameraMapDataSource(options = {}) {
   const payloads = new Map();
   const tileManifests = new Map();
   const inflight = new Map();
+  let lastViewportResult = null;
 
   function emitStatus(patch = {}, requestId = activeRequestId) {
     if (destroyed || requestId !== activeRequestId) return;
@@ -835,6 +836,22 @@ export function createCameraMapDataSource(options = {}) {
       const uniqueSkipped = skippedCountries.filter((item, index, list) =>
         list.findIndex((candidate) => candidate.code === item.code && candidate.reason === item.reason) === index
       );
+      if (features.length === 0 && errors.length > 0 && lastViewportResult?.features?.length > 0) {
+        emitStatus({
+          status: "offline-cached",
+          featureCount: lastViewportResult.features.length,
+          loadedCountries: lastViewportResult.loadedCountries || [],
+          loadedTiles: lastViewportResult.loadedTiles || [],
+          skippedCountries: uniqueSkipped,
+          cacheHit: true,
+          offline: true,
+          error: errors[0] || null,
+        }, requestId);
+        return {
+          ...lastViewportResult,
+          status: getStatus(),
+        };
+      }
       const offline = errors.length > 0 && features.length > 0;
       const nextStatus = features.length > 0
         ? (offline ? "offline-cached" : "ready")
@@ -851,15 +868,33 @@ export function createCameraMapDataSource(options = {}) {
         error: errors[0] || null,
       }, requestId);
 
-      return {
+      const viewportResult = {
         features,
         loadedCountries: Array.from(loadedCountries),
         loadedTiles,
         skippedCountries: uniqueSkipped,
         status: getStatus(),
       };
+      if (features.length > 0) lastViewportResult = viewportResult;
+      return viewportResult;
     } catch (error) {
       if (isAbortError(error)) throw error;
+      if (features.length === 0 && lastViewportResult?.features?.length > 0) {
+        emitStatus({
+          status: "offline-cached",
+          featureCount: lastViewportResult.features.length,
+          loadedCountries: lastViewportResult.loadedCountries || [],
+          loadedTiles: lastViewportResult.loadedTiles || [],
+          skippedCountries,
+          cacheHit: true,
+          offline: true,
+          error,
+        }, requestId);
+        return {
+          ...lastViewportResult,
+          status: getStatus(),
+        };
+      }
       emitStatus({
         status: features.length > 0 ? "offline-cached" : "unavailable",
         featureCount: features.length,
@@ -896,6 +931,7 @@ export function createCameraMapDataSource(options = {}) {
     payloads.clear();
     tileManifests.clear();
     inflight.clear();
+    lastViewportResult = null;
     manifestPromise = null;
   }
 

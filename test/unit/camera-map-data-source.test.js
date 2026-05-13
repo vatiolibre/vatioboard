@@ -298,6 +298,36 @@ describe("camera map data source", () => {
     });
   });
 
+  it("returns last-known features instead of empty when a refresh fails", async () => {
+    const usPayload = countryPayload("us", [[-73.9857, 40.7484, 48, 1]]);
+    const coPayload = countryPayload("co", [[-74.1, 4.6, 50, 2]]);
+    const rootManifest = manifest({
+      us: countryEntry("us", usPayload.traps, { bbox: [-80, 35, -70, 45] }),
+      co: countryEntry("co", coPayload.traps, { bbox: [-80, -5, -66, 13] }),
+    });
+    let offline = false;
+    const fetchImpl = vi.fn(async (url) => {
+      if (String(url).endsWith("manifest.json")) return jsonResponse(rootManifest);
+      if (offline) throw new TypeError("offline");
+      if (String(url).endsWith("us.json")) return jsonResponse(usPayload);
+      if (String(url).endsWith("co.json")) return jsonResponse(coPayload);
+      return new Response("", { status: 404 });
+    });
+    const dataSource = createCameraMapDataSource({ store: createMemoryStore(), fetchImpl });
+
+    const first = await dataSource.loadViewport({ bounds: [-75, 39, -72, 42], zoom: 8 });
+    offline = true;
+    const second = await dataSource.loadViewport({ bounds: [-75, 3, -72, 5], zoom: 8 });
+
+    expect(first.features).toHaveLength(1);
+    expect(second.features).toEqual(first.features);
+    expect(second.status).toMatchObject({
+      status: "offline-cached",
+      cacheHit: true,
+      offline: true,
+    });
+  });
+
   it("abort signal prevents late updates", async () => {
     const statuses = [];
     const fetchImpl = vi.fn((url, { signal } = {}) => new Promise((resolve, reject) => {

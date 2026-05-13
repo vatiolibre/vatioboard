@@ -13,15 +13,35 @@ const mapLibreDouble = vi.hoisted(() => {
       this.sources = new Map();
       this.style = options.style || {};
       this.layers = [...(this.style.layers || [])];
+      this.zoom = 8;
+      this.bearing = 0;
+      this.pitch = 0;
       this.resize = vi.fn();
       this.remove = vi.fn();
-      this.easeTo = vi.fn();
-      this.jumpTo = vi.fn();
-      this.addControl = vi.fn();
-      this.getZoom = vi.fn(() => 8);
+      this.easeTo = vi.fn((camera = {}) => {
+        if (Number.isFinite(camera.zoom)) this.zoom = camera.zoom;
+        if (Number.isFinite(camera.bearing)) this.bearing = camera.bearing;
+        if (Number.isFinite(camera.pitch)) this.pitch = camera.pitch;
+      });
+      this.fitBounds = vi.fn();
+      this.rotateTo = vi.fn((bearing) => {
+        if (Number.isFinite(bearing)) this.bearing = bearing;
+      });
+      this.jumpTo = vi.fn((camera = {}) => {
+        if (Number.isFinite(camera.zoom)) this.zoom = camera.zoom;
+        if (Number.isFinite(camera.bearing)) this.bearing = camera.bearing;
+        if (Number.isFinite(camera.pitch)) this.pitch = camera.pitch;
+      });
+      this.controls = [];
+      this.addControl = vi.fn((control, position) => {
+        this.controls.push({ control, position });
+        return this;
+      });
+      this.projection = "mercator";
+      this.getZoom = vi.fn(() => this.zoom);
       this.getCenter = vi.fn(() => ({ lng: -73.9, lat: 40.7 }));
-      this.getBearing = vi.fn(() => 0);
-      this.getPitch = vi.fn(() => 0);
+      this.getBearing = vi.fn(() => this.bearing);
+      this.getPitch = vi.fn(() => this.pitch);
       this.getBounds = vi.fn(() => ({
         getWest: () => -75,
         getSouth: () => 39,
@@ -29,6 +49,11 @@ const mapLibreDouble = vi.hoisted(() => {
         getNorth: () => 42,
       }));
       this.getCanvas = vi.fn(() => ({ style: {} }));
+      this.setProjection = vi.fn((projection) => {
+        this.projection = typeof projection === "string" ? projection : projection?.type;
+        return this;
+      });
+      this.getProjection = vi.fn(() => ({ type: this.projection }));
       this.setStyle = vi.fn((style, options = {}) => {
         this.style = style;
         this.styleOptions = options;
@@ -172,6 +197,12 @@ function fireMapEvent(map, eventName) {
   for (const handler of [...(map.handlers[eventName] || [])]) handler();
 }
 
+function latestSourceData(map, sourceId) {
+  const source = map.getSource(sourceId);
+  const calls = source?.setData?.mock?.calls || [];
+  return calls.at(-1)?.[0] || source?.config?.data || null;
+}
+
 function getLayerButton() {
   return document.querySelector(".camera-map-layer-button");
 }
@@ -255,10 +286,24 @@ describe("createCameraMapWidget", () => {
     originalExitFullscreen = document.exitFullscreen;
     originalMatchMedia = globalThis.matchMedia;
     document.body.innerHTML = "";
+    delete window.__vatioboardSpeedGetCurrentPosition;
     localStorage.clear();
     mapLibreDouble.maps.length = 0;
     dataSourceDouble.instances.length = 0;
-    dataSourceDouble.loadViewport.mockClear();
+    dataSourceDouble.loadViewport.mockReset();
+    dataSourceDouble.loadViewport.mockImplementation(async () => ({
+      features: [
+        {
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [-73.9, 40.7] },
+          properties: { country: "us" },
+        },
+      ],
+      loadedCountries: ["us"],
+      loadedTiles: [],
+      skippedCountries: [],
+      status: { status: "ready", featureCount: 1 },
+    }));
     vi.resetModules();
     ({ loadMapLibre } = await import("../../src/shared/maplibre-loader.js"));
     ({ createShellWindowManager } = await import("../../src/shared/shell-window-manager.js"));
@@ -273,6 +318,7 @@ describe("createCameraMapWidget", () => {
     } else {
       globalThis.matchMedia = originalMatchMedia;
     }
+    delete window.__vatioboardSpeedGetCurrentPosition;
     vi.useRealTimers();
   });
 
@@ -300,15 +346,21 @@ describe("createCameraMapWidget", () => {
     const body = document.querySelector(".camera-map-body");
     const mapContainer = document.querySelector(".camera-map-container");
     const topOverlay = document.querySelector(".camera-map-overlay--top");
+    const navOverlay = document.querySelector(".camera-map-overlay--nav");
     const bottomOverlay = document.querySelector(".camera-map-overlay--bottom");
 
     expect(body).not.toBeNull();
     expect(mapContainer.parentElement).toBe(body);
     expect(topOverlay).not.toBeNull();
+    expect(navOverlay).not.toBeNull();
     expect(bottomOverlay).not.toBeNull();
     expect(topOverlay.contains(document.querySelector(".camera-map-status"))).toBe(true);
-    expect(topOverlay.contains(document.querySelector(".camera-map-layer-button"))).toBe(true);
-    expect(topOverlay.contains(document.querySelector(".camera-map-layer-menu"))).toBe(true);
+    expect(topOverlay.contains(document.querySelector(".camera-map-layer-control"))).toBe(false);
+    expect(navOverlay.contains(document.querySelector(".camera-map-follow-toggle"))).toBe(true);
+    expect(navOverlay.contains(document.querySelector(".camera-map-orientation-toggle"))).toBe(true);
+    expect(navOverlay.contains(document.querySelector(".camera-map-refresh"))).toBe(true);
+    expect(navOverlay.contains(document.querySelector(".camera-map-layer-button"))).toBe(true);
+    expect(navOverlay.contains(document.querySelector(".camera-map-layer-menu"))).toBe(true);
     expect(bottomOverlay.contains(document.querySelector(".camera-map-attribution"))).toBe(true);
     expect(bottomOverlay.contains(document.querySelector(".camera-map-privacy"))).toBe(true);
     expect(document.querySelector(".camera-map-toolbar")).toBeNull();
@@ -337,6 +389,12 @@ describe("createCameraMapWidget", () => {
     expect(css).toContain(".camera-map-layer-button");
     expect(css).toContain(".camera-map-layer-menu");
     expect(css).toContain(".camera-map-layer-option");
+    expect(css).toContain(".camera-map-overlay--nav");
+    expect(css).toContain(".camera-map-nav-controls");
+    expect(css).toContain("bottom: calc(72px + env(safe-area-inset-bottom, 0px));");
+    expect(css).toContain("width: 44px;");
+    expect(css).toContain("max-width: 44px;");
+    expect(css).toContain("clip: rect(0 0 0 0);");
     expect(css).toContain("min-height: 44px;");
     expect(css).toContain("touch-action: manipulation;");
     expect(css).toContain("pointer-events: auto;");
@@ -379,6 +437,18 @@ describe("createCameraMapWidget", () => {
     expect(layerButton.getAttribute("aria-expanded")).toBe("false");
     expect(layerMenu.hidden).toBe(true);
 
+    layerButton.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+
+    expect(layerButton.getAttribute("aria-expanded")).toBe("true");
+    expect(layerMenu.hidden).toBe(false);
+    expect(document.activeElement).toBe(layerMenu.querySelector(".camera-map-layer-option.is-active"));
+
+    layerMenu.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+
+    expect(layerButton.getAttribute("aria-expanded")).toBe("false");
+    expect(layerMenu.hidden).toBe(true);
+    expect(document.activeElement).toBe(layerButton);
+
     widget.destroy();
     manager.destroy();
   });
@@ -393,6 +463,23 @@ describe("createCameraMapWidget", () => {
 
     expect(loadMapLibre).toHaveBeenCalledTimes(1);
     expect(mapLibreDouble.maps).toHaveLength(1);
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("keeps app controls out of the MapLibre top-right navigation control area", async () => {
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+
+    expect(map.controls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ position: "top-right" }),
+    ]));
+    expect(document.querySelector(".camera-map-overlay--top .camera-map-layer-control")).toBeNull();
+    expect(document.querySelector(".camera-map-overlay--top .camera-map-follow-toggle")).toBeNull();
+    expect(document.querySelector(".camera-map-overlay--nav .camera-map-layer-control")).not.toBeNull();
+    expect(document.querySelector(".camera-map-overlay--nav .camera-map-follow-toggle")).not.toBeNull();
 
     widget.destroy();
     manager.destroy();
@@ -423,6 +510,444 @@ describe("createCameraMapWidget", () => {
     expect(map.options.style.sources["camera-map-basemap"].tiles[0]).toContain("basemaps.cartocdn.com");
     expect(map.options.style.sources["camera-map-basemap"].tiles[0]).toContain("voyager");
     expect(getLayerButton().dataset.layerId).toBe("auto");
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("adds user position source and layers after map load", async () => {
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+    const layerIds = map.layers.map((layer) => layer.id);
+
+    expect(map.getSource("camera-map-user-position")).not.toBeNull();
+    expect(layerIds).toEqual(expect.arrayContaining([
+      "camera-map-user-accuracy",
+      "camera-map-user-glow",
+      "camera-map-user-dot",
+      "camera-map-user-heading-arrow",
+    ]));
+    expect(map.getLayer("camera-map-user-heading-arrow").filter).toEqual(["==", ["get", "headingAvailable"], true]);
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("auto-enters drive navigation with the Speed provider when GPS is available", async () => {
+    window.__vatioboardSpeedGetCurrentPosition = () => ({
+      latitude: 40.7,
+      longitude: -73.9,
+      accuracy: 5,
+      headingDeg: 44,
+      speedMs: 7,
+      timestampMs: Date.now(),
+    });
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    try {
+      const map = await openAndLoad(widget);
+
+      expect(widget.getNavigationState()).toMatchObject({
+        followEnabled: true,
+        followPaused: false,
+        navigationMode: "drive",
+        orientationMode: "heading-up",
+      });
+      expect(map.easeTo).toHaveBeenCalledWith(expect.objectContaining({
+        center: [-73.9, 40.7],
+        bearing: 44,
+        offset: expect.arrayContaining([0, expect.any(Number)]),
+      }));
+      expect(widget.getNavigationState().latestBearingApplied).toBe(44);
+    } finally {
+      widget.destroy();
+      manager.destroy();
+      delete window.__vatioboardSpeedGetCurrentPosition;
+    }
+  });
+
+  it("stays in browse mode without a Speed provider and reports GPS unavailable on follow", async () => {
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    await openAndLoad(widget);
+
+    expect(widget.getNavigationState()).toMatchObject({
+      followEnabled: false,
+      navigationMode: "browse",
+    });
+
+    document.querySelector(".camera-map-follow-toggle").click();
+
+    expect(widget.getNavigationState()).toMatchObject({
+      followEnabled: false,
+      navigationMode: "browse",
+    });
+    expect(document.querySelector(".camera-map-status").dataset.status).toBe("gps-unavailable");
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("updates the user position source with GPS heading", async () => {
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+
+    const feature = widget.updatePosition({
+      latitude: 40.7,
+      longitude: -73.9,
+      heading: 92,
+      speedMs: 8,
+      timestampMs: 1000,
+    }, { now: 1000 });
+    const data = latestSourceData(map, "camera-map-user-position");
+
+    expect(feature.properties).toMatchObject({ heading: 92, headingAvailable: true, stale: false });
+    expect(data.features[0].geometry.coordinates).toEqual([-73.9, 40.7]);
+    expect(data.features[0].properties.heading).toBe(92);
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("accepts the Speed provider headingDeg shape for heading-up follow", async () => {
+    localStorage.setItem("vatioboard.cameraMap.follow.v1", "true");
+    localStorage.setItem("vatioboard.cameraMap.orientation.v1", "heading-up");
+    dataSourceDouble.loadViewport.mockImplementation(async () => ({
+      features: [],
+      loadedCountries: [],
+      loadedTiles: [],
+      skippedCountries: [],
+      status: { status: "ready", featureCount: 0 },
+    }));
+    let position = {
+      latitude: 40.7,
+      longitude: -73.9,
+      accuracy: 4,
+      headingDeg: 123,
+      speedMs: 8,
+      timestampMs: 1000,
+    };
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({
+      shellManager: manager,
+      restoreVisibility: false,
+      getCurrentPosition: () => position,
+    });
+    const map = await openAndLoad(widget);
+    map.easeTo.mockClear();
+
+    position = { ...position, latitude: 40.7005, timestampMs: 2000 };
+    widget.updatePosition(position, { now: 2000 });
+
+    expect(map.easeTo).toHaveBeenLastCalledWith(expect.objectContaining({ bearing: 123 }));
+    expect(latestSourceData(map, "camera-map-user-position").features[0].properties.heading).toBe(123);
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("uses the Speed shell global provider shape for heading-up follow", async () => {
+    localStorage.setItem("vatioboard.cameraMap.follow.v1", "true");
+    localStorage.setItem("vatioboard.cameraMap.orientation.v1", "heading-up");
+    dataSourceDouble.loadViewport.mockImplementation(async () => ({
+      features: [],
+      loadedCountries: [],
+      loadedTiles: [],
+      skippedCountries: [],
+      status: { status: "ready", featureCount: 0 },
+    }));
+    window.__vatioboardSpeedGetCurrentPosition = () => ({
+      latitude: 40.7,
+      longitude: -73.9,
+      accuracy: 5,
+      headingDeg: 123,
+      speedMs: 8,
+      timestampMs: 1000,
+    });
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    try {
+      const map = await openAndLoad(widget);
+      map.easeTo.mockClear();
+
+      widget.updatePosition(undefined, { now: 1000 });
+
+      expect(map.easeTo).toHaveBeenLastCalledWith(expect.objectContaining({ bearing: 123 }));
+    } finally {
+      widget.destroy();
+      manager.destroy();
+      delete window.__vatioboardSpeedGetCurrentPosition;
+    }
+  });
+
+  it("derives user heading from movement when GPS heading is missing", async () => {
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+
+    widget.updatePosition({ latitude: 40.7, longitude: -73.9, timestampMs: 1000, speedMs: 4 }, { now: 1000 });
+    widget.updatePosition({ latitude: 40.701, longitude: -73.9, timestampMs: 3000, speedMs: 4 }, { now: 3000 });
+    const data = latestSourceData(map, "camera-map-user-position");
+
+    expect(data.features[0].properties.headingAvailable).toBe(true);
+    expect(data.features[0].properties.heading).toBeCloseTo(0, 0);
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("hides the heading arrow when heading is unavailable", async () => {
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+
+    widget.updatePosition({ latitude: 40.7, longitude: -73.9, timestampMs: 1000, speedMs: 0 }, { now: 20000 });
+    const data = latestSourceData(map, "camera-map-user-position");
+
+    expect(data.features[0].properties.headingAvailable).toBe(false);
+    expect(map.getLayer("camera-map-user-heading-arrow").filter).toEqual(["==", ["get", "headingAvailable"], true]);
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("marks stale GPS and avoids follow movement", async () => {
+    localStorage.setItem("vatioboard.cameraMap.follow.v1", "true");
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+    map.easeTo.mockClear();
+
+    widget.updatePosition({ latitude: 40.7, longitude: -73.9, heading: 90, timestampMs: 1000 }, { now: 12000 });
+    const data = latestSourceData(map, "camera-map-user-position");
+
+    expect(data.features[0].properties.stale).toBe(true);
+    expect(document.querySelector(".camera-map-status").dataset.status).toBe("gps-stale");
+    expect(map.easeTo).not.toHaveBeenCalled();
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("follows in north-up and heading-up modes", async () => {
+    localStorage.setItem("vatioboard.cameraMap.follow.v1", "true");
+    localStorage.setItem("vatioboard.cameraMap.orientation.v1", "north-up");
+    dataSourceDouble.loadViewport.mockImplementation(async () => ({
+      features: [],
+      loadedCountries: [],
+      loadedTiles: [],
+      skippedCountries: [],
+      status: { status: "ready", featureCount: 0 },
+    }));
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+    map.easeTo.mockClear();
+
+    widget.updatePosition({ latitude: 40.7, longitude: -73.9, heading: 123, speedMs: 6, timestampMs: 1000 }, { now: 1000 });
+    expect(map.easeTo).toHaveBeenLastCalledWith(expect.objectContaining({ bearing: 0 }));
+
+    document.querySelector(".camera-map-orientation-toggle").click();
+    map.easeTo.mockClear();
+    widget.updatePosition({ latitude: 40.7005, longitude: -73.9, heading: 123, speedMs: 6, timestampMs: 2000 }, { now: 2000 });
+    expect(map.easeTo).toHaveBeenLastCalledWith(expect.objectContaining({ bearing: 123 }));
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("manual map movement pauses follow and the follow button resumes it", async () => {
+    let position = { latitude: 40.7, longitude: -73.9, heading: 10, speedMs: 5, timestampMs: 1000 };
+    localStorage.setItem("vatioboard.cameraMap.follow.v1", "true");
+    dataSourceDouble.loadViewport.mockImplementation(async () => ({
+      features: [],
+      loadedCountries: [],
+      loadedTiles: [],
+      skippedCountries: [],
+      status: { status: "ready", featureCount: 0 },
+    }));
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({
+      shellManager: manager,
+      restoreVisibility: false,
+      getCurrentPosition: () => position,
+    });
+    const map = await openAndLoad(widget);
+
+    await vi.advanceTimersByTimeAsync(901);
+    fireMapEvent(map, "dragstart");
+    expect(widget.getNavigationState()).toMatchObject({ followEnabled: true, followPaused: true, navigationMode: "browse" });
+    expect(document.querySelector(".camera-map-status").dataset.status).toBe("follow-paused");
+
+    map.easeTo.mockClear();
+    position = { latitude: 40.701, longitude: -73.9, heading: 15, speedMs: 5 };
+    document.querySelector(".camera-map-follow-toggle").click();
+
+    expect(widget.getNavigationState()).toMatchObject({ followEnabled: true, followPaused: false, navigationMode: "drive" });
+    expect(map.easeTo).toHaveBeenCalled();
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("does not pause follow from programmatic navigation camera movement", async () => {
+    localStorage.setItem("vatioboard.cameraMap.follow.v1", "true");
+    dataSourceDouble.loadViewport.mockImplementation(async () => ({
+      features: [],
+      loadedCountries: [],
+      loadedTiles: [],
+      skippedCountries: [],
+      status: { status: "ready", featureCount: 0 },
+    }));
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+
+    widget.updatePosition({ latitude: 40.7, longitude: -73.9, heading: 20, speedMs: 6, timestampMs: 1000 }, { now: 1000 });
+    fireMapEvent(map, "zoomstart");
+
+    expect(map.easeTo).toHaveBeenCalled();
+    expect(widget.getNavigationState()).toMatchObject({ followEnabled: true, followPaused: false, navigationMode: "drive" });
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("updates immediately from Speed position events without waiting for polling", async () => {
+    localStorage.setItem("vatioboard.cameraMap.follow.v1", "true");
+    localStorage.setItem("vatioboard.cameraMap.orientation.v1", "heading-up");
+    dataSourceDouble.loadViewport.mockImplementation(async () => ({
+      features: [],
+      loadedCountries: [],
+      loadedTiles: [],
+      skippedCountries: [],
+      status: { status: "ready", featureCount: 0 },
+    }));
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+    map.easeTo.mockClear();
+
+    window.dispatchEvent(new CustomEvent("vatioboard:speed-position", {
+      detail: {
+        latitude: 40.701,
+        longitude: -73.901,
+        headingDeg: 77,
+        speedMs: 9,
+        timestampMs: Date.now(),
+      },
+    }));
+
+    expect(map.easeTo).toHaveBeenCalledWith(expect.objectContaining({
+      center: [-73.901, 40.701],
+      bearing: 77,
+    }));
+    expect(latestSourceData(map, "camera-map-user-position").features[0].properties.heading).toBe(77);
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("keeps the previous heading-up bearing when heading becomes stale", async () => {
+    localStorage.setItem("vatioboard.cameraMap.follow.v1", "true");
+    localStorage.setItem("vatioboard.cameraMap.orientation.v1", "heading-up");
+    dataSourceDouble.loadViewport.mockImplementation(async () => ({
+      features: [],
+      loadedCountries: [],
+      loadedTiles: [],
+      skippedCountries: [],
+      status: { status: "ready", featureCount: 0 },
+    }));
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+
+    widget.updatePosition({ latitude: 40.7, longitude: -73.9, headingDeg: 90, speedMs: 8, timestampMs: 1000 }, { now: 1000 });
+    map.easeTo.mockClear();
+    widget.updatePosition({ latitude: 40.7001, longitude: -73.9, speedMs: 0, timestampMs: 7000 }, { now: 7000 });
+
+    expect(map.easeTo).toHaveBeenCalledWith(expect.objectContaining({ bearing: 90 }));
+    expect(widget.getNavigationState()).toMatchObject({
+      latestBearingApplied: 90,
+      lastCameraCommandReason: "heading-unavailable",
+    });
+    expect(document.querySelector(".camera-map-status").dataset.status).toBe("heading-unavailable");
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("frames the vehicle and a relevant camera without reloading data on GPS ticks", async () => {
+    localStorage.setItem("vatioboard.cameraMap.follow.v1", "true");
+    dataSourceDouble.loadViewport.mockImplementation(async () => ({
+      features: [
+        {
+          type: "Feature",
+          id: "ahead",
+          geometry: { type: "Point", coordinates: [-73.9, 40.705] },
+          properties: { country: "us" },
+        },
+      ],
+      loadedCountries: ["us"],
+      loadedTiles: [],
+      skippedCountries: [],
+      status: { status: "ready", featureCount: 1 },
+    }));
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+    await widget.refresh();
+    dataSourceDouble.loadViewport.mockClear();
+
+    widget.updatePosition({ latitude: 40.7, longitude: -73.9, heading: 0, speedMs: 8, timestampMs: 1000 }, { now: 1000 });
+
+    expect(map.fitBounds).not.toHaveBeenCalled();
+    expect(map.easeTo).toHaveBeenCalledWith(expect.objectContaining({
+      center: [-73.9, 40.7],
+      offset: expect.any(Array),
+    }));
+    expect(widget.getNavigationState().lastCameraCommandReason).toBe("camera-ahead");
+    expect(dataSourceDouble.loadViewport).not.toHaveBeenCalled();
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("preserves heading-up bearing while framing a relevant camera", async () => {
+    localStorage.setItem("vatioboard.cameraMap.follow.v1", "true");
+    localStorage.setItem("vatioboard.cameraMap.orientation.v1", "heading-up");
+    dataSourceDouble.loadViewport.mockImplementation(async () => ({
+      features: [
+        {
+          type: "Feature",
+          id: "east-ahead",
+          geometry: { type: "Point", coordinates: [-73.895, 40.7] },
+          properties: { country: "us" },
+        },
+      ],
+      loadedCountries: ["us"],
+      loadedTiles: [],
+      skippedCountries: [],
+      status: { status: "ready", featureCount: 1 },
+    }));
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+    await widget.refresh();
+    map.fitBounds.mockClear();
+    map.rotateTo.mockClear();
+    map.easeTo.mockClear();
+
+    widget.updatePosition({ latitude: 40.7, longitude: -73.9, headingDeg: 90, speedMs: 8, timestampMs: 1000 }, { now: 1000 });
+
+    expect(map.fitBounds).not.toHaveBeenCalled();
+    expect(map.rotateTo).not.toHaveBeenCalled();
+    expect(map.easeTo).toHaveBeenCalledWith(expect.objectContaining({
+      bearing: 90,
+      offset: expect.any(Array),
+    }));
 
     widget.destroy();
     manager.destroy();
@@ -552,6 +1077,38 @@ describe("createCameraMapWidget", () => {
     manager.destroy();
   });
 
+  it("close and minimize stop live position polling", async () => {
+    const getCurrentPosition = vi.fn(() => ({ latitude: 40.7, longitude: -73.9, timestampMs: Date.now() }));
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false, getCurrentPosition });
+    const map = await openAndLoad(widget);
+
+    getCurrentPosition.mockClear();
+    map.easeTo.mockClear();
+    widget.close();
+    window.dispatchEvent(new CustomEvent("vatioboard:speed-position", {
+      detail: { latitude: 40.8, longitude: -73.8, headingDeg: 90, speedMs: 8, timestampMs: Date.now() },
+    }));
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(getCurrentPosition).not.toHaveBeenCalled();
+    expect(map.easeTo).not.toHaveBeenCalled();
+
+    widget.open();
+    await flushTimers();
+    getCurrentPosition.mockClear();
+    map.easeTo.mockClear();
+    widget.minimize();
+    window.dispatchEvent(new CustomEvent("vatioboard:speed-position", {
+      detail: { latitude: 40.8, longitude: -73.8, headingDeg: 90, speedMs: 8, timestampMs: Date.now() },
+    }));
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(getCurrentPosition).not.toHaveBeenCalled();
+    expect(map.easeTo).not.toHaveBeenCalled();
+
+    widget.destroy();
+    manager.destroy();
+  });
+
   it("destroy removes the map and data source", async () => {
     const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
     const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
@@ -591,7 +1148,7 @@ describe("createCameraMapWidget", () => {
     });
     const map = await openAndLoad(widget);
 
-    document.querySelector(".camera-map-toolbar-btn").click();
+    document.querySelector(".camera-map-follow-toggle").click();
 
     expect(map.easeTo).toHaveBeenCalledWith(expect.objectContaining({
       center: [-73.9, 40.7],
@@ -613,6 +1170,25 @@ describe("createCameraMapWidget", () => {
       zoom: 8,
     }));
     expect(document.querySelector(".camera-map-status").textContent).toBe("cameraMapReady:1");
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("wires the compact refresh control to reload the current viewport", async () => {
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    await openAndLoad(widget);
+
+    dataSourceDouble.loadViewport.mockClear();
+    document.querySelector(".camera-map-refresh").click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(dataSourceDouble.loadViewport).toHaveBeenCalledWith(expect.objectContaining({
+      bounds: expect.any(Object),
+      zoom: 8,
+    }));
 
     widget.destroy();
     manager.destroy();
@@ -642,11 +1218,17 @@ describe("createCameraMapWidget", () => {
     await Promise.resolve();
 
     const cameraSource = map.getSource("camera-map-cameras");
+    const userSource = map.getSource("camera-map-user-position");
     const layerIds = map.layers.map((layer) => layer.id);
     const basemapIndex = layerIds.indexOf("camera-map-basemap-layer");
     const cameraLayerIds = layerIds.filter((id) => id.startsWith("camera-map-camera-"));
 
     expect(cameraSource).not.toBeNull();
+    expect(userSource).not.toBeNull();
+    expect(layerIds).toEqual(expect.arrayContaining([
+      "camera-map-user-dot",
+      "camera-map-user-heading-arrow",
+    ]));
     expect(cameraSource.setData).toHaveBeenCalledWith(expect.objectContaining({
       features: expect.arrayContaining([
         expect.objectContaining({
@@ -662,6 +1244,64 @@ describe("createCameraMapWidget", () => {
     expect(new Set(cameraLayerIds).size).toBe(cameraLayerIds.length);
     expect(cameraLayerIds.every((id) => layerIds.indexOf(id) > basemapIndex)).toBe(true);
     expect(dataSourceDouble.loadViewport).not.toHaveBeenCalled();
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("projection switching preserves camera and user-position layers", async () => {
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+    widget.updatePosition({ latitude: 40.7, longitude: -73.9, heading: 45, timestampMs: 1000 }, { now: 1000 });
+
+    widget.setProjectionMode("globe");
+
+    expect(map.setProjection).toHaveBeenCalledWith("globe");
+    expect(map.getSource("camera-map-cameras")).not.toBeNull();
+    expect(map.getSource("camera-map-user-position")).not.toBeNull();
+    expect(map.getLayer("camera-map-user-dot")).not.toBeNull();
+    expect(map.getLayer("camera-map-camera-points")).not.toBeNull();
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("preserves last camera features when refresh fails", async () => {
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+    const cameraSource = map.getSource("camera-map-cameras");
+    dataSourceDouble.loadViewport.mockRejectedValueOnce(new TypeError("offline"));
+
+    await widget.refresh();
+
+    const lastData = cameraSource.setData.mock.calls.at(-1)[0];
+    expect(lastData.features).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        geometry: expect.objectContaining({ coordinates: [-73.9, 40.7] }),
+      }),
+    ]));
+    expect(document.querySelector(".camera-map-status").dataset.status).toBe("offline-cached");
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("keeps driving navigation status ahead of offline camera cache status", async () => {
+    localStorage.setItem("vatioboard.cameraMap.follow.v1", "true");
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    await openAndLoad(widget);
+
+    widget.updatePosition({ latitude: 40.7, longitude: -73.9, heading: 45, speedMs: 6, timestampMs: 1000 }, { now: 1000 });
+    expect(document.querySelector(".camera-map-status").dataset.status).toBe("following");
+
+    dataSourceDouble.loadViewport.mockRejectedValueOnce(new TypeError("offline"));
+    await widget.refresh();
+
+    expect(document.querySelector(".camera-map-status").dataset.status).toBe("following");
+    expect(document.querySelector(".camera-map-status").textContent).toBe("cameraMapFollowing");
 
     widget.destroy();
     manager.destroy();

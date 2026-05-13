@@ -312,6 +312,84 @@ describe('speed.html smoke', () => {
     expect(window.getComputedStyle(loginButton).display).toBe('none');
   });
 
+  it('exposes live heading, speed, and timestamps through the Camera Map provider', async () => {
+    const speedPage = await import('../../src/speed/dev-harness.js');
+    await speedPage.initPromise;
+    await settleAsyncWork();
+
+    emitGeolocationSuccess({
+      timestamp: 1000,
+      coords: {
+        latitude: 40.7128,
+        longitude: -74.006,
+        speed: 8,
+        accuracy: 4,
+        heading: 123,
+      },
+    });
+    await settleAsyncWork();
+
+    expect(window.__vatioboardSpeedGetCurrentPosition?.()).toMatchObject({
+      latitude: 40.7128,
+      longitude: -74.006,
+      accuracy: 4,
+      speedMs: expect.any(Number),
+      heading: 123,
+      headingDeg: 123,
+      timestampMs: expect.any(Number),
+      receivedAtMs: expect.any(Number),
+      stale: false,
+    });
+  });
+
+  it('dispatches Speed position events for Camera Map navigation', async () => {
+    const speedPage = await import('../../src/speed/dev-harness.js');
+    await speedPage.initPromise;
+    await settleAsyncWork();
+    const eventSpy = vi.fn();
+    window.addEventListener('vatioboard:speed-position', eventSpy);
+
+    try {
+      emitGeolocationSuccess({
+        timestamp: 2000,
+        coords: {
+          latitude: 40.713,
+          longitude: -74.005,
+          speed: 9,
+          accuracy: 4,
+          heading: 88,
+        },
+      });
+      await settleAsyncWork();
+
+      expect(eventSpy).toHaveBeenCalled();
+      expect(eventSpy.mock.calls.at(-1)?.[0].detail).toMatchObject({
+        latitude: 40.713,
+        longitude: -74.005,
+        heading: 88,
+        headingDeg: 88,
+        speedMs: expect.any(Number),
+        receivedAtMs: expect.any(Number),
+      });
+    } finally {
+      window.removeEventListener('vatioboard:speed-position', eventSpy);
+    }
+  });
+
+  it('clears the Camera Map position provider when Speed unmounts', async () => {
+    const speedPage = await import('../../src/speed/dev-harness.js');
+    const speedModule = await import('../../src/speed/speed.js');
+    await speedPage.initPromise;
+    await settleAsyncWork();
+
+    expect(window.__vatioboardSpeedGetCurrentPosition).toBeTypeOf('function');
+
+    speedModule.unmountSpeedRoute();
+    await settleAsyncWork();
+
+    expect(window.__vatioboardSpeedGetCurrentPosition).toBeUndefined();
+  });
+
   it('starts and stops the recording keep-alive when route recording changes', async () => {
     const speedPage = await import('../../src/speed/dev-harness.js');
     const audioSystem = await import('../../src/shared/audio-system.js');
