@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildUserPositionFeature,
   computeNavigationCameraUpdate,
   createNavigationCameraState,
   deriveHeadingFromPositions,
@@ -33,6 +34,32 @@ describe("camera map navigation helpers", () => {
       heading: 5,
       timestampMs: 2000,
     });
+  });
+
+  it("uses receive time for Camera Map position freshness", () => {
+    const position = normalizeLivePosition({
+      latitude: 40.7,
+      longitude: -73.9,
+      headingDeg: 90,
+      speedMs: 8,
+      timestampMs: 1000,
+      receivedAtMs: 12000,
+    }, 12000);
+    const feature = buildUserPositionFeature(
+      position,
+      { heading: 90, headingAvailable: true, headingStale: false, source: "gps" },
+      12000
+    );
+
+    expect(feature.properties).toMatchObject({
+      stale: false,
+      headingAvailable: true,
+      timestampMs: 1000,
+      receivedAtMs: 12000,
+    });
+
+    expect(buildUserPositionFeature({ ...position, receivedAtMs: null, lastCallbackAtMs: 1000 }, {}, 12000)
+      .properties.stale).toBe(true);
   });
 
   it("derives heading from meaningful movement", () => {

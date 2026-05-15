@@ -682,6 +682,224 @@ describe("createCameraMapWidget", () => {
     }
   });
 
+  it("receives GPS from an injected app GPS service without Speed mounted", async () => {
+    localStorage.setItem("vatioboard.cameraMap.follow.v1", "true");
+    localStorage.setItem("vatioboard.cameraMap.orientation.v1", "heading-up");
+    const gpsListeners = new Set();
+    let gpsPosition = {
+      latitude: 40.7,
+      longitude: -73.9,
+      headingDeg: 30,
+      speedMs: 7,
+      timestampMs: Date.now(),
+    };
+    const gpsService = {
+      getCurrentPosition: vi.fn(() => gpsPosition),
+      startConsumer: vi.fn(() => vi.fn()),
+      subscribe: vi.fn((listener) => {
+        gpsListeners.add(listener);
+        listener({ normalized: gpsPosition });
+        return () => gpsListeners.delete(listener);
+      }),
+    };
+    dataSourceDouble.loadViewport.mockImplementation(async () => ({
+      features: [],
+      loadedCountries: [],
+      loadedTiles: [],
+      skippedCountries: [],
+      status: { status: "ready", featureCount: 0 },
+    }));
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false, gpsService });
+    const map = await openAndLoad(widget);
+    map.easeTo.mockClear();
+
+    gpsPosition = {
+      latitude: 40.701,
+      longitude: -73.901,
+      headingDeg: 66,
+      speedMs: 9,
+      timestampMs: Date.now(),
+    };
+    for (const listener of gpsListeners) listener({ normalized: gpsPosition });
+
+    expect(gpsService.startConsumer).toHaveBeenCalledWith("camera-map", expect.objectContaining({
+      enableHighAccuracy: true,
+    }));
+    expect(map.easeTo).toHaveBeenCalledWith(expect.objectContaining({
+      center: [-73.901, 40.701],
+      bearing: expect.closeTo(46.56, 2),
+    }));
+    expect(latestSourceData(map, "camera-map-user-position").features[0].geometry.coordinates).toEqual([-73.901, 40.701]);
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("updates from gpsService when normalized timestampMs is old but receivedAtMs is fresh", async () => {
+    vi.setSystemTime(12000);
+    localStorage.setItem("vatioboard.cameraMap.follow.v1", "true");
+    localStorage.setItem("vatioboard.cameraMap.orientation.v1", "heading-up");
+    const gpsListeners = new Set();
+    let gpsPosition = {
+      latitude: 40.7,
+      longitude: -73.9,
+      headingDeg: 90,
+      speedMs: 8,
+      timestampMs: 1000,
+      receivedAtMs: 12000,
+      lastCallbackAtMs: 12000,
+    };
+    const gpsService = {
+      getCurrentPosition: vi.fn(() => gpsPosition),
+      startConsumer: vi.fn(() => vi.fn()),
+      subscribe: vi.fn((listener) => {
+        gpsListeners.add(listener);
+        listener({ normalized: gpsPosition });
+        return () => gpsListeners.delete(listener);
+      }),
+    };
+    dataSourceDouble.loadViewport.mockImplementation(async () => ({
+      features: [],
+      loadedCountries: [],
+      loadedTiles: [],
+      skippedCountries: [],
+      status: { status: "ready", featureCount: 0 },
+    }));
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false, gpsService });
+    const map = await openAndLoad(widget);
+    map.easeTo.mockClear();
+
+    vi.setSystemTime(13000);
+    gpsPosition = {
+      latitude: 40.701,
+      longitude: -73.901,
+      headingDeg: 100,
+      speedMs: 8,
+      timestampMs: 1000,
+      receivedAtMs: 13000,
+      lastCallbackAtMs: 13000,
+    };
+    for (const listener of gpsListeners) listener({ normalized: gpsPosition });
+
+    const feature = latestSourceData(map, "camera-map-user-position").features[0];
+    expect(feature.properties.stale).toBe(false);
+    expect(feature.geometry.coordinates).toEqual([-73.901, 40.701]);
+    expect(document.querySelector(".camera-map-status").dataset.status).not.toBe("gps-stale");
+    expect(map.easeTo).toHaveBeenCalledWith(expect.objectContaining({
+      center: [-73.901, 40.701],
+    }));
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("handles vatioboard:gps-position detail as normalized and as { normalized }", async () => {
+    vi.setSystemTime(12000);
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+
+    window.dispatchEvent(new CustomEvent("vatioboard:gps-position", {
+      detail: {
+        latitude: 40.71,
+        longitude: -73.91,
+        headingDeg: 80,
+        speedMs: 7,
+        timestampMs: 1000,
+        receivedAtMs: 12000,
+      },
+    }));
+
+    let feature = latestSourceData(map, "camera-map-user-position").features[0];
+    expect(feature.geometry.coordinates).toEqual([-73.91, 40.71]);
+    expect(feature.properties.stale).toBe(false);
+
+    vi.setSystemTime(13000);
+    window.dispatchEvent(new CustomEvent("vatioboard:gps-position", {
+      detail: {
+        normalized: {
+          latitude: 40.72,
+          longitude: -73.92,
+          headingDeg: 95,
+          speedMs: 8,
+          timestampMs: 1000,
+          receivedAtMs: 13000,
+        },
+      },
+    }));
+
+    feature = latestSourceData(map, "camera-map-user-position").features[0];
+    expect(feature.geometry.coordinates).toEqual([-73.92, 40.72]);
+    expect(feature.properties.stale).toBe(false);
+    expect(document.querySelector(".camera-map-status").dataset.status).not.toBe("gps-stale");
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("does not leave heading-up follow GPS stale with Tesla-style timestamps", async () => {
+    vi.setSystemTime(12000);
+    localStorage.setItem("vatioboard.cameraMap.follow.v1", "true");
+    localStorage.setItem("vatioboard.cameraMap.orientation.v1", "heading-up");
+    dataSourceDouble.loadViewport.mockImplementation(async () => ({
+      features: [],
+      loadedCountries: [],
+      loadedTiles: [],
+      skippedCountries: [],
+      status: { status: "ready", featureCount: 0 },
+    }));
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+    map.easeTo.mockClear();
+
+    const feature = widget.updatePosition({
+      latitude: 40.7,
+      longitude: -73.9,
+      headingDeg: 90,
+      speedMs: 8,
+      timestampMs: 1000,
+      receivedAtMs: 12000,
+    }, { now: 12000, source: "test" });
+
+    expect(feature.properties.stale).toBe(false);
+    expect(document.querySelector(".camera-map-status").dataset.status).toBe("following");
+    expect(map.easeTo).toHaveBeenCalledWith(expect.objectContaining({
+      center: [-73.9, 40.7],
+      bearing: 90,
+    }));
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("keeps the camera-map GPS consumer active while the panel is open", async () => {
+    const stopConsumer = vi.fn();
+    const gpsService = {
+      getCurrentPosition: vi.fn(() => null),
+      startConsumer: vi.fn(() => stopConsumer),
+      subscribe: vi.fn(() => vi.fn()),
+    };
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false, gpsService });
+    await openAndLoad(widget);
+
+    expect(gpsService.startConsumer).toHaveBeenCalledWith("camera-map", expect.objectContaining({
+      enableHighAccuracy: true,
+      reason: "camera-map-open",
+    }));
+    expect(stopConsumer).not.toHaveBeenCalled();
+
+    widget.close();
+
+    expect(stopConsumer).toHaveBeenCalledTimes(1);
+
+    widget.destroy();
+    manager.destroy();
+  });
+
   it("derives user heading from movement when GPS heading is missing", async () => {
     const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
     const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });

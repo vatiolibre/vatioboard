@@ -64,6 +64,7 @@ const RESIZE_MIN_HEIGHT = 320;
 const POSITION_POLL_MS = 1000;
 const CAMERA_LOOKAHEAD_M = 1400;
 const CAMERA_AHEAD_ANGLE_DEGREES = 60;
+const GPS_DEBUG_STORAGE_KEY = "vatioboard.debug.gps";
 
 function getEmptyFeatureCollection() {
   return {
@@ -82,6 +83,19 @@ function createElement(tagName, attributes = {}, children = []) {
   }
   element.append(...children.filter(Boolean));
   return element;
+}
+
+function isGpsDebugEnabled() {
+  try {
+    return localStorage.getItem(GPS_DEBUG_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function debugCameraGps(label, payload = {}) {
+  if (!isGpsDebugEnabled() || typeof console === "undefined" || typeof console.debug !== "function") return;
+  console.debug(`[vatioboard:camera-map:gps] ${label}`, payload);
 }
 
 function normalizePosition(value) {
@@ -219,9 +233,12 @@ function getStatusMessage(status = {}) {
   return t("cameraMapLoading");
 }
 
-function getInitialView(getCurrentPosition) {
+function getInitialView({ gpsService = null, getCurrentPosition = null } = {}) {
   const currentPosition = normalizePosition(
-    getCurrentPosition?.() || window.__vatioboardSpeedGetCurrentPosition?.()
+    gpsService?.getCurrentPosition?.()
+      || getCurrentPosition?.()
+      || window.__vatioboardGpsGetCurrentPosition?.()
+      || window.__vatioboardSpeedGetCurrentPosition?.()
   );
   if (currentPosition) {
     return {
@@ -556,6 +573,7 @@ export function createCameraMapWidget(options = {}) {
     persistVisibility = false,
     visibilityKey = VISIBILITY_KEY,
     shellManager = getDefaultShellWindowManager(),
+    gpsService = null,
     getCurrentPosition = null,
     getCameraDatabase = null,
     dataSource = null,
@@ -650,6 +668,8 @@ export function createCameraMapWidget(options = {}) {
   let programmaticCameraMoveDepth = 0;
   let suppressManualPauseUntilMs = 0;
   let speedPositionListenerActive = false;
+  let gpsConsumerCleanup = null;
+  let gpsSnapshotUnsubscribe = null;
 
   function loadPos() {
     try {
@@ -1375,7 +1395,13 @@ export function createCameraMapWidget(options = {}) {
   }
 
   function readCurrentPosition(now = Date.now()) {
-    const reader = getCurrentPosition || (() => window.__vatioboardSpeedGetCurrentPosition?.() || null);
+    const servicePosition = gpsService?.getCurrentPosition?.();
+    if (servicePosition) return normalizeLivePosition(servicePosition, now);
+    const reader = getCurrentPosition || (() => (
+      window.__vatioboardGpsGetCurrentPosition?.()
+      || window.__vatioboardSpeedGetCurrentPosition?.()
+      || null
+    ));
     return normalizeLivePosition(reader?.(), now);
   }
 
@@ -1397,19 +1423,37 @@ export function createCameraMapWidget(options = {}) {
 
   function handleSpeedPositionEvent(event) {
     if (destroyed || panel.hidden) return;
-    updatePosition(event.detail, { now: Date.now(), source: "speed-event" });
+    const detail = event.detail?.normalized || event.detail;
+    updatePosition(detail, {
+      now: Date.now(),
+      source: event.type === "vatioboard:gps-position" ? "gps-event" : "speed-event",
+    });
   }
 
   function startSpeedPositionEvents() {
     if (speedPositionListenerActive) return;
     speedPositionListenerActive = true;
+    gpsConsumerCleanup = gpsService?.startConsumer?.("camera-map", {
+      enableHighAccuracy: true,
+      reason: "camera-map-open",
+    }) || null;
+    gpsSnapshotUnsubscribe = gpsService?.subscribe?.((snapshot) => {
+      if (destroyed || panel.hidden || !snapshot?.normalized) return;
+      updatePosition(snapshot.normalized, { now: Date.now(), source: "gps-service" });
+    }) || null;
+    window.addEventListener("vatioboard:gps-position", handleSpeedPositionEvent);
     window.addEventListener("vatioboard:speed-position", handleSpeedPositionEvent);
   }
 
   function stopSpeedPositionEvents() {
     if (!speedPositionListenerActive) return;
     speedPositionListenerActive = false;
+    window.removeEventListener("vatioboard:gps-position", handleSpeedPositionEvent);
     window.removeEventListener("vatioboard:speed-position", handleSpeedPositionEvent);
+    gpsSnapshotUnsubscribe?.();
+    gpsSnapshotUnsubscribe = null;
+    gpsConsumerCleanup?.();
+    gpsConsumerCleanup = null;
   }
 
   function featurePosition(feature) {
@@ -1552,6 +1596,12 @@ export function createCameraMapWidget(options = {}) {
     const position = normalizeLivePosition(input === undefined ? readCurrentPosition(now) : input, now);
     if (!position) {
       if (followEnabled) setNavigationStatus({ status: "gps-unavailable" });
+      debugCameraGps("position-rejected", {
+        source,
+        input,
+        followEnabled,
+        followPaused,
+      });
       return null;
     }
 
@@ -1562,6 +1612,23 @@ export function createCameraMapWidget(options = {}) {
     currentLivePosition = position;
     setUserPositionFeature(feature);
     maybeAutoSelectHeadingUp(position, headingState);
+    debugCameraGps("position-update", {
+      source,
+      latitude: position.latitude,
+      longitude: position.longitude,
+      timestampMs: position.timestampMs,
+      receivedAtMs: position.receivedAtMs,
+      lastCallbackAtMs: position.lastCallbackAtMs,
+      freshnessTimestampMs: position.freshnessTimestampMs,
+      stale: feature?.properties?.stale ?? null,
+      heading: headingState.heading,
+      headingAvailable: headingState.headingAvailable,
+      speed: position.speedMs,
+      followEnabled,
+      followPaused,
+      navigationMode,
+      orientationMode,
+    });
 
     if (feature?.properties?.stale) {
       setNavigationStatus({ status: "gps-stale" });
@@ -1705,7 +1772,7 @@ export function createCameraMapWidget(options = {}) {
           return;
         }
 
-        const initialView = getInitialView(getCurrentPosition);
+        const initialView = getInitialView({ gpsService, getCurrentPosition });
         map = new maplibregl.Map({
           container: mapEl,
           antialias: true,

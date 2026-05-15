@@ -16,7 +16,11 @@ export function getFloatingTools() {
   return window[GLOBAL_TOOLS_KEY] || null;
 }
 
-export function initFloatingTools({ mount = document.body, shellManager = getDefaultShellWindowManager({ root: mount }) } = {}) {
+export function initFloatingTools({
+  mount = document.body,
+  shellManager = getDefaultShellWindowManager({ root: mount }),
+  gpsService = window.__vatioboardGpsStore || null,
+} = {}) {
   const existing = getFloatingTools();
   const existingCalculator = existing?.shellManager?.getWindow?.("calculator");
   if (existingCalculator?.element?.isConnected) return existing;
@@ -49,7 +53,10 @@ export function initFloatingTools({ mount = document.body, shellManager = getDef
     restoreVisibility: true,
     visibilityKey: CAMERA_MAP_VISIBILITY_KEY,
     shellManager,
-    getCurrentPosition: () => window.__vatioboardSpeedGetCurrentPosition?.() || null,
+    gpsService,
+    getCurrentPosition: () => window.__vatioboardGpsGetCurrentPosition?.()
+      || window.__vatioboardSpeedGetCurrentPosition?.()
+      || null,
   });
 
   const tools = {

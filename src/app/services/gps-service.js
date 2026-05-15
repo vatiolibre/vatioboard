@@ -1,8 +1,26 @@
+import {
+  deriveHeadingFromPositions,
+  normalizeHeading,
+} from "../../shared/geo-heading.js";
+
 const STORAGE_KEY = "vatioboard.gps_service.snapshot.v1";
+const POSITION_STALE_MS = 10000;
+const GPS_TIMESTAMP_MAX_SKEW_MS = 60000;
+const MIN_VALID_WALL_CLOCK_MS = 946684800000;
+const HIGH_ACCURACY_WATCH_TIMEOUT_MS = 20000;
+const DEFAULT_WATCH_TIMEOUT_MS = 15000;
+const MIN_DERIVED_HEADING_SPEED_MS = 1.5;
+const GPS_DEBUG_STORAGE_KEY = "vatioboard.debug.gps";
 
 function saveSnapshot(snapshot) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      status: snapshot.status,
+      lastPosition: snapshot.lastPosition,
+      normalized: snapshot.normalized,
+      lastError: snapshot.lastError,
+      lastCallbackAtMs: snapshot.lastCallbackAtMs,
+    }));
   } catch {
     // Best-effort resume hint only.
   }
@@ -17,11 +35,34 @@ function readSnapshot() {
   }
 }
 
+function isFiniteNumber(value) {
+  return getFiniteNumber(value) !== null;
+}
+
+function getFiniteNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isGpsDebugEnabled() {
+  try {
+    return localStorage.getItem(GPS_DEBUG_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function debugGps(label, payload = {}) {
+  if (!isGpsDebugEnabled() || typeof console === "undefined" || typeof console.debug !== "function") return;
+  console.debug(`[vatioboard:gps] ${label}`, payload);
+}
+
 function clonePosition(position) {
   if (!position?.coords) return position;
 
   return {
-    timestamp: position.timestamp || Date.now(),
+    timestamp: isFiniteNumber(position.timestamp) ? Number(position.timestamp) : null,
     coords: {
       latitude: position.coords.latitude,
       longitude: position.coords.longitude,
@@ -36,17 +77,96 @@ function clonePosition(position) {
 
 export function createGpsService({ geolocation = navigator.geolocation } = {}) {
   const subscribers = new Map();
+  const consumers = new Map();
   const listeners = new Set();
-  const nativeWatchPosition = geolocation?.watchPosition?.bind(geolocation);
-  const nativeClearWatch = geolocation?.clearWatch?.bind(geolocation);
+  const originalWatchPosition = geolocation?.watchPosition;
+  const originalClearWatch = geolocation?.clearWatch;
+  const nativeWatchPosition = originalWatchPosition?.bind(geolocation);
+  const nativeClearWatch = originalClearWatch?.bind(geolocation);
   let nextId = 1;
   let nativeWatchId = null;
+  let nativeWatchHighAccuracy = false;
   let snapshot = readSnapshot() || {
     status: geolocation ? "idle" : "unsupported",
     lastPosition: null,
+    normalized: null,
     lastError: null,
     lastCallbackAtMs: 0,
   };
+  let previousNormalized = snapshot.normalized || null;
+  let lastHeadingDeg = normalizeHeading(snapshot.normalized?.headingDeg);
+  let lastHeadingAtMs = Number(snapshot.normalized?.receivedAtMs || 0);
+
+  function getConsumers() {
+    return Array.from(consumers.keys());
+  }
+
+  function hasHighAccuracyConsumer() {
+    if (subscribers.size > 0) {
+      for (const subscriber of subscribers.values()) {
+        if (subscriber.options?.enableHighAccuracy !== false) return true;
+      }
+    }
+    for (const consumer of consumers.values()) {
+      if (consumer.options?.enableHighAccuracy !== false) return true;
+    }
+    return false;
+  }
+
+  function normalizePosition(position, now = Date.now()) {
+    const coords = position?.coords || {};
+    const latitude = Number(coords.latitude);
+    const longitude = Number(coords.longitude);
+    if (
+      !Number.isFinite(latitude)
+      || !Number.isFinite(longitude)
+      || latitude < -90
+      || latitude > 90
+      || longitude < -180
+      || longitude > 180
+    ) {
+      return null;
+    }
+
+    const rawTimestampMs = getFiniteNumber(position.timestamp);
+    const timestampSkewMs = rawTimestampMs === null ? Infinity : Math.abs(now - rawTimestampMs);
+    const rawTimestampLooksPlausible = rawTimestampMs !== null
+      && rawTimestampMs > MIN_VALID_WALL_CLOCK_MS
+      && timestampSkewMs < GPS_TIMESTAMP_MAX_SKEW_MS;
+    const timestampMs = rawTimestampLooksPlausible ? rawTimestampMs : now;
+    const speedMs = Number.isFinite(Number(coords.speed)) && Number(coords.speed) >= 0
+      ? Number(coords.speed)
+      : null;
+    const gpsHeading = normalizeHeading(coords.heading);
+    const derivedHeading = gpsHeading === null
+      && (speedMs ?? 0) >= MIN_DERIVED_HEADING_SPEED_MS
+      ? deriveHeadingFromPositions(previousNormalized, { latitude, longitude, timestampMs })
+      : null;
+    const nextHeading = gpsHeading ?? derivedHeading;
+    if (nextHeading !== null) {
+      lastHeadingDeg = nextHeading;
+      lastHeadingAtMs = now;
+    }
+    const headingFresh = lastHeadingDeg !== null && now - lastHeadingAtMs <= 5000;
+    return {
+      latitude,
+      longitude,
+      accuracy: Number.isFinite(Number(coords.accuracy)) ? Number(coords.accuracy) : null,
+      altitudeM: Number.isFinite(Number(coords.altitude)) ? Number(coords.altitude) : null,
+      altitudeAccuracyM: Number.isFinite(Number(coords.altitudeAccuracy)) ? Number(coords.altitudeAccuracy) : null,
+      speedMs,
+      heading: headingFresh ? lastHeadingDeg : null,
+      headingDeg: headingFresh ? lastHeadingDeg : null,
+      fixTimestampMs: rawTimestampMs,
+      timestampMs,
+      receivedAtMs: now,
+      lastCallbackAtMs: now,
+      freshnessTimestampMs: now,
+      timestampSkewMs: Number.isFinite(timestampSkewMs) ? timestampSkewMs : null,
+      timestampSource: rawTimestampLooksPlausible ? "browser" : "received",
+      stale: false,
+    };
+  }
 
   function emit() {
     const detail = getSnapshot();
@@ -56,6 +176,9 @@ export function createGpsService({ geolocation = navigator.geolocation } = {}) {
       } catch {
         // Subscriber isolation.
       }
+    }
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("vatioboard:gps-status", { detail }));
     }
   }
 
@@ -69,12 +192,33 @@ export function createGpsService({ geolocation = navigator.geolocation } = {}) {
   }
 
   function handlePosition(position) {
+    const now = Date.now();
     const cloned = clonePosition(position);
+    const normalized = normalizePosition(cloned, now);
+    if (normalized) previousNormalized = normalized;
     persistAndEmit({
       status: "active",
       lastPosition: cloned,
+      normalized,
       lastError: null,
-      lastCallbackAtMs: Date.now(),
+      lastCallbackAtMs: now,
+    });
+    if (normalized && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("vatioboard:gps-position", {
+        detail: normalized,
+      }));
+    }
+    debugGps("position", {
+      rawTimestampMs: getFiniteNumber(position?.timestamp),
+      receivedAtMs: now,
+      timestampMs: normalized?.timestampMs ?? null,
+      timestampSkewMs: normalized?.timestampSkewMs ?? null,
+      timestampSource: normalized?.timestampSource ?? null,
+      stale: normalized?.stale ?? null,
+      heading: normalized?.headingDeg ?? null,
+      speed: normalized?.speedMs ?? null,
+      consumers: getConsumers(),
+      nativeWatchActive: nativeWatchId !== null,
     });
 
     for (const subscriber of subscribers.values()) {
@@ -87,13 +231,20 @@ export function createGpsService({ geolocation = navigator.geolocation } = {}) {
   }
 
   function handleError(error) {
+    const lastError = {
+      code: error?.code ?? 0,
+      message: error?.message || "Geolocation failed.",
+      receivedAtMs: Date.now(),
+    };
     persistAndEmit({
-      status: "error",
-      lastError: {
-        code: error?.code ?? 0,
-        message: error?.message || "Geolocation failed.",
-      },
-      lastCallbackAtMs: Date.now(),
+      status: snapshot.normalized ? "degraded" : "error",
+      lastError,
+    });
+    debugGps("error", {
+      ...lastError,
+      consumers: getConsumers(),
+      nativeWatchActive: nativeWatchId !== null,
+      hasLastPosition: Boolean(snapshot.normalized),
     });
 
     for (const subscriber of subscribers.values()) {
@@ -108,18 +259,63 @@ export function createGpsService({ geolocation = navigator.geolocation } = {}) {
   function ensureNativeWatch() {
     if (nativeWatchId !== null || !nativeWatchPosition) return;
     persistAndEmit({ status: "starting" });
+    nativeWatchHighAccuracy = hasHighAccuracyConsumer();
     nativeWatchId = nativeWatchPosition(handlePosition, handleError, {
-      enableHighAccuracy: true,
+      enableHighAccuracy: nativeWatchHighAccuracy,
       maximumAge: 0,
-      timeout: 10000,
+      timeout: nativeWatchHighAccuracy ? HIGH_ACCURACY_WATCH_TIMEOUT_MS : DEFAULT_WATCH_TIMEOUT_MS,
+    });
+    debugGps("watch-start", {
+      enableHighAccuracy: nativeWatchHighAccuracy,
+      timeout: nativeWatchHighAccuracy ? HIGH_ACCURACY_WATCH_TIMEOUT_MS : DEFAULT_WATCH_TIMEOUT_MS,
+      consumers: getConsumers(),
+      nativeWatchActive: true,
     });
   }
 
   function stopNativeWatchIfIdle() {
-    if (subscribers.size > 0 || nativeWatchId === null || !nativeClearWatch) return;
+    if (subscribers.size > 0 || consumers.size > 0 || nativeWatchId === null || !nativeClearWatch) return;
     nativeClearWatch(nativeWatchId);
     nativeWatchId = null;
+    nativeWatchHighAccuracy = false;
     persistAndEmit({ status: "idle" });
+    debugGps("watch-stop", {
+      consumers: getConsumers(),
+      nativeWatchActive: false,
+    });
+  }
+
+  function restartNativeWatchIfAccuracyChanged() {
+    if (nativeWatchId === null || !nativeClearWatch || !nativeWatchPosition) return;
+    const nextHighAccuracy = hasHighAccuracyConsumer();
+    if (nextHighAccuracy === nativeWatchHighAccuracy) return;
+    nativeClearWatch(nativeWatchId);
+    nativeWatchId = null;
+    ensureNativeWatch();
+  }
+
+  function getLastCallbackAtMs() {
+    const callbackAtMs = getFiniteNumber(snapshot.lastCallbackAtMs);
+    if (callbackAtMs !== null) return callbackAtMs;
+    const receivedAtMs = getFiniteNumber(snapshot.normalized?.receivedAtMs);
+    if (receivedAtMs !== null) return receivedAtMs;
+    return getFiniteNumber(snapshot.normalized?.timestampMs);
+  }
+
+  function getDynamicNormalized(now = Date.now()) {
+    if (!snapshot.normalized) return null;
+    const lastCallbackAtMs = getLastCallbackAtMs();
+    const freshnessTimestampMs = lastCallbackAtMs
+      ?? getFiniteNumber(snapshot.normalized.freshnessTimestampMs)
+      ?? getFiniteNumber(snapshot.normalized.receivedAtMs)
+      ?? getFiniteNumber(snapshot.normalized.timestampMs);
+    const stale = freshnessTimestampMs === null || now - freshnessTimestampMs > POSITION_STALE_MS;
+    return {
+      ...snapshot.normalized,
+      lastCallbackAtMs,
+      freshnessTimestampMs,
+      stale,
+    };
   }
 
   function watchPosition(success, error, options = {}) {
@@ -144,13 +340,44 @@ export function createGpsService({ geolocation = navigator.geolocation } = {}) {
       error,
       options,
     });
-    ensureNativeWatch();
+    if (nativeWatchId === null) ensureNativeWatch();
+    else restartNativeWatchIfAccuracyChanged();
     return id;
   }
 
   function clearWatch(id) {
     subscribers.delete(id);
     stopNativeWatchIfIdle();
+    restartNativeWatchIfAccuracyChanged();
+  }
+
+  function startConsumer(consumerId, options = {}) {
+    if (!consumerId) return () => {};
+    consumers.set(String(consumerId), {
+      options: {
+        enableHighAccuracy: options.enableHighAccuracy !== false,
+        reason: options.reason || "",
+      },
+    });
+    if (nativeWatchId === null) ensureNativeWatch();
+    else restartNativeWatchIfAccuracyChanged();
+    emit();
+    return () => stopConsumer(consumerId);
+  }
+
+  function stopConsumer(consumerId) {
+    consumers.delete(String(consumerId));
+    stopNativeWatchIfIdle();
+    restartNativeWatchIfAccuracyChanged();
+    emit();
+  }
+
+  function requestHighAccuracy(reason = "high-accuracy") {
+    return startConsumer(`high-accuracy:${reason}`, { enableHighAccuracy: true, reason });
+  }
+
+  function releaseHighAccuracy(reason = "high-accuracy") {
+    stopConsumer(`high-accuracy:${reason}`);
   }
 
   function subscribe(listener) {
@@ -163,11 +390,40 @@ export function createGpsService({ geolocation = navigator.geolocation } = {}) {
   }
 
   function getSnapshot() {
+    const now = Date.now();
+    const normalized = getDynamicNormalized(now);
     return {
       ...snapshot,
+      normalized,
       subscriberCount: subscribers.size,
       nativeWatchActive: nativeWatchId !== null,
+      consumers: getConsumers(),
     };
+  }
+
+  function getCurrentPosition() {
+    return getSnapshot().normalized;
+  }
+
+  function destroy() {
+    subscribers.clear();
+    consumers.clear();
+    if (nativeWatchId !== null && nativeClearWatch) {
+      nativeClearWatch(nativeWatchId);
+    }
+    nativeWatchId = null;
+    nativeWatchHighAccuracy = false;
+    listeners.clear();
+    persistAndEmit({ status: geolocation ? "idle" : "unsupported" });
+    if (geolocation?.__vatioboardGpsServiceShim && geolocation.watchPosition === watchPosition) {
+      try {
+        geolocation.watchPosition = originalWatchPosition;
+        geolocation.clearWatch = originalClearWatch;
+        delete geolocation.__vatioboardGpsServiceShim;
+      } catch {
+        // If the browser refuses restoration, the app can still continue until page unload.
+      }
+    }
   }
 
   function installGlobalShim() {
@@ -189,8 +445,14 @@ export function createGpsService({ geolocation = navigator.geolocation } = {}) {
   return {
     watchPosition,
     clearWatch,
+    startConsumer,
+    stopConsumer,
     subscribe,
     getSnapshot,
+    getCurrentPosition,
+    requestHighAccuracy,
+    releaseHighAccuracy,
     installGlobalShim,
+    destroy,
   };
 }

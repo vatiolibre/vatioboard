@@ -16,6 +16,7 @@ const NAVIGATION_ANCHOR_Y_RATIO = 0.22;
 const NAVIGATION_MIN_COMMAND_INTERVAL_MS = 180;
 
 function finiteNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -223,6 +224,9 @@ export function normalizeLivePosition(input, now = Date.now()) {
   }
 
   const timestampMs = finiteNumber(input?.timestampMs ?? input?.timestamp ?? coords.timestampMs ?? coords.timestamp) ?? now;
+  const receivedAtMs = finiteNumber(input?.receivedAtMs ?? coords.receivedAtMs);
+  const lastCallbackAtMs = finiteNumber(input?.lastCallbackAtMs ?? coords.lastCallbackAtMs);
+  const freshnessTimestampMs = finiteNumber(input?.freshnessTimestampMs ?? coords.freshnessTimestampMs);
   const speedMs = finiteNumber(coords.speedMs ?? coords.speed ?? input?.speedMs ?? input?.speed);
   const accuracy = finiteNumber(coords.accuracy ?? input?.accuracy);
   return {
@@ -232,6 +236,9 @@ export function normalizeLivePosition(input, now = Date.now()) {
     heading: normalizeHeading(getHeadingCandidate(input, coords)),
     speedMs: speedMs !== null && speedMs >= 0 ? speedMs : null,
     timestampMs,
+    receivedAtMs,
+    lastCallbackAtMs,
+    freshnessTimestampMs,
   };
 }
 
@@ -303,7 +310,13 @@ export function shouldShowHeading(position, previousPosition, lastHeadingState =
 
 export function buildUserPositionFeature(position, headingState = {}, now = Date.now()) {
   if (!isUsableLivePosition(position)) return null;
-  const stale = now - Number(position.timestampMs || 0) > POSITION_STALE_MS;
+  const freshnessMs = finiteNumber(
+    position.receivedAtMs
+      ?? position.lastCallbackAtMs
+      ?? position.freshnessTimestampMs
+      ?? position.timestampMs
+  );
+  const stale = freshnessMs === null || now - freshnessMs > POSITION_STALE_MS;
   return {
     type: "Feature",
     geometry: {
@@ -320,6 +333,9 @@ export function buildUserPositionFeature(position, headingState = {}, now = Date
       accuracy: position.accuracy,
       speedMs: position.speedMs,
       timestampMs: position.timestampMs,
+      receivedAtMs: position.receivedAtMs,
+      lastCallbackAtMs: position.lastCallbackAtMs,
+      freshnessTimestampMs: position.freshnessTimestampMs,
     },
   };
 }

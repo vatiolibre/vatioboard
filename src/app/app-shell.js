@@ -70,6 +70,12 @@ export async function startAppShell({
 
   const context = createRuntimeContext();
   context.gpsService.installGlobalShim();
+  window.__vatioboardGpsStore = context.gpsService;
+  window.__vatioboardGpsGetCurrentPosition = () => context.gpsService.getCurrentPosition?.() || null;
+  window.__vatioboardDriveRecording = context.driveRecordingService;
+  window.__vatioboardDrivingAlerts = context.drivingAlertService;
+  // Deprecated compatibility alias for older Camera Map/Speed integrations.
+  window.__vatioboardSpeedGetCurrentPosition = window.__vatioboardGpsGetCurrentPosition;
 
   initBackendAuthControllers();
   void ensureSingleTabOwnership();
@@ -85,7 +91,7 @@ export async function startAppShell({
     shellManager,
   });
   window.__vatioboardPlayerWidget = playerWidget;
-  const floatingTools = initFloatingTools({ mount: persistentLayer, shellManager });
+  const floatingTools = initFloatingTools({ mount: persistentLayer, shellManager, gpsService: context.gpsService });
   const startMenu = initSharedStartMenu({ floatingTools, mount: persistentLayer });
   const activityIndicator = initActivityIndicator({ mount: persistentLayer });
   const shellTaskbar = createShellTaskbar({ shellManager, root: persistentLayer });
@@ -139,6 +145,21 @@ export async function startAppShell({
   router.destroy = () => {
     shellKeyboard.uninstall();
     shellTaskbar.destroy();
+    context.drivingAlertService?.destroy?.();
+    context.driveRecordingService?.destroy?.();
+    context.gpsService.destroy?.();
+    const gpsProvider = window.__vatioboardGpsGetCurrentPosition;
+    if (window.__vatioboardGpsStore === context.gpsService) delete window.__vatioboardGpsStore;
+    if (window.__vatioboardSpeedGetCurrentPosition === gpsProvider) {
+      delete window.__vatioboardSpeedGetCurrentPosition;
+    }
+    if (window.__vatioboardGpsGetCurrentPosition === gpsProvider) delete window.__vatioboardGpsGetCurrentPosition;
+    if (window.__vatioboardDriveRecording === context.driveRecordingService) {
+      delete window.__vatioboardDriveRecording;
+    }
+    if (window.__vatioboardDrivingAlerts === context.drivingAlertService) {
+      delete window.__vatioboardDrivingAlerts;
+    }
     originalRouterDestroy.call(router);
   };
   scheduleRoutePreload({ router, routes });

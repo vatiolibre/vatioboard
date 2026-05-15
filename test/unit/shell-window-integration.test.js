@@ -395,7 +395,12 @@ describe("shell window integration", () => {
   it("floating tools open calculator through the shell manager without a legacy dock", async () => {
     const { createShellWindowManager, initFloatingTools } = await loadModules();
     const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
-    const tools = initFloatingTools({ mount: document.body, shellManager: manager });
+    const gpsService = {
+      getCurrentPosition: vi.fn(() => null),
+      startConsumer: vi.fn(() => vi.fn()),
+      subscribe: vi.fn(() => vi.fn()),
+    };
+    const tools = initFloatingTools({ mount: document.body, shellManager: manager, gpsService });
 
     expect(document.querySelector(".floating-dock")).toBeNull();
     tools.openCalculator();
@@ -405,6 +410,9 @@ describe("shell window integration", () => {
     expect(manager.getWindow("camera-map").state).toBe("open");
     expect(document.querySelector(".calc-panel").hidden).toBe(false);
     expect(document.querySelector(".camera-map-panel").hidden).toBe(false);
+    expect(gpsService.startConsumer).toHaveBeenCalledWith("camera-map", expect.objectContaining({
+      enableHighAccuracy: true,
+    }));
     manager.destroy();
   });
 

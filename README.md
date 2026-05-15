@@ -187,7 +187,7 @@ npm run analyze:cameras:maxspeed
 
 Only use `CAMERA_ROAD_REFRESH_CACHE=1` when you deliberately want to re-download every road-speed tile. That is much heavier than a normal camera refresh and should not be part of routine local development.
 
-At runtime, Speed does not upload live location to fetch camera alerts. GPS matching happens locally: the app loads the manifest, chooses the current country or nearby tile from the GPS fix, tries IndexedDB first, and revalidates in the background. If the network drops during an update, the last good cached country/tile stays intact. With no cache and no network, the speedometer still works and trap alerts show an unavailable/offline camera database status.
+At runtime, Speed does not upload live location to fetch camera alerts. GPS matching happens locally: the app-level GPS service keeps one shared browser `watchPosition()` for active consumers, normalizes speed/heading/timestamps, and broadcasts local `vatioboard:gps-position` updates for Speed, Camera Map, recording, driving alerts, and other shells. Camera matching loads the manifest, chooses the current country or nearby tile from the GPS fix, tries IndexedDB first, and revalidates in the background. If the network drops during an update, the last good cached country/tile stays intact. With no cache and no network, the speedometer still works and trap alerts show an unavailable/offline camera database status.
 
 ### Camera Map
 
@@ -195,7 +195,11 @@ The Camera Map points come from the same local/static camera artifacts described
 
 The panel is designed as an in-car navigation display: the map takes nearly the whole window, controls are compact touch targets, and the live position is shown as a bright green vehicle puck. Native MapLibre zoom controls stay in the top-right, while Camera Map follow/orientation/layer controls are compact and offset so they remain usable on touch screens and fullscreen displays.
 
-Heading comes from browser GPS `coords.heading` when available and is exposed through the Speed shell as `headingDeg`; when GPS heading is missing, Camera Map can derive a bearing from meaningful recent movement. Follow mode keeps the vehicle visible and can frame a nearby relevant camera from the currently loaded camera features. The orientation control cycles between north-up and heading-up; heading-up falls back gracefully to north-up behavior when heading is unavailable or stale. Camera-aware framing uses only loaded local/static artifacts and does not fetch live camera APIs.
+Heading comes from browser GPS `coords.heading` when available and is exposed through the app GPS service as `headingDeg`; when GPS heading is missing, Camera Map can derive a bearing from meaningful recent movement. Follow mode keeps the vehicle visible and can frame a nearby relevant camera from the currently loaded camera features. The orientation control cycles between north-up and heading-up; heading-up falls back gracefully to north-up behavior when heading is unavailable or stale. Camera-aware framing uses only loaded local/static artifacts and does not fetch live camera APIs.
+
+Drive recording remains local-first. Recording uses the shared GPS stream and persists active replay data locally as it goes, so route changes do not require a second GPS watch and network/cloud-sync failures do not stop local capture.
+
+Overspeed and camera proximity audio alerts are also app-level. Once the browser audio path has been primed from a user gesture, the driving alert service keeps evaluating the shared GPS stream and cached/static camera artifacts even if the user switches to Library, Board, Accel, Replay, or Camera Map. Unknown camera speed limits stay unknown rather than becoming a zero-speed alert, and low-confidence road-speed enrichment follows the same alert rules used by Speed.
 
 Offline behavior is local-first. If a camera refresh fails, the map keeps the last successful camera GeoJSON in memory and reports cached/offline status rather than clearing the markers. Basemap tile failures can make the visual map incomplete, but they do not remove the local camera layers or the user-position puck.
 

@@ -140,6 +140,11 @@ beforeEach(() => {
   delete window.__vatioboardPlayerWidget;
   delete window.__vatioboardFloatingTools;
   delete window.__vatioboardStartMenu;
+  delete window.__vatioboardGpsStore;
+  delete window.__vatioboardGpsGetCurrentPosition;
+  delete window.__vatioboardSpeedGetCurrentPosition;
+  delete window.__vatioboardDriveRecording;
+  delete window.__vatioboardDrivingAlerts;
 
   const canvasContexts = new WeakMap();
   const geolocation = createGeolocationMock();
