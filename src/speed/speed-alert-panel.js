@@ -220,9 +220,9 @@ function buildPanel() {
   const title = createElement("strong", {
     id: titleId,
     class: "speed-alert-window-title",
-    text: t("speedAlertsTitle"),
+    text: t("alertSettingsTitle"),
   });
-  title.dataset.i18n = "speedAlertsTitle";
+  title.dataset.i18n = "alertSettingsTitle";
 
   const statusChip = createElement("span", {
     class: "speed-alert-window-status",
@@ -231,12 +231,6 @@ function buildPanel() {
     text: t("off"),
   });
 
-  const minimizeBtn = createActionButton({
-    className: "speed-alert-window-action speed-alert-window-minimize",
-    label: t("minimizeSpeedAlerts"),
-    labelKey: "minimizeSpeedAlerts",
-    text: "-",
-  });
   const closeBtn = createActionButton({
     className: "speed-alert-window-action speed-alert-window-close",
     label: t("closeSpeedAlerts"),
@@ -246,14 +240,10 @@ function buildPanel() {
 
   const header = createElement("div", { class: "speed-alert-window-header" }, [
     createElement("div", { class: "speed-alert-window-heading" }, [
-      createElement("span", {
-        class: "speed-alert-window-kicker",
-        text: t("alerts"),
-      }),
       title,
     ]),
     statusChip,
-    createElement("div", { class: "speed-alert-window-actions" }, [minimizeBtn, closeBtn]),
+    createElement("div", { class: "speed-alert-window-actions" }, [closeBtn]),
   ]);
 
   const manualToggle = createElement("button", {
@@ -484,7 +474,6 @@ function buildPanel() {
     limitUnit,
     limitValue,
     manualToggle,
-    minimizeBtn,
     muteToggle,
     nearestTrap,
     openCameraMap,
@@ -809,11 +798,6 @@ export function createSpeedAlertPanel(options = {}) {
       event.stopPropagation();
       close();
     });
-    refs.minimizeBtn.addEventListener("pointerdown", (event) => event.stopPropagation());
-    refs.minimizeBtn.addEventListener("click", (event) => {
-      event.stopPropagation();
-      shellManager.minimizeWindow?.(SPEED_ALERT_PANEL_WINDOW_ID);
-    });
     refs.manualToggle.addEventListener("click", () => {
       const preferences = latestSnapshot.preferences || {};
       service.setManualAlertEnabled?.(
@@ -926,7 +910,7 @@ export function createSpeedAlertPanel(options = {}) {
   cleanupLayer = registerFloatingPanel(panel, {
     id: SPEED_ALERT_PANEL_WINDOW_ID,
     kind: "tool",
-    title: t("speedAlertsTitle"),
+    title: t("alertSettingsTitle"),
     shellManager,
     storageKey: VISIBILITY_KEY,
     bounds: DEFAULT_BOUNDS,
