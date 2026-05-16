@@ -7,8 +7,10 @@ import {
   normalizePositionTimestamp,
 } from '../../src/speed/navigation.js';
 import {
+  loadCameraApproachOptionsPreference,
   loadDistanceUnitPreference,
   loadUnitPreference,
+  normalizeCameraApproachFallbackMode,
   normalizeTrapAlertDistance,
 } from '../../src/speed/preferences.js';
 import { convertSpeed } from '../../src/speed/render.js';
@@ -33,6 +35,21 @@ describe('speed extracted helpers', () => {
   it('snaps trap alert distance preferences to the nearest preset', () => {
     expect(normalizeTrapAlertDistance(780, 'ft')).toBeCloseTo(804.672, 6);
     expect(normalizeTrapAlertDistance(850, 'm')).toBe(1000);
+  });
+
+  it('loads tunable camera approach matcher preferences safely', () => {
+    expect(normalizeCameraApproachFallbackMode('heading-only')).toBe('heading-only');
+    expect(normalizeCameraApproachFallbackMode('radius-party')).toBe('legacy-radius');
+
+    localStorage.setItem('vatio_speed_camera_approach_fallback_mode', 'silent');
+    localStorage.setItem('vatio_speed_camera_approach_heading_tolerance_deg', '35');
+    localStorage.setItem('vatio_speed_camera_approach_minimum_speed_ms', '2.25');
+
+    expect(loadCameraApproachOptionsPreference()).toEqual({
+      fallbackMode: 'silent',
+      headingToleranceDeg: 35,
+      minimumSpeedMs: 2.25,
+    });
   });
 
   it('loads unit preferences from the bootstrap snapshot when shared keys are absent', () => {

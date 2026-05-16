@@ -17,6 +17,9 @@ import {
   STORAGE_ALERT_SOUND_ENABLED_KEY,
   STORAGE_ALERT_TRIGGER_DISCOVERED_KEY,
   STORAGE_AUDIO_MUTED_KEY,
+  STORAGE_CAMERA_APPROACH_FALLBACK_MODE_KEY,
+  STORAGE_CAMERA_APPROACH_HEADING_TOLERANCE_KEY,
+  STORAGE_CAMERA_APPROACH_MINIMUM_SPEED_KEY,
   STORAGE_DISTANCE_UNIT_KEY,
   STORAGE_PRIMARY_VIEW_KEY,
   STORAGE_TRAP_ALERT_DISTANCE_KEY,
@@ -26,6 +29,10 @@ import {
   TRAP_ALERT_PRESETS,
   UNIT_CONFIG,
 } from './constants.js';
+
+const CAMERA_APPROACH_FALLBACK_MODES = new Set(['legacy-radius', 'heading-only', 'silent']);
+const DEFAULT_CAMERA_APPROACH_HEADING_TOLERANCE_DEG = 45;
+const DEFAULT_CAMERA_APPROACH_MINIMUM_SPEED_MS = 1.5;
 
 export function loadUnitPreference() {
   const unit = loadConfiguredSpeedUnit('kmh');
@@ -142,6 +149,53 @@ export function saveTrapSoundEnabledPreference(enabled) {
   saveBoolean(STORAGE_TRAP_SOUND_ENABLED_KEY, enabled);
 }
 
+export function normalizeCameraApproachFallbackMode(value) {
+  const mode = String(value || '').trim();
+  return CAMERA_APPROACH_FALLBACK_MODES.has(mode) ? mode : 'legacy-radius';
+}
+
+export function loadCameraApproachFallbackModePreference() {
+  return normalizeCameraApproachFallbackMode(
+    loadText(STORAGE_CAMERA_APPROACH_FALLBACK_MODE_KEY, 'legacy-radius')
+  );
+}
+
+export function saveCameraApproachFallbackModePreference(mode) {
+  saveText(STORAGE_CAMERA_APPROACH_FALLBACK_MODE_KEY, normalizeCameraApproachFallbackMode(mode));
+}
+
+export function loadCameraApproachHeadingTolerancePreference() {
+  return loadNumber(
+    STORAGE_CAMERA_APPROACH_HEADING_TOLERANCE_KEY,
+    DEFAULT_CAMERA_APPROACH_HEADING_TOLERANCE_DEG,
+    { validate: (value) => value >= 10 && value <= 90 },
+  );
+}
+
+export function saveCameraApproachHeadingTolerancePreference(degrees) {
+  saveNumber(STORAGE_CAMERA_APPROACH_HEADING_TOLERANCE_KEY, degrees);
+}
+
+export function loadCameraApproachMinimumSpeedPreference() {
+  return loadNumber(
+    STORAGE_CAMERA_APPROACH_MINIMUM_SPEED_KEY,
+    DEFAULT_CAMERA_APPROACH_MINIMUM_SPEED_MS,
+    { validate: (value) => value >= 0 && value <= 15 },
+  );
+}
+
+export function saveCameraApproachMinimumSpeedPreference(speedMs) {
+  saveNumber(STORAGE_CAMERA_APPROACH_MINIMUM_SPEED_KEY, speedMs);
+}
+
+export function loadCameraApproachOptionsPreference() {
+  return {
+    fallbackMode: loadCameraApproachFallbackModePreference(),
+    headingToleranceDeg: loadCameraApproachHeadingTolerancePreference(),
+    minimumSpeedMs: loadCameraApproachMinimumSpeedPreference(),
+  };
+}
+
 export function loadAlertTriggerDiscoveredPreference() {
   return loadBoolean(STORAGE_ALERT_TRIGGER_DISCOVERED_KEY, false);
 }
@@ -165,6 +219,7 @@ export function loadInitialPreferences() {
     trapAlertEnabled: loadTrapAlertEnabledPreference(),
     trapAlertDistanceM: loadTrapAlertDistancePreference(distanceUnit),
     trapSoundEnabled: loadTrapSoundEnabledPreference(),
+    cameraApproachOptions: loadCameraApproachOptionsPreference(),
     alertTriggerDiscovered: loadAlertTriggerDiscoveredPreference(),
   };
 }

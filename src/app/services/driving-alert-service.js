@@ -1,4 +1,5 @@
 import { getAlertUiState as buildAlertUiState, isManualAlertActive } from "../../speed/alerts.js";
+import { findApproachingTrapAcrossDatasets } from "../../speed/camera-approach.js";
 import { createCameraDatabase } from "../../speed/camera-database.js";
 import {
   DEFAULT_ALERT_LIMIT_MS,
@@ -6,6 +7,7 @@ import {
   UNIT_CONFIG,
 } from "../../speed/constants.js";
 import {
+  loadCameraApproachOptionsPreference,
   loadInitialPreferences,
   normalizeTrapAlertDistance,
   saveAlertEnabledPreference,
@@ -22,7 +24,6 @@ import { convertSpeed } from "../../speed/render.js";
 import {
   formatTrapDistance,
   formatTrapSpeed,
-  updateNearestTrapAcrossDatasets,
 } from "../../speed/traps.js";
 import { clearActivity, setActivity } from "../../shared/activity-state.js";
 import { createDrivingAudioAlertController } from "./driving-audio-alert-controller.js";
@@ -116,10 +117,15 @@ export function createDrivingAlertService({
     audioControlActive: false,
     currentSpeedMs: 0,
     latestPosition: null,
+    previousPosition: null,
     nearestTrapId: null,
     nearestTrapDistanceM: null,
     nearestTrapSpeedKph: null,
     nearestTrapSpeedMeta: null,
+    cameraApproachState: "none",
+    cameraApproachConfidence: "none",
+    cameraApproachReason: "no-candidate",
+    cameraApproachDetails: null,
     cameraDatabaseStatus: createDefaultCameraStatus(),
     alertUiState: null,
     lastCameraLoadKey: "",
@@ -177,6 +183,10 @@ export function createDrivingAlertService({
       nearestTrapDistanceM: state.nearestTrapDistanceM,
       nearestTrapSpeedKph: state.nearestTrapSpeedKph,
       nearestTrapSpeedMeta: state.nearestTrapSpeedMeta,
+      cameraApproachState: state.cameraApproachState,
+      cameraApproachConfidence: state.cameraApproachConfidence,
+      cameraApproachReason: state.cameraApproachReason,
+      cameraApproachDetails: state.cameraApproachDetails,
       trapAlertDistanceM: state.trapAlertDistanceM,
       convertSpeed,
       getTrapAlertDistanceLabel: (distanceM) => getTrapAlertDistanceLabel(distanceM, state.distanceUnit),
@@ -221,17 +231,31 @@ export function createDrivingAlertService({
       state.nearestTrapDistanceM = null;
       state.nearestTrapSpeedKph = null;
       state.nearestTrapSpeedMeta = null;
+      state.cameraApproachState = "none";
+      state.cameraApproachConfidence = "none";
+      state.cameraApproachReason = "trap-alert-disabled";
+      state.cameraApproachDetails = null;
       return;
     }
-    const nearest = updateNearestTrapAcrossDatasets(
-      getLoadedDatasets(),
-      position.longitude,
-      position.latitude,
-    );
+    const previousPosition = state.previousPosition && isFiniteLatLon(state.previousPosition)
+      ? state.previousPosition
+      : null;
+    const nearest = findApproachingTrapAcrossDatasets(getLoadedDatasets(), {
+      ...position,
+      accuracyM: position.accuracy,
+      previousPosition,
+    }, {
+      alertDistanceM: state.trapAlertDistanceM,
+      ...loadCameraApproachOptionsPreference(),
+    });
     state.nearestTrapId = nearest.nearestTrapId;
     state.nearestTrapDistanceM = nearest.nearestTrapDistanceM;
     state.nearestTrapSpeedKph = nearest.nearestTrapSpeedKph;
     state.nearestTrapSpeedMeta = nearest.nearestTrapSpeedMeta;
+    state.cameraApproachState = nearest.cameraApproachState || "none";
+    state.cameraApproachConfidence = nearest.cameraApproachConfidence || "none";
+    state.cameraApproachReason = nearest.cameraApproachReason || "no-candidate";
+    state.cameraApproachDetails = nearest.cameraApproachDetails || null;
   }
 
   function syncAudio(options = {}) {
@@ -353,6 +377,8 @@ export function createDrivingAlertService({
       emit();
       return;
     }
+    const previousPosition = state.latestPosition;
+    state.previousPosition = previousPosition;
     state.latestPosition = position;
     state.currentSpeedMs = position.stale ? 0 : position.speedMs;
     ensureCameraArtifactsForPosition(position);
@@ -444,6 +470,13 @@ export function createDrivingAlertService({
       state.trapAlertEnabled = Boolean(value);
       if (!state.trapAlertEnabled) {
         state.nearestTrapId = null;
+        state.nearestTrapDistanceM = null;
+        state.nearestTrapSpeedKph = null;
+        state.nearestTrapSpeedMeta = null;
+        state.cameraApproachState = "none";
+        state.cameraApproachConfidence = "none";
+        state.cameraApproachReason = "trap-alert-disabled";
+        state.cameraApproachDetails = null;
       }
       saveTrapAlertEnabledPreference(state.trapAlertEnabled);
     }, options);
@@ -519,6 +552,10 @@ export function createDrivingAlertService({
       nearestTrapDistanceM: state.nearestTrapDistanceM,
       nearestTrapSpeedKph: state.nearestTrapSpeedKph,
       nearestTrapSpeedMeta: state.nearestTrapSpeedMeta,
+      cameraApproachState: state.cameraApproachState,
+      cameraApproachConfidence: state.cameraApproachConfidence,
+      cameraApproachReason: state.cameraApproachReason,
+      cameraApproachDetails: state.cameraApproachDetails ? { ...state.cameraApproachDetails } : null,
       cameraDatabaseStatus: { ...state.cameraDatabaseStatus },
       preferences: createPreferencesSnapshot(state),
       audio: {

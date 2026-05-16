@@ -178,6 +178,11 @@ function normalizeSpeedMeta(meta) {
   const wayId = meta.wayId ?? meta.sourceWayId ?? meta.w;
   const distanceM = Number(meta.distanceM ?? meta.d);
   const raw = meta.raw ?? meta.r;
+  const approach = normalizeApproachMetadata(meta.approach ?? meta.approaches);
+  const nearbyCandidateCount = Number(meta.nearbyCandidateCount ?? meta.n);
+  const bearingSpreadDeg = Number(meta.bearingSpreadDeg ?? meta.bs);
+  const ambiguous = meta.ambiguous === true || meta.a === true;
+  const ambiguityReason = String(meta.ambiguityReason ?? meta.ar ?? "").trim();
   const normalized = {
     source: normalizedSource,
     confidence,
@@ -188,17 +193,88 @@ function normalizeSpeedMeta(meta) {
   }
   if (Number.isFinite(distanceM)) normalized.distanceM = Math.round(distanceM);
   if (raw !== null && raw !== undefined && raw !== "") normalized.raw = String(raw);
+  if (approach.length) normalized.approach = approach;
+  if (ambiguous) normalized.ambiguous = true;
+  if (ambiguityReason) normalized.ambiguityReason = ambiguityReason;
+  if (Number.isFinite(nearbyCandidateCount) && nearbyCandidateCount > 0) {
+    normalized.nearbyCandidateCount = Math.round(nearbyCandidateCount);
+  }
+  if (Number.isFinite(bearingSpreadDeg) && bearingSpreadDeg > 0) {
+    normalized.bearingSpreadDeg = Math.round(bearingSpreadDeg);
+  }
   return normalized;
+}
+
+function normalizeApproachMetadata(value) {
+  const entries = Array.isArray(value) ? value : [];
+  return entries
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const bearingDeg = Number(entry.bearingDeg ?? entry.bearing ?? entry.b);
+      if (!Number.isFinite(bearingDeg)) return null;
+      const reverseBearingDeg = Number(entry.reverseBearingDeg ?? entry.reverseBearing ?? entry.rb);
+      const roadDistanceM = Number(entry.roadDistanceM ?? entry.distanceM ?? entry.d);
+      const direction = String(entry.direction ?? entry.dir ?? "both").trim().toLowerCase();
+      const confidence = String(entry.confidence ?? entry.c ?? "low").trim().toLowerCase();
+      const nearbyCandidateCount = Number(entry.nearbyCandidateCount ?? entry.n);
+      const bearingSpreadDeg = Number(entry.bearingSpreadDeg ?? entry.bs);
+      const ambiguityReason = String(entry.ambiguityReason ?? entry.ar ?? "").trim();
+      const wayId = entry.wayId ?? entry.sourceWayId ?? entry.way ?? entry.w;
+      const role = String(entry.role ?? "").trim().toLowerCase();
+      const source = String(entry.source ?? entry.s ?? "").trim();
+      const clusterIndex = Number(entry.clusterIndex ?? entry.cluster);
+      const candidateRank = Number(entry.candidateRank ?? entry.rank);
+      const normalized = {
+        bearingDeg: Math.round((((bearingDeg % 360) + 360) % 360)),
+        reverseBearingDeg: Number.isFinite(reverseBearingDeg)
+          ? Math.round((((reverseBearingDeg % 360) + 360) % 360))
+          : Math.round(((((bearingDeg + 180) % 360) + 360) % 360)),
+        direction: ["forward", "backward", "both", "unknown"].includes(direction) ? direction : "both",
+        roadDistanceM: Number.isFinite(roadDistanceM) ? Math.round(roadDistanceM) : undefined,
+        confidence: ["high", "medium", "low"].includes(confidence) ? confidence : "low",
+        role: ["primary", "secondary", "intersection", "ambiguous"].includes(role) ? role : undefined,
+        source: source || undefined,
+        wayId: wayId !== null && wayId !== undefined && wayId !== ""
+          ? (Number.isFinite(Number(wayId)) ? Math.round(Number(wayId)) : wayId)
+          : undefined,
+        clusterIndex: Number.isFinite(clusterIndex) && clusterIndex >= 0 ? Math.round(clusterIndex) : undefined,
+        candidateRank: Number.isFinite(candidateRank) && candidateRank > 0 ? Math.round(candidateRank) : undefined,
+        ambiguous: entry.ambiguous === true || entry.a === true ? true : undefined,
+        ambiguityReason: ambiguityReason || undefined,
+        nearbyCandidateCount: Number.isFinite(nearbyCandidateCount) && nearbyCandidateCount > 0
+          ? Math.round(nearbyCandidateCount)
+          : undefined,
+        bearingSpreadDeg: Number.isFinite(bearingSpreadDeg) && bearingSpreadDeg > 0
+          ? Math.round(bearingSpreadDeg)
+          : undefined,
+      };
+      const segment = Array.isArray(entry.segment ?? entry.seg) ? (entry.segment ?? entry.seg) : null;
+      if (segment?.length >= 2) {
+        const start = segment[0];
+        const end = segment[1];
+        const normalizedSegment = [
+          [roundCoordinate(start?.[0] ?? start?.lon ?? start?.longitude), roundCoordinate(start?.[1] ?? start?.lat ?? start?.latitude)],
+          [roundCoordinate(end?.[0] ?? end?.lon ?? end?.longitude), roundCoordinate(end?.[1] ?? end?.lat ?? end?.latitude)],
+        ];
+        if (normalizedSegment.flat().every(Number.isFinite)) normalized.segment = normalizedSegment;
+      }
+      for (const key of Object.keys(normalized)) {
+        if (normalized[key] === undefined || normalized[key] === null || normalized[key] === "") delete normalized[key];
+      }
+      return normalized;
+    })
+    .filter(Boolean)
+    .slice(0, 4);
 }
 
 function normalizeEnrichmentEntry(entry) {
   if (!entry || typeof entry !== "object") return null;
   const speedKph = Number(entry.speedKph);
-  if (!Number.isFinite(speedKph) || speedKph <= 0) return null;
   const speedMeta = normalizeSpeedMeta(entry.speedMeta ?? entry.meta);
-  if (!speedMeta || !speedMeta.source.startsWith("nearest_road:")) return null;
+  if (!speedMeta || (!speedMeta.source.startsWith("nearest_road:") && !speedMeta.approach?.length)) return null;
+  if ((!Number.isFinite(speedKph) || speedKph <= 0) && !speedMeta.approach?.length) return null;
   return {
-    speedKph: Math.round(speedKph),
+    speedKph: Number.isFinite(speedKph) && speedKph > 0 ? Math.round(speedKph) : null,
     speedMeta,
   };
 }
@@ -213,14 +289,23 @@ function buildTrap({ lon, lat, osmId, explicitSpeed, enrichment }) {
   const trap = osmId ? [lon, lat, null, osmId] : [lon, lat, null];
   if (explicitSpeed?.parsed) {
     trap[2] = explicitSpeed.speedKph;
+    if (enrichment?.speedMeta?.approach?.length) {
+      trap[4] = {
+        source: "camera:maxspeed",
+        confidence: "high",
+        raw: explicitSpeed.raw,
+        approach: enrichment.speedMeta.approach,
+      };
+    }
     return trap;
   }
 
   if (enrichment?.speedKph) {
     trap[2] = enrichment.speedKph;
-    if (enrichment.speedMeta) {
-      trap[4] = enrichment.speedMeta;
-    }
+  }
+
+  if (enrichment?.speedMeta) {
+    trap[4] = enrichment.speedMeta;
   }
 
   return trap;
@@ -234,9 +319,7 @@ function normalizeOsmElement(element, options = {}) {
   const osmId = Number.isFinite(Number(element.id)) ? Math.round(Number(element.id)) : null;
   const key = osmId ? `osm:${osmId}` : `coord:${lon},${lat}`;
   const explicitSpeed = parseCameraMaxspeed(element?.tags);
-  const enrichment = explicitSpeed.parsed
-    ? null
-    : getEnrichmentForKey(options.maxspeedEnrichment, key);
+  const enrichment = getEnrichmentForKey(options.maxspeedEnrichment, key);
   const country = getTaggedCountryCode(element?.tags) || inferCountryFromCoordinate(lon, lat, "zz");
 
   return {
@@ -266,9 +349,7 @@ function normalizeGeoJsonFeature(feature, { defaultCountry = "zz", maxspeedEnric
   const country = taggedCountry || inferCountryFromCoordinate(lon, lat, defaultCountry || "zz");
   const key = osmId ? `osm:${osmId}` : `coord:${lon},${lat}`;
   const explicitSpeed = parseCameraMaxspeed(properties);
-  const enrichment = explicitSpeed.parsed
-    ? null
-    : getEnrichmentForKey(maxspeedEnrichment, key);
+  const enrichment = getEnrichmentForKey(maxspeedEnrichment, key);
 
   return {
     country,
@@ -290,9 +371,7 @@ function normalizePlainCamera(camera, options = {}) {
     || inferCountryFromCoordinate(lon, lat, "zz");
   const key = osmId ? `osm:${osmId}` : `coord:${lon},${lat}`;
   const explicitSpeed = parseCameraMaxspeed(camera);
-  const enrichment = explicitSpeed.parsed
-    ? null
-    : getEnrichmentForKey(options.maxspeedEnrichment, key);
+  const enrichment = getEnrichmentForKey(options.maxspeedEnrichment, key);
 
   return {
     country,
@@ -781,7 +860,8 @@ function getCanonicalTrapId(record) {
 function shouldOmitSpeedMeta(record, sourceMeta) {
   return !sourceMeta
     && record?.source === "osm"
-    && record?.speedMeta?.source === "camera:maxspeed";
+    && record?.speedMeta?.source === "camera:maxspeed"
+    && !record?.speedMeta?.approach?.length;
 }
 
 function cameraRecordToBuildRecord(record) {

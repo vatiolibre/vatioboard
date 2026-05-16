@@ -152,6 +152,81 @@ describe("build-worldwide-cameras", () => {
     ]);
   });
 
+  it("preserves compact approach metadata from the enrichment sidecar", async () => {
+    const dir = await makeTempDir();
+    const sourcePath = path.join(dir, "overpass.json");
+    const enrichmentPath = path.join(dir, "enrichment.json");
+    const outputDir = path.join(dir, "geo");
+    await fs.writeFile(sourcePath, JSON.stringify({
+      elements: [
+        { type: "node", id: 45, lon: -73.9857, lat: 40.7484, tags: { maxspeed: "30 mph", "addr:country": "US" } },
+        { type: "node", id: 46, lon: -73.9858, lat: 40.7485, tags: { "addr:country": "US" } },
+      ],
+    }));
+    const approach = [{
+      bearingDeg: 91,
+      reverseBearingDeg: 271,
+      direction: "forward",
+      roadDistanceM: 7,
+      confidence: "high",
+      wayId: 9,
+      role: "primary",
+      source: "osm-road-segment",
+      clusterIndex: 0,
+      candidateRank: 1,
+      segment: [[-73.986, 40.7484], [-73.984, 40.7484]],
+    }];
+    await fs.writeFile(enrichmentPath, JSON.stringify({
+      records: {
+        "osm:45": {
+          speedKph: 80,
+          speedMeta: { source: "nearest_road:maxspeed", confidence: "high", wayId: 9, distanceM: 4, raw: "80", approach },
+        },
+        "osm:46": {
+          speedKph: null,
+          speedMeta: { source: "nearest_road:approach", confidence: "low", approach },
+        },
+      },
+    }));
+
+    await buildWorldwideCameraArtifacts({
+      sourcePath,
+      enrichmentPath,
+      outputDir,
+      generatedAt: "2026-05-10T00:00:00.000Z",
+      allowLegacyFallback: false,
+      includeLocalSources: false,
+    });
+
+    const country = JSON.parse(await fs.readFile(path.join(outputDir, "countries/us.json"), "utf8"));
+    const explicitTrap = country.traps.find((trap) => trap[3] === 45);
+    const approachOnlyTrap = country.traps.find((trap) => trap[3] === 46);
+    expect(explicitTrap[2]).toBe(48);
+    expect(explicitTrap[4]).toMatchObject({
+      source: "camera:maxspeed",
+      confidence: "high",
+      approach: [expect.objectContaining({
+        bearingDeg: 91,
+        direction: "forward",
+        wayId: 9,
+        role: "primary",
+        source: "osm-road-segment",
+        clusterIndex: 0,
+        candidateRank: 1,
+      })],
+    });
+    expect(approachOnlyTrap).toEqual([
+      -73.9858,
+      40.7485,
+      null,
+      46,
+      expect.objectContaining({
+        source: "nearest_road:approach",
+        approach: [expect.objectContaining({ confidence: "high" })],
+      }),
+    ]);
+  });
+
   it("keeps unknown speed null and reports manifest coverage", async () => {
     const dir = await makeTempDir();
     const sourcePath = path.join(dir, "overpass.json");

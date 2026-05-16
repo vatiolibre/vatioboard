@@ -114,22 +114,95 @@ function normalizeSpeedMeta(meta) {
   const wayId = meta.wayId ?? meta.sourceWayId ?? meta.w;
   const distanceM = Number(meta.distanceM ?? meta.d);
   const raw = meta.raw ?? meta.r;
+  const approach = normalizeApproachMetadata(meta.approach ?? meta.approaches);
+  const nearbyCandidateCount = Number(meta.nearbyCandidateCount ?? meta.n);
+  const bearingSpreadDeg = Number(meta.bearingSpreadDeg ?? meta.bs);
+  const ambiguous = meta.ambiguous === true || meta.a === true;
+  const ambiguityReason = String(meta.ambiguityReason ?? meta.ar ?? "").trim();
   const normalized = { source: normalizedSource, confidence };
   if (wayId !== null && wayId !== undefined && wayId !== "") {
     normalized.wayId = Number.isFinite(Number(wayId)) ? Math.round(Number(wayId)) : wayId;
   }
   if (Number.isFinite(distanceM)) normalized.distanceM = Math.round(distanceM);
   if (raw !== null && raw !== undefined && raw !== "") normalized.raw = String(raw);
+  if (approach.length) normalized.approach = approach;
+  if (ambiguous) normalized.ambiguous = true;
+  if (ambiguityReason) normalized.ambiguityReason = ambiguityReason;
+  if (Number.isFinite(nearbyCandidateCount) && nearbyCandidateCount > 0) {
+    normalized.nearbyCandidateCount = Math.round(nearbyCandidateCount);
+  }
+  if (Number.isFinite(bearingSpreadDeg) && bearingSpreadDeg > 0) {
+    normalized.bearingSpreadDeg = Math.round(bearingSpreadDeg);
+  }
   return normalized;
+}
+
+function normalizeApproachMetadata(value) {
+  const entries = Array.isArray(value) ? value : [];
+  return entries
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const bearingDeg = Number(entry.bearingDeg ?? entry.bearing ?? entry.b);
+      if (!Number.isFinite(bearingDeg)) return null;
+      const reverseBearingDeg = Number(entry.reverseBearingDeg ?? entry.reverseBearing ?? entry.rb);
+      const direction = String(entry.direction ?? entry.dir ?? "both").trim().toLowerCase();
+      const confidence = String(entry.confidence ?? entry.c ?? "low").trim().toLowerCase();
+      const roadDistanceM = Number(entry.roadDistanceM ?? entry.distanceM ?? entry.d);
+      const nearbyCandidateCount = Number(entry.nearbyCandidateCount ?? entry.n);
+      const bearingSpreadDeg = Number(entry.bearingSpreadDeg ?? entry.bs);
+      const ambiguityReason = String(entry.ambiguityReason ?? entry.ar ?? "").trim();
+      const wayId = entry.wayId ?? entry.sourceWayId ?? entry.way ?? entry.w;
+      const role = String(entry.role ?? "").trim().toLowerCase();
+      const source = String(entry.source ?? entry.s ?? "").trim();
+      const clusterIndex = Number(entry.clusterIndex ?? entry.cluster);
+      const candidateRank = Number(entry.candidateRank ?? entry.rank);
+      const normalized = {
+        bearingDeg: Math.round((((bearingDeg % 360) + 360) % 360)),
+        reverseBearingDeg: Number.isFinite(reverseBearingDeg)
+          ? Math.round((((reverseBearingDeg % 360) + 360) % 360))
+          : Math.round(((((bearingDeg + 180) % 360) + 360) % 360)),
+        direction: ["forward", "backward", "both", "unknown"].includes(direction) ? direction : "both",
+        confidence: ["high", "medium", "low"].includes(confidence) ? confidence : "low",
+        roadDistanceM: Number.isFinite(roadDistanceM) ? Math.round(roadDistanceM) : undefined,
+        role: ["primary", "secondary", "intersection", "ambiguous"].includes(role) ? role : undefined,
+        source: source || undefined,
+        wayId: wayId !== null && wayId !== undefined && wayId !== ""
+          ? (Number.isFinite(Number(wayId)) ? Math.round(Number(wayId)) : wayId)
+          : undefined,
+        clusterIndex: Number.isFinite(clusterIndex) && clusterIndex >= 0 ? Math.round(clusterIndex) : undefined,
+        candidateRank: Number.isFinite(candidateRank) && candidateRank > 0 ? Math.round(candidateRank) : undefined,
+        ambiguous: entry.ambiguous === true || entry.a === true ? true : undefined,
+        ambiguityReason: ambiguityReason || undefined,
+        nearbyCandidateCount: Number.isFinite(nearbyCandidateCount) && nearbyCandidateCount > 0
+          ? Math.round(nearbyCandidateCount)
+          : undefined,
+        bearingSpreadDeg: Number.isFinite(bearingSpreadDeg) && bearingSpreadDeg > 0
+          ? Math.round(bearingSpreadDeg)
+          : undefined,
+      };
+      const segment = Array.isArray(entry.segment ?? entry.seg) ? (entry.segment ?? entry.seg) : null;
+      if (segment?.length >= 2) {
+        normalized.segment = segment.slice(0, 2);
+      }
+      for (const key of Object.keys(normalized)) {
+        if (normalized[key] === undefined || normalized[key] === null || normalized[key] === "") delete normalized[key];
+      }
+      return normalized;
+    })
+    .filter(Boolean)
+    .slice(0, 4);
 }
 
 export function normalizeEnrichmentEntry(entry) {
   if (!entry || typeof entry !== "object") return null;
   const speedKph = Number(entry.speedKph);
-  if (!Number.isFinite(speedKph) || speedKph <= 0) return null;
   const speedMeta = normalizeSpeedMeta(entry.speedMeta ?? entry.meta);
-  if (!speedMeta || !speedMeta.source.startsWith("nearest_road:")) return null;
-  return { speedKph: Math.round(speedKph), speedMeta };
+  if (!speedMeta || (!speedMeta.source.startsWith("nearest_road:") && !speedMeta.approach?.length)) return null;
+  if ((!Number.isFinite(speedKph) || speedKph <= 0) && !speedMeta.approach?.length) return null;
+  return {
+    speedKph: Number.isFinite(speedKph) && speedKph > 0 ? Math.round(speedKph) : null,
+    speedMeta,
+  };
 }
 
 function getEnrichmentForKey(maxspeedEnrichment, key) {
@@ -226,7 +299,7 @@ export function normalizeOsmCameraElements(elements, options = {}) {
     const osmId = Number.isFinite(Number(element.id)) ? Math.round(Number(element.id)) : null;
     const key = osmId ? `osm:${osmId}` : `coord:${lon},${lat}`;
     const explicit = parseCameraMaxspeed(element.tags);
-    const enrichment = explicit.parsed ? null : getEnrichmentForKey(options.maxspeedEnrichment, key);
+    const enrichment = getEnrichmentForKey(options.maxspeedEnrichment, key);
     const country = getTaggedCountryCode(element.tags) || inferCountryFromCoordinate(lon, lat, "zz");
     const tags = element.tags || {};
     const name = cleanString(tags.name || tags.ref || tags["camera:type"]);
@@ -238,7 +311,12 @@ export function normalizeOsmCameraElements(elements, options = {}) {
       lat,
       speedKph: explicit.parsed ? explicit.speedKph : enrichment?.speedKph,
       speedMeta: explicit.parsed
-        ? { source: "camera:maxspeed", confidence: "high", raw: explicit.raw }
+        ? {
+          source: "camera:maxspeed",
+          confidence: "high",
+          raw: explicit.raw,
+          ...(enrichment?.speedMeta?.approach?.length ? { approach: enrichment.speedMeta.approach } : {}),
+        }
         : enrichment?.speedMeta,
       country,
       sourceMeta: {

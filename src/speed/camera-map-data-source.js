@@ -1,4 +1,5 @@
 import { createIndexedJsonKeyValueStore } from "../shared/indexed-storage.js";
+import { getTrapApproachMetadata } from "./camera-approach.js";
 
 export const CAMERA_MAP_MANIFEST_URL = "/geo/cameras/manifest.json";
 
@@ -305,6 +306,74 @@ function readSourceList(sourceMeta) {
   return sources.map((source) => String(source).trim()).filter(Boolean);
 }
 
+function summarizeApproachValues(values, fallback = "none") {
+  const normalized = values
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean);
+  if (normalized.length === 0) return fallback;
+  const unique = Array.from(new Set(normalized));
+  return unique.length === 1 ? unique[0] : "mixed";
+}
+
+function summarizeApproachConfidence(approaches) {
+  return summarizeApproachValues(approaches.map((approach) => approach.confidence), "none");
+}
+
+function summarizeApproachDirections(approaches) {
+  return summarizeApproachValues(approaches.map((approach) => approach.direction), "none");
+}
+
+function summarizeApproachRoles(approaches) {
+  return summarizeApproachValues(approaches.map((approach) => approach.role), "none");
+}
+
+function getApproachRoadDistanceMin(approaches) {
+  const distances = approaches
+    .map((approach) => Number(approach.roadDistanceM))
+    .filter(Number.isFinite);
+  if (distances.length === 0) return null;
+  return Math.round(Math.min(...distances));
+}
+
+function hasApproachGeometry(approaches) {
+  return approaches.some((approach) =>
+    Array.isArray(approach.segment)
+    && approach.segment.length >= 2
+    && approach.segment.slice(0, 2).every((point) => {
+      if (Array.isArray(point)) {
+        return point.length >= 2
+          && Number.isFinite(Number(point[0]))
+          && Number.isFinite(Number(point[1]));
+      }
+      return Number.isFinite(Number(point?.longitude ?? point?.lon ?? point?.lng))
+        && Number.isFinite(Number(point?.latitude ?? point?.lat));
+    })
+  );
+}
+
+function readApproachAmbiguous(speedMeta) {
+  return speedMeta?.ambiguous === true || speedMeta?.approachAmbiguous === true;
+}
+
+function hasAmbiguousApproach(approaches) {
+  return approaches.some((approach) => approach.ambiguous === true);
+}
+
+function readApproachAmbiguityReason(speedMeta) {
+  const reason = String(speedMeta?.ambiguityReason ?? speedMeta?.approachAmbiguityReason ?? "").trim();
+  return reason || null;
+}
+
+function readApproachNearbyCandidateCount(speedMeta) {
+  const count = Number(speedMeta?.nearbyCandidateCount ?? speedMeta?.approachNearbyCandidateCount);
+  return Number.isFinite(count) && count > 0 ? Math.round(count) : null;
+}
+
+function readApproachBearingSpreadDeg(speedMeta) {
+  const spread = Number(speedMeta?.bearingSpreadDeg ?? speedMeta?.approachBearingSpreadDeg);
+  return Number.isFinite(spread) && spread >= 0 ? Math.round(spread) : null;
+}
+
 export function compactTrapsToCameraFeatures(traps, {
   countryCode = "",
   countryName = "",
@@ -312,9 +381,11 @@ export function compactTrapsToCameraFeatures(traps, {
   bounds = null,
   maxFeatures = DEFAULT_MAX_FEATURES,
   startIndex = 0,
+  includeApproachVisualization = false,
 } = {}) {
   const features = [];
   const normalizedBounds = bounds ? normalizeViewportBounds(bounds) : null;
+  const includeApproachJson = includeApproachVisualization;
 
   for (let index = 0; index < traps.length; index += 1) {
     if (features.length >= maxFeatures) break;
@@ -329,6 +400,8 @@ export function compactTrapsToCameraFeatures(traps, {
     const speedMeta = readTrapSpeedMeta(trap);
     const sourceMeta = readTrapSourceMeta(trap);
     const cameraSources = readSourceList(sourceMeta);
+    const approaches = getTrapApproachMetadata(trap);
+    const approachAmbiguous = readApproachAmbiguous(speedMeta) || hasAmbiguousApproach(approaches);
     const featureIndex = startIndex + features.length;
     features.push({
       type: "Feature",
@@ -355,6 +428,19 @@ export function compactTrapsToCameraFeatures(traps, {
         address: sourceMeta?.address || null,
         ticketStats: sourceMeta?.ticketStats || null,
         sourceMeta,
+        approachCount: approaches.length,
+        approachConfidenceSummary: approachAmbiguous ? "ambiguous" : summarizeApproachConfidence(approaches),
+        approachDirections: summarizeApproachDirections(approaches),
+        approachRoles: summarizeApproachRoles(approaches),
+        approachRoadDistanceMMin: getApproachRoadDistanceMin(approaches),
+        hasApproachGeometry: hasApproachGeometry(approaches),
+        approachAmbiguous,
+        approachAmbiguityReason: readApproachAmbiguityReason(speedMeta),
+        approachNearbyCandidateCount: readApproachNearbyCandidateCount(speedMeta),
+        approachBearingSpreadDeg: readApproachBearingSpreadDeg(speedMeta),
+        ...(includeApproachJson && approaches.length > 0
+          ? { approachJson: JSON.stringify(approaches) }
+          : {}),
       },
     });
   }
@@ -395,7 +481,9 @@ export function createCameraMapDataSource(options = {}) {
     largeUntiledCountryCount = DEFAULT_LARGE_UNTILED_COUNT,
     largeUntiledMinZoom = DEFAULT_LARGE_UNTILED_MIN_ZOOM,
     maxFeatures = DEFAULT_MAX_FEATURES,
+    includeApproachVisualization = false,
   } = options;
+  const defaultIncludeApproachVisualization = includeApproachVisualization;
 
   let manifest = null;
   let manifestPromise = null;
@@ -612,7 +700,9 @@ export function createCameraMapDataSource(options = {}) {
     loadedTiles,
     skippedCountries,
     errors,
+    includeApproachVisualization: requestIncludeApproachVisualization = defaultIncludeApproachVisualization,
   }) {
+    const shouldIncludeApproachVisualization = requestIncludeApproachVisualization;
     const countryName = countryEntry.name || countryCode.toUpperCase();
     let tileManifestResult = null;
 
@@ -655,6 +745,7 @@ export function createCameraMapDataSource(options = {}) {
           bounds,
           maxFeatures: maxFeatures - features.length,
           startIndex: features.length,
+          includeApproachVisualization: shouldIncludeApproachVisualization,
         });
         if (nextFeatures.length > 0) {
           features.push(...nextFeatures);
@@ -686,7 +777,9 @@ export function createCameraMapDataSource(options = {}) {
     skippedCountries,
     errors,
     signal,
+    includeApproachVisualization: requestIncludeApproachVisualization = defaultIncludeApproachVisualization,
   }) {
+    const shouldIncludeApproachVisualization = requestIncludeApproachVisualization;
     const count = Number(countryEntry.count) || 0;
     if (features.length >= maxFeatures) return null;
     if (!allowNetwork) {
@@ -708,6 +801,7 @@ export function createCameraMapDataSource(options = {}) {
         bounds,
         maxFeatures: maxFeatures - features.length,
         startIndex: features.length,
+        includeApproachVisualization: shouldIncludeApproachVisualization,
       });
       if (nextFeatures.length > 0) {
         features.push(...nextFeatures);
@@ -738,6 +832,7 @@ export function createCameraMapDataSource(options = {}) {
         bounds,
         maxFeatures: maxFeatures - features.length,
         startIndex: features.length,
+        includeApproachVisualization: shouldIncludeApproachVisualization,
       });
       if (nextFeatures.length > 0) {
         features.push(...nextFeatures);
@@ -753,7 +848,13 @@ export function createCameraMapDataSource(options = {}) {
     }
   }
 
-  async function loadViewport({ bounds, zoom = 0, signal: externalSignal } = {}) {
+  async function loadViewport({
+    bounds,
+    zoom = 0,
+    signal: externalSignal,
+    includeApproachVisualization: requestIncludeApproachVisualization = defaultIncludeApproachVisualization,
+  } = {}) {
+    const shouldIncludeApproachVisualization = requestIncludeApproachVisualization;
     const requestId = activeRequestId + 1;
     activeRequestId = requestId;
     const { signal, cleanup } = createSignal(externalSignal);
@@ -816,6 +917,7 @@ export function createCameraMapDataSource(options = {}) {
             loadedTiles,
             skippedCountries,
             errors,
+            includeApproachVisualization: shouldIncludeApproachVisualization,
           });
         } else {
           await loadUntiledCountry({
@@ -829,6 +931,7 @@ export function createCameraMapDataSource(options = {}) {
             skippedCountries,
             errors,
             signal,
+            includeApproachVisualization: shouldIncludeApproachVisualization,
           });
         }
       }

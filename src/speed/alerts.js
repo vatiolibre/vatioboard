@@ -46,6 +46,7 @@ function canUseTrapSpeedForOverspeed(meta) {
 export function getActiveTrapAlert(input) {
   if (!isTrapDataReady(input.trapLoadPending, input.trapLoadError)) return null;
   if (!input.trapAlertEnabled) return null;
+  if (input.nearestTrapId === null || input.nearestTrapId === undefined || input.nearestTrapId === "") return null;
   if (!Number.isFinite(input.nearestTrapDistanceM) || !Number.isFinite(input.trapAlertDistanceM)) return null;
   if (input.nearestTrapDistanceM > input.trapAlertDistanceM) return null;
 
@@ -98,6 +99,10 @@ export function getAlertUiState(input) {
     trapSpeedLabel: trapAlert && Number.isFinite(trapAlert.speedKph)
       ? input.formatTrapSpeed(trapAlert.speedKph)
       : null,
+    cameraApproachState: input.cameraApproachState || "none",
+    cameraApproachConfidence: input.cameraApproachConfidence || "none",
+    cameraApproachReason: input.cameraApproachReason || "",
+    cameraApproachDetails: input.cameraApproachDetails || null,
     limitMs,
     over,
     near,

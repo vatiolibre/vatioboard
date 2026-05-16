@@ -6,6 +6,12 @@ const DEFAULT_AMBIGUOUS_DISTANCE_M = 15;
 const DEFAULT_BBOX_PADDING_DEGREES = 0.002;
 const DEFAULT_SEGMENT_INDEX_CELL_DEGREES = 0.01;
 const DEFAULT_SEGMENT_INDEX_MAX_CELLS_PER_SEGMENT = 512;
+const DEFAULT_APPROACH_AMBIGUOUS_BEARING_DEG = 25;
+const DEFAULT_MAX_APPROACH_CORRIDORS = 4;
+const DEFAULT_APPROACH_DISTANCE_BAND_M = 12;
+const DEFAULT_APPROACH_BEARING_CLUSTER_DEG = 25;
+const DEFAULT_APPROACH_SIMILAR_BEARING_DEG = 15;
+const DEFAULT_APPROACH_INTERSECTION_DISTANCE_M = 18;
 const DEFAULT_OVERPASS_URL = "https://overpass-api.de/api/interpreter";
 const DEFAULT_OVERPASS_MAX_RETRIES = 4;
 const DEFAULT_OVERPASS_RETRY_INITIAL_DELAY_MS = 5000;
@@ -68,6 +74,30 @@ function sleep(ms) {
 function finiteNumber(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function roundCoordinate(value) {
+  const number = finiteNumber(value);
+  return Number.isFinite(number) ? Number(number.toFixed(6)) : null;
+}
+
+function normalizeHeadingDeg(value) {
+  const number = finiteNumber(value);
+  if (!Number.isFinite(number)) return null;
+  return ((number % 360) + 360) % 360;
+}
+
+function bearingDegrees(start, end) {
+  const a = normalizePoint(start);
+  const b = normalizePoint(end);
+  if (!isFiniteCoordinate(a) || !isFiniteCoordinate(b)) return null;
+  const lat1 = toRadians(a.lat);
+  const lat2 = toRadians(b.lat);
+  const dLon = toRadians(b.lon - a.lon);
+  const y = Math.sin(dLon) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2)
+    - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+  return normalizeHeadingDeg(Math.atan2(y, x) * 180 / Math.PI);
 }
 
 function normalizeWayId(id) {
@@ -407,6 +437,51 @@ function chooseWayMaxspeed(tags = {}) {
   return null;
 }
 
+function getWayDirection(tags = {}) {
+  const oneway = String(tags.oneway ?? tags["oneway:vehicle"] ?? tags["oneway:motor_vehicle"] ?? "")
+    .trim()
+    .toLowerCase();
+  const junction = String(tags.junction || "").trim().toLowerCase();
+  if (oneway === "-1" || oneway === "reverse") return "backward";
+  if (oneway === "yes" || oneway === "true" || oneway === "1" || junction === "roundabout") return "forward";
+  if (oneway === "no" || oneway === "false" || oneway === "0") return "both";
+  return "both";
+}
+
+function createApproachMetadata(segment, distanceM, options = {}) {
+  const bearingDeg = bearingDegrees(segment.start, segment.end);
+  if (bearingDeg === null) return null;
+  const confidence = options.confidence || confidenceForDistance(distanceM, options);
+  const approach = {
+    bearingDeg: Math.round(bearingDeg),
+    reverseBearingDeg: Math.round(normalizeHeadingDeg(bearingDeg + 180)),
+    direction: getWayDirection(segment.way?.tags || {}),
+    roadDistanceM: Math.round(distanceM),
+    confidence,
+    role: options.role || "primary",
+    source: "osm-road-segment",
+    wayId: segment.wayId ?? normalizeWayId(segment.way?.id),
+    segment: [
+      [roundCoordinate(segment.start.lon), roundCoordinate(segment.start.lat)],
+      [roundCoordinate(segment.end.lon), roundCoordinate(segment.end.lat)],
+    ],
+  };
+
+  if (options.ambiguous === true) approach.ambiguous = true;
+  if (options.ambiguityReason) approach.ambiguityReason = String(options.ambiguityReason);
+  if (Number.isFinite(Number(options.nearbyCandidateCount)) && Number(options.nearbyCandidateCount) > 0) {
+    approach.nearbyCandidateCount = Math.round(Number(options.nearbyCandidateCount));
+  }
+  if (Number.isFinite(Number(options.bearingSpreadDeg)) && Number(options.bearingSpreadDeg) > 0) {
+    approach.bearingSpreadDeg = Math.round(Number(options.bearingSpreadDeg));
+  }
+  if (Number.isFinite(Number(options.clusterIndex))) approach.clusterIndex = Math.round(Number(options.clusterIndex));
+  if (Number.isFinite(Number(options.candidateRank))) approach.candidateRank = Math.round(Number(options.candidateRank));
+  if (approach.wayId === null || approach.wayId === undefined || approach.wayId === "") delete approach.wayId;
+  if (!approach.segment.flat().every(Number.isFinite)) delete approach.segment;
+  return approach;
+}
+
 function confidenceForDistance(distanceM, options = {}) {
   const highDistanceM = options.highConfidenceDistanceM ?? DEFAULT_HIGH_CONFIDENCE_DISTANCE_M;
   const mediumDistanceM = options.mediumConfidenceDistanceM ?? DEFAULT_MEDIUM_CONFIDENCE_DISTANCE_M;
@@ -415,15 +490,31 @@ function confidenceForDistance(distanceM, options = {}) {
   return "low";
 }
 
-function getClosestSegmentDistance(point, geometry) {
-  let bestDistanceM = Number.POSITIVE_INFINITY;
-  for (let index = 1; index < geometry.length; index += 1) {
-    bestDistanceM = Math.min(
-      bestDistanceM,
-      distancePointToSegmentMeters(point, geometry[index - 1], geometry[index]),
-    );
+function mergeDefined(base, patch) {
+  const merged = { ...base };
+  for (const [key, value] of Object.entries(patch || {})) {
+    if (value !== undefined && value !== null && value !== "") merged[key] = value;
   }
-  return bestDistanceM;
+  return merged;
+}
+
+function getClosestSegmentMatch(point, geometry) {
+  let bestDistanceM = Number.POSITIVE_INFINITY;
+  let bestSegment = null;
+  for (let index = 1; index < geometry.length; index += 1) {
+    const start = normalizePoint(geometry[index - 1]);
+    const end = normalizePoint(geometry[index]);
+    if (!isFiniteCoordinate(start) || !isFiniteCoordinate(end)) continue;
+    const distanceM = distancePointToSegmentMeters(point, start, end);
+    if (distanceM < bestDistanceM) {
+      bestDistanceM = distanceM;
+      bestSegment = { start, end };
+    }
+  }
+  return {
+    distanceM: bestDistanceM,
+    segment: bestSegment,
+  };
 }
 
 function getSegmentIndexCellSize(options = {}) {
@@ -498,7 +589,7 @@ export function createRoadSegmentIndex(roadWays, options = {}) {
   for (const way of ways) {
     const speed = chooseWayMaxspeed(way?.tags || {});
     const geometry = Array.isArray(way?.geometry) ? way.geometry : [];
-    if (!speed || geometry.length < 2) {
+    if (geometry.length < 2) {
       index.skippedWayCount += 1;
       continue;
     }
@@ -512,9 +603,10 @@ export function createRoadSegmentIndex(roadWays, options = {}) {
       const segment = {
         way,
         wayId: normalizeWayId(way.id),
-        speedKph: speed.speedKph,
-        source: speed.source,
-        raw: speed.raw,
+        speedKph: speed?.speedKph ?? null,
+        source: speed?.source ?? "nearest_road:approach",
+        raw: speed?.raw ?? null,
+        hasSpeed: Boolean(speed),
         start,
         end,
         minLon: Math.min(start.lon, end.lon),
@@ -560,27 +652,39 @@ function getRoadSegmentsNearPoint(segmentIndex, point, options = {}) {
   return segments;
 }
 
-function indexedSegmentToCandidate(segment, camera, cameraPoint, options = {}) {
+function segmentToApproachCandidate(segment, camera, cameraPoint, options = {}) {
   if (!isAllowedHighway(segment.way, camera, options)) return null;
 
   const distanceM = distancePointToSegmentMeters(cameraPoint, segment.start, segment.end);
   const maxDistanceM = options.maxDistanceM ?? DEFAULT_MAX_DISTANCE_M;
   if (!Number.isFinite(distanceM) || distanceM > maxDistanceM) return null;
+  const approach = createApproachMetadata(segment, distanceM, options);
+  if (!approach) return null;
+  const speedKph = segment.speedKph === null || segment.speedKph === undefined
+    ? null
+    : finiteNumber(segment.speedKph);
 
   return {
-    speedKph: segment.speedKph,
+    speedKph,
     speedMeta: {
       source: segment.source,
       confidence: confidenceForDistance(distanceM, options),
       wayId: segment.wayId,
       distanceM: Math.round(distanceM),
       raw: segment.raw,
+      approach: [approach],
     },
     sourceWayId: segment.wayId,
     distanceM,
     raw: segment.raw,
     source: segment.source,
+    hasSpeed: speedKph !== null,
+    highway: String(segment.way?.tags?.highway || ""),
   };
+}
+
+function indexedSegmentToCandidate(segment, camera, cameraPoint, options = {}) {
+  return segmentToApproachCandidate(segment, camera, cameraPoint, options);
 }
 
 export function getWayCandidateSpeed(way, camera, options = {}) {
@@ -594,7 +698,8 @@ export function getWayCandidateSpeed(way, camera, options = {}) {
   const geometry = Array.isArray(way?.geometry) ? way.geometry : [];
   if (geometry.length < 2) return null;
 
-  const distanceM = getClosestSegmentDistance(cameraPoint, geometry);
+  const closest = getClosestSegmentMatch(cameraPoint, geometry);
+  const distanceM = closest.distanceM;
   const maxDistanceM = options.maxDistanceM ?? DEFAULT_MAX_DISTANCE_M;
   if (!Number.isFinite(distanceM) || distanceM > maxDistanceM) return null;
 
@@ -606,6 +711,12 @@ export function getWayCandidateSpeed(way, camera, options = {}) {
       wayId: normalizeWayId(way.id),
       distanceM: Math.round(distanceM),
       raw: speed.raw,
+      approach: [createApproachMetadata({
+        way,
+        wayId: normalizeWayId(way.id),
+        start: closest.segment?.start,
+        end: closest.segment?.end,
+      }, distanceM, options)].filter(Boolean),
     },
     sourceWayId: normalizeWayId(way.id),
     distanceM,
@@ -639,36 +750,306 @@ function getCameraKey(camera) {
   return isFiniteCoordinate(point) ? `coord:${point.lon},${point.lat}` : "";
 }
 
-function isAmbiguousCandidate(best, candidate, options = {}) {
-  if (!best || !candidate) return false;
-  if (best.speedKph === candidate.speedKph) return false;
-  const clearDistanceM = options.ambiguityClearDistanceM ?? DEFAULT_AMBIGUOUS_DISTANCE_M;
-  return candidate.distanceM - best.distanceM < clearDistanceM;
+function getPrimaryApproach(candidate) {
+  return candidate?.speedMeta?.approach?.[0] || null;
 }
 
-function findBestRoadCandidate(camera, roadWays, options = {}) {
-  const candidates = [];
-  for (const way of roadWays) {
-    const candidate = getWayCandidateSpeed(way, camera, options);
-    if (candidate) candidates.push(candidate);
+function angularDifferenceDeg(left, right) {
+  const a = normalizeHeadingDeg(left);
+  const b = normalizeHeadingDeg(right);
+  if (a === null || b === null) return null;
+  return Math.abs(((a - b + 540) % 360) - 180);
+}
+
+function getCandidateBearingDeg(candidate) {
+  const approach = getPrimaryApproach(candidate);
+  const bearing = Number(candidate?.bearingDeg ?? approach?.bearingDeg);
+  return Number.isFinite(bearing) ? normalizeHeadingDeg(bearing) : null;
+}
+
+function getCandidateDistanceM(candidate) {
+  const approach = getPrimaryApproach(candidate);
+  const distanceM = Number(candidate?.distanceM ?? approach?.roadDistanceM);
+  return Number.isFinite(distanceM) ? distanceM : Number.POSITIVE_INFINITY;
+}
+
+function getCandidateWayId(candidate) {
+  const approach = getPrimaryApproach(candidate);
+  const wayId = candidate?.sourceWayId ?? candidate?.speedMeta?.wayId ?? approach?.wayId;
+  return wayId === null || wayId === undefined ? "" : String(wayId);
+}
+
+function bearingAxisDifferenceDeg(left, right) {
+  const direct = angularDifferenceDeg(left, right);
+  const reverse = angularDifferenceDeg(left, Number(right) + 180);
+  if (direct === null && reverse === null) return null;
+  if (direct === null) return reverse;
+  if (reverse === null) return direct;
+  return Math.min(direct, reverse);
+}
+
+function compareRoadCandidate(left, right) {
+  const distanceDelta = getCandidateDistanceM(left) - getCandidateDistanceM(right);
+  if (Math.abs(distanceDelta) > 0.01) return distanceDelta;
+  if (left?.hasSpeed !== right?.hasSpeed) return left?.hasSpeed ? -1 : 1;
+  return getCandidateWayId(left).localeCompare(getCandidateWayId(right));
+}
+
+function speedsAreCompatible(left, right) {
+  const leftSpeed = Number(left?.speedKph);
+  const rightSpeed = Number(right?.speedKph);
+  return !Number.isFinite(leftSpeed) || !Number.isFinite(rightSpeed) || leftSpeed === rightSpeed;
+}
+
+function getBearingSpreadDeg(candidates = []) {
+  const bearings = candidates
+    .map(getCandidateBearingDeg)
+    .filter(Number.isFinite);
+  if (bearings.length < 2) return 0;
+  let largestGap = 0;
+  const sorted = bearings
+    .map((bearing) => normalizeHeadingDeg(bearing))
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+  for (let index = 0; index < sorted.length; index += 1) {
+    const current = sorted[index];
+    const next = sorted[(index + 1) % sorted.length] + (index === sorted.length - 1 ? 360 : 0);
+    largestGap = Math.max(largestGap, next - current);
+  }
+  return Math.round(360 - largestGap);
+}
+
+export function clusterApproachCandidatesByBearing(candidates = [], options = {}) {
+  const clusterToleranceDeg = options.approachBearingClusterDeg ?? DEFAULT_APPROACH_BEARING_CLUSTER_DEG;
+  const sameWayToleranceDeg = options.approachSimilarBearingDeg ?? DEFAULT_APPROACH_SIMILAR_BEARING_DEG;
+  const clusters = [];
+
+  for (const candidate of [...candidates].sort(compareRoadCandidate)) {
+    const bearingDeg = getCandidateBearingDeg(candidate);
+    if (bearingDeg === null) continue;
+    const wayId = getCandidateWayId(candidate);
+    const sameWayCluster = clusters.find((cluster) =>
+      wayId
+      && cluster.wayId === wayId
+      && speedsAreCompatible(candidate, cluster.representative)
+      && bearingAxisDifferenceDeg(bearingDeg, cluster.bearingDeg) <= sameWayToleranceDeg
+    );
+    const cluster = sameWayCluster || clusters.find((entry) =>
+      speedsAreCompatible(candidate, entry.representative)
+      &&
+      bearingAxisDifferenceDeg(bearingDeg, entry.bearingDeg) <= clusterToleranceDeg
+    );
+
+    if (cluster) {
+      cluster.members.push(candidate);
+      if (compareRoadCandidate(candidate, cluster.representative) < 0) {
+        cluster.representative = candidate;
+        cluster.bearingDeg = bearingDeg;
+        cluster.wayId = wayId;
+      }
+    } else {
+      clusters.push({
+        bearingDeg,
+        wayId,
+        representative: candidate,
+        members: [candidate],
+      });
+    }
   }
 
-  if (candidates.length === 0) return { candidate: null, ambiguous: false };
-  candidates.sort((a, b) => a.distanceM - b.distanceM);
-  const best = candidates[0];
-  const ambiguous = candidates.slice(1).some((candidate) =>
-    isAmbiguousCandidate(best, candidate, options)
-  );
+  return clusters
+    .map((cluster, clusterIndex) => ({
+      ...cluster.representative,
+      clusterIndex,
+      clusteredCandidateCount: cluster.members.length,
+    }))
+    .sort(compareRoadCandidate);
+}
+
+function collectWayApproachCandidates(camera, roadWays, options = {}) {
+  const cameraPoint = readCameraPoint(camera);
+  if (!isFiniteCoordinate(cameraPoint)) return [];
+  const candidates = [];
+
+  for (const way of roadWays) {
+    if (!isAllowedHighway(way, camera, options)) continue;
+    const speed = chooseWayMaxspeed(way?.tags || {});
+    const geometry = Array.isArray(way?.geometry) ? way.geometry : [];
+    for (let geometryIndex = 1; geometryIndex < geometry.length; geometryIndex += 1) {
+      const start = normalizePoint(geometry[geometryIndex - 1]);
+      const end = normalizePoint(geometry[geometryIndex]);
+      if (!isFiniteCoordinate(start) || !isFiniteCoordinate(end)) continue;
+      const candidate = segmentToApproachCandidate({
+        way,
+        wayId: normalizeWayId(way.id),
+        speedKph: speed?.speedKph ?? null,
+        source: speed?.source ?? "nearest_road:approach",
+        raw: speed?.raw ?? null,
+        hasSpeed: Boolean(speed),
+        start,
+        end,
+      }, camera, cameraPoint, options);
+      if (candidate) candidates.push(candidate);
+    }
+  }
+
+  return candidates;
+}
+
+function getPlausibleApproachCandidates(candidates = [], options = {}) {
+  if (candidates.length === 0) return [];
+  const sorted = [...candidates].sort(compareRoadCandidate);
+  const closestDistanceM = getCandidateDistanceM(sorted[0]);
+  const distanceBandM = options.approachDistanceBandM ?? DEFAULT_APPROACH_DISTANCE_BAND_M;
+  const intersectionDistanceM = options.approachIntersectionDistanceM ?? DEFAULT_APPROACH_INTERSECTION_DISTANCE_M;
+  return sorted.filter((candidate) => {
+    const distanceM = getCandidateDistanceM(candidate);
+    return distanceM <= closestDistanceM + distanceBandM || distanceM <= intersectionDistanceM;
+  });
+}
+
+function getUniqueSpeeds(candidates = []) {
+  return Array.from(new Set(
+    candidates
+      .map((candidate) => candidate.speedKph)
+      .filter(Number.isFinite)
+  ));
+}
+
+function isLowerPriorityRoad(candidate) {
+  const highway = String(candidate?.highway || "").toLowerCase();
+  return highway === "service" || highway.endsWith("_link");
+}
+
+function getCorridorRole(candidate, index, { ambiguous = false, corridorCount = 1 } = {}) {
+  if (ambiguous && index > 0) return "ambiguous";
+  if (index === 0) return "primary";
+  if (corridorCount > 1) return "intersection";
+  return "secondary";
+}
+
+function getCorridorConfidence(candidate, index, { ambiguous = false, corridorCount = 1 } = {}, options = {}) {
+  if (ambiguous) return "low";
+  let confidence = confidenceForDistance(getCandidateDistanceM(candidate), options);
+  if (corridorCount > 1 && confidence === "high") confidence = "medium";
+  if (index > 0 && confidence === "high") confidence = "medium";
+  if (isLowerPriorityRoad(candidate)) {
+    if (index > 0) confidence = "low";
+    else if (confidence === "high") confidence = "medium";
+  }
+  return confidence;
+}
+
+function annotateApproachCandidate(candidate, index, context, options = {}) {
+  const confidence = getCorridorConfidence(candidate, index, context, options);
+  const role = getCorridorRole(candidate, index, context);
+  const approach = getPrimaryApproach(candidate);
+  const annotatedApproach = mergeDefined(approach, {
+    confidence,
+    role,
+    source: "osm-road-segment",
+    ambiguous: context.ambiguous ? true : undefined,
+    ambiguityReason: context.ambiguityReason,
+    nearbyCandidateCount: context.nearbyCandidateCount,
+    bearingSpreadDeg: context.bearingSpreadDeg > 0 ? context.bearingSpreadDeg : undefined,
+    clusterIndex: candidate.clusterIndex ?? index,
+    candidateRank: index + 1,
+  });
   return {
-    candidate: ambiguous ? null : best,
-    ambiguous,
+    ...candidate,
+    speedMeta: {
+      ...candidate.speedMeta,
+      confidence,
+      approach: [annotatedApproach],
+      nearbyCandidateCount: context.nearbyCandidateCount,
+      ...(context.bearingSpreadDeg > 0 ? { bearingSpreadDeg: context.bearingSpreadDeg } : {}),
+      ...(context.ambiguous ? {
+        ambiguous: true,
+        ambiguityReason: context.ambiguityReason,
+      } : {}),
+    },
   };
 }
 
-function findBestRoadCandidateFromIndex(camera, segmentIndex, options = {}) {
+function createSpeedCandidateFromCorridors(approachCandidates, context) {
+  const speeds = getUniqueSpeeds(approachCandidates);
+  if (speeds.length !== 1) return null;
+  const speedKph = speeds[0];
+  const sourceCandidate = approachCandidates.find((candidate) => candidate.speedKph === speedKph) || approachCandidates[0];
+  return {
+    ...sourceCandidate,
+    speedKph,
+    speedMeta: {
+      ...sourceCandidate.speedMeta,
+      source: sourceCandidate.source,
+      confidence: sourceCandidate.speedMeta?.confidence || "low",
+      wayId: sourceCandidate.sourceWayId,
+      distanceM: Math.round(sourceCandidate.distanceM),
+      raw: sourceCandidate.raw,
+      approach: approachCandidates.flatMap((candidate) => candidate.speedMeta?.approach || []),
+      nearbyCandidateCount: context.nearbyCandidateCount,
+      ...(context.bearingSpreadDeg > 0 ? { bearingSpreadDeg: context.bearingSpreadDeg } : {}),
+      ...(context.ambiguous ? {
+        ambiguous: true,
+        ambiguityReason: context.ambiguityReason,
+      } : {}),
+    },
+  };
+}
+
+function buildApproachRoadResult(candidates, options = {}) {
+  if (!Array.isArray(candidates) || candidates.length === 0) {
+    return { candidate: null, primaryCandidate: null, approachCandidates: [], approaches: [], ambiguous: false };
+  }
+
+  const plausibleCandidates = getPlausibleApproachCandidates(candidates, options);
+  const clusteredCandidates = clusterApproachCandidatesByBearing(plausibleCandidates, options);
+  const maxCorridors = Math.max(
+    1,
+    Math.round(Number(options.maxApproachCorridors ?? DEFAULT_MAX_APPROACH_CORRIDORS) || DEFAULT_MAX_APPROACH_CORRIDORS),
+  );
+  const selectedCandidates = clusteredCandidates.slice(0, maxCorridors);
+  const speedValues = getUniqueSpeeds(selectedCandidates);
+  const speedAmbiguous = speedValues.length > 1;
+  const cappedAmbiguous = clusteredCandidates.length > selectedCandidates.length;
+  const ambiguous = speedAmbiguous || cappedAmbiguous;
+  const ambiguityReason = speedAmbiguous
+    ? "nearby-different-speed"
+    : (cappedAmbiguous ? "too-many-plausible-corridors" : "");
+  const bearingSpreadDeg = getBearingSpreadDeg(selectedCandidates);
+  const context = {
+    ambiguous,
+    ambiguityReason,
+    nearbyCandidateCount: plausibleCandidates.length,
+    bearingSpreadDeg,
+    corridorCount: selectedCandidates.length,
+  };
+  const approachCandidates = selectedCandidates.map((candidate, index) =>
+    annotateApproachCandidate(candidate, index, context, options)
+  );
+  const candidate = ambiguous ? null : createSpeedCandidateFromCorridors(approachCandidates, context);
+
+  return {
+    candidate,
+    primaryCandidate: approachCandidates[0] || null,
+    approachCandidates,
+    approaches: approachCandidates.flatMap((candidateEntry) => candidateEntry.speedMeta?.approach || []),
+    ambiguous,
+    ambiguityReason,
+    speedAmbiguous,
+    nearbyCandidateCount: plausibleCandidates.length,
+    bearingSpreadDeg,
+  };
+}
+
+function findBestRoadCandidate(camera, roadWays, options = {}) {
+  return buildApproachRoadResult(collectWayApproachCandidates(camera, roadWays, options), options);
+}
+
+export function findApproachRoadCandidates(camera, segmentIndex, options = {}) {
   const cameraPoint = readCameraPoint(camera);
   if (!isFiniteCoordinate(cameraPoint) || !segmentIndex) {
-    return { candidate: null, ambiguous: false };
+    return { candidate: null, primaryCandidate: null, approachCandidates: [], approaches: [], ambiguous: false };
   }
 
   const candidates = [];
@@ -677,16 +1058,11 @@ function findBestRoadCandidateFromIndex(camera, segmentIndex, options = {}) {
     if (candidate) candidates.push(candidate);
   }
 
-  if (candidates.length === 0) return { candidate: null, ambiguous: false };
-  candidates.sort((a, b) => a.distanceM - b.distanceM);
-  const best = candidates[0];
-  const ambiguous = candidates.slice(1).some((candidate) =>
-    isAmbiguousCandidate(best, candidate, options)
-  );
-  return {
-    candidate: ambiguous ? null : best,
-    ambiguous,
-  };
+  return buildApproachRoadResult(candidates, options);
+}
+
+function findBestRoadCandidateFromIndex(camera, segmentIndex, options = {}) {
+  return findApproachRoadCandidates(camera, segmentIndex, options);
 }
 
 export function enrichCameraRecordsWithRoadSpeeds(records, roadWays, options = {}) {
@@ -696,8 +1072,12 @@ export function enrichCameraRecordsWithRoadSpeeds(records, roadWays, options = {
     || (options.useSegmentIndex === false ? null : createRoadSegmentIndex(ways, options));
 
   return cameras.map((camera) => {
-    const explicit = readCameraExplicitSpeed(camera);
     const key = getCameraKey(camera);
+    const roadResult = segmentIndex
+      ? findBestRoadCandidateFromIndex(camera, segmentIndex, options)
+      : findBestRoadCandidate(camera, ways, options);
+    const approach = roadResult.approaches || roadResult.candidate?.speedMeta?.approach || [];
+    const explicit = readCameraExplicitSpeed(camera);
     if (explicit.parsed) {
       return {
         ...camera,
@@ -707,20 +1087,39 @@ export function enrichCameraRecordsWithRoadSpeeds(records, roadWays, options = {
           source: "camera:maxspeed",
           confidence: "high",
           raw: explicit.raw,
+          ...(approach.length ? { approach } : {}),
+          ...(roadResult.ambiguous ? {
+            ambiguous: true,
+            ambiguityReason: roadResult.ambiguityReason,
+          } : {}),
+          ...(Number.isFinite(roadResult.nearbyCandidateCount) ? { nearbyCandidateCount: roadResult.nearbyCandidateCount } : {}),
+          ...(Number.isFinite(roadResult.bearingSpreadDeg) && roadResult.bearingSpreadDeg > 0
+            ? { bearingSpreadDeg: roadResult.bearingSpreadDeg }
+            : {}),
         },
+        approachMeta: approach,
         speedEnrichmentStatus: "explicit",
       };
     }
 
-    const { candidate, ambiguous } = segmentIndex
-      ? findBestRoadCandidateFromIndex(camera, segmentIndex, options)
-      : findBestRoadCandidate(camera, ways, options);
+    const { candidate, ambiguous } = roadResult;
     if (!candidate) {
       return {
         ...camera,
         key,
         speedKph: null,
-        speedMeta: null,
+        speedMeta: approach.length
+          ? {
+            source: "nearest_road:approach",
+            confidence: roadResult.ambiguous ? "low" : (approach[0]?.confidence || "low"),
+            approach,
+            ambiguous: ambiguous || undefined,
+            ambiguityReason: roadResult.ambiguityReason || undefined,
+            nearbyCandidateCount: roadResult.nearbyCandidateCount || undefined,
+            bearingSpreadDeg: roadResult.bearingSpreadDeg || undefined,
+          }
+          : null,
+        approachMeta: approach,
         speedEnrichmentStatus: ambiguous ? "ambiguous" : "unknown",
       };
     }
@@ -730,6 +1129,7 @@ export function enrichCameraRecordsWithRoadSpeeds(records, roadWays, options = {
       key,
       speedKph: candidate.speedKph,
       speedMeta: candidate.speedMeta,
+      approachMeta: candidate.speedMeta?.approach || [],
       speedEnrichmentStatus: "inferred",
     };
   });

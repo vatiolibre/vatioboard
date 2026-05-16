@@ -148,7 +148,9 @@ Vatio Speed uses generated runtime artifacts in `public/geo/cameras`:
 - `countries/<code>.kdbush` stores the matching KDBush index.
 - Large countries can be split into `countries/<code>/manifest.json` plus `tiles/<tile-id>.json` and `tiles/<tile-id>.kdbush`.
 
-`speedMeta` is optional compact provenance for inferred limits. Explicit camera maxspeed tags stay highest-confidence. Missing camera maxspeed can be enriched at fetch/build time from nearby OSM road ways with `maxspeed`, `maxspeed:forward`, or `maxspeed:backward`; unknown remains `null`, never `0`.
+`speedMeta` is optional compact provenance for inferred limits and approach matching. Explicit camera maxspeed tags stay highest-confidence. Missing camera maxspeed can be enriched at fetch/build time from nearby OSM road ways with `maxspeed`, `maxspeed:forward`, or `maxspeed:backward`; unknown remains `null`, never `0`.
+
+Approach metadata is stored inside `speedMeta.approach` when the build pipeline can match a camera to a nearby road segment. Each compact approach entry can include a forward bearing, reverse bearing, allowed direction, road distance, confidence, and a clipped two-point segment. Old artifacts without `approach` continue to load and alert through the fallback policy.
 
 `npm run prepare:geo` is offline-safe. It builds from `data-src/osm_speed_cameras_overpass.json` and the optional `data-src/osm_speed_cameras_maxspeed_enrichment.json` sidecar when they exist, otherwise it uses the checked-in Colombia ANSV seed so dev/build never depend on live Overpass. Browser runtime does not query Overpass or parse road geometry while driving.
 
@@ -189,6 +191,32 @@ Only use `CAMERA_ROAD_REFRESH_CACHE=1` when you deliberately want to re-download
 
 At runtime, Speed does not upload live location to fetch camera alerts. GPS matching happens locally: the app-level GPS service keeps one shared browser `watchPosition()` for active consumers, normalizes speed/heading/timestamps, and broadcasts local `vatioboard:gps-position` updates for Speed, Camera Map, recording, driving alerts, and other shells. Camera matching loads the manifest, chooses the current country or nearby tile from the GPS fix, tries IndexedDB first, and revalidates in the background. If the network drops during an update, the last good cached country/tile stays intact. With no cache and no network, the speedometer still works and trap alerts show an unavailable/offline camera database status.
 
+Camera alerts are approach-aware instead of purely circular. The runtime still uses the point KDBush/geokdbush index for bounded candidate lookup, then evaluates several nearby cameras by exact distance, GPS or movement heading, whether the vehicle is moving toward the camera, whether distance is decreasing, and any build-time road approach metadata. Build-time enrichment stores a bounded set of plausible approach corridors for cameras near intersections, divided roads, ramps, frontage roads, and other multi-road geometry. Each corridor is a clipped local road segment with bearing, reverse bearing, direction, road distance, OSM way id, role (`primary`, `intersection`, `secondary`, or `ambiguous`), confidence, and compact ambiguity metadata when needed.
+
+High- and medium-confidence corridors can require the vehicle heading to match an allowed approach bearing and, when segment geometry is present, to be plausibly near that short road corridor. Runtime accepts a camera when any valid corridor matches and reports the matched approach index, way id, role, confidence, direction, and reason through `cameraApproachDetails`. Low, missing, or ambiguous metadata degrades conservatively: heading-only matching is used when available, and legacy radius fallback remains available when heading is unavailable so old cached artifacts do not silently miss cameras.
+
+Speed inference remains separate and conservative. When multiple plausible road corridors disagree on speed, VatioBoard stores the corridors for approach matching but avoids inferring a camera speed from the conflicting roads. Equal-speed intersection corridors can still produce one speed value while retaining multiple approach corridors. NYC, ANSV, and other local/official camera records can carry OSM-derived approach corridors when they merge with OSM or enrichment records; local-only records without OSM geometry continue to work without approach metadata. Local source direction hints are not treated as full road geometry unless a future source-specific converter adds compact segments.
+
+Known limitations are intentionally conservative: curved roads may be represented by one short bearing, urban intersections can remain ambiguous, frontage roads can be lower confidence unless clearly closest, and poor GPS heading can fall back to radius matching rather than suppressing every alert.
+
+Approach matching behavior can be tuned for development without a rebuild through localStorage:
+
+- `vatio_speed_camera_approach_fallback_mode`: `legacy-radius` (default), `heading-only`, or `silent`.
+- `vatio_speed_camera_approach_heading_tolerance_deg`: accepted approach angle, default `45`.
+- `vatio_speed_camera_approach_minimum_speed_ms`: low-speed suppression threshold, default `1.5`.
+
+Useful local camera-data commands:
+
+```bash
+npm run fetch:cameras
+npm run prepare:geo
+npm run analyze:cameras:maxspeed
+npm run test:unit
+npm run test:smoke
+npm run lint
+npm run build
+```
+
 ### Camera Map
 
 The Camera Map points come from the same local/static camera artifacts described above. The browser does not call Overpass or any camera API from the map panel.
@@ -196,6 +224,10 @@ The Camera Map points come from the same local/static camera artifacts described
 The panel is designed as an in-car navigation display: the map takes nearly the whole window, controls are compact touch targets, and the live position is shown as a bright green vehicle puck. Native MapLibre zoom controls stay in the top-right, while Camera Map follow/orientation/layer controls are compact and offset so they remain usable on touch screens and fullscreen displays.
 
 Heading comes from browser GPS `coords.heading` when available and is exposed through the app GPS service as `headingDeg`; when GPS heading is missing, Camera Map can derive a bearing from meaningful recent movement. Follow mode keeps the vehicle visible and can frame a nearby relevant camera from the currently loaded camera features. The orientation control cycles between north-up and heading-up; heading-up falls back gracefully to north-up behavior when heading is unavailable or stale. Camera-aware framing uses only loaded local/static artifacts and does not fetch live camera APIs.
+
+Camera Map includes an Approach overlay in the normal layer menu. Enable **Approach** to show matched camera road segments, allowed detection directions, confidence styling, and a compact legend. Solid approach roads indicate higher-confidence matches; softer/dashed lines indicate low-confidence or ambiguous matches; direction rays show which traffic direction is believed to trigger the camera. Multiple corridors can be shown for one camera, such as a primary road plus an intersection candidate. The overlay reads only generated camera artifacts and cached map state, so it does not make live Overpass, Nominatim, or road-network requests while driving.
+
+Tapping a camera opens a Camera approach section that summarizes confidence, direction, matched-road distance, bearing, source context, and the current match decision when live position is available. The details list each corridor, including its role, allowed direction, bearing pair, confidence, road match distance, and way id. The popup explains outcomes such as “Would alert now,” “Near but not approaching,” “Heading unavailable,” or “Using fallback,” and includes a **Copy camera review info** action with a local JSON payload for filing data fixes. Cameras with missing, low-confidence, or ambiguous approach data remain visible so bad road matching, wrong direction metadata, and old cached artifacts can be reviewed instead of hidden.
 
 Drive recording remains local-first. Recording uses the shared GPS stream and persists active replay data locally as it goes, so route changes do not require a second GPS watch and network/cloud-sync failures do not stop local capture.
 

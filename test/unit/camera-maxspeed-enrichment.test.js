@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  clusterApproachCandidatesByBearing,
+  createRoadSegmentIndex,
   distancePointToSegmentMeters,
   enrichCameraRecordsWithRoadSpeeds,
   fetchOverpassJsonWithRetry,
   fetchRoadWaysForCameraBatch,
+  findApproachRoadCandidates,
   getWayCandidateSpeed,
   parseMaxspeed,
   parseRetryAfterMs,
@@ -81,8 +84,74 @@ describe("camera maxspeed enrichment", () => {
         source: "nearest_road:maxspeed",
         confidence: "high",
         wayId: 201,
+        approach: [
+          expect.objectContaining({
+            bearingDeg: 0,
+            reverseBearingDeg: 180,
+            direction: "both",
+            confidence: "high",
+          }),
+        ],
       }),
     });
+  });
+
+  it("adds road approach metadata for explicit camera speeds", () => {
+    const result = enrichCameraRecordsWithRoadSpeeds(
+      [camera({ tags: { maxspeed: "60" } })],
+      [way({
+        id: 210,
+        tags: { highway: "primary", maxspeed: "60", oneway: "yes" },
+        geometry: [
+          { lat: 0, lon: -0.001 },
+          { lat: 0, lon: 0.001 },
+        ],
+      })],
+    );
+
+    expect(result[0]).toMatchObject({
+      speedKph: 60,
+      speedEnrichmentStatus: "explicit",
+      speedMeta: expect.objectContaining({
+        source: "camera:maxspeed",
+        approach: [
+          expect.objectContaining({
+            bearingDeg: 90,
+            reverseBearingDeg: 270,
+            direction: "forward",
+            roadDistanceM: 0,
+          }),
+        ],
+      }),
+    });
+  });
+
+  it("uses the closest local segment bearing for bent road approach metadata", () => {
+    const candidate = getWayCandidateSpeed(
+      way({
+        id: 211,
+        tags: { highway: "primary", maxspeed: "70" },
+        geometry: [
+          { lat: 0, lon: -0.001 },
+          { lat: 0, lon: 0 },
+          { lat: 0.001, lon: 0 },
+        ],
+      }),
+      camera({ lat: 0.0005, lon: 0.00002 }),
+    );
+
+    expect(candidate).toMatchObject({
+      speedKph: 70,
+      speedMeta: expect.objectContaining({
+        approach: [
+          expect.objectContaining({
+            bearingDeg: 0,
+            reverseBearingDeg: 180,
+          }),
+        ],
+      }),
+    });
+    expect(candidate.speedMeta.approach[0].segment).toEqual([[0, 0], [0, 0.001]]);
   });
 
   it("rejects roads beyond the threshold", () => {
@@ -131,7 +200,165 @@ describe("camera maxspeed enrichment", () => {
     expect(result[0]).toMatchObject({
       speedKph: null,
       speedEnrichmentStatus: "ambiguous",
+      speedMeta: expect.objectContaining({
+        source: "nearest_road:approach",
+        confidence: "low",
+        ambiguous: true,
+        ambiguityReason: "nearby-different-speed",
+        nearbyCandidateCount: 2,
+        approach: expect.arrayContaining([
+          expect.objectContaining({
+            confidence: "low",
+            ambiguous: true,
+            ambiguityReason: "nearby-different-speed",
+          }),
+        ]),
+      }),
     });
+  });
+
+  it("stores same-speed perpendicular roads as bounded intersection corridors", () => {
+    const result = enrichCameraRecordsWithRoadSpeeds(
+      [camera()],
+      [
+        way({
+          id: 311,
+          tags: { highway: "primary", maxspeed: "50" },
+          geometry: [
+            { lat: -0.001, lon: 0.00004 },
+            { lat: 0.001, lon: 0.00004 },
+          ],
+        }),
+        way({
+          id: 312,
+          tags: { highway: "primary", maxspeed: "50" },
+          geometry: [
+            { lat: 0.00005, lon: -0.001 },
+            { lat: 0.00005, lon: 0.001 },
+          ],
+        }),
+      ],
+    );
+
+    expect(result[0]).toMatchObject({
+      speedKph: 50,
+      speedEnrichmentStatus: "inferred",
+      speedMeta: expect.objectContaining({
+        source: "nearest_road:maxspeed",
+        confidence: "medium",
+        nearbyCandidateCount: 2,
+        bearingSpreadDeg: 90,
+        approach: expect.arrayContaining([
+          expect.objectContaining({
+            wayId: 311,
+            confidence: "medium",
+            role: "primary",
+            bearingDeg: 0,
+          }),
+          expect.objectContaining({
+            wayId: 312,
+            confidence: "medium",
+            role: "intersection",
+            bearingDeg: 90,
+          }),
+        ]),
+      }),
+    });
+  });
+
+  it("clusters near-identical approach bearings and handles 0/360 wrap", () => {
+    const clustered = clusterApproachCandidatesByBearing([
+      { distanceM: 8, speedKph: 50, sourceWayId: 1, speedMeta: { approach: [{ bearingDeg: 2 }] } },
+      { distanceM: 6, speedKph: 50, sourceWayId: 2, speedMeta: { approach: [{ bearingDeg: 358 }] } },
+      { distanceM: 7, speedKph: 50, sourceWayId: 3, speedMeta: { approach: [{ bearingDeg: 90 }] } },
+    ], { approachBearingClusterDeg: 15 });
+
+    expect(clustered).toHaveLength(2);
+    expect(clustered.map((candidate) => candidate.sourceWayId)).toEqual([2, 3]);
+  });
+
+  it("caps plausible approach corridors deterministically", () => {
+    const roads = [0, 30, 70, 110, 155].map((bearingDeg, index) => {
+      const radians = bearingDeg * Math.PI / 180;
+      const dx = Math.sin(radians) * 0.001;
+      const dy = Math.cos(radians) * 0.001;
+      return way({
+        id: 400 + index,
+        tags: { highway: "primary", maxspeed: "50" },
+        geometry: [
+          { lat: -dy, lon: -dx },
+          { lat: dy, lon: dx },
+        ],
+      });
+    });
+    const result = enrichCameraRecordsWithRoadSpeeds([camera()], roads, { maxApproachCorridors: 3 });
+
+    expect(result[0].speedEnrichmentStatus).toBe("ambiguous");
+    expect(result[0].speedMeta.approach).toHaveLength(3);
+    expect(result[0].speedMeta).toMatchObject({
+      ambiguous: true,
+      ambiguityReason: "too-many-plausible-corridors",
+      nearbyCandidateCount: 5,
+    });
+  });
+
+  it("stores approach-only corridors when road speed cannot be inferred", () => {
+    const result = enrichCameraRecordsWithRoadSpeeds(
+      [camera()],
+      [
+        way({
+          id: 430,
+          tags: { highway: "primary" },
+          geometry: [
+            { lat: -0.001, lon: 0 },
+            { lat: 0.001, lon: 0 },
+          ],
+        }),
+      ],
+    );
+
+    expect(result[0]).toMatchObject({
+      speedKph: null,
+      speedEnrichmentStatus: "unknown",
+      speedMeta: expect.objectContaining({
+        source: "nearest_road:approach",
+        approach: [
+          expect.objectContaining({
+            wayId: 430,
+            role: "primary",
+            confidence: "high",
+            source: "osm-road-segment",
+          }),
+        ],
+      }),
+    });
+  });
+
+  it("finds multiple approach corridors from the segment index", () => {
+    const segmentIndex = createRoadSegmentIndex([
+      way({
+        id: 441,
+        tags: { highway: "primary", maxspeed: "50" },
+        geometry: [
+          { lat: -0.001, lon: 0 },
+          { lat: 0.001, lon: 0 },
+        ],
+      }),
+      way({
+        id: 442,
+        tags: { highway: "primary", maxspeed: "50" },
+        geometry: [
+          { lat: 0, lon: -0.001 },
+          { lat: 0, lon: 0.001 },
+        ],
+      }),
+    ]);
+    const result = findApproachRoadCandidates(camera(), segmentIndex);
+
+    expect(result.approaches).toEqual(expect.arrayContaining([
+      expect.objectContaining({ wayId: 441, role: "primary" }),
+      expect.objectContaining({ wayId: 442, role: "intersection" }),
+    ]));
   });
 
   it("converts mph road speed to kph", () => {

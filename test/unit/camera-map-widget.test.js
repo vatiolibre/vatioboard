@@ -400,13 +400,52 @@ describe("createCameraMapWidget", () => {
     expect(css).toContain("pointer-events: auto;");
     expect(css).toContain("-webkit-tap-highlight-color: transparent;");
     expect(css).toContain(".camera-map-resize-handle");
+    expect(css).toContain(".camera-map-approach-panel");
     expect(css).toContain("width: 48px;");
     expect(css).toContain("height: 48px;");
     expect(css).toContain("touch-action: none;");
     expect(css).toContain("cursor: nwse-resize;");
   });
 
-  it("opens the layer menu without relying on a native dropdown", () => {
+  it("builds approach line features from camera approach metadata", async () => {
+    const { buildCameraApproachFeatureCollection } = await import("../../src/speed/camera-map-widget.js");
+    const collection = buildCameraApproachFeatureCollection([
+      {
+        type: "Feature",
+        id: "camera-1",
+        geometry: { type: "Point", coordinates: [-73.9, 40.7] },
+        properties: {
+          approachJson: JSON.stringify([
+            {
+              bearingDeg: 0,
+              reverseBearingDeg: 180,
+              direction: "forward",
+              confidence: "high",
+              role: "primary",
+              wayId: 44,
+              clusterIndex: 0,
+              candidateRank: 1,
+              roadDistanceM: 7,
+              segment: [[-73.9, 40.699], [-73.9, 40.701]],
+            },
+          ]),
+        },
+      },
+    ]);
+
+    expect(collection.features).toHaveLength(2);
+    expect(collection.features.map((feature) => feature.properties.kind)).toEqual(["segment", "bearing"]);
+    expect(collection.features[0].geometry.coordinates).toEqual([[-73.9, 40.699], [-73.9, 40.701]]);
+    expect(collection.features[0].properties).toMatchObject({
+      approachIndex: 0,
+      role: "primary",
+      wayId: 44,
+      clusterIndex: 0,
+      candidateRank: 1,
+    });
+  });
+
+  it("opens the layer menu with basemaps and approach overlays", () => {
     const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
     const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
     const layerButton = getLayerButton();
@@ -421,7 +460,7 @@ describe("createCameraMapWidget", () => {
 
     expect(layerButton.getAttribute("aria-expanded")).toBe("true");
     expect(layerMenu.hidden).toBe(false);
-    expect(Array.from(layerMenu.querySelectorAll(".camera-map-layer-option")).map((option) => option.dataset.layerId))
+    expect(Array.from(layerMenu.querySelectorAll(".camera-map-layer-option[data-layer-id]")).map((option) => option.dataset.layerId))
       .toEqual([
         "auto",
         "carto-voyager",
@@ -431,6 +470,10 @@ describe("createCameraMapWidget", () => {
         "opentopomap",
         "esri-world-imagery",
       ]);
+    expect(layerMenu.querySelector('[data-overlay-id="approach"]').textContent).toContain("cameraMapApproachLayer");
+    expect(Array.from(layerMenu.querySelectorAll("[data-approach-filter]")).map((option) => option.dataset.approachFilter))
+      .toEqual(["all", "review", "missing", "nearby"]);
+    expect(layerMenu.textContent.toLowerCase()).not.toContain("debug");
 
     document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
 
@@ -529,6 +572,94 @@ describe("createCameraMapWidget", () => {
       "camera-map-user-heading-arrow",
     ]));
     expect(map.getLayer("camera-map-user-heading-arrow").filter).toEqual(["==", ["get", "headingAvailable"], true]);
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("shows the Approach overlay and runtime decision from normal layer UI", async () => {
+    dataSourceDouble.loadViewport.mockImplementation(async () => ({
+      features: [
+        {
+          type: "Feature",
+          id: "camera-a",
+          geometry: { type: "Point", coordinates: [-73.9, 40.701] },
+          properties: {
+            country: "us",
+            speedKph: 50,
+            speedSource: "nearest_road:maxspeed",
+            speedConfidence: "high",
+            osmId: "camera-a",
+            approachCount: 1,
+            approachConfidenceSummary: "high",
+            approachDirections: "forward",
+            hasApproachGeometry: true,
+            approachJson: JSON.stringify([
+              {
+                bearingDeg: 0,
+                reverseBearingDeg: 180,
+                direction: "forward",
+                confidence: "high",
+                roadDistanceM: 5,
+                segment: [[-73.9, 40.7], [-73.9, 40.702]],
+              },
+            ]),
+          },
+        },
+      ],
+      loadedCountries: ["us"],
+      loadedTiles: [],
+      skippedCountries: [],
+      status: { status: "ready", featureCount: 1 },
+    }));
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+
+    expect(dataSourceDouble.instances[0].options.includeApproachVisualization).toBe(false);
+    expect(dataSourceDouble.loadViewport).toHaveBeenCalledWith(expect.objectContaining({
+      includeApproachVisualization: false,
+    }));
+    expect(map.getLayer("camera-map-camera-approach-segments")).not.toBeNull();
+    expect(map.getLayer("camera-map-camera-approach-bearings")).not.toBeNull();
+    expect(latestSourceData(map, "camera-map-camera-approaches").features).toHaveLength(0);
+    expect(document.querySelector(".camera-map-approach-panel").hidden).toBe(true);
+
+    const layerButton = getLayerButton();
+    layerButton.click();
+    document.querySelector('[data-overlay-id="approach"]').click();
+    await flushTimers();
+
+    expect(localStorage.getItem("vatioboard.cameraMap.approachLayer.v1")).toBe("true");
+    expect(dataSourceDouble.loadViewport).toHaveBeenLastCalledWith(expect.objectContaining({
+      includeApproachVisualization: true,
+    }));
+    expect(latestSourceData(map, "camera-map-camera-approaches").features).toHaveLength(2);
+    expect(document.querySelector(".camera-map-approach-panel").hidden).toBe(false);
+    expect(document.querySelector(".camera-map-approach-panel").textContent).toContain("cameraMapApproachLegendSolid");
+
+    widget.updatePosition({
+      latitude: 40.7,
+      longitude: -73.9,
+      headingDeg: 0,
+      speedMs: 10,
+      timestampMs: 10000,
+      receivedAtMs: 10000,
+      previousPosition: { latitude: 40.699, longitude: -73.9, timestampMs: 9000 },
+    }, { now: 10000, source: "test" });
+
+    expect(widget.getApproachSnapshot().decision).toMatchObject({
+      accepted: true,
+      state: "approaching",
+      reason: "metadata-approach-match",
+    });
+    expect(document.querySelector(".camera-map-approach-panel").hidden).toBe(false);
+    expect(document.querySelector(".camera-map-approach-panel").textContent).toContain("metadata-approach-match");
+
+    layerButton.click();
+    document.querySelector('[data-overlay-id="approach"]').click();
+    expect(document.querySelector(".camera-map-approach-panel").hidden).toBe(true);
+    expect(latestSourceData(map, "camera-map-camera-approaches").features).toHaveLength(0);
 
     widget.destroy();
     manager.destroy();
@@ -1458,6 +1589,9 @@ describe("createCameraMapWidget", () => {
       "camera-map-camera-clusters",
       "camera-map-camera-cluster-count",
       "camera-map-camera-points",
+      "camera-map-camera-approach-segments",
+      "camera-map-camera-approach-bearings",
+      "camera-map-camera-approach-current-match-line",
     ]);
     expect(new Set(cameraLayerIds).size).toBe(cameraLayerIds.length);
     expect(cameraLayerIds.every((id) => layerIds.indexOf(id) > basemapIndex)).toBe(true);
@@ -1804,5 +1938,138 @@ describe("createCameraMapWidget", () => {
 
     expect(html).toContain("Source");
     expect(html).toContain("OSM + NYC local");
+  });
+
+  it("explains camera approach operation in popup HTML", async () => {
+    const { buildPopupHtml } = await import("../../src/speed/camera-map-widget.js");
+
+    const html = buildPopupHtml({
+      id: "camera-approach",
+      geometry: { type: "Point", coordinates: [-73.9, 40.7] },
+      properties: {
+        country: "us",
+        osmId: "123",
+        speedKph: 50,
+        speedSource: "nearest_road:maxspeed",
+        approachCount: 1,
+        approachConfidenceSummary: "high",
+        approachDirections: "forward",
+        approachRoadDistanceMMin: 7,
+        approachJson: JSON.stringify([
+          {
+            bearingDeg: 82,
+            reverseBearingDeg: 262,
+            direction: "forward",
+            confidence: "high",
+            role: "primary",
+            roadDistanceM: 7,
+            wayId: 99,
+          },
+          {
+            bearingDeg: 174,
+            reverseBearingDeg: 354,
+            direction: "both",
+            confidence: "medium",
+            role: "intersection",
+            roadDistanceM: 9,
+            wayId: 100,
+          },
+        ]),
+      },
+    }, {
+      currentDecision: {
+        accepted: true,
+        state: "approaching",
+        reason: "metadata-approach-match",
+        distanceM: 130,
+        headingDeg: 84,
+        bearingToCameraDeg: 82,
+        headingDifferenceDeg: 2,
+        matchedApproachIndex: 1,
+        matchedWayId: 100,
+        matchedRole: "intersection",
+        matchedConfidence: "medium",
+        matchedDirection: "both",
+      },
+    });
+
+    expect(html).toContain("Camera approach");
+    expect(html).toContain("High confidence");
+    expect(html).toContain("Forward");
+    expect(html).toContain("Matched road");
+    expect(html).toContain("Matched way");
+    expect(html).toContain("99");
+    expect(html).toContain("Approach bearing");
+    expect(html).toContain("Primary road");
+    expect(html).toContain("Intersection candidate - matched");
+    expect(html).toContain("100");
+    expect(html).toContain("Current match");
+    expect(html).toContain("Would alert now");
+    expect(html).toContain("metadata-approach-match");
+    expect(html).toContain("Copy camera review info");
+    expect(html.toLowerCase()).not.toContain("debug");
+  });
+
+  it("builds bounded camera review payloads for copying", async () => {
+    const { createCameraReviewPayload } = await import("../../src/speed/camera-map-widget.js");
+
+    const payload = createCameraReviewPayload({
+      id: "camera-review",
+      geometry: { type: "Point", coordinates: [-73.9, 40.7] },
+      properties: {
+        country: "us",
+        speedSource: "nearest_road:approach",
+        cameraSources: ["osm", "nyc"],
+        approachConfidenceSummary: "ambiguous",
+        approachDirections: "mixed",
+        approachAmbiguous: true,
+        approachAmbiguityReason: "nearby-different-approach",
+        approachNearbyCandidateCount: 2,
+        approachBearingSpreadDeg: 90,
+        approachJson: JSON.stringify([
+          { bearingDeg: 0, direction: "both", roadDistanceM: 6 },
+        ]),
+      },
+    }, {
+      accepted: false,
+      state: "near-not-approaching",
+      reason: "heading-away",
+      distanceM: 80.4,
+      headingDeg: 180.2,
+      bearingToCameraDeg: 2.1,
+      headingDifferenceDeg: 178.1,
+      matchedApproachIndex: 0,
+      matchedWayId: 55,
+      matchedRole: "primary",
+      matchedConfidence: "low",
+      matchedDirection: "both",
+    });
+
+    expect(payload).toMatchObject({
+      cameraId: "camera-review",
+      coordinates: [-73.9, 40.7],
+      confidence: "ambiguous",
+      direction: "mixed",
+      ambiguous: true,
+      ambiguityReason: "nearby-different-approach",
+      nearbyCandidateCount: 2,
+      bearingSpreadDeg: 90,
+      sources: ["osm", "nyc"],
+      reason: "heading-away",
+      currentDecision: {
+        accepted: false,
+        state: "near-not-approaching",
+        distanceM: 80,
+        headingDeg: 180,
+        bearingToCameraDeg: 2,
+        headingDifferenceDeg: 178,
+        matchedApproachIndex: 0,
+        matchedWayId: 55,
+        matchedRole: "primary",
+        matchedConfidence: "low",
+        matchedDirection: "both",
+      },
+    });
+    expect(JSON.stringify(payload).toLowerCase()).not.toContain("debug");
   });
 });

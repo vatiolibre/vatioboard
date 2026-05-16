@@ -243,6 +243,116 @@ describe("camera map data source", () => {
     });
   });
 
+  it("summarizes approach metadata without attaching visualization JSON by default", () => {
+    const features = compactTrapsToCameraFeatures(
+      [[-73.9857, 40.7484, 50, 12345, {
+        source: "nearest_road:maxspeed",
+        confidence: "high",
+        approach: [
+          {
+            bearingDeg: 82,
+            reverseBearingDeg: 262,
+            direction: "forward",
+            roadDistanceM: 8,
+            confidence: "high",
+            role: "primary",
+            source: "osm-road-segment",
+            clusterIndex: 0,
+            candidateRank: 1,
+            segment: [[-73.986, 40.748], [-73.984, 40.748]],
+          },
+        ],
+      }]],
+      { countryCode: "us", countryName: "United States" }
+    );
+
+    expect(features[0].properties).toMatchObject({
+      approachCount: 1,
+      approachConfidenceSummary: "high",
+      approachDirections: "forward",
+      approachRoles: "primary",
+      approachRoadDistanceMMin: 8,
+      hasApproachGeometry: true,
+    });
+    expect(features[0].properties.approachJson).toBeUndefined();
+  });
+
+  it("can attach approach visualization JSON when requested", () => {
+    const features = compactTrapsToCameraFeatures(
+      [[-73.9857, 40.7484, 50, 12345, {
+        source: "nearest_road:maxspeed",
+        confidence: "medium",
+        approach: [
+          {
+            bearingDeg: 82,
+            reverseBearingDeg: 262,
+            direction: "forward",
+            roadDistanceM: 18,
+            confidence: "medium",
+            role: "primary",
+            wayId: 77,
+          },
+          {
+            bearingDeg: 10,
+            reverseBearingDeg: 190,
+            direction: "both",
+            roadDistanceM: 22,
+            confidence: "low",
+            role: "intersection",
+          },
+        ],
+      }]],
+      { countryCode: "us", includeApproachVisualization: true }
+    );
+
+    expect(features[0].properties).toMatchObject({
+      approachCount: 2,
+      approachConfidenceSummary: "mixed",
+      approachDirections: "mixed",
+      approachRoles: "mixed",
+      approachRoadDistanceMMin: 18,
+    });
+    const approaches = JSON.parse(features[0].properties.approachJson);
+    expect(approaches).toHaveLength(2);
+    expect(approaches[0]).toMatchObject({ wayId: 77, role: "primary" });
+  });
+
+  it("represents ambiguous approach metadata for map review", () => {
+    const features = compactTrapsToCameraFeatures(
+      [[-73.9857, 40.7484, null, 12345, {
+        source: "nearest_road:approach",
+        confidence: "low",
+        ambiguous: true,
+        ambiguityReason: "nearby-different-approach",
+        nearbyCandidateCount: 2,
+        bearingSpreadDeg: 90,
+        approach: [
+          {
+            bearingDeg: 0,
+            reverseBearingDeg: 180,
+            direction: "both",
+            roadDistanceM: 6,
+            confidence: "low",
+            ambiguous: true,
+          },
+        ],
+      }]],
+      { countryCode: "us", includeApproachVisualization: true }
+    );
+
+    expect(features[0].properties).toMatchObject({
+      approachCount: 1,
+      approachConfidenceSummary: "ambiguous",
+      approachAmbiguous: true,
+      approachAmbiguityReason: "nearby-different-approach",
+      approachNearbyCandidateCount: 2,
+      approachBearingSpreadDeg: 90,
+    });
+    expect(JSON.parse(features[0].properties.approachJson)[0]).toMatchObject({
+      ambiguous: true,
+    });
+  });
+
   it("preserves compact trap source metadata in GeoJSON properties", () => {
     const sourceMeta = {
       sources: ["osm", "nyc", "nyc-tickets"],

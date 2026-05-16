@@ -351,10 +351,9 @@ export async function fetchWorldwideCameraMaxspeedEnrichment({
   slowTileMs = ROAD_SLOW_TILE_MS,
 } = {}) {
   const cameraElements = Array.isArray(cameras) ? cameras : [];
-  const missingSpeedCameras = cameraElements.filter((camera) =>
-    camera?.type === "node" && !hasExplicitCameraMaxspeed(camera)
-  );
-  const tileGroups = groupCamerasByRoadTile(missingSpeedCameras, tileSizeDegrees);
+  const nodeCameras = cameraElements.filter((camera) => camera?.type === "node");
+  const missingSpeedCameras = nodeCameras.filter((camera) => !hasExplicitCameraMaxspeed(camera));
+  const tileGroups = groupCamerasByRoadTile(nodeCameras, tileSizeDegrees);
   const records = {};
   const summary = countExplicitAndMissing(cameraElements.filter((camera) => camera?.type === "node"));
   const tileSummaries = {};
@@ -381,7 +380,7 @@ out tags geom;`;
   }
 
   progress(
-    `Road speed enrichment: ${missingSpeedCameras.length} camera(s) without explicit maxspeed across ${tileGroups.length} tile(s).`,
+    `Road speed/approach enrichment: ${nodeCameras.length} camera(s), ${missingSpeedCameras.length} without explicit maxspeed, across ${tileGroups.length} tile(s).`,
   );
   progress(
     `Road speed cache: ${path.relative(projectRoot, roadCacheDir)} (${refreshCache ? "refresh cached tiles" : "resume from cached tiles"}; missing-cache fetch ${fetchMissing ? "enabled" : "disabled"})`,
@@ -474,14 +473,17 @@ out tags geom;`;
     };
 
     for (const camera of enriched) {
-      if (camera.speedEnrichmentStatus === "inferred" && camera.key && camera.speedMeta) {
+      const hasApproach = Array.isArray(camera.speedMeta?.approach) && camera.speedMeta.approach.length > 0;
+      if ((camera.speedEnrichmentStatus === "inferred" || hasApproach) && camera.key && camera.speedMeta) {
         records[camera.key] = {
-          speedKph: camera.speedKph,
+          speedKph: Number.isFinite(camera.speedKph) ? camera.speedKph : null,
           speedMeta: camera.speedMeta,
         };
-        tileSummary.inferred += 1;
-        summary.inferred += 1;
-        summary.unknown = Math.max(0, summary.unknown - 1);
+        if (camera.speedEnrichmentStatus === "inferred") {
+          tileSummary.inferred += 1;
+          summary.inferred += 1;
+          summary.unknown = Math.max(0, summary.unknown - 1);
+        }
       } else if (camera.speedEnrichmentStatus === "ambiguous") {
         tileSummary.ambiguous += 1;
         summary.ambiguous += 1;

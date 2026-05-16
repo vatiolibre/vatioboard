@@ -67,6 +67,7 @@ import {
 } from './constants.js';
 import {
   getTrapAlertPresets,
+  loadCameraApproachOptionsPreference,
   loadInitialPreferences,
   normalizeTrapAlertDistance,
   saveAlertEnabledPreference,
@@ -89,6 +90,7 @@ import {
   normalizeAlertDisplayValue,
 } from './alerts.js';
 import { createSpeedAudioController } from './audio.js';
+import { findApproachingTrapAcrossDatasets } from './camera-approach.js';
 import {
   SPEED_ALERTS_ACTIVITY_ID,
   SPEED_GPS_STALE_MS,
@@ -112,8 +114,6 @@ import {
 import {
   formatTrapDistance,
   formatTrapSpeed,
-  updateNearestTrap,
-  updateNearestTrapAcrossDatasets,
 } from './traps.js';
 import { createCameraDatabase } from './camera-database.js';
 
@@ -435,6 +435,10 @@ const state = {
   nearestTrapDistanceM: null,
   nearestTrapSpeedKph: null,
   nearestTrapSpeedMeta: null,
+  cameraApproachState: 'none',
+  cameraApproachConfidence: 'none',
+  cameraApproachReason: 'no-candidate',
+  cameraApproachDetails: null,
   trapLoadPending: false,
   trapLoadError: null,
   cameraDatabaseStatus: {
@@ -772,6 +776,10 @@ function applyDrivingAlertSnapshot(snapshot = {}) {
       ? snapshot.nearestTrapSpeedKph
       : null;
     state.nearestTrapSpeedMeta = snapshot.nearestTrapSpeedMeta || null;
+    state.cameraApproachState = snapshot.cameraApproachState || 'none';
+    state.cameraApproachConfidence = snapshot.cameraApproachConfidence || 'none';
+    state.cameraApproachReason = snapshot.cameraApproachReason || '';
+    state.cameraApproachDetails = snapshot.cameraApproachDetails || null;
     state.cameraDatabaseStatus = {
       ...state.cameraDatabaseStatus,
       ...(snapshot.cameraDatabaseStatus || {}),
@@ -1513,6 +1521,10 @@ function getAlertUiState() {
     nearestTrapDistanceM: state.nearestTrapDistanceM,
     nearestTrapSpeedKph: state.nearestTrapSpeedKph,
     nearestTrapSpeedMeta: state.nearestTrapSpeedMeta,
+    cameraApproachState: state.cameraApproachState,
+    cameraApproachConfidence: state.cameraApproachConfidence,
+    cameraApproachReason: state.cameraApproachReason,
+    cameraApproachDetails: state.cameraApproachDetails,
     trapAlertDistanceM: state.trapAlertDistanceM,
     convertSpeed,
     getTrapAlertDistanceLabel,
@@ -1728,15 +1740,64 @@ function stopRecordingSession({ fromUserGesture = false } = {}) {
   stopHiddenTrackingIfIdle({ disarmBackgroundAudio: true });
 }
 
-function updateNearestTrapState(longitude, latitude) {
+function clearNearestTrapState(reason = 'no-candidate') {
+  state.nearestTrapId = null;
+  state.nearestTrapDistanceM = null;
+  state.nearestTrapSpeedKph = null;
+  state.nearestTrapSpeedMeta = null;
+  state.cameraApproachState = 'none';
+  state.cameraApproachConfidence = 'none';
+  state.cameraApproachReason = reason;
+  state.cameraApproachDetails = null;
+}
+
+function buildApproachPosition(longitude, latitude, overrides = {}) {
+  const previousPosition = overrides.previousPosition || (state.lastPoint
+    ? {
+      latitude: state.lastPoint.latitude,
+      longitude: state.lastPoint.longitude,
+      timestampMs: state.lastPoint.timestampMs ?? state.lastPoint.timestamp,
+    }
+    : null);
+  return {
+    latitude,
+    longitude,
+    headingDeg: overrides.headingDeg ?? state.lastHeadingDeg,
+    speedMs: overrides.speedMs ?? state.currentSpeedMs,
+    timestampMs: overrides.timestampMs ?? state.lastPositionTimestamp ?? Date.now(),
+    accuracyM: overrides.accuracyM ?? state.lastAccuracyM,
+    previousPosition,
+  };
+}
+
+function updateNearestTrapState(longitude, latitude, options = {}) {
   const datasets = Array.isArray(state.trapDatasets) ? state.trapDatasets : [];
-  const nextTrapState = datasets.length > 0
-    ? updateNearestTrapAcrossDatasets(datasets, longitude, latitude)
-    : updateNearestTrap(state.trapIndex, state.trapRecords, longitude, latitude);
+  const candidateDatasets = datasets.length > 0
+    ? datasets
+    : (state.trapIndex && Array.isArray(state.trapRecords) && state.trapRecords.length > 0
+      ? [{ key: 'legacy', index: state.trapIndex, traps: state.trapRecords }]
+      : []);
+  if (candidateDatasets.length === 0 || !state.trapAlertEnabled) {
+    clearNearestTrapState(state.trapAlertEnabled ? 'no-datasets' : 'trap-alert-disabled');
+    return;
+  }
+
+  const nextTrapState = findApproachingTrapAcrossDatasets(
+    candidateDatasets,
+    buildApproachPosition(longitude, latitude, options),
+    {
+      alertDistanceM: state.trapAlertDistanceM,
+      ...loadCameraApproachOptionsPreference(),
+    },
+  );
   state.nearestTrapId = nextTrapState.nearestTrapId;
   state.nearestTrapDistanceM = nextTrapState.nearestTrapDistanceM;
   state.nearestTrapSpeedKph = nextTrapState.nearestTrapSpeedKph;
   state.nearestTrapSpeedMeta = nextTrapState.nearestTrapSpeedMeta;
+  state.cameraApproachState = nextTrapState.cameraApproachState || 'none';
+  state.cameraApproachConfidence = nextTrapState.cameraApproachConfidence || 'none';
+  state.cameraApproachReason = nextTrapState.cameraApproachReason || '';
+  state.cameraApproachDetails = nextTrapState.cameraApproachDetails || null;
 }
 
 function getCameraDatabase() {
@@ -2119,6 +2180,7 @@ function setTrapAlertEnabled(enabled, options = {}) {
 
   if (!enabled) {
     state.lastTrapSoundedId = null;
+    clearNearestTrapState('trap-alert-disabled');
   }
 
   saveTrapAlertEnabledPreference(enabled);
@@ -2262,6 +2324,10 @@ function clearLiveFixState({ preserveContinuity = false } = {}) {
   state.nearestTrapDistanceM = null;
   state.nearestTrapSpeedKph = null;
   state.nearestTrapSpeedMeta = null;
+  state.cameraApproachState = 'none';
+  state.cameraApproachConfidence = 'none';
+  state.cameraApproachReason = 'gps-reset';
+  state.cameraApproachDetails = null;
   state.recentSpeeds = [];
   state.lastFixAt = 0;
   state.lastPositionTimestamp = null;
@@ -2299,6 +2365,10 @@ function resetTripData() {
   state.nearestTrapDistanceM = null;
   state.nearestTrapSpeedKph = null;
   state.nearestTrapSpeedMeta = null;
+  state.cameraApproachState = 'none';
+  state.cameraApproachConfidence = 'none';
+  state.cameraApproachReason = 'session-reset';
+  state.cameraApproachDetails = null;
   state.lastTrapSoundedId = null;
   state.recentSpeeds = [];
   state.lastAccuracyM = null;
@@ -2449,7 +2519,13 @@ function handlePosition(position) {
     : null;
 
   void ensureCameraArtifactsForPoint(coords.longitude, coords.latitude);
-  updateNearestTrapState(coords.longitude, coords.latitude);
+  updateNearestTrapState(coords.longitude, coords.latitude, {
+    headingDeg: freshSampleHeadingDeg,
+    speedMs: state.currentSpeedMs,
+    timestampMs: normalizedTimestamp,
+    accuracyM: currentAccuracyM,
+    previousPosition: previousPoint,
+  });
   if (shouldRender) {
     globeController.syncGlobePosition(coords.longitude, coords.latitude);
     if (

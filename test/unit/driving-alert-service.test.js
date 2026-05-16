@@ -180,6 +180,92 @@ describe("createDrivingAlertService", () => {
     expect(alertState.over).toBe(false);
   });
 
+  it("suppresses high-confidence cameras that are nearby but not on the driven approach", async () => {
+    const gpsService = createGpsServiceDouble();
+    const audioController = createAudioControllerDouble();
+    const traps = [[-73.8999, 40.7, 50, "side", {
+      source: "nearest_road:maxspeed",
+      confidence: "high",
+      approach: [{
+        bearingDeg: 90,
+        reverseBearingDeg: 270,
+        direction: "both",
+        confidence: "high",
+        segment: [[-73.901, 40.7], [-73.899, 40.7]],
+      }],
+    }]];
+    const cameraDatabase = createCameraDatabaseDouble({ traps });
+    const service = createDrivingAlertService({ gpsService, cameraDatabase, audioController });
+
+    service.setManualAlertEnabled(false);
+    service.setTrapAlertEnabled(true);
+    service.setTrapAlertDistanceM(500);
+    service.start({ reason: "test" });
+    gpsService.emit({
+      latitude: 40.699,
+      longitude: -73.9,
+      headingDeg: 0,
+      speedMs: 8,
+      timestampMs: 1000,
+      receivedAtMs: 1000,
+    });
+    gpsService.emit({
+      latitude: 40.7,
+      longitude: -73.9,
+      headingDeg: 0,
+      speedMs: 8,
+      timestampMs: 2000,
+      receivedAtMs: 2000,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const snapshot = service.getSnapshot();
+    expect(snapshot.nearestTrapId).toBeNull();
+    expect(snapshot.cameraApproachState).toBe("near-not-approaching");
+    expect(snapshot.alertUiState.trapActive).toBe(false);
+    expect(snapshot.alertUiState.cameraApproachReason).toBe("metadata-heading-mismatch");
+  });
+
+  it("can alert on a second candidate when the nearest camera is not approaching", async () => {
+    const gpsService = createGpsServiceDouble();
+    const audioController = createAudioControllerDouble();
+    const traps = [
+      [-73.8999, 40.7, 50, "side"],
+      [-73.9, 40.701, 80, "ahead"],
+    ];
+    const cameraDatabase = createCameraDatabaseDouble({ traps });
+    const service = createDrivingAlertService({ gpsService, cameraDatabase, audioController });
+
+    service.setManualAlertEnabled(false);
+    service.setTrapAlertEnabled(true);
+    service.setTrapAlertDistanceM(500);
+    service.start({ reason: "test" });
+    gpsService.emit({
+      latitude: 40.699,
+      longitude: -73.9,
+      speedMs: 8,
+      timestampMs: 1000,
+      receivedAtMs: 1000,
+    });
+    gpsService.emit({
+      latitude: 40.7,
+      longitude: -73.9,
+      speedMs: 8,
+      timestampMs: 2000,
+      receivedAtMs: 2000,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(service.getSnapshot()).toMatchObject({
+      nearestTrapId: "test:1",
+      nearestTrapSpeedKph: 80,
+      cameraApproachState: "missing-metadata",
+    });
+    expect(service.getSnapshot().alertUiState.trapActive).toBe(true);
+  });
+
   it("keeps the previous loaded camera data when a refresh fails", async () => {
     const gpsService = createGpsServiceDouble();
     const audioController = createAudioControllerDouble();
