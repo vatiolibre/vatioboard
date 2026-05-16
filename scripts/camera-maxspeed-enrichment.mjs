@@ -45,6 +45,11 @@ const IGNORED_HIGHWAYS = new Set([
   "bridleway",
   "corridor",
   "track",
+  "busway",
+  "construction",
+  "proposed",
+  "raceway",
+  "escape",
 ]);
 
 const UNPARSEABLE_MAXSPEED_VALUES = new Set([
@@ -59,6 +64,75 @@ const UNPARSEABLE_MAXSPEED_VALUES = new Set([
   "national",
   "urban",
   "rural",
+]);
+
+const CONSTRUCTION_HIGHWAYS = new Set(["construction", "proposed"]);
+
+const ALWAYS_REJECTED_SERVICE_VALUES = new Set([
+  "driveway",
+  "parking_aisle",
+  "emergency_access",
+  "drive-through",
+  "drive_through",
+  "bus",
+  "private",
+]);
+
+const ACCESS_TAG_INFOS = [
+  { key: "access", specificity: 0, restrictedReason: "access-private" },
+  { key: "vehicle", specificity: 1, restrictedReason: "motor-vehicle-restricted" },
+  { key: "motor_vehicle", specificity: 2, restrictedReason: "motor-vehicle-restricted" },
+  { key: "motorcar", specificity: 3, restrictedReason: "motor-vehicle-restricted" },
+];
+
+const LANE_ACCESS_TAG_INFOS = [
+  { key: "access:lanes", specificity: 0 },
+  { key: "vehicle:lanes", specificity: 1 },
+  { key: "motor_vehicle:lanes", specificity: 2 },
+  { key: "motorcar:lanes", specificity: 3 },
+];
+
+const ACCESS_ALLOWED_VALUES = new Set([
+  "yes",
+  "designated",
+  "permissive",
+  "destination",
+  "customers",
+]);
+
+const ACCESS_RESTRICTED_VALUES = new Set([
+  "no",
+  "private",
+  "agricultural",
+  "forestry",
+  "delivery",
+  "delivery_only",
+  "emergency",
+  "emergency_only",
+  "emergency-only",
+]);
+
+const LANE_RESTRICTED_VALUES = new Set([
+  ...ACCESS_RESTRICTED_VALUES,
+  "psv",
+  "bus",
+  "taxi",
+]);
+
+const LANE_TRANSIT_ONLY_VALUES = new Set([
+  "psv",
+  "bus",
+  "taxi",
+]);
+
+const TRANSIT_DESIGNATED_VALUES = new Set(["yes", "designated"]);
+const ROAD_INDEX_EARLY_SKIP_REASONS = new Set([
+  "access-private",
+  "motor-vehicle-restricted",
+  "bus-only",
+  "service-private",
+  "construction",
+  "unknown-highway",
 ]);
 
 function toRadians(degrees) {
@@ -140,6 +214,11 @@ function isFiniteCoordinate(point) {
 function normalizeMaxspeedText(value) {
   if (value === null || value === undefined) return "";
   return String(value).trim();
+}
+
+function normalizeOsmTagValue(value) {
+  if (value === null || value === undefined) return "";
+  return String(value).trim().toLowerCase().replace(/\s+/g, "_");
 }
 
 export class OverpassRequestError extends Error {
@@ -357,29 +436,246 @@ export function distancePointToSegmentMeters(point, segmentStart, segmentEnd) {
 
 function getCameraTaggedHighway(camera) {
   const tags = camera?.tags || camera?.properties || {};
-  return String(
+  return normalizeOsmTagValue(
     tags["camera:highway"]
       ?? tags["road:highway"]
       ?? tags.highway_class
       ?? tags.road
       ?? "",
-  ).trim();
+  );
+}
+
+function collectionHasNormalizedValue(collection, value) {
+  const normalized = normalizeOsmTagValue(value);
+  if (!collection || !normalized) return false;
+  if (typeof collection.has === "function") {
+    if (collection.has(normalized) || collection.has(value)) return true;
+  }
+  if (typeof collection[Symbol.iterator] === "function") {
+    for (const entry of collection) {
+      if (normalizeOsmTagValue(entry) === normalized) return true;
+    }
+  }
+  return false;
+}
+
+function splitAccessValues(value) {
+  const normalized = normalizeOsmTagValue(value);
+  if (!normalized) return [];
+  return normalized
+    .split(/[;,]/)
+    .map((part) => normalizeOsmTagValue(part))
+    .filter(Boolean);
+}
+
+function classifyAccessValue(value) {
+  const values = splitAccessValues(value);
+  if (values.length === 0) return null;
+
+  const restricted = values.find((part) => ACCESS_RESTRICTED_VALUES.has(part));
+  if (restricted) return { kind: "reject", value: restricted };
+
+  if (values.every((part) => ACCESS_ALLOWED_VALUES.has(part))) {
+    return { kind: "allow", value: values[0] };
+  }
+
+  return { kind: "unknown", value: normalizeOsmTagValue(value) };
+}
+
+function classifyConditionalAccessValue(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+
+  for (const clause of raw.split(";")) {
+    const [accessPart] = clause.split("@");
+    const classification = classifyAccessValue(accessPart);
+    if (classification?.kind === "reject") return classification;
+  }
+
+  return null;
+}
+
+function analyzePrivateCarAccess(tags = {}) {
+  let strongestDirect = null;
+
+  for (let index = ACCESS_TAG_INFOS.length - 1; index >= 0; index -= 1) {
+    const info = ACCESS_TAG_INFOS[index];
+    const classification = classifyAccessValue(tags[info.key]);
+    if (!classification || classification.kind === "unknown") continue;
+    strongestDirect = { ...info, ...classification };
+    break;
+  }
+
+  if (strongestDirect?.kind === "reject") {
+    return {
+      eligible: false,
+      reason: strongestDirect.restrictedReason,
+      explicitPrivateCarAllowed: false,
+      allowSpecificity: -1,
+    };
+  }
+
+  const minimumConditionalSpecificity = strongestDirect?.kind === "allow"
+    ? strongestDirect.specificity
+    : 0;
+  for (let index = ACCESS_TAG_INFOS.length - 1; index >= 0; index -= 1) {
+    const info = ACCESS_TAG_INFOS[index];
+    if (info.specificity < minimumConditionalSpecificity) continue;
+    const classification = classifyConditionalAccessValue(tags[`${info.key}:conditional`]);
+    if (classification?.kind === "reject") {
+      return {
+        eligible: false,
+        reason: info.restrictedReason,
+        explicitPrivateCarAllowed: false,
+        allowSpecificity: -1,
+      };
+    }
+  }
+
+  return {
+    eligible: true,
+    reason: "allowed",
+    explicitPrivateCarAllowed: strongestDirect?.kind === "allow",
+    allowSpecificity: strongestDirect?.kind === "allow" ? strongestDirect.specificity : -1,
+  };
+}
+
+function tagHasValueIn(tags = {}, key, acceptedValues) {
+  return splitAccessValues(tags[key]).some((value) => acceptedValues.has(value));
+}
+
+function hasBusOnlyRestriction(tags = {}, highway, accessEligibility) {
+  if (highway === "busway") return true;
+
+  const busway = normalizeOsmTagValue(tags.busway);
+  if (busway && busway !== "no" && accessEligibility.explicitPrivateCarAllowed !== true) {
+    return true;
+  }
+
+  const transitDesignated = tagHasValueIn(tags, "bus", TRANSIT_DESIGNATED_VALUES)
+    || tagHasValueIn(tags, "psv", TRANSIT_DESIGNATED_VALUES);
+  return transitDesignated && accessEligibility.eligible === false;
+}
+
+function classifyLaneValue(value) {
+  const values = splitAccessValues(value);
+  if (values.length === 0) return { kind: "unknown", values };
+  if (values.some((part) => ACCESS_ALLOWED_VALUES.has(part))) return { kind: "allow", values };
+  if (values.every((part) => LANE_RESTRICTED_VALUES.has(part))) return { kind: "reject", values };
+  return { kind: "unknown", values };
+}
+
+function analyzeLaneTagValue(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return { kind: "unknown", reason: "" };
+  const laneClassifications = raw.split("|").map((laneValue) => classifyLaneValue(laneValue));
+  if (laneClassifications.some((classification) => classification.kind === "allow")) {
+    return { kind: "allow", reason: "" };
+  }
+  if (
+    laneClassifications.length > 0
+    && laneClassifications.every((classification) => classification.kind === "reject")
+  ) {
+    const restrictedValues = laneClassifications.flatMap((classification) => classification.values);
+    const reason = restrictedValues.length > 0
+      && restrictedValues.every((part) => LANE_TRANSIT_ONLY_VALUES.has(part))
+      ? "bus-only"
+      : "motor-vehicle-restricted";
+    return { kind: "reject", reason };
+  }
+  return { kind: "unknown", reason: "" };
+}
+
+function analyzeLaneAccess(tags = {}) {
+  for (let index = LANE_ACCESS_TAG_INFOS.length - 1; index >= 0; index -= 1) {
+    const info = LANE_ACCESS_TAG_INFOS[index];
+    const classification = analyzeLaneTagValue(tags[info.key]);
+    if (classification.kind === "allow") return { eligible: true, reason: "allowed" };
+    if (classification.kind === "reject") {
+      return { eligible: false, reason: classification.reason };
+    }
+  }
+
+  return { eligible: true, reason: "allowed" };
+}
+
+function hasConstructionRestriction(tags = {}, highway) {
+  if (CONSTRUCTION_HIGHWAYS.has(highway)) return true;
+  const construction = normalizeOsmTagValue(tags.construction);
+  return Boolean(construction && construction !== "no");
+}
+
+export function getPrivateCarRoadEligibility(way, camera, options = {}) {
+  const tags = way?.tags || {};
+  const highway = normalizeOsmTagValue(tags.highway);
+  if (!highway) return { eligible: false, reason: "unknown-highway" };
+
+  if (hasConstructionRestriction(tags, highway)) {
+    return { eligible: false, reason: "construction" };
+  }
+
+  const accessEligibility = analyzePrivateCarAccess(tags);
+  if (hasBusOnlyRestriction(tags, highway, accessEligibility)) {
+    return { eligible: false, reason: "bus-only" };
+  }
+  if (!accessEligibility.eligible) {
+    return { eligible: false, reason: accessEligibility.reason };
+  }
+
+  const laneEligibility = analyzeLaneAccess(tags);
+  if (!laneEligibility.eligible) {
+    return { eligible: false, reason: laneEligibility.reason };
+  }
+
+  if (highway === "service") {
+    const service = normalizeOsmTagValue(tags.service);
+    if (
+      ALWAYS_REJECTED_SERVICE_VALUES.has(service)
+      || options.includePublicServiceRoads !== true
+    ) {
+      return { eligible: false, reason: "service-private" };
+    }
+    return { eligible: true, reason: "allowed" };
+  }
+
+  const drivableHighways = options.drivableHighways || DRIVABLE_HIGHWAYS;
+  if (collectionHasNormalizedValue(drivableHighways, highway)) {
+    return { eligible: true, reason: "allowed" };
+  }
+
+  const ignoredHighways = options.ignoredHighways || IGNORED_HIGHWAYS;
+  if (collectionHasNormalizedValue(ignoredHighways, highway)) {
+    if (getCameraTaggedHighway(camera) === highway) {
+      return { eligible: true, reason: "camera-tagged-ignored-highway" };
+    }
+    return { eligible: false, reason: "ignored-highway" };
+  }
+
+  if (options.includeUnknownHighwayClasses === true) {
+    return { eligible: true, reason: "allowed" };
+  }
+
+  return { eligible: false, reason: "unknown-highway" };
 }
 
 function isAllowedHighway(way, camera, options = {}) {
-  const tags = way?.tags || {};
-  const highway = String(tags.highway || "").trim();
-  if (!highway) return false;
+  return getPrivateCarRoadEligibility(way, camera, options).eligible;
+}
 
-  const drivableHighways = options.drivableHighways || DRIVABLE_HIGHWAYS;
-  const ignoredHighways = options.ignoredHighways || IGNORED_HIGHWAYS;
-  if (drivableHighways.has(highway)) return true;
+function incrementReasonCount(counts, reason, amount = 1) {
+  if (!reason) return;
+  counts[reason] = (counts[reason] || 0) + amount;
+}
 
-  if (ignoredHighways.has(highway)) {
-    return getCameraTaggedHighway(camera) === highway;
-  }
+function recordRoadSkipReason(stats, reason, amount = 1) {
+  if (!stats || !reason) return;
+  if (!stats.skippedRoadReasons) stats.skippedRoadReasons = {};
+  incrementReasonCount(stats.skippedRoadReasons, reason, amount);
+}
 
-  return options.includeUnknownHighwayClasses === true;
+function recordIndexSkipReason(index, reason, options = {}) {
+  incrementReasonCount(index.skippedReasonCounts, reason);
+  recordRoadSkipReason(options.stats, reason);
 }
 
 function chooseWayMaxspeed(tags = {}) {
@@ -584,16 +880,25 @@ export function createRoadSegmentIndex(roadWays, options = {}) {
     segmentCount: 0,
     indexedWayCount: 0,
     skippedWayCount: 0,
+    skippedReasonCounts: {},
   };
 
   for (const way of ways) {
-    const speed = chooseWayMaxspeed(way?.tags || {});
     const geometry = Array.isArray(way?.geometry) ? way.geometry : [];
     if (geometry.length < 2) {
       index.skippedWayCount += 1;
+      recordIndexSkipReason(index, "malformed-geometry", options);
       continue;
     }
 
+    const eligibility = getPrivateCarRoadEligibility(way, null, options);
+    if (!eligibility.eligible && ROAD_INDEX_EARLY_SKIP_REASONS.has(eligibility.reason)) {
+      index.skippedWayCount += 1;
+      recordIndexSkipReason(index, eligibility.reason, options);
+      continue;
+    }
+
+    const speed = chooseWayMaxspeed(way?.tags || {});
     let indexedWay = false;
     for (let geometryIndex = 1; geometryIndex < geometry.length; geometryIndex += 1) {
       const start = normalizePoint(geometry[geometryIndex - 1]);
@@ -620,7 +925,10 @@ export function createRoadSegmentIndex(roadWays, options = {}) {
     }
 
     if (indexedWay) index.indexedWayCount += 1;
-    else index.skippedWayCount += 1;
+    else {
+      index.skippedWayCount += 1;
+      recordIndexSkipReason(index, "malformed-geometry", options);
+    }
   }
 
   return index;

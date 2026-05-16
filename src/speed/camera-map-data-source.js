@@ -10,6 +10,8 @@ const DEFAULT_MIN_NETWORK_ZOOM = 5;
 const DEFAULT_LARGE_UNTILED_COUNT = 2500;
 const DEFAULT_LARGE_UNTILED_MIN_ZOOM = 7;
 const DEFAULT_MAX_FEATURES = 15000;
+const EARTH_RADIUS_M = 6371000;
+const CAMERA_COORDINATE_EPSILON = 1e-7;
 
 const EMPTY_STATUS = {
   status: "idle",
@@ -374,6 +376,165 @@ function readApproachBearingSpreadDeg(speedMeta) {
   return Number.isFinite(spread) && spread >= 0 ? Math.round(spread) : null;
 }
 
+function normalizeCameraCoordinate(input) {
+  if (Array.isArray(input) && input.length >= 2) {
+    const longitude = Number(input[0]);
+    const latitude = Number(input[1]);
+    return Number.isFinite(longitude) && Number.isFinite(latitude) ? { longitude, latitude } : null;
+  }
+  const longitude = Number(input?.longitude ?? input?.lon ?? input?.lng);
+  const latitude = Number(input?.latitude ?? input?.lat);
+  return Number.isFinite(longitude) && Number.isFinite(latitude) ? { longitude, latitude } : null;
+}
+
+function parseApproachJson(value) {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== "string") return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function cameraFeatureIdentity(feature) {
+  const props = feature?.properties || {};
+  const coordinates = normalizeCameraCoordinate(feature?.geometry?.coordinates);
+  return {
+    id: feature?.id === null || feature?.id === undefined ? "" : String(feature.id),
+    osmId: props.osmId === null || props.osmId === undefined ? "" : String(props.osmId),
+    countryCode: normalizeCountryCode(props.country),
+    tileId: String(props.tile || ""),
+    coordinates,
+  };
+}
+
+function trapMatchesCameraFeature(trap, feature, payload = {}) {
+  const identity = cameraFeatureIdentity(feature);
+  const payloadCountry = normalizeCountryCode(payload.country);
+  const payloadTile = String(payload.tile || "");
+  if (identity.countryCode && payloadCountry && identity.countryCode !== payloadCountry) return false;
+  if (identity.tileId && payloadTile && identity.tileId !== payloadTile) return false;
+
+  const trapOsmId = readTrapOsmId(trap);
+  if (identity.osmId && trapOsmId && identity.osmId === trapOsmId) return true;
+
+  const trapLongitude = Number(trap?.[0]);
+  const trapLatitude = Number(trap?.[1]);
+  if (!identity.coordinates || !Number.isFinite(trapLongitude) || !Number.isFinite(trapLatitude)) return false;
+  return Math.abs(identity.coordinates.longitude - trapLongitude) <= CAMERA_COORDINATE_EPSILON
+    && Math.abs(identity.coordinates.latitude - trapLatitude) <= CAMERA_COORDINATE_EPSILON;
+}
+
+function mergeResolvedFeature(originalFeature, resolvedFeature) {
+  if (!resolvedFeature) return originalFeature || null;
+  if (!originalFeature) return resolvedFeature;
+  return {
+    ...resolvedFeature,
+    id: originalFeature.id || resolvedFeature.id,
+    properties: {
+      ...(resolvedFeature.properties || {}),
+      ...(originalFeature.properties || {}),
+      ...(resolvedFeature.properties?.approachJson ? { approachJson: resolvedFeature.properties.approachJson } : {}),
+    },
+  };
+}
+
+export function resolveCameraApproachDetails(feature, {
+  trap = null,
+  countryCode = "",
+  countryName = "",
+  tileId = "",
+} = {}) {
+  const props = feature?.properties || {};
+  let fullFeature = feature || null;
+  let hasFullApproachDetails = false;
+
+  if (trap) {
+    const resolvedFeature = compactTrapsToCameraFeatures([trap], {
+      countryCode: countryCode || props.country || "",
+      countryName: countryName || props.countryName || "",
+      tileId: tileId || props.tile || "",
+      maxFeatures: 1,
+      includeApproachVisualization: true,
+    })[0] || null;
+    fullFeature = mergeResolvedFeature(feature, resolvedFeature);
+    hasFullApproachDetails = true;
+  }
+
+  const resolvedProps = fullFeature?.properties || props;
+  const approachEntries = parseApproachJson(resolvedProps.approachJson);
+  if (approachEntries.length > 0) hasFullApproachDetails = true;
+  const coordinates = normalizeCameraCoordinate(fullFeature?.geometry?.coordinates || feature?.geometry?.coordinates);
+  const approachCount = finiteNumber(resolvedProps.approachCount, approachEntries.length) ?? approachEntries.length;
+  const hasUnresolvedApproachDetails = approachEntries.length === 0 && approachCount > 0 && !hasFullApproachDetails;
+
+  return {
+    cameraId: String(fullFeature?.id || resolvedProps.osmId || props.osmId || ""),
+    feature: fullFeature,
+    coordinates: coordinates ? [coordinates.longitude, coordinates.latitude] : null,
+    speedKph: finiteNumber(resolvedProps.speedKph),
+    sources: readSourceList(resolvedProps.sourceMeta).length
+      ? readSourceList(resolvedProps.sourceMeta)
+      : (Array.isArray(resolvedProps.cameraSources) ? resolvedProps.cameraSources : []),
+    approachEntries,
+    approachCount,
+    confidenceSummary: resolvedProps.approachConfidenceSummary || "none",
+    directions: resolvedProps.approachDirections || "none",
+    roles: resolvedProps.approachRoles || "none",
+    ambiguous: resolvedProps.approachAmbiguous === true,
+    ambiguityReason: resolvedProps.approachAmbiguityReason || null,
+    fallbackMode: approachEntries.length > 0 ? "approach-corridor" : "heading-radius",
+    hasFullApproachDetails,
+    hasUnresolvedApproachDetails,
+  };
+}
+
+export function buildCirclePolygonFeature(center, radiusM, {
+  segments = 40,
+  properties = {},
+  id = null,
+} = {}) {
+  const point = normalizeCameraCoordinate(center);
+  const radius = Number(radiusM);
+  if (!point || !Number.isFinite(radius) || radius <= 0) return null;
+
+  const segmentCount = Math.max(12, Math.min(96, Math.round(Number(segments) || 40)));
+  const latRad = point.latitude * Math.PI / 180;
+  const lonRad = point.longitude * Math.PI / 180;
+  const angularDistance = radius / EARTH_RADIUS_M;
+  const coordinates = [];
+
+  for (let index = 0; index <= segmentCount; index += 1) {
+    const bearing = (index / segmentCount) * Math.PI * 2;
+    const targetLatRad = Math.asin(
+      Math.sin(latRad) * Math.cos(angularDistance)
+      + Math.cos(latRad) * Math.sin(angularDistance) * Math.cos(bearing)
+    );
+    const targetLonRad = lonRad + Math.atan2(
+      Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(latRad),
+      Math.cos(angularDistance) - Math.sin(latRad) * Math.sin(targetLatRad)
+    );
+    const targetLongitude = ((targetLonRad * 180 / Math.PI + 540) % 360) - 180;
+    const targetLatitude = targetLatRad * 180 / Math.PI;
+    coordinates.push([targetLongitude, targetLatitude]);
+  }
+
+  return {
+    type: "Feature",
+    ...(id ? { id } : {}),
+    geometry: {
+      type: "Polygon",
+      coordinates: [coordinates],
+    },
+    properties: {
+      ...properties,
+      radiusM: Math.round(radius),
+    },
+  };
+}
+
 export function compactTrapsToCameraFeatures(traps, {
   countryCode = "",
   countryName = "",
@@ -687,6 +848,22 @@ export function createCameraMapDataSource(options = {}) {
 
   function getStatus() {
     return cloneStatus(status);
+  }
+
+  function resolveCameraDetails(feature) {
+    if (!feature || typeof feature !== "object") return resolveCameraApproachDetails(feature);
+    for (const payload of payloads.values()) {
+      const traps = sanitizeCameraTraps(payload);
+      const trap = traps.find((candidate) => trapMatchesCameraFeature(candidate, feature, payload));
+      if (!trap) continue;
+      return resolveCameraApproachDetails(feature, {
+        trap,
+        countryCode: payload.country || feature.properties?.country || "",
+        countryName: feature.properties?.countryName || payload.country || "",
+        tileId: payload.tile || feature.properties?.tile || "",
+      });
+    }
+    return resolveCameraApproachDetails(feature);
   }
 
   async function loadTiledCountry({
@@ -1044,5 +1221,6 @@ export function createCameraMapDataSource(options = {}) {
     getStatus,
     loadManifest,
     loadViewport,
+    resolveCameraDetails,
   };
 }

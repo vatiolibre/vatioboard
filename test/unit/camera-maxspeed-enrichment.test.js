@@ -7,6 +7,7 @@ import {
   fetchOverpassJsonWithRetry,
   fetchRoadWaysForCameraBatch,
   findApproachRoadCandidates,
+  getPrivateCarRoadEligibility,
   getWayCandidateSpeed,
   parseMaxspeed,
   parseRetryAfterMs,
@@ -36,6 +37,14 @@ function way(overrides = {}) {
   };
 }
 
+function roadEligibility(tags, options = {}, cameraOverrides = {}) {
+  return getPrivateCarRoadEligibility(
+    way({ tags: { maxspeed: "50", ...tags } }),
+    camera(cameraOverrides),
+    options,
+  );
+}
+
 describe("camera maxspeed enrichment", () => {
   it("parses only unambiguous explicit maxspeed values", () => {
     expect(parseMaxspeed("50")).toMatchObject({ parsed: true, speedKph: 50, raw: "50" });
@@ -49,6 +58,177 @@ describe("camera maxspeed enrichment", () => {
     expect(parseMaxspeed("50;60").parsed).toBe(false);
     expect(parseMaxspeed("50 @ (22:00-06:00)").parsed).toBe(false);
     expect(parseMaxspeed("30 mph; 50 mph").parsed).toBe(false);
+  });
+
+  it.each(["residential", "primary", "motorway"])("allows private-car highway class %s", (highway) => {
+    expect(roadEligibility({ highway })).toMatchObject({ eligible: true, reason: "allowed" });
+  });
+
+  it.each(["footway", "path", "cycleway", "pedestrian", "track"])(
+    "rejects non-private-car highway class %s by default",
+    (highway) => {
+      expect(roadEligibility({ highway })).toMatchObject({
+        eligible: false,
+        reason: "ignored-highway",
+      });
+    },
+  );
+
+  it("rejects service roads by default and allows only opted-in public service roads", () => {
+    expect(roadEligibility({ highway: "service" })).toMatchObject({
+      eligible: false,
+      reason: "service-private",
+    });
+    expect(roadEligibility({ highway: "service", service: "alley" }, {
+      includePublicServiceRoads: true,
+    })).toMatchObject({ eligible: true });
+    expect(roadEligibility({ highway: "service", service: "alley", access: "private" }, {
+      includePublicServiceRoads: true,
+    })).toMatchObject({ eligible: false, reason: "access-private" });
+  });
+
+  it("rejects unknown highway classes unless explicitly included", () => {
+    expect(roadEligibility({ highway: "byway" })).toMatchObject({
+      eligible: false,
+      reason: "unknown-highway",
+    });
+    expect(roadEligibility({ highway: "byway" }, {
+      includeUnknownHighwayClasses: true,
+    })).toMatchObject({ eligible: true });
+  });
+
+  it("preserves the camera-tagged ignored-highway fallback without overriding hard access restrictions", () => {
+    expect(roadEligibility({ highway: "footway" }, {}, {
+      tags: { "road:highway": "footway" },
+    })).toMatchObject({
+      eligible: true,
+      reason: "camera-tagged-ignored-highway",
+    });
+
+    expect(roadEligibility({ highway: "footway", access: "no" }, {}, {
+      tags: { "road:highway": "footway" },
+    })).toMatchObject({
+      eligible: false,
+      reason: "access-private",
+    });
+  });
+
+  it.each([
+    [{ access: "private" }, "access-private"],
+    [{ access: "no" }, "access-private"],
+    [{ vehicle: "no" }, "motor-vehicle-restricted"],
+    [{ motor_vehicle: "no" }, "motor-vehicle-restricted"],
+    [{ motorcar: "no" }, "motor-vehicle-restricted"],
+    [{ motorcar: "delivery" }, "motor-vehicle-restricted"],
+  ])("rejects private-car access restriction %o", (tags, reason) => {
+    expect(roadEligibility({ highway: "residential", ...tags })).toMatchObject({
+      eligible: false,
+      reason,
+    });
+  });
+
+  it("lets specific private-car permission override generic access restrictions", () => {
+    expect(roadEligibility({
+      highway: "residential",
+      access: "private",
+      motorcar: "yes",
+    })).toMatchObject({ eligible: true });
+
+    expect(roadEligibility({
+      highway: "residential",
+      vehicle: "no",
+      motor_vehicle: "designated",
+    })).toMatchObject({ eligible: true });
+  });
+
+  it("allows destination and customer access for normal private-car users", () => {
+    expect(roadEligibility({ highway: "residential", access: "destination" })).toMatchObject({
+      eligible: true,
+    });
+    expect(roadEligibility({ highway: "residential", access: "customers" })).toMatchObject({
+      eligible: true,
+    });
+  });
+
+  it("rejects conditional restrictions for private cars", () => {
+    expect(roadEligibility({
+      highway: "residential",
+      "motor_vehicle:conditional": "no @ (22:00-06:00)",
+    })).toMatchObject({
+      eligible: false,
+      reason: "motor-vehicle-restricted",
+    });
+  });
+
+  it("rejects bus-only and transit-only roads without rejecting normal bus-designated roads", () => {
+    expect(roadEligibility({ highway: "busway" })).toMatchObject({
+      eligible: false,
+      reason: "bus-only",
+    });
+    expect(roadEligibility({ highway: "primary", busway: "lane", motor_vehicle: "no" })).toMatchObject({
+      eligible: false,
+      reason: "bus-only",
+    });
+    expect(roadEligibility({ highway: "primary", access: "no", bus: "yes" })).toMatchObject({
+      eligible: false,
+      reason: "bus-only",
+    });
+    expect(roadEligibility({ highway: "primary", vehicle: "no", bus: "designated" })).toMatchObject({
+      eligible: false,
+      reason: "bus-only",
+    });
+    expect(roadEligibility({ highway: "primary", bus: "designated" })).toMatchObject({
+      eligible: true,
+    });
+    expect(roadEligibility({ highway: "primary", busway: "lane", motorcar: "yes" })).toMatchObject({
+      eligible: true,
+    });
+  });
+
+  it.each(["driveway", "parking_aisle", "emergency_access", "bus", "private"])(
+    "rejects private service value %s",
+    (service) => {
+      expect(roadEligibility({ highway: "service", service }, {
+        includePublicServiceRoads: true,
+      })).toMatchObject({
+        eligible: false,
+        reason: "service-private",
+      });
+    },
+  );
+
+  it("rejects roads only when lane tags clearly leave no private-car lane", () => {
+    expect(roadEligibility({
+      highway: "primary",
+      "motor_vehicle:lanes": "no|no",
+    })).toMatchObject({
+      eligible: false,
+      reason: "motor-vehicle-restricted",
+    });
+
+    expect(roadEligibility({
+      highway: "primary",
+      "motor_vehicle:lanes": "yes|no",
+    })).toMatchObject({ eligible: true });
+
+    expect(roadEligibility({
+      highway: "primary",
+      "vehicle:lanes": "bus|bus",
+    })).toMatchObject({
+      eligible: false,
+      reason: "bus-only",
+    });
+
+    expect(roadEligibility({
+      highway: "primary",
+      "vehicle:lanes": "no|no",
+      "motorcar:lanes": "yes|no",
+    })).toMatchObject({ eligible: true });
+
+    expect(roadEligibility({
+      highway: "primary",
+      "motor_vehicle:lanes": "no @ (Mo-Fr)|unknown",
+    })).toMatchObject({ eligible: true });
   });
 
   it("measures point-to-segment distance in meters", () => {
@@ -359,6 +539,175 @@ describe("camera maxspeed enrichment", () => {
       expect.objectContaining({ wayId: 441, role: "primary" }),
       expect.objectContaining({ wayId: 442, role: "intersection" }),
     ]));
+  });
+
+  it("does not index hard-rejected roads and records skip reasons", () => {
+    const stats = {};
+    const segmentIndex = createRoadSegmentIndex([
+      way({
+        id: 451,
+        tags: { highway: "primary", maxspeed: "50", access: "no" },
+      }),
+      way({
+        id: 452,
+        tags: { highway: "primary", maxspeed: "50" },
+      }),
+      way({
+        id: 453,
+        tags: { highway: "primary", maxspeed: "50" },
+        geometry: [{ lat: 0, lon: 0 }],
+      }),
+    ], { stats });
+
+    expect(segmentIndex.indexedWayCount).toBe(1);
+    expect(segmentIndex.skippedReasonCounts).toMatchObject({
+      "access-private": 1,
+      "malformed-geometry": 1,
+    });
+    expect(stats.skippedRoadReasons).toMatchObject({
+      "access-private": 1,
+      "malformed-geometry": 1,
+    });
+  });
+
+  it("does not include rejected road types in approach candidates", () => {
+    const segmentIndex = createRoadSegmentIndex([
+      way({
+        id: 461,
+        tags: { highway: "footway", maxspeed: "10" },
+        geometry: [
+          { lat: -0.001, lon: 0 },
+          { lat: 0.001, lon: 0 },
+        ],
+      }),
+      way({
+        id: 462,
+        tags: { highway: "primary", maxspeed: "50" },
+        geometry: [
+          { lat: -0.001, lon: 0.0001 },
+          { lat: 0.001, lon: 0.0001 },
+        ],
+      }),
+    ]);
+    const result = findApproachRoadCandidates(camera(), segmentIndex);
+
+    expect(result.approaches).toEqual([
+      expect.objectContaining({ wayId: 462 }),
+    ]);
+  });
+
+  it("chooses a residential road over a closer footway with maxspeed", () => {
+    const result = enrichCameraRecordsWithRoadSpeeds(
+      [camera()],
+      [
+        way({
+          id: 471,
+          tags: { highway: "footway", maxspeed: "10" },
+          geometry: [
+            { lat: -0.001, lon: 0 },
+            { lat: 0.001, lon: 0 },
+          ],
+        }),
+        way({
+          id: 472,
+          tags: { highway: "residential", maxspeed: "50" },
+          geometry: [
+            { lat: -0.001, lon: 0.0001 },
+            { lat: 0.001, lon: 0.0001 },
+          ],
+        }),
+      ],
+    );
+
+    expect(result[0]).toMatchObject({
+      speedKph: 50,
+      speedEnrichmentStatus: "inferred",
+      speedMeta: expect.objectContaining({
+        wayId: 472,
+      }),
+    });
+  });
+
+  it("chooses a primary road over a bus-only road", () => {
+    const result = enrichCameraRecordsWithRoadSpeeds(
+      [camera()],
+      [
+        way({
+          id: 481,
+          tags: { highway: "busway", maxspeed: "30" },
+          geometry: [
+            { lat: -0.001, lon: 0 },
+            { lat: 0.001, lon: 0 },
+          ],
+        }),
+        way({
+          id: 482,
+          tags: { highway: "primary", maxspeed: "70" },
+          geometry: [
+            { lat: -0.001, lon: 0.0001 },
+            { lat: 0.001, lon: 0.0001 },
+          ],
+        }),
+      ],
+    );
+
+    expect(result[0]).toMatchObject({
+      speedKph: 70,
+      speedEnrichmentStatus: "inferred",
+      speedMeta: expect.objectContaining({
+        wayId: 482,
+      }),
+    });
+  });
+
+  it("falls back safely when only private roads are nearby", () => {
+    const result = enrichCameraRecordsWithRoadSpeeds(
+      [camera()],
+      [
+        way({
+          id: 491,
+          tags: { highway: "primary", maxspeed: "50", access: "no" },
+          geometry: [
+            { lat: -0.001, lon: 0 },
+            { lat: 0.001, lon: 0 },
+          ],
+        }),
+      ],
+    );
+
+    expect(result[0]).toMatchObject({
+      speedKph: null,
+      speedEnrichmentStatus: "unknown",
+      speedMeta: null,
+      approachMeta: [],
+    });
+  });
+
+  it("rejects restricted roads in speed-only and approach-only enrichment paths", () => {
+    expect(getWayCandidateSpeed(
+      way({ tags: { highway: "residential", maxspeed: "30", access: "no" } }),
+      camera(),
+    )).toBeNull();
+
+    const result = enrichCameraRecordsWithRoadSpeeds(
+      [camera({ tags: { maxspeed: "60" } })],
+      [
+        way({
+          id: 492,
+          tags: { highway: "primary", access: "private" },
+          geometry: [
+            { lat: -0.001, lon: 0 },
+            { lat: 0.001, lon: 0 },
+          ],
+        }),
+      ],
+    );
+
+    expect(result[0]).toMatchObject({
+      speedKph: 60,
+      speedEnrichmentStatus: "explicit",
+      approachMeta: [],
+    });
   });
 
   it("converts mph road speed to kph", () => {

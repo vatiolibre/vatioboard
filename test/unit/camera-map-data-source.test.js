@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  buildCirclePolygonFeature,
   compactTrapsToCameraFeatures,
   createCameraMapDataSource,
+  resolveCameraApproachDetails,
 } from "../../src/speed/camera-map-data-source.js";
 
 function createMemoryStore(seed = {}) {
@@ -315,6 +317,87 @@ describe("camera map data source", () => {
     const approaches = JSON.parse(features[0].properties.approachJson);
     expect(approaches).toHaveLength(2);
     expect(approaches[0]).toMatchObject({ wayId: 77, role: "primary" });
+  });
+
+  it("builds fallback circle polygons for no-corridor camera visuals", () => {
+    const feature = buildCirclePolygonFeature(
+      { longitude: -73.9857, latitude: 40.7484 },
+      120,
+      { segments: 16, properties: { kind: "fallback-radius", cameraId: "camera-1" } }
+    );
+
+    expect(feature).toMatchObject({
+      type: "Feature",
+      geometry: { type: "Polygon" },
+      properties: expect.objectContaining({ kind: "fallback-radius", cameraId: "camera-1", radiusM: 120 }),
+    });
+    expect(feature.geometry.coordinates[0]).toHaveLength(17);
+    expect(feature.geometry.coordinates[0][0]).toEqual(feature.geometry.coordinates[0].at(-1));
+    expect(feature.geometry.coordinates[0].every(([lon, lat]) =>
+      Number.isFinite(lon) && Number.isFinite(lat) && lon >= -180 && lon <= 180 && lat >= -90 && lat <= 90
+    )).toBe(true);
+  });
+
+  it("resolves full approach details on demand from loaded raw camera payloads", async () => {
+    const payload = countryPayload("us", [[-73.9857, 40.7484, 50, 12345, {
+      source: "nearest_road:maxspeed",
+      confidence: "high",
+      approach: [
+        {
+          bearingDeg: 82,
+          reverseBearingDeg: 262,
+          direction: "both",
+          roadDistanceM: 7,
+          confidence: "high",
+          role: "primary",
+          wayId: 99,
+          segment: [[-73.986, 40.748], [-73.984, 40.748]],
+        },
+      ],
+    }]]);
+    const rootManifest = manifest({
+      us: countryEntry("us", payload.traps, { bbox: [-80, 35, -70, 45] }),
+    });
+    const fetchImpl = vi.fn(async (url) => {
+      if (String(url).endsWith("manifest.json")) return jsonResponse(rootManifest);
+      if (String(url).endsWith("us.json")) return jsonResponse(payload);
+      return new Response("", { status: 404 });
+    });
+    const dataSource = createCameraMapDataSource({ store: createMemoryStore(), fetchImpl });
+
+    const result = await dataSource.loadViewport({ bounds: [-75, 39, -72, 42], zoom: 8 });
+    expect(result.features[0].properties.approachJson).toBeUndefined();
+
+    const details = dataSource.resolveCameraDetails(result.features[0]);
+
+    expect(details).toMatchObject({
+      cameraId: "us:country:12345",
+      approachCount: 1,
+      hasFullApproachDetails: true,
+      hasUnresolvedApproachDetails: false,
+    });
+    expect(details.approachEntries[0]).toMatchObject({ wayId: 99, role: "primary" });
+    expect(JSON.parse(details.feature.properties.approachJson)).toHaveLength(1);
+  });
+
+  it("marks summarized cameras as unresolved when full approach JSON is unavailable", () => {
+    const details = resolveCameraApproachDetails({
+      id: "camera-summary",
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [-73.9857, 40.7484] },
+      properties: {
+        approachCount: 2,
+        approachConfidenceSummary: "mixed",
+      },
+    });
+
+    expect(details).toMatchObject({
+      cameraId: "camera-summary",
+      approachCount: 2,
+      hasFullApproachDetails: false,
+      hasUnresolvedApproachDetails: true,
+    });
+    expect(details.approachEntries).toEqual([]);
   });
 
   it("represents ambiguous approach metadata for map review", () => {

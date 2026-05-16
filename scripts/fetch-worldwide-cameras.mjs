@@ -86,6 +86,21 @@ function createProgressLogger(enabled = true) {
     : () => {};
 }
 
+function mergeReasonCounts(target, source = {}) {
+  for (const [reason, count] of Object.entries(source || {})) {
+    target[reason] = (target[reason] || 0) + count;
+  }
+  return target;
+}
+
+function formatReasonCounts(counts = {}) {
+  return Object.entries(counts)
+    .filter(([, count]) => Number(count) > 0)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([reason, count]) => `${reason}=${count}`)
+    .join(" ");
+}
+
 function formatProjectPath(filePath) {
   return path.relative(projectRoot, filePath) || ".";
 }
@@ -365,6 +380,7 @@ export async function fetchWorldwideCameraMaxspeedEnrichment({
   let failedTiles = 0;
   let skippedTiles = 0;
   let totalRoadWays = 0;
+  const skippedRoadReasons = {};
 
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
   await fs.mkdir(roadCacheDir, { recursive: true });
@@ -460,7 +476,10 @@ out tags geom;`;
       cachedTiles += 1;
     }
 
-    const enriched = enrichCameraRecordsWithRoadSpeeds(tileCameras, ways);
+    const enrichmentStats = { skippedRoadReasons: {} };
+    const enriched = enrichCameraRecordsWithRoadSpeeds(tileCameras, ways, {
+      stats: enrichmentStats,
+    });
     const tileSummary = {
       cameras: tileCameras.length,
       roadWays: ways.length,
@@ -470,6 +489,7 @@ out tags geom;`;
       cacheHit,
       source: tileSource,
       error: errorMessage || null,
+      skippedRoadReasons: enrichmentStats.skippedRoadReasons,
     };
 
     for (const camera of enriched) {
@@ -494,6 +514,7 @@ out tags geom;`;
 
     tileSummaries[tileId] = tileSummary;
     totalRoadWays += ways.length;
+    mergeReasonCounts(skippedRoadReasons, enrichmentStats.skippedRoadReasons);
 
     const tileElapsedMs = Date.now() - tileStartedAtMs;
     if (shouldLogRoadTileProgress({
@@ -505,8 +526,9 @@ out tags geom;`;
       attemptedNetwork,
       tileSource,
     })) {
+      const skippedRoadDetail = formatReasonCounts(tileSummary.skippedRoadReasons);
       progress(
-        `${tileLabel}: ${tileSource}; roads=${ways.length}; inferred=${tileSummary.inferred}; unknown=${tileSummary.unknown}; ambiguous=${tileSummary.ambiguous}; elapsed=${formatDurationMs(tileElapsedMs)}; totals fetched=${fetchedTiles} cached=${cachedTiles} skipped=${skippedTiles} failed=${failedTiles}`,
+        `${tileLabel}: ${tileSource}; roads=${ways.length}; inferred=${tileSummary.inferred}; unknown=${tileSummary.unknown}; ambiguous=${tileSummary.ambiguous}${skippedRoadDetail ? `; skippedRoads ${skippedRoadDetail}` : ""}; elapsed=${formatDurationMs(tileElapsedMs)}; totals fetched=${fetchedTiles} cached=${cachedTiles} skipped=${skippedTiles} failed=${failedTiles}`,
       );
     }
 
@@ -538,6 +560,7 @@ out tags geom;`;
       skippedTiles,
       failedTiles,
       totalRoadWays,
+      skippedRoadReasons,
       elapsedMs: Date.now() - startedAtMs,
     },
     tiles: tileSummaries,

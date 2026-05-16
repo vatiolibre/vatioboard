@@ -502,7 +502,7 @@ export function scoreApproachCandidate(candidate, position, options = {}) {
   let accepted = false;
   let state = "near-not-approaching";
   let confidence = metadataConfidence;
-  let reason = "not-approaching";
+  let reason;
 
   if (highOrMediumMetadata) {
     if (metadataMatch.matched) {

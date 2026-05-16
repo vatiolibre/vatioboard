@@ -5,6 +5,7 @@ const cameraMapLessPath = `${process.cwd()}/src/styles/camera-map.less`;
 
 const mapLibreDouble = vi.hoisted(() => {
   const maps = [];
+  const popups = [];
 
   class FakeMap {
     constructor(options = {}) {
@@ -123,13 +124,25 @@ const mapLibreDouble = vi.hoisted(() => {
   class FakeNavigationControl {}
   class FakeAttributionControl {}
   class FakePopup {
+    handlers = {};
+    constructor() {
+      popups.push(this);
+    }
     setLngLat = vi.fn(() => this);
     setHTML = vi.fn(() => this);
     addTo = vi.fn(() => this);
+    on = vi.fn((event, handler) => {
+      this.handlers[event] = handler;
+      return this;
+    });
+    close() {
+      this.handlers.close?.();
+    }
   }
 
   return {
     maps,
+    popups,
     module: {
       Map: FakeMap,
       NavigationControl: FakeNavigationControl,
@@ -164,18 +177,23 @@ vi.mock("../../src/shared/maplibre-loader.js", () => ({
   loadMapLibre: vi.fn(() => Promise.resolve(mapLibreDouble.module)),
 }));
 
-vi.mock("../../src/speed/camera-map-data-source.js", () => ({
-  createCameraMapDataSource: vi.fn((options = {}) => {
+vi.mock("../../src/speed/camera-map-data-source.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    createCameraMapDataSource: vi.fn((options = {}) => {
     const source = {
       destroy: vi.fn(),
       getStatus: vi.fn(() => ({ status: "idle", featureCount: 0 })),
       loadViewport: dataSourceDouble.loadViewport,
+      resolveCameraDetails: vi.fn((feature) => actual.resolveCameraApproachDetails(feature)),
       options,
     };
     dataSourceDouble.instances.push(source);
     return source;
   }),
-}));
+  };
+});
 
 async function flushTimers() {
   await vi.runOnlyPendingTimersAsync();
@@ -193,8 +211,8 @@ async function openAndLoad(widget) {
   return map;
 }
 
-function fireMapEvent(map, eventName) {
-  for (const handler of [...(map.handlers[eventName] || [])]) handler();
+function fireMapEvent(map, eventName, payload = undefined) {
+  for (const handler of [...(map.handlers[eventName] || [])]) handler(payload);
 }
 
 function latestSourceData(map, sourceId) {
@@ -289,6 +307,7 @@ describe("createCameraMapWidget", () => {
     delete window.__vatioboardSpeedGetCurrentPosition;
     localStorage.clear();
     mapLibreDouble.maps.length = 0;
+    mapLibreDouble.popups.length = 0;
     dataSourceDouble.instances.length = 0;
     dataSourceDouble.loadViewport.mockReset();
     dataSourceDouble.loadViewport.mockImplementation(async () => ({
@@ -434,7 +453,7 @@ describe("createCameraMapWidget", () => {
     ]);
 
     expect(collection.features).toHaveLength(2);
-    expect(collection.features.map((feature) => feature.properties.kind)).toEqual(["segment", "bearing"]);
+    expect(collection.features.map((feature) => feature.properties.kind)).toEqual(["corridor", "direction"]);
     expect(collection.features[0].geometry.coordinates).toEqual([[-73.9, 40.699], [-73.9, 40.701]]);
     expect(collection.features[0].properties).toMatchObject({
       approachIndex: 0,
@@ -442,6 +461,60 @@ describe("createCameraMapWidget", () => {
       wayId: 44,
       clusterIndex: 0,
       candidateRank: 1,
+    });
+  });
+
+  it("builds focused selected/current approach visuals with fallback support", async () => {
+    const { buildSelectedCameraApproachFeatureCollection } = await import("../../src/speed/camera-map-widget.js");
+    const noCorridor = buildSelectedCameraApproachFeatureCollection({
+      type: "Feature",
+      id: "camera-no-corridor",
+      geometry: { type: "Point", coordinates: [-73.9, 40.7] },
+      properties: { approachCount: 0, approachConfidenceSummary: "none" },
+    }, { fallbackRadiusM: 120 });
+
+    expect(noCorridor.features).toHaveLength(1);
+    expect(noCorridor.features[0]).toMatchObject({
+      geometry: { type: "Polygon" },
+      properties: expect.objectContaining({
+        kind: "fallback-radius",
+        isSelected: true,
+        radiusM: 120,
+      }),
+    });
+
+    const matched = buildSelectedCameraApproachFeatureCollection({
+      type: "Feature",
+      id: "camera-multi",
+      geometry: { type: "Point", coordinates: [-73.9, 40.7] },
+      properties: {
+        approachJson: JSON.stringify([
+          {
+            bearingDeg: 0,
+            reverseBearingDeg: 180,
+            direction: "forward",
+            confidence: "high",
+            role: "primary",
+            wayId: 44,
+            segment: [[-73.9, 40.699], [-73.9, 40.701]],
+          },
+        ]),
+      },
+    }, {
+      mode: "current",
+      decision: { matchedApproachIndex: 0, accepted: true },
+      position: { longitude: -73.9, latitude: 40.699 },
+    });
+
+    expect(matched.features.map((feature) => feature.properties.kind)).toEqual([
+      "corridor",
+      "direction",
+      "fallback-bearing",
+    ]);
+    expect(matched.features[0].properties).toMatchObject({
+      isCurrentMatch: true,
+      isMatched: true,
+      wayId: 44,
     });
   });
 
@@ -660,6 +733,202 @@ describe("createCameraMapWidget", () => {
     document.querySelector('[data-overlay-id="approach"]').click();
     expect(document.querySelector(".camera-map-approach-panel").hidden).toBe(true);
     expect(latestSourceData(map, "camera-map-camera-approaches").features).toHaveLength(0);
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("renders selected-camera approach visuals while the global Approach overlay is off", async () => {
+    const summaryFeature = {
+      type: "Feature",
+      id: "camera-summary",
+      geometry: { type: "Point", coordinates: [-73.9, 40.701] },
+      properties: {
+        country: "us",
+        osmId: "camera-summary",
+        approachCount: 1,
+        approachConfidenceSummary: "high",
+        approachDirections: "both",
+      },
+    };
+    const fullFeature = {
+      ...summaryFeature,
+      properties: {
+        ...summaryFeature.properties,
+        approachJson: JSON.stringify([
+          {
+            bearingDeg: 0,
+            reverseBearingDeg: 180,
+            direction: "both",
+            confidence: "high",
+            role: "primary",
+            wayId: 55,
+            roadDistanceM: 6,
+            segment: [[-73.9, 40.6995], [-73.9, 40.7015]],
+          },
+        ]),
+      },
+    };
+    const dataSource = {
+      destroy: vi.fn(),
+      getStatus: vi.fn(() => ({ status: "ready", featureCount: 1 })),
+      loadViewport: vi.fn(async () => ({
+        features: [summaryFeature],
+        loadedCountries: ["us"],
+        loadedTiles: [],
+        skippedCountries: [],
+        status: { status: "ready", featureCount: 1 },
+      })),
+      resolveCameraDetails: vi.fn(() => ({
+        cameraId: "camera-summary",
+        feature: fullFeature,
+        coordinates: [-73.9, 40.701],
+        approachEntries: JSON.parse(fullFeature.properties.approachJson),
+        approachCount: 1,
+        hasFullApproachDetails: true,
+        hasUnresolvedApproachDetails: false,
+      })),
+    };
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false, dataSource });
+    const map = await openAndLoad(widget);
+
+    expect(latestSourceData(map, "camera-map-camera-approaches").features).toHaveLength(0);
+
+    fireMapEvent(map, "click", { features: [summaryFeature] });
+
+    const selectedData = latestSourceData(map, "camera-map-selected-approach");
+    expect(dataSource.resolveCameraDetails).toHaveBeenCalledWith(summaryFeature);
+    expect(selectedData.features.map((feature) => feature.properties.kind)).toEqual(["corridor", "direction", "direction"]);
+    expect(selectedData.features[0].properties).toMatchObject({
+      isSelected: true,
+      wayId: 55,
+      confidence: "high",
+    });
+    expect(latestSourceData(map, "camera-map-camera-approaches").features).toHaveLength(0);
+    expect(mapLibreDouble.popups.at(-1).setHTML.mock.calls.at(-1)[0]).toContain("Primary road");
+    expect(mapLibreDouble.popups.at(-1).setHTML.mock.calls.at(-1)[0]).toContain("Live match unavailable - showing configured camera approaches.");
+
+    mapLibreDouble.popups.at(-1).close();
+    expect(latestSourceData(map, "camera-map-selected-approach").features).toHaveLength(0);
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("renders active current-match corridor visuals while the global Approach overlay is off", async () => {
+    const cameraFeature = {
+      type: "Feature",
+      id: "camera-current",
+      geometry: { type: "Point", coordinates: [-73.9, 40.701] },
+      properties: {
+        country: "us",
+        osmId: "camera-current",
+        speedKph: 50,
+        approachCount: 1,
+        approachConfidenceSummary: "high",
+        approachDirections: "forward",
+        approachJson: JSON.stringify([
+          {
+            bearingDeg: 0,
+            reverseBearingDeg: 180,
+            direction: "forward",
+            confidence: "high",
+            role: "primary",
+            wayId: 77,
+            roadDistanceM: 5,
+            segment: [[-73.9, 40.6995], [-73.9, 40.7015]],
+          },
+        ]),
+      },
+    };
+    dataSourceDouble.loadViewport.mockImplementation(async () => ({
+      features: [cameraFeature],
+      loadedCountries: ["us"],
+      loadedTiles: [],
+      skippedCountries: [],
+      status: { status: "ready", featureCount: 1 },
+    }));
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+
+    widget.updatePosition({
+      latitude: 40.7,
+      longitude: -73.9,
+      headingDeg: 0,
+      speedMs: 10,
+      timestampMs: 10000,
+      receivedAtMs: 10000,
+      previousPosition: { latitude: 40.699, longitude: -73.9, timestampMs: 9000 },
+    }, { now: 10000, source: "test" });
+
+    expect(latestSourceData(map, "camera-map-camera-approaches").features).toHaveLength(0);
+    const currentData = latestSourceData(map, "camera-map-current-approach");
+    expect(widget.getApproachSnapshot().decision).toMatchObject({
+      accepted: true,
+      matchedApproachIndex: 0,
+      matchedWayId: 77,
+    });
+    expect(currentData.features.map((feature) => feature.properties.kind)).toEqual([
+      "corridor",
+      "direction",
+      "fallback-bearing",
+    ]);
+    expect(currentData.features[0].properties).toMatchObject({
+      isCurrentMatch: true,
+      isMatched: true,
+      wayId: 77,
+    });
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("renders active current-match fallback halos for cameras without corridors", async () => {
+    const cameraFeature = {
+      type: "Feature",
+      id: "camera-fallback",
+      geometry: { type: "Point", coordinates: [-73.9, 40.7005] },
+      properties: {
+        country: "us",
+        osmId: "camera-fallback",
+        speedKph: 50,
+        approachCount: 0,
+        approachConfidenceSummary: "none",
+        approachDirections: "none",
+      },
+    };
+    dataSourceDouble.loadViewport.mockImplementation(async () => ({
+      features: [cameraFeature],
+      loadedCountries: ["us"],
+      loadedTiles: [],
+      skippedCountries: [],
+      status: { status: "ready", featureCount: 1 },
+    }));
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+
+    widget.updatePosition({
+      latitude: 40.7,
+      longitude: -73.9,
+      headingDeg: 0,
+      speedMs: 8,
+      timestampMs: 10000,
+      receivedAtMs: 10000,
+    }, { now: 10000, source: "test" });
+
+    const currentData = latestSourceData(map, "camera-map-current-approach");
+    expect(widget.getApproachSnapshot().decision).toMatchObject({
+      accepted: true,
+      state: "missing-metadata",
+    });
+    expect(currentData.features.map((feature) => feature.properties.kind)).toEqual([
+      "fallback-radius",
+      "fallback-bearing",
+    ]);
+    expect(currentData.features[0].geometry.type).toBe("Polygon");
 
     widget.destroy();
     manager.destroy();
@@ -1570,7 +1839,11 @@ describe("createCameraMapWidget", () => {
     const userSource = map.getSource("camera-map-user-position");
     const layerIds = map.layers.map((layer) => layer.id);
     const basemapIndex = layerIds.indexOf("camera-map-basemap-layer");
-    const cameraLayerIds = layerIds.filter((id) => id.startsWith("camera-map-camera-"));
+    const cameraLayerIds = layerIds.filter((id) =>
+      id.startsWith("camera-map-camera-")
+      || id.startsWith("camera-map-selected-approach")
+      || id.startsWith("camera-map-current-approach")
+    );
 
     expect(cameraSource).not.toBeNull();
     expect(userSource).not.toBeNull();
@@ -1589,9 +1862,18 @@ describe("createCameraMapWidget", () => {
       "camera-map-camera-clusters",
       "camera-map-camera-cluster-count",
       "camera-map-camera-points",
+      "camera-map-camera-approach-fallback",
       "camera-map-camera-approach-segments",
       "camera-map-camera-approach-bearings",
-      "camera-map-camera-approach-current-match-line",
+      "camera-map-selected-approach-fallback",
+      "camera-map-selected-approach-corridor-band",
+      "camera-map-selected-approach-corridor",
+      "camera-map-selected-approach-direction",
+      "camera-map-current-approach-fallback",
+      "camera-map-current-approach-corridor-band",
+      "camera-map-current-approach-corridor",
+      "camera-map-current-approach-direction",
+      "camera-map-current-approach-bearing-line",
     ]);
     expect(new Set(cameraLayerIds).size).toBe(cameraLayerIds.length);
     expect(cameraLayerIds.every((id) => layerIds.indexOf(id) > basemapIndex)).toBe(true);
@@ -2008,6 +2290,47 @@ describe("createCameraMapWidget", () => {
     expect(html).toContain("metadata-approach-match");
     expect(html).toContain("Copy camera review info");
     expect(html.toLowerCase()).not.toContain("debug");
+  });
+
+  it("explains no-corridor fallback behavior in popup HTML", async () => {
+    const { buildPopupHtml } = await import("../../src/speed/camera-map-widget.js");
+
+    const html = buildPopupHtml({
+      id: "camera-no-corridor",
+      geometry: { type: "Point", coordinates: [-73.9, 40.7] },
+      properties: {
+        country: "us",
+        osmId: "123",
+        speedKph: 50,
+        approachCount: 0,
+        approachConfidenceSummary: "none",
+        approachDirections: "none",
+      },
+    });
+
+    expect(html).toContain("No road corridor available");
+    expect(html).toContain("Alerts may use heading/radius fallback");
+    expect(html).toContain("road-direction data");
+  });
+
+  it("reports unresolved corridor details without pretending no corridors exist", async () => {
+    const { buildPopupHtml } = await import("../../src/speed/camera-map-widget.js");
+
+    const html = buildPopupHtml({
+      id: "camera-summary",
+      geometry: { type: "Point", coordinates: [-73.9, 40.7] },
+      properties: {
+        country: "us",
+        approachCount: 2,
+        approachConfidenceSummary: "mixed",
+        approachDirections: "mixed",
+      },
+    }, {
+      approachDetails: { hasUnresolvedApproachDetails: true },
+    });
+
+    expect(html).toContain("Approach details unavailable in this view.");
+    expect(html).not.toContain("This camera needs road-direction data");
   });
 
   it("builds bounded camera review payloads for copying", async () => {
