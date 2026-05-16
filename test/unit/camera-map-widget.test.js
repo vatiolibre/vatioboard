@@ -392,6 +392,7 @@ describe("createCameraMapWidget", () => {
     expect(Array.from(document.querySelectorAll(".camera-map-actions .camera-map-action"))
       .map((button) => button.className)).toEqual([
       "camera-map-action camera-map-fullscreen",
+      "camera-map-action camera-map-speed-alerts",
       "camera-map-action camera-map-close",
     ]);
 

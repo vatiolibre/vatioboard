@@ -219,6 +219,16 @@ npm run lint
 npm run build
 ```
 
+### Speed Alerts Shell Window
+
+Speed alert settings live in a reusable shell window with the window id `speed-alerts`. It can be opened from the Speed page, Camera Map/floating tools/start menu, and any SPA route that has access to `window.__vatioboardFloatingTools.openSpeedAlerts()` or `toggleSpeedAlerts()`.
+
+The window behaves like the other VatioBoard tools: it is draggable, resizable, snappable, minimizable/restorable/closable, and participates in shell layout persistence and named layouts. It is not owned by the Speed route, so switching to Board, Library, Replay, Accel, or Camera Map does not destroy the panel or create a duplicate settings surface.
+
+Speed Alerts is only a settings and status shell. It binds to the shared app-level driving alert service, shared GPS service, existing speed preferences, and generated/cached camera artifacts. Opening the window does not start a second GPS watch, create a second camera database, query Overpass, or fetch a live road network. If GPS permission is denied or camera artifacts are unavailable, the panel still opens and reports the local/offline state.
+
+Audio still follows browser gesture rules. Sound toggles change the existing alert preferences, and priming/testing alert audio must happen from a user gesture. Once audio is primed and alerts are enabled, overspeed and camera proximity evaluation continues through the app-level service across route changes.
+
 ### Contributing Speed Cameras To OpenStreetMap
 
 The best way to improve VatioBoard's camera coverage is to improve OpenStreetMap itself. VatioBoard's generated camera artifacts are derived from OSM `highway=speed_camera` nodes plus local/official sources, so upstream fixes benefit this app and every other OSM consumer after the next data refresh.

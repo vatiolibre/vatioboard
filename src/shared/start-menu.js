@@ -1,6 +1,6 @@
 import "../styles/backend-auth.less";
 
-import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
+import { applyTranslations, getLang, toggleLang } from "../i18n.js";
 import {
   IconAccel,
   IconBoard,
@@ -205,6 +205,13 @@ function buildStartMenu() {
     dataset: { startAction: "camera-map" },
   }));
 
+  list.append(createIconButton({
+    icon: IconSpeed,
+    i18nKey: "speedAlertsTitle",
+    text: "Speed Alerts",
+    dataset: { startAction: "speed-alerts" },
+  }));
+
   const playerAnchor = document.createElement("span");
   playerAnchor.dataset.playerToggleAnchor = "";
   playerAnchor.hidden = true;
@@ -344,6 +351,11 @@ export function initSharedStartMenu({
     }
     if (actionButton?.dataset.startAction === "camera-map") {
       floatingTools?.toggleCameraMap?.();
+      close();
+      return;
+    }
+    if (actionButton?.dataset.startAction === "speed-alerts") {
+      floatingTools?.toggleSpeedAlerts?.();
       close();
       return;
     }

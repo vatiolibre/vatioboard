@@ -47,13 +47,16 @@ describe("SPA Speed route real-controller smoke", () => {
 
     document.getElementById("quickAlertConfig")?.click();
     await settleRealSpaSmoke();
-    expect(document.body.classList.contains("alert-panel-open")).toBe(true);
+    const speedAlerts = document.querySelector(".speed-alert-window");
+    expect(speedAlerts?.hidden).toBe(false);
+    expect(speedAlerts?.getAttribute("data-vb-shell-window")).toBe("speed-alerts");
     const boardAfterAlert = await navigateRealSpaSmoke("#/board");
     expect(boardAfterAlert.activeWatchCount).toBe(0);
     expect(boardAfterAlert.activeRafCount).toBe(0);
     expect(boardAfterAlert.activeMapCount).toBe(0);
     expect(boardAfterAlert.activeResizeObserverCount).toBe(0);
-    expect(document.body.classList.contains("alert-panel-open")).toBe(false);
+    expect(document.querySelector(".speed-alert-window")).toBe(speedAlerts);
+    expect(speedAlerts.hidden).toBe(false);
   }, 40000);
 
   it("restores the Waze primary stage after a remount", async () => {

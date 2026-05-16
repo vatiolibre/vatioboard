@@ -195,6 +195,7 @@ async function loadModules() {
     energy,
     player,
     cameraMap,
+    speedAlerts,
     milkdrop,
     floatingTools,
   ] = await Promise.all([
@@ -203,6 +204,7 @@ async function loadModules() {
     import("../../src/energy/energy-calculator-widget.js"),
     import("../../src/player/player-widget.js"),
     import("../../src/speed/camera-map-widget.js"),
+    import("../../src/speed/speed-alert-panel.js"),
     import("../../src/player/milkdrop-panel.js"),
     import("../../src/shared/floating-tools.js"),
   ]);
@@ -212,8 +214,46 @@ async function loadModules() {
     createEnergyCalculatorWidget: energy.createEnergyCalculatorWidget,
     createPlayerWidget: player.createPlayerWidget,
     createCameraMapWidget: cameraMap.createCameraMapWidget,
+    createSpeedAlertPanel: speedAlerts.createSpeedAlertPanel,
     createMilkdropPanel: milkdrop.createMilkdropPanel,
     initFloatingTools: floatingTools.initFloatingTools,
+  };
+}
+
+function createDrivingAlertServiceStub(overrides = {}) {
+  const snapshot = {
+    status: "idle",
+    currentSpeedMs: 0,
+    cameraDatabaseStatus: { status: "idle" },
+    preferences: {
+      unit: "kmh",
+      distanceUnit: "m",
+      alertEnabled: false,
+      alertLimitMs: 27.7777777778,
+      alertSoundEnabled: true,
+      audioMuted: false,
+      trapAlertEnabled: true,
+      trapAlertDistanceM: 500,
+      trapSoundEnabled: true,
+    },
+    audio: {},
+    ...overrides,
+  };
+  return {
+    getSnapshot: vi.fn(() => snapshot),
+    primeAudioFromUserGesture: vi.fn(),
+    setAlertSoundEnabled: vi.fn(),
+    setManualAlertEnabled: vi.fn(),
+    setManualAlertLimitMs: vi.fn(),
+    setMuted: vi.fn(),
+    setTrapAlertDistanceM: vi.fn(),
+    setTrapAlertEnabled: vi.fn(),
+    setTrapSoundEnabled: vi.fn(),
+    setUnits: vi.fn(),
+    subscribe: vi.fn((listener) => {
+      listener(snapshot);
+      return vi.fn();
+    }),
   };
 }
 
@@ -224,13 +264,14 @@ describe("shell window integration", () => {
     vi.restoreAllMocks();
   });
 
-  it("calculator, energy, camera map, player, and milkdrop register as shell windows", async () => {
+  it("calculator, energy, camera map, speed alerts, player, and milkdrop register as shell windows", async () => {
     const {
       createShellWindowManager,
       createCalculatorWidget,
       createEnergyCalculatorWidget,
       createPlayerWidget,
       createCameraMapWidget,
+      createSpeedAlertPanel,
       createMilkdropPanel,
     } = await loadModules();
     const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
@@ -238,6 +279,11 @@ describe("shell window integration", () => {
     const calc = createCalculatorWidget({ floating: false, restoreVisibility: false, shellManager: manager });
     const energy = createEnergyCalculatorWidget({ restoreVisibility: false, shellManager: manager });
     const cameraMap = createCameraMapWidget({ restoreVisibility: false, shellManager: manager });
+    const speedAlerts = createSpeedAlertPanel({
+      restoreVisibility: false,
+      shellManager: manager,
+      drivingAlertService: createDrivingAlertServiceStub(),
+    });
     const player = createPlayerWidget({ floating: false, restoreVisibility: false, shellManager: manager });
     const milkdrop = createMilkdropPanel({ restoreVisibility: false, shellManager: manager });
 
@@ -247,10 +293,12 @@ describe("shell window integration", () => {
       "energy",
       "milkdrop",
       "player",
+      "speed-alerts",
     ]);
 
     milkdrop.destroy();
     player.destroy();
+    speedAlerts.destroy();
     cameraMap.destroy();
     energy.destroy();
     calc.destroy();
@@ -258,23 +306,52 @@ describe("shell window integration", () => {
   });
 
   it("last opened shell window is active/topmost", async () => {
-    const { createShellWindowManager, createCalculatorWidget, createCameraMapWidget, createPlayerWidget } = await loadModules();
+    const { createShellWindowManager, createCalculatorWidget, createCameraMapWidget, createSpeedAlertPanel, createPlayerWidget } = await loadModules();
     const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
     const calc = createCalculatorWidget({ floating: false, restoreVisibility: false, shellManager: manager });
     const cameraMap = createCameraMapWidget({ restoreVisibility: false, shellManager: manager });
+    const speedAlerts = createSpeedAlertPanel({
+      restoreVisibility: false,
+      shellManager: manager,
+      drivingAlertService: createDrivingAlertServiceStub(),
+    });
     const player = createPlayerWidget({ floating: false, restoreVisibility: false, shellManager: manager });
 
     manager.openWindow("calculator");
     manager.openWindow("player");
     manager.openWindow("camera-map");
+    manager.openWindow("speed-alerts");
 
-    expect(manager.getActiveWindow().id).toBe("camera-map");
-    expect(Number(document.querySelector(".camera-map-panel").style.zIndex))
+    expect(manager.getActiveWindow().id).toBe("speed-alerts");
+    expect(Number(document.querySelector(".speed-alert-window").style.zIndex))
       .toBeGreaterThan(Number(document.querySelector(".player-panel").style.zIndex));
 
     player.destroy();
+    speedAlerts.destroy();
     cameraMap.destroy();
     calc.destroy();
+    manager.destroy();
+  });
+
+  it("Camera Map can bring Speed Alerts to the front", async () => {
+    const { createShellWindowManager, createCameraMapWidget, createSpeedAlertPanel } = await loadModules();
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const cameraMap = createCameraMapWidget({ restoreVisibility: false, shellManager: manager });
+    const speedAlerts = createSpeedAlertPanel({
+      restoreVisibility: false,
+      shellManager: manager,
+      drivingAlertService: createDrivingAlertServiceStub(),
+    });
+
+    manager.openWindow("camera-map");
+    document.querySelector(".camera-map-speed-alerts").click();
+
+    expect(manager.getWindow("speed-alerts").state).toBe("open");
+    expect(manager.getActiveWindow().id).toBe("speed-alerts");
+    expect(document.querySelector(".speed-alert-window").hidden).toBe(false);
+
+    speedAlerts.destroy();
+    cameraMap.destroy();
     manager.destroy();
   });
 
@@ -358,14 +435,16 @@ describe("shell window integration", () => {
     const mount = document.createElement("div");
     document.body.appendChild(mount);
 
-    initFloatingTools({ mount, shellManager: manager });
-    initFloatingTools({ mount, shellManager: manager });
+    const drivingAlertService = createDrivingAlertServiceStub();
+    initFloatingTools({ mount, shellManager: manager, drivingAlertService });
+    initFloatingTools({ mount, shellManager: manager, drivingAlertService });
 
     expect(document.querySelectorAll(".floating-dock")).toHaveLength(0);
     expect(document.querySelectorAll(".calc-panel")).toHaveLength(1);
     expect(document.querySelectorAll(".camera-map-panel")).toHaveLength(1);
     expect(document.querySelectorAll(".energy-panel")).toHaveLength(1);
-    expect(manager.listWindows().filter((record) => ["calculator", "camera-map", "energy"].includes(record.id))).toHaveLength(3);
+    expect(document.querySelectorAll(".speed-alert-window")).toHaveLength(1);
+    expect(manager.listWindows().filter((record) => ["calculator", "camera-map", "energy", "speed-alerts"].includes(record.id))).toHaveLength(4);
     manager.destroy();
   });
 
@@ -400,19 +479,25 @@ describe("shell window integration", () => {
       startConsumer: vi.fn(() => vi.fn()),
       subscribe: vi.fn(() => vi.fn()),
     };
-    const tools = initFloatingTools({ mount: document.body, shellManager: manager, gpsService });
+    const drivingAlertService = createDrivingAlertServiceStub();
+    const tools = initFloatingTools({ mount: document.body, shellManager: manager, gpsService, drivingAlertService });
 
     expect(document.querySelector(".floating-dock")).toBeNull();
     tools.openCalculator();
     tools.openCameraMap();
+    tools.openSpeedAlerts();
 
     expect(manager.getWindow("calculator").state).toBe("open");
     expect(manager.getWindow("camera-map").state).toBe("open");
+    expect(manager.getWindow("speed-alerts").state).toBe("open");
     expect(document.querySelector(".calc-panel").hidden).toBe(false);
     expect(document.querySelector(".camera-map-panel").hidden).toBe(false);
+    expect(document.querySelector(".speed-alert-window").hidden).toBe(false);
     expect(gpsService.startConsumer).toHaveBeenCalledWith("camera-map", expect.objectContaining({
       enableHighAccuracy: true,
     }));
+    expect(gpsService.startConsumer).not.toHaveBeenCalledWith("speed-alerts", expect.anything());
+    expect(drivingAlertService.subscribe).toHaveBeenCalled();
     manager.destroy();
   });
 

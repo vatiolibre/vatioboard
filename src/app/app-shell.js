@@ -91,7 +91,12 @@ export async function startAppShell({
     shellManager,
   });
   window.__vatioboardPlayerWidget = playerWidget;
-  const floatingTools = initFloatingTools({ mount: persistentLayer, shellManager, gpsService: context.gpsService });
+  const floatingTools = initFloatingTools({
+    mount: persistentLayer,
+    shellManager,
+    gpsService: context.gpsService,
+    drivingAlertService: context.drivingAlertService,
+  });
   const startMenu = initSharedStartMenu({ floatingTools, mount: persistentLayer });
   const activityIndicator = initActivityIndicator({ mount: persistentLayer });
   const shellTaskbar = createShellTaskbar({ shellManager, root: persistentLayer });

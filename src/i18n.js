@@ -58,6 +58,8 @@ const baseTranslations = {
     activitySpeedAlertsTapToRearm: 'Tap to rearm',
     activitySpeedAlertsUserAction: 'Audio requires user action',
     activitySpeedAlertsGpsRequired: 'GPS required',
+    active: 'Active',
+    muted: 'Muted',
     speedRecoveryTitle: 'Resume driving tools?',
     speedRecoveryRecordingMessage:
       'Drive recording or its background keep-alive may need to be resumed.',
@@ -75,6 +77,16 @@ const baseTranslations = {
       'Speed and camera alerts need one tap before the browser can play audio while driving.',
     enableDrivingAlerts: 'Enable alerts',
     keepAlertsOff: 'Keep alerts off',
+    speedAlertsTitle: 'Speed Alerts',
+    closeSpeedAlerts: 'Close speed alerts',
+    minimizeSpeedAlerts: 'Minimize speed alerts',
+    resizeSpeedAlerts: 'Resize speed alerts',
+    speedAlertsAudioMuted: 'Alert audio is muted.',
+    speedAlertsAudioNeedsTap: 'Tap Enable alerts after turning on alert sounds so the browser can play them while driving.',
+    speedAlertsNoNearbyCamera: 'No nearby camera in range.',
+    speedAlertsNoApproach: 'No camera approach match yet.',
+    speedAlertsApproach: 'Approach',
+    speedAlertsLocalFirst: 'Saved automatically. Uses shared local GPS and camera artifacts.',
     recordingKeepAlivePromptTitle: 'Rearm keep-alive audio',
     recordingKeepAlivePromptBody:
       'GPS recording is still active. The browser paused the keep-alive audio channel.',
@@ -928,6 +940,8 @@ const baseTranslations = {
     activitySpeedAlertsTapToRearm: 'Toca para rearmar',
     activitySpeedAlertsUserAction: 'El audio requiere acción del usuario',
     activitySpeedAlertsGpsRequired: 'GPS requerido',
+    active: 'Activo',
+    muted: 'Silenciado',
     speedRecoveryTitle: '¿Reanudar herramientas de conducción?',
     speedRecoveryRecordingMessage:
       'La grabación del viaje o su keep-alive en segundo plano puede necesitar reanudarse.',
@@ -945,6 +959,18 @@ const baseTranslations = {
       'Las alertas de velocidad y radar necesitan un toque antes de que el navegador pueda reproducir audio al conducir.',
     enableDrivingAlerts: 'Activar alertas',
     keepAlertsOff: 'Mantener alertas apagadas',
+    speedAlertsTitle: 'Alertas de velocidad',
+    closeSpeedAlerts: 'Cerrar alertas de velocidad',
+    minimizeSpeedAlerts: 'Minimizar alertas de velocidad',
+    resizeSpeedAlerts: 'Redimensionar alertas de velocidad',
+    speedAlertsAudioMuted: 'El audio de alertas está silenciado.',
+    speedAlertsAudioNeedsTap:
+      'Toca Activar alertas después de encender los sonidos para que el navegador pueda reproducirlos al conducir.',
+    speedAlertsNoNearbyCamera: 'No hay cámaras cercanas en rango.',
+    speedAlertsNoApproach: 'Aún no hay coincidencia de aproximación a cámara.',
+    speedAlertsApproach: 'Aproximación',
+    speedAlertsLocalFirst:
+      'Guardado automáticamente. Usa GPS local compartido y artefactos locales de cámaras.',
     recordingKeepAlivePromptTitle: 'Rearmar audio keep-alive',
     recordingKeepAlivePromptBody:
       'La grabación GPS sigue activa. El navegador pausó el canal de audio keep-alive.',

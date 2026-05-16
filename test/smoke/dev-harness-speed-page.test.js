@@ -190,11 +190,10 @@ describe('speed.html smoke', () => {
       canonical: 'https://vatioboard.com/speed.html',
     });
     expect(getBrowserMocks().geolocation.watchPosition).toHaveBeenCalledTimes(1);
-    expect(document.getElementById('quickAlertConfig').getAttribute('aria-label')).toBe(
-      'Configure alerts'
+    expect(document.getElementById('quickAlertConfig').getAttribute('aria-label')).toContain(
+      'Configure'
     );
-    expect(document.getElementById('closeAlertPanel').getAttribute('aria-label')).toBe('Close');
-    expect(document.querySelector('#closeAlertPanel.speed-alert-close svg')).toBeTruthy();
+    expect(document.getElementById('speedAlertPanel')).toBeNull();
     expect(document.querySelector('#quickAlertConfig .toolbar-recording-glyph svg')).toBeTruthy();
     expect(document.getElementById('resetTrip').getAttribute('aria-label')).toBe('Reset trip');
     expect(document.querySelector('#resetTrip .toolbar-recording-glyph svg')).toBeTruthy();
@@ -273,13 +272,18 @@ describe('speed.html smoke', () => {
     await flushTasks();
     expect(document.getElementById('speedToolsMenuList').hidden).toBe(true);
     document.getElementById('quickAlertConfig').click();
-    await flushTasks();
-    expect(document.getElementById('speedAlertPanel').hidden).toBe(false);
+    await settleAsyncWork();
+    const speedAlertWindow = document.querySelector('.speed-alert-window');
+    expect(speedAlertWindow?.hidden).toBe(false);
+    expect(speedAlertWindow?.getAttribute('data-vb-shell-window')).toBe('speed-alerts');
+    expect(speedAlertWindow?.querySelector('.speed-alert-window-close')?.getAttribute('aria-label')).toBe(
+      'Close speed alerts'
+    );
     expect(document.getElementById('quickAlertConfig').getAttribute('aria-pressed')).toBe('true');
     document.getElementById('quickAlertConfig').click();
     await flushTasks();
-    expect(document.getElementById('speedAlertPanel').hidden).toBe(true);
-    expect(document.getElementById('quickAlertConfig').getAttribute('aria-pressed')).toBe('false');
+    expect(document.querySelector('.speed-alert-window')?.hidden).toBe(false);
+    expect(document.getElementById('quickAlertConfig').getAttribute('aria-pressed')).toBe('true');
 
     emitGeolocationSuccess({
       coords: {

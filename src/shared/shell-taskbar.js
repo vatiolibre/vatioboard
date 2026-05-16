@@ -1,4 +1,4 @@
-import { IconCalculator, IconCameraMap, IconEnergy, IconMedia, IconMusic } from "../icons.js";
+import { IconCalculator, IconCameraMap, IconEnergy, IconMedia, IconMusic, IconSpeed } from "../icons.js";
 
 const TASKBAR_STATE_KEY = "vatioboard.shell.taskbar_fabs.v1";
 const DRAG_THRESHOLD_PX = 6;
@@ -12,6 +12,7 @@ const DEFAULT_ICONS = {
   energy: IconEnergy,
   milkdrop: IconMedia,
   player: IconMusic,
+  "speed-alerts": IconSpeed,
 };
 
 const TOUCH_MOVE_OPTIONS = { capture: true, passive: false };

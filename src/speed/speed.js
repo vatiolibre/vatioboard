@@ -7,6 +7,7 @@ import { createAnalogSpeedometer } from '../shared/analog-speedometer.js';
 import { ACTIVITY_OPEN_EVENT } from '../shared/activity-state.js';
 import { initBackendAuthControllers } from '../shared/backend-auth.js';
 import { initCloudSyncStatusIndicator } from '../shared/cloud-sync-status-indicator.js';
+import { initFloatingTools } from '../shared/floating-tools.js';
 import { navigateToAppRoute } from '../app/router.js';
 import { showConfirmDialog } from '../shared/ui/confirm-dialog.js';
 import { createPlaceResolver } from '../shared/place-resolver.js';
@@ -353,17 +354,30 @@ function dispatchSpeedPositionUpdate() {
   window.dispatchEvent(new CustomEvent('vatioboard:speed-position', { detail }));
 }
 
+function getOrInitFloatingTools() {
+  const existing = window.__vatioboardFloatingTools;
+  if (existing?.shellManager) return existing;
+  return initFloatingTools({
+    mount: document.getElementById('app-persistent-layer') || document.body,
+    gpsService: window.__vatioboardGpsStore || null,
+    drivingAlertService: appDrivingAlertService || window.__vatioboardDrivingAlerts || null,
+  });
+}
+
 function openCameraMapPanel() {
-  const tools = window.__vatioboardFloatingTools;
-  if (tools?.openCameraMap) {
-    tools.openCameraMap();
-    return;
-  }
-  import('../shared/floating-tools.js')
-    .then(({ initFloatingTools }) => {
-      initFloatingTools({ mount: document.body }).openCameraMap?.();
-    })
-    .catch(() => {});
+  getOrInitFloatingTools()?.openCameraMap?.();
+}
+
+function markAlertTriggerDiscovered() {
+  if (state.alertTriggerDiscovered) return;
+  state.alertTriggerDiscovered = true;
+  saveAlertTriggerDiscoveredPreference(true);
+  syncAlertTriggerDiscovery();
+}
+
+function openSpeedAlertPanel() {
+  markAlertTriggerDiscovered();
+  getOrInitFloatingTools()?.openSpeedAlerts?.();
 }
 
 const initialPreferences = loadInitialPreferences();
@@ -1214,7 +1228,7 @@ function applyUnitsConfiguration(
     if (persist) {
       saveUnitPreference(unit);
     }
-    delete elements.alertPresets.dataset.unit;
+    if (elements.alertPresets) delete elements.alertPresets.dataset.unit;
   }
 
   if (DISTANCE_UNIT_CONFIG[distanceUnit] && distanceUnit !== state.distanceUnit) {
@@ -1225,7 +1239,7 @@ function applyUnitsConfiguration(
       saveDistanceUnitPreference(distanceUnit);
     }
     saveTrapAlertDistancePreference(state.trapAlertDistanceM);
-    delete elements.trapDistancePresets.dataset.unit;
+    if (elements.trapDistancePresets) delete elements.trapDistancePresets.dataset.unit;
   }
 
   if (!unitChanged && !distanceChanged) {
@@ -1978,7 +1992,8 @@ function renderQuickAudioControls() {
 }
 
 function syncAlertTriggerDiscovery() {
-  const shouldHighlightTrigger = !state.alertTriggerDiscovered && elements.alertPanel.hidden;
+  if (!elements.alertTriggerHint || !elements.gaugeCard) return;
+  const shouldHighlightTrigger = !state.alertTriggerDiscovered;
   elements.alertTriggerHint.hidden = !shouldHighlightTrigger;
   elements.gaugeCard.classList.toggle('is-alert-discoverable', shouldHighlightTrigger);
 }
@@ -1990,30 +2005,39 @@ function renderAlertUi(options = {}) {
     state.lastFixAt > 0 &&
     Math.round(convertSpeed(state.currentSpeedMs, state.unit)) >= getAlertConfig(state.unit).min;
 
-  speedRenderer.renderAlertPresets();
-  speedRenderer.renderTrapDistancePresets();
+  if (elements.alertPresets) speedRenderer.renderAlertPresets();
+  if (elements.trapDistancePresets) speedRenderer.renderTrapDistancePresets();
 
   elements.alertTriggerValue.textContent = speedRenderer.getAlertTriggerText(alertState);
   elements.alertTrigger.setAttribute('aria-label', speedRenderer.getAlertTriggerLabel(alertState));
-  elements.alertPanelStatus.textContent = speedRenderer.getAlertPanelStatusText(alertState);
-  elements.alertToggle.textContent = isManualAlertActive(state.alertEnabled, state.alertLimitMs)
-    ? t('turnOff')
-    : t('turnOn');
-  elements.alertToggle.setAttribute(
-    'aria-pressed',
-    String(isManualAlertActive(state.alertEnabled, state.alertLimitMs))
-  );
-  elements.alertUseCurrent.disabled = !canUseCurrentSpeed;
-  elements.alertValue.textContent = String(currentLimitDisplay);
-  elements.alertUnit.textContent = UNIT_CONFIG[state.unit].label;
-  elements.alertDecrease.disabled = currentLimitDisplay <= getAlertConfig(state.unit).min;
-  elements.alertIncrease.disabled = currentLimitDisplay >= getAlertConfig(state.unit).max;
-
-  for (const button of elements.alertPresets.querySelectorAll('button')) {
-    button.setAttribute(
+  elements.alertTrigger.setAttribute('aria-pressed', String(alertState.enabled || state.trapAlertEnabled));
+  elements.quickAlertConfig?.setAttribute('aria-pressed', String(alertState.enabled || state.trapAlertEnabled));
+  elements.quickAlertConfig?.setAttribute('aria-label', speedRenderer.getAlertTriggerLabel(alertState));
+  if (elements.alertPanelStatus) {
+    elements.alertPanelStatus.textContent = speedRenderer.getAlertPanelStatusText(alertState);
+  }
+  if (elements.alertToggle) {
+    elements.alertToggle.textContent = isManualAlertActive(state.alertEnabled, state.alertLimitMs)
+      ? t('turnOff')
+      : t('turnOn');
+    elements.alertToggle.setAttribute(
       'aria-pressed',
-      String(Number(button.dataset.alertPreset) === currentLimitDisplay)
+      String(isManualAlertActive(state.alertEnabled, state.alertLimitMs))
     );
+  }
+  if (elements.alertUseCurrent) elements.alertUseCurrent.disabled = !canUseCurrentSpeed;
+  if (elements.alertValue) elements.alertValue.textContent = String(currentLimitDisplay);
+  if (elements.alertUnit) elements.alertUnit.textContent = UNIT_CONFIG[state.unit].label;
+  if (elements.alertDecrease) elements.alertDecrease.disabled = currentLimitDisplay <= getAlertConfig(state.unit).min;
+  if (elements.alertIncrease) elements.alertIncrease.disabled = currentLimitDisplay >= getAlertConfig(state.unit).max;
+
+  if (elements.alertPresets) {
+    for (const button of elements.alertPresets.querySelectorAll('button')) {
+      button.setAttribute(
+        'aria-pressed',
+        String(Number(button.dataset.alertPreset) === currentLimitDisplay)
+      );
+    }
   }
 
   for (const button of elements.alertSoundButtons) {
@@ -2030,11 +2054,13 @@ function renderAlertUi(options = {}) {
     );
   }
 
-  for (const button of elements.trapDistancePresets.querySelectorAll('button')) {
-    button.setAttribute(
-      'aria-pressed',
-      String(Math.abs(Number(button.dataset.trapDistance) - state.trapAlertDistanceM) < 1)
-    );
+  if (elements.trapDistancePresets) {
+    for (const button of elements.trapDistancePresets.querySelectorAll('button')) {
+      button.setAttribute(
+        'aria-pressed',
+        String(Math.abs(Number(button.dataset.trapDistance) - state.trapAlertDistanceM) < 1)
+      );
+    }
   }
 
   for (const button of elements.trapSoundButtons) {
@@ -2272,40 +2298,12 @@ function stopHiddenTrackingIfIdle({ disarmBackgroundAudio = false } = {}) {
 }
 
 function openAlertPanel() {
-  if (elements.alertBackdrop) {
-    elements.alertBackdrop.hidden = false;
-  }
-  elements.alertPanel.hidden = false;
-  if (!state.alertTriggerDiscovered) {
-    state.alertTriggerDiscovered = true;
-    saveAlertTriggerDiscoveredPreference(true);
-  }
-  renderAlertUi();
-  document.body.classList.add('alert-panel-open');
-  elements.alertPanel.scrollTop = 0;
-  elements.alertTrigger.setAttribute('aria-expanded', 'true');
-  elements.quickAlertConfig?.setAttribute('aria-expanded', 'true');
-  elements.quickAlertConfig?.setAttribute('aria-pressed', 'true');
+  openSpeedAlertPanel();
 }
 
 function closeAlertPanel() {
-  document.body.classList.remove('alert-panel-open');
-  if (elements.alertBackdrop) {
-    elements.alertBackdrop.hidden = true;
-  }
-  elements.alertPanel.hidden = true;
-  elements.alertTrigger.setAttribute('aria-expanded', 'false');
-  elements.quickAlertConfig?.setAttribute('aria-expanded', 'false');
-  elements.quickAlertConfig?.setAttribute('aria-pressed', 'false');
+  window.__vatioboardFloatingTools?.closeSpeedAlerts?.();
   syncAlertTriggerDiscovery();
-}
-
-function toggleAlertPanel() {
-  if (elements.alertPanel.hidden) {
-    openAlertPanel();
-  } else {
-    closeAlertPanel();
-  }
 }
 
 function setUnit(unit) {
@@ -2379,7 +2377,6 @@ function resetTripData() {
 
   globeController.resetGlobe();
   hideNotice();
-  closeAlertPanel();
   setStatus('requesting');
   renderMetrics();
   speedRenderer.drawGauge();
@@ -2683,7 +2680,6 @@ function handleSingleTabOwnershipChange(event) {
     stopRenderLoop();
     globeController.stopGlobeSolarUpdates();
     audioController.syncRuntimePagePresentation();
-    closeAlertPanel();
     return;
   }
 
@@ -2692,7 +2688,6 @@ function handleSingleTabOwnershipChange(event) {
   globeController.stopGlobeSolarUpdates();
   audioController.disarmBackgroundAlertAudio();
   audioController.syncRuntimePagePresentation();
-  closeAlertPanel();
 }
 
 function resumeVisibleRuntime() {
@@ -3063,8 +3058,6 @@ function unmountSpeedController() {
     audioController.stopTrapSound();
   }
   audioController.syncRuntimePagePresentation();
-  closeAlertPanel();
-  document.body.classList.remove('alert-panel-open');
   destroySpeedRouteResources(route);
   if (route?.ownsCleanup) {
     route.cleanup?.run?.();
@@ -3124,8 +3117,8 @@ function bindEvents({ cleanup, signal } = {}) {
   cleanup.addEventListener(elements.stopRecording, 'click', () => {
     stopRecordingSession({ fromUserGesture: true });
   });
-  cleanup.addEventListener(elements.quickAlertConfig, 'click', toggleAlertPanel);
-  cleanup.addEventListener(elements.alertTrigger, 'click', toggleAlertPanel);
+  cleanup.addEventListener(elements.quickAlertConfig, 'click', openSpeedAlertPanel);
+  cleanup.addEventListener(elements.alertTrigger, 'click', openSpeedAlertPanel);
   cleanup.addEventListener(elements.closeAlertPanel, 'click', closeAlertPanel);
   cleanup.addEventListener(elements.alertToggle, 'click', () => {
     if (isManualAlertActive(state.alertEnabled, state.alertLimitMs)) {
@@ -3247,21 +3240,6 @@ function bindEvents({ cleanup, signal } = {}) {
     resumeVisibleRuntime();
     recheckSpeedRouteRecovery({ reason: 'pageshow-recheck' });
   });
-  cleanup.addEventListener(document, 'pointerdown', (event) => {
-    if (event.target.closest('.player-panel')) return;
-    const insideAlertUi =
-      elements.alertPanel.contains(event.target) ||
-      elements.alertTrigger.contains(event.target) ||
-      elements.quickAlertConfig?.contains(event.target);
-    if (elements.alertPanel.hidden) return;
-    if (insideAlertUi) return;
-    closeAlertPanel();
-  });
-  cleanup.addEventListener(document, 'keydown', (event) => {
-    if (event.target.closest('.player-panel')) return;
-    if (event.key === 'Escape') closeAlertPanel();
-  });
-
   cleanup.addEventListener(document, 'visibilitychange', () => {
     if (document.hidden) {
       void persistReplaySessionNow();
@@ -3292,7 +3270,6 @@ async function init() {
     return;
   }
 
-  document.body.classList.remove('alert-panel-open');
   await hydrateReplaySession();
   await persistReplaySessionNow();
   updatePageMeta();

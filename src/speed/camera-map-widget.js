@@ -5,6 +5,7 @@ import {
   IconFullscreenExit,
   IconGpsLab,
   IconRestart,
+  IconSpeed,
   IconWorld,
 } from "../icons.js";
 import { clampElementToViewport, makePanelDraggable } from "../calculator/widget/drag.js";
@@ -1166,6 +1167,16 @@ function buildPanel(selectedBasemapId, {
     html: `<span class="btn-icon">${IconFullscreen}</span>`,
   });
 
+  const speedAlertsBtn = createElement("button", {
+    type: "button",
+    class: "camera-map-action camera-map-speed-alerts",
+    "aria-label": t("speedAlertsTitle"),
+    title: t("speedAlertsTitle"),
+    "data-i18n-aria": "speedAlertsTitle",
+    "data-i18n-title": "speedAlertsTitle",
+    html: `<span class="btn-icon">${IconSpeed}</span>`,
+  });
+
   const closeBtn = createElement("button", {
     type: "button",
     class: "camera-map-action camera-map-close",
@@ -1178,6 +1189,7 @@ function buildPanel(selectedBasemapId, {
 
   const actions = createElement("div", { class: "camera-map-actions" }, [
     fullscreenBtn,
+    speedAlertsBtn,
     closeBtn,
   ]);
   const header = createElement("div", { class: "camera-map-header" }, [
@@ -1311,6 +1323,7 @@ function buildPanel(selectedBasemapId, {
     header,
     closeBtn,
     fullscreenBtn,
+    speedAlertsBtn,
     recenterBtn,
     orientationBtn,
     refreshBtn,
@@ -1371,6 +1384,7 @@ export function createCameraMapWidget(options = {}) {
     header,
     closeBtn,
     fullscreenBtn,
+    speedAlertsBtn,
     recenterBtn,
     orientationBtn,
     refreshBtn,
@@ -3505,6 +3519,17 @@ export function createCameraMapWidget(options = {}) {
   fullscreenBtn.addEventListener("click", (event) => {
     event.stopPropagation();
     toggleFullscreen().catch(() => {});
+  });
+
+  speedAlertsBtn.addEventListener("pointerdown", (event) => event.stopPropagation());
+  speedAlertsBtn.addEventListener("pointerup", (event) => event.stopPropagation());
+  speedAlertsBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (window.__vatioboardFloatingTools?.openSpeedAlerts) {
+      window.__vatioboardFloatingTools.openSpeedAlerts();
+      return;
+    }
+    shellManager.openWindow?.("speed-alerts");
   });
 
   recenterBtn.addEventListener("click", () => toggleFollow());
