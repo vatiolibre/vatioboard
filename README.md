@@ -219,6 +219,46 @@ npm run lint
 npm run build
 ```
 
+### Contributing Speed Cameras To OpenStreetMap
+
+The best way to improve VatioBoard's camera coverage is to improve OpenStreetMap itself. VatioBoard's generated camera artifacts are derived from OSM `highway=speed_camera` nodes plus local/official sources, so upstream fixes benefit this app and every other OSM consumer after the next data refresh.
+
+Before editing, read the OSM wiki pages for [`highway=speed_camera`](https://wiki.openstreetmap.org/wiki/Tag:highway%3Dspeed_camera), [speed limits](https://wiki.openstreetmap.org/wiki/Speed_limit), [`maxspeed=*`](https://wiki.openstreetmap.org/wiki/Key:maxspeed), [verifiability](https://wiki.openstreetmap.org/wiki/Verifiability), and [good practice](https://wiki.openstreetmap.org/wiki/Good_practice). Do not copy camera locations or speed limits from Google Maps, Waze, TomTom, Apple Maps, commercial camera databases, or any other source that is not explicitly compatible with OSM. If you want to use a government or open-data camera list, follow the OSM [Import Guidelines](https://wiki.openstreetmap.org/wiki/Import/Guidelines) and [Automated Edits code of conduct](https://wiki.openstreetmap.org/wiki/Automated_Edits_code_of_conduct), discuss the plan with the local OSM community first, and keep the import reviewable.
+
+For one-off manual fixes:
+
+1. Create or log in to an OpenStreetMap account at [openstreetmap.org](https://www.openstreetmap.org/).
+2. Use the built-in iD editor for small edits, or JOSM for careful road/camera cleanup.
+3. Confirm the camera from ground survey, your own geotagged imagery, street-level imagery allowed for OSM editing, or another OSM-compatible source. Map only real, current, verifiable fixed cameras. Do not add temporary police traps or rumors as permanent `highway=speed_camera` objects.
+4. Place a node for the fixed camera. If the camera is represented directly on the roadway, put the node on the affected road way near the camera. If the physical camera is beside or above the road, place it at the real camera position and consider adding an enforcement relation for the affected road section.
+5. Add `highway=speed_camera`. Add `maxspeed=*` when the enforced limit is known and verifiable. Use plain numeric values for km/h, for example `maxspeed=50`, and include a spaced unit for mph, for example `maxspeed=30 mph`.
+6. Add `direction=*` when the monitored direction is known. Use degrees when possible; make sure the value describes the useful enforcement/traffic direction rather than a confusing decorative camera-lens direction. For complex setups, use an OSM `type=enforcement` relation with the camera device and the affected road section.
+7. Add helpful provenance and maintenance tags when known, such as `operator=*`, `ref=*`, `source=*`, `check_date=*`, or `survey:date=*`. Keep names and notes factual; avoid adding warnings or app-specific text to OSM.
+8. Save with a clear changeset comment, for example `Add fixed speed camera and signed maxspeed on Main St`, and include the source you used.
+
+Good camera alerts also depend on nearby road tagging. If a camera already exists but VatioBoard picks the wrong corridor, improve the road data rather than adding duplicate cameras:
+
+- Add or correct `maxspeed=*`, `maxspeed:forward=*`, and `maxspeed:backward=*` on the road ways where the limit is actually posted. Split the OSM way at the sign or intersection when the limit changes for only part of the road.
+- Check the road direction before using `*:forward` or `*:backward`; forward means the direction of the OSM way geometry.
+- Add `oneway=*`, `junction=roundabout`, turn restrictions, or separate carriageways where the real road layout requires them.
+- Add access tags such as `access=*`, `vehicle=*`, `motor_vehicle=*`, `motorcar=*`, `busway=*`, `service=*`, and lane access tags when they are signed or otherwise verifiable. These tags help VatioBoard ignore footways, cycleways, private roads, bus-only lanes, driveways, parking aisles, and emergency-only service roads when building approach corridors.
+- Remove stale or duplicate camera nodes only when you have verified the physical camera is gone or the duplicate truly refers to the same object. Preserve useful existing tags and OSM object history whenever possible.
+
+After an upstream OSM edit is saved, wait for Overpass and downstream OSM mirrors to catch up, then regenerate the local artifacts:
+
+```bash
+npm run fetch:cameras
+npm run analyze:cameras:maxspeed
+```
+
+For routine local verification without fetching missing road tiles, use:
+
+```bash
+CAMERA_ROAD_FETCH_MISSING=0 npm run fetch:cameras
+```
+
+Individual camera fixes should normally go to OSM first, not directly into this repository. A VatioBoard data PR is most useful when it adds or updates an OSM-compatible official source, documents a repeatable import/reconciliation process, or improves the build pipeline that consumes upstream data.
+
 ### Camera Map
 
 The Camera Map points come from the same local/static camera artifacts described above. The browser does not call Overpass or any camera API from the map panel.
