@@ -1276,6 +1276,58 @@ describe("createCameraMapWidget", () => {
     manager.destroy();
   });
 
+  it("reapplies heading-up follow from the cached live position after close and reopen", async () => {
+    vi.setSystemTime(2000);
+    localStorage.setItem("vatioboard.cameraMap.follow.v1", "true");
+    localStorage.setItem("vatioboard.cameraMap.orientation.v1", "heading-up");
+    dataSourceDouble.loadViewport.mockImplementation(async () => ({
+      features: [],
+      loadedCountries: [],
+      loadedTiles: [],
+      skippedCountries: [],
+      status: { status: "ready", featureCount: 0 },
+    }));
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+    map.easeTo.mockClear();
+
+    widget.updatePosition({
+      latitude: 40.7,
+      longitude: -73.9,
+      headingDeg: 135,
+      speedMs: 8,
+      timestampMs: 2000,
+      receivedAtMs: 2000,
+    }, { now: 2000, source: "test" });
+    expect(map.easeTo).toHaveBeenLastCalledWith(expect.objectContaining({
+      center: [-73.9, 40.7],
+      bearing: 135,
+    }));
+
+    widget.close();
+    map.easeTo.mockClear();
+    map.bearing = 0;
+    vi.setSystemTime(2500);
+
+    widget.open();
+    await flushTimers();
+
+    expect(widget.getNavigationState()).toMatchObject({
+      followEnabled: true,
+      followPaused: false,
+      navigationMode: "drive",
+      orientationMode: "heading-up",
+    });
+    expect(map.easeTo).toHaveBeenCalledWith(expect.objectContaining({
+      center: [-73.9, 40.7],
+      bearing: 135,
+    }));
+
+    widget.destroy();
+    manager.destroy();
+  });
+
   it("keeps the camera-map GPS consumer active while the panel is open", async () => {
     const stopConsumer = vi.fn();
     const gpsService = {

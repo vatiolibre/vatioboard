@@ -2751,6 +2751,15 @@ export function createCameraMapWidget(options = {}) {
     return normalizeLivePosition(reader?.(), now);
   }
 
+  function readCurrentOrCachedPosition(now = Date.now()) {
+    return readCurrentPosition(now) || normalizeLivePosition(currentLivePosition, now);
+  }
+
+  function reapplyNavigationFromLatestPosition({ now = Date.now(), source = "reopen" } = {}) {
+    if (destroyed || panel.hidden || !mapReady) return null;
+    return updatePosition(readCurrentOrCachedPosition(now), { now, source });
+  }
+
   function maybeEnableDriveNavigationFromCurrentPosition({ force = false } = {}) {
     if (initialNavigationDefaultMode === "browse" && !force) return false;
     if (!autoEnableFollowFromSpeed && !force) return false;
@@ -3109,7 +3118,8 @@ export function createCameraMapWidget(options = {}) {
 
   function startPositionPolling() {
     if (destroyed || panel.hidden) return;
-    updatePosition(readCurrentPosition(), { now: Date.now(), source: "poll" });
+    const now = Date.now();
+    updatePosition(readCurrentOrCachedPosition(now), { now, source: "poll" });
     schedulePositionPoll();
   }
 
@@ -3323,8 +3333,8 @@ export function createCameraMapWidget(options = {}) {
   function showPanel({ persist = true } = {}) {
     panel.hidden = false;
     startResizeObserver();
-    maybeEnableDriveNavigationFromCurrentPosition();
     startSpeedPositionEvents();
+    maybeEnableDriveNavigationFromCurrentPosition();
     startPositionPolling();
     if (persist) saveVisibility(true);
     if (panel.style.left && panel.style.top) {
@@ -3334,6 +3344,7 @@ export function createCameraMapWidget(options = {}) {
       resizeMap();
       initMap().then(() => {
         resizeMap();
+        reapplyNavigationFromLatestPosition({ source: "reopen" });
         refresh().catch(() => {});
       });
     }, 0);
