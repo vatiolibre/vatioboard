@@ -5,6 +5,9 @@
   --camera-map-overlay-muted: #374151;
   --camera-map-overlay-border: rgba(17, 24, 39, 0.2);
   --camera-map-overlay-focus: rgba(16, 185, 129, 0.34);
+  --camera-map-z-overlay: 2;
+  --camera-map-z-approach-panel: 3;
+  --camera-map-z-layer-menu: 4;
   position: fixed;
   right: 18px;
   bottom: calc(72px + env(safe-area-inset-bottom, 0px));
@@ -199,7 +202,7 @@
   position: absolute;
   left: 10px;
   right: 10px;
-  z-index: 2;
+  z-index: var(--camera-map-z-overlay, 2);
   display: flex;
   gap: 8px;
   pointer-events: none;
@@ -223,6 +226,10 @@
   justify-content: flex-end;
 }
 
+.camera-map-overlay--nav:has(.camera-map-layer-menu:not([hidden])) {
+  z-index: var(--camera-map-z-layer-menu, 4);
+}
+
 .camera-map-overlay--bottom {
   bottom: calc(10px + env(safe-area-inset-bottom, 0px));
   align-items: flex-end;
@@ -234,7 +241,7 @@
   position: absolute;
   right: 62px;
   bottom: calc(72px + env(safe-area-inset-bottom, 0px));
-  z-index: 3;
+  z-index: var(--camera-map-z-approach-panel, 3);
   display: grid;
   gap: 6px;
   width: min(300px, calc(100% - 84px));
