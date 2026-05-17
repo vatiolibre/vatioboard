@@ -1447,10 +1447,6 @@ export function createCameraMapWidget(options = {}) {
   let resizeInProgress = false;
   let colorSchemeMediaQuery = null;
   let cleanupColorSchemeListener = () => {};
-  let preFullscreenWidth = null;
-  let preFullscreenHeight = null;
-  let preFullscreenLeft = null;
-  let preFullscreenTop = null;
   let programmaticCameraMoveDepth = 0;
   let suppressManualPauseUntilMs = 0;
   let speedPositionListenerActive = false;
@@ -1946,30 +1942,23 @@ export function createCameraMapWidget(options = {}) {
     fullscreenBtn.dataset.fullscreen = active ? "true" : "false";
   }
 
-  function savePreFullscreenGeometry() {
-    if (preFullscreenWidth && preFullscreenHeight) return;
-    const rect = panel.getBoundingClientRect();
-    preFullscreenWidth = Math.round(rect.width || pxToNumber(panel.style.width, 720));
-    preFullscreenHeight = Math.round(rect.height || pxToNumber(panel.style.height, 520));
-    preFullscreenLeft = panel.style.left || `${Math.round(rect.left || 18)}px`;
-    preFullscreenTop = panel.style.top || `${Math.round(rect.top || 78)}px`;
+  function syncShellBoundsBeforeFullscreen() {
+    const record = shellManager.getWindow?.(CAMERA_MAP_WINDOW_ID);
+    if (record?.state === "fullscreen") return record;
+    const bounds = getPanelBounds();
+    return shellManager.updateWindowBounds?.(CAMERA_MAP_WINDOW_ID, bounds, {
+      persist: false,
+      preserveSnap: true,
+    }) || record;
   }
 
-  function restorePreFullscreenGeometry() {
-    if (preFullscreenWidth && preFullscreenHeight) {
-      panel.style.width = `${preFullscreenWidth}px`;
-      panel.style.height = `${preFullscreenHeight}px`;
-    }
-    if (preFullscreenLeft && preFullscreenTop) {
-      panel.style.left = preFullscreenLeft;
-      panel.style.top = preFullscreenTop;
-      panel.style.right = "auto";
-      panel.style.bottom = "auto";
-    }
-    preFullscreenWidth = null;
-    preFullscreenHeight = null;
-    preFullscreenLeft = null;
-    preFullscreenTop = null;
+  function enterShellFullscreen() {
+    syncShellBoundsBeforeFullscreen();
+    return shellManager.fullscreenWindow?.(CAMERA_MAP_WINDOW_ID, { persist: false });
+  }
+
+  function exitShellFullscreen() {
+    return shellManager.exitFullscreenWindow?.(CAMERA_MAP_WINDOW_ID, { persist: false });
   }
 
   function resizeAfterFullscreenTransition() {
@@ -1982,29 +1971,27 @@ export function createCameraMapWidget(options = {}) {
   }
 
   function enterFallbackFullscreen() {
-    savePreFullscreenGeometry();
-    shellManager.fullscreenWindow?.(CAMERA_MAP_WINDOW_ID, { persist: false });
+    enterShellFullscreen();
     isFallbackFullscreen = true;
     panel.classList.add("is-fullscreen", "is-window-fullscreen");
     updateFullscreenButton();
     resizeAfterFullscreenTransition();
   }
 
-  function exitFallbackFullscreen({ restore = true } = {}) {
+  function exitFallbackFullscreen() {
     if (!isFallbackFullscreen) return;
     isFallbackFullscreen = false;
     panel.classList.remove("is-window-fullscreen");
     if (!isNativeFullscreen) {
       panel.classList.remove("is-fullscreen");
-      if (restore) restorePreFullscreenGeometry();
     }
-    shellManager.exitFullscreenWindow?.(CAMERA_MAP_WINDOW_ID, { persist: false });
+    exitShellFullscreen();
     updateFullscreenButton();
     resizeAfterFullscreenTransition();
   }
 
   async function enterFullscreen() {
-    savePreFullscreenGeometry();
+    enterShellFullscreen();
     if (typeof panel.requestFullscreen === "function") {
       try {
         await panel.requestFullscreen();
@@ -2039,7 +2026,7 @@ export function createCameraMapWidget(options = {}) {
     if (isNativeFullscreen) {
       isNativeFullscreen = false;
       panel.classList.remove("is-fullscreen");
-      restorePreFullscreenGeometry();
+      exitShellFullscreen();
       updateFullscreenButton();
       resizeAfterFullscreenTransition();
     }
@@ -2057,29 +2044,30 @@ export function createCameraMapWidget(options = {}) {
     const wasNativeFullscreen = isNativeFullscreen;
     isNativeFullscreen = document.fullscreenElement === panel;
     if (isNativeFullscreen) {
-      shellManager.fullscreenWindow?.(CAMERA_MAP_WINDOW_ID, { persist: false });
+      if (shellManager.getWindow?.(CAMERA_MAP_WINDOW_ID)?.state !== "fullscreen") {
+        enterShellFullscreen();
+      }
       isFallbackFullscreen = false;
       panel.classList.remove("is-window-fullscreen");
     }
     panel.classList.toggle("is-fullscreen", isNativeFullscreen || isFallbackFullscreen);
     if (wasNativeFullscreen && !isNativeFullscreen && !isFallbackFullscreen) {
-      restorePreFullscreenGeometry();
-      shellManager.exitFullscreenWindow?.(CAMERA_MAP_WINDOW_ID, { persist: false });
+      exitShellFullscreen();
     }
     updateFullscreenButton();
     resizeAfterFullscreenTransition();
   }
 
-  function exitFullscreenBeforeHide({ restore = true } = {}) {
+  function exitFullscreenBeforeHide() {
     if (isFallbackFullscreen) {
-      exitFallbackFullscreen({ restore });
+      exitFallbackFullscreen();
     }
     if (document.fullscreenElement === panel && typeof document.exitFullscreen === "function") {
       document.exitFullscreen().catch(() => {});
     } else if (isNativeFullscreen) {
       isNativeFullscreen = false;
       panel.classList.remove("is-fullscreen");
-      if (restore) restorePreFullscreenGeometry();
+      exitShellFullscreen();
       updateFullscreenButton();
       resizeAfterFullscreenTransition();
     }
@@ -3448,7 +3436,7 @@ export function createCameraMapWidget(options = {}) {
 
   function destroy() {
     destroyed = true;
-    exitFullscreenBeforeHide({ restore: false });
+    exitFullscreenBeforeHide();
     window.clearTimeout(refreshTimer);
     window.clearTimeout(fullscreenResizeTimer);
     stopPositionPolling();
@@ -3502,6 +3490,9 @@ export function createCameraMapWidget(options = {}) {
       closable: true,
       restorable: true,
       fullscreen: true,
+      maximizable: true,
+      snap: true,
+      snapZones: ["left", "right", "top", "bottom", "center", "top-left", "top-right", "bottom-left", "bottom-right"],
     },
     lifecycle: {
       open: showPanel,

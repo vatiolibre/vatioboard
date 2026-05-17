@@ -176,15 +176,17 @@ function installWidgetMocks() {
 async function loadWidgets() {
   vi.resetModules();
   installWidgetMocks();
-  const [calculator, energy, player] = await Promise.all([
+  const [calculator, energy, player, shell] = await Promise.all([
     import("../../src/calculator/calculator-widget.js"),
     import("../../src/energy/energy-calculator-widget.js"),
     import("../../src/player/player-widget.js"),
+    import("../../src/shared/shell-window-manager.js"),
   ]);
   return {
     createCalculatorWidget: calculator.createCalculatorWidget,
     createEnergyCalculatorWidget: energy.createEnergyCalculatorWidget,
     createPlayerWidget: player.createPlayerWidget,
+    createShellWindowManager: shell.createShellWindowManager,
   };
 }
 
@@ -276,6 +278,47 @@ describe("floating widget z-order", () => {
     expect(zIndexOf(".player-panel")).toBeGreaterThan(zIndexOf(".milkdrop-panel"));
 
     player.destroy();
+  });
+
+  it("registers compact calculator, energy, and player panels without maximize or snap capabilities", async () => {
+    const {
+      createCalculatorWidget,
+      createEnergyCalculatorWidget,
+      createPlayerWidget,
+      createShellWindowManager,
+    } = await loadWidgets();
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const calc = createCalculatorWidget({ floating: false, restoreVisibility: false, shellManager: manager });
+    const energy = createEnergyCalculatorWidget({ restoreVisibility: false, shellManager: manager });
+    const player = createPlayerWidget({ floating: false, restoreVisibility: false, shellManager: manager });
+
+    expect(manager.getWindow("calculator").capabilities).toMatchObject({
+      resizable: false,
+      maximizable: false,
+      snap: false,
+      preserveIntrinsicWidth: true,
+      maxWidth: 320,
+    });
+    expect(manager.getWindow("energy").capabilities).toMatchObject({
+      resizable: false,
+      maximizable: false,
+      snap: false,
+      preserveIntrinsicWidth: true,
+      maxWidth: 640,
+    });
+    expect(manager.getWindow("player").capabilities).toMatchObject({
+      resizable: false,
+      maximizable: false,
+      fullscreen: false,
+      snap: false,
+      preserveIntrinsicWidth: true,
+      maxWidth: 340,
+    });
+
+    player.destroy();
+    energy.destroy();
+    calc.destroy();
+    manager.destroy();
   });
 
   it("normal floating panels stay below taskbar and start menu layers", async () => {

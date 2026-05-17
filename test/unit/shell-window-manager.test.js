@@ -286,6 +286,107 @@ describe("shell-window-manager", () => {
     manager.destroy();
   });
 
+  it("refuses unsupported snap zones for fixed-width tools", () => {
+    const manager = createManager();
+    const panel = createPanel();
+    panel.hidden = false;
+    manager.registerWindow({
+      id: "calculator",
+      element: panel,
+      bounds: { left: 48, top: 72, width: 320, height: 220 },
+      capabilities: {
+        resizable: false,
+        maximizable: false,
+        snap: false,
+        preserveIntrinsicWidth: true,
+        maxWidth: 320,
+      },
+    });
+
+    const before = manager.openWindow("calculator").bounds;
+    const snapped = manager.snapWindow("calculator", "top");
+
+    expect(snapped.bounds).toEqual(before);
+    expect(snapped.snap).toBeNull();
+    expect(panel.style.width).toBe("320px");
+    manager.destroy();
+  });
+
+  it("allows supported top snap for maximizable camera map windows", () => {
+    const manager = createManager();
+    const panel = createPanel();
+    panel.hidden = false;
+    manager.registerWindow({
+      id: "camera-map",
+      element: panel,
+      bounds: { left: 48, top: 72, width: 420, height: 280 },
+      capabilities: {
+        resizable: true,
+        maximizable: true,
+        fullscreen: true,
+        snap: true,
+        snapZones: ["top", "left", "right", "center"],
+      },
+    });
+
+    manager.openWindow("camera-map");
+    const snapped = manager.snapWindow("camera-map", "top");
+
+    expect(snapped.snap.zone).toBe("top");
+    expect(snapped.bounds.width).toBeGreaterThan(420);
+    expect(Number.parseInt(panel.style.width, 10)).toBe(snapped.bounds.width);
+    manager.destroy();
+  });
+
+  it("preserves intrinsic width when a compact snappable window opts out of widening", () => {
+    const manager = createManager();
+    const panel = createPanel();
+    panel.hidden = false;
+    manager.registerWindow({
+      id: "compact-tool",
+      element: panel,
+      bounds: { left: 48, top: 72, width: 300, height: 220 },
+      capabilities: {
+        maximizable: true,
+        snap: true,
+        preserveIntrinsicWidth: true,
+        maxWidth: 340,
+      },
+    });
+
+    manager.openWindow("compact-tool");
+    const snapped = manager.snapWindow("compact-tool", "top");
+
+    expect(snapped.snap.zone).toBe("top");
+    expect(snapped.bounds.width).toBe(300);
+    expect(panel.style.width).toBe("300px");
+    manager.destroy();
+  });
+
+  it("exits fullscreen to the exact previous bounds when they still fit the work area", () => {
+    const manager = createManager();
+    const panel = createPanel();
+    panel.hidden = false;
+    const previousBounds = { left: 123, top: 144, width: 640, height: 470 };
+    manager.registerWindow({
+      id: "camera-map",
+      element: panel,
+      bounds: previousBounds,
+      capabilities: { fullscreen: true },
+    });
+
+    manager.openWindow("camera-map");
+    manager.fullscreenWindow("camera-map");
+    const restored = manager.exitFullscreenWindow("camera-map");
+
+    expect(restored.bounds).toEqual(previousBounds);
+    expect(panel.style.left).toBe("123px");
+    expect(panel.style.top).toBe("144px");
+    expect(panel.style.width).toBe("640px");
+    expect(panel.style.height).toBe("470px");
+    manager.destroy();
+  });
+
   it("persists shell preferences and applies root attributes", () => {
     const root = document.createElement("div");
     document.body.append(root);

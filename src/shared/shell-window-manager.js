@@ -9,6 +9,20 @@ export const SHELL_WINDOW_MAX_Z_INDEX = SHELL_Z_INDEX.windowMax;
 const BASE_Z_INDEX = SHELL_WINDOW_BASE_Z_INDEX;
 const MAX_Z_INDEX = SHELL_WINDOW_MAX_Z_INDEX;
 const VALID_STATES = new Set(["closed", "open", "minimized", "hidden", "fullscreen"]);
+const SNAP_ZONES = new Set([
+  "left",
+  "right",
+  "top",
+  "bottom",
+  "center",
+  "top-left",
+  "top-right",
+  "bottom-left",
+  "bottom-right",
+]);
+const MAXIMIZE_ZONES = new Set(["top"]);
+// These capabilities are deliberately separate: a panel may resize inside
+// design-safe bounds without supporting snap, top maximize, or fullscreen.
 const SHELL_PREFERENCES_STORAGE_KEY = "vatioboard.shell.preferences.v1";
 const DEFAULT_SHELL_PREFERENCES = {
   taskbarPosition: "bottom",
@@ -50,12 +64,23 @@ function normalizeBounds(bounds) {
 }
 
 function normalizeCapabilities(capabilities = {}) {
+  const snapZones = Array.isArray(capabilities.snapZones)
+    ? capabilities.snapZones.filter((zone) => SNAP_ZONES.has(zone))
+    : null;
+  const maxWidth = toNumber(capabilities.maxWidth);
+  const maxHeight = toNumber(capabilities.maxHeight);
   return {
     draggable: capabilities.draggable !== false,
     resizable: capabilities.resizable === true,
     minimizable: capabilities.minimizable !== false,
     closable: capabilities.closable !== false,
     restorable: capabilities.restorable !== false,
+    maximizable: capabilities.maximizable !== false,
+    snap: capabilities.snap !== false,
+    snapZones,
+    preserveIntrinsicWidth: capabilities.preserveIntrinsicWidth === true,
+    maxWidth: maxWidth !== null && maxWidth > 0 ? maxWidth : null,
+    maxHeight: maxHeight !== null && maxHeight > 0 ? maxHeight : null,
     ...(capabilities.pinnable !== undefined ? { pinnable: capabilities.pinnable === true } : {}),
     ...(capabilities.fullscreen !== undefined ? { fullscreen: capabilities.fullscreen === true } : {}),
   };
@@ -81,6 +106,30 @@ function applyBounds(element, bounds) {
   element.style.bottom = "auto";
   if (next.width) element.style.width = `${Math.round(next.width)}px`;
   if (next.height) element.style.height = `${Math.round(next.height)}px`;
+}
+
+function applyCapabilityConstraints(bounds, record, options = {}) {
+  const next = normalizeBounds(bounds);
+  if (!next || !record?.capabilities) return next;
+  const constrained = { ...next };
+  const maxWidth = toNumber(record.capabilities.maxWidth);
+  const maxHeight = toNumber(record.capabilities.maxHeight);
+  if (maxWidth !== null && maxWidth > 0 && constrained.width) {
+    constrained.width = Math.min(constrained.width, maxWidth);
+  }
+  if (maxHeight !== null && maxHeight > 0 && constrained.height) {
+    constrained.height = Math.min(constrained.height, maxHeight);
+  }
+  if (options.snap === true && record.capabilities.preserveIntrinsicWidth === true && constrained.width) {
+    const currentWidth = toNumber(options.currentBounds?.width)
+      ?? toNumber(record.bounds?.width)
+      ?? toNumber(record.restoreBounds?.width)
+      ?? maxWidth;
+    if (currentWidth !== null && currentWidth > 0) {
+      constrained.width = Math.min(constrained.width, currentWidth);
+    }
+  }
+  return constrained;
 }
 
 function getViewport() {
@@ -113,10 +162,19 @@ function sanitizeRecordBounds(record, bounds, options = {}) {
   if (isFullscreenRecord(record) && options.fullscreen !== false) {
     return getFullscreenBounds({ root: options.root, viewport: options.viewport });
   }
-  return sanitizeNormalBounds(bounds, {
+  const constrained = applyCapabilityConstraints(bounds, record, options);
+  return sanitizeNormalBounds(constrained, {
     ...options,
     currentBounds: options.currentBounds || record?.bounds || record?.restoreBounds,
   });
+}
+
+function canSnapRecord(record, zone) {
+  if (!record || record.capabilities?.snap === false) return false;
+  if (!SNAP_ZONES.has(zone)) return false;
+  if (MAXIMIZE_ZONES.has(zone) && record.capabilities?.maximizable !== true) return false;
+  if (Array.isArray(record.capabilities?.snapZones) && !record.capabilities.snapZones.includes(zone)) return false;
+  return true;
 }
 
 function getRecordZIndex(record) {
@@ -357,12 +415,12 @@ export function createShellWindowManager(options = {}) {
     record.state = storedState === "fullscreen" ? "open" : storedState;
     record.previousState = VALID_STATES.has(stored.previousState) ? stored.previousState : record.previousState;
     record.bounds = sanitizeRecordBounds(record, stored.bounds, { root }) || record.bounds;
-    record.restoreBounds = sanitizeNormalBounds(stored.restoreBounds, { root }) || record.restoreBounds;
-    record.fullscreenRestoreBounds = sanitizeNormalBounds(stored.fullscreenRestoreBounds, { root }) || null;
+    record.restoreBounds = sanitizeRecordBounds(record, stored.restoreBounds, { root, fullscreen: false }) || record.restoreBounds;
+    record.fullscreenRestoreBounds = sanitizeRecordBounds(record, stored.fullscreenRestoreBounds, { root, fullscreen: false }) || null;
     record.fullscreenRestoreSnap = stored.fullscreenRestoreSnap || null;
     record.zIndex = Math.min(Number.parseInt(String(stored.zIndex || record.zIndex), 10) || record.zIndex, MAX_Z_INDEX);
     record.minimized = stored.minimized === true || record.state === "minimized";
-    record.snap = stored.snap || null;
+    record.snap = stored.snap && canSnapRecord(record, stored.snap.zone) ? stored.snap : null;
     if (record.bounds) applyBounds(record.element, record.bounds);
     return record;
   }
@@ -379,6 +437,13 @@ export function createShellWindowManager(options = {}) {
     const configuredState = VALID_STATES.has(config.state) ? config.state : (record.state || (config.element.hidden ? "closed" : "open"));
     const configuredBounds = normalizeBounds(config.bounds) || record.bounds || elementBounds;
     const configuredRestoreBounds = normalizeBounds(config.restoreBounds) || record.restoreBounds || elementBounds;
+    const configuredCapabilities = normalizeCapabilities({ ...record.capabilities, ...config.capabilities });
+    const constraintRecord = {
+      ...record,
+      capabilities: configuredCapabilities,
+      bounds: configuredBounds,
+      restoreBounds: configuredRestoreBounds,
+    };
 
     Object.assign(record, {
       id: config.id,
@@ -388,15 +453,19 @@ export function createShellWindowManager(options = {}) {
       launcherElement: config.launcherElement || record.launcherElement || null,
       state: configuredState === "fullscreen" ? "open" : configuredState,
       previousState: VALID_STATES.has(config.previousState) ? config.previousState : (record.previousState || "closed"),
-      bounds: sanitizeNormalBounds(configuredBounds, { root }) || configuredBounds,
-      restoreBounds: sanitizeNormalBounds(configuredRestoreBounds, { root }) || configuredRestoreBounds,
-      fullscreenRestoreBounds: sanitizeNormalBounds(config.fullscreenRestoreBounds || record.fullscreenRestoreBounds, { root }),
+      bounds: sanitizeRecordBounds(constraintRecord, configuredBounds, { root, fullscreen: false }) || configuredBounds,
+      restoreBounds: sanitizeRecordBounds(constraintRecord, configuredRestoreBounds, { root, fullscreen: false }) || configuredRestoreBounds,
+      fullscreenRestoreBounds: sanitizeRecordBounds(
+        constraintRecord,
+        config.fullscreenRestoreBounds || record.fullscreenRestoreBounds,
+        { root, fullscreen: false },
+      ),
       fullscreenRestoreSnap: config.fullscreenRestoreSnap || record.fullscreenRestoreSnap || null,
       zIndex: Math.min(Number.parseInt(String(config.zIndex || record.zIndex || BASE_Z_INDEX), 10) || BASE_Z_INDEX, MAX_Z_INDEX),
       active: record.active === true,
       minimized: config.minimized === true || record.minimized === true,
       snap: config.snap || record.snap || null,
-      capabilities: normalizeCapabilities({ ...record.capabilities, ...config.capabilities }),
+      capabilities: configuredCapabilities,
       lifecycle: sanitizeLifecycle({ ...record.lifecycle, ...config.lifecycle }),
       lazy: config.lazy === true || record.lazy === true,
       restoreOnBoot: config.restoreOnBoot !== undefined ? config.restoreOnBoot !== false : record.restoreOnBoot !== false,
@@ -472,13 +541,21 @@ export function createShellWindowManager(options = {}) {
     record.minimized = false;
     if (record.state !== "fullscreen") record.state = "open";
     if (record.snap?.zone) {
+      if (!canSnapRecord(record, record.snap.zone)) {
+        record.snap = null;
+      }
+    }
+    if (record.snap?.zone) {
       const snapBounds = getBoundsForSnapZone(record.snap.zone, getViewport(), {
         ...record.snap,
         useWorkArea: true,
         root,
       });
-      record.bounds = snapBounds;
-      applyBounds(record.element, snapBounds);
+      record.bounds = applyCapabilityConstraints(snapBounds, record, {
+        snap: true,
+        currentBounds: record.restoreBounds || record.bounds,
+      }) || snapBounds;
+      applyBounds(record.element, record.bounds);
     } else if (record.state === "fullscreen") {
       const fullscreenBounds = getFullscreenBounds({ root });
       record.bounds = fullscreenBounds;
@@ -507,7 +584,7 @@ export function createShellWindowManager(options = {}) {
     const record = windows.get(id);
     if (!record) return null;
     const normalBounds = isFullscreenRecord(record)
-      ? sanitizeNormalBounds(record.fullscreenRestoreBounds || record.restoreBounds, { root })
+      ? sanitizeRecordBounds(record, record.fullscreenRestoreBounds || record.restoreBounds, { root, fullscreen: false })
       : sanitizeRecordBounds(record, getElementBounds(record.element) || record.bounds, { root });
     record.bounds = normalBounds || record.bounds;
     record.restoreBounds = normalBounds || record.restoreBounds;
@@ -530,7 +607,7 @@ export function createShellWindowManager(options = {}) {
     const record = windows.get(id);
     if (!record) return null;
     const normalBounds = isFullscreenRecord(record)
-      ? sanitizeNormalBounds(record.fullscreenRestoreBounds || record.restoreBounds, { root })
+      ? sanitizeRecordBounds(record, record.fullscreenRestoreBounds || record.restoreBounds, { root, fullscreen: false })
       : sanitizeRecordBounds(record, getElementBounds(record.element) || record.bounds, { root });
     record.bounds = normalBounds || record.bounds;
     record.restoreBounds = normalBounds || record.restoreBounds;
@@ -598,14 +675,19 @@ export function createShellWindowManager(options = {}) {
   function snapWindow(id, zone, options = {}) {
     const record = windows.get(id);
     if (!record) return null;
+    if (!canSnapRecord(record, zone)) return shallowRecord(record);
     if (!record.snap && record.state === "open") {
       record.restoreBounds = getElementBounds(record.element) || record.bounds;
     }
-    const bounds = getBoundsForSnapZone(zone, options.viewport || getViewport(), {
+    const snapBounds = getBoundsForSnapZone(zone, options.viewport || getViewport(), {
       ...options,
       useWorkArea: options.useWorkArea !== false,
       root,
     });
+    const bounds = applyCapabilityConstraints(snapBounds, record, {
+      snap: true,
+      currentBounds: record.restoreBounds || record.bounds,
+    }) || snapBounds;
     record.snap = { zone, ...(options.ratio ? { ratio: options.ratio } : {}) };
     record.bounds = bounds;
     applyBounds(record.element, bounds);
@@ -637,7 +719,8 @@ export function createShellWindowManager(options = {}) {
     if (!record) return null;
     if (record.capabilities?.fullscreen !== true && options.force !== true) return shallowRecord(record);
     if (!isFullscreenRecord(record)) {
-      record.fullscreenRestoreBounds = sanitizeNormalBounds(record.bounds || getElementBounds(record.element) || record.restoreBounds, { root })
+      const currentBounds = getElementBounds(record.element) || record.bounds || record.restoreBounds;
+      record.fullscreenRestoreBounds = sanitizeRecordBounds(record, currentBounds, { root, fullscreen: false })
         || record.restoreBounds
         || record.bounds;
       record.fullscreenRestoreSnap = record.snap || null;
@@ -662,7 +745,10 @@ export function createShellWindowManager(options = {}) {
     const record = windows.get(id);
     if (!record) return null;
     if (!isFullscreenRecord(record)) return shallowRecord(record);
-    const restoreBounds = sanitizeNormalBounds(record.fullscreenRestoreBounds || record.restoreBounds || record.bounds, { root })
+    const restoreBounds = sanitizeRecordBounds(record, record.fullscreenRestoreBounds || record.restoreBounds || record.bounds, {
+      root,
+      fullscreen: false,
+    })
       || record.restoreBounds
       || record.bounds;
     const restoreSnap = record.fullscreenRestoreSnap || null;
@@ -674,12 +760,20 @@ export function createShellWindowManager(options = {}) {
     record.fullscreenRestoreSnap = null;
     record.snap = restoreSnap;
     if (record.snap?.zone) {
+      if (!canSnapRecord(record, record.snap.zone)) {
+        record.snap = null;
+      }
+    }
+    if (record.snap?.zone) {
       const snapBounds = getBoundsForSnapZone(record.snap.zone, options.viewport || getViewport(), {
         ...record.snap,
         useWorkArea: options.useWorkArea !== false,
         root,
       });
-      record.bounds = snapBounds;
+      record.bounds = applyCapabilityConstraints(snapBounds, record, {
+        snap: true,
+        currentBounds: record.restoreBounds || record.bounds,
+      }) || snapBounds;
     }
     applyBounds(record.element, record.bounds);
     setWindowAttributes(record);
@@ -695,6 +789,10 @@ export function createShellWindowManager(options = {}) {
     return isFullscreenRecord(record)
       ? exitFullscreenWindow(id, options)
       : fullscreenWindow(id, options);
+  }
+
+  function canSnapWindow(id, zone) {
+    return canSnapRecord(windows.get(id), zone);
   }
 
   function restoreShellLayout(options = {}) {
@@ -801,6 +899,7 @@ export function createShellWindowManager(options = {}) {
     updateWindowBounds,
     snapWindow,
     unsnapWindow,
+    canSnapWindow,
     fullscreenWindow,
     exitFullscreenWindow,
     toggleFullscreenWindow,
@@ -880,6 +979,10 @@ export function snapWindow(id, zone, options = {}) {
 
 export function unsnapWindow(id, options = {}) {
   return getDefaultShellWindowManager().unsnapWindow(id, options);
+}
+
+export function canSnapWindow(id, zone) {
+  return getDefaultShellWindowManager().canSnapWindow(id, zone);
 }
 
 export function fullscreenWindow(id, options = {}) {

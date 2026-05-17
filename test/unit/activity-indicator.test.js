@@ -1,4 +1,7 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SHELL_Z_INDEX } from "../../src/shared/shell-layers.js";
 
 const routerMock = vi.hoisted(() => ({
   navigateToAppRoute: vi.fn(),
@@ -210,5 +213,70 @@ describe("activity indicator", () => {
     document.querySelector('[data-activity-id="speed.alerts"]').click();
 
     expect(routerMock.navigateToAppRoute).toHaveBeenCalledWith("#/speed");
+  });
+
+  it("uses the shell activity layer above normal windows and below fullscreen/modal", () => {
+    const css = readFileSync(resolve(process.cwd(), "src/styles/activity-indicator.less"), "utf8");
+
+    expect(SHELL_Z_INDEX.activity).toBeGreaterThan(SHELL_Z_INDEX.windowMax);
+    expect(SHELL_Z_INDEX.activity).toBeGreaterThan(SHELL_Z_INDEX.startMenu);
+    expect(SHELL_Z_INDEX.activity).toBeLessThan(SHELL_Z_INDEX.fullscreen);
+    expect(SHELL_Z_INDEX.activity).toBeLessThan(SHELL_Z_INDEX.modal);
+    expect(css).toContain("--vb-z-activity: 1970;");
+    expect(css).toContain("z-index: var(--vb-z-activity, 1970)");
+  });
+
+  it("drags within the viewport and persists the indicator position", () => {
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+    const root = document.querySelector(".activity-indicator");
+    root.getBoundingClientRect = () => ({
+      left: Number.parseFloat(root.style.left) || 16,
+      top: Number.parseFloat(root.style.top) || 84,
+      right: (Number.parseFloat(root.style.left) || 16) + 240,
+      bottom: (Number.parseFloat(root.style.top) || 84) + 72,
+      width: 240,
+      height: 72,
+      x: Number.parseFloat(root.style.left) || 16,
+      y: Number.parseFloat(root.style.top) || 84,
+      toJSON() {},
+    });
+    setActivity("speed.recording", {
+      kind: "speed",
+      route: "#/speed",
+      state: "recording",
+      labelKey: "activitySpeedRecording",
+    });
+
+    root.dispatchEvent(new PointerEvent("pointerdown", {
+      clientX: 24,
+      clientY: 96,
+      pointerId: 71,
+      pointerType: "mouse",
+      button: 0,
+      bubbles: true,
+    }));
+    root.dispatchEvent(new PointerEvent("pointermove", {
+      clientX: 180,
+      clientY: 190,
+      pointerId: 71,
+      pointerType: "mouse",
+      bubbles: true,
+    }));
+    root.dispatchEvent(new PointerEvent("pointerup", {
+      clientX: 180,
+      clientY: 190,
+      pointerId: 71,
+      pointerType: "mouse",
+      bubbles: true,
+    }));
+
+    const stored = JSON.parse(localStorage.getItem("vatioboard.activity_indicator_pos_v1"));
+    expect(stored.launcher.left).toBe(root.style.left);
+    expect(stored.launcher.top).toBe(root.style.top);
+    expect(Number.parseFloat(root.style.left)).toBeGreaterThanOrEqual(8);
+    expect(Number.parseFloat(root.style.top)).toBeGreaterThanOrEqual(8);
   });
 });

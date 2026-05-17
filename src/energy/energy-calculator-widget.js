@@ -123,10 +123,14 @@ export function createEnergyCalculatorWidget(options = {}) {
     storageKey: visibilityKey,
     capabilities: {
       draggable: true,
-      resizable: true,
+      resizable: false,
       minimizable: true,
       closable: true,
       restorable: true,
+      maximizable: false,
+      snap: false,
+      preserveIntrinsicWidth: true,
+      maxWidth: 640,
     },
     lifecycle: {
       open: showPanel,

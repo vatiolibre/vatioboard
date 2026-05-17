@@ -201,7 +201,8 @@ export function makePanelDraggable({
       viewportWidth: window.innerWidth,
       viewportHeight: window.innerHeight,
     });
-    activeSnapZone = zone === "center" ? null : zone;
+    const supported = zone !== "center" && shellManager.canSnapWindow?.(shellWindowId, zone) !== false;
+    activeSnapZone = supported ? zone : null;
     if (activeSnapZone) {
       applySnapPreview(panel, activeSnapZone);
     } else {

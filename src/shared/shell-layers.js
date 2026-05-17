@@ -3,7 +3,7 @@ export const SHELL_Z_INDEX = Object.freeze({
   windowMax: 1890,
   taskbar: 1950,
   startMenu: 1960,
+  activity: 1970,
   fullscreen: 1980,
   modal: 2000,
 });
-

@@ -17,6 +17,7 @@ import { initBackendAuthControllers } from "./backend-auth.js";
 import { integratePlayerWidget } from "../player/integrate-player-widget.js";
 import { navigateToAppRoute, ROUTE_VISIBLE_EVENT } from "../app/router.js";
 import { SHELL_Z_INDEX } from "./shell-layers.js";
+import { getShellWorkArea, getViewportRect } from "./shell-work-area.js";
 
 const START_MENU_KEY = "__vatioboardStartMenu";
 
@@ -249,26 +250,71 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function readPositiveNumber(...values) {
+  for (const value of values) {
+    const parsed = Number.parseFloat(String(value ?? ""));
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return 0;
+}
+
+function getMenuNaturalSize(list) {
+  const rect = list.getBoundingClientRect?.() || {};
+  return {
+    width: readPositiveNumber(rect.width, list.scrollWidth, list.offsetWidth, 320),
+    height: readPositiveNumber(list.scrollHeight, rect.height, list.offsetHeight, 320),
+  };
+}
+
 function positionMenu(list, trigger) {
   const margin = 8;
+  const gap = 8;
   const triggerRect = trigger?.getBoundingClientRect?.();
+  const viewport = getViewportRect();
+  const workArea = getShellWorkArea({ viewport, safeMargin: margin });
+  const area = {
+    left: Math.max(viewport.left + margin, workArea.left),
+    top: Math.max(viewport.top + margin, workArea.top),
+    right: Math.min(viewport.left + viewport.width - margin, workArea.left + workArea.width),
+    bottom: Math.min(viewport.top + viewport.height - margin, workArea.top + workArea.height),
+  };
+  area.width = Math.max(1, area.right - area.left);
+  area.height = Math.max(1, area.bottom - area.top);
 
   list.style.position = "fixed";
   list.style.right = "auto";
   list.style.bottom = "auto";
+  list.style.height = "auto";
+  list.style.maxHeight = "none";
+  list.style.overflowY = "visible";
 
-  const rect = list.getBoundingClientRect();
-  const fallbackLeft = Math.max(margin, window.innerWidth - rect.width - 16);
+  const naturalSize = getMenuNaturalSize(list);
+  const menuWidth = Math.min(naturalSize.width, area.width);
+  const fallbackLeft = Math.max(area.left, area.right - menuWidth - margin);
   const fallbackTop = 64;
   const preferredLeft = triggerRect
-    ? triggerRect.right - rect.width
+    ? triggerRect.right - menuWidth
     : fallbackLeft;
-  const preferredTop = triggerRect
-    ? triggerRect.bottom + 8
-    : fallbackTop;
 
-  list.style.left = `${clamp(preferredLeft, margin, window.innerWidth - rect.width - margin)}px`;
-  list.style.top = `${clamp(preferredTop, margin, window.innerHeight - rect.height - margin)}px`;
+  const belowTop = triggerRect ? triggerRect.bottom + gap : clamp(fallbackTop, area.top, area.bottom);
+  const aboveBottom = triggerRect ? triggerRect.top - gap : area.bottom;
+  const availableBelow = Math.max(0, area.bottom - belowTop);
+  const availableAbove = Math.max(0, aboveBottom - area.top);
+  const opensBelow = !triggerRect
+    || naturalSize.height <= availableBelow
+    || (naturalSize.height > availableAbove && availableBelow >= availableAbove);
+  const chosenAvailableHeight = opensBelow ? availableBelow : availableAbove;
+  const availableHeight = Math.max(1, chosenAvailableHeight || area.height);
+  const menuHeight = Math.min(naturalSize.height, availableHeight);
+  const preferredTop = opensBelow
+    ? belowTop
+    : aboveBottom - menuHeight;
+  const needsScroll = naturalSize.height > availableHeight + 1;
+
+  list.style.left = `${clamp(preferredLeft, area.left, Math.max(area.left, area.right - menuWidth))}px`;
+  list.style.top = `${clamp(preferredTop, area.top, Math.max(area.top, area.bottom - menuHeight))}px`;
+  list.style.maxHeight = needsScroll ? `${Math.floor(availableHeight)}px` : "none";
+  list.style.overflowY = needsScroll ? "auto" : "visible";
 }
 
 export function getSharedStartMenu() {
@@ -388,6 +434,10 @@ export function initSharedStartMenu({
   });
 
   window.addEventListener("resize", () => {
+    if (!list.hidden) positionMenu(list, activeTrigger);
+  });
+
+  window.addEventListener("orientationchange", () => {
     if (!list.hidden) positionMenu(list, activeTrigger);
   });
 

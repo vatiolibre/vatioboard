@@ -250,6 +250,8 @@ export function createMilkdropPanel(options = {}) {
       closable: true,
       restorable: true,
       fullscreen: true,
+      maximizable: true,
+      snap: true,
     },
     lifecycle: {
       open: showPanel,
