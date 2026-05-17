@@ -6,6 +6,7 @@ import {
   DEFAULT_RAW_OSM_PATH,
   OVERPASS_QUERY,
   buildWorldwideCameraArtifacts,
+  prepareAnsvCameraGeoJson,
 } from "./build-worldwide-cameras.mjs";
 import {
   enrichCameraRecordsWithRoadSpeeds,
@@ -602,6 +603,14 @@ async function main() {
     );
   }
 
+  const ansvResult = await prepareAnsvCameraGeoJson();
+  if (ansvResult) {
+    const skipped = ansvResult.skippedRows ? ` (${ansvResult.skippedRows} row(s) skipped)` : "";
+    console.warn(
+      `Prepared ${ansvResult.featureCount} ANSV camera feature(s)${skipped} -> ${path.relative(projectRoot, ansvResult.outputPath)}`,
+    );
+  }
+
   const built = await buildWorldwideCameraArtifacts({
     sourcePath: fetched.outputPath,
     enrichmentPath: enrichment?.outputPath || DEFAULT_MAXSPEED_ENRICHMENT_PATH,
@@ -610,7 +619,7 @@ async function main() {
   const count = Object.values(built.manifest.countries)
     .reduce((sum, country) => sum + country.count, 0);
   console.warn(
-    `Prepared ${count} OSM speed cameras -> ${path.relative(projectRoot, built.outputDir)}`,
+    `Prepared ${count} speed cameras -> ${path.relative(projectRoot, built.outputDir)}`,
   );
 }
 

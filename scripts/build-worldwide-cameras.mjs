@@ -3,6 +3,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import KDBush from "kdbush";
+import {
+  DEFAULT_ANSV_CSV_PATH,
+  DEFAULT_ANSV_GEOJSON_PATH,
+  buildAnsvCameraGeoJson,
+} from "./build-ansv-cameras.mjs";
 import { parseMaxspeed } from "./camera-maxspeed-enrichment.mjs";
 import {
   attachNycTicketStats,
@@ -22,7 +27,8 @@ export const DEFAULT_MAXSPEED_ENRICHMENT_PATH = path.resolve(
   projectRoot,
   "data-src/osm_speed_cameras_maxspeed_enrichment.json",
 );
-export const LEGACY_ANSV_PATH = path.resolve(projectRoot, "data-src/ansv_cameras_maplibre.geojson");
+export { DEFAULT_ANSV_CSV_PATH };
+export const LEGACY_ANSV_PATH = DEFAULT_ANSV_GEOJSON_PATH;
 export const DEFAULT_LOCAL_CAMERA_SOURCE_PATHS = [
   LEGACY_ANSV_PATH,
   path.resolve(projectRoot, "data-src/nyc/nyc_cameras.geojson"),
@@ -746,6 +752,24 @@ async function readJsonFile(filePath) {
   return JSON.parse(await fs.readFile(filePath, "utf8"));
 }
 
+async function fileExists(filePath) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch (error) {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+export async function prepareAnsvCameraGeoJson({
+  inputPath = DEFAULT_ANSV_CSV_PATH,
+  outputPath = LEGACY_ANSV_PATH,
+} = {}) {
+  if (!inputPath || !(await fileExists(inputPath))) return null;
+  return buildAnsvCameraGeoJson({ inputPath, outputPath });
+}
+
 async function loadMaxspeedEnrichment(enrichmentPath) {
   if (!enrichmentPath) return new Map();
 
@@ -1061,6 +1085,14 @@ export async function buildWorldwideCameraArtifacts({
 }
 
 async function main() {
+  const ansvResult = await prepareAnsvCameraGeoJson();
+  if (ansvResult) {
+    const skipped = ansvResult.skippedRows ? ` (${ansvResult.skippedRows} row(s) skipped)` : "";
+    console.warn(
+      `Prepared ${ansvResult.featureCount} ANSV camera feature(s)${skipped} -> ${path.relative(projectRoot, ansvResult.outputPath)}`,
+    );
+  }
+
   const result = await buildWorldwideCameraArtifacts();
   const count = Object.values(result.manifest.countries)
     .reduce((sum, country) => sum + country.count, 0);

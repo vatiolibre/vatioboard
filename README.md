@@ -154,7 +154,7 @@ Approach metadata is stored inside `speedMeta.approach` when the build pipeline 
 
 If a camera is near only restricted roads, the build leaves the approach corridor empty instead of using a misleading segment. Old artifacts without `approach` continue to load and alert through the fallback policy.
 
-`npm run prepare:geo` is offline-safe. It builds from `data-src/osm_speed_cameras_overpass.json` and the optional `data-src/osm_speed_cameras_maxspeed_enrichment.json` sidecar when they exist, otherwise it uses the checked-in Colombia ANSV seed so dev/build never depend on live Overpass. Browser runtime does not query Overpass or parse road geometry while driving.
+`npm run prepare:geo` is offline-safe. It first converts `data-src/ANSV.csv` to `data-src/ansv_cameras_maplibre.geojson` when the CSV is present, then builds from `data-src/osm_speed_cameras_overpass.json` and the optional `data-src/osm_speed_cameras_maxspeed_enrichment.json` sidecar when they exist. Without the cached OSM source, it falls back to the generated Colombia ANSV GeoJSON so dev/build never depend on live Overpass. Browser runtime does not query Overpass or parse road geometry while driving.
 
 `npm run fetch:cameras` is the network/update command. By default it reuses the cached global camera source if `data-src/osm_speed_cameras_overpass.json` already exists, resumes cached road-speed tiles from `data-src/osm-road-speeds/`, fetches only missing road-speed tiles, writes `data-src/osm_speed_cameras_maxspeed_enrichment.json`, and rebuilds `public/geo/cameras`. Set `CAMERA_REFRESH_CACHE=1` only when you intentionally want to refresh the global camera Overpass source.
 
@@ -391,7 +391,8 @@ Legacy standalone test/dev harnesses remain available at:
 
 ## Scripts
 
-- `npm run prepare:geo`: builds the speed-camera artifacts consumed by Vatio Speed from local data
+- `npm run prepare:ansv`: converts `data-src/ANSV.csv` to `data-src/ansv_cameras_maplibre.geojson`
+- `npm run prepare:geo`: builds the speed-camera artifacts consumed by Vatio Speed from local data, including the ANSV CSV conversion step
 - `npm run fetch:cameras`: resumes/fetches local Overpass camera and road-speed data, writes maxspeed enrichment, and rebuilds speed-camera artifacts
 - `npm run analyze:cameras:maxspeed`: prints explicit/inferred/unknown speed coverage from the generated camera manifest
 - `npm run dev`: runs Vite locally after the `predev` geo preparation step
@@ -408,7 +409,7 @@ Legacy standalone test/dev harnesses remain available at:
 
 ## Generated Data
 
-`npm run prepare:geo` reads `data-src/osm_speed_cameras_overpass.json` when present, applies `data-src/osm_speed_cameras_maxspeed_enrichment.json` when present, otherwise falls back to [`data-src/ansv_cameras_maplibre.geojson`](data-src/ansv_cameras_maplibre.geojson), and generates:
+`npm run prepare:geo` first regenerates [`data-src/ansv_cameras_maplibre.geojson`](data-src/ansv_cameras_maplibre.geojson) from `data-src/ANSV.csv` when the CSV exists. It then reads `data-src/osm_speed_cameras_overpass.json` when present, applies `data-src/osm_speed_cameras_maxspeed_enrichment.json` when present, otherwise falls back to the ANSV GeoJSON, and generates:
 
 - `public/geo/cameras/manifest.json`
 - `public/geo/cameras/countries/<country-code>.json`
@@ -417,13 +418,15 @@ Legacy standalone test/dev harnesses remain available at:
 
 Source/cache files have different repository roles:
 
+- Commit `data-src/ANSV.csv`; it is the editable ANSV source of truth for Colombia official cameras.
+- `data-src/ansv_cameras_maplibre.geojson` is regenerated from `data-src/ANSV.csv` by `npm run prepare:ansv` and by the default geo build.
 - Commit `data-src/osm_speed_cameras_overpass.json`; it is the compact raw camera source used by offline builds.
 - Commit `data-src/osm_speed_cameras_maxspeed_enrichment.json`; it is the compact inferred-speed sidecar used by offline builds and GitHub Pages.
 - Do not commit `data-src/osm-road-speeds/`; it is a large restartable Overpass road tile cache used only by `npm run fetch:cameras`.
 - Do not commit `logs/`; fetch logs are local diagnostics.
 - Do not commit `public/geo/cameras/`; `predev`, `prebuild`, and the GitHub Pages workflow regenerate it.
 
-The GitHub Pages workflow runs `npm run build`, and `prebuild` runs `npm run prepare:geo`. That means Pages deployment needs the checked-in source JSON files under `data-src`, not the 5 GB road cache or the generated `public/geo/cameras` directory.
+The GitHub Pages workflow runs `npm run build`, and `prebuild` runs `npm run prepare:geo`. That means Pages deployment needs the checked-in source files under `data-src`, not the 5 GB road cache or the generated `public/geo/cameras` directory.
 
 `public/geo/` may be missing in a fresh checkout until you run `npm run prepare:geo`, `npm run dev`, or `npm run build`.
 
