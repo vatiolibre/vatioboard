@@ -42,6 +42,7 @@ const accelTemplate = String.raw`
           <div
             class="toolbar accel-toolbar"
             role="toolbar"
+            data-vb-shell-toolbar
             aria-label="Acceleration tools"
             data-i18n-aria="accelToolbar"
           >

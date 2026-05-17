@@ -277,4 +277,25 @@ describe("floating widget z-order", () => {
 
     player.destroy();
   });
+
+  it("normal floating panels stay below taskbar and start menu layers", async () => {
+    vi.resetModules();
+    const [{ createShellWindowManager }, { SHELL_Z_INDEX }] = await Promise.all([
+      import("../../src/shared/shell-window-manager.js"),
+      import("../../src/shared/shell-layers.js"),
+    ]);
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const panel = document.createElement("section");
+    panel.hidden = false;
+    document.body.append(panel);
+    manager.registerWindow({ id: "calculator", element: panel });
+
+    for (let index = 0; index < 1200; index += 1) {
+      manager.activateWindow("calculator");
+    }
+
+    expect(Number(panel.style.zIndex)).toBeLessThan(SHELL_Z_INDEX.taskbar);
+    expect(SHELL_Z_INDEX.taskbar).toBeLessThan(SHELL_Z_INDEX.startMenu);
+    manager.destroy();
+  });
 });

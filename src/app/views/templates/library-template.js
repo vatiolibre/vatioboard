@@ -24,7 +24,7 @@ const libraryTemplate = String.raw`
             </button>
           </div>
 
-          <div class="toolbar library-toolbar" role="toolbar" data-i18n-aria="cloudLibraryTools" aria-label="Cloud library tools">
+          <div class="toolbar library-toolbar" role="toolbar" data-vb-shell-toolbar data-i18n-aria="cloudLibraryTools" aria-label="Cloud library tools">
             <div class="library-toolbar-right">
               <div class="library-toolbar-strip">
                 <div class="tools-menu library-tools-menu">

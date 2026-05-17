@@ -665,6 +665,7 @@ export function createMilkdropPanel(options = {}) {
 
   function enterFallbackFullscreen() {
     savePreFullscreenGeometry();
+    shellManager.fullscreenWindow?.(MILKDROP_WINDOW_ID, { persist: false });
     isFallbackFullscreen = true;
     root.classList.add("is-fullscreen", "is-window-fullscreen");
     updateFullscreenBtn();
@@ -682,6 +683,7 @@ export function createMilkdropPanel(options = {}) {
         clampPanelToWindow();
       }
     }
+    shellManager.exitFullscreenWindow?.(MILKDROP_WINDOW_ID, { persist: false });
     updateFullscreenBtn();
     resizeAfterFullscreenTransition();
   }
@@ -749,6 +751,9 @@ export function createMilkdropPanel(options = {}) {
   function onFullscreenChange() {
     const wasFullscreen = isNativeFullscreen;
     isNativeFullscreen = document.fullscreenElement === root;
+    if (isNativeFullscreen) {
+      shellManager.fullscreenWindow?.(MILKDROP_WINDOW_ID, { persist: false });
+    }
     root.classList.toggle("is-fullscreen", isNativeFullscreen || isFallbackFullscreen);
     updateFullscreenBtn();
 
@@ -757,6 +762,7 @@ export function createMilkdropPanel(options = {}) {
       restorePreFullscreenGeometry();
       // Re-clamp position to keep panel inside viewport
       clampPanelToWindow();
+      shellManager.exitFullscreenWindow?.(MILKDROP_WINDOW_ID, { persist: false });
     }
 
     // Resize canvas after fullscreen transition

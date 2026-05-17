@@ -1,7 +1,7 @@
 export const SHELL_LAYOUT_STORAGE_KEY = "vatioboard.shell.layout.v1";
 export const SHELL_LAYOUT_VERSION = 1;
 
-const VALID_STATES = new Set(["closed", "open", "minimized", "hidden"]);
+const VALID_STATES = new Set(["closed", "open", "minimized", "hidden", "fullscreen"]);
 const VALID_ZONES = new Set([
   "left",
   "right",

@@ -68,6 +68,27 @@ async function loadAppShellWithMocks() {
   return import("../../src/app/app-shell.js");
 }
 
+async function loadStartMenuWithMocks() {
+  vi.resetModules();
+  vi.doUnmock("../../src/shared/start-menu.js");
+  vi.doUnmock("../../src/shared/shell-window-manager.js");
+  vi.doMock("../../src/shared/backend-auth.js", () => ({
+    initBackendAuthControllers: vi.fn(),
+  }));
+  vi.doMock("../../src/player/integrate-player-widget.js", () => ({
+    integratePlayerWidget: vi.fn(),
+  }));
+  vi.doMock("../../src/app/router.js", () => ({
+    ROUTE_VISIBLE_EVENT: "vatioboard:route-visible",
+    navigateToAppRoute: vi.fn(() => true),
+  }));
+  const [startMenu, manager] = await Promise.all([
+    import("../../src/shared/start-menu.js"),
+    import("../../src/shared/shell-window-manager.js"),
+  ]);
+  return { ...startMenu, ...manager };
+}
+
 function dispatchTouchControl(target) {
   target.dispatchEvent(new PointerEvent("pointerdown", {
     pointerId: 7,
@@ -96,6 +117,7 @@ function dispatchTouchControl(target) {
 describe("shell UI integration", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
+    delete window.__vatioboardStartMenu;
     localStorage.clear();
     vi.restoreAllMocks();
   });
@@ -371,6 +393,93 @@ describe("shell UI integration", () => {
     manager.destroy();
   });
 
+  it("start menu stays above active normal windows and still toggles shell tools", async () => {
+    const { initSharedStartMenu, createShellWindowManager } = await loadStartMenuWithMocks();
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const { panel: first } = makePanel("first-window");
+    const { panel: second } = makePanel("second-window");
+    manager.registerWindow({ id: "first", element: first });
+    manager.registerWindow({ id: "second", element: second });
+    manager.openWindow("first");
+    manager.openWindow("second");
+    manager.activateWindow("first");
+    manager.activateWindow("second");
+
+    const toggleSpeedAlerts = vi.fn();
+    const menu = initSharedStartMenu({
+      floatingTools: { toggleSpeedAlerts },
+      mount: document.body,
+    });
+    const trigger = document.createElement("button");
+    document.body.append(trigger);
+    menu.bindTrigger(trigger);
+    trigger.click();
+
+    expect(menu.list.hidden).toBe(false);
+    expect(Number(menu.list.style.zIndex)).toBeGreaterThan(Number(second.style.zIndex));
+    expect(Number(menu.list.style.zIndex)).toBeGreaterThan(1950);
+
+    menu.list.querySelector("[data-start-action='speed-alerts']").click();
+    expect(toggleSpeedAlerts).toHaveBeenCalledTimes(1);
+    expect(menu.list.hidden).toBe(true);
+    manager.destroy();
+  });
+
+  it("dragging a normal shell window clamps below the toolbar work area", async () => {
+    const { createShellWindowManager, makePanelDraggable } = await loadShell();
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+    const toolbar = document.createElement("div");
+    toolbar.setAttribute("data-vb-shell-toolbar", "");
+    vi.spyOn(toolbar, "getBoundingClientRect").mockReturnValue({
+      left: 0, top: 0, right: 1024, bottom: 64, width: 1024, height: 64, x: 0, y: 0, toJSON: () => {},
+    });
+    document.body.append(toolbar);
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const { panel, header } = makePanel("drag-clamp");
+    panel.hidden = false;
+    panel.style.top = "96px";
+    manager.registerWindow({ id: "calculator", title: "Calculator", element: panel });
+    makePanelDraggable({
+      panel,
+      header,
+      dragThresholdPx: 1,
+      savePos: vi.fn(),
+      loadPos: vi.fn(() => ({})),
+      shellWindowId: "calculator",
+      shellManager: manager,
+      enableSnapPreview: false,
+    });
+
+    header.dispatchEvent(new PointerEvent("pointerdown", {
+      clientX: 100,
+      clientY: 100,
+      pointerId: 1,
+      pointerType: "mouse",
+      button: 0,
+      bubbles: true,
+    }));
+    header.dispatchEvent(new PointerEvent("pointermove", {
+      clientX: 100,
+      clientY: -300,
+      pointerId: 1,
+      pointerType: "mouse",
+      bubbles: true,
+    }));
+    header.dispatchEvent(new PointerEvent("pointerup", {
+      clientX: 100,
+      clientY: -300,
+      pointerId: 1,
+      pointerType: "mouse",
+      bubbles: true,
+    }));
+
+    expect(Number.parseInt(panel.style.top, 10)).toBeGreaterThanOrEqual(72);
+    manager.destroy();
+  });
+
   it("snap preview CSS avoids a fixed viewport overlay for iPhone Safari hit testing", () => {
     const appCss = readProjectFile("src/styles/app.less");
 
@@ -426,23 +535,29 @@ describe("shell UI integration", () => {
     expect(dragGhostBlock).toContain("touch-action: none");
   });
 
-  it("taskbar and detached FABs stay below shell windows except while dragging", () => {
+  it("taskbar and detached FABs stay above normal shell windows", () => {
     const appCss = readProjectFile("src/styles/app.less");
 
-    expect(getCssBlock(appCss, ".vb-shell-taskbar")).toContain("z-index: calc(var(--vb-z-floating, 1000) - 1)");
-    expect(getCssBlock(appCss, ".vb-shell-taskbar.is-detached")).toContain("z-index: calc(var(--vb-z-floating, 1000) - 1)");
-    expect(getCssBlock(appCss, ".vb-shell-taskbar-item.is-detached")).toContain("z-index: calc(var(--vb-z-floating, 1000) - 1)");
-    expect(getCssBlock(appCss, ".vb-shell-taskbar.is-dragging")).toContain("z-index: calc(var(--vb-z-floating, 1000) + 850)");
-    expect(getCssBlock(appCss, ".vb-shell-taskbar-item.is-dragging")).toContain("z-index: calc(var(--vb-z-floating, 1000) + 850)");
+    expect(appCss).toContain("--vb-z-shell-window-max: 1890");
+    expect(appCss).toContain("--vb-z-shell-taskbar: 1950");
+    expect(appCss).toContain("--vb-z-shell-start-menu: 1960");
+    expect(appCss).toContain("--vb-z-shell-fullscreen: 1980");
+    expect(getCssBlock(appCss, ".vb-shell-taskbar")).toContain("z-index: var(--vb-z-shell-taskbar, 1950)");
+    expect(getCssBlock(appCss, ".vb-shell-taskbar.is-detached")).toContain("z-index: var(--vb-z-shell-taskbar, 1950)");
+    expect(getCssBlock(appCss, ".vb-shell-taskbar-item.is-detached")).toContain("z-index: var(--vb-z-shell-taskbar, 1950)");
+    expect(getCssBlock(appCss, ".vb-shell-taskbar.is-dragging")).toContain("z-index: var(--vb-z-shell-taskbar, 1950)");
+    expect(getCssBlock(appCss, ".vb-shell-taskbar-item.is-dragging")).toContain("z-index: var(--vb-z-shell-taskbar, 1950)");
+    expect(getCssBlock(appCss, ".app-start-menu-list")).toContain("z-index: var(--vb-z-shell-start-menu, 1960)");
   });
 
-  it("confirm dialog layer remains above shell windows and taskbar", () => {
+  it("confirm dialog layer remains above shell windows, taskbar, start menu, and fullscreen", () => {
     const appCss = readProjectFile("src/styles/app.less");
     const confirmCss = readProjectFile("src/shared/ui/confirm-dialog.less");
 
     expect(confirmCss).toContain("z-index: var(--vb-z-modal, 2000)");
-    expect(appCss).toContain("z-index: calc(var(--vb-z-floating, 1000) - 1)");
-    expect(appCss).toContain("z-index: calc(var(--vb-z-floating, 1000) + 850)");
+    expect(appCss).toContain("--vb-z-shell-fullscreen: 1980");
+    expect(appCss).toContain("--vb-z-shell-start-menu: 1960");
+    expect(appCss).toContain("--vb-z-shell-taskbar: 1950");
   });
 
   it("shell layout restores locally after simulated reload", async () => {

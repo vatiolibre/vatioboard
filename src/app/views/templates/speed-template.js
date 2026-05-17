@@ -18,7 +18,7 @@ const speedTemplate = String.raw`
           <button id="langToggle" type="button" class="lang-toggle" data-i18n-aria="changeLanguage" aria-label="Change language">EN</button>
         </div>
 
-        <div class="toolbar speed-toolbar" role="toolbar" data-i18n-aria="speedometerControls" aria-label="Speedometer controls">
+        <div class="toolbar speed-toolbar" role="toolbar" data-vb-shell-toolbar data-i18n-aria="speedometerControls" aria-label="Speedometer controls">
           <div class="toolbar-recording-quick">
             <div class="tools-menu speed-tools-menu">
               <button

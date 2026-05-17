@@ -1983,6 +1983,7 @@ export function createCameraMapWidget(options = {}) {
 
   function enterFallbackFullscreen() {
     savePreFullscreenGeometry();
+    shellManager.fullscreenWindow?.(CAMERA_MAP_WINDOW_ID, { persist: false });
     isFallbackFullscreen = true;
     panel.classList.add("is-fullscreen", "is-window-fullscreen");
     updateFullscreenButton();
@@ -1997,6 +1998,7 @@ export function createCameraMapWidget(options = {}) {
       panel.classList.remove("is-fullscreen");
       if (restore) restorePreFullscreenGeometry();
     }
+    shellManager.exitFullscreenWindow?.(CAMERA_MAP_WINDOW_ID, { persist: false });
     updateFullscreenButton();
     resizeAfterFullscreenTransition();
   }
@@ -2055,12 +2057,14 @@ export function createCameraMapWidget(options = {}) {
     const wasNativeFullscreen = isNativeFullscreen;
     isNativeFullscreen = document.fullscreenElement === panel;
     if (isNativeFullscreen) {
+      shellManager.fullscreenWindow?.(CAMERA_MAP_WINDOW_ID, { persist: false });
       isFallbackFullscreen = false;
       panel.classList.remove("is-window-fullscreen");
     }
     panel.classList.toggle("is-fullscreen", isNativeFullscreen || isFallbackFullscreen);
     if (wasNativeFullscreen && !isNativeFullscreen && !isFallbackFullscreen) {
       restorePreFullscreenGeometry();
+      shellManager.exitFullscreenWindow?.(CAMERA_MAP_WINDOW_ID, { persist: false });
     }
     updateFullscreenButton();
     resizeAfterFullscreenTransition();

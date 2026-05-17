@@ -1,9 +1,10 @@
 import { getDefaultShellWindowManager } from "./shell-window-manager.js";
+import { SHELL_Z_INDEX } from "./shell-layers.js";
 
 const FLOATING_PANEL_SELECTOR = "[data-vb-floating-panel]";
 const ACTIVE_ATTR = "data-vb-floating-active";
-const BASE_Z_INDEX = 1000;
-const MAX_Z_INDEX = 1900;
+const BASE_Z_INDEX = SHELL_Z_INDEX.windowBase;
+const MAX_Z_INDEX = SHELL_Z_INDEX.windowMax;
 
 let nextZIndex = BASE_Z_INDEX;
 const registrations = new WeakMap();

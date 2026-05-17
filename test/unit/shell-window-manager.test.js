@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SHELL_LAYOUT_STORAGE_KEY } from "../../src/shared/shell-layout-store.js";
 import { createShellWindowManager } from "../../src/shared/shell-window-manager.js";
+import { getShellWorkArea } from "../../src/shared/shell-work-area.js";
 
 function createPanel(className = "test-panel") {
   const panel = document.createElement("section");
@@ -21,12 +22,25 @@ function createManager() {
   });
 }
 
+function mockRect(element, rect) {
+  Object.defineProperty(element, "getBoundingClientRect", {
+    configurable: true,
+    value: () => ({
+      x: rect.left,
+      y: rect.top,
+      toJSON: () => {},
+      ...rect,
+    }),
+  });
+}
+
 function readStoredWindow(id) {
   return JSON.parse(localStorage.getItem(SHELL_LAYOUT_STORAGE_KEY)).windows[id];
 }
 
 describe("shell-window-manager", () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     localStorage.clear();
     document.body.innerHTML = "";
   });
@@ -183,7 +197,92 @@ describe("shell-window-manager", () => {
       manager.activateWindow(`panel-${index % panels.length}`);
     }
 
-    expect(Math.max(...panels.map((panel) => Number(panel.style.zIndex)))).toBeLessThan(2000);
+    expect(Math.max(...panels.map((panel) => Number(panel.style.zIndex)))).toBeLessThan(1950);
+    manager.destroy();
+  });
+
+  it("normal windows open below measured route toolbar and above the taskbar recovery area", () => {
+    const toolbar = document.createElement("div");
+    toolbar.setAttribute("data-vb-shell-toolbar", "");
+    mockRect(toolbar, { left: 0, top: 0, right: 1024, bottom: 64, width: 1024, height: 64 });
+    document.body.append(toolbar);
+    const taskbar = document.createElement("nav");
+    taskbar.setAttribute("data-vb-shell-taskbar", "");
+    taskbar.setAttribute("data-vb-shell-taskbar-position", "bottom");
+    mockRect(taskbar, { left: 300, top: 700, right: 724, bottom: 758, width: 424, height: 58 });
+    document.body.append(taskbar);
+    expect(toolbar.getBoundingClientRect().bottom).toBe(64);
+    expect(document.querySelectorAll("[data-vb-shell-toolbar]")).toHaveLength(1);
+    expect(getShellWorkArea().top).toBe(80);
+
+    const manager = createManager();
+    const panel = createPanel();
+    manager.registerWindow({ id: "camera-map", element: panel, bounds: { left: 20, top: 0, width: 900, height: 700 } });
+    manager.openWindow("camera-map");
+
+    expect(Number.parseInt(panel.style.top, 10)).toBeGreaterThanOrEqual(80);
+    expect(Number.parseInt(panel.style.height, 10)).toBeLessThanOrEqual(604);
+    manager.destroy();
+  });
+
+  it("restore normalizes stale persisted bounds under the toolbar", () => {
+    localStorage.setItem(SHELL_LAYOUT_STORAGE_KEY, JSON.stringify({
+      version: 1,
+      activeWindowId: "calculator",
+      windows: {
+        calculator: {
+          state: "open",
+          previousState: "closed",
+          bounds: { left: 8, top: 8, width: 320, height: 220 },
+          restoreBounds: { left: 8, top: 8, width: 320, height: 220 },
+          zIndex: 1000,
+          minimized: false,
+          snap: null,
+        },
+      },
+    }));
+    const toolbar = document.createElement("div");
+    toolbar.setAttribute("data-vb-shell-toolbar", "");
+    mockRect(toolbar, { left: 0, top: 0, right: 1024, bottom: 72, width: 1024, height: 72 });
+    document.body.append(toolbar);
+
+    const manager = createManager();
+    const panel = createPanel();
+    manager.registerWindow({ id: "calculator", element: panel });
+    manager.restoreShellLayout();
+
+    expect(Number.parseInt(panel.style.top, 10)).toBeGreaterThanOrEqual(88);
+    manager.destroy();
+  });
+
+  it("fullscreen windows bypass normal chrome reservations and restore clamped normal bounds", () => {
+    const toolbar = document.createElement("div");
+    toolbar.setAttribute("data-vb-shell-toolbar", "");
+    mockRect(toolbar, { left: 0, top: 0, right: 1024, bottom: 72, width: 1024, height: 72 });
+    document.body.append(toolbar);
+    const manager = createManager();
+    const panel = createPanel();
+    manager.registerWindow({
+      id: "milkdrop",
+      element: panel,
+      capabilities: { fullscreen: true },
+      bounds: { left: 24, top: 96, width: 480, height: 360 },
+    });
+
+    manager.fullscreenWindow("milkdrop");
+
+    expect(manager.getWindow("milkdrop").state).toBe("fullscreen");
+    expect(panel.getAttribute("data-vb-shell-window-fullscreen")).toBe("true");
+    expect(panel.style.top).toBe("0px");
+    expect(panel.style.height).toBe("768px");
+    expect(Number(panel.style.zIndex)).toBe(1980);
+
+    manager.exitFullscreenWindow("milkdrop");
+
+    expect(manager.getWindow("milkdrop").state).toBe("open");
+    expect(panel.getAttribute("data-vb-shell-window-fullscreen")).toBe("false");
+    expect(Number.parseInt(panel.style.top, 10)).toBeGreaterThanOrEqual(88);
+    expect(Number(panel.style.zIndex)).toBeLessThan(1950);
     manager.destroy();
   });
 

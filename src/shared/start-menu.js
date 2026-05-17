@@ -16,6 +16,7 @@ import {
 import { initBackendAuthControllers } from "./backend-auth.js";
 import { integratePlayerWidget } from "../player/integrate-player-widget.js";
 import { navigateToAppRoute, ROUTE_VISIBLE_EVENT } from "../app/router.js";
+import { SHELL_Z_INDEX } from "./shell-layers.js";
 
 const START_MENU_KEY = "__vatioboardStartMenu";
 
@@ -145,6 +146,7 @@ function buildStartMenu() {
   const list = document.createElement("div");
   list.id = "appStartMenuList";
   list.className = "tools-menu-list app-start-menu-list";
+  list.style.zIndex = String(SHELL_Z_INDEX.startMenu);
   list.hidden = true;
 
   const brand = document.createElement("div");

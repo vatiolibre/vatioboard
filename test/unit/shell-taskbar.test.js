@@ -119,6 +119,25 @@ describe("shell-taskbar", () => {
     manager.destroy();
   });
 
+  it("keeps taskbar and detached FAB layers above normal shell windows", () => {
+    const appCss = readFileSync(resolve(process.cwd(), "src/styles/app.less"), "utf8");
+    const manager = makeManager();
+    const panel = makePanel();
+    manager.registerWindow({ id: "calculator", title: "Calculator", element: panel });
+    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+
+    manager.openWindow("calculator");
+
+    expect(Number(panel.style.zIndex)).toBeLessThan(1950);
+    expect(appCss).toContain(".vb-shell-taskbar");
+    expect(appCss).toContain("z-index: var(--vb-z-shell-taskbar, 1950)");
+    expect(appCss).toContain(".vb-shell-taskbar-item.is-detached");
+    expect(appCss).toContain("z-index: var(--vb-z-shell-taskbar, 1950)");
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
   it("updates when a window is minimized and restored", () => {
     const manager = makeManager();
     manager.registerWindow({ id: "player", title: "Player", element: makePanel() });
