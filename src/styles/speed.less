@@ -95,11 +95,6 @@ body.speed-page{
     -webkit-touch-callout: none;
 }
 
-body.speed-page.alert-panel-open,
-body.speed-page.alert-panel-open .speed-main{
-    overflow: hidden;
-}
-
 .speed-app{
     height: 100vh;
     height: 100dvh;
@@ -668,6 +663,14 @@ body.speed-page.alert-panel-open .speed-main{
 }
 
 .speed-alert-trigger{
+    --speed-alert-trigger-bg: color-mix(in srgb, var(--speed-surface-strong) 92%, transparent);
+    --speed-alert-trigger-bg-hover: color-mix(in srgb, var(--speed-surface-strong) 86%, var(--speed-accent-soft) 14%);
+    --speed-alert-trigger-border: color-mix(in srgb, var(--speed-panel-border) 88%, rgba(17, 24, 39, 0.18));
+    --speed-alert-trigger-text: color-mix(in srgb, var(--btn-fg) 94%, #000000 6%);
+    --speed-alert-trigger-muted: color-mix(in srgb, var(--btn-fg) 62%, var(--muted) 38%);
+    --speed-alert-trigger-icon-bg: color-mix(in srgb, var(--speed-accent-soft) 68%, var(--speed-surface-strong));
+    --speed-alert-trigger-icon-fg: color-mix(in srgb, var(--speed-accent) 68%, var(--speed-alert-trigger-text));
+
     position: absolute;
     top: var(--speed-floating-control-offset);
     right: var(--speed-floating-control-offset);
@@ -681,9 +684,15 @@ body.speed-page.alert-panel-open .speed-main{
     min-height: var(--speed-floating-control-height);
     height: var(--speed-floating-control-height);
     padding: 10px 14px;
-    border: 1px solid var(--speed-panel-border);
+    border: 1px solid var(--speed-alert-trigger-border);
     border-radius: 18px;
-    background: color-mix(in srgb, var(--speed-chip-bg) 96%, transparent);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--speed-alert-trigger-bg) 94%, #ffffff 6%),
+        var(--speed-alert-trigger-bg)
+      );
+    color: var(--speed-alert-trigger-text);
     box-shadow:
       0 12px 28px rgba(15, 23, 42, 0.12),
       inset 0 0 0 1px var(--inner-ring);
@@ -695,12 +704,21 @@ body.speed-page.alert-panel-open .speed-main{
 
 .speed-alert-trigger:hover{
     border-color: color-mix(in srgb, var(--speed-accent) 32%, var(--speed-panel-border));
-    background: color-mix(in srgb, var(--speed-chip-bg) 92%, var(--speed-accent-soft));
+    background: var(--speed-alert-trigger-bg-hover);
 }
 
-.speed-alert-trigger[aria-expanded="true"]{
+.speed-alert-trigger:focus-visible{
+    outline: none;
+    border-color: color-mix(in srgb, var(--speed-accent) 56%, var(--speed-panel-border));
+    box-shadow:
+      0 0 0 3px color-mix(in srgb, var(--speed-accent) 24%, transparent),
+      0 12px 28px rgba(15, 23, 42, 0.12),
+      inset 0 0 0 1px var(--inner-ring);
+}
+
+.speed-alert-trigger[aria-pressed="true"]{
     border-color: color-mix(in srgb, var(--speed-accent) 40%, var(--speed-panel-border));
-    background: color-mix(in srgb, var(--speed-chip-bg) 84%, var(--speed-accent-soft));
+    background: color-mix(in srgb, var(--speed-alert-trigger-bg) 82%, var(--speed-accent-soft) 18%);
 }
 
 .speed-alert-trigger-icon{
@@ -709,8 +727,8 @@ body.speed-page.alert-panel-open .speed-main{
     width: 28px;
     height: 28px;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--speed-accent-soft) 72%, var(--speed-chip-bg));
-    color: var(--btn-fg);
+    background: var(--speed-alert-trigger-icon-bg);
+    color: var(--speed-alert-trigger-icon-fg);
 }
 
 .speed-alert-trigger-icon svg,
@@ -735,14 +753,14 @@ body.speed-page.alert-panel-open .speed-main{
     font-weight: 800;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: var(--muted);
+    color: var(--speed-alert-trigger-muted);
 }
 
 .speed-alert-trigger-value{
     font-size: 15px;
     font-weight: 900;
     letter-spacing: -0.03em;
-    color: var(--btn-fg);
+    color: var(--speed-alert-trigger-text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -751,13 +769,12 @@ body.speed-page.alert-panel-open .speed-main{
 .speed-alert-trigger-chevron{
     display: grid;
     place-items: center;
-    color: var(--muted);
+    color: var(--speed-alert-trigger-muted);
     transition: transform 160ms ease, color 160ms ease;
 }
 
-.speed-alert-trigger[aria-expanded="true"] .speed-alert-trigger-chevron{
-    transform: rotate(90deg);
-    color: var(--btn-fg);
+.speed-alert-trigger[aria-pressed="true"] .speed-alert-trigger-chevron{
+    color: var(--speed-alert-trigger-text);
 }
 
 .speed-alert-trigger-hint{
@@ -796,6 +813,21 @@ body.speed-page.alert-panel-open .speed-main{
     border-left: 1px solid color-mix(in srgb, var(--speed-panel-border) 88%, transparent);
     background: color-mix(in srgb, var(--speed-surface-strong) 96%, transparent);
     transform: rotate(45deg);
+}
+
+@media (prefers-color-scheme: dark){
+    .speed-alert-trigger{
+        --speed-alert-trigger-bg: rgba(17, 24, 39, 0.84);
+        --speed-alert-trigger-bg-hover: color-mix(in srgb, rgba(17, 24, 39, 0.92) 84%, var(--speed-accent-soft) 16%);
+        --speed-alert-trigger-border: rgba(255, 255, 255, 0.2);
+        --speed-alert-trigger-text: #f8fafc;
+        --speed-alert-trigger-muted: #cbd5e1;
+        --speed-alert-trigger-icon-bg: color-mix(in srgb, var(--speed-accent) 18%, rgba(17, 24, 39, 0.94));
+        --speed-alert-trigger-icon-fg: #d1fae5;
+        box-shadow:
+          0 14px 30px rgba(0, 0, 0, 0.34),
+          inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+    }
 }
 
 .gauge-card.is-alert-discoverable .speed-alert-trigger{
@@ -1606,28 +1638,101 @@ body.speed-page.alert-panel-open .speed-main{
     border-color: color-mix(in srgb, var(--btn-active-bg) 35%, var(--speed-panel-border));
 }
 
+.camera-database-status-row{
+    display: grid;
+    gap: 4px;
+    padding-top: 2px;
+}
+
+.camera-database-status{
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.35;
+    font-weight: 700;
+    color: var(--muted);
+}
+
+.camera-database-map-button{
+    justify-self: start;
+    min-height: 34px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--speed-panel-border) 82%, transparent);
+    background: color-mix(in srgb, var(--speed-surface-strong) 62%, transparent);
+    color: color-mix(in srgb, var(--speed-accent) 72%, var(--btn-fg));
+    font-size: 12px;
+    line-height: 1.2;
+    font-weight: 900;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.camera-database-map-button:hover,
+.camera-database-map-button:focus-visible{
+    background: var(--btn-hover-bg);
+    color: var(--btn-fg);
+}
+
+.camera-database-map-button:focus-visible{
+    outline: 2px solid color-mix(in srgb, var(--speed-accent) 70%, transparent);
+    outline-offset: 2px;
+}
+
+.camera-database-status.is-offline,
+.camera-database-status[data-status="offline"]{
+    color: color-mix(in srgb, var(--speed-trap) 72%, var(--muted));
+}
+
+.camera-database-status.is-updating{
+    color: color-mix(in srgb, var(--speed-accent) 72%, var(--muted));
+}
+
+.camera-database-attribution{
+    width: fit-content;
+    font-size: 11px;
+    line-height: 1.3;
+    font-weight: 800;
+    color: var(--muted);
+    text-decoration: none;
+}
+
+.camera-database-attribution:focus-visible,
+.camera-database-attribution:hover{
+    color: var(--btn-fg);
+    text-decoration: underline;
+}
+
 .speed-alert-panel button:disabled{
     opacity: 0.45;
     cursor: default;
 }
 
 .gauge-card.is-alert-enabled .speed-alert-trigger{
+    --speed-alert-trigger-icon-bg: color-mix(in srgb, var(--speed-accent) 18%, var(--speed-surface-strong));
+    --speed-alert-trigger-icon-fg: color-mix(in srgb, var(--speed-accent) 74%, var(--speed-alert-trigger-text));
     border-color: color-mix(in srgb, var(--speed-accent) 40%, var(--speed-panel-border));
 }
 
 .gauge-card.is-alert-near .speed-alert-trigger{
+    --speed-alert-trigger-icon-bg: color-mix(in srgb, var(--speed-alert-marker) 18%, var(--speed-surface-strong));
+    --speed-alert-trigger-icon-fg: color-mix(in srgb, var(--speed-alert-marker) 70%, var(--speed-alert-trigger-text));
     border-color: color-mix(in srgb, var(--speed-alert-marker) 55%, var(--speed-panel-border));
 }
 
 .gauge-card.is-trap-active .speed-alert-trigger{
+    --speed-alert-trigger-bg: color-mix(in srgb, var(--speed-surface-strong) 78%, var(--speed-trap-soft) 22%);
+    --speed-alert-trigger-text: color-mix(in srgb, var(--btn-fg) 82%, var(--speed-trap) 18%);
+    --speed-alert-trigger-muted: color-mix(in srgb, var(--btn-fg) 58%, var(--speed-trap) 42%);
+    --speed-alert-trigger-icon-bg: color-mix(in srgb, var(--speed-trap) 18%, var(--speed-surface-strong));
+    --speed-alert-trigger-icon-fg: color-mix(in srgb, var(--speed-trap) 64%, var(--btn-fg) 36%);
     border-color: color-mix(in srgb, var(--speed-trap) 55%, var(--speed-panel-border));
-    background: color-mix(in srgb, var(--speed-trap-soft) 48%, var(--speed-chip-bg));
+    background: var(--speed-alert-trigger-bg);
 }
 
 .gauge-card.is-trap-active:not(.is-alert-over) .speed-alert-trigger-value,
 .gauge-card.is-trap-active:not(.is-alert-over) .speed-alert-panel-header strong,
 .gauge-card.is-trap-active:not(.is-alert-over) .gauge-substatus{
-    color: var(--speed-trap);
+    color: color-mix(in srgb, var(--speed-trap) 56%, var(--btn-fg) 44%);
 }
 
 .gauge-card.is-alert-over{
@@ -1639,8 +1744,13 @@ body.speed-page.alert-panel-open .speed-main{
 }
 
 .gauge-card.is-alert-over .speed-alert-trigger{
+    --speed-alert-trigger-bg: color-mix(in srgb, var(--speed-surface-strong) 74%, var(--speed-alert-soft) 26%);
+    --speed-alert-trigger-text: color-mix(in srgb, var(--btn-fg) 80%, var(--speed-alert) 20%);
+    --speed-alert-trigger-muted: color-mix(in srgb, var(--btn-fg) 56%, var(--speed-alert) 44%);
+    --speed-alert-trigger-icon-bg: color-mix(in srgb, var(--speed-alert) 18%, var(--speed-surface-strong));
+    --speed-alert-trigger-icon-fg: color-mix(in srgb, var(--speed-alert) 66%, var(--btn-fg) 34%);
     border-color: color-mix(in srgb, var(--speed-alert) 55%, var(--speed-panel-border));
-    background: color-mix(in srgb, var(--speed-alert-soft) 72%, var(--speed-chip-bg));
+    background: var(--speed-alert-trigger-bg);
 }
 
 .gauge-card.is-alert-over .speed-alert-trigger-value,
@@ -1648,7 +1758,7 @@ body.speed-page.alert-panel-open .speed-main{
 .gauge-card.is-alert-over #alertValue,
 .gauge-card.is-alert-over .gauge-reading #speedValue,
 .gauge-card.is-alert-over .gauge-substatus{
-    color: var(--speed-alert);
+    color: color-mix(in srgb, var(--speed-alert) 60%, var(--btn-fg) 40%);
 }
 
 .gauge-overlay{

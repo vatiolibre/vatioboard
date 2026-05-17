@@ -58,14 +58,15 @@ function serializeShellLayout(shellManager) {
   const activeWindowId = shellManager.getActiveWindow()?.id || null;
   const windows = {};
   for (const record of shellManager.listWindows()) {
+    const isFullscreen = record.state === "fullscreen";
     windows[record.id] = {
-      state: record.state,
+      state: isFullscreen ? "open" : record.state,
       previousState: record.previousState,
-      bounds: record.bounds,
-      restoreBounds: record.restoreBounds,
+      bounds: isFullscreen ? (record.fullscreenRestoreBounds || record.restoreBounds) : record.bounds,
+      restoreBounds: isFullscreen ? (record.fullscreenRestoreBounds || record.restoreBounds) : record.restoreBounds,
       zIndex: record.zIndex,
       minimized: record.minimized,
-      snap: record.snap,
+      snap: isFullscreen ? (record.fullscreenRestoreSnap || null) : record.snap,
       updatedAt: Date.now(),
     };
   }
@@ -86,7 +87,7 @@ function applyLayout(layout, shellManager) {
       shellManager.unsnapWindow(id, { persist: false });
     }
 
-    if (record.state === "open") {
+    if (record.state === "open" || record.state === "fullscreen") {
       shellManager.openWindow(id, { persist: false });
     } else if (record.state === "minimized") {
       shellManager.minimizeWindow(id, { persist: false, invokeLifecycle: false });
@@ -185,4 +186,3 @@ export function importNamedLayout(payload, { storage } = {}) {
   writeStore(storage, store);
   return store.layouts[safeName];
 }
-

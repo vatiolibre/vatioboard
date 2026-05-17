@@ -12,8 +12,9 @@ describe("confirm dialog stacking policy", () => {
     const energyCss = readProjectFile("src/styles/energy.less");
 
     expect(confirmCss).toContain("z-index: var(--vb-z-modal, 2000)");
-    expect(appCss).toContain("z-index: calc(var(--vb-z-floating, 1000) - 1)");
-    expect(appCss).toContain("z-index: calc(var(--vb-z-floating, 1000) + 850)");
+    expect(appCss).toContain("--vb-z-shell-taskbar: 1950");
+    expect(appCss).toContain("--vb-z-shell-start-menu: 1960");
+    expect(appCss).toContain("--vb-z-shell-fullscreen: 1980");
     expect(playerCss).toContain("z-index: var(--vb-z-floating, 1000)");
     expect(calculatorCss).toContain("z-index: var(--vb-z-floating, 1000)");
     expect(energyCss).toContain("z-index: var(--vb-z-floating-secondary, 990)");

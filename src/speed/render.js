@@ -1,4 +1,5 @@
 import { DISTANCE_UNIT_CONFIG, UNIT_CONFIG } from "./constants.js";
+import { loadUnitPreference } from "./preferences.js";
 
 export function tf(translate, key, values = {}) {
   return translate(key).replace(/\{(\w+)\}/g, (_, token) => String(values[token] ?? ""));
@@ -32,6 +33,13 @@ export function convertDisplaySpeedToMs(value, unit) {
 
 export function convertDistanceMeasurement(valueM, unit) {
   return valueM * DISTANCE_UNIT_CONFIG[unit].factor;
+}
+
+export function formatCameraLimitSpeed(speedKph, unit = loadUnitPreference()) {
+  if (!Number.isFinite(speedKph)) return null;
+  const displayUnit = unit === "mph" ? "mph" : "kmh";
+  const speedMs = speedKph / UNIT_CONFIG.kmh.factor;
+  return `${Math.round(convertSpeed(speedMs, displayUnit))} ${UNIT_CONFIG[displayUnit].label}`;
 }
 
 export function getElapsedTripSeconds(startTime, nowMs = Date.now()) {

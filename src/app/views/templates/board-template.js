@@ -18,7 +18,7 @@ const boardTemplate = String.raw`
           <button id="langToggle" type="button" class="lang-toggle" aria-label="Change language">EN</button>
         </div>
 
-        <div class="toolbar" role="toolbar" aria-label="Drawing tools">
+        <div class="toolbar" role="toolbar" data-vb-shell-toolbar aria-label="Drawing tools">
           <div class="board-action-strip">
             <div class="tools-menu board-tools-menu">
               <button

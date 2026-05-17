@@ -190,11 +190,10 @@ describe('speed.html smoke', () => {
       canonical: 'https://vatioboard.com/speed.html',
     });
     expect(getBrowserMocks().geolocation.watchPosition).toHaveBeenCalledTimes(1);
-    expect(document.getElementById('quickAlertConfig').getAttribute('aria-label')).toBe(
-      'Configure alerts'
+    expect(document.getElementById('quickAlertConfig').getAttribute('aria-label')).toContain(
+      'Configure'
     );
-    expect(document.getElementById('closeAlertPanel').getAttribute('aria-label')).toBe('Close');
-    expect(document.querySelector('#closeAlertPanel.speed-alert-close svg')).toBeTruthy();
+    expect(document.getElementById('speedAlertPanel')).toBeNull();
     expect(document.querySelector('#quickAlertConfig .toolbar-recording-glyph svg')).toBeTruthy();
     expect(document.getElementById('resetTrip').getAttribute('aria-label')).toBe('Reset trip');
     expect(document.querySelector('#resetTrip .toolbar-recording-glyph svg')).toBeTruthy();
@@ -273,13 +272,18 @@ describe('speed.html smoke', () => {
     await flushTasks();
     expect(document.getElementById('speedToolsMenuList').hidden).toBe(true);
     document.getElementById('quickAlertConfig').click();
-    await flushTasks();
-    expect(document.getElementById('speedAlertPanel').hidden).toBe(false);
+    await settleAsyncWork();
+    const speedAlertWindow = document.querySelector('.speed-alert-window');
+    expect(speedAlertWindow?.hidden).toBe(false);
+    expect(speedAlertWindow?.getAttribute('data-vb-shell-window')).toBe('speed-alerts');
+    expect(speedAlertWindow?.querySelector('.speed-alert-window-close')?.getAttribute('aria-label')).toBe(
+      'Close speed alerts'
+    );
     expect(document.getElementById('quickAlertConfig').getAttribute('aria-pressed')).toBe('true');
     document.getElementById('quickAlertConfig').click();
     await flushTasks();
-    expect(document.getElementById('speedAlertPanel').hidden).toBe(true);
-    expect(document.getElementById('quickAlertConfig').getAttribute('aria-pressed')).toBe('false');
+    expect(document.querySelector('.speed-alert-window')?.hidden).toBe(false);
+    expect(document.getElementById('quickAlertConfig').getAttribute('aria-pressed')).toBe('true');
 
     emitGeolocationSuccess({
       coords: {
@@ -310,6 +314,84 @@ describe('speed.html smoke', () => {
     expect(subscribeLink?.textContent).toBe('Manage subscription');
     expect(loginButton?.hidden).toBe(true);
     expect(window.getComputedStyle(loginButton).display).toBe('none');
+  });
+
+  it('exposes live heading, speed, and timestamps through the Camera Map provider', async () => {
+    const speedPage = await import('../../src/speed/dev-harness.js');
+    await speedPage.initPromise;
+    await settleAsyncWork();
+
+    emitGeolocationSuccess({
+      timestamp: 1000,
+      coords: {
+        latitude: 40.7128,
+        longitude: -74.006,
+        speed: 8,
+        accuracy: 4,
+        heading: 123,
+      },
+    });
+    await settleAsyncWork();
+
+    expect(window.__vatioboardSpeedGetCurrentPosition?.()).toMatchObject({
+      latitude: 40.7128,
+      longitude: -74.006,
+      accuracy: 4,
+      speedMs: expect.any(Number),
+      heading: 123,
+      headingDeg: 123,
+      timestampMs: expect.any(Number),
+      receivedAtMs: expect.any(Number),
+      stale: false,
+    });
+  });
+
+  it('dispatches Speed position events for Camera Map navigation', async () => {
+    const speedPage = await import('../../src/speed/dev-harness.js');
+    await speedPage.initPromise;
+    await settleAsyncWork();
+    const eventSpy = vi.fn();
+    window.addEventListener('vatioboard:speed-position', eventSpy);
+
+    try {
+      emitGeolocationSuccess({
+        timestamp: 2000,
+        coords: {
+          latitude: 40.713,
+          longitude: -74.005,
+          speed: 9,
+          accuracy: 4,
+          heading: 88,
+        },
+      });
+      await settleAsyncWork();
+
+      expect(eventSpy).toHaveBeenCalled();
+      expect(eventSpy.mock.calls.at(-1)?.[0].detail).toMatchObject({
+        latitude: 40.713,
+        longitude: -74.005,
+        heading: 88,
+        headingDeg: 88,
+        speedMs: expect.any(Number),
+        receivedAtMs: expect.any(Number),
+      });
+    } finally {
+      window.removeEventListener('vatioboard:speed-position', eventSpy);
+    }
+  });
+
+  it('clears the Camera Map position provider when Speed unmounts', async () => {
+    const speedPage = await import('../../src/speed/dev-harness.js');
+    const speedModule = await import('../../src/speed/speed.js');
+    await speedPage.initPromise;
+    await settleAsyncWork();
+
+    expect(window.__vatioboardSpeedGetCurrentPosition).toBeTypeOf('function');
+
+    speedModule.unmountSpeedRoute();
+    await settleAsyncWork();
+
+    expect(window.__vatioboardSpeedGetCurrentPosition).toBeUndefined();
   });
 
   it('starts and stops the recording keep-alive when route recording changes', async () => {

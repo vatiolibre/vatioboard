@@ -7,12 +7,19 @@ import {
   normalizePositionTimestamp,
 } from '../../src/speed/navigation.js';
 import {
+  loadCameraApproachOptionsPreference,
   loadDistanceUnitPreference,
   loadUnitPreference,
+  normalizeCameraApproachFallbackMode,
   normalizeTrapAlertDistance,
 } from '../../src/speed/preferences.js';
 import { convertSpeed } from '../../src/speed/render.js';
-import { formatTrapDistance, formatTrapSpeed, updateNearestTrap } from '../../src/speed/traps.js';
+import {
+  formatTrapDistance,
+  formatTrapSpeed,
+  updateNearestTrap,
+  updateNearestTrapAcrossDatasets,
+} from '../../src/speed/traps.js';
 
 describe('speed extracted helpers', () => {
   beforeEach(() => {
@@ -28,6 +35,21 @@ describe('speed extracted helpers', () => {
   it('snaps trap alert distance preferences to the nearest preset', () => {
     expect(normalizeTrapAlertDistance(780, 'ft')).toBeCloseTo(804.672, 6);
     expect(normalizeTrapAlertDistance(850, 'm')).toBe(1000);
+  });
+
+  it('loads tunable camera approach matcher preferences safely', () => {
+    expect(normalizeCameraApproachFallbackMode('heading-only')).toBe('heading-only');
+    expect(normalizeCameraApproachFallbackMode('radius-party')).toBe('legacy-radius');
+
+    localStorage.setItem('vatio_speed_camera_approach_fallback_mode', 'silent');
+    localStorage.setItem('vatio_speed_camera_approach_heading_tolerance_deg', '35');
+    localStorage.setItem('vatio_speed_camera_approach_minimum_speed_ms', '2.25');
+
+    expect(loadCameraApproachOptionsPreference()).toEqual({
+      fallbackMode: 'silent',
+      headingToleranceDeg: 35,
+      minimumSpeedMs: 2.25,
+    });
   });
 
   it('loads unit preferences from the bootstrap snapshot when shared keys are absent', () => {
@@ -134,7 +156,101 @@ describe('speed extracted helpers', () => {
       nearestTrapId: 1,
       nearestTrapDistanceM: 420,
       nearestTrapSpeedKph: 80,
+      nearestTrapSpeedMeta: null,
     });
+  });
+
+  it('returns optional nearest trap speed metadata without changing speed semantics', () => {
+    const meta = { source: 'nearest_road:maxspeed', confidence: 'medium', wayId: 9, distanceM: 18, raw: '50' };
+    const trapState = updateNearestTrap(
+      { fake: true },
+      [[-73.99, 4.71, 50, 123, meta]],
+      -74.1,
+      4.72,
+      {
+        around: vi.fn(() => [0]),
+        distanceKm: vi.fn(() => 0.12),
+      }
+    );
+
+    expect(trapState).toMatchObject({
+      nearestTrapSpeedKph: 50,
+      nearestTrapSpeedMeta: meta,
+    });
+  });
+
+  it('keeps unknown trap speed null instead of zero', () => {
+    const trapState = updateNearestTrap(
+      { fake: true },
+      [[-73.99, 4.71, null, 123]],
+      -74.1,
+      4.72,
+      {
+        around: vi.fn(() => [0]),
+        distanceKm: vi.fn(() => 0.12),
+      }
+    );
+
+    expect(trapState.nearestTrapSpeedKph).toBeNull();
+  });
+
+  it('does not let low-confidence inferred trap speed override the manual alert limit', () => {
+    const alertState = getAlertUiState({
+      unit: 'kmh',
+      currentSpeedMs: 20,
+      alertEnabled: true,
+      alertLimitMs: 30,
+      trapAlertEnabled: true,
+      trapLoadPending: false,
+      trapLoadError: null,
+      nearestTrapId: 7,
+      nearestTrapDistanceM: 100,
+      nearestTrapSpeedKph: 50,
+      nearestTrapSpeedMeta: { source: 'nearest_road:maxspeed', confidence: 'low' },
+      trapAlertDistanceM: 500,
+      convertSpeed,
+      getTrapAlertDistanceLabel: (distanceM) => `${Math.round(distanceM)} m`,
+      formatTrapSpeed: (speedKph) => `${speedKph} km/h`,
+    });
+
+    expect(alertState).toMatchObject({
+      source: 'manual',
+      trapActive: true,
+      trapSpeedLabel: '50 km/h',
+      over: false,
+      limitDisplayValue: 108,
+    });
+  });
+
+  it('finds the nearest trap across multiple loaded datasets', () => {
+    const trapState = updateNearestTrapAcrossDatasets(
+      [
+        {
+          key: 'country:us',
+          index: { id: 'us-index' },
+          traps: [[-73.9, 40.7, 50]],
+        },
+        {
+          key: 'country:ca',
+          index: { id: 'ca-index' },
+          traps: [[-73.99, 40.71, 80]],
+        },
+      ],
+      -74,
+      40.72,
+      {
+        around: vi.fn((index) => index.id === 'us-index' ? [0] : [0]),
+        distanceKm: vi.fn((lon, lat, trapLon) => trapLon === -73.9 ? 2 : 0.4),
+      }
+    );
+
+    expect(trapState).toMatchObject({
+      nearestTrapId: 'country:ca:0',
+      nearestTrapDistanceM: 400,
+      nearestTrapSpeedKph: 80,
+      nearestTrapSpeedMeta: null,
+    });
+    expect(trapState.nearestTrapDataset.key).toBe('country:ca');
   });
 
   it('derives stable Waze zoom levels and embed URLs', () => {

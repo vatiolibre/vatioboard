@@ -10,7 +10,6 @@ const view = createRouteView({
       "Vatio Speed is a free live GPS speedometer with an analog dial, trip stats, unit switching, altitude tracking, and speed trap alerts. Works in Tesla browsers and modern mobile browsers.",
     canonicalPath: "/",
     bodyClass: "speed-page",
-    cleanupBodyClasses: ["alert-panel-open"],
   },
   loadModule: () => import("../../speed/speed.js"),
   mountController: (module, routeContext) => module.mountSpeedRoute?.(routeContext),

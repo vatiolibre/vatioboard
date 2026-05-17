@@ -47,6 +47,7 @@ What it does:
 - supports `km/h` or `mph`, and metric or imperial distance units
 - can auto-configure shared speed and distance units from the detected country on first use
 - offers manual overspeed alerts and nearby speed-trap alerts
+- loads speed-camera data by country/tile from generated OpenStreetMap-style artifacts and caches it in IndexedDB for offline use after the first successful load
 - supports quick audio mute and optional background-audio mode
 - switches between gauge and Waze-style primary views
 - records replay sessions for the replay page
@@ -138,6 +139,173 @@ What it does:
 - Vitest + jsdom for unit and smoke tests
 - ESLint + Prettier for code quality
 
+## Speed Camera Data
+
+Vatio Speed uses generated runtime artifacts in `public/geo/cameras`:
+
+- `manifest.json` lists available countries, counts, hashes, bounding boxes, and country or tile artifact URLs.
+- `countries/<code>.json` stores compact traps as `[lon, lat, speedKphOrNull, osmId?, speedMeta?]`.
+- `countries/<code>.kdbush` stores the matching KDBush index.
+- Large countries can be split into `countries/<code>/manifest.json` plus `tiles/<tile-id>.json` and `tiles/<tile-id>.kdbush`.
+
+`speedMeta` is optional compact provenance for inferred limits and approach matching. Explicit camera maxspeed tags stay highest-confidence. Missing camera maxspeed can be enriched at fetch/build time from nearby OSM road ways with `maxspeed`, `maxspeed:forward`, or `maxspeed:backward`; unknown remains `null`, never `0`.
+
+Approach metadata is stored inside `speedMeta.approach` when the build pipeline can match a camera to a nearby private-car-eligible road segment. Each compact approach entry can include a forward bearing, reverse bearing, allowed direction, road distance, confidence, and a clipped two-point segment. The enrichment filter excludes pedestrian and cycling ways, tracks, bus-only roads, private or access-restricted roads, emergency-only roads, and private service roads such as driveways or parking aisles. Public service roads are included only when the build explicitly opts in and the OSM access tags still allow private cars.
+
+If a camera is near only restricted roads, the build leaves the approach corridor empty instead of using a misleading segment. Old artifacts without `approach` continue to load and alert through the fallback policy.
+
+`npm run prepare:geo` is offline-safe. It first converts `data-src/ANSV.csv` to `data-src/ansv_cameras_maplibre.geojson` when the CSV is present, then builds from `data-src/osm_speed_cameras_overpass.json` and the optional `data-src/osm_speed_cameras_maxspeed_enrichment.json` sidecar when they exist. Without the cached OSM source, it falls back to the generated Colombia ANSV GeoJSON so dev/build never depend on live Overpass. Browser runtime does not query Overpass or parse road geometry while driving.
+
+`npm run fetch:cameras` is the network/update command. By default it reuses the cached global camera source if `data-src/osm_speed_cameras_overpass.json` already exists, resumes cached road-speed tiles from `data-src/osm-road-speeds/`, fetches only missing road-speed tiles, writes `data-src/osm_speed_cameras_maxspeed_enrichment.json`, and rebuilds `public/geo/cameras`. Set `CAMERA_REFRESH_CACHE=1` only when you intentionally want to refresh the global camera Overpass source.
+
+The global camera query is:
+
+```txt
+[out:json][timeout:1000];
+node["highway"="speed_camera"];
+out body;
+```
+
+For a first road-enrichment pass from a partly empty road cache, use a slow, restartable run that is gentle to public Overpass:
+
+```bash
+mkdir -p logs
+CAMERA_ROAD_FETCH_MISSING=1 \
+OVERPASS_MAX_RETRIES=8 \
+OVERPASS_RETRY_INITIAL_DELAY_MS=10000 \
+OVERPASS_RETRY_MAX_DELAY_MS=180000 \
+CAMERA_ROAD_REQUEST_DELAY_MS=8000 \
+CAMERA_ROAD_PROGRESS_EVERY=25 \
+CAMERA_ROAD_SLOW_TILE_MS=5000 \
+OVERPASS_PROGRESS_INTERVAL_MS=30000 \
+npm run fetch:cameras 2>&1 | tee "logs/fetch-cameras-first-pass-$(date +%Y%m%d-%H%M%S).log"
+```
+
+After the first pass, most local work should avoid Overpass entirely:
+
+```bash
+CAMERA_ROAD_FETCH_MISSING=0 npm run fetch:cameras
+npm run prepare:geo
+npm run analyze:cameras:maxspeed
+```
+
+Only use `CAMERA_ROAD_REFRESH_CACHE=1` when you deliberately want to re-download every road-speed tile. That is much heavier than a normal camera refresh and should not be part of routine local development.
+
+At runtime, Speed does not upload live location to fetch camera alerts. GPS matching happens locally: the app-level GPS service keeps one shared browser `watchPosition()` for active consumers, normalizes speed/heading/timestamps, and broadcasts local `vatioboard:gps-position` updates for Speed, Camera Map, recording, driving alerts, and other shells. Camera matching loads the manifest, chooses the current country or nearby tile from the GPS fix, tries IndexedDB first, and revalidates in the background. If the network drops during an update, the last good cached country/tile stays intact. With no cache and no network, the speedometer still works and trap alerts show an unavailable/offline camera database status.
+
+Camera alerts are approach-aware instead of purely circular. The runtime still uses the point KDBush/geokdbush index for bounded candidate lookup, then evaluates several nearby cameras by exact distance, GPS or movement heading, whether the vehicle is moving toward the camera, whether distance is decreasing, and any build-time road approach metadata. Build-time enrichment stores a bounded set of plausible approach corridors for cameras near intersections, divided roads, ramps, frontage roads, and other multi-road geometry. Each corridor is a clipped local road segment with bearing, reverse bearing, direction, road distance, OSM way id, role (`primary`, `intersection`, `secondary`, or `ambiguous`), confidence, and compact ambiguity metadata when needed.
+
+High- and medium-confidence corridors can require the vehicle heading to match an allowed approach bearing and, when segment geometry is present, to be plausibly near that short road corridor. Runtime accepts a camera when any valid corridor matches and reports the matched approach index, way id, role, confidence, direction, and reason through `cameraApproachDetails`. Low, missing, or ambiguous metadata degrades conservatively: heading-only matching is used when available, and legacy radius fallback remains available when heading is unavailable so old cached artifacts do not silently miss cameras.
+
+Speed inference remains separate and conservative. When multiple plausible road corridors disagree on speed, VatioBoard stores the corridors for approach matching but avoids inferring a camera speed from the conflicting roads. Equal-speed intersection corridors can still produce one speed value while retaining multiple approach corridors. NYC, ANSV, and other local/official camera records can carry OSM-derived approach corridors when they merge with OSM or enrichment records; local-only records without OSM geometry continue to work without approach metadata. Local source direction hints are not treated as full road geometry unless a future source-specific converter adds compact segments.
+
+Known limitations are intentionally conservative: curved roads may be represented by one short bearing, urban intersections can remain ambiguous, frontage roads can be lower confidence unless clearly closest, and poor GPS heading can fall back to radius matching rather than suppressing every alert.
+
+Approach matching behavior can be tuned for development without a rebuild through localStorage:
+
+- `vatio_speed_camera_approach_fallback_mode`: `legacy-radius` (default), `heading-only`, or `silent`.
+- `vatio_speed_camera_approach_heading_tolerance_deg`: accepted approach angle, default `45`.
+- `vatio_speed_camera_approach_minimum_speed_ms`: low-speed suppression threshold, default `1.5`.
+
+Useful local camera-data commands:
+
+```bash
+npm run fetch:cameras
+npm run prepare:geo
+npm run analyze:cameras:maxspeed
+npm run test:unit
+npm run test:smoke
+npm run lint
+npm run build
+```
+
+### Speed Alerts Shell Window
+
+Speed alert settings live in a reusable shell window with the window id `speed-alerts`. It can be opened from the Speed page, Camera Map/floating tools/start menu, and any SPA route that has access to `window.__vatioboardFloatingTools.openSpeedAlerts()` or `toggleSpeedAlerts()`.
+
+The window behaves like the other VatioBoard tools: it is draggable, resizable, snappable, minimizable/restorable/closable, and participates in shell layout persistence and named layouts. It is not owned by the Speed route, so switching to Board, Library, Replay, Accel, or Camera Map does not destroy the panel or create a duplicate settings surface.
+
+Speed Alerts is only a settings and status shell. It binds to the shared app-level driving alert service, shared GPS service, existing speed preferences, and generated/cached camera artifacts. Opening the window does not start a second GPS watch, create a second camera database, query Overpass, or fetch a live road network. If GPS permission is denied or camera artifacts are unavailable, the panel still opens and reports the local/offline state.
+
+Audio still follows browser gesture rules. Sound toggles change the existing alert preferences, and priming/testing alert audio must happen from a user gesture. Once audio is primed and alerts are enabled, overspeed and camera proximity evaluation continues through the app-level service across route changes.
+
+### Contributing Speed Cameras To OpenStreetMap
+
+The best way to improve VatioBoard's camera coverage is to improve OpenStreetMap itself. VatioBoard's generated camera artifacts are derived from OSM `highway=speed_camera` nodes plus local/official sources, so upstream fixes benefit this app and every other OSM consumer after the next data refresh.
+
+Before editing, read the OSM wiki pages for [`highway=speed_camera`](https://wiki.openstreetmap.org/wiki/Tag:highway%3Dspeed_camera), [speed limits](https://wiki.openstreetmap.org/wiki/Speed_limit), [`maxspeed=*`](https://wiki.openstreetmap.org/wiki/Key:maxspeed), [verifiability](https://wiki.openstreetmap.org/wiki/Verifiability), and [good practice](https://wiki.openstreetmap.org/wiki/Good_practice). Do not copy camera locations or speed limits from Google Maps, Waze, TomTom, Apple Maps, commercial camera databases, or any other source that is not explicitly compatible with OSM. If you want to use a government or open-data camera list, follow the OSM [Import Guidelines](https://wiki.openstreetmap.org/wiki/Import/Guidelines) and [Automated Edits code of conduct](https://wiki.openstreetmap.org/wiki/Automated_Edits_code_of_conduct), discuss the plan with the local OSM community first, and keep the import reviewable.
+
+For one-off manual fixes:
+
+1. Create or log in to an OpenStreetMap account at [openstreetmap.org](https://www.openstreetmap.org/).
+2. Use the built-in iD editor for small edits, or JOSM for careful road/camera cleanup.
+3. Confirm the camera from ground survey, your own geotagged imagery, street-level imagery allowed for OSM editing, or another OSM-compatible source. Map only real, current, verifiable fixed cameras. Do not add temporary police traps or rumors as permanent `highway=speed_camera` objects.
+4. Place a node for the fixed camera. If the camera is represented directly on the roadway, put the node on the affected road way near the camera. If the physical camera is beside or above the road, place it at the real camera position and consider adding an enforcement relation for the affected road section.
+5. Add `highway=speed_camera`. Add `maxspeed=*` when the enforced limit is known and verifiable. Use plain numeric values for km/h, for example `maxspeed=50`, and include a spaced unit for mph, for example `maxspeed=30 mph`.
+6. Add `direction=*` when the monitored direction is known. Use degrees when possible; make sure the value describes the useful enforcement/traffic direction rather than a confusing decorative camera-lens direction. For complex setups, use an OSM `type=enforcement` relation with the camera device and the affected road section.
+7. Add helpful provenance and maintenance tags when known, such as `operator=*`, `ref=*`, `source=*`, `check_date=*`, or `survey:date=*`. Keep names and notes factual; avoid adding warnings or app-specific text to OSM.
+8. Save with a clear changeset comment, for example `Add fixed speed camera and signed maxspeed on Main St`, and include the source you used.
+
+Good camera alerts also depend on nearby road tagging. If a camera already exists but VatioBoard picks the wrong corridor, improve the road data rather than adding duplicate cameras:
+
+- Add or correct `maxspeed=*`, `maxspeed:forward=*`, and `maxspeed:backward=*` on the road ways where the limit is actually posted. Split the OSM way at the sign or intersection when the limit changes for only part of the road.
+- Check the road direction before using `*:forward` or `*:backward`; forward means the direction of the OSM way geometry.
+- Add `oneway=*`, `junction=roundabout`, turn restrictions, or separate carriageways where the real road layout requires them.
+- Add access tags such as `access=*`, `vehicle=*`, `motor_vehicle=*`, `motorcar=*`, `busway=*`, `service=*`, and lane access tags when they are signed or otherwise verifiable. These tags help VatioBoard ignore footways, cycleways, private roads, bus-only lanes, driveways, parking aisles, and emergency-only service roads when building approach corridors.
+- Remove stale or duplicate camera nodes only when you have verified the physical camera is gone or the duplicate truly refers to the same object. Preserve useful existing tags and OSM object history whenever possible.
+
+After an upstream OSM edit is saved, wait for Overpass and downstream OSM mirrors to catch up, then regenerate the local artifacts:
+
+```bash
+npm run fetch:cameras
+npm run analyze:cameras:maxspeed
+```
+
+For routine local verification without fetching missing road tiles, use:
+
+```bash
+CAMERA_ROAD_FETCH_MISSING=0 npm run fetch:cameras
+```
+
+Individual camera fixes should normally go to OSM first, not directly into this repository. A VatioBoard data PR is most useful when it adds or updates an OSM-compatible official source, documents a repeatable import/reconciliation process, or improves the build pipeline that consumes upstream data.
+
+### Camera Map
+
+The Camera Map points come from the same local/static camera artifacts described above. The browser does not call Overpass or any camera API from the map panel.
+
+The panel is designed as an in-car navigation display: the map takes nearly the whole window, controls are compact touch targets, and the live position is shown as a bright green vehicle puck. Native MapLibre zoom controls stay in the top-right, while Camera Map follow/orientation/layer controls are compact and offset so they remain usable on touch screens and fullscreen displays.
+
+Heading comes from browser GPS `coords.heading` when available and is exposed through the app GPS service as `headingDeg`; when GPS heading is missing, Camera Map can derive a bearing from meaningful recent movement. Follow mode keeps the vehicle visible and can frame a nearby relevant camera from the currently loaded camera features. The orientation control cycles between north-up and heading-up; heading-up falls back gracefully to north-up behavior when heading is unavailable or stale. Camera-aware framing uses only loaded local/static artifacts and does not fetch live camera APIs.
+
+Camera Map includes an Approach overlay in the normal layer menu. Enable **Approach** to show matched camera road segments, allowed detection directions, confidence styling, fallback halos for cameras without road corridors, and a compact legend for all visible cameras. Solid approach roads indicate higher-confidence matches; softer/dashed lines indicate low-confidence or ambiguous matches; direction rays show which traffic direction is believed to trigger the camera. Multiple corridors can be shown for one camera, such as a primary road plus an intersection candidate. The overlay reads only generated camera artifacts and cached map state, so it does not make live Overpass, Nominatim, or road-network requests while driving.
+
+The global Approach overlay is optional, but focused camera explanations are always available. Tapping any camera draws that selected camera’s road corridor, detection direction, or no-corridor fallback area even when the global overlay is off. While driving, the current approaching or active matched camera is highlighted automatically with the matched corridor, detection ray, user-to-camera bearing line, or fallback halo. If the global overlay is on, these selected/current visuals sit above the wider overlay so the active rule is easy to distinguish from neighboring cameras.
+
+Tapping a camera opens a Camera approach section that summarizes confidence, direction, matched-road distance, bearing, source context, and the current match decision when live position is available. The popup resolves full corridor details on demand from already-loaded local camera artifacts, so normal marker features can stay lightweight until a single camera is inspected. The details list each corridor, including its role, allowed direction, bearing pair, confidence, road match distance, and way id. If no road corridor is available, the popup explains that alerts may use heading/radius fallback and that the camera needs road-direction data for more precise filtering. The popup explains outcomes such as “Would alert now,” “Near but not approaching,” “Heading unavailable,” or “Using fallback,” and includes a **Copy camera review info** action with a local JSON payload for filing data fixes. Cameras with missing, low-confidence, or ambiguous approach data remain visible so bad road matching, wrong direction metadata, and old cached artifacts can be reviewed instead of hidden.
+
+Drive recording remains local-first. Recording uses the shared GPS stream and persists active replay data locally as it goes, so route changes do not require a second GPS watch and network/cloud-sync failures do not stop local capture.
+
+Overspeed and camera proximity audio alerts are also app-level. Once the browser audio path has been primed from a user gesture, the driving alert service keeps evaluating the shared GPS stream and cached/static camera artifacts even if the user switches to Library, Board, Accel, Replay, or Camera Map. Unknown camera speed limits stay unknown rather than becoming a zero-speed alert, and low-confidence road-speed enrichment follows the same alert rules used by Speed.
+
+Offline behavior is local-first. If a camera refresh fails, the map keeps the last successful camera GeoJSON in memory and reports cached/offline status rather than clearing the markers. Basemap tile failures can make the visual map incomplete, but they do not remove the local camera layers or the user-position puck.
+
+Basemap imagery and map tiles are loaded from third-party tile services and must keep visible attribution in the map. Included layers:
+
+- CARTO Voyager, Light, and Dark: `© OpenStreetMap contributors © CARTO`
+- OSM Standard: `© OpenStreetMap contributors`
+- OpenTopoMap: `© OpenStreetMap contributors, SRTM | style © OpenTopoMap`
+- Esri World Imagery: `Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community`
+
+Public tile services have fair-use and attribution policies. OSM Standard should follow the [OSM tile usage policy](https://operations.osmfoundation.org/policies/tiles/), CARTO layers should follow [CARTO attribution](https://carto.com/attribution), OpenTopoMap should follow its [usage notes](https://opentopomap.org/about), and Esri imagery attribution should stay visible. Production or high-volume deployments should use an approved commercial/dedicated tile provider or self-hosted tiles.
+
+Follow-up tickets:
+
+- Add a daily GitHub Actions workflow that runs `npm run fetch:cameras`, opens a data refresh PR, and reports artifact counts.
+- Add a Help link explaining that missing cameras can be added to OpenStreetMap and will appear after the next artifact refresh.
+- Preserve optional source/debug tags in a separate diagnostics artifact without expanding the runtime payload.
+- Add an optional voice announcement patterned after `src/speed/audio.js`: “speed camera ahead, limit X” in the selected speed unit, while preserving browser audio gesture requirements.
+- Region-first preload: after a stable country is known and the device is idle on a good network, prefetch small neighboring countries.
+
 ## Project Layout
 
 ```txt
@@ -152,10 +320,12 @@ What it does:
 ├─ data-src/                 # Source/reference datasets
 ├─ public/
 │  ├─ audio/                 # Alert and finish sounds
-│  ├─ geo/                   # Generated speed-trap payloads and KDBush index
+│  ├─ geo/                   # Generated speed-camera manifests, payloads, and KDBush indexes
 │  └─ img/                   # Logos and social images
 ├─ scripts/
-│  └─ build-speed-traps.mjs
+│  ├─ build-worldwide-cameras.mjs
+│  ├─ fetch-worldwide-cameras.mjs
+│  └─ build-speed-traps.mjs   # Compatibility wrapper
 ├─ src/
 │  ├─ accel/
 │  ├─ board/
@@ -221,7 +391,10 @@ Legacy standalone test/dev harnesses remain available at:
 
 ## Scripts
 
-- `npm run prepare:geo`: builds the speed-trap artifacts consumed by Vatio Speed
+- `npm run prepare:ansv`: converts `data-src/ANSV.csv` to `data-src/ansv_cameras_maplibre.geojson`
+- `npm run prepare:geo`: builds the speed-camera artifacts consumed by Vatio Speed from local data, including the ANSV CSV conversion step
+- `npm run fetch:cameras`: resumes/fetches local Overpass camera and road-speed data, writes maxspeed enrichment, and rebuilds speed-camera artifacts
+- `npm run analyze:cameras:maxspeed`: prints explicit/inferred/unknown speed coverage from the generated camera manifest
 - `npm run dev`: runs Vite locally after the `predev` geo preparation step
 - `npm run build`: creates a production build after the `prebuild` geo preparation step
 - `npm run preview`: serves the built app locally
@@ -236,10 +409,24 @@ Legacy standalone test/dev harnesses remain available at:
 
 ## Generated Data
 
-`npm run prepare:geo` reads [`data-src/ansv_cameras_maplibre.geojson`](data-src/ansv_cameras_maplibre.geojson) and generates:
+`npm run prepare:geo` first regenerates [`data-src/ansv_cameras_maplibre.geojson`](data-src/ansv_cameras_maplibre.geojson) from `data-src/ANSV.csv` when the CSV exists. It then reads `data-src/osm_speed_cameras_overpass.json` when present, applies `data-src/osm_speed_cameras_maxspeed_enrichment.json` when present, otherwise falls back to the ANSV GeoJSON, and generates:
 
-- `public/geo/ansv_cameras_compact.min.json`
-- `public/geo/ansv_cameras_compact.kdbush`
+- `public/geo/cameras/manifest.json`
+- `public/geo/cameras/countries/<country-code>.json`
+- `public/geo/cameras/countries/<country-code>.kdbush`
+- optional `public/geo/cameras/countries/<country-code>/tiles/*` files for large countries
+
+Source/cache files have different repository roles:
+
+- Commit `data-src/ANSV.csv`; it is the editable ANSV source of truth for Colombia official cameras.
+- `data-src/ansv_cameras_maplibre.geojson` is regenerated from `data-src/ANSV.csv` by `npm run prepare:ansv` and by the default geo build.
+- Commit `data-src/osm_speed_cameras_overpass.json`; it is the compact raw camera source used by offline builds.
+- Commit `data-src/osm_speed_cameras_maxspeed_enrichment.json`; it is the compact inferred-speed sidecar used by offline builds and GitHub Pages.
+- Do not commit `data-src/osm-road-speeds/`; it is a large restartable Overpass road tile cache used only by `npm run fetch:cameras`.
+- Do not commit `logs/`; fetch logs are local diagnostics.
+- Do not commit `public/geo/cameras/`; `predev`, `prebuild`, and the GitHub Pages workflow regenerate it.
+
+The GitHub Pages workflow runs `npm run build`, and `prebuild` runs `npm run prepare:geo`. That means Pages deployment needs the checked-in source files under `data-src`, not the 5 GB road cache or the generated `public/geo/cameras` directory.
 
 `public/geo/` may be missing in a fresh checkout until you run `npm run prepare:geo`, `npm run dev`, or `npm run build`.
 

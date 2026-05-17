@@ -18,7 +18,7 @@ const speedTemplate = String.raw`
           <button id="langToggle" type="button" class="lang-toggle" data-i18n-aria="changeLanguage" aria-label="Change language">EN</button>
         </div>
 
-        <div class="toolbar speed-toolbar" role="toolbar" data-i18n-aria="speedometerControls" aria-label="Speedometer controls">
+        <div class="toolbar speed-toolbar" role="toolbar" data-vb-shell-toolbar data-i18n-aria="speedometerControls" aria-label="Speedometer controls">
           <div class="toolbar-recording-quick">
             <div class="tools-menu speed-tools-menu">
               <button
@@ -114,8 +114,6 @@ const speedTemplate = String.raw`
               data-i18n-title="configureAlerts"
               aria-label="Configure alerts"
               title="Configure alerts"
-              aria-controls="speedAlertPanel"
-              aria-expanded="false"
               aria-pressed="false"
             >
               <span class="toolbar-recording-glyph btn-icon" aria-hidden="true"></span>
@@ -221,8 +219,6 @@ const speedTemplate = String.raw`
               id="alertTrigger"
               class="speed-alert-trigger"
               type="button"
-              aria-expanded="false"
-              aria-controls="speedAlertPanel"
               aria-describedby="alertTriggerHint"
             >
               <span class="speed-alert-trigger-icon" aria-hidden="true">
@@ -317,111 +313,6 @@ const speedTemplate = String.raw`
                   </div>
                 </div>
               </section>
-            </div>
-
-            <div id="speedAlertBackdrop" class="speed-alert-backdrop" hidden aria-hidden="true"></div>
-
-            <div id="speedAlertPanel" class="speed-alert-panel" hidden data-i18n-aria="configureAlerts" aria-label="Configure alerts">
-              <div class="speed-alert-panel-top">
-                <div class="speed-alert-panel-header">
-                  <div class="speed-alert-copy">
-                    <span class="speed-alert-panel-kicker" data-i18n="alerts">Alerts</span>
-                    <strong id="alertPanelStatus">Off</strong>
-                  </div>
-                  <button
-                    id="closeAlertPanel"
-                    type="button"
-                    class="speed-alert-close"
-                    aria-label="Close"
-                    title="Close"
-                    data-i18n-aria="close"
-                    data-i18n-title="close"
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <path d="M18 6L6 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M6 6l12 12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                    <span class="sr-only" data-i18n="close">Close</span>
-                  </button>
-                </div>
-              </div>
-
-              <div class="speed-alert-section" data-i18n-aria="speedAlertSettings" aria-label="Speed alert settings">
-                <span class="speed-alert-settings-title" data-i18n="manualSpeed">Manual speed</span>
-
-                <div class="speed-alert-actions">
-                  <button id="alertToggle" type="button" class="speed-alert-toggle" data-i18n="turnOn">Turn on</button>
-                  <button id="alertUseCurrent" type="button" class="speed-alert-secondary" data-i18n="useCurrentSpeed">
-                    Use current speed
-                  </button>
-                </div>
-
-                <div class="speed-alert-stepper" role="group" data-i18n-aria="setAlertSpeedLimit" aria-label="Set alert speed limit">
-                  <button id="alertDecrease" type="button" data-i18n-aria="decreaseSpeedAlert" aria-label="Decrease speed alert">−</button>
-                  <div class="speed-alert-limit-display">
-                    <span id="alertValue">100</span>
-                    <span id="alertUnit">km/h</span>
-                  </div>
-                  <button id="alertIncrease" type="button" data-i18n-aria="increaseSpeedAlert" aria-label="Increase speed alert">+</button>
-                </div>
-
-                <div id="alertPresets" class="speed-alert-presets" role="group" data-i18n-aria="quickSpeedAlertPresets" aria-label="Quick speed alert presets"></div>
-
-                <div class="speed-alert-setting speed-alert-sound-setting">
-                  <span class="speed-alert-setting-label" data-i18n="overspeedSound">Overspeed sound</span>
-                  <div class="unit-switch speed-alert-switch" role="group" data-i18n-aria="overspeedSound" aria-label="Overspeed sound">
-                    <button type="button" class="alert-sound-btn" data-alert-sound="off" data-i18n="off">Off</button>
-                    <button type="button" class="alert-sound-btn" data-alert-sound="on" data-i18n="on">On</button>
-                  </div>
-                </div>
-
-                <p class="speed-alert-note" data-i18n="nearbyTrapOverrides">Nearby trap speed overrides the manual limit.</p>
-              </div>
-
-              <div class="speed-alert-section" data-i18n-aria="trapAlertSettings" aria-label="Trap alert settings">
-                <span class="speed-alert-settings-title" data-i18n="trapAlerts">Trap alerts</span>
-
-                <div class="speed-alert-setting speed-alert-sound-setting">
-                  <span class="speed-alert-setting-label" data-i18n="trapAlerts">Trap alerts</span>
-                  <div class="unit-switch speed-alert-switch" role="group" data-i18n-aria="trapAlerts" aria-label="Trap alerts">
-                    <button type="button" class="trap-alert-btn" data-trap-alert="off" data-i18n="off">Off</button>
-                    <button type="button" class="trap-alert-btn" data-trap-alert="on" data-i18n="on">On</button>
-                  </div>
-                </div>
-
-                <div class="speed-alert-setting">
-                  <span class="speed-alert-setting-label" data-i18n="alertDistance">Alert distance</span>
-                  <div id="trapDistancePresets" class="speed-alert-presets" role="group" data-i18n-aria="trapAlertDistancePresets" aria-label="Trap alert distance presets"></div>
-                </div>
-
-                <div class="speed-alert-setting speed-alert-sound-setting">
-                  <span class="speed-alert-setting-label" data-i18n="trapSound">Trap sound</span>
-                  <div class="unit-switch speed-alert-switch" role="group" data-i18n-aria="trapSound" aria-label="Trap alert sound">
-                    <button type="button" class="trap-sound-btn" data-trap-sound="off" data-i18n="off">Off</button>
-                    <button type="button" class="trap-sound-btn" data-trap-sound="on" data-i18n="on">On</button>
-                  </div>
-                </div>
-              </div>
-
-              <div class="speed-alert-settings" data-i18n-aria="units" aria-label="Units">
-                <span class="speed-alert-settings-title" data-i18n="units">Units</span>
-
-                <div class="speed-alert-setting">
-                  <span class="speed-alert-setting-label" data-i18n="speed">Speed</span>
-                  <div class="unit-switch speed-alert-switch" role="group" data-i18n-aria="speedUnit" aria-label="Speed unit">
-                    <button type="button" class="unit-btn" data-unit="kmh">km/h</button>
-                    <button type="button" class="unit-btn" data-unit="mph">mph</button>
-                  </div>
-                </div>
-
-                <div class="speed-alert-setting">
-                  <span class="speed-alert-setting-label" data-i18n="distance">Distance</span>
-                  <div class="unit-switch speed-alert-switch" role="group" data-i18n-aria="distanceUnit" aria-label="Distance unit">
-                    <button type="button" class="distance-unit-btn" data-distance-unit="m">m</button>
-                    <button type="button" class="distance-unit-btn" data-distance-unit="ft">ft</button>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
 

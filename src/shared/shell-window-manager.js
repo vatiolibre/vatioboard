@@ -1,9 +1,28 @@
 import { createShellLayoutStore } from "./shell-layout-store.js";
 import { getBoundsForSnapZone } from "./shell-snap.js";
+import { SHELL_Z_INDEX } from "./shell-layers.js";
+import { clampBoundsToWorkArea, getShellWorkArea, getViewportRect } from "./shell-work-area.js";
 
-const BASE_Z_INDEX = 1000;
-const MAX_Z_INDEX = 1900;
-const VALID_STATES = new Set(["closed", "open", "minimized", "hidden"]);
+export const SHELL_WINDOW_BASE_Z_INDEX = SHELL_Z_INDEX.windowBase;
+export const SHELL_WINDOW_MAX_Z_INDEX = SHELL_Z_INDEX.windowMax;
+
+const BASE_Z_INDEX = SHELL_WINDOW_BASE_Z_INDEX;
+const MAX_Z_INDEX = SHELL_WINDOW_MAX_Z_INDEX;
+const VALID_STATES = new Set(["closed", "open", "minimized", "hidden", "fullscreen"]);
+const SNAP_ZONES = new Set([
+  "left",
+  "right",
+  "top",
+  "bottom",
+  "center",
+  "top-left",
+  "top-right",
+  "bottom-left",
+  "bottom-right",
+]);
+const MAXIMIZE_ZONES = new Set(["top"]);
+// These capabilities are deliberately separate: a panel may resize inside
+// design-safe bounds without supporting snap, top maximize, or fullscreen.
 const SHELL_PREFERENCES_STORAGE_KEY = "vatioboard.shell.preferences.v1";
 const DEFAULT_SHELL_PREFERENCES = {
   taskbarPosition: "bottom",
@@ -45,12 +64,23 @@ function normalizeBounds(bounds) {
 }
 
 function normalizeCapabilities(capabilities = {}) {
+  const snapZones = Array.isArray(capabilities.snapZones)
+    ? capabilities.snapZones.filter((zone) => SNAP_ZONES.has(zone))
+    : null;
+  const maxWidth = toNumber(capabilities.maxWidth);
+  const maxHeight = toNumber(capabilities.maxHeight);
   return {
     draggable: capabilities.draggable !== false,
     resizable: capabilities.resizable === true,
     minimizable: capabilities.minimizable !== false,
     closable: capabilities.closable !== false,
     restorable: capabilities.restorable !== false,
+    maximizable: capabilities.maximizable !== false,
+    snap: capabilities.snap !== false,
+    snapZones,
+    preserveIntrinsicWidth: capabilities.preserveIntrinsicWidth === true,
+    maxWidth: maxWidth !== null && maxWidth > 0 ? maxWidth : null,
+    maxHeight: maxHeight !== null && maxHeight > 0 ? maxHeight : null,
     ...(capabilities.pinnable !== undefined ? { pinnable: capabilities.pinnable === true } : {}),
     ...(capabilities.fullscreen !== undefined ? { fullscreen: capabilities.fullscreen === true } : {}),
   };
@@ -78,13 +108,79 @@ function applyBounds(element, bounds) {
   if (next.height) element.style.height = `${Math.round(next.height)}px`;
 }
 
+function applyCapabilityConstraints(bounds, record, options = {}) {
+  const next = normalizeBounds(bounds);
+  if (!next || !record?.capabilities) return next;
+  const constrained = { ...next };
+  const maxWidth = toNumber(record.capabilities.maxWidth);
+  const maxHeight = toNumber(record.capabilities.maxHeight);
+  if (maxWidth !== null && maxWidth > 0 && constrained.width) {
+    constrained.width = Math.min(constrained.width, maxWidth);
+  }
+  if (maxHeight !== null && maxHeight > 0 && constrained.height) {
+    constrained.height = Math.min(constrained.height, maxHeight);
+  }
+  if (options.snap === true && record.capabilities.preserveIntrinsicWidth === true && constrained.width) {
+    const currentWidth = toNumber(options.currentBounds?.width)
+      ?? toNumber(record.bounds?.width)
+      ?? toNumber(record.restoreBounds?.width)
+      ?? maxWidth;
+    if (currentWidth !== null && currentWidth > 0) {
+      constrained.width = Math.min(constrained.width, currentWidth);
+    }
+  }
+  return constrained;
+}
+
 function getViewport() {
-  return {
-    left: 0,
-    top: 0,
-    width: globalThis.innerWidth || 1024,
-    height: globalThis.innerHeight || 768,
-  };
+  return getViewportRect();
+}
+
+function isFullscreenRecord(record) {
+  return record?.state === "fullscreen";
+}
+
+function getFullscreenBounds(options = {}) {
+  return getShellWorkArea({ ...options, fullscreen: true });
+}
+
+function sanitizeNormalBounds(bounds, options = {}) {
+  const next = normalizeBounds(bounds);
+  if (!next) return null;
+  if (options.rawBounds === true) return next;
+  return clampBoundsToWorkArea(next, {
+    root: options.root,
+    viewport: options.viewport,
+    workArea: options.workArea,
+    currentBounds: options.currentBounds,
+    safeMargin: options.safeMargin,
+    margin: options.margin,
+  });
+}
+
+function sanitizeRecordBounds(record, bounds, options = {}) {
+  if (isFullscreenRecord(record) && options.fullscreen !== false) {
+    return getFullscreenBounds({ root: options.root, viewport: options.viewport });
+  }
+  const constrained = applyCapabilityConstraints(bounds, record, options);
+  return sanitizeNormalBounds(constrained, {
+    ...options,
+    currentBounds: options.currentBounds || record?.bounds || record?.restoreBounds,
+  });
+}
+
+function canSnapRecord(record, zone) {
+  if (!record || record.capabilities?.snap === false) return false;
+  if (!SNAP_ZONES.has(zone)) return false;
+  if (MAXIMIZE_ZONES.has(zone) && record.capabilities?.maximizable !== true) return false;
+  if (Array.isArray(record.capabilities?.snapZones) && !record.capabilities.snapZones.includes(zone)) return false;
+  return true;
+}
+
+function getRecordZIndex(record) {
+  return isFullscreenRecord(record)
+    ? SHELL_Z_INDEX.fullscreen
+    : Math.min(record.zIndex, MAX_Z_INDEX);
 }
 
 function sanitizeLifecycle(lifecycle = {}) {
@@ -109,6 +205,8 @@ function shallowRecord(record) {
     previousState: record.previousState,
     bounds: record.bounds,
     restoreBounds: record.restoreBounds,
+    fullscreenRestoreBounds: record.fullscreenRestoreBounds,
+    fullscreenRestoreSnap: record.fullscreenRestoreSnap,
     zIndex: record.zIndex,
     active: record.active,
     minimized: record.minimized,
@@ -198,7 +296,10 @@ export function createShellWindowManager(options = {}) {
   let preferences = readShellPreferences(preferenceStorage);
   let layout = store.read();
   let activeWindowId = layout.activeWindowId || null;
-  let nextZIndex = Math.max(BASE_Z_INDEX, ...Object.values(layout.windows || {}).map((entry) => entry?.zIndex || 0));
+  let nextZIndex = Math.min(
+    MAX_Z_INDEX,
+    Math.max(BASE_Z_INDEX, ...Object.values(layout.windows || {}).map((entry) => entry?.zIndex || 0))
+  );
   let destroyed = false;
   applyShellPreferenceAttributes(root, preferences);
 
@@ -254,9 +355,10 @@ export function createShellWindowManager(options = {}) {
     record.element.setAttribute("data-vb-shell-window", record.id);
     record.element.setAttribute("data-vb-shell-window-active", record.active ? "true" : "false");
     record.element.setAttribute("data-vb-shell-window-state", record.state);
+    record.element.setAttribute("data-vb-shell-window-fullscreen", isFullscreenRecord(record) ? "true" : "false");
     record.element.setAttribute("data-vb-floating-panel", "");
     record.element.setAttribute("data-vb-floating-active", record.active ? "true" : "false");
-    record.element.style.zIndex = String(Math.min(record.zIndex, MAX_Z_INDEX));
+    record.element.style.zIndex = String(getRecordZIndex(record));
   }
 
   function setActiveRecord(record) {
@@ -294,7 +396,7 @@ export function createShellWindowManager(options = {}) {
     existing?.();
 
     const activate = () => {
-      if (record.state === "open" && !record.element.hidden) {
+      if ((record.state === "open" || record.state === "fullscreen") && !record.element.hidden) {
         activateWindow(record.id);
       }
     };
@@ -309,13 +411,16 @@ export function createShellWindowManager(options = {}) {
 
   function applyStoredLayout(record, stored) {
     if (!stored) return record;
-    record.state = VALID_STATES.has(stored.state) ? stored.state : record.state;
+    const storedState = VALID_STATES.has(stored.state) ? stored.state : record.state;
+    record.state = storedState === "fullscreen" ? "open" : storedState;
     record.previousState = VALID_STATES.has(stored.previousState) ? stored.previousState : record.previousState;
-    record.bounds = normalizeBounds(stored.bounds) || record.bounds;
-    record.restoreBounds = normalizeBounds(stored.restoreBounds) || record.restoreBounds;
+    record.bounds = sanitizeRecordBounds(record, stored.bounds, { root }) || record.bounds;
+    record.restoreBounds = sanitizeRecordBounds(record, stored.restoreBounds, { root, fullscreen: false }) || record.restoreBounds;
+    record.fullscreenRestoreBounds = sanitizeRecordBounds(record, stored.fullscreenRestoreBounds, { root, fullscreen: false }) || null;
+    record.fullscreenRestoreSnap = stored.fullscreenRestoreSnap || null;
     record.zIndex = Math.min(Number.parseInt(String(stored.zIndex || record.zIndex), 10) || record.zIndex, MAX_Z_INDEX);
     record.minimized = stored.minimized === true || record.state === "minimized";
-    record.snap = stored.snap || null;
+    record.snap = stored.snap && canSnapRecord(record, stored.snap.zone) ? stored.snap : null;
     if (record.bounds) applyBounds(record.element, record.bounds);
     return record;
   }
@@ -329,21 +434,38 @@ export function createShellWindowManager(options = {}) {
     const record = existing || {};
     const elementBounds = getElementBounds(config.element);
 
+    const configuredState = VALID_STATES.has(config.state) ? config.state : (record.state || (config.element.hidden ? "closed" : "open"));
+    const configuredBounds = normalizeBounds(config.bounds) || record.bounds || elementBounds;
+    const configuredRestoreBounds = normalizeBounds(config.restoreBounds) || record.restoreBounds || elementBounds;
+    const configuredCapabilities = normalizeCapabilities({ ...record.capabilities, ...config.capabilities });
+    const constraintRecord = {
+      ...record,
+      capabilities: configuredCapabilities,
+      bounds: configuredBounds,
+      restoreBounds: configuredRestoreBounds,
+    };
+
     Object.assign(record, {
       id: config.id,
       kind: config.kind || record.kind || "tool",
       title: config.title || record.title || config.id,
       element: config.element,
       launcherElement: config.launcherElement || record.launcherElement || null,
-      state: VALID_STATES.has(config.state) ? config.state : (record.state || (config.element.hidden ? "closed" : "open")),
+      state: configuredState === "fullscreen" ? "open" : configuredState,
       previousState: VALID_STATES.has(config.previousState) ? config.previousState : (record.previousState || "closed"),
-      bounds: normalizeBounds(config.bounds) || record.bounds || elementBounds,
-      restoreBounds: normalizeBounds(config.restoreBounds) || record.restoreBounds || elementBounds,
+      bounds: sanitizeRecordBounds(constraintRecord, configuredBounds, { root, fullscreen: false }) || configuredBounds,
+      restoreBounds: sanitizeRecordBounds(constraintRecord, configuredRestoreBounds, { root, fullscreen: false }) || configuredRestoreBounds,
+      fullscreenRestoreBounds: sanitizeRecordBounds(
+        constraintRecord,
+        config.fullscreenRestoreBounds || record.fullscreenRestoreBounds,
+        { root, fullscreen: false },
+      ),
+      fullscreenRestoreSnap: config.fullscreenRestoreSnap || record.fullscreenRestoreSnap || null,
       zIndex: Math.min(Number.parseInt(String(config.zIndex || record.zIndex || BASE_Z_INDEX), 10) || BASE_Z_INDEX, MAX_Z_INDEX),
       active: record.active === true,
       minimized: config.minimized === true || record.minimized === true,
       snap: config.snap || record.snap || null,
-      capabilities: normalizeCapabilities({ ...record.capabilities, ...config.capabilities }),
+      capabilities: configuredCapabilities,
       lifecycle: sanitizeLifecycle({ ...record.lifecycle, ...config.lifecycle }),
       lazy: config.lazy === true || record.lazy === true,
       restoreOnBoot: config.restoreOnBoot !== undefined ? config.restoreOnBoot !== false : record.restoreOnBoot !== false,
@@ -372,6 +494,7 @@ export function createShellWindowManager(options = {}) {
     record.element?.removeAttribute?.("data-vb-shell-window");
     record.element?.removeAttribute?.("data-vb-shell-window-active");
     record.element?.removeAttribute?.("data-vb-shell-window-state");
+    record.element?.removeAttribute?.("data-vb-shell-window-fullscreen");
     windows.delete(id);
     if (activeWindowId === id) activeWindowId = null;
     emit("vatioboard:shell-window-unregistered", { id });
@@ -416,13 +539,31 @@ export function createShellWindowManager(options = {}) {
   function showRecord(record) {
     record.element.hidden = false;
     record.minimized = false;
-    record.state = "open";
+    if (record.state !== "fullscreen") record.state = "open";
     if (record.snap?.zone) {
-      const snapBounds = getBoundsForSnapZone(record.snap.zone, getViewport(), record.snap);
-      record.bounds = snapBounds;
-      applyBounds(record.element, snapBounds);
-    } else if (record.bounds) {
+      if (!canSnapRecord(record, record.snap.zone)) {
+        record.snap = null;
+      }
+    }
+    if (record.snap?.zone) {
+      const snapBounds = getBoundsForSnapZone(record.snap.zone, getViewport(), {
+        ...record.snap,
+        useWorkArea: true,
+        root,
+      });
+      record.bounds = applyCapabilityConstraints(snapBounds, record, {
+        snap: true,
+        currentBounds: record.restoreBounds || record.bounds,
+      }) || snapBounds;
       applyBounds(record.element, record.bounds);
+    } else if (record.state === "fullscreen") {
+      const fullscreenBounds = getFullscreenBounds({ root });
+      record.bounds = fullscreenBounds;
+      applyBounds(record.element, fullscreenBounds);
+    } else if (record.bounds) {
+      const bounds = sanitizeRecordBounds(record, record.bounds, { root }) || record.bounds;
+      record.bounds = bounds;
+      applyBounds(record.element, bounds);
     }
     setWindowAttributes(record);
   }
@@ -442,8 +583,13 @@ export function createShellWindowManager(options = {}) {
   function closeWindow(id, options = {}) {
     const record = windows.get(id);
     if (!record) return null;
-    record.bounds = getElementBounds(record.element) || record.bounds;
-    record.restoreBounds = record.bounds || record.restoreBounds;
+    const normalBounds = isFullscreenRecord(record)
+      ? sanitizeRecordBounds(record, record.fullscreenRestoreBounds || record.restoreBounds, { root, fullscreen: false })
+      : sanitizeRecordBounds(record, getElementBounds(record.element) || record.bounds, { root });
+    record.bounds = normalBounds || record.bounds;
+    record.restoreBounds = normalBounds || record.restoreBounds;
+    record.fullscreenRestoreBounds = null;
+    record.fullscreenRestoreSnap = null;
     record.previousState = record.state;
     record.state = "closed";
     record.minimized = false;
@@ -460,8 +606,13 @@ export function createShellWindowManager(options = {}) {
   function minimizeWindow(id, options = {}) {
     const record = windows.get(id);
     if (!record) return null;
-    record.bounds = getElementBounds(record.element) || record.bounds;
-    record.restoreBounds = record.bounds || record.restoreBounds;
+    const normalBounds = isFullscreenRecord(record)
+      ? sanitizeRecordBounds(record, record.fullscreenRestoreBounds || record.restoreBounds, { root, fullscreen: false })
+      : sanitizeRecordBounds(record, getElementBounds(record.element) || record.bounds, { root });
+    record.bounds = normalBounds || record.bounds;
+    record.restoreBounds = normalBounds || record.restoreBounds;
+    record.fullscreenRestoreBounds = null;
+    record.fullscreenRestoreSnap = null;
     record.previousState = record.state;
     record.state = "minimized";
     record.minimized = true;
@@ -481,7 +632,8 @@ export function createShellWindowManager(options = {}) {
     invokeLifecycle(record, "restore", options);
     record.state = "open";
     record.minimized = false;
-    record.bounds = record.restoreBounds || record.bounds;
+    record.bounds = sanitizeRecordBounds(record, record.restoreBounds || record.bounds, { root }) || record.restoreBounds || record.bounds;
+    record.restoreBounds = record.bounds || record.restoreBounds;
     showRecord(record);
     activateWindow(id, { ...options, persist: false });
     emit("vatioboard:shell-window-restored", { id, record: shallowRecord(record) });
@@ -503,10 +655,16 @@ export function createShellWindowManager(options = {}) {
     if (!record) return null;
     const next = normalizeBounds(bounds);
     if (!next) return shallowRecord(record);
-    record.bounds = next;
-    if (options.updateRestoreBounds !== false) record.restoreBounds = next;
+    const sanitized = sanitizeRecordBounds(record, next, {
+      root,
+      rawBounds: options.rawBounds === true,
+      fullscreen: options.fullscreen,
+      currentBounds: record.bounds,
+    }) || next;
+    record.bounds = sanitized;
+    if (options.updateRestoreBounds !== false && !isFullscreenRecord(record)) record.restoreBounds = sanitized;
     if (options.preserveSnap !== true) record.snap = null;
-    applyBounds(record.element, next);
+    applyBounds(record.element, sanitized);
     setWindowAttributes(record);
     emit("vatioboard:shell-window-layout-changed", { id, record: shallowRecord(record) });
     notify("layout-changed", record);
@@ -517,10 +675,19 @@ export function createShellWindowManager(options = {}) {
   function snapWindow(id, zone, options = {}) {
     const record = windows.get(id);
     if (!record) return null;
+    if (!canSnapRecord(record, zone)) return shallowRecord(record);
     if (!record.snap && record.state === "open") {
       record.restoreBounds = getElementBounds(record.element) || record.bounds;
     }
-    const bounds = getBoundsForSnapZone(zone, options.viewport || getViewport(), options);
+    const snapBounds = getBoundsForSnapZone(zone, options.viewport || getViewport(), {
+      ...options,
+      useWorkArea: options.useWorkArea !== false,
+      root,
+    });
+    const bounds = applyCapabilityConstraints(snapBounds, record, {
+      snap: true,
+      currentBounds: record.restoreBounds || record.bounds,
+    }) || snapBounds;
     record.snap = { zone, ...(options.ratio ? { ratio: options.ratio } : {}) };
     record.bounds = bounds;
     applyBounds(record.element, bounds);
@@ -536,14 +703,96 @@ export function createShellWindowManager(options = {}) {
     if (!record) return null;
     record.snap = null;
     if (record.restoreBounds) {
-      record.bounds = record.restoreBounds;
-      applyBounds(record.element, record.restoreBounds);
+      record.bounds = sanitizeRecordBounds(record, record.restoreBounds, { root }) || record.restoreBounds;
+      record.restoreBounds = record.bounds;
+      applyBounds(record.element, record.bounds);
     }
     setWindowAttributes(record);
     emit("vatioboard:shell-window-layout-changed", { id, record: shallowRecord(record) });
     notify("unsnapped", record);
     persist(options);
     return shallowRecord(record);
+  }
+
+  function fullscreenWindow(id, options = {}) {
+    const record = windows.get(id);
+    if (!record) return null;
+    if (record.capabilities?.fullscreen !== true && options.force !== true) return shallowRecord(record);
+    if (!isFullscreenRecord(record)) {
+      const currentBounds = getElementBounds(record.element) || record.bounds || record.restoreBounds;
+      record.fullscreenRestoreBounds = sanitizeRecordBounds(record, currentBounds, { root, fullscreen: false })
+        || record.restoreBounds
+        || record.bounds;
+      record.fullscreenRestoreSnap = record.snap || null;
+      record.previousState = record.state;
+    }
+    record.element.hidden = false;
+    record.minimized = false;
+    record.state = "fullscreen";
+    record.snap = null;
+    record.bounds = getFullscreenBounds({ root, viewport: options.viewport });
+    applyBounds(record.element, record.bounds);
+    record.active = true;
+    setActiveRecord(record);
+    setWindowAttributes(record);
+    emit("vatioboard:shell-window-fullscreen", { id, record: shallowRecord(record) });
+    notify("fullscreen", record);
+    persist(options);
+    return shallowRecord(record);
+  }
+
+  function exitFullscreenWindow(id, options = {}) {
+    const record = windows.get(id);
+    if (!record) return null;
+    if (!isFullscreenRecord(record)) return shallowRecord(record);
+    const restoreBounds = sanitizeRecordBounds(record, record.fullscreenRestoreBounds || record.restoreBounds || record.bounds, {
+      root,
+      fullscreen: false,
+    })
+      || record.restoreBounds
+      || record.bounds;
+    const restoreSnap = record.fullscreenRestoreSnap || null;
+    record.state = "open";
+    record.minimized = false;
+    record.bounds = restoreBounds;
+    record.restoreBounds = restoreBounds;
+    record.fullscreenRestoreBounds = null;
+    record.fullscreenRestoreSnap = null;
+    record.snap = restoreSnap;
+    if (record.snap?.zone) {
+      if (!canSnapRecord(record, record.snap.zone)) {
+        record.snap = null;
+      }
+    }
+    if (record.snap?.zone) {
+      const snapBounds = getBoundsForSnapZone(record.snap.zone, options.viewport || getViewport(), {
+        ...record.snap,
+        useWorkArea: options.useWorkArea !== false,
+        root,
+      });
+      record.bounds = applyCapabilityConstraints(snapBounds, record, {
+        snap: true,
+        currentBounds: record.restoreBounds || record.bounds,
+      }) || snapBounds;
+    }
+    applyBounds(record.element, record.bounds);
+    setWindowAttributes(record);
+    emit("vatioboard:shell-window-fullscreen-exited", { id, record: shallowRecord(record) });
+    notify("fullscreen-exited", record);
+    persist(options);
+    return shallowRecord(record);
+  }
+
+  function toggleFullscreenWindow(id, options = {}) {
+    const record = windows.get(id);
+    if (!record) return null;
+    return isFullscreenRecord(record)
+      ? exitFullscreenWindow(id, options)
+      : fullscreenWindow(id, options);
+  }
+
+  function canSnapWindow(id, zone) {
+    return canSnapRecord(windows.get(id), zone);
   }
 
   function restoreShellLayout(options = {}) {
@@ -553,7 +802,7 @@ export function createShellWindowManager(options = {}) {
       const stored = layout.windows?.[record.id];
       if (!stored) continue;
       applyStoredLayout(record, stored);
-      if (stored.state === "open" && record.restoreOnBoot !== false) {
+      if ((stored.state === "open" || stored.state === "fullscreen") && record.restoreOnBoot !== false) {
         openWindow(record.id, { ...options, persist: false });
       } else if (stored.state === "minimized") {
         minimizeWindow(record.id, { ...options, invokeLifecycle: false, persist: false });
@@ -579,13 +828,13 @@ export function createShellWindowManager(options = {}) {
     for (const record of windows.values()) {
       nextLayout.windows[record.id] = {
         ...(nextLayout.windows[record.id] || {}),
-        state: record.state,
+        state: isFullscreenRecord(record) ? "open" : record.state,
         previousState: record.previousState,
-        bounds: record.bounds,
-        restoreBounds: record.restoreBounds,
+        bounds: isFullscreenRecord(record) ? (record.fullscreenRestoreBounds || record.restoreBounds) : record.bounds,
+        restoreBounds: isFullscreenRecord(record) ? (record.fullscreenRestoreBounds || record.restoreBounds) : record.restoreBounds,
         zIndex: Math.min(record.zIndex, MAX_Z_INDEX),
         minimized: record.minimized,
-        snap: record.snap,
+        snap: isFullscreenRecord(record) ? (record.fullscreenRestoreSnap || null) : record.snap,
         updatedAt: now,
       };
     }
@@ -650,6 +899,10 @@ export function createShellWindowManager(options = {}) {
     updateWindowBounds,
     snapWindow,
     unsnapWindow,
+    canSnapWindow,
+    fullscreenWindow,
+    exitFullscreenWindow,
+    toggleFullscreenWindow,
     restoreShellLayout,
     persistShellLayout,
     subscribe,
@@ -726,6 +979,22 @@ export function snapWindow(id, zone, options = {}) {
 
 export function unsnapWindow(id, options = {}) {
   return getDefaultShellWindowManager().unsnapWindow(id, options);
+}
+
+export function canSnapWindow(id, zone) {
+  return getDefaultShellWindowManager().canSnapWindow(id, zone);
+}
+
+export function fullscreenWindow(id, options = {}) {
+  return getDefaultShellWindowManager().fullscreenWindow(id, options);
+}
+
+export function exitFullscreenWindow(id, options = {}) {
+  return getDefaultShellWindowManager().exitFullscreenWindow(id, options);
+}
+
+export function toggleFullscreenWindow(id, options = {}) {
+  return getDefaultShellWindowManager().toggleFullscreenWindow(id, options);
 }
 
 export function restoreShellLayout(options = {}) {

@@ -404,10 +404,15 @@ export function createPlayerWidget(options = {}) {
     lazy: preload !== "immediate",
     capabilities: {
       draggable: true,
-      resizable: true,
+      resizable: false,
       minimizable: true,
       closable: true,
       restorable: true,
+      maximizable: false,
+      fullscreen: false,
+      snap: false,
+      preserveIntrinsicWidth: true,
+      maxWidth: 340,
     },
     lifecycle: {
       open: showPanel,

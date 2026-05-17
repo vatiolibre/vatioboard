@@ -3,6 +3,7 @@ import {
   clearSnapPreview,
   getSnapZoneForPointer,
 } from "../../shared/shell-snap.js";
+import { clampBoundsToWorkArea, getShellWorkArea } from "../../shared/shell-work-area.js";
 
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
@@ -33,7 +34,11 @@ function ensureFixedTopLeft(elm) {
   elm.style.bottom = "auto";
 }
 
-export function clampElementToViewport(elm, margin = 8) {
+function shouldUseShellWorkArea(elm, options = {}) {
+  return options.useShellWorkArea === true || Boolean(elm?.hasAttribute?.("data-vb-shell-window"));
+}
+
+export function clampElementToViewport(elm, margin = 8, options = {}) {
   // Assumes fixed position with left/top set (or at least measurable via rect)
   const r = elm.getBoundingClientRect();
   const box = getElementBoxSize(elm, r);
@@ -44,6 +49,24 @@ export function clampElementToViewport(elm, margin = 8) {
 
   const curLeft = parseFloat(elm.style.left) || r.left;
   const curTop = parseFloat(elm.style.top) || r.top;
+
+  if (shouldUseShellWorkArea(elm, options)) {
+    const next = clampBoundsToWorkArea({
+      left: curLeft,
+      top: curTop,
+      width: box.width,
+      height: box.height,
+    }, {
+      root: options.root,
+      safeMargin: margin,
+      forceSize: true,
+    });
+    elm.style.left = `${next.left}px`;
+    elm.style.top = `${next.top}px`;
+    if (next.width) elm.style.width = `${next.width}px`;
+    if (next.height) elm.style.height = `${next.height}px`;
+    return;
+  }
 
   const nextLeft = clamp(curLeft, margin, vw - box.width - margin);
   const nextTop = clamp(curTop, margin, vh - box.height - margin);
@@ -97,6 +120,7 @@ export function makePanelDraggable({
     boxH = 0;
 
   let rafId = 0;
+  let activeWorkArea = null;
 
   function startDragNow() {
     if (dragging) return;
@@ -110,6 +134,7 @@ export function makePanelDraggable({
     const r = panel.getBoundingClientRect();
     boxW = r.width;
     boxH = r.height;
+    activeWorkArea = shellWindowId ? getShellWorkArea({ safeMargin: 8 }) : null;
 
     originLeft = parseFloat(panel.style.left) || r.left;
     originTop = parseFloat(panel.style.top) || r.top;
@@ -132,11 +157,27 @@ export function makePanelDraggable({
     const dy = lastY - startY;
 
     const margin = 8;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-
-    const nextLeft = clamp(originLeft + dx, margin, vw - boxW - margin);
-    const nextTop = clamp(originTop + dy, margin, vh - boxH - margin);
+    let nextLeft;
+    let nextTop;
+    if (activeWorkArea) {
+      const next = clampBoundsToWorkArea({
+        left: originLeft + dx,
+        top: originTop + dy,
+        width: boxW,
+        height: boxH,
+      }, {
+        workArea: activeWorkArea,
+        safeMargin: margin,
+        forceSize: true,
+      });
+      nextLeft = next.left;
+      nextTop = next.top;
+    } else {
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      nextLeft = clamp(originLeft + dx, margin, vw - boxW - margin);
+      nextTop = clamp(originTop + dy, margin, vh - boxH - margin);
+    }
 
     panel.style.left = `${nextLeft}px`;
     panel.style.top = `${nextTop}px`;
@@ -160,7 +201,8 @@ export function makePanelDraggable({
       viewportWidth: window.innerWidth,
       viewportHeight: window.innerHeight,
     });
-    activeSnapZone = zone === "center" ? null : zone;
+    const supported = zone !== "center" && shellManager.canSnapWindow?.(shellWindowId, zone) !== false;
+    activeSnapZone = supported ? zone : null;
     if (activeSnapZone) {
       applySnapPreview(panel, activeSnapZone);
     } else {
@@ -196,7 +238,7 @@ export function makePanelDraggable({
       if (activeSnapZone && shellWindowId && shellManager) {
         shellManager.snapWindow(shellWindowId, activeSnapZone);
       } else {
-        clampElementToViewport(panel);
+        clampElementToViewport(panel, 8, { useShellWorkArea: Boolean(shellWindowId) });
       }
 
       savePos({
@@ -212,6 +254,7 @@ export function makePanelDraggable({
     }
 
     activeSnapZone = null;
+    activeWorkArea = null;
     pointerId = null;
   }
 
@@ -281,7 +324,7 @@ export function makePanelDraggable({
   // Keep in bounds on resize
   window.addEventListener("resize", () => {
     if (panel.hidden) return;
-    clampElementToViewport(panel);
+    clampElementToViewport(panel, 8, { useShellWorkArea: Boolean(shellWindowId) });
     savePos({
       ...(loadPos() || {}),
       panel: { left: panel.style.left, top: panel.style.top },

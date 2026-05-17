@@ -1,3 +1,5 @@
+import { getShellWorkArea } from "./shell-work-area.js";
+
 const SNAP_ZONES = new Set([
   "left",
   "right",
@@ -28,6 +30,20 @@ function normalizeViewport(viewport = {}) {
     width,
     height,
   };
+}
+
+function resolveSnapArea(viewport, options = {}) {
+  if (options.workArea) return { viewport: normalizeViewport(options.workArea), usesWorkArea: true };
+  if (options.useWorkArea === true) {
+    return {
+      viewport: normalizeViewport(getShellWorkArea({
+        ...(options.workAreaOptions || options),
+        viewport,
+      })),
+      usesWorkArea: true,
+    };
+  }
+  return { viewport: normalizeViewport(viewport), usesWorkArea: false };
 }
 
 function getSafeMargin(options = {}) {
@@ -99,8 +115,8 @@ export function normalizeBoundsToViewport(bounds, viewport, options = {}) {
 }
 
 export function getBoundsForSnapZone(zone, viewport, options = {}) {
-  const vp = normalizeViewport(viewport);
-  const margin = getSafeMargin(options);
+  const { viewport: vp, usesWorkArea } = resolveSnapArea(viewport, options);
+  const margin = usesWorkArea ? 0 : getSafeMargin(options);
   const safeWidth = Math.max(1, vp.width - (margin * 2));
   const safeHeight = Math.max(1, vp.height - (margin * 2));
   const left = vp.left + margin;
@@ -149,6 +165,13 @@ export function getBoundsForSnapZone(zone, viewport, options = {}) {
         height: numberOr(options.defaultHeight, Math.min(320, safeHeight)),
       }, vp, { safeMargin: margin });
   }
+}
+
+export function getBoundsForSnapZoneInWorkArea(zone, options = {}) {
+  return getBoundsForSnapZone(zone, options.viewport, {
+    ...options,
+    useWorkArea: true,
+  });
 }
 
 export function applySnapPreview(panelEl, zone) {

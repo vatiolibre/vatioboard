@@ -28,6 +28,7 @@ export function updateNearestTrap(trapIndex, trapRecords, longitude, latitude, o
       nearestTrapId: null,
       nearestTrapDistanceM: null,
       nearestTrapSpeedKph: null,
+      nearestTrapSpeedMeta: null,
     };
   }
 
@@ -37,6 +38,7 @@ export function updateNearestTrap(trapIndex, trapRecords, longitude, latitude, o
       nearestTrapId: null,
       nearestTrapDistanceM: null,
       nearestTrapSpeedKph: null,
+      nearestTrapSpeedMeta: null,
     };
   }
 
@@ -47,7 +49,48 @@ export function updateNearestTrap(trapIndex, trapRecords, longitude, latitude, o
     nearestTrapId,
     nearestTrapDistanceM: distanceKm(longitude, latitude, nearestTrap[0], nearestTrap[1]) * 1000,
     nearestTrapSpeedKph: Number.isFinite(nearestTrap[2]) ? nearestTrap[2] : null,
+    nearestTrapSpeedMeta: nearestTrap[4] || null,
   };
+}
+
+export function updateNearestTrapAcrossDatasets(datasets, longitude, latitude, options = {}) {
+  if (!Array.isArray(datasets) || datasets.length === 0) {
+    return {
+      nearestTrapId: null,
+      nearestTrapDistanceM: null,
+      nearestTrapSpeedKph: null,
+      nearestTrapSpeedMeta: null,
+      nearestTrapDataset: null,
+    };
+  }
+
+  let bestTrap = {
+    nearestTrapId: null,
+    nearestTrapDistanceM: null,
+    nearestTrapSpeedKph: null,
+    nearestTrapSpeedMeta: null,
+    nearestTrapDataset: null,
+  };
+
+  for (const dataset of datasets) {
+    const trapIndex = dataset?.index ?? dataset?.trapIndex;
+    const trapRecords = dataset?.traps ?? dataset?.trapRecords;
+    const nextTrap = updateNearestTrap(trapIndex, trapRecords, longitude, latitude, options);
+    if (!Number.isFinite(nextTrap.nearestTrapDistanceM)) continue;
+    if (
+      !Number.isFinite(bestTrap.nearestTrapDistanceM)
+      || nextTrap.nearestTrapDistanceM < bestTrap.nearestTrapDistanceM
+    ) {
+      const datasetId = dataset?.key || dataset?.id || dataset?.country || "dataset";
+      bestTrap = {
+        ...nextTrap,
+        nearestTrapId: `${datasetId}:${nextTrap.nearestTrapId}`,
+        nearestTrapDataset: dataset,
+      };
+    }
+  }
+
+  return bestTrap;
 }
 
 export function formatTrapDistance(distanceM, unit, awayLabel = "away") {
@@ -139,6 +182,7 @@ export function createTrapLoader({
         state.nearestTrapId = null;
         state.nearestTrapDistanceM = null;
         state.nearestTrapSpeedKph = null;
+        state.nearestTrapSpeedMeta = null;
         state.trapLoadError = error;
       } finally {
         state.trapLoadPending = false;

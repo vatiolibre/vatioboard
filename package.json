@@ -4,7 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "prepare:geo": "node scripts/build-speed-traps.mjs",
+    "prepare:ansv": "node scripts/build-ansv-cameras.mjs",
+    "prepare:geo": "node scripts/build-worldwide-cameras.mjs",
+    "fetch:cameras": "node scripts/fetch-worldwide-cameras.mjs",
+    "analyze:cameras:maxspeed": "node scripts/analyze-camera-maxspeed-coverage.mjs",
     "predev": "npm run prepare:geo",
     "dev": "vite",
     "prebuild": "npm run prepare:geo",

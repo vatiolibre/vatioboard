@@ -11,14 +11,23 @@ node_modules
 dist
 dist-ssr
 *.local
+
+# Generated/restartable geo caches. GitHub Pages builds regenerate runtime
+# artifacts from the compact checked-in source JSON files under data-src.
+data-src/osm-road-speeds/
 public/geo/ansv_cameras_compact.min.json
 public/geo/ansv_cameras_compact.kdbush
+public/geo/cameras/
+
+# Raw local data snapshots that are converted to checked-in GeoJSON before build.
+data-src/nyc/*.csv
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
 .idea
 .DS_Store
+*:Zone.Identifier
 *.suo
 *.ntvs*
 *.njsproj

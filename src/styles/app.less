@@ -5,6 +5,18 @@ body,
   min-height: 100%;
 }
 
+:root {
+  --vb-z-shell-window-base: 1000;
+  --vb-z-shell-window-max: 1890;
+  --vb-z-shell-taskbar: 1950;
+  --vb-z-shell-start-menu: 1960;
+  --vb-z-activity: 1970;
+  --vb-z-shell-fullscreen: 1980;
+  --vb-z-modal: 2000;
+  --vb-z-floating: var(--vb-z-shell-window-base);
+  --vb-z-floating-fullscreen: var(--vb-z-shell-fullscreen);
+}
+
 html,
 body {
   margin: 0;
@@ -44,7 +56,8 @@ main#app-view {
 }
 
 [data-vb-shell-window] .vb-floating-drag-handle,
-[data-vb-shell-window] .milkdrop-resize-handle {
+[data-vb-shell-window] .milkdrop-resize-handle,
+[data-vb-shell-window] .camera-map-resize-handle {
   touch-action: none;
 }
 
@@ -67,6 +80,10 @@ html.vb-floating-drag-active body {
   display: none !important;
 }
 
+[data-vb-shell-window-fullscreen="true"] {
+  z-index: var(--vb-z-shell-fullscreen, 1980);
+}
+
 [data-vb-shell-snap-preview] {
   outline: 2px solid color-mix(in srgb, var(--calc-accent, #10b981) 48%, transparent);
   outline-offset: 2px;
@@ -85,7 +102,7 @@ html.vb-floating-drag-active body {
   left: 50%;
   bottom: max(10px, env(safe-area-inset-bottom));
   transform: translateX(-50%);
-  z-index: calc(var(--vb-z-floating, 1000) - 1);
+  z-index: var(--vb-z-shell-taskbar, 1950);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -168,7 +185,7 @@ html.vb-floating-drag-active body {
 }
 
 .vb-shell-taskbar.is-detached {
-  z-index: calc(var(--vb-z-floating, 1000) - 1);
+  z-index: var(--vb-z-shell-taskbar, 1950);
 }
 
 .vb-shell-taskbar.is-dragging {
@@ -177,7 +194,7 @@ html.vb-floating-drag-active body {
   transition: none;
   touch-action: none;
   will-change: transform;
-  z-index: calc(var(--vb-z-floating, 1000) + 850);
+  z-index: var(--vb-z-shell-taskbar, 1950);
 }
 
 .vb-shell-taskbar.is-dragging .vb-shell-taskbar-tray {
@@ -303,12 +320,12 @@ html.vb-floating-drag-active body {
 }
 
 .vb-shell-taskbar-item.is-detached {
-  z-index: calc(var(--vb-z-floating, 1000) - 1);
+  z-index: var(--vb-z-shell-taskbar, 1950);
 }
 
 .vb-shell-taskbar-item.is-dragging {
   cursor: grabbing;
-  z-index: calc(var(--vb-z-floating, 1000) + 850);
+  z-index: var(--vb-z-shell-taskbar, 1950);
 }
 
 .vb-shell-taskbar-item.is-drag-source {
@@ -318,7 +335,7 @@ html.vb-floating-drag-active body {
 .vb-shell-drag-layer {
   position: fixed;
   inset: 0;
-  z-index: calc(var(--vb-z-floating, 1000) + 850);
+  z-index: var(--vb-z-shell-taskbar, 1950);
   overflow: visible;
   pointer-events: none;
   touch-action: none;
@@ -340,7 +357,7 @@ html.vb-floating-drag-active body {
   position: fixed;
   left: 50%;
   bottom: calc(86px + env(safe-area-inset-bottom));
-  z-index: calc(var(--vb-z-floating, 1000) + 860);
+  z-index: var(--vb-z-shell-start-menu, 1960);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -466,9 +483,10 @@ html.vb-floating-drag-active body {
 .app-start-menu-list {
   position: fixed;
   width: min(320px, calc(100vw - 16px));
-  max-height: min(680px, calc(100dvh - 16px));
-  overflow: auto;
-  z-index: calc(var(--vb-z-floating, 1000) + 20);
+  max-height: none;
+  overflow-x: hidden;
+  overflow-y: visible;
+  z-index: var(--vb-z-shell-start-menu, 1960);
   border: 1px solid var(--calc-border, rgba(0, 0, 0, 0.14));
   border-radius: 14px;
   background: var(--calc-surface, #fff);

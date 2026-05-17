@@ -194,6 +194,7 @@ describe("index.html SPA shell", () => {
     expect(sharedList.querySelector("[data-start-route]")?.dataset.startRoute).toBe("/");
     expect(sharedList.querySelector("[data-start-route='/board']")).toBeTruthy();
     expect(sharedList.querySelector("[data-start-route='/replay']")).toBeTruthy();
+    expect(sharedList.querySelector("[data-start-action='speed-alerts']")).toBeTruthy();
     expect(sharedList.querySelector("[data-backend-auth]")).toBeTruthy();
     expect(sharedList.querySelector("[data-player-toggle]")).toBeTruthy();
 
@@ -223,25 +224,31 @@ describe("index.html SPA shell", () => {
     expect(sharedList.querySelector("[data-start-route='/library']")).toBeTruthy();
   });
 
-  it("keeps calculator and energy panels in the persistent layer across routes", async () => {
+  it("keeps calculator, energy, and speed alerts panels in the persistent layer across routes", async () => {
     await bootSpa();
 
     const persistentLayer = document.getElementById("app-persistent-layer");
     const calcPanel = persistentLayer.querySelector(".calc-panel");
     const energyPanel = persistentLayer.querySelector(".energy-panel");
+    const speedAlertsPanel = persistentLayer.querySelector(".speed-alert-window");
 
     expect(calcPanel.hidden).toBe(true);
     expect(energyPanel.hidden).toBe(true);
+    expect(speedAlertsPanel.hidden).toBe(true);
 
     window.__vatioboardFloatingTools.openCalculator();
     window.__vatioboardFloatingTools.openEnergy();
+    window.__vatioboardFloatingTools.openSpeedAlerts();
 
     expect(calcPanel.hidden).toBe(false);
     expect(energyPanel.hidden).toBe(false);
+    expect(speedAlertsPanel.hidden).toBe(false);
     expect(persistentLayer.querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeTruthy();
     expect(persistentLayer.querySelector("[data-vb-shell-taskbar-item='energy']")).toBeTruthy();
+    expect(persistentLayer.querySelector("[data-vb-shell-taskbar-item='speed-alerts']")).toBeTruthy();
     expect(localStorage.getItem("vatioboard.calc_panel.visible_v1")).toBe("open");
     expect(localStorage.getItem("vatioboard.energy_panel.visible_v1")).toBe("open");
+    expect(localStorage.getItem("vatioboard.speed_alerts_panel.visible_v1")).toBe("open");
 
     window.location.hash = "#/library";
     window.dispatchEvent(new HashChangeEvent("hashchange"));
@@ -252,17 +259,21 @@ describe("index.html SPA shell", () => {
     expect(document.querySelector("[data-mock-view='library']")).toBeTruthy();
     expect(persistentLayer.querySelector(".calc-panel")).toBe(calcPanel);
     expect(persistentLayer.querySelector(".energy-panel")).toBe(energyPanel);
+    expect(persistentLayer.querySelector(".speed-alert-window")).toBe(speedAlertsPanel);
     expect(calcPanel.hidden).toBe(false);
     expect(energyPanel.hidden).toBe(false);
+    expect(speedAlertsPanel.hidden).toBe(false);
   });
 
-  it("restores persisted calculator and energy visibility on boot", async () => {
+  it("restores persisted calculator, energy, and speed alerts visibility on boot", async () => {
     localStorage.setItem("vatioboard.calc_panel.visible_v1", "open");
     localStorage.setItem("vatioboard.energy_panel.visible_v1", "open");
+    localStorage.setItem("vatioboard.speed_alerts_panel.visible_v1", "open");
 
     await bootSpa();
 
     expect(document.querySelector(".calc-panel")?.hidden).toBe(false);
     expect(document.querySelector(".energy-panel")?.hidden).toBe(false);
+    expect(document.querySelector(".speed-alert-window")?.hidden).toBe(false);
   });
 });

@@ -35,7 +35,7 @@ const replayTemplate = String.raw`
             </button>
           </div>
 
-          <div class="toolbar replay-toolbar">
+          <div class="toolbar replay-toolbar" data-vb-shell-toolbar>
             <div class="replay-toolbar-right">
               <div class="replay-toolbar-strip">
                 <div class="tools-menu replay-tools-menu">

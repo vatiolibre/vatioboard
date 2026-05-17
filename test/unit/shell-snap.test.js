@@ -55,6 +55,35 @@ describe("shell-snap", () => {
     expect(first).toMatchObject({ left: 500, top: 16, width: 484, height: 668 });
   });
 
+  it("snap bounds can use a shell work area instead of the raw viewport", () => {
+    const workArea = { left: 16, top: 80, width: 968, height: 600 };
+
+    expect(getBoundsForSnapZone("top", { width: 1000, height: 760 }, { workArea })).toMatchObject({
+      left: 16,
+      top: 80,
+      width: 968,
+      height: 300,
+    });
+    expect(getBoundsForSnapZone("bottom", { width: 1000, height: 760 }, { workArea })).toMatchObject({
+      top: 380,
+      height: 300,
+    });
+  });
+
+  it("center fallback stays inside a small work area", () => {
+    const bounds = getBoundsForSnapZone("unknown", { width: 360, height: 320 }, {
+      workArea: { left: 12, top: 72, width: 336, height: 180 },
+      defaultWidth: 420,
+      defaultHeight: 320,
+      safeMargin: 12,
+    });
+
+    expect(bounds.left).toBeGreaterThanOrEqual(12);
+    expect(bounds.top).toBeGreaterThanOrEqual(72);
+    expect(bounds.width).toBeLessThanOrEqual(336);
+    expect(bounds.height).toBeLessThanOrEqual(180);
+  });
+
   it("sets and clears snap preview attributes", () => {
     const panel = document.createElement("section");
     applySnapPreview(panel, "left");
@@ -63,4 +92,3 @@ describe("shell-snap", () => {
     expect(panel.hasAttribute("data-vb-shell-snap-preview")).toBe(false);
   });
 });
-

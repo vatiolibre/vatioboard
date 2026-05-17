@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SHELL_LAYOUT_STORAGE_KEY } from "../../src/shared/shell-layout-store.js";
 import { createShellWindowManager } from "../../src/shared/shell-window-manager.js";
+import { getShellWorkArea } from "../../src/shared/shell-work-area.js";
 
 function createPanel(className = "test-panel") {
   const panel = document.createElement("section");
@@ -21,12 +22,25 @@ function createManager() {
   });
 }
 
+function mockRect(element, rect) {
+  Object.defineProperty(element, "getBoundingClientRect", {
+    configurable: true,
+    value: () => ({
+      x: rect.left,
+      y: rect.top,
+      toJSON: () => {},
+      ...rect,
+    }),
+  });
+}
+
 function readStoredWindow(id) {
   return JSON.parse(localStorage.getItem(SHELL_LAYOUT_STORAGE_KEY)).windows[id];
 }
 
 describe("shell-window-manager", () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     localStorage.clear();
     document.body.innerHTML = "";
   });
@@ -183,7 +197,193 @@ describe("shell-window-manager", () => {
       manager.activateWindow(`panel-${index % panels.length}`);
     }
 
-    expect(Math.max(...panels.map((panel) => Number(panel.style.zIndex)))).toBeLessThan(2000);
+    expect(Math.max(...panels.map((panel) => Number(panel.style.zIndex)))).toBeLessThan(1950);
+    manager.destroy();
+  });
+
+  it("normal windows open below measured route toolbar and above the taskbar recovery area", () => {
+    const toolbar = document.createElement("div");
+    toolbar.setAttribute("data-vb-shell-toolbar", "");
+    mockRect(toolbar, { left: 0, top: 0, right: 1024, bottom: 64, width: 1024, height: 64 });
+    document.body.append(toolbar);
+    const taskbar = document.createElement("nav");
+    taskbar.setAttribute("data-vb-shell-taskbar", "");
+    taskbar.setAttribute("data-vb-shell-taskbar-position", "bottom");
+    mockRect(taskbar, { left: 300, top: 700, right: 724, bottom: 758, width: 424, height: 58 });
+    document.body.append(taskbar);
+    expect(toolbar.getBoundingClientRect().bottom).toBe(64);
+    expect(document.querySelectorAll("[data-vb-shell-toolbar]")).toHaveLength(1);
+    expect(getShellWorkArea().top).toBe(80);
+
+    const manager = createManager();
+    const panel = createPanel();
+    manager.registerWindow({ id: "camera-map", element: panel, bounds: { left: 20, top: 0, width: 900, height: 700 } });
+    manager.openWindow("camera-map");
+
+    expect(Number.parseInt(panel.style.top, 10)).toBeGreaterThanOrEqual(80);
+    expect(Number.parseInt(panel.style.height, 10)).toBeLessThanOrEqual(604);
+    manager.destroy();
+  });
+
+  it("restore normalizes stale persisted bounds under the toolbar", () => {
+    localStorage.setItem(SHELL_LAYOUT_STORAGE_KEY, JSON.stringify({
+      version: 1,
+      activeWindowId: "calculator",
+      windows: {
+        calculator: {
+          state: "open",
+          previousState: "closed",
+          bounds: { left: 8, top: 8, width: 320, height: 220 },
+          restoreBounds: { left: 8, top: 8, width: 320, height: 220 },
+          zIndex: 1000,
+          minimized: false,
+          snap: null,
+        },
+      },
+    }));
+    const toolbar = document.createElement("div");
+    toolbar.setAttribute("data-vb-shell-toolbar", "");
+    mockRect(toolbar, { left: 0, top: 0, right: 1024, bottom: 72, width: 1024, height: 72 });
+    document.body.append(toolbar);
+
+    const manager = createManager();
+    const panel = createPanel();
+    manager.registerWindow({ id: "calculator", element: panel });
+    manager.restoreShellLayout();
+
+    expect(Number.parseInt(panel.style.top, 10)).toBeGreaterThanOrEqual(88);
+    manager.destroy();
+  });
+
+  it("fullscreen windows bypass normal chrome reservations and restore clamped normal bounds", () => {
+    const toolbar = document.createElement("div");
+    toolbar.setAttribute("data-vb-shell-toolbar", "");
+    mockRect(toolbar, { left: 0, top: 0, right: 1024, bottom: 72, width: 1024, height: 72 });
+    document.body.append(toolbar);
+    const manager = createManager();
+    const panel = createPanel();
+    manager.registerWindow({
+      id: "milkdrop",
+      element: panel,
+      capabilities: { fullscreen: true },
+      bounds: { left: 24, top: 96, width: 480, height: 360 },
+    });
+
+    manager.fullscreenWindow("milkdrop");
+
+    expect(manager.getWindow("milkdrop").state).toBe("fullscreen");
+    expect(panel.getAttribute("data-vb-shell-window-fullscreen")).toBe("true");
+    expect(panel.style.top).toBe("0px");
+    expect(panel.style.height).toBe("768px");
+    expect(Number(panel.style.zIndex)).toBe(1980);
+
+    manager.exitFullscreenWindow("milkdrop");
+
+    expect(manager.getWindow("milkdrop").state).toBe("open");
+    expect(panel.getAttribute("data-vb-shell-window-fullscreen")).toBe("false");
+    expect(Number.parseInt(panel.style.top, 10)).toBeGreaterThanOrEqual(88);
+    expect(Number(panel.style.zIndex)).toBeLessThan(1950);
+    manager.destroy();
+  });
+
+  it("refuses unsupported snap zones for fixed-width tools", () => {
+    const manager = createManager();
+    const panel = createPanel();
+    panel.hidden = false;
+    manager.registerWindow({
+      id: "calculator",
+      element: panel,
+      bounds: { left: 48, top: 72, width: 320, height: 220 },
+      capabilities: {
+        resizable: false,
+        maximizable: false,
+        snap: false,
+        preserveIntrinsicWidth: true,
+        maxWidth: 320,
+      },
+    });
+
+    const before = manager.openWindow("calculator").bounds;
+    const snapped = manager.snapWindow("calculator", "top");
+
+    expect(snapped.bounds).toEqual(before);
+    expect(snapped.snap).toBeNull();
+    expect(panel.style.width).toBe("320px");
+    manager.destroy();
+  });
+
+  it("allows supported top snap for maximizable camera map windows", () => {
+    const manager = createManager();
+    const panel = createPanel();
+    panel.hidden = false;
+    manager.registerWindow({
+      id: "camera-map",
+      element: panel,
+      bounds: { left: 48, top: 72, width: 420, height: 280 },
+      capabilities: {
+        resizable: true,
+        maximizable: true,
+        fullscreen: true,
+        snap: true,
+        snapZones: ["top", "left", "right", "center"],
+      },
+    });
+
+    manager.openWindow("camera-map");
+    const snapped = manager.snapWindow("camera-map", "top");
+
+    expect(snapped.snap.zone).toBe("top");
+    expect(snapped.bounds.width).toBeGreaterThan(420);
+    expect(Number.parseInt(panel.style.width, 10)).toBe(snapped.bounds.width);
+    manager.destroy();
+  });
+
+  it("preserves intrinsic width when a compact snappable window opts out of widening", () => {
+    const manager = createManager();
+    const panel = createPanel();
+    panel.hidden = false;
+    manager.registerWindow({
+      id: "compact-tool",
+      element: panel,
+      bounds: { left: 48, top: 72, width: 300, height: 220 },
+      capabilities: {
+        maximizable: true,
+        snap: true,
+        preserveIntrinsicWidth: true,
+        maxWidth: 340,
+      },
+    });
+
+    manager.openWindow("compact-tool");
+    const snapped = manager.snapWindow("compact-tool", "top");
+
+    expect(snapped.snap.zone).toBe("top");
+    expect(snapped.bounds.width).toBe(300);
+    expect(panel.style.width).toBe("300px");
+    manager.destroy();
+  });
+
+  it("exits fullscreen to the exact previous bounds when they still fit the work area", () => {
+    const manager = createManager();
+    const panel = createPanel();
+    panel.hidden = false;
+    const previousBounds = { left: 123, top: 144, width: 640, height: 470 };
+    manager.registerWindow({
+      id: "camera-map",
+      element: panel,
+      bounds: previousBounds,
+      capabilities: { fullscreen: true },
+    });
+
+    manager.openWindow("camera-map");
+    manager.fullscreenWindow("camera-map");
+    const restored = manager.exitFullscreenWindow("camera-map");
+
+    expect(restored.bounds).toEqual(previousBounds);
+    expect(panel.style.left).toBe("123px");
+    expect(panel.style.top).toBe("144px");
+    expect(panel.style.width).toBe("640px");
+    expect(panel.style.height).toBe("470px");
     manager.destroy();
   });
 
