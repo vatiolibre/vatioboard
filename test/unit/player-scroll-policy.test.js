@@ -9,7 +9,9 @@ describe("player content sheet scroll policy", () => {
     expect(playerCss).toContain(".player-content-pane-stack");
     expect(playerCss).toContain("overscroll-behavior: contain;");
     expect(playerCss).toContain(".player-content-sheet.is-open");
-    expect(playerCss).toContain("height: min(340px, 56vh);");
+    expect(playerCss).toContain("--player-content-sheet-open-height");
+    expect(playerCss).toContain(".player-panel.is-content-open .player-utility-row");
+    expect(playerCss).toContain("display: none;");
     expect(playerCss).toContain(".player-content-pane");
     expect(playerCss).toContain("overflow-y: auto;");
     expect(playerCss).toContain("-webkit-overflow-scrolling: touch;");

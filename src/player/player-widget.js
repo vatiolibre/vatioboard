@@ -15,10 +15,7 @@
  */
 
 import { createPlayerShell } from "./player-shell.js";
-import {
-  clampElementToViewport,
-  makePanelDraggable,
-} from "../calculator/widget/drag.js";
+import { makePanelDraggable } from "../calculator/widget/drag.js";
 import { loadAudioCatalog, syncAudioCatalog, annotateOfflineAvailability } from "../shared/audio-catalog.js";
 import { loadPlaylists, syncPlaylistsManifest } from "../shared/playlist-loader.js";
 import { loadDemoPlaylist, syncDemoPlaylist } from "../shared/demo-cache.js";
@@ -38,6 +35,7 @@ import {
   registerFloatingPanel,
 } from "../shared/floating-layer-manager.js";
 import { getDefaultShellWindowManager } from "../shared/shell-window-manager.js";
+import { getShellWorkArea } from "../shared/shell-work-area.js";
 
 // ── Deduped bootstrap (shared across all widget instances) ───────────
 
@@ -65,6 +63,55 @@ async function bootstrapAuth() {
 const DEMO_PLAYLIST_NAME = "demo:playlist";
 const DEMO_PLAYLIST_TITLE = "Demo Playlist";
 const PLAYER_WINDOW_ID = "player";
+const PLAYER_PANEL_SAFE_MARGIN_PX = 8;
+const PLAYER_CONTENT_SHEET_HEIGHT_VAR = "--player-content-sheet-open-height";
+const PLAYER_CONTENT_SHEET_MAX_HEIGHT_PX = 340;
+const PLAYER_CONTENT_SHEET_VIEWPORT_RATIO = 0.56;
+
+function toFiniteNumber(value) {
+  const number = Number.parseFloat(String(value ?? ""));
+  return Number.isFinite(number) ? number : null;
+}
+
+function positiveNumber(...values) {
+  for (const value of values) {
+    const number = toFiniteNumber(value);
+    if (number !== null && number > 0) return number;
+  }
+  return 0;
+}
+
+function clampNumber(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function getViewportHeight() {
+  return positiveNumber(globalThis.visualViewport?.height, globalThis.innerHeight, 768);
+}
+
+function getElementBox(element, rect = element?.getBoundingClientRect?.()) {
+  const style = typeof getComputedStyle === "function" && element
+    ? getComputedStyle(element)
+    : null;
+  const width = positiveNumber(rect?.width, element?.offsetWidth, style?.width);
+  const height = positiveNumber(rect?.height, element?.offsetHeight, style?.height);
+  return { width, height };
+}
+
+function getElementRect(element) {
+  const rect = element?.getBoundingClientRect?.();
+  const box = getElementBox(element, rect);
+  const left = toFiniteNumber(rect?.left) ?? toFiniteNumber(element?.style?.left) ?? 0;
+  const top = toFiniteNumber(rect?.top) ?? toFiniteNumber(element?.style?.top) ?? 0;
+  return {
+    left,
+    top,
+    width: box.width,
+    height: box.height,
+    right: left + box.width,
+    bottom: top + box.height,
+  };
+}
 
 async function loadAnnotatedDemoPlaylist() {
   const result = await loadDemoPlaylist();
@@ -338,6 +385,7 @@ export function createPlayerWidget(options = {}) {
   }
 
   function savePos(pos) {
+    clearPanelFixedHeight();
     try {
       localStorage.setItem(POS_KEY, JSON.stringify(pos));
     } catch {
@@ -349,6 +397,7 @@ export function createPlayerWidget(options = {}) {
         top: parseFloat(pos.panel.top),
       }, {
         preserveSnap: Boolean(shellManager.getWindow(PLAYER_WINDOW_ID)?.snap),
+        rawBounds: true,
       });
     }
   }
@@ -375,7 +424,11 @@ export function createPlayerWidget(options = {}) {
   }
 
   // ── Create player shell ──────────────────────────────────────
-  const shell = createPlayerShell({ container: mount });
+  const shell = createPlayerShell({
+    container: mount,
+    onContentOpenChange: handleContentOpenChange,
+  });
+  const contentSheet = shell.root.querySelector(".player-content-sheet");
   let cleanupLayer = () => {};
 
   // Apply stored panel position, or use the first-visit default.
@@ -394,6 +447,131 @@ export function createPlayerWidget(options = {}) {
       shell.root.style.bottom = DEFAULT_PANEL_BOTTOM;
     }
   }
+
+  function clearPanelFixedHeight() {
+    shell.root.style.height = "";
+    shell.root.style.maxHeight = "";
+  }
+
+  function persistPanelPosition() {
+    if (!shell.root.style.left || !shell.root.style.top) return;
+    savePos({
+      ...(loadPos() || {}),
+      panel: {
+        left: shell.root.style.left,
+        top: shell.root.style.top,
+      },
+    });
+  }
+
+  function getPanelPosition(rect = getElementRect(shell.root)) {
+    const styledLeft = toFiniteNumber(shell.root.style.left);
+    const styledTop = toFiniteNumber(shell.root.style.top);
+    const styledBottom = toFiniteNumber(shell.root.style.bottom);
+    const panelHeight = positiveNumber(rect.height, shell.root.offsetHeight);
+    const viewportHeight = getViewportHeight();
+    const viewportTop = toFiniteNumber(globalThis.visualViewport?.offsetTop) ?? 0;
+
+    return {
+      left: styledLeft ?? rect.left,
+      top: styledTop ?? (
+        styledBottom !== null && panelHeight > 0
+          ? viewportTop + viewportHeight - styledBottom - panelHeight
+          : rect.top
+      ),
+    };
+  }
+
+  function ensureTopLeftPositioning() {
+    const rect = getElementRect(shell.root);
+    const position = getPanelPosition(rect);
+    shell.root.style.position = "fixed";
+    shell.root.style.left = `${Math.round(position.left)}px`;
+    shell.root.style.top = `${Math.round(position.top)}px`;
+    shell.root.style.right = "auto";
+    shell.root.style.bottom = "auto";
+  }
+
+  function getDefaultOpenSheetHeight() {
+    return Math.min(
+      PLAYER_CONTENT_SHEET_MAX_HEIGHT_PX,
+      getViewportHeight() * PLAYER_CONTENT_SHEET_VIEWPORT_RATIO,
+    );
+  }
+
+  function fitContentSheetHeight(area) {
+    if (!contentSheet?.classList.contains("is-open")) {
+      shell.root.style.removeProperty(PLAYER_CONTENT_SHEET_HEIGHT_VAR);
+      return;
+    }
+
+    const panelRect = getElementRect(shell.root);
+    const sheetRect = contentSheet.getBoundingClientRect?.();
+    const sheetHeight = positiveNumber(sheetRect?.height, contentSheet.offsetHeight);
+    const baseHeight = Math.max(0, panelRect.height - sheetHeight);
+    const availableSheetHeight = Math.max(0, area.height - baseHeight);
+    const nextSheetHeight = Math.max(0, Math.min(getDefaultOpenSheetHeight(), availableSheetHeight));
+    shell.root.style.setProperty(
+      PLAYER_CONTENT_SHEET_HEIGHT_VAR,
+      `${Math.floor(nextSheetHeight)}px`,
+    );
+  }
+
+  function fitPanelToAvailableSpace({ persist = false } = {}) {
+    if (shell.root.hidden) return;
+
+    clearPanelFixedHeight();
+    ensureTopLeftPositioning();
+
+    const area = getShellWorkArea({
+      root: document,
+      safeMargin: PLAYER_PANEL_SAFE_MARGIN_PX,
+    });
+
+    fitContentSheetHeight(area);
+
+    const rect = getElementRect(shell.root);
+    const position = getPanelPosition(rect);
+    const width = Math.min(rect.width || 340, area.width);
+    const height = Math.min(rect.height || 1, area.height);
+    const minLeft = area.left;
+    const minTop = area.top;
+    const maxLeft = Math.max(minLeft, area.left + area.width - width);
+    const maxTop = Math.max(minTop, area.top + area.height - height);
+
+    shell.root.style.left = `${Math.round(clampNumber(position.left, minLeft, maxLeft))}px`;
+    shell.root.style.top = `${Math.round(clampNumber(position.top, minTop, maxTop))}px`;
+    shell.root.style.right = "auto";
+    shell.root.style.bottom = "auto";
+    clearPanelFixedHeight();
+
+    if (persist) persistPanelPosition();
+  }
+
+  function schedulePanelFit({ persist = true } = {}) {
+    fitPanelToAvailableSpace({ persist });
+
+    const refit = () => fitPanelToAvailableSpace({ persist });
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => {
+        refit();
+        requestAnimationFrame(refit);
+      });
+    }
+    window.setTimeout(refit, 280);
+  }
+
+  function handleContentOpenChange() {
+    schedulePanelFit({ persist: true });
+  }
+
+  function handleContentSheetTransitionEnd(event) {
+    if (event.target !== contentSheet) return;
+    if (event.propertyName !== "height" && event.propertyName !== "max-height") return;
+    fitPanelToAvailableSpace({ persist: true });
+  }
+
+  contentSheet?.addEventListener("transitionend", handleContentSheetTransitionEnd);
 
   cleanupLayer = registerFloatingPanel(shell.root, {
     id: PLAYER_WINDOW_ID,
@@ -432,7 +610,11 @@ export function createPlayerWidget(options = {}) {
     shellWindowId: PLAYER_WINDOW_ID,
     shellManager,
     enableSnapPreview: shellManager.getShellPreference?.("snapEnabled") !== false,
+    onDragEnd: () => {
+      schedulePanelFit({ persist: true });
+    },
   });
+  window.addEventListener("resize", handleContentOpenChange);
 
   // ── Close button (must NOT stop playback) ────────────────────
   shell.closeBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
@@ -463,10 +645,7 @@ export function createPlayerWidget(options = {}) {
     // Lazy bootstrap on first open
     ensureBootstrap();
 
-    // Ensure panel stays in viewport
-    if (shell.root.style.left && shell.root.style.top) {
-      clampElementToViewport(shell.root);
-    }
+    fitPanelToAvailableSpace({ persist: false });
 
     if (typeof onOpen === "function") onOpen();
   }
@@ -485,6 +664,7 @@ export function createPlayerWidget(options = {}) {
   function open(options = {}) {
     showPanel(options);
     shellManager.openWindow(PLAYER_WINDOW_ID, { ...options, invokeLifecycle: false });
+    fitPanelToAvailableSpace({ persist: false });
   }
 
   function close(options = {}) {
@@ -541,6 +721,8 @@ export function createPlayerWidget(options = {}) {
   // ── Destroy ──────────────────────────────────────────────────
   function destroy() {
     window.removeEventListener(BACKEND_AUTH_STATE_EVENT, onAuthChange);
+    window.removeEventListener("resize", handleContentOpenChange);
+    contentSheet?.removeEventListener("transitionend", handleContentSheetTransitionEnd);
     cleanupLayer();
     shell.destroy();
     if (button) {

@@ -194,6 +194,22 @@ function makeRuntimeState(overrides = {}) {
   };
 }
 
+function makeRect({ left = 0, top = 0, width = 0, height = 0 } = {}) {
+  return {
+    x: left,
+    y: top,
+    left,
+    top,
+    width,
+    height,
+    right: left + width,
+    bottom: top + height,
+    toJSON() {
+      return this;
+    },
+  };
+}
+
 // ── Tests ────────────────────────────────────────────────────────────
 
 describe("createPlayerWidget", () => {
@@ -925,6 +941,65 @@ describe("createPlayerWidget", () => {
 
     widget.destroy();
     localStorage.removeItem("player_widget_pos_v1");
+  });
+
+  it("fits the expanded content sheet into the available viewport", () => {
+    vi.stubGlobal("innerWidth", 390);
+    vi.stubGlobal("innerHeight", 500);
+    const visualViewport = {
+      width: 390,
+      height: 500,
+      offsetLeft: 0,
+      offsetTop: 0,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    vi.stubGlobal("visualViewport", visualViewport);
+    Object.defineProperty(window, "visualViewport", {
+      configurable: true,
+      value: visualViewport,
+    });
+
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+
+    const panel = document.querySelector(".player-panel");
+    const contentSheet = panel.querySelector(".player-content-sheet");
+    const toggleBtn = panel.querySelector(".player-content-toggle-btn");
+
+    panel.style.left = "24px";
+    panel.style.top = "300px";
+    panel.style.bottom = "auto";
+    panel.style.height = "260px";
+
+    Object.defineProperty(contentSheet, "getBoundingClientRect", {
+      configurable: true,
+      value: vi.fn(() => makeRect({ left: 24, top: 560, width: 340, height: 0 })),
+    });
+    Object.defineProperty(panel, "getBoundingClientRect", {
+      configurable: true,
+      value: vi.fn(() => {
+        const left = Number.parseFloat(panel.style.left) || 24;
+        const top = Number.parseFloat(panel.style.top) || 300;
+        const sheetHeight = Number.parseFloat(panel.style.getPropertyValue("--player-content-sheet-open-height")) || 0;
+        return makeRect({ left, top, width: 340, height: 260 + sheetHeight });
+      }),
+    });
+
+    toggleBtn.click();
+
+    const sheetHeight = Number.parseFloat(panel.style.getPropertyValue("--player-content-sheet-open-height"));
+    const panelTop = Number.parseFloat(panel.style.top);
+    expect(sheetHeight).toBe(224);
+    expect(panel.style.height).toBe("");
+    expect(panelTop).toBe(8);
+    expect(panelTop + 260 + sheetHeight).toBeLessThanOrEqual(492);
+    expect(JSON.parse(localStorage.getItem("player_widget_pos_v1"))?.panel).toEqual({
+      left: "24px",
+      top: "8px",
+    });
+
+    widget.destroy();
   });
 
   // ── Playlist sheet ───────────────────────────────────────────
