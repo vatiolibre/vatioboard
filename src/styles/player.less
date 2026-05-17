@@ -93,7 +93,11 @@ html.vb-floating-drag-active body {
   right: auto;
   bottom: 76px;
   z-index: var(--vb-z-floating, 1000);
+  display: flex;
+  flex-direction: column;
   width: 340px;
+  max-height: calc(100vh - 16px);
+  max-height: calc(100dvh - 16px);
   border-radius: var(--player-radius);
   border: 1px solid var(--player-border);
   background: var(--player-surface);
@@ -113,6 +117,7 @@ html.vb-floating-drag-active body {
 
 .player-header {
   position: relative;
+  flex: 0 0 auto;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -215,6 +220,7 @@ html.vb-floating-drag-active body {
 /* ── Body ─────────────────────────────────────────────────────────── */
 
 .player-body {
+  flex: 0 0 auto;
   padding: 10px 12px 12px;
   display: flex;
   flex-direction: column;
@@ -785,9 +791,15 @@ html.vb-floating-drag-active body {
   letter-spacing: 0.01em;
 }
 
+.player-panel.is-content-open .player-utility-row {
+  display: none;
+}
+
 /* ── Integrated content sheet ─────────────────────────────────────── */
 
 .player-content-sheet {
+  flex: 0 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--player-queue-bg);
@@ -801,8 +813,12 @@ html.vb-floating-drag-active body {
 }
 
 .player-content-sheet.is-open {
-  height: min(340px, 56vh);
-  max-height: min(340px, 56vh);
+  height: var(--player-content-sheet-open-height, min(340px, 56vh));
+  max-height: var(--player-content-sheet-open-height, min(340px, 56vh));
+}
+
+.player-panel.is-content-open .player-content-sheet {
+  border-top-color: color-mix(in srgb, var(--player-border) 80%, transparent);
 }
 
 .player-content-sheet-header {

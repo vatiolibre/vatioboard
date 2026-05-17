@@ -2480,16 +2480,19 @@ describe("player-shell", () => {
     const container = document.createElement("div");
     const shell = createPlayerShell({ container });
     const toggleBtn = container.querySelector(".player-content-toggle-btn");
+    const panel = container.querySelector(".player-panel");
     const contentSheet = container.querySelector(".player-content-sheet");
     const queueTabBtn = container.querySelector(".player-content-tab-queue");
     const queuePane = container.querySelector(".player-content-pane-queue");
 
+    expect(panel.classList.contains("is-content-open")).toBe(false);
     expect(toggleBtn.getAttribute("aria-expanded")).toBe("false");
     expect(toggleBtn.getAttribute("aria-pressed")).toBe("false");
     expect(contentSheet.classList.contains("is-open")).toBe(false);
 
     toggleBtn.click();
 
+    expect(panel.classList.contains("is-content-open")).toBe(true);
     expect(toggleBtn.getAttribute("aria-expanded")).toBe("true");
     expect(toggleBtn.getAttribute("aria-pressed")).toBe("true");
     expect(contentSheet.classList.contains("is-open")).toBe(true);
@@ -2500,6 +2503,7 @@ describe("player-shell", () => {
 
     toggleBtn.click();
 
+    expect(panel.classList.contains("is-content-open")).toBe(false);
     expect(toggleBtn.getAttribute("aria-expanded")).toBe("false");
     expect(toggleBtn.getAttribute("aria-pressed")).toBe("false");
     expect(contentSheet.classList.contains("is-open")).toBe(false);

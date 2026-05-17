@@ -230,7 +230,7 @@ async function resolveArtworkUrl(track) {
 /**
  * Create the compact player panel.
  *
- * @param {{ container: HTMLElement }} opts
+ * @param {{ container: HTMLElement, onContentOpenChange?: Function }} opts
  * @returns {{
  *   root: HTMLElement,
  *   header: HTMLElement,
@@ -240,7 +240,7 @@ async function resolveArtworkUrl(track) {
  *   setTracks: (tracks: object[]) => void,
  * }}
  */
-export function createPlayerShell({ container }) {
+export function createPlayerShell({ container, onContentOpenChange = null }) {
   // ── Root panel ─────────────────────────────────────────────────
   const root = document.createElement("section");
   root.className = "player-panel";
@@ -574,6 +574,7 @@ export function createPlayerShell({ container }) {
     libraryOpen = contentOpen && activeContentTab === "library";
     playlistOpen = contentOpen && activeContentTab === "playlists";
 
+    root.classList.toggle("is-content-open", contentOpen);
     contentSheet.classList.toggle("is-open", contentOpen);
     contentSheet.setAttribute("aria-hidden", String(!contentOpen));
     contentToggleBtn.classList.toggle("active", contentOpen);
@@ -590,13 +591,25 @@ export function createPlayerShell({ container }) {
       tabPanes[tab].setAttribute("aria-hidden", String(!isActive));
     }
 
-    if (!render || !contentOpen) return;
-    if (queueOpen) {
-      renderTrackList(queueFilter);
-    } else if (libraryOpen) {
-      renderLibraryList(libraryFilter);
-    } else if (playlistOpen && !playlistDetailView) {
-      renderPlaylistList();
+    if (render && contentOpen) {
+      if (queueOpen) {
+        renderTrackList(queueFilter);
+      } else if (libraryOpen) {
+        renderLibraryList(libraryFilter);
+      } else if (playlistOpen && !playlistDetailView) {
+        renderPlaylistList();
+      }
+    }
+
+    if (typeof onContentOpenChange === "function") {
+      onContentOpenChange({
+        open: contentOpen,
+        activeTab: activeContentTab,
+        root,
+        sheet: contentSheet,
+        header: contentSheetHeader,
+        toggleButton: contentToggleBtn,
+      });
     }
   }
 
