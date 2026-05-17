@@ -430,6 +430,8 @@ export function createPlayerWidget(options = {}) {
   });
   const contentSheet = shell.root.querySelector(".player-content-sheet");
   let cleanupLayer = () => {};
+  let panelFitTimeoutId = 0;
+  const panelFitFrameIds = new Set();
 
   // Apply stored panel position, or use the first-visit default.
   {
@@ -548,17 +550,42 @@ export function createPlayerWidget(options = {}) {
     if (persist) persistPanelPosition();
   }
 
+  function cancelScheduledPanelFit() {
+    for (const frameId of panelFitFrameIds) {
+      window.cancelAnimationFrame?.(frameId);
+    }
+    panelFitFrameIds.clear();
+    if (panelFitTimeoutId) {
+      window.clearTimeout(panelFitTimeoutId);
+      panelFitTimeoutId = 0;
+    }
+  }
+
+  function requestPanelFitFrame(callback) {
+    if (typeof window.requestAnimationFrame !== "function") return;
+    const frameId = window.requestAnimationFrame(() => {
+      panelFitFrameIds.delete(frameId);
+      callback();
+    });
+    panelFitFrameIds.add(frameId);
+  }
+
   function schedulePanelFit({ persist = true } = {}) {
+    cancelScheduledPanelFit();
     fitPanelToAvailableSpace({ persist });
+    if (shell.root.hidden) return;
 
     const refit = () => fitPanelToAvailableSpace({ persist });
-    if (typeof requestAnimationFrame === "function") {
-      requestAnimationFrame(() => {
-        refit();
-        requestAnimationFrame(refit);
-      });
-    }
-    window.setTimeout(refit, 280);
+    requestPanelFitFrame(() => {
+      refit();
+      if (!shell.root.hidden) {
+        requestPanelFitFrame(refit);
+      }
+    });
+    panelFitTimeoutId = window.setTimeout(() => {
+      panelFitTimeoutId = 0;
+      refit();
+    }, 280);
   }
 
   function handleContentOpenChange() {
@@ -723,6 +750,7 @@ export function createPlayerWidget(options = {}) {
     window.removeEventListener(BACKEND_AUTH_STATE_EVENT, onAuthChange);
     window.removeEventListener("resize", handleContentOpenChange);
     contentSheet?.removeEventListener("transitionend", handleContentSheetTransitionEnd);
+    cancelScheduledPanelFit();
     cleanupLayer();
     shell.destroy();
     if (button) {
