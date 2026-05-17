@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SHELL_Z_INDEX } from "../../src/shared/shell-layers.js";
 
 function makePanel(id = "panel") {
   const panel = document.createElement("section");
@@ -786,8 +787,14 @@ describe("shell UI integration", () => {
 
     expect(appCss).toContain("--vb-z-shell-window-max: 1890");
     expect(appCss).toContain("--vb-z-shell-taskbar: 1950");
+    expect(appCss).toContain("--vb-z-activity: 1955");
     expect(appCss).toContain("--vb-z-shell-start-menu: 1960");
     expect(appCss).toContain("--vb-z-shell-fullscreen: 1980");
+    expect(SHELL_Z_INDEX.windowMax).toBeLessThan(SHELL_Z_INDEX.taskbar);
+    expect(SHELL_Z_INDEX.taskbar).toBeLessThan(SHELL_Z_INDEX.activity);
+    expect(SHELL_Z_INDEX.activity).toBeLessThan(SHELL_Z_INDEX.startMenu);
+    expect(SHELL_Z_INDEX.startMenu).toBeLessThan(SHELL_Z_INDEX.fullscreen);
+    expect(SHELL_Z_INDEX.fullscreen).toBeLessThan(SHELL_Z_INDEX.modal);
     expect(getCssBlock(appCss, ".vb-shell-taskbar")).toContain("z-index: var(--vb-z-shell-taskbar, 1950)");
     expect(getCssBlock(appCss, ".vb-shell-taskbar.is-detached")).toContain("z-index: var(--vb-z-shell-taskbar, 1950)");
     expect(getCssBlock(appCss, ".vb-shell-taskbar-item.is-detached")).toContain("z-index: var(--vb-z-shell-taskbar, 1950)");
@@ -796,13 +803,34 @@ describe("shell UI integration", () => {
     expect(getCssBlock(appCss, ".app-start-menu-list")).toContain("z-index: var(--vb-z-shell-start-menu, 1960)");
   });
 
+  it("keeps the Start menu layer above the activity indicator layer", () => {
+    const appCss = readProjectFile("src/styles/app.less");
+    const activityCss = readProjectFile("src/styles/activity-indicator.less");
+    const startMenuBlock = getCssBlock(appCss, ".app-start-menu-list");
+    const indicatorBlock = getCssBlock(activityCss, ".activity-indicator");
+    const startMenu = document.createElement("div");
+    const indicator = document.createElement("div");
+
+    expect(startMenuBlock).toContain("z-index: var(--vb-z-shell-start-menu, 1960)");
+    expect(indicatorBlock).toContain("z-index: var(--vb-z-activity, 1955)");
+    expect(SHELL_Z_INDEX.startMenu).toBeGreaterThan(SHELL_Z_INDEX.activity);
+
+    startMenu.className = "app-start-menu-list";
+    startMenu.style.zIndex = String(SHELL_Z_INDEX.startMenu);
+    indicator.className = "activity-indicator";
+    indicator.style.zIndex = String(SHELL_Z_INDEX.activity);
+    document.body.append(indicator, startMenu);
+
+    expect(Number(getComputedStyle(startMenu).zIndex)).toBeGreaterThan(Number(getComputedStyle(indicator).zIndex));
+  });
+
   it("confirm dialog layer remains above shell windows, taskbar, start menu, and fullscreen", () => {
     const appCss = readProjectFile("src/styles/app.less");
     const confirmCss = readProjectFile("src/shared/ui/confirm-dialog.less");
 
     expect(confirmCss).toContain("z-index: var(--vb-z-modal, 2000)");
     expect(appCss).toContain("--vb-z-shell-fullscreen: 1980");
-    expect(appCss).toContain("--vb-z-activity: 1970");
+    expect(appCss).toContain("--vb-z-activity: 1955");
     expect(appCss).toContain("--vb-z-shell-start-menu: 1960");
     expect(appCss).toContain("--vb-z-shell-taskbar: 1950");
   });

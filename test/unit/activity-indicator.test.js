@@ -215,15 +215,16 @@ describe("activity indicator", () => {
     expect(routerMock.navigateToAppRoute).toHaveBeenCalledWith("#/speed");
   });
 
-  it("uses the shell activity layer above normal windows and below fullscreen/modal", () => {
+  it("uses the shell activity layer above normal windows and below start menu/fullscreen/modal", () => {
     const css = readFileSync(resolve(process.cwd(), "src/styles/activity-indicator.less"), "utf8");
 
     expect(SHELL_Z_INDEX.activity).toBeGreaterThan(SHELL_Z_INDEX.windowMax);
-    expect(SHELL_Z_INDEX.activity).toBeGreaterThan(SHELL_Z_INDEX.startMenu);
+    expect(SHELL_Z_INDEX.activity).toBeGreaterThan(SHELL_Z_INDEX.taskbar);
+    expect(SHELL_Z_INDEX.activity).toBeLessThan(SHELL_Z_INDEX.startMenu);
     expect(SHELL_Z_INDEX.activity).toBeLessThan(SHELL_Z_INDEX.fullscreen);
     expect(SHELL_Z_INDEX.activity).toBeLessThan(SHELL_Z_INDEX.modal);
-    expect(css).toContain("--vb-z-activity: 1970;");
-    expect(css).toContain("z-index: var(--vb-z-activity, 1970)");
+    expect(css).toContain("--vb-z-activity: 1955;");
+    expect(css).toContain("z-index: var(--vb-z-activity, 1955)");
   });
 
   it("drags within the viewport and persists the indicator position", () => {
