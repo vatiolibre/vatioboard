@@ -435,6 +435,11 @@ describe("createCameraMapWidget", () => {
     expect(css).toContain(".camera-map-layer-option");
     expect(css).toContain(".camera-map-overlay--nav");
     expect(css).toContain(".camera-map-nav-controls");
+    expect(css).toContain("--camera-map-z-approach-panel");
+    expect(css).toContain("--camera-map-z-layer-menu");
+    expect(css).toContain("z-index: var(--camera-map-z-approach-panel");
+    expect(css).toContain("z-index: var(--camera-map-z-layer-menu");
+    expect(css).toContain(".camera-map-overlay--nav:has(.camera-map-layer-menu:not([hidden]))");
     expect(css).toContain("bottom: calc(72px + env(safe-area-inset-bottom, 0px));");
     expect(css).toContain("width: 44px;");
     expect(css).toContain("max-width: 44px;");
@@ -676,6 +681,7 @@ describe("createCameraMapWidget", () => {
   });
 
   it("shows the Approach overlay and runtime decision from normal layer UI", async () => {
+    const css = readFileSync(cameraMapLessPath, "utf8");
     dataSourceDouble.loadViewport.mockImplementation(async () => ({
       features: [
         {
@@ -734,6 +740,8 @@ describe("createCameraMapWidget", () => {
     }));
     expect(latestSourceData(map, "camera-map-camera-approaches").features).toHaveLength(2);
     expect(document.querySelector(".camera-map-approach-panel").hidden).toBe(false);
+    expect(document.querySelector(".camera-map-layer-menu").hidden).toBe(false);
+    expect(css).toContain(".camera-map-overlay--nav:has(.camera-map-layer-menu:not([hidden]))");
     expect(document.querySelector(".camera-map-approach-panel").textContent).toContain("cameraMapApproachLegendSolid");
 
     widget.updatePosition({
