@@ -85,6 +85,14 @@ async function loadAppShellWithMocks() {
       gpsService: { installGlobalShim: vi.fn() },
     })),
   }));
+  vi.doMock("../../src/app/welcome-consent.js", () => ({
+    showWelcomeConsentIfNeeded: vi.fn(() => Promise.resolve({
+      accepted: true,
+      acceptedAtMs: Date.now(),
+      locationChoice: "enabled",
+      version: 1,
+    })),
+  }));
   vi.doMock("../../src/app/routes.js", () => ({
     routes: [],
   }));

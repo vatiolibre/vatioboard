@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { emitGeolocationSuccess, getBrowserMocks } from '../helpers/browser-mocks.js';
 import { bootHtmlPage, flushTasks } from '../helpers/page-smoke.js';
 
+const WELCOME_CONSENT_KEY = 'vatioboard.welcome_consent.v1';
+
 const testDoubles = vi.hoisted(() => ({
   archiveReplaySessionSpy: vi.fn(),
   createPlayerWidget: vi.fn(() => ({
@@ -118,6 +120,18 @@ function createTrustedPointerEvent(type, properties = {}) {
     isPrimary: true,
     ...properties,
   });
+}
+
+function seedWelcomeConsent() {
+  localStorage.setItem(
+    WELCOME_CONSENT_KEY,
+    JSON.stringify({
+      accepted: true,
+      acceptedAtMs: Date.now(),
+      locationChoice: 'enabled',
+      version: 1,
+    })
+  );
 }
 
 function createTouchEndEvent() {
@@ -348,6 +362,7 @@ describe('SPA GPS background runtime', () => {
     testDoubles.reversePlaceSpy.mockClear();
     delete window.__vatioboardRouter;
     delete window.__vatioboardSpa;
+    seedWelcomeConsent();
     window.fetch = createFetchMock();
   });
 

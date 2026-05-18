@@ -459,6 +459,13 @@ const baseTranslations = {
       'Still waiting for a GPS lock. Make sure location access is enabled and try again.',
     noticeStillLookingFirstFix:
       'Still looking for the first GPS fix. Keep location enabled and give the browser a moment.',
+    welcomeConsentTitle: 'Welcome!',
+    welcomeConsentBody:
+      'VatioBoard can work without your location. Some live driving features, such as speed, route recording, nearby camera alerts, maps, and acceleration tools, work better when you allow location access.\n\nLocation permission is optional. You can continue without it and enable it later from any GPS feature.\n\nBy using VatioBoard, you understand and agree that you are entirely responsible for how you use the application, your device, and any decisions you make while using it. Always follow applicable laws and drive safely.',
+    welcomeConsentCheckbox:
+      'I understand and accept that I am entirely responsible for my use of VatioBoard.',
+    welcomeConsentSkipLocation: 'Continue without location',
+    welcomeConsentEnableLocation: 'Enable location features',
 
     // Color names
     graphite: 'Graphite',
@@ -1345,6 +1352,13 @@ const baseTranslations = {
       'Aún esperando señal GPS. Verifica que la ubicación esté activada y vuelve a intentar.',
     noticeStillLookingFirstFix:
       'Aún buscando la primera señal GPS. Mantén la ubicación activa y dale un momento al navegador.',
+    welcomeConsentTitle: '¡Bienvenido!',
+    welcomeConsentBody:
+      'VatioBoard puede funcionar sin tu ubicación. Algunas funciones de conducción en vivo, como velocidad, grabación de rutas, alertas de cámaras cercanas, mapas y herramientas de aceleración, funcionan mejor si permites el acceso a la ubicación.\n\nEl permiso de ubicación es opcional. Puedes continuar sin permitirlo y activarlo más tarde desde cualquier función de GPS.\n\nAl usar VatioBoard, entiendes y aceptas que eres totalmente responsable de cómo usas la aplicación, tu dispositivo y cualquier decisión que tomes mientras la usas. Respeta siempre las leyes aplicables y conduce de forma segura.',
+    welcomeConsentCheckbox:
+      'Entiendo y acepto que soy totalmente responsable de mi uso de VatioBoard.',
+    welcomeConsentSkipLocation: 'Continuar sin ubicación',
+    welcomeConsentEnableLocation: 'Activar funciones de ubicación',
 
     // Color names
     graphite: 'Grafito',

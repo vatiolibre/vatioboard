@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { bootHtmlPage, expectPageSeo, flushTasks } from "../helpers/page-smoke.js";
 
+const WELCOME_CONSENT_KEY = "vatioboard.welcome_consent.v1";
+
 const routeState = vi.hoisted(() => ({
   mounted: [],
   unmounted: [],
@@ -60,8 +62,31 @@ vi.mock("../../src/shared/single-tab.js", () => ({
 }));
 
 async function bootSpa() {
+  seedWelcomeConsent();
   await bootHtmlPage("index.html");
   await import("../../src/app/main.js");
+  for (let index = 0; index < 8; index += 1) {
+    await flushTasks();
+  }
+}
+
+function seedWelcomeConsent(locationChoice = "enabled") {
+  localStorage.setItem(
+    WELCOME_CONSENT_KEY,
+    JSON.stringify({
+      accepted: true,
+      acceptedAtMs: Date.now(),
+      locationChoice,
+      version: 1,
+    }),
+  );
+}
+
+async function acceptWelcomeWithoutLocation() {
+  const checkbox = document.querySelector(".vb-welcome-checkbox-input");
+  checkbox.checked = true;
+  checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+  document.querySelector(".vb-welcome-skip")?.click();
   for (let index = 0; index < 8; index += 1) {
     await flushTasks();
   }
@@ -116,6 +141,26 @@ describe("index.html SPA shell", () => {
     );
   }, 40000);
 
+  it("shows the first-run welcome modal and does not request GPS before consent", async () => {
+    await bootHtmlPage("index.html");
+    const nativeWatchPosition = navigator.geolocation.watchPosition;
+    await import("../../src/app/main.js");
+    for (let index = 0; index < 8; index += 1) {
+      await flushTasks();
+    }
+
+    expect(document.querySelector(".vb-welcome-backdrop [role='dialog']")).toBeTruthy();
+    expect(document.querySelector("[data-mock-view='speed']")).toBeNull();
+    expect(nativeWatchPosition).not.toHaveBeenCalled();
+
+    await acceptWelcomeWithoutLocation();
+
+    expect(document.querySelector(".vb-welcome-backdrop")).toBeNull();
+    expect(document.querySelector("[data-mock-view='speed']")).toBeTruthy();
+    expect(document.querySelector("[data-vb-shell-taskbar]")).toBeTruthy();
+    expect(nativeWatchPosition).not.toHaveBeenCalled();
+  }, 40000);
+
   it("switches hash routes without reloading the document", async () => {
     await bootSpa();
     const originalBody = document.body;
@@ -149,6 +194,7 @@ describe("index.html SPA shell", () => {
     const delayedSpeed = createDeferred();
     routeState.deferredLoads.set("/", delayedSpeed);
 
+    seedWelcomeConsent();
     await bootHtmlPage("index.html");
     await import("../../src/app/main.js");
     await flushTasks();

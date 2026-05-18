@@ -4,6 +4,10 @@ import '../styles/cloud-sync-status.less';
 import '../styles/backend-auth.less';
 import { createCleanupStack } from '../app/view-cleanup.js';
 import {
+  markWelcomeLocationChoice,
+  shouldDeferWelcomeLocationRequest,
+} from '../app/welcome-consent.js';
+import {
   applyTranslations as applySharedTranslations,
   getLang,
   t as sharedT,
@@ -1879,6 +1883,7 @@ export const initPromise = (function () {
     }
 
     if (!isGpsReady()) {
+      ensureWatch({ fromUserGesture: true });
       setActionNotice('accelNeedGps');
       renderAll();
       return;
@@ -2486,9 +2491,15 @@ export const initPromise = (function () {
     });
   }
 
-  function ensureWatch() {
+  function ensureWatch(options = {}) {
     if (isSpaRuntime && !state.viewMounted) return;
     if (!state.geolocationSupported || state.watchId !== null) return;
+    if (options.fromUserGesture) {
+      markWelcomeLocationChoice('enabled');
+    } else if (isSpaRuntime && shouldDeferWelcomeLocationRequest()) {
+      renderAll();
+      return;
+    }
 
     try {
       state.watchId = navigator.geolocation.watchPosition(
@@ -2865,7 +2876,7 @@ export const initPromise = (function () {
     elements.armRun.classList.toggle('accel-toolbar-btn-cancel', hasActiveRun);
     elements.armRun.disabled = hasActiveRun
       ? false
-      : !state.geolocationSupported || customInvalid || !gpsReady;
+      : !state.geolocationSupported || customInvalid || (!gpsReady && state.watchId !== null);
     elements.clearHistory.disabled = !state.runs.length;
   }
 
