@@ -1,11 +1,26 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   expectRealSpaRouteRemount,
+  getRealSpaResourceSnapshot,
   getRealSpaSmokeMocks,
   navigateRealSpaSmoke,
   resetRealSpaSmoke,
   settleRealSpaSmoke,
 } from "../helpers/real-spa-route-smoke.js";
+
+const WELCOME_CONSENT_KEY = "vatioboard.welcome_consent.v1";
+
+function storeWelcomeConsent(locationChoice) {
+  localStorage.setItem(
+    WELCOME_CONSENT_KEY,
+    JSON.stringify({
+      accepted: true,
+      acceptedAtMs: Date.now(),
+      locationChoice,
+      version: 1,
+    }),
+  );
+}
 
 describe("SPA Speed route real-controller smoke", () => {
   beforeEach(resetRealSpaSmoke);
@@ -57,6 +72,30 @@ describe("SPA Speed route real-controller smoke", () => {
     expect(boardAfterAlert.activeResizeObserverCount).toBe(0);
     expect(document.querySelector(".speed-alert-window")).toBe(speedAlerts);
     expect(speedAlerts.hidden).toBe(false);
+  }, 40000);
+
+  it("does not start GPS after skipped welcome location until Retry GPS is clicked", async () => {
+    storeWelcomeConsent("skipped");
+
+    const { finalSnapshot } = await expectRealSpaRouteRemount({
+      targetHash: "#/speed",
+      targetSelector: "#speedValue",
+      sequence: ["#/board", "#/speed"],
+    });
+
+    expect(finalSnapshot.activeWatchCount).toBe(0);
+    expect(document.getElementById("notice")?.hidden).toBe(false);
+    expect(document.getElementById("noticeText")?.textContent).toBe(
+      "Allow location access to measure speed.",
+    );
+
+    document.getElementById("retryGps")?.click();
+    await settleRealSpaSmoke();
+
+    expect(getRealSpaResourceSnapshot().activeWatchCount).toBe(1);
+    expect(JSON.parse(localStorage.getItem(WELCOME_CONSENT_KEY))).toMatchObject({
+      locationChoice: "enabled",
+    });
   }, 40000);
 
   it("restores the Waze primary stage after a remount", async () => {

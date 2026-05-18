@@ -1,0 +1,290 @@
+.vb-welcome-backdrop {
+  align-items: flex-end;
+  padding:
+    max(10px, env(safe-area-inset-top))
+    max(10px, env(safe-area-inset-right))
+    max(10px, env(safe-area-inset-bottom))
+    max(10px, env(safe-area-inset-left));
+}
+
+.vb-welcome-backdrop.vb-confirm-entering {
+  animation: vbWelcomeBackdropIn 0.18s ease-out forwards;
+}
+
+.vb-welcome-backdrop.vb-confirm-exiting {
+  animation: vbWelcomeBackdropOut 0.14s ease-in forwards;
+}
+
+.vb-welcome-card {
+  --vb-welcome-accent: #10b981;
+  --vb-welcome-accent-soft: rgba(16, 185, 129, 0.1);
+  --vb-welcome-text: #111827;
+  --vb-welcome-muted: rgba(17, 24, 39, 0.66);
+  --vb-welcome-surface: #ffffff;
+  --vb-welcome-surface-soft: #f7f8fa;
+  --vb-welcome-border: rgba(17, 24, 39, 0.12);
+  --vb-welcome-button-bg: rgba(17, 24, 39, 0.06);
+  --vb-welcome-button-hover: rgba(17, 24, 39, 0.1);
+  --vb-welcome-primary: #121826;
+  --vb-welcome-primary-text: #ffffff;
+
+  width: min(500px, calc(100vw - 20px));
+  max-height: calc(100dvh - max(20px, env(safe-area-inset-top)) - max(20px, env(safe-area-inset-bottom)));
+  margin-bottom: 0;
+  padding: 18px;
+  overflow: auto;
+  gap: 12px;
+  border: 1px solid var(--vb-welcome-border);
+  border-radius: var(--radius, 18px);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--vb-welcome-surface) 96%, var(--vb-welcome-accent-soft) 4%),
+      color-mix(in srgb, var(--vb-welcome-surface-soft) 94%, var(--vb-welcome-surface) 6%)
+    );
+  box-shadow:
+    0 18px 44px rgba(15, 23, 42, 0.2),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  color: var(--vb-welcome-text);
+  font-family:
+    Inter,
+    "SF Pro Text",
+    "SF Pro Display",
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    Arial,
+    sans-serif;
+  font-kerning: normal;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.vb-welcome-card::before {
+  content: "";
+  width: 42px;
+  height: 4px;
+  margin: -4px auto 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vb-welcome-text) 24%, transparent);
+}
+
+.vb-welcome-brand {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+}
+
+.vb-welcome-logo {
+  display: block;
+  width: min(190px, 56vw);
+  height: auto;
+  opacity: 0.94;
+}
+
+.vb-welcome-logo img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.vb-welcome-title {
+  position: relative;
+  padding-top: 8px;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.18;
+  color: var(--vb-welcome-text);
+}
+
+.vb-welcome-title::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 34px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--vb-welcome-accent);
+}
+
+.vb-welcome-body {
+  display: grid;
+  gap: 8px;
+}
+
+.vb-welcome-body .vb-confirm-message {
+  max-width: 58ch;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.48;
+  color: var(--vb-welcome-muted);
+}
+
+.vb-welcome-checkbox {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: start;
+  min-height: 58px;
+  margin-top: 2px;
+  padding: 13px 14px;
+  border: 1px solid color-mix(in srgb, var(--vb-welcome-accent) 28%, var(--vb-welcome-border));
+  border-radius: var(--radius-sm, 12px);
+  background: color-mix(in srgb, var(--vb-welcome-accent-soft) 56%, var(--vb-welcome-button-bg));
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.vb-welcome-checkbox:focus-within {
+  border-color: color-mix(in srgb, var(--vb-welcome-accent) 72%, var(--vb-welcome-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--vb-welcome-accent) 18%, transparent);
+}
+
+.vb-welcome-checkbox-input {
+  width: 24px;
+  height: 24px;
+  margin: 1px 0 0;
+  accent-color: var(--vb-welcome-accent);
+}
+
+.vb-welcome-checkbox-text {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--vb-welcome-text);
+}
+
+.vb-welcome-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 0;
+}
+
+.vb-welcome-actions .vb-confirm-btn {
+  min-height: 54px;
+  border-radius: var(--radius-sm, 12px);
+  font-size: 15px;
+  font-weight: 750;
+  letter-spacing: 0;
+}
+
+.vb-welcome-actions .vb-confirm-btn--cancel {
+  background: var(--vb-welcome-button-bg);
+  color: var(--vb-welcome-text);
+}
+
+.vb-welcome-actions .vb-confirm-btn--cancel:hover:not(:disabled) {
+  background: var(--vb-welcome-button-hover);
+}
+
+.vb-welcome-actions .vb-confirm-btn--confirm {
+  background: color-mix(in srgb, var(--vb-welcome-accent) 26%, var(--vb-welcome-primary));
+  color: var(--vb-welcome-primary-text);
+}
+
+.vb-welcome-actions .vb-confirm-btn--confirm:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--vb-welcome-accent) 32%, var(--vb-welcome-primary));
+}
+
+.vb-welcome-actions .vb-confirm-btn:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--vb-welcome-accent) 20%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  .vb-welcome-card {
+    --vb-welcome-accent: #34d399;
+    --vb-welcome-accent-soft: rgba(52, 211, 153, 0.13);
+    --vb-welcome-text: rgba(255, 255, 255, 0.9);
+    --vb-welcome-muted: rgba(255, 255, 255, 0.68);
+    --vb-welcome-surface: #202226;
+    --vb-welcome-surface-soft: #17191d;
+    --vb-welcome-border: rgba(255, 255, 255, 0.1);
+    --vb-welcome-button-bg: rgba(255, 255, 255, 0.07);
+    --vb-welcome-button-hover: rgba(255, 255, 255, 0.11);
+    --vb-welcome-primary: rgba(255, 255, 255, 0.88);
+    --vb-welcome-primary-text: #15171a;
+    box-shadow:
+      0 18px 46px rgba(0, 0, 0, 0.42),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  }
+
+  .vb-welcome-card::before {
+    background: rgba(255, 255, 255, 0.22);
+  }
+
+  .vb-welcome-logo {
+    opacity: 0.88;
+  }
+}
+
+@keyframes vbWelcomeBackdropIn {
+  from {
+    background: rgba(0, 0, 0, 0.01);
+    backdrop-filter: blur(0);
+    -webkit-backdrop-filter: blur(0);
+    opacity: 0;
+  }
+  to {
+    background: rgba(0, 0, 0, 0.42);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    opacity: 1;
+  }
+}
+
+@keyframes vbWelcomeBackdropOut {
+  from {
+    background: rgba(0, 0, 0, 0.42);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    opacity: 1;
+  }
+  to {
+    background: rgba(0, 0, 0, 0.01);
+    backdrop-filter: blur(0);
+    -webkit-backdrop-filter: blur(0);
+    opacity: 0;
+  }
+}
+
+@media (min-width: 560px) {
+  .vb-welcome-backdrop {
+    align-items: center;
+  }
+
+  .vb-welcome-card {
+    padding: 22px;
+  }
+
+  .vb-welcome-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 420px) {
+  .vb-welcome-card {
+    width: calc(100vw - 16px);
+    padding: 16px;
+    gap: 10px;
+  }
+
+  .vb-welcome-title {
+    font-size: 19px;
+  }
+
+  .vb-welcome-logo {
+    width: min(170px, 58vw);
+  }
+
+  .vb-welcome-body .vb-confirm-message,
+  .vb-welcome-checkbox-text {
+    font-size: 13.5px;
+  }
+}

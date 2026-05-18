@@ -9,6 +9,10 @@ import { initBackendAuthControllers } from '../shared/backend-auth.js';
 import { initCloudSyncStatusIndicator } from '../shared/cloud-sync-status-indicator.js';
 import { initFloatingTools } from '../shared/floating-tools.js';
 import { navigateToAppRoute } from '../app/router.js';
+import {
+  markWelcomeLocationChoice,
+  shouldDeferWelcomeLocationRequest,
+} from '../app/welcome-consent.js';
 import { showConfirmDialog } from '../shared/ui/confirm-dialog.js';
 import { createPlaceResolver } from '../shared/place-resolver.js';
 import {
@@ -2399,6 +2403,7 @@ function stopTracking({ disarmBackgroundAudio = false } = {}) {
 
 function startTracking({ fromUserGesture = false } = {}) {
   if (isSpaRuntime && !state.viewMounted) return;
+  if (fromUserGesture) markWelcomeLocationChoice('enabled');
 
   if (!('geolocation' in navigator)) {
     clearLiveFixState();
@@ -2432,9 +2437,31 @@ function startTracking({ fromUserGesture = false } = {}) {
   publishSpeedRecordingActivity();
 }
 
+function deferTrackingUntilLocationGesture() {
+  if (!isSpaRuntime || !shouldDeferWelcomeLocationRequest()) return false;
+  if (state.watchId !== null) return false;
+
+  clearLiveFixState();
+  audioController.suppressRecordingKeepAliveAudio();
+  audioController.suppressBackgroundAudioRuntime();
+  audioController.stopOverspeedSound();
+  audioController.stopTrapSound();
+  setStatus('waiting');
+  showTranslatedNotice('allowLocationAccess');
+  renderMetrics();
+  speedRenderer.drawGauge();
+  publishSpeedRecordingActivity();
+  return true;
+}
+
+function startTrackingIfAllowed({ fromUserGesture = false } = {}) {
+  if (!fromUserGesture && deferTrackingUntilLocationGesture()) return;
+  startTracking({ fromUserGesture });
+}
+
 function restartTrip({ fromUserGesture = false } = {}) {
   resetTripData();
-  startTracking({ fromUserGesture });
+  startTrackingIfAllowed({ fromUserGesture });
 }
 
 function handlePosition(position) {
@@ -3031,7 +3058,7 @@ function mountSpeedController(routeContext = {}) {
   if (!state.initialized) return startSpeedInit();
 
   syncMountedSpeedRouteUi();
-  if (state.watchId === null) startTracking();
+  if (state.watchId === null) startTrackingIfAllowed();
   resumeVisibleRuntime();
   recheckSpeedRouteRecovery();
   resolveSpaSpeedRouteReady();
@@ -3236,7 +3263,7 @@ function bindEvents({ cleanup, signal } = {}) {
     if (!isSpaRuntime && !(await ensureSingleTabOwnership())) {
       return;
     }
-    if (state.watchId === null) startTracking();
+    if (state.watchId === null) startTrackingIfAllowed();
     resumeVisibleRuntime();
     recheckSpeedRouteRecovery({ reason: 'pageshow-recheck' });
   });
@@ -3325,7 +3352,7 @@ async function init() {
   state.initialized = true;
   if (state.viewMounted) {
     syncMountedSpeedRouteUi();
-    startTracking();
+    startTrackingIfAllowed();
     startRenderLoop();
     speedRuntime.handleAppReturn();
     resolveSpaSpeedRouteReady();

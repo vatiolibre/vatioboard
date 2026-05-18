@@ -451,8 +451,24 @@ export async function settleRealSpaSmoke(iterations = 16) {
   await settle(iterations);
 }
 
+const WELCOME_CONSENT_KEY = "vatioboard.welcome_consent.v1";
+
+function seedWelcomeConsent(locationChoice = "enabled") {
+  if (localStorage.getItem(WELCOME_CONSENT_KEY)) return;
+  localStorage.setItem(
+    WELCOME_CONSENT_KEY,
+    JSON.stringify({
+      accepted: true,
+      acceptedAtMs: Date.now(),
+      locationChoice,
+      version: 1,
+    }),
+  );
+}
+
 async function bootSpa(hash = "#/board") {
   await bootHtmlPage("index.html");
+  seedWelcomeConsent();
   expect(document.getElementById("app-view"), "index.html should provide #app-view").toBeTruthy();
   window.history.replaceState({}, "", `https://vatioboard.com/${hash}`);
   const { startAppShell } = await import("../../src/app/app-shell.js");

@@ -2,6 +2,7 @@ import "../styles/app.less";
 import "../styles/player.less";
 import "../styles/activity-indicator.less";
 import "../shared/ui/confirm-dialog.less";
+import "../styles/welcome-consent.less";
 
 import { createPlayerWidget } from "../player/player-widget.js";
 import { initBackendAuthControllers } from "../shared/backend-auth.js";
@@ -16,6 +17,7 @@ import { installShellKeyboardShortcuts } from "../shared/shell-keyboard.js";
 import { createHashRouter, emitRouteVisible, navigateToAppRoute } from "./router.js";
 import { routes } from "./routes.js";
 import { createRuntimeContext } from "./runtime-context.js";
+import { showWelcomeConsentIfNeeded } from "./welcome-consent.js";
 
 function installLinkInterceptor() {
   document.addEventListener("click", (event) => {
@@ -91,6 +93,9 @@ export async function startAppShell({
     shellManager,
   });
   window.__vatioboardPlayerWidget = playerWidget;
+
+  await showWelcomeConsentIfNeeded({ gpsService: context.gpsService });
+
   const floatingTools = initFloatingTools({
     mount: persistentLayer,
     shellManager,
