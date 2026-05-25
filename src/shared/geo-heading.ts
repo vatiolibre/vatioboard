@@ -1,36 +1,42 @@
 const EARTH_RADIUS_M = 6371008.8;
 const MIN_DERIVED_HEADING_DISTANCE_M = 8;
 
-function finiteNumber(value) {
+export interface LatLon {
+  latitude: number;
+  longitude: number;
+}
+
+function finiteNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function toRadians(degrees) {
+function toRadians(degrees: number): number {
   return degrees * Math.PI / 180;
 }
 
-function toDegrees(radians) {
+function toDegrees(radians: number): number {
   return radians * 180 / Math.PI;
 }
 
-export function normalizeHeading(value) {
+export function normalizeHeading(value: unknown): number | null {
   const heading = finiteNumber(value);
   if (heading === null || heading < 0) return null;
   return ((heading % 360) + 360) % 360;
 }
 
-export function isUsableLatLon(value) {
-  return Number.isFinite(value?.latitude)
-    && Number.isFinite(value?.longitude)
-    && value.latitude >= -90
-    && value.latitude <= 90
-    && value.longitude >= -180
-    && value.longitude <= 180;
+export function isUsableLatLon(value: unknown): value is LatLon {
+  const point = value as Partial<LatLon> | null | undefined;
+  return Number.isFinite(point?.latitude)
+    && Number.isFinite(point?.longitude)
+    && point.latitude! >= -90
+    && point.latitude! <= 90
+    && point.longitude! >= -180
+    && point.longitude! <= 180;
 }
 
-export function distanceMeters(a, b) {
+export function distanceMeters(a: unknown, b: unknown): number {
   if (!isUsableLatLon(a) || !isUsableLatLon(b)) return Infinity;
 
   const lat1 = toRadians(a.latitude);
@@ -43,7 +49,7 @@ export function distanceMeters(a, b) {
   return 2 * EARTH_RADIUS_M * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
-export function bearingDegrees(a, b) {
+export function bearingDegrees(a: unknown, b: unknown): number | null {
   if (!isUsableLatLon(a) || !isUsableLatLon(b)) return null;
 
   const lat1 = toRadians(a.latitude);
@@ -55,14 +61,14 @@ export function bearingDegrees(a, b) {
   return normalizeHeading(toDegrees(Math.atan2(y, x)));
 }
 
-export function angularDifferenceDegrees(a, b) {
+export function angularDifferenceDegrees(a: unknown, b: unknown): number {
   const headingA = normalizeHeading(a);
   const headingB = normalizeHeading(b);
   if (headingA === null || headingB === null) return Infinity;
   return Math.abs(((headingA - headingB + 540) % 360) - 180);
 }
 
-export function deriveHeadingFromPositions(previous, next) {
+export function deriveHeadingFromPositions(previous: unknown, next: unknown): number | null {
   if (distanceMeters(previous, next) < MIN_DERIVED_HEADING_DISTANCE_M) return null;
   return bearingDegrees(previous, next);
 }

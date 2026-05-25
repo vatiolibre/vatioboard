@@ -17,6 +17,7 @@ import {
   getCachedManifestSnapshot,
   getCachedMediaManifest,
   cacheManifestSnapshot,
+  type MediaManifestAsset,
 } from "./media-cache.js";
 import {
   getBackendMediaManifest,
@@ -26,18 +27,51 @@ import {
 import { hasLocalSource } from "./audio-source-resolver.js";
 import { normalizeTrack } from "./track-model.js";
 
-function isAbortError(error) {
+export interface AudioCatalogQuery {
+  search?: string;
+  sort?: string;
+}
+
+export interface AudioCatalogTrack extends MediaManifestAsset {
+  name: string;
+  title: string;
+  artist: string;
+  album: string;
+  genre: string;
+  duration: number | null;
+  track_number?: number | null;
+  artwork_ref?: string;
+  media_kind: string;
+  original_filename: string;
+  content_hash: string;
+  mime_type: string;
+  blob_size: number;
+  file_extension: string;
+  folder_path: string;
+  src: string;
+  _offline?: boolean;
+  _demo?: boolean;
+}
+
+export interface AudioCatalogResult {
+  tracks: AudioCatalogTrack[];
+  total: number;
+}
+
+function isAbortError(error: unknown): boolean {
+  const err = error as { name?: string; code?: number } | null | undefined;
   return Boolean(
-    error
+    err
     && (
-      error.name === "AbortError"
-      || error.code === 20
+      err.name === "AbortError"
+      || err.code === 20
     )
   );
 }
 
-function isAuthBlockedResponse(result) {
-  return result?.blockedByAuth === true || result?.status === 401 || result?.status === 403;
+function isAuthBlockedResponse(result: unknown): boolean {
+  const response = result as { blockedByAuth?: boolean; status?: number } | null | undefined;
+  return response?.blockedByAuth === true || response?.status === 401 || response?.status === 403;
 }
 
 /**
@@ -50,8 +84,8 @@ function isAuthBlockedResponse(result) {
  * @param {{ search?: string, sort?: string }} [query]
  * @returns {Promise<{ tracks: object[], total: number }>}
  */
-export async function loadAudioCatalog(query = {}) {
-  let assets = [];
+export async function loadAudioCatalog(query: AudioCatalogQuery = {}): Promise<AudioCatalogResult> {
+  let assets: MediaManifestAsset[] = [];
 
   try {
     // Prefer the structured snapshot (includes token metadata)
@@ -97,7 +131,10 @@ export async function loadAudioCatalog(query = {}) {
   }
 
   // Filter to audio only and normalise into canonical shape
-  const audioAssets = assets.filter(isAudioAsset).map(normalizeTrack).filter(Boolean);
+  const audioAssets = assets
+    .filter(isAudioAsset)
+    .map((asset) => normalizeTrack(asset) as AudioCatalogTrack | null)
+    .filter((track): track is AudioCatalogTrack => Boolean(track));
 
   // Apply search + sort
   const filtered = filterAndSort(audioAssets, query);
@@ -114,7 +151,7 @@ export async function loadAudioCatalog(query = {}) {
  *
  * @returns {Promise<boolean>} true when the manifest was refreshed
  */
-export async function syncAudioCatalog() {
+export async function syncAudioCatalog(): Promise<boolean> {
   let gate = null;
   try {
     gate = await getProtectedMediaRequestGate();
@@ -161,7 +198,9 @@ export async function syncAudioCatalog() {
  * @param {object[]} tracks
  * @returns {Promise<object[]>} Same tracks with `_offline` boolean added
  */
-export async function annotateOfflineAvailability(tracks) {
+export async function annotateOfflineAvailability<T extends AudioCatalogTrack>(
+  tracks: T[],
+): Promise<Array<T & { _offline: boolean }>> {
   const results = await Promise.all(
     tracks.map(async (track) => {
       const offline = await hasLocalSource(track.name, track).catch(() => false);
@@ -185,7 +224,7 @@ const AUDIO_EXTENSIONS = new Set([
  *  2. mime_type starts with "audio/"
  *  3. Known audio file extension (fallback)
  */
-export function isAudioAsset(asset) {
+export function isAudioAsset(asset: MediaManifestAsset | null | undefined): asset is MediaManifestAsset {
   if (!asset) return false;
   const kind = String(asset.media_kind || "").toLowerCase();
   if (kind === "audio") return true;
@@ -200,16 +239,16 @@ export function isAudioAsset(asset) {
  * Guess whether a file is audio from its extension.
  * Used as fallback when media_kind is not set.
  */
-function guessAudioFromFilename(filename) {
+function guessAudioFromFilename(filename: unknown): boolean {
   if (!filename) return false;
-  const ext = filename.split(".").pop()?.toLowerCase();
-  return AUDIO_EXTENSIONS.has(ext);
+  const ext = String(filename).split(".").pop()?.toLowerCase();
+  return Boolean(ext && AUDIO_EXTENSIONS.has(ext));
 }
 
 /**
  * Filter and sort assets (mirrors cloud-library-resources pattern).
  */
-function filterAndSort(assets, query) {
+function filterAndSort(assets: AudioCatalogTrack[], query: AudioCatalogQuery): AudioCatalogTrack[] {
   let result = assets;
 
   const search = String(query?.search || "").trim().toLowerCase();
@@ -232,12 +271,12 @@ function filterAndSort(assets, query) {
   return result;
 }
 
-function getSortableTimestamp(item) {
+function getSortableTimestamp(item: MediaManifestAsset): number {
   if (typeof item.sort_timestamp === "number" && item.sort_timestamp > 0) return item.sort_timestamp;
   for (const field of [item.modified_at, item.created_at]) {
     if (typeof field === "number" && field > 0) return field;
     if (field) {
-      const parsed = Date.parse(field);
+      const parsed = Date.parse(String(field));
       if (!Number.isNaN(parsed)) return parsed;
     }
   }

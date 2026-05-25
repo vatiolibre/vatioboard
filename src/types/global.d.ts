@@ -67,6 +67,7 @@ interface ImportMeta {
 }
 
 interface Window {
+  webkitAudioContext?: typeof AudioContext;
   __vatioboardActivityState?: unknown;
   __vatioboardCameraMapApproach?: unknown;
   __vatioboardCanLeaveAccel?: () => boolean;
@@ -91,4 +92,11 @@ interface Geolocation {
   __vatioboardGpsServiceShim?: boolean;
   watchPosition: VatioBoardGpsService["watchPosition"];
   clearWatch: VatioBoardGpsService["clearWatch"];
+}
+
+interface HTMLMediaElement {
+  playsInline?: boolean;
+  preservesPitch?: boolean;
+  webkitPreservesPitch?: boolean;
+  mozPreservesPitch?: boolean;
 }

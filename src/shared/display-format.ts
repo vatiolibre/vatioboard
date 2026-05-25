@@ -6,7 +6,7 @@
  *   - distance: raw meters value + unit key ("m" | "ft")
  */
 
-const SPEED_UNIT_LABELS = { kmh: "km/h", mph: "mph" };
+const SPEED_UNIT_LABELS: Record<string, string> = { kmh: "km/h", mph: "mph" };
 const FEET_PER_MILE = 5280;
 const METERS_PER_KM = 1000;
 const METERS_PER_MILE = 1609.344;
@@ -23,7 +23,11 @@ const METERS_PER_FOOT = 0.3048;
  * @param {string} [fallback="—"]       Returned when value is not finite.
  * @returns {string}
  */
-export function formatDisplaySpeed(value, unitKey, fallback = "—") {
+export function formatDisplaySpeed(
+  value: number | null | undefined,
+  unitKey: string,
+  fallback = "—",
+): string {
   if (value == null) return fallback;
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return fallback;
@@ -50,7 +54,11 @@ export function formatDisplaySpeed(value, unitKey, fallback = "—") {
  * @param {string} [fallback="—"]            Returned when value is not finite.
  * @returns {string}
  */
-export function formatDisplayDistance(distanceM, unitKey, fallback = "—") {
+export function formatDisplayDistance(
+  distanceM: number | null | undefined,
+  unitKey: string,
+  fallback = "—",
+): string {
   if (distanceM == null) return fallback;
   const meters = Number(distanceM);
   if (!Number.isFinite(meters) || meters < 0) return fallback;

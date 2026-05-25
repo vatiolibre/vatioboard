@@ -2,8 +2,23 @@ import { loadState, saveState, addToHistory } from "./storage.js";
 import { create, all } from "mathjs";
 import { t } from "../i18n.js";
 const math = create(all);
+const translate = t as (key: string, params?: Record<string, unknown>) => string;
 
-function normalizeExpr(expr) {
+interface CalcState {
+  expr?: string;
+  lastResult?: string;
+  lastExpr?: string;
+  status?: string;
+}
+
+export interface CalcEvaluationResult {
+  ok: boolean;
+  result?: string;
+  error?: string;
+  toggled?: boolean;
+}
+
+function normalizeExpr(expr: string): string {
   return expr
     .replaceAll("×", "*")
     .replaceAll("÷", "/")
@@ -16,7 +31,7 @@ function normalizeExpr(expr) {
 // LinangData-like percent behavior:
 // 1) Binary: 50%10 => (10/100)*50
 // 2) Unary: 100+10% => 100 + (10% of 100)
-function applyPercentRules(expr) {
+function applyPercentRules(expr: string): string {
   let s = expr;
 
   // Binary percentage: A%B => (B/100)*A
@@ -50,7 +65,7 @@ function applyPercentRules(expr) {
   return s;
 }
 
-function sanitize(expr) {
+function sanitize(expr: string): string | null {
   // Allow only safe characters/operators + the sqrt identifier.
   // We also allow commas because some locales paste them; we convert commas to dots.
   const normalized = expr.replaceAll(",", ".");
@@ -71,8 +86,13 @@ function sanitize(expr) {
 }
 
 export class CalcCore {
+  expr: string;
+  lastResult: string;
+  lastExpr: string;
+  status: string;
+
   constructor() {
-    const state = loadState();
+    const state = loadState() as CalcState | null;
     this.expr = state?.expr ?? "";
     this.lastResult = state?.lastResult ?? "";
     this.lastExpr = state?.lastExpr ?? "";
@@ -80,21 +100,21 @@ export class CalcCore {
     this._persist();
   }
 
-  _persist() {
+  _persist(): void {
     saveState({ expr: this.expr, lastResult: this.lastResult, lastExpr: this.lastExpr, status: this.status });
   }
 
-  setExpr(v) {
+  setExpr(v: string | null | undefined): void {
     this.expr = v ?? "";
     this._persist();
   }
 
-  append(token) {
+  append(token: string): void {
     this.expr = (this.expr ?? "") + token;
     this._persist();
   }
 
-  clear() {
+  clear(): void {
     this.expr = "";
     this.status = "";
     this.lastResult = "";
@@ -102,12 +122,12 @@ export class CalcCore {
     this._persist();
   }
 
-  backspace() {
+  backspace(): void {
     this.expr = (this.expr ?? "").slice(0, -1);
     this._persist();
   }
 
-  toggleSign() {
+  toggleSign(): void {
     // Toggle sign of the trailing number in the expression
     const s = this.expr ?? "";
     const m = s.match(/(.*?)(\d+(?:\.\d+)?)\s*$/);
@@ -127,7 +147,7 @@ export class CalcCore {
     this._persist();
   }
 
-  sqrtTrailingNumber() {
+  sqrtTrailingNumber(): void {
     // Replace trailing number N with sqrt(N)
     const s = this.expr ?? "";
     const m = s.match(/(.*?)(\d+(?:\.\d+)?)\s*$/);
@@ -136,7 +156,7 @@ export class CalcCore {
     this._persist();
   }
 
-  squareTrailingNumber() {
+  squareTrailingNumber(): void {
     const s = this.expr ?? "";
     const m = s.match(/(.*?)(\d+(?:\.\d+)?)\s*$/);
     if (!m) return;
@@ -144,7 +164,7 @@ export class CalcCore {
     this._persist();
   }
 
-  smartParen() {
+  smartParen(): "(" | ")" {
     const s = this.expr ?? "";
     let open = 0;
     let close = 0;
@@ -155,7 +175,7 @@ export class CalcCore {
     return open > close ? ")" : "(";
   }
 
-  async evaluate() {
+  async evaluate(): Promise<CalcEvaluationResult> {
     if (this.expr === this.lastResult && this.lastExpr) {
       this.expr = this.lastExpr;
       this.status = "";
@@ -167,7 +187,7 @@ export class CalcCore {
       const raw = normalizeExpr(this.expr || "");
       const safe = sanitize(raw);
       if (safe == null) {
-        this.status = t("blockedChars");
+        this.status = translate("blockedChars");
         this._persist();
         return { ok: false, error: this.status };
       }
@@ -185,9 +205,10 @@ export class CalcCore {
       this._persist();
       return { ok: true, result };
     } catch (e) {
-      this.status = t("error");
+      this.status = translate("error");
       this._persist();
-      return { ok: false, error: String(e?.message || e) };
+      const message = e instanceof Error ? e.message : String(e);
+      return { ok: false, error: String(message || e) };
     }
   }
 }

@@ -18,6 +18,8 @@ import {
   getCachedPlaylistDetail,
   cachePlaylistDetail,
   fanOutManifestDetails,
+  type PlaylistDetail,
+  type PlaylistManifestEntry,
 } from "./playlist-cache.js";
 import {
   getBackendPlaylistsManifest,
@@ -26,15 +28,26 @@ import {
   getProtectedMediaRequestGate,
 } from "./backend-auth.js";
 
-function isAbortError(error) {
+export interface PlaylistQuery {
+  search?: string;
+}
+
+export interface PlaylistListResult {
+  playlists: PlaylistManifestEntry[];
+  total: number;
+}
+
+function isAbortError(error: unknown): boolean {
+  const err = error as { name?: string; code?: number } | null | undefined;
   return Boolean(
-    error
-    && (error.name === "AbortError" || error.code === 20),
+    err
+    && (err.name === "AbortError" || err.code === 20),
   );
 }
 
-function isAuthBlockedResponse(result) {
-  return result?.blockedByAuth === true || result?.status === 401 || result?.status === 403;
+function isAuthBlockedResponse(result: unknown): boolean {
+  const response = result as { blockedByAuth?: boolean; status?: number } | null | undefined;
+  return response?.blockedByAuth === true || response?.status === 401 || response?.status === 403;
 }
 
 /**
@@ -45,8 +58,8 @@ function isAuthBlockedResponse(result) {
  * @param {{ search?: string }} [query]
  * @returns {Promise<{ playlists: object[], total: number }>}
  */
-export async function loadPlaylists(query = {}) {
-  let playlists = [];
+export async function loadPlaylists(query: PlaylistQuery = {}): Promise<PlaylistListResult> {
+  let playlists: PlaylistManifestEntry[] = [];
 
   try {
     const snapshot = await getCachedPlaylistsManifestSnapshot();
@@ -93,7 +106,7 @@ export async function loadPlaylists(query = {}) {
  * @param {string} playlistName
  * @returns {Promise<object|null>}
  */
-export async function loadPlaylistDetail(playlistName) {
+export async function loadPlaylistDetail(playlistName: string): Promise<PlaylistDetail | null> {
   if (!playlistName) return null;
 
   // Try cache first
@@ -133,7 +146,7 @@ export async function loadPlaylistDetail(playlistName) {
  *
  * @returns {Promise<boolean>} true when the manifest was refreshed
  */
-export async function syncPlaylistsManifest() {
+export async function syncPlaylistsManifest(): Promise<boolean> {
   let gate = null;
   try {
     gate = await getProtectedMediaRequestGate();
@@ -174,7 +187,7 @@ export async function syncPlaylistsManifest() {
 
 // ── Internal ─────────────────────────────────────────────────────────
 
-function filterPlaylists(playlists, query) {
+function filterPlaylists(playlists: PlaylistManifestEntry[], query: PlaylistQuery): PlaylistManifestEntry[] {
   let result = playlists;
 
   const search = String(query?.search || "").trim().toLowerCase();

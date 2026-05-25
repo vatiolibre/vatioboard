@@ -1,17 +1,48 @@
-function writeAsciiString(view, offset, value) {
+interface SilentLoopAudioOptions {
+  sampleRate?: number;
+  durationSeconds?: number;
+}
+
+interface PrimeAudioElementOptions {
+  getResumeTime?: ((audio: HTMLAudioElement) => number) | null;
+  beforePlay?: ((audio: HTMLAudioElement, resumeTime: number) => void) | null;
+  restorePlayback?: ((audio: HTMLAudioElement, resumeTime: number) => void) | null;
+}
+
+interface AudioChannelRetainerOptions {
+  keepAliveSampleRate?: number;
+  keepAliveDurationSeconds?: number;
+}
+
+export interface AudioChannelRetainer {
+  activateAudioElement(audio: HTMLAudioElement | null | undefined, volume?: number): void;
+  dispose(): void;
+  ensureAudioElementLooping(
+    audio: HTMLAudioElement | null | undefined,
+    options?: { shouldContinue?: (() => boolean) | null },
+  ): Promise<boolean>;
+  ensureKeepAlivePlaying(options?: { shouldContinue?: (() => boolean) | null }): Promise<boolean>;
+  getKeepAliveAudio(): HTMLAudioElement;
+  isKeepAliveActive(): boolean;
+  silenceAudioElement(audio: HTMLAudioElement | null | undefined): void;
+  stopAudioElementPlayback(audio: HTMLAudioElement | null | undefined): void;
+  stopKeepAlive(): void;
+}
+
+function writeAsciiString(view: DataView, offset: number, value: string): void {
   for (let index = 0; index < value.length; index += 1) {
     view.setUint8(offset + index, value.charCodeAt(index));
   }
 }
 
-function isPromiseLike(value) {
-  return Boolean(value && typeof value.then === "function");
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return Boolean(value && typeof (value as { then?: unknown }).then === "function");
 }
 
 export function createSilentLoopAudioUrl({
   sampleRate = 44100,
   durationSeconds = 2,
-} = {}) {
+}: SilentLoopAudioOptions = {}): string {
   const sampleCount = sampleRate * durationSeconds;
   const buffer = new ArrayBuffer(44 + (sampleCount * 2));
   const view = new DataView(buffer);
@@ -33,13 +64,13 @@ export function createSilentLoopAudioUrl({
   return URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
 }
 
-export function silenceAudioElement(audio) {
+export function silenceAudioElement(audio: HTMLAudioElement | null | undefined): void {
   if (!audio) return;
   audio.muted = true;
   audio.volume = 0;
 }
 
-export function resetAudioElementPlaybackRate(audio) {
+export function resetAudioElementPlaybackRate(audio: HTMLAudioElement | null | undefined): void {
   if (!audio) return;
 
   try { audio.defaultPlaybackRate = 1; } catch { /* ignore */ }
@@ -49,7 +80,7 @@ export function resetAudioElementPlaybackRate(audio) {
   try { audio.mozPreservesPitch = true; } catch { /* ignore */ }
 }
 
-export function activateAudioElement(audio, volume = 1) {
+export function activateAudioElement(audio: HTMLAudioElement | null | undefined, volume = 1): void {
   if (!audio) return;
   resetAudioElementPlaybackRate(audio);
   audio.muted = false;
@@ -57,13 +88,13 @@ export function activateAudioElement(audio, volume = 1) {
 }
 
 export async function primeAudioElement(
-  audio,
+  audio: HTMLAudioElement | null | undefined,
   {
     getResumeTime = null,
     beforePlay = null,
     restorePlayback = null,
-  } = {},
-) {
+  }: PrimeAudioElementOptions = {},
+): Promise<boolean> {
   if (!audio) return false;
   resetAudioElementPlaybackRate(audio);
   if (!audio.paused) return true;
@@ -111,7 +142,7 @@ export async function primeAudioElement(
 export function createAudioChannelRetainer({
   keepAliveSampleRate = 44100,
   keepAliveDurationSeconds = 2,
-} = {}) {
+}: AudioChannelRetainerOptions = {}): AudioChannelRetainer {
   let keepAliveAudioUrl = createSilentLoopAudioUrl({
     sampleRate: keepAliveSampleRate,
     durationSeconds: keepAliveDurationSeconds,
@@ -123,13 +154,15 @@ export function createAudioChannelRetainer({
   keepAliveAudio.playsInline = true;
   resetAudioElementPlaybackRate(keepAliveAudio);
 
-  function stopAudioElementPlayback(audio) {
+  function stopAudioElementPlayback(audio: HTMLAudioElement | null | undefined): void {
     if (!audio) return;
     audio.pause();
     audio.currentTime = 0;
   }
 
-  async function ensureKeepAlivePlaying({ shouldContinue = null } = {}) {
+  async function ensureKeepAlivePlaying({
+    shouldContinue = null,
+  }: { shouldContinue?: (() => boolean) | null } = {}): Promise<boolean> {
     resetAudioElementPlaybackRate(keepAliveAudio);
     keepAliveAudio.loop = true;
     keepAliveAudio.muted = false;
@@ -153,7 +186,10 @@ export function createAudioChannelRetainer({
     return true;
   }
 
-  async function ensureAudioElementLooping(audio, { shouldContinue = null } = {}) {
+  async function ensureAudioElementLooping(
+    audio: HTMLAudioElement | null | undefined,
+    { shouldContinue = null }: { shouldContinue?: (() => boolean) | null } = {},
+  ): Promise<boolean> {
     if (!audio) return false;
 
     resetAudioElementPlaybackRate(audio);
@@ -178,18 +214,18 @@ export function createAudioChannelRetainer({
     return true;
   }
 
-  function stopKeepAlive() {
+  function stopKeepAlive(): void {
     keepAliveAudio.pause();
     keepAliveAudio.currentTime = 0;
   }
 
-  function revokeKeepAliveAudioUrl() {
+  function revokeKeepAliveAudioUrl(): void {
     if (!keepAliveAudioUrl) return;
     URL.revokeObjectURL(keepAliveAudioUrl);
     keepAliveAudioUrl = "";
   }
 
-  function dispose() {
+  function dispose(): void {
     stopKeepAlive();
     revokeKeepAliveAudioUrl();
   }

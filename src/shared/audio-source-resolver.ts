@@ -3,8 +3,8 @@ import {
   getLocalBlobMeta,
   isAutoCacheEligible,
   registerAutoCacheDownload,
-  cacheMediaBlob,
   cacheMediaFromResponse,
+  type MediaManifestAsset,
 } from "./media-cache.js";
 import {
   getCachedDemoTrackBlob,
@@ -23,17 +23,49 @@ import {
   shouldUseBackendMediaAccess,
 } from "./track-source-policy.js";
 
-function isAbortError(error) {
+export interface AudioSourceAsset extends MediaManifestAsset {
+  src?: string;
+  playback_url?: string;
+  download_url?: string;
+  _demo?: boolean;
+}
+
+export interface ResolvedAudioSource {
+  src: string;
+  type: "blob" | "remote";
+  blob?: Blob;
+  source?: string;
+  contentHash?: string | null;
+  revokeUrl: () => void;
+}
+
+export type BackgroundCacheFailureReason =
+  | "ineligible"
+  | "static_source"
+  | "not_allowed"
+  | "aborted"
+  | "no_source"
+  | "cache_failed"
+  | "already_in_flight";
+
+export interface BackgroundCacheOptions {
+  onCached?: () => void;
+  onFailed?: (reason: BackgroundCacheFailureReason) => void;
+  fetchFn?: typeof fetch;
+}
+
+function isAbortError(error: unknown): boolean {
+  const err = error as { name?: string; code?: number } | null | undefined;
   return Boolean(
-    error
+    err
     && (
-      error.name === "AbortError"
-      || error.code === 20
+      err.name === "AbortError"
+      || err.code === 20
     )
   );
 }
 
-function isDemoTrack(assetName, asset = {}) {
+function isDemoTrack(assetName: string, asset: AudioSourceAsset | null | undefined = {}): boolean {
   return Boolean(
     isDemoTrackName(assetName)
       || isDemoTrackName(asset?.name)
@@ -56,7 +88,10 @@ function isDemoTrack(assetName, asset = {}) {
  * @param {{ content_hash?: string, media_kind?: string, playback_url?: string, download_url?: string }} [asset]
  * @returns {Promise<{ src: string, type: "blob"|"remote", blob?: Blob, revokeUrl?: () => void } | null>}
  */
-export async function resolveAudioSource(assetName, asset) {
+export async function resolveAudioSource(
+  assetName: string,
+  asset?: AudioSourceAsset | null,
+): Promise<ResolvedAudioSource | null> {
   if (!assetName) return null;
 
   // 0. Direct static src (e.g. demo tracks served from /audio/demo/)
@@ -127,7 +162,10 @@ export async function resolveAudioSource(assetName, asset) {
  * @param {{ content_hash?: string }} [asset]
  * @returns {Promise<string|null>}
  */
-async function resolveRemotePlaybackUrl(assetName, asset) {
+async function resolveRemotePlaybackUrl(
+  assetName: string,
+  asset?: AudioSourceAsset | null,
+): Promise<string | null> {
   if (!shouldUseBackendMediaAccess(assetName, asset)) return null;
   const hash = asset?.content_hash || null;
 
@@ -167,7 +205,7 @@ async function resolveRemotePlaybackUrl(assetName, asset) {
  * Never returns signed/expiring URLs — those are resolved on demand
  * by the backend auth layer.
  */
-export function buildRemotePlaybackUrl(assetName, asset) {
+export function buildRemotePlaybackUrl(assetName: string, asset?: AudioSourceAsset | null): string {
   if (!shouldUseBackendMediaAccess(assetName, asset)) return "";
   if (asset?.playback_url) return asset.playback_url;
   if (asset?.download_url) return asset.download_url;
@@ -193,7 +231,11 @@ export function buildRemotePlaybackUrl(assetName, asset) {
  * @param {{ onCached?: Function, onFailed?: Function, fetchFn?: Function }} [opts]
  * @returns {void}
  */
-export function triggerBackgroundCache(assetName, asset, { onCached, onFailed, fetchFn = fetch } = {}) {
+export function triggerBackgroundCache(
+  assetName: string,
+  asset: AudioSourceAsset | null | undefined,
+  { onCached, onFailed, fetchFn = fetch }: BackgroundCacheOptions = {},
+): void {
   if (!assetName || !asset) {
     if (typeof onFailed === "function") {
       try { onFailed("ineligible"); } catch { /* ignore */ }
@@ -201,7 +243,11 @@ export function triggerBackgroundCache(assetName, asset, { onCached, onFailed, f
     return;
   }
   if (isDemoTrack(assetName, asset)) {
-    triggerDemoTrackCache(assetName, asset, {
+    (triggerDemoTrackCache as (
+      name: string,
+      track: AudioSourceAsset,
+      options?: BackgroundCacheOptions,
+    ) => void)(assetName, asset, {
       fetchFn,
       onCached,
       onFailed,
@@ -243,7 +289,7 @@ export function triggerBackgroundCache(assetName, asset, { onCached, onFailed, f
         return;
       }
 
-      let response = null;
+      let response: Response | null = null;
 
       // 1. Prefer signed download URL via backend access endpoint.
       try {
@@ -349,7 +395,10 @@ export function triggerBackgroundCache(assetName, asset, { onCached, onFailed, f
  * @param {object} [asset]
  * @returns {Promise<boolean>}
  */
-export async function hasLocalSource(assetName, asset = {}) {
+export async function hasLocalSource(
+  assetName: string,
+  asset: AudioSourceAsset | null | undefined = {},
+): Promise<boolean> {
   if (!assetName) return false;
 
   if (isDemoTrack(assetName, asset)) {

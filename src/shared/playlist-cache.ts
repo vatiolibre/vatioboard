@@ -11,6 +11,43 @@
 
 import { createIndexedJsonKeyValueStore } from "./indexed-storage.js";
 import { getMediaCacheUser } from "./media-cache.js";
+import type { JsonObject } from "../types/storage";
+
+export interface PlaylistManifestItem {
+  media_asset_name?: string;
+  position?: number;
+  snapshot_title?: string;
+  snapshot_artist?: string;
+  snapshot_album?: string;
+  snapshot_genre?: string;
+  snapshot_duration?: number | null;
+  snapshot_artwork_ref?: string;
+  snapshot_content_hash?: string;
+  [key: string]: unknown;
+}
+
+export interface PlaylistManifestEntry {
+  name?: string;
+  title?: string;
+  item_count?: number;
+  total_duration_seconds?: number;
+  cover_asset_name?: string | null;
+  created_at?: string | number | null;
+  modified_at?: string | number | null;
+  items?: PlaylistManifestItem[];
+  [key: string]: unknown;
+}
+
+export interface PlaylistManifestSnapshot {
+  playlists: PlaylistManifestEntry[];
+  token: string | null;
+}
+
+interface PersistedPlaylistManifestSnapshot extends PlaylistManifestSnapshot {
+  cached_at?: number;
+}
+
+export type PlaylistDetail = PlaylistManifestEntry;
 
 const PLAYLIST_DB_NAME = "vatioboard_playlist_metadata";
 const PLAYLIST_STORE_NAME = "playlist_metadata";
@@ -20,7 +57,7 @@ const playlistStore = createIndexedJsonKeyValueStore({
   storeName: PLAYLIST_STORE_NAME,
 });
 
-function userKey(key) {
+function userKey(key: string): string | null {
   const user = getMediaCacheUser();
   if (!user) return null;
   return `${user}:${key}`;
@@ -32,36 +69,42 @@ function userKey(key) {
  * Persist the full playlists manifest atomically — playlists array and
  * freshness token written as a single IndexedDB record.
  */
-export async function cachePlaylistsManifestSnapshot({ playlists, token = null }) {
+export async function cachePlaylistsManifestSnapshot({
+  playlists,
+  token = null,
+}: {
+  playlists: PlaylistManifestEntry[];
+  token?: string | null;
+}): Promise<boolean> {
   const key = userKey("__playlists_manifest__");
   if (!key || !Array.isArray(playlists)) return false;
   return playlistStore.setValue(key, {
     playlists: playlists.map(mapPlaylistEntry),
     token: token || null,
     cached_at: Date.now(),
-  });
+  } as JsonObject);
 }
 
 /**
  * Return the full playlists manifest snapshot (playlists + token).
  * Returns ``null`` when nothing is stored.
  */
-export async function getCachedPlaylistsManifestSnapshot() {
+export async function getCachedPlaylistsManifestSnapshot(): Promise<PlaylistManifestSnapshot | null> {
   const key = userKey("__playlists_manifest__");
   if (!key) return null;
-  const result = await playlistStore.getValue(key);
+  const result = await playlistStore.getValue(key) as unknown as PersistedPlaylistManifestSnapshot | undefined;
   if (!result?.playlists) return null;
   return { playlists: result.playlists, token: result.token || null };
 }
 
 /** Convenience — returns the cached playlists array or null. */
-export async function getCachedPlaylistsList() {
+export async function getCachedPlaylistsList(): Promise<PlaylistManifestEntry[] | null> {
   const snapshot = await getCachedPlaylistsManifestSnapshot();
   return snapshot?.playlists || null;
 }
 
 /** Convenience — returns the cached freshness token or null. */
-export async function getCachedPlaylistsToken() {
+export async function getCachedPlaylistsToken(): Promise<string | null> {
   const snapshot = await getCachedPlaylistsManifestSnapshot();
   return snapshot?.token || null;
 }
@@ -71,22 +114,25 @@ export async function getCachedPlaylistsToken() {
 /**
  * Cache a single playlist detail for offline display (includes items).
  */
-export async function cachePlaylistDetail(playlistName, detail) {
+export async function cachePlaylistDetail(
+  playlistName: string,
+  detail: PlaylistManifestEntry | null | undefined,
+): Promise<boolean> {
   const key = userKey(`detail:${playlistName}`);
   if (!key || !detail) return false;
   return playlistStore.setValue(key, {
     ...detail,
     cached_at: Date.now(),
-  });
+  } as JsonObject);
 }
 
 /**
  * Return cached detail for a single playlist, or null.
  */
-export async function getCachedPlaylistDetail(playlistName) {
+export async function getCachedPlaylistDetail(playlistName: string): Promise<PlaylistDetail | null> {
   const key = userKey(`detail:${playlistName}`);
   if (!key) return null;
-  const result = await playlistStore.getValue(key);
+  const result = await playlistStore.getValue(key) as PlaylistDetail | undefined;
   return result ?? null;
 }
 
@@ -97,7 +143,7 @@ export async function getCachedPlaylistDetail(playlistName) {
  * an individual detail entry so ``loadPlaylistDetail()`` can resolve
  * offline without a separate ``getBackendPlaylistDetail`` call.
  */
-export async function fanOutManifestDetails(playlists) {
+export async function fanOutManifestDetails(playlists: PlaylistManifestEntry[] | null | undefined): Promise<void> {
   if (!Array.isArray(playlists)) return;
   const user = getMediaCacheUser();
   if (!user) return;
@@ -111,7 +157,7 @@ export async function fanOutManifestDetails(playlists) {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function mapPlaylistEntry(playlist) {
+function mapPlaylistEntry(playlist: PlaylistManifestEntry): PlaylistManifestEntry {
   return {
     name: playlist.name,
     title: playlist.title,
@@ -124,7 +170,7 @@ function mapPlaylistEntry(playlist) {
   };
 }
 
-function mapPlaylistItem(item) {
+function mapPlaylistItem(item: PlaylistManifestItem): PlaylistManifestItem {
   return {
     media_asset_name: item.media_asset_name,
     position: item.position ?? 0,

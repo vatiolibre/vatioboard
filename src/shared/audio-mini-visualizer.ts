@@ -3,22 +3,56 @@ import {
   releaseGraph,
   destroyGraphForElement,
   resumeGraphForElement,
+  type GraphEntry,
 } from "./audio-graph-registry.js";
 
-const VALID_MODES = new Set(["spectrum", "scope", "off"]);
-const SPECTRUM_BAR_COUNT = 20;
+export type MiniAudioVisualizerMode = "spectrum" | "scope" | "off";
 
-function normalizeMode(mode) {
-  const value = String(mode || "").toLowerCase();
-  return VALID_MODES.has(value) ? value : "spectrum";
+interface MiniAudioVisualizerOptions {
+  mediaElement: HTMLMediaElement;
+  mount: HTMLElement;
+  mode?: MiniAudioVisualizerMode | string;
 }
 
-function createUnavailableController() {
+export interface MiniAudioVisualizerController {
+  readonly isAvailable: boolean;
+  setMode(nextMode: MiniAudioVisualizerMode | string): void;
+  resize(): void;
+  start(): Promise<boolean>;
+  stop(): void;
+  destroy(): void;
+}
+
+interface VisualizerPalette {
+  spectrumLow: string;
+  spectrumMid: string;
+  spectrumHigh: string;
+  spectrumPeak: string;
+  spectrumPeakGlow: string;
+  spectrumGlow: string;
+  waveform: string;
+  grid: string;
+  baseline: string;
+}
+
+interface SpectrumState {
+  peaks: number[];
+}
+
+const VALID_MODES = new Set<MiniAudioVisualizerMode>(["spectrum", "scope", "off"]);
+const SPECTRUM_BAR_COUNT = 20;
+
+function normalizeMode(mode: MiniAudioVisualizerMode | string | null | undefined): MiniAudioVisualizerMode {
+  const value = String(mode || "").toLowerCase();
+  return VALID_MODES.has(value as MiniAudioVisualizerMode) ? value as MiniAudioVisualizerMode : "spectrum";
+}
+
+function createUnavailableController(): MiniAudioVisualizerController {
   return {
     get isAvailable() {
       return false;
     },
-    setMode() {},
+    setMode(_nextMode: MiniAudioVisualizerMode | string) {},
     resize() {},
     start: async () => false,
     stop() {},
@@ -26,25 +60,25 @@ function createUnavailableController() {
   };
 }
 
-function getAudioContextCtor() {
+function getAudioContextCtor(): typeof AudioContext | null {
   return window.AudioContext || window.webkitAudioContext || null;
 }
 
-export function destroyVisualizerGraphForElement(mediaElement) {
+export function destroyVisualizerGraphForElement(mediaElement: unknown): boolean {
   if (!mediaElement || (typeof mediaElement !== "object" && typeof mediaElement !== "function")) {
     return false;
   }
-  return destroyGraphForElement(mediaElement);
+  return destroyGraphForElement(mediaElement as HTMLMediaElement);
 }
 
-export function resumeVisualizerGraphForElement(mediaElement) {
+export function resumeVisualizerGraphForElement(mediaElement: unknown): Promise<boolean> {
   if (!mediaElement || (typeof mediaElement !== "object" && typeof mediaElement !== "function")) {
     return Promise.resolve(false);
   }
-  return resumeGraphForElement(mediaElement);
+  return resumeGraphForElement(mediaElement as HTMLMediaElement);
 }
 
-function readVisualizerPalette(target) {
+function readVisualizerPalette(target: Element | null | undefined): VisualizerPalette {
   const styles = target ? window.getComputedStyle(target) : null;
   const spectrumBar = styles?.getPropertyValue("--media-player-visualizer-bar").trim() || "rgba(34, 197, 94, 0.90)";
   return {
@@ -60,18 +94,26 @@ function readVisualizerPalette(target) {
   };
 }
 
-function getSpectrumCellColor(palette, segmentIndex, segmentCount) {
+function getSpectrumCellColor(palette: VisualizerPalette, segmentIndex: number, segmentCount: number): string {
   const ratio = segmentCount <= 1 ? 0 : segmentIndex / (segmentCount - 1);
   if (ratio > 0.68) return palette.spectrumHigh;
   if (ratio > 0.42) return palette.spectrumMid;
   return palette.spectrumLow;
 }
 
-function resetSpectrumState(state) {
+function resetSpectrumState(state: SpectrumState): void {
   state.peaks = [];
 }
 
-function drawSpectrum(ctx, analyser, data, palette, state, width, height) {
+function drawSpectrum(
+  ctx: CanvasRenderingContext2D,
+  analyser: AnalyserNode,
+  data: Uint8Array<ArrayBuffer>,
+  palette: VisualizerPalette,
+  state: SpectrumState,
+  width: number,
+  height: number,
+): void {
   analyser.getByteFrequencyData(data);
   ctx.clearRect(0, 0, width, height);
 
@@ -150,7 +192,14 @@ function drawSpectrum(ctx, analyser, data, palette, state, width, height) {
   ctx.shadowBlur = 0;
 }
 
-function drawScope(ctx, analyser, data, palette, width, height) {
+function drawScope(
+  ctx: CanvasRenderingContext2D,
+  analyser: AnalyserNode,
+  data: Uint8Array<ArrayBuffer>,
+  palette: VisualizerPalette,
+  width: number,
+  height: number,
+): void {
   analyser.getByteTimeDomainData(data);
   ctx.clearRect(0, 0, width, height);
 
@@ -205,7 +254,11 @@ function drawScope(ctx, analyser, data, palette, width, height) {
  *   destroy: () => void,
  * }}
  */
-export function createMiniAudioVisualizer({ mediaElement, mount, mode = "spectrum" }) {
+export function createMiniAudioVisualizer({
+  mediaElement,
+  mount,
+  mode = "spectrum",
+}: MiniAudioVisualizerOptions): MiniAudioVisualizerController {
   if (!(mediaElement instanceof HTMLMediaElement) || !(mount instanceof HTMLElement)) {
     return createUnavailableController();
   }
@@ -231,18 +284,18 @@ export function createMiniAudioVisualizer({ mediaElement, mount, mode = "spectru
   let running = false;
   let animationFrameId = 0;
   let modeValue = normalizeMode(mode);
-  let graphEntry = null;
-  let analyserPromise = null;
-  let analyser = null;
-  let frequencyData = null;
-  let timeDomainData = null;
-  let resizeObserver = null;
+  let graphEntry: GraphEntry | null = null;
+  let analyserPromise: Promise<boolean> | null = null;
+  let analyser: AnalyserNode | null = null;
+  let frequencyData: Uint8Array<ArrayBuffer> | null = null;
+  let timeDomainData: Uint8Array<ArrayBuffer> | null = null;
+  let resizeObserver: ResizeObserver | null = null;
   let lastWidth = 0;
   let lastHeight = 0;
   let palette = readVisualizerPalette(mount);
   const spectrumState = { peaks: [] };
 
-  function resize() {
+  function resize(): void {
     if (destroyed) return;
 
     const rect = mount.getBoundingClientRect();
@@ -263,7 +316,7 @@ export function createMiniAudioVisualizer({ mediaElement, mount, mode = "spectru
     resetSpectrumState(spectrumState);
   }
 
-  function stop() {
+  function stop(): void {
     running = false;
     if (animationFrameId) {
       cancelAnimationFrame(animationFrameId);
@@ -271,12 +324,12 @@ export function createMiniAudioVisualizer({ mediaElement, mount, mode = "spectru
     }
   }
 
-  function markUnavailable() {
+  function markUnavailable(): void {
     available = false;
     stop();
   }
 
-  async function ensureAnalyser() {
+  async function ensureAnalyser(): Promise<boolean> {
     if (destroyed || !available) return false;
     if (analyser) return true;
     if (analyserPromise) return analyserPromise;
@@ -322,7 +375,7 @@ export function createMiniAudioVisualizer({ mediaElement, mount, mode = "spectru
     }
   }
 
-  function renderFrame() {
+  function renderFrame(): void {
     if (destroyed) return;
     if (!running || !available || modeValue === "off") {
       animationFrameId = 0;
@@ -332,7 +385,7 @@ export function createMiniAudioVisualizer({ mediaElement, mount, mode = "spectru
     resize();
     const width = canvas.width || lastWidth;
     const height = canvas.height || lastHeight;
-    if (!width || !height || !analyser) {
+    if (!width || !height || !analyser || !frequencyData || !timeDomainData) {
       animationFrameId = requestAnimationFrame(renderFrame);
       return;
     }
@@ -346,7 +399,7 @@ export function createMiniAudioVisualizer({ mediaElement, mount, mode = "spectru
     animationFrameId = requestAnimationFrame(renderFrame);
   }
 
-  function setMode(nextMode) {
+  function setMode(nextMode: MiniAudioVisualizerMode | string): void {
     modeValue = normalizeMode(nextMode);
     if (modeValue === "off") {
       stop();
@@ -360,7 +413,7 @@ export function createMiniAudioVisualizer({ mediaElement, mount, mode = "spectru
     }
   }
 
-  async function start() {
+  async function start(): Promise<boolean> {
     if (destroyed || !available) return false;
     resize();
 
@@ -379,7 +432,7 @@ export function createMiniAudioVisualizer({ mediaElement, mount, mode = "spectru
     return true;
   }
 
-  function destroy() {
+  function destroy(): void {
     if (destroyed) return;
     destroyed = true;
     stop();

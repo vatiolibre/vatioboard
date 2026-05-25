@@ -21,11 +21,21 @@
  * @module audio-graph-registry
  */
 
-/** @type {WeakMap<HTMLMediaElement, GraphEntry>} */
-const MEDIA_GRAPH_BY_ELEMENT = new WeakMap();
+export interface GraphEntry {
+  audioContext: AudioContext;
+  sourceNode: MediaElementAudioSourceNode;
+  consumers: Set<AudioNode>;
+  analysers?: Set<AudioNode>;
+  refCount: number;
+}
 
-/** @type {WeakMap<HTMLMediaElement, { promise: Promise<GraphEntry|null>, cancelled: boolean }>} */
-const MEDIA_GRAPH_CREATION_BY_ELEMENT = new WeakMap();
+interface GraphCreationRecord {
+  promise: Promise<GraphEntry | null> | null;
+  cancelled: boolean;
+}
+
+const MEDIA_GRAPH_BY_ELEMENT = new WeakMap<HTMLMediaElement, GraphEntry>();
+const MEDIA_GRAPH_CREATION_BY_ELEMENT = new WeakMap<HTMLMediaElement, GraphCreationRecord>();
 
 /**
  * Shared pre-warmed AudioContext.
@@ -35,34 +45,25 @@ const MEDIA_GRAPH_CREATION_BY_ELEMENT = new WeakMap();
  * bound to a MediaElementSourceNode it is no longer reusable — a new
  * prime is needed for the next element.
  *
- * @type {AudioContext|null}
  */
-let _primedAudioContext = null;
-
-/**
- * @typedef {object} GraphEntry
- * @property {AudioContext}              audioContext
- * @property {MediaElementAudioSourceNode} sourceNode
- * @property {Set<AudioNode>}            consumers  - analyser nodes or other connected nodes
- * @property {number}                    refCount   - number of active owners
- */
+let _primedAudioContext: AudioContext | null = null;
 
 /**
  * Return the existing graph entry for a media element, or null.
  * @param {HTMLMediaElement} mediaElement
  * @returns {GraphEntry|null}
  */
-export function getGraph(mediaElement) {
+export function getGraph(mediaElement: HTMLMediaElement): GraphEntry | null {
   return MEDIA_GRAPH_BY_ELEMENT.get(mediaElement) || null;
 }
 
-async function resumeGraphContext(entry) {
+async function resumeGraphContext(entry: GraphEntry | null | undefined): Promise<void> {
   if (entry?.audioContext?.state === "suspended") {
     try { await entry.audioContext.resume(); } catch { /* best effort */ }
   }
 }
 
-async function retainGraph(entry) {
+async function retainGraph(entry: GraphEntry | null | undefined): Promise<GraphEntry | null> {
   if (!entry) return null;
   entry.refCount += 1;
   await resumeGraphContext(entry);
@@ -79,7 +80,7 @@ async function retainGraph(entry) {
  * @param {HTMLMediaElement} mediaElement
  * @returns {Promise<boolean>} true when an existing graph is running
  */
-export async function resumeGraphForElement(mediaElement) {
+export async function resumeGraphForElement(mediaElement: HTMLMediaElement): Promise<boolean> {
   const entry = MEDIA_GRAPH_BY_ELEMENT.get(mediaElement);
   if (!entry) return false;
   await resumeGraphContext(entry);
@@ -98,7 +99,7 @@ export async function resumeGraphForElement(mediaElement) {
  *
  * @returns {boolean} true when a running AudioContext is ready.
  */
-export function primeAudioContext() {
+export function primeAudioContext(): boolean {
   // Already have a usable primed context.
   if (_primedAudioContext && _primedAudioContext.state === "running") return true;
 
@@ -134,7 +135,7 @@ export function primeAudioContext() {
  * @param {HTMLMediaElement} mediaElement
  * @returns {Promise<GraphEntry|null>} null on failure (CORS, no AudioContext, etc.)
  */
-export async function acquireGraph(mediaElement) {
+export async function acquireGraph(mediaElement: HTMLMediaElement): Promise<GraphEntry | null> {
   const existing = MEDIA_GRAPH_BY_ELEMENT.get(mediaElement);
   if (existing) {
     return retainGraph(existing);
@@ -158,7 +159,7 @@ export async function acquireGraph(mediaElement) {
     const hasPrimedContext = _primedAudioContext && _primedAudioContext.state !== "closed";
     const audioContext = hasPrimedContext ? _primedAudioContext : new AudioContextCtor();
     if (hasPrimedContext) {
-      _primedAudioContext = null;  // consumed — next acquireGraph needs a fresh prime
+      _primedAudioContext = null;  // consumed - next acquireGraph needs a fresh prime
     }
 
     try {
@@ -176,7 +177,7 @@ export async function acquireGraph(mediaElement) {
       return null;
     }
 
-    let sourceNode;
+    let sourceNode: MediaElementAudioSourceNode;
     try {
       sourceNode = audioContext.createMediaElementSource(mediaElement);
       sourceNode.connect(audioContext.destination);
@@ -194,8 +195,7 @@ export async function acquireGraph(mediaElement) {
       return null;
     }
 
-    /** @type {GraphEntry} */
-    const entry = { audioContext, sourceNode, consumers: new Set(), refCount: 0 };
+    const entry: GraphEntry = { audioContext, sourceNode, consumers: new Set<AudioNode>(), refCount: 0 };
     MEDIA_GRAPH_BY_ELEMENT.set(mediaElement, entry);
     return entry;
   })();
@@ -222,7 +222,7 @@ export async function acquireGraph(mediaElement) {
  * @param {HTMLMediaElement} mediaElement
  * @param {AudioNode} [consumerNode] - optional analyser/node to disconnect & remove
  */
-export function releaseGraph(mediaElement, consumerNode) {
+export function releaseGraph(mediaElement: HTMLMediaElement, consumerNode?: AudioNode): void {
   const entry = MEDIA_GRAPH_BY_ELEMENT.get(mediaElement);
   if (!entry) return;
 
@@ -243,7 +243,7 @@ export function releaseGraph(mediaElement, consumerNode) {
  * @param {HTMLMediaElement} mediaElement
  * @returns {boolean} true if a graph was found and destroyed
  */
-export function destroyGraphForElement(mediaElement) {
+export function destroyGraphForElement(mediaElement: HTMLMediaElement): boolean {
   const pending = MEDIA_GRAPH_CREATION_BY_ELEMENT.get(mediaElement);
   if (pending) {
     pending.cancelled = true;
@@ -267,6 +267,6 @@ export function destroyGraphForElement(mediaElement) {
 }
 
 /** @internal — reset primed context; test-only. */
-export function _resetPrimedForTesting() {
+export function _resetPrimedForTesting(): void {
   _primedAudioContext = null;
 }

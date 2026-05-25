@@ -8,9 +8,40 @@ import {
   toRaw,
 } from "../calculator/widget/number-format.js";
 import { t } from "../i18n.js";
+const translate = t as (key: string, params?: Record<string, unknown>) => string;
+
+export interface NumberFormatSettings extends Record<string, unknown> {
+  decimals?: number;
+  thousandSeparator?: string;
+}
+
+export interface SliderRangeConfig {
+  min: number;
+  max: number;
+  step: number;
+}
+
+export interface EnergyTripInput {
+  id: string;
+  distance: string;
+  consumption: string;
+  price: string;
+  [key: string]: unknown;
+}
+
+export interface EnergyTripCalculation {
+  kwhUsed: number;
+  cost: number;
+}
+
+export interface EnergyValidationResult {
+  valid: boolean;
+  value: number | null;
+  error: string | null;
+}
 
 // Slider ranges based on unit (km = Colombia/Latam, mi = USA)
-export const SLIDER_CONFIG = {
+export const SLIDER_CONFIG: Record<"km" | "mi", Record<"distance" | "consumption" | "price", SliderRangeConfig>> = {
   km: {
     distance: { min: 0, max: 1000, step: 1 },
     consumption: { min: 5, max: 40, step: 0.1 },
@@ -27,14 +58,16 @@ export const SLIDER_CONFIG = {
  * EnergyCore - Clase con lógica de cálculo y formateo
  */
 export class EnergyCore {
-  constructor(formatSettings) {
+  formatSettings: NumberFormatSettings;
+
+  constructor(formatSettings: NumberFormatSettings) {
     this.formatSettings = formatSettings;
   }
 
   /**
    * Actualiza los settings de formateo
    */
-  setFormatSettings(settings) {
+  setFormatSettings(settings: NumberFormatSettings): void {
     this.formatSettings = settings;
   }
 
@@ -43,7 +76,7 @@ export class EnergyCore {
    * @param {string} rawStr - String a parsear
    * @returns {number|null|NaN} - Número, null si vacío, NaN si inválido
    */
-  parseNumber(rawStr) {
+  parseNumber(rawStr: string): number | null {
     if (!rawStr || rawStr.trim() === "") return null;
     const num = parseFloat(rawStr);
     if (!Number.isFinite(num)) return NaN;
@@ -55,7 +88,7 @@ export class EnergyCore {
    * @param {string} rawValue - Valor crudo a validar
    * @returns {{ valid: boolean, value: number|null, error: string|null }}
    */
-  validateInput(rawValue) {
+  validateInput(rawValue: string): EnergyValidationResult {
     const val = this.parseNumber(rawValue);
 
     if (!rawValue || rawValue.trim() === "") {
@@ -63,11 +96,11 @@ export class EnergyCore {
     }
 
     if (Number.isNaN(val)) {
-      return { valid: false, value: NaN, error: t("invalidNumber") };
+      return { valid: false, value: NaN, error: translate("invalidNumber") };
     }
 
     if (val < 0) {
-      return { valid: false, value: val, error: t("mustBePositive") };
+      return { valid: false, value: val, error: translate("mustBePositive") };
     }
 
     return { valid: true, value: val, error: null };
@@ -78,7 +111,7 @@ export class EnergyCore {
    * @param {string|number} rawValue - Valor crudo
    * @returns {string} - Valor formateado para display
    */
-  formatInputValue(rawValue) {
+  formatInputValue(rawValue: string | number): string {
     if (!rawValue && rawValue !== "0" && rawValue !== 0) return "";
     return toDisplay(String(rawValue), this.formatSettings);
   }
@@ -88,7 +121,7 @@ export class EnergyCore {
    * @param {string} displayValue - Valor mostrado en input
    * @returns {string} - Valor crudo
    */
-  parseInputValue(displayValue) {
+  parseInputValue(displayValue: string): string {
     if (!displayValue || displayValue.trim() === "") return "";
     return toRaw(displayValue, this.formatSettings);
   }
@@ -99,7 +132,7 @@ export class EnergyCore {
    * @param {number} decimals - Decimales (default 2)
    * @returns {string} - Valor formateado
    */
-  formatResultNumber(value, decimals = 2) {
+  formatResultNumber(value: number | null, decimals = 2): string {
     if (value === null || Number.isNaN(value)) return "—";
     const fixed = value.toFixed(decimals);
     return toDisplay(fixed, this.formatSettings);
@@ -110,7 +143,7 @@ export class EnergyCore {
    * @param {number} value - kWh
    * @returns {string} - "X.XX kWh" o "—"
    */
-  formatKwh(value) {
+  formatKwh(value: number | null): string {
     if (value === null || Number.isNaN(value)) return "—";
     return this.formatResultNumber(value, 2) + " kWh";
   }
@@ -120,7 +153,7 @@ export class EnergyCore {
    * @param {number} value - Costo
    * @returns {string} - "$ X.XX" o "—"
    */
-  formatCost(value) {
+  formatCost(value: number | null): string {
     if (value === null || Number.isNaN(value)) return "—";
     return "$ " + this.formatResultNumber(value, 2);
   }
@@ -132,7 +165,7 @@ export class EnergyCore {
    * @param {number} price - Precio por kWh
    * @returns {{ kwhUsed: number, cost: number }}
    */
-  calculateTrip(distance, consumption, price) {
+  calculateTrip(distance: number, consumption: number, price: number): EnergyTripCalculation {
     const kwhUsed = distance * (consumption / 100);
     const cost = kwhUsed * price;
     return { kwhUsed, cost };
@@ -143,7 +176,10 @@ export class EnergyCore {
    * @param {Array} trips - Array de trips con { id, distance, consumption, price }
    * @returns {{ total: number, tripCosts: Map<string, { kwhUsed: number, cost: number }> }}
    */
-  calculateMultiTotal(trips) {
+  calculateMultiTotal(trips: EnergyTripInput[]): {
+    total: number;
+    tripCosts: Map<string, EnergyTripCalculation | null>;
+  } {
     let total = 0;
     const tripCosts = new Map();
 

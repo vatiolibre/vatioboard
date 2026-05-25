@@ -10,13 +10,28 @@
 
 const SAFETY_MARGIN_MS = 30_000;
 
-const cache = new Map();
+export interface MediaAssetAccess {
+  playback_url?: string;
+  download_url?: string;
+  export_url?: string;
+  image_url?: string;
+  preview_image_url?: string;
+  expires_in_seconds?: number;
+  [key: string]: unknown;
+}
 
-function cacheKey(assetName, contentHash) {
+interface MediaAccessCacheEntry {
+  access: MediaAssetAccess;
+  expiresAt: number;
+}
+
+const cache = new Map<string, MediaAccessCacheEntry>();
+
+function cacheKey(assetName: string, contentHash?: string | null): string {
   return contentHash ? `${assetName}:${contentHash}` : assetName;
 }
 
-export function getCachedMediaAccess(assetName, contentHash) {
+export function getCachedMediaAccess(assetName: string, contentHash?: string | null): MediaAssetAccess | null {
   const entry = cache.get(cacheKey(assetName, contentHash));
   if (!entry) return null;
 
@@ -28,14 +43,19 @@ export function getCachedMediaAccess(assetName, contentHash) {
   return entry.access;
 }
 
-export function setCachedMediaAccess(assetName, contentHash, access, expiresInSeconds) {
+export function setCachedMediaAccess(
+  assetName: string,
+  contentHash: string | null | undefined,
+  access: MediaAssetAccess,
+  expiresInSeconds: number,
+): void {
   cache.set(cacheKey(assetName, contentHash), {
     access,
     expiresAt: Date.now() + expiresInSeconds * 1000,
   });
 }
 
-export function clearMediaAccessCache(assetName) {
+export function clearMediaAccessCache(assetName?: string): void {
   if (assetName) {
     // Clear all entries whose key starts with the asset name.
     for (const key of [...cache.keys()]) {
