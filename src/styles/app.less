@@ -6,6 +6,11 @@ body,
 }
 
 :root {
+  --vb-touch-target-min: 44px;
+  --vb-safe-area-top: env(safe-area-inset-top, 0px);
+  --vb-safe-area-right: env(safe-area-inset-right, 0px);
+  --vb-safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --vb-safe-area-left: env(safe-area-inset-left, 0px);
   --vb-z-shell-window-base: 1000;
   --vb-z-shell-window-max: 1890;
   --vb-z-shell-taskbar: 1950;
@@ -96,11 +101,11 @@ html.vb-floating-drag-active body {
   --vb-shell-taskbar-max-width: min(520px, calc(100vw - 24px));
   --vb-shell-taskbar-padding-x: 12px;
   --vb-shell-taskbar-padding-inline-total: 24px;
-  --vb-shell-taskbar-handle-width: 44px;
+  --vb-shell-taskbar-handle-width: var(--vb-touch-target-min);
 
   position: fixed;
   left: 50%;
-  bottom: max(10px, env(safe-area-inset-bottom));
+  bottom: max(10px, var(--vb-safe-area-bottom));
   transform: translateX(-50%);
   z-index: var(--vb-z-shell-taskbar, 1950);
   display: flex;
@@ -203,7 +208,7 @@ html.vb-floating-drag-active body {
 
 .vb-shell-taskbar[data-vb-shell-taskbar-position="left"],
 [data-vb-shell-taskbar-position="left"] .vb-shell-taskbar {
-  left: max(10px, env(safe-area-inset-left));
+  left: max(10px, var(--vb-safe-area-left));
   top: 50%;
   bottom: auto;
   transform: translateY(-50%);
@@ -246,7 +251,7 @@ html.vb-floating-drag-active body {
 .vb-shell-taskbar[data-vb-shell-taskbar-position="right"],
 [data-vb-shell-taskbar-position="right"] .vb-shell-taskbar {
   left: auto;
-  right: max(10px, env(safe-area-inset-right));
+  right: max(10px, var(--vb-safe-area-right));
   top: 50%;
   bottom: auto;
   transform: translateY(-50%);
@@ -466,16 +471,16 @@ html.vb-floating-drag-active body {
 
 @media (max-width: 640px) {
   .vb-shell-taskbar {
-    --vb-shell-taskbar-safe-left: max(4px, env(safe-area-inset-left));
-    --vb-shell-taskbar-safe-right: max(4px, env(safe-area-inset-right));
+    --vb-shell-taskbar-safe-left: max(4px, var(--vb-safe-area-left));
+    --vb-shell-taskbar-safe-right: max(4px, var(--vb-safe-area-right));
     --vb-shell-taskbar-max-width: calc(100vw - var(--vb-shell-taskbar-safe-left) - var(--vb-shell-taskbar-safe-right));
     --vb-shell-taskbar-padding-x: 8px;
     --vb-shell-taskbar-padding-inline-total: 16px;
-    --vb-shell-taskbar-handle-width: 44px;
+    --vb-shell-taskbar-handle-width: var(--vb-touch-target-min);
 
     left: var(--vb-shell-taskbar-safe-left);
     right: auto;
-    bottom: max(8px, env(safe-area-inset-bottom));
+    bottom: max(8px, var(--vb-safe-area-bottom));
     transform: none;
   }
 }

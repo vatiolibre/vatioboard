@@ -15,6 +15,8 @@ const STANDALONE_PAGES = [
 ];
 const HARNESS_COMMENT =
   "Legacy standalone test/dev harness. Production ships through index.html SPA routes.";
+const PRODUCTION_SOURCE_EXTENSIONS = new Set([".js", ".mjs", ".ts", ".tsx", ".less", ".css"]);
+const TEST_SOURCE_EXTENSIONS = new Set([".js", ".mjs", ".ts", ".tsx"]);
 
 function readProjectFile(path) {
   return readFileSync(resolve(root, path), "utf8");
@@ -61,7 +63,7 @@ describe("standalone HTML production-surface guard", () => {
   });
 
   it("keeps production source from linking to standalone root pages", () => {
-    const productionFiles = listFiles("src", (file) => [".js", ".mjs", ".less", ".css"].includes(extname(file)));
+    const productionFiles = listFiles("src", (file) => PRODUCTION_SOURCE_EXTENSIONS.has(extname(file)));
     const pagePattern = new RegExp(`(?:${STANDALONE_PAGES.map((page) => page.replace(".", "\\.")).join("|")})["'#?]`);
 
     for (const file of productionFiles) {
@@ -70,7 +72,7 @@ describe("standalone HTML production-surface guard", () => {
   });
 
   it("keeps product smoke tests on SPA route surfaces", () => {
-    const smokeFiles = listFiles("test/smoke", (file) => extname(file) === ".js");
+    const smokeFiles = listFiles("test/smoke", (file) => TEST_SOURCE_EXTENSIONS.has(extname(file)));
     const standaloneBootPattern = /bootHtmlPage\(["'](?:speed|accel|library|replay|player|calculator|gps-rate|login)\.html["']\)/;
 
     for (const file of smokeFiles) {

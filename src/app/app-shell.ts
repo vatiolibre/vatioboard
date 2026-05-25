@@ -18,10 +18,28 @@ import { createHashRouter, emitRouteVisible, navigateToAppRoute } from "./router
 import { routes } from "./routes.js";
 import { createRuntimeContext } from "./runtime-context.js";
 import { showWelcomeConsentIfNeeded } from "./welcome-consent.js";
+import type { AppRoute, MountedView } from "../types/route";
+import type { ShellRuntime } from "../types/shell";
+
+interface AppShellStartOptions {
+  viewRoot?: HTMLElement | null;
+  persistentLayer?: HTMLElement | null;
+}
+
+interface HashRouterRuntime {
+  getRoute(): AppRoute | null;
+  destroy(): void;
+}
+
+const createShellPlayerWidget = createPlayerWidget as (options: Record<string, unknown>) => unknown;
+const installShellKeyboard = installShellKeyboardShortcuts as (options: {
+  shellManager: ShellRuntime;
+}) => { uninstall(): void };
 
 function installLinkInterceptor() {
   document.addEventListener("click", (event) => {
-    const anchor = event.target?.closest?.("a[href]");
+    const target = event.target instanceof Element ? event.target : null;
+    const anchor = target?.closest?.("a[href]") as HTMLAnchorElement | null;
     if (!anchor || event.defaultPrevented) return;
     if (anchor.target && anchor.target !== "_self") return;
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -63,7 +81,7 @@ function scheduleRoutePreload({ router, routes: appRoutes }) {
 export async function startAppShell({
   viewRoot = document.getElementById("app-view"),
   persistentLayer = document.getElementById("app-persistent-layer"),
-} = {}) {
+}: AppShellStartOptions = {}) {
   if (!viewRoot || !persistentLayer) {
     throw new Error("VatioBoard app shell roots are missing.");
   }
@@ -83,8 +101,8 @@ export async function startAppShell({
   void ensureSingleTabOwnership();
   startCloudSyncLoop();
 
-  const shellManager = getDefaultShellWindowManager({ root: persistentLayer });
-  const playerWidget = createPlayerWidget({
+  const shellManager = getDefaultShellWindowManager({ root: persistentLayer }) as ShellRuntime;
+  const playerWidget = createShellPlayerWidget({
     mount: persistentLayer,
     floating: false,
     preload: "immediate",
@@ -105,14 +123,14 @@ export async function startAppShell({
   const startMenu = initSharedStartMenu({ floatingTools, mount: persistentLayer });
   const activityIndicator = initActivityIndicator({ mount: persistentLayer });
   const shellTaskbar = createShellTaskbar({ shellManager, root: persistentLayer });
-  const shellKeyboard = installShellKeyboardShortcuts({ shellManager });
+  const shellKeyboard = installShellKeyboard({ shellManager });
   floatingTools.taskbar = shellTaskbar;
   shellManager.restoreShellLayout();
 
   installLinkInterceptor();
 
-  let activeView = null;
-  let activeRouteController = null;
+  let activeView: MountedView | null = null;
+  let activeRouteController: AbortController | null = null;
   let routeVersion = 0;
 
   const router = createHashRouter({
@@ -148,7 +166,7 @@ export async function startAppShell({
       activeView = view;
       emitRouteVisible(route);
     },
-  });
+  }) as HashRouterRuntime;
 
   window.__vatioboardRouter = router;
   const originalRouterDestroy = router.destroy;

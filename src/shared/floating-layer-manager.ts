@@ -1,24 +1,31 @@
 import { getDefaultShellWindowManager } from "./shell-window-manager.js";
 import { SHELL_Z_INDEX } from "./shell-layers.js";
+import type { ShellRuntime, ShellWindowRegistration } from "../types/shell";
+import { getShellWindowDefinition } from "./shell-window-registry.js";
 
 const FLOATING_PANEL_SELECTOR = "[data-vb-floating-panel]";
 const ACTIVE_ATTR = "data-vb-floating-active";
 const BASE_Z_INDEX = SHELL_Z_INDEX.windowBase;
 const MAX_Z_INDEX = SHELL_Z_INDEX.windowMax;
 
-let nextZIndex = BASE_Z_INDEX;
-const registrations = new WeakMap();
-const shellRegistrations = new WeakMap();
+let nextZIndex: number = BASE_Z_INDEX;
+const registrations = new WeakMap<HTMLElement, { cleanup: () => void; count: number }>();
+const shellRegistrations = new WeakMap<HTMLElement, { count: number; id: string }>();
 
-function isElement(value) {
-  return value instanceof Element;
+type FloatingPanelOptions = Partial<Omit<ShellWindowRegistration, "element">> & {
+  disabled?: boolean;
+  shellManager?: ShellRuntime;
+};
+
+function isElement(value: unknown): value is HTMLElement {
+  return value instanceof HTMLElement;
 }
 
-function isVisiblePanel(panel) {
+function isVisiblePanel(panel: Element): panel is HTMLElement {
   return isElement(panel) && panel.isConnected && !panel.hidden && !panel.hasAttribute("hidden");
 }
 
-function readZIndex(panel) {
+function readZIndex(panel: HTMLElement) {
   const inline = Number.parseInt(panel.style?.zIndex || "", 10);
   if (Number.isFinite(inline)) return inline;
 
@@ -28,24 +35,24 @@ function readZIndex(panel) {
   return BASE_Z_INDEX;
 }
 
-function getVisiblePanels(root = document) {
+function getVisiblePanels(root: ParentNode = document) {
   return Array.from(root.querySelectorAll?.(FLOATING_PANEL_SELECTOR) || [])
     .filter(isVisiblePanel);
 }
 
-function setActivePanel(panel) {
+function setActivePanel(panel: HTMLElement) {
   const scope = panel.ownerDocument || document;
   for (const candidate of getVisiblePanels(scope)) {
     candidate.setAttribute(ACTIVE_ATTR, candidate === panel ? "true" : "false");
   }
 }
 
-function prepareZIndex(root = document) {
+function prepareZIndex(root: ParentNode = document) {
   if (nextZIndex < MAX_Z_INDEX) return;
   compactFloatingPanelZOrder(root);
 }
 
-export function compactFloatingPanelZOrder(root = document) {
+export function compactFloatingPanelZOrder(root: ParentNode = document) {
   const visiblePanels = getVisiblePanels(root)
     .map((panel, index) => ({ panel, index, zIndex: readZIndex(panel) }))
     .sort((a, b) => (a.zIndex - b.zIndex) || (a.index - b.index));
@@ -60,7 +67,7 @@ export function compactFloatingPanelZOrder(root = document) {
   nextZIndex = Math.min(highestZIndex + 1, MAX_Z_INDEX);
 }
 
-export function bringFloatingPanelToFront(panelEl) {
+export function bringFloatingPanelToFront(panelEl: unknown) {
   if (!isElement(panelEl)) return;
 
   const shellManager = getDefaultShellWindowManager();
@@ -77,18 +84,26 @@ export function bringFloatingPanelToFront(panelEl) {
   setActivePanel(panelEl);
 }
 
-export function registerFloatingPanel(panelEl, options = {}) {
+export function registerFloatingPanel(panelEl: unknown, options: FloatingPanelOptions = {}) {
   if (!isElement(panelEl)) return () => {};
 
   if (options.id) {
     const shellManager = options.shellManager || getDefaultShellWindowManager();
+    const definition = getShellWindowDefinition(options.id);
+    const registration = {
+      ...definition,
+      ...options,
+      id: options.id,
+      capabilities: {
+        ...(definition?.capabilities || {}),
+        ...(options.capabilities || {}),
+      },
+      element: panelEl,
+    };
     const existing = shellRegistrations.get(panelEl);
     if (existing) {
       existing.count += 1;
-      shellManager.registerWindow({
-        ...options,
-        element: panelEl,
-      });
+      shellManager.registerWindow(registration);
       return () => {
         existing.count -= 1;
         if (existing.count <= 0) {
@@ -99,10 +114,7 @@ export function registerFloatingPanel(panelEl, options = {}) {
     }
 
     panelEl.setAttribute("data-vb-floating-panel", "");
-    shellManager.registerWindow({
-      ...options,
-      element: panelEl,
-    });
+    shellManager.registerWindow(registration);
     shellRegistrations.set(panelEl, { count: 1, id: options.id });
     return () => {
       const current = shellRegistrations.get(panelEl);

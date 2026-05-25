@@ -2,63 +2,46 @@ import "../styles/backend-auth.less";
 
 import { applyTranslations, getLang, toggleLang } from "../i18n.js";
 import {
-  IconAccel,
-  IconBoard,
-  IconCalculator,
-  IconCameraMap,
-  IconEnergy,
   IconLogin,
   IconLogout,
-  IconReplay,
-  IconSpeed,
-  IconWorld,
 } from "../icons.js";
 import { initBackendAuthControllers } from "./backend-auth.js";
 import { integratePlayerWidget } from "../player/integrate-player-widget.js";
 import { navigateToAppRoute, ROUTE_VISIBLE_EVENT } from "../app/router.js";
 import { SHELL_Z_INDEX } from "./shell-layers.js";
 import { getShellWorkArea, getViewportRect } from "./shell-work-area.js";
+import type { FloatingToolsRuntime } from "./floating-tools";
+import type { VatioToolDefinition } from "../types/ui";
+import { getRouteToolDefinition, getStartMenuToolDefinitions, TOOL_IDS } from "./tool-registry.js";
 
 const START_MENU_KEY = "__vatioboardStartMenu";
 
-const NAV_ITEMS = [
-  {
-    icon: IconSpeed,
-    i18nKey: "speedometer",
-    href: "#/speed",
-    path: "/",
-    pathAliases: ["/speed"],
-    text: "Speedometer",
-  },
-  {
-    icon: IconBoard,
-    i18nKey: "openBoard",
-    href: "#/board",
-    path: "/board",
-    text: "Open board",
-  },
-  {
-    icon: IconReplay,
-    i18nKey: "driveReplay",
-    href: "#/replay",
-    path: "/replay",
-    text: "Drive Replay",
-  },
-  {
-    icon: IconAccel,
-    i18nKey: "accelerationTest",
-    href: "#/accel",
-    path: "/accel",
-    text: "Acceleration Test",
-  },
-  {
-    icon: IconWorld,
-    i18nKey: "cloudLibrary",
-    href: "#/library",
-    path: "/library",
-    text: "Cloud library",
-  },
-];
+interface IconButtonOptions {
+  icon?: string;
+  i18nKey?: string;
+  text?: string;
+  type?: "button" | "submit" | "reset";
+  dataset?: Record<string, string>;
+}
+
+interface StartMenuApi {
+  bindTrigger(button: HTMLElement): StartMenuApi;
+  close(): void;
+  list: HTMLElement;
+  setOpen(isOpen: boolean, trigger?: HTMLElement | null): void;
+}
+
+interface StartMenuOptions {
+  floatingTools?: FloatingToolsRuntime | null;
+  mount?: HTMLElement;
+}
+
+const integrateShellPlayerWidget = integratePlayerWidget as (options: {
+  toolsMenuList: HTMLElement;
+  toolsMenu: StartMenuApi;
+}) => unknown;
+const applyStartMenuTranslations = applyTranslations as (root?: ParentNode) => void;
+const initStartMenuBackendAuth = initBackendAuthControllers as unknown as (options?: { root?: HTMLElement }) => unknown;
 
 function createIconButton({
   icon,
@@ -66,7 +49,7 @@ function createIconButton({
   text,
   type = "button",
   dataset = {},
-} = {}) {
+}: IconButtonOptions = {}) {
   const button = document.createElement("button");
   button.type = type;
   button.className = "btn-with-icon";
@@ -86,6 +69,23 @@ function createIconButton({
 
   button.append(iconSlot, label);
   return button;
+}
+
+function getStartMenuDataset(item: VatioToolDefinition) {
+  if (item.kind === "route") {
+    return {
+      href: item.href || "",
+      startRoute: item.path || "",
+    };
+  }
+  if (item.kind === "shell-window") {
+    return {
+      startAction: item.shellWindowId || item.id,
+    };
+  }
+  return {
+    startAction: item.id,
+  };
 }
 
 function buildBackendAuthForm() {
@@ -175,45 +175,14 @@ function buildStartMenu() {
   list.append(brand);
   list.append(buildBackendAuthForm());
 
-  for (const item of NAV_ITEMS) {
+  for (const item of getStartMenuToolDefinitions()) {
     list.append(createIconButton({
       icon: item.icon,
       i18nKey: item.i18nKey,
       text: item.text,
-      dataset: {
-        href: item.href,
-        startRoute: item.path,
-      },
+      dataset: getStartMenuDataset(item),
     }));
   }
-
-  list.append(createIconButton({
-    icon: IconCalculator,
-    i18nKey: "calculator",
-    text: "Calculator",
-    dataset: { startAction: "calculator" },
-  }));
-
-  list.append(createIconButton({
-    icon: IconEnergy,
-    i18nKey: "energy",
-    text: "Energy",
-    dataset: { startAction: "energy" },
-  }));
-
-  list.append(createIconButton({
-    icon: IconCameraMap,
-    i18nKey: "cameraMapTitle",
-    text: "Camera Map",
-    dataset: { startAction: "camera-map" },
-  }));
-
-  list.append(createIconButton({
-    icon: IconSpeed,
-    i18nKey: "speedAlertsTitle",
-    text: "Speed Alerts",
-    dataset: { startAction: "speed-alerts" },
-  }));
 
   const playerAnchor = document.createElement("span");
   playerAnchor.dataset.playerToggleAnchor = "";
@@ -235,7 +204,7 @@ function getRoutePath() {
 function syncCurrentRoute(list) {
   const routePath = getRoutePath();
   list.querySelectorAll("[data-start-route]").forEach((button) => {
-    const item = NAV_ITEMS.find((candidate) => candidate.path === button.dataset.startRoute);
+    const item = getRouteToolDefinition(button instanceof HTMLElement ? button.dataset.startRoute || "" : "");
     const isCurrent = item?.path === routePath || item?.pathAliases?.includes(routePath);
     button.dataset.currentPage = isCurrent ? "true" : "false";
     button.setAttribute("aria-current", isCurrent ? "page" : "false");
@@ -272,7 +241,7 @@ function positionMenu(list, trigger) {
   const triggerRect = trigger?.getBoundingClientRect?.();
   const viewport = getViewportRect();
   const workArea = getShellWorkArea({ viewport, safeMargin: margin });
-  const area = {
+  const area: Record<string, number> = {
     left: Math.max(viewport.left + margin, workArea.left),
     top: Math.max(viewport.top + margin, workArea.top),
     right: Math.min(viewport.left + viewport.width - margin, workArea.left + workArea.width),
@@ -317,14 +286,14 @@ function positionMenu(list, trigger) {
   list.style.overflowY = needsScroll ? "auto" : "visible";
 }
 
-export function getSharedStartMenu() {
+export function getSharedStartMenu(): StartMenuApi | null {
   return window[START_MENU_KEY] || null;
 }
 
 export function initSharedStartMenu({
   floatingTools,
   mount = document.body,
-} = {}) {
+}: StartMenuOptions = {}): StartMenuApi {
   const existing = getSharedStartMenu();
   if (existing?.list?.isConnected) return existing;
   if (existing) delete window[START_MENU_KEY];
@@ -370,6 +339,14 @@ export function initSharedStartMenu({
     setOpen(false);
   }
 
+  function toggleShellTool(action: string) {
+    if (action === TOOL_IDS.calculator) return floatingTools?.toggleCalculator?.();
+    if (action === TOOL_IDS.energy) return floatingTools?.toggleEnergy?.();
+    if (action === TOOL_IDS.cameraMap) return floatingTools?.toggleCameraMap?.();
+    if (action === TOOL_IDS.speedAlerts) return floatingTools?.toggleSpeedAlerts?.();
+    return null;
+  }
+
   function bindTrigger(button) {
     if (!button || button.dataset.startMenuBound === "true") return api;
     button.dataset.startMenuBound = "true";
@@ -386,29 +363,15 @@ export function initSharedStartMenu({
   }
 
   list.addEventListener("click", (event) => {
-    const actionButton = event.target.closest("[data-start-action]");
-    if (actionButton?.dataset.startAction === "calculator") {
-      floatingTools?.toggleCalculator?.();
-      close();
-      return;
-    }
-    if (actionButton?.dataset.startAction === "energy") {
-      floatingTools?.toggleEnergy?.();
-      close();
-      return;
-    }
-    if (actionButton?.dataset.startAction === "camera-map") {
-      floatingTools?.toggleCameraMap?.();
-      close();
-      return;
-    }
-    if (actionButton?.dataset.startAction === "speed-alerts") {
-      floatingTools?.toggleSpeedAlerts?.();
+    const target = event.target instanceof Element ? event.target : null;
+    const actionButton = target?.closest("[data-start-action]") as HTMLElement | null;
+    if (actionButton?.dataset.startAction) {
+      toggleShellTool(actionButton.dataset.startAction);
       close();
       return;
     }
 
-    const navButton = event.target.closest("[data-href]");
+    const navButton = target?.closest("[data-href]") as HTMLElement | null;
     if (!navButton) return;
     close();
     navigateToAppRoute(navButton.dataset.href);
@@ -421,7 +384,8 @@ export function initSharedStartMenu({
 
   document.addEventListener("click", (event) => {
     if (list.hidden) return;
-    if (list.contains(event.target) || activeTrigger?.contains?.(event.target)) return;
+    const target = event.target instanceof Node ? event.target : null;
+    if (target && (list.contains(target) || activeTrigger?.contains?.(target))) return;
     close();
   });
 
@@ -446,10 +410,10 @@ export function initSharedStartMenu({
   });
 
   syncLanguageButton(langButton);
-  applyTranslations(list);
-  initBackendAuthControllers({ root: list });
+  applyStartMenuTranslations(list);
+  initStartMenuBackendAuth({ root: list });
 
-  const api = {
+  const api: StartMenuApi = {
     bindTrigger,
     close,
     list,
@@ -457,6 +421,6 @@ export function initSharedStartMenu({
   };
 
   window[START_MENU_KEY] = api;
-  integratePlayerWidget({ toolsMenuList: list, toolsMenu: api });
+  integrateShellPlayerWidget({ toolsMenuList: list, toolsMenu: api });
   return api;
 }

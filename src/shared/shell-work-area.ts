@@ -2,7 +2,19 @@ const DEFAULT_MARGIN = 16;
 const DEFAULT_WIDTH = 360;
 const DEFAULT_HEIGHT = 260;
 
-function numberOr(value, fallback) {
+// TODO(ts-migration): narrow this legacy option bag once all shell callers are TS.
+type LegacyWorkAreaOptions = Record<string, any>;
+
+interface RectLike {
+  left: number;
+  top: number;
+  right?: number;
+  bottom?: number;
+  width: number;
+  height: number;
+}
+
+function numberOr(value: unknown, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
@@ -11,22 +23,22 @@ function hasDom() {
   return typeof document !== "undefined";
 }
 
-function getRootDocument(root) {
+function getRootDocument(root: Document | Element | null | undefined) {
   if (!hasDom()) return null;
   return root?.ownerDocument || root || document;
 }
 
-function isElement(value) {
-  return Boolean(value?.nodeType === 1);
+function isElement(value: unknown): value is HTMLElement {
+  return Boolean((value as Element | null)?.nodeType === 1);
 }
 
-function isHidden(element) {
+function isHidden(element: unknown) {
   if (!isElement(element)) return true;
   if (element.hidden || element.getAttribute("aria-hidden") === "true") return true;
   return false;
 }
 
-function getRect(element) {
+function getRect(element: Element): RectLike | null {
   const rect = element?.getBoundingClientRect?.();
   if (!rect) return null;
   const width = numberOr(rect.width, numberOr(rect.right, 0) - numberOr(rect.left, 0));
@@ -42,7 +54,7 @@ function getRect(element) {
   };
 }
 
-function isShellSurface(element) {
+function isShellSurface(element: Element) {
   return Boolean(element?.closest?.([
     "[data-vb-shell-window]",
     "[data-vb-floating-panel]",
@@ -57,11 +69,11 @@ function isShellSurface(element) {
   ].join(",")));
 }
 
-function collectElements(root, selector) {
+function collectElements(root: ParentNode | null | undefined, selector: string): Element[] {
   return Array.from(root?.querySelectorAll?.(selector) || []);
 }
 
-function getToolbarRects(root, viewport) {
+function getToolbarRects(root: Document | Element | null | undefined, viewport: RectLike) {
   const doc = getRootDocument(root);
   if (!doc) return [];
   const explicit = collectElements(doc, "[data-vb-shell-toolbar], [data-vb-app-toolbar]");
@@ -80,7 +92,7 @@ function getToolbarRects(root, viewport) {
     .filter((rect) => rect.bottom > viewport.top && rect.top < viewport.top + Math.max(180, viewport.height * 0.33));
 }
 
-function getTaskbarRects(root) {
+function getTaskbarRects(root: Document | Element | null | undefined) {
   const doc = getRootDocument(root);
   if (!doc) return [];
   return collectElements(doc, "[data-vb-shell-taskbar]:not([hidden])")
@@ -89,7 +101,7 @@ function getTaskbarRects(root) {
     .filter((entry) => entry.rect);
 }
 
-function isBottomTaskbar({ element, rect }, viewport) {
+function isBottomTaskbar({ element, rect }: { element: Element; rect: RectLike }, viewport: RectLike) {
   const position = element.getAttribute("data-vb-shell-taskbar-position")
     || element.closest?.("[data-vb-shell-taskbar-position]")?.getAttribute?.("data-vb-shell-taskbar-position")
     || "bottom";
@@ -98,7 +110,7 @@ function isBottomTaskbar({ element, rect }, viewport) {
   return rect.bottom >= viewport.top + viewport.height - Math.max(96, rect.height * 1.5);
 }
 
-export function getViewportRect(viewport = {}) {
+export function getViewportRect(viewport: LegacyWorkAreaOptions = {}) {
   const visualViewport = globalThis.visualViewport;
   const width = numberOr(viewport.width ?? viewport.viewportWidth, numberOr(visualViewport?.width, globalThis.innerWidth || 1024));
   const height = numberOr(viewport.height ?? viewport.viewportHeight, numberOr(visualViewport?.height, globalThis.innerHeight || 768));
@@ -110,7 +122,7 @@ export function getViewportRect(viewport = {}) {
   };
 }
 
-export function getShellChromeRects(options = {}) {
+export function getShellChromeRects(options: LegacyWorkAreaOptions = {}) {
   const viewport = getViewportRect(options.viewport);
   return {
     viewport,
@@ -119,7 +131,7 @@ export function getShellChromeRects(options = {}) {
   };
 }
 
-export function getShellWorkArea(options = {}) {
+export function getShellWorkArea(options: LegacyWorkAreaOptions = {}) {
   const viewport = getViewportRect(options.viewport);
   if (options.fullscreen === true) return viewport;
 
@@ -143,7 +155,7 @@ export function getShellWorkArea(options = {}) {
   };
 }
 
-export function clampBoundsToWorkArea(bounds, options = {}) {
+export function clampBoundsToWorkArea(bounds: LegacyWorkAreaOptions, options: LegacyWorkAreaOptions = {}) {
   const area = options.workArea || getShellWorkArea(options);
   const current = options.currentBounds || {};
   const source = { ...current, ...(bounds || {}) };
@@ -155,7 +167,7 @@ export function clampBoundsToWorkArea(bounds, options = {}) {
   const minTop = area.top;
   const maxLeft = Math.max(minLeft, area.left + area.width - width);
   const maxTop = Math.max(minTop, area.top + area.height - height);
-  const clamped = {
+  const clamped: LegacyWorkAreaOptions = {
     left: Math.min(maxLeft, Math.max(minLeft, numberOr(source.left, minLeft))),
     top: Math.min(maxTop, Math.max(minTop, numberOr(source.top, minTop))),
   };

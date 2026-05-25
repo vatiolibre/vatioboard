@@ -1,4 +1,6 @@
-import { IconCalculator, IconCameraMap, IconEnergy, IconMedia, IconMusic, IconSpeed } from "../icons.js";
+import type { ShellRuntime, ShellWindowRecord } from "../types/shell";
+import type { StorageLike } from "../types/storage";
+import { getToolDefinitionForShellWindow } from "./tool-registry.js";
 
 const TASKBAR_STATE_KEY = "vatioboard.shell.taskbar_fabs.v1";
 const DRAG_THRESHOLD_PX = 6;
@@ -6,29 +8,44 @@ const RETURN_MARGIN_PX = 36;
 const FAB_SIZE_PX = 52;
 const VIEWPORT_MARGIN_PX = 8;
 
-const DEFAULT_ICONS = {
-  calculator: IconCalculator,
-  "camera-map": IconCameraMap,
-  energy: IconEnergy,
-  milkdrop: IconMedia,
-  player: IconMusic,
-  "speed-alerts": IconSpeed,
-};
-
 const TOUCH_MOVE_OPTIONS = { capture: true, passive: false };
 const CAPTURE_OPTIONS = { capture: true };
 
-function getWindowState(record) {
+// TODO(ts-migration): drag sensors preserve the legacy JS payload shape while
+// the taskbar callers are still mixed JS/TS.
+type LegacyTaskbarOptions = Record<string, any>;
+
+interface StoredPosition {
+  detached: true;
+  left: number;
+  top: number;
+}
+
+interface TaskbarState {
+  knownWindowIds: string[];
+  positions: Record<string, StoredPosition>;
+  taskbar: StoredPosition | null;
+}
+
+interface TaskbarOptions {
+  shellManager?: ShellRuntime;
+  root?: HTMLElement;
+  labels?: Record<string, string>;
+  icons?: Record<string, string>;
+  storage?: StorageLike | null;
+}
+
+function getWindowState(record: ShellWindowRecord | LegacyTaskbarOptions) {
   if (record.minimized || record.state === "minimized") return "minimized";
   if (record.state === "open" && !record.element?.hidden) return "open";
   return record.state || "closed";
 }
 
-function defaultLabel(record) {
+function defaultLabel(record: ShellWindowRecord | LegacyTaskbarOptions) {
   return record.title || record.id;
 }
 
-function getStorage(storage) {
+function getStorage(storage?: StorageLike | null) {
   if (storage === null) return null;
   if (storage) return storage;
   try {
@@ -38,7 +55,7 @@ function getStorage(storage) {
   }
 }
 
-function normalizeStoredPosition(value, { requireDetached = true } = {}) {
+function normalizeStoredPosition(value: LegacyTaskbarOptions, { requireDetached = true }: { requireDetached?: boolean } = {}): StoredPosition | null {
   const left = Number.parseFloat(String(value?.left));
   const top = Number.parseFloat(String(value?.top));
   if (!Number.isFinite(left) || !Number.isFinite(top)) return null;
@@ -46,7 +63,7 @@ function normalizeStoredPosition(value, { requireDetached = true } = {}) {
   return { detached: true, left, top };
 }
 
-function readTaskbarState(storage) {
+function readTaskbarState(storage: StorageLike | null): TaskbarState {
   if (!storage) return { knownWindowIds: [], positions: {}, taskbar: null };
   try {
     const parsed = JSON.parse(storage.getItem(TASKBAR_STATE_KEY) || "{}");
@@ -75,7 +92,12 @@ function readTaskbarState(storage) {
   }
 }
 
-function writeTaskbarState(storage, knownWindowIds, itemPositions, taskbarPosition) {
+function writeTaskbarState(
+  storage: StorageLike | null,
+  knownWindowIds: Set<string>,
+  itemPositions: Map<string, StoredPosition>,
+  taskbarPosition: StoredPosition | null,
+) {
   if (!storage) return;
   try {
     const positions = {};
@@ -105,11 +127,11 @@ function writeTaskbarState(storage, knownWindowIds, itemPositions, taskbarPositi
   }
 }
 
-function getInitial(label) {
+function getInitial(label: unknown) {
   return String(label || "?").trim().charAt(0).toUpperCase() || "?";
 }
 
-function getDetachedRoot(root) {
+function getDetachedRoot(root: HTMLElement | Document | null | undefined) {
   return root?.appendChild ? root : document.body;
 }
 
@@ -120,7 +142,7 @@ function getViewportSize() {
   };
 }
 
-function clampPositionToViewport(position, width, height) {
+function clampPositionToViewport(position: LegacyTaskbarOptions, width: number, height: number) {
   const viewport = getViewportSize();
   return {
     left: Math.min(
@@ -134,14 +156,19 @@ function clampPositionToViewport(position, width, height) {
   };
 }
 
-function clampElementPosition(position, element, fallbackWidth = FAB_SIZE_PX, fallbackHeight = FAB_SIZE_PX) {
-  const rect = element?.getBoundingClientRect?.() || {};
+function clampElementPosition(
+  position: LegacyTaskbarOptions,
+  element: HTMLElement,
+  fallbackWidth = FAB_SIZE_PX,
+  fallbackHeight = FAB_SIZE_PX,
+) {
+  const rect = (element?.getBoundingClientRect?.() || {}) as DOMRect;
   const width = rect.width || element?.offsetWidth || fallbackWidth;
   const height = rect.height || element?.offsetHeight || fallbackHeight;
   return clampPositionToViewport(position, width, height);
 }
 
-function applyDetachedStyle(item, position) {
+function applyDetachedStyle(item: HTMLElement, position: StoredPosition) {
   item.classList.add("is-detached");
   item.style.position = "fixed";
   item.style.left = `${Math.round(position.left)}px`;
@@ -150,7 +177,7 @@ function applyDetachedStyle(item, position) {
   item.style.bottom = "auto";
 }
 
-function clearDetachedStyle(item) {
+function clearDetachedStyle(item: HTMLElement) {
   item.classList.remove("is-detached", "is-dragging", "is-drag-source");
   item.removeAttribute("data-vb-shell-taskbar-drag-source");
   item.style.position = "";
@@ -162,24 +189,24 @@ function clearDetachedStyle(item) {
   item.style.willChange = "";
 }
 
-function suppressNativeDrag(element) {
+function suppressNativeDrag(element: HTMLElement) {
   element.draggable = false;
   element.setAttribute("draggable", "false");
   element.ondragstart = () => false;
 }
 
-function makePoint(clientX, clientY) {
+function makePoint(clientX: number, clientY: number) {
   return { clientX, clientY, x: clientX, y: clientY };
 }
 
-function pointFromPointerEvent(event, fallback = null) {
+function pointFromPointerEvent(event: LegacyTaskbarOptions, fallback: LegacyTaskbarOptions | null = null) {
   const x = Number(event?.clientX);
   const y = Number(event?.clientY);
   if (!Number.isFinite(x) || !Number.isFinite(y)) return fallback;
   return makePoint(x, y);
 }
 
-function pointFromTouch(touch, fallback = null) {
+function pointFromTouch(touch: LegacyTaskbarOptions | null | undefined, fallback: LegacyTaskbarOptions | null = null) {
   if (!touch) return fallback;
   const x = Number(touch.clientX);
   const y = Number(touch.clientY);
@@ -187,20 +214,20 @@ function pointFromTouch(touch, fallback = null) {
   return makePoint(x, y);
 }
 
-function findTouch(event, identifier) {
-  const touches = [
+function findTouch(event: LegacyTaskbarOptions, identifier: number) {
+  const touches: LegacyTaskbarOptions[] = [
     ...Array.from(event?.changedTouches || []),
     ...Array.from(event?.touches || []),
   ];
   return touches.find((touch) => touch.identifier === identifier) || null;
 }
 
-function distanceBetween(a, b) {
+function distanceBetween(a: LegacyTaskbarOptions | null, b: LegacyTaskbarOptions | null) {
   if (!a || !b) return 0;
   return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
 }
 
-function buildDragPayload(sensor, point, event, type) {
+function buildDragPayload(sensor: LegacyTaskbarOptions, point: LegacyTaskbarOptions, event: Event, type: string) {
   const dx = point.clientX - sensor.startPoint.clientX;
   const dy = point.clientY - sensor.startPoint.clientY;
   const movementX = point.clientX - sensor.lastPoint.clientX;
@@ -230,8 +257,8 @@ function createTouchDragSensor({
   onEnd,
   onCancel,
   preventDefaultOnStart = false,
-}) {
-  let active = null;
+}: LegacyTaskbarOptions) {
+  let active: LegacyTaskbarOptions | null = null;
 
   function cleanup() {
     document.removeEventListener("touchmove", handleMove, TOUCH_MOVE_OPTIONS);
@@ -348,8 +375,8 @@ function createPointerDragSensor({
   onMove,
   onEnd,
   onCancel,
-}) {
-  let active = null;
+}: LegacyTaskbarOptions) {
+  let active: LegacyTaskbarOptions | null = null;
 
   function cleanup() {
     window.removeEventListener("pointermove", handleMove, TOUCH_MOVE_OPTIONS);
@@ -460,7 +487,7 @@ function createPointerDragSensor({
   };
 }
 
-function createDragSensors(options) {
+function createDragSensors(options: LegacyTaskbarOptions) {
   const touchSensor = createTouchDragSensor(options);
   const pointerSensor = createPointerDragSensor(options);
   return {
@@ -481,7 +508,7 @@ export function createShellTaskbar({
   labels = {},
   icons = {},
   storage,
-} = {}) {
+}: TaskbarOptions = {}) {
   if (!shellManager) throw new Error("createShellTaskbar requires a shellManager.");
 
   const storageTarget = getStorage(storage);
@@ -797,7 +824,7 @@ export function createShellTaskbar({
     payload.event?.preventDefault?.();
   }
 
-  function endTaskbarDrag(payload = {}) {
+  function endTaskbarDrag(payload: LegacyTaskbarOptions = {}) {
     const drag = activeTaskbarDrag;
     activeTaskbarDrag = null;
     if (!drag) return;
@@ -905,7 +932,7 @@ export function createShellTaskbar({
     document.documentElement.classList.remove("vb-floating-drag-active");
   }
 
-  function endItemDrag(payload = {}) {
+  function endItemDrag(payload: LegacyTaskbarOptions = {}) {
     const drag = activeItemDrag;
     activeItemDrag = null;
     if (!drag) return;
@@ -938,7 +965,7 @@ export function createShellTaskbar({
     payload.event?.preventDefault?.();
   }
 
-  function cancelItemDrag(payload = {}) {
+  function cancelItemDrag(payload: LegacyTaskbarOptions = {}) {
     if (payload.canceled && activeItemDrag?.moved) {
       endItemDrag(payload);
       return;
@@ -979,7 +1006,7 @@ export function createShellTaskbar({
     item.setAttribute("aria-label", `${label} ${state}`);
     item.title = label;
 
-    const icon = icons[record.id] || DEFAULT_ICONS[record.id];
+    const icon = icons[record.id] || getToolDefinitionForShellWindow(record.id)?.icon || "";
     const iconEl = document.createElement("span");
     iconEl.className = "vb-shell-taskbar-icon";
     iconEl.setAttribute("aria-hidden", "true");

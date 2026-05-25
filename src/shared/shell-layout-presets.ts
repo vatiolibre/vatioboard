@@ -1,8 +1,15 @@
+import type { ShellRuntime } from "../types/shell";
+import type { StorageLike } from "../types/storage";
+
 export const SHELL_NAMED_LAYOUTS_STORAGE_KEY = "vatioboard.shell.named_layouts.v1";
+
+// TODO(ts-migration): replace this with persisted shell layout interfaces shared
+// with shell-layout-store once all shell persistence callers are TS.
+type LegacyNamedLayout = Record<string, any>;
 
 const NAME_PATTERN = /^[A-Za-z0-9 _-]+$/;
 
-function safeStorage(storage) {
+function safeStorage(storage?: StorageLike | null) {
   if (storage) return storage;
   try {
     return globalThis.localStorage;
@@ -11,7 +18,7 @@ function safeStorage(storage) {
   }
 }
 
-function normalizeName(name) {
+function normalizeName(name: unknown) {
   const next = String(name ?? "").trim().slice(0, 48);
   if (!next || !NAME_PATTERN.test(next)) return null;
   return next;
@@ -21,7 +28,7 @@ function emptyStore() {
   return { version: 1, layouts: {} };
 }
 
-function readStore(storage) {
+function readStore(storage?: StorageLike | null): LegacyNamedLayout {
   const target = safeStorage(storage);
   if (!target) return emptyStore();
   try {
@@ -40,7 +47,7 @@ function readStore(storage) {
   }
 }
 
-function writeStore(storage, value) {
+function writeStore(storage: StorageLike | null | undefined, value: LegacyNamedLayout) {
   const target = safeStorage(storage);
   if (!target) return false;
   try {
@@ -54,7 +61,7 @@ function writeStore(storage, value) {
   }
 }
 
-function serializeShellLayout(shellManager) {
+function serializeShellLayout(shellManager: ShellRuntime): LegacyNamedLayout {
   const activeWindowId = shellManager.getActiveWindow()?.id || null;
   const windows = {};
   for (const record of shellManager.listWindows()) {
@@ -73,10 +80,10 @@ function serializeShellLayout(shellManager) {
   return { version: 1, activeWindowId, windows };
 }
 
-function applyLayout(layout, shellManager) {
+function applyLayout(layout: LegacyNamedLayout, shellManager: ShellRuntime) {
   if (!layout?.windows || typeof layout.windows !== "object") return false;
 
-  for (const [id, record] of Object.entries(layout.windows)) {
+  for (const [id, record] of Object.entries(layout.windows) as [string, LegacyNamedLayout][]) {
     if (!shellManager.getWindow(id)) continue;
     if (record.bounds) {
       shellManager.updateWindowBounds(id, record.bounds, { persist: false, updateRestoreBounds: true });
@@ -103,7 +110,10 @@ function applyLayout(layout, shellManager) {
   return true;
 }
 
-export function saveNamedLayout(name, { shellManager, storage } = {}) {
+export function saveNamedLayout(name: unknown, { shellManager, storage }: {
+  shellManager?: ShellRuntime;
+  storage?: StorageLike | null;
+} = {}) {
   const safeName = normalizeName(name);
   if (!safeName || !shellManager) return null;
   const store = readStore(storage);
@@ -119,7 +129,10 @@ export function saveNamedLayout(name, { shellManager, storage } = {}) {
   return store.layouts[safeName];
 }
 
-export function loadNamedLayout(name, { shellManager, storage } = {}) {
+export function loadNamedLayout(name: unknown, { shellManager, storage }: {
+  shellManager?: ShellRuntime;
+  storage?: StorageLike | null;
+} = {}) {
   const safeName = normalizeName(name);
   if (!safeName || !shellManager) return false;
   const entry = readStore(storage).layouts[safeName];
@@ -127,7 +140,7 @@ export function loadNamedLayout(name, { shellManager, storage } = {}) {
   return applyLayout(entry.layout, shellManager);
 }
 
-export function deleteNamedLayout(name, { storage } = {}) {
+export function deleteNamedLayout(name: unknown, { storage }: { storage?: StorageLike | null } = {}) {
   const safeName = normalizeName(name);
   if (!safeName) return false;
   const store = readStore(storage);
@@ -136,13 +149,13 @@ export function deleteNamedLayout(name, { storage } = {}) {
   return writeStore(storage, store);
 }
 
-export function listNamedLayouts({ storage } = {}) {
-  return Object.values(readStore(storage).layouts)
+export function listNamedLayouts({ storage }: { storage?: StorageLike | null } = {}) {
+  return (Object.values(readStore(storage).layouts) as LegacyNamedLayout[])
     .filter((entry) => entry?.name)
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
 }
 
-export function renameNamedLayout(oldName, newName, { storage } = {}) {
+export function renameNamedLayout(oldName: unknown, newName: unknown, { storage }: { storage?: StorageLike | null } = {}) {
   const safeOldName = normalizeName(oldName);
   const safeNewName = normalizeName(newName);
   if (!safeOldName || !safeNewName) return false;
@@ -158,13 +171,13 @@ export function renameNamedLayout(oldName, newName, { storage } = {}) {
   return writeStore(storage, store);
 }
 
-export function exportNamedLayout(name, { storage } = {}) {
+export function exportNamedLayout(name: unknown, { storage }: { storage?: StorageLike | null } = {}) {
   const safeName = normalizeName(name);
   const entry = safeName ? readStore(storage).layouts[safeName] : null;
   return entry ? JSON.stringify({ version: 1, layout: entry }) : null;
 }
 
-export function importNamedLayout(payload, { storage } = {}) {
+export function importNamedLayout(payload: unknown, { storage }: { storage?: StorageLike | null } = {}) {
   let parsed = payload;
   if (typeof payload === "string") {
     try {
@@ -173,7 +186,8 @@ export function importNamedLayout(payload, { storage } = {}) {
       return null;
     }
   }
-  const entry = parsed?.layout || parsed;
+  const parsedPayload = parsed as LegacyNamedLayout;
+  const entry = parsedPayload?.layout || parsedPayload;
   const safeName = normalizeName(entry?.name);
   if (!safeName || !entry?.layout?.windows) return null;
   const store = readStore(storage);

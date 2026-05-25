@@ -1,5 +1,27 @@
+import type { ShellBounds, ShellSnap, ShellWindowState } from "../types/shell";
+import type { StorageLike } from "../types/storage";
+
 export const SHELL_LAYOUT_STORAGE_KEY = "vatioboard.shell.layout.v1";
 export const SHELL_LAYOUT_VERSION = 1;
+
+// TODO(ts-migration): replace legacy layout option bags with explicit store
+// config types after repositories and remaining JS consumers are converted.
+type LegacyLayoutOptions = Record<string, any>;
+type ShellLayoutWindow = LegacyLayoutOptions & {
+  state: ShellWindowState;
+  previousState?: ShellWindowState;
+  bounds?: ShellBounds | null;
+  restoreBounds?: ShellBounds | null;
+  zIndex: number;
+  minimized: boolean;
+  snap?: ShellSnap | null;
+  updatedAt: number;
+};
+type ShellLayout = LegacyLayoutOptions & {
+  version: number;
+  activeWindowId: string | null;
+  windows: Record<string, ShellLayoutWindow>;
+};
 
 const VALID_STATES = new Set(["closed", "open", "minimized", "hidden", "fullscreen"]);
 const VALID_ZONES = new Set([
@@ -37,7 +59,7 @@ const LEGACY_WINDOWS = {
   },
 };
 
-function safeStorage(storage) {
+function safeStorage(storage?: StorageLike | null) {
   if (storage) return storage;
   try {
     return globalThis.localStorage;
@@ -46,22 +68,22 @@ function safeStorage(storage) {
   }
 }
 
-function isObject(value) {
+function isObject(value: unknown): value is Record<string, any> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function toNumber(value) {
+function toNumber(value: unknown) {
   const parsed = Number.parseFloat(String(value ?? ""));
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function normalizeBounds(bounds) {
+function normalizeBounds(bounds: unknown): ShellBounds | null {
   if (!isObject(bounds)) return null;
   const left = toNumber(bounds.left);
   const top = toNumber(bounds.top);
   if (left === null || top === null) return null;
 
-  const next = { left, top };
+  const next: ShellBounds = { left, top };
   const width = toNumber(bounds.width);
   const height = toNumber(bounds.height);
   if (width !== null && width > 0) next.width = width;
@@ -69,15 +91,15 @@ function normalizeBounds(bounds) {
   return next;
 }
 
-function normalizeSnap(snap) {
+function normalizeSnap(snap: unknown): ShellSnap | null {
   if (!isObject(snap) || !VALID_ZONES.has(snap.zone)) return null;
-  const next = { ...snap, zone: snap.zone };
+  const next: ShellSnap = { ...snap, zone: snap.zone };
   const ratio = Number(snap.ratio);
   if (Number.isFinite(ratio) && ratio > 0) next.ratio = ratio;
   return next;
 }
 
-function normalizeWindowLayout(value) {
+function normalizeWindowLayout(value: unknown): ShellLayoutWindow | null {
   if (!isObject(value)) return null;
   const state = VALID_STATES.has(value.state) ? value.state : null;
   if (!state) return null;
@@ -98,7 +120,7 @@ function normalizeWindowLayout(value) {
   };
 }
 
-export function createEmptyShellLayout(extra = {}) {
+export function createEmptyShellLayout(extra: LegacyLayoutOptions = {}): ShellLayout {
   return {
     ...extra,
     version: SHELL_LAYOUT_VERSION,
@@ -107,10 +129,10 @@ export function createEmptyShellLayout(extra = {}) {
   };
 }
 
-export function normalizeShellLayout(value) {
+export function normalizeShellLayout(value: unknown): ShellLayout {
   if (!isObject(value)) return createEmptyShellLayout();
 
-  const windows = {};
+  const windows: Record<string, ShellLayoutWindow> = {};
   if (isObject(value.windows)) {
     for (const [id, record] of Object.entries(value.windows)) {
       if (!id || typeof id !== "string") continue;
@@ -131,7 +153,7 @@ export function normalizeShellLayout(value) {
   };
 }
 
-function readRaw(storage, key) {
+function readRaw(storage: StorageLike | null | undefined, key: string) {
   try {
     return storage?.getItem?.(key) ?? null;
   } catch {
@@ -139,7 +161,7 @@ function readRaw(storage, key) {
   }
 }
 
-function removeRaw(storage, key) {
+function removeRaw(storage: StorageLike | null | undefined, key: string) {
   try {
     storage?.removeItem?.(key);
   } catch {
@@ -147,7 +169,7 @@ function removeRaw(storage, key) {
   }
 }
 
-function readJson(storage, key) {
+function readJson(storage: StorageLike | null | undefined, key: string) {
   const raw = readRaw(storage, key);
   if (!raw) return null;
   try {
@@ -158,7 +180,7 @@ function readJson(storage, key) {
   }
 }
 
-function getLegacyVisibility(storage, config) {
+function getLegacyVisibility(storage: StorageLike | null, config: LegacyLayoutOptions) {
   for (const key of config.visibilityKeys) {
     const raw = readRaw(storage, key);
     if (raw === null) continue;
@@ -174,7 +196,7 @@ function getLegacyVisibility(storage, config) {
   return null;
 }
 
-function getLegacyBounds(storage, config) {
+function getLegacyBounds(storage: StorageLike | null, config: LegacyLayoutOptions) {
   for (const key of config.posKeys) {
     const pos = readJson(storage, key);
     const bounds = normalizeBounds(pos?.panel);
@@ -183,7 +205,7 @@ function getLegacyBounds(storage, config) {
   return null;
 }
 
-export function migrateLegacyShellLayout(options = {}) {
+export function migrateLegacyShellLayout(options: LegacyLayoutOptions = {}) {
   const storage = safeStorage(options.storage);
   const now = Number.isFinite(Number(options.now)) ? Number(options.now) : Date.now();
   const layout = createEmptyShellLayout();
@@ -210,7 +232,7 @@ export function migrateLegacyShellLayout(options = {}) {
   return layout;
 }
 
-export function readShellLayout(options = {}) {
+export function readShellLayout(options: LegacyLayoutOptions = {}) {
   const storage = safeStorage(options.storage);
   const storageKey = options.storageKey || SHELL_LAYOUT_STORAGE_KEY;
   if (!storage) return createEmptyShellLayout();
@@ -230,7 +252,7 @@ export function readShellLayout(options = {}) {
   }
 }
 
-export function writeShellLayout(layout, options = {}) {
+export function writeShellLayout(layout: ShellLayout | LegacyLayoutOptions, options: LegacyLayoutOptions = {}) {
   const storage = safeStorage(options.storage);
   const storageKey = options.storageKey || SHELL_LAYOUT_STORAGE_KEY;
   if (!storage) return false;
@@ -243,12 +265,12 @@ export function writeShellLayout(layout, options = {}) {
   }
 }
 
-export function createShellLayoutStore(options = {}) {
+export function createShellLayoutStore(options: LegacyLayoutOptions = {}) {
   const storage = safeStorage(options.storage);
   const storageKey = options.storageKey || SHELL_LAYOUT_STORAGE_KEY;
-  let pendingLayout = null;
+  let pendingLayout: ShellLayout | null = null;
   let microtaskPending = false;
-  let timeoutId = 0;
+  let timeoutId: ReturnType<typeof setTimeout> | 0 = 0;
 
   function cancelPending() {
     if (timeoutId) {

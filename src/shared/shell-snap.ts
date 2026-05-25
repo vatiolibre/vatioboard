@@ -1,4 +1,9 @@
 import { getShellWorkArea } from "./shell-work-area.js";
+import type { ShellBounds, ShellSnapZone } from "../types/shell";
+
+// TODO(ts-migration): replace this open option bag with named snap/work-area
+// interfaces after the remaining JS callers are converted.
+type LegacySnapOptions = Record<string, any>;
 
 const SNAP_ZONES = new Set([
   "left",
@@ -16,12 +21,12 @@ const DEFAULT_MARGIN = 16;
 const SMALL_VIEWPORT_WIDTH = 560;
 const SMALL_VIEWPORT_HEIGHT = 460;
 
-function numberOr(value, fallback) {
+function numberOr(value: unknown, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function normalizeViewport(viewport = {}) {
+function normalizeViewport(viewport: LegacySnapOptions = {}) {
   const width = numberOr(viewport.width ?? viewport.viewportWidth, globalThis.innerWidth || 1024);
   const height = numberOr(viewport.height ?? viewport.viewportHeight, globalThis.innerHeight || 768);
   return {
@@ -32,7 +37,7 @@ function normalizeViewport(viewport = {}) {
   };
 }
 
-function resolveSnapArea(viewport, options = {}) {
+function resolveSnapArea(viewport: LegacySnapOptions, options: LegacySnapOptions = {}) {
   if (options.workArea) return { viewport: normalizeViewport(options.workArea), usesWorkArea: true };
   if (options.useWorkArea === true) {
     return {
@@ -46,11 +51,11 @@ function resolveSnapArea(viewport, options = {}) {
   return { viewport: normalizeViewport(viewport), usesWorkArea: false };
 }
 
-function getSafeMargin(options = {}) {
+function getSafeMargin(options: LegacySnapOptions = {}) {
   return numberOr(options.safeMargin ?? options.margin, DEFAULT_MARGIN);
 }
 
-function isSmallViewport(viewport) {
+function isSmallViewport(viewport: ShellBounds) {
   return viewport.width < SMALL_VIEWPORT_WIDTH || viewport.height < SMALL_VIEWPORT_HEIGHT;
 }
 
@@ -60,7 +65,7 @@ export function getSnapZoneForPointer({
   viewportWidth,
   viewportHeight,
   thresholdPx = 32,
-} = {}) {
+}: LegacySnapOptions = {}) {
   const width = numberOr(viewportWidth, globalThis.innerWidth || 1024);
   const height = numberOr(viewportHeight, globalThis.innerHeight || 768);
   const threshold = numberOr(thresholdPx, 32);
@@ -86,7 +91,7 @@ export function getSnapZoneForPointer({
   return "center";
 }
 
-export function clampBoundsToViewport(bounds, viewport, options = {}) {
+export function clampBoundsToViewport(bounds: LegacySnapOptions, viewport: LegacySnapOptions, options: LegacySnapOptions = {}) {
   const vp = normalizeViewport(viewport);
   const margin = getSafeMargin(options);
   const width = Math.max(1, Math.min(numberOr(bounds?.width, 360), vp.width - (margin * 2)));
@@ -104,7 +109,7 @@ export function clampBoundsToViewport(bounds, viewport, options = {}) {
   };
 }
 
-export function normalizeBoundsToViewport(bounds, viewport, options = {}) {
+export function normalizeBoundsToViewport(bounds: LegacySnapOptions, viewport: LegacySnapOptions, options: LegacySnapOptions = {}) {
   const vp = normalizeViewport(viewport);
   const margin = getSafeMargin(options);
   const width = numberOr(bounds?.width, Math.min(420, vp.width - (margin * 2)));
@@ -114,7 +119,7 @@ export function normalizeBoundsToViewport(bounds, viewport, options = {}) {
   return clampBoundsToViewport({ left, top, width, height }, vp, { safeMargin: margin });
 }
 
-export function getBoundsForSnapZone(zone, viewport, options = {}) {
+export function getBoundsForSnapZone(zone: ShellSnapZone | string, viewport?: LegacySnapOptions, options: LegacySnapOptions = {}) {
   const { viewport: vp, usesWorkArea } = resolveSnapArea(viewport, options);
   const margin = usesWorkArea ? 0 : getSafeMargin(options);
   const safeWidth = Math.max(1, vp.width - (margin * 2));
@@ -167,21 +172,21 @@ export function getBoundsForSnapZone(zone, viewport, options = {}) {
   }
 }
 
-export function getBoundsForSnapZoneInWorkArea(zone, options = {}) {
+export function getBoundsForSnapZoneInWorkArea(zone: ShellSnapZone | string, options: LegacySnapOptions = {}) {
   return getBoundsForSnapZone(zone, options.viewport, {
     ...options,
     useWorkArea: true,
   });
 }
 
-export function applySnapPreview(panelEl, zone) {
+export function applySnapPreview(panelEl: Element | null | undefined, zone: ShellSnapZone | string) {
   if (!panelEl) return;
   const normalizedZone = SNAP_ZONES.has(zone) ? zone : "center";
   panelEl.setAttribute("data-vb-shell-snap-preview", normalizedZone);
   panelEl.setAttribute("data-vb-shell-snap-zone", normalizedZone);
 }
 
-export function clearSnapPreview(panelEl) {
+export function clearSnapPreview(panelEl: Element | null | undefined) {
   panelEl?.removeAttribute?.("data-vb-shell-snap-preview");
   panelEl?.removeAttribute?.("data-vb-shell-snap-zone");
 }

@@ -760,7 +760,8 @@ describe("shell UI integration", () => {
     expect(taskbarBlock).not.toContain("overflow-x: auto");
     expect(taskbarBlock).not.toContain("-webkit-overflow-scrolling");
     expect(taskbarBlock).toContain("width: fit-content");
-    expect(taskbarBlock).toContain("--vb-shell-taskbar-handle-width: 44px");
+    expect(appCss).toContain("--vb-touch-target-min: 44px");
+    expect(taskbarBlock).toContain("--vb-shell-taskbar-handle-width: var(--vb-touch-target-min)");
     expect(trayBlock).toContain("display: flex");
     expect(trayBlock).toContain("justify-content: center");
     expect(trayBlock).toContain("flex-wrap: wrap");
@@ -772,8 +773,8 @@ describe("shell UI integration", () => {
     expect(trayBlock).toContain("margin: 0");
     expect(trayBlock).not.toContain("overflow-x: auto");
     expect(trayBlock).not.toContain("-webkit-overflow-scrolling");
-    expect(appCss).toContain("--vb-shell-taskbar-safe-left: max(4px, env(safe-area-inset-left))");
-    expect(appCss).toContain("--vb-shell-taskbar-safe-right: max(4px, env(safe-area-inset-right))");
+    expect(appCss).toContain("--vb-shell-taskbar-safe-left: max(4px, var(--vb-safe-area-left))");
+    expect(appCss).toContain("--vb-shell-taskbar-safe-right: max(4px, var(--vb-safe-area-right))");
     expect(handleBlock).toContain("flex: 0 0 var(--vb-shell-taskbar-handle-width)");
     expect(handleBlock).toContain("min-width: var(--vb-shell-taskbar-handle-width)");
     expect(handleBlock).toContain("margin: 0");

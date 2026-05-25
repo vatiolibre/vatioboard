@@ -1,14 +1,37 @@
 import { createCleanupStack } from "../view-cleanup.js";
+import type { MountedView, RouteContext, RouteMountContext } from "../../types/route";
 
-const templateCache = new Map();
+interface RouteMeta {
+  title?: string;
+  description?: string;
+  canonicalPath?: string;
+  bodyClass?: string | string[];
+  bodyClasses?: string | string[];
+  cleanupBodyClasses?: string | string[];
+}
 
-function normalizeClassList(value) {
+interface RouteViewConfig {
+  pageName?: string;
+  template?: string;
+  meta?: RouteMeta;
+  loadModule: () => Promise<unknown> | unknown;
+  mountController?: (routeModule: unknown, context: RouteMountContext) => Promise<MountedView | void> | MountedView | void;
+  unmountController?: (routeModule: unknown, context: RouteMountContext) => void;
+}
+
+type RouteViewRuntimeContext = Partial<RouteContext> & {
+  routeSignal?: AbortSignal;
+};
+
+const templateCache = new Map<string, HTMLTemplateElement>();
+
+function normalizeClassList(value?: string | string[] | null) {
   if (!value) return [];
   if (Array.isArray(value)) return value.filter(Boolean);
   return String(value).split(/\s+/).filter(Boolean);
 }
 
-function resolveCanonicalHref(canonicalPath) {
+function resolveCanonicalHref(canonicalPath?: string) {
   if (!canonicalPath) return "";
   try {
     return new URL(canonicalPath, window.location.origin).href;
@@ -17,7 +40,7 @@ function resolveCanonicalHref(canonicalPath) {
   }
 }
 
-function setMetaContent(selector, content) {
+function setMetaContent(selector: string, content?: string) {
   const element = document.querySelector(selector);
   if (!element || !content) return null;
   const previous = element.getAttribute("content");
@@ -38,7 +61,7 @@ export function setRouteMeta({
   bodyClass,
   bodyClasses,
   cleanupBodyClasses,
-} = {}) {
+}: RouteMeta = {}) {
   const classNames = [...normalizeClassList(bodyClass), ...normalizeClassList(bodyClasses)];
   const cleanupClassNames = [...new Set([...classNames, ...normalizeClassList(cleanupBodyClasses)])];
   const previousTitle = document.title;
@@ -79,7 +102,7 @@ export function setRouteMeta({
   };
 }
 
-function getTemplate(pageName, template) {
+function getTemplate(pageName?: string, template?: string) {
   const cacheKey = `${pageName || "route"}:${String(template || "")}`;
   if (templateCache.has(cacheKey)) return templateCache.get(cacheKey);
 
@@ -89,7 +112,7 @@ function getTemplate(pageName, template) {
   return templateElement;
 }
 
-function createNoopMountedView() {
+function createNoopMountedView(): MountedView {
   return {
     unmount() {},
   };
@@ -102,18 +125,18 @@ export function createRouteView({
   loadModule,
   mountController,
   unmountController,
-}) {
-  let modulePromise = null;
+}: RouteViewConfig) {
+  let modulePromise: Promise<unknown> | null = null;
 
   return {
-    async mount(root, context = {}) {
+    async mount(root: HTMLElement, context: RouteViewRuntimeContext = {}): Promise<MountedView> {
       const signal = context.routeSignal;
       if (signal?.aborted) return createNoopMountedView();
 
       const cleanup = createCleanupStack();
-      let routeModule = null;
-      let controllerResult = null;
-      let routeNodes = [];
+      let routeModule: unknown = null;
+      let controllerResult: MountedView | null = null;
+      let routeNodes: ChildNode[] = [];
       const mountContext = {
         root,
         context,
@@ -164,7 +187,7 @@ export function createRouteView({
           return createNoopMountedView();
         }
 
-        controllerResult = await mountController?.(routeModule, mountContext);
+        controllerResult = ((await mountController?.(routeModule, mountContext)) || null) as MountedView | null;
         cleanup.add(() => {
           unmountController?.(routeModule, mountContext);
         });

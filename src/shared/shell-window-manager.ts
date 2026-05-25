@@ -2,6 +2,15 @@ import { createShellLayoutStore } from "./shell-layout-store.js";
 import { getBoundsForSnapZone } from "./shell-snap.js";
 import { SHELL_Z_INDEX } from "./shell-layers.js";
 import { clampBoundsToWorkArea, getShellWorkArea, getViewportRect } from "./shell-work-area.js";
+import type {
+  ShellBounds,
+  ShellPreferences,
+  ShellRuntime,
+  ShellSnapZone,
+  ShellWindowCapabilities,
+  ShellWindowLifecycle,
+  ShellWindowRecord,
+} from "../types/shell";
 
 export const SHELL_WINDOW_BASE_Z_INDEX = SHELL_Z_INDEX.windowBase;
 export const SHELL_WINDOW_MAX_Z_INDEX = SHELL_Z_INDEX.windowMax;
@@ -30,7 +39,7 @@ const DEFAULT_SHELL_PREFERENCES = {
   snapEnabled: true,
   restoreOnBoot: true,
   reduceMotion: "system",
-};
+} as const satisfies ShellPreferences;
 const PREFERENCE_VALIDATORS = {
   taskbarPosition: (value) => ["bottom", "left", "right"].includes(value),
   windowDensity: (value) => ["comfortable", "compact"].includes(value),
@@ -39,31 +48,38 @@ const PREFERENCE_VALIDATORS = {
   reduceMotion: (value) => value === "system" || value === true || value === false,
 };
 
-let defaultShellWindowManager = null;
+// TODO(ts-migration): this manager still accepts legacy JS window records and
+// option bags. Keep the public ShellRuntime typed while narrowing internals in
+// follow-up feature conversions.
+type LegacyShellOptions = Record<string, any>;
+type MutableShellWindowRecord = Record<string, any>;
 
-function isElement(value) {
-  return Boolean(value?.nodeType === 1);
+let defaultShellWindowManager: ShellRuntime | null = null;
+
+function isElement(value: unknown): value is HTMLElement {
+  return Boolean((value as Element | null)?.nodeType === 1);
 }
 
-function toNumber(value) {
+function toNumber(value: unknown) {
   const parsed = Number.parseFloat(String(value ?? ""));
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function normalizeBounds(bounds) {
+function normalizeBounds(bounds: unknown): ShellBounds | null {
   if (!bounds || typeof bounds !== "object") return null;
-  const left = toNumber(bounds.left);
-  const top = toNumber(bounds.top);
+  const source = bounds as LegacyShellOptions;
+  const left = toNumber(source.left);
+  const top = toNumber(source.top);
   if (left === null || top === null) return null;
-  const next = { left, top };
-  const width = toNumber(bounds.width);
-  const height = toNumber(bounds.height);
+  const next: ShellBounds = { left, top };
+  const width = toNumber(source.width);
+  const height = toNumber(source.height);
   if (width !== null && width > 0) next.width = width;
   if (height !== null && height > 0) next.height = height;
   return next;
 }
 
-function normalizeCapabilities(capabilities = {}) {
+function normalizeCapabilities(capabilities: LegacyShellOptions = {}): ShellWindowCapabilities {
   const snapZones = Array.isArray(capabilities.snapZones)
     ? capabilities.snapZones.filter((zone) => SNAP_ZONES.has(zone))
     : null;
@@ -86,9 +102,9 @@ function normalizeCapabilities(capabilities = {}) {
   };
 }
 
-function getElementBounds(element) {
+function getElementBounds(element: unknown): ShellBounds | null {
   if (!isElement(element)) return null;
-  const rect = element.getBoundingClientRect?.() || {};
+  const rect = (element.getBoundingClientRect?.() || {}) as DOMRect;
   const left = toNumber(element.style?.left) ?? toNumber(rect.left) ?? 0;
   const top = toNumber(element.style?.top) ?? toNumber(rect.top) ?? 0;
   const width = toNumber(element.style?.width) ?? toNumber(rect.width);
@@ -96,7 +112,7 @@ function getElementBounds(element) {
   return normalizeBounds({ left, top, width, height }) || { left, top };
 }
 
-function applyBounds(element, bounds) {
+function applyBounds(element: unknown, bounds: unknown) {
   const next = normalizeBounds(bounds);
   if (!isElement(element) || !next) return;
   element.style.position = "fixed";
@@ -108,7 +124,11 @@ function applyBounds(element, bounds) {
   if (next.height) element.style.height = `${Math.round(next.height)}px`;
 }
 
-function applyCapabilityConstraints(bounds, record, options = {}) {
+function applyCapabilityConstraints(
+  bounds: unknown,
+  record: MutableShellWindowRecord | null | undefined,
+  options: LegacyShellOptions = {},
+): ShellBounds | null {
   const next = normalizeBounds(bounds);
   if (!next || !record?.capabilities) return next;
   const constrained = { ...next };
@@ -136,15 +156,15 @@ function getViewport() {
   return getViewportRect();
 }
 
-function isFullscreenRecord(record) {
+function isFullscreenRecord(record: MutableShellWindowRecord | null | undefined) {
   return record?.state === "fullscreen";
 }
 
-function getFullscreenBounds(options = {}) {
+function getFullscreenBounds(options: LegacyShellOptions = {}) {
   return getShellWorkArea({ ...options, fullscreen: true });
 }
 
-function sanitizeNormalBounds(bounds, options = {}) {
+function sanitizeNormalBounds(bounds: unknown, options: LegacyShellOptions = {}) {
   const next = normalizeBounds(bounds);
   if (!next) return null;
   if (options.rawBounds === true) return next;
@@ -158,7 +178,7 @@ function sanitizeNormalBounds(bounds, options = {}) {
   });
 }
 
-function sanitizeRecordBounds(record, bounds, options = {}) {
+function sanitizeRecordBounds(record: MutableShellWindowRecord | null | undefined, bounds: unknown, options: LegacyShellOptions = {}) {
   if (isFullscreenRecord(record) && options.fullscreen !== false) {
     return getFullscreenBounds({ root: options.root, viewport: options.viewport });
   }
@@ -169,7 +189,7 @@ function sanitizeRecordBounds(record, bounds, options = {}) {
   });
 }
 
-function canSnapRecord(record, zone) {
+function canSnapRecord(record: MutableShellWindowRecord | null | undefined, zone: ShellSnapZone | string) {
   if (!record || record.capabilities?.snap === false) return false;
   if (!SNAP_ZONES.has(zone)) return false;
   if (MAXIMIZE_ZONES.has(zone) && record.capabilities?.maximizable !== true) return false;
@@ -177,13 +197,13 @@ function canSnapRecord(record, zone) {
   return true;
 }
 
-function getRecordZIndex(record) {
+function getRecordZIndex(record: MutableShellWindowRecord) {
   return isFullscreenRecord(record)
     ? SHELL_Z_INDEX.fullscreen
     : Math.min(record.zIndex, MAX_Z_INDEX);
 }
 
-function sanitizeLifecycle(lifecycle = {}) {
+function sanitizeLifecycle(lifecycle: LegacyShellOptions = {}): ShellWindowLifecycle {
   return {
     ...(typeof lifecycle.open === "function" ? { open: lifecycle.open } : {}),
     ...(typeof lifecycle.close === "function" ? { close: lifecycle.close } : {}),
@@ -193,7 +213,7 @@ function sanitizeLifecycle(lifecycle = {}) {
   };
 }
 
-function shallowRecord(record) {
+function shallowRecord(record: MutableShellWindowRecord | null | undefined): ShellWindowRecord | null {
   if (!record) return null;
   return {
     id: record.id,
@@ -217,10 +237,10 @@ function shallowRecord(record) {
     restoreOnBoot: record.restoreOnBoot,
     storageKey: record.storageKey,
     version: record.version,
-  };
+  } as ShellWindowRecord;
 }
 
-function getPreferenceStorage(storage) {
+function getPreferenceStorage(storage: LegacyShellOptions | null | undefined) {
   if (storage) return storage;
   try {
     return globalThis.localStorage;
@@ -229,7 +249,7 @@ function getPreferenceStorage(storage) {
   }
 }
 
-function normalizeShellPreferences(value = {}) {
+function normalizeShellPreferences(value: LegacyShellOptions = {}): ShellPreferences {
   const next = { ...DEFAULT_SHELL_PREFERENCES };
   if (!value || typeof value !== "object") return next;
   for (const key of Object.keys(DEFAULT_SHELL_PREFERENCES)) {
@@ -240,7 +260,7 @@ function normalizeShellPreferences(value = {}) {
   return next;
 }
 
-function readShellPreferences(storage) {
+function readShellPreferences(storage: LegacyShellOptions | null | undefined): ShellPreferences {
   const target = getPreferenceStorage(storage);
   if (!target) return { ...DEFAULT_SHELL_PREFERENCES };
   try {
@@ -256,7 +276,7 @@ function readShellPreferences(storage) {
   }
 }
 
-function writeShellPreferences(storage, preferences) {
+function writeShellPreferences(storage: LegacyShellOptions | null | undefined, preferences: ShellPreferences) {
   const target = getPreferenceStorage(storage);
   if (!target) return false;
   try {
@@ -270,12 +290,12 @@ function writeShellPreferences(storage, preferences) {
   }
 }
 
-function getPreferenceAttributeTarget(root) {
+function getPreferenceAttributeTarget(root: unknown) {
   if (isElement(root)) return root;
   return document?.documentElement || null;
 }
 
-function applyShellPreferenceAttributes(root, preferences) {
+function applyShellPreferenceAttributes(root: unknown, preferences: ShellPreferences) {
   const target = getPreferenceAttributeTarget(root);
   if (!target) return;
   target.setAttribute("data-vb-shell-taskbar-position", preferences.taskbarPosition);
@@ -283,27 +303,27 @@ function applyShellPreferenceAttributes(root, preferences) {
   target.setAttribute("data-vb-shell-reduce-motion", String(preferences.reduceMotion));
 }
 
-export function createShellWindowManager(options = {}) {
+export function createShellWindowManager(options: LegacyShellOptions = {}): ShellRuntime {
   const store = options.store || createShellLayoutStore(options.storeOptions || {});
   const eventTarget = options.eventTarget || document;
   const root = options.root || document;
-  const windows = new Map();
-  const elementToId = new WeakMap();
-  const listenerCleanups = new Map();
-  const subscribers = new Set();
-  const preferenceSubscribers = new Set();
+  const windows = new Map<string, MutableShellWindowRecord>();
+  const elementToId = new WeakMap<Element, string>();
+  const listenerCleanups = new Map<string, () => void>();
+  const subscribers = new Set<(event: LegacyShellOptions) => void>();
+  const preferenceSubscribers = new Set<(preferences: ShellPreferences) => void>();
   const preferenceStorage = getPreferenceStorage(options.preferenceStorage || options.storage);
   let preferences = readShellPreferences(preferenceStorage);
   let layout = store.read();
   let activeWindowId = layout.activeWindowId || null;
   let nextZIndex = Math.min(
     MAX_Z_INDEX,
-    Math.max(BASE_Z_INDEX, ...Object.values(layout.windows || {}).map((entry) => entry?.zIndex || 0))
+    Math.max(BASE_Z_INDEX, ...Object.values(layout.windows || {}).map((entry: LegacyShellOptions) => entry?.zIndex || 0))
   );
   let destroyed = false;
   applyShellPreferenceAttributes(root, preferences);
 
-  function emit(type, detail = {}) {
+  function emit(type: string, detail: LegacyShellOptions = {}) {
     try {
       eventTarget?.dispatchEvent?.(new CustomEvent(type, { detail }));
     } catch {
@@ -311,7 +331,7 @@ export function createShellWindowManager(options = {}) {
     }
   }
 
-  function notify(event, record) {
+  function notify(event: string, record: MutableShellWindowRecord | null) {
     const snapshot = record ? shallowRecord(record) : null;
     for (const listener of subscribers) {
       try {
@@ -333,12 +353,12 @@ export function createShellWindowManager(options = {}) {
     }
   }
 
-  function persist(options = {}) {
+  function persist(options: LegacyShellOptions = {}) {
     if (options.persist === false) return;
     persistShellLayout({ flush: options.flush === true });
   }
 
-  function invokeLifecycle(record, name, options = {}) {
+  function invokeLifecycle(record: MutableShellWindowRecord, name: keyof ShellWindowLifecycle, options: LegacyShellOptions = {}) {
     if (options.invokeLifecycle === false) return;
     const fn = record.lifecycle?.[name];
     if (typeof fn !== "function") return;
@@ -350,7 +370,7 @@ export function createShellWindowManager(options = {}) {
     }
   }
 
-  function setWindowAttributes(record) {
+  function setWindowAttributes(record: MutableShellWindowRecord) {
     if (!isElement(record.element)) return;
     record.element.setAttribute("data-vb-shell-window", record.id);
     record.element.setAttribute("data-vb-shell-window-active", record.active ? "true" : "false");
@@ -361,7 +381,7 @@ export function createShellWindowManager(options = {}) {
     record.element.style.zIndex = String(getRecordZIndex(record));
   }
 
-  function setActiveRecord(record) {
+  function setActiveRecord(record: MutableShellWindowRecord | null) {
     for (const candidate of windows.values()) {
       candidate.active = candidate.id === record?.id;
       setWindowAttributes(candidate);
@@ -409,7 +429,7 @@ export function createShellWindowManager(options = {}) {
     });
   }
 
-  function applyStoredLayout(record, stored) {
+  function applyStoredLayout(record: MutableShellWindowRecord, stored: LegacyShellOptions | null | undefined) {
     if (!stored) return record;
     const storedState = VALID_STATES.has(stored.state) ? stored.state : record.state;
     record.state = storedState === "fullscreen" ? "open" : storedState;
@@ -425,13 +445,13 @@ export function createShellWindowManager(options = {}) {
     return record;
   }
 
-  function registerWindow(config = {}) {
+  function registerWindow(config: LegacyShellOptions = {}) {
     if (destroyed || !config.id || !isElement(config.element)) return null;
 
     const existing = windows.get(config.id);
     const stored = layout.windows?.[config.id];
     const wasExistingElement = existing?.element === config.element;
-    const record = existing || {};
+    const record: MutableShellWindowRecord = existing || {};
     const elementBounds = getElementBounds(config.element);
 
     const configuredState = VALID_STATES.has(config.state) ? config.state : (record.state || (config.element.hidden ? "closed" : "open"));
@@ -485,7 +505,7 @@ export function createShellWindowManager(options = {}) {
     return shallowRecord(record);
   }
 
-  function unregisterWindow(id) {
+  function unregisterWindow(id: string) {
     const record = windows.get(id);
     if (!record) return null;
     listenerCleanups.get(id)?.();
@@ -503,11 +523,11 @@ export function createShellWindowManager(options = {}) {
     return shallowRecord(record);
   }
 
-  function getWindow(id) {
+  function getWindow(id: string) {
     return shallowRecord(windows.get(id));
   }
 
-  function getWindowIdForElement(element) {
+  function getWindowIdForElement(element: Element) {
     if (!isElement(element)) return null;
     return elementToId.get(element) || element.getAttribute("data-vb-shell-window") || null;
   }
@@ -520,7 +540,7 @@ export function createShellWindowManager(options = {}) {
     return getWindow(activeWindowId);
   }
 
-  function activateWindow(id, options = {}) {
+  function activateWindow(id: string, options: LegacyShellOptions = {}) {
     const record = windows.get(id);
     if (!record) return null;
     if (record.active === true && activeWindowId === id) {
@@ -536,7 +556,7 @@ export function createShellWindowManager(options = {}) {
     return shallowRecord(record);
   }
 
-  function showRecord(record) {
+  function showRecord(record: MutableShellWindowRecord) {
     record.element.hidden = false;
     record.minimized = false;
     if (record.state !== "fullscreen") record.state = "open";
@@ -568,7 +588,7 @@ export function createShellWindowManager(options = {}) {
     setWindowAttributes(record);
   }
 
-  function openWindow(id, options = {}) {
+  function openWindow(id: string, options: LegacyShellOptions = {}) {
     const record = windows.get(id);
     if (!record) return null;
     invokeLifecycle(record, "open", options);
@@ -580,7 +600,7 @@ export function createShellWindowManager(options = {}) {
     return shallowRecord(record);
   }
 
-  function closeWindow(id, options = {}) {
+  function closeWindow(id: string, options: LegacyShellOptions = {}) {
     const record = windows.get(id);
     if (!record) return null;
     const normalBounds = isFullscreenRecord(record)
@@ -603,7 +623,7 @@ export function createShellWindowManager(options = {}) {
     return shallowRecord(record);
   }
 
-  function minimizeWindow(id, options = {}) {
+  function minimizeWindow(id: string, options: LegacyShellOptions = {}) {
     const record = windows.get(id);
     if (!record) return null;
     const normalBounds = isFullscreenRecord(record)
@@ -626,7 +646,7 @@ export function createShellWindowManager(options = {}) {
     return shallowRecord(record);
   }
 
-  function restoreWindow(id, options = {}) {
+  function restoreWindow(id: string, options: LegacyShellOptions = {}) {
     const record = windows.get(id);
     if (!record) return null;
     invokeLifecycle(record, "restore", options);
@@ -642,7 +662,7 @@ export function createShellWindowManager(options = {}) {
     return shallowRecord(record);
   }
 
-  function toggleWindow(id, options = {}) {
+  function toggleWindow(id: string, options: LegacyShellOptions = {}) {
     const record = windows.get(id);
     if (!record) return null;
     if (record.state === "open" && !record.element.hidden) return closeWindow(id, options);
@@ -650,7 +670,7 @@ export function createShellWindowManager(options = {}) {
     return openWindow(id, options);
   }
 
-  function updateWindowBounds(id, bounds, options = {}) {
+  function updateWindowBounds(id: string, bounds: unknown, options: LegacyShellOptions = {}) {
     const record = windows.get(id);
     if (!record) return null;
     const next = normalizeBounds(bounds);
@@ -672,7 +692,7 @@ export function createShellWindowManager(options = {}) {
     return shallowRecord(record);
   }
 
-  function snapWindow(id, zone, options = {}) {
+  function snapWindow(id: string, zone: ShellSnapZone | string, options: LegacyShellOptions = {}) {
     const record = windows.get(id);
     if (!record) return null;
     if (!canSnapRecord(record, zone)) return shallowRecord(record);
@@ -698,7 +718,7 @@ export function createShellWindowManager(options = {}) {
     return shallowRecord(record);
   }
 
-  function unsnapWindow(id, options = {}) {
+  function unsnapWindow(id: string, options: LegacyShellOptions = {}) {
     const record = windows.get(id);
     if (!record) return null;
     record.snap = null;
@@ -714,7 +734,7 @@ export function createShellWindowManager(options = {}) {
     return shallowRecord(record);
   }
 
-  function fullscreenWindow(id, options = {}) {
+  function fullscreenWindow(id: string, options: LegacyShellOptions = {}) {
     const record = windows.get(id);
     if (!record) return null;
     if (record.capabilities?.fullscreen !== true && options.force !== true) return shallowRecord(record);
@@ -741,7 +761,7 @@ export function createShellWindowManager(options = {}) {
     return shallowRecord(record);
   }
 
-  function exitFullscreenWindow(id, options = {}) {
+  function exitFullscreenWindow(id: string, options: LegacyShellOptions = {}) {
     const record = windows.get(id);
     if (!record) return null;
     if (!isFullscreenRecord(record)) return shallowRecord(record);
@@ -783,7 +803,7 @@ export function createShellWindowManager(options = {}) {
     return shallowRecord(record);
   }
 
-  function toggleFullscreenWindow(id, options = {}) {
+  function toggleFullscreenWindow(id: string, options: LegacyShellOptions = {}) {
     const record = windows.get(id);
     if (!record) return null;
     return isFullscreenRecord(record)
@@ -791,11 +811,11 @@ export function createShellWindowManager(options = {}) {
       : fullscreenWindow(id, options);
   }
 
-  function canSnapWindow(id, zone) {
+  function canSnapWindow(id: string, zone: ShellSnapZone) {
     return canSnapRecord(windows.get(id), zone);
   }
 
-  function restoreShellLayout(options = {}) {
+  function restoreShellLayout(options: LegacyShellOptions = {}) {
     layout = store.read();
     activeWindowId = layout.activeWindowId || activeWindowId;
     for (const record of windows.values()) {
@@ -817,7 +837,7 @@ export function createShellWindowManager(options = {}) {
     return listWindows();
   }
 
-  function persistShellLayout(options = {}) {
+  function persistShellLayout(options: LegacyShellOptions = {}) {
     const nextLayout = {
       ...layout,
       version: 1,
@@ -844,13 +864,13 @@ export function createShellWindowManager(options = {}) {
     return true;
   }
 
-  function subscribe(listener) {
+  function subscribe(listener: (event: LegacyShellOptions) => void) {
     if (typeof listener !== "function") return () => {};
     subscribers.add(listener);
     return () => subscribers.delete(listener);
   }
 
-  function setShellPreference(key, value) {
+  function setShellPreference(key: keyof ShellPreferences, value: ShellPreferences[keyof ShellPreferences]) {
     if (!PREFERENCE_VALIDATORS[key]?.(value)) return getShellPreference(key);
     preferences = normalizeShellPreferences({ ...preferences, [key]: value });
     writeShellPreferences(preferenceStorage, preferences);
@@ -859,12 +879,12 @@ export function createShellWindowManager(options = {}) {
     return preferences[key];
   }
 
-  function getShellPreference(key) {
+  function getShellPreference(key?: keyof ShellPreferences) {
     if (!key) return { ...preferences };
     return preferences[key];
   }
 
-  function subscribeShellPreferences(listener) {
+  function subscribeShellPreferences(listener: (preferences: ShellPreferences) => void) {
     if (typeof listener !== "function") return () => {};
     preferenceSubscribers.add(listener);
     listener({ ...preferences });
@@ -915,10 +935,10 @@ export function createShellWindowManager(options = {}) {
     },
   };
 
-  return api;
+  return api as ShellRuntime;
 }
 
-export function getDefaultShellWindowManager(options = {}) {
+export function getDefaultShellWindowManager(options: LegacyShellOptions = {}): ShellRuntime {
   if (!defaultShellWindowManager) {
     defaultShellWindowManager = createShellWindowManager(options);
   }

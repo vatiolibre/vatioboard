@@ -1,25 +1,32 @@
-import { readFileSync, readdirSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { basename, extname, join, resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const root = process.cwd();
+const SOURCE_MODULE_EXTENSIONS = new Set([".js", ".mjs", ".ts", ".tsx"]);
+const FEATURE_MODULE_EXTENSIONS = [".ts", ".js"];
+
+function isRouteViewFile(file) {
+  const name = basename(file);
+  return name.endsWith("View.js") || name.endsWith("View.ts") || name.endsWith("View.tsx");
+}
 
 const FEATURE_MODULES = [
   {
     name: "board",
-    path: "src/board/board.js",
+    path: "src/board/board",
     importModule: () => import("../../src/board/board.js"),
     requiredExports: ["mountBoardRoute", "unmountBoardRoute"],
   },
   {
     name: "library",
-    path: "src/library/library.js",
+    path: "src/library/library",
     importModule: () => import("../../src/library/library.js"),
     requiredExports: ["getLibraryElements", "mountLibraryRoute", "unmountLibraryRoute"],
   },
   {
     name: "replay",
-    path: "src/replay/replay.js",
+    path: "src/replay/replay",
     importModule: () => import("../../src/replay/replay.js"),
     requiredExports: [
       "getReplayElements",
@@ -30,13 +37,13 @@ const FEATURE_MODULES = [
   },
   {
     name: "speed",
-    path: "src/speed/speed.js",
+    path: "src/speed/speed",
     importModule: () => import("../../src/speed/speed.js"),
     requiredExports: ["getSpeedElements", "mountSpeedRoute", "unmountSpeedRoute"],
   },
   {
     name: "accel",
-    path: "src/accel/accel.js",
+    path: "src/accel/accel",
     importModule: () => import("../../src/accel/accel.js"),
     requiredExports: ["mountAccelRoute", "unmountAccelRoute"],
     requiredSourcePatterns: [/function\s+getAccelElements\(/],
@@ -45,6 +52,20 @@ const FEATURE_MODULES = [
 
 function readProjectFile(path) {
   return readFileSync(resolve(root, path), "utf8");
+}
+
+function resolveProjectModule(path) {
+  if (extname(path)) {
+    const absolutePath = resolve(root, path);
+    if (existsSync(absolutePath)) return path;
+  }
+
+  for (const extension of FEATURE_MODULE_EXTENSIONS) {
+    const candidate = `${path}${extension}`;
+    if (existsSync(resolve(root, candidate))) return candidate;
+  }
+
+  throw new Error(`Unable to resolve project module: ${path}`);
 }
 
 function listFiles(dir, predicate = () => true) {
@@ -110,8 +131,8 @@ describe("route lifecycle contract", () => {
 
   it("does not allow preserveDom in route views or the route-view helper", () => {
     const routeViewFiles = [
-      "src/app/views/route-view.js",
-      ...listFiles("src/app/views", (file) => basename(file).endsWith("View.js")),
+      resolveProjectModule("src/app/views/route-view"),
+      ...listFiles("src/app/views", isRouteViewFile),
     ];
 
     for (const file of routeViewFiles) {
@@ -120,7 +141,7 @@ describe("route lifecycle contract", () => {
   });
 
   it("keeps route views on template modules instead of standalone HTML or raw templates", () => {
-    const routeViewFiles = listFiles("src/app/views", (file) => basename(file).endsWith("View.js"));
+    const routeViewFiles = listFiles("src/app/views", isRouteViewFile);
 
     for (const file of routeViewFiles) {
       const source = readProjectFile(file);
@@ -134,9 +155,10 @@ describe("route lifecycle contract", () => {
     installCloudSyncMock();
 
     for (const feature of FEATURE_MODULES) {
-      const source = readProjectFile(feature.path);
+      const modulePath = resolveProjectModule(feature.path);
+      const source = readProjectFile(modulePath);
       for (const pattern of feature.requiredSourcePatterns ?? []) {
-        expect(source, feature.path).toMatch(pattern);
+        expect(source, modulePath).toMatch(pattern);
       }
 
       const module = await feature.importModule();
@@ -208,7 +230,7 @@ describe("route lifecycle contract", () => {
   });
 
   it("keeps lifecycle-sensitive route code using cleanup-owned listeners", () => {
-    const routeModules = FEATURE_MODULES.map((feature) => feature.path);
+    const routeModules = FEATURE_MODULES.map((feature) => resolveProjectModule(feature.path));
     const directListenerPattern = /(?<!cleanup\.)\b(?:window|document)\.addEventListener\(/;
 
     for (const file of routeModules) {
@@ -218,7 +240,7 @@ describe("route lifecycle contract", () => {
   });
 
   it("keeps raw cloud sync pull loops out of route controllers", () => {
-    const routeModules = FEATURE_MODULES.map((feature) => feature.path);
+    const routeModules = FEATURE_MODULES.map((feature) => resolveProjectModule(feature.path));
 
     for (const file of routeModules) {
       const source = readProjectFile(file);
@@ -229,7 +251,7 @@ describe("route lifecycle contract", () => {
   });
 
   it("keeps heavy map, chart, and visualizer modules out of eager feature imports", () => {
-    const sourceFiles = listFiles("src", (file) => file.endsWith(".js"));
+    const sourceFiles = listFiles("src", (file) => SOURCE_MODULE_EXTENSIONS.has(extname(file)));
 
     for (const file of sourceFiles) {
       const source = readProjectFile(file);
@@ -240,7 +262,7 @@ describe("route lifecycle contract", () => {
       expect(source, file).not.toMatch(/from\s+["']chart\.js\/auto["']/);
     }
 
-    expect(readProjectFile("src/player/player-shell.js")).not.toMatch(
+    expect(readProjectFile(resolveProjectModule("src/player/player-shell"))).not.toMatch(
       /from\s+["']\.\/milkdrop-panel\.js["']/
     );
   });
