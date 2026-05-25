@@ -1,9 +1,41 @@
+import type { IndexedJsonKeyValueStore } from "./indexed-storage";
+
 export const STORAGE_BACKENDS = Object.freeze({
   indexedDb: 'indexeddb',
   localStorage: 'localStorage',
 });
 
-function createDefaultSnapshot({ indexedDbPresent } = {}) {
+export type StorageBackend = typeof STORAGE_BACKENDS[keyof typeof STORAGE_BACKENDS];
+
+export interface StorageCapabilitySnapshot {
+  indexedDbPresent: boolean;
+  indexedDbOpenable: boolean;
+  indexedDbWritable: boolean;
+  fallbackMode: boolean;
+  degraded: boolean;
+  preferredLargePayloadBackend: StorageBackend;
+}
+
+export interface StorageCapabilityOptions {
+  store?: IndexedJsonKeyValueStore | null;
+  namespace?: string;
+}
+
+export interface StorageCapabilityDetectOptions {
+  force?: boolean;
+}
+
+export interface StorageCapability {
+  detect(options?: StorageCapabilityDetectOptions): Promise<StorageCapabilitySnapshot>;
+  getSnapshot(): StorageCapabilitySnapshot;
+  hasIndexedDbSupport(): boolean;
+  isDegraded(options?: StorageCapabilityDetectOptions): Promise<boolean>;
+  isFallbackMode(options?: StorageCapabilityDetectOptions): Promise<boolean>;
+  isIndexedDbUsable(options?: StorageCapabilityDetectOptions): Promise<boolean>;
+  resolveLargePayloadBackend(options?: StorageCapabilityDetectOptions): Promise<StorageBackend>;
+}
+
+function createDefaultSnapshot({ indexedDbPresent }: { indexedDbPresent?: boolean } = {}): StorageCapabilitySnapshot {
   const hasIndexedDb = indexedDbPresent === true;
   return {
     indexedDbPresent: hasIndexedDb,
@@ -15,14 +47,17 @@ function createDefaultSnapshot({ indexedDbPresent } = {}) {
   };
 }
 
-export function createStorageCapability({ store, namespace = 'storage-capability' } = {}) {
+export function createStorageCapability({
+  store,
+  namespace = 'storage-capability',
+}: StorageCapabilityOptions = {}): StorageCapability {
   let cachedSnapshot = createDefaultSnapshot({
     indexedDbPresent: Boolean(store?.hasSupport?.()),
   });
   let hasDetected = false;
-  let probePromise = null;
+  let probePromise: Promise<StorageCapabilitySnapshot> | null = null;
 
-  async function probeIndexedDb() {
+  async function probeIndexedDb(): Promise<StorageCapabilitySnapshot> {
     const indexedDbPresent = Boolean(store?.hasSupport?.());
     if (!indexedDbPresent || !store) {
       cachedSnapshot = createDefaultSnapshot({ indexedDbPresent: false });
@@ -31,7 +66,7 @@ export function createStorageCapability({ store, namespace = 'storage-capability
     }
 
     const probeKey = `${namespace}:probe`;
-    let indexedDbOpenable;
+    let indexedDbOpenable: boolean;
     let indexedDbWritable = false;
 
     try {
@@ -64,7 +99,7 @@ export function createStorageCapability({ store, namespace = 'storage-capability
     return cachedSnapshot;
   }
 
-  async function detect({ force = false } = {}) {
+  async function detect({ force = false }: StorageCapabilityDetectOptions = {}) {
     if (!force && probePromise) {
       return probePromise;
     }

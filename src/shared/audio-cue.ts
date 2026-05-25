@@ -14,16 +14,19 @@
  * Future: speed/audio.js overspeed and trap sounds can migrate here.
  */
 
-const activeCues = new Map();
-const listeners = new Set();
-let mainAudioElement = null;
+type CueAudioElement = HTMLAudioElement & { playsInline?: boolean };
+type CueStateListener = (state: { activeCueCount: number }) => void;
+
+const activeCues = new Map<string, { id: string; audio: CueAudioElement; duckMainAudio: boolean }>();
+const listeners = new Set<CueStateListener>();
+let mainAudioElement: HTMLAudioElement | null = null;
 let duckLevel = 1; // 1 = no duck, 0.2 = heavy duck
 
 /**
  * Set the main audio element that ducking will affect.
  * @param {HTMLAudioElement|null} el
  */
-export function setMainAudioElement(el) {
+export function setMainAudioElement(el: HTMLAudioElement | null) {
   mainAudioElement = el;
 }
 
@@ -45,13 +48,19 @@ export function prime() {
  * @param {{ id?: string, src: string, volume?: number, loop?: boolean, duckMainAudio?: boolean }} opts
  * @returns {string} The cue id (generated if not provided)
  */
-export function playCue({ id, src, volume = 1, loop = false, duckMainAudio = false }) {
+export function playCue({ id, src, volume = 1, loop = false, duckMainAudio = false }: {
+  id?: string;
+  src: string;
+  volume?: number;
+  loop?: boolean;
+  duckMainAudio?: boolean;
+}) {
   const cueId = id || `cue_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
   // Stop any existing cue with same id
   stopCue(cueId);
 
-  const audio = new Audio(src);
+  const audio = new Audio(src) as CueAudioElement;
   audio.volume = Math.max(0, Math.min(1, volume));
   audio.loop = loop;
   audio.preload = "auto";
@@ -85,7 +94,7 @@ export function playCue({ id, src, volume = 1, loop = false, duckMainAudio = fal
  * Stop a specific cue, or all cues if no id is provided.
  * @param {string} [id]
  */
-export function stopCue(id) {
+export function stopCue(id?: string) {
   if (id) {
     const cue = activeCues.get(id);
     if (cue) {
@@ -111,7 +120,7 @@ export function stopCue(id) {
  * @param {Function} listener - Called with { activeCueCount: number }
  * @returns {Function} unsubscribe
  */
-export function subscribe(listener) {
+export function subscribe(listener: CueStateListener) {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
@@ -127,7 +136,7 @@ export function getActiveCueCount() {
 
 const DUCK_VOLUME = 0.25;
 const DUCK_RESTORE_DELAY_MS = 300;
-let duckRestoreTimer = null;
+let duckRestoreTimer: ReturnType<typeof setTimeout> | null = null;
 let preDuckVolume = 1;
 
 function applyDuck() {

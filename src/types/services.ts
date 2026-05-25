@@ -96,10 +96,19 @@ export interface DrivingAlertSnapshot {
 
 export interface DrivingAlertService {
   start(options?: { fromUserGesture?: boolean; reason?: string }): DrivingAlertSnapshot;
-  stop(): DrivingAlertSnapshot;
+  stop(options?: { reason?: string }): DrivingAlertSnapshot;
   subscribe(listener: (snapshot: DrivingAlertSnapshot) => void): Unsubscribe;
   getSnapshot(): DrivingAlertSnapshot;
+  primeAudioFromUserGesture?(): Promise<boolean>;
+  setAlertSoundEnabled?(value: unknown, options?: { fromUserGesture?: boolean; startIfNeeded?: boolean }): DrivingAlertSnapshot;
+  setManualAlertEnabled?(value: unknown, options?: { fromUserGesture?: boolean; startIfNeeded?: boolean }): DrivingAlertSnapshot;
+  setManualAlertLimitMs?(value: unknown, options?: { fromUserGesture?: boolean; startIfNeeded?: boolean }): DrivingAlertSnapshot;
+  setMuted?(value: unknown, options?: { fromUserGesture?: boolean; startIfNeeded?: boolean }): DrivingAlertSnapshot;
   setPreference?(key: string, value: unknown, options?: { fromUserGesture?: boolean }): DrivingAlertSnapshot;
+  setTrapAlertDistanceM?(value: unknown, options?: { fromUserGesture?: boolean; startIfNeeded?: boolean }): DrivingAlertSnapshot;
+  setTrapAlertEnabled?(value: unknown, options?: { fromUserGesture?: boolean; startIfNeeded?: boolean }): DrivingAlertSnapshot;
+  setTrapSoundEnabled?(value: unknown, options?: { fromUserGesture?: boolean; startIfNeeded?: boolean }): DrivingAlertSnapshot;
+  setUnits?(options?: { unit?: string; distanceUnit?: string }): DrivingAlertSnapshot;
   destroy(): void;
 }
 
@@ -145,6 +154,9 @@ export interface AudioRuntimeState {
   loading: boolean;
   error: unknown;
   remoteSessionActive: boolean;
+  currentTime?: number;
+  duration?: number;
+  playing?: boolean;
 }
 
 export interface AudioRuntime {

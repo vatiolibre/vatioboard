@@ -5,8 +5,24 @@ import {
   saveActiveReplaySession,
 } from "../../replay/session.js";
 import { distanceMeters } from "../../shared/geo-heading.js";
+import type {
+  DriveRecordingService,
+  DriveRecordingSnapshot,
+  GpsService,
+  NormalizedGpsPosition,
+} from "../../types/services";
 
 const RECORDING_CONSUMER_ID = "speed-recording";
+
+// TODO(ts-migration): replay repository/session payloads remain JS-owned.
+type LegacyRecordingRecord = Record<string, any>;
+
+interface DriveRecordingServiceOptions {
+  gpsStore?: GpsService | null;
+  replayRepository?: LegacyRecordingRecord;
+  unitStore?: LegacyRecordingRecord | null;
+  now?: () => number;
+}
 
 function getDefaultUnits() {
   return {
@@ -15,7 +31,7 @@ function getDefaultUnits() {
   };
 }
 
-function createSnapshot(state) {
+function createSnapshot(state: LegacyRecordingRecord): DriveRecordingSnapshot {
   return {
     state: state.recordingState,
     sessionId: state.session?.id || "",
@@ -32,8 +48,9 @@ function createSnapshot(state) {
   };
 }
 
-function normalizeGpsPosition(snapshotOrPosition) {
-  const position = snapshotOrPosition?.normalized || snapshotOrPosition;
+function normalizeGpsPosition(snapshotOrPosition: LegacyRecordingRecord | NormalizedGpsPosition | null | undefined): NormalizedGpsPosition | null {
+  const candidate = snapshotOrPosition as LegacyRecordingRecord | null | undefined;
+  const position = (candidate?.normalized || snapshotOrPosition) as LegacyRecordingRecord | NormalizedGpsPosition | null | undefined;
   if (!position) return null;
   const latitude = Number(position.latitude);
   const longitude = Number(position.longitude);
@@ -55,6 +72,7 @@ function normalizeGpsPosition(snapshotOrPosition) {
     speedMs: Number.isFinite(Number(position.speedMs)) ? Math.max(0, Number(position.speedMs)) : 0,
     headingDeg: Number.isFinite(Number(position.headingDeg)) ? Number(position.headingDeg) : null,
     timestampMs: Number.isFinite(Number(position.timestampMs)) ? Number(position.timestampMs) : Date.now(),
+    receivedAtMs: Number.isFinite(Number(position.receivedAtMs)) ? Number(position.receivedAtMs) : Date.now(),
     stale: position.stale === true,
   };
 }
@@ -64,7 +82,7 @@ export function createDriveRecordingService({
   replayRepository = {},
   unitStore = null,
   now = () => Date.now(),
-} = {}) {
+}: DriveRecordingServiceOptions = {}): DriveRecordingService {
   const repository = {
     archiveReplaySession,
     appendReplaySample,
@@ -72,10 +90,10 @@ export function createDriveRecordingService({
     saveActiveReplaySession,
     ...replayRepository,
   };
-  const listeners = new Set();
+  const listeners = new Set<(snapshot: DriveRecordingSnapshot) => void>();
   const units = () => unitStore?.getSnapshot?.() || unitStore?.getUnits?.() || getDefaultUnits();
   const initialUnits = units();
-  const state = {
+  const state: LegacyRecordingRecord = {
     recordingState: "idle",
     session: repository.createReplaySession({
       unit: initialUnits.unit,
@@ -92,8 +110,8 @@ export function createDriveRecordingService({
     lastPersistedAtMs: 0,
     pendingCloudSync: false,
   };
-  let gpsConsumerCleanup = null;
-  let gpsUnsubscribe = null;
+  let gpsConsumerCleanup: (() => void) | null = null;
+  let gpsUnsubscribe: (() => void) | null = null;
   let destroyed = false;
 
   function emit() {
@@ -185,7 +203,7 @@ export function createDriveRecordingService({
     appendPosition(normalizeGpsPosition(snapshotOrPosition));
   }
 
-  function startRecording({ source = "speed" } = {}) {
+  function startRecording({ source = "speed" }: LegacyRecordingRecord = {}) {
     if (destroyed) return getSnapshot();
     if (state.recordingState === "recording") return getSnapshot();
     const nextUnits = units();
@@ -252,7 +270,7 @@ export function createDriveRecordingService({
     return getSnapshot();
   }
 
-  function subscribe(listener) {
+  function subscribe(listener: (snapshot: DriveRecordingSnapshot) => void) {
     if (typeof listener !== "function") return () => {};
     listeners.add(listener);
     listener(getSnapshot());

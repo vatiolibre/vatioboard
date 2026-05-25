@@ -26,12 +26,28 @@ import {
   formatTrapSpeed,
 } from "../../speed/traps.js";
 import { clearActivity, setActivity } from "../../shared/activity-state.js";
+import type {
+  DrivingAlertService,
+  DrivingAlertSnapshot,
+  GpsService,
+  NormalizedGpsPosition,
+} from "../../types/services";
 import { createDrivingAudioAlertController } from "./driving-audio-alert-controller.js";
+
+// TODO(ts-migration): speed camera DB and alert UI payloads are still JS-owned.
+type LegacyDrivingAlertRecord = Record<string, any>;
+
+interface DrivingAlertServiceOptions {
+  gpsService?: GpsService | null;
+  cameraDatabase?: LegacyDrivingAlertRecord | null;
+  audioController?: LegacyDrivingAlertRecord | null;
+  now?: () => number;
+}
 
 const ALERT_CONSUMER_ID = "speed-alerts";
 const GPS_STALE_MS = 12000;
 
-function isFiniteLatLon(position) {
+function isFiniteLatLon(position: LegacyDrivingAlertRecord | null | undefined) {
   return Number.isFinite(position?.latitude)
     && Number.isFinite(position?.longitude)
     && position.latitude >= -90
@@ -56,8 +72,9 @@ function createDefaultCameraStatus() {
   };
 }
 
-function normalizeGpsSnapshot(snapshotOrPosition) {
-  const position = snapshotOrPosition?.normalized || snapshotOrPosition;
+function normalizeGpsSnapshot(snapshotOrPosition: LegacyDrivingAlertRecord | NormalizedGpsPosition | null | undefined): NormalizedGpsPosition | null {
+  const candidate = snapshotOrPosition as LegacyDrivingAlertRecord | null | undefined;
+  const position = (candidate?.normalized || snapshotOrPosition) as LegacyDrivingAlertRecord | NormalizedGpsPosition | null | undefined;
   if (!position || !isFiniteLatLon(position)) return null;
   return {
     latitude: Number(position.latitude),
@@ -73,7 +90,7 @@ function normalizeGpsSnapshot(snapshotOrPosition) {
   };
 }
 
-function createPreferencesSnapshot(state) {
+function createPreferencesSnapshot(state: LegacyDrivingAlertRecord) {
   return {
     unit: state.unit,
     distanceUnit: state.distanceUnit,
@@ -99,10 +116,10 @@ export function createDrivingAlertService({
   cameraDatabase = null,
   audioController = null,
   now = () => Date.now(),
-} = {}) {
+}: DrivingAlertServiceOptions = {}): DrivingAlertService {
   const initialPreferences = loadInitialPreferences();
-  const listeners = new Set();
-  const state = {
+  const listeners = new Set<(snapshot: DrivingAlertSnapshot) => void>();
+  const state: LegacyDrivingAlertRecord = {
     status: "idle",
     started: false,
     unit: initialPreferences.unit,
@@ -130,8 +147,8 @@ export function createDrivingAlertService({
     alertUiState: null,
     lastCameraLoadKey: "",
   };
-  let gpsConsumerCleanup = null;
-  let gpsUnsubscribe = null;
+  let gpsConsumerCleanup: (() => void) | null = null;
+  let gpsUnsubscribe: (() => void) | null = null;
   let destroyed = false;
   let ownedCameraDatabase = null;
   const alertAudio = audioController || createDrivingAudioAlertController({
@@ -258,7 +275,7 @@ export function createDrivingAlertService({
     state.cameraApproachDetails = nearest.cameraApproachDetails || null;
   }
 
-  function syncAudio(options = {}) {
+  function syncAudio(options: LegacyDrivingAlertRecord = {}) {
     state.alertUiState = buildAlertState();
     state.status = computeStatus();
     alertAudio.sync?.({
@@ -325,7 +342,7 @@ export function createDrivingAlertService({
     window.dispatchEvent?.(new CustomEvent("vatioboard:driving-alerts", { detail: snapshot }));
   }
 
-  function handleCameraDatabaseStatus(nextStatus = {}) {
+  function handleCameraDatabaseStatus(nextStatus: LegacyDrivingAlertRecord = {}) {
     state.cameraDatabaseStatus = {
       ...state.cameraDatabaseStatus,
       ...nextStatus,
@@ -405,7 +422,7 @@ export function createDrivingAlertService({
     gpsConsumerCleanup = null;
   }
 
-  function start({ reason = "start" } = {}) {
+  function start({ reason: _reason = "start" }: LegacyDrivingAlertRecord = {}) {
     if (destroyed) return getSnapshot();
     state.started = true;
     ensureGpsSubscription();
@@ -418,7 +435,7 @@ export function createDrivingAlertService({
     return getSnapshot();
   }
 
-  function stop({ reason = "stop" } = {}) {
+  function stop({ reason: _reason = "stop" }: LegacyDrivingAlertRecord = {}) {
     state.started = false;
     state.audioControlActive = false;
     releaseGpsSubscription();
@@ -430,7 +447,7 @@ export function createDrivingAlertService({
     return getSnapshot();
   }
 
-  function updatePreference(mutator, { fromUserGesture = false, startIfNeeded = true } = {}) {
+  function updatePreference(mutator: () => void, { fromUserGesture = false, startIfNeeded = true }: LegacyDrivingAlertRecord = {}) {
     mutator();
     if (startIfNeeded && hasActiveAlertFeature()) start({ reason: "alert-preference" });
     else if (startIfNeeded && state.started && !hasActiveAlertFeature()) stop({ reason: "alerts-disabled" });
@@ -439,7 +456,7 @@ export function createDrivingAlertService({
     return getSnapshot();
   }
 
-  function setManualAlertEnabled(value, options = {}) {
+  function setManualAlertEnabled(value: unknown, options: LegacyDrivingAlertRecord = {}) {
     return updatePreference(() => {
       state.alertEnabled = Boolean(value);
       if (!Number.isFinite(state.alertLimitMs) || state.alertLimitMs <= 0) {
@@ -450,7 +467,7 @@ export function createDrivingAlertService({
     }, options);
   }
 
-  function setManualAlertLimitMs(value, options = {}) {
+  function setManualAlertLimitMs(value: unknown, options: LegacyDrivingAlertRecord = {}) {
     return updatePreference(() => {
       const limit = Number(value);
       state.alertLimitMs = Number.isFinite(limit) && limit > 0 ? limit : DEFAULT_ALERT_LIMIT_MS;
@@ -458,14 +475,14 @@ export function createDrivingAlertService({
     }, options);
   }
 
-  function setAlertSoundEnabled(value, options = {}) {
+  function setAlertSoundEnabled(value: unknown, options: LegacyDrivingAlertRecord = {}) {
     return updatePreference(() => {
       state.alertSoundEnabled = Boolean(value);
       saveAlertSoundEnabledPreference(state.alertSoundEnabled);
     }, options);
   }
 
-  function setTrapAlertEnabled(value, options = {}) {
+  function setTrapAlertEnabled(value: unknown, options: LegacyDrivingAlertRecord = {}) {
     return updatePreference(() => {
       state.trapAlertEnabled = Boolean(value);
       if (!state.trapAlertEnabled) {
@@ -482,21 +499,21 @@ export function createDrivingAlertService({
     }, options);
   }
 
-  function setTrapSoundEnabled(value, options = {}) {
+  function setTrapSoundEnabled(value: unknown, options: LegacyDrivingAlertRecord = {}) {
     return updatePreference(() => {
       state.trapSoundEnabled = Boolean(value);
       saveTrapSoundEnabledPreference(state.trapSoundEnabled);
     }, options);
   }
 
-  function setTrapAlertDistanceM(value, options = {}) {
+  function setTrapAlertDistanceM(value: unknown, options: LegacyDrivingAlertRecord = {}) {
     return updatePreference(() => {
       state.trapAlertDistanceM = normalizeTrapAlertDistance(Number(value), state.distanceUnit);
       saveTrapAlertDistancePreference(state.trapAlertDistanceM);
     }, options);
   }
 
-  function setMuted(value, options = {}) {
+  function setMuted(value: unknown, options: LegacyDrivingAlertRecord = {}) {
     return updatePreference(() => {
       state.audioMuted = Boolean(value);
       if (state.audioMuted) state.audioControlActive = false;
@@ -505,7 +522,7 @@ export function createDrivingAlertService({
     }, { startIfNeeded: false, ...options });
   }
 
-  function setUnits({ unit = state.unit, distanceUnit = state.distanceUnit } = {}) {
+  function setUnits({ unit = state.unit, distanceUnit = state.distanceUnit }: LegacyDrivingAlertRecord = {}) {
     return updatePreference(() => {
       if (UNIT_CONFIG[unit]) {
         state.unit = unit;
@@ -534,7 +551,7 @@ export function createDrivingAlertService({
     });
   }
 
-  function subscribe(listener) {
+  function subscribe(listener: (snapshot: DrivingAlertSnapshot) => void) {
     if (typeof listener !== "function") return () => {};
     listeners.add(listener);
     listener(getSnapshot());

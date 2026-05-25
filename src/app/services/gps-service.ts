@@ -2,6 +2,39 @@ import {
   deriveHeadingFromPositions,
   normalizeHeading,
 } from "../../shared/geo-heading.js";
+import type {
+  GpsConsumerOptions,
+  GpsService,
+  GpsSnapshot,
+  NormalizedGpsPosition,
+} from "../../types/services";
+
+interface GpsServiceOptions {
+  geolocation?: Geolocation | null;
+}
+
+interface GpsSubscriber {
+  success: PositionCallback;
+  error?: PositionErrorCallback | null;
+  options: PositionOptions;
+}
+
+type GpsCoordsLike = {
+  latitude?: unknown;
+  longitude?: unknown;
+  accuracy?: unknown;
+  altitude?: unknown;
+  altitudeAccuracy?: unknown;
+  heading?: unknown;
+  speed?: unknown;
+};
+type GpsPositionLike = {
+  timestamp?: unknown;
+  coords?: GpsCoordsLike | null;
+};
+type GpsStoredSnapshot = Partial<Omit<GpsSnapshot, "lastPosition">> & {
+  lastPosition?: GeolocationPosition | GpsPositionLike | null;
+};
 
 const STORAGE_KEY = "vatioboard.gps_service.snapshot.v1";
 const POSITION_STALE_MS = 10000;
@@ -12,7 +45,7 @@ const DEFAULT_WATCH_TIMEOUT_MS = 15000;
 const MIN_DERIVED_HEADING_SPEED_MS = 1.5;
 const GPS_DEBUG_STORAGE_KEY = "vatioboard.debug.gps";
 
-function saveSnapshot(snapshot) {
+function saveSnapshot(snapshot: GpsStoredSnapshot) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       status: snapshot.status,
@@ -26,10 +59,11 @@ function saveSnapshot(snapshot) {
   }
 }
 
-function readSnapshot() {
+function readSnapshot(): GpsStoredSnapshot | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === "object" ? parsed as GpsStoredSnapshot : null;
   } catch {
     return null;
   }
@@ -39,7 +73,7 @@ function isFiniteNumber(value) {
   return getFiniteNumber(value) !== null;
 }
 
-function getFiniteNumber(value) {
+function getFiniteNumber(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
@@ -53,12 +87,12 @@ function isGpsDebugEnabled() {
   }
 }
 
-function debugGps(label, payload = {}) {
+function debugGps(label: string, payload: Record<string, unknown> = {}) {
   if (!isGpsDebugEnabled() || typeof console === "undefined" || typeof console.debug !== "function") return;
   console.debug(`[vatioboard:gps] ${label}`, payload);
 }
 
-function clonePosition(position) {
+function clonePosition(position: GeolocationPosition | GpsPositionLike | null | undefined) {
   if (!position?.coords) return position;
 
   return {
@@ -75,10 +109,10 @@ function clonePosition(position) {
   };
 }
 
-export function createGpsService({ geolocation = navigator.geolocation } = {}) {
-  const subscribers = new Map();
-  const consumers = new Map();
-  const listeners = new Set();
+export function createGpsService({ geolocation = navigator.geolocation }: GpsServiceOptions = {}): GpsService {
+  const subscribers = new Map<number, GpsSubscriber>();
+  const consumers = new Map<string, { options: GpsConsumerOptions }>();
+  const listeners = new Set<(snapshot: GpsSnapshot) => void>();
   const originalWatchPosition = geolocation?.watchPosition;
   const originalClearWatch = geolocation?.clearWatch;
   const nativeWatchPosition = originalWatchPosition?.bind(geolocation);
@@ -86,12 +120,17 @@ export function createGpsService({ geolocation = navigator.geolocation } = {}) {
   let nextId = 1;
   let nativeWatchId = null;
   let nativeWatchHighAccuracy = false;
-  let snapshot = readSnapshot() || {
-    status: geolocation ? "idle" : "unsupported",
-    lastPosition: null,
+  const savedSnapshot = readSnapshot();
+  let snapshot: GpsSnapshot = {
+    status: (savedSnapshot?.status as GpsSnapshot["status"]) || (geolocation ? "idle" : "unsupported"),
     normalized: null,
     lastError: null,
     lastCallbackAtMs: 0,
+    subscriberCount: 0,
+    nativeWatchActive: false,
+    consumers: [],
+    ...savedSnapshot,
+    lastPosition: (savedSnapshot?.lastPosition as GeolocationPosition | null) ?? null,
   };
   let previousNormalized = snapshot.normalized || null;
   let lastHeadingDeg = normalizeHeading(snapshot.normalized?.headingDeg);
@@ -113,7 +152,7 @@ export function createGpsService({ geolocation = navigator.geolocation } = {}) {
     return false;
   }
 
-  function normalizePosition(position, now = Date.now()) {
+  function normalizePosition(position: GeolocationPosition | GpsPositionLike | null | undefined, now = Date.now()): NormalizedGpsPosition | null {
     const coords = position?.coords || {};
     const latitude = Number(coords.latitude);
     const longitude = Number(coords.longitude);
@@ -182,7 +221,7 @@ export function createGpsService({ geolocation = navigator.geolocation } = {}) {
     }
   }
 
-  function persistAndEmit(nextSnapshot) {
+  function persistAndEmit(nextSnapshot: Partial<GpsSnapshot>) {
     snapshot = {
       ...snapshot,
       ...nextSnapshot,
@@ -198,7 +237,7 @@ export function createGpsService({ geolocation = navigator.geolocation } = {}) {
     if (normalized) previousNormalized = normalized;
     persistAndEmit({
       status: "active",
-      lastPosition: cloned,
+      lastPosition: cloned as GeolocationPosition,
       normalized,
       lastError: null,
       lastCallbackAtMs: now,
@@ -318,7 +357,7 @@ export function createGpsService({ geolocation = navigator.geolocation } = {}) {
     };
   }
 
-  function watchPosition(success, error, options = {}) {
+  function watchPosition(success: PositionCallback, error?: PositionErrorCallback | null, options: PositionOptions = {}) {
     if (typeof success !== "function") {
       throw new TypeError("watchPosition success callback is required.");
     }
@@ -329,7 +368,7 @@ export function createGpsService({ geolocation = navigator.geolocation } = {}) {
         message: "Geolocation is unavailable.",
       };
       if (typeof error === "function") {
-        setTimeout(() => error(unsupportedError), 0);
+        setTimeout(() => error(unsupportedError as GeolocationPositionError), 0);
       }
       return nextId++;
     }
@@ -345,13 +384,13 @@ export function createGpsService({ geolocation = navigator.geolocation } = {}) {
     return id;
   }
 
-  function clearWatch(id) {
+  function clearWatch(id: number) {
     subscribers.delete(id);
     stopNativeWatchIfIdle();
     restartNativeWatchIfAccuracyChanged();
   }
 
-  function startConsumer(consumerId, options = {}) {
+  function startConsumer(consumerId: string, options: GpsConsumerOptions = {}) {
     if (!consumerId) return () => {};
     consumers.set(String(consumerId), {
       options: {
@@ -365,7 +404,7 @@ export function createGpsService({ geolocation = navigator.geolocation } = {}) {
     return () => stopConsumer(consumerId);
   }
 
-  function stopConsumer(consumerId) {
+  function stopConsumer(consumerId: string) {
     consumers.delete(String(consumerId));
     stopNativeWatchIfIdle();
     restartNativeWatchIfAccuracyChanged();
@@ -380,7 +419,7 @@ export function createGpsService({ geolocation = navigator.geolocation } = {}) {
     stopConsumer(`high-accuracy:${reason}`);
   }
 
-  function subscribe(listener) {
+  function subscribe(listener: (snapshot: GpsSnapshot) => void) {
     if (typeof listener !== "function") return () => {};
     listeners.add(listener);
     listener(getSnapshot());

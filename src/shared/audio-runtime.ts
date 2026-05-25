@@ -13,7 +13,7 @@
  * falling back to remote BFF streaming URLs.
  */
 
-import { resolveAudioSource, hasLocalSource, triggerBackgroundCache } from "./audio-source-resolver.js";
+import { resolveAudioSource, triggerBackgroundCache } from "./audio-source-resolver.js";
 import {
   clearMediaSessionClient,
   updateMediaSessionClient,
@@ -34,6 +34,42 @@ import {
   resumeVisualizerGraphForElement,
 } from "./audio-mini-visualizer.js";
 import { loadPlayerSession, savePlayerSession } from "./player-session.js";
+import type { AudioRuntimeState } from "../types/services";
+
+// TODO(ts-migration): player/library track payloads are still owned by JS feature modules.
+type RuntimeTrack = Record<string, any>;
+type ManagedAudioElement = HTMLAudioElement & { playsInline?: boolean };
+type ResolvedAudioSource = {
+  src: string;
+  type: "blob" | "remote";
+  blob?: Blob;
+  source?: string;
+  contentHash?: string;
+  revokeUrl?: () => void;
+};
+type PreparedNextSource = {
+  index: number;
+  queueId: string;
+  resolved: ResolvedAudioSource;
+  preparedAt: number;
+};
+type PrepareNextPromise = {
+  key: string;
+  promise: Promise<PreparedNextSource | null>;
+};
+type AudioRuntimeMutableState = Omit<AudioRuntimeState, "queue" | "playedHistory" | "currentTrack" | "error"> & {
+  queue: RuntimeTrack[];
+  playedHistory: RuntimeTrack[];
+  currentIndex: number;
+  currentTrack: RuntimeTrack | null;
+  error: unknown;
+};
+
+const resolveRuntimeAudioSource = resolveAudioSource as (
+  assetName: string,
+  asset?: RuntimeTrack,
+) => Promise<ResolvedAudioSource | null>;
+const savePlayerSessionSnapshot = savePlayerSession as (snapshot: RuntimeTrack) => void;
 
 function isArtworkUrl(ref) {
   return typeof ref === "string" && (ref.startsWith("http://") || ref.startsWith("https://") || ref.startsWith("/"));
@@ -63,9 +99,9 @@ export function setMediaSessionEnabled(enabled) {
   syncPositionState();
 }
 
-const listeners = new Set();
+const listeners = new Set<(state: AudioRuntimeState) => void>();
 
-const state = {
+const state: AudioRuntimeMutableState = {
   /** @type {object[]} Queue of track metadata objects */
   queue: [],
   /** Stack of consumed tracks that can be restored by Previous */
@@ -98,14 +134,14 @@ const state = {
 
 // ── Audio element ────────────────────────────────────────────────────
 
-let audio = null;
-let currentSourceRevoke = null;
-let positionSyncTimer = null;
-let sessionSaveTimer = null;
+let audio: ManagedAudioElement | null = null;
+let currentSourceRevoke: (() => void) | null = null;
+let positionSyncTimer: ReturnType<typeof setInterval> | null = null;
+let sessionSaveTimer: ReturnType<typeof setTimeout> | null = null;
 let loadRequestToken = 0;
 let lastPersistedPlaybackSecond = -1;
 let lifecycleBound = false;
-let pendingSeek = null;
+let pendingSeek: RuntimeTrack | null = null;
 
 const PREPARE_MIN_LEAD_SECONDS = 8;
 const PREPARE_MAX_LEAD_SECONDS = 24;
@@ -113,11 +149,11 @@ const PREPARE_LEAD_RATIO = 0.15;
 const PREPARED_SOURCE_MAX_AGE_MS = 90_000;
 const PLAYED_HISTORY_LIMIT = 50;
 
-let preparedNext = null;
-let prepareNextPromise = null;
+let preparedNext: PreparedNextSource | null = null;
+let prepareNextPromise: PrepareNextPromise | null = null;
 let prepareNextGeneration = 0;
 let queueEntrySeed = 0;
-let libraryContinuation = null;
+let libraryContinuation: RuntimeTrack | null = null;
 
 /**
  * Audio priming state — follows the speed/audio.js primeAudioElement pattern.
@@ -129,13 +165,13 @@ let libraryContinuation = null;
  * Failure leaves `primed = false` so the next user gesture can retry.
  */
 let primed = false;
-let primeInFlight = null;
+let primeInFlight: Promise<boolean> | null = null;
 let backgroundKeepAliveGeneration = 0;
 let backgroundKeepAliveArmPending = false;
 
 const backgroundKeepAliveAudio = getBackgroundKeepAliveAudio();
 
-function bindAudioElement(el) {
+function bindAudioElement(el: ManagedAudioElement) {
   el.addEventListener("play", onPlay);
   el.addEventListener("pause", onPause);
   el.addEventListener("ended", onEnded);
@@ -147,7 +183,7 @@ function bindAudioElement(el) {
   el.addEventListener("playing", onPlaying);
 }
 
-function unbindAudioElement(el) {
+function unbindAudioElement(el: ManagedAudioElement) {
   el.removeEventListener("play", onPlay);
   el.removeEventListener("pause", onPause);
   el.removeEventListener("ended", onEnded);
@@ -161,7 +197,7 @@ function unbindAudioElement(el) {
 
 function createManagedAudioElement() {
   bindLifecyclePersistence();
-  const el = new Audio();
+  const el = new Audio() as ManagedAudioElement;
   resetAudioElementPlaybackRate(el);
   el.preload = "metadata";
   el.playsInline = true;
@@ -177,7 +213,7 @@ function createManagedAudioElement() {
   return el;
 }
 
-function clearAudioElementSource(el) {
+function clearAudioElementSource(el: ManagedAudioElement | null) {
   if (!el) return;
 
   try { el.pause(); } catch { /* ignore */ }
@@ -571,7 +607,7 @@ async function prepareNextTrackSource(index) {
   const generation = prepareNextGeneration;
 
   const promise = (async () => {
-    const resolved = await resolveAudioSource(track.name, track);
+    const resolved = await resolveRuntimeAudioSource(track.name, track);
     const liveTrack = state.queue[index];
     if (generation !== prepareNextGeneration || !liveTrack || liveTrack._queueId !== track._queueId || !resolved) {
       if (resolved?.revokeUrl) {
@@ -698,8 +734,8 @@ function getCurrentPlaybackSecond() {
   return Math.floor(getCurrentPlaybackTime());
 }
 
-function writeSessionSnapshot(overrides = {}) {
-  savePlayerSession({
+function writeSessionSnapshot(overrides: RuntimeTrack = {}) {
+  savePlayerSessionSnapshot({
     queueEntries: state.queue.map(serializeQueueEntry).filter(Boolean),
     playedEntries: state.playedHistory.map(serializeQueueEntry).filter(Boolean),
     currentEntryId: state.currentTrack?._queueId || "",
@@ -1309,7 +1345,7 @@ export function setMuted(muted) {
  * Cycle repeat mode: off → all → one → off.
  */
 export function cycleRepeat() {
-  const modes = ["off", "all", "one"];
+  const modes: Array<AudioRuntimeMutableState["repeat"]> = ["off", "all", "one"];
   const idx = modes.indexOf(state.repeat);
   state.repeat = modes[(idx + 1) % modes.length];
   persistSession();
@@ -1426,6 +1462,7 @@ export function getState() {
     sourceType: state.sourceType,
     loading: state.loading,
     error: state.error,
+    remoteSessionActive: state.remoteSessionActive,
     currentTime: getCurrentPlaybackTime(),
     duration: el?.duration || 0,
     playing: el ? !el.paused && !el.ended : false,

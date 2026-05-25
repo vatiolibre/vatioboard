@@ -5,10 +5,29 @@ import { primeAudioContext } from "./audio-graph-registry.js";
 import { requiresCrossOriginForAnalysis } from "./audio-visualizer.js";
 import { loadText, saveText } from "./storage.js";
 
+type MediaPlayerKind = "audio" | "video";
+type VisualizerMode = "spectrum" | "scope" | "off";
+type InlineMediaElement = HTMLMediaElement & {
+  playsInline?: boolean;
+  poster?: string;
+  crossOrigin: string | null;
+  title: string;
+};
+type MiniAudioVisualizer = {
+  isAvailable: boolean;
+  start(): Promise<boolean>;
+  stop(): void;
+  destroy(): void;
+  resize(): void;
+  setMode(mode: VisualizerMode): void;
+};
+
+const translate = (key: string, params?: Record<string, unknown> | null) => t(key, params || undefined);
+
 /**
  * Format seconds as m:ss or h:mm:ss.
  */
-function formatTime(seconds) {
+function formatTime(seconds: number) {
   if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
 
   const totalSeconds = Math.floor(seconds);
@@ -26,28 +45,28 @@ function formatTime(seconds) {
 
 const PROGRESS_MAX = 1000;
 const VISUALIZER_MODE_STORAGE_KEY = "vatio_board_media_player_visualizer_mode";
-const VALID_VISUALIZER_MODES = new Set(["spectrum", "scope", "off"]);
+const VALID_VISUALIZER_MODES = new Set<VisualizerMode>(["spectrum", "scope", "off"]);
 
-function normalizeVisualizerMode(mode) {
+function normalizeVisualizerMode(mode: unknown): VisualizerMode {
   const value = String(mode || "").toLowerCase();
-  return VALID_VISUALIZER_MODES.has(value) ? value : "spectrum";
+  return VALID_VISUALIZER_MODES.has(value as VisualizerMode) ? value as VisualizerMode : "spectrum";
 }
 
 function loadVisualizerModePreference() {
   return normalizeVisualizerMode(loadText(VISUALIZER_MODE_STORAGE_KEY, "spectrum"));
 }
 
-function saveVisualizerModePreference(mode) {
+function saveVisualizerModePreference(mode: VisualizerMode) {
   saveText(VISUALIZER_MODE_STORAGE_KEY, normalizeVisualizerMode(mode));
 }
 
-function getVisualizerModeLabel(mode) {
-  if (mode === "scope") return t("mediaPlayerVisualizerScope");
-  if (mode === "off") return t("mediaPlayerVisualizerOff");
-  return t("mediaPlayerVisualizerSpectrum");
+function getVisualizerModeLabel(mode: VisualizerMode) {
+  if (mode === "scope") return translate("mediaPlayerVisualizerScope");
+  if (mode === "off") return translate("mediaPlayerVisualizerOff");
+  return translate("mediaPlayerVisualizerSpectrum");
 }
 
-function getNextVisualizerMode(mode) {
+function getNextVisualizerMode(mode: VisualizerMode): VisualizerMode {
   if (mode === "spectrum") return "scope";
   if (mode === "scope") return "off";
   return "spectrum";
@@ -64,15 +83,31 @@ function getNextVisualizerMode(mode) {
  * @param {string} [options.posterUrl] - Poster image URL for video
  * @returns {{ destroy: () => void, mediaElement: HTMLMediaElement }}
  */
-export function createMediaPlayer({ container, src, kind, title = "", posterUrl = "", visualizer: enableVisualizer = false, onFirstRemotePlay = null }) {
+export function createMediaPlayer({
+  container,
+  src,
+  kind,
+  title = "",
+  posterUrl = "",
+  visualizer: enableVisualizer = false,
+  onFirstRemotePlay = null,
+}: {
+  container: HTMLElement;
+  src: string;
+  kind: MediaPlayerKind;
+  title?: string;
+  posterUrl?: string;
+  visualizer?: boolean;
+  onFirstRemotePlay?: (() => void) | null;
+}) {
   if (!container || !src) return null;
 
   const isVideo = kind === "video";
   const shouldRenderVisualizer = enableVisualizer && !isVideo;
   let firstPlayFired = false;
-  let preferredVisualizerMode = loadVisualizerModePreference();
-  let effectiveVisualizerMode = shouldRenderVisualizer ? preferredVisualizerMode : "off";
-  let activeVisualizer = null;
+  let preferredVisualizerMode: VisualizerMode = loadVisualizerModePreference();
+  let effectiveVisualizerMode: VisualizerMode = shouldRenderVisualizer ? preferredVisualizerMode : "off";
+  let activeVisualizer: MiniAudioVisualizer | null = null;
   let visualizerFailed = false;
 
   // Root wrapper
@@ -85,7 +120,7 @@ export function createMediaPlayer({ container, src, kind, title = "", posterUrl 
   stage.className = "media-player-stage";
 
   // Create media element
-  const media = document.createElement(isVideo ? "video" : "audio");
+  const media = document.createElement(isVideo ? "video" : "audio") as InlineMediaElement;
   // CORS: set crossOrigin before src so the browser sends the Origin header
   // on the initial request. Required for Web Audio analysis of remote storage URLs.
   if (enableVisualizer && requiresCrossOriginForAnalysis(src)) {
@@ -99,7 +134,7 @@ export function createMediaPlayer({ container, src, kind, title = "", posterUrl 
   let audioCanvasMount = null;
   let audioFallback = null;
   let visualizerModeGroup = null;
-  const visualizerModeButtons = new Map();
+  const visualizerModeButtons = new Map<VisualizerMode, HTMLButtonElement>();
 
   if (isVideo) {
     media.playsInline = true;
@@ -124,7 +159,7 @@ export function createMediaPlayer({ container, src, kind, title = "", posterUrl 
 
     const kindLabel = document.createElement("span");
     kindLabel.className = "media-player-audio-label";
-    kindLabel.textContent = title || t("mediaPlayerAudio");
+    kindLabel.textContent = title || translate("mediaPlayerAudio");
     audioMeta.append(kindLabel);
     audioHeader.append(audioMeta);
 
@@ -132,9 +167,9 @@ export function createMediaPlayer({ container, src, kind, title = "", posterUrl 
       visualizerModeGroup = document.createElement("div");
       visualizerModeGroup.className = "media-player-audio-visualizer-modes";
       visualizerModeGroup.setAttribute("role", "group");
-      visualizerModeGroup.setAttribute("aria-label", t("mediaPlayerVisualizerMode"));
+      visualizerModeGroup.setAttribute("aria-label", translate("mediaPlayerVisualizerMode"));
 
-      ["spectrum", "scope", "off"].forEach((mode) => {
+      (["spectrum", "scope", "off"] as VisualizerMode[]).forEach((mode) => {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "media-player-audio-mode-btn";
@@ -154,7 +189,7 @@ export function createMediaPlayer({ container, src, kind, title = "", posterUrl 
     audioCanvasWrap.dataset.visualizerMode = effectiveVisualizerMode;
     if (audioCanvasWrap instanceof HTMLButtonElement) {
       audioCanvasWrap.type = "button";
-      audioCanvasWrap.setAttribute("aria-label", t("mediaPlayerVisualizerCycle"));
+      audioCanvasWrap.setAttribute("aria-label", translate("mediaPlayerVisualizerCycle"));
     }
 
     audioCanvasMount = document.createElement("div");
@@ -162,7 +197,7 @@ export function createMediaPlayer({ container, src, kind, title = "", posterUrl 
 
     audioFallback = document.createElement("div");
     audioFallback.className = "media-player-audio-fallback";
-    audioFallback.textContent = t("mediaPlayerVisualizerOff");
+    audioFallback.textContent = translate("mediaPlayerVisualizerOff");
 
     audioCanvasWrap.append(audioCanvasMount, audioFallback);
     audioVisual.append(audioHeader, audioCanvasWrap);
@@ -181,7 +216,7 @@ export function createMediaPlayer({ container, src, kind, title = "", posterUrl 
   const playBtn = document.createElement("button");
   playBtn.type = "button";
   playBtn.className = "media-player-play-btn";
-  playBtn.setAttribute("aria-label", t("mediaPlayerPlay"));
+  playBtn.setAttribute("aria-label", translate("mediaPlayerPlay"));
   const playIcon = document.createElement("span");
   playIcon.className = "btn-icon";
   playIcon.innerHTML = IconPlay;
@@ -195,7 +230,7 @@ export function createMediaPlayer({ container, src, kind, title = "", posterUrl 
   progress.max = String(PROGRESS_MAX);
   progress.value = "0";
   progress.step = "1";
-  progress.setAttribute("aria-label", t("mediaPlayerProgress"));
+  progress.setAttribute("aria-label", translate("mediaPlayerProgress"));
 
   // Time display
   const timeDisplay = document.createElement("span");
@@ -206,7 +241,7 @@ export function createMediaPlayer({ container, src, kind, title = "", posterUrl 
   const muteBtn = document.createElement("button");
   muteBtn.type = "button";
   muteBtn.className = "media-player-mute-btn";
-  muteBtn.setAttribute("aria-label", t("mediaPlayerMute"));
+  muteBtn.setAttribute("aria-label", translate("mediaPlayerMute"));
   const muteIcon = document.createElement("span");
   muteIcon.className = "btn-icon";
   muteIcon.innerHTML = IconVolume;
@@ -220,7 +255,7 @@ export function createMediaPlayer({ container, src, kind, title = "", posterUrl 
   volumeSlider.max = "100";
   volumeSlider.value = "100";
   volumeSlider.step = "1";
-  volumeSlider.setAttribute("aria-label", t("mediaPlayerVolume"));
+  volumeSlider.setAttribute("aria-label", translate("mediaPlayerVolume"));
 
   // Fullscreen button (video only)
   let fullscreenBtn = null;
@@ -229,7 +264,7 @@ export function createMediaPlayer({ container, src, kind, title = "", posterUrl 
     fullscreenBtn = document.createElement("button");
     fullscreenBtn.type = "button";
     fullscreenBtn.className = "media-player-fullscreen-btn";
-    fullscreenBtn.setAttribute("aria-label", t("mediaPlayerFullscreen"));
+    fullscreenBtn.setAttribute("aria-label", translate("mediaPlayerFullscreen"));
     fullscreenIcon = document.createElement("span");
     fullscreenIcon.className = "btn-icon";
     fullscreenIcon.innerHTML = IconFullscreen;
@@ -265,9 +300,9 @@ export function createMediaPlayer({ container, src, kind, title = "", posterUrl 
 
     if (audioFallback) {
       if (visualizerFailed) {
-        audioFallback.textContent = t("mediaPlayerVisualizerUnavailable");
+        audioFallback.textContent = translate("mediaPlayerVisualizerUnavailable");
       } else if (effectiveVisualizerMode === "off") {
-        audioFallback.textContent = t("mediaPlayerVisualizerOff");
+        audioFallback.textContent = translate("mediaPlayerVisualizerOff");
       } else {
         audioFallback.textContent = getVisualizerModeLabel(effectiveVisualizerMode);
       }
@@ -370,12 +405,12 @@ export function createMediaPlayer({ container, src, kind, title = "", posterUrl 
 
   function syncPlayIcon() {
     playIcon.innerHTML = playing ? IconPause : IconPlay;
-    playBtn.setAttribute("aria-label", playing ? t("mediaPlayerPause") : t("mediaPlayerPlay"));
+    playBtn.setAttribute("aria-label", playing ? translate("mediaPlayerPause") : translate("mediaPlayerPlay"));
   }
 
   function syncMuteIcon() {
     muteIcon.innerHTML = media.muted ? IconMuted : IconVolume;
-    muteBtn.setAttribute("aria-label", media.muted ? t("mediaPlayerUnmute") : t("mediaPlayerMute"));
+    muteBtn.setAttribute("aria-label", media.muted ? translate("mediaPlayerUnmute") : translate("mediaPlayerMute"));
   }
 
   function syncTimeDisplay() {
@@ -518,7 +553,7 @@ export function createMediaPlayer({ container, src, kind, title = "", posterUrl 
     if (!fullscreenBtn) return;
     fullscreenIcon.innerHTML = isFullscreen() ? IconFullscreenExit : IconFullscreen;
     fullscreenBtn.setAttribute("aria-label",
-      isFullscreen() ? t("mediaPlayerExitFullscreen") : t("mediaPlayerFullscreen"));
+      isFullscreen() ? translate("mediaPlayerExitFullscreen") : translate("mediaPlayerFullscreen"));
   }
 
   function onFullscreenBtnClick() {
@@ -587,7 +622,7 @@ export function createMediaPlayer({ container, src, kind, title = "", posterUrl 
       mediaElement: media,
       mount: audioCanvasMount,
       mode: preferredVisualizerMode,
-    });
+    }) as MiniAudioVisualizer;
     if (!activeVisualizer.isAvailable) {
       visualizerFailed = true;
     }

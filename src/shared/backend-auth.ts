@@ -2,6 +2,37 @@ import { t } from "../i18n.js";
 import { IconBoard, IconLogin, IconLogout } from "../icons.js";
 import { getEnvironmentConfig } from "./environment.js";
 
+// TODO(ts-migration): backend-auth still exposes many legacy BFF option bags.
+// Keep this permissive until those endpoint payloads are split into named DTOs.
+type LegacyBackendOptions = Record<string, any>;
+
+interface BackendAuthConfig extends LegacyBackendOptions {
+  frontendOrigin: string;
+  apiBase: string;
+  isProduction: boolean;
+  signupUrl: string;
+  forgotUrl: string;
+  vatioLibreOrigin?: string;
+}
+
+interface BackendAuthStateSnapshot {
+  authenticated: boolean | null;
+  busy: boolean;
+  isGuest: boolean | null;
+  pendingLogout: boolean;
+  user: string | null;
+}
+
+interface BackendRequestCache {
+  configKey: string;
+  fetchedAtMs: number;
+  promise: Promise<LegacyBackendOptions> | null;
+  requestVersion: number;
+  value: LegacyBackendOptions | null;
+}
+
+const translate = (key: string, params?: LegacyBackendOptions | null) => t(key, params || undefined);
+
 export const BACKEND_AUTH_SIGNUP_URL = "https://www.vatiolibre.com/login#signup";
 export const BACKEND_AUTH_FORGOT_URL = "https://www.vatiolibre.com/login#forgot";
 export const VATIOLIBRE_PROD_ORIGIN = "https://vatiolibre.com";
@@ -97,14 +128,14 @@ const SSO_LIBRE_PROD_ORIGINS = new Set([
   VATIOLIBRE_WWW_PROD_ORIGIN,
 ]);
 const SSO_LIBRE_DEV_ORIGINS = new Set([VATIOLIBRE_DEV_ORIGIN]);
-const backendSessionCache = {
+const backendSessionCache: BackendRequestCache = {
   configKey: "",
   fetchedAtMs: 0,
   promise: null,
   requestVersion: 0,
   value: null,
 };
-const backendFeatureAccessCache = {
+const backendFeatureAccessCache: BackendRequestCache = {
   configKey: "",
   fetchedAtMs: 0,
   promise: null,
@@ -112,7 +143,7 @@ const backendFeatureAccessCache = {
   value: null,
 };
 const backendFeatureDenialCache = new Map();
-const DEFAULT_BACKEND_AUTH_STATE = Object.freeze({
+const DEFAULT_BACKEND_AUTH_STATE: Readonly<BackendAuthStateSnapshot> = Object.freeze({
   authenticated: null,
   busy: false,
   isGuest: null,
@@ -121,15 +152,20 @@ const DEFAULT_BACKEND_AUTH_STATE = Object.freeze({
 });
 
 let backendAuthStateListenerInstalled = false;
-let backendAuthStateSnapshot = { ...DEFAULT_BACKEND_AUTH_STATE };
+let backendAuthStateSnapshot: BackendAuthStateSnapshot = { ...DEFAULT_BACKEND_AUTH_STATE };
 
-function getDirectChildByClass(root, className) {
+function getDirectChildByClass(root: Element | null | undefined, className: string): HTMLElement | null {
   return Array.from(root?.children || []).find((child) =>
     child.classList?.contains(className)
-  ) || null;
+  ) as HTMLElement || null;
 }
 
-function wrapBackendAuthChildren(root, className, children, datasetKey) {
+function wrapBackendAuthChildren(
+  root: HTMLElement,
+  className: string,
+  children: Array<Element | null>,
+  datasetKey?: string,
+): HTMLElement | null {
   const existing = getDirectChildByClass(root, className);
   if (existing) return existing;
 
@@ -145,15 +181,15 @@ function wrapBackendAuthChildren(root, className, children, datasetKey) {
   return wrapper;
 }
 
-function enhanceBackendAuthButton(button, {
+function enhanceBackendAuthButton(button: HTMLElement | null, {
   icon,
   iconOnly = false,
   labelKey,
   className,
-} = {}) {
+}: LegacyBackendOptions = {}) {
   if (!button || button.dataset.authLayoutEnhanced === "true") return;
 
-  const labelText = button.textContent.trim() || t(labelKey);
+  const labelText = button.textContent.trim() || translate(labelKey, undefined);
   button.classList.add(className);
   button.removeAttribute("data-i18n");
   button.dataset.authLayoutEnhanced = "true";
@@ -161,8 +197,8 @@ function enhanceBackendAuthButton(button, {
   if (iconOnly) {
     button.dataset.i18nAria = labelKey;
     button.dataset.i18nTitle = labelKey;
-    button.setAttribute("aria-label", t(labelKey));
-    button.setAttribute("title", t(labelKey));
+    button.setAttribute("aria-label", translate(labelKey, undefined));
+    button.setAttribute("title", translate(labelKey, undefined));
     button.innerHTML = `
       <span class="backend-auth-action-icon" aria-hidden="true">${icon}</span>
       <span class="sr-only" data-i18n="${labelKey}">${labelText}</span>
@@ -182,19 +218,19 @@ function createBackendAuthActionButton({
   icon,
   labelKey,
   type = "button",
-}) {
+}: LegacyBackendOptions) {
   const button = document.createElement("button");
   button.type = type;
   button.className = className;
   button.dataset[datasetKey] = "";
   button.innerHTML = `
     <span class="backend-auth-action-icon" aria-hidden="true">${icon}</span>
-    <span data-i18n="${labelKey}">${t(labelKey)}</span>
+    <span data-i18n="${labelKey}">${translate(labelKey, undefined)}</span>
   `;
   return button;
 }
 
-function normalizeBackendAuthSsoUiOptions(options = {}) {
+function normalizeBackendAuthSsoUiOptions(options: LegacyBackendOptions = {}) {
   return {
     showGuestSsoLogin: options?.showGuestSsoLogin === true,
     showAuthenticatedCrossOpenActions:
@@ -202,17 +238,17 @@ function normalizeBackendAuthSsoUiOptions(options = {}) {
   };
 }
 
-function removeBackendAuthControls(root, selector) {
+function removeBackendAuthControls(root: ParentNode, selector: string) {
   root.querySelectorAll(selector).forEach((element) => element.remove());
 }
 
-function removeEmptyAuthenticatedActions(root) {
+function removeEmptyAuthenticatedActions(root: ParentNode) {
   root.querySelectorAll(".backend-auth-authenticated-actions").forEach((element) => {
     if (!element.children.length) element.remove();
   });
 }
 
-function ensureBackendAuthSsoActions(root, options = {}) {
+function ensureBackendAuthSsoActions(root: HTMLElement, options: LegacyBackendOptions = {}) {
   const {
     showGuestSsoLogin,
     showAuthenticatedCrossOpenActions,
@@ -277,7 +313,7 @@ function ensureBackendAuthSsoActions(root, options = {}) {
   }
 }
 
-function normalizeBackendAuthLayout(root, ssoUi = BACKEND_AUTH_SSO_UI_DEFAULTS) {
+function normalizeBackendAuthLayout(root: HTMLElement | null, ssoUi = BACKEND_AUTH_SSO_UI_DEFAULTS) {
   if (!root) return;
 
   if (root.dataset.authLayout === "normalized") {
@@ -289,8 +325,8 @@ function normalizeBackendAuthLayout(root, ssoUi = BACKEND_AUTH_SSO_UI_DEFAULTS) 
   const statusEl = root.querySelector("[data-backend-auth-status]");
   const usernameInput = root.querySelector("[data-backend-auth-user]");
   const passwordInput = root.querySelector("[data-backend-auth-password]");
-  const loginButton = root.querySelector("[data-backend-auth-login]");
-  const logoutButton = root.querySelector("[data-backend-auth-logout]");
+  const loginButton = root.querySelector<HTMLElement>("[data-backend-auth-login]");
+  const logoutButton = root.querySelector<HTMLElement>("[data-backend-auth-logout]");
   const signupLink = root.querySelector("[data-backend-auth-signup]");
   const forgotLink = root.querySelector("[data-backend-auth-forgot]");
 
@@ -351,22 +387,22 @@ function normalizeBackendAuthLayout(root, ssoUi = BACKEND_AUTH_SSO_UI_DEFAULTS) 
   root.dataset.authLayout = "normalized";
 }
 
-function getFetch(fetchImpl) {
+function getFetch(fetchImpl?: typeof fetch | null): typeof fetch {
   if (typeof fetchImpl === "function") return fetchImpl;
   if (typeof window?.fetch === "function") return window.fetch.bind(window);
   throw new Error("Fetch API is unavailable.");
 }
 
-function observeRequestPromise(promise) {
+function observeRequestPromise<T>(promise: Promise<T>): Promise<T> {
   promise?.catch?.(() => {});
   return promise;
 }
 
-function getMethodUrl(methodName, config) {
+function getMethodUrl(methodName: string, config: BackendAuthConfig) {
   return `${config.apiBase}/api/method/${methodName}`;
 }
 
-function buildMethodUrl(methodName, args = {}, config) {
+function buildMethodUrl(methodName: string, args: LegacyBackendOptions = {}, config: BackendAuthConfig) {
   const url = new URL(getMethodUrl(methodName, config));
 
   Object.entries(args || {}).forEach(([key, value]) => {
@@ -377,7 +413,7 @@ function buildMethodUrl(methodName, args = {}, config) {
   return url.toString();
 }
 
-function getUrlOrigin(value) {
+function getUrlOrigin(value: unknown) {
   try {
     return new URL(String(value || "")).origin;
   } catch {
@@ -385,7 +421,7 @@ function getUrlOrigin(value) {
   }
 }
 
-function getUrlHostname(value) {
+function getUrlHostname(value: unknown) {
   try {
     return new URL(String(value || "")).hostname.toLowerCase();
   } catch {
@@ -393,17 +429,17 @@ function getUrlHostname(value) {
   }
 }
 
-function isProductionApiBase(config) {
+function isProductionApiBase(config: BackendAuthConfig) {
   return config?.isProduction === true
     || getUrlHostname(config?.apiBase) === "api.vatioboard.com";
 }
 
-function normalizeSsoTarget(target) {
+function normalizeSsoTarget(target: unknown) {
   const normalizedTarget = String(target || "").trim().toLowerCase();
   return SSO_TARGETS.has(normalizedTarget) ? normalizedTarget : "";
 }
 
-function getBoardFrontendOrigin(config = getBackendAuthConfig()) {
+function getBoardFrontendOrigin(config: BackendAuthConfig = getBackendAuthConfig()) {
   const frontendOrigin = getUrlOrigin(config?.frontendOrigin);
   if (
     SSO_BOARD_PROD_ORIGINS.has(frontendOrigin)
@@ -415,7 +451,7 @@ function getBoardFrontendOrigin(config = getBackendAuthConfig()) {
   return isProductionApiBase(config) ? VATIOBOARD_PROD_ORIGIN : VATIOBOARD_DEV_ORIGIN;
 }
 
-function getAllowedSsoRedirectOrigins(target, config = getBackendAuthConfig()) {
+function getAllowedSsoRedirectOrigins(target: string, config: BackendAuthConfig = getBackendAuthConfig()) {
   if (target === "libre") {
     return isProductionApiBase(config)
       ? new Set(SSO_LIBRE_PROD_ORIGINS)
@@ -427,7 +463,7 @@ function getAllowedSsoRedirectOrigins(target, config = getBackendAuthConfig()) {
     : new Set(SSO_BOARD_DEV_ORIGINS);
 }
 
-function getDefaultSsoRedirectTo(target, config = getBackendAuthConfig()) {
+function getDefaultSsoRedirectTo(target: string, config: BackendAuthConfig = getBackendAuthConfig()) {
   if (target === "libre") {
     return `${getVatioLibreOrigin(config)}/fleet`;
   }
@@ -435,7 +471,7 @@ function getDefaultSsoRedirectTo(target, config = getBackendAuthConfig()) {
   return `${getBoardFrontendOrigin(config)}/#/board`;
 }
 
-function hasUnsafeSsoRedirectChars(value) {
+function hasUnsafeSsoRedirectChars(value: string) {
   return (
     value.includes("\\")
     || Array.from(value).some((char) => {
@@ -445,7 +481,7 @@ function hasUnsafeSsoRedirectChars(value) {
   );
 }
 
-function normalizeSsoRedirectTo(redirectTo, target, config = getBackendAuthConfig()) {
+function normalizeSsoRedirectTo(redirectTo: unknown, target: unknown, config: BackendAuthConfig = getBackendAuthConfig()) {
   const normalizedTarget = normalizeSsoTarget(target);
   if (!normalizedTarget) return "";
 
@@ -476,7 +512,7 @@ function normalizeSsoRedirectTo(redirectTo, target, config = getBackendAuthConfi
   return `${normalizedTarget === "libre" ? getVatioLibreOrigin(config) : getBoardFrontendOrigin(config)}${value}`;
 }
 
-function getCurrentBoardRedirectTo({ config = getBackendAuthConfig(), location = window.location } = {}) {
+function getCurrentBoardRedirectTo({ config = getBackendAuthConfig(), location = window.location }: LegacyBackendOptions = {}) {
   const currentUrl = String(location?.href || "");
   const normalizedCurrentUrl = normalizeSsoRedirectTo(currentUrl, "board", config);
   if (normalizedCurrentUrl) return normalizedCurrentUrl;
@@ -488,17 +524,17 @@ function getCurrentBoardRedirectTo({ config = getBackendAuthConfig(), location =
   return normalizeSsoRedirectTo(route === "/" ? "/#/board" : route, "board", config);
 }
 
-export function getVatioLibreOrigin(config = getBackendAuthConfig()) {
+export function getVatioLibreOrigin(config: BackendAuthConfig = getBackendAuthConfig()) {
   const configuredOrigin = getUrlOrigin(config?.vatioLibreOrigin);
   if (configuredOrigin) return configuredOrigin;
   return isProductionApiBase(config) ? VATIOLIBRE_PROD_ORIGIN : VATIOLIBRE_DEV_ORIGIN;
 }
 
-export function getVatioLibreSubscribeUrl(config = getBackendAuthConfig()) {
+export function getVatioLibreSubscribeUrl(config: BackendAuthConfig = getBackendAuthConfig()) {
   return `${getVatioLibreOrigin(config)}/subscribe`;
 }
 
-export function getSsoStartUrl(target, redirectTo, config = getBackendAuthConfig()) {
+export function getSsoStartUrl(target: unknown, redirectTo: unknown, config: BackendAuthConfig = getBackendAuthConfig()) {
   const normalizedTarget = normalizeSsoTarget(target);
   if (!normalizedTarget) return "";
 
@@ -515,14 +551,14 @@ export function getSsoStartUrl(target, redirectTo, config = getBackendAuthConfig
   }
 }
 
-export function getSsoSubscribeUrl(config = getBackendAuthConfig()) {
+export function getSsoSubscribeUrl(config: BackendAuthConfig = getBackendAuthConfig()) {
   return getSsoStartUrl("libre", getVatioLibreSubscribeUrl(config), config);
 }
 
 export function startSso(target, redirectTo, {
   config = getBackendAuthConfig(),
   location = window.location,
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const normalizedTarget = normalizeSsoTarget(target);
   const fallbackRedirectTo = normalizedTarget === "libre"
     ? `${getVatioLibreOrigin(config)}/fleet`
@@ -545,7 +581,7 @@ export function startSso(target, redirectTo, {
 export function startSubscriptionSso({
   config = getBackendAuthConfig(),
   location = window.location,
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const subscribeUrl = getVatioLibreSubscribeUrl(config);
   if (startSso("libre", subscribeUrl, { config, location })) {
     return true;
@@ -560,7 +596,7 @@ export function startSubscriptionSso({
   return true;
 }
 
-function createUrlEncodedBody(args = {}) {
+function createUrlEncodedBody(args: LegacyBackendOptions = {}) {
   const body = new URLSearchParams();
 
   Object.entries(args || {}).forEach(([key, value]) => {
@@ -571,11 +607,11 @@ function createUrlEncodedBody(args = {}) {
   return body.toString();
 }
 
-function getConfigCacheKey(config) {
+function getConfigCacheKey(config: BackendAuthConfig) {
   return String(config?.apiBase || "").trim();
 }
 
-function hasBackendOwnedPath(pathname) {
+function hasBackendOwnedPath(pathname: unknown) {
   const normalizedPath = getText(pathname);
   if (!normalizedPath) return false;
 
@@ -584,7 +620,7 @@ function hasBackendOwnedPath(pathname) {
   );
 }
 
-function getApiBaseUrl(config) {
+function getApiBaseUrl(config: BackendAuthConfig) {
   try {
     return new URL(String(config?.apiBase || "").trim());
   } catch {
@@ -594,7 +630,7 @@ function getApiBaseUrl(config) {
 
 export function normalizeBackendOwnedUrl(value, {
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   if (typeof value !== "string") return value;
 
   const normalizedValue = value.trim();
@@ -649,21 +685,22 @@ export function normalizeBackendOwnedUrl(value, {
   ).toString();
 }
 
-function normalizeBackendMediaRecord(record, { config = getBackendAuthConfig() } = {}) {
+function normalizeBackendMediaRecord(record: unknown, { config = getBackendAuthConfig() }: LegacyBackendOptions = {}) {
   if (!record || typeof record !== "object" || Array.isArray(record)) {
     return record ?? null;
   }
 
-  let normalizedRecord = record;
+  const mediaRecord = record as LegacyBackendOptions;
+  let normalizedRecord: LegacyBackendOptions = mediaRecord;
 
   BACKEND_MEDIA_FIELD_KEYS.forEach((fieldName) => {
-    if (!Object.prototype.hasOwnProperty.call(record, fieldName)) return;
-    const fieldValue = record[fieldName];
+    if (!Object.prototype.hasOwnProperty.call(mediaRecord, fieldName)) return;
+    const fieldValue = mediaRecord[fieldName];
     const normalizedValue = normalizeBackendOwnedUrl(fieldValue, { config });
     if (normalizedValue === fieldValue) return;
 
-    if (normalizedRecord === record) {
-      normalizedRecord = { ...record };
+    if (normalizedRecord === mediaRecord) {
+      normalizedRecord = { ...mediaRecord };
     }
     normalizedRecord[fieldName] = normalizedValue;
   });
@@ -671,41 +708,43 @@ function normalizeBackendMediaRecord(record, { config = getBackendAuthConfig() }
   return normalizedRecord;
 }
 
-function normalizeBackendMediaRecords(records, { config = getBackendAuthConfig() } = {}) {
+function normalizeBackendMediaRecords(records: unknown, { config = getBackendAuthConfig() }: LegacyBackendOptions = {}) {
   if (!Array.isArray(records) || records.length === 0) return [];
   return records.map((record) => normalizeBackendMediaRecord(record, { config }));
 }
 
-async function safeJson(response) {
+async function safeJson(response: Response): Promise<LegacyBackendOptions> {
   const text = await response.text();
 
   try {
-    return JSON.parse(text);
+    return JSON.parse(text) as LegacyBackendOptions;
   } catch {
     return { raw: text };
   }
 }
 
-function getMessage(data) {
-  return data && Object.prototype.hasOwnProperty.call(data, "message")
-    ? data.message
+function getMessage(data: any): any {
+  const record = data && typeof data === "object" ? data as LegacyBackendOptions : null;
+  return record && Object.prototype.hasOwnProperty.call(record, "message")
+    ? record.message
     : data;
 }
 
-function getLoggedUser(data) {
-  const user = typeof getMessage(data) === "string" ? getMessage(data).trim() : "";
+function getLoggedUser(data: unknown) {
+  const message = getMessage(data);
+  const user = typeof message === "string" ? message.trim() : "";
   return user && user !== "Guest" ? user : null;
 }
 
-function getText(value) {
+function getText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function normalizeOptionalBoolean(value) {
+function normalizeOptionalBoolean(value: unknown) {
   return value === true ? true : value === false ? false : null;
 }
 
-function normalizeBackendAuthStateDetail(detail) {
+function normalizeBackendAuthStateDetail(detail: LegacyBackendOptions | null | undefined): BackendAuthStateSnapshot {
   return {
     authenticated: normalizeOptionalBoolean(detail?.authenticated),
     busy: detail?.busy === true,
@@ -715,7 +754,7 @@ function normalizeBackendAuthStateDetail(detail) {
   };
 }
 
-function mergeBackendAuthStateSnapshot(detail = {}) {
+function mergeBackendAuthStateSnapshot(detail: LegacyBackendOptions = {}) {
   const nextDetail = normalizeBackendAuthStateDetail(detail);
   backendAuthStateSnapshot = {
     ...backendAuthStateSnapshot,
@@ -747,12 +786,12 @@ function ensureBackendAuthStateTracking() {
   }
 
   window.addEventListener(BACKEND_AUTH_STATE_EVENT, (event) => {
-    mergeBackendAuthStateSnapshot(event?.detail || {});
+    mergeBackendAuthStateSnapshot((event as CustomEvent).detail || {});
   });
   backendAuthStateListenerInstalled = true;
 }
 
-function createMergedAbortSignal(signals = []) {
+function createMergedAbortSignal(signals: Array<AbortSignal | undefined | null> = []) {
   const activeSignals = signals.filter(Boolean);
 
   if (activeSignals.length === 0) {
@@ -794,7 +833,7 @@ function createMergedAbortSignal(signals = []) {
   };
 }
 
-function shouldAbortProtectedMediaRequest(detail) {
+function shouldAbortProtectedMediaRequest(detail: LegacyBackendOptions) {
   const normalized = normalizeBackendAuthStateDetail(detail);
   return (
     normalized.pendingLogout === true
@@ -806,7 +845,7 @@ function shouldAbortProtectedMediaRequest(detail) {
   );
 }
 
-function getProtectedFeatureCapability(featureAccessState, featureKey) {
+function getProtectedFeatureCapability(featureAccessState: LegacyBackendOptions | null | undefined, featureKey: string) {
   if (featureKey === BACKEND_FEATURE_KEYS.mediaAssets) {
     return featureAccessState?.capability
       || getMediaAssetsCapability(featureAccessState?.data);
@@ -818,17 +857,18 @@ function getProtectedFeatureCapability(featureAccessState, featureKey) {
   return getFeatureCapabilityByKey(featureAccessState?.data, featureKey);
 }
 
-function getFeatureBlockedReason(featureKey, capability = {}) {
+function getFeatureBlockedReason(featureKey: string, capability: LegacyBackendOptions = {}) {
   return getText(capability?.reason) || BACKEND_FEATURE_BLOCKED_REASONS[featureKey] || "Feature access is unavailable.";
 }
 
-function getBackendErrorReason(data, fallback = "") {
+function getBackendErrorReason(data: LegacyBackendOptions | null | undefined, fallback = "") {
   const message = getMessage(data);
   if (typeof message === "string") return getText(message) || fallback;
   if (message && typeof message === "object") {
-    return getText(message.reason)
-      || getText(message.message)
-      || getText(message.error)
+    const messageRecord = message as LegacyBackendOptions;
+    return getText(messageRecord.reason)
+      || getText(messageRecord.message)
+      || getText(messageRecord.error)
       || fallback;
   }
 
@@ -850,10 +890,10 @@ function getBackendErrorReason(data, fallback = "") {
   return fallback;
 }
 
-function normalizeProtectedEndpointResult(result, {
+function normalizeProtectedEndpointResult(result: LegacyBackendOptions | null | undefined, {
   featureKey,
   fallbackReason = "",
-} = {}) {
+}: LegacyBackendOptions = {}) {
   if (!result || typeof result !== "object") return result;
   const status = Number(result.status) || 0;
   if (status !== 401 && status !== 403) return result;
@@ -879,10 +919,10 @@ function normalizeProtectedEndpointResult(result, {
   };
 }
 
-function rememberProtectedFeatureDenial(featureKey, {
+function rememberProtectedFeatureDenial(featureKey: string, {
   reason = "",
   status = 403,
-} = {}) {
+}: LegacyBackendOptions = {}) {
   if (!featureKey) return;
   backendFeatureDenialCache.set(featureKey, {
     featureKey,
@@ -891,7 +931,7 @@ function rememberProtectedFeatureDenial(featureKey, {
   });
 }
 
-function clearProtectedFeatureDenial(featureKey) {
+function clearProtectedFeatureDenial(featureKey: string) {
   if (!featureKey) return;
   backendFeatureDenialCache.delete(featureKey);
 }
@@ -900,7 +940,7 @@ function clearProtectedFeatureDenials() {
   backendFeatureDenialCache.clear();
 }
 
-function getRememberedProtectedFeatureDenial(featureKey) {
+function getRememberedProtectedFeatureDenial(featureKey: string) {
   if (!featureKey) return null;
   return backendFeatureDenialCache.get(featureKey) || null;
 }
@@ -915,7 +955,7 @@ function createBlockedProtectedGate({
   status = 0,
   blockedByAuth = false,
   blockedByFeature = false,
-} = {}) {
+}: LegacyBackendOptions = {}) {
   return {
     allowed: false,
     blockedByAuth,
@@ -931,7 +971,7 @@ function createBlockedProtectedGate({
   };
 }
 
-export function isBackendUserAuthenticated(sessionOrDetail) {
+export function isBackendUserAuthenticated(sessionOrDetail: LegacyBackendOptions | null | undefined) {
   const detail = normalizeBackendAuthStateDetail(sessionOrDetail);
   return (
     detail.authenticated === true
@@ -945,7 +985,7 @@ export async function getProtectedFeatureRequestGate({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   ensureBackendAuthStateTracking();
 
   if (backendAuthStateSnapshot.pendingLogout === true) {
@@ -959,8 +999,8 @@ export async function getProtectedFeatureRequestGate({
   }
 
   const authAbortController = new AbortController();
-  const handleAuthStateChange = (event) => {
-    const detail = mergeBackendAuthStateSnapshot(event?.detail || {});
+  const handleAuthStateChange = (event: Event) => {
+    const detail = mergeBackendAuthStateSnapshot((event as CustomEvent).detail || {});
     if (shouldAbortProtectedMediaRequest(detail)) {
       authAbortController.abort();
     }
@@ -994,7 +1034,7 @@ export async function getProtectedFeatureRequestGate({
       pendingLogout: false,
     });
 
-    if (backendAuthStateSnapshot.pendingLogout === true) {
+    if ((backendAuthStateSnapshot.pendingLogout as boolean) === true) {
       cleanup();
       throw createAbortError();
     }
@@ -1098,31 +1138,31 @@ export async function getProtectedFeatureRequestGate({
   }
 }
 
-export function getProtectedMediaAssetsRequestGate(options = {}) {
+export function getProtectedMediaAssetsRequestGate(options: LegacyBackendOptions = {}) {
   return getProtectedFeatureRequestGate({
     ...options,
     featureKey: BACKEND_FEATURE_KEYS.mediaAssets,
   });
 }
 
-export function getProtectedCloudSyncRequestGate(options = {}) {
+export function getProtectedCloudSyncRequestGate(options: LegacyBackendOptions = {}) {
   return getProtectedFeatureRequestGate({
     ...options,
     featureKey: BACKEND_FEATURE_KEYS.cloudSync,
   });
 }
 
-export function getProtectedMediaRequestGate(options = {}) {
+export function getProtectedMediaRequestGate(options: LegacyBackendOptions = {}) {
   return getProtectedMediaAssetsRequestGate(options);
 }
 
-function cloneCachedResult(value) {
+function cloneCachedResult(value: unknown): LegacyBackendOptions {
   if (!value || typeof value !== "object") {
-    return value ?? null;
+    return (value ?? null) as LegacyBackendOptions;
   }
 
   if (Array.isArray(value)) {
-    return value.slice();
+    return value.slice() as LegacyBackendOptions;
   }
 
   return { ...value };
@@ -1134,7 +1174,7 @@ function createAbortError() {
   return error;
 }
 
-function waitForAbort(promise, signal) {
+function waitForAbort<T>(promise: Promise<T>, signal?: AbortSignal | null): Promise<T> {
   if (!signal) return promise;
   if (signal.aborted) {
     return Promise.reject(createAbortError());
@@ -1163,7 +1203,7 @@ function waitForAbort(promise, signal) {
   });
 }
 
-function clearRequestCache(cache) {
+function clearRequestCache(cache: BackendRequestCache) {
   cache.configKey = "";
   cache.fetchedAtMs = 0;
   cache.promise = null;
@@ -1171,7 +1211,7 @@ function clearRequestCache(cache) {
   cache.value = null;
 }
 
-function hasFreshCachedValue(cache, configKey, ttlMs) {
+function hasFreshCachedValue(cache: BackendRequestCache, configKey: string, ttlMs: number) {
   return Boolean(
     cache.value
     && cache.configKey === configKey
@@ -1179,12 +1219,12 @@ function hasFreshCachedValue(cache, configKey, ttlMs) {
   );
 }
 
-async function loadCachedBackendRequest(cache, loader, {
+async function loadCachedBackendRequest(cache: BackendRequestCache, loader: () => unknown, {
   force = false,
   ttlMs,
   configKey,
   signal,
-} = {}) {
+}: LegacyBackendOptions = {}) {
   if (!force && hasFreshCachedValue(cache, configKey, ttlMs)) {
     return cloneCachedResult(cache.value);
   }
@@ -1342,7 +1382,7 @@ async function fetchBackendJson(methodName, {
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const request = getFetch(fetchImpl);
   const response = await observeRequestPromise(request(getMethodUrl(methodName, config), {
     method,
@@ -1366,7 +1406,7 @@ async function fetchBackendMethodJson(methodName, {
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const request = getFetch(fetchImpl);
   const upperMethod = String(method || "GET").toUpperCase();
   const requestHeaders = {
@@ -1429,7 +1469,7 @@ export function getBackendAuthConfig(location = window.location) {
  * @param {string} assetName
  * @param {{ preview?: boolean, config?: { apiBase: string } }} [opts]
  */
-export function buildMediaBffUrl(assetName, { preview = false, config = getBackendAuthConfig() } = {}) {
+export function buildMediaBffUrl(assetName, { preview = false, config = getBackendAuthConfig() }: LegacyBackendOptions = {}) {
   if (!assetName) return "";
   const base = `${config.apiBase}/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset`;
   const params = new URLSearchParams({ name: assetName });
@@ -1442,7 +1482,7 @@ export function buildMediaBffUrl(assetName, { preview = false, config = getBacke
  * @param {string} documentName
  * @param {{ config?: { apiBase: string } }} [opts]
  */
-export function buildBoardDocumentPreviewBffUrl(documentName, { config = getBackendAuthConfig() } = {}) {
+export function buildBoardDocumentPreviewBffUrl(documentName, { config = getBackendAuthConfig() }: LegacyBackendOptions = {}) {
   if (!documentName) return "";
   const base = `${config.apiBase}/api/method/vatiolibre.vatiolibre.board_documents.download_my_board_document_preview`;
   return `${base}?${new URLSearchParams({ name: documentName }).toString()}`;
@@ -1452,7 +1492,7 @@ export async function fetchBackendSession({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const { response, data } = await fetchBackendJson(SESSION_PROBE_METHOD, {
     fetchImpl,
     signal,
@@ -1484,7 +1524,7 @@ export async function getBackendSessionState({
   signal,
   force = false,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   return loadCachedBackendRequest(
     backendSessionCache,
     () => fetchBackendSession({ fetchImpl, config }),
@@ -1500,7 +1540,7 @@ export async function getBackendSessionState({
 export async function fetchBackendLoggedUser({
   fetchImpl,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const { response, data } = await fetchBackendJson(LOGGED_USER_METHOD, {
     fetchImpl,
     config,
@@ -1519,7 +1559,7 @@ export async function loginToBackend({
   password,
   fetchImpl,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const body = new URLSearchParams();
   body.set("usr", String(username || "").trim());
   body.set("pwd", String(password || ""));
@@ -1541,7 +1581,7 @@ export async function loginToBackend({
   };
 }
 
-export async function logoutFromBackend({ fetchImpl, config = getBackendAuthConfig() } = {}) {
+export async function logoutFromBackend({ fetchImpl, config = getBackendAuthConfig() }: LegacyBackendOptions = {}) {
   const { response, data } = await fetchBackendJson("logout", {
     method: "POST",
     headers: {
@@ -1570,7 +1610,7 @@ export async function fetchBackendFeatureAccess({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const { response, data } = await fetchBackendJson(FEATURE_ACCESS_METHOD, {
     fetchImpl,
     signal,
@@ -1602,7 +1642,7 @@ export async function getBackendFeatureAccessState({
   signal,
   force = false,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   return loadCachedBackendRequest(
     backendFeatureAccessCache,
     () => fetchBackendFeatureAccess({ fetchImpl, config }),
@@ -1623,7 +1663,7 @@ export async function listBackendSpeedRecordings({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const { response, data } = await fetchBackendMethodJson(LIST_SPEED_RECORDINGS_METHOD, {
     args: { limit, offset, search, sort },
     fetchImpl,
@@ -1649,7 +1689,7 @@ export async function getBackendSpeedRecordingDetail({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const { response, data } = await fetchBackendMethodJson(GET_SPEED_RECORDING_DETAIL_METHOD, {
     args: {
       name,
@@ -1678,7 +1718,7 @@ export async function listBackendAccelRuns({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const { response, data } = await fetchBackendMethodJson(LIST_ACCEL_RECORDINGS_METHOD, {
     args: { limit, offset, search, sort },
     fetchImpl,
@@ -1704,7 +1744,7 @@ export async function getBackendAccelRunDetail({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const { response, data } = await fetchBackendMethodJson(GET_ACCEL_RECORDING_DETAIL_METHOD, {
     args: {
       name,
@@ -1734,7 +1774,7 @@ export async function listBackendMediaAssets({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const { response, data } = await fetchBackendMethodJson(LIST_MEDIA_ASSETS_METHOD, {
     args: { limit, offset, search, sort, media_kind },
     fetchImpl,
@@ -1764,7 +1804,7 @@ export async function getBackendMediaAssetDetail({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const { response, data } = await fetchBackendMethodJson(GET_MEDIA_ASSET_DETAIL_METHOD, {
     args: { name },
     fetchImpl,
@@ -1788,8 +1828,8 @@ export async function getBackendMediaAssetAccess({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
-  const args = { name };
+}: LegacyBackendOptions = {}) {
+  const args: LegacyBackendOptions = { name };
   if (intent) args.intent = intent;
   const { response, data } = await fetchBackendMethodJson(GET_MEDIA_ASSET_ACCESS_METHOD, {
     args,
@@ -1811,7 +1851,7 @@ export async function getBackendManifestVersion({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const { response, data } = await fetchBackendMethodJson(GET_MEDIA_MANIFEST_VERSION_METHOD, {
     args: {},
     fetchImpl,
@@ -1839,7 +1879,7 @@ export async function getBackendMediaManifest({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const { response, data } = await fetchBackendMethodJson(GET_MEDIA_MANIFEST_METHOD, {
     args: {},
     fetchImpl,
@@ -1874,7 +1914,7 @@ export async function fetchBackendMediaAssetBlob({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const request = getFetch(fetchImpl);
   const url = buildMethodUrl(STREAM_MEDIA_ASSET_BLOB_METHOD, { name }, config);
   return observeRequestPromise(request(url, {
@@ -1892,7 +1932,7 @@ export async function listBackendBoardDocuments({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const { response, data } = await fetchBackendMethodJson(LIST_BOARD_DOCUMENTS_METHOD, {
     args: { limit, offset, search, sort },
     fetchImpl,
@@ -1923,7 +1963,7 @@ export async function getBackendBoardDocumentDetail({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const { response, data } = await fetchBackendMethodJson(GET_BOARD_DOCUMENT_DETAIL_METHOD, {
     args: {
       name,
@@ -1953,7 +1993,7 @@ export async function saveBoardDocumentToBackend({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const body = new FormData();
   body.append("title", getText(title) || "");
   body.append("payload", typeof payload === "string" ? payload : JSON.stringify(payload || {}));
@@ -1994,7 +2034,7 @@ export async function updateBoardDocumentInBackend({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const body = new FormData();
   body.append("name", getText(name));
   if (title !== undefined) {
@@ -2037,7 +2077,7 @@ export async function deleteBoardDocumentFromBackend({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const body = new FormData();
   body.append("name", getText(name));
 
@@ -2073,7 +2113,7 @@ export async function uploadMediaAssetToBackend({
   csrfToken,
   fetchImpl,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const body = new FormData();
 
   if (!(fileBlob instanceof Blob)) {
@@ -2128,7 +2168,7 @@ export async function updateMediaAssetInBackend({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const headers = {
     "Content-Type": "application/x-www-form-urlencoded",
   };
@@ -2170,7 +2210,7 @@ export async function pushSyncChangesToBackend({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const serializedChanges = JSON.stringify(Array.isArray(changes) ? changes : []);
   const compressedChanges = await createCompressedJsonBlob(serializedChanges);
   const body = new FormData();
@@ -2211,7 +2251,7 @@ export async function pullSyncChangesFromBackend({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const body = new URLSearchParams();
   if (getText(cursor)) {
     body.set("cursor", getText(cursor));
@@ -2248,7 +2288,7 @@ export async function downloadSyncPayloadFromBackend({
   onRequestStart,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const body = new URLSearchParams();
   body.set("name", getText(name));
   if (hasGzipDecompressionSupport()) {
@@ -2294,7 +2334,7 @@ export async function deleteSyncRecordFromBackend({
   csrfToken,
   fetchImpl,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const body = new URLSearchParams();
   body.set("entity_type", getText(entityType));
   body.set("client_record_id", getText(clientRecordId));
@@ -2335,7 +2375,7 @@ export async function deleteMediaAssetFromBackend({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const headers = {
     "Content-Type": "application/x-www-form-urlencoded",
   };
@@ -2373,8 +2413,8 @@ export async function listBackendPlaylists({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
-  const args = {};
+}: LegacyBackendOptions = {}) {
+  const args: LegacyBackendOptions = {};
   if (search) args.search = String(search);
   if (limit != null) args.limit = Number(limit);
   if (offset != null) args.offset = Number(offset);
@@ -2401,7 +2441,7 @@ export async function getBackendPlaylistDetail({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const { response, data } = await fetchBackendMethodJson(GET_PLAYLIST_DETAIL_METHOD, {
     args: { name: String(name || "") },
     fetchImpl,
@@ -2421,7 +2461,7 @@ export async function getBackendPlaylistsManifestVersion({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const { response, data } = await fetchBackendMethodJson(GET_PLAYLISTS_MANIFEST_VERSION_METHOD, {
     args: {},
     fetchImpl,
@@ -2442,7 +2482,7 @@ export async function getBackendPlaylistsManifest({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const { response, data } = await fetchBackendMethodJson(GET_PLAYLISTS_MANIFEST_METHOD, {
     args: {},
     fetchImpl,
@@ -2466,8 +2506,8 @@ export async function createBackendPlaylist({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
-  const args = {};
+}: LegacyBackendOptions = {}) {
+  const args: LegacyBackendOptions = {};
   if (title) args.title = String(title);
 
   const { response, data } = await fetchBackendMethodJson(CREATE_PLAYLIST_METHOD, {
@@ -2492,7 +2532,7 @@ export async function addBackendPlaylistItem({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const { response, data } = await fetchBackendMethodJson(ADD_PLAYLIST_ITEM_METHOD, {
     method: "POST",
     args: {
@@ -2518,7 +2558,7 @@ export async function bulkAddBackendPlaylistItems({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
-} = {}) {
+}: LegacyBackendOptions = {}) {
   const { response, data } = await fetchBackendMethodJson(BULK_ADD_PLAYLIST_ITEMS_METHOD, {
     method: "POST",
     args: {
@@ -2546,7 +2586,7 @@ export function createBackendAuthController({
   config = getBackendAuthConfig(),
   location = window.location,
   ssoUi = BACKEND_AUTH_SSO_UI_DEFAULTS,
-} = {}) {
+}: LegacyBackendOptions = {}) {
   if (!root) return null;
 
   normalizeBackendAuthLayout(root, ssoUi);
@@ -2576,7 +2616,7 @@ export function createBackendAuthController({
     const toggleBtn = document.createElement("button");
     toggleBtn.type = "button";
     toggleBtn.className = "backend-auth-password-toggle";
-    toggleBtn.setAttribute("aria-label", t("authTogglePassword"));
+    toggleBtn.setAttribute("aria-label", translate("authTogglePassword", undefined));
     toggleBtn.tabIndex = -1;
     toggleBtn.innerHTML = `<svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16" aria-hidden="true">
       <path d="M10 3C5.5 3 1.7 6 .3 10c1.4 4 5.2 7 9.7 7s8.3-3 9.7-7C18.3 6 14.5 3 10 3Zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/>
@@ -2586,7 +2626,7 @@ export function createBackendAuthController({
       const revealed = passwordInput.type === "text";
       passwordInput.type = revealed ? "password" : "text";
       toggleBtn.classList.toggle("is-revealed", !revealed);
-      toggleBtn.setAttribute("aria-label", t(revealed ? "authTogglePassword" : "authHidePassword"));
+      toggleBtn.setAttribute("aria-label", translate(revealed ? "authTogglePassword" : "authHidePassword", undefined));
     });
 
     wrap.append(toggleBtn);
@@ -2610,11 +2650,11 @@ export function createBackendAuthController({
 
   function renderStatus() {
     if (!statusEl) return;
-    statusEl.textContent = t(statusKey, statusParams || undefined);
+    statusEl.textContent = translate(statusKey, statusParams || undefined);
     statusEl.dataset.tone = statusTone;
   }
 
-  function setStatus(key, params, tone = "muted") {
+  function setStatus(key: string, params: LegacyBackendOptions | null = null, tone = "muted") {
     statusKey = key;
     statusParams = params || null;
     statusTone = tone;
@@ -2640,7 +2680,7 @@ export function createBackendAuthController({
     if (openBoardButton) openBoardButton.disabled = busy;
   }
 
-  async function refreshSession(options = {}) {
+  async function refreshSession(options: LegacyBackendOptions = {}) {
     busy = true;
     setStatus("authCheckingSession");
     syncView();
@@ -2839,7 +2879,7 @@ export function initBackendAuthControllers({
   config = getBackendAuthConfig(),
   location = window.location,
   ssoUi = BACKEND_AUTH_SSO_UI_DEFAULTS,
-} = {}) {
+}: LegacyBackendOptions = {}) {
   return Array.from(root.querySelectorAll("[data-backend-auth]"))
     .map((element) => createBackendAuthController({
       root: element,

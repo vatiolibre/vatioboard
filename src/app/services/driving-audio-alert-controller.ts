@@ -15,6 +15,16 @@ import {
 
 export const DRIVING_ALERT_BACKGROUND_AUDIO_LEASE = "speed-alerts";
 
+type AlertAudioElement = HTMLAudioElement & { playsInline?: boolean };
+type AlertAudioConstructor = new (src?: string) => AlertAudioElement;
+// TODO(ts-migration): alert state snapshots are consumed by JS speed UI modules.
+type LegacyAudioAlertRecord = Record<string, any>;
+
+interface DrivingAudioAlertControllerOptions {
+  AudioClass?: AlertAudioConstructor;
+  onStateChange?: ((snapshot: LegacyAudioAlertRecord) => void) | null;
+}
+
 function createAlertAudioState() {
   return {
     overspeedAudible: false,
@@ -35,9 +45,9 @@ function createAlertAudioState() {
 }
 
 export function createDrivingAudioAlertController({
-  AudioClass = globalThis.Audio,
+  AudioClass = globalThis.Audio as AlertAudioConstructor,
   onStateChange = null,
-} = {}) {
+}: DrivingAudioAlertControllerOptions = {}) {
   const state = createAlertAudioState();
   const overspeedAudio = new AudioClass(OVERSPEED_SOUND_URL);
   overspeedAudio.loop = true;
@@ -49,7 +59,7 @@ export function createDrivingAudioAlertController({
   trapAudio.preload = "auto";
   trapAudio.playsInline = true;
 
-  let primePromise = null;
+  let primePromise: Promise<boolean> | null = null;
 
   function emit() {
     try {
@@ -59,7 +69,7 @@ export function createDrivingAudioAlertController({
     }
   }
 
-  function stopAudio(audio) {
+  function stopAudio(audio: AlertAudioElement) {
     try {
       audio.pause();
       audio.currentTime = 0;
@@ -75,7 +85,7 @@ export function createDrivingAudioAlertController({
     stopAudio(overspeedAudio);
   }
 
-  function stopTrap({ resetLastTrap = false } = {}) {
+  function stopTrap({ resetLastTrap = false }: LegacyAudioAlertRecord = {}) {
     state.trapRequestId += 1;
     state.trapSoundPending = false;
     state.trapAudible = false;
@@ -109,7 +119,7 @@ export function createDrivingAudioAlertController({
     emit();
   }
 
-  function playLoopingOverspeed({ fromUserGesture = false } = {}) {
+  function playLoopingOverspeed({ fromUserGesture = false }: LegacyAudioAlertRecord = {}) {
     if (state.overspeedAudible && !overspeedAudio.paused) return;
     if (state.alertSoundPending) return;
     if (state.alertSoundBlocked && !fromUserGesture) return;
@@ -146,7 +156,7 @@ export function createDrivingAudioAlertController({
       });
   }
 
-  function playTrapOnce({ trapId, fromUserGesture = false } = {}) {
+  function playTrapOnce({ trapId, fromUserGesture = false }: LegacyAudioAlertRecord = {}) {
     if (!trapId) {
       stopTrap({ resetLastTrap: true });
       return;
@@ -197,7 +207,7 @@ export function createDrivingAudioAlertController({
     muted = false,
     audioIntended = false,
     fromUserGesture = false,
-  } = {}) {
+  }: LegacyAudioAlertRecord = {}) {
     state.muted = Boolean(muted);
     if (audioIntended && !state.muted) {
       void armBackgroundAudio();
@@ -223,7 +233,7 @@ export function createDrivingAudioAlertController({
     emit();
   }
 
-  function primeAudioFromUserGesture({ keepAlive = true } = {}) {
+  function primeAudioFromUserGesture({ keepAlive = true }: LegacyAudioAlertRecord = {}) {
     if (state.primed && (!keepAlive || isBackgroundAudioLeaseActive(DRIVING_ALERT_BACKGROUND_AUDIO_LEASE))) {
       return Promise.resolve(true);
     }
@@ -254,7 +264,7 @@ export function createDrivingAudioAlertController({
     return primePromise;
   }
 
-  function setMuted(muted) {
+  function setMuted(muted: unknown) {
     state.muted = Boolean(muted);
     if (state.muted) {
       stopOverspeed();

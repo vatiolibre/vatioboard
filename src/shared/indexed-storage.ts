@@ -1,6 +1,22 @@
 const INDEXED_DB_OPEN_TIMEOUT_MS = 3000;
 
-export function hasIndexedDbSupport() {
+import type { JsonValue } from "../types/storage";
+
+export interface IndexedJsonKeyValueStoreOptions {
+  dbName: string;
+  dbVersion?: number;
+  storeName: string;
+}
+
+export interface IndexedJsonKeyValueStore {
+  deleteValue(key: IDBValidKey): Promise<boolean>;
+  getValue<T extends JsonValue = JsonValue>(key: IDBValidKey): Promise<T | undefined>;
+  hasSupport(): boolean;
+  openDatabase(): Promise<IDBDatabase | null>;
+  setValue(key: IDBValidKey, value: JsonValue): Promise<boolean>;
+}
+
+export function hasIndexedDbSupport(): boolean {
   return typeof indexedDB !== "undefined" && typeof indexedDB.open === "function";
 }
 
@@ -8,17 +24,17 @@ export function createIndexedJsonKeyValueStore({
   dbName,
   dbVersion = 1,
   storeName,
-}) {
-  let dbPromise = null;
-  let databaseRef = null;
+}: IndexedJsonKeyValueStoreOptions): IndexedJsonKeyValueStore {
+  let dbPromise: Promise<IDBDatabase | null> | null = null;
+  let databaseRef: IDBDatabase | null = null;
 
-  function clearCachedDatabase(target = databaseRef) {
+  function clearCachedDatabase(target = databaseRef): void {
     if (databaseRef === target) {
       databaseRef = null;
     }
   }
 
-  function cacheDatabase(database) {
+  function cacheDatabase(database: IDBDatabase | null): IDBDatabase | null {
     if (!database) return null;
     if (databaseRef === database) return database;
 
@@ -49,7 +65,7 @@ export function createIndexedJsonKeyValueStore({
     return database;
   }
 
-  async function openDatabase() {
+  async function openDatabase(): Promise<IDBDatabase | null> {
     if (!hasIndexedDbSupport()) {
       return null;
     }
@@ -61,13 +77,13 @@ export function createIndexedJsonKeyValueStore({
     if (!dbPromise) {
       dbPromise = new Promise((resolve) => {
         let settled = false;
-        let openTimeoutId;
+        let openTimeoutId: ReturnType<typeof setTimeout> | undefined;
         let timedOut = false;
 
-        const finish = (database) => {
+        const finish = (database: IDBDatabase | null) => {
           if (settled) return;
           settled = true;
-          clearTimeout(openTimeoutId);
+          if (openTimeoutId !== undefined) clearTimeout(openTimeoutId);
           // When the open succeeds, clear dbPromise so future calls use databaseRef.
           // When it fails via error/blocked, clear dbPromise to allow a retry.
           // When it times out, keep dbPromise cached so subsequent calls return
@@ -115,15 +131,15 @@ export function createIndexedJsonKeyValueStore({
     return dbPromise;
   }
 
-  async function getValue(key) {
+  async function getValue<T extends JsonValue = JsonValue>(key: IDBValidKey): Promise<T | undefined> {
     const database = await openDatabase();
     if (!database) return undefined;
 
     try {
-      return await new Promise((resolve, reject) => {
+      return await new Promise<T | undefined>((resolve, reject) => {
         const transaction = database.transaction(storeName, "readonly");
         const request = transaction.objectStore(storeName).get(key);
-        let result = undefined;
+        let result: T | undefined = undefined;
         request.onsuccess = () => {
           result = request.result ?? undefined;
         };
@@ -137,12 +153,12 @@ export function createIndexedJsonKeyValueStore({
     }
   }
 
-  async function setValue(key, value) {
+  async function setValue(key: IDBValidKey, value: JsonValue): Promise<boolean> {
     const database = await openDatabase();
     if (!database) return false;
 
     try {
-      await new Promise((resolve, reject) => {
+      await new Promise<void>((resolve, reject) => {
         const transaction = database.transaction(storeName, "readwrite");
         const request = transaction.objectStore(storeName).put(value, key);
         request.onsuccess = () => {};
@@ -157,12 +173,12 @@ export function createIndexedJsonKeyValueStore({
     }
   }
 
-  async function deleteValue(key) {
+  async function deleteValue(key: IDBValidKey): Promise<boolean> {
     const database = await openDatabase();
     if (!database) return false;
 
     try {
-      await new Promise((resolve, reject) => {
+      await new Promise<void>((resolve, reject) => {
         const transaction = database.transaction(storeName, "readwrite");
         const request = transaction.objectStore(storeName).delete(key);
         request.onsuccess = () => {};

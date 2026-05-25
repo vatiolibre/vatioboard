@@ -23,6 +23,25 @@ import { hasSingleTabOwnership, SINGLE_TAB_OWNERSHIP_EVENT } from "./single-tab.
 import { createStorageCapability } from "./storage-capability.js";
 import { loadJson, loadText, removeStoredValue, saveJson, saveText } from "./storage.js";
 
+// TODO(ts-migration): cloud sync bridges several JS feature repositories.
+// Keep these legacy records permissive until each feature payload is typed.
+type LegacyCloudRecord = Record<string, any>;
+
+interface CloudSyncStatusSnapshot {
+  state: string;
+  reason: string;
+  lastSuccessAtMs: number;
+  lastFailureAtMs: number;
+  lastFailureMessage: string;
+  pendingByEntity: Record<string, number>;
+}
+
+interface CloudSyncStateSnapshot {
+  cursor: string;
+  bootstrapVersion: number;
+  records: Record<string, LegacyCloudRecord>;
+}
+
 export const CLOUD_SYNC_ENTITY_TYPES = Object.freeze({
   accelRun: "accel_run",
   boardDrawing: "board_drawing",
@@ -80,7 +99,7 @@ let backendAuthenticated = null;
 let logoutPending = false;
 const suppressedPayloadDownloadWarnings = new Set();
 let lastImmediateSyncRequestAtMs = 0;
-let cloudSyncStatus = {
+let cloudSyncStatus: CloudSyncStatusSnapshot = {
   state: CLOUD_SYNC_STATUS_STATES.syncing,
   reason: "starting",
   lastSuccessAtMs: 0,
@@ -190,7 +209,7 @@ function emitCloudSyncStatus(detail) {
   );
 }
 
-function setCloudSyncStatus(nextStatus = {}) {
+function setCloudSyncStatus(nextStatus: Partial<CloudSyncStatusSnapshot> = {}) {
   cloudSyncStatus = {
     ...cloudSyncStatus,
     ...nextStatus,
@@ -203,7 +222,7 @@ function setCloudSyncStatus(nextStatus = {}) {
 }
 
 function countPendingByEntity(outbox) {
-  const pendingByEntity = {};
+  const pendingByEntity: Record<string, number> = {};
 
   for (const entry of normalizeOutboxEntries(outbox)) {
     pendingByEntity[entry.entityType] = (pendingByEntity[entry.entityType] || 0) + 1;
@@ -328,7 +347,7 @@ function getStateRecords(state) {
 }
 
 function normalizeStateRecords(records) {
-  const normalizedRecords = {};
+  const normalizedRecords: Record<string, LegacyCloudRecord> = {};
 
   for (const record of Object.values(getStateRecords({ records }))) {
     const meta = normalizeRecordMeta(record);
@@ -382,15 +401,15 @@ function isValidCloudSyncState(value) {
   );
 }
 
-async function loadCloudSyncState() {
+async function loadCloudSyncState(): Promise<CloudSyncStateSnapshot> {
   const indexedDbUsable = await syncStoreCapability.isIndexedDbUsable();
   const indexedValue = indexedDbUsable
-    ? await syncStore.getValue(CLOUD_SYNC_STATE_KEY)
+    ? await syncStore.getValue<LegacyCloudRecord>(CLOUD_SYNC_STATE_KEY)
     : undefined;
-  const fallbackValue = loadJson(CLOUD_SYNC_STATE_FALLBACK_KEY, {});
+  const fallbackValue = loadJson(CLOUD_SYNC_STATE_FALLBACK_KEY, {}) as LegacyCloudRecord;
   const hasIndexedState = indexedDbUsable && isValidCloudSyncState(indexedValue);
-  const indexedState = hasIndexedState ? indexedValue : {};
-  const fallbackState = isValidCloudSyncState(fallbackValue) ? fallbackValue : {};
+  const indexedState: LegacyCloudRecord = hasIndexedState ? indexedValue as LegacyCloudRecord : {};
+  const fallbackState: LegacyCloudRecord = isValidCloudSyncState(fallbackValue) ? fallbackValue : {};
   const cursor = hasIndexedState
     ? (typeof indexedState.cursor === "string" ? indexedState.cursor : "")
     : (typeof fallbackState.cursor === "string" ? fallbackState.cursor : "");
@@ -869,12 +888,12 @@ async function acquireSyncLease() {
 
   return new Promise((resolve) => {
     let settled = false;
-    let releaseHold = () => {};
-    const holdPromise = new Promise((release) => {
+    let releaseHold: () => void = () => {};
+    const holdPromise = new Promise<void>((release) => {
       releaseHold = release;
     });
 
-    const settle = (value) => {
+    const settle = (value: boolean) => {
       if (settled) return;
       settled = true;
       resolve(value);
@@ -964,7 +983,7 @@ async function applyBoardDrawing(meta, payload) {
   await saveBoardDrawing(payload || createEmptyBoardDrawing());
 }
 
-async function deleteBoardDrawing() {
+async function deleteBoardDrawing(_meta?: LegacyCloudRecord) {
   // Board sync uses empty snapshots instead of tombstones.
 }
 
@@ -986,7 +1005,7 @@ export async function restoreCloudSyncRecord({
   entityType,
   recordId,
   signal,
-} = {}) {
+}: LegacyCloudRecord = {}) {
   const result = await downloadCloudSyncRecord({
     entityType,
     recordId,
@@ -1011,7 +1030,7 @@ export async function downloadCloudSyncRecord({
   recordId,
   onPayloadDownloadStart,
   signal,
-} = {}) {
+}: LegacyCloudRecord = {}) {
   const meta = await findCloudSyncRecordMeta(entityType, recordId);
   if (!meta || meta.deletedAtMs > 0) {
     return {
@@ -1038,7 +1057,7 @@ export async function downloadCloudSyncRecord({
       };
     }
 
-    const payloadRequest = {
+    const payloadRequest: LegacyCloudRecord = {
       name: meta.name,
       signal: gate.signal,
     };
@@ -1104,7 +1123,7 @@ async function hydrateAccelChangePayload(change) {
   return runs.find((entry) => entry.id === change.recordId) ?? null;
 }
 
-async function hydrateBoardChangePayload() {
+async function hydrateBoardChangePayload(_change?: LegacyCloudRecord) {
   return loadBoardDrawing();
 }
 
@@ -1227,7 +1246,7 @@ async function pushCloudSyncOutbox({
   }));
 }
 
-async function pullCloudSyncRecords({ signal } = {}) {
+async function pullCloudSyncRecords({ signal }: LegacyCloudRecord = {}) {
   if (!hasSingleTabOwnership() || !isCloudSyncAuthAllowed()) return;
   const state = await loadCloudSyncState();
   let cursor = state.cursor;
@@ -1372,7 +1391,7 @@ async function pullCloudSyncRecords({ signal } = {}) {
   };
 }
 
-async function resolveCloudSyncCapability({ signal } = {}) {
+async function resolveCloudSyncCapability({ signal }: LegacyCloudRecord = {}) {
   const session = await getBackendSessionState({ signal });
   if (!session.ok || session.isGuest) {
     if (session.isGuest) {
@@ -1435,7 +1454,7 @@ export function stopCloudSyncLoop() {
   }
 }
 
-function scheduleCloudSync({ immediate = false } = {}) {
+function scheduleCloudSync({ immediate = false }: LegacyCloudRecord = {}) {
   if (typeof window === "undefined") return;
   if (!hasSingleTabOwnership() || !isCloudSyncAuthAllowed()) return;
 
@@ -1471,7 +1490,7 @@ export function requestCloudSync({
   reason = "requested",
   immediate = false,
   signal,
-} = {}) {
+}: LegacyCloudRecord = {}) {
   if (signal?.aborted) {
     return false;
   }
@@ -1520,7 +1539,7 @@ export async function queueCloudSyncDeletion({
   recordId,
   deletedAtMs = Date.now(),
   recordTitle = "",
-} = {}) {
+}: LegacyCloudRecord = {}) {
   return queueCloudSyncChange({
     entityType,
     recordId,
@@ -1649,7 +1668,7 @@ export function syncCloudRecords() {
         };
       }
 
-      const pullResult = await pullCloudSyncRecords({ signal: syncSignal });
+      const pullResult: LegacyCloudRecord = await pullCloudSyncRecords({ signal: syncSignal }) || {};
       if (pullResult?.blocked) {
         return {
           ok: true,
@@ -1713,7 +1732,7 @@ export function syncCloudRecords() {
   return activeSyncPromise;
 }
 
-export function startCloudSyncLoop({ immediate = true } = {}) {
+export function startCloudSyncLoop({ immediate = true }: LegacyCloudRecord = {}) {
   if (typeof window === "undefined" || listenersInstalled) {
     if (immediate) {
       scheduleCloudSync({ immediate: true });
@@ -1741,29 +1760,31 @@ export function startCloudSyncLoop({ immediate = true } = {}) {
     });
   }
   window.addEventListener(SINGLE_TAB_OWNERSHIP_EVENT, (event) => {
-    if (event?.detail?.owned === false) {
+    const detail = (event as CustomEvent).detail || {};
+    if (detail.owned === false) {
       stopCloudSyncLoop();
       setCloudSyncSkippedState("ownership");
       return;
     }
-    if (event?.detail?.owned === true) {
+    if (detail.owned === true) {
       scheduleCloudSync({ immediate: true });
     }
   });
   window.addEventListener(BACKEND_AUTH_STATE_EVENT, (event) => {
-    if (event?.detail?.pendingLogout === true) {
+    const detail = (event as CustomEvent).detail || {};
+    if (detail.pendingLogout === true) {
       logoutPending = true;
       stopCloudSyncLoop();
       setCloudSyncSkippedState("logout");
       return;
     }
-    if (event?.detail?.authenticated === true) {
+    if (detail.authenticated === true) {
       backendAuthenticated = true;
       logoutPending = false;
       scheduleCloudSync({ immediate: true });
       return;
     }
-    if (event?.detail?.isGuest === true) {
+    if (detail.isGuest === true) {
       backendAuthenticated = false;
       logoutPending = false;
       stopCloudSyncLoop();

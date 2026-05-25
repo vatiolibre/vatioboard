@@ -58,6 +58,14 @@ interface NetworkInformation {
   effectiveType?: string;
 }
 
+interface ImportMeta {
+  env?: {
+    DEV?: boolean;
+    MODE?: string;
+    [key: string]: string | boolean | undefined;
+  };
+}
+
 interface Window {
   __vatioboardActivityState?: unknown;
   __vatioboardCameraMapApproach?: unknown;
