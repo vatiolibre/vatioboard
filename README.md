@@ -154,9 +154,9 @@ Approach metadata is stored inside `speedMeta.approach` when the build pipeline 
 
 If a camera is near only restricted roads, the build leaves the approach corridor empty instead of using a misleading segment. Old artifacts without `approach` continue to load and alert through the fallback policy.
 
-`npm run prepare:geo` is offline-safe. It first converts `data-src/ANSV.csv` to `data-src/ansv_cameras_maplibre.geojson` when the CSV is present, then builds from `data-src/osm_speed_cameras_overpass.json` and the optional `data-src/osm_speed_cameras_maxspeed_enrichment.json` sidecar when they exist. Without the cached OSM source, it falls back to the generated Colombia ANSV GeoJSON so dev/build never depend on live Overpass. Browser runtime does not query Overpass or parse road geometry while driving.
+`pnpm run prepare:geo` is offline-safe. It first converts `data-src/ANSV.csv` to `data-src/ansv_cameras_maplibre.geojson` when the CSV is present, then builds from `data-src/osm_speed_cameras_overpass.json` and the optional `data-src/osm_speed_cameras_maxspeed_enrichment.json` sidecar when they exist. Without the cached OSM source, it falls back to the generated Colombia ANSV GeoJSON so dev/build never depend on live Overpass. Browser runtime does not query Overpass or parse road geometry while driving.
 
-`npm run fetch:cameras` is the network/update command. By default it reuses the cached global camera source if `data-src/osm_speed_cameras_overpass.json` already exists, resumes cached road-speed tiles from `data-src/osm-road-speeds/`, fetches only missing road-speed tiles, writes `data-src/osm_speed_cameras_maxspeed_enrichment.json`, and rebuilds `public/geo/cameras`. Set `CAMERA_REFRESH_CACHE=1` only when you intentionally want to refresh the global camera Overpass source.
+`pnpm run fetch:cameras` is the network/update command. By default it reuses the cached global camera source if `data-src/osm_speed_cameras_overpass.json` already exists, resumes cached road-speed tiles from `data-src/osm-road-speeds/`, fetches only missing road-speed tiles, writes `data-src/osm_speed_cameras_maxspeed_enrichment.json`, and rebuilds `public/geo/cameras`. Set `CAMERA_REFRESH_CACHE=1` only when you intentionally want to refresh the global camera Overpass source.
 
 The global camera query is:
 
@@ -178,15 +178,15 @@ CAMERA_ROAD_REQUEST_DELAY_MS=8000 \
 CAMERA_ROAD_PROGRESS_EVERY=25 \
 CAMERA_ROAD_SLOW_TILE_MS=5000 \
 OVERPASS_PROGRESS_INTERVAL_MS=30000 \
-npm run fetch:cameras 2>&1 | tee "logs/fetch-cameras-first-pass-$(date +%Y%m%d-%H%M%S).log"
+pnpm run fetch:cameras 2>&1 | tee "logs/fetch-cameras-first-pass-$(date +%Y%m%d-%H%M%S).log"
 ```
 
 After the first pass, most local work should avoid Overpass entirely:
 
 ```bash
-CAMERA_ROAD_FETCH_MISSING=0 npm run fetch:cameras
-npm run prepare:geo
-npm run analyze:cameras:maxspeed
+CAMERA_ROAD_FETCH_MISSING=0 pnpm run fetch:cameras
+pnpm run prepare:geo
+pnpm run analyze:cameras:maxspeed
 ```
 
 Only use `CAMERA_ROAD_REFRESH_CACHE=1` when you deliberately want to re-download every road-speed tile. That is much heavier than a normal camera refresh and should not be part of routine local development.
@@ -210,13 +210,13 @@ Approach matching behavior can be tuned for development without a rebuild throug
 Useful local camera-data commands:
 
 ```bash
-npm run fetch:cameras
-npm run prepare:geo
-npm run analyze:cameras:maxspeed
-npm run test:unit
-npm run test:smoke
-npm run lint
-npm run build
+pnpm run fetch:cameras
+pnpm run prepare:geo
+pnpm run analyze:cameras:maxspeed
+pnpm run test:unit
+pnpm run test:smoke
+pnpm run lint
+pnpm run build
 ```
 
 ### Speed Alerts Shell Window
@@ -257,14 +257,14 @@ Good camera alerts also depend on nearby road tagging. If a camera already exist
 After an upstream OSM edit is saved, wait for Overpass and downstream OSM mirrors to catch up, then regenerate the local artifacts:
 
 ```bash
-npm run fetch:cameras
-npm run analyze:cameras:maxspeed
+pnpm run fetch:cameras
+pnpm run analyze:cameras:maxspeed
 ```
 
 For routine local verification without fetching missing road tiles, use:
 
 ```bash
-CAMERA_ROAD_FETCH_MISSING=0 npm run fetch:cameras
+CAMERA_ROAD_FETCH_MISSING=0 pnpm run fetch:cameras
 ```
 
 Individual camera fixes should normally go to OSM first, not directly into this repository. A VatioBoard data PR is most useful when it adds or updates an OSM-compatible official source, documents a repeatable import/reconciliation process, or improves the build pipeline that consumes upstream data.
@@ -300,7 +300,7 @@ Public tile services have fair-use and attribution policies. OSM Standard should
 
 Follow-up tickets:
 
-- Add a daily GitHub Actions workflow that runs `npm run fetch:cameras`, opens a data refresh PR, and reports artifact counts.
+- Add a daily GitHub Actions workflow that runs `pnpm run fetch:cameras`, opens a data refresh PR, and reports artifact counts.
 - Add a Help link explaining that missing cameras can be added to OpenStreetMap and will appear after the next artifact refresh.
 - Preserve optional source/debug tags in a separate diagnostics artifact without expanding the runtime payload.
 - Add an optional voice announcement patterned after `src/speed/audio.js`: “speed camera ahead, limit X” in the selected speed unit, while preserving browser audio gesture requirements.
@@ -353,18 +353,19 @@ Follow-up tickets:
 ### Requirements
 
 - Node.js `>=24`
-- npm
+- pnpm via Corepack
 
 ### Install
 
 ```bash
-npm install
+corepack enable
+pnpm install
 ```
 
 ### Start The Dev Server
 
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 Vite is configured with `strictPort: true`, so local development runs at:
@@ -391,25 +392,27 @@ Legacy standalone test/dev harnesses remain available at:
 
 ## Scripts
 
-- `npm run prepare:ansv`: converts `data-src/ANSV.csv` to `data-src/ansv_cameras_maplibre.geojson`
-- `npm run prepare:geo`: builds the speed-camera artifacts consumed by Vatio Speed from local data, including the ANSV CSV conversion step
-- `npm run fetch:cameras`: resumes/fetches local Overpass camera and road-speed data, writes maxspeed enrichment, and rebuilds speed-camera artifacts
-- `npm run analyze:cameras:maxspeed`: prints explicit/inferred/unknown speed coverage from the generated camera manifest
-- `npm run dev`: runs Vite locally after the `predev` geo preparation step
-- `npm run build`: creates a production build after the `prebuild` geo preparation step
-- `npm run preview`: serves the built app locally
-- `npm run lint`: runs ESLint
-- `npm run lint:fix`: runs ESLint with autofix
-- `npm run format`: formats the repo with Prettier
-- `npm run format:check`: checks formatting without writing changes
-- `npm test`: runs the full Vitest suite
-- `npm run test:watch`: runs Vitest in watch mode
-- `npm run test:unit`: runs unit tests under `test/unit`
-- `npm run test:smoke`: runs smoke tests under `test/smoke`
+- `pnpm run prepare:ansv`: converts `data-src/ANSV.csv` to `data-src/ansv_cameras_maplibre.geojson`
+- `pnpm run prepare:geo`: builds the speed-camera artifacts consumed by Vatio Speed from local data, including the ANSV CSV conversion step
+- `pnpm run fetch:cameras`: resumes/fetches local Overpass camera and road-speed data, writes maxspeed enrichment, and rebuilds speed-camera artifacts
+- `pnpm run analyze:cameras:maxspeed`: prints explicit/inferred/unknown speed coverage from the generated camera manifest
+- `pnpm run dev`: runs Vite locally after the `predev` geo preparation step
+- `pnpm run build`: creates a production build after the `prebuild` geo preparation step
+- `pnpm run preview`: serves the built app locally
+- `pnpm run lint`: runs ESLint
+- `pnpm run lint:fix`: runs ESLint with autofix
+- `pnpm run format`: formats root JSON/YAML/Markdown config/docs, lockfile/workspace files, and workflow YAML with Prettier
+- `pnpm run format:check`: checks the same maintained-file set without writing changes
+- `pnpm test`: runs the full Vitest suite
+- `pnpm run test:watch`: runs Vitest in watch mode
+- `pnpm run test:unit`: runs unit tests under `test/unit`
+- `pnpm run test:smoke`: runs smoke tests under `test/smoke`
+
+Application source/tests/scripts, legacy standalone harness HTML, and generated/reference geo datasets are excluded from routine Prettier checks during this migration to avoid unrelated churn and Node heap pressure.
 
 ## Generated Data
 
-`npm run prepare:geo` first regenerates [`data-src/ansv_cameras_maplibre.geojson`](data-src/ansv_cameras_maplibre.geojson) from `data-src/ANSV.csv` when the CSV exists. It then reads `data-src/osm_speed_cameras_overpass.json` when present, applies `data-src/osm_speed_cameras_maxspeed_enrichment.json` when present, otherwise falls back to the ANSV GeoJSON, and generates:
+`pnpm run prepare:geo` first regenerates [`data-src/ansv_cameras_maplibre.geojson`](data-src/ansv_cameras_maplibre.geojson) from `data-src/ANSV.csv` when the CSV exists. It then reads `data-src/osm_speed_cameras_overpass.json` when present, applies `data-src/osm_speed_cameras_maxspeed_enrichment.json` when present, otherwise falls back to the ANSV GeoJSON, and generates:
 
 - `public/geo/cameras/manifest.json`
 - `public/geo/cameras/countries/<country-code>.json`
@@ -419,16 +422,16 @@ Legacy standalone test/dev harnesses remain available at:
 Source/cache files have different repository roles:
 
 - Commit `data-src/ANSV.csv`; it is the editable ANSV source of truth for Colombia official cameras.
-- `data-src/ansv_cameras_maplibre.geojson` is regenerated from `data-src/ANSV.csv` by `npm run prepare:ansv` and by the default geo build.
+- `data-src/ansv_cameras_maplibre.geojson` is regenerated from `data-src/ANSV.csv` by `pnpm run prepare:ansv` and by the default geo build.
 - Commit `data-src/osm_speed_cameras_overpass.json`; it is the compact raw camera source used by offline builds.
 - Commit `data-src/osm_speed_cameras_maxspeed_enrichment.json`; it is the compact inferred-speed sidecar used by offline builds and GitHub Pages.
-- Do not commit `data-src/osm-road-speeds/`; it is a large restartable Overpass road tile cache used only by `npm run fetch:cameras`.
+- Do not commit `data-src/osm-road-speeds/`; it is a large restartable Overpass road tile cache used only by `pnpm run fetch:cameras`.
 - Do not commit `logs/`; fetch logs are local diagnostics.
 - Do not commit `public/geo/cameras/`; `predev`, `prebuild`, and the GitHub Pages workflow regenerate it.
 
-The GitHub Pages workflow runs `npm run build`, and `prebuild` runs `npm run prepare:geo`. That means Pages deployment needs the checked-in source files under `data-src`, not the 5 GB road cache or the generated `public/geo/cameras` directory.
+The GitHub Pages workflow runs `pnpm run build`, and `prebuild` runs `pnpm run prepare:geo`. That means Pages deployment needs the checked-in source files under `data-src`, not the 5 GB road cache or the generated `public/geo/cameras` directory.
 
-`public/geo/` may be missing in a fresh checkout until you run `npm run prepare:geo`, `npm run dev`, or `npm run build`.
+`public/geo/` may be missing in a fresh checkout until you run `pnpm run prepare:geo`, `pnpm run dev`, or `pnpm run build`.
 
 ## Persistence Model
 
@@ -515,7 +518,7 @@ The repo has both unit and smoke coverage.
 
 ## Automation
 
-- [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs `npm ci`, `npm run lint`, `npm test`, and `npm run build` on pushes and pull requests
+- [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs `pnpm install --frozen-lockfile`, `pnpm run lint`, `pnpm test`, and `pnpm run build` on pushes and pull requests
 - [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) builds `dist/` with Node 24 and deploys GitHub Pages on pushes to `main` or manual dispatch
 
 ## Runtime Notes
@@ -552,18 +555,18 @@ The demo songs in `public/audio/demo/` are royalty-free tracks used under
 Creative Commons or similar permissive licenses. They ship with the
 repository so visitors can try the player without signing in.
 
-| Track | Artist | License | Source |
-|---|---|---|---|
-| On The Run | Tim Kulig | CC BY 4.0 | [timkulig.com](https://timkulig.com) |
-| Rocker Chicks | Audionautix | CC BY 4.0 | [audionautix.com](https://audionautix.com) |
-| Titan | Scott Buckley | CC BY 4.0 | [scottbuckley.com.au](https://www.scottbuckley.com.au/library) |
-| Exit the Premises | Kevin MacLeod | CC BY 4.0 | [incompetech.com](https://incompetech.com) |
-| Pascifica | Tim Kulig | CC BY 4.0 | [timkulig.com](https://timkulig.com) |
-| Ryno's Theme | Kevin MacLeod | CC BY 4.0 | [incompetech.com](https://incompetech.com) |
-| Legionnaire (2022 Remaster) | Scott Buckley | CC BY 4.0 | [scottbuckley.com.au](https://www.scottbuckley.com.au/library) |
-| Timeless | Alex Productions | CC0 / Free | [chosic.com](https://www.chosic.com) |
-| Neo Western | Kevin MacLeod | CC BY 4.0 | [incompetech.com](https://incompetech.com) |
-| Beach Bum | Kevin MacLeod | CC BY 4.0 | [incompetech.com](https://incompetech.com) |
-| The Climb | Scott Buckley | CC BY 4.0 | [scottbuckley.com.au](https://www.scottbuckley.com.au/library) |
-| What You Want | Kevin MacLeod | CC BY 4.0 | [incompetech.com](https://incompetech.com) |
-| Canon in D Major | Kevin MacLeod | CC BY 4.0 | [incompetech.com](https://incompetech.com) |
+| Track                       | Artist           | License    | Source                                                         |
+| --------------------------- | ---------------- | ---------- | -------------------------------------------------------------- |
+| On The Run                  | Tim Kulig        | CC BY 4.0  | [timkulig.com](https://timkulig.com)                           |
+| Rocker Chicks               | Audionautix      | CC BY 4.0  | [audionautix.com](https://audionautix.com)                     |
+| Titan                       | Scott Buckley    | CC BY 4.0  | [scottbuckley.com.au](https://www.scottbuckley.com.au/library) |
+| Exit the Premises           | Kevin MacLeod    | CC BY 4.0  | [incompetech.com](https://incompetech.com)                     |
+| Pascifica                   | Tim Kulig        | CC BY 4.0  | [timkulig.com](https://timkulig.com)                           |
+| Ryno's Theme                | Kevin MacLeod    | CC BY 4.0  | [incompetech.com](https://incompetech.com)                     |
+| Legionnaire (2022 Remaster) | Scott Buckley    | CC BY 4.0  | [scottbuckley.com.au](https://www.scottbuckley.com.au/library) |
+| Timeless                    | Alex Productions | CC0 / Free | [chosic.com](https://www.chosic.com)                           |
+| Neo Western                 | Kevin MacLeod    | CC BY 4.0  | [incompetech.com](https://incompetech.com)                     |
+| Beach Bum                   | Kevin MacLeod    | CC BY 4.0  | [incompetech.com](https://incompetech.com)                     |
+| The Climb                   | Scott Buckley    | CC BY 4.0  | [scottbuckley.com.au](https://www.scottbuckley.com.au/library) |
+| What You Want               | Kevin MacLeod    | CC BY 4.0  | [incompetech.com](https://incompetech.com)                     |
+| Canon in D Major            | Kevin MacLeod    | CC BY 4.0  | [incompetech.com](https://incompetech.com)                     |

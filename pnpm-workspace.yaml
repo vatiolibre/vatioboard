@@ -1,0 +1,6 @@
+allowBuilds:
+  core-js: false
+  esbuild: true
+  less: false
+overrides:
+  brace-expansion: '5.0.6'
