@@ -1,7 +1,8 @@
 import { createIndexedJsonKeyValueStore } from "./indexed-storage.js";
-import { createChunkedBlobStore } from "./chunked-blob-store.js";
-import { normalizeTrack } from "./track-model.js";
+import { createChunkedBlobStore, type ChunkedBlobStore } from "./chunked-blob-store.js";
+import { normalizeTrack, type RawTrackLike, type Track } from "./track-model.js";
 import { isDemoTrackName } from "./track-source-policy.js";
+import type { JsonObject } from "../types/storage";
 
 const DEMO_PLAYLIST_DB_NAME = "vatioboard_demo_playlist";
 const DEMO_PLAYLIST_STORE_NAME = "demo_playlist";
@@ -22,9 +23,99 @@ const demoTrackStore = createChunkedBlobStore(
   }),
 );
 
-const inFlightDemoTrackDownloads = new Map();
+const inFlightDemoTrackDownloads = new Map<string, Promise<void>>();
 
-function isDemoTrack(assetName, track = {}) {
+export interface StoredDemoTrack extends JsonObject {
+  name: string;
+  title: string;
+  artist: string;
+  album: string;
+  genre: string;
+  duration: number | null;
+  track_number: number | null;
+  artwork_ref: string;
+  media_kind: string;
+  original_filename: string;
+  content_hash: string;
+  mime_type: string;
+  blob_size: number;
+  file_extension: string;
+  folder_path: string;
+  src: string;
+  has_preview_image: boolean;
+  has_artwork: boolean;
+  created_at: string | number | null;
+  modified_at: string | number | null;
+  sort_timestamp: number;
+  _demo: true;
+}
+
+interface StoredDemoPlaylistRecord extends JsonObject {
+  tracks: StoredDemoTrack[];
+  cached_at: number;
+}
+
+interface DemoPlaylistSnapshot {
+  tracks: Track[];
+  cachedAt: number;
+  signature: string;
+}
+
+export interface DemoPlaylistLoadResult extends DemoPlaylistSnapshot {
+  source: "cache" | "network" | "empty";
+}
+
+export interface DemoPlaylistSyncResult {
+  refreshed: boolean;
+  changed: boolean;
+  tracks: Track[];
+  source: "cache" | "network" | "empty";
+}
+
+export interface StoredDemoTrackBlobRecord {
+  blob?: Blob;
+  src?: string;
+  mime_type?: string;
+  blob_size?: number;
+  cached_at?: number;
+  [key: string]: unknown;
+}
+
+export interface CachedDemoTrackBlob {
+  blob: Blob;
+  src: string;
+  mimeType: string;
+  blobSize: number;
+  cachedAt: number;
+}
+
+type DemoFetch = typeof fetch;
+
+interface DemoPlaylistOptions {
+  fetchFn?: DemoFetch;
+}
+
+interface DemoPlaylistSyncOptions extends DemoPlaylistOptions {
+  maxAgeMs?: number;
+}
+
+type DemoTrackCacheFailureReason =
+  | "already_in_flight"
+  | "cache_failed"
+  | "fetch_failed"
+  | "no_source";
+
+interface DemoTrackCacheOptions {
+  fetchFn?: DemoFetch;
+  onCached?: () => void;
+  onFailed?: (reason: DemoTrackCacheFailureReason) => void;
+}
+
+type DemoTrackInput = RawTrackLike | Track | StoredDemoTrack | null | undefined;
+
+const demoTrackBlobStore = demoTrackStore as ChunkedBlobStore<StoredDemoTrackBlobRecord>;
+
+function isDemoTrack(assetName: unknown, track: DemoTrackInput = {}): boolean {
   return Boolean(
     isDemoTrackName(assetName)
       || isDemoTrackName(track?.name)
@@ -32,12 +123,12 @@ function isDemoTrack(assetName, track = {}) {
   );
 }
 
-function getDemoTrackKey(assetName, track = {}) {
+function getDemoTrackKey(assetName: unknown, track: DemoTrackInput = {}): string {
   const key = String(assetName || track?.name || "").trim();
   return isDemoTrack(key, track) ? key : "";
 }
 
-function toStoredDemoTrack(track) {
+function toStoredDemoTrack(track: DemoTrackInput): StoredDemoTrack | null {
   const normalized = normalizeTrack(track);
   if (!normalized?._demo || !normalized.src) return null;
 
@@ -67,25 +158,28 @@ function toStoredDemoTrack(track) {
   };
 }
 
-function normalizeStoredDemoTracks(tracks) {
+function normalizeStoredDemoTracks(tracks: unknown): Track[] {
   if (!Array.isArray(tracks)) return [];
   return tracks
-    .map((track) => normalizeTrack(track))
-    .filter((track) => track?._demo && Boolean(track.src));
+    .map((track) => normalizeTrack(track as RawTrackLike | null | undefined))
+    .filter((track): track is Track => Boolean(track?._demo && track.src));
 }
 
-function getTrackSignature(tracks) {
+function getTrackSignature(tracks: unknown): string {
   if (!Array.isArray(tracks) || tracks.length === 0) return "";
-  return tracks.map((track) => [
-    track?.name || "",
-    track?.src || "",
-    track?.title || "",
-    track?.content_hash || "",
-    String(track?.duration ?? ""),
-  ].join("\u001f")).join("\u001e");
+  return tracks.map((track) => {
+    const entry = track as Partial<Track> | null | undefined;
+    return [
+      entry?.name || "",
+      entry?.src || "",
+      entry?.title || "",
+      entry?.content_hash || "",
+      String(entry?.duration ?? ""),
+    ].join("\u001f");
+  }).join("\u001e");
 }
 
-async function fetchDemoPlaylist({ fetchFn = fetch } = {}) {
+async function fetchDemoPlaylist({ fetchFn = fetch }: DemoPlaylistOptions = {}): Promise<DemoPlaylistSnapshot | null> {
   try {
     const response = await fetchFn("/audio/demo/playlist.json");
     if (!response?.ok) return null;
@@ -102,9 +196,11 @@ async function fetchDemoPlaylist({ fetchFn = fetch } = {}) {
   }
 }
 
-export async function cacheDemoPlaylistSnapshot(tracks) {
+export async function cacheDemoPlaylistSnapshot(tracks: unknown): Promise<boolean> {
   const normalized = Array.isArray(tracks)
-    ? tracks.map(toStoredDemoTrack).filter(Boolean)
+    ? tracks
+        .map((track) => toStoredDemoTrack(track as DemoTrackInput))
+        .filter((track): track is StoredDemoTrack => Boolean(track))
     : [];
 
   if (normalized.length === 0) return false;
@@ -112,11 +208,11 @@ export async function cacheDemoPlaylistSnapshot(tracks) {
   return demoPlaylistStore.setValue(DEMO_PLAYLIST_KEY, {
     tracks: normalized,
     cached_at: Date.now(),
-  });
+  } as StoredDemoPlaylistRecord);
 }
 
-export async function getCachedDemoPlaylistSnapshot() {
-  const snapshot = await demoPlaylistStore.getValue(DEMO_PLAYLIST_KEY);
+export async function getCachedDemoPlaylistSnapshot(): Promise<DemoPlaylistSnapshot | null> {
+  const snapshot = await demoPlaylistStore.getValue<StoredDemoPlaylistRecord>(DEMO_PLAYLIST_KEY);
   if (!Array.isArray(snapshot?.tracks) || snapshot.tracks.length === 0) return null;
 
   const tracks = normalizeStoredDemoTracks(snapshot.tracks);
@@ -129,7 +225,7 @@ export async function getCachedDemoPlaylistSnapshot() {
   };
 }
 
-export async function loadDemoPlaylist({ fetchFn = fetch } = {}) {
+export async function loadDemoPlaylist({ fetchFn = fetch }: DemoPlaylistOptions = {}): Promise<DemoPlaylistLoadResult> {
   const cached = await getCachedDemoPlaylistSnapshot().catch(() => null);
   if (cached?.tracks?.length) {
     return {
@@ -161,7 +257,7 @@ export async function loadDemoPlaylist({ fetchFn = fetch } = {}) {
 export async function syncDemoPlaylist({
   fetchFn = fetch,
   maxAgeMs = DEMO_PLAYLIST_CACHE_TTL_MS,
-} = {}) {
+}: DemoPlaylistSyncOptions = {}): Promise<DemoPlaylistSyncResult> {
   const cached = await getCachedDemoPlaylistSnapshot().catch(() => null);
   const cachedAgeMs = cached?.cachedAt ? Math.max(0, Date.now() - cached.cachedAt) : Number.POSITIVE_INFINITY;
 
@@ -192,11 +288,14 @@ export async function syncDemoPlaylist({
   };
 }
 
-export async function getCachedDemoTrackBlob(assetName, track = {}) {
+export async function getCachedDemoTrackBlob(
+  assetName: unknown,
+  track: DemoTrackInput = {},
+): Promise<CachedDemoTrackBlob | null> {
   const key = getDemoTrackKey(assetName, track);
   if (!key) return null;
 
-  const entry = await demoTrackStore.getValue(key);
+  const entry = await demoTrackBlobStore.getValue(key);
   if (!(entry?.blob instanceof Blob)) return null;
 
   const expectedSrc = String(track?.src || "");
@@ -213,13 +312,17 @@ export async function getCachedDemoTrackBlob(assetName, track = {}) {
   };
 }
 
-async function cacheDemoTrackResponse(assetName, track, response) {
+async function cacheDemoTrackResponse(
+  assetName: unknown,
+  track: DemoTrackInput,
+  response: Response,
+): Promise<boolean> {
   const key = getDemoTrackKey(assetName, track);
   if (!key || !response) return false;
 
   const contentLength = Number(response.headers?.get("content-length"));
 
-  return demoTrackStore.streamResponse(key, response, {
+  return demoTrackBlobStore.streamResponse(key, response, {
     src: String(track?.src || ""),
     mime_type: response.headers?.get("content-type") || String(track?.mime_type || ""),
     blob_size: Number.isFinite(contentLength) ? contentLength : Number(track?.blob_size) || 0,
@@ -227,11 +330,11 @@ async function cacheDemoTrackResponse(assetName, track, response) {
   });
 }
 
-export function triggerDemoTrackCache(assetName, track, {
+export function triggerDemoTrackCache(assetName: unknown, track: DemoTrackInput = {}, {
   fetchFn = fetch,
   onCached,
   onFailed,
-} = {}) {
+}: DemoTrackCacheOptions = {}): void {
   const key = getDemoTrackKey(assetName, track);
   if (!key || !track?.src) {
     if (typeof onFailed === "function") {
@@ -257,7 +360,7 @@ export function triggerDemoTrackCache(assetName, track, {
         return;
       }
 
-      const response = await fetchFn(track.src);
+      const response = await fetchFn(track.src as string);
       if (!response?.ok) {
         if (typeof onFailed === "function") {
           try { onFailed("fetch_failed"); } catch { /* ignore */ }

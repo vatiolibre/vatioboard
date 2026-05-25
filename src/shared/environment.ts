@@ -13,13 +13,20 @@ const PROD_HOSTS = new Set(["vatioboard.com", "www.vatioboard.com"]);
 const PROD_API_BASE = "https://api.vatioboard.com";
 const DEV_API_BASE = "https://api.dev.vatioboard.com";
 
+export interface EnvironmentConfig {
+  frontendOrigin: string;
+  apiBase: string;
+  isProduction: boolean;
+}
+
+export type EnvironmentLocation = Pick<Location, "hostname" | "origin"> | null | undefined;
+
 /**
  * Resolve the BFF API base URL from the current hostname.
  *
- * @param {Location} [location] - Override for testing; defaults to window.location.
- * @returns {{ frontendOrigin: string, apiBase: string, isProduction: boolean }}
+ * @param location - Override for testing; defaults to window.location.
  */
-export function getEnvironmentConfig(location = window.location) {
+export function getEnvironmentConfig(location: EnvironmentLocation = window.location): EnvironmentConfig {
   const host = String(location?.hostname || "").toLowerCase();
   const isProduction = PROD_HOSTS.has(host);
 

@@ -15,62 +15,90 @@ import { loadJson, saveJson, removeStoredValue } from "../shared/storage.js";
 
 const QUEUE_STORAGE_KEY = "vatio_board_mutation_queue_v1";
 
-/**
- * @typedef {'create'|'update'|'delete'} MutationType
- *
- * @typedef {Object} QueuedMutation
- * @property {string}       id               - Unique mutation ID
- * @property {MutationType} type             - Mutation type
- * @property {string|null}  documentName     - Backend document name (null for pending creates)
- * @property {string}       localSessionId   - Local session ID for reconciliation
- * @property {string}       title            - Document title
- * @property {Object|null}  payload          - Board drawing payload (null for deletes)
- * @property {Blob|null}    pngBlob          - PNG snapshot blob (not persisted, set before replay)
- * @property {number}       queuedAtMs       - When this mutation was queued
- * @property {'pending'|'replaying'|'failed'} status
- * @property {string}       failReason       - Failure description if status === 'failed'
- */
+export type MutationType = 'create' | 'update' | 'delete';
+export type MutationStatus = 'pending' | 'replaying' | 'failed';
+
+export interface QueuedMutation {
+  /** Unique mutation ID. */
+  id: string;
+  /** Mutation type. */
+  type: MutationType;
+  /** Backend document name (null for pending creates). */
+  documentName?: string | null;
+  /** Local session ID for reconciliation. */
+  localSessionId?: string | null;
+  /** Document title. */
+  title: string;
+  /** Board drawing payload (null for deletes). */
+  payload: unknown | null;
+  /** PNG snapshot blob (not persisted, set before replay). */
+  pngBlob?: Blob | null;
+  /** When this mutation was queued. */
+  queuedAtMs: number;
+  status: MutationStatus;
+  /** Failure description if status === 'failed'. */
+  failReason: string;
+  [key: string]: unknown;
+}
+
+interface QueueCreateMutationOptions {
+  localSessionId?: string | null;
+  title?: string | null;
+  payload?: unknown;
+}
+
+interface QueueUpdateMutationOptions {
+  documentName?: string | null;
+  localSessionId?: string | null;
+  title?: string | null;
+  payload?: unknown;
+}
+
+interface QueueDeleteMutationOptions {
+  documentName?: string | null;
+  localSessionId?: string | null;
+}
 
 let mutationCounter = 0;
 
-function createMutationId() {
+function createMutationId(): string {
   mutationCounter += 1;
   return `mut-${Date.now()}-${mutationCounter}`;
 }
 
-function loadQueue() {
-  const raw = loadJson(QUEUE_STORAGE_KEY, []);
+function loadQueue(): QueuedMutation[] {
+  const raw = loadJson<QueuedMutation[]>(QUEUE_STORAGE_KEY, []);
   return Array.isArray(raw) ? raw : [];
 }
 
-function persistQueue(queue) {
+function persistQueue(queue: QueuedMutation[]): void {
   if (queue.length === 0) {
     removeStoredValue(QUEUE_STORAGE_KEY);
     return;
   }
   // Strip non-serializable blobs before persisting
-  const serializable = queue.map(({ pngBlob, ...rest }) => rest);
+  const serializable = queue.map(({ pngBlob: _pngBlob, ...rest }) => rest);
   saveJson(QUEUE_STORAGE_KEY, serializable);
 }
 
 /**
  * Get all pending mutations in queue order.
  */
-export function getPendingMutations() {
+export function getPendingMutations(): QueuedMutation[] {
   return loadQueue().filter((m) => m.status === "pending" || m.status === "failed");
 }
 
 /**
  * Whether there are any pending mutations in the queue.
  */
-export function hasPendingMutations() {
+export function hasPendingMutations(): boolean {
   return getPendingMutations().length > 0;
 }
 
 /**
  * Queue a create mutation.
  */
-export function queueCreateMutation({ localSessionId, title, payload }) {
+export function queueCreateMutation({ localSessionId, title, payload }: QueueCreateMutationOptions): void {
   const queue = loadQueue();
 
   // Remove any existing pending create for same local session (dedup)
@@ -96,7 +124,12 @@ export function queueCreateMutation({ localSessionId, title, payload }) {
 /**
  * Queue an update mutation. Latest payload wins.
  */
-export function queueUpdateMutation({ documentName, localSessionId, title, payload }) {
+export function queueUpdateMutation({
+  documentName,
+  localSessionId,
+  title,
+  payload,
+}: QueueUpdateMutationOptions): void {
   const queue = loadQueue();
 
   // Remove any existing pending update for the same document (latest wins)
@@ -122,7 +155,7 @@ export function queueUpdateMutation({ documentName, localSessionId, title, paylo
 /**
  * Queue a delete mutation. Supersedes pending updates for the same document.
  */
-export function queueDeleteMutation({ documentName, localSessionId }) {
+export function queueDeleteMutation({ documentName, localSessionId }: QueueDeleteMutationOptions): void {
   const queue = loadQueue();
 
   // Remove pending creates/updates for the same document
@@ -156,7 +189,7 @@ export function queueDeleteMutation({ documentName, localSessionId }) {
 /**
  * Remove a specific mutation from the queue (after successful replay).
  */
-export function removeMutation(mutationId) {
+export function removeMutation(mutationId: unknown): void {
   const queue = loadQueue();
   persistQueue(queue.filter((m) => m.id !== mutationId));
 }
@@ -164,7 +197,7 @@ export function removeMutation(mutationId) {
 /**
  * Mark a mutation as failed.
  */
-export function markMutationFailed(mutationId, reason) {
+export function markMutationFailed(mutationId: unknown, reason?: string): void {
   const queue = loadQueue();
   const mutation = queue.find((m) => m.id === mutationId);
   if (mutation) {
@@ -177,7 +210,7 @@ export function markMutationFailed(mutationId, reason) {
 /**
  * Mark a mutation as replaying.
  */
-export function markMutationReplaying(mutationId) {
+export function markMutationReplaying(mutationId: unknown): void {
   const queue = loadQueue();
   const mutation = queue.find((m) => m.id === mutationId);
   if (mutation) {
@@ -190,7 +223,7 @@ export function markMutationReplaying(mutationId) {
  * Reconcile a local session ID to a real backend document name after successful create.
  * Updates any pending update mutations that reference the old local session.
  */
-export function reconcileLocalToRemote(localSessionId, remoteName) {
+export function reconcileLocalToRemote(localSessionId: unknown, remoteName: string | null): void {
   const queue = loadQueue();
   let changed = false;
   for (const mutation of queue) {
@@ -207,13 +240,13 @@ export function reconcileLocalToRemote(localSessionId, remoteName) {
 /**
  * Clear the entire queue (e.g. after successful full replay).
  */
-export function clearMutationQueue() {
+export function clearMutationQueue(): void {
   removeStoredValue(QUEUE_STORAGE_KEY);
 }
 
 /**
  * Get count of pending mutations.
  */
-export function getPendingMutationCount() {
+export function getPendingMutationCount(): number {
   return getPendingMutations().length;
 }

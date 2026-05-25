@@ -30,6 +30,39 @@ const DEFAULT_CHUNK_BYTES = 5 * 1024 * 1024;
 /** Separator used between the main key and chunk index. */
 const CHUNK_SEP = "\0chunk\0";
 
+export interface ChunkedBlobRecord {
+  blob?: Blob;
+  [key: string]: unknown;
+}
+
+interface ChunkManifestRecord extends ChunkedBlobRecord {
+  __chunked?: boolean;
+  chunkCount?: number;
+  totalSize?: number;
+  contentType?: string;
+}
+
+export interface ChunkedBlobBaseStore {
+  deleteValue(key: IDBValidKey): Promise<boolean>;
+  getValue(key: IDBValidKey): Promise<unknown>;
+  hasSupport?: () => boolean;
+  openDatabase?: () => Promise<IDBDatabase | null>;
+  setValue(key: IDBValidKey, value: unknown): Promise<boolean>;
+}
+
+export interface ChunkedBlobStore<TRecord extends ChunkedBlobRecord = ChunkedBlobRecord> {
+  deleteValue(key: IDBValidKey): Promise<boolean>;
+  getValue(key: IDBValidKey): Promise<TRecord | null | undefined>;
+  hasSupport?: () => boolean;
+  openDatabase?: () => Promise<IDBDatabase | null>;
+  setValue(key: IDBValidKey, value: TRecord): Promise<boolean>;
+  streamResponse(key: IDBValidKey, response: Response, meta?: ChunkedBlobRecord): Promise<boolean>;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 /**
  * Returns true when the browser can reliably stream a fetch Response body
  * via ReadableStream into IndexedDB chunks.
@@ -41,7 +74,7 @@ const CHUNK_SEP = "\0chunk\0";
  * (those are a Tesla Chromium constraint), falling back to the simpler
  * `response.blob()` path is safe and avoids the issue entirely.
  */
-function canStreamFetchBody() {
+function canStreamFetchBody(): boolean {
   if (typeof ReadableStream === "undefined") return false;
   if (typeof navigator === "undefined") return true;
   const ua = navigator.userAgent || "";
@@ -51,58 +84,58 @@ function canStreamFetchBody() {
   return true;
 }
 
-function chunkKey(baseKey, index) {
+function chunkKey(baseKey: IDBValidKey, index: number): string {
   return `${baseKey}${CHUNK_SEP}${index}`;
 }
 
 /**
  * Wrap a base IndexedDB key-value store with transparent blob chunking.
  *
- * @param {object} baseStore - Store returned by createIndexedJsonKeyValueStore
- * @param {{ chunkBytes?: number }} [opts]
- * @returns {typeof baseStore} Same API (getValue, setValue, deleteValue, …)
  */
-export function createChunkedBlobStore(baseStore, { chunkBytes = DEFAULT_CHUNK_BYTES } = {}) {
+export function createChunkedBlobStore<TRecord extends ChunkedBlobRecord = ChunkedBlobRecord>(
+  baseStore: ChunkedBlobBaseStore,
+  { chunkBytes = DEFAULT_CHUNK_BYTES }: { chunkBytes?: number } = {},
+): ChunkedBlobStore<TRecord> {
   const threshold = Math.max(1024, chunkBytes);
 
   /**
    * Retrieve a value.  If the record is a chunked manifest, reassemble
    * the original blob from its chunk records.
    */
-  async function getValue(key) {
+  async function getValue(key: IDBValidKey): Promise<TRecord | null | undefined> {
     const record = await baseStore.getValue(key);
-    if (record === undefined || record === null) return record;
+    if (record === undefined || record === null) return record as null | undefined;
 
     // Not chunked — return as-is (backwards-compatible with pre-chunking data).
-    if (!record.__chunked) return record;
+    if (!isRecord(record) || !record.__chunked) return record as TRecord;
 
-    const { chunkCount, contentType, ...meta } = record;
+    const { chunkCount, contentType, ...meta } = record as ChunkManifestRecord;
     if (!chunkCount || chunkCount <= 0) return undefined;
 
-    const parts = new Array(chunkCount);
+    const parts = new Array(chunkCount) as BlobPart[];
     for (let i = 0; i < chunkCount; i++) {
       const chunk = await baseStore.getValue(chunkKey(key, i));
-      if (!chunk?.blob) return undefined;          // corrupted / partial
-      parts[i] = chunk.blob;
+      if (!isRecord(chunk) || !chunk.blob) return undefined;          // corrupted / partial
+      parts[i] = chunk.blob as BlobPart;
     }
 
-    const blob = new Blob(parts, contentType ? { type: contentType } : undefined);
+    const blob = new Blob(parts, contentType ? { type: contentType as string } : undefined);
 
     // Strip internal fields, restore the blob into the original shape.
-    const restored = { ...meta };
+    const restored = { ...meta } as ChunkManifestRecord;
     delete restored.__chunked;
     delete restored.chunkCount;
     delete restored.totalSize;
     delete restored.contentType;
     restored.blob = blob;
-    return restored;
+    return restored as TRecord;
   }
 
   /**
    * Store a value.  When the value contains a `blob` property larger than
    * the chunk threshold, split it into chunk records + a manifest.
    */
-  async function setValue(key, value) {
+  async function setValue(key: IDBValidKey, value: TRecord): Promise<boolean> {
     const blob = value?.blob;
 
     // No blob or small blob — store as a single record.
@@ -153,25 +186,25 @@ export function createChunkedBlobStore(baseStore, { chunkBytes = DEFAULT_CHUNK_B
   }
 
   /** Delete the main record and any associated chunks. */
-  async function deleteValue(key) {
+  async function deleteValue(key: IDBValidKey): Promise<boolean> {
     await deleteChunks(key);
     return baseStore.deleteValue(key);
   }
 
   /** Delete all chunk records for a key. */
-  async function deleteChunks(key) {
+  async function deleteChunks(key: IDBValidKey): Promise<void> {
     // Read the manifest to find out how many chunks exist.
     const record = await baseStore.getValue(key);
-    if (!record?.__chunked) return;
+    if (!isRecord(record) || !record.__chunked) return;
 
-    const count = record.chunkCount || 0;
+    const count = (record.chunkCount as number) || 0;
     for (let i = 0; i < count; i++) {
       await baseStore.deleteValue(chunkKey(key, i)).catch(() => {});
     }
   }
 
   /** Remove leftover chunks beyond `validCount` (after a re-write with fewer chunks). */
-  async function cleanupStaleChunks(key, validCount) {
+  async function cleanupStaleChunks(key: IDBValidKey, validCount: number): Promise<void> {
     // Try a few extra indices in case a previous write had more chunks.
     for (let i = validCount; i < validCount + 20; i++) {
       const ck = chunkKey(key, i);
@@ -199,13 +232,17 @@ export function createChunkedBlobStore(baseStore, { chunkBytes = DEFAULT_CHUNK_B
    * @param {object}   [meta]    Extra metadata fields to include in the manifest.
    * @returns {Promise<boolean>}
    */
-  async function streamResponse(key, response, meta = {}) {
+  async function streamResponse(
+    key: IDBValidKey,
+    response: Response,
+    meta: ChunkedBlobRecord = {},
+  ): Promise<boolean> {
     if (!response?.body || !canStreamFetchBody()) {
       // No readable stream, or browser known to have unreliable fetch
       // ReadableStream (Safari/WebKit) — fall back to the blob path.
       try {
         const blob = await response.blob();
-        return setValue(key, { ...meta, blob });
+        return setValue(key, { ...meta, blob } as TRecord);
       } catch {
         return false;
       }
@@ -216,14 +253,14 @@ export function createChunkedBlobStore(baseStore, { chunkBytes = DEFAULT_CHUNK_B
 
     let chunkIndex = 0;
     let totalSize = 0;
-    let buffer = [];       // array of Uint8Arrays for current chunk
+    let buffer: Uint8Array[] = [];       // array of Uint8Arrays for current chunk
     let bufferBytes = 0;
 
     /** Flush the current buffer as one IndexedDB chunk record. */
-    async function flushChunk() {
+    async function flushChunk(): Promise<boolean> {
       if (bufferBytes === 0) return true;
       const merged = mergeUint8Arrays(buffer, bufferBytes);
-      const blob = new Blob([merged], contentType ? { type: contentType } : undefined);
+      const blob = new Blob([merged as unknown as BlobPart], contentType ? { type: contentType } : undefined);
       buffer = [];
       bufferBytes = 0;
       const ok = await baseStore.setValue(chunkKey(key, chunkIndex), { blob });
@@ -291,7 +328,7 @@ export function createChunkedBlobStore(baseStore, { chunkBytes = DEFAULT_CHUNK_B
       // to keep the common (small file) path identical to setValue().
       if (chunkIndex === 1) {
         const singleChunk = await baseStore.getValue(chunkKey(key, 0));
-        if (!singleChunk?.blob) {
+        if (!isRecord(singleChunk) || !singleChunk.blob) {
           await rollbackChunks(key, 1);
           return false;
         }
@@ -326,7 +363,7 @@ export function createChunkedBlobStore(baseStore, { chunkBytes = DEFAULT_CHUNK_B
   }
 
   /** Roll back chunk records 0..count-1. */
-  async function rollbackChunks(key, count) {
+  async function rollbackChunks(key: IDBValidKey, count: number): Promise<void> {
     for (let i = 0; i < count; i++) {
       await baseStore.deleteValue(chunkKey(key, i)).catch(() => {});
     }
@@ -348,7 +385,7 @@ export function createChunkedBlobStore(baseStore, { chunkBytes = DEFAULT_CHUNK_B
  * @param {number} totalLength
  * @returns {Uint8Array}
  */
-function mergeUint8Arrays(arrays, totalLength) {
+function mergeUint8Arrays(arrays: Uint8Array[], totalLength: number): Uint8Array {
   if (arrays.length === 1) return arrays[0];
   const result = new Uint8Array(totalLength);
   let offset = 0;

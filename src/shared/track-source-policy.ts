@@ -6,19 +6,29 @@
  * tracks eligible for signed access URLs and auto-cache downloads.
  */
 
-function str(value) {
+export interface TrackSourcePolicyAsset {
+  name?: unknown;
+  src?: unknown;
+  _demo?: unknown;
+  [key: string]: unknown;
+}
+
+function str(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-export function isDemoTrackName(name) {
+export function isDemoTrackName(name: unknown): boolean {
   return str(name).startsWith("demo:");
 }
 
-export function hasStaticPlaybackSource(track) {
+export function hasStaticPlaybackSource(track: TrackSourcePolicyAsset | null | undefined): boolean {
   return Boolean(str(track?.src));
 }
 
-export function isPublicStaticTrack(assetName, asset = {}) {
+export function isPublicStaticTrack(
+  assetName: unknown,
+  asset: TrackSourcePolicyAsset | null | undefined = {},
+): boolean {
   return Boolean(
     isDemoTrackName(assetName)
       || isDemoTrackName(asset?.name)
@@ -27,7 +37,9 @@ export function isPublicStaticTrack(assetName, asset = {}) {
   );
 }
 
-export function shouldUseBackendMediaAccess(assetName, asset = {}) {
+export function shouldUseBackendMediaAccess(
+  assetName: unknown,
+  asset: TrackSourcePolicyAsset | null | undefined = {},
+): boolean {
   return Boolean(assetName) && !isPublicStaticTrack(assetName, asset);
 }
-

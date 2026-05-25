@@ -7,27 +7,89 @@
  * source (backend manifest, playlist detail, demo playlist, queue entry).
  */
 
-/**
- * @typedef {object} Track
- * @property {string}  name              - Stable asset id / name (e.g. hash or "demo:slug")
- * @property {string}  title             - Display title
- * @property {string}  artist            - Artist / performer
- * @property {string}  album             - Album name
- * @property {string}  genre             - Genre tag
- * @property {number|null} duration      - Duration in seconds (null if unknown)
- * @property {number|null} track_number  - Track number within album
- * @property {string}  artwork_ref       - Cover art reference (asset name, preview key, or URL)
- * @property {string}  media_kind        - "audio" | "video" | "image" | "other"
- * @property {string}  original_filename - Original upload filename
- * @property {string}  content_hash      - SHA-256 content hash (for staleness checks)
- * @property {string}  mime_type         - MIME type
- * @property {number}  blob_size         - File size in bytes
- * @property {string}  file_extension    - e.g. "mp3"
- * @property {string}  folder_path       - Virtual folder path
- * @property {string}  src               - Direct playback URL (demo tracks only)
- * @property {boolean} _offline          - Whether a local blob is available
- * @property {boolean} _demo             - Whether this is a demo track
- */
+export interface Track {
+  [key: string]: unknown;
+  /** Stable asset id / name (e.g. hash or "demo:slug"). */
+  name: string;
+  /** Display title. */
+  title: string;
+  /** Artist / performer. */
+  artist: string;
+  /** Album name. */
+  album: string;
+  /** Genre tag. */
+  genre: string;
+  /** Duration in seconds (null if unknown). */
+  duration: number | null;
+  /** Track number within album. */
+  track_number: number | null;
+  /** Cover art reference (asset name, preview key, or URL). */
+  artwork_ref: string;
+  /** "audio" | "video" | "image" | "other" in current callers. */
+  media_kind: string;
+  /** Original upload filename. */
+  original_filename: string;
+  /** SHA-256 content hash (for staleness checks). */
+  content_hash: string;
+  /** MIME type. */
+  mime_type: string;
+  /** File size in bytes. */
+  blob_size: number;
+  /** e.g. "mp3". */
+  file_extension: string;
+  /** Virtual folder path. */
+  folder_path: string;
+  /** Direct playback URL (demo tracks only). */
+  src: string;
+  has_preview_image: boolean;
+  has_artwork: boolean;
+  created_at: string | number | null;
+  modified_at: string | number | null;
+  sort_timestamp: number;
+  /** Whether a local blob is available. */
+  _offline: boolean;
+  /** Whether this is a demo track. */
+  _demo: boolean;
+}
+
+export interface RawTrackLike {
+  name?: unknown;
+  title?: unknown;
+  artist?: unknown;
+  album?: unknown;
+  genre?: unknown;
+  duration?: unknown;
+  track_number?: unknown;
+  artwork_ref?: unknown;
+  media_kind?: unknown;
+  original_filename?: unknown;
+  content_hash?: unknown;
+  mime_type?: unknown;
+  blob_size?: unknown;
+  file_extension?: unknown;
+  folder_path?: unknown;
+  src?: unknown;
+  has_preview_image?: unknown;
+  has_artwork?: unknown;
+  created_at?: unknown;
+  modified_at?: unknown;
+  sort_timestamp?: unknown;
+  metadata_json?: unknown;
+  snapshot_title?: unknown;
+  snapshot_artist?: unknown;
+  snapshot_album?: unknown;
+  snapshot_genre?: unknown;
+  snapshot_duration?: unknown;
+  snapshot_artwork_ref?: unknown;
+  snapshot_content_hash?: unknown;
+  cover_asset_name?: unknown;
+  preview_image_url?: unknown;
+  image_url?: unknown;
+  _offline?: unknown;
+  [key: string]: unknown;
+}
+
+type TrackMetadata = RawTrackLike;
 
 const EMPTY = "";
 
@@ -40,7 +102,7 @@ const EMPTY = "";
  * @param {string} filename
  * @returns {string}
  */
-export function titleFromFilename(filename) {
+export function titleFromFilename(filename: string | null | undefined): string {
   if (!filename) return EMPTY;
   let base = filename;
   const dotIdx = base.lastIndexOf(".");
@@ -55,15 +117,13 @@ export function titleFromFilename(filename) {
 /**
  * Parse the structured `metadata_json` field returned by the backend.
  *
- * @param {string|object|null|undefined} raw
- * @returns {object}
  */
-function parseMetadataJson(raw) {
+function parseMetadataJson(raw: unknown): TrackMetadata {
   if (!raw) return {};
-  if (typeof raw === "object") return raw;
+  if (typeof raw === "object") return raw as TrackMetadata;
   try {
-    const parsed = JSON.parse(raw);
-    return typeof parsed === "object" && parsed !== null ? parsed : {};
+    const parsed = (JSON.parse as (text: unknown) => unknown)(raw);
+    return typeof parsed === "object" && parsed !== null ? parsed as TrackMetadata : {};
   } catch {
     return {};
   }
@@ -78,10 +138,8 @@ function parseMetadataJson(raw) {
  *  - Demo playlist entries
  *  - Runtime queue entries (already normalised — passthrough)
  *
- * @param {object} raw - Raw track-like object from any source
- * @returns {Track}
  */
-export function normalizeTrack(raw) {
+export function normalizeTrack(raw: RawTrackLike | null | undefined): Track | null {
   if (!raw) return null;
 
   const meta = parseMetadataJson(raw.metadata_json);
@@ -133,15 +191,15 @@ export function normalizeTrack(raw) {
     original_filename: str(raw.original_filename),
     content_hash: str(raw.content_hash) || str(raw.snapshot_content_hash),
     mime_type: str(raw.mime_type),
-    blob_size: raw.blob_size ?? 0,
+    blob_size: (raw.blob_size ?? 0) as number,
     file_extension: str(raw.file_extension),
     folder_path: str(raw.folder_path),
     src: str(raw.src),
     has_preview_image: Boolean(raw.has_preview_image),
     has_artwork: Boolean(raw.has_artwork),
-    created_at: raw.created_at ?? null,
-    modified_at: raw.modified_at ?? null,
-    sort_timestamp: raw.sort_timestamp ?? 0,
+    created_at: (raw.created_at ?? null) as string | number | null,
+    modified_at: (raw.modified_at ?? null) as string | number | null,
+    sort_timestamp: (raw.sort_timestamp ?? 0) as number,
     _offline: Boolean(raw._offline),
     _demo: isDemo,
   };
@@ -150,22 +208,20 @@ export function normalizeTrack(raw) {
 /**
  * Normalise an array of raw track-like objects, filtering out nulls.
  *
- * @param {object[]} rawTracks
- * @returns {Track[]}
  */
-export function normalizeTracks(rawTracks) {
+export function normalizeTracks(rawTracks: unknown): Track[] {
   if (!Array.isArray(rawTracks)) return [];
-  return rawTracks.map(normalizeTrack).filter(Boolean);
+  return rawTracks
+    .map((track) => normalizeTrack(track as RawTrackLike | null | undefined))
+    .filter((track): track is Track => Boolean(track));
 }
 
 /**
  * Format a duration in seconds as "m:ss" or "h:mm:ss".
  *
- * @param {number|null} seconds
- * @returns {string}
  */
-export function formatDuration(seconds) {
-  if (!Number.isFinite(seconds) || seconds < 0) return "";
+export function formatDuration(seconds: unknown): string {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) return "";
   const total = Math.floor(seconds);
   const m = Math.floor(total / 60);
   const s = total % 60;
@@ -179,11 +235,11 @@ export function formatDuration(seconds) {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function str(val) {
+function str(val: unknown): string {
   return typeof val === "string" ? val.trim() : (val != null ? String(val).trim() : EMPTY);
 }
 
-function numOrNull(val) {
+function numOrNull(val: unknown): number | null {
   if (val == null) return null;
   const n = Number(val);
   return Number.isFinite(n) && n >= 0 ? n : null;

@@ -4,24 +4,47 @@ export const NAVIGATION_PAYLOAD_RESOURCES = Object.freeze({
   accelRun: 'accel_run',
   boardDocument: 'board_document',
   replaySession: 'replay_session',
-});
+} as const);
+
+export type NavigationPayloadResource =
+  typeof NAVIGATION_PAYLOAD_RESOURCES[keyof typeof NAVIGATION_PAYLOAD_RESOURCES];
+
+export interface NavigationPayloadHandoff<TPayload = unknown> {
+  createdAtMs: number;
+  meta: object | null;
+  payload: TPayload | null;
+  recordId: string;
+  resourceType: string;
+}
+
+export interface QueueNavigationPayloadHandoffOptions<TPayload = unknown> {
+  resourceType?: unknown;
+  recordId?: unknown;
+  payload?: TPayload | null;
+  meta?: unknown;
+}
+
+export interface ConsumeNavigationPayloadHandoffOptions {
+  resourceType?: unknown;
+  recordId?: unknown;
+}
 
 const HANDOFF_STORAGE_KEY_PREFIX = 'vatioboard.navigation_handoff';
-const handoffCache = new Map();
+const handoffCache = new Map<string, NavigationPayloadHandoff>();
 
-function normalizeResourceType(resourceType) {
+function normalizeResourceType(resourceType: unknown): string {
   return String(resourceType || '').trim();
 }
 
-function normalizeRecordId(recordId) {
+function normalizeRecordId(recordId: unknown): string {
   return String(recordId || '').trim();
 }
 
-function createHandoffStorageKey(resourceType) {
+function createHandoffStorageKey(resourceType: string): string {
   return `${HANDOFF_STORAGE_KEY_PREFIX}:${resourceType}`;
 }
 
-function matchesRecordId(entry, recordId) {
+function matchesRecordId(entry: NavigationPayloadHandoff | null | undefined, recordId: string): boolean {
   if (!recordId) return true;
   return normalizeRecordId(entry?.recordId) === recordId;
 }
@@ -31,7 +54,7 @@ export function queueNavigationPayloadHandoff({
   recordId = '',
   payload = null,
   meta = null,
-} = {}) {
+}: QueueNavigationPayloadHandoffOptions = {}): NavigationPayloadHandoff | null {
   const normalizedResourceType = normalizeResourceType(resourceType);
   if (!normalizedResourceType) return null;
 
@@ -47,7 +70,10 @@ export function queueNavigationPayloadHandoff({
   return handoff;
 }
 
-export function consumeNavigationPayloadHandoff({ resourceType, recordId = '' } = {}) {
+export function consumeNavigationPayloadHandoff({
+  resourceType,
+  recordId = '',
+}: ConsumeNavigationPayloadHandoffOptions = {}): NavigationPayloadHandoff | null {
   const normalizedResourceType = normalizeResourceType(resourceType);
   const normalizedRecordId = normalizeRecordId(recordId);
   if (!normalizedResourceType) return null;
@@ -59,7 +85,7 @@ export function consumeNavigationPayloadHandoff({ resourceType, recordId = '' } 
     return cachedEntry;
   }
 
-  const storedEntry = loadJson(createHandoffStorageKey(normalizedResourceType), null);
+  const storedEntry = loadJson<NavigationPayloadHandoff>(createHandoffStorageKey(normalizedResourceType), null);
   if (!storedEntry || !matchesRecordId(storedEntry, normalizedRecordId)) {
     return null;
   }
