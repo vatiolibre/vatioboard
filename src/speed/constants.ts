@@ -14,6 +14,41 @@ export const STORAGE_AUDIO_MUTED_KEY = "vatio_speed_audio_muted";
 export const STORAGE_ALERT_TRIGGER_DISCOVERED_KEY = "vatio_speed_alert_trigger_discovered";
 export const STORAGE_PRIMARY_VIEW_KEY = "vatio_speed_primary_view";
 
+export type SpeedUnit = "mph" | "kmh";
+export type DistanceUnit = "ft" | "m";
+export type PrimaryView = "gauge" | "waze";
+export type CameraApproachFallbackMode = "legacy-radius" | "heading-only" | "silent";
+
+export interface SpeedUnitConfig {
+  label: string;
+  baseMax: number;
+  tickStep: number;
+  factor: number;
+}
+
+export interface DistanceUnitConfig {
+  label: string;
+  factor: number;
+}
+
+export interface AlertConfig {
+  step: number;
+  min: number;
+  max: number;
+  presets: number[];
+}
+
+export interface TrapAlertPreset {
+  meters: number;
+  label: string;
+}
+
+export interface GlobeNightCap {
+  altitude: number;
+  opacity: number;
+  color: string;
+}
+
 export const OVERSPEED_SOUND_URL = "/audio/overspeed_notification.m4a";
 export const TRAP_SOUND_URL = "/audio/near_camera_notification.m4a";
 export const START_RECORDING_SOUND_URL = "/audio/start_recording.m4a";
@@ -38,7 +73,7 @@ export const GLOBE_SKY_COLOR = "#e6f2ff";
 export const GLOBE_HORIZON_COLOR = "#ffffff";
 export const GLOBE_SKY_HORIZON_BLEND = 0.28;
 export const GLOBE_NIGHT_POLYGON_STEPS = 180;
-export const GLOBE_NIGHT_CAPS = [
+export const GLOBE_NIGHT_CAPS: GlobeNightCap[] = [
   { altitude: -1, opacity: 0.08, color: "#10233a" },
   { altitude: -6, opacity: 0.12, color: "#0a1525" },
   { altitude: -12, opacity: 0.18, color: "#050d18" },
@@ -58,21 +93,21 @@ export const WAZE_REFRESH_MIN_DISTANCE_M = 300;
 export const UNIT_CONFIG = {
   mph: { label: "mph", baseMax: 120, tickStep: 20, factor: 2.2369362920544 },
   kmh: { label: "km/h", baseMax: 200, tickStep: 40, factor: 3.6 },
-};
+} satisfies Record<SpeedUnit, SpeedUnitConfig>;
 
 export const DISTANCE_UNIT_CONFIG = {
   ft: { label: "ft", factor: 3.2808398950131 },
   m: { label: "m", factor: 1 },
-};
+} satisfies Record<DistanceUnit, DistanceUnitConfig>;
 
 export const ALERT_CONFIG = {
   mph: { step: 5, min: 10, max: 180, presets: [25, 35, 45, 55, 65, 75] },
   kmh: { step: 10, min: 20, max: 280, presets: [40, 60, 80, 100, 120, 140] },
-};
+} satisfies Record<SpeedUnit, AlertConfig>;
 
 export const DEFAULT_ALERT_LIMIT_MS = 100 / UNIT_CONFIG.kmh.factor;
 
-export const TRAP_ALERT_PRESETS = {
+export const TRAP_ALERT_PRESETS: Record<DistanceUnit, TrapAlertPreset[]> = {
   ft: [
     { meters: 304.8, label: "1000 ft" },
     { meters: 609.6, label: "2000 ft" },
@@ -100,7 +135,7 @@ export const GEO_ERROR_CODE = {
   TIMEOUT: 3,
 };
 
-export const MEDIA_SESSION_FALLBACK_ARTWORK = [
+export const MEDIA_SESSION_FALLBACK_ARTWORK: MediaImage[] = [
   { src: "/favicon-96x96.png", sizes: "96x96", type: "image/png" },
   { src: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
   { src: "/img/vatio-board-speed-og-1200x630.jpg", sizes: "1200x630", type: "image/jpeg" },

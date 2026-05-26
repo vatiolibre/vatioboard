@@ -4,7 +4,7 @@ export const GEO_OPTIONS = {
   enableHighAccuracy: true,
   maximumAge: 0,
   timeout: 10000,
-};
+} satisfies PositionOptions;
 
 export const GEO_ERROR_CODE = {
   PERMISSION_DENIED: 1,
@@ -18,7 +18,7 @@ export const STORAGE_KEYS = {
   lastSummary: "vatio_gps_rate_last_summary",
   nominatimBaseUrl: "vatio_gps_rate_nominatim_base_url",
   nominatimActiveApi: "vatio_gps_rate_nominatim_active_api",
-};
+} satisfies GpsRateStorageKeys;
 
 export const MAX_LOG_ROWS = 200;
 export const SPARKLINE_WINDOW = 48;
@@ -32,7 +32,21 @@ export const STATIONARY_SPEED_THRESHOLD_MS = 0.3;
 export const MIN_DISTANCE_NOISE_FLOOR_M = 4;
 export const MAX_ACCURACY_INFLUENCE_M = 18;
 
-export const HISTOGRAM_BUCKETS = [
+export interface GpsRateStorageKeys {
+  notes: string;
+  keepAwake: string;
+  lastSummary: string;
+  nominatimBaseUrl: string;
+  nominatimActiveApi: string;
+}
+
+export interface HistogramBucket {
+  label: string;
+  min: number;
+  max: number;
+}
+
+export const HISTOGRAM_BUCKETS: HistogramBucket[] = [
   { label: "<100", min: 0, max: 100 },
   { label: "100-249", min: 100, max: 250 },
   { label: "250-499", min: 250, max: 500 },

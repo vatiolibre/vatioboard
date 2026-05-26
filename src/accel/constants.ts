@@ -2,10 +2,20 @@ export const SHARED_SPEED_UNIT_KEY = "vatio_speed_unit";
 export const SHARED_DISTANCE_UNIT_KEY = "vatio_speed_distance_unit";
 export const SHARED_LEGACY_ALTITUDE_UNIT_KEY = "vatio_speed_altitude_unit";
 
+export type AccelSpeedUnit = "mph" | "kmh";
+export type AccelDistanceUnit = "ft" | "m";
+export type AccelPresetKind = "speed" | "distance" | "custom";
+export type AccelPartialKind = "speed" | "distance";
+
+export interface AccelStorageKeys {
+  runs: string;
+  settings: string;
+}
+
 export const STORAGE_KEYS = {
   runs: "vatioboard.accel.runs",
   settings: "vatioboard.accel.settings",
-};
+} satisfies AccelStorageKeys;
 
 export const MPH_TO_MS = 0.44704;
 export const KMH_TO_MS = 1000 / 3600;
@@ -16,18 +26,18 @@ export const QUARTER_MILE_M = 402.336;
 export const SPEED_UNIT_CONFIG = {
   mph: { factor: 2.2369362920544, labelKey: "accelMphUnit" },
   kmh: { factor: 3.6, labelKey: "accelKmhUnit" },
-};
+} satisfies Record<AccelSpeedUnit, { factor: number; labelKey: string }>;
 
 export const DISTANCE_UNIT_CONFIG = {
   ft: { factor: 3.2808398950131, label: "ft" },
   m: { factor: 1, label: "m" },
-};
+} satisfies Record<AccelDistanceUnit, { factor: number; label: string }>;
 
 export const GEO_OPTIONS = {
   enableHighAccuracy: true,
   maximumAge: 0,
   timeout: 10000,
-};
+} satisfies PositionOptions;
 
 export const GEO_ERROR_CODE = {
   PERMISSION_DENIED: 1,
@@ -56,6 +66,17 @@ export const MIN_VALID_RUN_DURATION_MS = 800;
 export const FINISH_SOUND_URL = "/audio/finish.m4a";
 export const RESULT_GRAPH_HEIGHT = 220;
 
+export interface AccelSettings {
+  selectedPresetId: string;
+  rolloutEnabled: boolean;
+  launchThresholdMs: number;
+  speedUnit: AccelSpeedUnit;
+  distanceUnit: AccelDistanceUnit;
+  customStart: number;
+  customEnd: number;
+  notes: string;
+}
+
 export const defaultSettings = {
   selectedPresetId: "0-60-mph",
   rolloutEnabled: false,
@@ -65,9 +86,44 @@ export const defaultSettings = {
   customStart: 0,
   customEnd: 60,
   notes: "",
-};
+} satisfies AccelSettings;
 
-export const presetDefinitions = [
+export interface AccelPresetDefinitionBase {
+  id: string;
+  type: AccelPresetKind;
+  labelKey: string;
+  standingStart: boolean;
+  variantGroup: string;
+  startSpeedMs?: number;
+  targetSpeedMs?: number;
+  distanceTargetM?: number;
+  speedSystem?: AccelSpeedUnit;
+  distanceSystem?: AccelDistanceUnit;
+}
+
+export interface AccelSpeedPresetDefinition extends AccelPresetDefinitionBase {
+  type: "speed";
+  startSpeedMs: number;
+  targetSpeedMs: number;
+  speedSystem: AccelSpeedUnit;
+}
+
+export interface AccelDistancePresetDefinition extends AccelPresetDefinitionBase {
+  type: "distance";
+  distanceTargetM: number;
+  distanceSystem: AccelDistanceUnit;
+}
+
+export interface AccelCustomPresetDefinition extends AccelPresetDefinitionBase {
+  type: "custom";
+}
+
+export type AccelPresetDefinition =
+  | AccelSpeedPresetDefinition
+  | AccelDistancePresetDefinition
+  | AccelCustomPresetDefinition;
+
+export const presetDefinitions: AccelPresetDefinition[] = [
   { id: "0-30-mph", type: "speed", labelKey: "accelPreset0to30", standingStart: true, startSpeedMs: 0, targetSpeedMs: 30 * MPH_TO_MS, speedSystem: "mph", variantGroup: "launch-1" },
   { id: "0-40-mph", type: "speed", labelKey: "accelPreset0to40", standingStart: true, startSpeedMs: 0, targetSpeedMs: 40 * MPH_TO_MS, speedSystem: "mph", variantGroup: "launch-2" },
   { id: "0-50-mph", type: "speed", labelKey: "accelPreset0to50", standingStart: true, startSpeedMs: 0, targetSpeedMs: 50 * MPH_TO_MS, speedSystem: "mph", variantGroup: "launch-3" },
@@ -85,7 +141,53 @@ export const presetDefinitions = [
   { id: "custom", type: "custom", labelKey: "accelPresetCustom", standingStart: false, variantGroup: "custom" },
 ];
 
-export const distancePartialDefinitions = {
+export interface AccelDistancePartialDefinition {
+  id: string;
+  kind: "distance";
+  labelKey: string;
+  distanceM: number;
+  showTrapSpeed: boolean;
+}
+
+export interface AccelSpeedPartialDefinition {
+  id: string;
+  kind: "speed";
+  labelKey: string;
+  startSpeedMs: number;
+  targetSpeedMs: number;
+  showTrapSpeed?: undefined;
+  trapSpeedMs?: undefined;
+}
+
+export interface AccelDistanceRunPartial extends AccelDistancePartialDefinition {
+  elapsedMs: number | null;
+  trapSpeedMs: number | null;
+}
+
+export interface AccelSpeedRunPartial extends AccelSpeedPartialDefinition {
+  startCrossPerfMs?: number | null;
+  elapsedMs: number | null;
+}
+
+export type AccelRunPartial = AccelDistanceRunPartial | AccelSpeedRunPartial;
+
+export interface AccelPreset {
+  id: string;
+  type: AccelPresetKind;
+  labelKey: string;
+  standingStart: boolean;
+  startSpeedMs: number;
+  targetSpeedMs: number | null;
+  distanceTargetM: number | null;
+  speedSystem?: AccelSpeedUnit | null;
+  distanceSystem?: AccelDistanceUnit | null;
+  variantGroup?: string;
+  customStart: number | null;
+  customEnd: number | null;
+  customUnit: AccelSpeedUnit | null;
+}
+
+export const distancePartialDefinitions: Record<AccelDistanceUnit, AccelDistancePartialDefinition[]> = {
   ft: [
     { id: "60-ft", kind: "distance", labelKey: "accelPartial60ft", distanceM: 60 * FT_TO_M, showTrapSpeed: false },
     { id: "eighth-mile", kind: "distance", labelKey: "accelPresetEighthMile", distanceM: EIGHTH_MILE_M, showTrapSpeed: true },
@@ -99,7 +201,7 @@ export const distancePartialDefinitions = {
   ],
 };
 
-export const speedPartialDefinitions = {
+export const speedPartialDefinitions: Record<AccelSpeedUnit, AccelSpeedPartialDefinition[]> = {
   mph: [
     { id: "0-60-mph", kind: "speed", labelKey: "accelPreset0to60", startSpeedMs: 0, targetSpeedMs: 60 * MPH_TO_MS },
     { id: "60-130-mph", kind: "speed", labelKey: "accelPreset60to130", startSpeedMs: 60 * MPH_TO_MS, targetSpeedMs: 130 * MPH_TO_MS },
@@ -112,10 +214,10 @@ export const speedPartialDefinitions = {
   ],
 };
 
-export function normalizeSpeedUnit(unit) {
+export function normalizeSpeedUnit(unit: unknown): AccelSpeedUnit {
   return unit === "kmh" ? "kmh" : "mph";
 }
 
-export function normalizeDistanceUnit(unit) {
+export function normalizeDistanceUnit(unit: unknown): AccelDistanceUnit {
   return unit === "m" ? "m" : "ft";
 }

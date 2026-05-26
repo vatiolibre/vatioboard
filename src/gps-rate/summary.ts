@@ -1,5 +1,6 @@
 import { normalizePlace } from '../shared/place-resolver.js';
 import {
+  type HistogramBucket,
   HISTOGRAM_BUCKETS,
   MAX_ACCURACY_INFLUENCE_M,
   MIN_DISTANCE_NOISE_FLOOR_M,
@@ -9,60 +10,215 @@ import {
   STATIONARY_SPEED_THRESHOLD_MS,
 } from './constants.js';
 
-export function normalizeStoredSummary(summary, fallbackNow = Date.now()) {
-  if (!summary || typeof summary !== 'object') return null;
+type UnknownRecord = Record<string, unknown>;
 
+export type GpsRateSummarySource = 'current' | 'saved' | string;
+export type GpsRateMovementState = 'moving' | 'stationary' | 'uncertain';
+export type GpsRateMovementSource = 'reported' | 'derived' | 'unknown';
+export type GpsRateVisibilityState = 'hidden' | 'visible';
+
+export interface GpsRatePlace {
+  label?: string;
+  countryCode?: string;
+  [key: string]: unknown;
+}
+
+export interface GpsRateFieldAvailability {
+  speed: boolean;
+  heading: boolean;
+  altitude: boolean;
+  altitudeAccuracy: boolean;
+  accuracy: boolean;
+}
+
+export interface GpsRateHistogramEntry {
+  label: string;
+  count: number;
+}
+
+export interface GpsRateWarning {
+  kind: string;
+  label: string;
+  detail: string;
+  [key: string]: unknown;
+}
+
+export interface GpsRateMotionSummary {
+  latestState?: GpsRateMovementState;
+  latestSource?: GpsRateMovementSource;
+  movingHz?: number | null;
+  stationaryHz?: number | null;
+  movingSamples?: number;
+  stationarySamples?: number;
+  [key: string]: unknown;
+}
+
+export interface GpsRateSummary {
+  source: GpsRateSummarySource;
+  savedAtMs: number | null;
+  durationMs: number;
+  sampleCount: number;
+  currentIntervalMs: number | null;
+  averageIntervalMs: number | null;
+  medianIntervalMs: number | null;
+  minIntervalMs: number | null;
+  maxIntervalMs: number | null;
+  effectiveAverageHz: number | null;
+  bestObservedHz: number | null;
+  fiveSecondHz: number | null;
+  wholeSessionHz: number | null;
+  averageAccuracyM: number | null;
+  latestAccuracyM: number | null;
+  nullSpeedCount: number;
+  nullHeadingCount: number;
+  missingAltitudeCount: number;
+  staleSampleCount: number;
+  jitterMs: number | null;
+  fieldAvailability: GpsRateFieldAvailability;
+  unsupportedFields: string[];
+  motion: GpsRateMotionSummary;
+  histogram: GpsRateHistogramEntry[];
+  warnings: GpsRateWarning[];
+  statusText: string;
+  notes: string;
+  place: GpsRatePlace | null;
+}
+
+export interface GpsRateSample {
+  index: number;
+  callbackWallClockMs: number;
+  performanceNowMs: number;
+  positionTimestampMs: number;
+  latitude: number | null;
+  longitude: number | null;
+  speedMps: number | null;
+  headingDeg: number | null;
+  accuracyM: number | null;
+  altitudeM: number | null;
+  altitudeAccuracyM: number | null;
+  intervalMs: number | null;
+  effectiveHz: number | null;
+  geoTimestampDeltaMs: number | null;
+  sampleAgeMs: number | null;
+  movementState: GpsRateMovementState;
+  movementSource: GpsRateMovementSource;
+  derivedSpeedMps: number | null;
+  distanceFromPreviousM: number | null;
+  visibilityState: GpsRateVisibilityState;
+  isStale: boolean;
+  [key: string]: unknown;
+}
+
+export interface GpsRateCoordinateLike {
+  latitude?: unknown;
+  longitude?: unknown;
+  speed?: unknown;
+  heading?: unknown;
+  accuracy?: unknown;
+  altitude?: unknown;
+  altitudeAccuracy?: unknown;
+}
+
+export interface GpsRatePositionLike {
+  coords?: GpsRateCoordinateLike | null;
+  timestamp?: unknown;
+}
+
+export interface GpsRatePreviousSampleLike {
+  performanceNowMs: number;
+  positionTimestampMs?: number | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  accuracyM?: number | null;
+}
+
+export interface GpsRateMotionClassification {
+  state: GpsRateMovementState;
+  source: GpsRateMovementSource;
+  derivedSpeedMps: number | null;
+  distanceM: number | null;
+}
+
+export interface SummarizeSessionOptions {
+  samples: GpsRateSample[];
+  durationMs: number;
+  source?: GpsRateSummarySource;
+  savedAtMs?: number | null;
+  notes?: unknown;
+  statusText?: string;
+  place?: unknown;
+}
+
+export interface CreateSampleOptions {
+  position: GpsRatePositionLike;
+  previousSample?: GpsRatePreviousSampleLike | null;
+  sampleIndex: number;
+  callbackPerfMs: number;
+  callbackWallClockMs: number;
+  hiddenNow: boolean;
+}
+
+const normalizeSummaryPlace = normalizePlace as (place: unknown) => GpsRatePlace | null;
+
+function getDefaultFieldAvailability(): GpsRateFieldAvailability {
   return {
-    source: 'saved',
-    savedAtMs: Number.isFinite(summary.savedAtMs) ? summary.savedAtMs : fallbackNow,
-    durationMs: Number.isFinite(summary.durationMs) ? summary.durationMs : 0,
-    sampleCount: Number.isFinite(summary.sampleCount) ? summary.sampleCount : 0,
-    currentIntervalMs: Number.isFinite(summary.currentIntervalMs)
-      ? summary.currentIntervalMs
-      : null,
-    averageIntervalMs: Number.isFinite(summary.averageIntervalMs)
-      ? summary.averageIntervalMs
-      : null,
-    medianIntervalMs: Number.isFinite(summary.medianIntervalMs) ? summary.medianIntervalMs : null,
-    minIntervalMs: Number.isFinite(summary.minIntervalMs) ? summary.minIntervalMs : null,
-    maxIntervalMs: Number.isFinite(summary.maxIntervalMs) ? summary.maxIntervalMs : null,
-    effectiveAverageHz: Number.isFinite(summary.effectiveAverageHz)
-      ? summary.effectiveAverageHz
-      : null,
-    bestObservedHz: Number.isFinite(summary.bestObservedHz) ? summary.bestObservedHz : null,
-    fiveSecondHz: Number.isFinite(summary.fiveSecondHz) ? summary.fiveSecondHz : null,
-    wholeSessionHz: Number.isFinite(summary.wholeSessionHz) ? summary.wholeSessionHz : null,
-    averageAccuracyM: Number.isFinite(summary.averageAccuracyM) ? summary.averageAccuracyM : null,
-    latestAccuracyM: Number.isFinite(summary.latestAccuracyM) ? summary.latestAccuracyM : null,
-    nullSpeedCount: Number.isFinite(summary.nullSpeedCount) ? summary.nullSpeedCount : 0,
-    nullHeadingCount: Number.isFinite(summary.nullHeadingCount) ? summary.nullHeadingCount : 0,
-    missingAltitudeCount: Number.isFinite(summary.missingAltitudeCount)
-      ? summary.missingAltitudeCount
-      : 0,
-    staleSampleCount: Number.isFinite(summary.staleSampleCount) ? summary.staleSampleCount : 0,
-    jitterMs: Number.isFinite(summary.jitterMs) ? summary.jitterMs : null,
-    fieldAvailability: summary.fieldAvailability || {
-      speed: false,
-      heading: false,
-      altitude: false,
-      altitudeAccuracy: false,
-      accuracy: false,
-    },
-    unsupportedFields: Array.isArray(summary.unsupportedFields) ? summary.unsupportedFields : [],
-    motion: summary.motion || {},
-    histogram: Array.isArray(summary.histogram) ? summary.histogram : [],
-    warnings: Array.isArray(summary.warnings) ? summary.warnings : [],
-    statusText: typeof summary.statusText === 'string' ? summary.statusText : '',
-    notes: typeof summary.notes === 'string' ? summary.notes : '',
-    place: normalizePlace(summary.place),
+    speed: false,
+    heading: false,
+    altitude: false,
+    altitudeAccuracy: false,
+    accuracy: false,
   };
 }
 
-export function isFiniteNumber(value) {
+export function normalizeStoredSummary(summary: unknown, fallbackNow = Date.now()): GpsRateSummary | null {
+  if (!summary || typeof summary !== 'object') return null;
+  const record = summary as UnknownRecord;
+
+  return {
+    source: 'saved',
+    savedAtMs: Number.isFinite(record.savedAtMs) ? record.savedAtMs as number : fallbackNow,
+    durationMs: Number.isFinite(record.durationMs) ? record.durationMs as number : 0,
+    sampleCount: Number.isFinite(record.sampleCount) ? record.sampleCount as number : 0,
+    currentIntervalMs: Number.isFinite(record.currentIntervalMs)
+      ? record.currentIntervalMs as number
+      : null,
+    averageIntervalMs: Number.isFinite(record.averageIntervalMs)
+      ? record.averageIntervalMs as number
+      : null,
+    medianIntervalMs: Number.isFinite(record.medianIntervalMs) ? record.medianIntervalMs as number : null,
+    minIntervalMs: Number.isFinite(record.minIntervalMs) ? record.minIntervalMs as number : null,
+    maxIntervalMs: Number.isFinite(record.maxIntervalMs) ? record.maxIntervalMs as number : null,
+    effectiveAverageHz: Number.isFinite(record.effectiveAverageHz)
+      ? record.effectiveAverageHz as number
+      : null,
+    bestObservedHz: Number.isFinite(record.bestObservedHz) ? record.bestObservedHz as number : null,
+    fiveSecondHz: Number.isFinite(record.fiveSecondHz) ? record.fiveSecondHz as number : null,
+    wholeSessionHz: Number.isFinite(record.wholeSessionHz) ? record.wholeSessionHz as number : null,
+    averageAccuracyM: Number.isFinite(record.averageAccuracyM) ? record.averageAccuracyM as number : null,
+    latestAccuracyM: Number.isFinite(record.latestAccuracyM) ? record.latestAccuracyM as number : null,
+    nullSpeedCount: Number.isFinite(record.nullSpeedCount) ? record.nullSpeedCount as number : 0,
+    nullHeadingCount: Number.isFinite(record.nullHeadingCount) ? record.nullHeadingCount as number : 0,
+    missingAltitudeCount: Number.isFinite(record.missingAltitudeCount)
+      ? record.missingAltitudeCount as number
+      : 0,
+    staleSampleCount: Number.isFinite(record.staleSampleCount) ? record.staleSampleCount as number : 0,
+    jitterMs: Number.isFinite(record.jitterMs) ? record.jitterMs as number : null,
+    fieldAvailability: (record.fieldAvailability || getDefaultFieldAvailability()) as GpsRateFieldAvailability,
+    unsupportedFields: Array.isArray(record.unsupportedFields) ? record.unsupportedFields as string[] : [],
+    motion: (record.motion || {}) as GpsRateMotionSummary,
+    histogram: Array.isArray(record.histogram) ? record.histogram as GpsRateHistogramEntry[] : [],
+    warnings: Array.isArray(record.warnings) ? record.warnings as GpsRateWarning[] : [],
+    statusText: typeof record.statusText === 'string' ? record.statusText : '',
+    notes: typeof record.notes === 'string' ? record.notes : '',
+    place: normalizeSummaryPlace(record.place),
+  };
+}
+
+export function isFiniteNumber(value: unknown): value is number {
   return Number.isFinite(value);
 }
 
-export function normalizePositionTimestamp(timestamp, fallbackMs = Date.now()) {
+export function normalizePositionTimestamp(timestamp: unknown, fallbackMs = Date.now()): number {
   if (!isFiniteNumber(timestamp)) return fallbackMs;
 
   const safeFallbackMs = isFiniteNumber(fallbackMs) ? fallbackMs : Date.now();
@@ -75,12 +231,12 @@ export function normalizePositionTimestamp(timestamp, fallbackMs = Date.now()) {
   return timestamp;
 }
 
-export function average(values) {
+export function average(values: number[]): number | null {
   if (!values.length) return null;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-export function median(values) {
+export function median(values: number[]): number | null {
   if (!values.length) return null;
   const sorted = values.slice().sort((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);
@@ -88,9 +244,9 @@ export function median(values) {
   return (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
-export function standardDeviation(values) {
+export function standardDeviation(values: number[]): number | null {
   if (values.length < 2) return null;
-  const meanValue = average(values);
+  const meanValue = average(values) as number;
   const variance =
     values.reduce((sum, value) => {
       const delta = value - meanValue;
@@ -99,7 +255,7 @@ export function standardDeviation(values) {
   return Math.sqrt(variance);
 }
 
-export function haversineDistance(a, b) {
+export function haversineDistance(a: GpsRateCoordinateLike, b: GpsRateCoordinateLike): number | null {
   if (
     !isFiniteNumber(a.latitude) ||
     !isFiniteNumber(a.longitude) ||
@@ -109,11 +265,15 @@ export function haversineDistance(a, b) {
     return null;
   }
 
+  const latitudeA = a.latitude;
+  const longitudeA = a.longitude;
+  const latitudeB = b.latitude;
+  const longitudeB = b.longitude;
   const radius = 6371000;
-  const lat1 = (a.latitude * Math.PI) / 180;
-  const lat2 = (b.latitude * Math.PI) / 180;
-  const deltaLat = ((b.latitude - a.latitude) * Math.PI) / 180;
-  const deltaLon = ((b.longitude - a.longitude) * Math.PI) / 180;
+  const lat1 = (latitudeA * Math.PI) / 180;
+  const lat2 = (latitudeB * Math.PI) / 180;
+  const deltaLat = ((latitudeB - latitudeA) * Math.PI) / 180;
+  const deltaLon = ((longitudeB - longitudeA) * Math.PI) / 180;
 
   const sinLat = Math.sin(deltaLat / 2);
   const sinLon = Math.sin(deltaLon / 2);
@@ -122,7 +282,7 @@ export function haversineDistance(a, b) {
   return radius * 2 * Math.atan2(Math.sqrt(calc), Math.sqrt(1 - calc));
 }
 
-export function getMovementThresholdM(currentAccuracyM, previousAccuracyM) {
+export function getMovementThresholdM(currentAccuracyM: unknown, previousAccuracyM: unknown): number {
   const accuracies = [currentAccuracyM, previousAccuracyM].filter(isFiniteNumber);
   const accuracyFloorM = accuracies.length
     ? Math.min(Math.max.apply(null, accuracies), MAX_ACCURACY_INFLUENCE_M)
@@ -131,19 +291,23 @@ export function getMovementThresholdM(currentAccuracyM, previousAccuracyM) {
   return Math.max(MIN_DISTANCE_NOISE_FLOOR_M, accuracyFloorM * 0.5);
 }
 
-export function normalizeSpeed(value) {
+export function normalizeSpeed(value: unknown): number | null {
   return isFiniteNumber(value) && value >= 0 ? value : null;
 }
 
-export function normalizeHeading(value) {
+export function normalizeHeading(value: unknown): number | null {
   return isFiniteNumber(value) && value >= 0 ? value : null;
 }
 
-export function normalizeMetric(value) {
+export function normalizeMetric(value: unknown): number | null {
   return isFiniteNumber(value) ? value : null;
 }
 
-export function classifyMotion(coords, previousSample, callbackPerfMs) {
+export function classifyMotion(
+  coords: GpsRateCoordinateLike,
+  previousSample: GpsRatePreviousSampleLike | null | undefined,
+  callbackPerfMs: number,
+): GpsRateMotionClassification {
   const reportedSpeed = normalizeSpeed(coords.speed);
 
   if (reportedSpeed !== null) {
@@ -186,7 +350,11 @@ export function classifyMotion(coords, previousSample, callbackPerfMs) {
   return { state: 'uncertain', source: 'unknown', derivedSpeedMps, distanceM };
 }
 
-export function isStaleSample(positionTimestampMs, previousSample, sampleAgeMs) {
+export function isStaleSample(
+  positionTimestampMs: unknown,
+  previousSample: GpsRatePreviousSampleLike | null | undefined,
+  sampleAgeMs: unknown,
+): boolean {
   if (
     isFiniteNumber(positionTimestampMs) &&
     previousSample &&
@@ -200,7 +368,10 @@ export function isStaleSample(positionTimestampMs, previousSample, sampleAgeMs) 
   return isFiniteNumber(sampleAgeMs) && sampleAgeMs > STALE_SAMPLE_AGE_MS;
 }
 
-export function computeSessionHz(samples, windowMs = null) {
+export function computeSessionHz(
+  samples: Pick<GpsRateSample, 'performanceNowMs'>[],
+  windowMs: number | null = null,
+): number | null {
   if (samples.length < 2) return null;
 
   let windowSamples = samples;
@@ -220,8 +391,11 @@ export function computeSessionHz(samples, windowMs = null) {
   return ((windowSamples.length - 1) * 1000) / spanMs;
 }
 
-export function computeMotionHz(samples, motionState) {
-  const intervals = [];
+export function computeMotionHz(
+  samples: Pick<GpsRateSample, 'intervalMs' | 'movementState'>[],
+  motionState: GpsRateMovementState,
+): { sampleCount: number; hz: number | null } {
+  const intervals: number[] = [];
   let sampleCount = 0;
 
   for (let index = 0; index < samples.length; index += 1) {
@@ -236,11 +410,14 @@ export function computeMotionHz(samples, motionState) {
 
   return {
     sampleCount,
-    hz: intervals.length ? 1000 / average(intervals) : null,
+    hz: intervals.length ? 1000 / (average(intervals) as number) : null,
   };
 }
 
-export function buildHistogram(intervals, histogramBuckets = HISTOGRAM_BUCKETS) {
+export function buildHistogram(
+  intervals: number[],
+  histogramBuckets: HistogramBucket[] = HISTOGRAM_BUCKETS,
+): GpsRateHistogramEntry[] {
   return histogramBuckets.map((bucket) => {
     const count = intervals.filter((value) => value >= bucket.min && value < bucket.max).length;
     return { label: bucket.label, count };
@@ -255,7 +432,7 @@ export function summarizeSession({
   notes = '',
   statusText = '',
   place = null,
-}) {
+}: SummarizeSessionOptions): GpsRateSummary {
   const latestSample = samples.length ? samples[samples.length - 1] : null;
   const intervals = samples
     .map((sample) => sample.intervalMs)
@@ -284,7 +461,7 @@ export function summarizeSession({
     medianIntervalMs: median(intervals),
     minIntervalMs: intervals.length ? Math.min.apply(null, intervals) : null,
     maxIntervalMs: intervals.length ? Math.max.apply(null, intervals) : null,
-    effectiveAverageHz: intervals.length ? 1000 / average(intervals) : null,
+    effectiveAverageHz: intervals.length ? 1000 / (average(intervals) as number) : null,
     bestObservedHz: intervals.length ? 1000 / Math.min.apply(null, intervals) : null,
     fiveSecondHz: computeSessionHz(samples, 5000),
     wholeSessionHz: computeSessionHz(samples),
@@ -309,7 +486,7 @@ export function summarizeSession({
     warnings: [],
     statusText,
     notes: typeof notes === 'string' ? notes.trim() : '',
-    place: normalizePlace(place),
+    place: normalizeSummaryPlace(place),
   };
 }
 
@@ -320,7 +497,7 @@ export function createSample({
   callbackPerfMs,
   callbackWallClockMs,
   hiddenNow,
-}) {
+}: CreateSampleOptions): GpsRateSample {
   const coords = position.coords || {};
   const positionTimestampMs = normalizePositionTimestamp(position.timestamp, callbackWallClockMs);
   const intervalMs = previousSample ? callbackPerfMs - previousSample.performanceNowMs : null;

@@ -1,7 +1,112 @@
 import KDBush from "kdbush";
 import { around as geoAround, distance as geoDistanceKm } from "geokdbush";
+import type { DistanceUnit, SpeedUnit } from "./constants.js";
+import type { SpeedTrapMeta } from "./alerts.js";
 
-export function buildTrapIndex(traps, KDBushClass = KDBush) {
+export type TrapRecord = [
+  longitude: number,
+  latitude: number,
+  speedKph?: number | null,
+  id?: unknown,
+  meta?: SpeedTrapMeta | null,
+];
+
+export interface TrapCompactPayload {
+  traps?: unknown;
+}
+
+export interface NearestTrapState {
+  nearestTrapId: string | number | null;
+  nearestTrapDistanceM: number | null;
+  nearestTrapSpeedKph: number | null;
+  nearestTrapSpeedMeta: SpeedTrapMeta | null;
+}
+
+export interface NearestTrapAcrossDatasetsState extends NearestTrapState {
+  nearestTrapDataset: TrapDataset | null;
+}
+
+export interface TrapDataset {
+  key?: string;
+  id?: string;
+  country?: string;
+  index?: unknown;
+  trapIndex?: unknown;
+  traps?: TrapRecord[];
+  trapRecords?: TrapRecord[];
+  [key: string]: unknown;
+}
+
+export interface TrapDistanceDisplay {
+  value: string;
+  unit: string;
+}
+
+export interface TrapLoaderState extends NearestTrapState {
+  trapAlertEnabled: boolean;
+  trapLoadPending: boolean;
+  trapLoadError: unknown;
+  trapRecords: TrapRecord[];
+  trapIndex: unknown;
+}
+
+export interface TrapSearchOptions {
+  around?: (index: unknown, longitude: number, latitude: number, maxResults: number) => number[];
+  distanceKm?: (
+    longitude: number,
+    latitude: number,
+    trapLongitude: number,
+    trapLatitude: number,
+  ) => number;
+}
+
+export interface TrapIndexClass {
+  new (numItems: number): {
+    add(longitude: number, latitude: number): unknown;
+    finish(): unknown;
+  };
+  from(data: ArrayBuffer): unknown;
+}
+
+export interface TrapLoaderOptions {
+  state: TrapLoaderState;
+  dataUrl: string;
+  indexUrl: string;
+  renderMetrics: () => void;
+  afterLoad?: (() => void) | null;
+  fetchImpl?: typeof fetch;
+  KDBushClass?: TrapIndexClass;
+}
+
+export interface TrapLoader {
+  ensureTrapArtifactsLoaded(): void;
+  isTrapDataReady(): boolean;
+  loadTrapArtifacts(): Promise<unknown>;
+}
+
+type TrapAround = NonNullable<TrapSearchOptions["around"]>;
+type TrapDistanceKm = NonNullable<TrapSearchOptions["distanceKm"]>;
+
+const defaultAround = geoAround as TrapAround;
+const defaultDistanceKm = geoDistanceKm as TrapDistanceKm;
+
+function isTrapRecord(trap: unknown): trap is TrapRecord {
+  return Array.isArray(trap)
+    && trap.length >= 2
+    && Number.isFinite(trap[0])
+    && Number.isFinite(trap[1]);
+}
+
+function createEmptyNearestTrapState(): NearestTrapState {
+  return {
+    nearestTrapId: null,
+    nearestTrapDistanceM: null,
+    nearestTrapSpeedKph: null,
+    nearestTrapSpeedMeta: null,
+  };
+}
+
+export function buildTrapIndex(traps: TrapRecord[], KDBushClass: TrapIndexClass = KDBush): unknown {
   const index = new KDBushClass(traps.length);
   for (const [longitude, latitude] of traps) {
     index.add(longitude, latitude);
@@ -10,36 +115,28 @@ export function buildTrapIndex(traps, KDBushClass = KDBush) {
   return index;
 }
 
-export function sanitizeTrapRecords(compact) {
+export function sanitizeTrapRecords(compact: TrapCompactPayload | null | undefined): TrapRecord[] {
   const traps = Array.isArray(compact?.traps) ? compact.traps : [];
-  return traps.filter((trap) =>
-    Array.isArray(trap)
-    && trap.length >= 2
-    && Number.isFinite(trap[0])
-    && Number.isFinite(trap[1]));
+  return traps.filter(isTrapRecord);
 }
 
-export function updateNearestTrap(trapIndex, trapRecords, longitude, latitude, options = {}) {
-  const around = options.around || geoAround;
-  const distanceKm = options.distanceKm || geoDistanceKm;
+export function updateNearestTrap(
+  trapIndex: unknown,
+  trapRecords: TrapRecord[] | null | undefined,
+  longitude: number,
+  latitude: number,
+  options: TrapSearchOptions = {},
+): NearestTrapState {
+  const around = options.around || defaultAround;
+  const distanceKm = options.distanceKm || defaultDistanceKm;
 
   if (!trapIndex || !Array.isArray(trapRecords) || trapRecords.length === 0) {
-    return {
-      nearestTrapId: null,
-      nearestTrapDistanceM: null,
-      nearestTrapSpeedKph: null,
-      nearestTrapSpeedMeta: null,
-    };
+    return createEmptyNearestTrapState();
   }
 
   const nearestIds = around(trapIndex, longitude, latitude, 1);
   if (nearestIds.length === 0) {
-    return {
-      nearestTrapId: null,
-      nearestTrapDistanceM: null,
-      nearestTrapSpeedKph: null,
-      nearestTrapSpeedMeta: null,
-    };
+    return createEmptyNearestTrapState();
   }
 
   const nearestTrapId = nearestIds[0];
@@ -53,7 +150,12 @@ export function updateNearestTrap(trapIndex, trapRecords, longitude, latitude, o
   };
 }
 
-export function updateNearestTrapAcrossDatasets(datasets, longitude, latitude, options = {}) {
+export function updateNearestTrapAcrossDatasets(
+  datasets: TrapDataset[] | null | undefined,
+  longitude: number,
+  latitude: number,
+  options: TrapSearchOptions = {},
+): NearestTrapAcrossDatasetsState {
   if (!Array.isArray(datasets) || datasets.length === 0) {
     return {
       nearestTrapId: null,
@@ -64,7 +166,7 @@ export function updateNearestTrapAcrossDatasets(datasets, longitude, latitude, o
     };
   }
 
-  let bestTrap = {
+  let bestTrap: NearestTrapAcrossDatasetsState = {
     nearestTrapId: null,
     nearestTrapDistanceM: null,
     nearestTrapSpeedKph: null,
@@ -93,7 +195,7 @@ export function updateNearestTrapAcrossDatasets(datasets, longitude, latitude, o
   return bestTrap;
 }
 
-export function formatTrapDistance(distanceM, unit, awayLabel = "away") {
+export function formatTrapDistance(distanceM: number, unit: DistanceUnit, awayLabel = "away"): TrapDistanceDisplay {
   if (!Number.isFinite(distanceM)) {
     return { value: "—", unit: awayLabel };
   }
@@ -122,8 +224,8 @@ export function formatTrapDistance(distanceM, unit, awayLabel = "away") {
   };
 }
 
-export function formatTrapSpeed(speedKph, unit) {
-  if (!Number.isFinite(speedKph)) return null;
+export function formatTrapSpeed(speedKph: number | null | undefined, unit: SpeedUnit): string | null {
+  if (typeof speedKph !== "number" || !Number.isFinite(speedKph)) return null;
   if (unit === "kmh") return `${Math.round(speedKph)} km/h`;
   return `${Math.round(speedKph / 1.609344)} mph`;
 }
@@ -136,14 +238,14 @@ export function createTrapLoader({
   afterLoad,
   fetchImpl = fetch,
   KDBushClass = KDBush,
-}) {
-  let trapLoadPromise = null;
+}: TrapLoaderOptions): TrapLoader {
+  let trapLoadPromise: Promise<unknown> | null = null;
 
-  function isTrapDataReady() {
+  function isTrapDataReady(): boolean {
     return !state.trapLoadPending && !state.trapLoadError;
   }
 
-  async function loadTrapArtifacts() {
+  async function loadTrapArtifacts(): Promise<unknown> {
     if (trapLoadPromise) {
       return trapLoadPromise;
     }
@@ -200,7 +302,7 @@ export function createTrapLoader({
     return trapLoadPromise;
   }
 
-  function ensureTrapArtifactsLoaded() {
+  function ensureTrapArtifactsLoaded(): void {
     if (!state.trapAlertEnabled) return;
     if (state.trapLoadPending || isTrapDataReady()) return;
     void loadTrapArtifacts();

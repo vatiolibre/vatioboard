@@ -74,6 +74,18 @@
 - Low-churn optional shell keyboard and analog speedometer helpers also moved to TypeScript after the shell/bootstrap batch was green:
   - `src/shared/shell-keyboard.ts`
   - `src/shared/analog-speedometer.ts`
+- Small pure feature-helper/constants batches moved to TypeScript in this phase, with accel verified before speed and GPS-rate:
+  - `src/accel/constants.ts`
+  - `src/accel/formatters.ts`
+  - `src/accel/history.ts`
+  - `src/accel/presets.ts`
+  - `src/speed/constants.ts`
+  - `src/speed/preferences.ts`
+  - `src/speed/traps.ts`
+  - `src/speed/alerts.ts`
+  - `src/gps-rate/constants.ts`
+  - `src/gps-rate/session-state.ts`
+  - `src/gps-rate/summary.ts`
 
 ## Contracts Future Work Must Use
 
@@ -97,6 +109,9 @@
 - Shell/bootstrap helpers kept the `SHELL_Z_INDEX` layer values and ordering, shared unit preference keys `vatio_speed_unit`, `vatio_speed_distance_unit`, and `vatio_unit_bootstrap_v1`, regional imperial-country inference, existing/manual/auto bootstrap reasons, and trip-distance unit fallback behavior.
 - Shell keyboard kept the single `keydown` listener contract, editable-target guard, Alt/Ctrl+Backquote cycling, Shift reverse cycling, Escape snap-preview clearing, Ctrl+Alt+M minimize, Ctrl+Alt+R restore, uninstall behavior, and optional minimized-window cycling.
 - Analog speedometer kept the `analog-speedometer.less` side-effect import, canvas/ResizeObserver sizing behavior, CSS variable names, overlay text updates, marker/accent/pivot color behavior, no-op fallback controller, and render model merge semantics.
+- Accel helper consumers should keep importing the same public `.js` specifiers. This phase preserved shared unit localStorage keys, accel storage keys, default settings, GPS options/error codes, conversion constants, preset ids/signatures/variant groups, partial definitions, custom-preset signature rounding, formatter fallback strings, history comparison behavior, and the acceleration calculation boundary in `src/accel/logic.js`.
+- Speed helper consumers should keep the same public exports and `.js` specifiers. This phase preserved speed preference localStorage keys, unit defaults, primary-view values, alert limit defaults, trap-alert presets/snapping, camera-approach preference modes, alert/trap active-state semantics, speed metadata confidence handling, trap distance/speed formatting, KDBush/geokdbush lookup behavior, and overspeed sound gating.
+- GPS-rate helper consumers should keep the same public exports and `.js` specifiers. This phase preserved GPS Rate storage keys, geo options/error codes, histogram buckets, session state defaults, elapsed/activity/status helpers, saved-summary normalization defaults, timestamp stale guards, motion classification thresholds, sample shape, histogram/session summary calculations, notes trimming, and place normalization handoff.
 
 ## Still JavaScript
 
@@ -105,8 +120,8 @@
 - No files under `src/shared/repositories/` remain JavaScript.
 - Shared helper files still in JavaScript include `maplibre-loader`, `nominatim`, `place-resolver`, `route-boundary`, `route-string`, `single-tab`, and `ui/confirm-dialog`.
 - Feature/domain storage and session helpers still in JavaScript include `src/replay/session.js`.
-- Other feature/domain modules still in JavaScript include accel constants/logic/history/formatters/presets/replay helpers, board drawing-surface, calculator and energy widgets, plus the larger UI modules listed above.
+- Other feature/domain modules still in JavaScript include accel UI/logic/replay/result-graph modules, speed UI/runtime/navigation/audio/camera modules, GPS-rate controller/render/page/Nominatim lab modules, board drawing-surface, calculator and energy widgets, plus the larger UI modules listed above.
 
 ## Next Recommended Batch
 
-Consider pausing on shared helpers and moving next to narrowly scoped pure feature helpers/constants after a dependency check, such as small accel/speed constants or formatter modules. Keep `route-string`, `route-boundary`, `place-resolver`, `nominatim`, `single-tab`, `maplibre-loader`, `ui/confirm-dialog`, `replay/session`, and large UI/domain-heavy modules for later dedicated batches.
+Pause before large UI/controller/map/session modules. The next safe migration should start with a fresh dependency check for any remaining tiny, non-excluded feature helpers; keep `accel` logic/replay/UI, speed runtime/navigation/audio/camera/UI, GPS-rate controller/render/Nominatim UI, `route-string`, `route-boundary`, `place-resolver`, `nominatim`, `single-tab`, `maplibre-loader`, `ui/confirm-dialog`, and `replay/session` for later dedicated batches.
