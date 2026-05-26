@@ -1076,7 +1076,7 @@ export function createPlayerShell({ container, onContentOpenChange = null }) {
     playAllBtn.addEventListener("click", () => {
       _gestureUnlocked = true;
       primeAudioContext();
-      playPlaylistTracks(items);
+      playPlaylistTracks(items, undefined);
     });
 
     toolbarLi.append(playAllBtn);
@@ -1662,7 +1662,7 @@ export function createPlayerShell({ container, onContentOpenChange = null }) {
   shuffleBtn.addEventListener("click", () => runtime.toggleShuffle());
   repeatBtn.addEventListener("click", () => runtime.cycleRepeat());
 
-  muteBtn.addEventListener("click", () => runtime.setMuted());
+  muteBtn.addEventListener("click", () => runtime.setMuted(undefined));
   volumeSlider.addEventListener("input", () => {
     updateRangeVisualFill(volumeSlider);
     runtime.setVolume(Number(volumeSlider.value) / 100);
@@ -1888,7 +1888,7 @@ export function createPlayerShell({ container, onContentOpenChange = null }) {
   }
 
   function renderQueueActive(currentQueueId) {
-    for (const li of trackListUl.children) {
+    for (const li of Array.from(trackListUl.children) as HTMLElement[]) {
       if (li.dataset?.queueId) {
         li.classList.toggle("active", li.dataset.queueId === currentQueueId);
       }
@@ -1903,10 +1903,10 @@ export function createPlayerShell({ container, onContentOpenChange = null }) {
     if (newOffline.size === 0) return;
 
     // Update existing badge DOM nodes without full re-render
-    for (const li of trackListUl.children) {
+    for (const li of Array.from(trackListUl.children) as HTMLElement[]) {
       const name = li.dataset?.trackName;
       if (!name || !newOffline.has(name)) continue;
-      const badge = li.querySelector(".player-queue-item-badge");
+      const badge = li.querySelector<HTMLElement>(".player-queue-item-badge");
       if (badge && !badge.classList.contains("offline")) {
         badge.classList.add("offline");
         badge.title = t("playerOffline");

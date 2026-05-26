@@ -29,7 +29,46 @@ import {
 
 // ── Auth helpers ─────────────────────────────────────────────────────
 
-function isLoggedIn(detail) {
+type BackendAuthDetail = {
+  authenticated?: boolean;
+  isGuest?: boolean;
+  pendingLogout?: boolean;
+  [key: string]: unknown;
+};
+
+type ToolsMenuController = {
+  close?: () => void;
+};
+
+type PlayerWidgetApi = {
+  open?: (options?: Record<string, unknown>) => void;
+  close: (options?: Record<string, unknown>) => void;
+  restoreVisibility: () => void;
+  [key: string]: unknown;
+};
+
+type IntegratePlayerWidgetOptions = {
+  toolsMenuList?: HTMLElement | null;
+  toolsMenu?: ToolsMenuController | null;
+  mediaSession?: boolean;
+  preload?: "on-open" | "immediate";
+  mount?: HTMLElement;
+};
+
+type IntegratePlayerWidgetResult = {
+  widget: PlayerWidgetApi | null;
+  button: HTMLButtonElement | null;
+};
+
+type VisibilityOptions = {
+  loggedIn?: boolean;
+  available?: boolean;
+  stop?: boolean;
+  restore?: boolean;
+  known?: boolean;
+};
+
+function isLoggedIn(detail: BackendAuthDetail) {
   return (
     detail.authenticated === true &&
     detail.isGuest !== true &&
@@ -43,14 +82,14 @@ function isLoggedIn(detail) {
  * session check yet.  Treating that as a logout would wipe player restore
  * state during page refresh.
  */
-function readInitialAuth(toolsMenuList) {
-  const root = toolsMenuList?.closest("[data-backend-auth]")
-    || toolsMenuList?.querySelector("[data-backend-auth]");
+function readInitialAuth(toolsMenuList: HTMLElement | null | undefined): boolean | undefined {
+  const root = toolsMenuList?.closest<HTMLElement>("[data-backend-auth]")
+    || toolsMenuList?.querySelector<HTMLElement>("[data-backend-auth]");
   if (!root?.dataset || !("authState" in root.dataset)) return undefined;
   return root.dataset.authState === "authenticated";
 }
 
-function insertPlayerButton(toolsMenuList, button) {
+function insertPlayerButton(toolsMenuList: HTMLElement | null | undefined, button: HTMLButtonElement) {
   const anchor = toolsMenuList?.querySelector("[data-player-toggle-anchor]")
     || toolsMenuList?.querySelector("[data-backend-auth]");
   if (anchor) toolsMenuList.insertBefore(button, anchor);
@@ -74,7 +113,7 @@ export function integratePlayerWidget({
   mediaSession = true,
   preload = "on-open",
   mount = document.body,
-} = {}) {
+}: IntegratePlayerWidgetOptions = {}): IntegratePlayerWidgetResult {
   // Duplicate-injection guard
   if (toolsMenuList?.querySelector("[data-player-toggle]")) {
     return { widget: null, button: null };
@@ -84,7 +123,8 @@ export function integratePlayerWidget({
   setMediaSessionEnabled(mediaSession);
 
   if (window.__vatioboardSpa && window.__vatioboardPlayerWidget) {
-    let button = null;
+    const existingWidget = window.__vatioboardPlayerWidget as PlayerWidgetApi;
+    let button: HTMLButtonElement | null = null;
     if (toolsMenuList) {
       button = document.createElement("button");
       button.type = "button";
@@ -104,13 +144,13 @@ export function integratePlayerWidget({
       insertPlayerButton(toolsMenuList, button);
 
       button.addEventListener("click", () => {
-        window.__vatioboardPlayerWidget.open?.();
+        existingWidget.open?.();
         if (toolsMenu && typeof toolsMenu.close === "function") toolsMenu.close();
       });
     }
 
     return {
-      widget: window.__vatioboardPlayerWidget,
+      widget: existingWidget,
       button,
     };
   }
@@ -123,7 +163,7 @@ export function integratePlayerWidget({
   let authStateKnown = initialAuthState !== undefined;
 
   // ── Launcher button ────────────────────────────────────────────
-  let button = null;
+  let button: HTMLButtonElement | null = null;
   if (toolsMenuList) {
     button = document.createElement("button");
     button.type = "button";
@@ -165,7 +205,7 @@ export function integratePlayerWidget({
     stop = false,
     restore = false,
     known = true,
-  } = {}) {
+  }: VisibilityOptions = {}) {
     if (known) authStateKnown = true;
     authenticated = loggedIn === true;
     if (button) button.hidden = !available;
@@ -215,7 +255,7 @@ export function integratePlayerWidget({
 
   // React to auth changes
   window.addEventListener(BACKEND_AUTH_STATE_EVENT, (event) => {
-    const detail = event?.detail || {};
+    const detail = (event as CustomEvent<BackendAuthDetail>)?.detail || {};
     const loggedIn = isLoggedIn(detail);
     const available = detail.pendingLogout !== true;
     const shouldStopPlayback = detail.pendingLogout === true || (authenticated === true && !loggedIn);

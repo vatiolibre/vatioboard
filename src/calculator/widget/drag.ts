@@ -4,16 +4,73 @@ import {
   getSnapZoneForPointer,
 } from "../../shared/shell-snap.js";
 import { clampBoundsToWorkArea, getShellWorkArea } from "../../shared/shell-work-area.js";
+import type { ShellBounds, ShellRuntime, ShellSnapZone } from "../../types/shell";
 
-function clamp(n, min, max) {
+type DragPosition = {
+  panel?: {
+    left?: string;
+    top?: string;
+  } | null;
+  launcher?: {
+    left?: string;
+    top?: string;
+  } | null;
+};
+
+type ClampOptions = {
+  useShellWorkArea?: boolean;
+  root?: Document | Element | null;
+};
+
+type DragPointer = {
+  x: number;
+  y: number;
+  pointerId: number | null;
+};
+
+type DragCallbackPayload = {
+  element: HTMLElement;
+  pointer: DragPointer;
+  bounds: ShellBounds;
+  snapZone?: ShellSnapZone | null;
+};
+
+type DragCallback = (payload: DragCallbackPayload) => void;
+
+type DraggablePanelOptions = {
+  panel: HTMLElement;
+  header: HTMLElement | Array<HTMLElement | null | undefined>;
+  dragThresholdPx: number;
+  savePos: (position: DragPosition) => void;
+  loadPos: () => DragPosition | null;
+  onDragStart?: DragCallback | null;
+  onDragMove?: DragCallback | null;
+  onDragEnd?: DragCallback | null;
+  shellWindowId?: string | null;
+  shellManager?: ShellRuntime | null;
+  enableSnapPreview?: boolean;
+};
+
+type LauncherMovedChecker = (() => boolean) & {
+  destroy?: () => void;
+};
+
+type DraggableLauncherOptions = {
+  launcherEl: HTMLElement;
+  dragThresholdPx: number;
+  savePos: (position: DragPosition) => void;
+  loadPos: () => DragPosition | null;
+};
+
+function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
 }
 
-function firstPositiveNumber(...values) {
+function firstPositiveNumber(...values: Array<number | undefined>): number {
   return values.find((value) => Number.isFinite(value) && value > 0) ?? 0;
 }
 
-function getElementBoxSize(elm, rect = elm.getBoundingClientRect()) {
+function getElementBoxSize(elm: HTMLElement, rect = elm.getBoundingClientRect()) {
   const style = typeof getComputedStyle === "function" ? getComputedStyle(elm) : null;
   return {
     width: firstPositiveNumber(rect.width, elm.offsetWidth, parseFloat(style?.width)),
@@ -21,7 +78,7 @@ function getElementBoxSize(elm, rect = elm.getBoundingClientRect()) {
   };
 }
 
-function ensureFixedTopLeft(elm) {
+function ensureFixedTopLeft(elm: HTMLElement): void {
   // Convert an element to fixed top/left positioning (from right/bottom)
   const r = elm.getBoundingClientRect();
   const left = elm.style.left ? parseFloat(elm.style.left) : r.left;
@@ -34,11 +91,11 @@ function ensureFixedTopLeft(elm) {
   elm.style.bottom = "auto";
 }
 
-function shouldUseShellWorkArea(elm, options = {}) {
+function shouldUseShellWorkArea(elm: HTMLElement, options: ClampOptions = {}): boolean {
   return options.useShellWorkArea === true || Boolean(elm?.hasAttribute?.("data-vb-shell-window"));
 }
 
-export function clampElementToViewport(elm, margin = 8, options = {}) {
+export function clampElementToViewport(elm: HTMLElement, margin = 8, options: ClampOptions = {}): void {
   // Assumes fixed position with left/top set (or at least measurable via rect)
   const r = elm.getBoundingClientRect();
   const box = getElementBoxSize(elm, r);
@@ -75,7 +132,7 @@ export function clampElementToViewport(elm, margin = 8, options = {}) {
   elm.style.top = `${nextTop}px`;
 }
 
-function getDragBounds(panel) {
+function getDragBounds(panel: HTMLElement): ShellBounds {
   const rect = panel.getBoundingClientRect();
   return {
     left: parseFloat(panel.style.left) || rect.left || 0,
@@ -97,12 +154,14 @@ export function makePanelDraggable({
   shellWindowId = null,
   shellManager = null,
   enableSnapPreview = false,
-}) {
-  const handles = (Array.isArray(header) ? header : [header]).filter(Boolean);
+}: DraggablePanelOptions): void {
+  const handles = (Array.isArray(header) ? header : [header]).filter(
+    (handle): handle is HTMLElement => Boolean(handle)
+  );
   let pointerDown = false;
   let dragging = false;
-  let pointerId = null;
-  let activeSnapZone = null;
+  let pointerId: number | null = null;
+  let activeSnapZone: ShellSnapZone | null = null;
 
   for (const handle of handles) {
     handle.classList.add("vb-floating-drag-handle");
@@ -120,12 +179,12 @@ export function makePanelDraggable({
     boxH = 0;
 
   let rafId = 0;
-  let activeWorkArea = null;
+  let activeWorkArea: ReturnType<typeof getShellWorkArea> | null = null;
 
   function startDragNow() {
     if (dragging) return;
 
-    if (shellWindowId && shellManager?.getWindow?.(shellWindowId)?.snap) {
+    if (shellWindowId && shellManager?.getWindow(shellWindowId)?.snap) {
       shellManager.unsnapWindow(shellWindowId, { preserveSnap: false });
     }
 
@@ -157,8 +216,8 @@ export function makePanelDraggable({
     const dy = lastY - startY;
 
     const margin = 8;
-    let nextLeft;
-    let nextTop;
+    let nextLeft: number;
+    let nextTop: number;
     if (activeWorkArea) {
       const next = clampBoundsToWorkArea({
         left: originLeft + dx,
@@ -200,8 +259,8 @@ export function makePanelDraggable({
       y: lastY,
       viewportWidth: window.innerWidth,
       viewportHeight: window.innerHeight,
-    });
-    const supported = zone !== "center" && shellManager.canSnapWindow?.(shellWindowId, zone) !== false;
+    }) as ShellSnapZone;
+    const supported = zone !== "center" && shellManager.canSnapWindow(shellWindowId, zone) !== false;
     activeSnapZone = supported ? zone : null;
     if (activeSnapZone) {
       applySnapPreview(panel, activeSnapZone);
@@ -216,7 +275,7 @@ export function makePanelDraggable({
     clearSnapPreview(panel);
   }
 
-  function endDrag(e = null) {
+  function endDrag(e: Event | null = null) {
     if (rafId) {
       cancelAnimationFrame(rafId);
       rafId = 0;
@@ -245,9 +304,10 @@ export function makePanelDraggable({
         ...(loadPos() || {}),
         panel: { left: panel.style.left, top: panel.style.top },
       });
+      const pointerEvent = e as PointerEvent | null;
       onDragEnd?.({
         element: panel,
-        pointer: { x: e?.clientX ?? lastX, y: e?.clientY ?? lastY, pointerId },
+        pointer: { x: pointerEvent?.clientX ?? lastX, y: pointerEvent?.clientY ?? lastY, pointerId },
         bounds: getDragBounds(panel),
         snapZone: activeSnapZone,
       });
@@ -258,8 +318,9 @@ export function makePanelDraggable({
     pointerId = null;
   }
 
-  function onPointerDown(e) {
-    if (e.target?.closest?.(".calc-close, .calc-settings-btn")) return;
+  function onPointerDown(e: PointerEvent) {
+    const target = e.target as Element | null;
+    if (target?.closest?.(".calc-close, .calc-settings-btn")) return;
 
     // Mouse: left button only
     if (e.pointerType === "mouse" && e.button !== 0) return;
@@ -275,7 +336,7 @@ export function makePanelDraggable({
     startY = lastY = e.clientY;
 
     try {
-      e.currentTarget?.setPointerCapture?.(pointerId);
+      (e.currentTarget as HTMLElement | null)?.setPointerCapture?.(e.pointerId);
     } catch {
       // ignore
     }
@@ -290,7 +351,7 @@ export function makePanelDraggable({
     // this pointer before the drag threshold is crossed.
   }
 
-  function onPointerMove(e) {
+  function onPointerMove(e: PointerEvent) {
     if (!pointerDown) return;
 
     lastX = e.clientX;
@@ -332,7 +393,12 @@ export function makePanelDraggable({
   });
 }
 
-export function makeLauncherDraggable({ launcherEl, dragThresholdPx, savePos, loadPos }) {
+export function makeLauncherDraggable({
+  launcherEl,
+  dragThresholdPx,
+  savePos,
+  loadPos,
+}: DraggableLauncherOptions): LauncherMovedChecker {
   let pointerDown = false;
   let dragging = false;
 
@@ -487,9 +553,9 @@ export function makeLauncherDraggable({ launcherEl, dragThresholdPx, savePos, lo
   window.addEventListener("resize", handleResize);
 
   // Return a function for checking if last interaction moved
-  function wasMoved() {
+  const wasMoved = function wasMoved() {
     return moved;
-  }
+  } as LauncherMovedChecker;
 
   wasMoved.destroy = function destroyLauncherDrag() {
     window.removeEventListener("resize", handleResize);

@@ -1,9 +1,28 @@
-function finiteNumber(value, fallback = 0) {
+type RectLike = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  right: number;
+  bottom: number;
+};
+
+type ViewportMeasureOptions = {
+  doc?: Document;
+  win?: Window & typeof globalThis;
+};
+
+type DrawableSurfaceOptions = ViewportMeasureOptions & {
+  canvas?: Element | null;
+  frame?: Element | null;
+};
+
+function finiteNumber(value: unknown, fallback = 0): number {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
 }
 
-function firstPositiveNumber(...values) {
+function firstPositiveNumber(...values: unknown[]): number {
   for (const value of values) {
     const number = finiteNumber(value);
     if (number > 0) return number;
@@ -11,7 +30,7 @@ function firstPositiveNumber(...values) {
   return 0;
 }
 
-function readRect(element) {
+function readRect(element: Element | null | undefined): RectLike | null {
   if (!element || typeof element.getBoundingClientRect !== "function") {
     return null;
   }
@@ -32,14 +51,14 @@ function readRect(element) {
   };
 }
 
-function hasUsableRect(rect) {
+function hasUsableRect(rect: RectLike | null): boolean {
   return Boolean(rect && (rect.width > 0 || rect.height > 0));
 }
 
 export function measureVisibleViewport({
   doc = globalThis.document,
   win = globalThis.window,
-} = {}) {
+}: ViewportMeasureOptions = {}): RectLike {
   const viewport = win?.visualViewport;
   const root = doc?.documentElement;
   const width = firstPositiveNumber(viewport?.width, win?.innerWidth, root?.clientWidth);
@@ -60,7 +79,7 @@ export function measureDrawableSurface({
   frame = null,
   doc = globalThis.document,
   win = globalThis.window,
-} = {}) {
+}: DrawableSurfaceOptions = {}): RectLike {
   const canvasRect = readRect(canvas);
   const frameRect = readRect(frame);
   const originRect = hasUsableRect(canvasRect) ? canvasRect : frameRect;
@@ -90,9 +109,9 @@ export function measureDrawableSurface({
   };
 }
 
-export function pointFromPointerEvent(event, surface) {
+export function pointFromPointerEvent(event: PointerEvent | MouseEvent | TouchEvent | null | undefined, surface: Partial<RectLike> | null | undefined) {
   return {
-    x: finiteNumber(event?.clientX) - finiteNumber(surface?.left),
-    y: finiteNumber(event?.clientY) - finiteNumber(surface?.top),
+    x: finiteNumber((event as PointerEvent | MouseEvent | undefined)?.clientX) - finiteNumber(surface?.left),
+    y: finiteNumber((event as PointerEvent | MouseEvent | undefined)?.clientY) - finiteNumber(surface?.top),
   };
 }

@@ -30,6 +30,7 @@ import {
   makePanelDraggable,
   clampElementToViewport,
 } from "../calculator/widget/drag.js";
+import type { ShellLifecycleOptions, ShellRuntime } from "../types/shell";
 
 // ── Storage keys ──────────────────────────────────────────────────
 
@@ -37,6 +38,41 @@ const POS_KEY = "milkdrop_panel_pos_v1";
 const PRESET_KEY = "milkdrop_preset_name_v1";
 const SIZE_KEY = "milkdrop_panel_size_v1";
 const MILKDROP_WINDOW_ID = "milkdrop";
+
+type MilkdropPosition = {
+  panel?: {
+    left?: string;
+    top?: string;
+  } | null;
+};
+
+type MilkdropSize = {
+  w?: number;
+  h?: number;
+};
+
+type MilkdropPanelOptions = {
+  mount?: HTMLElement;
+  onOpen?: (() => void) | null;
+  onClose?: (() => void) | null;
+  restoreVisibility?: boolean;
+  shellManager?: ShellRuntime;
+};
+
+type MilkdropPanelApi = {
+  open: (options?: ShellLifecycleOptions) => Promise<void>;
+  close: (options?: ShellLifecycleOptions) => void;
+  toggle: () => void;
+  isOpen: () => boolean;
+  destroy: () => void;
+};
+
+type RectLike = {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+};
 
 // ── Icons ─────────────────────────────────────────────────────────
 
@@ -82,40 +118,40 @@ async function loadButterchurn() {
 
 // ── Helpers ───────────────────────────────────────────────────────
 
-function loadPos() {
+function loadPos(): MilkdropPosition | null {
   try {
     const raw = localStorage.getItem(POS_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch { return null; }
 }
-function savePos(pos) {
+function savePos(pos: MilkdropPosition) {
   try { localStorage.setItem(POS_KEY, JSON.stringify(pos)); } catch { /* ignore */ }
 }
 
-function loadSize() {
+function loadSize(): MilkdropSize | null {
   try {
     const raw = localStorage.getItem(SIZE_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch { return null; }
 }
-function saveSize(w, h) {
+function saveSize(w: number, h: number) {
   try { localStorage.setItem(SIZE_KEY, JSON.stringify({ w, h })); } catch { /* ignore */ }
 }
 
-function saveVisibility(isOpen) {
+function saveVisibility(isOpen: boolean) {
   saveMilkdropPanelVisibility(isOpen);
 }
 
-function clamp(n, min, max) {
+function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
 }
 
-function pxToNumber(value, fallback) {
+function pxToNumber(value: unknown, fallback: number): number {
   const parsed = Number.parseFloat(String(value || ""));
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function getPanelSize(root) {
+function getPanelSize(root: HTMLElement) {
   const rect = root.getBoundingClientRect();
   return {
     width: Math.round(rect.width || pxToNumber(root.style.width, 480)),
@@ -123,7 +159,7 @@ function getPanelSize(root) {
   };
 }
 
-function rectsOverlap(a, b, margin = 12) {
+function rectsOverlap(a: RectLike | null | undefined, b: RectLike | null | undefined, margin = 12): boolean {
   if (!a || !b) return false;
   return !(
     a.left > b.right + margin
@@ -139,7 +175,7 @@ function isSafeSource() {
   return isVisualizerSafeSource(el.currentSrc || el.src);
 }
 
-function makeBtn(cls, icon, label) {
+function makeBtn(cls: string, icon: string, label: string) {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = cls;
@@ -166,7 +202,7 @@ function makeBtn(cls, icon, label) {
  *   destroy: () => void,
  * }}
  */
-export function createMilkdropPanel(options = {}) {
+export function createMilkdropPanel(options: MilkdropPanelOptions = {}): MilkdropPanelApi {
   const {
     mount = document.body,
     onOpen = null,
@@ -262,7 +298,7 @@ export function createMilkdropPanel(options = {}) {
   });
 
   // ── Drag ────────────────────────────────────────────────────
-  function savePanelPos(pos) {
+  function savePanelPos(pos: MilkdropPosition) {
     savePos(pos);
     if (pos?.panel?.left && pos?.panel?.top) {
       shellManager.updateWindowBounds(MILKDROP_WINDOW_ID, {
@@ -538,7 +574,7 @@ export function createMilkdropPanel(options = {}) {
   }
 
   // ── Open / Close ────────────────────────────────────────────
-  async function showPanel({ persist = true } = {}) {
+  async function showPanel({ persist = true }: ShellLifecycleOptions = {}) {
     if (destroyed) return;
     const wasOpen = !root.hidden;
     root.hidden = false;
@@ -562,7 +598,7 @@ export function createMilkdropPanel(options = {}) {
     }
   }
 
-  function hidePanel({ persist = true } = {}) {
+  function hidePanel({ persist = true }: ShellLifecycleOptions = {}) {
     const wasOpen = !root.hidden;
     endHandleResize();
 
@@ -603,12 +639,12 @@ export function createMilkdropPanel(options = {}) {
     }
   }
 
-  async function open(options = {}) {
+  async function open(options: ShellLifecycleOptions = {}) {
     await showPanel(options);
     shellManager.openWindow(MILKDROP_WINDOW_ID, { ...options, invokeLifecycle: false });
   }
 
-  function close(options = {}) {
+  function close(options: ShellLifecycleOptions = {}) {
     hidePanel(options);
     shellManager.closeWindow(MILKDROP_WINDOW_ID, { ...options, invokeLifecycle: false });
   }
@@ -674,7 +710,7 @@ export function createMilkdropPanel(options = {}) {
     resizeAfterFullscreenTransition();
   }
 
-  function exitFallbackFullscreen({ restore = true } = {}) {
+  function exitFallbackFullscreen({ restore = true }: { restore?: boolean } = {}) {
     if (!isFallbackFullscreen) return;
     isFallbackFullscreen = false;
     root.classList.remove("is-window-fullscreen");
@@ -877,7 +913,7 @@ export function createMilkdropPanel(options = {}) {
   resizeHandle.addEventListener("pointercancel", endHandleResize);
 
   // ── Event wiring ────────────────────────────────────────────
-  const stopProp = (e) => e.stopPropagation();
+  const stopProp = (e: Event) => e.stopPropagation();
   for (const btn of [presetPrevBtn, presetNextBtn, presetShuffleBtn, fullscreenBtn, closeBtn]) {
     btn.addEventListener("pointerdown", stopProp);
     btn.addEventListener("pointerup", stopProp);

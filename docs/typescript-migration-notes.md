@@ -122,6 +122,26 @@
   - `src/app/views/templates/library-template.ts`
   - `src/app/views/templates/replay-template.ts`
   - `src/app/views/templates/speed-template.ts`
+- The leaf widget cluster moved to TypeScript in this phase:
+  - `src/board/drawing-surface.ts`
+  - `src/calculator/calculator-widget.ts`
+  - `src/calculator/widget/drag.ts`
+  - `src/calculator/widget/history-sheet.ts`
+  - `src/calculator/widget/keypad.ts`
+  - `src/calculator/widget/number-format.ts`
+  - `src/calculator/widget/panel.ts`
+  - `src/calculator/widget/settings-sheet.ts`
+  - `src/energy/energy-calculator-widget.ts`
+  - `src/energy/widget/modal.ts`
+  - `src/energy/widget/multi-trip-mode.ts`
+  - `src/energy/widget/panel.ts`
+  - `src/energy/widget/settings-sheet.ts`
+  - `src/energy/widget/simple-mode.ts`
+  - `src/player/integrate-player-widget.ts`
+  - `src/player/milkdrop-panel-prefs.ts`
+  - `src/player/milkdrop-panel.ts`
+  - `src/player/player-shell.ts`
+  - `src/player/player-widget.ts`
 
 ## Contracts Future Work Must Use
 
@@ -156,18 +176,19 @@
 - Confirm-dialog consumers should keep using `showConfirmDialog` and `showPromptDialog` from the same public `.js` specifier. This phase preserved dialog class names, DOM order, roles/ARIA attributes, backdrop click/Escape/Tab handling, focus trapping, initial focus choices, active-dialog replacement dismissal, `onConfirm` gesture timing and error swallowing, reduced-motion cleanup, animationend/fallback timeout cleanup, focus restoration, confirm/cancel result semantics, prompt trimming/disabled-submit behavior, and the superseded-prompt `false` resolution behavior.
 - Route/location helper consumers should keep using the same public `.js` specifiers. This phase preserved the lazy MapLibre/CSS import promise, compact route/address formatting, Colombia and US locality/state abbreviations, movement-aware route boundary selection, boundary place display fallbacks, stale boundary enrichment guard, Nominatim base URL normalization, cache/schedule storage keys, 1 request per second scheduling, public-details policy guard, normalized place metadata, OSM lookup ids, language forwarding, reverse-country defaults, and lookup-place normalization.
 - Global UI foundation consumers should keep using the same public `.js` specifiers. This phase preserved every icon export name/string payload, shared translation keys and interpolation behavior, `vatio_board_lang`, language detection from storage/window/browser, `i18n:change`, DOM translation attributes, welcome-consent storage key/version, location-choice values, GPS request timing and consumer id, welcome modal DOM classes/assets/focus behavior, and route template default exports, SEO copy, element ids/classes, backend-auth forms, tools-menu containers, and shell toolbar markers.
+- Leaf widget consumers should keep using the same public `.js` specifiers. This phase preserved calculator and energy DOM ids/classes, keypad/settings/history behavior, calculator and energy storage keys, shell window ids/capabilities/lifecycle hooks, draggable panel/launcher snap and viewport clamping behavior, board drawable viewport measurements and pointer coordinate normalization, player widget bootstrap/visibility keys, backend-auth gating, tools-menu integration, audio bootstrap and Media Session ownership, player shell queue/playlist/milkdrop launch behavior, milkdrop panel visibility/position/size/preset keys, fullscreen fallback, resize behavior, audio graph acquisition/release, runtime subscription lifetime, and all public widget API method names.
 
 ## Still JavaScript
 
-- Feature UI modules remain JavaScript to keep this batch reviewable: speed, camera map, accel, library, player shell, board, replay, calculator, and energy UI.
+- Larger feature UI/controller modules remain JavaScript to keep later batches reviewable: speed, camera map, accel UI/logic/replay/result graph, library, board main, replay controller/session, and GPS-rate controller/render/Nominatim lab.
 - Route/app wrapper JavaScript has moved to TypeScript, including route template modules; app main and concrete route view wrappers remain TypeScript.
 - Standalone/dev harness wrapper JavaScript from this phase has moved to TypeScript; the standalone HTML files now point at the `.ts` Vite entry files where needed while test/runtime imports keep using public `.js` specifiers.
 - No files under `src/app/services/` remain JavaScript.
 - No files under `src/shared/repositories/` remain JavaScript.
-- The low-risk shared route/location helpers and global UI foundation helpers are now TypeScript.
+- The low-risk shared route/location helpers, global UI foundation helpers, calculator/energy leaf widgets, player widget/shell/milkdrop leaf widgets, and board drawing-surface helper are now TypeScript.
 - Feature/domain storage and session helpers still in JavaScript include `src/replay/session.js`.
-- Other feature/domain modules still in JavaScript include accel UI/logic/replay/result-graph modules, speed UI/runtime/navigation/audio/camera modules, GPS-rate controller/render/Nominatim lab modules, board drawing-surface, calculator and energy widgets, plus the larger UI modules listed above.
+- Other feature/domain modules still in JavaScript include accel UI/logic/replay/result-graph modules, speed UI/runtime/navigation/audio/camera modules, GPS-rate controller/render/Nominatim lab modules, board main, replay controller/session, and library controller modules.
 
 ## Next Recommended Batch
 
-Pause before large UI/controller/map/session modules. The next recommended dedicated batch is a leaf widget/helper cluster such as calculator/energy widget helpers or player widget shell helpers after a fresh dependency check; keep `accel` logic/replay/UI, speed runtime/navigation/audio/camera/UI, GPS-rate controller/render/Nominatim UI, and `replay/session` for later dedicated batches.
+Pause before large UI/controller/map/session modules. The next recommended dedicated batch is a focused controller/session conversion such as `src/replay/session.js` with replay lifecycle coverage, or `src/board/board.js` after a fresh dependency check; keep `accel` logic/replay/UI, speed runtime/navigation/audio/camera/UI, GPS-rate controller/render/Nominatim UI, and library/replay route controllers for later dedicated batches.

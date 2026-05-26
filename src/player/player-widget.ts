@@ -36,6 +36,7 @@ import {
 } from "../shared/floating-layer-manager.js";
 import { getDefaultShellWindowManager } from "../shared/shell-window-manager.js";
 import { getShellWorkArea } from "../shared/shell-work-area.js";
+import type { ShellLifecycleOptions, ShellRuntime } from "../types/shell";
 
 // ── Deduped bootstrap (shared across all widget instances) ───────────
 
@@ -67,6 +68,35 @@ const PLAYER_PANEL_SAFE_MARGIN_PX = 8;
 const PLAYER_CONTENT_SHEET_HEIGHT_VAR = "--player-content-sheet-open-height";
 const PLAYER_CONTENT_SHEET_MAX_HEIGHT_PX = 340;
 const PLAYER_CONTENT_SHEET_VIEWPORT_RATIO = 0.56;
+
+type PlayerWidgetPosition = {
+  panel?: {
+    left?: string;
+    top?: string;
+  } | null;
+};
+
+type PlayerWidgetOptions = {
+  mount?: HTMLElement;
+  floating?: boolean;
+  button?: HTMLElement | null;
+  preload?: "on-open" | "immediate";
+  persistVisibility?: boolean;
+  restoreVisibility?: boolean;
+  onOpen?: (() => void) | null;
+  onClose?: (() => void) | null;
+  shellManager?: ShellRuntime;
+};
+
+export type PlayerWidgetApi = {
+  open: (options?: ShellLifecycleOptions) => void;
+  close: (options?: ShellLifecycleOptions) => void;
+  toggle: () => void;
+  restoreVisibility: () => void;
+  destroy: () => void;
+  setTracks: (tracks: unknown[]) => void;
+  setPlaylists: (playlists: unknown[]) => void;
+};
 
 function toFiniteNumber(value) {
   const number = Number.parseFloat(String(value ?? ""));
@@ -356,7 +386,7 @@ export function _getBootstrapPromise() {
  * @param {Function|null} [options.onClose]
  * @returns {{ open: Function, close: Function, toggle: Function, restoreVisibility: Function, destroy: Function, setTracks: Function }}
  */
-export function createPlayerWidget(options = {}) {
+export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWidgetApi {
   const {
     mount = document.body,
     button = null,
@@ -375,7 +405,7 @@ export function createPlayerWidget(options = {}) {
   const DEFAULT_PANEL_BOTTOM = "76px";
 
   // ── Position persistence ─────────────────────────────────────
-  function loadPos() {
+  function loadPos(): PlayerWidgetPosition | null {
     try {
       const raw = localStorage.getItem(POS_KEY);
       return raw ? JSON.parse(raw) : null;
@@ -384,7 +414,7 @@ export function createPlayerWidget(options = {}) {
     }
   }
 
-  function savePos(pos) {
+  function savePos(pos: PlayerWidgetPosition) {
     clearPanelFixedHeight();
     try {
       localStorage.setItem(POS_KEY, JSON.stringify(pos));
@@ -414,7 +444,7 @@ export function createPlayerWidget(options = {}) {
     }
   }
 
-  function saveVisibility(visible) {
+  function saveVisibility(visible: boolean) {
     if (!persistVisibility) return;
     try {
       localStorage.setItem(VISIBILITY_KEY, visible ? "true" : "false");
@@ -428,10 +458,10 @@ export function createPlayerWidget(options = {}) {
     container: mount,
     onContentOpenChange: handleContentOpenChange,
   });
-  const contentSheet = shell.root.querySelector(".player-content-sheet");
+  const contentSheet = shell.root.querySelector<HTMLElement>(".player-content-sheet");
   let cleanupLayer = () => {};
   let panelFitTimeoutId = 0;
-  const panelFitFrameIds = new Set();
+  const panelFitFrameIds = new Set<number>();
 
   // Apply stored panel position, or use the first-visit default.
   {
@@ -665,7 +695,7 @@ export function createPlayerWidget(options = {}) {
   }
 
   // ── Open / Close / Toggle ────────────────────────────────────
-  function showPanel({ persist = true } = {}) {
+  function showPanel({ persist = true }: ShellLifecycleOptions = {}) {
     shell.root.hidden = false;
     if (persist) saveVisibility(true);
 
@@ -677,7 +707,7 @@ export function createPlayerWidget(options = {}) {
     if (typeof onOpen === "function") onOpen();
   }
 
-  function hidePanel({ persist = true } = {}) {
+  function hidePanel({ persist = true }: ShellLifecycleOptions = {}) {
     shell.root.hidden = true;
     if (persist) saveVisibility(false);
     // Playback continues — closing the panel does NOT stop audio
@@ -688,13 +718,13 @@ export function createPlayerWidget(options = {}) {
     shell.root.hidden = true;
   }
 
-  function open(options = {}) {
+  function open(options: ShellLifecycleOptions = {}) {
     showPanel(options);
     shellManager.openWindow(PLAYER_WINDOW_ID, { ...options, invokeLifecycle: false });
     fitPanelToAvailableSpace({ persist: false });
   }
 
-  function close(options = {}) {
+  function close(options: ShellLifecycleOptions = {}) {
     hidePanel(options);
     shellManager.closeWindow(PLAYER_WINDOW_ID, { ...options, invokeLifecycle: false });
   }

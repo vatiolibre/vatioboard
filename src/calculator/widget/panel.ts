@@ -1,7 +1,24 @@
 import { el } from "../dom.js";
 import { IconHistory, IconSettings, IconClose, IconEnergy } from "../../icons.js";
 
-function makeUtilityBtn({ className, icon, ariaLabel, ariaKey, label, labelKey }) {
+type TranslateFn = (key: string, params?: Record<string, unknown>) => string;
+
+type UtilityButtonOptions = {
+  className: string;
+  icon: string;
+  ariaLabel: string;
+  ariaKey: string;
+  label: string;
+  labelKey: string;
+};
+
+type PanelOptions = {
+  t: TranslateFn;
+  isTouchLike: boolean;
+  showEnergyTool?: boolean;
+};
+
+function makeUtilityBtn({ className, icon, ariaLabel, ariaKey, label, labelKey }: UtilityButtonOptions) {
   return el(
     "button",
     {
@@ -15,7 +32,7 @@ function makeUtilityBtn({ className, icon, ariaLabel, ariaKey, label, labelKey }
   );
 }
 
-export function buildPanel({ t, isTouchLike, showEnergyTool = false }) {
+export function buildPanel({ t, isTouchLike, showEnergyTool = false }: PanelOptions) {
   const historyBtn = makeUtilityBtn({
     className: "calc-history-btn",
     icon: IconHistory,
@@ -157,14 +174,14 @@ export function buildPanel({ t, isTouchLike, showEnergyTool = false }) {
     el("div", { class: "calc-keys" })
   );
 
-  const exprInput = panel.querySelector(".calc-expr");
+  const exprInput = panel.querySelector<HTMLInputElement>(".calc-expr");
 
   if (isTouchLike) {
     exprInput.setAttribute("readonly", "");
     exprInput.setAttribute("inputmode", "none");
 
     // Prevent focus entirely (stronger than blur)
-    const blockFocus = (e) => {
+    const blockFocus = (e: Event) => {
       e.preventDefault();
       e.stopPropagation();
       exprInput.blur();
@@ -180,22 +197,22 @@ export function buildPanel({ t, isTouchLike, showEnergyTool = false }) {
   return {
     panel,
     exprInput,
-    historyEl: panel.querySelector(".calc-history-text"),
-    historyBtn: panel.querySelector(".calc-history-btn"),
-    energyBtn: panel.querySelector(".calc-energy-btn"),
-    historySheet: panel.querySelector(".calc-history-sheet"),
-    historyList: panel.querySelector(".calc-history-list"),
-    historyClearBtn: panel.querySelector(".calc-history-clear"),
-    historyCloseBtn: panel.querySelector(".calc-history-close"),
-    settingsBtn: panel.querySelector(".calc-settings-btn"),
-    settingsSheet: panel.querySelector(".calc-settings-sheet"),
-    settingsCloseBtn: panel.querySelector(".calc-settings-close"),
-    settingsDecimalsMinus: panel.querySelector(".calc-settings-decimals-minus"),
-    settingsDecimalsPlus: panel.querySelector(".calc-settings-decimals-plus"),
-    settingsDecimalsValue: panel.querySelector(".calc-settings-decimals-value"),
-    settingsThousandsToggle: panel.querySelector(".calc-settings-thousands"),
-    closeBtn: panel.querySelector(".calc-close"),
-    keys: panel.querySelector(".calc-keys"),
-    header: panel.querySelector(".calc-header"),
+    historyEl: panel.querySelector<HTMLElement>(".calc-history-text"),
+    historyBtn: panel.querySelector<HTMLButtonElement>(".calc-history-btn"),
+    energyBtn: panel.querySelector<HTMLButtonElement>(".calc-energy-btn"),
+    historySheet: panel.querySelector<HTMLElement>(".calc-history-sheet"),
+    historyList: panel.querySelector<HTMLElement>(".calc-history-list"),
+    historyClearBtn: panel.querySelector<HTMLButtonElement>(".calc-history-clear"),
+    historyCloseBtn: panel.querySelector<HTMLButtonElement>(".calc-history-close"),
+    settingsBtn: panel.querySelector<HTMLButtonElement>(".calc-settings-btn"),
+    settingsSheet: panel.querySelector<HTMLElement>(".calc-settings-sheet"),
+    settingsCloseBtn: panel.querySelector<HTMLButtonElement>(".calc-settings-close"),
+    settingsDecimalsMinus: panel.querySelector<HTMLButtonElement>(".calc-settings-decimals-minus"),
+    settingsDecimalsPlus: panel.querySelector<HTMLButtonElement>(".calc-settings-decimals-plus"),
+    settingsDecimalsValue: panel.querySelector<HTMLElement>(".calc-settings-decimals-value"),
+    settingsThousandsToggle: panel.querySelector<HTMLInputElement>(".calc-settings-thousands"),
+    closeBtn: panel.querySelector<HTMLButtonElement>(".calc-close"),
+    keys: panel.querySelector<HTMLElement>(".calc-keys"),
+    header: panel.querySelector<HTMLElement>(".calc-header"),
   };
 }

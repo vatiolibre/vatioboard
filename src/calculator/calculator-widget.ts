@@ -13,8 +13,46 @@ import {
   registerFloatingPanel,
 } from "../shared/floating-layer-manager.js";
 import { getDefaultShellWindowManager } from "../shared/shell-window-manager.js";
+import type { ShellLifecycleOptions, ShellRuntime } from "../types/shell";
 
 const CALCULATOR_WINDOW_ID = "calculator";
+
+type CalculatorPosition = {
+  panel?: {
+    left?: string;
+    top?: string;
+  } | null;
+  launcher?: {
+    left?: string;
+    top?: string;
+  } | null;
+};
+
+type CalculatorWidgetOptions = {
+  mount?: HTMLElement;
+  floating?: boolean;
+  button?: HTMLElement | null;
+  onResult?: ((value: string) => void) | null;
+  onOpenEnergy?: (() => void) | null;
+  persistVisibility?: boolean;
+  restoreVisibility?: boolean;
+  visibilityKey?: string;
+  shellManager?: ShellRuntime;
+};
+
+type CalculatorShowOptions = ShellLifecycleOptions & {
+  focus?: boolean;
+};
+
+type CalculatorWidgetApi = {
+  open: (options?: CalculatorShowOptions) => void;
+  close: (options?: ShellLifecycleOptions) => void;
+  toggle: () => void;
+  destroy: () => void;
+  isOpen: () => boolean;
+  setExpression: (value: unknown) => void;
+  getExpression: () => string;
+};
 
 /**
  * createCalculatorWidget(options)
@@ -32,7 +70,7 @@ const CALCULATOR_WINDOW_ID = "calculator";
  * - Clicking outside DOES NOT close the calculator.
  * - It only closes via the close buttons ("Close" in header and "Close" key).
  */
-export function createCalculatorWidget(options = {}) {
+export function createCalculatorWidget(options: CalculatorWidgetOptions = {}): CalculatorWidgetApi {
   const {
     mount = document.body,
     floating = options.button ? false : true,
@@ -59,7 +97,7 @@ export function createCalculatorWidget(options = {}) {
   const POS_KEY = "embeddable_calc_pos_v1";
   const DRAG_THRESHOLD_PX = 6;
 
-  function loadPos() {
+  function loadPos(): CalculatorPosition | null {
     try {
       const raw = localStorage.getItem(POS_KEY);
       return raw ? JSON.parse(raw) : null;
@@ -68,7 +106,7 @@ export function createCalculatorWidget(options = {}) {
     }
   }
 
-  function savePos(pos) {
+  function savePos(pos: CalculatorPosition) {
     try {
       localStorage.setItem(POS_KEY, JSON.stringify(pos));
     } catch {
@@ -93,7 +131,7 @@ export function createCalculatorWidget(options = {}) {
     }
   }
 
-  function saveVisibility(isOpen) {
+  function saveVisibility(isOpen: boolean) {
     if (!persistVisibility) return;
     try {
       localStorage.setItem(visibilityKey, isOpen ? "open" : "closed");
@@ -180,7 +218,7 @@ export function createCalculatorWidget(options = {}) {
     enableSnapPreview: shellManager.getShellPreference?.("snapEnabled") !== false,
   });
 
-  function keepInputEndVisible(input) {
+  function keepInputEndVisible(input: HTMLInputElement) {
     // Put caret at end (so the browser scroll logic is consistent)
     const len = input.value.length;
     try {
@@ -259,7 +297,7 @@ export function createCalculatorWidget(options = {}) {
     if (keepEnd) keepInputEndVisible(exprInput);
   }
 
-  function showPanel({ persist = true, focus = true } = {}) {
+  function showPanel({ persist = true, focus = true }: CalculatorShowOptions = {}) {
     panel.hidden = false;
     if (persist) saveVisibility(true);
     render({ keepEnd: true });
@@ -274,7 +312,7 @@ export function createCalculatorWidget(options = {}) {
     }
   }
 
-  function hidePanel({ persist = true } = {}) {
+  function hidePanel({ persist = true }: ShellLifecycleOptions = {}) {
     panel.hidden = true;
     if (persist) saveVisibility(false);
   }
@@ -283,12 +321,12 @@ export function createCalculatorWidget(options = {}) {
     panel.hidden = true;
   }
 
-  function open(options = {}) {
+  function open(options: CalculatorShowOptions = {}) {
     showPanel(options);
     shellManager.openWindow(CALCULATOR_WINDOW_ID, { ...options, invokeLifecycle: false });
   }
 
-  function close(options = {}) {
+  function close(options: ShellLifecycleOptions = {}) {
     hidePanel(options);
     shellManager.closeWindow(CALCULATOR_WINDOW_ID, { ...options, invokeLifecycle: false });
   }
@@ -353,7 +391,7 @@ export function createCalculatorWidget(options = {}) {
     }
   }
 
-  function pushToken(tokenOrFn) {
+  function pushToken(tokenOrFn: string | ((core: CalcCore) => string)) {
     core.setExpr(toRaw(exprInput.value, settings));
     const tok = typeof tokenOrFn === "function" ? tokenOrFn(core) : tokenOrFn;
     core.append(tok);
@@ -362,7 +400,7 @@ export function createCalculatorWidget(options = {}) {
     if (!isTouchLike) exprInput.focus({ preventScroll: true });
   }
 
-  function act(fn) {
+  function act(fn: ((core: CalcCore) => void) | null | undefined) {
     core.setExpr(toRaw(exprInput.value, settings));
     if (typeof fn === "function") fn(core);
     isEditing = false;

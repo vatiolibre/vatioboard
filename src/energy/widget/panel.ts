@@ -7,8 +7,26 @@ import { el } from "../../calculator/dom.js";
 import { t } from "../../i18n.js";
 import { IconSettings, IconClose } from "../../icons.js";
 
-function makeToolbarButton({ className, icon = "", ariaLabel, ariaKey, label, labelKey, mode = null }) {
-  const attrs = {
+type ToolbarButtonOptions = {
+  className: string;
+  icon?: string;
+  ariaLabel?: string;
+  ariaKey?: string;
+  label: string;
+  labelKey: string;
+  mode?: string | null;
+};
+
+function makeToolbarButton({
+  className,
+  icon = "",
+  ariaLabel,
+  ariaKey,
+  label,
+  labelKey,
+  mode = null,
+}: ToolbarButtonOptions) {
+  const attrs: Record<string, string> = {
     class: `energy-toolbar-btn ${className}`,
     type: "button",
   };
@@ -365,69 +383,69 @@ export function buildPanel() {
   );
 
   // Query all elements and return refs
-  const distanceInput = panel.querySelector("#energy-distance");
-  const consumptionInput = panel.querySelector("#energy-consumption");
-  const priceInput = panel.querySelector("#energy-price");
+  const distanceInput = panel.querySelector<HTMLInputElement>("#energy-distance");
+  const consumptionInput = panel.querySelector<HTMLInputElement>("#energy-consumption");
+  const priceInput = panel.querySelector<HTMLInputElement>("#energy-price");
 
   return {
     panel,
-    header: panel.querySelector(".energy-header"),
-    closeBtn: panel.querySelector(".energy-close"),
-    settingsBtn: panel.querySelector(".energy-settings-btn"),
+    header: panel.querySelector<HTMLElement>(".energy-header"),
+    closeBtn: panel.querySelector<HTMLButtonElement>(".energy-close"),
+    settingsBtn: panel.querySelector<HTMLButtonElement>(".energy-settings-btn"),
 
     // Settings sheet refs
-    settingsSheet: panel.querySelector(".energy-settings-sheet"),
-    settingsCloseBtn: panel.querySelector(".energy-settings-close"),
-    unitBtns: panel.querySelectorAll(".energy-unit-btn"),
-    thousandsToggle: panel.querySelector(".energy-settings-thousands"),
+    settingsSheet: panel.querySelector<HTMLElement>(".energy-settings-sheet"),
+    settingsCloseBtn: panel.querySelector<HTMLButtonElement>(".energy-settings-close"),
+    unitBtns: panel.querySelectorAll<HTMLButtonElement>(".energy-unit-btn"),
+    thousandsToggle: panel.querySelector<HTMLInputElement>(".energy-settings-thousands"),
 
     // Mode switch
-    modeBtns: panel.querySelectorAll(".energy-mode-btn"),
-    simpleView: panel.querySelector(".energy-simple-view"),
-    multiView: panel.querySelector(".energy-multi-view"),
+    modeBtns: panel.querySelectorAll<HTMLButtonElement>(".energy-mode-btn"),
+    simpleView: panel.querySelector<HTMLElement>(".energy-simple-view"),
+    multiView: panel.querySelector<HTMLElement>(".energy-multi-view"),
 
     // Simple mode refs
-    distanceLabel: panel.querySelector('label[for="energy-distance"]'),
+    distanceLabel: panel.querySelector<HTMLLabelElement>('label[for="energy-distance"]'),
     distanceInput,
-    distanceSlider: panel.querySelector("#energy-distance-slider"),
-    distanceError: distanceInput.parentElement.querySelector(".energy-input-error"),
+    distanceSlider: panel.querySelector<HTMLInputElement>("#energy-distance-slider"),
+    distanceError: distanceInput.parentElement.querySelector<HTMLElement>(".energy-input-error"),
 
-    consumptionLabel: panel.querySelector('label[for="energy-consumption"]'),
+    consumptionLabel: panel.querySelector<HTMLLabelElement>('label[for="energy-consumption"]'),
     consumptionInput,
-    consumptionSlider: panel.querySelector("#energy-consumption-slider"),
-    consumptionError: consumptionInput.parentElement.querySelector(".energy-input-error"),
+    consumptionSlider: panel.querySelector<HTMLInputElement>("#energy-consumption-slider"),
+    consumptionError: consumptionInput.parentElement.querySelector<HTMLElement>(".energy-input-error"),
 
     priceInput,
-    priceSlider: panel.querySelector("#energy-price-slider"),
-    priceError: priceInput.parentElement.querySelector(".energy-input-error"),
+    priceSlider: panel.querySelector<HTMLInputElement>("#energy-price-slider"),
+    priceError: priceInput.parentElement.querySelector<HTMLElement>(".energy-input-error"),
 
-    kwhResult: panel.querySelector("#energy-kwh-result"),
-    costResult: panel.querySelector("#energy-cost-result"),
+    kwhResult: panel.querySelector<HTMLElement>("#energy-kwh-result"),
+    costResult: panel.querySelector<HTMLElement>("#energy-cost-result"),
 
     // Multi-trip refs
-    tripsContainer: panel.querySelector(".energy-trips-container"),
-    resetAllBtn: panel.querySelector(".energy-reset-all-btn"),
-    multiTotalValue: panel.querySelector("#energy-multi-total"),
+    tripsContainer: panel.querySelector<HTMLElement>(".energy-trips-container"),
+    resetAllBtn: panel.querySelector<HTMLButtonElement>(".energy-reset-all-btn"),
+    multiTotalValue: panel.querySelector<HTMLElement>("#energy-multi-total"),
 
-    multiTripNameInput: panel.querySelector("#energy-multi-trip-name"),
-    multiDistanceInput: panel.querySelector("#energy-multi-distance"),
-    multiDistanceSlider: panel.querySelector("#energy-multi-distance-slider"),
-    multiDistanceLabel: panel.querySelector("#energy-multi-distance-label"),
+    multiTripNameInput: panel.querySelector<HTMLInputElement>("#energy-multi-trip-name"),
+    multiDistanceInput: panel.querySelector<HTMLInputElement>("#energy-multi-distance"),
+    multiDistanceSlider: panel.querySelector<HTMLInputElement>("#energy-multi-distance-slider"),
+    multiDistanceLabel: panel.querySelector<HTMLLabelElement>("#energy-multi-distance-label"),
 
-    multiConsumptionInput: panel.querySelector("#energy-multi-consumption"),
-    multiConsumptionSlider: panel.querySelector("#energy-multi-consumption-slider"),
-    multiConsumptionLabel: panel.querySelector("#energy-multi-consumption-label"),
+    multiConsumptionInput: panel.querySelector<HTMLInputElement>("#energy-multi-consumption"),
+    multiConsumptionSlider: panel.querySelector<HTMLInputElement>("#energy-multi-consumption-slider"),
+    multiConsumptionLabel: panel.querySelector<HTMLLabelElement>("#energy-multi-consumption-label"),
 
-    multiPriceInput: panel.querySelector("#energy-multi-price"),
-    multiPriceSlider: panel.querySelector("#energy-multi-price-slider"),
+    multiPriceInput: panel.querySelector<HTMLInputElement>("#energy-multi-price"),
+    multiPriceSlider: panel.querySelector<HTMLInputElement>("#energy-multi-price-slider"),
 
-    multiSaveBtn: panel.querySelector(".energy-multi-save-btn"),
-    multiCancelBtn: panel.querySelector(".energy-multi-cancel-btn"),
+    multiSaveBtn: panel.querySelector<HTMLButtonElement>(".energy-multi-save-btn"),
+    multiCancelBtn: panel.querySelector<HTMLButtonElement>(".energy-multi-cancel-btn"),
 
     // Modal refs
-    modal: panel.querySelector(".energy-modal"),
-    modalMessage: panel.querySelector("#energy-modal-message"),
-    modalCancelBtn: panel.querySelector(".energy-modal-cancel"),
-    modalConfirmBtn: panel.querySelector(".energy-modal-confirm"),
+    modal: panel.querySelector<HTMLElement>(".energy-modal"),
+    modalMessage: panel.querySelector<HTMLElement>("#energy-modal-message"),
+    modalCancelBtn: panel.querySelector<HTMLButtonElement>(".energy-modal-cancel"),
+    modalConfirmBtn: panel.querySelector<HTMLButtonElement>(".energy-modal-confirm"),
   };
 }

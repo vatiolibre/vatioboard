@@ -12,6 +12,7 @@ import {
   saveTripCostValues,
   loadMultiTrips,
   saveMultiTrips,
+  type TripCostMode,
 } from "./trip-cost-storage.js";
 import {
   loadSettings as loadCalcSettings,
@@ -27,18 +28,47 @@ import { initModal } from "./widget/modal.js";
 import { initSettingsSheet } from "./widget/settings-sheet.js";
 import { initSimpleMode } from "./widget/simple-mode.js";
 import { initMultiTripMode } from "./widget/multi-trip-mode.js";
-import { EnergyCore } from "./energy-core.js";
+import { EnergyCore, type NumberFormatSettings } from "./energy-core.js";
+import type { ShellLifecycleOptions, ShellRuntime } from "../types/shell";
 
 const DRAG_THRESHOLD_PX = 6;
 const POS_KEY = "energy_calc_pos_v1";
 const ENERGY_WINDOW_ID = "energy";
+
+type EnergyPosition = {
+  panel?: {
+    left?: string;
+    top?: string;
+  } | null;
+};
+
+type EnergyCalculatorWidgetOptions = {
+  mount?: HTMLElement;
+  button?: HTMLElement | null;
+  persistVisibility?: boolean;
+  restoreVisibility?: boolean;
+  visibilityKey?: string;
+  shellManager?: ShellRuntime;
+};
+
+type EnergyCalculatorWidgetApi = {
+  open: (options?: ShellLifecycleOptions) => void;
+  close: (options?: ShellLifecycleOptions) => void;
+  destroy: () => void;
+  isOpen: () => boolean;
+  toggle: () => void;
+};
+
+function loadNumberFormatSettings(): NumberFormatSettings {
+  return { ...loadCalcSettings() };
+}
 
 /**
  * createEnergyCalculatorWidget(options)
  * - button: HTMLElement -> if provided, clicking it toggles the panel
  * - mount: HTMLElement -> where to append the panel (default document.body)
  */
-export function createEnergyCalculatorWidget(options = {}) {
+export function createEnergyCalculatorWidget(options: EnergyCalculatorWidgetOptions = {}): EnergyCalculatorWidgetApi {
   const {
     mount = document.body,
     button = null,
@@ -52,10 +82,10 @@ export function createEnergyCalculatorWidget(options = {}) {
   const tripSettings = loadTripCostSettings();
   const values = loadTripCostValues();
   let multiTrips = loadMultiTrips();
-  let formatSettings = loadCalcSettings();
+  let formatSettings = loadNumberFormatSettings();
 
   // Position helpers
-  function loadPos() {
+  function loadPos(): EnergyPosition | null {
     try {
       const raw = localStorage.getItem(POS_KEY);
       return raw ? JSON.parse(raw) : null;
@@ -64,7 +94,7 @@ export function createEnergyCalculatorWidget(options = {}) {
     }
   }
 
-  function savePos(pos) {
+  function savePos(pos: EnergyPosition) {
     try {
       localStorage.setItem(POS_KEY, JSON.stringify(pos));
     } catch {
@@ -89,7 +119,7 @@ export function createEnergyCalculatorWidget(options = {}) {
     }
   }
 
-  function saveVisibility(isOpen) {
+  function saveVisibility(isOpen: boolean) {
     if (!persistVisibility) return;
     try {
       localStorage.setItem(visibilityKey, isOpen ? "open" : "closed");
@@ -247,7 +277,7 @@ export function createEnergyCalculatorWidget(options = {}) {
   });
 
   // Mode switch
-  function setMode(mode) {
+  function setMode(mode: TripCostMode) {
     tripSettings.mode = mode;
     saveTripCostSettings(tripSettings);
 
@@ -280,7 +310,7 @@ export function createEnergyCalculatorWidget(options = {}) {
 
   refs.modeBtns.forEach(btn => {
     btn.addEventListener("click", () => {
-      setMode(btn.dataset.mode);
+      setMode(btn.dataset.mode as TripCostMode);
     });
   });
 
@@ -292,9 +322,9 @@ export function createEnergyCalculatorWidget(options = {}) {
   }
 
   // Open / Close
-  function showPanel({ persist = true } = {}) {
+  function showPanel({ persist = true }: ShellLifecycleOptions = {}) {
     // Reload format settings in case they changed in calculator
-    formatSettings = loadCalcSettings();
+    formatSettings = loadNumberFormatSettings();
     core.setFormatSettings(formatSettings);
 
     panel.hidden = false;
@@ -310,7 +340,7 @@ export function createEnergyCalculatorWidget(options = {}) {
     setMode(tripSettings.mode);
   }
 
-  function hidePanel({ persist = true } = {}) {
+  function hidePanel({ persist = true }: ShellLifecycleOptions = {}) {
     panel.hidden = true;
     if (persist) saveVisibility(false);
     settingsApi.setSettingsSheetOpen(false);
@@ -320,12 +350,12 @@ export function createEnergyCalculatorWidget(options = {}) {
     panel.hidden = true;
   }
 
-  function open(options = {}) {
+  function open(options: ShellLifecycleOptions = {}) {
     showPanel(options);
     shellManager.openWindow(ENERGY_WINDOW_ID, { ...options, invokeLifecycle: false });
   }
 
-  function close(options = {}) {
+  function close(options: ShellLifecycleOptions = {}) {
     hidePanel(options);
     shellManager.closeWindow(ENERGY_WINDOW_ID, { ...options, invokeLifecycle: false });
   }
