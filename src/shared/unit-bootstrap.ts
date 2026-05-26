@@ -4,6 +4,46 @@ import { normalizeCountryCode } from './place-resolver.js';
 
 export const UNIT_BOOTSTRAP_KEY = 'vatio_unit_bootstrap_v1';
 
+export type SpeedUnit = 'mph' | 'kmh';
+export type DistanceUnit = 'ft' | 'm';
+export type TripDistanceUnit = 'mi' | 'km';
+export type UnitBootstrapSource = 'manual' | 'auto' | 'existing';
+export type UnitBootstrapReason = 'bootstrap-present' | 'existing-preferences' | 'auto-initialized';
+
+export interface RegionalUnitConfig {
+  speedUnit: SpeedUnit;
+  distanceUnit: DistanceUnit;
+  tripDistanceUnit: TripDistanceUnit;
+}
+
+export interface UnitBootstrapSnapshot extends RegionalUnitConfig {
+  initializedAtMs: number | null;
+  updatedAtMs: number | null;
+  source: UnitBootstrapSource;
+  countryCode: string;
+}
+
+export interface UnitBootstrapInitResult {
+  changed: boolean;
+  reason: UnitBootstrapReason;
+  config: UnitBootstrapSnapshot;
+}
+
+export interface UnitBootstrapOptions {
+  nowMs?: number;
+}
+
+export interface UnitBootstrapManualSelection {
+  countryCode?: unknown;
+  speedUnit?: unknown;
+  distanceUnit?: unknown;
+  tripDistanceUnit?: unknown;
+}
+
+type StoredUnitBootstrap = Record<string, unknown>;
+
+const normalizeBootstrapCountryCode = normalizeCountryCode as (countryCode: unknown) => string;
+
 const IMPERIAL_COUNTRY_CODES = new Set([
   'as',
   'gb',
@@ -19,34 +59,34 @@ const IMPERIAL_COUNTRY_CODES = new Set([
   'vi',
 ]);
 
-function normalizeSpeedUnit(value, fallback = 'kmh') {
+function normalizeSpeedUnit(value: unknown, fallback: SpeedUnit = 'kmh'): SpeedUnit {
   return value === 'mph' ? 'mph' : value === 'kmh' ? 'kmh' : fallback;
 }
 
-function normalizeDistanceUnit(value, fallback = 'm') {
+function normalizeDistanceUnit(value: unknown, fallback: DistanceUnit = 'm'): DistanceUnit {
   return value === 'ft' ? 'ft' : value === 'm' ? 'm' : fallback;
 }
 
-function normalizeTripDistanceUnit(value, fallback = 'km') {
+function normalizeTripDistanceUnit(value: unknown, fallback: TripDistanceUnit = 'km'): TripDistanceUnit {
   return value === 'mi' ? 'mi' : value === 'km' ? 'km' : fallback;
 }
 
-function inferTripDistanceUnit(speedUnit, distanceUnit) {
+function inferTripDistanceUnit(speedUnit: unknown, distanceUnit: unknown): TripDistanceUnit {
   if (speedUnit === 'mph' || distanceUnit === 'ft') return 'mi';
   return 'km';
 }
 
-function loadSharedSpeedUnit() {
+function loadSharedSpeedUnit(): SpeedUnit | null {
   const unit = loadText(SHARED_SPEED_UNIT_KEY, '');
   return unit === 'mph' || unit === 'kmh' ? unit : null;
 }
 
-function loadSharedDistanceUnit() {
+function loadSharedDistanceUnit(): DistanceUnit | null {
   const unit = loadText(SHARED_DISTANCE_UNIT_KEY, '');
   return unit === 'ft' || unit === 'm' ? unit : null;
 }
 
-export function loadConfiguredSpeedUnit(fallback = 'kmh') {
+export function loadConfiguredSpeedUnit(fallback: SpeedUnit = 'kmh'): SpeedUnit {
   const bootstrapUnit = loadUnitBootstrap()?.speedUnit;
   if (bootstrapUnit === 'mph' || bootstrapUnit === 'kmh') {
     return bootstrapUnit;
@@ -55,7 +95,7 @@ export function loadConfiguredSpeedUnit(fallback = 'kmh') {
   return normalizeSpeedUnit(loadSharedSpeedUnit(), fallback);
 }
 
-export function loadConfiguredDistanceUnit(fallback = 'm') {
+export function loadConfiguredDistanceUnit(fallback: DistanceUnit = 'm'): DistanceUnit {
   const bootstrapUnit = loadUnitBootstrap()?.distanceUnit;
   if (bootstrapUnit === 'ft' || bootstrapUnit === 'm') {
     return bootstrapUnit;
@@ -64,7 +104,7 @@ export function loadConfiguredDistanceUnit(fallback = 'm') {
   return normalizeDistanceUnit(loadSharedDistanceUnit(), fallback);
 }
 
-export function saveSharedUnitPreferences(partialConfig = {}) {
+export function saveSharedUnitPreferences(partialConfig: UnitBootstrapManualSelection = {}): void {
   if (partialConfig.speedUnit === 'mph' || partialConfig.speedUnit === 'kmh') {
     saveText(SHARED_SPEED_UNIT_KEY, partialConfig.speedUnit);
   }
@@ -73,16 +113,16 @@ export function saveSharedUnitPreferences(partialConfig = {}) {
   }
 }
 
-export function hasConfiguredUnitPreferences() {
+export function hasConfiguredUnitPreferences(): boolean {
   return Boolean(
     loadUnitBootstrap() ||
     hasStoredValue(SHARED_SPEED_UNIT_KEY) ||
-    hasStoredValue(SHARED_DISTANCE_UNIT_KEY)
+    hasStoredValue(SHARED_DISTANCE_UNIT_KEY),
   );
 }
 
-export function getRegionalUnitsForCountry(countryCode) {
-  const normalizedCountryCode = normalizeCountryCode(countryCode);
+export function getRegionalUnitsForCountry(countryCode: unknown): RegionalUnitConfig {
+  const normalizedCountryCode = normalizeBootstrapCountryCode(countryCode);
   const useImperial = IMPERIAL_COUNTRY_CODES.has(normalizedCountryCode);
 
   return {
@@ -92,34 +132,37 @@ export function getRegionalUnitsForCountry(countryCode) {
   };
 }
 
-export function loadUnitBootstrap() {
-  const stored = loadJson(UNIT_BOOTSTRAP_KEY, null);
+export function loadUnitBootstrap(): UnitBootstrapSnapshot | null {
+  const stored = loadJson<StoredUnitBootstrap>(UNIT_BOOTSTRAP_KEY, null);
   if (!stored || typeof stored !== 'object') return null;
 
   return {
-    initializedAtMs: Number.isFinite(stored.initializedAtMs) ? stored.initializedAtMs : null,
-    updatedAtMs: Number.isFinite(stored.updatedAtMs) ? stored.updatedAtMs : null,
+    initializedAtMs: Number.isFinite(stored.initializedAtMs) ? stored.initializedAtMs as number : null,
+    updatedAtMs: Number.isFinite(stored.updatedAtMs) ? stored.updatedAtMs as number : null,
     source:
       stored.source === 'manual' || stored.source === 'auto' || stored.source === 'existing'
         ? stored.source
         : 'manual',
-    countryCode: normalizeCountryCode(stored.countryCode),
+    countryCode: normalizeBootstrapCountryCode(stored.countryCode),
     speedUnit: normalizeSpeedUnit(stored.speedUnit),
     distanceUnit: normalizeDistanceUnit(stored.distanceUnit),
     tripDistanceUnit: normalizeTripDistanceUnit(
       stored.tripDistanceUnit,
-      inferTripDistanceUnit(stored.speedUnit, stored.distanceUnit)
+      inferTripDistanceUnit(stored.speedUnit, stored.distanceUnit),
     ),
   };
 }
 
-function saveUnitBootstrap(snapshot) {
+function saveUnitBootstrap(snapshot: UnitBootstrapSnapshot): UnitBootstrapSnapshot {
   saveJson(UNIT_BOOTSTRAP_KEY, snapshot);
   return snapshot;
 }
 
-export function maybeInitializeUnitsFromCountry(countryCode, options = {}) {
-  const nowMs = Number.isFinite(options.nowMs) ? options.nowMs : Date.now();
+export function maybeInitializeUnitsFromCountry(
+  countryCode: unknown,
+  options: UnitBootstrapOptions = {},
+): UnitBootstrapInitResult {
+  const nowMs = Number.isFinite(options.nowMs) ? options.nowMs as number : Date.now();
   const existingBootstrap = loadUnitBootstrap();
   if (existingBootstrap) {
     return {
@@ -139,7 +182,7 @@ export function maybeInitializeUnitsFromCountry(countryCode, options = {}) {
         initializedAtMs: nowMs,
         updatedAtMs: nowMs,
         source: 'existing',
-        countryCode: normalizeCountryCode(countryCode),
+        countryCode: normalizeBootstrapCountryCode(countryCode),
         speedUnit: normalizeSpeedUnit(storedSpeedUnit),
         distanceUnit: normalizeDistanceUnit(storedDistanceUnit),
         tripDistanceUnit: inferTripDistanceUnit(storedSpeedUnit, storedDistanceUnit),
@@ -157,44 +200,46 @@ export function maybeInitializeUnitsFromCountry(countryCode, options = {}) {
       initializedAtMs: nowMs,
       updatedAtMs: nowMs,
       source: 'auto',
-      countryCode: normalizeCountryCode(countryCode),
+      countryCode: normalizeBootstrapCountryCode(countryCode),
       ...config,
     }),
   };
 }
 
-export function markUnitBootstrapManualSelection(partialConfig = {}) {
+export function markUnitBootstrapManualSelection(
+  partialConfig: UnitBootstrapManualSelection = {},
+): UnitBootstrapSnapshot {
   const nowMs = Date.now();
   const existing = loadUnitBootstrap();
   saveSharedUnitPreferences(partialConfig);
 
-  const nextConfig = {
+  const nextConfig: UnitBootstrapSnapshot = {
     initializedAtMs: existing?.initializedAtMs ?? nowMs,
     updatedAtMs: nowMs,
     source: 'manual',
-    countryCode: normalizeCountryCode(partialConfig.countryCode ?? existing?.countryCode),
+    countryCode: normalizeBootstrapCountryCode(partialConfig.countryCode ?? existing?.countryCode),
     speedUnit: normalizeSpeedUnit(
       partialConfig.speedUnit,
-      existing?.speedUnit ?? loadSharedSpeedUnit() ?? 'kmh'
+      existing?.speedUnit ?? loadSharedSpeedUnit() ?? 'kmh',
     ),
     distanceUnit: normalizeDistanceUnit(
       partialConfig.distanceUnit,
-      existing?.distanceUnit ?? loadSharedDistanceUnit() ?? 'm'
+      existing?.distanceUnit ?? loadSharedDistanceUnit() ?? 'm',
     ),
     tripDistanceUnit: normalizeTripDistanceUnit(
       partialConfig.tripDistanceUnit,
       existing?.tripDistanceUnit ??
         inferTripDistanceUnit(
           partialConfig.speedUnit ?? existing?.speedUnit ?? loadSharedSpeedUnit(),
-          partialConfig.distanceUnit ?? existing?.distanceUnit ?? loadSharedDistanceUnit()
-        )
+          partialConfig.distanceUnit ?? existing?.distanceUnit ?? loadSharedDistanceUnit(),
+        ),
     ),
   };
 
   return saveUnitBootstrap(nextConfig);
 }
 
-export function getPreferredTripDistanceUnit() {
+export function getPreferredTripDistanceUnit(): TripDistanceUnit {
   const bootstrap = loadUnitBootstrap();
   if (bootstrap?.tripDistanceUnit) {
     return bootstrap.tripDistanceUnit;

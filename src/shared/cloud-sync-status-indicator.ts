@@ -14,7 +14,69 @@ import {
   getCloudSyncStatus,
 } from "./cloud-sync.js";
 
-const CLOUD_SYNC_LABEL_KEYS = Object.freeze({
+const translate = t as (key: string, params?: Record<string, unknown>) => string;
+
+type CloudSyncState = typeof CLOUD_SYNC_STATUS_STATES[keyof typeof CLOUD_SYNC_STATUS_STATES];
+
+interface CloudSyncStatusSnapshot {
+  state?: unknown;
+  reason?: unknown;
+  [key: string]: unknown;
+}
+
+interface NormalizedCloudSyncStatus extends CloudSyncStatusSnapshot {
+  state: CloudSyncState;
+  reason: string;
+}
+
+interface PanelAccessState {
+  authenticated: boolean | null;
+  checking: boolean;
+  cloudSyncEnabled: boolean | null;
+  hasActiveSubscription: boolean | null;
+  isGuest: boolean | null;
+  pendingLogout: boolean;
+  unavailable: boolean;
+}
+
+interface BackendAuthStateDetail {
+  authenticated?: unknown;
+  isGuest?: unknown;
+  pendingLogout?: unknown;
+}
+
+interface BackendSessionState {
+  ok?: boolean;
+  authenticated?: boolean;
+  isGuest?: boolean;
+}
+
+interface BackendFeatureCapability {
+  enabled?: boolean;
+  hasActiveSubscription?: boolean;
+}
+
+interface BackendFeatureAccessState {
+  ok?: boolean;
+  isGuest?: boolean;
+  cloudSyncCapability?: BackendFeatureCapability | null;
+}
+
+interface BindPanelActionOptions {
+  allowDefault?: boolean;
+}
+
+export interface CloudSyncStatusIndicatorOptions {
+  mount?: HTMLElement | null;
+  alignEnd?: boolean;
+  openLauncher?: () => void;
+}
+
+export interface CloudSyncStatusIndicatorController {
+  destroy(): void;
+}
+
+const CLOUD_SYNC_LABEL_KEYS: Readonly<Record<CloudSyncState, string>> = Object.freeze({
   [CLOUD_SYNC_STATUS_STATES.failed]: "cloudSyncFailed",
   [CLOUD_SYNC_STATUS_STATES.localOnly]: "cloudSyncLocalOnly",
   [CLOUD_SYNC_STATUS_STATES.paused]: "cloudSyncPaused",
@@ -22,7 +84,7 @@ const CLOUD_SYNC_LABEL_KEYS = Object.freeze({
   [CLOUD_SYNC_STATUS_STATES.syncing]: "cloudSyncSyncing",
 });
 
-const CLOUD_SYNC_HELP_KEYS = Object.freeze({
+const CLOUD_SYNC_HELP_KEYS: Readonly<Record<CloudSyncState, string>> = Object.freeze({
   [CLOUD_SYNC_STATUS_STATES.failed]: "cloudSyncHelpFailed",
   [CLOUD_SYNC_STATUS_STATES.localOnly]: "cloudSyncHelpLocalOnly",
   [CLOUD_SYNC_STATUS_STATES.paused]: "cloudSyncHelpPaused",
@@ -38,6 +100,8 @@ const PANEL_AUDIENCES = Object.freeze({
   unknown: "unknown",
 });
 
+type PanelAudience = typeof PANEL_AUDIENCES[keyof typeof PANEL_AUDIENCES];
+
 const OPERATIONAL_REASONS = new Set([
   "aborted",
   "error",
@@ -48,34 +112,34 @@ const OPERATIONAL_REASONS = new Set([
   "unavailable",
 ]);
 
-function normalizeCloudSyncState(value) {
-  return Object.values(CLOUD_SYNC_STATUS_STATES).includes(value)
-    ? value
+function normalizeCloudSyncState(value: unknown): CloudSyncState {
+  return (Object.values(CLOUD_SYNC_STATUS_STATES) as unknown[]).includes(value)
+    ? value as CloudSyncState
     : CLOUD_SYNC_STATUS_STATES.localOnly;
 }
 
-function setHidden(element, isHidden) {
+function setHidden(element: HTMLElement | null | undefined, isHidden: boolean): void {
   if (!element) return;
   element.hidden = isHidden;
 }
 
-function stopEventPropagation(event) {
+function stopEventPropagation(event: Event): void {
   event.stopPropagation();
   if (typeof event.stopImmediatePropagation === "function") {
     event.stopImmediatePropagation();
   }
 }
 
-function getText(value) {
+function getText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function normalizeOptionalBoolean(value) {
+function normalizeOptionalBoolean(value: unknown): boolean | null {
   return value === true ? true : value === false ? false : null;
 }
 
-function getNormalizedStatus() {
-  const status = getCloudSyncStatus();
+function getNormalizedStatus(): NormalizedCloudSyncStatus {
+  const status = getCloudSyncStatus() as CloudSyncStatusSnapshot;
   return {
     ...status,
     state: normalizeCloudSyncState(status?.state),
@@ -83,7 +147,7 @@ function getNormalizedStatus() {
   };
 }
 
-function reasonSuggestsSubscription(reason) {
+function reasonSuggestsSubscription(reason: unknown): boolean {
   const normalized = getText(reason).toLowerCase();
   return (
     normalized === "disabled"
@@ -93,7 +157,7 @@ function reasonSuggestsSubscription(reason) {
   );
 }
 
-function isOperationalStatus(status) {
+function isOperationalStatus(status: CloudSyncStatusSnapshot | null | undefined): boolean {
   const reason = getText(status?.reason).toLowerCase();
   return (
     OPERATIONAL_REASONS.has(reason)
@@ -101,7 +165,7 @@ function isOperationalStatus(status) {
   );
 }
 
-function createPanelAccessState() {
+function createPanelAccessState(): PanelAccessState {
   return {
     authenticated: null,
     checking: false,
@@ -113,7 +177,7 @@ function createPanelAccessState() {
   };
 }
 
-function derivePanelAudience(status, accessState) {
+function derivePanelAudience(status: CloudSyncStatusSnapshot | null | undefined, accessState: PanelAccessState): PanelAudience {
   const reason = getText(status?.reason).toLowerCase();
 
   if (accessState.pendingLogout === true || reason === "logout") {
@@ -176,7 +240,11 @@ function derivePanelAudience(status, accessState) {
   return PANEL_AUDIENCES.unknown;
 }
 
-function getPanelMessageKey(status, accessState, audience) {
+function getPanelMessageKey(
+  status: CloudSyncStatusSnapshot | null | undefined,
+  accessState: PanelAccessState,
+  audience: PanelAudience,
+): string {
   const reason = getText(status?.reason).toLowerCase();
 
   if (accessState.checking && audience === PANEL_AUDIENCES.unknown) {
@@ -222,10 +290,15 @@ function getPanelMessageKey(status, accessState, audience) {
     return "cloudSyncPanelSubscriberSynced";
   }
 
-  return CLOUD_SYNC_HELP_KEYS[status?.state] || "cloudSyncPanelUnknown";
+  return CLOUD_SYNC_HELP_KEYS[normalizeCloudSyncState(status?.state)] || "cloudSyncPanelUnknown";
 }
 
-function bindPanelAction(element, closePanel, handler = null, { allowDefault = false } = {}) {
+function bindPanelAction(
+  element: HTMLElement | null | undefined,
+  closePanel: () => void,
+  handler: (() => void) | null = null,
+  { allowDefault = false }: BindPanelActionOptions = {},
+): void {
   if (!element) return;
 
   element.addEventListener("click", (event) => {
@@ -238,7 +311,7 @@ function bindPanelAction(element, closePanel, handler = null, { allowDefault = f
   });
 }
 
-function getSubscribeLinkHref() {
+function getSubscribeLinkHref(): string {
   try {
     return getSsoSubscribeUrl() || getVatioLibreSubscribeUrl();
   } catch {
@@ -250,7 +323,7 @@ export function initCloudSyncStatusIndicator({
   mount,
   alignEnd = false,
   openLauncher,
-} = {}) {
+}: CloudSyncStatusIndicatorOptions = {}): CloudSyncStatusIndicatorController | null {
   if (!mount || typeof document === "undefined") return null;
 
   const root = document.createElement("div");
@@ -290,8 +363,8 @@ export function initCloudSyncStatusIndicator({
   const closeButton = document.createElement("button");
   closeButton.type = "button";
   closeButton.className = "cloud-sync-indicator-close";
-  closeButton.setAttribute("aria-label", t("close"));
-  closeButton.title = t("close");
+  closeButton.setAttribute("aria-label", translate("close"));
+  closeButton.title = translate("close");
   closeButton.innerHTML = IconClose;
 
   actions.append(subscribeLink, loginButton);
@@ -303,14 +376,14 @@ export function initCloudSyncStatusIndicator({
   let panelAccessState = createPanelAccessState();
   let accessRefreshVersion = 0;
 
-  function closePanel() {
+  function closePanel(): void {
     root.classList.remove("is-open");
     setHidden(panel, true);
     button.setAttribute("aria-expanded", "false");
   }
 
-  function togglePanel() {
-    const nextOpen = panel.hidden;
+  function togglePanel(): void {
+    const nextOpen = Boolean(panel.hidden);
     root.classList.toggle("is-open", nextOpen);
     setHidden(panel, !nextOpen);
     button.setAttribute("aria-expanded", nextOpen ? "true" : "false");
@@ -320,7 +393,7 @@ export function initCloudSyncStatusIndicator({
     render();
   }
 
-  function applyAuthStateDetail(detail = {}) {
+  function applyAuthStateDetail(detail: BackendAuthStateDetail = {}): void {
     const authenticated = normalizeOptionalBoolean(detail.authenticated);
     const isGuest = normalizeOptionalBoolean(detail.isGuest);
 
@@ -337,7 +410,7 @@ export function initCloudSyncStatusIndicator({
     }
   }
 
-  async function refreshPanelAccessState({ force = false } = {}) {
+  async function refreshPanelAccessState({ force = false }: { force?: boolean } = {}): Promise<void> {
     const requestVersion = accessRefreshVersion + 1;
     accessRefreshVersion = requestVersion;
     panelAccessState = {
@@ -348,7 +421,7 @@ export function initCloudSyncStatusIndicator({
     render();
 
     try {
-      const session = await getBackendSessionState({ force });
+      const session = await getBackendSessionState({ force }) as BackendSessionState;
       if (destroyed || accessRefreshVersion !== requestVersion) return;
 
       if (!session?.ok || session?.isGuest || session?.authenticated !== true) {
@@ -366,7 +439,7 @@ export function initCloudSyncStatusIndicator({
         return;
       }
 
-      const featureAccess = await getBackendFeatureAccessState({ force });
+      const featureAccess = await getBackendFeatureAccessState({ force }) as BackendFeatureAccessState;
       if (destroyed || accessRefreshVersion !== requestVersion) return;
 
       if (!featureAccess?.ok || featureAccess?.isGuest) {
@@ -407,7 +480,7 @@ export function initCloudSyncStatusIndicator({
     render();
   }
 
-  function syncActions(status, audience) {
+  function syncActions(status: NormalizedCloudSyncStatus, audience: PanelAudience): void {
     const operationalOnly = isOperationalStatus(status);
     const showAccountLink = (
       audience === PANEL_AUDIENCES.guest
@@ -426,32 +499,32 @@ export function initCloudSyncStatusIndicator({
       subscribeLink.href = BACKEND_AUTH_SIGNUP_URL;
       subscribeLink.target = "_blank";
       subscribeLink.rel = "noopener noreferrer";
-      subscribeLink.textContent = t("cloudSyncCreateAccount");
+      subscribeLink.textContent = translate("cloudSyncCreateAccount");
     } else if (audience === PANEL_AUDIENCES.noSubscription) {
       subscribeLink.href = getSubscribeLinkHref();
       subscribeLink.target = "_self";
       subscribeLink.removeAttribute("rel");
-      subscribeLink.textContent = t("cloudSyncSubscribe");
+      subscribeLink.textContent = translate("cloudSyncSubscribe");
     } else {
       subscribeLink.href = getSubscribeLinkHref();
       subscribeLink.target = "_self";
       subscribeLink.removeAttribute("rel");
-      subscribeLink.textContent = t("cloudSyncManageSubscription");
+      subscribeLink.textContent = translate("cloudSyncManageSubscription");
     }
 
-    loginButton.textContent = t("authLogin");
-    closeButton.setAttribute("aria-label", t("close"));
-    closeButton.title = t("close");
+    loginButton.textContent = translate("authLogin");
+    closeButton.setAttribute("aria-label", translate("close"));
+    closeButton.title = translate("close");
   }
 
-  function render() {
+  function render(): void {
     if (destroyed) return;
     const status = getNormalizedStatus();
     const state = status.state;
     const audience = derivePanelAudience(status, panelAccessState);
     const labelKey = CLOUD_SYNC_LABEL_KEYS[state];
     const helpKey = getPanelMessageKey(status, panelAccessState, audience);
-    const label = t(labelKey);
+    const label = translate(labelKey);
 
     root.dataset.state = state;
     root.dataset.panelAudience = audience;
@@ -459,39 +532,39 @@ export function initCloudSyncStatusIndicator({
     button.textContent = label;
     button.setAttribute("aria-label", label);
     button.title = label;
-    message.textContent = t(helpKey);
+    message.textContent = translate(helpKey);
     syncActions(status, audience);
   }
 
-  function isEventInsideRoot(event) {
-    return Boolean(event?.target && root.contains(event.target));
+  function isEventInsideRoot(event: Event): boolean {
+    return Boolean(event?.target && root.contains(event.target as Node));
   }
 
-  function handleDocumentPointerDown(event) {
+  function handleDocumentPointerDown(event: PointerEvent): void {
     if (panel.hidden || isEventInsideRoot(event)) return;
     closePanel();
   }
 
-  function handleDocumentClick(event) {
+  function handleDocumentClick(event: MouseEvent): void {
     if (panel.hidden || isEventInsideRoot(event)) return;
     closePanel();
   }
 
-  function handleRootClick(event) {
+  function handleRootClick(event: MouseEvent): void {
     stopEventPropagation(event);
   }
 
-  function handleDocumentKeyDown(event) {
+  function handleDocumentKeyDown(event: KeyboardEvent): void {
     if (event.key !== "Escape" || panel.hidden) return;
     closePanel();
   }
 
-  function handleStatusChange() {
+  function handleStatusChange(): void {
     render();
   }
 
-  function handleAuthStateChange(event) {
-    applyAuthStateDetail(event?.detail || {});
+  function handleAuthStateChange(event: Event): void {
+    applyAuthStateDetail((event as CustomEvent<BackendAuthStateDetail>)?.detail || {});
     if (!panel.hidden && panelAccessState.authenticated === true) {
       void refreshPanelAccessState({ force: true });
     }

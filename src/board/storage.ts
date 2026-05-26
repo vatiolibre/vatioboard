@@ -1,6 +1,7 @@
 import { createIndexedJsonKeyValueStore } from "../shared/indexed-storage.js";
 import { createStorageCapability } from "../shared/storage-capability.js";
 import { loadJson, removeStoredValue, saveJson } from "../shared/storage.js";
+import type { JsonObject } from "../types/storage";
 
 export const BOARD_DRAWING_KEY = "vatio_board_drawing_v1";
 export const BOARD_CURRENT_DOCUMENT_KEY = "vatio_board_document_current_v1";
@@ -25,26 +26,112 @@ const boardStorageCapability = createStorageCapability({
   store: boardStore,
 });
 
-let boardMigrationPromise = null;
-let pendingSaveDocument = null;
-let saveLoopPromise = null;
+let boardMigrationPromise: Promise<void> | null = null;
+let pendingSaveDocument: BoardDrawing | null = null;
+let saveLoopPromise: Promise<void> | null = null;
 let generationCounter = 0;
 
-function isFiniteNumber(value) {
+export interface BoardPoint extends JsonObject {
+  x: number;
+  y: number;
+}
+
+export interface BoardClearCommand extends JsonObject {
+  type: "clear";
+}
+
+export interface BoardStrokeCommand extends JsonObject {
+  type: "stroke";
+  tool: "pen" | "eraser";
+  size: number;
+  inkRaw: string;
+  points: BoardPoint[];
+}
+
+export type BoardCommand = BoardClearCommand | BoardStrokeCommand;
+
+export interface BoardDrawing extends JsonObject {
+  version: number;
+  updatedAtMs: number;
+  commands: BoardCommand[];
+  redoCommands: BoardCommand[];
+}
+
+export interface StoredBoardDrawingRecord extends BoardDrawing {
+  generation: string;
+  commandCount: number;
+  redoCount: number;
+  chunkCount: number;
+  redoChunkCount: number;
+  previousGeneration: string;
+  previousCommandCount: number;
+  previousRedoCount: number;
+  previousChunkCount: number;
+  previousRedoChunkCount: number;
+}
+
+export interface EmbeddedBoardDrawingRecord extends BoardDrawing {
+  generation: string;
+  commandCount: number;
+  redoCount: number;
+  chunkCount: number;
+  redoChunkCount: number;
+}
+
+export interface BoardSnapshotReference {
+  generation: string;
+  commandCount: number;
+  redoCount: number;
+  chunkCount: number;
+  redoChunkCount: number;
+}
+
+interface ChunkSaveResult {
+  ok: boolean;
+  chunkCount: number;
+}
+
+interface ChunkLoadResult {
+  ok: boolean;
+  commands: BoardCommand[];
+}
+
+interface HydratedSnapshotResult {
+  ok: boolean;
+  commands: BoardCommand[];
+  redoCommands: BoardCommand[];
+}
+
+export interface CurrentBoardDocumentMeta extends JsonObject {
+  name: string;
+  title: string;
+  updatedAtMs: number;
+}
+
+export interface PendingBoardDocumentOpen extends JsonObject {
+  document: JsonObject | null;
+  payload: BoardDrawing;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isFiniteNumber(value: unknown): value is number {
   return Number.isFinite(value);
 }
 
-function normalizePositiveInteger(value, fallback = 0) {
+function normalizePositiveInteger(value: unknown, fallback = 0): number {
   if (!isFiniteNumber(value)) return fallback;
   return Math.max(0, Math.round(value));
 }
 
-function cloneJson(value) {
-  return JSON.parse(JSON.stringify(value));
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function normalizePoint(point) {
-  if (!point || typeof point !== "object") return null;
+function normalizePoint(point: unknown): BoardPoint | null {
+  if (!isRecord(point)) return null;
   if (!isFiniteNumber(point.x) || !isFiniteNumber(point.y)) return null;
 
   return {
@@ -53,8 +140,8 @@ function normalizePoint(point) {
   };
 }
 
-function normalizeCommand(command) {
-  if (!command || typeof command !== "object") return null;
+function normalizeCommand(command: unknown): BoardCommand | null {
+  if (!isRecord(command)) return null;
 
   if (command.type === "clear") {
     return { type: "clear" };
@@ -63,7 +150,7 @@ function normalizeCommand(command) {
   if (command.type !== "stroke") return null;
 
   const points = Array.isArray(command.points)
-    ? command.points.map(normalizePoint).filter(Boolean)
+    ? command.points.map(normalizePoint).filter((point): point is BoardPoint => Boolean(point))
     : [];
 
   if (points.length === 0) return null;
@@ -77,34 +164,35 @@ function normalizeCommand(command) {
   };
 }
 
-function normalizeCommands(commands) {
+function normalizeCommands(commands: unknown): BoardCommand[] {
   if (!Array.isArray(commands)) return [];
-  return commands.map(normalizeCommand).filter(Boolean);
+  return commands.map(normalizeCommand).filter((command): command is BoardCommand => Boolean(command));
 }
 
-function createStoredDocument(document = {}) {
-  const commands = normalizeCommands(document.commands);
-  const redoCommands = normalizeCommands(document.redoCommands);
+function createStoredDocument(document: unknown = {}): StoredBoardDrawingRecord {
+  const record = isRecord(document) ? document : {};
+  const commands = normalizeCommands(record.commands);
+  const redoCommands = normalizeCommands(record.redoCommands);
 
   return {
     version: BOARD_SCHEMA_VERSION,
-    updatedAtMs: normalizePositiveInteger(document.updatedAtMs, Date.now()),
-    generation: typeof document.generation === "string" ? document.generation : "",
-    commandCount: normalizePositiveInteger(document.commandCount, commands.length),
-    redoCount: normalizePositiveInteger(document.redoCount, redoCommands.length),
-    chunkCount: normalizePositiveInteger(document.chunkCount, 0),
-    redoChunkCount: normalizePositiveInteger(document.redoChunkCount, 0),
-    previousGeneration: typeof document.previousGeneration === "string" ? document.previousGeneration : "",
-    previousCommandCount: normalizePositiveInteger(document.previousCommandCount, 0),
-    previousRedoCount: normalizePositiveInteger(document.previousRedoCount, 0),
-    previousChunkCount: normalizePositiveInteger(document.previousChunkCount, 0),
-    previousRedoChunkCount: normalizePositiveInteger(document.previousRedoChunkCount, 0),
+    updatedAtMs: normalizePositiveInteger(record.updatedAtMs, Date.now()),
+    generation: typeof record.generation === "string" ? record.generation : "",
+    commandCount: normalizePositiveInteger(record.commandCount, commands.length),
+    redoCount: normalizePositiveInteger(record.redoCount, redoCommands.length),
+    chunkCount: normalizePositiveInteger(record.chunkCount, 0),
+    redoChunkCount: normalizePositiveInteger(record.redoChunkCount, 0),
+    previousGeneration: typeof record.previousGeneration === "string" ? record.previousGeneration : "",
+    previousCommandCount: normalizePositiveInteger(record.previousCommandCount, 0),
+    previousRedoCount: normalizePositiveInteger(record.previousRedoCount, 0),
+    previousChunkCount: normalizePositiveInteger(record.previousChunkCount, 0),
+    previousRedoChunkCount: normalizePositiveInteger(record.previousRedoChunkCount, 0),
     commands,
     redoCommands,
   };
 }
 
-export function createEmptyBoardDrawing() {
+export function createEmptyBoardDrawing(): BoardDrawing {
   return {
     version: BOARD_SCHEMA_VERSION,
     updatedAtMs: 0,
@@ -113,12 +201,12 @@ export function createEmptyBoardDrawing() {
   };
 }
 
-export function hasBoardDrawingContent(document) {
+export function hasBoardDrawingContent(document: unknown): boolean {
   const normalized = toBoardDrawing(document);
   return normalized.commands.length > 0 || normalized.redoCommands.length > 0;
 }
 
-function toBoardDrawing(document) {
+function toBoardDrawing(document: unknown): BoardDrawing {
   const normalized = createStoredDocument(document);
   return {
     version: BOARD_SCHEMA_VERSION,
@@ -128,7 +216,7 @@ function toBoardDrawing(document) {
   };
 }
 
-function createEmbeddedBoardDrawing(document) {
+function createEmbeddedBoardDrawing(document: unknown): EmbeddedBoardDrawingRecord {
   const normalized = toBoardDrawing(document);
   return {
     version: BOARD_SCHEMA_VERSION,
@@ -143,16 +231,16 @@ function createEmbeddedBoardDrawing(document) {
   };
 }
 
-function getBoardChunkKey(generation, section, chunkIndex) {
+function getBoardChunkKey(generation: string, section: string, chunkIndex: number): string {
   return `${BOARD_CHUNK_KEY_PREFIX}${generation}:${section}:${String(chunkIndex)}`;
 }
 
-function createGenerationId() {
+function createGenerationId(): string {
   generationCounter += 1;
   return `board-${Date.now()}-${generationCounter}`;
 }
 
-async function openBoardDatabase() {
+async function openBoardDatabase(): Promise<IDBDatabase | null> {
   if (!(await boardStorageCapability.isIndexedDbUsable())) return null;
 
   try {
@@ -166,7 +254,10 @@ export function getBoardStorageCapability() {
   return boardStorageCapability;
 }
 
-function createSnapshotReference(document, { previous = false } = {}) {
+function createSnapshotReference(
+  document: unknown,
+  { previous = false }: { previous?: boolean } = {},
+): BoardSnapshotReference {
   const normalized = createStoredDocument(document);
 
   return previous
@@ -186,13 +277,13 @@ function createSnapshotReference(document, { previous = false } = {}) {
     };
 }
 
-function hasPersistedSnapshot(snapshot) {
+function hasPersistedSnapshot(snapshot: BoardSnapshotReference | null | undefined): boolean {
   return Boolean(snapshot?.generation)
     || snapshot?.chunkCount > 0
     || snapshot?.redoChunkCount > 0;
 }
 
-async function deleteChunkRange(generation, section, chunkCount) {
+async function deleteChunkRange(generation: string, section: string, chunkCount: number): Promise<void> {
   if (!boardStore.hasSupport() || !generation) return;
 
   for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
@@ -200,13 +291,17 @@ async function deleteChunkRange(generation, section, chunkCount) {
   }
 }
 
-async function deleteSnapshotReference(snapshot) {
+async function deleteSnapshotReference(snapshot: BoardSnapshotReference | null | undefined): Promise<void> {
   if (!snapshot?.generation) return;
   await deleteChunkRange(snapshot.generation, BOARD_HISTORY_SECTION, snapshot.chunkCount ?? 0);
   await deleteChunkRange(snapshot.generation, BOARD_REDO_SECTION, snapshot.redoChunkCount ?? 0);
 }
 
-async function saveCommandChunks(generation, section, commands) {
+async function saveCommandChunks(
+  generation: string,
+  section: string,
+  commands: BoardCommand[],
+): Promise<ChunkSaveResult> {
   let chunkIndex = 0;
 
   for (let index = 0; index < commands.length; index += BOARD_PERSIST_CHUNK_SIZE) {
@@ -227,7 +322,12 @@ async function saveCommandChunks(generation, section, commands) {
   };
 }
 
-async function loadCommandChunks(generation, section, chunkCount, expectedCount) {
+async function loadCommandChunks(
+  generation: string,
+  section: string,
+  chunkCount: number,
+  expectedCount: number,
+): Promise<ChunkLoadResult> {
   if (chunkCount === 0) {
     return {
       ok: expectedCount === 0,
@@ -242,10 +342,10 @@ async function loadCommandChunks(generation, section, chunkCount, expectedCount)
     };
   }
 
-  const commands = [];
+  const commands: BoardCommand[] = [];
 
   for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
-    const chunk = await boardStore.getValue(getBoardChunkKey(generation, section, chunkIndex));
+    const chunk = await boardStore.getValue<BoardCommand[]>(getBoardChunkKey(generation, section, chunkIndex));
     if (!Array.isArray(chunk) || chunk.length === 0) {
       return {
         ok: false,
@@ -270,10 +370,10 @@ async function loadCommandChunks(generation, section, chunkCount, expectedCount)
   };
 }
 
-async function persistBoardDocument(document) {
+async function persistBoardDocument(document: unknown): Promise<boolean> {
   const normalized = toBoardDrawing({
-    ...document,
-    updatedAtMs: isFiniteNumber(document?.updatedAtMs) ? document.updatedAtMs : Date.now(),
+    ...(isRecord(document) ? document : {}),
+    updatedAtMs: isRecord(document) && isFiniteNumber(document.updatedAtMs) ? document.updatedAtMs : Date.now(),
   });
 
   const database = await openBoardDatabase();
@@ -282,7 +382,7 @@ async function persistBoardDocument(document) {
     return true;
   }
 
-  const previousDocument = createStoredDocument(await boardStore.getValue(BOARD_DRAWING_KEY));
+  const previousDocument = createStoredDocument(await boardStore.getValue<StoredBoardDrawingRecord>(BOARD_DRAWING_KEY));
   const previousSnapshot = createSnapshotReference(previousDocument);
   const previousBackupSnapshot = createSnapshotReference(previousDocument, { previous: true });
   const nextGeneration = normalized.commands.length > 0 || normalized.redoCommands.length > 0
@@ -317,7 +417,7 @@ async function persistBoardDocument(document) {
     previousRedoChunkCount: previousSnapshot.redoChunkCount,
     commands: [],
     redoCommands: [],
-  });
+  } satisfies StoredBoardDrawingRecord);
 
   if (!stored) {
     await deleteChunkRange(nextGeneration, BOARD_HISTORY_SECTION, historySave.chunkCount);
@@ -336,7 +436,7 @@ async function persistBoardDocument(document) {
   return true;
 }
 
-async function migrateLegacyBoardStorage() {
+async function migrateLegacyBoardStorage(): Promise<void> {
   if (!boardStore.hasSupport()) return;
 
   if (!boardMigrationPromise) {
@@ -347,7 +447,7 @@ async function migrateLegacyBoardStorage() {
       const existingValue = await boardStore.getValue(BOARD_DRAWING_KEY);
       if (existingValue !== undefined) return;
 
-      const legacyValue = loadJson(BOARD_DRAWING_KEY, undefined);
+      const legacyValue = loadJson<unknown>(BOARD_DRAWING_KEY, undefined);
       if (legacyValue === undefined) return;
 
       const stored = await persistBoardDocument(legacyValue);
@@ -360,7 +460,7 @@ async function migrateLegacyBoardStorage() {
   return boardMigrationPromise;
 }
 
-async function hydratePersistedSnapshot(snapshot) {
+async function hydratePersistedSnapshot(snapshot: BoardSnapshotReference): Promise<HydratedSnapshotResult> {
   if (!hasPersistedSnapshot(snapshot)) {
     return {
       ok: true,
@@ -404,7 +504,7 @@ async function hydratePersistedSnapshot(snapshot) {
   };
 }
 
-async function hydrateStoredBoardDrawing(document) {
+async function hydrateStoredBoardDrawing(document: unknown): Promise<BoardDrawing | null> {
   const normalized = createStoredDocument(document);
 
   if (!hasPersistedSnapshot(createSnapshotReference(normalized))) {
@@ -437,12 +537,12 @@ async function hydrateStoredBoardDrawing(document) {
   return null;
 }
 
-export async function loadBoardDrawing() {
+export async function loadBoardDrawing(): Promise<BoardDrawing> {
   await migrateLegacyBoardStorage();
 
   const database = await openBoardDatabase();
   if (database) {
-    const indexedValue = await boardStore.getValue(BOARD_DRAWING_KEY);
+    const indexedValue = await boardStore.getValue<StoredBoardDrawingRecord>(BOARD_DRAWING_KEY);
     if (indexedValue !== undefined) {
       const hydrated = await hydrateStoredBoardDrawing(indexedValue);
       if (hydrated) return hydrated;
@@ -452,7 +552,7 @@ export async function loadBoardDrawing() {
   return toBoardDrawing(loadJson(BOARD_DRAWING_KEY, createEmptyBoardDrawing()));
 }
 
-export function saveBoardDrawing(document) {
+export function saveBoardDrawing(document: unknown): Promise<void> {
   pendingSaveDocument = cloneJson(toBoardDrawing(document));
   saveLoopPromise = (saveLoopPromise || Promise.resolve()).then(async () => {
     while (pendingSaveDocument) {
@@ -470,9 +570,9 @@ export function saveBoardDrawing(document) {
   return saveLoopPromise;
 }
 
-export function loadCurrentBoardDocumentMeta() {
-  const storedValue = loadJson(BOARD_CURRENT_DOCUMENT_KEY, null);
-  if (!storedValue || typeof storedValue !== "object") return null;
+export function loadCurrentBoardDocumentMeta(): CurrentBoardDocumentMeta | null {
+  const storedValue = loadJson<Record<string, unknown>>(BOARD_CURRENT_DOCUMENT_KEY, null);
+  if (!isRecord(storedValue)) return null;
 
   const name = typeof storedValue.name === "string" ? storedValue.name : "";
   if (!name) return null;
@@ -484,8 +584,8 @@ export function loadCurrentBoardDocumentMeta() {
   };
 }
 
-export function saveCurrentBoardDocumentMeta(meta) {
-  const normalizedMeta = meta && typeof meta === "object" ? meta : {};
+export function saveCurrentBoardDocumentMeta(meta: unknown): void {
+  const normalizedMeta = isRecord(meta) ? meta : {};
   const name = typeof normalizedMeta.name === "string" ? normalizedMeta.name : "";
   if (!name) {
     removeStoredValue(BOARD_CURRENT_DOCUMENT_KEY);
@@ -499,25 +599,25 @@ export function saveCurrentBoardDocumentMeta(meta) {
   });
 }
 
-export function clearCurrentBoardDocumentMeta() {
+export function clearCurrentBoardDocumentMeta(): void {
   removeStoredValue(BOARD_CURRENT_DOCUMENT_KEY);
 }
 
-export function queuePendingBoardDocumentOpen(payload) {
-  saveJson(BOARD_PENDING_OPEN_DOCUMENT_KEY, payload && typeof payload === "object" ? payload : null);
+export function queuePendingBoardDocumentOpen(payload: unknown): void {
+  saveJson(BOARD_PENDING_OPEN_DOCUMENT_KEY, isRecord(payload) ? payload : null);
 }
 
-export function consumePendingBoardDocumentOpen() {
-  const pendingOpen = loadJson(BOARD_PENDING_OPEN_DOCUMENT_KEY, null);
+export function consumePendingBoardDocumentOpen(): PendingBoardDocumentOpen | null {
+  const pendingOpen = loadJson<Record<string, unknown>>(BOARD_PENDING_OPEN_DOCUMENT_KEY, null);
   removeStoredValue(BOARD_PENDING_OPEN_DOCUMENT_KEY);
 
-  if (!pendingOpen || typeof pendingOpen !== "object") return null;
+  if (!isRecord(pendingOpen)) return null;
   const drawing = toBoardDrawing(pendingOpen.payload);
   if (!drawing) return null;
 
   return {
-    document: pendingOpen.document && typeof pendingOpen.document === "object"
-      ? pendingOpen.document
+    document: isRecord(pendingOpen.document)
+      ? pendingOpen.document as JsonObject
       : null,
     payload: drawing,
   };

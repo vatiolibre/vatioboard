@@ -1,10 +1,65 @@
 import { createIndexedJsonKeyValueStore } from "./indexed-storage.js";
 import { createStorageCapability } from "./storage-capability.js";
+import type { JsonObject, JsonValue } from "../types/storage";
 
 const CLOUD_LIBRARY_DB_NAME = "vatioboard-cloud-library";
 const CLOUD_LIBRARY_DB_VERSION = 1;
 const CLOUD_LIBRARY_DB_STORE = "cloudLibraryCache";
 const DETAIL_TTL_MS = 5 * 60 * 1000;
+
+type DetailMode = string | null;
+type MaybePromise<T> = T | Promise<T>;
+
+export type CloudLibraryQuery = Record<string, unknown>;
+
+export interface CloudLibraryLoadOptions {
+  force?: boolean;
+  signal?: AbortSignal | null;
+}
+
+export interface CloudLibraryDetailOptions extends CloudLibraryLoadOptions {
+  mode?: DetailMode;
+}
+
+export interface CloudLibraryPersistDecision {
+  mode: DetailMode;
+  name: string;
+}
+
+export interface CloudLibraryResourceOptions<TListResponse = unknown, TDetailResponse = unknown> {
+  resourceKey?: string;
+  listLoader?: (
+    query: CloudLibraryQuery,
+    options: CloudLibraryLoadOptions,
+  ) => MaybePromise<TListResponse>;
+  detailLoader?: (
+    name: string,
+    options: CloudLibraryDetailOptions,
+  ) => MaybePromise<TDetailResponse>;
+  listTtlMs?: number;
+  detailTtlMs?: number;
+  maxPersistedDetailEntries?: number;
+  shouldPersistDetail?: (decision: CloudLibraryPersistDecision) => boolean;
+}
+
+export interface CloudLibraryResource<TListResponse = unknown, TDetailResponse = unknown> {
+  getDetail(name: unknown, options?: CloudLibraryDetailOptions): Promise<TDetailResponse | null>;
+  invalidateDetail(name?: unknown, options?: { mode?: DetailMode }): void;
+  invalidateList(query?: CloudLibraryQuery | null): void;
+  list(query?: CloudLibraryQuery | null, options?: CloudLibraryLoadOptions): Promise<TListResponse | null>;
+}
+
+interface CacheEntry<TValue> {
+  fetchedAtMs: number;
+  promise: Promise<TValue> | null;
+  requestVersion: number;
+  value: TValue | null;
+}
+
+interface CloudLibraryRequestError extends Error {
+  result: unknown;
+  status: number;
+}
 
 const detailStore = createIndexedJsonKeyValueStore({
   dbName: CLOUD_LIBRARY_DB_NAME,
@@ -16,33 +71,37 @@ const detailStoreCapability = createStorageCapability({
   store: detailStore,
 });
 
-let detailStoreMutationChain = Promise.resolve();
+let detailStoreMutationChain: Promise<unknown> = Promise.resolve();
 
-function cloneJson(value, fallback = null) {
-  if (value === null || value === undefined) return value ?? fallback;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object");
+}
+
+function cloneJson<T = unknown>(value: unknown, fallback: T): T {
+  if (value === null || value === undefined) return (value ?? fallback) as T;
 
   try {
-    return JSON.parse(JSON.stringify(value));
+    return JSON.parse(JSON.stringify(value)) as T;
   } catch {
-    return value;
+    return value as T;
   }
 }
 
-function createAbortError() {
+function createAbortError(): Error {
   const error = new Error("Request aborted.");
   error.name = "AbortError";
   return error;
 }
 
-function createRequestError(result) {
-  const error = new Error("Cloud library request failed.");
+function createRequestError(result: unknown): CloudLibraryRequestError {
+  const error = new Error("Cloud library request failed.") as CloudLibraryRequestError;
   error.name = "CloudLibraryRequestError";
   error.result = cloneJson(result, null);
-  error.status = Number(result?.status) || 0;
+  error.status = Number(isRecord(result) ? result.status : undefined) || 0;
   return error;
 }
 
-function waitForAbort(promise, signal) {
+function waitForAbort<T>(promise: Promise<T>, signal?: AbortSignal | null): Promise<T> {
   if (!signal) return promise;
   if (signal.aborted) {
     return Promise.reject(createAbortError());
@@ -63,23 +122,23 @@ function waitForAbort(promise, signal) {
         cleanup();
         resolve(value);
       },
-      (error) => {
+      (error: unknown) => {
         cleanup();
         reject(error);
-      }
+      },
     );
   });
 }
 
-function normalizeName(value) {
+function normalizeName(value: unknown): string {
   return String(value || "").trim();
 }
 
-function stableStringify(value) {
+function stableStringify(value: unknown): string | undefined {
   return JSON.stringify(value ?? {});
 }
 
-function createCacheEntry() {
+function createCacheEntry<TValue>(): CacheEntry<TValue> {
   return {
     fetchedAtMs: 0,
     promise: null,
@@ -88,27 +147,27 @@ function createCacheEntry() {
   };
 }
 
-function isFresh(entry, ttlMs) {
+function isFresh<TValue>(entry: CacheEntry<TValue> | undefined, ttlMs: number): boolean {
   return Boolean(entry?.value) && (Date.now() - Number(entry.fetchedAtMs || 0)) < ttlMs;
 }
 
-function beginLoad(entry, loader) {
+function beginLoad<TValue>(entry: CacheEntry<TValue>, loader: () => MaybePromise<TValue>): Promise<TValue> {
   const requestVersion = entry.requestVersion + 1;
   entry.requestVersion = requestVersion;
   entry.promise = Promise.resolve()
     .then(loader)
     .then((value) => {
-      if (value && typeof value === "object" && value.ok === false) {
+      if (value && typeof value === "object" && (value as { ok?: unknown }).ok === false) {
         throw createRequestError(value);
       }
 
       if (entry.requestVersion === requestVersion) {
-        entry.value = cloneJson(value, null);
+        entry.value = cloneJson<TValue | null>(value, null);
         entry.fetchedAtMs = Date.now();
       }
-      return cloneJson(value, null);
+      return cloneJson<TValue>(value, null as TValue);
     })
-    .catch((error) => {
+    .catch((error: unknown) => {
       if (entry.requestVersion === requestVersion && !entry.value) {
         entry.fetchedAtMs = 0;
       }
@@ -123,29 +182,39 @@ function beginLoad(entry, loader) {
   return entry.promise;
 }
 
-function queueDetailStoreMutation(task) {
-  detailStoreMutationChain = detailStoreMutationChain.catch(() => {}).then(task);
-  return detailStoreMutationChain;
+function queueDetailStoreMutation<TValue>(task: () => MaybePromise<TValue>): Promise<TValue> {
+  const nextMutation = detailStoreMutationChain.catch(() => undefined).then(task);
+  detailStoreMutationChain = nextMutation;
+  return nextMutation;
 }
 
-function getDetailEntryKey(resourceKey, mode, name) {
+function getDetailEntryKey(resourceKey: string | undefined, mode: DetailMode, name: string): string {
   return `detail:${resourceKey}:${mode}:${name}`;
 }
 
-function getDetailIndexKey(resourceKey, mode) {
+function getDetailIndexKey(resourceKey: string | undefined, mode: DetailMode): string {
   return `detail-index:${resourceKey}:${mode}`;
 }
 
-async function touchPersistedDetailIndex(resourceKey, mode, name, maxEntries) {
+async function touchPersistedDetailIndex(
+  resourceKey: string | undefined,
+  mode: DetailMode,
+  name: string,
+  maxEntries: number,
+): Promise<void> {
   const indexKey = getDetailIndexKey(resourceKey, mode);
   const indexValue = await detailStore.getValue(indexKey);
-  const nextIndex = indexValue && typeof indexValue === "object" ? { ...indexValue } : {};
+  const nextIndex: JsonObject = indexValue && typeof indexValue === "object"
+    ? { ...(indexValue as JsonObject) }
+    : {};
   nextIndex[name] = Date.now();
 
-  const sortedEntries = Object.entries(nextIndex).sort((left, right) => right[1] - left[1]);
+  const sortedEntries = Object.entries(nextIndex).sort(
+    (left, right) => (right[1] as number) - (left[1] as number),
+  );
   const keptEntries = sortedEntries.slice(0, maxEntries);
   const evictedEntries = sortedEntries.slice(maxEntries);
-  const nextStoredIndex = Object.fromEntries(keptEntries);
+  const nextStoredIndex = Object.fromEntries(keptEntries) as JsonObject;
 
   for (const [evictedName] of evictedEntries) {
     await detailStore.deleteValue(getDetailEntryKey(resourceKey, mode, evictedName));
@@ -154,7 +223,13 @@ async function touchPersistedDetailIndex(resourceKey, mode, name, maxEntries) {
   await detailStore.setValue(indexKey, nextStoredIndex);
 }
 
-async function loadPersistedDetail(resourceKey, mode, name, ttlMs, maxEntries) {
+async function loadPersistedDetail<TValue>(
+  resourceKey: string | undefined,
+  mode: DetailMode,
+  name: string,
+  ttlMs: number,
+  maxEntries: number,
+): Promise<TValue | null> {
   if (!(await detailStoreCapability.isIndexedDbUsable())) return null;
 
   const entryKey = getDetailEntryKey(resourceKey, mode, name);
@@ -163,14 +238,15 @@ async function loadPersistedDetail(resourceKey, mode, name, ttlMs, maxEntries) {
     return null;
   }
 
-  const fetchedAtMs = Number(storedEntry.fetchedAtMs || 0);
+  const storedRecord = storedEntry as JsonObject;
+  const fetchedAtMs = Number(storedRecord.fetchedAtMs || 0);
   if (!fetchedAtMs || (Date.now() - fetchedAtMs) >= ttlMs) {
     await queueDetailStoreMutation(async () => {
       await detailStore.deleteValue(entryKey);
       const indexKey = getDetailIndexKey(resourceKey, mode);
       const indexValue = await detailStore.getValue(indexKey);
       if (!indexValue || typeof indexValue !== "object") return;
-      const nextIndex = { ...indexValue };
+      const nextIndex: JsonObject = { ...(indexValue as JsonObject) };
       delete nextIndex[name];
       await detailStore.setValue(indexKey, nextIndex);
     });
@@ -178,22 +254,28 @@ async function loadPersistedDetail(resourceKey, mode, name, ttlMs, maxEntries) {
   }
 
   void queueDetailStoreMutation(() => touchPersistedDetailIndex(resourceKey, mode, name, maxEntries));
-  return cloneJson(storedEntry.value, null);
+  return cloneJson<TValue | null>(storedRecord.value, null);
 }
 
-async function savePersistedDetail(resourceKey, mode, name, value, maxEntries) {
+async function savePersistedDetail(
+  resourceKey: string | undefined,
+  mode: DetailMode,
+  name: string,
+  value: unknown,
+  maxEntries: number,
+): Promise<void> {
   if (!(await detailStoreCapability.isIndexedDbUsable())) return;
 
   await queueDetailStoreMutation(async () => {
     await detailStore.setValue(getDetailEntryKey(resourceKey, mode, name), {
       fetchedAtMs: Date.now(),
-      value: cloneJson(value, null),
+      value: cloneJson<JsonValue | null>(value, null),
     });
     await touchPersistedDetailIndex(resourceKey, mode, name, maxEntries);
   });
 }
 
-export function createCloudLibraryResource({
+export function createCloudLibraryResource<TListResponse = unknown, TDetailResponse = unknown>({
   resourceKey,
   listLoader,
   detailLoader,
@@ -201,48 +283,54 @@ export function createCloudLibraryResource({
   detailTtlMs = DETAIL_TTL_MS,
   maxPersistedDetailEntries = 12,
   shouldPersistDetail = ({ mode }) => mode === "full",
-} = {}) {
-  const listCache = new Map();
-  const detailCache = new Map();
+}: CloudLibraryResourceOptions<TListResponse, TDetailResponse> = {}): CloudLibraryResource<
+  TListResponse,
+  TDetailResponse
+> {
+  const listCache = new Map<string | undefined, CacheEntry<TListResponse>>();
+  const detailCache = new Map<string, CacheEntry<TDetailResponse>>();
 
-  function getListEntry(queryKey) {
+  function getListEntry(queryKey: string | undefined): CacheEntry<TListResponse> {
     if (!listCache.has(queryKey)) {
       listCache.set(queryKey, createCacheEntry());
     }
-    return listCache.get(queryKey);
+    return listCache.get(queryKey)!;
   }
 
-  function getDetailEntry(detailKey) {
+  function getDetailEntry(detailKey: string): CacheEntry<TDetailResponse> {
     if (!detailCache.has(detailKey)) {
       detailCache.set(detailKey, createCacheEntry());
     }
-    return detailCache.get(detailKey);
+    return detailCache.get(detailKey)!;
   }
 
-  async function list(query = {}, { force = false, signal } = {}) {
-    const querySnapshot = cloneJson(query, {});
+  async function list(
+    query: CloudLibraryQuery | null = {},
+    { force = false, signal }: CloudLibraryLoadOptions = {},
+  ): Promise<TListResponse | null> {
+    const querySnapshot = cloneJson<CloudLibraryQuery>(query, {});
     const queryKey = stableStringify(querySnapshot);
     const entry = getListEntry(queryKey);
 
     if (!force && isFresh(entry, listTtlMs)) {
-      return cloneJson(entry.value, null);
+      return cloneJson<TListResponse | null>(entry.value, null);
     }
 
     if (!force && entry.promise) {
-      return cloneJson(await waitForAbort(entry.promise, signal), null);
+      return cloneJson<TListResponse | null>(await waitForAbort(entry.promise, signal), null);
     }
 
-    return cloneJson(await waitForAbort(
-      beginLoad(entry, () => listLoader(querySnapshot, { force, signal })),
-      signal
+    return cloneJson<TListResponse | null>(await waitForAbort(
+      beginLoad(entry, () => listLoader!(querySnapshot, { force, signal })),
+      signal,
     ), null);
   }
 
-  async function getDetail(name, {
+  async function getDetail(name: unknown, {
     force = false,
     mode = "summary",
     signal,
-  } = {}) {
+  }: CloudLibraryDetailOptions = {}): Promise<TDetailResponse | null> {
     const normalizedName = normalizeName(name);
     if (!normalizedName) return null;
 
@@ -250,39 +338,39 @@ export function createCloudLibraryResource({
     const entry = getDetailEntry(detailKey);
 
     if (!force && isFresh(entry, detailTtlMs)) {
-      return cloneJson(entry.value, null);
+      return cloneJson<TDetailResponse | null>(entry.value, null);
     }
 
     if (!force && entry.promise) {
-      return cloneJson(await waitForAbort(entry.promise, signal), null);
+      return cloneJson<TDetailResponse | null>(await waitForAbort(entry.promise, signal), null);
     }
 
     if (!force && shouldPersistDetail({ mode, name: normalizedName })) {
-      const persistedValue = await loadPersistedDetail(
+      const persistedValue = await loadPersistedDetail<TDetailResponse>(
         resourceKey,
         mode,
         normalizedName,
         detailTtlMs,
-        maxPersistedDetailEntries
+        maxPersistedDetailEntries,
       );
       if (persistedValue !== null) {
-        entry.value = cloneJson(persistedValue, null);
+        entry.value = cloneJson<TDetailResponse | null>(persistedValue, null);
         entry.fetchedAtMs = Date.now();
-        return cloneJson(persistedValue, null);
+        return cloneJson<TDetailResponse | null>(persistedValue, null);
       }
     }
 
     const value = await waitForAbort(
-      beginLoad(entry, () => detailLoader(normalizedName, { mode, signal })),
-      signal
+      beginLoad(entry, () => detailLoader!(normalizedName, { mode, signal })),
+      signal,
     );
     if (shouldPersistDetail({ mode, name: normalizedName })) {
       void savePersistedDetail(resourceKey, mode, normalizedName, value, maxPersistedDetailEntries);
     }
-    return cloneJson(value, null);
+    return cloneJson<TDetailResponse | null>(value, null);
   }
 
-  function invalidateList(query = null) {
+  function invalidateList(query: CloudLibraryQuery | null = null): void {
     if (query === null) {
       listCache.clear();
       return;
@@ -297,7 +385,7 @@ export function createCloudLibraryResource({
     entry.value = null;
   }
 
-  function invalidateDetail(name = "", { mode = null } = {}) {
+  function invalidateDetail(name: unknown = "", { mode = null }: { mode?: DetailMode } = {}): void {
     const normalizedName = normalizeName(name);
     if (!normalizedName && mode === null) {
       detailCache.clear();
@@ -335,7 +423,7 @@ export function createCloudLibraryResource({
         const indexKey = getDetailIndexKey(resourceKey, candidateMode);
         const indexValue = await detailStore.getValue(indexKey);
         if (indexValue && typeof indexValue === "object") {
-          const nextIndex = { ...indexValue };
+          const nextIndex: JsonObject = { ...(indexValue as JsonObject) };
           if (normalizedName) {
             delete nextIndex[normalizedName];
           }
@@ -343,7 +431,7 @@ export function createCloudLibraryResource({
         }
         if (normalizedName) {
           await detailStore.deleteValue(
-            getDetailEntryKey(resourceKey, candidateMode, normalizedName)
+            getDetailEntryKey(resourceKey, candidateMode, normalizedName),
           );
         }
       }

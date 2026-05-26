@@ -3,20 +3,53 @@ import { clampElementToViewport, makeLauncherDraggable } from "../calculator/wid
 import { IconAccel, IconSpeed } from "../icons.js";
 import { t } from "../i18n.js";
 import { ACTIVITY_OPEN_EVENT, subscribeActivities } from "./activity-state.js";
+import type { ActivityRecord } from "./activity-state";
 
 const POS_KEY = "vatioboard.activity_indicator_pos_v1";
 const DRAG_THRESHOLD_PX = 6;
 
-function loadPos() {
+const translate = t as (key: string, params?: Record<string, unknown>) => string;
+
+interface ActivityIndicatorPosition {
+  launcher?: {
+    left?: string;
+    top?: string;
+  };
+  [key: string]: unknown;
+}
+
+interface LauncherDragState {
+  (): boolean;
+  destroy?: () => void;
+}
+
+interface ActivityIndicatorOptions {
+  mount?: HTMLElement | null;
+}
+
+export interface ActivityIndicatorController {
+  root: HTMLElement;
+  destroy(): void;
+}
+
+const makeActivityLauncherDraggable = makeLauncherDraggable as (options: {
+  launcherEl: HTMLElement;
+  dragThresholdPx: number;
+  savePos: (pos: ActivityIndicatorPosition) => void;
+  loadPos: () => ActivityIndicatorPosition | null;
+}) => LauncherDragState;
+const clampActivityElementToViewport = clampElementToViewport as (element: HTMLElement) => void;
+
+function loadPos(): ActivityIndicatorPosition | null {
   try {
     const raw = localStorage.getItem(POS_KEY);
-    return raw ? JSON.parse(raw) : null;
+    return raw ? JSON.parse(raw) as ActivityIndicatorPosition : null;
   } catch {
     return null;
   }
 }
 
-function savePos(pos) {
+function savePos(pos: ActivityIndicatorPosition): void {
   try {
     localStorage.setItem(POS_KEY, JSON.stringify(pos));
   } catch {
@@ -24,11 +57,11 @@ function savePos(pos) {
   }
 }
 
-function isFiniteTimestamp(value) {
-  return Number.isFinite(value) && value > 0;
+function isFiniteTimestamp(value: unknown): value is number {
+  return Number.isFinite(value) && (value as number) > 0;
 }
 
-function formatElapsed(ms) {
+function formatElapsed(ms: number): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
   const seconds = totalSeconds % 60;
   const totalMinutes = Math.floor(totalSeconds / 60);
@@ -39,19 +72,19 @@ function formatElapsed(ms) {
   return `${seconds}s`;
 }
 
-function getActivityIcon(activity) {
+function getActivityIcon(activity: ActivityRecord): string {
   return activity.kind === "accel" ? IconAccel : IconSpeed;
 }
 
-function getActivityLabel(activity) {
-  return activity.labelKey ? t(activity.labelKey) : activity.label || "";
+function getActivityLabel(activity: ActivityRecord): string {
+  return activity.labelKey ? translate(activity.labelKey) : activity.label || "";
 }
 
-function getActivityDetail(activity, nowMs = Date.now()) {
-  const parts = [];
+function getActivityDetail(activity: ActivityRecord, nowMs = Date.now()): string {
+  const parts: string[] = [];
 
   if (activity.detailKey) {
-    parts.push(t(activity.detailKey, activity.detailParams));
+    parts.push(translate(activity.detailKey, activity.detailParams));
   } else if (activity.detail) {
     parts.push(String(activity.detail));
   }
@@ -61,26 +94,26 @@ function getActivityDetail(activity, nowMs = Date.now()) {
   }
 
   if (Number.isFinite(activity.sampleCount) && activity.sampleCount > 0) {
-    parts.push(t("activitySamplesShort", { count: Math.max(0, Math.round(activity.sampleCount)) }));
+    parts.push(translate("activitySamplesShort", { count: Math.max(0, Math.round(activity.sampleCount)) }));
   }
 
   if (!parts.length && activity.fallbackDetailKey) {
-    parts.push(t(activity.fallbackDetailKey));
+    parts.push(translate(activity.fallbackDetailKey));
   }
 
   return parts.join(" · ");
 }
 
-function getActivityAriaLabel(activity, label, detail) {
+function getActivityAriaLabel(activity: ActivityRecord, label: string, detail: string): string {
   const openLabel = activity.openLabelKey
-    ? t(activity.openLabelKey)
+    ? translate(activity.openLabelKey)
     : activity.kind === "accel"
-    ? t("activityOpenAccelTest")
-    : t("activityOpenSpeedRecording");
+      ? translate("activityOpenAccelTest")
+      : translate("activityOpenSpeedRecording");
   return detail ? `${openLabel}: ${label}, ${detail}` : `${openLabel}: ${label}`;
 }
 
-function getLiveSignature(activities) {
+function getLiveSignature(activities: ActivityRecord[]): string {
   return activities
     .map((activity) => {
       const detail = activity.detailKey || activity.detail || "";
@@ -89,7 +122,7 @@ function getLiveSignature(activities) {
     .join("|");
 }
 
-function getLiveText(activities) {
+function getLiveText(activities: ActivityRecord[]): string {
   if (!activities.length) return "";
   return activities
     .map((activity) => {
@@ -100,11 +133,11 @@ function getLiveText(activities) {
     .join(". ");
 }
 
-export function initActivityIndicator({ mount = document.body } = {}) {
+export function initActivityIndicator({ mount = document.body }: ActivityIndicatorOptions = {}): ActivityIndicatorController {
   const root = document.createElement("section");
   root.className = "activity-indicator";
   root.hidden = true;
-  root.setAttribute("aria-label", t("activityStatusLabel"));
+  root.setAttribute("aria-label", translate("activityStatusLabel"));
 
   const list = document.createElement("div");
   list.className = "activity-indicator-list";
@@ -125,31 +158,31 @@ export function initActivityIndicator({ mount = document.body } = {}) {
     root.style.bottom = "auto";
   }
 
-  const rootMoved = makeLauncherDraggable({
+  const rootMoved = makeActivityLauncherDraggable({
     launcherEl: root,
     dragThresholdPx: DRAG_THRESHOLD_PX,
     savePos,
     loadPos,
   });
 
-  let activities = [];
+  let activities: ActivityRecord[] = [];
   let liveSignature = "";
-  let renderTimerId = null;
+  let renderTimerId: number | null = null;
 
-  function clearRenderTimer() {
+  function clearRenderTimer(): void {
     if (renderTimerId === null) return;
     window.clearInterval(renderTimerId);
     renderTimerId = null;
   }
 
-  function syncRenderTimer() {
+  function syncRenderTimer(): void {
     clearRenderTimer();
     const needsTicks = activities.some((activity) => isFiniteTimestamp(activity.startedAtMs));
     if (!needsTicks) return;
     renderTimerId = window.setInterval(() => render({ announce: false }), 1000);
   }
 
-  function render({ announce = true } = {}) {
+  function render({ announce = true }: { announce?: boolean } = {}): void {
     const hasActivities = activities.length > 0;
     root.hidden = !hasActivities;
 
@@ -191,7 +224,7 @@ export function initActivityIndicator({ mount = document.body } = {}) {
 
       const meta = document.createElement("span");
       meta.className = "activity-indicator-meta";
-      meta.textContent = detail || t("activityGpsActive");
+      meta.textContent = detail || translate("activityGpsActive");
 
       copy.append(title, meta);
 
@@ -206,7 +239,7 @@ export function initActivityIndicator({ mount = document.body } = {}) {
     list.replaceChildren(fragment);
 
     if (root.style.left && root.style.top) {
-      clampElementToViewport(root);
+      clampActivityElementToViewport(root);
     }
 
     if (!announce) return;
@@ -224,7 +257,7 @@ export function initActivityIndicator({ mount = document.body } = {}) {
   });
 
   list.addEventListener("click", (event) => {
-    const button = event.target.closest(".activity-indicator-row");
+    const button = (event.target as Element).closest(".activity-indicator-row") as HTMLElement | null;
     if (!button) return;
     if (rootMoved()) {
       event.preventDefault();
@@ -236,13 +269,13 @@ export function initActivityIndicator({ mount = document.body } = {}) {
     window.dispatchEvent(
       new CustomEvent(ACTIVITY_OPEN_EVENT, {
         detail: { activity },
-      })
+      }),
     );
     navigateToAppRoute(activity.route);
   });
 
-  function handleI18nChange() {
-    root.setAttribute("aria-label", t("activityStatusLabel"));
+  function handleI18nChange(): void {
+    root.setAttribute("aria-label", translate("activityStatusLabel"));
     render();
   }
 

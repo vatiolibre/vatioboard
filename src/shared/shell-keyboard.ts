@@ -1,17 +1,35 @@
-function isEditableTarget(target) {
+import type { ShellRuntime, ShellWindowRecord } from "../types/shell";
+
+export interface ShellKeyboardShortcutOptions {
+  shellManager?: ShellRuntime | null;
+  target?: Window | Document | HTMLElement;
+  restoreMinimizedOnCycle?: boolean;
+}
+
+export interface ShellKeyboardShortcutsController {
+  uninstall(): void;
+  cycleNextWindow(): ShellWindowRecord | null;
+  cyclePreviousWindow(): ShellWindowRecord | null;
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
   if (!target) return false;
-  if (target.isContentEditable) return true;
-  const closest = target.closest?.("input, textarea, select, [contenteditable='true'], .calc-expr");
+  const element = target as Element & { isContentEditable?: boolean };
+  if (element.isContentEditable) return true;
+  const closest = element.closest?.("input, textarea, select, [contenteditable='true'], .calc-expr");
   return Boolean(closest);
 }
 
-function isBackquoteShortcut(event) {
+function isBackquoteShortcut(event: KeyboardEvent): boolean {
   return (event.altKey || event.ctrlKey)
     && !event.metaKey
     && (event.code === "Backquote" || event.key === "`");
 }
 
-function getCycleWindows(shellManager, { includeMinimized = false } = {}) {
+function getCycleWindows(
+  shellManager: ShellRuntime,
+  { includeMinimized = false }: { includeMinimized?: boolean } = {},
+): ShellWindowRecord[] {
   return shellManager.listWindows()
     .filter((record) => record.kind !== "system")
     .filter((record) => record.state === "open" || (includeMinimized && record.state === "minimized"))
@@ -23,18 +41,18 @@ export function installShellKeyboardShortcuts({
   shellManager,
   target = window,
   restoreMinimizedOnCycle = false,
-} = {}) {
+}: ShellKeyboardShortcutOptions = {}): ShellKeyboardShortcutsController {
   if (!shellManager) throw new Error("installShellKeyboardShortcuts requires a shellManager.");
 
   let destroyed = false;
 
-  function activateRecord(record) {
+  function activateRecord(record: ShellWindowRecord | null | undefined): ShellWindowRecord | null {
     if (!record) return null;
     if (record.state === "minimized") return shellManager.restoreWindow(record.id);
     return shellManager.activateWindow(record.id);
   }
 
-  function cycle(delta) {
+  function cycle(delta: number): ShellWindowRecord | null {
     const windows = getCycleWindows(shellManager, { includeMinimized: restoreMinimizedOnCycle });
     if (windows.length === 0) return null;
     const activeId = shellManager.getActiveWindow()?.id;
@@ -45,21 +63,21 @@ export function installShellKeyboardShortcuts({
     return activateRecord(windows[nextIndex]);
   }
 
-  function cycleNextWindow() {
+  function cycleNextWindow(): ShellWindowRecord | null {
     return cycle(1);
   }
 
-  function cyclePreviousWindow() {
+  function cyclePreviousWindow(): ShellWindowRecord | null {
     return cycle(-1);
   }
 
-  function minimizeActiveWindow() {
+  function minimizeActiveWindow(): ShellWindowRecord | null {
     const active = shellManager.getActiveWindow();
     if (!active || active.capabilities?.minimizable === false) return null;
     return shellManager.minimizeWindow(active.id);
   }
 
-  function restoreMostRecentMinimizedWindow() {
+  function restoreMostRecentMinimizedWindow(): ShellWindowRecord | null {
     const minimized = shellManager.listWindows()
       .filter((record) => record.state === "minimized")
       .sort((a, b) => (b.zIndex - a.zIndex) || String(a.id).localeCompare(String(b.id)));
@@ -67,7 +85,7 @@ export function installShellKeyboardShortcuts({
     return shellManager.restoreWindow(minimized[0].id);
   }
 
-  function clearSnapPreviews() {
+  function clearSnapPreviews(): boolean {
     const previews = Array.from(document.querySelectorAll("[data-vb-shell-snap-preview]"));
     previews.forEach((panel) => {
       panel.removeAttribute("data-vb-shell-snap-preview");
@@ -76,7 +94,7 @@ export function installShellKeyboardShortcuts({
     return previews.length > 0;
   }
 
-  function onKeyDown(event) {
+  function onKeyDown(event: KeyboardEvent): void {
     if (isEditableTarget(event.target)) return;
 
     if (isBackquoteShortcut(event)) {
@@ -106,16 +124,15 @@ export function installShellKeyboardShortcuts({
     }
   }
 
-  target.addEventListener("keydown", onKeyDown);
+  target.addEventListener("keydown", onKeyDown as EventListener);
 
   return {
     uninstall() {
       if (destroyed) return;
       destroyed = true;
-      target.removeEventListener("keydown", onKeyDown);
+      target.removeEventListener("keydown", onKeyDown as EventListener);
     },
     cycleNextWindow,
     cyclePreviousWindow,
   };
 }
-

@@ -1,12 +1,47 @@
 import "../styles/analog-speedometer.less";
 
-function toFiniteNumber(value, fallback) {
-  return Number.isFinite(value) ? value : fallback;
-}
-
 const MIN_DRAW_SIZE = 24;
 
-export function createAnalogSpeedometer(options) {
+export interface AnalogSpeedometerOptions {
+  stageElement?: HTMLElement | null;
+  stageInnerElement?: HTMLElement | null;
+  dialCanvas?: HTMLCanvasElement | null;
+  needleCanvas?: HTMLCanvasElement | null;
+  valueElement?: HTMLElement | null;
+  unitElement?: HTMLElement | null;
+  substatusElement?: HTMLElement | null;
+  resizeTarget?: Element | null;
+  styleSourceElement?: Element | null;
+}
+
+export interface AnalogSpeedometerRenderModel {
+  value?: number | null;
+  valueText?: unknown;
+  unitText?: unknown;
+  substatusText?: unknown;
+  maxValue?: number | null;
+  tickStep?: number | null;
+  markerValue?: number | null;
+  accentColor?: string | null;
+  markerColor?: string | null;
+  pivotInnerColor?: string | null;
+}
+
+export interface AnalogSpeedometerController {
+  destroy(): void;
+  render(nextModel?: AnalogSpeedometerRenderModel | null): void;
+  resize(): void;
+}
+
+function toFiniteNumber(value: unknown, fallback: number): number {
+  return Number.isFinite(value) ? value as number : fallback;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return Number.isFinite(value);
+}
+
+export function createAnalogSpeedometer(options?: AnalogSpeedometerOptions | null): AnalogSpeedometerController {
   if (!options) return createNoopSpeedometer();
 
   const stageElement = options.stageElement;
@@ -30,8 +65,8 @@ export function createAnalogSpeedometer(options) {
   }
 
   let canvasSize = 0;
-  let resizeObserver = null;
-  let model = {
+  let resizeObserver: ResizeObserver | null = null;
+  let model: AnalogSpeedometerRenderModel = {
     value: 0,
     valueText: "0",
     unitText: "",
@@ -44,19 +79,19 @@ export function createAnalogSpeedometer(options) {
     pivotInnerColor: null,
   };
 
-  function getCssColor(name, fallback) {
+  function getCssColor(name: string, fallback: string): string {
     const value = getComputedStyle(styleSourceElement).getPropertyValue(name).trim();
     return value || fallback;
   }
 
-  function syncStageSize() {
+  function syncStageSize(): void {
     const rect = stageElement.getBoundingClientRect();
     const measuredSize = Math.floor(Math.min(rect.width, rect.height));
     const size = Number.isFinite(measuredSize) && measuredSize >= MIN_DRAW_SIZE ? measuredSize : 0;
     stageInnerElement.style.setProperty("--analog-speedometer-size", `${size}px`);
   }
 
-  function resize() {
+  function resize(): void {
     syncStageSize();
 
     const rect = dialCanvas.getBoundingClientRect();
@@ -77,7 +112,7 @@ export function createAnalogSpeedometer(options) {
     draw();
   }
 
-  function draw() {
+  function draw(): void {
     if (canvasSize < MIN_DRAW_SIZE) return;
 
     const size = canvasSize;
@@ -158,7 +193,7 @@ export function createAnalogSpeedometer(options) {
     dialContext.arc(center, center, ringRadius, startAngle, endAngle);
     dialContext.stroke();
 
-    if (Number.isFinite(model.markerValue)) {
+    if (isFiniteNumber(model.markerValue)) {
       const markerAngle = startAngle + Math.min(Math.max(model.markerValue, 0) / gaugeMax, 1) * angleRange;
       const markerInnerRadius = ringRadius - Math.max(16, size * 0.032);
       const markerOuterRadius = ringRadius + Math.max(10, size * 0.02);
@@ -259,7 +294,7 @@ export function createAnalogSpeedometer(options) {
     needleContext.fill();
   }
 
-  function render(nextModel) {
+  function render(nextModel?: AnalogSpeedometerRenderModel | null): void {
     model = Object.assign({}, model, nextModel || {});
 
     if (valueElement) {
@@ -274,7 +309,7 @@ export function createAnalogSpeedometer(options) {
     draw();
   }
 
-  function destroy() {
+  function destroy(): void {
     if (resizeObserver) resizeObserver.disconnect();
   }
 
@@ -294,7 +329,7 @@ export function createAnalogSpeedometer(options) {
   };
 }
 
-function createNoopSpeedometer() {
+function createNoopSpeedometer(): AnalogSpeedometerController {
   return {
     destroy() {},
     render() {},

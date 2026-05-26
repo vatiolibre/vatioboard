@@ -19,6 +19,12 @@ import {
   getCachedMediaManifest,
   getCachedMediaMetadata,
 } from "./media-cache.js";
+import type {
+  CloudLibraryLoadOptions,
+  CloudLibraryQuery,
+  CloudLibraryResource,
+} from "./cloud-library";
+import type { MediaManifestAsset, MediaMetadataRecord } from "./media-cache";
 
 export const CLOUD_LIBRARY_TAB_KEYS = Object.freeze({
   accel: "accel",
@@ -26,6 +32,74 @@ export const CLOUD_LIBRARY_TAB_KEYS = Object.freeze({
   media: "media",
   speed: "speed",
 });
+
+export type CloudLibraryTabKey = typeof CLOUD_LIBRARY_TAB_KEYS[keyof typeof CLOUD_LIBRARY_TAB_KEYS];
+
+interface CloudLibraryResourceConfig {
+  capabilityKey: string;
+  detailMode: string;
+  getDetailItem(response: unknown): unknown;
+  getItems(response: unknown): unknown;
+  key: CloudLibraryTabKey;
+  title: string;
+  resource: CloudLibraryResource;
+}
+
+interface BackendResultRecord {
+  ok?: boolean;
+  status?: number;
+  blockedByAuth?: boolean;
+  blockedByFeature?: boolean;
+  featureKey?: string;
+  reason?: string;
+  manifestToken?: unknown;
+  isTruncated?: boolean;
+  assets?: unknown;
+  asset?: unknown;
+}
+
+interface MediaRequestGate {
+  allowed?: boolean;
+  blockedByAuth?: boolean;
+  blockedByFeature?: boolean;
+  cleanup?: () => void;
+  featureKey?: string;
+  reason?: string;
+  signal?: AbortSignal;
+  status?: number;
+}
+
+interface BlockedMediaResponseOptions {
+  blockedByAuth?: boolean;
+  blockedByFeature?: boolean;
+  featureKey?: string;
+  reason?: string;
+  status?: number;
+}
+
+interface CachedMediaListOptions {
+  blockedGate?: BlockedMediaResponseOptions | null;
+  offline?: boolean;
+}
+
+interface CachedMediaListResponse {
+  assets: MediaManifestAsset[];
+  total_count: number;
+  has_more: boolean;
+  next_offset: number;
+  _cached?: boolean;
+  _offline?: boolean;
+  blockedByAuth?: boolean;
+  blockedByFeature?: boolean;
+  featureKey?: string;
+  reason?: string;
+  status?: number;
+}
+
+interface SyncCanonicalManifestOptions {
+  browseToken?: unknown;
+  signal?: AbortSignal | null;
+}
 
 const speedResource = createCloudLibraryResource({
   resourceKey: "replay_session",
@@ -54,24 +128,26 @@ const boardDocumentsResource = createCloudLibraryResource({
     getBackendBoardDocumentDetail({
       name,
       includePayload: mode === "full",
-  }),
+    }),
 });
 
-function isAbortError(error) {
+function isAbortError(error: unknown): boolean {
+  const candidate = error as { name?: unknown; code?: unknown } | null | undefined;
   return Boolean(
-    error
+    candidate
     && (
-      error.name === "AbortError"
-      || error.code === 20
-    )
+      candidate.name === "AbortError"
+      || candidate.code === 20
+    ),
   );
 }
 
-function isAuthBlockedResponse(result) {
-  return result?.blockedByAuth === true || result?.status === 401 || result?.status === 403;
+function isAuthBlockedResponse(result: unknown): boolean {
+  const response = result as BackendResultRecord | null | undefined;
+  return response?.blockedByAuth === true || response?.status === 401 || response?.status === 403;
 }
 
-function createBlockedMediaListResponse(gate = {}) {
+function createBlockedMediaListResponse(gate: BlockedMediaResponseOptions = {}) {
   return {
     ok: false,
     status: gate.status || 401,
@@ -88,7 +164,7 @@ function createBlockedMediaListResponse(gate = {}) {
   };
 }
 
-function createBlockedMediaDetailResponse(gate = {}) {
+function createBlockedMediaDetailResponse(gate: BlockedMediaResponseOptions = {}) {
   return {
     ok: false,
     status: gate.status || 401,
@@ -101,15 +177,19 @@ function createBlockedMediaDetailResponse(gate = {}) {
   };
 }
 
-function createCachedMediaListResponse(cached, query, {
-  blockedGate = null,
-  offline = false,
-} = {}) {
+function createCachedMediaListResponse(
+  cached: MediaManifestAsset[],
+  query: CloudLibraryQuery | null | undefined,
+  {
+    blockedGate = null,
+    offline = false,
+  }: CachedMediaListOptions = {},
+): CachedMediaListResponse {
   const limit = Number(query?.limit) || MEDIA_PAGE_SIZE;
   const offset = Number(query?.offset) || 0;
   const filtered = filterAndSortOfflineAssets(cached, query);
   const page = filtered.slice(offset, offset + limit);
-  const response = {
+  const response: CachedMediaListResponse = {
     assets: page,
     total_count: filtered.length,
     has_more: offset + page.length < filtered.length,
@@ -133,7 +213,10 @@ function createCachedMediaListResponse(cached, query, {
   return response;
 }
 
-function filterAndSortOfflineAssets(assets, query) {
+function filterAndSortOfflineAssets(
+  assets: MediaManifestAsset[],
+  query: CloudLibraryQuery | null | undefined,
+): MediaManifestAsset[] {
   let result = assets;
 
   const search = String(query?.search || "").trim().toLowerCase();
@@ -150,7 +233,7 @@ function filterAndSortOfflineAssets(assets, query) {
     if (sort === "oldest") return getSortableTimestamp(a) - getSortableTimestamp(b);
     if (sort === "title_asc") return collator.compare(a.title || "", b.title || "");
     if (sort === "title_desc") return collator.compare(b.title || "", a.title || "");
-    // "newest" (default) — descending by modified date
+    // "newest" (default) - descending by modified date
     return getSortableTimestamp(b) - getSortableTimestamp(a);
   });
 
@@ -164,12 +247,12 @@ function filterAndSortOfflineAssets(assets, query) {
  * items that were not cached through `cacheMediaManifest()`.  Returns 0
  * when nothing is parseable so sort remains stable.
  */
-function getSortableTimestamp(item) {
+function getSortableTimestamp(item: MediaManifestAsset): number {
   if (typeof item.sort_timestamp === "number" && item.sort_timestamp > 0) return item.sort_timestamp;
   for (const field of [item.modified_at, item.created_at]) {
     if (typeof field === "number" && field > 0) return field;
     if (field) {
-      const parsed = Date.parse(field);
+      const parsed = Date.parse(field as string);
       if (!Number.isNaN(parsed)) return parsed;
     }
   }
@@ -193,19 +276,19 @@ function getSortableTimestamp(item) {
  *
  * Returns ``true`` when the manifest was refreshed, ``false`` when skipped.
  */
-async function syncCanonicalManifest({ browseToken = null, signal } = {}) {
-  let gate = null;
+async function syncCanonicalManifest({ browseToken = null, signal }: SyncCanonicalManifestOptions = {}): Promise<boolean> {
+  let gate: MediaRequestGate | null = null;
   try {
-    gate = await getProtectedMediaRequestGate({ signal });
+    gate = await getProtectedMediaRequestGate({ signal }) as MediaRequestGate;
     if (!gate.allowed) return false;
 
-    // Determine the remote token — prefer the one already in hand.
+    // Determine the remote token - prefer the one already in hand.
     let remoteToken = browseToken;
     if (!remoteToken) {
-      const remoteVersion = await getBackendManifestVersion({ signal: gate.signal }).catch((error) => {
+      const remoteVersion = await getBackendManifestVersion({ signal: gate.signal }).catch((error: unknown) => {
         if (isAbortError(error)) throw error;
         return null;
-      });
+      }) as BackendResultRecord | null;
       if (isAuthBlockedResponse(remoteVersion)) {
         return false;
       }
@@ -222,8 +305,8 @@ async function syncCanonicalManifest({ browseToken = null, signal } = {}) {
       }
     }
 
-    // Token mismatch or no cached snapshot — fetch the full manifest
-    const response = await getBackendMediaManifest({ signal: gate.signal });
+    // Token mismatch or no cached snapshot - fetch the full manifest
+    const response = await getBackendMediaManifest({ signal: gate.signal }) as BackendResultRecord;
     if (isAuthBlockedResponse(response) || response?.ok === false) {
       return false;
     }
@@ -235,7 +318,10 @@ async function syncCanonicalManifest({ browseToken = null, signal } = {}) {
       const token = (response.manifestToken && !response.isTruncated)
         ? response.manifestToken
         : null;
-      await cacheManifestSnapshot({ assets, token });
+      await cacheManifestSnapshot({
+        assets: assets as MediaManifestAsset[],
+        token: token as string | null,
+      });
     }
     return true;
   } catch (error) {
@@ -250,7 +336,7 @@ const MEDIA_PAGE_SIZE = 24;
 
 const mediaResource = createCloudLibraryResource({
   resourceKey: "media_asset",
-  listLoader: async (query, { force = false, signal } = {}) => {
+  listLoader: async (query: CloudLibraryQuery, { force = false, signal }: CloudLibraryLoadOptions = {}) => {
     const limit = Number(query?.limit) || MEDIA_PAGE_SIZE;
     const offset = Number(query?.offset) || 0;
 
@@ -264,9 +350,9 @@ const mediaResource = createCloudLibraryResource({
       }
     }
 
-    let gate = null;
+    let gate: MediaRequestGate | null = null;
     try {
-      gate = await getProtectedMediaRequestGate({ signal });
+      gate = await getProtectedMediaRequestGate({ signal }) as MediaRequestGate;
       if (!gate.allowed) {
         const cached = gate.blockedByFeature === true
           ? await getCachedMediaManifest().catch(() => null)
@@ -280,7 +366,7 @@ const mediaResource = createCloudLibraryResource({
       const response = await listBackendMediaAssets({
         ...query,
         signal: gate.signal,
-      });
+      }) as BackendResultRecord;
 
       // Determine whether this is a canonical (unfiltered, first-page) load.
       const isCanonical = !query?.search && !offset;
@@ -319,9 +405,9 @@ const mediaResource = createCloudLibraryResource({
     }
   },
   detailLoader: async (name, { signal } = {}) => {
-    let gate = null;
+    let gate: MediaRequestGate | null = null;
     try {
-      gate = await getProtectedMediaRequestGate({ signal });
+      gate = await getProtectedMediaRequestGate({ signal }) as MediaRequestGate;
       if (!gate.allowed) {
         const cached = gate.blockedByFeature === true
           ? await getCachedMediaMetadata(name).catch(() => null)
@@ -339,10 +425,10 @@ const mediaResource = createCloudLibraryResource({
         return createBlockedMediaDetailResponse(gate);
       }
 
-      const response = await getBackendMediaAssetDetail({ name, signal: gate.signal });
-      const asset = response?.asset;
+      const response = await getBackendMediaAssetDetail({ name, signal: gate.signal }) as BackendResultRecord;
+      const asset = response?.asset as MediaMetadataRecord | null | undefined;
       if (asset && asset.name) {
-        cacheMediaMetadata(asset.name, asset).catch(() => {});
+        cacheMediaMetadata(asset.name as string, asset).catch(() => {});
       }
       return response;
     } catch (error) {
@@ -361,12 +447,12 @@ const mediaResource = createCloudLibraryResource({
   shouldPersistDetail: () => false,
 });
 
-export const cloudLibraryResources = Object.freeze({
+export const cloudLibraryResources: Readonly<Record<CloudLibraryTabKey, CloudLibraryResourceConfig>> = Object.freeze({
   [CLOUD_LIBRARY_TAB_KEYS.speed]: {
     capabilityKey: "cloud_sync",
     detailMode: "summary",
-    getDetailItem: (response) => response?.record ?? null,
-    getItems: (response) => response?.records ?? [],
+    getDetailItem: (response) => (response as { record?: unknown } | null | undefined)?.record ?? null,
+    getItems: (response) => (response as { records?: unknown } | null | undefined)?.records ?? [],
     key: CLOUD_LIBRARY_TAB_KEYS.speed,
     title: "Speed",
     resource: speedResource,
@@ -374,8 +460,8 @@ export const cloudLibraryResources = Object.freeze({
   [CLOUD_LIBRARY_TAB_KEYS.accel]: {
     capabilityKey: "cloud_sync",
     detailMode: "summary",
-    getDetailItem: (response) => response?.record ?? null,
-    getItems: (response) => response?.records ?? [],
+    getDetailItem: (response) => (response as { record?: unknown } | null | undefined)?.record ?? null,
+    getItems: (response) => (response as { records?: unknown } | null | undefined)?.records ?? [],
     key: CLOUD_LIBRARY_TAB_KEYS.accel,
     title: "Accel",
     resource: accelResource,
@@ -383,8 +469,8 @@ export const cloudLibraryResources = Object.freeze({
   [CLOUD_LIBRARY_TAB_KEYS.boardDocuments]: {
     capabilityKey: "cloud_sync",
     detailMode: "summary",
-    getDetailItem: (response) => response?.document ?? null,
-    getItems: (response) => response?.documents ?? [],
+    getDetailItem: (response) => (response as { document?: unknown } | null | undefined)?.document ?? null,
+    getItems: (response) => (response as { documents?: unknown } | null | undefined)?.documents ?? [],
     key: CLOUD_LIBRARY_TAB_KEYS.boardDocuments,
     title: "Board Documents",
     resource: boardDocumentsResource,
@@ -392,14 +478,14 @@ export const cloudLibraryResources = Object.freeze({
   [CLOUD_LIBRARY_TAB_KEYS.media]: {
     capabilityKey: "media_assets",
     detailMode: "summary",
-    getDetailItem: (response) => response?.asset ?? null,
-    getItems: (response) => response?.assets ?? [],
+    getDetailItem: (response) => (response as { asset?: unknown } | null | undefined)?.asset ?? null,
+    getItems: (response) => (response as { assets?: unknown } | null | undefined)?.assets ?? [],
     key: CLOUD_LIBRARY_TAB_KEYS.media,
     title: "Media",
     resource: mediaResource,
   },
 });
 
-export function getCloudLibraryResource(tabKey) {
-  return cloudLibraryResources[tabKey] || cloudLibraryResources[CLOUD_LIBRARY_TAB_KEYS.speed];
+export function getCloudLibraryResource(tabKey: unknown): CloudLibraryResourceConfig {
+  return cloudLibraryResources[tabKey as CloudLibraryTabKey] || cloudLibraryResources[CLOUD_LIBRARY_TAB_KEYS.speed];
 }
