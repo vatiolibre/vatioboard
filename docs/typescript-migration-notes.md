@@ -169,6 +169,11 @@
   - `src/speed/speed-alert-panel.ts`
   - `src/speed/camera-map-widget.ts`
   - `src/speed/speed.ts`
+- The remaining large feature route controllers moved to TypeScript in this phase:
+  - `src/accel/accel.ts`
+  - `src/replay/replay.ts`
+  - `src/library/library.ts`
+  - `src/board/board.ts`
 
 ## Contracts Future Work Must Use
 
@@ -208,17 +213,21 @@
 - Replay domain consumers should keep using the same public `.js` specifiers. This phase preserved replay storage keys, IndexedDB database/store/chunk key names, legacy localStorage migration, sample normalization/sorting/de-duplication/distance rebasing, active/last/library/pending-open record shapes, import/archive/remove behavior, payload completeness semantics, summary/path/bounds/interpolation/highlight/graph-model helpers, chart controller methods, map controller methods, satellite/solar layer setup, playback source updates, approach animation options, and debug window flags.
 - Accel domain/replay consumers should keep using the same public `.js` specifiers. This phase preserved run state/result shapes, live sample speed-resolution behavior, trace/sample-log/partial normalization, quality grading, persisted replay source/frame/marker/map-session payloads, elapsed/distance interpolation, replay chart controller methods, result graph controller methods, and every `accelTranslations` key/value payload.
 - GPS-rate controller/render/Nominatim consumers should keep using the same public `.js` specifiers. This phase preserved controller `init()` behavior, start/stop/reset/export/copy/wake-lock/permission/language event wiring, saved-summary enrichment and unit bootstrap, renderer method names and DOM update behavior, log row limits, warning/histogram/sparkline/availability calculations, Nominatim base URL and active-API persistence, public details guard, request-state shape, and response formatting.
+- Large route controller consumers should keep using the same public `.js` specifiers. This phase preserved accel/replay/library/board mount and unmount exports, thenable `initPromise` behavior, route lifecycle cleanup, standalone-vs-SPA startup timing, cloud sync status/idempotence, backend auth and tools-menu integration, single-tab ownership handling, DOM ids/classes, storage keys, route-query selection, and background/route-visible behavior.
 
 ## Still JavaScript
 
-- Larger feature UI/controller modules remain JavaScript to keep later batches reviewable: accel route UI/controller, library, board main, and replay route controller.
+- Large feature route controllers have moved to TypeScript; remaining JavaScript in these feature areas is limited to library support modules:
+  - `src/library/library-map-preview.js`
+  - `src/library/library-media-player.js`
+  - `src/library/resource-registry.js`
 - Route/app wrapper JavaScript has moved to TypeScript, including route template modules; app main and concrete route view wrappers remain TypeScript.
 - Standalone/dev harness wrapper JavaScript from this phase has moved to TypeScript; the standalone HTML files now point at the `.ts` Vite entry files where needed while test/runtime imports keep using public `.js` specifiers.
 - No files under `src/app/services/` remain JavaScript.
 - No files under `src/shared/repositories/` remain JavaScript.
 - The low-risk shared route/location helpers, global UI foundation helpers, calculator/energy leaf widgets, player widget/shell/milkdrop leaf widgets, board drawing-surface helper, replay session/logic/chart/map helpers, accel logic/replay/chart/result-graph helpers, and GPS-rate controller/render/Nominatim lab helpers are now TypeScript.
-- Other feature/domain modules still in JavaScript include `src/accel/accel.js`, `src/board/board.js`, `src/replay/replay.js`, and library controller modules.
+- No route controller modules remain JavaScript.
 
 ## Next Recommended Batch
 
-Pause before large route controllers. The next recommended dedicated batch is either `src/board/board.js` after a fresh dependency check or one large route controller at a time (`src/replay/replay.js` or `src/accel/accel.js`) with route lifecycle coverage; keep library controller modules for a later dedicated batch.
+The next recommended dedicated batch is the remaining library support JavaScript (`src/library/library-map-preview.js`, `src/library/library-media-player.js`, and `src/library/resource-registry.js`) after a fresh dependency check and library route smoke coverage.

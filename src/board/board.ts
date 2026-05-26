@@ -88,7 +88,9 @@ import {
   IconWorld,
 } from "../icons.js";
 
-let activeBoardRoute = null;
+type AnyRecord = Record<string, any>;
+
+let activeBoardRoute: AnyRecord | null = null;
 
 export function mountBoardRoute(routeContext = {}) {
   unmountBoardRoute();
@@ -105,13 +107,13 @@ function createMountedBoardController({
   root = document,
   cleanup: routeCleanup = null,
   signal,
-} = {}) {
-  const cleanup = createCleanupStack();
+}: AnyRecord = {}) {
+  const cleanup: AnyRecord = createCleanupStack() as any;
   routeCleanup?.add(() => cleanup.run());
   const routeRoot = root && typeof root.querySelector === "function" ? root : document;
-  const byId = (id) => routeRoot.querySelector(`#${id}`);
-  const query = (selector) => routeRoot.querySelector(selector);
-  const queryAll = (selector) => Array.from(routeRoot.querySelectorAll(selector));
+  const byId = (id: string): any => routeRoot.querySelector(`#${id}`);
+  const query = (selector: string): any => routeRoot.querySelector(selector);
+  const queryAll = (selector: string): any[] => Array.from(routeRoot.querySelectorAll(selector));
 
 // Apply translations immediately
 applyTranslations();
@@ -167,9 +169,9 @@ cleanup.addDisposable(toolsMenu);
 if (!isSpaRuntime) initBackendAuthControllers();
 
 // Shared floating tools live outside route-owned DOM in the SPA shell.
-const floatingTools = isSpaRuntime ? getFloatingTools() : initFloatingTools();
-const calcWidget = floatingTools?.calcWidget || null;
-const energyWidget = floatingTools?.energyWidget || null;
+const floatingTools: AnyRecord = (isSpaRuntime ? getFloatingTools() : initFloatingTools()) as any;
+const calcWidget: AnyRecord | null = floatingTools?.calcWidget || null;
+const energyWidget: AnyRecord | null = floatingTools?.energyWidget || null;
 
 const bindToggle = (btn, widget) => {
   if (!btn || !widget) return;
@@ -258,7 +260,7 @@ if (!isSpaRuntime) {
 
     const iroPickerEl = byId("iroPicker");
 
-    let iroPicker = null;
+    let iroPicker: any = null;
     let syncingFromIro = false;
 
 
@@ -323,18 +325,18 @@ if (!isSpaRuntime) {
 
     let tool = "pen"; // "pen" | "eraser"
     let drawing = false;
-    let activePointerId = null;
-    let activePointerCaptureTarget = null;
-    let last = null;
-    let currentStroke = null;
+    let activePointerId: number | null = null;
+    let activePointerCaptureTarget: any = null;
+    let last: AnyRecord | null = null;
+    let currentStroke: AnyRecord | null = null;
     let boardStateRevision = 0;
     let canvasCssWidth = 0;
     let canvasCssHeight = 0;
     let canvasDpr = 1;
     let viewMounted = true;
     let initialized = false;
-    const commandHistory = [];
-    const redoHistory = [];
+    const commandHistory: AnyRecord[] = [];
+    const redoHistory: AnyRecord[] = [];
 
     function isRouteInactive(){
       return Boolean(signal?.aborted || (isSpaRuntime && !viewMounted));
@@ -436,7 +438,7 @@ if (!isSpaRuntime) {
       }
     }
 
-    function setActive(options = {}){
+    function setActive(options: AnyRecord = {}){
       const shouldAnnounce = options.announce !== false;
       penBtn.setAttribute("aria-pressed", tool === "pen" ? "true" : "false");
       eraseBtn.setAttribute("aria-pressed", tool === "eraser" ? "true" : "false");
@@ -445,7 +447,7 @@ if (!isSpaRuntime) {
       }
     }
 
-    function activatePenTool(options = {}){
+    function activatePenTool(options: AnyRecord = {}){
       if (tool === "pen") {
         if (options.announce) setActive(options);
         return;
@@ -526,9 +528,9 @@ if (!isSpaRuntime) {
     async function hydrateBoardDrawing(){
       if (isRouteInactive()) return;
       const restoreRevision = boardStateRevision;
-      const pendingOpen = await consumeBoardDocumentOpen();
+      const pendingOpen: any = await consumeBoardDocumentOpen();
       if (isRouteInactive()) return;
-      const storedDrawing = pendingOpen?.payload || await loadBoardDrawing();
+      const storedDrawing: any = pendingOpen?.payload || await loadBoardDrawing();
       if (isRouteInactive()) return;
 
       if (boardStateRevision !== restoreRevision || drawing || commandHistory.length > 0 || redoHistory.length > 0) {
@@ -781,7 +783,7 @@ if (!isSpaRuntime) {
       if (!iroPickerEl || iroPicker) return;
 
       try {
-        iroPicker = new iro.ColorPicker(iroPickerEl, {
+        iroPicker = new (iro as any).ColorPicker(iroPickerEl, {
         width: 260,
         color: inkRaw,
         layout: [
@@ -1074,7 +1076,7 @@ if (!isSpaRuntime) {
         if (!capability) return;
 
         // Prompt for title on first save
-        let title = documentSession.documentTitle;
+        let title: any = documentSession.documentTitle;
         if (needsTitleForSave(documentSession)) {
           title = await showPromptDialog({
             title: t("boardTitlePrompt"),

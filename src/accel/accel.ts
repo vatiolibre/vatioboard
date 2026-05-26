@@ -132,7 +132,19 @@ import {
 
 const ACCEL_ACTIVITY_ID = 'accel.run';
 
-let accelRouteLifecycle = {
+type AnyRecord = Record<string, any>;
+type AnyFn = (...args: any[]) => any;
+type RouteLifecycle = {
+  mount: (routeContext?: AnyRecord) => unknown;
+  unmount: () => void;
+};
+type ToolsMenuController = {
+  close: AnyFn;
+  destroy: AnyFn;
+  setOpen: AnyFn;
+};
+
+let accelRouteLifecycle: RouteLifecycle = {
   mount() {},
   unmount() {},
 };
@@ -147,14 +159,14 @@ export function unmountAccelRoute() {
 
 export const initPromise = (function () {
   const isSpaRuntime = Boolean(window.__vatioboardSpa);
-  var singleTabOwnershipPromise = Promise.resolve(true);
-  var activeAccelRoute = null;
-  var standaloneCleanup = null;
+  var singleTabOwnershipPromise: Promise<boolean> = Promise.resolve(true);
+  var activeAccelRoute: AnyRecord | null = null;
+  var standaloneCleanup: AnyRecord | null = null;
   var standaloneBackendAuthInitialized = false;
-  var Chart = null;
-  var chartLoadPromise = null;
-  var DualRangeInput = null;
-  var dualRangeInputLoadPromise = null;
+  var Chart: any = null;
+  var chartLoadPromise: Promise<any> | null = null;
+  var DualRangeInput: any = null;
+  var dualRangeInputLoadPromise: Promise<any> | null = null;
 
   function loadChart() {
     if (!chartLoadPromise) {
@@ -176,8 +188,8 @@ export const initPromise = (function () {
     return dualRangeInputLoadPromise;
   }
 
-  var finishAudio = null;
-  var finishAudioPrimePromise = null;
+  var finishAudio: HTMLAudioElement | null = null;
+  var finishAudioPrimePromise: Promise<boolean> | null = null;
   var finishAudioPrimed = false;
 
   function getFinishAudio() {
@@ -189,14 +201,14 @@ export const initPromise = (function () {
     return finishAudio;
   }
 
-  function getAccelElements(root) {
-    var queryOne = function (selector) {
+  function getAccelElements(root: any): AnyRecord {
+    var queryOne = function (selector: string): any {
       return root?.querySelector ? root.querySelector(selector) : null;
     };
-    var queryAll = function (selector) {
+    var queryAll = function (selector: string): any[] {
       return root?.querySelectorAll ? Array.from(root.querySelectorAll(selector)) : [];
     };
-    var byId = function (id) {
+    var byId = function (id: string): any {
       return queryOne('#' + id);
     };
 
@@ -349,7 +361,7 @@ export const initPromise = (function () {
     };
   }
 
-  function createInactiveToolsMenu() {
+  function createInactiveToolsMenu(): ToolsMenuController {
     return {
       close: function () {},
       destroy: function () {},
@@ -357,7 +369,7 @@ export const initPromise = (function () {
     };
   }
 
-  function createInactiveSpeedometer() {
+  function createInactiveSpeedometer(): AnyRecord {
     return {
       destroy: function () {},
       render: function () {},
@@ -365,8 +377,8 @@ export const initPromise = (function () {
     };
   }
 
-  var elements = {};
-  var toolsMenu = createInactiveToolsMenu();
+  var elements: AnyRecord = getAccelElements(null);
+  var toolsMenu: ToolsMenuController = createInactiveToolsMenu();
 
   function openCloudSyncLauncher() {
     Promise.resolve().then(function () {
@@ -394,12 +406,12 @@ export const initPromise = (function () {
   var unitBootstrapPending = false;
   var runPlaceEnrichmentIds = new Set();
 
-  var replayChartFilterController = null;
+  var replayChartFilterController: AnyRecord | null = null;
   var accelChartControllersReady = false;
-  var accelChartControllersLoadPromise = null;
-  var liveSpeedometer = createInactiveSpeedometer();
+  var accelChartControllersLoadPromise: Promise<boolean> | null = null;
+  var liveSpeedometer: AnyRecord = createInactiveSpeedometer();
 
-  var state = {
+  var state: AnyRecord = {
     permissionState: 'prompt',
     permissionStatus: null,
     geolocationSupported: Boolean(navigator.geolocation),
@@ -487,11 +499,11 @@ export const initPromise = (function () {
     },
     formatRunSeconds: formatRunSeconds,
     t: t,
-    buildComparisonSignature: buildComparisonSignature,
+    buildComparisonSignature: buildComparisonSignature as any,
   });
   var buildComparisonText = historyHelpers.buildComparisonText;
 
-  function createInactiveResultGraph() {
+  function createInactiveResultGraph(): AnyRecord {
     return {
       buildGraphDataFromTraceSource: function () { return []; },
       destroy: function () {},
@@ -502,7 +514,7 @@ export const initPromise = (function () {
     };
   }
 
-  function createInactiveReplayCharts() {
+  function createInactiveReplayCharts(): AnyRecord {
     return {
       destroy: function () {},
       getAxisValueFromClientX: function () { return null; },
@@ -512,7 +524,7 @@ export const initPromise = (function () {
     };
   }
 
-  function createInactiveReplayMap() {
+  function createInactiveReplayMap(): AnyRecord {
     return {
       cancelApproachAnimation: function () {},
       clear: function () {},
@@ -525,9 +537,9 @@ export const initPromise = (function () {
     };
   }
 
-  var resultGraph = createInactiveResultGraph();
-  var replayCharts = createInactiveReplayCharts();
-  var replayMap = createInactiveReplayMap();
+  var resultGraph: AnyRecord = createInactiveResultGraph();
+  var replayCharts: AnyRecord = createInactiveReplayCharts();
+  var replayMap: AnyRecord = createInactiveReplayMap();
 
   function createAccelChartRouteControllers() {
     replayChartFilterController?.destroy?.();
@@ -631,10 +643,10 @@ export const initPromise = (function () {
 
     return accelChartControllersLoadPromise;
   }
-  var replayMapIntroPromise = null;
+  var replayMapIntroPromise: Promise<any> | null = null;
   var replayMapIntroToken = 0;
   var replayMapRenderToken = 0;
-  var replayMapResizeFrame = null;
+  var replayMapResizeFrame: number | null = null;
   var pendingMissingSelectionId = '';
 
   function applyStoredRuns(runs, preferredResultId, { preserveMissingPreferred = false } = {}) {
@@ -834,7 +846,7 @@ export const initPromise = (function () {
     }
   }
 
-  function t(key, params) {
+  function t(key: string, params?: any) {
     return sharedT(key, params);
   }
 
@@ -851,7 +863,7 @@ export const initPromise = (function () {
 
   function bindEvents() {
     var cleanup = activeAccelRoute?.cleanup;
-    function add(target, type, listener, options) {
+    function add(target: any, type: string, listener: any, options?: any) {
       cleanup?.addEventListener(target, type, listener, options);
     }
 
@@ -1116,7 +1128,7 @@ export const initPromise = (function () {
     publishAccelActivity();
   }
 
-  function focusElement(element) {
+  function focusElement(element: any) {
     if (!element || typeof element.focus !== 'function') return;
     try {
       element.focus({ preventScroll: true });
@@ -1125,7 +1137,7 @@ export const initPromise = (function () {
     }
   }
 
-  function isVisibleForFocus(element) {
+  function isVisibleForFocus(element: any) {
     return Boolean(element && element.hidden !== true && !element.closest('[hidden]'));
   }
 
@@ -1142,7 +1154,7 @@ export const initPromise = (function () {
     return candidates.find(isVisibleForFocus) || null;
   }
 
-  function focusCloudSyncLauncherTarget(attempt) {
+  function focusCloudSyncLauncherTarget(attempt = 0) {
     var nextAttempt = Number.isFinite(attempt) ? attempt : 0;
     toolsMenu.setOpen(true);
     var target = getCloudSyncLauncherFocusTarget();
@@ -1181,7 +1193,7 @@ export const initPromise = (function () {
     setReplayChartSheetOpen(false);
   }
 
-  function openPanel(panelName, triggerElement) {
+  function openPanel(panelName: string, triggerElement: any = null) {
     if (state.openPanel === panelName) return;
     if (state.openPanel) {
       teardownPanel(state.openPanel);
@@ -1200,7 +1212,7 @@ export const initPromise = (function () {
     if (focusTarget) focusTarget.focus();
   }
 
-  function closePanel(triggerElement) {
+  function closePanel(triggerElement: any = null) {
     if (!state.openPanel) return;
 
     var previouslyOpen = state.openPanel;
@@ -1332,7 +1344,7 @@ export const initPromise = (function () {
     return formatRouteString(startPlace, endPlace, t('accelUnavailable'));
   }
 
-  function getRunPlaceBoundarySamples(run) {
+  function getRunPlaceBoundarySamples(run: any): AnyRecord {
     if (!run || !Array.isArray(run.sampleLog)) {
       return {
         startSample: null,
@@ -1658,7 +1670,7 @@ export const initPromise = (function () {
     }
   }
 
-  function destroyAccelRouteResources(route = activeAccelRoute) {
+  function destroyAccelRouteResources(route: AnyRecord | null = activeAccelRoute) {
     if (!route || route.destroyed) return;
     route.destroyed = true;
     route.syncIndicator?.destroy?.();
@@ -1680,12 +1692,12 @@ export const initPromise = (function () {
     }
   }
 
-  async function mountAccelController(routeContext = {}) {
+  async function mountAccelController(routeContext: AnyRecord = {}) {
     if (routeContext.signal?.aborted) return Promise.resolve();
     unmountAccelController();
     var ownsCleanup = !routeContext.cleanup;
     var cleanup = routeContext.cleanup || createCleanupStack();
-    var route = {
+    var route: AnyRecord = {
       cleanup: cleanup,
       destroyed: false,
       ownsCleanup: ownsCleanup,
@@ -2208,7 +2220,7 @@ export const initPromise = (function () {
     });
   }
 
-  function cancelReplayMapApproach(options) {
+  function cancelReplayMapApproach(options: AnyRecord | null = null) {
     var markPlayed = Boolean(options && options.markPlayed);
     replayMapIntroToken += 1;
     replayMapIntroPromise = null;
@@ -2373,7 +2385,7 @@ export const initPromise = (function () {
     state.replay.playPending = false;
   }
 
-  async function startReplayPlayback(options) {
+  async function startReplayPlayback(options: AnyRecord | null = null) {
     var result = getDisplayedResult();
     var source = ensureReplaySource(result);
     if (!source) return;
@@ -2491,7 +2503,7 @@ export const initPromise = (function () {
     });
   }
 
-  function ensureWatch(options = {}) {
+  function ensureWatch(options: AnyRecord = {}) {
     if (isSpaRuntime && !state.viewMounted) return;
     if (!state.geolocationSupported || state.watchId !== null) return;
     if (options.fromUserGesture) {
@@ -3930,7 +3942,7 @@ export const initPromise = (function () {
     );
   }
 
-  function setActionNotice(key, params) {
+  function setActionNotice(key: string, params: AnyRecord = {}) {
     if (state.actionNoticeTimerId) window.clearTimeout(state.actionNoticeTimerId);
     elements.actionNotice.textContent = t(key, params || {});
 

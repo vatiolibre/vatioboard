@@ -62,15 +62,31 @@ import { isReplayPayloadComplete } from './session.js';
 
 const isSpaRuntime = Boolean(window.__vatioboardSpa);
 
-function queryAll(root, selector) {
+type AnyRecord = Record<string, any>;
+type AnyFn = (...args: any[]) => any;
+type RouteLifecycle = {
+  mount: (routeContext?: AnyRecord) => unknown;
+  unmount: () => void;
+};
+type ToolsMenuController = {
+  close: AnyFn;
+  destroy: AnyFn;
+  setOpen: AnyFn;
+};
+type SingleTabOwnershipResult = {
+  owned: boolean;
+  degraded: boolean;
+};
+
+function queryAll(root: any, selector: string): any[] {
   return root?.querySelectorAll ? Array.from(root.querySelectorAll(selector)) : [];
 }
 
-function queryOne(root, selector) {
+function queryOne(root: any, selector: string): any {
   return root?.querySelector ? root.querySelector(selector) : null;
 }
 
-export function getReplayElements(root) {
+export function getReplayElements(root: any): AnyRecord {
   return {
     langToggle: queryOne(root, '#langToggle'),
     langToggleButtons: queryAll(root, '[data-lang-toggle], #langToggle'),
@@ -122,7 +138,7 @@ export function getReplayElements(root) {
   };
 }
 
-export function getReplayGraphElements(root) {
+export function getReplayGraphElements(root: any): AnyRecord {
   return {
     speed: {
       current: queryOne(root, '#replayGraphSpeedCurrent'),
@@ -153,15 +169,15 @@ export function getReplayGraphElements(root) {
   };
 }
 
-function createInactiveReplayElements() {
+function createInactiveReplayElements(): AnyRecord {
   return getReplayElements(null);
 }
 
-function createInactiveReplayGraphElements() {
+function createInactiveReplayGraphElements(): AnyRecord {
   return getReplayGraphElements(null);
 }
 
-function createInactiveToolsMenu() {
+function createInactiveToolsMenu(): ToolsMenuController {
   return {
     close() {},
     destroy() {},
@@ -169,7 +185,7 @@ function createInactiveToolsMenu() {
   };
 }
 
-function createInactiveReplayChartsController() {
+function createInactiveReplayChartsController(): AnyRecord {
   return {
     destroy() {},
     renderSession() {},
@@ -179,7 +195,7 @@ function createInactiveReplayChartsController() {
   };
 }
 
-function createInactiveReplayMapController() {
+function createInactiveReplayMapController(): AnyRecord {
   return {
     cancelApproachAnimation() {},
     destroy() {},
@@ -195,23 +211,23 @@ function createInactiveReplayMapController() {
   };
 }
 
-let elements = createInactiveReplayElements();
-let graphElements = createInactiveReplayGraphElements();
-let toolsMenu = createInactiveToolsMenu();
-let replayFilterController = null;
-let chartsController = createInactiveReplayChartsController();
-let mapController = createInactiveReplayMapController();
+let elements: AnyRecord = createInactiveReplayElements();
+let graphElements: AnyRecord = createInactiveReplayGraphElements();
+let toolsMenu: ToolsMenuController = createInactiveToolsMenu();
+let replayFilterController: AnyRecord | null = null;
+let chartsController: AnyRecord = createInactiveReplayChartsController();
+let mapController: AnyRecord = createInactiveReplayMapController();
 let replayChartsReady = false;
-let replayChartsLoadPromise = null;
-let singleTabOwnershipPromise = Promise.resolve(true);
+let replayChartsLoadPromise: Promise<boolean> | null = null;
+let singleTabOwnershipPromise: Promise<boolean> = Promise.resolve(true);
 let replayRouteGeneration = 0;
-let activeReplayRoute = null;
-let standaloneCleanup = null;
+let activeReplayRoute: AnyRecord | null = null;
+let standaloneCleanup: AnyRecord | null = null;
 let standaloneBackendAuthInitialized = false;
-let DualRangeInput = null;
-let dualRangeInputLoadPromise = null;
-let Chart = null;
-let chartLoadPromise = null;
+let DualRangeInput: any = null;
+let dualRangeInputLoadPromise: Promise<any> | null = null;
+let Chart: any = null;
+let chartLoadPromise: Promise<any> | null = null;
 
 function loadDualRangeInput() {
   if (!dualRangeInputLoadPromise) {
@@ -233,7 +249,7 @@ function loadChart() {
   return chartLoadPromise;
 }
 
-function focusElement(element) {
+function focusElement(element: any) {
   if (!element || typeof element.focus !== 'function') return;
   try {
     element.focus({ preventScroll: true });
@@ -242,7 +258,7 @@ function focusElement(element) {
   }
 }
 
-function isVisibleForFocus(element) {
+function isVisibleForFocus(element: any) {
   return Boolean(element && element.hidden !== true && !element.closest('[hidden]'));
 }
 
@@ -282,7 +298,7 @@ function openCloudSyncLauncher() {
   });
 }
 
-let replayRouteLifecycle = {
+let replayRouteLifecycle: RouteLifecycle = {
   mount() {},
   unmount() {},
 };
@@ -295,7 +311,7 @@ export function unmountReplayRoute() {
   replayRouteLifecycle.unmount();
 }
 
-const state = {
+const state: AnyRecord = {
   records: [],
   selectedRecordingId: null,
   sessionSource: null,
@@ -318,14 +334,14 @@ const state = {
   expandedGraphFilterEndRatio: 1,
   expandedGraphPointerId: null,
 };
-let replaySelectionPromise = Promise.resolve();
-let replaySelectionKickoffPromise = Promise.resolve();
+let replaySelectionPromise: Promise<any> = Promise.resolve();
+let replaySelectionKickoffPromise: Promise<any> = Promise.resolve();
 let replaySelectionRequestVersion = 0;
 let hasHydratedInitialSelection = false;
-let introApproachPromise = null;
+let introApproachPromise: Promise<any> | null = null;
 let introApproachToken = 0;
-let recordingsDetailMeasureFrame = null;
-let pendingReplayRecoveryRecordingId = null;
+let recordingsDetailMeasureFrame: number | null = null;
+let pendingReplayRecoveryRecordingId: string | null = null;
 
 refreshDerivedState();
 
@@ -1019,7 +1035,7 @@ function ensureReplayChartRouteControllers() {
   return replayChartsLoadPromise;
 }
 
-function destroyReplayRouteResources(route = activeReplayRoute) {
+function destroyReplayRouteResources(route: AnyRecord | null = activeReplayRoute) {
   if (!route || route.destroyed) return;
   route.destroyed = true;
   route.syncIndicator?.destroy?.();
@@ -1066,12 +1082,12 @@ function syncMountedReplayRouteUi() {
   mapController.resize();
 }
 
-async function mountReplayController(routeContext = {}) {
+async function mountReplayController(routeContext: AnyRecord = {}) {
   if (routeContext.signal?.aborted) return Promise.resolve();
   unmountReplayController();
   const ownsCleanup = !routeContext.cleanup;
   const cleanup = routeContext.cleanup || createCleanupStack();
-  const route = {
+  const route: AnyRecord = {
     cleanup,
     destroyed: false,
     generation: replayRouteGeneration + 1,
@@ -1315,7 +1331,7 @@ async function refreshReplaySelectionTelemetry({
   requestId,
   restoreRecordingId,
   session,
-} = {}) {
+}: AnyRecord = {}) {
   const result = await ensureReplayTelemetry(restoreRecordingId, { session });
   if (!result?.restored) {
     return false;
@@ -1435,7 +1451,12 @@ function syncLanguage() {
   renderPlaybackFrame();
 }
 
-function bindEvents({ elements: routeElements = elements, graphElements: routeGraphElements = graphElements, cleanup, signal } = {}) {
+function bindEvents({
+  elements: routeElements = elements,
+  graphElements: routeGraphElements = graphElements,
+  cleanup,
+  signal,
+}: AnyRecord = {}) {
   if (!cleanup) return;
   if (signal?.aborted) return;
 
@@ -1543,7 +1564,7 @@ function bindEvents({ elements: routeElements = elements, graphElements: routeGr
     stopPlayback();
     const nextRecord = state.records.find((record) => record.id === button.dataset.recordingId) ?? null;
     if (nextRecord?.session && !isReplayPayloadComplete(nextRecord.session)) {
-      replaySelectionKickoffPromise = new Promise((resolve) => {
+      replaySelectionKickoffPromise = new Promise<void>((resolve) => {
         let settled = false;
         const resolveOnce = () => {
           if (settled) return;
@@ -1691,10 +1712,10 @@ function bindEvents({ elements: routeElements = elements, graphElements: routeGr
 
 const REPLAY_OWNERSHIP_TIMEOUT_MS = 3000;
 
-async function raceOwnershipWithTimeout() {
-  let timeoutId;
+async function raceOwnershipWithTimeout(): Promise<SingleTabOwnershipResult> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
   try {
-    const result = await Promise.race([
+    const result = await Promise.race<SingleTabOwnershipResult>([
       singleTabOwnershipPromise.then(
         (owned) => ({ owned: owned === true, degraded: false }),
         () => ({ owned: false, degraded: true }),

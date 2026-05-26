@@ -100,15 +100,27 @@ const TAB_ORDER = [
   CLOUD_LIBRARY_TAB_KEYS.media,
 ];
 
-function queryAll(root, selector) {
+type AnyRecord = Record<string, any>;
+type AnyFn = (...args: any[]) => any;
+type RouteLifecycle = {
+  mount: (routeContext?: AnyRecord) => unknown;
+  unmount: () => void;
+};
+type ToolsMenuController = {
+  close: AnyFn;
+  destroy: AnyFn;
+  setOpen: AnyFn;
+};
+
+function queryAll(root: any, selector: string): any[] {
   return root?.querySelectorAll ? Array.from(root.querySelectorAll(selector)) : [];
 }
 
-function queryOne(root, selector) {
+function queryOne(root: any, selector: string): any {
   return root?.querySelector ? root.querySelector(selector) : null;
 }
 
-export function getLibraryElements(root) {
+export function getLibraryElements(root: any): AnyRecord {
   return {
     langToggleButtons: queryAll(root, "[data-lang-toggle], #langToggle"),
     libraryTabs: queryAll(root, ".library-tab[data-tab]"),
@@ -152,7 +164,7 @@ function createEmptyLibraryElements() {
   return getLibraryElements(null);
 }
 
-function createInactiveLibraryMediaPlayer() {
+function createInactiveLibraryMediaPlayer(): AnyRecord {
   return {
     destroy() {},
     getMediaElement() {
@@ -164,7 +176,7 @@ function createInactiveLibraryMediaPlayer() {
   };
 }
 
-function createInactiveToolsMenu() {
+function createInactiveToolsMenu(): ToolsMenuController {
   return {
     close() {},
     destroy() {},
@@ -172,15 +184,15 @@ function createInactiveToolsMenu() {
   };
 }
 
-let elements = createEmptyLibraryElements();
-let toolsMenu = createInactiveToolsMenu();
-let overflowMenu = createInactiveToolsMenu();
-let libraryMediaPlayer = createInactiveLibraryMediaPlayer();
+let elements: AnyRecord = createEmptyLibraryElements();
+let toolsMenu: ToolsMenuController = createInactiveToolsMenu();
+let overflowMenu: ToolsMenuController = createInactiveToolsMenu();
+let libraryMediaPlayer: AnyRecord = createInactiveLibraryMediaPlayer();
 let libraryRouteGeneration = 0;
-let activeLibraryRoute = null;
+let activeLibraryRoute: AnyRecord | null = null;
 let standaloneBackendAuthInitialized = false;
 
-function focusElement(element) {
+function focusElement(element: any) {
   try {
     element.focus({ preventScroll: true });
   } catch {
@@ -188,7 +200,7 @@ function focusElement(element) {
   }
 }
 
-function isVisibleForFocus(element) {
+function isVisibleForFocus(element: any) {
   return Boolean(element && element.hidden !== true && !element.closest("[hidden]"));
 }
 
@@ -228,7 +240,7 @@ function openCloudSyncLauncher() {
   });
 }
 
-const state = {
+const state: AnyRecord = {
   viewMounted: false,
   initialized: false,
   activeTab: CLOUD_LIBRARY_TAB_KEYS.speed,
@@ -261,8 +273,8 @@ const state = {
   statusTone: "muted",
 };
 
-let mapPreview = null;
-let previewObjectUrl = null;
+let mapPreview: AnyRecord | null = null;
+let previewObjectUrl: string | null = null;
 
 /**
  * Tracks an active remote playback session by asset name.  Set when the
@@ -287,9 +299,9 @@ let lastPreviewSignature = "";
  * to discard stale results from in-flight reconnect recovery.
  */
 let authGeneration = 0;
-let pendingAuthRefresh = null;
+let pendingAuthRefresh: AnyRecord | null = null;
 
-let libraryRouteLifecycle = {
+let libraryRouteLifecycle: RouteLifecycle = {
   mount() {},
   unmount() {},
 };
@@ -330,7 +342,7 @@ function revokePreviewObjectUrl() {
  * @param {string} [contentHash]
  * @param {{ intent?: string }} [opts]
  */
-async function resolveMediaAccess(assetName, contentHash, { intent } = {}) {
+async function resolveMediaAccess(assetName: any, contentHash: any, { intent }: AnyRecord = {}) {
   if (!assetName) return null;
 
   // When no intent is specified, use the generic cache lookup.
@@ -522,11 +534,11 @@ function formatDimensionPair(width, height) {
   return `${Math.round(normalizedWidth)} x ${Math.round(normalizedHeight)}`;
 }
 
-function getCurrentResourceConfig() {
-  return getCloudLibraryResource(state.activeTab);
+function getCurrentResourceConfig(): AnyRecord {
+  return getCloudLibraryResource(state.activeTab) as any;
 }
 
-function getCurrentCapability() {
+function getCurrentCapability(): AnyRecord {
   if (!state.session?.authenticated) {
     return {
       enabled: false,
@@ -581,7 +593,7 @@ function buildListRequestKey({
   offset = 0,
   search = "",
   sort = "newest",
-} = {}) {
+}: AnyRecord = {}) {
   return JSON.stringify({
     limit,
     offset,
@@ -596,7 +608,7 @@ function isActiveListRequest({
   requestId,
   generation,
   requestKey,
-} = {}) {
+}: AnyRecord = {}) {
   return (
     requestId === listRequestState.requestId
     && generation === listRequestState.generation
@@ -902,7 +914,7 @@ async function recoverMissingCloudRecord(name, { tabKey = state.activeTab } = {}
   }
 }
 
-function buildRecordSubtitle(item = {}) {
+function buildRecordSubtitle(item: AnyRecord = {}) {
   const config = getResourceConfig(state.activeTab);
   return config.buildSubtitle(item);
 }
@@ -1012,7 +1024,7 @@ function createMetaRow(label, value) {
   return wrapper;
 }
 
-function buildDetailMetaEntries(item = {}) {
+function buildDetailMetaEntries(item: AnyRecord = {}) {
   const config = getResourceConfig(state.activeTab);
   return config.buildMetaEntries(item);
 }
@@ -1040,18 +1052,21 @@ function renderPreviewPlaceholder(item, config) {
   elements.detailPreview.append(fallback);
 }
 
-async function playMediaItemInGlobalRuntime(item) {
+async function playMediaItemInGlobalRuntime(item: AnyRecord) {
   if (!item?.name) return;
   const tracks = state.items.filter((entry) => String(entry?.media_kind || "").toLowerCase() === "audio");
   audioRuntime.primeAudio?.();
   await audioRuntime.playLibraryTrackNow(item, tracks.length ? tracks : [item]);
-  window.__vatioboardPlayerWidget?.open?.();
+  (window.__vatioboardPlayerWidget as any)?.open?.();
   if (isAutoCacheEligible(item)) {
     triggerAutoCacheDownload(item.name, item).catch(() => {});
   }
 }
 
-function renderDetailPreview(item = {}, { isOfflineItem = false, isPinned = false, localPreviewUrl = "" } = {}) {
+function renderDetailPreview(
+  item: AnyRecord = {},
+  { isOfflineItem = false, isPinned = false, localPreviewUrl = "" }: AnyRecord = {},
+) {
   if (!canRenderView()) return;
   if (!elements.detailPreview) return;
 
@@ -1676,7 +1691,9 @@ function rehydrateAuthOnReconnect() {
   })();
 }
 
-async function loadList({ append = false, force = false, offlineBootstrap = false, preserveSnapshot = false } = {}) {
+async function loadList(
+  { append = false, force = false, offlineBootstrap = false, preserveSnapshot = false }: AnyRecord = {},
+) {
   const capability = getCurrentCapability();
   const isOfflineMediaTab = state.listOffline && state.activeTab === CLOUD_LIBRARY_TAB_KEYS.media;
   const isReconnectingMediaTab = state.reconnecting && state.activeTab === CLOUD_LIBRARY_TAB_KEYS.media;
@@ -1692,7 +1709,7 @@ async function loadList({ append = false, force = false, offlineBootstrap = fals
     return;
   }
 
-  const resourceConfig = getCurrentResourceConfig();
+  const resourceConfig: AnyRecord = getCurrentResourceConfig();
   const tabKey = state.activeTab;
   const detailFromList = getResourceConfig(tabKey).detailFromList;
   const offset = append ? state.nextOffset : 0;
@@ -1724,7 +1741,7 @@ async function loadList({ append = false, force = false, offlineBootstrap = fals
   renderDetail();
 
   try {
-    const response = await resourceConfig.resource.list(
+    const response: AnyRecord = await resourceConfig.resource.list(
       {
         limit: PAGE_SIZE,
         offset,
@@ -1747,7 +1764,7 @@ async function loadList({ append = false, force = false, offlineBootstrap = fals
     }
 
     setStatus();
-    const nextItems = resourceConfig.getItems(response);
+    const nextItems: AnyRecord[] = resourceConfig.getItems(response);
     const isOfflineResponse = Boolean(response?._offline);
     // During offline bootstrap, cached manifest responses should be treated
     // as offline so items are tagged _offline and state.listOffline is set.
@@ -1811,12 +1828,12 @@ async function loadList({ append = false, force = false, offlineBootstrap = fals
           sort: state.query.sort,
         },
         { force: true }
-      ).then((freshResponse) => {
+      ).then((freshResponse: AnyRecord) => {
         if (!isActiveListRequest(revalidationFence)) {
           return;
         }
 
-        const freshItems = resourceConfig.getItems(freshResponse);
+        const freshItems: AnyRecord[] = resourceConfig.getItems(freshResponse);
         const wasOffline = state.listOffline;
         const isFreshOffline = Boolean(freshResponse?._offline);
         if (isFreshOffline) {
@@ -2545,7 +2562,7 @@ function applyLibraryIcons(routeElements = elements) {
   });
 }
 
-function destroyLibraryRouteResources(route = activeLibraryRoute) {
+function destroyLibraryRouteResources(route: AnyRecord | null = activeLibraryRoute) {
   if (!route || route.destroyed) return;
   route.destroyed = true;
   route.syncIndicator?.destroy?.();
@@ -2562,13 +2579,13 @@ function destroyLibraryRouteResources(route = activeLibraryRoute) {
   }
 }
 
-function mountLibraryController(routeContext = {}) {
+function mountLibraryController(routeContext: AnyRecord = {}) {
   if (routeContext.signal?.aborted) return Promise.resolve();
   unmountLibraryController();
   const ownsCleanup = !routeContext.cleanup;
   const cleanup = routeContext.cleanup || createCleanupStack();
   const root = routeContext.root || document;
-  const route = {
+  const route: AnyRecord = {
     cleanup,
     destroyed: false,
     generation: libraryRouteGeneration + 1,
@@ -2657,7 +2674,7 @@ function unmountLibraryController() {
   }
 }
 
-function bindEvents({ elements: routeElements = elements, cleanup, signal } = {}) {
+function bindEvents({ elements: routeElements = elements, cleanup, signal }: AnyRecord = {}) {
   if (!cleanup) return;
   if (signal?.aborted) return;
 
