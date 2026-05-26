@@ -9,6 +9,11 @@ import {
 
 const DETAIL_METRIC_KEYS = ["speedMs", "altitudeM", "headingDeg"];
 
+type ReplayChartLike = {
+  destroy(): void;
+  [key: string]: any;
+};
+
 const replayCursorPlugin = {
   id: "replayCursor",
   afterDatasetsDraw(chart) {
@@ -208,7 +213,7 @@ export function createReplayChartsController({
     return { min, max };
   }
 
-  function destroyChartMap(chartMap) {
+  function destroyChartMap(chartMap: Record<string, ReplayChartLike | null>) {
     for (const chart of Object.values(chartMap)) {
       if (chart) chart.destroy();
     }
@@ -436,8 +441,8 @@ export function createReplayChartsController({
     updatePlayback(lastPlaybackPoint);
   }
 
-  function updatePlayback(playbackPoint = {}) {
-    const safePlaybackPoint = playbackPoint && typeof playbackPoint === "object"
+  function updatePlayback(playbackPoint: any = {}) {
+    const safePlaybackPoint: any = playbackPoint && typeof playbackPoint === "object"
       ? playbackPoint
       : {};
     const palette = getSharedPalette();

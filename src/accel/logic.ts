@@ -16,6 +16,25 @@ import {
   TRACE_DUPLICATE_EPSILON_MS,
 } from "./constants.js";
 
+interface AccelSpeedTracePoint {
+  elapsedMs: number;
+  speedMs: number;
+  distanceM?: number | null;
+  altitudeM?: number | null;
+  accuracyM?: number | null;
+  speedSource?: string | null;
+}
+
+interface AccelQuality {
+  grade: string;
+  score: number;
+  warningKeys: string[];
+  averageIntervalMs?: number | null;
+  jitterMs?: number | null;
+  averageHz?: number | null;
+  samples?: number;
+}
+
 export function toFiniteNumber(value, fallback) {
   return isFiniteNumber(Number(value)) ? Number(value) : fallback;
 }
@@ -132,7 +151,7 @@ export function computeIntervalStats(intervals) {
   };
 }
 
-export function evaluateQuality(input) {
+export function evaluateQuality(input): AccelQuality {
   let score = 100;
   const warningKeys = [];
 
@@ -416,7 +435,7 @@ export function appendSpeedTracePoint(run, elapsedMs, speedMs, details) {
   const normalizedSpeedMs = Math.max(0, speedMs);
   const trace = run.speedTrace;
   const lastPoint = trace.length ? trace[trace.length - 1] : null;
-  const nextPoint = {
+  const nextPoint: AccelSpeedTracePoint = {
     elapsedMs: normalizedElapsedMs,
     speedMs: normalizedSpeedMs,
   };
@@ -476,12 +495,12 @@ export function appendRunSampleLog(run, sample) {
 export function normalizeStoredSpeedTrace(trace, expectedElapsedMs) {
   if (!Array.isArray(trace) || !trace.length) return [];
 
-  let normalized = [];
+  let normalized: AccelSpeedTracePoint[] = [];
   for (let index = 0; index < trace.length; index += 1) {
     const point = trace[index];
     if (!point || typeof point !== "object") continue;
     if (!isFiniteNumber(point.elapsedMs) || !isFiniteNumber(point.speedMs)) continue;
-    const normalizedPoint = {
+    const normalizedPoint: AccelSpeedTracePoint = {
       elapsedMs: Math.max(0, point.elapsedMs),
       speedMs: Math.max(0, point.speedMs),
     };
@@ -551,10 +570,10 @@ export function repairStoredSpeedTrace(trace, expectedElapsedMs) {
   if (maxElapsedMs <= normalizedExpectedMs * CLOCK_DELTA_DISAGREEMENT_RATIO) return trace.slice();
 
   const scale = normalizedExpectedMs / maxElapsedMs;
-  const scaled = [];
+  const scaled: AccelSpeedTracePoint[] = [];
   for (let scaleIndex = 0; scaleIndex < trace.length; scaleIndex += 1) {
     const sourcePoint = trace[scaleIndex];
-    const scaledPoint = {
+    const scaledPoint: AccelSpeedTracePoint = {
       elapsedMs: sourcePoint.elapsedMs * scale,
       speedMs: sourcePoint.speedMs,
     };
@@ -768,12 +787,12 @@ export function compactSpeedTrace(trace) {
   const maxPoints = MAX_RESULT_TRACE_POINTS;
   if (!Array.isArray(trace) || trace.length <= maxPoints) return trace ? trace.slice() : [];
 
-  const compacted = [];
+  const compacted: AccelSpeedTracePoint[] = [];
   const lastIndex = trace.length - 1;
   for (let index = 0; index < maxPoints; index += 1) {
     const sourceIndex = Math.round((index / (maxPoints - 1)) * lastIndex);
     const point = trace[sourceIndex];
-    const compactedPoint = {
+    const compactedPoint: AccelSpeedTracePoint = {
       elapsedMs: point.elapsedMs,
       speedMs: point.speedMs,
     };

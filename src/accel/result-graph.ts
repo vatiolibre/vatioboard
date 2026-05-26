@@ -1,3 +1,10 @@
+interface AccelResultGraphRenderOptions {
+  axisMode?: string;
+  markerPoints?: any[];
+  playbackPoint?: any;
+  [key: string]: any;
+}
+
 export function createAccelResultGraph({
   Chart,
   elements,
@@ -23,7 +30,7 @@ export function createAccelResultGraph({
   let resultGraphResizeObserver = null;
   let resultGraphRefreshFrame = 0;
   let resultGraphRenderKey = "";
-  let resultGraphRenderOptions = {};
+  let resultGraphRenderOptions: AccelResultGraphRenderOptions = {};
   let resultGraphSelectionResultId = "";
   let resultGraphSelectionPointKey = "";
   let resultGraphObservedPanelWidth = 0;
@@ -222,7 +229,7 @@ export function createAccelResultGraph({
     return fallbackPoint;
   }
 
-  function getResultGraphSelectedIndex(selectedPoint, graphData) {
+  function _getResultGraphSelectedIndex(selectedPoint, graphData) {
     if (!selectedPoint || !graphData || !graphData.length) return -1;
 
     for (let index = 0; index < graphData.length; index += 1) {
@@ -589,7 +596,7 @@ export function createAccelResultGraph({
     }
   }
 
-  function render(result, options = {}) {
+  function render(result, options: AccelResultGraphRenderOptions = {}) {
     if (!elements.resultGraphMeta || !elements.resultGraphEmptyState || !elements.resultGraphFrame) return;
     resultGraphRenderOptions = options;
 

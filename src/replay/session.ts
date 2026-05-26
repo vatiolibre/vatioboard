@@ -18,6 +18,24 @@ const REPLAY_DB_STORE = 'replayRecords';
 const REPLAY_STORAGE_KEYS = [REPLAY_ACTIVE_KEY, REPLAY_LAST_KEY, REPLAY_LIBRARY_KEY];
 const REPLAY_CHUNK_KEY_PREFIX = 'replayChunk:';
 
+type ReplayOptionBag = Record<string, any>;
+
+interface ReplayLoadOptions {
+  includeSamples?: boolean;
+}
+
+interface ReplayImportOptions {
+  minSamples?: number;
+  saveLast?: boolean;
+  maxRecordings?: number;
+}
+
+interface ReplayArchiveOptions {
+  endedAtMs?: number | null;
+  minSamples?: number;
+  maxRecordings?: number;
+}
+
 const replayStore = createIndexedJsonKeyValueStore({
   dbName: REPLAY_DB_NAME,
   dbVersion: REPLAY_DB_VERSION,
@@ -55,7 +73,7 @@ function normalizeBoundaryPlace(place) {
   };
 }
 
-let replayMigrationPromise = null;
+let replayMigrationPromise: Promise<void> | null = null;
 
 async function hasReplayIndexedStorageAvailable() {
   return replayStorageCapability.isIndexedDbUsable();
@@ -175,7 +193,7 @@ function sortAndDedupeReplaySamples(samples) {
   return dedupedSamples;
 }
 
-export function createReplaySession(options = {}) {
+export function createReplaySession(options: ReplayOptionBag = {}) {
   const startedAtMs = isFiniteNumber(options.startedAtMs) ? options.startedAtMs : null;
   const fallbackTimestamp = startedAtMs ?? Date.now();
 
@@ -717,7 +735,7 @@ export function hasReplaySamples(session, minSamples = 1) {
   return sampleCount >= minSamples;
 }
 
-export function appendReplaySample(session, sample, options = {}) {
+export function appendReplaySample(session, sample, options: ReplayOptionBag = {}) {
   const normalizedSample = normalizeReplaySample(sample);
   if (!normalizedSample) {
     return session;
@@ -835,7 +853,7 @@ export function finalizeReplaySession(session, endedAtMs = null) {
   });
 }
 
-export async function loadActiveReplaySession(options = {}) {
+export async function loadActiveReplaySession(options: ReplayLoadOptions = {}) {
   const hasIndexedStorage = await hasReplayIndexedStorageAvailable();
   const session = await ensureReplaySessionDistanceOrigin(
     await ensureChunkedReplaySession(
@@ -878,7 +896,7 @@ export async function clearActiveReplaySession() {
   await removeReplayValue(REPLAY_ACTIVE_KEY);
 }
 
-export async function loadLastReplaySession(options = {}) {
+export async function loadLastReplaySession(options: ReplayLoadOptions = {}) {
   const hasIndexedStorage = await hasReplayIndexedStorageAvailable();
   const session = await ensureReplaySessionDistanceOrigin(
     await ensureChunkedReplaySession(await loadReplayValue(REPLAY_LAST_KEY, null), REPLAY_LAST_KEY),
@@ -1000,7 +1018,7 @@ export async function saveReplayLibrary(recordings) {
   return persistedRecordings;
 }
 
-export async function importReplaySession(session, options = {}) {
+export async function importReplaySession(session, options: ReplayImportOptions = {}) {
   const normalizedSession = normalizeReplaySession(session);
   if (!normalizedSession || !isReplayPayloadComplete(normalizedSession, options)) {
     return null;
@@ -1020,7 +1038,7 @@ export async function importReplaySession(session, options = {}) {
   return normalizedSession;
 }
 
-export async function archiveReplaySession(session, options = {}) {
+export async function archiveReplaySession(session, options: ReplayArchiveOptions = {}) {
   const normalizedSession = finalizeReplaySession(session, options.endedAtMs ?? null);
   if (!hasReplaySamples(normalizedSession, options.minSamples ?? 2)) {
     return null;

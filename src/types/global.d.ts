@@ -85,6 +85,8 @@ interface Window {
   __vatioboardSpeedGetCurrentPosition?: () => VatioBoardGpsPosition | null;
   __vatioboardSpeedRuntimeLifecycleCleanup?: unknown;
   __vatioboardStartMenu?: VatioBoardStartMenu;
+  __VATIO_ACCEL_REPLAY_DEBUG?: boolean;
+  __VATIO_REPLAY_MAP_DEBUG?: boolean;
   __lang?: string;
 }
 

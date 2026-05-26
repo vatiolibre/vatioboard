@@ -2,6 +2,21 @@ import { formatRouteString } from '../shared/route-string.js';
 import { DISTANCE_UNIT_CONFIG, UNIT_CONFIG } from '../speed/constants.js';
 import { isFiniteNumber } from './session.js';
 
+interface ReplayGraphModelOptions {
+  width?: number;
+  height?: number;
+  paddingX?: number;
+  paddingY?: number;
+  metricKey?: string;
+  minValue?: number;
+  maxValue?: number;
+}
+
+interface ReplayGraphCursorOptions {
+  width?: number;
+  paddingX?: number;
+}
+
 export function getReplayDurationMs(session) {
   if (!session) return 0;
 
@@ -543,7 +558,7 @@ export function getReplayMetricDomain(session, metricKey, axisMode = 'time', axi
   };
 }
 
-export function buildReplayGraphModel(session, options = {}) {
+export function buildReplayGraphModel(session, options: ReplayGraphModelOptions = {}) {
   const width = Number.isFinite(options.width) ? options.width : 320;
   const height = Number.isFinite(options.height) ? options.height : 92;
   const paddingX = Number.isFinite(options.paddingX) ? options.paddingX : 10;
@@ -615,7 +630,7 @@ export function buildReplayGraphModel(session, options = {}) {
   };
 }
 
-export function getReplayGraphCursorX(session, elapsedMs, options = {}) {
+export function getReplayGraphCursorX(session, elapsedMs, options: ReplayGraphCursorOptions = {}) {
   const width = Number.isFinite(options.width) ? options.width : 320;
   const paddingX = Number.isFinite(options.paddingX) ? options.paddingX : 10;
   const plotWidth = Math.max(1, width - paddingX * 2);

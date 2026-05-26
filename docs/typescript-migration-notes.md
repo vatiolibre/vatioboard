@@ -142,6 +142,20 @@
   - `src/player/milkdrop-panel.ts`
   - `src/player/player-shell.ts`
   - `src/player/player-widget.ts`
+- The domain/session controller-support cluster moved to TypeScript before the large route controllers:
+  - `src/replay/session.ts`
+  - `src/replay/logic.ts`
+  - `src/replay/charts.ts`
+  - `src/replay/map.ts`
+  - `src/accel/logic.ts`
+  - `src/accel/replay.ts`
+  - `src/accel/replay-charts.ts`
+  - `src/accel/replay-map.ts`
+  - `src/accel/result-graph.ts`
+  - `src/accel/translations.ts`
+  - `src/gps-rate/controller.ts`
+  - `src/gps-rate/render.ts`
+  - `src/gps-rate/nominatim-lab.ts`
 
 ## Contracts Future Work Must Use
 
@@ -165,7 +179,7 @@
 - Shell/bootstrap helpers kept the `SHELL_Z_INDEX` layer values and ordering, shared unit preference keys `vatio_speed_unit`, `vatio_speed_distance_unit`, and `vatio_unit_bootstrap_v1`, regional imperial-country inference, existing/manual/auto bootstrap reasons, and trip-distance unit fallback behavior.
 - Shell keyboard kept the single `keydown` listener contract, editable-target guard, Alt/Ctrl+Backquote cycling, Shift reverse cycling, Escape snap-preview clearing, Ctrl+Alt+M minimize, Ctrl+Alt+R restore, uninstall behavior, and optional minimized-window cycling.
 - Analog speedometer kept the `analog-speedometer.less` side-effect import, canvas/ResizeObserver sizing behavior, CSS variable names, overlay text updates, marker/accent/pivot color behavior, no-op fallback controller, and render model merge semantics.
-- Accel helper consumers should keep importing the same public `.js` specifiers. This phase preserved shared unit localStorage keys, accel storage keys, default settings, GPS options/error codes, conversion constants, preset ids/signatures/variant groups, partial definitions, custom-preset signature rounding, formatter fallback strings, history comparison behavior, and the acceleration calculation boundary in `src/accel/logic.js`.
+- Accel helper consumers should keep importing the same public `.js` specifiers. This phase preserved shared unit localStorage keys, accel storage keys, default settings, GPS options/error codes, conversion constants, preset ids/signatures/variant groups, partial definitions, custom-preset signature rounding, formatter fallback strings, history comparison behavior, and the acceleration calculation boundary in `src/accel/logic.ts`.
 - Speed helper consumers should keep the same public exports and `.js` specifiers. This phase preserved speed preference localStorage keys, unit defaults, primary-view values, alert limit defaults, trap-alert presets/snapping, camera-approach preference modes, alert/trap active-state semantics, speed metadata confidence handling, trap distance/speed formatting, KDBush/geokdbush lookup behavior, and overspeed sound gating.
 - GPS-rate helper consumers should keep the same public exports and `.js` specifiers. This phase preserved GPS Rate storage keys, geo options/error codes, histogram buckets, session state defaults, elapsed/activity/status helpers, saved-summary normalization defaults, timestamp stale guards, motion classification thresholds, sample shape, histogram/session summary calculations, notes trimming, and place normalization handoff.
 - App route wrapper consumers should keep the same public `.js` specifiers for dynamic imports. This phase preserved the single SPA bootstrap entry behavior, app-shell startup timing/error fallback, route hashes and aliases, route meta titles/descriptions/canonical paths/body classes, template imports, controller lazy-loading, mount/unmount adapter names, and mounted view `unmount()` contracts.
@@ -177,18 +191,20 @@
 - Route/location helper consumers should keep using the same public `.js` specifiers. This phase preserved the lazy MapLibre/CSS import promise, compact route/address formatting, Colombia and US locality/state abbreviations, movement-aware route boundary selection, boundary place display fallbacks, stale boundary enrichment guard, Nominatim base URL normalization, cache/schedule storage keys, 1 request per second scheduling, public-details policy guard, normalized place metadata, OSM lookup ids, language forwarding, reverse-country defaults, and lookup-place normalization.
 - Global UI foundation consumers should keep using the same public `.js` specifiers. This phase preserved every icon export name/string payload, shared translation keys and interpolation behavior, `vatio_board_lang`, language detection from storage/window/browser, `i18n:change`, DOM translation attributes, welcome-consent storage key/version, location-choice values, GPS request timing and consumer id, welcome modal DOM classes/assets/focus behavior, and route template default exports, SEO copy, element ids/classes, backend-auth forms, tools-menu containers, and shell toolbar markers.
 - Leaf widget consumers should keep using the same public `.js` specifiers. This phase preserved calculator and energy DOM ids/classes, keypad/settings/history behavior, calculator and energy storage keys, shell window ids/capabilities/lifecycle hooks, draggable panel/launcher snap and viewport clamping behavior, board drawable viewport measurements and pointer coordinate normalization, player widget bootstrap/visibility keys, backend-auth gating, tools-menu integration, audio bootstrap and Media Session ownership, player shell queue/playlist/milkdrop launch behavior, milkdrop panel visibility/position/size/preset keys, fullscreen fallback, resize behavior, audio graph acquisition/release, runtime subscription lifetime, and all public widget API method names.
+- Replay domain consumers should keep using the same public `.js` specifiers. This phase preserved replay storage keys, IndexedDB database/store/chunk key names, legacy localStorage migration, sample normalization/sorting/de-duplication/distance rebasing, active/last/library/pending-open record shapes, import/archive/remove behavior, payload completeness semantics, summary/path/bounds/interpolation/highlight/graph-model helpers, chart controller methods, map controller methods, satellite/solar layer setup, playback source updates, approach animation options, and debug window flags.
+- Accel domain/replay consumers should keep using the same public `.js` specifiers. This phase preserved run state/result shapes, live sample speed-resolution behavior, trace/sample-log/partial normalization, quality grading, persisted replay source/frame/marker/map-session payloads, elapsed/distance interpolation, replay chart controller methods, result graph controller methods, and every `accelTranslations` key/value payload.
+- GPS-rate controller/render/Nominatim consumers should keep using the same public `.js` specifiers. This phase preserved controller `init()` behavior, start/stop/reset/export/copy/wake-lock/permission/language event wiring, saved-summary enrichment and unit bootstrap, renderer method names and DOM update behavior, log row limits, warning/histogram/sparkline/availability calculations, Nominatim base URL and active-API persistence, public details guard, request-state shape, and response formatting.
 
 ## Still JavaScript
 
-- Larger feature UI/controller modules remain JavaScript to keep later batches reviewable: speed, camera map, accel UI/logic/replay/result graph, library, board main, replay controller/session, and GPS-rate controller/render/Nominatim lab.
+- Larger feature UI/controller modules remain JavaScript to keep later batches reviewable: speed, camera map, accel route UI/controller, library, board main, and replay route controller.
 - Route/app wrapper JavaScript has moved to TypeScript, including route template modules; app main and concrete route view wrappers remain TypeScript.
 - Standalone/dev harness wrapper JavaScript from this phase has moved to TypeScript; the standalone HTML files now point at the `.ts` Vite entry files where needed while test/runtime imports keep using public `.js` specifiers.
 - No files under `src/app/services/` remain JavaScript.
 - No files under `src/shared/repositories/` remain JavaScript.
-- The low-risk shared route/location helpers, global UI foundation helpers, calculator/energy leaf widgets, player widget/shell/milkdrop leaf widgets, and board drawing-surface helper are now TypeScript.
-- Feature/domain storage and session helpers still in JavaScript include `src/replay/session.js`.
-- Other feature/domain modules still in JavaScript include accel UI/logic/replay/result-graph modules, speed UI/runtime/navigation/audio/camera modules, GPS-rate controller/render/Nominatim lab modules, board main, replay controller/session, and library controller modules.
+- The low-risk shared route/location helpers, global UI foundation helpers, calculator/energy leaf widgets, player widget/shell/milkdrop leaf widgets, board drawing-surface helper, replay session/logic/chart/map helpers, accel logic/replay/chart/result-graph helpers, and GPS-rate controller/render/Nominatim lab helpers are now TypeScript.
+- Other feature/domain modules still in JavaScript include `src/accel/accel.js`, speed UI/runtime/navigation/audio/camera modules, `src/board/board.js`, `src/replay/replay.js`, and library controller modules.
 
 ## Next Recommended Batch
 
-Pause before large UI/controller/map/session modules. The next recommended dedicated batch is a focused controller/session conversion such as `src/replay/session.js` with replay lifecycle coverage, or `src/board/board.js` after a fresh dependency check; keep `accel` logic/replay/UI, speed runtime/navigation/audio/camera/UI, GPS-rate controller/render/Nominatim UI, and library/replay route controllers for later dedicated batches.
+Pause before large route controllers. The next recommended dedicated batch is either `src/board/board.js` after a fresh dependency check or one large route controller at a time (`src/replay/replay.js` or `src/accel/accel.js`) with route lifecycle coverage; keep speed runtime/navigation/audio/camera/UI and library controller modules for later dedicated batches.

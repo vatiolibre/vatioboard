@@ -16,6 +16,12 @@ const ACCEL_APPROACH_OPTIONS = {
   finalPadding: { top: 48, right: 48, bottom: 72, left: 48 },
 };
 
+interface AccelReplayMapSetSourceOptions {
+  forceUpdate?: boolean;
+  resetCamera?: boolean;
+  preservePlayback?: boolean;
+}
+
 function debugAccelReplayMap(label, payload) {
   if (!window.__VATIO_ACCEL_REPLAY_DEBUG) return;
   console.warn("[accel replay map]", label, payload);
@@ -29,7 +35,7 @@ export function createAccelReplayMapController({ element }) {
 
   let activeSource = null;
 
-  function setSource(source, options = {}) {
+  function setSource(source, options: AccelReplayMapSetSourceOptions = {}) {
     if (source === activeSource && !options.forceUpdate) return;
     activeSource = source || null;
     baseController.setSession(buildAccelReplayMapSession(activeSource), options);

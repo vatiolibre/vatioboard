@@ -2,6 +2,11 @@ import { interpolateValue, isFiniteNumber } from "./logic.js";
 
 const REPLAY_EPSILON_MS = 0.01;
 
+interface AccelReplayMarkerOptions {
+  getPartialLabel?: (partial: any) => string;
+  finishLabel?: string;
+}
+
 function getReplayPointKey(elapsedMs) {
   return String(Math.round(Math.max(0, elapsedMs) * 100));
 }
@@ -672,7 +677,7 @@ export function getAccelReplayPlayedCoordinates(source, elapsedMs) {
   return coordinates;
 }
 
-export function buildAccelReplayMarkers(result, source, options = {}) {
+export function buildAccelReplayMarkers(result, source, options: AccelReplayMarkerOptions = {}) {
   if (!result || !source || !Array.isArray(source.frames) || !source.frames.length) return [];
 
   const getPartialLabel = typeof options.getPartialLabel === "function"

@@ -5,6 +5,12 @@ import {
 
 const API_KEYS = ["search", "reverse", "lookup", "status", "details"];
 
+interface NominatimRequestStateInput {
+  key?: string;
+  params?: Record<string, unknown> | null;
+  rawText?: string | null;
+}
+
 function isFiniteNumber(value) {
   return Number.isFinite(value);
 }
@@ -71,7 +77,7 @@ export function createGpsRateNominatimLab({
     return client;
   }
 
-  function setRequestState({ key, params = null, rawText = null } = {}) {
+  function setRequestState({ key, params = null, rawText = null }: NominatimRequestStateInput = {}) {
     state.nominatim.requestState = {
       key,
       params,
@@ -116,7 +122,7 @@ export function createGpsRateNominatimLab({
   }
 
   function renderEndpointButtons(nominatimClient) {
-    Object.entries(elements.nominatimApiButtons).forEach(([apiKey, button]) => {
+    Object.entries(elements.nominatimApiButtons as Record<string, HTMLButtonElement | null>).forEach(([apiKey, button]) => {
       if (!button) return;
       const isActive = state.nominatim.activeApi === apiKey;
       const isDisabled = state.nominatim.isLoading || (apiKey === "details" && nominatimClient.isPublicServer);
@@ -129,7 +135,7 @@ export function createGpsRateNominatimLab({
   }
 
   function renderPanels(nominatimClient) {
-    Object.entries(elements.nominatimPanels).forEach(([apiKey, panel]) => {
+    Object.entries(elements.nominatimPanels as Record<string, HTMLElement | null>).forEach(([apiKey, panel]) => {
       if (!panel) return;
       panel.hidden = apiKey !== state.nominatim.activeApi;
     });
@@ -297,7 +303,7 @@ export function createGpsRateNominatimLab({
   }
 
   function bindEvents() {
-    Object.entries(elements.nominatimApiButtons).forEach(([apiKey, button]) => {
+    Object.entries(elements.nominatimApiButtons as Record<string, HTMLElement | null>).forEach(([apiKey, button]) => {
       if (!button) return;
       button.addEventListener("click", () => setActiveApi(apiKey));
     });

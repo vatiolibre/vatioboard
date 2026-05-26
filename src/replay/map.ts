@@ -20,6 +20,35 @@ const REPLAY_DETAIL_SATELLITE_SOURCE_ID = "replay-satellite-detail";
 const REPLAY_DETAIL_SATELLITE_ATTRIBUTION = "Imagery © Esri, Maxar, Earthstar Geographics, and contributors";
 const REPLAY_CLOSEUP_ZOOM = 12;
 
+interface ReplayMapPadding {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+interface ReplayMapFitOptions {
+  duration?: number;
+  padding?: ReplayMapPadding;
+  pitch?: number;
+  bearing?: number;
+  maxZoom?: number;
+  zoom?: number;
+}
+
+interface ReplayMapApproachOptions {
+  finalDuration?: number;
+  finalPitch?: number;
+  finalBearing?: number;
+  finalMaxZoom?: number;
+  finalPadding?: ReplayMapPadding;
+}
+
+interface ReplayMapSetSessionOptions {
+  resetCamera?: boolean;
+  preservePlayback?: boolean;
+}
+
 function getEmptyFeatureCollection() {
   return {
     type: "FeatureCollection",
@@ -180,7 +209,7 @@ export function createReplayMapController({
     ];
   }
 
-  function fitRoute(options = {}) {
+  function fitRoute(options: ReplayMapFitOptions = {}) {
     if (!map || !ready) return;
 
     const bounds = getReplayBounds(activeSession);
@@ -206,7 +235,7 @@ export function createReplayMapController({
         maxZoom: options.maxZoom ?? 15.5,
         duration: options.duration ?? 0,
         essential: true,
-      });
+      } as any);
       return;
     }
 
@@ -239,7 +268,7 @@ export function createReplayMapController({
     stopMapMotion();
   }
 
-  async function runApproachAnimation(options = {}) {
+  async function runApproachAnimation(options: ReplayMapApproachOptions = {}) {
     if (!map || !ready || !activeSession) return;
 
     const runToken = approachToken + 1;
@@ -306,7 +335,7 @@ export function createReplayMapController({
     }
   }
 
-  function renderPlaybackFrame({ sample = null, playedCoordinates = [] } = {}) {
+  function renderPlaybackFrame({ sample = null, playedCoordinates = [] }: { sample?: any; playedCoordinates?: any[] } = {}) {
     playbackState = {
       sample,
       playedCoordinates: Array.isArray(playedCoordinates) ? playedCoordinates : [],
@@ -321,7 +350,7 @@ export function createReplayMapController({
     collapseReplayAttributionControl(element);
   }
 
-  function setSession(nextSession, options = {}) {
+  function setSession(nextSession, options: ReplayMapSetSessionOptions = {}) {
     const shouldResetCamera = options.resetCamera !== false;
     const shouldPreservePlayback = options.preservePlayback === true;
     const sessionChanged = nextSession !== activeSession;
@@ -387,23 +416,23 @@ export function createReplayMapController({
             },
             [REPLAY_SOURCE_ID]: {
               type: "geojson",
-              data: getLineFeatureCollection(getReplayPathCoordinates(activeSession)),
+              data: getLineFeatureCollection(getReplayPathCoordinates(activeSession)) as any,
             },
             [REPLAY_PLAYED_SOURCE_ID]: {
               type: "geojson",
-              data: getEmptyFeatureCollection(),
+              data: getEmptyFeatureCollection() as any,
             },
             [REPLAY_POINT_SOURCE_ID]: {
               type: "geojson",
-              data: getEmptyFeatureCollection(),
+              data: getEmptyFeatureCollection() as any,
             },
             [GLOBE_TERMINATOR_SOURCE_ID]: {
               type: "geojson",
-              data: getSolarTerminatorData(initialSunVector),
+              data: getSolarTerminatorData(initialSunVector) as any,
             },
             [GLOBE_NIGHT_SOURCE_ID]: {
               type: "geojson",
-              data: getSolarNightData(initialSunVector),
+              data: getSolarNightData(initialSunVector) as any,
             },
           },
           layers: [
@@ -552,7 +581,7 @@ export function createReplayMapController({
             ],
           },
         },
-      });
+      } as any);
 
       if (shouldEnableWheelZoom()) {
         map.scrollZoom?.enable?.();

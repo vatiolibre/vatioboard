@@ -100,6 +100,11 @@ const accelReplayCursorPlugin = {
   },
 };
 
+type AccelReplayChartLike = {
+  destroy(): void;
+  [key: string]: any;
+};
+
 export function createAccelReplayChartsController({
   Chart,
   elements,
@@ -443,7 +448,7 @@ export function createAccelReplayChartsController({
     });
   }
 
-  function destroyChartMap(chartMap) {
+  function destroyChartMap(chartMap: Record<string, AccelReplayChartLike | null>) {
     for (const chart of Object.values(chartMap)) {
       if (chart) chart.destroy();
     }
