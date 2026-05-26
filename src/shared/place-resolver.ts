@@ -1,4 +1,9 @@
-import { createNominatimClient } from './nominatim.js';
+import {
+  createNominatimClient,
+  type NominatimClient,
+  type NominatimClientOptions,
+  type NominatimResponse,
+} from './nominatim.js';
 
 const PLACE_LABEL_KEYS = [
   'suburb',
@@ -58,21 +63,82 @@ const OSM_TYPE_NAME_BY_PREFIX = {
   R: 'relation',
 };
 
-function normalizeText(value) {
+type OsmType = 'node' | 'way' | 'relation';
+type OsmTypePrefix = 'N' | 'W' | 'R';
+type RawPlaceRecord = Record<string, unknown>;
+type AddressRecord = Record<string, unknown>;
+
+export type NormalizedPlace = {
+  label: string;
+  detail: string;
+  displayName: string;
+  countryCode: string;
+  countryName: string;
+  latitude: number | null;
+  longitude: number | null;
+  locality: string;
+  city: string;
+  state: string;
+  stateCode: string;
+  houseNumber: string;
+  road: string;
+  osmType: OsmType | '';
+  osmId: number | null;
+  osmLookupId: string;
+};
+
+export type PlaceResolverOptions = NominatimClientOptions & {
+  getLanguage?: () => string;
+  language?: string;
+};
+
+export type ReversePlaceParams = {
+  latitude?: number;
+  longitude?: number;
+  zoom?: number;
+  layer?: string;
+  language?: string;
+};
+
+export type LookupPlacesParams = {
+  osmIds?: string | string[];
+  language?: string;
+  namedetails?: boolean;
+  extratags?: boolean;
+};
+
+export type PlaceLookupResult<T = unknown> = {
+  place: NormalizedPlace | null;
+  data: T | null;
+  meta: NominatimResponse['meta'] | null;
+};
+
+export type PlaceResolver = {
+  client: NominatimClient;
+  reversePlace(params?: ReversePlaceParams): Promise<PlaceLookupResult>;
+  reverseCountry(params?: ReversePlaceParams): Promise<PlaceLookupResult & { countryCode: string }>;
+  lookupPlaces(params?: LookupPlacesParams): Promise<{
+    places: NormalizedPlace[];
+    data: unknown[];
+    meta: NominatimResponse['meta'] | null;
+  }>;
+};
+
+function normalizeText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function toFiniteNumber(value) {
+function toFiniteNumber(value: unknown): number | null {
   const numericValue = Number(value);
   return Number.isFinite(numericValue) ? numericValue : null;
 }
 
-function normalizeAddress(address) {
-  return address && typeof address === 'object' ? address : {};
+function normalizeAddress(address: unknown): AddressRecord {
+  return address && typeof address === 'object' ? (address as AddressRecord) : {};
 }
 
-function dedupeParts(parts) {
-  const unique = [];
+function dedupeParts(parts: unknown[]): string[] {
+  const unique: string[] = [];
 
   for (let index = 0; index < parts.length; index += 1) {
     const part = normalizeText(parts[index]);
@@ -84,7 +150,7 @@ function dedupeParts(parts) {
   return unique;
 }
 
-function firstAddressValue(address, keys) {
+function firstAddressValue(address: AddressRecord, keys: readonly string[]): string {
   for (let index = 0; index < keys.length; index += 1) {
     const value = normalizeText(address[keys[index]]);
     if (value) return value;
@@ -92,26 +158,27 @@ function firstAddressValue(address, keys) {
   return '';
 }
 
-function normalizeOsmType(value) {
+function normalizeOsmType(value: unknown): OsmType | '' {
   const normalizedValue = normalizeText(value).toLowerCase();
 
-  if (OSM_TYPE_PREFIX_BY_NAME[normalizedValue]) {
-    return normalizedValue;
+  if (Object.hasOwn(OSM_TYPE_PREFIX_BY_NAME, normalizedValue)) {
+    return normalizedValue as OsmType;
   }
 
-  if (OSM_TYPE_NAME_BY_PREFIX[normalizedValue.toUpperCase()]) {
-    return OSM_TYPE_NAME_BY_PREFIX[normalizedValue.toUpperCase()];
+  const prefix = normalizedValue.toUpperCase() as OsmTypePrefix;
+  if (Object.hasOwn(OSM_TYPE_NAME_BY_PREFIX, prefix)) {
+    return OSM_TYPE_NAME_BY_PREFIX[prefix] as OsmType;
   }
 
   return '';
 }
 
-function normalizeOsmId(value) {
+function normalizeOsmId(value: unknown): number | null {
   const numericValue = Number(value);
   return Number.isFinite(numericValue) && numericValue > 0 ? Math.round(numericValue) : null;
 }
 
-function normalizeSubdivisionCode(value) {
+function normalizeSubdivisionCode(value: unknown): string {
   const normalizedValue = normalizeText(value).replace(/\./g, '').toUpperCase();
   if (!normalizedValue) return '';
   if (/^[A-Z]{2,3}$/.test(normalizedValue)) return normalizedValue;
@@ -120,20 +187,20 @@ function normalizeSubdivisionCode(value) {
   return match && /^[A-Z]{2,3}$/.test(match[1]) ? match[1] : '';
 }
 
-export function normalizeCountryCode(value) {
+export function normalizeCountryCode(value: unknown): string {
   const normalizedValue = normalizeText(value).toLowerCase();
   return /^[a-z]{2}$/.test(normalizedValue) ? normalizedValue : '';
 }
 
-export function buildOsmLookupId(input) {
-  const place = input && typeof input === 'object' ? input : {};
+export function buildOsmLookupId(input: unknown): string {
+  const place = input && typeof input === 'object' ? (input as RawPlaceRecord) : {};
   const osmType = normalizeOsmType(place.osmType ?? place.osm_type);
   const osmId = normalizeOsmId(place.osmId ?? place.osm_id);
   if (!osmType || !osmId) return '';
   return `${OSM_TYPE_PREFIX_BY_NAME[osmType]}${osmId}`;
 }
 
-function derivePlaceLabel(rawPlace, address) {
+function derivePlaceLabel(rawPlace: RawPlaceRecord, address: AddressRecord): string {
   return (
     normalizeText(rawPlace.label) ||
     firstAddressValue(address, PLACE_LABEL_KEYS) ||
@@ -142,7 +209,12 @@ function derivePlaceLabel(rawPlace, address) {
   );
 }
 
-function derivePlaceDetail(rawPlace, address, label, countryName) {
+function derivePlaceDetail(
+  rawPlace: RawPlaceRecord,
+  address: AddressRecord,
+  label: string,
+  countryName: string
+): string {
   if (normalizeText(rawPlace.detail)) {
     return normalizeText(rawPlace.detail);
   }
@@ -155,35 +227,36 @@ function derivePlaceDetail(rawPlace, address, label, countryName) {
   return detailParts.join(', ');
 }
 
-export function normalizePlace(value) {
+export function normalizePlace(value: unknown): NormalizedPlace | null {
   if (!value || typeof value !== 'object') return null;
 
-  const address = normalizeAddress(value.address);
+  const rawPlace = value as RawPlaceRecord;
+  const address = normalizeAddress(rawPlace.address);
   const countryCode = normalizeCountryCode(
-    value.countryCode ?? value.country_code ?? address.country_code
+    rawPlace.countryCode ?? rawPlace.country_code ?? address.country_code
   );
-  const countryName = normalizeText(value.countryName ?? address.country ?? '');
-  const label = derivePlaceLabel(value, address);
-  const displayName = normalizeText(value.displayName ?? value.display_name);
-  const detail = derivePlaceDetail(value, address, label, countryName);
-  const osmType = normalizeOsmType(value.osmType ?? value.osm_type);
-  const osmId = normalizeOsmId(value.osmId ?? value.osm_id);
-  const latitude = toFiniteNumber(value.latitude ?? value.lat);
-  const longitude = toFiniteNumber(value.longitude ?? value.lon);
+  const countryName = normalizeText(rawPlace.countryName ?? address.country ?? '');
+  const label = derivePlaceLabel(rawPlace, address);
+  const displayName = normalizeText(rawPlace.displayName ?? rawPlace.display_name);
+  const detail = derivePlaceDetail(rawPlace, address, label, countryName);
+  const osmType = normalizeOsmType(rawPlace.osmType ?? rawPlace.osm_type);
+  const osmId = normalizeOsmId(rawPlace.osmId ?? rawPlace.osm_id);
+  const latitude = toFiniteNumber(rawPlace.latitude ?? rawPlace.lat);
+  const longitude = toFiniteNumber(rawPlace.longitude ?? rawPlace.lon);
   const locality =
-    normalizeText(value.locality) || firstAddressValue(address, PLACE_LOCALITY_KEYS) || label;
+    normalizeText(rawPlace.locality) || firstAddressValue(address, PLACE_LOCALITY_KEYS) || label;
   const city =
-    normalizeText(value.city) || firstAddressValue(address, PLACE_CITY_KEYS) || locality || label;
-  const state = normalizeText(value.state) || firstAddressValue(address, PLACE_STATE_KEYS);
+    normalizeText(rawPlace.city) || firstAddressValue(address, PLACE_CITY_KEYS) || locality || label;
+  const state = normalizeText(rawPlace.state) || firstAddressValue(address, PLACE_STATE_KEYS);
   const stateCode = normalizeSubdivisionCode(
-    value.stateCode ??
-      value.state_code ??
+    rawPlace.stateCode ??
+      rawPlace.state_code ??
       address.state_code ??
       address['ISO3166-2-lvl4'] ??
       address['ISO3166-2-lvl6']
   );
-  const houseNumber = normalizeText(value.houseNumber ?? value.house_number ?? address.house_number);
-  const road = normalizeText(value.road ?? value.street) || firstAddressValue(address, PLACE_ROAD_KEYS);
+  const houseNumber = normalizeText(rawPlace.houseNumber ?? rawPlace.house_number ?? address.house_number);
+  const road = normalizeText(rawPlace.road ?? rawPlace.street) || firstAddressValue(address, PLACE_ROAD_KEYS);
 
   if (!label && !displayName && !countryName && !osmType && !osmId) {
     return null;
@@ -209,7 +282,7 @@ export function normalizePlace(value) {
   };
 }
 
-export function formatPlaceDisplay(place, fallback = '—') {
+export function formatPlaceDisplay(place: unknown, fallback = '—'): string {
   const normalizedPlace = normalizePlace(place);
   if (!normalizedPlace) return fallback;
 
@@ -228,11 +301,11 @@ export function formatPlaceDisplay(place, fallback = '—') {
   return label || displayName || countryName || fallback;
 }
 
-export function getPlaceLabel(place, fallback = '—') {
+export function getPlaceLabel(place: unknown, fallback = '—'): string {
   return formatPlaceDisplay(place, fallback);
 }
 
-export function formatPlaceTransition(startPlace, endPlace, fallback = '—') {
+export function formatPlaceTransition(startPlace: unknown, endPlace: unknown, fallback = '—'): string {
   const normalizedStart = normalizePlace(startPlace);
   const normalizedEnd = normalizePlace(endPlace);
   const startLabel = normalizeText(normalizedStart?.label);
@@ -263,14 +336,14 @@ export function formatPlaceTransition(startPlace, endPlace, fallback = '—') {
   return startDisplay || endDisplay || fallback;
 }
 
-export function createPlaceResolver(options = {}) {
+export function createPlaceResolver(options: PlaceResolverOptions = {}): PlaceResolver {
   const client = createNominatimClient(options);
   const getLanguage =
     typeof options.getLanguage === 'function'
       ? options.getLanguage
       : () => normalizeText(options.language);
 
-  function resolveLanguage(explicitLanguage) {
+  function resolveLanguage(explicitLanguage: unknown): string {
     return normalizeText(explicitLanguage) || normalizeText(getLanguage());
   }
 
@@ -280,7 +353,7 @@ export function createPlaceResolver(options = {}) {
     zoom = 13,
     layer = 'address',
     language = '',
-  } = {}) {
+  }: ReversePlaceParams = {}): Promise<PlaceLookupResult> {
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
       return {
         place: null,
@@ -305,7 +378,7 @@ export function createPlaceResolver(options = {}) {
     };
   }
 
-  async function reverseCountry(options = {}) {
+  async function reverseCountry(options: ReversePlaceParams = {}) {
     const response = await reversePlace({
       ...options,
       zoom: Number.isFinite(options.zoom) ? options.zoom : 5,
@@ -322,7 +395,7 @@ export function createPlaceResolver(options = {}) {
     language = '',
     namedetails = true,
     extratags = false,
-  } = {}) {
+  }: LookupPlacesParams = {}) {
     const normalizedIds = Array.isArray(osmIds)
       ? osmIds.map((value) => normalizeText(value)).filter(Boolean)
       : normalizeText(osmIds)
@@ -348,7 +421,7 @@ export function createPlaceResolver(options = {}) {
     const rawResults = Array.isArray(response.data) ? response.data : [];
 
     return {
-      places: rawResults.map(normalizePlace).filter(Boolean),
+      places: rawResults.map(normalizePlace).filter((place): place is NormalizedPlace => Boolean(place)),
       data: rawResults,
       meta: response.meta,
     };

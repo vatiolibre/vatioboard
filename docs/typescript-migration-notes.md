@@ -107,6 +107,12 @@
   - `src/shared/single-tab.ts`
 - The focused shared confirm-dialog UI helper moved to TypeScript in this phase:
   - `src/shared/ui/confirm-dialog.ts`
+- The low-risk shared route/location helper batch moved to TypeScript in this phase:
+  - `src/shared/maplibre-loader.ts`
+  - `src/shared/route-string.ts`
+  - `src/shared/route-boundary.ts`
+  - `src/shared/nominatim.ts`
+  - `src/shared/place-resolver.ts`
 
 ## Contracts Future Work Must Use
 
@@ -139,6 +145,7 @@
 - GPS-rate page bootstrap preserved the standalone HTML entry timing, style side-effect imports, backend auth initialization, tools menu/icon setup, element ids/classes, unit/state hydration, storage keys, renderer/controller wiring, wake-lock support detection, and controller `init()` behavior.
 - Single-tab consumers should keep using the same public `.js` specifier and runtime exports. This phase preserved the `vatioboard:single-tab-ownership` event name/detail shape, owner id format, active-scope normalization, Web Locks `ifAvailable` acquisition path, IndexedDB fallback database/store/version, lease and hint key prefixes, localStorage lease-hint payload shape, no sessionStorage or BroadcastChannel records, 15s lease/5s heartbeat timing, stale heartbeat cleanup, blocked-overlay DOM/focus/i18n behavior, pagehide/beforeunload release behavior, persisted-pageshow reacquire behavior, callback ordering, and async IndexedDB release teardown.
 - Confirm-dialog consumers should keep using `showConfirmDialog` and `showPromptDialog` from the same public `.js` specifier. This phase preserved dialog class names, DOM order, roles/ARIA attributes, backdrop click/Escape/Tab handling, focus trapping, initial focus choices, active-dialog replacement dismissal, `onConfirm` gesture timing and error swallowing, reduced-motion cleanup, animationend/fallback timeout cleanup, focus restoration, confirm/cancel result semantics, prompt trimming/disabled-submit behavior, and the superseded-prompt `false` resolution behavior.
+- Route/location helper consumers should keep using the same public `.js` specifiers. This phase preserved the lazy MapLibre/CSS import promise, compact route/address formatting, Colombia and US locality/state abbreviations, movement-aware route boundary selection, boundary place display fallbacks, stale boundary enrichment guard, Nominatim base URL normalization, cache/schedule storage keys, 1 request per second scheduling, public-details policy guard, normalized place metadata, OSM lookup ids, language forwarding, reverse-country defaults, and lookup-place normalization.
 
 ## Still JavaScript
 
@@ -147,10 +154,10 @@
 - Standalone/dev harness wrapper JavaScript from this phase has moved to TypeScript; the standalone HTML files now point at the `.ts` Vite entry files where needed while test/runtime imports keep using public `.js` specifiers.
 - No files under `src/app/services/` remain JavaScript.
 - No files under `src/shared/repositories/` remain JavaScript.
-- Shared helper files still in JavaScript include `maplibre-loader`, `nominatim`, `place-resolver`, `route-boundary`, and `route-string`.
+- The low-risk shared route/location helpers are now TypeScript; larger shared/global JavaScript remains in `i18n` and `icons`.
 - Feature/domain storage and session helpers still in JavaScript include `src/replay/session.js`.
 - Other feature/domain modules still in JavaScript include accel UI/logic/replay/result-graph modules, speed UI/runtime/navigation/audio/camera modules, GPS-rate controller/render/Nominatim lab modules, board drawing-surface, calculator and energy widgets, plus the larger UI modules listed above.
 
 ## Next Recommended Batch
 
-Pause before large UI/controller/map/session modules. The next recommended dedicated batch is the small lazy-map loader (`src/shared/maplibre-loader.js`) or the route parsing/boundary pair (`src/shared/route-string.js` and `src/shared/route-boundary.js`) after a fresh dependency check; keep app view templates, `accel` logic/replay/UI, speed runtime/navigation/audio/camera/UI, GPS-rate controller/render/Nominatim UI, `place-resolver`, `nominatim`, `i18n`, `icons`, and `replay/session` for later dedicated batches.
+Pause before large UI/controller/map/session modules. The next recommended dedicated batch is either the global UI foundation pair (`src/i18n.js` and `src/icons.js`) or the route template modules under `src/app/views/templates/*.js` after a fresh dependency check; keep `accel` logic/replay/UI, speed runtime/navigation/audio/camera/UI, GPS-rate controller/render/Nominatim UI, and `replay/session` for later dedicated batches.

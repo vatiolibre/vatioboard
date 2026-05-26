@@ -3,10 +3,78 @@ const DEFAULT_MIN_INTERVAL_MS = 1000;
 const SCHEDULE_KEY_PREFIX = "vatio_nominatim_next_allowed:";
 const CACHE_KEY_PREFIX = "vatio_nominatim_cache:";
 
-const schedulerStateByBaseUrl = new Map();
+type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
+type WaitLike = (ms: number) => Promise<unknown>;
+type NominatimParams = Record<string, unknown>;
+
+export type NominatimErrorOptions = {
+  status?: number | null;
+  url?: string;
+  payload?: unknown;
+};
+
+export type NominatimClientOptions = {
+  baseUrl?: string;
+  fetchImpl?: FetchLike;
+  now?: () => number;
+  wait?: WaitLike;
+  minIntervalMs?: number;
+  scheduleStorage?: StorageLike | null;
+  cacheStorage?: StorageLike | null;
+  allowPublicDetails?: boolean;
+};
+
+export type NominatimResponseMeta = {
+  baseUrl: string;
+  endpoint: string;
+  fromCache: boolean;
+  status: number;
+  url: string;
+  cachedAtMs: number | null;
+};
+
+export type NominatimResponse<T = unknown> = {
+  data: T;
+  meta: NominatimResponseMeta;
+};
+
+export type NominatimClient = {
+  baseUrl: string;
+  isPublicServer: boolean;
+  search(params?: NominatimParams): Promise<NominatimResponse>;
+  reverse(params?: NominatimParams): Promise<NominatimResponse>;
+  lookup(params?: NominatimParams & { osmIds?: unknown; osm_ids?: unknown }): Promise<NominatimResponse>;
+  status(params?: NominatimParams): Promise<NominatimResponse>;
+  details(params?: NominatimParams): Promise<NominatimResponse>;
+  clearCachedResponse(requestUrl: string): void;
+};
+
+type SchedulerState = {
+  tail: Promise<unknown>;
+  nextAllowedAtMs: number;
+};
+
+type SchedulerOptions = {
+  now: () => number;
+  wait: WaitLike;
+  minIntervalMs: number;
+  scheduleStorage: StorageLike | null;
+};
+
+type CachedResponse = {
+  data: unknown;
+  cachedAtMs: number | null;
+};
+
+const schedulerStateByBaseUrl = new Map<string, SchedulerState>();
 
 export class NominatimError extends Error {
-  constructor(message, options = {}) {
+  status: number | null;
+  url: string;
+  payload: unknown | null;
+
+  constructor(message: string, options: NominatimErrorOptions = {}) {
     super(message);
     this.name = "NominatimError";
     this.status = Number.isFinite(options.status) ? options.status : null;
@@ -16,13 +84,13 @@ export class NominatimError extends Error {
 }
 
 export class NominatimPolicyError extends NominatimError {
-  constructor(message, options = {}) {
+  constructor(message: string, options: NominatimErrorOptions = {}) {
     super(message, options);
     this.name = "NominatimPolicyError";
   }
 }
 
-function getDefaultStorage(storage) {
+function getDefaultStorage(storage: StorageLike | null | undefined): StorageLike | null {
   try {
     return storage || null;
   } catch {
@@ -30,18 +98,18 @@ function getDefaultStorage(storage) {
   }
 }
 
-function createDelay(ms) {
+function createDelay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
 }
 
-function cloneJson(value) {
+function cloneJson<T>(value: T): T {
   if (value === null || value === undefined) return value;
   return JSON.parse(JSON.stringify(value));
 }
 
-function normalizeBaseUrl(baseUrl) {
+function normalizeBaseUrl(baseUrl: unknown): string {
   const rawValue = typeof baseUrl === "string" ? baseUrl.trim() : "";
   const candidate = rawValue || DEFAULT_BASE_URL;
 
@@ -55,11 +123,11 @@ function normalizeBaseUrl(baseUrl) {
   }
 }
 
-function isNonEmptyValue(value) {
+function isNonEmptyValue(value: unknown): boolean {
   return value !== null && value !== undefined && value !== "";
 }
 
-function buildSearchParams(params) {
+function buildSearchParams(params: NominatimParams): URLSearchParams {
   const searchParams = new URLSearchParams();
   Object.entries(params)
     .filter(([, value]) => isNonEmptyValue(value))
@@ -70,7 +138,7 @@ function buildSearchParams(params) {
   return searchParams;
 }
 
-function parseResponsePayload(text) {
+function parseResponsePayload(text: string): unknown {
   if (!text) return null;
   try {
     return JSON.parse(text);
@@ -79,7 +147,7 @@ function parseResponsePayload(text) {
   }
 }
 
-function getStorageValue(storage, key) {
+function getStorageValue(storage: StorageLike | null, key: string): string | null {
   if (!storage || typeof storage.getItem !== "function") return null;
   try {
     return storage.getItem(key);
@@ -88,7 +156,7 @@ function getStorageValue(storage, key) {
   }
 }
 
-function setStorageValue(storage, key, value) {
+function setStorageValue(storage: StorageLike | null, key: string, value: string): void {
   if (!storage || typeof storage.setItem !== "function") return;
   try {
     storage.setItem(key, value);
@@ -97,7 +165,7 @@ function setStorageValue(storage, key, value) {
   }
 }
 
-function removeStorageValue(storage, key) {
+function removeStorageValue(storage: StorageLike | null, key: string): void {
   if (!storage || typeof storage.removeItem !== "function") return;
   try {
     storage.removeItem(key);
@@ -106,15 +174,15 @@ function removeStorageValue(storage, key) {
   }
 }
 
-function getScheduleStorageKey(baseUrl) {
+function getScheduleStorageKey(baseUrl: string): string {
   return `${SCHEDULE_KEY_PREFIX}${encodeURIComponent(baseUrl)}`;
 }
 
-function getCacheStorageKey(requestUrl) {
+function getCacheStorageKey(requestUrl: string): string {
   return `${CACHE_KEY_PREFIX}${encodeURIComponent(requestUrl)}`;
 }
 
-function readCachedResponse(cacheStorage, requestUrl) {
+function readCachedResponse(cacheStorage: StorageLike | null, requestUrl: string): CachedResponse | null {
   const storedValue = getStorageValue(cacheStorage, getCacheStorageKey(requestUrl));
   if (!storedValue) return null;
 
@@ -133,7 +201,7 @@ function readCachedResponse(cacheStorage, requestUrl) {
   }
 }
 
-function writeCachedResponse(cacheStorage, requestUrl, data) {
+function writeCachedResponse(cacheStorage: StorageLike | null, requestUrl: string, data: unknown): void {
   setStorageValue(
     cacheStorage,
     getCacheStorageKey(requestUrl),
@@ -144,16 +212,16 @@ function writeCachedResponse(cacheStorage, requestUrl, data) {
   );
 }
 
-function readNextAllowedAt(scheduleStorage, baseUrl) {
+function readNextAllowedAt(scheduleStorage: StorageLike | null, baseUrl: string): number {
   const storedValue = Number(getStorageValue(scheduleStorage, getScheduleStorageKey(baseUrl)));
   return Number.isFinite(storedValue) ? storedValue : 0;
 }
 
-function writeNextAllowedAt(scheduleStorage, baseUrl, nextAllowedAtMs) {
+function writeNextAllowedAt(scheduleStorage: StorageLike | null, baseUrl: string, nextAllowedAtMs: number): void {
   setStorageValue(scheduleStorage, getScheduleStorageKey(baseUrl), String(nextAllowedAtMs));
 }
 
-function getScheduler(baseUrl, options) {
+function getScheduler(baseUrl: string, options: SchedulerOptions) {
   if (!schedulerStateByBaseUrl.has(baseUrl)) {
     schedulerStateByBaseUrl.set(baseUrl, {
       tail: Promise.resolve(),
@@ -161,7 +229,7 @@ function getScheduler(baseUrl, options) {
     });
   }
 
-  const state = schedulerStateByBaseUrl.get(baseUrl);
+  const state = schedulerStateByBaseUrl.get(baseUrl)!;
   const {
     now,
     wait,
@@ -170,7 +238,7 @@ function getScheduler(baseUrl, options) {
   } = options;
 
   return {
-    schedule(task) {
+    schedule<T>(task: () => Promise<T> | T): Promise<T> {
       const queuedTask = state.tail.catch(() => undefined).then(async () => {
         const storedNextAllowedAtMs = readNextAllowedAt(scheduleStorage, baseUrl);
         const currentNow = now();
@@ -194,13 +262,13 @@ function getScheduler(baseUrl, options) {
   };
 }
 
-function createRequestUrl(baseUrl, endpoint, params) {
+function createRequestUrl(baseUrl: string, endpoint: string, params: NominatimParams): URL {
   const requestUrl = new URL(endpoint.replace(/^\//, ""), `${baseUrl}/`);
   requestUrl.search = buildSearchParams(params).toString();
   return requestUrl;
 }
 
-export function isPublicNominatimServer(baseUrl) {
+export function isPublicNominatimServer(baseUrl: unknown): boolean {
   try {
     return new URL(normalizeBaseUrl(baseUrl)).hostname === "nominatim.openstreetmap.org";
   } catch {
@@ -208,11 +276,11 @@ export function isPublicNominatimServer(baseUrl) {
   }
 }
 
-export function normalizeNominatimBaseUrl(baseUrl) {
+export function normalizeNominatimBaseUrl(baseUrl: unknown): string {
   return normalizeBaseUrl(baseUrl);
 }
 
-export function createNominatimClient(options = {}) {
+export function createNominatimClient(options: NominatimClientOptions = {}): NominatimClient {
   const baseUrl = normalizeBaseUrl(options.baseUrl);
   const fetchImpl = options.fetchImpl || window.fetch.bind(window);
   const now = typeof options.now === "function" ? options.now : Date.now;
@@ -228,7 +296,11 @@ export function createNominatimClient(options = {}) {
     scheduleStorage,
   });
 
-  async function requestJson(endpoint, params = {}, requestOptions = {}) {
+  async function requestJson(
+    endpoint: string,
+    params: NominatimParams = {},
+    requestOptions: { cache?: boolean } = {}
+  ): Promise<NominatimResponse> {
     const requestUrl = createRequestUrl(baseUrl, endpoint, params);
     const cacheKey = requestUrl.toString();
     const useCache = requestOptions.cache !== false;
@@ -261,9 +333,10 @@ export function createNominatimClient(options = {}) {
     const payload = parseResponsePayload(bodyText);
 
     if (!response.ok) {
+      const errorPayload = payload && typeof payload === "object" ? (payload as { error?: unknown }) : null;
       throw new NominatimError(
-        typeof payload === "object" && payload && typeof payload.error === "string"
-          ? payload.error
+        typeof errorPayload?.error === "string"
+          ? errorPayload.error
           : `Nominatim request failed with status ${response.status}`,
         {
           status: response.status,
@@ -293,7 +366,7 @@ export function createNominatimClient(options = {}) {
   return {
     baseUrl,
     isPublicServer,
-    search(params = {}) {
+    search(params: NominatimParams = {}) {
       return requestJson("search", {
         format: "jsonv2",
         addressdetails: 1,
@@ -301,7 +374,7 @@ export function createNominatimClient(options = {}) {
         ...params,
       });
     },
-    reverse(params = {}) {
+    reverse(params: NominatimParams = {}) {
       return requestJson("reverse", {
         format: "jsonv2",
         addressdetails: 1,
@@ -309,7 +382,7 @@ export function createNominatimClient(options = {}) {
         ...params,
       });
     },
-    lookup(params = {}) {
+    lookup(params: NominatimParams & { osmIds?: unknown; osm_ids?: unknown } = {}) {
       const normalizedParams = { ...params };
       if (normalizedParams.osmIds && !normalizedParams.osm_ids) {
         normalizedParams.osm_ids = normalizedParams.osmIds;
@@ -322,13 +395,13 @@ export function createNominatimClient(options = {}) {
         ...normalizedParams,
       });
     },
-    status(params = {}) {
+    status(params: NominatimParams = {}) {
       return requestJson("status", {
         format: "json",
         ...params,
       }, { cache: false });
     },
-    details(params = {}) {
+    details(params: NominatimParams = {}) {
       if (isPublicServer && options.allowPublicDetails !== true) {
         return Promise.reject(new NominatimPolicyError(
           "The public Nominatim details endpoint may not be used in scripts or bots. Switch to a self-hosted or third-party Nominatim service to test details.",
@@ -341,13 +414,13 @@ export function createNominatimClient(options = {}) {
 
       return requestJson("details", params, { cache: false });
     },
-    clearCachedResponse(requestUrl) {
+    clearCachedResponse(requestUrl: string) {
       removeStorageValue(cacheStorage, getCacheStorageKey(requestUrl));
     },
   };
 }
 
-export function __resetNominatimTestState() {
+export function __resetNominatimTestState(): void {
   schedulerStateByBaseUrl.clear();
 }
 

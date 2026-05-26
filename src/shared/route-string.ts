@@ -1,8 +1,27 @@
-import { normalizePlace } from './place-resolver.js';
+import { normalizePlace, type NormalizedPlace } from './place-resolver.js';
 
 const ROUTE_SEPARATOR = ' -> ';
 
-const ROAD_TOKEN_ABBREVIATIONS = {
+type ParsedStandaloneAddress = {
+  streetLine: string;
+  city: string;
+  state: string;
+  comparisonLocality: string;
+  formatted: string;
+};
+
+type StateNameEntry = {
+  name: string;
+  code: string;
+  tokenCount: number;
+};
+
+type CountryNameEntry = {
+  name: string;
+  tokenCount: number;
+};
+
+const ROAD_TOKEN_ABBREVIATIONS: Record<string, string> = {
   avenue: 'Ave',
   boulevard: 'Blvd',
   center: 'Ctr',
@@ -33,7 +52,7 @@ const ROAD_TOKEN_ABBREVIATIONS = {
   west: 'W',
 };
 
-const US_STATE_CODE_BY_NAME = {
+const US_STATE_CODE_BY_NAME: Record<string, string> = {
   alabama: 'AL',
   alaska: 'AK',
   arizona: 'AZ',
@@ -98,7 +117,7 @@ const COMMON_COUNTRY_NAMES = new Set([
   'usa',
 ]);
 
-const US_STATE_NAME_ENTRIES = Object.entries(US_STATE_CODE_BY_NAME)
+const US_STATE_NAME_ENTRIES: StateNameEntry[] = Object.entries(US_STATE_CODE_BY_NAME)
   .map(([name, code]) => ({
     name,
     code,
@@ -106,28 +125,28 @@ const US_STATE_NAME_ENTRIES = Object.entries(US_STATE_CODE_BY_NAME)
   }))
   .sort((left, right) => right.tokenCount - left.tokenCount || right.name.length - left.name.length);
 
-const COUNTRY_NAME_ENTRIES = Array.from(COMMON_COUNTRY_NAMES)
+const COUNTRY_NAME_ENTRIES: CountryNameEntry[] = Array.from(COMMON_COUNTRY_NAMES)
   .map((name) => ({
     name,
     tokenCount: name.split(' ').length,
   }))
   .sort((left, right) => right.tokenCount - left.tokenCount || right.name.length - left.name.length);
 
-const US_STATE_CODES = new Set(Object.values(US_STATE_CODE_BY_NAME));
+const US_STATE_CODES = new Set<string>(Object.values(US_STATE_CODE_BY_NAME));
 const ROAD_SUFFIX_TOKENS = new Set([
   ...Object.keys(ROAD_TOKEN_ABBREVIATIONS),
   ...Object.values(ROAD_TOKEN_ABBREVIATIONS).map((value) => value.toLowerCase()),
 ]);
 
-function normalizeText(value) {
+function normalizeText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function normalizeComparisonValue(value) {
+function normalizeComparisonValue(value: unknown): string {
   return normalizeText(value).toLowerCase();
 }
 
-function normalizeLooseAddressText(value) {
+function normalizeLooseAddressText(value: unknown): string {
   return normalizeText(value)
     .replace(/\.(?=\s|$)/g, '')
     .replace(/\s*,\s*/g, ' ')
@@ -135,14 +154,14 @@ function normalizeLooseAddressText(value) {
     .replace(/\s+/g, ' ');
 }
 
-function splitAddressParts(value) {
+function splitAddressParts(value: unknown): string[] {
   return normalizeText(value)
     .split(',')
     .map((part) => normalizeLooseAddressText(part))
     .filter(Boolean);
 }
 
-function removeCountryParts(parts, countryName = '') {
+function removeCountryParts(parts: string[], countryName = ''): string[] {
   const normalizedCountryName = normalizeComparisonValue(countryName);
 
   return parts.filter((part) => {
@@ -153,7 +172,7 @@ function removeCountryParts(parts, countryName = '') {
   });
 }
 
-function joinUniqueParts(parts) {
+function joinUniqueParts(parts: unknown[]): string {
   const uniqueParts = [];
 
   for (let index = 0; index < parts.length; index += 1) {
@@ -172,7 +191,7 @@ function joinUniqueParts(parts) {
   return uniqueParts.join(' ');
 }
 
-function normalizeSubdivisionCode(value) {
+function normalizeSubdivisionCode(value: unknown): string {
   const normalizedValue = normalizeText(value).replace(/\./g, '').toUpperCase();
   if (!normalizedValue) return '';
   if (/^[A-Z]{2,3}$/.test(normalizedValue)) return normalizedValue;
@@ -181,7 +200,7 @@ function normalizeSubdivisionCode(value) {
   return match && /^[A-Z]{2,3}$/.test(match[1]) ? match[1] : '';
 }
 
-function abbreviateState(value, countryCode = '') {
+function abbreviateState(value: unknown, countryCode = ''): string {
   const subdivisionCode = normalizeSubdivisionCode(value);
   if (subdivisionCode && countryCode === 'us') return subdivisionCode;
 
@@ -194,7 +213,7 @@ function abbreviateState(value, countryCode = '') {
   return normalizedValue;
 }
 
-function abbreviateRoadName(road) {
+function abbreviateRoadName(road: unknown): string {
   const tokens = normalizeLooseAddressText(road)
     .split(' ')
     .map((token) => normalizeText(token))
@@ -211,7 +230,7 @@ function abbreviateRoadName(road) {
     .join(' ');
 }
 
-function seemsLikeStreetLine(value) {
+function seemsLikeStreetLine(value: string): boolean {
   return (
     /\d/.test(value) ||
     /\b(?:ave|avenue|blvd|boulevard|cir|circle|court|ct|dr|drive|hwy|highway|lane|ln|parkway|pkwy|pl|place|rd|road|rte|route|sq|square|st|street|ter|terrace|tpke|turnpike|way)\b/i.test(
@@ -220,14 +239,14 @@ function seemsLikeStreetLine(value) {
   );
 }
 
-function tokenizeAddressText(value) {
+function tokenizeAddressText(value: unknown): string[] {
   return normalizeLooseAddressText(value)
     .split(' ')
     .map((token) => normalizeText(token))
     .filter(Boolean);
 }
 
-function formatColombiaDisplayState(state, stateCode = '') {
+function formatColombiaDisplayState(state: unknown, stateCode = ''): string {
   const subdivisionCode = normalizeSubdivisionCode(stateCode);
   if (subdivisionCode === 'DC') return 'DC';
   const normalizedState = normalizeLooseAddressText(state);
@@ -235,7 +254,7 @@ function formatColombiaDisplayState(state, stateCode = '') {
   return normalizedState || subdivisionCode;
 }
 
-function formatColombiaStreetLine(streetLine) {
+function formatColombiaStreetLine(streetLine: unknown): string {
   const tokens = tokenizeAddressText(streetLine);
   if (!tokens.length) return '';
   if (tokens.length > 1 && /\d/.test(tokens[0])) {
@@ -244,7 +263,7 @@ function formatColombiaStreetLine(streetLine) {
   return normalizeLooseAddressText(streetLine);
 }
 
-function buildColombiaLocation(locality, city, state, stateCode = '') {
+function buildColombiaLocation(locality: unknown, city: unknown, state: unknown, stateCode = ''): string {
   const normalizedLocality = normalizeLooseAddressText(locality);
   const normalizedCity = normalizeLooseAddressText(city);
   const displayState = formatColombiaDisplayState(state, stateCode);
@@ -261,15 +280,15 @@ function buildColombiaLocation(locality, city, state, stateCode = '') {
   return joinUniqueParts(locationParts);
 }
 
-function getColombiaComparisonLocality(locality, city) {
+function getColombiaComparisonLocality(locality: unknown, city: unknown): string {
   return joinUniqueParts([normalizeLooseAddressText(locality), normalizeLooseAddressText(city)]);
 }
 
-function isRoadSuffixToken(token) {
+function isRoadSuffixToken(token: string): boolean {
   return ROAD_SUFFIX_TOKENS.has(normalizeComparisonValue(token).replace(/\.$/g, ''));
 }
 
-function removeTrailingCountryTokens(tokens) {
+function removeTrailingCountryTokens(tokens: string[]): string[] {
   if (!tokens.length) return tokens;
 
   for (let index = 0; index < COUNTRY_NAME_ENTRIES.length; index += 1) {
@@ -284,7 +303,7 @@ function removeTrailingCountryTokens(tokens) {
   return tokens;
 }
 
-function extractTrailingUsState(tokens) {
+function extractTrailingUsState(tokens: string[]): { state: string; tokens: string[] } | null {
   if (!tokens.length) return null;
 
   const lastToken = normalizeText(tokens[tokens.length - 1]).replace(/\./g, '').toUpperCase();
@@ -310,7 +329,7 @@ function extractTrailingUsState(tokens) {
   return null;
 }
 
-function findStreetEndIndex(tokens) {
+function findStreetEndIndex(tokens: string[]): number {
   for (let index = 1; index < tokens.length; index += 1) {
     if (isRoadSuffixToken(tokens[index])) return index;
   }
@@ -318,7 +337,7 @@ function findStreetEndIndex(tokens) {
   return -1;
 }
 
-function parseStandaloneAddressParts(value) {
+function parseStandaloneAddressParts(value: unknown): ParsedStandaloneAddress | null {
   const parts = removeCountryParts(splitAddressParts(value), '');
   if (!parts.length) return null;
 
@@ -326,7 +345,7 @@ function parseStandaloneAddressParts(value) {
     return null;
   }
 
-  if (/\bcolombia\b/i.test(value) && parts.length >= 3) {
+  if (/\bcolombia\b/i.test(normalizeText(value)) && parts.length >= 3) {
     const locality = parts[1] || '';
     const city = parts[2] || locality;
     const state = parts[3] || '';
@@ -374,7 +393,7 @@ function parseStandaloneAddressParts(value) {
   };
 }
 
-function parseStandaloneAddressText(value) {
+function parseStandaloneAddressText(value: unknown): ParsedStandaloneAddress | null {
   const parsedFromParts = parseStandaloneAddressParts(value);
   if (parsedFromParts?.formatted) return parsedFromParts;
 
@@ -406,11 +425,11 @@ function parseStandaloneAddressText(value) {
   };
 }
 
-function getDisplayParts(place) {
+function getDisplayParts(place: NormalizedPlace | null | undefined): string[] {
   return removeCountryParts(splitAddressParts(place?.displayName), place?.countryName);
 }
 
-function getContextParts(place) {
+function getContextParts(place: NormalizedPlace | null | undefined): string[] {
   const detailParts = removeCountryParts(splitAddressParts(place?.detail), place?.countryName);
   if (detailParts.length) return detailParts;
 
@@ -422,7 +441,7 @@ function getContextParts(place) {
   return displayParts;
 }
 
-function getPlaceLocality(place) {
+function getPlaceLocality(place: unknown): string {
   const normalizedPlace = normalizePlace(place);
   if (!normalizedPlace) return '';
 
@@ -434,7 +453,7 @@ function getPlaceLocality(place) {
   );
 }
 
-function getPlaceCity(place) {
+function getPlaceCity(place: unknown): string {
   const normalizedPlace = normalizePlace(place);
   if (!normalizedPlace) return '';
 
@@ -447,7 +466,7 @@ function getPlaceCity(place) {
   );
 }
 
-function getPlaceState(place) {
+function getPlaceState(place: unknown): string {
   const normalizedPlace = normalizePlace(place);
   if (!normalizedPlace) return '';
 
@@ -474,7 +493,7 @@ function getPlaceState(place) {
   return subdivisionCode && normalizedPlace.countryCode === 'us' ? subdivisionCode : '';
 }
 
-function getPlaceDisplayState(place) {
+function getPlaceDisplayState(place: unknown): string {
   const normalizedPlace = normalizePlace(place);
   if (!normalizedPlace) return '';
 
@@ -485,7 +504,7 @@ function getPlaceDisplayState(place) {
   return abbreviateState(getPlaceState(normalizedPlace), normalizedPlace.countryCode);
 }
 
-function getRouteComparisonLocality(place) {
+function getRouteComparisonLocality(place: unknown): string {
   const normalizedPlace = normalizePlace(place);
   if (!normalizedPlace) return '';
 
@@ -496,7 +515,7 @@ function getRouteComparisonLocality(place) {
   return getPlaceCity(normalizedPlace);
 }
 
-function getPlaceDisplayLocation(place) {
+function getPlaceDisplayLocation(place: unknown): string {
   const normalizedPlace = normalizePlace(place);
   if (!normalizedPlace) return '';
 
@@ -512,7 +531,7 @@ function getPlaceDisplayLocation(place) {
   return joinUniqueParts([getPlaceCity(normalizedPlace), getPlaceDisplayState(normalizedPlace)]);
 }
 
-function getStreetLine(place) {
+function getStreetLine(place: unknown): string {
   const normalizedPlace = normalizePlace(place);
   if (!normalizedPlace) return '';
 
@@ -539,11 +558,11 @@ function getStreetLine(place) {
   return firstDisplayPart;
 }
 
-function formatStandaloneAddressText(value) {
+function formatStandaloneAddressText(value: unknown): string {
   return parseStandaloneAddressText(value)?.formatted || normalizeLooseAddressText(value);
 }
 
-function optimizeTextRoute(startText, endText, fallback = '—') {
+function optimizeTextRoute(startText: unknown, endText: unknown, fallback = '—'): string {
   const parsedStart = parseStandaloneAddressText(startText);
   const parsedEnd = parseStandaloneAddressText(endText);
   const normalizedStart = parsedStart?.formatted || formatStandaloneAddressText(startText);
@@ -569,7 +588,7 @@ function optimizeTextRoute(startText, endText, fallback = '—') {
   return normalizedStart || normalizedEnd || fallback;
 }
 
-export function formatPlaceAddress(place, fallback = '—') {
+export function formatPlaceAddress(place: unknown, fallback = '—'): string {
   const normalizedPlace = normalizePlace(place);
   if (!normalizedPlace) {
     return typeof place === 'string' ? formatStandaloneAddressText(place) || fallback : fallback;
@@ -582,7 +601,7 @@ export function formatPlaceAddress(place, fallback = '—') {
   return formatted || fallback;
 }
 
-export function formatRouteString(start, end, fallback = '—') {
+export function formatRouteString(start: unknown, end: unknown, fallback = '—'): string {
   const normalizedStart = normalizePlace(start);
   const normalizedEnd = normalizePlace(end);
 
@@ -621,6 +640,6 @@ export function formatRouteString(start, end, fallback = '—') {
   return startText || endText || fallback;
 }
 
-export function formatOptimizedRouteString(start, end, fallback = '—') {
+export function formatOptimizedRouteString(start: unknown, end: unknown, fallback = '—'): string {
   return formatRouteString(start, end, fallback);
 }

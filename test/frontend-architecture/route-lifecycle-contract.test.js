@@ -255,7 +255,7 @@ describe("route lifecycle contract", () => {
 
     for (const file of sourceFiles) {
       const source = readProjectFile(file);
-      if (file !== "src/shared/maplibre-loader.js") {
+      if (file !== "src/shared/maplibre-loader.ts") {
         expect(source, file).not.toContain("maplibre-gl");
         expect(source, file).not.toContain("maplibre-gl/dist/maplibre-gl.css");
       }

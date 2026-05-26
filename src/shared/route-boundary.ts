@@ -25,20 +25,101 @@ const DEFAULT_LOOKAHEAD_WINDOW = 3;
 /** Earth radius in meters for haversine. */
 const EARTH_RADIUS_M = 6371000;
 
+export type RouteBoundaryStrategy = 'movement' | 'fallback' | 'empty';
+
+export type GeoSample = {
+  latitude: number;
+  longitude: number;
+  speedMs?: number | null;
+  timestampMs?: number | null;
+  [key: string]: unknown;
+};
+
+type IndexedGeoSample = {
+  sample: GeoSample;
+  originalIndex: number;
+};
+
+export type RouteBoundaryOptions = {
+  mode?: string;
+  movementThresholdM?: number;
+  speedThresholdMs?: number;
+  lookaheadWindow?: number;
+};
+
+type MovementSearchOptions = {
+  movementThresholdM: number;
+  speedThresholdMs: number;
+  windowSize: number;
+};
+
+export type RouteBoundaryResult = {
+  startSample: GeoSample | null;
+  endSample: GeoSample | null;
+  startIndex: number;
+  endIndex: number;
+  strategy: RouteBoundaryStrategy;
+  sameBoundaryCoordinates?: boolean;
+  sameBoundarySample?: boolean;
+  canReuseBoundaryPlace?: boolean;
+};
+
+export type BoundaryPoint = {
+  latitude: number;
+  longitude: number;
+  timestampMs: number | null;
+  sampleIndex: number | null;
+};
+
+export type RouteBoundaryPlaceDisplay = {
+  label: string;
+  detail: string;
+  raw: unknown;
+};
+
+type BoundaryDisplayOptions = {
+  fallback?: string;
+};
+
+type PlaceResolverLike = {
+  reversePlace(params: {
+    latitude: number;
+    longitude: number;
+    zoom: number;
+  }): Promise<{
+    place?: (Record<string, unknown> & {
+      countryCode?: string;
+    }) | null;
+    data?: unknown;
+    meta?: unknown;
+  }>;
+};
+
+type ReverseGeocodeOptions = BoundaryDisplayOptions & {
+  zoom?: number;
+};
+
+type RouteBoundaryEnrichmentOptions = RouteBoundaryOptions &
+  ReverseGeocodeOptions & {
+    sessionId?: string;
+    getCurrentSessionId?: () => string | null | undefined;
+    onCountryCode?: (countryCode: string) => void;
+  };
+
 // ---------------------------------------------------------------------------
 // Geo helpers
 // ---------------------------------------------------------------------------
 
-function isFiniteNumber(value) {
+function isFiniteNumber(value: unknown): value is number {
   return Number.isFinite(value);
 }
 
 /**
  * Returns true when a sample has valid, non-zero coordinates.
  */
-export function isValidGeoSample(sample) {
+export function isValidGeoSample(sample: unknown): sample is GeoSample {
   if (!sample || typeof sample !== 'object') return false;
-  const { latitude, longitude } = sample;
+  const { latitude, longitude } = sample as Record<string, unknown>;
   if (!isFiniteNumber(latitude) || !isFiniteNumber(longitude)) return false;
   // Reject (0, 0) – Null Island / uninitialized
   if (latitude === 0 && longitude === 0) return false;
@@ -51,7 +132,7 @@ export function isValidGeoSample(sample) {
 /**
  * Haversine distance between two {latitude, longitude} objects in meters.
  */
-function haversineDistance(a, b) {
+function haversineDistance(a: GeoSample, b: GeoSample): number {
   const lat1 = (a.latitude * Math.PI) / 180;
   const lat2 = (b.latitude * Math.PI) / 180;
   const deltaLat = ((b.latitude - a.latitude) * Math.PI) / 180;
@@ -68,12 +149,12 @@ function haversineDistance(a, b) {
  * speed data is present). Samples without speed are considered neutral
  * so speed alone won't exclude them.
  */
-function hasMinimumSpeed(sample, thresholdMs) {
+function hasMinimumSpeed(sample: GeoSample, thresholdMs: number): boolean {
   if (!isFiniteNumber(sample.speedMs)) return true; // no speed info → neutral
   return sample.speedMs >= thresholdMs;
 }
 
-function haveSameCoordinates(left, right) {
+function haveSameCoordinates(left: GeoSample | null | undefined, right: GeoSample | null | undefined): boolean {
   return Boolean(
     left &&
     right &&
@@ -82,7 +163,7 @@ function haveSameCoordinates(left, right) {
   );
 }
 
-function haveSameRecordedPoint(left, right) {
+function haveSameRecordedPoint(left: GeoSample | null | undefined, right: GeoSample | null | undefined): boolean {
   if (!haveSameCoordinates(left, right)) return false;
   const leftTimestamp = left.timestampMs;
   const rightTimestamp = right.timestampMs;
@@ -92,12 +173,17 @@ function haveSameRecordedPoint(left, right) {
   return true;
 }
 
-function sampleDedupeKey(sample) {
+function sampleDedupeKey(sample: GeoSample): string {
   const timestamp = isFiniteNumber(sample.timestampMs) ? sample.timestampMs : '';
   return `${sample.latitude}:${sample.longitude}:${timestamp}`;
 }
 
-function buildBoundaryResult(indexed, startValidIndex, endValidIndex, strategy) {
+function buildBoundaryResult(
+  indexed: IndexedGeoSample[],
+  startValidIndex: number,
+  endValidIndex: number,
+  strategy: RouteBoundaryStrategy
+): RouteBoundaryResult {
   const start = indexed[startValidIndex];
   const end = indexed[endValidIndex];
   const sameBoundaryCoordinates = haveSameCoordinates(start.sample, end.sample);
@@ -116,7 +202,7 @@ function buildBoundaryResult(indexed, startValidIndex, endValidIndex, strategy) 
   };
 }
 
-function buildFallbackBoundary(indexed) {
+function buildFallbackBoundary(indexed: IndexedGeoSample[]): RouteBoundaryResult {
   return buildBoundaryResult(indexed, 0, indexed.length - 1, 'fallback');
 }
 
@@ -129,11 +215,11 @@ function buildFallbackBoundary(indexed) {
  * show movement (speed ≥ threshold or distance from anchor ≥ threshold).
  * Returns the index of the first sample in that window, or -1.
  */
-function findForwardMovementStart(validSamples, anchor, {
+function findForwardMovementStart(validSamples: GeoSample[], anchor: GeoSample, {
   movementThresholdM,
   speedThresholdMs,
   windowSize,
-}) {
+}: MovementSearchOptions): number {
   let consecutiveMoving = 0;
   let windowStartIndex = -1;
 
@@ -160,11 +246,11 @@ function findForwardMovementStart(validSamples, anchor, {
  * show movement. Returns the index of the last sample in that window,
  * or -1.
  */
-function findBackwardMovementEnd(validSamples, anchor, {
+function findBackwardMovementEnd(validSamples: GeoSample[], anchor: GeoSample, {
   movementThresholdM,
   speedThresholdMs,
   windowSize,
-}) {
+}: MovementSearchOptions): number {
   let consecutiveMoving = 0;
   let windowEndIndex = -1;
 
@@ -190,38 +276,45 @@ function findBackwardMovementEnd(validSamples, anchor, {
  * Build a boundary-selection input from a recording/session object that may
  * carry full samples, firstSample/lastSample metadata, or a tail-only buffer.
  */
-export function getRouteBoundaryInputSamples(recording) {
-  if (Array.isArray(recording)) return recording.slice();
+export function getRouteBoundaryInputSamples(recording: unknown): GeoSample[] {
+  if (Array.isArray(recording)) return recording.slice() as GeoSample[];
   if (!recording || typeof recording !== 'object') return [];
 
-  const embeddedSamples = Array.isArray(recording.samples)
-    ? recording.samples
-    : Array.isArray(recording.sampleLog)
-      ? recording.sampleLog
-      : [];
-  const candidates = [];
+  const record = recording as {
+    samples?: unknown;
+    sampleLog?: unknown;
+    firstSample?: unknown;
+    lastSample?: unknown;
+  };
 
-  if (isValidGeoSample(recording.firstSample)) {
-    candidates.push(recording.firstSample);
+  const embeddedSamples = Array.isArray(record.samples)
+    ? record.samples
+    : Array.isArray(record.sampleLog)
+      ? record.sampleLog
+      : [];
+  const candidates: GeoSample[] = [];
+
+  if (isValidGeoSample(record.firstSample)) {
+    candidates.push(record.firstSample);
   }
 
   for (const sample of embeddedSamples) {
     if (isValidGeoSample(sample)) candidates.push(sample);
   }
 
-  if (isValidGeoSample(recording.lastSample)) {
-    candidates.push(recording.lastSample);
+  if (isValidGeoSample(record.lastSample)) {
+    candidates.push(record.lastSample);
   }
 
   if (
     candidates.length > 1 &&
     candidates.every((sample) => isFiniteNumber(sample.timestampMs))
   ) {
-    candidates.sort((left, right) => left.timestampMs - right.timestampMs);
+    candidates.sort((left, right) => Number(left.timestampMs) - Number(right.timestampMs));
   }
 
-  const seen = new Set();
-  const deduped = [];
+  const seen = new Set<string>();
+  const deduped: GeoSample[] = [];
   for (const sample of candidates) {
     const key = sampleDedupeKey(sample);
     if (seen.has(key)) continue;
@@ -250,13 +343,19 @@ export function getRouteBoundaryInputSamples(recording) {
  *   "fallback"   – could not find movement; using first/last valid sample
  *   "empty"      – no valid samples at all
  */
-export function getRouteBoundarySamples(samples, options = {}) {
-  const empty = { startSample: null, endSample: null, startIndex: -1, endIndex: -1, strategy: 'empty' };
+export function getRouteBoundarySamples(samples: unknown, options: RouteBoundaryOptions = {}): RouteBoundaryResult {
+  const empty: RouteBoundaryResult = {
+    startSample: null,
+    endSample: null,
+    startIndex: -1,
+    endIndex: -1,
+    strategy: 'empty',
+  };
 
   if (!Array.isArray(samples) || samples.length === 0) return empty;
 
   // 1. Filter to valid geo samples, keeping original indices
-  const indexed = [];
+  const indexed: IndexedGeoSample[] = [];
   for (let i = 0; i < samples.length; i++) {
     if (isValidGeoSample(samples[i])) {
       indexed.push({ sample: samples[i], originalIndex: i });
@@ -323,7 +422,7 @@ export function getRouteBoundarySamples(samples, options = {}) {
  * Build the persisted boundary-point object from a sample and its
  * original index in the samples array.
  */
-export function buildBoundaryPoint(sample, sampleIndex) {
+export function buildBoundaryPoint(sample: unknown, sampleIndex: unknown): BoundaryPoint | null {
   if (!sample || !isValidGeoSample(sample)) return null;
   return {
     latitude: sample.latitude,
@@ -367,11 +466,11 @@ const BOUNDARY_DETAIL_KEYS = [
 
 const BOUNDARY_ROAD_KEYS = ['road', 'pedestrian', 'footway', 'street', 'residential', 'path'];
 
-function normalizeText(value) {
+function normalizeText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function firstValue(obj, keys) {
+function firstValue(obj: Record<string, unknown> | null | undefined, keys: readonly string[]): string {
   if (!obj || typeof obj !== 'object') return '';
   for (let i = 0; i < keys.length; i++) {
     const v = normalizeText(obj[keys[i]]);
@@ -380,9 +479,9 @@ function firstValue(obj, keys) {
   return '';
 }
 
-function dedupe(parts) {
-  const seen = new Set();
-  const result = [];
+function dedupe(parts: unknown[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
   for (const part of parts) {
     const trimmed = normalizeText(part);
     if (!trimmed) continue;
@@ -408,17 +507,24 @@ function dedupe(parts) {
  *   detail – broader context (state, country)
  *   raw    – the original place object reference
  */
-export function buildRouteBoundaryPlaceDisplay(place, options = {}) {
+export function buildRouteBoundaryPlaceDisplay(
+  place: unknown,
+  options: BoundaryDisplayOptions = {}
+): RouteBoundaryPlaceDisplay {
   const fallback = normalizeText(options.fallback) || '—';
 
   if (!place || typeof place !== 'object') {
     return { label: fallback, detail: '', raw: null };
   }
 
-  const address = (place.address && typeof place.address === 'object') ? place.address : {};
+  const placeRecord = place as Record<string, unknown>;
+  const address =
+    placeRecord.address && typeof placeRecord.address === 'object'
+      ? (placeRecord.address as Record<string, unknown>)
+      : {};
 
   // Merge top-level normalised fields and embedded address for lookup
-  const merged = { ...address, ...place };
+  const merged = { ...address, ...placeRecord };
 
   // 1. Derive meaningful label: prefer city-level, include road if useful
   const cityLevel = firstValue(merged, BOUNDARY_LABEL_KEYS);
@@ -444,7 +550,7 @@ export function buildRouteBoundaryPlaceDisplay(place, options = {}) {
     label = road;
   } else {
     // Last resort: use whatever normalizePlace stored as label
-    label = normalizeText(place.label) || normalizeText(place.displayName) || fallback;
+    label = normalizeText(placeRecord.label) || normalizeText(placeRecord.displayName) || fallback;
   }
 
   // 2. Derive detail: state / country, avoiding duplication with label
@@ -465,7 +571,11 @@ export function buildRouteBoundaryPlaceDisplay(place, options = {}) {
  *
  * Returns { place, boundaryDisplay } or null on failure.
  */
-export async function reverseGeocodeBoundarySample(sample, placeResolver, options = {}) {
+export async function reverseGeocodeBoundarySample(
+  sample: unknown,
+  placeResolver: PlaceResolverLike | null | undefined,
+  options: ReverseGeocodeOptions = {}
+) {
   if (!sample || !isValidGeoSample(sample)) return null;
   if (!placeResolver || typeof placeResolver.reversePlace !== 'function') return null;
 
@@ -514,7 +624,11 @@ export async function reverseGeocodeBoundarySample(sample, placeResolver, option
  *   }
  *   or null if enrichment was stale or fully failed.
  */
-export async function enrichRouteBoundaryPlaces(samples, placeResolver, options = {}) {
+export async function enrichRouteBoundaryPlaces(
+  samples: unknown,
+  placeResolver: PlaceResolverLike,
+  options: RouteBoundaryEnrichmentOptions = {}
+) {
   const { sessionId, getCurrentSessionId, onCountryCode } = options;
 
   function isStale() {
@@ -528,8 +642,8 @@ export async function enrichRouteBoundaryPlaces(samples, placeResolver, options 
   const startBoundaryPoint = buildBoundaryPoint(boundary.startSample, boundary.startIndex);
   const endBoundaryPoint = buildBoundaryPoint(boundary.endSample, boundary.endIndex);
 
-  let startPlace = null;
-  let endPlace = null;
+  let startPlace: { label: string; detail: string; raw: unknown } | null = null;
+  let endPlace: { label: string; detail: string; raw: unknown } | null = null;
 
   // Reverse geocode start
   if (boundary.startSample) {
