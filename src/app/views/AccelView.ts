@@ -1,5 +1,15 @@
 import accelTemplate from "./templates/accel-template.js";
 import { createRouteView } from "./route-view.js";
+import type { MountedView, RouteContext, RouteMountContext } from "../../types/route";
+
+interface AccelRouteModule {
+  mountAccelRoute?: (routeContext: RouteMountContext) => Promise<MountedView | void> | MountedView | void;
+  unmountAccelRoute?: (routeContext: RouteMountContext) => void;
+}
+
+function asAccelRouteModule(module: unknown): AccelRouteModule {
+  return module as AccelRouteModule;
+}
 
 const view = createRouteView({
   pageName: "accel",
@@ -13,10 +23,10 @@ const view = createRouteView({
     cleanupBodyClasses: ["accel-sheet-open", "accel-replay-chart-sheet-open"],
   },
   loadModule: () => import("../../accel/accel.js"),
-  mountController: (module, routeContext) => module.mountAccelRoute?.(routeContext),
-  unmountController: (module, routeContext) => module.unmountAccelRoute?.(routeContext),
+  mountController: (module, routeContext) => asAccelRouteModule(module).mountAccelRoute?.(routeContext),
+  unmountController: (module, routeContext) => asAccelRouteModule(module).unmountAccelRoute?.(routeContext),
 });
 
-export function mount(root, context) {
+export function mount(root: HTMLElement, context: Partial<RouteContext>): Promise<MountedView> {
   return view.mount(root, context);
 }

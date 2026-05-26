@@ -86,6 +86,17 @@
   - `src/gps-rate/constants.ts`
   - `src/gps-rate/session-state.ts`
   - `src/gps-rate/summary.ts`
+- Thin app entry, route view wrappers, and tiny demo/DOM helpers moved to TypeScript in this phase:
+  - `src/app/main.ts`
+  - `src/app/views/SpeedView.ts`
+  - `src/app/views/LibraryView.ts`
+  - `src/app/views/AccelView.ts`
+  - `src/app/views/ReplayView.ts`
+  - `src/app/views/BoardView.ts`
+  - `src/app/views/PlayerDebugView.ts`
+  - `src/calculator/dom.ts`
+  - `src/calculator/calculator-demo.ts`
+  - `src/player/player-demo.ts`
 
 ## Contracts Future Work Must Use
 
@@ -112,10 +123,13 @@
 - Accel helper consumers should keep importing the same public `.js` specifiers. This phase preserved shared unit localStorage keys, accel storage keys, default settings, GPS options/error codes, conversion constants, preset ids/signatures/variant groups, partial definitions, custom-preset signature rounding, formatter fallback strings, history comparison behavior, and the acceleration calculation boundary in `src/accel/logic.js`.
 - Speed helper consumers should keep the same public exports and `.js` specifiers. This phase preserved speed preference localStorage keys, unit defaults, primary-view values, alert limit defaults, trap-alert presets/snapping, camera-approach preference modes, alert/trap active-state semantics, speed metadata confidence handling, trap distance/speed formatting, KDBush/geokdbush lookup behavior, and overspeed sound gating.
 - GPS-rate helper consumers should keep the same public exports and `.js` specifiers. This phase preserved GPS Rate storage keys, geo options/error codes, histogram buckets, session state defaults, elapsed/activity/status helpers, saved-summary normalization defaults, timestamp stale guards, motion classification thresholds, sample shape, histogram/session summary calculations, notes trimming, and place normalization handoff.
+- App route wrapper consumers should keep the same public `.js` specifiers for dynamic imports. This phase preserved the single SPA bootstrap entry behavior, app-shell startup timing/error fallback, route hashes and aliases, route meta titles/descriptions/canonical paths/body classes, template imports, controller lazy-loading, mount/unmount adapter names, and mounted view `unmount()` contracts.
+- Demo/DOM helper consumers should keep the same public exports and `.js` specifiers. This phase preserved calculator/player standalone demo startup behavior, style side-effect imports, translation application timing, demo button ids, widget creation options, widget exports, player bootstrap promise export, and `el`/`qs` DOM helper semantics.
 
 ## Still JavaScript
 
 - Feature UI modules remain JavaScript to keep this batch reviewable: speed, camera map, accel, library, player shell, board, replay, calculator, and energy UI.
+- Route/app wrapper JavaScript is now limited to route template modules under `src/app/views/templates/*.js`; app main and concrete route view wrappers are TypeScript.
 - No files under `src/app/services/` remain JavaScript.
 - No files under `src/shared/repositories/` remain JavaScript.
 - Shared helper files still in JavaScript include `maplibre-loader`, `nominatim`, `place-resolver`, `route-boundary`, `route-string`, `single-tab`, and `ui/confirm-dialog`.
@@ -124,4 +138,4 @@
 
 ## Next Recommended Batch
 
-Pause before large UI/controller/map/session modules. The next safe migration should start with a fresh dependency check for any remaining tiny, non-excluded feature helpers; keep `accel` logic/replay/UI, speed runtime/navigation/audio/camera/UI, GPS-rate controller/render/Nominatim UI, `route-string`, `route-boundary`, `place-resolver`, `nominatim`, `single-tab`, `maplibre-loader`, `ui/confirm-dialog`, and `replay/session` for later dedicated batches.
+Pause before large UI/controller/map/session modules. The next safe migration should start with a fresh dependency check for any remaining tiny, non-excluded feature helpers; keep app view templates, `accel` logic/replay/UI, speed runtime/navigation/audio/camera/UI, GPS-rate controller/render/Nominatim UI, `route-string`, `route-boundary`, `place-resolver`, `nominatim`, `single-tab`, `maplibre-loader`, `ui/confirm-dialog`, `i18n`, `icons`, and `replay/session` for later dedicated batches.
