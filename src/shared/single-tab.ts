@@ -1,5 +1,113 @@
 import { t } from "../i18n.js";
 
+const translate = t as (key: string, params?: Record<string, unknown> | null) => string;
+
+type SingleTabOwnerId = `tab-${string}-${number}`;
+type SingleTabOwnershipMode = "" | "web-lock" | "indexeddb";
+type SingleTabReleaseCallback = () => void;
+
+export interface EnsureSingleTabOwnershipOptions {
+  force?: boolean;
+  scope?: string;
+}
+
+export interface ReleaseSingleTabOwnershipOptions {
+  blocked?: boolean;
+  reason?: string;
+}
+
+export interface SingleTabOwnershipEventDetail {
+  owned: boolean;
+  ownerId: SingleTabOwnerId;
+  reason: string;
+  scope: string;
+}
+
+export type SingleTabOwnershipEvent = CustomEvent<SingleTabOwnershipEventDetail>;
+export type SingleTabOwnershipCallback = (detail: SingleTabOwnershipEventDetail) => void;
+
+interface SingleTabLeaseRecord {
+  ownerId: string;
+  expiresAtMs: number;
+  hintReady: boolean;
+}
+
+interface SingleTabLeaseHintRecord {
+  ownerId: string;
+  updatedAtMs: number;
+}
+
+interface LeaseHintInspection {
+  available: boolean;
+  present: boolean;
+  ownerId: string;
+}
+
+interface OwnershipChangePayload {
+  owned: boolean;
+  reason?: string;
+}
+
+interface SetOwnershipStateOptions {
+  reason?: string;
+  blocked?: boolean;
+  mode?: SingleTabOwnershipMode;
+}
+
+interface IndexedDbLeaseTransactionContext {
+  store: IDBObjectStore;
+  key: string;
+  currentLease: SingleTabLeaseRecord | null;
+  nowMs: number;
+}
+
+type IndexedDbLeaseTransactionHandler<T> = (context: IndexedDbLeaseTransactionContext) => T;
+
+interface IndexedDbLeaseTransactionOptions {
+  allowRetry?: boolean;
+}
+
+interface IndexedDbLeaseTransactionResult<T> {
+  supported: boolean;
+  errored: boolean;
+  value: T | null;
+}
+
+interface SingleTabAcquireUnavailableResult {
+  supported: false;
+  acquired: false;
+  errored: false;
+}
+
+interface SingleTabAcquireBlockedResult {
+  supported: true;
+  acquired: false;
+  errored: boolean;
+}
+
+interface WebLockAcquireSuccessResult {
+  supported: true;
+  acquired: true;
+  errored: false;
+  release: SingleTabReleaseCallback;
+}
+
+interface IndexedDbAcquireSuccessResult {
+  supported: true;
+  acquired: true;
+  errored: boolean;
+}
+
+type WebLockAcquireResult =
+  | SingleTabAcquireUnavailableResult
+  | SingleTabAcquireBlockedResult
+  | WebLockAcquireSuccessResult;
+
+type IndexedDbAcquireResult =
+  | SingleTabAcquireUnavailableResult
+  | SingleTabAcquireBlockedResult
+  | IndexedDbAcquireSuccessResult;
+
 const SINGLE_TAB_SCOPE = "app";
 const SINGLE_TAB_LOCK_PREFIX = "vatioboard:single-tab";
 const SINGLE_TAB_LEASE_PREFIX = "vatioboard.single_tab.lease";
@@ -23,40 +131,40 @@ const BLOCKED_INTERACTION_EVENTS = [
   "touchstart",
   "touchend",
   "wheel",
-];
-const ownerId = `tab-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+] as const satisfies readonly (keyof DocumentEventMap)[];
+const ownerId = `tab-${Math.random().toString(36).slice(2)}-${Date.now()}` as SingleTabOwnerId;
 
 export const SINGLE_TAB_OWNERSHIP_EVENT = "vatioboard:single-tab-ownership";
 
 let activeScope = SINGLE_TAB_SCOPE;
-let blockerElement = null;
-let blockerTitleElement = null;
-let blockerMessageElement = null;
-let blockerRetryButton = null;
+let blockerElement: HTMLDivElement | null = null;
+let blockerTitleElement: HTMLHeadingElement | null = null;
+let blockerMessageElement: HTMLParagraphElement | null = null;
+let blockerRetryButton: HTMLButtonElement | null = null;
 let blockerCopyBound = false;
 let blockedInteractionInstalled = false;
 let cleanupInstalled = false;
-let fallbackHeartbeatId = null;
-let ownershipPromise = null;
+let fallbackHeartbeatId: number | null = null;
+let ownershipPromise: Promise<boolean> | null = null;
 let ownsSingleTab = false;
-let webLockRelease = null;
-let ownershipMode = "";
-let indexedDbPromise = null;
-let indexedDbRef = null;
+let webLockRelease: SingleTabReleaseCallback | null = null;
+let ownershipMode: SingleTabOwnershipMode = "";
+let indexedDbPromise: Promise<IDBDatabase | null> | null = null;
+let indexedDbRef: IDBDatabase | null = null;
 
-function getLockName(scope = SINGLE_TAB_SCOPE) {
+function getLockName(scope: string = SINGLE_TAB_SCOPE): string {
   return `${SINGLE_TAB_LOCK_PREFIX}:${String(scope || SINGLE_TAB_SCOPE).trim() || SINGLE_TAB_SCOPE}`;
 }
 
-function getLeaseKey(scope = SINGLE_TAB_SCOPE) {
+function getLeaseKey(scope: string = SINGLE_TAB_SCOPE): string {
   return `${SINGLE_TAB_LEASE_PREFIX}:${String(scope || SINGLE_TAB_SCOPE).trim() || SINGLE_TAB_SCOPE}`;
 }
 
-function getLeaseHintKey(scope = SINGLE_TAB_SCOPE) {
+function getLeaseHintKey(scope: string = SINGLE_TAB_SCOPE): string {
   return `${SINGLE_TAB_HINT_PREFIX}:${String(scope || SINGLE_TAB_SCOPE).trim() || SINGLE_TAB_SCOPE}`;
 }
 
-function hasActiveLease(lease) {
+function hasActiveLease(lease: SingleTabLeaseRecord | null): lease is SingleTabLeaseRecord {
   return Boolean(
     lease
       && typeof lease.ownerId === "string"
@@ -66,14 +174,28 @@ function hasActiveLease(lease) {
   );
 }
 
-function saveLeaseHint(scope = activeScope) {
+function normalizeLeaseRecord(value: unknown): SingleTabLeaseRecord | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Partial<SingleTabLeaseRecord>;
+  return {
+    ownerId: typeof record.ownerId === "string" ? record.ownerId : "",
+    expiresAtMs: Number.isFinite(record.expiresAtMs)
+      ? record.expiresAtMs as number
+      : 0,
+    hintReady: record.hintReady === true,
+  };
+}
+
+function saveLeaseHint(scope: string = activeScope): boolean {
   try {
+    const key = getLeaseHintKey(scope);
+    const hint: SingleTabLeaseHintRecord = {
+      ownerId,
+      updatedAtMs: Date.now(),
+    };
     localStorage.setItem(
-      getLeaseHintKey(scope),
-      JSON.stringify({
-        ownerId,
-        updatedAtMs: Date.now(),
-      })
+      key,
+      JSON.stringify(hint)
     );
     return true;
   } catch {
@@ -81,7 +203,7 @@ function saveLeaseHint(scope = activeScope) {
   }
 }
 
-function clearLeaseHint(scope = activeScope) {
+function clearLeaseHint(scope: string = activeScope): boolean {
   try {
     localStorage.removeItem(getLeaseHintKey(scope));
     return true;
@@ -90,7 +212,10 @@ function clearLeaseHint(scope = activeScope) {
   }
 }
 
-function inspectLeaseHint(scope = SINGLE_TAB_SCOPE, expectedOwnerId = "") {
+function inspectLeaseHint(
+  scope: string = SINGLE_TAB_SCOPE,
+  expectedOwnerId = ""
+): LeaseHintInspection {
   try {
     const rawValue = localStorage.getItem(getLeaseHintKey(scope));
     if (rawValue === null) {
@@ -101,7 +226,7 @@ function inspectLeaseHint(scope = SINGLE_TAB_SCOPE, expectedOwnerId = "") {
       };
     }
 
-    const hint = JSON.parse(rawValue);
+    const hint = JSON.parse(rawValue) as Partial<SingleTabLeaseHintRecord> | null;
     const ownerIdValue = typeof hint?.ownerId === "string" ? hint.ownerId : "";
     if (!ownerIdValue) {
       return {
@@ -125,7 +250,7 @@ function inspectLeaseHint(scope = SINGLE_TAB_SCOPE, expectedOwnerId = "") {
   }
 }
 
-function emitOwnershipChange({ owned, reason = "" }) {
+function emitOwnershipChange({ owned, reason = "" }: OwnershipChangePayload): void {
   if (
     typeof window === "undefined"
     || typeof window.dispatchEvent !== "function"
@@ -134,32 +259,34 @@ function emitOwnershipChange({ owned, reason = "" }) {
     return;
   }
 
+  const detail: SingleTabOwnershipEventDetail = {
+    owned: owned === true,
+    ownerId,
+    reason: String(reason || ""),
+    scope: activeScope,
+  };
+
   window.dispatchEvent(
-    new CustomEvent(SINGLE_TAB_OWNERSHIP_EVENT, {
-      detail: {
-        owned: owned === true,
-        ownerId,
-        reason: String(reason || ""),
-        scope: activeScope,
-      },
+    new CustomEvent<SingleTabOwnershipEventDetail>(SINGLE_TAB_OWNERSHIP_EVENT, {
+      detail,
     })
   );
 }
 
-function clearFallbackHeartbeat() {
+function clearFallbackHeartbeat(): void {
   if (fallbackHeartbeatId !== null && typeof window !== "undefined") {
     window.clearInterval(fallbackHeartbeatId);
     fallbackHeartbeatId = null;
   }
 }
 
-function installBlockedInteractionHandlers() {
+function installBlockedInteractionHandlers(): void {
   if (blockedInteractionInstalled || typeof document === "undefined") return;
   blockedInteractionInstalled = true;
 
-  const isBlockerTarget = (target) => {
+  const isBlockerTarget = (target: EventTarget | null): boolean => {
     if (!blockerElement) return false;
-    return blockerElement === target || blockerElement.contains(target);
+    return blockerElement === target || blockerElement.contains(target as Node | null);
   };
 
   for (const eventName of BLOCKED_INTERACTION_EVENTS) {
@@ -186,19 +313,19 @@ function installBlockedInteractionHandlers() {
   );
 }
 
-function setBlockedState(isBlocked) {
+function setBlockedState(isBlocked: boolean): void {
   if (typeof document === "undefined") return;
   document.documentElement.dataset.singleTabBlocked = isBlocked ? "true" : "false";
 }
 
-function updateBlockerCopy() {
+function updateBlockerCopy(): void {
   if (!blockerElement) return;
-  blockerTitleElement.textContent = t("singleTabBlockedTitle");
-  blockerMessageElement.textContent = t("singleTabBlockedMessage");
-  blockerRetryButton.textContent = t("singleTabRetry");
+  blockerTitleElement!.textContent = translate("singleTabBlockedTitle");
+  blockerMessageElement!.textContent = translate("singleTabBlockedMessage");
+  blockerRetryButton!.textContent = translate("singleTabRetry");
 }
 
-function ensureBlocker() {
+function ensureBlocker(): HTMLDivElement | null {
   if (typeof document === "undefined") return null;
   if (blockerElement) return blockerElement;
 
@@ -282,21 +409,24 @@ function ensureBlocker() {
   return blockerElement;
 }
 
-function showBlockedOverlay() {
+function showBlockedOverlay(): void {
   const overlay = ensureBlocker();
   if (!overlay) return;
   overlay.hidden = false;
   setBlockedState(true);
 }
 
-function hideBlockedOverlay() {
+function hideBlockedOverlay(): void {
   if (blockerElement) {
     blockerElement.hidden = true;
   }
   setBlockedState(false);
 }
 
-function setOwnershipState(owned, { reason = "", blocked = false, mode = ownershipMode } = {}) {
+function setOwnershipState(
+  owned: boolean,
+  { reason = "", blocked = false, mode = ownershipMode }: SetOwnershipStateOptions = {}
+): void {
   const nextOwned = owned === true;
   const changed = ownsSingleTab !== nextOwned || ownershipMode !== (nextOwned ? mode : "");
 
@@ -316,7 +446,7 @@ function setOwnershipState(owned, { reason = "", blocked = false, mode = ownersh
   }
 }
 
-function installCleanupHandlers() {
+function installCleanupHandlers(): void {
   if (cleanupInstalled || typeof window === "undefined") return;
   cleanupInstalled = true;
 
@@ -340,7 +470,7 @@ function installCleanupHandlers() {
   });
 }
 
-async function openIndexedDb() {
+async function openIndexedDb(): Promise<IDBDatabase | null> {
   if (typeof indexedDB === "undefined" || typeof indexedDB.open !== "function") {
     return null;
   }
@@ -351,13 +481,13 @@ async function openIndexedDb() {
 
   if (!indexedDbPromise) {
     indexedDbPromise = new Promise((resolve) => {
-      const clearCachedDatabase = (target = indexedDbRef) => {
+      const clearCachedDatabase = (target: IDBDatabase | null = indexedDbRef) => {
         if (indexedDbRef === target) {
           indexedDbRef = null;
         }
       };
 
-      const cacheDatabase = (database) => {
+      const cacheDatabase = (database: IDBDatabase | null): IDBDatabase | null => {
         if (!database) return null;
         if (indexedDbRef === database) return database;
 
@@ -388,7 +518,7 @@ async function openIndexedDb() {
         return database;
       };
 
-      const finish = (database) => {
+      const finish = (database: IDBDatabase | null): void => {
         indexedDbPromise = null;
         resolve(database);
       };
@@ -415,18 +545,22 @@ async function openIndexedDb() {
   return indexedDbPromise;
 }
 
-function clearCachedIndexedDb(target = indexedDbRef) {
+function clearCachedIndexedDb(target: IDBDatabase | null = indexedDbRef): void {
   if (indexedDbRef === target) {
     indexedDbRef = null;
   }
 }
 
-async function executeIndexedDbLeaseTransaction(database, scope, handler) {
+async function executeIndexedDbLeaseTransaction<T>(
+  database: IDBDatabase,
+  scope: string,
+  handler: IndexedDbLeaseTransactionHandler<T>
+): Promise<IndexedDbLeaseTransactionResult<T>> {
   return new Promise((resolve) => {
     let settled = false;
-    let value = null;
+    let value: T | null = null;
 
-    const settle = (result) => {
+    const settle = (result: IndexedDbLeaseTransactionResult<T>) => {
       if (settled) return;
       settled = true;
       resolve(result);
@@ -439,16 +573,7 @@ async function executeIndexedDbLeaseTransaction(database, scope, handler) {
       const request = store.get(key);
 
       request.onsuccess = () => {
-        const currentLease =
-          request.result && typeof request.result === "object"
-            ? {
-                ownerId: typeof request.result.ownerId === "string" ? request.result.ownerId : "",
-                expiresAtMs: Number.isFinite(request.result.expiresAtMs)
-                  ? request.result.expiresAtMs
-                  : 0,
-                hintReady: request.result.hintReady === true,
-              }
-            : null;
+        const currentLease = normalizeLeaseRecord(request.result);
         value = handler({
           store,
           key,
@@ -502,7 +627,11 @@ async function executeIndexedDbLeaseTransaction(database, scope, handler) {
   });
 }
 
-async function runIndexedDbLeaseTransaction(scope, handler, { allowRetry = true } = {}) {
+async function runIndexedDbLeaseTransaction<T>(
+  scope: string,
+  handler: IndexedDbLeaseTransactionHandler<T>,
+  { allowRetry = true }: IndexedDbLeaseTransactionOptions = {}
+): Promise<IndexedDbLeaseTransactionResult<T>> {
   const database = await openIndexedDb();
   if (!database) {
     return {
@@ -525,7 +654,7 @@ async function runIndexedDbLeaseTransaction(scope, handler, { allowRetry = true 
   return executeIndexedDbLeaseTransaction(retriedDatabase, scope, handler);
 }
 
-async function releaseIndexedDbLease(scope = activeScope) {
+async function releaseIndexedDbLease(scope: string = activeScope): Promise<void> {
   await runIndexedDbLeaseTransaction(scope, ({ currentLease, key, store }) => {
     if (currentLease?.ownerId === ownerId) {
       store.delete(key);
@@ -534,20 +663,21 @@ async function releaseIndexedDbLease(scope = activeScope) {
   });
 }
 
-async function renewIndexedDbLease(scope = activeScope) {
+async function renewIndexedDbLease(scope: string = activeScope): Promise<boolean> {
   const result = await runIndexedDbLeaseTransaction(scope, ({ currentLease, key, nowMs, store }) => {
     if (currentLease?.ownerId !== ownerId) {
       return false;
     }
 
     const hintReady = saveLeaseHint(scope);
+    const nextLease: SingleTabLeaseRecord = {
+      ownerId,
+      expiresAtMs: nowMs + SINGLE_TAB_LEASE_MS,
+      hintReady,
+    };
 
     store.put(
-      {
-        ownerId,
-        expiresAtMs: nowMs + SINGLE_TAB_LEASE_MS,
-        hintReady,
-      },
+      nextLease,
       key
     );
     return true;
@@ -556,7 +686,7 @@ async function renewIndexedDbLease(scope = activeScope) {
   return result.supported && result.errored !== true && result.value === true;
 }
 
-async function acquireIndexedDbLease(scope = activeScope) {
+async function acquireIndexedDbLease(scope: string = activeScope): Promise<IndexedDbAcquireResult> {
   const result = await runIndexedDbLeaseTransaction(scope, ({ currentLease, key, nowMs, store }) => {
     if (hasActiveLease(currentLease) && currentLease.ownerId !== ownerId) {
       if (currentLease.hintReady !== true) {
@@ -573,13 +703,14 @@ async function acquireIndexedDbLease(scope = activeScope) {
     }
 
     const hintReady = saveLeaseHint(scope);
+    const nextLease: SingleTabLeaseRecord = {
+      ownerId,
+      expiresAtMs: nowMs + SINGLE_TAB_LEASE_MS,
+      hintReady,
+    };
 
     store.put(
-      {
-        ownerId,
-        expiresAtMs: nowMs + SINGLE_TAB_LEASE_MS,
-        hintReady,
-      },
+      nextLease,
       key
     );
     return true;
@@ -600,7 +731,7 @@ async function acquireIndexedDbLease(scope = activeScope) {
   };
 }
 
-function startFallbackHeartbeat(scope = activeScope) {
+function startFallbackHeartbeat(scope: string = activeScope): void {
   clearFallbackHeartbeat();
   if (typeof window === "undefined") return;
 
@@ -618,7 +749,7 @@ function startFallbackHeartbeat(scope = activeScope) {
   }, SINGLE_TAB_HEARTBEAT_MS);
 }
 
-async function tryAcquireWebLock(scope = activeScope) {
+async function tryAcquireWebLock(scope: string = activeScope): Promise<WebLockAcquireResult> {
   if (typeof navigator === "undefined" || typeof navigator.locks?.request !== "function") {
     return {
       supported: false,
@@ -629,8 +760,8 @@ async function tryAcquireWebLock(scope = activeScope) {
 
   return new Promise((resolve) => {
     let resolved = false;
-    let releaseHold = () => {};
-    const holdPromise = new Promise((release) => {
+    let releaseHold: SingleTabReleaseCallback = () => {};
+    const holdPromise = new Promise<void>((release) => {
       releaseHold = release;
     });
 
@@ -685,7 +816,7 @@ async function tryAcquireWebLock(scope = activeScope) {
   });
 }
 
-async function attemptSingleTabOwnership(scope = activeScope) {
+async function attemptSingleTabOwnership(scope: string = activeScope): Promise<boolean> {
   installCleanupHandlers();
 
   const webLockResult = await tryAcquireWebLock(scope);
@@ -732,9 +863,9 @@ async function attemptSingleTabOwnership(scope = activeScope) {
 }
 
 export async function ensureSingleTabOwnership({
-  force = false,
+  force: _force = false,
   scope = SINGLE_TAB_SCOPE,
-} = {}) {
+}: EnsureSingleTabOwnershipOptions = {}): Promise<boolean> {
   activeScope = String(scope || SINGLE_TAB_SCOPE).trim() || SINGLE_TAB_SCOPE;
 
   if (ownsSingleTab) return true;
@@ -764,7 +895,7 @@ export async function ensureSingleTabOwnership({
 export function releaseSingleTabOwnership({
   blocked = false,
   reason = "released",
-} = {}) {
+}: ReleaseSingleTabOwnershipOptions = {}): void {
   const releaseScope = activeScope;
   ownershipPromise = null;
   clearFallbackHeartbeat();
@@ -789,6 +920,6 @@ export function releaseSingleTabOwnership({
   });
 }
 
-export function hasSingleTabOwnership() {
+export function hasSingleTabOwnership(): boolean {
   return ownsSingleTab;
 }

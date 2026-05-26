@@ -19,19 +19,69 @@ const DIALOG_CLASS = "vb-confirm-dialog";
 const BACKDROP_CLASS = "vb-confirm-backdrop";
 const CARD_CLASS = "vb-confirm-card";
 
-let activeDialog = null;
+export type DialogButtonLabel = string;
+export type ConfirmDialogResult = boolean;
+export type PromptDialogResult = string | null | false;
+export type DialogCleanupHandler = () => void;
 
-function createEl(tag, attrs = {}, children = []) {
+export interface ConfirmDialogOptions {
+  title?: string;
+  message?: string;
+  description?: string;
+  confirmLabel?: DialogButtonLabel;
+  cancelLabel?: DialogButtonLabel;
+  destructive?: boolean;
+  icon?: string;
+  onConfirm?: (() => unknown) | null;
+}
+
+export interface PromptDialogOptions {
+  title?: string;
+  message?: string;
+  placeholder?: string;
+  value?: string;
+  confirmLabel?: DialogButtonLabel;
+  cancelLabel?: DialogButtonLabel;
+  inputLabel?: string;
+  maxLength?: number | null;
+}
+
+type DialogDismissResult = ConfirmDialogResult | PromptDialogResult;
+type DialogChild = Node | string | null | undefined | false;
+type DialogAttributeValue = string | number | boolean | null | undefined;
+
+type DialogElementAttributes = Record<string, DialogAttributeValue> & {
+  className?: DialogButtonLabel;
+  textContent?: string;
+  innerHTML?: string;
+};
+
+type FocusableElement = HTMLElement & {
+  disabled?: boolean;
+};
+
+interface ActiveDialog {
+  backdrop: HTMLElement;
+  dismiss: (result: DialogDismissResult) => void;
+}
+
+let activeDialog: ActiveDialog | null = null;
+
+function createEl<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  attrs: DialogElementAttributes = {},
+  children: DialogChild[] = []
+): HTMLElementTagNameMap[K] {
   const el = document.createElement(tag);
   for (const [key, value] of Object.entries(attrs)) {
     if (key === "className") {
-      el.className = value;
+      el.className = value as string;
     } else if (key === "textContent") {
-      el.textContent = value;
+      el.textContent = value as string;
     } else if (key === "innerHTML") {
-      el.innerHTML = value;
+      el.innerHTML = value as string;
     } else {
-      el.setAttribute(key, value);
+      el.setAttribute(key, value as string);
     }
   }
   for (const child of children) {
@@ -44,15 +94,15 @@ function createEl(tag, attrs = {}, children = []) {
   return el;
 }
 
-function getFocusableElements(container) {
+function getFocusableElements(container: HTMLElement): FocusableElement[] {
   return Array.from(
-    container.querySelectorAll(
+    container.querySelectorAll<FocusableElement>(
       'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
     )
   ).filter((el) => !el.disabled && !el.hidden && el.offsetParent !== null);
 }
 
-function trapFocus(container, event) {
+function trapFocus(container: HTMLElement, event: KeyboardEvent): void {
   const focusable = getFocusableElements(container);
   if (focusable.length === 0) return;
 
@@ -89,14 +139,14 @@ export function showConfirmDialog({
   destructive = false,
   icon = "",
   onConfirm = null,
-} = {}) {
+}: ConfirmDialogOptions = {}): Promise<ConfirmDialogResult> {
   // Dismiss any existing dialog first
   if (activeDialog) {
     activeDialog.dismiss(false);
   }
 
   return new Promise((resolve) => {
-    const triggerElement = document.activeElement;
+    const triggerElement = document.activeElement as HTMLElement | null;
 
     // Build DOM
     const backdrop = createEl("div", {
@@ -165,14 +215,14 @@ export function showConfirmDialog({
 
     let resolved = false;
 
-    function dismiss(result) {
+    function dismiss(result: ConfirmDialogResult): void {
       if (resolved) return;
       resolved = true;
 
       backdrop.classList.add("vb-confirm-exiting");
       card.classList.add("vb-confirm-exiting");
 
-      const cleanup = () => {
+      const cleanup: DialogCleanupHandler = () => {
         backdrop.remove();
         if (activeDialog?.backdrop === backdrop) {
           activeDialog = null;
@@ -257,13 +307,13 @@ export function showPromptDialog({
   cancelLabel = "Cancel",
   inputLabel = "",
   maxLength = null,
-} = {}) {
+}: PromptDialogOptions = {}): Promise<PromptDialogResult> {
   if (activeDialog) {
     activeDialog.dismiss(false);
   }
 
   return new Promise((resolve) => {
-    const triggerElement = document.activeElement;
+    const triggerElement = document.activeElement as HTMLElement | null;
 
     const backdrop = createEl("div", {
       className: BACKDROP_CLASS,
@@ -326,14 +376,14 @@ export function showPromptDialog({
 
     let resolved = false;
 
-    function dismiss(result) {
+    function dismiss(result: PromptDialogResult): void {
       if (resolved) return;
       resolved = true;
 
       backdrop.classList.add("vb-confirm-exiting");
       card.classList.add("vb-confirm-exiting");
 
-      const cleanup = () => {
+      const cleanup: DialogCleanupHandler = () => {
         backdrop.remove();
         if (activeDialog?.backdrop === backdrop) {
           activeDialog = null;
@@ -355,7 +405,7 @@ export function showPromptDialog({
       }
     }
 
-    function submit() {
+    function submit(): void {
       const trimmed = input.value.trim();
       if (trimmed) {
         dismiss(trimmed);
@@ -364,7 +414,7 @@ export function showPromptDialog({
       }
     }
 
-    function syncSubmitState() {
+    function syncSubmitState(): void {
       confirmBtn.disabled = input.value.trim().length === 0;
     }
 
