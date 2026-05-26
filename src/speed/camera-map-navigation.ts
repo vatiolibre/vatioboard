@@ -7,6 +7,8 @@ import {
   normalizeHeading,
 } from "../shared/geo-heading.js";
 
+type AnyRecord = Record<string, any>;
+
 const MIN_DERIVED_HEADING_DISTANCE_M = 8;
 const MIN_MOVING_SPEED_MS = 1.5;
 const HEADING_TTL_MS = 5000;
@@ -42,7 +44,7 @@ export function createNavigationCameraState() {
   };
 }
 
-export function normalizeNavigationOptions(options = {}) {
+export function normalizeNavigationOptions(options: AnyRecord = {}) {
   const navigationMode = options.navigationMode === "browse" ? "browse" : "drive";
   const anchorRatio = finiteNumber(options.vehicleAnchorYRatio) ?? NAVIGATION_ANCHOR_Y_RATIO;
   return {
@@ -61,7 +63,7 @@ export function shouldUseNavigationCamera({
   mapReady = true,
   position = null,
   navigationMode = "drive",
-} = {}) {
+}: AnyRecord = {}) {
   return followEnabled === true
     && followPaused !== true
     && panelVisible === true
@@ -70,7 +72,7 @@ export function shouldUseNavigationCamera({
     && isUsableLivePosition(position);
 }
 
-export function smoothHeading(previousHeading, nextHeading, options = {}) {
+export function smoothHeading(previousHeading, nextHeading, options: AnyRecord = {}) {
   const previous = normalizeHeading(previousHeading);
   const next = normalizeHeading(nextHeading);
   if (next === null) return previous;
@@ -85,7 +87,7 @@ export function smoothHeading(previousHeading, nextHeading, options = {}) {
   return normalizeHeading(previous + signedDelta * factor);
 }
 
-export function shouldUpdateBearing(previousBearing, nextBearing, speedMs = null, options = {}) {
+export function shouldUpdateBearing(previousBearing, nextBearing, speedMs = null, options: AnyRecord = {}) {
   const previous = normalizeHeading(previousBearing);
   const next = normalizeHeading(nextBearing);
   if (next === null) return false;
@@ -110,7 +112,7 @@ function getNavigationZoom(speedMs, currentZoom, relevantCamera) {
   return targetZoom;
 }
 
-function shouldEmphasizeRelevantCamera(relevantCamera, previousCameraState = {}) {
+function shouldEmphasizeRelevantCamera(relevantCamera, previousCameraState: AnyRecord = {}) {
   if (!relevantCamera?.ahead) return false;
   if (relevantCamera.key !== previousCameraState.lastCameraKey) return true;
   if (!Number.isFinite(relevantCamera.distance) || !Number.isFinite(previousCameraState.lastCameraDistance)) {
@@ -130,10 +132,10 @@ export function computeNavigationCameraUpdate({
   mapSize = {},
   currentZoom = null,
   currentBearing = 0,
-  currentPitch = 0,
+  currentPitch: _currentPitch = 0,
   now = Date.now(),
   options = {},
-} = {}) {
+}: AnyRecord = {}) {
   const normalizedOptions = normalizeNavigationOptions({ ...options, navigationMode });
   if (!isUsableLivePosition(position) || normalizedOptions.navigationMode !== "drive") {
     return {
@@ -208,8 +210,8 @@ function getHeadingCandidate(input, coords) {
     ?? input?.course;
 }
 
-export function normalizeLivePosition(input, now = Date.now()) {
-  const coords = input?.coords || input || {};
+export function normalizeLivePosition(input: any, now = Date.now()) {
+  const coords: AnyRecord = input?.coords || input || {};
   const latitude = finiteNumber(coords.latitude);
   const longitude = finiteNumber(coords.longitude);
   if (
@@ -242,11 +244,11 @@ export function normalizeLivePosition(input, now = Date.now()) {
   };
 }
 
-export function isUsableLivePosition(position) {
+export function isUsableLivePosition(position): boolean {
   return isUsableLatLon(position);
 }
 
-export function shouldShowHeading(position, previousPosition, lastHeadingState = null, now = Date.now()) {
+export function shouldShowHeading(position: any, previousPosition: any, lastHeadingState: any = null, now = Date.now()) {
   if (!isUsableLivePosition(position)) {
     return {
       heading: null,
@@ -308,7 +310,7 @@ export function shouldShowHeading(position, previousPosition, lastHeadingState =
   };
 }
 
-export function buildUserPositionFeature(position, headingState = {}, now = Date.now()) {
+export function buildUserPositionFeature(position: any, headingState: AnyRecord = {}, now = Date.now()) {
   if (!isUsableLivePosition(position)) return null;
   const freshnessMs = finiteNumber(
     position.receivedAtMs

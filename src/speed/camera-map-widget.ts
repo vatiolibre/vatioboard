@@ -51,6 +51,8 @@ import {
 import { formatCameraLimitSpeed } from "./render.js";
 import { formatTrapDistance } from "./traps.js";
 
+type AnyRecord = Record<string, any>;
+
 export const CAMERA_MAP_WINDOW_ID = "camera-map";
 
 const CAMERA_SOURCE_ID = "camera-map-cameras";
@@ -99,14 +101,14 @@ const CAMERA_APPROACH_FALLBACK_HALO_M = 160;
 const APPROACH_FILTERS = ["all", "review", "missing", "nearby"];
 const APPROACH_NEARBY_DISTANCE_M = 1600;
 
-function getEmptyFeatureCollection() {
+function getEmptyFeatureCollection(): any {
   return {
     type: "FeatureCollection",
     features: [],
   };
 }
 
-function createElement(tagName, attributes = {}, children = []) {
+function createElement(tagName, attributes: AnyRecord = {}, children: any[] = []): any {
   const element = document.createElement(tagName);
   for (const [key, value] of Object.entries(attributes)) {
     if (key === "class") element.className = value;
@@ -126,14 +128,16 @@ function isGpsDebugEnabled() {
   }
 }
 
-function debugCameraGps(label, payload = {}) {
-  if (!isGpsDebugEnabled() || typeof console === "undefined" || typeof console.debug !== "function") return;
-  console.debug(`[vatioboard:camera-map:gps] ${label}`, payload);
+function debugCameraGps(label, payload: AnyRecord = {}) {
+  const debug = globalThis.console?.debug;
+  if (!isGpsDebugEnabled() || typeof debug !== "function") return;
+  debug.call(globalThis.console, `[vatioboard:camera-map:gps] ${label}`, payload);
 }
 
-function logCameraApproach(label, payload = {}) {
-  if (!isGpsDebugEnabled() || typeof console === "undefined" || typeof console.debug !== "function") return;
-  console.debug(`[vatioboard:camera-map:approach] ${label}`, payload);
+function logCameraApproach(label, payload: AnyRecord = {}) {
+  const debug = globalThis.console?.debug;
+  if (!isGpsDebugEnabled() || typeof debug !== "function") return;
+  debug.call(globalThis.console, `[vatioboard:camera-map:approach] ${label}`, payload);
 }
 
 function parseApproachJson(value) {
@@ -170,7 +174,7 @@ function destinationPoint([longitude, latitude], bearingDeg, distanceM) {
   return [longitude + lonDelta, latitude + latDelta];
 }
 
-function getApproachBearingsForVisualization(approach = {}) {
+function getApproachBearingsForVisualization(approach: AnyRecord = {}) {
   const bearingDeg = Number(approach.bearingDeg);
   const reverseBearingDeg = Number(approach.reverseBearingDeg);
   const direction = String(approach.direction || "both").toLowerCase();
@@ -184,7 +188,7 @@ function getApproachBearingsForVisualization(approach = {}) {
   ].filter(Boolean);
 }
 
-function shouldShowApproachFeature(feature, { filter = "all", position = null } = {}) {
+function shouldShowApproachFeature(feature, { filter = "all", position = null }: AnyRecord = {}) {
   const props = feature?.properties || {};
   if (filter === "missing") return Number(props.approachCount || 0) === 0;
   if (filter === "review") {
@@ -240,7 +244,7 @@ function getApproachFeatureBaseProperties({
   };
 }
 
-function buildApproachVisualizationFeaturesForCamera(feature, options = {}) {
+function buildApproachVisualizationFeaturesForCamera(feature, options: AnyRecord = {}) {
   const {
     mode = "global",
     decision = null,
@@ -387,13 +391,13 @@ function buildApproachVisualizationFeaturesForCamera(feature, options = {}) {
   return approachFeatures;
 }
 
-function currentLivePositionFromOptions(options = {}) {
+function currentLivePositionFromOptions(options: AnyRecord = {}) {
   const longitude = Number(options.position?.longitude);
   const latitude = Number(options.position?.latitude);
   return Number.isFinite(longitude) && Number.isFinite(latitude) ? { longitude, latitude } : null;
 }
 
-export function buildCameraApproachFeatureCollection(cameraFeatures = {}, options = {}) {
+export function buildCameraApproachFeatureCollection(cameraFeatures: any = {}, options: AnyRecord = {}) {
   const features = Array.isArray(cameraFeatures)
     ? cameraFeatures
     : (Array.isArray(cameraFeatures?.features) ? cameraFeatures.features : []);
@@ -414,7 +418,7 @@ export function buildCameraApproachFeatureCollection(cameraFeatures = {}, option
   };
 }
 
-export function buildSelectedCameraApproachFeatureCollection(feature, options = {}) {
+export function buildSelectedCameraApproachFeatureCollection(feature, options: AnyRecord = {}) {
   return {
     type: "FeatureCollection",
     features: feature ? buildApproachVisualizationFeaturesForCamera(feature, {
@@ -452,7 +456,7 @@ function featureToApproachTrap(feature) {
   ];
 }
 
-export function evaluateCameraFeatureApproachDecision(feature, position, options = {}) {
+export function evaluateCameraFeatureApproachDecision(feature, position, options: AnyRecord = {}) {
   const trap = featureToApproachTrap(feature);
   if (!trap || !position) return null;
   const distanceM = haversineDistanceMeters(position, {
@@ -469,7 +473,7 @@ export function evaluateCameraFeatureApproachDecision(feature, position, options
   };
 }
 
-function evaluateVisibleCameraApproachDecision(cameraFeatures, position, options = {}) {
+function evaluateVisibleCameraApproachDecision(cameraFeatures, position, options: AnyRecord = {}) {
   if (!position) {
     return {
       state: "no-position",
@@ -598,7 +602,7 @@ function parsePopupSources(value) {
     .filter(Boolean);
 }
 
-function getPopupSourceLabel(props = {}) {
+function getPopupSourceLabel(props: AnyRecord = {}) {
   const sourceMeta = props.sourceMeta && typeof props.sourceMeta === "object" ? props.sourceMeta : null;
   const sources = parsePopupSources(props.cameraSources?.length ? props.cameraSources : sourceMeta?.sources);
   const labels = [];
@@ -635,13 +639,13 @@ function getApproachRoleLabel(role) {
   return "Approach corridor";
 }
 
-function getApproachStatusLabel(props = {}) {
+function getApproachStatusLabel(props: AnyRecord = {}) {
   if (props.approachAmbiguous === true || props.approachConfidenceSummary === "ambiguous") return "Ambiguous";
   if (Number(props.approachCount || 0) <= 0) return "No approach data";
   return `${titleCase(props.approachConfidenceSummary || "low")} confidence`;
 }
 
-function getApproachExplanation(props = {}) {
+function getApproachExplanation(props: AnyRecord = {}) {
   if (props.approachAmbiguous === true || props.approachConfidenceSummary === "ambiguous") {
     return "Multiple nearby road matches look plausible. This camera may need review.";
   }
@@ -661,7 +665,7 @@ function getDecisionSummary(decision = null) {
   return titleCase(decision.state || "No match");
 }
 
-function getApproachBearingLabel(approach = {}) {
+function getApproachBearingLabel(approach: AnyRecord = {}) {
   return [
     Number.isFinite(Number(approach.bearingDeg)) ? `${Math.round(Number(approach.bearingDeg))}°` : null,
     Number.isFinite(Number(approach.reverseBearingDeg)) ? `${Math.round(Number(approach.reverseBearingDeg))}° reverse` : null,
@@ -734,7 +738,7 @@ export function createCameraReviewPayload(feature, decision = null) {
   };
 }
 
-export function buildPopupHtml(feature, options = {}) {
+export function buildPopupHtml(feature, options: AnyRecord = {}) {
   const {
     unit = loadUnitPreference(),
     distanceUnit = loadDistanceUnitPreference(),
@@ -867,7 +871,7 @@ export function buildPopupHtml(feature, options = {}) {
   `;
 }
 
-function getStatusMessage(status = {}) {
+function getStatusMessage(status: AnyRecord = {}) {
   if (status.status === "loading-manifest") return t("cameraMapLoading");
   if (status.status === "loading-cameras") return t("cameraMapLoadingCameras");
   if (status.status === "waiting-zoom") return t("cameraMapZoomIn");
@@ -884,7 +888,7 @@ function getStatusMessage(status = {}) {
   return t("cameraMapLoading");
 }
 
-function getInitialView({ gpsService = null, getCurrentPosition = null } = {}) {
+function getInitialView({ gpsService = null, getCurrentPosition = null }: AnyRecord = {}) {
   const currentPosition = normalizePosition(
     gpsService?.getCurrentPosition?.()
       || getCurrentPosition?.()
@@ -1338,7 +1342,7 @@ function buildPanel(selectedBasemapId, {
   };
 }
 
-export function createCameraMapWidget(options = {}) {
+export function createCameraMapWidget(options: AnyRecord = {}) {
   const {
     mount = document.body,
     floating = false,
@@ -1528,7 +1532,7 @@ export function createCameraMapWidget(options = {}) {
     return Number.isFinite(value) ? `${Math.round(value)}${suffix}` : "n/a";
   }
 
-  function getApproachDecisionLabel(decision = {}) {
+  function getApproachDecisionLabel(decision: AnyRecord = {}) {
     if (decision.accepted) return t("cameraMapApproachWouldAlert");
     if (decision.state === "near-not-approaching") return t("cameraMapApproachNotApproaching");
     if (decision.state === "unknown-heading") return t("cameraMapApproachHeadingUnavailable");
@@ -1561,7 +1565,7 @@ export function createCameraMapWidget(options = {}) {
     ]));
   }
 
-  function setApproachLayerEnabled(visible, { refreshData = true } = {}) {
+  function setApproachLayerEnabled(visible, { refreshData = true }: AnyRecord = {}) {
     approachLayerEnabled = Boolean(visible);
     saveBooleanPreference(APPROACH_LAYER_STORAGE_KEY, approachLayerEnabled);
     updateLayerMenuState();
@@ -1674,7 +1678,7 @@ export function createCameraMapWidget(options = {}) {
     layerButton.setAttribute("aria-expanded", open ? "true" : "false");
   }
 
-  function getLayerOptionElements() {
+  function getLayerOptionElements(): any[] {
     return Array.from(layerMenu.querySelectorAll(".camera-map-layer-option"));
   }
 
@@ -3322,7 +3326,7 @@ export function createCameraMapWidget(options = {}) {
     return projectionMode;
   }
 
-  function showPanel({ persist = true } = {}) {
+  function showPanel({ persist = true }: AnyRecord = {}) {
     panel.hidden = false;
     startResizeObserver();
     startSpeedPositionEvents();
@@ -3342,7 +3346,7 @@ export function createCameraMapWidget(options = {}) {
     }, 0);
   }
 
-  function hidePanel({ persist = true } = {}) {
+  function hidePanel({ persist = true }: AnyRecord = {}) {
     exitFullscreenBeforeHide();
     panel.hidden = true;
     if (persist) saveVisibility(false);
@@ -3354,7 +3358,7 @@ export function createCameraMapWidget(options = {}) {
     refreshController?.abort();
   }
 
-  function minimizePanel() {
+  function minimizePanel(_options: AnyRecord = {}) {
     exitFullscreenBeforeHide();
     panel.hidden = true;
     window.clearTimeout(refreshTimer);
@@ -3365,22 +3369,22 @@ export function createCameraMapWidget(options = {}) {
     refreshController?.abort();
   }
 
-  function open(openOptions = {}) {
+  function open(openOptions: AnyRecord = {}) {
     showPanel(openOptions);
     shellManager.openWindow(CAMERA_MAP_WINDOW_ID, { ...openOptions, invokeLifecycle: false });
   }
 
-  function close(closeOptions = {}) {
+  function close(closeOptions: AnyRecord = {}) {
     hidePanel(closeOptions);
     shellManager.closeWindow(CAMERA_MAP_WINDOW_ID, { ...closeOptions, invokeLifecycle: false });
   }
 
-  function minimize(minimizeOptions = {}) {
+  function minimize(minimizeOptions: AnyRecord = {}) {
     minimizePanel(minimizeOptions);
     shellManager.minimizeWindow(CAMERA_MAP_WINDOW_ID, { ...minimizeOptions, invokeLifecycle: false });
   }
 
-  function restore(restoreOptions = {}) {
+  function restore(restoreOptions: AnyRecord = {}) {
     showPanel(restoreOptions);
     shellManager.restoreWindow(CAMERA_MAP_WINDOW_ID, { ...restoreOptions, invokeLifecycle: false });
   }

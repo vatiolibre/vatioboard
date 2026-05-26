@@ -64,6 +64,12 @@ interface ImportMeta {
     MODE?: string;
     [key: string]: string | boolean | undefined;
   };
+  hot?: {
+    accept?: (...args: unknown[]) => void;
+    dispose?: (callback: (data?: unknown) => void) => void;
+    data?: unknown;
+    [key: string]: unknown;
+  };
 }
 
 interface Window {

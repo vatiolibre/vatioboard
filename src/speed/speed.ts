@@ -122,6 +122,8 @@ import {
 } from './traps.js';
 import { createCameraDatabase } from './camera-database.js';
 
+type AnyRecord = Record<string, any>;
+
 const DRIVING_AUDIO_OPPORTUNISTIC_IGNORE_SELECTOR = [
   '.player-panel',
   '#quickAudioToggle',
@@ -133,15 +135,15 @@ const DRIVING_AUDIO_OPPORTUNISTIC_IGNORE_SELECTOR = [
 ].join(', ');
 const SPEED_HEADING_TTL_MS = 5000;
 
-function queryAll(root, selector) {
+function queryAll(root: any, selector: string): any[] {
   return root?.querySelectorAll ? Array.from(root.querySelectorAll(selector)) : [];
 }
 
-function queryOne(root, selector) {
+function queryOne(root: any, selector: string): any {
   return root?.querySelector ? root.querySelector(selector) : null;
 }
 
-export function getSpeedElements(root) {
+export function getSpeedElements(root: any): AnyRecord {
   return {
     speedApp: queryOne(root, '.speed-app'),
     speedShell: queryOne(root, '.speed-shell'),
@@ -241,18 +243,18 @@ const elements = createEmptySpeedElements();
 
 const isSpaRuntime = Boolean(window.__vatioboardSpa);
 let singleTabOwnershipPromise = Promise.resolve(true);
-let activeSpeedRoute = null;
+let activeSpeedRoute: any = null;
 let speedRouteGeneration = 0;
 let standaloneCleanup = null;
 let standaloneBackendAuthInitialized = false;
 let appGpsService = null;
 
-let speedRouteLifecycle = {
+let speedRouteLifecycle: any = {
   mount() {},
   unmount() {},
 };
 
-export function mountSpeedRoute(routeContext = {}) {
+export function mountSpeedRoute(routeContext: AnyRecord = {}) {
   return speedRouteLifecycle.mount(routeContext);
 }
 
@@ -268,7 +270,7 @@ function createInactiveToolsMenu() {
   };
 }
 
-let toolsMenu = createInactiveToolsMenu();
+let toolsMenu: any = createInactiveToolsMenu();
 const placeResolver = createPlaceResolver({ getLanguage: getLang });
 
 function focusElement(element) {
@@ -392,7 +394,7 @@ const initialReplaySession = createReplaySession({
 });
 const ACTIVE_REPLAY_PERSIST_INTERVAL_MS = 5000;
 
-const state = {
+const state: AnyRecord = {
   unit: initialPreferences.unit,
   distanceUnit: initialPreferences.distanceUnit,
   primaryView: initialPreferences.primaryView,
@@ -590,20 +592,20 @@ function createInactiveAudioController() {
   };
 }
 
-let analogSpeedometer = createInactiveAnalogSpeedometer();
-let speedRenderer = createInactiveSpeedRenderer();
-let globeController = createInactiveGlobeController();
-let wazeController = createInactiveWazeController();
-let audioController = createInactiveAudioController();
+let analogSpeedometer: any = createInactiveAnalogSpeedometer();
+let speedRenderer: any = createInactiveSpeedRenderer();
+let globeController: any = createInactiveGlobeController();
+let wazeController: any = createInactiveWazeController();
+let audioController: any = createInactiveAudioController();
 let audioControllerInitialized = false;
-let cameraDatabase = null;
-let speedRuntimeLifecycleCleanup = null;
-let appDrivingAlertService = null;
-let drivingAlertUnsubscribe = null;
+let cameraDatabase: any = null;
+let speedRuntimeLifecycleCleanup: (() => void) | null = null;
+let appDrivingAlertService: any = null;
+let drivingAlertUnsubscribe: any = null;
 let syncingDrivingAlertSnapshot = false;
 let speedRecoveryDialogOpen = false;
 let replayPersistTimerId = null;
-let replayPersistChain = Promise.resolve();
+let replayPersistChain: Promise<any> = Promise.resolve();
 let replayPersistInFlight = false;
 let replayPersistRequested = false;
 let replayPersistScheduled = false;
@@ -611,8 +613,8 @@ let replayStartPlacePendingSessionId = '';
 let replayEndPlacePendingSessionId = '';
 let drivingAudioPromptActivationInFlight = false;
 let drivingAudioPromptLastPointerActivationAt = 0;
-let spaSpeedReadyPromise = null;
-let spaSpeedReadyResolve = null;
+let spaSpeedReadyPromise: Promise<any> | null = null;
+let spaSpeedReadyResolve: any = null;
 
 const DRIVING_AUDIO_PROMPT_POINTER_CLICK_SUPPRESS_MS = 800;
 
@@ -735,12 +737,12 @@ function syncSpeedRuntime({ persist = false, reason = 'sync' } = {}) {
   );
 }
 
-function publishSpeedRecordingActivity(options = {}) {
+function publishSpeedRecordingActivity(options: AnyRecord = {}) {
   syncSpeedRuntime(options);
   renderDrivingAudioPrompt();
 }
 
-function syncDrivingAlertServiceState({ fromUserGesture = false } = {}) {
+function syncDrivingAlertServiceState({ fromUserGesture = false }: AnyRecord = {}) {
   const service = appDrivingAlertService || window.__vatioboardDrivingAlerts;
   if (!service || syncingDrivingAlertSnapshot) return;
   service.setUnits?.({ unit: state.unit, distanceUnit: state.distanceUnit });
@@ -757,7 +759,7 @@ function syncDrivingAlertServiceState({ fromUserGesture = false } = {}) {
   }
 }
 
-function applyDrivingAlertSnapshot(snapshot = {}) {
+function applyDrivingAlertSnapshot(snapshot: AnyRecord = {}) {
   if (!snapshot || typeof snapshot !== 'object') return;
   syncingDrivingAlertSnapshot = true;
   try {
@@ -1381,7 +1383,7 @@ async function enrichReplaySessionPlaces(session) {
   };
 }
 
-function archiveReplaySessionWithPlaces(session, options = {}) {
+function archiveReplaySessionWithPlaces(session, options: AnyRecord = {}) {
   void (async () => {
     const archivedSession = await archiveReplaySession(session, options);
     if (archivedSession) {
@@ -1769,7 +1771,7 @@ function clearNearestTrapState(reason = 'no-candidate') {
   state.cameraApproachDetails = null;
 }
 
-function buildApproachPosition(longitude, latitude, overrides = {}) {
+function buildApproachPosition(longitude, latitude, overrides: AnyRecord = {}) {
   const previousPosition = overrides.previousPosition || (state.lastPoint
     ? {
       latitude: state.lastPoint.latitude,
@@ -1788,7 +1790,7 @@ function buildApproachPosition(longitude, latitude, overrides = {}) {
   };
 }
 
-function updateNearestTrapState(longitude, latitude, options = {}) {
+function updateNearestTrapState(longitude, latitude, options: AnyRecord = {}) {
   const datasets = Array.isArray(state.trapDatasets) ? state.trapDatasets : [];
   const candidateDatasets = datasets.length > 0
     ? datasets
@@ -2002,7 +2004,7 @@ function syncAlertTriggerDiscovery() {
   elements.gaugeCard.classList.toggle('is-alert-discoverable', shouldHighlightTrigger);
 }
 
-function renderAlertUi(options = {}) {
+function renderAlertUi(options: AnyRecord = {}) {
   const alertState = getAlertUiState();
   const currentLimitDisplay = getAlertLimitDisplayValue();
   const canUseCurrentSpeed =
@@ -2093,7 +2095,7 @@ function renderAlertUi(options = {}) {
   }
 }
 
-function setAlertEnabled(enabled, options = {}) {
+function setAlertEnabled(enabled, options: AnyRecord = {}) {
   state.alertEnabled = enabled;
   if (!Number.isFinite(state.alertLimitMs) || state.alertLimitMs <= 0) {
     state.alertLimitMs = DEFAULT_ALERT_LIMIT_MS;
@@ -2111,7 +2113,7 @@ function setAlertEnabled(enabled, options = {}) {
   publishSpeedRecordingActivity({ persist: true, reason: 'manual-alert-toggle' });
 }
 
-function setAlertSoundEnabled(enabled, options = {}) {
+function setAlertSoundEnabled(enabled, options: AnyRecord = {}) {
   state.alertSoundEnabled = enabled;
   saveAlertSoundEnabledPreference(enabled);
   if (!syncingDrivingAlertSnapshot) {
@@ -2124,7 +2126,7 @@ function setAlertSoundEnabled(enabled, options = {}) {
   publishSpeedRecordingActivity({ persist: true, reason: 'manual-alert-sound-toggle' });
 }
 
-function setAudioMuted(muted, { fromUserGesture = false, reason = 'alert-audio-toggle' } = {}) {
+function setAudioMuted(muted, { fromUserGesture = false, reason = 'alert-audio-toggle' }: AnyRecord = {}) {
   const nextMuted = Boolean(muted);
   const wasMuted = state.audioMuted;
   const nextAlertAudioControlActive = fromUserGesture && !nextMuted
@@ -2162,7 +2164,7 @@ function setAudioMuted(muted, { fromUserGesture = false, reason = 'alert-audio-t
   publishSpeedRecordingActivity({ persist: true, reason });
 }
 
-function setAlertLimitDisplay(value, { enable = true, fromUserGesture = false } = {}) {
+function setAlertLimitDisplay(value, { enable = true, fromUserGesture = false }: AnyRecord = {}) {
   const normalizedValue = normalizeAlertDisplayValue(value, state.unit);
   state.alertLimitMs = convertDisplaySpeedToMs(normalizedValue, state.unit);
   saveAlertLimitPreference(state.alertLimitMs);
@@ -2186,7 +2188,7 @@ function setAlertLimitDisplay(value, { enable = true, fromUserGesture = false } 
   publishSpeedRecordingActivity({ persist: true, reason: 'manual-alert-limit' });
 }
 
-function adjustAlertLimit(stepDirection, options = {}) {
+function adjustAlertLimit(stepDirection, options: AnyRecord = {}) {
   const { step } = getAlertConfig(state.unit);
   const currentDisplayValue = normalizeAlertDisplayValue(getAlertLimitDisplayValue(), state.unit);
   setAlertLimitDisplay(currentDisplayValue + stepDirection * step, options);
@@ -2199,7 +2201,7 @@ function setAlertLimitToCurrentSpeed() {
   });
 }
 
-function setTrapAlertEnabled(enabled, options = {}) {
+function setTrapAlertEnabled(enabled, options: AnyRecord = {}) {
   state.trapAlertEnabled = enabled;
   if (!Number.isFinite(state.trapAlertDistanceM) || state.trapAlertDistanceM <= 0) {
     state.trapAlertDistanceM =
@@ -2228,7 +2230,7 @@ function setTrapAlertEnabled(enabled, options = {}) {
   publishSpeedRecordingActivity({ persist: true, reason: 'trap-alert-toggle' });
 }
 
-function setTrapAlertDistance(distanceM, { enable = true, fromUserGesture = false } = {}) {
+function setTrapAlertDistance(distanceM, { enable = true, fromUserGesture = false }: AnyRecord = {}) {
   state.trapAlertDistanceM = normalizeTrapAlertDistance(distanceM, state.distanceUnit);
   saveTrapAlertDistancePreference(state.trapAlertDistanceM);
   if (!syncingDrivingAlertSnapshot) {
@@ -2253,7 +2255,7 @@ function setTrapAlertDistance(distanceM, { enable = true, fromUserGesture = fals
   publishSpeedRecordingActivity({ persist: true, reason: 'trap-alert-distance' });
 }
 
-function setTrapSoundEnabled(enabled, options = {}) {
+function setTrapSoundEnabled(enabled, options: AnyRecord = {}) {
   state.trapSoundEnabled = enabled;
   if (!enabled) {
     state.lastTrapSoundedId = null;
@@ -2269,7 +2271,7 @@ function setTrapSoundEnabled(enabled, options = {}) {
   publishSpeedRecordingActivity({ persist: true, reason: 'trap-alert-sound-toggle' });
 }
 
-function syncRecordingKeepAliveWithRecordingState({ fromUserGesture = false } = {}) {
+function syncRecordingKeepAliveWithRecordingState({ fromUserGesture = false }: AnyRecord = {}) {
   const recordingActive = state.recordingState === 'recording';
 
   if (recordingActive) {
@@ -2296,7 +2298,7 @@ function shouldKeepTrackingInBackground() {
   return isSpaRuntime && !state.viewMounted && state.recordingState === 'recording';
 }
 
-function stopHiddenTrackingIfIdle({ disarmBackgroundAudio = false } = {}) {
+function stopHiddenTrackingIfIdle({ disarmBackgroundAudio = false }: AnyRecord = {}) {
   if (!isSpaRuntime || state.viewMounted || shouldKeepTrackingInBackground()) return;
   stopTracking({ disarmBackgroundAudio });
 }
@@ -2318,7 +2320,7 @@ function setDistanceUnit(unit) {
   applyUnitsConfiguration({ distanceUnit: unit });
 }
 
-function clearLiveFixState({ preserveContinuity = false } = {}) {
+function clearLiveFixState({ preserveContinuity = false }: AnyRecord = {}) {
   state.currentSpeedMs = 0;
   state.displayedSpeedMs = 0;
   state.currentAltitudeM = null;
@@ -2386,7 +2388,7 @@ function resetTripData() {
   speedRenderer.drawGauge();
 }
 
-function stopTracking({ disarmBackgroundAudio = false } = {}) {
+function stopTracking({ disarmBackgroundAudio = false }: AnyRecord = {}) {
   if (state.watchId !== null) {
     navigator.geolocation.clearWatch(state.watchId);
     state.watchId = null;
@@ -2401,7 +2403,7 @@ function stopTracking({ disarmBackgroundAudio = false } = {}) {
   publishSpeedRecordingActivity();
 }
 
-function startTracking({ fromUserGesture = false } = {}) {
+function startTracking({ fromUserGesture = false }: AnyRecord = {}) {
   if (isSpaRuntime && !state.viewMounted) return;
   if (fromUserGesture) markWelcomeLocationChoice('enabled');
 
@@ -2454,12 +2456,12 @@ function deferTrackingUntilLocationGesture() {
   return true;
 }
 
-function startTrackingIfAllowed({ fromUserGesture = false } = {}) {
+function startTrackingIfAllowed({ fromUserGesture = false }: AnyRecord = {}) {
   if (!fromUserGesture && deferTrackingUntilLocationGesture()) return;
   startTracking({ fromUserGesture });
 }
 
-function restartTrip({ fromUserGesture = false } = {}) {
+function restartTrip({ fromUserGesture = false }: AnyRecord = {}) {
   resetTripData();
   startTrackingIfAllowed({ fromUserGesture });
 }
@@ -2759,7 +2761,7 @@ function getRecoveryMessage(recovery) {
   return t('speedRecoveryRecordingMessage');
 }
 
-function restartGpsSubscriptionForRecovery({ fromUserGesture = false } = {}) {
+function restartGpsSubscriptionForRecovery({ fromUserGesture = false }: AnyRecord = {}) {
   if (state.watchId !== null) {
     navigator.geolocation.clearWatch(state.watchId);
     state.watchId = null;
@@ -2931,7 +2933,7 @@ function handleDrivingAudioPromptSecondary() {
 function recheckSpeedRouteRecovery({
   reason = 'speed-remount-recheck',
   scheduleRecoveryCheck = true,
-} = {}) {
+}: AnyRecord = {}) {
   if (state.recordingState === 'recording') {
     audioController.maybeRecoverRecordingKeepAliveAudio({ fromUserGesture: false });
   }
@@ -3012,14 +3014,14 @@ function destroySpeedRouteResources(route = activeSpeedRoute) {
   }
 }
 
-function mountSpeedController(routeContext = {}) {
+function mountSpeedController(routeContext: AnyRecord = {}) {
   if (routeContext.signal?.aborted) return Promise.resolve();
   unmountSpeedController();
   appGpsService = routeContext.gpsService || window.__vatioboardGpsStore || appGpsService;
   bindDrivingAlertService(routeContext.drivingAlertService || window.__vatioboardDrivingAlerts || appDrivingAlertService);
   const ownsCleanup = !routeContext.cleanup;
   const cleanup = routeContext.cleanup || createCleanupStack();
-  const route = {
+  const route: any = {
     cleanup,
     destroyed: false,
     generation: speedRouteGeneration + 1,
@@ -3106,7 +3108,7 @@ function syncLanguage() {
   renderDrivingAudioPrompt();
 }
 
-function bindEvents({ cleanup, signal } = {}) {
+function bindEvents({ cleanup, signal }: AnyRecord = {}) {
   if (!cleanup) return;
   if (signal?.aborted) return;
 

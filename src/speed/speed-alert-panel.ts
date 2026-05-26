@@ -20,6 +20,8 @@ import { normalizeTrapAlertDistance } from "./preferences.js";
 import { convertDisplaySpeedToMs, convertSpeed, tf } from "./render.js";
 import { formatTrapDistance, formatTrapSpeed } from "./traps.js";
 
+type AnyRecord = Record<string, any>;
+
 export const SPEED_ALERT_PANEL_WINDOW_ID = "speed-alerts";
 
 const VISIBILITY_KEY = "vatioboard.speed_alerts_panel.visible_v1";
@@ -59,7 +61,7 @@ function createActionButton({
   labelKey = "",
   icon = "",
   text = "",
-} = {}) {
+}: AnyRecord = {}) {
   const button = createElement("button", {
     type: "button",
     class: className,
@@ -111,7 +113,7 @@ function writeJsonStorage(key, value) {
   }
 }
 
-function loadPos() {
+function loadPos(): any {
   return readJsonStorage(POS_KEY);
 }
 
@@ -121,9 +123,9 @@ function savePos(pos) {
 
 function applyInitialBounds(panel, shellManager) {
   const storedWindow = shellManager?.getWindow?.(SPEED_ALERT_PANEL_WINDOW_ID);
-  const storedBounds = storedWindow?.bounds;
+  const storedBounds: any = storedWindow?.bounds;
   const legacyPos = loadPos()?.panel;
-  const bounds = storedBounds || {
+  const bounds: any = storedBounds || {
     ...DEFAULT_BOUNDS,
     ...(legacyPos?.left ? { left: Number.parseFloat(legacyPos.left) } : {}),
     ...(legacyPos?.top ? { top: Number.parseFloat(legacyPos.top) } : {}),
@@ -158,7 +160,7 @@ function formatCameraDatabaseCount(value) {
   }
 }
 
-function getCameraDatabaseStatusText(cameraStatus = {}) {
+function getCameraDatabaseStatusText(cameraStatus: AnyRecord = {}) {
   const country = cameraStatus.activeCountryName || cameraStatus.activeCountryCode?.toUpperCase?.() || "";
   const count = formatCameraDatabaseCount(cameraStatus.cameraCount);
   const date = formatCameraDatabaseDate(cameraStatus.lastUpdated);
@@ -191,7 +193,7 @@ function getTrapAlertDistanceLabel(distanceM, distanceUnit) {
   return `${formatted.value} ${formatted.unit}`;
 }
 
-function getStatusLabel(snapshot = {}) {
+function getStatusLabel(snapshot: AnyRecord = {}) {
   const audio = snapshot.audio || {};
   const preferences = snapshot.preferences || {};
   if (preferences.audioMuted || audio.muted) return t("muted");
@@ -205,7 +207,7 @@ function getStatusLabel(snapshot = {}) {
   return t("off");
 }
 
-function getAudioStatusText(snapshot = {}) {
+function getAudioStatusText(snapshot: AnyRecord = {}) {
   const audio = snapshot.audio || {};
   const preferences = snapshot.preferences || {};
   if (preferences.audioMuted || audio.muted) return t("speedAlertsAudioMuted");
@@ -504,7 +506,7 @@ function clampNumber(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-function clampResizeBounds(width, height, bounds = {}) {
+function clampResizeBounds(width, height, bounds: AnyRecord = {}): AnyRecord {
   const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1024;
   const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 768;
   const maxWidth = Math.max(RESIZE_MIN_WIDTH, viewportWidth - bounds.left - RESIZE_MARGIN_PX);
@@ -516,7 +518,7 @@ function clampResizeBounds(width, height, bounds = {}) {
   };
 }
 
-export function createSpeedAlertPanel(options = {}) {
+export function createSpeedAlertPanel(options: AnyRecord = {}) {
   const {
     mount = document.body,
     shellManager = getDefaultShellWindowManager({ root: mount }),

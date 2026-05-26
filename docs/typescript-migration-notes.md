@@ -156,6 +156,19 @@
   - `src/gps-rate/controller.ts`
   - `src/gps-rate/render.ts`
   - `src/gps-rate/nominatim-lab.ts`
+- The speed runtime/navigation/audio/camera/UI cluster moved to TypeScript in dependency order before the remaining large non-speed route controllers:
+  - `src/speed/render.ts`
+  - `src/speed/camera-approach.ts`
+  - `src/speed/camera-database.ts`
+  - `src/speed/camera-map-data-source.ts`
+  - `src/speed/camera-map-layers.ts`
+  - `src/speed/camera-map-navigation.ts`
+  - `src/speed/navigation.ts`
+  - `src/speed/audio.ts`
+  - `src/speed/runtime.ts`
+  - `src/speed/speed-alert-panel.ts`
+  - `src/speed/camera-map-widget.ts`
+  - `src/speed/speed.ts`
 
 ## Contracts Future Work Must Use
 
@@ -181,6 +194,7 @@
 - Analog speedometer kept the `analog-speedometer.less` side-effect import, canvas/ResizeObserver sizing behavior, CSS variable names, overlay text updates, marker/accent/pivot color behavior, no-op fallback controller, and render model merge semantics.
 - Accel helper consumers should keep importing the same public `.js` specifiers. This phase preserved shared unit localStorage keys, accel storage keys, default settings, GPS options/error codes, conversion constants, preset ids/signatures/variant groups, partial definitions, custom-preset signature rounding, formatter fallback strings, history comparison behavior, and the acceleration calculation boundary in `src/accel/logic.ts`.
 - Speed helper consumers should keep the same public exports and `.js` specifiers. This phase preserved speed preference localStorage keys, unit defaults, primary-view values, alert limit defaults, trap-alert presets/snapping, camera-approach preference modes, alert/trap active-state semantics, speed metadata confidence handling, trap distance/speed formatting, KDBush/geokdbush lookup behavior, and overspeed sound gating.
+- Speed route and camera-map consumers should keep using the same public exports and `.js` specifiers. This phase preserved camera/trap lookup semantics, camera artifact cache keys and persisted shapes, unit conversion/display behavior, audio lease/gating and media-session behavior, GPS lifecycle handoff, map source/layer/controller APIs, camera-map activity/follow state, and route mount/unmount contracts.
 - GPS-rate helper consumers should keep the same public exports and `.js` specifiers. This phase preserved GPS Rate storage keys, geo options/error codes, histogram buckets, session state defaults, elapsed/activity/status helpers, saved-summary normalization defaults, timestamp stale guards, motion classification thresholds, sample shape, histogram/session summary calculations, notes trimming, and place normalization handoff.
 - App route wrapper consumers should keep the same public `.js` specifiers for dynamic imports. This phase preserved the single SPA bootstrap entry behavior, app-shell startup timing/error fallback, route hashes and aliases, route meta titles/descriptions/canonical paths/body classes, template imports, controller lazy-loading, mount/unmount adapter names, and mounted view `unmount()` contracts.
 - Demo/DOM helper consumers should keep the same public exports and `.js` specifiers. This phase preserved calculator/player standalone demo startup behavior, style side-effect imports, translation application timing, demo button ids, widget creation options, widget exports, player bootstrap promise export, and `el`/`qs` DOM helper semantics.
@@ -197,14 +211,14 @@
 
 ## Still JavaScript
 
-- Larger feature UI/controller modules remain JavaScript to keep later batches reviewable: speed, camera map, accel route UI/controller, library, board main, and replay route controller.
+- Larger feature UI/controller modules remain JavaScript to keep later batches reviewable: accel route UI/controller, library, board main, and replay route controller.
 - Route/app wrapper JavaScript has moved to TypeScript, including route template modules; app main and concrete route view wrappers remain TypeScript.
 - Standalone/dev harness wrapper JavaScript from this phase has moved to TypeScript; the standalone HTML files now point at the `.ts` Vite entry files where needed while test/runtime imports keep using public `.js` specifiers.
 - No files under `src/app/services/` remain JavaScript.
 - No files under `src/shared/repositories/` remain JavaScript.
 - The low-risk shared route/location helpers, global UI foundation helpers, calculator/energy leaf widgets, player widget/shell/milkdrop leaf widgets, board drawing-surface helper, replay session/logic/chart/map helpers, accel logic/replay/chart/result-graph helpers, and GPS-rate controller/render/Nominatim lab helpers are now TypeScript.
-- Other feature/domain modules still in JavaScript include `src/accel/accel.js`, speed UI/runtime/navigation/audio/camera modules, `src/board/board.js`, `src/replay/replay.js`, and library controller modules.
+- Other feature/domain modules still in JavaScript include `src/accel/accel.js`, `src/board/board.js`, `src/replay/replay.js`, and library controller modules.
 
 ## Next Recommended Batch
 
-Pause before large route controllers. The next recommended dedicated batch is either `src/board/board.js` after a fresh dependency check or one large route controller at a time (`src/replay/replay.js` or `src/accel/accel.js`) with route lifecycle coverage; keep speed runtime/navigation/audio/camera/UI and library controller modules for later dedicated batches.
+Pause before large route controllers. The next recommended dedicated batch is either `src/board/board.js` after a fresh dependency check or one large route controller at a time (`src/replay/replay.js` or `src/accel/accel.js`) with route lifecycle coverage; keep library controller modules for a later dedicated batch.

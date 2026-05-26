@@ -1,5 +1,7 @@
 import { clearActivity, setActivity } from "../shared/activity-state.js";
 
+type AnyRecord = Record<string, any>;
+
 export const SPEED_RECORDING_ACTIVITY_ID = "speed.recording";
 export const SPEED_ALERTS_ACTIVITY_ID = "speed.alerts";
 export const SPEED_RUNTIME_INTENT_STORAGE_KEY = "vatioboard.speed.runtime_intent.v1";
@@ -50,7 +52,7 @@ function getActivitySampleCount(snapshot) {
   return Math.max(0, Math.round(finiteNumber(snapshot.sampleCount, 0)));
 }
 
-function normalizeSnapshot(snapshot = {}) {
+function normalizeSnapshot(snapshot: AnyRecord = {}) {
   const recordingActive = snapshot.recordingState === "recording" || snapshot.recordingActive === true;
   const watchActive = snapshot.watchActive === true;
   const trackingRetained = snapshot.trackingRetained === true || watchActive;
@@ -127,7 +129,7 @@ function getRecoverySignature(recovery) {
   ]);
 }
 
-function createEmptyRecovery() {
+function createEmptyRecovery(): AnyRecord {
   return {
     needed: false,
     severity: "none",
@@ -150,11 +152,11 @@ function createEmptyRecovery() {
 function createSpeedRuntime() {
   let actual = normalizeSnapshot();
   let intent = readStoredIntent() || createIntentFromSnapshot(actual, "initial");
-  let recovery = createEmptyRecovery();
+  let recovery: AnyRecord = createEmptyRecovery();
   let recoveryTimerId = null;
-  let recoveryBaseline = null;
-  let onRecoveryNeeded = null;
-  let onPersistIntent = null;
+  let recoveryBaseline: AnyRecord | null = null;
+  let onRecoveryNeeded: any = null;
+  let onPersistIntent: any = null;
   let dismissedRecoverySignature = "";
 
   function getIntent() {
@@ -165,7 +167,7 @@ function createSpeedRuntime() {
     return { ...actual };
   }
 
-  function getRecoveryState() {
+  function getRecoveryState(): AnyRecord {
     return {
       ...recovery,
       reasons: [...(recovery.reasons || [])],
@@ -354,7 +356,7 @@ function createSpeedRuntime() {
     publishAlertActivity();
   }
 
-  function sync(snapshot = {}, { persist = false, reason = "sync" } = {}) {
+  function sync(snapshot: AnyRecord = {}, { persist = false, reason = "sync" }: AnyRecord = {}) {
     const previousIntent = intent;
     actual = normalizeSnapshot(snapshot);
     intent = createIntentFromSnapshot(actual, reason);
@@ -413,7 +415,7 @@ function createSpeedRuntime() {
     }
   }
 
-  function runRecoveryCheck({ force = false } = {}) {
+  function runRecoveryCheck({ force = false }: AnyRecord = {}) {
     clearRecoveryTimer();
     const persistedIntent = readStoredIntent();
     if (persistedIntent?.updatedAtMs > intent.updatedAtMs) {
@@ -528,7 +530,7 @@ function createSpeedRuntime() {
     return getRecoveryState();
   }
 
-  function scheduleRecoveryCheck({ graceMs = SPEED_RECOVERY_GRACE_MS, force = false } = {}) {
+  function scheduleRecoveryCheck({ graceMs = SPEED_RECOVERY_GRACE_MS, force = false }: AnyRecord = {}) {
     clearRecoveryTimer();
     if (
       !intent.recordingShouldBeActive &&
@@ -557,7 +559,7 @@ function createSpeedRuntime() {
     return getRecoveryState();
   }
 
-  function handleAppReturn(options = {}) {
+  function handleAppReturn(options: AnyRecord = {}) {
     return scheduleRecoveryCheck(options);
   }
 
@@ -568,17 +570,17 @@ function createSpeedRuntime() {
   function installLifecycleListeners({
     recoveryHandler = null,
     persistHandler = null,
-  } = {}) {
+  }: AnyRecord = {}) {
     if (typeof window === "undefined" || typeof document === "undefined") {
       return () => {};
     }
 
-    window[LIFECYCLE_CLEANUP_KEY]?.();
+    (window as AnyRecord)[LIFECYCLE_CLEANUP_KEY]?.();
     onRecoveryNeeded = typeof recoveryHandler === "function" ? recoveryHandler : null;
     onPersistIntent = typeof persistHandler === "function" ? persistHandler : null;
 
-    const cleanups = [];
-    const add = (target, type, handler, options) => {
+    const cleanups: Array<() => void> = [];
+    const add = (target: any, type: string, handler: any, options?: any) => {
       target.addEventListener(type, handler, options);
       cleanups.push(() => target.removeEventListener(type, handler, options));
     };
@@ -608,11 +610,11 @@ function createSpeedRuntime() {
       while (cleanups.length) {
         cleanups.pop()?.();
       }
-      if (window[LIFECYCLE_CLEANUP_KEY] === cleanup) {
-        delete window[LIFECYCLE_CLEANUP_KEY];
+      if ((window as AnyRecord)[LIFECYCLE_CLEANUP_KEY] === cleanup) {
+        delete (window as AnyRecord)[LIFECYCLE_CLEANUP_KEY];
       }
     };
-    window[LIFECYCLE_CLEANUP_KEY] = cleanup;
+    (window as AnyRecord)[LIFECYCLE_CLEANUP_KEY] = cleanup;
     return cleanup;
   }
 

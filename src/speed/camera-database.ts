@@ -1,6 +1,9 @@
 import KDBush from "kdbush";
 import { createIndexedJsonKeyValueStore } from "../shared/indexed-storage.js";
 
+type AnyRecord = Record<string, any>;
+type AbortOptions = { signal?: AbortSignal | null };
+
 export const CAMERA_MANIFEST_URL = "/geo/cameras/manifest.json";
 const CAMERA_DB_NAME = "vatio-speed-cameras-v2";
 const CAMERA_STORE_NAME = "cameraArtifacts";
@@ -239,7 +242,7 @@ export function createCameraDatabase({
   KDBushClass = KDBush,
   onStatusChange = null,
   clock = nowMs,
-} = {}) {
+}: AnyRecord = {}) {
   let manifest = null;
   let status = { ...DEFAULT_STATUS };
   let lastCountryDecision = null;
@@ -248,13 +251,13 @@ export function createCameraDatabase({
   let lastLocation = null;
   let lastManifestRevalidateAtMs = 0;
   let destroyed = false;
-  const memoryDatasets = new Map();
-  const tileManifests = new Map();
-  const inflight = new Map();
-  const pendingBackground = new Set();
-  const controllers = new Set();
+  const memoryDatasets = new Map<string, any>();
+  const tileManifests = new Map<string, any>();
+  const inflight = new Map<string, Promise<any>>();
+  const pendingBackground = new Set<Promise<any>>();
+  const controllers = new Set<AbortController>();
 
-  function emitStatus(patch = {}) {
+  function emitStatus(patch: AnyRecord = {}) {
     status = {
       ...status,
       ...patch,
@@ -263,7 +266,7 @@ export function createCameraDatabase({
     onStatusChange(cloneStatus(status));
   }
 
-  function trackBackground(promise) {
+  function trackBackground(promise: Promise<any>) {
     pendingBackground.add(promise);
     promise.finally(() => {
       pendingBackground.delete(promise);
@@ -271,10 +274,10 @@ export function createCameraDatabase({
     return promise;
   }
 
-  function createSignal(externalSignal) {
+  function createSignal(externalSignal?: AbortSignal | null) {
     const controller = new AbortController();
     controllers.add(controller);
-    let removeExternalAbort = null;
+    let removeExternalAbort: (() => void) | null = null;
 
     if (externalSignal) {
       if (externalSignal.aborted) {
@@ -295,7 +298,7 @@ export function createCameraDatabase({
     };
   }
 
-  async function fetchText(url, { signal } = {}) {
+  async function fetchText(url, { signal }: AbortOptions = {}) {
     if (typeof fetchImpl !== "function") {
       throw new Error("Camera database fetch is unavailable.");
     }
@@ -306,7 +309,7 @@ export function createCameraDatabase({
     return response;
   }
 
-  async function fetchManifest({ signal } = {}) {
+  async function fetchManifest({ signal }: AbortOptions = {}) {
     const response = await fetchText(manifestUrl, { signal });
     const { payload } = await responseJsonText(response);
     const nextManifest = normalizeManifest(payload);
@@ -318,7 +321,7 @@ export function createCameraDatabase({
     return nextManifest;
   }
 
-  async function revalidateManifest({ signal } = {}) {
+  async function revalidateManifest({ signal }: AbortOptions = {}) {
     try {
       lastManifestRevalidateAtMs = clock();
       const nextManifest = await fetchManifest({ signal });
@@ -365,7 +368,7 @@ export function createCameraDatabase({
     }
   }
 
-  async function getManifest({ signal } = {}) {
+  async function getManifest({ signal }: AbortOptions = {}) {
     if (manifest) {
       if (!pendingBackground.size && clock() - lastManifestRevalidateAtMs > MANIFEST_REVALIDATE_INTERVAL_MS) {
         emitStatus({ updating: true });
@@ -374,7 +377,7 @@ export function createCameraDatabase({
       return manifest;
     }
 
-    const cached = await store.getValue(MANIFEST_CACHE_KEY);
+    const cached = await store.getValue(MANIFEST_CACHE_KEY) as any;
     if (cached?.payload) {
       try {
         manifest = normalizeManifest(cached.payload);
@@ -431,7 +434,7 @@ export function createCameraDatabase({
       return lastCountryDecision.countryCodes;
     }
 
-    const countryCodes = Object.entries(currentManifest.countries || {})
+    const countryCodes = (Object.entries(currentManifest.countries || {}) as [string, any][])
       .filter(([, entry]) => containsPoint(entry.bbox, longitude, latitude))
       .map(([code]) => code)
       .sort((a, b) => {
@@ -473,7 +476,7 @@ export function createCameraDatabase({
     cacheHit,
     countryTotalCount,
     manifestEntry,
-  }) {
+  }: AnyRecord) {
     const traps = sanitizeCameraTraps(payload);
     const dataset = {
       key,
@@ -502,12 +505,12 @@ export function createCameraDatabase({
     manifestEntry,
     normalizePayload,
     datasetKey,
-  }) {
-    const cached = await store.getValue(jsonKey);
+  }: AnyRecord) {
+    const cached = await store.getValue(jsonKey) as any;
     if (!cached?.payload) return null;
 
     const payload = normalizePayload(cached.payload);
-    const cachedIndex = await store.getValue(indexKey);
+    const cachedIndex = await store.getValue(indexKey) as any;
     let index = null;
     try {
       if (cachedIndex?.buffer) {
@@ -534,7 +537,7 @@ export function createCameraDatabase({
     });
   }
 
-  async function fetchIndex(url, { signal } = {}) {
+  async function fetchIndex(url, { signal }: AbortOptions = {}) {
     if (!url) return null;
     try {
       const response = await fetchImpl(url, { cache: "no-cache", signal });
@@ -558,7 +561,7 @@ export function createCameraDatabase({
     normalizePayload,
     datasetKey,
     signal,
-  }) {
+  }: AnyRecord) {
     const response = await fetchText(url, { signal });
     const { text, payload: rawPayload } = await responseJsonText(response);
     await assertJsonHash(text, expectedHash);
@@ -590,7 +593,7 @@ export function createCameraDatabase({
           hash: expectedHash || "",
           buffer: indexBuffer,
           storedAt: new Date(clock()).toISOString(),
-        })
+        } as any)
         : Promise.resolve(false),
     ]);
 
@@ -630,7 +633,7 @@ export function createCameraDatabase({
     forceNetwork = false,
     allowCachedFallback = true,
     signal,
-  }) {
+  }: AnyRecord) {
     const existing = memoryDatasets.get(cacheKey);
     if (existing && !forceNetwork) {
       touchDataset(cacheKey, existing);
@@ -721,7 +724,7 @@ export function createCameraDatabase({
     }
   }
 
-  async function loadCountryDataset(countryCode, entry, options = {}) {
+  async function loadCountryDataset(countryCode, entry, options: AnyRecord = {}) {
     const countryName = entry.name || countryCode.toUpperCase();
     const cacheKey = datasetKeyForCountry(countryCode);
     return loadInflight(cacheKey, () => loadDatasetWithCache({
@@ -737,7 +740,7 @@ export function createCameraDatabase({
     }));
   }
 
-  async function fetchTileManifest(countryCode, entry, { signal } = {}) {
+  async function fetchTileManifest(countryCode, entry, { signal }: AbortOptions = {}) {
     const response = await fetchText(entry.tiles || entry.json, { signal });
     const { text, payload } = await responseJsonText(response);
     await assertJsonHash(text, entry.sha256);
@@ -751,10 +754,10 @@ export function createCameraDatabase({
     return nextTileManifest;
   }
 
-  async function getTileManifest(countryCode, entry, { signal } = {}) {
+  async function getTileManifest(countryCode, entry, { signal }: AbortOptions = {}) {
     if (tileManifests.has(countryCode)) return tileManifests.get(countryCode);
 
-    const cached = await store.getValue(tileManifestKey(countryCode));
+    const cached = await store.getValue(tileManifestKey(countryCode)) as any;
     if (cached?.payload) {
       try {
         const cachedManifest = normalizeTileManifest(cached.payload, countryCode);
@@ -769,7 +772,7 @@ export function createCameraDatabase({
     return fetchTileManifest(countryCode, entry, { signal });
   }
 
-  async function loadTiledCountryDatasets(countryCode, entry, { longitude, latitude, signal, forceNetwork = false } = {}) {
+  async function loadTiledCountryDatasets(countryCode, entry, { longitude, latitude, signal, forceNetwork = false }: AnyRecord = {}) {
     const tileManifest = await getTileManifest(countryCode, entry, { signal });
     const tileSize = Number.isFinite(tileManifest.tileSize) ? tileManifest.tileSize : entry.tileSize;
     const tileIds = getNeighborTileIds(longitude, latitude, tileSize)
@@ -797,7 +800,7 @@ export function createCameraDatabase({
     return results;
   }
 
-  async function loadCountryByEntry(countryCode, entry, options = {}) {
+  async function loadCountryByEntry(countryCode, entry, options: AnyRecord = {}) {
     if (entry.tiled) {
       if (!Number.isFinite(options.longitude) || !Number.isFinite(options.latitude)) {
         return [];
@@ -814,7 +817,10 @@ export function createCameraDatabase({
     return activeDatasets.reduce((sum, dataset) => sum + dataset.count, 0);
   }
 
-  async function loadForLocation({ longitude, latitude, countryCode = "" } = {}, { signal: externalSignal } = {}) {
+  async function loadForLocation(
+    { longitude, latitude, countryCode = "" }: AnyRecord = {},
+    { signal: externalSignal }: AnyRecord = {}
+  ) {
     if (!isFiniteCoordinate(longitude, latitude)) {
       emitStatus({
         status: "error",

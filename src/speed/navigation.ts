@@ -1,6 +1,5 @@
 import { loadMapLibre } from "../shared/maplibre-loader.js";
 import {
-  GEO_ERROR_CODE,
   GLOBE_DEFAULT_CENTER,
   GLOBE_DEFAULT_ZOOM,
   GLOBE_FOLLOW_RESUME_DELAY_MS,
@@ -758,7 +757,7 @@ export function createGlobeController({
     }
 
     state.globeMap.easeTo({
-      center: GLOBE_DEFAULT_CENTER,
+      center: GLOBE_DEFAULT_CENTER as [number, number],
       zoom: GLOBE_DEFAULT_ZOOM,
       duration: 900,
       essential: true,
@@ -781,7 +780,7 @@ export function createGlobeController({
         antialias: true,
         attributionControl: false,
         interactive: true,
-        center: GLOBE_DEFAULT_CENTER,
+        center: GLOBE_DEFAULT_CENTER as [number, number],
         zoom: GLOBE_DEFAULT_ZOOM,
         style: {
           version: 8,
@@ -796,15 +795,15 @@ export function createGlobeController({
             },
             [GLOBE_SOURCE_ID]: {
               type: "geojson",
-              data: getEmptyGlobeSourceData(),
+              data: getEmptyGlobeSourceData() as any,
             },
             [GLOBE_TERMINATOR_SOURCE_ID]: {
               type: "geojson",
-              data: getSolarTerminatorData(initialSunVector),
+              data: getSolarTerminatorData(initialSunVector) as any,
             },
             [GLOBE_NIGHT_SOURCE_ID]: {
               type: "geojson",
-              data: getSolarNightData(initialSunVector),
+              data: getSolarNightData(initialSunVector) as any,
             },
           },
           layers: [
@@ -897,7 +896,7 @@ export function createGlobeController({
             ],
           },
         },
-      });
+      } as any);
 
       globeMap.scrollZoom.disable();
       globeMap.boxZoom.disable();

@@ -1,5 +1,7 @@
 import { around as geoAround, distance as geoDistanceKm } from "geokdbush";
 
+type AnyRecord = Record<string, any>;
+
 const EARTH_RADIUS_M = 6371000;
 const METERS_PER_DEGREE_LAT = 111320;
 const DEFAULT_ALERT_DISTANCE_M = 500;
@@ -131,7 +133,7 @@ export function distancePointToSegmentMeters(point, segmentStart, segmentEnd) {
   return Math.sqrt(closestX * closestX + closestY * closestY);
 }
 
-function getPreviousPosition(position = {}) {
+function getPreviousPosition(position: AnyRecord = {}) {
   const explicit = normalizePoint(position.previousPosition);
   if (explicit) {
     return {
@@ -151,7 +153,7 @@ function getPreviousPosition(position = {}) {
   };
 }
 
-function deriveMovement(position, options = {}) {
+function deriveMovement(position: AnyRecord, options: AnyRecord = {}) {
   const current = normalizePoint(position);
   const previous = getPreviousPosition(position);
   if (!current || !previous) {
@@ -182,7 +184,7 @@ function deriveMovement(position, options = {}) {
   };
 }
 
-function getEffectiveHeading(position, options = {}) {
+function getEffectiveHeading(position: AnyRecord, options: AnyRecord = {}) {
   const movement = deriveMovement(position, options);
   const gpsHeading = normalizeHeadingDeg(position?.headingDeg ?? position?.heading ?? position?.course);
   const speedMs = finiteNumber(position?.speedMs ?? position?.speed);
@@ -221,7 +223,7 @@ function getEffectiveHeading(position, options = {}) {
   };
 }
 
-export function isDistanceDecreasing(position, camera, options = {}) {
+export function isDistanceDecreasing(position, camera, options: AnyRecord = {}) {
   const current = normalizePoint(position);
   const previous = getPreviousPosition(position);
   const target = normalizePoint(camera);
@@ -260,7 +262,7 @@ function normalizeSegment(segment) {
   return start && end ? [start, end] : null;
 }
 
-function normalizeApproachEntry(entry = {}) {
+function normalizeApproachEntry(entry: AnyRecord = {}) {
   if (!entry || typeof entry !== "object") return null;
   const bearingDeg = normalizeHeadingDeg(entry.bearingDeg ?? entry.bearing ?? entry.b);
   const reverseBearingDeg = normalizeHeadingDeg(
@@ -330,7 +332,8 @@ function getAllowedApproachBearings(approach) {
   return [approach.bearingDeg, approach.reverseBearingDeg].filter((value) => value !== null);
 }
 
-function getBestMetadataMatch({ approaches, position, headingDeg, toleranceDeg, accuracyM, options = {} }) {
+function getBestMetadataMatch(params: AnyRecord = {}): AnyRecord {
+  const { approaches, position, headingDeg, toleranceDeg, accuracyM, options = {} } = params;
   if (!Array.isArray(approaches) || approaches.length === 0 || headingDeg === null) {
     return {
       matched: false,
@@ -394,7 +397,7 @@ function getBestMetadataMatch({ approaches, position, headingDeg, toleranceDeg, 
   return best;
 }
 
-function isWithinRoadCorridor(position, approach, accuracyM, options = {}) {
+function isWithinRoadCorridor(position, approach, accuracyM, options: AnyRecord = {}) {
   if (!approach?.segment) return true;
   const distanceM = distancePointToSegmentMeters(position, approach.segment[0], approach.segment[1]);
   const baseCorridorM = finiteNumber(options.roadCorridorM) ?? DEFAULT_ROAD_CORRIDOR_M;
@@ -405,13 +408,13 @@ function isWithinRoadCorridor(position, approach, accuracyM, options = {}) {
   return distanceM <= baseCorridorM + accuracyAllowanceM;
 }
 
-function getFallbackMode(options = {}) {
+function getFallbackMode(options: AnyRecord = {}) {
   const fallback = String(options.fallbackMode || "legacy-radius");
   if (fallback === "heading-only" || fallback === "silent") return fallback;
   return "legacy-radius";
 }
 
-function emptyResult(patch = {}) {
+function emptyResult(patch: AnyRecord = {}) {
   return {
     ...EMPTY_APPROACH_RESULT,
     ...patch,
@@ -423,7 +426,7 @@ function trapToPoint(trap) {
   return normalizePoint([trap[0], trap[1]]);
 }
 
-export function scoreApproachCandidate(candidate, position, options = {}) {
+export function scoreApproachCandidate(candidate, position: AnyRecord, options: AnyRecord = {}) {
   const trap = candidate?.trap;
   const camera = trapToPoint(trap);
   const current = normalizePoint(position);
@@ -636,7 +639,7 @@ function buildCandidateResult(evaluation, dataset, trapId) {
   };
 }
 
-function getCandidateIds(dataset, position, options = {}) {
+function getCandidateIds(dataset, position, options: AnyRecord = {}) {
   const index = dataset?.index ?? dataset?.trapIndex;
   const traps = dataset?.traps ?? dataset?.trapRecords;
   if (!index || !Array.isArray(traps) || traps.length === 0) return [];
@@ -647,7 +650,7 @@ function getCandidateIds(dataset, position, options = {}) {
   return around(index, position.longitude, position.latitude, maxCandidateCount, alertDistanceM / 1000);
 }
 
-function getNearestDisplayCandidate(datasets, position, options = {}) {
+function getNearestDisplayCandidate(datasets, position, options: AnyRecord = {}) {
   const around = options.around || geoAround;
   const distanceKm = options.distanceKm || geoDistanceKm;
   let best = null;
@@ -669,7 +672,7 @@ function getNearestDisplayCandidate(datasets, position, options = {}) {
   return best;
 }
 
-export function findApproachingTrapAcrossDatasets(datasets, position, options = {}) {
+export function findApproachingTrapAcrossDatasets(datasets, position, options: AnyRecord = {}) {
   const current = normalizePoint(position);
   if (!current || !Array.isArray(datasets) || datasets.length === 0) {
     return emptyResult({

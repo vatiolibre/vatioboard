@@ -1,6 +1,9 @@
 import { createIndexedJsonKeyValueStore } from "../shared/indexed-storage.js";
 import { getTrapApproachMetadata } from "./camera-approach.js";
 
+type AnyRecord = Record<string, any>;
+type FetchJsonOptions = { signal?: AbortSignal | null; expectedHash?: string };
+
 export const CAMERA_MAP_MANIFEST_URL = "/geo/cameras/manifest.json";
 
 const CAMERA_DB_NAME = "vatio-speed-cameras-v2";
@@ -410,7 +413,7 @@ function cameraFeatureIdentity(feature) {
   };
 }
 
-function trapMatchesCameraFeature(trap, feature, payload = {}) {
+function trapMatchesCameraFeature(trap, feature, payload: AnyRecord = {}) {
   const identity = cameraFeatureIdentity(feature);
   const payloadCountry = normalizeCountryCode(payload.country);
   const payloadTile = String(payload.tile || "");
@@ -446,7 +449,7 @@ export function resolveCameraApproachDetails(feature, {
   countryCode = "",
   countryName = "",
   tileId = "",
-} = {}) {
+}: AnyRecord = {}) {
   const props = feature?.properties || {};
   let fullFeature = feature || null;
   let hasFullApproachDetails = false;
@@ -495,7 +498,7 @@ export function buildCirclePolygonFeature(center, radiusM, {
   segments = 40,
   properties = {},
   id = null,
-} = {}) {
+}: AnyRecord = {}) {
   const point = normalizeCameraCoordinate(center);
   const radius = Number(radiusM);
   if (!point || !Number.isFinite(radius) || radius <= 0) return null;
@@ -543,8 +546,8 @@ export function compactTrapsToCameraFeatures(traps, {
   maxFeatures = DEFAULT_MAX_FEATURES,
   startIndex = 0,
   includeApproachVisualization = false,
-} = {}) {
-  const features = [];
+}: AnyRecord = {}) {
+  const features: any[] = [];
   const normalizedBounds = bounds ? normalizeViewportBounds(bounds) : null;
   const includeApproachJson = includeApproachVisualization;
 
@@ -618,7 +621,7 @@ function sortEntriesByCode(entries) {
 }
 
 function selectCountriesForBounds(manifest, bounds) {
-  return sortEntriesByCode(Object.entries(manifest.countries || {})
+  return sortEntriesByCode((Object.entries(manifest.countries || {}) as [string, any][])
     .filter(([, entry]) => cameraMapBoundsIntersect(entry?.bbox, bounds)));
 }
 
@@ -627,11 +630,11 @@ function sortTilesById(tiles) {
 }
 
 function selectTilesForBounds(tileManifest, bounds) {
-  return sortTilesById(Object.entries(tileManifest.tiles || {})
+  return sortTilesById((Object.entries(tileManifest.tiles || {}) as [string, any][])
     .filter(([, entry]) => cameraMapBoundsIntersect(entry?.bbox, bounds)));
 }
 
-export function createCameraMapDataSource(options = {}) {
+export function createCameraMapDataSource(options: AnyRecord = {}) {
   const {
     manifestUrl = CAMERA_MAP_MANIFEST_URL,
     fetchImpl = globalThis.fetch,
@@ -651,13 +654,13 @@ export function createCameraMapDataSource(options = {}) {
   let status = { ...EMPTY_STATUS };
   let destroyed = false;
   let activeRequestId = 0;
-  const controllers = new Set();
-  const payloads = new Map();
-  const tileManifests = new Map();
-  const inflight = new Map();
-  let lastViewportResult = null;
+  const controllers = new Set<AbortController>();
+  const payloads = new Map<string, any>();
+  const tileManifests = new Map<string, any>();
+  const inflight = new Map<string, Promise<any>>();
+  let lastViewportResult: any = null;
 
-  function emitStatus(patch = {}, requestId = activeRequestId) {
+  function emitStatus(patch: AnyRecord = {}, requestId = activeRequestId) {
     if (destroyed || requestId !== activeRequestId) return;
     status = {
       ...status,
@@ -668,10 +671,10 @@ export function createCameraMapDataSource(options = {}) {
     }
   }
 
-  function createSignal(externalSignal) {
+  function createSignal(externalSignal?: AbortSignal | null) {
     const controller = new AbortController();
     controllers.add(controller);
-    let removeExternalAbort = null;
+    let removeExternalAbort: (() => void) | null = null;
 
     if (externalSignal) {
       if (externalSignal.aborted) {
@@ -692,7 +695,7 @@ export function createCameraMapDataSource(options = {}) {
     };
   }
 
-  async function fetchJson(url, { signal, expectedHash = "" } = {}) {
+  async function fetchJson(url, { signal, expectedHash = "" }: FetchJsonOptions = {}) {
     throwIfAborted(signal);
     if (typeof fetchImpl !== "function") {
       throw new Error("Camera map fetch is unavailable.");
@@ -709,7 +712,7 @@ export function createCameraMapDataSource(options = {}) {
   }
 
   async function readCachedPayload(key, normalizePayload) {
-    const cached = await store.getValue(key);
+    const cached = await store.getValue(key) as any;
     if (!cached?.payload) return null;
     try {
       return normalizePayload(cached.payload);
@@ -727,7 +730,7 @@ export function createCameraMapDataSource(options = {}) {
     });
   }
 
-  function loadInflight(key, factory) {
+  function loadInflight(key, factory): Promise<any> {
     if (inflight.has(key)) return inflight.get(key);
     const promise = factory().finally(() => {
       inflight.delete(key);
@@ -736,7 +739,7 @@ export function createCameraMapDataSource(options = {}) {
     return promise;
   }
 
-  async function loadManifest({ signal } = {}) {
+  async function loadManifest({ signal }: { signal?: AbortSignal | null } = {}) {
     if (manifest) return manifest;
     if (manifestPromise) return manifestPromise;
 
@@ -776,7 +779,7 @@ export function createCameraMapDataSource(options = {}) {
     normalizePayload,
     allowNetwork,
     signal,
-  }) {
+  }: AnyRecord) {
     if (payloads.has(cacheKey)) {
       return {
         payload: payloads.get(cacheKey),
@@ -807,7 +810,7 @@ export function createCameraMapDataSource(options = {}) {
     }
   }
 
-  async function getTileManifest(countryCode, countryEntry, { allowNetwork, signal } = {}) {
+  async function getTileManifest(countryCode, countryEntry, { allowNetwork, signal }: AnyRecord = {}) {
     if (tileManifests.has(countryCode)) return {
       manifest: tileManifests.get(countryCode),
       cacheHit: true,
@@ -878,7 +881,7 @@ export function createCameraMapDataSource(options = {}) {
     skippedCountries,
     errors,
     includeApproachVisualization: requestIncludeApproachVisualization = defaultIncludeApproachVisualization,
-  }) {
+  }: AnyRecord) {
     const shouldIncludeApproachVisualization = requestIncludeApproachVisualization;
     const countryName = countryEntry.name || countryCode.toUpperCase();
     let tileManifestResult = null;
@@ -955,7 +958,7 @@ export function createCameraMapDataSource(options = {}) {
     errors,
     signal,
     includeApproachVisualization: requestIncludeApproachVisualization = defaultIncludeApproachVisualization,
-  }) {
+  }: AnyRecord) {
     const shouldIncludeApproachVisualization = requestIncludeApproachVisualization;
     const count = Number(countryEntry.count) || 0;
     if (features.length >= maxFeatures) return null;
@@ -1030,7 +1033,7 @@ export function createCameraMapDataSource(options = {}) {
     zoom = 0,
     signal: externalSignal,
     includeApproachVisualization: requestIncludeApproachVisualization = defaultIncludeApproachVisualization,
-  } = {}) {
+  }: AnyRecord = {}) {
     const shouldIncludeApproachVisualization = requestIncludeApproachVisualization;
     const requestId = activeRequestId + 1;
     activeRequestId = requestId;
@@ -1038,11 +1041,11 @@ export function createCameraMapDataSource(options = {}) {
     const normalizedBounds = normalizeViewportBounds(bounds);
     const numericZoom = Number.isFinite(Number(zoom)) ? Number(zoom) : 0;
     const allowNetwork = numericZoom >= minNetworkZoom;
-    const features = [];
-    const loadedCountries = new Set();
-    const loadedTiles = [];
-    const skippedCountries = [];
-    const errors = [];
+    const features: any[] = [];
+    const loadedCountries = new Set<string>();
+    const loadedTiles: any[] = [];
+    const skippedCountries: any[] = [];
+    const errors: any[] = [];
 
     try {
       emitStatus({
