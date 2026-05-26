@@ -4,11 +4,18 @@ const PREVIEW_SOURCE_ID = "library-preview-route";
 const PREVIEW_BASE_SATELLITE_SOURCE_ID = "library-satellite-base";
 const SATELLITE_ATTRIBUTION = "Imagery © EOX, Sentinel-2, Esri";
 
-function getEmptyFeatureCollection() {
+type CoordinatePair = [number, number];
+type BoundsPair = [CoordinatePair, CoordinatePair];
+type PreviewFeatureCollection = {
+  type: "FeatureCollection";
+  features: any[];
+};
+
+function getEmptyFeatureCollection(): PreviewFeatureCollection {
   return { type: "FeatureCollection", features: [] };
 }
 
-function getLineFeatureCollection(coordinates) {
+function getLineFeatureCollection(coordinates: CoordinatePair[] | null | undefined): PreviewFeatureCollection {
   if (!Array.isArray(coordinates) || coordinates.length < 2) {
     return getEmptyFeatureCollection();
   }
@@ -21,7 +28,7 @@ function getLineFeatureCollection(coordinates) {
   };
 }
 
-function computeBounds(coordinates) {
+function computeBounds(coordinates: CoordinatePair[] | null | undefined): BoundsPair | null {
   if (!Array.isArray(coordinates) || coordinates.length < 2) return null;
 
   let minLon = Infinity;
@@ -40,7 +47,7 @@ function computeBounds(coordinates) {
   return [[minLon, minLat], [maxLon, maxLat]];
 }
 
-function getMidpoint(bounds) {
+function getMidpoint(bounds: BoundsPair | null): CoordinatePair {
   if (!bounds) return [0, 18];
   return [
     (bounds[0][0] + bounds[1][0]) / 2,
@@ -48,7 +55,7 @@ function getMidpoint(bounds) {
   ];
 }
 
-function prefersReducedMotion() {
+function prefersReducedMotion(): boolean {
   return Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches);
 }
 
@@ -110,7 +117,7 @@ export function createLibraryMapPreview({ element }) {
         return readyPromise ?? Promise.resolve();
       }
 
-      map = new maplibregl.Map({
+      map = new (maplibregl as any).Map({
         container: element,
         antialias: true,
         attributionControl: false,

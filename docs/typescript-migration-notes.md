@@ -174,6 +174,11 @@
   - `src/replay/replay.ts`
   - `src/library/library.ts`
   - `src/board/board.ts`
+- The final app/source JavaScript modules moved to TypeScript in this phase:
+  - `src/library/library-map-preview.ts`
+  - `src/library/library-media-player.ts`
+  - `src/library/resource-registry.ts`
+- Final migration cleanup removed `allowJs` from `tsconfig.json`, narrowed the typecheck include to TypeScript source/contracts, and added `pnpm run typecheck` to CI before lint/test/build.
 
 ## Contracts Future Work Must Use
 
@@ -214,20 +219,20 @@
 - Accel domain/replay consumers should keep using the same public `.js` specifiers. This phase preserved run state/result shapes, live sample speed-resolution behavior, trace/sample-log/partial normalization, quality grading, persisted replay source/frame/marker/map-session payloads, elapsed/distance interpolation, replay chart controller methods, result graph controller methods, and every `accelTranslations` key/value payload.
 - GPS-rate controller/render/Nominatim consumers should keep using the same public `.js` specifiers. This phase preserved controller `init()` behavior, start/stop/reset/export/copy/wake-lock/permission/language event wiring, saved-summary enrichment and unit bootstrap, renderer method names and DOM update behavior, log row limits, warning/histogram/sparkline/availability calculations, Nominatim base URL and active-API persistence, public details guard, request-state shape, and response formatting.
 - Large route controller consumers should keep using the same public `.js` specifiers. This phase preserved accel/replay/library/board mount and unmount exports, thenable `initPromise` behavior, route lifecycle cleanup, standalone-vs-SPA startup timing, cloud sync status/idempotence, backend auth and tools-menu integration, single-tab ownership handling, DOM ids/classes, storage keys, route-query selection, and background/route-visible behavior.
+- Library support consumers should keep using the same public `.js` specifiers. This phase preserved cloud-library tab keys/config selection, badge/meta/subtitle formatting, preview route coordinate normalization/fallbacks, map preview source/layer ids, satellite attribution/style, reduced-motion behavior, approach animation timings, route-signature de-duplication, media player mount/destroy/getMediaElement API, blob URL revocation, remote-vs-local source priority, poster/artwork behavior, visualizer gating, and first-remote-play callback timing.
+- Stricter TypeScript flags are intentionally still incremental: baseline `pnpm run typecheck` is green without `allowJs`, while probe runs for `noImplicitAny` and `strictNullChecks` still surface legacy annotation/nullability work across large migrated controllers and helpers. Do not enable those flags until their probes are green.
 
 ## Still JavaScript
 
-- Large feature route controllers have moved to TypeScript; remaining JavaScript in these feature areas is limited to library support modules:
-  - `src/library/library-map-preview.js`
-  - `src/library/library-media-player.js`
-  - `src/library/resource-registry.js`
+- No JavaScript remains under `src/`; app/source modules are TypeScript.
 - Route/app wrapper JavaScript has moved to TypeScript, including route template modules; app main and concrete route view wrappers remain TypeScript.
 - Standalone/dev harness wrapper JavaScript from this phase has moved to TypeScript; the standalone HTML files now point at the `.ts` Vite entry files where needed while test/runtime imports keep using public `.js` specifiers.
 - No files under `src/app/services/` remain JavaScript.
 - No files under `src/shared/repositories/` remain JavaScript.
 - The low-risk shared route/location helpers, global UI foundation helpers, calculator/energy leaf widgets, player widget/shell/milkdrop leaf widgets, board drawing-surface helper, replay session/logic/chart/map helpers, accel logic/replay/chart/result-graph helpers, and GPS-rate controller/render/Nominatim lab helpers are now TypeScript.
 - No route controller modules remain JavaScript.
+- JavaScript remains outside app source where it still makes sense for this repo: Vitest test files/helpers, Node `.mjs` camera/data scripts, and JS tool config files. These are executed directly by Vitest/Node/tooling rather than included in `tsc`.
 
 ## Next Recommended Batch
 
-The next recommended dedicated batch is the remaining library support JavaScript (`src/library/library-map-preview.js`, `src/library/library-media-player.js`, and `src/library/resource-registry.js`) after a fresh dependency check and library route smoke coverage.
+The next recommended work is a strictness pass, starting with targeted `noImplicitAny` cleanup in the largest migrated controllers/helpers, then `strictNullChecks` after no-implicit-any is green. Keep runtime-contract tests and route smoke coverage close to each tightening step.
