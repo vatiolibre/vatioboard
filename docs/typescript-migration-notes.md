@@ -97,6 +97,12 @@
   - `src/calculator/dom.ts`
   - `src/calculator/calculator-demo.ts`
   - `src/player/player-demo.ts`
+- Standalone/dev harness wrappers and the low-churn GPS-rate page bootstrap moved to TypeScript in this phase:
+  - `src/speed/dev-harness.ts`
+  - `src/accel/dev-harness.ts`
+  - `src/replay/dev-harness.ts`
+  - `src/library/dev-harness.ts`
+  - `src/gps-rate/gps-rate.ts`
 
 ## Contracts Future Work Must Use
 
@@ -125,17 +131,20 @@
 - GPS-rate helper consumers should keep the same public exports and `.js` specifiers. This phase preserved GPS Rate storage keys, geo options/error codes, histogram buckets, session state defaults, elapsed/activity/status helpers, saved-summary normalization defaults, timestamp stale guards, motion classification thresholds, sample shape, histogram/session summary calculations, notes trimming, and place normalization handoff.
 - App route wrapper consumers should keep the same public `.js` specifiers for dynamic imports. This phase preserved the single SPA bootstrap entry behavior, app-shell startup timing/error fallback, route hashes and aliases, route meta titles/descriptions/canonical paths/body classes, template imports, controller lazy-loading, mount/unmount adapter names, and mounted view `unmount()` contracts.
 - Demo/DOM helper consumers should keep the same public exports and `.js` specifiers. This phase preserved calculator/player standalone demo startup behavior, style side-effect imports, translation application timing, demo button ids, widget creation options, widget exports, player bootstrap promise export, and `el`/`qs` DOM helper semantics.
+- Standalone/dev harness consumers should keep the same public `.js` import specifiers. This phase preserved style side-effect imports, immediate mounting, route contexts shaped as `{ root: document, signal: null }`, `initPromise` then/catch/finally behavior, replay selection re-export, cloud-sync startup idempotence for speed/accel/replay, and library's standalone no-cloud-sync behavior.
+- GPS-rate page bootstrap preserved the standalone HTML entry timing, style side-effect imports, backend auth initialization, tools menu/icon setup, element ids/classes, unit/state hydration, storage keys, renderer/controller wiring, wake-lock support detection, and controller `init()` behavior.
 
 ## Still JavaScript
 
 - Feature UI modules remain JavaScript to keep this batch reviewable: speed, camera map, accel, library, player shell, board, replay, calculator, and energy UI.
 - Route/app wrapper JavaScript is now limited to route template modules under `src/app/views/templates/*.js`; app main and concrete route view wrappers are TypeScript.
+- Standalone/dev harness wrapper JavaScript from this phase has moved to TypeScript; the standalone HTML files now point at the `.ts` Vite entry files where needed while test/runtime imports keep using public `.js` specifiers.
 - No files under `src/app/services/` remain JavaScript.
 - No files under `src/shared/repositories/` remain JavaScript.
 - Shared helper files still in JavaScript include `maplibre-loader`, `nominatim`, `place-resolver`, `route-boundary`, `route-string`, `single-tab`, and `ui/confirm-dialog`.
 - Feature/domain storage and session helpers still in JavaScript include `src/replay/session.js`.
-- Other feature/domain modules still in JavaScript include accel UI/logic/replay/result-graph modules, speed UI/runtime/navigation/audio/camera modules, GPS-rate controller/render/page/Nominatim lab modules, board drawing-surface, calculator and energy widgets, plus the larger UI modules listed above.
+- Other feature/domain modules still in JavaScript include accel UI/logic/replay/result-graph modules, speed UI/runtime/navigation/audio/camera modules, GPS-rate controller/render/Nominatim lab modules, board drawing-surface, calculator and energy widgets, plus the larger UI modules listed above.
 
 ## Next Recommended Batch
 
-Pause before large UI/controller/map/session modules. The next safe migration should start with a fresh dependency check for any remaining tiny, non-excluded feature helpers; keep app view templates, `accel` logic/replay/UI, speed runtime/navigation/audio/camera/UI, GPS-rate controller/render/Nominatim UI, `route-string`, `route-boundary`, `place-resolver`, `nominatim`, `single-tab`, `maplibre-loader`, `ui/confirm-dialog`, `i18n`, `icons`, and `replay/session` for later dedicated batches.
+Pause before large UI/controller/map/session modules. The next safe migration should start with a fresh dependency check for any remaining tiny, non-excluded feature wrappers or helpers; keep app view templates, `accel` logic/replay/UI, speed runtime/navigation/audio/camera/UI, GPS-rate controller/render/Nominatim UI, `route-string`, `route-boundary`, `place-resolver`, `nominatim`, `single-tab`, `maplibre-loader`, `ui/confirm-dialog`, `i18n`, `icons`, and `replay/session` for later dedicated batches.

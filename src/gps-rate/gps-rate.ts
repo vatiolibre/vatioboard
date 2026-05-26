@@ -21,6 +21,15 @@ import { createGpsRateRenderer } from './render.js';
 import { createGpsRateState } from './session-state.js';
 import { normalizeStoredSummary } from './summary.js';
 
+interface GpsRateController {
+  init(): void;
+}
+
+function hasWakeLockSupport(navigatorRef: Navigator): boolean {
+  const wakeLock = navigatorRef.wakeLock;
+  return Boolean(wakeLock && typeof wakeLock.request === 'function');
+}
+
 applyTranslations();
 initBackendAuthControllers();
 
@@ -165,9 +174,7 @@ applyButtonIcon(elements.resetQuickTest, IconRestart);
 
 const state = createGpsRateState({
   hiddenNow: document.hidden,
-  wakeLockSupported: Boolean(
-    navigator.wakeLock && typeof navigator.wakeLock.request === 'function'
-  ),
+  wakeLockSupported: hasWakeLockSupport(navigator),
   keepAwakeRequested: loadBoolean(STORAGE_KEYS.keepAwake, false),
   notes: loadText(STORAGE_KEYS.notes, ''),
   lastSavedSummary: normalizeStoredSummary(loadJson(STORAGE_KEYS.lastSummary)),
@@ -197,6 +204,6 @@ const controller = createGpsRateController({
   applyTranslations,
   saveJson,
   saveText,
-});
+}) as GpsRateController;
 
 controller.init();

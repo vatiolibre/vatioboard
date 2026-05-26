@@ -49,10 +49,10 @@ describe("standalone HTML production-surface guard", () => {
 
   it("keeps standalone page bootstraps in dev-harness adapters", () => {
     const expectedAdapters = {
-      "speed.html": "/src/speed/dev-harness.js",
-      "accel.html": "/src/accel/dev-harness.js",
-      "library.html": "/src/library/dev-harness.js",
-      "replay.html": "/src/replay/dev-harness.js",
+      "speed.html": "/src/speed/dev-harness.ts",
+      "accel.html": "/src/accel/dev-harness.ts",
+      "library.html": "/src/library/dev-harness.ts",
+      "replay.html": "/src/replay/dev-harness.ts",
     };
 
     for (const [page, adapter] of Object.entries(expectedAdapters)) {
