@@ -1,4 +1,4 @@
-const libraryTemplate = String.raw`
+const libraryTemplate: string = String.raw`
 <h1 class="sr-only" data-i18n="cloudLibrary">Cloud library</h1>
     <div class="library-app">
       <header class="library-header">

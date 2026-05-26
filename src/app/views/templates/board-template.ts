@@ -1,4 +1,4 @@
-const boardTemplate = String.raw`
+const boardTemplate: string = String.raw`
 <h1 class="sr-only">Vatio Board drawing board</h1>
   <p class="sr-only">
     Full-screen drawing board optimized for touch and in-car browsers.

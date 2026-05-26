@@ -1,3 +1,5 @@
+export type IconSvgMarkup = string;
+
 export const IconFilePlus = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>

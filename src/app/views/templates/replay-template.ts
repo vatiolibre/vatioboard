@@ -1,4 +1,4 @@
-const replayTemplate = String.raw`
+const replayTemplate: string = String.raw`
 <h1 class="sr-only" data-i18n="replayPageH1">Vatio Drive Replay</h1>
     <p class="sr-only" data-i18n="replayPageLead">
       Replay your latest Vatio Speed drive on a hardware-accelerated 3D globe with a progress

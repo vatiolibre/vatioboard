@@ -1,4 +1,4 @@
-const speedTemplate = String.raw`
+const speedTemplate: string = String.raw`
 <h1 class="sr-only" data-i18n="speedPageH1">Vatio Speed live speedometer</h1>
   <p class="sr-only" data-i18n="speedPageLead">Live GPS speedometer with analog dial, trip stats, unit switching, altitude tracking, and speed trap alerts for Tesla and mobile browsers.</p>
 

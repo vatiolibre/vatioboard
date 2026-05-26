@@ -1,4 +1,4 @@
-const accelTemplate = String.raw`
+const accelTemplate: string = String.raw`
 <h1 class="sr-only" data-i18n="accelPageH1">Vatio Accel browser acceleration timer</h1>
     <p class="sr-only" data-i18n="accelPageLead">
       Browser-based GPS acceleration timer for 0-60 mph, 60-130 mph, quarter-mile, and metric

@@ -6,7 +6,12 @@ import { loadText, saveText } from './shared/storage.js';
  * Supports: English (en), Spanish (es)
  */
 
-const baseTranslations = {
+export type SupportedLanguage = 'en' | 'es';
+export type TranslationParams = Record<string, unknown>;
+export type TranslationMap = Record<string, string>;
+export type TranslationCatalog = Record<SupportedLanguage, TranslationMap>;
+
+const baseTranslations: TranslationCatalog = {
   en: {
     // UI Controls
     pen: 'Pen',
@@ -1794,7 +1799,7 @@ const baseTranslations = {
   },
 };
 
-const translations = {
+const translations: TranslationCatalog = {
   en: { ...baseTranslations.en, ...accelTranslations.en },
   es: { ...baseTranslations.es, ...accelTranslations.es },
 };
@@ -1802,18 +1807,25 @@ const translations = {
 const LANG_KEY = 'vatio_board_lang';
 
 const storedLang = loadText(LANG_KEY, null);
-const detectedLang =
-  storedLang || window.__lang || (navigator.language?.startsWith('es') ? 'es' : 'en');
+
+function normalizeLang(value: unknown): SupportedLanguage | null {
+  return value === 'en' || value === 'es' ? value : null;
+}
+
+const detectedLang: SupportedLanguage =
+  normalizeLang(storedLang) ||
+  normalizeLang(window.__lang) ||
+  (navigator.language?.startsWith('es') ? 'es' : 'en');
 
 // Current language (can be changed later for manual switching)
-let currentLang = detectedLang;
+let currentLang: SupportedLanguage = detectedLang;
 
 /**
  * Get translation by key
  * @param {string} key - Translation key
  * @returns {string} - Translated string or key if not found
  */
-export function t(key, params) {
+export function t(key: string, params?: TranslationParams): string {
   const text = translations[currentLang]?.[key] ?? translations.en[key] ?? key;
   if (!params) return text;
 
@@ -1829,7 +1841,7 @@ export function t(key, params) {
  * Get current language
  * @returns {string} - Current language code ('en' or 'es')
  */
-export function getLang() {
+export function getLang(): SupportedLanguage {
   return currentLang;
 }
 
@@ -1837,11 +1849,12 @@ export function getLang() {
  * Set language manually and persist to localStorage
  * @param {string} lang - Language code ('en' or 'es')
  */
-export function setLang(lang) {
-  if (translations[lang]) {
-    currentLang = lang;
-    saveText(LANG_KEY, lang);
-    document.documentElement.lang = lang;
+export function setLang(lang: string): void {
+  const normalizedLang = normalizeLang(lang);
+  if (normalizedLang) {
+    currentLang = normalizedLang;
+    saveText(LANG_KEY, normalizedLang);
+    document.documentElement.lang = normalizedLang;
   }
 }
 
@@ -1849,7 +1862,7 @@ export function setLang(lang) {
  * Toggle between 'en' and 'es', persist, and re-apply translations
  * @returns {string} - New language code
  */
-export function toggleLang() {
+export function toggleLang(): SupportedLanguage {
   const newLang = currentLang === 'en' ? 'es' : 'en';
   setLang(newLang);
   applyTranslations();
@@ -1860,25 +1873,25 @@ export function toggleLang() {
 /**
  * Apply translations to DOM elements with data-i18n attribute
  */
-export function applyTranslations() {
+export function applyTranslations(): void {
   document.querySelectorAll('[data-i18n]').forEach((el) => {
     const key = el.getAttribute('data-i18n');
-    el.textContent = t(key);
+    el.textContent = t(key ?? '');
   });
 
   document.querySelectorAll('[data-i18n-aria]').forEach((el) => {
     const key = el.getAttribute('data-i18n-aria');
-    el.setAttribute('aria-label', t(key));
+    el.setAttribute('aria-label', t(key ?? ''));
   });
 
   document.querySelectorAll('[data-i18n-title]').forEach((el) => {
     const key = el.getAttribute('data-i18n-title');
-    el.setAttribute('title', t(key));
+    el.setAttribute('title', t(key ?? ''));
   });
 
   document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
     const key = el.getAttribute('data-i18n-placeholder');
-    el.setAttribute('placeholder', t(key));
+    el.setAttribute('placeholder', t(key ?? ''));
   });
 }
 
