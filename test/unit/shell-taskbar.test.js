@@ -508,7 +508,7 @@ describe("shell-taskbar", () => {
 
   it("does not depend on interact.js", () => {
     const packageJson = readFileSync(resolve(process.cwd(), "package.json"), "utf8");
-    const source = readFileSync(resolve(process.cwd(), "src/shared/shell-taskbar.js"), "utf8");
+    const source = readFileSync(resolve(process.cwd(), "src/shared/shell-taskbar.ts"), "utf8");
 
     expect(packageJson).not.toContain("\"interactjs\"");
     expect(source).not.toContain("interactjs");

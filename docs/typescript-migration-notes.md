@@ -1,0 +1,238 @@
+# TypeScript Migration Notes
+
+## Typed In This Batch
+
+- TypeScript tooling, `tsconfig.json`, `typecheck`, and `verify` are in place.
+- Shared contracts now live under `src/types/` for routes, cleanup stacks, shell windows, tools, services, UI design, storage, and existing `window.__vatioboard...` globals.
+- The route and shell core has moved to TypeScript: router, routes, route-view, cleanup stack, runtime context, app shell, shell window/layout/snap/taskbar/work-area, floating layer/tools, start menu, and tools menu.
+- Typed registries now define routes, persistent shell windows, tools, and UI design tokens:
+  - `src/app/route-registry.ts`
+  - `src/shared/shell-window-registry.ts`
+  - `src/shared/tool-registry.ts`
+  - `src/shared/ui-design-contract.ts`
+- The shared service boundary has moved to TypeScript while preserving existing public APIs and singleton ownership:
+  - `src/app/services/gps-service.ts`
+  - `src/app/services/driving-alert-service.ts`
+  - `src/app/services/driving-audio-alert-controller.ts`
+  - `src/app/services/drive-recording-service.ts`
+  - `src/shared/audio-runtime.ts`
+  - `src/shared/audio-system.ts`
+  - `src/shared/audio-cue.ts`
+  - `src/shared/media-player.ts`
+  - `src/shared/backend-auth.ts`
+  - `src/shared/cloud-sync.ts`
+  - `src/shared/indexed-storage.ts`
+  - `src/shared/storage-capability.ts`
+- Service-adjacent shared helpers, media/cache helpers, base storage, repositories, and small pure logic utilities have now moved to TypeScript:
+  - `src/shared/audio-catalog.ts`
+  - `src/shared/audio-channel-retainer.ts`
+  - `src/shared/audio-graph-registry.ts`
+  - `src/shared/audio-mini-visualizer.ts`
+  - `src/shared/audio-source-resolver.ts`
+  - `src/shared/audio-visualizer.ts`
+  - `src/shared/media-access-cache.ts`
+  - `src/shared/media-cache.ts`
+  - `src/shared/media-session-adapter.ts`
+  - `src/shared/player-session.ts`
+  - `src/shared/playlist-cache.ts`
+  - `src/shared/playlist-loader.ts`
+  - `src/shared/storage.ts`
+  - `src/shared/repositories/accel-repository.ts`
+  - `src/shared/repositories/board-document-repository.ts`
+  - `src/shared/repositories/replay-repository.ts`
+  - `src/shared/display-format.ts`
+  - `src/shared/geo-heading.ts`
+  - `src/calculator/calc-core.ts`
+  - `src/energy/energy-core.ts`
+- Remaining small shared helper dependencies moved to TypeScript in this phase:
+  - `src/shared/track-model.ts`
+  - `src/shared/track-source-policy.ts`
+  - `src/shared/demo-cache.ts`
+  - `src/shared/chunked-blob-store.ts`
+  - `src/shared/navigation-payload-handoff.ts`
+  - `src/shared/environment.ts`
+- Small feature/domain storage helpers moved to TypeScript after the shared-helper batch was green:
+  - `src/calculator/storage.ts`
+  - `src/energy/trip-cost-storage.ts`
+  - `src/accel/storage.ts`
+- Low-churn optional board helpers also moved to TypeScript after the storage batch was green:
+  - `src/board/document-session.ts`
+  - `src/board/offline-mutations.ts`
+- Board storage moved to TypeScript first in this phase:
+  - `src/board/storage.ts`
+- The shared cloud-library helper cluster moved to TypeScript after board storage was green:
+  - `src/shared/cloud-library-open.ts`
+  - `src/shared/cloud-library-resources.ts`
+  - `src/shared/cloud-library.ts`
+  - `src/shared/cloud-sync-status-indicator.ts`
+- Low-churn optional activity helpers moved to TypeScript after the cloud-library batch was green:
+  - `src/shared/activity-state.ts`
+  - `src/shared/activity-indicator.ts`
+- Tiny shared shell/bootstrap helpers moved to TypeScript in this phase:
+  - `src/shared/shell-layers.ts`
+  - `src/shared/unit-bootstrap.ts`
+- Low-churn optional shell keyboard and analog speedometer helpers also moved to TypeScript after the shell/bootstrap batch was green:
+  - `src/shared/shell-keyboard.ts`
+  - `src/shared/analog-speedometer.ts`
+- Small pure feature-helper/constants batches moved to TypeScript in this phase, with accel verified before speed and GPS-rate:
+  - `src/accel/constants.ts`
+  - `src/accel/formatters.ts`
+  - `src/accel/history.ts`
+  - `src/accel/presets.ts`
+  - `src/speed/constants.ts`
+  - `src/speed/preferences.ts`
+  - `src/speed/traps.ts`
+  - `src/speed/alerts.ts`
+  - `src/gps-rate/constants.ts`
+  - `src/gps-rate/session-state.ts`
+  - `src/gps-rate/summary.ts`
+- Thin app entry, route view wrappers, and tiny demo/DOM helpers moved to TypeScript in this phase:
+  - `src/app/main.ts`
+  - `src/app/views/SpeedView.ts`
+  - `src/app/views/LibraryView.ts`
+  - `src/app/views/AccelView.ts`
+  - `src/app/views/ReplayView.ts`
+  - `src/app/views/BoardView.ts`
+  - `src/app/views/PlayerDebugView.ts`
+  - `src/calculator/dom.ts`
+  - `src/calculator/calculator-demo.ts`
+  - `src/player/player-demo.ts`
+- Standalone/dev harness wrappers and the low-churn GPS-rate page bootstrap moved to TypeScript in this phase:
+  - `src/speed/dev-harness.ts`
+  - `src/accel/dev-harness.ts`
+  - `src/replay/dev-harness.ts`
+  - `src/library/dev-harness.ts`
+  - `src/gps-rate/gps-rate.ts`
+- The dedicated single-tab lifecycle helper moved to TypeScript in this phase:
+  - `src/shared/single-tab.ts`
+- The focused shared confirm-dialog UI helper moved to TypeScript in this phase:
+  - `src/shared/ui/confirm-dialog.ts`
+- The low-risk shared route/location helper batch moved to TypeScript in this phase:
+  - `src/shared/maplibre-loader.ts`
+  - `src/shared/route-string.ts`
+  - `src/shared/route-boundary.ts`
+  - `src/shared/nominatim.ts`
+  - `src/shared/place-resolver.ts`
+- The global UI foundation batch moved to TypeScript in this phase:
+  - `src/icons.ts`
+  - `src/i18n.ts`
+  - `src/app/welcome-consent.ts`
+  - `src/app/views/templates/accel-template.ts`
+  - `src/app/views/templates/board-template.ts`
+  - `src/app/views/templates/library-template.ts`
+  - `src/app/views/templates/replay-template.ts`
+  - `src/app/views/templates/speed-template.ts`
+- The leaf widget cluster moved to TypeScript in this phase:
+  - `src/board/drawing-surface.ts`
+  - `src/calculator/calculator-widget.ts`
+  - `src/calculator/widget/drag.ts`
+  - `src/calculator/widget/history-sheet.ts`
+  - `src/calculator/widget/keypad.ts`
+  - `src/calculator/widget/number-format.ts`
+  - `src/calculator/widget/panel.ts`
+  - `src/calculator/widget/settings-sheet.ts`
+  - `src/energy/energy-calculator-widget.ts`
+  - `src/energy/widget/modal.ts`
+  - `src/energy/widget/multi-trip-mode.ts`
+  - `src/energy/widget/panel.ts`
+  - `src/energy/widget/settings-sheet.ts`
+  - `src/energy/widget/simple-mode.ts`
+  - `src/player/integrate-player-widget.ts`
+  - `src/player/milkdrop-panel-prefs.ts`
+  - `src/player/milkdrop-panel.ts`
+  - `src/player/player-shell.ts`
+  - `src/player/player-widget.ts`
+- The domain/session controller-support cluster moved to TypeScript before the large route controllers:
+  - `src/replay/session.ts`
+  - `src/replay/logic.ts`
+  - `src/replay/charts.ts`
+  - `src/replay/map.ts`
+  - `src/accel/logic.ts`
+  - `src/accel/replay.ts`
+  - `src/accel/replay-charts.ts`
+  - `src/accel/replay-map.ts`
+  - `src/accel/result-graph.ts`
+  - `src/accel/translations.ts`
+  - `src/gps-rate/controller.ts`
+  - `src/gps-rate/render.ts`
+  - `src/gps-rate/nominatim-lab.ts`
+- The speed runtime/navigation/audio/camera/UI cluster moved to TypeScript in dependency order before the remaining large non-speed route controllers:
+  - `src/speed/render.ts`
+  - `src/speed/camera-approach.ts`
+  - `src/speed/camera-database.ts`
+  - `src/speed/camera-map-data-source.ts`
+  - `src/speed/camera-map-layers.ts`
+  - `src/speed/camera-map-navigation.ts`
+  - `src/speed/navigation.ts`
+  - `src/speed/audio.ts`
+  - `src/speed/runtime.ts`
+  - `src/speed/speed-alert-panel.ts`
+  - `src/speed/camera-map-widget.ts`
+  - `src/speed/speed.ts`
+- The remaining large feature route controllers moved to TypeScript in this phase:
+  - `src/accel/accel.ts`
+  - `src/replay/replay.ts`
+  - `src/library/library.ts`
+  - `src/board/board.ts`
+- The final app/source JavaScript modules moved to TypeScript in this phase:
+  - `src/library/library-map-preview.ts`
+  - `src/library/library-media-player.ts`
+  - `src/library/resource-registry.ts`
+- Final migration cleanup removed `allowJs` from `tsconfig.json`, narrowed the typecheck include to TypeScript source/contracts, and added `pnpm run typecheck` to CI before lint/test/build.
+
+## Contracts Future Work Must Use
+
+- Add SPA routes through `defineRoute` in `src/app/route-registry.ts`.
+- Add persistent shell windows through `defineShellWindow` in `src/shared/shell-window-registry.ts`.
+- Expose start-menu, floating, taskbar, or launcher tools through `defineTool` in `src/shared/tool-registry.ts`.
+- Consume app-level GPS, driving-alert, drive-recording, and audio services through the interfaces in `src/types/services.ts`; routes should not create competing watches, camera databases, audio engines, or cloud sync loops.
+- Use `--vb-touch-target-min` and the `--vb-safe-area-*` tokens for shell/mobile touch surfaces.
+- Service consumers should keep using the existing exported functions and shared instances. This batch preserved the GPS watch owner, driving alert service state flow, lazy audio runtime/system, backend auth session surface, cloud sync loop ownership, IndexedDB keys, storage capability probes, and media player/audio cue contracts.
+- Audio/media consumers should keep importing the same public `.js` specifiers. This phase preserved lazy Web Audio creation, gesture-compatible priming, Media Session ownership, player-session keys, media-access memory-only semantics, media-cache IndexedDB database/store names, user-scoped cache keys, manifest/playlist record shapes, and signed-URL non-persistence.
+- Repository consumers should keep using the existing public functions. This phase preserved cloud handoff resource names, route hashes returned by cloud-open helpers, restore de-duplication/failure cooldown behavior, local import/persistence calls, and repository payload shapes for accel runs, board documents, and replay sessions.
+- Base storage helpers still use the same localStorage keys supplied by callers and keep the same fallback behavior for text, booleans, numbers, JSON, and removals.
+- Track consumers should keep using the same `.js` specifiers and canonical track shape. This phase preserved track key order/field names, demo-track detection, static-source policy decisions, duration formatting, filename title derivation, and playlist normalization fallbacks.
+- Demo/cache consumers should keep the same public exports. This phase preserved demo playlist and demo blob IndexedDB database/store names, `__demo_playlist_v1__`, cache TTL, chunk manifest/chunk key layout, streaming/fallback behavior, in-flight download de-duplication, callback reason strings, and signed/static media source policy.
+- Navigation handoff consumers should keep using `NAVIGATION_PAYLOAD_RESOURCES`, `queueNavigationPayloadHandoff`, and `consumeNavigationPayloadHandoff`. This phase preserved resource strings, localStorage key prefix, record-id matching behavior, memory-first handoff consumption, and removal after consume.
+- Calculator, energy trip-cost, and accel storage kept their existing localStorage keys, IndexedDB database/store names, migration behavior, max history/run limits, normalization fallbacks, unit preference keys, and persisted record shapes.
+- Board document-session and offline-mutation helpers kept their local session id format, mutation id format, mutation queue key, queue de-duplication/superseding behavior, status strings, and non-persistence of `pngBlob`.
+- Board storage kept `vatio_board_drawing_v1`, `vatio_board_document_current_v1`, `vatio_board_document_pending_open_v1`, IndexedDB database/store `vatio-board-storage` / `boardRecords`, `boardChunk:` chunk keys, embedded fallback record shape, snapshot reference shape, migration fallbacks, and save-loop semantics.
+- Cloud-library helpers kept the `vatioboard-cloud-library` / `cloudLibraryCache` persisted detail cache, detail/index key formats, list/detail TTL behavior, request-version invalidation, abort wrapping, non-ok request errors, persisted detail eviction, media feature gate fallbacks, canonical manifest background sync, resource keys, tab keys, cloud-open route hashes, and status indicator event/class/action behavior.
+- Activity helpers kept the `__vatioboardActivityState` window store, `vatioboard:activity-state-change` and `vatioboard:activity-open` events, activity ordering and listener semantics, `vatioboard.activity_indicator_pos_v1`, drag persistence, DOM class names, live-region behavior, route navigation, and i18n refresh handling.
+- Shell/bootstrap helpers kept the `SHELL_Z_INDEX` layer values and ordering, shared unit preference keys `vatio_speed_unit`, `vatio_speed_distance_unit`, and `vatio_unit_bootstrap_v1`, regional imperial-country inference, existing/manual/auto bootstrap reasons, and trip-distance unit fallback behavior.
+- Shell keyboard kept the single `keydown` listener contract, editable-target guard, Alt/Ctrl+Backquote cycling, Shift reverse cycling, Escape snap-preview clearing, Ctrl+Alt+M minimize, Ctrl+Alt+R restore, uninstall behavior, and optional minimized-window cycling.
+- Analog speedometer kept the `analog-speedometer.less` side-effect import, canvas/ResizeObserver sizing behavior, CSS variable names, overlay text updates, marker/accent/pivot color behavior, no-op fallback controller, and render model merge semantics.
+- Accel helper consumers should keep importing the same public `.js` specifiers. This phase preserved shared unit localStorage keys, accel storage keys, default settings, GPS options/error codes, conversion constants, preset ids/signatures/variant groups, partial definitions, custom-preset signature rounding, formatter fallback strings, history comparison behavior, and the acceleration calculation boundary in `src/accel/logic.ts`.
+- Speed helper consumers should keep the same public exports and `.js` specifiers. This phase preserved speed preference localStorage keys, unit defaults, primary-view values, alert limit defaults, trap-alert presets/snapping, camera-approach preference modes, alert/trap active-state semantics, speed metadata confidence handling, trap distance/speed formatting, KDBush/geokdbush lookup behavior, and overspeed sound gating.
+- Speed route and camera-map consumers should keep using the same public exports and `.js` specifiers. This phase preserved camera/trap lookup semantics, camera artifact cache keys and persisted shapes, unit conversion/display behavior, audio lease/gating and media-session behavior, GPS lifecycle handoff, map source/layer/controller APIs, camera-map activity/follow state, and route mount/unmount contracts.
+- GPS-rate helper consumers should keep the same public exports and `.js` specifiers. This phase preserved GPS Rate storage keys, geo options/error codes, histogram buckets, session state defaults, elapsed/activity/status helpers, saved-summary normalization defaults, timestamp stale guards, motion classification thresholds, sample shape, histogram/session summary calculations, notes trimming, and place normalization handoff.
+- App route wrapper consumers should keep the same public `.js` specifiers for dynamic imports. This phase preserved the single SPA bootstrap entry behavior, app-shell startup timing/error fallback, route hashes and aliases, route meta titles/descriptions/canonical paths/body classes, template imports, controller lazy-loading, mount/unmount adapter names, and mounted view `unmount()` contracts.
+- Demo/DOM helper consumers should keep the same public exports and `.js` specifiers. This phase preserved calculator/player standalone demo startup behavior, style side-effect imports, translation application timing, demo button ids, widget creation options, widget exports, player bootstrap promise export, and `el`/`qs` DOM helper semantics.
+- Standalone/dev harness consumers should keep the same public `.js` import specifiers. This phase preserved style side-effect imports, immediate mounting, route contexts shaped as `{ root: document, signal: null }`, `initPromise` then/catch/finally behavior, replay selection re-export, cloud-sync startup idempotence for speed/accel/replay, and library's standalone no-cloud-sync behavior.
+- GPS-rate page bootstrap preserved the standalone HTML entry timing, style side-effect imports, backend auth initialization, tools menu/icon setup, element ids/classes, unit/state hydration, storage keys, renderer/controller wiring, wake-lock support detection, and controller `init()` behavior.
+- Single-tab consumers should keep using the same public `.js` specifier and runtime exports. This phase preserved the `vatioboard:single-tab-ownership` event name/detail shape, owner id format, active-scope normalization, Web Locks `ifAvailable` acquisition path, IndexedDB fallback database/store/version, lease and hint key prefixes, localStorage lease-hint payload shape, no sessionStorage or BroadcastChannel records, 15s lease/5s heartbeat timing, stale heartbeat cleanup, blocked-overlay DOM/focus/i18n behavior, pagehide/beforeunload release behavior, persisted-pageshow reacquire behavior, callback ordering, and async IndexedDB release teardown.
+- Confirm-dialog consumers should keep using `showConfirmDialog` and `showPromptDialog` from the same public `.js` specifier. This phase preserved dialog class names, DOM order, roles/ARIA attributes, backdrop click/Escape/Tab handling, focus trapping, initial focus choices, active-dialog replacement dismissal, `onConfirm` gesture timing and error swallowing, reduced-motion cleanup, animationend/fallback timeout cleanup, focus restoration, confirm/cancel result semantics, prompt trimming/disabled-submit behavior, and the superseded-prompt `false` resolution behavior.
+- Route/location helper consumers should keep using the same public `.js` specifiers. This phase preserved the lazy MapLibre/CSS import promise, compact route/address formatting, Colombia and US locality/state abbreviations, movement-aware route boundary selection, boundary place display fallbacks, stale boundary enrichment guard, Nominatim base URL normalization, cache/schedule storage keys, 1 request per second scheduling, public-details policy guard, normalized place metadata, OSM lookup ids, language forwarding, reverse-country defaults, and lookup-place normalization.
+- Global UI foundation consumers should keep using the same public `.js` specifiers. This phase preserved every icon export name/string payload, shared translation keys and interpolation behavior, `vatio_board_lang`, language detection from storage/window/browser, `i18n:change`, DOM translation attributes, welcome-consent storage key/version, location-choice values, GPS request timing and consumer id, welcome modal DOM classes/assets/focus behavior, and route template default exports, SEO copy, element ids/classes, backend-auth forms, tools-menu containers, and shell toolbar markers.
+- Leaf widget consumers should keep using the same public `.js` specifiers. This phase preserved calculator and energy DOM ids/classes, keypad/settings/history behavior, calculator and energy storage keys, shell window ids/capabilities/lifecycle hooks, draggable panel/launcher snap and viewport clamping behavior, board drawable viewport measurements and pointer coordinate normalization, player widget bootstrap/visibility keys, backend-auth gating, tools-menu integration, audio bootstrap and Media Session ownership, player shell queue/playlist/milkdrop launch behavior, milkdrop panel visibility/position/size/preset keys, fullscreen fallback, resize behavior, audio graph acquisition/release, runtime subscription lifetime, and all public widget API method names.
+- Replay domain consumers should keep using the same public `.js` specifiers. This phase preserved replay storage keys, IndexedDB database/store/chunk key names, legacy localStorage migration, sample normalization/sorting/de-duplication/distance rebasing, active/last/library/pending-open record shapes, import/archive/remove behavior, payload completeness semantics, summary/path/bounds/interpolation/highlight/graph-model helpers, chart controller methods, map controller methods, satellite/solar layer setup, playback source updates, approach animation options, and debug window flags.
+- Accel domain/replay consumers should keep using the same public `.js` specifiers. This phase preserved run state/result shapes, live sample speed-resolution behavior, trace/sample-log/partial normalization, quality grading, persisted replay source/frame/marker/map-session payloads, elapsed/distance interpolation, replay chart controller methods, result graph controller methods, and every `accelTranslations` key/value payload.
+- GPS-rate controller/render/Nominatim consumers should keep using the same public `.js` specifiers. This phase preserved controller `init()` behavior, start/stop/reset/export/copy/wake-lock/permission/language event wiring, saved-summary enrichment and unit bootstrap, renderer method names and DOM update behavior, log row limits, warning/histogram/sparkline/availability calculations, Nominatim base URL and active-API persistence, public details guard, request-state shape, and response formatting.
+- Large route controller consumers should keep using the same public `.js` specifiers. This phase preserved accel/replay/library/board mount and unmount exports, thenable `initPromise` behavior, route lifecycle cleanup, standalone-vs-SPA startup timing, cloud sync status/idempotence, backend auth and tools-menu integration, single-tab ownership handling, DOM ids/classes, storage keys, route-query selection, and background/route-visible behavior.
+- Library support consumers should keep using the same public `.js` specifiers. This phase preserved cloud-library tab keys/config selection, badge/meta/subtitle formatting, preview route coordinate normalization/fallbacks, map preview source/layer ids, satellite attribution/style, reduced-motion behavior, approach animation timings, route-signature de-duplication, media player mount/destroy/getMediaElement API, blob URL revocation, remote-vs-local source priority, poster/artwork behavior, visualizer gating, and first-remote-play callback timing.
+- Stricter TypeScript flags are intentionally still incremental: baseline `pnpm run typecheck` is green without `allowJs`, while probe runs for `noImplicitAny` and `strictNullChecks` still surface legacy annotation/nullability work across large migrated controllers and helpers. Do not enable those flags until their probes are green.
+
+## Still JavaScript
+
+- No JavaScript remains under `src/`; app/source modules are TypeScript.
+- Route/app wrapper JavaScript has moved to TypeScript, including route template modules; app main and concrete route view wrappers remain TypeScript.
+- Standalone/dev harness wrapper JavaScript from this phase has moved to TypeScript; the standalone HTML files now point at the `.ts` Vite entry files where needed while test/runtime imports keep using public `.js` specifiers.
+- No files under `src/app/services/` remain JavaScript.
+- No files under `src/shared/repositories/` remain JavaScript.
+- The low-risk shared route/location helpers, global UI foundation helpers, calculator/energy leaf widgets, player widget/shell/milkdrop leaf widgets, board drawing-surface helper, replay session/logic/chart/map helpers, accel logic/replay/chart/result-graph helpers, and GPS-rate controller/render/Nominatim lab helpers are now TypeScript.
+- No route controller modules remain JavaScript.
+- JavaScript remains outside app source where it still makes sense for this repo: Vitest test files/helpers, Node `.mjs` camera/data scripts, and JS tool config files. These are executed directly by Vitest/Node/tooling rather than included in `tsc`.
+
+## Next Recommended Batch
+
+The next recommended work is a strictness pass, starting with targeted `noImplicitAny` cleanup in the largest migrated controllers/helpers, then `strictNullChecks` after no-implicit-any is green. Keep runtime-contract tests and route smoke coverage close to each tightening step.

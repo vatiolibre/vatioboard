@@ -58,8 +58,8 @@ describe("replay scroll policy", () => {
   });
 
   it("uses one compact details card and removes replay copy rows", () => {
-    const replayTemplate = readStyle("src/app/views/templates/replay-template.js");
-    const i18n = readStyle("src/i18n.js");
+    const replayTemplate = readStyle("src/app/views/templates/replay-template.ts");
+    const i18n = readStyle("src/i18n.ts");
 
     expect(replayTemplate).toContain('class="replay-card replay-details-card"');
     expect(replayTemplate).toContain('class="replay-summary-grid"');
@@ -75,7 +75,7 @@ describe("replay scroll policy", () => {
 
   it("matches floating panel close affordances on the expanded graph sheet", () => {
     const replayCss = readStyle("src/styles/replay.less");
-    const replayTemplate = readStyle("src/app/views/templates/replay-template.js");
+    const replayTemplate = readStyle("src/app/views/templates/replay-template.ts");
 
     expect(replayTemplate).toContain('class="replay-graph-sheet-grip"');
     expect(replayTemplate).toContain('class="replay-graph-sheet-close"');

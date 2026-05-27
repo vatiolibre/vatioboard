@@ -69,7 +69,7 @@ What it does:
 
 ### Vatio GPS Rate Lab
 
-`gps-rate.html` is a legacy standalone test/dev harness for the diagnostics page in [`src/gps-rate/gps-rate.js`](src/gps-rate/gps-rate.js). It is not a production SPA route.
+`gps-rate.html` is a legacy standalone test/dev harness for the diagnostics page in [`src/gps-rate/gps-rate.ts`](src/gps-rate/gps-rate.ts). It is not a production SPA route.
 
 What it does:
 

@@ -1,5 +1,7 @@
 import js from '@eslint/js';
 import globals from 'globals';
+import tsParser from '@typescript-eslint/parser';
+import tsPlugin from '@typescript-eslint/eslint-plugin';
 
 const vitestGlobals = {
   afterAll: 'readonly',
@@ -25,7 +27,7 @@ export default [
   },
   js.configs.recommended,
   {
-    files: ['**/*.{js,mjs}'],
+    files: ['**/*.{js,mjs,ts,tsx}'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',
@@ -52,7 +54,31 @@ export default [
     },
   },
   {
-    files: ['test/**/*.{js,mjs}', 'vitest.config.js'],
+    files: ['**/*.{ts,tsx}'],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: {
+        sourceType: 'module',
+      },
+    },
+    plugins: {
+      '@typescript-eslint': tsPlugin,
+    },
+    rules: {
+      'no-undef': 'off',
+      'no-unused-vars': 'off',
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        {
+          argsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+        },
+      ],
+    },
+  },
+  {
+    files: ['test/**/*.{js,mjs,ts,tsx}', 'vitest.config.js'],
     languageOptions: {
       globals: vitestGlobals,
     },

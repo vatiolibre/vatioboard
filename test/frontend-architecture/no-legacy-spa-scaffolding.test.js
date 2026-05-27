@@ -1,11 +1,32 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 const root = process.cwd();
+const PRODUCTION_SOURCE_EXTENSIONS = new Set([".js", ".mjs", ".ts", ".tsx", ".less", ".css"]);
+const FEATURE_MODULE_EXTENSIONS = [".ts", ".js"];
+
+function isRouteViewFile(file) {
+  const name = basename(file);
+  return name.endsWith("View.js") || name.endsWith("View.ts") || name.endsWith("View.tsx");
+}
 
 function readProjectFile(path) {
   return readFileSync(resolve(root, path), "utf8");
+}
+
+function resolveProjectModule(path) {
+  if (extname(path)) {
+    const absolutePath = resolve(root, path);
+    if (existsSync(absolutePath)) return path;
+  }
+
+  for (const extension of FEATURE_MODULE_EXTENSIONS) {
+    const candidate = `${path}${extension}`;
+    if (existsSync(resolve(root, candidate))) return candidate;
+  }
+
+  throw new Error(`Unable to resolve project module: ${path}`);
 }
 
 function listFiles(dir, predicate = () => true) {
@@ -19,7 +40,7 @@ function listFiles(dir, predicate = () => true) {
 
 describe("SPA architecture guard", () => {
   it("keeps route views free of legacy raw HTML wrappers", () => {
-    const routeViewFiles = listFiles("src/app/views", (file) => basename(file).endsWith("View.js"));
+    const routeViewFiles = listFiles("src/app/views", isRouteViewFile);
 
     for (const file of routeViewFiles) {
       const source = readProjectFile(file);
@@ -32,7 +53,7 @@ describe("SPA architecture guard", () => {
   });
 
   it("keeps production source and CSS free of legacy SPA scaffolding", () => {
-    const productionFiles = listFiles("src", (file) => [".js", ".mjs", ".less", ".css"].includes(extname(file)));
+    const productionFiles = listFiles("src", (file) => PRODUCTION_SOURCE_EXTENSIONS.has(extname(file)));
 
     for (const file of productionFiles) {
       const source = readProjectFile(file);
@@ -62,7 +83,7 @@ describe("SPA architecture guard", () => {
   });
 
   it("keeps the SPA router free of old standalone page aliases", () => {
-    const router = readProjectFile("src/app/router.js");
+    const router = readProjectFile(resolveProjectModule("src/app/router"));
 
     expect(router).not.toContain("/speed.html");
     expect(router).not.toContain("/library.html");
@@ -70,13 +91,13 @@ describe("SPA architecture guard", () => {
     expect(router).not.toContain("/replay.html");
     expect(router).not.toContain("/player.html");
 
-    const routes = readProjectFile("src/app/routes.js");
+    const routes = readProjectFile(resolveProjectModule("src/app/routes"));
     expect(routes).not.toContain('path: "/player"');
     expect(routes).not.toContain("PlayerDebugView");
   });
 
   it("keeps production source free of standalone HTML route links", () => {
-    const productionFiles = listFiles("src", (file) => [".js", ".mjs", ".less", ".css"].includes(extname(file)));
+    const productionFiles = listFiles("src", (file) => PRODUCTION_SOURCE_EXTENSIONS.has(extname(file)));
 
     for (const file of productionFiles) {
       const source = readProjectFile(file);
@@ -85,7 +106,7 @@ describe("SPA architecture guard", () => {
   });
 
   it("keeps route view modules free of obvious top-level browser side effects", () => {
-    const routeViewFiles = listFiles("src/app/views", (file) => basename(file).endsWith("View.js"));
+    const routeViewFiles = listFiles("src/app/views", isRouteViewFile);
     const sideEffectPatterns = [
       /document\.querySelector\(/,
       /document\.getElementById\(/,

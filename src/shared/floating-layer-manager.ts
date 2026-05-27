@@ -1,0 +1,169 @@
+import { getDefaultShellWindowManager } from "./shell-window-manager.js";
+import { SHELL_Z_INDEX } from "./shell-layers.js";
+import type { ShellRuntime, ShellWindowRegistration } from "../types/shell";
+import { getShellWindowDefinition } from "./shell-window-registry.js";
+
+const FLOATING_PANEL_SELECTOR = "[data-vb-floating-panel]";
+const ACTIVE_ATTR = "data-vb-floating-active";
+const BASE_Z_INDEX = SHELL_Z_INDEX.windowBase;
+const MAX_Z_INDEX = SHELL_Z_INDEX.windowMax;
+
+let nextZIndex: number = BASE_Z_INDEX;
+const registrations = new WeakMap<HTMLElement, { cleanup: () => void; count: number }>();
+const shellRegistrations = new WeakMap<HTMLElement, { count: number; id: string }>();
+
+type FloatingPanelOptions = Partial<Omit<ShellWindowRegistration, "element">> & {
+  disabled?: boolean;
+  shellManager?: ShellRuntime;
+};
+
+function isElement(value: unknown): value is HTMLElement {
+  return value instanceof HTMLElement;
+}
+
+function isVisiblePanel(panel: Element): panel is HTMLElement {
+  return isElement(panel) && panel.isConnected && !panel.hidden && !panel.hasAttribute("hidden");
+}
+
+function readZIndex(panel: HTMLElement) {
+  const inline = Number.parseInt(panel.style?.zIndex || "", 10);
+  if (Number.isFinite(inline)) return inline;
+
+  const computed = Number.parseInt(panel.ownerDocument?.defaultView?.getComputedStyle?.(panel)?.zIndex || "", 10);
+  if (Number.isFinite(computed)) return computed;
+
+  return BASE_Z_INDEX;
+}
+
+function getVisiblePanels(root: ParentNode = document) {
+  return Array.from(root.querySelectorAll?.(FLOATING_PANEL_SELECTOR) || [])
+    .filter(isVisiblePanel);
+}
+
+function setActivePanel(panel: HTMLElement) {
+  const scope = panel.ownerDocument || document;
+  for (const candidate of getVisiblePanels(scope)) {
+    candidate.setAttribute(ACTIVE_ATTR, candidate === panel ? "true" : "false");
+  }
+}
+
+function prepareZIndex(root: ParentNode = document) {
+  if (nextZIndex < MAX_Z_INDEX) return;
+  compactFloatingPanelZOrder(root);
+}
+
+export function compactFloatingPanelZOrder(root: ParentNode = document) {
+  const visiblePanels = getVisiblePanels(root)
+    .map((panel, index) => ({ panel, index, zIndex: readZIndex(panel) }))
+    .sort((a, b) => (a.zIndex - b.zIndex) || (a.index - b.index));
+
+  visiblePanels.forEach(({ panel }, index) => {
+    panel.style.zIndex = String(Math.min(BASE_Z_INDEX + index, MAX_Z_INDEX));
+  });
+
+  const highestZIndex = visiblePanels.length > 0
+    ? Math.min(BASE_Z_INDEX + visiblePanels.length - 1, MAX_Z_INDEX)
+    : BASE_Z_INDEX;
+  nextZIndex = Math.min(highestZIndex + 1, MAX_Z_INDEX);
+}
+
+export function bringFloatingPanelToFront(panelEl: unknown) {
+  if (!isElement(panelEl)) return;
+
+  const shellManager = getDefaultShellWindowManager();
+  const shellWindowId = shellManager.getWindowIdForElement?.(panelEl);
+  if (shellWindowId && shellManager.getWindow(shellWindowId)) {
+    shellManager.activateWindow(shellWindowId);
+    return;
+  }
+
+  panelEl.setAttribute("data-vb-floating-panel", "");
+  prepareZIndex(panelEl.ownerDocument || document);
+  nextZIndex = Math.min(nextZIndex + 1, MAX_Z_INDEX);
+  panelEl.style.zIndex = String(nextZIndex);
+  setActivePanel(panelEl);
+}
+
+export function registerFloatingPanel(panelEl: unknown, options: FloatingPanelOptions = {}) {
+  if (!isElement(panelEl)) return () => {};
+
+  if (options.id) {
+    const shellManager = options.shellManager || getDefaultShellWindowManager();
+    const definition = getShellWindowDefinition(options.id);
+    const registration = {
+      ...definition,
+      ...options,
+      id: options.id,
+      capabilities: {
+        ...(definition?.capabilities || {}),
+        ...(options.capabilities || {}),
+      },
+      element: panelEl,
+    };
+    const existing = shellRegistrations.get(panelEl);
+    if (existing) {
+      existing.count += 1;
+      shellManager.registerWindow(registration);
+      return () => {
+        existing.count -= 1;
+        if (existing.count <= 0) {
+          shellManager.unregisterWindow(existing.id);
+          shellRegistrations.delete(panelEl);
+        }
+      };
+    }
+
+    panelEl.setAttribute("data-vb-floating-panel", "");
+    shellManager.registerWindow(registration);
+    shellRegistrations.set(panelEl, { count: 1, id: options.id });
+    return () => {
+      const current = shellRegistrations.get(panelEl);
+      if (!current) return;
+      current.count -= 1;
+      if (current.count <= 0) {
+        shellManager.unregisterWindow(current.id);
+        shellRegistrations.delete(panelEl);
+      }
+    };
+  }
+
+  const existing = registrations.get(panelEl);
+  if (existing) {
+    existing.count += 1;
+    return () => {
+      existing.count -= 1;
+      if (existing.count <= 0) {
+        existing.cleanup();
+        registrations.delete(panelEl);
+      }
+    };
+  }
+
+  panelEl.setAttribute("data-vb-floating-panel", "");
+
+  const activate = () => {
+    if (!options.disabled && isVisiblePanel(panelEl)) {
+      bringFloatingPanelToFront(panelEl);
+    }
+  };
+
+  panelEl.addEventListener("pointerdown", activate, true);
+  panelEl.addEventListener("focusin", activate, true);
+
+  const cleanup = () => {
+    panelEl.removeEventListener("pointerdown", activate, true);
+    panelEl.removeEventListener("focusin", activate, true);
+    panelEl.removeAttribute(ACTIVE_ATTR);
+  };
+
+  registrations.set(panelEl, { cleanup, count: 1 });
+  return () => {
+    const current = registrations.get(panelEl);
+    if (!current) return;
+    current.count -= 1;
+    if (current.count <= 0) {
+      current.cleanup();
+      registrations.delete(panelEl);
+    }
+  };
+}
