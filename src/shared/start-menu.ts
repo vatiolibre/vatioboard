@@ -7,6 +7,7 @@ import {
 } from "../icons.js";
 import { initBackendAuthControllers } from "./backend-auth.js";
 import { integratePlayerWidget } from "../player/integrate-player-widget.js";
+import { appRegistry, createAppLauncher } from "../app-platform/index.js";
 import { navigateToAppRoute, ROUTE_VISIBLE_EVENT } from "../app/router.js";
 import { SHELL_Z_INDEX } from "./shell-layers.js";
 import { getShellWorkArea, getViewportRect } from "./shell-work-area.js";
@@ -300,6 +301,11 @@ export function initSharedStartMenu({
 
   const { langButton, list } = buildStartMenu();
   mount.append(list);
+  const appLauncher = createAppLauncher({
+    shellManager: floatingTools?.shellManager,
+    navigate: navigateToAppRoute,
+    getCurrentRoute: () => window.__vatioboardRouter?.getRoute?.() || null,
+  });
 
   let open = false;
   let activeTrigger = null;
@@ -344,6 +350,10 @@ export function initSharedStartMenu({
     if (action === TOOL_IDS.energy) return floatingTools?.toggleEnergy?.();
     if (action === TOOL_IDS.cameraMap) return floatingTools?.toggleCameraMap?.();
     if (action === TOOL_IDS.speedAlerts) return floatingTools?.toggleSpeedAlerts?.();
+    const app = appRegistry.listApps().find((candidate) =>
+      candidate.window?.shellWindowId === action || candidate.metadata.legacyToolId === action
+    );
+    if (app) return appLauncher.openApp(app.id);
     return null;
   }
 

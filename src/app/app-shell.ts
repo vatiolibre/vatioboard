@@ -14,6 +14,7 @@ import { ensureSingleTabOwnership } from "../shared/single-tab.js";
 import { getDefaultShellWindowManager } from "../shared/shell-window-manager.js";
 import { createShellTaskbar } from "../shared/shell-taskbar.js";
 import { installShellKeyboardShortcuts } from "../shared/shell-keyboard.js";
+import { appRegistry, createAppLauncher, createAppRuntime } from "../app-platform/index.js";
 import { createHashRouter, emitRouteVisible, navigateToAppRoute } from "./router.js";
 import { routes } from "./routes.js";
 import { createRuntimeContext } from "./runtime-context.js";
@@ -102,6 +103,13 @@ export async function startAppShell({
   startCloudSyncLoop();
 
   const shellManager = getDefaultShellWindowManager({ root: persistentLayer }) as ShellRuntime;
+  context.shellManager = shellManager;
+  let router: HashRouterRuntime | null = null;
+  const appLauncher = createAppLauncher({
+    shellManager,
+    navigate: navigateToAppRoute,
+    getCurrentRoute: () => router?.getRoute?.() || null,
+  });
   const playerWidget = createShellPlayerWidget({
     mount: persistentLayer,
     floating: false,
@@ -133,7 +141,7 @@ export async function startAppShell({
   let activeRouteController: AbortController | null = null;
   let routeVersion = 0;
 
-  const router = createHashRouter({
+  router = createHashRouter({
     routes,
     async onRouteChange(route) {
       const version = routeVersion + 1;
@@ -151,19 +159,44 @@ export async function startAppShell({
       const loaded = await route.config.load();
       if (version !== routeVersion || routeController.signal.aborted) return;
 
+      const appManifest = appRegistry.getAppByRoute(route.requestedPath || route.path);
+      const appRuntime = appManifest
+        ? createAppRuntime({
+            manifest: appManifest,
+            shellManager,
+            baseContext: context as unknown as Record<string, unknown>,
+            navigate: navigateToAppRoute,
+            route,
+            routeSignal: routeController.signal,
+            launcher: appLauncher,
+          })
+        : null;
+      appRuntime?.lifecycle.mount();
+      appRuntime?.lifecycle.activate();
+
       const view = await loaded.mount(viewRoot, {
         ...context,
         route,
         routeSignal: routeController.signal,
         navigate: navigateToAppRoute,
         emitRouteVisible: () => emitRouteVisible(route),
+        appManifest,
+        appRuntime,
       });
       if (version !== routeVersion || routeController.signal.aborted) {
         view?.unmount?.();
+        appRuntime?.lifecycle.deactivate();
+        appRuntime?.lifecycle.unmount();
         return;
       }
 
-      activeView = view;
+      activeView = {
+        unmount() {
+          view?.unmount?.();
+          appRuntime?.lifecycle.deactivate();
+          appRuntime?.lifecycle.unmount();
+        },
+      };
       emitRouteVisible(route);
     },
   }) as HashRouterRuntime;

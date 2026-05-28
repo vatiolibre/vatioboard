@@ -1,5 +1,6 @@
 import type { DriveRecordingService, DrivingAlertService, GpsService } from "./services";
 import type { ShellRuntime } from "./shell";
+import type { VatioAppManifest, VatioAppRuntime } from "../app-platform/types";
 
 export type RoutePath = string;
 export type AppRouteHash = string;
@@ -50,6 +51,8 @@ export interface RouteContext extends RuntimeContext {
   routeSignal: AbortSignal;
   navigate: (href: string, options?: { replace?: boolean }) => boolean;
   emitRouteVisible: () => void;
+  appManifest?: VatioAppManifest | null;
+  appRuntime?: VatioAppRuntime | null;
 }
 
 export interface RouteMeta {

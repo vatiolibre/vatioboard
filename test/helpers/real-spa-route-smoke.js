@@ -497,6 +497,10 @@ const routeConfig = {
     bodyClass: "library-page",
     selector: "#libraryList",
   },
+  "#/apps": {
+    bodyClass: "apps-page",
+    selector: "[data-vb-app-manager]",
+  },
 };
 
 async function navigate(hash) {

@@ -1,0 +1,319 @@
+.apps-page {
+  background:
+    linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(241, 245, 249, 0.98));
+  color: #111827;
+}
+
+.vb-app-manager {
+  min-height: 100vh;
+  min-height: 100dvh;
+  box-sizing: border-box;
+  padding: max(18px, var(--vb-safe-area-top)) max(14px, var(--vb-safe-area-right)) max(86px, var(--vb-safe-area-bottom)) max(14px, var(--vb-safe-area-left));
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.vb-app-manager-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: 1160px;
+  margin: 0 auto 16px;
+}
+
+.vb-app-manager-title-block {
+  display: grid;
+  gap: 4px;
+}
+
+.vb-app-manager-eyebrow {
+  margin: 0;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.vb-app-manager h1 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 28px;
+  line-height: 1.08;
+}
+
+.vb-app-manager-count {
+  min-width: 76px;
+  min-height: 36px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 12px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 999px;
+  background: #fff;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.vb-app-manager-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(132px, 180px);
+  gap: 10px;
+  max-width: 1160px;
+  margin: 0 auto 14px;
+}
+
+.vb-app-manager-search,
+.vb-app-manager-filter {
+  display: block;
+  min-width: 0;
+}
+
+.vb-app-manager-search input,
+.vb-app-manager-filter select {
+  width: 100%;
+  min-height: 46px;
+  box-sizing: border-box;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  border-radius: 8px;
+  background: #fff;
+  color: #0f172a;
+  padding: 0 12px;
+  font: inherit;
+}
+
+.vb-app-manager-search input:focus,
+.vb-app-manager-filter select:focus,
+.vb-app-manager-launch:focus-visible {
+  outline: 2px solid rgba(5, 150, 105, 0.5);
+  outline-offset: 2px;
+}
+
+.vb-app-manager-grid {
+  max-width: 1160px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+  gap: 12px;
+}
+
+.vb-app-manager-card {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  box-sizing: border-box;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 8px;
+  background: #fff;
+  padding: 14px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+.vb-app-manager-card-header {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.vb-app-manager-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.vb-app-manager-icon svg {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+
+.vb-app-manager-card-title {
+  min-width: 0;
+}
+
+.vb-app-manager-card-title h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 18px;
+  line-height: 1.18;
+}
+
+.vb-app-manager-card-title p {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.vb-app-manager-badges,
+.vb-app-manager-surfaces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.vb-app-manager-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  max-width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #334155;
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+
+.vb-app-manager-chip.is-status {
+  border-color: rgba(5, 150, 105, 0.22);
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.vb-app-manager-diagnostics {
+  display: grid;
+  gap: 6px;
+}
+
+.vb-app-manager-line {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 10px;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.vb-app-manager-line-label {
+  color: #64748b;
+  font-weight: 700;
+}
+
+.vb-app-manager-line-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.vb-app-manager-permissions {
+  min-width: 0;
+  color: #334155;
+  font-size: 13px;
+}
+
+.vb-app-manager-permissions summary {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.vb-app-manager-permissions ul {
+  margin: 2px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 3px;
+}
+
+.vb-app-manager-permissions li {
+  overflow-wrap: anywhere;
+}
+
+.vb-app-manager-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.vb-app-manager-launch {
+  min-width: 96px;
+  min-height: 44px;
+  border: 1px solid #047857;
+  border-radius: 8px;
+  background: #047857;
+  color: #fff;
+  padding: 0 14px;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.vb-app-manager-launch:disabled {
+  border-color: rgba(100, 116, 139, 0.24);
+  background: #e2e8f0;
+  color: #64748b;
+  cursor: not-allowed;
+}
+
+@media (prefers-color-scheme: dark) {
+  .apps-page {
+    background:
+      linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(17, 24, 39, 0.98));
+    color: #e5e7eb;
+  }
+
+  .vb-app-manager h1,
+  .vb-app-manager-card-title h2 {
+    color: #f8fafc;
+  }
+
+  .vb-app-manager-count,
+  .vb-app-manager-search input,
+  .vb-app-manager-filter select,
+  .vb-app-manager-card {
+    border-color: rgba(148, 163, 184, 0.22);
+    background: #111827;
+    color: #e5e7eb;
+  }
+
+  .vb-app-manager-card-title p,
+  .vb-app-manager-line-label {
+    color: #94a3b8;
+  }
+
+  .vb-app-manager-line,
+  .vb-app-manager-permissions {
+    color: #cbd5e1;
+  }
+
+  .vb-app-manager-chip {
+    border-color: rgba(148, 163, 184, 0.22);
+    background: #1f2937;
+    color: #d1d5db;
+  }
+
+  .vb-app-manager-icon,
+  .vb-app-manager-chip.is-status {
+    background: rgba(6, 95, 70, 0.32);
+    color: #6ee7b7;
+  }
+}
+
+@media (max-width: 620px) {
+  .vb-app-manager {
+    padding-inline: max(10px, var(--vb-safe-area-left)) max(10px, var(--vb-safe-area-right));
+  }
+
+  .vb-app-manager-header {
+    align-items: start;
+  }
+
+  .vb-app-manager-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .vb-app-manager-grid {
+    grid-template-columns: 1fr;
+  }
+}

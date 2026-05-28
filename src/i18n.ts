@@ -505,6 +505,11 @@ const baseTranslations: TranslationCatalog = {
     // Header/Brand
     brand: 'Vatio Board',
     tagline: 'Simple full-page drawing board by Vatio Libre',
+    appManager: 'Apps',
+    appManagerTitle: 'Apps',
+    appManagerSearch: 'Search apps',
+    appManagerSurface: 'Surface',
+    appManagerAllSurfaces: 'All surfaces',
     cloudLibrary: 'Cloud library',
     cloudLibraryLead:
       'Browse prior speed replays, accel runs, editable board documents, and media assets without restoring your whole cloud history into local storage first.',
@@ -1398,6 +1403,11 @@ const baseTranslations: TranslationCatalog = {
     // Header/Brand
     brand: 'Vatio Board',
     tagline: 'Pizarra de dibujo simple por Vatio Libre',
+    appManager: 'Apps',
+    appManagerTitle: 'Apps',
+    appManagerSearch: 'Buscar apps',
+    appManagerSurface: 'Superficie',
+    appManagerAllSurfaces: 'Todas',
     cloudLibrary: 'Biblioteca en la nube',
     cloudLibraryLead:
       'Explora replays de velocidad, corridas de aceleración, documentos editables de la pizarra y archivos multimedia sin restaurar primero todo tu historial en la nube al almacenamiento local.',
