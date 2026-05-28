@@ -1,5 +1,92 @@
 # VatioBoard OS Implementation Log
 
+## Calculator Migration Session
+
+- Date/time: 2026-05-28 06:53:11 EDT
+- Agent: Codex 5.5
+- Repository: `/home/oscar/vatioboard`
+- Backend/BFF: `/home/oscar/frappe-bench/apps/vatiolibre` was not changed.
+
+## Calculator Migration Baseline Understanding
+
+Calculator was still implemented as a legacy shell-window widget in `src/calculator/calculator-widget.ts`, with state/history/settings helpers in `src/calculator/storage.ts`, styles in `src/styles/calculator.less`, and launch wiring through `src/shared/floating-tools.ts`, the start menu, and the shell-window manager. The OS manifest `vatio.calculator` already existed with shell window ID `calculator` and legacy tool ID `calculator`, and `shellAppRuntimeManager` could create a scoped runtime for that app.
+
+## Calculator Files Inspected
+
+- `src/calculator/calculator-widget.ts`
+- `src/calculator/storage.ts`
+- `src/calculator/calc-core.ts`
+- `src/calculator/calculator-demo.ts`
+- `src/calculator/widget/settings-sheet.ts`
+- `src/calculator/widget/history-sheet.ts`
+- `src/calculator/widget/panel.ts`
+- `src/shared/floating-tools.ts`
+- `src/shared/start-menu.ts`
+- `src/shared/shell-window-manager.ts`
+- `src/shared/shell-window-registry.ts`
+- `src/app-platform/builtin-apps.ts`
+- `src/app-platform/shell-app-runtime-manager.ts`
+- `test/unit/shell-window-integration.test.js`
+- `test/smoke/index-page.test.js`
+- `test/smoke/dev-harness-calculator-page.test.js`
+- `test/unit/calc-core.test.js`
+
+## Calculator Migration Plan
+
+1. Add a first-class wrapper under `src/apps/calculator/` without duplicating Calculator UI.
+2. Keep direct `createCalculatorWidget()` compatibility for standalone/dev harnesses.
+3. Let the wrapper resolve `vatio.calculator` through `shellAppRuntimeManager`.
+4. Move Calculator preferences to `runtime.services.settings` while mirroring legacy settings for compatibility.
+5. Keep shell window ID, legacy tool ID, taskbar, visibility, position, and floating-tool behavior unchanged.
+6. Add focused tests for manifest launch, runtime creation, legacy launch paths, and runtime-backed settings.
+
+## Calculator Migration Decisions Made
+
+- Added `src/apps/calculator/calculator-app.ts` as an adapter over the existing widget. It resolves the scoped `vatio.calculator` runtime and returns the existing widget API plus the runtime.
+- Updated the Calculator manifest with an `entry` loader and `settings.read` / `settings.write` plus the `settings` service.
+- Updated `src/shared/floating-tools.ts` to create Calculator through `createCalculatorApp()` while leaving Energy, Camera Map, Speed Alerts, Player, and Milkdrop on their existing paths.
+- Passed `shellAppRuntimeManager` from `src/app/app-shell.ts` into floating tools so Calculator can retrieve its scoped runtime at shell boot.
+- Added optional `settingsStore` and `translate` hooks to `createCalculatorWidget()`. Existing direct widget callers still use legacy storage and global i18n by default.
+- Added `normalizeSettings()` to `src/calculator/storage.ts` so runtime settings and legacy settings share the same safe normalization.
+- Runtime Calculator preferences are saved at `vatioboard.app.vatio.calculator.settings.preferences`; writes are also mirrored to `embeddable_calc_settings_v1` so unmigrated Energy formatting still sees Calculator preferences.
+- Calculator expression state, history, panel position, panel visibility, and shell layout are intentionally left on legacy storage for this pass.
+
+## Calculator Migration Files Changed
+
+- `src/app-platform/builtin-apps.ts`
+- `src/app/app-shell.ts`
+- `src/apps/calculator/calculator-app.less`
+- `src/apps/calculator/calculator-app.ts`
+- `src/apps/calculator/index.ts`
+- `src/calculator/calculator-widget.ts`
+- `src/calculator/storage.ts`
+- `src/shared/floating-tools.ts`
+- `test/unit/calculator-app.test.js`
+- `docs/vatioboard-os.md`
+- `docs/next-agent-handoff.md`
+- `docs/vatioboard-os-implementation-log.md`
+
+## Calculator Migration Tests Run
+
+- `pnpm run typecheck` - passed during implementation.
+- `pnpm vitest run test/unit/calculator-app.test.js test/unit/app-platform.test.js test/unit/shell-window-integration.test.js test/unit/calc-core.test.js test/smoke/dev-harness-calculator-page.test.js` - passed, 5 files and 36 tests.
+
+Final Calculator migration verification in requested order:
+
+- `pnpm run typecheck` - passed.
+- `pnpm run lint` - passed with 63 warning-level findings and 0 errors. Warnings are in existing scripts/app/tests areas plus the existing Calculator widget unused `force` parameter warning, and were not blocking.
+- `pnpm vitest run test/unit/app-platform.test.js` - passed, 1 file and 15 tests.
+- `pnpm vitest run test/unit/calculator-app.test.js test/unit/shell-window-integration.test.js test/unit/calc-core.test.js test/smoke/dev-harness-calculator-page.test.js` - passed, 4 files and 21 tests.
+- `pnpm test` - passed, 126 files and 1621 tests.
+- `pnpm run build` - passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully. Vite emitted the existing dynamic-import chunk warnings for `backend-auth.ts` and `cloud-sync.ts`, plus a Calculator app warning because `src/apps/calculator/index.ts` is dynamically referenced by the manifest entry and statically imported by floating tools for compatibility.
+
+## Calculator Migration Known Limitations
+
+- Calculator state and history still use the legacy `embeddable_calc_state_v1` and `embeddable_calc_history_v1` keys.
+- Calculator panel position and visibility still use legacy shell/layout storage so existing restore/minimize/close behavior is unchanged.
+- Runtime settings are mirrored to legacy settings for compatibility until Energy is migrated.
+- Calculator is still an internal shell-window app, not an iframe or sandboxed external app.
+
 ## Hardening Session
 
 - Date/time: 2026-05-28 01:15:43 EDT

@@ -21,6 +21,9 @@
 - Tightened `manifest.services` so runtime service exposure requires both a declared service ID and the matching permission.
 - Fixed the Speed full-suite module-initialization edge by making `mountSpeedRoute()` / `unmountSpeedRoute()` safe if a cyclic import touches `speedRouteLifecycle` before assignment.
 - Confirmed the heavy mocks in `test/unit/app-shell-runtime-lifecycle.test.js` are explicitly unmocked after each test.
+- Migrated Calculator into the first first-class shell-window app module under `src/apps/calculator/`.
+- Calculator now resolves `vatio.calculator` through `shellAppRuntimeManager`, uses `runtime.services.settings` for preferences, uses runtime i18n for widget labels where practical, and logs runtime settings fallback warnings.
+- Calculator compatibility is preserved: shell window ID `calculator`, legacy tool ID `calculator`, floating-tool toggles, start-menu launch, taskbar, position, visibility, and direct `createCalculatorWidget()` callers still work.
 
 ## Important Files Changed
 
@@ -33,6 +36,9 @@
 - `src/app-platform/services.ts`
 - `src/app-platform/settings.ts`
 - `src/app-platform/shell-app-runtime-manager.ts`
+- `src/apps/calculator/calculator-app.ts`
+- `src/apps/calculator/calculator-app.less`
+- `src/apps/calculator/index.ts`
 - `src/app-platform/adapters/route-registry-adapter.ts`
 - `src/app-platform/adapters/tool-registry-adapter.ts`
 - `src/app-platform/adapters/shell-window-registry-adapter.ts`
@@ -43,6 +49,8 @@
 - `src/shared/shell-window-registry.ts`
 - `src/shared/start-menu.ts`
 - `src/speed/speed.ts`
+- `src/calculator/calculator-widget.ts`
+- `src/calculator/storage.ts`
 - `src/types/route.ts`
 - `src/app/views/AppsView.ts`
 - `src/app/views/templates/apps-template.ts`
@@ -51,6 +59,7 @@
 - `src/i18n.ts`
 - `test/unit/app-platform.test.js`
 - `test/unit/app-shell-runtime-lifecycle.test.js`
+- `test/unit/calculator-app.test.js`
 - `test/smoke/spa-apps-route.test.js`
 - `test/helpers/real-spa-route-smoke.js`
 - `docs/vatioboard-os.md`
@@ -87,6 +96,20 @@ Final hardening-pass verification in requested order:
 - `pnpm test` - passed, 125 files and 1617 tests.
 - `pnpm run build` - passed. Vite still warns that dynamic imports of `backend-auth.ts` and `cloud-sync.ts` stay in existing chunks because those modules are also statically imported elsewhere.
 
+Calculator migration focused verification:
+
+- `pnpm run typecheck` - passed during implementation.
+- `pnpm vitest run test/unit/calculator-app.test.js test/unit/app-platform.test.js test/unit/shell-window-integration.test.js test/unit/calc-core.test.js test/smoke/dev-harness-calculator-page.test.js` - passed, 5 files and 36 tests.
+
+Final Calculator migration verification:
+
+- `pnpm run typecheck` - passed.
+- `pnpm run lint` - passed with 63 warning-level findings and 0 errors.
+- `pnpm vitest run test/unit/app-platform.test.js` - passed, 1 file and 15 tests.
+- `pnpm vitest run test/unit/calculator-app.test.js test/unit/shell-window-integration.test.js test/unit/calc-core.test.js test/smoke/dev-harness-calculator-page.test.js` - passed, 4 files and 21 tests.
+- `pnpm test` - passed, 126 files and 1621 tests.
+- `pnpm run build` - passed. Vite still warns for dynamic/static auth and cloud-sync imports, and now also warns that `src/apps/calculator/index.ts` is both the manifest entry dynamic import and a static floating-tools import for compatibility.
+
 Final full-suite commands are also recorded in `docs/vatioboard-os-implementation-log.md`.
 
 ## Known Limitations
@@ -94,16 +117,16 @@ Final full-suite commands are also recorded in `docs/vatioboard-os-implementatio
 - App permissions are declared and enforced at the runtime boundary, but there are no user prompts yet.
 - App service declarations are now enforced with permissions, but this is still an internal runtime boundary rather than a sandbox.
 - App-private storage is localStorage-backed only.
-- Existing apps still import many global helpers directly; migration to `appRuntime` should be gradual.
+- Existing apps still import many global helpers directly; migration to `appRuntime` should be gradual. Calculator is partially migrated through an app wrapper, but its expression state/history and shell layout storage remain legacy for compatibility.
 - Existing global compatibility shims remain in place.
 - Background-service lifecycle is registered in types but not heavily implemented.
-- Shell-window runtimes are created and cached, but Calculator/Energy/etc. have not yet been refactored to accept runtime directly.
+- Shell-window runtimes are created and cached. Calculator now consumes its runtime through the app wrapper; Energy, Camera Map, Speed Alerts, Player, and Milkdrop still need migration.
 - App settings are local-only through app-private storage and do not sync yet.
 - Community/external app loading is intentionally not implemented.
 
 ## Suggested Next Prompt
 
-Continue the VatioBoard OS migration by moving Calculator or Energy behind a first-class shell-window app module in `src/apps/<app-id>`. Use `routeContext.context.shellAppRuntimeManager.ensureRuntime("vatio.calculator")` or the equivalent manifest app ID to retrieve the scoped runtime, move app preferences to `runtime.services.settings`, use `runtime.storage` only for app data, preserve the existing floating-tool toggles and shell-window IDs, and add tests proving the app opens through the manifest-backed launcher and still works through the legacy start menu path.
+Continue the VatioBoard OS migration by moving Energy behind a first-class shell-window app module in `src/apps/energy`. Use `routeContext.context.shellAppRuntimeManager.ensureRuntime("vatio.energy")` or the equivalent injected manager to retrieve the scoped runtime, move Energy trip-cost preferences to `runtime.services.settings`, preserve shell window ID `energy`, legacy tool ID `energy`, floating-tool toggles, Calculator-to-Energy launch behavior, and taskbar behavior, then add tests proving Energy opens through the manifest-backed launcher and legacy start menu path.
 
 ## Manual QA
 

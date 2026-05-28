@@ -252,10 +252,11 @@ export const BUILTIN_APP_MANIFESTS = [
     version: "1.0.0",
     icon: IconCalculator,
     i18nKey: "calculator",
+    entry: () => import("../apps/calculator/index.js"),
     surfaces: ["shell-window", "start-menu", "taskbar", "launcher"],
     order: 60,
-    permissions: ["storage.app", "i18n.read", "shell.window"],
-    services: ["shell", "storage", "i18n"],
+    permissions: ["storage.app", "i18n.read", "settings.read", "settings.write", "shell.window"],
+    services: ["shell", "storage", "i18n", "settings"],
     window: {
       shellWindowId: "calculator",
       mode: "floating",

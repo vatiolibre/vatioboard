@@ -157,6 +157,18 @@ const runtime =
 
 Launchers also expose `getAppRuntime(appId)` for code that already has a `VatioAppShellRuntime`.
 
+## Migrated Shell Apps
+
+Calculator is the first migrated shell-window app module. Its manifest is still `vatio.calculator`, its shell window ID remains `calculator`, and its legacy tool ID remains `calculator`.
+
+The first-class app wrapper lives in `src/apps/calculator/` and adapts the existing `src/calculator/calculator-widget.ts` implementation instead of duplicating the UI. The wrapper resolves the scoped runtime through `shellAppRuntimeManager`, then supplies the widget with:
+
+- `runtime.services.settings` for Calculator preferences under the app setting key `preferences`.
+- `runtime.i18n.t()` for Calculator labels where the wrapper can provide translation.
+- `runtime.logger` for settings fallback warnings.
+
+For compatibility, Calculator preference writes are mirrored to the legacy `embeddable_calc_settings_v1` key so Energy and other unmigrated consumers keep seeing the same formatter settings. Calculator expression state, history, position, visibility, shell layout, and taskbar behavior still use their existing legacy storage and shell-window paths.
+
 ## Launching Apps
 
 `createAppLauncher()` implements v1 shell launching:

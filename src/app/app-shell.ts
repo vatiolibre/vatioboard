@@ -138,6 +138,7 @@ export async function startAppShell({
   const floatingTools = initFloatingTools({
     mount: persistentLayer,
     shellManager,
+    shellAppRuntimeManager,
     gpsService: context.gpsService,
     drivingAlertService: context.drivingAlertService,
   });

@@ -65,6 +65,10 @@ export function clearHistory(): CalculatorHistoryRecord[] {
 
 export function loadSettings(): CalculatorSettings {
   const stored = loadJson<Partial<CalculatorSettings>>(SETTINGS_KEY, null);
+  return normalizeSettings(stored);
+}
+
+export function normalizeSettings(stored: Partial<CalculatorSettings> | null | undefined): CalculatorSettings {
   const decimals = Number.isFinite(Number(stored?.decimals))
     ? Number(stored.decimals)
     : DEFAULT_SETTINGS.decimals;

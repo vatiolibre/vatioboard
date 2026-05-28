@@ -1,6 +1,7 @@
 import { el } from "./dom.js";
 import { CalcCore } from "./calc-core.js";
 import { loadHistory, clearHistory, loadSettings, saveSettings } from "./storage.js";
+import type { CalculatorSettings } from "./storage";
 import { t } from "../i18n.js";
 import { buildPanel } from "./widget/panel.js";
 import { initHistorySheet } from "./widget/history-sheet.js";
@@ -28,7 +29,14 @@ type CalculatorPosition = {
   } | null;
 };
 
-type CalculatorWidgetOptions = {
+export type CalculatorSettingsStore = {
+  loadSettings?: (() => CalculatorSettings) | null;
+  saveSettings?: ((settings: CalculatorSettings | Partial<CalculatorSettings>) => void) | null;
+};
+
+export type CalculatorTranslateFn = (key: string, params?: Record<string, unknown>) => string;
+
+export type CalculatorWidgetOptions = {
   mount?: HTMLElement;
   floating?: boolean;
   button?: HTMLElement | null;
@@ -38,13 +46,15 @@ type CalculatorWidgetOptions = {
   restoreVisibility?: boolean;
   visibilityKey?: string;
   shellManager?: ShellRuntime;
+  settingsStore?: CalculatorSettingsStore | null;
+  translate?: CalculatorTranslateFn | null;
 };
 
 type CalculatorShowOptions = ShellLifecycleOptions & {
   focus?: boolean;
 };
 
-type CalculatorWidgetApi = {
+export type CalculatorWidgetApi = {
   open: (options?: CalculatorShowOptions) => void;
   close: (options?: ShellLifecycleOptions) => void;
   toggle: () => void;
@@ -81,6 +91,8 @@ export function createCalculatorWidget(options: CalculatorWidgetOptions = {}): C
     restoreVisibility = false,
     visibilityKey = "embeddable_calc_visibility_v1",
     shellManager = getDefaultShellWindowManager(),
+    settingsStore = null,
+    translate = null,
   } = options;
 
   const isTouchLike =
@@ -89,7 +101,10 @@ export function createCalculatorWidget(options: CalculatorWidgetOptions = {}): C
     navigator.maxTouchPoints > 0;
 
   const core = new CalcCore();
-  const settings = loadSettings();
+  const loadCalculatorSettings = settingsStore?.loadSettings || loadSettings;
+  const saveCalculatorSettings = settingsStore?.saveSettings || saveSettings;
+  const translateCalculator = translate || t;
+  const settings = loadCalculatorSettings();
 
   // -----------------------
   // Drag / position helpers
@@ -161,7 +176,7 @@ export function createCalculatorWidget(options: CalculatorWidgetOptions = {}): C
     keys,
     header,
   } = buildPanel({
-    t,
+    t: translateCalculator,
     isTouchLike,
     showEnergyTool: typeof onOpenEnergy === "function",
   });
@@ -244,7 +259,7 @@ export function createCalculatorWidget(options: CalculatorWidgetOptions = {}): C
     render,
     settings,
     onOpen: () => settingsApi?.setSettingsSheetOpen(false),
-    t,
+    t: translateCalculator,
     loadHistory,
     clearHistory,
   });
@@ -259,7 +274,7 @@ export function createCalculatorWidget(options: CalculatorWidgetOptions = {}): C
     settingsDecimalsPlus,
     settingsDecimalsValue,
     settingsThousandsToggle,
-    saveSettings,
+    saveSettings: saveCalculatorSettings,
     onOpen: () => historyApi?.setHistorySheetOpen(false),
     onChange: () => {
       render({ keepEnd: true, force: true });
@@ -438,7 +453,7 @@ export function createCalculatorWidget(options: CalculatorWidgetOptions = {}): C
     launcher = el("button", {
       type: "button",
       class: "calc-fab",
-      "aria-label": t("openCalculator"),
+      "aria-label": translateCalculator("openCalculator"),
       html: IconCalculator,
     });
 
