@@ -4,7 +4,7 @@ import {
   t,
   toggleLang,
 } from "../i18n.js";
-import type { VatioAppI18n } from "./types";
+import type { VatioAppI18n, VatioAppLogger, VatioAppPermissionRuntime } from "./types";
 
 const I18N_CHANGE_EVENT = "i18n:change";
 
@@ -30,16 +30,28 @@ function applyTranslationsWithin(root: ParentNode) {
   });
 }
 
-export function createAppI18n(): VatioAppI18n {
+export function createAppI18n({
+  permissions,
+}: {
+  permissions?: VatioAppPermissionRuntime | null;
+  logger?: Pick<VatioAppLogger, "warn"> | null;
+} = {}): VatioAppI18n {
+  function canReadI18n() {
+    return permissions?.require("i18n.read") ?? true;
+  }
+
   return {
     getLanguage() {
+      if (!canReadI18n()) return "en";
       return getLang();
     },
     t(key, fallback) {
+      if (!canReadI18n()) return fallback ?? key;
       const translated = t(key);
       return translated === key && fallback !== undefined ? fallback : translated;
     },
     apply(root) {
+      if (!canReadI18n()) return;
       if (root) {
         applyTranslationsWithin(root);
         return;
@@ -47,6 +59,7 @@ export function createAppI18n(): VatioAppI18n {
       applyTranslations();
     },
     subscribe(listener) {
+      if (!canReadI18n()) return () => {};
       if (typeof listener !== "function") return () => {};
       const handleChange = (event: Event) => {
         const detail = (event as CustomEvent<{ lang?: string }>).detail;
@@ -58,6 +71,7 @@ export function createAppI18n(): VatioAppI18n {
       };
     },
     toggleLanguage() {
+      if (!canReadI18n()) return getLang();
       return toggleLang();
     },
   };

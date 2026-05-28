@@ -2,6 +2,7 @@ import type {
   VatioAppManifest,
   VatioAppManifestValidationResult,
   VatioAppPermission,
+  VatioAppServiceId,
   VatioAppStatus,
   VatioAppSurface,
 } from "./types";
@@ -43,6 +44,19 @@ const VALID_PERMISSIONS = new Set<VatioAppPermission>([
   "i18n.read",
   "settings.read",
   "settings.write",
+]);
+
+const VALID_SERVICES = new Set<VatioAppServiceId>([
+  "gps",
+  "audio",
+  "driveRecording",
+  "drivingAlerts",
+  "auth",
+  "cloudSync",
+  "shell",
+  "storage",
+  "i18n",
+  "settings",
 ]);
 
 const VALID_STATUSES = new Set<VatioAppStatus>([
@@ -109,6 +123,9 @@ export function validateAppManifest(manifest: VatioAppManifest): VatioAppManifes
   }
 
   validateStringArray("services", manifest.services, errors);
+  for (const service of manifest.services || []) {
+    if (!VALID_SERVICES.has(service)) errors.push(`service "${service}" is not supported.`);
+  }
 
   if (manifest.route !== undefined && !hasText(manifest.route)) {
     errors.push("route must be a non-empty string when provided.");

@@ -14,7 +14,12 @@ import { ensureSingleTabOwnership } from "../shared/single-tab.js";
 import { getDefaultShellWindowManager } from "../shared/shell-window-manager.js";
 import { createShellTaskbar } from "../shared/shell-taskbar.js";
 import { installShellKeyboardShortcuts } from "../shared/shell-keyboard.js";
-import { appRegistry, createAppLauncher, createAppRuntime } from "../app-platform/index.js";
+import {
+  appRegistry,
+  createAppLauncher,
+  createAppRuntime,
+  createShellAppRuntimeManager,
+} from "../app-platform/index.js";
 import { createHashRouter, emitRouteVisible, navigateToAppRoute } from "./router.js";
 import { routes } from "./routes.js";
 import { createRuntimeContext } from "./runtime-context.js";
@@ -105,11 +110,19 @@ export async function startAppShell({
   const shellManager = getDefaultShellWindowManager({ root: persistentLayer }) as ShellRuntime;
   context.shellManager = shellManager;
   let router: HashRouterRuntime | null = null;
+  const shellAppRuntimeManager = createShellAppRuntimeManager({
+    shellManager,
+    baseContext: context as unknown as Record<string, unknown>,
+    navigate: navigateToAppRoute,
+  });
+  context.shellAppRuntimeManager = shellAppRuntimeManager;
   const appLauncher = createAppLauncher({
     shellManager,
     navigate: navigateToAppRoute,
     getCurrentRoute: () => router?.getRoute?.() || null,
+    shellAppRuntimeManager,
   });
+  shellAppRuntimeManager.setLauncher(appLauncher);
   const playerWidget = createShellPlayerWidget({
     mount: persistentLayer,
     floating: false,
@@ -174,15 +187,22 @@ export async function startAppShell({
       appRuntime?.lifecycle.mount();
       appRuntime?.lifecycle.activate();
 
-      const view = await loaded.mount(viewRoot, {
-        ...context,
-        route,
-        routeSignal: routeController.signal,
-        navigate: navigateToAppRoute,
-        emitRouteVisible: () => emitRouteVisible(route),
-        appManifest,
-        appRuntime,
-      });
+      let view: MountedView | null = null;
+      try {
+        view = await loaded.mount(viewRoot, {
+          ...context,
+          route,
+          routeSignal: routeController.signal,
+          navigate: navigateToAppRoute,
+          emitRouteVisible: () => emitRouteVisible(route),
+          appManifest,
+          appRuntime,
+        });
+      } catch (error) {
+        appRuntime?.lifecycle.deactivate();
+        appRuntime?.lifecycle.unmount();
+        throw error;
+      }
       if (version !== routeVersion || routeController.signal.aborted) {
         view?.unmount?.();
         appRuntime?.lifecycle.deactivate();
@@ -206,6 +226,7 @@ export async function startAppShell({
   router.destroy = () => {
     shellKeyboard.uninstall();
     shellTaskbar.destroy();
+    shellAppRuntimeManager.destroy();
     context.drivingAlertService?.destroy?.();
     context.driveRecordingService?.destroy?.();
     context.gpsService.destroy?.();

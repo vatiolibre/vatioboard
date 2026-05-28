@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createAppPermissionRuntime,
   createAppRegistry,
+  createAppLauncher,
   createAppRuntime,
   createAppStorage,
+  createShellAppRuntimeManager,
 } from "../../src/app-platform/index.js";
 import { getRouteRegistryFromApps } from "../../src/app-platform/adapters/route-registry-adapter.js";
 import {
@@ -49,8 +51,8 @@ describe("VatioBoard OS app platform", () => {
   it("registers and lists apps sorted by order", () => {
     const registry = createAppRegistry({ logger: { warn: vi.fn() } });
     registry.registerApps([
-      makeManifest({ id: "test.second", order: 20, route: "/second" }),
-      makeManifest({ id: "test.first", order: 10, route: "/first" }),
+      makeManifest({ id: "test.second", order: 20, route: "/second", aliases: ["/second-alias"] }),
+      makeManifest({ id: "test.first", order: 10, route: "/first", aliases: ["/first-alias"] }),
     ]);
 
     expect(registry.listApps().map((app) => app.id)).toEqual(["test.first", "test.second"]);
@@ -65,6 +67,54 @@ describe("VatioBoard OS app platform", () => {
 
     expect(registry.listApps()).toHaveLength(1);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("Duplicate app id"));
+  });
+
+  it("rejects duplicate routes, aliases, shell window IDs, and legacy tool IDs", () => {
+    const warn = vi.fn();
+    const registry = createAppRegistry({ logger: { warn } });
+
+    expect(registry.registerApp(makeManifest())).toBe(true);
+    expect(registry.registerApp(makeManifest({ id: "test.route", route: "/test", aliases: [] }))).toBe(false);
+    expect(registry.registerApp(makeManifest({ id: "test.alias", route: "/other", aliases: ["/test-alias"] }))).toBe(false);
+
+    expect(registry.registerApp(makeManifest({
+      id: "test.window",
+      route: undefined,
+      aliases: [],
+      surfaces: ["shell-window"],
+      window: {
+        shellWindowId: "window-one",
+        mode: "floating",
+        defaultBounds: { left: 0, top: 0, width: 100 },
+        capabilities: {},
+        restoreOnBoot: true,
+        lazy: false,
+      },
+      metadata: { legacyToolId: "window-one" },
+    }))).toBe(true);
+    expect(registry.registerApp(makeManifest({
+      id: "test.window.duplicate",
+      route: undefined,
+      aliases: [],
+      surfaces: ["shell-window"],
+      window: {
+        shellWindowId: "window-one",
+        mode: "floating",
+        defaultBounds: { left: 0, top: 0, width: 100 },
+        capabilities: {},
+        restoreOnBoot: true,
+        lazy: false,
+      },
+      metadata: { legacyToolId: "window-two" },
+    }))).toBe(false);
+    expect(registry.registerApp(makeManifest({
+      id: "test.legacy.duplicate",
+      route: "/legacy-other",
+      aliases: [],
+      metadata: { legacyToolId: "window-one" },
+    }))).toBe(false);
+
+    expect(warn.mock.calls.map((call) => String(call[0])).join("\n")).toContain("conflicts");
   });
 
   it("lists apps for a surface and finds apps by route aliases", () => {
@@ -82,6 +132,14 @@ describe("VatioBoard OS app platform", () => {
 
     expect(registry.getAppsForPermission("storage.app").map((app) => app.id)).toEqual(["test.app"]);
     expect(registry.getAppsForPermission("gps.read")).toEqual([]);
+  });
+
+  it("rejects unknown service IDs during manifest validation", () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    const validation = registry.validateAppManifest(makeManifest({ services: ["storage", "telepathy"] }));
+
+    expect(validation.ok).toBe(false);
+    expect(validation.errors.join("\n")).toContain('service "telepathy" is not supported');
   });
 
   it("namespaces app storage by app ID and handles JSON safely", () => {
@@ -132,6 +190,134 @@ describe("VatioBoard OS app platform", () => {
     expect(runtime.storage.setItem("ready", "yes")).toBe(true);
     expect(localStorage.getItem("vatioboard.app.test.runtime.ready")).toBe("yes");
     expect(runtime.lifecycle.getState()).toBe("registered");
+  });
+
+  it("gates storage and i18n runtime APIs behind declared permissions", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const runtime = createAppRuntime({
+      manifest: makeManifest({
+        id: "test.gated",
+        permissions: [],
+        services: [],
+      }),
+      baseContext: {},
+    });
+
+    expect(runtime.storage.setItem("secret", "nope")).toBe(false);
+    expect(runtime.storage.getItem("secret")).toBeNull();
+    expect(localStorage.getItem("vatioboard.app.test.gated.secret")).toBeNull();
+    expect(runtime.storage.getJson("json", { fallback: true })).toEqual({ fallback: true });
+    expect(runtime.i18n.t("brand", "Fallback Brand")).toBe("Fallback Brand");
+    expect(runtime.i18n.getLanguage()).toBe("en");
+    expect(runtime.i18n.subscribe(() => {
+      throw new Error("listener should not run");
+    })).toEqual(expect.any(Function));
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("[vatioboard:app:test.gated]"),
+      expect.stringContaining("Permission denied"),
+    );
+  });
+
+  it("exposes app-scoped settings with read/write permissions", () => {
+    const runtime = createAppRuntime({
+      manifest: makeManifest({
+        id: "test.settings",
+        permissions: ["settings.read", "settings.write", "i18n.read"],
+        services: ["settings", "i18n"],
+      }),
+      baseContext: {},
+    });
+
+    expect(runtime.storage.setItem("direct", "blocked")).toBe(false);
+    expect(runtime.services.settings?.set("theme", "night")).toBe(true);
+    expect(runtime.services.settings?.get("theme", "day")).toBe("night");
+    expect(runtime.services.settings?.setJson("panel", { compact: true })).toBe(true);
+    expect(runtime.services.settings?.getJson("panel", null)).toEqual({ compact: true });
+    expect(localStorage.getItem("vatioboard.app.test.settings.settings.theme")).toBe("night");
+  });
+
+  it("denies settings writes without settings.write", () => {
+    const runtime = createAppRuntime({
+      manifest: makeManifest({
+        id: "test.settings.readonly",
+        permissions: ["settings.read"],
+        services: ["settings"],
+      }),
+      baseContext: {},
+    });
+
+    expect(runtime.services.settings?.set("theme", "night")).toBe(false);
+    expect(runtime.services.settings?.get("theme", "day")).toBe("day");
+  });
+
+  it("creates and tracks shell-window app runtimes through the launcher", () => {
+    const subscribers = new Set();
+    const windows = new Map([[
+      "calculator",
+      {
+        id: "calculator",
+        title: "Calculator",
+        state: "closed",
+        element: { hidden: true },
+      },
+    ]]);
+    const emit = (event, record) => {
+      for (const listener of subscribers) listener({ event, record, manager: shellManager });
+    };
+    const shellManager = {
+      getWindow: vi.fn((id) => windows.get(id) || null),
+      listWindows: vi.fn(() => Array.from(windows.values())),
+      openWindow: vi.fn((id) => {
+        const record = windows.get(id);
+        record.state = "open";
+        record.element.hidden = false;
+        emit("opened", record);
+        return record;
+      }),
+      restoreWindow: vi.fn((id) => {
+        const record = windows.get(id);
+        record.state = "open";
+        record.element.hidden = false;
+        emit("restored", record);
+        return record;
+      }),
+      activateWindow: vi.fn((id) => {
+        const record = windows.get(id);
+        emit("activated", record);
+        return record;
+      }),
+      closeWindow: vi.fn((id) => {
+        const record = windows.get(id);
+        record.state = "closed";
+        record.element.hidden = true;
+        emit("closed", record);
+        return record;
+      }),
+      subscribe: vi.fn((listener) => {
+        subscribers.add(listener);
+        return () => subscribers.delete(listener);
+      }),
+    };
+    const manager = createShellAppRuntimeManager({ shellManager, baseContext: {} });
+    const launcher = createAppLauncher({ shellManager, shellAppRuntimeManager: manager });
+    manager.setLauncher(launcher);
+
+    expect(launcher.openApp("vatio.calculator")).toBe(true);
+    const runtime = manager.getRuntime("vatio.calculator");
+    expect(runtime?.appId).toBe("vatio.calculator");
+    expect(runtime?.lifecycle.getState()).toBe("active");
+
+    windows.get("calculator").state = "minimized";
+    windows.get("calculator").element.hidden = true;
+    expect(launcher.openApp("vatio.calculator")).toBe(true);
+    expect(shellManager.restoreWindow).toHaveBeenCalledWith("calculator", {});
+    expect(runtime?.lifecycle.getState()).toBe("active");
+
+    expect(launcher.closeApp("vatio.calculator")).toBe(true);
+    expect(runtime?.lifecycle.getState()).toBe("unmounted");
+    expect(launcher.getAppRuntime?.("vatio.calculator")).toBe(runtime);
+
+    manager.destroy();
   });
 
   it("adapters expose route, tool, and shell-window definitions for legacy code", () => {

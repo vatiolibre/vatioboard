@@ -2,6 +2,7 @@ import { appRegistry } from "./app-registry.js";
 import type { AppRoute } from "../types/route";
 import type { ShellRuntime } from "../types/shell";
 import type {
+  ShellAppRuntimeManager,
   VatioAppId,
   VatioAppLaunchOptions,
   VatioAppManifest,
@@ -17,15 +18,31 @@ export interface CreateAppLauncherOptions {
   shellManager?: ShellRuntime | null;
   navigate?: (href: string, options?: { replace?: boolean }) => boolean;
   getCurrentRoute?: () => AppRoute | null;
+  shellAppRuntimeManager?: ShellAppRuntimeManager | null;
 }
 
 export function createAppLauncher({
   shellManager = null,
   navigate,
   getCurrentRoute,
+  shellAppRuntimeManager = null,
 }: CreateAppLauncherOptions = {}): VatioAppShellRuntime {
   function getInstalledApps(): VatioAppManifest[] {
     return appRegistry.listApps();
+  }
+
+  function openOrFocusShellWindow(manifest: VatioAppManifest, options: VatioAppLaunchOptions = {}) {
+    if (!manifest.window?.shellWindowId || !shellManager) return false;
+    shellAppRuntimeManager?.ensureRuntime(manifest.id);
+    const shellWindowId = manifest.window.shellWindowId;
+    const record = shellManager.getWindow(shellWindowId);
+    if (record?.state === "minimized") {
+      return Boolean(shellManager.restoreWindow(shellWindowId, options));
+    }
+    if (!record || record.state === "closed" || record.state === "hidden" || record.element?.hidden) {
+      return Boolean(shellManager.openWindow(shellWindowId, options));
+    }
+    return Boolean(shellManager.activateWindow(shellWindowId, options));
   }
 
   function openApp(appId: VatioAppId, options: VatioAppLaunchOptions = {}) {
@@ -36,9 +53,7 @@ export function createAppLauncher({
     }
 
     if (manifest.route && navigate) return navigate(routeHref(manifest.route), options);
-    if (manifest.window?.shellWindowId && shellManager) {
-      return Boolean(shellManager.openWindow(manifest.window.shellWindowId, options));
-    }
+    if (manifest.window?.shellWindowId) return openOrFocusShellWindow(manifest, options);
 
     if (manifest.kind === "background-service") {
       console.warn(`[vatioboard:launcher] Background app "${appId}" is registered but has no v1 launcher.`);
@@ -53,6 +68,7 @@ export function createAppLauncher({
     const manifest = appRegistry.getApp(appId);
     if (!manifest) return false;
     if (manifest.window?.shellWindowId && shellManager) {
+      shellAppRuntimeManager?.ensureRuntime(manifest.id);
       return Boolean(shellManager.closeWindow(manifest.window.shellWindowId, options));
     }
     return false;
@@ -62,16 +78,7 @@ export function createAppLauncher({
     const manifest = appRegistry.getApp(appId);
     if (!manifest) return false;
     if (manifest.route && navigate) return navigate(routeHref(manifest.route), options);
-    if (manifest.window?.shellWindowId && shellManager) {
-      const record = shellManager.getWindow(manifest.window.shellWindowId);
-      if (record?.state === "minimized") {
-        return Boolean(shellManager.restoreWindow(manifest.window.shellWindowId, options));
-      }
-      if (record?.state === "closed" || record?.element?.hidden) {
-        return Boolean(shellManager.openWindow(manifest.window.shellWindowId, options));
-      }
-      return Boolean(shellManager.activateWindow(manifest.window.shellWindowId, options));
-    }
+    if (manifest.window?.shellWindowId) return openOrFocusShellWindow(manifest, options);
     return false;
   }
 
@@ -105,6 +112,9 @@ export function createAppLauncher({
     openApp,
     closeApp,
     focusApp,
+    getAppRuntime(appId) {
+      return shellAppRuntimeManager?.getRuntime(appId) || null;
+    },
     listApps: getInstalledApps,
     getInstalledApps,
     getRunningApps,

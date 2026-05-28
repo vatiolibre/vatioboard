@@ -346,14 +346,14 @@ export function initSharedStartMenu({
   }
 
   function toggleShellTool(action: string) {
+    const app = appRegistry.listApps().find((candidate) =>
+      candidate.window?.shellWindowId === action || candidate.metadata.legacyToolId === action
+    );
+    if (app && appLauncher.openApp(app.id)) return true;
     if (action === TOOL_IDS.calculator) return floatingTools?.toggleCalculator?.();
     if (action === TOOL_IDS.energy) return floatingTools?.toggleEnergy?.();
     if (action === TOOL_IDS.cameraMap) return floatingTools?.toggleCameraMap?.();
     if (action === TOOL_IDS.speedAlerts) return floatingTools?.toggleSpeedAlerts?.();
-    const app = appRegistry.listApps().find((candidate) =>
-      candidate.window?.shellWindowId === action || candidate.metadata.legacyToolId === action
-    );
-    if (app) return appLauncher.openApp(app.id);
     return null;
   }
 

@@ -26,6 +26,9 @@ function normalizeRoutePath(path: string) {
 
 export function createAppRegistry({ logger = console }: RegistryOptions = {}): VatioAppRegistry {
   const appsById = new Map<VatioAppId, VatioAppManifest>();
+  const routeOwners = new Map<string, VatioAppId>();
+  const shellWindowOwners = new Map<string, VatioAppId>();
+  const legacyToolOwners = new Map<string, VatioAppId>();
 
   function validateAppManifest(manifest: VatioAppManifest): VatioAppManifestValidationResult {
     return validateManifestShape(manifest);
@@ -47,6 +50,45 @@ export function createAppRegistry({ logger = console }: RegistryOptions = {}): V
       return false;
     }
 
+    const routePaths = [
+      ...(manifest.route ? [manifest.route] : []),
+      ...(manifest.aliases || []),
+    ].map(normalizeRoutePath);
+    const uniqueRoutePaths = new Set<string>();
+    for (const routePath of routePaths) {
+      if (uniqueRoutePaths.has(routePath)) {
+        logger?.warn?.(`[vatioboard:app-registry] Duplicate route or alias "${routePath}" inside app "${manifest.id}" skipped.`);
+        return false;
+      }
+      uniqueRoutePaths.add(routePath);
+
+      const owner = routeOwners.get(routePath);
+      if (owner) {
+        logger?.warn?.(`[vatioboard:app-registry] Route or alias "${routePath}" for app "${manifest.id}" conflicts with "${owner}" and was skipped.`);
+        return false;
+      }
+    }
+
+    const shellWindowId = manifest.window?.shellWindowId;
+    if (shellWindowId) {
+      const owner = shellWindowOwners.get(shellWindowId);
+      if (owner) {
+        logger?.warn?.(`[vatioboard:app-registry] Shell window id "${shellWindowId}" for app "${manifest.id}" conflicts with "${owner}" and was skipped.`);
+        return false;
+      }
+    }
+
+    const legacyToolId = typeof manifest.metadata.legacyToolId === "string"
+      ? manifest.metadata.legacyToolId.trim()
+      : "";
+    if (legacyToolId) {
+      const owner = legacyToolOwners.get(legacyToolId);
+      if (owner) {
+        logger?.warn?.(`[vatioboard:app-registry] Legacy tool id "${legacyToolId}" for app "${manifest.id}" conflicts with "${owner}" and was skipped.`);
+        return false;
+      }
+    }
+
     if (validation.warnings.length) {
       logger?.warn?.("[vatioboard:app-registry] App manifest warnings.", {
         appId: manifest.id,
@@ -55,6 +97,9 @@ export function createAppRegistry({ logger = console }: RegistryOptions = {}): V
     }
 
     appsById.set(manifest.id, manifest);
+    for (const routePath of uniqueRoutePaths) routeOwners.set(routePath, manifest.id);
+    if (shellWindowId) shellWindowOwners.set(shellWindowId, manifest.id);
+    if (legacyToolId) legacyToolOwners.set(legacyToolId, manifest.id);
     return true;
   }
 
@@ -81,7 +126,8 @@ export function createAppRegistry({ logger = console }: RegistryOptions = {}): V
   function getAppByRoute(path: string) {
     const normalizedPath = normalizeRoutePath(path);
     return listApps().find((app) =>
-      app.route === normalizedPath || app.aliases?.map(normalizeRoutePath).includes(normalizedPath)
+      (app.route ? normalizeRoutePath(app.route) === normalizedPath : false)
+      || app.aliases?.map(normalizeRoutePath).includes(normalizedPath)
     ) || null;
   }
 

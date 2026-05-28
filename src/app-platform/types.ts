@@ -200,6 +200,15 @@ export interface VatioCloudSyncService {
   request(options?: Record<string, unknown>): unknown;
 }
 
+export interface VatioAppSettingsService {
+  get<T = unknown>(key: string, fallback?: T): string | T | null;
+  set(key: string, value: string): boolean;
+  remove(key: string): boolean;
+  getJson<T = JsonValue>(key: string, fallback: T): T;
+  setJson(key: string, value: unknown): boolean;
+  subscribe?(listener: (key: string, value: unknown) => void): Unsubscribe;
+}
+
 export interface VatioAppServices {
   gps: GpsService | null;
   audio: AudioRuntime | null;
@@ -207,6 +216,7 @@ export interface VatioAppServices {
   drivingAlerts: DrivingAlertService | null;
   auth: VatioAuthService | null;
   cloudSync: VatioCloudSyncService | null;
+  settings: VatioAppSettingsService | null;
 }
 
 export interface VatioAppLaunchOptions {
@@ -227,6 +237,7 @@ export interface VatioAppShellRuntime {
   openApp(appId: VatioAppId, options?: VatioAppLaunchOptions): boolean;
   closeApp(appId: VatioAppId, options?: VatioAppLaunchOptions): boolean;
   focusApp(appId: VatioAppId, options?: VatioAppLaunchOptions): boolean;
+  getAppRuntime?(appId: VatioAppId): VatioAppRuntime | null;
   listApps(): VatioAppManifest[];
   getInstalledApps(): VatioAppManifest[];
   getRunningApps(): VatioRunningApp[];
@@ -263,5 +274,14 @@ export interface CreateAppRuntimeOptions {
   navigate?: (href: string, options?: { replace?: boolean }) => boolean;
   route?: AppRoute | null;
   routeSignal?: AbortSignal | null;
-  launcher?: Pick<VatioAppShellRuntime, "openApp" | "closeApp" | "focusApp" | "getInstalledApps" | "getRunningApps"> | null;
+  launcher?: Pick<VatioAppShellRuntime, "openApp" | "closeApp" | "focusApp" | "getAppRuntime" | "getInstalledApps" | "getRunningApps"> | null;
+}
+
+export interface ShellAppRuntimeManager {
+  ensureRuntime(appId: VatioAppId): VatioAppRuntime | null;
+  getRuntime(appId: VatioAppId): VatioAppRuntime | null;
+  getRuntimeForShellWindow(shellWindowId: string): VatioAppRuntime | null;
+  listRuntimes(): VatioAppRuntime[];
+  setLauncher(launcher: Pick<VatioAppShellRuntime, "openApp" | "closeApp" | "focusApp" | "getAppRuntime" | "getInstalledApps" | "getRunningApps"> | null): void;
+  destroy(): void;
 }

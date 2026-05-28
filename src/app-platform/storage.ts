@@ -1,6 +1,7 @@
 import type {
   VatioAppId,
   VatioAppLogger,
+  VatioAppPermissionRuntime,
   VatioAppStorage,
   VatioAppStorageUsage,
 } from "./types";
@@ -159,6 +160,62 @@ export function createAppStorage({
         bytes,
         available: true,
       };
+    },
+  };
+}
+
+export function createPermissionedAppStorage({
+  appId,
+  storage,
+  permissions,
+}: {
+  appId: VatioAppId;
+  storage: VatioAppStorage;
+  permissions: VatioAppPermissionRuntime;
+}): VatioAppStorage {
+  function canUseStorage() {
+    return permissions.require("storage.app");
+  }
+
+  return {
+    getItem(key) {
+      if (!canUseStorage()) return null;
+      return storage.getItem(key);
+    },
+    setItem(key, value) {
+      if (!canUseStorage()) return false;
+      return storage.setItem(key, value);
+    },
+    removeItem(key) {
+      if (!canUseStorage()) return false;
+      return storage.removeItem(key);
+    },
+    getJson(key, fallback) {
+      if (!canUseStorage()) return fallback;
+      return storage.getJson(key, fallback);
+    },
+    setJson(key, value) {
+      if (!canUseStorage()) return false;
+      return storage.setJson(key, value);
+    },
+    listKeys() {
+      if (!canUseStorage()) return [];
+      return storage.listKeys();
+    },
+    clearAppStorage() {
+      if (!canUseStorage()) return false;
+      return storage.clearAppStorage();
+    },
+    estimateUsage() {
+      if (!canUseStorage()) {
+        return {
+          appId,
+          keyCount: 0,
+          bytes: 0,
+          available: false,
+        };
+      }
+      return storage.estimateUsage();
     },
   };
 }

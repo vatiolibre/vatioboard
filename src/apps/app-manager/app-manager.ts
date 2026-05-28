@@ -3,11 +3,12 @@ import "./app-manager.less";
 import { appRegistry, createAppLauncher } from "../../app-platform/index.js";
 import type { RouteMountContext } from "../../types/route";
 import type { ShellRuntime } from "../../types/shell";
-import type { VatioAppManifest, VatioAppSurface } from "../../app-platform/types";
+import type { ShellAppRuntimeManager, VatioAppManifest, VatioAppSurface } from "../../app-platform/types";
 
 type AppManagerRouteContext = RouteMountContext & {
   context: RouteMountContext["context"] & {
     shellManager?: ShellRuntime;
+    shellAppRuntimeManager?: ShellAppRuntimeManager;
   };
 };
 
@@ -165,6 +166,7 @@ export function mountAppsRoute(routeContext: AppManagerRouteContext) {
     shellManager: routeContext.context.shellManager,
     navigate: routeContext.context.navigate,
     getCurrentRoute: () => routeContext.context.route || null,
+    shellAppRuntimeManager: routeContext.context.shellAppRuntimeManager,
   });
 
   const launchApp = (app: VatioAppManifest) => {

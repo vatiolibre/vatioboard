@@ -10,7 +10,7 @@ The old app shape worked, but every new feature had to wire itself into routes, 
 
 - Declare an app once in `src/app-platform/builtin-apps.ts`.
 - Derive legacy route, tool, and shell-window registries through adapters.
-- Receive an app-scoped runtime at route mount time.
+- Receive an app-scoped runtime when route apps mount or shell-window apps open.
 - Use app-private storage instead of direct localStorage keys.
 - Ask for platform services through declared permissions.
 
@@ -35,6 +35,8 @@ Current built-in manifests cover:
 
 The manifest registry is now the authoritative inventory. Compatibility adapters produce the existing `routeRegistry`, `toolRegistry`, and `shellWindowRegistry` exports.
 
+Manifest validation rejects unsupported app kinds, surfaces, permissions, and service IDs. The runtime registry also rejects duplicate app IDs, route paths, aliases, shell-window IDs, and legacy tool IDs so one manifest cannot accidentally shadow another.
+
 ## Permissions
 
 Permissions are declared in each manifest and checked by `createAppPermissionRuntime()`.
@@ -46,6 +48,8 @@ Examples:
 - `gps.read` exposes the GPS service.
 - `gps.highAccuracy` allows high-accuracy GPS requests.
 - `storage.app` enables app-private storage.
+- `i18n.read` enables localized string reads and DOM localization.
+- `settings.read` and `settings.write` enable app-scoped settings.
 - `shell.launchApp` allows runtime shell launching.
 - `cloud.sync` exposes cloud sync helpers lazily.
 
@@ -57,7 +61,9 @@ Examples:
 vatioboard.app.<appId>.<key>
 ```
 
-The v1 backend is localStorage. The API is intentionally small so it can later move to IndexedDB or VatioLibre cloud storage:
+The v1 backend is localStorage. App-facing storage operations are gated by `storage.app`; denied reads return `null` or the provided fallback, and denied writes return `false`.
+
+The API is intentionally small so it can later move to IndexedDB or VatioLibre cloud storage:
 
 - `getItem()`
 - `setItem()`
@@ -69,6 +75,29 @@ The v1 backend is localStorage. The API is intentionally small so it can later m
 - `estimateUsage()`
 
 JSON reads are safe: invalid JSON returns the caller-provided fallback.
+
+## App Settings
+
+`runtime.services.settings` is the v1 app-scoped settings service. It stores values in app-private storage under a reserved settings namespace:
+
+```text
+vatioboard.app.<appId>.settings.<key>
+```
+
+Reads require `settings.read`. Writes, removals, and JSON writes require `settings.write`. The current API is:
+
+- `get(key, fallback?)`
+- `set(key, value)`
+- `remove(key)`
+- `getJson(key, fallback)`
+- `setJson(key, value)`
+- `subscribe(listener)`
+
+The service is deliberately app-scoped. It does not expose raw shared settings or global localStorage.
+
+## App I18n
+
+`runtime.i18n` wraps the existing global i18n helper. `getLanguage()`, `t()`, `apply()`, `subscribe()`, and `toggleLanguage()` require `i18n.read` in the app manifest. Denied reads return the fallback or the key, and denied subscriptions return a no-op unsubscribe function.
 
 ## App Runtime
 
@@ -102,15 +131,27 @@ The new runtime exposes:
 - `runtime.lifecycle`
 - `runtime.logger`
 
+Shell-window apps receive the same runtime shape. The app shell owns `shellAppRuntimeManager`, which creates and caches runtimes by app ID when shell-window apps are opened, restored, focused, or launched. It also maps practical window state changes to lifecycle calls.
+
+For the next migration pass, a shell-window module can retrieve its runtime from the injected route context:
+
+```ts
+const runtime =
+  routeContext.context.shellAppRuntimeManager?.getRuntime("vatio.calculator") ??
+  routeContext.context.shellAppRuntimeManager?.ensureRuntime("vatio.calculator");
+```
+
+Launchers also expose `getAppRuntime(appId)` for code that already has a `VatioAppShellRuntime`.
+
 ## Launching Apps
 
 `createAppLauncher()` implements v1 shell launching:
 
 - Route apps navigate to their manifest route.
-- Shell-window apps open or focus their shell window.
+- Shell-window apps create an app runtime, restore if minimized, then focus or open their shell window.
 - Background apps can be registered but have no heavy lifecycle yet.
 
-The start menu still supports the legacy toggles for existing floating tools, but it now has a manifest-backed launcher fallback.
+The start menu still supports the legacy toggles for existing floating tools, but it now prefers the manifest-backed launcher when an app can be resolved from a legacy tool ID.
 
 ## Creating A New Internal App
 
@@ -119,8 +160,10 @@ The start menu still supports the legacy toggles for existing floating tools, bu
 3. Declare permissions and services.
 4. For route apps, add an `entry` lazy loader and route view.
 5. For shell-window apps, declare `window.shellWindowId`, default bounds, capabilities, and restore behavior.
-6. Prefer `routeContext.context.appRuntime` for platform APIs.
-7. Add focused tests for registry, runtime, and UI behavior.
+6. Prefer `routeContext.context.appRuntime` for route app platform APIs.
+7. For shell-window apps, retrieve the runtime from `routeContext.context.shellAppRuntimeManager` while the legacy shell-window UI is being migrated.
+8. Use `runtime.storage` for app data and `runtime.services.settings` for user preferences.
+9. Add focused tests for registry, runtime, lifecycle, and UI behavior.
 
 ## App Manager
 
@@ -142,6 +185,8 @@ It lists installed apps, kind, status, surfaces, permissions, local-first/offlin
 - App enable/disable preferences
 - App-to-app messaging
 - Service worker or background resilience changes
+- Full background-service runtime scheduling
+- Automatic dependency injection into legacy shell-window UI modules
 
 ## Future Direction
 

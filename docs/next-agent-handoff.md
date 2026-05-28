@@ -12,6 +12,12 @@
 - Added internal App Manager at `#/apps`.
 - Added platform unit tests and Apps route smoke test.
 - Added `docs/vatioboard-os.md` and this handoff.
+- Hardened shell-window app runtime support through `shellAppRuntimeManager`.
+- Added route mount failure lifecycle cleanup.
+- Enforced `storage.app`, `i18n.read`, `settings.read`, and `settings.write` at the runtime boundary.
+- Added app-scoped settings service backed by app-private storage.
+- Added manifest validation for service IDs and duplicate route, alias, shell-window, and legacy tool IDs.
+- Updated start menu and App Manager launcher paths to prefer manifest-backed app launching while keeping compatibility fallbacks.
 
 ## Important Files Changed
 
@@ -22,6 +28,8 @@
 - `src/app-platform/launcher.ts`
 - `src/app-platform/storage.ts`
 - `src/app-platform/services.ts`
+- `src/app-platform/settings.ts`
+- `src/app-platform/shell-app-runtime-manager.ts`
 - `src/app-platform/adapters/route-registry-adapter.ts`
 - `src/app-platform/adapters/tool-registry-adapter.ts`
 - `src/app-platform/adapters/shell-window-registry-adapter.ts`
@@ -38,6 +46,7 @@
 - `src/apps/app-manager/app-manager.less`
 - `src/i18n.ts`
 - `test/unit/app-platform.test.js`
+- `test/unit/app-shell-runtime-lifecycle.test.js`
 - `test/smoke/spa-apps-route.test.js`
 - `test/helpers/real-spa-route-smoke.js`
 - `docs/vatioboard-os.md`
@@ -55,6 +64,9 @@
 - `pnpm test` - first run exposed the Milkdrop placement issue and a transient GPS-background timeout; rerun passed with 124 files and 1609 tests.
 - `pnpm run build` - passed. Vite warned that dynamic auth/cloud-sync imports stay in existing chunks because those modules are also statically imported elsewhere.
 - Final `pnpm run typecheck` - passed.
+- Hardening pass: `pnpm run typecheck` - passed during implementation.
+- Hardening pass: `pnpm vitest run test/unit/app-platform.test.js test/unit/app-shell-runtime-lifecycle.test.js` - passed, 2 files and 15 tests.
+- Hardening pass: `pnpm vitest run test/smoke/spa-apps-route.test.js test/smoke/index-page.test.js` - passed, 2 files and 9 tests.
 
 Final full-suite commands are recorded in `docs/vatioboard-os-implementation-log.md`.
 
@@ -65,11 +77,13 @@ Final full-suite commands are recorded in `docs/vatioboard-os-implementation-log
 - Existing apps still import many global helpers directly; migration to `appRuntime` should be gradual.
 - Existing global compatibility shims remain in place.
 - Background-service lifecycle is registered in types but not heavily implemented.
+- Shell-window runtimes are created and cached, but Calculator/Energy/etc. have not yet been refactored to accept runtime directly.
+- App settings are local-only through app-private storage and do not sync yet.
 - Community/external app loading is intentionally not implemented.
 
 ## Suggested Next Prompt
 
-Continue the VatioBoard OS migration by moving one small shell-window tool, such as Calculator or Energy, behind a first-class app module in `src/apps/<app-id>`. Use `routeContext.context.appRuntime` or a shell app runtime instead of direct global imports where practical, keep the compatibility registry exports working, and add tests that prove the app can launch through the manifest-backed launcher.
+Continue the VatioBoard OS migration by moving Calculator or Energy behind a first-class shell-window app module in `src/apps/<app-id>`. Use `routeContext.context.shellAppRuntimeManager.ensureRuntime("vatio.calculator")` or the equivalent manifest app ID to retrieve the scoped runtime, move app preferences to `runtime.services.settings`, use `runtime.storage` only for app data, preserve the existing floating-tool toggles and shell-window IDs, and add tests proving the app opens through the manifest-backed launcher and still works through the legacy start menu path.
 
 ## Manual QA
 

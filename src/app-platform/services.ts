@@ -9,7 +9,9 @@ import type {
   VatioAppLogger,
   VatioAppPermissionRuntime,
   VatioAppServices,
+  VatioAppStorage,
 } from "./types";
+import { createAppSettingsService } from "./settings.js";
 
 type RuntimeServiceContext = Record<string, unknown> | null | undefined;
 
@@ -117,10 +119,12 @@ function createAudioGateway(
 
 export function createAppServiceGateway({
   baseContext,
+  appStorage,
   permissions,
   logger,
 }: {
   baseContext?: RuntimeServiceContext;
+  appStorage: VatioAppStorage;
   permissions: VatioAppPermissionRuntime;
   logger?: VatioAppLogger | null;
 }): VatioAppServices {
@@ -185,6 +189,9 @@ export function createAppServiceGateway({
             }
           },
         }
+      : null,
+    settings: permissions.has("settings.read") || permissions.has("settings.write")
+      ? createAppSettingsService({ storage: appStorage, permissions })
       : null,
   };
 }

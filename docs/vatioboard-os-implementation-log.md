@@ -1,5 +1,95 @@
 # VatioBoard OS Implementation Log
 
+## Hardening Session
+
+- Date/time: 2026-05-28 01:15:43 EDT
+- Agent: Codex 5.5
+- Repository: `/home/oscar/vatioboard`
+- Backend/BFF: `/home/oscar/frappe-bench/apps/vatiolibre` was not changed.
+
+## Hardening Baseline Understanding
+
+The first VatioBoard OS v1 pass had already introduced manifests, adapters, app runtime injection for route views, local app storage, i18n wrapping, a launcher, App Manager, docs, and tests. This hardening pass kept that architecture intact and focused on making the platform safe for the next phase: migrating shell-window tools such as Calculator and Energy into first-class app modules.
+
+## Additional Files Inspected
+
+- `src/app-platform/types.ts`
+- `src/app-platform/runtime.ts`
+- `src/app-platform/app-registry.ts`
+- `src/app-platform/manifest.ts`
+- `src/app-platform/storage.ts`
+- `src/app-platform/services.ts`
+- `src/app-platform/launcher.ts`
+- `src/app-platform/i18n.ts`
+- `src/app-platform/builtin-apps.ts`
+- `src/app/app-shell.ts`
+- `src/apps/app-manager/app-manager.ts`
+- `src/shared/start-menu.ts`
+- `test/unit/app-platform.test.js`
+- `test/smoke/spa-apps-route.test.js`
+- `test/smoke/index-page.test.js`
+
+## Hardening Plan
+
+1. Add shell-window app runtime creation and caching without migrating the existing shell-window UIs yet.
+2. Clean up route app lifecycle if route mounting throws.
+3. Enforce storage and i18n permissions at the app-facing boundary.
+4. Add a minimal app-scoped settings service.
+5. Strengthen manifest and app registry validation.
+6. Prefer manifest-backed app launching from the start menu and App Manager while preserving legacy toggles.
+7. Expand tests and update docs for the next agent.
+
+## Hardening Decisions Made
+
+- Added `shellAppRuntimeManager` as a small app-platform module owned by the app shell. It creates and caches shell-window app runtimes by app ID and maps practical shell-window state changes to runtime lifecycle calls.
+- Kept Calculator, Energy, Camera Map, Speed Alerts, Player, and Milkdrop UI code on their legacy paths for now. The next agent can retrieve shell-window runtimes through `routeContext.context.shellAppRuntimeManager`.
+- Wrapped route view mounting so a thrown app mount calls `appRuntime.lifecycle.deactivate()` and `appRuntime.lifecycle.unmount()` before preserving the existing error behavior.
+- Enforced `storage.app` for app storage and `i18n.read` for app i18n. Denied operations return safe values and log warnings rather than crashing.
+- Added app-scoped settings through `runtime.services.settings`, backed by app-private storage under `settings.<key>`. Reads require `settings.read`; writes require `settings.write`.
+- Added supported service ID validation through `VALID_SERVICES`.
+- Added duplicate detection for route paths, aliases, shell-window IDs, and `metadata.legacyToolId`.
+- Updated the launcher so shell-window apps create runtimes and restore/focus minimized windows before falling back to opening them.
+- Updated the start menu to prefer the manifest-backed launcher for known legacy tool IDs while leaving old floating-tool toggles as compatibility fallback.
+
+## Hardening Files Changed
+
+- `src/app-platform/app-registry.ts`
+- `src/app-platform/i18n.ts`
+- `src/app-platform/index.ts`
+- `src/app-platform/launcher.ts`
+- `src/app-platform/manifest.ts`
+- `src/app-platform/runtime.ts`
+- `src/app-platform/services.ts`
+- `src/app-platform/settings.ts`
+- `src/app-platform/shell-app-runtime-manager.ts`
+- `src/app-platform/storage.ts`
+- `src/app-platform/types.ts`
+- `src/app/app-shell.ts`
+- `src/apps/app-manager/app-manager.ts`
+- `src/shared/start-menu.ts`
+- `src/types/route.ts`
+- `test/unit/app-platform.test.js`
+- `test/unit/app-shell-runtime-lifecycle.test.js`
+- `docs/vatioboard-os.md`
+- `docs/next-agent-handoff.md`
+- `docs/vatioboard-os-implementation-log.md`
+
+## Hardening Tests Run
+
+- `pnpm run typecheck` - passed during implementation.
+- `pnpm vitest run test/unit/app-platform.test.js test/unit/app-shell-runtime-lifecycle.test.js` - passed, 2 files and 15 tests.
+- `pnpm vitest run test/smoke/spa-apps-route.test.js test/smoke/index-page.test.js` - passed, 2 files and 9 tests.
+
+Final verification for this hardening pass is recorded after the full command run below.
+
+## Hardening Known Limitations
+
+- Shell-window app runtimes now exist, but legacy shell-window UI modules do not yet receive the runtime as a constructor argument. The migration path is documented and ready for Calculator or Energy.
+- Permission enforcement is runtime-boundary enforcement only. There are still no user-facing prompts because v1 remains internal-only.
+- Settings are app-scoped and localStorage-backed through app storage. They do not yet sync to VatioLibre.
+- Background-service manifests can exist, but full background runtime scheduling is still future work.
+- Existing global compatibility shims remain.
+
 ## Work Session
 
 - Date/time: 2026-05-28 00:21:06 EDT
