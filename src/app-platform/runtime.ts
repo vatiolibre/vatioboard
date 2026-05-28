@@ -27,11 +27,28 @@ export function createAppRuntime({
 }: CreateAppRuntimeOptions): VatioAppRuntime {
   const logger = createAppLogger(manifest.id);
   const permissions = createAppPermissionRuntime(manifest, logger);
+  const declaresService = (service: (typeof manifest.services)[number]) => manifest.services.includes(service);
   const rawStorage = createAppStorage({ appId: manifest.id, logger });
-  const storage = createPermissionedAppStorage({ appId: manifest.id, storage: rawStorage, permissions });
-  const i18n = createAppI18n({ permissions, logger });
+  const storage = createPermissionedAppStorage({
+    appId: manifest.id,
+    storage: rawStorage,
+    permissions,
+    serviceDeclared: declaresService("storage"),
+    logger,
+  });
+  const i18n = createAppI18n({
+    permissions,
+    serviceDeclared: declaresService("i18n"),
+    logger,
+  });
   const lifecycle = createAppLifecycle();
-  const services = createAppServiceGateway({ baseContext, appStorage: rawStorage, permissions, logger });
+  const services = createAppServiceGateway({
+    baseContext,
+    appStorage: rawStorage,
+    permissions,
+    declaredServices: manifest.services,
+    logger,
+  });
 
   function getInstalledApps() {
     return launcher?.getInstalledApps?.() || appRegistry.listApps();

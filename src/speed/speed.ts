@@ -249,17 +249,21 @@ let standaloneCleanup = null;
 let standaloneBackendAuthInitialized = false;
 let appGpsService = null;
 
-let speedRouteLifecycle: any = {
-  mount() {},
-  unmount() {},
-};
+var speedRouteLifecycle: any;
 
 export function mountSpeedRoute(routeContext: AnyRecord = {}) {
-  return speedRouteLifecycle.mount(routeContext);
+  if (speedRouteLifecycle?.mount) return speedRouteLifecycle.mount(routeContext);
+  return Promise.resolve().then(() => speedRouteLifecycle?.mount?.(routeContext));
 }
 
 export function unmountSpeedRoute() {
-  speedRouteLifecycle.unmount();
+  if (speedRouteLifecycle?.unmount) {
+    speedRouteLifecycle.unmount();
+    return;
+  }
+  void Promise.resolve().then(() => {
+    speedRouteLifecycle?.unmount?.();
+  });
 }
 
 function createInactiveToolsMenu() {

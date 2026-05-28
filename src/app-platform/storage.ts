@@ -168,12 +168,20 @@ export function createPermissionedAppStorage({
   appId,
   storage,
   permissions,
+  serviceDeclared = true,
+  logger,
 }: {
   appId: VatioAppId;
   storage: VatioAppStorage;
   permissions: VatioAppPermissionRuntime;
+  serviceDeclared?: boolean;
+  logger?: Pick<VatioAppLogger, "warn"> | null;
 }): VatioAppStorage {
   function canUseStorage() {
+    if (!serviceDeclared) {
+      logger?.warn?.('Service "storage" is not declared.');
+      return false;
+    }
     return permissions.require("storage.app");
   }
 

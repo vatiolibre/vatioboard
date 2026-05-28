@@ -198,7 +198,7 @@ describe("VatioBoard OS app platform", () => {
       manifest: makeManifest({
         id: "test.gated",
         permissions: [],
-        services: [],
+        services: ["storage", "i18n"],
       }),
       baseContext: {},
     });
@@ -216,6 +216,46 @@ describe("VatioBoard OS app platform", () => {
       expect.stringContaining("[vatioboard:app:test.gated]"),
       expect.stringContaining("Permission denied"),
     );
+  });
+
+  it("requires service declarations as well as permissions before exposing services", () => {
+    const gpsService = {
+      watchPosition: vi.fn(),
+      clearWatch: vi.fn(),
+      getCurrentPosition: vi.fn(),
+      startConsumer: vi.fn(),
+      stopConsumer: vi.fn(),
+      requestHighAccuracy: vi.fn(),
+      releaseHighAccuracy: vi.fn(),
+    };
+    const withoutDeclaredService = createAppRuntime({
+      manifest: makeManifest({
+        id: "test.permission.only",
+        permissions: ["gps.read", "storage.app", "i18n.read", "settings.read"],
+        services: [],
+      }),
+      baseContext: { gpsService },
+    });
+
+    expect(withoutDeclaredService.services.gps).toBeNull();
+    expect(withoutDeclaredService.services.settings).toBeNull();
+    expect(withoutDeclaredService.storage.setItem("enabled", "no")).toBe(false);
+    expect(withoutDeclaredService.i18n.t("brand", "Fallback Brand")).toBe("Fallback Brand");
+
+    const withDeclaredService = createAppRuntime({
+      manifest: makeManifest({
+        id: "test.permission.and.service",
+        permissions: ["gps.read", "storage.app", "i18n.read", "settings.read"],
+        services: ["gps", "storage", "i18n", "settings"],
+      }),
+      baseContext: { gpsService },
+    });
+
+    expect(withDeclaredService.services.gps).not.toBeNull();
+    expect(withDeclaredService.services.settings).not.toBeNull();
+    expect(withDeclaredService.storage.setItem("enabled", "yes")).toBe(true);
+    expect(localStorage.getItem("vatioboard.app.test.permission.and.service.enabled")).toBe("yes");
+    expect(withDeclaredService.i18n.t("brand", "Fallback Brand")).toEqual(expect.any(String));
   });
 
   it("exposes app-scoped settings with read/write permissions", () => {

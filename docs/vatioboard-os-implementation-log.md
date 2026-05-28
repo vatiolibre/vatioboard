@@ -3,6 +3,7 @@
 ## Hardening Session
 
 - Date/time: 2026-05-28 01:15:43 EDT
+- Final verification update: 2026-05-28 06:30-06:33 EDT
 - Agent: Codex 5.5
 - Repository: `/home/oscar/vatioboard`
 - Backend/BFF: `/home/oscar/frappe-bench/apps/vatiolibre` was not changed.
@@ -25,9 +26,13 @@ The first VatioBoard OS v1 pass had already introduced manifests, adapters, app 
 - `src/app/app-shell.ts`
 - `src/apps/app-manager/app-manager.ts`
 - `src/shared/start-menu.ts`
+- `src/speed/speed.ts`
 - `test/unit/app-platform.test.js`
+- `test/unit/app-shell-runtime-lifecycle.test.js`
 - `test/smoke/spa-apps-route.test.js`
 - `test/smoke/index-page.test.js`
+- `test/smoke/spa-gps-background.test.js`
+- `test/smoke/dev-harness-speed-page.test.js`
 
 ## Hardening Plan
 
@@ -46,10 +51,13 @@ The first VatioBoard OS v1 pass had already introduced manifests, adapters, app 
 - Wrapped route view mounting so a thrown app mount calls `appRuntime.lifecycle.deactivate()` and `appRuntime.lifecycle.unmount()` before preserving the existing error behavior.
 - Enforced `storage.app` for app storage and `i18n.read` for app i18n. Denied operations return safe values and log warnings rather than crashing.
 - Added app-scoped settings through `runtime.services.settings`, backed by app-private storage under `settings.<key>`. Reads require `settings.read`; writes require `settings.write`.
+- Tightened `manifest.services` semantics so runtime service exposure now requires both a declared service ID and the matching permission. This applies to GPS, audio, drive recording, driving alerts, auth, cloud sync, settings, app storage, and app i18n.
 - Added supported service ID validation through `VALID_SERVICES`.
 - Added duplicate detection for route paths, aliases, shell-window IDs, and `metadata.legacyToolId`.
 - Updated the launcher so shell-window apps create runtimes and restore/focus minimized windows before falling back to opening them.
 - Updated the start menu to prefer the manifest-backed launcher for known legacy tool IDs while leaving old floating-tool toggles as compatibility fallback.
+- Made `mountSpeedRoute()` and `unmountSpeedRoute()` TDZ-safe by deferring to `speedRouteLifecycle` after module initialization if a cyclic import touches the exports early. This addressed the full-suite unhandled rejection `Cannot access 'speedRouteLifecycle' before initialization`.
+- Confirmed the new app-shell lifecycle unit test explicitly un-mocks its heavy `vi.doMock()` module graph after each run, so those mocks do not leak into later files.
 
 ## Hardening Files Changed
 
@@ -67,6 +75,7 @@ The first VatioBoard OS v1 pass had already introduced manifests, adapters, app 
 - `src/app/app-shell.ts`
 - `src/apps/app-manager/app-manager.ts`
 - `src/shared/start-menu.ts`
+- `src/speed/speed.ts`
 - `src/types/route.ts`
 - `test/unit/app-platform.test.js`
 - `test/unit/app-shell-runtime-lifecycle.test.js`
@@ -76,16 +85,41 @@ The first VatioBoard OS v1 pass had already introduced manifests, adapters, app 
 
 ## Hardening Tests Run
 
-- `pnpm run typecheck` - passed during implementation.
-- `pnpm vitest run test/unit/app-platform.test.js test/unit/app-shell-runtime-lifecycle.test.js` - passed, 2 files and 15 tests.
-- `pnpm vitest run test/smoke/spa-apps-route.test.js test/smoke/index-page.test.js` - passed, 2 files and 9 tests.
+Focused verification during the hardening pass:
 
-Final verification for this hardening pass is recorded after the full command run below.
+- `pnpm run typecheck` - passed during implementation.
+- `pnpm vitest run test/unit/app-platform.test.js test/unit/app-shell-runtime-lifecycle.test.js` - passed after service-contract test updates, 2 files and 16 tests.
+- `pnpm vitest run test/smoke/spa-apps-route.test.js test/smoke/index-page.test.js` - passed, 2 files and 9 tests.
+- `pnpm vitest run test/smoke/spa-gps-background.test.js -t "keeps speed recording and an accel run subscribed across route changes"` - passed, 1 file and 1 test, 13 skipped.
+- `pnpm vitest run test/smoke/dev-harness-speed-page.test.js -t "coalesces replay persistence under high-frequency recording bursts"` - passed, 1 file and 1 test, 13 skipped.
+
+Full-suite investigation before the final Speed fix:
+
+- `pnpm test` - failed once in `test/smoke/spa-gps-background.test.js` on `keeps speed recording and an accel run subscribed across route changes` after a 40000ms timeout. The same run reported an unhandled rejection from `src/speed/speed.ts`: `Cannot access 'speedRouteLifecycle' before initialization`.
+- `pnpm vitest run test/smoke/spa-gps-background.test.js -t "keeps speed recording and an accel run subscribed across route changes"` - passed when isolated, showing the scenario itself still worked.
+- `pnpm test` - failed once in `test/smoke/dev-harness-speed-page.test.js` on `coalesces replay persistence under high-frequency recording bursts` after a 20000ms timeout.
+- `pnpm vitest run test/smoke/dev-harness-speed-page.test.js -t "coalesces replay persistence under high-frequency recording bursts"` - passed when isolated.
+
+Speed investigation conclusion:
+
+- The focused Speed smoke tests passed in isolation, which showed the tested user flows still worked.
+- The full-suite unhandled rejection showed a real module-initialization edge: `mountSpeedRoute()` could read the `let speedRouteLifecycle` binding before it had been initialized under a cyclic/full-suite import timing pattern.
+- The fix in `src/speed/speed.ts` makes that binding TDZ-safe and defers mount/unmount calls by one microtask if they are touched before lifecycle assignment.
+- After that fix and explicit cleanup in the heavily mocked app-shell lifecycle test, the full `pnpm test` run passed.
+
+Final hardening-pass verification in requested order:
+
+- `pnpm run typecheck` - passed.
+- `pnpm run lint` - passed with 63 warning-level findings and 0 errors. Warnings are in existing scripts/app/tests areas and were not blocking.
+- `pnpm vitest run test/unit/app-platform.test.js test/unit/app-shell-runtime-lifecycle.test.js` - passed, 2 files and 16 tests.
+- `pnpm vitest run test/smoke/spa-apps-route.test.js test/smoke/index-page.test.js` - passed, 2 files and 9 tests.
+- `pnpm test` - passed, 125 files and 1617 tests.
+- `pnpm run build` - passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully. Vite emitted existing warnings that dynamic imports of `backend-auth.ts` and `cloud-sync.ts` from `src/app-platform/services.ts` cannot split those modules because they are also statically imported elsewhere.
 
 ## Hardening Known Limitations
 
 - Shell-window app runtimes now exist, but legacy shell-window UI modules do not yet receive the runtime as a constructor argument. The migration path is documented and ready for Calculator or Energy.
-- Permission enforcement is runtime-boundary enforcement only. There are still no user-facing prompts because v1 remains internal-only.
+- Permission and service declaration enforcement is runtime-boundary enforcement only. There are still no user-facing prompts because v1 remains internal-only.
 - Settings are app-scoped and localStorage-backed through app storage. They do not yet sync to VatioLibre.
 - Background-service manifests can exist, but full background runtime scheduling is still future work.
 - Existing global compatibility shims remain.
@@ -202,7 +236,7 @@ The existing production routes are declared in `src/app/route-registry.ts` and r
 - `docs/next-agent-handoff.md`
 - `docs/vatioboard-os-implementation-log.md`
 
-## Tests Run
+## Original OS V1 Tests Run
 
 - `pnpm run typecheck` - passed.
 - `pnpm vitest run test/unit/app-platform.test.js` - passed, 8 tests.
@@ -216,7 +250,7 @@ The existing production routes are declared in `src/app/route-registry.ts` and r
 - `pnpm run build` - passed. Build emitted Vite warnings that dynamic imports of `backend-auth.ts` and `cloud-sync.ts` cannot split those modules because they are also statically imported elsewhere.
 - Final `pnpm run typecheck` - passed.
 
-## Known Limitations
+## Original OS V1 Known Limitations
 
 - Permission declarations are enforced inside the runtime boundary, but there are no user-facing permission prompts yet.
 - App-private storage is localStorage-backed only.

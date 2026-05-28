@@ -18,6 +18,9 @@
 - Added app-scoped settings service backed by app-private storage.
 - Added manifest validation for service IDs and duplicate route, alias, shell-window, and legacy tool IDs.
 - Updated start menu and App Manager launcher paths to prefer manifest-backed app launching while keeping compatibility fallbacks.
+- Tightened `manifest.services` so runtime service exposure requires both a declared service ID and the matching permission.
+- Fixed the Speed full-suite module-initialization edge by making `mountSpeedRoute()` / `unmountSpeedRoute()` safe if a cyclic import touches `speedRouteLifecycle` before assignment.
+- Confirmed the heavy mocks in `test/unit/app-shell-runtime-lifecycle.test.js` are explicitly unmocked after each test.
 
 ## Important Files Changed
 
@@ -39,6 +42,7 @@
 - `src/shared/tool-registry.ts`
 - `src/shared/shell-window-registry.ts`
 - `src/shared/start-menu.ts`
+- `src/speed/speed.ts`
 - `src/types/route.ts`
 - `src/app/views/AppsView.ts`
 - `src/app/views/templates/apps-template.ts`
@@ -54,6 +58,8 @@
 
 ## Commands Run
 
+Original OS v1 verification from the previous implementation session:
+
 - `pnpm run typecheck` - passed after type fixes.
 - `pnpm vitest run test/unit/app-platform.test.js` - passed.
 - `pnpm vitest run test/smoke/spa-apps-route.test.js` - passed.
@@ -64,15 +70,29 @@
 - `pnpm test` - first run exposed the Milkdrop placement issue and a transient GPS-background timeout; rerun passed with 124 files and 1609 tests.
 - `pnpm run build` - passed. Vite warned that dynamic auth/cloud-sync imports stay in existing chunks because those modules are also statically imported elsewhere.
 - Final `pnpm run typecheck` - passed.
-- Hardening pass: `pnpm run typecheck` - passed during implementation.
-- Hardening pass: `pnpm vitest run test/unit/app-platform.test.js test/unit/app-shell-runtime-lifecycle.test.js` - passed, 2 files and 15 tests.
-- Hardening pass: `pnpm vitest run test/smoke/spa-apps-route.test.js test/smoke/index-page.test.js` - passed, 2 files and 9 tests.
 
-Final full-suite commands are recorded in `docs/vatioboard-os-implementation-log.md`.
+Hardening-pass investigation before the final Speed fix:
+
+- `pnpm test` - failed once in `test/smoke/spa-gps-background.test.js` on `keeps speed recording and an accel run subscribed across route changes`, with an unhandled rejection from `src/speed/speed.ts`: `Cannot access 'speedRouteLifecycle' before initialization`.
+- `pnpm vitest run test/smoke/spa-gps-background.test.js -t "keeps speed recording and an accel run subscribed across route changes"` - passed when isolated.
+- `pnpm test` - failed once in `test/smoke/dev-harness-speed-page.test.js` on `coalesces replay persistence under high-frequency recording bursts`.
+- `pnpm vitest run test/smoke/dev-harness-speed-page.test.js -t "coalesces replay persistence under high-frequency recording bursts"` - passed when isolated.
+
+Final hardening-pass verification in requested order:
+
+- `pnpm run typecheck` - passed.
+- `pnpm run lint` - passed with 63 warning-level findings and 0 errors.
+- `pnpm vitest run test/unit/app-platform.test.js test/unit/app-shell-runtime-lifecycle.test.js` - passed, 2 files and 16 tests.
+- `pnpm vitest run test/smoke/spa-apps-route.test.js test/smoke/index-page.test.js` - passed, 2 files and 9 tests.
+- `pnpm test` - passed, 125 files and 1617 tests.
+- `pnpm run build` - passed. Vite still warns that dynamic imports of `backend-auth.ts` and `cloud-sync.ts` stay in existing chunks because those modules are also statically imported elsewhere.
+
+Final full-suite commands are also recorded in `docs/vatioboard-os-implementation-log.md`.
 
 ## Known Limitations
 
 - App permissions are declared and enforced at the runtime boundary, but there are no user prompts yet.
+- App service declarations are now enforced with permissions, but this is still an internal runtime boundary rather than a sandbox.
 - App-private storage is localStorage-backed only.
 - Existing apps still import many global helpers directly; migration to `appRuntime` should be gradual.
 - Existing global compatibility shims remain in place.

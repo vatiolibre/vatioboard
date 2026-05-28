@@ -32,11 +32,18 @@ function applyTranslationsWithin(root: ParentNode) {
 
 export function createAppI18n({
   permissions,
+  serviceDeclared = true,
+  logger,
 }: {
   permissions?: VatioAppPermissionRuntime | null;
+  serviceDeclared?: boolean;
   logger?: Pick<VatioAppLogger, "warn"> | null;
 } = {}): VatioAppI18n {
   function canReadI18n() {
+    if (!serviceDeclared) {
+      logger?.warn?.('Service "i18n" is not declared.');
+      return false;
+    }
     return permissions?.require("i18n.read") ?? true;
   }
 

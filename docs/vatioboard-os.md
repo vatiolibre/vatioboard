@@ -12,7 +12,7 @@ The old app shape worked, but every new feature had to wire itself into routes, 
 - Derive legacy route, tool, and shell-window registries through adapters.
 - Receive an app-scoped runtime when route apps mount or shell-window apps open.
 - Use app-private storage instead of direct localStorage keys.
-- Ask for platform services through declared permissions.
+- Ask for platform services through declared service IDs and permissions.
 
 ## App Manifests
 
@@ -36,6 +36,20 @@ Current built-in manifests cover:
 The manifest registry is now the authoritative inventory. Compatibility adapters produce the existing `routeRegistry`, `toolRegistry`, and `shellWindowRegistry` exports.
 
 Manifest validation rejects unsupported app kinds, surfaces, permissions, and service IDs. The runtime registry also rejects duplicate app IDs, route paths, aliases, shell-window IDs, and legacy tool IDs so one manifest cannot accidentally shadow another.
+
+## Services
+
+`manifest.services` is enforced, not just descriptive metadata. Runtime service exposure requires both a declared service ID and the matching permission.
+
+Examples:
+
+- GPS requires `services: ["gps"]` and `gps.read`.
+- App storage requires `services: ["storage"]` and `storage.app`.
+- App i18n requires `services: ["i18n"]` and `i18n.read`.
+- App settings require `services: ["settings"]` plus `settings.read` or `settings.write`.
+- Auth and cloud sync require their service IDs plus their permissions.
+
+If a manifest declares a permission but omits the service ID, the runtime returns the same safe denied values it uses for missing permissions and logs a scoped warning.
 
 ## Permissions
 
@@ -61,7 +75,7 @@ Examples:
 vatioboard.app.<appId>.<key>
 ```
 
-The v1 backend is localStorage. App-facing storage operations are gated by `storage.app`; denied reads return `null` or the provided fallback, and denied writes return `false`.
+The v1 backend is localStorage. App-facing storage operations are gated by the `storage` service declaration and `storage.app`; denied reads return `null` or the provided fallback, and denied writes return `false`.
 
 The API is intentionally small so it can later move to IndexedDB or VatioLibre cloud storage:
 
@@ -84,7 +98,7 @@ JSON reads are safe: invalid JSON returns the caller-provided fallback.
 vatioboard.app.<appId>.settings.<key>
 ```
 
-Reads require `settings.read`. Writes, removals, and JSON writes require `settings.write`. The current API is:
+Settings exposure requires the `settings` service declaration. Reads require `settings.read`. Writes, removals, and JSON writes require `settings.write`. The current API is:
 
 - `get(key, fallback?)`
 - `set(key, value)`
@@ -97,7 +111,7 @@ The service is deliberately app-scoped. It does not expose raw shared settings o
 
 ## App I18n
 
-`runtime.i18n` wraps the existing global i18n helper. `getLanguage()`, `t()`, `apply()`, `subscribe()`, and `toggleLanguage()` require `i18n.read` in the app manifest. Denied reads return the fallback or the key, and denied subscriptions return a no-op unsubscribe function.
+`runtime.i18n` wraps the existing global i18n helper. `getLanguage()`, `t()`, `apply()`, `subscribe()`, and `toggleLanguage()` require the `i18n` service declaration and `i18n.read` in the app manifest. Denied reads return the fallback or the key, and denied subscriptions return a no-op unsubscribe function.
 
 ## App Runtime
 

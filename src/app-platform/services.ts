@@ -8,6 +8,7 @@ import type {
 import type {
   VatioAppLogger,
   VatioAppPermissionRuntime,
+  VatioAppServiceId,
   VatioAppServices,
   VatioAppStorage,
 } from "./types";
@@ -121,24 +122,28 @@ export function createAppServiceGateway({
   baseContext,
   appStorage,
   permissions,
+  declaredServices = [],
   logger,
 }: {
   baseContext?: RuntimeServiceContext;
   appStorage: VatioAppStorage;
   permissions: VatioAppPermissionRuntime;
+  declaredServices?: readonly VatioAppServiceId[];
   logger?: VatioAppLogger | null;
 }): VatioAppServices {
   const gpsService = getContextService<GpsService>(baseContext, "gpsService");
   const audioRuntime = getContextService<AudioRuntime>(baseContext, "audioRuntime");
   const driveRecordingService = getContextService<DriveRecordingService>(baseContext, "driveRecordingService");
   const drivingAlertService = getContextService<DrivingAlertService>(baseContext, "drivingAlertService");
+  const declaredServiceSet = new Set(declaredServices);
+  const hasService = (service: VatioAppServiceId) => declaredServiceSet.has(service);
 
   return {
-    gps: createGpsGateway(gpsService, permissions),
-    audio: createAudioGateway(audioRuntime, permissions),
-    driveRecording: createDriveRecordingGateway(driveRecordingService, permissions),
-    drivingAlerts: createDrivingAlertsGateway(drivingAlertService, permissions),
-    auth: permissions.has("auth.session")
+    gps: hasService("gps") ? createGpsGateway(gpsService, permissions) : null,
+    audio: hasService("audio") ? createAudioGateway(audioRuntime, permissions) : null,
+    driveRecording: hasService("driveRecording") ? createDriveRecordingGateway(driveRecordingService, permissions) : null,
+    drivingAlerts: hasService("drivingAlerts") ? createDrivingAlertsGateway(drivingAlertService, permissions) : null,
+    auth: hasService("auth") && permissions.has("auth.session")
       ? {
           async getSessionState(options) {
             try {
@@ -164,7 +169,7 @@ export function createAppServiceGateway({
           },
         }
       : null,
-    cloudSync: permissions.has("cloud.sync")
+    cloudSync: hasService("cloudSync") && permissions.has("cloud.sync")
       ? {
           async getStatus() {
             try {
@@ -190,7 +195,7 @@ export function createAppServiceGateway({
           },
         }
       : null,
-    settings: permissions.has("settings.read") || permissions.has("settings.write")
+    settings: hasService("settings") && (permissions.has("settings.read") || permissions.has("settings.write"))
       ? createAppSettingsService({ storage: appStorage, permissions })
       : null,
   };
