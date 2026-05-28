@@ -12,7 +12,11 @@ import {
   createEnergyApp,
   createEnergySettingsStore,
 } from "../../src/apps/energy/index.js";
-import { createCalculatorApp } from "../../src/apps/calculator/index.js";
+import {
+  CALCULATOR_APP_ID,
+  CALCULATOR_SETTINGS_KEY,
+  createCalculatorApp,
+} from "../../src/apps/calculator/index.js";
 import { createEnergyCalculatorWidget } from "../../src/energy/energy-calculator-widget.js";
 import { createShellWindowManager } from "../../src/shared/shell-window-manager.js";
 import { initFloatingTools } from "../../src/shared/floating-tools.js";
@@ -134,6 +138,107 @@ describe("Energy OS app module", () => {
     expect(runtimeNumberFormatSettings).toMatchObject({ decimals: 8, thousandSeparator: "." });
     expect(legacyNumberFormatSettings).toMatchObject({ decimals: 8, thousandSeparator: "." });
 
+    energy.destroy();
+    shellAppRuntimeManager.destroy();
+    shellManager.destroy();
+  });
+
+  it("loads the shared legacy number-format source instead of stale Energy runtime mirrors", () => {
+    const runtime = createAppRuntime({
+      manifest: makeManifest({
+        id: ENERGY_APP_ID,
+        permissions: ["settings.read", "settings.write", "i18n.read"],
+        services: ["settings", "i18n"],
+      }),
+      baseContext: {},
+    });
+    runtime.services.settings?.setJson(ENERGY_NUMBER_FORMAT_SETTINGS_KEY, { decimals: 3, thousandSeparator: "" });
+    localStorage.setItem("embeddable_calc_settings_v1", JSON.stringify({
+      decimals: 7,
+      thousandSeparator: ".",
+    }));
+
+    expect(createEnergySettingsStore(runtime).loadNumberFormatSettings?.()).toMatchObject({
+      decimals: 7,
+      thousandSeparator: ".",
+    });
+  });
+
+  it("shows Calculator number-format changes in Energy after Energy is recreated", () => {
+    localStorage.setItem(
+      `vatioboard.app.${ENERGY_APP_ID}.settings.${ENERGY_NUMBER_FORMAT_SETTINGS_KEY}`,
+      JSON.stringify({ decimals: 2, thousandSeparator: "" }),
+    );
+    const { shellManager, shellAppRuntimeManager, launcher } = createShellHarness();
+    const calculator = createCalculatorApp({
+      mount: document.body,
+      floating: false,
+      restoreVisibility: false,
+      shellManager,
+      shellAppRuntimeManager,
+    });
+    launcher.openApp(CALCULATOR_APP_ID);
+
+    document.querySelector(".calc-settings-btn").click();
+    document.querySelector(".calc-settings-decimals-plus").click();
+    const thousandsToggle = document.querySelector(".calc-settings-thousands");
+    thousandsToggle.checked = true;
+    thousandsToggle.dispatchEvent(new Event("change", { bubbles: true }));
+
+    const energy = createEnergyApp({
+      mount: document.body,
+      restoreVisibility: false,
+      shellManager,
+      shellAppRuntimeManager,
+    });
+
+    expect(createEnergySettingsStore(energy.runtime).loadNumberFormatSettings?.()).toMatchObject({
+      decimals: 9,
+      thousandSeparator: ".",
+    });
+
+    energy.destroy();
+    calculator.destroy();
+    shellAppRuntimeManager.destroy();
+    shellManager.destroy();
+  });
+
+  it("shows Energy number-format changes in Calculator after Calculator is recreated", () => {
+    localStorage.setItem(
+      `vatioboard.app.${CALCULATOR_APP_ID}.settings.${CALCULATOR_SETTINGS_KEY}`,
+      JSON.stringify({ decimals: 4, thousandSeparator: "" }),
+    );
+    const { shellManager, shellAppRuntimeManager, launcher } = createShellHarness();
+    const energy = createEnergyApp({
+      mount: document.body,
+      restoreVisibility: false,
+      shellManager,
+      shellAppRuntimeManager,
+    });
+    launcher.openApp(ENERGY_APP_ID);
+
+    document.querySelector(".energy-settings-btn").click();
+    const energyThousandsToggle = document.querySelector(".energy-settings-thousands");
+    energyThousandsToggle.checked = true;
+    energyThousandsToggle.dispatchEvent(new Event("change", { bubbles: true }));
+
+    const calculator = createCalculatorApp({
+      mount: document.body,
+      floating: false,
+      restoreVisibility: false,
+      shellManager,
+      shellAppRuntimeManager,
+    });
+    launcher.openApp(CALCULATOR_APP_ID);
+    document.querySelector(".calc-settings-btn").click();
+
+    expect(document.querySelector(".calc-settings-thousands").checked).toBe(true);
+    expect(JSON.parse(localStorage.getItem("embeddable_calc_settings_v1"))).toMatchObject({
+      decimals: 8,
+      thousandSeparator: ".",
+    });
+
+    calculator.destroy();
     energy.destroy();
     shellAppRuntimeManager.destroy();
     shellManager.destroy();

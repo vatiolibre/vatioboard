@@ -27,6 +27,8 @@
 - Migrated Energy into the next first-class shell-window app module under `src/apps/energy/`.
 - Energy now resolves `vatio.energy` through `shellAppRuntimeManager`, uses `runtime.services.settings` for trip preferences (`tripCostSettings`) and number-format preferences (`numberFormat`), uses runtime i18n for top-level panel labels where practical, and logs runtime settings fallback warnings.
 - Energy compatibility is preserved: shell window ID `energy`, legacy tool ID `energy`, floating-tool toggles, start-menu launch, Calculator-to-Energy launch, taskbar, position, visibility, and direct `createEnergyCalculatorWidget()` callers still work.
+- Fixed Calculator/Energy shared number-format compatibility before starting Camera Map. `embeddable_calc_settings_v1` is canonical for v1; Calculator and Energy app-private settings are mirrors so stale runtime settings cannot split decimal/thousands behavior.
+- Cleaned up Calculator and Energy `i18n:change` listeners during widget destroy.
 
 ## Important Files Changed
 
@@ -45,6 +47,7 @@
 - `src/apps/energy/energy-app.ts`
 - `src/apps/energy/energy-app.less`
 - `src/apps/energy/index.ts`
+- `src/apps/shared/number-format-settings.ts`
 - `src/app-platform/adapters/route-registry-adapter.ts`
 - `src/app-platform/adapters/tool-registry-adapter.ts`
 - `src/app-platform/adapters/shell-window-registry-adapter.ts`
@@ -130,6 +133,16 @@ Energy migration focused and final verification:
 - `pnpm run lint` - passed with 60 warning-level findings and 0 errors. Warnings are existing repository warnings in scripts/app/tests areas.
 - `pnpm run build` - passed. Vite still warns for dynamic/static auth and cloud-sync imports, and now also warns that `src/apps/calculator/index.ts` and `src/apps/energy/index.ts` are both manifest entry dynamic imports and static floating-tools imports for compatibility.
 
+Shared Calculator/Energy number-format compatibility verification:
+
+- `pnpm run typecheck` - passed.
+- `pnpm vitest run test/unit/calculator-app.test.js test/unit/energy-app.test.js test/unit/app-platform.test.js` - passed, 3 files and 30 tests.
+- `pnpm run lint` - passed with 60 warning-level findings and 0 errors.
+- `pnpm test` - first run failed in `test/smoke/spa-gps-background.test.js` on `keeps speed recording and an accel run subscribed across route changes` after a 40000ms timeout.
+- `pnpm vitest run test/smoke/spa-gps-background.test.js -t "keeps speed recording and an accel run subscribed across route changes"` - passed, 1 file and 1 test with 13 skipped.
+- `pnpm test` - rerun passed, 127 files and 1632 tests.
+- `pnpm run build` - passed. Vite still warns for dynamic/static auth and cloud-sync imports, and for Calculator/Energy app entries because they are manifest dynamic imports and static floating-tools imports for compatibility.
+
 Final full-suite commands are also recorded in `docs/vatioboard-os-implementation-log.md`.
 
 ## Known Limitations
@@ -138,6 +151,7 @@ Final full-suite commands are also recorded in `docs/vatioboard-os-implementatio
 - App service declarations are now enforced with permissions, but this is still an internal runtime boundary rather than a sandbox.
 - App-private storage is localStorage-backed only.
 - Existing apps still import many global helpers directly; migration to `appRuntime` should be gradual. Calculator and Energy are partially migrated through app wrappers, but Calculator expression state/history, Energy trip values/multi-trip records, and both apps' shell layout storage remain legacy for compatibility.
+- Calculator and Energy intentionally share number-format settings through `embeddable_calc_settings_v1` in v1. Their app-private runtime settings are mirrors until a true platform shared-settings service exists.
 - Existing global compatibility shims remain in place.
 - Background-service lifecycle is registered in types but not heavily implemented.
 - Shell-window runtimes are created and cached. Calculator and Energy now consume their runtimes through app wrappers; Camera Map, Speed Alerts, Player, and Milkdrop still need migration.

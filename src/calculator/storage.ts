@@ -2,7 +2,8 @@ import { loadJson, saveJson } from "../shared/storage.js";
 
 const KEY = "embeddable_calc_state_v1";
 const HISTORY_KEY = "embeddable_calc_history_v1";
-const SETTINGS_KEY = "embeddable_calc_settings_v1";
+export const CALCULATOR_SETTINGS_STORAGE_KEY = "embeddable_calc_settings_v1";
+const SETTINGS_KEY = CALCULATOR_SETTINGS_STORAGE_KEY;
 const MAX_HISTORY = 7;
 
 export interface CalculatorState {

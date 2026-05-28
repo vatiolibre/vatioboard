@@ -8,11 +8,12 @@ import {
   type CalculatorWidgetOptions,
 } from "../../calculator/calculator-widget.js";
 import {
-  loadSettings as loadLegacySettings,
-  normalizeSettings,
-  saveSettings as saveLegacySettings,
   type CalculatorSettings,
 } from "../../calculator/storage.js";
+import {
+  loadSharedNumberFormatSettings,
+  saveSharedNumberFormatSettings,
+} from "../shared/number-format-settings.js";
 import type { ShellRuntime } from "../../types/shell";
 import type { ShellAppRuntimeManager, VatioAppRuntime } from "../../app-platform/types";
 
@@ -40,25 +41,20 @@ export function resolveCalculatorRuntime({
 }
 
 export function createCalculatorSettingsStore(runtime: VatioAppRuntime | null): CalculatorSettingsStore {
-  function loadRuntimeSettings() {
-    if (!runtime?.services.settings) return null;
-    const stored = runtime.services.settings.getJson<Partial<CalculatorSettings> | null>(CALCULATOR_SETTINGS_KEY, null);
-    return stored && typeof stored === "object" ? stored : null;
+  function getMirror() {
+    return {
+      runtime,
+      settingsKey: CALCULATOR_SETTINGS_KEY,
+      appName: "Calculator",
+    };
   }
 
   return {
     loadSettings() {
-      const legacySettings = loadLegacySettings();
-      const runtimeSettings = loadRuntimeSettings();
-      return normalizeSettings(runtimeSettings ? { ...legacySettings, ...runtimeSettings } : legacySettings);
+      return loadSharedNumberFormatSettings(getMirror());
     },
     saveSettings(settings) {
-      const normalized = normalizeSettings(settings);
-      const saved = runtime?.services.settings?.setJson(CALCULATOR_SETTINGS_KEY, normalized) === true;
-      if (!saved && runtime) {
-        runtime.logger.warn("Calculator settings could not be saved through runtime settings; preserving legacy fallback.");
-      }
-      saveLegacySettings(normalized);
+      saveSharedNumberFormatSettings(settings as CalculatorSettings | Partial<CalculatorSettings>, getMirror());
     },
   };
 }

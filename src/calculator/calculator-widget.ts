@@ -282,9 +282,11 @@ export function createCalculatorWidget(options: CalculatorWidgetOptions = {}): C
     },
   });
 
-  document.addEventListener("i18n:change", () => {
+  function refreshCalculatorI18n() {
     historyApi?.refreshHistoryList();
-  });
+  }
+
+  document.addEventListener("i18n:change", refreshCalculatorI18n);
 
   function render({ keepEnd = false, force = false } = {}) {
     const rawExpr = core.expr ?? "";
@@ -508,6 +510,7 @@ export function createCalculatorWidget(options: CalculatorWidgetOptions = {}): C
     destroy: () => {
       cleanupLayer();
       launcherMoved?.destroy?.();
+      document.removeEventListener("i18n:change", refreshCalculatorI18n);
       if (button) button.removeEventListener("click", toggle);
       panel.remove();
       launcher?.remove();

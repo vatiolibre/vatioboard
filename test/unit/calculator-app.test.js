@@ -11,6 +11,7 @@ import {
   createCalculatorApp,
   createCalculatorSettingsStore,
 } from "../../src/apps/calculator/index.js";
+import { createCalculatorWidget } from "../../src/calculator/calculator-widget.js";
 import { createShellWindowManager } from "../../src/shared/shell-window-manager.js";
 import { initFloatingTools } from "../../src/shared/floating-tools.js";
 import { initSharedStartMenu } from "../../src/shared/start-menu.js";
@@ -127,6 +128,27 @@ describe("Calculator OS app module", () => {
     shellManager.destroy();
   });
 
+  it("loads the shared legacy number-format source instead of stale Calculator runtime mirrors", () => {
+    const runtime = createAppRuntime({
+      manifest: makeManifest({
+        id: CALCULATOR_APP_ID,
+        permissions: ["settings.read", "settings.write", "i18n.read"],
+        services: ["settings", "i18n"],
+      }),
+      baseContext: {},
+    });
+    runtime.services.settings?.setJson(CALCULATOR_SETTINGS_KEY, { decimals: 2, thousandSeparator: "" });
+    localStorage.setItem("embeddable_calc_settings_v1", JSON.stringify({
+      decimals: 6,
+      thousandSeparator: ".",
+    }));
+
+    expect(createCalculatorSettingsStore(runtime).loadSettings?.()).toMatchObject({
+      decimals: 6,
+      thousandSeparator: ".",
+    });
+  });
+
   it("keeps legacy start-menu and floating-tool launch paths working", () => {
     const { shellManager, shellAppRuntimeManager } = createShellHarness();
     const mount = document.createElement("div");
@@ -173,5 +195,25 @@ describe("Calculator OS app module", () => {
       expect.stringContaining("[vatioboard:app:test.calculator.readonly]"),
       expect.stringContaining("Permission denied"),
     );
+  });
+
+  it("keeps direct Calculator widget callers working without a runtime", () => {
+    const shellManager = createShellWindowManager({
+      root: document.body,
+      storeOptions: { storage: localStorage, migrateLegacy: false },
+    });
+    const calculator = createCalculatorWidget({
+      mount: document.body,
+      floating: false,
+      restoreVisibility: false,
+      shellManager,
+    });
+
+    expect(() => shellManager.openWindow("calculator")).not.toThrow();
+    expect(shellManager.getWindow("calculator")?.state).toBe("open");
+    expect(document.querySelector(".calc-panel")?.hidden).toBe(false);
+
+    calculator.destroy();
+    shellManager.destroy();
   });
 });

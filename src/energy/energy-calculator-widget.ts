@@ -422,6 +422,7 @@ export function createEnergyCalculatorWidget(options: EnergyCalculatorWidgetOpti
     close,
     destroy: () => {
       cleanupLayer();
+      document.removeEventListener("i18n:change", refreshI18n);
       if (button) button.removeEventListener("click", toggle);
       panel.remove();
     },

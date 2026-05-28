@@ -1,5 +1,71 @@
 # VatioBoard OS Implementation Log
 
+## Shared Number-Format Compatibility Fix
+
+- Date/time: 2026-05-28 07:42:23 EDT
+- Agent: Codex 5.5
+- Repository: `/home/oscar/vatioboard`
+- Backend/BFF: `/home/oscar/frappe-bench/apps/vatiolibre` was not changed.
+
+## Shared Number-Format Baseline Understanding
+
+Calculator and Energy were both first-class shell-window app wrappers, but each wrapper loaded its own app-private runtime settings over the shared legacy number-format key `embeddable_calc_settings_v1`. That meant a stale `vatioboard.app.vatio.calculator.settings.preferences` value could shadow a newer Energy write, and a stale `vatioboard.app.vatio.energy.settings.numberFormat` value could shadow a newer Calculator write. Historically the widgets shared number formatting through `embeddable_calc_settings_v1`, so this needed to be fixed before migrating a service-heavy app like Camera Map.
+
+## Shared Number-Format Files Inspected
+
+- `src/apps/calculator/calculator-app.ts`
+- `src/apps/energy/energy-app.ts`
+- `src/calculator/storage.ts`
+- `src/calculator/calculator-widget.ts`
+- `src/energy/energy-calculator-widget.ts`
+- `test/unit/calculator-app.test.js`
+- `test/unit/energy-app.test.js`
+- `docs/vatioboard-os.md`
+- `docs/next-agent-handoff.md`
+- `docs/vatioboard-os-implementation-log.md`
+
+## Shared Number-Format Decisions Made
+
+- Added `src/apps/shared/number-format-settings.ts` as the v1 shared helper for Calculator/Energy number formatting.
+- Kept `embeddable_calc_settings_v1` as the canonical shared number-format source for v1.
+- Kept Calculator runtime settings at `vatioboard.app.vatio.calculator.settings.preferences` as a mirror/diagnostic copy.
+- Kept Energy runtime number-format settings at `vatioboard.app.vatio.energy.settings.numberFormat` as a mirror/diagnostic copy.
+- If both a runtime mirror and `embeddable_calc_settings_v1` exist, the legacy shared key wins predictably.
+- If the legacy key is missing but a runtime mirror exists, the helper seeds the legacy key from the mirror so direct legacy widget callers keep working.
+- Exported `CALCULATOR_SETTINGS_STORAGE_KEY` from `src/calculator/storage.ts` so the helper can detect whether the canonical legacy key exists without duplicating the string.
+- Removed the Calculator and Energy `i18n:change` listener leak by unregistering those listeners in widget `destroy()`.
+
+## Shared Number-Format Files Changed
+
+- `src/apps/shared/number-format-settings.ts`
+- `src/apps/calculator/calculator-app.ts`
+- `src/apps/energy/energy-app.ts`
+- `src/calculator/storage.ts`
+- `src/calculator/calculator-widget.ts`
+- `src/energy/energy-calculator-widget.ts`
+- `test/unit/calculator-app.test.js`
+- `test/unit/energy-app.test.js`
+- `docs/vatioboard-os.md`
+- `docs/next-agent-handoff.md`
+- `docs/vatioboard-os-implementation-log.md`
+
+## Shared Number-Format Tests Run
+
+- `pnpm run typecheck` - passed.
+- `pnpm vitest run test/unit/calculator-app.test.js test/unit/energy-app.test.js test/unit/app-platform.test.js` - passed, 3 files and 30 tests.
+- `pnpm run lint` - passed with 60 warning-level findings and 0 errors. Warnings are existing repository warnings in scripts/app/tests areas.
+- `pnpm test` - first run failed in `test/smoke/spa-gps-background.test.js` on `keeps speed recording and an accel run subscribed across route changes` after a 40000ms timeout. This matched the known full-suite timing flake pattern.
+- `pnpm vitest run test/smoke/spa-gps-background.test.js -t "keeps speed recording and an accel run subscribed across route changes"` - passed, 1 file and 1 test with 13 skipped.
+- `pnpm test` - rerun passed, 127 files and 1632 tests.
+- `pnpm run build` - passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully. Vite emitted existing dynamic/static import warnings for `backend-auth.ts`, `cloud-sync.ts`, Calculator app entry, and Energy app entry.
+
+## Shared Number-Format Known Limitations
+
+- Calculator and Energy intentionally keep shared number formatting through the legacy key for v1. A future platform shared-settings service can replace this once more apps need shared preferences.
+- Calculator expression state/history and Energy trip values/multi-trip records remain on legacy storage.
+- Runtime settings mirrors are useful for diagnostics and future migration, but they are not canonical for shared Calculator/Energy number formatting.
+- The next app migration remains Camera Map; this fix was intentionally landed first so shared app settings do not drift before adding GPS service consumption.
+
 ## Energy Migration Session
 
 - Date/time: 2026-05-28 07:15:47 EDT

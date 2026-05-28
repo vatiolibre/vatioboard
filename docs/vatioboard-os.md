@@ -167,7 +167,7 @@ The first-class app wrapper lives in `src/apps/calculator/` and adapts the exist
 - `runtime.i18n.t()` for Calculator labels where the wrapper can provide translation.
 - `runtime.logger` for settings fallback warnings.
 
-For compatibility, Calculator preference writes are mirrored to the legacy `embeddable_calc_settings_v1` key so Energy and other unmigrated consumers keep seeing the same formatter settings. Calculator expression state, history, position, visibility, shell layout, and taskbar behavior still use their existing legacy storage and shell-window paths.
+For compatibility, Calculator preference writes are mirrored to the legacy `embeddable_calc_settings_v1` key so Energy and direct legacy consumers keep seeing the same formatter settings. Calculator expression state, history, position, visibility, shell layout, and taskbar behavior still use their existing legacy storage and shell-window paths.
 
 The first-class Energy wrapper lives in `src/apps/energy/` and adapts the existing `src/energy/energy-calculator-widget.ts` implementation. The wrapper resolves the scoped `vatio.energy` runtime, then supplies Energy with:
 
@@ -184,6 +184,16 @@ vatioboard.app.vatio.energy.settings.numberFormat
 ```
 
 For compatibility, Energy mirrors trip preferences to `energy_trip_cost_settings_v1` and mirrors number-format preferences to the shared legacy `embeddable_calc_settings_v1` key. Energy trip values, multi-trip data, position, visibility, shell layout, and taskbar behavior still use their existing legacy storage and shell-window paths.
+
+## Shared Number Formatting
+
+Calculator and Energy intentionally share decimal and thousands-separator settings in v1. The canonical source remains the legacy shared key:
+
+```text
+embeddable_calc_settings_v1
+```
+
+The helper in `src/apps/shared/number-format-settings.ts` loads that key first and treats app-private runtime settings as mirrors/diagnostics. Calculator still mirrors to `vatioboard.app.vatio.calculator.settings.preferences`; Energy still mirrors to `vatioboard.app.vatio.energy.settings.numberFormat`. If both app-private runtime settings and the legacy shared key exist, the legacy shared key wins so stale app-private mirrors cannot make Calculator and Energy diverge. If the legacy key is missing but a runtime mirror exists, the helper can seed the legacy key so direct widget callers continue to work.
 
 ## Launching Apps
 

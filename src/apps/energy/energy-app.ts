@@ -14,11 +14,12 @@ import {
   type TripCostSettings,
 } from "../../energy/trip-cost-storage.js";
 import {
-  loadSettings as loadLegacyNumberFormatSettings,
-  normalizeSettings as normalizeNumberFormatSettings,
-  saveSettings as saveLegacyNumberFormatSettings,
   type CalculatorSettings,
 } from "../../calculator/storage.js";
+import {
+  loadSharedNumberFormatSettings,
+  saveSharedNumberFormatSettings,
+} from "../shared/number-format-settings.js";
 import type { NumberFormatSettings } from "../../energy/energy-core.js";
 import type { ShellRuntime } from "../../types/shell";
 import type { ShellAppRuntimeManager, VatioAppRuntime } from "../../app-platform/types";
@@ -54,13 +55,12 @@ export function createEnergySettingsStore(runtime: VatioAppRuntime | null): Ener
     return stored && typeof stored === "object" ? stored : null;
   }
 
-  function loadRuntimeNumberFormatSettings() {
-    if (!runtime?.services.settings) return null;
-    const stored = runtime.services.settings.getJson<Partial<CalculatorSettings> | null>(
-      ENERGY_NUMBER_FORMAT_SETTINGS_KEY,
-      null,
-    );
-    return stored && typeof stored === "object" ? stored : null;
+  function getNumberFormatMirror() {
+    return {
+      runtime,
+      settingsKey: ENERGY_NUMBER_FORMAT_SETTINGS_KEY,
+      appName: "Energy",
+    };
   }
 
   return {
@@ -78,17 +78,10 @@ export function createEnergySettingsStore(runtime: VatioAppRuntime | null): Ener
       saveLegacyTripCostSettings(normalized);
     },
     loadNumberFormatSettings() {
-      const legacySettings = loadLegacyNumberFormatSettings();
-      const runtimeSettings = loadRuntimeNumberFormatSettings();
-      return { ...normalizeNumberFormatSettings(runtimeSettings ? { ...legacySettings, ...runtimeSettings } : legacySettings) };
+      return { ...loadSharedNumberFormatSettings(getNumberFormatMirror()) };
     },
     saveNumberFormatSettings(settings: NumberFormatSettings | Partial<NumberFormatSettings>) {
-      const normalized = normalizeNumberFormatSettings(settings);
-      const saved = runtime?.services.settings?.setJson(ENERGY_NUMBER_FORMAT_SETTINGS_KEY, normalized) === true;
-      if (!saved && runtime) {
-        runtime.logger.warn("Energy number-format settings could not be saved through runtime settings; preserving legacy fallback.");
-      }
-      saveLegacyNumberFormatSettings(normalized);
+      saveSharedNumberFormatSettings(settings as Partial<CalculatorSettings>, getNumberFormatMirror());
     },
   };
 }
