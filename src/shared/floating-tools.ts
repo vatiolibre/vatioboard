@@ -4,7 +4,7 @@ import "../styles/energy.less";
 import "../styles/speed-alert-panel.less";
 
 import { createCalculatorApp } from "../apps/calculator/index.js";
-import { createEnergyCalculatorWidget } from "../energy/energy-calculator-widget.js";
+import { createEnergyApp } from "../apps/energy/index.js";
 import { createCameraMapWidget } from "../speed/camera-map-widget.js";
 import { createSpeedAlertPanel } from "../speed/speed-alert-panel.js";
 import { getDefaultShellWindowManager } from "./shell-window-manager.js";
@@ -69,12 +69,13 @@ export function initFloatingTools({
     delete window[GLOBAL_TOOLS_KEY];
   }
 
-  const energyWidget = createEnergyCalculatorWidget({
+  const energyWidget = createEnergyApp({
     mount,
     persistVisibility: true,
     restoreVisibility: true,
     visibilityKey: ENERGY_VISIBILITY_KEY,
     shellManager,
+    shellAppRuntimeManager,
   });
 
   const calcWidget = createCalculatorApp({

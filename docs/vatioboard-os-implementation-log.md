@@ -1,5 +1,94 @@
 # VatioBoard OS Implementation Log
 
+## Energy Migration Session
+
+- Date/time: 2026-05-28 07:15:47 EDT
+- Agent: Codex 5.5
+- Repository: `/home/oscar/vatioboard`
+- Backend/BFF: `/home/oscar/frappe-bench/apps/vatiolibre` was not changed.
+
+## Energy Migration Baseline Understanding
+
+Energy was still implemented as a legacy shell-window widget in `src/energy/energy-calculator-widget.ts`, with trip settings and values in `src/energy/trip-cost-storage.ts`, shared number formatting through Calculator settings, styles in `src/styles/energy.less`, and launch wiring through `src/shared/floating-tools.ts`, the start menu, and the shell-window manager. The OS manifest `vatio.energy` already existed with shell window ID `energy`, legacy tool ID `energy`, and the required settings/storage/i18n/shell permissions, but it had no first-class app entry and the Energy UI did not receive a scoped runtime.
+
+## Energy Files Inspected
+
+- `src/energy/energy-calculator-widget.ts`
+- `src/energy/trip-cost-storage.ts`
+- `src/energy/energy-core.ts`
+- `src/energy/widget/panel.ts`
+- `src/energy/widget/settings-sheet.ts`
+- `src/energy/widget/simple-mode.ts`
+- `src/energy/widget/multi-trip-mode.ts`
+- `src/calculator/storage.ts`
+- `src/apps/calculator/calculator-app.ts`
+- `src/shared/floating-tools.ts`
+- `src/shared/start-menu.ts`
+- `src/shared/shell-window-manager.ts`
+- `src/app-platform/builtin-apps.ts`
+- `src/app-platform/shell-app-runtime-manager.ts`
+- `src/app-platform/launcher.ts`
+- `test/unit/calculator-app.test.js`
+- `test/unit/shell-window-integration.test.js`
+- `test/unit/floating-panel-z-order.test.js`
+- `test/unit/trip-cost-storage.test.js`
+- `test/smoke/index-page.test.js`
+
+## Energy Migration Plan
+
+1. Add a first-class wrapper under `src/apps/energy/` without duplicating the Energy UI.
+2. Keep direct `createEnergyCalculatorWidget()` compatibility for dev harnesses and older tests.
+3. Let the wrapper resolve `vatio.energy` through `shellAppRuntimeManager`.
+4. Move Energy preferences to `runtime.services.settings` while mirroring legacy settings.
+5. Keep shell window ID, legacy tool ID, taskbar, visibility, position, Calculator-to-Energy launch, and floating-tool behavior unchanged.
+6. Add focused tests for manifest launch, runtime creation, legacy launch paths, Calculator-to-Energy launch, direct widget compatibility, and runtime-backed settings.
+
+## Energy Migration Decisions Made
+
+- Added `src/apps/energy/energy-app.ts` as an adapter over the existing Energy widget. It resolves the scoped `vatio.energy` runtime and returns the existing widget API plus the runtime.
+- Updated the Energy manifest with an `entry` loader: `() => import("../apps/energy/index.js")`.
+- Updated `src/shared/floating-tools.ts` to create Energy through `createEnergyApp()` while keeping Camera Map, Speed Alerts, Player, and Milkdrop on their current paths.
+- Added optional `settingsStore` and `translate` hooks to `createEnergyCalculatorWidget()`. Existing direct widget callers still use legacy storage and global i18n by default.
+- Added `normalizeTripCostSettings()` to `src/energy/trip-cost-storage.ts` so runtime settings and legacy settings share the same safe normalization.
+- Runtime Energy trip preferences are saved at `vatioboard.app.vatio.energy.settings.tripCostSettings`; writes are also mirrored to `energy_trip_cost_settings_v1`.
+- Runtime Energy number-format preferences are saved at `vatioboard.app.vatio.energy.settings.numberFormat`; writes are also mirrored to `embeddable_calc_settings_v1` so Calculator and fallback paths keep seeing the same formatter settings.
+- Energy trip values, multi-trip records, panel position, panel visibility, and shell layout are intentionally left on legacy storage for this pass.
+- Calculator's "open Energy" button still opens the existing `energy` shell window, which activates the Energy runtime through `shellAppRuntimeManager`.
+
+## Energy Migration Files Changed
+
+- `src/app-platform/builtin-apps.ts`
+- `src/apps/energy/energy-app.less`
+- `src/apps/energy/energy-app.ts`
+- `src/apps/energy/index.ts`
+- `src/energy/energy-calculator-widget.ts`
+- `src/energy/trip-cost-storage.ts`
+- `src/energy/widget/panel.ts`
+- `src/energy/widget/settings-sheet.ts`
+- `src/shared/floating-tools.ts`
+- `test/unit/energy-app.test.js`
+- `docs/vatioboard-os.md`
+- `docs/next-agent-handoff.md`
+- `docs/vatioboard-os-implementation-log.md`
+
+## Energy Migration Tests Run
+
+- `pnpm run typecheck` - passed after the Energy wrapper type adjustment.
+- `pnpm vitest run test/unit/energy-app.test.js test/unit/calculator-app.test.js test/unit/app-platform.test.js test/unit/shell-window-integration.test.js test/unit/floating-panel-z-order.test.js test/unit/trip-cost-storage.test.js` - passed, 6 files and 48 tests.
+- `pnpm vitest run test/unit/energy-app.test.js` - passed after the lint cleanup, 1 file and 6 tests.
+- `pnpm test` - passed, 127 files and 1627 tests.
+- `pnpm run lint` - passed with 60 warning-level findings and 0 errors. Warnings are existing repository warnings in scripts/app/tests areas and were not blocking; the Energy migration did not leave new Energy lint warnings.
+- `pnpm run build` - passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully. Vite emitted existing dynamic/static import warnings for `backend-auth.ts` and `cloud-sync.ts`, plus compatibility warnings for Calculator and Energy app entries because both are manifest dynamic imports and static floating-tools imports.
+
+## Energy Migration Known Limitations
+
+- Energy trip values still use `energy_trip_cost_values_v1`.
+- Energy multi-trip records still use `energy_multi_trip_v1`.
+- Energy panel position and visibility still use legacy shell/layout storage so restore/minimize/close behavior is unchanged.
+- Energy simple-mode and multi-trip subcomponents still call the global i18n helper internally; the app wrapper injects runtime i18n into the top-level panel where practical.
+- Energy remains an internal shell-window app, not an iframe or sandboxed external app.
+- The next shell-window migration should target a service-heavy app such as Camera Map or Speed Alerts to prove GPS/driving-alert runtime service consumption.
+
 ## Calculator Migration Session
 
 - Date/time: 2026-05-28 06:53:11 EDT
@@ -84,7 +173,7 @@ Final Calculator migration verification in requested order:
 
 - Calculator state and history still use the legacy `embeddable_calc_state_v1` and `embeddable_calc_history_v1` keys.
 - Calculator panel position and visibility still use legacy shell/layout storage so existing restore/minimize/close behavior is unchanged.
-- Runtime settings are mirrored to legacy settings for compatibility until Energy is migrated.
+- Runtime settings are mirrored to legacy settings for compatibility with direct widget callers and shared number-format fallback paths.
 - Calculator is still an internal shell-window app, not an iframe or sandboxed external app.
 
 ## Hardening Session
@@ -205,7 +294,7 @@ Final hardening-pass verification in requested order:
 
 ## Hardening Known Limitations
 
-- Shell-window app runtimes now exist, but legacy shell-window UI modules do not yet receive the runtime as a constructor argument. The migration path is documented and ready for Calculator or Energy.
+- Shell-window app runtimes now exist. Calculator and Energy receive runtimes through app wrappers; Camera Map, Speed Alerts, Player, and Milkdrop still use their legacy constructor paths.
 - Permission and service declaration enforcement is runtime-boundary enforcement only. There are still no user-facing prompts because v1 remains internal-only.
 - Settings are app-scoped and localStorage-backed through app storage. They do not yet sync to VatioLibre.
 - Background-service manifests can exist, but full background runtime scheduling is still future work.
@@ -349,7 +438,7 @@ The existing production routes are declared in `src/app/route-registry.ts` and r
 
 ## Next Recommended Steps
 
-- Move one small shell-window tool, likely Calculator or Energy, into `src/apps/<app-id>` as a first-class app module.
+- Continue migrating remaining shell-window tools, likely Camera Map or Speed Alerts, into `src/apps/<app-id>` as first-class app modules.
 - Start replacing direct localStorage usage in one app with `appRuntime.storage`.
 - Add app enable/disable preferences once app manifests are stable.
 - Add permission prompts only when non-core or community apps become real.

@@ -288,6 +288,7 @@ export const BUILTIN_APP_MANIFESTS = [
     version: "1.0.0",
     icon: IconEnergy,
     i18nKey: "energy",
+    entry: () => import("../apps/energy/index.js"),
     surfaces: ["shell-window", "start-menu", "taskbar", "launcher"],
     order: 70,
     permissions: ["storage.app", "i18n.read", "shell.window", "settings.read", "settings.write"],

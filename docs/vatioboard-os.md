@@ -159,7 +159,7 @@ Launchers also expose `getAppRuntime(appId)` for code that already has a `VatioA
 
 ## Migrated Shell Apps
 
-Calculator is the first migrated shell-window app module. Its manifest is still `vatio.calculator`, its shell window ID remains `calculator`, and its legacy tool ID remains `calculator`.
+Calculator and Energy are the first migrated shell-window app modules. Their manifests remain `vatio.calculator` and `vatio.energy`; their shell window IDs remain `calculator` and `energy`; their legacy tool IDs remain `calculator` and `energy`.
 
 The first-class app wrapper lives in `src/apps/calculator/` and adapts the existing `src/calculator/calculator-widget.ts` implementation instead of duplicating the UI. The wrapper resolves the scoped runtime through `shellAppRuntimeManager`, then supplies the widget with:
 
@@ -168,6 +168,22 @@ The first-class app wrapper lives in `src/apps/calculator/` and adapts the exist
 - `runtime.logger` for settings fallback warnings.
 
 For compatibility, Calculator preference writes are mirrored to the legacy `embeddable_calc_settings_v1` key so Energy and other unmigrated consumers keep seeing the same formatter settings. Calculator expression state, history, position, visibility, shell layout, and taskbar behavior still use their existing legacy storage and shell-window paths.
+
+The first-class Energy wrapper lives in `src/apps/energy/` and adapts the existing `src/energy/energy-calculator-widget.ts` implementation. The wrapper resolves the scoped `vatio.energy` runtime, then supplies Energy with:
+
+- `runtime.services.settings` for trip preferences under `tripCostSettings`.
+- `runtime.services.settings` for Energy number-format preferences under `numberFormat`.
+- `runtime.i18n.t()` for top-level Energy panel labels where the wrapper can provide translation.
+- `runtime.logger` for settings fallback warnings.
+
+Energy runtime settings are stored under:
+
+```text
+vatioboard.app.vatio.energy.settings.tripCostSettings
+vatioboard.app.vatio.energy.settings.numberFormat
+```
+
+For compatibility, Energy mirrors trip preferences to `energy_trip_cost_settings_v1` and mirrors number-format preferences to the shared legacy `embeddable_calc_settings_v1` key. Energy trip values, multi-trip data, position, visibility, shell layout, and taskbar behavior still use their existing legacy storage and shell-window paths.
 
 ## Launching Apps
 
@@ -212,7 +228,7 @@ It lists installed apps, kind, status, surfaces, permissions, local-first/offlin
 - App-to-app messaging
 - Service worker or background resilience changes
 - Full background-service runtime scheduling
-- Automatic dependency injection into legacy shell-window UI modules
+- Automatic dependency injection into every legacy shell-window UI module
 
 ## Future Direction
 

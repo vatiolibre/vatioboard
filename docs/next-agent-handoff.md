@@ -24,6 +24,9 @@
 - Migrated Calculator into the first first-class shell-window app module under `src/apps/calculator/`.
 - Calculator now resolves `vatio.calculator` through `shellAppRuntimeManager`, uses `runtime.services.settings` for preferences, uses runtime i18n for widget labels where practical, and logs runtime settings fallback warnings.
 - Calculator compatibility is preserved: shell window ID `calculator`, legacy tool ID `calculator`, floating-tool toggles, start-menu launch, taskbar, position, visibility, and direct `createCalculatorWidget()` callers still work.
+- Migrated Energy into the next first-class shell-window app module under `src/apps/energy/`.
+- Energy now resolves `vatio.energy` through `shellAppRuntimeManager`, uses `runtime.services.settings` for trip preferences (`tripCostSettings`) and number-format preferences (`numberFormat`), uses runtime i18n for top-level panel labels where practical, and logs runtime settings fallback warnings.
+- Energy compatibility is preserved: shell window ID `energy`, legacy tool ID `energy`, floating-tool toggles, start-menu launch, Calculator-to-Energy launch, taskbar, position, visibility, and direct `createEnergyCalculatorWidget()` callers still work.
 
 ## Important Files Changed
 
@@ -39,6 +42,9 @@
 - `src/apps/calculator/calculator-app.ts`
 - `src/apps/calculator/calculator-app.less`
 - `src/apps/calculator/index.ts`
+- `src/apps/energy/energy-app.ts`
+- `src/apps/energy/energy-app.less`
+- `src/apps/energy/index.ts`
 - `src/app-platform/adapters/route-registry-adapter.ts`
 - `src/app-platform/adapters/tool-registry-adapter.ts`
 - `src/app-platform/adapters/shell-window-registry-adapter.ts`
@@ -51,6 +57,10 @@
 - `src/speed/speed.ts`
 - `src/calculator/calculator-widget.ts`
 - `src/calculator/storage.ts`
+- `src/energy/energy-calculator-widget.ts`
+- `src/energy/trip-cost-storage.ts`
+- `src/energy/widget/panel.ts`
+- `src/energy/widget/settings-sheet.ts`
 - `src/types/route.ts`
 - `src/app/views/AppsView.ts`
 - `src/app/views/templates/apps-template.ts`
@@ -60,6 +70,7 @@
 - `test/unit/app-platform.test.js`
 - `test/unit/app-shell-runtime-lifecycle.test.js`
 - `test/unit/calculator-app.test.js`
+- `test/unit/energy-app.test.js`
 - `test/smoke/spa-apps-route.test.js`
 - `test/helpers/real-spa-route-smoke.js`
 - `docs/vatioboard-os.md`
@@ -110,6 +121,15 @@ Final Calculator migration verification:
 - `pnpm test` - passed, 126 files and 1621 tests.
 - `pnpm run build` - passed. Vite still warns for dynamic/static auth and cloud-sync imports, and now also warns that `src/apps/calculator/index.ts` is both the manifest entry dynamic import and a static floating-tools import for compatibility.
 
+Energy migration focused and final verification:
+
+- `pnpm run typecheck` - passed.
+- `pnpm vitest run test/unit/energy-app.test.js test/unit/calculator-app.test.js test/unit/app-platform.test.js test/unit/shell-window-integration.test.js test/unit/floating-panel-z-order.test.js test/unit/trip-cost-storage.test.js` - passed, 6 files and 48 tests.
+- `pnpm vitest run test/unit/energy-app.test.js` - passed after lint cleanup, 1 file and 6 tests.
+- `pnpm test` - passed, 127 files and 1627 tests.
+- `pnpm run lint` - passed with 60 warning-level findings and 0 errors. Warnings are existing repository warnings in scripts/app/tests areas.
+- `pnpm run build` - passed. Vite still warns for dynamic/static auth and cloud-sync imports, and now also warns that `src/apps/calculator/index.ts` and `src/apps/energy/index.ts` are both manifest entry dynamic imports and static floating-tools imports for compatibility.
+
 Final full-suite commands are also recorded in `docs/vatioboard-os-implementation-log.md`.
 
 ## Known Limitations
@@ -117,21 +137,21 @@ Final full-suite commands are also recorded in `docs/vatioboard-os-implementatio
 - App permissions are declared and enforced at the runtime boundary, but there are no user prompts yet.
 - App service declarations are now enforced with permissions, but this is still an internal runtime boundary rather than a sandbox.
 - App-private storage is localStorage-backed only.
-- Existing apps still import many global helpers directly; migration to `appRuntime` should be gradual. Calculator is partially migrated through an app wrapper, but its expression state/history and shell layout storage remain legacy for compatibility.
+- Existing apps still import many global helpers directly; migration to `appRuntime` should be gradual. Calculator and Energy are partially migrated through app wrappers, but Calculator expression state/history, Energy trip values/multi-trip records, and both apps' shell layout storage remain legacy for compatibility.
 - Existing global compatibility shims remain in place.
 - Background-service lifecycle is registered in types but not heavily implemented.
-- Shell-window runtimes are created and cached. Calculator now consumes its runtime through the app wrapper; Energy, Camera Map, Speed Alerts, Player, and Milkdrop still need migration.
+- Shell-window runtimes are created and cached. Calculator and Energy now consume their runtimes through app wrappers; Camera Map, Speed Alerts, Player, and Milkdrop still need migration.
 - App settings are local-only through app-private storage and do not sync yet.
 - Community/external app loading is intentionally not implemented.
 
 ## Suggested Next Prompt
 
-Continue the VatioBoard OS migration by moving Energy behind a first-class shell-window app module in `src/apps/energy`. Use `routeContext.context.shellAppRuntimeManager.ensureRuntime("vatio.energy")` or the equivalent injected manager to retrieve the scoped runtime, move Energy trip-cost preferences to `runtime.services.settings`, preserve shell window ID `energy`, legacy tool ID `energy`, floating-tool toggles, Calculator-to-Energy launch behavior, and taskbar behavior, then add tests proving Energy opens through the manifest-backed launcher and legacy start menu path.
+Continue the VatioBoard OS migration by moving Camera Map behind a first-class shell-window app module in `src/apps/camera-map`. Resolve `vatio.cameraMap` through `shellAppRuntimeManager`, use runtime GPS service access instead of direct globals where practical, move Camera Map preferences to `runtime.services.settings` while preserving existing legacy keys as mirrors/fallbacks, keep shell window ID `camera-map`, legacy tool ID `camera-map`, floating-tool toggles, start-menu launch, taskbar behavior, and Speed Alerts-to-Camera Map launch behavior, then add tests proving manifest-backed launch, legacy launch, runtime creation, GPS permission/service behavior, and direct widget compatibility.
 
 ## Manual QA
 
 - Desktop browser: load `/`, open the start menu, confirm Speed/Board/Library/Replay/Accel/Apps appear and launch.
 - Desktop browser: visit `#/apps`, search/filter apps, and launch a route app and a shell-window app.
 - Mobile browser: verify `#/apps` cards, filter, and buttons fit without horizontal scrolling.
-- Tesla browser: verify `#/speed`, `#/board`, `#/library`, `#/replay`, `#/accel`, and `#/apps` load; open Calculator, Energy, Camera Map, Speed Alerts, Player, and Milkdrop from their existing surfaces.
+- Tesla browser: verify `#/speed`, `#/board`, `#/library`, `#/replay`, `#/accel`, and `#/apps` load; open Calculator, Energy, Camera Map, Speed Alerts, Player, and Milkdrop from their existing surfaces; use Calculator's Energy button and confirm Energy opens/focuses.
 - Offline/glitch QA: load once, go offline, refresh `#/apps` and core local-first routes, and confirm the shell does not crash.

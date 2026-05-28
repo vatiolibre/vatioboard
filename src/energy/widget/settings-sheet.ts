@@ -35,6 +35,8 @@ export function initSettingsSheet({
   onUnitChange,
   onThousandsChange,
   onOpen,
+  saveTripCostSettings: persistTripCostSettings = saveTripCostSettings,
+  saveFormatSettings = saveCalcSettings,
 }) {
   function setSettingsSheetOpen(isOpen) {
     settingsBtn.classList.toggle('active', isOpen);
@@ -95,7 +97,7 @@ export function initSettingsSheet({
     btn.addEventListener('click', () => {
       const newUnit = btn.dataset.unit;
       tripSettings.unit = newUnit;
-      saveTripCostSettings(tripSettings);
+      persistTripCostSettings(tripSettings);
       markUnitBootstrapManualSelection({ tripDistanceUnit: newUnit });
       syncForm();
       onUnitChange(newUnit);
@@ -105,7 +107,7 @@ export function initSettingsSheet({
   // Thousands separator toggle
   thousandsToggle.addEventListener('change', () => {
     formatSettings.thousandSeparator = thousandsToggle.checked ? '.' : '';
-    saveCalcSettings(formatSettings);
+    saveFormatSettings(formatSettings);
     onThousandsChange(formatSettings);
   });
 

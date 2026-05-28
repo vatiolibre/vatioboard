@@ -17,6 +17,12 @@ type ToolbarButtonOptions = {
   mode?: string | null;
 };
 
+type PanelTranslateFn = (key: string, params?: Record<string, unknown>) => string;
+
+type BuildPanelOptions = {
+  t?: PanelTranslateFn;
+};
+
 function makeToolbarButton({
   className,
   icon = "",
@@ -57,14 +63,14 @@ function makeToolbarButton({
  * buildPanel - Construye el panel completo y retorna referencias a elementos
  * @returns {Object} Referencias a todos los elementos del panel
  */
-export function buildPanel() {
+export function buildPanel({ t: translate = t }: BuildPanelOptions = {}) {
   const panel = el(
     "section",
     {
       class: "energy-panel",
       hidden: true,
       role: "dialog",
-      "aria-label": t("energyTitle"),
+      "aria-label": translate("energyTitle"),
       "data-i18n-aria": "energyTitle",
     },
     // Header
@@ -79,9 +85,9 @@ export function buildPanel() {
       el("button", {
         class: "energy-close",
         type: "button",
-        "aria-label": t("close"),
+        "aria-label": translate("close"),
         "data-i18n-aria": "close",
-        title: t("close"),
+        title: translate("close"),
         html: IconClose,
       })
     ),
@@ -91,22 +97,22 @@ export function buildPanel() {
       { class: "energy-toolbar-row" },
       makeToolbarButton({
         className: "energy-mode-btn",
-        label: t("simple") || "Simple",
+        label: translate("simple") || "Simple",
         labelKey: "simple",
         mode: "simple",
       }),
       makeToolbarButton({
         className: "energy-mode-btn",
-        label: t("multiTrip") || "Multi-tramo",
+        label: translate("multiTrip") || "Multi-tramo",
         labelKey: "multiTrip",
         mode: "multi",
       }),
       makeToolbarButton({
         className: "energy-settings-btn",
         icon: IconSettings,
-        ariaLabel: t("settings"),
+        ariaLabel: translate("settings"),
         ariaKey: "settings",
-        label: t("settings"),
+        label: translate("settings"),
         labelKey: "settings",
       })
     ),
@@ -162,7 +168,7 @@ export function buildPanel() {
         el(
           "div",
           { class: "energy-input-group" },
-          el("label", { class: "energy-label", for: "energy-price", "data-i18n": "electricityPrice" }, t("electricityPrice")),
+          el("label", { class: "energy-label", for: "energy-price", "data-i18n": "electricityPrice" }, translate("electricityPrice")),
           el("input", {
             class: "energy-input",
             id: "energy-price",
@@ -186,13 +192,13 @@ export function buildPanel() {
           el(
             "div",
             { class: "energy-result-row" },
-            el("span", { class: "energy-result-label", "data-i18n": "energyUsed" }, t("energyUsed")),
+            el("span", { class: "energy-result-label", "data-i18n": "energyUsed" }, translate("energyUsed")),
             el("span", { class: "energy-result-value", id: "energy-kwh-result" }, "—")
           ),
           el(
             "div",
             { class: "energy-result-row energy-result-total" },
-            el("span", { class: "energy-result-label", "data-i18n": "estimatedCost" }, t("estimatedCost")),
+            el("span", { class: "energy-result-label", "data-i18n": "estimatedCost" }, translate("estimatedCost")),
             el("span", { class: "energy-result-value", id: "energy-cost-result" }, "—")
           )
         )
@@ -202,17 +208,17 @@ export function buildPanel() {
     el("div", { class: "energy-multi-view", hidden: true },
       // Left sidebar (Editor)
       el("div", { class: "energy-multi-sidebar" },
-        el("div", { class: "energy-multi-form-title", "data-i18n": "tripEditor" }, t("tripEditor") || "Trip Editor"),
+        el("div", { class: "energy-multi-form-title", "data-i18n": "tripEditor" }, translate("tripEditor") || "Trip Editor"),
         // Trip name input
         el(
           "div",
           { class: "energy-input-group" },
-          el("label", { class: "energy-label", "data-i18n": "tripName" }, t("tripName") || "Trip name"),
+          el("label", { class: "energy-label", "data-i18n": "tripName" }, translate("tripName") || "Trip name"),
           el("input", {
             class: "energy-input",
             id: "energy-multi-trip-name",
             type: "text",
-            placeholder: t("tripPlaceholder"),
+            placeholder: translate("tripPlaceholder"),
             spellcheck: "false",
           })
         ),
@@ -260,7 +266,7 @@ export function buildPanel() {
         el(
           "div",
           { class: "energy-input-group" },
-          el("label", { class: "energy-label", "data-i18n": "electricityPrice" }, t("electricityPrice")),
+          el("label", { class: "energy-label", "data-i18n": "electricityPrice" }, translate("electricityPrice")),
           el("input", {
             class: "energy-input",
             id: "energy-multi-price",
@@ -281,13 +287,13 @@ export function buildPanel() {
           el("button", {
             class: "energy-multi-save-btn",
             type: "button",
-          }, t("addTrip") || "Add Trip"),
+          }, translate("addTrip") || "Add Trip"),
           el("button", {
             class: "energy-multi-cancel-btn",
             type: "button",
             hidden: true,
             "data-i18n": "cancel",
-          }, t("cancel"))
+          }, translate("cancel"))
         )
       ),
       // Right side: trips list + footer
@@ -295,14 +301,14 @@ export function buildPanel() {
         el("div", { class: "energy-trips-container" }),
         el("div", { class: "energy-multi-footer" },
           el("div", { class: "energy-multi-total" },
-            el("div", { class: "energy-multi-total-label", "data-i18n": "total" }, t("total") || "Total"),
+            el("div", { class: "energy-multi-total-label", "data-i18n": "total" }, translate("total") || "Total"),
             el("div", { class: "energy-multi-total-value", id: "energy-multi-total" }, "—")
           ),
           el("button", {
             class: "energy-reset-all-btn",
             type: "button",
             "data-i18n": "resetAll",
-          }, t("resetAll") || "Reiniciar todo")
+          }, translate("resetAll") || "Reiniciar todo")
         )
       )
     ),
@@ -313,11 +319,11 @@ export function buildPanel() {
       el(
         "div",
         { class: "energy-settings-sheet-header" },
-        el("span", { "data-i18n": "settings" }, t("settings")),
+        el("span", { "data-i18n": "settings" }, translate("settings")),
         el("button", {
           class: "energy-icon-btn energy-settings-close",
           type: "button",
-          "aria-label": t("close"),
+          "aria-label": translate("close"),
           "data-i18n-aria": "close",
           html: IconClose,
         })
@@ -329,7 +335,7 @@ export function buildPanel() {
         el(
           "div",
           { class: "energy-settings-row energy-settings-row-box" },
-          el("span", { class: "energy-settings-label", "data-i18n": "distanceUnit" }, t("distanceUnit")),
+          el("span", { class: "energy-settings-label", "data-i18n": "distanceUnit" }, translate("distanceUnit")),
           el(
             "div",
             { class: "energy-unit-toggle" },
@@ -349,7 +355,7 @@ export function buildPanel() {
         el(
           "label",
           { class: "energy-settings-row" },
-          el("span", { class: "energy-settings-label", "data-i18n": "thousandSeparator" }, t("thousandSeparator")),
+          el("span", { class: "energy-settings-label", "data-i18n": "thousandSeparator" }, translate("thousandSeparator")),
           el(
             "span",
             { class: "energy-settings-switch" },
@@ -372,11 +378,11 @@ export function buildPanel() {
             class: "energy-modal-btn energy-modal-cancel",
             type: "button",
             "data-i18n": "cancel",
-          }, t("cancel")),
+          }, translate("cancel")),
           el("button", {
             class: "energy-modal-btn energy-modal-confirm",
             type: "button",
-          }, t("delete"))
+          }, translate("delete"))
         )
       )
     )
