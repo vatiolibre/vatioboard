@@ -32,6 +32,9 @@
 - Migrated Camera Map into a first-class shell-window app module under `src/apps/camera-map/`.
 - Camera Map now resolves `vatio.cameraMap` through `shellAppRuntimeManager`, prefers `runtime.services.gps`, mirrors preferences through `runtime.services.settings`, and logs runtime settings fallback warnings.
 - Camera Map compatibility is preserved: shell window ID `camera-map`, legacy tool ID `camera-map`, floating-tool toggles, start-menu launch, Speed Alerts-to-Camera Map launch, taskbar behavior, position/visibility, local/offline camera data, global GPS fallbacks, and direct `createCameraMapWidget()` callers still work.
+- Migrated Speed Alerts into a first-class shell-window app module under `src/apps/speed-alerts/`.
+- Speed Alerts now resolves `vatio.speedAlerts` through `shellAppRuntimeManager`, prefers runtime GPS and driving-alert services where available, mirrors preferences through `runtime.services.settings`, and logs runtime settings fallback warnings.
+- Speed Alerts compatibility is preserved: shell window ID `speed-alerts`, legacy tool ID `speed-alerts`, floating-tool toggles, start-menu launch, Camera Map button behavior, taskbar behavior, position/visibility, alert audio priming, alert sound behavior, GPS fallbacks, and direct `createSpeedAlertPanel()` callers still work.
 
 ## Important Files Changed
 
@@ -53,6 +56,9 @@
 - `src/apps/camera-map/camera-map-app.ts`
 - `src/apps/camera-map/camera-map-app.less`
 - `src/apps/camera-map/index.ts`
+- `src/apps/speed-alerts/speed-alerts-app.ts`
+- `src/apps/speed-alerts/speed-alerts-app.less`
+- `src/apps/speed-alerts/index.ts`
 - `src/apps/shared/number-format-settings.ts`
 - `src/app-platform/adapters/route-registry-adapter.ts`
 - `src/app-platform/adapters/tool-registry-adapter.ts`
@@ -71,6 +77,7 @@
 - `src/energy/widget/panel.ts`
 - `src/energy/widget/settings-sheet.ts`
 - `src/speed/camera-map-widget.ts`
+- `src/speed/speed-alert-panel.ts`
 - `src/types/route.ts`
 - `src/app/views/AppsView.ts`
 - `src/app/views/templates/apps-template.ts`
@@ -82,12 +89,14 @@
 - `test/unit/calculator-app.test.js`
 - `test/unit/energy-app.test.js`
 - `test/unit/camera-map-app.test.js`
+- `test/unit/speed-alerts-app.test.js`
 - `test/smoke/dev-harness-speed-page.test.js`
 - `test/smoke/spa-gps-background.test.js`
 - `test/smoke/spa-apps-route.test.js`
 - `test/helpers/real-spa-route-smoke.js`
 - `docs/vatioboard-os.md`
 - `docs/vatioboard-os-implementation-log.md`
+- `docs/next-agent-handoff.md`
 
 ## Commands Run
 
@@ -171,6 +180,18 @@ Camera Map migration focused verification:
 - Final `pnpm run lint` - passed with 60 warning-level findings and 0 errors.
 - `pnpm run build` - passed. Vite still warns for dynamic/static auth and cloud-sync imports, and now also warns that Calculator, Camera Map, and Energy app entries are both manifest dynamic imports and static floating-tools imports for compatibility.
 
+Speed Alerts migration focused and final verification:
+
+- `pnpm run typecheck` - passed.
+- `pnpm vitest run test/unit/speed-alerts-app.test.js` - first run failed one new wrapper test because the denied-permission assertion clicked the "Use current speed" button instead of the mute button. The selector was fixed.
+- `pnpm vitest run test/unit/speed-alerts-app.test.js` - passed after the selector fix, 1 file and 10 tests.
+- `pnpm vitest run test/unit/speed-alerts-app.test.js test/unit/speed-alert-panel.test.js test/unit/camera-map-app.test.js test/unit/app-platform.test.js test/unit/shell-window-integration.test.js` - passed, 5 files and 49 tests.
+- `pnpm run lint` - passed with 60 warning-level findings and 0 errors.
+- `pnpm test` - first run failed in `test/smoke/spa-gps-background.test.js` on `keeps speed recording and an accel run subscribed across route changes` after the 90000ms timeout. The same test passed isolated immediately afterward.
+- `pnpm vitest run test/smoke/spa-gps-background.test.js -t "keeps speed recording and an accel run subscribed across route changes"` - passed, 1 file and 1 test with 13 skipped.
+- `pnpm test` - rerun passed, 129 files and 1652 tests.
+- `pnpm run build` - passed. Vite still warns for dynamic/static auth and cloud-sync imports, and now also warns that Calculator, Camera Map, Energy, and Speed Alerts app entries are both manifest dynamic imports and static floating-tools imports for compatibility.
+
 Final full-suite commands are also recorded in `docs/vatioboard-os-implementation-log.md`.
 
 ## Known Limitations
@@ -178,18 +199,18 @@ Final full-suite commands are also recorded in `docs/vatioboard-os-implementatio
 - App permissions are declared and enforced at the runtime boundary, but there are no user prompts yet.
 - App service declarations are now enforced with permissions, but this is still an internal runtime boundary rather than a sandbox.
 - App-private storage is localStorage-backed only.
-- Existing apps still import many global helpers directly; migration to `appRuntime` should be gradual. Calculator and Energy are partially migrated through app wrappers, but Calculator expression state/history, Energy trip values/multi-trip records, and both apps' shell layout storage remain legacy for compatibility.
+- Existing apps still import many global helpers directly; migration to `appRuntime` should be gradual. Calculator, Energy, Camera Map, and Speed Alerts are partially migrated through app wrappers, but Calculator expression state/history, Energy trip values/multi-trip records, Camera Map local/offline data storage, Speed Alerts panel internals, and shell layout storage remain legacy for compatibility.
 - Calculator and Energy intentionally share number-format settings through `embeddable_calc_settings_v1` in v1. Their app-private runtime settings are mirrors until a true platform shared-settings service exists.
 - Existing global compatibility shims remain in place.
 - Background-service lifecycle is registered in types but not heavily implemented.
-- Shell-window runtimes are created and cached. Calculator, Energy, and Camera Map now consume their runtimes through app wrappers; Speed Alerts, Player, and Milkdrop still need migration.
+- Shell-window runtimes are created and cached. Calculator, Energy, Camera Map, and Speed Alerts now consume their runtimes through app wrappers; Player and Milkdrop still need migration.
 - App settings are local-only through app-private storage and do not sync yet.
 - Two long GPS/speed smoke tests have larger per-test timeouts because they repeatedly passed in isolation but timed out under full-suite load.
 - Community/external app loading is intentionally not implemented.
 
 ## Suggested Next Prompt
 
-Continue the VatioBoard OS migration by moving Speed Alerts behind a first-class shell-window app module in `src/apps/speed-alerts`. Resolve `vatio.speedAlerts` through `shellAppRuntimeManager`, prefer runtime GPS and driving-alert services where practical, move Speed Alerts panel preferences through `runtime.services.settings` while preserving existing legacy keys and driving-alert service behavior, keep shell window ID `speed-alerts`, legacy tool ID `speed-alerts`, floating-tool toggles, start-menu launch, taskbar behavior, Camera Map launch button behavior, audio priming behavior, and direct `createSpeedAlertPanel()` callers, then add tests proving manifest-backed launch, legacy launch, runtime creation, service fallback behavior, Camera Map interop, and direct panel compatibility.
+Continue the VatioBoard OS migration by moving Player behind a first-class shell-window app module in `src/apps/player`. Resolve `vatio.player` through `shellAppRuntimeManager`, prefer runtime audio/media services where practical, preserve the persistent player widget, media session behavior, playback queue/session restore, background audio behavior, taskbar/minimize/restore/close behavior, shell window ID `player`, legacy tool ID `player`, floating-tool toggles, start-menu launch, and direct player widget compatibility. Add tests proving manifest-backed launch, legacy launch, runtime creation, audio/runtime fallback behavior, session persistence compatibility, and direct widget callers.
 
 ## Manual QA
 
@@ -198,4 +219,5 @@ Continue the VatioBoard OS migration by moving Speed Alerts behind a first-class
 - Mobile browser: verify `#/apps` cards, filter, and buttons fit without horizontal scrolling.
 - Tesla browser: verify `#/speed`, `#/board`, `#/library`, `#/replay`, `#/accel`, and `#/apps` load; open Calculator, Energy, Camera Map, Speed Alerts, Player, and Milkdrop from their existing surfaces; use Calculator's Energy button and confirm Energy opens/focuses.
 - Tesla browser: open Speed Alerts, tap its Camera Map button, and confirm Camera Map opens/focuses and follows GPS when location permission is available.
+- Tesla browser: enable Speed Alerts, prime alert audio from a tap, toggle mute/sound options, close/reopen the panel, and confirm preferences persist and alerts still do not appear in the activity indicator until audio is explicitly armed.
 - Offline/glitch QA: load once, go offline, refresh `#/apps` and core local-first routes, and confirm the shell does not crash.

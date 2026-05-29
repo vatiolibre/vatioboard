@@ -159,7 +159,7 @@ Launchers also expose `getAppRuntime(appId)` for code that already has a `VatioA
 
 ## Migrated Shell Apps
 
-Calculator and Energy are the first migrated shell-window app modules. Their manifests remain `vatio.calculator` and `vatio.energy`; their shell window IDs remain `calculator` and `energy`; their legacy tool IDs remain `calculator` and `energy`.
+Calculator and Energy were the first migrated shell-window app modules. Their manifests remain `vatio.calculator` and `vatio.energy`; their shell window IDs remain `calculator` and `energy`; their legacy tool IDs remain `calculator` and `energy`.
 
 The first-class app wrapper lives in `src/apps/calculator/` and adapts the existing `src/calculator/calculator-widget.ts` implementation instead of duplicating the UI. The wrapper resolves the scoped runtime through `shellAppRuntimeManager`, then supplies the widget with:
 
@@ -232,6 +232,48 @@ vatioboard.cameraMap.approachFilter.v1
 ```
 
 Legacy values win when both legacy and app-private runtime settings exist, so stale app-private mirrors cannot permanently shadow a user's existing Camera Map preferences. If a legacy value is missing but a runtime mirror exists, the wrapper seeds the legacy key so direct `createCameraMapWidget()` callers continue to behave as before.
+
+## Speed Alerts Migration
+
+Speed Alerts is now wrapped as a first-class shell-window app module in `src/apps/speed-alerts/`. The wrapper adapts the existing `src/speed/speed-alert-panel.ts` panel and driving-alert service contract instead of duplicating the alert UI or rewriting audio/GPS behavior.
+
+The manifest remains `vatio.speedAlerts`; the shell window ID remains `speed-alerts`; the legacy tool ID remains `speed-alerts`. The manifest entry is:
+
+```ts
+entry: () => import("../apps/speed-alerts/index.js")
+```
+
+The wrapper resolves the scoped runtime through `shellAppRuntimeManager`, then supplies the panel with:
+
+- `runtime.services.gps` when the runtime has declared GPS service access.
+- `runtime.services.drivingAlerts` when available, preserving the existing app-level driving-alert service.
+- The injected `gpsService` / `drivingAlertService` or legacy globals when runtime services are unavailable.
+- `runtime.services.settings` for Speed Alerts preferences while preserving legacy localStorage keys.
+- `runtime.logger` for settings fallback warnings.
+
+Speed Alerts keeps the existing audio controller and audio priming path inside `createDrivingAlertService()`. The wrapper exposes `runtime.services.audio` through the manifest contract but does not reroute alert sounds directly through the app runtime in v1, which avoids changing background audio lease behavior.
+
+Speed Alerts settings mirror under:
+
+```text
+vatioboard.app.vatio.speedAlerts.settings.preferences
+```
+
+The v1 wrapper preserves these legacy preference keys for compatibility:
+
+```text
+vatio_speed_unit
+vatio_speed_distance_unit
+vatio_speed_alert_enabled
+vatio_speed_alert_limit_ms
+vatio_speed_alert_sound_enabled
+vatio_speed_audio_muted
+vatio_speed_trap_alert_enabled
+vatio_speed_trap_alert_distance_m
+vatio_speed_trap_sound_enabled
+```
+
+Direct `createSpeedAlertPanel()` callers still work without a runtime. The Speed Alerts Camera Map button still opens/focuses Camera Map through the existing callback path; when no callback is supplied, the wrapper prefers `runtime.shell.openApp("vatio.cameraMap")` and then falls back to the shell window manager/global floating tools path.
 
 ## Launching Apps
 

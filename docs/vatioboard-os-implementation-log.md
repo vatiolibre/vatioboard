@@ -1,5 +1,104 @@
 # VatioBoard OS Implementation Log
 
+## Speed Alerts Migration Session
+
+- Date/time: 2026-05-29 00:28:52 EDT
+- Agent: Codex 5.5
+- Repository: `/home/oscar/vatioboard`
+- Backend/BFF: `/home/oscar/frappe-bench/apps/vatiolibre` was not changed.
+
+## Speed Alerts Migration Baseline Understanding
+
+Calculator, Energy, and Camera Map were already first-class shell-window app wrappers under `src/apps/calculator/`, `src/apps/energy/`, and `src/apps/camera-map/`. Speed Alerts still launched through `src/speed/speed-alert-panel.ts` directly from `src/shared/floating-tools.ts`. The panel already preserved shell-window registration, taskbar integration, GPS fallback behavior, driving-alert service usage, alert audio priming, Camera Map launch, direct widget compatibility, and legacy localStorage preference keys. The `vatio.speedAlerts` manifest existed with shell window ID `speed-alerts` and legacy tool ID `speed-alerts`, but it had no app entry and no wrapper to resolve a scoped runtime.
+
+## Speed Alerts Files Inspected
+
+- `src/speed/speed-alert-panel.ts`
+- `src/app/services/driving-alert-service.ts`
+- `src/app/services/driving-audio-alert-controller.ts`
+- `src/speed/preferences.ts`
+- `src/speed/constants.ts`
+- `src/shared/floating-tools.ts`
+- `src/shared/start-menu.ts`
+- `src/shared/shell-window-manager.ts`
+- `src/app-platform/builtin-apps.ts`
+- `src/app-platform/shell-app-runtime-manager.ts`
+- `src/app-platform/launcher.ts`
+- `src/app-platform/services.ts`
+- `src/app-platform/settings.ts`
+- `src/apps/camera-map/camera-map-app.ts`
+- `test/unit/speed-alert-panel.test.js`
+- `test/unit/camera-map-app.test.js`
+- `test/unit/shell-window-integration.test.js`
+- `test/unit/app-platform.test.js`
+- `test/smoke/spa-gps-background.test.js`
+
+## Speed Alerts Migration Plan
+
+1. Add `src/apps/speed-alerts/` as a thin wrapper around the existing Speed Alerts panel.
+2. Resolve `vatio.speedAlerts` through `shellAppRuntimeManager` and return the existing panel API plus `runtime`.
+3. Prefer runtime GPS and driving-alert services when available, while preserving injected services and legacy global fallback behavior.
+4. Mirror Speed Alerts preferences through `runtime.services.settings` while preserving the existing legacy localStorage keys.
+5. Keep shell window ID, legacy tool ID, taskbar behavior, minimize/restore/close behavior, start-menu launch, floating-tool launch, Camera Map launch button, audio priming, alert sound behavior, GPS fallback behavior, and direct `createSpeedAlertPanel()` compatibility unchanged.
+6. Add focused tests for manifest-backed launch, runtime creation, runtime GPS/driving-alert service use, legacy launch paths, Camera Map interop, audio priming, settings mirrors, safe denied settings writes, and direct panel compatibility.
+
+## Speed Alerts Decisions Made
+
+- Added `src/apps/speed-alerts/speed-alerts-app.ts` as an adapter over `createSpeedAlertPanel()`.
+- Added `entry: () => import("../apps/speed-alerts/index.js")` to the `vatio.speedAlerts` manifest.
+- Added `gps.highAccuracy` to `vatio.speedAlerts` because the driving-alert service requests high-accuracy GPS while alerts are active.
+- Added `shell.launchApp` to `vatio.speedAlerts` because the wrapper can launch Camera Map through `runtime.shell.openApp("vatio.cameraMap")` when no legacy callback is supplied.
+- Updated `src/shared/floating-tools.ts` to instantiate Speed Alerts through `createSpeedAlertsApp()` while keeping the same shell-window ID and legacy tool actions.
+- Exported `SpeedAlertPanelApi` from `src/speed/speed-alert-panel.ts` so the app wrapper can return the existing API plus runtime metadata.
+- Runtime Speed Alerts preferences mirror to `vatioboard.app.vatio.speedAlerts.settings.preferences`.
+- Legacy Speed Alerts preference keys remain the compatibility source for v1:
+  - `vatio_speed_unit`
+  - `vatio_speed_distance_unit`
+  - `vatio_speed_alert_enabled`
+  - `vatio_speed_alert_limit_ms`
+  - `vatio_speed_alert_sound_enabled`
+  - `vatio_speed_audio_muted`
+  - `vatio_speed_trap_alert_enabled`
+  - `vatio_speed_trap_alert_distance_m`
+  - `vatio_speed_trap_sound_enabled`
+- If no legacy preference exists but a runtime mirror does, the wrapper seeds the legacy keys so direct panel callers continue to work.
+- The wrapper does not directly reroute alert playback through `runtime.services.audio`; the existing driving-alert audio controller remains responsible for alert audio and background audio leases to preserve behavior.
+- The Speed Alerts Camera Map button still uses the injected callback from floating tools. If no callback is supplied, the wrapper prefers manifest-backed `runtime.shell.openApp("vatio.cameraMap")`, then falls back to the shell window manager/global floating tools path.
+
+## Speed Alerts Files Changed
+
+- `src/app-platform/builtin-apps.ts`
+- `src/apps/speed-alerts/speed-alerts-app.less`
+- `src/apps/speed-alerts/speed-alerts-app.ts`
+- `src/apps/speed-alerts/index.ts`
+- `src/shared/floating-tools.ts`
+- `src/speed/speed-alert-panel.ts`
+- `test/unit/speed-alerts-app.test.js`
+- `docs/vatioboard-os.md`
+- `docs/next-agent-handoff.md`
+- `docs/vatioboard-os-implementation-log.md`
+
+## Speed Alerts Verification
+
+- `pnpm run typecheck` - passed.
+- `pnpm vitest run test/unit/speed-alerts-app.test.js` - first run failed one new wrapper test because the denied-permission assertion clicked the "Use current speed" button instead of the mute button. The selector was fixed; product code was not changed for this failure.
+- `pnpm vitest run test/unit/speed-alerts-app.test.js` - passed after the test selector fix, 1 file and 10 tests.
+- `pnpm vitest run test/unit/speed-alerts-app.test.js test/unit/speed-alert-panel.test.js test/unit/camera-map-app.test.js test/unit/app-platform.test.js test/unit/shell-window-integration.test.js` - passed, 5 files and 49 tests.
+- `pnpm run lint` - passed with 60 warning-level findings and 0 errors. Warnings are existing repository warnings in scripts/app/tests areas.
+- `pnpm test` - first run failed in `test/smoke/spa-gps-background.test.js` on `keeps speed recording and an accel run subscribed across route changes` after the 90000ms timeout. This matched the known timing-sensitive full-suite pattern; the same test passed isolated immediately afterward.
+- `pnpm vitest run test/smoke/spa-gps-background.test.js -t "keeps speed recording and an accel run subscribed across route changes"` - passed, 1 file and 1 test with 13 skipped.
+- `pnpm test` - rerun passed, 129 files and 1652 tests.
+- `pnpm run build` - passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1296 transformed modules. Vite emitted existing dynamic/static import warnings for `backend-auth.ts`, `cloud-sync.ts`, Calculator app entry, Camera Map app entry, Energy app entry, and the new Speed Alerts app entry because those modules are also statically imported for compatibility.
+
+## Speed Alerts Known Limitations
+
+- Speed Alerts panel UI internals still live in `src/speed/speed-alert-panel.ts`; the new app module is a wrapper/adaptor, matching the conservative Calculator/Energy/Camera Map migration pattern.
+- Runtime settings are mirrors/fallbacks for v1; legacy preference keys remain the compatibility source to protect direct panel callers.
+- Alert audio still flows through the existing driving-alert audio controller rather than a new app-runtime audio facade. This is intentional for v1 so background audio lease behavior remains unchanged.
+- Speed Alerts still uses the existing global i18n helper internally. The runtime i18n service remains available for future panel refactoring.
+- Player and Milkdrop still need first-class shell-window app wrappers.
+- One full-suite run hit the known GPS-background timing-sensitive smoke timeout; the isolated test passed, and a full rerun passed without code changes.
+
 ## Camera Map Migration Session
 
 - Date/time: 2026-05-28 23:47:11 EDT

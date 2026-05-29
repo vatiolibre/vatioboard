@@ -24,6 +24,16 @@ type AnyRecord = Record<string, any>;
 
 export const SPEED_ALERT_PANEL_WINDOW_ID = "speed-alerts";
 
+export interface SpeedAlertPanelApi {
+  close(options?: AnyRecord): void;
+  destroy(): void;
+  getElement(): HTMLElement;
+  isOpen(): boolean;
+  open(options?: AnyRecord): void;
+  syncFromService(snapshot?: AnyRecord): void;
+  toggle(options?: AnyRecord): void;
+}
+
 const VISIBILITY_KEY = "vatioboard.speed_alerts_panel.visible_v1";
 const POS_KEY = "vatioboard.speed_alerts_panel.pos_v1";
 const DRAG_THRESHOLD_PX = 6;
@@ -518,7 +528,7 @@ function clampResizeBounds(width, height, bounds: AnyRecord = {}): AnyRecord {
   };
 }
 
-export function createSpeedAlertPanel(options: AnyRecord = {}) {
+export function createSpeedAlertPanel(options: AnyRecord = {}): SpeedAlertPanelApi {
   const {
     mount = document.body,
     shellManager = getDefaultShellWindowManager({ root: mount }),

@@ -6,7 +6,7 @@ import "../styles/speed-alert-panel.less";
 import { createCalculatorApp } from "../apps/calculator/index.js";
 import { createCameraMapApp } from "../apps/camera-map/index.js";
 import { createEnergyApp } from "../apps/energy/index.js";
-import { createSpeedAlertPanel } from "../speed/speed-alert-panel.js";
+import { createSpeedAlertsApp } from "../apps/speed-alerts/index.js";
 import { getDefaultShellWindowManager } from "./shell-window-manager.js";
 import type { DrivingAlertService, GpsService } from "../types/services";
 import type { ShellRuntime } from "../types/shell";
@@ -103,9 +103,10 @@ export function initFloatingTools({
       || null,
   });
 
-  const speedAlertPanel = createSpeedAlertPanel({
+  const speedAlertPanel = createSpeedAlertsApp({
     mount,
     shellManager,
+    shellAppRuntimeManager,
     gpsService,
     drivingAlertService,
     restoreVisibility: true,
