@@ -38,6 +38,9 @@
 - Migrated Player into a first-class shell-window app module under `src/apps/player/`.
 - Player now resolves `vatio.player` through `shellAppRuntimeManager`, uses the runtime audio service at the app boundary, mirrors visualizer preferences through `runtime.services.settings`, and keeps the existing shared audio runtime singleton.
 - Player compatibility is preserved: shell window ID `player`, legacy tool ID `player`, persistent player global, taskbar behavior, minimize/restore/close behavior, Media Session behavior, background audio behavior, queue/session restore, pinned/local media behavior, and direct `createPlayerWidget()` callers still work.
+- Migrated Milkdrop into a first-class shell-window app module under `src/apps/milkdrop/`.
+- Milkdrop now resolves `vatio.milkdrop` through `shellAppRuntimeManager`, acknowledges the runtime audio service without replacing the shared audio graph, mirrors visibility through `runtime.services.settings`, and uses runtime i18n for panel labels where practical.
+- Milkdrop compatibility is preserved: shell window ID `milkdrop`, legacy tool ID `milkdrop`, Player-to-Milkdrop launch, taskbar behavior, minimize/restore/close behavior, preset loading, canvas/WebGL behavior, shared audio graph behavior, legacy position/visibility/size/preset keys, and direct `createMilkdropPanel()` callers still work.
 
 ## Important Files Changed
 
@@ -65,6 +68,9 @@
 - `src/apps/player/player-app.ts`
 - `src/apps/player/player-app.less`
 - `src/apps/player/index.ts`
+- `src/apps/milkdrop/milkdrop-app.ts`
+- `src/apps/milkdrop/milkdrop-app.less`
+- `src/apps/milkdrop/index.ts`
 - `src/apps/shared/number-format-settings.ts`
 - `src/app-platform/adapters/route-registry-adapter.ts`
 - `src/app-platform/adapters/tool-registry-adapter.ts`
@@ -86,6 +92,8 @@
 - `src/speed/speed-alert-panel.ts`
 - `src/player/player-shell.ts`
 - `src/player/player-widget.ts`
+- `src/player/milkdrop-panel.ts`
+- `src/player/milkdrop-panel-prefs.ts`
 - `src/types/route.ts`
 - `src/app/views/AppsView.ts`
 - `src/app/views/templates/apps-template.ts`
@@ -99,6 +107,7 @@
 - `test/unit/camera-map-app.test.js`
 - `test/unit/speed-alerts-app.test.js`
 - `test/unit/player-app.test.js`
+- `test/unit/milkdrop-app.test.js`
 - `test/smoke/dev-harness-speed-page.test.js`
 - `test/smoke/spa-gps-background.test.js`
 - `test/smoke/spa-apps-route.test.js`
@@ -214,6 +223,24 @@ Player migration focused and final verification:
   - `pnpm test` - passed, 130 files and 1659 tests.
   - `pnpm run build` - passed. Vite still warns for dynamic/static auth and cloud-sync imports, and now also warns that Calculator, Camera Map, Energy, Speed Alerts, and Player app entries are both manifest dynamic imports and static imports used for compatibility.
 
+Milkdrop migration focused verification:
+
+- `pnpm run typecheck` - first run failed because `PlayerShellOptions.onContentOpenChange` was typed as a zero-argument callback while the shell passes a detail object. Fixed the type.
+- `pnpm run typecheck` - passed after the type fix.
+- `pnpm vitest run test/unit/milkdrop-app.test.js test/unit/milkdrop-panel.test.js test/unit/player-app.test.js test/unit/app-platform.test.js` - passed, 4 files and 45 tests.
+- `pnpm run lint` - passed with 60 warning-level findings and 0 errors. Warnings are existing repository warnings in scripts/app/tests areas.
+- `pnpm vitest run test/unit/audio-player.test.js test/unit/floating-panel-z-order.test.js test/unit/shell-window-integration.test.js` - passed, 3 files and 170 tests.
+
+Milkdrop migration final verification after documentation updates:
+
+- `pnpm run typecheck` - passed.
+- `pnpm run lint` - passed with 60 warning-level findings and 0 errors. Warnings are existing repository warnings in scripts/app/tests areas.
+- `pnpm vitest run test/unit/milkdrop-app.test.js test/unit/milkdrop-panel.test.js test/unit/player-app.test.js test/unit/audio-player.test.js test/unit/floating-panel-z-order.test.js test/unit/shell-window-integration.test.js test/unit/app-platform.test.js` - passed, 7 files and 215 tests.
+- `pnpm test` - passed, 131 files and 1667 tests.
+- `pnpm run build` - passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1302 transformed modules. Vite emitted existing dynamic/static import warnings for `backend-auth.ts`, `cloud-sync.ts`, Calculator app entry, Camera Map app entry, Energy app entry, Speed Alerts app entry, and Player app entry.
+- A literal final-tree `pnpm test` rerun hit the known full-suite timing-sensitive `test/smoke/spa-gps-background.test.js` test once after 90000ms. The same test passed isolated immediately afterward, and the full `pnpm test` rerun passed again with 131 files and 1667 tests.
+- Final `pnpm run build` rerun passed with the same existing Vite dynamic/static import warnings.
+
 Final full-suite commands are also recorded in `docs/vatioboard-os-implementation-log.md`.
 
 ## Known Limitations
@@ -221,18 +248,18 @@ Final full-suite commands are also recorded in `docs/vatioboard-os-implementatio
 - App permissions are declared and enforced at the runtime boundary, but there are no user prompts yet.
 - App service declarations are now enforced with permissions, but this is still an internal runtime boundary rather than a sandbox.
 - App-private storage is localStorage-backed only.
-- Existing apps still import many global helpers directly; migration to `appRuntime` should be gradual. Calculator, Energy, Camera Map, Speed Alerts, and Player are partially migrated through app wrappers, but Calculator expression state/history, Energy trip values/multi-trip records, Camera Map local/offline data storage, Speed Alerts panel internals, Player queue/session restore, Player media cache, and shell layout storage remain legacy for compatibility.
+- Existing apps still import many global helpers directly; migration to `appRuntime` should be gradual. Calculator, Energy, Camera Map, Speed Alerts, Player, and Milkdrop are partially migrated through app wrappers, but Calculator expression state/history, Energy trip values/multi-trip records, Camera Map local/offline data storage, Speed Alerts panel internals, Player queue/session restore, Player media cache, Milkdrop preset/position/size persistence, and shell layout storage remain legacy for compatibility.
 - Calculator and Energy intentionally share number-format settings through `embeddable_calc_settings_v1` in v1. Their app-private runtime settings are mirrors until a true platform shared-settings service exists.
 - Existing global compatibility shims remain in place.
 - Background-service lifecycle is registered in types but not heavily implemented.
-- Shell-window runtimes are created and cached. Calculator, Energy, Camera Map, Speed Alerts, and Player now consume their runtimes through app wrappers; Milkdrop still needs migration.
+- Shell-window runtimes are created and cached. Calculator, Energy, Camera Map, Speed Alerts, Player, and Milkdrop now consume their runtimes through app wrappers.
 - App settings are local-only through app-private storage and do not sync yet.
 - Two long GPS/speed smoke tests have larger per-test timeouts because they repeatedly passed in isolation but timed out under full-suite load.
 - Community/external app loading is intentionally not implemented.
 
 ## Suggested Next Prompt
 
-Continue the VatioBoard OS migration by moving Milkdrop behind a first-class shell-window app module in `src/apps/milkdrop`. Resolve `vatio.milkdrop` through `shellAppRuntimeManager`, prefer runtime audio/settings/i18n services where practical, preserve shell window ID `milkdrop`, legacy tool ID `milkdrop`, Player-to-Milkdrop launch behavior, visualizer preset loading, canvas/WebGL behavior, taskbar/minimize/restore/close behavior, position/visibility persistence, and direct `createMilkdropPanel()` callers. Add tests proving manifest-backed launch, runtime creation, legacy launch, Player interop, runtime audio/settings fallback behavior, and direct panel compatibility.
+Continue VatioBoard OS after all current shell-window wrappers have been migrated. Harden the app-first launch path for lazy shell-window modules and then start a route-app migration candidate such as Speed or Board. Preserve existing routes, globals, and shell-window compatibility; prefer small adapters over rewrites; add tests proving App Manager/app launcher behavior from a cold shell, runtime lifecycle cleanup, direct legacy compatibility, and full-suite/build verification.
 
 ## Manual QA
 
@@ -243,4 +270,5 @@ Continue the VatioBoard OS migration by moving Milkdrop behind a first-class she
 - Tesla browser: open Speed Alerts, tap its Camera Map button, and confirm Camera Map opens/focuses and follows GPS when location permission is available.
 - Tesla browser: enable Speed Alerts, prime alert audio from a tap, toggle mute/sound options, close/reopen the panel, and confirm preferences persist and alerts still do not appear in the activity indicator until audio is explicitly armed.
 - Tesla browser: open Player, play/pause/skip a demo or local track, close and reopen the panel while audio continues, refresh and confirm queue/session restore, and verify Media Session controls still target Player.
+- Tesla browser: from Player, open Milkdrop, cycle/shuffle presets, resize/fullscreen/close/reopen it, and confirm audio playback continues and the panel restores its visibility/position behavior.
 - Offline/glitch QA: load once, go offline, refresh `#/apps` and core local-first routes, and confirm the shell does not crash.

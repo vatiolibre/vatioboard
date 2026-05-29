@@ -36,6 +36,7 @@ import {
 } from "../shared/floating-layer-manager.js";
 import { getDefaultShellWindowManager } from "../shared/shell-window-manager.js";
 import { getShellWorkArea } from "../shared/shell-work-area.js";
+import type { ShellAppRuntimeManager } from "../app-platform/types";
 import type { ShellLifecycleOptions, ShellRuntime } from "../types/shell";
 
 // ── Deduped bootstrap (shared across all widget instances) ───────────
@@ -87,6 +88,7 @@ type PlayerWidgetOptions = {
   onClose?: (() => void) | null;
   settingsStore?: PlayerShellSettingsStore | null;
   shellManager?: ShellRuntime;
+  shellAppRuntimeManager?: ShellAppRuntimeManager | null;
 };
 
 export type PlayerWidgetApi = {
@@ -398,6 +400,7 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
     onClose = null,
     settingsStore = null,
     shellManager = getDefaultShellWindowManager(),
+    shellAppRuntimeManager = null,
   } = options;
 
   const DRAG_THRESHOLD_PX = 6;
@@ -460,6 +463,8 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
     container: mount,
     onContentOpenChange: handleContentOpenChange,
     settingsStore,
+    shellManager,
+    shellAppRuntimeManager,
   });
   const contentSheet = shell.root.querySelector<HTMLElement>(".player-content-sheet");
   let cleanupLayer = () => {};

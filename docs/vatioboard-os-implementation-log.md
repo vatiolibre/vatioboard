@@ -1,5 +1,104 @@
 # VatioBoard OS Implementation Log
 
+## Milkdrop Migration Session
+
+- Date/time: 2026-05-29 07:27:28 EDT
+- Agent: Codex 5.5
+- Repository: `/home/oscar/vatioboard`
+- Backend/BFF: `/home/oscar/frappe-bench/apps/vatiolibre` was not changed.
+
+## Milkdrop Migration Baseline Understanding
+
+Calculator, Energy, Camera Map, Speed Alerts, and Player were already first-class shell-window app wrappers. Milkdrop still lived as the lazy visualizer panel in `src/player/milkdrop-panel.ts`, opened from the Player shell through a dynamic panel import. The panel already preserved shell window ID `milkdrop`, taskbar/minimize/restore/close behavior, Butterchurn preset loading, WebGL/canvas lifecycle, position/size/visibility persistence, and shared audio graph usage through `audio-graph-registry`. The `vatio.milkdrop` manifest existed with shell window ID `milkdrop`, legacy tool ID `milkdrop`, and audio/settings/storage/i18n service declarations, but it had no app entry and Player did not resolve a scoped Milkdrop runtime before opening the panel.
+
+## Milkdrop Files Inspected
+
+- `src/player/milkdrop-panel.ts`
+- `src/player/milkdrop-panel-prefs.ts`
+- `src/player/player-shell.ts`
+- `src/player/player-widget.ts`
+- `src/apps/player/player-app.ts`
+- `src/shared/audio-runtime.ts`
+- `src/shared/audio-graph-registry.ts`
+- `src/shared/audio-visualizer.ts`
+- `src/shared/floating-layer-manager.ts`
+- `src/shared/shell-window-manager.ts`
+- `src/app-platform/builtin-apps.ts`
+- `src/app-platform/shell-app-runtime-manager.ts`
+- `src/app-platform/launcher.ts`
+- `test/unit/milkdrop-panel.test.js`
+- `test/unit/player-app.test.js`
+- `test/unit/audio-player.test.js`
+- `test/unit/floating-panel-z-order.test.js`
+- `test/unit/shell-window-integration.test.js`
+
+## Milkdrop Migration Plan
+
+1. Add `src/apps/milkdrop/` as a thin wrapper around the existing Milkdrop panel.
+2. Resolve `vatio.milkdrop` through `shellAppRuntimeManager` and return the existing panel API plus `runtime`.
+3. Keep Player-to-Milkdrop lazy loading by changing Player shell's dynamic import to the app wrapper, not to a static visualizer import.
+4. Use runtime audio/settings/i18n/logger at the boundary without replacing the shared audio runtime singleton or graph registry.
+5. Mirror only safe visibility state through `runtime.services.settings`; leave position, size, preset, WebGL, and audio graph behavior on existing legacy paths.
+6. Preserve shell window ID, legacy tool ID, taskbar behavior, minimize/restore/close behavior, preset loading, canvas/WebGL lifecycle, Player interop, and direct `createMilkdropPanel()` callers.
+7. Add focused tests for manifest-backed launch, runtime creation, Player interop, runtime audio acknowledgement, visibility settings mirrors, taskbar behavior, preset/audio graph behavior, and direct panel compatibility.
+
+## Milkdrop Decisions Made
+
+- Added `src/apps/milkdrop/milkdrop-app.ts` as an adapter over `createMilkdropPanel()`.
+- Added `entry: () => import("../apps/milkdrop/index.js")` to the `vatio.milkdrop` manifest.
+- Updated Player shell to lazy-load `../apps/milkdrop/index.js` and call `createMilkdropApp()` when the Milkdrop button is pressed.
+- Passed `shellManager` and `shellAppRuntimeManager` from `createPlayerWidget()` into `createPlayerShell()` so Player-to-Milkdrop launch uses the same shell runtime/cache.
+- Exported Milkdrop panel API/options types and the legacy visibility key to support the wrapper and tests without changing direct panel callers.
+- Added a `translate` option to `createMilkdropPanel()` so the wrapper can provide `runtime.i18n.t()` for panel labels.
+- Runtime Milkdrop visibility mirrors to `vatioboard.app.vatio.milkdrop.settings.visible`.
+- Legacy Milkdrop visibility remains canonical for v1 at `milkdrop_panel_visible_v1`; stale runtime mirrors cannot shadow it.
+- Milkdrop position, size, and preset name remain on existing legacy keys:
+  - `milkdrop_panel_pos_v1`
+  - `milkdrop_panel_size_v1`
+  - `milkdrop_preset_name_v1`
+- The wrapper acknowledges `runtime.services.audio` by inspecting state, but the panel still uses the shared `audio-runtime` singleton and `audio-graph-registry` for Butterchurn wiring. No second audio graph was introduced.
+
+## Milkdrop Files Changed
+
+- `src/app-platform/builtin-apps.ts`
+- `src/apps/milkdrop/milkdrop-app.less`
+- `src/apps/milkdrop/milkdrop-app.ts`
+- `src/apps/milkdrop/index.ts`
+- `src/player/milkdrop-panel-prefs.ts`
+- `src/player/milkdrop-panel.ts`
+- `src/player/player-shell.ts`
+- `src/player/player-widget.ts`
+- `test/unit/milkdrop-app.test.js`
+- `docs/vatioboard-os.md`
+- `docs/next-agent-handoff.md`
+- `docs/vatioboard-os-implementation-log.md`
+
+## Milkdrop Verification
+
+- `pnpm run typecheck` - first run failed because `PlayerShellOptions.onContentOpenChange` was typed as a zero-argument callback while the shell passes a detail object. Fixed the type.
+- `pnpm run typecheck` - passed after the type fix.
+- `pnpm vitest run test/unit/milkdrop-app.test.js test/unit/milkdrop-panel.test.js test/unit/player-app.test.js test/unit/app-platform.test.js` - passed, 4 files and 45 tests.
+- `pnpm run lint` - passed with 60 warning-level findings and 0 errors. Warnings are existing repository warnings in scripts/app/tests areas.
+- `pnpm vitest run test/unit/audio-player.test.js test/unit/floating-panel-z-order.test.js test/unit/shell-window-integration.test.js` - passed, 3 files and 170 tests.
+- Final verification was rerun after documentation updates:
+  - `pnpm run typecheck` - passed.
+  - `pnpm run lint` - passed with 60 warning-level findings and 0 errors. Warnings are existing repository warnings in scripts/app/tests areas.
+  - `pnpm vitest run test/unit/milkdrop-app.test.js test/unit/milkdrop-panel.test.js test/unit/player-app.test.js test/unit/audio-player.test.js test/unit/floating-panel-z-order.test.js test/unit/shell-window-integration.test.js test/unit/app-platform.test.js` - passed, 7 files and 215 tests.
+  - `pnpm test` - passed, 131 files and 1667 tests.
+  - `pnpm run build` - passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1302 transformed modules. Vite emitted existing dynamic/static import warnings for `backend-auth.ts`, `cloud-sync.ts`, Calculator app entry, Camera Map app entry, Energy app entry, Speed Alerts app entry, and Player app entry. Milkdrop stayed lazy through the new app entry and vendor Milkdrop chunk.
+- During final verification, one rerun hit the known full-suite timing-sensitive smoke test:
+  - `pnpm test` - failed in `test/smoke/spa-gps-background.test.js` on `keeps speed recording and an accel run subscribed across route changes` after the 90000ms timeout. This same test passed in the prior full run and passed isolated immediately afterward.
+  - `pnpm vitest run test/smoke/spa-gps-background.test.js -t "keeps speed recording and an accel run subscribed across route changes"` - passed, 1 file and 1 test with 13 skipped.
+  - `pnpm test` - rerun passed, 131 files and 1667 tests.
+  - `pnpm run build` - rerun passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1302 transformed modules and the same existing dynamic/static import warnings listed above.
+
+## Milkdrop Known Limitations
+
+- Milkdrop UI and visualizer internals still live in `src/player/milkdrop-panel.ts`; the new app module is a wrapper/adaptor.
+- Only visibility is mirrored to runtime settings. Position, size, and preset persistence remain on legacy keys for compatibility.
+- Milkdrop still uses the existing shared audio runtime singleton and audio graph registry directly inside the panel.
+- The manifest-backed launcher can open/focus Milkdrop once the panel has been registered by the wrapper. Player-to-Milkdrop launch now creates that wrapper/runtime path lazily.
+
 ## Player Migration Session
 
 - Date/time: 2026-05-29 07:04:13 EDT

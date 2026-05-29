@@ -41,6 +41,8 @@ import {
   fetchBackendMediaAssetBlob,
 } from "../shared/backend-auth.js";
 import { showPromptDialog } from "../shared/ui/confirm-dialog.js";
+import type { ShellAppRuntimeManager } from "../app-platform/types";
+import type { ShellRuntime } from "../types/shell";
 
 const PROGRESS_MAX = 1000;
 export const VISUALIZER_VISIBLE_STORAGE_KEY = "vatio_board_player_widget_visualizer_visible";
@@ -232,6 +234,14 @@ export interface PlayerShellSettingsStore {
   setText?(key: string, value: string): unknown;
 }
 
+export interface PlayerShellOptions {
+  container: HTMLElement;
+  onContentOpenChange?: ((detail?: Record<string, unknown>) => void) | null;
+  settingsStore?: PlayerShellSettingsStore | null;
+  shellManager?: ShellRuntime | null;
+  shellAppRuntimeManager?: ShellAppRuntimeManager | null;
+}
+
 /**
  * Create the compact player panel.
  *
@@ -245,7 +255,13 @@ export interface PlayerShellSettingsStore {
  *   setTracks: (tracks: object[]) => void,
  * }}
  */
-export function createPlayerShell({ container, onContentOpenChange = null, settingsStore = null }) {
+export function createPlayerShell({
+  container,
+  onContentOpenChange = null,
+  settingsStore = null,
+  shellManager = null,
+  shellAppRuntimeManager = null,
+}: PlayerShellOptions) {
   // ── Root panel ─────────────────────────────────────────────────
   const root = document.createElement("section");
   root.className = "player-panel";
@@ -1604,11 +1620,11 @@ export function createPlayerShell({ container, onContentOpenChange = null, setti
 
   // ── Milkdrop panel (lazy) ──────────────────────────────────────
   let milkdropPanel = null;
-  let milkdropPanelModulePromise = null;
+  let milkdropPanelModulePromise: Promise<typeof import("../apps/milkdrop/index.js")> | null = null;
 
   function loadMilkdropPanelModule() {
     if (!milkdropPanelModulePromise) {
-      milkdropPanelModulePromise = import("./milkdrop-panel.js");
+      milkdropPanelModulePromise = import("../apps/milkdrop/index.js");
     }
     return milkdropPanelModulePromise;
   }
@@ -1621,12 +1637,14 @@ export function createPlayerShell({ container, onContentOpenChange = null, setti
 
   async function ensureMilkdropPanel() {
     if (!milkdropPanel) {
-      const { createMilkdropPanel } = await loadMilkdropPanelModule();
+      const { createMilkdropApp } = await loadMilkdropPanelModule();
       if (milkdropPanel) return milkdropPanel;
-      milkdropPanel = createMilkdropPanel({
+      milkdropPanel = createMilkdropApp({
         mount: container,
         onOpen: syncMilkdropToggle,
         onClose: syncMilkdropToggle,
+        shellManager: shellManager || undefined,
+        shellAppRuntimeManager,
       });
     }
     syncMilkdropToggle();

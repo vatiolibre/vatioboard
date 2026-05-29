@@ -467,6 +467,7 @@ export const BUILTIN_APP_MANIFESTS = [
     version: "1.0.0",
     icon: IconMedia,
     i18nKey: "milkdropTitle",
+    entry: () => import("../apps/milkdrop/index.js"),
     surfaces: ["shell-window", "taskbar", "launcher"],
     order: 110,
     permissions: [

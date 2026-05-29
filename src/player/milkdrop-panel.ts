@@ -51,15 +51,16 @@ type MilkdropSize = {
   h?: number;
 };
 
-type MilkdropPanelOptions = {
+export type MilkdropPanelOptions = {
   mount?: HTMLElement;
   onOpen?: (() => void) | null;
   onClose?: (() => void) | null;
   restoreVisibility?: boolean;
   shellManager?: ShellRuntime;
+  translate?: ((key: string) => string) | null;
 };
 
-type MilkdropPanelApi = {
+export type MilkdropPanelApi = {
   open: (options?: ShellLifecycleOptions) => Promise<void>;
   close: (options?: ShellLifecycleOptions) => void;
   toggle: () => void;
@@ -209,14 +210,16 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
     onClose = null,
     restoreVisibility = true,
     shellManager = getDefaultShellWindowManager(),
+    translate = null,
   } = options;
+  const tr = typeof translate === "function" ? translate : t;
 
   // ── DOM ────────────────────────────────────────────────────────
   const root = document.createElement("section");
   root.className = "milkdrop-panel";
   root.hidden = true;
   root.setAttribute("role", "dialog");
-  root.setAttribute("aria-label", t("milkdropTitle"));
+  root.setAttribute("aria-label", tr("milkdropTitle"));
   let cleanupLayer = () => {};
 
   const header = document.createElement("div");
@@ -224,20 +227,20 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
 
   const titleEl = document.createElement("span");
   titleEl.className = "milkdrop-title";
-  titleEl.textContent = t("milkdropTitle");
+  titleEl.textContent = tr("milkdropTitle");
 
-  const presetPrevBtn = makeBtn("milkdrop-btn milkdrop-preset-prev", IconPresetPrev, t("milkdropPresetPrev"));
+  const presetPrevBtn = makeBtn("milkdrop-btn milkdrop-preset-prev", IconPresetPrev, tr("milkdropPresetPrev"));
   const presetLabel = document.createElement("span");
   presetLabel.className = "milkdrop-preset-label";
   presetLabel.textContent = "";
-  const presetNextBtn = makeBtn("milkdrop-btn milkdrop-preset-next", IconPresetNext, t("milkdropPresetNext"));
-  const presetShuffleBtn = makeBtn("milkdrop-btn milkdrop-preset-shuffle", IconPresetShuffle, t("milkdropPresetShuffle"));
+  const presetNextBtn = makeBtn("milkdrop-btn milkdrop-preset-next", IconPresetNext, tr("milkdropPresetNext"));
+  const presetShuffleBtn = makeBtn("milkdrop-btn milkdrop-preset-shuffle", IconPresetShuffle, tr("milkdropPresetShuffle"));
 
   const spacer = document.createElement("div");
   spacer.className = "milkdrop-spacer";
 
-  const fullscreenBtn = makeBtn("milkdrop-btn milkdrop-fullscreen-btn", IconFullscreen, t("mediaPlayerFullscreen"));
-  const closeBtn = makeBtn("milkdrop-btn milkdrop-close-btn", IconClose, t("close"));
+  const fullscreenBtn = makeBtn("milkdrop-btn milkdrop-fullscreen-btn", IconFullscreen, tr("mediaPlayerFullscreen"));
+  const closeBtn = makeBtn("milkdrop-btn milkdrop-close-btn", IconClose, tr("close"));
 
   header.append(titleEl, presetPrevBtn, presetLabel, presetNextBtn, presetShuffleBtn, spacer, fullscreenBtn, closeBtn);
 
@@ -672,7 +675,7 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
   function updateFullscreenBtn() {
     const active = isFullscreenActive();
     fullscreenBtn.querySelector(".btn-icon").innerHTML = active ? IconFullscreenExit : IconFullscreen;
-    fullscreenBtn.setAttribute("aria-label", active ? t("mediaPlayerExitFullscreen") : t("mediaPlayerFullscreen"));
+    fullscreenBtn.setAttribute("aria-label", active ? tr("mediaPlayerExitFullscreen") : tr("mediaPlayerFullscreen"));
   }
 
   function savePreFullscreenGeometry() {

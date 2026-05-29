@@ -314,6 +314,47 @@ If both legacy values and app-private runtime mirrors exist, legacy values win s
 
 Player position, visibility, queue/session restore, pinned media, local media cache, and playlist/cache state intentionally remain on existing legacy storage paths for compatibility.
 
+## Milkdrop Migration
+
+Milkdrop is now wrapped as a first-class shell-window app module in `src/apps/milkdrop/`. The wrapper adapts the existing `src/player/milkdrop-panel.ts` panel instead of rewriting the visualizer, WebGL canvas, preset loading, or shared audio graph behavior.
+
+The manifest remains `vatio.milkdrop`; the shell window ID remains `milkdrop`; the legacy tool ID remains `milkdrop`. The manifest entry is:
+
+```ts
+entry: () => import("../apps/milkdrop/index.js")
+```
+
+Player's Milkdrop button now lazy-loads the Milkdrop app wrapper instead of importing the raw panel directly. This keeps the Butterchurn visualizer path lazy while allowing the wrapper to resolve the scoped `vatio.milkdrop` runtime through `shellAppRuntimeManager`.
+
+The wrapper uses:
+
+- `runtime.services.audio` at the app boundary to acknowledge the shared audio runtime without replacing the existing `audio-runtime` singleton or audio graph.
+- `runtime.services.settings` for safe visibility mirroring under `visible`.
+- `runtime.i18n.t()` for panel labels where the wrapper can provide translation.
+- `runtime.logger` for settings/audio fallback warnings.
+
+Milkdrop visibility mirrors under:
+
+```text
+vatioboard.app.vatio.milkdrop.settings.visible
+```
+
+The legacy visibility key remains canonical for v1:
+
+```text
+milkdrop_panel_visible_v1
+```
+
+If both the legacy key and app-private runtime mirror exist, the legacy key wins so stale runtime settings cannot shadow direct `createMilkdropPanel()` callers. If no legacy key exists but a runtime mirror does, the wrapper seeds the legacy key. Milkdrop position, size, preset name, canvas/WebGL lifecycle, and shared audio graph behavior intentionally remain on the existing legacy paths:
+
+```text
+milkdrop_panel_pos_v1
+milkdrop_panel_size_v1
+milkdrop_preset_name_v1
+```
+
+Direct `createMilkdropPanel()` callers still work without a runtime.
+
 ## Launching Apps
 
 `createAppLauncher()` implements v1 shell launching:
