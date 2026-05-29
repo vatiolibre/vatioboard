@@ -195,6 +195,44 @@ embeddable_calc_settings_v1
 
 The helper in `src/apps/shared/number-format-settings.ts` loads that key first and treats app-private runtime settings as mirrors/diagnostics. Calculator still mirrors to `vatioboard.app.vatio.calculator.settings.preferences`; Energy still mirrors to `vatioboard.app.vatio.energy.settings.numberFormat`. If both app-private runtime settings and the legacy shared key exist, the legacy shared key wins so stale app-private mirrors cannot make Calculator and Energy diverge. If the legacy key is missing but a runtime mirror exists, the helper can seed the legacy key so direct widget callers continue to work.
 
+## Camera Map Migration
+
+Camera Map is now wrapped as a first-class shell-window app module in `src/apps/camera-map/`. The wrapper adapts the existing `src/speed/camera-map-widget.ts` implementation instead of duplicating the map UI or changing the shell-window contract.
+
+The manifest remains `vatio.cameraMap`; the shell window ID remains `camera-map`; the legacy tool ID remains `camera-map`. The manifest entry is:
+
+```ts
+entry: () => import("../apps/camera-map/index.js")
+```
+
+The wrapper resolves the scoped runtime through `shellAppRuntimeManager`, then supplies the widget with:
+
+- `runtime.services.gps` when the runtime has declared GPS service access.
+- The legacy injected `gpsService` or global GPS readers when runtime GPS is unavailable.
+- `runtime.services.settings` for Camera Map preferences while preserving legacy localStorage keys.
+- `runtime.logger` for settings fallback warnings.
+
+Camera Map requests high-accuracy GPS while open, so its manifest includes both `gps.read` and `gps.highAccuracy`. If runtime GPS is missing, the widget still falls back to the existing `gpsService`, `window.__vatioboardGpsGetCurrentPosition`, and `window.__vatioboardSpeedGetCurrentPosition` paths used by standalone/dev harnesses and older integrations.
+
+Camera Map settings are mirrored under:
+
+```text
+vatioboard.app.vatio.cameraMap.settings.<key>
+```
+
+The v1 wrapper preserves these legacy preference keys for compatibility:
+
+```text
+vatioboard:camera-map:basemap
+vatioboard.cameraMap.follow.v1
+vatioboard.cameraMap.orientation.v1
+vatioboard.cameraMap.projection.v1
+vatioboard.cameraMap.approachLayer.v1
+vatioboard.cameraMap.approachFilter.v1
+```
+
+Legacy values win when both legacy and app-private runtime settings exist, so stale app-private mirrors cannot permanently shadow a user's existing Camera Map preferences. If a legacy value is missing but a runtime mirror exists, the wrapper seeds the legacy key so direct `createCameraMapWidget()` callers continue to behave as before.
+
 ## Launching Apps
 
 `createAppLauncher()` implements v1 shell launching:

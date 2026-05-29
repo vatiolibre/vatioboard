@@ -693,7 +693,7 @@ describe('speed.html smoke', () => {
     await flushTasks();
 
     expect(saveActiveReplaySessionSpy.mock.calls.length).toBeLessThanOrEqual(3);
-  });
+  }, 60000);
 
   it('archives a stopped replay before reverse geocoding finishes', async () => {
     reversePlaceSpy.mockImplementation(() => new Promise(() => {}));

@@ -29,6 +29,9 @@
 - Energy compatibility is preserved: shell window ID `energy`, legacy tool ID `energy`, floating-tool toggles, start-menu launch, Calculator-to-Energy launch, taskbar, position, visibility, and direct `createEnergyCalculatorWidget()` callers still work.
 - Fixed Calculator/Energy shared number-format compatibility before starting Camera Map. `embeddable_calc_settings_v1` is canonical for v1; Calculator and Energy app-private settings are mirrors so stale runtime settings cannot split decimal/thousands behavior.
 - Cleaned up Calculator and Energy `i18n:change` listeners during widget destroy.
+- Migrated Camera Map into a first-class shell-window app module under `src/apps/camera-map/`.
+- Camera Map now resolves `vatio.cameraMap` through `shellAppRuntimeManager`, prefers `runtime.services.gps`, mirrors preferences through `runtime.services.settings`, and logs runtime settings fallback warnings.
+- Camera Map compatibility is preserved: shell window ID `camera-map`, legacy tool ID `camera-map`, floating-tool toggles, start-menu launch, Speed Alerts-to-Camera Map launch, taskbar behavior, position/visibility, local/offline camera data, global GPS fallbacks, and direct `createCameraMapWidget()` callers still work.
 
 ## Important Files Changed
 
@@ -47,6 +50,9 @@
 - `src/apps/energy/energy-app.ts`
 - `src/apps/energy/energy-app.less`
 - `src/apps/energy/index.ts`
+- `src/apps/camera-map/camera-map-app.ts`
+- `src/apps/camera-map/camera-map-app.less`
+- `src/apps/camera-map/index.ts`
 - `src/apps/shared/number-format-settings.ts`
 - `src/app-platform/adapters/route-registry-adapter.ts`
 - `src/app-platform/adapters/tool-registry-adapter.ts`
@@ -64,6 +70,7 @@
 - `src/energy/trip-cost-storage.ts`
 - `src/energy/widget/panel.ts`
 - `src/energy/widget/settings-sheet.ts`
+- `src/speed/camera-map-widget.ts`
 - `src/types/route.ts`
 - `src/app/views/AppsView.ts`
 - `src/app/views/templates/apps-template.ts`
@@ -74,6 +81,9 @@
 - `test/unit/app-shell-runtime-lifecycle.test.js`
 - `test/unit/calculator-app.test.js`
 - `test/unit/energy-app.test.js`
+- `test/unit/camera-map-app.test.js`
+- `test/smoke/dev-harness-speed-page.test.js`
+- `test/smoke/spa-gps-background.test.js`
 - `test/smoke/spa-apps-route.test.js`
 - `test/helpers/real-spa-route-smoke.js`
 - `docs/vatioboard-os.md`
@@ -143,6 +153,24 @@ Shared Calculator/Energy number-format compatibility verification:
 - `pnpm test` - rerun passed, 127 files and 1632 tests.
 - `pnpm run build` - passed. Vite still warns for dynamic/static auth and cloud-sync imports, and for Calculator/Energy app entries because they are manifest dynamic imports and static floating-tools imports for compatibility.
 
+Camera Map migration focused verification:
+
+- `pnpm vitest run test/unit/camera-map-app.test.js` - passed, 1 file and 10 tests.
+- `pnpm run typecheck` - passed.
+- `pnpm vitest run test/unit/camera-map-app.test.js test/unit/camera-map-widget.test.js test/unit/speed-alert-panel.test.js test/unit/app-platform.test.js` - passed, 4 files and 99 tests.
+- `pnpm run lint` - passed with 60 warning-level findings and 0 errors.
+- `pnpm test` - first run failed in two known timing-sensitive smoke tests under full-suite load: `coalesces replay persistence under high-frequency recording bursts` and `keeps speed recording and an accel run subscribed across route changes`.
+- `pnpm vitest run test/smoke/dev-harness-speed-page.test.js -t "coalesces replay persistence under high-frequency recording bursts"` - passed, 1 file and 1 test with 13 skipped.
+- `pnpm vitest run test/smoke/spa-gps-background.test.js -t "keeps speed recording and an accel run subscribed across route changes"` - passed, 1 file and 1 test with 13 skipped.
+- `pnpm test` - second run failed only `coalesces replay persistence under high-frequency recording bursts`; the same test had passed isolated.
+- Increased only those two long-running smoke test timeouts to reduce full-suite timing brittleness: replay burst coalescing to 60000ms, SPA GPS background route-change coverage to 90000ms.
+- `pnpm vitest run test/smoke/dev-harness-speed-page.test.js -t "coalesces replay persistence under high-frequency recording bursts"` - passed after timeout hardening, 1 file and 1 test with 13 skipped.
+- `pnpm vitest run test/smoke/spa-gps-background.test.js -t "keeps speed recording and an accel run subscribed across route changes"` - passed after timeout hardening, 1 file and 1 test with 13 skipped.
+- `pnpm test` - passed after timeout hardening, 128 files and 1642 tests.
+- Final `pnpm run typecheck` - passed.
+- Final `pnpm run lint` - passed with 60 warning-level findings and 0 errors.
+- `pnpm run build` - passed. Vite still warns for dynamic/static auth and cloud-sync imports, and now also warns that Calculator, Camera Map, and Energy app entries are both manifest dynamic imports and static floating-tools imports for compatibility.
+
 Final full-suite commands are also recorded in `docs/vatioboard-os-implementation-log.md`.
 
 ## Known Limitations
@@ -154,13 +182,14 @@ Final full-suite commands are also recorded in `docs/vatioboard-os-implementatio
 - Calculator and Energy intentionally share number-format settings through `embeddable_calc_settings_v1` in v1. Their app-private runtime settings are mirrors until a true platform shared-settings service exists.
 - Existing global compatibility shims remain in place.
 - Background-service lifecycle is registered in types but not heavily implemented.
-- Shell-window runtimes are created and cached. Calculator and Energy now consume their runtimes through app wrappers; Camera Map, Speed Alerts, Player, and Milkdrop still need migration.
+- Shell-window runtimes are created and cached. Calculator, Energy, and Camera Map now consume their runtimes through app wrappers; Speed Alerts, Player, and Milkdrop still need migration.
 - App settings are local-only through app-private storage and do not sync yet.
+- Two long GPS/speed smoke tests have larger per-test timeouts because they repeatedly passed in isolation but timed out under full-suite load.
 - Community/external app loading is intentionally not implemented.
 
 ## Suggested Next Prompt
 
-Continue the VatioBoard OS migration by moving Camera Map behind a first-class shell-window app module in `src/apps/camera-map`. Resolve `vatio.cameraMap` through `shellAppRuntimeManager`, use runtime GPS service access instead of direct globals where practical, move Camera Map preferences to `runtime.services.settings` while preserving existing legacy keys as mirrors/fallbacks, keep shell window ID `camera-map`, legacy tool ID `camera-map`, floating-tool toggles, start-menu launch, taskbar behavior, and Speed Alerts-to-Camera Map launch behavior, then add tests proving manifest-backed launch, legacy launch, runtime creation, GPS permission/service behavior, and direct widget compatibility.
+Continue the VatioBoard OS migration by moving Speed Alerts behind a first-class shell-window app module in `src/apps/speed-alerts`. Resolve `vatio.speedAlerts` through `shellAppRuntimeManager`, prefer runtime GPS and driving-alert services where practical, move Speed Alerts panel preferences through `runtime.services.settings` while preserving existing legacy keys and driving-alert service behavior, keep shell window ID `speed-alerts`, legacy tool ID `speed-alerts`, floating-tool toggles, start-menu launch, taskbar behavior, Camera Map launch button behavior, audio priming behavior, and direct `createSpeedAlertPanel()` callers, then add tests proving manifest-backed launch, legacy launch, runtime creation, service fallback behavior, Camera Map interop, and direct panel compatibility.
 
 ## Manual QA
 
@@ -168,4 +197,5 @@ Continue the VatioBoard OS migration by moving Camera Map behind a first-class s
 - Desktop browser: visit `#/apps`, search/filter apps, and launch a route app and a shell-window app.
 - Mobile browser: verify `#/apps` cards, filter, and buttons fit without horizontal scrolling.
 - Tesla browser: verify `#/speed`, `#/board`, `#/library`, `#/replay`, `#/accel`, and `#/apps` load; open Calculator, Energy, Camera Map, Speed Alerts, Player, and Milkdrop from their existing surfaces; use Calculator's Energy button and confirm Energy opens/focuses.
+- Tesla browser: open Speed Alerts, tap its Camera Map button, and confirm Camera Map opens/focuses and follows GPS when location permission is available.
 - Offline/glitch QA: load once, go offline, refresh `#/apps` and core local-first routes, and confirm the shell does not crash.

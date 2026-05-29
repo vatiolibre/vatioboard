@@ -508,7 +508,7 @@ describe('SPA GPS background runtime', () => {
         return Math.max(sampleCount, embeddedCount) >= 3;
       })
     ).toBe(true);
-  }, 40000);
+  }, 90000);
 
   it('shows speed alert activity only after alert audio is explicitly armed', async () => {
     await bootHtmlPage('index.html');

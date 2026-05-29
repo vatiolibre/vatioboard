@@ -101,6 +101,28 @@ const CAMERA_APPROACH_FALLBACK_HALO_M = 160;
 const APPROACH_FILTERS = ["all", "review", "missing", "nearby"];
 const APPROACH_NEARBY_DISTANCE_M = 1600;
 
+export const CAMERA_MAP_LEGACY_SETTING_KEYS = {
+  basemap: CAMERA_MAP_BASEMAP_STORAGE_KEY,
+  follow: FOLLOW_STORAGE_KEY,
+  orientation: ORIENTATION_STORAGE_KEY,
+  projection: PROJECTION_STORAGE_KEY,
+  approachLayer: APPROACH_LAYER_STORAGE_KEY,
+  approachFilter: APPROACH_FILTER_STORAGE_KEY,
+} as const;
+
+export type CameraMapSettingId = keyof typeof CAMERA_MAP_LEGACY_SETTING_KEYS;
+
+export interface CameraMapSettingsStore {
+  get?(key: CameraMapSettingId, fallback?: string | null): string | null;
+  set?(key: CameraMapSettingId, value: string): void;
+  remove?(key: CameraMapSettingId): void;
+  has?(key: CameraMapSettingId): boolean;
+  getBoolean?(key: CameraMapSettingId, fallback?: boolean): boolean;
+  setBoolean?(key: CameraMapSettingId, value: boolean): void;
+  getEnum?(key: CameraMapSettingId, allowedValues: readonly string[], fallback: string): string;
+  setEnum?(key: CameraMapSettingId, value: string): void;
+}
+
 function getEmptyFeatureCollection(): any {
   return {
     type: "FeatureCollection",
@@ -1358,25 +1380,64 @@ export function createCameraMapWidget(options: AnyRecord = {}) {
     navigationDefaultMode = "auto",
     autoEnableFollowFromSpeed = true,
     autoFrameCamera = true,
+    settingsStore = null,
   } = options;
 
-  const storedBasemapId = loadBasemapPreference();
+  function loadCameraMapBasemapPreference() {
+    return settingsStore?.get?.("basemap", null) ?? loadBasemapPreference();
+  }
+
+  function saveCameraMapBasemapPreference(basemapId) {
+    if (settingsStore?.set) settingsStore.set("basemap", basemapId);
+    else saveBasemapPreference(basemapId);
+  }
+
+  function clearCameraMapBasemapPreference() {
+    if (settingsStore?.remove) settingsStore.remove("basemap");
+    else clearBasemapPreference();
+  }
+
+  function hasCameraMapPreference(key) {
+    return settingsStore?.has?.(key) ?? hasStoredPreference(CAMERA_MAP_LEGACY_SETTING_KEYS[key]);
+  }
+
+  function loadCameraMapBooleanPreference(key, fallback = false) {
+    return settingsStore?.getBoolean?.(key, fallback)
+      ?? loadBooleanPreference(CAMERA_MAP_LEGACY_SETTING_KEYS[key], fallback);
+  }
+
+  function saveCameraMapBooleanPreference(key, value) {
+    if (settingsStore?.setBoolean) settingsStore.setBoolean(key, value);
+    else saveBooleanPreference(CAMERA_MAP_LEGACY_SETTING_KEYS[key], value);
+  }
+
+  function loadCameraMapEnumPreference(key, allowedValues, fallback) {
+    return settingsStore?.getEnum?.(key, allowedValues, fallback)
+      ?? loadEnumPreference(CAMERA_MAP_LEGACY_SETTING_KEYS[key], allowedValues, fallback);
+  }
+
+  function saveCameraMapEnumPreference(key, value) {
+    if (settingsStore?.setEnum) settingsStore.setEnum(key, value);
+    else saveEnumPreference(CAMERA_MAP_LEGACY_SETTING_KEYS[key], value);
+  }
+
+  const storedBasemapId = loadCameraMapBasemapPreference();
   let hasUserBasemapPreference = isCameraMapBasemapId(storedBasemapId);
-  let hasUserFollowPreference = hasStoredPreference(FOLLOW_STORAGE_KEY);
-  let hasUserOrientationPreference = hasStoredPreference(ORIENTATION_STORAGE_KEY);
+  let hasUserFollowPreference = hasCameraMapPreference("follow");
+  let hasUserOrientationPreference = hasCameraMapPreference("orientation");
   let activeBasemap = getCameraMapBasemap(hasUserBasemapPreference
     ? storedBasemapId
     : getDefaultCameraMapBasemapId());
   const initialNavigationDefaultMode = ["drive", "browse", "auto"].includes(navigationDefaultMode)
     ? navigationDefaultMode
     : "auto";
-  let followEnabled = loadBooleanPreference(FOLLOW_STORAGE_KEY, false);
+  let followEnabled = loadCameraMapBooleanPreference("follow", false);
   let followPaused = false;
   let navigationMode = followEnabled ? "drive" : "browse";
-  let orientationMode = loadEnumPreference(ORIENTATION_STORAGE_KEY, ["north-up", "heading-up"], "north-up");
-  let projectionMode = loadEnumPreference(PROJECTION_STORAGE_KEY, ["auto", "flat", "globe"], "auto");
-  let approachLayerEnabled = loadBooleanPreference(APPROACH_LAYER_STORAGE_KEY, false);
-  let approachFilter = loadEnumPreference(APPROACH_FILTER_STORAGE_KEY, APPROACH_FILTERS, "all");
+  let orientationMode = loadCameraMapEnumPreference("orientation", ["north-up", "heading-up"], "north-up");
+  let projectionMode = loadCameraMapEnumPreference("projection", ["auto", "flat", "globe"], "auto");
+  let approachLayerEnabled = loadCameraMapBooleanPreference("approachLayer", false);
+  let approachFilter = loadCameraMapEnumPreference("approachFilter", APPROACH_FILTERS, "all");
   let activeProjection = null;
   const refs = buildPanel(activeBasemap.id, {
     autoBasemap: !hasUserBasemapPreference,
@@ -1567,7 +1628,7 @@ export function createCameraMapWidget(options: AnyRecord = {}) {
 
   function setApproachLayerEnabled(visible, { refreshData = true }: AnyRecord = {}) {
     approachLayerEnabled = Boolean(visible);
-    saveBooleanPreference(APPROACH_LAYER_STORAGE_KEY, approachLayerEnabled);
+    saveCameraMapBooleanPreference("approachLayer", approachLayerEnabled);
     updateLayerMenuState();
     updateApproachLayers();
     renderApproachPanel();
@@ -1577,7 +1638,7 @@ export function createCameraMapWidget(options: AnyRecord = {}) {
   function setApproachFilter(filter) {
     if (!APPROACH_FILTERS.includes(filter)) return;
     approachFilter = filter;
-    saveEnumPreference(APPROACH_FILTER_STORAGE_KEY, approachFilter);
+    saveCameraMapEnumPreference("approachFilter", approachFilter);
     updateLayerMenuState();
     updateApproachLayers();
     renderApproachPanel();
@@ -3038,7 +3099,7 @@ export function createCameraMapWidget(options: AnyRecord = {}) {
 
     activeBasemap = nextBasemap;
     updateBasemapUi(nextBasemap);
-    if (persist) saveBasemapPreference(nextBasemap.id);
+    if (persist) saveCameraMapBasemapPreference(nextBasemap.id);
 
     if (!map) return;
 
@@ -3069,7 +3130,7 @@ export function createCameraMapWidget(options: AnyRecord = {}) {
     if (!layerId) return;
     if (layerId === CAMERA_MAP_BASEMAP_AUTO_ID) {
       hasUserBasemapPreference = false;
-      clearBasemapPreference();
+      clearCameraMapBasemapPreference();
       switchBasemap(getDefaultCameraMapBasemapId(), { persist: false });
       layerButton.focus();
       return;
@@ -3286,7 +3347,7 @@ export function createCameraMapWidget(options: AnyRecord = {}) {
     followEnabled = true;
     followPaused = false;
     hasUserFollowPreference = true;
-    saveBooleanPreference(FOLLOW_STORAGE_KEY, true);
+    saveCameraMapBooleanPreference("follow", true);
     updateNavigationButtons();
     updatePosition(position, { now: Date.now(), source: "follow" });
     return true;
@@ -3301,7 +3362,7 @@ export function createCameraMapWidget(options: AnyRecord = {}) {
     followPaused = false;
     navigationMode = "browse";
     hasUserFollowPreference = true;
-    saveBooleanPreference(FOLLOW_STORAGE_KEY, false);
+    saveCameraMapBooleanPreference("follow", false);
     navigationCameraState = createNavigationCameraState();
     updateNavigationButtons();
     setNavigationStatus(currentLivePosition ? { status: "gps-live" } : null);
@@ -3310,7 +3371,7 @@ export function createCameraMapWidget(options: AnyRecord = {}) {
   function cycleOrientationMode() {
     orientationMode = orientationMode === "heading-up" ? "north-up" : "heading-up";
     hasUserOrientationPreference = true;
-    saveEnumPreference(ORIENTATION_STORAGE_KEY, orientationMode);
+    saveCameraMapEnumPreference("orientation", orientationMode);
     updateNavigationButtons();
     if (followEnabled && currentLivePosition) {
       updatePosition(currentLivePosition, { now: Date.now(), source: "orientation" });
@@ -3320,7 +3381,7 @@ export function createCameraMapWidget(options: AnyRecord = {}) {
   function setProjectionMode(nextMode) {
     if (!["auto", "flat", "globe"].includes(nextMode)) return projectionMode;
     projectionMode = nextMode;
-    saveEnumPreference(PROJECTION_STORAGE_KEY, projectionMode);
+    saveCameraMapEnumPreference("projection", projectionMode);
     activeProjection = null;
     applyProjection();
     return projectionMode;
