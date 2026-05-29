@@ -14,7 +14,7 @@
  * Multiple instances share the same runtime and deduped catalog bootstrap.
  */
 
-import { createPlayerShell } from "./player-shell.js";
+import { createPlayerShell, type PlayerShellSettingsStore } from "./player-shell.js";
 import { makePanelDraggable } from "../calculator/widget/drag.js";
 import { loadAudioCatalog, syncAudioCatalog, annotateOfflineAvailability } from "../shared/audio-catalog.js";
 import { loadPlaylists, syncPlaylistsManifest } from "../shared/playlist-loader.js";
@@ -85,6 +85,7 @@ type PlayerWidgetOptions = {
   restoreVisibility?: boolean;
   onOpen?: (() => void) | null;
   onClose?: (() => void) | null;
+  settingsStore?: PlayerShellSettingsStore | null;
   shellManager?: ShellRuntime;
 };
 
@@ -395,6 +396,7 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
     restoreVisibility = true,
     onOpen = null,
     onClose = null,
+    settingsStore = null,
     shellManager = getDefaultShellWindowManager(),
   } = options;
 
@@ -457,6 +459,7 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
   const shell = createPlayerShell({
     container: mount,
     onContentOpenChange: handleContentOpenChange,
+    settingsStore,
   });
   const contentSheet = shell.root.querySelector<HTMLElement>(".player-content-sheet");
   let cleanupLayer = () => {};

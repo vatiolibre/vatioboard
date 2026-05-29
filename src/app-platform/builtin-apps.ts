@@ -420,6 +420,7 @@ export const BUILTIN_APP_MANIFESTS = [
     version: "1.0.0",
     icon: IconMusic,
     i18nKey: "audioPlayer",
+    entry: () => import("../apps/player/index.js"),
     surfaces: ["shell-window", "taskbar", "launcher"],
     order: 100,
     permissions: [
@@ -432,6 +433,7 @@ export const BUILTIN_APP_MANIFESTS = [
       "i18n.read",
       "shell.window",
       "settings.read",
+      "settings.write",
     ],
     services: ["audio", "auth", "shell", "storage", "i18n", "settings"],
     window: {

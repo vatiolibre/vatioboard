@@ -43,8 +43,8 @@ import {
 import { showPromptDialog } from "../shared/ui/confirm-dialog.js";
 
 const PROGRESS_MAX = 1000;
-const VISUALIZER_VISIBLE_STORAGE_KEY = "vatio_board_player_widget_visualizer_visible";
-const VISUALIZER_MODE_STORAGE_KEY = "vatio_board_player_widget_visualizer_mode";
+export const VISUALIZER_VISIBLE_STORAGE_KEY = "vatio_board_player_widget_visualizer_visible";
+export const VISUALIZER_MODE_STORAGE_KEY = "vatio_board_player_widget_visualizer_mode";
 const VISUALIZER_MODES = new Set(["spectrum", "scope"]);
 const IconVisualizer = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -227,10 +227,15 @@ async function resolveArtworkUrl(track) {
   return "";
 }
 
+export interface PlayerShellSettingsStore {
+  getText?(key: string, fallback: string): string;
+  setText?(key: string, value: string): unknown;
+}
+
 /**
  * Create the compact player panel.
  *
- * @param {{ container: HTMLElement, onContentOpenChange?: Function }} opts
+ * @param {{ container: HTMLElement, onContentOpenChange?: Function, settingsStore?: PlayerShellSettingsStore|null }} opts
  * @returns {{
  *   root: HTMLElement,
  *   header: HTMLElement,
@@ -240,7 +245,7 @@ async function resolveArtworkUrl(track) {
  *   setTracks: (tracks: object[]) => void,
  * }}
  */
-export function createPlayerShell({ container, onContentOpenChange = null }) {
+export function createPlayerShell({ container, onContentOpenChange = null, settingsStore = null }) {
   // ── Root panel ─────────────────────────────────────────────────
   const root = document.createElement("section");
   root.className = "player-panel";
@@ -541,8 +546,19 @@ export function createPlayerShell({ container, onContentOpenChange = null }) {
   let queueFilter = "";
   let lastRenderedQueueSignature = "";
   let queueSaveStatusTimer = 0;
-  let visualizerVisible = loadText(VISUALIZER_VISIBLE_STORAGE_KEY, "true") !== "false";
-  let visualizerMode = normalizeVisualizerMode(loadText(VISUALIZER_MODE_STORAGE_KEY, "spectrum"));
+  const loadSettingText = (key: string, fallback: string) => {
+    if (typeof settingsStore?.getText === "function") return settingsStore.getText(key, fallback);
+    return loadText(key, fallback);
+  };
+  const saveSettingText = (key: string, value: string) => {
+    if (typeof settingsStore?.setText === "function") {
+      settingsStore.setText(key, value);
+      return;
+    }
+    saveText(key, value);
+  };
+  let visualizerVisible = loadSettingText(VISUALIZER_VISIBLE_STORAGE_KEY, "true") !== "false";
+  let visualizerMode = normalizeVisualizerMode(loadSettingText(VISUALIZER_MODE_STORAGE_KEY, "spectrum"));
   let visualizerController = null;
   let visualizerMediaElement = null;
   let visualizerFailed = false;
@@ -1563,7 +1579,7 @@ export function createPlayerShell({ container, onContentOpenChange = null }) {
 
   function setVisualizerVisible(visible) {
     visualizerVisible = Boolean(visible);
-    saveText(VISUALIZER_VISIBLE_STORAGE_KEY, visualizerVisible ? "true" : "false");
+    saveSettingText(VISUALIZER_VISIBLE_STORAGE_KEY, visualizerVisible ? "true" : "false");
     syncVisualizerPlayback();
   }
 
@@ -1581,7 +1597,7 @@ export function createPlayerShell({ container, onContentOpenChange = null }) {
     primeAudioContext();
     if (visualizerFailed) return;
     visualizerMode = getNextVisualizerMode(visualizerMode);
-    saveText(VISUALIZER_MODE_STORAGE_KEY, visualizerMode);
+    saveSettingText(VISUALIZER_MODE_STORAGE_KEY, visualizerMode);
     visualizerController?.setMode(visualizerMode);
     syncVisualizerPlayback();
   });

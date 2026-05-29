@@ -275,6 +275,45 @@ vatio_speed_trap_sound_enabled
 
 Direct `createSpeedAlertPanel()` callers still work without a runtime. The Speed Alerts Camera Map button still opens/focuses Camera Map through the existing callback path; when no callback is supplied, the wrapper prefers `runtime.shell.openApp("vatio.cameraMap")` and then falls back to the shell window manager/global floating tools path.
 
+## Player Migration
+
+Player is now wrapped as a first-class shell-window app module in `src/apps/player/`. The wrapper adapts the existing persistent `src/player/player-widget.ts` implementation instead of duplicating playback UI or changing the shared audio runtime.
+
+The manifest remains `vatio.player`; the shell window ID remains `player`; the legacy tool ID remains `player`. The manifest entry is:
+
+```ts
+entry: () => import("../apps/player/index.js")
+```
+
+The app shell now creates the persistent player through `createPlayerApp()`, passing the shell app runtime manager so the wrapper can resolve the scoped `vatio.player` runtime. The existing widget still owns:
+
+- Queue and session restore through `vatioboard_player_session_v2`.
+- The shared `audio-runtime` singleton.
+- Media Session metadata/action behavior.
+- Background audio keepalive behavior.
+- Local/offline pinned media resolution.
+- Shell window registration, taskbar state, position, visibility, minimize, restore, and close behavior.
+
+The wrapper uses `runtime.services.audio` at the app boundary to keep Media Session enabled when the runtime exposes the audio service. The widget itself continues to import the same shared audio runtime singleton, so there is no second audio engine and no queue/session split.
+
+Player visualizer settings are the only Player preferences mirrored through runtime settings in this pass:
+
+```text
+vatioboard.app.vatio.player.settings.visualizerVisible
+vatioboard.app.vatio.player.settings.visualizerMode
+```
+
+The legacy visualizer keys remain canonical for v1:
+
+```text
+vatio_board_player_widget_visualizer_visible
+vatio_board_player_widget_visualizer_mode
+```
+
+If both legacy values and app-private runtime mirrors exist, legacy values win so direct `createPlayerWidget()` callers and older sessions cannot be shadowed by stale runtime mirrors. If no legacy value exists but a runtime mirror does, the wrapper seeds the legacy key.
+
+Player position, visibility, queue/session restore, pinned media, local media cache, and playlist/cache state intentionally remain on existing legacy storage paths for compatibility.
+
 ## Launching Apps
 
 `createAppLauncher()` implements v1 shell launching:

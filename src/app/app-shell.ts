@@ -4,7 +4,7 @@ import "../styles/activity-indicator.less";
 import "../shared/ui/confirm-dialog.less";
 import "../styles/welcome-consent.less";
 
-import { createPlayerWidget } from "../player/player-widget.js";
+import { createPlayerApp } from "../apps/player/index.js";
 import { initBackendAuthControllers } from "../shared/backend-auth.js";
 import { startCloudSyncLoop } from "../shared/cloud-sync.js";
 import { initActivityIndicator } from "../shared/activity-indicator.js";
@@ -37,7 +37,7 @@ interface HashRouterRuntime {
   destroy(): void;
 }
 
-const createShellPlayerWidget = createPlayerWidget as (options: Record<string, unknown>) => unknown;
+const createShellPlayerWidget = createPlayerApp as (options: Record<string, unknown>) => unknown;
 const installShellKeyboard = installShellKeyboardShortcuts as (options: {
   shellManager: ShellRuntime;
 }) => { uninstall(): void };
@@ -130,6 +130,7 @@ export async function startAppShell({
     persistVisibility: true,
     restoreVisibility: true,
     shellManager,
+    shellAppRuntimeManager,
   });
   window.__vatioboardPlayerWidget = playerWidget;
 

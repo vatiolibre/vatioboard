@@ -1,5 +1,109 @@
 # VatioBoard OS Implementation Log
 
+## Player Migration Session
+
+- Date/time: 2026-05-29 07:04:13 EDT
+- Agent: Codex 5.5
+- Repository: `/home/oscar/vatioboard`
+- Backend/BFF: `/home/oscar/frappe-bench/apps/vatiolibre` was not changed.
+
+## Player Migration Baseline Understanding
+
+Calculator, Energy, Camera Map, and Speed Alerts were already first-class shell-window app wrappers. Player was still created directly in `src/app/app-shell.ts` through `createPlayerWidget()`. The widget already registered shell window ID `player`, preserved taskbar/minimize/restore/close behavior, used the shared `audio-runtime` singleton, restored queue/session state, owned Media Session integration, kept local/offline media behavior through the media cache/source resolver, and supported direct widget callers. The `vatio.player` manifest existed with shell window ID `player` and legacy tool ID `player`, but it had no app entry and the persistent shell player did not resolve a scoped runtime.
+
+## Player Files Inspected
+
+- `src/player/player-widget.ts`
+- `src/player/player-shell.ts`
+- `src/player/integrate-player-widget.ts`
+- `src/shared/audio-runtime.ts`
+- `src/shared/player-session.ts`
+- `src/shared/media-session-adapter.ts`
+- `src/shared/media-cache.ts`
+- `src/shared/audio-source-resolver.ts`
+- `src/shared/audio-catalog.ts`
+- `src/shared/playlist-loader.ts`
+- `src/shared/floating-tools.ts`
+- `src/shared/start-menu.ts`
+- `src/shared/shell-window-manager.ts`
+- `src/app/app-shell.ts`
+- `src/app/runtime-context.ts`
+- `src/app-platform/builtin-apps.ts`
+- `src/app-platform/shell-app-runtime-manager.ts`
+- `src/app-platform/launcher.ts`
+- `src/app-platform/services.ts`
+- `test/unit/player-widget.test.js`
+- `test/unit/integrate-player-widget.test.js`
+- `test/unit/player-cold-boot.test.js`
+- `test/unit/library-offline-media.test.js`
+- `test/unit/shell-window-integration.test.js`
+- `test/smoke/dev-harness-player-page.test.js`
+- `test/smoke/index-page.test.js`
+
+## Player Migration Plan
+
+1. Add `src/apps/player/` as a thin wrapper around the existing persistent Player widget.
+2. Resolve `vatio.player` through `shellAppRuntimeManager` and return the existing widget API plus `runtime`.
+3. Update the app shell to create the persistent player through the wrapper while keeping `window.__vatioboardPlayerWidget`.
+4. Use `runtime.services.audio` at the app boundary without replacing the shared audio runtime singleton used by the widget.
+5. Mirror only safe UI preferences through `runtime.services.settings`, leaving queue/session restore, pinned media, local/offline cache, position, and visibility on existing legacy paths.
+6. Keep shell window ID, legacy tool ID, taskbar behavior, minimize/restore/close behavior, Media Session actions, background audio, queue/session restore, pinned/local media compatibility, and direct `createPlayerWidget()` callers unchanged.
+7. Add focused tests for manifest-backed launch, runtime creation, taskbar state, runtime audio boundary, media controls, queue/session bootstrap, offline annotation path, visualizer settings mirrors, stale mirror precedence, and direct widget compatibility.
+
+## Player Decisions Made
+
+- Added `src/apps/player/player-app.ts` as an adapter over `createPlayerWidget()`.
+- Added `entry: () => import("../apps/player/index.js")` to the `vatio.player` manifest.
+- Added `settings.write` to `vatio.player` because the wrapper mirrors visualizer preferences through app-scoped runtime settings.
+- Updated `src/app/app-shell.ts` to create the persistent player with `createPlayerApp()` while keeping the same `window.__vatioboardPlayerWidget` compatibility global.
+- Added an optional `settingsStore` to `createPlayerWidget()` and `createPlayerShell()` for visualizer preferences only. Direct widget callers still use legacy localStorage when no settings store is provided.
+- Runtime Player visualizer preferences mirror to:
+  - `vatioboard.app.vatio.player.settings.visualizerVisible`
+  - `vatioboard.app.vatio.player.settings.visualizerMode`
+- Legacy Player visualizer keys remain canonical for v1:
+  - `vatio_board_player_widget_visualizer_visible`
+  - `vatio_board_player_widget_visualizer_mode`
+- Legacy values win over stale runtime mirrors. If no legacy value exists but a runtime mirror does, the wrapper seeds the legacy key.
+- Player queue/session restore remains on `vatioboard_player_session_v2`.
+- Player panel position and visibility remain on `player_widget_pos_v1` and `player_widget_visible_v1`.
+- Player local/offline pinned media and media cache behavior remain on existing media cache/source resolver paths.
+- The wrapper calls `runtime.services.audio.setMediaSessionEnabled(true)` when available, but the widget still uses the same shared `audio-runtime` singleton. No second audio runtime was introduced.
+
+## Player Files Changed
+
+- `src/app-platform/builtin-apps.ts`
+- `src/app/app-shell.ts`
+- `src/apps/player/player-app.less`
+- `src/apps/player/player-app.ts`
+- `src/apps/player/index.ts`
+- `src/player/player-shell.ts`
+- `src/player/player-widget.ts`
+- `test/unit/player-app.test.js`
+- `docs/vatioboard-os.md`
+- `docs/next-agent-handoff.md`
+- `docs/vatioboard-os-implementation-log.md`
+
+## Player Verification
+
+- `pnpm run typecheck` - passed after the wrapper and Player shell setting seam were added.
+- `pnpm vitest run test/unit/player-app.test.js` - passed, 1 file and 7 tests.
+- `pnpm vitest run test/unit/player-app.test.js test/unit/player-widget.test.js test/unit/integrate-player-widget.test.js test/unit/player-cold-boot.test.js test/unit/shell-window-integration.test.js test/smoke/index-page.test.js` - passed, 6 files and 128 tests.
+- `pnpm vitest run test/unit/app-shell-runtime-lifecycle.test.js test/unit/spa-route-remount-regression.test.js test/unit/shell-ui-integration.test.js` - passed, 3 files and 36 tests.
+- After tightening Player settings fallback seeding, final verification was rerun:
+  - `pnpm run typecheck` - passed.
+  - `pnpm run lint` - passed with 60 warning-level findings and 0 errors. Warnings are existing repository warnings in scripts/app/tests areas.
+  - `pnpm vitest run test/unit/player-app.test.js test/unit/app-platform.test.js test/unit/audio-system.test.js test/unit/audio-channel-retainer.test.js test/unit/integrate-player-widget.test.js` - passed, 5 files and 52 tests.
+  - `pnpm test` - passed, 130 files and 1659 tests.
+  - `pnpm run build` - passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1299 transformed modules. Vite emitted existing dynamic/static import warnings for `backend-auth.ts`, `cloud-sync.ts`, Calculator app entry, Camera Map app entry, Energy app entry, Speed Alerts app entry, and the new Player app entry because those modules are also statically imported for compatibility.
+
+## Player Known Limitations
+
+- Player UI internals still live in `src/player/player-widget.ts` and `src/player/player-shell.ts`; the new app module is a wrapper/adaptor, matching the conservative migration pattern.
+- Only visualizer visibility/mode are mirrored to runtime settings. Queue/session restore, panel position, panel visibility, playlists, pinned media, and local media cache remain on legacy storage paths for compatibility.
+- Player still imports shared audio/runtime/cache helpers directly inside the widget and shell. The wrapper establishes the runtime boundary but does not rewrite the playback engine.
+- Media Session behavior remains owned by the existing `audio-runtime` singleton.
+- Milkdrop still needs a first-class shell-window app wrapper.
+
 ## Speed Alerts Migration Session
 
 - Date/time: 2026-05-29 00:28:52 EDT
