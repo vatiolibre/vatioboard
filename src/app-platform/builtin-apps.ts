@@ -190,7 +190,7 @@ export const BUILTIN_APP_MANIFESTS = [
     icon: IconWorld,
     i18nKey: "cloudLibrary",
     route: "/library",
-    entry: () => import("../app/views/LibraryView.js"),
+    entry: () => import("../apps/library/index.js"),
     surfaces: ["main-route", "start-menu", "launcher"],
     order: 50,
     permissions: [
@@ -201,6 +201,7 @@ export const BUILTIN_APP_MANIFESTS = [
       "network.backend",
       "i18n.read",
       "settings.read",
+      "settings.write",
       "shell.launchApp",
     ],
     services: ["auth", "cloudSync", "shell", "storage", "i18n", "settings"],

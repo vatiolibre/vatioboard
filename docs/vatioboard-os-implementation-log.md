@@ -1098,3 +1098,63 @@ The existing production routes are declared in `src/app/route-registry.ts` and r
 - Board cloud sync and auth still import the existing shared helpers directly.
 - Board export/import, document metadata, and offline mutation internals remain legacy for compatibility.
 - The route app wrapper is an adapter, not a full `src/board/board.ts` decomposition.
+
+## Library Route-App Migration - 2026-05-30 07:48:00 EDT
+
+### Baseline Understanding
+
+- Library was still loaded through `src/app/views/LibraryView.ts`, which directly wrapped `src/library/library.ts`.
+- The app shell already provides `appRuntime` and `appManifest` to route contexts.
+- Library has sensitive local-first surfaces: offline media cache, pinned media blobs, media-access cache, playlist/library tabs, downloads, backend auth, and cloud sync.
+- The safe first migration is a route adapter plus one small preference seam, leaving media/cache/cloud persistence untouched.
+
+### Decisions Made
+
+- Add a thin route-app wrapper in `src/apps/library/` instead of rewriting Library.
+- Point the `vatio.library` manifest entry at `../apps/library/index.js`.
+- Keep `src/app/views/LibraryView.ts` as a compatibility re-export.
+- Pass runtime storage, settings, auth, cloud sync, i18n, and logger seams through the existing `mountLibraryRoute()` context.
+- Keep local/offline media cache, pinned media, downloads, playlist/media loading, cloud sync, auth helpers, and direct/dev route behavior on existing legacy paths.
+- Use the active Library tab as the low-risk runtime settings seam.
+- Keep the route query canonical for v1. A URL like `#/library?tab=media` wins over `vatioboard.app.vatio.library.settings.activeTab` and refreshes the runtime mirror. When no `tab` query exists, Library can seed its active tab from the runtime mirror.
+- Add `settings.write` to the `vatio.library` manifest because the wrapper/controller now writes the active-tab mirror through `runtime.services.settings`.
+
+### Files Changed In This Pass
+
+- `src/apps/library/library-route-app.ts`
+- `src/apps/library/index.ts`
+- `src/app/views/LibraryView.ts`
+- `src/app-platform/builtin-apps.ts`
+- `src/library/library.ts`
+- `test/unit/library-route-app.test.js`
+- `test/unit/library-route-lifecycle.test.js`
+- `docs/vatioboard-os.md`
+- `docs/vatioboard-os-implementation-log.md`
+- `docs/next-agent-handoff.md`
+
+### Tests Run In This Pass
+
+- `pnpm vitest run test/unit/library-route-app.test.js test/unit/library-route-lifecycle.test.js test/smoke/spa-library-route.test.js` - first run failed because the test backend-auth mock did not export `BACKEND_AUTH_SIGNUP_URL`; fixed the mock. The same run also exposed that `vatio.library` needed `settings.write` for the new active-tab mirror.
+- `pnpm vitest run test/unit/library-route-app.test.js test/unit/library-route-lifecycle.test.js test/smoke/spa-library-route.test.js` - passed after fixes, 3 files and 8 tests.
+- `pnpm run typecheck` - first run failed on the active-tab type guard in `src/library/library.ts`; fixed with an explicit `TAB_ORDER` union cast.
+- `pnpm run typecheck` - passed after the type guard fix.
+- `pnpm run lint` - passed with 60 warning-level findings and 0 errors. Warnings are existing repository warnings in scripts/app/tests areas.
+- `pnpm vitest run test/unit/app-platform.test.js test/unit/app-shell-runtime-lifecycle.test.js test/unit/library-route-app.test.js test/unit/library-route-lifecycle.test.js test/unit/library-offline-media.test.js test/smoke/spa-library-route.test.js` - passed, 6 files and 119 tests.
+- `pnpm test` - passed, 135 files and 1686 tests.
+- `pnpm run build` - passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1305 transformed modules. Vite emitted existing dynamic/static import warnings for `backend-auth.ts`, `cloud-sync.ts`, Player app entry, Calculator app entry, Camera Map app entry, Energy app entry, and Speed Alerts app entry.
+
+### Proof Points
+
+- The `vatio.library` manifest entry now loads `src/apps/library/index.ts`.
+- The existing `#/library` route still mounts through the compatibility `LibraryView` re-export and existing route pipeline.
+- Library receives the scoped `vatio.library` runtime seams through the old `mountLibraryRoute()` context.
+- Direct route callers without an app runtime still mount Library without runtime-specific dependencies.
+- `#/library?tab=...` remains the canonical active-tab source when present and updates `vatioboard.app.vatio.library.settings.activeTab`.
+- If no `tab` query exists, the runtime mirror can restore the active tab.
+- Focused offline-media coverage still passes, preserving the pinned/local media path.
+
+### Known Limitations After This Pass
+
+- Library media cache, pinned media, media manifests, downloads, playlist loading, cloud sync, auth, and import/export actions remain on existing legacy modules.
+- The active-tab setting mirror is local-only app-private storage and does not cloud sync.
+- The route app wrapper is an adapter, not a full `src/library/library.ts` decomposition.

@@ -422,6 +422,41 @@ vatioboard.app.vatio.board.settings.inkRaw
 
 If both keys exist, the legacy key wins so stale app-private runtime settings cannot shadow direct Board callers. If no legacy key exists but a runtime mirror does, Board seeds the legacy key for compatibility.
 
+## Library Route Migration
+
+Library is now wrapped as a first-class route app module. The manifest `vatio.library` still owns `#/library`, but its entry now points at:
+
+```ts
+entry: () => import("../apps/library/index.js")
+```
+
+The compatibility view `src/app/views/LibraryView.ts` remains as a re-export for older direct imports. The app wrapper in `src/apps/library/` keeps the existing `src/library/library.ts` controller and `library-template` UI intact.
+
+The wrapper adapts the normal route mount context before calling `mountLibraryRoute()`:
+
+- `runtime.storage` is exposed as `routeContext.appStorage` for future app-private seams.
+- `runtime.services.settings` is exposed as `routeContext.settingsService`.
+- `runtime.services.auth` is exposed as `routeContext.authService`.
+- `runtime.services.cloudSync` is exposed as `routeContext.cloudSyncService`.
+- `runtime.i18n.t()` is exposed as a translation helper for future safe label seams.
+- `runtime.logger` is exposed for non-fatal diagnostics.
+
+Library's local/offline media cache, pinned media, downloads, playlist/media loading, backend auth, cloud sync, import/export actions, and direct/dev route usage intentionally remain on the existing legacy paths in this pass.
+
+One low-risk preference is mirrored through the runtime settings service: the active Library tab. The route query remains canonical for v1:
+
+```text
+#/library?tab=media
+```
+
+The runtime mirror lives at:
+
+```text
+vatioboard.app.vatio.library.settings.activeTab
+```
+
+If a `tab` query parameter is present, it wins over any stale runtime mirror and updates the mirror. If no `tab` query exists but a runtime mirror does, Library uses the mirrored tab. Direct callers without an app runtime still follow the existing route-query/default behavior.
+
 ## Launching Apps
 
 `createAppLauncher()` implements v1 shell launching:
@@ -472,7 +507,7 @@ It lists installed apps, kind, status, surfaces, permissions, local-first/offlin
 
 ## Future Direction
 
-- Move remaining route apps gradually into `src/apps/<app-id>`. Speed and Board are wrapped; likely next candidates are Library or Replay.
+- Move remaining route apps gradually into `src/apps/<app-id>`. Speed, Board, and Library are wrapped; Replay is the likely next candidate.
 - Replace global compatibility shims with runtime services.
 - Add app install/enable/disable preferences.
 - Add VatioLibre-backed app storage after the local contract is stable.

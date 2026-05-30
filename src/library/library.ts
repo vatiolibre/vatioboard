@@ -92,6 +92,7 @@ import { initCloudSyncStatusIndicator } from "../shared/cloud-sync-status-indica
 
 const isSpaRuntime = Boolean(window.__vatioboardSpa);
 const PAGE_SIZE = 24;
+const LIBRARY_ACTIVE_TAB_SETTING_KEY = "activeTab";
 const SORT_OPTIONS = new Set(["newest", "oldest", "title_asc", "title_desc"]);
 const TAB_ORDER = [
   CLOUD_LIBRARY_TAB_KEYS.speed,
@@ -463,6 +464,44 @@ const detailRequestState = {
 
 function normalizeTabKey(value) {
   return TAB_ORDER.includes(value) ? value : CLOUD_LIBRARY_TAB_KEYS.speed;
+}
+
+function normalizeStoredTabKey(value) {
+  const normalized = String(value || "").trim();
+  return TAB_ORDER.includes(normalized as (typeof TAB_ORDER)[number]) ? normalized : null;
+}
+
+function getRuntimeSettingsService() {
+  return activeLibraryRoute?.settingsService || null;
+}
+
+function getRuntimeLogger() {
+  return activeLibraryRoute?.logger || null;
+}
+
+function readRuntimeActiveTab() {
+  const settingsService = getRuntimeSettingsService();
+  if (!settingsService?.get) return null;
+  try {
+    return normalizeStoredTabKey(settingsService.get(LIBRARY_ACTIVE_TAB_SETTING_KEY, null));
+  } catch (error) {
+    getRuntimeLogger()?.warn?.("Library active tab setting could not be read through runtime settings.", error);
+    return null;
+  }
+}
+
+function mirrorActiveTabToRuntime(tabKey) {
+  const settingsService = getRuntimeSettingsService();
+  if (!settingsService?.set) return;
+  const normalizedTab = normalizeTabKey(tabKey);
+  try {
+    const saved = settingsService.set(LIBRARY_ACTIVE_TAB_SETTING_KEY, normalizedTab);
+    if (!saved) {
+      getRuntimeLogger()?.warn?.("Library active tab setting could not be mirrored through runtime settings.");
+    }
+  } catch (error) {
+    getRuntimeLogger()?.warn?.("Library active tab setting mirror failed.", error);
+  }
 }
 
 function normalizeSearch(value) {
@@ -2394,6 +2433,7 @@ function handleTabSelection(nextTab) {
   }
 
   state.activeTab = normalizedTab;
+  mirrorActiveTabToRuntime(state.activeTab);
   setStatus();
   updateLocationState();
   renderTabs();
@@ -2494,6 +2534,7 @@ async function refreshAuthState({ force = false, pendingLogout = false } = {}) {
     // Offline-limited mode: switch to media tab and load from cache.
     if (state.activeTab !== CLOUD_LIBRARY_TAB_KEYS.media) {
       state.activeTab = CLOUD_LIBRARY_TAB_KEYS.media;
+      mirrorActiveTabToRuntime(state.activeTab);
       updateLocationState();
       renderTabs();
     }
@@ -2507,6 +2548,7 @@ async function refreshAuthState({ force = false, pendingLogout = false } = {}) {
     const nextTab = getFirstAccessibleTab();
     if (nextTab !== state.activeTab) {
       state.activeTab = nextTab;
+      mirrorActiveTabToRuntime(state.activeTab);
       updateLocationState();
       renderTabs();
     }
@@ -2533,9 +2575,12 @@ function bindMenuNavigation(button, href, cleanup) {
 
 function syncStateFromRouteQuery() {
   const routeQuery = getCurrentAppRouteQuery();
-  state.activeTab = normalizeTabKey(routeQuery.get("tab"));
+  state.activeTab = routeQuery.has("tab")
+    ? normalizeTabKey(routeQuery.get("tab"))
+    : readRuntimeActiveTab() || CLOUD_LIBRARY_TAB_KEYS.speed;
   state.query.search = normalizeSearch(routeQuery.get("search"));
   state.query.sort = normalizeSort(routeQuery.get("sort"));
+  mirrorActiveTabToRuntime(state.activeTab);
   if (elements.searchInput) elements.searchInput.value = state.query.search;
   if (elements.sortSelect) elements.sortSelect.value = state.query.sort;
 }
@@ -2592,6 +2637,8 @@ function mountLibraryController(routeContext: AnyRecord = {}) {
     ownsCleanup,
     root,
     signal: routeContext.signal || null,
+    settingsService: routeContext.settingsService || null,
+    logger: routeContext.logger || null,
   };
   libraryRouteGeneration = route.generation;
   activeLibraryRoute = route;
@@ -2787,6 +2834,9 @@ function bindEvents({ elements: routeElements = elements, cleanup, signal }: Any
 
     state.query.search = nextSearch;
     state.query.sort = nextSort;
+    if (routeQuery.has("tab")) {
+      mirrorActiveTabToRuntime(nextTab);
+    }
     if (routeElements.searchInput) routeElements.searchInput.value = nextSearch;
     if (routeElements.sortSelect) routeElements.sortSelect.value = nextSort;
 

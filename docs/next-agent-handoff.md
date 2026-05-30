@@ -53,6 +53,10 @@
 - The `vatio.board` manifest now loads `../apps/board/index.js`; `src/app/views/BoardView.ts` remains as a compatibility re-export.
 - Board receives scoped runtime storage, settings, auth, cloud-sync, i18n, and logger seams through the existing `mountBoardRoute()` context while preserving the existing Board UI/controller.
 - Board ink color now mirrors through `runtime.services.settings` as `vatioboard.app.vatio.board.settings.inkRaw`, while the legacy `vatio_board_ink_raw` key remains canonical for v1.
+- Migrated Library into a conservative route-app wrapper under `src/apps/library/`.
+- The `vatio.library` manifest now loads `../apps/library/index.js`; `src/app/views/LibraryView.ts` remains as a compatibility re-export.
+- Library receives scoped runtime storage, settings, auth, cloud-sync, i18n, and logger seams through the existing `mountLibraryRoute()` context while preserving the existing Library UI/controller.
+- Library active tab now mirrors through `runtime.services.settings` as `vatioboard.app.vatio.library.settings.activeTab`, while the route query `#/library?tab=...` remains canonical for v1.
 
 ## Important Files Changed
 
@@ -87,6 +91,8 @@
 - `src/apps/speed/index.ts`
 - `src/apps/board/board-route-app.ts`
 - `src/apps/board/index.ts`
+- `src/apps/library/library-route-app.ts`
+- `src/apps/library/index.ts`
 - `src/apps/shared/number-format-settings.ts`
 - `src/app-platform/adapters/route-registry-adapter.ts`
 - `src/app-platform/adapters/tool-registry-adapter.ts`
@@ -96,11 +102,13 @@
 - `src/app/route-registry.ts`
 - `src/app/views/SpeedView.ts`
 - `src/app/views/BoardView.ts`
+- `src/app/views/LibraryView.ts`
 - `src/shared/tool-registry.ts`
 - `src/shared/shell-window-registry.ts`
 - `src/shared/start-menu.ts`
 - `src/speed/speed.ts`
 - `src/board/board.ts`
+- `src/library/library.ts`
 - `src/calculator/calculator-widget.ts`
 - `src/calculator/storage.ts`
 - `src/energy/energy-calculator-widget.ts`
@@ -130,6 +138,8 @@
 - `test/unit/speed-route-app.test.js`
 - `test/unit/board-route-app.test.js`
 - `test/unit/board-route-lifecycle.test.js`
+- `test/unit/library-route-app.test.js`
+- `test/unit/library-route-lifecycle.test.js`
 - `test/smoke/dev-harness-speed-page.test.js`
 - `test/smoke/spa-gps-background.test.js`
 - `test/smoke/spa-apps-route.test.js`
@@ -305,6 +315,17 @@ Board route-app migration verification:
 - `pnpm test` - passed, 133 files and 1680 tests.
 - `pnpm run build` - passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1304 transformed modules. Vite emitted existing dynamic/static import warnings for `backend-auth.ts`, `cloud-sync.ts`, Player app entry, Calculator app entry, Camera Map app entry, Energy app entry, and Speed Alerts app entry.
 
+Library route-app migration verification:
+
+- `pnpm vitest run test/unit/library-route-app.test.js test/unit/library-route-lifecycle.test.js test/smoke/spa-library-route.test.js` - first run failed because the test backend-auth mock did not export `BACKEND_AUTH_SIGNUP_URL`; fixed the mock. The same run also exposed that `vatio.library` needed `settings.write` for the new active-tab mirror.
+- `pnpm vitest run test/unit/library-route-app.test.js test/unit/library-route-lifecycle.test.js test/smoke/spa-library-route.test.js` - passed after fixes, 3 files and 8 tests.
+- `pnpm run typecheck` - first run failed on the active-tab type guard in `src/library/library.ts`; fixed with an explicit `TAB_ORDER` union cast.
+- `pnpm run typecheck` - passed after the type guard fix.
+- `pnpm run lint` - passed with 60 warning-level findings and 0 errors.
+- `pnpm vitest run test/unit/app-platform.test.js test/unit/app-shell-runtime-lifecycle.test.js test/unit/library-route-app.test.js test/unit/library-route-lifecycle.test.js test/unit/library-offline-media.test.js test/smoke/spa-library-route.test.js` - passed, 6 files and 119 tests.
+- `pnpm test` - passed, 135 files and 1686 tests.
+- `pnpm run build` - passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1305 transformed modules. Vite emitted existing dynamic/static import warnings for `backend-auth.ts`, `cloud-sync.ts`, Player app entry, Calculator app entry, Camera Map app entry, Energy app entry, and Speed Alerts app entry.
+
 ## Known Limitations
 
 - App permissions are declared and enforced at the runtime boundary, but there are no user prompts yet.
@@ -313,6 +334,7 @@ Board route-app migration verification:
 - Existing apps still import many global helpers directly; migration to `appRuntime` should be gradual. Calculator, Energy, Camera Map, Speed Alerts, Player, and Milkdrop are partially migrated through app wrappers, but Calculator expression state/history, Energy trip values/multi-trip records, Camera Map local/offline data storage, Speed Alerts panel internals, Player queue/session restore, Player media cache, Milkdrop preset/position/size persistence, and shell layout storage remain legacy for compatibility.
 - Speed is now route-wrapper migrated, but its internal replay/recording persistence, preferences, geolocation watch implementation, and many globals remain legacy for compatibility.
 - Board is now route-wrapper migrated, but drawing/draft persistence, cloud sync, auth, document metadata, export/import, offline mutations, and most Board globals remain legacy for compatibility.
+- Library is now route-wrapper migrated, but media cache, pinned media, media manifests, downloads, playlist loading, cloud sync, auth, import/export actions, and most Library globals remain legacy for compatibility.
 - Calculator and Energy intentionally share number-format settings through `embeddable_calc_settings_v1` in v1. Their app-private runtime settings are mirrors until a true platform shared-settings service exists.
 - Existing global compatibility shims remain in place.
 - Background-service lifecycle is registered in types but not heavily implemented.
@@ -324,7 +346,7 @@ Board route-app migration verification:
 
 ## Suggested Next Prompt
 
-Continue VatioBoard OS after Speed and Board have been route-wrapper migrated. Migrate Library or Replay next without rewriting the existing controller. Preserve the existing route, local-first/offline persistence, cloud-sync/auth behavior, media/download compatibility, and direct/dev route usage. Create a conservative `src/apps/<route-app>` wrapper, keep the old `src/app/views/*View.ts` as a compatibility re-export if safe, pass scoped runtime storage/settings/auth/cloud-sync/i18n/logger seams through the existing route context, migrate only one low-risk preference seam, add focused route/runtime tests, then run full `pnpm test` and `pnpm run build`.
+Continue VatioBoard OS after Speed, Board, and Library have been route-wrapper migrated. Migrate Replay next without rewriting `src/replay/replay.ts`. Preserve `#/replay`, local replay/session history, cloud-sync/auth behavior, route playback controls, map/chart lifecycle, and direct/dev route usage. Create a conservative `src/apps/replay` wrapper, keep `src/app/views/ReplayView.ts` as a compatibility re-export if safe, pass scoped runtime storage/settings/auth/cloud-sync/driveRecording/i18n/logger seams through the existing route context, migrate only one low-risk preference seam, add focused route/runtime tests, then run full `pnpm test` and `pnpm run build`.
 
 ## Manual QA
 
