@@ -107,6 +107,8 @@ function createMountedBoardController({
   root = document,
   cleanup: routeCleanup = null,
   signal,
+  settingsService = null,
+  logger = null,
 }: AnyRecord = {}) {
   const cleanup: AnyRecord = createCleanupStack() as any;
   routeCleanup?.add(() => cleanup.run());
@@ -226,6 +228,7 @@ if (!isSpaRuntime) {
     const swatchesEl = byId("swatches");
 
     const LS_INK_RAW = "vatio_board_ink_raw";
+    const BOARD_INK_SETTING_KEY = "inkRaw";
     let saveBusy = false;
     let currentBoardDocument = loadCurrentBoardDocumentMeta();
     let documentSession = currentBoardDocument
@@ -241,9 +244,44 @@ if (!isSpaRuntime) {
       return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
     }
 
-    let inkRaw =
-    normalizeHex(localStorage.getItem(LS_INK_RAW)) ||
-    (isDarkMode() ? "#e5e7eb" : "#111827");
+    function readRuntimeInkRaw(){
+      try {
+        return normalizeHex(settingsService?.get?.(BOARD_INK_SETTING_KEY, null));
+      } catch (error) {
+        logger?.warn?.("Board ink color setting could not be read through runtime settings.", error);
+        return null;
+      }
+    }
+
+    function mirrorInkRawToRuntime(value){
+      if (!settingsService?.set) return;
+      try {
+        const saved = settingsService.set(BOARD_INK_SETTING_KEY, value);
+        if (!saved) {
+          logger?.warn?.("Board ink color setting could not be mirrored through runtime settings.");
+        }
+      } catch (error) {
+        logger?.warn?.("Board ink color setting mirror failed.", error);
+      }
+    }
+
+    function loadInitialInkRaw(){
+      const legacyInkRaw = normalizeHex(localStorage.getItem(LS_INK_RAW));
+      if (legacyInkRaw) {
+        mirrorInkRawToRuntime(legacyInkRaw);
+        return legacyInkRaw;
+      }
+
+      const runtimeInkRaw = readRuntimeInkRaw();
+      if (runtimeInkRaw) {
+        localStorage.setItem(LS_INK_RAW, runtimeInkRaw);
+        return runtimeInkRaw;
+      }
+
+      return isDarkMode() ? "#e5e7eb" : "#111827";
+    }
+
+    let inkRaw = loadInitialInkRaw();
 
     // Popup UI
     const colorTriggerBtn = byId("sizePreview");
@@ -901,6 +939,7 @@ if (!isSpaRuntime) {
       if(!h) return;
       inkRaw = h;
       localStorage.setItem(LS_INK_RAW, inkRaw);
+      mirrorInkRawToRuntime(inkRaw);
       activatePenTool({ announce: false });
       applyInk();
 

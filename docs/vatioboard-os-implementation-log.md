@@ -1042,3 +1042,59 @@ The existing production routes are declared in `src/app/route-registry.ts` and r
 - Speed preferences still use the existing legacy localStorage keys.
 - Speed still imports global helpers directly in many places.
 - The route app wrapper is an adapter, not a full `src/speed/speed.ts` decomposition.
+
+## Board Route-App Migration - 2026-05-30 07:28:06 EDT
+
+### Baseline Understanding
+
+- Board was still loaded through `src/app/views/BoardView.ts`, which directly wrapped `src/board/board.ts`.
+- The app shell already provides `appRuntime` and `appManifest` to route contexts.
+- Board has a larger persistence surface than Speed: local IndexedDB/localStorage draft storage, cloud sync, backend auth, drawing commands, document metadata, and offline mutation helpers.
+- The safest first pass is a route adapter plus one small preference seam, not a Board persistence rewrite.
+
+### Decisions Made
+
+- Add a thin route-app wrapper in `src/apps/board/` instead of rewriting Board.
+- Point the `vatio.board` manifest entry at `../apps/board/index.js`.
+- Keep `src/app/views/BoardView.ts` as a compatibility re-export.
+- Pass runtime storage, settings, auth, cloud sync, i18n, and logger seams through the existing `mountBoardRoute()` context.
+- Keep local draft/canvas storage, cloud sync, auth helpers, drawing tools, export/import, and direct/dev route behavior on existing legacy paths.
+- Use the ink color preference as the low-risk runtime settings seam.
+- Keep `vatio_board_ink_raw` canonical for v1. Mirror it to `vatioboard.app.vatio.board.settings.inkRaw` when a scoped runtime exists, and only seed the legacy key from the runtime mirror when no legacy value exists.
+
+### Files Changed In This Pass
+
+- `src/apps/board/board-route-app.ts`
+- `src/apps/board/index.ts`
+- `src/app/views/BoardView.ts`
+- `src/app-platform/builtin-apps.ts`
+- `src/board/board.ts`
+- `test/unit/board-route-app.test.js`
+- `test/unit/board-route-lifecycle.test.js`
+- `docs/vatioboard-os.md`
+- `docs/vatioboard-os-implementation-log.md`
+- `docs/next-agent-handoff.md`
+
+### Tests Run In This Pass
+
+- `pnpm vitest run test/unit/board-route-app.test.js test/unit/board-route-lifecycle.test.js test/smoke/spa-board-route.test.js` - passed, 3 files and 7 tests.
+- `pnpm run typecheck` - passed.
+- `pnpm run lint` - passed with 60 warning-level findings and 0 errors. Warnings are existing repository warnings in scripts/app/tests areas.
+- `pnpm vitest run test/unit/app-platform.test.js test/unit/app-shell-runtime-lifecycle.test.js test/unit/board-route-app.test.js test/unit/board-route-lifecycle.test.js test/smoke/spa-board-route.test.js` - passed, 5 files and 23 tests.
+- `pnpm test` - passed, 133 files and 1680 tests.
+- `pnpm run build` - passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1304 transformed modules. Vite emitted existing dynamic/static import warnings for `backend-auth.ts`, `cloud-sync.ts`, Player app entry, Calculator app entry, Camera Map app entry, Energy app entry, and Speed Alerts app entry.
+
+### Proof Points
+
+- The `vatio.board` manifest entry now loads `src/apps/board/index.ts`.
+- The existing `#/board` route still mounts through the compatibility `BoardView` re-export and existing route pipeline.
+- Board receives the scoped `vatio.board` runtime seams through the old `mountBoardRoute()` context.
+- Direct route callers without an app runtime still mount Board without runtime-specific dependencies.
+- `vatio_board_ink_raw` remains the canonical ink color key and mirrors to `vatioboard.app.vatio.board.settings.inkRaw`.
+
+### Known Limitations After This Pass
+
+- Board drawing/draft persistence is not migrated to app-private storage; it remains on the existing IndexedDB/localStorage implementation.
+- Board cloud sync and auth still import the existing shared helpers directly.
+- Board export/import, document metadata, and offline mutation internals remain legacy for compatibility.
+- The route app wrapper is an adapter, not a full `src/board/board.ts` decomposition.

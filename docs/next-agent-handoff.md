@@ -49,6 +49,10 @@
 - The `vatio.speed` manifest now loads `../apps/speed/index.js`; `src/app/views/SpeedView.ts` remains as a compatibility re-export.
 - Speed receives scoped runtime GPS, drive-recording, driving-alert, i18n, and logger seams through the existing `mountSpeedRoute()` context while preserving legacy globals and the existing Speed UI/controller.
 - Speed's internal geolocation watch path intentionally remains on the existing `navigator.geolocation` shim so Speed recording and Accel can keep concurrent GPS subscriptions across route changes.
+- Migrated Board into a conservative route-app wrapper under `src/apps/board/`.
+- The `vatio.board` manifest now loads `../apps/board/index.js`; `src/app/views/BoardView.ts` remains as a compatibility re-export.
+- Board receives scoped runtime storage, settings, auth, cloud-sync, i18n, and logger seams through the existing `mountBoardRoute()` context while preserving the existing Board UI/controller.
+- Board ink color now mirrors through `runtime.services.settings` as `vatioboard.app.vatio.board.settings.inkRaw`, while the legacy `vatio_board_ink_raw` key remains canonical for v1.
 
 ## Important Files Changed
 
@@ -81,6 +85,8 @@
 - `src/apps/milkdrop/index.ts`
 - `src/apps/speed/speed-route-app.ts`
 - `src/apps/speed/index.ts`
+- `src/apps/board/board-route-app.ts`
+- `src/apps/board/index.ts`
 - `src/apps/shared/number-format-settings.ts`
 - `src/app-platform/adapters/route-registry-adapter.ts`
 - `src/app-platform/adapters/tool-registry-adapter.ts`
@@ -89,10 +95,12 @@
 - `src/app/router.ts`
 - `src/app/route-registry.ts`
 - `src/app/views/SpeedView.ts`
+- `src/app/views/BoardView.ts`
 - `src/shared/tool-registry.ts`
 - `src/shared/shell-window-registry.ts`
 - `src/shared/start-menu.ts`
 - `src/speed/speed.ts`
+- `src/board/board.ts`
 - `src/calculator/calculator-widget.ts`
 - `src/calculator/storage.ts`
 - `src/energy/energy-calculator-widget.ts`
@@ -120,6 +128,8 @@
 - `test/unit/player-app.test.js`
 - `test/unit/milkdrop-app.test.js`
 - `test/unit/speed-route-app.test.js`
+- `test/unit/board-route-app.test.js`
+- `test/unit/board-route-lifecycle.test.js`
 - `test/smoke/dev-harness-speed-page.test.js`
 - `test/smoke/spa-gps-background.test.js`
 - `test/smoke/spa-apps-route.test.js`
@@ -286,6 +296,15 @@ Speed route-app migration verification:
   - `pnpm test` - passed, 132 files and 1675 tests.
   - `pnpm run build` - passed with the same existing Vite dynamic/static import warnings.
 
+Board route-app migration verification:
+
+- `pnpm vitest run test/unit/board-route-app.test.js test/unit/board-route-lifecycle.test.js test/smoke/spa-board-route.test.js` - passed, 3 files and 7 tests.
+- `pnpm run typecheck` - passed.
+- `pnpm run lint` - passed with 60 warning-level findings and 0 errors.
+- `pnpm vitest run test/unit/app-platform.test.js test/unit/app-shell-runtime-lifecycle.test.js test/unit/board-route-app.test.js test/unit/board-route-lifecycle.test.js test/smoke/spa-board-route.test.js` - passed, 5 files and 23 tests.
+- `pnpm test` - passed, 133 files and 1680 tests.
+- `pnpm run build` - passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1304 transformed modules. Vite emitted existing dynamic/static import warnings for `backend-auth.ts`, `cloud-sync.ts`, Player app entry, Calculator app entry, Camera Map app entry, Energy app entry, and Speed Alerts app entry.
+
 ## Known Limitations
 
 - App permissions are declared and enforced at the runtime boundary, but there are no user prompts yet.
@@ -293,6 +312,7 @@ Speed route-app migration verification:
 - App-private storage is localStorage-backed only.
 - Existing apps still import many global helpers directly; migration to `appRuntime` should be gradual. Calculator, Energy, Camera Map, Speed Alerts, Player, and Milkdrop are partially migrated through app wrappers, but Calculator expression state/history, Energy trip values/multi-trip records, Camera Map local/offline data storage, Speed Alerts panel internals, Player queue/session restore, Player media cache, Milkdrop preset/position/size persistence, and shell layout storage remain legacy for compatibility.
 - Speed is now route-wrapper migrated, but its internal replay/recording persistence, preferences, geolocation watch implementation, and many globals remain legacy for compatibility.
+- Board is now route-wrapper migrated, but drawing/draft persistence, cloud sync, auth, document metadata, export/import, offline mutations, and most Board globals remain legacy for compatibility.
 - Calculator and Energy intentionally share number-format settings through `embeddable_calc_settings_v1` in v1. Their app-private runtime settings are mirrors until a true platform shared-settings service exists.
 - Existing global compatibility shims remain in place.
 - Background-service lifecycle is registered in types but not heavily implemented.
@@ -304,7 +324,7 @@ Speed route-app migration verification:
 
 ## Suggested Next Prompt
 
-Continue VatioBoard OS after Speed has been route-wrapper migrated. Migrate Board next without rewriting `src/board/board.ts`. Preserve `#/board`, local draft/offline behavior, cloud-sync compatibility, drawing controls, media/library links, and direct/dev harness usage. Create a conservative `src/apps/board` route wrapper, keep `src/app/views/BoardView.ts` as a compatibility re-export if safe, pass scoped `appRuntime` storage/settings/auth/cloud-sync/i18n seams through the existing route context, migrate only one low-risk preference or storage seam, add tests for route launch, lifecycle cleanup, direct legacy fallback, local draft persistence, and full-suite/build verification.
+Continue VatioBoard OS after Speed and Board have been route-wrapper migrated. Migrate Library or Replay next without rewriting the existing controller. Preserve the existing route, local-first/offline persistence, cloud-sync/auth behavior, media/download compatibility, and direct/dev route usage. Create a conservative `src/apps/<route-app>` wrapper, keep the old `src/app/views/*View.ts` as a compatibility re-export if safe, pass scoped runtime storage/settings/auth/cloud-sync/i18n/logger seams through the existing route context, migrate only one low-risk preference seam, add focused route/runtime tests, then run full `pnpm test` and `pnpm run build`.
 
 ## Manual QA
 

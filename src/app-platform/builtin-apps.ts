@@ -88,7 +88,7 @@ export const BUILTIN_APP_MANIFESTS = [
     icon: IconBoard,
     i18nKey: "openBoard",
     route: "/board",
-    entry: () => import("../app/views/BoardView.js"),
+    entry: () => import("../apps/board/index.js"),
     surfaces: ["main-route", "start-menu", "launcher"],
     order: 20,
     permissions: [

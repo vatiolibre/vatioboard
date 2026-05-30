@@ -387,6 +387,41 @@ The wrapper adapts the normal route mount context before calling `mountSpeedRout
 
 Speed still uses its existing geolocation subscription path internally. In the SPA, that path is already routed through the installed GPS service shim, and keeping it there preserves the known coexistence behavior where Speed recording and Accel can hold concurrent route subscriptions without starving each other. Drive recording, replay persistence, acceleration interop, Speed Alerts, Camera Map, offline/local storage, and public Speed globals remain on the established legacy paths in this pass.
 
+## Board Route Migration
+
+Board is now wrapped as a first-class route app module. The manifest `vatio.board` still owns `#/board`, but its entry now points at:
+
+```ts
+entry: () => import("../apps/board/index.js")
+```
+
+The compatibility view `src/app/views/BoardView.ts` remains as a re-export for older direct imports. The app wrapper in `src/apps/board/` keeps the existing `src/board/board.ts` controller and `board-template` UI intact.
+
+The wrapper adapts the normal route mount context before calling `mountBoardRoute()`:
+
+- `runtime.storage` is exposed as `routeContext.appStorage` for future app-private seams.
+- `runtime.services.settings` is exposed as `routeContext.settingsService`.
+- `runtime.services.auth` is exposed as `routeContext.authService`.
+- `runtime.services.cloudSync` is exposed as `routeContext.cloudSyncService`.
+- `runtime.i18n.t()` is exposed as a translation helper for future safe label seams.
+- `runtime.logger` is exposed for non-fatal diagnostics.
+
+Board's local draft/canvas persistence, IndexedDB/localStorage drawing storage, cloud sync helpers, auth helpers, drawing controls, export/import behavior, and direct/dev route usage intentionally remain on the existing legacy paths in this pass.
+
+One low-risk preference is mirrored through the runtime settings service: the ink color. The legacy key remains canonical for v1:
+
+```text
+vatio_board_ink_raw
+```
+
+The runtime mirror lives at:
+
+```text
+vatioboard.app.vatio.board.settings.inkRaw
+```
+
+If both keys exist, the legacy key wins so stale app-private runtime settings cannot shadow direct Board callers. If no legacy key exists but a runtime mirror does, Board seeds the legacy key for compatibility.
+
 ## Launching Apps
 
 `createAppLauncher()` implements v1 shell launching:
@@ -437,7 +472,7 @@ It lists installed apps, kind, status, surfaces, permissions, local-first/offlin
 
 ## Future Direction
 
-- Move each core app gradually into `src/apps/<app-id>`.
+- Move remaining route apps gradually into `src/apps/<app-id>`. Speed and Board are wrapped; likely next candidates are Library or Replay.
 - Replace global compatibility shims with runtime services.
 - Add app install/enable/disable preferences.
 - Add VatioLibre-backed app storage after the local contract is stable.
