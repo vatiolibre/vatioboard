@@ -1158,3 +1158,81 @@ The existing production routes are declared in `src/app/route-registry.ts` and r
 - Library media cache, pinned media, media manifests, downloads, playlist loading, cloud sync, auth, and import/export actions remain on existing legacy modules.
 - The active-tab setting mirror is local-only app-private storage and does not cloud sync.
 - The route app wrapper is an adapter, not a full `src/library/library.ts` decomposition.
+
+## Replay Route-App Migration - 2026-05-30 11:59:15 EDT
+
+### Baseline Understanding
+
+- Replay was still loaded through `src/app/views/ReplayView.ts`, which directly wrapped `src/replay/replay.ts`.
+- The app shell already provides `appRuntime` and `appManifest` to route contexts.
+- Replay has sensitive local-first surfaces: active replay session storage, saved replay history, cloud replay payload recovery, backend auth, cloud sync, MapLibre map lifecycle, Chart.js chart lifecycle, playback timers, and direct/dev harness behavior.
+- The safe first migration is a route adapter plus one small preference seam, leaving replay/session history and map/chart internals untouched.
+
+### Files Inspected
+
+- `src/app/views/ReplayView.ts`
+- `src/replay/replay.ts`
+- `src/replay/session.ts`
+- `src/replay/map.ts`
+- `src/replay/charts.ts`
+- `src/replay/dev-harness.ts`
+- `src/app-platform/builtin-apps.ts`
+- `src/apps/speed/speed-route-app.ts`
+- `src/apps/board/board-route-app.ts`
+- `src/apps/library/library-route-app.ts`
+- `test/smoke/spa-replay-route.test.js`
+- `test/smoke/dev-harness-replay-page.test.js`
+- `test/unit/library-route-app.test.js`
+- `test/unit/library-route-lifecycle.test.js`
+
+### Decisions Made
+
+- Add a thin route-app wrapper in `src/apps/replay/` instead of rewriting Replay.
+- Point the `vatio.replay` manifest entry at `../apps/replay/index.js`.
+- Keep `src/app/views/ReplayView.ts` as a compatibility re-export.
+- Pass runtime storage, settings, auth, cloud sync, drive-recording, i18n, and logger seams through the existing `mountReplayRoute()` context.
+- Keep local replay/session history, cloud replay payload loading, auth helpers, cloud sync helpers, map controllers, chart controllers, playback controls, and direct/dev route behavior on existing legacy paths.
+- Use the playback rate as the low-risk runtime settings seam.
+- Keep the new legacy compatibility key `vatio_replay_playback_rate_v1` canonical for v1. Mirror it to `vatioboard.app.vatio.replay.settings.playbackRate` when a scoped runtime exists, and only seed the legacy key from the runtime mirror when no legacy value exists.
+- Do not migrate large replay/session payloads, GPS sample arrays, cloud records, map cache, or chart state in this pass.
+
+### Files Changed In This Pass
+
+- `src/apps/replay/replay-route-app.ts`
+- `src/apps/replay/index.ts`
+- `src/app/views/ReplayView.ts`
+- `src/app-platform/builtin-apps.ts`
+- `src/replay/replay.ts`
+- `test/unit/replay-route-app.test.js`
+- `test/unit/replay-route-lifecycle.test.js`
+- `docs/vatioboard-os.md`
+- `docs/vatioboard-os-implementation-log.md`
+- `docs/next-agent-handoff.md`
+
+### Tests Run In This Pass
+
+- `pnpm vitest run test/unit/replay-route-app.test.js test/unit/replay-route-lifecycle.test.js test/smoke/spa-replay-route.test.js` - passed, 3 files and 7 tests.
+- `pnpm exec tsc --noEmit --pretty false` - passed during focused implementation checks.
+- `pnpm vitest run test/unit/app-platform.test.js test/unit/app-shell-runtime-lifecycle.test.js test/unit/replay-route-app.test.js test/unit/replay-route-lifecycle.test.js test/smoke/spa-replay-route.test.js test/smoke/dev-harness-replay-page.test.js` - passed, 6 files and 42 tests.
+- `pnpm run typecheck` - passed.
+- `pnpm run lint` - passed with 60 warning-level findings and 0 errors. Warnings are existing repository warnings in scripts/app/tests areas.
+- `pnpm test` - passed, 137 files and 1692 tests.
+- `pnpm run build` - passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1306 transformed modules. Vite emitted existing dynamic/static import warnings for `backend-auth.ts`, `cloud-sync.ts`, Player app entry, Calculator app entry, Camera Map app entry, Energy app entry, and Speed Alerts app entry.
+
+### Proof Points
+
+- The `vatio.replay` manifest entry now loads `src/apps/replay/index.ts`.
+- The existing `#/replay` route still mounts through the compatibility `ReplayView` re-export and existing route pipeline.
+- Replay receives the scoped `vatio.replay` runtime seams through the old `mountReplayRoute()` context.
+- Direct route callers without an app runtime still mount Replay without runtime-specific dependencies.
+- `vatio_replay_playback_rate_v1` remains the canonical playback-rate key and mirrors to `vatioboard.app.vatio.replay.settings.playbackRate`.
+- If the runtime playback-rate mirror exists and the legacy key does not, Replay seeds the legacy key for direct/dev compatibility.
+- Existing SPA Replay remount coverage and dev-harness Replay smoke coverage still pass, preserving route cleanup, map/chart lifecycle, playback controls, and replay session behavior.
+
+### Known Limitations After This Pass
+
+- Replay session/history persistence is not migrated to app-private storage; it remains on the existing localStorage/IndexedDB replay storage implementation.
+- Replay cloud sync and auth still import the existing shared helpers directly.
+- Replay map/chart controllers, playback timer internals, cloud replay recovery, and import/open-from-library behavior remain legacy for compatibility.
+- The playback-rate mirror is local-only app-private storage and does not cloud sync.
+- The route app wrapper is an adapter, not a full `src/replay/replay.ts` decomposition.

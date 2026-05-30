@@ -61,6 +61,10 @@ import { createReplayMapController } from './map.js';
 import { isReplayPayloadComplete } from './session.js';
 
 const isSpaRuntime = Boolean(window.__vatioboardSpa);
+const DEFAULT_REPLAY_PLAYBACK_RATE = 1000;
+const REPLAY_PLAYBACK_RATE_LEGACY_KEY = 'vatio_replay_playback_rate_v1';
+const REPLAY_PLAYBACK_RATE_SETTING_KEY = 'playbackRate';
+const REPLAY_PLAYBACK_RATES = new Set([1, 4, 10, 100, 1000]);
 
 type AnyRecord = Record<string, any>;
 type AnyFn = (...args: any[]) => any;
@@ -319,7 +323,7 @@ const state: AnyRecord = {
   initialSelectionPending: true,
   summary: getReplaySummary(null),
   highlights: getReplayHighlights(null),
-  playbackRate: 1000,
+  playbackRate: DEFAULT_REPLAY_PLAYBACK_RATE,
   dashboardAxis: 'time',
   elapsedMs: 0,
   playing: false,
@@ -599,6 +603,90 @@ function renderRateButtons() {
     const isActive = Number(button.dataset.rate) === state.playbackRate;
     button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
   }
+}
+
+function normalizePlaybackRate(value, fallback = null) {
+  const numeric = Number(value);
+  return REPLAY_PLAYBACK_RATES.has(numeric) ? numeric : fallback;
+}
+
+function getReplayPreferencesStorage() {
+  try {
+    return window.localStorage || null;
+  } catch {
+    return null;
+  }
+}
+
+function getRuntimeSettingsService() {
+  return activeReplayRoute?.settingsService || null;
+}
+
+function getRuntimeLogger() {
+  return activeReplayRoute?.logger || null;
+}
+
+function readLegacyPlaybackRate() {
+  try {
+    return normalizePlaybackRate(
+      getReplayPreferencesStorage()?.getItem(REPLAY_PLAYBACK_RATE_LEGACY_KEY),
+      null
+    );
+  } catch (error) {
+    getRuntimeLogger()?.warn?.('Replay playback rate could not be read from legacy storage.', error);
+    return null;
+  }
+}
+
+function writeLegacyPlaybackRate(rate) {
+  try {
+    getReplayPreferencesStorage()?.setItem(REPLAY_PLAYBACK_RATE_LEGACY_KEY, String(rate));
+  } catch (error) {
+    getRuntimeLogger()?.warn?.('Replay playback rate could not be written to legacy storage.', error);
+  }
+}
+
+function readRuntimePlaybackRate() {
+  const settingsService = getRuntimeSettingsService();
+  if (!settingsService?.get) return null;
+  try {
+    return normalizePlaybackRate(
+      settingsService.get(REPLAY_PLAYBACK_RATE_SETTING_KEY, null),
+      null
+    );
+  } catch (error) {
+    getRuntimeLogger()?.warn?.('Replay playback rate setting could not be read through runtime settings.', error);
+    return null;
+  }
+}
+
+function mirrorPlaybackRateToRuntime(rate) {
+  const settingsService = getRuntimeSettingsService();
+  if (!settingsService?.set) return;
+  try {
+    const saved = settingsService.set(REPLAY_PLAYBACK_RATE_SETTING_KEY, String(rate));
+    if (!saved) {
+      getRuntimeLogger()?.warn?.('Replay playback rate setting could not be mirrored through runtime settings.');
+    }
+  } catch (error) {
+    getRuntimeLogger()?.warn?.('Replay playback rate setting mirror failed.', error);
+  }
+}
+
+function loadInitialPlaybackRate() {
+  const legacyRate = readLegacyPlaybackRate();
+  if (legacyRate !== null) {
+    mirrorPlaybackRateToRuntime(legacyRate);
+    return legacyRate;
+  }
+
+  const runtimeRate = readRuntimePlaybackRate();
+  if (runtimeRate !== null) {
+    writeLegacyPlaybackRate(runtimeRate);
+    return runtimeRate;
+  }
+
+  return normalizePlaybackRate(state.playbackRate, DEFAULT_REPLAY_PLAYBACK_RATE);
 }
 
 function renderAxisButtons() {
@@ -1091,11 +1179,14 @@ async function mountReplayController(routeContext: AnyRecord = {}) {
     cleanup,
     destroyed: false,
     generation: replayRouteGeneration + 1,
+    logger: routeContext.logger || null,
     ownsCleanup,
+    settingsService: routeContext.settingsService || null,
     signal: routeContext.signal || null,
   };
   replayRouteGeneration = route.generation;
   activeReplayRoute = route;
+  state.playbackRate = loadInitialPlaybackRate();
   elements = getReplayElements(routeContext.root || document);
   graphElements = getReplayGraphElements(routeContext.root || document);
   toolsMenu = initToolsMenu({
@@ -1214,8 +1305,11 @@ function togglePlayback() {
 }
 
 function setPlaybackRate(rate) {
-  if (!Number.isFinite(rate) || rate <= 0) return;
-  state.playbackRate = rate;
+  const normalizedRate = normalizePlaybackRate(rate, null);
+  if (normalizedRate === null) return;
+  state.playbackRate = normalizedRate;
+  writeLegacyPlaybackRate(normalizedRate);
+  mirrorPlaybackRateToRuntime(normalizedRate);
   renderRateButtons();
 }
 

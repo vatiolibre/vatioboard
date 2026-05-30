@@ -457,6 +457,42 @@ vatioboard.app.vatio.library.settings.activeTab
 
 If a `tab` query parameter is present, it wins over any stale runtime mirror and updates the mirror. If no `tab` query exists but a runtime mirror does, Library uses the mirrored tab. Direct callers without an app runtime still follow the existing route-query/default behavior.
 
+## Replay Route Migration
+
+Replay is now wrapped as a first-class route app module. The manifest `vatio.replay` still owns `#/replay`, but its entry now points at:
+
+```ts
+entry: () => import("../apps/replay/index.js")
+```
+
+The compatibility view `src/app/views/ReplayView.ts` remains as a re-export for older direct imports. The app wrapper in `src/apps/replay/` keeps the existing `src/replay/replay.ts` controller and `replay-template` UI intact.
+
+The wrapper adapts the normal route mount context before calling `mountReplayRoute()`:
+
+- `runtime.storage` is exposed as `routeContext.appStorage` for future app-private seams.
+- `runtime.services.settings` is exposed as `routeContext.settingsService`.
+- `runtime.services.auth` is exposed as `routeContext.authService`.
+- `runtime.services.cloudSync` is exposed as `routeContext.cloudSyncService`.
+- `runtime.services.driveRecording` is exposed as `routeContext.driveRecordingService`.
+- `runtime.i18n.t()` is exposed as a translation helper for future safe label seams.
+- `runtime.logger` is exposed for non-fatal diagnostics.
+
+Replay's local replay/session history, cloud replay loaders, backend auth, cloud sync, map lifecycle, chart lifecycle, playback controls, and direct/dev route usage intentionally remain on the existing legacy paths in this pass.
+
+One low-risk preference is mirrored through the runtime settings service: replay playback rate. The legacy key remains canonical for v1:
+
+```text
+vatio_replay_playback_rate_v1
+```
+
+The runtime mirror lives at:
+
+```text
+vatioboard.app.vatio.replay.settings.playbackRate
+```
+
+If both keys exist, the legacy key wins so stale app-private runtime settings cannot shadow direct Replay callers. If no legacy key exists but a runtime mirror does, Replay seeds the legacy key for compatibility. Large replay/session payloads remain on the existing replay storage keys and IndexedDB paths.
+
 ## Launching Apps
 
 `createAppLauncher()` implements v1 shell launching:
@@ -507,7 +543,7 @@ It lists installed apps, kind, status, surfaces, permissions, local-first/offlin
 
 ## Future Direction
 
-- Move remaining route apps gradually into `src/apps/<app-id>`. Speed, Board, and Library are wrapped; Replay is the likely next candidate.
+- Move remaining route apps gradually into `src/apps/<app-id>`. Speed, Board, Library, and Replay are wrapped; Accel is the likely next candidate.
 - Replace global compatibility shims with runtime services.
 - Add app install/enable/disable preferences.
 - Add VatioLibre-backed app storage after the local contract is stable.
