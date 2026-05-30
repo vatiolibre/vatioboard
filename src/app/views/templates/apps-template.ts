@@ -23,6 +23,40 @@ const appsTemplate = `
           <option value="launcher">Launcher</option>
         </select>
       </label>
+      <label class="vb-app-manager-filter">
+        <span class="sr-only">Kind</span>
+        <select data-app-kind-filter aria-label="Kind">
+          <option value="all">All kinds</option>
+          <option value="core-app">Core</option>
+          <option value="tool-app">Tools</option>
+          <option value="media-app">Media</option>
+          <option value="visualizer-app">Visualizer</option>
+          <option value="system-app">System</option>
+          <option value="background-service">Background</option>
+        </select>
+      </label>
+      <label class="vb-app-manager-filter">
+        <span class="sr-only">Status</span>
+        <select data-app-status-filter aria-label="Status">
+          <option value="all">All statuses</option>
+          <option value="stable">Stable</option>
+          <option value="beta">Beta</option>
+          <option value="experimental">Experimental</option>
+          <option value="internal">Internal</option>
+        </select>
+      </label>
+      <label class="vb-app-manager-filter">
+        <span class="sr-only">Permission</span>
+        <select data-app-permission-filter aria-label="Permission">
+          <option value="all">All permissions</option>
+          <option value="gps.read">GPS</option>
+          <option value="audio.playback">Audio</option>
+          <option value="storage.app">Storage</option>
+          <option value="settings.read">Settings</option>
+          <option value="cloud.sync">Cloud sync</option>
+          <option value="shell.launchApp">Launch apps</option>
+        </select>
+      </label>
     </div>
     <div class="vb-app-manager-grid" data-app-list></div>
   </section>

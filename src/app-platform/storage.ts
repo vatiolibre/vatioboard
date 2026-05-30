@@ -1,9 +1,11 @@
 import type {
   VatioAppId,
+  VatioAppStorageExport,
   VatioAppLogger,
   VatioAppPermissionRuntime,
   VatioAppStorage,
   VatioAppStorageUsage,
+  VatioStorageDriver,
 } from "./types";
 import type { StorageLike } from "../types/storage";
 
@@ -31,6 +33,137 @@ function getByteLength(value: string) {
 
 export function getAppStorageNamespace(appId: VatioAppId) {
   return `${APP_STORAGE_PREFIX}${appId}.`;
+}
+
+export function createLocalStorageDriver(
+  storage: StorageLike | null = getDefaultStorage(),
+): VatioStorageDriver {
+  function listKeys(prefix: string) {
+    if (!storage) return [];
+    const keys: string[] = [];
+    const iterableStorage = storage as StorageLike & { length?: number; key?: (index: number) => string | null };
+    try {
+      const length = "length" in iterableStorage ? Number(iterableStorage.length || 0) : 0;
+      if (length > 0 && typeof iterableStorage.key === "function") {
+        for (let index = 0; index < length; index += 1) {
+          const key = iterableStorage.key(index);
+          if (key?.startsWith(prefix)) keys.push(key);
+        }
+        return keys.sort();
+      }
+
+      return Object.keys(storage).filter((key) => key.startsWith(prefix)).sort();
+    } catch {
+      return [];
+    }
+  }
+
+  return {
+    getItem(key) {
+      if (!storage) return null;
+      try {
+        return storage.getItem(key);
+      } catch {
+        return null;
+      }
+    },
+    setItem(key, value) {
+      if (!storage) return false;
+      try {
+        storage.setItem(key, value);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    removeItem(key) {
+      if (!storage) return false;
+      try {
+        storage.removeItem(key);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    listKeys,
+    estimate(prefix) {
+      const keys = listKeys(prefix);
+      let bytes = 0;
+      for (const key of keys) {
+        bytes += getByteLength(key) + getByteLength(this.getItem(key) || "");
+      }
+      const appId = prefix.startsWith(APP_STORAGE_PREFIX)
+        ? prefix.slice(APP_STORAGE_PREFIX.length).replace(/\.$/, "")
+        : prefix;
+      return {
+        appId,
+        keyCount: keys.length,
+        bytes,
+        available: Boolean(storage),
+      };
+    },
+  };
+}
+
+export function listAppPrivateStorageKeys(appId: VatioAppId, storage: StorageLike | null = getDefaultStorage()) {
+  const namespace = getAppStorageNamespace(appId);
+  return (createLocalStorageDriver(storage).listKeys(namespace) as string[])
+    .map((key) => key.slice(namespace.length));
+}
+
+export function estimateAppPrivateStorage(appId: VatioAppId, storage: StorageLike | null = getDefaultStorage()) {
+  return createLocalStorageDriver(storage).estimate(getAppStorageNamespace(appId)) as VatioAppStorageUsage;
+}
+
+export function clearAppPrivateStorage(appId: VatioAppId, storage: StorageLike | null = getDefaultStorage()) {
+  const driver = createLocalStorageDriver(storage);
+  const namespace = getAppStorageNamespace(appId);
+  let ok = true;
+  for (const key of driver.listKeys(namespace) as string[]) {
+    ok = driver.removeItem(key) === true && ok;
+  }
+  return ok;
+}
+
+export function exportAppPrivateStorage(
+  appId: VatioAppId,
+  storage: StorageLike | null = getDefaultStorage(),
+): VatioAppStorageExport {
+  const driver = createLocalStorageDriver(storage);
+  const namespace = getAppStorageNamespace(appId);
+  const keys: Record<string, string> = {};
+
+  for (const key of driver.listKeys(namespace) as string[]) {
+    const value = driver.getItem(key);
+    if (value !== null) keys[key.slice(namespace.length)] = value;
+  }
+
+  return {
+    appId,
+    exportedAt: new Date().toISOString(),
+    keys,
+  };
+}
+
+export function importAppPrivateStorage(
+  appId: VatioAppId,
+  data: Partial<VatioAppStorageExport> | Record<string, string>,
+  storage: StorageLike | null = getDefaultStorage(),
+) {
+  const driver = createLocalStorageDriver(storage);
+  const namespace = getAppStorageNamespace(appId);
+  const source = "keys" in data && data.keys && typeof data.keys === "object"
+    ? data.keys as Record<string, string>
+    : data as Record<string, string>;
+  let ok = true;
+
+  for (const [key, value] of Object.entries(source)) {
+    const normalized = normalizeKey(key);
+    if (!normalized) continue;
+    ok = driver.setItem(`${namespace}${normalized}`, String(value)) === true && ok;
+  }
+
+  return ok;
 }
 
 export function createAppStorage({

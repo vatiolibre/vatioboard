@@ -2,6 +2,23 @@
 
 ## Completed
 
+- Added the VatioBoard OS app control plane in `src/app-platform/app-control.ts` and `app-control-storage.ts`.
+- App control state is stored in `vatioboard.os.appControl.v1` and tracks enabled, pinned, favorite, launch count, last opened time, permission grants/revocations, and storage policy.
+- Protected apps such as `vatio.speed`, `vatio.appManager`, and protected internal background diagnostics cannot be disabled.
+- Runtime permission checks now require permissions to be declared and effectively granted. Undeclared grants are rejected, and revoked permissions fail safely.
+- Added shared settings in `src/app-platform/shared-settings.ts` plus legacy-first bridges in `shared-settings-compat.ts`.
+- Speed unit and distance unit now mirror through shared OS settings while keeping `vatio_speed_unit` and `vatio_speed_distance_unit` canonical.
+- Added app-private storage diagnostics/reset/export/import helpers while keeping app control, shell layout, media cache, drawings, replay sessions, acceleration histories, player queues, and other legacy payloads untouched.
+- App Manager is now an internal OS control panel with search, filters, running counts, enable/disable, pin/favorite, permission toggles, lifecycle diagnostics, service indicators, storage usage, storage reset, and storage JSON export/import.
+- App Manager closes a running shell-window app when disabling it, and protected apps show a blocking explanation.
+- Launcher, runtime `shell.openApp()`, route tool adapters, Start Menu, and App Manager now block disabled apps.
+- Start Menu now receives `shellAppRuntimeManager` from `app-shell.ts`, so lazy shell-window launch behavior matches App Manager.
+- Added `openAppAsync()` and launch-count recording to the manifest launcher; `getRunningApps()` includes cold-launching shell-window apps.
+- Added bounded lifecycle diagnostics (`createdAt`, `mountedAt`, `activatedAt`, `lastStateChangeAt`, and capped transition log).
+- Added conservative internal background-service support in `src/app-platform/background-services.ts`.
+- Added protected autostart background diagnostic manifest `vatio.offlineReadiness` without adding GPS watchers, heavy loops, external loading, or new cloud behavior.
+- App shell now starts/destroys the background service manager and redirects disabled route apps back to Speed.
+- Added focused control-plane tests in `test/unit/app-control-platform.test.js`.
 - Added the first functional VatioBoard OS platform under `src/app-platform/`.
 - Added built-in app manifests for current route apps and shell-window tools.
 - Made app manifests the source for route, tool, and shell-window compatibility registries.
@@ -75,12 +92,17 @@
 
 - `src/app-platform/types.ts`
 - `src/app-platform/builtin-apps.ts`
+- `src/app-platform/app-control.ts`
+- `src/app-platform/app-control-storage.ts`
 - `src/app-platform/app-registry.ts`
 - `src/app-platform/runtime.ts`
 - `src/app-platform/launcher.ts`
 - `src/app-platform/storage.ts`
 - `src/app-platform/services.ts`
 - `src/app-platform/settings.ts`
+- `src/app-platform/shared-settings.ts`
+- `src/app-platform/shared-settings-compat.ts`
+- `src/app-platform/background-services.ts`
 - `src/app-platform/shell-app-runtime-manager.ts`
 - `src/apps/calculator/calculator-app.ts`
 - `src/apps/calculator/calculator-app.less`
@@ -125,6 +147,8 @@
 - `src/shared/tool-registry.ts`
 - `src/shared/shell-window-registry.ts`
 - `src/shared/start-menu.ts`
+- `src/shared/unit-bootstrap.ts`
+- `src/speed/preferences.ts`
 - `src/speed/speed.ts`
 - `src/board/board.ts`
 - `src/library/library.ts`
@@ -150,6 +174,7 @@
 - `src/apps/app-manager/app-manager.less`
 - `src/i18n.ts`
 - `test/unit/app-platform.test.js`
+- `test/unit/app-control-platform.test.js`
 - `test/unit/app-shell-runtime-lifecycle.test.js`
 - `test/helpers/route-app-test-utils.js`
 - `test/unit/route-app-contract.test.js`
@@ -177,6 +202,19 @@
 - `docs/next-agent-handoff.md`
 
 ## Commands Run
+
+Current app control-plane pass:
+
+- `pnpm run typecheck` - passed.
+- `pnpm vitest run test/unit/app-platform.test.js test/unit/app-control-platform.test.js test/unit/app-shell-runtime-lifecycle.test.js test/unit/route-app-contract.test.js` - passed, 4 files and 33 tests.
+- `pnpm run typecheck && pnpm run lint` - typecheck passed; lint passed with existing warning-level findings and 0 errors.
+- `pnpm vitest run test/unit/calculator-app.test.js test/unit/energy-app.test.js test/unit/camera-map-app.test.js test/unit/speed-alerts-app.test.js test/unit/player-app.test.js test/unit/milkdrop-app.test.js test/unit/speed-route-app.test.js test/unit/board-route-app.test.js test/unit/library-route-app.test.js test/unit/replay-route-app.test.js test/unit/accel-route-app.test.js test/unit/board-route-lifecycle.test.js test/unit/library-route-lifecycle.test.js test/unit/replay-route-lifecycle.test.js test/unit/accel-route-lifecycle.test.js` - passed, 15 files and 82 tests.
+- `pnpm test` - first run failed in `test/unit/unit-bootstrap.test.js` because shared settings persisted a default distance unit when only speed unit was explicitly set; fixed by storing only explicit shared values. The same run also hit the known full-suite GPS coexistence smoke timeout.
+- `pnpm vitest run test/unit/unit-bootstrap.test.js test/unit/app-control-platform.test.js` - passed, 2 files and 11 tests.
+- `pnpm vitest run test/smoke/spa-gps-background.test.js -t "keeps speed recording and an accel run subscribed across route changes"` - passed isolated, 1 test.
+- `pnpm test` - rerun passed, 141 files and 1715 tests.
+- `pnpm run build` - passed. Vite still reports existing dynamic/static import chunking warnings for backend auth, cloud sync, Player, Calculator, Camera Map, Energy, and Speed Alerts entries.
+- `pnpm run typecheck && pnpm vitest run test/unit/app-control-platform.test.js` - passed after the final background-service disabled-app guard.
 
 Original OS v1 verification from the previous implementation session:
 

@@ -55,7 +55,13 @@ If a manifest declares a permission but omits the service ID, the runtime return
 
 Permissions are declared in each manifest and checked by `createAppPermissionRuntime()`.
 
-For v1, internal apps are auto-granted the permissions they declare. The runtime still denies undeclared permissions. A denied permission returns a safe value and logs a scoped warning instead of crashing the shell.
+For v1, declared built-in app permissions are auto-granted by default for compatibility, but the app control plane can revoke individual permissions. The effective permission set is:
+
+```text
+manifest.permissions ∩ app-control grants
+```
+
+with stable/internal/beta/experimental built-ins receiving their declared permissions unless a permission is explicitly revoked. The runtime still denies undeclared permissions, and App Manager refuses to grant a permission that the manifest did not declare. A denied permission returns a safe value and logs a scoped warning instead of crashing the shell.
 
 Examples:
 
@@ -66,6 +72,24 @@ Examples:
 - `settings.read` and `settings.write` enable app-scoped settings.
 - `shell.launchApp` allows runtime shell launching.
 - `cloud.sync` exposes cloud sync helpers lazily.
+
+## App Control State
+
+App control state lives separately from manifests in:
+
+```text
+vatioboard.os.appControl.v1
+```
+
+The manifest registry remains the source of truth for available apps. The control plane stores user/system state such as enabled, pinned, favorite, last opened time, launch count, permission grants/revocations, and storage policy.
+
+Protected system apps cannot be disabled when that would make the shell unusable. In v1 this protects at least:
+
+- `vatio.speed`
+- `vatio.appManager`
+- protected internal background diagnostics such as `vatio.offlineReadiness`
+
+Launchers, runtime `shell.openApp()`, route adapters, App Manager, and Start Menu all consult app control state before launching. Disabling a shell-window app from App Manager closes its window if it is running. Disabled route apps are redirected back to Speed when reached through the app shell.
 
 ## App Storage
 
@@ -90,6 +114,16 @@ The API is intentionally small so it can later move to IndexedDB or VatioLibre c
 
 JSON reads are safe: invalid JSON returns the caller-provided fallback.
 
+The storage module also exposes v1 diagnostics helpers for App Manager:
+
+- `listAppPrivateStorageKeys(appId)`
+- `estimateAppPrivateStorage(appId)`
+- `clearAppPrivateStorage(appId)`
+- `exportAppPrivateStorage(appId)`
+- `importAppPrivateStorage(appId, json)`
+
+These helpers only touch `vatioboard.app.<appId>.*` keys. App control state, shell layout, large legacy payloads, player queues, media cache, drawings, replay sessions, acceleration histories, and camera offline data are not erased by an app-private reset unless a future migration intentionally moves them behind an app-private adapter.
+
 ## App Settings
 
 `runtime.services.settings` is the v1 app-scoped settings service. It stores values in app-private storage under a reserved settings namespace:
@@ -107,7 +141,23 @@ Settings exposure requires the `settings` service declaration. Reads require `se
 - `setJson(key, value)`
 - `subscribe(listener)`
 
-The service is deliberately app-scoped. It does not expose raw shared settings or global localStorage.
+The service is deliberately app-scoped. It does not expose raw global localStorage.
+
+## Shared Settings
+
+Cross-app settings that are intentionally shared now live behind `runtime.services.sharedSettings` and the singleton shared-settings service. The v1 storage key is:
+
+```text
+vatioboard.os.sharedSettings.v1
+```
+
+Shared settings are distinct from app-private settings. They cover small OS-wide preferences such as speed unit, distance unit, trip distance unit, number-format defaults, language, UI density, in-vehicle mode, audio defaults, and camera alert defaults.
+
+Compatibility rule for migrated settings:
+
+1. Existing legacy value wins.
+2. The shared setting is mirrored from legacy.
+3. If no legacy value exists but an explicit shared setting exists, the legacy key is seeded so direct/dev callers continue to work.
 
 ## App I18n
 
@@ -572,14 +622,31 @@ The next low-risk migrations should remain preference-sized:
 
 `createAppLauncher()` implements v1 shell launching:
 
+- Disabled apps return `false` and do not navigate/open.
 - Route apps navigate to their manifest route.
 - Shell-window apps create an app runtime, restore if minimized, then focus or open their shell window.
 - If a shell-window app is not registered yet and has a lazy manifest entry, the launcher cold-loads the entry and calls `createShellWindowApp()` before opening it.
 - Concurrent cold launches for the same app share the same in-flight load to avoid duplicate panels.
 - If a window was already registered by a legacy/floating-tools path, the launcher reuses and focuses that existing window without loading another entry.
-- Background apps can be registered but have no heavy lifecycle yet.
+- Launch attempts update app control `lastOpenedAt` and `openCount`.
+- `openAppAsync(appId)` is available for callers that want to wait for lazy shell-window registration.
+- `getRunningApps()` includes active route apps, open shell-window apps, and shell-window apps currently cold-launching.
 
-The start menu still supports the legacy toggles for existing floating tools, but it now prefers the manifest-backed launcher when an app can be resolved from a legacy tool ID.
+The start menu now receives `shellAppRuntimeManager` from the app shell and uses the same manifest-backed launcher path as App Manager. It still supports legacy floating-tool fallbacks for compatibility, but disabled manifest apps are blocked before the fallback path can open them.
+
+## Background Services
+
+Background-service manifests are supported conservatively in v1. `createBackgroundServiceManager()` scans internal background-service manifests, creates normal app runtimes, and starts only services with `lifecycle.autostart: true`.
+
+Current behavior:
+
+- No external app loading.
+- No signed bundles or iframes.
+- No new GPS watch, heavy loop, or cloud protocol.
+- Lifecycle supports start, suspend, resume, stop, and destroy.
+- Runtime diagnostics are visible in App Manager.
+
+The first internal service is `vatio.offlineReadiness`, an autostart diagnostic runtime for local-first/offline readiness. It does not keep GPS active and does not change Speed/Accel GPS behavior.
 
 ## Creating A New Internal App
 
@@ -601,19 +668,62 @@ The internal App Manager is available at:
 #/apps
 ```
 
-It lists installed apps, kind, status, surfaces, permissions, local-first/offline/Tesla flags, and launch/open actions.
+It is now the internal OS control panel. It lists installed apps, running count, kind, status, surfaces, permissions, local-first/offline/Tesla flags, launch/open/close actions, enable/disable state, pin/favorite state, permission grant toggles, storage usage, app-private storage keys, storage reset, storage JSON export/import, runtime lifecycle state, exposed runtime services, and protected-app explanations.
+
+### Migrated Settings Table
+
+| Area | Shared/runtime mirror | Canonical v1 source |
+| --- | --- | --- |
+| Speed unit | `vatioboard.os.sharedSettings.v1.speedUnit` | `vatio_speed_unit` |
+| Speed distance unit | `vatioboard.os.sharedSettings.v1.distanceUnit` | `vatio_speed_distance_unit` |
+| Calculator number format | `vatioboard.app.vatio.calculator.settings.preferences` | `embeddable_calc_settings_v1` |
+| Energy number format | `vatioboard.app.vatio.energy.settings.numberFormat` | `embeddable_calc_settings_v1` |
+| Energy trip settings | `vatioboard.app.vatio.energy.settings.tripCostSettings` | `energy_trip_cost_settings_v1` |
+| Camera Map preferences | `vatioboard.app.vatio.cameraMap.settings.preferences` | existing Camera Map localStorage keys |
+| Speed Alerts preferences | `vatioboard.app.vatio.speedAlerts.settings.preferences` | existing Speed Alerts/Speed preference keys |
+| Player visualizer state | `vatioboard.app.vatio.player.settings.visualizer` | existing Player session/visibility keys |
+| Milkdrop visibility | `vatioboard.app.vatio.milkdrop.settings.visibility` | existing Milkdrop preset/position/size keys |
+| Board ink color | `vatioboard.app.vatio.board.settings.inkRaw` | `vatio_board_ink_raw` |
+| Library active tab | `vatioboard.app.vatio.library.settings.activeTab` | route query `#/library?tab=...` |
+| Replay playback rate | `vatioboard.app.vatio.replay.settings.playbackRate` | `vatio_replay_playback_rate_v1` |
+| Accel selected preset | `vatioboard.app.vatio.accel.settings.selectedPresetId` | `vatioboard.accel.settings` |
+
+### Manual QA Checklist
+
+- Desktop: load `/`, open Start Menu, launch every route app.
+- Desktop: open `#/apps`, search/filter apps, disable a non-protected app, confirm it cannot launch, re-enable it, launch it.
+- Desktop: from `#/apps`, launch a route app and a shell-window app.
+- Desktop: from Start Menu, launch the same shell-window app and confirm no duplicate panel/runtime is created.
+- Desktop: reset app-private storage for a safe app and confirm global shell still works.
+- Desktop: revoke one non-critical permission from a beta/experimental app and confirm denied services fail safely after runtime recreation.
+- Mobile/Tesla: confirm `#/speed`, `#/board`, `#/library`, `#/replay`, `#/accel`, and `#/apps` fit without horizontal scrolling.
+- Tesla: confirm Player keeps audio behavior across close/reopen and route changes, and Milkdrop still opens from Player.
+- Offline: refresh `#/apps` and core local-first routes after first load.
+- GPS coexistence: start Speed recording, navigate to Accel, confirm Accel receives GPS fixes while Speed recording stays active, then return to Speed and stop recording.
+
+### Commands Run
+
+- `pnpm run typecheck`
+- `pnpm vitest run test/unit/app-platform.test.js test/unit/app-control-platform.test.js test/unit/app-shell-runtime-lifecycle.test.js test/unit/route-app-contract.test.js`
+- `pnpm run typecheck && pnpm run lint`
+- `pnpm vitest run test/unit/calculator-app.test.js test/unit/energy-app.test.js test/unit/camera-map-app.test.js test/unit/speed-alerts-app.test.js test/unit/player-app.test.js test/unit/milkdrop-app.test.js test/unit/speed-route-app.test.js test/unit/board-route-app.test.js test/unit/library-route-app.test.js test/unit/replay-route-app.test.js test/unit/accel-route-app.test.js test/unit/board-route-lifecycle.test.js test/unit/library-route-lifecycle.test.js test/unit/replay-route-lifecycle.test.js test/unit/accel-route-lifecycle.test.js`
+- `pnpm test` initially exposed a shared-settings explicit/default merge regression and the known full-suite GPS timing smoke timeout.
+- `pnpm vitest run test/unit/unit-bootstrap.test.js test/unit/app-control-platform.test.js`
+- `pnpm vitest run test/smoke/spa-gps-background.test.js -t "keeps speed recording and an accel run subscribed across route changes"`
+- `pnpm test` passed on rerun with 141 files and 1715 tests.
+- `pnpm run build` passed. Vite still reports the existing dynamic/static import chunking warnings for backend auth, cloud sync, and shell-window app entries.
+- `pnpm run typecheck && pnpm vitest run test/unit/app-control-platform.test.js` passed after the final background-service disabled-app guard.
 
 ## Not Implemented Yet
 
 - External/community app installation
-- Permission prompts for non-core apps
+- Permission prompts for non-core apps; grant/revoke is App Manager based in v1
 - Signed app bundles
 - Sandboxed iframe apps
 - Cloud-backed app-private storage
-- App enable/disable preferences
 - App-to-app messaging
 - Service worker or background resilience changes
-- Full background-service runtime scheduling
+- Heavy background-service scheduling
 - Automatic dependency injection into every legacy shell-window UI module
 
 ## Future Direction
@@ -621,7 +731,6 @@ It lists installed apps, kind, status, surfaces, permissions, local-first/offlin
 - All current core route apps are now wrapped under `src/apps/<app-id>`: Speed, Board, Library, Replay, and Accel.
 - Deepen route-app migrations gradually by replacing direct global/localStorage seams with runtime services behind compatibility adapters.
 - Replace global compatibility shims with runtime services.
-- Add app install/enable/disable preferences.
 - Add VatioLibre-backed app storage after the local contract is stable.
 - Add permission prompts only when non-core apps exist.
 - Add signed community bundles after internal architecture matures.

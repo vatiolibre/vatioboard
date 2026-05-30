@@ -6,6 +6,7 @@ import {
   saveNumber,
   saveText,
 } from '../shared/storage.js';
+import { sharedSettings } from '../app-platform/shared-settings.js';
 import { loadConfiguredDistanceUnit, loadConfiguredSpeedUnit } from '../shared/unit-bootstrap.js';
 import {
   ALERT_CONFIG,
@@ -69,6 +70,7 @@ export function loadUnitPreference(): SpeedUnit {
 
 export function saveUnitPreference(unit: unknown): void {
   saveText(STORAGE_UNIT_KEY, unit);
+  sharedSettings.set('speedUnit', unit === 'mph' ? 'mph' : unit === 'kmh' ? 'kmh' : undefined);
 }
 
 export function loadDistanceUnitPreference(): DistanceUnit {
@@ -81,6 +83,7 @@ export function loadDistanceUnitPreference(): DistanceUnit {
 
 export function saveDistanceUnitPreference(unit: unknown): void {
   saveText(STORAGE_DISTANCE_UNIT_KEY, unit);
+  sharedSettings.set('distanceUnit', unit === 'ft' ? 'ft' : unit === 'm' ? 'm' : undefined);
 }
 
 export function loadPrimaryViewPreference(): PrimaryView {

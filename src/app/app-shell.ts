@@ -16,8 +16,10 @@ import { createShellTaskbar } from "../shared/shell-taskbar.js";
 import { installShellKeyboardShortcuts } from "../shared/shell-keyboard.js";
 import {
   appRegistry,
+  appControl,
   createAppLauncher,
   createAppRuntime,
+  createBackgroundServiceManager,
   createShellAppRuntimeManager,
 } from "../app-platform/index.js";
 import { createHashRouter, emitRouteVisible, navigateToAppRoute } from "./router.js";
@@ -123,6 +125,26 @@ export async function startAppShell({
     shellAppRuntimeManager,
   });
   shellAppRuntimeManager.setLauncher(appLauncher);
+  const backgroundServiceManager = createBackgroundServiceManager({
+    shellManager,
+    baseContext: context as unknown as Record<string, unknown>,
+    navigate: navigateToAppRoute,
+    launcher: appLauncher,
+  });
+  context.backgroundServiceManager = backgroundServiceManager;
+  backgroundServiceManager.startAutostartServices();
+  const unsubscribeAppControl = appControl.subscribe?.((state) => {
+    if (state.enabled) return;
+    const disabledApp = appRegistry.getApp(state.appId);
+    if (disabledApp?.window?.shellWindowId) {
+      shellManager.closeWindow(disabledApp.window.shellWindowId, { source: "app-control" });
+    }
+    const currentRoute = router?.getRoute?.();
+    const currentApp = currentRoute?.path ? appRegistry.getAppByRoute(currentRoute.path) : null;
+    if (currentApp?.id === state.appId) {
+      navigateToAppRoute("#/speed", { replace: true });
+    }
+  });
   const playerWidget = createShellPlayerWidget({
     mount: persistentLayer,
     floating: false,
@@ -143,7 +165,7 @@ export async function startAppShell({
     gpsService: context.gpsService,
     drivingAlertService: context.drivingAlertService,
   });
-  const startMenu = initSharedStartMenu({ floatingTools, mount: persistentLayer });
+  const startMenu = initSharedStartMenu({ floatingTools, mount: persistentLayer, shellAppRuntimeManager });
   const activityIndicator = initActivityIndicator({ mount: persistentLayer });
   const shellTaskbar = createShellTaskbar({ shellManager, root: persistentLayer });
   const shellKeyboard = installShellKeyboard({ shellManager });
@@ -171,10 +193,15 @@ export async function startAppShell({
         activeView = null;
       }
 
+      const appManifest = appRegistry.getAppByRoute(route.requestedPath || route.path);
+      if (appManifest && !appControl.isEnabled(appManifest.id)) {
+        navigateToAppRoute("#/speed", { replace: true });
+        return;
+      }
+
       const loaded = await route.config.load();
       if (version !== routeVersion || routeController.signal.aborted) return;
 
-      const appManifest = appRegistry.getAppByRoute(route.requestedPath || route.path);
       const appRuntime = appManifest
         ? createAppRuntime({
             manifest: appManifest,
@@ -228,6 +255,8 @@ export async function startAppShell({
   router.destroy = () => {
     shellKeyboard.uninstall();
     shellTaskbar.destroy();
+    unsubscribeAppControl?.();
+    backgroundServiceManager.destroy();
     shellAppRuntimeManager.destroy();
     context.drivingAlertService?.destroy?.();
     context.driveRecordingService?.destroy?.();

@@ -1,4 +1,5 @@
 import { appRegistry } from "./app-registry.js";
+import { appControl } from "./app-control.js";
 import type { AppRoute } from "../types/route";
 import type { ShellRuntime } from "../types/shell";
 import type {
@@ -53,6 +54,8 @@ export function createAppLauncher({
   getCurrentRoute,
   shellAppRuntimeManager = null,
 }: CreateAppLauncherOptions = {}): VatioAppShellRuntime {
+  const launchingAppIds = new Set<VatioAppId>();
+
   function getInstalledApps(): VatioAppManifest[] {
     return appRegistry.listApps();
   }
@@ -71,6 +74,7 @@ export function createAppLauncher({
     if (existingLoad) return existingLoad;
 
     const load = (async () => {
+      launchingAppIds.add(manifest.id);
       try {
         const entryModule = await manifest.entry?.();
         if (shellManager.getWindow(shellWindowId)) return true;
@@ -96,6 +100,7 @@ export function createAppLauncher({
         return false;
       } finally {
         loads.delete(manifest.id);
+        launchingAppIds.delete(manifest.id);
       }
     })();
 
@@ -135,6 +140,19 @@ export function createAppLauncher({
     return true;
   }
 
+  async function openOrFocusShellWindowAsync(manifest: VatioAppManifest, options: VatioAppLaunchOptions = {}) {
+    if (!manifest.window?.shellWindowId || !shellManager) return false;
+    const runtime = shellAppRuntimeManager?.ensureRuntime(manifest.id) || null;
+
+    if (shellManager.getWindow(manifest.window.shellWindowId)) {
+      return openOrFocusRegisteredShellWindow(manifest, options);
+    }
+
+    if (!manifest.entry) return false;
+    const registered = await loadShellWindowEntry(manifest, runtime);
+    return registered ? openOrFocusRegisteredShellWindow(manifest, options) : false;
+  }
+
   function openApp(appId: VatioAppId, options: VatioAppLaunchOptions = {}) {
     const manifest = appRegistry.getApp(appId);
     if (!manifest) {
@@ -142,8 +160,53 @@ export function createAppLauncher({
       return false;
     }
 
-    if (manifest.route && navigate) return navigate(routeHref(manifest.route), options);
-    if (manifest.window?.shellWindowId) return openOrFocusShellWindow(manifest, options);
+    if (!appControl.isEnabled(appId)) {
+      console.warn(`[vatioboard:launcher] App "${appId}" is disabled.`);
+      return false;
+    }
+
+    if (manifest.route && navigate) {
+      const launched = navigate(routeHref(manifest.route), options);
+      if (launched) appControl.recordLaunch(appId);
+      return launched;
+    }
+    if (manifest.window?.shellWindowId) {
+      const launched = openOrFocusShellWindow(manifest, options);
+      if (launched) appControl.recordLaunch(appId);
+      return launched;
+    }
+
+    if (manifest.kind === "background-service") {
+      console.warn(`[vatioboard:launcher] Background app "${appId}" is registered but has no v1 launcher.`);
+      return false;
+    }
+
+    console.warn(`[vatioboard:launcher] App "${appId}" has no launchable v1 surface.`);
+    return false;
+  }
+
+  async function openAppAsync(appId: VatioAppId, options: VatioAppLaunchOptions = {}) {
+    const manifest = appRegistry.getApp(appId);
+    if (!manifest) {
+      console.warn(`[vatioboard:launcher] Unknown app "${appId}".`);
+      return false;
+    }
+
+    if (!appControl.isEnabled(appId)) {
+      console.warn(`[vatioboard:launcher] App "${appId}" is disabled.`);
+      return false;
+    }
+
+    if (manifest.route && navigate) {
+      const launched = navigate(routeHref(manifest.route), options);
+      if (launched) appControl.recordLaunch(appId);
+      return launched;
+    }
+    if (manifest.window?.shellWindowId) {
+      const launched = await openOrFocusShellWindowAsync(manifest, options);
+      if (launched) appControl.recordLaunch(appId);
+      return launched;
+    }
 
     if (manifest.kind === "background-service") {
       console.warn(`[vatioboard:launcher] Background app "${appId}" is registered but has no v1 launcher.`);
@@ -167,6 +230,7 @@ export function createAppLauncher({
   function focusApp(appId: VatioAppId, options: VatioAppLaunchOptions = {}) {
     const manifest = appRegistry.getApp(appId);
     if (!manifest) return false;
+    if (!appControl.isEnabled(appId)) return false;
     if (manifest.route && navigate) return navigate(routeHref(manifest.route), options);
     if (manifest.window?.shellWindowId) return openOrFocusShellWindow(manifest, options);
     return false;
@@ -195,11 +259,23 @@ export function createAppLauncher({
         state: record.state,
       });
     }
+    for (const appId of launchingAppIds) {
+      if (running.some((app) => app.appId === appId)) continue;
+      const manifest = appRegistry.getApp(appId);
+      if (!manifest) continue;
+      running.push({
+        appId,
+        title: manifest.title,
+        surface: "shell-window",
+        state: "launching",
+      });
+    }
     return running;
   }
 
   return {
     openApp,
+    openAppAsync,
     closeApp,
     focusApp,
     getAppRuntime(appId) {

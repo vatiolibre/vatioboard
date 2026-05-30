@@ -1,4 +1,5 @@
 import { appRegistry } from "../app-registry.js";
+import { appControl } from "../app-control.js";
 import type { VatioToolDefinition, ToolSurface } from "../../types/ui";
 import type { VatioAppManifest } from "../types";
 
@@ -81,6 +82,7 @@ function mapAppToTool(app: VatioAppManifest): VatioToolDefinition | null {
     order: app.order,
     surfaces,
     open(context = {}) {
+      if (!appControl.isEnabled(app.id)) return false;
       if (kind === "route" && href) {
         return context.navigate?.(href) ?? false;
       }

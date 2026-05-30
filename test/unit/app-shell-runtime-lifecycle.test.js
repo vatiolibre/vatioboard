@@ -66,6 +66,10 @@ describe("app shell route app runtime lifecycle", () => {
     };
 
     vi.doMock("../../src/app-platform/index.js", () => ({
+      appControl: {
+        isEnabled: vi.fn(() => true),
+        subscribe: vi.fn(() => vi.fn()),
+      },
       appRegistry: {
         getAppByRoute: vi.fn(() => ({
           id: "test.broken",
@@ -82,6 +86,16 @@ describe("app shell route app runtime lifecycle", () => {
       })),
       createAppRuntime: vi.fn(() => ({
         lifecycle: state.lifecycle,
+      })),
+      createBackgroundServiceManager: vi.fn(() => ({
+        destroy: vi.fn(),
+        getRuntime: vi.fn(() => null),
+        listServices: vi.fn(() => []),
+        resume: vi.fn(() => false),
+        start: vi.fn(() => false),
+        startAutostartServices: vi.fn(() => []),
+        stop: vi.fn(() => false),
+        suspend: vi.fn(() => false),
       })),
       createShellAppRuntimeManager: vi.fn(() => ({
         destroy: vi.fn(),

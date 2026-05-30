@@ -13,6 +13,7 @@ import type {
   VatioAppStorage,
 } from "./types";
 import { createAppSettingsService } from "./settings.js";
+import { sharedSettings } from "./shared-settings.js";
 
 type RuntimeServiceContext = Record<string, unknown> | null | undefined;
 
@@ -197,6 +198,9 @@ export function createAppServiceGateway({
       : null,
     settings: hasService("settings") && (permissions.has("settings.read") || permissions.has("settings.write"))
       ? createAppSettingsService({ storage: appStorage, permissions })
+      : null,
+    sharedSettings: hasService("settings") && (permissions.has("settings.read") || permissions.has("settings.write"))
+      ? sharedSettings
       : null,
   };
 }

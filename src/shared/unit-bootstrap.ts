@@ -1,4 +1,5 @@
 import { SHARED_DISTANCE_UNIT_KEY, SHARED_SPEED_UNIT_KEY } from '../accel/constants.js';
+import { readStoredSharedSettings, sharedSettings } from '../app-platform/shared-settings.js';
 import { hasStoredValue, loadJson, loadText, saveJson, saveText } from './storage.js';
 import { normalizeCountryCode } from './place-resolver.js';
 
@@ -78,12 +79,32 @@ function inferTripDistanceUnit(speedUnit: unknown, distanceUnit: unknown): TripD
 
 function loadSharedSpeedUnit(): SpeedUnit | null {
   const unit = loadText(SHARED_SPEED_UNIT_KEY, '');
-  return unit === 'mph' || unit === 'kmh' ? unit : null;
+  if (unit === 'mph' || unit === 'kmh') {
+    sharedSettings.set('speedUnit', unit);
+    return unit;
+  }
+
+  const sharedUnit = readStoredSharedSettings().speedUnit;
+  if (sharedUnit === 'mph' || sharedUnit === 'kmh') {
+    saveText(SHARED_SPEED_UNIT_KEY, sharedUnit);
+    return sharedUnit;
+  }
+  return null;
 }
 
 function loadSharedDistanceUnit(): DistanceUnit | null {
   const unit = loadText(SHARED_DISTANCE_UNIT_KEY, '');
-  return unit === 'ft' || unit === 'm' ? unit : null;
+  if (unit === 'ft' || unit === 'm') {
+    sharedSettings.set('distanceUnit', unit);
+    return unit;
+  }
+
+  const sharedUnit = readStoredSharedSettings().distanceUnit;
+  if (sharedUnit === 'ft' || sharedUnit === 'm') {
+    saveText(SHARED_DISTANCE_UNIT_KEY, sharedUnit);
+    return sharedUnit;
+  }
+  return null;
 }
 
 export function loadConfiguredSpeedUnit(fallback: SpeedUnit = 'kmh'): SpeedUnit {
@@ -107,9 +128,14 @@ export function loadConfiguredDistanceUnit(fallback: DistanceUnit = 'm'): Distan
 export function saveSharedUnitPreferences(partialConfig: UnitBootstrapManualSelection = {}): void {
   if (partialConfig.speedUnit === 'mph' || partialConfig.speedUnit === 'kmh') {
     saveText(SHARED_SPEED_UNIT_KEY, partialConfig.speedUnit);
+    sharedSettings.set('speedUnit', partialConfig.speedUnit);
   }
   if (partialConfig.distanceUnit === 'ft' || partialConfig.distanceUnit === 'm') {
     saveText(SHARED_DISTANCE_UNIT_KEY, partialConfig.distanceUnit);
+    sharedSettings.set('distanceUnit', partialConfig.distanceUnit);
+  }
+  if (partialConfig.tripDistanceUnit === 'mi' || partialConfig.tripDistanceUnit === 'km') {
+    sharedSettings.set('tripDistanceUnit', partialConfig.tripDistanceUnit);
   }
 }
 

@@ -1,16 +1,43 @@
 import "./app-manager.less";
 
-import { appRegistry, createAppLauncher } from "../../app-platform/index.js";
+import {
+  appControl,
+  appRegistry,
+  clearAppPrivateStorage,
+  createAppLauncher,
+  estimateAppPrivateStorage,
+  exportAppPrivateStorage,
+  importAppPrivateStorage,
+  listAppPrivateStorageKeys,
+} from "../../app-platform/index.js";
 import type { RouteMountContext } from "../../types/route";
 import type { ShellRuntime } from "../../types/shell";
-import type { ShellAppRuntimeManager, VatioAppManifest, VatioAppSurface } from "../../app-platform/types";
+import type {
+  ShellAppRuntimeManager,
+  VatioAppControlState,
+  VatioAppManifest,
+  VatioAppPermission,
+  VatioAppRuntime,
+  VatioAppSurface,
+  VatioBackgroundServiceManager,
+  VatioRunningApp,
+} from "../../app-platform/types";
 
 type AppManagerRouteContext = RouteMountContext & {
   context: RouteMountContext["context"] & {
     shellManager?: ShellRuntime;
     shellAppRuntimeManager?: ShellAppRuntimeManager;
+    backgroundServiceManager?: VatioBackgroundServiceManager;
   };
 };
+
+interface AppManagerFilters {
+  search: string;
+  surface: string;
+  kind: string;
+  status: string;
+  permission: string;
+}
 
 function formatToken(value: string) {
   return String(value || "")
@@ -43,7 +70,34 @@ function createDiagnosticLine(label: string, value: string) {
   return row;
 }
 
+function createButton(text: string, className = "vb-app-manager-button") {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className;
+  button.textContent = text;
+  return button;
+}
+
+function createToggleButton({
+  text,
+  pressed,
+  disabled = false,
+  onClick,
+}: {
+  text: string;
+  pressed: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  const button = createButton(text, "vb-app-manager-toggle");
+  button.setAttribute("aria-pressed", pressed ? "true" : "false");
+  button.disabled = disabled;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
 function getPrimaryLaunchText(app: VatioAppManifest) {
+  if (app.kind === "background-service") return "Background";
   if (app.route) return "Launch";
   if (app.window?.shellWindowId) return "Open";
   return "Unavailable";
@@ -52,11 +106,19 @@ function getPrimaryLaunchText(app: VatioAppManifest) {
 function getSurfaceInfo(app: VatioAppManifest) {
   if (app.route) return `Route ${app.route}`;
   if (app.window?.shellWindowId) return `Window ${app.window.shellWindowId}`;
+  if (app.kind === "background-service") return "Background service";
   return "No v1 surface";
 }
 
-function appMatchesFilter(app: VatioAppManifest, search: string, surface: string) {
-  const normalizedSearch = search.trim().toLowerCase();
+function formatBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function appMatchesFilter(app: VatioAppManifest, filters: AppManagerFilters) {
+  const normalizedSearch = filters.search.trim().toLowerCase();
   const searchable = [
     app.title,
     app.shortTitle,
@@ -69,20 +131,63 @@ function appMatchesFilter(app: VatioAppManifest, search: string, surface: string
   ].join(" ").toLowerCase();
 
   const searchOk = !normalizedSearch || searchable.includes(normalizedSearch);
-  const surfaceOk = surface === "all" || app.surfaces.includes(surface as VatioAppSurface);
-  return searchOk && surfaceOk;
+  const surfaceOk = filters.surface === "all" || app.surfaces.includes(filters.surface as VatioAppSurface);
+  const kindOk = filters.kind === "all" || app.kind === filters.kind;
+  const statusOk = filters.status === "all" || app.status === filters.status;
+  const permissionOk = filters.permission === "all" || app.permissions.includes(filters.permission as VatioAppPermission);
+  return searchOk && surfaceOk && kindOk && statusOk && permissionOk;
+}
+
+function getRuntimeForApp({
+  app,
+  routeContext,
+}: {
+  app: VatioAppManifest;
+  routeContext: AppManagerRouteContext;
+}): VatioAppRuntime | null {
+  if (routeContext.context.appRuntime?.appId === app.id) return routeContext.context.appRuntime;
+  if (app.window?.shellWindowId) {
+    return routeContext.context.shellAppRuntimeManager?.getRuntime(app.id) || null;
+  }
+  if (app.kind === "background-service") {
+    return routeContext.context.backgroundServiceManager?.getRuntime(app.id) || null;
+  }
+  return null;
+}
+
+function getRunningRecord(app: VatioAppManifest, runningApps: VatioRunningApp[]) {
+  return runningApps.find((runningApp) => runningApp.appId === app.id) || null;
+}
+
+function getServiceSummary(runtime: VatioAppRuntime | null) {
+  if (!runtime) return "No runtime";
+  const services = Object.entries(runtime.services)
+    .filter(([, value]) => Boolean(value))
+    .map(([key]) => key);
+  return services.length ? services.join(", ") : "No exposed services";
 }
 
 function createAppCard({
   app,
+  state,
+  runtime,
+  runningRecord,
   launchApp,
+  closeApp,
+  rerender,
 }: {
   app: VatioAppManifest;
+  state: VatioAppControlState;
+  runtime: VatioAppRuntime | null;
+  runningRecord: VatioRunningApp | null;
   launchApp: (app: VatioAppManifest) => void;
+  closeApp: (app: VatioAppManifest) => void;
+  rerender: () => void;
 }) {
   const card = document.createElement("article");
   card.className = "vb-app-manager-card";
   card.dataset.appId = app.id;
+  card.dataset.enabled = state.enabled ? "true" : "false";
 
   const header = document.createElement("header");
   header.className = "vb-app-manager-card-header";
@@ -108,6 +213,8 @@ function createAppCard({
   badges.className = "vb-app-manager-badges";
   badges.append(
     createChip(formatToken(app.status), "vb-app-manager-chip is-status"),
+    createChip(state.enabled ? "Enabled" : "Disabled", state.enabled ? "vb-app-manager-chip is-enabled" : "vb-app-manager-chip is-disabled"),
+    createChip(runningRecord ? `Running: ${formatToken(runningRecord.state)}` : "Stopped"),
     createChip(app.localFirst ? "Local-first" : "Online"),
     createChip(app.offlineCapable ? "Offline" : "Network"),
     createChip(app.teslaOptimized ? "Tesla" : "Desktop"),
@@ -123,7 +230,60 @@ function createAppCard({
     createDiagnosticLine("Kind", formatToken(app.kind)),
     createDiagnosticLine("Surface", getSurfaceInfo(app)),
     createDiagnosticLine("Version", app.version),
+    createDiagnosticLine("Launches", String(state.openCount || 0)),
+    createDiagnosticLine("Runtime", runtime?.lifecycle.getState() || "not running"),
+    createDiagnosticLine("Services", getServiceSummary(runtime)),
   );
+
+  const storageUsage = estimateAppPrivateStorage(app.id);
+  const storageKeys = listAppPrivateStorageKeys(app.id);
+  const storageDetails = document.createElement("details");
+  storageDetails.className = "vb-app-manager-storage";
+  const storageSummary = document.createElement("summary");
+  storageSummary.textContent = `Storage ${formatBytes(storageUsage.bytes)} (${storageUsage.keyCount})`;
+  const storageList = document.createElement("ul");
+  if (storageKeys.length) {
+    for (const key of storageKeys) {
+      const item = document.createElement("li");
+      item.textContent = key;
+      storageList.append(item);
+    }
+  } else {
+    const item = document.createElement("li");
+    item.textContent = "No app-private keys";
+    storageList.append(item);
+  }
+
+  const storageJson = document.createElement("textarea");
+  storageJson.className = "vb-app-manager-storage-json";
+  storageJson.rows = 4;
+  storageJson.spellcheck = false;
+  storageJson.placeholder = "App-private storage JSON";
+  const storageActions = document.createElement("div");
+  storageActions.className = "vb-app-manager-inline-actions";
+  const exportButton = createButton("Export");
+  exportButton.addEventListener("click", () => {
+    storageJson.value = JSON.stringify(exportAppPrivateStorage(app.id), null, 2);
+  });
+  const importButton = createButton("Import");
+  importButton.addEventListener("click", () => {
+    try {
+      const parsed = JSON.parse(storageJson.value || "{}");
+      importAppPrivateStorage(app.id, parsed);
+      rerender();
+    } catch {
+      storageJson.setCustomValidity("Invalid JSON");
+      storageJson.reportValidity();
+      storageJson.setCustomValidity("");
+    }
+  });
+  const resetStorageButton = createButton("Reset storage", "vb-app-manager-button is-danger");
+  resetStorageButton.addEventListener("click", () => {
+    clearAppPrivateStorage(app.id);
+    rerender();
+  });
+  storageActions.append(exportButton, importButton, resetStorageButton);
+  storageDetails.append(storageSummary, storageList, storageJson, storageActions);
 
   const details = document.createElement("details");
   details.className = "vb-app-manager-permissions";
@@ -132,23 +292,93 @@ function createAppCard({
   const permissionList = document.createElement("ul");
   for (const permission of app.permissions) {
     const item = document.createElement("li");
-    item.textContent = permission;
+    const granted = appControl.hasGrantedPermission(app.id, permission);
+    const label = document.createElement("span");
+    label.textContent = permission;
+    const toggle = createButton(granted ? "Revoke" : "Grant", "vb-app-manager-mini-button");
+    toggle.addEventListener("click", () => {
+      if (granted) appControl.revokePermission(app.id, permission);
+      else appControl.grantPermission(app.id, permission);
+      rerender();
+    });
+    item.dataset.granted = granted ? "true" : "false";
+    item.append(label, createChip(granted ? "Granted" : "Revoked", granted ? "vb-app-manager-chip is-enabled" : "vb-app-manager-chip is-disabled"), toggle);
     permissionList.append(item);
   }
   details.append(summary, permissionList);
 
+  const lifecycleDetails = document.createElement("details");
+  lifecycleDetails.className = "vb-app-manager-lifecycle";
+  const lifecycleSummary = document.createElement("summary");
+  lifecycleSummary.textContent = "Lifecycle";
+  const lifecycleList = document.createElement("ul");
+  const lifecycleLog = runtime?.lifecycle.getLog() || [];
+  if (lifecycleLog.length) {
+    for (const entry of lifecycleLog.slice(-8).reverse()) {
+      const item = document.createElement("li");
+      item.textContent = `${formatToken(entry.state)} ${entry.at}`;
+      lifecycleList.append(item);
+    }
+  } else {
+    const item = document.createElement("li");
+    item.textContent = "No lifecycle activity";
+    lifecycleList.append(item);
+  }
+  lifecycleDetails.append(lifecycleSummary, lifecycleList);
+
   const actions = document.createElement("div");
   actions.className = "vb-app-manager-actions";
-  const launchButton = document.createElement("button");
-  launchButton.type = "button";
-  launchButton.className = "vb-app-manager-launch";
+  const launchButton = createButton(getPrimaryLaunchText(app), "vb-app-manager-launch");
   launchButton.textContent = getPrimaryLaunchText(app);
-  launchButton.disabled = !app.route && !app.window?.shellWindowId;
+  launchButton.disabled = !state.enabled || (!app.route && !app.window?.shellWindowId);
   launchButton.setAttribute("aria-label", `${launchButton.textContent} ${app.title}`);
   launchButton.addEventListener("click", () => launchApp(app));
-  actions.append(launchButton);
+  const closeButton = createButton("Close");
+  closeButton.disabled = !app.window?.shellWindowId || !runningRecord;
+  closeButton.addEventListener("click", () => closeApp(app));
+  const enableButton = createToggleButton({
+    text: state.enabled ? "Enabled" : "Disabled",
+    pressed: state.enabled,
+    disabled: appControl.isProtected(app.id),
+    onClick: () => {
+      if (appControl.setEnabled(app.id, !state.enabled)) {
+        if (state.enabled) closeApp(app);
+        rerender();
+      }
+    },
+  });
+  const pinButton = createToggleButton({
+    text: state.pinned ? "Pinned" : "Pin",
+    pressed: state.pinned === true,
+    onClick: () => {
+      appControl.setPinned(app.id, !state.pinned);
+      rerender();
+    },
+  });
+  const favoriteButton = createToggleButton({
+    text: state.favorite ? "Favorite" : "Favorite",
+    pressed: state.favorite === true,
+    onClick: () => {
+      appControl.setFavorite(app.id, !state.favorite);
+      rerender();
+    },
+  });
+  const resetControlButton = createButton("Reset control");
+  resetControlButton.addEventListener("click", () => {
+    appControl.resetAppControlState(app.id);
+    rerender();
+  });
+  actions.append(launchButton, closeButton, enableButton, pinButton, favoriteButton, resetControlButton);
 
-  card.append(header, badges, surfaces, diagnostics, details, actions);
+  if (appControl.isProtected(app.id)) {
+    const protectedNote = document.createElement("p");
+    protectedNote.className = "vb-app-manager-note";
+    protectedNote.textContent = "Protected system app; disabling is blocked.";
+    card.append(header, badges, surfaces, diagnostics, protectedNote, details, storageDetails, lifecycleDetails, actions);
+    return card;
+  }
+
+  card.append(header, badges, surfaces, diagnostics, details, storageDetails, lifecycleDetails, actions);
   return card;
 }
 
@@ -161,6 +391,9 @@ export function mountAppsRoute(routeContext: AppManagerRouteContext) {
   const count = appRoot.querySelector("[data-app-count]");
   const searchInput = appRoot.querySelector("[data-app-search]") as HTMLInputElement | null;
   const surfaceFilter = appRoot.querySelector("[data-app-surface-filter]") as HTMLSelectElement | null;
+  const kindFilter = appRoot.querySelector("[data-app-kind-filter]") as HTMLSelectElement | null;
+  const statusFilter = appRoot.querySelector("[data-app-status-filter]") as HTMLSelectElement | null;
+  const permissionFilter = appRoot.querySelector("[data-app-permission-filter]") as HTMLSelectElement | null;
   const runtime = routeContext.context.appRuntime;
   const launcher = createAppLauncher({
     shellManager: routeContext.context.shellManager,
@@ -175,21 +408,56 @@ export function mountAppsRoute(routeContext: AppManagerRouteContext) {
     runtime?.logger.warn(`App Manager could not launch ${app.id}.`);
   };
 
+  const closeApp = (app: VatioAppManifest) => {
+    if (!launcher.closeApp(app.id)) {
+      runtime?.shell.closeApp(app.id);
+    }
+    render();
+  };
+
   function render() {
     if (!list) return;
-    const search = searchInput?.value || "";
-    const surface = surfaceFilter?.value || "all";
-    const apps = appRegistry.listApps().filter((app) => appMatchesFilter(app, search, surface));
+    const filters: AppManagerFilters = {
+      search: searchInput?.value || "",
+      surface: surfaceFilter?.value || "all",
+      kind: kindFilter?.value || "all",
+      status: statusFilter?.value || "all",
+      permission: permissionFilter?.value || "all",
+    };
+    const apps = appRegistry.listApps().filter((app) => appMatchesFilter(app, filters));
+    const backgroundRunning = (routeContext.context.backgroundServiceManager?.listServices() || []).map((record) => ({
+      appId: record.appId,
+      title: record.title,
+      surface: "background" as const,
+      state: record.state,
+    }));
+    const runningApps = [
+      ...launcher.getRunningApps(),
+      ...backgroundRunning,
+    ];
 
-    list.replaceChildren(...apps.map((app) => createAppCard({ app, launchApp })));
+    list.replaceChildren(...apps.map((app) => createAppCard({
+      app,
+      state: appControl.getState(app.id),
+      runtime: getRuntimeForApp({ app, routeContext }),
+      runningRecord: getRunningRecord(app, runningApps),
+      launchApp,
+      closeApp,
+      rerender: render,
+    })));
     if (count) {
-      count.textContent = `${apps.length} / ${appRegistry.listApps().length}`;
+      count.textContent = `${apps.length} / ${appRegistry.listApps().length} apps · ${runningApps.length} running`;
     }
     runtime?.i18n.apply(appRoot);
   }
 
   routeContext.cleanup.addEventListener(searchInput, "input", render);
   routeContext.cleanup.addEventListener(surfaceFilter, "change", render);
+  routeContext.cleanup.addEventListener(kindFilter, "change", render);
+  routeContext.cleanup.addEventListener(statusFilter, "change", render);
+  routeContext.cleanup.addEventListener(permissionFilter, "change", render);
+  const unsubscribeControl = appControl.subscribe?.(() => render());
+  routeContext.cleanup.add(unsubscribeControl);
   const unsubscribeI18n = runtime?.i18n.subscribe(() => runtime.i18n.apply(appRoot));
   routeContext.cleanup.add(unsubscribeI18n);
 

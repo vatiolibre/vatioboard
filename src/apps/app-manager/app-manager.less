@@ -57,7 +57,7 @@
 
 .vb-app-manager-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(132px, 180px);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px;
   max-width: 1160px;
   margin: 0 auto 14px;
@@ -67,6 +67,10 @@
 .vb-app-manager-filter {
   display: block;
   min-width: 0;
+}
+
+.vb-app-manager-search {
+  grid-column: span 2;
 }
 
 .vb-app-manager-search input,
@@ -84,6 +88,9 @@
 
 .vb-app-manager-search input:focus,
 .vb-app-manager-filter select:focus,
+.vb-app-manager-button:focus-visible,
+.vb-app-manager-toggle:focus-visible,
+.vb-app-manager-mini-button:focus-visible,
 .vb-app-manager-launch:focus-visible {
   outline: 2px solid rgba(5, 150, 105, 0.5);
   outline-offset: 2px;
@@ -182,6 +189,18 @@
   color: #047857;
 }
 
+.vb-app-manager-chip.is-enabled {
+  border-color: rgba(5, 150, 105, 0.22);
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.vb-app-manager-chip.is-disabled {
+  border-color: rgba(185, 28, 28, 0.2);
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
 .vb-app-manager-diagnostics {
   display: grid;
   gap: 6px;
@@ -206,13 +225,17 @@
   overflow-wrap: anywhere;
 }
 
-.vb-app-manager-permissions {
+.vb-app-manager-permissions,
+.vb-app-manager-storage,
+.vb-app-manager-lifecycle {
   min-width: 0;
   color: #334155;
   font-size: 13px;
 }
 
-.vb-app-manager-permissions summary {
+.vb-app-manager-permissions summary,
+.vb-app-manager-storage summary,
+.vb-app-manager-lifecycle summary {
   min-height: 36px;
   display: flex;
   align-items: center;
@@ -220,35 +243,106 @@
   font-weight: 800;
 }
 
-.vb-app-manager-permissions ul {
+.vb-app-manager-permissions ul,
+.vb-app-manager-storage ul,
+.vb-app-manager-lifecycle ul {
   margin: 2px 0 0;
   padding-left: 18px;
   display: grid;
   gap: 3px;
 }
 
-.vb-app-manager-permissions li {
+.vb-app-manager-permissions li,
+.vb-app-manager-storage li,
+.vb-app-manager-lifecycle li {
   overflow-wrap: anywhere;
+}
+
+.vb-app-manager-permissions li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.vb-app-manager-storage-json {
+  width: 100%;
+  min-height: 92px;
+  box-sizing: border-box;
+  margin-top: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #0f172a;
+  padding: 8px;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  resize: vertical;
+}
+
+.vb-app-manager-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .vb-app-manager-actions {
   display: flex;
-  justify-content: flex-end;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 8px;
 }
 
+.vb-app-manager-button,
+.vb-app-manager-toggle,
+.vb-app-manager-mini-button,
 .vb-app-manager-launch {
   min-width: 96px;
   min-height: 44px;
-  border: 1px solid #047857;
+  border: 1px solid rgba(15, 23, 42, 0.14);
   border-radius: 8px;
-  background: #047857;
-  color: #fff;
+  background: #fff;
+  color: #0f172a;
   padding: 0 14px;
   font: inherit;
   font-weight: 800;
   cursor: pointer;
 }
 
+.vb-app-manager-launch {
+  border-color: #047857;
+  background: #047857;
+  color: #fff;
+}
+
+.vb-app-manager-toggle[aria-pressed="true"] {
+  border-color: rgba(5, 150, 105, 0.36);
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.vb-app-manager-mini-button {
+  min-width: 72px;
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.vb-app-manager-button.is-danger {
+  border-color: rgba(185, 28, 28, 0.24);
+  color: #b91c1c;
+}
+
+.vb-app-manager-note {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.vb-app-manager-button:disabled,
+.vb-app-manager-toggle:disabled,
+.vb-app-manager-mini-button:disabled,
 .vb-app-manager-launch:disabled {
   border-color: rgba(100, 116, 139, 0.24);
   background: #e2e8f0;
@@ -283,7 +377,9 @@
   }
 
   .vb-app-manager-line,
-  .vb-app-manager-permissions {
+  .vb-app-manager-permissions,
+  .vb-app-manager-storage,
+  .vb-app-manager-lifecycle {
     color: #cbd5e1;
   }
 
@@ -294,9 +390,28 @@
   }
 
   .vb-app-manager-icon,
-  .vb-app-manager-chip.is-status {
+  .vb-app-manager-chip.is-status,
+  .vb-app-manager-chip.is-enabled {
     background: rgba(6, 95, 70, 0.32);
     color: #6ee7b7;
+  }
+
+  .vb-app-manager-chip.is-disabled {
+    background: rgba(127, 29, 29, 0.36);
+    color: #fecaca;
+  }
+
+  .vb-app-manager-storage-json,
+  .vb-app-manager-button,
+  .vb-app-manager-toggle,
+  .vb-app-manager-mini-button {
+    border-color: rgba(148, 163, 184, 0.22);
+    background: #1f2937;
+    color: #e5e7eb;
+  }
+
+  .vb-app-manager-note {
+    color: #94a3b8;
   }
 }
 
@@ -311,6 +426,10 @@
 
   .vb-app-manager-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .vb-app-manager-search {
+    grid-column: auto;
   }
 
   .vb-app-manager-grid {

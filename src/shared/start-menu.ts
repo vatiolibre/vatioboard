@@ -7,11 +7,12 @@ import {
 } from "../icons.js";
 import { initBackendAuthControllers } from "./backend-auth.js";
 import { integratePlayerWidget } from "../player/integrate-player-widget.js";
-import { appRegistry, createAppLauncher } from "../app-platform/index.js";
+import { appControl, appRegistry, createAppLauncher } from "../app-platform/index.js";
 import { navigateToAppRoute, ROUTE_VISIBLE_EVENT } from "../app/router.js";
 import { SHELL_Z_INDEX } from "./shell-layers.js";
 import { getShellWorkArea, getViewportRect } from "./shell-work-area.js";
 import type { FloatingToolsRuntime } from "./floating-tools";
+import type { ShellAppRuntimeManager } from "../app-platform/types";
 import type { VatioToolDefinition } from "../types/ui";
 import { getRouteToolDefinition, getStartMenuToolDefinitions, TOOL_IDS } from "./tool-registry.js";
 
@@ -35,6 +36,7 @@ interface StartMenuApi {
 interface StartMenuOptions {
   floatingTools?: FloatingToolsRuntime | null;
   mount?: HTMLElement;
+  shellAppRuntimeManager?: ShellAppRuntimeManager | null;
 }
 
 const integrateShellPlayerWidget = integratePlayerWidget as (options: {
@@ -207,8 +209,18 @@ function syncCurrentRoute(list) {
   list.querySelectorAll("[data-start-route]").forEach((button) => {
     const item = getRouteToolDefinition(button instanceof HTMLElement ? button.dataset.startRoute || "" : "");
     const isCurrent = item?.path === routePath || item?.pathAliases?.includes(routePath);
+    const app = item?.path ? appRegistry.getAppByRoute(item.path) : null;
+    const disabled = app ? !appControl.isEnabled(app.id) : false;
     button.dataset.currentPage = isCurrent ? "true" : "false";
     button.setAttribute("aria-current", isCurrent ? "page" : "false");
+    if (button instanceof HTMLButtonElement) button.disabled = disabled;
+  });
+  list.querySelectorAll("[data-start-action]").forEach((button) => {
+    const action = button instanceof HTMLElement ? button.dataset.startAction || "" : "";
+    const app = appRegistry.listApps().find((candidate) =>
+      candidate.window?.shellWindowId === action || candidate.metadata.legacyToolId === action
+    );
+    if (button instanceof HTMLButtonElement) button.disabled = app ? !appControl.isEnabled(app.id) : false;
   });
 }
 
@@ -294,6 +306,7 @@ export function getSharedStartMenu(): StartMenuApi | null {
 export function initSharedStartMenu({
   floatingTools,
   mount = document.body,
+  shellAppRuntimeManager = null,
 }: StartMenuOptions = {}): StartMenuApi {
   const existing = getSharedStartMenu();
   if (existing?.list?.isConnected) return existing;
@@ -305,6 +318,7 @@ export function initSharedStartMenu({
     shellManager: floatingTools?.shellManager,
     navigate: navigateToAppRoute,
     getCurrentRoute: () => window.__vatioboardRouter?.getRoute?.() || null,
+    shellAppRuntimeManager,
   });
 
   let open = false;
@@ -349,6 +363,7 @@ export function initSharedStartMenu({
     const app = appRegistry.listApps().find((candidate) =>
       candidate.window?.shellWindowId === action || candidate.metadata.legacyToolId === action
     );
+    if (app && !appControl.isEnabled(app.id)) return false;
     if (app && appLauncher.openApp(app.id)) return true;
     if (action === TOOL_IDS.calculator) return floatingTools?.toggleCalculator?.();
     if (action === TOOL_IDS.energy) return floatingTools?.toggleEnergy?.();
@@ -384,7 +399,10 @@ export function initSharedStartMenu({
     const navButton = target?.closest("[data-href]") as HTMLElement | null;
     if (!navButton) return;
     close();
-    navigateToAppRoute(navButton.dataset.href);
+    const routePath = navButton.dataset.startRoute || navButton.dataset.href || "";
+    const app = appRegistry.getAppByRoute(routePath.replace(/^#/, "") || routePath);
+    if (app) appLauncher.openApp(app.id);
+    else navigateToAppRoute(navButton.dataset.href);
   });
 
   langButton.addEventListener("click", () => {

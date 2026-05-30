@@ -1,4 +1,5 @@
 import { appRegistry } from "./app-registry.js";
+import { appControl } from "./app-control.js";
 import { createAppI18n } from "./i18n.js";
 import { createAppLifecycle } from "./lifecycle.js";
 import { createAppLogger } from "./logger.js";
@@ -77,12 +78,28 @@ export function createAppRuntime({
       logger.warn(`Cannot open unknown app "${appId}".`);
       return false;
     }
-    if (target.route && navigate) return navigate(routeHref(target.route), options);
+    if (!appControl.isEnabled(appId)) {
+      logger.warn(`Cannot open disabled app "${appId}".`);
+      return false;
+    }
+    if (target.route && navigate) {
+      const launched = navigate(routeHref(target.route), options);
+      if (launched) appControl.recordLaunch(appId);
+      return launched;
+    }
     if (target.window?.shellWindowId && shellManager) {
-      return Boolean(shellManager.openWindow(target.window.shellWindowId, options));
+      const launched = Boolean(shellManager.openWindow(target.window.shellWindowId, options));
+      if (launched) appControl.recordLaunch(appId);
+      return launched;
     }
     logger.warn(`App "${appId}" has no launchable v1 surface.`);
     return false;
+  }
+
+  function openAppAsync(appId: string, options: VatioAppLaunchOptions = {}) {
+    if (!permissions.require("shell.launchApp")) return Promise.resolve(false);
+    if (launcher?.openAppAsync) return launcher.openAppAsync(appId, { ...options, sourceAppId: manifest.id });
+    return Promise.resolve(openApp(appId, options));
   }
 
   function closeApp(appId: string, options: VatioAppLaunchOptions = {}) {
@@ -115,6 +132,7 @@ export function createAppRuntime({
     services,
     shell: {
       openApp,
+      openAppAsync,
       closeApp,
       focusApp,
       getAppRuntime,
