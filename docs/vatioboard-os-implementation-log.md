@@ -910,9 +910,70 @@ The existing production routes are declared in `src/app/route-registry.ts` and r
 
 ## Next Recommended Steps
 
-- Continue migrating remaining shell-window tools, likely Camera Map or Speed Alerts, into `src/apps/<app-id>` as first-class app modules.
-- Start replacing direct localStorage usage in one app with `appRuntime.storage`.
+- Continue migrating apps behind the runtime contract. The shell-window wrappers are now in place; the next major candidate is a route app such as Speed or Board.
+- Start replacing direct localStorage usage in route apps with `appRuntime.storage` only behind narrow compatibility seams.
 - Add app enable/disable preferences once app manifests are stable.
 - Add permission prompts only when non-core or community apps become real.
-- Add VatioLibre-backed app storage after the local storage contract is exercised by at least one migrated app.
+- Add VatioLibre-backed app storage after the local storage contract is exercised by several migrated apps.
 - Gradually remove global shims only after each internal consumer has a runtime-service replacement.
+
+## Cold-Launch Hardening Pass - 2026-05-30 06:29:21 EDT
+
+### Baseline Understanding
+
+- Calculator, Energy, Camera Map, Speed Alerts, Player, and Milkdrop already had first-class shell-window wrappers.
+- Their manifests exposed lazy `entry` loaders, but `createAppLauncher().openApp(appId)` only called `shellManager.openWindow(shellWindowId)`.
+- That meant App Manager/manifest launcher cold-launch only worked after a wrapper had already registered the shell window through another path.
+- Existing tests covered opening/focusing an already registered app, not a true fresh shell manager with no pre-created panel.
+
+### Decisions Made
+
+- Keep `VatioAppShellRuntime.openApp()` synchronous and boolean-returning for compatibility.
+- Treat a scheduled lazy shell-window import as a successful launch request; the launcher opens/focuses the window after the entry registers it.
+- Standardize shell-window app entries on `createShellWindowApp(options)`.
+- Keep app-specific exports such as `createPlayerApp()` and `createMilkdropApp()` for direct callers.
+- Use a `WeakMap<ShellRuntime, Map<VatioAppId, Promise<boolean>>>` in the launcher to coalesce concurrent cold launches per shell manager and app ID.
+- Reuse already registered legacy/floating-tool windows before loading a lazy entry.
+
+### Files Changed In This Pass
+
+- `src/app-platform/launcher.ts`
+- `src/app-platform/types.ts`
+- `src/apps/calculator/calculator-app.ts`
+- `src/apps/energy/energy-app.ts`
+- `src/apps/camera-map/camera-map-app.ts`
+- `src/apps/camera-map/index.ts`
+- `src/apps/speed-alerts/speed-alerts-app.ts`
+- `src/apps/speed-alerts/index.ts`
+- `src/apps/player/player-app.ts`
+- `src/apps/player/index.ts`
+- `test/unit/player-app.test.js`
+- `test/unit/milkdrop-app.test.js`
+- `docs/vatioboard-os.md`
+- `docs/vatioboard-os-implementation-log.md`
+- `docs/next-agent-handoff.md`
+
+### Tests Run In This Pass
+
+- `pnpm vitest run test/unit/milkdrop-app.test.js test/unit/player-app.test.js` - passed, 2 files and 20 tests.
+- `pnpm run typecheck` - passed.
+- `pnpm run lint` - passed with 60 warning-level findings and 0 errors. Warnings are existing repository warnings in scripts/app/tests areas.
+- `pnpm vitest run test/unit/app-platform.test.js test/unit/app-shell-runtime-lifecycle.test.js test/unit/milkdrop-app.test.js test/unit/player-app.test.js` - passed, 4 files and 36 tests.
+- `pnpm vitest run test/unit/calculator-app.test.js test/unit/energy-app.test.js test/unit/camera-map-app.test.js test/unit/speed-alerts-app.test.js` - passed, 4 files and 35 tests.
+- `pnpm test` - passed, 131 files and 1672 tests.
+- `pnpm run build` - passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1302 transformed modules. Vite emitted existing dynamic/static import warnings for `backend-auth.ts`, `cloud-sync.ts`, Player app entry, Calculator app entry, Camera Map app entry, Energy app entry, and Speed Alerts app entry.
+
+### Proof Points
+
+- `launcher.openApp("vatio.milkdrop")` now cold-launches Milkdrop from a fresh shell manager with no pre-created panel.
+- `launcher.openApp("vatio.player")` now cold-launches Player from a fresh shell manager with no pre-created panel.
+- App Manager's launch button uses the same launcher path and can cold-launch Milkdrop.
+- Concurrent `launcher.openApp("vatio.milkdrop")` calls create one Milkdrop panel/window.
+- If Milkdrop is already registered by the legacy path, the launcher focuses that window and does not call the lazy entry.
+
+### Known Limitations After This Pass
+
+- Cold launch is still same-document and trusted-internal only; there is no sandbox or external app install path.
+- `openApp()` returns `true` when a cold shell-window launch is scheduled, before the dynamic import finishes.
+- Existing static imports for compatibility mean some shell-window entries are not always split into separate Vite chunks.
+- Route apps have not been migrated behind app modules yet.

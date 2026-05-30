@@ -106,3 +106,5 @@ export function createPlayerApp(options: PlayerAppOptions = {}): PlayerAppApi {
     runtime,
   };
 }
+
+export const createShellWindowApp = createPlayerApp;

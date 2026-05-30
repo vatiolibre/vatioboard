@@ -144,3 +144,5 @@ export function createCameraMapApp(options: CameraMapAppOptions = {}): CameraMap
     runtime,
   };
 }
+
+export const createShellWindowApp = createCameraMapApp;

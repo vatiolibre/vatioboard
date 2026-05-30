@@ -3,6 +3,7 @@ export {
   PLAYER_VISUALIZER_MODE_SETTING_KEY,
   PLAYER_VISUALIZER_VISIBLE_SETTING_KEY,
   createPlayerApp,
+  createShellWindowApp,
   resolvePlayerRuntime,
   type PlayerAppApi,
   type PlayerAppOptions,

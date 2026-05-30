@@ -147,7 +147,19 @@ The new runtime exposes:
 
 Shell-window apps receive the same runtime shape. The app shell owns `shellAppRuntimeManager`, which creates and caches runtimes by app ID when shell-window apps are opened, restored, focused, or launched. It also maps practical window state changes to lifecycle calls.
 
-For the next migration pass, a shell-window module can retrieve its runtime from the injected route context:
+Shell-window app entries now use a stable v1 cold-launch contract. A shell-window app entry module should export:
+
+```ts
+export function createShellWindowApp(options) {
+  return createSpecificApp(options);
+}
+```
+
+`createAppLauncher().openApp(appId)` can use that entry when the shell window is not registered yet. The launcher ensures the scoped runtime, dynamically imports `manifest.entry`, calls `createShellWindowApp({ mount, shellManager, shellAppRuntimeManager, runtime })`, and then opens or focuses the registered shell window. In-flight lazy loads are cached per shell manager and app ID, so repeated cold launch calls before the import settles create only one panel.
+
+Existing app-specific exports such as `createPlayerApp()` and `createMilkdropApp()` remain supported for direct callers. `createShellWindowApp()` is the generic manifest entry contract.
+
+A shell-window module can retrieve its runtime from the injected shell runtime manager:
 
 ```ts
 const runtime =
@@ -361,6 +373,9 @@ Direct `createMilkdropPanel()` callers still work without a runtime.
 
 - Route apps navigate to their manifest route.
 - Shell-window apps create an app runtime, restore if minimized, then focus or open their shell window.
+- If a shell-window app is not registered yet and has a lazy manifest entry, the launcher cold-loads the entry and calls `createShellWindowApp()` before opening it.
+- Concurrent cold launches for the same app share the same in-flight load to avoid duplicate panels.
+- If a window was already registered by a legacy/floating-tools path, the launcher reuses and focuses that existing window without loading another entry.
 - Background apps can be registered but have no heavy lifecycle yet.
 
 The start menu still supports the legacy toggles for existing floating tools, but it now prefers the manifest-backed launcher when an app can be resolved from a legacy tool ID.
@@ -373,7 +388,7 @@ The start menu still supports the legacy toggles for existing floating tools, bu
 4. For route apps, add an `entry` lazy loader and route view.
 5. For shell-window apps, declare `window.shellWindowId`, default bounds, capabilities, and restore behavior.
 6. Prefer `routeContext.context.appRuntime` for route app platform APIs.
-7. For shell-window apps, retrieve the runtime from `routeContext.context.shellAppRuntimeManager` while the legacy shell-window UI is being migrated.
+7. For shell-window apps, export `createShellWindowApp(options)` from the manifest entry module and keep any app-specific direct export for compatibility.
 8. Use `runtime.storage` for app data and `runtime.services.settings` for user preferences.
 9. Add focused tests for registry, runtime, lifecycle, and UI behavior.
 

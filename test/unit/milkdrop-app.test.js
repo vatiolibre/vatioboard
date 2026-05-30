@@ -196,6 +196,25 @@ async function loadModules() {
   };
 }
 
+async function loadPlatformModules() {
+  vi.resetModules();
+  installMilkdropMocks();
+  const [
+    appPlatform,
+    shell,
+    appManager,
+  ] = await Promise.all([
+    import("../../src/app-platform/index.js"),
+    import("../../src/shared/shell-window-manager.js"),
+    import("../../src/apps/app-manager/app-manager.js"),
+  ]);
+  return {
+    ...appPlatform,
+    createShellWindowManager: shell.createShellWindowManager,
+    mountAppsRoute: appManager.mountAppsRoute,
+  };
+}
+
 function createShellHarness(modules, baseContext = { audioRuntime: audioRuntimeMock }) {
   const shellManager = modules.createShellWindowManager({
     root: document.body,
@@ -308,6 +327,124 @@ describe("Milkdrop OS app module", () => {
     expect(shellAppRuntimeManager.getRuntime(modules.MILKDROP_APP_ID)?.lifecycle.getState()).toBe("active");
 
     milkdrop.destroy();
+    shellAppRuntimeManager.destroy();
+    shellManager.destroy();
+  });
+
+  it("cold-launches vatio.milkdrop from its manifest entry when no panel is registered", async () => {
+    const modules = await loadPlatformModules();
+    const { shellManager, shellAppRuntimeManager, launcher } = createShellHarness(modules);
+
+    expect(shellManager.getWindow("milkdrop")).toBeNull();
+    expect(launcher.openApp("vatio.milkdrop")).toBe(true);
+    await vi.dynamicImportSettled();
+    await flushMicrotasks(30);
+
+    expect(shellManager.getWindow("milkdrop")?.state).toBe("open");
+    expect(document.querySelectorAll(".milkdrop-panel")).toHaveLength(1);
+    expect(document.querySelector(".milkdrop-panel")?.hidden).toBe(false);
+    expect(shellAppRuntimeManager.getRuntime("vatio.milkdrop")?.lifecycle.getState()).toBe("active");
+
+    shellManager.unregisterWindow("milkdrop");
+    shellAppRuntimeManager.destroy();
+    shellManager.destroy();
+  });
+
+  it("coalesces concurrent cold launches so only one Milkdrop panel is created", async () => {
+    const modules = await loadPlatformModules();
+    const { shellManager, shellAppRuntimeManager, launcher } = createShellHarness(modules);
+
+    expect(launcher.openApp("vatio.milkdrop")).toBe(true);
+    expect(launcher.openApp("vatio.milkdrop")).toBe(true);
+    expect(launcher.openApp("vatio.milkdrop")).toBe(true);
+    await vi.dynamicImportSettled();
+    await flushMicrotasks(30);
+
+    expect(document.querySelectorAll(".milkdrop-panel")).toHaveLength(1);
+    expect(shellManager.getWindow("milkdrop")?.state).toBe("open");
+
+    shellManager.unregisterWindow("milkdrop");
+    shellAppRuntimeManager.destroy();
+    shellManager.destroy();
+  });
+
+  it("reuses a legacy-registered Milkdrop window without loading a duplicate entry", async () => {
+    const modules = await loadModules();
+    const { shellManager, shellAppRuntimeManager, launcher } = createShellHarness(modules);
+    const milkdrop = modules.createMilkdropApp({
+      mount: document.body,
+      restoreVisibility: false,
+      shellManager,
+      shellAppRuntimeManager,
+    });
+    const manifest = modules.appRegistry.getApp(modules.MILKDROP_APP_ID);
+    const originalEntry = manifest.entry;
+    manifest.entry = vi.fn(originalEntry);
+
+    expect(launcher.openApp(modules.MILKDROP_APP_ID)).toBe(true);
+
+    expect(manifest.entry).not.toHaveBeenCalled();
+    expect(document.querySelectorAll(".milkdrop-panel")).toHaveLength(1);
+    expect(shellManager.getWindow("milkdrop")?.state).toBe("open");
+
+    manifest.entry = originalEntry;
+    milkdrop.destroy();
+    shellAppRuntimeManager.destroy();
+    shellManager.destroy();
+  });
+
+  it("lets App Manager cold-launch Milkdrop through the manifest launcher path", async () => {
+    const modules = await loadPlatformModules();
+    const { shellManager, shellAppRuntimeManager, launcher } = createShellHarness(modules);
+    const appRuntime = modules.createAppRuntime({
+      manifest: modules.appRegistry.getApp("vatio.appManager"),
+      shellManager,
+      launcher,
+      baseContext: {},
+    });
+    const root = document.createElement("div");
+    root.innerHTML = `
+      <section data-vb-app-manager>
+        <input data-app-search />
+        <select data-app-surface-filter><option value="all">All</option></select>
+        <span data-app-count></span>
+        <div data-app-list></div>
+      </section>
+    `;
+    document.body.appendChild(root);
+    const cleanupFns = [];
+
+    modules.mountAppsRoute({
+      root,
+      context: {
+        shellManager,
+        shellAppRuntimeManager,
+        appRuntime,
+        navigate: vi.fn(() => true),
+        route: null,
+      },
+      cleanup: {
+        add(fn) {
+          if (typeof fn === "function") cleanupFns.push(fn);
+        },
+        addEventListener(target, event, listener) {
+          target?.addEventListener?.(event, listener);
+          cleanupFns.push(() => target?.removeEventListener?.(event, listener));
+        },
+      },
+    });
+
+    const launchButton = root.querySelector('[data-app-id="vatio.milkdrop"] .vb-app-manager-launch');
+    expect(launchButton).toBeTruthy();
+    launchButton.click();
+    await vi.dynamicImportSettled();
+    await flushMicrotasks(30);
+
+    expect(shellManager.getWindow("milkdrop")?.state).toBe("open");
+    expect(document.querySelectorAll(".milkdrop-panel")).toHaveLength(1);
+
+    cleanupFns.forEach((fn) => fn());
+    shellManager.unregisterWindow("milkdrop");
     shellAppRuntimeManager.destroy();
     shellManager.destroy();
   });

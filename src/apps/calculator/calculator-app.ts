@@ -74,3 +74,5 @@ export function createCalculatorApp(options: CalculatorAppOptions = {}): Calcula
     runtime,
   };
 }
+
+export const createShellWindowApp = createCalculatorApp;

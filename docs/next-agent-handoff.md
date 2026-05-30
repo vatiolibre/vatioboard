@@ -41,6 +41,10 @@
 - Migrated Milkdrop into a first-class shell-window app module under `src/apps/milkdrop/`.
 - Milkdrop now resolves `vatio.milkdrop` through `shellAppRuntimeManager`, acknowledges the runtime audio service without replacing the shared audio graph, mirrors visibility through `runtime.services.settings`, and uses runtime i18n for panel labels where practical.
 - Milkdrop compatibility is preserved: shell window ID `milkdrop`, legacy tool ID `milkdrop`, Player-to-Milkdrop launch, taskbar behavior, minimize/restore/close behavior, preset loading, canvas/WebGL behavior, shared audio graph behavior, legacy position/visibility/size/preset keys, and direct `createMilkdropPanel()` callers still work.
+- Hardened shell-window app cold launch for App Manager and the manifest launcher.
+- `createAppLauncher().openApp(appId)` now ensures the shell app runtime, dynamically loads a shell-window manifest entry when the window has not been registered yet, calls the entry's `createShellWindowApp({ mount, shellManager, shellAppRuntimeManager, runtime })`, and opens/focuses the registered shell window.
+- Calculator, Energy, Camera Map, Speed Alerts, Player, and Milkdrop now all expose the generic `createShellWindowApp()` entry contract while preserving their existing app-specific exports.
+- Cold-launch races are coalesced per shell manager and app ID, and already registered legacy/floating-tool windows are reused instead of duplicated.
 
 ## Important Files Changed
 
@@ -243,6 +247,16 @@ Milkdrop migration final verification after documentation updates:
 
 Final full-suite commands are also recorded in `docs/vatioboard-os-implementation-log.md`.
 
+Shell-window cold-launch hardening verification:
+
+- `pnpm vitest run test/unit/milkdrop-app.test.js test/unit/player-app.test.js` - passed, 2 files and 20 tests.
+- `pnpm run typecheck` - passed.
+- `pnpm run lint` - passed with 60 warning-level findings and 0 errors. Warnings are existing repository warnings in scripts/app/tests areas.
+- `pnpm vitest run test/unit/app-platform.test.js test/unit/app-shell-runtime-lifecycle.test.js test/unit/milkdrop-app.test.js test/unit/player-app.test.js` - passed, 4 files and 36 tests.
+- `pnpm vitest run test/unit/calculator-app.test.js test/unit/energy-app.test.js test/unit/camera-map-app.test.js test/unit/speed-alerts-app.test.js` - passed, 4 files and 35 tests.
+- `pnpm test` - passed, 131 files and 1672 tests.
+- `pnpm run build` - passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1302 transformed modules. Vite emitted existing dynamic/static import warnings for `backend-auth.ts`, `cloud-sync.ts`, Player app entry, Calculator app entry, Camera Map app entry, Energy app entry, and Speed Alerts app entry.
+
 ## Known Limitations
 
 - App permissions are declared and enforced at the runtime boundary, but there are no user prompts yet.
@@ -252,19 +266,21 @@ Final full-suite commands are also recorded in `docs/vatioboard-os-implementatio
 - Calculator and Energy intentionally share number-format settings through `embeddable_calc_settings_v1` in v1. Their app-private runtime settings are mirrors until a true platform shared-settings service exists.
 - Existing global compatibility shims remain in place.
 - Background-service lifecycle is registered in types but not heavily implemented.
-- Shell-window runtimes are created and cached. Calculator, Energy, Camera Map, Speed Alerts, Player, and Milkdrop now consume their runtimes through app wrappers.
+- Shell-window runtimes are created and cached. Calculator, Energy, Camera Map, Speed Alerts, Player, and Milkdrop now consume their runtimes through app wrappers and can be cold-launched through manifest entries.
+- Shell-window cold launch is trusted-internal and same-document only. `openApp()` returns `true` once the lazy entry load is scheduled, before the import has finished and the panel is visible.
 - App settings are local-only through app-private storage and do not sync yet.
 - Two long GPS/speed smoke tests have larger per-test timeouts because they repeatedly passed in isolation but timed out under full-suite load.
 - Community/external app loading is intentionally not implemented.
 
 ## Suggested Next Prompt
 
-Continue VatioBoard OS after all current shell-window wrappers have been migrated. Harden the app-first launch path for lazy shell-window modules and then start a route-app migration candidate such as Speed or Board. Preserve existing routes, globals, and shell-window compatibility; prefer small adapters over rewrites; add tests proving App Manager/app launcher behavior from a cold shell, runtime lifecycle cleanup, direct legacy compatibility, and full-suite/build verification.
+Continue VatioBoard OS after shell-window wrappers and cold-launch hardening are verified. Start the first route-app migration candidate, likely Speed or Board, without rewriting the platform. Preserve existing routes (`#/speed`, `#/board`, `#/library`, `#/replay`, `#/accel`), globals, GPS/drive/audio behavior, App Manager launch behavior, and shell-window compatibility. Create a conservative app module/wrapper, pass or resolve `appRuntime` through the existing route mount pipeline, migrate only one safe runtime service seam, add tests for route launch, lifecycle cleanup, direct legacy compatibility, refresh/resume behavior, and then run `pnpm run typecheck`, `pnpm run lint`, focused tests, `pnpm test`, and `pnpm run build`.
 
 ## Manual QA
 
 - Desktop browser: load `/`, open the start menu, confirm Speed/Board/Library/Replay/Accel/Apps appear and launch.
 - Desktop browser: visit `#/apps`, search/filter apps, and launch a route app and a shell-window app.
+- Desktop browser: from a fresh reload, use `#/apps` to launch Milkdrop or another shell-window app before opening it from legacy floating tools, and confirm it appears in the taskbar with one panel.
 - Mobile browser: verify `#/apps` cards, filter, and buttons fit without horizontal scrolling.
 - Tesla browser: verify `#/speed`, `#/board`, `#/library`, `#/replay`, `#/accel`, and `#/apps` load; open Calculator, Energy, Camera Map, Speed Alerts, Player, and Milkdrop from their existing surfaces; use Calculator's Energy button and confirm Energy opens/focuses.
 - Tesla browser: open Speed Alerts, tap its Camera Map button, and confirm Camera Map opens/focuses and follows GPS when location permission is available.

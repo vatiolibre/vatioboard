@@ -6,12 +6,38 @@ import type {
   VatioAppId,
   VatioAppLaunchOptions,
   VatioAppManifest,
+  VatioAppRuntime,
   VatioAppShellRuntime,
   VatioRunningApp,
+  VatioShellWindowAppModule,
 } from "./types";
 
 function routeHref(route: string) {
   return route.startsWith("#/") ? route : `#${route.startsWith("/") ? route : `/${route}`}`;
+}
+
+const shellWindowEntryLoads = new WeakMap<ShellRuntime, Map<VatioAppId, Promise<boolean>>>();
+
+function getShellWindowEntryLoads(shellManager: ShellRuntime) {
+  let loads = shellWindowEntryLoads.get(shellManager);
+  if (!loads) {
+    loads = new Map();
+    shellWindowEntryLoads.set(shellManager, loads);
+  }
+  return loads;
+}
+
+function getShellMount(shellManager: ShellRuntime): HTMLElement {
+  const root = shellManager.root;
+  if (root instanceof HTMLElement) return root;
+  if (root instanceof Document) return root.body;
+  if (root instanceof Element) return root as HTMLElement;
+  return document.body;
+}
+
+function getShellWindowAppFactory(entryModule: unknown) {
+  const module = entryModule as Partial<VatioShellWindowAppModule> | null;
+  return typeof module?.createShellWindowApp === "function" ? module.createShellWindowApp : null;
 }
 
 export interface CreateAppLauncherOptions {
@@ -31,18 +57,82 @@ export function createAppLauncher({
     return appRegistry.listApps();
   }
 
-  function openOrFocusShellWindow(manifest: VatioAppManifest, options: VatioAppLaunchOptions = {}) {
+  async function loadShellWindowEntry(manifest: VatioAppManifest, runtime: VatioAppRuntime | null) {
+    if (!shellManager || !manifest.window?.shellWindowId) return false;
+    const shellWindowId = manifest.window.shellWindowId;
+    if (shellManager.getWindow(shellWindowId)) return true;
+    if (!manifest.entry) {
+      console.warn(`[vatioboard:launcher] Shell-window app "${manifest.id}" is not registered and has no lazy entry.`);
+      return false;
+    }
+
+    const loads = getShellWindowEntryLoads(shellManager);
+    const existingLoad = loads.get(manifest.id);
+    if (existingLoad) return existingLoad;
+
+    const load = (async () => {
+      try {
+        const entryModule = await manifest.entry?.();
+        if (shellManager.getWindow(shellWindowId)) return true;
+
+        const createShellWindowApp = getShellWindowAppFactory(entryModule);
+        if (!createShellWindowApp) {
+          console.warn(`[vatioboard:launcher] Shell-window app "${manifest.id}" entry did not export createShellWindowApp().`);
+          return false;
+        }
+
+        createShellWindowApp({
+          mount: getShellMount(shellManager),
+          shellManager,
+          shellAppRuntimeManager,
+          runtime,
+        });
+
+        if (shellManager.getWindow(shellWindowId)) return true;
+        console.warn(`[vatioboard:launcher] Shell-window app "${manifest.id}" did not register window "${shellWindowId}".`);
+        return false;
+      } catch (error) {
+        console.warn(`[vatioboard:launcher] Shell-window app "${manifest.id}" failed to load.`, error);
+        return false;
+      } finally {
+        loads.delete(manifest.id);
+      }
+    })();
+
+    loads.set(manifest.id, load);
+    return load;
+  }
+
+  function openOrFocusRegisteredShellWindow(manifest: VatioAppManifest, options: VatioAppLaunchOptions = {}) {
     if (!manifest.window?.shellWindowId || !shellManager) return false;
-    shellAppRuntimeManager?.ensureRuntime(manifest.id);
     const shellWindowId = manifest.window.shellWindowId;
     const record = shellManager.getWindow(shellWindowId);
-    if (record?.state === "minimized") {
+    if (!record) return false;
+
+    if (record.state === "minimized") {
       return Boolean(shellManager.restoreWindow(shellWindowId, options));
     }
-    if (!record || record.state === "closed" || record.state === "hidden" || record.element?.hidden) {
+    if (record.state === "closed" || record.state === "hidden" || record.element?.hidden) {
       return Boolean(shellManager.openWindow(shellWindowId, options));
     }
     return Boolean(shellManager.activateWindow(shellWindowId, options));
+  }
+
+  function openOrFocusShellWindow(manifest: VatioAppManifest, options: VatioAppLaunchOptions = {}) {
+    if (!manifest.window?.shellWindowId || !shellManager) return false;
+    const runtime = shellAppRuntimeManager?.ensureRuntime(manifest.id) || null;
+    const shellWindowId = manifest.window.shellWindowId;
+
+    if (shellManager.getWindow(shellWindowId)) {
+      return openOrFocusRegisteredShellWindow(manifest, options);
+    }
+
+    if (!manifest.entry) return false;
+
+    void loadShellWindowEntry(manifest, runtime).then((registered) => {
+      if (registered) openOrFocusRegisteredShellWindow(manifest, options);
+    });
+    return true;
   }
 
   function openApp(appId: VatioAppId, options: VatioAppLaunchOptions = {}) {

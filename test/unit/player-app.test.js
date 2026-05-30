@@ -188,6 +188,22 @@ async function loadModules() {
   };
 }
 
+async function loadPlatformModules() {
+  vi.resetModules();
+  installPlayerMocks();
+  const [
+    appPlatform,
+    shell,
+  ] = await Promise.all([
+    import("../../src/app-platform/index.js"),
+    import("../../src/shared/shell-window-manager.js"),
+  ]);
+  return {
+    ...appPlatform,
+    createShellWindowManager: shell.createShellWindowManager,
+  };
+}
+
 function createShellHarness(modules) {
   const shellManager = modules.createShellWindowManager({
     root: document.body,
@@ -289,6 +305,26 @@ describe("Player OS app module", () => {
     expect(shellAppRuntimeManager.getRuntime(modules.PLAYER_APP_ID)?.lifecycle.getState()).toBe("active");
 
     player.destroy();
+    shellAppRuntimeManager.destroy();
+    shellManager.destroy();
+  });
+
+  it("cold-launches vatio.player from its manifest entry when no player panel is registered", async () => {
+    const modules = await loadPlatformModules();
+    const { shellManager, shellAppRuntimeManager, launcher } = createShellHarness(modules);
+
+    expect(shellManager.getWindow("player")).toBeNull();
+    expect(launcher.openApp("vatio.player")).toBe(true);
+    await vi.dynamicImportSettled();
+    await flushMicrotasks(30);
+
+    expect(shellManager.getWindow("player")?.state).toBe("open");
+    expect(document.querySelectorAll(".player-panel")).toHaveLength(1);
+    expect(document.querySelector(".player-panel")?.hidden).toBe(false);
+    expect(shellAppRuntimeManager.getRuntime("vatio.player")?.lifecycle.getState()).toBe("active");
+    expect(audioRuntimeMock.setMediaSessionEnabled).toHaveBeenCalledWith(true);
+
+    shellManager.unregisterWindow("player");
     shellAppRuntimeManager.destroy();
     shellManager.destroy();
   });

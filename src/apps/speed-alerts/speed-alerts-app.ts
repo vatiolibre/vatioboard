@@ -301,3 +301,5 @@ export function createSpeedAlertsApp(options: SpeedAlertsAppOptions = {}): Speed
     },
   };
 }
+
+export const createShellWindowApp = createSpeedAlertsApp;

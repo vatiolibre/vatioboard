@@ -244,6 +244,18 @@ export interface VatioAppShellRuntime {
   shellManager: ShellRuntime | null;
 }
 
+export interface VatioShellWindowAppOptions {
+  mount?: HTMLElement | null;
+  shellManager?: ShellRuntime | null;
+  shellAppRuntimeManager?: ShellAppRuntimeManager | null;
+  runtime?: VatioAppRuntime | null;
+  [key: string]: unknown;
+}
+
+export interface VatioShellWindowAppModule {
+  createShellWindowApp(options?: VatioShellWindowAppOptions): unknown;
+}
+
 export interface VatioAppRuntime {
   appId: VatioAppId;
   manifest: VatioAppManifest;

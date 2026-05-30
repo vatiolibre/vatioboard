@@ -101,3 +101,5 @@ export function createEnergyApp(options: EnergyAppOptions = {}): EnergyAppApi {
     runtime,
   };
 }
+
+export const createShellWindowApp = createEnergyApp;
