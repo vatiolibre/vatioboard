@@ -211,8 +211,10 @@ function syncCurrentRoute(list) {
     const isCurrent = item?.path === routePath || item?.pathAliases?.includes(routePath);
     const app = item?.path ? appRegistry.getAppByRoute(item.path) : null;
     const disabled = app ? !appControl.isEnabled(app.id) : false;
+    const hidden = app ? appControl.isHiddenFromStartMenu(app.id) && !appControl.isProtected(app.id) : false;
     button.dataset.currentPage = isCurrent ? "true" : "false";
     button.setAttribute("aria-current", isCurrent ? "page" : "false");
+    if (button instanceof HTMLElement) button.hidden = hidden;
     if (button instanceof HTMLButtonElement) button.disabled = disabled;
   });
   list.querySelectorAll("[data-start-action]").forEach((button) => {
@@ -220,6 +222,8 @@ function syncCurrentRoute(list) {
     const app = appRegistry.listApps().find((candidate) =>
       candidate.window?.shellWindowId === action || candidate.metadata.legacyToolId === action
     );
+    const hidden = app ? appControl.isHiddenFromStartMenu(app.id) && !appControl.isProtected(app.id) : false;
+    if (button instanceof HTMLElement) button.hidden = hidden;
     if (button instanceof HTMLButtonElement) button.disabled = app ? !appControl.isEnabled(app.id) : false;
   });
 }

@@ -1,5 +1,5 @@
 import { hasStoredValue, loadText, saveText } from "../shared/storage.js";
-import { sharedSettings } from "./shared-settings.js";
+import { readStoredSharedSettings, sharedSettings } from "./shared-settings.js";
 import type { VatioSharedSettingsKey, VatioSharedSettingsSnapshot } from "./types";
 
 type Normalizer<T> = (value: unknown) => T | null;
@@ -27,7 +27,7 @@ function loadLegacyFirst<K extends VatioSharedSettingsKey, T>({
     }
   }
 
-  const sharedValue = normalize(sharedSettings.get(sharedKey));
+  const sharedValue = normalize(readStoredSharedSettings()[sharedKey]);
   if (sharedValue !== null) {
     saveText(legacyKey, serialize(sharedValue));
     return sharedValue;

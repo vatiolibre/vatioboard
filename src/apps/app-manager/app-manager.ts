@@ -12,6 +12,7 @@ import {
 } from "../../app-platform/index.js";
 import type { RouteMountContext } from "../../types/route";
 import type { ShellRuntime } from "../../types/shell";
+import { showConfirmDialog } from "../../shared/ui/confirm-dialog.js";
 import type {
   ShellAppRuntimeManager,
   VatioAppControlState,
@@ -138,6 +139,14 @@ function appMatchesFilter(app: VatioAppManifest, filters: AppManagerFilters) {
   return searchOk && surfaceOk && kindOk && statusOk && permissionOk;
 }
 
+function compareAppManagerApps(a: VatioAppManifest, b: VatioAppManifest) {
+  const aState = appControl.getState(a.id);
+  const bState = appControl.getState(b.id);
+  if (aState.pinned !== bState.pinned) return aState.pinned ? -1 : 1;
+  if (aState.favorite !== bState.favorite) return aState.favorite ? -1 : 1;
+  return (a.order - b.order) || a.title.localeCompare(b.title) || a.id.localeCompare(b.id);
+}
+
 function getRuntimeForApp({
   app,
   routeContext,
@@ -172,6 +181,7 @@ function createAppCard({
   state,
   runtime,
   runningRecord,
+  backgroundServiceManager,
   launchApp,
   closeApp,
   rerender,
@@ -180,6 +190,7 @@ function createAppCard({
   state: VatioAppControlState;
   runtime: VatioAppRuntime | null;
   runningRecord: VatioRunningApp | null;
+  backgroundServiceManager?: VatioBackgroundServiceManager | null;
   launchApp: (app: VatioAppManifest) => void;
   closeApp: (app: VatioAppManifest) => void;
   rerender: () => void;
@@ -219,6 +230,9 @@ function createAppCard({
     createChip(app.offlineCapable ? "Offline" : "Network"),
     createChip(app.teslaOptimized ? "Tesla" : "Desktop"),
   );
+  if (state.pinned) badges.append(createChip("Pinned"));
+  if (state.favorite) badges.append(createChip("Favorite"));
+  if (state.hiddenFromStartMenu) badges.append(createChip("Hidden from Start"));
 
   const surfaces = document.createElement("div");
   surfaces.className = "vb-app-manager-surfaces";
@@ -230,17 +244,20 @@ function createAppCard({
     createDiagnosticLine("Kind", formatToken(app.kind)),
     createDiagnosticLine("Surface", getSurfaceInfo(app)),
     createDiagnosticLine("Version", app.version),
-    createDiagnosticLine("Launches", String(state.openCount || 0)),
+    createDiagnosticLine("Launcher opens", String(state.openCount || 0)),
     createDiagnosticLine("Runtime", runtime?.lifecycle.getState() || "not running"),
     createDiagnosticLine("Services", getServiceSummary(runtime)),
   );
+  if (app.kind === "background-service") {
+    diagnostics.append(createDiagnosticLine("Background", runningRecord ? formatToken(runningRecord.state) : "stopped"));
+  }
 
   const storageUsage = estimateAppPrivateStorage(app.id);
   const storageKeys = listAppPrivateStorageKeys(app.id);
   const storageDetails = document.createElement("details");
   storageDetails.className = "vb-app-manager-storage";
   const storageSummary = document.createElement("summary");
-  storageSummary.textContent = `Storage ${formatBytes(storageUsage.bytes)} (${storageUsage.keyCount})`;
+  storageSummary.textContent = `App-private storage ${formatBytes(storageUsage.bytes)} (${storageUsage.keyCount})`;
   const storageList = document.createElement("ul");
   if (storageKeys.length) {
     for (const key of storageKeys) {
@@ -259,6 +276,9 @@ function createAppCard({
   storageJson.rows = 4;
   storageJson.spellcheck = false;
   storageJson.placeholder = "App-private storage JSON";
+  const storageNote = document.createElement("p");
+  storageNote.className = "vb-app-manager-note";
+  storageNote.textContent = "Legacy app data such as drawings, replay sessions, media cache, player queues, and shell layout are not cleared here.";
   const storageActions = document.createElement("div");
   storageActions.className = "vb-app-manager-inline-actions";
   const exportButton = createButton("Export");
@@ -277,13 +297,23 @@ function createAppCard({
       storageJson.setCustomValidity("");
     }
   });
-  const resetStorageButton = createButton("Reset storage", "vb-app-manager-button is-danger");
-  resetStorageButton.addEventListener("click", () => {
-    clearAppPrivateStorage(app.id);
-    rerender();
+  const resetStorageButton = createButton("Reset app-private storage", "vb-app-manager-button is-danger");
+  resetStorageButton.addEventListener("click", async () => {
+    const confirmed = await showConfirmDialog({
+      title: "Reset app-private storage?",
+      message: `Clear app-private keys for ${app.title}?`,
+      description: "Legacy app data such as drawings, replay sessions, media cache, player queues, and shell layout are not cleared here.",
+      confirmLabel: "Reset app-private storage",
+      cancelLabel: "Cancel",
+      destructive: true,
+      onConfirm: () => {
+        clearAppPrivateStorage(app.id);
+      },
+    });
+    if (confirmed) rerender();
   });
   storageActions.append(exportButton, importButton, resetStorageButton);
-  storageDetails.append(storageSummary, storageList, storageJson, storageActions);
+  storageDetails.append(storageSummary, storageList, storageNote, storageJson, storageActions);
 
   const details = document.createElement("details");
   details.className = "vb-app-manager-permissions";
@@ -293,16 +323,33 @@ function createAppCard({
   for (const permission of app.permissions) {
     const item = document.createElement("li");
     const granted = appControl.hasGrantedPermission(app.id, permission);
+    const protectedPermission = appControl.isProtectedPermission(app.id, permission);
     const label = document.createElement("span");
     label.textContent = permission;
-    const toggle = createButton(granted ? "Revoke" : "Grant", "vb-app-manager-mini-button");
+    const toggle = createButton(
+      protectedPermission ? "Required" : granted ? "Revoke" : "Grant",
+      "vb-app-manager-mini-button",
+    );
+    toggle.disabled = protectedPermission;
+    if (protectedPermission) {
+      toggle.title = "Required for this protected app.";
+      item.dataset.protectedPermission = "true";
+    }
     toggle.addEventListener("click", () => {
+      if (protectedPermission) return;
       if (granted) appControl.revokePermission(app.id, permission);
       else appControl.grantPermission(app.id, permission);
       rerender();
     });
     item.dataset.granted = granted ? "true" : "false";
-    item.append(label, createChip(granted ? "Granted" : "Revoked", granted ? "vb-app-manager-chip is-enabled" : "vb-app-manager-chip is-disabled"), toggle);
+    item.append(
+      label,
+      createChip(
+        protectedPermission ? "Protected" : granted ? "Granted" : "Revoked",
+        protectedPermission || granted ? "vb-app-manager-chip is-enabled" : "vb-app-manager-chip is-disabled",
+      ),
+      toggle,
+    );
     permissionList.append(item);
   }
   details.append(summary, permissionList);
@@ -330,7 +377,7 @@ function createAppCard({
   actions.className = "vb-app-manager-actions";
   const launchButton = createButton(getPrimaryLaunchText(app), "vb-app-manager-launch");
   launchButton.textContent = getPrimaryLaunchText(app);
-  launchButton.disabled = !state.enabled || (!app.route && !app.window?.shellWindowId);
+  launchButton.disabled = !state.enabled || app.kind === "background-service" || (!app.route && !app.window?.shellWindowId);
   launchButton.setAttribute("aria-label", `${launchButton.textContent} ${app.title}`);
   launchButton.addEventListener("click", () => launchApp(app));
   const closeButton = createButton("Close");
@@ -363,17 +410,55 @@ function createAppCard({
       rerender();
     },
   });
+  const hiddenButton = createToggleButton({
+    text: state.hiddenFromStartMenu ? "Start hidden" : "Start visible",
+    pressed: state.hiddenFromStartMenu === true,
+    disabled: appControl.isProtected(app.id),
+    onClick: () => {
+      appControl.setHiddenFromStartMenu(app.id, !state.hiddenFromStartMenu);
+      rerender();
+    },
+  });
   const resetControlButton = createButton("Reset control");
   resetControlButton.addEventListener("click", () => {
     appControl.resetAppControlState(app.id);
     rerender();
   });
-  actions.append(launchButton, closeButton, enableButton, pinButton, favoriteButton, resetControlButton);
+  actions.append(launchButton, closeButton);
+  if (app.kind === "background-service") {
+    const backgroundState = runtime?.lifecycle.getState() || "stopped";
+    const backgroundStartButton = createButton("Start");
+    backgroundStartButton.disabled = !state.enabled || !backgroundServiceManager || backgroundState === "active";
+    backgroundStartButton.addEventListener("click", () => {
+      backgroundServiceManager?.start(app.id);
+      rerender();
+    });
+    const backgroundSuspendButton = createButton("Suspend");
+    backgroundSuspendButton.disabled = !backgroundServiceManager || backgroundState !== "active";
+    backgroundSuspendButton.addEventListener("click", () => {
+      backgroundServiceManager?.suspend(app.id);
+      rerender();
+    });
+    const backgroundResumeButton = createButton("Resume");
+    backgroundResumeButton.disabled = !backgroundServiceManager || backgroundState !== "suspended";
+    backgroundResumeButton.addEventListener("click", () => {
+      backgroundServiceManager?.resume(app.id);
+      rerender();
+    });
+    const backgroundStopButton = createButton("Stop");
+    backgroundStopButton.disabled = !backgroundServiceManager || !runtime;
+    backgroundStopButton.addEventListener("click", () => {
+      backgroundServiceManager?.stop(app.id);
+      rerender();
+    });
+    actions.append(backgroundStartButton, backgroundSuspendButton, backgroundResumeButton, backgroundStopButton);
+  }
+  actions.append(enableButton, pinButton, favoriteButton, hiddenButton, resetControlButton);
 
   if (appControl.isProtected(app.id)) {
     const protectedNote = document.createElement("p");
     protectedNote.className = "vb-app-manager-note";
-    protectedNote.textContent = "Protected system app; disabling is blocked.";
+    protectedNote.textContent = "Protected system app; disabling, hiding, and critical permission revocation are blocked.";
     card.append(header, badges, surfaces, diagnostics, protectedNote, details, storageDetails, lifecycleDetails, actions);
     return card;
   }
@@ -424,7 +509,9 @@ export function mountAppsRoute(routeContext: AppManagerRouteContext) {
       status: statusFilter?.value || "all",
       permission: permissionFilter?.value || "all",
     };
-    const apps = appRegistry.listApps().filter((app) => appMatchesFilter(app, filters));
+    const apps = appRegistry.listApps()
+      .filter((app) => appMatchesFilter(app, filters))
+      .sort(compareAppManagerApps);
     const backgroundRunning = (routeContext.context.backgroundServiceManager?.listServices() || []).map((record) => ({
       appId: record.appId,
       title: record.title,
@@ -441,6 +528,7 @@ export function mountAppsRoute(routeContext: AppManagerRouteContext) {
       state: appControl.getState(app.id),
       runtime: getRuntimeForApp({ app, routeContext }),
       runningRecord: getRunningRecord(app, runningApps),
+      backgroundServiceManager: routeContext.context.backgroundServiceManager || null,
       launchApp,
       closeApp,
       rerender: render,

@@ -3,7 +3,9 @@ import { appControl } from "./app-control.js";
 import { createAppRuntime } from "./runtime.js";
 import type { ShellRuntime } from "../types/shell";
 import type {
+  VatioAppControlService,
   VatioAppId,
+  VatioAppRegistry,
   VatioAppRuntime,
   VatioAppShellRuntime,
   VatioBackgroundServiceManager,
@@ -15,10 +17,12 @@ export interface CreateBackgroundServiceManagerOptions {
   baseContext?: Record<string, unknown> | null;
   navigate?: (href: string, options?: { replace?: boolean }) => boolean;
   launcher?: Pick<VatioAppShellRuntime, "openApp" | "openAppAsync" | "closeApp" | "focusApp" | "getAppRuntime" | "getInstalledApps" | "getRunningApps"> | null;
+  registry?: VatioAppRegistry;
+  control?: VatioAppControlService;
 }
 
-function isBackgroundService(appId: VatioAppId) {
-  const manifest = appRegistry.getApp(appId);
+function isBackgroundService(appId: VatioAppId, registry: VatioAppRegistry) {
+  const manifest = registry.getApp(appId);
   return manifest?.kind === "background-service" && manifest.surfaces.includes("background");
 }
 
@@ -41,14 +45,16 @@ export function createBackgroundServiceManager({
   baseContext = null,
   navigate,
   launcher = null,
+  registry = appRegistry,
+  control = appControl,
 }: CreateBackgroundServiceManagerOptions = {}): VatioBackgroundServiceManager {
   const runtimes = new Map<VatioAppId, VatioAppRuntime>();
 
   function ensureRuntime(appId: VatioAppId) {
     const existing = runtimes.get(appId);
     if (existing) return existing;
-    const manifest = appRegistry.getApp(appId);
-    if (!manifest || !isBackgroundService(appId)) return null;
+    const manifest = registry.getApp(appId);
+    if (!manifest || !isBackgroundService(appId, registry)) return null;
 
     const runtime = createAppRuntime({
       manifest,
@@ -71,9 +77,19 @@ export function createBackgroundServiceManager({
     };
   }
 
+  const unsubscribeControl = control.subscribe?.((state) => {
+    if (state.enabled) return;
+    if (!isBackgroundService(state.appId, registry)) return;
+    const runtime = runtimes.get(state.appId);
+    if (runtime) {
+      deactivateRuntime(runtime);
+      runtimes.delete(state.appId);
+    }
+  });
+
   return {
     start(appId) {
-      if (!appControl.isEnabled(appId)) return false;
+      if (!control.isEnabled(appId)) return false;
       const runtime = ensureRuntime(appId);
       if (!runtime) return false;
       activateRuntime(runtime);
@@ -99,11 +115,11 @@ export function createBackgroundServiceManager({
       return true;
     },
     startAutostartServices() {
-      for (const manifest of appRegistry.listApps()) {
+      for (const manifest of registry.listApps()) {
         if (
           manifest.kind === "background-service"
           && manifest.lifecycle?.autostart === true
-          && appControl.isEnabled(manifest.id)
+          && control.isEnabled(manifest.id)
         ) {
           this.start(manifest.id);
         }
@@ -117,6 +133,7 @@ export function createBackgroundServiceManager({
       return Array.from(runtimes.values()).map(toRecord);
     },
     destroy() {
+      unsubscribeControl?.();
       for (const runtime of runtimes.values()) {
         deactivateRuntime(runtime);
       }

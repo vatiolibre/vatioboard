@@ -20,6 +20,27 @@ const PROTECTED_APP_IDS = new Set<VatioAppId>([
   "vatio.appManager",
 ]);
 
+const PROTECTED_CRITICAL_PERMISSIONS: Partial<Record<VatioAppId, readonly VatioAppPermission[]>> = {
+  "vatio.speed": [
+    "gps.read",
+    "gps.highAccuracy",
+    "storage.app",
+    "i18n.read",
+    "shell.launchApp",
+  ],
+  "vatio.appManager": [
+    "storage.app",
+    "i18n.read",
+    "settings.read",
+    "shell.launchApp",
+  ],
+  "vatio.offlineReadiness": [
+    "storage.app",
+    "i18n.read",
+    "settings.read",
+  ],
+};
+
 const VALID_STORAGE_POLICIES = new Set<VatioAppStoragePolicy>([
   "default",
   "local-only",
@@ -73,6 +94,24 @@ function createDefaultState(appId: VatioAppId, updatedAt: string): VatioAppContr
   };
 }
 
+function getProtectedCriticalPermissions(
+  appId: VatioAppId,
+  manifest: VatioAppManifest | null,
+): VatioAppPermission[] {
+  const protectedPermissions = PROTECTED_CRITICAL_PERMISSIONS[appId] || [];
+  if (!manifest) return Array.from(protectedPermissions);
+  const declared = new Set(manifest.permissions);
+  return protectedPermissions.filter((permission) => declared.has(permission));
+}
+
+function isProtectedCriticalPermission(
+  appId: VatioAppId,
+  permission: VatioAppPermission,
+  manifest: VatioAppManifest | null,
+) {
+  return getProtectedCriticalPermissions(appId, manifest).includes(permission);
+}
+
 function normalizeState(
   appId: VatioAppId,
   stored: unknown,
@@ -85,6 +124,8 @@ function normalizeState(
   const storagePolicy = VALID_STORAGE_POLICIES.has(source.storagePolicy as VatioAppStoragePolicy)
     ? source.storagePolicy as VatioAppStoragePolicy
     : "default";
+  const deniedPermissions = uniqueDeclaredPermissions(source.deniedPermissions, manifest)
+    .filter((permission) => !isProtectedCriticalPermission(appId, permission, manifest));
 
   return {
     appId,
@@ -97,7 +138,7 @@ function normalizeState(
       ? Math.floor(Number(source.openCount))
       : 0,
     grantedPermissions: uniqueDeclaredPermissions(source.grantedPermissions, manifest),
-    deniedPermissions: uniqueDeclaredPermissions(source.deniedPermissions, manifest),
+    deniedPermissions,
     storagePolicy,
     updatedAt: typeof source.updatedAt === "string" ? source.updatedAt : updatedAt,
   };
@@ -158,6 +199,11 @@ export function createAppControlService({
     return PROTECTED_APP_IDS.has(appId) || manifest?.metadata.protected === true;
   }
 
+  function isProtectedPermission(appId: VatioAppId, permission: VatioAppPermission) {
+    if (!isProtected(appId)) return false;
+    return isProtectedCriticalPermission(appId, permission, getManifest(appId));
+  }
+
   function getEffectivePermissions(appId: VatioAppId): VatioAppPermission[] {
     const manifest = getManifest(appId);
     if (!manifest) return [];
@@ -168,6 +214,7 @@ export function createAppControlService({
     const autoGrant = shouldAutoGrantDeclaredPermissions(manifest);
 
     return manifest.permissions.filter((permission) => {
+      if (isProtectedPermission(appId, permission)) return true;
       if (denied.has(permission)) return false;
       return autoGrant || granted.has(permission);
     });
@@ -206,6 +253,16 @@ export function createAppControlService({
         favorite: Boolean(favorite),
       }));
     },
+    isHiddenFromStartMenu(appId) {
+      return getState(appId).hiddenFromStartMenu === true;
+    },
+    setHiddenFromStartMenu(appId, hidden) {
+      if (hidden && isProtected(appId)) return false;
+      return mutateState(appId, (state) => ({
+        ...state,
+        hiddenFromStartMenu: Boolean(hidden),
+      }));
+    },
     grantPermission(appId, permission) {
       const manifest = getManifest(appId);
       if (!manifest?.permissions.includes(permission)) return false;
@@ -225,6 +282,7 @@ export function createAppControlService({
     revokePermission(appId, permission) {
       const manifest = getManifest(appId);
       if (!manifest?.permissions.includes(permission)) return false;
+      if (isProtectedPermission(appId, permission)) return false;
 
       return mutateState(appId, (state) => {
         const granted = new Set(state.grantedPermissions || []);
@@ -258,6 +316,11 @@ export function createAppControlService({
       return removed;
     },
     isProtected,
+    isProtectedPermission,
+    getProtectedCriticalPermissions(appId) {
+      if (!isProtected(appId)) return [];
+      return getProtectedCriticalPermissions(appId, getManifest(appId));
+    },
     subscribe(listener) {
       if (typeof listener !== "function") return () => {};
       listeners.add(listener);

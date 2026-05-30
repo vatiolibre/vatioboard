@@ -1,7 +1,9 @@
 import type {
   AudioRuntime,
+  AudioRuntimeState,
   DriveRecordingService,
   DrivingAlertService,
+  DrivingAlertSnapshot,
   GpsConsumerOptions,
   GpsService,
 } from "../types/services";
@@ -11,6 +13,9 @@ import type {
   VatioAppServiceId,
   VatioAppServices,
   VatioAppStorage,
+  VatioSharedSettingsKey,
+  VatioSharedSettingsService,
+  VatioSharedSettingsSnapshot,
 } from "./types";
 import { createAppSettingsService } from "./settings.js";
 import { sharedSettings } from "./shared-settings.js";
@@ -20,6 +25,55 @@ type RuntimeServiceContext = Record<string, unknown> | null | undefined;
 function getContextService<T>(context: RuntimeServiceContext, key: string): T | null {
   return (context?.[key] as T | null | undefined) || null;
 }
+
+function warnDenied(
+  logger: Pick<VatioAppLogger, "warn"> | null | undefined,
+  serviceName: string,
+  permission: string,
+) {
+  logger?.warn?.(`Service "${serviceName}" denied because permission "${permission}" is not granted.`);
+}
+
+function canUseService(
+  permissions: VatioAppPermissionRuntime,
+  logger: Pick<VatioAppLogger, "warn"> | null | undefined,
+  serviceName: string,
+  permission: Parameters<VatioAppPermissionRuntime["require"]>[0],
+) {
+  const allowed = permissions.require(permission);
+  if (!allowed) warnDenied(logger, serviceName, permission);
+  return allowed;
+}
+
+const DENIED_AUDIO_STATE: AudioRuntimeState = {
+  queue: [],
+  playedHistory: [],
+  currentIndex: -1,
+  paused: true,
+  volume: 0,
+  muted: true,
+  repeat: "off",
+  shuffle: false,
+  backgroundMode: false,
+  sourceType: null,
+  currentTrack: null,
+  loading: false,
+  error: "permission-denied",
+  remoteSessionActive: false,
+  currentTime: 0,
+  duration: 0,
+  playing: false,
+};
+
+const DENIED_DRIVING_ALERT_SNAPSHOT: DrivingAlertSnapshot = {
+  status: "permission-denied",
+  started: false,
+  currentSpeedMs: 0,
+  latestPosition: null,
+  alertUiState: null,
+  audio: null,
+  preferences: null,
+};
 
 function createGpsGateway(
   service: GpsService | null,
@@ -104,19 +158,241 @@ function createDriveRecordingGateway(
 function createDrivingAlertsGateway(
   service: DrivingAlertService | null,
   permissions: VatioAppPermissionRuntime,
+  logger?: VatioAppLogger | null,
 ): DrivingAlertService | null {
   if (!service) return null;
   if (!permissions.has("alerts.speed")) return null;
-  return service;
+  const canUseAlerts = () => canUseService(permissions, logger, "drivingAlerts", "alerts.speed");
+  const deniedSnapshot = () => ({ ...DENIED_DRIVING_ALERT_SNAPSHOT });
+
+  return {
+    ...service,
+    start(options) {
+      if (!canUseAlerts()) return deniedSnapshot();
+      return service.start(options);
+    },
+    stop(options) {
+      if (!canUseAlerts()) return deniedSnapshot();
+      return service.stop(options);
+    },
+    subscribe(listener) {
+      if (!canUseAlerts()) return () => {};
+      return service.subscribe(listener);
+    },
+    getSnapshot() {
+      if (!canUseAlerts()) return deniedSnapshot();
+      return service.getSnapshot();
+    },
+    primeAudioFromUserGesture: service.primeAudioFromUserGesture
+      ? async () => {
+          if (!canUseAlerts()) return false;
+          return service.primeAudioFromUserGesture?.() ?? false;
+        }
+      : undefined,
+    setAlertSoundEnabled: service.setAlertSoundEnabled
+      ? (value, options) => {
+          if (!canUseAlerts()) return deniedSnapshot();
+          return service.setAlertSoundEnabled?.(value, options) ?? deniedSnapshot();
+        }
+      : undefined,
+    setManualAlertEnabled: service.setManualAlertEnabled
+      ? (value, options) => {
+          if (!canUseAlerts()) return deniedSnapshot();
+          return service.setManualAlertEnabled?.(value, options) ?? deniedSnapshot();
+        }
+      : undefined,
+    setManualAlertLimitMs: service.setManualAlertLimitMs
+      ? (value, options) => {
+          if (!canUseAlerts()) return deniedSnapshot();
+          return service.setManualAlertLimitMs?.(value, options) ?? deniedSnapshot();
+        }
+      : undefined,
+    setMuted: service.setMuted
+      ? (value, options) => {
+          if (!canUseAlerts()) return deniedSnapshot();
+          return service.setMuted?.(value, options) ?? deniedSnapshot();
+        }
+      : undefined,
+    setPreference: service.setPreference
+      ? (key, value, options) => {
+          if (!canUseAlerts()) return deniedSnapshot();
+          return service.setPreference?.(key, value, options) ?? deniedSnapshot();
+        }
+      : undefined,
+    setTrapAlertDistanceM: service.setTrapAlertDistanceM
+      ? (value, options) => {
+          if (!canUseAlerts()) return deniedSnapshot();
+          return service.setTrapAlertDistanceM?.(value, options) ?? deniedSnapshot();
+        }
+      : undefined,
+    setTrapAlertEnabled: service.setTrapAlertEnabled
+      ? (value, options) => {
+          if (!canUseAlerts()) return deniedSnapshot();
+          return service.setTrapAlertEnabled?.(value, options) ?? deniedSnapshot();
+        }
+      : undefined,
+    setTrapSoundEnabled: service.setTrapSoundEnabled
+      ? (value, options) => {
+          if (!canUseAlerts()) return deniedSnapshot();
+          return service.setTrapSoundEnabled?.(value, options) ?? deniedSnapshot();
+        }
+      : undefined,
+    setUnits: service.setUnits
+      ? (options) => {
+          if (!canUseAlerts()) return deniedSnapshot();
+          return service.setUnits?.(options) ?? deniedSnapshot();
+        }
+      : undefined,
+    destroy() {
+      if (!canUseAlerts()) return;
+      service.destroy();
+    },
+  };
 }
 
 function createAudioGateway(
   service: AudioRuntime | null,
   permissions: VatioAppPermissionRuntime,
+  logger?: VatioAppLogger | null,
 ): AudioRuntime | null {
   if (!service) return null;
   if (!permissions.has("audio.playback")) return null;
-  return service;
+  const canUseAudio = () => canUseService(permissions, logger, "audio", "audio.playback");
+
+  return {
+    ...service,
+    getState() {
+      if (!canUseAudio()) return { ...DENIED_AUDIO_STATE };
+      return service.getState();
+    },
+    subscribe(listener) {
+      if (!canUseAudio()) return () => {};
+      return service.subscribe(listener);
+    },
+    setMediaSessionEnabled(enabled) {
+      if (!canUseAudio()) return;
+      service.setMediaSessionEnabled(enabled);
+    },
+    async primeAudio() {
+      if (!canUseAudio()) return false;
+      return service.primeAudio();
+    },
+    play(options) {
+      if (!canUseAudio()) return false;
+      return service.play(options);
+    },
+    pause(options) {
+      if (!canUseAudio()) return;
+      service.pause(options);
+    },
+    stopPlayback(options) {
+      if (!canUseAudio()) return;
+      service.stopPlayback(options);
+    },
+  };
+}
+
+function createAuthGateway(
+  permissions: VatioAppPermissionRuntime,
+  logger?: VatioAppLogger | null,
+) {
+  if (!permissions.has("auth.session")) return null;
+  const canUseAuth = () => canUseService(permissions, logger, "auth", "auth.session");
+
+  return {
+    async getSessionState(options?: Record<string, unknown>) {
+      if (!canUseAuth()) return null;
+      try {
+        const auth = await import("../shared/backend-auth.js");
+        return typeof auth.getBackendSessionState === "function"
+          ? auth.getBackendSessionState(options)
+          : null;
+      } catch (error) {
+        logger?.warn("Backend auth session service is unavailable.", error);
+        return null;
+      }
+    },
+    async getFeatureAccessState(options?: Record<string, unknown>) {
+      if (!canUseAuth()) return null;
+      try {
+        const auth = await import("../shared/backend-auth.js");
+        return typeof auth.getBackendFeatureAccessState === "function"
+          ? auth.getBackendFeatureAccessState(options)
+          : null;
+      } catch (error) {
+        logger?.warn("Backend feature access service is unavailable.", error);
+        return null;
+      }
+    },
+  };
+}
+
+function createCloudSyncGateway(
+  permissions: VatioAppPermissionRuntime,
+  logger?: VatioAppLogger | null,
+) {
+  if (!permissions.has("cloud.sync")) return null;
+  const canUseCloudSync = () => canUseService(permissions, logger, "cloudSync", "cloud.sync");
+
+  return {
+    async getStatus() {
+      if (!canUseCloudSync()) return null;
+      try {
+        const cloudSync = await import("../shared/cloud-sync.js");
+        return typeof cloudSync.getCloudSyncStatus === "function"
+          ? cloudSync.getCloudSyncStatus()
+          : null;
+      } catch (error) {
+        logger?.warn("Cloud sync status service is unavailable.", error);
+        return null;
+      }
+    },
+    async request(options?: Record<string, unknown>) {
+      if (!canUseCloudSync()) return null;
+      try {
+        const cloudSync = await import("../shared/cloud-sync.js");
+        return typeof cloudSync.requestCloudSync === "function"
+          ? cloudSync.requestCloudSync(options)
+          : null;
+      } catch (error) {
+        logger?.warn("Cloud sync request service is unavailable.", error);
+        return null;
+      }
+    },
+  };
+}
+
+function createSharedSettingsGateway(
+  service: VatioSharedSettingsService,
+  permissions: VatioAppPermissionRuntime,
+  logger?: VatioAppLogger | null,
+): VatioSharedSettingsService | null {
+  if (!permissions.has("settings.read") && !permissions.has("settings.write")) return null;
+  const canRead = () => canUseService(permissions, logger, "sharedSettings", "settings.read");
+  const canWrite = () => canUseService(permissions, logger, "sharedSettings", "settings.write");
+
+  return {
+    getAll() {
+      if (!canRead()) return {};
+      return service.getAll();
+    },
+    get<K extends VatioSharedSettingsKey>(key: K): VatioSharedSettingsSnapshot[K] | null {
+      if (!canRead()) return null;
+      return service.get(key);
+    },
+    set<K extends VatioSharedSettingsKey>(key: K, value: VatioSharedSettingsSnapshot[K]) {
+      if (!canWrite()) return false;
+      return service.set(key, value);
+    },
+    reset(key?: VatioSharedSettingsKey) {
+      if (!canWrite()) return false;
+      return service.reset(key);
+    },
+    subscribe(listener) {
+      if (!canRead()) return () => {};
+      return service.subscribe(listener);
+    },
+  };
 }
 
 export function createAppServiceGateway({
@@ -141,66 +417,16 @@ export function createAppServiceGateway({
 
   return {
     gps: hasService("gps") ? createGpsGateway(gpsService, permissions) : null,
-    audio: hasService("audio") ? createAudioGateway(audioRuntime, permissions) : null,
+    audio: hasService("audio") ? createAudioGateway(audioRuntime, permissions, logger) : null,
     driveRecording: hasService("driveRecording") ? createDriveRecordingGateway(driveRecordingService, permissions) : null,
-    drivingAlerts: hasService("drivingAlerts") ? createDrivingAlertsGateway(drivingAlertService, permissions) : null,
-    auth: hasService("auth") && permissions.has("auth.session")
-      ? {
-          async getSessionState(options) {
-            try {
-              const auth = await import("../shared/backend-auth.js");
-              return typeof auth.getBackendSessionState === "function"
-                ? auth.getBackendSessionState(options)
-                : null;
-            } catch (error) {
-              logger?.warn("Backend auth session service is unavailable.", error);
-              return null;
-            }
-          },
-          async getFeatureAccessState(options) {
-            try {
-              const auth = await import("../shared/backend-auth.js");
-              return typeof auth.getBackendFeatureAccessState === "function"
-                ? auth.getBackendFeatureAccessState(options)
-                : null;
-            } catch (error) {
-              logger?.warn("Backend feature access service is unavailable.", error);
-              return null;
-            }
-          },
-        }
-      : null,
-    cloudSync: hasService("cloudSync") && permissions.has("cloud.sync")
-      ? {
-          async getStatus() {
-            try {
-              const cloudSync = await import("../shared/cloud-sync.js");
-              return typeof cloudSync.getCloudSyncStatus === "function"
-                ? cloudSync.getCloudSyncStatus()
-                : null;
-            } catch (error) {
-              logger?.warn("Cloud sync status service is unavailable.", error);
-              return null;
-            }
-          },
-          async request(options) {
-            try {
-              const cloudSync = await import("../shared/cloud-sync.js");
-              return typeof cloudSync.requestCloudSync === "function"
-                ? cloudSync.requestCloudSync(options)
-                : null;
-            } catch (error) {
-              logger?.warn("Cloud sync request service is unavailable.", error);
-              return null;
-            }
-          },
-        }
-      : null,
+    drivingAlerts: hasService("drivingAlerts") ? createDrivingAlertsGateway(drivingAlertService, permissions, logger) : null,
+    auth: hasService("auth") ? createAuthGateway(permissions, logger) : null,
+    cloudSync: hasService("cloudSync") ? createCloudSyncGateway(permissions, logger) : null,
     settings: hasService("settings") && (permissions.has("settings.read") || permissions.has("settings.write"))
       ? createAppSettingsService({ storage: appStorage, permissions })
       : null,
     sharedSettings: hasService("settings") && (permissions.has("settings.read") || permissions.has("settings.write"))
-      ? sharedSettings
+      ? createSharedSettingsGateway(sharedSettings, permissions, logger)
       : null,
   };
 }

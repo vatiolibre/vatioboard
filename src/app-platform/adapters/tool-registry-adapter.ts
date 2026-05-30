@@ -41,7 +41,8 @@ function getLegacyToolId(app: VatioAppManifest) {
 
 function getToolSurfaces(app: VatioAppManifest): ToolSurface[] {
   const surfaces = new Set<ToolSurface>();
-  if (app.surfaces.includes("start-menu")) surfaces.add("start-menu");
+  const hiddenFromStartMenu = appControl.isHiddenFromStartMenu(app.id) && !appControl.isProtected(app.id);
+  if (app.surfaces.includes("start-menu") && !hiddenFromStartMenu) surfaces.add("start-menu");
   if (app.surfaces.includes("taskbar")) surfaces.add("taskbar");
   if (app.surfaces.includes("launcher")) surfaces.add("launcher");
 
@@ -53,6 +54,16 @@ function getToolSurfaces(app: VatioAppManifest): ToolSurface[] {
   }
 
   return Array.from(surfaces);
+}
+
+function compareToolAppsForSurface(surface: ToolSurface, a: VatioAppManifest, b: VatioAppManifest) {
+  if (surface === "start-menu") {
+    const aState = appControl.getState(a.id);
+    const bState = appControl.getState(b.id);
+    if (aState.pinned !== bState.pinned) return aState.pinned ? -1 : 1;
+    if (aState.favorite !== bState.favorite) return aState.favorite ? -1 : 1;
+  }
+  return (a.order - b.order) || a.title.localeCompare(b.title) || a.id.localeCompare(b.id);
 }
 
 function getToolKind(app: VatioAppManifest): VatioToolDefinition["kind"] {
@@ -107,7 +118,14 @@ export function getToolRegistryFromApps(): VatioToolDefinition[] {
 }
 
 export function getToolDefinitionsForSurfaceFromApps(surface: ToolSurface): VatioToolDefinition[] {
-  return getToolRegistryFromApps().filter((tool) => tool.surfaces.includes(surface));
+  return appRegistry
+    .listApps()
+    .map((app) => ({ app, tool: mapAppToTool(app) }))
+    .filter((record): record is { app: VatioAppManifest; tool: VatioToolDefinition } =>
+      Boolean(record.tool?.surfaces.includes(surface))
+    )
+    .sort((a, b) => compareToolAppsForSurface(surface, a.app, b.app))
+    .map((record) => record.tool);
 }
 
 export function getRouteToolDefinitionFromApps(path: string): VatioToolDefinition | null {

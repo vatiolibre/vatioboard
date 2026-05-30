@@ -6,17 +6,20 @@
 - App control state is stored in `vatioboard.os.appControl.v1` and tracks enabled, pinned, favorite, launch count, last opened time, permission grants/revocations, and storage policy.
 - Protected apps such as `vatio.speed`, `vatio.appManager`, and protected internal background diagnostics cannot be disabled.
 - Runtime permission checks now require permissions to be declared and effectively granted. Undeclared grants are rejected, and revoked permissions fail safely.
+- Runtime service gateways for audio, driving alerts, auth, cloud sync, settings, and shared settings now re-check permissions at method-call time, so revoking permissions affects already-created runtimes without recreating shell-window apps.
+- Protected critical permissions are now explicit for `vatio.speed`, `vatio.appManager`, and `vatio.offlineReadiness`; `appControl.revokePermission()` returns `false` for those permissions, and App Manager marks their toggles protected.
 - Added shared settings in `src/app-platform/shared-settings.ts` plus legacy-first bridges in `shared-settings-compat.ts`.
-- Speed unit and distance unit now mirror through shared OS settings while keeping `vatio_speed_unit` and `vatio_speed_distance_unit` canonical.
+- Speed unit and distance unit now mirror through shared OS settings while keeping `vatio_speed_unit` and `vatio_speed_distance_unit` canonical; legacy seeding now uses only explicit stored shared settings, not default-filled reads.
 - Added app-private storage diagnostics/reset/export/import helpers while keeping app control, shell layout, media cache, drawings, replay sessions, acceleration histories, player queues, and other legacy payloads untouched.
-- App Manager is now an internal OS control panel with search, filters, running counts, enable/disable, pin/favorite, permission toggles, lifecycle diagnostics, service indicators, storage usage, storage reset, and storage JSON export/import.
+- App Manager is now an internal OS control panel with search, filters, running counts, enable/disable, pin/favorite/hidden state, protected permission toggles, background lifecycle controls, lifecycle diagnostics, service indicators, app-private storage usage, confirmed app-private reset, and storage JSON export/import.
 - App Manager closes a running shell-window app when disabling it, and protected apps show a blocking explanation.
-- Launcher, runtime `shell.openApp()`, route tool adapters, Start Menu, and App Manager now block disabled apps.
+- Launcher, runtime `shell.openApp()`, route tool adapters, Start Menu, and App Manager now block disabled apps; Start Menu also respects hidden-from-start-menu state for non-protected apps and sorts pinned entries first.
 - Start Menu now receives `shellAppRuntimeManager` from `app-shell.ts`, so lazy shell-window launch behavior matches App Manager.
-- Added `openAppAsync()` and launch-count recording to the manifest launcher; `getRunningApps()` includes cold-launching shell-window apps.
+- Added `openAppAsync()` and launcher-open count recording to the manifest launcher; `getRunningApps()` includes cold-launching shell-window apps.
 - Added bounded lifecycle diagnostics (`createdAt`, `mountedAt`, `activatedAt`, `lastStateChangeAt`, and capped transition log).
 - Added conservative internal background-service support in `src/app-platform/background-services.ts`.
 - Added protected autostart background diagnostic manifest `vatio.offlineReadiness` without adding GPS watchers, heavy loops, external loading, or new cloud behavior.
+- Background manager start/suspend/resume/stop controls are exposed through App Manager; disabled non-protected background services do not autostart and stop if disabled while running.
 - App shell now starts/destroys the background service manager and redirects disabled route apps back to Speed.
 - Added focused control-plane tests in `test/unit/app-control-platform.test.js`.
 - Added the first functional VatioBoard OS platform under `src/app-platform/`.
@@ -206,15 +209,10 @@
 Current app control-plane pass:
 
 - `pnpm run typecheck` - passed.
-- `pnpm vitest run test/unit/app-platform.test.js test/unit/app-control-platform.test.js test/unit/app-shell-runtime-lifecycle.test.js test/unit/route-app-contract.test.js` - passed, 4 files and 33 tests.
-- `pnpm run typecheck && pnpm run lint` - typecheck passed; lint passed with existing warning-level findings and 0 errors.
-- `pnpm vitest run test/unit/calculator-app.test.js test/unit/energy-app.test.js test/unit/camera-map-app.test.js test/unit/speed-alerts-app.test.js test/unit/player-app.test.js test/unit/milkdrop-app.test.js test/unit/speed-route-app.test.js test/unit/board-route-app.test.js test/unit/library-route-app.test.js test/unit/replay-route-app.test.js test/unit/accel-route-app.test.js test/unit/board-route-lifecycle.test.js test/unit/library-route-lifecycle.test.js test/unit/replay-route-lifecycle.test.js test/unit/accel-route-lifecycle.test.js` - passed, 15 files and 82 tests.
-- `pnpm test` - first run failed in `test/unit/unit-bootstrap.test.js` because shared settings persisted a default distance unit when only speed unit was explicitly set; fixed by storing only explicit shared values. The same run also hit the known full-suite GPS coexistence smoke timeout.
-- `pnpm vitest run test/unit/unit-bootstrap.test.js test/unit/app-control-platform.test.js` - passed, 2 files and 11 tests.
-- `pnpm vitest run test/smoke/spa-gps-background.test.js -t "keeps speed recording and an accel run subscribed across route changes"` - passed isolated, 1 test.
-- `pnpm test` - rerun passed, 141 files and 1715 tests.
-- `pnpm run build` - passed. Vite still reports existing dynamic/static import chunking warnings for backend auth, cloud sync, Player, Calculator, Camera Map, Energy, and Speed Alerts entries.
-- `pnpm run typecheck && pnpm vitest run test/unit/app-control-platform.test.js` - passed after the final background-service disabled-app guard.
+- `pnpm run lint` - passed with the existing 60 warning-level findings and 0 errors.
+- `pnpm vitest run test/unit/app-control-platform.test.js test/unit/app-platform.test.js test/unit/app-shell-runtime-lifecycle.test.js test/unit/route-app-contract.test.js` - passed, 4 files and 44 tests.
+- `pnpm test` - passed, 141 files and 1726 tests.
+- `pnpm run build` - passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1312 transformed modules. Vite still reports existing dynamic/static import chunking warnings for backend auth, cloud sync, Player, Calculator, Camera Map, Energy, and Speed Alerts entries.
 
 Original OS v1 verification from the previous implementation session:
 
@@ -436,6 +434,8 @@ Route-app hardening verification:
 - App permissions are declared and enforced at the runtime boundary, but there are no user prompts yet.
 - App service declarations are now enforced with permissions, but this is still an internal runtime boundary rather than a sandbox.
 - App-private storage is localStorage-backed only.
+- App control `storagePolicy` is reserved metadata in v1; there is no enforcement or App Manager control for it yet.
+- App control `openCount` means launcher opens only. Direct initial route loads and browser refreshes are not counted.
 - Existing apps still import many global helpers directly; migration to `appRuntime` should be gradual. Calculator, Energy, Camera Map, Speed Alerts, Player, and Milkdrop are partially migrated through app wrappers, but Calculator expression state/history, Energy trip values/multi-trip records, Camera Map local/offline data storage, Speed Alerts panel internals, Player queue/session restore, Player media cache, Milkdrop preset/position/size persistence, and shell layout storage remain legacy for compatibility.
 - Speed is now route-wrapper migrated, but its internal replay/recording persistence, preferences, geolocation watch implementation, and many globals remain legacy for compatibility.
 - Speed exposes read-capable settings and cloud-sync seams for consistency, but it does not write runtime settings today and no longer requests `settings.write`.
@@ -447,7 +447,7 @@ Route-app hardening verification:
 - Accel selected preset mirrors to `vatioboard.app.vatio.accel.settings.selectedPresetId`, while the existing Accel settings storage remains canonical for v1.
 - Calculator and Energy intentionally share number-format settings through `embeddable_calc_settings_v1` in v1. Their app-private runtime settings are mirrors until a true platform shared-settings service exists.
 - Existing global compatibility shims remain in place.
-- Background-service lifecycle is registered in types but not heavily implemented.
+- Background-service v1 is lifecycle/diagnostic only. App Manager can start, suspend, resume, and stop services, but there is no heavy scheduler, external worker model, or service-worker-backed execution layer.
 - Shell-window runtimes are created and cached. Calculator, Energy, Camera Map, Speed Alerts, Player, and Milkdrop now consume their runtimes through app wrappers and can be cold-launched through manifest entries.
 - Shell-window cold launch is trusted-internal and same-document only. `openApp()` returns `true` once the lazy entry load is scheduled, before the import has finished and the panel is visible.
 - App settings are local-only through app-private storage and do not sync yet.

@@ -162,6 +162,8 @@ export interface VatioAppControlService {
   setPinned(appId: VatioAppId, pinned: boolean): boolean;
   isFavorite(appId: VatioAppId): boolean;
   setFavorite(appId: VatioAppId, favorite: boolean): boolean;
+  isHiddenFromStartMenu(appId: VatioAppId): boolean;
+  setHiddenFromStartMenu(appId: VatioAppId, hidden: boolean): boolean;
   grantPermission(appId: VatioAppId, permission: VatioAppPermission): boolean;
   revokePermission(appId: VatioAppId, permission: VatioAppPermission): boolean;
   hasGrantedPermission(appId: VatioAppId, permission: VatioAppPermission): boolean;
@@ -169,6 +171,8 @@ export interface VatioAppControlService {
   recordLaunch(appId: VatioAppId): void;
   resetAppControlState(appId: VatioAppId): boolean;
   isProtected(appId: VatioAppId): boolean;
+  isProtectedPermission(appId: VatioAppId, permission: VatioAppPermission): boolean;
+  getProtectedCriticalPermissions(appId: VatioAppId): VatioAppPermission[];
   subscribe?(listener: (state: VatioAppControlState) => void): Unsubscribe;
 }
 
