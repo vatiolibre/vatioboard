@@ -367,6 +367,26 @@ milkdrop_preset_name_v1
 
 Direct `createMilkdropPanel()` callers still work without a runtime.
 
+## Speed Route Migration
+
+Speed is now the first route app moved behind a first-class app wrapper. The manifest `vatio.speed` still owns the `/` route and `/speed` alias, but its entry now points at:
+
+```ts
+entry: () => import("../apps/speed/index.js")
+```
+
+The compatibility view `src/app/views/SpeedView.ts` remains as a re-export for older direct imports. The app wrapper in `src/apps/speed/` keeps the existing `src/speed/speed.ts` controller and `speed-template` UI intact.
+
+The wrapper adapts the normal route mount context before calling `mountSpeedRoute()`:
+
+- `runtime.services.gps` is provided as `routeContext.gpsService` when available.
+- `runtime.services.driveRecording` is provided as `routeContext.driveRecordingService` for future recording seams.
+- `runtime.services.drivingAlerts` is provided as `routeContext.drivingAlertService`.
+- `runtime.i18n.t()` is exposed as a translation helper for future safe label seams.
+- Legacy globals such as `window.__vatioboardGpsStore`, `window.__vatioboardDriveRecording`, and `window.__vatioboardDrivingAlerts` remain fallback sources for direct/dev harness callers.
+
+Speed still uses its existing geolocation subscription path internally. In the SPA, that path is already routed through the installed GPS service shim, and keeping it there preserves the known coexistence behavior where Speed recording and Accel can hold concurrent route subscriptions without starving each other. Drive recording, replay persistence, acceleration interop, Speed Alerts, Camera Map, offline/local storage, and public Speed globals remain on the established legacy paths in this pass.
+
 ## Launching Apps
 
 `createAppLauncher()` implements v1 shell launching:

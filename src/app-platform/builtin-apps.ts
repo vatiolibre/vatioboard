@@ -48,7 +48,7 @@ export const BUILTIN_APP_MANIFESTS = [
     i18nKey: "speedometer",
     route: "/",
     aliases: ["/speed"],
-    entry: () => import("../app/views/SpeedView.js"),
+    entry: () => import("../apps/speed/index.js"),
     surfaces: ["main-route", "start-menu", "launcher"],
     order: 10,
     permissions: [

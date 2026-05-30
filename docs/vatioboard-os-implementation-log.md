@@ -977,3 +977,68 @@ The existing production routes are declared in `src/app/route-registry.ts` and r
 - `openApp()` returns `true` when a cold shell-window launch is scheduled, before the dynamic import finishes.
 - Existing static imports for compatibility mean some shell-window entries are not always split into separate Vite chunks.
 - Route apps have not been migrated behind app modules yet.
+
+## Speed Route-App Migration - 2026-05-30 07:04:12 EDT
+
+### Baseline Understanding
+
+- Speed was still loaded through `src/app/views/SpeedView.ts`, which directly wrapped `src/speed/speed.ts`.
+- The app shell already created `appRuntime` and `appManifest` for route contexts.
+- `src/speed/speed.ts` already exposed `mountSpeedRoute()` / `unmountSpeedRoute()` and had been hardened against module-initialization lifecycle ordering.
+- Speed has delicate GPS/background behavior: Speed recording can keep GPS alive while the user navigates to Accel, and both routes must continue receiving geolocation callbacks.
+
+### Decisions Made
+
+- Add a thin route-app wrapper in `src/apps/speed/` instead of rewriting Speed.
+- Point the `vatio.speed` manifest entry at `../apps/speed/index.js`.
+- Keep `src/app/views/SpeedView.ts` as a compatibility re-export.
+- Flatten runtime services into the old `mountSpeedRoute()` context so existing Speed code can keep using its current route shape.
+- Preserve the existing Speed geolocation watch path. A direct attempt to call the runtime GPS service's `watchPosition()` from Speed caused the full-suite GPS-background test to fail because it bypassed the test's concurrent Accel subscription spy. In production, the current path still goes through the app shell's installed GPS service shim.
+- Provide `runtime.services.driveRecording` to Speed as a safe route-context seam, but do not move Speed replay/recording persistence to the shared drive-recording service yet.
+
+### Files Changed In This Pass
+
+- `src/apps/speed/speed-route-app.ts`
+- `src/apps/speed/index.ts`
+- `src/app/views/SpeedView.ts`
+- `src/app-platform/builtin-apps.ts`
+- `test/unit/speed-route-app.test.js`
+- `docs/vatioboard-os.md`
+- `docs/vatioboard-os-implementation-log.md`
+- `docs/next-agent-handoff.md`
+
+### Tests Run In This Pass
+
+- `pnpm vitest run test/unit/speed-route-app.test.js` - passed, 1 file and 3 tests.
+- `pnpm run typecheck` - passed.
+- `pnpm vitest run test/unit/speed-route-app.test.js test/smoke/spa-speed-route.test.js` - passed, 2 files and 7 tests.
+- `pnpm vitest run test/smoke/spa-gps-background.test.js` - passed, 1 file and 14 tests.
+- `pnpm run lint` - passed with 60 warning-level findings and 0 errors. Warnings are existing repository warnings in scripts/app/tests areas.
+- `pnpm test` - first full run failed in `test/smoke/spa-gps-background.test.js` because the direct Speed GPS-service watch change prevented the Accel route subscription spy from observing a callback. The direct watch change was reverted while keeping the route runtime seam.
+- `pnpm vitest run test/smoke/spa-gps-background.test.js -t "keeps speed recording and an accel run subscribed across route changes"` - passed after the revert, 1 file and 1 test with 13 skipped.
+- `pnpm run typecheck` - passed after the revert.
+- `pnpm vitest run test/unit/speed-route-app.test.js test/smoke/spa-speed-route.test.js test/smoke/spa-gps-background.test.js` - passed, 3 files and 21 tests.
+- `pnpm test` - passed, 132 files and 1675 tests.
+- `pnpm run build` - passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1303 transformed modules. Vite emitted existing dynamic/static import warnings for `backend-auth.ts`, `cloud-sync.ts`, Player app entry, Calculator app entry, Camera Map app entry, Energy app entry, and Speed Alerts app entry.
+- Final latest-tree verification after a debug-log cleanup:
+  - `pnpm run typecheck` - passed.
+  - `pnpm vitest run test/unit/speed-route-app.test.js` - passed, 1 file and 3 tests.
+  - `pnpm run lint` - passed with 60 warning-level findings and 0 errors.
+  - `pnpm vitest run test/unit/speed-route-app.test.js test/smoke/spa-speed-route.test.js test/smoke/spa-gps-background.test.js` - passed, 3 files and 21 tests.
+  - `pnpm test` - passed, 132 files and 1675 tests.
+  - `pnpm run build` - passed with the same existing Vite dynamic/static import warnings.
+
+### Proof Points
+
+- The `vatio.speed` manifest entry now loads `src/apps/speed/index.ts`.
+- The existing `#/speed` route still mounts through the route registry and existing route pipeline.
+- Speed receives the scoped `vatio.speed` runtime services through the old `mountSpeedRoute()` context.
+- Direct/global fallback callers still receive `window.__vatioboardGpsStore`, `window.__vatioboardDriveRecording`, and `window.__vatioboardDrivingAlerts`.
+- SPA Speed route remount tests, GPS background tests, drive recording background behavior, Accel coexistence, and full suite all pass.
+
+### Known Limitations After This Pass
+
+- Speed's internal replay/recording state is not yet migrated to `runtime.services.driveRecording`; the service is passed through as a safe seam for a later pass.
+- Speed preferences still use the existing legacy localStorage keys.
+- Speed still imports global helpers directly in many places.
+- The route app wrapper is an adapter, not a full `src/speed/speed.ts` decomposition.

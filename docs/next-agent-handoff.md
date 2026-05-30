@@ -45,6 +45,10 @@
 - `createAppLauncher().openApp(appId)` now ensures the shell app runtime, dynamically loads a shell-window manifest entry when the window has not been registered yet, calls the entry's `createShellWindowApp({ mount, shellManager, shellAppRuntimeManager, runtime })`, and opens/focuses the registered shell window.
 - Calculator, Energy, Camera Map, Speed Alerts, Player, and Milkdrop now all expose the generic `createShellWindowApp()` entry contract while preserving their existing app-specific exports.
 - Cold-launch races are coalesced per shell manager and app ID, and already registered legacy/floating-tool windows are reused instead of duplicated.
+- Migrated Speed into the first route-app wrapper under `src/apps/speed/`.
+- The `vatio.speed` manifest now loads `../apps/speed/index.js`; `src/app/views/SpeedView.ts` remains as a compatibility re-export.
+- Speed receives scoped runtime GPS, drive-recording, driving-alert, i18n, and logger seams through the existing `mountSpeedRoute()` context while preserving legacy globals and the existing Speed UI/controller.
+- Speed's internal geolocation watch path intentionally remains on the existing `navigator.geolocation` shim so Speed recording and Accel can keep concurrent GPS subscriptions across route changes.
 
 ## Important Files Changed
 
@@ -75,6 +79,8 @@
 - `src/apps/milkdrop/milkdrop-app.ts`
 - `src/apps/milkdrop/milkdrop-app.less`
 - `src/apps/milkdrop/index.ts`
+- `src/apps/speed/speed-route-app.ts`
+- `src/apps/speed/index.ts`
 - `src/apps/shared/number-format-settings.ts`
 - `src/app-platform/adapters/route-registry-adapter.ts`
 - `src/app-platform/adapters/tool-registry-adapter.ts`
@@ -82,6 +88,7 @@
 - `src/app/app-shell.ts`
 - `src/app/router.ts`
 - `src/app/route-registry.ts`
+- `src/app/views/SpeedView.ts`
 - `src/shared/tool-registry.ts`
 - `src/shared/shell-window-registry.ts`
 - `src/shared/start-menu.ts`
@@ -112,6 +119,7 @@
 - `test/unit/speed-alerts-app.test.js`
 - `test/unit/player-app.test.js`
 - `test/unit/milkdrop-app.test.js`
+- `test/unit/speed-route-app.test.js`
 - `test/smoke/dev-harness-speed-page.test.js`
 - `test/smoke/spa-gps-background.test.js`
 - `test/smoke/spa-apps-route.test.js`
@@ -257,12 +265,34 @@ Shell-window cold-launch hardening verification:
 - `pnpm test` - passed, 131 files and 1672 tests.
 - `pnpm run build` - passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1302 transformed modules. Vite emitted existing dynamic/static import warnings for `backend-auth.ts`, `cloud-sync.ts`, Player app entry, Calculator app entry, Camera Map app entry, Energy app entry, and Speed Alerts app entry.
 
+Speed route-app migration verification:
+
+- `pnpm vitest run test/unit/speed-route-app.test.js` - passed, 1 file and 3 tests.
+- `pnpm run typecheck` - passed.
+- `pnpm vitest run test/unit/speed-route-app.test.js test/smoke/spa-speed-route.test.js` - passed, 2 files and 7 tests.
+- `pnpm vitest run test/smoke/spa-gps-background.test.js` - passed, 1 file and 14 tests.
+- `pnpm run lint` - passed with 60 warning-level findings and 0 errors. Warnings are existing repository warnings in scripts/app/tests areas.
+- `pnpm test` - first full run failed in `test/smoke/spa-gps-background.test.js` after an attempted direct Speed GPS-service watch change. The direct watch change was reverted to preserve Accel/Speed concurrent geolocation behavior through the existing shim.
+- `pnpm vitest run test/smoke/spa-gps-background.test.js -t "keeps speed recording and an accel run subscribed across route changes"` - passed after the revert, 1 file and 1 test with 13 skipped.
+- `pnpm run typecheck` - passed after the revert.
+- `pnpm vitest run test/unit/speed-route-app.test.js test/smoke/spa-speed-route.test.js test/smoke/spa-gps-background.test.js` - passed, 3 files and 21 tests.
+- `pnpm test` - passed, 132 files and 1675 tests.
+- `pnpm run build` - passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1303 transformed modules. Vite emitted existing dynamic/static import warnings for `backend-auth.ts`, `cloud-sync.ts`, Player app entry, Calculator app entry, Camera Map app entry, Energy app entry, and Speed Alerts app entry.
+- Final latest-tree rerun after a debug-log cleanup:
+  - `pnpm run typecheck` - passed.
+  - `pnpm vitest run test/unit/speed-route-app.test.js` - passed, 1 file and 3 tests.
+  - `pnpm run lint` - passed with 60 warning-level findings and 0 errors.
+  - `pnpm vitest run test/unit/speed-route-app.test.js test/smoke/spa-speed-route.test.js test/smoke/spa-gps-background.test.js` - passed, 3 files and 21 tests.
+  - `pnpm test` - passed, 132 files and 1675 tests.
+  - `pnpm run build` - passed with the same existing Vite dynamic/static import warnings.
+
 ## Known Limitations
 
 - App permissions are declared and enforced at the runtime boundary, but there are no user prompts yet.
 - App service declarations are now enforced with permissions, but this is still an internal runtime boundary rather than a sandbox.
 - App-private storage is localStorage-backed only.
 - Existing apps still import many global helpers directly; migration to `appRuntime` should be gradual. Calculator, Energy, Camera Map, Speed Alerts, Player, and Milkdrop are partially migrated through app wrappers, but Calculator expression state/history, Energy trip values/multi-trip records, Camera Map local/offline data storage, Speed Alerts panel internals, Player queue/session restore, Player media cache, Milkdrop preset/position/size persistence, and shell layout storage remain legacy for compatibility.
+- Speed is now route-wrapper migrated, but its internal replay/recording persistence, preferences, geolocation watch implementation, and many globals remain legacy for compatibility.
 - Calculator and Energy intentionally share number-format settings through `embeddable_calc_settings_v1` in v1. Their app-private runtime settings are mirrors until a true platform shared-settings service exists.
 - Existing global compatibility shims remain in place.
 - Background-service lifecycle is registered in types but not heavily implemented.
@@ -274,11 +304,12 @@ Shell-window cold-launch hardening verification:
 
 ## Suggested Next Prompt
 
-Continue VatioBoard OS after shell-window wrappers and cold-launch hardening are verified. Start the first route-app migration candidate, likely Speed or Board, without rewriting the platform. Preserve existing routes (`#/speed`, `#/board`, `#/library`, `#/replay`, `#/accel`), globals, GPS/drive/audio behavior, App Manager launch behavior, and shell-window compatibility. Create a conservative app module/wrapper, pass or resolve `appRuntime` through the existing route mount pipeline, migrate only one safe runtime service seam, add tests for route launch, lifecycle cleanup, direct legacy compatibility, refresh/resume behavior, and then run `pnpm run typecheck`, `pnpm run lint`, focused tests, `pnpm test`, and `pnpm run build`.
+Continue VatioBoard OS after Speed has been route-wrapper migrated. Migrate Board next without rewriting `src/board/board.ts`. Preserve `#/board`, local draft/offline behavior, cloud-sync compatibility, drawing controls, media/library links, and direct/dev harness usage. Create a conservative `src/apps/board` route wrapper, keep `src/app/views/BoardView.ts` as a compatibility re-export if safe, pass scoped `appRuntime` storage/settings/auth/cloud-sync/i18n seams through the existing route context, migrate only one low-risk preference or storage seam, add tests for route launch, lifecycle cleanup, direct legacy fallback, local draft persistence, and full-suite/build verification.
 
 ## Manual QA
 
 - Desktop browser: load `/`, open the start menu, confirm Speed/Board/Library/Replay/Accel/Apps appear and launch.
+- Desktop browser: visit `#/speed`, start recording, navigate to `#/accel`, confirm Speed recording remains active while Accel receives GPS fixes, then return to `#/speed` and stop recording.
 - Desktop browser: visit `#/apps`, search/filter apps, and launch a route app and a shell-window app.
 - Desktop browser: from a fresh reload, use `#/apps` to launch Milkdrop or another shell-window app before opening it from legacy floating tools, and confirm it appears in the taskbar with one panel.
 - Mobile browser: verify `#/apps` cards, filter, and buttons fit without horizontal scrolling.
