@@ -123,6 +123,7 @@ import { createAccelReplayChartsController } from './replay-charts.js';
 import { createAccelResultGraph } from './result-graph.js';
 import {
   createDefaultSettings,
+  hasStoredSettings,
   isAccelPayloadComplete,
   loadRuns,
   loadSettings,
@@ -131,6 +132,7 @@ import {
 } from './storage.js';
 
 const ACCEL_ACTIVITY_ID = 'accel.run';
+const ACCEL_SELECTED_PRESET_SETTING_KEY = 'selectedPresetId';
 
 type AnyRecord = Record<string, any>;
 type AnyFn = (...args: any[]) => any;
@@ -731,13 +733,15 @@ export const initPromise = (function () {
 
     var loadedState = await Promise.all([
       loadSettings(),
+      hasStoredSettings(),
       getAccelSelection(initialRunId, {
         preserveMissingSelection: Boolean(initialRunId),
       }),
     ]);
 
     state.settings = loadedState[0];
-    applyStoredRuns(loadedState[1].runs, initialRunId, {
+    var seededSelectedPreset = seedSelectedPresetFromRuntimeIfNeeded(loadedState[1]);
+    applyStoredRuns(loadedState[2].runs, initialRunId, {
       preserveMissingPreferred: Boolean(initialRunId),
     });
 
@@ -748,7 +752,8 @@ export const initPromise = (function () {
       });
     }
 
-    if (syncSelectedPresetForUnits()) saveSettings();
+    if (syncSelectedPresetForUnits() || seededSelectedPreset) saveSettings();
+    else mirrorSelectedPresetToRuntime();
     syncMountedAccelRouteUi();
     publishAccelActivity();
     var initialTelemetryPromise = ensureSelectedResultTelemetry(initialRunId || state.selectedResultId, {
@@ -1238,7 +1243,56 @@ export const initPromise = (function () {
   }
 
   function saveSettings() {
+    mirrorSelectedPresetToRuntime();
     void persistSettings(state.settings);
+  }
+
+  function getRuntimeSettingsService() {
+    return activeAccelRoute?.settingsService || null;
+  }
+
+  function getRuntimeLogger() {
+    return activeAccelRoute?.logger || null;
+  }
+
+  function normalizeSelectedPresetSetting(value) {
+    return typeof value === 'string' && value.trim() ? value.trim() : '';
+  }
+
+  function readRuntimeSelectedPresetId() {
+    var settingsService = getRuntimeSettingsService();
+    if (!settingsService?.get) return '';
+    try {
+      return normalizeSelectedPresetSetting(
+        settingsService.get(ACCEL_SELECTED_PRESET_SETTING_KEY, '')
+      );
+    } catch (error) {
+      getRuntimeLogger()?.warn?.('Accel selected preset setting could not be read through runtime settings.', error);
+      return '';
+    }
+  }
+
+  function mirrorSelectedPresetToRuntime() {
+    var settingsService = getRuntimeSettingsService();
+    if (!settingsService?.set) return;
+    var selectedPresetId = normalizeSelectedPresetSetting(state.settings.selectedPresetId);
+    if (!selectedPresetId) return;
+    try {
+      var saved = settingsService.set(ACCEL_SELECTED_PRESET_SETTING_KEY, selectedPresetId);
+      if (!saved) {
+        getRuntimeLogger()?.warn?.('Accel selected preset setting could not be mirrored through runtime settings.');
+      }
+    } catch (error) {
+      getRuntimeLogger()?.warn?.('Accel selected preset setting mirror failed.', error);
+    }
+  }
+
+  function seedSelectedPresetFromRuntimeIfNeeded(hasLegacySettings) {
+    if (hasLegacySettings) return false;
+    var selectedPresetId = readRuntimeSelectedPresetId();
+    if (!selectedPresetId) return false;
+    state.settings.selectedPresetId = selectedPresetId;
+    return true;
   }
 
   function saveRuns() {
@@ -1700,7 +1754,9 @@ export const initPromise = (function () {
     var route: AnyRecord = {
       cleanup: cleanup,
       destroyed: false,
+      logger: routeContext.logger || null,
       ownsCleanup: ownsCleanup,
+      settingsService: routeContext.settingsService || null,
       signal: routeContext.signal || null,
     };
     activeAccelRoute = route;

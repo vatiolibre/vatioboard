@@ -22,6 +22,19 @@ async function settleAsyncWork(iterations = 20) {
   }
 }
 
+async function yieldTask() {
+  await new Promise((resolve) => window.setTimeout(resolve, 0));
+}
+
+async function waitForAsyncCondition(condition, iterations = 40) {
+  for (let index = 0; index < iterations; index += 1) {
+    if (condition()) return true;
+    await flushTasks();
+    await yieldTask();
+  }
+  return Boolean(condition());
+}
+
 async function navigateHash(hash) {
   window.location.hash = hash;
   window.dispatchEvent(new HashChangeEvent('hashchange'));
@@ -382,7 +395,7 @@ describe('SPA GPS background runtime', () => {
     const serviceWatchPosition = navigator.geolocation.watchPosition.bind(navigator.geolocation);
     let accelGpsCallbackCount = 0;
     const accelGpsErrors = [];
-    vi.spyOn(navigator.geolocation, 'watchPosition').mockImplementation((success, error, options) =>
+    const accelWatchSpy = vi.spyOn(navigator.geolocation, 'watchPosition').mockImplementation((success, error, options) =>
       serviceWatchPosition(
         (position) => {
           accelGpsCallbackCount += 1;
@@ -397,6 +410,7 @@ describe('SPA GPS background runtime', () => {
         options
       )
     );
+    const accelWatchCallBaseline = accelWatchSpy.mock.calls.length;
     const serviceClearWatch = vi.spyOn(navigator.geolocation, 'clearWatch');
 
     document.getElementById('toggleRecording').click();
@@ -422,10 +436,14 @@ describe('SPA GPS background runtime', () => {
     await navigateHash('#/accel');
     await import('../../src/accel/accel.js').then((module) => module.initPromise);
     await settleAsyncWork();
+    await waitForAsyncCondition(
+      () => accelWatchSpy.mock.calls.length > accelWatchCallBaseline
+    );
 
     expect(nativeClearWatch).not.toHaveBeenCalled();
     expect(serviceClearWatch).not.toHaveBeenCalled();
     expect(nativeWatchPosition).toHaveBeenCalledTimes(1);
+    expect(accelWatchSpy.mock.calls.length).toBeGreaterThan(accelWatchCallBaseline);
 
     emitGeolocationSuccess({
       timestamp: 101000,

@@ -61,6 +61,10 @@
 - The `vatio.replay` manifest now loads `../apps/replay/index.js`; `src/app/views/ReplayView.ts` remains as a compatibility re-export.
 - Replay receives scoped runtime storage, settings, auth, cloud-sync, drive-recording, i18n, and logger seams through the existing `mountReplayRoute()` context while preserving the existing Replay UI/controller.
 - Replay playback rate now mirrors through `runtime.services.settings` as `vatioboard.app.vatio.replay.settings.playbackRate`, while the legacy `vatio_replay_playback_rate_v1` key remains canonical for v1.
+- Migrated Accel into a conservative route-app wrapper under `src/apps/accel/`.
+- The `vatio.accel` manifest now loads `../apps/accel/index.js`; `src/app/views/AccelView.ts` remains as a compatibility re-export.
+- Accel receives scoped runtime storage, GPS, settings, auth, cloud-sync, i18n, and logger seams through the existing `mountAccelRoute()` context while preserving the existing Accel UI/controller.
+- Accel selected preset now mirrors through `runtime.services.settings` as `vatioboard.app.vatio.accel.settings.selectedPresetId`, while the existing Accel settings storage remains canonical for v1.
 
 ## Important Files Changed
 
@@ -99,6 +103,8 @@
 - `src/apps/library/index.ts`
 - `src/apps/replay/replay-route-app.ts`
 - `src/apps/replay/index.ts`
+- `src/apps/accel/accel-route-app.ts`
+- `src/apps/accel/index.ts`
 - `src/apps/shared/number-format-settings.ts`
 - `src/app-platform/adapters/route-registry-adapter.ts`
 - `src/app-platform/adapters/tool-registry-adapter.ts`
@@ -110,6 +116,7 @@
 - `src/app/views/BoardView.ts`
 - `src/app/views/LibraryView.ts`
 - `src/app/views/ReplayView.ts`
+- `src/app/views/AccelView.ts`
 - `src/shared/tool-registry.ts`
 - `src/shared/shell-window-registry.ts`
 - `src/shared/start-menu.ts`
@@ -117,6 +124,8 @@
 - `src/board/board.ts`
 - `src/library/library.ts`
 - `src/replay/replay.ts`
+- `src/accel/accel.ts`
+- `src/accel/storage.ts`
 - `src/calculator/calculator-widget.ts`
 - `src/calculator/storage.ts`
 - `src/energy/energy-calculator-widget.ts`
@@ -150,6 +159,8 @@
 - `test/unit/library-route-lifecycle.test.js`
 - `test/unit/replay-route-app.test.js`
 - `test/unit/replay-route-lifecycle.test.js`
+- `test/unit/accel-route-app.test.js`
+- `test/unit/accel-route-lifecycle.test.js`
 - `test/smoke/dev-harness-speed-page.test.js`
 - `test/smoke/spa-gps-background.test.js`
 - `test/smoke/spa-apps-route.test.js`
@@ -346,6 +357,26 @@ Replay route-app migration verification:
 - `pnpm test` - passed, 137 files and 1692 tests.
 - `pnpm run build` - passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1306 transformed modules. Vite emitted existing dynamic/static import warnings for `backend-auth.ts`, `cloud-sync.ts`, Player app entry, Calculator app entry, Camera Map app entry, Energy app entry, and Speed Alerts app entry.
 
+Accel route-app migration verification:
+
+- `pnpm run typecheck` - first run failed because `src/accel/storage.ts` needed to import `hasStoredValue` for the new stored-settings detector. Fixed the import.
+- `pnpm vitest run test/unit/accel-route-app.test.js test/unit/accel-route-lifecycle.test.js test/smoke/spa-accel-route.test.js` - first run failed from the same missing import. Fixed as above.
+- `pnpm run typecheck` - passed after the import fix.
+- `pnpm vitest run test/unit/accel-route-app.test.js test/unit/accel-route-lifecycle.test.js test/smoke/spa-accel-route.test.js` - passed, 3 files and 8 tests.
+- `pnpm run lint` - passed with 60 warning-level findings and 0 errors. Warnings are existing repository warnings in scripts/app/tests areas.
+- `pnpm vitest run test/unit/app-platform.test.js test/unit/app-shell-runtime-lifecycle.test.js test/unit/accel-route-app.test.js test/unit/accel-route-lifecycle.test.js test/smoke/spa-accel-route.test.js test/smoke/spa-gps-background.test.js test/unit/accel-storage.test.js test/unit/accel-replay.test.js` - passed, 8 files and 53 tests.
+- `pnpm test` - first run failed once in `test/smoke/spa-gps-background.test.js` on the known Speed/Accel coexistence smoke path: `accelGpsCallbackCount` was `0` instead of `1` under full-suite load.
+- `pnpm vitest run test/smoke/spa-gps-background.test.js -t "keeps speed recording and an accel run subscribed across route changes"` - passed isolated, 1 file and 1 test with 13 skipped.
+- `pnpm test` - rerun passed, 139 files and 1698 tests.
+- `pnpm run build` - passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1307 transformed modules. Vite emitted existing dynamic/static import warnings for `backend-auth.ts`, `cloud-sync.ts`, Player app entry, Calculator app entry, Camera Map app entry, Energy app entry, and Speed Alerts app entry.
+- Latest-tree follow-up: final full-suite reruns reproduced the same Speed/Accel smoke race. The root was test timing: with the lazy Accel route wrapper, a direct `src/accel/accel.js` `initPromise` await can resolve before the route mount has reached `mountAccelRoute()`. The smoke now waits for Accel's geolocation watch subscription before emitting its first Accel sample, yielding both microtasks and a real zero-delay timer task between checks. The Accel lifecycle unit test now defensively unmounts any mounted view in `afterEach`.
+- `pnpm vitest run test/smoke/spa-gps-background.test.js -t "keeps speed recording and an accel run subscribed across route changes"` - passed after the smoke wait hardening, 1 file and 1 test with 13 skipped.
+- `pnpm vitest run test/unit/accel-route-lifecycle.test.js` - passed after teardown hardening, 1 file and 3 tests.
+- `pnpm run typecheck` - passed on the latest tree.
+- `pnpm run lint` - passed on the latest tree with 60 warning-level findings and 0 errors after fixing a helper lint error.
+- `pnpm test` - passed after the final timer-yield smoke hardening, 139 files and 1698 tests.
+- `pnpm run build` - passed after the final timer-yield smoke hardening. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1307 transformed modules and the same existing dynamic/static import warnings.
+
 ## Known Limitations
 
 - App permissions are declared and enforced at the runtime boundary, but there are no user prompts yet.
@@ -357,6 +388,8 @@ Replay route-app migration verification:
 - Library is now route-wrapper migrated, but media cache, pinned media, media manifests, downloads, playlist loading, cloud sync, auth, import/export actions, and most Library globals remain legacy for compatibility.
 - Replay is now route-wrapper migrated, but replay/session history, cloud replay payload loading, map/chart controllers, auth/cloud sync helpers, and most Replay globals remain legacy for compatibility.
 - Replay playback rate uses a small legacy-canonical compatibility key, `vatio_replay_playback_rate_v1`, mirrored to `vatioboard.app.vatio.replay.settings.playbackRate`.
+- Accel is now route-wrapper migrated, but run history, GPS watch internals, replay payloads, map/chart controllers, auth/cloud sync helpers, and most Accel globals remain legacy for compatibility.
+- Accel selected preset mirrors to `vatioboard.app.vatio.accel.settings.selectedPresetId`, while the existing Accel settings storage remains canonical for v1.
 - Calculator and Energy intentionally share number-format settings through `embeddable_calc_settings_v1` in v1. Their app-private runtime settings are mirrors until a true platform shared-settings service exists.
 - Existing global compatibility shims remain in place.
 - Background-service lifecycle is registered in types but not heavily implemented.
@@ -368,12 +401,13 @@ Replay route-app migration verification:
 
 ## Suggested Next Prompt
 
-Continue VatioBoard OS after Speed, Board, Library, and Replay have been route-wrapper migrated. Migrate Accel next without rewriting `src/accel/accel.ts`. Preserve `#/accel`, acceleration run lifecycle, GPS behavior, local run history, replay/export behavior, map/chart lifecycle, cloud-sync/auth behavior, route cleanup, and direct/dev route usage. Create a conservative `src/apps/accel` wrapper, keep `src/app/views/AccelView.ts` as a compatibility re-export if safe, pass scoped runtime storage/settings/auth/cloud-sync/driveRecording/i18n/logger seams through the existing route context, migrate only one low-risk preference seam, add focused route/runtime tests, then run full `pnpm test` and `pnpm run build`.
+Continue VatioBoard OS after all current core route apps have first-class wrappers. Do a route-app hardening pass before deeper controller migrations: audit Speed, Board, Library, Replay, and Accel wrappers for consistent runtime seam names, document the route-app entry contract, add shared route-app test helpers to reduce duplicated mocks, and identify the next safe internal seams to migrate without changing user behavior. Preserve all current routes and compatibility re-exports. Run focused route/platform smoke tests, full `pnpm test`, and `pnpm run build`.
 
 ## Manual QA
 
 - Desktop browser: load `/`, open the start menu, confirm Speed/Board/Library/Replay/Accel/Apps appear and launch.
 - Desktop browser: visit `#/replay`, change playback rate, reload/reopen Replay, and confirm the selected rate persists while replay/session history still loads.
+- Desktop browser: visit `#/accel`, switch the selected preset, reload/reopen Accel, and confirm the preset persists while local run history and replay controls still work.
 - Desktop browser: visit `#/speed`, start recording, navigate to `#/accel`, confirm Speed recording remains active while Accel receives GPS fixes, then return to `#/speed` and stop recording.
 - Desktop browser: visit `#/apps`, search/filter apps, and launch a route app and a shell-window app.
 - Desktop browser: from a fresh reload, use `#/apps` to launch Milkdrop or another shell-window app before opening it from legacy floating tools, and confirm it appears in the taskbar with one panel.

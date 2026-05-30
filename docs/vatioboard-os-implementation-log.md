@@ -1236,3 +1236,109 @@ The existing production routes are declared in `src/app/route-registry.ts` and r
 - Replay map/chart controllers, playback timer internals, cloud replay recovery, and import/open-from-library behavior remain legacy for compatibility.
 - The playback-rate mirror is local-only app-private storage and does not cloud sync.
 - The route app wrapper is an adapter, not a full `src/replay/replay.ts` decomposition.
+
+## Accel Route-App Migration - 2026-05-30 13:42:14 EDT
+
+### Baseline Understanding
+
+- Accel was still loaded through `src/app/views/AccelView.ts`, which directly wrapped `src/accel/accel.ts`.
+- The app shell already provides `appRuntime` and `appManifest` to route contexts.
+- Accel has sensitive local-first surfaces: GPS watch lifecycle, high-accuracy geolocation behavior, active run lifecycle, local run history, cloud sync, backend auth, replay map/chart controllers, result graph controllers, and direct/dev harness behavior.
+- The safe first migration is a route adapter plus one small preference seam, leaving run history, GPS internals, replay payloads, and map/chart state untouched.
+
+### Files Inspected
+
+- `src/app/views/AccelView.ts`
+- `src/app/views/templates/accel-template.ts`
+- `src/accel/accel.ts`
+- `src/accel/constants.ts`
+- `src/accel/storage.ts`
+- `src/accel/replay.ts`
+- `src/accel/replay-map.ts`
+- `src/accel/replay-charts.ts`
+- `src/accel/dev-harness.ts`
+- `src/shared/unit-bootstrap.ts`
+- `src/app-platform/builtin-apps.ts`
+- `src/apps/speed/speed-route-app.ts`
+- `src/apps/replay/replay-route-app.ts`
+- `test/smoke/spa-accel-route.test.js`
+- `test/smoke/spa-gps-background.test.js`
+- `test/smoke/dev-harness-accel-page.test.js`
+- `test/unit/accel-storage.test.js`
+- `test/unit/accel-replay.test.js`
+
+### Decisions Made
+
+- Add a thin route-app wrapper in `src/apps/accel/` instead of rewriting Accel.
+- Point the `vatio.accel` manifest entry at `../apps/accel/index.js`.
+- Keep `src/app/views/AccelView.ts` as a compatibility re-export.
+- Pass runtime storage, GPS, settings, auth, cloud sync, i18n, and logger seams through the existing `mountAccelRoute()` context.
+- Keep GPS watch behavior on the existing navigator/geolocation shim path to preserve Speed/Accel coexistence.
+- Keep local run history, replay/export behavior, auth helpers, cloud sync helpers, map controllers, chart controllers, and direct/dev route behavior on existing legacy paths.
+- Use the selected acceleration preset as the low-risk runtime settings seam.
+- Keep existing Accel settings storage canonical for v1. Mirror `selectedPresetId` to `vatioboard.app.vatio.accel.settings.selectedPresetId` when a scoped runtime exists, and only seed from the runtime mirror when no stored Accel settings exist.
+- Add `hasStoredSettings()` to `src/accel/storage.ts` so Accel can distinguish legacy/local settings from stale runtime mirrors without migrating run history.
+
+### Files Changed In This Pass
+
+- `src/apps/accel/accel-route-app.ts`
+- `src/apps/accel/index.ts`
+- `src/app/views/AccelView.ts`
+- `src/app-platform/builtin-apps.ts`
+- `src/accel/accel.ts`
+- `src/accel/storage.ts`
+- `test/unit/accel-route-app.test.js`
+- `test/unit/accel-route-lifecycle.test.js`
+- `test/smoke/spa-gps-background.test.js`
+- `docs/vatioboard-os.md`
+- `docs/vatioboard-os-implementation-log.md`
+- `docs/next-agent-handoff.md`
+
+### Tests Run In This Pass
+
+- `pnpm run typecheck` - first run failed because `src/accel/storage.ts` needed to import `hasStoredValue` for the new stored-settings detector. Fixed the import.
+- `pnpm vitest run test/unit/accel-route-app.test.js test/unit/accel-route-lifecycle.test.js test/smoke/spa-accel-route.test.js` - first run failed from the same missing import. Fixed as above.
+- `pnpm run typecheck` - passed after the import fix.
+- `pnpm vitest run test/unit/accel-route-app.test.js test/unit/accel-route-lifecycle.test.js test/smoke/spa-accel-route.test.js` - passed, 3 files and 8 tests.
+- `pnpm run lint` - passed with 60 warning-level findings and 0 errors. Warnings are existing repository warnings in scripts/app/tests areas.
+- `pnpm vitest run test/unit/app-platform.test.js test/unit/app-shell-runtime-lifecycle.test.js test/unit/accel-route-app.test.js test/unit/accel-route-lifecycle.test.js test/smoke/spa-accel-route.test.js test/smoke/spa-gps-background.test.js test/unit/accel-storage.test.js test/unit/accel-replay.test.js` - passed, 8 files and 53 tests.
+- `pnpm test` - first run failed once in `test/smoke/spa-gps-background.test.js` on the known Speed/Accel coexistence smoke path: `accelGpsCallbackCount` was `0` instead of `1` under full-suite load.
+- `pnpm vitest run test/smoke/spa-gps-background.test.js -t "keeps speed recording and an accel run subscribed across route changes"` - passed isolated, 1 file and 1 test with 13 skipped.
+- `pnpm test` - rerun passed, 139 files and 1698 tests.
+- `pnpm run build` - passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1307 transformed modules. Vite emitted existing dynamic/static import warnings for `backend-auth.ts`, `cloud-sync.ts`, Player app entry, Calculator app entry, Camera Map app entry, Energy app entry, and Speed Alerts app entry.
+- After documentation updates, a latest-tree `pnpm test` rerun reproduced the same Speed/Accel coexistence smoke race. Investigation found that the new lazy route-app wrapper can make a direct `src/accel/accel.js` `initPromise` await observe the module before `mountAccelRoute()` has started, because SPA mode initializes that promise as an already-resolved placeholder until the route mount begins. The product route behavior was intact; the smoke test was waiting on the wrong signal under full-suite timing.
+- Updated `test/smoke/spa-gps-background.test.js` to wait until Accel has registered its own geolocation watch through the test spy before emitting the first Accel GPS sample.
+- Updated `test/unit/accel-route-lifecycle.test.js` with defensive mounted-view teardown so failed assertions cannot leak an Accel route mount into later checks in the same file.
+- `pnpm vitest run test/smoke/spa-gps-background.test.js -t "keeps speed recording and an accel run subscribed across route changes"` - passed after the smoke wait hardening, 1 file and 1 test with 13 skipped.
+- `pnpm vitest run test/unit/accel-route-lifecycle.test.js` - passed after teardown hardening, 1 file and 3 tests.
+- `pnpm run typecheck` - passed on the latest tree.
+- `pnpm run lint` - first latest-tree run failed on a `no-useless-assignment` error in the new smoke helper. Fixed the helper.
+- `pnpm run lint` - passed on rerun with 60 warning-level findings and 0 errors. Warnings are existing repository warnings in scripts/app/tests areas.
+- `pnpm test` - passed on the latest tree, 139 files and 1698 tests.
+- `pnpm run build` - passed on the latest tree. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1307 transformed modules. Vite emitted existing dynamic/static import warnings for `backend-auth.ts`, `cloud-sync.ts`, Player app entry, Calculator app entry, Camera Map app entry, Energy app entry, and Speed Alerts app entry.
+- A final post-docs `pnpm test` rerun reproduced that the first smoke wait still only yielded microtasks. Updated the smoke wait helper to yield a real zero-delay timer task between checks so jsdom/Vite dynamic import work can complete under full-suite load.
+- `pnpm vitest run test/smoke/spa-gps-background.test.js -t "keeps speed recording and an accel run subscribed across route changes"` - passed after the timer-yield fix, 1 file and 1 test with 13 skipped.
+- `pnpm run lint` - passed after the timer-yield fix with 60 warning-level findings and 0 errors.
+- `pnpm run typecheck` - passed after the timer-yield fix.
+- `pnpm test` - passed after the timer-yield fix, 139 files and 1698 tests.
+- `pnpm run build` - passed after the timer-yield fix. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1307 transformed modules and the same existing dynamic/static import warnings.
+
+### Proof Points
+
+- The `vatio.accel` manifest entry now loads `src/apps/accel/index.ts`.
+- The existing `#/accel` route still mounts through the compatibility `AccelView` re-export and existing route pipeline.
+- Accel receives the scoped `vatio.accel` runtime seams through the old `mountAccelRoute()` context.
+- Direct route callers without an app runtime still mount Accel without runtime-specific dependencies.
+- Existing stored Accel settings remain canonical and mirror `selectedPresetId` to `vatioboard.app.vatio.accel.settings.selectedPresetId`.
+- If no stored Accel settings exist, the runtime selected-preset mirror can seed the selected preset through the existing settings persistence path.
+- Existing SPA Accel remount coverage and GPS background coverage pass, preserving route cleanup, map/chart lifecycle, active run background behavior, and Speed/Accel GPS coexistence.
+- The Speed/Accel GPS coexistence smoke now waits for the lazy Accel route wrapper to actually subscribe to geolocation before emitting the first Accel sample, making the test match the route-app timing model.
+
+### Known Limitations After This Pass
+
+- Accel run-history persistence is not migrated to app-private storage; it remains on the existing localStorage/IndexedDB Accel storage implementation.
+- Accel GPS watch behavior still uses the existing navigator/geolocation shim path to preserve Speed/Accel coexistence.
+- Accel cloud sync and auth still import the existing shared helpers directly.
+- Accel map/chart controllers, replay/export internals, result graph internals, and active run state remain legacy for compatibility.
+- The selected-preset mirror is local-only app-private storage and does not cloud sync.
+- The route app wrapper is an adapter, not a full `src/accel/accel.ts` decomposition.

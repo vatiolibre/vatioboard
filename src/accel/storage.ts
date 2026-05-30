@@ -2,7 +2,7 @@ import { createIndexedJsonKeyValueStore } from '../shared/indexed-storage.js';
 import { normalizePlace } from '../shared/place-resolver.js';
 import { buildRouteBoundaryPlaceDisplay } from '../shared/route-boundary.js';
 import { createStorageCapability } from '../shared/storage-capability.js';
-import { loadJson, loadText, removeStoredValue, saveJson } from '../shared/storage.js';
+import { hasStoredValue, loadJson, loadText, removeStoredValue, saveJson } from '../shared/storage.js';
 import { loadConfiguredDistanceUnit, loadConfiguredSpeedUnit } from '../shared/unit-bootstrap.js';
 import {
   DISTANCE_UNIT_CONFIG,
@@ -337,6 +337,13 @@ export function createDefaultSettings(): AccelSettings {
 
 export async function loadSettings(): Promise<AccelSettings> {
   return normalizeSettings(await loadAccelValue(STORAGE_KEYS.settings, null));
+}
+
+export async function hasStoredSettings(): Promise<boolean> {
+  await migrateLegacyAccelStorage();
+  const indexedValue = await accelStore.getValue(STORAGE_KEYS.settings);
+  if (indexedValue !== undefined) return true;
+  return hasStoredValue(STORAGE_KEYS.settings);
 }
 
 export function saveSettings(settings: AccelSettings | Partial<AccelSettings>): Promise<unknown> {

@@ -493,6 +493,44 @@ vatioboard.app.vatio.replay.settings.playbackRate
 
 If both keys exist, the legacy key wins so stale app-private runtime settings cannot shadow direct Replay callers. If no legacy key exists but a runtime mirror does, Replay seeds the legacy key for compatibility. Large replay/session payloads remain on the existing replay storage keys and IndexedDB paths.
 
+## Accel Route Migration
+
+Accel is now wrapped as a first-class route app module. The manifest `vatio.accel` still owns `#/accel`, but its entry now points at:
+
+```ts
+entry: () => import("../apps/accel/index.js")
+```
+
+The compatibility view `src/app/views/AccelView.ts` remains as a re-export for older direct imports. The app wrapper in `src/apps/accel/` keeps the existing `src/accel/accel.ts` controller and `accel-template` UI intact.
+
+The wrapper adapts the normal route mount context before calling `mountAccelRoute()`:
+
+- `runtime.storage` is exposed as `routeContext.appStorage` for future app-private seams.
+- `runtime.services.gps` is exposed as `routeContext.gpsService` when available.
+- `runtime.services.settings` is exposed as `routeContext.settingsService`.
+- `runtime.services.auth` is exposed as `routeContext.authService`.
+- `runtime.services.cloudSync` is exposed as `routeContext.cloudSyncService`.
+- `runtime.i18n.t()` is exposed as a translation helper for future safe label seams.
+- `runtime.logger` is exposed for non-fatal diagnostics.
+
+Accel's acceleration run lifecycle, GPS subscription behavior, local run history, replay/export behavior, cloud sync, backend auth, map lifecycle, chart lifecycle, and direct/dev route usage intentionally remain on the existing legacy paths in this pass.
+
+One low-risk preference is mirrored through the runtime settings service: the selected acceleration preset. The existing Accel settings record remains canonical for v1:
+
+```text
+vatioboard.accel.settings
+```
+
+The runtime mirror lives at:
+
+```text
+vatioboard.app.vatio.accel.settings.selectedPresetId
+```
+
+If existing Accel settings are present in localStorage or IndexedDB, their `selectedPresetId` wins and updates the runtime mirror. If no legacy Accel settings exist but a runtime mirror does, Accel can seed the selected preset from that mirror and persist it back through the existing settings storage path. Acceleration run history, GPS sample arrays, replay payloads, cloud records, map state, and chart state remain on existing storage/controllers.
+
+The Speed/Accel GPS coexistence smoke coverage now waits for the lazy Accel route wrapper to complete its geolocation subscription, yielding both microtasks and a normal timer task before emitting the first Accel sample. This matches the route-app timing model without changing the production GPS path.
+
 ## Launching Apps
 
 `createAppLauncher()` implements v1 shell launching:
@@ -543,7 +581,8 @@ It lists installed apps, kind, status, surfaces, permissions, local-first/offlin
 
 ## Future Direction
 
-- Move remaining route apps gradually into `src/apps/<app-id>`. Speed, Board, Library, and Replay are wrapped; Accel is the likely next candidate.
+- All current core route apps are now wrapped under `src/apps/<app-id>`: Speed, Board, Library, Replay, and Accel.
+- Deepen route-app migrations gradually by replacing direct global/localStorage seams with runtime services behind compatibility adapters.
 - Replace global compatibility shims with runtime services.
 - Add app install/enable/disable preferences.
 - Add VatioLibre-backed app storage after the local contract is stable.

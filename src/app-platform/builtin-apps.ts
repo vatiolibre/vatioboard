@@ -157,7 +157,7 @@ export const BUILTIN_APP_MANIFESTS = [
     icon: IconAccel,
     i18nKey: "accelerationTest",
     route: "/accel",
-    entry: () => import("../app/views/AccelView.js"),
+    entry: () => import("../apps/accel/index.js"),
     surfaces: ["main-route", "start-menu", "launcher"],
     order: 40,
     permissions: [
