@@ -1342,3 +1342,77 @@ The existing production routes are declared in `src/app/route-registry.ts` and r
 - Accel map/chart controllers, replay/export internals, result graph internals, and active run state remain legacy for compatibility.
 - The selected-preset mirror is local-only app-private storage and does not cloud sync.
 - The route app wrapper is an adapter, not a full `src/accel/accel.ts` decomposition.
+
+## Route-App Hardening Pass - 2026-05-30 15:33:00 EDT
+
+### Baseline Understanding
+
+- Shell-window app wrappers and cold-launch behavior are complete.
+- Speed, Board, Library, Replay, and Accel all have conservative route-app wrappers under `src/apps/*/`.
+- Route wrappers already preserve compatibility views and legacy controllers.
+- The hardening goal was consistency and auditability, not migration of large persistence surfaces.
+
+### Files Inspected
+
+- `src/apps/speed/speed-route-app.ts`
+- `src/apps/board/board-route-app.ts`
+- `src/apps/library/library-route-app.ts`
+- `src/apps/replay/replay-route-app.ts`
+- `src/apps/accel/accel-route-app.ts`
+- `src/app/views/SpeedView.ts`
+- `src/app/views/BoardView.ts`
+- `src/app/views/LibraryView.ts`
+- `src/app/views/ReplayView.ts`
+- `src/app/views/AccelView.ts`
+- `src/app-platform/builtin-apps.ts`
+- `src/types/route.ts`
+- Route-app unit and lifecycle tests for Speed, Board, Library, Replay, and Accel
+
+### Decisions Made
+
+- Keep the existing route-app wrapper architecture. No platform rewrite and no controller rewrite.
+- Normalize Speed to expose the same predictable route seams as the other wrappers: `appStorage`, `settingsService`, `cloudSyncService`, and `logger`, in addition to its GPS/recording/alerts seams.
+- Export `SpeedRouteMountContext` from `src/apps/speed/index.ts` to match the typed wrapper pattern used by the other route apps.
+- Remove `settings.write` from `vatio.speed` because Speed does not write a runtime settings mirror today. `settings.read` remains so the future read-only settings seam can exist.
+- Add a shared route-app unit-test helper instead of rewriting all route-app tests.
+- Apply the shared helper to Board and Library tests first, where it reduces duplicated app-platform/runtime/root boilerplate with minimal churn.
+- Add a cross-app route wrapper contract test that verifies each manifest entry resolves to the wrapper, each compatibility view re-exports wrapper `mount`, each context factory exists, and wrong-app runtimes are ignored.
+- Document a route runtime seam audit and next safe preference-sized migration seams.
+
+### Files Changed In This Pass
+
+- `src/apps/speed/speed-route-app.ts`
+- `src/apps/speed/index.ts`
+- `src/app-platform/builtin-apps.ts`
+- `test/helpers/route-app-test-utils.js`
+- `test/unit/route-app-contract.test.js`
+- `test/unit/speed-route-app.test.js`
+- `test/unit/board-route-app.test.js`
+- `test/unit/library-route-app.test.js`
+- `docs/vatioboard-os.md`
+- `docs/vatioboard-os-implementation-log.md`
+- `docs/next-agent-handoff.md`
+
+### Tests Run In This Pass
+
+- `pnpm vitest run test/unit/route-app-contract.test.js test/unit/speed-route-app.test.js test/unit/board-route-app.test.js test/unit/library-route-app.test.js test/unit/replay-route-app.test.js test/unit/accel-route-app.test.js test/unit/board-route-lifecycle.test.js test/unit/library-route-lifecycle.test.js test/unit/replay-route-lifecycle.test.js test/unit/accel-route-lifecycle.test.js test/smoke/spa-gps-background.test.js` - passed, 11 files and 51 tests.
+- `pnpm run typecheck` - passed.
+- `pnpm run lint` - passed with 60 warning-level findings and 0 errors. Warnings are existing repository warnings in scripts/app/tests areas.
+- `pnpm vitest run test/unit/app-platform.test.js test/unit/route-app-contract.test.js test/unit/speed-route-app.test.js test/unit/board-route-app.test.js test/unit/library-route-app.test.js test/unit/replay-route-app.test.js test/unit/accel-route-app.test.js` - passed, 7 files and 40 tests.
+- `pnpm test` - passed, 140 files and 1708 tests.
+- `pnpm run build` - passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1307 transformed modules. Vite emitted existing dynamic/static import warnings for `backend-auth.ts`, `cloud-sync.ts`, Player app entry, Calculator app entry, Camera Map app entry, Energy app entry, and Speed Alerts app entry.
+
+### Proof Points
+
+- All migrated core route apps expose a manifest-backed wrapper module and compatibility view re-export.
+- All migrated route wrappers reject a runtime scoped to another app.
+- Speed now exposes the same base seams as the other route wrappers while preserving its existing GPS shim behavior.
+- Board and Library route-app unit tests now use shared route-app test helpers.
+- The Speed/Accel GPS coexistence smoke still passes in focused coverage after wrapper normalization.
+
+### Known Limitations After This Pass
+
+- This pass did not migrate large persistence surfaces.
+- Speed's new `appStorage`, read-capable `settingsService`, and `cloudSyncService` seams are future-safe but not actively consumed by `src/speed/speed.ts`.
+- Route wrappers still adapt legacy controllers rather than decomposing them into app modules.
+- App-private storage is still localStorage-backed, and settings mirrors remain local-only.

@@ -63,7 +63,6 @@ export const BUILTIN_APP_MANIFESTS = [
       "cloud.sync",
       "i18n.read",
       "settings.read",
-      "settings.write",
       "shell.window",
       "shell.launchApp",
     ],

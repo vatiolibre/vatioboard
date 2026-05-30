@@ -132,9 +132,13 @@ describe("Speed route OS app module", () => {
     const speedRouteContext = speedRouteMocks.mountSpeedRoute.mock.calls[0][0];
     expect(speedRouteContext.appRuntime).toBe(runtime);
     expect(speedRouteContext.appManifest).toBe(manifest);
+    expect(speedRouteContext.appStorage).toBe(runtime.storage);
     expect(speedRouteContext.gpsService).toBe(runtime.services.gps);
     expect(speedRouteContext.driveRecordingService).toBe(runtime.services.driveRecording);
     expect(speedRouteContext.drivingAlertService).toBe(runtime.services.drivingAlerts);
+    expect(speedRouteContext.settingsService).toBe(runtime.services.settings);
+    expect(speedRouteContext.cloudSyncService).toBe(runtime.services.cloudSync);
+    expect(speedRouteContext.logger).toBe(runtime.logger);
     expect(speedRouteContext.context.appRuntime).toBe(runtime);
 
     mounted.unmount();
@@ -156,9 +160,13 @@ describe("Speed route OS app module", () => {
 
     const speedRouteContext = speedRouteMocks.mountSpeedRoute.mock.calls[0][0];
     expect(speedRouteContext.appRuntime).toBeNull();
+    expect(speedRouteContext.appStorage).toBeNull();
     expect(speedRouteContext.gpsService).toBe(gpsService);
     expect(speedRouteContext.driveRecordingService).toBe(driveRecordingService);
     expect(speedRouteContext.drivingAlertService).toBe(drivingAlertService);
+    expect(speedRouteContext.settingsService).toBeNull();
+    expect(speedRouteContext.cloudSyncService).toBeNull();
+    expect(speedRouteContext.logger).toBeNull();
 
     mounted.unmount();
   });

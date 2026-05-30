@@ -379,10 +379,14 @@ The compatibility view `src/app/views/SpeedView.ts` remains as a re-export for o
 
 The wrapper adapts the normal route mount context before calling `mountSpeedRoute()`:
 
+- `runtime.storage` is exposed as `routeContext.appStorage` for future app-private seams.
 - `runtime.services.gps` is provided as `routeContext.gpsService` when available.
 - `runtime.services.driveRecording` is provided as `routeContext.driveRecordingService` for future recording seams.
 - `runtime.services.drivingAlerts` is provided as `routeContext.drivingAlertService`.
+- `runtime.services.settings` is exposed as `routeContext.settingsService` as a read-capable future seam. Speed does not request `settings.write` because it does not write a runtime settings mirror today.
+- `runtime.services.cloudSync` is exposed as `routeContext.cloudSyncService` for future safe seams.
 - `runtime.i18n.t()` is exposed as a translation helper for future safe label seams.
+- `runtime.logger` is exposed for non-fatal diagnostics.
 - Legacy globals such as `window.__vatioboardGpsStore`, `window.__vatioboardDriveRecording`, and `window.__vatioboardDrivingAlerts` remain fallback sources for direct/dev harness callers.
 
 Speed still uses its existing geolocation subscription path internally. In the SPA, that path is already routed through the installed GPS service shim, and keeping it there preserves the known coexistence behavior where Speed recording and Accel can hold concurrent route subscriptions without starving each other. Drive recording, replay persistence, acceleration interop, Speed Alerts, Camera Map, offline/local storage, and public Speed globals remain on the established legacy paths in this pass.
@@ -530,6 +534,39 @@ vatioboard.app.vatio.accel.settings.selectedPresetId
 If existing Accel settings are present in localStorage or IndexedDB, their `selectedPresetId` wins and updates the runtime mirror. If no legacy Accel settings exist but a runtime mirror does, Accel can seed the selected preset from that mirror and persist it back through the existing settings storage path. Acceleration run history, GPS sample arrays, replay payloads, cloud records, map state, and chart state remain on existing storage/controllers.
 
 The Speed/Accel GPS coexistence smoke coverage now waits for the lazy Accel route wrapper to complete its geolocation subscription, yielding both microtasks and a normal timer task before emitting the first Accel sample. This matches the route-app timing model without changing the production GPS path.
+
+## Route App Wrapper Contract
+
+Core route apps use a consistent adapter contract:
+
+- Each app has `src/apps/<app>/index.ts` and `src/apps/<app>/<app>-route-app.ts`.
+- Each wrapper exports an app ID constant, `create<Route>RouteMountContext()`, `mount()`, and a route mount context type.
+- The manifest `entry` points at the wrapper module.
+- The legacy compatibility view in `src/app/views/*View.ts` re-exports `mount` from the wrapper.
+- The wrapper only accepts `context.appRuntime` when `runtime.appId` matches the expected app ID.
+- Direct/dev callers with no runtime still work and receive `null` app-runtime seams plus existing global/service fallbacks.
+- Shared seam names are stable: `appRuntime`, `appManifest`, `appStorage`, `gpsService`, `driveRecordingService`, `drivingAlertService`, `settingsService`, `authService`, `cloudSyncService`, `translate`, and `logger`.
+- Legacy controllers remain authoritative for UI and large persistence in v1.
+
+### Route Runtime Seam Audit
+
+| App | Runtime seams passed | Actively used today | Canonical legacy/fallback behavior |
+| --- | --- | --- | --- |
+| Speed | `appStorage`, `gpsService`, `driveRecordingService`, `drivingAlertService`, read-capable `settingsService`, `cloudSyncService`, `translate`, `logger` | `gpsService` and `drivingAlertService` are consumed by `src/speed/speed.ts`; other seams are future-safe. | GPS still flows through the existing navigator/geolocation shim and Speed globals. Recording/replay persistence and Speed preferences remain legacy. |
+| Board | `appStorage`, `settingsService`, `authService`, `cloudSyncService`, `translate`, `logger` | `settingsService` and `logger` mirror ink color. | `vatio_board_ink_raw` remains canonical. Draft/canvas storage, IndexedDB chunks, cloud sync, auth, import/export, and offline mutations remain legacy. |
+| Library | `appStorage`, `settingsService`, `authService`, `cloudSyncService`, `translate`, `logger` | `settingsService` and `logger` mirror active tab. | Route query `#/library?tab=...` remains canonical when present. Media cache, pinned media, downloads, playlists, auth, cloud sync, and import/export remain legacy. |
+| Replay | `appStorage`, `settingsService`, `authService`, `cloudSyncService`, `driveRecordingService`, `translate`, `logger` | `settingsService` and `logger` mirror playback rate. | `vatio_replay_playback_rate_v1` remains canonical. Session history, cloud replay loading, map/chart lifecycle, and playback internals remain legacy. |
+| Accel | `appStorage`, `gpsService`, `settingsService`, `authService`, `cloudSyncService`, `translate`, `logger` | `settingsService` and `logger` mirror selected preset. | `vatioboard.accel.settings` remains canonical. GPS watch internals, run history, replay/export payloads, map/chart lifecycle, auth, and cloud sync remain legacy. |
+
+### Next Safe Seams
+
+The next low-risk migrations should remain preference-sized:
+
+- Speed: last selected speed/distance unit mirror, after validating shared unit behavior with Accel and Speed Alerts.
+- Board: toolbar panel or grid/snap visibility, keeping drawing data untouched.
+- Library: sort/filter/view mode preference, keeping media cache and pinned media untouched.
+- Replay: dashboard axis or chart visibility, keeping replay/session payloads untouched.
+- Accel: chart visibility or last selected result panel, keeping GPS samples and run history untouched.
 
 ## Launching Apps
 

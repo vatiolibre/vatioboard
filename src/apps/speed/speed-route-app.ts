@@ -10,13 +10,17 @@ interface SpeedRouteModule {
   unmountSpeedRoute?: (routeContext: RouteMountContext) => void;
 }
 
-type SpeedRouteMountContext = RouteMountContext & {
+export type SpeedRouteMountContext = RouteMountContext & {
   appRuntime?: VatioAppRuntime | null;
   appManifest?: VatioAppRuntime["manifest"] | null;
+  appStorage?: VatioAppRuntime["storage"] | null;
   gpsService?: RouteContext["gpsService"] | null;
   driveRecordingService?: RouteContext["driveRecordingService"] | null;
   drivingAlertService?: RouteContext["drivingAlertService"] | null;
+  settingsService?: VatioAppRuntime["services"]["settings"] | null;
+  cloudSyncService?: VatioAppRuntime["services"]["cloudSync"] | null;
   translate?: ((key: string, fallback?: string) => string) | null;
+  logger?: VatioAppRuntime["logger"] | null;
 };
 
 function asSpeedRouteModule(module: unknown): SpeedRouteModule {
@@ -53,10 +57,14 @@ export function createSpeedRouteMountContext(routeContext: RouteMountContext): S
     ...routeContext,
     appRuntime: runtime,
     appManifest: runtime?.manifest || context.appManifest || null,
+    appStorage: runtime?.storage || null,
     gpsService,
     driveRecordingService,
     drivingAlertService,
+    settingsService: runtime?.services.settings || null,
+    cloudSyncService: runtime?.services.cloudSync || null,
     translate: runtime ? (key, fallback) => runtime.i18n.t(key, fallback) : null,
+    logger: runtime?.logger || null,
   };
 }
 

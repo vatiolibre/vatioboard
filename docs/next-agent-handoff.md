@@ -65,6 +65,11 @@
 - The `vatio.accel` manifest now loads `../apps/accel/index.js`; `src/app/views/AccelView.ts` remains as a compatibility re-export.
 - Accel receives scoped runtime storage, GPS, settings, auth, cloud-sync, i18n, and logger seams through the existing `mountAccelRoute()` context while preserving the existing Accel UI/controller.
 - Accel selected preset now mirrors through `runtime.services.settings` as `vatioboard.app.vatio.accel.settings.selectedPresetId`, while the existing Accel settings storage remains canonical for v1.
+- Hardened the completed route-app wrapper layer across Speed, Board, Library, Replay, and Accel.
+- Speed now exposes the same base route seams as the other wrappers: `appStorage`, read-capable `settingsService`, `cloudSyncService`, and `logger`, while preserving its GPS/recording/alert fallbacks.
+- Removed `settings.write` from `vatio.speed` because Speed does not write a runtime settings mirror today.
+- Added shared route-app test helpers in `test/helpers/route-app-test-utils.js` and a cross-app wrapper contract test in `test/unit/route-app-contract.test.js`.
+- Documented the route-app entry contract, runtime seam audit, canonical legacy storage/fallbacks, and next safe preference-sized migrations.
 
 ## Important Files Changed
 
@@ -146,6 +151,8 @@
 - `src/i18n.ts`
 - `test/unit/app-platform.test.js`
 - `test/unit/app-shell-runtime-lifecycle.test.js`
+- `test/helpers/route-app-test-utils.js`
+- `test/unit/route-app-contract.test.js`
 - `test/unit/calculator-app.test.js`
 - `test/unit/energy-app.test.js`
 - `test/unit/camera-map-app.test.js`
@@ -377,6 +384,15 @@ Accel route-app migration verification:
 - `pnpm test` - passed after the final timer-yield smoke hardening, 139 files and 1698 tests.
 - `pnpm run build` - passed after the final timer-yield smoke hardening. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1307 transformed modules and the same existing dynamic/static import warnings.
 
+Route-app hardening verification:
+
+- `pnpm vitest run test/unit/route-app-contract.test.js test/unit/speed-route-app.test.js test/unit/board-route-app.test.js test/unit/library-route-app.test.js test/unit/replay-route-app.test.js test/unit/accel-route-app.test.js test/unit/board-route-lifecycle.test.js test/unit/library-route-lifecycle.test.js test/unit/replay-route-lifecycle.test.js test/unit/accel-route-lifecycle.test.js test/smoke/spa-gps-background.test.js` - passed, 11 files and 51 tests.
+- `pnpm run typecheck` - passed.
+- `pnpm run lint` - passed with 60 warning-level findings and 0 errors. Warnings are existing repository warnings in scripts/app/tests areas.
+- `pnpm vitest run test/unit/app-platform.test.js test/unit/route-app-contract.test.js test/unit/speed-route-app.test.js test/unit/board-route-app.test.js test/unit/library-route-app.test.js test/unit/replay-route-app.test.js test/unit/accel-route-app.test.js` - passed, 7 files and 40 tests.
+- `pnpm test` - passed, 140 files and 1708 tests.
+- `pnpm run build` - passed. The build prepared 1291 ANSV camera features and 73930 speed cameras, then Vite built successfully with 1307 transformed modules and the same existing dynamic/static import warnings.
+
 ## Known Limitations
 
 - App permissions are declared and enforced at the runtime boundary, but there are no user prompts yet.
@@ -384,6 +400,7 @@ Accel route-app migration verification:
 - App-private storage is localStorage-backed only.
 - Existing apps still import many global helpers directly; migration to `appRuntime` should be gradual. Calculator, Energy, Camera Map, Speed Alerts, Player, and Milkdrop are partially migrated through app wrappers, but Calculator expression state/history, Energy trip values/multi-trip records, Camera Map local/offline data storage, Speed Alerts panel internals, Player queue/session restore, Player media cache, Milkdrop preset/position/size persistence, and shell layout storage remain legacy for compatibility.
 - Speed is now route-wrapper migrated, but its internal replay/recording persistence, preferences, geolocation watch implementation, and many globals remain legacy for compatibility.
+- Speed exposes read-capable settings and cloud-sync seams for consistency, but it does not write runtime settings today and no longer requests `settings.write`.
 - Board is now route-wrapper migrated, but drawing/draft persistence, cloud sync, auth, document metadata, export/import, offline mutations, and most Board globals remain legacy for compatibility.
 - Library is now route-wrapper migrated, but media cache, pinned media, media manifests, downloads, playlist loading, cloud sync, auth, import/export actions, and most Library globals remain legacy for compatibility.
 - Replay is now route-wrapper migrated, but replay/session history, cloud replay payload loading, map/chart controllers, auth/cloud sync helpers, and most Replay globals remain legacy for compatibility.
@@ -401,7 +418,7 @@ Accel route-app migration verification:
 
 ## Suggested Next Prompt
 
-Continue VatioBoard OS after all current core route apps have first-class wrappers. Do a route-app hardening pass before deeper controller migrations: audit Speed, Board, Library, Replay, and Accel wrappers for consistent runtime seam names, document the route-app entry contract, add shared route-app test helpers to reduce duplicated mocks, and identify the next safe internal seams to migrate without changing user behavior. Preserve all current routes and compatibility re-exports. Run focused route/platform smoke tests, full `pnpm test`, and `pnpm run build`.
+Continue VatioBoard OS after the route-app wrapper hardening pass. Start the next small internal seam migration, not a large persistence rewrite. Recommended target: Speed selected speed/distance unit or Replay dashboard axis, keeping the existing legacy key canonical and mirroring only one preference through `runtime.services.settings`. Preserve all current routes, compatibility re-exports, direct/dev route callers, Speed/Accel GPS coexistence, and shell-window behavior. Reuse `test/helpers/route-app-test-utils.js`, add focused lifecycle tests for stale runtime mirrors versus canonical legacy state, then run focused route/platform tests, full `pnpm test`, and `pnpm run build`.
 
 ## Manual QA
 
