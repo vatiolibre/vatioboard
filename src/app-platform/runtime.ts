@@ -50,6 +50,8 @@ export function createAppRuntime({
     declaredServices: manifest.services,
     logger,
   });
+  const exposedShellManager =
+    declaresService("shell") && permissions.has("shell.window") ? shellManager : null;
 
   function getInstalledApps() {
     return launcher?.getInstalledApps?.() || appRegistry.listApps();
@@ -147,7 +149,7 @@ export function createAppRuntime({
       listApps: getInstalledApps,
       getInstalledApps,
       getRunningApps,
-      shellManager,
+      shellManager: exposedShellManager,
     },
     storage,
     i18n,

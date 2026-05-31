@@ -9,7 +9,7 @@ permissions: ["gps.read"],
 services: ["gps"],
 ```
 
-If permission exists but the service is missing, `runtime.services.gps` is `null`. If the service exists but permission is missing or revoked in App Manager, access is denied. Shell launch methods follow the same rule: `runtime.shell.openApp()` needs the `shell` service declaration and the matching shell permission.
+If permission exists but the service is missing, `runtime.services.gps` is `null`. If the service exists but permission is missing or revoked in App Manager, access is denied. Shell APIs follow the same rule: declare `services: ["shell"]`, then request the specific shell permission the app needs.
 
 ## Runtime Shape
 
@@ -130,7 +130,11 @@ services: ["shell"],
 
 Use `runtime.shell.openApp()`, `openAppAsync()`, `closeApp()`, and `focusApp()` to work with other apps. `shell.window` is for shell-window ownership; `shell.launchApp` is for launching/focusing apps.
 
-The shell object is always present for diagnostics such as `getRunningApps()`, but launch/focus/close methods return `false` unless the app declares `services: ["shell"]` and has `shell.launchApp`.
+The shell object is always present for diagnostics such as `getRunningApps()`, but mutating shell capabilities are gated:
+
+- `runtime.shell.openApp()`, `openAppAsync()`, `closeApp()`, and `focusApp()` return `false` unless the app declares `services: ["shell"]` and has `shell.launchApp`.
+- `runtime.shell.shellManager` is `null` unless the app declares `services: ["shell"]` and has `shell.window`.
+- Shell-window apps should declare `shell.window`; launcher/controller apps should declare `shell.launchApp`; apps that need both direct window ownership and app launching may declare both.
 
 ### Storage
 

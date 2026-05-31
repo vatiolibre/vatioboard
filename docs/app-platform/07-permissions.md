@@ -67,4 +67,6 @@ permissions: ["shell.window", "storage.app", "settings.read", "settings.write"],
 services: ["shell", "storage", "settings"],
 ```
 
+`shell.window` allows direct shell-window ownership and exposes `runtime.shell.shellManager`. It does not grant app launching by itself; add `shell.launchApp` only when the app needs to open, focus, or close other apps through the runtime launcher API.
+
 Choose the smallest set that supports the app. Add permissions when a real feature needs them, not as a future wish list.

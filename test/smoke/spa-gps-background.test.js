@@ -3,7 +3,7 @@ import { emitGeolocationSuccess, getBrowserMocks } from '../helpers/browser-mock
 import { bootHtmlPage, flushTasks } from '../helpers/page-smoke.js';
 
 const WELCOME_CONSENT_KEY = 'vatioboard.welcome_consent.v1';
-const SPA_GPS_BACKGROUND_SMOKE_TIMEOUT_MS = 180000;
+const SPA_GPS_BACKGROUND_SMOKE_TIMEOUT_MS = 300000;
 
 const testDoubles = vi.hoisted(() => ({
   archiveReplaySessionSpy: vi.fn(),

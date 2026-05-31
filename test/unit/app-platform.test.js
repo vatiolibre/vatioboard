@@ -285,6 +285,9 @@ describe("VatioBoard OS app platform", () => {
       getInstalledApps: vi.fn(() => []),
       getRunningApps: vi.fn(() => []),
     };
+    const shellManager = {
+      listWindows: vi.fn(() => []),
+    };
     const withoutShellService = createAppRuntime({
       manifest: makeManifest({
         id: "test.shell.permission.only",
@@ -292,12 +295,14 @@ describe("VatioBoard OS app platform", () => {
         services: [],
       }),
       launcher,
+      shellManager,
     });
 
     expect(withoutShellService.shell.openApp("vatio.speed")).toBe(false);
     await expect(withoutShellService.shell.openAppAsync?.("vatio.speed")).resolves.toBe(false);
     expect(withoutShellService.shell.focusApp("vatio.speed")).toBe(false);
     expect(withoutShellService.shell.closeApp("vatio.calculator")).toBe(false);
+    expect(withoutShellService.shell.shellManager).toBeNull();
     expect(launcher.openApp).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("[vatioboard:app:test.shell.permission.only]"),
@@ -311,12 +316,57 @@ describe("VatioBoard OS app platform", () => {
         services: ["shell"],
       }),
       launcher,
+      shellManager,
     });
 
     expect(withShellService.shell.openApp("vatio.speed")).toBe(true);
     await expect(withShellService.shell.openAppAsync?.("vatio.speed")).resolves.toBe(true);
     expect(withShellService.shell.focusApp("vatio.speed")).toBe(true);
     expect(withShellService.shell.closeApp("vatio.calculator")).toBe(true);
+    expect(withShellService.shell.shellManager).toBeNull();
+  });
+
+  it("exposes raw shellManager only with shell service and shell.window permission", () => {
+    const shellManager = {
+      listWindows: vi.fn(() => []),
+    };
+
+    const withoutShellWindow = createAppRuntime({
+      manifest: makeManifest({
+        id: "test.shell.launch.only",
+        permissions: ["shell.launchApp"],
+        services: ["shell"],
+      }),
+      shellManager,
+    });
+    expect(withoutShellWindow.shell.shellManager).toBeNull();
+
+    const withShellWindow = createAppRuntime({
+      manifest: makeManifest({
+        id: "test.shell.window",
+        permissions: ["shell.window"],
+        services: ["shell"],
+      }),
+      shellManager,
+    });
+    expect(withShellWindow.shell.shellManager).toBe(shellManager);
+  });
+
+  it("keeps raw shellManager available for built-in shell-window apps", () => {
+    const shellManager = {
+      listWindows: vi.fn(() => []),
+    };
+    const shellWindowApps = appRegistry.listApps().filter((manifest) =>
+      manifest.surfaces.includes("shell-window")
+    );
+
+    expect(shellWindowApps.length).toBeGreaterThan(0);
+    for (const manifest of shellWindowApps) {
+      expect(manifest.services).toContain("shell");
+      expect(manifest.permissions).toContain("shell.window");
+      const runtime = createAppRuntime({ manifest, shellManager });
+      expect(runtime.shell.shellManager).toBe(shellManager);
+    }
   });
 
   it("requires network.backend for backend auth and cloud sync gateways", () => {
@@ -357,6 +407,81 @@ describe("VatioBoard OS app platform", () => {
       const runtime = createAppRuntime({ manifest, baseContext: {} });
       if (manifest.services.includes("auth")) expect(runtime.services.auth).not.toBeNull();
       if (manifest.services.includes("cloudSync")) expect(runtime.services.cloudSync).not.toBeNull();
+    }
+  });
+
+  it("warns for manifest permission and service dependency gaps", () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    const validation = registry.validateAppManifest(makeManifest({
+      surfaces: ["main-route", "shell-window"],
+      permissions: ["shell.launchApp"],
+      services: ["auth", "cloudSync", "shell", "storage", "i18n"],
+      window: {
+        shellWindowId: "dependency-test",
+        mode: "floating",
+        defaultBounds: { left: 0, top: 0, width: 100 },
+        capabilities: {},
+        restoreOnBoot: true,
+        lazy: false,
+      },
+    }));
+
+    expect(validation.ok).toBe(true);
+    expect(validation.warnings).toEqual(expect.arrayContaining([
+      'service "auth" requires permission "auth.session".',
+      'service "auth" requires permission "network.backend".',
+      'service "cloudSync" requires permission "cloud.sync".',
+      'service "cloudSync" requires permission "network.backend".',
+      'surface "shell-window" requires permission "shell.window".',
+      'service "storage" requires permission "storage.app".',
+      'service "i18n" requires permission "i18n.read".',
+    ]));
+  });
+
+  it("warns when shell permissions or surfaces omit the shell service", () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    const withShellPermissionOnly = registry.validateAppManifest(makeManifest({
+      permissions: ["storage.app", "i18n.read", "shell.launchApp"],
+      services: ["storage", "i18n"],
+    }));
+    expect(withShellPermissionOnly.warnings).toContain('shell permissions are declared without service "shell".');
+
+    const withShellWindowSurfaceOnly = registry.validateAppManifest(makeManifest({
+      route: undefined,
+      aliases: [],
+      surfaces: ["shell-window"],
+      permissions: ["storage.app", "i18n.read", "shell.window"],
+      services: ["storage", "i18n"],
+      window: {
+        shellWindowId: "missing-shell-service",
+        mode: "floating",
+        defaultBounds: { left: 0, top: 0, width: 100 },
+        capabilities: {},
+        restoreOnBoot: true,
+        lazy: false,
+      },
+    }));
+    expect(withShellWindowSurfaceOnly.warnings).toEqual(expect.arrayContaining([
+      'surface "shell-window" requires service "shell".',
+      'shell permissions are declared without service "shell".',
+    ]));
+  });
+
+  it("warns when shell service has no shell capability permission", () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    const validation = registry.validateAppManifest(makeManifest({
+      permissions: ["storage.app", "i18n.read"],
+      services: ["shell", "storage", "i18n"],
+    }));
+
+    expect(validation.warnings).toContain('service "shell" requires permission "shell.launchApp" or "shell.window".');
+  });
+
+  it("built-in manifests have no platform dependency warnings", () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+
+    for (const manifest of appRegistry.listApps()) {
+      expect(registry.validateAppManifest(manifest).warnings).toEqual([]);
     }
   });
 

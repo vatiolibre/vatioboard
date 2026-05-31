@@ -149,5 +149,9 @@ The registry calls `validateAppManifest()` before registration and rejects inval
 - `auth` service access requires both `auth.session` and `network.backend`.
 - `cloudSync` service access requires both `cloud.sync` and `network.backend`.
 - `runtime.shell.openApp()`, `openAppAsync()`, `closeApp()`, and `focusApp()` require `services: ["shell"]` as well as `shell.launchApp`.
+- Direct `runtime.shell.shellManager` access requires `services: ["shell"]` and `shell.window`.
+- `shell-window` surfaces require `services: ["shell"]` and `shell.window`.
+- `storage` service access requires `storage.app`.
+- `i18n` service access requires `i18n.read`.
 
 Warnings still allow registration today, but new apps should treat warnings as defects.

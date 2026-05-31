@@ -561,6 +561,143 @@ describe("VatioBoard OS app control plane", () => {
     manager.destroy();
   });
 
+  it("queues startAsync behind an in-progress async stop and creates a fresh service", async () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    let resolveStop = null;
+    let resolveDestroy = null;
+    const createdServices = [];
+    const createBackgroundServiceApp = vi.fn(() => {
+      const index = createdServices.length;
+      const service = {
+        start: vi.fn(),
+        stop: vi.fn(() => {
+          if (index !== 0) return undefined;
+          return new Promise((resolve) => {
+            resolveStop = resolve;
+          });
+        }),
+        destroy: vi.fn(() => {
+          if (index !== 0) return undefined;
+          return new Promise((resolve) => {
+            resolveDestroy = resolve;
+          });
+        }),
+      };
+      createdServices.push(service);
+      return service;
+    });
+    const manifest = {
+      ...appRegistry.getApp("vatio.offlineReadiness"),
+      id: "test.background.restart-after-stop",
+      title: "Restart After Stop Background",
+      shortTitle: "Restart Stop",
+      order: 1,
+      entry: vi.fn(async () => ({ createBackgroundServiceApp })),
+      metadata: {},
+    };
+    registry.registerApp(manifest);
+    const control = createAppControlService({ registry, storage: localStorage });
+    const manager = createBackgroundServiceManager({ registry, control, baseContext: {} });
+
+    await expect(manager.startAsync("test.background.restart-after-stop")).resolves.toBe(true);
+    const firstService = createdServices[0];
+    const stopPromise = manager.stopAsync("test.background.restart-after-stop");
+
+    expect(firstService.stop).toHaveBeenCalledTimes(1);
+    expect(createBackgroundServiceApp).toHaveBeenCalledTimes(1);
+
+    const restartPromise = manager.startAsync("test.background.restart-after-stop");
+    await flushAsyncWork();
+    expect(createBackgroundServiceApp).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.restart-after-stop")?.lifecycle.getState()).toBe("active");
+
+    resolveStop?.();
+    await flushAsyncWork();
+    expect(firstService.destroy).toHaveBeenCalledTimes(1);
+    expect(createBackgroundServiceApp).toHaveBeenCalledTimes(1);
+
+    resolveDestroy?.();
+    await expect(stopPromise).resolves.toBe(true);
+    await expect(restartPromise).resolves.toBe(true);
+
+    expect(createBackgroundServiceApp).toHaveBeenCalledTimes(2);
+    expect(createdServices[1]).not.toBe(firstService);
+    expect(createdServices[1].start).toHaveBeenCalledTimes(1);
+    expect(firstService.start).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.restart-after-stop")?.lifecycle.getState()).toBe("active");
+
+    await manager.stopAsync("test.background.restart-after-stop");
+    manager.destroy();
+  });
+
+  it("sync start queues safely behind an in-progress async stop", async () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    let resolveStop = null;
+    let resolveDestroy = null;
+    const createdServices = [];
+    const createBackgroundServiceApp = vi.fn(() => {
+      const index = createdServices.length;
+      const service = {
+        start: vi.fn(),
+        stop: vi.fn(() => {
+          if (index !== 0) return undefined;
+          return new Promise((resolve) => {
+            resolveStop = resolve;
+          });
+        }),
+        destroy: vi.fn(() => {
+          if (index !== 0) return undefined;
+          return new Promise((resolve) => {
+            resolveDestroy = resolve;
+          });
+        }),
+      };
+      createdServices.push(service);
+      return service;
+    });
+    const manifest = {
+      ...appRegistry.getApp("vatio.offlineReadiness"),
+      id: "test.background.sync-restart-after-stop",
+      title: "Sync Restart After Stop Background",
+      shortTitle: "Sync Restart",
+      order: 1,
+      entry: vi.fn(async () => ({ createBackgroundServiceApp })),
+      metadata: {},
+    };
+    registry.registerApp(manifest);
+    const control = createAppControlService({ registry, storage: localStorage });
+    const manager = createBackgroundServiceManager({ registry, control, baseContext: {} });
+
+    await expect(manager.startAsync("test.background.sync-restart-after-stop")).resolves.toBe(true);
+    const firstService = createdServices[0];
+    const stopPromise = manager.stopAsync("test.background.sync-restart-after-stop");
+
+    expect(manager.start("test.background.sync-restart-after-stop")).toBe(true);
+    const queuedStart = manager.startAsync("test.background.sync-restart-after-stop");
+    await flushAsyncWork();
+
+    expect(firstService.stop).toHaveBeenCalledTimes(1);
+    expect(firstService.destroy).not.toHaveBeenCalled();
+    expect(createBackgroundServiceApp).toHaveBeenCalledTimes(1);
+
+    resolveStop?.();
+    await flushAsyncWork();
+    expect(firstService.destroy).toHaveBeenCalledTimes(1);
+    expect(createBackgroundServiceApp).toHaveBeenCalledTimes(1);
+
+    resolveDestroy?.();
+    await expect(stopPromise).resolves.toBe(true);
+    await expect(queuedStart).resolves.toBe(true);
+
+    expect(createBackgroundServiceApp).toHaveBeenCalledTimes(2);
+    expect(createdServices[1]).not.toBe(firstService);
+    expect(createdServices[1].start).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.sync-restart-after-stop")?.lifecycle.getState()).toBe("active");
+
+    await manager.stopAsync("test.background.sync-restart-after-stop");
+    manager.destroy();
+  });
+
   it("clears background service records immediately when the manager is destroyed", async () => {
     const registry = createAppRegistry({ logger: { warn: vi.fn() } });
     const service = {

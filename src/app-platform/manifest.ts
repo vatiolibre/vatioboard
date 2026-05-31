@@ -173,6 +173,48 @@ export function validateAppManifest(manifest: VatioAppManifest): VatioAppManifes
     warnings.push("driveRecording.write is declared without driveRecording.read.");
   }
 
+  const permissions = new Set(manifest.permissions || []);
+  const services = new Set(manifest.services || []);
+  const surfaces = new Set(manifest.surfaces || []);
+
+  if (services.has("auth")) {
+    if (!permissions.has("auth.session")) warnings.push('service "auth" requires permission "auth.session".');
+    if (!permissions.has("network.backend")) warnings.push('service "auth" requires permission "network.backend".');
+  }
+
+  if (services.has("cloudSync")) {
+    if (!permissions.has("cloud.sync")) warnings.push('service "cloudSync" requires permission "cloud.sync".');
+    if (!permissions.has("network.backend")) warnings.push('service "cloudSync" requires permission "network.backend".');
+  }
+
+  if (
+    services.has("shell")
+    && !permissions.has("shell.launchApp")
+    && !permissions.has("shell.window")
+  ) {
+    warnings.push('service "shell" requires permission "shell.launchApp" or "shell.window".');
+  }
+
+  if (surfaces.has("shell-window")) {
+    if (!permissions.has("shell.window")) warnings.push('surface "shell-window" requires permission "shell.window".');
+    if (!services.has("shell")) warnings.push('surface "shell-window" requires service "shell".');
+  }
+
+  if (
+    (permissions.has("shell.launchApp") || permissions.has("shell.window"))
+    && !services.has("shell")
+  ) {
+    warnings.push('shell permissions are declared without service "shell".');
+  }
+
+  if (services.has("storage") && !permissions.has("storage.app")) {
+    warnings.push('service "storage" requires permission "storage.app".');
+  }
+
+  if (services.has("i18n") && !permissions.has("i18n.read")) {
+    warnings.push('service "i18n" requires permission "i18n.read".');
+  }
+
   return {
     ok: errors.length === 0,
     errors,

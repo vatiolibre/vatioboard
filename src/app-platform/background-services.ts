@@ -161,12 +161,13 @@ export function createBackgroundServiceManager({
     controllers.get(appId)?.abort();
     controllers.delete(appId);
     services.delete(appId);
-    starting.delete(appId);
     deactivateRuntime(runtime);
     runtimes.delete(appId);
   }
 
   async function startService(appId: VatioAppId) {
+    const activeStop = stopping.get(appId);
+    if (activeStop) await activeStop.catch(() => false);
     if (!control.isEnabled(appId)) return false;
     const runtime = ensureRuntime(appId);
     if (!runtime) return false;
@@ -211,10 +212,12 @@ export function createBackgroundServiceManager({
     const controller = controllers.get(appId);
     const activeStart = starting.get(appId);
     let service = services.get(appId);
+    if (service) services.delete(appId);
     if (!service && activeStart) {
       controller?.abort();
       await activeStart.catch(() => false);
       service = services.get(appId);
+      if (service) services.delete(appId);
     } else if (activeStart) {
       await activeStart.catch(() => false);
     }
@@ -228,7 +231,7 @@ export function createBackgroundServiceManager({
     controller?.abort();
     controllers.delete(appId);
     services.delete(appId);
-    starting.delete(appId);
+    if (starting.get(appId) === activeStart) starting.delete(appId);
     deactivateRuntime(runtime);
     runtimes.delete(appId);
     return ok;
@@ -260,32 +263,35 @@ export function createBackgroundServiceManager({
     };
   }
 
+  function queueStart(appId: VatioAppId) {
+    const existing = starting.get(appId);
+    if (existing) return existing;
+    const start = startService(appId).finally(() => {
+      if (starting.get(appId) === start) starting.delete(appId);
+    });
+    starting.set(appId, start);
+    return start;
+  }
+
   const controlSubscriptions: Array<() => void> = [];
   const manager: VatioBackgroundServiceManager = {
     start(appId) {
       if (!control.isEnabled(appId)) return false;
       const runtime = ensureRuntime(appId);
       if (!runtime) return false;
+      if (stopping.has(appId)) {
+        void queueStart(appId);
+        return true;
+      }
       if (!runtime.manifest.entry || services.has(appId)) {
         activateRuntime(runtime);
         return true;
       }
-      if (!starting.has(appId)) {
-        const start = startService(appId).finally(() => {
-          if (starting.get(appId) === start) starting.delete(appId);
-        });
-        starting.set(appId, start);
-      }
+      void queueStart(appId);
       return true;
     },
     startAsync(appId) {
-      const existing = starting.get(appId);
-      if (existing) return existing;
-      const start = startService(appId).finally(() => {
-        if (starting.get(appId) === start) starting.delete(appId);
-      });
-      starting.set(appId, start);
-      return start;
+      return queueStart(appId);
     },
     suspend(appId) {
       const runtime = runtimes.get(appId);
