@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  appControl,
   createAppLauncher,
   createAppRuntime,
   createShellAppRuntimeManager,
@@ -270,6 +271,33 @@ describe("Speed Alerts OS app module", () => {
     shellManager.destroy();
   });
 
+  it("does not stop active alerts when the Speed Alerts panel is minimized or closed", () => {
+    const drivingAlertService = createDrivingAlertServiceStub();
+    drivingAlertService.start();
+    drivingAlertService.stop.mockClear();
+    const { shellManager, shellAppRuntimeManager, launcher } = createShellHarness({ drivingAlertService });
+    const speedAlerts = createSpeedAlertsApp({
+      mount: document.body,
+      restoreVisibility: false,
+      shellManager,
+      shellAppRuntimeManager,
+    });
+    launcher.openApp(SPEED_ALERTS_APP_ID);
+
+    shellManager.minimizeWindow("speed-alerts");
+    expect(document.querySelector(".speed-alert-window")?.hidden).toBe(true);
+    shellManager.closeWindow("speed-alerts");
+
+    expect(shellManager.getWindow("speed-alerts")?.state).toBe("closed");
+    expect(document.querySelector(".speed-alert-window")?.hidden).toBe(true);
+    expect(drivingAlertService.stop).not.toHaveBeenCalled();
+    expect(drivingAlertService.getSnapshot()).toMatchObject({ status: "active" });
+
+    speedAlerts.destroy();
+    shellAppRuntimeManager.destroy();
+    shellManager.destroy();
+  });
+
   it("keeps Speed Alerts-to-Camera Map launch behavior working", () => {
     const { shellManager, shellAppRuntimeManager } = createShellHarness({
       drivingAlertService: createDrivingAlertServiceStub(),
@@ -309,6 +337,63 @@ describe("Speed Alerts OS app module", () => {
     speedAlerts.destroy();
     shellAppRuntimeManager.destroy();
     shellManager.destroy();
+  });
+
+  it("keeps explicit alert-off and mute controls as the way to stop alert behavior", () => {
+    const drivingAlertService = createDrivingAlertServiceStub();
+    drivingAlertService.emit({
+      status: "active",
+      audio: { backgroundAudioArmed: true },
+      preferences: {
+        alertEnabled: true,
+        audioMuted: false,
+        trapAlertEnabled: true,
+      },
+    });
+    const { shellManager, shellAppRuntimeManager, launcher } = createShellHarness({ drivingAlertService });
+    const speedAlerts = createSpeedAlertsApp({
+      mount: document.body,
+      restoreVisibility: false,
+      shellManager,
+      shellAppRuntimeManager,
+    });
+    launcher.openApp(SPEED_ALERTS_APP_ID);
+
+    document.querySelector(".speed-alert-window-primary").click();
+    document.querySelector(".speed-alert-window-section--compact .speed-alert-window-secondary").click();
+    document.querySelector("button[data-trap-alert='off']").click();
+
+    expect(drivingAlertService.setManualAlertEnabled).toHaveBeenCalledWith(false, expect.objectContaining({ fromUserGesture: true }));
+    expect(drivingAlertService.setMuted).toHaveBeenCalledWith(true, expect.objectContaining({ fromUserGesture: true }));
+    expect(drivingAlertService.setTrapAlertEnabled).toHaveBeenCalledWith(false, expect.objectContaining({ fromUserGesture: true }));
+
+    speedAlerts.destroy();
+    shellAppRuntimeManager.destroy();
+    shellManager.destroy();
+  });
+
+  it("permission revocation blocks new runtime alert API calls without stopping an active alert flow", () => {
+    const drivingAlertService = createDrivingAlertServiceStub();
+    drivingAlertService.start();
+    drivingAlertService.stop.mockClear();
+    const runtime = createAppRuntime({
+      manifest: makeManifest({
+        permissions: ["alerts.speed", "settings.read", "settings.write", "i18n.read"],
+        services: ["drivingAlerts", "settings", "i18n"],
+      }),
+      baseContext: { drivingAlertService },
+    });
+
+    expect(runtime.services.drivingAlerts?.setMuted?.(true)).toMatchObject({
+      preferences: expect.objectContaining({ audioMuted: true }),
+    });
+
+    appControl.revokePermission(SPEED_ALERTS_APP_ID, "alerts.speed");
+
+    expect(runtime.services.drivingAlerts?.setMuted?.(false)).toMatchObject({ status: "permission-denied" });
+    expect(runtime.services.drivingAlerts?.start()).toMatchObject({ status: "permission-denied" });
+    expect(drivingAlertService.stop).not.toHaveBeenCalled();
+    expect(drivingAlertService.getSnapshot()).toMatchObject({ status: "active" });
   });
 
   it("persists Speed Alerts preferences through runtime settings while mirroring legacy settings", () => {

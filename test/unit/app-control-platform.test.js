@@ -175,6 +175,8 @@ describe("VatioBoard OS app control plane", () => {
     });
     expect(audioRuntime.play).toHaveBeenCalledTimes(1);
     expect(audioRuntime.primeAudio).not.toHaveBeenCalled();
+    expect(audioRuntime.stopPlayback).not.toHaveBeenCalled();
+    expect(audioRuntime.pause).not.toHaveBeenCalled();
   });
 
   it("denies already-created driving alert services after speed alert permission is revoked", async () => {
@@ -194,6 +196,8 @@ describe("VatioBoard OS app control plane", () => {
     await expect(runtime.services.drivingAlerts?.primeAudioFromUserGesture?.()).resolves.toBe(false);
     expect(drivingAlertService.start).toHaveBeenCalledTimes(1);
     expect(drivingAlertService.setMuted).not.toHaveBeenCalled();
+    expect(drivingAlertService.stop).not.toHaveBeenCalled();
+    expect(drivingAlertService.destroy).not.toHaveBeenCalled();
   });
 
   it("denies already-created auth, cloud sync, settings, and shared settings services after revocation", async () => {

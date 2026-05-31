@@ -357,6 +357,48 @@ describe("Player OS app module", () => {
     shellManager.destroy();
   });
 
+  it("does not stop playback when the Player panel is minimized or closed", async () => {
+    const modules = await loadModules();
+    audioRuntimeMock.getState.mockReturnValue({
+      queue: [makeTrack("PLAYING")],
+      currentIndex: 0,
+      currentTrack: makeTrack("PLAYING"),
+      paused: false,
+      volume: 1,
+      muted: false,
+      repeat: "off",
+      shuffle: false,
+      backgroundMode: true,
+      sourceType: "remote",
+      loading: false,
+      error: null,
+      currentTime: 12,
+      duration: 180,
+      playing: true,
+    });
+    audioRuntimeMock.stopPlayback.mockClear();
+    audioRuntimeMock.pause.mockClear();
+    const { shellManager, shellAppRuntimeManager, launcher } = createShellHarness(modules);
+    const player = modules.createPlayerApp({
+      mount: document.body,
+      restoreVisibility: false,
+      shellManager,
+      shellAppRuntimeManager,
+    });
+    launcher.openApp(modules.PLAYER_APP_ID);
+
+    shellManager.minimizeWindow("player");
+    shellManager.closeWindow("player");
+
+    expect(document.querySelector(".player-panel")?.hidden).toBe(true);
+    expect(audioRuntimeMock.stopPlayback).not.toHaveBeenCalled();
+    expect(audioRuntimeMock.pause).not.toHaveBeenCalled();
+
+    player.destroy();
+    shellAppRuntimeManager.destroy();
+    shellManager.destroy();
+  });
+
   it("preserves Media Session/audio runtime behavior from the player controls", async () => {
     const modules = await loadModules();
     const { shellManager, shellAppRuntimeManager, launcher } = createShellHarness(modules);

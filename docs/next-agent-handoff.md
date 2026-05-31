@@ -7,6 +7,7 @@
 - Protected apps such as `vatio.speed`, `vatio.appManager`, and protected internal background diagnostics cannot be disabled.
 - Runtime permission checks now require permissions to be declared and effectively granted. Undeclared grants are rejected, and revoked permissions fail safely.
 - Runtime service gateways for audio, driving alerts, auth, cloud sync, settings, and shared settings now re-check permissions at method-call time, so revoking permissions affects already-created runtimes without recreating shell-window apps.
+- App Manager permission revocation is explicitly documented as a control-plane boundary, not a runtime kill switch: it blocks new runtime service calls but does not automatically stop Player audio, active Speed Alerts, GPS-related behavior, alert audio priming, background audio leases, or song transition preparation.
 - Protected critical permissions are now explicit for `vatio.speed`, `vatio.appManager`, and `vatio.offlineReadiness`; `appControl.revokePermission()` returns `false` for those permissions, and App Manager marks their toggles protected.
 - Added shared settings in `src/app-platform/shared-settings.ts` plus legacy-first bridges in `shared-settings-compat.ts`.
 - Speed unit and distance unit now mirror through shared OS settings while keeping `vatio_speed_unit` and `vatio_speed_distance_unit` canonical; legacy seeding now uses only explicit stored shared settings, not default-filled reads.
@@ -55,9 +56,11 @@
 - Migrated Speed Alerts into a first-class shell-window app module under `src/apps/speed-alerts/`.
 - Speed Alerts now resolves `vatio.speedAlerts` through `shellAppRuntimeManager`, prefers runtime GPS and driving-alert services where available, mirrors preferences through `runtime.services.settings`, and logs runtime settings fallback warnings.
 - Speed Alerts compatibility is preserved: shell window ID `speed-alerts`, legacy tool ID `speed-alerts`, floating-tool toggles, start-menu launch, Camera Map button behavior, taskbar behavior, position/visibility, alert audio priming, alert sound behavior, GPS fallbacks, and direct `createSpeedAlertPanel()` callers still work.
+- Speed Alerts close/minimize remains visual-only. Explicit in-panel alert off, mute, trap-alert, and manual-alert controls remain the way to change alert behavior.
 - Migrated Player into a first-class shell-window app module under `src/apps/player/`.
 - Player now resolves `vatio.player` through `shellAppRuntimeManager`, uses the runtime audio service at the app boundary, mirrors visualizer preferences through `runtime.services.settings`, and keeps the existing shared audio runtime singleton.
 - Player compatibility is preserved: shell window ID `player`, legacy tool ID `player`, persistent player global, taskbar behavior, minimize/restore/close behavior, Media Session behavior, background audio behavior, queue/session restore, pinned/local media behavior, and direct `createPlayerWidget()` callers still work.
+- Player close/minimize remains visual-only and must not stop playback or release background audio keepalive behavior.
 - Migrated Milkdrop into a first-class shell-window app module under `src/apps/milkdrop/`.
 - Milkdrop now resolves `vatio.milkdrop` through `shellAppRuntimeManager`, acknowledges the runtime audio service without replacing the shared audio graph, mirrors visibility through `runtime.services.settings`, and uses runtime i18n for panel labels where practical.
 - Milkdrop compatibility is preserved: shell window ID `milkdrop`, legacy tool ID `milkdrop`, Player-to-Milkdrop launch, taskbar behavior, minimize/restore/close behavior, preset loading, canvas/WebGL behavior, shared audio graph behavior, legacy position/visibility/size/preset keys, and direct `createMilkdropPanel()` callers still work.

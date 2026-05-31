@@ -53,6 +53,8 @@ If a manifest declares a permission but omits the service ID, the runtime return
 
 Runtime revocation is method-level for service gateways that can be held by running apps. `audio`, `drivingAlerts`, `auth`, `cloudSync`, `settings`, and `sharedSettings` keep their runtime object shape after creation, but every operation checks the current effective permission before doing work. Revoked operations return safe denied values such as `false`, `null`, `{}`, no-op unsubscribe functions, or a permission-denied snapshot, and they log scoped warnings through the app logger. This means App Manager permission changes affect already-created shell-window runtimes without requiring a window recreation.
 
+App Manager permission revocation is a control-plane boundary in v1, not a runtime kill switch. Revoking `audio.playback` blocks future operations through `runtime.services.audio`, but it does not automatically stop the shared Player audio runtime. Revoking `alerts.speed` blocks future privileged operations through `runtime.services.drivingAlerts`, but it does not automatically stop an already-running safety/alert flow. Player audio, Speed Alerts, alert audio priming, background audio leases, GPS-related behavior, and song transition preparation are intentionally persistent across panel close, minimize, shell-window close, and route transitions. Explicit user actions inside Speed Alerts, such as turning alerts off, muting alert audio, or disabling trap/manual alerts, remain the supported way to stop alert behavior. Closing or hiding the panel remains visual-only.
+
 ## Permissions
 
 Permissions are declared in each manifest and checked by `createAppPermissionRuntime()`.
@@ -331,6 +333,8 @@ The wrapper resolves the scoped runtime through `shellAppRuntimeManager`, then s
 
 Speed Alerts keeps the existing audio controller and audio priming path inside `createDrivingAlertService()`. The wrapper exposes `runtime.services.audio` through the manifest contract but does not reroute alert sounds directly through the app runtime in v1, which avoids changing background audio lease behavior.
 
+The Speed Alerts panel is visual control chrome, not the lifetime owner of the alert service. Closing or minimizing the panel hides the UI only; it does not stop active alerts, release alert audio priming, or tear down GPS-related alert behavior. Use the in-panel alert off, trap/manual alert toggles, and mute controls for explicit alert changes.
+
 Speed Alerts settings mirror under:
 
 ```text
@@ -391,6 +395,8 @@ vatio_board_player_widget_visualizer_mode
 If both legacy values and app-private runtime mirrors exist, legacy values win so direct `createPlayerWidget()` callers and older sessions cannot be shadowed by stale runtime mirrors. If no legacy value exists but a runtime mirror does, the wrapper seeds the legacy key.
 
 Player position, visibility, queue/session restore, pinned media, local media cache, and playlist/cache state intentionally remain on existing legacy storage paths for compatibility.
+
+Player close and minimize are also visual shell actions. They hide or close the panel window, but they do not stop playback, release background audio keepalive state, or interrupt song transition preparation.
 
 ## Milkdrop Migration
 
