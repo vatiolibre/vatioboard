@@ -275,6 +275,91 @@ describe("VatioBoard OS app platform", () => {
     expect(withDeclaredService.i18n.t("brand", "Fallback Brand")).toEqual(expect.any(String));
   });
 
+  it("requires shell service declaration as well as shell permissions before launching apps", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const launcher = {
+      openApp: vi.fn(() => true),
+      openAppAsync: vi.fn(async () => true),
+      closeApp: vi.fn(() => true),
+      focusApp: vi.fn(() => true),
+      getInstalledApps: vi.fn(() => []),
+      getRunningApps: vi.fn(() => []),
+    };
+    const withoutShellService = createAppRuntime({
+      manifest: makeManifest({
+        id: "test.shell.permission.only",
+        permissions: ["shell.launchApp"],
+        services: [],
+      }),
+      launcher,
+    });
+
+    expect(withoutShellService.shell.openApp("vatio.speed")).toBe(false);
+    await expect(withoutShellService.shell.openAppAsync?.("vatio.speed")).resolves.toBe(false);
+    expect(withoutShellService.shell.focusApp("vatio.speed")).toBe(false);
+    expect(withoutShellService.shell.closeApp("vatio.calculator")).toBe(false);
+    expect(launcher.openApp).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("[vatioboard:app:test.shell.permission.only]"),
+      expect.stringContaining('service "shell" is not declared'),
+    );
+
+    const withShellService = createAppRuntime({
+      manifest: makeManifest({
+        id: "test.shell.permission.and.service",
+        permissions: ["shell.launchApp"],
+        services: ["shell"],
+      }),
+      launcher,
+    });
+
+    expect(withShellService.shell.openApp("vatio.speed")).toBe(true);
+    await expect(withShellService.shell.openAppAsync?.("vatio.speed")).resolves.toBe(true);
+    expect(withShellService.shell.focusApp("vatio.speed")).toBe(true);
+    expect(withShellService.shell.closeApp("vatio.calculator")).toBe(true);
+  });
+
+  it("requires network.backend for backend auth and cloud sync gateways", () => {
+    const withoutNetwork = createAppRuntime({
+      manifest: makeManifest({
+        id: "test.backend.without.network",
+        permissions: ["auth.session", "cloud.sync"],
+        services: ["auth", "cloudSync"],
+      }),
+      baseContext: {},
+    });
+
+    expect(withoutNetwork.services.auth).toBeNull();
+    expect(withoutNetwork.services.cloudSync).toBeNull();
+
+    const withNetwork = createAppRuntime({
+      manifest: makeManifest({
+        id: "test.backend.with.network",
+        permissions: ["auth.session", "cloud.sync", "network.backend"],
+        services: ["auth", "cloudSync"],
+      }),
+      baseContext: {},
+    });
+
+    expect(withNetwork.services.auth).not.toBeNull();
+    expect(withNetwork.services.cloudSync).not.toBeNull();
+  });
+
+  it("exposes backend services for built-in manifests that declare backend access", () => {
+    const manifests = appRegistry.listApps();
+    const backendApps = manifests.filter((manifest) =>
+      manifest.services.includes("auth") || manifest.services.includes("cloudSync")
+    );
+
+    expect(backendApps.length).toBeGreaterThan(0);
+    for (const manifest of backendApps) {
+      expect(manifest.permissions).toContain("network.backend");
+      const runtime = createAppRuntime({ manifest, baseContext: {} });
+      if (manifest.services.includes("auth")) expect(runtime.services.auth).not.toBeNull();
+      if (manifest.services.includes("cloudSync")) expect(runtime.services.cloudSync).not.toBeNull();
+    }
+  });
+
   it("exposes app-scoped settings with read/write permissions", () => {
     const runtime = createAppRuntime({
       manifest: makeManifest({

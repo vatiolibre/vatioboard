@@ -69,8 +69,16 @@ export function createAppRuntime({
     return launcher?.getAppRuntime?.(appId) || null;
   }
 
+  function canUseShellLaunch() {
+    if (!declaresService("shell")) {
+      logger.warn('Shell API denied because service "shell" is not declared.');
+      return false;
+    }
+    return permissions.require("shell.launchApp");
+  }
+
   function openApp(appId: string, options: VatioAppLaunchOptions = {}) {
-    if (!permissions.require("shell.launchApp")) return false;
+    if (!canUseShellLaunch()) return false;
     if (launcher?.openApp) return launcher.openApp(appId, { ...options, sourceAppId: manifest.id });
 
     const target = appRegistry.getApp(appId);
@@ -97,13 +105,13 @@ export function createAppRuntime({
   }
 
   function openAppAsync(appId: string, options: VatioAppLaunchOptions = {}) {
-    if (!permissions.require("shell.launchApp")) return Promise.resolve(false);
+    if (!canUseShellLaunch()) return Promise.resolve(false);
     if (launcher?.openAppAsync) return launcher.openAppAsync(appId, { ...options, sourceAppId: manifest.id });
     return Promise.resolve(openApp(appId, options));
   }
 
   function closeApp(appId: string, options: VatioAppLaunchOptions = {}) {
-    if (!permissions.require("shell.launchApp")) return false;
+    if (!canUseShellLaunch()) return false;
     if (launcher?.closeApp) return launcher.closeApp(appId, { ...options, sourceAppId: manifest.id });
 
     const target = appRegistry.getApp(appId);
@@ -114,7 +122,7 @@ export function createAppRuntime({
   }
 
   function focusApp(appId: string, options: VatioAppLaunchOptions = {}) {
-    if (!permissions.require("shell.launchApp")) return false;
+    if (!canUseShellLaunch()) return false;
     if (launcher?.focusApp) return launcher.focusApp(appId, { ...options, sourceAppId: manifest.id });
 
     const target = appRegistry.getApp(appId);

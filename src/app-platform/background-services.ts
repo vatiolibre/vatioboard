@@ -67,6 +67,7 @@ export function createBackgroundServiceManager({
   const services = new Map<VatioAppId, VatioBackgroundServiceApp>();
   const controllers = new Map<VatioAppId, AbortController>();
   const starting = new Map<VatioAppId, Promise<boolean>>();
+  const stopping = new Map<VatioAppId, Promise<boolean>>();
 
   function ensureRuntime(appId: VatioAppId) {
     const existing = runtimes.get(appId);
@@ -94,7 +95,6 @@ export function createBackgroundServiceManager({
   }
 
   async function createServiceInstance(runtime: VatioAppRuntime, controller: AbortController) {
-    if (services.has(runtime.appId)) return services.get(runtime.appId) || null;
     const entryModule = await runtime.manifest.entry?.();
     if (controller.signal.aborted || !control.isEnabled(runtime.appId)) return null;
 
@@ -116,8 +116,6 @@ export function createBackgroundServiceManager({
       await service.destroy?.();
       return null;
     }
-
-    services.set(runtime.appId, service);
     return service;
   }
 
@@ -144,12 +142,28 @@ export function createBackgroundServiceManager({
     action: keyof VatioBackgroundServiceApp,
   ) {
     const handler = service?.[action];
-    if (typeof handler !== "function") return;
+    if (typeof handler !== "function") return true;
     try {
       await handler.call(service);
+      return true;
     } catch (error) {
       reportServiceError(runtime, action, error);
+      return false;
     }
+  }
+
+  async function cleanupFailedStart(
+    appId: VatioAppId,
+    runtime: VatioAppRuntime,
+    service: VatioBackgroundServiceApp | null | undefined,
+  ) {
+    if (service) await invokeServiceActionAsync(runtime, service, "destroy");
+    controllers.get(appId)?.abort();
+    controllers.delete(appId);
+    services.delete(appId);
+    starting.delete(appId);
+    deactivateRuntime(runtime);
+    runtimes.delete(appId);
   }
 
   async function startService(appId: VatioAppId) {
@@ -169,18 +183,71 @@ export function createBackgroundServiceManager({
     }
 
     const controller = ensureController(appId);
+    let service: VatioBackgroundServiceApp | null = null;
     try {
-      const service = await createServiceInstance(runtime, controller);
-      if (controller.signal.aborted || !control.isEnabled(appId)) return false;
-      if (!service) return false;
-      await invokeServiceActionAsync(runtime, service, "start");
-      if (controller.signal.aborted || !control.isEnabled(appId)) return false;
+      service = await createServiceInstance(runtime, controller);
+      if (controller.signal.aborted || !control.isEnabled(appId) || !service) {
+        await cleanupFailedStart(appId, runtime, service);
+        return false;
+      }
+      const started = await invokeServiceActionAsync(runtime, service, "start");
+      if (!started || controller.signal.aborted || !control.isEnabled(appId)) {
+        await cleanupFailedStart(appId, runtime, service);
+        return false;
+      }
+      services.set(appId, service);
       activateRuntime(runtime);
       return true;
     } catch (error) {
       reportServiceError(runtime, "start", error);
+      await cleanupFailedStart(appId, runtime, service);
       return false;
     }
+  }
+
+  async function stopService(appId: VatioAppId) {
+    const runtime = runtimes.get(appId);
+    if (!runtime) return false;
+    const controller = controllers.get(appId);
+    const activeStart = starting.get(appId);
+    let service = services.get(appId);
+    if (!service && activeStart) {
+      controller?.abort();
+      await activeStart.catch(() => false);
+      service = services.get(appId);
+    } else if (activeStart) {
+      await activeStart.catch(() => false);
+    }
+
+    let ok = true;
+    if (service) {
+      ok = (await invokeServiceActionAsync(runtime, service, "stop")) && ok;
+      ok = (await invokeServiceActionAsync(runtime, service, "destroy")) && ok;
+    }
+
+    controller?.abort();
+    controllers.delete(appId);
+    services.delete(appId);
+    starting.delete(appId);
+    deactivateRuntime(runtime);
+    runtimes.delete(appId);
+    return ok;
+  }
+
+  function queueStop(appId: VatioAppId) {
+    const existing = stopping.get(appId);
+    if (existing) return existing;
+    const stop = stopService(appId)
+      .catch((error) => {
+        const runtime = runtimes.get(appId);
+        if (runtime) reportServiceError(runtime, "stop", error);
+        return false;
+      })
+      .finally(() => {
+        if (stopping.get(appId) === stop) stopping.delete(appId);
+      });
+    stopping.set(appId, stop);
+    return stop;
   }
 
   function toRecord(runtime: VatioAppRuntime): VatioBackgroundServiceRecord {
@@ -235,18 +302,12 @@ export function createBackgroundServiceManager({
       return true;
     },
     stop(appId) {
-      const runtime = runtimes.get(appId);
-      if (!runtime) return false;
-      const service = services.get(appId);
-      invokeServiceAction(runtime, service, "stop");
-      invokeServiceAction(runtime, service, "destroy");
-      controllers.get(appId)?.abort();
-      controllers.delete(appId);
-      services.delete(appId);
-      starting.delete(appId);
-      deactivateRuntime(runtime);
-      runtimes.delete(appId);
+      if (!runtimes.has(appId)) return false;
+      void queueStop(appId);
       return true;
+    },
+    stopAsync(appId) {
+      return queueStop(appId);
     },
     startAutostartServices() {
       for (const manifest of registry.listApps()) {
@@ -268,12 +329,14 @@ export function createBackgroundServiceManager({
     },
     destroy() {
       for (const unsubscribe of controlSubscriptions.splice(0)) unsubscribe();
-      for (const appId of Array.from(runtimes.keys())) manager.stop(appId);
+      const stopPromises = Array.from(runtimes.keys()).map((appId) => queueStop(appId));
       for (const controller of controllers.values()) controller.abort();
+      void Promise.allSettled(stopPromises);
       runtimes.clear();
       services.clear();
       controllers.clear();
       starting.clear();
+      stopping.clear();
     },
   };
 

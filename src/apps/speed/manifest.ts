@@ -25,6 +25,7 @@ export const speedAppManifest = defineAppManifest({
     "driveRecording.read",
     "driveRecording.write",
     "cloud.sync",
+    "network.backend",
     "i18n.read",
     "settings.read",
     "shell.window",
@@ -41,4 +42,3 @@ export const speedAppManifest = defineAppManifest({
     legacyHref: "#/speed",
   },
 });
-

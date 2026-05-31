@@ -93,8 +93,10 @@ describe("app shell route app runtime lifecycle", () => {
         listServices: vi.fn(() => []),
         resume: vi.fn(() => false),
         start: vi.fn(() => false),
+        startAsync: vi.fn(async () => false),
         startAutostartServices: vi.fn(() => []),
         stop: vi.fn(() => false),
+        stopAsync: vi.fn(async () => false),
         suspend: vi.fn(() => false),
       })),
       createShellAppRuntimeManager: vi.fn(() => ({

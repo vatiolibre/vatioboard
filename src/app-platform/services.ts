@@ -296,8 +296,10 @@ function createAuthGateway(
   permissions: VatioAppPermissionRuntime,
   logger?: VatioAppLogger | null,
 ) {
-  if (!permissions.has("auth.session")) return null;
-  const canUseAuth = () => canUseService(permissions, logger, "auth", "auth.session");
+  if (!permissions.has("auth.session") || !permissions.has("network.backend")) return null;
+  const canUseAuth = () =>
+    canUseService(permissions, logger, "auth", "auth.session")
+    && canUseService(permissions, logger, "auth", "network.backend");
 
   return {
     async getSessionState(options?: Record<string, unknown>) {
@@ -331,8 +333,10 @@ function createCloudSyncGateway(
   permissions: VatioAppPermissionRuntime,
   logger?: VatioAppLogger | null,
 ) {
-  if (!permissions.has("cloud.sync")) return null;
-  const canUseCloudSync = () => canUseService(permissions, logger, "cloudSync", "cloud.sync");
+  if (!permissions.has("cloud.sync") || !permissions.has("network.backend")) return null;
+  const canUseCloudSync = () =>
+    canUseService(permissions, logger, "cloudSync", "cloud.sync")
+    && canUseService(permissions, logger, "cloudSync", "network.backend");
 
   return {
     async getStatus() {

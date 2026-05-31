@@ -49,12 +49,16 @@ permissions: ["cloud.sync", "auth.session", "network.backend", "storage.app"],
 services: ["cloudSync", "auth", "storage"],
 ```
 
+`network.backend` is required for both `auth` and `cloudSync`. Do not declare backend-facing services without it.
+
 Shell launcher app:
 
 ```ts
 permissions: ["shell.launchApp", "i18n.read"],
 services: ["shell", "i18n"],
 ```
+
+`shell.launchApp` is not enough by itself. The app must also declare `services: ["shell"]` before `runtime.shell.openApp()`, `openAppAsync()`, `closeApp()`, or `focusApp()` will run.
 
 Shell-window app:
 
@@ -64,4 +68,3 @@ services: ["shell", "storage", "settings"],
 ```
 
 Choose the smallest set that supports the app. Add permissions when a real feature needs them, not as a future wish list.
-

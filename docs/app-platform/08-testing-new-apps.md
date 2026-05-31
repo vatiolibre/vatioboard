@@ -11,6 +11,8 @@ Every app needs tests for its platform contract. Keep tests focused; avoid snaps
 - Storage namespacing.
 - Permission gating.
 - Service declaration gating.
+- Shell launch gating when the app uses `runtime.shell`.
+- `network.backend` gating when the app uses `auth` or `cloudSync`.
 - Mount/unmount cleanup.
 - Duplicate route/window id protection.
 - Smoke route coverage for user-facing routes.
@@ -109,6 +111,58 @@ describe("route cleanup", () => {
 
 Prefer using the real `createCleanupStack()` or route test helpers when testing a route module.
 
+## Background Service Example
+
+For background services with entries, test both successful and failed lifecycle paths:
+
+```js
+import { describe, expect, it, vi } from "vitest";
+import { createBackgroundServiceManager, createAppControlService, createAppRegistry } from "../../src/app-platform/index.js";
+
+describe("background service lifecycle", () => {
+  it("does not cache a failed start", async () => {
+    const registry = createAppRegistry({ logger: { warn() {} } });
+    registry.registerApp({
+      id: "test.background",
+      title: "Test Background",
+      shortTitle: "Background",
+      description: "Test",
+      kind: "background-service",
+      version: "1.0.0",
+      icon: "<svg></svg>",
+      i18nKey: "testBackground",
+      entry: async () => ({
+        createBackgroundServiceApp: () => ({
+          start() {
+            throw new Error("failed");
+          },
+          destroy: vi.fn(),
+        }),
+      }),
+      surfaces: ["background", "app-manager"],
+      order: 1,
+      permissions: ["storage.app"],
+      services: ["storage"],
+      localFirst: true,
+      teslaOptimized: true,
+      offlineCapable: true,
+      status: "experimental",
+      metadata: {},
+    });
+    const manager = createBackgroundServiceManager({
+      registry,
+      control: createAppControlService({ registry }),
+    });
+
+    await expect(manager.startAsync("test.background")).resolves.toBe(false);
+    expect(manager.getRuntime("test.background")).toBeNull();
+    expect(manager.listServices()).toEqual([]);
+  });
+});
+```
+
+Also test `stopAsync()` when `stop()` or `destroy()` returns a promise. `stopAsync()` should await `stop()` before calling `destroy()`, then remove the runtime.
+
 ## Generator Tests
 
 The app generator is dependency-free and can be tested by running it against a temporary app root:
@@ -116,6 +170,7 @@ The app generator is dependency-free and can be tested by running it against a t
 - Reject invalid names.
 - Reject existing folders without `--force`.
 - Generate route/window/background file sets.
+- Transpile or parse generated TypeScript files enough to catch syntax errors.
+- Assert generated manifests import existing icon exports and `defineAppManifest`.
 - Preserve existing files during dry runs.
 - Print next steps.
-

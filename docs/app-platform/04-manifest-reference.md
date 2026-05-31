@@ -146,6 +146,8 @@ The registry calls `validateAppManifest()` before registration and rejects inval
 - `metadata` is required.
 - `gps.highAccuracy` should also declare `gps.read`.
 - `driveRecording.write` should also declare `driveRecording.read`.
+- `auth` service access requires both `auth.session` and `network.backend`.
+- `cloudSync` service access requires both `cloud.sync` and `network.backend`.
+- `runtime.shell.openApp()`, `openAppAsync()`, `closeApp()`, and `focusApp()` require `services: ["shell"]` as well as `shell.launchApp`.
 
 Warnings still allow registration today, but new apps should treat warnings as defects.
-

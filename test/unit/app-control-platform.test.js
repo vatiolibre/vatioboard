@@ -40,6 +40,10 @@ function cleanupStack() {
   };
 }
 
+async function flushAsyncWork(cycles = 5) {
+  for (let index = 0; index < cycles; index += 1) await Promise.resolve();
+}
+
 function mountAppManagerRoute(extraContext = {}) {
   const root = document.createElement("main");
   root.innerHTML = appsTemplate;
@@ -377,12 +381,214 @@ describe("VatioBoard OS app control plane", () => {
     expect(service.resume).toHaveBeenCalledTimes(1);
     expect(manager.getRuntime("test.background.entry")?.lifecycle.getState()).toBe("active");
 
-    expect(manager.stop("test.background.entry")).toBe(true);
+    await expect(manager.stopAsync("test.background.entry")).resolves.toBe(true);
     expect(service.stop).toHaveBeenCalledTimes(1);
     expect(service.destroy).toHaveBeenCalledTimes(1);
     expect(manager.getRuntime("test.background.entry")).toBeNull();
 
     manager.destroy();
+  });
+
+  it("cleans up and reports false when background service start throws synchronously", async () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    const service = {
+      start: vi.fn(() => {
+        throw new Error("sync start failed");
+      }),
+      destroy: vi.fn(),
+    };
+    const manifest = {
+      ...appRegistry.getApp("vatio.offlineReadiness"),
+      id: "test.background.sync-fail",
+      title: "Sync Fail Background",
+      shortTitle: "Sync Fail",
+      order: 1,
+      entry: vi.fn(async () => ({
+        createBackgroundServiceApp: vi.fn(() => service),
+      })),
+      metadata: {},
+    };
+    registry.registerApp(manifest);
+    const control = createAppControlService({ registry, storage: localStorage });
+    const manager = createBackgroundServiceManager({ registry, control, baseContext: {} });
+
+    await expect(manager.startAsync("test.background.sync-fail")).resolves.toBe(false);
+
+    expect(service.start).toHaveBeenCalledTimes(1);
+    expect(service.destroy).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.sync-fail")).toBeNull();
+    expect(manager.listServices()).toEqual([]);
+
+    manager.destroy();
+  });
+
+  it("cleans up and reports false when background service start rejects", async () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    const service = {
+      start: vi.fn(async () => {
+        throw new Error("async start failed");
+      }),
+      destroy: vi.fn(),
+    };
+    const manifest = {
+      ...appRegistry.getApp("vatio.offlineReadiness"),
+      id: "test.background.async-fail",
+      title: "Async Fail Background",
+      shortTitle: "Async Fail",
+      order: 1,
+      entry: vi.fn(async () => ({
+        createBackgroundServiceApp: vi.fn(() => service),
+      })),
+      metadata: {},
+    };
+    registry.registerApp(manifest);
+    const control = createAppControlService({ registry, storage: localStorage });
+    const manager = createBackgroundServiceManager({ registry, control, baseContext: {} });
+
+    await expect(manager.startAsync("test.background.async-fail")).resolves.toBe(false);
+
+    expect(service.start).toHaveBeenCalledTimes(1);
+    expect(service.destroy).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.async-fail")).toBeNull();
+    expect(manager.listServices()).toEqual([]);
+
+    manager.destroy();
+  });
+
+  it("retries background service start cleanly after a failed start", async () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    const failedService = {
+      start: vi.fn(() => {
+        throw new Error("first start failed");
+      }),
+      destroy: vi.fn(),
+    };
+    const recoveredService = {
+      start: vi.fn(),
+      destroy: vi.fn(),
+    };
+    const createBackgroundServiceApp = vi
+      .fn()
+      .mockReturnValueOnce(failedService)
+      .mockReturnValueOnce(recoveredService);
+    const entry = vi.fn(async () => ({ createBackgroundServiceApp }));
+    const manifest = {
+      ...appRegistry.getApp("vatio.offlineReadiness"),
+      id: "test.background.retry",
+      title: "Retry Background",
+      shortTitle: "Retry",
+      order: 1,
+      entry,
+      metadata: {},
+    };
+    registry.registerApp(manifest);
+    const control = createAppControlService({ registry, storage: localStorage });
+    const manager = createBackgroundServiceManager({ registry, control, baseContext: {} });
+
+    await expect(manager.startAsync("test.background.retry")).resolves.toBe(false);
+    await expect(manager.startAsync("test.background.retry")).resolves.toBe(true);
+
+    expect(entry).toHaveBeenCalledTimes(2);
+    expect(createBackgroundServiceApp).toHaveBeenCalledTimes(2);
+    expect(failedService.destroy).toHaveBeenCalledTimes(1);
+    expect(recoveredService.start).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.retry")?.lifecycle.getState()).toBe("active");
+
+    await manager.stopAsync("test.background.retry");
+    manager.destroy();
+  });
+
+  it("awaits async background service stop before destroy and cleanup", async () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    let resolveStop = null;
+    let resolveDestroy = null;
+    let serviceSignal = null;
+    const actions = [];
+    const service = {
+      start: vi.fn(),
+      stop: vi.fn(() => new Promise((resolve) => {
+        actions.push(`stop:${serviceSignal?.aborted === true}`);
+        resolveStop = resolve;
+      })),
+      destroy: vi.fn(() => new Promise((resolve) => {
+        actions.push(`destroy:${serviceSignal?.aborted === true}`);
+        resolveDestroy = resolve;
+      })),
+    };
+    const manifest = {
+      ...appRegistry.getApp("vatio.offlineReadiness"),
+      id: "test.background.async-stop",
+      title: "Async Stop Background",
+      shortTitle: "Async Stop",
+      order: 1,
+      entry: vi.fn(async () => ({
+        createBackgroundServiceApp: vi.fn(({ signal }) => {
+          serviceSignal = signal;
+          return service;
+        }),
+      })),
+      metadata: {},
+    };
+    registry.registerApp(manifest);
+    const control = createAppControlService({ registry, storage: localStorage });
+    const manager = createBackgroundServiceManager({ registry, control, baseContext: {} });
+
+    await expect(manager.startAsync("test.background.async-stop")).resolves.toBe(true);
+    const stopPromise = manager.stopAsync("test.background.async-stop");
+
+    expect(service.stop).toHaveBeenCalledTimes(1);
+    expect(service.destroy).not.toHaveBeenCalled();
+
+    resolveStop?.();
+    await flushAsyncWork();
+    expect(service.destroy).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.async-stop")?.lifecycle.getState()).toBe("active");
+    expect(serviceSignal?.aborted).toBe(false);
+
+    let settled = false;
+    void stopPromise.then(() => {
+      settled = true;
+    });
+    await flushAsyncWork();
+    expect(settled).toBe(false);
+
+    resolveDestroy?.();
+    await expect(stopPromise).resolves.toBe(true);
+    expect(actions).toEqual(["stop:false", "destroy:false"]);
+    expect(serviceSignal?.aborted).toBe(true);
+    expect(manager.getRuntime("test.background.async-stop")).toBeNull();
+
+    manager.destroy();
+  });
+
+  it("clears background service records immediately when the manager is destroyed", async () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    const service = {
+      start: vi.fn(),
+      stop: vi.fn(() => new Promise(() => {})),
+      destroy: vi.fn(),
+    };
+    const manifest = {
+      ...appRegistry.getApp("vatio.offlineReadiness"),
+      id: "test.background.destroy",
+      title: "Destroy Background",
+      shortTitle: "Destroy",
+      order: 1,
+      entry: vi.fn(async () => ({
+        createBackgroundServiceApp: vi.fn(() => service),
+      })),
+      metadata: {},
+    };
+    registry.registerApp(manifest);
+    const control = createAppControlService({ registry, storage: localStorage });
+    const manager = createBackgroundServiceManager({ registry, control, baseContext: {} });
+
+    await expect(manager.startAsync("test.background.destroy")).resolves.toBe(true);
+    manager.destroy();
+
+    expect(service.stop).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.destroy")).toBeNull();
+    expect(manager.listServices()).toEqual([]);
   });
 
   it("stops background service entry instances when the app is disabled", async () => {
@@ -411,6 +617,7 @@ describe("VatioBoard OS app control plane", () => {
     expect(manager.getRuntime("test.background.disable")?.lifecycle.getState()).toBe("active");
 
     control.setEnabled("test.background.disable", false);
+    await flushAsyncWork();
     expect(service.stop).toHaveBeenCalledTimes(1);
     expect(service.destroy).toHaveBeenCalledTimes(1);
     expect(manager.getRuntime("test.background.disable")).toBeNull();

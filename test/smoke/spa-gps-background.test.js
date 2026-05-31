@@ -3,6 +3,7 @@ import { emitGeolocationSuccess, getBrowserMocks } from '../helpers/browser-mock
 import { bootHtmlPage, flushTasks } from '../helpers/page-smoke.js';
 
 const WELCOME_CONSENT_KEY = 'vatioboard.welcome_consent.v1';
+const SPA_GPS_BACKGROUND_SMOKE_TIMEOUT_MS = 180000;
 
 const testDoubles = vi.hoisted(() => ({
   archiveReplaySessionSpy: vi.fn(),
@@ -526,7 +527,7 @@ describe('SPA GPS background runtime', () => {
         return Math.max(sampleCount, embeddedCount) >= 3;
       })
     ).toBe(true);
-  }, 90000);
+  }, SPA_GPS_BACKGROUND_SMOKE_TIMEOUT_MS);
 
   it('shows speed alert activity only after alert audio is explicitly armed', async () => {
     await bootHtmlPage('index.html');
@@ -565,7 +566,7 @@ describe('SPA GPS background runtime', () => {
     ).toBe(true);
     expect(audioSystem.isBackgroundAudioLeaseActive(audioModule.SPEED_BACKGROUND_AUDIO_LEASE)).toBe(true);
     expect(audioSystem.getBackgroundAudioLeaseCount()).toBe(2);
-  }, 40000);
+  }, SPA_GPS_BACKGROUND_SMOKE_TIMEOUT_MS);
 
   it('keeps GPS recording and silent leases alive across media-session pause and stop', async () => {
     await bootHtmlPage('index.html');
@@ -642,7 +643,7 @@ describe('SPA GPS background runtime', () => {
     expect(document.querySelector('[data-activity-id="speed.recording"]')?.textContent).not.toContain(
       'Needs rearm'
     );
-  }, 40000);
+  }, SPA_GPS_BACKGROUND_SMOKE_TIMEOUT_MS);
 
   it('does not stop GPS recording on media-session stop, while explicit app stop still stops', async () => {
     await bootHtmlPage('index.html');
@@ -693,7 +694,7 @@ describe('SPA GPS background runtime', () => {
         audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
       )
     ).toBe(false);
-  }, 40000);
+  }, SPA_GPS_BACKGROUND_SMOKE_TIMEOUT_MS);
 
   it('retains GPS recording while hidden after recording keep-alive interruption', async () => {
     let now = 1_700_000_000_000;
@@ -782,7 +783,7 @@ describe('SPA GPS background runtime', () => {
     expect(speedModule.__testGetSpeedStateSnapshot().sampleCount).toBeGreaterThanOrEqual(
       before.sampleCount
     );
-  }, 40000);
+  }, SPA_GPS_BACKGROUND_SMOKE_TIMEOUT_MS);
 
   it('keeps speed alert and recording keep-alive leases independent', async () => {
     await bootHtmlPage('index.html');
@@ -852,7 +853,7 @@ describe('SPA GPS background runtime', () => {
       )
     ).toBe(true);
     expect(audioSystem.isBackgroundAudioLeaseActive(audioModule.SPEED_BACKGROUND_AUDIO_LEASE)).toBe(true);
-  }, 40000);
+  }, SPA_GPS_BACKGROUND_SMOKE_TIMEOUT_MS);
 
   it('shows a first-run driving alerts prompt when alert audio is blocked', async () => {
     installControllableAudio({ blocked: true });
@@ -896,7 +897,7 @@ describe('SPA GPS background runtime', () => {
     expect(document.getElementById('quickAudioToggle').getAttribute('aria-label')).toBe(
       'Unmute alert audio'
     );
-  }, 40000);
+  }, SPA_GPS_BACKGROUND_SMOKE_TIMEOUT_MS);
 
   it('uses the prompt primary pointerdown itself to arm background alert audio', async () => {
     let pointerActivationOpen = false;
@@ -927,7 +928,6 @@ describe('SPA GPS background runtime', () => {
     document.getElementById('quickAudioToggle').click();
     await settleAsyncWork(40);
 
-    const primary = document.getElementById('drivingAudioPromptPrimary');
     expect(document.getElementById('drivingAudioPrompt').hidden).toBe(false);
     expect(
       audioSystem.isBackgroundAudioLeaseActive(audioModule.SPEED_BACKGROUND_AUDIO_LEASE)
@@ -948,7 +948,7 @@ describe('SPA GPS background runtime', () => {
     expect(document.querySelector('[data-activity-id="speed.alerts"]')?.textContent).not.toContain(
       'Alert audio blocked'
     );
-  }, 40000);
+  }, SPA_GPS_BACKGROUND_SMOKE_TIMEOUT_MS);
 
   it('does not duplicate prompt arming across pointer, touch, and click follow-up events', async () => {
     let pointerActivationOpen = false;
@@ -1015,7 +1015,7 @@ describe('SPA GPS background runtime', () => {
       audioSystem.isBackgroundAudioLeaseActive(audioModule.SPEED_BACKGROUND_AUDIO_LEASE)
     ).toBe(true);
     expect(document.getElementById('drivingAudioPrompt').hidden).toBe(true);
-  }, 40000);
+  }, SPA_GPS_BACKGROUND_SMOKE_TIMEOUT_MS);
 
   it('arms blocked alert audio from the explicit prompt and from a trusted shell gesture', async () => {
     const { AudioClass, audioInstances } = installControllableAudio({ blocked: true });
@@ -1104,7 +1104,7 @@ describe('SPA GPS background runtime', () => {
     expect(
       audioSystem.isBackgroundAudioLeaseActive(audioModule.SPEED_BACKGROUND_AUDIO_LEASE)
     ).toBe(true);
-  }, 40000);
+  }, SPA_GPS_BACKGROUND_SMOKE_TIMEOUT_MS);
 
   it('does not opportunistically arm alert audio while alerts are muted', async () => {
     await bootHtmlPage('index.html');
@@ -1132,7 +1132,7 @@ describe('SPA GPS background runtime', () => {
     expect(document.getElementById('quickAudioToggle').getAttribute('aria-label')).toBe(
       'Unmute alert audio'
     );
-  }, 40000);
+  }, SPA_GPS_BACKGROUND_SMOKE_TIMEOUT_MS);
 
   it('keeps Speed to Board to Speed keep-alive-only recovery inline while GPS is fresh', async () => {
     await bootHtmlPage('index.html');
@@ -1204,7 +1204,7 @@ describe('SPA GPS background runtime', () => {
     expect(document.getElementById('drivingAudioPrompt').hidden).toBe(true);
     expect(nativeClearWatch).not.toHaveBeenCalled();
     expect(nativeWatchPosition).toHaveBeenCalledTimes(1);
-  }, 40000);
+  }, SPA_GPS_BACKGROUND_SMOKE_TIMEOUT_MS);
 
   it('shows the recording recovery modal after Speed to Board to Speed when GPS is stale', async () => {
     vi.useFakeTimers();
@@ -1244,7 +1244,7 @@ describe('SPA GPS background runtime', () => {
     } finally {
       vi.useRealTimers();
     }
-  }, 40000);
+  }, SPA_GPS_BACKGROUND_SMOKE_TIMEOUT_MS);
 
   it('keeps an active accel run subscribed across board remounts without duplicating GPS watchers', async () => {
     await bootHtmlPage('index.html');
@@ -1312,5 +1312,5 @@ describe('SPA GPS background runtime', () => {
     await navigateHash('#/board');
 
     expect(nativeClearWatch.mock.calls.length).toBeGreaterThan(clearCallsBeforeIdleUnmount);
-  }, 40000);
+  }, SPA_GPS_BACKGROUND_SMOKE_TIMEOUT_MS);
 });

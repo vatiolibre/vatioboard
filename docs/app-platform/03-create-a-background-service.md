@@ -35,15 +35,19 @@ export interface VatioBackgroundServiceAppModule {
 }
 ```
 
-The manager also exposes `startAsync(appId)` for tests and future callers that need to wait for entry loading. The existing `start(appId)` remains synchronous for App Manager and shell code; it starts lifecycle-only services immediately and kicks off entry loading for services with async entries.
+The manager exposes `startAsync(appId)` for tests and callers that need to wait for entry loading. The existing `start(appId)` remains synchronous for App Manager and shell code; it starts lifecycle-only services immediately and kicks off entry loading for services with async entries.
+
+The manager also exposes `stopAsync(appId)` for services that need async cleanup. The existing `stop(appId)` remains synchronous and starts the async stop path in the background.
 
 ## Lifecycle
 
-- `start` or `startAsync`: ensure runtime, import `manifest.entry` when present, call `createBackgroundServiceApp()`, call `service.start()` when available, then mount and activate the runtime.
+- `start` or `startAsync`: ensure runtime, import `manifest.entry` when present, call `createBackgroundServiceApp()`, call `service.start()` when available, then cache the service, mount, and activate the runtime.
+- `startAsync`: resolves `false` when entry import, factory creation, or `service.start()` fails. Failed starts clean up the controller, service instance, and runtime so a later start can retry.
 - `suspend`: call `service.suspend()` when available, then `runtime.lifecycle.suspend()`.
 - `resume`: call `service.resume()` when available, then `runtime.lifecycle.resume()`.
-- `stop`: call `service.stop()`, call `service.destroy()`, abort the service signal, deactivate/unmount the runtime, and remove the runtime/service instance.
-- `destroy`: stop all running services and unsubscribe from App Manager control events.
+- `stopAsync`: await `service.stop()`, await `service.destroy()`, abort the service signal, deactivate/unmount the runtime, and remove the runtime/service instance.
+- `stop`: initiate `stopAsync()` and return whether a stop was started.
+- `destroy`: unsubscribe from App Manager control events, initiate cleanup for all services, abort remaining controllers, and clear manager records.
 
 Duplicate starts reuse the existing runtime and service instance.
 
@@ -147,3 +151,4 @@ Background services must clean up everything they start: timers, listeners, obse
 
 If disabling an app in App Manager stops the service, the service must not leave work running after `stop()` or `destroy()`.
 
+If `start()` allocates resources before it can fail, implement `destroy()` so the manager can clean up the partial service before retrying.

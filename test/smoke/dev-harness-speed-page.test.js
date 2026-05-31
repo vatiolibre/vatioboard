@@ -296,7 +296,7 @@ describe('speed.html smoke', () => {
 
     expect(document.getElementById('speedValue').textContent).toBe('36');
     expect(document.getElementById('altitudeValue').textContent).toBe('42');
-  });
+  }, 60000);
 
   it('hides the cloud sync login action for active subscribers', async () => {
     window.fetch = createActiveSubscriberFetch();

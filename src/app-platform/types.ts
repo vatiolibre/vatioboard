@@ -434,6 +434,7 @@ export interface VatioBackgroundServiceManager {
   suspend(appId: VatioAppId): boolean;
   resume(appId: VatioAppId): boolean;
   stop(appId: VatioAppId): boolean;
+  stopAsync(appId: VatioAppId): Promise<boolean>;
   startAutostartServices(): VatioBackgroundServiceRecord[];
   getRuntime(appId: VatioAppId): VatioAppRuntime | null;
   listServices(): VatioBackgroundServiceRecord[];

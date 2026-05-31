@@ -9,7 +9,7 @@ permissions: ["gps.read"],
 services: ["gps"],
 ```
 
-If permission exists but the service is missing, `runtime.services.gps` is `null`. If the service exists but permission is missing or revoked in App Manager, access is denied.
+If permission exists but the service is missing, `runtime.services.gps` is `null`. If the service exists but permission is missing or revoked in App Manager, access is denied. Shell launch methods follow the same rule: `runtime.shell.openApp()` needs the `shell` service declaration and the matching shell permission.
 
 ## Runtime Shape
 
@@ -82,6 +82,8 @@ services: ["auth"],
 
 `runtime.services.auth` exposes backend session and feature access checks.
 
+Both permissions are required. If `auth.session` is declared without `network.backend`, `runtime.services.auth` is `null`.
+
 ### Cloud Sync
 
 Manifest:
@@ -92,6 +94,8 @@ services: ["cloudSync"],
 ```
 
 `runtime.services.cloudSync` exposes status and request helpers for account-aware sync.
+
+Both permissions are required. If `cloud.sync` is declared without `network.backend`, `runtime.services.cloudSync` is `null`.
 
 ### Settings
 
@@ -126,6 +130,8 @@ services: ["shell"],
 
 Use `runtime.shell.openApp()`, `openAppAsync()`, `closeApp()`, and `focusApp()` to work with other apps. `shell.window` is for shell-window ownership; `shell.launchApp` is for launching/focusing apps.
 
+The shell object is always present for diagnostics such as `getRunningApps()`, but launch/focus/close methods return `false` unless the app declares `services: ["shell"]` and has `shell.launchApp`.
+
 ### Storage
 
 Manifest:
@@ -155,4 +161,3 @@ Use `runtime.i18n.t()`, `apply()`, `getLanguage()`, and `subscribe()` for app-vi
 - Use `runtime.services.sharedSettings` for shared OS preferences.
 - Use IndexedDB through an app-owned wrapper for large structured records, media metadata, or query-heavy data.
 - Use direct `localStorage` only for legacy compatibility or migrations, and document the keys.
-
