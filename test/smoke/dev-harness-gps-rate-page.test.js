@@ -58,19 +58,9 @@ describe("gps-rate.html smoke", () => {
       canonical: "https://vatioboard.com/gps-rate.html",
     });
 
-    expect(document.getElementById("gpsRateToolsMenuBtn").getAttribute("aria-label")).toBe("Pages");
-    expect(document.querySelector("#gpsRateToolsMenuBtn .btn-icon svg")).toBeTruthy();
-    document.getElementById("gpsRateToolsMenuBtn").click();
-    await flushTasks();
-    expect(document.getElementById("gpsRateToolsMenuList").hidden).toBe(false);
-    expect(document.getElementById("gpsRateLangToggleMenu").textContent).toBe("EN");
-    expect(document.querySelector("#gpsRateToolsMenuList [data-backend-auth]")).toBeTruthy();
-    expect(document.querySelector("#gpsRateToolsMenuList [data-backend-auth-signup]")?.getAttribute("href")).toBe("https://www.vatiolibre.com/login#signup");
-    expect(document.querySelector("#gpsRateToolsMenuList [data-backend-auth-forgot]")?.getAttribute("href")).toBe("https://www.vatiolibre.com/login#forgot");
-    expect(document.querySelector("#gpsRateToolsMenuList [data-backend-auth-signup]")?.getAttribute("target")).toBe("_blank");
-    expect(document.querySelector("#gpsRateToolsMenuList [data-backend-auth-forgot]")?.getAttribute("target")).toBe("_blank");
-    expect(document.querySelector("#gpsRateToolsMenuList [data-backend-auth-signup]")?.getAttribute("rel")).toBe("noopener noreferrer");
-    expect(document.querySelector("#gpsRateToolsMenuList [data-backend-auth-forgot]")?.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(document.getElementById("gpsRateToolsMenuBtn")).toBeNull();
+    expect(document.getElementById("gpsRateToolsMenuList")).toBeNull();
+    expect(document.getElementById("gpsRateLangToggleMenu")).toBeNull();
     expect(document.querySelector("#gpsRateStartQuick .btn-icon svg")).toBeTruthy();
 
     document.getElementById("gpsRateStartQuick").click();

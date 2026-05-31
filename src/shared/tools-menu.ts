@@ -22,33 +22,9 @@ export function applyButtonIcon(button, icon) {
   iconSlot.innerHTML = icon || "";
 }
 
-export function getActiveToolsMenuList(fallbackList = null) {
-  return window.__vatioboardSpa && window.__vatioboardStartMenu?.list
-    ? window.__vatioboardStartMenu.list
-    : fallbackList;
-}
-
 export function initToolsMenu(options) {
   var button = options && options.button ? options.button : null;
   var list = options && options.list ? options.list : null;
-  var sharedStartMenu = window.__vatioboardSpa && window.__vatioboardStartMenu;
-
-  if (
-    sharedStartMenu
-    && button
-    && list
-    && list.id !== "libraryOverflowList"
-    && options?.shared !== false
-  ) {
-    list.hidden = true;
-    list.remove();
-    sharedStartMenu.bindTrigger(button);
-    return {
-      close: function () { sharedStartMenu.close(); },
-      setOpen: function (isOpen) { sharedStartMenu.setOpen(isOpen, button); },
-      destroy: function () {},
-    };
-  }
 
   if (!button || !list) {
     return {

@@ -20,7 +20,6 @@ export function createGpsRateController({
   elements,
   state,
   renderer,
-  toolsMenu,
   t,
   getLang,
   toggleLang,
@@ -140,14 +139,6 @@ export function createGpsRateController({
       .finally(() => {
         unitBootstrapPending = false;
       });
-  }
-
-  function bindMenuNavigation(element, href) {
-    if (!element) return;
-    element.addEventListener('click', () => {
-      toolsMenu.close();
-      window.location.href = href;
-    });
   }
 
   function stopWatchOnly() {
@@ -552,11 +543,6 @@ export function createGpsRateController({
         toggleLang();
       });
     });
-    bindMenuNavigation(elements.openSpeedMenu, '/speed');
-    bindMenuNavigation(elements.openAccelMenu, '/accel');
-    bindMenuNavigation(elements.openCalculatorMenu, '/calculator');
-    bindMenuNavigation(elements.openBoardMenu, '/');
-
     document.addEventListener('i18n:change', syncLanguage);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 

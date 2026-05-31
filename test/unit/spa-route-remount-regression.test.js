@@ -6,7 +6,8 @@ const routeState = vi.hoisted(() => ({
   unmounted: [],
   contexts: [],
   staleWrites: [],
-  boundButtons: new Map(),
+  shellManager: null,
+  shellTaskbar: null,
   createPlayerWidget: vi.fn(() => ({
     open: vi.fn(),
     close: vi.fn(),
@@ -25,16 +26,6 @@ const routeState = vi.hoisted(() => ({
       hasContext: Boolean(routeContext?.context),
       pageName: routeContext?.pageName,
     });
-
-    const toolsButton = root?.querySelector?.(
-      '#speedToolsMenuBtn, #replayToolsMenuBtn, #accelToolsMenuBtn, #libraryToolsMenuBtn, #toolsMenuBtn'
-    );
-    if (name === 'board') {
-      window.__vatioboardStartMenu?.bindTrigger?.(toolsButton);
-    } else if (!routeState.boundButtons.has(name)) {
-      routeState.boundButtons.set(name, toolsButton);
-      window.__vatioboardStartMenu?.bindTrigger?.(toolsButton);
-    }
 
     Promise.resolve().then(() => {
       if (routeContext?.signal?.aborted) return;
@@ -136,9 +127,20 @@ async function bootRouteHarness() {
 
   const { initFloatingTools } = await import('../../src/shared/floating-tools.js');
   const { initSharedStartMenu } = await import('../../src/shared/start-menu.js');
+  const { createShellWindowManager } = await import('../../src/shared/shell-window-manager.js');
+  const { createShellTaskbar } = await import('../../src/shared/shell-taskbar.js');
   const persistentLayer = document.getElementById('app-persistent-layer');
   const floatingTools = initFloatingTools({ mount: persistentLayer });
-  initSharedStartMenu({ floatingTools, mount: persistentLayer });
+  const startMenu = initSharedStartMenu({ floatingTools, mount: persistentLayer });
+  routeState.shellManager = createShellWindowManager({
+    root: persistentLayer,
+    storeOptions: { storage: localStorage, migrateLegacy: false },
+  });
+  routeState.shellTaskbar = createShellTaskbar({
+    shellManager: routeState.shellManager,
+    root: persistentLayer,
+    startMenu,
+  });
 }
 
 async function navigateHash(hash) {
@@ -183,12 +185,13 @@ async function expectRouteUsable(name) {
   expect(root.querySelector(routeSelectors[name])).toBeTruthy();
   expect(document.body.classList.contains(routeBodyClasses[name])).toBe(true);
 
-  const toolsButton = root.querySelector(
-    '#speedToolsMenuBtn, #replayToolsMenuBtn, #accelToolsMenuBtn, #libraryToolsMenuBtn, #toolsMenuBtn'
-  );
-  toolsButton?.click();
+  expect(root.querySelector('#speedToolsMenuBtn, #replayToolsMenuBtn, #accelToolsMenuBtn, #libraryToolsMenuBtn, #toolsMenuBtn')).toBeNull();
+  const startButton = document.querySelector('[data-vb-shell-start-button]');
+  expect(startButton).toBeTruthy();
+  expect(startButton.getAttribute('aria-controls')).toBe('appStartMenuList');
+  window.__vatioboardStartMenu.setOpen(true, startButton);
   await flushTasks();
-  expect(document.getElementById('appStartMenuList')).toBeTruthy();
+  expect(document.getElementById('appStartMenuList')?.hidden).toBe(false);
   expect(document.querySelector("[data-start-route='/board']")).toBeTruthy();
 }
 
@@ -199,11 +202,14 @@ describe('SPA route remount regression coverage', () => {
     delete window.__vatioboardFloatingTools;
     delete window.__vatioboardPlayerWidget;
     delete window.__vatioboardStartMenu;
+    routeState.shellTaskbar?.destroy?.();
+    routeState.shellManager?.destroy?.();
+    routeState.shellTaskbar = null;
+    routeState.shellManager = null;
     routeState.mounted = [];
     routeState.unmounted = [];
     routeState.contexts = [];
     routeState.staleWrites = [];
-    routeState.boundButtons.clear();
     routeState.createPlayerWidget.mockClear();
     vi.resetModules();
     localStorage.clear();

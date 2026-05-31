@@ -540,13 +540,29 @@ async function expectPersistentShellReady() {
   expect(document.querySelectorAll(".player-fab")).toHaveLength(0);
   expect(document.querySelectorAll("[data-vb-shell-taskbar]")).toHaveLength(1);
 
-  const routeToolsButton = document.querySelector(
-    "#speedToolsMenuBtn, #replayToolsMenuBtn, #accelToolsMenuBtn, #libraryToolsMenuBtn, #toolsMenuBtn"
-  );
-  routeToolsButton?.click();
+  const taskbar = document.querySelector("[data-vb-shell-taskbar]");
+  expect(taskbar.hidden).toBe(false);
+  const startButton = taskbar.querySelector("[data-vb-shell-start-button]");
+  expect(startButton).toBeTruthy();
+  expect(startButton.getAttribute("aria-controls")).toBe("appStartMenuList");
+  window.__vatioboardStartMenu?.setOpen?.(true, startButton);
   await settle();
-  expect(document.getElementById("appStartMenuList")).toBeTruthy();
+  const startMenu = document.getElementById("appStartMenuList");
+  expect(startMenu).toBeTruthy();
+  expect(startMenu.hidden).toBe(false);
+  expect(startMenu.querySelector(".app-start-menu-brand")).toBeTruthy();
+  expect(startMenu.querySelector("[data-lang-toggle]")).toBeTruthy();
+  expect(startMenu.querySelector("[data-backend-auth]")).toBeTruthy();
+  expect(startMenu.querySelector("[data-backend-auth-user]")).toBeTruthy();
+  expect(startMenu.querySelector("[data-backend-auth-login]")).toBeTruthy();
+  expect(startMenu.querySelector("[data-backend-auth-signup]")?.getAttribute("href")).toBe("https://www.vatiolibre.com/login#signup");
+  expect(startMenu.querySelector("[data-backend-auth-forgot]")?.getAttribute("href")).toBe("https://www.vatiolibre.com/login#forgot");
   expect(document.querySelector("[data-start-route='/board']")).toBeTruthy();
+  expect(document.querySelector("[data-start-route='/replay']")).toBeTruthy();
+  expect(document.querySelector("[data-start-route='/accel']")).toBeTruthy();
+  expect(document.querySelector("[data-start-route='/library']")).toBeTruthy();
+  expect(document.querySelector("[data-start-action]")).toBeTruthy();
+  window.__vatioboardStartMenu?.close?.();
 }
 
 async function expectRouteUsable(hash) {

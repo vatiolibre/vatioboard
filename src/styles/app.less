@@ -102,6 +102,8 @@ html.vb-floating-drag-active body {
   --vb-shell-taskbar-padding-x: 12px;
   --vb-shell-taskbar-padding-inline-total: 24px;
   --vb-shell-taskbar-handle-width: var(--vb-touch-target-min);
+  --vb-shell-taskbar-start-width: 52px;
+  --vb-shell-taskbar-gap: 8px;
 
   position: fixed;
   left: 50%;
@@ -111,6 +113,7 @@ html.vb-floating-drag-active body {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: var(--vb-shell-taskbar-gap);
   width: fit-content;
   max-width: var(--vb-shell-taskbar-max-width);
   min-height: 58px;
@@ -140,7 +143,14 @@ html.vb-floating-drag-active body {
   width: auto;
   max-width: max(
     52px,
-    calc(var(--vb-shell-taskbar-max-width) - var(--vb-shell-taskbar-handle-width) - var(--vb-shell-taskbar-padding-inline-total))
+    calc(
+      var(--vb-shell-taskbar-max-width)
+      - var(--vb-shell-taskbar-handle-width)
+      - var(--vb-shell-taskbar-start-width)
+      - var(--vb-shell-taskbar-padding-inline-total)
+      - var(--vb-shell-taskbar-gap)
+      - var(--vb-shell-taskbar-gap)
+    )
   );
   max-height: none;
   min-width: 0;
@@ -186,7 +196,13 @@ html.vb-floating-drag-active body {
 }
 
 .vb-shell-taskbar[data-vb-shell-taskbar-empty="true"] {
-  min-width: 58px;
+  min-width: calc(
+    var(--vb-shell-taskbar-handle-width)
+    + var(--vb-shell-taskbar-start-width)
+    + var(--vb-shell-taskbar-padding-inline-total)
+    + var(--vb-shell-taskbar-gap)
+    + var(--vb-shell-taskbar-gap)
+  );
 }
 
 .vb-shell-taskbar.is-detached {
@@ -289,6 +305,39 @@ html.vb-floating-drag-active body {
   background:
     radial-gradient(circle, color-mix(in srgb, var(--calc-text, #111827) 44%, transparent) 1.5px, transparent 2px)
     center / 8px 3px repeat-x;
+}
+
+.vb-shell-taskbar-start {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 var(--vb-shell-taskbar-start-width);
+  width: var(--vb-shell-taskbar-start-width);
+  min-width: var(--vb-shell-taskbar-start-width);
+  height: 52px;
+  min-height: 52px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--calc-accent, #10b981) 42%, var(--calc-border, rgba(0, 0, 0, 0.14)));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--calc-accent, #10b981) 12%, var(--calc-surface, #fff));
+  color: var(--calc-text, #111827);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.16);
+  cursor: pointer;
+  font: inherit;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+}
+
+.vb-shell-taskbar-start:hover,
+.vb-shell-taskbar-start:focus-visible,
+.vb-shell-taskbar-start[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--calc-accent, #10b981) 60%, transparent);
+  background: color-mix(in srgb, var(--calc-accent, #10b981) 20%, var(--calc-surface, #fff));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--calc-accent, #10b981) 18%, transparent),
+    0 12px 24px rgba(15, 23, 42, 0.18);
+  outline: none;
 }
 
 .vb-shell-taskbar-item {
@@ -477,6 +526,7 @@ html.vb-floating-drag-active body {
     --vb-shell-taskbar-padding-x: 8px;
     --vb-shell-taskbar-padding-inline-total: 16px;
     --vb-shell-taskbar-handle-width: var(--vb-touch-target-min);
+    --vb-shell-taskbar-start-width: 52px;
 
     left: var(--vb-shell-taskbar-safe-left);
     right: auto;

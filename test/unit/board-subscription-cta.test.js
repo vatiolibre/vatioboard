@@ -135,6 +135,17 @@ describe("Board subscription CTA", () => {
   });
 
   it("keeps guest save attempts on the login/auth flow", async () => {
+    const startMenuList = document.createElement("div");
+    const authInput = document.createElement("input");
+    authInput.dataset.backendAuthUser = "";
+    startMenuList.append(authInput);
+    document.body.append(startMenuList);
+    window.__vatioboardStartMenu = {
+      bindTrigger: vi.fn(),
+      close: vi.fn(),
+      list: startMenuList,
+      setOpen: vi.fn(),
+    };
     backendAuthMocks.getBackendSessionState.mockResolvedValue({
       authenticated: false,
       isGuest: true,
@@ -148,7 +159,8 @@ describe("Board subscription CTA", () => {
 
     expect(root.querySelector("#status").textContent).toBe("Log in to save board documents to VatioLibre.");
     expect(root.querySelector("#subscriptionCta").hidden).toBe(true);
-    expect(root.querySelector("#toolsMenuList").hidden).toBe(false);
+    expect(window.__vatioboardStartMenu.setOpen).toHaveBeenCalledWith(true);
+    expect(document.activeElement).toBe(authInput);
     expect(backendAuthMocks.startSubscriptionSso).not.toHaveBeenCalled();
 
     mounted.unmount();

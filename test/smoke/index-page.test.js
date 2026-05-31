@@ -130,6 +130,7 @@ describe("index.html SPA shell", () => {
     expect(document.querySelector("[data-mock-view='speed']")).toBeTruthy();
     expect(document.querySelector(".floating-dock")).toBeNull();
     expect(document.querySelector("[data-vb-shell-taskbar]")).toBeTruthy();
+    expect(document.querySelector("[data-vb-shell-start-button]")).toBeTruthy();
     expect(window.__vatioboardFloatingTools).toBeTruthy();
     expect(routeState.createPlayerWidget).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -158,6 +159,7 @@ describe("index.html SPA shell", () => {
     expect(document.querySelector(".vb-welcome-backdrop")).toBeNull();
     expect(document.querySelector("[data-mock-view='speed']")).toBeTruthy();
     expect(document.querySelector("[data-vb-shell-taskbar]")).toBeTruthy();
+    expect(document.querySelector("[data-vb-shell-start-button]")).toBeTruthy();
     expect(nativeWatchPosition).not.toHaveBeenCalled();
   }, 40000);
 
@@ -217,26 +219,17 @@ describe("index.html SPA shell", () => {
     expect(document.querySelector("[data-mock-view='speed']")).toBeNull();
   }, 40000);
 
-  it("binds route menu buttons to one shared start menu in the SPA", async () => {
+  it("opens the full shared start menu from the shell taskbar Start button", async () => {
     await bootSpa();
 
-    const { initToolsMenu } = await import("../../src/shared/tools-menu.js");
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "tools-menu-btn";
-    const localList = document.createElement("div");
-    localList.id = "mockToolsMenuList";
-    localList.className = "tools-menu-list";
-    localList.hidden = true;
-    document.body.append(button, localList);
-
-    const menu = initToolsMenu({ button, list: localList });
-    button.click();
+    const startButton = document.querySelector("[data-vb-shell-start-button]");
+    expect(startButton).toBeTruthy();
+    expect(startButton.getAttribute("aria-controls")).toBe("appStartMenuList");
+    startButton.click();
 
     const sharedList = document.getElementById("appStartMenuList");
     expect(sharedList).toBeTruthy();
     expect(sharedList.hidden).toBe(false);
-    expect(localList.hidden).toBe(true);
     expect(sharedList.querySelector("[data-start-route]")?.dataset.startRoute).toBe("/");
     expect(sharedList.querySelector("[data-start-route='/board']")).toBeTruthy();
     expect(sharedList.querySelector("[data-start-route='/replay']")).toBeTruthy();
@@ -258,7 +251,7 @@ describe("index.html SPA shell", () => {
     expect(authForm.querySelector("[data-backend-auth-signup]")?.getAttribute("rel")).toBe("noopener noreferrer");
     expect(authForm.querySelector("[data-backend-auth-forgot]")?.getAttribute("rel")).toBe("noopener noreferrer");
 
-    menu.close();
+    window.__vatioboardStartMenu.close();
     expect(sharedList.hidden).toBe(true);
   });
 

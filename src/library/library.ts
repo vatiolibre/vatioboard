@@ -5,17 +5,13 @@ import "../shared/ui/confirm-dialog.less";
 
 import { createCleanupStack } from "../app/view-cleanup.js";
 import {
-  IconAccel,
   IconBoard,
   IconDownload,
   IconMedia,
   IconMore,
   IconMuted,
-  IconPages,
   IconPin,
-  IconReplay,
   IconRestart,
-  IconSpeed,
   IconTrash,
   IconVolume,
   IconWorld,
@@ -86,8 +82,7 @@ import {
   openCloudReplaySession,
 } from "../shared/cloud-library-open.js";
 import * as audioRuntime from "../shared/audio-runtime.js";
-import { applyButtonIcon, getActiveToolsMenuList, initToolsMenu } from "../shared/tools-menu.js";
-import { integratePlayerWidget } from "../player/integrate-player-widget.js";
+import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
 import { initCloudSyncStatusIndicator } from "../shared/cloud-sync-status-indicator.js";
 
 const isSpaRuntime = Boolean(window.__vatioboardSpa);
@@ -129,8 +124,6 @@ export function getLibraryElements(root: any): AnyRecord {
     searchInput: queryOne(root, "#librarySearch"),
     sortSelect: queryOne(root, "#librarySort"),
     refreshButton: queryOne(root, "#libraryRefresh"),
-    toolsMenuButton: queryOne(root, "#libraryToolsMenuBtn"),
-    toolsMenuList: queryOne(root, "#libraryToolsMenuList"),
     toolbar: queryOne(root, ".library-toolbar"),
     status: queryOne(root, "#libraryStatus"),
     subscriptionCta: queryOne(root, "#librarySubscriptionCta"),
@@ -153,11 +146,6 @@ export function getLibraryElements(root: any): AnyRecord {
     toolbarVolume: queryOne(root, "#libraryToolbarVolume"),
     toolbarMuteBtn: queryOne(root, "#libraryToolbarMute"),
     toolbarVolumeSlider: queryOne(root, "#libraryToolbarVolumeSlider"),
-    openBoardPage: queryOne(root, "#openLibraryBoardMenu"),
-    openSpeedPage: queryOne(root, "#openLibrarySpeedMenu"),
-    openReplayPage: queryOne(root, "#openLibraryReplayMenu"),
-    openAccelPage: queryOne(root, "#openLibraryAccelMenu"),
-    openCurrentPage: queryOne(root, "#openLibraryCurrentMenu"),
   };
 }
 
@@ -186,7 +174,6 @@ function createInactiveToolsMenu(): ToolsMenuController {
 }
 
 let elements: AnyRecord = createEmptyLibraryElements();
-let toolsMenu: ToolsMenuController = createInactiveToolsMenu();
 let overflowMenu: ToolsMenuController = createInactiveToolsMenu();
 let libraryMediaPlayer: AnyRecord = createInactiveLibraryMediaPlayer();
 let libraryRouteGeneration = 0;
@@ -206,7 +193,7 @@ function isVisibleForFocus(element: any) {
 }
 
 function getCloudSyncLauncherFocusTarget() {
-  const menuList = getActiveToolsMenuList(elements.toolsMenuList);
+  const menuList = window.__vatioboardStartMenu?.list;
   const candidates = [
     menuList?.querySelector("[data-backend-auth-user]"),
     menuList?.querySelector("[data-backend-auth-password]"),
@@ -219,7 +206,7 @@ function getCloudSyncLauncherFocusTarget() {
 }
 
 function focusCloudSyncLauncherTarget(attempt = 0) {
-  toolsMenu.setOpen(true);
+  window.__vatioboardStartMenu?.setOpen?.(true);
   const target = getCloudSyncLauncherFocusTarget();
   if (target) {
     focusElement(target);
@@ -2566,13 +2553,6 @@ function handleLanguageChange() {
   renderDetail();
 }
 
-function bindMenuNavigation(button, href, cleanup) {
-  cleanup.addEventListener(button, "click", () => {
-    toolsMenu.close();
-    navigateToAppRoute(href);
-  });
-}
-
 function syncStateFromRouteQuery() {
   const routeQuery = getCurrentAppRouteQuery();
   state.activeTab = routeQuery.has("tab")
@@ -2586,13 +2566,7 @@ function syncStateFromRouteQuery() {
 }
 
 function applyLibraryIcons(routeElements = elements) {
-  applyButtonIcon(routeElements.toolsMenuButton, IconPages);
   applyButtonIcon(routeElements.refreshButton, IconRestart);
-  applyButtonIcon(routeElements.openBoardPage, IconBoard);
-  applyButtonIcon(routeElements.openSpeedPage, IconSpeed);
-  applyButtonIcon(routeElements.openReplayPage, IconReplay);
-  applyButtonIcon(routeElements.openAccelPage, IconAccel);
-  applyButtonIcon(routeElements.openCurrentPage, IconWorld);
   applyButtonIcon(routeElements.actionOpen, IconWorld);
   applyButtonIcon(routeElements.actionDownload, IconDownload);
   applyButtonIcon(routeElements.actionRename, IconBoard);
@@ -2611,14 +2585,12 @@ function destroyLibraryRouteResources(route: AnyRecord | null = activeLibraryRou
   if (!route || route.destroyed) return;
   route.destroyed = true;
   route.syncIndicator?.destroy?.();
-  route.toolsMenu?.destroy?.();
   route.overflowMenu?.destroy?.();
   route.mediaPlayer?.destroy?.();
 
   if (activeLibraryRoute === route) {
     activeLibraryRoute = null;
     elements = createEmptyLibraryElements();
-    toolsMenu = createInactiveToolsMenu();
     overflowMenu = createInactiveToolsMenu();
     libraryMediaPlayer = createInactiveLibraryMediaPlayer();
   }
@@ -2643,17 +2615,11 @@ function mountLibraryController(routeContext: AnyRecord = {}) {
   libraryRouteGeneration = route.generation;
   activeLibraryRoute = route;
   elements = getLibraryElements(root);
-  toolsMenu = initToolsMenu({
-    button: elements.toolsMenuButton,
-    list: elements.toolsMenuList,
-  });
-  toolsMenu.setOpen(false);
   overflowMenu = initToolsMenu({
     button: elements.overflowBtn,
     list: elements.overflowList,
   });
   libraryMediaPlayer = createLibraryMediaPlayer();
-  route.toolsMenu = toolsMenu;
   route.overflowMenu = overflowMenu;
   route.mediaPlayer = libraryMediaPlayer;
   route.syncIndicator = initCloudSyncStatusIndicator({
@@ -2704,7 +2670,6 @@ function unmountLibraryController() {
   pendingAuthRefresh = null;
   stopRequest(listRequestState);
   stopRequest(detailRequestState);
-  toolsMenu.close();
   overflowMenu.close();
   libraryMediaPlayer.destroy();
   if (mapPreview) {
@@ -2758,7 +2723,6 @@ function bindEvents({ elements: routeElements = elements, cleanup, signal }: Any
   });
 
   cleanup.addEventListener(routeElements.refreshButton, "click", () => {
-    toolsMenu.close();
     void refreshAuthState({ force: true });
   });
 
@@ -2815,14 +2779,6 @@ function bindEvents({ elements: routeElements = elements, cleanup, signal }: Any
       syncToolbarVolume();
     }
   });
-
-  bindMenuNavigation(routeElements.openBoardPage, "#/board", cleanup);
-  bindMenuNavigation(routeElements.openSpeedPage, "#/speed", cleanup);
-  bindMenuNavigation(routeElements.openReplayPage, "#/replay", cleanup);
-  bindMenuNavigation(routeElements.openAccelPage, "#/accel", cleanup);
-  if (!isSpaRuntime) {
-    integratePlayerWidget({ toolsMenuList: routeElements.toolsMenuList, toolsMenu });
-  }
 
   cleanup.addEventListener(window, ROUTE_VISIBLE_EVENT, (event) => {
     if (event?.detail?.path !== "/library") return;

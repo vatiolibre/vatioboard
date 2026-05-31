@@ -13,7 +13,7 @@ import {
   t as sharedT,
   toggleLang,
 } from '../i18n.js';
-import { getCurrentAppRouteQuery, navigateToAppRoute, ROUTE_VISIBLE_EVENT } from '../app/router.js';
+import { getCurrentAppRouteQuery, ROUTE_VISIBLE_EVENT } from '../app/router.js';
 import { clearActivity, setActivity } from '../shared/activity-state.js';
 import { initBackendAuthControllers } from '../shared/backend-auth.js';
 import { createAnalogSpeedometer } from '../shared/analog-speedometer.js';
@@ -36,8 +36,7 @@ import {
 } from '../shared/repositories/accel-repository.js';
 import { formatRouteString } from '../shared/route-string.js';
 import { hasStoredValue } from '../shared/storage.js';
-import { applyButtonIcon, getActiveToolsMenuList, initToolsMenu } from '../shared/tools-menu.js';
-import { integratePlayerWidget } from '../player/integrate-player-widget.js';
+import { applyButtonIcon } from '../shared/tools-menu.js';
 import {
   hasConfiguredUnitPreferences,
   markUnitBootstrapManualSelection,
@@ -45,18 +44,14 @@ import {
 } from '../shared/unit-bootstrap.js';
 import { ensureSingleTabOwnership, SINGLE_TAB_OWNERSHIP_EVENT } from '../shared/single-tab.js';
 import {
-  IconBoard,
   IconClose,
   IconDistance,
-  IconPages,
   IconPause,
   IconPlay,
   IconReplay,
   IconRestart,
   IconSettings,
-  IconSpeed,
   IconTime,
-  IconWorld,
 } from '../icons.js';
 import {
   FINISH_SOUND_URL,
@@ -135,15 +130,9 @@ const ACCEL_ACTIVITY_ID = 'accel.run';
 const ACCEL_SELECTED_PRESET_SETTING_KEY = 'selectedPresetId';
 
 type AnyRecord = Record<string, any>;
-type AnyFn = (...args: any[]) => any;
 type RouteLifecycle = {
   mount: (routeContext?: AnyRecord) => unknown;
   unmount: () => void;
-};
-type ToolsMenuController = {
-  close: AnyFn;
-  destroy: AnyFn;
-  setOpen: AnyFn;
 };
 
 let accelRouteLifecycle: RouteLifecycle = {
@@ -219,11 +208,6 @@ export const initPromise = (function () {
       langToggleButtons: queryAll('[data-lang-toggle], #langToggle'),
       pageDescriptionMeta: root ? document.querySelector('meta[name="description"]') : null,
       toolbar: queryOne('.accel-toolbar'),
-      toolsMenuBtn: byId('accelToolsMenuBtn'),
-      toolsMenuList: byId('accelToolsMenuList'),
-      openSpeedMenu: byId('openAccelSpeedMenu'),
-      openLibraryMenu: byId('openAccelLibraryMenu'),
-      openBoardMenu: byId('openAccelBoardMenu'),
       sheetBackdrop: byId('accelSheetBackdrop'),
       setupTrigger: byId('setupTrigger'),
       setupTriggerValue: byId('setupTriggerValue'),
@@ -363,14 +347,6 @@ export const initPromise = (function () {
     };
   }
 
-  function createInactiveToolsMenu(): ToolsMenuController {
-    return {
-      close: function () {},
-      destroy: function () {},
-      setOpen: function () {},
-    };
-  }
-
   function createInactiveSpeedometer(): AnyRecord {
     return {
       destroy: function () {},
@@ -380,7 +356,6 @@ export const initPromise = (function () {
   }
 
   var elements: AnyRecord = getAccelElements(null);
-  var toolsMenu: ToolsMenuController = createInactiveToolsMenu();
 
   function openCloudSyncLauncher() {
     Promise.resolve().then(function () {
@@ -390,12 +365,8 @@ export const initPromise = (function () {
 
   function applyAccelIcons() {
     applyButtonIcon(elements.armRun, IconPlay);
-    applyButtonIcon(elements.toolsMenuBtn, IconPages);
     applyButtonIcon(elements.toolbarSetup, IconSettings);
     applyButtonIcon(elements.toolbarResults, IconReplay);
-    applyButtonIcon(elements.openSpeedMenu, IconSpeed);
-    applyButtonIcon(elements.openLibraryMenu, IconWorld);
-    applyButtonIcon(elements.openBoardMenu, IconBoard);
     applyButtonIcon(elements.resultReplayToggle, IconPlay);
     applyButtonIcon(elements.resultReplayRestart, IconRestart);
     applyButtonIcon(elements.resultReplayAxisTime, IconTime);
@@ -875,12 +846,6 @@ export const initPromise = (function () {
     elements.langToggleButtons.forEach(function (button) {
       add(button, 'click', handleLangToggle);
     });
-    bindMenuNavigation(elements.openSpeedMenu, '#/speed', cleanup);
-    bindMenuNavigation(elements.openLibraryMenu, '#/library?tab=accel', cleanup);
-    bindMenuNavigation(elements.openBoardMenu, '#/board', cleanup);
-    if (!isSpaRuntime) {
-      integratePlayerWidget({ toolsMenuList: elements.toolsMenuList, toolsMenu });
-    }
     window.__vatioboardCanLeaveAccel = function () {
       if (!isRunActive(state.run)) return true;
       if (isSpaRuntime) return true;
@@ -1113,14 +1078,6 @@ export const initPromise = (function () {
     queueResultLocationOverflowSync();
   }
 
-  function bindMenuNavigation(element, href, cleanup) {
-    if (!element) return;
-    cleanup?.addEventListener(element, 'click', function () {
-      toolsMenu.close();
-      navigateToAppRoute(href);
-    });
-  }
-
   function setupResultGraphObservers() {
     resultGraph.setupObservers();
   }
@@ -1147,7 +1104,7 @@ export const initPromise = (function () {
   }
 
   function getCloudSyncLauncherFocusTarget() {
-    var menuList = getActiveToolsMenuList(elements.toolsMenuList);
+    var menuList = window.__vatioboardStartMenu?.list;
     var candidates = [
       menuList?.querySelector('[data-backend-auth-user]'),
       menuList?.querySelector('[data-backend-auth-password]'),
@@ -1161,7 +1118,7 @@ export const initPromise = (function () {
 
   function focusCloudSyncLauncherTarget(attempt = 0) {
     var nextAttempt = Number.isFinite(attempt) ? attempt : 0;
-    toolsMenu.setOpen(true);
+    window.__vatioboardStartMenu?.setOpen?.(true);
     var target = getCloudSyncLauncherFocusTarget();
     if (target) {
       focusElement(target);
@@ -1728,7 +1685,6 @@ export const initPromise = (function () {
     if (!route || route.destroyed) return;
     route.destroyed = true;
     route.syncIndicator?.destroy?.();
-    route.toolsMenu?.destroy?.();
     replayChartFilterController?.destroy?.();
     replayChartFilterController = null;
     accelChartControllersReady = false;
@@ -1740,7 +1696,6 @@ export const initPromise = (function () {
     replayMapRenderToken += 1;
     replayMap.destroy?.();
     replayMap = createInactiveReplayMap();
-    toolsMenu = createInactiveToolsMenu();
     if (activeAccelRoute === route) {
       activeAccelRoute = null;
     }
@@ -1761,11 +1716,6 @@ export const initPromise = (function () {
     };
     activeAccelRoute = route;
     elements = getAccelElements(routeContext.root || document);
-    toolsMenu = initToolsMenu({
-      button: elements.toolsMenuBtn,
-      list: elements.toolsMenuList,
-    });
-    route.toolsMenu = toolsMenu;
     createAccelLiveRouteControllers();
     route.syncIndicator = initCloudSyncStatusIndicator({
       mount: elements.toolbar,

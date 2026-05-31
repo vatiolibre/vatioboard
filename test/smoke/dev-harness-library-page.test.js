@@ -417,7 +417,8 @@ describe("library.html smoke", () => {
 
     expect(document.querySelector(".header-inner.library-header-inner")).toBeTruthy();
     expect(document.querySelector(".brand .brand-home")).toBeTruthy();
-    expect(document.getElementById("libraryToolsMenuBtn")).toBeTruthy();
+    expect(document.getElementById("libraryToolsMenuBtn")).toBeNull();
+    expect(document.getElementById("libraryToolsMenuList")).toBeNull();
     expect(document.getElementById("libraryRefresh")?.querySelector("svg")).toBeTruthy();
     expect(document.querySelector(".library-account-panel")).toBeNull();
     expect(document.querySelector(".library-hero")).toBeNull();
@@ -441,20 +442,10 @@ describe("library.html smoke", () => {
     expect(document.getElementById("librarySyncSlot")).toBeNull();
     expect(toolbar?.querySelector(":scope > .cloud-sync-indicator.cloud-sync-indicator-end")).toBeTruthy();
 
-    const toolsMenuButton = document.getElementById("libraryToolsMenuBtn");
-    const toolsMenuList = document.getElementById("libraryToolsMenuList");
-    expect(toolsMenuList?.hidden).toBe(true);
-    toolsMenuButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await settleLibraryTasks(2);
-
-    expect(toolsMenuButton?.getAttribute("aria-expanded")).toBe("true");
-    expect(toolsMenuList?.hidden).toBe(false);
-    expect(pageHeader?.classList.contains("tools-menu-layer-open")).toBe(true);
-    expect(document.querySelector("#libraryToolsMenuList [data-backend-auth]")).toBeTruthy();
-    expect(document.querySelector("#libraryToolsMenuList [data-backend-auth]")?.dataset.authState).toBe("authenticated");
-    expect(document.getElementById("openLibraryReplayMenu")).toBeTruthy();
+    expect(pageHeader?.classList.contains("tools-menu-layer-open")).toBe(false);
+    expect(document.getElementById("openLibraryReplayMenu")).toBeNull();
     expect(document.getElementById("openLibraryGpsLabMenu")).toBeNull();
-    expect(document.getElementById("openLibraryCurrentMenu")?.disabled).toBe(true);
+    expect(document.getElementById("openLibraryCurrentMenu")).toBeNull();
   });
 
   it("switches to board documents and renders their summary-first detail", async () => {
@@ -1304,23 +1295,12 @@ describe("library.html smoke", () => {
     }
   });
 
-  it("hides the Player launcher for guests and shows it after login", async () => {
+  it("does not install a route-local Player launcher in the standalone harness", async () => {
     const libraryPage = await import("../../src/library/dev-harness.js");
     await libraryPage.initPromise;
     await settleLibraryTasks();
 
-    const btn = document.querySelector("#libraryToolsMenuList [data-player-toggle]");
-    expect(btn).toBeTruthy();
-    expect(btn.className).toBe("btn-with-icon");
-    expect(btn.querySelector(".btn-icon[aria-hidden='true'] svg")).toBeTruthy();
-    expect(btn.querySelector("[data-i18n='audioPlayer']")).toBeTruthy();
+    expect(document.querySelector("[data-player-toggle]")).toBeNull();
     expect(document.querySelector(".player-fab")).toBeNull();
-
-    // Library boots authenticated by default in its fixture, so check visible
-    // The auth state depends on the library test fixture setup.
-    // Just verify the button exists + has correct formatting.
-    expect(btn.parentElement.id).toBe("libraryToolsMenuList");
-    const authForm = document.querySelector("#libraryToolsMenuList [data-backend-auth]");
-    expect(btn.nextElementSibling).toBe(authForm);
   });
 });

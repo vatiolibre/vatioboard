@@ -1,5 +1,6 @@
 import type { ShellRuntime, ShellWindowRecord } from "../types/shell";
 import type { StorageLike } from "../types/storage";
+import { IconPages } from "../icons.js";
 import { getToolDefinitionForShellWindow } from "./tool-registry.js";
 
 const TASKBAR_STATE_KEY = "vatioboard.shell.taskbar_fabs.v1";
@@ -32,6 +33,7 @@ interface TaskbarOptions {
   root?: HTMLElement;
   labels?: Record<string, string>;
   icons?: Record<string, string>;
+  startMenu?: VatioBoardStartMenu | null;
   storage?: StorageLike | null;
 }
 
@@ -136,22 +138,38 @@ function getDetachedRoot(root: HTMLElement | Document | null | undefined) {
 }
 
 function getViewportSize() {
+  const viewport = globalThis.visualViewport;
   return {
-    width: globalThis.innerWidth || document.documentElement?.clientWidth || 1024,
-    height: globalThis.innerHeight || document.documentElement?.clientHeight || 768,
+    width: viewport?.width || globalThis.innerWidth || document.documentElement?.clientWidth || 1024,
+    height: viewport?.height || globalThis.innerHeight || document.documentElement?.clientHeight || 768,
+  };
+}
+
+function getViewportBounds() {
+  const viewport = globalThis.visualViewport;
+  const size = getViewportSize();
+  return {
+    left: viewport?.offsetLeft || 0,
+    top: viewport?.offsetTop || 0,
+    width: size.width,
+    height: size.height,
   };
 }
 
 function clampPositionToViewport(position: LegacyTaskbarOptions, width: number, height: number) {
-  const viewport = getViewportSize();
+  const viewport = getViewportBounds();
+  const minLeft = viewport.left + VIEWPORT_MARGIN_PX;
+  const minTop = viewport.top + VIEWPORT_MARGIN_PX;
+  const maxLeft = viewport.left + viewport.width - width - VIEWPORT_MARGIN_PX;
+  const maxTop = viewport.top + viewport.height - height - VIEWPORT_MARGIN_PX;
   return {
     left: Math.min(
-      Math.max(VIEWPORT_MARGIN_PX, position.left),
-      Math.max(VIEWPORT_MARGIN_PX, viewport.width - width - VIEWPORT_MARGIN_PX)
+      Math.max(minLeft, position.left),
+      Math.max(minLeft, maxLeft)
     ),
     top: Math.min(
-      Math.max(VIEWPORT_MARGIN_PX, position.top),
-      Math.max(VIEWPORT_MARGIN_PX, viewport.height - height - VIEWPORT_MARGIN_PX)
+      Math.max(minTop, position.top),
+      Math.max(minTop, maxTop)
     ),
   };
 }
@@ -507,6 +525,7 @@ export function createShellTaskbar({
   root = document.body,
   labels = {},
   icons = {},
+  startMenu = null,
   storage,
 }: TaskbarOptions = {}) {
   if (!shellManager) throw new Error("createShellTaskbar requires a shellManager.");
@@ -532,10 +551,32 @@ export function createShellTaskbar({
   dragHandle.setAttribute("aria-hidden", "true");
   suppressNativeDrag(dragHandle);
 
+  const startButton = document.createElement("button");
+  startButton.type = "button";
+  startButton.className = "vb-shell-taskbar-start vb-shell-taskbar-fab dock-btn";
+  startButton.setAttribute("data-vb-shell-start-button", "");
+  startButton.setAttribute("aria-label", labels.startMenu || "Start menu");
+  startButton.setAttribute("aria-haspopup", "true");
+  startButton.setAttribute("aria-expanded", "false");
+  startButton.title = labels.startMenu || "Start menu";
+  suppressNativeDrag(startButton);
+
+  const startIcon = document.createElement("span");
+  startIcon.className = "vb-shell-taskbar-icon";
+  startIcon.setAttribute("aria-hidden", "true");
+  startIcon.innerHTML = icons.startMenu || IconPages;
+  startButton.append(startIcon);
+
+  const startLabel = document.createElement("span");
+  startLabel.className = "vb-shell-taskbar-label";
+  startLabel.textContent = labels.startMenu || "Start menu";
+  startButton.append(startLabel);
+  startMenu?.bindTrigger?.(startButton);
+
   const trayElement = document.createElement("div");
   trayElement.className = "vb-shell-taskbar-tray";
   trayElement.setAttribute("data-vb-shell-taskbar-tray", "");
-  element.append(dragHandle, trayElement);
+  element.append(dragHandle, startButton, trayElement);
 
   const trashElement = document.createElement("div");
   trashElement.className = "vb-shell-taskbar-trash";
@@ -650,9 +691,13 @@ export function createShellTaskbar({
 
   function applyTaskbarPosition() {
     if (taskbarPosition?.detached === true) {
+      const previous = taskbarPosition;
       const position = clampElementPosition(taskbarPosition, element, 64, 64);
       taskbarPosition = { detached: true, ...position };
       setTaskbarFixedPosition(position);
+      if (previous.left !== position.left || previous.top !== position.top) {
+        saveState();
+      }
       return;
     }
 
@@ -694,6 +739,48 @@ export function createShellTaskbar({
     setTaskbarFixedPosition(position);
     taskbarPosition = { detached: true, ...position };
     return position;
+  }
+
+  function clampDetachedItemsToViewport() {
+    let changed = false;
+    for (const [id, position] of itemPositions) {
+      if (position?.detached !== true) continue;
+      const item = itemElements.get(id)
+        || Array.from(document.querySelectorAll("[data-vb-shell-taskbar-item]"))
+          .find((candidate) => candidate.getAttribute("data-vb-shell-taskbar-item") === id);
+      const next = clampElementPosition(position, item, FAB_SIZE_PX, FAB_SIZE_PX);
+      if (next.left !== position.left || next.top !== position.top) {
+        const clampedPosition: StoredPosition = {
+          detached: true,
+          left: next.left,
+          top: next.top,
+        };
+        itemPositions.set(id, clampedPosition);
+        if (item instanceof HTMLElement) applyDetachedStyle(item, clampedPosition);
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  function clampFloatingSurfaces() {
+    if (destroyed) return;
+    const previousTaskbarPosition = taskbarPosition;
+    applyTaskbarPosition();
+    const taskbarChanged = Boolean(
+      previousTaskbarPosition?.detached === true
+      && taskbarPosition?.detached === true
+      && (
+        previousTaskbarPosition.left !== taskbarPosition.left
+        || previousTaskbarPosition.top !== taskbarPosition.top
+      )
+    );
+    const itemsChanged = clampDetachedItemsToViewport();
+    if (taskbarChanged || itemsChanged) saveState();
+  }
+
+  function scheduleViewportClamp() {
+    clampFloatingSurfaces();
   }
 
   function rememberWindow(id) {
@@ -1034,14 +1121,18 @@ export function createShellTaskbar({
     destroyItemSensors();
     for (const item of itemElements.values()) item.remove();
     itemElements.clear();
-    if (dragHandle.parentElement !== element || trayElement.parentElement !== element) {
-      element.replaceChildren(dragHandle, trayElement);
+    if (
+      dragHandle.parentElement !== element
+      || startButton.parentElement !== element
+      || trayElement.parentElement !== element
+    ) {
+      element.replaceChildren(dragHandle, startButton, trayElement);
     }
     trayElement.replaceChildren();
 
     const records = getTaskbarWindows();
     let dockedCount = 0;
-    element.hidden = records.length === 0;
+    element.hidden = false;
 
     for (const record of records) {
       const state = getWindowState(record);
@@ -1077,6 +1168,10 @@ export function createShellTaskbar({
     if (destroyed) return;
     destroyed = true;
     taskbarSensor?.destroy();
+    window.removeEventListener("resize", scheduleViewportClamp);
+    window.removeEventListener("orientationchange", scheduleViewportClamp);
+    globalThis.visualViewport?.removeEventListener?.("resize", scheduleViewportClamp);
+    globalThis.visualViewport?.removeEventListener?.("scroll", scheduleViewportClamp);
     destroyItemSensors();
     endTaskbarDrag();
     cancelItemDrag();
@@ -1101,6 +1196,10 @@ export function createShellTaskbar({
   });
 
   root.appendChild(element);
+  window.addEventListener("resize", scheduleViewportClamp);
+  window.addEventListener("orientationchange", scheduleViewportClamp);
+  globalThis.visualViewport?.addEventListener?.("resize", scheduleViewportClamp);
+  globalThis.visualViewport?.addEventListener?.("scroll", scheduleViewportClamp);
   unsubscribe = shellManager.subscribe(({ event, record }) => {
     if (record && ["opened", "restored", "minimized"].includes(event)) {
       rememberWindow(record.id);
@@ -1109,6 +1208,7 @@ export function createShellTaskbar({
   });
   preferenceUnsubscribe = shellManager.subscribeShellPreferences?.((preferences) => {
     element.setAttribute("data-vb-shell-taskbar-position", preferences.taskbarPosition);
+    clampFloatingSurfaces();
   });
   render();
 
@@ -1117,5 +1217,6 @@ export function createShellTaskbar({
     render,
     focusWindow,
     getElement: () => element,
+    getStartButton: () => startButton,
   };
 }

@@ -167,6 +167,8 @@ describe("shell UI integration", () => {
     const app = await startAppShell();
 
     expect(document.querySelectorAll("[data-vb-shell-taskbar]")).toHaveLength(1);
+    expect(document.querySelectorAll("[data-vb-shell-start-button]")).toHaveLength(1);
+    expect(document.querySelector("[data-vb-shell-taskbar]").hidden).toBe(false);
     app.router.destroy();
   });
 
@@ -748,6 +750,7 @@ describe("shell UI integration", () => {
     const appCss = readProjectFile("src/styles/app.less");
     const taskbarBlock = getCssBlock(appCss, ".vb-shell-taskbar");
     const trayBlock = getCssBlock(appCss, ".vb-shell-taskbar-tray");
+    const startButtonBlock = getCssBlock(appCss, ".vb-shell-taskbar-start");
     const handleBlock = getCssBlock(appCss, ".vb-shell-taskbar-drag-handle");
     const itemBlock = getCssBlock(appCss, ".vb-shell-taskbar-item");
     const dragLayerBlock = getCssBlock(appCss, ".vb-shell-drag-layer");
@@ -756,6 +759,8 @@ describe("shell UI integration", () => {
     expect(getCssBlock(appCss, "[data-vb-shell-window] *")).toContain("touch-action: auto");
     expect(appCss).not.toMatch(/\[data-vb-shell-window\]\s+\*\s*\{[^}]*touch-action:\s*none/s);
     expect(taskbarBlock).toContain("touch-action: none");
+    expect(taskbarBlock).toContain("--vb-shell-taskbar-start-width: 52px");
+    expect(taskbarBlock).toContain("gap: var(--vb-shell-taskbar-gap)");
     expect(taskbarBlock).not.toContain("contain: layout paint");
     expect(taskbarBlock).not.toContain("overflow-x: auto");
     expect(taskbarBlock).not.toContain("-webkit-overflow-scrolling");
@@ -767,7 +772,8 @@ describe("shell UI integration", () => {
     expect(trayBlock).toContain("flex-wrap: wrap");
     expect(trayBlock).toContain("width: auto");
     expect(trayBlock).toContain("max-width: max(");
-    expect(trayBlock).toContain("calc(var(--vb-shell-taskbar-max-width) - var(--vb-shell-taskbar-handle-width) - var(--vb-shell-taskbar-padding-inline-total))");
+    expect(trayBlock).toContain("var(--vb-shell-taskbar-start-width)");
+    expect(trayBlock).toContain("var(--vb-shell-taskbar-gap)");
     expect(trayBlock).toContain("overflow: visible");
     expect(trayBlock).toContain("padding: 0");
     expect(trayBlock).toContain("margin: 0");
@@ -780,6 +786,10 @@ describe("shell UI integration", () => {
     expect(handleBlock).toContain("margin: 0");
     expect(handleBlock).toContain("touch-action: none");
     expect(handleBlock).toContain("-webkit-user-drag: none");
+    expect(startButtonBlock).toContain("width: var(--vb-shell-taskbar-start-width)");
+    expect(startButtonBlock).toContain("min-height: 52px");
+    expect(startButtonBlock).toContain("touch-action: manipulation");
+    expect(startButtonBlock).toContain("-webkit-user-drag: none");
     expect(itemBlock).toContain("touch-action: none");
     expect(itemBlock).toContain("-webkit-user-drag: none");
     expect(dragLayerBlock).toContain("position: fixed");

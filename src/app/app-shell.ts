@@ -167,7 +167,7 @@ export async function startAppShell({
   });
   const startMenu = initSharedStartMenu({ floatingTools, mount: persistentLayer, shellAppRuntimeManager });
   const activityIndicator = initActivityIndicator({ mount: persistentLayer });
-  const shellTaskbar = createShellTaskbar({ shellManager, root: persistentLayer });
+  const shellTaskbar = createShellTaskbar({ shellManager, root: persistentLayer, startMenu });
   const shellKeyboard = installShellKeyboard({ shellManager });
   floatingTools.taskbar = shellTaskbar;
   shellManager.restoreShellLayout();

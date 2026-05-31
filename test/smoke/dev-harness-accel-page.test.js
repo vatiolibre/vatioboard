@@ -380,8 +380,8 @@ describe('accel.html smoke', () => {
     });
     expect(document.getElementById('armRun').getAttribute('aria-label')).toBe('Start test');
     expect(document.querySelector('#armRun .btn-icon svg')).toBeTruthy();
-    expect(document.getElementById('accelToolsMenuBtn').getAttribute('aria-label')).toBe('Pages');
-    expect(document.querySelector('#accelToolsMenuBtn .btn-icon svg')).toBeTruthy();
+    expect(document.getElementById('accelToolsMenuBtn')).toBeNull();
+    expect(document.getElementById('accelToolsMenuList')).toBeNull();
     expect(['Local only', 'Syncing']).toContain(
       document.querySelector('.cloud-sync-indicator-btn')?.textContent
     );
@@ -402,34 +402,7 @@ describe('accel.html smoke', () => {
     expect(document.getElementById('closeResultsPanel').getAttribute('aria-label')).toBe('Close');
     expect(document.querySelector('#closeResultsPanel.accel-sheet-close-icon svg')).toBeTruthy();
     expect(document.getElementById('accelToolbarResults').disabled).toBe(true);
-    expect(document.getElementById('accelToolsMenuList').hidden).toBe(false);
-    expect(document.getElementById('accelToolsMenuBtn').getAttribute('aria-expanded')).toBe('true');
-    expect(document.activeElement).toBe(
-      document.querySelector('#accelToolsMenuList [data-backend-auth-user]')
-    );
-    expect(document.getElementById('accelLangToggleMenu').textContent).toBe('EN');
-    expect(document.querySelector('#accelToolsMenuList [data-backend-auth]')).toBeTruthy();
-    expect(
-      document.querySelector('#accelToolsMenuList [data-backend-auth-signup]')?.getAttribute('href')
-    ).toBe('https://www.vatiolibre.com/login#signup');
-    expect(
-      document.querySelector('#accelToolsMenuList [data-backend-auth-forgot]')?.getAttribute('href')
-    ).toBe('https://www.vatiolibre.com/login#forgot');
-    expect(
-      document.querySelector('#accelToolsMenuList [data-backend-auth-signup]')?.getAttribute('target')
-    ).toBe('_blank');
-    expect(
-      document.querySelector('#accelToolsMenuList [data-backend-auth-forgot]')?.getAttribute('target')
-    ).toBe('_blank');
-    expect(
-      document.querySelector('#accelToolsMenuList [data-backend-auth-signup]')?.getAttribute('rel')
-    ).toBe('noopener noreferrer');
-    expect(
-      document.querySelector('#accelToolsMenuList [data-backend-auth-forgot]')?.getAttribute('rel')
-    ).toBe('noopener noreferrer');
-    document.getElementById('accelToolsMenuBtn').click();
-    await flushTasks();
-    expect(document.getElementById('accelToolsMenuList').hidden).toBe(true);
+    expect(document.getElementById('accelToolsMenuList')).toBeNull();
     document.getElementById('accelToolbarSetup').click();
     await flushTasks();
     expect(document.getElementById('setupPanel').hidden).toBe(false);
@@ -1595,29 +1568,12 @@ describe('accel.html smoke', () => {
     expect(fakeMaps[0].remove).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the Player launcher available for guests and after login", async () => {
+  it("does not install a route-local Player launcher in the standalone harness", async () => {
     const accelPage = await import("../../src/accel/dev-harness.js");
     await accelPage.initPromise;
     await settleAsyncWork();
 
-    const btn = document.querySelector("#accelToolsMenuList [data-player-toggle]");
-    expect(btn).toBeTruthy();
-    expect(btn.hidden).toBe(false);
-    expect(btn.className).toBe("btn-with-icon");
-    expect(btn.querySelector(".btn-icon[aria-hidden='true'] svg")).toBeTruthy();
-    expect(btn.querySelector("[data-i18n='audioPlayer']")).toBeTruthy();
-    expect(document.querySelector(".player-fab")).toBeNull();
-
-    // Log in → launcher stays available.
-    const authForm = document.querySelector("#accelToolsMenuList [data-backend-auth]");
-    const authUser = authForm.querySelector("[data-backend-auth-user]");
-    const authPassword = authForm.querySelector("[data-backend-auth-password]");
-    authUser.value = "test@vatiolibre.com";
-    authPassword.value = "secret123";
-    authForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-    await settleAsyncWork();
-
-    expect(btn.hidden).toBe(false);
+    expect(document.querySelector("[data-player-toggle]")).toBeNull();
     expect(document.querySelector(".player-fab")).toBeNull();
   });
 });
