@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { setTimeout as delay } from 'node:timers/promises';
 import { emitGeolocationSuccess, getBrowserMocks } from '../helpers/browser-mocks.js';
 import { bootHtmlPage, flushTasks } from '../helpers/page-smoke.js';
 
 const WELCOME_CONSENT_KEY = 'vatioboard.welcome_consent.v1';
-const SPA_GPS_BACKGROUND_SMOKE_TIMEOUT_MS = 300000;
+const SPA_GPS_BACKGROUND_SMOKE_TIMEOUT_MS = 180000;
 
 const testDoubles = vi.hoisted(() => ({
   archiveReplaySessionSpy: vi.fn(),
@@ -24,7 +25,7 @@ async function settleAsyncWork(iterations = 20) {
 }
 
 async function yieldTask() {
-  await new Promise((resolve) => window.setTimeout(resolve, 0));
+  await delay(0);
 }
 
 async function waitForAsyncCondition(condition, iterations = 40) {
@@ -437,9 +438,13 @@ describe('SPA GPS background runtime', () => {
     await navigateHash('#/accel');
     await import('../../src/accel/accel.js').then((module) => module.initPromise);
     await settleAsyncWork();
-    await waitForAsyncCondition(
+    const accelWatcherSubscribed = await waitForAsyncCondition(
       () => accelWatchSpy.mock.calls.length > accelWatchCallBaseline
     );
+    expect(
+      accelWatcherSubscribed,
+      'Accel GPS watcher did not subscribe after navigating to the Accel route.'
+    ).toBe(true);
 
     expect(nativeClearWatch).not.toHaveBeenCalled();
     expect(serviceClearWatch).not.toHaveBeenCalled();

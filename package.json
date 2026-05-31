@@ -20,10 +20,10 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"*.{json,md,yml,yaml}\" \".github/**/*.{yml,yaml}\"",
     "format:check": "prettier --check \"*.{json,md,yml,yaml}\" \".github/**/*.{yml,yaml}\"",
-    "test": "vitest run",
+    "test": "vitest run test/unit test/frontend-architecture && pnpm run test:smoke",
     "test:watch": "vitest",
     "test:unit": "vitest run test/unit",
-    "test:smoke": "vitest run test/smoke",
+    "test:smoke": "vitest run test/smoke --exclude test/smoke/spa-gps-background.test.js && vitest run test/smoke/spa-gps-background.test.js",
     "verify": "pnpm run typecheck && pnpm run lint && pnpm test && pnpm run build"
   },
   "devDependencies": {
