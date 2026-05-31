@@ -1806,8 +1806,8 @@ async function loadList(
     )] : nextItems;
     const wasOffline = state.listOffline;
     state.listOffline = effectivelyOffline;
-    if (wasOffline && !isOfflineResponse) rehydrateAuthOnReconnect();
-    if (wasOffline !== isOfflineResponse) renderTabs();
+    if (wasOffline && !effectivelyOffline) rehydrateAuthOnReconnect();
+    if (wasOffline !== effectivelyOffline) renderTabs();
     state.totalCount = Number(response?.totalCount ?? response?.total_count) || state.items.length;
     state.hasMore = response?.hasMore === true || response?.has_more === true;
     state.nextOffset = Number(response?.nextOffset ?? response?.next_offset) || (offset + nextItems.length);
