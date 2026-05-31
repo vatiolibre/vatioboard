@@ -363,6 +363,21 @@ export interface VatioShellWindowAppModule {
   createShellWindowApp(options?: VatioShellWindowAppOptions): unknown;
 }
 
+export interface VatioBackgroundServiceApp {
+  start?(): void | Promise<void>;
+  suspend?(): void | Promise<void>;
+  resume?(): void | Promise<void>;
+  stop?(): void | Promise<void>;
+  destroy?(): void | Promise<void>;
+}
+
+export interface VatioBackgroundServiceAppModule {
+  createBackgroundServiceApp?: (options: {
+    runtime: VatioAppRuntime;
+    signal?: AbortSignal;
+  }) => VatioBackgroundServiceApp | Promise<VatioBackgroundServiceApp>;
+}
+
 export interface VatioAppRuntime {
   appId: VatioAppId;
   manifest: VatioAppManifest;
@@ -415,6 +430,7 @@ export interface VatioBackgroundServiceRecord {
 
 export interface VatioBackgroundServiceManager {
   start(appId: VatioAppId): boolean;
+  startAsync(appId: VatioAppId): Promise<boolean>;
   suspend(appId: VatioAppId): boolean;
   resume(appId: VatioAppId): boolean;
   stop(appId: VatioAppId): boolean;

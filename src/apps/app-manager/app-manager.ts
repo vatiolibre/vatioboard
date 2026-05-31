@@ -176,6 +176,15 @@ function getServiceSummary(runtime: VatioAppRuntime | null) {
   return services.length ? services.join(", ") : "No exposed services";
 }
 
+function getDeclaredServiceSummary(app: VatioAppManifest) {
+  return app.services.length ? app.services.join(", ") : "None";
+}
+
+function getPermissionGrantSummary(app: VatioAppManifest) {
+  const granted = app.permissions.filter((permission) => appControl.hasGrantedPermission(app.id, permission));
+  return `${granted.length}/${app.permissions.length} granted`;
+}
+
 function createAppCard({
   app,
   state,
@@ -246,7 +255,9 @@ function createAppCard({
     createDiagnosticLine("Version", app.version),
     createDiagnosticLine("Launcher opens", String(state.openCount || 0)),
     createDiagnosticLine("Runtime", runtime?.lifecycle.getState() || "not running"),
+    createDiagnosticLine("Declared services", getDeclaredServiceSummary(app)),
     createDiagnosticLine("Services", getServiceSummary(runtime)),
+    createDiagnosticLine("Permissions", getPermissionGrantSummary(app)),
   );
   if (app.kind === "background-service") {
     diagnostics.append(createDiagnosticLine("Background", runningRecord ? formatToken(runningRecord.state) : "stopped"));

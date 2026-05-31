@@ -139,6 +139,23 @@ What it does:
 - Vitest + jsdom for unit and smoke tests
 - ESLint + Prettier for code quality
 
+## VatioBoard OS App Platform
+
+VatioBoard apps are created from manifests, entry modules, optional templates/styles, and tests. Start with the platform docs:
+
+- [Overview](docs/app-platform/00-overview.md)
+- [Create a route app](docs/app-platform/01-create-a-route-app.md)
+- [Create a shell-window app](docs/app-platform/02-create-a-shell-window-app.md)
+- [Create a background service](docs/app-platform/03-create-a-background-service.md)
+- [Manifest reference](docs/app-platform/04-manifest-reference.md)
+- [Runtime services](docs/app-platform/05-runtime-services.md)
+- [Storage and settings](docs/app-platform/06-storage-and-settings.md)
+- [Permissions](docs/app-platform/07-permissions.md)
+- [Testing new apps](docs/app-platform/08-testing-new-apps.md)
+- [Migration guide](docs/app-platform/09-migration-guide-existing-apps.md)
+
+Use `pnpm run create:app -- route notes`, `pnpm run create:app -- window timer`, or `pnpm run create:app -- background offline-heartbeat` to scaffold new app-owned files.
+
 ## Speed Camera Data
 
 Vatio Speed uses generated runtime artifacts in `public/geo/cameras`:
@@ -396,6 +413,7 @@ Legacy standalone test/dev harnesses remain available at:
 - `pnpm run prepare:geo`: builds the speed-camera artifacts consumed by Vatio Speed from local data, including the ANSV CSV conversion step
 - `pnpm run fetch:cameras`: resumes/fetches local Overpass camera and road-speed data, writes maxspeed enrichment, and rebuilds speed-camera artifacts
 - `pnpm run analyze:cameras:maxspeed`: prints explicit/inferred/unknown speed coverage from the generated camera manifest
+- `pnpm run create:app -- <route|window|background> <kebab-name>`: scaffolds a VatioBoard OS app folder
 - `pnpm run dev`: runs Vite locally after the `predev` geo preparation step
 - `pnpm run build`: creates a production build after the `prebuild` geo preparation step
 - `pnpm run preview`: serves the built app locally

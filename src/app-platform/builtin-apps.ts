@@ -1,7 +1,5 @@
 import {
   IconAccel,
-  IconBoard,
-  IconCalculator,
   IconCameraMap,
   IconEnergy,
   IconMedia,
@@ -11,6 +9,9 @@ import {
   IconSpeed,
   IconWorld,
 } from "../icons.js";
+import { boardAppManifest } from "../apps/board/manifest.js";
+import { calculatorAppManifest } from "../apps/calculator/manifest.js";
+import { speedAppManifest } from "../apps/speed/manifest.js";
 import { defineAppManifest } from "./manifest.js";
 import type { VatioAppManifest } from "./types";
 
@@ -37,81 +38,10 @@ const snappingWindowCapabilities = {
 } as const;
 
 export const BUILTIN_APP_MANIFESTS = [
-  defineAppManifest({
-    id: "vatio.speed",
-    title: "Vatio Speed",
-    shortTitle: "Speed",
-    description: "Live GPS speedometer, trip recording, speed alerts, and camera-aware driving tools.",
-    kind: "core-app",
-    version: "1.0.0",
-    icon: IconSpeed,
-    i18nKey: "speedometer",
-    route: "/",
-    aliases: ["/speed"],
-    entry: () => import("../apps/speed/index.js"),
-    surfaces: ["main-route", "start-menu", "launcher"],
-    order: 10,
-    permissions: [
-      "gps.read",
-      "gps.highAccuracy",
-      "storage.app",
-      "audio.playback",
-      "audio.background",
-      "alerts.speed",
-      "driveRecording.read",
-      "driveRecording.write",
-      "cloud.sync",
-      "i18n.read",
-      "settings.read",
-      "shell.window",
-      "shell.launchApp",
-    ],
-    services: ["gps", "audio", "driveRecording", "drivingAlerts", "cloudSync", "shell", "storage", "i18n", "settings"],
-    tags: ["driving", "gps", "local-first"],
-    localFirst: true,
-    teslaOptimized: true,
-    offlineCapable: true,
-    status: "stable",
-    metadata: {
-      legacyToolId: "route:speed",
-      legacyHref: "#/speed",
-    },
-  }),
-  defineAppManifest({
-    id: "vatio.board",
-    title: "Vatio Board",
-    shortTitle: "Board",
-    description: "Touch-first drawing board with local drafts and optional VatioLibre sync.",
-    kind: "core-app",
-    version: "1.0.0",
-    icon: IconBoard,
-    i18nKey: "openBoard",
-    route: "/board",
-    entry: () => import("../apps/board/index.js"),
-    surfaces: ["main-route", "start-menu", "launcher"],
-    order: 20,
-    permissions: [
-      "storage.app",
-      "storage.media",
-      "cloud.sync",
-      "auth.session",
-      "network.backend",
-      "i18n.read",
-      "settings.read",
-      "settings.write",
-      "shell.window",
-      "shell.launchApp",
-    ],
-    services: ["auth", "cloudSync", "shell", "storage", "i18n", "settings"],
-    tags: ["drawing", "offline", "cloud-sync"],
-    localFirst: true,
-    teslaOptimized: true,
-    offlineCapable: true,
-    status: "stable",
-    metadata: {
-      legacyToolId: "route:board",
-    },
-  }),
+  speedAppManifest,
+  boardAppManifest,
+  // TODO: migrate the remaining centralized built-in manifests into app-owned
+  // manifest.ts files as each app is touched.
   defineAppManifest({
     id: "vatio.replay",
     title: "Drive Replay",
@@ -245,42 +175,7 @@ export const BUILTIN_APP_MANIFESTS = [
       legacyToolId: "route:apps",
     },
   }),
-  defineAppManifest({
-    id: "vatio.calculator",
-    title: "Calculator",
-    shortTitle: "Calc",
-    description: "Floating calculator for quick arithmetic inside VatioBoard.",
-    kind: "tool-app",
-    version: "1.0.0",
-    icon: IconCalculator,
-    i18nKey: "calculator",
-    entry: () => import("../apps/calculator/index.js"),
-    surfaces: ["shell-window", "start-menu", "taskbar", "launcher"],
-    order: 60,
-    permissions: ["storage.app", "i18n.read", "settings.read", "settings.write", "shell.window"],
-    services: ["shell", "storage", "i18n", "settings"],
-    window: {
-      shellWindowId: "calculator",
-      mode: "floating",
-      defaultBounds: { left: 24, top: 88, width: 320 },
-      capabilities: {
-        ...fixedToolCapabilities,
-        maxWidth: 320,
-      },
-      restoreOnBoot: true,
-      lazy: false,
-    },
-    tags: ["tool", "math"],
-    localFirst: true,
-    teslaOptimized: true,
-    offlineCapable: true,
-    status: "stable",
-    metadata: {
-      legacyToolId: "calculator",
-      legacyToolSurfaces: ["floating-tools"],
-      legacyShellKind: "tool",
-    },
-  }),
+  calculatorAppManifest,
   defineAppManifest({
     id: "vatio.energy",
     title: "Energy",

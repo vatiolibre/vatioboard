@@ -329,6 +329,95 @@ describe("VatioBoard OS app control plane", () => {
     expect(manager.listServices()).toEqual([]);
   });
 
+  it("loads background service entries once and calls service lifecycle hooks", async () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    const service = {
+      start: vi.fn(),
+      suspend: vi.fn(),
+      resume: vi.fn(),
+      stop: vi.fn(),
+      destroy: vi.fn(),
+    };
+    const createBackgroundServiceApp = vi.fn(() => service);
+    const entry = vi.fn(async () => ({ createBackgroundServiceApp }));
+    const manifest = {
+      ...appRegistry.getApp("vatio.offlineReadiness"),
+      id: "test.background.entry",
+      title: "Entry Background",
+      shortTitle: "Entry BG",
+      order: 1,
+      entry,
+      lifecycle: {
+        autostart: false,
+        keepAlive: false,
+        restoreOnBoot: false,
+      },
+      metadata: {},
+    };
+    registry.registerApp(manifest);
+    const control = createAppControlService({ registry, storage: localStorage });
+    const manager = createBackgroundServiceManager({ registry, control, baseContext: {} });
+
+    const firstStart = manager.startAsync("test.background.entry");
+    const duplicateStart = manager.startAsync("test.background.entry");
+    expect(duplicateStart).toBe(firstStart);
+    await expect(firstStart).resolves.toBe(true);
+    await expect(manager.startAsync("test.background.entry")).resolves.toBe(true);
+
+    expect(entry).toHaveBeenCalledTimes(1);
+    expect(createBackgroundServiceApp).toHaveBeenCalledTimes(1);
+    expect(service.start).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.entry")?.lifecycle.getState()).toBe("active");
+
+    expect(manager.suspend("test.background.entry")).toBe(true);
+    expect(service.suspend).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.entry")?.lifecycle.getState()).toBe("suspended");
+
+    expect(manager.resume("test.background.entry")).toBe(true);
+    expect(service.resume).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.entry")?.lifecycle.getState()).toBe("active");
+
+    expect(manager.stop("test.background.entry")).toBe(true);
+    expect(service.stop).toHaveBeenCalledTimes(1);
+    expect(service.destroy).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.entry")).toBeNull();
+
+    manager.destroy();
+  });
+
+  it("stops background service entry instances when the app is disabled", async () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    const service = {
+      start: vi.fn(),
+      stop: vi.fn(),
+      destroy: vi.fn(),
+    };
+    const manifest = {
+      ...appRegistry.getApp("vatio.offlineReadiness"),
+      id: "test.background.disable",
+      title: "Disable Background",
+      shortTitle: "Disable BG",
+      order: 1,
+      entry: vi.fn(async () => ({
+        createBackgroundServiceApp: vi.fn(() => service),
+      })),
+      metadata: {},
+    };
+    registry.registerApp(manifest);
+    const control = createAppControlService({ registry, storage: localStorage });
+    const manager = createBackgroundServiceManager({ registry, control, baseContext: {} });
+
+    await expect(manager.startAsync("test.background.disable")).resolves.toBe(true);
+    expect(manager.getRuntime("test.background.disable")?.lifecycle.getState()).toBe("active");
+
+    control.setEnabled("test.background.disable", false);
+    expect(service.stop).toHaveBeenCalledTimes(1);
+    expect(service.destroy).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.disable")).toBeNull();
+
+    manager.destroy();
+  });
+
   it("does not autostart disabled non-protected background services and stops them when disabled", () => {
     const registry = createAppRegistry({ logger: { warn: vi.fn() } });
     const backgroundManifest = {

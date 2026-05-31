@@ -9,6 +9,7 @@
     "prepare:geo": "node scripts/build-worldwide-cameras.mjs",
     "fetch:cameras": "node scripts/fetch-worldwide-cameras.mjs",
     "analyze:cameras:maxspeed": "node scripts/analyze-camera-maxspeed-coverage.mjs",
+    "create:app": "node scripts/create-app.mjs",
     "predev": "pnpm run prepare:geo",
     "dev": "vite",
     "prebuild": "pnpm run prepare:geo",

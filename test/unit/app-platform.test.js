@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  BUILTIN_APP_MANIFESTS,
+  appRegistry,
   createAppPermissionRuntime,
   createAppRegistry,
   createAppLauncher,
@@ -8,6 +10,9 @@ import {
   createAppStorage,
   createShellAppRuntimeManager,
 } from "../../src/app-platform/index.js";
+import { boardAppManifest } from "../../src/apps/board/manifest.js";
+import { calculatorAppManifest } from "../../src/apps/calculator/manifest.js";
+import { speedAppManifest } from "../../src/apps/speed/manifest.js";
 import { getRouteRegistryFromApps } from "../../src/app-platform/adapters/route-registry-adapter.js";
 import {
   getRouteToolDefinitionFromApps,
@@ -15,6 +20,7 @@ import {
   getToolDefinitionsForSurfaceFromApps,
 } from "../../src/app-platform/adapters/tool-registry-adapter.js";
 import { getShellWindowDefinitionFromApps } from "../../src/app-platform/adapters/shell-window-registry-adapter.js";
+import { createShellWindowManager } from "../../src/shared/shell-window-manager.js";
 
 function makeManifest(overrides = {}) {
   return {
@@ -140,6 +146,17 @@ describe("VatioBoard OS app platform", () => {
 
     expect(validation.ok).toBe(false);
     expect(validation.errors.join("\n")).toContain('service "telepathy" is not supported');
+  });
+
+  it("imports representative app-owned manifests into the built-in registry", () => {
+    expect(BUILTIN_APP_MANIFESTS).toEqual(expect.arrayContaining([
+      speedAppManifest,
+      boardAppManifest,
+      calculatorAppManifest,
+    ]));
+    expect(appRegistry.getApp("vatio.speed")).toBe(speedAppManifest);
+    expect(appRegistry.getApp("vatio.board")).toBe(boardAppManifest);
+    expect(appRegistry.getApp("vatio.calculator")).toBe(calculatorAppManifest);
   });
 
   it("namespaces app storage by app ID and handles JSON safely", () => {
@@ -358,6 +375,26 @@ describe("VatioBoard OS app platform", () => {
     expect(launcher.getAppRuntime?.("vatio.calculator")).toBe(runtime);
 
     manager.destroy();
+  });
+
+  it("lazy-loads shell-window entries that export createShellWindowApp", async () => {
+    const root = document.createElement("div");
+    document.body.append(root);
+    const shellManager = createShellWindowManager({ root });
+    const manager = createShellAppRuntimeManager({ shellManager, baseContext: {} });
+    const launcher = createAppLauncher({ shellManager, shellAppRuntimeManager: manager });
+    manager.setLauncher(launcher);
+
+    expect(shellManager.getWindow("calculator")).toBeNull();
+    await expect(launcher.openAppAsync("vatio.calculator")).resolves.toBe(true);
+    expect(shellManager.getWindow("calculator")).toMatchObject({
+      id: "calculator",
+      title: "Calculator",
+    });
+
+    manager.destroy();
+    shellManager.destroy();
+    root.remove();
   });
 
   it("adapters expose route, tool, and shell-window definitions for legacy code", () => {
