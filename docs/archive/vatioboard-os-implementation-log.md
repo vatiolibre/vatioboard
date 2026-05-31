@@ -1,5 +1,7 @@
 # VatioBoard OS Implementation Log
 
+> Archived historical implementation log. Current coding-agent orientation starts at [`../agent-quickstart.md`](../agent-quickstart.md), and current architecture reference is [`../vatioboard-os.md`](../vatioboard-os.md).
+
 ## Milkdrop Migration Session
 
 - Date/time: 2026-05-29 07:27:28 EDT
@@ -70,8 +72,8 @@ Calculator, Energy, Camera Map, Speed Alerts, and Player were already first-clas
 - `src/player/player-widget.ts`
 - `test/unit/milkdrop-app.test.js`
 - `docs/vatioboard-os.md`
-- `docs/next-agent-handoff.md`
-- `docs/vatioboard-os-implementation-log.md`
+- `docs/archive/next-agent-handoff.md`
+- `docs/archive/vatioboard-os-implementation-log.md`
 
 ## Milkdrop Verification
 
@@ -179,8 +181,8 @@ Calculator, Energy, Camera Map, and Speed Alerts were already first-class shell-
 - `src/player/player-widget.ts`
 - `test/unit/player-app.test.js`
 - `docs/vatioboard-os.md`
-- `docs/next-agent-handoff.md`
-- `docs/vatioboard-os-implementation-log.md`
+- `docs/archive/next-agent-handoff.md`
+- `docs/archive/vatioboard-os-implementation-log.md`
 
 ## Player Verification
 
@@ -278,8 +280,8 @@ Calculator, Energy, and Camera Map were already first-class shell-window app wra
 - `src/speed/speed-alert-panel.ts`
 - `test/unit/speed-alerts-app.test.js`
 - `docs/vatioboard-os.md`
-- `docs/next-agent-handoff.md`
-- `docs/vatioboard-os-implementation-log.md`
+- `docs/archive/next-agent-handoff.md`
+- `docs/archive/vatioboard-os-implementation-log.md`
 
 ## Speed Alerts Verification
 
@@ -374,8 +376,8 @@ Calculator and Energy were already first-class shell-window app wrappers under `
 - `test/smoke/dev-harness-speed-page.test.js`
 - `test/smoke/spa-gps-background.test.js`
 - `docs/vatioboard-os.md`
-- `docs/next-agent-handoff.md`
-- `docs/vatioboard-os-implementation-log.md`
+- `docs/archive/next-agent-handoff.md`
+- `docs/archive/vatioboard-os-implementation-log.md`
 
 ## Camera Map Verification
 
@@ -427,8 +429,8 @@ Calculator and Energy were both first-class shell-window app wrappers, but each 
 - `test/unit/calculator-app.test.js`
 - `test/unit/energy-app.test.js`
 - `docs/vatioboard-os.md`
-- `docs/next-agent-handoff.md`
-- `docs/vatioboard-os-implementation-log.md`
+- `docs/archive/next-agent-handoff.md`
+- `docs/archive/vatioboard-os-implementation-log.md`
 
 ## Shared Number-Format Decisions Made
 
@@ -452,8 +454,8 @@ Calculator and Energy were both first-class shell-window app wrappers, but each 
 - `test/unit/calculator-app.test.js`
 - `test/unit/energy-app.test.js`
 - `docs/vatioboard-os.md`
-- `docs/next-agent-handoff.md`
-- `docs/vatioboard-os-implementation-log.md`
+- `docs/archive/next-agent-handoff.md`
+- `docs/archive/vatioboard-os-implementation-log.md`
 
 ## Shared Number-Format Tests Run
 
@@ -540,8 +542,8 @@ Energy was still implemented as a legacy shell-window widget in `src/energy/ener
 - `src/shared/floating-tools.ts`
 - `test/unit/energy-app.test.js`
 - `docs/vatioboard-os.md`
-- `docs/next-agent-handoff.md`
-- `docs/vatioboard-os-implementation-log.md`
+- `docs/archive/next-agent-handoff.md`
+- `docs/archive/vatioboard-os-implementation-log.md`
 
 ## Energy Migration Tests Run
 
@@ -624,8 +626,8 @@ Calculator was still implemented as a legacy shell-window widget in `src/calcula
 - `src/shared/floating-tools.ts`
 - `test/unit/calculator-app.test.js`
 - `docs/vatioboard-os.md`
-- `docs/next-agent-handoff.md`
-- `docs/vatioboard-os-implementation-log.md`
+- `docs/archive/next-agent-handoff.md`
+- `docs/archive/vatioboard-os-implementation-log.md`
 
 ## Calculator Migration Tests Run
 
@@ -728,8 +730,8 @@ The first VatioBoard OS v1 pass had already introduced manifests, adapters, app 
 - `test/unit/app-platform.test.js`
 - `test/unit/app-shell-runtime-lifecycle.test.js`
 - `docs/vatioboard-os.md`
-- `docs/next-agent-handoff.md`
-- `docs/vatioboard-os-implementation-log.md`
+- `docs/archive/next-agent-handoff.md`
+- `docs/archive/vatioboard-os-implementation-log.md`
 
 ## Hardening Tests Run
 
@@ -881,8 +883,8 @@ The existing production routes are declared in `src/app/route-registry.ts` and r
 - `test/smoke/spa-apps-route.test.js`
 - `test/helpers/real-spa-route-smoke.js`
 - `docs/vatioboard-os.md`
-- `docs/next-agent-handoff.md`
-- `docs/vatioboard-os-implementation-log.md`
+- `docs/archive/next-agent-handoff.md`
+- `docs/archive/vatioboard-os-implementation-log.md`
 
 ## Original OS V1 Tests Run
 
@@ -950,8 +952,8 @@ The existing production routes are declared in `src/app/route-registry.ts` and r
 - `test/unit/player-app.test.js`
 - `test/unit/milkdrop-app.test.js`
 - `docs/vatioboard-os.md`
-- `docs/vatioboard-os-implementation-log.md`
-- `docs/next-agent-handoff.md`
+- `docs/archive/vatioboard-os-implementation-log.md`
+- `docs/archive/next-agent-handoff.md`
 
 ### Tests Run In This Pass
 
@@ -1004,8 +1006,8 @@ The existing production routes are declared in `src/app/route-registry.ts` and r
 - `src/app-platform/builtin-apps.ts`
 - `test/unit/speed-route-app.test.js`
 - `docs/vatioboard-os.md`
-- `docs/vatioboard-os-implementation-log.md`
-- `docs/next-agent-handoff.md`
+- `docs/archive/vatioboard-os-implementation-log.md`
+- `docs/archive/next-agent-handoff.md`
 
 ### Tests Run In This Pass
 
@@ -1072,8 +1074,8 @@ The existing production routes are declared in `src/app/route-registry.ts` and r
 - `test/unit/board-route-app.test.js`
 - `test/unit/board-route-lifecycle.test.js`
 - `docs/vatioboard-os.md`
-- `docs/vatioboard-os-implementation-log.md`
-- `docs/next-agent-handoff.md`
+- `docs/archive/vatioboard-os-implementation-log.md`
+- `docs/archive/next-agent-handoff.md`
 
 ### Tests Run In This Pass
 
@@ -1129,8 +1131,8 @@ The existing production routes are declared in `src/app/route-registry.ts` and r
 - `test/unit/library-route-app.test.js`
 - `test/unit/library-route-lifecycle.test.js`
 - `docs/vatioboard-os.md`
-- `docs/vatioboard-os-implementation-log.md`
-- `docs/next-agent-handoff.md`
+- `docs/archive/vatioboard-os-implementation-log.md`
+- `docs/archive/next-agent-handoff.md`
 
 ### Tests Run In This Pass
 
@@ -1206,8 +1208,8 @@ The existing production routes are declared in `src/app/route-registry.ts` and r
 - `test/unit/replay-route-app.test.js`
 - `test/unit/replay-route-lifecycle.test.js`
 - `docs/vatioboard-os.md`
-- `docs/vatioboard-os-implementation-log.md`
-- `docs/next-agent-handoff.md`
+- `docs/archive/vatioboard-os-implementation-log.md`
+- `docs/archive/next-agent-handoff.md`
 
 ### Tests Run In This Pass
 
@@ -1291,8 +1293,8 @@ The existing production routes are declared in `src/app/route-registry.ts` and r
 - `test/unit/accel-route-lifecycle.test.js`
 - `test/smoke/spa-gps-background.test.js`
 - `docs/vatioboard-os.md`
-- `docs/vatioboard-os-implementation-log.md`
-- `docs/next-agent-handoff.md`
+- `docs/archive/vatioboard-os-implementation-log.md`
+- `docs/archive/next-agent-handoff.md`
 
 ### Tests Run In This Pass
 
@@ -1390,8 +1392,8 @@ The existing production routes are declared in `src/app/route-registry.ts` and r
 - `test/unit/board-route-app.test.js`
 - `test/unit/library-route-app.test.js`
 - `docs/vatioboard-os.md`
-- `docs/vatioboard-os-implementation-log.md`
-- `docs/next-agent-handoff.md`
+- `docs/archive/vatioboard-os-implementation-log.md`
+- `docs/archive/next-agent-handoff.md`
 
 ### Tests Run In This Pass
 

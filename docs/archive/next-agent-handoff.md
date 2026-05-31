@@ -1,5 +1,7 @@
 # Next Agent Handoff
 
+> Archived historical handoff. Current coding-agent orientation starts at [`../agent-quickstart.md`](../agent-quickstart.md), and current architecture reference is [`../vatioboard-os.md`](../vatioboard-os.md).
+
 ## Completed
 
 - Added the VatioBoard OS app control plane in `src/app-platform/app-control.ts` and `app-control-storage.ts`.
@@ -204,8 +206,8 @@
 - `test/smoke/spa-apps-route.test.js`
 - `test/helpers/real-spa-route-smoke.js`
 - `docs/vatioboard-os.md`
-- `docs/vatioboard-os-implementation-log.md`
-- `docs/next-agent-handoff.md`
+- `docs/archive/vatioboard-os-implementation-log.md`
+- `docs/archive/next-agent-handoff.md`
 
 ## Commands Run
 
@@ -340,7 +342,7 @@ Milkdrop migration final verification after documentation updates:
 - A literal final-tree `pnpm test` rerun hit the known full-suite timing-sensitive `test/smoke/spa-gps-background.test.js` test once after 90000ms. The same test passed isolated immediately afterward, and the full `pnpm test` rerun passed again with 131 files and 1667 tests.
 - Final `pnpm run build` rerun passed with the same existing Vite dynamic/static import warnings.
 
-Final full-suite commands are also recorded in `docs/vatioboard-os-implementation-log.md`.
+Final full-suite commands are also recorded in `docs/archive/vatioboard-os-implementation-log.md`.
 
 Shell-window cold-launch hardening verification:
 

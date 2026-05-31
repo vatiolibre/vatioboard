@@ -11,12 +11,24 @@ services: ["gps"],
 
 If permission exists but the service is missing, `runtime.services.gps` is `null`. If the service exists but permission is missing or revoked in App Manager, access is denied. Shell APIs follow the same rule: declare `services: ["shell"]`, then request the specific shell permission the app needs.
 
+## Top-Level APIs Vs `runtime.services`
+
+Manifest service IDs include `shell`, `storage`, and `i18n`, but those APIs are exposed as top-level runtime fields:
+
+- Declare `services: ["shell"]`, then use gated capabilities on `runtime.shell`.
+- Declare `services: ["storage"]`, then use `runtime.storage`.
+- Declare `services: ["i18n"]`, then use `runtime.i18n`.
+
+Do not use `runtime.services.shell`, `runtime.services.storage`, or `runtime.services.i18n`. They are not runtime service objects.
+
+`runtime.services` currently contains shared service gateways for `gps`, `audio`, `driveRecording`, `drivingAlerts`, `auth`, `cloudSync`, `settings`, and `sharedSettings`.
+
 ## Runtime Shape
 
 - `runtime.appId`: Current app id.
 - `runtime.manifest`: Current app manifest.
 - `runtime.permissions`: Permission helper with `has()`, `require()`, and `list()`.
-- `runtime.services`: Gated shared services.
+- `runtime.services`: Gated shared service gateways.
 - `runtime.shell`: App launcher and shell window access.
 - `runtime.storage`: App-private storage under `vatioboard.app.<appId>.`.
 - `runtime.i18n`: Translation and language helpers.
@@ -128,7 +140,7 @@ permissions: ["shell.launchApp", "shell.window"],
 services: ["shell"],
 ```
 
-Use `runtime.shell.openApp()`, `openAppAsync()`, `closeApp()`, and `focusApp()` to work with other apps. `shell.window` is for shell-window ownership; `shell.launchApp` is for launching/focusing apps.
+Use `runtime.shell.openApp()`, `openAppAsync()`, `closeApp()`, and `focusApp()` to work with other apps. `shell.window` is for shell-window ownership; `shell.launchApp` is for launching/focusing apps. There is no `runtime.services.shell`.
 
 The shell object is always present for diagnostics such as `getRunningApps()`, but mutating shell capabilities are gated:
 
@@ -145,7 +157,7 @@ permissions: ["storage.app"],
 services: ["storage"],
 ```
 
-Use `runtime.storage` for simple app-private state. It is local-first and namespaced automatically.
+Use `runtime.storage` for simple app-private state. It is local-first and namespaced automatically. There is no `runtime.services.storage`; the manifest service declaration gates the top-level storage API.
 
 ### i18n
 
@@ -156,7 +168,7 @@ permissions: ["i18n.read"],
 services: ["i18n"],
 ```
 
-Use `runtime.i18n.t()`, `apply()`, `getLanguage()`, and `subscribe()` for app-visible copy.
+Use `runtime.i18n.t()`, `apply()`, `getLanguage()`, and `subscribe()` for app-visible copy. There is no `runtime.services.i18n`; the manifest service declaration gates the top-level i18n API.
 
 ## Storage Choices
 

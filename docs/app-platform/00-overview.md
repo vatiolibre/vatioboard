@@ -10,6 +10,18 @@ App = Manifest + Entry Module + Optional Template + Optional Styles + Tests
 
 The manifest tells the OS what exists. The entry module gives the OS code to load. Templates and styles make the app visible when it has UI. Tests prove the app follows the platform contract.
 
+## For Coding Agents
+
+For the shortest safe path, read [`../agent-quickstart.md`](../agent-quickstart.md) first. The main source-of-truth files are:
+
+- `src/app-platform/types.ts`
+- `src/app-platform/manifest.ts`
+- `src/app-platform/builtin-apps.ts`
+- `src/app-platform/runtime.ts`
+- `scripts/create-app.mjs`
+
+Use the generator first, import the manifest in `src/app-platform/builtin-apps.ts`, avoid manual normal production route edits in `src/app/route-registry.ts`, add tests, and run `pnpm run verify` when feasible.
+
 ## App Types
 
 - Route app: a full-page SPA surface mounted inside the route view area. Examples: Speed, Board, Replay, Accel, Library, App Manager.
@@ -70,4 +82,3 @@ pnpm run verify
 ```
 
 `pnpm run verify` repeats the full local quality gate: typecheck, lint, tests, and build.
-

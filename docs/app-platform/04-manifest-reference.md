@@ -3,7 +3,7 @@
 Every app has a `VatioAppManifest`. Use `defineAppManifest()` so TypeScript keeps the manifest aligned with the platform contract.
 
 ```ts
-import { defineAppManifest } from "../../app-platform/manifest.js";
+import { defineAppManifest } from '../../app-platform/manifest.js';
 
 export const myAppManifest = defineAppManifest({
   // fields...
@@ -98,7 +98,10 @@ i18n
 settings
 ```
 
-`settings` exposes both `runtime.services.settings` and `runtime.services.sharedSettings` when the matching permissions are granted.
+Service exposure notes:
+
+- `settings` exposes both `runtime.services.settings` and `runtime.services.sharedSettings` when the matching permissions are granted.
+- `storage`, `i18n`, and `shell` are service declarations for gating top-level runtime APIs. Use `runtime.storage`, `runtime.i18n`, and gated capabilities on `runtime.shell`, not `runtime.services.storage`, `runtime.services.i18n`, or `runtime.services.shell`.
 
 `VatioAppStatus`
 
