@@ -1,0 +1,6 @@
+Copyright (c) 2026 VatioLibre Inc.
+
+This file is part of VatioBoard.
+
+VatioBoard Community Edition is licensed under AGPL-3.0-or-later.
+Commercial licenses are available from VatioLibre Inc.

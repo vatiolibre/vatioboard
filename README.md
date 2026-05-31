@@ -5,7 +5,8 @@ VatioBoard is a local-first Vite 7 SPA of touch-first browser tools for Tesla-si
 - Production site: https://www.vatioboard.com
 - Repository: https://github.com/vatiolibre/vatioboard
 - Community: https://vatiolibre.com
-- Creator: Oscar Perez
+- Legal owner: VatioLibre Inc.
+- Founder/creator attribution: Oscar Perez
 
 ## Quick Start
 
@@ -84,6 +85,8 @@ Use [`docs/app-platform/00-overview.md`](docs/app-platform/00-overview.md) as th
 - Coding-agent quick path: [`docs/agent-quickstart.md`](docs/agent-quickstart.md)
 - App creation and platform contracts: [`docs/app-platform/`](docs/app-platform/)
 - Architecture/reference: [`docs/vatioboard-os.md`](docs/vatioboard-os.md)
+- Licensing model: [`docs/LICENSING.md`](docs/LICENSING.md)
+- Open-core roadmap: [`docs/OPEN-CORE-ROADMAP.md`](docs/OPEN-CORE-ROADMAP.md)
 - Speed-camera data and Camera Map details: [`docs/speed-camera-data.md`](docs/speed-camera-data.md)
 - Historical handoff and implementation notes: [`docs/archive/`](docs/archive/)
 - TypeScript migration notes: [`docs/typescript-migration-notes.md`](docs/typescript-migration-notes.md)
@@ -154,4 +157,12 @@ The demo songs in `public/audio/demo/` are royalty-free tracks used under Creati
 
 ## License
 
-No open-source license has been declared yet. Ask the project owner before copying, redistributing, or using the code outside this repository.
+VatioBoard Community Edition is licensed under the GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later).
+
+Copyright (c) 2026 VatioLibre Inc.
+
+Commercial licenses are available from VatioLibre Inc. for organizations requiring proprietary, hosted, OEM, white-label, embedded, or enterprise deployments.
+
+Modified versions used over a network must comply with AGPL obligations.
+
+See [`LICENSE`](LICENSE), [`NOTICE.md`](NOTICE.md), [`COMMERCIAL-LICENSE.md`](COMMERCIAL-LICENSE.md), and [`docs/LICENSING.md`](docs/LICENSING.md).
