@@ -76,16 +76,40 @@ describe("app launcher start menu", () => {
     expect(menu.list.querySelector(".vb-app-launcher-page-button")).toBeNull();
     expect(menu.list.querySelector(".vb-app-launcher-manage")).toBeNull();
     expect(menu.list.querySelector(".vb-app-launcher-search-input")).toBeTruthy();
+    expect(menu.list.querySelector("[data-launcher-search-open]")).toBeTruthy();
+    expect(menu.list.querySelector("[data-launcher-search-panel]").hidden).toBe(true);
+    expect(document.activeElement).not.toBe(menu.list.querySelector(".vb-app-launcher-search-input"));
     expect(menu.list.querySelector(".vb-app-launcher-grid [data-app-id='vatio.board']")).toBeTruthy();
     expect(menu.list.querySelector("[data-start-route='/board']")).toBeTruthy();
     expect(menu.list.querySelector("[data-start-action='calculator']")).toBeTruthy();
+  });
+
+  it("reveals and focuses the top search panel only after tapping the search pill", async () => {
+    const { initSharedStartMenu } = await loadLauncher();
+    const menu = openLauncher(initSharedStartMenu);
+    const search = menu.list.querySelector(".vb-app-launcher-search-input");
+    const searchPanel = menu.list.querySelector("[data-launcher-search-panel]");
+    const searchButton = menu.list.querySelector("[data-launcher-search-open]");
+
+    expect(searchPanel.hidden).toBe(true);
+    expect(searchPanel.parentElement).toBe(menu.list);
+    expect(searchButton.hidden).toBe(false);
+    expect(document.activeElement).not.toBe(search);
+
+    searchButton.click();
+
+    expect(searchPanel.hidden).toBe(false);
+    expect(searchButton.hidden).toBe(true);
+    expect(document.activeElement).toBe(search);
   });
 
   it("filters visible app tiles through launcher search", async () => {
     const { initSharedStartMenu } = await loadLauncher();
     const menu = openLauncher(initSharedStartMenu);
     const search = menu.list.querySelector(".vb-app-launcher-search-input");
+    const searchButton = menu.list.querySelector("[data-launcher-search-open]");
 
+    searchButton.click();
     search.value = "math";
     search.dispatchEvent(new Event("input", { bubbles: true }));
 

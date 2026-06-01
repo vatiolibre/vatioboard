@@ -225,6 +225,63 @@ describe("shell-taskbar", () => {
     manager.destroy();
   });
 
+  it("uses one favorite taskbar control for a running favorite shell-window app", () => {
+    const manager = makeManager();
+    manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
+    const appLauncher = {
+      openApp: vi.fn(() => {
+        manager.openWindow("calculator");
+        return true;
+      }),
+    };
+    const startMenu = { bindTrigger: vi.fn(), close: vi.fn() };
+    const taskbar = createShellTaskbar({
+      shellManager: manager,
+      root: document.body,
+      startMenu,
+      appLauncher,
+    });
+
+    appControl.setFavorite("vatio.calculator", true);
+
+    let favoriteButton = taskbar.getElement().querySelector("[data-vb-shell-taskbar-favorite-app='vatio.calculator']");
+    expect(favoriteButton).toBeTruthy();
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeNull();
+    expect(favoriteButton.getAttribute("data-vb-shell-taskbar-running")).toBe("false");
+
+    favoriteButton.click();
+
+    expect(appLauncher.openApp).toHaveBeenCalledWith(
+      "vatio.calculator",
+      expect.objectContaining({ focus: true, source: "taskbar-favorite" }),
+    );
+    favoriteButton = taskbar.getElement().querySelector("[data-vb-shell-taskbar-favorite-app='vatio.calculator']");
+    expect(favoriteButton.getAttribute("data-vb-shell-taskbar-running")).toBe("true");
+    expect(favoriteButton.getAttribute("data-vb-shell-taskbar-state")).toBe("open");
+    expect(favoriteButton.getAttribute("data-vb-shell-taskbar-active")).toBe("true");
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeNull();
+
+    favoriteButton.click();
+    favoriteButton = taskbar.getElement().querySelector("[data-vb-shell-taskbar-favorite-app='vatio.calculator']");
+    expect(manager.getWindow("calculator").state).toBe("minimized");
+    expect(favoriteButton.getAttribute("data-vb-shell-taskbar-state")).toBe("minimized");
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeNull();
+
+    favoriteButton.click();
+    favoriteButton = taskbar.getElement().querySelector("[data-vb-shell-taskbar-favorite-app='vatio.calculator']");
+    expect(manager.getWindow("calculator").state).toBe("open");
+    expect(favoriteButton.getAttribute("data-vb-shell-taskbar-state")).toBe("open");
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeNull();
+
+    appControl.setFavorite("vatio.calculator", false);
+
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-favorite-app='vatio.calculator']")).toBeNull();
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeTruthy();
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
   it("adds a floating FAB to the taskbar tray the first time a window opens", () => {
     const { manager, taskbar } = setupCalculatorTaskbar();
 

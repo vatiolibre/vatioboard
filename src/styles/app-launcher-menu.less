@@ -69,6 +69,11 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+.app-start-menu-list.vb-app-launcher[data-search-active="true"] {
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 10px;
+}
+
 .app-start-menu-list.vb-app-launcher::before {
   content: "";
   position: absolute;
@@ -161,7 +166,7 @@
 
 .app-start-menu-list.vb-app-launcher .vb-app-launcher-header {
   display: grid;
-  grid-template-columns: minmax(132px, 176px) 58px minmax(260px, 1fr) max-content;
+  grid-template-columns: minmax(132px, 1fr) 58px max-content;
   align-items: center;
   gap: 10px 12px;
   min-width: 0;
@@ -227,9 +232,9 @@
 }
 
 .vb-app-launcher-search {
-  grid-column: 3;
-  grid-row: 1;
   position: relative;
+  display: block;
+  width: 100%;
   min-width: 0;
 }
 
@@ -263,8 +268,8 @@
 
 .vb-app-launcher-search-input {
   width: 100%;
-  min-height: 56px;
-  padding: 0 18px 0 58px;
+  min-height: 46px;
+  padding: 0 16px 0 54px;
   border: 1px solid var(--vb-app-launcher-border);
   border-radius: 8px;
   background: var(--vb-app-launcher-search-bg);
@@ -275,6 +280,46 @@
   box-shadow:
     inset 0 0 0 1px var(--vb-app-launcher-inner-ring),
     0 0 0 1px color-mix(in srgb, var(--vb-app-launcher-accent) 0%, transparent);
+}
+
+.vb-app-launcher-search-panel {
+  grid-row: 2;
+  justify-self: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: min(580px, calc(100% - 8px));
+  min-width: 0;
+  z-index: 3;
+}
+
+.vb-app-launcher-search-panel[hidden] {
+  display: none;
+}
+
+.vb-app-launcher-search-close {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 1px solid var(--vb-app-launcher-border);
+  border-radius: 999px;
+  background: var(--vb-app-launcher-control-strong);
+  color: var(--vb-app-launcher-muted);
+  cursor: pointer;
+  touch-action: manipulation;
+  backdrop-filter: blur(12px);
+}
+
+.vb-app-launcher-search-close svg {
+  width: 20px;
+  height: 20px;
 }
 
 .vb-app-launcher-search-input:focus-visible {
@@ -289,7 +334,7 @@
 }
 
 .vb-app-launcher-controls {
-  grid-column: 4;
+  grid-column: 3;
   grid-row: 1;
   display: flex;
   align-items: center;
@@ -389,11 +434,16 @@
 }
 
 .vb-app-launcher-body {
+  grid-row: 2;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   min-height: 0;
   min-width: 0;
+}
+
+.app-start-menu-list.vb-app-launcher[data-search-active="true"] .vb-app-launcher-body {
+  grid-row: 3;
 }
 
 .vb-app-launcher-main {
@@ -565,7 +615,7 @@
   position: relative;
   display: grid;
   place-items: center;
-  min-height: 20px;
+  min-height: 48px;
   padding: 0;
 }
 
@@ -580,6 +630,19 @@
   gap: 3px;
   min-width: 0;
   justify-self: center;
+}
+
+.vb-app-launcher-page-dots[hidden] {
+  display: none;
+}
+
+.vb-app-launcher-bottom-bar {
+  display: grid;
+  justify-items: center;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
 }
 
 .vb-app-launcher-page-dot {
@@ -618,6 +681,79 @@
 .vb-app-launcher-page-dot[aria-current="page"]::before {
   width: 16px;
   background: var(--vb-app-launcher-accent);
+}
+
+.vb-app-launcher-search-pill {
+  appearance: none;
+  display: inline-grid;
+  grid-template-columns: 18px auto;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 112px;
+  min-height: 38px;
+  padding: 0 16px;
+  border: 1px solid var(--vb-app-launcher-border);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--vb-app-launcher-control-strong) 82%, transparent), var(--vb-app-launcher-control)),
+    var(--vb-app-launcher-control-strong);
+  color: var(--vb-app-launcher-muted);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #ffffff 24%, transparent),
+    0 10px 26px rgba(15, 23, 42, 0.12);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: 0;
+  touch-action: manipulation;
+  backdrop-filter: blur(18px) saturate(1.12);
+}
+
+.vb-app-launcher-search-pill[hidden] {
+  display: none;
+}
+
+.vb-app-launcher-search-pill-icon {
+  position: relative;
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
+.vb-app-launcher-search-pill-icon::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid currentColor;
+  border-radius: 999px;
+}
+
+.vb-app-launcher-search-pill-icon::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  width: 7px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  transform: rotate(45deg);
+  transform-origin: left center;
+}
+
+.vb-app-launcher-search-pill:hover,
+.vb-app-launcher-search-pill:focus-visible {
+  border-color: color-mix(in srgb, var(--vb-app-launcher-accent) 48%, transparent);
+  background: var(--vb-app-launcher-selected-bg);
+  color: var(--vb-app-launcher-text);
+  outline: none;
+  box-shadow:
+    0 0 0 3px var(--vb-app-launcher-focus-ring),
+    0 12px 28px rgba(15, 23, 42, 0.14);
 }
 
 .vb-app-launcher-context {
@@ -769,7 +905,7 @@
 @media (max-width: 1180px) {
   .app-start-menu-list.vb-app-launcher .vb-app-launcher-header {
     grid-template-columns: minmax(128px, 1fr) 54px max-content;
-    grid-template-rows: auto auto;
+    grid-template-rows: auto;
   }
 
   .vb-app-launcher-brand {
@@ -789,11 +925,6 @@
     height: 54px;
   }
 
-  .vb-app-launcher-search {
-    grid-column: 1 / -1;
-    grid-row: 2;
-  }
-
   .vb-app-launcher-controls {
     grid-column: 3;
     grid-row: 1;
@@ -808,7 +939,7 @@
 
   .app-start-menu-list.vb-app-launcher .vb-app-launcher-header {
     grid-template-columns: minmax(0, 1fr) 52px max-content;
-    grid-template-rows: auto auto;
+    grid-template-rows: auto;
     align-items: center;
   }
 
@@ -820,11 +951,6 @@
   .vb-app-launcher-title-block {
     grid-column: 2;
     grid-row: 1;
-  }
-
-  .vb-app-launcher-search {
-    grid-column: 1 / -1;
-    grid-row: 2;
   }
 
   .vb-app-launcher-controls {
@@ -860,7 +986,7 @@
 
   .app-start-menu-list.vb-app-launcher .vb-app-launcher-header {
     grid-template-columns: minmax(0, 1fr) 48px max-content;
-    grid-template-rows: auto auto;
+    grid-template-rows: auto;
     gap: 8px;
   }
 
@@ -904,10 +1030,6 @@
   .vb-app-launcher-title-icon {
     width: 48px;
     height: 48px;
-  }
-
-  .vb-app-launcher-search {
-    grid-row: 2;
   }
 
   .vb-app-launcher-brand .compact-tools-menu-logo {

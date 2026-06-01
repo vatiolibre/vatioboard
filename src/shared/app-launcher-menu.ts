@@ -195,7 +195,13 @@ export function createAppLauncherMenu({
   titleIcon.innerHTML = IconPages;
   titleBlock.append(titleIcon);
 
-  const searchWrap = createEl("label", "vb-app-launcher-search");
+  const searchPanel = createEl("div", "vb-app-launcher-search-panel", {
+    "data-launcher-search-panel": "",
+  });
+  searchPanel.hidden = true;
+  const searchWrap = createEl("label", "vb-app-launcher-search", {
+    id: "appLauncherSearchField",
+  });
   const searchSr = createEl("span", "sr-only");
   searchSr.textContent = "Search applications";
   const searchInput = createEl("input", "vb-app-launcher-search-input", {
@@ -203,7 +209,15 @@ export function createAppLauncherMenu({
     placeholder: "Search apps",
     "aria-label": "Search applications",
   }) as HTMLInputElement;
+  searchInput.tabIndex = -1;
   searchWrap.append(searchSr, searchInput);
+  const searchCloseButton = createEl("button", "vb-app-launcher-search-close", {
+    type: "button",
+    "aria-label": "Close search",
+    title: "Close search",
+  }) as HTMLButtonElement;
+  searchCloseButton.innerHTML = IconClose;
+  searchPanel.append(searchWrap, searchCloseButton);
 
   const controls = createEl("div", "vb-app-launcher-controls");
   const utilityControls = createEl("div", "vb-app-launcher-utility-controls");
@@ -222,7 +236,7 @@ export function createAppLauncherMenu({
   closeButton.innerHTML = IconClose;
   utilityControls.append(langButton, closeButton);
   controls.append(utilityControls);
-  header.append(brand, titleBlock, searchWrap, controls);
+  header.append(brand, titleBlock, controls);
 
   const body = createEl("div", "vb-app-launcher-body");
   const main = createEl("main", "vb-app-launcher-main");
@@ -237,10 +251,23 @@ export function createAppLauncherMenu({
   emptyState.textContent = "No apps match your search.";
   emptyState.hidden = true;
   const pagination = createEl("div", "vb-app-launcher-pagination");
+  const bottomBar = createEl("div", "vb-app-launcher-bottom-bar");
   const dots = createEl("div", "vb-app-launcher-page-dots", {
     "aria-label": "Launcher pages",
   });
-  pagination.append(pageStatus, dots);
+  const searchButton = createEl("button", "vb-app-launcher-search-pill", {
+    type: "button",
+    "aria-label": "Search apps",
+    "aria-controls": "appLauncherSearchField",
+    "aria-expanded": "false",
+    "data-launcher-search-open": "",
+  }) as HTMLButtonElement;
+  searchButton.innerHTML = `
+    <span class="vb-app-launcher-search-pill-icon" aria-hidden="true"></span>
+    <span>Search</span>
+  `;
+  bottomBar.append(dots, searchButton);
+  pagination.append(pageStatus, bottomBar);
   main.append(grid, emptyState, pagination);
   body.append(main);
 
@@ -256,7 +283,7 @@ export function createAppLauncherMenu({
   });
   compatibilityList.hidden = true;
 
-  list.append(header, body, contextSheet, compatibilityList);
+  list.append(header, searchPanel, body, contextSheet, compatibilityList);
   mount.append(list);
 
   let open = false;
@@ -270,6 +297,7 @@ export function createAppLauncherMenu({
   let contextAppId = "";
   let contextAnchor: HTMLElement | null = null;
   let suppressNextGridClick = false;
+  let searchActive = false;
   const suppressedAppClicks = new Set<string>();
 
   function setTriggerExpanded(trigger: HTMLElement | null, isExpanded: boolean) {
@@ -381,6 +409,42 @@ export function createAppLauncherMenu({
     contextAppId = "";
     contextAnchor?.removeAttribute("aria-expanded");
     contextAnchor = null;
+  }
+
+  function syncSearchUi() {
+    list.dataset.searchActive = searchActive ? "true" : "false";
+    searchPanel.hidden = !searchActive;
+    searchButton.hidden = searchActive;
+    searchInput.tabIndex = searchActive ? 0 : -1;
+    searchButton.setAttribute("aria-expanded", searchActive ? "true" : "false");
+  }
+
+  function openSearch({ focus = false } = {}) {
+    const wasActive = searchActive;
+    searchActive = true;
+    syncSearchUi();
+    if (!wasActive) render();
+    if (focus) {
+      searchInput.focus({ preventScroll: true });
+    }
+  }
+
+  function closeSearch({ clear = false, focusButton = false } = {}) {
+    const hadQuery = Boolean(query || searchInput.value);
+    const wasActive = searchActive;
+    searchActive = false;
+    if (clear && hadQuery) {
+      searchInput.value = "";
+      query = "";
+      currentPage = 0;
+    }
+    syncSearchUi();
+    if ((clear && hadQuery) || wasActive) {
+      render();
+    }
+    if (focusButton && !list.hidden) {
+      searchButton.focus({ preventScroll: true });
+    }
   }
 
   function positionContextSheet(anchor: HTMLElement, point?: { clientX: number; clientY: number } | null) {
@@ -647,7 +711,9 @@ export function createAppLauncherMenu({
     pageStatus.textContent = `${pageText} · ${normalViews.length} app${normalViews.length === 1 ? "" : "s"}`;
     pageStatus.setAttribute("aria-label", pageText);
     renderDots(pageCount);
-    pagination.hidden = pageCount <= 1;
+    dots.hidden = pageCount <= 1;
+    pagination.hidden = false;
+    syncSearchUi();
     syncLanguageButton();
     applyStartMenuTranslations(list);
   }
@@ -711,6 +777,14 @@ export function createAppLauncherMenu({
       return;
     }
 
+    if (target?.closest?.("[data-launcher-search-open]")) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeContextSheet();
+      openSearch({ focus: true });
+      return;
+    }
+
     if (contextAppId && !target?.closest?.(".vb-app-launcher-context")) {
       closeContextSheet();
     }
@@ -733,12 +807,13 @@ export function createAppLauncherMenu({
       activeHeader = activeTrigger?.closest?.("header") || null;
       activeHeader?.classList.add("tools-menu-layer-open");
       open = true;
-      searchInput.focus({ preventScroll: true });
+      closeSearch({ clear: true });
       return;
     }
 
     list.hidden = true;
     closeContextSheet();
+    closeSearch({ clear: true });
     setTriggerExpanded(activeTrigger, false);
     clearActiveHeader();
     open = false;
@@ -770,6 +845,10 @@ export function createAppLauncherMenu({
     query = searchInput.value;
     currentPage = 0;
     render();
+  });
+  searchCloseButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    closeSearch({ clear: true, focusButton: true });
   });
   langButton.addEventListener("click", () => {
     toggleLang();
@@ -807,6 +886,11 @@ export function createAppLauncherMenu({
     api.close();
   });
   document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !list.hidden && searchActive) {
+      event.preventDefault();
+      closeSearch({ clear: true, focusButton: true });
+      return;
+    }
     if (event.key === "Escape") api.close();
   });
   document.addEventListener("i18n:change", () => {

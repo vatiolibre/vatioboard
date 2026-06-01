@@ -61,11 +61,21 @@
 }
 
 .vb-account-panel-header {
+  position: relative;
+  top: auto;
+  z-index: auto;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 44px;
   align-items: center;
   gap: 10px;
   min-width: 0;
+  border-bottom: 0;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   cursor: grab;
 }
 
@@ -162,8 +172,14 @@
   padding: 14px;
   gap: 14px;
   align-content: start;
-  border-color: var(--calc-border);
-  background: color-mix(in srgb, var(--calc-surface) 66%, var(--calc-btn) 34%);
+  border-color: color-mix(in srgb, var(--calc-border) 72%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--calc-surface) 24%, transparent),
+      color-mix(in srgb, var(--calc-btn) 28%, transparent)
+    );
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 24%, transparent);
 }
 
 .vb-account-panel-auth .backend-auth-fields {

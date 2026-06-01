@@ -252,6 +252,9 @@ describe("index.html SPA shell", () => {
     expect(sharedList.querySelector("[data-player-toggle]")).toBeNull();
     expect(sharedList.classList.contains("vb-app-launcher")).toBe(true);
     expect(sharedList.querySelector(".vb-app-launcher-search-input")).toBeTruthy();
+    expect(sharedList.querySelector("[data-launcher-search-open]")).toBeTruthy();
+    expect(sharedList.querySelector("[data-launcher-search-panel]").hidden).toBe(true);
+    expect(document.activeElement).not.toBe(sharedList.querySelector(".vb-app-launcher-search-input"));
     expect(sharedList.querySelector(".vb-app-launcher-favorites")).toBeNull();
     expect(sharedList.querySelector(".vb-app-launcher-rail")).toBeNull();
     expect(sharedList.querySelector("[data-launcher-view]")).toBeNull();

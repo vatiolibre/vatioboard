@@ -166,6 +166,14 @@ function getFavoriteApps() {
     ));
 }
 
+function getAppShellWindowId(app: VatioAppManifest) {
+  return app.window?.shellWindowId || "";
+}
+
+function isVisibleTaskbarState(state: string) {
+  return state === "open" || state === "minimized";
+}
+
 function getDetachedRoot(root: HTMLElement | Document | null | undefined) {
   return root?.appendChild ? root : document.body;
 }
@@ -565,17 +573,17 @@ export function createShellTaskbar({
     });
   }
 
-  function getTaskbarWindows() {
+  function getTaskbarWindows(excludedWindowIds = new Set<string>()) {
     const records = shellManager.listWindows()
       .filter((record) => record.kind !== "system")
       .sort((a, b) => String(a.title || a.id).localeCompare(String(b.title || b.id)));
 
     for (const record of records) {
       const state = getWindowState(record);
-      if (state === "open" || state === "minimized") rememberWindow(record.id);
+      if (isVisibleTaskbarState(state)) rememberWindow(record.id);
     }
 
-    return records.filter((record) => knownWindowIds.has(record.id));
+    return records.filter((record) => knownWindowIds.has(record.id) && !excludedWindowIds.has(record.id));
   }
 
   function handleItemClick(record, event) {
@@ -887,7 +895,15 @@ export function createShellTaskbar({
     suppressNativeDrag(item);
 
     const label = getAppLabel(app);
-    item.setAttribute("aria-label", label);
+    const shellWindowId = getAppShellWindowId(app);
+    const record = shellWindowId ? shellManager.getWindow(shellWindowId) : null;
+    const state = record ? getWindowState(record) : "closed";
+    const running = Boolean(record && isVisibleTaskbarState(state));
+
+    item.setAttribute("data-vb-shell-taskbar-state", running ? state : "closed");
+    item.setAttribute("data-vb-shell-taskbar-active", running && record?.active ? "true" : "false");
+    item.setAttribute("data-vb-shell-taskbar-running", running ? "true" : "false");
+    item.setAttribute("aria-label", running ? `${label} ${state}` : label);
     item.title = label;
 
     const iconEl = document.createElement("span");
@@ -908,7 +924,11 @@ export function createShellTaskbar({
     item.addEventListener("dragstart", (event) => event.preventDefault());
     item.addEventListener("click", (event) => {
       event.preventDefault();
-      appLauncher?.openApp(app.id, { focus: true, source: "taskbar-favorite" });
+      if (record && running) {
+        handleItemClick(record, event);
+      } else {
+        appLauncher?.openApp(app.id, { focus: true, source: "taskbar-favorite" });
+      }
       startMenu?.close?.();
     });
 
@@ -922,7 +942,7 @@ export function createShellTaskbar({
     for (const app of favoriteApps) {
       favoritesElement.append(createFavoriteAppButton(app));
     }
-    return favoriteApps.length;
+    return favoriteApps;
   }
 
   function syncAccountState(detail: TaskbarAuthState = {}) {
@@ -956,10 +976,13 @@ export function createShellTaskbar({
       element.replaceChildren(favoritesElement, dragHandle, startButton, accountButton, trayElement);
     }
     syncAccountState();
-    const favoriteCount = renderFavoriteApps();
+    const favoriteApps = renderFavoriteApps();
+    const favoriteWindowIds = new Set(
+      favoriteApps.map(getAppShellWindowId).filter(Boolean),
+    );
     trayElement.replaceChildren();
 
-    const records = getTaskbarWindows();
+    const records = getTaskbarWindows(favoriteWindowIds);
     let dockedCount = 0;
     element.hidden = false;
 
@@ -980,7 +1003,7 @@ export function createShellTaskbar({
       }
     }
 
-    element.setAttribute("data-vb-shell-taskbar-empty", dockedCount === 0 && favoriteCount === 0 ? "true" : "false");
+    element.setAttribute("data-vb-shell-taskbar-empty", dockedCount === 0 && favoriteApps.length === 0 ? "true" : "false");
     applyTaskbarPosition();
   }
 
