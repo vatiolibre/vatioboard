@@ -15,7 +15,7 @@ interface BackendAuthConfig extends LegacyBackendOptions {
   vatioLibreOrigin?: string;
 }
 
-interface BackendAuthStateSnapshot {
+export interface BackendAuthStateSnapshot {
   authenticated: boolean | null;
   busy: boolean;
   isGuest: boolean | null;
@@ -86,6 +86,7 @@ const SYNC_REQUEST_GZIP_ENCODING = "gzip";
 const SYNC_RESPONSE_GZIP_BASE64_ENCODING = "gzip_base64";
 
 export const BACKEND_AUTH_STATE_EVENT = "vatioboard:backend-auth-state";
+export const BACKEND_AUTH_REQUEST_EVENT = "vatioboard:backend-auth-request";
 
 const BACKEND_SESSION_CACHE_TTL_MS = 30 * 1000;
 const BACKEND_FEATURE_ACCESS_CACHE_TTL_MS = 30 * 1000;
@@ -791,6 +792,26 @@ function ensureBackendAuthStateTracking() {
   backendAuthStateListenerInstalled = true;
 }
 
+export function getBackendAuthStateSnapshot() {
+  ensureBackendAuthStateTracking();
+  return { ...backendAuthStateSnapshot };
+}
+
+export function requestBackendAuthentication(detail: LegacyBackendOptions = {}) {
+  if (
+    typeof window === "undefined"
+    || typeof window.dispatchEvent !== "function"
+    || typeof CustomEvent !== "function"
+  ) {
+    return false;
+  }
+
+  window.dispatchEvent(new CustomEvent(BACKEND_AUTH_REQUEST_EVENT, {
+    detail,
+  }));
+  return true;
+}
+
 function createMergedAbortSignal(signals: Array<AbortSignal | undefined | null> = []) {
   const activeSignals = signals.filter(Boolean);
 
@@ -1041,6 +1062,12 @@ export async function getProtectedFeatureRequestGate({
 
     if (!isBackendUserAuthenticated(session)) {
       cleanup();
+      requestBackendAuthentication({
+        blockedByAuth: true,
+        featureKey,
+        reason: session?.isGuest ? "guest" : "auth",
+        source: "protected-feature",
+      });
       return createBlockedProtectedGate({
         blockedByAuth: true,
         featureKey,
@@ -1070,6 +1097,7 @@ export async function getProtectedFeatureRequestGate({
     }
 
     if (!featureAccess?.ok || featureAccess?.isGuest) {
+      const blockedByAuth = featureAccess?.isGuest === true || featureAccess?.status === 401;
       if (featureAccess?.isGuest) {
         mergeBackendAuthStateSnapshot({
           authenticated: false,
@@ -1079,8 +1107,16 @@ export async function getProtectedFeatureRequestGate({
         });
       }
       cleanup();
+      if (blockedByAuth) {
+        requestBackendAuthentication({
+          blockedByAuth: true,
+          featureKey,
+          reason: featureAccess?.isGuest ? "guest" : "auth",
+          source: "protected-feature",
+        });
+      }
       return createBlockedProtectedGate({
-        blockedByAuth: featureAccess?.isGuest === true || featureAccess?.status === 401,
+        blockedByAuth,
         featureAccess,
         featureKey,
         reason: featureAccess?.isGuest ? "guest" : "feature_access_unavailable",

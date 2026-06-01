@@ -1883,23 +1883,24 @@ export function toggleLang(): SupportedLanguage {
 /**
  * Apply translations to DOM elements with data-i18n attribute
  */
-export function applyTranslations(): void {
-  document.querySelectorAll('[data-i18n]').forEach((el) => {
+export function applyTranslations(root: ParentNode = document): void {
+  const scope = root || document;
+  scope.querySelectorAll('[data-i18n]').forEach((el) => {
     const key = el.getAttribute('data-i18n');
     el.textContent = t(key ?? '');
   });
 
-  document.querySelectorAll('[data-i18n-aria]').forEach((el) => {
+  scope.querySelectorAll('[data-i18n-aria]').forEach((el) => {
     const key = el.getAttribute('data-i18n-aria');
     el.setAttribute('aria-label', t(key ?? ''));
   });
 
-  document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+  scope.querySelectorAll('[data-i18n-title]').forEach((el) => {
     const key = el.getAttribute('data-i18n-title');
     el.setAttribute('title', t(key ?? ''));
   });
 
-  document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+  scope.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
     const key = el.getAttribute('data-i18n-placeholder');
     el.setAttribute('placeholder', t(key ?? ''));
   });

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { appControl } from "../../src/app-platform/index.js";
 import { createShellTaskbar } from "../../src/shared/shell-taskbar.js";
 import { createShellWindowManager } from "../../src/shared/shell-window-manager.js";
 
@@ -112,6 +113,7 @@ describe("shell-taskbar", () => {
     expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-tray]")).toBeTruthy();
     expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-drag-handle]")).toBeTruthy();
     expect(taskbar.getElement().querySelector("[data-vb-shell-start-button]")).toBeTruthy();
+    expect(taskbar.getElement().querySelector("[data-vb-shell-account-button]")).toBeTruthy();
     expect(taskbar.getElement().hidden).toBe(false);
     expect(taskbar.getElement().getAttribute("data-vb-shell-taskbar-empty")).toBe("true");
 
@@ -142,6 +144,82 @@ describe("shell-taskbar", () => {
     expect(startButton.getAttribute("aria-controls")).toBe("appStartMenuList");
     expect(startButton.getAttribute("aria-expanded")).toBe("false");
     expect(startButton.draggable).toBe(false);
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("opens the account panel from the taskbar account button and reflects auth state", () => {
+    const manager = makeManager();
+    const accountPanel = { open: vi.fn() };
+    const startMenu = { bindTrigger: vi.fn(), close: vi.fn() };
+    const taskbar = createShellTaskbar({
+      shellManager: manager,
+      root: document.body,
+      startMenu,
+      accountPanel,
+    });
+    const accountButton = taskbar.getElement().querySelector("[data-vb-shell-account-button]");
+
+    accountButton.click();
+
+    expect(accountPanel.open).toHaveBeenCalledWith(expect.objectContaining({
+      focus: true,
+      source: "taskbar-account",
+    }));
+    expect(startMenu.close).toHaveBeenCalled();
+
+    window.dispatchEvent(new CustomEvent("vatioboard:backend-auth-state", {
+      detail: {
+        authenticated: true,
+        busy: false,
+        isGuest: false,
+        pendingLogout: false,
+        user: "driver@example.com",
+      },
+    }));
+
+    expect(accountButton.dataset.authState).toBe("authenticated");
+    expect(accountButton.getAttribute("aria-label")).toContain("driver@example.com");
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("renders favorite apps before the drag handle and removes them when unfavorited", () => {
+    const manager = makeManager();
+    const appLauncher = { openApp: vi.fn(() => true) };
+    const startMenu = { bindTrigger: vi.fn(), close: vi.fn() };
+    const taskbar = createShellTaskbar({
+      shellManager: manager,
+      root: document.body,
+      startMenu,
+      appLauncher,
+    });
+    const favorites = taskbar.getElement().querySelector("[data-vb-shell-taskbar-favorites]");
+    const handle = taskbar.getElement().querySelector("[data-vb-shell-taskbar-drag-handle]");
+
+    expect(favorites).toBeTruthy();
+    expect(favorites.hidden).toBe(true);
+
+    appControl.setFavorite("vatio.board", true);
+    const favoriteButton = favorites.querySelector("[data-vb-shell-taskbar-favorite-app='vatio.board']");
+    const children = Array.from(taskbar.getElement().children);
+
+    expect(favoriteButton).toBeTruthy();
+    expect(favorites.hidden).toBe(false);
+    expect(children.indexOf(favorites)).toBeLessThan(children.indexOf(handle));
+
+    favoriteButton.click();
+    expect(appLauncher.openApp).toHaveBeenCalledWith(
+      "vatio.board",
+      expect.objectContaining({ focus: true }),
+    );
+    expect(startMenu.close).toHaveBeenCalled();
+
+    appControl.setFavorite("vatio.board", false);
+    expect(favorites.querySelector("[data-vb-shell-taskbar-favorite-app='vatio.board']")).toBeNull();
+    expect(favorites.hidden).toBe(true);
 
     taskbar.destroy();
     manager.destroy();

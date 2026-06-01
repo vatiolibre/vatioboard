@@ -15,6 +15,7 @@ const mockedModules = [
   "../../src/app-platform/index.js",
   "../../src/player/player-widget.js",
   "../../src/shared/backend-auth.js",
+  "../../src/shared/account-panel.js",
   "../../src/shared/cloud-sync.js",
   "../../src/shared/activity-indicator.js",
   "../../src/shared/floating-tools.js",
@@ -113,6 +114,9 @@ describe("app shell route app runtime lifecycle", () => {
     }));
     vi.doMock("../../src/shared/backend-auth.js", () => ({
       initBackendAuthControllers: vi.fn(),
+    }));
+    vi.doMock("../../src/shared/account-panel.js", () => ({
+      initAccountPanel: vi.fn(() => ({ destroy: vi.fn(), open: vi.fn(), close: vi.fn(), toggle: vi.fn() })),
     }));
     vi.doMock("../../src/shared/cloud-sync.js", () => ({
       startCloudSyncLoop: vi.fn(),

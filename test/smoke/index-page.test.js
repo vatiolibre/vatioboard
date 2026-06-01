@@ -50,6 +50,16 @@ vi.mock("../../src/player/player-widget.js", () => ({
 }));
 
 vi.mock("../../src/shared/backend-auth.js", () => ({
+  BACKEND_AUTH_REQUEST_EVENT: "vatioboard:backend-auth-request",
+  BACKEND_AUTH_STATE_EVENT: "vatioboard:backend-auth-state",
+  createBackendAuthController: vi.fn(() => ({ refreshSession: vi.fn(), destroy: vi.fn() })),
+  getBackendAuthStateSnapshot: vi.fn(() => ({
+    authenticated: false,
+    busy: false,
+    isGuest: true,
+    pendingLogout: false,
+    user: null,
+  })),
   initBackendAuthControllers: vi.fn(),
 }));
 
@@ -130,7 +140,10 @@ describe("index.html SPA shell", () => {
     expect(document.querySelector("[data-mock-view='speed']")).toBeTruthy();
     expect(document.querySelector(".floating-dock")).toBeNull();
     expect(document.querySelector("[data-vb-shell-taskbar]")).toBeTruthy();
+    expect(document.querySelector("[data-vb-shell-taskbar-favorites]")).toBeTruthy();
     expect(document.querySelector("[data-vb-shell-start-button]")).toBeTruthy();
+    expect(document.querySelector("[data-vb-shell-account-button]")).toBeTruthy();
+    expect(document.querySelector("[data-vb-account-panel]")).toBeTruthy();
     expect(window.__vatioboardFloatingTools).toBeTruthy();
     expect(routeState.createPlayerWidget).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -160,6 +173,7 @@ describe("index.html SPA shell", () => {
     expect(document.querySelector("[data-mock-view='speed']")).toBeTruthy();
     expect(document.querySelector("[data-vb-shell-taskbar]")).toBeTruthy();
     expect(document.querySelector("[data-vb-shell-start-button]")).toBeTruthy();
+    expect(document.querySelector("[data-vb-shell-account-button]")).toBeTruthy();
     expect(nativeWatchPosition).not.toHaveBeenCalled();
   }, 40000);
 
@@ -234,17 +248,28 @@ describe("index.html SPA shell", () => {
     expect(sharedList.querySelector("[data-start-route='/board']")).toBeTruthy();
     expect(sharedList.querySelector("[data-start-route='/replay']")).toBeTruthy();
     expect(sharedList.querySelector("[data-start-action='speed-alerts']")).toBeTruthy();
-    expect(sharedList.querySelector("[data-backend-auth]")).toBeTruthy();
-    expect(sharedList.querySelector("[data-player-toggle]")).toBeTruthy();
+    expect(sharedList.querySelector("[data-backend-auth]")).toBeNull();
+    expect(sharedList.querySelector("[data-player-toggle]")).toBeNull();
+    expect(sharedList.classList.contains("vb-app-launcher")).toBe(true);
+    expect(sharedList.querySelector(".vb-app-launcher-search-input")).toBeTruthy();
+    expect(sharedList.querySelector(".vb-app-launcher-favorites")).toBeNull();
+    expect(sharedList.querySelector(".vb-app-launcher-rail")).toBeNull();
+    expect(sharedList.querySelector("[data-launcher-view]")).toBeNull();
+    expect(sharedList.querySelector(".vb-app-launcher-grid")).toBeTruthy();
+    expect(sharedList.querySelector(".vb-app-launcher-manage")).toBeNull();
+    expect(sharedList.querySelector(".vb-app-launcher-page-button")).toBeNull();
+    expect(sharedList.querySelector("[aria-label='Edit launcher']")).toBeNull();
+    expect(sharedList.querySelector("[aria-label='Manage apps']")).toBeNull();
 
-    const children = Array.from(sharedList.children);
     const brand = sharedList.querySelector(".app-start-menu-brand");
-    const authForm = sharedList.querySelector("[data-backend-auth]");
-    const firstRoute = sharedList.querySelector("[data-start-route]");
-    const playerButton = sharedList.querySelector("[data-player-toggle]");
-    expect(children.indexOf(authForm)).toBe(children.indexOf(brand) + 1);
-    expect(children.indexOf(authForm)).toBeLessThan(children.indexOf(firstRoute));
-    expect(children.indexOf(playerButton)).toBeGreaterThan(children.indexOf(authForm));
+    expect(brand.closest(".vb-app-launcher-header")).toBeTruthy();
+
+    const accountButton = document.querySelector("[data-vb-shell-account-button]");
+    accountButton.click();
+    const accountPanel = document.querySelector("[data-vb-account-panel]");
+    const authForm = accountPanel.querySelector("[data-backend-auth]");
+    expect(accountPanel.hidden).toBe(false);
+    expect(authForm).toBeTruthy();
     expect(authForm.querySelector(".backend-auth-logout-button svg")).toBeTruthy();
     expect(authForm.querySelector("[data-backend-auth-signup]")?.getAttribute("target")).toBe("_blank");
     expect(authForm.querySelector("[data-backend-auth-forgot]")?.getAttribute("target")).toBe("_blank");

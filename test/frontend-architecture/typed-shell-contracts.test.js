@@ -29,14 +29,18 @@ describe("typed shell architecture contracts", () => {
     expect(floatingLayer).toContain("getShellWindowDefinition");
   });
 
-  it("keeps start menu, floating tools, and taskbar backed by typed tool definitions", () => {
+  it("keeps launchers, floating tools, and taskbar backed by typed app/tool contracts", () => {
     const registry = readProjectFile("src/shared/tool-registry.ts");
     const startMenu = readProjectFile("src/shared/start-menu.ts");
+    const appLauncherMenu = readProjectFile("src/shared/app-launcher-menu.ts");
     const floatingTools = readProjectFile("src/shared/floating-tools.ts");
     const taskbar = readProjectFile("src/shared/shell-taskbar.ts");
 
     expect(registry).toContain("satisfies readonly VatioToolDefinition[]");
-    expect(startMenu).toContain("getStartMenuToolDefinitions");
+    expect(startMenu).toContain("createAppLauncherMenu");
+    expect(appLauncherMenu).toContain("appRegistry.listApps");
+    expect(appLauncherMenu).toContain("appControl.setFavorite");
+    expect(appLauncherMenu).toContain("createAppLauncher");
     expect(floatingTools).toContain("SHELL_WINDOW_IDS");
     expect(taskbar).toContain("getToolDefinitionForShellWindow");
   });

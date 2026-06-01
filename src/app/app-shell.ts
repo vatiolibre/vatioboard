@@ -8,6 +8,7 @@ import { createPlayerApp } from "../apps/player/index.js";
 import { initBackendAuthControllers } from "../shared/backend-auth.js";
 import { startCloudSyncLoop } from "../shared/cloud-sync.js";
 import { initActivityIndicator } from "../shared/activity-indicator.js";
+import { initAccountPanel } from "../shared/account-panel.js";
 import { initFloatingTools } from "../shared/floating-tools.js";
 import { initSharedStartMenu } from "../shared/start-menu.js";
 import { ensureSingleTabOwnership } from "../shared/single-tab.js";
@@ -106,11 +107,12 @@ export async function startAppShell({
   window.__vatioboardSpeedGetCurrentPosition = window.__vatioboardGpsGetCurrentPosition;
 
   initBackendAuthControllers();
-  void ensureSingleTabOwnership();
-  startCloudSyncLoop();
 
   const shellManager = getDefaultShellWindowManager({ root: persistentLayer }) as ShellRuntime;
   context.shellManager = shellManager;
+  const accountPanel = initAccountPanel({ mount: persistentLayer, shellManager });
+  void ensureSingleTabOwnership();
+  startCloudSyncLoop();
   let router: HashRouterRuntime | null = null;
   const shellAppRuntimeManager = createShellAppRuntimeManager({
     shellManager,
@@ -167,7 +169,13 @@ export async function startAppShell({
   });
   const startMenu = initSharedStartMenu({ floatingTools, mount: persistentLayer, shellAppRuntimeManager });
   const activityIndicator = initActivityIndicator({ mount: persistentLayer });
-  const shellTaskbar = createShellTaskbar({ shellManager, root: persistentLayer, startMenu });
+  const shellTaskbar = createShellTaskbar({
+    shellManager,
+    root: persistentLayer,
+    startMenu,
+    appLauncher,
+    accountPanel,
+  });
   const shellKeyboard = installShellKeyboard({ shellManager });
   floatingTools.taskbar = shellTaskbar;
   shellManager.restoreShellLayout();
@@ -255,6 +263,7 @@ export async function startAppShell({
   router.destroy = () => {
     shellKeyboard.uninstall();
     shellTaskbar.destroy();
+    accountPanel.destroy();
     unsubscribeAppControl?.();
     backgroundServiceManager.destroy();
     shellAppRuntimeManager.destroy();
@@ -285,6 +294,7 @@ export async function startAppShell({
     shellTaskbar,
     shellKeyboard,
     startMenu,
+    accountPanel,
     activityIndicator,
     context,
   };

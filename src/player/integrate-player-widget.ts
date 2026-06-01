@@ -92,7 +92,7 @@ function readInitialAuth(toolsMenuList: HTMLElement | null | undefined): boolean
 function insertPlayerButton(toolsMenuList: HTMLElement | null | undefined, button: HTMLButtonElement) {
   const anchor = toolsMenuList?.querySelector("[data-player-toggle-anchor]")
     || toolsMenuList?.querySelector("[data-backend-auth]");
-  if (anchor) toolsMenuList.insertBefore(button, anchor);
+  if (anchor) (anchor.parentElement || toolsMenuList)?.insertBefore(button, anchor);
   else toolsMenuList?.append(button);
 }
 

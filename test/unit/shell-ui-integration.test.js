@@ -65,6 +65,9 @@ async function loadAppShellWithMocks() {
   vi.doMock("../../src/shared/backend-auth.js", () => ({
     initBackendAuthControllers: vi.fn(),
   }));
+  vi.doMock("../../src/shared/account-panel.js", () => ({
+    initAccountPanel: vi.fn(() => ({ destroy: vi.fn(), open: vi.fn(), close: vi.fn(), toggle: vi.fn() })),
+  }));
   vi.doMock("../../src/shared/cloud-sync.js", () => ({
     startCloudSyncLoop: vi.fn(),
   }));
@@ -611,7 +614,7 @@ describe("shell UI integration", () => {
     manager.destroy();
   });
 
-  it("start menu avoids a scrollbar when its natural height fits below the trigger", async () => {
+  it("start menu launcher expands inside the available work area", async () => {
     Object.defineProperty(window, "innerHeight", { configurable: true, writable: true, value: 800 });
     const { initSharedStartMenu } = await loadStartMenuWithMocks();
     const menu = initSharedStartMenu({ floatingTools: {}, mount: document.body });
@@ -624,12 +627,14 @@ describe("shell UI integration", () => {
     trigger.click();
 
     expect(menu.list.hidden).toBe(false);
-    expect(menu.list.style.overflowY).toBe("visible");
-    expect(menu.list.style.maxHeight).toBe("none");
-    expect(Number.parseInt(menu.list.style.top, 10)).toBe(128);
+    expect(menu.list.classList.contains("vb-app-launcher")).toBe(true);
+    expect(Number.parseInt(menu.list.style.top, 10)).toBeGreaterThanOrEqual(8);
+    expect(Number.parseInt(menu.list.style.left, 10)).toBeGreaterThanOrEqual(8);
+    expect(Number.parseInt(menu.list.style.height, 10)).toBeLessThanOrEqual(784);
+    expect(Number.parseInt(menu.list.style.width, 10)).toBeGreaterThan(700);
   });
 
-  it("start menu opens above the trigger when below space is tight but above space fits", async () => {
+  it("start menu launcher uses the safe work area when below space is tight", async () => {
     Object.defineProperty(window, "innerHeight", { configurable: true, writable: true, value: 500 });
     const { initSharedStartMenu } = await loadStartMenuWithMocks();
     const menu = initSharedStartMenu({ floatingTools: {}, mount: document.body });
@@ -641,12 +646,12 @@ describe("shell UI integration", () => {
 
     trigger.click();
 
-    expect(menu.list.style.overflowY).toBe("visible");
-    expect(menu.list.style.maxHeight).toBe("none");
-    expect(Number.parseInt(menu.list.style.top, 10)).toBeLessThan(430);
+    expect(Number.parseInt(menu.list.style.top, 10)).toBeGreaterThanOrEqual(8);
+    expect(Number.parseInt(menu.list.style.height, 10)).toBeLessThanOrEqual(484);
+    expect(Number.parseInt(menu.list.style.top, 10) + Number.parseInt(menu.list.style.height, 10)).toBeLessThanOrEqual(492);
   });
 
-  it("start menu scrolls only when neither side has enough vertical space", async () => {
+  it("start menu launcher shrinks to the available work area on short viewports", async () => {
     Object.defineProperty(window, "innerHeight", { configurable: true, writable: true, value: 260 });
     const { initSharedStartMenu } = await loadStartMenuWithMocks();
     const menu = initSharedStartMenu({ floatingTools: {}, mount: document.body });
@@ -658,12 +663,12 @@ describe("shell UI integration", () => {
 
     trigger.click();
 
-    expect(menu.list.style.overflowY).toBe("auto");
-    expect(Number.parseInt(menu.list.style.maxHeight, 10)).toBeGreaterThan(0);
-    expect(Number.parseInt(menu.list.style.maxHeight, 10)).toBeLessThan(500);
+    expect(Number.parseInt(menu.list.style.height, 10)).toBeGreaterThan(0);
+    expect(Number.parseInt(menu.list.style.height, 10)).toBeLessThan(500);
+    expect(menu.list.style.maxHeight).toBe(menu.list.style.height);
   });
 
-  it("start menu recomputes available height while open on resize", async () => {
+  it("start menu launcher recomputes available height while open on resize", async () => {
     Object.defineProperty(window, "innerHeight", { configurable: true, writable: true, value: 260 });
     const { initSharedStartMenu } = await loadStartMenuWithMocks();
     const menu = initSharedStartMenu({ floatingTools: {}, mount: document.body });
@@ -673,13 +678,13 @@ describe("shell UI integration", () => {
     document.body.append(trigger);
     menu.bindTrigger(trigger);
     trigger.click();
-    const firstMaxHeight = Number.parseInt(menu.list.style.maxHeight, 10);
+    const firstHeight = Number.parseInt(menu.list.style.height, 10);
 
     Object.defineProperty(window, "innerHeight", { configurable: true, writable: true, value: 420 });
     window.dispatchEvent(new Event("resize"));
 
-    expect(Number.parseInt(menu.list.style.maxHeight, 10)).toBeGreaterThan(firstMaxHeight);
-    expect(menu.list.style.overflowY).toBe("auto");
+    expect(Number.parseInt(menu.list.style.height, 10)).toBeGreaterThan(firstHeight);
+    expect(menu.list.style.maxHeight).toBe(menu.list.style.height);
   });
 
   it("dragging a normal shell window clamps below the toolbar work area", async () => {

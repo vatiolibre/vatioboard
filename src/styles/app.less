@@ -103,6 +103,8 @@ html.vb-floating-drag-active body {
   --vb-shell-taskbar-padding-inline-total: 24px;
   --vb-shell-taskbar-handle-width: var(--vb-touch-target-min);
   --vb-shell-taskbar-start-width: 52px;
+  --vb-shell-taskbar-account-width: 44px;
+  --vb-shell-taskbar-favorite-width: 44px;
   --vb-shell-taskbar-gap: 8px;
 
   position: fixed;
@@ -133,6 +135,32 @@ html.vb-floating-drag-active body {
   -webkit-user-drag: none;
 }
 
+.vb-shell-taskbar-favorites {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex: 0 1 auto;
+  gap: 6px;
+  max-width: min(220px, 34vw);
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
+}
+
+.vb-shell-taskbar-favorites::-webkit-scrollbar {
+  display: none;
+}
+
+.vb-shell-taskbar-favorites[hidden] {
+  display: none;
+}
+
 .vb-shell-taskbar-tray {
   display: flex;
   align-items: center;
@@ -147,7 +175,9 @@ html.vb-floating-drag-active body {
       var(--vb-shell-taskbar-max-width)
       - var(--vb-shell-taskbar-handle-width)
       - var(--vb-shell-taskbar-start-width)
+      - var(--vb-shell-taskbar-account-width)
       - var(--vb-shell-taskbar-padding-inline-total)
+      - var(--vb-shell-taskbar-gap)
       - var(--vb-shell-taskbar-gap)
       - var(--vb-shell-taskbar-gap)
     )
@@ -199,7 +229,9 @@ html.vb-floating-drag-active body {
   min-width: calc(
     var(--vb-shell-taskbar-handle-width)
     + var(--vb-shell-taskbar-start-width)
+    + var(--vb-shell-taskbar-account-width)
     + var(--vb-shell-taskbar-padding-inline-total)
+    + var(--vb-shell-taskbar-gap)
     + var(--vb-shell-taskbar-gap)
     + var(--vb-shell-taskbar-gap)
   );
@@ -222,6 +254,10 @@ html.vb-floating-drag-active body {
   overflow: visible;
 }
 
+.vb-shell-taskbar.is-dragging .vb-shell-taskbar-favorites {
+  overflow: visible;
+}
+
 .vb-shell-taskbar[data-vb-shell-taskbar-position="left"],
 [data-vb-shell-taskbar-position="left"] .vb-shell-taskbar {
   left: max(10px, var(--vb-safe-area-left));
@@ -233,6 +269,8 @@ html.vb-floating-drag-active body {
   flex-direction: column;
 }
 
+.vb-shell-taskbar[data-vb-shell-taskbar-position="left"] .vb-shell-taskbar-favorites,
+[data-vb-shell-taskbar-position="left"] .vb-shell-taskbar .vb-shell-taskbar-favorites,
 .vb-shell-taskbar[data-vb-shell-taskbar-position="left"] .vb-shell-taskbar-tray,
 [data-vb-shell-taskbar-position="left"] .vb-shell-taskbar .vb-shell-taskbar-tray {
   flex-direction: column;
@@ -276,6 +314,8 @@ html.vb-floating-drag-active body {
   flex-direction: column;
 }
 
+.vb-shell-taskbar[data-vb-shell-taskbar-position="right"] .vb-shell-taskbar-favorites,
+[data-vb-shell-taskbar-position="right"] .vb-shell-taskbar .vb-shell-taskbar-favorites,
 .vb-shell-taskbar[data-vb-shell-taskbar-position="right"] .vb-shell-taskbar-tray,
 [data-vb-shell-taskbar-position="right"] .vb-shell-taskbar .vb-shell-taskbar-tray {
   flex-direction: column;
@@ -338,6 +378,93 @@ html.vb-floating-drag-active body {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--calc-accent, #10b981) 18%, transparent),
     0 12px 24px rgba(15, 23, 42, 0.18);
   outline: none;
+}
+
+.vb-shell-taskbar-favorite-app {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 var(--vb-shell-taskbar-favorite-width);
+  width: var(--vb-shell-taskbar-favorite-width);
+  min-width: var(--vb-shell-taskbar-favorite-width);
+  height: var(--vb-shell-taskbar-favorite-width);
+  min-height: var(--vb-shell-taskbar-favorite-width);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--calc-text, #111827);
+  box-shadow: none;
+  cursor: pointer;
+  font: inherit;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+}
+
+.vb-shell-taskbar-favorite-app:hover,
+.vb-shell-taskbar-favorite-app:focus-visible {
+  border-color: color-mix(in srgb, var(--calc-accent, #10b981) 52%, transparent);
+  background: color-mix(in srgb, var(--calc-accent, #10b981) 12%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--calc-accent, #10b981) 16%, transparent),
+    0 6px 14px rgba(15, 23, 42, 0.1);
+  outline: none;
+}
+
+.vb-shell-taskbar-account {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 var(--vb-shell-taskbar-account-width);
+  width: var(--vb-shell-taskbar-account-width);
+  min-width: var(--vb-shell-taskbar-account-width);
+  height: var(--vb-shell-taskbar-account-width);
+  min-height: var(--vb-shell-taskbar-account-width);
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--calc-border, rgba(0, 0, 0, 0.14)) 85%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--calc-surface, #fff) 84%, transparent);
+  color: var(--calc-text, #111827);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
+  cursor: pointer;
+  font: inherit;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+}
+
+.vb-shell-taskbar-account:hover,
+.vb-shell-taskbar-account:focus-visible {
+  border-color: color-mix(in srgb, var(--calc-accent, #10b981) 52%, transparent);
+  background: color-mix(in srgb, var(--calc-accent, #10b981) 10%, var(--calc-surface, #fff));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--calc-accent, #10b981) 16%, transparent),
+    0 8px 18px rgba(15, 23, 42, 0.14);
+  outline: none;
+}
+
+.vb-shell-taskbar-account-status {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  width: 8px;
+  height: 8px;
+  border: 1px solid color-mix(in srgb, var(--calc-surface, #fff) 82%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--calc-text, #111827) 32%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--calc-border, rgba(0, 0, 0, 0.14)) 72%, transparent);
+  pointer-events: none;
+}
+
+.vb-shell-taskbar-account[data-auth-state="authenticated"] .vb-shell-taskbar-account-status {
+  background: var(--calc-accent, #10b981);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--calc-accent, #10b981) 34%, transparent),
+    0 0 10px color-mix(in srgb, var(--calc-accent, #10b981) 48%, transparent);
+}
+
+.vb-shell-taskbar-account[data-auth-busy="true"] .vb-shell-taskbar-account-status {
+  background: #f59e0b;
 }
 
 .vb-shell-taskbar-item {
