@@ -5,7 +5,7 @@
 
 import { el } from "../../calculator/dom.js";
 import { t } from "../../i18n.js";
-import { IconSettings, IconClose } from "../../icons.js";
+import { IconSettings, IconClose, IconMinimize } from "../../icons.js";
 
 type ToolbarButtonOptions = {
   className: string;
@@ -82,6 +82,14 @@ export function buildPanel({ t: translate = t }: BuildPanelOptions = {}) {
         { class: "energy-header-main" },
         el("div", { class: "energy-header-grip", "aria-hidden": "true" })
       ),
+      el("button", {
+        class: "energy-minimize",
+        type: "button",
+        "aria-label": translate("minimize"),
+        "data-i18n-aria": "minimize",
+        title: translate("minimize"),
+        html: IconMinimize,
+      }),
       el("button", {
         class: "energy-close",
         type: "button",
@@ -396,6 +404,7 @@ export function buildPanel({ t: translate = t }: BuildPanelOptions = {}) {
   return {
     panel,
     header: panel.querySelector<HTMLElement>(".energy-header"),
+    minimizeBtn: panel.querySelector<HTMLButtonElement>(".energy-minimize"),
     closeBtn: panel.querySelector<HTMLButtonElement>(".energy-close"),
     settingsBtn: panel.querySelector<HTMLButtonElement>(".energy-settings-btn"),
 

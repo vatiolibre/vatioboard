@@ -215,7 +215,7 @@ export function integratePlayerWidget({
     }
 
     if (!available) {
-      widget.close({ persist: false });
+      widget.close({ persist: false, stopPlayback: false });
     } else if (restore) {
       widget.restoreVisibility();
     }

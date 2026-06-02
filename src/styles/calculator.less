@@ -142,10 +142,10 @@
   border-radius: 999px;
   background: color-mix(in srgb, var(--calc-muted) 36%, transparent);
 }
+.calc-minimize,
 .calc-close{
   position: absolute;
   top: 8px;
-  right: 8px;
   z-index: 3;
   width: 34px;
   min-height: 34px;
@@ -170,15 +170,24 @@
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14);
   opacity: 0.84;
 }
+.calc-minimize{
+  right: 48px;
+}
+.calc-close{
+  right: 8px;
+}
+.calc-minimize:hover,
 .calc-close:hover{
   background: color-mix(in srgb, var(--calc-surface) 82%, var(--calc-btn-hover) 18%);
   color: var(--calc-text);
   opacity: 1;
 }
+.calc-minimize:focus-visible,
 .calc-close:focus-visible{
   outline: none;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--calc-accent) 20%, transparent);
 }
+.calc-minimize svg,
 .calc-close svg{
   width: 16px;
   height: 16px;
@@ -643,12 +652,14 @@
   .calc-panel{ width: calc(100vw - 24px); right: 12px; }
   .calc-fab{ right: 12px; bottom: 12px; }
   .calc-header{ padding: 8px 8px 0; }
+  .calc-minimize,
   .calc-close{
     top: 8px;
-    right: 8px;
     width: 32px;
     min-height: 32px;
   }
+  .calc-minimize{ right: 44px; }
+  .calc-close{ right: 8px; }
   .calc-utility-row{
     gap: 6px;
   }

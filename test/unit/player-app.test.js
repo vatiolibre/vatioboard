@@ -357,7 +357,7 @@ describe("Player OS app module", () => {
     shellManager.destroy();
   });
 
-  it("does not stop playback when the Player panel is minimized or closed", async () => {
+  it("keeps playback alive when minimized and stops playback when closed", async () => {
     const modules = await loadModules();
     audioRuntimeMock.getState.mockReturnValue({
       queue: [makeTrack("PLAYING")],
@@ -388,10 +388,15 @@ describe("Player OS app module", () => {
     launcher.openApp(modules.PLAYER_APP_ID);
 
     shellManager.minimizeWindow("player");
+    expect(document.querySelector(".player-panel")?.hidden).toBe(true);
+    expect(audioRuntimeMock.stopPlayback).not.toHaveBeenCalled();
+    expect(audioRuntimeMock.pause).not.toHaveBeenCalled();
+
+    shellManager.restoreWindow("player");
     shellManager.closeWindow("player");
 
     expect(document.querySelector(".player-panel")?.hidden).toBe(true);
-    expect(audioRuntimeMock.stopPlayback).not.toHaveBeenCalled();
+    expect(audioRuntimeMock.stopPlayback).toHaveBeenCalledTimes(1);
     expect(audioRuntimeMock.pause).not.toHaveBeenCalled();
 
     player.destroy();

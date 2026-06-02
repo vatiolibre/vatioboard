@@ -169,10 +169,10 @@ html.vb-floating-drag-active body {
   background: color-mix(in srgb, var(--player-muted) 36%, transparent);
 }
 
+.player-minimize,
 .player-close {
   position: absolute;
   top: 8px;
-  right: 8px;
   z-index: 3;
   border: 1px solid color-mix(in srgb, var(--player-border) 96%, transparent);
   background: color-mix(in srgb, var(--player-surface) 68%, transparent);
@@ -193,17 +193,28 @@ html.vb-floating-drag-active body {
   opacity: 0.84;
 }
 
+.player-minimize {
+  right: 48px;
+}
+
+.player-close {
+  right: 8px;
+}
+
+.player-minimize:hover,
 .player-close:hover {
   background: color-mix(in srgb, var(--player-surface) 82%, var(--player-btn-hover) 18%);
   color: var(--player-text);
   opacity: 1;
 }
 
+.player-minimize:focus-visible,
 .player-close:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px var(--player-focus-ring);
 }
 
+.player-minimize,
 .player-close {
   width: 34px;
   min-height: 34px;
@@ -212,6 +223,7 @@ html.vb-floating-drag-active body {
   place-items: center;
 }
 
+.player-minimize svg,
 .player-close svg {
   width: 16px;
   height: 16px;
@@ -1403,11 +1415,19 @@ html.vb-floating-drag-active body {
     padding: 8px 8px 0;
   }
 
+  .player-minimize,
   .player-close {
     top: 8px;
-    right: 8px;
     width: 32px;
     min-height: 32px;
+  }
+
+  .player-minimize {
+    right: 44px;
+  }
+
+  .player-close {
+    right: 8px;
   }
 
   .player-now-playing {

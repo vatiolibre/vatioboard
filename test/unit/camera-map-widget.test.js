@@ -410,13 +410,14 @@ describe("createCameraMapWidget", () => {
     expect(document.querySelector(".camera-map-footer")).toBeNull();
     expect(document.querySelector(".camera-map-layer-select")).toBeNull();
     expect(document.querySelector(".camera-map-layer-control").tagName).toBe("DIV");
-    expect(document.querySelector(".camera-map-minimize")).toBeNull();
+    expect(document.querySelector(".camera-map-minimize")).toBeTruthy();
     expect(document.querySelector(".camera-map-resize-handle").tagName).toBe("BUTTON");
     expect(document.querySelector(".camera-map-resize-handle").getAttribute("aria-label")).toBe("cameraMapResize");
     expect(Array.from(document.querySelectorAll(".camera-map-actions .camera-map-action"))
       .map((button) => button.className)).toEqual([
       "camera-map-action camera-map-fullscreen",
       "camera-map-action camera-map-speed-alerts",
+      "camera-map-action camera-map-minimize",
       "camera-map-action camera-map-close",
     ]);
 

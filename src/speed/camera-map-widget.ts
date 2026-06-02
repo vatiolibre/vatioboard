@@ -4,6 +4,7 @@ import {
   IconFullscreen,
   IconFullscreenExit,
   IconGpsLab,
+  IconMinimize,
   IconRestart,
   IconSpeed,
   IconWorld,
@@ -1212,10 +1213,20 @@ function buildPanel(selectedBasemapId, {
     "data-i18n-title": "closeCameraMap",
     html: IconClose,
   });
+  const minimizeBtn = createElement("button", {
+    type: "button",
+    class: "camera-map-action camera-map-minimize",
+    "aria-label": t("minimizeCameraMap"),
+    title: t("minimizeCameraMap"),
+    "data-i18n-aria": "minimizeCameraMap",
+    "data-i18n-title": "minimizeCameraMap",
+    html: IconMinimize,
+  });
 
   const actions = createElement("div", { class: "camera-map-actions" }, [
     fullscreenBtn,
     speedAlertsBtn,
+    minimizeBtn,
     closeBtn,
   ]);
   const header = createElement("div", { class: "camera-map-header" }, [
@@ -1348,6 +1359,7 @@ function buildPanel(selectedBasemapId, {
     panel,
     header,
     closeBtn,
+    minimizeBtn,
     fullscreenBtn,
     speedAlertsBtn,
     recenterBtn,
@@ -1448,6 +1460,7 @@ export function createCameraMapWidget(options: AnyRecord = {}) {
     panel,
     header,
     closeBtn,
+    minimizeBtn,
     fullscreenBtn,
     speedAlertsBtn,
     recenterBtn,
@@ -3576,6 +3589,13 @@ export function createCameraMapWidget(options: AnyRecord = {}) {
     shellWindowId: CAMERA_MAP_WINDOW_ID,
     shellManager,
     enableSnapPreview: shellManager.getShellPreference?.("snapEnabled") !== false,
+  });
+
+  minimizeBtn.addEventListener("pointerdown", (event) => event.stopPropagation());
+  minimizeBtn.addEventListener("pointerup", (event) => event.stopPropagation());
+  minimizeBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    minimize();
   });
 
   closeBtn.addEventListener("pointerdown", (event) => event.stopPropagation());

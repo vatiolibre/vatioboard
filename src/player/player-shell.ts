@@ -12,7 +12,7 @@
 import {
   IconPlay, IconPause, IconSkipBack, IconSkipForward,
   IconRepeat, IconShuffle, IconVolume, IconMuted,
-  IconMusic, IconClose, IconQueue, IconPlaylist, IconLibrary,
+  IconMusic, IconClose, IconMinimize, IconQueue, IconPlaylist, IconLibrary,
 } from "../icons.js";
 import { t } from "../i18n.js";
 import { createMiniAudioVisualizer } from "../shared/audio-mini-visualizer.js";
@@ -250,6 +250,7 @@ export interface PlayerShellOptions {
  *   root: HTMLElement,
  *   header: HTMLElement,
  *   nowPlaying: HTMLElement,
+ *   minimizeBtn: HTMLElement,
  *   closeBtn: HTMLElement,
  *   destroy: () => void,
  *   setTracks: (tracks: object[]) => void,
@@ -304,14 +305,24 @@ export function createPlayerShell({
   contentToggleBtn.setAttribute("aria-expanded", "false");
   contentToggleBtn.setAttribute("aria-pressed", "false");
 
+  const minimizeBtn = document.createElement("button");
+  minimizeBtn.type = "button";
+  minimizeBtn.className = "player-minimize";
+  minimizeBtn.setAttribute("aria-label", t("minimize"));
+  minimizeBtn.setAttribute("data-i18n-aria", "minimize");
+  minimizeBtn.title = t("minimize");
+  minimizeBtn.innerHTML = IconMinimize;
+
   const closeBtn = document.createElement("button");
   closeBtn.type = "button";
   closeBtn.className = "player-close";
-  closeBtn.setAttribute("aria-label", t("close"));
-  closeBtn.title = t("close");
+  closeBtn.setAttribute("aria-label", t("stopAndClosePlayer"));
+  closeBtn.setAttribute("data-i18n-aria", "stopAndClosePlayer");
+  closeBtn.setAttribute("data-i18n-title", "stopAndClosePlayer");
+  closeBtn.title = t("stopAndClosePlayer");
   closeBtn.innerHTML = IconClose;
 
-  header.append(headerMain, closeBtn);
+  header.append(headerMain, minimizeBtn, closeBtn);
 
   // ── Now-playing row (compact artwork + metadata) ───────────────
   const nowPlaying = document.createElement("div");
@@ -1967,6 +1978,8 @@ export function createPlayerShell({
     header,
     /** The now-playing row (secondary drag handle for the widget). */
     nowPlaying,
+    /** The minimize button (widget wires its click handler). */
+    minimizeBtn,
     /** The close button (widget wires its click handler). */
     closeBtn,
 

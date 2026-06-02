@@ -68,6 +68,7 @@ export type EnergyCalculatorWidgetOptions = {
 export type EnergyCalculatorWidgetApi = {
   open: (options?: ShellLifecycleOptions) => void;
   close: (options?: ShellLifecycleOptions) => void;
+  minimize: (options?: ShellLifecycleOptions) => void;
   destroy: () => void;
   isOpen: () => boolean;
   toggle: () => void;
@@ -152,7 +153,7 @@ export function createEnergyCalculatorWidget(options: EnergyCalculatorWidgetOpti
 
   // Build panel and get all refs
   const refs = buildPanel({ t: translateEnergy });
-  const { panel, header, closeBtn } = refs;
+  const { panel, header, minimizeBtn, closeBtn } = refs;
   let cleanupLayer = () => {};
 
   // Apply stored panel position
@@ -384,11 +385,23 @@ export function createEnergyCalculatorWidget(options: EnergyCalculatorWidgetOpti
     shellManager.closeWindow(ENERGY_WINDOW_ID, { ...options, invokeLifecycle: false });
   }
 
+  function minimize(options: ShellLifecycleOptions = {}) {
+    minimizePanel();
+    shellManager.minimizeWindow(ENERGY_WINDOW_ID, { ...options, invokeLifecycle: false });
+  }
+
   function toggle() {
     panel.hidden ? open() : close();
   }
 
-  // Close button
+  // Window controls
+  minimizeBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  minimizeBtn.addEventListener("pointerup", (e) => e.stopPropagation());
+  minimizeBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    minimize();
+  });
+
   closeBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
   closeBtn.addEventListener("pointerup", (e) => e.stopPropagation());
   closeBtn.addEventListener("click", (e) => {
@@ -420,6 +433,7 @@ export function createEnergyCalculatorWidget(options: EnergyCalculatorWidgetOpti
   return {
     open,
     close,
+    minimize,
     destroy: () => {
       cleanupLayer();
       document.removeEventListener("i18n:change", refreshI18n);

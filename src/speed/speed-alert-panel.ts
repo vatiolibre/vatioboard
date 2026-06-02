@@ -1,4 +1,4 @@
-import { IconCameraMap, IconClose } from "../icons.js";
+import { IconCameraMap, IconClose, IconMinimize } from "../icons.js";
 import { t } from "../i18n.js";
 import { createDrivingAlertService } from "../app/services/driving-alert-service.js";
 import { clampElementToViewport, makePanelDraggable } from "../calculator/widget/drag.js";
@@ -29,6 +29,7 @@ export interface SpeedAlertPanelApi {
   destroy(): void;
   getElement(): HTMLElement;
   isOpen(): boolean;
+  minimize(options?: AnyRecord): void;
   open(options?: AnyRecord): void;
   syncFromService(snapshot?: AnyRecord): void;
   toggle(options?: AnyRecord): void;
@@ -249,13 +250,19 @@ function buildPanel() {
     labelKey: "closeSpeedAlerts",
     icon: IconClose,
   });
+  const minimizeBtn = createActionButton({
+    className: "speed-alert-window-action speed-alert-window-minimize",
+    label: t("minimizeSpeedAlerts"),
+    labelKey: "minimizeSpeedAlerts",
+    icon: IconMinimize,
+  });
 
   const header = createElement("div", { class: "speed-alert-window-header" }, [
     createElement("div", { class: "speed-alert-window-heading" }, [
       title,
     ]),
     statusChip,
-    createElement("div", { class: "speed-alert-window-actions" }, [closeBtn]),
+    createElement("div", { class: "speed-alert-window-actions" }, [minimizeBtn, closeBtn]),
   ]);
 
   const manualToggle = createElement("button", {
@@ -479,6 +486,7 @@ function buildPanel() {
     cameraApproach,
     cameraDatabaseStatus,
     closeBtn,
+    minimizeBtn,
     decrease,
     distanceUnitButtons,
     header,
@@ -770,6 +778,11 @@ export function createSpeedAlertPanel(options: AnyRecord = {}): SpeedAlertPanelA
     shellManager.closeWindow?.(SPEED_ALERT_PANEL_WINDOW_ID, { ...closeOptions, invokeLifecycle: false });
   }
 
+  function minimize(minimizeOptions = {}) {
+    minimizePanel();
+    shellManager.minimizeWindow?.(SPEED_ALERT_PANEL_WINDOW_ID, { ...minimizeOptions, invokeLifecycle: false });
+  }
+
   function toggle(toggleOptions = {}) {
     const record = shellManager.getWindow?.(SPEED_ALERT_PANEL_WINDOW_ID);
     if (record?.state === "open" && !panel.hidden) close(toggleOptions);
@@ -805,6 +818,11 @@ export function createSpeedAlertPanel(options: AnyRecord = {}): SpeedAlertPanelA
   }
 
   function addEventListeners() {
+    refs.minimizeBtn.addEventListener("pointerdown", (event) => event.stopPropagation());
+    refs.minimizeBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      minimize();
+    });
     refs.closeBtn.addEventListener("pointerdown", (event) => event.stopPropagation());
     refs.closeBtn.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -978,6 +996,7 @@ export function createSpeedAlertPanel(options: AnyRecord = {}): SpeedAlertPanelA
     },
     getElement: () => panel,
     isOpen: () => !panel.hidden,
+    minimize,
     open,
     syncFromService,
     toggle,

@@ -304,6 +304,41 @@ describe("shell-taskbar", () => {
     manager.destroy();
   });
 
+  it("removes a normal tray item when its window is closed", () => {
+    const { manager, taskbar } = setupCalculatorTaskbar();
+
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeTruthy();
+
+    manager.closeWindow("calculator");
+
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeNull();
+    expect(taskbar.getElement().getAttribute("data-vb-shell-taskbar-empty")).toBe("true");
+    expect(JSON.parse(localStorage.getItem(TASKBAR_STATE_KEY)).knownWindowIds).not.toContain("calculator");
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("prunes remembered closed windows from older taskbar state", () => {
+    localStorage.setItem(TASKBAR_STATE_KEY, JSON.stringify({
+      version: 1,
+      knownWindowIds: ["calculator"],
+      positions: { calculator: { detached: true, left: 120, top: 160 } },
+      taskbar: null,
+    }));
+    const manager = makeManager();
+    manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
+    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeNull();
+    const stored = JSON.parse(localStorage.getItem(TASKBAR_STATE_KEY));
+    expect(stored.knownWindowIds).not.toContain("calculator");
+    expect(stored.positions.calculator).toBeUndefined();
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
   it("keeps taskbar and detached FAB layers above normal shell windows", () => {
     const appCss = readFileSync(resolve(process.cwd(), "src/styles/app.less"), "utf8");
     const manager = makeManager();

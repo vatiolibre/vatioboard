@@ -1,5 +1,5 @@
 import { el } from "../dom.js";
-import { IconHistory, IconSettings, IconClose, IconEnergy } from "../../icons.js";
+import { IconHistory, IconSettings, IconClose, IconEnergy, IconMinimize } from "../../icons.js";
 
 type TranslateFn = (key: string, params?: Record<string, unknown>) => string;
 
@@ -79,6 +79,14 @@ export function buildPanel({ t, isTouchLike, showEnergyTool = false }: PanelOpti
         { class: "calc-header-main" },
         el("div", { class: "calc-header-grip", "aria-hidden": "true" })
       ),
+      el("button", {
+        class: "calc-minimize",
+        type: "button",
+        "aria-label": t("minimize"),
+        "data-i18n-aria": "minimize",
+        title: t("minimize"),
+        html: IconMinimize,
+      }),
       el("button", {
         class: "calc-close",
         type: "button",
@@ -211,6 +219,7 @@ export function buildPanel({ t, isTouchLike, showEnergyTool = false }: PanelOpti
     settingsDecimalsPlus: panel.querySelector<HTMLButtonElement>(".calc-settings-decimals-plus"),
     settingsDecimalsValue: panel.querySelector<HTMLElement>(".calc-settings-decimals-value"),
     settingsThousandsToggle: panel.querySelector<HTMLInputElement>(".calc-settings-thousands"),
+    minimizeBtn: panel.querySelector<HTMLButtonElement>(".calc-minimize"),
     closeBtn: panel.querySelector<HTMLButtonElement>(".calc-close"),
     keys: panel.querySelector<HTMLElement>(".calc-keys"),
     header: panel.querySelector<HTMLElement>(".calc-header"),

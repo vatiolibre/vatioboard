@@ -57,6 +57,7 @@ type CalculatorShowOptions = ShellLifecycleOptions & {
 export type CalculatorWidgetApi = {
   open: (options?: CalculatorShowOptions) => void;
   close: (options?: ShellLifecycleOptions) => void;
+  minimize: (options?: ShellLifecycleOptions) => void;
   toggle: () => void;
   destroy: () => void;
   isOpen: () => boolean;
@@ -172,6 +173,7 @@ export function createCalculatorWidget(options: CalculatorWidgetOptions = {}): C
     settingsDecimalsPlus,
     settingsDecimalsValue,
     settingsThousandsToggle,
+    minimizeBtn,
     closeBtn,
     keys,
     header,
@@ -348,6 +350,11 @@ export function createCalculatorWidget(options: CalculatorWidgetOptions = {}): C
     shellManager.closeWindow(CALCULATOR_WINDOW_ID, { ...options, invokeLifecycle: false });
   }
 
+  function minimize(options: ShellLifecycleOptions = {}) {
+    minimizePanel();
+    shellManager.minimizeWindow(CALCULATOR_WINDOW_ID, { ...options, invokeLifecycle: false });
+  }
+
   function toggle() {
     panel.hidden ? open() : close();
   }
@@ -432,6 +439,13 @@ export function createCalculatorWidget(options: CalculatorWidgetOptions = {}): C
     doEval,
   });
 
+  minimizeBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  minimizeBtn.addEventListener("pointerup", (e) => e.stopPropagation());
+  minimizeBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    minimize();
+  });
+
   closeBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
   closeBtn.addEventListener("pointerup", (e) => e.stopPropagation());
   closeBtn.addEventListener("click", (e) => {
@@ -506,6 +520,7 @@ export function createCalculatorWidget(options: CalculatorWidgetOptions = {}): C
   return {
     open,
     close,
+    minimize,
     toggle,
     destroy: () => {
       cleanupLayer();

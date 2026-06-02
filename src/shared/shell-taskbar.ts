@@ -566,12 +566,17 @@ export function createShellTaskbar({
     saveState();
   }
 
-  function closeWindowFromTaskbarTrash(record) {
-    const id = record?.id;
-    if (!id) return;
+  function forgetWindow(id) {
+    if (!id || !knownWindowIds.has(id)) return;
     knownWindowIds.delete(id);
     itemPositions.delete(id);
     saveState();
+  }
+
+  function closeWindowFromTaskbarTrash(record) {
+    const id = record?.id;
+    if (!id) return;
+    forgetWindow(id);
     shellManager.closeWindow?.(id, {
       taskbarTrash: true,
       ...(id === "player" ? { stopPlayback: true } : {}),
@@ -586,6 +591,7 @@ export function createShellTaskbar({
     for (const record of records) {
       const state = getWindowState(record);
       if (isVisibleTaskbarState(state)) rememberWindow(record.id);
+      else forgetWindow(record.id);
     }
 
     return records.filter((record) => knownWindowIds.has(record.id) && !excludedWindowIds.has(record.id));
@@ -1066,6 +1072,8 @@ export function createShellTaskbar({
   unsubscribe = shellManager.subscribe(({ event, record }) => {
     if (record && ["opened", "restored", "minimized"].includes(event)) {
       rememberWindow(record.id);
+    } else if (record && ["closed", "unregistered"].includes(event)) {
+      forgetWindow(record.id);
     }
     render();
   });

@@ -94,6 +94,7 @@ type PlayerWidgetOptions = {
 export type PlayerWidgetApi = {
   open: (options?: ShellLifecycleOptions) => void;
   close: (options?: ShellLifecycleOptions) => void;
+  minimize: (options?: ShellLifecycleOptions) => void;
   toggle: () => void;
   restoreVisibility: () => void;
   destroy: () => void;
@@ -681,7 +682,14 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
   });
   window.addEventListener("resize", handleContentOpenChange);
 
-  // ── Close button (must NOT stop playback) ────────────────────
+  // ── Window controls ──────────────────────────────────────────
+  shell.minimizeBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  shell.minimizeBtn.addEventListener("pointerup", (e) => e.stopPropagation());
+  shell.minimizeBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    minimize();
+  });
+
   shell.closeBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
   shell.closeBtn.addEventListener("pointerup", (e) => e.stopPropagation());
   shell.closeBtn.addEventListener("click", (e) => {
@@ -715,10 +723,10 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
     if (typeof onOpen === "function") onOpen();
   }
 
-  function hidePanel({ persist = true }: ShellLifecycleOptions = {}) {
+  function hidePanel({ persist = true, stopPlayback = true }: ShellLifecycleOptions = {}) {
     shell.root.hidden = true;
     if (persist) saveVisibility(false);
-    // Playback continues — closing the panel does NOT stop audio
+    if (stopPlayback !== false) runtime.stopPlayback();
     if (typeof onClose === "function") onClose();
   }
 
@@ -735,6 +743,11 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
   function close(options: ShellLifecycleOptions = {}) {
     hidePanel(options);
     shellManager.closeWindow(PLAYER_WINDOW_ID, { ...options, invokeLifecycle: false });
+  }
+
+  function minimize(options: ShellLifecycleOptions = {}) {
+    minimizePanel();
+    shellManager.minimizeWindow(PLAYER_WINDOW_ID, { ...options, invokeLifecycle: false });
   }
 
   function toggle() {
@@ -800,6 +813,7 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
   return {
     open,
     close,
+    minimize,
     toggle,
     restoreVisibility: restoreSavedVisibility,
     destroy,

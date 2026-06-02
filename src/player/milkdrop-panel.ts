@@ -10,7 +10,7 @@
  * @module milkdrop-panel
  */
 
-import { IconClose, IconFullscreen, IconFullscreenExit } from "../icons.js";
+import { IconClose, IconFullscreen, IconFullscreenExit, IconMinimize } from "../icons.js";
 import { t } from "../i18n.js";
 import { acquireGraph, releaseGraph } from "../shared/audio-graph-registry.js";
 import { isVisualizerSafeSource } from "../shared/audio-visualizer.js";
@@ -63,6 +63,7 @@ export type MilkdropPanelOptions = {
 export type MilkdropPanelApi = {
   open: (options?: ShellLifecycleOptions) => Promise<void>;
   close: (options?: ShellLifecycleOptions) => void;
+  minimize: (options?: ShellLifecycleOptions) => void;
   toggle: () => void;
   isOpen: () => boolean;
   destroy: () => void;
@@ -240,9 +241,10 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
   spacer.className = "milkdrop-spacer";
 
   const fullscreenBtn = makeBtn("milkdrop-btn milkdrop-fullscreen-btn", IconFullscreen, tr("mediaPlayerFullscreen"));
+  const minimizeBtn = makeBtn("milkdrop-btn milkdrop-minimize-btn", IconMinimize, tr("minimize"));
   const closeBtn = makeBtn("milkdrop-btn milkdrop-close-btn", IconClose, tr("close"));
 
-  header.append(titleEl, presetPrevBtn, presetLabel, presetNextBtn, presetShuffleBtn, spacer, fullscreenBtn, closeBtn);
+  header.append(titleEl, presetPrevBtn, presetLabel, presetNextBtn, presetShuffleBtn, spacer, fullscreenBtn, minimizeBtn, closeBtn);
 
   const stage = document.createElement("div");
   stage.className = "milkdrop-stage";
@@ -652,6 +654,11 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
     shellManager.closeWindow(MILKDROP_WINDOW_ID, { ...options, invokeLifecycle: false });
   }
 
+  function minimize(options: ShellLifecycleOptions = {}) {
+    minimizePanel();
+    shellManager.minimizeWindow(MILKDROP_WINDOW_ID, { ...options, invokeLifecycle: false });
+  }
+
   function toggle() {
     root.hidden ? open() : close();
   }
@@ -917,7 +924,7 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
 
   // ── Event wiring ────────────────────────────────────────────
   const stopProp = (e: Event) => e.stopPropagation();
-  for (const btn of [presetPrevBtn, presetNextBtn, presetShuffleBtn, fullscreenBtn, closeBtn]) {
+  for (const btn of [presetPrevBtn, presetNextBtn, presetShuffleBtn, fullscreenBtn, minimizeBtn, closeBtn]) {
     btn.addEventListener("pointerdown", stopProp);
     btn.addEventListener("pointerup", stopProp);
   }
@@ -926,6 +933,7 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
   presetNextBtn.addEventListener("click", (e) => { e.stopPropagation(); nextPreset(); });
   presetShuffleBtn.addEventListener("click", (e) => { e.stopPropagation(); randomPreset(); });
   fullscreenBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleFullscreen(); });
+  minimizeBtn.addEventListener("click", (e) => { e.stopPropagation(); minimize(); });
   closeBtn.addEventListener("click", (e) => { e.stopPropagation(); close(); });
 
   if (restoreVisibility && loadMilkdropPanelVisibility()) {
@@ -957,5 +965,5 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
     root.remove();
   }
 
-  return { open, close, toggle, isOpen, destroy };
+  return { open, close, minimize, toggle, isOpen, destroy };
 }
