@@ -168,10 +168,14 @@ describe("shell UI integration", () => {
     const { startAppShell } = await loadAppShellWithMocks();
 
     const app = await startAppShell();
+    const accountPanelModule = await import("../../src/shared/account-panel.js");
+    const accountPanelOptions = accountPanelModule.initAccountPanel.mock.calls[0]?.[0] || {};
 
     expect(document.querySelectorAll("[data-vb-shell-taskbar]")).toHaveLength(1);
     expect(document.querySelectorAll("[data-vb-shell-start-button]")).toHaveLength(1);
     expect(document.querySelector("[data-vb-shell-taskbar]").hidden).toBe(false);
+    expect(accountPanelOptions.authRequestGate).toBeInstanceOf(Promise);
+    expect(accountPanelOptions.gatedAuthRequestFocus).toBe(false);
     app.router.destroy();
   });
 

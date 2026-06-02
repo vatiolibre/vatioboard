@@ -110,7 +110,13 @@ export async function startAppShell({
 
   const shellManager = getDefaultShellWindowManager({ root: persistentLayer }) as ShellRuntime;
   context.shellManager = shellManager;
-  const accountPanel = initAccountPanel({ mount: persistentLayer, shellManager });
+  const welcomeConsent = showWelcomeConsentIfNeeded({ gpsService: context.gpsService });
+  const accountPanel = initAccountPanel({
+    mount: persistentLayer,
+    shellManager,
+    authRequestGate: welcomeConsent,
+    gatedAuthRequestFocus: false,
+  });
   void ensureSingleTabOwnership();
   startCloudSyncLoop();
   let router: HashRouterRuntime | null = null;
@@ -158,7 +164,7 @@ export async function startAppShell({
   });
   window.__vatioboardPlayerWidget = playerWidget;
 
-  await showWelcomeConsentIfNeeded({ gpsService: context.gpsService });
+  await welcomeConsent;
 
   const floatingTools = initFloatingTools({
     mount: persistentLayer,

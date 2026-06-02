@@ -20,6 +20,8 @@ const ACCOUNT_PANEL_POS_KEY = "vatioboard.account_panel_pos.v1";
 type AccountPanelOptions = {
   mount?: HTMLElement;
   shellManager?: ShellRuntime;
+  authRequestGate?: Promise<unknown> | null;
+  gatedAuthRequestFocus?: boolean;
 };
 
 type AccountPanelShowOptions = ShellLifecycleOptions & {
@@ -101,6 +103,8 @@ function buildAccountAuthForm() {
 export function initAccountPanel({
   mount = document.body,
   shellManager = getDefaultShellWindowManager(),
+  authRequestGate = null,
+  gatedAuthRequestFocus = false,
 }: AccountPanelOptions = {}): AccountPanelApi {
   const panel = createEl("section", "vb-account-panel", {
     role: "dialog",
@@ -236,10 +240,10 @@ export function initAccountPanel({
       maxWidth: 380,
     },
     lifecycle: {
-      open: showPanel,
+      open: (options = {}) => showPanel({ focus: false, ...options }),
       close: hidePanel,
       minimize: minimizePanel,
-      restore: showPanel,
+      restore: (options = {}) => showPanel({ focus: false, ...options }),
     },
   });
 
@@ -255,9 +259,19 @@ export function initAccountPanel({
   });
 
   const handleAuthRequest = (event: Event) => {
+    const detail = ((event as CustomEvent)?.detail || {}) as AccountPanelShowOptions;
+    const explicitFocus = typeof detail.focus === "boolean";
+    const options = {
+      ...detail,
+      source: detail.source || "auth-request",
+    };
+    if (authRequestGatePending) {
+      queuedAuthRequest = options;
+      return;
+    }
     open({
-      focus: true,
-      source: (event as CustomEvent)?.detail?.source || "auth-request",
+      ...options,
+      focus: explicitFocus ? detail.focus : true,
     });
   };
   const handleAuthState = (event: Event) => {
@@ -269,6 +283,25 @@ export function initAccountPanel({
     syncState();
   };
   const handleCloseClick = () => close({ source: "account-panel-close" });
+  let destroyed = false;
+  let authRequestGatePending = Boolean(authRequestGate);
+  let queuedAuthRequest: AccountPanelShowOptions | null = null;
+
+  function releaseAuthRequestGate() {
+    authRequestGatePending = false;
+    if (destroyed || !queuedAuthRequest) return;
+    const options = queuedAuthRequest;
+    queuedAuthRequest = null;
+    open({
+      ...options,
+      focus: typeof options.focus === "boolean" ? options.focus : gatedAuthRequestFocus,
+      source: options.source || "auth-request",
+    });
+  }
+
+  if (authRequestGate) {
+    authRequestGate.then(releaseAuthRequestGate, releaseAuthRequestGate);
+  }
 
   closeButton.addEventListener("click", handleCloseClick);
   window.addEventListener(BACKEND_AUTH_REQUEST_EVENT, handleAuthRequest);
@@ -281,6 +314,8 @@ export function initAccountPanel({
     close,
     toggle,
     destroy() {
+      destroyed = true;
+      queuedAuthRequest = null;
       closeButton.removeEventListener("click", handleCloseClick);
       window.removeEventListener(BACKEND_AUTH_REQUEST_EVENT, handleAuthRequest);
       window.removeEventListener(BACKEND_AUTH_STATE_EVENT, handleAuthState);
