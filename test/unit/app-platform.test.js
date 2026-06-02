@@ -13,6 +13,7 @@ import {
 import { boardAppManifest } from "../../src/apps/board/manifest.js";
 import { calculatorAppManifest } from "../../src/apps/calculator/manifest.js";
 import { codeRainAppManifest } from "../../src/apps/code-rain/manifest.js";
+import { premiumClockAppManifest } from "../../src/apps/premium-clock/manifest.js";
 import { speedAppManifest } from "../../src/apps/speed/manifest.js";
 import { getRouteRegistryFromApps } from "../../src/app-platform/adapters/route-registry-adapter.js";
 import {
@@ -155,11 +156,13 @@ describe("VatioBoard OS app platform", () => {
       boardAppManifest,
       calculatorAppManifest,
       codeRainAppManifest,
+      premiumClockAppManifest,
     ]));
     expect(appRegistry.getApp("vatio.speed")).toBe(speedAppManifest);
     expect(appRegistry.getApp("vatio.board")).toBe(boardAppManifest);
     expect(appRegistry.getApp("vatio.calculator")).toBe(calculatorAppManifest);
     expect(appRegistry.getApp("vatio.codeRain")).toBe(codeRainAppManifest);
+    expect(appRegistry.getApp("vatio.premiumClock")).toBe(premiumClockAppManifest);
   });
 
   it("namespaces app storage by app ID and handles JSON safely", () => {

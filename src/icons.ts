@@ -48,6 +48,20 @@ export const IconTime = `
   </svg>
 `;
 
+export const IconPremiumClock = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <circle cx="12" cy="12" r="8.6" fill="#111827"/>
+    <circle cx="12" cy="12" r="8.6" stroke="#d7dde5" stroke-width="1.2"/>
+    <circle cx="12" cy="12" r="6.8" stroke="#64748b" stroke-width="0.7" opacity="0.72"/>
+    <path d="M12 5.3v1.6M12 17.1v1.6M5.3 12h1.6M17.1 12h1.6" stroke="#f8fafc" stroke-width="1.1" stroke-linecap="round"/>
+    <path d="M8.65 6.2l.75 1.3M15.35 17.8l-.75-1.3M6.2 15.35l1.3-.75M17.8 8.65l-1.3.75" stroke="#94a3b8" stroke-width="0.85" stroke-linecap="round"/>
+    <path d="M12 12V7.8" stroke="#f8fafc" stroke-width="1.45" stroke-linecap="round"/>
+    <path d="M12 12l3.25 2.1" stroke="#f8fafc" stroke-width="1.25" stroke-linecap="round"/>
+    <path d="M12 12l4.75-4.75" stroke="#ef4444" stroke-width="0.85" stroke-linecap="round"/>
+    <circle cx="12" cy="12" r="1.05" fill="#f8fafc"/>
+  </svg>
+`;
+
 export const IconDistance = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path d="M4.75 12H19.25" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
