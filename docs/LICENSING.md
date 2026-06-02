@@ -75,6 +75,7 @@ Known notice areas include:
 - map and tile attribution links in the application
 - OpenStreetMap-derived camera data obligations and attribution
 - demo music attributions in `README.md`
+- Rezmason/matrix Code Rain visualizer runtime and assets under MIT in `public/vendor/rezmason-matrix/`
 
 Preserve third-party copyright and license notices when redistributing VatioBoard or modified versions.
 

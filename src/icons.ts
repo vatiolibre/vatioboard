@@ -231,6 +231,30 @@ export const IconCameraMap = `
   </svg>
 `;
 
+export const IconCodeRain = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <rect x="3.25" y="3.25" width="17.5" height="17.5" rx="3.4" fill="#020f07"/>
+    <rect x="3.25" y="3.25" width="17.5" height="17.5" rx="3.4" stroke="#00ff41" stroke-width="1.25" opacity="0.72"/>
+    <path d="M6 5.5v13M10 4.75v14.5M14 5.25v13.5M18 6v12" stroke="#00ff41" stroke-width="0.75" stroke-linecap="round" opacity="0.26"/>
+    <g fill="#00ff41" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="3.15" font-weight="800">
+      <text x="5.1" y="7.4">1</text>
+      <text x="5.1" y="11.7" opacity="0.76">0</text>
+      <text x="5.1" y="16" opacity="0.42">{</text>
+      <text x="9.1" y="6.4" opacity="0.56">0</text>
+      <text x="9.1" y="10.7">1</text>
+      <text x="9.1" y="15" opacity="0.68">;</text>
+      <text x="13.1" y="8.1">A</text>
+      <text x="13.1" y="12.4" opacity="0.8">1</text>
+      <text x="13.1" y="16.7" opacity="0.48">}</text>
+      <text x="17.1" y="9.2" opacity="0.74">$</text>
+      <text x="17.1" y="13.5">0</text>
+      <text x="17.1" y="17.8" opacity="0.52">1</text>
+    </g>
+    <path d="M8.9 9.25h2.15M12.9 6.55h2.15M16.9 11.85h2.15" stroke="#c9ffd3" stroke-width="0.9" stroke-linecap="round"/>
+    <path d="M4.9 19.2c3.35-1.1 7.15-.95 11.4.45" stroke="#00ff41" stroke-width="1" stroke-linecap="round" opacity="0.55"/>
+  </svg>
+`;
+
 export const IconMedia = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <rect x="4" y="4" width="16" height="16" rx="3" stroke="currentColor" stroke-width="1.6"/>

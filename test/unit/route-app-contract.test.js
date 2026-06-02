@@ -48,6 +48,14 @@ const ROUTE_APPS = [
     modulePath: "../../src/apps/accel/index.js",
     viewPath: "../../src/app/views/AccelView.js",
   },
+  {
+    appId: "vatio.codeRain",
+    appIdExport: "CODE_RAIN_APP_ID",
+    contextFactoryExport: "createCodeRainRouteMountContext",
+    expectedRoute: "/code-rain",
+    modulePath: "../../src/apps/code-rain/index.js",
+    viewPath: "../../src/app/views/CodeRainView.js",
+  },
 ];
 
 describe("route app wrapper contract", () => {
