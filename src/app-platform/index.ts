@@ -6,6 +6,7 @@ export * from "./app-control-storage.js";
 export * from "./app-control.js";
 export * from "./permissions.js";
 export * from "./runtime.js";
+export * from "./app-theme.js";
 export * from "./services.js";
 export * from "./storage.js";
 export * from "./settings.js";

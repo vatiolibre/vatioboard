@@ -21,6 +21,10 @@ export const calculatorAppManifest = defineAppManifest({
   kind: "tool-app",
   version: "1.0.0",
   icon: IconCalculator,
+  theme: {
+    color: "#2563eb",
+    color2: "#60a5fa",
+  },
   i18nKey: "calculator",
   entry: () => import("./index.js"),
   surfaces: ["shell-window", "start-menu", "taskbar", "launcher"],
@@ -46,4 +50,3 @@ export const calculatorAppManifest = defineAppManifest({
     legacyShellKind: "tool",
   },
 });
-

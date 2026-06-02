@@ -1,6 +1,6 @@
 import type { ShellRuntime, ShellWindowRecord } from "../types/shell";
 import type { StorageLike } from "../types/storage";
-import { appControl, appRegistry } from "../app-platform/index.js";
+import { appControl, appRegistry, applyAppIconTheme } from "../app-platform/index.js";
 import type { VatioAppManifest, VatioAppShellRuntime } from "../app-platform/types";
 import { IconLogin, IconPages } from "../icons.js";
 import { createDragSensors } from "./drag-sensors.js";
@@ -170,6 +170,10 @@ function getAppShellWindowId(app: VatioAppManifest) {
   return app.window?.shellWindowId || "";
 }
 
+function getAppForShellWindowId(shellWindowId: string) {
+  return appRegistry.listApps().find((app) => app.window?.shellWindowId === shellWindowId) || null;
+}
+
 function isVisibleTaskbarState(state: string) {
   return state === "open" || state === "minimized";
 }
@@ -306,6 +310,7 @@ export function createShellTaskbar({
   startButton.setAttribute("aria-expanded", "false");
   startButton.title = labels.startMenu || "Start menu";
   suppressNativeDrag(startButton);
+  applyAppIconTheme(startButton, appRegistry.getApp("vatio.appManager"));
 
   const startIcon = document.createElement("span");
   startIcon.className = "vb-shell-taskbar-icon";
@@ -860,6 +865,7 @@ export function createShellTaskbar({
     item.setAttribute("data-vb-shell-taskbar-active", record.active ? "true" : "false");
     item.setAttribute("data-vb-shell-taskbar-docked", docked ? "true" : "false");
     suppressNativeDrag(item);
+    applyAppIconTheme(item, getAppForShellWindowId(record.id));
 
     const label = labels[record.id] || defaultLabel(record);
     item.setAttribute("aria-label", `${label} ${state}`);
@@ -905,6 +911,7 @@ export function createShellTaskbar({
     item.setAttribute("data-vb-shell-taskbar-running", running ? "true" : "false");
     item.setAttribute("aria-label", running ? `${label} ${state}` : label);
     item.title = label;
+    applyAppIconTheme(item, app);
 
     const iconEl = document.createElement("span");
     iconEl.className = "vb-shell-taskbar-icon";

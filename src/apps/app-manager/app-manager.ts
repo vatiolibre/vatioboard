@@ -3,6 +3,7 @@ import "./app-manager.less";
 import {
   appControl,
   appRegistry,
+  applyAppIconTheme,
   clearAppPrivateStorage,
   createAppLauncher,
   estimateAppPrivateStorage,
@@ -208,6 +209,7 @@ function createAppCard({
   card.className = "vb-app-manager-card";
   card.dataset.appId = app.id;
   card.dataset.enabled = state.enabled ? "true" : "false";
+  applyAppIconTheme(card, app);
 
   const header = document.createElement("header");
   header.className = "vb-app-manager-card-header";

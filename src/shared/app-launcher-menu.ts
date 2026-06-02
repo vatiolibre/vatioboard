@@ -9,6 +9,7 @@ import {
 import {
   appControl,
   appRegistry,
+  applyAppIconTheme,
   createAppLauncher,
 } from "../app-platform/index.js";
 import type {
@@ -504,6 +505,7 @@ export function createAppLauncherMenu({
     const headingIcon = createEl("span", "vb-app-launcher-context-heading-icon");
     headingIcon.setAttribute("aria-hidden", "true");
     headingIcon.innerHTML = view.app.icon || IconPages;
+    applyAppIconTheme(contextSheet, view.app);
     const headingText = createEl("span", "vb-app-launcher-context-heading-text");
     const headingTitle = createEl("strong");
     headingTitle.textContent = label;
@@ -625,6 +627,7 @@ export function createAppLauncherMenu({
       "data-protected": view.protected ? "true" : "false",
       "data-disabled": view.disabled ? "true" : "false",
     });
+    applyAppIconTheme(tile, app);
 
     const mainButton = createEl("button", "vb-app-launcher-tile-main", {
       type: "button",

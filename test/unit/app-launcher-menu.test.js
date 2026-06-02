@@ -79,7 +79,9 @@ describe("app launcher start menu", () => {
     expect(menu.list.querySelector("[data-launcher-search-open]")).toBeTruthy();
     expect(menu.list.querySelector("[data-launcher-search-panel]").hidden).toBe(true);
     expect(document.activeElement).not.toBe(menu.list.querySelector(".vb-app-launcher-search-input"));
-    expect(menu.list.querySelector(".vb-app-launcher-grid [data-app-id='vatio.board']")).toBeTruthy();
+    const boardTile = menu.list.querySelector(".vb-app-launcher-grid [data-app-id='vatio.board']");
+    expect(boardTile).toBeTruthy();
+    expect(boardTile.style.getPropertyValue("--vb-app-icon-accent")).toBe("#2563eb");
     expect(menu.list.querySelector("[data-start-route='/board']")).toBeTruthy();
     expect(menu.list.querySelector("[data-start-action='calculator']")).toBeTruthy();
   });

@@ -85,6 +85,22 @@ function validateStringArray(name: string, value: unknown, errors: string[]) {
   }
 }
 
+function validateTheme(value: unknown, errors: string[]) {
+  if (value === undefined) return;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    errors.push("theme must be an object.");
+    return;
+  }
+
+  const theme = value as Record<string, unknown>;
+  if (!hasText(theme.color)) errors.push("theme.color is required when theme is provided.");
+  for (const key of ["color2", "foreground"] as const) {
+    if (theme[key] !== undefined && !hasText(theme[key])) {
+      errors.push(`theme.${key} must be a non-empty string.`);
+    }
+  }
+}
+
 export function defineAppManifest<const T extends VatioAppManifest>(manifest: T): T {
   return manifest;
 }
@@ -108,6 +124,7 @@ export function validateAppManifest(manifest: VatioAppManifest): VatioAppManifes
   if (!VALID_KINDS.has(manifest.kind)) errors.push(`kind "${manifest.kind}" is not supported.`);
   if (!VALID_STATUSES.has(manifest.status)) errors.push(`status "${manifest.status}" is not supported.`);
   if (!Number.isFinite(manifest.order)) errors.push("order must be a number.");
+  validateTheme(manifest.theme, errors);
 
   if (!Array.isArray(manifest.surfaces) || manifest.surfaces.length === 0) {
     errors.push("surfaces must include at least one surface.");

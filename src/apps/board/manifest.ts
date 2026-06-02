@@ -9,6 +9,10 @@ export const boardAppManifest = defineAppManifest({
   kind: "core-app",
   version: "1.0.0",
   icon: IconBoard,
+  theme: {
+    color: "#2563eb",
+    color2: "#60a5fa",
+  },
   i18nKey: "openBoard",
   route: "/board",
   entry: () => import("./index.js"),
@@ -36,4 +40,3 @@ export const boardAppManifest = defineAppManifest({
     legacyToolId: "route:board",
   },
 });
-

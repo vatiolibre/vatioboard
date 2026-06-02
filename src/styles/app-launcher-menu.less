@@ -502,6 +502,10 @@
 }
 
 .vb-app-launcher-tile {
+  --vb-app-icon-accent: var(--vb-app-launcher-accent);
+  --vb-app-icon-accent-2: color-mix(in srgb, var(--vb-app-launcher-accent) 76%, #ffffff);
+  --vb-app-icon-foreground: #ffffff;
+
   position: relative;
   display: block;
   min-width: 0;
@@ -553,11 +557,15 @@
   width: 72px;
   height: 72px;
   border-radius: 8px;
-  background: var(--vb-app-launcher-icon-bg);
-  color: var(--vb-app-launcher-accent);
+  background:
+    radial-gradient(circle at 26% 18%, color-mix(in srgb, #ffffff 36%, transparent) 0 16%, transparent 38%),
+    linear-gradient(145deg, var(--vb-app-icon-accent-2), var(--vb-app-icon-accent));
+  color: var(--vb-app-icon-foreground);
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--vb-app-launcher-accent) 10%, transparent),
-    0 10px 24px rgba(15, 23, 42, 0.1);
+    inset 0 1px 0 color-mix(in srgb, #ffffff 34%, transparent),
+    inset 0 -18px 32px color-mix(in srgb, #000000 18%, transparent),
+    0 14px 28px color-mix(in srgb, var(--vb-app-icon-accent) 28%, rgba(15, 23, 42, 0.12));
+  text-shadow: 0 2px 8px color-mix(in srgb, #000000 26%, transparent);
 }
 
 .vb-app-launcher-tile-icon svg {
@@ -566,9 +574,12 @@
 }
 
 .vb-app-launcher-tile[data-current-page="true"] .vb-app-launcher-tile-icon {
-  border: 1px solid color-mix(in srgb, var(--vb-app-launcher-accent) 58%, transparent);
-  background: var(--vb-app-launcher-current-bg);
-  box-shadow: var(--vb-app-launcher-current-shadow);
+  border: 1px solid color-mix(in srgb, var(--vb-app-icon-accent) 36%, #ffffff);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--vb-app-icon-accent) 18%, transparent),
+    0 0 32px color-mix(in srgb, var(--vb-app-icon-accent) 22%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #ffffff 36%, transparent),
+    inset 0 -18px 32px color-mix(in srgb, #000000 18%, transparent);
 }
 
 .vb-app-launcher-tile[data-favorite="true"] .vb-app-launcher-tile-icon::after {
@@ -606,9 +617,9 @@
 .vb-app-launcher-tile-main:hover,
 .vb-app-launcher-tile-main:focus-visible,
 .vb-app-launcher-tile-main[aria-expanded="true"] {
-  background: var(--vb-app-launcher-selected-bg);
+  background: color-mix(in srgb, var(--vb-app-icon-accent) 12%, transparent);
   outline: none;
-  box-shadow: 0 0 0 3px var(--vb-app-launcher-focus-ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--vb-app-icon-accent) 15%, transparent);
 }
 
 .vb-app-launcher-pagination {
@@ -757,6 +768,10 @@
 }
 
 .vb-app-launcher-context {
+  --vb-app-icon-accent: var(--vb-app-launcher-accent);
+  --vb-app-icon-accent-2: color-mix(in srgb, var(--vb-app-launcher-accent) 76%, #ffffff);
+  --vb-app-icon-foreground: #ffffff;
+
   position: absolute;
   z-index: 4;
   width: min(258px, calc(100% - 20px));
@@ -795,8 +810,13 @@
   width: 42px;
   height: 42px;
   border-radius: 8px;
-  background: var(--vb-app-launcher-icon-bg);
-  color: var(--vb-app-launcher-accent);
+  background:
+    radial-gradient(circle at 26% 18%, color-mix(in srgb, #ffffff 34%, transparent) 0 16%, transparent 38%),
+    linear-gradient(145deg, var(--vb-app-icon-accent-2), var(--vb-app-icon-accent));
+  color: var(--vb-app-icon-foreground);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #ffffff 30%, transparent),
+    0 10px 20px color-mix(in srgb, var(--vb-app-icon-accent) 24%, transparent);
 }
 
 .vb-app-launcher-context-heading-icon svg,
@@ -850,7 +870,7 @@
   place-items: center;
   width: 28px;
   height: 28px;
-  color: var(--vb-app-launcher-accent);
+  color: var(--vb-app-icon-accent);
 }
 
 .vb-app-launcher-context-button:hover,

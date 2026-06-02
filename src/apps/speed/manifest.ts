@@ -9,6 +9,10 @@ export const speedAppManifest = defineAppManifest({
   kind: "core-app",
   version: "1.0.0",
   icon: IconSpeed,
+  theme: {
+    color: "#16a34a",
+    color2: "#86efac",
+  },
   i18nKey: "speedometer",
   route: "/",
   aliases: ["/speed"],

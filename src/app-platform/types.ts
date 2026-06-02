@@ -88,6 +88,12 @@ export interface VatioAppMetadata {
 
 export type VatioAppEntryLoader = () => Promise<unknown>;
 
+export interface VatioAppTheme {
+  color: string;
+  color2?: string;
+  foreground?: string;
+}
+
 export interface VatioAppManifest {
   id: VatioAppId;
   title: string;
@@ -96,6 +102,7 @@ export interface VatioAppManifest {
   kind: VatioAppKind;
   version: string;
   icon: string;
+  theme?: VatioAppTheme;
   i18nKey: string;
   route?: string;
   aliases?: readonly string[];

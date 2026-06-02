@@ -143,6 +143,7 @@ describe("shell-taskbar", () => {
     expect(startButton.getAttribute("aria-haspopup")).toBe("true");
     expect(startButton.getAttribute("aria-controls")).toBe("appStartMenuList");
     expect(startButton.getAttribute("aria-expanded")).toBe("false");
+    expect(startButton.style.getPropertyValue("--vb-app-icon-accent")).toBe("#16a34a");
     expect(startButton.draggable).toBe(false);
 
     taskbar.destroy();
@@ -207,6 +208,7 @@ describe("shell-taskbar", () => {
     const children = Array.from(taskbar.getElement().children);
 
     expect(favoriteButton).toBeTruthy();
+    expect(favoriteButton.style.getPropertyValue("--vb-app-icon-accent")).toBe("#2563eb");
     expect(favorites.hidden).toBe(false);
     expect(children.indexOf(favorites)).toBeLessThan(children.indexOf(handle));
 
@@ -291,6 +293,7 @@ describe("shell-taskbar", () => {
     expect(item.parentElement).toBe(tray);
     expect(item.classList.contains("vb-shell-taskbar-fab")).toBe(true);
     expect(item.classList.contains("dock-btn")).toBe(true);
+    expect(item.style.getPropertyValue("--vb-app-icon-accent")).toBe("#2563eb");
     expect(item.getAttribute("data-vb-shell-taskbar-docked")).toBe("true");
     expect(item.draggable).toBe(false);
     expect(item.getAttribute("draggable")).toBe("false");

@@ -552,16 +552,25 @@ async function expectPersistentShellReady() {
   expect(startMenu.hidden).toBe(false);
   expect(startMenu.querySelector(".app-start-menu-brand")).toBeTruthy();
   expect(startMenu.querySelector("[data-lang-toggle]")).toBeTruthy();
-  expect(startMenu.querySelector("[data-backend-auth]")).toBeTruthy();
-  expect(startMenu.querySelector("[data-backend-auth-user]")).toBeTruthy();
-  expect(startMenu.querySelector("[data-backend-auth-login]")).toBeTruthy();
-  expect(startMenu.querySelector("[data-backend-auth-signup]")?.getAttribute("href")).toBe("https://www.vatiolibre.com/login#signup");
-  expect(startMenu.querySelector("[data-backend-auth-forgot]")?.getAttribute("href")).toBe("https://www.vatiolibre.com/login#forgot");
+  expect(startMenu.querySelector("[data-backend-auth]")).toBeNull();
   expect(document.querySelector("[data-start-route='/board']")).toBeTruthy();
   expect(document.querySelector("[data-start-route='/replay']")).toBeTruthy();
   expect(document.querySelector("[data-start-route='/accel']")).toBeTruthy();
   expect(document.querySelector("[data-start-route='/library']")).toBeTruthy();
   expect(document.querySelector("[data-start-action]")).toBeTruthy();
+
+  const accountButton = taskbar.querySelector("[data-vb-shell-account-button]");
+  expect(accountButton).toBeTruthy();
+  accountButton.click();
+  await settle();
+  const accountPanel = document.querySelector("[data-vb-account-panel]");
+  const authForm = accountPanel?.querySelector("[data-backend-auth]");
+  expect(accountPanel?.hidden).toBe(false);
+  expect(authForm).toBeTruthy();
+  expect(authForm.querySelector("[data-backend-auth-user]")).toBeTruthy();
+  expect(authForm.querySelector("[data-backend-auth-login]")).toBeTruthy();
+  expect(authForm.querySelector("[data-backend-auth-signup]")?.getAttribute("href")).toBe("https://www.vatiolibre.com/login#signup");
+  expect(authForm.querySelector("[data-backend-auth-forgot]")?.getAttribute("href")).toBe("https://www.vatiolibre.com/login#forgot");
   window.__vatioboardStartMenu?.close?.();
 }
 
