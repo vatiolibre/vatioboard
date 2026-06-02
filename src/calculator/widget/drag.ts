@@ -320,7 +320,7 @@ export function makePanelDraggable({
 
   function onPointerDown(e: PointerEvent) {
     const target = e.target as Element | null;
-    if (target?.closest?.(".calc-close, .calc-settings-btn")) return;
+    if (target?.closest?.(".calc-minimize, .calc-close, .calc-settings-btn")) return;
 
     // Mouse: left button only
     if (e.pointerType === "mouse" && e.button !== 0) return;
