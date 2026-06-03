@@ -45,6 +45,15 @@ function getManualChunk(id) {
 
 export default defineConfig({
   base: "/",
+  resolve: {
+    alias: [
+      {
+        find: /^onnxruntime-web$/,
+        replacement: "onnxruntime-web/wasm",
+      },
+    ],
+    conditions: ["onnxruntime-web-use-extern-wasm", "module", "browser", "development|production"],
+  },
   server: {
     host: true,
     port: 5174,

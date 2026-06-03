@@ -1,0 +1,366 @@
+.kokoro-tts-panel,
+.kokoro-tts-panel * {
+  box-sizing: border-box;
+}
+
+.kokoro-tts-panel {
+  --kokoro-surface: rgba(12, 18, 28, 0.88);
+  --kokoro-surface-strong: rgba(7, 11, 18, 0.94);
+  --kokoro-border: rgba(226, 232, 240, 0.18);
+  --kokoro-text: #f8fafc;
+  --kokoro-muted: #aeb9c8;
+  --kokoro-accent: #22c55e;
+  --kokoro-accent-strong: #16a34a;
+  --kokoro-danger: #ef4444;
+  position: fixed;
+  left: 52px;
+  top: 108px;
+  width: min(430px, calc(100vw - 24px));
+  color: var(--kokoro-text);
+  background:
+    linear-gradient(160deg, rgba(34, 197, 94, 0.13), transparent 32%),
+    linear-gradient(180deg, var(--kokoro-surface), var(--kokoro-surface-strong));
+  border: 1px solid var(--kokoro-border);
+  border-radius: 18px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  backdrop-filter: blur(24px) saturate(1.18);
+}
+
+.kokoro-tts-panel[hidden] {
+  display: none !important;
+}
+
+.kokoro-tts-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 52px;
+  padding: 10px 12px 8px 16px;
+  cursor: grab;
+  user-select: none;
+}
+
+.kokoro-tts-header:active {
+  cursor: grabbing;
+}
+
+.kokoro-tts-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 0.88rem;
+  font-weight: 780;
+  letter-spacing: 0;
+}
+
+.kokoro-tts-mark {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  color: #bbf7d0;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.16);
+  border: 1px solid rgba(187, 247, 208, 0.18);
+}
+
+.kokoro-tts-mark svg {
+  width: 17px;
+  height: 17px;
+}
+
+.kokoro-tts-window-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kokoro-tts-window-button {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  color: var(--kokoro-muted);
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(226, 232, 240, 0.14);
+  border-radius: 999px;
+  padding: 0;
+}
+
+.kokoro-tts-window-button:hover,
+.kokoro-tts-window-button:focus-visible {
+  color: var(--kokoro-text);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.kokoro-tts-window-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.kokoro-tts-body {
+  display: grid;
+  gap: 14px;
+  padding: 0 16px 16px;
+}
+
+.kokoro-tts-meter {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  height: 26px;
+  align-items: end;
+}
+
+.kokoro-tts-meter span {
+  display: block;
+  min-width: 0;
+  height: 42%;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(187, 247, 208, 0.88), rgba(34, 197, 94, 0.5));
+  opacity: 0.56;
+}
+
+.kokoro-tts-meter span:nth-child(2) {
+  height: 76%;
+}
+
+.kokoro-tts-meter span:nth-child(3) {
+  height: 100%;
+}
+
+.kokoro-tts-meter span:nth-child(4) {
+  height: 62%;
+}
+
+.kokoro-tts-meter span:nth-child(5) {
+  height: 84%;
+}
+
+.kokoro-tts-field {
+  display: grid;
+  gap: 8px;
+}
+
+.kokoro-tts-field > span,
+.kokoro-tts-label {
+  color: var(--kokoro-muted);
+  font-size: 0.72rem;
+  font-weight: 720;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.kokoro-tts-field textarea {
+  width: 100%;
+  min-height: 102px;
+  resize: vertical;
+  color: var(--kokoro-text);
+  background: rgba(2, 6, 23, 0.42);
+  border: 1px solid rgba(226, 232, 240, 0.16);
+  border-radius: 12px;
+  padding: 12px;
+  font: 600 0.95rem/1.48 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  outline: none;
+}
+
+.kokoro-tts-field textarea:focus {
+  border-color: rgba(34, 197, 94, 0.58);
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.16);
+}
+
+.kokoro-tts-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.kokoro-tts-grid > div {
+  display: grid;
+  gap: 7px;
+}
+
+.kokoro-tts-segments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.kokoro-tts-segment,
+.kokoro-tts-action {
+  min-height: 38px;
+  color: var(--kokoro-muted);
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(226, 232, 240, 0.14);
+  border-radius: 999px;
+  font: 760 0.78rem/1 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 0;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.kokoro-tts-segment {
+  flex: 1 1 auto;
+  min-width: 72px;
+  padding: 0 12px;
+}
+
+.kokoro-tts-segment[aria-pressed="true"] {
+  color: #ecfdf5;
+  background: linear-gradient(180deg, rgba(34, 197, 94, 0.76), rgba(22, 163, 74, 0.7));
+  border-color: rgba(187, 247, 208, 0.45);
+}
+
+.kokoro-tts-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.kokoro-tts-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 10px;
+}
+
+.kokoro-tts-action--primary {
+  color: #ecfdf5;
+  background: linear-gradient(180deg, rgba(34, 197, 94, 0.86), rgba(22, 163, 74, 0.76));
+  border-color: rgba(187, 247, 208, 0.46);
+}
+
+.kokoro-tts-action:disabled,
+.kokoro-tts-segment:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.kokoro-tts-action svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
+.kokoro-tts-status {
+  display: grid;
+  gap: 9px;
+  padding: 12px;
+  color: var(--kokoro-muted);
+  background: rgba(255, 255, 255, 0.052);
+  border: 1px solid rgba(226, 232, 240, 0.13);
+  border-radius: 12px;
+}
+
+.kokoro-tts-status > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.kokoro-tts-status strong {
+  color: var(--kokoro-text);
+  font-size: 0.92rem;
+}
+
+.kokoro-tts-status span {
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.kokoro-tts-progress {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.2);
+}
+
+.kokoro-tts-progress span {
+  display: block;
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, #22c55e, #bbf7d0);
+  transition: width 180ms ease;
+}
+
+.kokoro-tts-diagnostics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.kokoro-tts-diagnostics div {
+  min-width: 0;
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.24);
+  border: 1px solid rgba(226, 232, 240, 0.1);
+}
+
+.kokoro-tts-diagnostics dt {
+  margin: 0 0 3px;
+  color: var(--kokoro-muted);
+  font-size: 0.66rem;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.kokoro-tts-diagnostics dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--kokoro-text);
+  font-size: 0.76rem;
+  font-weight: 680;
+  line-height: 1.3;
+}
+
+@media (prefers-color-scheme: light) {
+  .kokoro-tts-panel {
+    --kokoro-surface: rgba(255, 255, 255, 0.9);
+    --kokoro-surface-strong: rgba(248, 250, 252, 0.96);
+    --kokoro-border: rgba(15, 23, 42, 0.14);
+    --kokoro-text: #111827;
+    --kokoro-muted: rgba(17, 24, 39, 0.64);
+    box-shadow: 0 22px 56px rgba(15, 23, 42, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  }
+
+  .kokoro-tts-field textarea,
+  .kokoro-tts-diagnostics div {
+    background: rgba(255, 255, 255, 0.72);
+    border-color: rgba(15, 23, 42, 0.12);
+  }
+
+  .kokoro-tts-window-button,
+  .kokoro-tts-segment,
+  .kokoro-tts-action,
+  .kokoro-tts-status {
+    background: rgba(255, 255, 255, 0.76);
+    border-color: rgba(15, 23, 42, 0.12);
+  }
+}
+
+@media (max-width: 520px) {
+  .kokoro-tts-panel {
+    left: 12px;
+    top: 76px;
+    width: calc(100vw - 24px);
+    border-radius: 16px;
+  }
+
+  .kokoro-tts-body {
+    padding-inline: 12px;
+  }
+
+  .kokoro-tts-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .kokoro-tts-diagnostics {
+    grid-template-columns: 1fr;
+  }
+}
+

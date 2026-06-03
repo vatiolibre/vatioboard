@@ -269,6 +269,19 @@ export const IconCodeRain = `
   </svg>
 `;
 
+export const IconKokoroTts = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <rect x="3.25" y="3.25" width="17.5" height="17.5" rx="4" fill="#052e16"/>
+    <rect x="3.25" y="3.25" width="17.5" height="17.5" rx="4" stroke="#86efac" stroke-width="1.2" opacity="0.72"/>
+    <path d="M7.1 14.25v-4.5M10.35 16.25v-8.5M13.6 17.25V6.75M16.85 14.75v-5.5" stroke="#bbf7d0" stroke-width="1.45" stroke-linecap="round"/>
+    <path d="M6.35 12h11.3" stroke="#22c55e" stroke-width="1.05" stroke-linecap="round" opacity="0.7"/>
+    <path d="M7.75 18.2c2.4 1.05 6.1 1.05 8.5 0" stroke="#dcfce7" stroke-width="1.1" stroke-linecap="round" opacity="0.8"/>
+    <circle cx="7.1" cy="9.75" r="1.25" fill="#22c55e"/>
+    <circle cx="13.6" cy="6.75" r="1.25" fill="#bbf7d0"/>
+    <circle cx="16.85" cy="14.75" r="1.25" fill="#4ade80"/>
+  </svg>
+`;
+
 export const IconMedia = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <rect x="4" y="4" width="16" height="16" rx="3" stroke="currentColor" stroke-width="1.6"/>
