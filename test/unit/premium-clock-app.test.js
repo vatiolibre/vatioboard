@@ -16,9 +16,27 @@ describe("Premium Clock app", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
     document.body.innerHTML = "";
     localStorage.clear();
   });
+
+  function mockAudio() {
+    const play = vi.fn(() => Promise.resolve());
+    const pause = vi.fn();
+    const AudioMock = vi.fn(function AudioMock(src) {
+      this.src = src;
+      this.loop = false;
+      this.muted = false;
+      this.preload = "";
+      this.volume = 1;
+      this.currentTime = 0;
+      this.play = play;
+      this.pause = pause;
+    });
+    vi.stubGlobal("Audio", AudioMock);
+    return { AudioMock, pause, play };
+  }
 
   it("declares a fixed non-maximizable tool window", () => {
     expect(premiumClockAppManifest).toMatchObject({
@@ -131,6 +149,106 @@ describe("Premium Clock app", () => {
 
     panel.querySelector("[data-premium-clock-mode-button='clock']").click();
     expect(panel.querySelector(".premium-clock-details").hidden).toBe(true);
+
+    app.destroy();
+    manager.destroy();
+  });
+
+  it("plays the alarm sound for timers and lets the user stop it", async () => {
+    const audio = mockAudio();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 2, 10, 15, 30, 0));
+
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const app = createPremiumClockApp({ shellManager: manager });
+    const panel = document.querySelector(".premium-clock-panel");
+
+    app.open();
+    panel.querySelector("[data-premium-clock-mode-button='timer']").click();
+    panel.querySelector("[data-premium-clock-timer-toggle]").click();
+    vi.advanceTimersByTime(5 * 60 * 1000);
+    await Promise.resolve();
+
+    expect(audio.AudioMock).toHaveBeenCalledWith("/audio/alarm-clock.m4a");
+    expect(audio.play).toHaveBeenCalled();
+    expect(panel.querySelector("[data-premium-clock-notice-message]").textContent).toBe("Timer complete");
+    expect(panel.querySelector("[data-premium-clock-alert-stop]").hidden).toBe(false);
+    expect(panel.querySelector("[data-premium-clock-alert-snooze]").hidden).toBe(true);
+
+    panel.querySelector("[data-premium-clock-alert-stop]").click();
+    expect(panel.querySelector("[data-premium-clock-notice]").hidden).toBe(true);
+    expect(audio.pause).toHaveBeenCalled();
+
+    app.destroy();
+    manager.destroy();
+  });
+
+  it("plays alarm alerts and supports snooze", async () => {
+    const audio = mockAudio();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 2, 7, 29, 59, 0));
+
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const app = createPremiumClockApp({ shellManager: manager });
+    const panel = document.querySelector(".premium-clock-panel");
+
+    app.open();
+    panel.querySelector("[data-premium-clock-mode-button='alarms']").click();
+    panel.querySelector("[data-premium-clock-alarm-add]").click();
+    vi.advanceTimersByTime(1000);
+    await Promise.resolve();
+
+    expect(panel.querySelector("[data-premium-clock-notice-message]").textContent).toBe("Alarm 07:30");
+    expect(panel.querySelector("[data-premium-clock-alert-snooze]").hidden).toBe(false);
+    expect(audio.play).toHaveBeenCalled();
+
+    panel.querySelector("[data-premium-clock-alert-snooze]").click();
+    expect(panel.querySelector("[data-premium-clock-notice]").hidden).toBe(true);
+    expect(audio.pause).toHaveBeenCalled();
+
+    vi.advanceTimersByTime(9 * 60 * 1000);
+    await Promise.resolve();
+    expect(panel.querySelector("[data-premium-clock-notice-message]").textContent).toBe("Alarm 07:30");
+
+    app.destroy();
+    manager.destroy();
+  });
+
+  it("uses browser text-to-speech when the clock is touched", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 5, 2, 10, 15, 30, 0));
+    const speak = vi.fn();
+    const cancel = vi.fn();
+    class UtteranceMock {
+      constructor(text) {
+        this.text = text;
+      }
+    }
+    vi.stubGlobal("speechSynthesis", { cancel, speak });
+    vi.stubGlobal("SpeechSynthesisUtterance", UtteranceMock);
+
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const app = createPremiumClockApp({ shellManager: manager });
+    const panel = document.querySelector(".premium-clock-panel");
+
+    app.open();
+    panel.querySelector(".premium-clock-drag-zone").dispatchEvent(new PointerEvent("pointerdown", {
+      bubbles: true,
+      clientX: 120,
+      clientY: 120,
+      pointerId: 1,
+    }));
+    panel.querySelector(".premium-clock-drag-zone").dispatchEvent(new PointerEvent("pointerup", {
+      bubbles: true,
+      clientX: 120,
+      clientY: 120,
+      pointerId: 1,
+    }));
+
+    expect(cancel).toHaveBeenCalled();
+    expect(speak).toHaveBeenCalledTimes(1);
+    expect(speak.mock.calls[0][0].text).toContain("The time is");
+    expect(speak.mock.calls[0][0].text).toContain("Today is");
 
     app.destroy();
     manager.destroy();

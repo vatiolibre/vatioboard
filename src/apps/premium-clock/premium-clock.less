@@ -503,14 +503,61 @@
 }
 
 .premium-clock-notice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
   width: fit-content;
   max-width: min(320px, 100%);
-  padding: 10px 14px;
+  padding: 8px 10px 8px 14px;
   border-color: rgba(239, 68, 68, 0.38);
   color: #fff7ed;
   background: rgba(127, 29, 29, 0.72);
   font-size: 0.86rem;
   font-weight: 820;
+}
+
+.premium-clock-notice[hidden],
+.premium-clock-notice__actions[hidden],
+.premium-clock-notice__actions button[hidden] {
+  display: none;
+}
+
+.premium-clock-notice__message {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.premium-clock-notice__actions {
+  display: flex;
+  gap: 6px;
+}
+
+.premium-clock-notice__actions button {
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid rgba(255, 247, 237, 0.22);
+  border-radius: 999px;
+  color: #fff7ed;
+  background: rgba(255, 255, 255, 0.12);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 840;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.premium-clock-notice__actions button:hover,
+.premium-clock-notice__actions button:focus-visible {
+  border-color: rgba(255, 247, 237, 0.38);
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.premium-clock-notice__actions button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255, 247, 237, 0.16);
 }
 
 .premium-clock-panel--notice .premium-clock-face {
@@ -681,6 +728,22 @@
     box-shadow:
       0 14px 28px rgba(127, 29, 29, 0.14),
       inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  }
+
+  .premium-clock-notice__actions button {
+    border-color: rgba(127, 29, 29, 0.16);
+    color: #7f1d1d;
+    background: rgba(127, 29, 29, 0.06);
+  }
+
+  .premium-clock-notice__actions button:hover,
+  .premium-clock-notice__actions button:focus-visible {
+    border-color: rgba(127, 29, 29, 0.26);
+    background: rgba(127, 29, 29, 0.1);
+  }
+
+  .premium-clock-notice__actions button:focus-visible {
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
   }
 
   .premium-clock-panel--notice .premium-clock-face {

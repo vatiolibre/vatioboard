@@ -16,6 +16,8 @@ const ALARMS_STORAGE_KEY = "alarms.v1";
 const FALLBACK_ALARMS_STORAGE_KEY = "premium_clock_alarms_v1";
 const DRAG_THRESHOLD_PX = 6;
 const DEFAULT_TIMER_DURATION_MS = 5 * 60 * 1000;
+const ALARM_AUDIO_SRC = "/audio/alarm-clock.m4a";
+const SNOOZE_DURATION_MS = 9 * 60 * 1000;
 
 const MODES = [
   { id: "clock", label: "Clock" },
@@ -53,6 +55,18 @@ type TimeParts = {
   hour: number;
   minute: number;
   second: number;
+};
+
+type ActiveAlert = {
+  alarmId?: string;
+  kind: "alarm" | "timer";
+  label?: string;
+};
+
+type SnoozedAlarm = {
+  alarmId: string;
+  fireAtMs: number;
+  label: string;
 };
 
 export interface PremiumClockAppOptions {
@@ -207,6 +221,10 @@ function buildPanel() {
 
   const dragZone = document.createElement("div");
   dragZone.className = "premium-clock-drag-zone";
+  dragZone.tabIndex = 0;
+  dragZone.setAttribute("role", "button");
+  dragZone.setAttribute("aria-label", "Touch clock to hear the time and date");
+  dragZone.title = "Touch clock to hear the time and date";
 
   const face = document.createElement("div");
   face.className = "premium-clock-face";
@@ -279,6 +297,13 @@ function buildPanel() {
   notice.className = "premium-clock-notice";
   notice.hidden = true;
   notice.dataset.premiumClockNotice = "";
+  notice.innerHTML = `
+    <span class="premium-clock-notice__message" data-premium-clock-notice-message></span>
+    <span class="premium-clock-notice__actions" data-premium-clock-notice-actions hidden>
+      <button type="button" data-premium-clock-alert-stop>Stop</button>
+      <button type="button" data-premium-clock-alert-snooze>Snooze</button>
+    </span>
+  `;
 
   panel.append(controls, dragZone, modeDock, details, notice);
 
@@ -294,6 +319,9 @@ function buildPanel() {
     digital: panel.querySelector("[data-premium-clock-digital]") as HTMLElement,
     date: panel.querySelector("[data-premium-clock-date]") as HTMLElement,
     notice,
+    noticeActions: panel.querySelector("[data-premium-clock-notice-actions]") as HTMLElement,
+    noticeMessage: panel.querySelector("[data-premium-clock-notice-message]") as HTMLElement,
+    alertSnoozeButton: panel.querySelector("[data-premium-clock-alert-snooze]") as HTMLButtonElement,
     timerDuration: panel.querySelector("[data-premium-clock-timer-duration]") as HTMLElement,
     timerToggle: panel.querySelector("[data-premium-clock-timer-toggle]") as HTMLButtonElement,
     stopwatchToggle: panel.querySelector("[data-premium-clock-stopwatch-toggle]") as HTMLButtonElement,
@@ -378,6 +406,19 @@ function setFaceAngles(panel: HTMLElement, parts: TimeParts, progress = 0) {
   panel.style.setProperty("--premium-clock-progress", `${Math.max(0, Math.min(1, progress)) * 360}deg`);
 }
 
+function formatSpokenDateTime(value: Date) {
+  const time = new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(value);
+  const day = new Intl.DateTimeFormat(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  }).format(value);
+  return `The time is ${time}. Today is ${day}.`;
+}
+
 function stopControlPropagation(element: HTMLElement) {
   element.addEventListener("pointerdown", (event) => event.stopPropagation());
   element.addEventListener("pointerup", (event) => event.stopPropagation());
@@ -403,6 +444,9 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
     digital,
     date,
     notice,
+    noticeActions,
+    noticeMessage,
+    alertSnoozeButton,
     timerDuration,
     timerToggle,
     stopwatchToggle,
@@ -423,7 +467,12 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
   let alarmDraftMinute = 30;
   let selectedWorldIndex = 0;
   let activeNotice = "";
+  let activeAlert: ActiveAlert | null = null;
+  let alarmAudio: HTMLAudioElement | null = null;
+  let alarmAudioUnlocked = false;
   let alarms = loadAlarms(runtime);
+  let snoozedAlarms: SnoozedAlarm[] = [];
+  let speechPointer: { x: number; y: number; pointerId: number } | null = null;
   const firedAlarmKeys = new Set<string>();
 
   const storedPosition = loadPos();
@@ -451,17 +500,119 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
     render();
   }
 
-  function showNotice(message: string) {
+  function getAlarmAudio() {
+    if (alarmAudio) return alarmAudio;
+    alarmAudio = new Audio(ALARM_AUDIO_SRC);
+    alarmAudio.loop = true;
+    alarmAudio.preload = "auto";
+    alarmAudio.volume = 1;
+    return alarmAudio;
+  }
+
+  function stopAlarmSound() {
+    if (!alarmAudio) return;
+    alarmAudio.pause();
+    alarmAudio.currentTime = 0;
+  }
+
+  function playAlarmSound() {
+    const audio = getAlarmAudio();
+    audio.muted = false;
+    audio.volume = 1;
+    audio.currentTime = 0;
+    try {
+      const playResult = audio.play();
+      if (playResult && typeof playResult.catch === "function") {
+        playResult.catch(() => {
+          runtime?.logger.warn("Premium Clock alarm audio could not start automatically.");
+        });
+      }
+    } catch {
+      runtime?.logger.warn("Premium Clock alarm audio could not start automatically.");
+    }
+  }
+
+  function primeAlarmSound() {
+    if (alarmAudioUnlocked) return;
+    const audio = getAlarmAudio();
+    const previousMuted = audio.muted;
+    audio.muted = true;
+    let playResult: Promise<void> | void;
+    try {
+      playResult = audio.play();
+    } catch {
+      audio.muted = previousMuted;
+      return;
+    }
+    if (playResult && typeof playResult.then === "function") {
+      playResult
+        .then(() => {
+          audio.pause();
+          audio.currentTime = 0;
+          audio.muted = previousMuted;
+          alarmAudioUnlocked = true;
+        })
+        .catch(() => {
+          audio.muted = previousMuted;
+        });
+    } else {
+      audio.muted = previousMuted;
+      alarmAudioUnlocked = true;
+    }
+  }
+
+  function showNotice(message: string, alert: ActiveAlert | null = null) {
     activeNotice = message;
-    notice.textContent = message;
+    activeAlert = alert;
+    noticeMessage.textContent = message;
     notice.hidden = false;
+    noticeActions.hidden = !alert;
+    alertSnoozeButton.hidden = alert?.kind !== "alarm";
+    if (alert) {
+      notice.dataset.premiumClockAlert = alert.kind;
+      playAlarmSound();
+    } else {
+      delete notice.dataset.premiumClockAlert;
+    }
     panel.classList.add("premium-clock-panel--notice");
   }
 
   function clearNotice() {
     activeNotice = "";
+    activeAlert = null;
     notice.hidden = true;
+    noticeActions.hidden = true;
+    alertSnoozeButton.hidden = true;
+    delete notice.dataset.premiumClockAlert;
     panel.classList.remove("premium-clock-panel--notice");
+    stopAlarmSound();
+  }
+
+  function snoozeActiveAlarm() {
+    if (activeAlert?.kind !== "alarm") return;
+    const label = activeAlert.label || activeNotice.replace(/^Alarm\s+/, "") || "alarm";
+    snoozedAlarms = [
+      ...snoozedAlarms.filter((alarm) => alarm.alarmId !== activeAlert.alarmId),
+      {
+        alarmId: activeAlert.alarmId || `snooze-${Date.now()}`,
+        fireAtMs: Date.now() + SNOOZE_DURATION_MS,
+        label,
+      },
+    ];
+    clearNotice();
+  }
+
+  function speakCurrentTime() {
+    if (!("speechSynthesis" in window) || typeof SpeechSynthesisUtterance === "undefined") {
+      if (!activeAlert) showNotice("Voice time unavailable");
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(formatSpokenDateTime(new Date()));
+    utterance.rate = 0.92;
+    utterance.pitch = 0.96;
+    utterance.volume = 1;
+    window.speechSynthesis.speak(utterance);
   }
 
   function persistAlarms() {
@@ -515,7 +666,19 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
     if (remaining > 0) return;
     timerRunning = false;
     timerRemainingMs = 0;
-    showNotice("Timer complete");
+    showNotice("Timer complete", { kind: "timer" });
+  }
+
+  function checkSnoozedAlarms(nowMs: number) {
+    const dueAlarm = snoozedAlarms.find((alarm) => alarm.fireAtMs <= nowMs);
+    if (!dueAlarm) return;
+    snoozedAlarms = snoozedAlarms.filter((alarm) => alarm !== dueAlarm);
+    showNotice(`Alarm ${dueAlarm.label}`, {
+      alarmId: dueAlarm.alarmId,
+      kind: "alarm",
+      label: dueAlarm.label,
+    });
+    setMode("alarms");
   }
 
   function checkAlarms(now: Date) {
@@ -525,7 +688,11 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
       const key = `${alarm.id}:${getDateKey(now)}:${alarm.hour}:${alarm.minute}`;
       if (firedAlarmKeys.has(key)) continue;
       firedAlarmKeys.add(key);
-      showNotice(`Alarm ${alarmLabel(alarm)}`);
+      showNotice(`Alarm ${alarmLabel(alarm)}`, {
+        alarmId: alarm.id,
+        kind: "alarm",
+        label: alarmLabel(alarm),
+      });
       setMode("alarms");
     }
   }
@@ -534,6 +701,7 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
     const now = new Date();
     const nowMs = now.getTime();
     updateTimer(nowMs);
+    checkSnoozedAlarms(nowMs);
     checkAlarms(now);
 
     for (const button of modeDock.querySelectorAll("[data-premium-clock-mode-button]")) {
@@ -626,6 +794,7 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
   function hidePanel() {
     panel.hidden = true;
     stopTicker();
+    stopAlarmSound();
   }
 
   function open(options: ShellLifecycleOptions = {}) {
@@ -670,6 +839,53 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
   });
 
   for (const control of [minimizeButton, closeButton]) stopControlPropagation(control);
+
+  panel.addEventListener("pointerdown", () => {
+    primeAlarmSound();
+  });
+
+  dragZone.addEventListener("pointerdown", (event) => {
+    speechPointer = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+    };
+  });
+
+  dragZone.addEventListener("pointerup", (event) => {
+    if (!speechPointer || speechPointer.pointerId !== event.pointerId) return;
+    const moved = Math.max(
+      Math.abs(event.clientX - speechPointer.x),
+      Math.abs(event.clientY - speechPointer.y)
+    );
+    speechPointer = null;
+    if (moved > DRAG_THRESHOLD_PX) return;
+    speakCurrentTime();
+  });
+
+  dragZone.addEventListener("pointercancel", () => {
+    speechPointer = null;
+  });
+
+  dragZone.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    speakCurrentTime();
+  });
+
+  notice.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+    if (target.closest("[data-premium-clock-alert-stop]")) {
+      clearNotice();
+      render();
+      return;
+    }
+    if (target.closest("[data-premium-clock-alert-snooze]")) {
+      snoozeActiveAlarm();
+      render();
+    }
+  });
 
   minimizeButton.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -814,6 +1030,7 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
     minimize,
     destroy() {
       stopTicker();
+      stopAlarmSound();
       cleanupLayer();
       panel.remove();
     },
