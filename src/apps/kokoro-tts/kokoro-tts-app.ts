@@ -1,26 +1,16 @@
 import "./kokoro-tts.less";
 
-import { env as transformersEnv } from "@huggingface/transformers";
 import { clampElementToViewport, makePanelDraggable } from "../../calculator/widget/drag.js";
 import { IconClose, IconDownload, IconMinimize, IconPlay, IconTrash, IconVolume } from "../../icons.js";
 import { registerFloatingPanel } from "../../shared/floating-layer-manager.js";
 import { getDefaultShellWindowManager } from "../../shared/shell-window-manager.js";
-import type { ShellLifecycleOptions, ShellRuntime } from "../../types/shell";
+import type { ShellBounds, ShellLifecycleOptions, ShellRuntime } from "../../types/shell";
 import type { ShellAppRuntimeManager, VatioAppRuntime } from "../../app-platform/types";
 import {
-  cacheKokoroAsset,
-  cacheKokoroAssets,
-  createKokoroChunkedCache,
-  getKokoroPrimeAssets,
-  getKokoroRuntimeAsset,
   KOKORO_MODEL_ID,
-  KOKORO_ORT_WASM_MJS_URL,
-  KOKORO_ORT_WASM_URL,
-  readCachedKokoroAsset,
   type KokoroDtype,
-  type KokoroAssetDescriptor,
-  type KokoroAssetProgress,
 } from "./kokoro-model-cache.js";
+import type { KokoroWorkerRequest, KokoroWorkerRequestPayload, KokoroWorkerResponse } from "./kokoro-worker-protocol.js";
 import { kokoroTtsWindowCapabilities } from "./manifest.js";
 
 export const KOKORO_TTS_APP_ID = "vatio.kokoroTts";
@@ -28,6 +18,15 @@ export const KOKORO_TTS_WINDOW_ID = "kokoro-tts";
 export const KOKORO_TTS_SETTINGS_KEY = "preferences";
 
 const DRAG_THRESHOLD_PX = 8;
+const RESIZE_MIN_WIDTH = 320;
+const RESIZE_MIN_HEIGHT = 360;
+const RESIZE_MARGIN_PX = 12;
+const DEFAULT_BOUNDS = {
+  left: 52,
+  top: 108,
+  width: 430,
+  height: 540,
+};
 const DEFAULT_TEXT = "The cabin clock says 10:15 and the route ahead looks clear.";
 const DEFAULT_VOICE = "af_heart";
 const VOICES = [
@@ -38,20 +37,6 @@ const VOICES = [
   { id: "bf_emma", label: "Emma" },
 ] as const;
 const DTYPES: KokoroDtype[] = ["q8", "q4"];
-
-type KokoroTtsInstance = {
-  generate(text: string, options?: { voice?: string; speed?: number }): Promise<{ toBlob(): Blob }>;
-};
-
-type OnnxWasmEnv = {
-  numThreads?: number;
-  proxy?: boolean;
-  wasmBinary?: ArrayBuffer | Uint8Array;
-  wasmPaths?: string | {
-    mjs?: string | URL;
-    wasm?: string | URL;
-  };
-};
 
 export interface KokoroTtsAppOptions {
   mount?: HTMLElement;
@@ -78,6 +63,7 @@ interface KokoroPreferences {
 interface KokoroView {
   panel: HTMLElement;
   header: HTMLElement;
+  body: HTMLElement;
   minimizeButton: HTMLButtonElement;
   closeButton: HTMLButtonElement;
   textInput: HTMLTextAreaElement;
@@ -89,6 +75,7 @@ interface KokoroView {
   loadButton: HTMLButtonElement;
   speakButton: HTMLButtonElement;
   stopButton: HTMLButtonElement;
+  resizeHandle: HTMLButtonElement;
   segmentButtons: HTMLButtonElement[];
 }
 
@@ -145,6 +132,51 @@ function stopControlPropagation(element: HTMLElement) {
   element.addEventListener("pointerup", (event) => event.stopPropagation());
 }
 
+function clampNumber(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function getPanelBounds(panel: HTMLElement): ShellBounds {
+  const rect = panel.getBoundingClientRect();
+  return {
+    left: Number.parseFloat(panel.style.left) || rect.left || DEFAULT_BOUNDS.left,
+    top: Number.parseFloat(panel.style.top) || rect.top || DEFAULT_BOUNDS.top,
+    width: Math.round(rect.width || panel.offsetWidth || Number.parseFloat(panel.style.width) || DEFAULT_BOUNDS.width),
+    height: Math.round(rect.height || panel.offsetHeight || Number.parseFloat(panel.style.height) || DEFAULT_BOUNDS.height),
+  };
+}
+
+function clampResizeBounds(width: number, height: number, bounds: ShellBounds): Required<ShellBounds> {
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1024;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 768;
+  const left = Number.isFinite(bounds.left) ? bounds.left : DEFAULT_BOUNDS.left;
+  const top = Number.isFinite(bounds.top) ? bounds.top : DEFAULT_BOUNDS.top;
+  const maxWidth = Math.max(RESIZE_MIN_WIDTH, viewportWidth - left - RESIZE_MARGIN_PX);
+  const maxHeight = Math.max(RESIZE_MIN_HEIGHT, viewportHeight - top - RESIZE_MARGIN_PX);
+  return {
+    left: Math.round(left),
+    top: Math.round(top),
+    width: Math.round(clampNumber(width, Math.min(RESIZE_MIN_WIDTH, maxWidth), maxWidth)),
+    height: Math.round(clampNumber(height, Math.min(RESIZE_MIN_HEIGHT, maxHeight), maxHeight)),
+  };
+}
+
+function applyInitialBounds(panel: HTMLElement, shellManager: ShellRuntime) {
+  const storedBounds = shellManager.getWindow(KOKORO_TTS_WINDOW_ID)?.bounds;
+  const bounds = {
+    ...DEFAULT_BOUNDS,
+    ...(storedBounds || {}),
+  };
+
+  panel.style.position = "fixed";
+  panel.style.left = `${Math.round(bounds.left ?? DEFAULT_BOUNDS.left)}px`;
+  panel.style.top = `${Math.round(bounds.top ?? DEFAULT_BOUNDS.top)}px`;
+  panel.style.width = `${Math.round(bounds.width ?? DEFAULT_BOUNDS.width)}px`;
+  panel.style.height = `${Math.round(bounds.height ?? DEFAULT_BOUNDS.height)}px`;
+  panel.style.right = "auto";
+  panel.style.bottom = "auto";
+}
+
 function buildSegmentGroup(name: string, values: readonly { id: string; label: string }[], selected: string): string {
   return `
     <div class="kokoro-tts-segments" role="group" aria-label="${name}">
@@ -178,13 +210,9 @@ function buildPanel(preferences: Required<KokoroPreferences>): KokoroView {
     </header>
 
     <div class="kokoro-tts-body">
-      <div class="kokoro-tts-meter" aria-hidden="true">
-        <span></span><span></span><span></span><span></span><span></span>
-      </div>
-
       <label class="kokoro-tts-field">
         <span>Text</span>
-        <textarea data-kokoro-text rows="4" spellcheck="true"></textarea>
+        <textarea data-kokoro-text rows="3" spellcheck="true"></textarea>
       </label>
 
       <div class="kokoro-tts-grid">
@@ -205,7 +233,7 @@ function buildPanel(preferences: Required<KokoroPreferences>): KokoroView {
         <button type="button" class="kokoro-tts-action" data-kokoro-stop>${IconTrash}<span>Stop</span></button>
       </div>
 
-      <div class="kokoro-tts-status">
+      <div class="kokoro-tts-status" aria-live="polite">
         <div>
           <strong data-kokoro-status>Ready</strong>
           <span data-kokoro-progress>Chunk cache idle</span>
@@ -221,6 +249,7 @@ function buildPanel(preferences: Required<KokoroPreferences>): KokoroView {
         <div><dt>Runtime</dt><dd>WASM</dd></div>
       </dl>
     </div>
+    <button type="button" class="kokoro-tts-resize" data-kokoro-resize aria-label="Resize Kokoro TTS" title="Resize Kokoro TTS"></button>
   `;
 
   const textInput = panel.querySelector("[data-kokoro-text]") as HTMLTextAreaElement;
@@ -229,6 +258,7 @@ function buildPanel(preferences: Required<KokoroPreferences>): KokoroView {
   return {
     panel,
     header: panel.querySelector(".kokoro-tts-header") as HTMLElement,
+    body: panel.querySelector(".kokoro-tts-body") as HTMLElement,
     minimizeButton: panel.querySelector("[data-kokoro-minimize]") as HTMLButtonElement,
     closeButton: panel.querySelector("[data-kokoro-close]") as HTMLButtonElement,
     textInput,
@@ -240,6 +270,7 @@ function buildPanel(preferences: Required<KokoroPreferences>): KokoroView {
     loadButton: panel.querySelector("[data-kokoro-load]") as HTMLButtonElement,
     speakButton: panel.querySelector("[data-kokoro-speak]") as HTMLButtonElement,
     stopButton: panel.querySelector("[data-kokoro-stop]") as HTMLButtonElement,
+    resizeHandle: panel.querySelector("[data-kokoro-resize]") as HTMLButtonElement,
     segmentButtons: Array.from(panel.querySelectorAll("[data-kokoro-field]")) as HTMLButtonElement[],
   };
 }
@@ -267,16 +298,33 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
     loadButton,
     speakButton,
     stopButton,
+    resizeHandle,
     segmentButtons,
   } = view;
 
   let dtype: KokoroDtype = preferences.dtype;
   let voice = preferences.voice;
-  let tts: KokoroTtsInstance | null = null;
-  let loadingPromise: Promise<KokoroTtsInstance> | null = null;
+  let worker: Worker | null = null;
+  let workerRequestId = 0;
+  const pendingWorkerRequests = new Map<number, {
+    resolve: (message: KokoroWorkerResponse) => void;
+    reject: (error: Error) => void;
+  }>();
+  let modelReady = false;
+  let loadingPromise: Promise<void> | null = null;
+  let generating = false;
   let audio: HTMLAudioElement | null = null;
   let audioUrl = "";
   let destroyed = false;
+  let resizePointerId: number | null = null;
+  let resizeStartX = 0;
+  let resizeStartY = 0;
+  let resizeStartWidth = 0;
+  let resizeStartHeight = 0;
+  let resizeLastX = 0;
+  let resizeLastY = 0;
+  let resizeRafId = 0;
+  let resizing = false;
 
   function persist() {
     savePreferences(runtime, {
@@ -313,7 +361,7 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
     const items = [
       ["Model", KOKORO_MODEL_ID],
       ["Cache", "5 MB chunks"],
-      ["Runtime", `WASM / ${dtype.toUpperCase()}`],
+      ["Runtime", `Worker WASM / ${dtype.toUpperCase()}`],
       ["ORT", "chunked binary"],
     ];
     if (extra) items.push(["Last", extra]);
@@ -328,69 +376,80 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
     }));
   }
 
-  function getOnnxWasmEnv(): OnnxWasmEnv {
-    const onnxEnv = transformersEnv.backends.onnx as { wasm?: OnnxWasmEnv };
-    onnxEnv.wasm ??= {};
-    return onnxEnv.wasm;
-  }
-
-  function configureTransformersCache() {
-    transformersEnv.useCustomCache = true;
-    transformersEnv.customCache = createKokoroChunkedCache();
-    transformersEnv.useBrowserCache = false;
-    transformersEnv.allowLocalModels = false;
-    transformersEnv.allowRemoteModels = true;
-    const wasmEnv = getOnnxWasmEnv();
-    wasmEnv.numThreads = 1;
-    wasmEnv.proxy = false;
-    wasmEnv.wasmPaths = {
-      mjs: KOKORO_ORT_WASM_MJS_URL,
-      wasm: KOKORO_ORT_WASM_URL,
-    };
-  }
-
-  async function prepareOnnxRuntimeBinary() {
-    const wasmEnv = getOnnxWasmEnv();
-    if (wasmEnv.wasmBinary) return;
-
-    const runtimeAsset = getKokoroRuntimeAsset();
-    let buffer = await readCachedKokoroAsset(runtimeAsset);
-    if (!buffer) {
-      await cacheKokoroAsset(runtimeAsset, (assetProgress) => handleAssetProgress(runtimeAsset, assetProgress));
-      buffer = await readCachedKokoroAsset(runtimeAsset);
+  function handleWorkerMessage(message: KokoroWorkerResponse) {
+    if (message.type === "status") {
+      setStatus(message.status, message.progress || "");
+      setProgressRatio(message.ratio ?? null);
+      return;
     }
-    if (!buffer) throw new Error("ONNX Runtime WASM binary was not cached.");
-    wasmEnv.wasmBinary = buffer;
-    setStatus("Runtime ready", `${formatBytes(buffer.byteLength)} ONNX Runtime WASM`);
+
+    const pending = pendingWorkerRequests.get(message.id);
+    if (!pending) return;
+    pendingWorkerRequests.delete(message.id);
+    if (message.type === "error") {
+      pending.reject(new Error(message.message));
+      return;
+    }
+    pending.resolve(message);
   }
 
-  function handleAssetProgress(asset: KokoroAssetDescriptor, assetProgress: KokoroAssetProgress) {
-    const total = assetProgress.totalBytes;
-    const ratio = total ? assetProgress.loadedBytes / total : null;
-    const range = assetProgress.rangeCount
-      ? `, range ${assetProgress.rangeIndex}/${assetProgress.rangeCount}`
-      : "";
-    setStatus("Priming cache", `${asset.label}: ${formatBytes(assetProgress.loadedBytes)} / ${formatBytes(total)}${range}`);
-    setProgressRatio(ratio);
+  function ensureWorker() {
+    if (worker) return worker;
+    worker = new Worker(new URL("./kokoro-tts-worker.ts", import.meta.url), { type: "module" });
+    worker.addEventListener("message", (event: MessageEvent<KokoroWorkerResponse>) => {
+      handleWorkerMessage(event.data);
+    });
+    worker.addEventListener("error", (event) => {
+      const error = new Error(event.message || "Kokoro worker failed.");
+      for (const pending of pendingWorkerRequests.values()) pending.reject(error);
+      pendingWorkerRequests.clear();
+      setStatus("Worker failed", error.message);
+      renderDiagnostics(error.message);
+      modelReady = false;
+      loadingPromise = null;
+      generating = false;
+      worker?.terminate();
+      worker = null;
+    });
+    return worker;
+  }
+
+  function resetWorker(reason = "Worker reset") {
+    if (worker) {
+      worker.terminate();
+      worker = null;
+    }
+    const error = new Error(reason);
+    for (const pending of pendingWorkerRequests.values()) pending.reject(error);
+    pendingWorkerRequests.clear();
+    modelReady = false;
+    loadingPromise = null;
+    generating = false;
+    setButtonBusy(cacheButton, false);
+    setButtonBusy(loadButton, false);
+    setButtonBusy(speakButton, false);
+  }
+
+  function sendWorkerRequest(request: KokoroWorkerRequestPayload): Promise<KokoroWorkerResponse> {
+    const id = ++workerRequestId;
+    const nextRequest = { ...request, id } as KokoroWorkerRequest;
+    const targetWorker = ensureWorker();
+    return new Promise((resolve, reject) => {
+      pendingWorkerRequests.set(id, { resolve, reject });
+      targetWorker.postMessage(nextRequest);
+    });
   }
 
   async function primeCache() {
-    configureTransformersCache();
-    const assets = getKokoroPrimeAssets(dtype);
+    const requestedDtype = dtype;
     setButtonBusy(cacheButton, true);
     setButtonBusy(loadButton, true);
     setButtonBusy(speakButton, true);
     setProgressRatio(null);
     try {
-      await cacheKokoroAssets(
-        assets,
-        handleAssetProgress,
-        (asset, result) => {
-          setStatus("Priming cache", `${asset.label}: ${result === "hit" ? "cached" : "stored"}`);
-        },
-      );
+      await sendWorkerRequest({ type: "prime", dtype: requestedDtype });
       setProgressRatio(1);
-      setStatus("Cache ready", `Runtime + ${dtype.toUpperCase()} model cached`);
+      setStatus("Cache ready", `Runtime + ${requestedDtype.toUpperCase()} model cached`);
       renderDiagnostics("runtime + model cached");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Cache priming failed";
@@ -404,39 +463,26 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
     }
   }
 
-  async function loadEngine(): Promise<KokoroTtsInstance> {
-    configureTransformersCache();
-    if (tts) return tts;
+  async function loadEngine(): Promise<void> {
+    if (modelReady) return;
     if (loadingPromise) return loadingPromise;
 
+    const requestedDtype = dtype;
     setButtonBusy(loadButton, true);
     setButtonBusy(speakButton, true);
     setStatus("Loading model", "Preparing chunk cache first");
     loadingPromise = (async () => {
-      await primeCache();
-      await prepareOnnxRuntimeBinary();
-      setStatus("Loading model", "Transformers.js is reading the cached ONNX file");
-      setProgressRatio(null);
-      const module = await import("kokoro-js");
-      const loaded = await module.KokoroTTS.from_pretrained(KOKORO_MODEL_ID, {
-        dtype,
-        device: "wasm",
-        progress_callback: (event: unknown) => {
-          if (!event || typeof event !== "object") return;
-          const detail = event as { status?: string; file?: string; progress?: number; loaded?: number; total?: number };
-          if (detail.status === "progress") {
-            setStatus("Loading model", `${detail.file || "asset"}: ${Math.round(detail.progress || 0)}%`);
-            setProgressRatio(typeof detail.progress === "number" ? detail.progress / 100 : null);
-          } else if (detail.status) {
-            setStatus("Loading model", detail.file ? `${detail.status}: ${detail.file}` : detail.status);
-          }
-        },
-      }) as KokoroTtsInstance;
-      tts = loaded;
-      setStatus("Model ready", `${voice} on WASM`);
+      await sendWorkerRequest({ type: "load", dtype: requestedDtype });
+      if (requestedDtype !== dtype) {
+        modelReady = false;
+        setStatus("Ready", "Load again after changing engine settings");
+        renderDiagnostics("settings changed");
+        return;
+      }
+      modelReady = true;
+      setStatus("Model ready", `${voice} on worker WASM`);
       setProgressRatio(1);
       renderDiagnostics("model ready");
-      return loaded;
     })().finally(() => {
       loadingPromise = null;
       setButtonBusy(loadButton, false);
@@ -464,28 +510,98 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
       return;
     }
     persist();
+    const requestedDtype = dtype;
+    const requestedVoice = voice;
+    setButtonBusy(cacheButton, true);
+    setButtonBusy(loadButton, true);
     setButtonBusy(speakButton, true);
-    setStatus("Generating", "Kokoro is synthesizing locally");
+    generating = true;
+    setStatus("Generating", "Kokoro is synthesizing in a worker");
     setProgressRatio(null);
     try {
-      const engine = await loadEngine();
-      const startedAt = performance.now();
-      const output = await engine.generate(text, { voice, speed: 1 });
+      const message = await sendWorkerRequest({
+        type: "speak",
+        text,
+        voice: requestedVoice,
+        dtype: requestedDtype,
+        speed: 1,
+      });
+      if (message.type !== "speech") throw new Error("Kokoro worker returned an unexpected response.");
+      modelReady = requestedDtype === dtype;
       stopAudio();
-      const blob = output.toBlob();
+      const blob = message.blob;
       audioUrl = URL.createObjectURL(blob);
       audio = new Audio(audioUrl);
       await audio.play();
-      const seconds = Math.max(0.1, (performance.now() - startedAt) / 1000);
+      const seconds = Math.max(0.1, message.durationMs / 1000);
       setStatus("Speaking", `${formatBytes(blob.size)} WAV generated in ${seconds.toFixed(1)}s`);
       renderDiagnostics("speech generated");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Speech generation failed";
-      setStatus("Generation failed", message);
-      renderDiagnostics(message);
+      if (message !== "Generation stopped") {
+        setStatus("Generation failed", message);
+        renderDiagnostics(message);
+      }
     } finally {
+      generating = false;
+      setButtonBusy(cacheButton, false);
+      setButtonBusy(loadButton, false);
       setButtonBusy(speakButton, false);
     }
+  }
+
+  function updateShellBounds(bounds: ShellBounds, shellOptions: ShellLifecycleOptions = {}) {
+    shellManager.updateWindowBounds(KOKORO_TTS_WINDOW_ID, bounds, shellOptions);
+  }
+
+  function applyPanelResize(width: number, height: number, shellOptions: ShellLifecycleOptions = {}) {
+    const bounds = clampResizeBounds(width, height, getPanelBounds(panel));
+    panel.style.position = "fixed";
+    panel.style.left = `${bounds.left}px`;
+    panel.style.top = `${bounds.top}px`;
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
+    panel.style.width = `${bounds.width}px`;
+    panel.style.height = `${bounds.height}px`;
+    updateShellBounds(bounds, shellOptions);
+  }
+
+  function applyHandleResize() {
+    resizeRafId = 0;
+    if (!resizing) return;
+    const dx = resizeLastX - resizeStartX;
+    const dy = resizeLastY - resizeStartY;
+    applyPanelResize(resizeStartWidth + dx, resizeStartHeight + dy);
+  }
+
+  function scheduleHandleResize() {
+    if (resizeRafId) return;
+    resizeRafId = window.requestAnimationFrame?.(applyHandleResize) || window.setTimeout(applyHandleResize, 0);
+  }
+
+  function endHandleResize(event: PointerEvent | Event | null = null) {
+    if (event instanceof PointerEvent && resizePointerId !== null && event.pointerId !== resizePointerId) return;
+    if (resizeRafId) {
+      if (typeof window.cancelAnimationFrame === "function") window.cancelAnimationFrame(resizeRafId);
+      else window.clearTimeout(resizeRafId);
+      resizeRafId = 0;
+      applyHandleResize();
+    }
+    if (!resizing) return;
+    resizing = false;
+    resizePointerId = null;
+    panel.classList.remove("is-resizing");
+    document.documentElement.classList.remove("vb-floating-drag-active");
+    updateShellBounds(getPanelBounds(panel), { flush: true });
+  }
+
+  function resizePanelBy(deltaWidth: number, deltaHeight: number) {
+    const bounds = getPanelBounds(panel);
+    applyPanelResize(
+      (bounds.width || DEFAULT_BOUNDS.width) + deltaWidth,
+      (bounds.height || DEFAULT_BOUNDS.height) + deltaHeight,
+      { flush: true },
+    );
   }
 
   function showPanel() {
@@ -513,6 +629,7 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
     shellManager.minimizeWindow(KOKORO_TTS_WINDOW_ID, { ...options, invokeLifecycle: false });
   }
 
+  applyInitialBounds(panel, shellManager);
   mount.append(panel);
   renderSegments();
   renderDiagnostics();
@@ -539,15 +656,65 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
     dragThresholdPx: DRAG_THRESHOLD_PX,
     savePos: () => {},
     loadPos: () => null,
+    onDragEnd: ({ bounds }) => updateShellBounds(bounds, { flush: true }),
     shellWindowId: KOKORO_TTS_WINDOW_ID,
     shellManager,
     enableSnapPreview: false,
   });
 
-  for (const control of [minimizeButton, closeButton]) stopControlPropagation(control);
+  for (const control of [minimizeButton, closeButton, resizeHandle]) stopControlPropagation(control);
 
   minimizeButton.addEventListener("click", () => minimize({ fromUserGesture: true }));
   closeButton.addEventListener("click", () => close({ fromUserGesture: true }));
+  resizeHandle.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (shellManager.getWindow(KOKORO_TTS_WINDOW_ID)?.snap) {
+      shellManager.unsnapWindow(KOKORO_TTS_WINDOW_ID, { preserveSnap: false });
+    }
+    const bounds = getPanelBounds(panel);
+    resizing = true;
+    resizePointerId = event.pointerId;
+    resizeStartX = resizeLastX = event.clientX;
+    resizeStartY = resizeLastY = event.clientY;
+    resizeStartWidth = bounds.width || DEFAULT_BOUNDS.width;
+    resizeStartHeight = bounds.height || DEFAULT_BOUNDS.height;
+    panel.classList.add("is-resizing");
+    document.documentElement.classList.add("vb-floating-drag-active");
+    try {
+      resizeHandle.setPointerCapture?.(resizePointerId);
+    } catch {
+      // Pointer capture is best effort.
+    }
+  }, { passive: false });
+  resizeHandle.addEventListener("pointermove", (event) => {
+    if (!resizing || event.pointerId !== resizePointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    resizeLastX = event.clientX;
+    resizeLastY = event.clientY;
+    scheduleHandleResize();
+  }, { passive: false });
+  resizeHandle.addEventListener("pointerup", endHandleResize);
+  resizeHandle.addEventListener("pointercancel", endHandleResize);
+  resizeHandle.addEventListener("lostpointercapture", endHandleResize);
+  resizeHandle.addEventListener("keydown", (event) => {
+    const step = event.shiftKey ? 80 : 32;
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      resizePanelBy(step, 0);
+    } else if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      resizePanelBy(-step, 0);
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      resizePanelBy(0, step);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      resizePanelBy(0, -step);
+    }
+  });
   cacheButton.addEventListener("click", () => {
     primeCache().catch((error) => runtime?.logger.warn("Kokoro cache prime failed.", error));
   });
@@ -559,7 +726,13 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
   });
   stopButton.addEventListener("click", () => {
     stopAudio();
-    setStatus("Stopped", "Audio output cleared");
+    if (generating || loadingPromise) {
+      resetWorker("Generation stopped");
+      setStatus("Stopped", "Generation worker reset");
+      renderDiagnostics("worker reset");
+    } else {
+      setStatus("Stopped", "Audio output cleared");
+    }
   });
   textInput.addEventListener("change", persist);
   textInput.addEventListener("blur", persist);
@@ -571,7 +744,7 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
     const value = target.getAttribute("data-kokoro-value");
     if (field === "voice" && isVoice(value)) voice = value;
     if (field === "dtype" && isKokoroDtype(value)) dtype = value;
-    tts = null;
+    modelReady = false;
     renderSegments();
     renderDiagnostics("settings changed");
     persist();
@@ -590,6 +763,12 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
       if (destroyed) return;
       destroyed = true;
       stopAudio();
+      resetWorker("Kokoro app destroyed");
+      if (resizeRafId) {
+        if (typeof window.cancelAnimationFrame === "function") window.cancelAnimationFrame(resizeRafId);
+        else window.clearTimeout(resizeRafId);
+        resizeRafId = 0;
+      }
       cleanupLayer();
       panel.remove();
     },

@@ -3,14 +3,15 @@ import { defineAppManifest } from "../../app-platform/manifest.js";
 
 export const kokoroTtsWindowCapabilities = {
   draggable: true,
-  resizable: false,
+  resizable: true,
   minimizable: true,
   closable: true,
   restorable: true,
   maximizable: false,
   snap: false,
-  preserveIntrinsicWidth: true,
-  maxWidth: 430,
+  preserveIntrinsicWidth: false,
+  maxWidth: 560,
+  maxHeight: 720,
 } as const;
 
 export const kokoroTtsAppManifest = defineAppManifest({
@@ -35,7 +36,7 @@ export const kokoroTtsAppManifest = defineAppManifest({
   window: {
     shellWindowId: "kokoro-tts",
     mode: "floating",
-    defaultBounds: { left: 52, top: 108, width: 430 },
+    defaultBounds: { left: 52, top: 108, width: 430, height: 540 },
     capabilities: kokoroTtsWindowCapabilities,
     restoreOnBoot: false,
     lazy: true,
