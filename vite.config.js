@@ -60,6 +60,9 @@ export default defineConfig({
     strictPort: true,
     allowedHosts: ["vatioboard.com", ".vatioboard.com", ".vatiolibre.com"],
   },
+  worker: {
+    format: "es",
+  },
   build: {
     chunkSizeWarningLimit: 1100,
     rollupOptions: {

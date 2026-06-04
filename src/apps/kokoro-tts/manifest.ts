@@ -10,7 +10,7 @@ export const kokoroTtsWindowCapabilities = {
   maximizable: false,
   snap: false,
   preserveIntrinsicWidth: false,
-  maxWidth: 560,
+  maxWidth: 620,
   maxHeight: 720,
 } as const;
 
@@ -18,7 +18,7 @@ export const kokoroTtsAppManifest = defineAppManifest({
   id: "vatio.kokoroTts",
   title: "Kokoro TTS Lab",
   shortTitle: "Kokoro",
-  description: "Experimental local neural TTS tester with chunked model caching for constrained browsers.",
+  description: "Experimental local neural TTS tester with WebGPU/WASM acceleration and chunked model caching for constrained browsers.",
   kind: "tool-app",
   version: "0.1.0",
   icon: IconKokoroTts,
@@ -36,7 +36,7 @@ export const kokoroTtsAppManifest = defineAppManifest({
   window: {
     shellWindowId: "kokoro-tts",
     mode: "floating",
-    defaultBounds: { left: 52, top: 108, width: 430, height: 540 },
+    defaultBounds: { left: 52, top: 108, width: 456, height: 560 },
     capabilities: kokoroTtsWindowCapabilities,
     restoreOnBoot: false,
     lazy: true,
@@ -48,12 +48,13 @@ export const kokoroTtsAppManifest = defineAppManifest({
   status: "experimental",
   metadata: {
     attribution: {
-      name: "Kokoro TTS / kokoro-js / Transformers.js",
-      license: "Apache-2.0",
-      source: "https://github.com/hexgrad/kokoro",
+      name: "Kokoro TTS / kokoro-web-inspired direct ONNX runtime / eSpeak NG",
+      license: "Apache-2.0 / MIT / GPL-3.0-or-later",
+      source: "https://github.com/eduardolat/kokoro-web",
       model: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX",
       runtime: "https://github.com/microsoft/onnxruntime",
+      phonemizer: "https://github.com/ianmarmour/espeak-ng.js",
     },
-    teslaNote: "Model files and the ONNX Runtime Web WASM binary are cached through VatioBoard's 5 MB chunked IndexedDB store, but ONNX still loads the full binary/model into memory.",
+    teslaNote: "Model, voice, eSpeak NG, and ONNX Runtime Web WASM files are cached through VatioBoard's 5 MB chunked IndexedDB store, but ONNX still loads the selected binary/model into memory.",
   },
 });

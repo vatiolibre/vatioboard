@@ -8,7 +8,7 @@
   --kokoro-surface-strong: rgba(255, 255, 255, 0.98);
   --kokoro-border: rgba(17, 24, 39, 0.13);
   --kokoro-text: #111827;
-  --kokoro-muted: #64748b;
+  --kokoro-muted: #475569;
   --kokoro-chip: rgba(255, 255, 255, 0.78);
   --kokoro-accent: #22c55e;
   --kokoro-accent-strong: #16a34a;
@@ -18,8 +18,8 @@
   flex-direction: column;
   left: 52px;
   top: 108px;
-  width: min(430px, calc(100vw - 24px));
-  height: min(540px, calc(100vh - 20px));
+  width: min(456px, calc(100vw - 24px));
+  height: min(560px, calc(100vh - 20px));
   min-width: 320px;
   min-height: 360px;
   max-width: calc(100vw - 16px);
@@ -49,8 +49,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 48px;
-  padding: 8px 10px 7px 14px;
+  min-height: 46px;
+  padding: 7px 9px 7px 13px;
   border-bottom: 1px solid color-mix(in srgb, var(--kokoro-border) 74%, transparent);
   background:
     linear-gradient(
@@ -69,7 +69,7 @@
 .kokoro-tts-title {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
   font-size: 0.82rem;
   font-weight: 780;
@@ -78,8 +78,8 @@
 
 .kokoro-tts-mark {
   display: inline-grid;
-  width: 28px;
-  height: 28px;
+  width: 27px;
+  height: 27px;
   place-items: center;
   color: color-mix(in srgb, var(--kokoro-accent) 80%, var(--kokoro-text));
   border-radius: 999px;
@@ -100,8 +100,8 @@
 
 .kokoro-tts-window-button {
   display: inline-grid;
-  width: 32px;
-  height: 32px;
+  width: 31px;
+  height: 31px;
   place-items: center;
   color: var(--kokoro-muted);
   background: color-mix(in srgb, var(--kokoro-surface-strong) 72%, transparent);
@@ -125,10 +125,10 @@
 .kokoro-tts-body {
   display: grid;
   flex: 1 1 auto;
-  gap: 10px;
+  gap: 9px;
   align-content: start;
   min-height: 0;
-  padding: 10px 12px 42px;
+  padding: 9px 10px 40px;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -165,14 +165,14 @@
 
 .kokoro-tts-field textarea {
   width: 100%;
-  min-height: 76px;
-  max-height: 180px;
+  min-height: 70px;
+  max-height: 150px;
   resize: vertical;
   color: var(--kokoro-text);
   background: color-mix(in srgb, var(--kokoro-surface-strong) 72%, transparent);
   border: 1px solid color-mix(in srgb, var(--kokoro-border) 88%, transparent);
   border-radius: 10px;
-  padding: 10px;
+  padding: 9px 10px;
   font: 650 0.9rem/1.42 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   outline: none;
 }
@@ -184,7 +184,7 @@
 
 .kokoro-tts-grid {
   display: grid;
-  gap: 9px;
+  gap: 8px;
 }
 
 .kokoro-tts-grid > div {
@@ -195,17 +195,17 @@
 .kokoro-tts-segments {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 5px;
 }
 
 .kokoro-tts-segment,
 .kokoro-tts-action {
-  min-height: 34px;
-  color: var(--kokoro-muted);
+  min-height: 32px;
+  color: color-mix(in srgb, var(--kokoro-text) 84%, var(--kokoro-muted));
   background: color-mix(in srgb, var(--kokoro-chip) 78%, transparent);
   border: 1px solid color-mix(in srgb, var(--kokoro-border) 84%, transparent);
-  border-radius: 12px;
-  font: 780 0.72rem/1.05 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  border-radius: 10px;
+  font: 780 0.7rem/1.05 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: 0;
   white-space: nowrap;
   cursor: pointer;
@@ -213,21 +213,49 @@
 }
 
 .kokoro-tts-segment {
-  flex: 1 1 auto;
-  min-width: 66px;
-  padding: 0 10px;
+  display: grid;
+  flex: 1 1 62px;
+  min-width: 58px;
+  place-items: center;
+  gap: 2px;
+  padding: 3px 8px;
+  text-align: center;
+}
+
+.kokoro-tts-segment small {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: color-mix(in srgb, currentColor 74%, transparent);
+  font-size: 0.58rem;
+  font-weight: 760;
+  line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kokoro-tts-segments--voices {
+  max-height: 78px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.kokoro-tts-segments--voices .kokoro-tts-segment {
+  flex-basis: 72px;
+  min-width: 64px;
 }
 
 .kokoro-tts-segment[aria-pressed="true"] {
   color: #ecfdf5;
-  background: linear-gradient(180deg, rgba(34, 197, 94, 0.76), rgba(22, 163, 74, 0.7));
+  background: linear-gradient(180deg, rgba(34, 197, 94, 0.9), rgba(22, 163, 74, 0.82));
   border-color: rgba(187, 247, 208, 0.45);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 
 .kokoro-tts-actions {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
+  gap: 5px;
 }
 
 .kokoro-tts-action {
@@ -236,7 +264,7 @@
   justify-content: center;
   gap: 5px;
   min-width: 0;
-  padding: 0 7px;
+  padding: 0 6px;
   text-align: center;
 }
 
@@ -260,8 +288,8 @@
 
 .kokoro-tts-status {
   display: grid;
-  gap: 7px;
-  padding: 10px;
+  gap: 6px;
+  padding: 9px;
   color: var(--kokoro-muted);
   background: color-mix(in srgb, var(--kokoro-chip) 72%, transparent);
   border: 1px solid color-mix(in srgb, var(--kokoro-border) 78%, transparent);
@@ -301,13 +329,13 @@
 .kokoro-tts-diagnostics {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  gap: 5px;
   margin: 0;
 }
 
 .kokoro-tts-diagnostics div {
   min-width: 0;
-  padding: 8px 9px;
+  padding: 7px 8px;
   border-radius: 10px;
   background: color-mix(in srgb, var(--kokoro-chip) 64%, transparent);
   border: 1px solid color-mix(in srgb, var(--kokoro-border) 70%, transparent);
@@ -370,7 +398,7 @@
     --kokoro-surface-strong: rgba(12, 18, 28, 0.96);
     --kokoro-border: rgba(226, 232, 240, 0.16);
     --kokoro-text: #f8fafc;
-    --kokoro-muted: #cbd5e1;
+    --kokoro-muted: #d7e1ee;
     --kokoro-chip: rgba(31, 41, 55, 0.72);
     box-shadow:
       0 24px 60px rgba(0, 0, 0, 0.42),

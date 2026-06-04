@@ -8,8 +8,25 @@ import type { ShellBounds, ShellLifecycleOptions, ShellRuntime } from "../../typ
 import type { ShellAppRuntimeManager, VatioAppRuntime } from "../../app-platform/types";
 import {
   KOKORO_MODEL_ID,
-  type KokoroDtype,
 } from "./kokoro-model-cache.js";
+import {
+  KOKORO_ACCELERATIONS,
+  KOKORO_LANGS,
+  KOKORO_MODEL_BY_ID,
+  KOKORO_MODELS,
+  KOKORO_VOICE_BY_ID,
+  KOKORO_VOICES_BY_LANG,
+  getDefaultVoiceForLang,
+  getLangForVoice,
+  isKokoroAcceleration,
+  isKokoroDirectModelId,
+  isKokoroLangId,
+  isKokoroVoiceId,
+  type KokoroAcceleration,
+  type KokoroDirectModelId,
+  type KokoroLangId,
+  type KokoroVoiceId,
+} from "./kokoro-direct-resources.js";
 import type { KokoroWorkerRequest, KokoroWorkerRequestPayload, KokoroWorkerResponse } from "./kokoro-worker-protocol.js";
 import { kokoroTtsWindowCapabilities } from "./manifest.js";
 
@@ -24,19 +41,14 @@ const RESIZE_MARGIN_PX = 12;
 const DEFAULT_BOUNDS = {
   left: 52,
   top: 108,
-  width: 430,
-  height: 540,
+  width: 456,
+  height: 560,
 };
-const DEFAULT_TEXT = "The cabin clock says 10:15 and the route ahead looks clear.";
-const DEFAULT_VOICE = "af_heart";
-const VOICES = [
-  { id: "af_heart", label: "Heart" },
-  { id: "af_bella", label: "Bella" },
-  { id: "af_nicole", label: "Nicole" },
-  { id: "am_michael", label: "Michael" },
-  { id: "bf_emma", label: "Emma" },
-] as const;
-const DTYPES: KokoroDtype[] = ["q8", "q4"];
+const DEFAULT_TEXT = "Hola. The cabin clock says 10:15 and the route ahead looks clear.";
+const DEFAULT_LANG: KokoroLangId = "en-us";
+const DEFAULT_VOICE: KokoroVoiceId = "af_heart";
+const DEFAULT_MODEL: KokoroDirectModelId = "model_q8f16";
+const DEFAULT_ACCELERATION: KokoroAcceleration = "auto";
 
 export interface KokoroTtsAppOptions {
   mount?: HTMLElement;
@@ -56,8 +68,10 @@ export interface KokoroTtsAppApi {
 
 interface KokoroPreferences {
   text?: string;
-  voice?: string;
-  dtype?: KokoroDtype;
+  voice?: KokoroVoiceId;
+  lang?: KokoroLangId;
+  model?: KokoroDirectModelId;
+  acceleration?: KokoroAcceleration;
 }
 
 interface KokoroView {
@@ -76,7 +90,7 @@ interface KokoroView {
   speakButton: HTMLButtonElement;
   stopButton: HTMLButtonElement;
   resizeHandle: HTMLButtonElement;
-  segmentButtons: HTMLButtonElement[];
+  voiceSegments: HTMLElement;
 }
 
 export function resolveKokoroTtsRuntime({
@@ -89,20 +103,22 @@ export function resolveKokoroTtsRuntime({
     || null;
 }
 
-function isKokoroDtype(value: unknown): value is KokoroDtype {
-  return typeof value === "string" && DTYPES.includes(value as KokoroDtype);
-}
-
-function isVoice(value: unknown): value is string {
-  return typeof value === "string" && VOICES.some((voice) => voice.id === value);
-}
-
 function loadPreferences(runtime: VatioAppRuntime | null): Required<KokoroPreferences> {
   const stored = runtime?.services.settings?.getJson<KokoroPreferences | null>(KOKORO_TTS_SETTINGS_KEY, null) || null;
+  const storedLang = isKokoroLangId(stored?.lang)
+    ? stored.lang
+    : isKokoroVoiceId(stored?.voice)
+      ? getLangForVoice(stored.voice)
+      : DEFAULT_LANG;
+  const storedVoice = isKokoroVoiceId(stored?.voice) && KOKORO_VOICE_BY_ID[stored.voice].lang === storedLang
+    ? stored.voice
+    : getDefaultVoiceForLang(storedLang);
   return {
     text: typeof stored?.text === "string" && stored.text.trim() ? stored.text : DEFAULT_TEXT,
-    voice: isVoice(stored?.voice) ? stored.voice : DEFAULT_VOICE,
-    dtype: isKokoroDtype(stored?.dtype) ? stored.dtype : "q8",
+    voice: storedVoice || DEFAULT_VOICE,
+    lang: storedLang,
+    model: isKokoroDirectModelId(stored?.model) ? stored.model : DEFAULT_MODEL,
+    acceleration: isKokoroAcceleration(stored?.acceleration) ? stored.acceleration : DEFAULT_ACCELERATION,
   };
 }
 
@@ -177,7 +193,11 @@ function applyInitialBounds(panel: HTMLElement, shellManager: ShellRuntime) {
   panel.style.bottom = "auto";
 }
 
-function buildSegmentGroup(name: string, values: readonly { id: string; label: string }[], selected: string): string {
+function buildSegmentGroup(
+  name: string,
+  values: readonly { id: string; label: string; detail?: string; title?: string }[],
+  selected: string,
+): string {
   return `
     <div class="kokoro-tts-segments" role="group" aria-label="${name}">
       ${values.map((value) => `
@@ -186,8 +206,9 @@ function buildSegmentGroup(name: string, values: readonly { id: string; label: s
           class="kokoro-tts-segment"
           data-kokoro-field="${name}"
           data-kokoro-value="${value.id}"
+          ${value.title ? `title="${value.title}"` : ""}
           aria-pressed="${value.id === selected ? "true" : "false"}"
-        >${value.label}</button>
+        ><span>${value.label}</span>${value.detail ? `<small>${value.detail}</small>` : ""}</button>
       `).join("")}
     </div>
   `;
@@ -217,12 +238,33 @@ function buildPanel(preferences: Required<KokoroPreferences>): KokoroView {
 
       <div class="kokoro-tts-grid">
         <div>
+          <span class="kokoro-tts-label">Language</span>
+          ${buildSegmentGroup("lang", KOKORO_LANGS.map((lang) => ({
+            id: lang.id,
+            label: lang.label,
+            title: lang.name,
+          })), preferences.lang)}
+        </div>
+        <div>
           <span class="kokoro-tts-label">Voice</span>
-          ${buildSegmentGroup("voice", VOICES, preferences.voice)}
+          <div class="kokoro-tts-segments kokoro-tts-segments--voices" data-kokoro-voice-segments role="group" aria-label="voice"></div>
         </div>
         <div>
           <span class="kokoro-tts-label">Model</span>
-          ${buildSegmentGroup("dtype", DTYPES.map((id) => ({ id, label: id.toUpperCase() })), preferences.dtype)}
+          ${buildSegmentGroup("model", KOKORO_MODELS.map((model) => ({
+            id: model.id,
+            label: model.label,
+            detail: model.detail,
+            title: model.quantization,
+          })), preferences.model)}
+        </div>
+        <div>
+          <span class="kokoro-tts-label">Acceleration</span>
+          ${buildSegmentGroup("acceleration", KOKORO_ACCELERATIONS.map((item) => ({
+            id: item.id,
+            label: item.label,
+            detail: item.detail,
+          })), preferences.acceleration)}
         </div>
       </div>
 
@@ -246,7 +288,7 @@ function buildPanel(preferences: Required<KokoroPreferences>): KokoroView {
       <dl class="kokoro-tts-diagnostics" data-kokoro-diagnostics>
         <div><dt>Model</dt><dd>${KOKORO_MODEL_ID}</dd></div>
         <div><dt>Cache</dt><dd>5 MB chunks</dd></div>
-        <div><dt>Runtime</dt><dd>WASM</dd></div>
+        <div><dt>Runtime</dt><dd>WebGPU / WASM</dd></div>
       </dl>
     </div>
     <button type="button" class="kokoro-tts-resize" data-kokoro-resize aria-label="Resize Kokoro TTS" title="Resize Kokoro TTS"></button>
@@ -271,7 +313,7 @@ function buildPanel(preferences: Required<KokoroPreferences>): KokoroView {
     speakButton: panel.querySelector("[data-kokoro-speak]") as HTMLButtonElement,
     stopButton: panel.querySelector("[data-kokoro-stop]") as HTMLButtonElement,
     resizeHandle: panel.querySelector("[data-kokoro-resize]") as HTMLButtonElement,
-    segmentButtons: Array.from(panel.querySelectorAll("[data-kokoro-field]")) as HTMLButtonElement[],
+    voiceSegments: panel.querySelector("[data-kokoro-voice-segments]") as HTMLElement,
   };
 }
 
@@ -299,11 +341,13 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
     speakButton,
     stopButton,
     resizeHandle,
-    segmentButtons,
+    voiceSegments,
   } = view;
 
-  let dtype: KokoroDtype = preferences.dtype;
-  let voice = preferences.voice;
+  let acceleration: KokoroAcceleration = preferences.acceleration;
+  let lang: KokoroLangId = preferences.lang;
+  let model: KokoroDirectModelId = preferences.model;
+  let voice: KokoroVoiceId = preferences.voice;
   let worker: Worker | null = null;
   let workerRequestId = 0;
   const pendingWorkerRequests = new Map<number, {
@@ -330,7 +374,9 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
     savePreferences(runtime, {
       text: textInput.value,
       voice,
-      dtype,
+      lang,
+      model,
+      acceleration,
     });
   }
 
@@ -347,22 +393,46 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
     progressBar.style.width = `${Math.max(0, Math.min(1, ratio)) * 100}%`;
   }
 
+  function renderVoiceSegments() {
+    const voices = KOKORO_VOICES_BY_LANG[lang] || [];
+    if (!voices.some((item) => item.id === voice)) {
+      voice = getDefaultVoiceForLang(lang);
+    }
+    voiceSegments.replaceChildren(...voices.map((item) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "kokoro-tts-segment";
+      button.dataset.kokoroField = "voice";
+      button.dataset.kokoroValue = item.id;
+      button.setAttribute("aria-pressed", item.id === voice ? "true" : "false");
+      button.title = item.id;
+      const label = document.createElement("span");
+      label.textContent = item.name;
+      button.append(label);
+      return button;
+    }));
+  }
+
   function renderSegments() {
-    for (const button of segmentButtons) {
+    renderVoiceSegments();
+    for (const button of Array.from(panel.querySelectorAll("[data-kokoro-field]")) as HTMLButtonElement[]) {
       const field = button.getAttribute("data-kokoro-field");
       const value = button.getAttribute("data-kokoro-value");
       const active = (field === "voice" && value === voice)
-        || (field === "dtype" && value === dtype);
+        || (field === "lang" && value === lang)
+        || (field === "model" && value === model)
+        || (field === "acceleration" && value === acceleration);
       button.setAttribute("aria-pressed", active ? "true" : "false");
     }
   }
 
   function renderDiagnostics(extra = "") {
+    const selectedModel = KOKORO_MODEL_BY_ID[model];
     const items = [
       ["Model", KOKORO_MODEL_ID],
       ["Cache", "5 MB chunks"],
-      ["Runtime", `Worker WASM / ${dtype.toUpperCase()}`],
-      ["ORT", "chunked binary"],
+      ["Voice", `${KOKORO_VOICE_BY_ID[voice]?.name || voice} / ${lang.toUpperCase()}`],
+      ["Engine", `${selectedModel.label} ${selectedModel.detail} / ${acceleration.toUpperCase()}`],
     ];
     if (extra) items.push(["Last", extra]);
     diagnostics.replaceChildren(...items.map(([term, value]) => {
@@ -440,16 +510,27 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
     });
   }
 
+  function getWorkerSettings() {
+    return {
+      acceleration,
+      lang,
+      model,
+      voice,
+      voiceFormula: voice,
+      speed: 1,
+    };
+  }
+
   async function primeCache() {
-    const requestedDtype = dtype;
+    const requestedSettings = getWorkerSettings();
     setButtonBusy(cacheButton, true);
     setButtonBusy(loadButton, true);
     setButtonBusy(speakButton, true);
     setProgressRatio(null);
     try {
-      await sendWorkerRequest({ type: "prime", dtype: requestedDtype });
+      const message = await sendWorkerRequest({ type: "prime", ...requestedSettings });
       setProgressRatio(1);
-      setStatus("Cache ready", `Runtime + ${requestedDtype.toUpperCase()} model cached`);
+      setStatus("Cache ready", `${message.type === "primed" ? message.provider.toUpperCase() : "Runtime"} + model cached`);
       renderDiagnostics("runtime + model cached");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Cache priming failed";
@@ -467,20 +548,26 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
     if (modelReady) return;
     if (loadingPromise) return loadingPromise;
 
-    const requestedDtype = dtype;
+    const requestedSettings = getWorkerSettings();
     setButtonBusy(loadButton, true);
     setButtonBusy(speakButton, true);
     setStatus("Loading model", "Preparing chunk cache first");
     loadingPromise = (async () => {
-      await sendWorkerRequest({ type: "load", dtype: requestedDtype });
-      if (requestedDtype !== dtype) {
+      const message = await sendWorkerRequest({ type: "load", ...requestedSettings });
+      if (
+        requestedSettings.model !== model
+        || requestedSettings.acceleration !== acceleration
+        || requestedSettings.lang !== lang
+        || requestedSettings.voice !== voice
+      ) {
         modelReady = false;
         setStatus("Ready", "Load again after changing engine settings");
         renderDiagnostics("settings changed");
         return;
       }
       modelReady = true;
-      setStatus("Model ready", `${voice} on worker WASM`);
+      const provider = message.type === "loaded" ? message.provider.toUpperCase() : acceleration.toUpperCase();
+      setStatus("Model ready", `${KOKORO_VOICE_BY_ID[voice]?.name || voice} on ${provider}`);
       setProgressRatio(1);
       renderDiagnostics("model ready");
     })().finally(() => {
@@ -510,8 +597,7 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
       return;
     }
     persist();
-    const requestedDtype = dtype;
-    const requestedVoice = voice;
+    const requestedSettings = getWorkerSettings();
     setButtonBusy(cacheButton, true);
     setButtonBusy(loadButton, true);
     setButtonBusy(speakButton, true);
@@ -522,20 +608,18 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
       const message = await sendWorkerRequest({
         type: "speak",
         text,
-        voice: requestedVoice,
-        dtype: requestedDtype,
-        speed: 1,
+        ...requestedSettings,
       });
       if (message.type !== "speech") throw new Error("Kokoro worker returned an unexpected response.");
-      modelReady = requestedDtype === dtype;
+      modelReady = requestedSettings.model === model && requestedSettings.acceleration === acceleration;
       stopAudio();
       const blob = message.blob;
       audioUrl = URL.createObjectURL(blob);
       audio = new Audio(audioUrl);
       await audio.play();
       const seconds = Math.max(0.1, message.durationMs / 1000);
-      setStatus("Speaking", `${formatBytes(blob.size)} WAV generated in ${seconds.toFixed(1)}s`);
-      renderDiagnostics("speech generated");
+      setStatus("Speaking", `${formatBytes(blob.size)} WAV in ${seconds.toFixed(1)}s; audio ${message.audioSeconds.toFixed(1)}s`);
+      renderDiagnostics(`${message.provider.toUpperCase()} speech generated`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Speech generation failed";
       if (message !== "Generation stopped") {
@@ -742,8 +826,16 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
     if (!(target instanceof HTMLButtonElement)) return;
     const field = target.getAttribute("data-kokoro-field");
     const value = target.getAttribute("data-kokoro-value");
-    if (field === "voice" && isVoice(value)) voice = value;
-    if (field === "dtype" && isKokoroDtype(value)) dtype = value;
+    if (field === "voice" && isKokoroVoiceId(value)) {
+      voice = value;
+      lang = KOKORO_VOICE_BY_ID[value].lang;
+    }
+    if (field === "lang" && isKokoroLangId(value)) {
+      lang = value;
+      if (KOKORO_VOICE_BY_ID[voice]?.lang !== lang) voice = getDefaultVoiceForLang(lang);
+    }
+    if (field === "model" && isKokoroDirectModelId(value)) model = value;
+    if (field === "acceleration" && isKokoroAcceleration(value)) acceleration = value;
     modelReady = false;
     renderSegments();
     renderDiagnostics("settings changed");

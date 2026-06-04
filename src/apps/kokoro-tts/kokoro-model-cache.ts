@@ -1,15 +1,27 @@
 import { createChunkedBlobStore, type ChunkedBlobRecord, type ChunkedBlobStore } from "../../shared/chunked-blob-store.js";
 import { createIndexedJsonKeyValueStore } from "../../shared/indexed-storage.js";
+import type { KokoroDirectModelId, KokoroExecutionProvider } from "./kokoro-direct-resources.js";
 
 export const KOKORO_MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 export const KOKORO_REVISION = "main";
+export const KOKORO_DIRECT_REVISION = "1939ad2a8e416c0acfeecc08a694d14ef25f2231";
 export const KOKORO_ORT_WASM_VERSION = "1.22.0-dev.20250409-89f8206ba4";
 export const KOKORO_ORT_WASM_MJS_FILE = "ort-wasm-simd-threaded.mjs";
 export const KOKORO_ORT_WASM_FILE = "ort-wasm-simd-threaded.wasm";
+export const KOKORO_ORT_WEBGPU_MJS_FILE = "ort-wasm-simd-threaded.jsep.mjs";
+export const KOKORO_ORT_WEBGPU_WASM_FILE = "ort-wasm-simd-threaded.jsep.wasm";
 export const KOKORO_ORT_WASM_MJS_URL =
   `https://cdn.jsdelivr.net/npm/onnxruntime-web@${KOKORO_ORT_WASM_VERSION}/dist/${KOKORO_ORT_WASM_MJS_FILE}`;
 export const KOKORO_ORT_WASM_URL =
   `https://cdn.jsdelivr.net/npm/onnxruntime-web@${KOKORO_ORT_WASM_VERSION}/dist/${KOKORO_ORT_WASM_FILE}`;
+export const KOKORO_ORT_WEBGPU_MJS_URL =
+  `https://cdn.jsdelivr.net/npm/onnxruntime-web@${KOKORO_ORT_WASM_VERSION}/dist/${KOKORO_ORT_WEBGPU_MJS_FILE}`;
+export const KOKORO_ORT_WEBGPU_WASM_URL =
+  `https://cdn.jsdelivr.net/npm/onnxruntime-web@${KOKORO_ORT_WASM_VERSION}/dist/${KOKORO_ORT_WEBGPU_WASM_FILE}`;
+export const KOKORO_ESPEAK_VERSION = "1.0.2";
+export const KOKORO_ESPEAK_WASM_FILE = "espeak-ng.wasm";
+export const KOKORO_ESPEAK_WASM_URL =
+  `https://cdn.jsdelivr.net/npm/espeak-ng@${KOKORO_ESPEAK_VERSION}/dist/${KOKORO_ESPEAK_WASM_FILE}`;
 
 const KOKORO_DB_NAME = "vatioboard_kokoro_tts_assets";
 const KOKORO_STORE_NAME = "kokoro_assets";
@@ -21,7 +33,7 @@ export type KokoroDtype = "q8" | "fp32" | "fp16" | "q4" | "q4f16";
 export interface KokoroAssetDescriptor {
   file: string;
   label: string;
-  kind: "config" | "tokenizer" | "model" | "runtime";
+  kind: "config" | "tokenizer" | "model" | "runtime" | "voice" | "phonemizer";
   url?: string;
 }
 
@@ -62,8 +74,19 @@ const MODEL_FILE_BY_DTYPE: Record<KokoroDtype, string> = {
   q4f16: "onnx/model_q4f16.onnx",
 };
 
+const MODEL_FILE_BY_DIRECT_MODEL: Record<KokoroDirectModelId, string> = {
+  model_q8f16: "onnx/model_q8f16.onnx",
+  model_quantized: "onnx/model_quantized.onnx",
+  model_uint8f16: "onnx/model_uint8f16.onnx",
+  model_q4f16: "onnx/model_q4f16.onnx",
+};
+
 export function kokoroModelUrl(file: string): string {
   return `https://huggingface.co/${KOKORO_MODEL_ID}/resolve/${KOKORO_REVISION}/${file}`;
+}
+
+export function kokoroDirectModelUrl(file: string): string {
+  return `https://huggingface.co/${KOKORO_MODEL_ID}/resolve/${KOKORO_DIRECT_REVISION}/${file}`;
 }
 
 export function getKokoroRuntimeAsset(): KokoroAssetDescriptor {
@@ -75,6 +98,19 @@ export function getKokoroRuntimeAsset(): KokoroAssetDescriptor {
   };
 }
 
+export function getKokoroOrtRuntimeAsset(provider: KokoroExecutionProvider): KokoroAssetDescriptor {
+  if (provider === "webgpu") {
+    return {
+      file: KOKORO_ORT_WEBGPU_WASM_FILE,
+      label: "ONNX Runtime WebGPU",
+      kind: "runtime",
+      url: KOKORO_ORT_WEBGPU_WASM_URL,
+    };
+  }
+
+  return getKokoroRuntimeAsset();
+}
+
 export function getKokoroCoreAssets(dtype: KokoroDtype): KokoroAssetDescriptor[] {
   return [
     { file: "config.json", label: "Model config", kind: "config" },
@@ -82,6 +118,34 @@ export function getKokoroCoreAssets(dtype: KokoroDtype): KokoroAssetDescriptor[]
     { file: "tokenizer_config.json", label: "Tokenizer config", kind: "tokenizer" },
     { file: MODEL_FILE_BY_DTYPE[dtype] || MODEL_FILE_BY_DTYPE.q8, label: `${dtype.toUpperCase()} ONNX`, kind: "model" },
   ];
+}
+
+export function getKokoroDirectModelAsset(model: KokoroDirectModelId): KokoroAssetDescriptor {
+  const file = MODEL_FILE_BY_DIRECT_MODEL[model] || MODEL_FILE_BY_DIRECT_MODEL.model_q8f16;
+  return {
+    file,
+    label: `${model.replace(/^model_/, "").toUpperCase()} ONNX`,
+    kind: "model",
+    url: kokoroDirectModelUrl(file),
+  };
+}
+
+export function getKokoroVoiceAsset(voice: string): KokoroAssetDescriptor {
+  return {
+    file: `voices/${voice}.bin`,
+    label: `${voice} voice`,
+    kind: "voice",
+    url: kokoroDirectModelUrl(`voices/${voice}.bin`),
+  };
+}
+
+export function getKokoroPhonemizerAsset(): KokoroAssetDescriptor {
+  return {
+    file: KOKORO_ESPEAK_WASM_FILE,
+    label: "eSpeak NG phonemizer",
+    kind: "phonemizer",
+    url: KOKORO_ESPEAK_WASM_URL,
+  };
 }
 
 export function getKokoroPrimeAssets(dtype: KokoroDtype): KokoroAssetDescriptor[] {
