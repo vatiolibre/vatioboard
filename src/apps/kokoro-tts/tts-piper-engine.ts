@@ -1,31 +1,31 @@
 import type * as OrtWasm from "onnxruntime-web/wasm";
 import piperPhonemizeWorkerUrl from "piper-tts-web/dist/worker/PhonemizeWebWorker.js?url";
 import {
-  KOKORO_ORT_WASM_URL,
-  cacheKokoroAsset,
-  cacheKokoroAssets,
-  getKokoroRuntimeAsset,
+  TTS_ORT_WASM_URL,
+  cacheTtsAsset,
+  cacheTtsAssets,
   getPiperPhonemizerAssets,
   getPiperVoiceAssets,
   getPiperVoiceConfigAsset,
   getPiperVoiceModelAsset,
-  readCachedKokoroAsset,
-  type KokoroAssetDescriptor,
-  type KokoroAssetProgress,
-} from "./kokoro-model-cache.js";
+  getTtsRuntimeAsset,
+  readCachedTtsAsset,
+  type TtsAssetDescriptor,
+  type TtsAssetProgress,
+} from "./tts-asset-cache.js";
 import {
   PIPER_VOICE_BY_ID,
   PIPER_VOICES_BY_LANG,
   getDefaultPiperVoiceForLang,
   isPiperVoiceId,
-  type KokoroLangId,
   type PiperVoiceId,
-} from "./kokoro-direct-resources.js";
+  type TtsLangId,
+} from "./tts-resources.js";
 
 export type PiperTtsStatusReporter = (status: string, progress?: string, ratio?: number | null) => void;
 
 export interface PiperTtsSettings {
-  lang: KokoroLangId;
+  lang: TtsLangId;
   piperVoice: PiperVoiceId;
   speed?: number;
 }
@@ -40,7 +40,7 @@ export interface PiperTtsSpeechResult {
 
 type OrtModule = typeof OrtWasm;
 type PiperSession = Awaited<ReturnType<OrtModule["InferenceSession"]["create"]>>;
-type AssetProgressReporter = (asset: KokoroAssetDescriptor, progress: KokoroAssetProgress) => void;
+type AssetProgressReporter = (asset: TtsAssetDescriptor, progress: TtsAssetProgress) => void;
 
 interface PiperVoiceConfig {
   audio: {
@@ -146,20 +146,20 @@ function clampSpeed(speed: number | undefined): number {
 }
 
 async function ensureAssetBuffer(
-  asset: KokoroAssetDescriptor,
+  asset: TtsAssetDescriptor,
   reportStatus: PiperTtsStatusReporter,
 ): Promise<ArrayBuffer> {
-  let buffer = await readCachedKokoroAsset(asset);
+  let buffer = await readCachedTtsAsset(asset);
   if (buffer) return buffer;
 
-  await cacheKokoroAsset(asset, (progress) => handleAssetProgress(reportStatus)(asset, progress));
-  buffer = await readCachedKokoroAsset(asset);
+  await cacheTtsAsset(asset, (progress) => handleAssetProgress(reportStatus)(asset, progress));
+  buffer = await readCachedTtsAsset(asset);
   if (!buffer) throw new Error(`${asset.label} was not cached.`);
   return buffer;
 }
 
 async function ensureAssetObjectUrl(
-  asset: KokoroAssetDescriptor,
+  asset: TtsAssetDescriptor,
   mimeType: string,
   reportStatus: PiperTtsStatusReporter,
 ): Promise<string> {
@@ -189,7 +189,7 @@ async function getOrtModule(wasmBinary: ArrayBuffer): Promise<OrtModule> {
       runtime.env.wasm.numThreads = 1;
       runtime.env.wasm.proxy = false;
       runtime.env.wasm.wasmBinary = wasmBinary;
-      runtime.env.wasm.wasmPaths = KOKORO_ORT_WASM_URL;
+      runtime.env.wasm.wasmPaths = TTS_ORT_WASM_URL;
       return runtime as OrtModule;
     })();
   }
@@ -199,7 +199,7 @@ async function getOrtModule(wasmBinary: ArrayBuffer): Promise<OrtModule> {
   runtime.env.wasm.numThreads = 1;
   runtime.env.wasm.proxy = false;
   runtime.env.wasm.wasmBinary = wasmBinary;
-  runtime.env.wasm.wasmPaths = KOKORO_ORT_WASM_URL;
+  runtime.env.wasm.wasmPaths = TTS_ORT_WASM_URL;
   return runtime;
 }
 
@@ -273,7 +273,7 @@ async function createSession(
 ): Promise<PiperSessionBundle> {
   if (!sessions.has(voice)) {
     const sessionPromise = (async () => {
-      const runtimeBinary = await ensureAssetBuffer(getKokoroRuntimeAsset(), reportStatus);
+      const runtimeBinary = await ensureAssetBuffer(getTtsRuntimeAsset(), reportStatus);
       const runtime = await getOrtModule(runtimeBinary);
       const config = await loadPiperVoiceConfig(voice, reportStatus);
       const modelBuffer = await ensureAssetBuffer(getPiperVoiceModelAsset(voice), reportStatus);
@@ -330,11 +330,11 @@ export async function primePiperTtsAssets(
 ): Promise<"wasm"> {
   const voice = resolvePiperVoice(settings);
   const assets = [
-    getKokoroRuntimeAsset(),
+    getTtsRuntimeAsset(),
     ...getPiperPhonemizerAssets(),
     ...getPiperVoiceAssets(voice),
   ];
-  await cacheKokoroAssets(
+  await cacheTtsAssets(
     assets,
     handleAssetProgress(reportStatus),
     (asset, result) => reportStatus(

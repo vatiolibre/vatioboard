@@ -1,28 +1,16 @@
-import {
-  loadKokoroDirectEngine,
-  primeKokoroDirectAssets,
-  synthesizeKokoroDirectSpeech,
-  type KokoroDirectSettings,
-} from "./kokoro-direct-engine.js";
-import type { KokoroWorkerRequest, KokoroWorkerResponse } from "./kokoro-worker-protocol.js";
+import type { TtsWorkerRequest, TtsWorkerResponse } from "./tts-worker-protocol.js";
 import {
   loadPiperTtsEngine,
   primePiperTtsAssets,
   synthesizePiperTtsSpeech,
   type PiperTtsSettings,
 } from "./tts-piper-engine.js";
-import {
-  loadFastTtsEngine,
-  primeFastTtsAssets,
-  synthesizeFastTtsSpeech,
-  type FastTtsSettings,
-} from "./tts-fast-engine.js";
 
-function post(message: KokoroWorkerResponse) {
+function post(message: TtsWorkerResponse) {
   self.postMessage(message);
 }
 
-type SpeechResponse = Extract<KokoroWorkerResponse, { type: "speech" }>;
+type SpeechResponse = Extract<TtsWorkerResponse, { type: "speech" }>;
 type CachedSpeechResponse = Omit<SpeechResponse, "id" | "durationMs"> & { durationMs: number };
 
 const MAX_SPEECH_CACHE_ITEMS = 10;
@@ -32,18 +20,12 @@ function postStatus(id: number, status: string, progress = "", ratio: number | n
   post({ id, type: "status", status, progress, ratio });
 }
 
-function getSpeechCacheKey(request: KokoroWorkerRequest): string {
+function getSpeechCacheKey(request: TtsWorkerRequest): string {
   const speed = Number.isFinite(request.speed || 0) ? request.speed : 1;
   return [
-    request.engine,
     request.lang,
-    request.voice,
     request.piperVoice,
-    request.model,
-    request.acceleration,
     speed,
-    "voiceFormula",
-    request.voiceFormula || request.voice,
     "text",
     request.type === "speak" ? request.text.trim() : "",
   ].join("\u001f");
@@ -65,26 +47,7 @@ function rememberSpeech(key: string, message: SpeechResponse) {
   }
 }
 
-function getSettings(request: KokoroWorkerRequest): KokoroDirectSettings {
-  return {
-    acceleration: request.acceleration,
-    lang: request.lang,
-    model: request.model,
-    voice: request.voice,
-    voiceFormula: request.voiceFormula || request.voice,
-    speed: request.speed ?? 1,
-  };
-}
-
-function getFastSettings(request: KokoroWorkerRequest): FastTtsSettings {
-  return {
-    lang: request.lang,
-    voice: request.voice,
-    speed: request.speed ?? 1,
-  };
-}
-
-function getPiperSettings(request: KokoroWorkerRequest): PiperTtsSettings {
+function getPiperSettings(request: TtsWorkerRequest): PiperTtsSettings {
   return {
     lang: request.lang,
     piperVoice: request.piperVoice,
@@ -92,102 +55,22 @@ function getPiperSettings(request: KokoroWorkerRequest): PiperTtsSettings {
   };
 }
 
-async function handleRequest(request: KokoroWorkerRequest) {
+async function handleRequest(request: TtsWorkerRequest) {
   try {
-    const settings = getSettings(request);
+    const piperSettings = getPiperSettings(request);
     const reportStatus = (status: string, progress = "", ratio: number | null = null) => {
       postStatus(request.id, status, progress, ratio);
     };
 
-    if (request.engine === "espeak") {
-      const fastSettings = getFastSettings(request);
-      if (request.type === "prime") {
-        const provider = await primeFastTtsAssets(reportStatus);
-        post({ id: request.id, type: "primed", engine: request.engine, model: "espeak-ng", provider });
-        return;
-      }
-
-      if (request.type === "load") {
-        const provider = await loadFastTtsEngine(reportStatus);
-        post({ id: request.id, type: "loaded", engine: request.engine, model: "espeak-ng", provider });
-        return;
-      }
-
-      const cacheKey = getSpeechCacheKey(request);
-      const cached = speechCache.get(cacheKey);
-      if (cached) {
-        speechCache.delete(cacheKey);
-        speechCache.set(cacheKey, cached);
-        postCachedSpeech(request.id, cached);
-        return;
-      }
-
-      const speech = await synthesizeFastTtsSpeech(request.text, fastSettings, reportStatus);
-      const response: SpeechResponse = {
-        id: request.id,
-        type: "speech",
-        engine: request.engine,
-        model: speech.model,
-        provider: speech.provider,
-        blob: speech.blob,
-        size: speech.blob.size,
-        durationMs: speech.durationMs,
-        audioSeconds: speech.audioSeconds,
-      };
-      rememberSpeech(cacheKey, response);
-      post(response);
-      return;
-    }
-
-    if (request.engine === "piper") {
-      const piperSettings = getPiperSettings(request);
-      if (request.type === "prime") {
-        const provider = await primePiperTtsAssets(piperSettings, reportStatus);
-        post({ id: request.id, type: "primed", engine: request.engine, model: request.piperVoice, provider });
-        return;
-      }
-
-      if (request.type === "load") {
-        const provider = await loadPiperTtsEngine(piperSettings, reportStatus);
-        post({ id: request.id, type: "loaded", engine: request.engine, model: request.piperVoice, provider });
-        return;
-      }
-
-      const cacheKey = getSpeechCacheKey(request);
-      const cached = speechCache.get(cacheKey);
-      if (cached) {
-        speechCache.delete(cacheKey);
-        speechCache.set(cacheKey, cached);
-        postCachedSpeech(request.id, cached);
-        return;
-      }
-
-      const speech = await synthesizePiperTtsSpeech(request.text, piperSettings, reportStatus);
-      const response: SpeechResponse = {
-        id: request.id,
-        type: "speech",
-        engine: request.engine,
-        model: speech.model,
-        provider: speech.provider,
-        blob: speech.blob,
-        size: speech.blob.size,
-        durationMs: speech.durationMs,
-        audioSeconds: speech.audioSeconds,
-      };
-      rememberSpeech(cacheKey, response);
-      post(response);
-      return;
-    }
-
     if (request.type === "prime") {
-      const provider = await primeKokoroDirectAssets(settings, reportStatus);
-      post({ id: request.id, type: "primed", engine: request.engine, model: request.model, provider });
+      const provider = await primePiperTtsAssets(piperSettings, reportStatus);
+      post({ id: request.id, type: "primed", model: request.piperVoice, provider });
       return;
     }
 
     if (request.type === "load") {
-      const provider = await loadKokoroDirectEngine(settings, reportStatus);
-      post({ id: request.id, type: "loaded", engine: request.engine, model: request.model, provider });
+      const provider = await loadPiperTtsEngine(piperSettings, reportStatus);
+      post({ id: request.id, type: "loaded", model: request.piperVoice, provider });
       return;
     }
 
@@ -200,11 +83,10 @@ async function handleRequest(request: KokoroWorkerRequest) {
       return;
     }
 
-    const speech = await synthesizeKokoroDirectSpeech(request.text, settings, reportStatus);
+    const speech = await synthesizePiperTtsSpeech(request.text, piperSettings, reportStatus);
     const response: SpeechResponse = {
       id: request.id,
       type: "speech",
-      engine: request.engine,
       model: speech.model,
       provider: speech.provider,
       blob: speech.blob,
@@ -223,6 +105,6 @@ async function handleRequest(request: KokoroWorkerRequest) {
   }
 }
 
-self.onmessage = (event: MessageEvent<KokoroWorkerRequest>) => {
+self.onmessage = (event: MessageEvent<TtsWorkerRequest>) => {
   void handleRequest(event.data);
 };

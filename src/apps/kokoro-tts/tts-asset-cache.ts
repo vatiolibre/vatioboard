@@ -1,27 +1,11 @@
 import { createChunkedBlobStore, type ChunkedBlobRecord, type ChunkedBlobStore } from "../../shared/chunked-blob-store.js";
 import { createIndexedJsonKeyValueStore } from "../../shared/indexed-storage.js";
-import type { KokoroDirectModelId, KokoroExecutionProvider, PiperVoiceId } from "./kokoro-direct-resources.js";
+import type { PiperVoiceId } from "./tts-resources.js";
 
-export const KOKORO_MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
-export const KOKORO_REVISION = "main";
-export const KOKORO_DIRECT_REVISION = "1939ad2a8e416c0acfeecc08a694d14ef25f2231";
-export const KOKORO_ORT_WASM_VERSION = "1.22.0-dev.20250409-89f8206ba4";
-export const KOKORO_ORT_WASM_MJS_FILE = "ort-wasm-simd-threaded.mjs";
-export const KOKORO_ORT_WASM_FILE = "ort-wasm-simd-threaded.wasm";
-export const KOKORO_ORT_WEBGPU_MJS_FILE = "ort-wasm-simd-threaded.jsep.mjs";
-export const KOKORO_ORT_WEBGPU_WASM_FILE = "ort-wasm-simd-threaded.jsep.wasm";
-export const KOKORO_ORT_WASM_MJS_URL =
-  `https://cdn.jsdelivr.net/npm/onnxruntime-web@${KOKORO_ORT_WASM_VERSION}/dist/${KOKORO_ORT_WASM_MJS_FILE}`;
-export const KOKORO_ORT_WASM_URL =
-  `https://cdn.jsdelivr.net/npm/onnxruntime-web@${KOKORO_ORT_WASM_VERSION}/dist/${KOKORO_ORT_WASM_FILE}`;
-export const KOKORO_ORT_WEBGPU_MJS_URL =
-  `https://cdn.jsdelivr.net/npm/onnxruntime-web@${KOKORO_ORT_WASM_VERSION}/dist/${KOKORO_ORT_WEBGPU_MJS_FILE}`;
-export const KOKORO_ORT_WEBGPU_WASM_URL =
-  `https://cdn.jsdelivr.net/npm/onnxruntime-web@${KOKORO_ORT_WASM_VERSION}/dist/${KOKORO_ORT_WEBGPU_WASM_FILE}`;
-export const KOKORO_ESPEAK_VERSION = "1.0.2";
-export const KOKORO_ESPEAK_WASM_FILE = "espeak-ng.wasm";
-export const KOKORO_ESPEAK_WASM_URL =
-  `https://cdn.jsdelivr.net/npm/espeak-ng@${KOKORO_ESPEAK_VERSION}/dist/${KOKORO_ESPEAK_WASM_FILE}`;
+export const TTS_ORT_WASM_VERSION = "1.22.0-dev.20250409-89f8206ba4";
+export const TTS_ORT_WASM_FILE = "ort-wasm-simd-threaded.wasm";
+export const TTS_ORT_WASM_URL =
+  `https://cdn.jsdelivr.net/npm/onnxruntime-web@${TTS_ORT_WASM_VERSION}/dist/${TTS_ORT_WASM_FILE}`;
 export const PIPER_TTS_WEB_VERSION = "1.1.2";
 export const PIPER_VOICES_MODEL_ID = "rhasspy/piper-voices";
 export const PIPER_VOICES_REVISION = "b710b0ba0740da88dc36e1ab8fa6b310d43a3a48";
@@ -32,21 +16,19 @@ export const PIPER_PHONEMIZER_WASM_URL =
 export const PIPER_PHONEMIZER_DATA_URL =
   `https://unpkg.com/piper-tts-web@${PIPER_TTS_WEB_VERSION}/dist/piper/${PIPER_PHONEMIZER_DATA_FILE}`;
 
-const KOKORO_DB_NAME = "vatioboard_kokoro_tts_assets";
-const KOKORO_STORE_NAME = "kokoro_assets";
+const TTS_DB_NAME = "vatioboard_tts_assets";
+const TTS_STORE_NAME = "tts_assets";
 const RANGE_CHUNK_BYTES = 5 * 1024 * 1024;
 const SINGLE_RESPONSE_LIMIT_BYTES = 9.5 * 1024 * 1024;
 
-export type KokoroDtype = "q8" | "fp32" | "fp16" | "q4" | "q4f16";
-
-export interface KokoroAssetDescriptor {
+export interface TtsAssetDescriptor {
   file: string;
   label: string;
-  kind: "config" | "tokenizer" | "model" | "runtime" | "voice" | "phonemizer";
-  url?: string;
+  kind: "config" | "model" | "runtime" | "phonemizer";
+  url: string;
 }
 
-export interface KokoroAssetProgress {
+export interface TtsAssetProgress {
   file: string;
   loadedBytes: number;
   totalBytes: number | null;
@@ -54,7 +36,7 @@ export interface KokoroAssetProgress {
   rangeCount?: number;
 }
 
-interface KokoroCacheRecord extends ChunkedBlobRecord {
+interface TtsCacheRecord extends ChunkedBlobRecord {
   blob?: Blob;
   cached_at?: number;
   content_type?: string;
@@ -68,105 +50,37 @@ interface AssetProbe {
   acceptsRanges: boolean;
 }
 
-const kokoroAssetStore = createChunkedBlobStore(
+const ttsAssetStore = createChunkedBlobStore(
   createIndexedJsonKeyValueStore({
-    dbName: KOKORO_DB_NAME,
-    storeName: KOKORO_STORE_NAME,
+    dbName: TTS_DB_NAME,
+    storeName: TTS_STORE_NAME,
   }),
-) as ChunkedBlobStore<KokoroCacheRecord>;
+) as ChunkedBlobStore<TtsCacheRecord>;
 
-const MODEL_FILE_BY_DTYPE: Record<KokoroDtype, string> = {
-  q8: "onnx/model_quantized.onnx",
-  fp32: "onnx/model.onnx",
-  fp16: "onnx/model_fp16.onnx",
-  q4: "onnx/model_q4.onnx",
-  q4f16: "onnx/model_q4f16.onnx",
-};
-
-const MODEL_FILE_BY_DIRECT_MODEL: Record<KokoroDirectModelId, string> = {
-  model_q8f16: "onnx/model_q8f16.onnx",
-  model_quantized: "onnx/model_quantized.onnx",
-  model_uint8f16: "onnx/model_uint8f16.onnx",
-  model_q4f16: "onnx/model_q4f16.onnx",
-};
-
-const PIPER_VOICE_FILE_BY_ID: Record<PiperVoiceId, string> = {
-  "en_US-lessac-medium": "en/en_US/lessac/medium/en_US-lessac-medium",
-  "es_MX-claude-high": "es/es_MX/claude/high/es_MX-claude-high",
-};
-
-export function kokoroModelUrl(file: string): string {
-  return `https://huggingface.co/${KOKORO_MODEL_ID}/resolve/${KOKORO_REVISION}/${file}`;
-}
-
-export function kokoroDirectModelUrl(file: string): string {
-  return `https://huggingface.co/${KOKORO_MODEL_ID}/resolve/${KOKORO_DIRECT_REVISION}/${file}`;
+function getPiperVoiceFileStem(voice: PiperVoiceId): string {
+  const firstDashIndex = voice.indexOf("-");
+  const lastDashIndex = voice.lastIndexOf("-");
+  const locale = voice.slice(0, firstDashIndex);
+  const dataset = voice.slice(firstDashIndex + 1, lastDashIndex);
+  const quality = voice.slice(lastDashIndex + 1);
+  const languageFamily = locale.split("_")[0];
+  return `${languageFamily}/${locale}/${dataset}/${quality}/${voice}`;
 }
 
 export function piperVoiceUrl(file: string): string {
   return `https://huggingface.co/${PIPER_VOICES_MODEL_ID}/resolve/${PIPER_VOICES_REVISION}/${file}`;
 }
 
-export function getKokoroRuntimeAsset(): KokoroAssetDescriptor {
+export function getTtsRuntimeAsset(): TtsAssetDescriptor {
   return {
-    file: KOKORO_ORT_WASM_FILE,
+    file: TTS_ORT_WASM_FILE,
     label: "ONNX Runtime",
     kind: "runtime",
-    url: KOKORO_ORT_WASM_URL,
+    url: TTS_ORT_WASM_URL,
   };
 }
 
-export function getKokoroOrtRuntimeAsset(provider: KokoroExecutionProvider): KokoroAssetDescriptor {
-  if (provider === "webgpu") {
-    return {
-      file: KOKORO_ORT_WEBGPU_WASM_FILE,
-      label: "ONNX Runtime WebGPU",
-      kind: "runtime",
-      url: KOKORO_ORT_WEBGPU_WASM_URL,
-    };
-  }
-
-  return getKokoroRuntimeAsset();
-}
-
-export function getKokoroCoreAssets(dtype: KokoroDtype): KokoroAssetDescriptor[] {
-  return [
-    { file: "config.json", label: "Model config", kind: "config" },
-    { file: "tokenizer.json", label: "Tokenizer", kind: "tokenizer" },
-    { file: "tokenizer_config.json", label: "Tokenizer config", kind: "tokenizer" },
-    { file: MODEL_FILE_BY_DTYPE[dtype] || MODEL_FILE_BY_DTYPE.q8, label: `${dtype.toUpperCase()} ONNX`, kind: "model" },
-  ];
-}
-
-export function getKokoroDirectModelAsset(model: KokoroDirectModelId): KokoroAssetDescriptor {
-  const file = MODEL_FILE_BY_DIRECT_MODEL[model] || MODEL_FILE_BY_DIRECT_MODEL.model_q8f16;
-  return {
-    file,
-    label: `${model.replace(/^model_/, "").toUpperCase()} ONNX`,
-    kind: "model",
-    url: kokoroDirectModelUrl(file),
-  };
-}
-
-export function getKokoroVoiceAsset(voice: string): KokoroAssetDescriptor {
-  return {
-    file: `voices/${voice}.bin`,
-    label: `${voice} voice`,
-    kind: "voice",
-    url: kokoroDirectModelUrl(`voices/${voice}.bin`),
-  };
-}
-
-export function getKokoroPhonemizerAsset(): KokoroAssetDescriptor {
-  return {
-    file: KOKORO_ESPEAK_WASM_FILE,
-    label: "eSpeak NG phonemizer",
-    kind: "phonemizer",
-    url: KOKORO_ESPEAK_WASM_URL,
-  };
-}
-
-export function getPiperPhonemizerAssets(): KokoroAssetDescriptor[] {
+export function getPiperPhonemizerAssets(): TtsAssetDescriptor[] {
   return [
     {
       file: PIPER_PHONEMIZER_WASM_FILE,
@@ -183,8 +97,8 @@ export function getPiperPhonemizerAssets(): KokoroAssetDescriptor[] {
   ];
 }
 
-export function getPiperVoiceConfigAsset(voice: PiperVoiceId): KokoroAssetDescriptor {
-  const file = `${PIPER_VOICE_FILE_BY_ID[voice]}.onnx.json`;
+export function getPiperVoiceConfigAsset(voice: PiperVoiceId): TtsAssetDescriptor {
+  const file = `${getPiperVoiceFileStem(voice)}.onnx.json`;
   return {
     file,
     label: `${voice} config`,
@@ -193,8 +107,8 @@ export function getPiperVoiceConfigAsset(voice: PiperVoiceId): KokoroAssetDescri
   };
 }
 
-export function getPiperVoiceModelAsset(voice: PiperVoiceId): KokoroAssetDescriptor {
-  const file = `${PIPER_VOICE_FILE_BY_ID[voice]}.onnx`;
+export function getPiperVoiceModelAsset(voice: PiperVoiceId): TtsAssetDescriptor {
+  const file = `${getPiperVoiceFileStem(voice)}.onnx`;
   return {
     file,
     label: `${voice} ONNX`,
@@ -203,22 +117,11 @@ export function getPiperVoiceModelAsset(voice: PiperVoiceId): KokoroAssetDescrip
   };
 }
 
-export function getPiperVoiceAssets(voice: PiperVoiceId): KokoroAssetDescriptor[] {
+export function getPiperVoiceAssets(voice: PiperVoiceId): TtsAssetDescriptor[] {
   return [
     getPiperVoiceConfigAsset(voice),
     getPiperVoiceModelAsset(voice),
   ];
-}
-
-export function getKokoroPrimeAssets(dtype: KokoroDtype): KokoroAssetDescriptor[] {
-  return [
-    getKokoroRuntimeAsset(),
-    ...getKokoroCoreAssets(dtype),
-  ];
-}
-
-function assetUrl(asset: KokoroAssetDescriptor): string {
-  return asset.url || kokoroModelUrl(asset.file);
 }
 
 function requestToKey(request: RequestInfo | URL): string {
@@ -266,9 +169,8 @@ async function readIntoController(
   }
 }
 
-export async function probeKokoroAsset(asset: KokoroAssetDescriptor): Promise<AssetProbe> {
-  const url = assetUrl(asset);
-  const response = await fetch(url, { method: "HEAD" });
+export async function probeTtsAsset(asset: TtsAssetDescriptor): Promise<AssetProbe> {
+  const response = await fetch(asset.url, { method: "HEAD" });
   if (!response.ok) {
     throw new Error(`Unable to inspect ${asset.file} (${response.status}).`);
   }
@@ -281,11 +183,10 @@ export async function probeKokoroAsset(asset: KokoroAssetDescriptor): Promise<As
 }
 
 export function createTeslaSafeAssetResponse(
-  asset: KokoroAssetDescriptor,
+  asset: TtsAssetDescriptor,
   probe: AssetProbe,
-  onProgress?: (progress: KokoroAssetProgress) => void,
+  onProgress?: (progress: TtsAssetProgress) => void,
 ): Response {
-  const url = assetUrl(asset);
   const total = probe.totalBytes;
   const useRanges = Boolean(total && total > SINGLE_RESPONSE_LIMIT_BYTES && probe.acceptsRanges);
   const rangeCount = useRanges && total ? Math.ceil(total / RANGE_CHUNK_BYTES) : 1;
@@ -299,7 +200,7 @@ export function createTeslaSafeAssetResponse(
     async start(controller) {
       try {
         if (!useRanges || !total) {
-          const response = await fetch(url);
+          const response = await fetch(asset.url);
           if (!response.ok) throw new Error(`Download failed for ${asset.file} (${response.status}).`);
           await readIntoController(response, controller, (byteLength) => {
             loadedBytes += byteLength;
@@ -312,7 +213,7 @@ export function createTeslaSafeAssetResponse(
         for (let rangeIndex = 0; rangeIndex < rangeCount; rangeIndex++) {
           const start = rangeIndex * RANGE_CHUNK_BYTES;
           const end = Math.min(start + RANGE_CHUNK_BYTES - 1, total - 1);
-          const response = await fetch(url, {
+          const response = await fetch(asset.url, {
             headers: {
               Range: `bytes=${start}-${end}`,
             },
@@ -346,11 +247,11 @@ export function createTeslaSafeAssetResponse(
   return new Response(stream, { status: 200, headers });
 }
 
-export function createKokoroChunkedCache() {
+export function createTtsChunkedCache() {
   return {
     async match(request: RequestInfo | URL): Promise<Response | undefined> {
       const key = requestToKey(request);
-      const entry = await kokoroAssetStore.getValue(key).catch(() => null);
+      const entry = await ttsAssetStore.getValue(key).catch(() => null);
       if (!entry?.blob) return undefined;
 
       const headers = new Headers(entry.headers || {});
@@ -363,7 +264,7 @@ export function createKokoroChunkedCache() {
       const key = requestToKey(request);
       const headers = headersToRecord(response.headers);
       const contentType = response.headers.get("content-type") || "application/octet-stream";
-      const ok = await kokoroAssetStore.streamResponse(key, response, {
+      const ok = await ttsAssetStore.streamResponse(key, response, {
         cached_at: Date.now(),
         content_type: contentType,
         headers,
@@ -374,39 +275,33 @@ export function createKokoroChunkedCache() {
   };
 }
 
-export async function isKokoroAssetCached(file: string): Promise<boolean> {
-  const cached = await createKokoroChunkedCache().match(kokoroModelUrl(file));
-  return Boolean(cached);
-}
-
-export async function cacheKokoroAsset(
-  asset: KokoroAssetDescriptor,
-  onProgress?: (progress: KokoroAssetProgress) => void,
+export async function cacheTtsAsset(
+  asset: TtsAssetDescriptor,
+  onProgress?: (progress: TtsAssetProgress) => void,
 ): Promise<"hit" | "stored"> {
-  const cache = createKokoroChunkedCache();
-  const url = assetUrl(asset);
-  const cached = await cache.match(url);
+  const cache = createTtsChunkedCache();
+  const cached = await cache.match(asset.url);
   if (cached) return "hit";
 
-  const probe = await probeKokoroAsset(asset);
+  const probe = await probeTtsAsset(asset);
   const response = createTeslaSafeAssetResponse(asset, probe, onProgress);
-  await cache.put(url, response);
+  await cache.put(asset.url, response);
   return "stored";
 }
 
-export async function readCachedKokoroAsset(asset: KokoroAssetDescriptor): Promise<ArrayBuffer | null> {
-  const response = await createKokoroChunkedCache().match(assetUrl(asset));
+export async function readCachedTtsAsset(asset: TtsAssetDescriptor): Promise<ArrayBuffer | null> {
+  const response = await createTtsChunkedCache().match(asset.url);
   if (!response) return null;
   return response.arrayBuffer();
 }
 
-export async function cacheKokoroAssets(
-  assets: KokoroAssetDescriptor[],
-  onProgress?: (asset: KokoroAssetDescriptor, progress: KokoroAssetProgress) => void,
-  onAssetDone?: (asset: KokoroAssetDescriptor, result: "hit" | "stored") => void,
+export async function cacheTtsAssets(
+  assets: TtsAssetDescriptor[],
+  onProgress?: (asset: TtsAssetDescriptor, progress: TtsAssetProgress) => void,
+  onAssetDone?: (asset: TtsAssetDescriptor, result: "hit" | "stored") => void,
 ): Promise<void> {
   for (const asset of assets) {
-    const result = await cacheKokoroAsset(asset, (progress) => onProgress?.(asset, progress));
+    const result = await cacheTtsAsset(asset, (progress) => onProgress?.(asset, progress));
     onAssetDone?.(asset, result);
   }
 }
