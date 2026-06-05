@@ -104,7 +104,7 @@ function handleAssetProgress(reportStatus: PiperTtsStatusReporter): AssetProgres
     const total = progress.totalBytes;
     const range = progress.rangeCount ? `, range ${progress.rangeIndex}/${progress.rangeCount}` : "";
     reportStatus(
-      "Priming Piper",
+      "Preparing Piper",
       `${asset.label}: ${formatBytes(progress.loadedBytes)} / ${formatBytes(total)}${range}`,
       total ? progress.loadedBytes / total : null,
     );
@@ -324,7 +324,7 @@ function encodeWavPcm16(waveform: Float32Array, sampleRate: number): ArrayBuffer
   return buffer;
 }
 
-export async function primePiperTtsAssets(
+export async function preparePiperTtsAssets(
   settings: PiperTtsSettings,
   reportStatus: PiperTtsStatusReporter,
 ): Promise<"wasm"> {
@@ -338,7 +338,7 @@ export async function primePiperTtsAssets(
     assets,
     handleAssetProgress(reportStatus),
     (asset, result) => reportStatus(
-      "Priming Piper",
+      "Preparing Piper",
       `${asset.label}: ${result === "hit" ? "cached" : "stored"}`,
       null,
     ),
@@ -352,7 +352,7 @@ export async function loadPiperTtsEngine(
   reportStatus: PiperTtsStatusReporter,
 ): Promise<"wasm"> {
   const voice = resolvePiperVoice(settings);
-  await primePiperTtsAssets(settings, reportStatus);
+  await preparePiperTtsAssets(settings, reportStatus);
   await ensurePhonemizerModule(reportStatus);
   await createSession(voice, reportStatus);
   reportStatus("Piper ready", `${PIPER_VOICE_BY_ID[voice].name} neural voice ready`, 1);
@@ -373,7 +373,7 @@ export async function synthesizePiperTtsSpeech(
     throw new Error("Choose a Piper voice for the selected language.");
   }
 
-  await primePiperTtsAssets(settings, reportStatus);
+  await preparePiperTtsAssets(settings, reportStatus);
   const { config, runtime, session } = await createSession(voice, reportStatus);
   const phonemeData = await phonemize(normalized, config, reportStatus);
   const phonemeIds = BigInt64Array.from(phonemeData.phoneme_ids.map((id) => BigInt(id)));

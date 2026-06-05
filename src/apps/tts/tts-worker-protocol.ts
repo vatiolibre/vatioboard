@@ -7,18 +7,15 @@ export interface TtsWorkerSettings {
 }
 
 export type TtsWorkerRequest =
-  | ({ id: number; type: "prime" } & TtsWorkerSettings)
   | ({ id: number; type: "load" } & TtsWorkerSettings)
   | ({ id: number; type: "speak"; text: string } & TtsWorkerSettings);
 
 export type TtsWorkerRequestPayload =
-  | ({ type: "prime" } & TtsWorkerSettings)
   | ({ type: "load" } & TtsWorkerSettings)
   | ({ type: "speak"; text: string } & TtsWorkerSettings);
 
 export type TtsWorkerResponse =
   | { id: number; type: "status"; status: string; progress?: string; ratio?: number | null }
-  | { id: number; type: "primed"; model: PiperVoiceId; provider: "wasm" }
   | { id: number; type: "loaded"; model: PiperVoiceId; provider: "wasm" }
   | {
     id: number;

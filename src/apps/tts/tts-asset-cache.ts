@@ -301,7 +301,12 @@ export async function cacheTtsAssets(
   onAssetDone?: (asset: TtsAssetDescriptor, result: "hit" | "stored") => void,
 ): Promise<void> {
   for (const asset of assets) {
-    const result = await cacheTtsAsset(asset, (progress) => onProgress?.(asset, progress));
-    onAssetDone?.(asset, result);
+    try {
+      const result = await cacheTtsAsset(asset, (progress) => onProgress?.(asset, progress));
+      onAssetDone?.(asset, result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "asset preparation failed";
+      throw new Error(`${asset.label} failed: ${message}`, { cause: error });
+    }
   }
 }

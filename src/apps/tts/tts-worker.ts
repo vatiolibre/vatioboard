@@ -1,7 +1,6 @@
 import type { TtsWorkerRequest, TtsWorkerResponse } from "./tts-worker-protocol.js";
 import {
   loadPiperTtsEngine,
-  primePiperTtsAssets,
   synthesizePiperTtsSpeech,
   type PiperTtsSettings,
 } from "./tts-piper-engine.js";
@@ -61,12 +60,6 @@ async function handleRequest(request: TtsWorkerRequest) {
     const reportStatus = (status: string, progress = "", ratio: number | null = null) => {
       postStatus(request.id, status, progress, ratio);
     };
-
-    if (request.type === "prime") {
-      const provider = await primePiperTtsAssets(piperSettings, reportStatus);
-      post({ id: request.id, type: "primed", model: request.piperVoice, provider });
-      return;
-    }
 
     if (request.type === "load") {
       const provider = await loadPiperTtsEngine(piperSettings, reportStatus);

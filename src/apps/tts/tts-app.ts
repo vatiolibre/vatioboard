@@ -80,7 +80,6 @@ interface TtsView {
   progress: HTMLElement;
   progressBar: HTMLElement;
   diagnostics: HTMLElement;
-  cacheButton: HTMLButtonElement;
   loadButton: HTMLButtonElement;
   speakButton: HTMLButtonElement;
   stopButton: HTMLButtonElement;
@@ -280,8 +279,7 @@ function buildPanel(preferences: Required<TtsPreferences>): TtsView {
       </div>
 
       <div class="tts-actions">
-        <button type="button" class="tts-action" data-tts-cache>${IconDownload}<span>Prime</span></button>
-        <button type="button" class="tts-action" data-tts-load><span>Load</span></button>
+        <button type="button" class="tts-action" data-tts-load>${IconDownload}<span>Load</span></button>
         <button type="button" class="tts-action tts-action--primary" data-tts-speak>${IconPlay}<span>Speak</span></button>
         <button type="button" class="tts-action" data-tts-stop>${IconTrash}<span>Stop</span></button>
       </div>
@@ -319,7 +317,6 @@ function buildPanel(preferences: Required<TtsPreferences>): TtsView {
     progress: panel.querySelector("[data-tts-progress]") as HTMLElement,
     progressBar: panel.querySelector("[data-tts-progress-bar]") as HTMLElement,
     diagnostics: panel.querySelector("[data-tts-diagnostics]") as HTMLElement,
-    cacheButton: panel.querySelector("[data-tts-cache]") as HTMLButtonElement,
     loadButton: panel.querySelector("[data-tts-load]") as HTMLButtonElement,
     speakButton: panel.querySelector("[data-tts-speak]") as HTMLButtonElement,
     stopButton: panel.querySelector("[data-tts-stop]") as HTMLButtonElement,
@@ -347,7 +344,6 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
     progress,
     progressBar,
     diagnostics,
-    cacheButton,
     loadButton,
     speakButton,
     stopButton,
@@ -516,7 +512,6 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
     modelReady = false;
     loadingPromise = null;
     generating = false;
-    setButtonBusy(cacheButton, false);
     setButtonBusy(loadButton, false);
     setButtonBusy(speakButton, false);
   }
@@ -537,30 +532,6 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
       piperVoice,
       speed: 1,
     };
-  }
-
-  async function primeCache() {
-    const requestedSettings = getWorkerSettings();
-    setButtonBusy(cacheButton, true);
-    setButtonBusy(loadButton, true);
-    setButtonBusy(speakButton, true);
-    setProgressRatio(null);
-    try {
-      const message = await sendWorkerRequest({ type: "prime", ...requestedSettings });
-      setProgressRatio(1);
-      const voiceName = PIPER_VOICE_BY_ID[piperVoice]?.name || piperVoice;
-      setStatus("Cache ready", `${voiceName} cached on ${message.type === "primed" ? message.provider.toUpperCase() : "WASM"}`);
-      renderDiagnostics(`${voiceName.toLowerCase()} cached`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Cache priming failed";
-      setStatus("Cache failed", message);
-      renderDiagnostics(message);
-      throw error;
-    } finally {
-      setButtonBusy(cacheButton, false);
-      setButtonBusy(loadButton, false);
-      setButtonBusy(speakButton, false);
-    }
   }
 
   async function loadEngine(): Promise<void> {
@@ -618,7 +589,6 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
     }
     persist();
     const requestedSettings = getWorkerSettings();
-    setButtonBusy(cacheButton, true);
     setButtonBusy(loadButton, true);
     setButtonBusy(speakButton, true);
     generating = true;
@@ -649,7 +619,6 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
       }
     } finally {
       generating = false;
-      setButtonBusy(cacheButton, false);
       setButtonBusy(loadButton, false);
       setButtonBusy(speakButton, false);
     }
@@ -819,9 +788,6 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
       event.preventDefault();
       resizePanelBy(0, -step);
     }
-  });
-  cacheButton.addEventListener("click", () => {
-    primeCache().catch((error) => runtime?.logger.warn("TTS cache prime failed.", error));
   });
   loadButton.addEventListener("click", () => {
     loadEngine().catch((error) => runtime?.logger.warn("TTS engine load failed.", error));
