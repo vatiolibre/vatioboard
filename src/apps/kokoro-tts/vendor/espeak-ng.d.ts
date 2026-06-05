@@ -6,6 +6,7 @@ type ESpeakNgModuleOptions = {
 type ESpeakNgModule = {
   FS: {
     readFile(path: string, options: { encoding: "utf8" }): string;
+    readFile(path: string): Uint8Array;
   };
 };
 

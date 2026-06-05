@@ -13,6 +13,29 @@ export const KOKORO_LANGS = [
 
 export type KokoroLangId = (typeof KOKORO_LANGS)[number]["id"];
 
+export const TTS_ENGINES = [
+  {
+    id: "piper",
+    label: "Neural",
+    detail: "Piper",
+    title: "Piper ONNX voice, best local quality and speed balance",
+  },
+  {
+    id: "espeak",
+    label: "Tiny",
+    detail: "Fallback",
+    title: "eSpeak NG WASM, smallest emergency local voice",
+  },
+  {
+    id: "kokoro",
+    label: "Lab",
+    detail: "Kokoro",
+    title: "Kokoro ONNX neural speech, slower experimental engine",
+  },
+] as const;
+
+export type TtsEngineId = (typeof TTS_ENGINES)[number]["id"];
+
 export const KOKORO_MODELS = [
   {
     id: "model_q8f16",
@@ -50,6 +73,27 @@ export const KOKORO_ACCELERATIONS = [
 
 export type KokoroAcceleration = (typeof KOKORO_ACCELERATIONS)[number]["id"];
 export type KokoroExecutionProvider = Exclude<KokoroAcceleration, "auto">;
+
+export const PIPER_VOICES = [
+  {
+    id: "en_US-lessac-medium",
+    name: "Lessac",
+    label: "Lessac",
+    detail: "EN medium",
+    lang: "en-us",
+    quality: "medium",
+  },
+  {
+    id: "es_MX-claude-high",
+    name: "Claude",
+    label: "Claude",
+    detail: "ES high",
+    lang: "es-419",
+    quality: "high",
+  },
+] as const;
+
+export type PiperVoiceId = (typeof PIPER_VOICES)[number]["id"];
 
 export const KOKORO_VOICES = [
   { id: "af_heart", name: "Heart", lang: "en-us" },
@@ -124,13 +168,27 @@ export const KOKORO_VOICE_BY_ID = Object.fromEntries(KOKORO_VOICES.map((voice) =
   (typeof KOKORO_VOICES)[number]
 >;
 
+export const PIPER_VOICE_BY_ID = Object.fromEntries(PIPER_VOICES.map((voice) => [voice.id, voice])) as Record<
+  PiperVoiceId,
+  (typeof PIPER_VOICES)[number]
+>;
+
 export const KOKORO_VOICES_BY_LANG = KOKORO_LANGS.reduce((map, lang) => {
   map[lang.id] = KOKORO_VOICES.filter((voice) => voice.lang === lang.id);
   return map;
 }, {} as Record<KokoroLangId, typeof KOKORO_VOICES[number][]>);
 
+export const PIPER_VOICES_BY_LANG = KOKORO_LANGS.reduce((map, lang) => {
+  map[lang.id] = PIPER_VOICES.filter((voice) => voice.lang === lang.id);
+  return map;
+}, {} as Record<KokoroLangId, typeof PIPER_VOICES[number][]>);
+
 export function isKokoroLangId(value: unknown): value is KokoroLangId {
   return typeof value === "string" && value in KOKORO_LANG_BY_ID;
+}
+
+export function isTtsEngineId(value: unknown): value is TtsEngineId {
+  return typeof value === "string" && TTS_ENGINES.some((item) => item.id === value);
 }
 
 export function isKokoroDirectModelId(value: unknown): value is KokoroDirectModelId {
@@ -145,10 +203,22 @@ export function isKokoroVoiceId(value: unknown): value is KokoroVoiceId {
   return typeof value === "string" && value in KOKORO_VOICE_BY_ID;
 }
 
+export function isPiperVoiceId(value: unknown): value is PiperVoiceId {
+  return typeof value === "string" && value in PIPER_VOICE_BY_ID;
+}
+
 export function getDefaultVoiceForLang(lang: KokoroLangId): KokoroVoiceId {
   return (KOKORO_VOICES_BY_LANG[lang]?.[0]?.id || "af_heart") as KokoroVoiceId;
 }
 
+export function getDefaultPiperVoiceForLang(lang: KokoroLangId): PiperVoiceId {
+  return (PIPER_VOICES_BY_LANG[lang]?.[0]?.id || "en_US-lessac-medium") as PiperVoiceId;
+}
+
 export function getLangForVoice(voice: string): KokoroLangId {
   return isKokoroVoiceId(voice) ? KOKORO_VOICE_BY_ID[voice].lang : "en-us";
+}
+
+export function getLangForPiperVoice(voice: string): KokoroLangId {
+  return isPiperVoiceId(voice) ? PIPER_VOICE_BY_ID[voice].lang : "en-us";
 }

@@ -1,4 +1,4 @@
-import { IconKokoroTts } from "../../icons.js";
+import { IconTts } from "../../icons.js";
 import { defineAppManifest } from "../../app-platform/manifest.js";
 
 export const kokoroTtsWindowCapabilities = {
@@ -16,12 +16,12 @@ export const kokoroTtsWindowCapabilities = {
 
 export const kokoroTtsAppManifest = defineAppManifest({
   id: "vatio.kokoroTts",
-  title: "Kokoro TTS Lab",
-  shortTitle: "Kokoro",
-  description: "Experimental local neural TTS tester with WebGPU/WASM acceleration and chunked model caching for constrained browsers.",
+  title: "TTS",
+  shortTitle: "TTS",
+  description: "Local text-to-speech tester with Piper neural voices, tiny eSpeak fallback, and a Kokoro lab engine.",
   kind: "tool-app",
   version: "0.1.0",
-  icon: IconKokoroTts,
+  icon: IconTts,
   theme: {
     color: "#16a34a",
     color2: "#bbf7d0",
@@ -41,20 +41,22 @@ export const kokoroTtsAppManifest = defineAppManifest({
     restoreOnBoot: false,
     lazy: true,
   },
-  tags: ["tool", "tts", "voice", "kokoro", "experimental"],
+  tags: ["tool", "tts", "voice", "piper", "kokoro", "espeak", "experimental"],
   localFirst: true,
   teslaOptimized: true,
   offlineCapable: false,
   status: "experimental",
   metadata: {
     attribution: {
-      name: "Kokoro TTS / kokoro-web-inspired direct ONNX runtime / eSpeak NG",
+      name: "TTS / Piper neural engine / eSpeak NG tiny engine / Kokoro lab engine",
       license: "Apache-2.0 / MIT / GPL-3.0-or-later",
-      source: "https://github.com/eduardolat/kokoro-web",
-      model: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX",
+      source: "https://github.com/rhasspy/piper",
+      model: "https://huggingface.co/rhasspy/piper-voices",
+      kokoroModel: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX",
       runtime: "https://github.com/microsoft/onnxruntime",
-      phonemizer: "https://github.com/ianmarmour/espeak-ng.js",
+      espeak: "https://github.com/ianmarmour/espeak-ng.js",
+      piperWeb: "https://github.com/Poket-Jony/piper-tts-web",
     },
-    teslaNote: "Model, voice, eSpeak NG, and ONNX Runtime Web WASM files are cached through VatioBoard's 5 MB chunked IndexedDB store, but ONNX still loads the selected binary/model into memory.",
+    teslaNote: "Piper and Kokoro model/runtime assets are cached through VatioBoard's 5 MB chunked IndexedDB store, but ONNX still loads the selected binary/model into memory. eSpeak remains available as a tiny fallback.",
   },
 });

@@ -53,7 +53,8 @@
     "kdbush": "^4.0.2",
     "maplibre-gl": "^5.20.1",
     "mathjs": "^15.1.0",
-    "onnxruntime-web": "1.22.0-dev.20250409-89f8206ba4"
+    "onnxruntime-web": "1.22.0-dev.20250409-89f8206ba4",
+    "piper-tts-web": "1.1.2"
   },
   "engines": {
     "node": ">=24"

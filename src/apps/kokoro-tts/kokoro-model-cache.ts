@@ -1,6 +1,6 @@
 import { createChunkedBlobStore, type ChunkedBlobRecord, type ChunkedBlobStore } from "../../shared/chunked-blob-store.js";
 import { createIndexedJsonKeyValueStore } from "../../shared/indexed-storage.js";
-import type { KokoroDirectModelId, KokoroExecutionProvider } from "./kokoro-direct-resources.js";
+import type { KokoroDirectModelId, KokoroExecutionProvider, PiperVoiceId } from "./kokoro-direct-resources.js";
 
 export const KOKORO_MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 export const KOKORO_REVISION = "main";
@@ -22,6 +22,15 @@ export const KOKORO_ESPEAK_VERSION = "1.0.2";
 export const KOKORO_ESPEAK_WASM_FILE = "espeak-ng.wasm";
 export const KOKORO_ESPEAK_WASM_URL =
   `https://cdn.jsdelivr.net/npm/espeak-ng@${KOKORO_ESPEAK_VERSION}/dist/${KOKORO_ESPEAK_WASM_FILE}`;
+export const PIPER_TTS_WEB_VERSION = "1.1.2";
+export const PIPER_VOICES_MODEL_ID = "rhasspy/piper-voices";
+export const PIPER_VOICES_REVISION = "b710b0ba0740da88dc36e1ab8fa6b310d43a3a48";
+export const PIPER_PHONEMIZER_WASM_FILE = "piper_phonemize.wasm";
+export const PIPER_PHONEMIZER_DATA_FILE = "piper_phonemize.data";
+export const PIPER_PHONEMIZER_WASM_URL =
+  `https://unpkg.com/piper-tts-web@${PIPER_TTS_WEB_VERSION}/dist/piper/${PIPER_PHONEMIZER_WASM_FILE}`;
+export const PIPER_PHONEMIZER_DATA_URL =
+  `https://unpkg.com/piper-tts-web@${PIPER_TTS_WEB_VERSION}/dist/piper/${PIPER_PHONEMIZER_DATA_FILE}`;
 
 const KOKORO_DB_NAME = "vatioboard_kokoro_tts_assets";
 const KOKORO_STORE_NAME = "kokoro_assets";
@@ -81,12 +90,21 @@ const MODEL_FILE_BY_DIRECT_MODEL: Record<KokoroDirectModelId, string> = {
   model_q4f16: "onnx/model_q4f16.onnx",
 };
 
+const PIPER_VOICE_FILE_BY_ID: Record<PiperVoiceId, string> = {
+  "en_US-lessac-medium": "en/en_US/lessac/medium/en_US-lessac-medium",
+  "es_MX-claude-high": "es/es_MX/claude/high/es_MX-claude-high",
+};
+
 export function kokoroModelUrl(file: string): string {
   return `https://huggingface.co/${KOKORO_MODEL_ID}/resolve/${KOKORO_REVISION}/${file}`;
 }
 
 export function kokoroDirectModelUrl(file: string): string {
   return `https://huggingface.co/${KOKORO_MODEL_ID}/resolve/${KOKORO_DIRECT_REVISION}/${file}`;
+}
+
+export function piperVoiceUrl(file: string): string {
+  return `https://huggingface.co/${PIPER_VOICES_MODEL_ID}/resolve/${PIPER_VOICES_REVISION}/${file}`;
 }
 
 export function getKokoroRuntimeAsset(): KokoroAssetDescriptor {
@@ -146,6 +164,50 @@ export function getKokoroPhonemizerAsset(): KokoroAssetDescriptor {
     kind: "phonemizer",
     url: KOKORO_ESPEAK_WASM_URL,
   };
+}
+
+export function getPiperPhonemizerAssets(): KokoroAssetDescriptor[] {
+  return [
+    {
+      file: PIPER_PHONEMIZER_WASM_FILE,
+      label: "Piper phonemizer WASM",
+      kind: "phonemizer",
+      url: PIPER_PHONEMIZER_WASM_URL,
+    },
+    {
+      file: PIPER_PHONEMIZER_DATA_FILE,
+      label: "Piper phonemizer data",
+      kind: "phonemizer",
+      url: PIPER_PHONEMIZER_DATA_URL,
+    },
+  ];
+}
+
+export function getPiperVoiceConfigAsset(voice: PiperVoiceId): KokoroAssetDescriptor {
+  const file = `${PIPER_VOICE_FILE_BY_ID[voice]}.onnx.json`;
+  return {
+    file,
+    label: `${voice} config`,
+    kind: "config",
+    url: piperVoiceUrl(file),
+  };
+}
+
+export function getPiperVoiceModelAsset(voice: PiperVoiceId): KokoroAssetDescriptor {
+  const file = `${PIPER_VOICE_FILE_BY_ID[voice]}.onnx`;
+  return {
+    file,
+    label: `${voice} ONNX`,
+    kind: "model",
+    url: piperVoiceUrl(file),
+  };
+}
+
+export function getPiperVoiceAssets(voice: PiperVoiceId): KokoroAssetDescriptor[] {
+  return [
+    getPiperVoiceConfigAsset(voice),
+    getPiperVoiceModelAsset(voice),
+  ];
 }
 
 export function getKokoroPrimeAssets(dtype: KokoroDtype): KokoroAssetDescriptor[] {

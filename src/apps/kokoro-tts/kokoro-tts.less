@@ -192,6 +192,10 @@
   gap: 6px;
 }
 
+.kokoro-tts-panel:not([data-tts-engine="kokoro"]) [data-tts-premium] {
+  display: none;
+}
+
 .kokoro-tts-segments {
   display: flex;
   flex-wrap: wrap;
@@ -276,6 +280,11 @@
 
 .kokoro-tts-action:disabled,
 .kokoro-tts-segment:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.kokoro-tts-action[aria-busy="true"] {
   cursor: wait;
   opacity: 0.58;
 }

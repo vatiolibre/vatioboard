@@ -4,12 +4,19 @@ import type {
   KokoroExecutionProvider,
   KokoroLangId,
   KokoroVoiceId,
+  PiperVoiceId,
+  TtsEngineId,
 } from "./kokoro-direct-resources.js";
+
+export type TtsWorkerModelId = KokoroDirectModelId | PiperVoiceId | "espeak-ng";
+export type TtsWorkerProvider = KokoroExecutionProvider | "wasm";
 
 export interface KokoroWorkerSettings {
   acceleration: KokoroAcceleration;
+  engine: TtsEngineId;
   lang: KokoroLangId;
   model: KokoroDirectModelId;
+  piperVoice: PiperVoiceId;
   voice: KokoroVoiceId;
   voiceFormula?: string;
   speed?: number;
@@ -27,13 +34,14 @@ export type KokoroWorkerRequestPayload =
 
 export type KokoroWorkerResponse =
   | { id: number; type: "status"; status: string; progress?: string; ratio?: number | null }
-  | { id: number; type: "primed"; model: KokoroDirectModelId; provider: KokoroExecutionProvider }
-  | { id: number; type: "loaded"; model: KokoroDirectModelId; provider: KokoroExecutionProvider }
+  | { id: number; type: "primed"; engine: TtsEngineId; model: TtsWorkerModelId; provider: TtsWorkerProvider }
+  | { id: number; type: "loaded"; engine: TtsEngineId; model: TtsWorkerModelId; provider: TtsWorkerProvider }
   | {
     id: number;
     type: "speech";
-    model: KokoroDirectModelId;
-    provider: KokoroExecutionProvider;
+    engine: TtsEngineId;
+    model: TtsWorkerModelId;
+    provider: TtsWorkerProvider;
     blob: Blob;
     size: number;
     durationMs: number;
