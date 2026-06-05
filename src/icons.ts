@@ -269,7 +269,7 @@ export const IconCodeRain = `
   </svg>
 `;
 
-export const IconKokoroTts = `
+export const IconTts = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <rect x="3.25" y="3.25" width="17.5" height="17.5" rx="4" fill="#052e16"/>
     <rect x="3.25" y="3.25" width="17.5" height="17.5" rx="4" stroke="#86efac" stroke-width="1.2" opacity="0.72"/>
@@ -281,8 +281,6 @@ export const IconKokoroTts = `
     <circle cx="16.85" cy="14.75" r="1.25" fill="#4ade80"/>
   </svg>
 `;
-
-export const IconTts = IconKokoroTts;
 
 export const IconMedia = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">

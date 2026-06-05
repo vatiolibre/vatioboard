@@ -1,4 +1,4 @@
-import "./kokoro-tts.less";
+import "./tts.less";
 
 import { clampElementToViewport, makePanelDraggable } from "../../calculator/widget/drag.js";
 import { IconClose, IconDownload, IconMinimize, IconPlay, IconTrash, IconVolume } from "../../icons.js";
@@ -18,11 +18,11 @@ import {
   isTtsLangId,
 } from "./tts-resources.js";
 import type { TtsWorkerRequest, TtsWorkerRequestPayload, TtsWorkerResponse } from "./tts-worker-protocol.js";
-import { kokoroTtsWindowCapabilities } from "./manifest.js";
+import { ttsWindowCapabilities } from "./manifest.js";
 
-export const KOKORO_TTS_APP_ID = "vatio.kokoroTts";
-export const KOKORO_TTS_WINDOW_ID = "kokoro-tts";
-export const KOKORO_TTS_SETTINGS_KEY = "preferences";
+export const TTS_APP_ID = "vatio.tts";
+export const TTS_WINDOW_ID = "tts";
+export const TTS_SETTINGS_KEY = "preferences";
 
 const DRAG_THRESHOLD_PX = 8;
 const RESIZE_MIN_WIDTH = 320;
@@ -34,11 +34,20 @@ const DEFAULT_BOUNDS = {
   width: 456,
   height: 510,
 };
-const DEFAULT_TEXT = "Hola. The cabin clock says 10:15 and the route ahead looks clear.";
 const DEFAULT_LANG: TtsLangId = "en-us";
-const DEFAULT_PIPER_VOICE: PiperVoiceId = "en_US-lessac-medium";
+const DEFAULT_PIPER_VOICE: PiperVoiceId = getDefaultPiperVoiceForLang(DEFAULT_LANG);
+const DEFAULT_TEXT_BY_LANG: Record<TtsLangId, string> = {
+  "en-us": "The cabin clock says 10:15 and the route ahead looks clear.",
+  "en-gb": "The cabin clock says 10:15 and the route ahead looks clear.",
+  "es-419": "Hola. El reloj del auto marca las 10:15 y la ruta está despejada.",
+  "es-es": "Hola. El reloj del coche marca las 10:15 y la ruta está despejada.",
+  "pt-br": "Olá. O relógio do carro marca 10:15 e a rota está livre.",
+  it: "Ciao. L'orologio dell'auto segna le 10:15 e il percorso è libero.",
+  fr: "Bonjour. L'horloge de la voiture indique 10 h 15 et la route est dégagée.",
+  de: "Hallo. Die Uhr im Auto zeigt 10:15, und die Route ist frei.",
+};
 
-export interface KokoroTtsAppOptions {
+export interface TtsAppOptions {
   mount?: HTMLElement;
   runtime?: VatioAppRuntime | null;
   shellAppRuntimeManager?: ShellAppRuntimeManager | null;
@@ -46,7 +55,7 @@ export interface KokoroTtsAppOptions {
   restoreVisibility?: boolean;
 }
 
-export interface KokoroTtsAppApi {
+export interface TtsAppApi {
   open(options?: ShellLifecycleOptions): void;
   close(options?: ShellLifecycleOptions): void;
   minimize(options?: ShellLifecycleOptions): void;
@@ -54,13 +63,13 @@ export interface KokoroTtsAppApi {
   runtime: VatioAppRuntime | null;
 }
 
-interface KokoroPreferences {
+interface TtsPreferences {
   text?: string;
   piperVoice?: PiperVoiceId;
   lang?: TtsLangId;
 }
 
-interface KokoroView {
+interface TtsView {
   panel: HTMLElement;
   header: HTMLElement;
   body: HTMLElement;
@@ -79,36 +88,69 @@ interface KokoroView {
   voiceSegments: HTMLElement;
 }
 
-export function resolveKokoroTtsRuntime({
+export function resolveTtsRuntime({
   runtime = null,
   shellAppRuntimeManager = null,
-}: Pick<KokoroTtsAppOptions, "runtime" | "shellAppRuntimeManager"> = {}): VatioAppRuntime | null {
-  if (runtime?.appId === KOKORO_TTS_APP_ID) return runtime;
-  return shellAppRuntimeManager?.getRuntime(KOKORO_TTS_APP_ID)
-    || shellAppRuntimeManager?.ensureRuntime(KOKORO_TTS_APP_ID)
+}: Pick<TtsAppOptions, "runtime" | "shellAppRuntimeManager"> = {}): VatioAppRuntime | null {
+  if (runtime?.appId === TTS_APP_ID) return runtime;
+  return shellAppRuntimeManager?.getRuntime(TTS_APP_ID)
+    || shellAppRuntimeManager?.ensureRuntime(TTS_APP_ID)
     || null;
 }
 
-function loadPreferences(runtime: VatioAppRuntime | null): Required<KokoroPreferences> {
-  const stored = runtime?.services.settings?.getJson<KokoroPreferences | null>(KOKORO_TTS_SETTINGS_KEY, null) || null;
+function getBrowserLanguageCandidates(): string[] {
+  if (typeof navigator === "undefined") return [];
+  const languages = Array.isArray(navigator.languages) ? navigator.languages : [];
+  return [...languages, navigator.language].filter((language): language is string => Boolean(language));
+}
+
+function resolveBrowserLanguageTag(language: string): TtsLangId | null {
+  const normalized = language.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized.startsWith("es")) return "es-419";
+  if (normalized.startsWith("en")) return "en-us";
+  if (normalized.startsWith("pt")) return "pt-br";
+  if (normalized.startsWith("it")) return "it";
+  if (normalized.startsWith("fr")) return "fr";
+  if (normalized.startsWith("de")) return "de";
+  return null;
+}
+
+function detectInitialLang(): TtsLangId {
+  for (const language of getBrowserLanguageCandidates()) {
+    const lang = resolveBrowserLanguageTag(language);
+    if (lang) return lang;
+  }
+  return DEFAULT_LANG;
+}
+
+function getDefaultTextForLang(lang: TtsLangId): string {
+  return DEFAULT_TEXT_BY_LANG[lang] || DEFAULT_TEXT_BY_LANG[DEFAULT_LANG];
+}
+
+function loadPreferences(runtime: VatioAppRuntime | null): Required<TtsPreferences> {
+  const stored = runtime?.services.settings?.getJson<TtsPreferences | null>(TTS_SETTINGS_KEY, null) || null;
+  const initialLang = stored ? DEFAULT_LANG : detectInitialLang();
   const storedLang = isTtsLangId(stored?.lang)
     ? stored.lang
     : isPiperVoiceId(stored?.piperVoice)
       ? getLangForPiperVoice(stored.piperVoice)
-      : DEFAULT_LANG;
-  const safeLang = PIPER_VOICES_BY_LANG[storedLang]?.length ? storedLang : DEFAULT_LANG;
+      : initialLang;
+  const safeLang = PIPER_VOICES_BY_LANG[storedLang]?.length ? storedLang : initialLang;
   const storedPiperVoice = isPiperVoiceId(stored?.piperVoice) && PIPER_VOICE_BY_ID[stored.piperVoice].lang === safeLang
     ? stored.piperVoice
     : getDefaultPiperVoiceForLang(safeLang);
-  return {
-    text: typeof stored?.text === "string" && stored.text.trim() ? stored.text : DEFAULT_TEXT,
+  const preferences = {
+    text: typeof stored?.text === "string" && stored.text.trim() ? stored.text : getDefaultTextForLang(safeLang),
     piperVoice: storedPiperVoice || DEFAULT_PIPER_VOICE,
     lang: safeLang,
   };
+  if (!stored) savePreferences(runtime, preferences);
+  return preferences;
 }
 
-function savePreferences(runtime: VatioAppRuntime | null, preferences: Required<KokoroPreferences>) {
-  runtime?.services.settings?.setJson(KOKORO_TTS_SETTINGS_KEY, preferences);
+function savePreferences(runtime: VatioAppRuntime | null, preferences: Required<TtsPreferences>) {
+  runtime?.services.settings?.setJson(TTS_SETTINGS_KEY, preferences);
 }
 
 function setButtonBusy(button: HTMLButtonElement, busy: boolean) {
@@ -163,7 +205,7 @@ function clampResizeBounds(width: number, height: number, bounds: ShellBounds): 
 }
 
 function applyInitialBounds(panel: HTMLElement, shellManager: ShellRuntime) {
-  const storedBounds = shellManager.getWindow(KOKORO_TTS_WINDOW_ID)?.bounds;
+  const storedBounds = shellManager.getWindow(TTS_WINDOW_ID)?.bounds;
   const bounds = {
     ...DEFAULT_BOUNDS,
     ...(storedBounds || {}),
@@ -184,13 +226,13 @@ function buildSegmentGroup(
   selected: string,
 ): string {
   return `
-    <div class="kokoro-tts-segments" role="group" aria-label="${name}">
+    <div class="tts-segments" role="group" aria-label="${name}">
       ${values.map((value) => `
         <button
           type="button"
-          class="kokoro-tts-segment"
-          data-kokoro-field="${name}"
-          data-kokoro-value="${value.id}"
+          class="tts-segment"
+          data-tts-field="${name}"
+          data-tts-value="${value.id}"
           ${value.title ? `title="${value.title}"` : ""}
           aria-pressed="${value.id === selected ? "true" : "false"}"
         ><span>${value.label}</span>${value.detail ? `<small>${value.detail}</small>` : ""}</button>
@@ -199,32 +241,32 @@ function buildSegmentGroup(
   `;
 }
 
-function buildPanel(preferences: Required<KokoroPreferences>): KokoroView {
+function buildPanel(preferences: Required<TtsPreferences>): TtsView {
   const panel = document.createElement("section");
-  panel.className = "kokoro-tts-panel";
+  panel.className = "tts-panel";
   panel.dataset.ttsEngine = "piper";
   panel.setAttribute("aria-label", "TTS");
   panel.innerHTML = `
-    <header class="kokoro-tts-header">
-      <div class="kokoro-tts-title">
-        <span class="kokoro-tts-mark" aria-hidden="true">${IconVolume}</span>
+    <header class="tts-header">
+      <div class="tts-title">
+        <span class="tts-mark" aria-hidden="true">${IconVolume}</span>
         <span>TTS</span>
       </div>
-      <div class="kokoro-tts-window-actions">
-        <button type="button" class="kokoro-tts-window-button" data-kokoro-minimize aria-label="Minimize">${IconMinimize}</button>
-        <button type="button" class="kokoro-tts-window-button" data-kokoro-close aria-label="Close">${IconClose}</button>
+      <div class="tts-window-actions">
+        <button type="button" class="tts-window-button" data-tts-minimize aria-label="Minimize">${IconMinimize}</button>
+        <button type="button" class="tts-window-button" data-tts-close aria-label="Close">${IconClose}</button>
       </div>
     </header>
 
-    <div class="kokoro-tts-body">
-      <label class="kokoro-tts-field">
+    <div class="tts-body">
+      <label class="tts-field">
         <span>Text</span>
-        <textarea data-kokoro-text rows="3" spellcheck="true"></textarea>
+        <textarea data-tts-text rows="3" spellcheck="true"></textarea>
       </label>
 
-      <div class="kokoro-tts-grid">
+      <div class="tts-grid">
         <div>
-          <span class="kokoro-tts-label">Language</span>
+          <span class="tts-label">Language</span>
           ${buildSegmentGroup("lang", TTS_LANGS.map((lang) => ({
             id: lang.id,
             label: lang.label,
@@ -232,67 +274,67 @@ function buildPanel(preferences: Required<KokoroPreferences>): KokoroView {
           })), preferences.lang)}
         </div>
         <div>
-          <span class="kokoro-tts-label">Voice</span>
-          <div class="kokoro-tts-segments kokoro-tts-segments--voices" data-kokoro-voice-segments role="group" aria-label="voice"></div>
+          <span class="tts-label">Voice</span>
+          <div class="tts-segments tts-segments--voices" data-tts-voice-segments role="group" aria-label="voice"></div>
         </div>
       </div>
 
-      <div class="kokoro-tts-actions">
-        <button type="button" class="kokoro-tts-action" data-kokoro-cache>${IconDownload}<span>Prime</span></button>
-        <button type="button" class="kokoro-tts-action" data-kokoro-load><span>Load</span></button>
-        <button type="button" class="kokoro-tts-action kokoro-tts-action--primary" data-kokoro-speak>${IconPlay}<span>Speak</span></button>
-        <button type="button" class="kokoro-tts-action" data-kokoro-stop>${IconTrash}<span>Stop</span></button>
+      <div class="tts-actions">
+        <button type="button" class="tts-action" data-tts-cache>${IconDownload}<span>Prime</span></button>
+        <button type="button" class="tts-action" data-tts-load><span>Load</span></button>
+        <button type="button" class="tts-action tts-action--primary" data-tts-speak>${IconPlay}<span>Speak</span></button>
+        <button type="button" class="tts-action" data-tts-stop>${IconTrash}<span>Stop</span></button>
       </div>
 
-      <div class="kokoro-tts-status" aria-live="polite">
+      <div class="tts-status" aria-live="polite">
         <div>
-          <strong data-kokoro-status>Ready</strong>
-          <span data-kokoro-progress>Chunk cache idle</span>
+          <strong data-tts-status>Ready</strong>
+          <span data-tts-progress>Chunk cache idle</span>
         </div>
-        <div class="kokoro-tts-progress" aria-hidden="true">
-          <span data-kokoro-progress-bar></span>
+        <div class="tts-progress" aria-hidden="true">
+          <span data-tts-progress-bar></span>
         </div>
       </div>
 
-      <dl class="kokoro-tts-diagnostics" data-kokoro-diagnostics>
+      <dl class="tts-diagnostics" data-tts-diagnostics>
         <div><dt>Engine</dt><dd>Piper ONNX</dd></div>
         <div><dt>Cache</dt><dd>5 MB chunks</dd></div>
         <div><dt>Voices</dt><dd>On demand</dd></div>
       </dl>
     </div>
-    <button type="button" class="kokoro-tts-resize" data-kokoro-resize aria-label="Resize TTS" title="Resize TTS"></button>
+    <button type="button" class="tts-resize" data-tts-resize aria-label="Resize TTS" title="Resize TTS"></button>
   `;
 
-  const textInput = panel.querySelector("[data-kokoro-text]") as HTMLTextAreaElement;
+  const textInput = panel.querySelector("[data-tts-text]") as HTMLTextAreaElement;
   textInput.value = preferences.text;
 
   return {
     panel,
-    header: panel.querySelector(".kokoro-tts-header") as HTMLElement,
-    body: panel.querySelector(".kokoro-tts-body") as HTMLElement,
-    minimizeButton: panel.querySelector("[data-kokoro-minimize]") as HTMLButtonElement,
-    closeButton: panel.querySelector("[data-kokoro-close]") as HTMLButtonElement,
+    header: panel.querySelector(".tts-header") as HTMLElement,
+    body: panel.querySelector(".tts-body") as HTMLElement,
+    minimizeButton: panel.querySelector("[data-tts-minimize]") as HTMLButtonElement,
+    closeButton: panel.querySelector("[data-tts-close]") as HTMLButtonElement,
     textInput,
-    status: panel.querySelector("[data-kokoro-status]") as HTMLElement,
-    progress: panel.querySelector("[data-kokoro-progress]") as HTMLElement,
-    progressBar: panel.querySelector("[data-kokoro-progress-bar]") as HTMLElement,
-    diagnostics: panel.querySelector("[data-kokoro-diagnostics]") as HTMLElement,
-    cacheButton: panel.querySelector("[data-kokoro-cache]") as HTMLButtonElement,
-    loadButton: panel.querySelector("[data-kokoro-load]") as HTMLButtonElement,
-    speakButton: panel.querySelector("[data-kokoro-speak]") as HTMLButtonElement,
-    stopButton: panel.querySelector("[data-kokoro-stop]") as HTMLButtonElement,
-    resizeHandle: panel.querySelector("[data-kokoro-resize]") as HTMLButtonElement,
-    voiceSegments: panel.querySelector("[data-kokoro-voice-segments]") as HTMLElement,
+    status: panel.querySelector("[data-tts-status]") as HTMLElement,
+    progress: panel.querySelector("[data-tts-progress]") as HTMLElement,
+    progressBar: panel.querySelector("[data-tts-progress-bar]") as HTMLElement,
+    diagnostics: panel.querySelector("[data-tts-diagnostics]") as HTMLElement,
+    cacheButton: panel.querySelector("[data-tts-cache]") as HTMLButtonElement,
+    loadButton: panel.querySelector("[data-tts-load]") as HTMLButtonElement,
+    speakButton: panel.querySelector("[data-tts-speak]") as HTMLButtonElement,
+    stopButton: panel.querySelector("[data-tts-stop]") as HTMLButtonElement,
+    resizeHandle: panel.querySelector("[data-tts-resize]") as HTMLButtonElement,
+    voiceSegments: panel.querySelector("[data-tts-voice-segments]") as HTMLElement,
   };
 }
 
-export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTtsAppApi {
+export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
   const {
     mount = document.body,
     shellManager = getDefaultShellWindowManager(),
     restoreVisibility = false,
   } = options;
-  const runtime = resolveKokoroTtsRuntime(options);
+  const runtime = resolveTtsRuntime(options);
   const preferences = loadPreferences(runtime);
   const view = buildPanel(preferences);
   const {
@@ -373,9 +415,9 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
     voiceSegments.replaceChildren(...voices.map((item) => {
       const button = document.createElement("button");
       button.type = "button";
-      button.className = "kokoro-tts-segment";
-      button.dataset.kokoroField = "voice";
-      button.dataset.kokoroValue = item.id;
+      button.className = "tts-segment";
+      button.dataset.ttsField = "voice";
+      button.dataset.ttsValue = item.id;
       button.setAttribute("aria-pressed", item.id === piperVoice ? "true" : "false");
       button.title = item.id;
       const label = document.createElement("span");
@@ -393,9 +435,9 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
   function renderSegments() {
     normalizeSelectionForEngine();
     renderVoiceSegments();
-    for (const button of Array.from(panel.querySelectorAll("[data-kokoro-field]")) as HTMLButtonElement[]) {
-      const field = button.getAttribute("data-kokoro-field");
-      const value = button.getAttribute("data-kokoro-value");
+    for (const button of Array.from(panel.querySelectorAll("[data-tts-field]")) as HTMLButtonElement[]) {
+      const field = button.getAttribute("data-tts-field");
+      const value = button.getAttribute("data-tts-value");
       const languageAvailable = field !== "lang"
         || (isTtsLangId(value) && Boolean(PIPER_VOICES_BY_LANG[value]?.length));
       const active = (field === "voice" && value === piperVoice)
@@ -444,7 +486,7 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
 
   function ensureWorker() {
     if (worker) return worker;
-    worker = new Worker(new URL("./kokoro-tts-worker.ts", import.meta.url), { type: "module" });
+    worker = new Worker(new URL("./tts-worker.ts", import.meta.url), { type: "module" });
     worker.addEventListener("message", (event: MessageEvent<TtsWorkerResponse>) => {
       handleWorkerMessage(event.data);
     });
@@ -614,7 +656,7 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
   }
 
   function updateShellBounds(bounds: ShellBounds, shellOptions: ShellLifecycleOptions = {}) {
-    shellManager.updateWindowBounds(KOKORO_TTS_WINDOW_ID, bounds, shellOptions);
+    shellManager.updateWindowBounds(TTS_WINDOW_ID, bounds, shellOptions);
   }
 
   function applyPanelResize(width: number, height: number, shellOptions: ShellLifecycleOptions = {}) {
@@ -679,17 +721,17 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
 
   function open(options: ShellLifecycleOptions = {}) {
     showPanel();
-    shellManager.openWindow(KOKORO_TTS_WINDOW_ID, { ...options, invokeLifecycle: false });
+    shellManager.openWindow(TTS_WINDOW_ID, { ...options, invokeLifecycle: false });
   }
 
   function close(options: ShellLifecycleOptions = {}) {
     hidePanel();
-    shellManager.closeWindow(KOKORO_TTS_WINDOW_ID, { ...options, invokeLifecycle: false });
+    shellManager.closeWindow(TTS_WINDOW_ID, { ...options, invokeLifecycle: false });
   }
 
   function minimize(options: ShellLifecycleOptions = {}) {
     hidePanel();
-    shellManager.minimizeWindow(KOKORO_TTS_WINDOW_ID, { ...options, invokeLifecycle: false });
+    shellManager.minimizeWindow(TTS_WINDOW_ID, { ...options, invokeLifecycle: false });
   }
 
   applyInitialBounds(panel, shellManager);
@@ -699,11 +741,11 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
   panel.hidden = !restoreVisibility;
 
   const cleanupLayer = registerFloatingPanel(panel, {
-    id: KOKORO_TTS_WINDOW_ID,
+    id: TTS_WINDOW_ID,
     kind: "tool",
     title: "TTS",
     shellManager,
-    capabilities: kokoroTtsWindowCapabilities,
+    capabilities: ttsWindowCapabilities,
     lifecycle: {
       open: showPanel,
       close: hidePanel,
@@ -720,7 +762,7 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
     savePos: () => {},
     loadPos: () => null,
     onDragEnd: ({ bounds }) => updateShellBounds(bounds, { flush: true }),
-    shellWindowId: KOKORO_TTS_WINDOW_ID,
+    shellWindowId: TTS_WINDOW_ID,
     shellManager,
     enableSnapPreview: false,
   });
@@ -733,8 +775,8 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
     if (event.pointerType === "mouse" && event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
-    if (shellManager.getWindow(KOKORO_TTS_WINDOW_ID)?.snap) {
-      shellManager.unsnapWindow(KOKORO_TTS_WINDOW_ID, { preserveSnap: false });
+    if (shellManager.getWindow(TTS_WINDOW_ID)?.snap) {
+      shellManager.unsnapWindow(TTS_WINDOW_ID, { preserveSnap: false });
     }
     const bounds = getPanelBounds(panel);
     resizing = true;
@@ -801,10 +843,10 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
   textInput.addEventListener("blur", persist);
 
   panel.addEventListener("click", (event) => {
-    const target = event.target instanceof Element ? event.target.closest("[data-kokoro-field]") : null;
+    const target = event.target instanceof Element ? event.target.closest("[data-tts-field]") : null;
     if (!(target instanceof HTMLButtonElement)) return;
-    const field = target.getAttribute("data-kokoro-field");
-    const value = target.getAttribute("data-kokoro-value");
+    const field = target.getAttribute("data-tts-field");
+    const value = target.getAttribute("data-tts-value");
     if (field === "voice" && isPiperVoiceId(value)) {
       piperVoice = value;
       lang = PIPER_VOICE_BY_ID[value].lang;
@@ -845,4 +887,4 @@ export function createKokoroTtsApp(options: KokoroTtsAppOptions = {}): KokoroTts
   };
 }
 
-export const createShellWindowApp = createKokoroTtsApp;
+export const createShellWindowApp = createTtsApp;

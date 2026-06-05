@@ -175,6 +175,17 @@ export const PIPER_VOICES_BY_LANG = TTS_LANGS.reduce((map, lang) => {
   return map;
 }, {} as Record<TtsLangId, typeof PIPER_VOICES[number][]>);
 
+const DEFAULT_PIPER_VOICE_BY_LANG: Record<TtsLangId, PiperVoiceId> = {
+  "en-us": "en_US-hfc_male-medium",
+  "en-gb": "en_GB-cori-medium",
+  "es-419": "es_MX-claude-high",
+  "es-es": "es_ES-davefx-medium",
+  "pt-br": "pt_BR-cadu-medium",
+  it: "it_IT-paola-medium",
+  fr: "fr_FR-siwis-medium",
+  de: "de_DE-thorsten-medium",
+};
+
 export function isTtsLangId(value: unknown): value is TtsLangId {
   return typeof value === "string" && value in TTS_LANG_BY_ID;
 }
@@ -184,7 +195,7 @@ export function isPiperVoiceId(value: unknown): value is PiperVoiceId {
 }
 
 export function getDefaultPiperVoiceForLang(lang: TtsLangId): PiperVoiceId {
-  return (PIPER_VOICES_BY_LANG[lang]?.[0]?.id || "en_US-lessac-medium") as PiperVoiceId;
+  return DEFAULT_PIPER_VOICE_BY_LANG[lang] || "en_US-hfc_male-medium";
 }
 
 export function getLangForPiperVoice(voice: string): TtsLangId {

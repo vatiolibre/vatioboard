@@ -1,7 +1,7 @@
 import { IconTts } from "../../icons.js";
 import { defineAppManifest } from "../../app-platform/manifest.js";
 
-export const kokoroTtsWindowCapabilities = {
+export const ttsWindowCapabilities = {
   draggable: true,
   resizable: true,
   minimizable: true,
@@ -14,8 +14,8 @@ export const kokoroTtsWindowCapabilities = {
   maxHeight: 720,
 } as const;
 
-export const kokoroTtsAppManifest = defineAppManifest({
-  id: "vatio.kokoroTts",
+export const ttsAppManifest = defineAppManifest({
+  id: "vatio.tts",
   title: "TTS",
   shortTitle: "TTS",
   description: "Local text-to-speech tester with curated Piper neural voices and Tesla-safe chunked model caching.",
@@ -27,17 +27,17 @@ export const kokoroTtsAppManifest = defineAppManifest({
     color2: "#bbf7d0",
     foreground: "#ecfdf5",
   },
-  i18nKey: "kokoroTts",
+  i18nKey: "tts",
   entry: () => import("./index.js"),
   surfaces: ["shell-window", "start-menu", "taskbar", "launcher"],
   order: 64,
   permissions: ["storage.app", "settings.read", "settings.write", "shell.window"],
   services: ["shell", "storage", "settings"],
   window: {
-    shellWindowId: "kokoro-tts",
+    shellWindowId: "tts",
     mode: "floating",
     defaultBounds: { left: 52, top: 108, width: 456, height: 510 },
-    capabilities: kokoroTtsWindowCapabilities,
+    capabilities: ttsWindowCapabilities,
     restoreOnBoot: false,
     lazy: true,
   },

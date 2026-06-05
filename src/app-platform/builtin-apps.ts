@@ -12,7 +12,7 @@ import {
 import { boardAppManifest } from "../apps/board/manifest.js";
 import { calculatorAppManifest } from "../apps/calculator/manifest.js";
 import { codeRainAppManifest } from "../apps/code-rain/manifest.js";
-import { kokoroTtsAppManifest } from "../apps/kokoro-tts/manifest.js";
+import { ttsAppManifest } from "../apps/tts/manifest.js";
 import { premiumClockAppManifest } from "../apps/premium-clock/manifest.js";
 import { speedAppManifest } from "../apps/speed/manifest.js";
 import { defineAppManifest } from "./manifest.js";
@@ -197,7 +197,7 @@ export const BUILTIN_APP_MANIFESTS = [
   codeRainAppManifest,
   calculatorAppManifest,
   premiumClockAppManifest,
-  kokoroTtsAppManifest,
+  ttsAppManifest,
   defineAppManifest({
     id: "vatio.energy",
     title: "Energy",
