@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 import {
+  BACKEND_AUTH_REQUEST_EVENT,
   BACKEND_AUTH_SSO_UI_DEFAULTS,
   buildBoardDocumentPreviewBffUrl,
   buildMediaBffUrl,
@@ -64,16 +65,42 @@ describe('environment configuration', () => {
     }).apiBase).toBe('https://api.vatioboard.com');
   });
 
-  it('maps development and local hosts to the development API host', () => {
+  it('maps development hosts to the development API host with backend enabled', () => {
     expect(getEnvironmentConfig({
       hostname: 'dev.vatioboard.com',
       origin: 'https://dev.vatioboard.com',
     }).apiBase).toBe('https://api.dev.vatioboard.com');
-
     expect(getEnvironmentConfig({
+      hostname: 'dev.vatioboard.com',
+      origin: 'https://dev.vatioboard.com',
+    }).backendEnabled).toBe(true);
+  });
+
+  it('keeps localhost on the development API host but disables backend calls by default', () => {
+    const config = getEnvironmentConfig({
       hostname: 'localhost',
       origin: 'http://localhost:5173',
-    }).apiBase).toBe('https://api.dev.vatioboard.com');
+    });
+
+    expect(config.apiBase).toBe('https://api.dev.vatioboard.com');
+    expect(config.isLocalhost).toBe(true);
+    expect(config.backendEnabled).toBe(false);
+  });
+
+  it('allows local backend calls when explicitly enabled by environment', () => {
+    expect(getEnvironmentConfig({
+      hostname: '127.0.0.1',
+      origin: 'http://127.0.0.1:5174',
+    }, {
+      VITE_VATIOBOARD_BACKEND: 'on',
+    }).backendEnabled).toBe(true);
+
+    expect(getEnvironmentConfig({
+      hostname: 'dev.vatioboard.com',
+      origin: 'https://dev.vatioboard.com',
+    }, {
+      VITE_VATIOBOARD_BACKEND: 'off',
+    }).backendEnabled).toBe(false);
   });
 });
 
@@ -726,6 +753,88 @@ describe('backend auth transport helpers', () => {
       '/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset?name=MEDIA-1',
       { config: { apiBase: PROD_BFF_ORIGIN } },
     )).toBe(`${PROD_BFF_ORIGIN}/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset?name=MEDIA-1`);
+  });
+
+  it('returns a local-only guest session without fetching when backend calls are disabled', async () => {
+    clearBackendAccessCache();
+    const fetchImpl = vi.fn();
+
+    const session = await getBackendSessionState({
+      fetchImpl,
+      config: {
+        ...TEST_CONFIG,
+        backendEnabled: false,
+        frontendOrigin: 'http://localhost:5174',
+      },
+    });
+
+    expect(session).toMatchObject({
+      ok: true,
+      status: 0,
+      isGuest: true,
+      authenticated: false,
+      localOnly: true,
+      reason: 'local_only',
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('blocks protected media locally without fetching or requesting auth when backend calls are disabled', async () => {
+    clearBackendAccessCache();
+    const fetchImpl = vi.fn();
+    const authRequests = [];
+    const handleAuthRequest = (event) => {
+      authRequests.push(event.detail);
+    };
+    window.addEventListener(BACKEND_AUTH_REQUEST_EVENT, handleAuthRequest);
+
+    try {
+      const gate = await getProtectedMediaRequestGate({
+        fetchImpl,
+        config: {
+          ...TEST_CONFIG,
+          backendEnabled: false,
+          frontendOrigin: 'http://localhost:5174',
+        },
+      });
+
+      expect(gate).toMatchObject({
+        allowed: false,
+        blockedByAuth: true,
+        featureKey: 'media_assets',
+        reason: 'local_only',
+        status: 0,
+      });
+      expect(gate.session).toMatchObject({
+        isGuest: true,
+        localOnly: true,
+      });
+      expect(fetchImpl).not.toHaveBeenCalled();
+      expect(authRequests).toHaveLength(0);
+    } finally {
+      window.removeEventListener(BACKEND_AUTH_REQUEST_EVENT, handleAuthRequest);
+    }
+  });
+
+  it('returns a synthetic disabled response without fetching for direct backend helpers', async () => {
+    const fetchImpl = vi.fn();
+
+    const result = await listBackendMediaAssets({
+      fetchImpl,
+      config: {
+        ...TEST_CONFIG,
+        backendEnabled: false,
+        frontendOrigin: 'http://localhost:5174',
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: 503,
+      assets: [],
+      totalCount: 0,
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('dedupes concurrent session probes', async () => {

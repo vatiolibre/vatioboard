@@ -23,7 +23,7 @@ pnpm run dev
 pnpm run verify
 ```
 
-`pnpm run dev` starts Vite after rebuilding local speed-camera artifacts. Local development uses `http://localhost:5174/` when the configured port is free.
+`pnpm run dev` starts Vite after rebuilding local speed-camera artifacts. Local development uses `http://localhost:5174/` when the configured port is free. Backend calls are disabled on localhost by default so frontend-only work does not trigger CORS noise; start dev with `VITE_VATIOBOARD_BACKEND=on pnpm run dev` when you intentionally want the dev backend.
 
 ## App Routes
 
@@ -120,7 +120,7 @@ See [`docs/speed-camera-data.md`](docs/speed-camera-data.md) for artifact roles,
 
 VatioBoard is mostly local-first. Drawings, calculator state, trip estimates, replay sessions, acceleration runs, media cache state, and app-private settings are stored in the browser. Some account-aware actions use the VatioLibre backend when available, such as cloud sync, auth/session checks, feature access, and media/library flows.
 
-Shared backend auth lives in `src/shared/backend-auth.ts`. Production frontend hosts use `https://api.vatioboard.com`; non-production frontend hosts use `https://api.dev.vatioboard.com`.
+Shared backend auth lives in `src/shared/backend-auth.ts`. Production frontend hosts use `https://api.vatioboard.com`; non-production frontend hosts use `https://api.dev.vatioboard.com`. Localhost keeps the dev API base for URL construction but runs in frontend-only mode by default; set `VITE_VATIOBOARD_BACKEND=on` to opt into backend calls locally.
 
 ## Testing
 
