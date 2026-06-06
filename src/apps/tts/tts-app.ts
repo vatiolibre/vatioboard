@@ -6,6 +6,7 @@ import { registerFloatingPanel } from "../../shared/floating-layer-manager.js";
 import { getDefaultShellWindowManager } from "../../shared/shell-window-manager.js";
 import type { ShellBounds, ShellLifecycleOptions, ShellRuntime } from "../../types/shell";
 import type { ShellAppRuntimeManager, VatioAppRuntime } from "../../app-platform/types";
+import type { TtsSnapshot, TtsStatusUpdate } from "../../types/services";
 import {
   PIPER_VOICE_BY_ID,
   PIPER_VOICES_BY_LANG,
@@ -17,7 +18,6 @@ import {
   type TtsLangId,
   isTtsLangId,
 } from "./tts-resources.js";
-import type { TtsWorkerRequest, TtsWorkerRequestPayload, TtsWorkerResponse } from "./tts-worker-protocol.js";
 import { ttsWindowCapabilities } from "./manifest.js";
 
 export const TTS_APP_ID = "vatio.tts";
@@ -404,18 +404,12 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
   let lang: TtsLangId = preferences.lang;
   let piperVoice: PiperVoiceId = preferences.piperVoice;
   let volume = preferences.volume;
-  let worker: Worker | null = null;
-  let workerRequestId = 0;
-  const pendingWorkerRequests = new Map<number, {
-    resolve: (message: TtsWorkerResponse) => void;
-    reject: (error: Error) => void;
-  }>();
-  let modelReady = false;
+  const ttsService = runtime?.services.tts || null;
+  let modelReady = ttsService?.getSnapshot().loadedVoice === piperVoice;
   let loadingPromise: Promise<void> | null = null;
   let generating = false;
-  let audio: HTMLAudioElement | null = null;
-  let audioUrl = "";
   let destroyed = false;
+  let unsubscribeTts: (() => void) | null = null;
   let resizePointerId: number | null = null;
   let resizeStartX = 0;
   let resizeStartY = 0;
@@ -446,6 +440,18 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
       return;
     }
     progressBar.style.width = `${Math.max(0, Math.min(1, ratio)) * 100}%`;
+  }
+
+  function handleTtsStatus(update: TtsStatusUpdate) {
+    setStatus(update.status, update.progress || "");
+    setProgressRatio(update.ratio ?? null);
+  }
+
+  function syncTtsSnapshot(snapshot: TtsSnapshot) {
+    modelReady = snapshot.loadedVoice === piperVoice;
+    if (snapshot.status === "error" && snapshot.error) {
+      renderDiagnostics(snapshot.error);
+    }
   }
 
   function normalizeSelectionForEngine() {
@@ -515,73 +521,10 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
     }));
   }
 
-  function handleWorkerMessage(message: TtsWorkerResponse) {
-    if (message.type === "status") {
-      setStatus(message.status, message.progress || "");
-      setProgressRatio(message.ratio ?? null);
-      return;
-    }
-
-    const pending = pendingWorkerRequests.get(message.id);
-    if (!pending) return;
-    pendingWorkerRequests.delete(message.id);
-    if (message.type === "error") {
-      pending.reject(new Error(message.message));
-      return;
-    }
-    pending.resolve(message);
-  }
-
-  function ensureWorker() {
-    if (worker) return worker;
-    worker = new Worker(new URL("./tts-worker.ts", import.meta.url), { type: "module" });
-    worker.addEventListener("message", (event: MessageEvent<TtsWorkerResponse>) => {
-      handleWorkerMessage(event.data);
-    });
-    worker.addEventListener("error", (event) => {
-      const error = new Error(event.message || "TTS worker failed.");
-      for (const pending of pendingWorkerRequests.values()) pending.reject(error);
-      pendingWorkerRequests.clear();
-      setStatus("Worker failed", error.message);
-      renderDiagnostics(error.message);
-      modelReady = false;
-      loadingPromise = null;
-      generating = false;
-      worker?.terminate();
-      worker = null;
-    });
-    return worker;
-  }
-
-  function resetWorker(reason = "Worker reset") {
-    if (worker) {
-      worker.terminate();
-      worker = null;
-    }
-    const error = new Error(reason);
-    for (const pending of pendingWorkerRequests.values()) pending.reject(error);
-    pendingWorkerRequests.clear();
-    modelReady = false;
-    loadingPromise = null;
-    generating = false;
-    setButtonBusy(loadButton, false);
-    setButtonBusy(speakButton, false);
-  }
-
-  function sendWorkerRequest(request: TtsWorkerRequestPayload): Promise<TtsWorkerResponse> {
-    const id = ++workerRequestId;
-    const nextRequest = { ...request, id } as TtsWorkerRequest;
-    const targetWorker = ensureWorker();
-    return new Promise((resolve, reject) => {
-      pendingWorkerRequests.set(id, { resolve, reject });
-      targetWorker.postMessage(nextRequest);
-    });
-  }
-
-  function getWorkerSettings() {
+  function getVoiceSettings() {
     return {
       lang,
-      piperVoice,
+      voice: piperVoice,
       speed: 1,
     };
   }
@@ -591,21 +534,29 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
     volumeSlider.value = String(volumePercent);
     volumeValue.textContent = formatVolume(volume);
     updateRangeVisualFill(volumeSlider);
-    if (audio) audio.volume = volume;
+    ttsService?.setVolume(volume);
   }
 
   async function loadEngine(): Promise<void> {
+    if (!ttsService) {
+      setStatus("Unavailable", "The OS TTS service is not available");
+      renderDiagnostics("service unavailable");
+      return;
+    }
     if (modelReady) return;
     if (loadingPromise) return loadingPromise;
 
-    const requestedSettings = getWorkerSettings();
+    const requestedSettings = getVoiceSettings();
     setButtonBusy(loadButton, true);
     setButtonBusy(speakButton, true);
     setStatus("Loading Piper", "Preparing chunk cache first");
     loadingPromise = (async () => {
-      const message = await sendWorkerRequest({ type: "load", ...requestedSettings });
+      const message = await ttsService.loadVoice({
+        ...requestedSettings,
+        onStatus: handleTtsStatus,
+      });
       if (
-        requestedSettings.piperVoice !== piperVoice
+        requestedSettings.voice !== piperVoice
         || requestedSettings.lang !== lang
       ) {
         modelReady = false;
@@ -614,7 +565,7 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
         return;
       }
       modelReady = true;
-      const provider = message.type === "loaded" ? message.provider.toUpperCase() : "WASM";
+      const provider = message.provider.toUpperCase();
       setStatus(
         "Piper ready",
         `${PIPER_VOICE_BY_ID[piperVoice]?.name || piperVoice} on ${provider}`,
@@ -630,51 +581,44 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
   }
 
   function stopAudio() {
-    if (audio) {
-      audio.pause();
-      audio.src = "";
-      audio = null;
-    }
-    if (audioUrl) {
-      URL.revokeObjectURL(audioUrl);
-      audioUrl = "";
-    }
+    ttsService?.stop({ reason: "TTS test stopped" });
   }
 
   async function speak() {
+    if (!ttsService) {
+      setStatus("Unavailable", "The OS TTS service is not available");
+      renderDiagnostics("service unavailable");
+      return;
+    }
     const text = textInput.value.trim();
     if (!text) {
       setStatus("Text needed", "Add a short sentence first");
       return;
     }
     persist();
-    const requestedSettings = getWorkerSettings();
+    const requestedSettings = getVoiceSettings();
     setButtonBusy(loadButton, true);
     setButtonBusy(speakButton, true);
     generating = true;
     setStatus("Generating", "Piper voice is synthesizing in a worker");
     setProgressRatio(null);
     try {
-      const message = await sendWorkerRequest({
-        type: "speak",
+      const message = await ttsService.speak({
         text,
+        volume,
+        priority: "system",
+        interrupt: true,
+        onStatus: handleTtsStatus,
         ...requestedSettings,
       });
-      if (message.type !== "speech") throw new Error("TTS worker returned an unexpected response.");
       modelReady = requestedSettings.lang === lang
-        && requestedSettings.piperVoice === piperVoice;
-      stopAudio();
-      const blob = message.blob;
-      audioUrl = URL.createObjectURL(blob);
-      audio = new Audio(audioUrl);
-      audio.volume = volume;
-      await audio.play();
+        && requestedSettings.voice === piperVoice;
       const seconds = Math.max(0.1, message.durationMs / 1000);
-      setStatus("Speaking", `${formatBytes(blob.size)} WAV in ${seconds.toFixed(1)}s; audio ${message.audioSeconds.toFixed(1)}s`);
+      setStatus("Speech complete", `${formatBytes(message.size)} WAV in ${seconds.toFixed(1)}s; audio ${message.audioSeconds.toFixed(1)}s`);
       renderDiagnostics("speech generated");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Speech generation failed";
-      if (message !== "Generation stopped") {
+      if (message !== "Generation stopped" && message !== "TTS test stopped") {
         setStatus("Generation failed", message);
         renderDiagnostics(message);
       }
@@ -769,6 +713,13 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
   renderSegments();
   renderVolume();
   renderDiagnostics();
+  if (!ttsService) {
+    setStatus("Unavailable", "The OS TTS service is not available");
+    setButtonBusy(loadButton, true);
+    setButtonBusy(speakButton, true);
+  } else {
+    unsubscribeTts = ttsService.subscribe(syncTtsSnapshot);
+  }
   panel.hidden = !restoreVisibility;
 
   const cleanupLayer = registerFloatingPanel(panel, {
@@ -863,12 +814,17 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
     persist();
   });
   stopButton.addEventListener("click", () => {
-    stopAudio();
     if (generating || loadingPromise) {
-      resetWorker("Generation stopped");
-      setStatus("Stopped", "Generation worker reset");
-      renderDiagnostics("worker reset");
+      ttsService?.cancel({ reason: "Generation stopped" });
+      modelReady = false;
+      generating = false;
+      loadingPromise = null;
+      setButtonBusy(loadButton, false);
+      setButtonBusy(speakButton, false);
+      setStatus("Stopped", "Voice service reset");
+      renderDiagnostics("service reset");
     } else {
+      stopAudio();
       setStatus("Stopped", "Audio output cleared");
     }
   });
@@ -907,7 +863,8 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
       if (destroyed) return;
       destroyed = true;
       stopAudio();
-      resetWorker("TTS app destroyed");
+      unsubscribeTts?.();
+      unsubscribeTts = null;
       if (resizeRafId) {
         if (typeof window.cancelAnimationFrame === "function") window.cancelAnimationFrame(resizeRafId);
         else window.clearTimeout(resizeRafId);

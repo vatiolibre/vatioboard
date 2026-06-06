@@ -1,4 +1,4 @@
-import type { DriveRecordingService, DrivingAlertService, GpsService } from "./services";
+import type { DriveRecordingService, DrivingAlertService, GpsService, TtsService } from "./services";
 import type { ShellRuntime } from "./shell";
 import type {
   ShellAppRuntimeManager,
@@ -48,6 +48,7 @@ export interface RuntimeContext {
   driveRecordingService: DriveRecordingService;
   drivingAlertService: DrivingAlertService;
   gpsService: GpsService;
+  ttsService?: TtsService;
   shellManager?: ShellRuntime;
   shellAppRuntimeManager?: ShellAppRuntimeManager;
   backgroundServiceManager?: VatioBackgroundServiceManager;

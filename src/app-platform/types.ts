@@ -4,6 +4,7 @@ import type {
   DriveRecordingService,
   DrivingAlertService,
   GpsService,
+  TtsService,
   Unsubscribe,
 } from "../types/services";
 import type {
@@ -49,7 +50,8 @@ export type VatioAppPermission =
   | "network.backend"
   | "i18n.read"
   | "settings.read"
-  | "settings.write";
+  | "settings.write"
+  | "tts.speak";
 
 export type VatioAppStatus = "stable" | "beta" | "experimental" | "internal";
 
@@ -65,7 +67,8 @@ export type VatioAppServiceId =
   | "shell"
   | "storage"
   | "i18n"
-  | "settings";
+  | "settings"
+  | "tts";
 
 export interface VatioAppWindowManifest {
   shellWindowId: string;
@@ -326,6 +329,7 @@ export interface VatioAppServices {
   audio: AudioRuntime | null;
   driveRecording: DriveRecordingService | null;
   drivingAlerts: DrivingAlertService | null;
+  tts: TtsService | null;
   auth: VatioAuthService | null;
   cloudSync: VatioCloudSyncService | null;
   settings: VatioAppSettingsService | null;

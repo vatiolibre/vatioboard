@@ -6,8 +6,11 @@ import type {
   DrivingAlertSnapshot,
   GpsConsumerOptions,
   GpsService,
+  TtsService,
+  TtsSnapshot,
 } from "../types/services";
 import type {
+  VatioAppId,
   VatioAppLogger,
   VatioAppPermissionRuntime,
   VatioAppServiceId,
@@ -73,6 +76,25 @@ const DENIED_DRIVING_ALERT_SNAPSHOT: DrivingAlertSnapshot = {
   alertUiState: null,
   audio: null,
   preferences: null,
+};
+
+const DENIED_TTS_SNAPSHOT: TtsSnapshot = {
+  status: "error",
+  progress: "Permission denied",
+  ratio: null,
+  muted: true,
+  volume: 0,
+  primed: false,
+  loading: false,
+  generating: false,
+  speaking: false,
+  queueLength: 0,
+  loadedVoice: null,
+  activeVoice: null,
+  activeLang: null,
+  provider: null,
+  error: "permission-denied",
+  currentSourceAppId: null,
 };
 
 function createGpsGateway(
@@ -292,6 +314,70 @@ function createAudioGateway(
   };
 }
 
+function createTtsGateway(
+  service: TtsService | null,
+  permissions: VatioAppPermissionRuntime,
+  logger?: VatioAppLogger | null,
+  appId?: VatioAppId,
+): TtsService | null {
+  if (!service) return null;
+  if (!permissions.has("tts.speak")) return null;
+  const canUseTts = () => canUseService(permissions, logger, "tts", "tts.speak");
+  const sourceAppId = appId || "unknown";
+
+  return {
+    ...service,
+    getSnapshot() {
+      if (!canUseTts()) return { ...DENIED_TTS_SNAPSHOT };
+      return service.getSnapshot();
+    },
+    subscribe(listener) {
+      if (!canUseTts()) return () => {};
+      return service.subscribe(listener);
+    },
+    listVoices(lang) {
+      if (!canUseTts()) return [];
+      return service.listVoices(lang);
+    },
+    getDefaultVoice(lang) {
+      if (!canUseTts()) return "";
+      return service.getDefaultVoice(lang);
+    },
+    async primeFromUserGesture(options) {
+      if (!canUseTts()) return false;
+      return service.primeFromUserGesture(options);
+    },
+    async loadVoice(request = {}) {
+      if (!canUseTts()) throw new Error("TTS permission denied.");
+      return service.loadVoice({ ...request, sourceAppId });
+    },
+    async preloadVoice(request = {}) {
+      if (!canUseTts()) throw new Error("TTS permission denied.");
+      return service.preloadVoice({ ...request, sourceAppId });
+    },
+    async speak(request) {
+      if (!canUseTts()) throw new Error("TTS permission denied.");
+      return service.speak({ ...request, sourceAppId });
+    },
+    stop(options = {}) {
+      if (!canUseTts()) return;
+      service.stop({ ...options, sourceAppId });
+    },
+    cancel(options = {}) {
+      if (!canUseTts()) return;
+      service.cancel({ ...options, sourceAppId });
+    },
+    setMuted(value) {
+      if (!canUseTts()) return { ...DENIED_TTS_SNAPSHOT };
+      return service.setMuted(value);
+    },
+    setVolume(value) {
+      if (!canUseTts()) return { ...DENIED_TTS_SNAPSHOT };
+      return service.setVolume(value);
+    },
+  };
+}
+
 function createAuthGateway(
   permissions: VatioAppPermissionRuntime,
   logger?: VatioAppLogger | null,
@@ -400,12 +486,14 @@ function createSharedSettingsGateway(
 }
 
 export function createAppServiceGateway({
+  appId,
   baseContext,
   appStorage,
   permissions,
   declaredServices = [],
   logger,
 }: {
+  appId?: VatioAppId;
   baseContext?: RuntimeServiceContext;
   appStorage: VatioAppStorage;
   permissions: VatioAppPermissionRuntime;
@@ -416,6 +504,7 @@ export function createAppServiceGateway({
   const audioRuntime = getContextService<AudioRuntime>(baseContext, "audioRuntime");
   const driveRecordingService = getContextService<DriveRecordingService>(baseContext, "driveRecordingService");
   const drivingAlertService = getContextService<DrivingAlertService>(baseContext, "drivingAlertService");
+  const ttsService = getContextService<TtsService>(baseContext, "ttsService");
   const declaredServiceSet = new Set(declaredServices);
   const hasService = (service: VatioAppServiceId) => declaredServiceSet.has(service);
 
@@ -424,6 +513,7 @@ export function createAppServiceGateway({
     audio: hasService("audio") ? createAudioGateway(audioRuntime, permissions, logger) : null,
     driveRecording: hasService("driveRecording") ? createDriveRecordingGateway(driveRecordingService, permissions) : null,
     drivingAlerts: hasService("drivingAlerts") ? createDrivingAlertsGateway(drivingAlertService, permissions, logger) : null,
+    tts: hasService("tts") ? createTtsGateway(ttsService, permissions, logger, appId) : null,
     auth: hasService("auth") ? createAuthGateway(permissions, logger) : null,
     cloudSync: hasService("cloudSync") ? createCloudSyncGateway(permissions, logger) : null,
     settings: hasService("settings") && (permissions.has("settings.read") || permissions.has("settings.write"))

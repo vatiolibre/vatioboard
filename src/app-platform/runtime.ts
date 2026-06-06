@@ -44,6 +44,7 @@ export function createAppRuntime({
   });
   const lifecycle = createAppLifecycle();
   const services = createAppServiceGateway({
+    appId: manifest.id,
     baseContext,
     appStorage: rawStorage,
     permissions,

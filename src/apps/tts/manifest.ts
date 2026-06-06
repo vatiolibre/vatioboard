@@ -31,8 +31,8 @@ export const ttsAppManifest = defineAppManifest({
   entry: () => import("./index.js"),
   surfaces: ["shell-window", "start-menu", "taskbar", "launcher"],
   order: 64,
-  permissions: ["storage.app", "settings.read", "settings.write", "shell.window"],
-  services: ["shell", "storage", "settings"],
+  permissions: ["storage.app", "settings.read", "settings.write", "shell.window", "tts.speak"],
+  services: ["shell", "storage", "settings", "tts"],
   window: {
     shellWindowId: "tts",
     mode: "floating",

@@ -603,12 +603,27 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
   }
 
   function speakCurrentTime() {
+    const text = formatSpokenDateTime(new Date());
+    const tts = runtime?.services.tts || null;
+    if (tts) {
+      tts.speak({
+        text,
+        priority: "system",
+        interrupt: true,
+        volume: 1,
+      }).catch((error) => {
+        runtime?.logger.warn("Premium Clock voice announcement failed.", error);
+        if (!activeAlert) showNotice("Voice time unavailable");
+      });
+      return;
+    }
+
     if (!("speechSynthesis" in window) || typeof SpeechSynthesisUtterance === "undefined") {
       if (!activeAlert) showNotice("Voice time unavailable");
       return;
     }
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(formatSpokenDateTime(new Date()));
+    const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 0.92;
     utterance.pitch = 0.96;
     utterance.volume = 1;
@@ -842,6 +857,7 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
 
   panel.addEventListener("pointerdown", () => {
     primeAlarmSound();
+    void runtime?.services.tts?.primeFromUserGesture();
   });
 
   dragZone.addEventListener("pointerdown", (event) => {

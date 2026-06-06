@@ -44,6 +44,7 @@ const VALID_PERMISSIONS = new Set<VatioAppPermission>([
   "i18n.read",
   "settings.read",
   "settings.write",
+  "tts.speak",
 ]);
 
 const VALID_SERVICES = new Set<VatioAppServiceId>([
@@ -57,6 +58,7 @@ const VALID_SERVICES = new Set<VatioAppServiceId>([
   "storage",
   "i18n",
   "settings",
+  "tts",
 ]);
 
 const VALID_STATUSES = new Set<VatioAppStatus>([
@@ -230,6 +232,10 @@ export function validateAppManifest(manifest: VatioAppManifest): VatioAppManifes
 
   if (services.has("i18n") && !permissions.has("i18n.read")) {
     warnings.push('service "i18n" requires permission "i18n.read".');
+  }
+
+  if (services.has("tts") && !permissions.has("tts.speak")) {
+    warnings.push('service "tts" requires permission "tts.speak".');
   }
 
   return {

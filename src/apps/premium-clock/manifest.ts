@@ -30,8 +30,8 @@ export const premiumClockAppManifest = defineAppManifest({
   entry: () => import("./index.js"),
   surfaces: ["shell-window", "start-menu", "taskbar", "launcher"],
   order: 62,
-  permissions: ["shell.window", "storage.app"],
-  services: ["shell", "storage"],
+  permissions: ["shell.window", "storage.app", "tts.speak"],
+  services: ["shell", "storage", "tts"],
   window: {
     shellWindowId: "premium-clock",
     mode: "floating",
