@@ -355,6 +355,10 @@ function createTtsGateway(
       if (!canUseTts()) throw new Error("TTS permission denied.");
       return service.preloadVoice({ ...request, sourceAppId });
     },
+    async prepareSpeech(request) {
+      if (!canUseTts()) throw new Error("TTS permission denied.");
+      return service.prepareSpeech({ ...request, sourceAppId });
+    },
     async speak(request) {
       if (!canUseTts()) throw new Error("TTS permission denied.");
       return service.speak({ ...request, sourceAppId });

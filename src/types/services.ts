@@ -204,6 +204,7 @@ export interface TtsSpeakRequest extends TtsLoadVoiceRequest {
 
 export interface TtsStopRequest {
   reason?: string;
+  resetEngine?: boolean;
   sourceAppId?: string;
 }
 
@@ -246,6 +247,7 @@ export interface TtsService {
   primeFromUserGesture(options?: { keepAlive?: boolean }): Promise<boolean>;
   loadVoice(request?: TtsLoadVoiceRequest): Promise<TtsVoiceLoadResult>;
   preloadVoice(request?: TtsLoadVoiceRequest): Promise<TtsVoiceLoadResult>;
+  prepareSpeech(request: Omit<TtsSpeakRequest, "interrupt" | "volume">): Promise<TtsSpeechResult>;
   speak(request: TtsSpeakRequest): Promise<TtsSpeechResult>;
   stop(options?: TtsStopRequest): void;
   cancel(options?: TtsStopRequest): void;

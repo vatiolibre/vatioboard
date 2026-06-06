@@ -62,6 +62,10 @@ type ResolvedSpeakRequest = ResolvedVoiceRequest & {
   text: string;
   volume: number;
 };
+type ResolvedPrepareSpeechRequest = ResolvedVoiceRequest & {
+  priority: NonNullable<TtsSpeakRequest["priority"]>;
+  text: string;
+};
 
 const TTS_BACKGROUND_AUDIO_LEASE = "tts";
 const DEFAULT_LANG: TtsLangId = "en-us";
@@ -238,6 +242,13 @@ export function createTtsService(): TtsService {
   function rejectPendingWorkerRequests(error: Error) {
     for (const pending of pendingWorkerRequests.values()) pending.reject(error);
     pendingWorkerRequests.clear();
+  }
+
+  function hasPendingWorkerRequestForSource(sourceAppId: string | null): boolean {
+    for (const pending of pendingWorkerRequests.values()) {
+      if (!sourceAppId || pending.sourceAppId === sourceAppId) return true;
+    }
+    return false;
   }
 
   function resetWorker(reason = "TTS worker reset") {
@@ -492,22 +503,7 @@ export function createTtsService(): TtsService {
     return now - previous < 2500;
   }
 
-  async function runSpeakItem(item: QueueItem): Promise<TtsSpeechResult> {
-    const request = item.request;
-    if (!request.text) throw new Error("No text was provided.");
-    if (snapshot.muted) throw new Error("TTS is muted.");
-
-    setSnapshot({
-      activeLang: request.lang,
-      activeVoice: request.voice,
-      currentSourceAppId: request.sourceAppId || null,
-      error: null,
-      generating: true,
-      status: "generating",
-      progress: "Generating Piper speech",
-      ratio: null,
-    });
-
+  async function requestSpeechFromWorker(request: ResolvedPrepareSpeechRequest): Promise<Extract<TtsWorkerResponse, { type: "speech" }>> {
     const message = await runWorkerOperation(() => sendWorkerRequest({
       type: "speak",
       lang: request.lang,
@@ -524,6 +520,26 @@ export function createTtsService(): TtsService {
       loadedVoice: message.model,
       provider: message.provider,
     });
+    return message;
+  }
+
+  async function runSpeakItem(item: QueueItem): Promise<TtsSpeechResult> {
+    const request = item.request;
+    if (!request.text) throw new Error("No text was provided.");
+    if (snapshot.muted) throw new Error("TTS is muted.");
+
+    setSnapshot({
+      activeLang: request.lang,
+      activeVoice: request.voice,
+      currentSourceAppId: request.sourceAppId || null,
+      error: null,
+      generating: true,
+      status: "generating",
+      progress: "Generating Piper speech",
+      ratio: null,
+    });
+
+    const message = await requestSpeechFromWorker(request);
     await playSpeechBlob(message.blob, request);
     return {
       id: item.id,
@@ -533,6 +549,51 @@ export function createTtsService(): TtsService {
       provider: message.provider,
       size: message.size,
     };
+  }
+
+  async function prepareSpeech(request: Omit<TtsSpeakRequest, "interrupt" | "volume">): Promise<TtsSpeechResult> {
+    const resolved = {
+      ...resolveVoiceRequest(request),
+      priority: request.priority || "info",
+      text: normalizeText(request.text),
+    } satisfies ResolvedPrepareSpeechRequest;
+    if (!resolved.text) throw new Error("No text was provided.");
+    const ownsSnapshot = !activePlaybackReject && !snapshot.speaking && !processingQueue;
+
+    if (ownsSnapshot) {
+      setSnapshot({
+        activeLang: resolved.lang,
+        activeVoice: resolved.voice,
+        currentSourceAppId: resolved.sourceAppId || null,
+        error: null,
+        generating: true,
+        status: "generating",
+        progress: "Preparing Piper speech cache",
+        ratio: null,
+      });
+    }
+
+    try {
+      const message = await requestSpeechFromWorker(resolved);
+      return {
+        id: `tts-prepared-${Date.now()}`,
+        audioSeconds: message.audioSeconds,
+        durationMs: message.durationMs,
+        model: message.model,
+        provider: message.provider,
+        size: message.size,
+      };
+    } finally {
+      if (ownsSnapshot) {
+        setSnapshot({
+          currentSourceAppId: null,
+          generating: false,
+          loading: false,
+          speaking: false,
+          status: snapshot.error ? "error" : snapshot.loadedVoice ? "ready" : "idle",
+        });
+      }
+    }
   }
 
   function sortQueue() {
@@ -663,9 +724,10 @@ export function createTtsService(): TtsService {
   function cancel(options: TtsStopRequest = {}) {
     const sourceAppId = normalizeSourceAppId(options.sourceAppId);
     const reason = options.reason || "TTS cancelled";
+    const shouldResetWorker = options.resetEngine === true || hasPendingWorkerRequestForSource(sourceAppId);
     stop(options);
     rejectQueuedForSource(sourceAppId, new Error(reason));
-    if (!sourceAppId || activeItem?.request.sourceAppId === sourceAppId || snapshot.currentSourceAppId === sourceAppId) {
+    if (shouldResetWorker) {
       resetWorker(reason);
     }
   }
@@ -703,6 +765,7 @@ export function createTtsService(): TtsService {
     getSnapshot,
     listVoices,
     loadVoice,
+    prepareSpeech,
     preloadVoice: loadVoice,
     primeFromUserGesture,
     setMuted,

@@ -18,6 +18,8 @@ const DRAG_THRESHOLD_PX = 6;
 const DEFAULT_TIMER_DURATION_MS = 5 * 60 * 1000;
 const ALARM_AUDIO_SRC = "/audio/alarm-clock.m4a";
 const SNOOZE_DURATION_MS = 9 * 60 * 1000;
+const CLOCK_TTS_DEDUPE_KEY = "premium-clock-time";
+const CLOCK_TTS_WARMUP_DELAY_MS = 600;
 
 const MODES = [
   { id: "clock", label: "Clock" },
@@ -419,6 +421,10 @@ function formatSpokenDateTime(value: Date) {
   return `The time is ${time}. Today is ${day}.`;
 }
 
+function getSpokenMinuteKey(value: Date) {
+  return `${value.getFullYear()}-${value.getMonth()}-${value.getDate()}-${value.getHours()}-${value.getMinutes()}`;
+}
+
 function stopControlPropagation(element: HTMLElement) {
   element.addEventListener("pointerdown", (event) => event.stopPropagation());
   element.addEventListener("pointerup", (event) => event.stopPropagation());
@@ -473,6 +479,11 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
   let alarms = loadAlarms(runtime);
   let snoozedAlarms: SnoozedAlarm[] = [];
   let speechPointer: { x: number; y: number; pointerId: number } | null = null;
+  let clockTtsWarmupId: number | null = null;
+  let clockTtsVoiceWarmupPromise: Promise<unknown> | null = null;
+  let clockTtsSpeechWarmupPromise: Promise<unknown> | null = null;
+  let clockTtsPreparedMinuteKey = "";
+  let clockTtsPreparingMinuteKey = "";
   const firedAlarmKeys = new Set<string>();
 
   const storedPosition = loadPos();
@@ -588,6 +599,10 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
     stopAlarmSound();
   }
 
+  function clearVoiceNotice() {
+    if (!activeAlert && activeNotice === "Voice time unavailable") clearNotice();
+  }
+
   function snoozeActiveAlarm() {
     if (activeAlert?.kind !== "alarm") return;
     const label = activeAlert.label || activeNotice.replace(/^Alarm\s+/, "") || "alarm";
@@ -602,18 +617,82 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
     clearNotice();
   }
 
+  function preloadClockTtsVoice() {
+    const tts = runtime?.services.tts || null;
+    if (!tts) return Promise.resolve();
+    if (!clockTtsVoiceWarmupPromise) {
+      clockTtsVoiceWarmupPromise = tts.preloadVoice()
+        .catch((error) => {
+          runtime?.logger.debug("Premium Clock TTS voice preload did not complete.", error);
+        })
+        .finally(() => {
+          clockTtsVoiceWarmupPromise = null;
+        });
+    }
+    return clockTtsVoiceWarmupPromise;
+  }
+
+  function prepareClockTtsSpeech(value = new Date()) {
+    const tts = runtime?.services.tts || null;
+    if (!tts || panel.hidden) return Promise.resolve();
+    const minuteKey = getSpokenMinuteKey(value);
+    if (clockTtsPreparedMinuteKey === minuteKey || clockTtsPreparingMinuteKey === minuteKey) {
+      return clockTtsSpeechWarmupPromise || Promise.resolve();
+    }
+    const snapshot = tts.getSnapshot();
+    if (snapshot.speaking || snapshot.generating || snapshot.loading) return Promise.resolve();
+
+    clockTtsPreparingMinuteKey = minuteKey;
+    clockTtsSpeechWarmupPromise = tts.prepareSpeech({
+      text: formatSpokenDateTime(value),
+      priority: "info",
+      dedupeKey: `${CLOCK_TTS_DEDUPE_KEY}:${minuteKey}`,
+    })
+      .then(() => {
+        clockTtsPreparedMinuteKey = minuteKey;
+      })
+      .catch((error) => {
+        runtime?.logger.debug("Premium Clock TTS speech warmup did not complete.", error);
+      })
+      .finally(() => {
+        if (clockTtsPreparingMinuteKey === minuteKey) clockTtsPreparingMinuteKey = "";
+        clockTtsSpeechWarmupPromise = null;
+      });
+    return clockTtsSpeechWarmupPromise;
+  }
+
+  function scheduleClockTtsWarmup(delayMs = CLOCK_TTS_WARMUP_DELAY_MS) {
+    if (!runtime?.services.tts || panel.hidden) return;
+    if (clockTtsWarmupId !== null) {
+      if (delayMs > 0) return;
+      window.clearTimeout(clockTtsWarmupId);
+    }
+    clockTtsWarmupId = window.setTimeout(() => {
+      clockTtsWarmupId = null;
+      void preloadClockTtsVoice().then(() => prepareClockTtsSpeech());
+    }, Math.max(0, delayMs));
+  }
+
   function speakCurrentTime() {
-    const text = formatSpokenDateTime(new Date());
+    const now = new Date();
+    const text = formatSpokenDateTime(now);
     const tts = runtime?.services.tts || null;
     if (tts) {
+      clearVoiceNotice();
       tts.speak({
         text,
+        dedupeKey: CLOCK_TTS_DEDUPE_KEY,
         priority: "system",
-        interrupt: true,
         volume: 1,
+      }).then(() => {
+        clockTtsPreparedMinuteKey = getSpokenMinuteKey(now);
+        scheduleClockTtsWarmup();
       }).catch((error) => {
+        const message = error instanceof Error ? error.message : "";
         runtime?.logger.warn("Premium Clock voice announcement failed.", error);
-        if (!activeAlert) showNotice("Voice time unavailable");
+        if (!activeAlert && !message.includes("Duplicate TTS announcement suppressed")) {
+          showNotice("Voice time unavailable");
+        }
       });
       return;
     }
@@ -778,6 +857,9 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
       label.textContent = "Local Time";
       digital.textContent = formatClockTime(now);
       date.textContent = formatDate(now);
+      if (clockTtsPreparedMinuteKey !== getSpokenMinuteKey(now) && !clockTtsPreparingMinuteKey) {
+        scheduleClockTtsWarmup();
+      }
     }
 
     timerDuration.textContent = formatShortDuration(timerDurationMs);
@@ -804,12 +886,17 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
     panel.hidden = false;
     if (panel.style.left && panel.style.top) clampElementToViewport(panel, 8, { useShellWorkArea: true });
     startTicker();
+    scheduleClockTtsWarmup();
   }
 
   function hidePanel() {
     panel.hidden = true;
     stopTicker();
     stopAlarmSound();
+    if (clockTtsWarmupId !== null) {
+      window.clearTimeout(clockTtsWarmupId);
+      clockTtsWarmupId = null;
+    }
   }
 
   function open(options: ShellLifecycleOptions = {}) {
@@ -857,7 +944,8 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
 
   panel.addEventListener("pointerdown", () => {
     primeAlarmSound();
-    void runtime?.services.tts?.primeFromUserGesture();
+    void runtime?.services.tts?.primeFromUserGesture({ keepAlive: true });
+    scheduleClockTtsWarmup(0);
   });
 
   dragZone.addEventListener("pointerdown", (event) => {
@@ -1047,6 +1135,7 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
     destroy() {
       stopTicker();
       stopAlarmSound();
+      if (clockTtsWarmupId !== null) window.clearTimeout(clockTtsWarmupId);
       cleanupLayer();
       panel.remove();
     },
