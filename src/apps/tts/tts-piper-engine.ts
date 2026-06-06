@@ -79,6 +79,8 @@ interface PendingPhonemizerRequest {
 const PIPER_MAX_TEXT_CHARS = 700;
 const PIPER_MIN_SPEED = 0.72;
 const PIPER_MAX_SPEED = 1.35;
+const PIPER_TARGET_PEAK = 0.98;
+const PIPER_MAX_NORMALIZE_GAIN = 4;
 
 const sessions = new Map<PiperVoiceId, Promise<PiperSessionBundle>>();
 const assetObjectUrls = new Map<string, string>();
@@ -324,6 +326,25 @@ function encodeWavPcm16(waveform: Float32Array, sampleRate: number): ArrayBuffer
   return buffer;
 }
 
+function normalizeWaveform(waveform: Float32Array): Float32Array {
+  let peak = 0;
+  for (const sample of waveform) {
+    const magnitude = Math.abs(sample);
+    if (magnitude > peak) peak = magnitude;
+  }
+
+  if (!Number.isFinite(peak) || peak <= 0 || peak >= PIPER_TARGET_PEAK) return waveform;
+
+  const gain = Math.min(PIPER_MAX_NORMALIZE_GAIN, PIPER_TARGET_PEAK / peak);
+  if (!Number.isFinite(gain) || gain <= 1.01) return waveform;
+
+  const normalized = new Float32Array(waveform.length);
+  for (let index = 0; index < waveform.length; index++) {
+    normalized[index] = waveform[index] * gain;
+  }
+  return normalized;
+}
+
 export async function preparePiperTtsAssets(
   settings: PiperTtsSettings,
   reportStatus: PiperTtsStatusReporter,
@@ -397,7 +418,8 @@ export async function synthesizePiperTtsSpeech(
   const output = result.output || Object.values(result)[0];
   if (!output) throw new Error("Piper model did not return audio.");
 
-  const pcm = output.data instanceof Float32Array ? output.data : Float32Array.from(output.data as Iterable<number>);
+  const rawPcm = output.data instanceof Float32Array ? output.data : Float32Array.from(output.data as Iterable<number>);
+  const pcm = normalizeWaveform(rawPcm);
   const sampleRate = config.audio.sample_rate || 22050;
   const wavBuffer = encodeWavPcm16(pcm, sampleRate);
   return {

@@ -36,6 +36,7 @@ const DEFAULT_BOUNDS = {
 };
 const DEFAULT_LANG: TtsLangId = "en-us";
 const DEFAULT_PIPER_VOICE: PiperVoiceId = getDefaultPiperVoiceForLang(DEFAULT_LANG);
+const DEFAULT_VOLUME = 1;
 const DEFAULT_TEXT_BY_LANG: Record<TtsLangId, string> = {
   "en-us": "The cabin clock says 10:15 and the route ahead looks clear.",
   "en-gb": "The cabin clock says 10:15 and the route ahead looks clear.",
@@ -67,6 +68,7 @@ interface TtsPreferences {
   text?: string;
   piperVoice?: PiperVoiceId;
   lang?: TtsLangId;
+  volume?: number;
 }
 
 interface TtsView {
@@ -83,6 +85,8 @@ interface TtsView {
   loadButton: HTMLButtonElement;
   speakButton: HTMLButtonElement;
   stopButton: HTMLButtonElement;
+  volumeSlider: HTMLInputElement;
+  volumeValue: HTMLElement;
   resizeHandle: HTMLButtonElement;
   voiceSegments: HTMLElement;
 }
@@ -127,6 +131,30 @@ function getDefaultTextForLang(lang: TtsLangId): string {
   return DEFAULT_TEXT_BY_LANG[lang] || DEFAULT_TEXT_BY_LANG[DEFAULT_LANG];
 }
 
+function clampVolume(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_VOLUME;
+  return Math.max(0, Math.min(1, parsed));
+}
+
+function formatVolume(value: number): string {
+  return `${Math.round(clampVolume(value) * 100)}%`;
+}
+
+function updateRangeVisualFill(input: HTMLInputElement) {
+  const min = Number(input.min);
+  const max = Number(input.max);
+  const value = Number(input.value);
+  const safeMin = Number.isFinite(min) ? min : 0;
+  const safeMax = Number.isFinite(max) ? max : 100;
+  const safeValue = Number.isFinite(value) ? value : safeMax;
+  const span = safeMax - safeMin;
+  const clampedValue = Math.min(safeMax, Math.max(safeMin, safeValue));
+  const percent = span > 0 ? ((clampedValue - safeMin) / span) * 100 : 0;
+
+  input.style.setProperty("--tts-range-percent", `${percent}%`);
+}
+
 function loadPreferences(runtime: VatioAppRuntime | null): Required<TtsPreferences> {
   const stored = runtime?.services.settings?.getJson<TtsPreferences | null>(TTS_SETTINGS_KEY, null) || null;
   const initialLang = stored ? DEFAULT_LANG : detectInitialLang();
@@ -143,6 +171,7 @@ function loadPreferences(runtime: VatioAppRuntime | null): Required<TtsPreferenc
     text: typeof stored?.text === "string" && stored.text.trim() ? stored.text : getDefaultTextForLang(safeLang),
     piperVoice: storedPiperVoice || DEFAULT_PIPER_VOICE,
     lang: safeLang,
+    volume: clampVolume(stored?.volume),
   };
   if (!stored) savePreferences(runtime, preferences);
   return preferences;
@@ -284,6 +313,21 @@ function buildPanel(preferences: Required<TtsPreferences>): TtsView {
         <button type="button" class="tts-action" data-tts-stop>${IconTrash}<span>Stop</span></button>
       </div>
 
+      <div class="tts-volume-row">
+        <span class="tts-volume-icon" aria-hidden="true">${IconVolume}</span>
+        <input
+          type="range"
+          class="tts-volume"
+          data-tts-volume
+          min="0"
+          max="100"
+          step="1"
+          value="${Math.round(preferences.volume * 100)}"
+          aria-label="TTS volume"
+        />
+        <output class="tts-volume-value" data-tts-volume-value>${formatVolume(preferences.volume)}</output>
+      </div>
+
       <div class="tts-status" aria-live="polite">
         <div>
           <strong data-tts-status>Ready</strong>
@@ -305,6 +349,8 @@ function buildPanel(preferences: Required<TtsPreferences>): TtsView {
 
   const textInput = panel.querySelector("[data-tts-text]") as HTMLTextAreaElement;
   textInput.value = preferences.text;
+  const volumeSlider = panel.querySelector("[data-tts-volume]") as HTMLInputElement;
+  updateRangeVisualFill(volumeSlider);
 
   return {
     panel,
@@ -320,6 +366,8 @@ function buildPanel(preferences: Required<TtsPreferences>): TtsView {
     loadButton: panel.querySelector("[data-tts-load]") as HTMLButtonElement,
     speakButton: panel.querySelector("[data-tts-speak]") as HTMLButtonElement,
     stopButton: panel.querySelector("[data-tts-stop]") as HTMLButtonElement,
+    volumeSlider,
+    volumeValue: panel.querySelector("[data-tts-volume-value]") as HTMLElement,
     resizeHandle: panel.querySelector("[data-tts-resize]") as HTMLButtonElement,
     voiceSegments: panel.querySelector("[data-tts-voice-segments]") as HTMLElement,
   };
@@ -347,12 +395,15 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
     loadButton,
     speakButton,
     stopButton,
+    volumeSlider,
+    volumeValue,
     resizeHandle,
     voiceSegments,
   } = view;
 
   let lang: TtsLangId = preferences.lang;
   let piperVoice: PiperVoiceId = preferences.piperVoice;
+  let volume = preferences.volume;
   let worker: Worker | null = null;
   let workerRequestId = 0;
   const pendingWorkerRequests = new Map<number, {
@@ -380,6 +431,7 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
       text: textInput.value,
       piperVoice,
       lang,
+      volume,
     });
   }
 
@@ -534,6 +586,14 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
     };
   }
 
+  function renderVolume() {
+    const volumePercent = Math.round(volume * 100);
+    volumeSlider.value = String(volumePercent);
+    volumeValue.textContent = formatVolume(volume);
+    updateRangeVisualFill(volumeSlider);
+    if (audio) audio.volume = volume;
+  }
+
   async function loadEngine(): Promise<void> {
     if (modelReady) return;
     if (loadingPromise) return loadingPromise;
@@ -607,6 +667,7 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
       const blob = message.blob;
       audioUrl = URL.createObjectURL(blob);
       audio = new Audio(audioUrl);
+      audio.volume = volume;
       await audio.play();
       const seconds = Math.max(0.1, message.durationMs / 1000);
       setStatus("Speaking", `${formatBytes(blob.size)} WAV in ${seconds.toFixed(1)}s; audio ${message.audioSeconds.toFixed(1)}s`);
@@ -706,6 +767,7 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
   applyInitialBounds(panel, shellManager);
   mount.append(panel);
   renderSegments();
+  renderVolume();
   renderDiagnostics();
   panel.hidden = !restoreVisibility;
 
@@ -794,6 +856,11 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
   });
   speakButton.addEventListener("click", () => {
     speak().catch((error) => runtime?.logger.warn("TTS speech failed.", error));
+  });
+  volumeSlider.addEventListener("input", () => {
+    volume = clampVolume(Number(volumeSlider.value) / 100);
+    renderVolume();
+    persist();
   });
   stopButton.addEventListener("click", () => {
     stopAudio();
