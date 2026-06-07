@@ -57,4 +57,13 @@ describe("typed shell architecture contracts", () => {
     }
     expect(appStyles).toContain("--vb-touch-target-min");
   });
+
+  it("keeps launcher branding constrained inside the header grid", () => {
+    const launcherStyles = readProjectFile("src/styles/app-launcher-menu.less");
+
+    expect(launcherStyles).toContain(".vb-app-launcher-brand .compact-tools-menu-logo img");
+    expect(launcherStyles).toMatch(/\.vb-app-launcher-brand \.compact-tools-menu-logo img\s*\{[^}]*width:\s*100%;/s);
+    expect(launcherStyles).toMatch(/\.vb-app-launcher-brand \.compact-tools-menu-logo img\s*\{[^}]*max-width:\s*100%;/s);
+    expect(launcherStyles).toMatch(/\.vb-app-launcher-brand\.app-start-menu-brand\s*\{[^}]*overflow:\s*hidden;/s);
+  });
 });

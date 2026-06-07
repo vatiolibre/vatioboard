@@ -166,7 +166,7 @@
 
 .app-start-menu-list.vb-app-launcher .vb-app-launcher-header {
   display: grid;
-  grid-template-columns: minmax(132px, 1fr) 58px max-content;
+  grid-template-columns: minmax(0, 1fr) 58px max-content;
   align-items: center;
   gap: 10px 12px;
   min-width: 0;
@@ -184,12 +184,34 @@
   grid-row: 1;
   display: inline-flex;
   align-items: center;
+  gap: 7px;
+  width: 100%;
   min-width: 0;
+  overflow: hidden;
+  padding: 0;
   margin: 0;
+  border: 0;
 }
 
 .vb-app-launcher-brand .compact-tools-menu-logo {
-  max-width: 158px;
+  display: block;
+  flex: 0 1 min(158px, calc(100% - 16px));
+  width: min(158px, calc(100% - 16px));
+  max-width: calc(100% - 16px);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.vb-app-launcher-brand .compact-tools-menu-logo img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  min-width: 0;
+}
+
+.vb-app-launcher-brand .dot {
+  flex: 0 0 auto;
 }
 
 .vb-app-launcher-title-block {
@@ -924,7 +946,7 @@
 
 @media (max-width: 1180px) {
   .app-start-menu-list.vb-app-launcher .vb-app-launcher-header {
-    grid-template-columns: minmax(128px, 1fr) 54px max-content;
+    grid-template-columns: minmax(0, 1fr) 54px max-content;
     grid-template-rows: auto;
   }
 
@@ -1053,7 +1075,9 @@
   }
 
   .vb-app-launcher-brand .compact-tools-menu-logo {
-    max-width: 138px;
+    flex-basis: min(138px, calc(100% - 16px));
+    width: min(138px, calc(100% - 16px));
+    max-width: calc(100% - 16px);
   }
 
   .vb-app-launcher-icon-button span {
