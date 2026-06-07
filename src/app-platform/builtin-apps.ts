@@ -432,8 +432,8 @@ export const BUILTIN_APP_MANIFESTS = [
       defaultBounds: { left: 64, top: 104, width: 640, height: 420 },
       capabilities: {
         ...snappingWindowCapabilities,
-        minWidth: 320,
-        minHeight: 260,
+        minWidth: 360,
+        minHeight: 300,
       },
       restoreOnBoot: true,
       lazy: false,

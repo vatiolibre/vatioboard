@@ -45,6 +45,7 @@ type DraggablePanelOptions = {
   dragThresholdPx: number;
   savePos: (position: DragPosition) => void;
   loadPos: () => DragPosition | null;
+  canStart?: ((event: PointerEvent) => boolean) | null;
   onDragStart?: DragCallback | null;
   onDragMove?: DragCallback | null;
   onDragEnd?: DragCallback | null;
@@ -174,6 +175,7 @@ export function makePanelDraggable({
   dragThresholdPx,
   savePos,
   loadPos,
+  canStart = null,
   onDragStart = null,
   onDragMove = null,
   onDragEnd = null,
@@ -207,8 +209,12 @@ export function makePanelDraggable({
   let rafId = 0;
   let activeWorkArea: ReturnType<typeof getShellWorkArea> | null = null;
 
-  function startDragNow() {
+  function startDragNow(e?: PointerEvent) {
     if (dragging) return;
+    if (e && canStart && !canStart(e)) {
+      endDrag(e);
+      return;
+    }
 
     if (shellWindowId && shellManager?.getWindow(shellWindowId)?.snap) {
       shellManager.unsnapWindow(shellWindowId, { preserveSnap: false });
@@ -352,6 +358,7 @@ export function makePanelDraggable({
     if (e.pointerType === "mouse" && e.button !== 0) return;
 
     if (pointerDown) endDrag(e);
+    if (canStart && !canStart(e)) return;
     clearSnapPreview(panel);
     activeSnapZone = null;
 
@@ -369,7 +376,7 @@ export function makePanelDraggable({
 
     // Mouse: start immediately (keep current perfect behavior)
     if (e.pointerType === "mouse") {
-      startDragNow();
+      startDragNow(e);
       return;
     }
 
@@ -387,7 +394,7 @@ export function makePanelDraggable({
       const dx = Math.abs(lastX - startX);
       const dy = Math.abs(lastY - startY);
       if (dx > dragThresholdPx || dy > dragThresholdPx) {
-        startDragNow();
+        startDragNow(e);
       } else {
         return;
       }
