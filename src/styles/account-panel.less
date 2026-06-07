@@ -16,7 +16,7 @@
 
   width: min(378px, calc(100vw - 24px));
   min-width: 320px;
-  min-height: 360px;
+  min-height: 400px;
   max-height: min(560px, calc(100dvh - 104px));
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -205,7 +205,7 @@
 
 .vb-account-panel-auth .backend-auth-links {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 

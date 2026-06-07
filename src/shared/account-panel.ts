@@ -18,7 +18,7 @@ import type { ShellLifecycleOptions, ShellRuntime } from "../types/shell";
 const ACCOUNT_PANEL_WINDOW_ID = "account";
 const ACCOUNT_PANEL_POS_KEY = "vatioboard.account_panel_pos.v1";
 const ACCOUNT_PANEL_MIN_WIDTH = 320;
-const ACCOUNT_PANEL_MIN_HEIGHT = 360;
+const ACCOUNT_PANEL_MIN_HEIGHT = 400;
 
 type AccountPanelOptions = {
   mount?: HTMLElement;

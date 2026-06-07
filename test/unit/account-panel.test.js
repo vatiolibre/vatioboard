@@ -1,7 +1,13 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const AUTH_REQUEST_EVENT = "vatioboard:backend-auth-request";
 const AUTH_STATE_EVENT = "vatioboard:backend-auth-state";
+
+function readProjectFile(path) {
+  return readFileSync(resolve(process.cwd(), path), "utf8");
+}
 
 async function loadAccountPanel({ backendAuthDebugControlsEnabled = false } = {}) {
   vi.resetModules();
@@ -41,6 +47,14 @@ describe("account panel", () => {
     vi.restoreAllMocks();
   });
 
+  it("keeps guest account links side by side by default", () => {
+    const css = readProjectFile("src/styles/account-panel.less");
+
+    expect(css).toMatch(
+      /\.vb-account-panel-auth \.backend-auth-links\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/s,
+    );
+  });
+
   it("keeps backend auth debug controls disabled by default", async () => {
     const { createBackendAuthController, createShellWindowManager, initAccountPanel } = await loadAccountPanel();
     const shellManager = createShellWindowManager({
@@ -56,11 +70,11 @@ describe("account panel", () => {
     expect(shellManager.getWindow("account").capabilities).toMatchObject({
       resizable: false,
       minWidth: 320,
-      minHeight: 360,
+      minHeight: 400,
       maxWidth: 380,
     });
     expect(accountPanel.getElement().style.minWidth).toBe("320px");
-    expect(accountPanel.getElement().style.minHeight).toBe("360px");
+    expect(accountPanel.getElement().style.minHeight).toBe("400px");
 
     accountPanel.destroy();
     shellManager.destroy();
