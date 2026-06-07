@@ -3,6 +3,12 @@ body.code-rain-page {
   background: #060807;
 }
 
+body.code-rain-browser-fullscreen-active {
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+}
+
 body.code-rain-page #app,
 body.code-rain-page #app-view,
 body.code-rain-page .code-rain-app {
@@ -41,6 +47,20 @@ body.code-rain-page .code-rain-app {
   background: #000;
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: 0;
+}
+
+.code-rain-app--browser-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: var(--vb-z-shell-fullscreen, 1980);
+  width: 100vw;
+  height: 100vh;
+  height: 100svh;
+  height: 100dvh;
+  min-height: 0;
+  max-width: none;
+  max-height: none;
+  overflow: hidden;
 }
 
 @media (prefers-color-scheme: dark) {

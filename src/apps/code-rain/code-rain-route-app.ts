@@ -27,6 +27,8 @@ const SWIPE_DISTANCE_PX = 56;
 const SWIPE_AXIS_RATIO = 1.35;
 const DOUBLE_TAP_MS = 300;
 const DOUBLE_TAP_DISTANCE_PX = 28;
+const BROWSER_FULLSCREEN_BODY_CLASS = "code-rain-browser-fullscreen-active";
+const BROWSER_FULLSCREEN_APP_CLASS = "code-rain-app--browser-fullscreen";
 
 const VERSION_OPTIONS = [
   { value: "3d", label: "Classic 3D" },
@@ -456,8 +458,8 @@ function isStageFullscreen(stage: HTMLElement) {
   return getFullscreenElement() === stage;
 }
 
-function syncFullscreenState(root: HTMLElement, stage: HTMLElement) {
-  const fullscreen = isStageFullscreen(stage);
+function syncFullscreenState(root: HTMLElement, stage: HTMLElement, fallbackFullscreen = false) {
+  const fullscreen = isStageFullscreen(stage) || fallbackFullscreen;
   root.classList.toggle("code-rain-app--fullscreen", fullscreen);
   if (fullscreen) setSettingsOpen(root, false);
 
@@ -570,19 +572,23 @@ function createRandomState(): CodeRainState {
   });
 }
 
-async function toggleFullscreen(stage: HTMLElement) {
-  const doc = document as Document & {
-    webkitExitFullscreen?: () => Promise<void> | void;
-    webkitFullscreenElement?: Element | null;
-  };
+async function requestNativeFullscreen(stage: HTMLElement) {
   const element = stage as HTMLElement & {
     webkitRequestFullscreen?: () => Promise<void> | void;
   };
-  if (getFullscreenElement()) {
-    await (document.exitFullscreen?.() || doc.webkitExitFullscreen?.());
-    return;
-  }
-  await (stage.requestFullscreen?.() || element.webkitRequestFullscreen?.());
+  const requestFullscreen = stage.requestFullscreen || element.webkitRequestFullscreen;
+  if (typeof requestFullscreen !== "function") return false;
+
+  await requestFullscreen.call(stage);
+  return isStageFullscreen(stage);
+}
+
+async function exitNativeFullscreen() {
+  const doc = document as Document & {
+    webkitExitFullscreen?: () => Promise<void> | void;
+  };
+  const exitFullscreen = document.exitFullscreen || doc.webkitExitFullscreen;
+  if (typeof exitFullscreen === "function") await exitFullscreen.call(document);
 }
 
 function mountCodeRain(routeContext: RouteMountContext): MountedView {
@@ -609,11 +615,29 @@ function mountCodeRain(routeContext: RouteMountContext): MountedView {
   let statusRevealTimer = 0;
   let gesturePointer: CodeRainPointer | null = null;
   let lastGestureTap: Omit<CodeRainPointer, "id"> | null = null;
+  let isFallbackFullscreen = false;
+
+  function setFallbackFullscreenClasses(active: boolean) {
+    root.classList.toggle(BROWSER_FULLSCREEN_APP_CLASS, active);
+    document.body.classList.toggle(BROWSER_FULLSCREEN_BODY_CLASS, active);
+  }
+
+  function isFullscreenActive() {
+    return isStageFullscreen(stage) || isFallbackFullscreen;
+  }
+
+  function syncFullscreenUi() {
+    if (isStageFullscreen(stage) && isFallbackFullscreen) {
+      isFallbackFullscreen = false;
+      setFallbackFullscreenClasses(false);
+    }
+    syncFullscreenState(root, stage, isFallbackFullscreen);
+  }
 
   function revealStatus() {
     root.classList.add("code-rain-app--status-visible");
     window.clearTimeout(statusRevealTimer);
-    if (isStageFullscreen(stage)) {
+    if (isFullscreenActive()) {
       statusRevealTimer = window.setTimeout(() => {
         root.classList.remove("code-rain-app--status-visible");
       }, STATUS_OVERLAY_VISIBLE_MS);
@@ -666,8 +690,59 @@ function mountCodeRain(routeContext: RouteMountContext): MountedView {
     showStatus("Reloaded");
   }
 
+  function enterFallbackFullscreen() {
+    isFallbackFullscreen = true;
+    setFallbackFullscreenClasses(true);
+    syncFullscreenUi();
+    revealStatus();
+  }
+
+  function exitFallbackFullscreen({ clearStatus = true } = {}) {
+    if (!isFallbackFullscreen) return;
+    isFallbackFullscreen = false;
+    setFallbackFullscreenClasses(false);
+    syncFullscreenUi();
+    if (clearStatus) clearStatusReveal();
+  }
+
+  async function enterFullscreen() {
+    if (isFullscreenActive()) return;
+
+    try {
+      if (await requestNativeFullscreen(stage)) {
+        syncFullscreenUi();
+        revealStatus();
+        return;
+      }
+    } catch {
+      // Fall back to a fixed browser-viewport fullscreen experience below.
+    }
+
+    enterFallbackFullscreen();
+  }
+
+  async function exitFullscreenMode() {
+    if (isFallbackFullscreen) {
+      exitFallbackFullscreen();
+      return;
+    }
+    if (isStageFullscreen(stage)) {
+      await exitNativeFullscreen();
+    }
+    syncFullscreenUi();
+    if (!isFullscreenActive()) clearStatusReveal();
+  }
+
+  async function toggleFullscreenMode() {
+    if (isFullscreenActive() || getFullscreenElement() === stage) {
+      await exitFullscreenMode();
+      return;
+    }
+    await enterFullscreen();
+  }
+
   applyState({ updateRoute: true, reload: true });
-  syncFullscreenState(root, stage);
+  syncFullscreenUi();
   runtime?.logger.debug("Code Rain route app mounted with an isolated renderer iframe.");
 
   for (const field of routeContext.root.querySelectorAll("[data-code-rain-field]")) {
@@ -726,14 +801,14 @@ function mountCodeRain(routeContext: RouteMountContext): MountedView {
   });
 
   routeContext.cleanup.addEventListener(document, "fullscreenchange", () => {
-    syncFullscreenState(root, stage);
-    if (isStageFullscreen(stage)) revealStatus();
+    syncFullscreenUi();
+    if (isFullscreenActive()) revealStatus();
     else clearStatusReveal();
   });
 
   routeContext.cleanup.addEventListener(document, "webkitfullscreenchange", () => {
-    syncFullscreenState(root, stage);
-    if (isStageFullscreen(stage)) revealStatus();
+    syncFullscreenUi();
+    if (isFullscreenActive()) revealStatus();
     else clearStatusReveal();
   });
 
@@ -752,10 +827,11 @@ function mountCodeRain(routeContext: RouteMountContext): MountedView {
   routeContext.cleanup.addEventListener(routeContext.root.querySelector('[data-code-rain-action="reload"]'), "click", reloadVisual);
 
   routeContext.cleanup.addEventListener(routeContext.root.querySelector('[data-code-rain-action="fullscreen"]'), "click", () => {
-    void toggleFullscreen(stage)
+    void toggleFullscreenMode()
       .then(() => {
-        syncFullscreenState(root, stage);
-        revealStatus();
+        syncFullscreenUi();
+        if (isFullscreenActive()) revealStatus();
+        else clearStatusReveal();
       })
       .catch((error) => runtime?.logger.warn("Code Rain fullscreen request failed.", error));
   });
@@ -783,7 +859,7 @@ function mountCodeRain(routeContext: RouteMountContext): MountedView {
 
   routeContext.cleanup.addEventListener(gestureLayer, "pointerdown", (event) => {
     const pointerEvent = event as PointerEvent;
-    if (!isStageFullscreen(stage)) return;
+    if (!isFullscreenActive()) return;
     if (pointerEvent.pointerType === "mouse" && pointerEvent.button !== 0) return;
     pointerEvent.preventDefault();
     gesturePointer = {
@@ -801,7 +877,7 @@ function mountCodeRain(routeContext: RouteMountContext): MountedView {
 
   routeContext.cleanup.addEventListener(gestureLayer, "pointerup", (event) => {
     const pointerEvent = event as PointerEvent;
-    if (!isStageFullscreen(stage) || !gesturePointer || pointerEvent.pointerId !== gesturePointer.id) return;
+    if (!isFullscreenActive() || !gesturePointer || pointerEvent.pointerId !== gesturePointer.id) return;
     pointerEvent.preventDefault();
     const dx = pointerEvent.clientX - gesturePointer.x;
     const dy = pointerEvent.clientY - gesturePointer.y;
@@ -837,11 +913,21 @@ function mountCodeRain(routeContext: RouteMountContext): MountedView {
 
   routeContext.cleanup.add(() => {
     window.clearTimeout(statusRevealTimer);
+    exitFallbackFullscreen({ clearStatus: false });
+    if (isStageFullscreen(stage)) {
+      exitNativeFullscreen().catch(() => {});
+    }
+    setFallbackFullscreenClasses(false);
     frame.src = "about:blank";
   });
 
   return {
     unmount() {
+      exitFallbackFullscreen({ clearStatus: false });
+      if (isStageFullscreen(stage)) {
+        exitNativeFullscreen().catch(() => {});
+      }
+      setFallbackFullscreenClasses(false);
       frame.src = "about:blank";
     },
   };

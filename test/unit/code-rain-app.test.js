@@ -55,6 +55,94 @@ function installFullscreenMock() {
   };
 }
 
+function installUnavailableFullscreenMock() {
+  const fullscreenDescriptor = Object.getOwnPropertyDescriptor(document, "fullscreenElement");
+  const requestDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "requestFullscreen");
+  const webkitRequestDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "webkitRequestFullscreen");
+  const exitFullscreenDescriptor = Object.getOwnPropertyDescriptor(document, "exitFullscreen");
+
+  Object.defineProperty(document, "fullscreenElement", {
+    configurable: true,
+    get: () => null,
+  });
+  Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
+    configurable: true,
+    writable: true,
+    value: undefined,
+  });
+  Object.defineProperty(HTMLElement.prototype, "webkitRequestFullscreen", {
+    configurable: true,
+    writable: true,
+    value: undefined,
+  });
+  Object.defineProperty(document, "exitFullscreen", {
+    configurable: true,
+    value: vi.fn(() => Promise.resolve()),
+  });
+
+  return () => {
+    if (fullscreenDescriptor) {
+      Object.defineProperty(document, "fullscreenElement", fullscreenDescriptor);
+    } else {
+      delete document.fullscreenElement;
+    }
+
+    if (requestDescriptor) {
+      Object.defineProperty(HTMLElement.prototype, "requestFullscreen", requestDescriptor);
+    } else {
+      delete HTMLElement.prototype.requestFullscreen;
+    }
+
+    if (webkitRequestDescriptor) {
+      Object.defineProperty(HTMLElement.prototype, "webkitRequestFullscreen", webkitRequestDescriptor);
+    } else {
+      delete HTMLElement.prototype.webkitRequestFullscreen;
+    }
+
+    if (exitFullscreenDescriptor) {
+      Object.defineProperty(document, "exitFullscreen", exitFullscreenDescriptor);
+    } else {
+      delete document.exitFullscreen;
+    }
+  };
+}
+
+function installRejectingFullscreenMock() {
+  const fullscreenDescriptor = Object.getOwnPropertyDescriptor(document, "fullscreenElement");
+  const originalRequestFullscreen = HTMLElement.prototype.requestFullscreen;
+  const exitFullscreenDescriptor = Object.getOwnPropertyDescriptor(document, "exitFullscreen");
+
+  Object.defineProperty(document, "fullscreenElement", {
+    configurable: true,
+    get: () => null,
+  });
+  HTMLElement.prototype.requestFullscreen = vi.fn(() => Promise.reject(new Error("blocked")));
+  Object.defineProperty(document, "exitFullscreen", {
+    configurable: true,
+    value: vi.fn(() => Promise.resolve()),
+  });
+
+  return () => {
+    if (fullscreenDescriptor) {
+      Object.defineProperty(document, "fullscreenElement", fullscreenDescriptor);
+    } else {
+      delete document.fullscreenElement;
+    }
+
+    if (originalRequestFullscreen) {
+      HTMLElement.prototype.requestFullscreen = originalRequestFullscreen;
+    } else {
+      delete HTMLElement.prototype.requestFullscreen;
+    }
+
+    if (exitFullscreenDescriptor) {
+      Object.defineProperty(document, "exitFullscreen", exitFullscreenDescriptor);
+    } else {
+      delete document.exitFullscreen;
+    }
+  };
+}
+
 function createPointerTestEvent(type, init = {}) {
   const eventInit = {
     bubbles: true,
@@ -88,6 +176,7 @@ describe("Code Rain app", () => {
 
   afterEach(() => {
     cleanupRouteAppTestDom();
+    document.body.className = "";
   });
 
   it("mounts the isolated renderer iframe with sanitized visualizer params", async () => {
@@ -257,6 +346,105 @@ describe("Code Rain app", () => {
 
       expect(app.classList.contains("code-rain-app--fullscreen")).toBe(false);
       expect(fullscreenButton.getAttribute("aria-label")).toBe("Fullscreen");
+    } finally {
+      restoreFullscreen();
+    }
+  });
+
+  it("uses browser-viewport fullscreen fallback when native fullscreen is unavailable", async () => {
+    const restoreFullscreen = installUnavailableFullscreenMock();
+
+    try {
+      const modules = await loadRouteAppModules("../../src/apps/code-rain/index.js");
+      const manifest = modules.appRegistry.getApp("vatio.codeRain");
+      const runtime = modules.createAppRuntime({ manifest, baseContext: {} });
+      const root = createRouteTestRoot();
+      const mounted = await modules.mount(root, createRouteMountContext({
+        runtime,
+        manifest,
+        path: "/code-rain",
+        hash: "#/code-rain",
+      }));
+
+      const app = root.querySelector("[data-code-rain-app]");
+      const settingsButton = root.querySelector('[data-code-rain-action="settings"]');
+      const fullscreenButton = root.querySelector('[data-code-rain-action="fullscreen"]');
+      const gestureLayer = root.querySelector("[data-code-rain-gesture-layer]");
+
+      settingsButton.click();
+      expect(app.classList.contains("code-rain-app--settings-open")).toBe(true);
+
+      fullscreenButton.click();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(app.classList.contains("code-rain-app--settings-open")).toBe(false);
+      expect(app.classList.contains("code-rain-app--fullscreen")).toBe(true);
+      expect(app.classList.contains("code-rain-app--browser-fullscreen")).toBe(true);
+      expect(document.body.classList.contains("code-rain-browser-fullscreen-active")).toBe(true);
+      expect(fullscreenButton.getAttribute("aria-label")).toBe("Exit fullscreen");
+
+      gestureLayer.dispatchEvent(createPointerTestEvent("pointerdown", {
+        clientX: 260,
+        clientY: 120,
+        pointerId: 7,
+      }));
+      gestureLayer.dispatchEvent(createPointerTestEvent("pointerup", {
+        clientX: 120,
+        clientY: 124,
+        pointerId: 7,
+      }));
+
+      const swipedSrc = new URL(root.querySelector("[data-code-rain-frame]").getAttribute("src"), window.location.origin);
+      expect(swipedSrc.searchParams.get("version")).toBe("operator");
+      expect(swipedSrc.searchParams.get("effect")).toBe("mirror");
+
+      fullscreenButton.click();
+      await Promise.resolve();
+
+      expect(app.classList.contains("code-rain-app--fullscreen")).toBe(false);
+      expect(app.classList.contains("code-rain-app--browser-fullscreen")).toBe(false);
+      expect(document.body.classList.contains("code-rain-browser-fullscreen-active")).toBe(false);
+      expect(fullscreenButton.getAttribute("aria-label")).toBe("Fullscreen");
+
+      fullscreenButton.click();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(document.body.classList.contains("code-rain-browser-fullscreen-active")).toBe(true);
+
+      mounted.unmount();
+      expect(document.body.classList.contains("code-rain-browser-fullscreen-active")).toBe(false);
+    } finally {
+      restoreFullscreen();
+    }
+  });
+
+  it("falls back when native fullscreen rejects", async () => {
+    const restoreFullscreen = installRejectingFullscreenMock();
+
+    try {
+      const modules = await loadRouteAppModules("../../src/apps/code-rain/index.js");
+      const manifest = modules.appRegistry.getApp("vatio.codeRain");
+      const runtime = modules.createAppRuntime({ manifest, baseContext: {} });
+      const root = createRouteTestRoot();
+      await modules.mount(root, createRouteMountContext({
+        runtime,
+        manifest,
+        path: "/code-rain",
+        hash: "#/code-rain",
+      }));
+
+      const app = root.querySelector("[data-code-rain-app]");
+      const fullscreenButton = root.querySelector('[data-code-rain-action="fullscreen"]');
+
+      fullscreenButton.click();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(HTMLElement.prototype.requestFullscreen).toHaveBeenCalled();
+      expect(app.classList.contains("code-rain-app--fullscreen")).toBe(true);
+      expect(app.classList.contains("code-rain-app--browser-fullscreen")).toBe(true);
+      expect(document.body.classList.contains("code-rain-browser-fullscreen-active")).toBe(true);
     } finally {
       restoreFullscreen();
     }
