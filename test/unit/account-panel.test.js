@@ -3,12 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const AUTH_REQUEST_EVENT = "vatioboard:backend-auth-request";
 const AUTH_STATE_EVENT = "vatioboard:backend-auth-state";
 
-async function loadAccountPanel() {
+async function loadAccountPanel({ backendAuthDebugControlsEnabled = false } = {}) {
   vi.resetModules();
+  const createBackendAuthController = vi.fn(() => ({ destroy: vi.fn() }));
   vi.doMock("../../src/shared/backend-auth.js", () => ({
     BACKEND_AUTH_REQUEST_EVENT: AUTH_REQUEST_EVENT,
     BACKEND_AUTH_STATE_EVENT: AUTH_STATE_EVENT,
-    createBackendAuthController: vi.fn(() => ({ destroy: vi.fn() })),
+    createBackendAuthController,
     getBackendAuthStateSnapshot: vi.fn(() => ({
       authenticated: false,
       busy: false,
@@ -17,11 +18,16 @@ async function loadAccountPanel() {
       user: null,
     })),
   }));
+  vi.doMock("../../src/shared/environment.js", () => ({
+    getEnvironmentConfig: vi.fn(() => ({
+      backendAuthDebugControlsEnabled,
+    })),
+  }));
   const [accountPanel, shellWindowManager] = await Promise.all([
     import("../../src/shared/account-panel.js"),
     import("../../src/shared/shell-window-manager.js"),
   ]);
-  return { ...accountPanel, ...shellWindowManager };
+  return { ...accountPanel, ...shellWindowManager, createBackendAuthController };
 }
 
 describe("account panel", () => {
@@ -33,6 +39,45 @@ describe("account panel", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("keeps backend auth debug controls disabled by default", async () => {
+    const { createBackendAuthController, createShellWindowManager, initAccountPanel } = await loadAccountPanel();
+    const shellManager = createShellWindowManager({
+      root: document.body,
+      storeOptions: { storage: localStorage, migrateLegacy: false },
+    });
+    const accountPanel = initAccountPanel({
+      mount: document.body,
+      shellManager,
+    });
+
+    expect(createBackendAuthController.mock.calls[0]?.[0]?.ssoUi).toBeUndefined();
+
+    accountPanel.destroy();
+    shellManager.destroy();
+  });
+
+  it("enables backend auth debug controls when requested by environment", async () => {
+    const { createBackendAuthController, createShellWindowManager, initAccountPanel } = await loadAccountPanel({
+      backendAuthDebugControlsEnabled: true,
+    });
+    const shellManager = createShellWindowManager({
+      root: document.body,
+      storeOptions: { storage: localStorage, migrateLegacy: false },
+    });
+    const accountPanel = initAccountPanel({
+      mount: document.body,
+      shellManager,
+    });
+
+    expect(createBackendAuthController.mock.calls[0]?.[0]?.ssoUi).toEqual({
+      showGuestSsoLogin: true,
+      showAuthenticatedCrossOpenActions: true,
+    });
+
+    accountPanel.destroy();
+    shellManager.destroy();
   });
 
   it("queues automatic auth requests behind the welcome gate without focusing the username field", async () => {

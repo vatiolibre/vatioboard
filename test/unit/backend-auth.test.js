@@ -85,6 +85,7 @@ describe('environment configuration', () => {
     expect(config.apiBase).toBe('https://api.dev.vatioboard.com');
     expect(config.isLocalhost).toBe(true);
     expect(config.backendEnabled).toBe(false);
+    expect(config.backendAuthDebugControlsEnabled).toBe(false);
   });
 
   it('allows local backend calls when explicitly enabled by environment', () => {
@@ -101,6 +102,27 @@ describe('environment configuration', () => {
     }, {
       VITE_VATIOBOARD_BACKEND: 'off',
     }).backendEnabled).toBe(false);
+  });
+
+  it('keeps backend auth debug controls hidden unless explicitly enabled by environment', () => {
+    expect(getEnvironmentConfig({
+      hostname: 'vatioboard.com',
+      origin: 'https://vatioboard.com',
+    }).backendAuthDebugControlsEnabled).toBe(false);
+
+    expect(getEnvironmentConfig({
+      hostname: 'vatioboard.com',
+      origin: 'https://vatioboard.com',
+    }, {
+      VITE_VATIOBOARD_BACKEND_AUTH_DEBUG_CONTROLS: 'on',
+    }).backendAuthDebugControlsEnabled).toBe(true);
+
+    expect(getEnvironmentConfig({
+      hostname: 'vatioboard.com',
+      origin: 'https://vatioboard.com',
+    }, {
+      VITE_VATIOBOARD_BACKEND_AUTH_DEBUG_CONTROLS: 'false',
+    }).backendAuthDebugControlsEnabled).toBe(false);
   });
 });
 

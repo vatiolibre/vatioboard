@@ -23,7 +23,7 @@ pnpm run dev
 pnpm run verify
 ```
 
-`pnpm run dev` starts Vite after rebuilding local speed-camera artifacts. Local development uses `http://localhost:5174/` when the configured port is free. Backend calls are disabled on localhost by default so frontend-only work does not trigger CORS noise; start dev with `VITE_VATIOBOARD_BACKEND=on pnpm run dev` when you intentionally want the dev backend.
+`pnpm run dev` starts Vite after rebuilding local speed-camera artifacts. Local development uses `http://localhost:5174/` when the configured port is free. Backend calls are disabled on localhost by default so frontend-only work does not trigger CORS noise; start dev with `VITE_VATIOBOARD_BACKEND=on pnpm run dev` when you intentionally want the dev backend. Account-panel backend-auth debug buttons are hidden by default; set `VITE_VATIOBOARD_BACKEND_AUTH_DEBUG_CONTROLS=on` only when testing those SSO/open actions.
 
 ## App Routes
 
@@ -120,7 +120,7 @@ See [`docs/speed-camera-data.md`](docs/speed-camera-data.md) for artifact roles,
 
 VatioBoard is mostly local-first. Drawings, calculator state, trip estimates, replay sessions, acceleration runs, media cache state, and app-private settings are stored in the browser. Some account-aware actions use the VatioLibre backend when available, such as cloud sync, auth/session checks, feature access, and media/library flows.
 
-Shared backend auth lives in `src/shared/backend-auth.ts`. Production frontend hosts use `https://api.vatioboard.com`; non-production frontend hosts use `https://api.dev.vatioboard.com`. Localhost keeps the dev API base for URL construction but runs in frontend-only mode by default; set `VITE_VATIOBOARD_BACKEND=on` to opt into backend calls locally.
+Shared backend auth lives in `src/shared/backend-auth.ts`. Production frontend hosts use `https://api.vatioboard.com`; non-production frontend hosts use `https://api.dev.vatioboard.com`. Localhost keeps the dev API base for URL construction but runs in frontend-only mode by default; set `VITE_VATIOBOARD_BACKEND=on` to opt into backend calls locally. The account panel hides backend-auth debug controls by default; set `VITE_VATIOBOARD_BACKEND_AUTH_DEBUG_CONTROLS=on` to show the SSO/open test buttons.
 
 ## Testing
 

@@ -10,6 +10,7 @@ import {
   createBackendAuthController,
   getBackendAuthStateSnapshot,
 } from "./backend-auth.js";
+import { getEnvironmentConfig } from "./environment.js";
 import { registerFloatingPanel } from "./floating-layer-manager.js";
 import { getDefaultShellWindowManager } from "./shell-window-manager.js";
 import type { ShellLifecycleOptions, ShellRuntime } from "../types/shell";
@@ -152,12 +153,17 @@ export function initAccountPanel({
     panel.style.bottom = "auto";
   }
 
+  const showBackendAuthDebugControls = getEnvironmentConfig().backendAuthDebugControlsEnabled;
   const authController = createBackendAuthController({
     root: authForm,
-    ssoUi: {
-      showGuestSsoLogin: true,
-      showAuthenticatedCrossOpenActions: true,
-    },
+    ...(showBackendAuthDebugControls
+      ? {
+          ssoUi: {
+            showGuestSsoLogin: true,
+            showAuthenticatedCrossOpenActions: true,
+          },
+        }
+      : {}),
   });
 
   function savePos(position: { panel?: { left?: string; top?: string } | null }) {

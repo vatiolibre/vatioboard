@@ -20,24 +20,29 @@ export interface EnvironmentConfig {
   isProduction: boolean;
   isLocalhost: boolean;
   backendEnabled: boolean;
+  backendAuthDebugControlsEnabled: boolean;
 }
 
 export type EnvironmentLocation = Pick<Location, "hostname" | "origin"> | null | undefined;
 export type EnvironmentRuntimeEnv = Record<string, string | boolean | undefined> | null | undefined;
 
 const LOCALHOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
-const BACKEND_ENABLED_VALUES = new Set(["1", "true", "on", "yes", "enabled"]);
-const BACKEND_DISABLED_VALUES = new Set(["0", "false", "off", "no", "disabled", "local"]);
+const ENV_ENABLED_VALUES = new Set(["1", "true", "on", "yes", "enabled"]);
+const ENV_DISABLED_VALUES = new Set(["0", "false", "off", "no", "disabled", "local"]);
 
 function isLocalhost(host: string) {
   return LOCALHOSTS.has(host) || host.endsWith(".localhost");
 }
 
-function getBackendEnabledOverride(env: EnvironmentRuntimeEnv) {
-  const rawValue = String(env?.VITE_VATIOBOARD_BACKEND ?? "").trim().toLowerCase();
-  if (BACKEND_ENABLED_VALUES.has(rawValue)) return true;
-  if (BACKEND_DISABLED_VALUES.has(rawValue)) return false;
+function getBooleanEnvOverride(env: EnvironmentRuntimeEnv, key: string) {
+  const rawValue = String(env?.[key] ?? "").trim().toLowerCase();
+  if (ENV_ENABLED_VALUES.has(rawValue)) return true;
+  if (ENV_DISABLED_VALUES.has(rawValue)) return false;
   return null;
+}
+
+function getBackendEnabledOverride(env: EnvironmentRuntimeEnv) {
+  return getBooleanEnvOverride(env, "VITE_VATIOBOARD_BACKEND");
 }
 
 /**
@@ -60,5 +65,7 @@ export function getEnvironmentConfig(
     isProduction,
     isLocalhost: isLocal,
     backendEnabled: backendEnabledOverride ?? !isLocal,
+    backendAuthDebugControlsEnabled:
+      getBooleanEnvOverride(env, "VITE_VATIOBOARD_BACKEND_AUTH_DEBUG_CONTROLS") ?? false,
   };
 }

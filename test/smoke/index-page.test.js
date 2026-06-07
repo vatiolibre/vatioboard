@@ -278,6 +278,9 @@ describe("index.html SPA shell", () => {
     expect(authForm.querySelector("[data-backend-auth-forgot]")?.getAttribute("target")).toBe("_blank");
     expect(authForm.querySelector("[data-backend-auth-signup]")?.getAttribute("rel")).toBe("noopener noreferrer");
     expect(authForm.querySelector("[data-backend-auth-forgot]")?.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(authForm.querySelector(".backend-auth-sso-button")).toBeNull();
+    expect(authForm.querySelector(".backend-auth-open-libre-button")).toBeNull();
+    expect(authForm.querySelector(".backend-auth-open-board-button")).toBeNull();
 
     window.__vatioboardStartMenu.close();
     expect(sharedList.hidden).toBe(true);
