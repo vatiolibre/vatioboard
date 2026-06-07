@@ -838,6 +838,94 @@ describe('backend auth transport helpers', () => {
     }
   });
 
+  it('keeps protected media gates silent for guest sessions by default', async () => {
+    clearBackendAccessCache();
+    const fetchImpl = vi.fn(async (url) => {
+      const requestUrl = String(url);
+      if (requestUrl.includes('tesla_connection_status')) {
+        return jsonResponse({
+          message: {
+            is_guest: true,
+          },
+        });
+      }
+      throw new Error(`Unexpected request: ${requestUrl}`);
+    });
+    const authRequests = [];
+    const handleAuthRequest = (event) => {
+      authRequests.push(event.detail);
+    };
+    window.addEventListener(BACKEND_AUTH_REQUEST_EVENT, handleAuthRequest);
+
+    try {
+      const gate = await getProtectedMediaRequestGate({
+        fetchImpl,
+        config: TEST_CONFIG,
+      });
+
+      expect(gate).toMatchObject({
+        allowed: false,
+        blockedByAuth: true,
+        featureKey: 'media_assets',
+        reason: 'guest',
+        status: 401,
+      });
+      expect(authRequests).toHaveLength(0);
+    } finally {
+      window.removeEventListener(BACKEND_AUTH_REQUEST_EVENT, handleAuthRequest);
+    }
+  });
+
+  it('dispatches a required login prompt for protected media gates when requested', async () => {
+    clearBackendAccessCache();
+    const fetchImpl = vi.fn(async (url) => {
+      const requestUrl = String(url);
+      if (requestUrl.includes('tesla_connection_status')) {
+        return jsonResponse({
+          message: {
+            is_guest: true,
+          },
+        });
+      }
+      throw new Error(`Unexpected request: ${requestUrl}`);
+    });
+    const authRequests = [];
+    const handleAuthRequest = (event) => {
+      authRequests.push(event.detail);
+    };
+    window.addEventListener(BACKEND_AUTH_REQUEST_EVENT, handleAuthRequest);
+
+    try {
+      const gate = await getProtectedMediaRequestGate({
+        fetchImpl,
+        config: TEST_CONFIG,
+        promptAuth: true,
+        authPromptMode: 'required',
+        source: 'media-playback',
+      });
+
+      expect(gate).toMatchObject({
+        allowed: false,
+        blockedByAuth: true,
+        featureKey: 'media_assets',
+        reason: 'guest',
+        status: 401,
+      });
+      expect(authRequests).toEqual([
+        expect.objectContaining({
+          authPromptMode: 'required',
+          blockedByAuth: true,
+          featureKey: 'media_assets',
+          promptAuth: true,
+          reason: 'guest',
+          source: 'media-playback',
+        }),
+      ]);
+    } finally {
+      window.removeEventListener(BACKEND_AUTH_REQUEST_EVENT, handleAuthRequest);
+    }
+  });
+
   it('returns a synthetic disabled response without fetching for direct backend helpers', async () => {
     const fetchImpl = vi.fn();
 

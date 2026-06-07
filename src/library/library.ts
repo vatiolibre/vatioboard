@@ -343,7 +343,11 @@ async function resolveMediaAccess(assetName: any, contentHash: any, { intent }: 
 
   let gate = null;
   try {
-    gate = await getProtectedMediaRequestGate();
+    gate = await getProtectedMediaRequestGate({
+      promptAuth: true,
+      authPromptMode: "required",
+      source: "library-media-access",
+    });
     if (!gate.allowed) return null;
 
     const result = await getBackendMediaAssetAccess({

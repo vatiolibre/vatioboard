@@ -189,7 +189,7 @@ describe("account panel", () => {
     shellManager.destroy();
   });
 
-  it("restores the account panel after a simulated shell reload", async () => {
+  it("preserves account panel geometry without reopening it after a simulated shell reload", async () => {
     const { createShellWindowManager, initAccountPanel } = await loadAccountPanel();
     const shellManager = createShellWindowManager({
       root: document.body,
@@ -217,11 +217,74 @@ describe("account panel", () => {
     nextManager.restoreShellLayout();
 
     const panel = nextAccountPanel.getElement();
-    const usernameInput = panel.querySelector("[data-backend-auth-user]");
-    expect(panel.hidden).toBe(false);
+    expect(panel.hidden).toBe(true);
+    expect(nextManager.getWindow("account")?.state).toBe("closed");
     expect(panel.style.left).toBe("144px");
     expect(panel.style.top).toBe("72px");
-    expect(document.activeElement).not.toBe(usernameInput);
+
+    nextAccountPanel.destroy();
+    nextManager.destroy();
+  });
+
+  it("keeps dismissed soft auth prompts closed while allowing required prompts", async () => {
+    const { createShellWindowManager, initAccountPanel } = await loadAccountPanel();
+    const shellManager = createShellWindowManager({
+      root: document.body,
+      storeOptions: { storage: localStorage, migrateLegacy: false },
+    });
+    const accountPanel = initAccountPanel({
+      mount: document.body,
+      shellManager,
+    });
+
+    window.dispatchEvent(new CustomEvent(AUTH_REQUEST_EVENT, {
+      detail: {
+        blockedByAuth: true,
+        featureKey: "cloud_sync",
+        reason: "guest",
+        source: "protected-feature",
+        authPromptMode: "soft",
+      },
+    }));
+    expect(accountPanel.getElement().hidden).toBe(false);
+
+    accountPanel.close({ source: "account-panel-close" });
+    expect(accountPanel.getElement().hidden).toBe(true);
+    accountPanel.destroy();
+    shellManager.destroy();
+
+    document.body.innerHTML = "";
+    const nextManager = createShellWindowManager({
+      root: document.body,
+      storeOptions: { storage: localStorage, migrateLegacy: false },
+    });
+    const nextAccountPanel = initAccountPanel({
+      mount: document.body,
+      shellManager: nextManager,
+    });
+
+    window.dispatchEvent(new CustomEvent(AUTH_REQUEST_EVENT, {
+      detail: {
+        blockedByAuth: true,
+        featureKey: "cloud_sync",
+        reason: "guest",
+        source: "protected-feature",
+        authPromptMode: "soft",
+      },
+    }));
+    expect(nextAccountPanel.getElement().hidden).toBe(true);
+
+    window.dispatchEvent(new CustomEvent(AUTH_REQUEST_EVENT, {
+      detail: {
+        blockedByAuth: true,
+        featureKey: "media_assets",
+        reason: "guest",
+        source: "media-playback",
+        authPromptMode: "required",
+        promptAuth: true,
+      },
+    }));
+    expect(nextAccountPanel.getElement().hidden).toBe(false);
 
     nextAccountPanel.destroy();
     nextManager.destroy();

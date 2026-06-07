@@ -100,6 +100,7 @@ const BACKEND_FEATURE_BLOCKED_REASONS = Object.freeze({
   [BACKEND_FEATURE_KEYS.cloudSync]: "This feature requires an active subscription.",
   [BACKEND_FEATURE_KEYS.mediaAssets]: "This feature requires an active subscription.",
 });
+const AUTH_PROMPT_MODES = new Set(["silent", "soft", "required"]);
 const BACKEND_DISABLED_REASON = "backend_disabled";
 const LOCAL_ONLY_REASON = "local_only";
 const BACKEND_DISABLED_RESPONSE_STATUS = 503;
@@ -920,6 +921,19 @@ export function requestBackendAuthentication(detail: LegacyBackendOptions = {}) 
   return true;
 }
 
+function normalizeAuthPromptMode(authPromptMode: unknown, promptAuth: unknown) {
+  if (typeof authPromptMode === "string" && AUTH_PROMPT_MODES.has(authPromptMode)) {
+    return authPromptMode;
+  }
+  if (promptAuth === true) return "required";
+  if (promptAuth === false) return "silent";
+  return "silent";
+}
+
+function shouldRequestBackendAuthenticationPrompt(authPromptMode: string) {
+  return authPromptMode === "required" || authPromptMode === "soft";
+}
+
 function createMergedAbortSignal(signals: Array<AbortSignal | undefined | null> = []) {
   const activeSignals = signals.filter(Boolean);
 
@@ -1114,8 +1128,12 @@ export async function getProtectedFeatureRequestGate({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
+  promptAuth = false,
+  authPromptMode,
+  source = "protected-feature",
 }: LegacyBackendOptions = {}) {
   ensureBackendAuthStateTracking();
+  const normalizedAuthPromptMode = normalizeAuthPromptMode(authPromptMode, promptAuth);
 
   if (backendAuthStateSnapshot.pendingLogout === true) {
     return createBlockedProtectedGate({
@@ -1175,12 +1193,14 @@ export async function getProtectedFeatureRequestGate({
           ? "guest"
           : "auth";
       cleanup();
-      if (!session?.localOnly) {
+      if (!session?.localOnly && shouldRequestBackendAuthenticationPrompt(normalizedAuthPromptMode)) {
         requestBackendAuthentication({
           blockedByAuth: true,
           featureKey,
           reason,
-          source: "protected-feature",
+          promptAuth: normalizedAuthPromptMode === "required",
+          authPromptMode: normalizedAuthPromptMode,
+          source,
         });
       }
       return createBlockedProtectedGate({
@@ -1227,12 +1247,18 @@ export async function getProtectedFeatureRequestGate({
         });
       }
       cleanup();
-      if (blockedByAuth && !featureAccess?.localOnly) {
+      if (
+        blockedByAuth
+        && !featureAccess?.localOnly
+        && shouldRequestBackendAuthenticationPrompt(normalizedAuthPromptMode)
+      ) {
         requestBackendAuthentication({
           blockedByAuth: true,
           featureKey,
           reason,
-          source: "protected-feature",
+          promptAuth: normalizedAuthPromptMode === "required",
+          authPromptMode: normalizedAuthPromptMode,
+          source,
         });
       }
       return createBlockedProtectedGate({
@@ -1303,6 +1329,8 @@ export function getProtectedMediaAssetsRequestGate(options: LegacyBackendOptions
 
 export function getProtectedCloudSyncRequestGate(options: LegacyBackendOptions = {}) {
   return getProtectedFeatureRequestGate({
+    promptAuth: false,
+    authPromptMode: "silent",
     ...options,
     featureKey: BACKEND_FEATURE_KEYS.cloudSync,
   });

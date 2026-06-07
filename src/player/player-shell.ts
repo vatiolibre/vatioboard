@@ -798,7 +798,11 @@ export function createPlayerShell({
     let statusKey = "playerPlaylistSaveFailed";
     let gate = null;
     try {
-      gate = await getProtectedMediaRequestGate();
+      gate = await getProtectedMediaRequestGate({
+        promptAuth: true,
+        authPromptMode: "required",
+        source: "player-save-playlist",
+      });
       if (!gate.allowed) {
         return;
       }
@@ -1362,7 +1366,11 @@ export function createPlayerShell({
           // Network path: download and pin
           let gate = null;
           try {
-            gate = await getProtectedMediaRequestGate();
+            gate = await getProtectedMediaRequestGate({
+              promptAuth: true,
+              authPromptMode: "required",
+              source: "player-pin-media",
+            });
             if (!gate.allowed) {
               results[idx] = { name: assetName, ok: false, reason: "not_allowed" };
               return;

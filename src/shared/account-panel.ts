@@ -17,8 +17,11 @@ import type { ShellLifecycleOptions, ShellRuntime } from "../types/shell";
 
 const ACCOUNT_PANEL_WINDOW_ID = "account";
 const ACCOUNT_PANEL_POS_KEY = "vatioboard.account_panel_pos.v1";
+const ACCOUNT_PANEL_PROMPT_STATE_KEY = "vatioboard.account_panel_prompt_state.v1";
+const ACCOUNT_PANEL_PROMPT_STATE_VERSION = 1;
 const ACCOUNT_PANEL_MIN_WIDTH = 320;
 const ACCOUNT_PANEL_MIN_HEIGHT = 400;
+const AUTH_PROMPT_MODES = new Set(["silent", "soft", "required"]);
 
 type AccountPanelOptions = {
   mount?: HTMLElement;
@@ -29,6 +32,20 @@ type AccountPanelOptions = {
 
 type AccountPanelShowOptions = ShellLifecycleOptions & {
   focus?: boolean;
+  authPromptMode?: string;
+  blockedByAuth?: boolean;
+  featureKey?: string;
+  promptAuth?: boolean;
+  reason?: string;
+  source?: string;
+};
+
+type AccountPanelPromptState = {
+  dismissedAtMs: number;
+  featureKey: string | null;
+  reason: string | null;
+  source: string | null;
+  version: number;
 };
 
 export type AccountPanelApi = {
@@ -66,6 +83,60 @@ function savePanelPosition(position: { panel?: { left?: string; top?: string } |
   } catch {
     // Position is convenience state only.
   }
+}
+
+function normalizePromptState(value: unknown): AccountPanelPromptState | null {
+  if (!value || typeof value !== "object") return null;
+  const state = value as Partial<AccountPanelPromptState>;
+  const dismissedAtMs = Number(state.dismissedAtMs);
+  if (!Number.isFinite(dismissedAtMs) || dismissedAtMs <= 0) return null;
+  return {
+    dismissedAtMs,
+    featureKey: typeof state.featureKey === "string" ? state.featureKey : null,
+    reason: typeof state.reason === "string" ? state.reason : null,
+    source: typeof state.source === "string" ? state.source : null,
+    version: Number(state.version) || ACCOUNT_PANEL_PROMPT_STATE_VERSION,
+  };
+}
+
+function loadPromptState(): AccountPanelPromptState | null {
+  try {
+    return normalizePromptState(JSON.parse(localStorage.getItem(ACCOUNT_PANEL_PROMPT_STATE_KEY) || "null"));
+  } catch {
+    return null;
+  }
+}
+
+function savePromptState(options: AccountPanelShowOptions = {}) {
+  const state: AccountPanelPromptState = {
+    dismissedAtMs: Date.now(),
+    featureKey: typeof options.featureKey === "string" ? options.featureKey : null,
+    reason: typeof options.reason === "string" ? options.reason : null,
+    source: typeof options.source === "string" ? options.source : null,
+    version: ACCOUNT_PANEL_PROMPT_STATE_VERSION,
+  };
+  try {
+    localStorage.setItem(ACCOUNT_PANEL_PROMPT_STATE_KEY, JSON.stringify(state));
+  } catch {
+    // Prompt dismissal is a UX preference only.
+  }
+}
+
+function clearPromptState() {
+  try {
+    localStorage.removeItem(ACCOUNT_PANEL_PROMPT_STATE_KEY);
+  } catch {
+    // Best effort only.
+  }
+}
+
+function getAuthPromptMode(detail: AccountPanelShowOptions = {}) {
+  if (typeof detail.authPromptMode === "string" && AUTH_PROMPT_MODES.has(detail.authPromptMode)) {
+    return detail.authPromptMode;
+  }
+  if (detail.promptAuth === true) return "required";
+  if (detail.promptAuth === false) return "silent";
+  return "soft";
 }
 
 function buildAccountAuthForm() {
@@ -193,6 +264,7 @@ export function initAccountPanel({
     state.textContent = label;
     state.dataset.authState = authenticated ? "authenticated" : "guest";
     state.dataset.authBusy = busy ? "true" : "false";
+    if (authenticated) clearPromptState();
   }
 
   function showPanel({ focus = true }: AccountPanelShowOptions = {}) {
@@ -226,6 +298,10 @@ export function initAccountPanel({
   }
 
   function close(options: ShellLifecycleOptions = {}) {
+    if (activeAuthPrompt && options.source === "account-panel-close") {
+      savePromptState(activeAuthPrompt);
+      activeAuthPrompt = null;
+    }
     hidePanel();
     shellManager.closeWindow(ACCOUNT_PANEL_WINDOW_ID, { ...options, invokeLifecycle: false });
   }
@@ -239,7 +315,7 @@ export function initAccountPanel({
     kind: "system",
     title: "Account",
     shellManager,
-    restoreOnBoot: true,
+    restoreOnBoot: false,
     capabilities: {
       draggable: true,
       resizable: false,
@@ -274,15 +350,21 @@ export function initAccountPanel({
 
   const handleAuthRequest = (event: Event) => {
     const detail = ((event as CustomEvent)?.detail || {}) as AccountPanelShowOptions;
+    const authPromptMode = getAuthPromptMode(detail);
+    if (authPromptMode === "silent") return;
+    if (authPromptMode === "soft" && loadPromptState()) return;
+
     const explicitFocus = typeof detail.focus === "boolean";
     const options = {
       ...detail,
+      authPromptMode,
       source: detail.source || "auth-request",
     };
     if (authRequestGatePending) {
       queuedAuthRequest = options;
       return;
     }
+    activeAuthPrompt = options.blockedByAuth === true ? options : null;
     open({
       ...options,
       focus: explicitFocus ? detail.focus : true,
@@ -300,12 +382,14 @@ export function initAccountPanel({
   let destroyed = false;
   let authRequestGatePending = Boolean(authRequestGate);
   let queuedAuthRequest: AccountPanelShowOptions | null = null;
+  let activeAuthPrompt: AccountPanelShowOptions | null = null;
 
   function releaseAuthRequestGate() {
     authRequestGatePending = false;
     if (destroyed || !queuedAuthRequest) return;
     const options = queuedAuthRequest;
     queuedAuthRequest = null;
+    activeAuthPrompt = options.blockedByAuth === true ? options : null;
     open({
       ...options,
       focus: typeof options.focus === "boolean" ? options.focus : gatedAuthRequestFocus,

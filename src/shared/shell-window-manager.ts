@@ -941,7 +941,12 @@ export function createShellWindowManager(options: LegacyShellOptions = {}): Shel
       const stored = layout.windows?.[record.id];
       if (!stored) continue;
       applyStoredLayout(record, stored);
-      if ((stored.state === "open" || stored.state === "fullscreen") && record.restoreOnBoot !== false) {
+      if (
+        record.restoreOnBoot === false
+        && (stored.state === "open" || stored.state === "fullscreen" || stored.state === "minimized")
+      ) {
+        closeWindow(record.id, { ...options, invokeLifecycle: false, persist: false });
+      } else if ((stored.state === "open" || stored.state === "fullscreen") && record.restoreOnBoot !== false) {
         openWindow(record.id, { ...options, persist: false });
       } else if (stored.state === "minimized") {
         minimizeWindow(record.id, { ...options, invokeLifecycle: false, persist: false });
@@ -949,8 +954,9 @@ export function createShellWindowManager(options: LegacyShellOptions = {}): Shel
         closeWindow(record.id, { ...options, invokeLifecycle: false, persist: false });
       }
     }
-    if (layout.activeWindowId && windows.has(layout.activeWindowId)) {
-      activateWindow(layout.activeWindowId, { ...options, persist: false });
+    const activeRecord = layout.activeWindowId ? windows.get(layout.activeWindowId) : null;
+    if (activeRecord && activeRecord.state !== "closed" && activeRecord.state !== "hidden") {
+      activateWindow(activeRecord.id, { ...options, persist: false });
     }
     persist(options);
     return listWindows();

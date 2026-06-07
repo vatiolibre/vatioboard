@@ -12,6 +12,7 @@ let getBackendFeatureAccessStateMock;
 let getBackendSessionStateMock;
 let getSsoSubscribeUrlMock;
 let getVatioLibreSubscribeUrlMock;
+let requestBackendAuthenticationMock;
 
 function buildCloudSyncStateModule() {
   const CLOUD_SYNC_STATUS_STATES = Object.freeze({
@@ -77,6 +78,7 @@ describe("cloud sync status indicator", () => {
     getBackendSessionStateMock = vi.fn(() => Promise.resolve(sessionStateMock));
     getSsoSubscribeUrlMock = vi.fn(() => "https://api.example.com/api/method/vatiolibre.vatiolibre.sso.start?target=libre&redirect_to=https%3A%2F%2Fexample.com%2Fsubscribe");
     getVatioLibreSubscribeUrlMock = vi.fn(() => "https://example.com/subscribe");
+    requestBackendAuthenticationMock = vi.fn(() => true);
     vi.doMock(BACKEND_AUTH_MODULE, () => ({
       BACKEND_AUTH_STATE_EVENT: "vatioboard:backend-auth-state",
       BACKEND_AUTH_SIGNUP_URL: "https://example.com/signup",
@@ -84,6 +86,7 @@ describe("cloud sync status indicator", () => {
       getBackendSessionState: getBackendSessionStateMock,
       getSsoSubscribeUrl: getSsoSubscribeUrlMock,
       getVatioLibreSubscribeUrl: getVatioLibreSubscribeUrlMock,
+      requestBackendAuthentication: requestBackendAuthenticationMock,
     }));
     vi.doMock(CLOUD_SYNC_MODULE, () => buildCloudSyncStateModule());
   });
@@ -148,7 +151,15 @@ describe("cloud sync status indicator", () => {
     loginButton.click();
     await flushAsyncWork();
     expect(panel.hidden).toBe(true);
-    expect(launcherOpenCount).toBe(1);
+    expect(launcherOpenCount).toBe(0);
+    expect(requestBackendAuthenticationMock).toHaveBeenCalledWith({
+      authPromptMode: "required",
+      blockedByAuth: true,
+      featureKey: "cloud_sync",
+      promptAuth: true,
+      reason: "guest",
+      source: "cloud-sync-indicator",
+    });
 
     toggle.click();
     closeButton.click();

@@ -399,6 +399,48 @@ describe("shell-window-manager", () => {
     manager.destroy();
   });
 
+  it("closes persisted open windows that opt out of restore on boot", () => {
+    localStorage.setItem(SHELL_LAYOUT_STORAGE_KEY, JSON.stringify({
+      version: 1,
+      activeWindowId: "account",
+      windows: {
+        account: {
+          state: "open",
+          previousState: "closed",
+          bounds: { left: 144, top: 72, width: 380, height: 420 },
+          restoreBounds: { left: 144, top: 72, width: 380, height: 420 },
+          zIndex: 1300,
+          minimized: false,
+          snap: null,
+        },
+      },
+    }));
+
+    const manager = createManager();
+    const panel = createPanel();
+    panel.hidden = true;
+    const openLifecycle = vi.fn();
+    manager.registerWindow({
+      id: "account",
+      element: panel,
+      restoreOnBoot: false,
+      lifecycle: {
+        open: openLifecycle,
+      },
+    });
+    manager.restoreShellLayout({ flush: true });
+
+    expect(manager.getWindow("account")).toMatchObject({
+      active: false,
+      state: "closed",
+    });
+    expect(panel.hidden).toBe(true);
+    expect(panel.style.left).toBe("144px");
+    expect(panel.style.top).toBe("72px");
+    expect(openLifecycle).not.toHaveBeenCalled();
+    manager.destroy();
+  });
+
   it("fullscreen windows bypass normal chrome reservations and restore clamped normal bounds", () => {
     const toolbar = document.createElement("div");
     toolbar.setAttribute("data-vb-shell-toolbar", "");

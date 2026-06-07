@@ -7,6 +7,7 @@ import {
   getBackendSessionState,
   getSsoSubscribeUrl,
   getVatioLibreSubscribeUrl,
+  requestBackendAuthentication,
 } from "./backend-auth.js";
 import {
   CLOUD_SYNC_STATUS_EVENT,
@@ -322,7 +323,6 @@ function getSubscribeLinkHref(): string {
 export function initCloudSyncStatusIndicator({
   mount,
   alignEnd = false,
-  openLauncher,
 }: CloudSyncStatusIndicatorOptions = {}): CloudSyncStatusIndicatorController | null {
   if (!mount || typeof document === "undefined") return null;
 
@@ -578,8 +578,13 @@ export function initCloudSyncStatusIndicator({
   });
   bindPanelAction(subscribeLink, closePanel, null, { allowDefault: true });
   bindPanelAction(loginButton, closePanel, () => {
-    queueMicrotask(() => {
-      openLauncher?.();
+    requestBackendAuthentication({
+      authPromptMode: "required",
+      blockedByAuth: true,
+      featureKey: "cloud_sync",
+      promptAuth: true,
+      reason: "guest",
+      source: "cloud-sync-indicator",
     });
   });
   bindPanelAction(closeButton, closePanel);
