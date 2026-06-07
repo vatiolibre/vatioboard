@@ -10,6 +10,8 @@ import {
   IconRestart,
   IconSettings,
   IconShuffle,
+  IconSkipBack,
+  IconSkipForward,
 } from "../../icons.js";
 import { replaceAppRouteQuery } from "../../app/router.js";
 import { createRouteView } from "../../app/views/route-view.js";
@@ -20,6 +22,11 @@ export const CODE_RAIN_APP_ID = "vatio.codeRain";
 export const CODE_RAIN_VENDOR_BASE = "/vendor/rezmason-matrix/";
 
 const STATE_STORAGE_KEY = "state.v1";
+const STATUS_OVERLAY_VISIBLE_MS = 2600;
+const SWIPE_DISTANCE_PX = 56;
+const SWIPE_AXIS_RATIO = 1.35;
+const DOUBLE_TAP_MS = 300;
+const DOUBLE_TAP_DISTANCE_PX = 28;
 
 const VERSION_OPTIONS = [
   { value: "3d", label: "Classic 3D" },
@@ -141,6 +148,13 @@ type CodeRainState = {
   volumetric: string;
 };
 
+type CodeRainPointer = {
+  id: number;
+  x: number;
+  y: number;
+  time: number;
+};
+
 export type CodeRainRouteMountContext = RouteMountContext & {
   appRuntime?: VatioAppRuntime | null;
   appManifest?: VatioAppRuntime["manifest"] | null;
@@ -192,21 +206,22 @@ const template = `
         referrerpolicy="no-referrer"
       ></iframe>
       <div class="code-rain-scanline" aria-hidden="true"></div>
+      <div class="code-rain-status-overlay" data-code-rain-status aria-live="polite">Classic 3D</div>
+      <div class="code-rain-gesture-layer" data-code-rain-gesture-layer aria-hidden="true"></div>
       <div class="code-rain-dismiss-layer" data-code-rain-dismiss-layer aria-hidden="true"></div>
       <div class="code-rain-toolbar" data-code-rain-toolbar>
-        <div class="code-rain-toolbar__brand">
-          <span class="code-rain-toolbar__dot" aria-hidden="true"></span>
-          <span class="code-rain-toolbar__status" data-code-rain-status>Classic 3D</span>
-        </div>
         <div class="code-rain-toolbar__buttons">
+          <button type="button" class="code-rain-icon-button" data-code-rain-action="previous-preset" title="Previous preset" aria-label="Previous preset">
+            ${IconSkipBack}
+          </button>
           <button type="button" class="code-rain-icon-button" data-code-rain-action="pause" title="Pause" aria-label="Pause">
             <span data-code-rain-pause-icon>${IconPause}</span>
           </button>
           <button type="button" class="code-rain-icon-button" data-code-rain-action="randomize" title="Randomize" aria-label="Randomize">
             ${IconShuffle}
           </button>
-          <button type="button" class="code-rain-icon-button" data-code-rain-action="reload" title="Reload" aria-label="Reload">
-            ${IconRestart}
+          <button type="button" class="code-rain-icon-button" data-code-rain-action="next-preset" title="Next preset" aria-label="Next preset">
+            ${IconSkipForward}
           </button>
           <button type="button" class="code-rain-icon-button" data-code-rain-action="fullscreen" title="Fullscreen" aria-label="Fullscreen">
             <span data-code-rain-fullscreen-icon>${IconFullscreen}</span>
@@ -226,41 +241,64 @@ const template = `
             ${IconClose}
           </button>
         </div>
-        <fieldset class="code-rain-choice-group">
-          <legend>Preset</legend>
-          <div class="code-rain-choice-grid code-rain-choice-grid--presets" data-code-rain-presets>
-            ${PRESETS.map((preset) => `
-              <button type="button" data-code-rain-preset="${preset.id}">${preset.label}</button>
-            `).join("")}
+        <div class="code-rain-panel__body">
+          <div class="code-rain-settings-section">
+            <h3>Presets</h3>
+            <fieldset class="code-rain-choice-group">
+              <legend>Preset</legend>
+              <div class="code-rain-choice-grid code-rain-choice-grid--presets" data-code-rain-presets>
+                ${PRESETS.map((preset) => `
+                  <button type="button" data-code-rain-preset="${preset.id}">${preset.label}</button>
+                `).join("")}
+              </div>
+            </fieldset>
           </div>
-        </fieldset>
-        ${renderChoiceGroup("Version", "version", VERSION_OPTIONS)}
-        ${renderChoiceGroup("Effect", "effect", EFFECT_OPTIONS)}
-        ${renderChoiceGroup("Glyphs", "font", FONT_OPTIONS)}
-        <div class="code-rain-sliders">
-          <label>
-            <span>Speed <output data-code-rain-output="fallSpeed"></output></span>
-            <input type="range" min="0" max="1.5" step="0.05" data-code-rain-field="fallSpeed" />
-          </label>
-          <label>
-            <span>Density <output data-code-rain-output="numColumns"></output></span>
-            <input type="range" min="24" max="140" step="1" data-code-rain-field="numColumns" />
-          </label>
-          <label>
-            <span>Glow <output data-code-rain-output="bloomStrength"></output></span>
-            <input type="range" min="0" max="1" step="0.05" data-code-rain-field="bloomStrength" />
-          </label>
-          <label>
-            <span>Sharpness <output data-code-rain-output="resolution"></output></span>
-            <input type="range" min="0.35" max="1" step="0.05" data-code-rain-field="resolution" />
-          </label>
+          <div class="code-rain-settings-section">
+            <h3>Look</h3>
+            ${renderChoiceGroup("Version", "version", VERSION_OPTIONS)}
+            ${renderChoiceGroup("Effect", "effect", EFFECT_OPTIONS)}
+            ${renderChoiceGroup("Glyphs", "font", FONT_OPTIONS)}
+          </div>
+          <div class="code-rain-settings-section">
+            <h3>Motion</h3>
+            <div class="code-rain-sliders">
+              <label>
+                <span>Speed <output data-code-rain-output="fallSpeed"></output></span>
+                <input type="range" min="0" max="1.5" step="0.05" data-code-rain-field="fallSpeed" />
+              </label>
+              <label>
+                <span>Density <output data-code-rain-output="numColumns"></output></span>
+                <input type="range" min="24" max="140" step="1" data-code-rain-field="numColumns" />
+              </label>
+            </div>
+          </div>
+          <div class="code-rain-settings-section">
+            <h3>Render</h3>
+            <div class="code-rain-sliders">
+              <label>
+                <span>Glow <output data-code-rain-output="bloomStrength"></output></span>
+                <input type="range" min="0" max="1" step="0.05" data-code-rain-field="bloomStrength" />
+              </label>
+              <label>
+                <span>Sharpness <output data-code-rain-output="resolution"></output></span>
+                <input type="range" min="0.35" max="1" step="0.05" data-code-rain-field="resolution" />
+              </label>
+              <div class="code-rain-toggle-row">
+                <span>Depth</span>
+                <label class="code-rain-toggle">
+                  <input type="checkbox" data-code-rain-field="volumetric" />
+                  <span>3D</span>
+                </label>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="code-rain-panel__footer">
-          <label class="code-rain-toggle">
-            <input type="checkbox" data-code-rain-field="volumetric" />
-            <span>3D</span>
-          </label>
           <button type="button" class="code-rain-text-button" data-code-rain-action="reset">Reset</button>
+          <button type="button" class="code-rain-text-button" data-code-rain-action="reload">
+            <span class="code-rain-text-button__icon">${IconRestart}</span>
+            Reload
+          </button>
           <button type="button" class="code-rain-text-button" data-code-rain-action="share">
             <span class="code-rain-text-button__icon">${IconRepeat}</span>
             Link
@@ -373,6 +411,24 @@ function stateSummary(state: CodeRainState) {
   const version = optionLabel(VERSION_OPTIONS, state.version);
   const effect = optionLabel(EFFECT_OPTIONS, state.effect);
   return state.volumetric === "true" && !version.includes("3D") ? `${version} 3D` : `${version} · ${effect}`;
+}
+
+function findPresetIndex(state: CodeRainState) {
+  return PRESETS.findIndex((preset) => Object.entries(preset.state).every(([key, value]) =>
+    state[key as keyof CodeRainState] === value
+  ));
+}
+
+function presetStateAtOffset(state: CodeRainState, direction: 1 | -1) {
+  const currentIndex = findPresetIndex(state);
+  const baseIndex = currentIndex === -1
+    ? direction > 0 ? -1 : 0
+    : currentIndex;
+  const nextIndex = ((baseIndex + direction) % PRESETS.length + PRESETS.length) % PRESETS.length;
+  return sanitizeState({
+    ...state,
+    ...PRESETS[nextIndex].state,
+  });
 }
 
 function setStatus(status: Element | null, message: string) {
@@ -535,9 +591,10 @@ function mountCodeRain(routeContext: RouteMountContext): MountedView {
   const root = routeContext.root.querySelector("[data-code-rain-app]") as HTMLElement | null;
   const stage = routeContext.root.querySelector("[data-code-rain-stage]") as HTMLElement | null;
   const frame = routeContext.root.querySelector("[data-code-rain-frame]") as HTMLIFrameElement | null;
+  const gestureLayer = routeContext.root.querySelector("[data-code-rain-gesture-layer]") as HTMLElement | null;
   const status = routeContext.root.querySelector("[data-code-rain-status]");
 
-  if (!root || !stage || !frame) {
+  if (!root || !stage || !frame || !gestureLayer) {
     runtime?.logger.warn("Code Rain route could not find its frame root.");
     return { unmount() {} };
   }
@@ -549,10 +606,35 @@ function mountCodeRain(routeContext: RouteMountContext): MountedView {
     ...stateFromQuery(getRouteQuery(routeContext)),
   });
   let paused = false;
+  let statusRevealTimer = 0;
+  let gesturePointer: CodeRainPointer | null = null;
+  let lastGestureTap: Omit<CodeRainPointer, "id"> | null = null;
+
+  function revealStatus() {
+    root.classList.add("code-rain-app--status-visible");
+    window.clearTimeout(statusRevealTimer);
+    if (isStageFullscreen(stage)) {
+      statusRevealTimer = window.setTimeout(() => {
+        root.classList.remove("code-rain-app--status-visible");
+      }, STATUS_OVERLAY_VISIBLE_MS);
+    }
+  }
+
+  function clearStatusReveal() {
+    window.clearTimeout(statusRevealTimer);
+    statusRevealTimer = 0;
+    root.classList.remove("code-rain-app--status-visible");
+  }
+
+  function showStatus(message: string) {
+    setStatus(status, message);
+    revealStatus();
+  }
 
   function applyState({ persist = true, updateRoute = true, reload = true } = {}) {
     state = sanitizeState(state);
     setControlValues(routeContext.root, state, paused);
+    revealStatus();
     if (persist) saveState(runtime, state);
     if (updateRoute) updateUrlState(state);
     if (reload && !paused) loadFrame(frame, state);
@@ -562,7 +644,26 @@ function mountCodeRain(routeContext: RouteMountContext): MountedView {
     paused = false;
     loadFrame(frame, state);
     setControlValues(routeContext.root, state, paused);
-    setStatus(status, stateSummary(state));
+    showStatus(stateSummary(state));
+  }
+
+  function applyPresetOffset(direction: 1 | -1) {
+    state = presetStateAtOffset(state, direction);
+    if (paused) resumeFrame();
+    applyState();
+  }
+
+  function randomizeVisual() {
+    state = createRandomState();
+    if (paused) resumeFrame();
+    applyState();
+  }
+
+  function reloadVisual() {
+    paused = false;
+    loadFrame(frame, state, String(Date.now()));
+    setControlValues(routeContext.root, state, paused);
+    showStatus("Reloaded");
   }
 
   applyState({ updateRoute: true, reload: true });
@@ -626,36 +727,36 @@ function mountCodeRain(routeContext: RouteMountContext): MountedView {
 
   routeContext.cleanup.addEventListener(document, "fullscreenchange", () => {
     syncFullscreenState(root, stage);
+    if (isStageFullscreen(stage)) revealStatus();
+    else clearStatusReveal();
   });
 
   routeContext.cleanup.addEventListener(document, "webkitfullscreenchange", () => {
     syncFullscreenState(root, stage);
+    if (isStageFullscreen(stage)) revealStatus();
+    else clearStatusReveal();
   });
 
-  routeContext.cleanup.addEventListener(routeContext.root.querySelector('[data-code-rain-action="randomize"]'), "click", () => {
-    state = createRandomState();
-    if (paused) resumeFrame();
-    applyState();
-  });
+  routeContext.cleanup.addEventListener(routeContext.root.querySelector('[data-code-rain-action="previous-preset"]'), "click", () => applyPresetOffset(-1));
+  routeContext.cleanup.addEventListener(routeContext.root.querySelector('[data-code-rain-action="next-preset"]'), "click", () => applyPresetOffset(1));
+  routeContext.cleanup.addEventListener(routeContext.root.querySelector('[data-code-rain-action="randomize"]'), "click", randomizeVisual);
 
   routeContext.cleanup.addEventListener(routeContext.root.querySelector('[data-code-rain-action="pause"]'), "click", () => {
     paused = !paused;
     frame.src = paused ? "about:blank" : "";
     if (!paused) loadFrame(frame, state);
     setControlValues(routeContext.root, state, paused);
-    setStatus(status, paused ? "Paused" : stateSummary(state));
+    showStatus(paused ? "Paused" : stateSummary(state));
   });
 
-  routeContext.cleanup.addEventListener(routeContext.root.querySelector('[data-code-rain-action="reload"]'), "click", () => {
-    paused = false;
-    loadFrame(frame, state, String(Date.now()));
-    setControlValues(routeContext.root, state, paused);
-    setStatus(status, "Reloaded");
-  });
+  routeContext.cleanup.addEventListener(routeContext.root.querySelector('[data-code-rain-action="reload"]'), "click", reloadVisual);
 
   routeContext.cleanup.addEventListener(routeContext.root.querySelector('[data-code-rain-action="fullscreen"]'), "click", () => {
     void toggleFullscreen(stage)
-      .then(() => syncFullscreenState(root, stage))
+      .then(() => {
+        syncFullscreenState(root, stage);
+        revealStatus();
+      })
       .catch((error) => runtime?.logger.warn("Code Rain fullscreen request failed.", error));
   });
 
@@ -671,16 +772,71 @@ function mountCodeRain(routeContext: RouteMountContext): MountedView {
     url.hash = `/code-rain?${params.toString()}`;
     const copy = navigator.clipboard?.writeText?.(url.href);
     if (!copy) {
-      setStatus(status, "Link ready");
+      showStatus("Link ready");
       return;
     }
     void copy.then(
-      () => setStatus(status, "Copied"),
-      () => setStatus(status, "Link ready"),
+      () => showStatus("Copied"),
+      () => showStatus("Link ready"),
     );
   });
 
+  routeContext.cleanup.addEventListener(gestureLayer, "pointerdown", (event) => {
+    const pointerEvent = event as PointerEvent;
+    if (!isStageFullscreen(stage)) return;
+    if (pointerEvent.pointerType === "mouse" && pointerEvent.button !== 0) return;
+    pointerEvent.preventDefault();
+    gesturePointer = {
+      id: pointerEvent.pointerId,
+      x: pointerEvent.clientX,
+      y: pointerEvent.clientY,
+      time: Date.now(),
+    };
+    try {
+      gestureLayer.setPointerCapture(pointerEvent.pointerId);
+    } catch {
+      // ignore
+    }
+  }, { passive: false });
+
+  routeContext.cleanup.addEventListener(gestureLayer, "pointerup", (event) => {
+    const pointerEvent = event as PointerEvent;
+    if (!isStageFullscreen(stage) || !gesturePointer || pointerEvent.pointerId !== gesturePointer.id) return;
+    pointerEvent.preventDefault();
+    const dx = pointerEvent.clientX - gesturePointer.x;
+    const dy = pointerEvent.clientY - gesturePointer.y;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    const now = Date.now();
+
+    if (absX >= SWIPE_DISTANCE_PX && absX >= absY * SWIPE_AXIS_RATIO) {
+      applyPresetOffset(dx < 0 ? 1 : -1);
+      lastGestureTap = null;
+      gesturePointer = null;
+      return;
+    }
+
+    if (Math.hypot(dx, dy) <= DOUBLE_TAP_DISTANCE_PX) {
+      if (
+        lastGestureTap
+        && now - lastGestureTap.time <= DOUBLE_TAP_MS
+        && Math.hypot(pointerEvent.clientX - lastGestureTap.x, pointerEvent.clientY - lastGestureTap.y) <= DOUBLE_TAP_DISTANCE_PX
+      ) {
+        randomizeVisual();
+        lastGestureTap = null;
+      } else {
+        lastGestureTap = { x: pointerEvent.clientX, y: pointerEvent.clientY, time: now };
+      }
+    }
+    gesturePointer = null;
+  }, { passive: false });
+
+  routeContext.cleanup.addEventListener(gestureLayer, "pointercancel", () => {
+    gesturePointer = null;
+  });
+
   routeContext.cleanup.add(() => {
+    window.clearTimeout(statusRevealTimer);
     frame.src = "about:blank";
   });
 

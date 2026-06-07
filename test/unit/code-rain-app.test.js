@@ -55,6 +55,31 @@ function installFullscreenMock() {
   };
 }
 
+function createPointerTestEvent(type, init = {}) {
+  const eventInit = {
+    bubbles: true,
+    cancelable: true,
+    button: 0,
+    clientX: 0,
+    clientY: 0,
+    pointerId: 1,
+    pointerType: "touch",
+    ...init,
+  };
+  const event = typeof PointerEvent === "function"
+    ? new PointerEvent(type, eventInit)
+    : new MouseEvent(type, eventInit);
+
+  if (!("pointerId" in event)) {
+    Object.defineProperty(event, "pointerId", { value: eventInit.pointerId });
+  }
+  if (!("pointerType" in event)) {
+    Object.defineProperty(event, "pointerType", { value: eventInit.pointerType });
+  }
+
+  return event;
+}
+
 describe("Code Rain app", () => {
   beforeEach(() => {
     resetRouteAppTestDom();
@@ -125,6 +150,21 @@ describe("Code Rain app", () => {
     expect(initialSrc.searchParams.get("version")).toBe("3d");
     expect(initialSrc.searchParams.get("volumetric")).toBe("true");
     expect(root.querySelector("[data-code-rain-status]").textContent).toBe("Classic 3D · Palette");
+    expect(root.querySelector(".code-rain-toolbar__brand")).toBeNull();
+    expect(root.querySelector('[data-code-rain-action="reload"]').closest(".code-rain-panel__footer")).not.toBeNull();
+    expect(root.querySelector('[data-code-rain-action="previous-preset"]')).not.toBeNull();
+    expect(root.querySelector('[data-code-rain-action="next-preset"]')).not.toBeNull();
+
+    root.querySelector('[data-code-rain-action="next-preset"]').click();
+    const nextPresetSrc = new URL(root.querySelector("[data-code-rain-frame]").getAttribute("src"), window.location.origin);
+    expect(nextPresetSrc.searchParams.get("version")).toBe("operator");
+    expect(nextPresetSrc.searchParams.get("effect")).toBe("mirror");
+    expect(root.querySelector("[data-code-rain-status]").textContent).toBe("Operator · Ripple");
+
+    root.querySelector('[data-code-rain-action="previous-preset"]').click();
+    const previousPresetSrc = new URL(root.querySelector("[data-code-rain-frame]").getAttribute("src"), window.location.origin);
+    expect(previousPresetSrc.searchParams.get("version")).toBe("3d");
+    expect(previousPresetSrc.searchParams.get("effect")).toBe("palette");
 
     const app = root.querySelector("[data-code-rain-app]");
     const settingsButton = root.querySelector('[data-code-rain-action="settings"]');
@@ -181,8 +221,10 @@ describe("Code Rain app", () => {
       const app = root.querySelector("[data-code-rain-app]");
       const settingsButton = root.querySelector('[data-code-rain-action="settings"]');
       const fullscreenButton = root.querySelector('[data-code-rain-action="fullscreen"]');
+      const gestureLayer = root.querySelector("[data-code-rain-gesture-layer]");
 
       expect(root.querySelector(".code-rain-toolbar__title")).toBeNull();
+      expect(root.querySelector(".code-rain-toolbar__brand")).toBeNull();
 
       settingsButton.click();
       expect(app.classList.contains("code-rain-app--settings-open")).toBe(true);
@@ -193,6 +235,22 @@ describe("Code Rain app", () => {
       expect(app.classList.contains("code-rain-app--settings-open")).toBe(false);
       expect(app.classList.contains("code-rain-app--fullscreen")).toBe(true);
       expect(fullscreenButton.getAttribute("aria-label")).toBe("Exit fullscreen");
+
+      gestureLayer.dispatchEvent(createPointerTestEvent("pointerdown", {
+        clientX: 260,
+        clientY: 120,
+        pointerId: 7,
+      }));
+      gestureLayer.dispatchEvent(createPointerTestEvent("pointerup", {
+        clientX: 120,
+        clientY: 124,
+        pointerId: 7,
+      }));
+
+      const swipedSrc = new URL(root.querySelector("[data-code-rain-frame]").getAttribute("src"), window.location.origin);
+      expect(swipedSrc.searchParams.get("version")).toBe("operator");
+      expect(swipedSrc.searchParams.get("effect")).toBe("mirror");
+      expect(root.querySelector("[data-code-rain-status]").textContent).toBe("Operator · Ripple");
 
       fullscreenButton.click();
       await Promise.resolve();
