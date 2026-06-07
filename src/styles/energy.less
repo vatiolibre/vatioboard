@@ -8,6 +8,8 @@
   bottom: 76px;
   z-index: var(--vb-z-floating-secondary, 990);
   width: 320px;
+  min-width: 320px;
+  min-height: 570px;
   border-radius: var(--calc-radius);
   border: 1px solid var(--calc-border);
   background: var(--calc-surface);
@@ -80,10 +82,10 @@
   background: color-mix(in srgb, var(--calc-muted) 36%, transparent);
 }
 
+.energy-minimize,
 .energy-close {
   position: absolute;
   top: 8px;
-  right: 8px;
   z-index: 3;
   width: 34px;
   min-height: 34px;
@@ -109,17 +111,28 @@
   opacity: 0.84;
 }
 
+.energy-minimize {
+  right: 48px;
+}
+
+.energy-close {
+  right: 8px;
+}
+
+.energy-minimize:hover,
 .energy-close:hover {
   background: color-mix(in srgb, var(--calc-surface) 82%, var(--calc-btn-hover) 18%);
   color: var(--calc-text);
   opacity: 1;
 }
 
+.energy-minimize:focus-visible,
 .energy-close:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--calc-accent) 20%, transparent);
 }
 
+.energy-minimize svg,
 .energy-close svg {
   width: 16px;
   height: 16px;
@@ -950,11 +963,19 @@
     padding: 8px 8px 0;
   }
 
+  .energy-minimize,
   .energy-close {
     top: 8px;
-    right: 8px;
     width: 32px;
     min-height: 32px;
+  }
+
+  .energy-minimize {
+    right: 44px;
+  }
+
+  .energy-close {
+    right: 8px;
   }
 
   .energy-toolbar-row {

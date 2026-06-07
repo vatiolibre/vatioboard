@@ -22,6 +22,8 @@ const baseTranslations: TranslationCatalog = {
     color: 'Color',
     hex: 'Hex',
     close: 'Close',
+    minimize: 'Minimize',
+    stopAndClosePlayer: 'Stop and close player',
     clear: 'Clear',
     savePng: 'Save PNG',
     saveToVatioLibre: 'Save to VatioLibre',
@@ -505,6 +507,11 @@ const baseTranslations: TranslationCatalog = {
     // Header/Brand
     brand: 'Vatio Board',
     tagline: 'Simple full-page drawing board by Vatio Libre',
+    appManager: 'Apps',
+    appManagerTitle: 'Apps',
+    appManagerSearch: 'Search apps',
+    appManagerSurface: 'Surface',
+    appManagerAllSurfaces: 'All surfaces',
     cloudLibrary: 'Cloud library',
     cloudLibraryLead:
       'Browse prior speed replays, accel runs, editable board documents, and media assets without restoring your whole cloud history into local storage first.',
@@ -912,6 +919,8 @@ const baseTranslations: TranslationCatalog = {
     color: 'Color',
     hex: 'Hex',
     close: 'Cerrar',
+    minimize: 'Minimizar',
+    stopAndClosePlayer: 'Detener y cerrar reproductor',
     clear: 'Limpiar',
     savePng: 'Guardar PNG',
     saveToVatioLibre: 'Guardar en VatioLibre',
@@ -1398,6 +1407,11 @@ const baseTranslations: TranslationCatalog = {
     // Header/Brand
     brand: 'Vatio Board',
     tagline: 'Pizarra de dibujo simple por Vatio Libre',
+    appManager: 'Apps',
+    appManagerTitle: 'Apps',
+    appManagerSearch: 'Buscar apps',
+    appManagerSurface: 'Superficie',
+    appManagerAllSurfaces: 'Todas',
     cloudLibrary: 'Biblioteca en la nube',
     cloudLibraryLead:
       'Explora replays de velocidad, corridas de aceleración, documentos editables de la pizarra y archivos multimedia sin restaurar primero todo tu historial en la nube al almacenamiento local.',
@@ -1873,23 +1887,24 @@ export function toggleLang(): SupportedLanguage {
 /**
  * Apply translations to DOM elements with data-i18n attribute
  */
-export function applyTranslations(): void {
-  document.querySelectorAll('[data-i18n]').forEach((el) => {
+export function applyTranslations(root: ParentNode = document): void {
+  const scope = root || document;
+  scope.querySelectorAll('[data-i18n]').forEach((el) => {
     const key = el.getAttribute('data-i18n');
     el.textContent = t(key ?? '');
   });
 
-  document.querySelectorAll('[data-i18n-aria]').forEach((el) => {
+  scope.querySelectorAll('[data-i18n-aria]').forEach((el) => {
     const key = el.getAttribute('data-i18n-aria');
     el.setAttribute('aria-label', t(key ?? ''));
   });
 
-  document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+  scope.querySelectorAll('[data-i18n-title]').forEach((el) => {
     const key = el.getAttribute('data-i18n-title');
     el.setAttribute('title', t(key ?? ''));
   });
 
-  document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+  scope.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
     const key = el.getAttribute('data-i18n-placeholder');
     el.setAttribute('placeholder', t(key ?? ''));
   });

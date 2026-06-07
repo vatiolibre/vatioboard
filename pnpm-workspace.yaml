@@ -2,5 +2,8 @@ allowBuilds:
   core-js: false
   esbuild: true
   less: false
+  onnxruntime-node: false
+  protobufjs: false
+  sharp: false
 overrides:
   brace-expansion: '5.0.6'

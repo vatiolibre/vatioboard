@@ -12,7 +12,7 @@
 import {
   IconPlay, IconPause, IconSkipBack, IconSkipForward,
   IconRepeat, IconShuffle, IconVolume, IconMuted,
-  IconMusic, IconClose, IconQueue, IconPlaylist, IconLibrary,
+  IconMusic, IconClose, IconMinimize, IconQueue, IconPlaylist, IconLibrary,
 } from "../icons.js";
 import { t } from "../i18n.js";
 import { createMiniAudioVisualizer } from "../shared/audio-mini-visualizer.js";
@@ -41,10 +41,12 @@ import {
   fetchBackendMediaAssetBlob,
 } from "../shared/backend-auth.js";
 import { showPromptDialog } from "../shared/ui/confirm-dialog.js";
+import type { ShellAppRuntimeManager } from "../app-platform/types";
+import type { ShellRuntime } from "../types/shell";
 
 const PROGRESS_MAX = 1000;
-const VISUALIZER_VISIBLE_STORAGE_KEY = "vatio_board_player_widget_visualizer_visible";
-const VISUALIZER_MODE_STORAGE_KEY = "vatio_board_player_widget_visualizer_mode";
+export const VISUALIZER_VISIBLE_STORAGE_KEY = "vatio_board_player_widget_visualizer_visible";
+export const VISUALIZER_MODE_STORAGE_KEY = "vatio_board_player_widget_visualizer_mode";
 const VISUALIZER_MODES = new Set(["spectrum", "scope"]);
 const IconVisualizer = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -227,20 +229,40 @@ async function resolveArtworkUrl(track) {
   return "";
 }
 
+export interface PlayerShellSettingsStore {
+  getText?(key: string, fallback: string): string;
+  setText?(key: string, value: string): unknown;
+}
+
+export interface PlayerShellOptions {
+  container: HTMLElement;
+  onContentOpenChange?: ((detail?: Record<string, unknown>) => void) | null;
+  settingsStore?: PlayerShellSettingsStore | null;
+  shellManager?: ShellRuntime | null;
+  shellAppRuntimeManager?: ShellAppRuntimeManager | null;
+}
+
 /**
  * Create the compact player panel.
  *
- * @param {{ container: HTMLElement, onContentOpenChange?: Function }} opts
+ * @param {{ container: HTMLElement, onContentOpenChange?: Function, settingsStore?: PlayerShellSettingsStore|null }} opts
  * @returns {{
  *   root: HTMLElement,
  *   header: HTMLElement,
  *   nowPlaying: HTMLElement,
+ *   minimizeBtn: HTMLElement,
  *   closeBtn: HTMLElement,
  *   destroy: () => void,
  *   setTracks: (tracks: object[]) => void,
  * }}
  */
-export function createPlayerShell({ container, onContentOpenChange = null }) {
+export function createPlayerShell({
+  container,
+  onContentOpenChange = null,
+  settingsStore = null,
+  shellManager = null,
+  shellAppRuntimeManager = null,
+}: PlayerShellOptions) {
   // ── Root panel ─────────────────────────────────────────────────
   const root = document.createElement("section");
   root.className = "player-panel";
@@ -283,14 +305,24 @@ export function createPlayerShell({ container, onContentOpenChange = null }) {
   contentToggleBtn.setAttribute("aria-expanded", "false");
   contentToggleBtn.setAttribute("aria-pressed", "false");
 
+  const minimizeBtn = document.createElement("button");
+  minimizeBtn.type = "button";
+  minimizeBtn.className = "player-minimize";
+  minimizeBtn.setAttribute("aria-label", t("minimize"));
+  minimizeBtn.setAttribute("data-i18n-aria", "minimize");
+  minimizeBtn.title = t("minimize");
+  minimizeBtn.innerHTML = IconMinimize;
+
   const closeBtn = document.createElement("button");
   closeBtn.type = "button";
   closeBtn.className = "player-close";
-  closeBtn.setAttribute("aria-label", t("close"));
-  closeBtn.title = t("close");
+  closeBtn.setAttribute("aria-label", t("stopAndClosePlayer"));
+  closeBtn.setAttribute("data-i18n-aria", "stopAndClosePlayer");
+  closeBtn.setAttribute("data-i18n-title", "stopAndClosePlayer");
+  closeBtn.title = t("stopAndClosePlayer");
   closeBtn.innerHTML = IconClose;
 
-  header.append(headerMain, closeBtn);
+  header.append(headerMain, minimizeBtn, closeBtn);
 
   // ── Now-playing row (compact artwork + metadata) ───────────────
   const nowPlaying = document.createElement("div");
@@ -541,8 +573,19 @@ export function createPlayerShell({ container, onContentOpenChange = null }) {
   let queueFilter = "";
   let lastRenderedQueueSignature = "";
   let queueSaveStatusTimer = 0;
-  let visualizerVisible = loadText(VISUALIZER_VISIBLE_STORAGE_KEY, "true") !== "false";
-  let visualizerMode = normalizeVisualizerMode(loadText(VISUALIZER_MODE_STORAGE_KEY, "spectrum"));
+  const loadSettingText = (key: string, fallback: string) => {
+    if (typeof settingsStore?.getText === "function") return settingsStore.getText(key, fallback);
+    return loadText(key, fallback);
+  };
+  const saveSettingText = (key: string, value: string) => {
+    if (typeof settingsStore?.setText === "function") {
+      settingsStore.setText(key, value);
+      return;
+    }
+    saveText(key, value);
+  };
+  let visualizerVisible = loadSettingText(VISUALIZER_VISIBLE_STORAGE_KEY, "true") !== "false";
+  let visualizerMode = normalizeVisualizerMode(loadSettingText(VISUALIZER_MODE_STORAGE_KEY, "spectrum"));
   let visualizerController = null;
   let visualizerMediaElement = null;
   let visualizerFailed = false;
@@ -755,7 +798,11 @@ export function createPlayerShell({ container, onContentOpenChange = null }) {
     let statusKey = "playerPlaylistSaveFailed";
     let gate = null;
     try {
-      gate = await getProtectedMediaRequestGate();
+      gate = await getProtectedMediaRequestGate({
+        promptAuth: true,
+        authPromptMode: "required",
+        source: "player-save-playlist",
+      });
       if (!gate.allowed) {
         return;
       }
@@ -1319,7 +1366,11 @@ export function createPlayerShell({ container, onContentOpenChange = null }) {
           // Network path: download and pin
           let gate = null;
           try {
-            gate = await getProtectedMediaRequestGate();
+            gate = await getProtectedMediaRequestGate({
+              promptAuth: true,
+              authPromptMode: "required",
+              source: "player-pin-media",
+            });
             if (!gate.allowed) {
               results[idx] = { name: assetName, ok: false, reason: "not_allowed" };
               return;
@@ -1563,7 +1614,7 @@ export function createPlayerShell({ container, onContentOpenChange = null }) {
 
   function setVisualizerVisible(visible) {
     visualizerVisible = Boolean(visible);
-    saveText(VISUALIZER_VISIBLE_STORAGE_KEY, visualizerVisible ? "true" : "false");
+    saveSettingText(VISUALIZER_VISIBLE_STORAGE_KEY, visualizerVisible ? "true" : "false");
     syncVisualizerPlayback();
   }
 
@@ -1581,18 +1632,18 @@ export function createPlayerShell({ container, onContentOpenChange = null }) {
     primeAudioContext();
     if (visualizerFailed) return;
     visualizerMode = getNextVisualizerMode(visualizerMode);
-    saveText(VISUALIZER_MODE_STORAGE_KEY, visualizerMode);
+    saveSettingText(VISUALIZER_MODE_STORAGE_KEY, visualizerMode);
     visualizerController?.setMode(visualizerMode);
     syncVisualizerPlayback();
   });
 
   // ── Milkdrop panel (lazy) ──────────────────────────────────────
   let milkdropPanel = null;
-  let milkdropPanelModulePromise = null;
+  let milkdropPanelModulePromise: Promise<typeof import("../apps/milkdrop/index.js")> | null = null;
 
   function loadMilkdropPanelModule() {
     if (!milkdropPanelModulePromise) {
-      milkdropPanelModulePromise = import("./milkdrop-panel.js");
+      milkdropPanelModulePromise = import("../apps/milkdrop/index.js");
     }
     return milkdropPanelModulePromise;
   }
@@ -1605,12 +1656,14 @@ export function createPlayerShell({ container, onContentOpenChange = null }) {
 
   async function ensureMilkdropPanel() {
     if (!milkdropPanel) {
-      const { createMilkdropPanel } = await loadMilkdropPanelModule();
+      const { createMilkdropApp } = await loadMilkdropPanelModule();
       if (milkdropPanel) return milkdropPanel;
-      milkdropPanel = createMilkdropPanel({
+      milkdropPanel = createMilkdropApp({
         mount: container,
         onOpen: syncMilkdropToggle,
         onClose: syncMilkdropToggle,
+        shellManager: shellManager || undefined,
+        shellAppRuntimeManager,
       });
     }
     syncMilkdropToggle();
@@ -1933,6 +1986,8 @@ export function createPlayerShell({ container, onContentOpenChange = null }) {
     header,
     /** The now-playing row (secondary drag handle for the widget). */
     nowPlaying,
+    /** The minimize button (widget wires its click handler). */
+    minimizeBtn,
     /** The close button (widget wires its click handler). */
     closeBtn,
 

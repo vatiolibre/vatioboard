@@ -1,0 +1,266 @@
+.vb-account-panel {
+  --calc-surface: #ffffff;
+  --calc-text: #111827;
+  --calc-muted: rgba(17, 24, 39, 0.62);
+  --calc-border: rgba(15, 23, 42, 0.16);
+  --calc-btn: rgba(15, 23, 42, 0.06);
+  --calc-btn-hover: rgba(15, 23, 42, 0.1);
+  --calc-accent: #10b981;
+  --vb-account-panel-bg:
+    linear-gradient(132deg, rgba(16, 185, 129, 0.08), rgba(16, 185, 129, 0) 48%),
+    rgba(248, 250, 252, 0.96);
+  --vb-account-panel-control: rgba(255, 255, 255, 0.74);
+  --vb-account-panel-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 18px 54px rgba(15, 23, 42, 0.22);
+
+  width: min(378px, calc(100vw - 24px));
+  min-width: 320px;
+  min-height: 400px;
+  max-height: min(560px, calc(100dvh - 104px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px;
+  box-sizing: border-box;
+  border: 1px solid var(--calc-border);
+  border-radius: 8px;
+  background: var(--vb-account-panel-bg);
+  color: var(--calc-text);
+  box-shadow: var(--vb-account-panel-shadow);
+  backdrop-filter: blur(22px) saturate(1.12);
+  font-family: var(--calc-font, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial);
+  overflow: hidden;
+}
+
+@media (prefers-color-scheme: dark) {
+  .vb-account-panel {
+    --calc-surface: #111827;
+    --calc-text: #f8fafc;
+    --calc-muted: rgba(226, 232, 240, 0.68);
+    --calc-border: rgba(148, 163, 184, 0.24);
+    --calc-btn: rgba(255, 255, 255, 0.075);
+    --calc-btn-hover: rgba(255, 255, 255, 0.12);
+    --calc-accent: #20e6a4;
+    --vb-account-panel-bg:
+      linear-gradient(132deg, rgba(32, 230, 164, 0.1), rgba(32, 230, 164, 0) 48%),
+      rgba(12, 17, 24, 0.94);
+    --vb-account-panel-control: rgba(12, 17, 24, 0.5);
+    --vb-account-panel-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.1),
+      0 22px 70px rgba(0, 0, 0, 0.48);
+  }
+}
+
+.vb-account-panel[hidden] {
+  display: none;
+}
+
+.vb-account-panel *,
+.vb-account-panel *::before,
+.vb-account-panel *::after {
+  box-sizing: border-box;
+}
+
+.vb-account-panel-header {
+  position: relative;
+  top: auto;
+  z-index: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  border-bottom: 0;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  cursor: grab;
+}
+
+.vb-account-panel-header-main {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.vb-account-panel-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid color-mix(in srgb, var(--calc-accent) 45%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--calc-accent) 12%, transparent);
+  color: var(--calc-accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--calc-accent) 10%, transparent);
+}
+
+.vb-account-panel-icon svg,
+.vb-account-panel-close svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+.vb-account-panel-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.vb-account-panel-title {
+  min-width: 0;
+  font-size: 17px;
+  line-height: 1.1;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.vb-account-panel-state {
+  min-width: 0;
+  color: var(--calc-muted);
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.vb-account-panel-state[data-auth-state="authenticated"] {
+  color: var(--calc-accent);
+}
+
+.vb-account-panel-close {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 1px solid var(--calc-border);
+  border-radius: 999px;
+  background: var(--vb-account-panel-control);
+  color: var(--calc-muted);
+  cursor: pointer;
+  touch-action: manipulation;
+  backdrop-filter: blur(12px);
+}
+
+.vb-account-panel-close:hover,
+.vb-account-panel-close:focus-visible {
+  border-color: color-mix(in srgb, var(--calc-accent) 48%, transparent);
+  color: var(--calc-text);
+  outline: 3px solid color-mix(in srgb, var(--calc-accent) 16%, transparent);
+  outline-offset: 0;
+}
+
+.vb-account-panel-body {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-right: 1px;
+}
+
+.vb-account-panel-auth.backend-auth {
+  min-height: 100%;
+  margin: 0;
+  padding: 14px;
+  gap: 14px;
+  align-content: start;
+  border-color: color-mix(in srgb, var(--calc-border) 72%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--calc-surface) 24%, transparent),
+      color-mix(in srgb, var(--calc-btn) 28%, transparent)
+    );
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 24%, transparent);
+}
+
+.vb-account-panel-auth .backend-auth-fields {
+  gap: 10px;
+}
+
+.vb-account-panel-auth .backend-auth-input {
+  min-height: 46px;
+}
+
+.vb-account-panel-auth .backend-auth-actions {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+}
+
+.vb-account-panel-auth .backend-auth-login-button,
+.vb-account-panel-auth .backend-auth-sso-button {
+  min-height: 46px;
+}
+
+.vb-account-panel-auth .backend-auth-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.vb-account-panel-auth .backend-auth-link {
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--calc-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--calc-btn) 72%, transparent);
+  color: var(--calc-muted);
+  text-align: center;
+}
+
+.vb-account-panel-auth[data-auth-state="authenticated"] {
+  min-height: auto;
+}
+
+@media (max-width: 430px), (max-height: 520px) {
+  .vb-account-panel {
+    left: max(8px, var(--vb-safe-area-left, 0px)) !important;
+    right: max(8px, var(--vb-safe-area-right, 0px)) !important;
+    top: max(8px, var(--vb-safe-area-top, 0px)) !important;
+    bottom: auto !important;
+    width: auto;
+    max-height: calc(100dvh - 16px);
+    padding: 12px;
+  }
+
+  .vb-account-panel-auth.backend-auth {
+    padding: 10px;
+    gap: 10px;
+  }
+
+  .vb-account-panel-auth .backend-auth-fields {
+    gap: 8px;
+  }
+
+  .vb-account-panel-auth .backend-auth-input,
+  .vb-account-panel-auth .backend-auth-login-button,
+  .vb-account-panel-auth .backend-auth-sso-button {
+    min-height: 44px;
+  }
+
+  .vb-account-panel-auth .backend-auth-actions {
+    gap: 8px;
+  }
+
+  .vb-account-panel-auth .backend-auth-links {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .vb-account-panel-auth .backend-auth-link {
+    min-height: 38px;
+    padding: 0 8px;
+  }
+}

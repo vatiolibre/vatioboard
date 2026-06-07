@@ -14,7 +14,7 @@
  * Multiple instances share the same runtime and deduped catalog bootstrap.
  */
 
-import { createPlayerShell } from "./player-shell.js";
+import { createPlayerShell, type PlayerShellSettingsStore } from "./player-shell.js";
 import { makePanelDraggable } from "../calculator/widget/drag.js";
 import { loadAudioCatalog, syncAudioCatalog, annotateOfflineAvailability } from "../shared/audio-catalog.js";
 import { loadPlaylists, syncPlaylistsManifest } from "../shared/playlist-loader.js";
@@ -36,6 +36,7 @@ import {
 } from "../shared/floating-layer-manager.js";
 import { getDefaultShellWindowManager } from "../shared/shell-window-manager.js";
 import { getShellWorkArea } from "../shared/shell-work-area.js";
+import type { ShellAppRuntimeManager } from "../app-platform/types";
 import type { ShellLifecycleOptions, ShellRuntime } from "../types/shell";
 
 // ── Deduped bootstrap (shared across all widget instances) ───────────
@@ -85,12 +86,15 @@ type PlayerWidgetOptions = {
   restoreVisibility?: boolean;
   onOpen?: (() => void) | null;
   onClose?: (() => void) | null;
+  settingsStore?: PlayerShellSettingsStore | null;
   shellManager?: ShellRuntime;
+  shellAppRuntimeManager?: ShellAppRuntimeManager | null;
 };
 
 export type PlayerWidgetApi = {
   open: (options?: ShellLifecycleOptions) => void;
   close: (options?: ShellLifecycleOptions) => void;
+  minimize: (options?: ShellLifecycleOptions) => void;
   toggle: () => void;
   restoreVisibility: () => void;
   destroy: () => void;
@@ -395,7 +399,9 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
     restoreVisibility = true,
     onOpen = null,
     onClose = null,
+    settingsStore = null,
     shellManager = getDefaultShellWindowManager(),
+    shellAppRuntimeManager = null,
   } = options;
 
   const DRAG_THRESHOLD_PX = 6;
@@ -457,6 +463,9 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
   const shell = createPlayerShell({
     container: mount,
     onContentOpenChange: handleContentOpenChange,
+    settingsStore,
+    shellManager,
+    shellAppRuntimeManager,
   });
   const contentSheet = shell.root.querySelector<HTMLElement>(".player-content-sheet");
   let cleanupLayer = () => {};
@@ -673,7 +682,14 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
   });
   window.addEventListener("resize", handleContentOpenChange);
 
-  // ── Close button (must NOT stop playback) ────────────────────
+  // ── Window controls ──────────────────────────────────────────
+  shell.minimizeBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  shell.minimizeBtn.addEventListener("pointerup", (e) => e.stopPropagation());
+  shell.minimizeBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    minimize();
+  });
+
   shell.closeBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
   shell.closeBtn.addEventListener("pointerup", (e) => e.stopPropagation());
   shell.closeBtn.addEventListener("click", (e) => {
@@ -707,10 +723,10 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
     if (typeof onOpen === "function") onOpen();
   }
 
-  function hidePanel({ persist = true }: ShellLifecycleOptions = {}) {
+  function hidePanel({ persist = true, stopPlayback = true }: ShellLifecycleOptions = {}) {
     shell.root.hidden = true;
     if (persist) saveVisibility(false);
-    // Playback continues — closing the panel does NOT stop audio
+    if (stopPlayback !== false) runtime.stopPlayback();
     if (typeof onClose === "function") onClose();
   }
 
@@ -727,6 +743,11 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
   function close(options: ShellLifecycleOptions = {}) {
     hidePanel(options);
     shellManager.closeWindow(PLAYER_WINDOW_ID, { ...options, invokeLifecycle: false });
+  }
+
+  function minimize(options: ShellLifecycleOptions = {}) {
+    minimizePanel();
+    shellManager.minimizeWindow(PLAYER_WINDOW_ID, { ...options, invokeLifecycle: false });
   }
 
   function toggle() {
@@ -792,6 +813,7 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
   return {
     open,
     close,
+    minimize,
     toggle,
     restoreVisibility: restoreSavedVisibility,
     destroy,

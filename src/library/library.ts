@@ -5,17 +5,13 @@ import "../shared/ui/confirm-dialog.less";
 
 import { createCleanupStack } from "../app/view-cleanup.js";
 import {
-  IconAccel,
   IconBoard,
   IconDownload,
   IconMedia,
   IconMore,
   IconMuted,
-  IconPages,
   IconPin,
-  IconReplay,
   IconRestart,
-  IconSpeed,
   IconTrash,
   IconVolume,
   IconWorld,
@@ -86,12 +82,12 @@ import {
   openCloudReplaySession,
 } from "../shared/cloud-library-open.js";
 import * as audioRuntime from "../shared/audio-runtime.js";
-import { applyButtonIcon, getActiveToolsMenuList, initToolsMenu } from "../shared/tools-menu.js";
-import { integratePlayerWidget } from "../player/integrate-player-widget.js";
+import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
 import { initCloudSyncStatusIndicator } from "../shared/cloud-sync-status-indicator.js";
 
 const isSpaRuntime = Boolean(window.__vatioboardSpa);
 const PAGE_SIZE = 24;
+const LIBRARY_ACTIVE_TAB_SETTING_KEY = "activeTab";
 const SORT_OPTIONS = new Set(["newest", "oldest", "title_asc", "title_desc"]);
 const TAB_ORDER = [
   CLOUD_LIBRARY_TAB_KEYS.speed,
@@ -128,8 +124,6 @@ export function getLibraryElements(root: any): AnyRecord {
     searchInput: queryOne(root, "#librarySearch"),
     sortSelect: queryOne(root, "#librarySort"),
     refreshButton: queryOne(root, "#libraryRefresh"),
-    toolsMenuButton: queryOne(root, "#libraryToolsMenuBtn"),
-    toolsMenuList: queryOne(root, "#libraryToolsMenuList"),
     toolbar: queryOne(root, ".library-toolbar"),
     status: queryOne(root, "#libraryStatus"),
     subscriptionCta: queryOne(root, "#librarySubscriptionCta"),
@@ -152,11 +146,6 @@ export function getLibraryElements(root: any): AnyRecord {
     toolbarVolume: queryOne(root, "#libraryToolbarVolume"),
     toolbarMuteBtn: queryOne(root, "#libraryToolbarMute"),
     toolbarVolumeSlider: queryOne(root, "#libraryToolbarVolumeSlider"),
-    openBoardPage: queryOne(root, "#openLibraryBoardMenu"),
-    openSpeedPage: queryOne(root, "#openLibrarySpeedMenu"),
-    openReplayPage: queryOne(root, "#openLibraryReplayMenu"),
-    openAccelPage: queryOne(root, "#openLibraryAccelMenu"),
-    openCurrentPage: queryOne(root, "#openLibraryCurrentMenu"),
   };
 }
 
@@ -185,7 +174,6 @@ function createInactiveToolsMenu(): ToolsMenuController {
 }
 
 let elements: AnyRecord = createEmptyLibraryElements();
-let toolsMenu: ToolsMenuController = createInactiveToolsMenu();
 let overflowMenu: ToolsMenuController = createInactiveToolsMenu();
 let libraryMediaPlayer: AnyRecord = createInactiveLibraryMediaPlayer();
 let libraryRouteGeneration = 0;
@@ -205,7 +193,7 @@ function isVisibleForFocus(element: any) {
 }
 
 function getCloudSyncLauncherFocusTarget() {
-  const menuList = getActiveToolsMenuList(elements.toolsMenuList);
+  const menuList = window.__vatioboardStartMenu?.list;
   const candidates = [
     menuList?.querySelector("[data-backend-auth-user]"),
     menuList?.querySelector("[data-backend-auth-password]"),
@@ -218,7 +206,7 @@ function getCloudSyncLauncherFocusTarget() {
 }
 
 function focusCloudSyncLauncherTarget(attempt = 0) {
-  toolsMenu.setOpen(true);
+  window.__vatioboardStartMenu?.setOpen?.(true);
   const target = getCloudSyncLauncherFocusTarget();
   if (target) {
     focusElement(target);
@@ -355,7 +343,11 @@ async function resolveMediaAccess(assetName: any, contentHash: any, { intent }: 
 
   let gate = null;
   try {
-    gate = await getProtectedMediaRequestGate();
+    gate = await getProtectedMediaRequestGate({
+      promptAuth: true,
+      authPromptMode: "required",
+      source: "library-media-access",
+    });
     if (!gate.allowed) return null;
 
     const result = await getBackendMediaAssetAccess({
@@ -463,6 +455,44 @@ const detailRequestState = {
 
 function normalizeTabKey(value) {
   return TAB_ORDER.includes(value) ? value : CLOUD_LIBRARY_TAB_KEYS.speed;
+}
+
+function normalizeStoredTabKey(value) {
+  const normalized = String(value || "").trim();
+  return TAB_ORDER.includes(normalized as (typeof TAB_ORDER)[number]) ? normalized : null;
+}
+
+function getRuntimeSettingsService() {
+  return activeLibraryRoute?.settingsService || null;
+}
+
+function getRuntimeLogger() {
+  return activeLibraryRoute?.logger || null;
+}
+
+function readRuntimeActiveTab() {
+  const settingsService = getRuntimeSettingsService();
+  if (!settingsService?.get) return null;
+  try {
+    return normalizeStoredTabKey(settingsService.get(LIBRARY_ACTIVE_TAB_SETTING_KEY, null));
+  } catch (error) {
+    getRuntimeLogger()?.warn?.("Library active tab setting could not be read through runtime settings.", error);
+    return null;
+  }
+}
+
+function mirrorActiveTabToRuntime(tabKey) {
+  const settingsService = getRuntimeSettingsService();
+  if (!settingsService?.set) return;
+  const normalizedTab = normalizeTabKey(tabKey);
+  try {
+    const saved = settingsService.set(LIBRARY_ACTIVE_TAB_SETTING_KEY, normalizedTab);
+    if (!saved) {
+      getRuntimeLogger()?.warn?.("Library active tab setting could not be mirrored through runtime settings.");
+    }
+  } catch (error) {
+    getRuntimeLogger()?.warn?.("Library active tab setting mirror failed.", error);
+  }
 }
 
 function normalizeSearch(value) {
@@ -1780,8 +1810,8 @@ async function loadList(
     )] : nextItems;
     const wasOffline = state.listOffline;
     state.listOffline = effectivelyOffline;
-    if (wasOffline && !isOfflineResponse) rehydrateAuthOnReconnect();
-    if (wasOffline !== isOfflineResponse) renderTabs();
+    if (wasOffline && !effectivelyOffline) rehydrateAuthOnReconnect();
+    if (wasOffline !== effectivelyOffline) renderTabs();
     state.totalCount = Number(response?.totalCount ?? response?.total_count) || state.items.length;
     state.hasMore = response?.hasMore === true || response?.has_more === true;
     state.nextOffset = Number(response?.nextOffset ?? response?.next_offset) || (offset + nextItems.length);
@@ -2394,6 +2424,7 @@ function handleTabSelection(nextTab) {
   }
 
   state.activeTab = normalizedTab;
+  mirrorActiveTabToRuntime(state.activeTab);
   setStatus();
   updateLocationState();
   renderTabs();
@@ -2494,6 +2525,7 @@ async function refreshAuthState({ force = false, pendingLogout = false } = {}) {
     // Offline-limited mode: switch to media tab and load from cache.
     if (state.activeTab !== CLOUD_LIBRARY_TAB_KEYS.media) {
       state.activeTab = CLOUD_LIBRARY_TAB_KEYS.media;
+      mirrorActiveTabToRuntime(state.activeTab);
       updateLocationState();
       renderTabs();
     }
@@ -2507,6 +2539,7 @@ async function refreshAuthState({ force = false, pendingLogout = false } = {}) {
     const nextTab = getFirstAccessibleTab();
     if (nextTab !== state.activeTab) {
       state.activeTab = nextTab;
+      mirrorActiveTabToRuntime(state.activeTab);
       updateLocationState();
       renderTabs();
     }
@@ -2524,30 +2557,20 @@ function handleLanguageChange() {
   renderDetail();
 }
 
-function bindMenuNavigation(button, href, cleanup) {
-  cleanup.addEventListener(button, "click", () => {
-    toolsMenu.close();
-    navigateToAppRoute(href);
-  });
-}
-
 function syncStateFromRouteQuery() {
   const routeQuery = getCurrentAppRouteQuery();
-  state.activeTab = normalizeTabKey(routeQuery.get("tab"));
+  state.activeTab = routeQuery.has("tab")
+    ? normalizeTabKey(routeQuery.get("tab"))
+    : readRuntimeActiveTab() || CLOUD_LIBRARY_TAB_KEYS.speed;
   state.query.search = normalizeSearch(routeQuery.get("search"));
   state.query.sort = normalizeSort(routeQuery.get("sort"));
+  mirrorActiveTabToRuntime(state.activeTab);
   if (elements.searchInput) elements.searchInput.value = state.query.search;
   if (elements.sortSelect) elements.sortSelect.value = state.query.sort;
 }
 
 function applyLibraryIcons(routeElements = elements) {
-  applyButtonIcon(routeElements.toolsMenuButton, IconPages);
   applyButtonIcon(routeElements.refreshButton, IconRestart);
-  applyButtonIcon(routeElements.openBoardPage, IconBoard);
-  applyButtonIcon(routeElements.openSpeedPage, IconSpeed);
-  applyButtonIcon(routeElements.openReplayPage, IconReplay);
-  applyButtonIcon(routeElements.openAccelPage, IconAccel);
-  applyButtonIcon(routeElements.openCurrentPage, IconWorld);
   applyButtonIcon(routeElements.actionOpen, IconWorld);
   applyButtonIcon(routeElements.actionDownload, IconDownload);
   applyButtonIcon(routeElements.actionRename, IconBoard);
@@ -2566,14 +2589,12 @@ function destroyLibraryRouteResources(route: AnyRecord | null = activeLibraryRou
   if (!route || route.destroyed) return;
   route.destroyed = true;
   route.syncIndicator?.destroy?.();
-  route.toolsMenu?.destroy?.();
   route.overflowMenu?.destroy?.();
   route.mediaPlayer?.destroy?.();
 
   if (activeLibraryRoute === route) {
     activeLibraryRoute = null;
     elements = createEmptyLibraryElements();
-    toolsMenu = createInactiveToolsMenu();
     overflowMenu = createInactiveToolsMenu();
     libraryMediaPlayer = createInactiveLibraryMediaPlayer();
   }
@@ -2592,21 +2613,17 @@ function mountLibraryController(routeContext: AnyRecord = {}) {
     ownsCleanup,
     root,
     signal: routeContext.signal || null,
+    settingsService: routeContext.settingsService || null,
+    logger: routeContext.logger || null,
   };
   libraryRouteGeneration = route.generation;
   activeLibraryRoute = route;
   elements = getLibraryElements(root);
-  toolsMenu = initToolsMenu({
-    button: elements.toolsMenuButton,
-    list: elements.toolsMenuList,
-  });
-  toolsMenu.setOpen(false);
   overflowMenu = initToolsMenu({
     button: elements.overflowBtn,
     list: elements.overflowList,
   });
   libraryMediaPlayer = createLibraryMediaPlayer();
-  route.toolsMenu = toolsMenu;
   route.overflowMenu = overflowMenu;
   route.mediaPlayer = libraryMediaPlayer;
   route.syncIndicator = initCloudSyncStatusIndicator({
@@ -2657,7 +2674,6 @@ function unmountLibraryController() {
   pendingAuthRefresh = null;
   stopRequest(listRequestState);
   stopRequest(detailRequestState);
-  toolsMenu.close();
   overflowMenu.close();
   libraryMediaPlayer.destroy();
   if (mapPreview) {
@@ -2711,7 +2727,6 @@ function bindEvents({ elements: routeElements = elements, cleanup, signal }: Any
   });
 
   cleanup.addEventListener(routeElements.refreshButton, "click", () => {
-    toolsMenu.close();
     void refreshAuthState({ force: true });
   });
 
@@ -2769,14 +2784,6 @@ function bindEvents({ elements: routeElements = elements, cleanup, signal }: Any
     }
   });
 
-  bindMenuNavigation(routeElements.openBoardPage, "#/board", cleanup);
-  bindMenuNavigation(routeElements.openSpeedPage, "#/speed", cleanup);
-  bindMenuNavigation(routeElements.openReplayPage, "#/replay", cleanup);
-  bindMenuNavigation(routeElements.openAccelPage, "#/accel", cleanup);
-  if (!isSpaRuntime) {
-    integratePlayerWidget({ toolsMenuList: routeElements.toolsMenuList, toolsMenu });
-  }
-
   cleanup.addEventListener(window, ROUTE_VISIBLE_EVENT, (event) => {
     if (event?.detail?.path !== "/library") return;
     const routeQuery = getCurrentAppRouteQuery();
@@ -2787,6 +2794,9 @@ function bindEvents({ elements: routeElements = elements, cleanup, signal }: Any
 
     state.query.search = nextSearch;
     state.query.sort = nextSort;
+    if (routeQuery.has("tab")) {
+      mirrorActiveTabToRuntime(nextTab);
+    }
     if (routeElements.searchInput) routeElements.searchInput.value = nextSearch;
     if (routeElements.sortSelect) routeElements.sortSelect.value = nextSort;
 

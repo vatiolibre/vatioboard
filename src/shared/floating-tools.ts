@@ -3,13 +3,14 @@ import "../styles/camera-map.less";
 import "../styles/energy.less";
 import "../styles/speed-alert-panel.less";
 
-import { createCalculatorWidget } from "../calculator/calculator-widget.js";
-import { createEnergyCalculatorWidget } from "../energy/energy-calculator-widget.js";
-import { createCameraMapWidget } from "../speed/camera-map-widget.js";
-import { createSpeedAlertPanel } from "../speed/speed-alert-panel.js";
+import { createCalculatorApp } from "../apps/calculator/index.js";
+import { createCameraMapApp } from "../apps/camera-map/index.js";
+import { createEnergyApp } from "../apps/energy/index.js";
+import { createSpeedAlertsApp } from "../apps/speed-alerts/index.js";
 import { getDefaultShellWindowManager } from "./shell-window-manager.js";
 import type { DrivingAlertService, GpsService } from "../types/services";
 import type { ShellRuntime } from "../types/shell";
+import type { ShellAppRuntimeManager } from "../app-platform/types";
 import { SHELL_WINDOW_IDS } from "./shell-window-registry.js";
 
 const GLOBAL_TOOLS_KEY = "__vatioboardFloatingTools";
@@ -44,6 +45,7 @@ export interface FloatingToolsRuntime {
 interface FloatingToolsOptions {
   mount?: HTMLElement;
   shellManager?: ShellRuntime;
+  shellAppRuntimeManager?: ShellAppRuntimeManager | null;
   gpsService?: GpsService | null;
   drivingAlertService?: DrivingAlertService | null;
 }
@@ -55,6 +57,7 @@ export function getFloatingTools(): FloatingToolsRuntime | null {
 export function initFloatingTools({
   mount = document.body,
   shellManager = getDefaultShellWindowManager({ root: mount }),
+  shellAppRuntimeManager = null,
   gpsService = window.__vatioboardGpsStore || null,
   drivingAlertService = window.__vatioboardDrivingAlerts || null,
 }: FloatingToolsOptions = {}): FloatingToolsRuntime {
@@ -66,15 +69,16 @@ export function initFloatingTools({
     delete window[GLOBAL_TOOLS_KEY];
   }
 
-  const energyWidget = createEnergyCalculatorWidget({
+  const energyWidget = createEnergyApp({
     mount,
     persistVisibility: true,
     restoreVisibility: true,
     visibilityKey: ENERGY_VISIBILITY_KEY,
     shellManager,
+    shellAppRuntimeManager,
   });
 
-  const calcWidget = createCalculatorWidget({
+  const calcWidget = createCalculatorApp({
     mount,
     floating: false,
     onOpenEnergy: () => shellManager.openWindow(SHELL_WINDOW_IDS.energy),
@@ -82,24 +86,27 @@ export function initFloatingTools({
     restoreVisibility: true,
     visibilityKey: CALC_VISIBILITY_KEY,
     shellManager,
+    shellAppRuntimeManager,
   });
 
-  const cameraMapWidget = createCameraMapWidget({
+  const cameraMapWidget = createCameraMapApp({
     mount,
     floating: false,
     persistVisibility: true,
     restoreVisibility: true,
     visibilityKey: CAMERA_MAP_VISIBILITY_KEY,
     shellManager,
+    shellAppRuntimeManager,
     gpsService,
     getCurrentPosition: () => window.__vatioboardGpsGetCurrentPosition?.()
       || window.__vatioboardSpeedGetCurrentPosition?.()
       || null,
   });
 
-  const speedAlertPanel = createSpeedAlertPanel({
+  const speedAlertPanel = createSpeedAlertsApp({
     mount,
     shellManager,
+    shellAppRuntimeManager,
     gpsService,
     drivingAlertService,
     restoreVisibility: true,

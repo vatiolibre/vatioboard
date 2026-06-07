@@ -96,6 +96,8 @@ html.vb-floating-drag-active body {
   display: flex;
   flex-direction: column;
   width: 340px;
+  min-width: 320px;
+  min-height: 220px;
   max-height: calc(100vh - 16px);
   max-height: calc(100dvh - 16px);
   border-radius: var(--player-radius);
@@ -169,10 +171,10 @@ html.vb-floating-drag-active body {
   background: color-mix(in srgb, var(--player-muted) 36%, transparent);
 }
 
+.player-minimize,
 .player-close {
   position: absolute;
   top: 8px;
-  right: 8px;
   z-index: 3;
   border: 1px solid color-mix(in srgb, var(--player-border) 96%, transparent);
   background: color-mix(in srgb, var(--player-surface) 68%, transparent);
@@ -193,17 +195,28 @@ html.vb-floating-drag-active body {
   opacity: 0.84;
 }
 
+.player-minimize {
+  right: 48px;
+}
+
+.player-close {
+  right: 8px;
+}
+
+.player-minimize:hover,
 .player-close:hover {
   background: color-mix(in srgb, var(--player-surface) 82%, var(--player-btn-hover) 18%);
   color: var(--player-text);
   opacity: 1;
 }
 
+.player-minimize:focus-visible,
 .player-close:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px var(--player-focus-ring);
 }
 
+.player-minimize,
 .player-close {
   width: 34px;
   min-height: 34px;
@@ -212,6 +225,7 @@ html.vb-floating-drag-active body {
   place-items: center;
 }
 
+.player-minimize svg,
 .player-close svg {
   width: 16px;
   height: 16px;
@@ -1403,11 +1417,19 @@ html.vb-floating-drag-active body {
     padding: 8px 8px 0;
   }
 
+  .player-minimize,
   .player-close {
     top: 8px;
-    right: 8px;
     width: 32px;
     min-height: 32px;
+  }
+
+  .player-minimize {
+    right: 44px;
+  }
+
+  .player-close {
+    right: 8px;
   }
 
   .player-now-playing {
@@ -1465,8 +1487,8 @@ html.vb-floating-drag-active body {
   z-index: var(--vb-z-floating-secondary, 990);
   width: 480px;
   height: 380px;
-  min-width: 320px;
-  min-height: 260px;
+  min-width: 360px;
+  min-height: 300px;
   display: flex;
   flex-direction: column;
   background: var(--mk-bg);
@@ -1511,9 +1533,10 @@ html.vb-floating-drag-active body {
 /* ── Header (drag handle) ──────────────────────────────────────── */
 
 .milkdrop-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   padding: 6px 8px;
   background: var(--mk-surface);
   border-bottom: 1px solid var(--mk-border);
@@ -1527,74 +1550,69 @@ html.vb-floating-drag-active body {
 }
 
 .milkdrop-title {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: var(--mk-text-dim);
-  margin-right: 6px;
-  flex: 0 0 auto;
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-.milkdrop-preset-label {
-  font-size: 11px;
-  color: var(--mk-text-dim);
-  flex: 1 1 120px;
-  min-width: 72px;
-  max-width: none;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0;
+  color: var(--mk-text-dim);
   white-space: nowrap;
   pointer-events: none;
 }
 
-.milkdrop-spacer {
-  flex: 0 0 4px;
+.milkdrop-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .milkdrop-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 38px;
-  width: 38px;
-  height: 34px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
+  display: inline-grid;
+  place-items: center;
+  min-width: 36px;
+  width: 36px;
+  min-height: 36px;
+  height: 36px;
+  border: 1px solid color-mix(in srgb, var(--mk-text-dim) 28%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--mk-surface) 86%, transparent);
   color: var(--mk-text-dim);
   cursor: pointer;
   padding: 0;
-  transition: background 0.15s, color 0.15s;
+  touch-action: manipulation;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s,
+    opacity 0.15s;
   flex-shrink: 0;
+  backdrop-filter: blur(12px);
 
   &:hover {
-    background: rgba(255, 255, 255, 0.08);
+    border-color: color-mix(in srgb, var(--mk-text-dim) 44%, transparent);
+    background: color-mix(in srgb, var(--mk-surface) 96%, var(--mk-accent) 8%);
     color: var(--mk-text);
   }
 
   &:active {
-    background: rgba(255, 255, 255, 0.12);
+    background: color-mix(in srgb, var(--mk-surface) 86%, var(--mk-accent) 14%);
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--mk-accent) 35%, transparent);
   }
 
   .btn-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: inline-grid;
+    place-items: center;
   }
 
   svg {
     width: 17px;
     height: 17px;
   }
-}
-
-.milkdrop-preset-prev,
-.milkdrop-preset-next,
-.milkdrop-preset-shuffle {
-  min-width: 42px;
 }
 
 /* ── Stage (WebGL canvas container) ────────────────────────────── */
@@ -1609,11 +1627,106 @@ html.vb-floating-drag-active body {
   justify-content: center;
 }
 
+.milkdrop-panel:not(.is-fullscreen) .milkdrop-stage {
+  cursor: grab;
+}
+
+.milkdrop-panel:not(.is-fullscreen) .milkdrop-stage:active {
+  cursor: grabbing;
+}
+
 .milkdrop-canvas {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+.milkdrop-preset-overlay {
+  pointer-events: none;
+  position: absolute;
+  right: 14px;
+  left: 156px;
+  bottom: 16px;
+  z-index: 3;
+  max-width: calc(100% - 28px);
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  font-weight: 740;
+  line-height: 1.2;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  text-align: right;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.88);
+  white-space: nowrap;
+  opacity: 0.78;
+  transition: opacity 180ms ease;
+}
+
+.milkdrop-preset-controls {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  pointer-events: auto;
+}
+
+.milkdrop-preset-controls .milkdrop-btn {
+  width: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  height: 40px;
+  color: rgba(255, 255, 255, 0.74);
+  background: rgba(0, 0, 0, 0.36);
+}
+
+.milkdrop-fullscreen-exit-btn {
+  position: absolute;
+  bottom: max(14px, env(safe-area-inset-bottom, 0px));
+  left: max(14px, env(safe-area-inset-left, 0px));
+  z-index: 5;
+  display: none;
+  width: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  height: 44px;
+  color: rgba(255, 255, 255, 0.88);
+  background: rgba(0, 0, 0, 0.34);
+}
+
+.milkdrop-panel.is-fullscreen .milkdrop-header,
+.milkdrop-panel.is-window-fullscreen .milkdrop-header,
+.milkdrop-panel.is-fullscreen .milkdrop-preset-controls,
+.milkdrop-panel.is-window-fullscreen .milkdrop-preset-controls {
+  display: none;
+}
+
+.milkdrop-panel.is-fullscreen .milkdrop-stage,
+.milkdrop-panel.is-window-fullscreen .milkdrop-stage {
+  cursor: default;
+  touch-action: none;
+}
+
+.milkdrop-panel.is-fullscreen .milkdrop-fullscreen-exit-btn,
+.milkdrop-panel.is-window-fullscreen .milkdrop-fullscreen-exit-btn {
+  display: inline-grid;
+}
+
+.milkdrop-panel.is-fullscreen .milkdrop-preset-overlay,
+.milkdrop-panel.is-window-fullscreen .milkdrop-preset-overlay {
+  top: max(16px, env(safe-area-inset-top, 0px));
+  bottom: auto;
+  left: max(16px, env(safe-area-inset-left, 0px));
+  right: max(64px, calc(env(safe-area-inset-right, 0px) + 64px));
+  opacity: 0;
+}
+
+.milkdrop-panel.is-preset-visible .milkdrop-preset-overlay {
+  opacity: 0.86;
 }
 
 .milkdrop-resize-handle {
@@ -1653,11 +1766,11 @@ html.vb-floating-drag-active body {
 @media (max-width: 600px) {
   .milkdrop-panel {
     width: calc(100vw - 16px);
-    height: 300px;
+    height: 320px;
     right: 8px;
     bottom: 80px;
-    min-width: 0;
-    min-height: 200px;
+    min-width: 360px;
+    min-height: 300px;
     border-radius: 12px;
   }
 }

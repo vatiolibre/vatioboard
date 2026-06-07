@@ -22,6 +22,7 @@ export default [
       'coverage/**',
       'node_modules/**',
       'public/geo/**',
+      'public/vendor/**',
       '**/*.Zone.Identifier',
     ],
   },

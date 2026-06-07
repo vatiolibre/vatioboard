@@ -1,19 +1,12 @@
 import '../styles/gps-rate.less';
-import '../styles/backend-auth.less';
 import { applyTranslations, getLang, t, toggleLang } from '../i18n.js';
-import { initBackendAuthControllers } from '../shared/backend-auth.js';
 import { loadBoolean, loadJson, loadText, saveJson, saveText } from '../shared/storage.js';
 import { NOMINATIM_DEFAULT_BASE_URL } from '../shared/nominatim.js';
-import { applyButtonIcon, initToolsMenu } from '../shared/tools-menu.js';
+import { applyButtonIcon } from '../shared/tools-menu.js';
 import {
-  IconAccel,
-  IconBoard,
-  IconCalculator,
   IconClose,
-  IconPages,
   IconPlay,
   IconRestart,
-  IconSpeed,
 } from '../icons.js';
 import { APP_NAME, GEO_ERROR_CODE, GEO_OPTIONS, STORAGE_KEYS } from './constants.js';
 import { createGpsRateController } from './controller.js';
@@ -31,18 +24,11 @@ function hasWakeLockSupport(navigatorRef: Navigator): boolean {
 }
 
 applyTranslations();
-initBackendAuthControllers();
 
 const elements = {
   langToggle: document.getElementById('langToggle'),
   langToggleButtons: Array.from(document.querySelectorAll('[data-lang-toggle], #langToggle')),
   pageDescriptionMeta: document.querySelector('meta[name="description"]'),
-  toolsMenuBtn: document.getElementById('gpsRateToolsMenuBtn'),
-  toolsMenuList: document.getElementById('gpsRateToolsMenuList'),
-  openSpeedMenu: document.getElementById('openGpsRateSpeedMenu'),
-  openAccelMenu: document.getElementById('openGpsRateAccelMenu'),
-  openCalculatorMenu: document.getElementById('openGpsRateCalculatorMenu'),
-  openBoardMenu: document.getElementById('openGpsRateBoardMenu'),
   permissionChipValue: document.getElementById('permissionChipValue'),
   visibilityChipValue: document.getElementById('visibilityChipValue'),
   headerStatusText: document.getElementById('headerStatusText'),
@@ -158,16 +144,6 @@ const elements = {
   eventLogBody: document.getElementById('eventLogBody'),
 };
 
-const toolsMenu = initToolsMenu({
-  button: elements.toolsMenuBtn,
-  list: elements.toolsMenuList,
-});
-
-applyButtonIcon(elements.openSpeedMenu, IconSpeed);
-applyButtonIcon(elements.openAccelMenu, IconAccel);
-applyButtonIcon(elements.openCalculatorMenu, IconCalculator);
-applyButtonIcon(elements.openBoardMenu, IconBoard);
-applyButtonIcon(elements.toolsMenuBtn, IconPages);
 applyButtonIcon(elements.startQuickTest, IconPlay);
 applyButtonIcon(elements.stopQuickTest, IconClose);
 applyButtonIcon(elements.resetQuickTest, IconRestart);
@@ -197,7 +173,6 @@ const controller = createGpsRateController({
   elements,
   state,
   renderer,
-  toolsMenu,
   t,
   getLang,
   toggleLang,

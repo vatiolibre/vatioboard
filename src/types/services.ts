@@ -168,3 +168,89 @@ export interface AudioRuntime {
   pause(options?: unknown): void;
   stopPlayback(options?: unknown): void;
 }
+
+export type TtsPriority = "critical" | "driving" | "system" | "info";
+
+export interface TtsVoiceOption {
+  id: string;
+  name: string;
+  label?: string;
+  detail?: string;
+  lang: string;
+  quality?: string;
+}
+
+export interface TtsStatusUpdate {
+  status: string;
+  progress?: string;
+  ratio?: number | null;
+}
+
+export interface TtsLoadVoiceRequest {
+  lang?: string;
+  sourceAppId?: string;
+  voice?: string;
+  speed?: number;
+  onStatus?: (status: TtsStatusUpdate) => void;
+}
+
+export interface TtsSpeakRequest extends TtsLoadVoiceRequest {
+  text: string;
+  volume?: number;
+  priority?: TtsPriority;
+  interrupt?: boolean;
+  dedupeKey?: string;
+}
+
+export interface TtsStopRequest {
+  reason?: string;
+  resetEngine?: boolean;
+  sourceAppId?: string;
+}
+
+export interface TtsVoiceLoadResult {
+  model: string;
+  provider: "wasm";
+}
+
+export interface TtsSpeechResult extends TtsVoiceLoadResult {
+  id: string;
+  size: number;
+  durationMs: number;
+  audioSeconds: number;
+}
+
+export interface TtsSnapshot {
+  status: "idle" | "loading" | "ready" | "generating" | "speaking" | "blocked" | "error";
+  progress: string;
+  ratio: number | null;
+  muted: boolean;
+  volume: number;
+  primed: boolean;
+  loading: boolean;
+  generating: boolean;
+  speaking: boolean;
+  queueLength: number;
+  loadedVoice: string | null;
+  activeVoice: string | null;
+  activeLang: string | null;
+  provider: "wasm" | null;
+  error: string | null;
+  currentSourceAppId?: string | null;
+}
+
+export interface TtsService {
+  getSnapshot(): TtsSnapshot;
+  subscribe(listener: (snapshot: TtsSnapshot) => void): Unsubscribe;
+  listVoices(lang?: string): TtsVoiceOption[];
+  getDefaultVoice(lang?: string): string;
+  primeFromUserGesture(options?: { keepAlive?: boolean }): Promise<boolean>;
+  loadVoice(request?: TtsLoadVoiceRequest): Promise<TtsVoiceLoadResult>;
+  preloadVoice(request?: TtsLoadVoiceRequest): Promise<TtsVoiceLoadResult>;
+  prepareSpeech(request: Omit<TtsSpeakRequest, "interrupt" | "volume">): Promise<TtsSpeechResult>;
+  speak(request: TtsSpeakRequest): Promise<TtsSpeechResult>;
+  stop(options?: TtsStopRequest): void;
+  cancel(options?: TtsStopRequest): void;
+  setMuted(value: boolean): TtsSnapshot;
+  setVolume(value: number): TtsSnapshot;
+}

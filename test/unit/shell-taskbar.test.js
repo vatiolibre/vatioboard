@@ -1,12 +1,16 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { appControl } from "../../src/app-platform/index.js";
 import { createShellTaskbar } from "../../src/shared/shell-taskbar.js";
 import { createShellWindowManager } from "../../src/shared/shell-window-manager.js";
 
 const TASKBAR_STATE_KEY = "vatioboard.shell.taskbar_fabs.v1";
 const originalRaf = globalThis.requestAnimationFrame;
 const originalCancelRaf = globalThis.cancelAnimationFrame;
+const originalVisualViewport = globalThis.visualViewport;
+const originalInnerWidth = globalThis.innerWidth;
+const originalInnerHeight = globalThis.innerHeight;
 
 function makeManager() {
   return createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
@@ -84,9 +88,23 @@ describe("shell-taskbar", () => {
   afterEach(() => {
     globalThis.requestAnimationFrame = originalRaf;
     globalThis.cancelAnimationFrame = originalCancelRaf;
+    Object.defineProperty(globalThis, "visualViewport", {
+      configurable: true,
+      value: originalVisualViewport,
+    });
+    Object.defineProperty(globalThis, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: originalInnerWidth,
+    });
+    Object.defineProperty(globalThis, "innerHeight", {
+      configurable: true,
+      writable: true,
+      value: originalInnerHeight,
+    });
   });
 
-  it("does not render registered closed windows before first open", () => {
+  it("renders a Start button immediately without registered open windows", () => {
     const manager = makeManager();
     manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
     const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
@@ -94,7 +112,173 @@ describe("shell-taskbar", () => {
     expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeNull();
     expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-tray]")).toBeTruthy();
     expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-drag-handle]")).toBeTruthy();
-    expect(taskbar.getElement().hidden).toBe(true);
+    expect(taskbar.getElement().querySelector("[data-vb-shell-start-button]")).toBeTruthy();
+    expect(taskbar.getElement().querySelector("[data-vb-shell-account-button]")).toBeTruthy();
+    expect(taskbar.getElement().hidden).toBe(false);
+    expect(taskbar.getElement().getAttribute("data-vb-shell-taskbar-empty")).toBe("true");
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("binds the Start button to the provided shared Start menu API", () => {
+    const manager = makeManager();
+    const bindTrigger = vi.fn((button) => {
+      button.setAttribute("aria-controls", "appStartMenuList");
+      button.setAttribute("aria-expanded", "false");
+    });
+    const startMenu = {
+      bindTrigger,
+      close: vi.fn(),
+      list: document.createElement("div"),
+      setOpen: vi.fn(),
+    };
+
+    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body, startMenu });
+    const startButton = taskbar.getStartButton();
+
+    expect(bindTrigger).toHaveBeenCalledWith(startButton);
+    expect(startButton).toBe(taskbar.getElement().querySelector("[data-vb-shell-start-button]"));
+    expect(startButton.getAttribute("aria-label")).toBe("Start menu");
+    expect(startButton.getAttribute("aria-haspopup")).toBe("true");
+    expect(startButton.getAttribute("aria-controls")).toBe("appStartMenuList");
+    expect(startButton.getAttribute("aria-expanded")).toBe("false");
+    expect(startButton.style.getPropertyValue("--vb-app-icon-accent")).toBe("#16a34a");
+    expect(startButton.draggable).toBe(false);
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("opens the account panel from the taskbar account button and reflects auth state", () => {
+    const manager = makeManager();
+    const accountPanel = { open: vi.fn() };
+    const startMenu = { bindTrigger: vi.fn(), close: vi.fn() };
+    const taskbar = createShellTaskbar({
+      shellManager: manager,
+      root: document.body,
+      startMenu,
+      accountPanel,
+    });
+    const accountButton = taskbar.getElement().querySelector("[data-vb-shell-account-button]");
+
+    accountButton.click();
+
+    expect(accountPanel.open).toHaveBeenCalledWith(expect.objectContaining({
+      focus: true,
+      source: "taskbar-account",
+    }));
+    expect(startMenu.close).toHaveBeenCalled();
+
+    window.dispatchEvent(new CustomEvent("vatioboard:backend-auth-state", {
+      detail: {
+        authenticated: true,
+        busy: false,
+        isGuest: false,
+        pendingLogout: false,
+        user: "driver@example.com",
+      },
+    }));
+
+    expect(accountButton.dataset.authState).toBe("authenticated");
+    expect(accountButton.getAttribute("aria-label")).toContain("driver@example.com");
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("renders favorite apps before the drag handle and removes them when unfavorited", () => {
+    const manager = makeManager();
+    const appLauncher = { openApp: vi.fn(() => true) };
+    const startMenu = { bindTrigger: vi.fn(), close: vi.fn() };
+    const taskbar = createShellTaskbar({
+      shellManager: manager,
+      root: document.body,
+      startMenu,
+      appLauncher,
+    });
+    const favorites = taskbar.getElement().querySelector("[data-vb-shell-taskbar-favorites]");
+    const handle = taskbar.getElement().querySelector("[data-vb-shell-taskbar-drag-handle]");
+
+    expect(favorites).toBeTruthy();
+    expect(favorites.hidden).toBe(true);
+
+    appControl.setFavorite("vatio.board", true);
+    const favoriteButton = favorites.querySelector("[data-vb-shell-taskbar-favorite-app='vatio.board']");
+    const children = Array.from(taskbar.getElement().children);
+
+    expect(favoriteButton).toBeTruthy();
+    expect(favoriteButton.style.getPropertyValue("--vb-app-icon-accent")).toBe("#2563eb");
+    expect(favorites.hidden).toBe(false);
+    expect(children.indexOf(favorites)).toBeLessThan(children.indexOf(handle));
+
+    favoriteButton.click();
+    expect(appLauncher.openApp).toHaveBeenCalledWith(
+      "vatio.board",
+      expect.objectContaining({ focus: true }),
+    );
+    expect(startMenu.close).toHaveBeenCalled();
+
+    appControl.setFavorite("vatio.board", false);
+    expect(favorites.querySelector("[data-vb-shell-taskbar-favorite-app='vatio.board']")).toBeNull();
+    expect(favorites.hidden).toBe(true);
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("uses one favorite taskbar control for a running favorite shell-window app", () => {
+    const manager = makeManager();
+    manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
+    const appLauncher = {
+      openApp: vi.fn(() => {
+        manager.openWindow("calculator");
+        return true;
+      }),
+    };
+    const startMenu = { bindTrigger: vi.fn(), close: vi.fn() };
+    const taskbar = createShellTaskbar({
+      shellManager: manager,
+      root: document.body,
+      startMenu,
+      appLauncher,
+    });
+
+    appControl.setFavorite("vatio.calculator", true);
+
+    let favoriteButton = taskbar.getElement().querySelector("[data-vb-shell-taskbar-favorite-app='vatio.calculator']");
+    expect(favoriteButton).toBeTruthy();
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeNull();
+    expect(favoriteButton.getAttribute("data-vb-shell-taskbar-running")).toBe("false");
+
+    favoriteButton.click();
+
+    expect(appLauncher.openApp).toHaveBeenCalledWith(
+      "vatio.calculator",
+      expect.objectContaining({ focus: true, source: "taskbar-favorite" }),
+    );
+    favoriteButton = taskbar.getElement().querySelector("[data-vb-shell-taskbar-favorite-app='vatio.calculator']");
+    expect(favoriteButton.getAttribute("data-vb-shell-taskbar-running")).toBe("true");
+    expect(favoriteButton.getAttribute("data-vb-shell-taskbar-state")).toBe("open");
+    expect(favoriteButton.getAttribute("data-vb-shell-taskbar-active")).toBe("true");
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeNull();
+
+    favoriteButton.click();
+    favoriteButton = taskbar.getElement().querySelector("[data-vb-shell-taskbar-favorite-app='vatio.calculator']");
+    expect(manager.getWindow("calculator").state).toBe("minimized");
+    expect(favoriteButton.getAttribute("data-vb-shell-taskbar-state")).toBe("minimized");
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeNull();
+
+    favoriteButton.click();
+    favoriteButton = taskbar.getElement().querySelector("[data-vb-shell-taskbar-favorite-app='vatio.calculator']");
+    expect(manager.getWindow("calculator").state).toBe("open");
+    expect(favoriteButton.getAttribute("data-vb-shell-taskbar-state")).toBe("open");
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeNull();
+
+    appControl.setFavorite("vatio.calculator", false);
+
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-favorite-app='vatio.calculator']")).toBeNull();
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeTruthy();
 
     taskbar.destroy();
     manager.destroy();
@@ -109,11 +293,47 @@ describe("shell-taskbar", () => {
     expect(item.parentElement).toBe(tray);
     expect(item.classList.contains("vb-shell-taskbar-fab")).toBe(true);
     expect(item.classList.contains("dock-btn")).toBe(true);
+    expect(item.style.getPropertyValue("--vb-app-icon-accent")).toBe("#2563eb");
     expect(item.getAttribute("data-vb-shell-taskbar-docked")).toBe("true");
     expect(item.draggable).toBe(false);
     expect(item.getAttribute("draggable")).toBe("false");
     expect(item.ondragstart()).toBe(false);
     expect(taskbar.getElement().hidden).toBe(false);
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("removes a normal tray item when its window is closed", () => {
+    const { manager, taskbar } = setupCalculatorTaskbar();
+
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeTruthy();
+
+    manager.closeWindow("calculator");
+
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeNull();
+    expect(taskbar.getElement().getAttribute("data-vb-shell-taskbar-empty")).toBe("true");
+    expect(JSON.parse(localStorage.getItem(TASKBAR_STATE_KEY)).knownWindowIds).not.toContain("calculator");
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("prunes remembered closed windows from older taskbar state", () => {
+    localStorage.setItem(TASKBAR_STATE_KEY, JSON.stringify({
+      version: 1,
+      knownWindowIds: ["calculator"],
+      positions: { calculator: { detached: true, left: 120, top: 160 } },
+      taskbar: null,
+    }));
+    const manager = makeManager();
+    manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
+    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeNull();
+    const stored = JSON.parse(localStorage.getItem(TASKBAR_STATE_KEY));
+    expect(stored.knownWindowIds).not.toContain("calculator");
+    expect(stored.positions.calculator).toBeUndefined();
 
     taskbar.destroy();
     manager.destroy();
@@ -251,10 +471,11 @@ describe("shell-taskbar", () => {
     manager.destroy();
   });
 
-  it("does not start whole-taskbar drag from the tray or item buttons", () => {
+  it("does not start whole-taskbar drag from the tray, Start button, or item buttons", () => {
     const { manager, taskbar } = setupCalculatorTaskbar();
     const element = taskbar.getElement();
     const item = element.querySelector("[data-vb-shell-taskbar-item='calculator']");
+    const startButton = element.querySelector("[data-vb-shell-start-button]");
     vi.spyOn(element, "getBoundingClientRect").mockReturnValue(rect({
       left: 120,
       top: 620,
@@ -267,6 +488,59 @@ describe("shell-taskbar", () => {
 
     expect(element.classList.contains("is-dragging")).toBe(false);
     expect(element.style.transform).not.toContain("translate3d(300px, -240px, 0)");
+
+    startButton.dispatchEvent(touchEvent("touchstart", { target: startButton, clientX: 225, clientY: 650 }));
+    document.dispatchEvent(touchEvent("touchmove", { target: startButton, clientX: 525, clientY: 410 }));
+
+    expect(element.classList.contains("is-dragging")).toBe(false);
+    expect(element.style.transform).not.toContain("translate3d(300px, -240px, 0)");
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("clamps a detached taskbar back into view on resize", () => {
+    const viewport = new EventTarget();
+    Object.defineProperties(viewport, {
+      width: { configurable: true, writable: true, value: 1024 },
+      height: { configurable: true, writable: true, value: 768 },
+      offsetLeft: { configurable: true, writable: true, value: 0 },
+      offsetTop: { configurable: true, writable: true, value: 0 },
+    });
+    Object.defineProperty(window, "visualViewport", { configurable: true, value: viewport });
+    Object.defineProperty(globalThis, "visualViewport", { configurable: true, value: viewport });
+    Object.defineProperty(globalThis, "innerWidth", { configurable: true, writable: true, value: 1024 });
+    Object.defineProperty(globalThis, "innerHeight", { configurable: true, writable: true, value: 768 });
+    localStorage.setItem(TASKBAR_STATE_KEY, JSON.stringify({
+      version: 1,
+      knownWindowIds: [],
+      positions: {},
+      taskbar: { detached: true, left: 900, top: 700 },
+    }));
+    const manager = makeManager();
+    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+    const element = taskbar.getElement();
+
+    expect(element.classList.contains("is-detached")).toBe(true);
+    vi.spyOn(element, "getBoundingClientRect").mockReturnValue(rect({
+      left: 696,
+      top: 696,
+      width: 64,
+      height: 64,
+    }));
+
+    viewport.width = 320;
+    viewport.height = 240;
+    globalThis.innerWidth = 320;
+    globalThis.innerHeight = 240;
+    viewport.dispatchEvent(new Event("resize"));
+    window.dispatchEvent(new Event("resize"));
+    taskbar.render();
+
+    expect(element.style.left).toBe("248px");
+    expect(element.style.top).toBe("168px");
+    expect(JSON.parse(localStorage.getItem(TASKBAR_STATE_KEY)).taskbar)
+      .toMatchObject({ detached: true, left: 248, top: 168 });
 
     taskbar.destroy();
     manager.destroy();
@@ -392,7 +666,8 @@ describe("shell-taskbar", () => {
     document.dispatchEvent(touchEvent("touchend", { target: item, clientX: 300, clientY: 550 }));
 
     expect(document.querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeNull();
-    expect(taskbar.getElement().hidden).toBe(true);
+    expect(taskbar.getElement().hidden).toBe(false);
+    expect(taskbar.getElement().querySelector("[data-vb-shell-start-button]")).toBeTruthy();
     expect(trash.isConnected).toBe(false);
     expect(manager.getWindow("calculator").state).toBe("closed");
     expect(panel.hidden).toBe(true);

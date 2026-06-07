@@ -1,5 +1,11 @@
-import type { DriveRecordingService, DrivingAlertService, GpsService } from "./services";
+import type { DriveRecordingService, DrivingAlertService, GpsService, TtsService } from "./services";
 import type { ShellRuntime } from "./shell";
+import type {
+  ShellAppRuntimeManager,
+  VatioAppManifest,
+  VatioAppRuntime,
+  VatioBackgroundServiceManager,
+} from "../app-platform/types";
 
 export type RoutePath = string;
 export type AppRouteHash = string;
@@ -42,7 +48,10 @@ export interface RuntimeContext {
   driveRecordingService: DriveRecordingService;
   drivingAlertService: DrivingAlertService;
   gpsService: GpsService;
+  ttsService?: TtsService;
   shellManager?: ShellRuntime;
+  shellAppRuntimeManager?: ShellAppRuntimeManager;
+  backgroundServiceManager?: VatioBackgroundServiceManager;
 }
 
 export interface RouteContext extends RuntimeContext {
@@ -50,6 +59,8 @@ export interface RouteContext extends RuntimeContext {
   routeSignal: AbortSignal;
   navigate: (href: string, options?: { replace?: boolean }) => boolean;
   emitRouteVisible: () => void;
+  appManifest?: VatioAppManifest | null;
+  appRuntime?: VatioAppRuntime | null;
 }
 
 export interface RouteMeta {

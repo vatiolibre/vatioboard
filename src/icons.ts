@@ -48,6 +48,20 @@ export const IconTime = `
   </svg>
 `;
 
+export const IconPremiumClock = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <circle cx="12" cy="12" r="8.6" fill="#111827"/>
+    <circle cx="12" cy="12" r="8.6" stroke="#d7dde5" stroke-width="1.2"/>
+    <circle cx="12" cy="12" r="6.8" stroke="#64748b" stroke-width="0.7" opacity="0.72"/>
+    <path d="M12 5.3v1.6M12 17.1v1.6M5.3 12h1.6M17.1 12h1.6" stroke="#f8fafc" stroke-width="1.1" stroke-linecap="round"/>
+    <path d="M8.65 6.2l.75 1.3M15.35 17.8l-.75-1.3M6.2 15.35l1.3-.75M17.8 8.65l-1.3.75" stroke="#94a3b8" stroke-width="0.85" stroke-linecap="round"/>
+    <path d="M12 12V7.8" stroke="#f8fafc" stroke-width="1.45" stroke-linecap="round"/>
+    <path d="M12 12l3.25 2.1" stroke="#f8fafc" stroke-width="1.25" stroke-linecap="round"/>
+    <path d="M12 12l4.75-4.75" stroke="#ef4444" stroke-width="0.85" stroke-linecap="round"/>
+    <circle cx="12" cy="12" r="1.05" fill="#f8fafc"/>
+  </svg>
+`;
+
 export const IconDistance = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path d="M4.75 12H19.25" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
@@ -61,6 +75,12 @@ export const IconClose = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path d="M18 6L6 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
     <path d="M6 6l12 12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`;
+
+export const IconMinimize = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M7 12h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
   </svg>
 `;
 
@@ -222,6 +242,43 @@ export const IconCameraMap = `
     <path d="M9 4.75v12.5M15 7.25v12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
     <circle cx="12" cy="12" r="2.15" stroke="currentColor" stroke-width="1.5"/>
     <path d="M12 9.85v-1.1M12 15.25v-1.1M14.15 12h1.1M8.75 12h1.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  </svg>
+`;
+
+export const IconCodeRain = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <rect x="3.25" y="3.25" width="17.5" height="17.5" rx="3.4" fill="#020f07"/>
+    <rect x="3.25" y="3.25" width="17.5" height="17.5" rx="3.4" stroke="#00ff41" stroke-width="1.25" opacity="0.72"/>
+    <path d="M6 5.5v13M10 4.75v14.5M14 5.25v13.5M18 6v12" stroke="#00ff41" stroke-width="0.75" stroke-linecap="round" opacity="0.26"/>
+    <g fill="#00ff41" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="3.15" font-weight="800">
+      <text x="5.1" y="7.4">1</text>
+      <text x="5.1" y="11.7" opacity="0.76">0</text>
+      <text x="5.1" y="16" opacity="0.42">{</text>
+      <text x="9.1" y="6.4" opacity="0.56">0</text>
+      <text x="9.1" y="10.7">1</text>
+      <text x="9.1" y="15" opacity="0.68">;</text>
+      <text x="13.1" y="8.1">A</text>
+      <text x="13.1" y="12.4" opacity="0.8">1</text>
+      <text x="13.1" y="16.7" opacity="0.48">}</text>
+      <text x="17.1" y="9.2" opacity="0.74">$</text>
+      <text x="17.1" y="13.5">0</text>
+      <text x="17.1" y="17.8" opacity="0.52">1</text>
+    </g>
+    <path d="M8.9 9.25h2.15M12.9 6.55h2.15M16.9 11.85h2.15" stroke="#c9ffd3" stroke-width="0.9" stroke-linecap="round"/>
+    <path d="M4.9 19.2c3.35-1.1 7.15-.95 11.4.45" stroke="#00ff41" stroke-width="1" stroke-linecap="round" opacity="0.55"/>
+  </svg>
+`;
+
+export const IconTts = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <rect x="3.25" y="3.25" width="17.5" height="17.5" rx="4" fill="#052e16"/>
+    <rect x="3.25" y="3.25" width="17.5" height="17.5" rx="4" stroke="#86efac" stroke-width="1.2" opacity="0.72"/>
+    <path d="M7.1 14.25v-4.5M10.35 16.25v-8.5M13.6 17.25V6.75M16.85 14.75v-5.5" stroke="#bbf7d0" stroke-width="1.45" stroke-linecap="round"/>
+    <path d="M6.35 12h11.3" stroke="#22c55e" stroke-width="1.05" stroke-linecap="round" opacity="0.7"/>
+    <path d="M7.75 18.2c2.4 1.05 6.1 1.05 8.5 0" stroke="#dcfce7" stroke-width="1.1" stroke-linecap="round" opacity="0.8"/>
+    <circle cx="7.1" cy="9.75" r="1.25" fill="#22c55e"/>
+    <circle cx="13.6" cy="6.75" r="1.25" fill="#bbf7d0"/>
+    <circle cx="16.85" cy="14.75" r="1.25" fill="#4ade80"/>
   </svg>
 `;
 

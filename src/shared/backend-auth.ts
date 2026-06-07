@@ -10,12 +10,14 @@ interface BackendAuthConfig extends LegacyBackendOptions {
   frontendOrigin: string;
   apiBase: string;
   isProduction: boolean;
+  isLocalhost?: boolean;
+  backendEnabled?: boolean;
   signupUrl: string;
   forgotUrl: string;
   vatioLibreOrigin?: string;
 }
 
-interface BackendAuthStateSnapshot {
+export interface BackendAuthStateSnapshot {
   authenticated: boolean | null;
   busy: boolean;
   isGuest: boolean | null;
@@ -86,6 +88,7 @@ const SYNC_REQUEST_GZIP_ENCODING = "gzip";
 const SYNC_RESPONSE_GZIP_BASE64_ENCODING = "gzip_base64";
 
 export const BACKEND_AUTH_STATE_EVENT = "vatioboard:backend-auth-state";
+export const BACKEND_AUTH_REQUEST_EVENT = "vatioboard:backend-auth-request";
 
 const BACKEND_SESSION_CACHE_TTL_MS = 30 * 1000;
 const BACKEND_FEATURE_ACCESS_CACHE_TTL_MS = 30 * 1000;
@@ -97,6 +100,10 @@ const BACKEND_FEATURE_BLOCKED_REASONS = Object.freeze({
   [BACKEND_FEATURE_KEYS.cloudSync]: "This feature requires an active subscription.",
   [BACKEND_FEATURE_KEYS.mediaAssets]: "This feature requires an active subscription.",
 });
+const AUTH_PROMPT_MODES = new Set(["silent", "soft", "required"]);
+const BACKEND_DISABLED_REASON = "backend_disabled";
+const LOCAL_ONLY_REASON = "local_only";
+const BACKEND_DISABLED_RESPONSE_STATUS = 503;
 const BACKEND_MEDIA_FIELD_KEYS = Object.freeze([
   "download_url",
   "export_url",
@@ -153,6 +160,7 @@ const DEFAULT_BACKEND_AUTH_STATE: Readonly<BackendAuthStateSnapshot> = Object.fr
 
 let backendAuthStateListenerInstalled = false;
 let backendAuthStateSnapshot: BackendAuthStateSnapshot = { ...DEFAULT_BACKEND_AUTH_STATE };
+const loggedDisabledBackendRequests = new Set<string>();
 
 function getDirectChildByClass(root: Element | null | undefined, className: string): HTMLElement | null {
   return Array.from(root?.children || []).find((child) =>
@@ -393,6 +401,101 @@ function getFetch(fetchImpl?: typeof fetch | null): typeof fetch {
   throw new Error("Fetch API is unavailable.");
 }
 
+function isBackendRequestEnabled(config: BackendAuthConfig) {
+  return config?.backendEnabled !== false && Boolean(String(config?.apiBase || "").trim());
+}
+
+function createBackendDisabledData(methodName: string) {
+  return {
+    message: {
+      is_guest: true,
+      local_only: true,
+      method: methodName,
+      reason: BACKEND_DISABLED_REASON,
+    },
+  };
+}
+
+function createSyntheticJsonResponse(data: LegacyBackendOptions, status = BACKEND_DISABLED_RESPONSE_STATUS): Response {
+  const body = JSON.stringify(data);
+  if (typeof Response === "function") {
+    return new Response(body, {
+      status,
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+  }
+
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    text: async () => body,
+  } as Response;
+}
+
+function logBackendRequestSkipped(methodName: string, config: BackendAuthConfig) {
+  if (import.meta.env?.MODE === "test") return;
+  if (typeof console === "undefined" || typeof console.warn !== "function") return;
+
+  const key = `${String(config?.frontendOrigin || "")}|${methodName || "unknown"}`;
+  if (loggedDisabledBackendRequests.has(key)) return;
+  loggedDisabledBackendRequests.add(key);
+
+  console.warn(
+    `[backend] skipped ${methodName || "request"}: backend disabled for local frontend development. `
+      + "Set VITE_VATIOBOARD_BACKEND=on to enable backend calls."
+  );
+}
+
+function createBackendDisabledFetchResult(methodName: string, config: BackendAuthConfig) {
+  logBackendRequestSkipped(methodName, config);
+  const data = createBackendDisabledData(methodName);
+
+  return {
+    response: createSyntheticJsonResponse(data),
+    data,
+  };
+}
+
+function createLocalOnlyBackendSession(methodName: string, config: BackendAuthConfig) {
+  logBackendRequestSkipped(methodName, config);
+  const data = createBackendDisabledData(methodName);
+
+  return {
+    ok: true,
+    status: 0,
+    data,
+    isGuest: true,
+    authenticated: false,
+    localOnly: true,
+    reason: LOCAL_ONLY_REASON,
+  };
+}
+
+function createLocalOnlyFeatureAccess(methodName: string, config: BackendAuthConfig) {
+  logBackendRequestSkipped(methodName, config);
+  const data = createBackendDisabledData(methodName);
+  const capability = {
+    hasActiveSubscription: false,
+    enabled: false,
+    reason: LOCAL_ONLY_REASON,
+    csrfToken: "",
+  };
+
+  return {
+    ok: false,
+    status: 0,
+    data,
+    isGuest: true,
+    localOnly: true,
+    reason: LOCAL_ONLY_REASON,
+    featureAccess: null,
+    capability,
+    cloudSyncCapability: capability,
+  };
+}
+
 function observeRequestPromise<T>(promise: Promise<T>): Promise<T> {
   promise?.catch?.(() => {});
   return promise;
@@ -559,6 +662,11 @@ export function startSso(target, redirectTo, {
   config = getBackendAuthConfig(),
   location = window.location,
 }: LegacyBackendOptions = {}) {
+  if (!isBackendRequestEnabled(config)) {
+    logBackendRequestSkipped(SSO_START_METHOD, config);
+    return false;
+  }
+
   const normalizedTarget = normalizeSsoTarget(target);
   const fallbackRedirectTo = normalizedTarget === "libre"
     ? `${getVatioLibreOrigin(config)}/fleet`
@@ -608,7 +716,9 @@ function createUrlEncodedBody(args: LegacyBackendOptions = {}) {
 }
 
 function getConfigCacheKey(config: BackendAuthConfig) {
-  return String(config?.apiBase || "").trim();
+  const apiBase = String(config?.apiBase || "").trim();
+  const backendMode = config?.backendEnabled === false ? "backend:off" : "backend:on";
+  return `${apiBase}|${backendMode}`;
 }
 
 function hasBackendOwnedPath(pathname: unknown) {
@@ -789,6 +899,39 @@ function ensureBackendAuthStateTracking() {
     mergeBackendAuthStateSnapshot((event as CustomEvent).detail || {});
   });
   backendAuthStateListenerInstalled = true;
+}
+
+export function getBackendAuthStateSnapshot() {
+  ensureBackendAuthStateTracking();
+  return { ...backendAuthStateSnapshot };
+}
+
+export function requestBackendAuthentication(detail: LegacyBackendOptions = {}) {
+  if (
+    typeof window === "undefined"
+    || typeof window.dispatchEvent !== "function"
+    || typeof CustomEvent !== "function"
+  ) {
+    return false;
+  }
+
+  window.dispatchEvent(new CustomEvent(BACKEND_AUTH_REQUEST_EVENT, {
+    detail,
+  }));
+  return true;
+}
+
+function normalizeAuthPromptMode(authPromptMode: unknown, promptAuth: unknown) {
+  if (typeof authPromptMode === "string" && AUTH_PROMPT_MODES.has(authPromptMode)) {
+    return authPromptMode;
+  }
+  if (promptAuth === true) return "required";
+  if (promptAuth === false) return "silent";
+  return "silent";
+}
+
+function shouldRequestBackendAuthenticationPrompt(authPromptMode: string) {
+  return authPromptMode === "required" || authPromptMode === "soft";
 }
 
 function createMergedAbortSignal(signals: Array<AbortSignal | undefined | null> = []) {
@@ -985,8 +1128,12 @@ export async function getProtectedFeatureRequestGate({
   fetchImpl,
   signal,
   config = getBackendAuthConfig(),
+  promptAuth = false,
+  authPromptMode,
+  source = "protected-feature",
 }: LegacyBackendOptions = {}) {
   ensureBackendAuthStateTracking();
+  const normalizedAuthPromptMode = normalizeAuthPromptMode(authPromptMode, promptAuth);
 
   if (backendAuthStateSnapshot.pendingLogout === true) {
     return createBlockedProtectedGate({
@@ -1040,14 +1187,29 @@ export async function getProtectedFeatureRequestGate({
     }
 
     if (!isBackendUserAuthenticated(session)) {
+      const reason = session?.localOnly
+        ? LOCAL_ONLY_REASON
+        : session?.isGuest
+          ? "guest"
+          : "auth";
       cleanup();
+      if (!session?.localOnly && shouldRequestBackendAuthenticationPrompt(normalizedAuthPromptMode)) {
+        requestBackendAuthentication({
+          blockedByAuth: true,
+          featureKey,
+          reason,
+          promptAuth: normalizedAuthPromptMode === "required",
+          authPromptMode: normalizedAuthPromptMode,
+          source,
+        });
+      }
       return createBlockedProtectedGate({
         blockedByAuth: true,
         featureKey,
-        reason: session?.isGuest ? "guest" : "auth",
+        reason,
         session,
         signal: mergedSignal.signal,
-        status: session?.isGuest ? 401 : (session?.status || 401),
+        status: session?.localOnly ? 0 : (session?.isGuest ? 401 : (session?.status || 401)),
       });
     }
 
@@ -1070,6 +1232,12 @@ export async function getProtectedFeatureRequestGate({
     }
 
     if (!featureAccess?.ok || featureAccess?.isGuest) {
+      const blockedByAuth = featureAccess?.isGuest === true || featureAccess?.status === 401;
+      const reason = featureAccess?.localOnly
+        ? LOCAL_ONLY_REASON
+        : featureAccess?.isGuest
+          ? "guest"
+          : "feature_access_unavailable";
       if (featureAccess?.isGuest) {
         mergeBackendAuthStateSnapshot({
           authenticated: false,
@@ -1079,11 +1247,25 @@ export async function getProtectedFeatureRequestGate({
         });
       }
       cleanup();
+      if (
+        blockedByAuth
+        && !featureAccess?.localOnly
+        && shouldRequestBackendAuthenticationPrompt(normalizedAuthPromptMode)
+      ) {
+        requestBackendAuthentication({
+          blockedByAuth: true,
+          featureKey,
+          reason,
+          promptAuth: normalizedAuthPromptMode === "required",
+          authPromptMode: normalizedAuthPromptMode,
+          source,
+        });
+      }
       return createBlockedProtectedGate({
-        blockedByAuth: featureAccess?.isGuest === true || featureAccess?.status === 401,
+        blockedByAuth,
         featureAccess,
         featureKey,
-        reason: featureAccess?.isGuest ? "guest" : "feature_access_unavailable",
+        reason,
         session,
         signal: mergedSignal.signal,
         status: featureAccess?.status || 0,
@@ -1147,6 +1329,8 @@ export function getProtectedMediaAssetsRequestGate(options: LegacyBackendOptions
 
 export function getProtectedCloudSyncRequestGate(options: LegacyBackendOptions = {}) {
   return getProtectedFeatureRequestGate({
+    promptAuth: false,
+    authPromptMode: "silent",
     ...options,
     featureKey: BACKEND_FEATURE_KEYS.cloudSync,
   });
@@ -1383,6 +1567,10 @@ async function fetchBackendJson(methodName, {
   signal,
   config = getBackendAuthConfig(),
 }: LegacyBackendOptions = {}) {
+  if (!isBackendRequestEnabled(config)) {
+    return createBackendDisabledFetchResult(methodName, config);
+  }
+
   const request = getFetch(fetchImpl);
   const response = await observeRequestPromise(request(getMethodUrl(methodName, config), {
     method,
@@ -1407,6 +1595,10 @@ async function fetchBackendMethodJson(methodName, {
   signal,
   config = getBackendAuthConfig(),
 }: LegacyBackendOptions = {}) {
+  if (!isBackendRequestEnabled(config)) {
+    return createBackendDisabledFetchResult(methodName, config);
+  }
+
   const request = getFetch(fetchImpl);
   const upperMethod = String(method || "GET").toUpperCase();
   const requestHeaders = {
@@ -1455,6 +1647,8 @@ export function getBackendAuthConfig(location = window.location) {
     frontendOrigin: env.frontendOrigin,
     apiBase: env.apiBase,
     isProduction: env.isProduction,
+    isLocalhost: env.isLocalhost,
+    backendEnabled: env.backendEnabled,
     signupUrl: BACKEND_AUTH_SIGNUP_URL,
     forgotUrl: BACKEND_AUTH_FORGOT_URL,
   };
@@ -1493,6 +1687,10 @@ export async function fetchBackendSession({
   signal,
   config = getBackendAuthConfig(),
 }: LegacyBackendOptions = {}) {
+  if (!isBackendRequestEnabled(config)) {
+    return createLocalOnlyBackendSession(SESSION_PROBE_METHOD, config);
+  }
+
   const { response, data } = await fetchBackendJson(SESSION_PROBE_METHOD, {
     fetchImpl,
     signal,
@@ -1509,6 +1707,7 @@ export async function fetchBackendSession({
     data,
     isGuest,
     authenticated: response.ok && !isGuest,
+    localOnly: Boolean(payload?.local_only),
   };
 }
 
@@ -1560,6 +1759,17 @@ export async function loginToBackend({
   fetchImpl,
   config = getBackendAuthConfig(),
 }: LegacyBackendOptions = {}) {
+  if (!isBackendRequestEnabled(config)) {
+    logBackendRequestSkipped("login", config);
+    return {
+      ok: false,
+      status: 0,
+      data: createBackendDisabledData("login"),
+      localOnly: true,
+      reason: LOCAL_ONLY_REASON,
+    };
+  }
+
   const body = new URLSearchParams();
   body.set("usr", String(username || "").trim());
   body.set("pwd", String(password || ""));
@@ -1611,6 +1821,10 @@ export async function fetchBackendFeatureAccess({
   signal,
   config = getBackendAuthConfig(),
 }: LegacyBackendOptions = {}) {
+  if (!isBackendRequestEnabled(config)) {
+    return createLocalOnlyFeatureAccess(FEATURE_ACCESS_METHOD, config);
+  }
+
   const { response, data } = await fetchBackendJson(FEATURE_ACCESS_METHOD, {
     fetchImpl,
     signal,

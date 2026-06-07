@@ -478,22 +478,52 @@ describe("createPlayerWidget", () => {
   it("close button hides panel", () => {
     const widget = createPlayerWidget({ floating: false });
     widget.open();
+    runtimeMock.stopPlayback.mockClear();
 
     const closeBtn = document.querySelector(".player-close");
+    expect(closeBtn.getAttribute("aria-label")).toBe("stopAndClosePlayer");
+    expect(closeBtn.getAttribute("data-i18n-aria")).toBe("stopAndClosePlayer");
     closeBtn.click();
 
     expect(document.querySelector(".player-panel").hidden).toBe(true);
+    expect(runtimeMock.stopPlayback).toHaveBeenCalledTimes(1);
     widget.destroy();
   });
 
-  // ── Closing panel does NOT stop playback ─────────────────────
+  // ── Player window lifecycle ──────────────────────────────────
 
-  it("closing panel does not stop active playback", () => {
+  it("minimizing panel does not stop active playback", () => {
     const widget = createPlayerWidget({ floating: false });
     widget.open();
+    runtimeMock.stopPlayback.mockClear();
+    widget.minimize();
+
+    expect(document.querySelector(".player-panel").hidden).toBe(true);
+    expect(runtimeMock.stopPlayback).not.toHaveBeenCalled();
+    expect(runtimeMock.pause).not.toHaveBeenCalled();
+    widget.destroy();
+  });
+
+  it("closing panel stops active playback", () => {
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    runtimeMock.stopPlayback.mockClear();
     widget.close();
 
-    // runtime.pause() and runtime.stopPlayback() should NOT have been called
+    expect(document.querySelector(".player-panel").hidden).toBe(true);
+    expect(runtimeMock.stopPlayback).toHaveBeenCalledTimes(1);
+    expect(runtimeMock.pause).not.toHaveBeenCalled();
+    widget.destroy();
+  });
+
+  it("allows internal close calls to hide the panel without stopping playback", () => {
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    runtimeMock.stopPlayback.mockClear();
+    widget.close({ stopPlayback: false });
+
+    expect(document.querySelector(".player-panel").hidden).toBe(true);
+    expect(runtimeMock.stopPlayback).not.toHaveBeenCalled();
     expect(runtimeMock.pause).not.toHaveBeenCalled();
     widget.destroy();
   });

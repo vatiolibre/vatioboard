@@ -10,7 +10,7 @@
  * @module milkdrop-panel
  */
 
-import { IconClose, IconFullscreen, IconFullscreenExit } from "../icons.js";
+import { IconClose, IconFullscreen, IconFullscreenExit, IconMinimize } from "../icons.js";
 import { t } from "../i18n.js";
 import { acquireGraph, releaseGraph } from "../shared/audio-graph-registry.js";
 import { isVisualizerSafeSource } from "../shared/audio-visualizer.js";
@@ -36,8 +36,16 @@ import type { ShellLifecycleOptions, ShellRuntime } from "../types/shell";
 
 const POS_KEY = "milkdrop_panel_pos_v1";
 const PRESET_KEY = "milkdrop_preset_name_v1";
+const PRESET_INDEX_KEY = "milkdrop_preset_index_v1";
 const SIZE_KEY = "milkdrop_panel_size_v1";
 const MILKDROP_WINDOW_ID = "milkdrop";
+const PANEL_MIN_WIDTH = 360;
+const PANEL_MIN_HEIGHT = 300;
+const PRESET_OVERLAY_VISIBLE_MS = 2600;
+const SWIPE_DISTANCE_PX = 56;
+const SWIPE_AXIS_RATIO = 1.35;
+const DOUBLE_TAP_MS = 300;
+const DOUBLE_TAP_DISTANCE_PX = 28;
 
 type MilkdropPosition = {
   panel?: {
@@ -51,17 +59,19 @@ type MilkdropSize = {
   h?: number;
 };
 
-type MilkdropPanelOptions = {
+export type MilkdropPanelOptions = {
   mount?: HTMLElement;
   onOpen?: (() => void) | null;
   onClose?: (() => void) | null;
   restoreVisibility?: boolean;
   shellManager?: ShellRuntime;
+  translate?: ((key: string) => string) | null;
 };
 
-type MilkdropPanelApi = {
+export type MilkdropPanelApi = {
   open: (options?: ShellLifecycleOptions) => Promise<void>;
   close: (options?: ShellLifecycleOptions) => void;
+  minimize: (options?: ShellLifecycleOptions) => void;
   toggle: () => void;
   isOpen: () => boolean;
   destroy: () => void;
@@ -209,14 +219,16 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
     onClose = null,
     restoreVisibility = true,
     shellManager = getDefaultShellWindowManager(),
+    translate = null,
   } = options;
+  const tr = typeof translate === "function" ? translate : t;
 
   // ── DOM ────────────────────────────────────────────────────────
   const root = document.createElement("section");
   root.className = "milkdrop-panel";
   root.hidden = true;
   root.setAttribute("role", "dialog");
-  root.setAttribute("aria-label", t("milkdropTitle"));
+  root.setAttribute("aria-label", tr("milkdropTitle"));
   let cleanupLayer = () => {};
 
   const header = document.createElement("div");
@@ -224,25 +236,33 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
 
   const titleEl = document.createElement("span");
   titleEl.className = "milkdrop-title";
-  titleEl.textContent = t("milkdropTitle");
+  titleEl.textContent = tr("milkdropTitle");
 
-  const presetPrevBtn = makeBtn("milkdrop-btn milkdrop-preset-prev", IconPresetPrev, t("milkdropPresetPrev"));
-  const presetLabel = document.createElement("span");
-  presetLabel.className = "milkdrop-preset-label";
-  presetLabel.textContent = "";
-  const presetNextBtn = makeBtn("milkdrop-btn milkdrop-preset-next", IconPresetNext, t("milkdropPresetNext"));
-  const presetShuffleBtn = makeBtn("milkdrop-btn milkdrop-preset-shuffle", IconPresetShuffle, t("milkdropPresetShuffle"));
+  const fullscreenBtn = makeBtn("milkdrop-btn milkdrop-fullscreen-btn", IconFullscreen, tr("mediaPlayerFullscreen"));
+  const minimizeBtn = makeBtn("milkdrop-btn milkdrop-minimize-btn", IconMinimize, tr("minimize"));
+  const closeBtn = makeBtn("milkdrop-btn milkdrop-close-btn", IconClose, tr("close"));
+  const actions = document.createElement("div");
+  actions.className = "milkdrop-actions";
+  actions.append(fullscreenBtn, minimizeBtn, closeBtn);
 
-  const spacer = document.createElement("div");
-  spacer.className = "milkdrop-spacer";
-
-  const fullscreenBtn = makeBtn("milkdrop-btn milkdrop-fullscreen-btn", IconFullscreen, t("mediaPlayerFullscreen"));
-  const closeBtn = makeBtn("milkdrop-btn milkdrop-close-btn", IconClose, t("close"));
-
-  header.append(titleEl, presetPrevBtn, presetLabel, presetNextBtn, presetShuffleBtn, spacer, fullscreenBtn, closeBtn);
+  header.append(titleEl, actions);
 
   const stage = document.createElement("div");
   stage.className = "milkdrop-stage";
+
+  const presetOverlay = document.createElement("div");
+  presetOverlay.className = "milkdrop-preset-overlay";
+  presetOverlay.setAttribute("aria-live", "polite");
+
+  const presetPrevBtn = makeBtn("milkdrop-btn milkdrop-preset-btn milkdrop-preset-prev", IconPresetPrev, tr("milkdropPresetPrev"));
+  const presetNextBtn = makeBtn("milkdrop-btn milkdrop-preset-btn milkdrop-preset-next", IconPresetNext, tr("milkdropPresetNext"));
+  const presetShuffleBtn = makeBtn("milkdrop-btn milkdrop-preset-btn milkdrop-preset-shuffle", IconPresetShuffle, tr("milkdropPresetShuffle"));
+  const presetControls = document.createElement("div");
+  presetControls.className = "milkdrop-preset-controls";
+  presetControls.append(presetPrevBtn, presetShuffleBtn, presetNextBtn);
+
+  const fullscreenExitBtn = makeBtn("milkdrop-btn milkdrop-fullscreen-exit-btn", IconFullscreenExit, tr("mediaPlayerExitFullscreen"));
+  stage.append(presetOverlay, presetControls, fullscreenExitBtn);
 
   const resizeHandle = document.createElement("div");
   resizeHandle.className = "milkdrop-resize-handle";
@@ -253,8 +273,8 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
   // Restore saved size
   const savedSize = loadSize();
   if (savedSize?.w && savedSize?.h) {
-    root.style.width = `${savedSize.w}px`;
-    root.style.height = `${savedSize.h}px`;
+    root.style.width = `${Math.max(PANEL_MIN_WIDTH, savedSize.w)}px`;
+    root.style.height = `${Math.max(PANEL_MIN_HEIGHT, savedSize.h)}px`;
   }
 
   // Restore saved position
@@ -312,10 +332,15 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
 
   makePanelDraggable({
     panel: root,
-    header,
+    header: [header, stage],
     dragThresholdPx: 6,
     savePos: savePanelPos,
     loadPos,
+    canStart(event) {
+      if (isFullscreenActive() || document.fullscreenElement === root) return false;
+      const target = event.target as Element | null;
+      return !target?.closest?.(".milkdrop-btn, .milkdrop-preset-controls");
+    },
     shellWindowId: MILKDROP_WINDOW_ID,
     shellManager,
     enableSnapPreview: shellManager.getShellPreference?.("snapEnabled") !== false,
@@ -398,6 +423,33 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
   let rafId = null;
   let currentPresetIndex = -1;
   let runtimeUnsub = null;
+  let presetOverlayTimer = 0;
+
+  function setPresetOverlayText(name: string) {
+    presetOverlay.textContent = name;
+    presetOverlay.title = name;
+  }
+
+  function hidePresetOverlaySoon() {
+    window.clearTimeout(presetOverlayTimer);
+    presetOverlayTimer = window.setTimeout(() => {
+      if (isFullscreenActive() || document.fullscreenElement === root) {
+        root.classList.remove("is-preset-visible");
+      }
+    }, PRESET_OVERLAY_VISIBLE_MS);
+  }
+
+  function revealPresetOverlay() {
+    root.classList.add("is-preset-visible");
+    if (isFullscreenActive() || document.fullscreenElement === root) {
+      hidePresetOverlaySoon();
+    }
+  }
+
+  function clearPresetOverlayTimer() {
+    window.clearTimeout(presetOverlayTimer);
+    presetOverlayTimer = 0;
+  }
 
   // ── Preset navigation ──────────────────────────────────────
   function setPresetByIndex(index, blendTime = 2.7) {
@@ -406,8 +458,10 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
     const key = _presetKeys[idx];
     currentPresetIndex = idx;
     visualizer.loadPreset(_presetsModule[key], blendTime);
-    presetLabel.textContent = key;
+    setPresetOverlayText(key);
+    revealPresetOverlay();
     saveText(PRESET_KEY, key);
+    saveText(PRESET_INDEX_KEY, String(idx));
   }
 
   function nextPreset() {
@@ -431,6 +485,11 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
         setPresetByIndex(idx, 0);
         return;
       }
+    }
+    const savedIndex = Number.parseInt(loadText(PRESET_INDEX_KEY, ""), 10);
+    if (Number.isFinite(savedIndex) && savedIndex >= 0 && _presetKeys.length > 0) {
+      setPresetByIndex(savedIndex, 0);
+      return;
     }
     randomPreset();
   }
@@ -523,7 +582,7 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
       return false;
     }
 
-    stage.replaceChildren(canvas);
+    stage.insertBefore(canvas, stage.firstChild);
 
     // Responsive resize
     try {
@@ -649,6 +708,11 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
     shellManager.closeWindow(MILKDROP_WINDOW_ID, { ...options, invokeLifecycle: false });
   }
 
+  function minimize(options: ShellLifecycleOptions = {}) {
+    minimizePanel();
+    shellManager.minimizeWindow(MILKDROP_WINDOW_ID, { ...options, invokeLifecycle: false });
+  }
+
   function toggle() {
     root.hidden ? open() : close();
   }
@@ -671,8 +735,12 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
 
   function updateFullscreenBtn() {
     const active = isFullscreenActive();
-    fullscreenBtn.querySelector(".btn-icon").innerHTML = active ? IconFullscreenExit : IconFullscreen;
-    fullscreenBtn.setAttribute("aria-label", active ? t("mediaPlayerExitFullscreen") : t("mediaPlayerFullscreen"));
+    const headerIcon = fullscreenBtn.querySelector(".btn-icon");
+    const exitIcon = fullscreenExitBtn.querySelector(".btn-icon");
+    if (headerIcon) headerIcon.innerHTML = active ? IconFullscreenExit : IconFullscreen;
+    if (exitIcon) exitIcon.innerHTML = IconFullscreenExit;
+    fullscreenBtn.setAttribute("aria-label", active ? tr("mediaPlayerExitFullscreen") : tr("mediaPlayerFullscreen"));
+    fullscreenExitBtn.setAttribute("aria-label", tr("mediaPlayerExitFullscreen"));
   }
 
   function savePreFullscreenGeometry() {
@@ -707,6 +775,7 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
     isFallbackFullscreen = true;
     root.classList.add("is-fullscreen", "is-window-fullscreen");
     updateFullscreenBtn();
+    revealPresetOverlay();
     resizeAfterFullscreenTransition();
   }
 
@@ -722,6 +791,8 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
       }
     }
     shellManager.exitFullscreenWindow?.(MILKDROP_WINDOW_ID, { persist: false });
+    clearPresetOverlayTimer();
+    root.classList.remove("is-preset-visible");
     updateFullscreenBtn();
     resizeAfterFullscreenTransition();
   }
@@ -769,8 +840,8 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
 
   function clampPanelToWindow() {
     // Defensive: ensure the panel never exceeds viewport bounds
-    const maxW = window.innerWidth - 16;
-    const maxH = window.innerHeight - 16;
+    const maxW = Math.max(PANEL_MIN_WIDTH, window.innerWidth - 16);
+    const maxH = Math.max(PANEL_MIN_HEIGHT, window.innerHeight - 16);
     const rect = root.getBoundingClientRect();
     if (rect.width > maxW) root.style.width = `${maxW}px`;
     if (rect.height > maxH) root.style.height = `${maxH}px`;
@@ -793,6 +864,12 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
       shellManager.fullscreenWindow?.(MILKDROP_WINDOW_ID, { persist: false });
     }
     root.classList.toggle("is-fullscreen", isNativeFullscreen || isFallbackFullscreen);
+    if (isNativeFullscreen || isFallbackFullscreen) {
+      revealPresetOverlay();
+    } else {
+      clearPresetOverlayTimer();
+      root.classList.remove("is-preset-visible");
+    }
     updateFullscreenBtn();
 
     // Restore pre-fullscreen size when exiting fullscreen
@@ -838,10 +915,10 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
     if (!resizing || isFullscreenActive()) return;
     const dx = resizeLastX - resizeStartX;
     const dy = resizeLastY - resizeStartY;
-    const maxW = Math.max(320, (window.innerWidth || 1024) - 16);
-    const maxH = Math.max(240, (window.innerHeight || 768) - 16);
-    const nextW = clamp(resizeStartW + dx, 320, maxW);
-    const nextH = clamp(resizeStartH + dy, 240, maxH);
+    const maxW = Math.max(PANEL_MIN_WIDTH, (window.innerWidth || 1024) - 16);
+    const maxH = Math.max(PANEL_MIN_HEIGHT, (window.innerHeight || 768) - 16);
+    const nextW = clamp(resizeStartW + dx, PANEL_MIN_WIDTH, maxW);
+    const nextH = clamp(resizeStartH + dy, PANEL_MIN_HEIGHT, maxH);
     root.style.width = `${Math.round(nextW)}px`;
     root.style.height = `${Math.round(nextH)}px`;
     shellManager.updateWindowBounds(MILKDROP_WINDOW_ID, {
@@ -912,9 +989,72 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
 
   resizeHandle.addEventListener("pointercancel", endHandleResize);
 
+  // ── Fullscreen stage gestures ─────────────────────────────────
+  let stagePointer = null;
+  let lastStageTap = null;
+
+  function isStageGestureMode() {
+    return isFullscreenActive() || document.fullscreenElement === root;
+  }
+
+  function clearStagePointer() {
+    stagePointer = null;
+  }
+
+  stage.addEventListener("pointerdown", (e) => {
+    if (!isStageGestureMode()) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    if ((e.target as Element | null)?.closest?.(".milkdrop-btn")) return;
+    e.preventDefault();
+    stagePointer = {
+      id: e.pointerId,
+      x: e.clientX,
+      y: e.clientY,
+      time: Date.now(),
+    };
+    try {
+      stage.setPointerCapture(e.pointerId);
+    } catch { /* ignore */ }
+  }, { passive: false });
+
+  stage.addEventListener("pointerup", (e) => {
+    if (!isStageGestureMode() || !stagePointer || e.pointerId !== stagePointer.id) return;
+    e.preventDefault();
+    const dx = e.clientX - stagePointer.x;
+    const dy = e.clientY - stagePointer.y;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    const now = Date.now();
+
+    if (absX >= SWIPE_DISTANCE_PX && absX >= absY * SWIPE_AXIS_RATIO) {
+      if (dx < 0) nextPreset();
+      else prevPreset();
+      lastStageTap = null;
+      clearStagePointer();
+      return;
+    }
+
+    const moved = Math.hypot(dx, dy);
+    if (moved <= DOUBLE_TAP_DISTANCE_PX) {
+      if (
+        lastStageTap
+        && now - lastStageTap.time <= DOUBLE_TAP_MS
+        && Math.hypot(e.clientX - lastStageTap.x, e.clientY - lastStageTap.y) <= DOUBLE_TAP_DISTANCE_PX
+      ) {
+        randomPreset();
+        lastStageTap = null;
+      } else {
+        lastStageTap = { x: e.clientX, y: e.clientY, time: now };
+      }
+    }
+    clearStagePointer();
+  }, { passive: false });
+
+  stage.addEventListener("pointercancel", clearStagePointer);
+
   // ── Event wiring ────────────────────────────────────────────
   const stopProp = (e: Event) => e.stopPropagation();
-  for (const btn of [presetPrevBtn, presetNextBtn, presetShuffleBtn, fullscreenBtn, closeBtn]) {
+  for (const btn of [presetPrevBtn, presetNextBtn, presetShuffleBtn, fullscreenBtn, fullscreenExitBtn, minimizeBtn, closeBtn]) {
     btn.addEventListener("pointerdown", stopProp);
     btn.addEventListener("pointerup", stopProp);
   }
@@ -923,6 +1063,8 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
   presetNextBtn.addEventListener("click", (e) => { e.stopPropagation(); nextPreset(); });
   presetShuffleBtn.addEventListener("click", (e) => { e.stopPropagation(); randomPreset(); });
   fullscreenBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleFullscreen(); });
+  fullscreenExitBtn.addEventListener("click", (e) => { e.stopPropagation(); exitFullscreenMode(); });
+  minimizeBtn.addEventListener("click", (e) => { e.stopPropagation(); minimize(); });
   closeBtn.addEventListener("click", (e) => { e.stopPropagation(); close(); });
 
   if (restoreVisibility && loadMilkdropPanelVisibility()) {
@@ -947,6 +1089,7 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
 
     if (runtimeUnsub) { runtimeUnsub(); runtimeUnsub = null; }
     if (panelResizeObserver) { panelResizeObserver.disconnect(); panelResizeObserver = null; }
+    clearPresetOverlayTimer();
     document.removeEventListener("fullscreenchange", onFullscreenChange);
     cleanupLayer();
 
@@ -954,5 +1097,5 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
     root.remove();
   }
 
-  return { open, close, toggle, isOpen, destroy };
+  return { open, close, minimize, toggle, isOpen, destroy };
 }

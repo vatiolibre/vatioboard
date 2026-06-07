@@ -19,6 +19,15 @@ function numberOr(value: unknown, fallback: number) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function positiveNumberOr(value: unknown, fallback: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
 function hasDom() {
   return typeof document !== "undefined";
 }
@@ -159,17 +168,29 @@ export function clampBoundsToWorkArea(bounds: LegacyWorkAreaOptions, options: Le
   const area = options.workArea || getShellWorkArea(options);
   const current = options.currentBounds || {};
   const source = { ...current, ...(bounds || {}) };
+  const minWidth = positiveNumberOr(options.minWidth, 1);
+  const minHeight = positiveNumberOr(options.minHeight, 1);
+  const maxWidth = Math.max(minWidth, positiveNumberOr(options.maxWidth, area.width));
+  const maxHeight = Math.max(minHeight, positiveNumberOr(options.maxHeight, area.height));
+  const widthLimit = Math.min(maxWidth, Math.max(minWidth, area.width));
+  const heightLimit = Math.min(maxHeight, Math.max(minHeight, area.height));
   const requestedWidth = numberOr(source.width, numberOr(options.defaultWidth, DEFAULT_WIDTH));
   const requestedHeight = numberOr(source.height, numberOr(options.defaultHeight, DEFAULT_HEIGHT));
-  const width = Math.max(1, Math.min(requestedWidth, area.width));
-  const height = Math.max(1, Math.min(requestedHeight, area.height));
-  const minLeft = area.left;
-  const minTop = area.top;
-  const maxLeft = Math.max(minLeft, area.left + area.width - width);
-  const maxTop = Math.max(minTop, area.top + area.height - height);
+  const width = Math.max(minWidth, Math.min(requestedWidth, widthLimit));
+  const height = Math.max(minHeight, Math.min(requestedHeight, heightLimit));
+  const minLeft = width > area.width ? area.left + area.width - width : area.left;
+  const minTop = height > area.height ? area.top + area.height - height : area.top;
+  const maxLeft = width > area.width ? area.left : area.left + area.width - width;
+  const maxTop = height > area.height ? area.top : area.top + area.height - height;
+  const sourceTop = numberOr(source.top, minTop);
+  const visibleBottomInset = Math.max(0, Math.min(height - 1, numberOr(options.visibleBottomInset, 0)));
+  const visibleBottomTop = area.top + area.height - height + visibleBottomInset;
+  const preferredTop = options.preferVisibleBottom === true && height > area.height
+    ? Math.min(sourceTop, visibleBottomTop)
+    : sourceTop;
   const clamped: LegacyWorkAreaOptions = {
-    left: Math.min(maxLeft, Math.max(minLeft, numberOr(source.left, minLeft))),
-    top: Math.min(maxTop, Math.max(minTop, numberOr(source.top, minTop))),
+    left: clampNumber(numberOr(source.left, minLeft), minLeft, maxLeft),
+    top: clampNumber(preferredTop, minTop, maxTop),
   };
   const hasWidth = source.width !== undefined || options.forceSize === true;
   const hasHeight = source.height !== undefined || options.forceSize === true;

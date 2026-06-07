@@ -2,6 +2,8 @@
   "name": "vatioboard",
   "private": true,
   "version": "0.0.0",
+  "license": "AGPL-3.0-or-later",
+  "author": "VatioLibre Inc.",
   "type": "module",
   "packageManager": "pnpm@11.3.0",
   "scripts": {
@@ -9,6 +11,7 @@
     "prepare:geo": "node scripts/build-worldwide-cameras.mjs",
     "fetch:cameras": "node scripts/fetch-worldwide-cameras.mjs",
     "analyze:cameras:maxspeed": "node scripts/analyze-camera-maxspeed-coverage.mjs",
+    "create:app": "node scripts/create-app.mjs",
     "predev": "pnpm run prepare:geo",
     "dev": "vite",
     "prebuild": "pnpm run prepare:geo",
@@ -19,10 +22,10 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"*.{json,md,yml,yaml}\" \".github/**/*.{yml,yaml}\"",
     "format:check": "prettier --check \"*.{json,md,yml,yaml}\" \".github/**/*.{yml,yaml}\"",
-    "test": "vitest run",
+    "test": "vitest run test/unit test/frontend-architecture && pnpm run test:smoke",
     "test:watch": "vitest",
     "test:unit": "vitest run test/unit",
-    "test:smoke": "vitest run test/smoke",
+    "test:smoke": "vitest run test/smoke --exclude test/smoke/spa-gps-background.test.js && vitest run test/smoke/spa-gps-background.test.js",
     "verify": "pnpm run typecheck && pnpm run lint && pnpm test && pnpm run build"
   },
   "devDependencies": {
@@ -49,7 +52,9 @@
     "geokdbush": "^2.0.1",
     "kdbush": "^4.0.2",
     "maplibre-gl": "^5.20.1",
-    "mathjs": "^15.1.0"
+    "mathjs": "^15.1.0",
+    "onnxruntime-web": "1.22.0-dev.20250409-89f8206ba4",
+    "piper-tts-web": "1.1.2"
   },
   "engines": {
     "node": ">=24"

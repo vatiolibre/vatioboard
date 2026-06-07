@@ -5,15 +5,11 @@ import '../styles/backend-auth.less';
 import { createCleanupStack } from '../app/view-cleanup.js';
 import { applyTranslations, getLang, t, toggleLang } from '../i18n.js';
 import {
-  IconAccel,
-  IconBoard,
   IconClose,
   IconDistance,
-  IconPages,
   IconPause,
   IconPlay,
   IconRestart,
-  IconSpeed,
   IconTime,
   IconWorld,
 } from '../icons.js';
@@ -44,8 +40,7 @@ import {
   releaseSingleTabOwnership,
   SINGLE_TAB_OWNERSHIP_EVENT,
 } from '../shared/single-tab.js';
-import { applyButtonIcon, getActiveToolsMenuList, initToolsMenu } from '../shared/tools-menu.js';
-import { integratePlayerWidget } from '../player/integrate-player-widget.js';
+import { applyButtonIcon } from '../shared/tools-menu.js';
 import {
   getReplayAxisRange,
   formatReplayDistanceValue,
@@ -61,17 +56,15 @@ import { createReplayMapController } from './map.js';
 import { isReplayPayloadComplete } from './session.js';
 
 const isSpaRuntime = Boolean(window.__vatioboardSpa);
+const DEFAULT_REPLAY_PLAYBACK_RATE = 1000;
+const REPLAY_PLAYBACK_RATE_LEGACY_KEY = 'vatio_replay_playback_rate_v1';
+const REPLAY_PLAYBACK_RATE_SETTING_KEY = 'playbackRate';
+const REPLAY_PLAYBACK_RATES = new Set([1, 4, 10, 100, 1000]);
 
 type AnyRecord = Record<string, any>;
-type AnyFn = (...args: any[]) => any;
 type RouteLifecycle = {
   mount: (routeContext?: AnyRecord) => unknown;
   unmount: () => void;
-};
-type ToolsMenuController = {
-  close: AnyFn;
-  destroy: AnyFn;
-  setOpen: AnyFn;
 };
 type SingleTabOwnershipResult = {
   owned: boolean;
@@ -95,12 +88,6 @@ export function getReplayElements(root: any): AnyRecord {
     replaySessionChip: queryOne(root, '#replaySessionChip'),
     replayAxisButtons: queryAll(root, '.replay-axis-btn'),
     replayGraphTriggers: queryAll(root, '.replay-graph-trigger'),
-    replayToolsMenuBtn: queryOne(root, '#replayToolsMenuBtn'),
-    replayToolsMenuList: queryOne(root, '#replayToolsMenuList'),
-    openReplaySpeedMenu: queryOne(root, '#openReplaySpeedMenu'),
-    openReplayAccelMenu: queryOne(root, '#openReplayAccelMenu'),
-    openReplayLibraryMenu: queryOne(root, '#openReplayLibraryMenu'),
-    openReplayBoardMenu: queryOne(root, '#openReplayBoardMenu'),
     replayRecordedAtValue: queryOne(root, '#replayRecordedAtValue'),
     replaySampleCountValue: queryOne(root, '#replaySampleCountValue'),
     replayEmptyState: queryOne(root, '#replayEmptyState'),
@@ -177,14 +164,6 @@ function createInactiveReplayGraphElements(): AnyRecord {
   return getReplayGraphElements(null);
 }
 
-function createInactiveToolsMenu(): ToolsMenuController {
-  return {
-    close() {},
-    destroy() {},
-    setOpen() {},
-  };
-}
-
 function createInactiveReplayChartsController(): AnyRecord {
   return {
     destroy() {},
@@ -213,7 +192,6 @@ function createInactiveReplayMapController(): AnyRecord {
 
 let elements: AnyRecord = createInactiveReplayElements();
 let graphElements: AnyRecord = createInactiveReplayGraphElements();
-let toolsMenu: ToolsMenuController = createInactiveToolsMenu();
 let replayFilterController: AnyRecord | null = null;
 let chartsController: AnyRecord = createInactiveReplayChartsController();
 let mapController: AnyRecord = createInactiveReplayMapController();
@@ -263,7 +241,7 @@ function isVisibleForFocus(element: any) {
 }
 
 function getCloudSyncLauncherFocusTarget() {
-  const menuList = getActiveToolsMenuList(elements.replayToolsMenuList);
+  const menuList = window.__vatioboardStartMenu?.list;
   const candidates = [
     menuList?.querySelector('[data-backend-auth-user]'),
     menuList?.querySelector('[data-backend-auth-password]'),
@@ -276,7 +254,7 @@ function getCloudSyncLauncherFocusTarget() {
 }
 
 function focusCloudSyncLauncherTarget(attempt = 0) {
-  toolsMenu.setOpen(true);
+  window.__vatioboardStartMenu?.setOpen?.(true);
   const target = getCloudSyncLauncherFocusTarget();
   if (target) {
     focusElement(target);
@@ -319,7 +297,7 @@ const state: AnyRecord = {
   initialSelectionPending: true,
   summary: getReplaySummary(null),
   highlights: getReplayHighlights(null),
-  playbackRate: 1000,
+  playbackRate: DEFAULT_REPLAY_PLAYBACK_RATE,
   dashboardAxis: 'time',
   elapsedMs: 0,
   playing: false,
@@ -386,15 +364,6 @@ function initReplayMapForSession() {
     mapController.resize();
   });
   return initPromise;
-}
-
-function bindMenuNavigation(element, href, cleanup) {
-  if (!element) return;
-
-  cleanup.addEventListener(element, 'click', () => {
-    toolsMenu.close();
-    navigateToAppRoute(href);
-  });
 }
 
 function refreshDerivedState() {
@@ -599,6 +568,90 @@ function renderRateButtons() {
     const isActive = Number(button.dataset.rate) === state.playbackRate;
     button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
   }
+}
+
+function normalizePlaybackRate(value, fallback = null) {
+  const numeric = Number(value);
+  return REPLAY_PLAYBACK_RATES.has(numeric) ? numeric : fallback;
+}
+
+function getReplayPreferencesStorage() {
+  try {
+    return window.localStorage || null;
+  } catch {
+    return null;
+  }
+}
+
+function getRuntimeSettingsService() {
+  return activeReplayRoute?.settingsService || null;
+}
+
+function getRuntimeLogger() {
+  return activeReplayRoute?.logger || null;
+}
+
+function readLegacyPlaybackRate() {
+  try {
+    return normalizePlaybackRate(
+      getReplayPreferencesStorage()?.getItem(REPLAY_PLAYBACK_RATE_LEGACY_KEY),
+      null
+    );
+  } catch (error) {
+    getRuntimeLogger()?.warn?.('Replay playback rate could not be read from legacy storage.', error);
+    return null;
+  }
+}
+
+function writeLegacyPlaybackRate(rate) {
+  try {
+    getReplayPreferencesStorage()?.setItem(REPLAY_PLAYBACK_RATE_LEGACY_KEY, String(rate));
+  } catch (error) {
+    getRuntimeLogger()?.warn?.('Replay playback rate could not be written to legacy storage.', error);
+  }
+}
+
+function readRuntimePlaybackRate() {
+  const settingsService = getRuntimeSettingsService();
+  if (!settingsService?.get) return null;
+  try {
+    return normalizePlaybackRate(
+      settingsService.get(REPLAY_PLAYBACK_RATE_SETTING_KEY, null),
+      null
+    );
+  } catch (error) {
+    getRuntimeLogger()?.warn?.('Replay playback rate setting could not be read through runtime settings.', error);
+    return null;
+  }
+}
+
+function mirrorPlaybackRateToRuntime(rate) {
+  const settingsService = getRuntimeSettingsService();
+  if (!settingsService?.set) return;
+  try {
+    const saved = settingsService.set(REPLAY_PLAYBACK_RATE_SETTING_KEY, String(rate));
+    if (!saved) {
+      getRuntimeLogger()?.warn?.('Replay playback rate setting could not be mirrored through runtime settings.');
+    }
+  } catch (error) {
+    getRuntimeLogger()?.warn?.('Replay playback rate setting mirror failed.', error);
+  }
+}
+
+function loadInitialPlaybackRate() {
+  const legacyRate = readLegacyPlaybackRate();
+  if (legacyRate !== null) {
+    mirrorPlaybackRateToRuntime(legacyRate);
+    return legacyRate;
+  }
+
+  const runtimeRate = readRuntimePlaybackRate();
+  if (runtimeRate !== null) {
+    writeLegacyPlaybackRate(runtimeRate);
+    return runtimeRate;
+  }
+
+  return normalizePlaybackRate(state.playbackRate, DEFAULT_REPLAY_PLAYBACK_RATE);
 }
 
 function renderAxisButtons() {
@@ -969,11 +1022,6 @@ function stopPlayback() {
 }
 
 function applyReplayIcons(routeElements = elements) {
-  applyButtonIcon(routeElements.openReplaySpeedMenu, IconSpeed);
-  applyButtonIcon(routeElements.openReplayAccelMenu, IconAccel);
-  applyButtonIcon(routeElements.openReplayLibraryMenu, IconWorld);
-  applyButtonIcon(routeElements.openReplayBoardMenu, IconBoard);
-  applyButtonIcon(routeElements.replayToolsMenuBtn, IconPages);
   for (const button of routeElements.replayAxisButtons) {
     if (button.dataset.axis === 'time') {
       applyButtonIcon(button, IconTime);
@@ -1039,7 +1087,6 @@ function destroyReplayRouteResources(route: AnyRecord | null = activeReplayRoute
   if (!route || route.destroyed) return;
   route.destroyed = true;
   route.syncIndicator?.destroy?.();
-  route.toolsMenu?.destroy?.();
   route.filterController?.destroy?.();
   route.chartsController?.destroy?.();
   route.mapController?.destroy?.();
@@ -1048,7 +1095,6 @@ function destroyReplayRouteResources(route: AnyRecord | null = activeReplayRoute
     activeReplayRoute = null;
     elements = createInactiveReplayElements();
     graphElements = createInactiveReplayGraphElements();
-    toolsMenu = createInactiveToolsMenu();
     replayFilterController = null;
     chartsController = createInactiveReplayChartsController();
     mapController = createInactiveReplayMapController();
@@ -1091,18 +1137,16 @@ async function mountReplayController(routeContext: AnyRecord = {}) {
     cleanup,
     destroyed: false,
     generation: replayRouteGeneration + 1,
+    logger: routeContext.logger || null,
     ownsCleanup,
+    settingsService: routeContext.settingsService || null,
     signal: routeContext.signal || null,
   };
   replayRouteGeneration = route.generation;
   activeReplayRoute = route;
+  state.playbackRate = loadInitialPlaybackRate();
   elements = getReplayElements(routeContext.root || document);
   graphElements = getReplayGraphElements(routeContext.root || document);
-  toolsMenu = initToolsMenu({
-    button: elements.replayToolsMenuBtn,
-    list: elements.replayToolsMenuList,
-  });
-  route.toolsMenu = toolsMenu;
   createReplayMapRouteController(elements);
   route.mapController = mapController;
   route.syncIndicator = initCloudSyncStatusIndicator({
@@ -1214,8 +1258,11 @@ function togglePlayback() {
 }
 
 function setPlaybackRate(rate) {
-  if (!Number.isFinite(rate) || rate <= 0) return;
-  state.playbackRate = rate;
+  const normalizedRate = normalizePlaybackRate(rate, null);
+  if (normalizedRate === null) return;
+  state.playbackRate = normalizedRate;
+  writeLegacyPlaybackRate(normalizedRate);
+  mirrorPlaybackRateToRuntime(normalizedRate);
   renderRateButtons();
 }
 
@@ -1465,14 +1512,6 @@ function bindEvents({
       toggleLang();
     });
   });
-
-  bindMenuNavigation(routeElements.openReplaySpeedMenu, '#/speed', cleanup);
-  bindMenuNavigation(routeElements.openReplayAccelMenu, '#/accel', cleanup);
-  bindMenuNavigation(routeElements.openReplayLibraryMenu, '#/library?tab=speed', cleanup);
-  bindMenuNavigation(routeElements.openReplayBoardMenu, '#/board', cleanup);
-  if (!isSpaRuntime) {
-    integratePlayerWidget({ toolsMenuList: routeElements.replayToolsMenuList, toolsMenu });
-  }
 
   cleanup.addEventListener(routeElements.replayOpenSpeed, 'click', () => {
     navigateToAppRoute('#/speed');

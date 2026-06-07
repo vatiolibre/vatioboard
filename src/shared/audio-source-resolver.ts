@@ -175,7 +175,11 @@ async function resolveRemotePlaybackUrl(
 
   let gate = null;
   try {
-    gate = await getProtectedMediaRequestGate();
+    gate = await getProtectedMediaRequestGate({
+      promptAuth: true,
+      authPromptMode: "required",
+      source: "media-playback",
+    });
     if (!gate.allowed) return null;
 
     const result = await getBackendMediaAssetAccess({

@@ -5,7 +5,6 @@ import "../styles/energy.less";
 import "../shared/ui/confirm-dialog.less";
 
 import { createCleanupStack } from "../app/view-cleanup.js";
-import { integratePlayerWidget } from "../player/integrate-player-widget.js";
 import { navigateToAppRoute } from "../app/router.js";
 import {
   clearCurrentBoardDocumentMeta,
@@ -39,7 +38,7 @@ import {
 } from "../shared/cloud-library-resources.js";
 import { ensureSingleTabOwnership, SINGLE_TAB_OWNERSHIP_EVENT } from "../shared/single-tab.js";
 import { getFloatingTools, initFloatingTools } from "../shared/floating-tools.js";
-import { applyButtonIcon, initToolsMenu } from "../shared/tools-menu.js";
+import { applyButtonIcon } from "../shared/tools-menu.js";
 import { showConfirmDialog, showPromptDialog } from "../shared/ui/confirm-dialog.js";
 import {
   createBlankSession,
@@ -73,19 +72,16 @@ import {
 import iro from "@jaames/iro";
 import { t, applyTranslations, toggleLang, getLang } from "../i18n.js";
 import {
-  IconAccel,
   IconCalculator,
   IconEnergy,
   IconEraser,
   IconFilePlus,
-  IconPages,
   IconPen,
   IconRedo,
   IconSave,
   IconSpeed,
   IconTrash,
   IconUndo,
-  IconWorld,
 } from "../icons.js";
 
 type AnyRecord = Record<string, any>;
@@ -107,6 +103,8 @@ function createMountedBoardController({
   root = document,
   cleanup: routeCleanup = null,
   signal,
+  settingsService = null,
+  logger = null,
 }: AnyRecord = {}) {
   const cleanup: AnyRecord = createCleanupStack() as any;
   routeCleanup?.add(() => cleanup.run());
@@ -141,12 +139,6 @@ langToggleButtons.forEach((button) => {
 const openCalcBtn = byId("openCalc");
 const openSpeedBtn = byId("openSpeed");
 const openEnergyBtn = byId("openEnergy");
-const openAccelMenuBtn = byId("openAccelMenu");
-const openCalcMenuBtn = byId("openCalcMenu");
-const openLibraryMenuBtn = byId("openLibraryMenu");
-const openSpeedMenuBtn = byId("openSpeedMenu");
-const toolsMenuBtn = byId("toolsMenuBtn");
-const toolsMenuList = byId("toolsMenuList");
 
 applyButtonIcon(byId("pen"), IconPen);
 applyButtonIcon(byId("erase"), IconEraser);
@@ -156,16 +148,9 @@ applyButtonIcon(byId("createNew"), IconFilePlus);
 applyButtonIcon(byId("save"), IconSave);
 applyButtonIcon(byId("deleteBoard"), IconTrash);
 applyButtonIcon(openCalcBtn, IconCalculator);
-applyButtonIcon(openCalcMenuBtn, IconCalculator);
-applyButtonIcon(openAccelMenuBtn, IconAccel);
-applyButtonIcon(openLibraryMenuBtn, IconWorld);
 applyButtonIcon(openSpeedBtn, IconSpeed);
-applyButtonIcon(openSpeedMenuBtn, IconSpeed);
 applyButtonIcon(openEnergyBtn, IconEnergy);
-applyButtonIcon(toolsMenuBtn, IconPages);
 
-const toolsMenu = initToolsMenu({ button: toolsMenuBtn, list: toolsMenuList });
-cleanup.addDisposable(toolsMenu);
 if (!isSpaRuntime) initBackendAuthControllers();
 
 // Shared floating tools live outside route-owned DOM in the SPA shell.
@@ -173,34 +158,30 @@ const floatingTools: AnyRecord = (isSpaRuntime ? getFloatingTools() : initFloati
 const calcWidget: AnyRecord | null = floatingTools?.calcWidget || null;
 const energyWidget: AnyRecord | null = floatingTools?.energyWidget || null;
 
+const closeStartMenu = () => {
+  window.__vatioboardStartMenu?.close?.();
+};
+
 const bindToggle = (btn, widget) => {
   if (!btn || !widget) return;
   cleanup.addEventListener(btn, "click", () => {
     widget.toggle?.();
-    toolsMenu.close();
+    closeStartMenu();
   });
 };
 
 const bindNavigation = (btn, href) => {
   cleanup.addEventListener(btn, "click", () => {
-    toolsMenu.close();
+    closeStartMenu();
     navigateToAppRoute(href);
   });
 };
 
 bindToggle(openCalcBtn, calcWidget);
-bindToggle(openCalcMenuBtn, calcWidget);
 
 bindToggle(openEnergyBtn, energyWidget);
 
 bindNavigation(openSpeedBtn, "#/speed");
-bindNavigation(openSpeedMenuBtn, "#/speed");
-bindNavigation(openAccelMenuBtn, "#/accel");
-bindNavigation(openLibraryMenuBtn, "#/library?tab=board_documents");
-
-if (!isSpaRuntime) {
-  integratePlayerWidget({ toolsMenuList, toolsMenu });
-}
 
   return (function(){
     const canvas = byId("pad");
@@ -220,12 +201,12 @@ if (!isSpaRuntime) {
     const saveBtn = byId("save");
     const deleteBoardBtn = byId("deleteBoard");
     const subscriptionCta = byId("subscriptionCta");
-    const backendAuthUserInput = query("[data-backend-auth-user]");
 
     // NEW: color UI
     const swatchesEl = byId("swatches");
 
     const LS_INK_RAW = "vatio_board_ink_raw";
+    const BOARD_INK_SETTING_KEY = "inkRaw";
     let saveBusy = false;
     let currentBoardDocument = loadCurrentBoardDocumentMeta();
     let documentSession = currentBoardDocument
@@ -241,9 +222,44 @@ if (!isSpaRuntime) {
       return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
     }
 
-    let inkRaw =
-    normalizeHex(localStorage.getItem(LS_INK_RAW)) ||
-    (isDarkMode() ? "#e5e7eb" : "#111827");
+    function readRuntimeInkRaw(){
+      try {
+        return normalizeHex(settingsService?.get?.(BOARD_INK_SETTING_KEY, null));
+      } catch (error) {
+        logger?.warn?.("Board ink color setting could not be read through runtime settings.", error);
+        return null;
+      }
+    }
+
+    function mirrorInkRawToRuntime(value){
+      if (!settingsService?.set) return;
+      try {
+        const saved = settingsService.set(BOARD_INK_SETTING_KEY, value);
+        if (!saved) {
+          logger?.warn?.("Board ink color setting could not be mirrored through runtime settings.");
+        }
+      } catch (error) {
+        logger?.warn?.("Board ink color setting mirror failed.", error);
+      }
+    }
+
+    function loadInitialInkRaw(){
+      const legacyInkRaw = normalizeHex(localStorage.getItem(LS_INK_RAW));
+      if (legacyInkRaw) {
+        mirrorInkRawToRuntime(legacyInkRaw);
+        return legacyInkRaw;
+      }
+
+      const runtimeInkRaw = readRuntimeInkRaw();
+      if (runtimeInkRaw) {
+        localStorage.setItem(LS_INK_RAW, runtimeInkRaw);
+        return runtimeInkRaw;
+      }
+
+      return isDarkMode() ? "#e5e7eb" : "#111827";
+    }
+
+    let inkRaw = loadInitialInkRaw();
 
     // Popup UI
     const colorTriggerBtn = byId("sizePreview");
@@ -901,6 +917,7 @@ if (!isSpaRuntime) {
       if(!h) return;
       inkRaw = h;
       localStorage.setItem(LS_INK_RAW, inkRaw);
+      mirrorInkRawToRuntime(inkRaw);
       activatePenTool({ announce: false });
       applyInk();
 
@@ -966,7 +983,7 @@ if (!isSpaRuntime) {
     function start(ev){
       if (ev.pointerType === "mouse" && ev.button !== 0) return;
       if (activePointerId !== null && ev.pointerId !== activePointerId) return;
-      toolsMenu.close();
+      closeStartMenu();
       clearNativeSelection();
       drawing = true;
       activePointerId = ev.pointerId;
@@ -1273,7 +1290,7 @@ if (!isSpaRuntime) {
       if (isSpaRuntime && !viewMounted) return;
       finishStroke({ commit: false });
       closeColorPopup();
-      toolsMenu.close();
+      closeStartMenu();
       if (!isSpaRuntime) {
         calcWidget.close?.();
         energyWidget.close?.();
@@ -1352,8 +1369,9 @@ if (!isSpaRuntime) {
     }
 
     function openBackendAuth(){
-      toolsMenu.setOpen(true);
-      backendAuthUserInput?.focus?.();
+      const startMenu = window.__vatioboardStartMenu;
+      startMenu?.setOpen?.(true);
+      startMenu?.list?.querySelector<HTMLElement>("[data-backend-auth-user]")?.focus?.();
     }
 
     function getBlockedSaveMessage(capability){

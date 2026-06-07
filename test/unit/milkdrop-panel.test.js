@@ -83,6 +83,27 @@ vi.mock("../../src/shared/storage.js", () => ({
 }));
 
 import { createMilkdropPanel } from "../../src/player/milkdrop-panel.js";
+import butterchurn from "butterchurn";
+import * as audioRuntime from "../../src/shared/audio-runtime.js";
+import { loadText, saveText } from "../../src/shared/storage.js";
+import { createShellWindowManager } from "../../src/shared/shell-window-manager.js";
+
+const defaultAudioState = {
+  paused: false,
+  playing: true,
+  currentTrack: null,
+  queue: [],
+  currentIndex: 0,
+  volume: 1,
+  muted: false,
+  repeat: "off",
+  shuffle: false,
+  sourceType: "blob",
+  loading: false,
+  error: null,
+  currentTime: 0,
+  duration: 0,
+};
 
 describe("createMilkdropPanel", () => {
   let mount;
@@ -120,6 +141,11 @@ describe("createMilkdropPanel", () => {
     window.requestAnimationFrame = vi.fn((cb) => setTimeout(cb, 0));
     window.cancelAnimationFrame = vi.fn((id) => clearTimeout(id));
 
+    audioRuntime.getState.mockReturnValue({ ...defaultAudioState });
+    loadText.mockImplementation((key, fallback = "") => fallback);
+    saveText.mockClear();
+    butterchurn.createVisualizer.mockClear();
+    mockAudioElement.removeAttribute("src");
     localStorage.clear();
   });
 
@@ -133,6 +159,23 @@ describe("createMilkdropPanel", () => {
     document.exitFullscreen = originalExitFullscreen;
     localStorage.clear();
   });
+
+  function makePlayableAudio() {
+    mockAudioElement.src = "blob:https://vatioboard.local/milkdrop-audio";
+    audioRuntime.getState.mockReturnValue({
+      ...defaultAudioState,
+      currentTrack: { name: "Demo track" },
+      sourceType: "blob",
+      playing: true,
+      paused: false,
+    });
+    window.requestAnimationFrame = vi.fn(() => 1);
+    window.cancelAnimationFrame = vi.fn();
+  }
+
+  function getLatestVisualizer() {
+    return butterchurn.createVisualizer.mock.results.at(-1)?.value;
+  }
 
   it("creates a panel instance with expected API", () => {
     const panel = createMilkdropPanel({ mount });
@@ -177,7 +220,10 @@ describe("createMilkdropPanel", () => {
     expect(el.querySelector(".milkdrop-header")).not.toBeNull();
     expect(el.querySelector(".milkdrop-stage")).not.toBeNull();
     expect(el.querySelector(".milkdrop-resize-handle")).not.toBeNull();
-    expect(el.querySelector(".milkdrop-preset-label")).not.toBeNull();
+    expect(el.querySelector(".milkdrop-preset-overlay")).not.toBeNull();
+    expect(el.querySelector(".milkdrop-preset-controls")).not.toBeNull();
+    expect(el.querySelector(".milkdrop-fullscreen-exit-btn")).not.toBeNull();
+    expect(el.querySelector(".milkdrop-header .milkdrop-preset-prev")).toBeNull();
     expect(el.querySelector(".milkdrop-close-btn")).not.toBeNull();
     expect(el.querySelector(".milkdrop-fullscreen-btn")).not.toBeNull();
     panel.destroy();
@@ -199,13 +245,127 @@ describe("createMilkdropPanel", () => {
     expect(el.classList.contains("is-window-fullscreen")).toBe(true);
     expect(fullscreenBtn.getAttribute("aria-label")).toBe("Exit fullscreen");
 
-    fullscreenBtn.click();
+    el.querySelector(".milkdrop-fullscreen-exit-btn").click();
     await Promise.resolve();
 
     expect(el.classList.contains("is-fullscreen")).toBe(false);
     expect(el.classList.contains("is-window-fullscreen")).toBe(false);
     expect(fullscreenBtn.getAttribute("aria-label")).toBe("Fullscreen");
 
+    panel.destroy();
+  });
+
+  it("restores a saved preset into the stage overlay", async () => {
+    makePlayableAudio();
+    loadText.mockImplementation((key, fallback = "") => (
+      key === "milkdrop_preset_name_v1" ? "Preset B" : fallback
+    ));
+
+    const panel = createMilkdropPanel({ mount });
+    await panel.open();
+    const el = mount.querySelector(".milkdrop-panel");
+    const visualizer = getLatestVisualizer();
+
+    expect(visualizer.loadPreset).toHaveBeenCalledWith({ name: "Preset B" }, 0);
+    expect(el.querySelector(".milkdrop-preset-overlay").textContent).toBe("Preset B");
+    expect(saveText).toHaveBeenCalledWith("milkdrop_preset_name_v1", "Preset B");
+    expect(saveText).toHaveBeenCalledWith("milkdrop_preset_index_v1", "1");
+
+    panel.destroy();
+  });
+
+  it("uses saved preset index when the saved preset name is missing", async () => {
+    makePlayableAudio();
+    loadText.mockImplementation((key, fallback = "") => {
+      if (key === "milkdrop_preset_name_v1") return "Missing preset";
+      if (key === "milkdrop_preset_index_v1") return "2";
+      return fallback;
+    });
+
+    const panel = createMilkdropPanel({ mount });
+    await panel.open();
+    const visualizer = getLatestVisualizer();
+
+    expect(visualizer.loadPreset).toHaveBeenCalledWith({ name: "Preset C" }, 0);
+
+    panel.destroy();
+  });
+
+  it("navigates presets with fullscreen stage swipes", async () => {
+    makePlayableAudio();
+    HTMLElement.prototype.requestFullscreen = undefined;
+    loadText.mockImplementation((key, fallback = "") => (
+      key === "milkdrop_preset_name_v1" ? "Preset A" : fallback
+    ));
+
+    const panel = createMilkdropPanel({ mount });
+    await panel.open();
+    const el = mount.querySelector(".milkdrop-panel");
+    const stage = el.querySelector(".milkdrop-stage");
+    const visualizer = getLatestVisualizer();
+    visualizer.loadPreset.mockClear();
+
+    el.querySelector(".milkdrop-fullscreen-btn").click();
+    await Promise.resolve();
+
+    stage.dispatchEvent(new PointerEvent("pointerdown", {
+      clientX: 240,
+      clientY: 120,
+      pointerId: 7,
+      pointerType: "touch",
+      bubbles: true,
+    }));
+    stage.dispatchEvent(new PointerEvent("pointerup", {
+      clientX: 150,
+      clientY: 124,
+      pointerId: 7,
+      pointerType: "touch",
+      bubbles: true,
+    }));
+
+    expect(visualizer.loadPreset).toHaveBeenCalledWith({ name: "Preset B" }, 2.7);
+
+    panel.destroy();
+  });
+
+  it("randomizes presets with a fullscreen stage double tap", async () => {
+    makePlayableAudio();
+    HTMLElement.prototype.requestFullscreen = undefined;
+    loadText.mockImplementation((key, fallback = "") => (
+      key === "milkdrop_preset_name_v1" ? "Preset A" : fallback
+    ));
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.9);
+
+    const panel = createMilkdropPanel({ mount });
+    await panel.open();
+    const el = mount.querySelector(".milkdrop-panel");
+    const stage = el.querySelector(".milkdrop-stage");
+    const visualizer = getLatestVisualizer();
+    visualizer.loadPreset.mockClear();
+
+    el.querySelector(".milkdrop-fullscreen-btn").click();
+    await Promise.resolve();
+
+    for (const pointerId of [11, 12]) {
+      stage.dispatchEvent(new PointerEvent("pointerdown", {
+        clientX: 180,
+        clientY: 130,
+        pointerId,
+        pointerType: "touch",
+        bubbles: true,
+      }));
+      stage.dispatchEvent(new PointerEvent("pointerup", {
+        clientX: 182,
+        clientY: 132,
+        pointerId,
+        pointerType: "touch",
+        bubbles: true,
+      }));
+    }
+
+    expect(visualizer.loadPreset).toHaveBeenCalledWith({ name: "Preset C" }, 1.5);
+
+    randomSpy.mockRestore();
     panel.destroy();
   });
 
@@ -374,7 +534,8 @@ describe("createMilkdropPanel", () => {
     });
     mount.appendChild(playerPanel);
 
-    const panel = createMilkdropPanel({ mount });
+    const shellManager = createShellWindowManager({ root: mount });
+    const panel = createMilkdropPanel({ mount, shellManager });
     const el = mount.querySelector(".milkdrop-panel");
 
     expect(Number.parseInt(el.style.left, 10)).toBeGreaterThan(400);
@@ -382,5 +543,6 @@ describe("createMilkdropPanel", () => {
     expect(el.style.bottom).toBe("auto");
 
     panel.destroy();
+    shellManager.destroy();
   });
 });

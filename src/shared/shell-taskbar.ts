@@ -1,19 +1,28 @@
 import type { ShellRuntime, ShellWindowRecord } from "../types/shell";
 import type { StorageLike } from "../types/storage";
+import { appControl, appRegistry, applyAppIconTheme } from "../app-platform/index.js";
+import type { VatioAppManifest, VatioAppShellRuntime } from "../app-platform/types";
+import { IconLogin, IconPages } from "../icons.js";
+import { createDragSensors } from "./drag-sensors.js";
 import { getToolDefinitionForShellWindow } from "./tool-registry.js";
 
 const TASKBAR_STATE_KEY = "vatioboard.shell.taskbar_fabs.v1";
-const DRAG_THRESHOLD_PX = 6;
+const BACKEND_AUTH_STATE_EVENT = "vatioboard:backend-auth-state";
 const RETURN_MARGIN_PX = 36;
 const FAB_SIZE_PX = 52;
 const VIEWPORT_MARGIN_PX = 8;
 
-const TOUCH_MOVE_OPTIONS = { capture: true, passive: false };
-const CAPTURE_OPTIONS = { capture: true };
-
 // TODO(ts-migration): drag sensors preserve the legacy JS payload shape while
 // the taskbar callers are still mixed JS/TS.
 type LegacyTaskbarOptions = Record<string, any>;
+
+interface TaskbarAuthState {
+  authenticated?: boolean | null;
+  busy?: boolean;
+  isGuest?: boolean | null;
+  pendingLogout?: boolean;
+  user?: string | null;
+}
 
 interface StoredPosition {
   detached: true;
@@ -32,6 +41,12 @@ interface TaskbarOptions {
   root?: HTMLElement;
   labels?: Record<string, string>;
   icons?: Record<string, string>;
+  startMenu?: VatioBoardStartMenu | null;
+  appLauncher?: Pick<VatioAppShellRuntime, "openApp"> | null;
+  accountPanel?: {
+    open?: (options?: Record<string, unknown>) => void;
+    toggle?: (options?: Record<string, unknown>) => void;
+  } | null;
   storage?: StorageLike | null;
 }
 
@@ -131,27 +146,75 @@ function getInitial(label: unknown) {
   return String(label || "?").trim().charAt(0).toUpperCase() || "?";
 }
 
+function getAppLabel(app: VatioAppManifest) {
+  return app.shortTitle || app.title || app.id;
+}
+
+function isLaunchableFavoriteApp(app: VatioAppManifest) {
+  return appControl.isFavorite(app.id)
+    && appControl.isEnabled(app.id)
+    && Boolean(app.route || app.window?.shellWindowId);
+}
+
+function getFavoriteApps() {
+  return appRegistry.listApps()
+    .filter(isLaunchableFavoriteApp)
+    .sort((a, b) => (
+      a.order - b.order
+      || getAppLabel(a).localeCompare(getAppLabel(b))
+      || a.id.localeCompare(b.id)
+    ));
+}
+
+function getAppShellWindowId(app: VatioAppManifest) {
+  return app.window?.shellWindowId || "";
+}
+
+function getAppForShellWindowId(shellWindowId: string) {
+  return appRegistry.listApps().find((app) => app.window?.shellWindowId === shellWindowId) || null;
+}
+
+function isVisibleTaskbarState(state: string) {
+  return state === "open" || state === "minimized";
+}
+
 function getDetachedRoot(root: HTMLElement | Document | null | undefined) {
   return root?.appendChild ? root : document.body;
 }
 
 function getViewportSize() {
+  const viewport = globalThis.visualViewport;
   return {
-    width: globalThis.innerWidth || document.documentElement?.clientWidth || 1024,
-    height: globalThis.innerHeight || document.documentElement?.clientHeight || 768,
+    width: viewport?.width || globalThis.innerWidth || document.documentElement?.clientWidth || 1024,
+    height: viewport?.height || globalThis.innerHeight || document.documentElement?.clientHeight || 768,
+  };
+}
+
+function getViewportBounds() {
+  const viewport = globalThis.visualViewport;
+  const size = getViewportSize();
+  return {
+    left: viewport?.offsetLeft || 0,
+    top: viewport?.offsetTop || 0,
+    width: size.width,
+    height: size.height,
   };
 }
 
 function clampPositionToViewport(position: LegacyTaskbarOptions, width: number, height: number) {
-  const viewport = getViewportSize();
+  const viewport = getViewportBounds();
+  const minLeft = viewport.left + VIEWPORT_MARGIN_PX;
+  const minTop = viewport.top + VIEWPORT_MARGIN_PX;
+  const maxLeft = viewport.left + viewport.width - width - VIEWPORT_MARGIN_PX;
+  const maxTop = viewport.top + viewport.height - height - VIEWPORT_MARGIN_PX;
   return {
     left: Math.min(
-      Math.max(VIEWPORT_MARGIN_PX, position.left),
-      Math.max(VIEWPORT_MARGIN_PX, viewport.width - width - VIEWPORT_MARGIN_PX)
+      Math.max(minLeft, position.left),
+      Math.max(minLeft, maxLeft)
     ),
     top: Math.min(
-      Math.max(VIEWPORT_MARGIN_PX, position.top),
-      Math.max(VIEWPORT_MARGIN_PX, viewport.height - height - VIEWPORT_MARGIN_PX)
+      Math.max(minTop, position.top),
+      Math.max(minTop, maxTop)
     ),
   };
 }
@@ -199,314 +262,14 @@ function makePoint(clientX: number, clientY: number) {
   return { clientX, clientY, x: clientX, y: clientY };
 }
 
-function pointFromPointerEvent(event: LegacyTaskbarOptions, fallback: LegacyTaskbarOptions | null = null) {
-  const x = Number(event?.clientX);
-  const y = Number(event?.clientY);
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return fallback;
-  return makePoint(x, y);
-}
-
-function pointFromTouch(touch: LegacyTaskbarOptions | null | undefined, fallback: LegacyTaskbarOptions | null = null) {
-  if (!touch) return fallback;
-  const x = Number(touch.clientX);
-  const y = Number(touch.clientY);
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return fallback;
-  return makePoint(x, y);
-}
-
-function findTouch(event: LegacyTaskbarOptions, identifier: number) {
-  const touches: LegacyTaskbarOptions[] = [
-    ...Array.from(event?.changedTouches || []),
-    ...Array.from(event?.touches || []),
-  ];
-  return touches.find((touch) => touch.identifier === identifier) || null;
-}
-
-function distanceBetween(a: LegacyTaskbarOptions | null, b: LegacyTaskbarOptions | null) {
-  if (!a || !b) return 0;
-  return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-}
-
-function buildDragPayload(sensor: LegacyTaskbarOptions, point: LegacyTaskbarOptions, event: Event, type: string) {
-  const dx = point.clientX - sensor.startPoint.clientX;
-  const dy = point.clientY - sensor.startPoint.clientY;
-  const movementX = point.clientX - sensor.lastPoint.clientX;
-  const movementY = point.clientY - sensor.lastPoint.clientY;
-  return {
-    type,
-    event,
-    context: sensor.context,
-    pointerType: sensor.pointerType,
-    startX: sensor.startPoint.clientX,
-    startY: sensor.startPoint.clientY,
-    clientX: point.clientX,
-    clientY: point.clientY,
-    dx,
-    dy,
-    movementX,
-    movementY,
-    point,
-  };
-}
-
-function createTouchDragSensor({
-  source,
-  canStart,
-  onStart,
-  onMove,
-  onEnd,
-  onCancel,
-  preventDefaultOnStart = false,
-}: LegacyTaskbarOptions) {
-  let active: LegacyTaskbarOptions | null = null;
-
-  function cleanup() {
-    document.removeEventListener("touchmove", handleMove, TOUCH_MOVE_OPTIONS);
-    document.removeEventListener("touchend", handleEnd, TOUCH_MOVE_OPTIONS);
-    document.removeEventListener("touchcancel", handleCancel, TOUCH_MOVE_OPTIONS);
-    window.removeEventListener("blur", handleHardCancel, CAPTURE_OPTIONS);
-    document.removeEventListener("visibilitychange", handleVisibilityChange, CAPTURE_OPTIONS);
-    active = null;
-  }
-
-  function finish(event, canceled = false) {
-    const sensor = active;
-    if (!sensor) return;
-    cleanup();
-    if (!sensor.started) {
-      onCancel?.({ context: sensor.context, event, pointerType: sensor.pointerType });
-      return;
-    }
-    const payload = buildDragPayload(sensor, sensor.lastPoint, event, canceled ? "cancel" : "end");
-    if (canceled) {
-      onEnd?.({ ...payload, canceled: true });
-    } else {
-      onEnd?.(payload);
-    }
-  }
-
-  function handleStart(event) {
-    if (active || event.touches?.length > 1) return;
-    const touch = event.changedTouches?.[0] || event.touches?.[0];
-    const point = pointFromTouch(touch);
-    if (!touch || !point) return;
-    const context = canStart?.(event, point);
-    if (!context) return;
-
-    active = {
-      context,
-      identifier: touch.identifier,
-      pointerType: "touch",
-      startPoint: point,
-      lastPoint: point,
-      started: false,
-    };
-
-    document.addEventListener("touchmove", handleMove, TOUCH_MOVE_OPTIONS);
-    document.addEventListener("touchend", handleEnd, TOUCH_MOVE_OPTIONS);
-    document.addEventListener("touchcancel", handleCancel, TOUCH_MOVE_OPTIONS);
-    window.addEventListener("blur", handleHardCancel, CAPTURE_OPTIONS);
-    document.addEventListener("visibilitychange", handleVisibilityChange, CAPTURE_OPTIONS);
-    if (preventDefaultOnStart) event.preventDefault?.();
-  }
-
-  function handleMove(event) {
-    const sensor = active;
-    if (!sensor) return;
-    const touch = findTouch(event, sensor.identifier);
-    const point = pointFromTouch(touch, sensor.lastPoint);
-    if (!point) return;
-    event.preventDefault?.();
-
-    if (!sensor.started) {
-      if (distanceBetween(sensor.startPoint, point) < DRAG_THRESHOLD_PX) {
-        sensor.lastPoint = point;
-        return;
-      }
-      sensor.started = true;
-      onStart?.(buildDragPayload(sensor, point, event, "start"));
-    }
-
-    onMove?.(buildDragPayload(sensor, point, event, "move"));
-    sensor.lastPoint = point;
-  }
-
-  function handleEnd(event) {
-    const sensor = active;
-    if (!sensor) return;
-    const touch = findTouch(event, sensor.identifier);
-    const point = pointFromTouch(touch, sensor.lastPoint);
-    sensor.lastPoint = point;
-    if (sensor.started) event.preventDefault?.();
-    finish(event, false);
-  }
-
-  function handleCancel(event) {
-    const sensor = active;
-    if (!sensor) return;
-    const touch = findTouch(event, sensor.identifier);
-    sensor.lastPoint = pointFromTouch(touch, sensor.lastPoint);
-    if (sensor.started) event.preventDefault?.();
-    finish(event, true);
-  }
-
-  function handleHardCancel(event) {
-    finish(event, true);
-  }
-
-  function handleVisibilityChange(event) {
-    if (document.visibilityState === "hidden") finish(event, true);
-  }
-
-  source.addEventListener("touchstart", handleStart, { passive: false });
-  return {
-    destroy() {
-      cleanup();
-      source.removeEventListener("touchstart", handleStart, { passive: false });
-    },
-    cancel: cleanup,
-  };
-}
-
-function createPointerDragSensor({
-  source,
-  canStart,
-  onStart,
-  onMove,
-  onEnd,
-  onCancel,
-}: LegacyTaskbarOptions) {
-  let active: LegacyTaskbarOptions | null = null;
-
-  function cleanup() {
-    window.removeEventListener("pointermove", handleMove, TOUCH_MOVE_OPTIONS);
-    window.removeEventListener("pointerup", handleEnd, CAPTURE_OPTIONS);
-    window.removeEventListener("pointercancel", handleCancel, CAPTURE_OPTIONS);
-    source.removeEventListener("lostpointercapture", handleCancel, CAPTURE_OPTIONS);
-    active = null;
-  }
-
-  function finish(event, canceled = false) {
-    const sensor = active;
-    if (!sensor) return;
-    cleanup();
-    if (!sensor.started) {
-      onCancel?.({ context: sensor.context, event, pointerType: sensor.pointerType });
-      return;
-    }
-    const point = pointFromPointerEvent(event, sensor.lastPoint);
-    sensor.lastPoint = point;
-    const payload = buildDragPayload(sensor, point, event, canceled ? "cancel" : "end");
-    if (canceled) {
-      onCancel?.({ ...payload, canceled: true });
-    } else {
-      onEnd?.(payload);
-    }
-  }
-
-  function handleStart(event) {
-    if (active || event.pointerType === "touch") return;
-    if (event.button !== undefined && event.button !== 0) return;
-    const point = pointFromPointerEvent(event);
-    if (!point) return;
-    const context = canStart?.(event, point);
-    if (!context) return;
-
-    active = {
-      context,
-      pointerId: event.pointerId,
-      pointerType: event.pointerType || "mouse",
-      startPoint: point,
-      lastPoint: point,
-      started: false,
-    };
-
-    window.addEventListener("pointermove", handleMove, TOUCH_MOVE_OPTIONS);
-    window.addEventListener("pointerup", handleEnd, CAPTURE_OPTIONS);
-    window.addEventListener("pointercancel", handleCancel, CAPTURE_OPTIONS);
-    source.addEventListener("lostpointercapture", handleCancel, CAPTURE_OPTIONS);
-    try {
-      source.setPointerCapture?.(event.pointerId);
-    } catch {
-      // best effort for mouse/pen only
-    }
-  }
-
-  function handleMove(event) {
-    const sensor = active;
-    if (!sensor) return;
-    if (sensor.pointerId != null && event.pointerId != null && event.pointerId !== sensor.pointerId) return;
-    const point = pointFromPointerEvent(event, sensor.lastPoint);
-    if (!point) return;
-
-    if (!sensor.started) {
-      if (distanceBetween(sensor.startPoint, point) < DRAG_THRESHOLD_PX) {
-        sensor.lastPoint = point;
-        return;
-      }
-      sensor.started = true;
-      onStart?.(buildDragPayload(sensor, point, event, "start"));
-    }
-
-    onMove?.(buildDragPayload(sensor, point, event, "move"));
-    sensor.lastPoint = point;
-    event.preventDefault?.();
-  }
-
-  function handleEnd(event) {
-    const sensor = active;
-    if (!sensor) return;
-    if (sensor.pointerId != null && event.pointerId != null && event.pointerId !== sensor.pointerId) return;
-    try {
-      source.releasePointerCapture?.(sensor.pointerId);
-    } catch {
-      // ignore
-    }
-    finish(event, false);
-  }
-
-  function handleCancel(event) {
-    const sensor = active;
-    if (!sensor) return;
-    if (sensor.pointerId != null && event.pointerId != null && event.pointerId !== sensor.pointerId) return;
-    try {
-      source.releasePointerCapture?.(sensor.pointerId);
-    } catch {
-      // ignore
-    }
-    finish(event, true);
-  }
-
-  source.addEventListener("pointerdown", handleStart);
-  return {
-    destroy() {
-      cleanup();
-      source.removeEventListener("pointerdown", handleStart);
-    },
-    cancel: cleanup,
-  };
-}
-
-function createDragSensors(options: LegacyTaskbarOptions) {
-  const touchSensor = createTouchDragSensor(options);
-  const pointerSensor = createPointerDragSensor(options);
-  return {
-    destroy() {
-      touchSensor.destroy();
-      pointerSensor.destroy();
-    },
-    cancel() {
-      touchSensor.cancel();
-      pointerSensor.cancel();
-    },
-  };
-}
-
 export function createShellTaskbar({
   shellManager,
   root = document.body,
   labels = {},
   icons = {},
+  startMenu = null,
+  appLauncher = null,
+  accountPanel = null,
   storage,
 }: TaskbarOptions = {}) {
   if (!shellManager) throw new Error("createShellTaskbar requires a shellManager.");
@@ -526,16 +289,69 @@ export function createShellTaskbar({
   element.setAttribute("aria-label", labels.taskbar || "Shell windows");
   suppressNativeDrag(element);
 
+  const favoritesElement = document.createElement("div");
+  favoritesElement.className = "vb-shell-taskbar-favorites";
+  favoritesElement.setAttribute("data-vb-shell-taskbar-favorites", "");
+  favoritesElement.setAttribute("aria-label", labels.favoriteApps || "Favorite apps");
+  suppressNativeDrag(favoritesElement);
+
   const dragHandle = document.createElement("div");
   dragHandle.className = "vb-shell-taskbar-drag-handle";
   dragHandle.setAttribute("data-vb-shell-taskbar-drag-handle", "");
   dragHandle.setAttribute("aria-hidden", "true");
   suppressNativeDrag(dragHandle);
 
+  const startButton = document.createElement("button");
+  startButton.type = "button";
+  startButton.className = "vb-shell-taskbar-start vb-shell-taskbar-fab dock-btn";
+  startButton.setAttribute("data-vb-shell-start-button", "");
+  startButton.setAttribute("aria-label", labels.startMenu || "Start menu");
+  startButton.setAttribute("aria-haspopup", "true");
+  startButton.setAttribute("aria-expanded", "false");
+  startButton.title = labels.startMenu || "Start menu";
+  suppressNativeDrag(startButton);
+  applyAppIconTheme(startButton, appRegistry.getApp("vatio.appManager"));
+
+  const startIcon = document.createElement("span");
+  startIcon.className = "vb-shell-taskbar-icon";
+  startIcon.setAttribute("aria-hidden", "true");
+  startIcon.innerHTML = icons.startMenu || IconPages;
+  startButton.append(startIcon);
+
+  const startLabel = document.createElement("span");
+  startLabel.className = "vb-shell-taskbar-label";
+  startLabel.textContent = labels.startMenu || "Start menu";
+  startButton.append(startLabel);
+  startMenu?.bindTrigger?.(startButton);
+
+  const accountButton = document.createElement("button");
+  accountButton.type = "button";
+  accountButton.className = "vb-shell-taskbar-account vb-shell-taskbar-fab dock-btn";
+  accountButton.setAttribute("data-vb-shell-account-button", "");
+  accountButton.setAttribute("aria-label", labels.account || "Account");
+  accountButton.title = labels.account || "Account";
+  suppressNativeDrag(accountButton);
+
+  const accountIcon = document.createElement("span");
+  accountIcon.className = "vb-shell-taskbar-icon";
+  accountIcon.setAttribute("aria-hidden", "true");
+  accountIcon.innerHTML = icons.account || IconLogin;
+  accountButton.append(accountIcon);
+
+  const accountStatus = document.createElement("span");
+  accountStatus.className = "vb-shell-taskbar-account-status";
+  accountStatus.setAttribute("aria-hidden", "true");
+  accountButton.append(accountStatus);
+
+  const accountLabel = document.createElement("span");
+  accountLabel.className = "vb-shell-taskbar-label";
+  accountLabel.textContent = labels.account || "Account";
+  accountButton.append(accountLabel);
+
   const trayElement = document.createElement("div");
   trayElement.className = "vb-shell-taskbar-tray";
   trayElement.setAttribute("data-vb-shell-taskbar-tray", "");
-  element.append(dragHandle, trayElement);
+  element.append(favoritesElement, dragHandle, startButton, accountButton, trayElement);
 
   const trashElement = document.createElement("div");
   trashElement.className = "vb-shell-taskbar-trash";
@@ -557,6 +373,8 @@ export function createShellTaskbar({
 
   let unsubscribe = null;
   let preferenceUnsubscribe = null;
+  let appControlUnsubscribe = null;
+  let authStateListener: ((event: Event) => void) | null = null;
   let destroyed = false;
   let taskbarSensor = null;
   let activeTaskbarDrag = null;
@@ -650,9 +468,13 @@ export function createShellTaskbar({
 
   function applyTaskbarPosition() {
     if (taskbarPosition?.detached === true) {
+      const previous = taskbarPosition;
       const position = clampElementPosition(taskbarPosition, element, 64, 64);
       taskbarPosition = { detached: true, ...position };
       setTaskbarFixedPosition(position);
+      if (previous.left !== position.left || previous.top !== position.top) {
+        saveState();
+      }
       return;
     }
 
@@ -696,35 +518,83 @@ export function createShellTaskbar({
     return position;
   }
 
+  function clampDetachedItemsToViewport() {
+    let changed = false;
+    for (const [id, position] of itemPositions) {
+      if (position?.detached !== true) continue;
+      const item = itemElements.get(id)
+        || Array.from(document.querySelectorAll("[data-vb-shell-taskbar-item]"))
+          .find((candidate) => candidate.getAttribute("data-vb-shell-taskbar-item") === id);
+      const next = clampElementPosition(position, item, FAB_SIZE_PX, FAB_SIZE_PX);
+      if (next.left !== position.left || next.top !== position.top) {
+        const clampedPosition: StoredPosition = {
+          detached: true,
+          left: next.left,
+          top: next.top,
+        };
+        itemPositions.set(id, clampedPosition);
+        if (item instanceof HTMLElement) applyDetachedStyle(item, clampedPosition);
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  function clampFloatingSurfaces() {
+    if (destroyed) return;
+    const previousTaskbarPosition = taskbarPosition;
+    applyTaskbarPosition();
+    const taskbarChanged = Boolean(
+      previousTaskbarPosition?.detached === true
+      && taskbarPosition?.detached === true
+      && (
+        previousTaskbarPosition.left !== taskbarPosition.left
+        || previousTaskbarPosition.top !== taskbarPosition.top
+      )
+    );
+    const itemsChanged = clampDetachedItemsToViewport();
+    if (taskbarChanged || itemsChanged) saveState();
+  }
+
+  function scheduleViewportClamp() {
+    clampFloatingSurfaces();
+  }
+
   function rememberWindow(id) {
     if (!id || knownWindowIds.has(id)) return;
     knownWindowIds.add(id);
     saveState();
   }
 
-  function closeWindowFromTaskbarTrash(record) {
-    const id = record?.id;
-    if (!id) return;
+  function forgetWindow(id) {
+    if (!id || !knownWindowIds.has(id)) return;
     knownWindowIds.delete(id);
     itemPositions.delete(id);
     saveState();
+  }
+
+  function closeWindowFromTaskbarTrash(record) {
+    const id = record?.id;
+    if (!id) return;
+    forgetWindow(id);
     shellManager.closeWindow?.(id, {
       taskbarTrash: true,
       ...(id === "player" ? { stopPlayback: true } : {}),
     });
   }
 
-  function getTaskbarWindows() {
+  function getTaskbarWindows(excludedWindowIds = new Set<string>()) {
     const records = shellManager.listWindows()
       .filter((record) => record.kind !== "system")
       .sort((a, b) => String(a.title || a.id).localeCompare(String(b.title || b.id)));
 
     for (const record of records) {
       const state = getWindowState(record);
-      if (state === "open" || state === "minimized") rememberWindow(record.id);
+      if (isVisibleTaskbarState(state)) rememberWindow(record.id);
+      else forgetWindow(record.id);
     }
 
-    return records.filter((record) => knownWindowIds.has(record.id));
+    return records.filter((record) => knownWindowIds.has(record.id) && !excludedWindowIds.has(record.id));
   }
 
   function handleItemClick(record, event) {
@@ -1001,6 +871,7 @@ export function createShellTaskbar({
     item.setAttribute("data-vb-shell-taskbar-active", record.active ? "true" : "false");
     item.setAttribute("data-vb-shell-taskbar-docked", docked ? "true" : "false");
     suppressNativeDrag(item);
+    applyAppIconTheme(item, getAppForShellWindowId(record.id));
 
     const label = labels[record.id] || defaultLabel(record);
     item.setAttribute("aria-label", `${label} ${state}`);
@@ -1028,20 +899,105 @@ export function createShellTaskbar({
     return item;
   }
 
+  function createFavoriteAppButton(app: VatioAppManifest) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "vb-shell-taskbar-favorite-app vb-shell-taskbar-fab dock-btn";
+    item.setAttribute("data-vb-shell-taskbar-favorite-app", app.id);
+    suppressNativeDrag(item);
+
+    const label = getAppLabel(app);
+    const shellWindowId = getAppShellWindowId(app);
+    const record = shellWindowId ? shellManager.getWindow(shellWindowId) : null;
+    const state = record ? getWindowState(record) : "closed";
+    const running = Boolean(record && isVisibleTaskbarState(state));
+
+    item.setAttribute("data-vb-shell-taskbar-state", running ? state : "closed");
+    item.setAttribute("data-vb-shell-taskbar-active", running && record?.active ? "true" : "false");
+    item.setAttribute("data-vb-shell-taskbar-running", running ? "true" : "false");
+    item.setAttribute("aria-label", running ? `${label} ${state}` : label);
+    item.title = label;
+    applyAppIconTheme(item, app);
+
+    const iconEl = document.createElement("span");
+    iconEl.className = "vb-shell-taskbar-icon";
+    iconEl.setAttribute("aria-hidden", "true");
+    if (app.icon) {
+      iconEl.innerHTML = app.icon;
+    } else {
+      iconEl.textContent = getInitial(label);
+    }
+    item.append(iconEl);
+
+    const text = document.createElement("span");
+    text.className = "vb-shell-taskbar-label";
+    text.textContent = label;
+    item.append(text);
+
+    item.addEventListener("dragstart", (event) => event.preventDefault());
+    item.addEventListener("click", (event) => {
+      event.preventDefault();
+      if (record && running) {
+        handleItemClick(record, event);
+      } else {
+        appLauncher?.openApp(app.id, { focus: true, source: "taskbar-favorite" });
+      }
+      startMenu?.close?.();
+    });
+
+    return item;
+  }
+
+  function renderFavoriteApps() {
+    favoritesElement.replaceChildren();
+    const favoriteApps = appLauncher ? getFavoriteApps() : [];
+    favoritesElement.hidden = favoriteApps.length === 0;
+    for (const app of favoriteApps) {
+      favoritesElement.append(createFavoriteAppButton(app));
+    }
+    return favoriteApps;
+  }
+
+  function syncAccountState(detail: TaskbarAuthState = {}) {
+    const authenticated = detail?.authenticated === true;
+    const busy = detail?.busy === true;
+    const label = authenticated
+      ? (detail?.user ? `Account signed in as ${detail.user}` : "Account signed in")
+      : busy
+        ? "Account checking session"
+        : "Account signed out";
+
+    accountButton.dataset.authState = authenticated ? "authenticated" : "guest";
+    accountButton.dataset.authBusy = busy ? "true" : "false";
+    accountButton.setAttribute("aria-label", label);
+    accountButton.title = label;
+  }
+
   function render() {
     if (destroyed) return;
 
     destroyItemSensors();
     for (const item of itemElements.values()) item.remove();
     itemElements.clear();
-    if (dragHandle.parentElement !== element || trayElement.parentElement !== element) {
-      element.replaceChildren(dragHandle, trayElement);
+    if (
+      favoritesElement.parentElement !== element
+      || dragHandle.parentElement !== element
+      || startButton.parentElement !== element
+      || accountButton.parentElement !== element
+      || trayElement.parentElement !== element
+    ) {
+      element.replaceChildren(favoritesElement, dragHandle, startButton, accountButton, trayElement);
     }
+    syncAccountState();
+    const favoriteApps = renderFavoriteApps();
+    const favoriteWindowIds = new Set(
+      favoriteApps.map(getAppShellWindowId).filter(Boolean),
+    );
     trayElement.replaceChildren();
 
-    const records = getTaskbarWindows();
+    const records = getTaskbarWindows(favoriteWindowIds);
     let dockedCount = 0;
-    element.hidden = records.length === 0;
+    element.hidden = false;
 
     for (const record of records) {
       const state = getWindowState(record);
@@ -1060,7 +1016,7 @@ export function createShellTaskbar({
       }
     }
 
-    element.setAttribute("data-vb-shell-taskbar-empty", dockedCount === 0 ? "true" : "false");
+    element.setAttribute("data-vb-shell-taskbar-empty", dockedCount === 0 && favoriteApps.length === 0 ? "true" : "false");
     applyTaskbarPosition();
   }
 
@@ -1077,11 +1033,19 @@ export function createShellTaskbar({
     if (destroyed) return;
     destroyed = true;
     taskbarSensor?.destroy();
+    window.removeEventListener("resize", scheduleViewportClamp);
+    window.removeEventListener("orientationchange", scheduleViewportClamp);
+    globalThis.visualViewport?.removeEventListener?.("resize", scheduleViewportClamp);
+    globalThis.visualViewport?.removeEventListener?.("scroll", scheduleViewportClamp);
     destroyItemSensors();
     endTaskbarDrag();
     cancelItemDrag();
     unsubscribe?.();
     preferenceUnsubscribe?.();
+    appControlUnsubscribe?.();
+    if (authStateListener) {
+      window.removeEventListener(BACKEND_AUTH_STATE_EVENT, authStateListener);
+    }
     for (const item of itemElements.values()) item.remove();
     itemElements.clear();
     hideTrashTarget();
@@ -1101,14 +1065,33 @@ export function createShellTaskbar({
   });
 
   root.appendChild(element);
+  window.addEventListener("resize", scheduleViewportClamp);
+  window.addEventListener("orientationchange", scheduleViewportClamp);
+  globalThis.visualViewport?.addEventListener?.("resize", scheduleViewportClamp);
+  globalThis.visualViewport?.addEventListener?.("scroll", scheduleViewportClamp);
   unsubscribe = shellManager.subscribe(({ event, record }) => {
     if (record && ["opened", "restored", "minimized"].includes(event)) {
       rememberWindow(record.id);
+    } else if (record && ["closed", "unregistered"].includes(event)) {
+      forgetWindow(record.id);
     }
     render();
   });
   preferenceUnsubscribe = shellManager.subscribeShellPreferences?.((preferences) => {
     element.setAttribute("data-vb-shell-taskbar-position", preferences.taskbarPosition);
+    clampFloatingSurfaces();
+  });
+  appControlUnsubscribe = appControl.subscribe?.(() => {
+    render();
+  });
+  authStateListener = (event: Event) => {
+    syncAccountState((event as CustomEvent).detail || undefined);
+  };
+  window.addEventListener(BACKEND_AUTH_STATE_EVENT, authStateListener);
+  accountButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    accountPanel?.open?.({ focus: true, source: "taskbar-account" });
+    startMenu?.close?.();
   });
   render();
 
@@ -1117,5 +1100,7 @@ export function createShellTaskbar({
     render,
     focusWindow,
     getElement: () => element,
+    getStartButton: () => startButton,
+    getAccountButton: () => accountButton,
   };
 }

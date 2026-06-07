@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SHELL_LAYOUT_STORAGE_KEY } from "../../src/shared/shell-layout-store.js";
 import { createShellWindowManager } from "../../src/shared/shell-window-manager.js";
-import { getShellWorkArea } from "../../src/shared/shell-work-area.js";
+import { clampBoundsToWorkArea, getShellWorkArea } from "../../src/shared/shell-work-area.js";
 
 function createPanel(className = "test-panel") {
   const panel = document.createElement("section");
@@ -40,6 +40,7 @@ function readStoredWindow(id) {
 
 describe("shell-window-manager", () => {
   beforeEach(() => {
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
     localStorage.clear();
     document.body.innerHTML = "";
@@ -154,6 +155,149 @@ describe("shell-window-manager", () => {
     manager.destroy();
   });
 
+  it("enforces window minimum size even when the work area is smaller", () => {
+    vi.stubGlobal("innerWidth", 300);
+    vi.stubGlobal("innerHeight", 260);
+    const manager = createManager();
+    const panel = createPanel();
+    manager.registerWindow({
+      id: "account",
+      element: panel,
+      bounds: { left: 12, top: 12, width: 120, height: 100 },
+      capabilities: {
+        resizable: false,
+        minWidth: 320,
+        minHeight: 300,
+        maxWidth: 380,
+      },
+    });
+
+    const record = manager.openWindow("account");
+
+    expect(record.bounds.width).toBe(320);
+    expect(record.bounds.height).toBe(300);
+    expect(panel.style.width).toBe("320px");
+    expect(panel.style.height).toBe("300px");
+    expect(panel.style.minWidth).toBe("320px");
+    expect(panel.style.minHeight).toBe("300px");
+    expect(Number.parseInt(panel.style.left, 10)).toBeLessThanOrEqual(16);
+    expect(Number.parseInt(panel.style.top, 10)).toBeLessThanOrEqual(16);
+    manager.destroy();
+  });
+
+  it("allows oversized windows to pan within the work area instead of trapping one edge", () => {
+    const workArea = { left: 16, top: 48, width: 300, height: 220 };
+
+    expect(clampBoundsToWorkArea({
+      left: 16,
+      top: 48,
+      width: 320,
+      height: 528,
+    }, { workArea, forceSize: true, minWidth: 320, minHeight: 528 })).toEqual({
+      left: 16,
+      top: 48,
+      width: 320,
+      height: 528,
+    });
+
+    expect(clampBoundsToWorkArea({
+      left: -24,
+      top: -260,
+      width: 320,
+      height: 528,
+    }, { workArea, forceSize: true, minWidth: 320, minHeight: 528 })).toEqual({
+      left: -4,
+      top: -260,
+      width: 320,
+      height: 528,
+    });
+
+    expect(clampBoundsToWorkArea({
+      left: -120,
+      top: -400,
+      width: 320,
+      height: 528,
+    }, { workArea, forceSize: true, minWidth: 320, minHeight: 528 })).toEqual({
+      left: -4,
+      top: -260,
+      width: 320,
+      height: 528,
+    });
+  });
+
+  it("can prefer the visible bottom edge for oversized windows", () => {
+    vi.stubGlobal("innerWidth", 720);
+    vi.stubGlobal("innerHeight", 520);
+    const workArea = { left: 16, top: 16, width: 688, height: 412 };
+
+    expect(clampBoundsToWorkArea({
+      left: 24,
+      top: 16,
+      width: 320,
+      height: 548,
+    }, {
+      workArea,
+      forceSize: true,
+      minWidth: 320,
+      minHeight: 548,
+      preferVisibleBottom: true,
+    })).toEqual({
+      left: 24,
+      top: -120,
+      width: 320,
+      height: 548,
+    });
+
+    expect(clampBoundsToWorkArea({
+      left: 24,
+      top: 16,
+      width: 320,
+      height: 548,
+    }, {
+      workArea,
+      forceSize: true,
+      minWidth: 320,
+      minHeight: 548,
+      preferVisibleBottom: true,
+      visibleBottomInset: 34,
+    })).toEqual({
+      left: 24,
+      top: -86,
+      width: 320,
+      height: 548,
+    });
+  });
+
+  it("resets a window to its default geometry", () => {
+    const manager = createManager();
+    const panel = createPanel();
+    const defaultBounds = { left: 48, top: 72, width: 360, height: 320 };
+    manager.registerWindow({
+      id: "tts",
+      element: panel,
+      defaultBounds,
+      bounds: defaultBounds,
+      capabilities: {
+        resizable: true,
+        minWidth: 320,
+        minHeight: 300,
+        maxWidth: 620,
+      },
+    });
+    manager.updateWindowBounds("tts", { left: 240, top: 180, width: 500, height: 420 });
+
+    const record = manager.resetWindowGeometry("tts", { flush: true });
+
+    expect(record.bounds).toEqual(defaultBounds);
+    expect(record.restoreBounds).toEqual(defaultBounds);
+    expect(panel.style.left).toBe("48px");
+    expect(panel.style.top).toBe("72px");
+    expect(panel.style.width).toBe("360px");
+    expect(panel.style.height).toBe("320px");
+    expect(readStoredWindow("tts").bounds).toEqual(defaultBounds);
+    manager.destroy();
+  });
+
   it("duplicate registration updates record without duplicate listeners", () => {
     const manager = createManager();
     const panel = createPanel();
@@ -252,6 +396,48 @@ describe("shell-window-manager", () => {
     manager.restoreShellLayout();
 
     expect(Number.parseInt(panel.style.top, 10)).toBeGreaterThanOrEqual(88);
+    manager.destroy();
+  });
+
+  it("closes persisted open windows that opt out of restore on boot", () => {
+    localStorage.setItem(SHELL_LAYOUT_STORAGE_KEY, JSON.stringify({
+      version: 1,
+      activeWindowId: "account",
+      windows: {
+        account: {
+          state: "open",
+          previousState: "closed",
+          bounds: { left: 144, top: 72, width: 380, height: 420 },
+          restoreBounds: { left: 144, top: 72, width: 380, height: 420 },
+          zIndex: 1300,
+          minimized: false,
+          snap: null,
+        },
+      },
+    }));
+
+    const manager = createManager();
+    const panel = createPanel();
+    panel.hidden = true;
+    const openLifecycle = vi.fn();
+    manager.registerWindow({
+      id: "account",
+      element: panel,
+      restoreOnBoot: false,
+      lifecycle: {
+        open: openLifecycle,
+      },
+    });
+    manager.restoreShellLayout({ flush: true });
+
+    expect(manager.getWindow("account")).toMatchObject({
+      active: false,
+      state: "closed",
+    });
+    expect(panel.hidden).toBe(true);
+    expect(panel.style.left).toBe("144px");
+    expect(panel.style.top).toBe("72px");
+    expect(openLifecycle).not.toHaveBeenCalled();
     manager.destroy();
   });
 

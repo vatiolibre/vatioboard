@@ -92,7 +92,7 @@ function readInitialAuth(toolsMenuList: HTMLElement | null | undefined): boolean
 function insertPlayerButton(toolsMenuList: HTMLElement | null | undefined, button: HTMLButtonElement) {
   const anchor = toolsMenuList?.querySelector("[data-player-toggle-anchor]")
     || toolsMenuList?.querySelector("[data-backend-auth]");
-  if (anchor) toolsMenuList.insertBefore(button, anchor);
+  if (anchor) (anchor.parentElement || toolsMenuList)?.insertBefore(button, anchor);
   else toolsMenuList?.append(button);
 }
 
@@ -215,7 +215,7 @@ export function integratePlayerWidget({
     }
 
     if (!available) {
-      widget.close({ persist: false });
+      widget.close({ persist: false, stopPlayback: false });
     } else if (restore) {
       widget.restoreVisibility();
     }

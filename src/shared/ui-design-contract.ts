@@ -18,5 +18,6 @@ export const uiDesignContract = {
     "vb-shell-taskbar",
     "tools-menu-list",
     "app-start-menu-list",
+    "vb-app-launcher",
   ],
 } satisfies UiDesignContract;

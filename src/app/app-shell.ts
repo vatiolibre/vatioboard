@@ -4,16 +4,25 @@ import "../styles/activity-indicator.less";
 import "../shared/ui/confirm-dialog.less";
 import "../styles/welcome-consent.less";
 
-import { createPlayerWidget } from "../player/player-widget.js";
+import { createPlayerApp } from "../apps/player/index.js";
 import { initBackendAuthControllers } from "../shared/backend-auth.js";
 import { startCloudSyncLoop } from "../shared/cloud-sync.js";
 import { initActivityIndicator } from "../shared/activity-indicator.js";
+import { initAccountPanel } from "../shared/account-panel.js";
 import { initFloatingTools } from "../shared/floating-tools.js";
 import { initSharedStartMenu } from "../shared/start-menu.js";
 import { ensureSingleTabOwnership } from "../shared/single-tab.js";
 import { getDefaultShellWindowManager } from "../shared/shell-window-manager.js";
 import { createShellTaskbar } from "../shared/shell-taskbar.js";
 import { installShellKeyboardShortcuts } from "../shared/shell-keyboard.js";
+import {
+  appRegistry,
+  appControl,
+  createAppLauncher,
+  createAppRuntime,
+  createBackgroundServiceManager,
+  createShellAppRuntimeManager,
+} from "../app-platform/index.js";
 import { createHashRouter, emitRouteVisible, navigateToAppRoute } from "./router.js";
 import { routes } from "./routes.js";
 import { createRuntimeContext } from "./runtime-context.js";
@@ -31,7 +40,7 @@ interface HashRouterRuntime {
   destroy(): void;
 }
 
-const createShellPlayerWidget = createPlayerWidget as (options: Record<string, unknown>) => unknown;
+const createShellPlayerWidget = createPlayerApp as (options: Record<string, unknown>) => unknown;
 const installShellKeyboard = installShellKeyboardShortcuts as (options: {
   shellManager: ShellRuntime;
 }) => { uninstall(): void };
@@ -78,6 +87,25 @@ function scheduleRoutePreload({ router, routes: appRoutes }) {
   }
 }
 
+function installShellLayoutPersistenceFlush(shellManager: ShellRuntime) {
+  const flush = () => {
+    shellManager.persistShellLayout({ flush: true });
+  };
+  const flushWhenHidden = () => {
+    if (document.visibilityState === "hidden") flush();
+  };
+
+  window.addEventListener("pagehide", flush);
+  window.addEventListener("beforeunload", flush);
+  document.addEventListener("visibilitychange", flushWhenHidden);
+
+  return () => {
+    window.removeEventListener("pagehide", flush);
+    window.removeEventListener("beforeunload", flush);
+    document.removeEventListener("visibilitychange", flushWhenHidden);
+  };
+}
+
 export async function startAppShell({
   viewRoot = document.getElementById("app-view"),
   persistentLayer = document.getElementById("app-persistent-layer"),
@@ -98,10 +126,53 @@ export async function startAppShell({
   window.__vatioboardSpeedGetCurrentPosition = window.__vatioboardGpsGetCurrentPosition;
 
   initBackendAuthControllers();
-  void ensureSingleTabOwnership();
-  startCloudSyncLoop();
 
   const shellManager = getDefaultShellWindowManager({ root: persistentLayer }) as ShellRuntime;
+  const uninstallShellLayoutPersistenceFlush = installShellLayoutPersistenceFlush(shellManager);
+  context.shellManager = shellManager;
+  const welcomeConsent = showWelcomeConsentIfNeeded({ gpsService: context.gpsService });
+  const accountPanel = initAccountPanel({
+    mount: persistentLayer,
+    shellManager,
+    authRequestGate: welcomeConsent,
+    gatedAuthRequestFocus: false,
+  });
+  void ensureSingleTabOwnership();
+  startCloudSyncLoop();
+  let router: HashRouterRuntime | null = null;
+  const shellAppRuntimeManager = createShellAppRuntimeManager({
+    shellManager,
+    baseContext: context as unknown as Record<string, unknown>,
+    navigate: navigateToAppRoute,
+  });
+  context.shellAppRuntimeManager = shellAppRuntimeManager;
+  const appLauncher = createAppLauncher({
+    shellManager,
+    navigate: navigateToAppRoute,
+    getCurrentRoute: () => router?.getRoute?.() || null,
+    shellAppRuntimeManager,
+  });
+  shellAppRuntimeManager.setLauncher(appLauncher);
+  const backgroundServiceManager = createBackgroundServiceManager({
+    shellManager,
+    baseContext: context as unknown as Record<string, unknown>,
+    navigate: navigateToAppRoute,
+    launcher: appLauncher,
+  });
+  context.backgroundServiceManager = backgroundServiceManager;
+  backgroundServiceManager.startAutostartServices();
+  const unsubscribeAppControl = appControl.subscribe?.((state) => {
+    if (state.enabled) return;
+    const disabledApp = appRegistry.getApp(state.appId);
+    if (disabledApp?.window?.shellWindowId) {
+      shellManager.closeWindow(disabledApp.window.shellWindowId, { source: "app-control" });
+    }
+    const currentRoute = router?.getRoute?.();
+    const currentApp = currentRoute?.path ? appRegistry.getAppByRoute(currentRoute.path) : null;
+    if (currentApp?.id === state.appId) {
+      navigateToAppRoute("#/speed", { replace: true });
+    }
+  });
   const playerWidget = createShellPlayerWidget({
     mount: persistentLayer,
     floating: false,
@@ -109,22 +180,31 @@ export async function startAppShell({
     persistVisibility: true,
     restoreVisibility: true,
     shellManager,
+    shellAppRuntimeManager,
   });
   window.__vatioboardPlayerWidget = playerWidget;
 
-  await showWelcomeConsentIfNeeded({ gpsService: context.gpsService });
+  await welcomeConsent;
 
   const floatingTools = initFloatingTools({
     mount: persistentLayer,
     shellManager,
+    shellAppRuntimeManager,
     gpsService: context.gpsService,
     drivingAlertService: context.drivingAlertService,
   });
-  const startMenu = initSharedStartMenu({ floatingTools, mount: persistentLayer });
+  const startMenu = initSharedStartMenu({ floatingTools, mount: persistentLayer, shellAppRuntimeManager });
   const activityIndicator = initActivityIndicator({ mount: persistentLayer });
-  const shellTaskbar = createShellTaskbar({ shellManager, root: persistentLayer });
+  const shellTaskbar = createShellTaskbar({
+    shellManager,
+    root: persistentLayer,
+    startMenu,
+    appLauncher,
+    accountPanel,
+  });
   const shellKeyboard = installShellKeyboard({ shellManager });
   floatingTools.taskbar = shellTaskbar;
+  await appLauncher.restorePersistedShellWindows?.();
   shellManager.restoreShellLayout();
 
   installLinkInterceptor();
@@ -133,7 +213,7 @@ export async function startAppShell({
   let activeRouteController: AbortController | null = null;
   let routeVersion = 0;
 
-  const router = createHashRouter({
+  router = createHashRouter({
     routes,
     async onRouteChange(route) {
       const version = routeVersion + 1;
@@ -148,22 +228,59 @@ export async function startAppShell({
         activeView = null;
       }
 
-      const loaded = await route.config.load();
-      if (version !== routeVersion || routeController.signal.aborted) return;
-
-      const view = await loaded.mount(viewRoot, {
-        ...context,
-        route,
-        routeSignal: routeController.signal,
-        navigate: navigateToAppRoute,
-        emitRouteVisible: () => emitRouteVisible(route),
-      });
-      if (version !== routeVersion || routeController.signal.aborted) {
-        view?.unmount?.();
+      const appManifest = appRegistry.getAppByRoute(route.requestedPath || route.path);
+      if (appManifest && !appControl.isEnabled(appManifest.id)) {
+        navigateToAppRoute("#/speed", { replace: true });
         return;
       }
 
-      activeView = view;
+      const loaded = await route.config.load();
+      if (version !== routeVersion || routeController.signal.aborted) return;
+
+      const appRuntime = appManifest
+        ? createAppRuntime({
+            manifest: appManifest,
+            shellManager,
+            baseContext: context as unknown as Record<string, unknown>,
+            navigate: navigateToAppRoute,
+            route,
+            routeSignal: routeController.signal,
+            launcher: appLauncher,
+          })
+        : null;
+      appRuntime?.lifecycle.mount();
+      appRuntime?.lifecycle.activate();
+
+      let view: MountedView | null = null;
+      try {
+        view = await loaded.mount(viewRoot, {
+          ...context,
+          route,
+          routeSignal: routeController.signal,
+          navigate: navigateToAppRoute,
+          emitRouteVisible: () => emitRouteVisible(route),
+          appManifest,
+          appRuntime,
+        });
+      } catch (error) {
+        appRuntime?.lifecycle.deactivate();
+        appRuntime?.lifecycle.unmount();
+        throw error;
+      }
+      if (version !== routeVersion || routeController.signal.aborted) {
+        view?.unmount?.();
+        appRuntime?.lifecycle.deactivate();
+        appRuntime?.lifecycle.unmount();
+        return;
+      }
+
+      activeView = {
+        unmount() {
+          view?.unmount?.();
+          appRuntime?.lifecycle.deactivate();
+          appRuntime?.lifecycle.unmount();
+        },
+      };
       emitRouteVisible(route);
     },
   }) as HashRouterRuntime;
@@ -172,7 +289,12 @@ export async function startAppShell({
   const originalRouterDestroy = router.destroy;
   router.destroy = () => {
     shellKeyboard.uninstall();
+    uninstallShellLayoutPersistenceFlush();
     shellTaskbar.destroy();
+    accountPanel.destroy();
+    unsubscribeAppControl?.();
+    backgroundServiceManager.destroy();
+    shellAppRuntimeManager.destroy();
     context.drivingAlertService?.destroy?.();
     context.driveRecordingService?.destroy?.();
     context.gpsService.destroy?.();
@@ -200,6 +322,7 @@ export async function startAppShell({
     shellTaskbar,
     shellKeyboard,
     startMenu,
+    accountPanel,
     activityIndicator,
     context,
   };

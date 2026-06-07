@@ -274,43 +274,8 @@ describe('replay.html smoke', () => {
     );
     expect(document.querySelector('#replayAxisTime .btn-icon svg')).toBeTruthy();
     expect(document.querySelector('#replayAxisDistance .btn-icon svg')).toBeTruthy();
-    expect(document.getElementById('replayToolsMenuBtn').getAttribute('aria-label')).toBe('Pages');
-    expect(document.querySelector('#replayToolsMenuBtn .btn-icon svg')).toBeTruthy();
-    document.getElementById('replayToolsMenuBtn').click();
-    await flushTasks();
-    expect(document.getElementById('replayToolsMenuList').hidden).toBe(false);
-    expect(document.getElementById('replayLangToggleMenu').textContent).toBe('EN');
-    expect(document.querySelector('#replayToolsMenuList [data-backend-auth]')).toBeTruthy();
-    expect(
-      document
-        .querySelector('#replayToolsMenuList [data-backend-auth-signup]')
-        ?.getAttribute('href')
-    ).toBe('https://www.vatiolibre.com/login#signup');
-    expect(
-      document
-        .querySelector('#replayToolsMenuList [data-backend-auth-forgot]')
-        ?.getAttribute('href')
-    ).toBe('https://www.vatiolibre.com/login#forgot');
-    expect(
-      document
-        .querySelector('#replayToolsMenuList [data-backend-auth-signup]')
-        ?.getAttribute('target')
-    ).toBe('_blank');
-    expect(
-      document
-        .querySelector('#replayToolsMenuList [data-backend-auth-forgot]')
-        ?.getAttribute('target')
-    ).toBe('_blank');
-    expect(
-      document
-        .querySelector('#replayToolsMenuList [data-backend-auth-signup]')
-        ?.getAttribute('rel')
-    ).toBe('noopener noreferrer');
-    expect(
-      document
-        .querySelector('#replayToolsMenuList [data-backend-auth-forgot]')
-        ?.getAttribute('rel')
-    ).toBe('noopener noreferrer');
+    expect(document.getElementById('replayToolsMenuBtn')).toBeNull();
+    expect(document.getElementById('replayToolsMenuList')).toBeNull();
     expect(document.querySelector('#replayPlayPause .replay-action-icon svg')).toBeTruthy();
     expect(document.getElementById('replayPlayPause').getAttribute('aria-label')).toBe('Play');
     expect(document.querySelector('#replayRestart .replay-action-icon svg')).toBeTruthy();
@@ -1396,29 +1361,12 @@ describe('replay.html smoke', () => {
     vi.useRealTimers();
   });
 
-  it("keeps the Player launcher available for guests and after login", async () => {
+  it("does not install a route-local Player launcher in the standalone harness", async () => {
     const replayPage = await import("../../src/replay/dev-harness.js");
     await replayPage.initPromise;
     await settleAsyncWork();
 
-    const btn = document.querySelector("#replayToolsMenuList [data-player-toggle]");
-    expect(btn).toBeTruthy();
-    expect(btn.hidden).toBe(false);
-    expect(btn.className).toBe("btn-with-icon");
-    expect(btn.querySelector(".btn-icon[aria-hidden='true'] svg")).toBeTruthy();
-    expect(btn.querySelector("[data-i18n='audioPlayer']")).toBeTruthy();
-    expect(document.querySelector(".player-fab")).toBeNull();
-
-    // Log in → launcher stays available.
-    const authForm = document.querySelector("#replayToolsMenuList [data-backend-auth]");
-    const authUser = authForm.querySelector("[data-backend-auth-user]");
-    const authPassword = authForm.querySelector("[data-backend-auth-password]");
-    authUser.value = "test@vatiolibre.com";
-    authPassword.value = "secret123";
-    authForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-    await settleAsyncWork();
-
-    expect(btn.hidden).toBe(false);
+    expect(document.querySelector("[data-player-toggle]")).toBeNull();
     expect(document.querySelector(".player-fab")).toBeNull();
   });
 });

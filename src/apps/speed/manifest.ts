@@ -1,0 +1,48 @@
+import { IconSpeed } from "../../icons.js";
+import { defineAppManifest } from "../../app-platform/manifest.js";
+
+export const speedAppManifest = defineAppManifest({
+  id: "vatio.speed",
+  title: "Vatio Speed",
+  shortTitle: "Speed",
+  description: "Live GPS speedometer, trip recording, speed alerts, and camera-aware driving tools.",
+  kind: "core-app",
+  version: "1.0.0",
+  icon: IconSpeed,
+  theme: {
+    color: "#16a34a",
+    color2: "#86efac",
+  },
+  i18nKey: "speedometer",
+  route: "/",
+  aliases: ["/speed"],
+  entry: () => import("./index.js"),
+  surfaces: ["main-route", "start-menu", "launcher"],
+  order: 10,
+  permissions: [
+    "gps.read",
+    "gps.highAccuracy",
+    "storage.app",
+    "audio.playback",
+    "audio.background",
+    "alerts.speed",
+    "driveRecording.read",
+    "driveRecording.write",
+    "cloud.sync",
+    "network.backend",
+    "i18n.read",
+    "settings.read",
+    "shell.window",
+    "shell.launchApp",
+  ],
+  services: ["gps", "audio", "driveRecording", "drivingAlerts", "cloudSync", "shell", "storage", "i18n", "settings"],
+  tags: ["driving", "gps", "local-first"],
+  localFirst: true,
+  teslaOptimized: true,
+  offlineCapable: true,
+  status: "stable",
+  metadata: {
+    legacyToolId: "route:speed",
+    legacyHref: "#/speed",
+  },
+});

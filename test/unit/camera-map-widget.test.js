@@ -410,13 +410,14 @@ describe("createCameraMapWidget", () => {
     expect(document.querySelector(".camera-map-footer")).toBeNull();
     expect(document.querySelector(".camera-map-layer-select")).toBeNull();
     expect(document.querySelector(".camera-map-layer-control").tagName).toBe("DIV");
-    expect(document.querySelector(".camera-map-minimize")).toBeNull();
+    expect(document.querySelector(".camera-map-minimize")).toBeTruthy();
     expect(document.querySelector(".camera-map-resize-handle").tagName).toBe("BUTTON");
     expect(document.querySelector(".camera-map-resize-handle").getAttribute("aria-label")).toBe("cameraMapResize");
     expect(Array.from(document.querySelectorAll(".camera-map-actions .camera-map-action"))
       .map((button) => button.className)).toEqual([
       "camera-map-action camera-map-fullscreen",
       "camera-map-action camera-map-speed-alerts",
+      "camera-map-action camera-map-minimize",
       "camera-map-action camera-map-close",
     ]);
 
@@ -2115,6 +2116,7 @@ describe("createCameraMapWidget", () => {
       await openAndLoad(widget);
       const panel = document.querySelector(".camera-map-panel");
       const previousBounds = { left: 88, top: 132, width: 610, height: 455 };
+      const minimumBounds = { ...previousBounds, height: 460 };
       stubPanelRect(panel, previousBounds);
       manager.updateWindowBounds("camera-map", previousBounds, { persist: false });
 
@@ -2124,11 +2126,11 @@ describe("createCameraMapWidget", () => {
       await Promise.resolve();
 
       expect(document.exitFullscreen).toHaveBeenCalled();
-      expect(manager.getWindow("camera-map").bounds).toEqual(previousBounds);
+      expect(manager.getWindow("camera-map").bounds).toEqual(minimumBounds);
       expect(panel.style.left).toBe("88px");
       expect(panel.style.top).toBe("132px");
       expect(panel.style.width).toBe("610px");
-      expect(panel.style.height).toBe("455px");
+      expect(panel.style.height).toBe("460px");
     } finally {
       widget?.destroy();
       manager.destroy();
@@ -2166,6 +2168,7 @@ describe("createCameraMapWidget", () => {
     await openAndLoad(widget);
     const panel = document.querySelector(".camera-map-panel");
     const previousBounds = { left: 140, top: 150, width: 600, height: 440 };
+    const minimumBounds = { ...previousBounds, height: 460 };
     stubPanelRect(panel, previousBounds);
     manager.updateWindowBounds("camera-map", previousBounds, { persist: false });
 
@@ -2174,7 +2177,7 @@ describe("createCameraMapWidget", () => {
       await Promise.resolve();
       document.querySelector(".camera-map-fullscreen").click();
       await Promise.resolve();
-      expect(manager.getWindow("camera-map").bounds).toEqual(previousBounds);
+      expect(manager.getWindow("camera-map").bounds).toEqual(minimumBounds);
     }
 
     widget.destroy();

@@ -2,7 +2,8 @@ import { loadJson, saveJson } from "../shared/storage.js";
 
 const KEY = "embeddable_calc_state_v1";
 const HISTORY_KEY = "embeddable_calc_history_v1";
-const SETTINGS_KEY = "embeddable_calc_settings_v1";
+export const CALCULATOR_SETTINGS_STORAGE_KEY = "embeddable_calc_settings_v1";
+const SETTINGS_KEY = CALCULATOR_SETTINGS_STORAGE_KEY;
 const MAX_HISTORY = 7;
 
 export interface CalculatorState {
@@ -65,6 +66,10 @@ export function clearHistory(): CalculatorHistoryRecord[] {
 
 export function loadSettings(): CalculatorSettings {
   const stored = loadJson<Partial<CalculatorSettings>>(SETTINGS_KEY, null);
+  return normalizeSettings(stored);
+}
+
+export function normalizeSettings(stored: Partial<CalculatorSettings> | null | undefined): CalculatorSettings {
   const decimals = Number.isFinite(Number(stored?.decimals))
     ? Number(stored.decimals)
     : DEFAULT_SETTINGS.decimals;

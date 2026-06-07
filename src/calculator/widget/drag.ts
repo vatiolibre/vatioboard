@@ -19,6 +19,8 @@ type DragPosition = {
 
 type ClampOptions = {
   useShellWorkArea?: boolean;
+  preferVisibleBottom?: boolean;
+  visibleBottomInset?: number;
   root?: Document | Element | null;
 };
 
@@ -43,6 +45,7 @@ type DraggablePanelOptions = {
   dragThresholdPx: number;
   savePos: (position: DragPosition) => void;
   loadPos: () => DragPosition | null;
+  canStart?: ((event: PointerEvent) => boolean) | null;
   onDragStart?: DragCallback | null;
   onDragMove?: DragCallback | null;
   onDragEnd?: DragCallback | null;
@@ -78,6 +81,22 @@ function getElementBoxSize(elm: HTMLElement, rect = elm.getBoundingClientRect())
   };
 }
 
+function getElementMinimumSize(elm: HTMLElement) {
+  const style = typeof getComputedStyle === "function" ? getComputedStyle(elm) : null;
+  return {
+    width: firstPositiveNumber(parseFloat(elm.style.minWidth), parseFloat(style?.minWidth)),
+    height: firstPositiveNumber(parseFloat(elm.style.minHeight), parseFloat(style?.minHeight)),
+  };
+}
+
+function getElementVisibleBottomInset(elm: HTMLElement) {
+  const style = typeof getComputedStyle === "function" ? getComputedStyle(elm) : null;
+  return firstPositiveNumber(
+    parseFloat(elm.style.getPropertyValue("--vb-shell-visible-bottom-inset")),
+    parseFloat(style?.getPropertyValue("--vb-shell-visible-bottom-inset")),
+  );
+}
+
 function ensureFixedTopLeft(elm: HTMLElement): void {
   // Convert an element to fixed top/left positioning (from right/bottom)
   const r = elm.getBoundingClientRect();
@@ -108,6 +127,10 @@ export function clampElementToViewport(elm: HTMLElement, margin = 8, options: Cl
   const curTop = parseFloat(elm.style.top) || r.top;
 
   if (shouldUseShellWorkArea(elm, options)) {
+    const minSize = getElementMinimumSize(elm);
+    const effectiveMinWidth = Math.max(minSize.width || 0, box.width || 0);
+    const effectiveMinHeight = Math.max(minSize.height || 0, box.height || 0);
+    const visibleBottomInset = options.visibleBottomInset ?? getElementVisibleBottomInset(elm);
     const next = clampBoundsToWorkArea({
       left: curLeft,
       top: curTop,
@@ -117,6 +140,10 @@ export function clampElementToViewport(elm: HTMLElement, margin = 8, options: Cl
       root: options.root,
       safeMargin: margin,
       forceSize: true,
+      minWidth: effectiveMinWidth || undefined,
+      minHeight: effectiveMinHeight || undefined,
+      preferVisibleBottom: options.preferVisibleBottom === true,
+      visibleBottomInset,
     });
     elm.style.left = `${next.left}px`;
     elm.style.top = `${next.top}px`;
@@ -148,6 +175,7 @@ export function makePanelDraggable({
   dragThresholdPx,
   savePos,
   loadPos,
+  canStart = null,
   onDragStart = null,
   onDragMove = null,
   onDragEnd = null,
@@ -181,8 +209,12 @@ export function makePanelDraggable({
   let rafId = 0;
   let activeWorkArea: ReturnType<typeof getShellWorkArea> | null = null;
 
-  function startDragNow() {
+  function startDragNow(e?: PointerEvent) {
     if (dragging) return;
+    if (e && canStart && !canStart(e)) {
+      endDrag(e);
+      return;
+    }
 
     if (shellWindowId && shellManager?.getWindow(shellWindowId)?.snap) {
       shellManager.unsnapWindow(shellWindowId, { preserveSnap: false });
@@ -320,12 +352,13 @@ export function makePanelDraggable({
 
   function onPointerDown(e: PointerEvent) {
     const target = e.target as Element | null;
-    if (target?.closest?.(".calc-close, .calc-settings-btn")) return;
+    if (target?.closest?.(".calc-minimize, .calc-close, .calc-settings-btn")) return;
 
     // Mouse: left button only
     if (e.pointerType === "mouse" && e.button !== 0) return;
 
     if (pointerDown) endDrag(e);
+    if (canStart && !canStart(e)) return;
     clearSnapPreview(panel);
     activeSnapZone = null;
 
@@ -343,7 +376,7 @@ export function makePanelDraggable({
 
     // Mouse: start immediately (keep current perfect behavior)
     if (e.pointerType === "mouse") {
-      startDragNow();
+      startDragNow(e);
       return;
     }
 
@@ -361,7 +394,7 @@ export function makePanelDraggable({
       const dx = Math.abs(lastX - startX);
       const dy = Math.abs(lastY - startY);
       if (dx > dragThresholdPx || dy > dragThresholdPx) {
-        startDragNow();
+        startDragNow(e);
       } else {
         return;
       }
@@ -385,7 +418,10 @@ export function makePanelDraggable({
   // Keep in bounds on resize
   window.addEventListener("resize", () => {
     if (panel.hidden) return;
-    clampElementToViewport(panel, 8, { useShellWorkArea: Boolean(shellWindowId) });
+    clampElementToViewport(panel, 8, {
+      useShellWorkArea: Boolean(shellWindowId),
+      preferVisibleBottom: Boolean(shellWindowId),
+    });
     savePos({
       ...(loadPos() || {}),
       panel: { left: panel.style.left, top: panel.style.top },

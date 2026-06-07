@@ -1,0 +1,875 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import {
+  appControl,
+  appRegistry,
+  clearAppPrivateStorage,
+  createAppControlService,
+  createAppLauncher,
+  createAppPermissionRuntime,
+  createAppRegistry,
+  createAppRuntime,
+  createBackgroundServiceManager,
+  createShellAppRuntimeManager,
+  sharedSettings,
+  loadLegacyBackedDistanceUnit,
+  loadLegacyBackedSpeedUnit,
+} from "../../src/app-platform/index.js";
+import { loadConfiguredSpeedUnit } from "../../src/shared/unit-bootstrap.js";
+import { createShellWindowManager } from "../../src/shared/shell-window-manager.js";
+import { initFloatingTools } from "../../src/shared/floating-tools.js";
+import { initSharedStartMenu } from "../../src/shared/start-menu.js";
+import { getStartMenuToolDefinitions } from "../../src/shared/tool-registry.js";
+import appsTemplate from "../../src/app/views/templates/apps-template.js";
+import { mountAppsRoute } from "../../src/apps/app-manager/app-manager.js";
+
+function cleanupStack() {
+  const callbacks = [];
+  return {
+    add(callback) {
+      if (typeof callback === "function") callbacks.push(callback);
+      return callback;
+    },
+    addEventListener(target, type, listener, options) {
+      target?.addEventListener?.(type, listener, options);
+      callbacks.push(() => target?.removeEventListener?.(type, listener, options));
+    },
+    run() {
+      while (callbacks.length) callbacks.pop()?.();
+    },
+  };
+}
+
+async function flushAsyncWork(cycles = 5) {
+  for (let index = 0; index < cycles; index += 1) await Promise.resolve();
+}
+
+function mountAppManagerRoute(extraContext = {}) {
+  const root = document.createElement("main");
+  root.innerHTML = appsTemplate;
+  document.body.append(root);
+  const cleanup = cleanupStack();
+  const runtime = createAppRuntime({
+    manifest: appRegistry.getApp("vatio.appManager"),
+    baseContext: {},
+  });
+
+  mountAppsRoute({
+    root,
+    context: {
+      appRuntime: runtime,
+      navigate: vi.fn(() => true),
+      ...extraContext,
+    },
+    cleanup,
+  });
+
+  return { root, cleanup, runtime };
+}
+
+function createAudioRuntimeMock() {
+  return {
+    getState: vi.fn(() => ({
+      queue: [],
+      playedHistory: [],
+      currentIndex: 0,
+      paused: false,
+      volume: 0.8,
+      muted: false,
+      repeat: "off",
+      shuffle: false,
+      backgroundMode: true,
+      sourceType: null,
+      currentTrack: null,
+      loading: false,
+      error: null,
+      remoteSessionActive: false,
+      currentTime: 0,
+      duration: 0,
+      playing: true,
+    })),
+    subscribe: vi.fn(() => vi.fn()),
+    setMediaSessionEnabled: vi.fn(),
+    primeAudio: vi.fn(async () => true),
+    play: vi.fn(() => true),
+    pause: vi.fn(),
+    stopPlayback: vi.fn(),
+  };
+}
+
+function createDrivingAlertServiceMock() {
+  const snapshot = {
+    status: "active",
+    started: true,
+    currentSpeedMs: 12,
+    latestPosition: null,
+    alertUiState: {},
+    audio: {},
+    preferences: {},
+  };
+  return {
+    start: vi.fn(() => snapshot),
+    stop: vi.fn(() => snapshot),
+    subscribe: vi.fn(() => vi.fn()),
+    getSnapshot: vi.fn(() => snapshot),
+    primeAudioFromUserGesture: vi.fn(async () => true),
+    setMuted: vi.fn(() => snapshot),
+    destroy: vi.fn(),
+  };
+}
+
+describe("VatioBoard OS app control plane", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    document.body.innerHTML = "";
+    delete window.__vatioboardFloatingTools;
+    delete window.__vatioboardStartMenu;
+    vi.restoreAllMocks();
+  });
+
+  it("recovers corrupt app control storage and protects core system apps", () => {
+    localStorage.setItem("vatioboard.os.appControl.v1", "{");
+
+    expect(appControl.getState("vatio.calculator")).toMatchObject({
+      appId: "vatio.calculator",
+      enabled: true,
+    });
+    expect(appControl.setEnabled("vatio.speed", false)).toBe(false);
+    expect(appControl.isEnabled("vatio.speed")).toBe(true);
+
+    expect(appControl.setEnabled("vatio.calculator", false)).toBe(true);
+    expect(appControl.isEnabled("vatio.calculator")).toBe(false);
+  });
+
+  it("enforces declared and granted permissions", () => {
+    const warn = vi.fn();
+    const manifest = appRegistry.getApp("vatio.calculator");
+    expect(manifest).toBeTruthy();
+
+    appControl.revokePermission("vatio.calculator", "settings.write");
+    const permissions = createAppPermissionRuntime(manifest, { warn });
+
+    expect(permissions.has("settings.read")).toBe(true);
+    expect(permissions.require("settings.write")).toBe(false);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("Grant it in App Manager"));
+    expect(appControl.grantPermission("vatio.calculator", "gps.read")).toBe(false);
+
+    const runtime = createAppRuntime({ manifest, baseContext: {} });
+    expect(runtime.services.settings?.setJson("preferences", { decimals: 4 })).toBe(false);
+  });
+
+  it("denies already-created audio services after playback permission is revoked", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const audioRuntime = createAudioRuntimeMock();
+    const runtime = createAppRuntime({
+      manifest: appRegistry.getApp("vatio.player"),
+      baseContext: { audioRuntime },
+    });
+
+    expect(runtime.services.audio).toBeTruthy();
+    expect(runtime.services.audio?.play()).toBe(true);
+
+    expect(appControl.revokePermission("vatio.player", "audio.playback")).toBe(true);
+    expect(runtime.services.audio?.play()).toBe(false);
+    await expect(runtime.services.audio?.primeAudio()).resolves.toBe(false);
+    expect(runtime.services.audio?.getState()).toMatchObject({
+      paused: true,
+      muted: true,
+      error: "permission-denied",
+    });
+    expect(audioRuntime.play).toHaveBeenCalledTimes(1);
+    expect(audioRuntime.primeAudio).not.toHaveBeenCalled();
+    expect(audioRuntime.stopPlayback).not.toHaveBeenCalled();
+    expect(audioRuntime.pause).not.toHaveBeenCalled();
+  });
+
+  it("denies already-created driving alert services after speed alert permission is revoked", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const drivingAlertService = createDrivingAlertServiceMock();
+    const runtime = createAppRuntime({
+      manifest: appRegistry.getApp("vatio.speedAlerts"),
+      baseContext: { drivingAlertService },
+    });
+
+    expect(runtime.services.drivingAlerts).toBeTruthy();
+    expect(runtime.services.drivingAlerts?.start()).toMatchObject({ status: "active" });
+
+    expect(appControl.revokePermission("vatio.speedAlerts", "alerts.speed")).toBe(true);
+    expect(runtime.services.drivingAlerts?.start()).toMatchObject({ status: "permission-denied" });
+    expect(runtime.services.drivingAlerts?.setMuted?.(true)).toMatchObject({ status: "permission-denied" });
+    await expect(runtime.services.drivingAlerts?.primeAudioFromUserGesture?.()).resolves.toBe(false);
+    expect(drivingAlertService.start).toHaveBeenCalledTimes(1);
+    expect(drivingAlertService.setMuted).not.toHaveBeenCalled();
+    expect(drivingAlertService.stop).not.toHaveBeenCalled();
+    expect(drivingAlertService.destroy).not.toHaveBeenCalled();
+  });
+
+  it("denies already-created auth, cloud sync, settings, and shared settings services after revocation", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const runtime = createAppRuntime({
+      manifest: appRegistry.getApp("vatio.board"),
+      baseContext: {},
+    });
+
+    expect(runtime.services.auth).toBeTruthy();
+    expect(runtime.services.cloudSync).toBeTruthy();
+    expect(runtime.services.settings).toBeTruthy();
+    expect(runtime.services.sharedSettings).toBeTruthy();
+
+    appControl.revokePermission("vatio.board", "auth.session");
+    appControl.revokePermission("vatio.board", "cloud.sync");
+    appControl.revokePermission("vatio.board", "settings.read");
+    appControl.revokePermission("vatio.board", "settings.write");
+
+    await expect(runtime.services.auth?.getSessionState()).resolves.toBeNull();
+    await expect(runtime.services.auth?.getFeatureAccessState()).resolves.toBeNull();
+    await expect(runtime.services.cloudSync?.getStatus()).resolves.toBeNull();
+    await expect(runtime.services.cloudSync?.request()).resolves.toBeNull();
+    expect(runtime.services.settings?.get("inkRaw", "fallback")).toBe("fallback");
+    expect(runtime.services.settings?.set("inkRaw", "#fff")).toBe(false);
+    expect(runtime.services.sharedSettings?.get("distanceUnit")).toBeNull();
+    expect(runtime.services.sharedSettings?.getAll()).toEqual({});
+    expect(runtime.services.sharedSettings?.set("distanceUnit", "ft")).toBe(false);
+  });
+
+  it("protects critical permissions on protected apps while leaving non-critical permissions controllable", () => {
+    expect(appControl.revokePermission("vatio.speed", "gps.read")).toBe(false);
+    expect(appControl.hasGrantedPermission("vatio.speed", "gps.read")).toBe(true);
+    expect(appControl.revokePermission("vatio.appManager", "settings.read")).toBe(false);
+    expect(appControl.hasGrantedPermission("vatio.appManager", "settings.read")).toBe(true);
+
+    expect(appControl.revokePermission("vatio.speed", "audio.playback")).toBe(true);
+    expect(appControl.hasGrantedPermission("vatio.speed", "audio.playback")).toBe(false);
+    expect(appControl.resetAppControlState("vatio.speed")).toBe(true);
+    expect(appControl.hasGrantedPermission("vatio.speed", "audio.playback")).toBe(true);
+  });
+
+  it("blocks disabled launcher and start-menu launches", () => {
+    const shellManager = createShellWindowManager({
+      root: document.body,
+      storeOptions: { storage: localStorage, migrateLegacy: false },
+    });
+    const shellAppRuntimeManager = createShellAppRuntimeManager({ shellManager, baseContext: {} });
+    const launcher = createAppLauncher({ shellManager, shellAppRuntimeManager });
+    shellAppRuntimeManager.setLauncher(launcher);
+    const floatingTools = initFloatingTools({ mount: document.body, shellManager, shellAppRuntimeManager });
+
+    appControl.setEnabled("vatio.calculator", false);
+    expect(launcher.openApp("vatio.calculator")).toBe(false);
+
+    const startMenu = initSharedStartMenu({ floatingTools, mount: document.body, shellAppRuntimeManager });
+    startMenu.setOpen(true);
+    startMenu.list.querySelector("[data-start-action='calculator']").click();
+    expect(shellManager.getWindow("calculator")?.state).not.toBe("open");
+
+    appControl.setEnabled("vatio.calculator", true);
+    expect(launcher.openApp("vatio.calculator")).toBe(true);
+    expect(shellManager.getWindow("calculator")?.state).toBe("open");
+
+    shellAppRuntimeManager.destroy();
+    shellManager.destroy();
+  });
+
+  it("keeps app-private storage reset isolated from app control state", () => {
+    appControl.setPinned("vatio.calculator", true);
+    localStorage.setItem("vatioboard.app.vatio.calculator.settings.preferences", JSON.stringify({ decimals: 5 }));
+
+    expect(clearAppPrivateStorage("vatio.calculator")).toBe(true);
+    expect(localStorage.getItem("vatioboard.app.vatio.calculator.settings.preferences")).toBeNull();
+    expect(appControl.isPinned("vatio.calculator")).toBe(true);
+  });
+
+  it("uses legacy speed unit preferences as canonical while mirroring shared settings", () => {
+    sharedSettings.set("speedUnit", "mph");
+    localStorage.setItem("vatio_speed_unit", "kmh");
+
+    expect(loadConfiguredSpeedUnit("mph")).toBe("kmh");
+    expect(sharedSettings.get("speedUnit")).toBe("kmh");
+
+    localStorage.removeItem("vatio_speed_unit");
+    sharedSettings.set("speedUnit", "mph");
+    expect(loadConfiguredSpeedUnit("kmh")).toBe("mph");
+    expect(localStorage.getItem("vatio_speed_unit")).toBe("mph");
+  });
+
+  it("does not seed legacy unit keys from default-filled shared settings", () => {
+    expect(loadLegacyBackedSpeedUnit("legacy_speed", "mph")).toBe("mph");
+    expect(localStorage.getItem("legacy_speed")).toBeNull();
+    expect(loadLegacyBackedDistanceUnit("legacy_distance", "ft")).toBe("ft");
+    expect(localStorage.getItem("legacy_distance")).toBeNull();
+  });
+
+  it("seeds legacy unit keys only from explicit shared settings and lets legacy values win", () => {
+    sharedSettings.set("speedUnit", "mph");
+    sharedSettings.set("distanceUnit", "ft");
+
+    expect(loadLegacyBackedSpeedUnit("legacy_speed", "kmh")).toBe("mph");
+    expect(localStorage.getItem("legacy_speed")).toBe("mph");
+    expect(loadLegacyBackedDistanceUnit("legacy_distance", "m")).toBe("ft");
+    expect(localStorage.getItem("legacy_distance")).toBe("ft");
+
+    localStorage.setItem("legacy_speed", "kmh");
+    localStorage.setItem("legacy_distance", "m");
+    expect(loadLegacyBackedSpeedUnit("legacy_speed", "mph")).toBe("kmh");
+    expect(loadLegacyBackedDistanceUnit("legacy_distance", "ft")).toBe("m");
+    expect(sharedSettings.get("speedUnit")).toBe("kmh");
+    expect(sharedSettings.get("distanceUnit")).toBe("m");
+  });
+
+  it("autostarts conservative internal background services", () => {
+    const manager = createBackgroundServiceManager({ baseContext: {} });
+    const services = manager.startAutostartServices();
+
+    expect(services.map((service) => service.appId)).toContain("vatio.offlineReadiness");
+    expect(manager.getRuntime("vatio.offlineReadiness")?.lifecycle.getState()).toBe("active");
+    expect(manager.suspend("vatio.offlineReadiness")).toBe(true);
+    expect(manager.getRuntime("vatio.offlineReadiness")?.lifecycle.getState()).toBe("suspended");
+    expect(manager.resume("vatio.offlineReadiness")).toBe(true);
+    expect(manager.getRuntime("vatio.offlineReadiness")?.lifecycle.getState()).toBe("active");
+    expect(manager.stop("vatio.offlineReadiness")).toBe(true);
+    expect(manager.getRuntime("vatio.offlineReadiness")).toBeNull();
+
+    manager.destroy();
+    expect(manager.listServices()).toEqual([]);
+  });
+
+  it("loads background service entries once and calls service lifecycle hooks", async () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    const service = {
+      start: vi.fn(),
+      suspend: vi.fn(),
+      resume: vi.fn(),
+      stop: vi.fn(),
+      destroy: vi.fn(),
+    };
+    const createBackgroundServiceApp = vi.fn(() => service);
+    const entry = vi.fn(async () => ({ createBackgroundServiceApp }));
+    const manifest = {
+      ...appRegistry.getApp("vatio.offlineReadiness"),
+      id: "test.background.entry",
+      title: "Entry Background",
+      shortTitle: "Entry BG",
+      order: 1,
+      entry,
+      lifecycle: {
+        autostart: false,
+        keepAlive: false,
+        restoreOnBoot: false,
+      },
+      metadata: {},
+    };
+    registry.registerApp(manifest);
+    const control = createAppControlService({ registry, storage: localStorage });
+    const manager = createBackgroundServiceManager({ registry, control, baseContext: {} });
+
+    const firstStart = manager.startAsync("test.background.entry");
+    const duplicateStart = manager.startAsync("test.background.entry");
+    expect(duplicateStart).toBe(firstStart);
+    await expect(firstStart).resolves.toBe(true);
+    await expect(manager.startAsync("test.background.entry")).resolves.toBe(true);
+
+    expect(entry).toHaveBeenCalledTimes(1);
+    expect(createBackgroundServiceApp).toHaveBeenCalledTimes(1);
+    expect(service.start).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.entry")?.lifecycle.getState()).toBe("active");
+
+    expect(manager.suspend("test.background.entry")).toBe(true);
+    expect(service.suspend).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.entry")?.lifecycle.getState()).toBe("suspended");
+
+    expect(manager.resume("test.background.entry")).toBe(true);
+    expect(service.resume).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.entry")?.lifecycle.getState()).toBe("active");
+
+    await expect(manager.stopAsync("test.background.entry")).resolves.toBe(true);
+    expect(service.stop).toHaveBeenCalledTimes(1);
+    expect(service.destroy).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.entry")).toBeNull();
+
+    manager.destroy();
+  });
+
+  it("cleans up and reports false when background service start throws synchronously", async () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    const service = {
+      start: vi.fn(() => {
+        throw new Error("sync start failed");
+      }),
+      destroy: vi.fn(),
+    };
+    const manifest = {
+      ...appRegistry.getApp("vatio.offlineReadiness"),
+      id: "test.background.sync-fail",
+      title: "Sync Fail Background",
+      shortTitle: "Sync Fail",
+      order: 1,
+      entry: vi.fn(async () => ({
+        createBackgroundServiceApp: vi.fn(() => service),
+      })),
+      metadata: {},
+    };
+    registry.registerApp(manifest);
+    const control = createAppControlService({ registry, storage: localStorage });
+    const manager = createBackgroundServiceManager({ registry, control, baseContext: {} });
+
+    await expect(manager.startAsync("test.background.sync-fail")).resolves.toBe(false);
+
+    expect(service.start).toHaveBeenCalledTimes(1);
+    expect(service.destroy).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.sync-fail")).toBeNull();
+    expect(manager.listServices()).toEqual([]);
+
+    manager.destroy();
+  });
+
+  it("cleans up and reports false when background service start rejects", async () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    const service = {
+      start: vi.fn(async () => {
+        throw new Error("async start failed");
+      }),
+      destroy: vi.fn(),
+    };
+    const manifest = {
+      ...appRegistry.getApp("vatio.offlineReadiness"),
+      id: "test.background.async-fail",
+      title: "Async Fail Background",
+      shortTitle: "Async Fail",
+      order: 1,
+      entry: vi.fn(async () => ({
+        createBackgroundServiceApp: vi.fn(() => service),
+      })),
+      metadata: {},
+    };
+    registry.registerApp(manifest);
+    const control = createAppControlService({ registry, storage: localStorage });
+    const manager = createBackgroundServiceManager({ registry, control, baseContext: {} });
+
+    await expect(manager.startAsync("test.background.async-fail")).resolves.toBe(false);
+
+    expect(service.start).toHaveBeenCalledTimes(1);
+    expect(service.destroy).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.async-fail")).toBeNull();
+    expect(manager.listServices()).toEqual([]);
+
+    manager.destroy();
+  });
+
+  it("retries background service start cleanly after a failed start", async () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    const failedService = {
+      start: vi.fn(() => {
+        throw new Error("first start failed");
+      }),
+      destroy: vi.fn(),
+    };
+    const recoveredService = {
+      start: vi.fn(),
+      destroy: vi.fn(),
+    };
+    const createBackgroundServiceApp = vi
+      .fn()
+      .mockReturnValueOnce(failedService)
+      .mockReturnValueOnce(recoveredService);
+    const entry = vi.fn(async () => ({ createBackgroundServiceApp }));
+    const manifest = {
+      ...appRegistry.getApp("vatio.offlineReadiness"),
+      id: "test.background.retry",
+      title: "Retry Background",
+      shortTitle: "Retry",
+      order: 1,
+      entry,
+      metadata: {},
+    };
+    registry.registerApp(manifest);
+    const control = createAppControlService({ registry, storage: localStorage });
+    const manager = createBackgroundServiceManager({ registry, control, baseContext: {} });
+
+    await expect(manager.startAsync("test.background.retry")).resolves.toBe(false);
+    await expect(manager.startAsync("test.background.retry")).resolves.toBe(true);
+
+    expect(entry).toHaveBeenCalledTimes(2);
+    expect(createBackgroundServiceApp).toHaveBeenCalledTimes(2);
+    expect(failedService.destroy).toHaveBeenCalledTimes(1);
+    expect(recoveredService.start).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.retry")?.lifecycle.getState()).toBe("active");
+
+    await manager.stopAsync("test.background.retry");
+    manager.destroy();
+  });
+
+  it("awaits async background service stop before destroy and cleanup", async () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    let resolveStop = null;
+    let resolveDestroy = null;
+    let serviceSignal = null;
+    const actions = [];
+    const service = {
+      start: vi.fn(),
+      stop: vi.fn(() => new Promise((resolve) => {
+        actions.push(`stop:${serviceSignal?.aborted === true}`);
+        resolveStop = resolve;
+      })),
+      destroy: vi.fn(() => new Promise((resolve) => {
+        actions.push(`destroy:${serviceSignal?.aborted === true}`);
+        resolveDestroy = resolve;
+      })),
+    };
+    const manifest = {
+      ...appRegistry.getApp("vatio.offlineReadiness"),
+      id: "test.background.async-stop",
+      title: "Async Stop Background",
+      shortTitle: "Async Stop",
+      order: 1,
+      entry: vi.fn(async () => ({
+        createBackgroundServiceApp: vi.fn(({ signal }) => {
+          serviceSignal = signal;
+          return service;
+        }),
+      })),
+      metadata: {},
+    };
+    registry.registerApp(manifest);
+    const control = createAppControlService({ registry, storage: localStorage });
+    const manager = createBackgroundServiceManager({ registry, control, baseContext: {} });
+
+    await expect(manager.startAsync("test.background.async-stop")).resolves.toBe(true);
+    const stopPromise = manager.stopAsync("test.background.async-stop");
+
+    expect(service.stop).toHaveBeenCalledTimes(1);
+    expect(service.destroy).not.toHaveBeenCalled();
+
+    resolveStop?.();
+    await flushAsyncWork();
+    expect(service.destroy).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.async-stop")?.lifecycle.getState()).toBe("active");
+    expect(serviceSignal?.aborted).toBe(false);
+
+    let settled = false;
+    void stopPromise.then(() => {
+      settled = true;
+    });
+    await flushAsyncWork();
+    expect(settled).toBe(false);
+
+    resolveDestroy?.();
+    await expect(stopPromise).resolves.toBe(true);
+    expect(actions).toEqual(["stop:false", "destroy:false"]);
+    expect(serviceSignal?.aborted).toBe(true);
+    expect(manager.getRuntime("test.background.async-stop")).toBeNull();
+
+    manager.destroy();
+  });
+
+  it("queues startAsync behind an in-progress async stop and creates a fresh service", async () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    let resolveStop = null;
+    let resolveDestroy = null;
+    const createdServices = [];
+    const createBackgroundServiceApp = vi.fn(() => {
+      const index = createdServices.length;
+      const service = {
+        start: vi.fn(),
+        stop: vi.fn(() => {
+          if (index !== 0) return undefined;
+          return new Promise((resolve) => {
+            resolveStop = resolve;
+          });
+        }),
+        destroy: vi.fn(() => {
+          if (index !== 0) return undefined;
+          return new Promise((resolve) => {
+            resolveDestroy = resolve;
+          });
+        }),
+      };
+      createdServices.push(service);
+      return service;
+    });
+    const manifest = {
+      ...appRegistry.getApp("vatio.offlineReadiness"),
+      id: "test.background.restart-after-stop",
+      title: "Restart After Stop Background",
+      shortTitle: "Restart Stop",
+      order: 1,
+      entry: vi.fn(async () => ({ createBackgroundServiceApp })),
+      metadata: {},
+    };
+    registry.registerApp(manifest);
+    const control = createAppControlService({ registry, storage: localStorage });
+    const manager = createBackgroundServiceManager({ registry, control, baseContext: {} });
+
+    await expect(manager.startAsync("test.background.restart-after-stop")).resolves.toBe(true);
+    const firstService = createdServices[0];
+    const stopPromise = manager.stopAsync("test.background.restart-after-stop");
+
+    expect(firstService.stop).toHaveBeenCalledTimes(1);
+    expect(createBackgroundServiceApp).toHaveBeenCalledTimes(1);
+
+    const restartPromise = manager.startAsync("test.background.restart-after-stop");
+    await flushAsyncWork();
+    expect(createBackgroundServiceApp).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.restart-after-stop")?.lifecycle.getState()).toBe("active");
+
+    resolveStop?.();
+    await flushAsyncWork();
+    expect(firstService.destroy).toHaveBeenCalledTimes(1);
+    expect(createBackgroundServiceApp).toHaveBeenCalledTimes(1);
+
+    resolveDestroy?.();
+    await expect(stopPromise).resolves.toBe(true);
+    await expect(restartPromise).resolves.toBe(true);
+
+    expect(createBackgroundServiceApp).toHaveBeenCalledTimes(2);
+    expect(createdServices[1]).not.toBe(firstService);
+    expect(createdServices[1].start).toHaveBeenCalledTimes(1);
+    expect(firstService.start).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.restart-after-stop")?.lifecycle.getState()).toBe("active");
+
+    await manager.stopAsync("test.background.restart-after-stop");
+    manager.destroy();
+  });
+
+  it("sync start queues safely behind an in-progress async stop", async () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    let resolveStop = null;
+    let resolveDestroy = null;
+    const createdServices = [];
+    const createBackgroundServiceApp = vi.fn(() => {
+      const index = createdServices.length;
+      const service = {
+        start: vi.fn(),
+        stop: vi.fn(() => {
+          if (index !== 0) return undefined;
+          return new Promise((resolve) => {
+            resolveStop = resolve;
+          });
+        }),
+        destroy: vi.fn(() => {
+          if (index !== 0) return undefined;
+          return new Promise((resolve) => {
+            resolveDestroy = resolve;
+          });
+        }),
+      };
+      createdServices.push(service);
+      return service;
+    });
+    const manifest = {
+      ...appRegistry.getApp("vatio.offlineReadiness"),
+      id: "test.background.sync-restart-after-stop",
+      title: "Sync Restart After Stop Background",
+      shortTitle: "Sync Restart",
+      order: 1,
+      entry: vi.fn(async () => ({ createBackgroundServiceApp })),
+      metadata: {},
+    };
+    registry.registerApp(manifest);
+    const control = createAppControlService({ registry, storage: localStorage });
+    const manager = createBackgroundServiceManager({ registry, control, baseContext: {} });
+
+    await expect(manager.startAsync("test.background.sync-restart-after-stop")).resolves.toBe(true);
+    const firstService = createdServices[0];
+    const stopPromise = manager.stopAsync("test.background.sync-restart-after-stop");
+
+    expect(manager.start("test.background.sync-restart-after-stop")).toBe(true);
+    const queuedStart = manager.startAsync("test.background.sync-restart-after-stop");
+    await flushAsyncWork();
+
+    expect(firstService.stop).toHaveBeenCalledTimes(1);
+    expect(firstService.destroy).not.toHaveBeenCalled();
+    expect(createBackgroundServiceApp).toHaveBeenCalledTimes(1);
+
+    resolveStop?.();
+    await flushAsyncWork();
+    expect(firstService.destroy).toHaveBeenCalledTimes(1);
+    expect(createBackgroundServiceApp).toHaveBeenCalledTimes(1);
+
+    resolveDestroy?.();
+    await expect(stopPromise).resolves.toBe(true);
+    await expect(queuedStart).resolves.toBe(true);
+
+    expect(createBackgroundServiceApp).toHaveBeenCalledTimes(2);
+    expect(createdServices[1]).not.toBe(firstService);
+    expect(createdServices[1].start).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.sync-restart-after-stop")?.lifecycle.getState()).toBe("active");
+
+    await manager.stopAsync("test.background.sync-restart-after-stop");
+    manager.destroy();
+  });
+
+  it("clears background service records immediately when the manager is destroyed", async () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    const service = {
+      start: vi.fn(),
+      stop: vi.fn(() => new Promise(() => {})),
+      destroy: vi.fn(),
+    };
+    const manifest = {
+      ...appRegistry.getApp("vatio.offlineReadiness"),
+      id: "test.background.destroy",
+      title: "Destroy Background",
+      shortTitle: "Destroy",
+      order: 1,
+      entry: vi.fn(async () => ({
+        createBackgroundServiceApp: vi.fn(() => service),
+      })),
+      metadata: {},
+    };
+    registry.registerApp(manifest);
+    const control = createAppControlService({ registry, storage: localStorage });
+    const manager = createBackgroundServiceManager({ registry, control, baseContext: {} });
+
+    await expect(manager.startAsync("test.background.destroy")).resolves.toBe(true);
+    manager.destroy();
+
+    expect(service.stop).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.destroy")).toBeNull();
+    expect(manager.listServices()).toEqual([]);
+  });
+
+  it("stops background service entry instances when the app is disabled", async () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    const service = {
+      start: vi.fn(),
+      stop: vi.fn(),
+      destroy: vi.fn(),
+    };
+    const manifest = {
+      ...appRegistry.getApp("vatio.offlineReadiness"),
+      id: "test.background.disable",
+      title: "Disable Background",
+      shortTitle: "Disable BG",
+      order: 1,
+      entry: vi.fn(async () => ({
+        createBackgroundServiceApp: vi.fn(() => service),
+      })),
+      metadata: {},
+    };
+    registry.registerApp(manifest);
+    const control = createAppControlService({ registry, storage: localStorage });
+    const manager = createBackgroundServiceManager({ registry, control, baseContext: {} });
+
+    await expect(manager.startAsync("test.background.disable")).resolves.toBe(true);
+    expect(manager.getRuntime("test.background.disable")?.lifecycle.getState()).toBe("active");
+
+    control.setEnabled("test.background.disable", false);
+    await flushAsyncWork();
+    expect(service.stop).toHaveBeenCalledTimes(1);
+    expect(service.destroy).toHaveBeenCalledTimes(1);
+    expect(manager.getRuntime("test.background.disable")).toBeNull();
+
+    manager.destroy();
+  });
+
+  it("does not autostart disabled non-protected background services and stops them when disabled", () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    const backgroundManifest = {
+      ...appRegistry.getApp("vatio.offlineReadiness"),
+      id: "test.background",
+      title: "Test Background",
+      shortTitle: "Test BG",
+      order: 1,
+      metadata: {},
+    };
+    registry.registerApp(backgroundManifest);
+    const control = createAppControlService({ registry, storage: localStorage });
+    const manager = createBackgroundServiceManager({ registry, control, baseContext: {} });
+
+    control.setEnabled("test.background", false);
+    expect(manager.startAutostartServices()).toEqual([]);
+    expect(manager.getRuntime("test.background")).toBeNull();
+
+    control.setEnabled("test.background", true);
+    expect(manager.start("test.background")).toBe(true);
+    expect(manager.getRuntime("test.background")?.lifecycle.getState()).toBe("active");
+
+    control.setEnabled("test.background", false);
+    expect(manager.getRuntime("test.background")).toBeNull();
+    manager.destroy();
+  });
+
+  it("renders App Manager controls and persists enable state changes", () => {
+    const { root, cleanup } = mountAppManagerRoute();
+
+    const calculatorCard = root.querySelector("[data-app-id='vatio.calculator']");
+    expect(calculatorCard).toBeTruthy();
+    expect(calculatorCard.dataset.enabled).toBe("true");
+
+    calculatorCard.querySelector(".vb-app-manager-toggle").click();
+    const disabledCard = root.querySelector("[data-app-id='vatio.calculator']");
+    expect(appControl.isEnabled("vatio.calculator")).toBe(false);
+    expect(disabledCard.dataset.enabled).toBe("false");
+    expect(disabledCard.querySelector(".vb-app-manager-launch").disabled).toBe(true);
+    expect(root.querySelector("[data-app-id='vatio.speed'] .vb-app-manager-toggle").disabled).toBe(true);
+    expect(root.querySelector("[data-app-id='vatio.speed'] [data-protected-permission='true'] button").disabled).toBe(true);
+
+    cleanup.run();
+  });
+
+  it("sorts pinned and favorite apps ahead in App Manager", () => {
+    appControl.setPinned("vatio.energy", true);
+    appControl.setFavorite("vatio.calculator", true);
+
+    const { root, cleanup } = mountAppManagerRoute();
+    const appIds = Array.from(root.querySelectorAll("[data-app-id]")).map((card) => card.dataset.appId);
+
+    expect(appControl.getState("vatio.energy").pinned).toBe(true);
+    expect(appControl.getState("vatio.calculator").favorite).toBe(true);
+    expect(getStartMenuToolDefinitions()[0].id).toBe("energy");
+    expect(appIds[0]).toBe("vatio.energy");
+    expect(appIds[1]).toBe("vatio.calculator");
+    cleanup.run();
+  });
+
+  it("hides non-protected apps from Start Menu without removing them from App Manager", () => {
+    expect(appControl.setHiddenFromStartMenu("vatio.calculator", true)).toBe(true);
+    expect(getStartMenuToolDefinitions().map((tool) => tool.id)).not.toContain("calculator");
+    expect(appControl.setHiddenFromStartMenu("vatio.speed", true)).toBe(false);
+
+    const { root, cleanup } = mountAppManagerRoute();
+    expect(root.querySelector("[data-app-id='vatio.calculator']")).toBeTruthy();
+    expect(root.querySelector("[data-app-id='vatio.calculator']").textContent).toContain("Hidden from Start");
+    cleanup.run();
+  });
+
+  it("shows background service running state and controls in App Manager", () => {
+    const backgroundServiceManager = createBackgroundServiceManager({ baseContext: {} });
+    backgroundServiceManager.start("vatio.offlineReadiness");
+
+    const { root, cleanup } = mountAppManagerRoute({ backgroundServiceManager });
+    const backgroundCard = root.querySelector("[data-app-id='vatio.offlineReadiness']");
+
+    expect(backgroundCard).toBeTruthy();
+    expect(backgroundCard.textContent).toContain("Running: Active");
+    expect(Array.from(backgroundCard.querySelectorAll("button")).map((button) => button.textContent)).toEqual(
+      expect.arrayContaining(["Start", "Suspend", "Resume", "Stop"]),
+    );
+
+    cleanup.run();
+    backgroundServiceManager.destroy();
+  });
+
+  it("requires confirmation before resetting app-private storage from App Manager", () => {
+    appControl.setPinned("vatio.calculator", true);
+    localStorage.setItem("vatioboard.app.vatio.calculator.settings.preferences", JSON.stringify({ decimals: 5 }));
+    localStorage.setItem("vatio_legacy_player_queue", "keep");
+
+    const { root, cleanup } = mountAppManagerRoute();
+    const calculatorCard = root.querySelector("[data-app-id='vatio.calculator']");
+    const resetButton = Array.from(calculatorCard.querySelectorAll("button"))
+      .find((button) => button.textContent === "Reset app-private storage");
+
+    resetButton.click();
+    expect(localStorage.getItem("vatioboard.app.vatio.calculator.settings.preferences")).not.toBeNull();
+    expect(document.querySelector(".vb-confirm-dialog, .vb-confirm-backdrop")).toBeTruthy();
+
+    const confirmButton = document.querySelector(".vb-confirm-btn--confirm");
+    confirmButton.click();
+
+    expect(localStorage.getItem("vatioboard.app.vatio.calculator.settings.preferences")).toBeNull();
+    expect(localStorage.getItem("vatio_legacy_player_queue")).toBe("keep");
+    expect(appControl.isPinned("vatio.calculator")).toBe(true);
+    cleanup.run();
+  });
+});

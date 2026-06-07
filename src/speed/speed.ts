@@ -20,8 +20,7 @@ import {
   getRouteBoundaryInputSamples,
   reverseGeocodeBoundarySample,
 } from '../shared/route-boundary.js';
-import { applyButtonIcon, getActiveToolsMenuList, initToolsMenu } from '../shared/tools-menu.js';
-import { integratePlayerWidget } from '../player/integrate-player-widget.js';
+import { applyButtonIcon } from '../shared/tools-menu.js';
 import {
   deriveHeadingFromPositions,
   normalizeHeading,
@@ -33,13 +32,9 @@ import {
 } from '../shared/unit-bootstrap.js';
 import '../styles/backend-auth.less';
 import {
-  IconAccel,
-  IconBoard,
-  IconPages,
   IconReplay,
   IconRestart,
   IconSettings,
-  IconWorld,
 } from '../icons.js';
 import {
   archiveReplaySession,
@@ -152,13 +147,8 @@ export function getSpeedElements(root: any): AnyRecord {
     langToggleButtons: queryAll(root, '[data-lang-toggle], #langToggle'),
     pageDescriptionMeta: root ? document.querySelector('meta[name="description"]') : null,
     toolbar: queryOne(root, '.speed-toolbar'),
-    toolsMenuBtn: queryOne(root, '#speedToolsMenuBtn'),
-    toolsMenuList: queryOne(root, '#speedToolsMenuList'),
     openReplayQuick: queryOne(root, '#openReplayQuick'),
-    openLibraryMenu: queryOne(root, '#openSpeedLibraryMenu'),
     quickAlertConfig: queryOne(root, '#quickAlertConfig'),
-    openAccelMenu: queryOne(root, '#openSpeedAccelMenu'),
-    openBoardMenu: queryOne(root, '#openSpeedBoardMenu'),
     primaryViewButtons: queryAll(root, '.speed-view-btn'),
     speedPrimaryStage: queryOne(root, '#speedPrimaryStage'),
     gaugeStage: queryOne(root, '#gaugeStage'),
@@ -249,28 +239,23 @@ let standaloneCleanup = null;
 let standaloneBackendAuthInitialized = false;
 let appGpsService = null;
 
-let speedRouteLifecycle: any = {
-  mount() {},
-  unmount() {},
-};
+var speedRouteLifecycle: any;
 
 export function mountSpeedRoute(routeContext: AnyRecord = {}) {
-  return speedRouteLifecycle.mount(routeContext);
+  if (speedRouteLifecycle?.mount) return speedRouteLifecycle.mount(routeContext);
+  return Promise.resolve().then(() => speedRouteLifecycle?.mount?.(routeContext));
 }
 
 export function unmountSpeedRoute() {
-  speedRouteLifecycle.unmount();
+  if (speedRouteLifecycle?.unmount) {
+    speedRouteLifecycle.unmount();
+    return;
+  }
+  void Promise.resolve().then(() => {
+    speedRouteLifecycle?.unmount?.();
+  });
 }
 
-function createInactiveToolsMenu() {
-  return {
-    close() {},
-    destroy() {},
-    setOpen() {},
-  };
-}
-
-let toolsMenu: any = createInactiveToolsMenu();
 const placeResolver = createPlaceResolver({ getLanguage: getLang });
 
 function focusElement(element) {
@@ -287,7 +272,7 @@ function isVisibleForFocus(element) {
 }
 
 function getCloudSyncLauncherFocusTarget() {
-  const menuList = getActiveToolsMenuList(elements.toolsMenuList);
+  const menuList = window.__vatioboardStartMenu?.list;
   const candidates = [
     menuList?.querySelector('[data-backend-auth-user]'),
     menuList?.querySelector('[data-backend-auth-password]'),
@@ -300,7 +285,7 @@ function getCloudSyncLauncherFocusTarget() {
 }
 
 function focusCloudSyncLauncherTarget(attempt = 0) {
-  toolsMenu.setOpen(true);
+  window.__vatioboardStartMenu?.setOpen?.(true);
   const target = getCloudSyncLauncherFocusTarget();
   if (target) {
     focusElement(target);
@@ -1448,7 +1433,7 @@ async function hydrateReplaySession() {
 function bindMenuNavigation(element, href, cleanup) {
   if (!element) return;
   cleanup.addEventListener(element, 'click', () => {
-    toolsMenu.close();
+    window.__vatioboardStartMenu?.close?.();
     navigateToAppRoute(href);
   });
 }
@@ -2969,20 +2954,15 @@ function syncMountedSpeedRouteUi() {
 }
 
 function applySpeedIcons() {
-  applyButtonIcon(elements.openAccelMenu, IconAccel);
-  applyButtonIcon(elements.openLibraryMenu, IconWorld);
-  applyButtonIcon(elements.openBoardMenu, IconBoard);
   applyButtonIcon(elements.openReplayQuick, IconReplay);
   applyButtonIcon(elements.quickAlertConfig, IconSettings);
   applyButtonIcon(elements.resetTrip, IconRestart);
-  applyButtonIcon(elements.toolsMenuBtn, IconPages);
 }
 
 function destroySpeedRouteResources(route = activeSpeedRoute) {
   if (!route || route.destroyed) return;
   route.destroyed = true;
   route.syncIndicator?.destroy?.();
-  route.toolsMenu?.destroy?.();
   drivingAlertUnsubscribe?.();
   drivingAlertUnsubscribe = null;
   cameraDatabase?.abortPending?.();
@@ -3000,7 +2980,6 @@ function destroySpeedRouteResources(route = activeSpeedRoute) {
   speedRenderer = createInactiveSpeedRenderer();
   globeController = createInactiveGlobeController();
   wazeController = createInactiveWazeController();
-  toolsMenu = createInactiveToolsMenu();
   if (window.__vatioboardSpeedGetCurrentPosition === getCurrentSpeedPosition) {
     if (appGpsService && window.__vatioboardGpsGetCurrentPosition) {
       window.__vatioboardSpeedGetCurrentPosition = window.__vatioboardGpsGetCurrentPosition;
@@ -3031,14 +3010,9 @@ function mountSpeedController(routeContext: AnyRecord = {}) {
   speedRouteGeneration = route.generation;
   activeSpeedRoute = route;
   Object.assign(elements, getSpeedElements(routeContext.root || document));
-  toolsMenu = initToolsMenu({
-    button: elements.toolsMenuBtn,
-    list: elements.toolsMenuList,
-  });
   window.__vatioboardSpeedGetCurrentPosition = appGpsService && window.__vatioboardGpsGetCurrentPosition
     ? window.__vatioboardGpsGetCurrentPosition
     : getCurrentSpeedPosition;
-  route.toolsMenu = toolsMenu;
   createSpeedRouteControllers();
   route.syncIndicator = initCloudSyncStatusIndicator({
     mount: elements.toolbar,
@@ -3132,12 +3106,6 @@ function bindEvents({ cleanup, signal }: AnyRecord = {}) {
     });
   });
   bindMenuNavigation(elements.openReplayQuick, '#/replay', cleanup);
-  bindMenuNavigation(elements.openLibraryMenu, '#/library?tab=speed', cleanup);
-  bindMenuNavigation(elements.openAccelMenu, '#/accel', cleanup);
-  bindMenuNavigation(elements.openBoardMenu, '#/board', cleanup);
-  if (!isSpaRuntime) {
-    integratePlayerWidget({ toolsMenuList: elements.toolsMenuList, toolsMenu });
-  }
   cleanup.addEventListener(elements.retryGps, 'click', () => restartTrip({ fromUserGesture: true }));
   cleanup.addEventListener(elements.resetTrip, 'click', () => restartTrip({ fromUserGesture: true }));
   cleanup.addEventListener(elements.toggleRecording, 'click', () => {

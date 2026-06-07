@@ -65,6 +65,9 @@ async function loadAppShellWithMocks() {
   vi.doMock("../../src/shared/backend-auth.js", () => ({
     initBackendAuthControllers: vi.fn(),
   }));
+  vi.doMock("../../src/shared/account-panel.js", () => ({
+    initAccountPanel: vi.fn(() => ({ destroy: vi.fn(), open: vi.fn(), close: vi.fn(), toggle: vi.fn() })),
+  }));
   vi.doMock("../../src/shared/cloud-sync.js", () => ({
     startCloudSyncLoop: vi.fn(),
   }));
@@ -165,8 +168,14 @@ describe("shell UI integration", () => {
     const { startAppShell } = await loadAppShellWithMocks();
 
     const app = await startAppShell();
+    const accountPanelModule = await import("../../src/shared/account-panel.js");
+    const accountPanelOptions = accountPanelModule.initAccountPanel.mock.calls[0]?.[0] || {};
 
     expect(document.querySelectorAll("[data-vb-shell-taskbar]")).toHaveLength(1);
+    expect(document.querySelectorAll("[data-vb-shell-start-button]")).toHaveLength(1);
+    expect(document.querySelector("[data-vb-shell-taskbar]").hidden).toBe(false);
+    expect(accountPanelOptions.authRequestGate).toBeInstanceOf(Promise);
+    expect(accountPanelOptions.gatedAuthRequestFocus).toBe(false);
     app.router.destroy();
   });
 
@@ -609,7 +618,7 @@ describe("shell UI integration", () => {
     manager.destroy();
   });
 
-  it("start menu avoids a scrollbar when its natural height fits below the trigger", async () => {
+  it("start menu launcher expands inside the available work area", async () => {
     Object.defineProperty(window, "innerHeight", { configurable: true, writable: true, value: 800 });
     const { initSharedStartMenu } = await loadStartMenuWithMocks();
     const menu = initSharedStartMenu({ floatingTools: {}, mount: document.body });
@@ -622,12 +631,14 @@ describe("shell UI integration", () => {
     trigger.click();
 
     expect(menu.list.hidden).toBe(false);
-    expect(menu.list.style.overflowY).toBe("visible");
-    expect(menu.list.style.maxHeight).toBe("none");
-    expect(Number.parseInt(menu.list.style.top, 10)).toBe(128);
+    expect(menu.list.classList.contains("vb-app-launcher")).toBe(true);
+    expect(Number.parseInt(menu.list.style.top, 10)).toBeGreaterThanOrEqual(8);
+    expect(Number.parseInt(menu.list.style.left, 10)).toBeGreaterThanOrEqual(8);
+    expect(Number.parseInt(menu.list.style.height, 10)).toBeLessThanOrEqual(784);
+    expect(Number.parseInt(menu.list.style.width, 10)).toBeGreaterThan(700);
   });
 
-  it("start menu opens above the trigger when below space is tight but above space fits", async () => {
+  it("start menu launcher uses the safe work area when below space is tight", async () => {
     Object.defineProperty(window, "innerHeight", { configurable: true, writable: true, value: 500 });
     const { initSharedStartMenu } = await loadStartMenuWithMocks();
     const menu = initSharedStartMenu({ floatingTools: {}, mount: document.body });
@@ -639,12 +650,12 @@ describe("shell UI integration", () => {
 
     trigger.click();
 
-    expect(menu.list.style.overflowY).toBe("visible");
-    expect(menu.list.style.maxHeight).toBe("none");
-    expect(Number.parseInt(menu.list.style.top, 10)).toBeLessThan(430);
+    expect(Number.parseInt(menu.list.style.top, 10)).toBeGreaterThanOrEqual(8);
+    expect(Number.parseInt(menu.list.style.height, 10)).toBeLessThanOrEqual(484);
+    expect(Number.parseInt(menu.list.style.top, 10) + Number.parseInt(menu.list.style.height, 10)).toBeLessThanOrEqual(492);
   });
 
-  it("start menu scrolls only when neither side has enough vertical space", async () => {
+  it("start menu launcher shrinks to the available work area on short viewports", async () => {
     Object.defineProperty(window, "innerHeight", { configurable: true, writable: true, value: 260 });
     const { initSharedStartMenu } = await loadStartMenuWithMocks();
     const menu = initSharedStartMenu({ floatingTools: {}, mount: document.body });
@@ -656,12 +667,12 @@ describe("shell UI integration", () => {
 
     trigger.click();
 
-    expect(menu.list.style.overflowY).toBe("auto");
-    expect(Number.parseInt(menu.list.style.maxHeight, 10)).toBeGreaterThan(0);
-    expect(Number.parseInt(menu.list.style.maxHeight, 10)).toBeLessThan(500);
+    expect(Number.parseInt(menu.list.style.height, 10)).toBeGreaterThan(0);
+    expect(Number.parseInt(menu.list.style.height, 10)).toBeLessThan(500);
+    expect(menu.list.style.maxHeight).toBe(menu.list.style.height);
   });
 
-  it("start menu recomputes available height while open on resize", async () => {
+  it("start menu launcher recomputes available height while open on resize", async () => {
     Object.defineProperty(window, "innerHeight", { configurable: true, writable: true, value: 260 });
     const { initSharedStartMenu } = await loadStartMenuWithMocks();
     const menu = initSharedStartMenu({ floatingTools: {}, mount: document.body });
@@ -671,13 +682,13 @@ describe("shell UI integration", () => {
     document.body.append(trigger);
     menu.bindTrigger(trigger);
     trigger.click();
-    const firstMaxHeight = Number.parseInt(menu.list.style.maxHeight, 10);
+    const firstHeight = Number.parseInt(menu.list.style.height, 10);
 
     Object.defineProperty(window, "innerHeight", { configurable: true, writable: true, value: 420 });
     window.dispatchEvent(new Event("resize"));
 
-    expect(Number.parseInt(menu.list.style.maxHeight, 10)).toBeGreaterThan(firstMaxHeight);
-    expect(menu.list.style.overflowY).toBe("auto");
+    expect(Number.parseInt(menu.list.style.height, 10)).toBeGreaterThan(firstHeight);
+    expect(menu.list.style.maxHeight).toBe(menu.list.style.height);
   });
 
   it("dragging a normal shell window clamps below the toolbar work area", async () => {
@@ -748,6 +759,7 @@ describe("shell UI integration", () => {
     const appCss = readProjectFile("src/styles/app.less");
     const taskbarBlock = getCssBlock(appCss, ".vb-shell-taskbar");
     const trayBlock = getCssBlock(appCss, ".vb-shell-taskbar-tray");
+    const startButtonBlock = getCssBlock(appCss, ".vb-shell-taskbar-start");
     const handleBlock = getCssBlock(appCss, ".vb-shell-taskbar-drag-handle");
     const itemBlock = getCssBlock(appCss, ".vb-shell-taskbar-item");
     const dragLayerBlock = getCssBlock(appCss, ".vb-shell-drag-layer");
@@ -756,6 +768,8 @@ describe("shell UI integration", () => {
     expect(getCssBlock(appCss, "[data-vb-shell-window] *")).toContain("touch-action: auto");
     expect(appCss).not.toMatch(/\[data-vb-shell-window\]\s+\*\s*\{[^}]*touch-action:\s*none/s);
     expect(taskbarBlock).toContain("touch-action: none");
+    expect(taskbarBlock).toContain("--vb-shell-taskbar-start-width: 52px");
+    expect(taskbarBlock).toContain("gap: var(--vb-shell-taskbar-gap)");
     expect(taskbarBlock).not.toContain("contain: layout paint");
     expect(taskbarBlock).not.toContain("overflow-x: auto");
     expect(taskbarBlock).not.toContain("-webkit-overflow-scrolling");
@@ -767,7 +781,8 @@ describe("shell UI integration", () => {
     expect(trayBlock).toContain("flex-wrap: wrap");
     expect(trayBlock).toContain("width: auto");
     expect(trayBlock).toContain("max-width: max(");
-    expect(trayBlock).toContain("calc(var(--vb-shell-taskbar-max-width) - var(--vb-shell-taskbar-handle-width) - var(--vb-shell-taskbar-padding-inline-total))");
+    expect(trayBlock).toContain("var(--vb-shell-taskbar-start-width)");
+    expect(trayBlock).toContain("var(--vb-shell-taskbar-gap)");
     expect(trayBlock).toContain("overflow: visible");
     expect(trayBlock).toContain("padding: 0");
     expect(trayBlock).toContain("margin: 0");
@@ -780,6 +795,10 @@ describe("shell UI integration", () => {
     expect(handleBlock).toContain("margin: 0");
     expect(handleBlock).toContain("touch-action: none");
     expect(handleBlock).toContain("-webkit-user-drag: none");
+    expect(startButtonBlock).toContain("width: var(--vb-shell-taskbar-start-width)");
+    expect(startButtonBlock).toContain("min-height: 52px");
+    expect(startButtonBlock).toContain("touch-action: manipulation");
+    expect(startButtonBlock).toContain("-webkit-user-drag: none");
     expect(itemBlock).toContain("touch-action: none");
     expect(itemBlock).toContain("-webkit-user-drag: none");
     expect(dragLayerBlock).toContain("position: fixed");
@@ -791,8 +810,9 @@ describe("shell UI integration", () => {
     expect(dragGhostBlock).toContain("touch-action: none");
   });
 
-  it("taskbar and detached FABs stay above normal shell windows", () => {
+  it("keeps taskbar and detached FABs above normal app windows", () => {
     const appCss = readProjectFile("src/styles/app.less");
+    const boardCss = readProjectFile("src/styles/board.less");
 
     expect(appCss).toContain("--vb-z-shell-window-max: 1890");
     expect(appCss).toContain("--vb-z-shell-taskbar: 1950");
@@ -809,7 +829,11 @@ describe("shell UI integration", () => {
     expect(getCssBlock(appCss, ".vb-shell-taskbar-item.is-detached")).toContain("z-index: var(--vb-z-shell-taskbar, 1950)");
     expect(getCssBlock(appCss, ".vb-shell-taskbar.is-dragging")).toContain("z-index: var(--vb-z-shell-taskbar, 1950)");
     expect(getCssBlock(appCss, ".vb-shell-taskbar-item.is-dragging")).toContain("z-index: var(--vb-z-shell-taskbar, 1950)");
+    expect(appCss).not.toContain('[data-vb-shell-window-active="true"][data-vb-shell-window-fullscreen="false"]');
+    expect(appCss).not.toContain("z-index: calc(var(--vb-z-shell-start-menu, 1960) - 1) !important");
     expect(getCssBlock(appCss, ".app-start-menu-list")).toContain("z-index: var(--vb-z-shell-start-menu, 1960)");
+    expect(getCssBlock(boardCss, ".color-popup")).toContain("z-index: var(--vb-z-shell-window-max, 1890)");
+    expect(boardCss).not.toContain("z-index: 9999");
   });
 
   it("keeps the Start menu layer above the activity indicator layer", () => {

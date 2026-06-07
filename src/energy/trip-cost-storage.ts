@@ -46,6 +46,10 @@ const DEFAULT_VALUES: TripCostValues = {
 
 export function loadTripCostSettings(): TripCostSettings {
   const stored = loadJson<Partial<TripCostSettings>>(SETTINGS_KEY, null);
+  return normalizeTripCostSettings(stored);
+}
+
+export function normalizeTripCostSettings(stored: Partial<TripCostSettings> | null | undefined): TripCostSettings {
   const defaultUnit = getPreferredTripDistanceUnit();
   return {
     ...DEFAULT_SETTINGS,

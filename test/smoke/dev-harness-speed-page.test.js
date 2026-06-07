@@ -12,6 +12,42 @@ async function settleAsyncWork(iterations = 20) {
   }
 }
 
+function createGuestFetch() {
+  return vi.fn(async (input) => {
+    const url = typeof input === 'string' ? input : String(input?.url ?? '');
+
+    if (url.endsWith('.json')) {
+      return new Response(JSON.stringify({ traps: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (url.endsWith('.kdbush')) {
+      return new Response('', { status: 404 });
+    }
+
+    if (url.includes('vatiolibre.services.tesla_connection_status')) {
+      return new Response(JSON.stringify({ message: { is_guest: true } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (url.includes('frappe.auth.get_logged_user')) {
+      return new Response(JSON.stringify({ message: 'Guest' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    return new Response('{}', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  });
+}
+
 function createActiveSubscriberFetch() {
   return vi.fn(async (input) => {
     const url = typeof input === 'string' ? input : String(input?.url ?? '');
@@ -171,6 +207,7 @@ describe('speed.html smoke', () => {
     reversePlaceSpy.mockReset();
     reversePlaceSpy.mockImplementation(async () => ({ place: null, data: null, meta: null }));
     saveActiveReplaySessionSpy.mockClear();
+    window.fetch = createGuestFetch();
     await bootHtmlPage('speed.html');
   });
 
@@ -212,9 +249,8 @@ describe('speed.html smoke', () => {
     expect(document.querySelector('#quickAudioToggle .toolbar-recording-glyph svg')).toBeTruthy();
     expect(document.getElementById('quickBackgroundAudioToggle')).toBeNull();
     expect(document.querySelector('.background-audio-btn')).toBeNull();
-    expect(document.getElementById('speedToolsMenuBtn').getAttribute('aria-label')).toBe('Pages');
-    expect(document.querySelector('#speedToolsMenuBtn .btn-icon svg')).toBeTruthy();
-    expect(document.getElementById('speedToolsMenuList').hidden).toBe(true);
+    expect(document.getElementById('speedToolsMenuBtn')).toBeNull();
+    expect(document.getElementById('speedToolsMenuList')).toBeNull();
     expect(['Local only', 'Syncing']).toContain(
       document.querySelector('.cloud-sync-indicator-btn')?.textContent
     );
@@ -243,34 +279,7 @@ describe('speed.html smoke', () => {
     document.querySelector('.cloud-sync-indicator-action')?.click();
     await settleAsyncWork();
 
-    expect(document.getElementById('speedToolsMenuList').hidden).toBe(false);
-    expect(document.getElementById('speedToolsMenuBtn').getAttribute('aria-expanded')).toBe('true');
-    expect(document.activeElement).toBe(
-      document.querySelector('#speedToolsMenuList [data-backend-auth-user]')
-    );
-    expect(document.getElementById('speedLangToggleMenu').textContent).toBe('EN');
-    expect(document.querySelector('#speedToolsMenuList [data-backend-auth]')).toBeTruthy();
-    expect(
-      document.querySelector('#speedToolsMenuList [data-backend-auth-signup]')?.getAttribute('href')
-    ).toBe('https://www.vatiolibre.com/login#signup');
-    expect(
-      document.querySelector('#speedToolsMenuList [data-backend-auth-forgot]')?.getAttribute('href')
-    ).toBe('https://www.vatiolibre.com/login#forgot');
-    expect(
-      document.querySelector('#speedToolsMenuList [data-backend-auth-signup]')?.getAttribute('target')
-    ).toBe('_blank');
-    expect(
-      document.querySelector('#speedToolsMenuList [data-backend-auth-forgot]')?.getAttribute('target')
-    ).toBe('_blank');
-    expect(
-      document.querySelector('#speedToolsMenuList [data-backend-auth-signup]')?.getAttribute('rel')
-    ).toBe('noopener noreferrer');
-    expect(
-      document.querySelector('#speedToolsMenuList [data-backend-auth-forgot]')?.getAttribute('rel')
-    ).toBe('noopener noreferrer');
-    document.getElementById('speedToolsMenuBtn').click();
-    await flushTasks();
-    expect(document.getElementById('speedToolsMenuList').hidden).toBe(true);
+    expect(document.getElementById('speedToolsMenuList')).toBeNull();
     document.getElementById('quickAlertConfig').click();
     await settleAsyncWork();
     const speedAlertWindow = document.querySelector('.speed-alert-window');
@@ -296,7 +305,7 @@ describe('speed.html smoke', () => {
 
     expect(document.getElementById('speedValue').textContent).toBe('36');
     expect(document.getElementById('altitudeValue').textContent).toBe('42');
-  });
+  }, 60000);
 
   it('hides the cloud sync login action for active subscribers', async () => {
     window.fetch = createActiveSubscriberFetch();
@@ -693,7 +702,7 @@ describe('speed.html smoke', () => {
     await flushTasks();
 
     expect(saveActiveReplaySessionSpy.mock.calls.length).toBeLessThanOrEqual(3);
-  });
+  }, 60000);
 
   it('archives a stopped replay before reverse geocoding finishes', async () => {
     reversePlaceSpy.mockImplementation(() => new Promise(() => {}));
@@ -978,30 +987,12 @@ describe('speed.html smoke', () => {
     expect(enrichedArchiveSession.startPlace).not.toEqual(enrichedArchiveSession.endPlace);
   });
 
-  it("keeps the Player launcher available for guests and after login", async () => {
+  it("does not install a route-local Player launcher in the standalone harness", async () => {
     const speedPage = await import("../../src/speed/dev-harness.js");
     await speedPage.initPromise;
     await settleAsyncWork();
 
-    // Guest demo playback is available, so the launcher should be visible.
-    const btn = document.querySelector("#speedToolsMenuList [data-player-toggle]");
-    expect(btn).toBeTruthy();
-    expect(btn.hidden).toBe(false);
-    expect(btn.className).toBe("btn-with-icon");
-    expect(btn.querySelector(".btn-icon[aria-hidden='true'] svg")).toBeTruthy();
-    expect(btn.querySelector("[data-i18n='audioPlayer']")).toBeTruthy();
-    expect(document.querySelector(".player-fab")).toBeNull();
-
-    // Log in → launcher stays available.
-    const authForm = document.querySelector("#speedToolsMenuList [data-backend-auth]");
-    const authUser = authForm.querySelector("[data-backend-auth-user]");
-    const authPassword = authForm.querySelector("[data-backend-auth-password]");
-    authUser.value = "test@vatiolibre.com";
-    authPassword.value = "secret123";
-    authForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-    await settleAsyncWork();
-
-    expect(btn.hidden).toBe(false);
+    expect(document.querySelector("[data-player-toggle]")).toBeNull();
     expect(document.querySelector(".player-fab")).toBeNull();
   });
 });

@@ -83,8 +83,12 @@ function normalizeCapabilities(capabilities: LegacyShellOptions = {}): ShellWind
   const snapZones = Array.isArray(capabilities.snapZones)
     ? capabilities.snapZones.filter((zone) => SNAP_ZONES.has(zone))
     : null;
+  const minWidth = toNumber(capabilities.minWidth);
+  const minHeight = toNumber(capabilities.minHeight);
   const maxWidth = toNumber(capabilities.maxWidth);
   const maxHeight = toNumber(capabilities.maxHeight);
+  const normalizedMinWidth = minWidth !== null && minWidth > 0 ? minWidth : null;
+  const normalizedMinHeight = minHeight !== null && minHeight > 0 ? minHeight : null;
   return {
     draggable: capabilities.draggable !== false,
     resizable: capabilities.resizable === true,
@@ -95,10 +99,29 @@ function normalizeCapabilities(capabilities: LegacyShellOptions = {}): ShellWind
     snap: capabilities.snap !== false,
     snapZones,
     preserveIntrinsicWidth: capabilities.preserveIntrinsicWidth === true,
-    maxWidth: maxWidth !== null && maxWidth > 0 ? maxWidth : null,
-    maxHeight: maxHeight !== null && maxHeight > 0 ? maxHeight : null,
+    minWidth: normalizedMinWidth,
+    minHeight: normalizedMinHeight,
+    maxWidth: maxWidth !== null && maxWidth > 0
+      ? Math.max(maxWidth, normalizedMinWidth || 0)
+      : null,
+    maxHeight: maxHeight !== null && maxHeight > 0
+      ? Math.max(maxHeight, normalizedMinHeight || 0)
+      : null,
     ...(capabilities.pinnable !== undefined ? { pinnable: capabilities.pinnable === true } : {}),
     ...(capabilities.fullscreen !== undefined ? { fullscreen: capabilities.fullscreen === true } : {}),
+  };
+}
+
+function getCapabilitySizeConstraints(record: MutableShellWindowRecord | null | undefined) {
+  const minWidth = toNumber(record?.capabilities?.minWidth);
+  const minHeight = toNumber(record?.capabilities?.minHeight);
+  const maxWidth = toNumber(record?.capabilities?.maxWidth);
+  const maxHeight = toNumber(record?.capabilities?.maxHeight);
+  return {
+    minWidth: minWidth !== null && minWidth > 0 ? minWidth : undefined,
+    minHeight: minHeight !== null && minHeight > 0 ? minHeight : undefined,
+    maxWidth: maxWidth !== null && maxWidth > 0 ? maxWidth : undefined,
+    maxHeight: maxHeight !== null && maxHeight > 0 ? maxHeight : undefined,
   };
 }
 
@@ -110,6 +133,15 @@ function getElementBounds(element: unknown): ShellBounds | null {
   const width = toNumber(element.style?.width) ?? toNumber(rect.width);
   const height = toNumber(element.style?.height) ?? toNumber(rect.height);
   return normalizeBounds({ left, top, width, height }) || { left, top };
+}
+
+function getElementVisibleBottomInset(element: unknown) {
+  if (!isElement(element)) return 0;
+  const style = element.ownerDocument?.defaultView?.getComputedStyle?.(element);
+  const inline = Number.parseFloat(element.style.getPropertyValue("--vb-shell-visible-bottom-inset"));
+  if (Number.isFinite(inline) && inline > 0) return inline;
+  const computed = Number.parseFloat(style?.getPropertyValue("--vb-shell-visible-bottom-inset") || "");
+  return Number.isFinite(computed) && computed > 0 ? computed : 0;
 }
 
 function applyBounds(element: unknown, bounds: unknown) {
@@ -124,6 +156,32 @@ function applyBounds(element: unknown, bounds: unknown) {
   if (next.height) element.style.height = `${Math.round(next.height)}px`;
 }
 
+function applyElementSizeConstraints(record: MutableShellWindowRecord) {
+  if (!isElement(record.element)) return;
+  const fullscreen = isFullscreenRecord(record);
+  const minWidth = toNumber(record.capabilities?.minWidth);
+  const minHeight = toNumber(record.capabilities?.minHeight);
+  const maxWidth = toNumber(record.capabilities?.maxWidth);
+  const maxHeight = toNumber(record.capabilities?.maxHeight);
+
+  record.element.style.minWidth = !fullscreen && minWidth !== null && minWidth > 0
+    ? `${Math.round(minWidth)}px`
+    : "";
+  record.element.style.minHeight = !fullscreen && minHeight !== null && minHeight > 0
+    ? `${Math.round(minHeight)}px`
+    : "";
+  record.element.style.maxWidth = fullscreen
+    ? "none"
+    : maxWidth !== null && maxWidth > 0
+      ? `${Math.round(maxWidth)}px`
+      : "";
+  record.element.style.maxHeight = fullscreen
+    ? "none"
+    : maxHeight !== null && maxHeight > 0
+      ? `${Math.round(maxHeight)}px`
+      : "";
+}
+
 function applyCapabilityConstraints(
   bounds: unknown,
   record: MutableShellWindowRecord | null | undefined,
@@ -132,6 +190,8 @@ function applyCapabilityConstraints(
   const next = normalizeBounds(bounds);
   if (!next || !record?.capabilities) return next;
   const constrained = { ...next };
+  const minWidth = toNumber(record.capabilities.minWidth);
+  const minHeight = toNumber(record.capabilities.minHeight);
   const maxWidth = toNumber(record.capabilities.maxWidth);
   const maxHeight = toNumber(record.capabilities.maxHeight);
   if (maxWidth !== null && maxWidth > 0 && constrained.width) {
@@ -148,6 +208,12 @@ function applyCapabilityConstraints(
     if (currentWidth !== null && currentWidth > 0) {
       constrained.width = Math.min(constrained.width, currentWidth);
     }
+  }
+  if (minWidth !== null && minWidth > 0 && constrained.width) {
+    constrained.width = Math.max(constrained.width, minWidth);
+  }
+  if (minHeight !== null && minHeight > 0 && constrained.height) {
+    constrained.height = Math.max(constrained.height, minHeight);
   }
   return constrained;
 }
@@ -175,6 +241,10 @@ function sanitizeNormalBounds(bounds: unknown, options: LegacyShellOptions = {})
     currentBounds: options.currentBounds,
     safeMargin: options.safeMargin,
     margin: options.margin,
+    minWidth: options.minWidth,
+    minHeight: options.minHeight,
+    maxWidth: options.maxWidth,
+    maxHeight: options.maxHeight,
   });
 }
 
@@ -185,6 +255,7 @@ function sanitizeRecordBounds(record: MutableShellWindowRecord | null | undefine
   const constrained = applyCapabilityConstraints(bounds, record, options);
   return sanitizeNormalBounds(constrained, {
     ...options,
+    ...getCapabilitySizeConstraints(record),
     currentBounds: options.currentBounds || record?.bounds || record?.restoreBounds,
   });
 }
@@ -236,6 +307,7 @@ function shallowRecord(record: MutableShellWindowRecord | null | undefined): She
     lazy: record.lazy,
     restoreOnBoot: record.restoreOnBoot,
     storageKey: record.storageKey,
+    defaultBounds: record.defaultBounds,
     version: record.version,
   } as ShellWindowRecord;
 }
@@ -378,6 +450,7 @@ export function createShellWindowManager(options: LegacyShellOptions = {}): Shel
     record.element.setAttribute("data-vb-shell-window-fullscreen", isFullscreenRecord(record) ? "true" : "false");
     record.element.setAttribute("data-vb-floating-panel", "");
     record.element.setAttribute("data-vb-floating-active", record.active ? "true" : "false");
+    applyElementSizeConstraints(record);
     record.element.style.zIndex = String(getRecordZIndex(record));
   }
 
@@ -455,6 +528,7 @@ export function createShellWindowManager(options: LegacyShellOptions = {}): Shel
     const elementBounds = getElementBounds(config.element);
 
     const configuredState = VALID_STATES.has(config.state) ? config.state : (record.state || (config.element.hidden ? "closed" : "open"));
+    const configuredDefaultBounds = normalizeBounds(config.defaultBounds) || normalizeBounds(config.bounds) || record.defaultBounds || elementBounds;
     const configuredBounds = normalizeBounds(config.bounds) || record.bounds || elementBounds;
     const configuredRestoreBounds = normalizeBounds(config.restoreBounds) || record.restoreBounds || elementBounds;
     const configuredCapabilities = normalizeCapabilities({ ...record.capabilities, ...config.capabilities });
@@ -490,6 +564,11 @@ export function createShellWindowManager(options: LegacyShellOptions = {}): Shel
       lazy: config.lazy === true || record.lazy === true,
       restoreOnBoot: config.restoreOnBoot !== undefined ? config.restoreOnBoot !== false : record.restoreOnBoot !== false,
       storageKey: config.storageKey || record.storageKey || null,
+      defaultBounds: sanitizeRecordBounds(
+        constraintRecord,
+        configuredDefaultBounds,
+        { root, fullscreen: false },
+      ) || configuredDefaultBounds,
       version: 1,
     });
 
@@ -581,7 +660,11 @@ export function createShellWindowManager(options: LegacyShellOptions = {}): Shel
       record.bounds = fullscreenBounds;
       applyBounds(record.element, fullscreenBounds);
     } else if (record.bounds) {
-      const bounds = sanitizeRecordBounds(record, record.bounds, { root }) || record.bounds;
+      const bounds = sanitizeRecordBounds(record, record.bounds, {
+        root,
+        preferVisibleBottom: true,
+        visibleBottomInset: getElementVisibleBottomInset(record.element),
+      }) || record.bounds;
       record.bounds = bounds;
       applyBounds(record.element, bounds);
     }
@@ -652,7 +735,11 @@ export function createShellWindowManager(options: LegacyShellOptions = {}): Shel
     invokeLifecycle(record, "restore", options);
     record.state = "open";
     record.minimized = false;
-    record.bounds = sanitizeRecordBounds(record, record.restoreBounds || record.bounds, { root }) || record.restoreBounds || record.bounds;
+    record.bounds = sanitizeRecordBounds(record, record.restoreBounds || record.bounds, {
+      root,
+      preferVisibleBottom: true,
+      visibleBottomInset: getElementVisibleBottomInset(record.element),
+    }) || record.restoreBounds || record.bounds;
     record.restoreBounds = record.bounds || record.restoreBounds;
     showRecord(record);
     activateWindow(id, { ...options, persist: false });
@@ -684,6 +771,38 @@ export function createShellWindowManager(options: LegacyShellOptions = {}): Shel
     record.bounds = sanitized;
     if (options.updateRestoreBounds !== false && !isFullscreenRecord(record)) record.restoreBounds = sanitized;
     if (options.preserveSnap !== true) record.snap = null;
+    applyBounds(record.element, sanitized);
+    setWindowAttributes(record);
+    emit("vatioboard:shell-window-layout-changed", { id, record: shallowRecord(record) });
+    notify("layout-changed", record);
+    persist(options);
+    return shallowRecord(record);
+  }
+
+  function resetWindowGeometry(id: string, options: LegacyShellOptions = {}) {
+    const record = windows.get(id);
+    if (!record) return null;
+    const fallbackBounds = getElementBounds(record.element) || record.restoreBounds || record.bounds;
+    const defaultBounds = normalizeBounds(record.defaultBounds) || fallbackBounds;
+    if (!defaultBounds) return shallowRecord(record);
+    const sanitized = sanitizeRecordBounds(record, defaultBounds, {
+      root,
+      fullscreen: false,
+      currentBounds: record.bounds,
+      preferVisibleBottom: true,
+      visibleBottomInset: getElementVisibleBottomInset(record.element),
+    }) || defaultBounds;
+
+    if (isFullscreenRecord(record)) {
+      record.state = "open";
+      record.minimized = false;
+      record.element.hidden = false;
+    }
+    record.snap = null;
+    record.bounds = sanitized;
+    record.restoreBounds = sanitized;
+    record.fullscreenRestoreBounds = null;
+    record.fullscreenRestoreSnap = null;
     applyBounds(record.element, sanitized);
     setWindowAttributes(record);
     emit("vatioboard:shell-window-layout-changed", { id, record: shallowRecord(record) });
@@ -822,7 +941,12 @@ export function createShellWindowManager(options: LegacyShellOptions = {}): Shel
       const stored = layout.windows?.[record.id];
       if (!stored) continue;
       applyStoredLayout(record, stored);
-      if ((stored.state === "open" || stored.state === "fullscreen") && record.restoreOnBoot !== false) {
+      if (
+        record.restoreOnBoot === false
+        && (stored.state === "open" || stored.state === "fullscreen" || stored.state === "minimized")
+      ) {
+        closeWindow(record.id, { ...options, invokeLifecycle: false, persist: false });
+      } else if ((stored.state === "open" || stored.state === "fullscreen") && record.restoreOnBoot !== false) {
         openWindow(record.id, { ...options, persist: false });
       } else if (stored.state === "minimized") {
         minimizeWindow(record.id, { ...options, invokeLifecycle: false, persist: false });
@@ -830,8 +954,9 @@ export function createShellWindowManager(options: LegacyShellOptions = {}): Shel
         closeWindow(record.id, { ...options, invokeLifecycle: false, persist: false });
       }
     }
-    if (layout.activeWindowId && windows.has(layout.activeWindowId)) {
-      activateWindow(layout.activeWindowId, { ...options, persist: false });
+    const activeRecord = layout.activeWindowId ? windows.get(layout.activeWindowId) : null;
+    if (activeRecord && activeRecord.state !== "closed" && activeRecord.state !== "hidden") {
+      activateWindow(activeRecord.id, { ...options, persist: false });
     }
     persist(options);
     return listWindows();
@@ -917,6 +1042,7 @@ export function createShellWindowManager(options: LegacyShellOptions = {}): Shel
     restoreWindow,
     toggleWindow,
     updateWindowBounds,
+    resetWindowGeometry,
     snapWindow,
     unsnapWindow,
     canSnapWindow,
@@ -991,6 +1117,10 @@ export function toggleWindow(id, options = {}) {
 
 export function updateWindowBounds(id, bounds, options = {}) {
   return getDefaultShellWindowManager().updateWindowBounds(id, bounds, options);
+}
+
+export function resetWindowGeometry(id, options = {}) {
+  return getDefaultShellWindowManager().resetWindowGeometry(id, options);
 }
 
 export function snapWindow(id, zone, options = {}) {
