@@ -1,5 +1,6 @@
 import { appRegistry } from "./app-registry.js";
 import { appControl } from "./app-control.js";
+import { readShellLayout } from "../shared/shell-layout-store.js";
 import type { AppRoute } from "../types/route";
 import type { ShellRuntime } from "../types/shell";
 import type {
@@ -7,8 +8,10 @@ import type {
   VatioAppId,
   VatioAppLaunchOptions,
   VatioAppManifest,
+  VatioAppRegistry,
   VatioAppRuntime,
   VatioAppShellRuntime,
+  VatioShellWindowRestoreOptions,
   VatioRunningApp,
   VatioShellWindowAppModule,
 } from "./types";
@@ -43,13 +46,17 @@ function getShellWindowAppFactory(entryModule: unknown) {
 
 export interface CreateAppLauncherOptions {
   shellManager?: ShellRuntime | null;
+  registry?: VatioAppRegistry | null;
   navigate?: (href: string, options?: { replace?: boolean }) => boolean;
   getCurrentRoute?: () => AppRoute | null;
   shellAppRuntimeManager?: ShellAppRuntimeManager | null;
 }
 
+const RESTORABLE_SHELL_WINDOW_STATES = new Set(["open", "fullscreen", "minimized"]);
+
 export function createAppLauncher({
   shellManager = null,
+  registry = appRegistry,
   navigate,
   getCurrentRoute,
   shellAppRuntimeManager = null,
@@ -57,7 +64,7 @@ export function createAppLauncher({
   const launchingAppIds = new Set<VatioAppId>();
 
   function getInstalledApps(): VatioAppManifest[] {
-    return appRegistry.listApps();
+    return registry?.listApps?.() || [];
   }
 
   async function loadShellWindowEntry(manifest: VatioAppManifest, runtime: VatioAppRuntime | null) {
@@ -153,8 +160,31 @@ export function createAppLauncher({
     return registered ? openOrFocusRegisteredShellWindow(manifest, options) : false;
   }
 
+  async function restorePersistedShellWindows(options: VatioShellWindowRestoreOptions = {}) {
+    if (!shellManager) return [];
+
+    const layout = options.layout || readShellLayout();
+    const windows = layout?.windows || {};
+    const restorableStates = new Set(options.states || Array.from(RESTORABLE_SHELL_WINDOW_STATES));
+    const candidates = getInstalledApps().filter((manifest) => {
+      const shellWindowId = manifest.window?.shellWindowId;
+      if (!shellWindowId) return false;
+      const stored = windows[shellWindowId];
+      if (!stored || !restorableStates.has(stored.state)) return false;
+      if (manifest.window?.restoreOnBoot !== true) return false;
+      if (!appControl.isEnabled(manifest.id)) return false;
+      return !shellManager.getWindow(shellWindowId);
+    });
+
+    const loaded = await Promise.all(candidates.map(async (manifest) => {
+      const runtime = shellAppRuntimeManager?.ensureRuntime(manifest.id) || null;
+      return await loadShellWindowEntry(manifest, runtime) ? manifest.id : null;
+    }));
+    return loaded.filter((appId): appId is VatioAppId => Boolean(appId));
+  }
+
   function openApp(appId: VatioAppId, options: VatioAppLaunchOptions = {}) {
-    const manifest = appRegistry.getApp(appId);
+    const manifest = registry?.getApp?.(appId) || null;
     if (!manifest) {
       console.warn(`[vatioboard:launcher] Unknown app "${appId}".`);
       return false;
@@ -186,7 +216,7 @@ export function createAppLauncher({
   }
 
   async function openAppAsync(appId: VatioAppId, options: VatioAppLaunchOptions = {}) {
-    const manifest = appRegistry.getApp(appId);
+    const manifest = registry?.getApp?.(appId) || null;
     if (!manifest) {
       console.warn(`[vatioboard:launcher] Unknown app "${appId}".`);
       return false;
@@ -218,7 +248,7 @@ export function createAppLauncher({
   }
 
   function closeApp(appId: VatioAppId, options: VatioAppLaunchOptions = {}) {
-    const manifest = appRegistry.getApp(appId);
+    const manifest = registry?.getApp?.(appId) || null;
     if (!manifest) return false;
     if (manifest.window?.shellWindowId && shellManager) {
       shellAppRuntimeManager?.ensureRuntime(manifest.id);
@@ -228,7 +258,7 @@ export function createAppLauncher({
   }
 
   function focusApp(appId: VatioAppId, options: VatioAppLaunchOptions = {}) {
-    const manifest = appRegistry.getApp(appId);
+    const manifest = registry?.getApp?.(appId) || null;
     if (!manifest) return false;
     if (!appControl.isEnabled(appId)) return false;
     if (manifest.route && navigate) return navigate(routeHref(manifest.route), options);
@@ -239,7 +269,7 @@ export function createAppLauncher({
   function getRunningApps(): VatioRunningApp[] {
     const running: VatioRunningApp[] = [];
     const currentRoute = getCurrentRoute?.();
-    const currentApp = currentRoute?.path ? appRegistry.getAppByRoute(currentRoute.path) : null;
+    const currentApp = currentRoute?.path ? registry?.getAppByRoute?.(currentRoute.path) || null : null;
     if (currentApp) {
       running.push({
         appId: currentApp.id,
@@ -251,7 +281,7 @@ export function createAppLauncher({
 
     for (const record of shellManager?.listWindows?.() || []) {
       if (record.state === "closed" || record.state === "hidden") continue;
-      const manifest = appRegistry.listApps().find((app) => app.window?.shellWindowId === record.id);
+      const manifest = getInstalledApps().find((app) => app.window?.shellWindowId === record.id);
       running.push({
         appId: manifest?.id || record.id,
         title: manifest?.title || record.title || record.id,
@@ -261,7 +291,7 @@ export function createAppLauncher({
     }
     for (const appId of launchingAppIds) {
       if (running.some((app) => app.appId === appId)) continue;
-      const manifest = appRegistry.getApp(appId);
+      const manifest = registry?.getApp?.(appId) || null;
       if (!manifest) continue;
       running.push({
         appId,
@@ -276,6 +306,7 @@ export function createAppLauncher({
   return {
     openApp,
     openAppAsync,
+    restorePersistedShellWindows,
     closeApp,
     focusApp,
     getAppRuntime(appId) {

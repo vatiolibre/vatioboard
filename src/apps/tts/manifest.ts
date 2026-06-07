@@ -40,7 +40,7 @@ export const ttsAppManifest = defineAppManifest({
     mode: "floating",
     defaultBounds: { left: 52, top: 108, width: 456, height: 510 },
     capabilities: ttsWindowCapabilities,
-    restoreOnBoot: false,
+    restoreOnBoot: true,
     lazy: true,
   },
   tags: ["tool", "tts", "voice", "piper", "experimental"],

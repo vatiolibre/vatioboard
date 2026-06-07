@@ -87,6 +87,25 @@ function scheduleRoutePreload({ router, routes: appRoutes }) {
   }
 }
 
+function installShellLayoutPersistenceFlush(shellManager: ShellRuntime) {
+  const flush = () => {
+    shellManager.persistShellLayout({ flush: true });
+  };
+  const flushWhenHidden = () => {
+    if (document.visibilityState === "hidden") flush();
+  };
+
+  window.addEventListener("pagehide", flush);
+  window.addEventListener("beforeunload", flush);
+  document.addEventListener("visibilitychange", flushWhenHidden);
+
+  return () => {
+    window.removeEventListener("pagehide", flush);
+    window.removeEventListener("beforeunload", flush);
+    document.removeEventListener("visibilitychange", flushWhenHidden);
+  };
+}
+
 export async function startAppShell({
   viewRoot = document.getElementById("app-view"),
   persistentLayer = document.getElementById("app-persistent-layer"),
@@ -109,6 +128,7 @@ export async function startAppShell({
   initBackendAuthControllers();
 
   const shellManager = getDefaultShellWindowManager({ root: persistentLayer }) as ShellRuntime;
+  const uninstallShellLayoutPersistenceFlush = installShellLayoutPersistenceFlush(shellManager);
   context.shellManager = shellManager;
   const welcomeConsent = showWelcomeConsentIfNeeded({ gpsService: context.gpsService });
   const accountPanel = initAccountPanel({
@@ -184,6 +204,7 @@ export async function startAppShell({
   });
   const shellKeyboard = installShellKeyboard({ shellManager });
   floatingTools.taskbar = shellTaskbar;
+  await appLauncher.restorePersistedShellWindows?.();
   shellManager.restoreShellLayout();
 
   installLinkInterceptor();
@@ -268,6 +289,7 @@ export async function startAppShell({
   const originalRouterDestroy = router.destroy;
   router.destroy = () => {
     shellKeyboard.uninstall();
+    uninstallShellLayoutPersistenceFlush();
     shellTaskbar.destroy();
     accountPanel.destroy();
     unsubscribeAppControl?.();

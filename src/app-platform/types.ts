@@ -9,8 +9,10 @@ import type {
 } from "../types/services";
 import type {
   ShellBounds,
+  ShellLayoutSnapshot,
   ShellRuntime,
   ShellWindowCapabilities,
+  ShellWindowState,
 } from "../types/shell";
 import type { JsonValue } from "../types/storage";
 
@@ -350,9 +352,15 @@ export interface VatioRunningApp {
   state: string;
 }
 
+export interface VatioShellWindowRestoreOptions {
+  layout?: ShellLayoutSnapshot | null;
+  states?: readonly ShellWindowState[];
+}
+
 export interface VatioAppShellRuntime {
   openApp(appId: VatioAppId, options?: VatioAppLaunchOptions): boolean;
   openAppAsync?(appId: VatioAppId, options?: VatioAppLaunchOptions): Promise<boolean>;
+  restorePersistedShellWindows?(options?: VatioShellWindowRestoreOptions): Promise<VatioAppId[]>;
   closeApp(appId: VatioAppId, options?: VatioAppLaunchOptions): boolean;
   focusApp(appId: VatioAppId, options?: VatioAppLaunchOptions): boolean;
   getAppRuntime?(appId: VatioAppId): VatioAppRuntime | null;

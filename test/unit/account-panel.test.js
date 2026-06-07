@@ -188,4 +188,42 @@ describe("account panel", () => {
     accountPanel.destroy();
     shellManager.destroy();
   });
+
+  it("restores the account panel after a simulated shell reload", async () => {
+    const { createShellWindowManager, initAccountPanel } = await loadAccountPanel();
+    const shellManager = createShellWindowManager({
+      root: document.body,
+      storeOptions: { storage: localStorage, migrateLegacy: false },
+    });
+    const accountPanel = initAccountPanel({
+      mount: document.body,
+      shellManager,
+    });
+
+    accountPanel.open({ focus: false, source: "test" });
+    shellManager.updateWindowBounds("account", { left: 144, top: 72, width: 380, height: 420 }, { flush: true });
+    accountPanel.destroy();
+    shellManager.destroy();
+
+    document.body.innerHTML = "";
+    const nextManager = createShellWindowManager({
+      root: document.body,
+      storeOptions: { storage: localStorage, migrateLegacy: false },
+    });
+    const nextAccountPanel = initAccountPanel({
+      mount: document.body,
+      shellManager: nextManager,
+    });
+    nextManager.restoreShellLayout();
+
+    const panel = nextAccountPanel.getElement();
+    const usernameInput = panel.querySelector("[data-backend-auth-user]");
+    expect(panel.hidden).toBe(false);
+    expect(panel.style.left).toBe("144px");
+    expect(panel.style.top).toBe("72px");
+    expect(document.activeElement).not.toBe(usernameInput);
+
+    nextAccountPanel.destroy();
+    nextManager.destroy();
+  });
 });

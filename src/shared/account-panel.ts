@@ -239,6 +239,7 @@ export function initAccountPanel({
     kind: "system",
     title: "Account",
     shellManager,
+    restoreOnBoot: true,
     capabilities: {
       draggable: true,
       resizable: false,

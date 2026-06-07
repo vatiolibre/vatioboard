@@ -613,6 +613,153 @@ describe("VatioBoard OS app platform", () => {
     root.remove();
   });
 
+  it("preloads persisted restorable shell-window apps before layout restore", async () => {
+    const root = document.createElement("div");
+    document.body.append(root);
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    const createShellWindowApp = vi.fn(({ mount, shellManager }) => {
+      const panel = document.createElement("section");
+      panel.hidden = true;
+      mount.append(panel);
+      shellManager.registerWindow({
+        id: "restore-window",
+        title: "Restore Window",
+        element: panel,
+        restoreOnBoot: true,
+        capabilities: { minWidth: 120, minHeight: 100 },
+        defaultBounds: { left: 10, top: 10, width: 220, height: 160 },
+        lifecycle: {
+          open: () => {
+            panel.hidden = false;
+          },
+          close: () => {
+            panel.hidden = true;
+          },
+          minimize: () => {
+            panel.hidden = true;
+          },
+          restore: () => {
+            panel.hidden = false;
+          },
+        },
+      });
+    });
+    const openEntry = vi.fn(async () => ({ createShellWindowApp }));
+    const closedEntry = vi.fn(async () => ({ createShellWindowApp: vi.fn() }));
+    const optOutEntry = vi.fn(async () => ({ createShellWindowApp: vi.fn() }));
+
+    registry.registerApps([
+      makeManifest({
+        id: "test.restore.open",
+        route: undefined,
+        aliases: [],
+        entry: openEntry,
+        surfaces: ["shell-window"],
+        permissions: ["storage.app", "shell.window"],
+        services: ["storage", "shell"],
+        window: {
+          shellWindowId: "restore-window",
+          mode: "floating",
+          defaultBounds: { left: 10, top: 10, width: 220, height: 160 },
+          capabilities: { minWidth: 120, minHeight: 100 },
+          restoreOnBoot: true,
+          lazy: true,
+        },
+      }),
+      makeManifest({
+        id: "test.restore.closed",
+        route: undefined,
+        aliases: [],
+        entry: closedEntry,
+        surfaces: ["shell-window"],
+        permissions: ["storage.app", "shell.window"],
+        services: ["storage", "shell"],
+        window: {
+          shellWindowId: "closed-window",
+          mode: "floating",
+          defaultBounds: { left: 20, top: 20, width: 200, height: 120 },
+          capabilities: {},
+          restoreOnBoot: true,
+          lazy: true,
+        },
+      }),
+      makeManifest({
+        id: "test.restore.optout",
+        route: undefined,
+        aliases: [],
+        entry: optOutEntry,
+        surfaces: ["shell-window"],
+        permissions: ["storage.app", "shell.window"],
+        services: ["storage", "shell"],
+        window: {
+          shellWindowId: "optout-window",
+          mode: "floating",
+          defaultBounds: { left: 30, top: 30, width: 200, height: 120 },
+          capabilities: {},
+          restoreOnBoot: false,
+          lazy: true,
+        },
+      }),
+    ]);
+    localStorage.setItem("vatioboard.shell.layout.v1", JSON.stringify({
+      version: 1,
+      activeWindowId: "restore-window",
+      windows: {
+        "restore-window": {
+          state: "open",
+          previousState: "closed",
+          bounds: { left: 42, top: 64, width: 260, height: 180 },
+          restoreBounds: { left: 42, top: 64, width: 260, height: 180 },
+          zIndex: 1200,
+          minimized: false,
+          snap: null,
+          updatedAt: 1,
+        },
+        "closed-window": {
+          state: "closed",
+          previousState: "open",
+          bounds: { left: 20, top: 20, width: 200, height: 120 },
+          restoreBounds: { left: 20, top: 20, width: 200, height: 120 },
+          zIndex: 1000,
+          minimized: false,
+          snap: null,
+          updatedAt: 1,
+        },
+        "optout-window": {
+          state: "open",
+          previousState: "closed",
+          bounds: { left: 30, top: 30, width: 200, height: 120 },
+          restoreBounds: { left: 30, top: 30, width: 200, height: 120 },
+          zIndex: 1000,
+          minimized: false,
+          snap: null,
+          updatedAt: 1,
+        },
+      },
+    }));
+
+    const shellManager = createShellWindowManager({ root });
+    const launcher = createAppLauncher({ shellManager, registry });
+
+    await expect(launcher.restorePersistedShellWindows()).resolves.toEqual(["test.restore.open"]);
+    expect(openEntry).toHaveBeenCalledTimes(1);
+    expect(closedEntry).not.toHaveBeenCalled();
+    expect(optOutEntry).not.toHaveBeenCalled();
+
+    const registered = shellManager.getWindow("restore-window");
+    expect(registered).toMatchObject({
+      state: "open",
+      bounds: { left: 42, top: 64, width: 260, height: 180 },
+    });
+    expect(registered.element.hidden).toBe(true);
+
+    shellManager.restoreShellLayout();
+    expect(shellManager.getWindow("restore-window").element.hidden).toBe(false);
+
+    shellManager.destroy();
+    root.remove();
+  });
+
   it("adapters expose route, tool, and shell-window definitions for legacy code", () => {
     const routes = getRouteRegistryFromApps();
     expect(routes.find((route) => route.path === "/apps")?.title).toBe("App Manager");
