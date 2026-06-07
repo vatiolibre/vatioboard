@@ -16,12 +16,15 @@ function cssBlock(source, selector) {
 describe("calculator layout", () => {
   it("keeps header controls out of the history row and preserves keypad geometry", () => {
     const calculatorCss = readProjectFile("src/styles/calculator.less");
+    const panel = cssBlock(calculatorCss, ".calc-panel");
     const header = cssBlock(calculatorCss, ".calc-header");
     const headerMain = cssBlock(calculatorCss, ".calc-header-main");
     const headerControls = cssBlock(calculatorCss, ".calc-minimize,\n.calc-close");
     const display = cssBlock(calculatorCss, ".calc-display");
     const history = cssBlock(calculatorCss, ".calc-history-text");
 
+    expect(panel).toContain("min-height: 548px");
+    expect(panel).toContain("--vb-shell-visible-bottom-inset: 34px");
     expect(header).toContain("min-height: 46px");
     expect(header).toContain("padding: 8px 90px 8px 10px");
     expect(header).toContain("box-sizing: border-box");

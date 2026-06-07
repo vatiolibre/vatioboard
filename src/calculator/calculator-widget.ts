@@ -323,7 +323,10 @@ export function createCalculatorWidget(options: CalculatorWidgetOptions = {}): C
 
     // If user dragged panel previously, ensure it stays visible
     if (panel.style.left && panel.style.top) {
-      clampElementToViewport(panel);
+      clampElementToViewport(panel, 8, {
+        useShellWorkArea: true,
+        preferVisibleBottom: true,
+      });
     }
 
     if (focus && !isTouchLike) {

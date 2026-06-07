@@ -304,6 +304,7 @@ describe("floating widget z-order", () => {
       maximizable: false,
       snap: false,
       preserveIntrinsicWidth: true,
+      minHeight: 570,
       maxWidth: 640,
     });
     expect(manager.getWindow("player").capabilities).toMatchObject({

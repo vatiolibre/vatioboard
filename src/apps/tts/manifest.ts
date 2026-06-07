@@ -10,6 +10,8 @@ export const ttsWindowCapabilities = {
   maximizable: false,
   snap: false,
   preserveIntrinsicWidth: false,
+  minWidth: 320,
+  minHeight: 360,
   maxWidth: 620,
   maxHeight: 720,
 } as const;

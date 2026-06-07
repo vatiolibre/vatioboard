@@ -17,6 +17,8 @@ import type { ShellLifecycleOptions, ShellRuntime } from "../types/shell";
 
 const ACCOUNT_PANEL_WINDOW_ID = "account";
 const ACCOUNT_PANEL_POS_KEY = "vatioboard.account_panel_pos.v1";
+const ACCOUNT_PANEL_MIN_WIDTH = 320;
+const ACCOUNT_PANEL_MIN_HEIGHT = 360;
 
 type AccountPanelOptions = {
   mount?: HTMLElement;
@@ -197,7 +199,10 @@ export function initAccountPanel({
     panel.hidden = false;
     syncState();
     if (panel.style.left && panel.style.top) {
-      clampElementToViewport(panel);
+      clampElementToViewport(panel, 8, {
+        useShellWorkArea: true,
+        preferVisibleBottom: true,
+      });
     }
     if (focus) {
       const target = authForm.querySelector<HTMLElement>(
@@ -243,6 +248,8 @@ export function initAccountPanel({
       maximizable: false,
       snap: false,
       preserveIntrinsicWidth: true,
+      minWidth: ACCOUNT_PANEL_MIN_WIDTH,
+      minHeight: ACCOUNT_PANEL_MIN_HEIGHT,
       maxWidth: 380,
     },
     lifecycle: {

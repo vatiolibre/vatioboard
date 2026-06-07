@@ -15,6 +15,8 @@
     0 18px 54px rgba(15, 23, 42, 0.22);
 
   width: min(378px, calc(100vw - 24px));
+  min-width: 320px;
+  min-height: 360px;
   max-height: min(560px, calc(100dvh - 104px));
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -231,5 +233,34 @@
     width: auto;
     max-height: calc(100dvh - 16px);
     padding: 12px;
+  }
+
+  .vb-account-panel-auth.backend-auth {
+    padding: 10px;
+    gap: 10px;
+  }
+
+  .vb-account-panel-auth .backend-auth-fields {
+    gap: 8px;
+  }
+
+  .vb-account-panel-auth .backend-auth-input,
+  .vb-account-panel-auth .backend-auth-login-button,
+  .vb-account-panel-auth .backend-auth-sso-button {
+    min-height: 44px;
+  }
+
+  .vb-account-panel-auth .backend-auth-actions {
+    gap: 8px;
+  }
+
+  .vb-account-panel-auth .backend-auth-links {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .vb-account-panel-auth .backend-auth-link {
+    min-height: 38px;
+    padding: 0 8px;
   }
 }

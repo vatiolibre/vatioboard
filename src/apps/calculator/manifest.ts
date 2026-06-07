@@ -10,6 +10,8 @@ const calculatorWindowCapabilities = {
   maximizable: false,
   snap: false,
   preserveIntrinsicWidth: true,
+  minWidth: 320,
+  minHeight: 548,
   maxWidth: 320,
 } as const;
 

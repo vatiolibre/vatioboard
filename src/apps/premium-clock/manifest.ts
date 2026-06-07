@@ -10,6 +10,8 @@ export const premiumClockWindowCapabilities = {
   maximizable: false,
   snap: false,
   preserveIntrinsicWidth: true,
+  minWidth: 320,
+  minHeight: 320,
   maxWidth: 390,
 } as const;
 

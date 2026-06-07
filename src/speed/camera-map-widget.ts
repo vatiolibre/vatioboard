@@ -91,8 +91,8 @@ const DRAG_THRESHOLD_PX = 6;
 const DEFAULT_CENTER = [0, 20];
 const DEFAULT_ZOOM = 1.5;
 const RESIZE_MARGIN_PX = 8;
-const RESIZE_MIN_WIDTH = 320;
-const RESIZE_MIN_HEIGHT = 320;
+const RESIZE_MIN_WIDTH = 420;
+const RESIZE_MIN_HEIGHT = 460;
 const POSITION_POLL_MS = 1000;
 const CAMERA_LOOKAHEAD_M = 1400;
 const CAMERA_AHEAD_ANGLE_DEGREES = 60;
@@ -1850,15 +1850,13 @@ export function createCameraMapWidget(options: AnyRecord = {}) {
   function clampResizeBounds(width, height, bounds = getPanelBounds()) {
     const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1024;
     const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 768;
-    const maxWidth = Math.max(240, viewportWidth - bounds.left - RESIZE_MARGIN_PX);
-    const maxHeight = Math.max(240, viewportHeight - bounds.top - RESIZE_MARGIN_PX);
-    const minWidth = Math.min(RESIZE_MIN_WIDTH, maxWidth);
-    const minHeight = Math.min(RESIZE_MIN_HEIGHT, maxHeight);
+    const maxWidth = Math.max(RESIZE_MIN_WIDTH, viewportWidth - bounds.left - RESIZE_MARGIN_PX);
+    const maxHeight = Math.max(RESIZE_MIN_HEIGHT, viewportHeight - bounds.top - RESIZE_MARGIN_PX);
     return {
       left: bounds.left,
       top: bounds.top,
-      width: Math.round(clampNumber(width, minWidth, maxWidth)),
-      height: Math.round(clampNumber(height, minHeight, maxHeight)),
+      width: Math.round(clampNumber(width, RESIZE_MIN_WIDTH, maxWidth)),
+      height: Math.round(clampNumber(height, RESIZE_MIN_HEIGHT, maxHeight)),
     };
   }
 

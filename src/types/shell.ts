@@ -38,6 +38,8 @@ export interface ShellWindowCapabilities {
   snap?: boolean;
   snapZones?: readonly ShellSnapZone[] | null;
   preserveIntrinsicWidth?: boolean;
+  minWidth?: number | null;
+  minHeight?: number | null;
   maxWidth?: number | null;
   maxHeight?: number | null;
   pinnable?: boolean;
@@ -67,6 +69,7 @@ export interface ShellWindowDefinition {
   storageKey?: string | null;
   restoreOnBoot?: boolean;
   lazy?: boolean;
+  defaultBounds?: ShellBounds;
   bounds?: ShellBounds;
   restoreBounds?: ShellBounds;
   capabilities?: ShellWindowCapabilities;
@@ -176,6 +179,7 @@ export interface ShellRuntime {
   restoreWindow(id: string, options?: ShellLifecycleOptions): ShellWindowRecord | null;
   toggleWindow(id: string, options?: ShellLifecycleOptions): ShellWindowRecord | null;
   updateWindowBounds(id: string, bounds: ShellBounds, options?: ShellLifecycleOptions): ShellWindowRecord | null;
+  resetWindowGeometry(id: string, options?: ShellLifecycleOptions): ShellWindowRecord | null;
   snapWindow(id: string, zone: ShellSnapZone, options?: ShellLifecycleOptions): ShellWindowRecord | null;
   unsnapWindow(id: string, options?: ShellLifecycleOptions): ShellWindowRecord | null;
   canSnapWindow(id: string, zone: ShellSnapZone): boolean;

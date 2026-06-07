@@ -810,8 +810,9 @@ describe("shell UI integration", () => {
     expect(dragGhostBlock).toContain("touch-action: none");
   });
 
-  it("taskbar and detached FABs stay above normal shell windows", () => {
+  it("keeps taskbar and detached FABs above normal app windows", () => {
     const appCss = readProjectFile("src/styles/app.less");
+    const boardCss = readProjectFile("src/styles/board.less");
 
     expect(appCss).toContain("--vb-z-shell-window-max: 1890");
     expect(appCss).toContain("--vb-z-shell-taskbar: 1950");
@@ -828,7 +829,11 @@ describe("shell UI integration", () => {
     expect(getCssBlock(appCss, ".vb-shell-taskbar-item.is-detached")).toContain("z-index: var(--vb-z-shell-taskbar, 1950)");
     expect(getCssBlock(appCss, ".vb-shell-taskbar.is-dragging")).toContain("z-index: var(--vb-z-shell-taskbar, 1950)");
     expect(getCssBlock(appCss, ".vb-shell-taskbar-item.is-dragging")).toContain("z-index: var(--vb-z-shell-taskbar, 1950)");
+    expect(appCss).not.toContain('[data-vb-shell-window-active="true"][data-vb-shell-window-fullscreen="false"]');
+    expect(appCss).not.toContain("z-index: calc(var(--vb-z-shell-start-menu, 1960) - 1) !important");
     expect(getCssBlock(appCss, ".app-start-menu-list")).toContain("z-index: var(--vb-z-shell-start-menu, 1960)");
+    expect(getCssBlock(boardCss, ".color-popup")).toContain("z-index: var(--vb-z-shell-window-max, 1890)");
+    expect(boardCss).not.toContain("z-index: 9999");
   });
 
   it("keeps the Start menu layer above the activity indicator layer", () => {

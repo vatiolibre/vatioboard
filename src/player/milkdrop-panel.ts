@@ -779,8 +779,8 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
 
   function clampPanelToWindow() {
     // Defensive: ensure the panel never exceeds viewport bounds
-    const maxW = window.innerWidth - 16;
-    const maxH = window.innerHeight - 16;
+    const maxW = Math.max(320, window.innerWidth - 16);
+    const maxH = Math.max(260, window.innerHeight - 16);
     const rect = root.getBoundingClientRect();
     if (rect.width > maxW) root.style.width = `${maxW}px`;
     if (rect.height > maxH) root.style.height = `${maxH}px`;
@@ -849,9 +849,9 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
     const dx = resizeLastX - resizeStartX;
     const dy = resizeLastY - resizeStartY;
     const maxW = Math.max(320, (window.innerWidth || 1024) - 16);
-    const maxH = Math.max(240, (window.innerHeight || 768) - 16);
+    const maxH = Math.max(260, (window.innerHeight || 768) - 16);
     const nextW = clamp(resizeStartW + dx, 320, maxW);
-    const nextH = clamp(resizeStartH + dy, 240, maxH);
+    const nextH = clamp(resizeStartH + dy, 260, maxH);
     root.style.width = `${Math.round(nextW)}px`;
     root.style.height = `${Math.round(nextH)}px`;
     shellManager.updateWindowBounds(MILKDROP_WINDOW_ID, {

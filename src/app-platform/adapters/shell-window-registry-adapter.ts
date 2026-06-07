@@ -27,6 +27,9 @@ function mapAppToShellWindow(app: VatioAppManifest): ShellWindowDefinition | nul
     title: app.title,
     lazy: app.window.lazy,
     restoreOnBoot: app.window.restoreOnBoot,
+    defaultBounds: app.window.defaultBounds,
+    bounds: app.window.defaultBounds,
+    restoreBounds: app.window.defaultBounds,
     capabilities: app.window.capabilities,
   };
 }

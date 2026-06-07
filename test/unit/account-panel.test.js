@@ -53,6 +53,14 @@ describe("account panel", () => {
     });
 
     expect(createBackendAuthController.mock.calls[0]?.[0]?.ssoUi).toBeUndefined();
+    expect(shellManager.getWindow("account").capabilities).toMatchObject({
+      resizable: false,
+      minWidth: 320,
+      minHeight: 360,
+      maxWidth: 380,
+    });
+    expect(accountPanel.getElement().style.minWidth).toBe("320px");
+    expect(accountPanel.getElement().style.minHeight).toBe("360px");
 
     accountPanel.destroy();
     shellManager.destroy();

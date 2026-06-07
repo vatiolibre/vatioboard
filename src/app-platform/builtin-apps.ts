@@ -222,6 +222,8 @@ export const BUILTIN_APP_MANIFESTS = [
       defaultBounds: { left: 32, top: 112, width: 640 },
       capabilities: {
         ...fixedToolCapabilities,
+        minWidth: 320,
+        minHeight: 570,
         maxWidth: 640,
       },
       restoreOnBoot: true,
@@ -268,9 +270,11 @@ export const BUILTIN_APP_MANIFESTS = [
     window: {
       shellWindowId: "camera-map",
       mode: "floating",
-      defaultBounds: { left: 40, top: 96, width: 560, height: 420 },
+      defaultBounds: { left: 40, top: 96, width: 560, height: 460 },
       capabilities: {
         ...snappingWindowCapabilities,
+        minWidth: 420,
+        minHeight: 460,
         snapZones: ["left", "right", "top", "bottom", "center", "top-left", "top-right", "bottom-left", "bottom-right"],
       },
       restoreOnBoot: true,
@@ -320,13 +324,15 @@ export const BUILTIN_APP_MANIFESTS = [
     window: {
       shellWindowId: "speed-alerts",
       mode: "floating",
-      defaultBounds: { left: 48, top: 120, width: 380, height: 360 },
+      defaultBounds: { left: 48, top: 120, width: 430, height: 620 },
       capabilities: {
         draggable: true,
         resizable: true,
         minimizable: true,
         closable: true,
         restorable: true,
+        minWidth: 320,
+        minHeight: 420,
       },
       restoreOnBoot: true,
       lazy: false,
@@ -378,6 +384,8 @@ export const BUILTIN_APP_MANIFESTS = [
       capabilities: {
         ...fixedToolCapabilities,
         fullscreen: false,
+        minWidth: 320,
+        minHeight: 220,
         maxWidth: 340,
       },
       restoreOnBoot: true,
@@ -422,7 +430,11 @@ export const BUILTIN_APP_MANIFESTS = [
       shellWindowId: "milkdrop",
       mode: "floating",
       defaultBounds: { left: 64, top: 104, width: 640, height: 420 },
-      capabilities: snappingWindowCapabilities,
+      capabilities: {
+        ...snappingWindowCapabilities,
+        minWidth: 320,
+        minHeight: 260,
+      },
       restoreOnBoot: true,
       lazy: false,
     },
