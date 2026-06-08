@@ -128,12 +128,17 @@ import {
 
 const ACCEL_ACTIVITY_ID = 'accel.run';
 const ACCEL_SELECTED_PRESET_SETTING_KEY = 'selectedPresetId';
+const ACCEL_CHART_SCRUB_INTENT_THRESHOLD_PX = 8;
 
 type AnyRecord = Record<string, any>;
 type RouteLifecycle = {
   mount: (routeContext?: AnyRecord) => unknown;
   unmount: () => void;
 };
+
+function shouldScrubImmediatelyFromPointer(event: AnyRecord) {
+  return !event?.pointerType || event.pointerType === 'mouse';
+}
 
 let accelRouteLifecycle: RouteLifecycle = {
   mount() {},
@@ -415,6 +420,10 @@ export const initPromise = (function () {
       introPlayed: false,
       chartSheetOpen: false,
       chartScrubMetric: '',
+      chartScrubPointerId: null,
+      chartScrubStartX: 0,
+      chartScrubStartY: 0,
+      chartScrubActive: false,
       chartFilterStartRatio: 0,
       chartFilterEndRatio: 1,
     },
@@ -2089,6 +2098,8 @@ export const initPromise = (function () {
   function setReplayChartSheetOpen(nextOpen) {
     state.replay.chartSheetOpen = Boolean(nextOpen);
     state.replay.chartScrubMetric = '';
+    state.replay.chartScrubPointerId = null;
+    state.replay.chartScrubActive = false;
     if (!state.replay.chartSheetOpen) {
       replayCharts.destroy();
     }
@@ -2164,27 +2175,78 @@ export const initPromise = (function () {
     var metricKey = event.currentTarget.getAttribute('data-accel-replay-scrub');
     if (!metricKey) return;
 
-    event.preventDefault();
     state.replay.chartScrubMetric = metricKey;
-    state.replay.engaged = true;
-    if (event.currentTarget.setPointerCapture && event.pointerId !== undefined) {
-      try {
-        event.currentTarget.setPointerCapture(event.pointerId);
-      } catch {
-        // Ignore pointer-capture failures.
+    state.replay.chartScrubPointerId = event.pointerId;
+    state.replay.chartScrubStartX = event.clientX;
+    state.replay.chartScrubStartY = event.clientY;
+    state.replay.chartScrubActive = shouldScrubImmediatelyFromPointer(event);
+    if (state.replay.chartScrubActive) {
+      event.preventDefault();
+      state.replay.engaged = true;
+      if (event.currentTarget.setPointerCapture && event.pointerId !== undefined) {
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          // Ignore pointer-capture failures.
+        }
       }
+      scrubReplayChartAtClientX(metricKey, event.clientX);
     }
-    scrubReplayChartAtClientX(metricKey, event.clientX);
   }
 
   function handleReplayChartPointerMove(event) {
     var metricKey = event.currentTarget.getAttribute('data-accel-replay-scrub');
     if (!metricKey || state.replay.chartScrubMetric !== metricKey) return;
+    if (state.replay.chartScrubPointerId !== event.pointerId) return;
+    if (!state.replay.chartScrubActive) {
+      var dx = Math.abs(event.clientX - state.replay.chartScrubStartX);
+      var dy = Math.abs(event.clientY - state.replay.chartScrubStartY);
+      if (dy >= ACCEL_CHART_SCRUB_INTENT_THRESHOLD_PX && dy > dx) {
+        state.replay.chartScrubMetric = '';
+        state.replay.chartScrubPointerId = null;
+        return;
+      }
+      if (dx < ACCEL_CHART_SCRUB_INTENT_THRESHOLD_PX || dx <= dy) return;
+      state.replay.chartScrubActive = true;
+      state.replay.engaged = true;
+      if (event.currentTarget.setPointerCapture && event.pointerId !== undefined) {
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          // Ignore pointer-capture failures.
+        }
+      }
+    }
+    event.preventDefault();
     scrubReplayChartAtClientX(metricKey, event.clientX);
   }
 
-  function handleReplayChartPointerUp() {
+  function handleReplayChartPointerUp(event) {
+    if (
+      event
+      && state.replay.chartScrubPointerId !== null
+      && state.replay.chartScrubPointerId !== event.pointerId
+    ) {
+      return;
+    }
+    if (event && !state.replay.chartScrubActive && state.replay.chartScrubMetric) {
+      var dx = Math.abs(event.clientX - state.replay.chartScrubStartX);
+      var dy = Math.abs(event.clientY - state.replay.chartScrubStartY);
+      if (Math.max(dx, dy) < ACCEL_CHART_SCRUB_INTENT_THRESHOLD_PX) {
+        state.replay.engaged = true;
+        scrubReplayChartAtClientX(state.replay.chartScrubMetric, event.clientX);
+      }
+    }
+    if (event && state.replay.chartScrubActive && event.currentTarget?.releasePointerCapture) {
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      } catch {
+        // Ignore pointer-capture failures.
+      }
+    }
     state.replay.chartScrubMetric = '';
+    state.replay.chartScrubPointerId = null;
+    state.replay.chartScrubActive = false;
   }
 
   function resetReplayState(options) {
@@ -2202,6 +2264,8 @@ export const initPromise = (function () {
     state.replay.introPlayed = false;
     state.replay.axisMode = nextAxisMode;
     state.replay.chartScrubMetric = '';
+    state.replay.chartScrubPointerId = null;
+    state.replay.chartScrubActive = false;
     state.replay.chartFilterStartRatio = 0;
     state.replay.chartFilterEndRatio = 1;
     resetReplayMapIntroState();

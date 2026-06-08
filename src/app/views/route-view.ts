@@ -72,7 +72,10 @@ export function setRouteMeta({
   let previousCanonicalHref = null;
 
   if (title) document.title = title;
-  if (classNames.length) document.body.classList.add(...classNames);
+  if (classNames.length) {
+    document.documentElement.classList.add(...classNames);
+    document.body.classList.add(...classNames);
+  }
 
   if (canonicalHref) {
     if (!canonicalLink) {
@@ -87,7 +90,10 @@ export function setRouteMeta({
   }
 
   return function restoreRouteMeta() {
-    if (cleanupClassNames.length) document.body.classList.remove(...cleanupClassNames);
+    if (cleanupClassNames.length) {
+      document.documentElement.classList.remove(...cleanupClassNames);
+      document.body.classList.remove(...cleanupClassNames);
+    }
     if (title) document.title = previousTitle;
     restoreDescription?.();
 

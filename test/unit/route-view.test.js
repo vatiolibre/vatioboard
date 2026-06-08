@@ -16,6 +16,7 @@ describe("createRouteView", () => {
   beforeEach(() => {
     document.head.innerHTML = '<meta name="description" content="Original description">';
     document.title = "VatioBoard";
+    document.documentElement.className = "";
     document.body.className = "";
     document.body.innerHTML = '<main id="root"></main>';
     window.history.replaceState({}, "", "https://vatioboard.com/");
@@ -53,6 +54,7 @@ describe("createRouteView", () => {
     expect(document.querySelector('link[rel="canonical"]')?.getAttribute("href")).toBe(
       "https://vatioboard.com/route",
     );
+    expect(document.documentElement.classList.contains("route-page")).toBe(true);
     expect(document.body.classList.contains("route-page")).toBe(true);
     expect(controller.mountRoute).toHaveBeenCalledTimes(1);
 
@@ -60,6 +62,8 @@ describe("createRouteView", () => {
     mounted.unmount();
 
     expect(root.children).toHaveLength(0);
+    expect(document.documentElement.classList.contains("route-page")).toBe(false);
+    expect(document.documentElement.classList.contains("route-sheet-open")).toBe(false);
     expect(document.body.classList.contains("route-page")).toBe(false);
     expect(document.body.classList.contains("route-sheet-open")).toBe(false);
     expect(document.title).toBe("VatioBoard");
@@ -123,6 +127,7 @@ describe("createRouteView", () => {
 
     const mountedPromise = view.mount(root, { routeSignal: routeController.signal });
     expect(root.querySelector("#slow-route")).toBeTruthy();
+    expect(document.documentElement.classList.contains("slow-page")).toBe(true);
     expect(document.body.classList.contains("slow-page")).toBe(true);
 
     routeController.abort();
@@ -132,6 +137,7 @@ describe("createRouteView", () => {
     expect(controller.mountRoute).not.toHaveBeenCalled();
     expect(controller.unmountRoute).not.toHaveBeenCalled();
     expect(root.children).toHaveLength(0);
+    expect(document.documentElement.classList.contains("slow-page")).toBe(false);
     expect(document.body.classList.contains("slow-page")).toBe(false);
 
     mounted.unmount();
@@ -258,6 +264,8 @@ describe("createRouteView", () => {
 
     expect(root.children).toHaveLength(0);
     expect(document.title).toBe("VatioBoard");
+    expect(document.documentElement.classList.contains("broken-page")).toBe(false);
+    expect(document.documentElement.classList.contains("broken-sheet-open")).toBe(false);
     expect(document.body.classList.contains("broken-page")).toBe(false);
     expect(document.body.classList.contains("broken-sheet-open")).toBe(false);
     expect(controller.unmountRoute).toHaveBeenCalledTimes(1);

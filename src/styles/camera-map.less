@@ -246,7 +246,11 @@
   gap: 6px;
   width: min(300px, calc(100% - 84px));
   max-height: min(320px, 48%);
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   padding: 10px;
   border: 1px solid var(--camera-map-overlay-border);
   border-radius: 8px;
@@ -432,7 +436,11 @@
   width: min(210px, calc(100vw - 24px));
   min-width: 100%;
   max-height: min(280px, 58vh);
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   padding: 5px;
   border: 1px solid var(--camera-map-overlay-border);
   border-radius: 12px;

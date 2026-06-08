@@ -59,6 +59,11 @@ body.replay-page{
     touch-action: auto;
 }
 
+.replay-graph-sheet,
+.replay-graph-sheet *{
+    touch-action: auto;
+}
+
 .replay-page [hidden]{
     display: none !important;
 }
@@ -90,6 +95,7 @@ body.replay-page .replay-app{
     height: 100dvh;
     min-height: 0;
     overflow: hidden;
+    touch-action: auto;
 }
 
 .replay-app{
@@ -941,7 +947,7 @@ body.replay-page .replay-app{
 .replay-graph-sheet{
     position: fixed;
     inset: 0;
-    z-index: 40;
+    z-index: var(--vb-z-modal, 2000);
     display: grid;
     align-items: stretch;
     justify-items: stretch;
@@ -1182,7 +1188,11 @@ body.replay-page .replay-app{
     gap: 12px;
     min-height: 0;
     align-content: start;
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
 }
 
 .replay-graph-sheet-stage{
@@ -1213,14 +1223,14 @@ body.replay-page .replay-app{
 
 .replay-graph-sheet-canvas-wrap{
     min-height: clamp(180px, 24vh, 250px);
-    touch-action: none;
+    touch-action: pan-y;
 }
 
 .replay-expanded-graph-canvas{
     display: block;
     width: 100% !important;
     height: clamp(180px, 24vh, 250px) !important;
-    touch-action: none;
+    touch-action: pan-y;
 }
 
 .replay-graph-sheet-foot{

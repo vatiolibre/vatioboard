@@ -60,6 +60,7 @@ const DEFAULT_REPLAY_PLAYBACK_RATE = 1000;
 const REPLAY_PLAYBACK_RATE_LEGACY_KEY = 'vatio_replay_playback_rate_v1';
 const REPLAY_PLAYBACK_RATE_SETTING_KEY = 'playbackRate';
 const REPLAY_PLAYBACK_RATES = new Set([1, 4, 10, 100, 1000]);
+const GRAPH_SCRUB_INTENT_THRESHOLD_PX = 8;
 
 type AnyRecord = Record<string, any>;
 type RouteLifecycle = {
@@ -70,6 +71,10 @@ type SingleTabOwnershipResult = {
   owned: boolean;
   degraded: boolean;
 };
+
+function shouldScrubImmediatelyFromPointer(event: AnyRecord) {
+  return !event?.pointerType || event.pointerType === 'mouse';
+}
 
 function queryAll(root: any, selector: string): any[] {
   return root?.querySelectorAll ? Array.from(root.querySelectorAll(selector)) : [];
@@ -311,6 +316,10 @@ const state: AnyRecord = {
   expandedGraphFilterStartRatio: 0,
   expandedGraphFilterEndRatio: 1,
   expandedGraphPointerId: null,
+  expandedGraphPointerStartX: 0,
+  expandedGraphPointerStartY: 0,
+  expandedGraphPointerScrubKey: '',
+  expandedGraphScrubActive: false,
 };
 let replaySelectionPromise: Promise<any> = Promise.resolve();
 let replaySelectionKickoffPromise: Promise<any> = Promise.resolve();
@@ -1296,6 +1305,8 @@ function openExpandedGraph() {
 function closeExpandedGraph() {
   state.expandedGraphOpen = false;
   state.expandedGraphPointerId = null;
+  state.expandedGraphPointerScrubKey = '';
+  state.expandedGraphScrubActive = false;
   renderExpandedGraphSheet();
 }
 
@@ -1354,6 +1365,8 @@ function applyReplaySelectionState(selection) {
   state.introPlayed = false;
   state.expandedGraphOpen = false;
   state.expandedGraphPointerId = null;
+  state.expandedGraphPointerScrubKey = '';
+  state.expandedGraphScrubActive = false;
   refreshDerivedState();
 
   renderSessionStateView();
@@ -1641,28 +1654,66 @@ function bindEvents({
   ]) {
     cleanup.addEventListener(canvas, 'pointerdown', (event) => {
       if (!state.expandedGraphOpen) return;
+      const scrubKey = event.currentTarget.dataset.graphSheetScrub;
+      if (!scrubKey) return;
       state.expandedGraphPointerId = event.pointerId;
-      event.preventDefault();
-      event.currentTarget.setPointerCapture?.(event.pointerId);
-      scrubExpandedGraph(event.currentTarget.dataset.graphSheetScrub, event.clientX);
+      state.expandedGraphPointerStartX = event.clientX;
+      state.expandedGraphPointerStartY = event.clientY;
+      state.expandedGraphPointerScrubKey = scrubKey;
+      state.expandedGraphScrubActive = shouldScrubImmediatelyFromPointer(event);
+      if (state.expandedGraphScrubActive) {
+        event.preventDefault();
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+        scrubExpandedGraph(scrubKey, event.clientX);
+      }
     });
 
     cleanup.addEventListener(canvas, 'pointermove', (event) => {
       if (state.expandedGraphPointerId !== event.pointerId) return;
+      const scrubKey = state.expandedGraphPointerScrubKey;
+      if (!scrubKey) return;
+      if (!state.expandedGraphScrubActive) {
+        const dx = Math.abs(event.clientX - state.expandedGraphPointerStartX);
+        const dy = Math.abs(event.clientY - state.expandedGraphPointerStartY);
+        if (dy >= GRAPH_SCRUB_INTENT_THRESHOLD_PX && dy > dx) {
+          state.expandedGraphPointerId = null;
+          state.expandedGraphPointerScrubKey = '';
+          return;
+        }
+        if (dx < GRAPH_SCRUB_INTENT_THRESHOLD_PX || dx <= dy) return;
+        state.expandedGraphScrubActive = true;
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+      }
       event.preventDefault();
-      scrubExpandedGraph(event.currentTarget.dataset.graphSheetScrub, event.clientX);
+      scrubExpandedGraph(scrubKey, event.clientX);
     });
 
     cleanup.addEventListener(canvas, 'pointerup', (event) => {
       if (state.expandedGraphPointerId !== event.pointerId) return;
-      event.currentTarget.releasePointerCapture?.(event.pointerId);
+      const scrubKey = state.expandedGraphPointerScrubKey;
+      if (!state.expandedGraphScrubActive && scrubKey) {
+        const dx = Math.abs(event.clientX - state.expandedGraphPointerStartX);
+        const dy = Math.abs(event.clientY - state.expandedGraphPointerStartY);
+        if (Math.max(dx, dy) < GRAPH_SCRUB_INTENT_THRESHOLD_PX) {
+          scrubExpandedGraph(scrubKey, event.clientX);
+        }
+      }
+      if (state.expandedGraphScrubActive) {
+        event.currentTarget.releasePointerCapture?.(event.pointerId);
+      }
       state.expandedGraphPointerId = null;
+      state.expandedGraphPointerScrubKey = '';
+      state.expandedGraphScrubActive = false;
     });
 
     cleanup.addEventListener(canvas, 'pointercancel', (event) => {
       if (state.expandedGraphPointerId !== event.pointerId) return;
-      event.currentTarget.releasePointerCapture?.(event.pointerId);
+      if (state.expandedGraphScrubActive) {
+        event.currentTarget.releasePointerCapture?.(event.pointerId);
+      }
       state.expandedGraphPointerId = null;
+      state.expandedGraphPointerScrubKey = '';
+      state.expandedGraphScrubActive = false;
     });
   }
 

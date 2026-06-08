@@ -1,7 +1,50 @@
+html.apps-page,
+body.apps-page {
+  height: 100%;
+  min-height: 100%;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y pinch-zoom;
+}
+
+body.apps-page .vb-floating-drag-handle,
+body.apps-page .vb-shell-taskbar,
+body.apps-page .milkdrop-resize-handle {
+  touch-action: none;
+}
+
+html.apps-page #app,
+body.apps-page #app {
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  touch-action: pan-y pinch-zoom;
+}
+
+html.apps-page #app-view,
+body.apps-page #app-view {
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y pinch-zoom;
+}
+
 .apps-page {
   background:
     linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(241, 245, 249, 0.98));
   color: #111827;
+}
+
+.vb-app-manager,
+.vb-app-manager * {
+  touch-action: auto;
 }
 
 .vb-app-manager {
@@ -251,6 +294,7 @@
   align-items: center;
   cursor: pointer;
   font-weight: 800;
+  touch-action: manipulation;
 }
 
 .vb-app-manager-permissions ul,
@@ -317,6 +361,7 @@
   font: inherit;
   font-weight: 800;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .vb-app-manager-launch {

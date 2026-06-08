@@ -74,6 +74,11 @@ body.accel-page{
     touch-action: auto;
 }
 
+.accel-replay-chart-sheet,
+.accel-replay-chart-sheet *{
+    touch-action: auto;
+}
+
 body.accel-page{
     background:
       linear-gradient(180deg, var(--accel-page-sheen), transparent 24%),
@@ -94,6 +99,7 @@ body.accel-page #app,
 body.accel-page #app-view,
 body.accel-page .accel-app{
     overflow: visible;
+    touch-action: auto;
 }
 
 .accel-app{
@@ -1107,7 +1113,7 @@ body.accel-page.accel-replay-chart-sheet-open{
 .accel-replay-chart-sheet{
     position: fixed;
     inset: 0;
-    z-index: 120;
+    z-index: var(--vb-z-modal, 2000);
     display: grid;
     place-items: stretch;
     padding:
@@ -1250,7 +1256,11 @@ body.accel-page.accel-replay-chart-sheet-open{
     gap: 12px;
     min-height: 0;
     align-content: start;
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
 }
 
 .accel-replay-chart-stage{
@@ -1282,14 +1292,14 @@ body.accel-page.accel-replay-chart-sheet-open{
 
 .accel-replay-chart-canvas-wrap{
     min-height: clamp(180px, 24vh, 250px);
-    touch-action: none;
+    touch-action: pan-y;
 }
 
 body.accel-page .accel-replay-chart-canvas{
     display: block;
     width: 100% !important;
     height: clamp(180px, 24vh, 250px) !important;
-    touch-action: none;
+    touch-action: pan-y;
 }
 
 .accel-replay-chart-sheet-hint{
@@ -2442,6 +2452,7 @@ button:disabled{
         height: 100dvh;
         min-height: 0;
         overflow: hidden;
+        touch-action: auto;
     }
 
     .accel-main{
