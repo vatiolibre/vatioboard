@@ -72,6 +72,10 @@ type SingleTabOwnershipResult = {
   degraded: boolean;
 };
 
+function shouldScrubImmediatelyFromPointer(event: AnyRecord) {
+  return !event?.pointerType || event.pointerType === 'mouse';
+}
+
 function queryAll(root: any, selector: string): any[] {
   return root?.querySelectorAll ? Array.from(root.querySelectorAll(selector)) : [];
 }
@@ -1656,7 +1660,7 @@ function bindEvents({
       state.expandedGraphPointerStartX = event.clientX;
       state.expandedGraphPointerStartY = event.clientY;
       state.expandedGraphPointerScrubKey = scrubKey;
-      state.expandedGraphScrubActive = event.pointerType === 'mouse';
+      state.expandedGraphScrubActive = shouldScrubImmediatelyFromPointer(event);
       if (state.expandedGraphScrubActive) {
         event.preventDefault();
         event.currentTarget.setPointerCapture?.(event.pointerId);

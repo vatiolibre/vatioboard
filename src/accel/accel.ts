@@ -136,6 +136,10 @@ type RouteLifecycle = {
   unmount: () => void;
 };
 
+function shouldScrubImmediatelyFromPointer(event: AnyRecord) {
+  return !event?.pointerType || event.pointerType === 'mouse';
+}
+
 let accelRouteLifecycle: RouteLifecycle = {
   mount() {},
   unmount() {},
@@ -2175,7 +2179,7 @@ export const initPromise = (function () {
     state.replay.chartScrubPointerId = event.pointerId;
     state.replay.chartScrubStartX = event.clientX;
     state.replay.chartScrubStartY = event.clientY;
-    state.replay.chartScrubActive = event.pointerType === 'mouse';
+    state.replay.chartScrubActive = shouldScrubImmediatelyFromPointer(event);
     if (state.replay.chartScrubActive) {
       event.preventDefault();
       state.replay.engaged = true;

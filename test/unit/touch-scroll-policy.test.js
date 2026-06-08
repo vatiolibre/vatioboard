@@ -74,7 +74,8 @@ describe("touch scroll policy", () => {
     expect(getBlock(replayCss, ".replay-graph-sheet-canvas-wrap")).toContain("touch-action: pan-y;");
     expect(getBlock(replayCss, ".replay-expanded-graph-canvas")).toContain("touch-action: pan-y;");
     expect(replayTs).toContain("GRAPH_SCRUB_INTENT_THRESHOLD_PX");
-    expect(replayTs).toContain("event.pointerType === 'mouse'");
+    expect(replayTs).toContain("function shouldScrubImmediatelyFromPointer");
+    expect(replayTs).toContain("!event?.pointerType || event.pointerType === 'mouse'");
     expect(replayTs).toContain("dy >= GRAPH_SCRUB_INTENT_THRESHOLD_PX && dy > dx");
     expect(replayTs).toContain("if (dx < GRAPH_SCRUB_INTENT_THRESHOLD_PX || dx <= dy) return;");
 
@@ -84,7 +85,8 @@ describe("touch scroll policy", () => {
     expect(getBlock(accelCss, ".accel-replay-chart-canvas-wrap")).toContain("touch-action: pan-y;");
     expect(getBlock(accelCss, "body.accel-page .accel-replay-chart-canvas")).toContain("touch-action: pan-y;");
     expect(accelTs).toContain("ACCEL_CHART_SCRUB_INTENT_THRESHOLD_PX");
-    expect(accelTs).toContain("event.pointerType === 'mouse'");
+    expect(accelTs).toContain("function shouldScrubImmediatelyFromPointer");
+    expect(accelTs).toContain("!event?.pointerType || event.pointerType === 'mouse'");
     expect(accelTs).toContain("dy >= ACCEL_CHART_SCRUB_INTENT_THRESHOLD_PX && dy > dx");
     expect(accelTs).toContain("if (dx < ACCEL_CHART_SCRUB_INTENT_THRESHOLD_PX || dx <= dy) return;");
   });
