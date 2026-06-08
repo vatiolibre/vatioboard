@@ -403,7 +403,11 @@
 }
 .calc-history-list{
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   padding: 8px 0;
 }
 
@@ -458,9 +462,14 @@
   background: var(--calc-btn-hover);
 }
 .calc-settings-body{
+  min-height: 0;
   padding: 12px 16px 16px 16px;
   display: grid;
   gap: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 .calc-settings-row{
   display: grid;

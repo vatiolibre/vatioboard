@@ -136,6 +136,7 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 .tts-body::-webkit-scrollbar {
@@ -241,6 +242,9 @@
 .tts-segments--voices {
   max-height: 78px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   padding-right: 2px;
 }
 

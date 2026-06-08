@@ -16,11 +16,13 @@ body.code-rain-page .code-rain-app {
   height: 100svh;
   min-height: 0;
   overflow: hidden;
+  touch-action: auto;
 }
 
 .code-rain-app,
 .code-rain-app * {
   box-sizing: border-box;
+  touch-action: auto;
 }
 
 .code-rain-app {
@@ -295,6 +297,9 @@ body.code-rain-page .code-rain-app {
   gap: 14px;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   padding-right: 2px;
 }
 
