@@ -5,7 +5,7 @@
 .energy-panel {
   position: fixed;
   right: 16px;
-  bottom: 76px;
+  bottom: max(76px, calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));
   z-index: var(--vb-z-floating-secondary, 990);
   display: flex;
   flex-direction: column;

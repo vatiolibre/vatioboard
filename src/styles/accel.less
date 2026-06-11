@@ -308,7 +308,7 @@ body.accel-page .accel-app{
     padding-top: clamp(10px, 1.2vw, 16px);
     padding-left: max(12px, env(safe-area-inset-left));
     padding-right: max(12px, env(safe-area-inset-right));
-    padding-bottom: max(18px, env(safe-area-inset-bottom));
+    padding-bottom: max(18px, env(safe-area-inset-bottom), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 10px));
 }
 
 .accel-shell{
@@ -1644,7 +1644,7 @@ body.accel-page .accel-result-graph-canvas{
     position: fixed;
     top: max(12px, calc(env(safe-area-inset-top) + 12px));
     left: 50%;
-    bottom: max(12px, calc(env(safe-area-inset-bottom) + 12px));
+    bottom: max(12px, calc(env(safe-area-inset-bottom) + 12px), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));
     z-index: 40;
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
@@ -2625,7 +2625,7 @@ button:disabled{
         top: max(8px, calc(env(safe-area-inset-top) + 8px));
         left: 8px;
         right: 8px;
-        bottom: max(8px, calc(env(safe-area-inset-bottom) + 8px));
+        bottom: max(8px, calc(env(safe-area-inset-bottom) + 8px), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));
         width: auto;
         padding: 12px;
         border-radius: 24px;

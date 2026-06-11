@@ -91,7 +91,7 @@ html.vb-floating-drag-active body {
   position: fixed;
   left: 16px;
   right: auto;
-  bottom: 76px;
+  bottom: max(76px, calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));
   z-index: var(--vb-z-floating, 1000);
   display: flex;
   flex-direction: column;
@@ -1686,7 +1686,7 @@ html.vb-floating-drag-active body {
 
 .milkdrop-fullscreen-exit-btn {
   position: absolute;
-  bottom: max(14px, env(safe-area-inset-bottom, 0px));
+  bottom: max(14px, env(safe-area-inset-bottom, 0px), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));
   left: max(14px, env(safe-area-inset-left, 0px));
   z-index: 5;
   display: none;
@@ -1768,7 +1768,7 @@ html.vb-floating-drag-active body {
     width: calc(100vw - 16px);
     height: 320px;
     right: 8px;
-    bottom: 80px;
+    bottom: max(80px, calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));
     min-width: 360px;
     min-height: 300px;
     border-radius: 12px;

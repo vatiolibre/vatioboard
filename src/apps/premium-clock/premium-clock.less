@@ -18,7 +18,7 @@
 
   position: fixed;
   right: max(18px, var(--vb-safe-area-right));
-  bottom: calc(max(18px, var(--vb-safe-area-bottom)) + 56px);
+  bottom: max(74px, calc(var(--vb-safe-area-bottom) + 56px), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));
   width: min(392px, calc(100vw - 24px));
   min-width: 320px;
   min-height: 320px;
@@ -760,7 +760,7 @@
 @media (max-width: 430px) {
   .premium-clock-panel {
     right: max(10px, var(--vb-safe-area-right));
-    bottom: calc(max(10px, var(--vb-safe-area-bottom)) + 54px);
+    bottom: max(64px, calc(var(--vb-safe-area-bottom) + 54px), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));
     width: calc(100vw - 20px);
   }
 

@@ -11,6 +11,9 @@ const BACKEND_AUTH_STATE_EVENT = "vatioboard:backend-auth-state";
 const RETURN_MARGIN_PX = 36;
 const FAB_SIZE_PX = 52;
 const VIEWPORT_MARGIN_PX = 8;
+const REDOCK_ZONE_WIDTH_PX = 280;
+const REDOCK_ZONE_HEIGHT_PX = 136;
+const TASKBAR_AVOID_BOTTOM_VAR = "--vb-shell-taskbar-avoid-bottom";
 
 // TODO(ts-migration): drag sensors preserve the legacy JS payload shape while
 // the taskbar callers are still mixed JS/TS.
@@ -351,7 +354,7 @@ export function createShellTaskbar({
   const trayElement = document.createElement("div");
   trayElement.className = "vb-shell-taskbar-tray";
   trayElement.setAttribute("data-vb-shell-taskbar-tray", "");
-  element.append(favoritesElement, dragHandle, startButton, accountButton, trayElement);
+  element.append(startButton, favoritesElement, trayElement, accountButton, dragHandle);
 
   const trashElement = document.createElement("div");
   trashElement.className = "vb-shell-taskbar-trash";
@@ -466,6 +469,39 @@ export function createShellTaskbar({
     return overTrash;
   }
 
+  function getTaskbarDockPosition() {
+    return element.getAttribute("data-vb-shell-taskbar-position") || "bottom";
+  }
+
+  function setTaskbarBottomAvoidance(value: number) {
+    document.documentElement.style.setProperty(TASKBAR_AVOID_BOTTOM_VAR, `${Math.max(0, Math.ceil(value))}px`);
+  }
+
+  function clearTaskbarBottomAvoidance() {
+    document.documentElement.style.removeProperty(TASKBAR_AVOID_BOTTOM_VAR);
+  }
+
+  function syncTaskbarBottomAvoidance() {
+    if (
+      destroyed
+      || element.hidden
+      || taskbarPosition?.detached === true
+      || element.classList.contains("is-detached")
+      || element.getAttribute("data-vb-shell-taskbar-floating") === "true"
+      || getTaskbarDockPosition() !== "bottom"
+    ) {
+      setTaskbarBottomAvoidance(0);
+      return;
+    }
+
+    const rect = element.getBoundingClientRect();
+    const viewport = getViewportBounds();
+    const viewportBottom = viewport.top + viewport.height;
+    const height = rect.height || element.offsetHeight || 0;
+    const top = Number.isFinite(rect.top) && (rect.top || height) ? rect.top : viewportBottom - height;
+    setTaskbarBottomAvoidance(Math.max(0, viewportBottom - top));
+  }
+
   function applyTaskbarPosition() {
     if (taskbarPosition?.detached === true) {
       const previous = taskbarPosition;
@@ -487,6 +523,7 @@ export function createShellTaskbar({
     element.style.bottom = "";
     element.style.transform = "";
     element.style.willChange = "";
+    syncTaskbarBottomAvoidance();
   }
 
   function setTaskbarFixedPosition(position, { transform = "none", dragging = false } = {}) {
@@ -499,6 +536,7 @@ export function createShellTaskbar({
     element.style.bottom = "auto";
     element.style.transform = transform;
     element.style.willChange = dragging ? "transform" : "";
+    syncTaskbarBottomAvoidance();
   }
 
   function ensureTaskbarFixedTopLeft() {
@@ -554,6 +592,7 @@ export function createShellTaskbar({
     );
     const itemsChanged = clampDetachedItemsToViewport();
     if (taskbarChanged || itemsChanged) saveState();
+    syncTaskbarBottomAvoidance();
   }
 
   function scheduleViewportClamp() {
@@ -643,12 +682,28 @@ export function createShellTaskbar({
     if (isPointNearRect(point, trayElement.getBoundingClientRect())) return true;
     if (isPointNearRect(point, element.getBoundingClientRect())) return true;
 
-    const position = element.getAttribute("data-vb-shell-taskbar-position") || "bottom";
+    const position = getTaskbarDockPosition();
     const viewport = getViewportSize();
     const edgeDistance = RETURN_MARGIN_PX + FAB_SIZE_PX;
     if (position === "left") return point.clientX <= edgeDistance;
     if (position === "right") return point.clientX >= viewport.width - edgeDistance;
     return point.clientY >= viewport.height - edgeDistance;
+  }
+
+  function isPointInTaskbarRedockZone(point, drag) {
+    if (!point) return false;
+    const viewport = getViewportBounds();
+    const position = getTaskbarDockPosition();
+    const width = Math.max(REDOCK_ZONE_WIDTH_PX, (drag?.width || FAB_SIZE_PX) + RETURN_MARGIN_PX);
+    const height = Math.max(REDOCK_ZONE_HEIGHT_PX, (drag?.height || FAB_SIZE_PX) + RETURN_MARGIN_PX);
+    if (position === "left") {
+      return point.clientX <= viewport.left + height;
+    }
+    if (position === "right") {
+      return point.clientX >= viewport.left + viewport.width - height;
+    }
+    return point.clientX <= viewport.left + width
+      && point.clientY >= viewport.top + viewport.height - height;
   }
 
   function beginTaskbarDrag(payload) {
@@ -702,12 +757,19 @@ export function createShellTaskbar({
       cancelAnimationFrame(drag.rafId);
       drag.rafId = 0;
     }
-    setTaskbarFixedPosition({ left: drag.nextLeft, top: drag.nextTop });
-    clampTaskbarToViewport(drag.width, drag.height);
+    const point = payload.point || makePoint(payload.clientX ?? drag.nextLeft, payload.clientY ?? drag.nextTop);
+    if (isPointInTaskbarRedockZone(point, drag)) {
+      taskbarPosition = null;
+      applyTaskbarPosition();
+    } else {
+      setTaskbarFixedPosition({ left: drag.nextLeft, top: drag.nextTop });
+      clampTaskbarToViewport(drag.width, drag.height);
+    }
     element.classList.remove("is-dragging");
     document.documentElement.classList.remove("vb-floating-drag-active");
     element.style.willChange = "";
     saveState();
+    syncTaskbarBottomAvoidance();
     payload.event?.preventDefault?.();
   }
 
@@ -980,13 +1042,13 @@ export function createShellTaskbar({
     for (const item of itemElements.values()) item.remove();
     itemElements.clear();
     if (
-      favoritesElement.parentElement !== element
-      || dragHandle.parentElement !== element
-      || startButton.parentElement !== element
+      startButton.parentElement !== element
+      || favoritesElement.parentElement !== element
       || accountButton.parentElement !== element
       || trayElement.parentElement !== element
+      || dragHandle.parentElement !== element
     ) {
-      element.replaceChildren(favoritesElement, dragHandle, startButton, accountButton, trayElement);
+      element.replaceChildren(startButton, favoritesElement, trayElement, accountButton, dragHandle);
     }
     syncAccountState();
     const favoriteApps = renderFavoriteApps();
@@ -1051,6 +1113,7 @@ export function createShellTaskbar({
     hideTrashTarget();
     dragLayerElement?.remove();
     dragLayerElement = null;
+    clearTaskbarBottomAvoidance();
     element.remove();
   }
 

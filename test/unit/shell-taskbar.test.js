@@ -6,6 +6,7 @@ import { createShellTaskbar } from "../../src/shared/shell-taskbar.js";
 import { createShellWindowManager } from "../../src/shared/shell-window-manager.js";
 
 const TASKBAR_STATE_KEY = "vatioboard.shell.taskbar_fabs.v1";
+const TASKBAR_AVOID_BOTTOM_VAR = "--vb-shell-taskbar-avoid-bottom";
 const originalRaf = globalThis.requestAnimationFrame;
 const originalCancelRaf = globalThis.cancelAnimationFrame;
 const originalVisualViewport = globalThis.visualViewport;
@@ -76,6 +77,7 @@ describe("shell-taskbar", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     document.documentElement.className = "";
+    document.documentElement.style.removeProperty(TASKBAR_AVOID_BOTTOM_VAR);
     localStorage.clear();
     vi.restoreAllMocks();
     globalThis.requestAnimationFrame = (callback) => {
@@ -116,6 +118,7 @@ describe("shell-taskbar", () => {
     expect(taskbar.getElement().querySelector("[data-vb-shell-account-button]")).toBeTruthy();
     expect(taskbar.getElement().hidden).toBe(false);
     expect(taskbar.getElement().getAttribute("data-vb-shell-taskbar-empty")).toBe("true");
+    expect(taskbar.getElement().children[0]).toBe(taskbar.getStartButton());
 
     taskbar.destroy();
     manager.destroy();
@@ -187,7 +190,7 @@ describe("shell-taskbar", () => {
     manager.destroy();
   });
 
-  it("renders favorite apps before the drag handle and removes them when unfavorited", () => {
+  it("renders favorite apps after Start and before the drag handle", () => {
     const manager = makeManager();
     const appLauncher = { openApp: vi.fn(() => true) };
     const startMenu = { bindTrigger: vi.fn(), close: vi.fn() };
@@ -199,6 +202,7 @@ describe("shell-taskbar", () => {
     });
     const favorites = taskbar.getElement().querySelector("[data-vb-shell-taskbar-favorites]");
     const handle = taskbar.getElement().querySelector("[data-vb-shell-taskbar-drag-handle]");
+    const startButton = taskbar.getStartButton();
 
     expect(favorites).toBeTruthy();
     expect(favorites.hidden).toBe(true);
@@ -210,7 +214,9 @@ describe("shell-taskbar", () => {
     expect(favoriteButton).toBeTruthy();
     expect(favoriteButton.style.getPropertyValue("--vb-app-icon-accent")).toBe("#2563eb");
     expect(favorites.hidden).toBe(false);
+    expect(children.indexOf(startButton)).toBeLessThan(children.indexOf(favorites));
     expect(children.indexOf(favorites)).toBeLessThan(children.indexOf(handle));
+    expect(children[children.length - 1]).toBe(handle);
 
     favoriteButton.click();
     expect(appLauncher.openApp).toHaveBeenCalledWith(
@@ -351,6 +357,11 @@ describe("shell-taskbar", () => {
     expect(Number(panel.style.zIndex)).toBeLessThan(1950);
     expect(appCss).toContain(".vb-shell-taskbar");
     expect(appCss).toContain("z-index: var(--vb-z-shell-taskbar, 1950)");
+    expect(appCss).toContain("--vb-shell-taskbar-avoid-bottom: 0px");
+    expect(appCss).toContain("left: max(10px, var(--vb-safe-area-left))");
+    expect(appCss).toContain("--vb-shell-taskbar-tray-glow-buffer: 8px");
+    expect(appCss).toContain("background: transparent");
+    expect(appCss).toContain("0 2px 8px color-mix(in srgb, var(--vb-app-icon-accent) 18%");
     expect(appCss).toContain(".vb-shell-taskbar-item.is-detached");
     expect(appCss).toContain("z-index: var(--vb-z-shell-taskbar, 1950)");
 
@@ -464,6 +475,7 @@ describe("shell-taskbar", () => {
     expect(element.style.position).toBe("fixed");
     expect(element.style.left).toBe("420px");
     expect(element.style.top).toBe("380px");
+    expect(document.documentElement.style.getPropertyValue(TASKBAR_AVOID_BOTTOM_VAR)).toBe("0px");
     expect(JSON.parse(localStorage.getItem(TASKBAR_STATE_KEY)).taskbar)
       .toMatchObject({ detached: true, left: 420, top: 380 });
 
@@ -546,6 +558,25 @@ describe("shell-taskbar", () => {
     manager.destroy();
   });
 
+  it("publishes the docked bottom taskbar inset for route-level layout", () => {
+    const { manager, taskbar } = setupCalculatorTaskbar();
+    const element = taskbar.getElement();
+    vi.spyOn(element, "getBoundingClientRect").mockReturnValue(rect({
+      left: 0,
+      top: 690,
+      width: 360,
+      height: 70,
+    }));
+
+    taskbar.render();
+
+    expect(document.documentElement.style.getPropertyValue(TASKBAR_AVOID_BOTTOM_VAR)).toBe("78px");
+
+    taskbar.destroy();
+    expect(document.documentElement.style.getPropertyValue(TASKBAR_AVOID_BOTTOM_VAR)).toBe("");
+    manager.destroy();
+  });
+
   it("moves the taskbar from the handle with mouse pointer events", () => {
     const { manager, taskbar } = setupCalculatorTaskbar();
     const element = taskbar.getElement();
@@ -564,6 +595,50 @@ describe("shell-taskbar", () => {
 
     expect(element.style.left).toBe("420px");
     expect(element.style.top).toBe("380px");
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("redocks a detached taskbar when dropped in the lower-left dock zone", () => {
+    const viewport = new EventTarget();
+    Object.defineProperties(viewport, {
+      width: { configurable: true, writable: true, value: 1024 },
+      height: { configurable: true, writable: true, value: 768 },
+      offsetLeft: { configurable: true, writable: true, value: 0 },
+      offsetTop: { configurable: true, writable: true, value: 0 },
+    });
+    Object.defineProperty(window, "visualViewport", { configurable: true, value: viewport });
+    Object.defineProperty(globalThis, "visualViewport", { configurable: true, value: viewport });
+    Object.defineProperty(globalThis, "innerWidth", { configurable: true, writable: true, value: 1024 });
+    Object.defineProperty(globalThis, "innerHeight", { configurable: true, writable: true, value: 768 });
+    localStorage.setItem(TASKBAR_STATE_KEY, JSON.stringify({
+      version: 1,
+      knownWindowIds: [],
+      positions: {},
+      taskbar: { detached: true, left: 320, top: 260 },
+    }));
+    const manager = makeManager();
+    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+    const element = taskbar.getElement();
+    const handle = element.querySelector("[data-vb-shell-taskbar-drag-handle]");
+    vi.spyOn(element, "getBoundingClientRect").mockReturnValue(rect({
+      left: 320,
+      top: 260,
+      width: 180,
+      height: 70,
+    }));
+
+    handle.dispatchEvent(pointer("pointerdown", { clientX: 480, clientY: 295 }));
+    window.dispatchEvent(pointer("pointermove", { clientX: 28, clientY: 720 }));
+    window.dispatchEvent(pointer("pointerup", { clientX: 28, clientY: 720 }));
+
+    expect(element.classList.contains("is-detached")).toBe(false);
+    expect(element.getAttribute("data-vb-shell-taskbar-floating")).toBe("false");
+    expect(element.style.position).toBe("");
+    expect(element.style.left).toBe("");
+    expect(element.style.top).toBe("");
+    expect(JSON.parse(localStorage.getItem(TASKBAR_STATE_KEY)).taskbar).toBeNull();
 
     taskbar.destroy();
     manager.destroy();
