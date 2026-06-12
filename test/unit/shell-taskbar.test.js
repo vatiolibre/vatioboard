@@ -310,6 +310,118 @@ describe("shell-taskbar", () => {
     manager.destroy();
   });
 
+  it("keeps account visible while collapsing crowded mobile taskbar apps into overflow", () => {
+    Object.defineProperty(globalThis, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 390,
+    });
+    Object.defineProperty(globalThis, "innerHeight", {
+      configurable: true,
+      writable: true,
+      value: 844,
+    });
+    const manager = makeManager();
+    const ids = ["alpha", "bravo", "charlie", "delta", "echo"];
+    for (const id of ids) {
+      manager.registerWindow({ id, title: id, element: makePanel(id) });
+    }
+    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+
+    for (const id of ids) manager.openWindow(id);
+
+    const element = taskbar.getElement();
+    const tray = element.querySelector("[data-vb-shell-taskbar-tray]");
+    const overflowButton = element.querySelector("[data-vb-shell-taskbar-overflow]");
+    const accountButton = element.querySelector("[data-vb-shell-account-button]");
+    const appCss = readFileSync(resolve(process.cwd(), "src/styles/app.less"), "utf8");
+
+    expect(element.getAttribute("data-vb-shell-taskbar-mobile-overflow")).toBe("true");
+    expect(tray.querySelectorAll("[data-vb-shell-taskbar-item]")).toHaveLength(2);
+    expect(overflowButton.hidden).toBe(false);
+    expect(overflowButton.textContent).toContain("+3");
+    expect(accountButton).toBeTruthy();
+    expect(accountButton.hidden).toBe(false);
+    expect(appCss).not.toMatch(/data-vb-shell-taskbar-mobile-overflow="true"][^{]*\.vb-shell-taskbar-account\s*{\s*display:\s*none;/);
+
+    overflowButton.click();
+
+    const overflowPanel = document.querySelector("[data-vb-shell-taskbar-overflow-panel]");
+    expect(overflowPanel.hidden).toBe(false);
+    expect(overflowPanel.querySelectorAll("[data-vb-shell-taskbar-overflow-item]")).toHaveLength(5);
+
+    overflowPanel.querySelector("[data-vb-shell-taskbar-overflow-item='alpha']").click();
+
+    expect(manager.getActiveWindow().id).toBe("alpha");
+    expect(overflowPanel.hidden).toBe(true);
+
+    taskbar.destroy();
+    expect(document.querySelector("[data-vb-shell-taskbar-overflow-panel]")).toBeNull();
+    manager.destroy();
+  });
+
+  it("uses one visible app slot on very narrow iPhone layouts so account still fits", () => {
+    Object.defineProperty(globalThis, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 320,
+    });
+    Object.defineProperty(globalThis, "innerHeight", {
+      configurable: true,
+      writable: true,
+      value: 568,
+    });
+    const manager = makeManager();
+    const ids = ["alpha", "bravo", "charlie", "delta", "echo"];
+    for (const id of ids) {
+      manager.registerWindow({ id, title: id, element: makePanel(id) });
+    }
+    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+
+    for (const id of ids) manager.openWindow(id);
+
+    const element = taskbar.getElement();
+    const tray = element.querySelector("[data-vb-shell-taskbar-tray]");
+    const overflowButton = element.querySelector("[data-vb-shell-taskbar-overflow]");
+    const accountButton = element.querySelector("[data-vb-shell-account-button]");
+
+    expect(element.getAttribute("data-vb-shell-taskbar-mobile-overflow")).toBe("true");
+    expect(tray.querySelectorAll("[data-vb-shell-taskbar-item]")).toHaveLength(1);
+    expect(overflowButton.textContent).toContain("+4");
+    expect(accountButton).toBeTruthy();
+    expect(accountButton.hidden).toBe(false);
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("keeps all docked taskbar apps visible on wider screens", () => {
+    Object.defineProperty(globalThis, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 1024,
+    });
+    const manager = makeManager();
+    const ids = ["alpha", "bravo", "charlie", "delta", "echo"];
+    for (const id of ids) {
+      manager.registerWindow({ id, title: id, element: makePanel(id) });
+    }
+    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+
+    for (const id of ids) manager.openWindow(id);
+
+    const element = taskbar.getElement();
+    const tray = element.querySelector("[data-vb-shell-taskbar-tray]");
+    const overflowButton = element.querySelector("[data-vb-shell-taskbar-overflow]");
+
+    expect(element.getAttribute("data-vb-shell-taskbar-mobile-overflow")).toBe("false");
+    expect(tray.querySelectorAll("[data-vb-shell-taskbar-item]")).toHaveLength(5);
+    expect(overflowButton.hidden).toBe(true);
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
   it("removes a normal tray item when its window is closed", () => {
     const { manager, taskbar } = setupCalculatorTaskbar();
 

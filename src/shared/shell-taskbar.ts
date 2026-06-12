@@ -14,6 +14,11 @@ const VIEWPORT_MARGIN_PX = 8;
 const REDOCK_ZONE_WIDTH_PX = 280;
 const REDOCK_ZONE_HEIGHT_PX = 136;
 const TASKBAR_AVOID_BOTTOM_VAR = "--vb-shell-taskbar-avoid-bottom";
+const MOBILE_TASKBAR_OVERFLOW_QUERY = "(max-width: 640px)";
+const MOBILE_TASKBAR_VISIBLE_DOCKED_LIMIT = 3;
+const MOBILE_TASKBAR_TWO_APP_MIN_WIDTH = 360;
+const MOBILE_TASKBAR_THREE_APP_MIN_WIDTH = 430;
+const TASKBAR_OVERFLOW_PANEL_ID = "vbShellTaskbarOverflow";
 
 // TODO(ts-migration): drag sensors preserve the legacy JS payload shape while
 // the taskbar callers are still mixed JS/TS.
@@ -282,9 +287,13 @@ export function createShellTaskbar({
   const knownWindowIds = new Set(savedState.knownWindowIds);
   const itemPositions = new Map(Object.entries(savedState.positions));
   let taskbarPosition = savedState.taskbar;
+  let recentWindowIds = savedState.knownWindowIds.filter((id) => knownWindowIds.has(id));
   const itemElements = new Map();
   const itemSensors = new Map();
   const suppressedClicks = new Set();
+  const overflowMediaQuery = typeof globalThis.matchMedia === "function"
+    ? globalThis.matchMedia(MOBILE_TASKBAR_OVERFLOW_QUERY)
+    : null;
 
   const element = document.createElement("nav");
   element.className = "vb-shell-taskbar";
@@ -354,7 +363,43 @@ export function createShellTaskbar({
   const trayElement = document.createElement("div");
   trayElement.className = "vb-shell-taskbar-tray";
   trayElement.setAttribute("data-vb-shell-taskbar-tray", "");
-  element.append(startButton, favoritesElement, trayElement, accountButton, dragHandle);
+
+  const overflowButton = document.createElement("button");
+  overflowButton.type = "button";
+  overflowButton.className = "vb-shell-taskbar-overflow";
+  overflowButton.setAttribute("data-vb-shell-taskbar-overflow", "");
+  overflowButton.setAttribute("aria-label", labels.moreOpenApps || "More open apps");
+  overflowButton.setAttribute("aria-haspopup", "dialog");
+  overflowButton.setAttribute("aria-expanded", "false");
+  overflowButton.setAttribute("aria-controls", TASKBAR_OVERFLOW_PANEL_ID);
+  overflowButton.hidden = true;
+  suppressNativeDrag(overflowButton);
+
+  const overflowCount = document.createElement("span");
+  overflowCount.className = "vb-shell-taskbar-overflow-count";
+  overflowCount.setAttribute("aria-hidden", "true");
+  overflowCount.textContent = "+0";
+  overflowButton.append(overflowCount);
+
+  const overflowLabel = document.createElement("span");
+  overflowLabel.className = "vb-shell-taskbar-label";
+  overflowLabel.textContent = labels.moreOpenApps || "More open apps";
+  overflowButton.append(overflowLabel);
+
+  const overflowPanelElement = document.createElement("section");
+  overflowPanelElement.id = TASKBAR_OVERFLOW_PANEL_ID;
+  overflowPanelElement.className = "vb-shell-taskbar-overflow-panel";
+  overflowPanelElement.setAttribute("data-vb-shell-taskbar-overflow-panel", "");
+  overflowPanelElement.setAttribute("role", "dialog");
+  overflowPanelElement.setAttribute("aria-label", labels.openApps || "Open apps");
+  overflowPanelElement.hidden = true;
+
+  const overflowGridElement = document.createElement("div");
+  overflowGridElement.className = "vb-shell-taskbar-overflow-grid";
+  overflowGridElement.setAttribute("data-vb-shell-taskbar-overflow-grid", "");
+  overflowPanelElement.append(overflowGridElement);
+
+  element.append(startButton, favoritesElement, trayElement, overflowButton, accountButton, dragHandle);
 
   const trashElement = document.createElement("div");
   trashElement.className = "vb-shell-taskbar-trash";
@@ -471,6 +516,19 @@ export function createShellTaskbar({
 
   function getTaskbarDockPosition() {
     return element.getAttribute("data-vb-shell-taskbar-position") || "bottom";
+  }
+
+  function isCompactOverflowMode() {
+    return taskbarPosition?.detached !== true
+      && getTaskbarDockPosition() === "bottom"
+      && (overflowMediaQuery?.matches || getViewportSize().width <= 640);
+  }
+
+  function getCompactVisibleDockedLimit() {
+    const { width } = getViewportSize();
+    if (width < MOBILE_TASKBAR_TWO_APP_MIN_WIDTH) return 1;
+    if (width < MOBILE_TASKBAR_THREE_APP_MIN_WIDTH) return 2;
+    return MOBILE_TASKBAR_VISIBLE_DOCKED_LIMIT;
   }
 
   function setTaskbarBottomAvoidance(value: number) {
@@ -608,8 +666,33 @@ export function createShellTaskbar({
   function forgetWindow(id) {
     if (!id || !knownWindowIds.has(id)) return;
     knownWindowIds.delete(id);
+    recentWindowIds = recentWindowIds.filter((recentId) => recentId !== id);
     itemPositions.delete(id);
     saveState();
+  }
+
+  function touchRecentWindow(id) {
+    if (!id) return;
+    recentWindowIds = [id, ...recentWindowIds.filter((recentId) => recentId !== id)];
+  }
+
+  function sortRecordsByMobilePriority(records) {
+    return records
+      .map((record, index) => {
+        const recentIndex = recentWindowIds.indexOf(record.id);
+        return {
+          record,
+          index,
+          activeRank: record.active ? 0 : 1,
+          recentRank: recentIndex >= 0 ? recentIndex : Number.MAX_SAFE_INTEGER,
+        };
+      })
+      .sort((a, b) => (
+        a.activeRank - b.activeRank
+        || a.recentRank - b.recentRank
+        || a.index - b.index
+      ))
+      .map(({ record }) => record);
   }
 
   function closeWindowFromTaskbarTrash(record) {
@@ -961,6 +1044,103 @@ export function createShellTaskbar({
     return item;
   }
 
+  function closeOverflowPanel() {
+    overflowPanelElement.hidden = true;
+    overflowButton.setAttribute("aria-expanded", "false");
+    element.setAttribute("data-vb-shell-taskbar-overflow-open", "false");
+  }
+
+  function ensureOverflowPanelParent() {
+    const detachedRoot = getDetachedRoot(root);
+    if (overflowPanelElement.parentElement !== detachedRoot) {
+      detachedRoot.append(overflowPanelElement);
+    }
+  }
+
+  function openOverflowPanel() {
+    if (overflowButton.hidden || destroyed) return;
+    ensureOverflowPanelParent();
+    overflowPanelElement.hidden = false;
+    overflowButton.setAttribute("aria-expanded", "true");
+    element.setAttribute("data-vb-shell-taskbar-overflow-open", "true");
+    startMenu?.close?.();
+  }
+
+  function toggleOverflowPanel() {
+    if (overflowPanelElement.hidden) openOverflowPanel();
+    else closeOverflowPanel();
+  }
+
+  function updateOverflowButton(hiddenCount: number) {
+    const enabled = hiddenCount > 0;
+    overflowButton.hidden = !enabled;
+    overflowCount.textContent = `+${hiddenCount}`;
+    overflowButton.setAttribute(
+      "aria-label",
+      hiddenCount === 1 ? "1 more open app" : `${hiddenCount} more open apps`,
+    );
+    if (!enabled) closeOverflowPanel();
+  }
+
+  function createOverflowPanelButton(record, state) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "vb-shell-taskbar-overflow-item";
+    item.setAttribute("data-vb-shell-taskbar-overflow-item", record.id);
+    item.setAttribute("data-vb-shell-taskbar-state", state);
+    item.setAttribute("data-vb-shell-taskbar-active", record.active ? "true" : "false");
+    suppressNativeDrag(item);
+    applyAppIconTheme(item, getAppForShellWindowId(record.id));
+
+    const label = labels[record.id] || defaultLabel(record);
+    const status = record.active ? "Active" : state === "minimized" ? "Minimized" : "Open";
+    item.setAttribute("aria-label", `${label} ${status}`);
+    item.title = label;
+
+    const icon = icons[record.id] || getToolDefinitionForShellWindow(record.id)?.icon || "";
+    const iconEl = document.createElement("span");
+    iconEl.className = "vb-shell-taskbar-icon";
+    iconEl.setAttribute("aria-hidden", "true");
+    if (icon) {
+      iconEl.innerHTML = icon;
+    } else {
+      iconEl.textContent = getInitial(label);
+    }
+    item.append(iconEl);
+
+    const text = document.createElement("span");
+    text.className = "vb-shell-taskbar-overflow-label";
+    text.textContent = label;
+    item.append(text);
+
+    const statusEl = document.createElement("span");
+    statusEl.className = "vb-shell-taskbar-overflow-status";
+    statusEl.textContent = status;
+    item.append(statusEl);
+
+    item.addEventListener("click", (event) => {
+      event.preventDefault();
+      closeOverflowPanel();
+      handleItemClick(record, event);
+    });
+
+    return item;
+  }
+
+  function renderOverflowPanel(records) {
+    overflowGridElement.replaceChildren();
+    if (records.length === 0) {
+      closeOverflowPanel();
+      return;
+    }
+
+    for (const record of records) {
+      const current = shellManager.getWindow(record.id) || record;
+      const state = getWindowState(current);
+      overflowGridElement.append(createOverflowPanelButton(current, state));
+    }
+  }
+
   function createFavoriteAppButton(app: VatioAppManifest) {
     const item = document.createElement("button");
     item.type = "button";
@@ -1046,9 +1226,10 @@ export function createShellTaskbar({
       || favoritesElement.parentElement !== element
       || accountButton.parentElement !== element
       || trayElement.parentElement !== element
+      || overflowButton.parentElement !== element
       || dragHandle.parentElement !== element
     ) {
-      element.replaceChildren(startButton, favoritesElement, trayElement, accountButton, dragHandle);
+      element.replaceChildren(startButton, favoritesElement, trayElement, overflowButton, accountButton, dragHandle);
     }
     syncAccountState();
     const favoriteApps = renderFavoriteApps();
@@ -1058,13 +1239,37 @@ export function createShellTaskbar({
     trayElement.replaceChildren();
 
     const records = getTaskbarWindows(favoriteWindowIds);
-    let dockedCount = 0;
+    const dockedRecords = records.filter((record) => itemPositions.get(record.id)?.detached !== true);
+    const compactOverflowMode = isCompactOverflowMode();
+    const compactVisibleDockedLimit = compactOverflowMode
+      ? getCompactVisibleDockedLimit()
+      : MOBILE_TASKBAR_VISIBLE_DOCKED_LIMIT;
+    const mobileOrderedDockedRecords = compactOverflowMode
+      ? sortRecordsByMobilePriority(dockedRecords)
+      : dockedRecords;
+    const overflowRecords = compactOverflowMode && mobileOrderedDockedRecords.length > compactVisibleDockedLimit
+      ? mobileOrderedDockedRecords.slice(compactVisibleDockedLimit)
+      : [];
+    const visibleDockedRecordIds = new Set(
+      compactOverflowMode && overflowRecords.length > 0
+        ? mobileOrderedDockedRecords
+            .slice(0, compactVisibleDockedLimit)
+            .map((record) => record.id)
+        : dockedRecords.map((record) => record.id),
+    );
+    let renderedDockedCount = 0;
     element.hidden = false;
+    element.setAttribute("data-vb-shell-taskbar-mobile-overflow", overflowRecords.length > 0 ? "true" : "false");
+    updateOverflowButton(overflowRecords.length);
+    renderOverflowPanel(mobileOrderedDockedRecords);
 
     for (const record of records) {
       const state = getWindowState(record);
       const position = itemPositions.get(record.id);
       const isDetached = position?.detached === true;
+      const isVisibleDocked = visibleDockedRecordIds.has(record.id);
+      if (!isDetached && !isVisibleDocked) continue;
+
       const item = createTaskbarItem(record, state, !isDetached);
       itemElements.set(record.id, item);
 
@@ -1074,11 +1279,11 @@ export function createShellTaskbar({
       } else {
         clearDetachedStyle(item);
         trayElement.append(item);
-        dockedCount += 1;
+        renderedDockedCount += 1;
       }
     }
 
-    element.setAttribute("data-vb-shell-taskbar-empty", dockedCount === 0 && favoriteApps.length === 0 ? "true" : "false");
+    element.setAttribute("data-vb-shell-taskbar-empty", renderedDockedCount === 0 && favoriteApps.length === 0 ? "true" : "false");
     applyTaskbarPosition();
   }
 
@@ -1091,14 +1296,37 @@ export function createShellTaskbar({
     item?.focus?.();
   }
 
+  function handleDocumentPointerDown(event: Event) {
+    if (overflowPanelElement.hidden) return;
+    const target = event.target;
+    if (!(target instanceof Node)) return;
+    if (overflowPanelElement.contains(target) || overflowButton.contains(target)) return;
+    closeOverflowPanel();
+  }
+
+  function handleDocumentKeyDown(event: KeyboardEvent) {
+    if (event.key === "Escape") closeOverflowPanel();
+  }
+
+  function handleOverflowModeChange() {
+    render();
+  }
+
   function destroy() {
     if (destroyed) return;
     destroyed = true;
     taskbarSensor?.destroy();
     window.removeEventListener("resize", scheduleViewportClamp);
     window.removeEventListener("orientationchange", scheduleViewportClamp);
+    document.removeEventListener("pointerdown", handleDocumentPointerDown, true);
+    document.removeEventListener("keydown", handleDocumentKeyDown);
     globalThis.visualViewport?.removeEventListener?.("resize", scheduleViewportClamp);
     globalThis.visualViewport?.removeEventListener?.("scroll", scheduleViewportClamp);
+    if (overflowMediaQuery?.removeEventListener) {
+      overflowMediaQuery.removeEventListener("change", handleOverflowModeChange);
+    } else {
+      overflowMediaQuery?.removeListener?.(handleOverflowModeChange);
+    }
     destroyItemSensors();
     endTaskbarDrag();
     cancelItemDrag();
@@ -1114,6 +1342,7 @@ export function createShellTaskbar({
     dragLayerElement?.remove();
     dragLayerElement = null;
     clearTaskbarBottomAvoidance();
+    overflowPanelElement.remove();
     element.remove();
   }
 
@@ -1130,11 +1359,19 @@ export function createShellTaskbar({
   root.appendChild(element);
   window.addEventListener("resize", scheduleViewportClamp);
   window.addEventListener("orientationchange", scheduleViewportClamp);
+  document.addEventListener("pointerdown", handleDocumentPointerDown, true);
+  document.addEventListener("keydown", handleDocumentKeyDown);
   globalThis.visualViewport?.addEventListener?.("resize", scheduleViewportClamp);
   globalThis.visualViewport?.addEventListener?.("scroll", scheduleViewportClamp);
+  if (overflowMediaQuery?.addEventListener) {
+    overflowMediaQuery.addEventListener("change", handleOverflowModeChange);
+  } else {
+    overflowMediaQuery?.addListener?.(handleOverflowModeChange);
+  }
   unsubscribe = shellManager.subscribe(({ event, record }) => {
-    if (record && ["opened", "restored", "minimized"].includes(event)) {
+    if (record && ["activated", "opened", "restored", "minimized"].includes(event)) {
       rememberWindow(record.id);
+      touchRecentWindow(record.id);
     } else if (record && ["closed", "unregistered"].includes(event)) {
       forgetWindow(record.id);
     }
@@ -1151,6 +1388,10 @@ export function createShellTaskbar({
     syncAccountState((event as CustomEvent).detail || undefined);
   };
   window.addEventListener(BACKEND_AUTH_STATE_EVENT, authStateListener);
+  overflowButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    toggleOverflowPanel();
+  });
   accountButton.addEventListener("click", (event) => {
     event.preventDefault();
     accountPanel?.open?.({ focus: true, source: "taskbar-account" });
