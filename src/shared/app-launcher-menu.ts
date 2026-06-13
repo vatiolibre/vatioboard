@@ -112,10 +112,6 @@ function isLauncherSurfaceApp(app: VatioAppManifest) {
 }
 
 function compareLauncherApps(a: LauncherAppView, b: LauncherAppView) {
-  if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-  const aLast = Date.parse(String(appControl.getState(a.app.id).lastOpenedAt || ""));
-  const bLast = Date.parse(String(appControl.getState(b.app.id).lastOpenedAt || ""));
-  if (Number.isFinite(aLast) && Number.isFinite(bLast) && aLast !== bLast) return bLast - aLast;
   if (a.app.order !== b.app.order) return a.app.order - b.app.order;
   return getAppLabel(a.app).localeCompare(getAppLabel(b.app)) || a.app.id.localeCompare(b.app.id);
 }

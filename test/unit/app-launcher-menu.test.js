@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const originalRaf = globalThis.requestAnimationFrame;
 const originalCancelRaf = globalThis.cancelAnimationFrame;
+const APP_CONTROL_STORAGE_KEY = "vatioboard.os.appControl.v1";
 
 async function loadLauncher() {
   vi.resetModules();
@@ -53,6 +54,18 @@ function openContext(menu, appId) {
     clientY: 220,
   }));
   return menu.list.querySelector("[data-launcher-context]");
+}
+
+function getLauncherTileIds(menu) {
+  return Array.from(menu.list.querySelectorAll(".vb-app-launcher-page .vb-app-launcher-tile[data-app-id]"))
+    .map((tile) => tile.getAttribute("data-app-id"));
+}
+
+function seedAppControlRecord(apps) {
+  localStorage.setItem(APP_CONTROL_STORAGE_KEY, JSON.stringify({
+    version: 1,
+    apps,
+  }));
 }
 
 describe("app launcher start menu", () => {
@@ -133,6 +146,48 @@ describe("app launcher start menu", () => {
     expect(tiles.map((tile) => tile.getAttribute("data-app-id"))).toEqual(["vatio.calculator"]);
   });
 
+  it("keeps manifest order even when apps have launch history, pinned, and favorite state", async () => {
+    seedAppControlRecord({
+      "vatio.board": {
+        lastOpenedAt: "2026-01-01T12:00:00.000Z",
+      },
+      "vatio.calculator": {
+        favorite: true,
+        lastOpenedAt: "2026-02-01T12:00:00.000Z",
+        pinned: true,
+      },
+    });
+    const { initSharedStartMenu } = await loadLauncher();
+    const menu = openLauncher(initSharedStartMenu);
+    const ids = getLauncherTileIds(menu);
+
+    expect(ids.slice(0, 6)).toEqual([
+      "vatio.speed",
+      "vatio.board",
+      "vatio.replay",
+      "vatio.accel",
+      "vatio.library",
+      "vatio.appManager",
+    ]);
+    expect(ids.indexOf("vatio.board")).toBeLessThan(ids.indexOf("vatio.calculator"));
+  });
+
+  it("preserves relative manifest order in filtered search results", async () => {
+    const { initSharedStartMenu } = await loadLauncher();
+    const menu = openLauncher(initSharedStartMenu);
+    const initialOrder = getLauncherTileIds(menu);
+    const search = menu.list.querySelector(".vb-app-launcher-search-input");
+    const searchButton = menu.list.querySelector("[data-launcher-search-open]");
+
+    searchButton.click();
+    search.value = "tool";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+
+    const filteredOrder = getLauncherTileIds(menu);
+    expect(filteredOrder.length).toBeGreaterThan(1);
+    expect(filteredOrder).toEqual(initialOrder.filter((appId) => filteredOrder.includes(appId)));
+  });
+
   it("opens a filtered app tile even when drag capture retargets the click to the grid", async () => {
     const { initSharedStartMenu } = await loadLauncher();
     const openCalculator = vi.fn();
@@ -163,12 +218,14 @@ describe("app launcher start menu", () => {
   it("favorites apps from a long-press context sheet without adding an internal favorites rail", async () => {
     const { appControl, initSharedStartMenu } = await loadLauncher();
     const menu = openLauncher(initSharedStartMenu);
+    const initialOrder = getLauncherTileIds(menu);
 
     const context = openContext(menu, "vatio.board");
     expect(context.hidden).toBe(false);
     context.querySelector("[data-launcher-context-action='favorite']").click();
 
     expect(appControl.isFavorite("vatio.board")).toBe(true);
+    expect(getLauncherTileIds(menu)).toEqual(initialOrder);
     expect(menu.list.querySelector(".vb-app-launcher-favorites")).toBeNull();
     expect(menu.list.querySelector("[data-launcher-view]")).toBeNull();
   });
@@ -177,6 +234,7 @@ describe("app launcher start menu", () => {
     const { appControl, initSharedStartMenu } = await loadLauncher();
     const menu = openLauncher(initSharedStartMenu);
     const search = menu.list.querySelector(".vb-app-launcher-search-input");
+    const initialOrder = getLauncherTileIds(menu);
 
     openContext(menu, "vatio.board")
       .querySelector("[data-launcher-context-action='hide']")
@@ -184,6 +242,7 @@ describe("app launcher start menu", () => {
 
     expect(appControl.isHiddenFromStartMenu("vatio.board")).toBe(true);
     expect(menu.list.querySelector(".vb-app-launcher-grid [data-app-id='vatio.board']")).toBeNull();
+    expect(getLauncherTileIds(menu)).toEqual(initialOrder.filter((appId) => appId !== "vatio.board"));
 
     search.value = "board";
     search.dispatchEvent(new Event("input", { bubbles: true }));
@@ -195,6 +254,10 @@ describe("app launcher start menu", () => {
 
     expect(appControl.isHiddenFromStartMenu("vatio.board")).toBe(false);
     expect(menu.list.querySelector(".vb-app-launcher-grid [data-app-id='vatio.board']")).toBeTruthy();
+
+    search.value = "";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(getLauncherTileIds(menu)).toEqual(initialOrder);
   });
 
   it("keeps protected apps from being hidden", async () => {
@@ -283,6 +346,7 @@ describe("app launcher start menu", () => {
     const { appControl, initSharedStartMenu } = await loadLauncher();
     appControl.setFavorite("vatio.board", false);
     const menu = openLauncher(initSharedStartMenu);
+    const initialOrder = getLauncherTileIds(menu);
     const events = [];
     const handler = (event) => events.push(event.detail);
     window.addEventListener("vatio:taskbar-favorite-drag", handler);
@@ -312,6 +376,7 @@ describe("app launcher start menu", () => {
     expect(events.map((event) => event.phase)).toEqual(["start", "move", "end"]);
     expect(events[0].appId).toBe("vatio.board");
     expect(document.querySelector("[data-vb-app-launcher-drag-ghost='vatio.board']")).toBeNull();
+    expect(getLauncherTileIds(menu)).toEqual(initialOrder);
     expect(menu.list.querySelector(".vb-app-launcher-page-status").textContent).toContain("Page 1 of");
   });
 });
