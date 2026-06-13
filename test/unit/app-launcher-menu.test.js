@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const originalRaf = globalThis.requestAnimationFrame;
+const originalCancelRaf = globalThis.cancelAnimationFrame;
 
 async function loadLauncher() {
   vi.resetModules();
@@ -59,6 +62,16 @@ describe("app launcher start menu", () => {
     Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 1024 });
     Object.defineProperty(window, "innerHeight", { configurable: true, writable: true, value: 768 });
     vi.restoreAllMocks();
+    globalThis.requestAnimationFrame = (callback) => {
+      callback(performance.now());
+      return 1;
+    };
+    globalThis.cancelAnimationFrame = () => {};
+  });
+
+  afterEach(() => {
+    globalThis.requestAnimationFrame = originalRaf;
+    globalThis.cancelAnimationFrame = originalCancelRaf;
   });
 
   it("renders the modern launcher while preserving legacy start-menu selectors", async () => {
@@ -117,6 +130,33 @@ describe("app launcher start menu", () => {
 
     const tiles = Array.from(menu.list.querySelectorAll(".vb-app-launcher-grid > [data-app-id]"));
     expect(tiles.map((tile) => tile.getAttribute("data-app-id"))).toEqual(["vatio.calculator"]);
+  });
+
+  it("opens a filtered app tile even when drag capture retargets the click to the grid", async () => {
+    const { initSharedStartMenu } = await loadLauncher();
+    const openCalculator = vi.fn();
+    const menu = openLauncher(initSharedStartMenu, {
+      floatingTools: { openCalculator },
+    });
+    const search = menu.list.querySelector(".vb-app-launcher-search-input");
+    const searchButton = menu.list.querySelector("[data-launcher-search-open]");
+    const grid = menu.list.querySelector(".vb-app-launcher-grid");
+    const appButton = () => menu.list.querySelector(".vb-app-launcher-grid [data-app-id='vatio.calculator'] .vb-app-launcher-tile-main");
+
+    searchButton.click();
+    search.value = "calculator";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+
+    appButton().dispatchEvent(pointer("pointerdown", { clientX: 90, clientY: 330 }));
+    window.dispatchEvent(pointer("pointerup", { clientX: 90, clientY: 330 }));
+    grid.dispatchEvent(new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 90,
+      clientY: 330,
+    }));
+
+    expect(openCalculator).toHaveBeenCalledTimes(1);
   });
 
   it("favorites apps from a long-press context sheet without adding an internal favorites rail", async () => {
@@ -185,5 +225,41 @@ describe("app launcher start menu", () => {
     window.dispatchEvent(pointer("pointerup", { clientX: 210, clientY: 322 }));
 
     expect(menu.list.querySelector(".vb-app-launcher-page-status").textContent).toContain("Page 2 of");
+  });
+
+  it("emits taskbar favorite drag events when a tile is dragged vertically", async () => {
+    const { appControl, initSharedStartMenu } = await loadLauncher();
+    appControl.setFavorite("vatio.board", false);
+    const menu = openLauncher(initSharedStartMenu);
+    const events = [];
+    const handler = (event) => events.push(event.detail);
+    window.addEventListener("vatio:taskbar-favorite-drag", handler);
+
+    const tile = menu.list.querySelector(".vb-app-launcher-grid [data-app-id='vatio.board']");
+    const button = tile.querySelector(".vb-app-launcher-tile-main");
+    vi.spyOn(tile, "getBoundingClientRect").mockReturnValue({
+      left: 120,
+      top: 160,
+      right: 240,
+      bottom: 282,
+      width: 120,
+      height: 122,
+      x: 120,
+      y: 160,
+      toJSON: () => {},
+    });
+
+    button.dispatchEvent(pointer("pointerdown", { clientX: 180, clientY: 220 }));
+    window.dispatchEvent(pointer("pointermove", { clientX: 184, clientY: 272 }));
+
+    expect(document.querySelector("[data-vb-app-launcher-drag-ghost='vatio.board']")).toBeTruthy();
+
+    window.dispatchEvent(pointer("pointerup", { clientX: 184, clientY: 330 }));
+
+    window.removeEventListener("vatio:taskbar-favorite-drag", handler);
+    expect(events.map((event) => event.phase)).toEqual(["start", "move", "end"]);
+    expect(events[0].appId).toBe("vatio.board");
+    expect(document.querySelector("[data-vb-app-launcher-drag-ghost='vatio.board']")).toBeNull();
+    expect(menu.list.querySelector(".vb-app-launcher-page-status").textContent).toContain("Page 1 of");
   });
 });

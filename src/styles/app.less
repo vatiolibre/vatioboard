@@ -138,6 +138,33 @@ html.vb-floating-drag-active body {
   -webkit-user-drag: none;
 }
 
+.vb-shell-taskbar[data-vb-shell-taskbar-favorite-drop="active"],
+.vb-shell-taskbar[data-vb-shell-taskbar-favorite-drop="over"] {
+  border-color: color-mix(in srgb, var(--calc-accent, #10b981) 46%, #ffffff);
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--calc-accent, #10b981) 14%, transparent),
+    0 14px 30px rgba(15, 23, 42, 0.18);
+}
+
+.vb-shell-taskbar[data-vb-shell-taskbar-favorite-drop="active"]::after,
+.vb-shell-taskbar[data-vb-shell-taskbar-favorite-drop="over"]::after {
+  content: "";
+  position: absolute;
+  left: 28px;
+  top: -5px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid color-mix(in srgb, var(--calc-surface, #fff) 92%, transparent);
+  border-radius: 999px;
+  background: var(--calc-accent, #10b981);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--calc-accent, #10b981) 38%, transparent);
+  pointer-events: none;
+}
+
+.vb-shell-taskbar[data-vb-shell-taskbar-favorite-drop="over"] {
+  background: color-mix(in srgb, var(--calc-accent, #10b981) 10%, var(--calc-surface, #fff));
+}
+
 .vb-shell-taskbar-favorites {
   --vb-shell-taskbar-favorite-glow-buffer: 8px;
 
@@ -471,6 +498,14 @@ html.vb-floating-drag-active body {
   opacity: 0.76;
 }
 
+.vb-shell-taskbar-favorite-app.is-dragging {
+  cursor: grabbing;
+}
+
+.vb-shell-taskbar-favorite-app.is-drag-source {
+  opacity: 0.32;
+}
+
 .vb-shell-taskbar-account {
   position: relative;
   display: inline-grid;
@@ -797,6 +832,21 @@ html.vb-floating-drag-active body {
   background: #fee2e2;
   box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.14),
     0 16px 34px rgba(127, 29, 29, 0.24);
+}
+
+.vb-shell-taskbar-trash[data-vb-shell-taskbar-trash-mode="favorite"] {
+  border-color: color-mix(in srgb, #f59e0b 48%, transparent);
+  background: #fffbeb;
+  color: #92400e;
+  box-shadow: 0 14px 32px rgba(146, 64, 14, 0.18);
+}
+
+.vb-shell-taskbar-trash[data-vb-shell-taskbar-trash-mode="favorite"][data-vb-shell-taskbar-trash-active="true"] {
+  border-color: #f59e0b;
+  background: #fef3c7;
+  box-shadow:
+    0 0 0 4px rgba(245, 158, 11, 0.16),
+    0 16px 34px rgba(146, 64, 14, 0.24);
 }
 
 .vb-shell-taskbar-trash-icon {

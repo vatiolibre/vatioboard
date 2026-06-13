@@ -28,6 +28,7 @@ const LAUNCHER_TILE_HEIGHT = 122;
 const LAUNCHER_GRID_GAP = 12;
 const LONG_PRESS_MS = 520;
 const LONG_PRESS_MOVE_TOLERANCE_PX = 10;
+const TASKBAR_FAVORITE_DRAG_EVENT = "vatio:taskbar-favorite-drag";
 
 const IconStar = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -36,6 +37,11 @@ const IconStar = `
 `;
 
 type AnyRecord = Record<string, any>;
+
+type LauncherGridDragContext =
+  | { kind: "page"; page: number }
+  | { kind: "favorite"; app: VatioAppManifest; tile: HTMLElement }
+  | { kind: "favorite-candidate"; app: VatioAppManifest; tile: HTMLElement; page: number };
 
 interface AppLauncherMenuOptions {
   floatingTools?: FloatingToolsRuntime | null;
@@ -299,6 +305,8 @@ export function createAppLauncherMenu({
   let contextAnchor: HTMLElement | null = null;
   let suppressNextGridClick = false;
   let searchActive = false;
+  let activeLauncherDrag: AnyRecord | null = null;
+  let pendingTileClickAppId = "";
   const suppressedAppClicks = new Set<string>();
 
   function setTriggerExpanded(trigger: HTMLElement | null, isExpanded: boolean) {
@@ -448,6 +456,135 @@ export function createAppLauncherMenu({
     }
   }
 
+  function suppressGridClickForDrag(duration = 350) {
+    suppressNextGridClick = true;
+    window.setTimeout(() => {
+      suppressNextGridClick = false;
+    }, duration);
+  }
+
+  function rememberPotentialTileClick(appId: string) {
+    pendingTileClickAppId = appId;
+    window.setTimeout(() => {
+      if (pendingTileClickAppId === appId) pendingTileClickAppId = "";
+    }, 650);
+  }
+
+  function dispatchTaskbarFavoriteDrag(phase: "start" | "move" | "end" | "cancel", app: VatioAppManifest, point: { clientX: number; clientY: number }) {
+    window.dispatchEvent(new CustomEvent(TASKBAR_FAVORITE_DRAG_EVENT, {
+      detail: {
+        phase,
+        appId: app.id,
+        point: {
+          clientX: point.clientX,
+          clientY: point.clientY,
+        },
+      },
+    }));
+  }
+
+  function createFavoriteDragGhost(app: VatioAppManifest, tile: HTMLElement, rect: DOMRect) {
+    const ghost = tile.cloneNode(true) as HTMLElement;
+    ghost.classList.add("vb-app-launcher-drag-ghost");
+    ghost.classList.remove("is-drag-source");
+    ghost.removeAttribute("role");
+    ghost.setAttribute("aria-hidden", "true");
+    ghost.setAttribute("data-vb-app-launcher-drag-ghost", app.id);
+    suppressNativeDrag(ghost);
+    applyAppIconTheme(ghost, app);
+    ghost.style.left = `${Math.round(rect.left)}px`;
+    ghost.style.top = `${Math.round(rect.top)}px`;
+    ghost.style.width = `${Math.round(rect.width || LAUNCHER_MIN_TILE_WIDTH)}px`;
+    ghost.style.height = `${Math.round(rect.height || LAUNCHER_TILE_HEIGHT)}px`;
+    document.body.append(ghost);
+    return ghost;
+  }
+
+  function scheduleFavoriteDragGhostMove() {
+    const drag = activeLauncherDrag;
+    if (!drag || drag.rafId) return;
+    drag.rafId = requestAnimationFrame(() => {
+      drag.rafId = 0;
+      if (!activeLauncherDrag) return;
+      const tx = Math.round(drag.currentLeft - drag.startLeft);
+      const ty = Math.round(drag.currentTop - drag.startTop);
+      drag.ghost.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
+    });
+  }
+
+  function beginFavoriteTileDrag(payload: AnyRecord) {
+    const context = payload.context || {};
+    const app = context.app as VatioAppManifest | undefined;
+    const tile = context.tile as HTMLElement | undefined;
+    if (!app || !tile) return;
+    closeContextSheet();
+
+    const rect = tile.getBoundingClientRect();
+    const ghost = createFavoriteDragGhost(app, tile, rect);
+    activeLauncherDrag = {
+      app,
+      tile,
+      ghost,
+      startLeft: rect.left,
+      startTop: rect.top,
+      currentLeft: rect.left,
+      currentTop: rect.top,
+      rafId: 0,
+      moved: false,
+    };
+
+    tile.classList.add("is-drag-source");
+    list.classList.add("is-dragging");
+    dispatchTaskbarFavoriteDrag("start", app, payload.point || { clientX: payload.clientX, clientY: payload.clientY });
+    payload.event?.preventDefault?.();
+  }
+
+  function moveFavoriteTileDrag(payload: AnyRecord) {
+    const drag = activeLauncherDrag;
+    if (!drag) return;
+    drag.currentLeft = drag.startLeft + payload.dx;
+    drag.currentTop = drag.startTop + payload.dy;
+    drag.lastPoint = payload.point || { clientX: payload.clientX, clientY: payload.clientY };
+    drag.moved = true;
+    dispatchTaskbarFavoriteDrag("move", drag.app, payload.point || { clientX: payload.clientX, clientY: payload.clientY });
+    scheduleFavoriteDragGhostMove();
+    payload.event?.preventDefault?.();
+  }
+
+  function cleanupFavoriteTileDrag() {
+    const drag = activeLauncherDrag;
+    activeLauncherDrag = null;
+    if (!drag) return;
+    if (drag.rafId) {
+      cancelAnimationFrame(drag.rafId);
+      drag.rafId = 0;
+    }
+    drag.tile?.classList?.remove("is-drag-source");
+    drag.ghost?.remove?.();
+    list.classList.remove("is-dragging");
+  }
+
+  function endFavoriteTileDrag(payload: AnyRecord = {}) {
+    const drag = activeLauncherDrag;
+    if (!drag) return;
+    dispatchTaskbarFavoriteDrag("end", drag.app, payload.point || drag.lastPoint || { clientX: payload.clientX, clientY: payload.clientY });
+    if (drag.moved) {
+      suppressGridClickForDrag();
+      suppressedAppClicks.add(drag.app.id);
+      window.setTimeout(() => suppressedAppClicks.delete(drag.app.id), 0);
+    }
+    cleanupFavoriteTileDrag();
+    payload.event?.preventDefault?.();
+  }
+
+  function cancelFavoriteTileDrag(payload: AnyRecord = {}) {
+    const drag = activeLauncherDrag;
+    if (drag) {
+      dispatchTaskbarFavoriteDrag("cancel", drag.app, payload.point || drag.lastPoint || { clientX: payload.clientX, clientY: payload.clientY });
+    }
+    cleanupFavoriteTileDrag();
+  }
+
   function positionContextSheet(anchor: HTMLElement, point?: { clientX: number; clientY: number } | null) {
     const listRect = list.getBoundingClientRect();
     const anchorRect = anchor.getBoundingClientRect();
@@ -588,6 +725,7 @@ export function createAppLauncherMenu({
       startY = event.clientY;
       pressTimer = window.setTimeout(() => {
         pressTimer = 0;
+        if (activeLauncherDrag) return;
         openFromEvent(event);
       }, LONG_PRESS_MS);
     });
@@ -793,8 +931,12 @@ export function createAppLauncherMenu({
     }
 
     const tileButton = target?.closest<HTMLElement>("[data-app-id]");
-    if (!tileButton || !list.contains(tileButton)) return;
-    const appId = tileButton.dataset.appId || tileButton.closest<HTMLElement>("[data-app-id]")?.dataset.appId || "";
+    const clickFromGridCapture = target === grid || Boolean(target?.closest?.(".vb-app-launcher-grid"));
+    if ((!tileButton || !list.contains(tileButton)) && !clickFromGridCapture) return;
+    const appId = tileButton?.dataset.appId
+      || tileButton?.closest<HTMLElement>("[data-app-id]")?.dataset.appId
+      || (clickFromGridCapture ? pendingTileClickAppId : "");
+    pendingTileClickAppId = "";
     if (appId) launchApp(appId);
   }
 
@@ -861,25 +1003,57 @@ export function createAppLauncherMenu({
   list.addEventListener("click", handleLauncherClick);
   createDragSensors({
     source: grid,
-    canStart(event) {
-      if (latestPageCount <= 1) return null;
+    canStart(event): LauncherGridDragContext | null {
       const target = event.target instanceof Element ? event.target : null;
       if (target?.closest?.(".vb-app-launcher-context, .vb-app-launcher-page-dot, input, a")) return null;
-      return { page: currentPage };
+
+      const tile = target?.closest<HTMLElement>(".vb-app-launcher-tile[data-app-id]") || null;
+      const appId = tile?.dataset.appId || "";
+      const app = appId ? appRegistry.getApp(appId) : null;
+      if (app && appControl.isEnabled(app.id) && isLaunchableApp(app) && !appControl.isFavorite(app.id)) {
+        rememberPotentialTileClick(app.id);
+        return { kind: "favorite-candidate", app, tile, page: currentPage };
+      }
+
+      if (latestPageCount <= 1) return null;
+      return { kind: "page", page: currentPage };
     },
-    onStart() {
+    onStart(payload) {
+      const context = payload.context as AnyRecord;
+      if (context.kind === "favorite-candidate") {
+        const horizontal = Math.abs(payload.dx);
+        const vertical = Math.abs(payload.dy);
+        if (latestPageCount > 1 && horizontal > 12 && horizontal > vertical * 1.2) {
+          context.kind = "page";
+          closeContextSheet();
+          return;
+        }
+        context.kind = "favorite";
+        beginFavoriteTileDrag(payload);
+        return;
+      }
       closeContextSheet();
     },
+    onMove(payload) {
+      const context = payload.context as AnyRecord;
+      if (context.kind === "favorite") moveFavoriteTileDrag(payload);
+    },
     onEnd(payload) {
+      const context = payload.context as AnyRecord;
+      if (context.kind === "favorite") {
+        endFavoriteTileDrag(payload);
+        return;
+      }
       const horizontal = Math.abs(payload.dx);
       const vertical = Math.abs(payload.dy);
       if (horizontal < 48 || horizontal < vertical * 1.2) return;
-      suppressNextGridClick = true;
-      window.setTimeout(() => {
-        suppressNextGridClick = false;
-      }, 350);
+      suppressGridClickForDrag();
       currentPage = clamp(currentPage + (payload.dx < 0 ? 1 : -1), 0, latestPageCount - 1);
       render();
+    },
+    onCancel(payload) {
+      const context = payload.context as AnyRecord;
+      if (context.kind === "favorite") cancelFavoriteTileDrag(payload);
     },
   });
   document.addEventListener("click", (event) => {

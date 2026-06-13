@@ -233,6 +233,52 @@ describe("shell-taskbar", () => {
     manager.destroy();
   });
 
+  it("adds a taskbar favorite when a launcher tile is dropped on the taskbar", () => {
+    const manager = makeManager();
+    const appLauncher = { openApp: vi.fn(() => true) };
+    const startMenu = { bindTrigger: vi.fn(), close: vi.fn() };
+    const taskbar = createShellTaskbar({
+      shellManager: manager,
+      root: document.body,
+      startMenu,
+      appLauncher,
+    });
+    vi.spyOn(taskbar.getElement(), "getBoundingClientRect").mockReturnValue(rect({
+      left: 10,
+      top: 700,
+      width: 280,
+      height: 58,
+    }));
+    appControl.setFavorite("vatio.board", false);
+
+    window.dispatchEvent(new CustomEvent("vatio:taskbar-favorite-drag", {
+      detail: {
+        phase: "start",
+        appId: "vatio.board",
+        point: { clientX: 72, clientY: 724 },
+      },
+    }));
+
+    expect(taskbar.getElement().getAttribute("data-vb-shell-taskbar-favorite-drop")).toBe("over");
+
+    window.dispatchEvent(new CustomEvent("vatio:taskbar-favorite-drag", {
+      detail: {
+        phase: "end",
+        appId: "vatio.board",
+        point: { clientX: 72, clientY: 724 },
+      },
+    }));
+
+    expect(appControl.isFavorite("vatio.board")).toBe(true);
+    expect(taskbar.getElement().getAttribute("data-vb-shell-taskbar-favorite-drop")).toBe("false");
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-favorite-app='vatio.board']")).toBeTruthy();
+    expect(startMenu.close).toHaveBeenCalled();
+
+    appControl.setFavorite("vatio.board", false);
+    taskbar.destroy();
+    manager.destroy();
+  });
+
   it("uses one favorite taskbar control for a running favorite shell-window app", () => {
     const manager = makeManager();
     manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
@@ -285,6 +331,51 @@ describe("shell-taskbar", () => {
 
     expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-favorite-app='vatio.calculator']")).toBeNull();
     expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeTruthy();
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("removes a favorite by dragging its taskbar button into the remove target", () => {
+    const manager = makeManager();
+    manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
+    const appLauncher = { openApp: vi.fn(() => true) };
+    const taskbar = createShellTaskbar({
+      shellManager: manager,
+      root: document.body,
+      appLauncher,
+    });
+    manager.openWindow("calculator");
+    appControl.setFavorite("vatio.calculator", true);
+
+    const favorite = taskbar.getElement().querySelector("[data-vb-shell-taskbar-favorite-app='vatio.calculator']");
+    expect(favorite).toBeTruthy();
+    vi.spyOn(favorite, "getBoundingClientRect").mockReturnValue(rect({ left: 100, top: 600, width: 44, height: 44 }));
+
+    favorite.dispatchEvent(touchEvent("touchstart", { target: favorite, clientX: 110, clientY: 610 }));
+    document.dispatchEvent(touchEvent("touchmove", { target: favorite, clientX: 180, clientY: 550 }));
+
+    const trash = document.querySelector("[data-vb-shell-taskbar-trash]");
+    expect(trash).toBeTruthy();
+    expect(trash.getAttribute("data-vb-shell-taskbar-trash-mode")).toBe("favorite");
+    expect(trash.textContent).toContain("Remove favorite");
+    vi.spyOn(trash, "getBoundingClientRect").mockReturnValue(rect({
+      left: 240,
+      top: 520,
+      width: 150,
+      height: 70,
+    }));
+
+    document.dispatchEvent(touchEvent("touchmove", { target: favorite, clientX: 300, clientY: 550 }));
+    expect(trash.getAttribute("data-vb-shell-taskbar-trash-active")).toBe("true");
+
+    document.dispatchEvent(touchEvent("touchend", { target: favorite, clientX: 300, clientY: 550 }));
+
+    expect(appControl.isFavorite("vatio.calculator")).toBe(false);
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-favorite-app='vatio.calculator']")).toBeNull();
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeTruthy();
+    expect(manager.getWindow("calculator").state).toBe("open");
+    expect(trash.isConnected).toBe(false);
 
     taskbar.destroy();
     manager.destroy();

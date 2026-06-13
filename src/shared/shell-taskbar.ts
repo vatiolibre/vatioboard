@@ -19,6 +19,8 @@ const MOBILE_TASKBAR_VISIBLE_DOCKED_LIMIT = 3;
 const MOBILE_TASKBAR_TWO_APP_MIN_WIDTH = 360;
 const MOBILE_TASKBAR_THREE_APP_MIN_WIDTH = 430;
 const TASKBAR_OVERFLOW_PANEL_ID = "vbShellTaskbarOverflow";
+const TASKBAR_FAVORITE_DRAG_EVENT = "vatio:taskbar-favorite-drag";
+const TASKBAR_FAVORITE_DROP_MARGIN_PX = 24;
 
 // TODO(ts-migration): drag sensors preserve the legacy JS payload shape while
 // the taskbar callers are still mixed JS/TS.
@@ -56,6 +58,17 @@ interface TaskbarOptions {
     toggle?: (options?: Record<string, unknown>) => void;
   } | null;
   storage?: StorageLike | null;
+}
+
+interface TaskbarFavoriteDragDetail {
+  appId?: string;
+  phase?: "start" | "move" | "end" | "cancel";
+  point?: {
+    clientX?: number;
+    clientY?: number;
+    x?: number;
+    y?: number;
+  } | null;
 }
 
 function getWindowState(record: ShellWindowRecord | LegacyTaskbarOptions) {
@@ -158,10 +171,12 @@ function getAppLabel(app: VatioAppManifest) {
   return app.shortTitle || app.title || app.id;
 }
 
+function isLaunchableTaskbarApp(app: VatioAppManifest) {
+  return appControl.isEnabled(app.id) && Boolean(app.route || app.window?.shellWindowId);
+}
+
 function isLaunchableFavoriteApp(app: VatioAppManifest) {
-  return appControl.isFavorite(app.id)
-    && appControl.isEnabled(app.id)
-    && Boolean(app.route || app.window?.shellWindowId);
+  return appControl.isFavorite(app.id) && isLaunchableTaskbarApp(app);
 }
 
 function getFavoriteApps() {
@@ -290,6 +305,7 @@ export function createShellTaskbar({
   let recentWindowIds = savedState.knownWindowIds.filter((id) => knownWindowIds.has(id));
   const itemElements = new Map();
   const itemSensors = new Map();
+  const favoriteSensors = new Map();
   const suppressedClicks = new Set();
   const overflowMediaQuery = typeof globalThis.matchMedia === "function"
     ? globalThis.matchMedia(MOBILE_TASKBAR_OVERFLOW_QUERY)
@@ -298,6 +314,7 @@ export function createShellTaskbar({
   const element = document.createElement("nav");
   element.className = "vb-shell-taskbar";
   element.setAttribute("data-vb-shell-taskbar", "");
+  element.setAttribute("data-vb-shell-taskbar-favorite-drop", "false");
   element.setAttribute("aria-label", labels.taskbar || "Shell windows");
   suppressNativeDrag(element);
 
@@ -427,6 +444,7 @@ export function createShellTaskbar({
   let taskbarSensor = null;
   let activeTaskbarDrag = null;
   let activeItemDrag = null;
+  let activeFavoriteDrag = null;
   let dragLayerElement = null;
 
   function saveState() {
@@ -450,13 +468,20 @@ export function createShellTaskbar({
     dragLayerElement = null;
   }
 
-  function createItemGhost(item, rect) {
+  function createItemGhost(item, rect, dragId = "") {
     const layer = ensureDragLayer();
     const ghost = item.cloneNode(true);
     ghost.classList.add("vb-shell-drag-ghost", "is-dragging");
     ghost.classList.remove("is-drag-source");
     ghost.removeAttribute("data-vb-shell-taskbar-item");
-    ghost.setAttribute("data-vb-shell-drag-ghost", item.getAttribute("data-vb-shell-taskbar-item") || "");
+    ghost.removeAttribute("data-vb-shell-taskbar-favorite-app");
+    ghost.setAttribute(
+      "data-vb-shell-drag-ghost",
+      dragId
+        || item.getAttribute("data-vb-shell-taskbar-item")
+        || item.getAttribute("data-vb-shell-taskbar-favorite-app")
+        || "",
+    );
     ghost.setAttribute("aria-hidden", "true");
     suppressNativeDrag(ghost);
     ghost.style.left = `${Math.round(rect.left)}px`;
@@ -472,7 +497,21 @@ export function createShellTaskbar({
     removeDragLayerIfEmpty();
   }
 
-  function prepareTrashTarget() {
+  function setTrashTargetMode(mode = "window") {
+    const isFavorite = mode === "favorite";
+    const label = isFavorite
+      ? labels.removeFavorite || "Remove favorite"
+      : labels.removeFromTaskbar || "Remove";
+    const ariaLabel = isFavorite
+      ? labels.removeFavorite || "Remove favorite"
+      : labels.removeFromTaskbar || "Remove from taskbar";
+    trashElement.setAttribute("data-vb-shell-taskbar-trash-mode", mode);
+    trashElement.setAttribute("aria-label", ariaLabel);
+    trashLabel.textContent = label;
+  }
+
+  function prepareTrashTarget(mode = "window") {
+    setTrashTargetMode(mode);
     const detachedRoot = getDetachedRoot(root);
     if (trashElement.parentElement !== detachedRoot) detachedRoot.append(trashElement);
     trashElement.classList.remove("is-visible");
@@ -773,6 +812,61 @@ export function createShellTaskbar({
     return point.clientY >= viewport.height - edgeDistance;
   }
 
+  function normalizeFavoriteDragPoint(detail: TaskbarFavoriteDragDetail) {
+    const x = Number(detail?.point?.clientX ?? detail?.point?.x);
+    const y = Number(detail?.point?.clientY ?? detail?.point?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return makePoint(x, y);
+  }
+
+  function getFavoriteDropApp(appId: string | undefined) {
+    if (!appId) return null;
+    const app = appRegistry.getApp(appId);
+    if (!app || !isLaunchableTaskbarApp(app)) return null;
+    return app;
+  }
+
+  function setFavoriteDropState(state: "false" | "active" | "over") {
+    element.setAttribute("data-vb-shell-taskbar-favorite-drop", state);
+  }
+
+  function isPointOverFavoriteDropTarget(point) {
+    if (!point || destroyed || element.hidden) return false;
+    const rect = element.getBoundingClientRect();
+    const width = rect.width || rect.right - rect.left;
+    const height = rect.height || rect.bottom - rect.top;
+    if (!width || !height) return false;
+    return point.clientX >= rect.left - TASKBAR_FAVORITE_DROP_MARGIN_PX
+      && point.clientX <= rect.right + TASKBAR_FAVORITE_DROP_MARGIN_PX
+      && point.clientY >= rect.top - TASKBAR_FAVORITE_DROP_MARGIN_PX
+      && point.clientY <= rect.bottom + TASKBAR_FAVORITE_DROP_MARGIN_PX;
+  }
+
+  function handleTaskbarFavoriteDrag(event: Event) {
+    const detail = ((event as CustomEvent<TaskbarFavoriteDragDetail>).detail || {}) as TaskbarFavoriteDragDetail;
+    const phase = detail.phase || "move";
+    const app = getFavoriteDropApp(detail.appId);
+    const point = normalizeFavoriteDragPoint(detail);
+    const over = Boolean(app && point && isPointOverFavoriteDropTarget(point));
+
+    if (phase === "cancel") {
+      setFavoriteDropState("false");
+      return;
+    }
+
+    if (phase === "end") {
+      if (app && over && !appControl.isFavorite(app.id)) {
+        appControl.setFavorite(app.id, true);
+        startMenu?.close?.();
+        render();
+      }
+      setFavoriteDropState("false");
+      return;
+    }
+
+    setFavoriteDropState(over ? "over" : "active");
+  }
+
   function isPointInTaskbarRedockZone(point, drag) {
     if (!point) return false;
     const viewport = getViewportBounds();
@@ -990,6 +1084,138 @@ export function createShellTaskbar({
     cleanupItemDragVisuals(drag);
   }
 
+  function beginFavoriteDrag(payload) {
+    const { app, item } = payload.context;
+    if (!app || !item || destroyed) return;
+    suppressNativeDrag(item);
+    prepareTrashTarget("favorite");
+    closeOverflowPanel();
+
+    const rect = item.getBoundingClientRect();
+    const width = rect.width || item.offsetWidth || FAB_SIZE_PX;
+    const height = rect.height || item.offsetHeight || FAB_SIZE_PX;
+    const position = clampPositionToViewport({ left: rect.left, top: rect.top }, width, height);
+    const ghost = createItemGhost(item, {
+      left: position.left,
+      top: position.top,
+      width,
+      height,
+    }, app.id);
+
+    activeFavoriteDrag = {
+      app,
+      item,
+      ghost,
+      startLeft: position.left,
+      startTop: position.top,
+      currentLeft: position.left,
+      currentTop: position.top,
+      width,
+      height,
+      overTrash: false,
+      rafId: 0,
+      moved: false,
+      lastPoint: makePoint(payload.clientX, payload.clientY),
+    };
+
+    item.classList.add("is-dragging", "is-drag-source");
+    item.setAttribute("data-vb-shell-taskbar-drag-source", "true");
+    document.documentElement.classList.add("vb-floating-drag-active");
+    showTrashTarget();
+    payload.event?.preventDefault?.();
+  }
+
+  function scheduleFavoriteGhostMove() {
+    const drag = activeFavoriteDrag;
+    if (!drag || drag.rafId) return;
+    drag.rafId = requestAnimationFrame(() => {
+      drag.rafId = 0;
+      if (!activeFavoriteDrag) return;
+      const tx = Math.round(drag.currentLeft - drag.startLeft);
+      const ty = Math.round(drag.currentTop - drag.startTop);
+      drag.ghost.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
+    });
+  }
+
+  function moveFavoriteDrag(payload) {
+    const drag = activeFavoriteDrag;
+    if (!drag) return;
+    const position = clampPositionToViewport({
+      left: drag.startLeft + payload.dx,
+      top: drag.startTop + payload.dy,
+    }, drag.width, drag.height);
+    drag.currentLeft = position.left;
+    drag.currentTop = position.top;
+    drag.lastPoint = makePoint(payload.clientX, payload.clientY);
+    drag.moved = true;
+    drag.overTrash = updateTrashTarget(drag.lastPoint);
+    scheduleFavoriteGhostMove();
+    payload.event?.preventDefault?.();
+  }
+
+  function cleanupFavoriteDragVisuals(drag) {
+    if (!drag) return;
+    if (drag.rafId) {
+      cancelAnimationFrame(drag.rafId);
+      drag.rafId = 0;
+    }
+    drag.item.classList.remove("is-dragging", "is-drag-source");
+    drag.item.removeAttribute("data-vb-shell-taskbar-drag-source");
+    removeItemGhost(drag.ghost);
+    hideTrashTarget();
+    document.documentElement.classList.remove("vb-floating-drag-active");
+  }
+
+  function endFavoriteDrag(payload: LegacyTaskbarOptions = {}) {
+    const drag = activeFavoriteDrag;
+    activeFavoriteDrag = null;
+    if (!drag) return;
+    cleanupFavoriteDragVisuals(drag);
+
+    if (!drag.moved) return;
+
+    suppressedClicks.add(drag.app.id);
+    setTimeout(() => suppressedClicks.delete(drag.app.id), 0);
+
+    const point = payload.point || drag.lastPoint;
+    if (drag.overTrash || isPointOverTrashTarget(point)) {
+      appControl.setFavorite(drag.app.id, false);
+      render();
+      payload.event?.preventDefault?.();
+      return;
+    }
+
+    render();
+    payload.event?.preventDefault?.();
+  }
+
+  function cancelFavoriteDrag(payload: LegacyTaskbarOptions = {}) {
+    if (payload.canceled && activeFavoriteDrag?.moved) {
+      endFavoriteDrag(payload);
+      return;
+    }
+    const drag = activeFavoriteDrag;
+    activeFavoriteDrag = null;
+    cleanupFavoriteDragVisuals(drag);
+  }
+
+  function setupFavoriteSensor(item, app) {
+    const sensor = createDragSensors({
+      source: item,
+      canStart: () => ({ app, item }),
+      onStart: beginFavoriteDrag,
+      onMove: moveFavoriteDrag,
+      onEnd: endFavoriteDrag,
+      onCancel: cancelFavoriteDrag,
+    });
+    favoriteSensors.set(app.id, sensor);
+  }
+
+  function destroyFavoriteSensors() {
+    for (const sensor of favoriteSensors.values()) sensor.destroy();
+    favoriteSensors.clear();
+  }
+
   function setupItemSensor(item, record) {
     const sensor = createDragSensors({
       source: item,
@@ -1179,6 +1405,10 @@ export function createShellTaskbar({
     item.addEventListener("dragstart", (event) => event.preventDefault());
     item.addEventListener("click", (event) => {
       event.preventDefault();
+      if (suppressedClicks.has(app.id)) {
+        event.stopPropagation();
+        return;
+      }
       if (record && running) {
         handleItemClick(record, event);
       } else {
@@ -1187,10 +1417,12 @@ export function createShellTaskbar({
       startMenu?.close?.();
     });
 
+    setupFavoriteSensor(item, app);
     return item;
   }
 
   function renderFavoriteApps() {
+    destroyFavoriteSensors();
     favoritesElement.replaceChildren();
     const favoriteApps = appLauncher ? getFavoriteApps() : [];
     favoritesElement.hidden = favoriteApps.length === 0;
@@ -1328,14 +1560,17 @@ export function createShellTaskbar({
       overflowMediaQuery?.removeListener?.(handleOverflowModeChange);
     }
     destroyItemSensors();
+    destroyFavoriteSensors();
     endTaskbarDrag();
     cancelItemDrag();
+    cancelFavoriteDrag();
     unsubscribe?.();
     preferenceUnsubscribe?.();
     appControlUnsubscribe?.();
     if (authStateListener) {
       window.removeEventListener(BACKEND_AUTH_STATE_EVENT, authStateListener);
     }
+    window.removeEventListener(TASKBAR_FAVORITE_DRAG_EVENT, handleTaskbarFavoriteDrag as EventListener);
     for (const item of itemElements.values()) item.remove();
     itemElements.clear();
     hideTrashTarget();
@@ -1359,6 +1594,7 @@ export function createShellTaskbar({
   root.appendChild(element);
   window.addEventListener("resize", scheduleViewportClamp);
   window.addEventListener("orientationchange", scheduleViewportClamp);
+  window.addEventListener(TASKBAR_FAVORITE_DRAG_EVENT, handleTaskbarFavoriteDrag as EventListener);
   document.addEventListener("pointerdown", handleDocumentPointerDown, true);
   document.addEventListener("keydown", handleDocumentKeyDown);
   globalThis.visualViewport?.addEventListener?.("resize", scheduleViewportClamp);
