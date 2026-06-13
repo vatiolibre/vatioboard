@@ -374,8 +374,21 @@
   min-width: 0;
 }
 
+.vb-app-launcher-arrange-controls {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.vb-app-launcher-arrange-controls[hidden] {
+  display: none;
+}
+
 .vb-app-launcher-icon-button,
 .vb-app-launcher-lang,
+.vb-app-launcher-arrange-action,
 .vb-app-launcher-page-dot {
   appearance: none;
   border: 1px solid var(--vb-app-launcher-border);
@@ -387,6 +400,7 @@
 }
 
 .app-start-menu-list.vb-app-launcher .vb-app-launcher-icon-button,
+.app-start-menu-list.vb-app-launcher .vb-app-launcher-arrange-action,
 .app-start-menu-list.vb-app-launcher .vb-app-launcher-lang {
   display: inline-grid;
   align-items: center;
@@ -417,6 +431,7 @@
 }
 
 .vb-app-launcher-icon-button svg,
+.vb-app-launcher-arrange-action svg,
 .vb-app-launcher-lang svg {
   width: 20px;
   height: 20px;
@@ -598,6 +613,37 @@
   opacity: 0.36;
 }
 
+.app-start-menu-list.vb-app-launcher[data-vb-app-launcher-reorder="true"] .vb-app-launcher-tile-main {
+  cursor: grab;
+}
+
+.app-start-menu-list.vb-app-launcher[data-vb-app-launcher-reorder-dragging="true"] .vb-app-launcher-tile-main {
+  cursor: grabbing;
+}
+
+.vb-app-launcher-tile[data-vb-app-launcher-reorder-drop]::before {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  top: 10px;
+  bottom: 10px;
+  width: 4px;
+  border-radius: 999px;
+  background: var(--vb-app-launcher-accent);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--vb-app-launcher-accent) 16%, transparent),
+    0 8px 18px color-mix(in srgb, var(--vb-app-launcher-accent) 32%, transparent);
+  pointer-events: none;
+}
+
+.vb-app-launcher-tile[data-vb-app-launcher-reorder-drop="before"]::before {
+  left: -6px;
+}
+
+.vb-app-launcher-tile[data-vb-app-launcher-reorder-drop="after"]::before {
+  right: -6px;
+}
+
 .vb-app-launcher-drag-ghost {
   position: fixed;
   z-index: calc(var(--vb-z-shell-start-menu, 1960) + 4);
@@ -609,6 +655,14 @@
   -webkit-user-drag: none;
   opacity: 0.94;
   filter: drop-shadow(0 18px 28px rgba(15, 23, 42, 0.22));
+}
+
+.vb-app-launcher-reorder-ghost {
+  opacity: 0.98;
+  transform-origin: 50% 50%;
+  filter:
+    drop-shadow(0 20px 30px rgba(15, 23, 42, 0.24))
+    drop-shadow(0 0 18px color-mix(in srgb, var(--vb-app-icon-accent) 22%, transparent));
 }
 
 .vb-app-launcher-tile-main {
@@ -1106,7 +1160,12 @@
     gap: 6px;
   }
 
+  .vb-app-launcher-arrange-controls {
+    gap: 6px;
+  }
+
   .app-start-menu-list.vb-app-launcher .vb-app-launcher-icon-button,
+  .app-start-menu-list.vb-app-launcher .vb-app-launcher-arrange-action,
   .app-start-menu-list.vb-app-launcher .vb-app-launcher-lang {
     flex-basis: 40px;
     width: 40px;

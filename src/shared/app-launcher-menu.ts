@@ -4,7 +4,9 @@ import { applyTranslations, getLang, t, toggleLang } from "../i18n.js";
 import {
   IconClose,
   IconPages,
+  IconSave,
   IconTrash,
+  IconUndo,
 } from "../icons.js";
 import {
   appControl,
@@ -29,6 +31,9 @@ const LAUNCHER_GRID_GAP = 12;
 const LONG_PRESS_MS = 520;
 const LONG_PRESS_MOVE_TOLERANCE_PX = 10;
 const TASKBAR_FAVORITE_DRAG_EVENT = "vatio:taskbar-favorite-drag";
+const APP_LAUNCHER_LAYOUT_STORAGE_KEY = "vatioboard.os.appLauncherLayout.v1";
+const REORDER_EDGE_HOLD_MS = 520;
+const REORDER_EDGE_ZONE_PX = 64;
 
 const IconStar = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -41,7 +46,16 @@ type AnyRecord = Record<string, any>;
 type LauncherGridDragContext =
   | { kind: "page"; page: number }
   | { kind: "favorite"; app: VatioAppManifest; tile: HTMLElement }
-  | { kind: "favorite-candidate"; app: VatioAppManifest; tile: HTMLElement; page: number };
+  | { kind: "favorite-candidate"; app: VatioAppManifest; tile: HTMLElement; page: number }
+  | { kind: "reorder"; app: VatioAppManifest; tile: HTMLElement; page: number };
+
+type LauncherDropPlacement = "before" | "after";
+
+type LauncherLayoutRecord = {
+  version: 1;
+  order: string[];
+  updatedAt: string;
+};
 
 interface AppLauncherMenuOptions {
   floatingTools?: FloatingToolsRuntime | null;
@@ -114,6 +128,74 @@ function isLauncherSurfaceApp(app: VatioAppManifest) {
 function compareLauncherApps(a: LauncherAppView, b: LauncherAppView) {
   if (a.app.order !== b.app.order) return a.app.order - b.app.order;
   return getAppLabel(a.app).localeCompare(getAppLabel(b.app)) || a.app.id.localeCompare(b.app.id);
+}
+
+function getLauncherLayoutStorage() {
+  try {
+    return window.localStorage || null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeLauncherLayoutOrder(order: unknown, defaultOrder: string[]) {
+  const knownIds = new Set(defaultOrder);
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  if (Array.isArray(order)) {
+    for (const item of order) {
+      const appId = typeof item === "string" ? item : "";
+      if (!appId || !knownIds.has(appId) || seen.has(appId)) continue;
+      seen.add(appId);
+      normalized.push(appId);
+    }
+  }
+
+  for (const appId of defaultOrder) {
+    if (seen.has(appId)) continue;
+    seen.add(appId);
+    normalized.push(appId);
+  }
+
+  return normalized;
+}
+
+function readLauncherLayoutOrder(defaultOrder: string[]) {
+  const storage = getLauncherLayoutStorage();
+  if (!storage) return defaultOrder;
+  try {
+    const parsed = JSON.parse(storage.getItem(APP_LAUNCHER_LAYOUT_STORAGE_KEY) || "null") as Partial<LauncherLayoutRecord> | null;
+    if (!parsed || parsed.version !== 1) return defaultOrder;
+    return normalizeLauncherLayoutOrder(parsed.order, defaultOrder);
+  } catch {
+    return defaultOrder;
+  }
+}
+
+function writeLauncherLayoutOrder(order: string[]) {
+  const storage = getLauncherLayoutStorage();
+  if (!storage) return;
+  const record: LauncherLayoutRecord = {
+    version: 1,
+    order: normalizeLauncherLayoutOrder(order, order),
+    updatedAt: new Date().toISOString(),
+  };
+  try {
+    storage.setItem(APP_LAUNCHER_LAYOUT_STORAGE_KEY, JSON.stringify(record));
+  } catch {
+    // Local layout persistence is best effort.
+  }
+}
+
+function resetLauncherLayoutOrder() {
+  const storage = getLauncherLayoutStorage();
+  if (!storage) return;
+  try {
+    storage.removeItem(APP_LAUNCHER_LAYOUT_STORAGE_KEY);
+  } catch {
+    // Local layout persistence is best effort.
+  }
 }
 
 function getTileDataset(app: VatioAppManifest) {
@@ -223,6 +305,25 @@ export function createAppLauncherMenu({
   searchPanel.append(searchWrap, searchCloseButton);
 
   const controls = createEl("div", "vb-app-launcher-controls");
+  const arrangeControls = createEl("div", "vb-app-launcher-arrange-controls", {
+    "data-vb-app-launcher-arrange-controls": "",
+  });
+  arrangeControls.hidden = true;
+  const resetArrangeButton = createEl("button", "vb-app-launcher-arrange-action", {
+    type: "button",
+    "aria-label": "Reset app order",
+    title: "Reset app order",
+    "data-launcher-arrange-reset": "",
+  }) as HTMLButtonElement;
+  resetArrangeButton.innerHTML = IconUndo;
+  const doneArrangeButton = createEl("button", "vb-app-launcher-arrange-action", {
+    type: "button",
+    "aria-label": "Done arranging apps",
+    title: "Done arranging apps",
+    "data-launcher-arrange-done": "",
+  }) as HTMLButtonElement;
+  doneArrangeButton.innerHTML = IconSave;
+  arrangeControls.append(resetArrangeButton, doneArrangeButton);
   const utilityControls = createEl("div", "vb-app-launcher-utility-controls");
   const langButton = createEl("button", "lang-toggle vb-app-launcher-lang", {
     type: "button",
@@ -238,7 +339,7 @@ export function createAppLauncherMenu({
   }) as HTMLButtonElement;
   closeButton.innerHTML = IconClose;
   utilityControls.append(langButton, closeButton);
-  controls.append(utilityControls);
+  controls.append(arrangeControls, utilityControls);
   header.append(brand, titleBlock, controls);
 
   const body = createEl("div", "vb-app-launcher-body");
@@ -290,7 +391,7 @@ export function createAppLauncherMenu({
   });
   compatibilityList.hidden = true;
 
-  list.append(header, searchPanel, body, contextSheet, compatibilityList);
+  list.append(header, searchPanel, compatibilityList, body, contextSheet);
   mount.append(list);
 
   let open = false;
@@ -307,6 +408,8 @@ export function createAppLauncherMenu({
   let suppressNextGridClick = false;
   let searchActive = false;
   let activeLauncherDrag: AnyRecord | null = null;
+  let arrangeMode = false;
+  let reorderEdgeSwitchTimer = 0;
   let pendingTileClickAppId = "";
   const suppressedAppClicks = new Set<string>();
 
@@ -327,10 +430,8 @@ export function createAppLauncherMenu({
     return new Set(appLauncher.getRunningApps().map((app) => app.appId));
   }
 
-  function buildAppViews({ includeHidden = false } = {}) {
+  function buildBaseAppViews() {
     const running = getRunningAppIds();
-    const search = query.trim().toLowerCase();
-    const revealHiddenMatches = Boolean(search);
     const routePath = currentRoutePath;
     return appRegistry.listApps()
       .filter(isLauncherSurfaceApp)
@@ -351,6 +452,22 @@ export function createAppLauncherMenu({
           running: running.has(app.id),
         };
       })
+      .sort(compareLauncherApps);
+  }
+
+  function applyLauncherLayoutOrder(views: LauncherAppView[]) {
+    const manifestOrder = [...views].sort(compareLauncherApps);
+    const viewById = new Map(manifestOrder.map((view) => [view.app.id, view]));
+    const savedOrder = readLauncherLayoutOrder(manifestOrder.map((view) => view.app.id));
+    return savedOrder
+      .map((appId) => viewById.get(appId))
+      .filter((view): view is LauncherAppView => Boolean(view));
+  }
+
+  function buildAppViews({ includeHidden = false, includeSearch = true } = {}) {
+    const search = includeSearch ? query.trim().toLowerCase() : "";
+    const revealHiddenMatches = Boolean(search);
+    return applyLauncherLayoutOrder(buildBaseAppViews())
       .filter((view) => includeHidden || !view.hidden || view.protected || (revealHiddenMatches && view.hidden))
       .filter((view) => {
         if (!search) return true;
@@ -361,8 +478,7 @@ export function createAppLauncherMenu({
           view.app.description,
           ...(view.app.tags || []),
         ].some((value) => String(value || "").toLowerCase().includes(search));
-      })
-      .sort(compareLauncherApps);
+      });
   }
 
   function calculatePageSize() {
@@ -487,15 +603,23 @@ export function createAppLauncherMenu({
     contextAnchor = null;
   }
 
+  function syncArrangeUi() {
+    list.setAttribute("data-vb-app-launcher-reorder", arrangeMode ? "true" : "false");
+    arrangeControls.hidden = !arrangeMode;
+    pagesViewport.setAttribute("aria-label", arrangeMode ? "Arrange applications" : "Applications");
+  }
+
   function syncSearchUi() {
-    list.dataset.searchActive = searchActive ? "true" : "false";
-    searchPanel.hidden = !searchActive;
-    searchButton.hidden = searchActive;
-    searchInput.tabIndex = searchActive ? 0 : -1;
-    searchButton.setAttribute("aria-expanded", searchActive ? "true" : "false");
+    const searchVisible = searchActive && !arrangeMode;
+    list.dataset.searchActive = searchVisible ? "true" : "false";
+    searchPanel.hidden = !searchVisible;
+    searchButton.hidden = arrangeMode || searchVisible;
+    searchInput.tabIndex = searchVisible ? 0 : -1;
+    searchButton.setAttribute("aria-expanded", searchVisible ? "true" : "false");
   }
 
   function openSearch({ focus = false } = {}) {
+    if (arrangeMode) return;
     const wasActive = searchActive;
     searchActive = true;
     syncSearchUi();
@@ -521,6 +645,37 @@ export function createAppLauncherMenu({
     if (focusButton && !list.hidden) {
       searchButton.focus({ preventScroll: true });
     }
+  }
+
+  function setArrangeMode(enabled: boolean, { renderView = true } = {}) {
+    const nextArrangeMode = enabled === true;
+    if (nextArrangeMode === arrangeMode) {
+      syncArrangeUi();
+      syncSearchUi();
+      return;
+    }
+
+    if (nextArrangeMode) {
+      closeContextSheet();
+      arrangeMode = true;
+      searchActive = false;
+      query = "";
+      searchInput.value = "";
+      currentPage = 0;
+    } else {
+      cleanupReorderTileDrag();
+      arrangeMode = false;
+    }
+
+    syncArrangeUi();
+    syncSearchUi();
+    if (renderView) render();
+  }
+
+  function resetArrangeOrder() {
+    resetLauncherLayoutOrder();
+    currentPage = 0;
+    render();
   }
 
   function suppressGridClickForDrag(duration = 350) {
@@ -567,7 +722,24 @@ export function createAppLauncherMenu({
     return ghost;
   }
 
-  function scheduleFavoriteDragGhostMove() {
+  function createReorderDragGhost(app: VatioAppManifest, tile: HTMLElement, rect: DOMRect) {
+    const ghost = tile.cloneNode(true) as HTMLElement;
+    ghost.classList.add("vb-app-launcher-drag-ghost", "vb-app-launcher-reorder-ghost");
+    ghost.classList.remove("is-drag-source");
+    ghost.removeAttribute("role");
+    ghost.setAttribute("aria-hidden", "true");
+    ghost.setAttribute("data-vb-app-launcher-reorder-ghost", app.id);
+    suppressNativeDrag(ghost);
+    applyAppIconTheme(ghost, app);
+    ghost.style.left = `${Math.round(rect.left)}px`;
+    ghost.style.top = `${Math.round(rect.top)}px`;
+    ghost.style.width = `${Math.round(rect.width || LAUNCHER_MIN_TILE_WIDTH)}px`;
+    ghost.style.height = `${Math.round(rect.height || LAUNCHER_TILE_HEIGHT)}px`;
+    document.body.append(ghost);
+    return ghost;
+  }
+
+  function scheduleLauncherDragGhostMove() {
     const drag = activeLauncherDrag;
     if (!drag || drag.rafId) return;
     drag.rafId = requestAnimationFrame(() => {
@@ -577,6 +749,10 @@ export function createAppLauncherMenu({
       const ty = Math.round(drag.currentTop - drag.startTop);
       drag.ghost.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
     });
+  }
+
+  function scheduleFavoriteDragGhostMove() {
+    scheduleLauncherDragGhostMove();
   }
 
   function beginFavoriteTileDrag(payload: AnyRecord) {
@@ -650,6 +826,233 @@ export function createAppLauncherMenu({
       dispatchTaskbarFavoriteDrag("cancel", drag.app, payload.point || drag.lastPoint || { clientX: payload.clientX, clientY: payload.clientY });
     }
     cleanupFavoriteTileDrag();
+  }
+
+  function getDragPayloadPoint(payload: AnyRecord = {}) {
+    const point = payload.point || {};
+    const clientX = Number.isFinite(Number(point.clientX)) ? Number(point.clientX) : Number(payload.clientX) || 0;
+    const clientY = Number.isFinite(Number(point.clientY)) ? Number(point.clientY) : Number(payload.clientY) || 0;
+    return { clientX, clientY };
+  }
+
+  function clearReorderEdgeSwitch() {
+    if (reorderEdgeSwitchTimer) {
+      window.clearTimeout(reorderEdgeSwitchTimer);
+      reorderEdgeSwitchTimer = 0;
+    }
+    if (activeLauncherDrag?.kind === "reorder") {
+      activeLauncherDrag.edgeTargetPage = null;
+    }
+  }
+
+  function clearReorderDropPreview() {
+    for (const tile of pageTrack.querySelectorAll<HTMLElement>("[data-vb-app-launcher-reorder-drop]")) {
+      tile.removeAttribute("data-vb-app-launcher-reorder-drop");
+    }
+  }
+
+  function getActiveLauncherPage() {
+    return pageTrack.querySelector<HTMLElement>(`.vb-app-launcher-page[data-page="${currentPage}"]`);
+  }
+
+  function getReorderPlacement(tile: HTMLElement, point: { clientX: number; clientY: number }): LauncherDropPlacement {
+    const rect = tile.getBoundingClientRect();
+    const sameRow = point.clientY >= rect.top && point.clientY <= rect.bottom;
+    const centerX = rect.left + (rect.width / 2);
+    const centerY = rect.top + (rect.height / 2);
+    return (sameRow ? point.clientX < centerX : point.clientY < centerY) ? "before" : "after";
+  }
+
+  function resolveReorderDropTarget(point: { clientX: number; clientY: number }) {
+    const drag = activeLauncherDrag;
+    const page = getActiveLauncherPage();
+    if (!drag || drag.kind !== "reorder" || !page) return null;
+
+    const sourceId = drag.app.id;
+    const directElement = document.elementFromPoint?.(point.clientX, point.clientY) || null;
+    const directTile = directElement instanceof Element
+      ? directElement.closest<HTMLElement>(".vb-app-launcher-tile[data-app-id]")
+      : null;
+    if (directTile && page.contains(directTile) && directTile.dataset.appId && directTile.dataset.appId !== sourceId) {
+      return {
+        tile: directTile,
+        appId: directTile.dataset.appId,
+        placement: getReorderPlacement(directTile, point),
+      };
+    }
+
+    const tiles = Array.from(page.querySelectorAll<HTMLElement>(".vb-app-launcher-tile[data-app-id]"))
+      .filter((tile) => tile.dataset.appId && tile.dataset.appId !== sourceId);
+    if (!tiles.length) return null;
+
+    let closestTile = tiles[0];
+    let closestDistance = Number.POSITIVE_INFINITY;
+    for (const tile of tiles) {
+      const rect = tile.getBoundingClientRect();
+      const centerX = rect.left + (rect.width / 2);
+      const centerY = rect.top + (rect.height / 2);
+      const distance = Math.hypot(point.clientX - centerX, point.clientY - centerY);
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestTile = tile;
+      }
+    }
+
+    return {
+      tile: closestTile,
+      appId: closestTile.dataset.appId || "",
+      placement: getReorderPlacement(closestTile, point),
+    };
+  }
+
+  function updateReorderDropPreview(point: { clientX: number; clientY: number }) {
+    const drag = activeLauncherDrag;
+    if (!drag || drag.kind !== "reorder") return;
+    clearReorderDropPreview();
+    const target = resolveReorderDropTarget(point);
+    if (!target?.appId) {
+      drag.dropTargetId = "";
+      drag.dropPlacement = "after";
+      return;
+    }
+    drag.dropTargetId = target.appId;
+    drag.dropPlacement = target.placement;
+    target.tile.setAttribute("data-vb-app-launcher-reorder-drop", target.placement);
+  }
+
+  function updateReorderEdgeSwitch(point: { clientX: number; clientY: number }) {
+    const drag = activeLauncherDrag;
+    if (!drag || drag.kind !== "reorder" || latestPageCount <= 1) {
+      clearReorderEdgeSwitch();
+      return;
+    }
+
+    const rect = pagesViewport.getBoundingClientRect();
+    const insideY = point.clientY >= rect.top && point.clientY <= rect.bottom;
+    let targetPage: number | null = null;
+    if (insideY && point.clientX <= rect.left + REORDER_EDGE_ZONE_PX && currentPage > 0) {
+      targetPage = currentPage - 1;
+    } else if (insideY && point.clientX >= rect.right - REORDER_EDGE_ZONE_PX && currentPage < latestPageCount - 1) {
+      targetPage = currentPage + 1;
+    }
+
+    if (targetPage == null) {
+      clearReorderEdgeSwitch();
+      return;
+    }
+    if (drag.edgeTargetPage === targetPage && reorderEdgeSwitchTimer) return;
+
+    clearReorderEdgeSwitch();
+    drag.edgeTargetPage = targetPage;
+    reorderEdgeSwitchTimer = window.setTimeout(() => {
+      reorderEdgeSwitchTimer = 0;
+      const activeDrag = activeLauncherDrag;
+      if (!activeDrag || activeDrag.kind !== "reorder" || activeDrag.edgeTargetPage !== targetPage) return;
+      activeDrag.edgeTargetPage = null;
+      goToPage(targetPage, { animate: true });
+      window.setTimeout(() => {
+        if (activeLauncherDrag?.kind === "reorder") updateReorderDropPreview(activeLauncherDrag.lastPoint || point);
+      }, 80);
+    }, REORDER_EDGE_HOLD_MS);
+  }
+
+  function saveReorderDrop(drag: AnyRecord) {
+    const sourceId = String(drag.app?.id || "");
+    const targetId = String(drag.dropTargetId || "");
+    if (!sourceId || !targetId || sourceId === targetId) return false;
+
+    const order = buildAppViews({ includeHidden: true, includeSearch: false }).map((view) => view.app.id);
+    const fromIndex = order.indexOf(sourceId);
+    if (fromIndex < 0 || !order.includes(targetId)) return false;
+
+    order.splice(fromIndex, 1);
+    const targetIndex = order.indexOf(targetId);
+    if (targetIndex < 0) return false;
+    const insertIndex = drag.dropPlacement === "before" ? targetIndex : targetIndex + 1;
+    order.splice(insertIndex, 0, sourceId);
+    writeLauncherLayoutOrder(order);
+    return true;
+  }
+
+  function beginReorderTileDrag(payload: AnyRecord) {
+    const context = payload.context || {};
+    const app = context.app as VatioAppManifest | undefined;
+    const tile = context.tile as HTMLElement | undefined;
+    if (!app || !tile) return;
+    closeContextSheet();
+
+    const rect = tile.getBoundingClientRect();
+    const ghost = createReorderDragGhost(app, tile, rect);
+    activeLauncherDrag = {
+      kind: "reorder",
+      app,
+      tile,
+      ghost,
+      startLeft: rect.left,
+      startTop: rect.top,
+      currentLeft: rect.left,
+      currentTop: rect.top,
+      rafId: 0,
+      moved: false,
+      dropTargetId: "",
+      dropPlacement: "after",
+      edgeTargetPage: null,
+      lastPoint: getDragPayloadPoint(payload),
+    };
+
+    tile.classList.add("is-drag-source");
+    list.classList.add("is-dragging");
+    list.setAttribute("data-vb-app-launcher-reorder-dragging", "true");
+    updateReorderDropPreview(activeLauncherDrag.lastPoint);
+    payload.event?.preventDefault?.();
+  }
+
+  function moveReorderTileDrag(payload: AnyRecord) {
+    const drag = activeLauncherDrag;
+    if (!drag || drag.kind !== "reorder") return;
+    drag.currentLeft = drag.startLeft + payload.dx;
+    drag.currentTop = drag.startTop + payload.dy;
+    drag.lastPoint = getDragPayloadPoint(payload);
+    drag.moved = true;
+    scheduleLauncherDragGhostMove();
+    updateReorderDropPreview(drag.lastPoint);
+    updateReorderEdgeSwitch(drag.lastPoint);
+    payload.event?.preventDefault?.();
+  }
+
+  function cleanupReorderTileDrag() {
+    const drag = activeLauncherDrag;
+    if (!drag || drag.kind !== "reorder") return;
+    activeLauncherDrag = null;
+    if (drag.rafId) {
+      cancelAnimationFrame(drag.rafId);
+      drag.rafId = 0;
+    }
+    clearReorderEdgeSwitch();
+    clearReorderDropPreview();
+    drag.tile?.classList?.remove("is-drag-source");
+    drag.ghost?.remove?.();
+    list.classList.remove("is-dragging");
+    list.removeAttribute("data-vb-app-launcher-reorder-dragging");
+  }
+
+  function endReorderTileDrag(payload: AnyRecord = {}) {
+    const drag = activeLauncherDrag;
+    if (!drag || drag.kind !== "reorder") return;
+    const saved = drag.moved ? saveReorderDrop(drag) : false;
+    if (drag.moved) {
+      suppressGridClickForDrag();
+      suppressedAppClicks.add(drag.app.id);
+      window.setTimeout(() => suppressedAppClicks.delete(drag.app.id), 0);
+    }
+    cleanupReorderTileDrag();
+    if (saved) render();
+    payload.event?.preventDefault?.();
+  }
+
+  function cancelReorderTileDrag(payload: AnyRecord = {}) {
+    cleanupReorderTileDrag();
+    payload.event?.preventDefault?.();
   }
 
   function beginPageDrag(payload: AnyRecord) {
@@ -783,6 +1186,11 @@ export function createAppLauncherMenu({
       label: "Open",
       disabled: view.disabled,
     });
+    const arrangeButton = createContextButton({
+      action: "arrange",
+      icon: IconPages,
+      label: "Arrange apps",
+    });
     const favoriteButton = createContextButton({
       action: "favorite",
       icon: IconStar,
@@ -796,7 +1204,7 @@ export function createAppLauncherMenu({
     });
     if (visibilityButton.disabled) visibilityButton.title = "Protected app";
 
-    contextSheet.append(heading, openButton, favoriteButton, visibilityButton);
+    contextSheet.append(heading, openButton, arrangeButton, favoriteButton, visibilityButton);
     contextSheet.hidden = false;
     contextSheet.setAttribute("aria-hidden", "false");
     positionContextSheet(anchor, point);
@@ -807,7 +1215,7 @@ export function createAppLauncherMenu({
   }
 
   function getViewForAppId(appId: string) {
-    return buildAppViews({ includeHidden: true }).find((view) => view.app.id === appId) || null;
+    return buildAppViews({ includeHidden: true, includeSearch: false }).find((view) => view.app.id === appId) || null;
   }
 
   function attachTileContext(mainButton: HTMLElement, view: LauncherAppView) {
@@ -838,6 +1246,7 @@ export function createAppLauncherMenu({
     }
 
     mainButton.addEventListener("pointerdown", (event) => {
+      if (arrangeMode) return;
       if (event.button !== 0) return;
       clearPressTimer();
       pointerId = event.pointerId;
@@ -863,11 +1272,13 @@ export function createAppLauncherMenu({
     mainButton.addEventListener("pointerleave", clearPressTimer);
     mainButton.addEventListener("contextmenu", (event) => {
       event.preventDefault();
+      if (arrangeMode) return;
       openFromEvent(event);
     });
     mainButton.addEventListener("keydown", (event) => {
       if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
       event.preventDefault();
+      if (arrangeMode) return;
       openFromEvent(event);
     });
   }
@@ -875,6 +1286,13 @@ export function createAppLauncherMenu({
   function createTile(view: LauncherAppView) {
     const app = view.app;
     const label = getAppLabel(app);
+    const tileAriaLabel = arrangeMode
+      ? `Move ${label}`
+      : view.hidden
+        ? `${label} hidden from launcher`
+        : view.disabled
+          ? `${label} unavailable`
+          : `Open ${label}`;
     const tile = createEl("article", "vb-app-launcher-tile", {
       role: "listitem",
       "data-app-id": app.id,
@@ -884,16 +1302,13 @@ export function createAppLauncherMenu({
       "data-running": view.running ? "true" : "false",
       "data-protected": view.protected ? "true" : "false",
       "data-disabled": view.disabled ? "true" : "false",
+      "data-vb-app-launcher-reorderable": arrangeMode ? "true" : "false",
     });
     applyAppIconTheme(tile, app);
 
     const mainButton = createEl("button", "vb-app-launcher-tile-main", {
       type: "button",
-      "aria-label": view.hidden
-        ? `${label} hidden from launcher`
-        : view.disabled
-          ? `${label} unavailable`
-          : `Open ${label}`,
+      "aria-label": tileAriaLabel,
       "aria-current": view.current ? "page" : "false",
       "aria-haspopup": "menu",
       "aria-expanded": "false",
@@ -991,11 +1406,12 @@ export function createAppLauncherMenu({
     emptyState.hidden = normalViews.length > 0;
 
     compatibilityList.replaceChildren();
-    for (const view of buildAppViews({ includeHidden: true })) {
+    for (const view of buildAppViews({ includeHidden: true, includeSearch: false })) {
       compatibilityList.append(createCompatibilityButton(view));
     }
 
     syncPageUi({ animate: false });
+    syncArrangeUi();
     syncSearchUi();
     syncLanguageButton();
     applyStartMenuTranslations(list);
@@ -1020,12 +1436,6 @@ export function createAppLauncherMenu({
 
   function handleLauncherClick(event: MouseEvent) {
     const target = event.target instanceof Element ? event.target : null;
-    if (suppressNextGridClick) {
-      event.preventDefault();
-      event.stopPropagation();
-      suppressNextGridClick = false;
-      return;
-    }
     const contextAction = target?.closest<HTMLElement>("[data-launcher-context-action]");
     if (contextAction?.dataset.launcherContextAction && contextAppId) {
       event.preventDefault();
@@ -1035,6 +1445,10 @@ export function createAppLauncherMenu({
       if (action === "open") {
         closeContextSheet();
         launchApp(appId);
+        return;
+      }
+      if (action === "arrange") {
+        setArrangeMode(true);
         return;
       }
       if (action === "favorite") {
@@ -1049,6 +1463,20 @@ export function createAppLauncherMenu({
         appControl.setHiddenFromStartMenu(appId, false);
         return;
       }
+      return;
+    }
+
+    if (target?.closest?.("[data-launcher-arrange-done]")) {
+      event.preventDefault();
+      event.stopPropagation();
+      setArrangeMode(false);
+      return;
+    }
+
+    if (target?.closest?.("[data-launcher-arrange-reset]")) {
+      event.preventDefault();
+      event.stopPropagation();
+      resetArrangeOrder();
       return;
     }
 
@@ -1077,6 +1505,17 @@ export function createAppLauncherMenu({
     const clickFromGridCapture = target === pagesViewport
       || target === pageTrack
       || Boolean(target?.closest?.(".vb-app-launcher-pages, .vb-app-launcher-grid"));
+    if (suppressNextGridClick && (tileButton || clickFromGridCapture)) {
+      event.preventDefault();
+      event.stopPropagation();
+      suppressNextGridClick = false;
+      return;
+    }
+    if (arrangeMode && tileButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if ((!tileButton || !list.contains(tileButton)) && !clickFromGridCapture) return;
     const appId = tileButton?.dataset.appId
       || tileButton?.closest<HTMLElement>("[data-app-id]")?.dataset.appId
@@ -1103,6 +1542,7 @@ export function createAppLauncherMenu({
 
     list.hidden = true;
     closeContextSheet();
+    setArrangeMode(false, { renderView: false });
     closeSearch({ clear: true });
     setTriggerExpanded(activeTrigger, false);
     clearActiveHeader();
@@ -1155,6 +1595,15 @@ export function createAppLauncherMenu({
       const tile = target?.closest<HTMLElement>(".vb-app-launcher-tile[data-app-id]") || null;
       const appId = tile?.dataset.appId || "";
       const app = appId ? appRegistry.getApp(appId) : null;
+      const activePage = tile?.closest<HTMLElement>("[data-vb-app-launcher-page]");
+      if (arrangeMode) {
+        if (app && tile && activePage?.getAttribute("data-vb-app-launcher-page-active") === "true") {
+          return { kind: "reorder", app, tile, page: currentPage };
+        }
+        if (latestPageCount <= 1) return null;
+        return { kind: "page", page: currentPage };
+      }
+
       if (app && appControl.isEnabled(app.id) && isLaunchableApp(app) && !appControl.isFavorite(app.id)) {
         rememberPotentialTileClick(app.id);
         return { kind: "favorite-candidate", app, tile, page: currentPage };
@@ -1177,11 +1626,16 @@ export function createAppLauncherMenu({
         beginFavoriteTileDrag(payload);
         return;
       }
+      if (context.kind === "reorder") {
+        beginReorderTileDrag(payload);
+        return;
+      }
       if (context.kind === "page") beginPageDrag(payload);
     },
     onMove(payload) {
       const context = payload.context as AnyRecord;
       if (context.kind === "favorite") moveFavoriteTileDrag(payload);
+      if (context.kind === "reorder") moveReorderTileDrag(payload);
       if (context.kind === "page") movePageDrag(payload);
     },
     onEnd(payload) {
@@ -1190,11 +1644,16 @@ export function createAppLauncherMenu({
         endFavoriteTileDrag(payload);
         return;
       }
+      if (context.kind === "reorder") {
+        endReorderTileDrag(payload);
+        return;
+      }
       if (context.kind === "page") endPageDrag(payload);
     },
     onCancel(payload) {
       const context = payload.context as AnyRecord;
       if (context.kind === "favorite") cancelFavoriteTileDrag(payload);
+      if (context.kind === "reorder") cancelReorderTileDrag(payload);
       if (context.kind === "page") cancelPageDrag(payload);
     },
   });
@@ -1208,6 +1667,11 @@ export function createAppLauncherMenu({
     if (event.key === "Escape" && !list.hidden && searchActive) {
       event.preventDefault();
       closeSearch({ clear: true, focusButton: true });
+      return;
+    }
+    if (event.key === "Escape" && !list.hidden && arrangeMode) {
+      event.preventDefault();
+      setArrangeMode(false);
       return;
     }
     if (event.key === "Escape") api.close();

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const originalRaf = globalThis.requestAnimationFrame;
 const originalCancelRaf = globalThis.cancelAnimationFrame;
 const APP_CONTROL_STORAGE_KEY = "vatioboard.os.appControl.v1";
+const APP_LAUNCHER_LAYOUT_STORAGE_KEY = "vatioboard.os.appLauncherLayout.v1";
 
 async function loadLauncher() {
   vi.resetModules();
@@ -56,9 +57,18 @@ function openContext(menu, appId) {
   return menu.list.querySelector("[data-launcher-context]");
 }
 
+function enterArrangeMode(menu, appId = "vatio.board") {
+  const context = openContext(menu, appId);
+  context.querySelector("[data-launcher-context-action='arrange']").click();
+}
+
 function getLauncherTileIds(menu) {
   return Array.from(menu.list.querySelectorAll(".vb-app-launcher-page .vb-app-launcher-tile[data-app-id]"))
     .map((tile) => tile.getAttribute("data-app-id"));
+}
+
+function getLauncherLayoutOrder() {
+  return JSON.parse(localStorage.getItem(APP_LAUNCHER_LAYOUT_STORAGE_KEY) || "null")?.order || [];
 }
 
 function seedAppControlRecord(apps) {
@@ -66,6 +76,65 @@ function seedAppControlRecord(apps) {
     version: 1,
     apps,
   }));
+}
+
+function mockElementRect(element, rect) {
+  vi.spyOn(element, "getBoundingClientRect").mockReturnValue({
+    right: rect.left + rect.width,
+    bottom: rect.top + rect.height,
+    x: rect.left,
+    y: rect.top,
+    toJSON: () => {},
+    ...rect,
+  });
+}
+
+function stubElementFromPoint(element) {
+  const original = document.elementFromPoint;
+  Object.defineProperty(document, "elementFromPoint", {
+    configurable: true,
+    value: vi.fn(() => element),
+  });
+  return () => {
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: original,
+    });
+  };
+}
+
+function dragTileAfter(menu, sourceId, targetId) {
+  const sourceTile = menu.list.querySelector(`.vb-app-launcher-grid [data-app-id='${sourceId}']`);
+  const targetTile = menu.list.querySelector(`.vb-app-launcher-grid [data-app-id='${targetId}']`);
+  const sourceButton = sourceTile.querySelector(".vb-app-launcher-tile-main");
+  mockElementRect(sourceTile, {
+    left: 100,
+    top: 120,
+    width: 112,
+    height: 122,
+  });
+  mockElementRect(targetTile, {
+    left: 236,
+    top: 120,
+    width: 112,
+    height: 122,
+  });
+  const restoreElementFromPoint = stubElementFromPoint(targetTile);
+
+  sourceButton.dispatchEvent(pointer("pointerdown", { clientX: 156, clientY: 180 }));
+  window.dispatchEvent(pointer("pointermove", { clientX: 324, clientY: 180 }));
+  window.dispatchEvent(pointer("pointerup", { clientX: 324, clientY: 180 }));
+
+  restoreElementFromPoint();
+}
+
+function runWindowTimeouts() {
+  const timeoutMock = window.setTimeout;
+  const calls = Array.isArray(timeoutMock?.mock?.calls) ? [...timeoutMock.mock.calls] : [];
+  timeoutMock?.mockClear?.();
+  for (const [callback] of calls) {
+    if (typeof callback === "function") callback();
+  }
 }
 
 describe("app launcher start menu", () => {
@@ -228,6 +297,143 @@ describe("app launcher start menu", () => {
     expect(getLauncherTileIds(menu)).toEqual(initialOrder);
     expect(menu.list.querySelector(".vb-app-launcher-favorites")).toBeNull();
     expect(menu.list.querySelector("[data-launcher-view]")).toBeNull();
+  });
+
+  it("enters arrange mode from the tile context menu and clears launcher search", async () => {
+    const { initSharedStartMenu } = await loadLauncher();
+    const menu = openLauncher(initSharedStartMenu);
+    const search = menu.list.querySelector(".vb-app-launcher-search-input");
+    const searchButton = menu.list.querySelector("[data-launcher-search-open]");
+
+    searchButton.click();
+    search.value = "board";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(getLauncherTileIds(menu)[0]).toBe("vatio.board");
+
+    enterArrangeMode(menu, "vatio.board");
+
+    expect(menu.list.getAttribute("data-vb-app-launcher-reorder")).toBe("true");
+    expect(menu.list.querySelector("[data-vb-app-launcher-arrange-controls]").hidden).toBe(false);
+    expect(menu.list.querySelector("[data-launcher-search-panel]").hidden).toBe(true);
+    expect(searchButton.hidden).toBe(true);
+    expect(search.value).toBe("");
+    expect(getLauncherTileIds(menu).slice(0, 3)).toEqual([
+      "vatio.speed",
+      "vatio.board",
+      "vatio.replay",
+    ]);
+  });
+
+  it("reorders launcher apps in arrange mode and persists the custom order", async () => {
+    const { appControl, initSharedStartMenu } = await loadLauncher();
+    const menu = openLauncher(initSharedStartMenu);
+
+    enterArrangeMode(menu);
+    dragTileAfter(menu, "vatio.board", "vatio.replay");
+
+    expect(getLauncherTileIds(menu).slice(0, 3)).toEqual([
+      "vatio.speed",
+      "vatio.replay",
+      "vatio.board",
+    ]);
+    expect(getLauncherLayoutOrder().slice(0, 3)).toEqual([
+      "vatio.speed",
+      "vatio.replay",
+      "vatio.board",
+    ]);
+
+    menu.list.querySelector("[data-launcher-arrange-done]").click();
+    expect(menu.list.getAttribute("data-vb-app-launcher-reorder")).toBe("false");
+    menu.setOpen(false);
+    menu.setOpen(true);
+    expect(getLauncherTileIds(menu).slice(0, 3)).toEqual([
+      "vatio.speed",
+      "vatio.replay",
+      "vatio.board",
+    ]);
+
+    runWindowTimeouts();
+    appControl.recordLaunch("vatio.calculator");
+    expect(getLauncherTileIds(menu).slice(0, 3)).toEqual([
+      "vatio.speed",
+      "vatio.replay",
+      "vatio.board",
+    ]);
+  });
+
+  it("resets a custom launcher order from arrange mode", async () => {
+    const { initSharedStartMenu } = await loadLauncher();
+    const menu = openLauncher(initSharedStartMenu);
+
+    enterArrangeMode(menu);
+    dragTileAfter(menu, "vatio.board", "vatio.replay");
+    expect(getLauncherTileIds(menu).slice(0, 3)).toEqual([
+      "vatio.speed",
+      "vatio.replay",
+      "vatio.board",
+    ]);
+
+    menu.list.querySelector("[data-launcher-arrange-reset]").click();
+
+    expect(localStorage.getItem(APP_LAUNCHER_LAYOUT_STORAGE_KEY)).toBeNull();
+    expect(menu.list.getAttribute("data-vb-app-launcher-reorder")).toBe("true");
+    expect(getLauncherTileIds(menu).slice(0, 3)).toEqual([
+      "vatio.speed",
+      "vatio.board",
+      "vatio.replay",
+    ]);
+  });
+
+  it("preserves custom placement when an app is hidden and restored", async () => {
+    const { appControl, initSharedStartMenu } = await loadLauncher();
+    const menu = openLauncher(initSharedStartMenu);
+    const search = menu.list.querySelector(".vb-app-launcher-search-input");
+
+    enterArrangeMode(menu);
+    dragTileAfter(menu, "vatio.board", "vatio.replay");
+    menu.list.querySelector("[data-launcher-arrange-done]").click();
+
+    openContext(menu, "vatio.board")
+      .querySelector("[data-launcher-context-action='hide']")
+      .click();
+
+    expect(appControl.isHiddenFromStartMenu("vatio.board")).toBe(true);
+    expect(getLauncherTileIds(menu).slice(0, 2)).toEqual(["vatio.speed", "vatio.replay"]);
+
+    search.value = "board";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    openContext(menu, "vatio.board")
+      .querySelector("[data-launcher-context-action='restore']")
+      .click();
+
+    expect(appControl.isHiddenFromStartMenu("vatio.board")).toBe(false);
+    search.value = "";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(getLauncherTileIds(menu).slice(0, 3)).toEqual([
+      "vatio.speed",
+      "vatio.replay",
+      "vatio.board",
+    ]);
+  });
+
+  it("does not emit taskbar favorite drag events while arranging apps", async () => {
+    const { appControl, initSharedStartMenu } = await loadLauncher();
+    appControl.setFavorite("vatio.board", false);
+    const menu = openLauncher(initSharedStartMenu);
+    const events = [];
+    const handler = (event) => events.push(event.detail);
+    window.addEventListener("vatio:taskbar-favorite-drag", handler);
+
+    enterArrangeMode(menu);
+    dragTileAfter(menu, "vatio.board", "vatio.replay");
+
+    window.removeEventListener("vatio:taskbar-favorite-drag", handler);
+    expect(events).toEqual([]);
+    expect(getLauncherTileIds(menu).slice(0, 3)).toEqual([
+      "vatio.speed",
+      "vatio.replay",
+      "vatio.board",
+    ]);
   });
 
   it("hides removable apps and restores hidden search results from the context sheet", async () => {
