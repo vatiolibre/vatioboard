@@ -279,6 +279,65 @@ describe("shell-taskbar", () => {
     manager.destroy();
   });
 
+  it("adds a favorite by dragging an open taskbar app onto the Start favorite zone", () => {
+    const manager = makeManager();
+    manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
+    const appLauncher = { openApp: vi.fn(() => true) };
+    const taskbar = createShellTaskbar({
+      shellManager: manager,
+      root: document.body,
+      appLauncher,
+    });
+    manager.openWindow("calculator");
+    appControl.setFavorite("vatio.calculator", false);
+
+    const item = taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']");
+    Object.defineProperty(item, "getBoundingClientRect", {
+      configurable: true,
+      value: () => rect({ left: 120, top: 600 }),
+    });
+    Object.defineProperty(taskbar.getStartButton(), "getBoundingClientRect", {
+      configurable: true,
+      value: () => rect({
+        left: 10,
+        top: 700,
+        width: 52,
+        height: 52,
+      }),
+    });
+
+    item.dispatchEvent(pointer("pointerdown", { clientX: 130, clientY: 610 }));
+    window.dispatchEvent(pointer("pointermove", { clientX: 180, clientY: 550 }));
+
+    const trash = document.querySelector("[data-vb-shell-taskbar-trash]");
+    expect(trash).toBeTruthy();
+    Object.defineProperty(trash, "getBoundingClientRect", {
+      configurable: true,
+      value: () => rect({
+        left: 900,
+        top: 900,
+        width: 150,
+        height: 70,
+      }),
+    });
+
+    window.dispatchEvent(pointer("pointermove", { clientX: 36, clientY: 724 }));
+
+    expect(taskbar.getElement().getAttribute("data-vb-shell-taskbar-favorite-drop")).toBe("over");
+
+    window.dispatchEvent(pointer("pointerup", { clientX: 36, clientY: 724 }));
+
+    expect(taskbar.getElement().getAttribute("data-vb-shell-taskbar-favorite-drop")).toBe("false");
+    expect(appControl.isFavorite("vatio.calculator")).toBe(true);
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-favorite-app='vatio.calculator']")).toBeTruthy();
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeNull();
+    expect(manager.getWindow("calculator").state).toBe("open");
+
+    appControl.setFavorite("vatio.calculator", false);
+    taskbar.destroy();
+    manager.destroy();
+  });
+
   it("uses one favorite taskbar control for a running favorite shell-window app", () => {
     const manager = makeManager();
     manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
@@ -376,6 +435,53 @@ describe("shell-taskbar", () => {
     expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeTruthy();
     expect(manager.getWindow("calculator").state).toBe("open");
     expect(trash.isConnected).toBe(false);
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("keeps redocking behavior when an open app is dropped on ordinary taskbar space", () => {
+    localStorage.setItem(TASKBAR_STATE_KEY, JSON.stringify({
+      version: 1,
+      knownWindowIds: ["calculator"],
+      positions: { calculator: { detached: true, left: 210, top: 210 } },
+      taskbar: null,
+    }));
+    const manager = makeManager();
+    manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
+    const appLauncher = { openApp: vi.fn(() => true) };
+    const taskbar = createShellTaskbar({
+      shellManager: manager,
+      root: document.body,
+      appLauncher,
+    });
+    manager.openWindow("calculator");
+    appControl.setFavorite("vatio.calculator", false);
+
+    vi.spyOn(taskbar.getElement(), "getBoundingClientRect").mockReturnValue(rect({
+      left: 0,
+      top: 690,
+      width: 360,
+      height: 70,
+    }));
+    vi.spyOn(taskbar.getStartButton(), "getBoundingClientRect").mockReturnValue(rect({
+      left: 0,
+      top: 690,
+      width: 52,
+      height: 52,
+    }));
+    const item = document.querySelector("[data-vb-shell-taskbar-item='calculator']");
+    vi.spyOn(item, "getBoundingClientRect").mockReturnValue(rect({ left: 210, top: 210 }));
+
+    item.dispatchEvent(touchEvent("touchstart", { target: item, clientX: 220, clientY: 220 }));
+    document.dispatchEvent(touchEvent("touchmove", { target: item, clientX: 300, clientY: 720 }));
+    document.dispatchEvent(touchEvent("touchend", { target: item, clientX: 300, clientY: 720 }));
+
+    expect(appControl.isFavorite("vatio.calculator")).toBe(false);
+    const docked = taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']");
+    expect(docked).toBeTruthy();
+    expect(docked.getAttribute("data-vb-shell-taskbar-docked")).toBe("true");
+    expect(docked.parentElement).toBe(taskbar.getElement().querySelector("[data-vb-shell-taskbar-tray]"));
 
     taskbar.destroy();
     manager.destroy();

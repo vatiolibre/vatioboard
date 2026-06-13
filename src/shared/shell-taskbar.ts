@@ -451,6 +451,13 @@ export function createShellTaskbar({
     writeTaskbarState(storageTarget, knownWindowIds, itemPositions, taskbarPosition);
   }
 
+  function getFavoriteCandidateForRecord(record) {
+    if (!appLauncher || !record?.id) return null;
+    const app = getAppForShellWindowId(record.id);
+    if (!app || !isLaunchableTaskbarApp(app) || appControl.isFavorite(app.id)) return null;
+    return app;
+  }
+
   function ensureDragLayer() {
     if (dragLayerElement?.isConnected) return dragLayerElement;
     dragLayerElement = document.createElement("div");
@@ -842,6 +849,22 @@ export function createShellTaskbar({
       && point.clientY <= rect.bottom + TASKBAR_FAVORITE_DROP_MARGIN_PX;
   }
 
+  function isPointOverFavoriteTaskbarItemDropTarget(point) {
+    if (!point || destroyed || element.hidden) return false;
+    const favoriteTargets: HTMLElement[] = [startButton];
+    if (!favoritesElement.hidden) favoriteTargets.push(favoritesElement);
+    return favoriteTargets.some((target) => {
+      const rect = target.getBoundingClientRect();
+      const width = rect.width || rect.right - rect.left;
+      const height = rect.height || rect.bottom - rect.top;
+      if (!width || !height) return false;
+      return point.clientX >= rect.left - TASKBAR_FAVORITE_DROP_MARGIN_PX
+        && point.clientX <= rect.right + TASKBAR_FAVORITE_DROP_MARGIN_PX
+        && point.clientY >= rect.top - TASKBAR_FAVORITE_DROP_MARGIN_PX
+        && point.clientY <= rect.bottom + TASKBAR_FAVORITE_DROP_MARGIN_PX;
+    });
+  }
+
   function handleTaskbarFavoriteDrag(event: Event) {
     const detail = ((event as CustomEvent<TaskbarFavoriteDragDetail>).detail || {}) as TaskbarFavoriteDragDetail;
     const phase = detail.phase || "move";
@@ -961,6 +984,7 @@ export function createShellTaskbar({
     if (!record || !item || destroyed) return;
     suppressNativeDrag(item);
     prepareTrashTarget();
+    const favoriteCandidate = getFavoriteCandidateForRecord(record);
 
     const saved = itemPositions.get(record.id);
     const rect = item.getBoundingClientRect();
@@ -987,6 +1011,8 @@ export function createShellTaskbar({
       currentTop: position.top,
       width,
       height,
+      favoriteCandidate,
+      overFavoriteDrop: false,
       overTrash: false,
       rafId: 0,
       moved: false,
@@ -996,6 +1022,7 @@ export function createShellTaskbar({
     item.classList.add("is-dragging", "is-drag-source");
     item.setAttribute("data-vb-shell-taskbar-drag-source", "true");
     document.documentElement.classList.add("vb-floating-drag-active");
+    if (favoriteCandidate) setFavoriteDropState("active");
     showTrashTarget();
     payload.event?.preventDefault?.();
   }
@@ -1024,6 +1051,12 @@ export function createShellTaskbar({
     drag.lastPoint = makePoint(payload.clientX, payload.clientY);
     drag.moved = true;
     drag.overTrash = updateTrashTarget(drag.lastPoint);
+    drag.overFavoriteDrop = Boolean(
+      drag.favoriteCandidate
+      && !drag.overTrash
+      && isPointOverFavoriteTaskbarItemDropTarget(drag.lastPoint),
+    );
+    if (drag.favoriteCandidate) setFavoriteDropState(drag.overFavoriteDrop ? "over" : "active");
     scheduleItemGhostMove();
     payload.event?.preventDefault?.();
   }
@@ -1038,6 +1071,7 @@ export function createShellTaskbar({
     drag.item.removeAttribute("data-vb-shell-taskbar-drag-source");
     removeItemGhost(drag.ghost);
     hideTrashTarget();
+    setFavoriteDropState("false");
     document.documentElement.classList.remove("vb-floating-drag-active");
   }
 
@@ -1055,6 +1089,18 @@ export function createShellTaskbar({
     const point = payload.point || drag.lastPoint;
     if (drag.overTrash || isPointOverTrashTarget(point)) {
       closeWindowFromTaskbarTrash(drag.record);
+      render();
+      payload.event?.preventDefault?.();
+      return;
+    }
+
+    if (
+      drag.favoriteCandidate
+      && (drag.overFavoriteDrop || isPointOverFavoriteTaskbarItemDropTarget(point))
+    ) {
+      itemPositions.delete(drag.record.id);
+      saveState();
+      appControl.setFavorite(drag.favoriteCandidate.id, true);
       render();
       payload.event?.preventDefault?.();
       return;

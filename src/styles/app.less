@@ -165,6 +165,24 @@ html.vb-floating-drag-active body {
   background: color-mix(in srgb, var(--calc-accent, #10b981) 10%, var(--calc-surface, #fff));
 }
 
+.vb-shell-taskbar[data-vb-shell-taskbar-favorite-drop="active"] .vb-shell-taskbar-start,
+.vb-shell-taskbar[data-vb-shell-taskbar-favorite-drop="over"] .vb-shell-taskbar-start {
+  border-color: color-mix(in srgb, var(--calc-accent, #10b981) 54%, #ffffff);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--calc-accent, #10b981) 18%, transparent),
+    0 12px 24px color-mix(in srgb, var(--calc-accent, #10b981) 26%, rgba(15, 23, 42, 0.14));
+}
+
+.vb-shell-taskbar[data-vb-shell-taskbar-favorite-drop="over"] .vb-shell-taskbar-start {
+  transform: translateY(-1px);
+}
+
+.vb-shell-taskbar[data-vb-shell-taskbar-favorite-drop="active"] .vb-shell-taskbar-favorites:not([hidden]),
+.vb-shell-taskbar[data-vb-shell-taskbar-favorite-drop="over"] .vb-shell-taskbar-favorites:not([hidden]) {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--calc-accent, #10b981) 10%, transparent);
+}
+
 .vb-shell-taskbar-favorites {
   --vb-shell-taskbar-favorite-glow-buffer: 8px;
 
