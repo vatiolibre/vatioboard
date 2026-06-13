@@ -13,11 +13,12 @@ async function loadLauncher() {
     navigateToAppRoute: vi.fn(() => true),
   }));
 
-  const [startMenu, appPlatform] = await Promise.all([
+  const [startMenu, appPlatform, router] = await Promise.all([
     import("../../src/shared/start-menu.js"),
     import("../../src/app-platform/index.js"),
+    import("../../src/app/router.js"),
   ]);
-  return { ...startMenu, ...appPlatform };
+  return { ...startMenu, ...appPlatform, router };
 }
 
 function openLauncher(initSharedStartMenu, options = {}) {
@@ -140,12 +141,12 @@ describe("app launcher start menu", () => {
     });
     const search = menu.list.querySelector(".vb-app-launcher-search-input");
     const searchButton = menu.list.querySelector("[data-launcher-search-open]");
-    const grid = menu.list.querySelector(".vb-app-launcher-grid");
     const appButton = () => menu.list.querySelector(".vb-app-launcher-grid [data-app-id='vatio.calculator'] .vb-app-launcher-tile-main");
 
     searchButton.click();
     search.value = "calculator";
     search.dispatchEvent(new Event("input", { bubbles: true }));
+    const grid = menu.list.querySelector(".vb-app-launcher-grid");
 
     appButton().dispatchEvent(pointer("pointerdown", { clientX: 90, clientY: 330 }));
     window.dispatchEvent(pointer("pointerup", { clientX: 90, clientY: 330 }));
@@ -212,19 +213,70 @@ describe("app launcher start menu", () => {
     const { initSharedStartMenu } = await loadLauncher();
     const menu = openLauncher(initSharedStartMenu);
     const search = menu.list.querySelector(".vb-app-launcher-search-input");
-    const grid = menu.list.querySelector(".vb-app-launcher-grid");
 
     menu.list.style.width = "260px";
     menu.list.style.height = "360px";
     search.dispatchEvent(new Event("input", { bubbles: true }));
+    const grid = menu.list.querySelector(".vb-app-launcher-grid");
+    const track = menu.list.querySelector("[data-vb-app-launcher-page-track]");
 
     expect(menu.list.querySelector(".vb-app-launcher-page-status").textContent).toContain("Page 1 of");
 
     grid.querySelector(".vb-app-launcher-tile-main").dispatchEvent(pointer("pointerdown", { clientX: 300, clientY: 320 }));
     window.dispatchEvent(pointer("pointermove", { clientX: 240, clientY: 322 }));
+    expect(track.getAttribute("data-vb-app-launcher-page-transition")).toBe("false");
+    expect(track.style.transform).toContain("translate3d");
     window.dispatchEvent(pointer("pointerup", { clientX: 210, clientY: 322 }));
 
     expect(menu.list.querySelector(".vb-app-launcher-page-status").textContent).toContain("Page 2 of");
+    expect(track.getAttribute("data-vb-app-launcher-page-transition")).toBe("true");
+    expect(menu.list.querySelector(".vb-app-launcher-page-dot[data-page='1']").getAttribute("aria-current")).toBe("page");
+  });
+
+  it("moves page cards from page dots and keeps inactive page buttons out of focus", async () => {
+    const { initSharedStartMenu, router } = await loadLauncher();
+    const menu = openLauncher(initSharedStartMenu);
+    const search = menu.list.querySelector(".vb-app-launcher-search-input");
+
+    menu.list.style.width = "260px";
+    menu.list.style.height = "360px";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+
+    const track = menu.list.querySelector("[data-vb-app-launcher-page-track]");
+    const firstPage = menu.list.querySelector(".vb-app-launcher-page[data-page='0']");
+    const firstPageButton = firstPage.querySelector("[data-app-id='vatio.board'] .vb-app-launcher-tile-main");
+    const secondDot = menu.list.querySelector(".vb-app-launcher-page-dot[data-page='1']");
+
+    secondDot.click();
+
+    expect(menu.list.hidden).toBe(false);
+    expect(menu.list.querySelector(".vb-app-launcher-page-status").textContent).toContain("Page 2 of");
+    expect(track.style.transform).toContain("translate3d");
+    expect(firstPage.getAttribute("aria-hidden")).toBe("true");
+    expect(firstPage.getAttribute("data-vb-app-launcher-page-active")).toBe("false");
+    expect(firstPageButton.getAttribute("tabindex")).toBe("-1");
+
+    router.navigateToAppRoute.mockClear();
+    firstPageButton.click();
+    expect(router.navigateToAppRoute).not.toHaveBeenCalled();
+  });
+
+  it("keeps filtered tile clicks working after page-track rendering", async () => {
+    const { initSharedStartMenu } = await loadLauncher();
+    const openCalculator = vi.fn();
+    const menu = openLauncher(initSharedStartMenu, {
+      floatingTools: { openCalculator },
+    });
+    const search = menu.list.querySelector(".vb-app-launcher-search-input");
+    const searchButton = menu.list.querySelector("[data-launcher-search-open]");
+
+    searchButton.click();
+    search.value = "calculator";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+
+    menu.list.querySelector(".vb-app-launcher-page[data-vb-app-launcher-page-active='true'] [data-app-id='vatio.calculator'] .vb-app-launcher-tile-main").click();
+
+    expect(openCalculator).toHaveBeenCalledTimes(1);
   });
 
   it("emits taskbar favorite drag events when a tile is dragged vertically", async () => {

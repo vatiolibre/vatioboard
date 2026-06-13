@@ -250,10 +250,14 @@ export function createAppLauncherMenu({
   const pageStatus = createEl("p", "vb-app-launcher-page-status", {
     "aria-live": "polite",
   });
-  const grid = createEl("div", "vb-app-launcher-grid", {
-    role: "list",
+  const pagesViewport = createEl("div", "vb-app-launcher-pages", {
     "aria-label": "Applications",
   });
+  const pageTrack = createEl("div", "vb-app-launcher-page-track", {
+    "data-vb-app-launcher-page-track": "",
+    "data-vb-app-launcher-page-transition": "false",
+  });
+  pagesViewport.append(pageTrack);
   const emptyState = createEl("p", "vb-app-launcher-empty");
   emptyState.textContent = "No apps match your search.";
   emptyState.hidden = true;
@@ -275,7 +279,7 @@ export function createAppLauncherMenu({
   `;
   bottomBar.append(dots, searchButton);
   pagination.append(pageStatus, bottomBar);
-  main.append(grid, emptyState, pagination);
+  main.append(pagesViewport, emptyState, pagination);
   body.append(main);
 
   const contextSheet = createEl("div", "vb-app-launcher-context", {
@@ -298,6 +302,7 @@ export function createAppLauncherMenu({
   let activeHeader: HTMLElement | null = null;
   let currentPage = 0;
   let latestPageCount = 1;
+  let latestAppCount = 0;
   let pageSize = 8;
   let query = "";
   let currentRoutePath = getCurrentRoutePath();
@@ -367,7 +372,7 @@ export function createAppLauncherMenu({
   function calculatePageSize() {
     const listWidth = numberFromStyle(list.style.width, list.offsetWidth || 900);
     const listHeight = numberFromStyle(list.style.height, list.offsetHeight || 640);
-    const gridRect = grid.getBoundingClientRect();
+    const gridRect = pagesViewport.getBoundingClientRect();
     const gridWidth = gridRect.width || Math.max(280, listWidth - 40);
     const gridHeight = gridRect.height || Math.max(220, listHeight - 150);
     const minTileWidth = gridWidth < 520 ? 92 : LAUNCHER_MIN_TILE_WIDTH;
@@ -375,6 +380,72 @@ export function createAppLauncherMenu({
     const rows = Math.max(1, Math.floor((gridHeight + LAUNCHER_GRID_GAP) / (LAUNCHER_TILE_HEIGHT + LAUNCHER_GRID_GAP)));
     pageSize = Math.max(1, columns * rows);
     list.style.setProperty("--vb-app-launcher-tile-min", `${minTileWidth}px`);
+  }
+
+  function getLauncherPageWidth() {
+    const rect = pagesViewport.getBoundingClientRect();
+    return rect.width || pagesViewport.offsetWidth || Math.max(280, numberFromStyle(list.style.width, list.offsetWidth || 900) - 40);
+  }
+
+  function getDampedPageOffset(dx: number, page = currentPage) {
+    if ((page <= 0 && dx > 0) || (page >= latestPageCount - 1 && dx < 0)) return dx * 0.36;
+    return dx;
+  }
+
+  function getPageTrackX(page: number, offset = 0) {
+    return Math.round((-page * getLauncherPageWidth()) + offset);
+  }
+
+  function applyPageTrackPosition({ offset = 0, animate = false } = {}) {
+    pageTrack.setAttribute("data-vb-app-launcher-page-transition", animate ? "true" : "false");
+    pageTrack.style.transform = `translate3d(${getPageTrackX(currentPage, offset)}px, 0, 0)`;
+  }
+
+  function syncPageInteractivity() {
+    const pages = Array.from(pageTrack.querySelectorAll<HTMLElement>("[data-vb-app-launcher-page]"));
+    for (const page of pages) {
+      const active = Number(page.dataset.page || "0") === currentPage;
+      page.setAttribute("aria-hidden", active ? "false" : "true");
+      page.setAttribute("data-vb-app-launcher-page-active", active ? "true" : "false");
+      page.toggleAttribute("inert", !active);
+      for (const control of page.querySelectorAll<HTMLElement>("button, a, input, select, textarea, [tabindex]")) {
+        if (active) {
+          const saved = control.dataset.launcherSavedTabIndex;
+          if (saved == null || saved === "") control.removeAttribute("tabindex");
+          else control.setAttribute("tabindex", saved);
+          delete control.dataset.launcherSavedTabIndex;
+        } else {
+          if (!Object.prototype.hasOwnProperty.call(control.dataset, "launcherSavedTabIndex")) {
+            control.dataset.launcherSavedTabIndex = control.getAttribute("tabindex") || "";
+          }
+          control.setAttribute("tabindex", "-1");
+        }
+      }
+    }
+  }
+
+  function syncPageUi({ animate = false } = {}) {
+    currentPage = clamp(currentPage, 0, Math.max(0, latestPageCount - 1));
+    const pageText = `Page ${currentPage + 1} of ${latestPageCount}`;
+    pageStatus.textContent = `${pageText} · ${latestAppCount} app${latestAppCount === 1 ? "" : "s"}`;
+    pageStatus.setAttribute("aria-label", pageText);
+    renderDots(latestPageCount);
+    dots.hidden = latestPageCount <= 1;
+    pagination.hidden = false;
+    syncPageInteractivity();
+    applyPageTrackPosition({ animate });
+  }
+
+  function goToPage(page: number, { animate = true } = {}) {
+    const nextPage = clamp(page, 0, Math.max(0, latestPageCount - 1));
+    if (nextPage === currentPage) {
+      renderDots(latestPageCount);
+      syncPageInteractivity();
+      applyPageTrackPosition({ animate });
+      return;
+    }
+    currentPage = nextPage;
+    syncPageUi({ animate });
   }
 
   function positionMenu(trigger: HTMLElement | null = activeTrigger) {
@@ -583,6 +654,59 @@ export function createAppLauncherMenu({
       dispatchTaskbarFavoriteDrag("cancel", drag.app, payload.point || drag.lastPoint || { clientX: payload.clientX, clientY: payload.clientY });
     }
     cleanupFavoriteTileDrag();
+  }
+
+  function beginPageDrag(payload: AnyRecord) {
+    const context = payload.context as AnyRecord;
+    const startPage = Number.isFinite(Number(context.page)) ? Number(context.page) : currentPage;
+    context.startPage = startPage;
+    context.pageWidth = getLauncherPageWidth();
+    pendingTileClickAppId = "";
+    closeContextSheet();
+    list.setAttribute("data-vb-app-launcher-page-dragging", "true");
+    pageTrack.setAttribute("data-vb-app-launcher-page-transition", "false");
+    pageTrack.style.transform = `translate3d(${getPageTrackX(startPage, getDampedPageOffset(payload.dx, startPage))}px, 0, 0)`;
+    payload.event?.preventDefault?.();
+  }
+
+  function movePageDrag(payload: AnyRecord) {
+    const context = payload.context as AnyRecord;
+    const startPage = Number.isFinite(Number(context.startPage)) ? Number(context.startPage) : currentPage;
+    const offset = getDampedPageOffset(payload.dx, startPage);
+    pageTrack.setAttribute("data-vb-app-launcher-page-transition", "false");
+    pageTrack.style.transform = `translate3d(${getPageTrackX(startPage, offset)}px, 0, 0)`;
+    payload.event?.preventDefault?.();
+  }
+
+  function endPageDrag(payload: AnyRecord = {}) {
+    const context = payload.context as AnyRecord;
+    const startPage = Number.isFinite(Number(context.startPage)) ? Number(context.startPage) : currentPage;
+    const horizontal = Math.abs(Number(payload.dx) || 0);
+    const vertical = Math.abs(Number(payload.dy) || 0);
+    const pageWidth = Number(context.pageWidth) || getLauncherPageWidth();
+    const threshold = Math.max(48, Math.min(120, pageWidth * 0.18));
+    const shouldChangePage = horizontal >= threshold && horizontal >= vertical * 1.2;
+    const direction = (Number(payload.dx) || 0) < 0 ? 1 : -1;
+    const nextPage = shouldChangePage
+      ? clamp(startPage + direction, 0, latestPageCount - 1)
+      : startPage;
+
+    currentPage = clamp(startPage, 0, latestPageCount - 1);
+    list.removeAttribute("data-vb-app-launcher-page-dragging");
+    pendingTileClickAppId = "";
+    suppressGridClickForDrag();
+    goToPage(nextPage, { animate: true });
+    payload.event?.preventDefault?.();
+  }
+
+  function cancelPageDrag(payload: AnyRecord = {}) {
+    const context = payload.context as AnyRecord;
+    const startPage = Number.isFinite(Number(context.startPage)) ? Number(context.startPage) : currentPage;
+    currentPage = clamp(startPage, 0, latestPageCount - 1);
+    list.removeAttribute("data-vb-app-launcher-page-dragging");
+    pendingTileClickAppId = "";
+    goToPage(currentPage, { animate: true });
+    payload.event?.preventDefault?.();
   }
 
   function positionContextSheet(anchor: HTMLElement, point?: { clientX: number; clientY: number } | null) {
@@ -813,7 +937,29 @@ export function createAppLauncherMenu({
     return button;
   }
 
+  function createLauncherPage(views: LauncherAppView[], pageIndex: number) {
+    const page = createEl("div", "vb-app-launcher-page vb-app-launcher-grid", {
+      role: "list",
+      "aria-label": `Applications page ${pageIndex + 1}`,
+      "data-vb-app-launcher-page": "",
+    });
+    page.dataset.page = String(pageIndex);
+    for (const view of views) page.append(createTile(view));
+    return page;
+  }
+
   function renderDots(pageCount: number) {
+    const existingDots = Array.from(dots.querySelectorAll<HTMLButtonElement>(".vb-app-launcher-page-dot"));
+    if (existingDots.length === pageCount) {
+      existingDots.forEach((dot, index) => {
+        dot.setAttribute("aria-label", `Go to app page ${index + 1}`);
+        dot.setAttribute("aria-current", index === currentPage ? "page" : "false");
+        dot.dataset.page = String(index);
+        dot.textContent = String(index + 1);
+      });
+      return;
+    }
+
     dots.replaceChildren();
     for (let index = 0; index < pageCount; index += 1) {
       const dot = createEl("button", "vb-app-launcher-page-dot", {
@@ -835,11 +981,16 @@ export function createAppLauncherMenu({
     const normalViews = buildAppViews();
     const pageCount = Math.max(1, Math.ceil(normalViews.length / pageSize));
     latestPageCount = pageCount;
+    latestAppCount = normalViews.length;
     currentPage = clamp(currentPage, 0, pageCount - 1);
-    const pageItems = normalViews.slice(currentPage * pageSize, currentPage * pageSize + pageSize);
 
-    grid.replaceChildren();
-    for (const view of pageItems) grid.append(createTile(view));
+    const pageElements: HTMLElement[] = [];
+    for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+      const pageItems = normalViews.slice(pageIndex * pageSize, pageIndex * pageSize + pageSize);
+      pageElements.push(createLauncherPage(pageItems, pageIndex));
+    }
+    pageTrack.replaceChildren(...pageElements);
+    pagesViewport.hidden = normalViews.length <= 0;
     emptyState.textContent = "No apps match your search.";
     emptyState.hidden = normalViews.length > 0;
 
@@ -848,12 +999,7 @@ export function createAppLauncherMenu({
       compatibilityList.append(createCompatibilityButton(view));
     }
 
-    const pageText = `Page ${currentPage + 1} of ${pageCount}`;
-    pageStatus.textContent = `${pageText} · ${normalViews.length} app${normalViews.length === 1 ? "" : "s"}`;
-    pageStatus.setAttribute("aria-label", pageText);
-    renderDots(pageCount);
-    dots.hidden = pageCount <= 1;
-    pagination.hidden = false;
+    syncPageUi({ animate: false });
     syncSearchUi();
     syncLanguageButton();
     applyStartMenuTranslations(list);
@@ -910,11 +1056,10 @@ export function createAppLauncherMenu({
       return;
     }
 
-    const pageDot = target?.closest<HTMLElement>("[data-page]");
+    const pageDot = target?.closest<HTMLElement>(".vb-app-launcher-page-dot[data-page]");
     if (pageDot?.dataset.page) {
       event.preventDefault();
-      currentPage = Number(pageDot.dataset.page) || 0;
-      render();
+      goToPage(Number(pageDot.dataset.page) || 0, { animate: true });
       return;
     }
 
@@ -931,7 +1076,11 @@ export function createAppLauncherMenu({
     }
 
     const tileButton = target?.closest<HTMLElement>("[data-app-id]");
-    const clickFromGridCapture = target === grid || Boolean(target?.closest?.(".vb-app-launcher-grid"));
+    const activePage = tileButton?.closest<HTMLElement>("[data-vb-app-launcher-page]");
+    if (activePage && activePage.getAttribute("data-vb-app-launcher-page-active") !== "true") return;
+    const clickFromGridCapture = target === pagesViewport
+      || target === pageTrack
+      || Boolean(target?.closest?.(".vb-app-launcher-pages, .vb-app-launcher-grid"));
     if ((!tileButton || !list.contains(tileButton)) && !clickFromGridCapture) return;
     const appId = tileButton?.dataset.appId
       || tileButton?.closest<HTMLElement>("[data-app-id]")?.dataset.appId
@@ -1002,7 +1151,7 @@ export function createAppLauncherMenu({
   closeButton.addEventListener("click", () => api.close());
   list.addEventListener("click", handleLauncherClick);
   createDragSensors({
-    source: grid,
+    source: pagesViewport,
     canStart(event): LauncherGridDragContext | null {
       const target = event.target instanceof Element ? event.target : null;
       if (target?.closest?.(".vb-app-launcher-context, .vb-app-launcher-page-dot, input, a")) return null;
@@ -1025,18 +1174,19 @@ export function createAppLauncherMenu({
         const vertical = Math.abs(payload.dy);
         if (latestPageCount > 1 && horizontal > 12 && horizontal > vertical * 1.2) {
           context.kind = "page";
-          closeContextSheet();
+          beginPageDrag(payload);
           return;
         }
         context.kind = "favorite";
         beginFavoriteTileDrag(payload);
         return;
       }
-      closeContextSheet();
+      if (context.kind === "page") beginPageDrag(payload);
     },
     onMove(payload) {
       const context = payload.context as AnyRecord;
       if (context.kind === "favorite") moveFavoriteTileDrag(payload);
+      if (context.kind === "page") movePageDrag(payload);
     },
     onEnd(payload) {
       const context = payload.context as AnyRecord;
@@ -1044,16 +1194,12 @@ export function createAppLauncherMenu({
         endFavoriteTileDrag(payload);
         return;
       }
-      const horizontal = Math.abs(payload.dx);
-      const vertical = Math.abs(payload.dy);
-      if (horizontal < 48 || horizontal < vertical * 1.2) return;
-      suppressGridClickForDrag();
-      currentPage = clamp(currentPage + (payload.dx < 0 ? 1 : -1), 0, latestPageCount - 1);
-      render();
+      if (context.kind === "page") endPageDrag(payload);
     },
     onCancel(payload) {
       const context = payload.context as AnyRecord;
       if (context.kind === "favorite") cancelFavoriteTileDrag(payload);
+      if (context.kind === "page") cancelPageDrag(payload);
     },
   });
   document.addEventListener("click", (event) => {
