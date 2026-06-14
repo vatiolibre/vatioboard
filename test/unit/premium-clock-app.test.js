@@ -166,7 +166,8 @@ describe("Premium Clock app", () => {
     app.open();
     panel.querySelector("[data-premium-clock-mode-button='timer']").click();
     panel.querySelector("[data-premium-clock-timer-toggle]").click();
-    vi.advanceTimersByTime(5 * 60 * 1000);
+    vi.setSystemTime(new Date(2026, 5, 2, 10, 20, 30, 0));
+    vi.advanceTimersByTime(250);
     await Promise.resolve();
 
     expect(audio.AudioMock).toHaveBeenCalledWith("/audio/alarm-clock.m4a");
@@ -206,7 +207,8 @@ describe("Premium Clock app", () => {
     expect(panel.querySelector("[data-premium-clock-notice]").hidden).toBe(true);
     expect(audio.pause).toHaveBeenCalled();
 
-    vi.advanceTimersByTime(9 * 60 * 1000);
+    vi.setSystemTime(new Date(2026, 5, 2, 7, 39, 0, 0));
+    vi.advanceTimersByTime(250);
     await Promise.resolve();
     expect(panel.querySelector("[data-premium-clock-notice-message]").textContent).toBe("Alarm 07:30");
 

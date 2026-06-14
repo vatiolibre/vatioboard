@@ -777,17 +777,24 @@ describe("shell UI integration", () => {
     expect(appCss).toContain("--vb-touch-target-min: 44px");
     expect(taskbarBlock).toContain("--vb-shell-taskbar-handle-width: var(--vb-touch-target-min)");
     expect(trayBlock).toContain("display: flex");
-    expect(trayBlock).toContain("justify-content: center");
-    expect(trayBlock).toContain("flex-wrap: wrap");
+    expect(trayBlock).toContain("justify-content: flex-start");
+    expect(trayBlock).toContain("flex-wrap: nowrap");
     expect(trayBlock).toContain("width: auto");
-    expect(trayBlock).toContain("max-width: max(");
+    expect(trayBlock).toContain("--vb-shell-taskbar-tray-glow-buffer: 8px");
+    expect(trayBlock).toContain("--vb-shell-taskbar-tray-content-max-width: max(");
+    expect(trayBlock).toContain("max-width: calc(var(--vb-shell-taskbar-tray-content-max-width) + (var(--vb-shell-taskbar-tray-glow-buffer) * 2))");
     expect(trayBlock).toContain("var(--vb-shell-taskbar-start-width)");
     expect(trayBlock).toContain("var(--vb-shell-taskbar-gap)");
-    expect(trayBlock).toContain("overflow: visible");
-    expect(trayBlock).toContain("padding: 0");
-    expect(trayBlock).toContain("margin: 0");
-    expect(trayBlock).not.toContain("overflow-x: auto");
-    expect(trayBlock).not.toContain("-webkit-overflow-scrolling");
+    expect(trayBlock).toContain("overflow-x: auto");
+    expect(trayBlock).toContain("overflow-y: hidden");
+    expect(trayBlock).toContain("overscroll-behavior: contain");
+    expect(trayBlock).toContain("scroll-padding-inline: var(--vb-shell-taskbar-tray-glow-buffer)");
+    expect(trayBlock).toContain("scrollbar-width: none");
+    expect(trayBlock).toContain("touch-action: pan-x");
+    expect(trayBlock).toContain("-webkit-overflow-scrolling: touch");
+    expect(trayBlock).toContain("padding: var(--vb-shell-taskbar-tray-glow-buffer)");
+    expect(trayBlock).toContain("margin: calc(var(--vb-shell-taskbar-tray-glow-buffer) * -1)");
+    expect(getCssBlock(appCss, ".vb-shell-taskbar.is-dragging .vb-shell-taskbar-tray")).toContain("overflow: visible");
     expect(appCss).toContain("--vb-shell-taskbar-safe-left: max(4px, var(--vb-safe-area-left))");
     expect(appCss).toContain("--vb-shell-taskbar-safe-right: max(4px, var(--vb-safe-area-right))");
     expect(handleBlock).toContain("flex: 0 0 var(--vb-shell-taskbar-handle-width)");
@@ -910,5 +917,5 @@ function readProjectFile(path) {
 
 function getCssBlock(css, selector) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return css.match(new RegExp(`${escaped}\\s*\\{[^}]*\\}`, "s"))?.[0] || "";
+  return css.match(new RegExp(`(^|\\n)\\s*${escaped}\\s*\\{[^}]*\\}`, "s"))?.[0] || "";
 }
