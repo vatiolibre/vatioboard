@@ -321,7 +321,7 @@ body.replay-page .replay-app{
     padding-top: clamp(8px, 1vw, 12px);
     padding-left: max(12px, env(safe-area-inset-left));
     padding-right: max(12px, env(safe-area-inset-right));
-    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    padding-bottom: max(12px, env(safe-area-inset-bottom), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 10px));
 }
 
 .replay-main > *{
@@ -1314,7 +1314,7 @@ body.replay-page .replay-app{
     .replay-main{
         gap: 8px;
         padding-top: 8px;
-        padding-bottom: max(8px, env(safe-area-inset-bottom));
+        padding-bottom: max(8px, env(safe-area-inset-bottom), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));
     }
 
     .replay-shell{
@@ -1501,7 +1501,7 @@ body.replay-page .replay-app{
     .replay-main{
         gap: 8px;
         padding-top: 8px;
-        padding-bottom: max(8px, env(safe-area-inset-bottom));
+        padding-bottom: max(8px, env(safe-area-inset-bottom), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));
     }
 
     .replay-shell,

@@ -51,7 +51,7 @@ body.apps-page #app-view {
   min-height: 100vh;
   min-height: 100dvh;
   box-sizing: border-box;
-  padding: max(18px, var(--vb-safe-area-top)) max(14px, var(--vb-safe-area-right)) max(86px, var(--vb-safe-area-bottom)) max(14px, var(--vb-safe-area-left));
+  padding: max(18px, var(--vb-safe-area-top)) max(14px, var(--vb-safe-area-right)) max(86px, var(--vb-safe-area-bottom), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 10px)) max(14px, var(--vb-safe-area-left));
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 

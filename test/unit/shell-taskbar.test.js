@@ -6,6 +6,7 @@ import { createShellTaskbar } from "../../src/shared/shell-taskbar.js";
 import { createShellWindowManager } from "../../src/shared/shell-window-manager.js";
 
 const TASKBAR_STATE_KEY = "vatioboard.shell.taskbar_fabs.v1";
+const TASKBAR_AVOID_BOTTOM_VAR = "--vb-shell-taskbar-avoid-bottom";
 const originalRaf = globalThis.requestAnimationFrame;
 const originalCancelRaf = globalThis.cancelAnimationFrame;
 const originalVisualViewport = globalThis.visualViewport;
@@ -76,6 +77,7 @@ describe("shell-taskbar", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     document.documentElement.className = "";
+    document.documentElement.style.removeProperty(TASKBAR_AVOID_BOTTOM_VAR);
     localStorage.clear();
     vi.restoreAllMocks();
     globalThis.requestAnimationFrame = (callback) => {
@@ -116,6 +118,7 @@ describe("shell-taskbar", () => {
     expect(taskbar.getElement().querySelector("[data-vb-shell-account-button]")).toBeTruthy();
     expect(taskbar.getElement().hidden).toBe(false);
     expect(taskbar.getElement().getAttribute("data-vb-shell-taskbar-empty")).toBe("true");
+    expect(taskbar.getElement().children[0]).toBe(taskbar.getStartButton());
 
     taskbar.destroy();
     manager.destroy();
@@ -187,7 +190,7 @@ describe("shell-taskbar", () => {
     manager.destroy();
   });
 
-  it("renders favorite apps before the drag handle and removes them when unfavorited", () => {
+  it("renders favorite apps after Start and before the drag handle", () => {
     const manager = makeManager();
     const appLauncher = { openApp: vi.fn(() => true) };
     const startMenu = { bindTrigger: vi.fn(), close: vi.fn() };
@@ -199,6 +202,7 @@ describe("shell-taskbar", () => {
     });
     const favorites = taskbar.getElement().querySelector("[data-vb-shell-taskbar-favorites]");
     const handle = taskbar.getElement().querySelector("[data-vb-shell-taskbar-drag-handle]");
+    const startButton = taskbar.getStartButton();
 
     expect(favorites).toBeTruthy();
     expect(favorites.hidden).toBe(true);
@@ -210,7 +214,9 @@ describe("shell-taskbar", () => {
     expect(favoriteButton).toBeTruthy();
     expect(favoriteButton.style.getPropertyValue("--vb-app-icon-accent")).toBe("#2563eb");
     expect(favorites.hidden).toBe(false);
+    expect(children.indexOf(startButton)).toBeLessThan(children.indexOf(favorites));
     expect(children.indexOf(favorites)).toBeLessThan(children.indexOf(handle));
+    expect(children[children.length - 1]).toBe(handle);
 
     favoriteButton.click();
     expect(appLauncher.openApp).toHaveBeenCalledWith(
@@ -223,6 +229,111 @@ describe("shell-taskbar", () => {
     expect(favorites.querySelector("[data-vb-shell-taskbar-favorite-app='vatio.board']")).toBeNull();
     expect(favorites.hidden).toBe(true);
 
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("adds a taskbar favorite when a launcher tile is dropped on the taskbar", () => {
+    const manager = makeManager();
+    const appLauncher = { openApp: vi.fn(() => true) };
+    const startMenu = { bindTrigger: vi.fn(), close: vi.fn() };
+    const taskbar = createShellTaskbar({
+      shellManager: manager,
+      root: document.body,
+      startMenu,
+      appLauncher,
+    });
+    vi.spyOn(taskbar.getElement(), "getBoundingClientRect").mockReturnValue(rect({
+      left: 10,
+      top: 700,
+      width: 280,
+      height: 58,
+    }));
+    appControl.setFavorite("vatio.board", false);
+
+    window.dispatchEvent(new CustomEvent("vatio:taskbar-favorite-drag", {
+      detail: {
+        phase: "start",
+        appId: "vatio.board",
+        point: { clientX: 72, clientY: 724 },
+      },
+    }));
+
+    expect(taskbar.getElement().getAttribute("data-vb-shell-taskbar-favorite-drop")).toBe("over");
+
+    window.dispatchEvent(new CustomEvent("vatio:taskbar-favorite-drag", {
+      detail: {
+        phase: "end",
+        appId: "vatio.board",
+        point: { clientX: 72, clientY: 724 },
+      },
+    }));
+
+    expect(appControl.isFavorite("vatio.board")).toBe(true);
+    expect(taskbar.getElement().getAttribute("data-vb-shell-taskbar-favorite-drop")).toBe("false");
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-favorite-app='vatio.board']")).toBeTruthy();
+    expect(startMenu.close).toHaveBeenCalled();
+
+    appControl.setFavorite("vatio.board", false);
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("adds a favorite by dragging an open taskbar app onto the Start favorite zone", () => {
+    const manager = makeManager();
+    manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
+    const appLauncher = { openApp: vi.fn(() => true) };
+    const taskbar = createShellTaskbar({
+      shellManager: manager,
+      root: document.body,
+      appLauncher,
+    });
+    manager.openWindow("calculator");
+    appControl.setFavorite("vatio.calculator", false);
+
+    const item = taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']");
+    Object.defineProperty(item, "getBoundingClientRect", {
+      configurable: true,
+      value: () => rect({ left: 120, top: 600 }),
+    });
+    Object.defineProperty(taskbar.getStartButton(), "getBoundingClientRect", {
+      configurable: true,
+      value: () => rect({
+        left: 10,
+        top: 700,
+        width: 52,
+        height: 52,
+      }),
+    });
+
+    item.dispatchEvent(pointer("pointerdown", { clientX: 130, clientY: 610 }));
+    window.dispatchEvent(pointer("pointermove", { clientX: 180, clientY: 550 }));
+
+    const trash = document.querySelector("[data-vb-shell-taskbar-trash]");
+    expect(trash).toBeTruthy();
+    Object.defineProperty(trash, "getBoundingClientRect", {
+      configurable: true,
+      value: () => rect({
+        left: 900,
+        top: 900,
+        width: 150,
+        height: 70,
+      }),
+    });
+
+    window.dispatchEvent(pointer("pointermove", { clientX: 36, clientY: 724 }));
+
+    expect(taskbar.getElement().getAttribute("data-vb-shell-taskbar-favorite-drop")).toBe("over");
+
+    window.dispatchEvent(pointer("pointerup", { clientX: 36, clientY: 724 }));
+
+    expect(taskbar.getElement().getAttribute("data-vb-shell-taskbar-favorite-drop")).toBe("false");
+    expect(appControl.isFavorite("vatio.calculator")).toBe(true);
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-favorite-app='vatio.calculator']")).toBeTruthy();
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeNull();
+    expect(manager.getWindow("calculator").state).toBe("open");
+
+    appControl.setFavorite("vatio.calculator", false);
     taskbar.destroy();
     manager.destroy();
   });
@@ -284,6 +395,98 @@ describe("shell-taskbar", () => {
     manager.destroy();
   });
 
+  it("removes a favorite by dragging its taskbar button into the remove target", () => {
+    const manager = makeManager();
+    manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
+    const appLauncher = { openApp: vi.fn(() => true) };
+    const taskbar = createShellTaskbar({
+      shellManager: manager,
+      root: document.body,
+      appLauncher,
+    });
+    manager.openWindow("calculator");
+    appControl.setFavorite("vatio.calculator", true);
+
+    const favorite = taskbar.getElement().querySelector("[data-vb-shell-taskbar-favorite-app='vatio.calculator']");
+    expect(favorite).toBeTruthy();
+    vi.spyOn(favorite, "getBoundingClientRect").mockReturnValue(rect({ left: 100, top: 600, width: 44, height: 44 }));
+
+    favorite.dispatchEvent(touchEvent("touchstart", { target: favorite, clientX: 110, clientY: 610 }));
+    document.dispatchEvent(touchEvent("touchmove", { target: favorite, clientX: 180, clientY: 550 }));
+
+    const trash = document.querySelector("[data-vb-shell-taskbar-trash]");
+    expect(trash).toBeTruthy();
+    expect(trash.getAttribute("data-vb-shell-taskbar-trash-mode")).toBe("favorite");
+    expect(trash.textContent).toContain("Remove favorite");
+    vi.spyOn(trash, "getBoundingClientRect").mockReturnValue(rect({
+      left: 240,
+      top: 520,
+      width: 150,
+      height: 70,
+    }));
+
+    document.dispatchEvent(touchEvent("touchmove", { target: favorite, clientX: 300, clientY: 550 }));
+    expect(trash.getAttribute("data-vb-shell-taskbar-trash-active")).toBe("true");
+
+    document.dispatchEvent(touchEvent("touchend", { target: favorite, clientX: 300, clientY: 550 }));
+
+    expect(appControl.isFavorite("vatio.calculator")).toBe(false);
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-favorite-app='vatio.calculator']")).toBeNull();
+    expect(taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']")).toBeTruthy();
+    expect(manager.getWindow("calculator").state).toBe("open");
+    expect(trash.isConnected).toBe(false);
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("keeps redocking behavior when an open app is dropped on ordinary taskbar space", () => {
+    localStorage.setItem(TASKBAR_STATE_KEY, JSON.stringify({
+      version: 1,
+      knownWindowIds: ["calculator"],
+      positions: { calculator: { detached: true, left: 210, top: 210 } },
+      taskbar: null,
+    }));
+    const manager = makeManager();
+    manager.registerWindow({ id: "calculator", title: "Calculator", element: makePanel() });
+    const appLauncher = { openApp: vi.fn(() => true) };
+    const taskbar = createShellTaskbar({
+      shellManager: manager,
+      root: document.body,
+      appLauncher,
+    });
+    manager.openWindow("calculator");
+    appControl.setFavorite("vatio.calculator", false);
+
+    vi.spyOn(taskbar.getElement(), "getBoundingClientRect").mockReturnValue(rect({
+      left: 0,
+      top: 690,
+      width: 360,
+      height: 70,
+    }));
+    vi.spyOn(taskbar.getStartButton(), "getBoundingClientRect").mockReturnValue(rect({
+      left: 0,
+      top: 690,
+      width: 52,
+      height: 52,
+    }));
+    const item = document.querySelector("[data-vb-shell-taskbar-item='calculator']");
+    vi.spyOn(item, "getBoundingClientRect").mockReturnValue(rect({ left: 210, top: 210 }));
+
+    item.dispatchEvent(touchEvent("touchstart", { target: item, clientX: 220, clientY: 220 }));
+    document.dispatchEvent(touchEvent("touchmove", { target: item, clientX: 300, clientY: 720 }));
+    document.dispatchEvent(touchEvent("touchend", { target: item, clientX: 300, clientY: 720 }));
+
+    expect(appControl.isFavorite("vatio.calculator")).toBe(false);
+    const docked = taskbar.getElement().querySelector("[data-vb-shell-taskbar-item='calculator']");
+    expect(docked).toBeTruthy();
+    expect(docked.getAttribute("data-vb-shell-taskbar-docked")).toBe("true");
+    expect(docked.parentElement).toBe(taskbar.getElement().querySelector("[data-vb-shell-taskbar-tray]"));
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
   it("adds a floating FAB to the taskbar tray the first time a window opens", () => {
     const { manager, taskbar } = setupCalculatorTaskbar();
 
@@ -299,6 +502,118 @@ describe("shell-taskbar", () => {
     expect(item.getAttribute("draggable")).toBe("false");
     expect(item.ondragstart()).toBe(false);
     expect(taskbar.getElement().hidden).toBe(false);
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("keeps account visible while collapsing crowded mobile taskbar apps into overflow", () => {
+    Object.defineProperty(globalThis, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 390,
+    });
+    Object.defineProperty(globalThis, "innerHeight", {
+      configurable: true,
+      writable: true,
+      value: 844,
+    });
+    const manager = makeManager();
+    const ids = ["alpha", "bravo", "charlie", "delta", "echo"];
+    for (const id of ids) {
+      manager.registerWindow({ id, title: id, element: makePanel(id) });
+    }
+    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+
+    for (const id of ids) manager.openWindow(id);
+
+    const element = taskbar.getElement();
+    const tray = element.querySelector("[data-vb-shell-taskbar-tray]");
+    const overflowButton = element.querySelector("[data-vb-shell-taskbar-overflow]");
+    const accountButton = element.querySelector("[data-vb-shell-account-button]");
+    const appCss = readFileSync(resolve(process.cwd(), "src/styles/app.less"), "utf8");
+
+    expect(element.getAttribute("data-vb-shell-taskbar-mobile-overflow")).toBe("true");
+    expect(tray.querySelectorAll("[data-vb-shell-taskbar-item]")).toHaveLength(2);
+    expect(overflowButton.hidden).toBe(false);
+    expect(overflowButton.textContent).toContain("+3");
+    expect(accountButton).toBeTruthy();
+    expect(accountButton.hidden).toBe(false);
+    expect(appCss).not.toMatch(/data-vb-shell-taskbar-mobile-overflow="true"][^{]*\.vb-shell-taskbar-account\s*{\s*display:\s*none;/);
+
+    overflowButton.click();
+
+    const overflowPanel = document.querySelector("[data-vb-shell-taskbar-overflow-panel]");
+    expect(overflowPanel.hidden).toBe(false);
+    expect(overflowPanel.querySelectorAll("[data-vb-shell-taskbar-overflow-item]")).toHaveLength(5);
+
+    overflowPanel.querySelector("[data-vb-shell-taskbar-overflow-item='alpha']").click();
+
+    expect(manager.getActiveWindow().id).toBe("alpha");
+    expect(overflowPanel.hidden).toBe(true);
+
+    taskbar.destroy();
+    expect(document.querySelector("[data-vb-shell-taskbar-overflow-panel]")).toBeNull();
+    manager.destroy();
+  });
+
+  it("uses one visible app slot on very narrow iPhone layouts so account still fits", () => {
+    Object.defineProperty(globalThis, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 320,
+    });
+    Object.defineProperty(globalThis, "innerHeight", {
+      configurable: true,
+      writable: true,
+      value: 568,
+    });
+    const manager = makeManager();
+    const ids = ["alpha", "bravo", "charlie", "delta", "echo"];
+    for (const id of ids) {
+      manager.registerWindow({ id, title: id, element: makePanel(id) });
+    }
+    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+
+    for (const id of ids) manager.openWindow(id);
+
+    const element = taskbar.getElement();
+    const tray = element.querySelector("[data-vb-shell-taskbar-tray]");
+    const overflowButton = element.querySelector("[data-vb-shell-taskbar-overflow]");
+    const accountButton = element.querySelector("[data-vb-shell-account-button]");
+
+    expect(element.getAttribute("data-vb-shell-taskbar-mobile-overflow")).toBe("true");
+    expect(tray.querySelectorAll("[data-vb-shell-taskbar-item]")).toHaveLength(1);
+    expect(overflowButton.textContent).toContain("+4");
+    expect(accountButton).toBeTruthy();
+    expect(accountButton.hidden).toBe(false);
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("keeps all docked taskbar apps visible on wider screens", () => {
+    Object.defineProperty(globalThis, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 1024,
+    });
+    const manager = makeManager();
+    const ids = ["alpha", "bravo", "charlie", "delta", "echo"];
+    for (const id of ids) {
+      manager.registerWindow({ id, title: id, element: makePanel(id) });
+    }
+    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+
+    for (const id of ids) manager.openWindow(id);
+
+    const element = taskbar.getElement();
+    const tray = element.querySelector("[data-vb-shell-taskbar-tray]");
+    const overflowButton = element.querySelector("[data-vb-shell-taskbar-overflow]");
+
+    expect(element.getAttribute("data-vb-shell-taskbar-mobile-overflow")).toBe("false");
+    expect(tray.querySelectorAll("[data-vb-shell-taskbar-item]")).toHaveLength(5);
+    expect(overflowButton.hidden).toBe(true);
 
     taskbar.destroy();
     manager.destroy();
@@ -351,6 +666,11 @@ describe("shell-taskbar", () => {
     expect(Number(panel.style.zIndex)).toBeLessThan(1950);
     expect(appCss).toContain(".vb-shell-taskbar");
     expect(appCss).toContain("z-index: var(--vb-z-shell-taskbar, 1950)");
+    expect(appCss).toContain("--vb-shell-taskbar-avoid-bottom: 0px");
+    expect(appCss).toContain("left: max(10px, var(--vb-safe-area-left))");
+    expect(appCss).toContain("--vb-shell-taskbar-tray-glow-buffer: 8px");
+    expect(appCss).toContain("background: transparent");
+    expect(appCss).toContain("0 2px 8px color-mix(in srgb, var(--vb-app-icon-accent) 18%");
     expect(appCss).toContain(".vb-shell-taskbar-item.is-detached");
     expect(appCss).toContain("z-index: var(--vb-z-shell-taskbar, 1950)");
 
@@ -464,6 +784,7 @@ describe("shell-taskbar", () => {
     expect(element.style.position).toBe("fixed");
     expect(element.style.left).toBe("420px");
     expect(element.style.top).toBe("380px");
+    expect(document.documentElement.style.getPropertyValue(TASKBAR_AVOID_BOTTOM_VAR)).toBe("0px");
     expect(JSON.parse(localStorage.getItem(TASKBAR_STATE_KEY)).taskbar)
       .toMatchObject({ detached: true, left: 420, top: 380 });
 
@@ -546,6 +867,25 @@ describe("shell-taskbar", () => {
     manager.destroy();
   });
 
+  it("publishes the docked bottom taskbar inset for route-level layout", () => {
+    const { manager, taskbar } = setupCalculatorTaskbar();
+    const element = taskbar.getElement();
+    vi.spyOn(element, "getBoundingClientRect").mockReturnValue(rect({
+      left: 0,
+      top: 690,
+      width: 360,
+      height: 70,
+    }));
+
+    taskbar.render();
+
+    expect(document.documentElement.style.getPropertyValue(TASKBAR_AVOID_BOTTOM_VAR)).toBe("78px");
+
+    taskbar.destroy();
+    expect(document.documentElement.style.getPropertyValue(TASKBAR_AVOID_BOTTOM_VAR)).toBe("");
+    manager.destroy();
+  });
+
   it("moves the taskbar from the handle with mouse pointer events", () => {
     const { manager, taskbar } = setupCalculatorTaskbar();
     const element = taskbar.getElement();
@@ -564,6 +904,50 @@ describe("shell-taskbar", () => {
 
     expect(element.style.left).toBe("420px");
     expect(element.style.top).toBe("380px");
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
+  it("redocks a detached taskbar when dropped in the lower-left dock zone", () => {
+    const viewport = new EventTarget();
+    Object.defineProperties(viewport, {
+      width: { configurable: true, writable: true, value: 1024 },
+      height: { configurable: true, writable: true, value: 768 },
+      offsetLeft: { configurable: true, writable: true, value: 0 },
+      offsetTop: { configurable: true, writable: true, value: 0 },
+    });
+    Object.defineProperty(window, "visualViewport", { configurable: true, value: viewport });
+    Object.defineProperty(globalThis, "visualViewport", { configurable: true, value: viewport });
+    Object.defineProperty(globalThis, "innerWidth", { configurable: true, writable: true, value: 1024 });
+    Object.defineProperty(globalThis, "innerHeight", { configurable: true, writable: true, value: 768 });
+    localStorage.setItem(TASKBAR_STATE_KEY, JSON.stringify({
+      version: 1,
+      knownWindowIds: [],
+      positions: {},
+      taskbar: { detached: true, left: 320, top: 260 },
+    }));
+    const manager = makeManager();
+    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+    const element = taskbar.getElement();
+    const handle = element.querySelector("[data-vb-shell-taskbar-drag-handle]");
+    vi.spyOn(element, "getBoundingClientRect").mockReturnValue(rect({
+      left: 320,
+      top: 260,
+      width: 180,
+      height: 70,
+    }));
+
+    handle.dispatchEvent(pointer("pointerdown", { clientX: 480, clientY: 295 }));
+    window.dispatchEvent(pointer("pointermove", { clientX: 28, clientY: 720 }));
+    window.dispatchEvent(pointer("pointerup", { clientX: 28, clientY: 720 }));
+
+    expect(element.classList.contains("is-detached")).toBe(false);
+    expect(element.getAttribute("data-vb-shell-taskbar-floating")).toBe("false");
+    expect(element.style.position).toBe("");
+    expect(element.style.left).toBe("");
+    expect(element.style.top).toBe("");
+    expect(JSON.parse(localStorage.getItem(TASKBAR_STATE_KEY)).taskbar).toBeNull();
 
     taskbar.destroy();
     manager.destroy();

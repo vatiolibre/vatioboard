@@ -11,6 +11,7 @@ body,
   --vb-safe-area-right: env(safe-area-inset-right, 0px);
   --vb-safe-area-bottom: env(safe-area-inset-bottom, 0px);
   --vb-safe-area-left: env(safe-area-inset-left, 0px);
+  --vb-shell-taskbar-avoid-bottom: 0px;
   --vb-z-shell-window-base: 1000;
   --vb-z-shell-window-max: 1890;
   --vb-z-shell-taskbar: 1950;
@@ -104,17 +105,19 @@ html.vb-floating-drag-active body {
   --vb-shell-taskbar-handle-width: var(--vb-touch-target-min);
   --vb-shell-taskbar-start-width: 52px;
   --vb-shell-taskbar-account-width: 44px;
+  --vb-shell-taskbar-overflow-width: 0px;
   --vb-shell-taskbar-favorite-width: 44px;
   --vb-shell-taskbar-gap: 8px;
 
   position: fixed;
-  left: 50%;
+  left: max(10px, var(--vb-safe-area-left));
+  right: auto;
   bottom: max(10px, var(--vb-safe-area-bottom));
-  transform: translateX(-50%);
+  transform: none;
   z-index: var(--vb-z-shell-taskbar, 1950);
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: var(--vb-shell-taskbar-gap);
   width: fit-content;
   max-width: var(--vb-shell-taskbar-max-width);
@@ -135,8 +138,53 @@ html.vb-floating-drag-active body {
   -webkit-user-drag: none;
 }
 
+.vb-shell-taskbar[data-vb-shell-taskbar-favorite-drop="active"],
+.vb-shell-taskbar[data-vb-shell-taskbar-favorite-drop="over"] {
+  border-color: color-mix(in srgb, var(--calc-accent, #10b981) 46%, #ffffff);
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--calc-accent, #10b981) 14%, transparent),
+    0 14px 30px rgba(15, 23, 42, 0.18);
+}
+
+.vb-shell-taskbar[data-vb-shell-taskbar-favorite-drop="active"]::after,
+.vb-shell-taskbar[data-vb-shell-taskbar-favorite-drop="over"]::after {
+  content: "";
+  position: absolute;
+  left: 28px;
+  top: -5px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid color-mix(in srgb, var(--calc-surface, #fff) 92%, transparent);
+  border-radius: 999px;
+  background: var(--calc-accent, #10b981);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--calc-accent, #10b981) 38%, transparent);
+  pointer-events: none;
+}
+
+.vb-shell-taskbar[data-vb-shell-taskbar-favorite-drop="over"] {
+  background: color-mix(in srgb, var(--calc-accent, #10b981) 10%, var(--calc-surface, #fff));
+}
+
+.vb-shell-taskbar[data-vb-shell-taskbar-favorite-drop="active"] .vb-shell-taskbar-start,
+.vb-shell-taskbar[data-vb-shell-taskbar-favorite-drop="over"] .vb-shell-taskbar-start {
+  border-color: color-mix(in srgb, var(--calc-accent, #10b981) 54%, #ffffff);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--calc-accent, #10b981) 18%, transparent),
+    0 12px 24px color-mix(in srgb, var(--calc-accent, #10b981) 26%, rgba(15, 23, 42, 0.14));
+}
+
+.vb-shell-taskbar[data-vb-shell-taskbar-favorite-drop="over"] .vb-shell-taskbar-start {
+  transform: translateY(-1px);
+}
+
+.vb-shell-taskbar[data-vb-shell-taskbar-favorite-drop="active"] .vb-shell-taskbar-favorites:not([hidden]),
+.vb-shell-taskbar[data-vb-shell-taskbar-favorite-drop="over"] .vb-shell-taskbar-favorites:not([hidden]) {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--calc-accent, #10b981) 10%, transparent);
+}
+
 .vb-shell-taskbar-favorites {
-  --vb-shell-taskbar-favorite-glow-buffer: 5px;
+  --vb-shell-taskbar-favorite-glow-buffer: 8px;
 
   display: flex;
   align-items: center;
@@ -165,34 +213,51 @@ html.vb-floating-drag-active body {
 }
 
 .vb-shell-taskbar-tray {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 1 auto;
-  flex-wrap: wrap;
-  gap: 8px;
-  width: auto;
-  max-width: max(
+  --vb-shell-taskbar-tray-glow-buffer: 8px;
+  --vb-shell-taskbar-tray-content-max-width: max(
     52px,
     calc(
       var(--vb-shell-taskbar-max-width)
       - var(--vb-shell-taskbar-handle-width)
       - var(--vb-shell-taskbar-start-width)
       - var(--vb-shell-taskbar-account-width)
+      - var(--vb-shell-taskbar-overflow-width)
       - var(--vb-shell-taskbar-padding-inline-total)
       - var(--vb-shell-taskbar-gap)
       - var(--vb-shell-taskbar-gap)
       - var(--vb-shell-taskbar-gap)
     )
   );
+
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex: 0 1 auto;
+  flex-wrap: nowrap;
+  gap: 8px;
+  width: auto;
+  max-width: calc(var(--vb-shell-taskbar-tray-content-max-width) + (var(--vb-shell-taskbar-tray-glow-buffer) * 2));
   max-height: none;
   min-width: 0;
-  padding: 0;
-  margin: 0;
+  padding: var(--vb-shell-taskbar-tray-glow-buffer);
+  margin: calc(var(--vb-shell-taskbar-tray-glow-buffer) * -1);
   box-sizing: border-box;
-  overflow: visible;
+  background: transparent;
+  overflow-x: auto;
+  overflow-y: hidden;
   overscroll-behavior: contain;
-  touch-action: none;
+  scroll-padding-inline: var(--vb-shell-taskbar-tray-glow-buffer);
+  scrollbar-width: none;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
+}
+
+.vb-shell-taskbar-tray:empty {
+  --vb-shell-taskbar-tray-glow-buffer: 0px;
+}
+
+.vb-shell-taskbar-tray::-webkit-scrollbar {
+  display: none;
 }
 
 .vb-shell-taskbar-drag-handle {
@@ -233,6 +298,7 @@ html.vb-floating-drag-active body {
     var(--vb-shell-taskbar-handle-width)
     + var(--vb-shell-taskbar-start-width)
     + var(--vb-shell-taskbar-account-width)
+    + var(--vb-shell-taskbar-overflow-width)
     + var(--vb-shell-taskbar-padding-inline-total)
     + var(--vb-shell-taskbar-gap)
     + var(--vb-shell-taskbar-gap)
@@ -415,7 +481,7 @@ html.vb-floating-drag-active body {
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, #ffffff 30%, transparent),
     inset 0 -14px 24px color-mix(in srgb, #000000 16%, transparent),
-    0 8px 18px color-mix(in srgb, var(--vb-app-icon-accent) 22%, rgba(15, 23, 42, 0.12));
+    0 2px 8px color-mix(in srgb, var(--vb-app-icon-accent) 18%, rgba(15, 23, 42, 0.12));
   cursor: pointer;
   font: inherit;
   touch-action: manipulation;
@@ -429,7 +495,7 @@ html.vb-floating-drag-active body {
   border-color: color-mix(in srgb, var(--vb-app-icon-accent) 46%, #ffffff);
   box-shadow:
     0 0 0 3px color-mix(in srgb, var(--vb-app-icon-accent) 18%, transparent),
-    0 10px 22px color-mix(in srgb, var(--vb-app-icon-accent) 26%, rgba(15, 23, 42, 0.12));
+    0 2px 8px color-mix(in srgb, var(--vb-app-icon-accent) 20%, rgba(15, 23, 42, 0.12));
   outline: none;
 }
 
@@ -441,13 +507,21 @@ html.vb-floating-drag-active body {
   border-color: color-mix(in srgb, var(--vb-app-icon-accent) 48%, #ffffff);
   box-shadow:
     0 0 0 3px color-mix(in srgb, var(--vb-app-icon-accent) 22%, transparent),
-    0 0 24px color-mix(in srgb, var(--vb-app-icon-accent) 24%, transparent),
+    0 2px 8px color-mix(in srgb, var(--vb-app-icon-accent) 20%, rgba(15, 23, 42, 0.12)),
     inset 0 1px 0 color-mix(in srgb, #ffffff 30%, transparent),
     inset 0 -14px 24px color-mix(in srgb, #000000 16%, transparent);
 }
 
 .vb-shell-taskbar-favorite-app[data-vb-shell-taskbar-state="minimized"] {
   opacity: 0.76;
+}
+
+.vb-shell-taskbar-favorite-app.is-dragging {
+  cursor: grabbing;
+}
+
+.vb-shell-taskbar-favorite-app.is-drag-source {
+  opacity: 0.32;
 }
 
 .vb-shell-taskbar-account {
@@ -505,6 +579,145 @@ html.vb-floating-drag-active body {
   background: #f59e0b;
 }
 
+.vb-shell-taskbar-overflow {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 44px;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--calc-border, rgba(0, 0, 0, 0.14)) 78%, transparent);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 32% 20%, color-mix(in srgb, #ffffff 44%, transparent) 0 18%, transparent 40%),
+    color-mix(in srgb, var(--calc-surface, #fff) 90%, transparent);
+  color: color-mix(in srgb, var(--calc-text, #111827) 78%, var(--calc-accent, #10b981));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #ffffff 44%, transparent),
+    0 8px 18px rgba(15, 23, 42, 0.12);
+  cursor: pointer;
+  font: 800 13px/1 var(--calc-font, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial);
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+}
+
+.vb-shell-taskbar-overflow[hidden] {
+  display: none;
+}
+
+.vb-shell-taskbar-overflow:hover,
+.vb-shell-taskbar-overflow:focus-visible,
+.vb-shell-taskbar-overflow[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--calc-accent, #10b981) 42%, transparent);
+  background: color-mix(in srgb, var(--calc-accent, #10b981) 9%, var(--calc-surface, #fff));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--calc-accent, #10b981) 16%, transparent),
+    0 8px 18px rgba(15, 23, 42, 0.14);
+  outline: none;
+}
+
+.vb-shell-taskbar-overflow-panel {
+  position: fixed;
+  left: max(8px, var(--vb-safe-area-left));
+  bottom: calc(var(--vb-shell-taskbar-avoid-bottom, 76px) + 8px);
+  z-index: var(--vb-z-shell-start-menu, 1960);
+  width: min(344px, calc(100vw - max(8px, var(--vb-safe-area-left)) - max(8px, var(--vb-safe-area-right))));
+  max-height: min(54vh, calc(100vh - var(--vb-shell-taskbar-avoid-bottom, 76px) - 24px));
+  padding: 10px;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--calc-border, rgba(0, 0, 0, 0.14)) 82%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--calc-surface, #fff) 94%, transparent);
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.18);
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.vb-shell-taskbar-overflow-panel[hidden] {
+  display: none;
+}
+
+.vb-shell-taskbar-overflow-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.vb-shell-taskbar-overflow-item {
+  --vb-app-icon-accent: var(--calc-accent, #10b981);
+  --vb-app-icon-accent-2: color-mix(in srgb, var(--calc-accent, #10b981) 72%, #ffffff);
+  --vb-app-icon-foreground: #ffffff;
+
+  display: grid;
+  grid-template-rows: 44px minmax(16px, auto) 14px;
+  align-items: center;
+  justify-items: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 88px;
+  padding: 8px 6px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--calc-text, #111827);
+  cursor: pointer;
+  font: inherit;
+  touch-action: manipulation;
+}
+
+.vb-shell-taskbar-overflow-item .vb-shell-taskbar-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid color-mix(in srgb, var(--vb-app-icon-accent) 44%, #ffffff 24%);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 30% 20%, color-mix(in srgb, #ffffff 34%, transparent) 0 16%, transparent 38%),
+    linear-gradient(145deg, var(--vb-app-icon-accent-2), var(--vb-app-icon-accent));
+  color: var(--vb-app-icon-foreground);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #ffffff 30%, transparent),
+    inset 0 -14px 24px color-mix(in srgb, #000000 16%, transparent),
+    0 2px 8px color-mix(in srgb, var(--vb-app-icon-accent) 18%, rgba(15, 23, 42, 0.12));
+}
+
+.vb-shell-taskbar-overflow-label,
+.vb-shell-taskbar-overflow-status {
+  max-width: 100%;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vb-shell-taskbar-overflow-label {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.vb-shell-taskbar-overflow-status {
+  color: color-mix(in srgb, var(--calc-muted, #6b7280) 84%, transparent);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.vb-shell-taskbar-overflow-item:hover,
+.vb-shell-taskbar-overflow-item:focus-visible,
+.vb-shell-taskbar-overflow-item[data-vb-shell-taskbar-active="true"] {
+  border-color: color-mix(in srgb, var(--vb-app-icon-accent) 24%, transparent);
+  background: color-mix(in srgb, var(--vb-app-icon-accent) 8%, transparent);
+  outline: none;
+}
+
 .vb-shell-taskbar-item {
   --vb-app-icon-accent: var(--calc-accent, #10b981);
   --vb-app-icon-accent-2: color-mix(in srgb, var(--calc-accent, #10b981) 72%, #ffffff);
@@ -528,7 +741,7 @@ html.vb-floating-drag-active body {
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, #ffffff 30%, transparent),
     inset 0 -16px 26px color-mix(in srgb, #000000 16%, transparent),
-    0 10px 22px color-mix(in srgb, var(--vb-app-icon-accent) 24%, rgba(15, 23, 42, 0.16));
+    0 2px 8px color-mix(in srgb, var(--vb-app-icon-accent) 18%, rgba(15, 23, 42, 0.14));
   cursor: pointer;
   font: inherit;
   touch-action: none;
@@ -541,8 +754,9 @@ html.vb-floating-drag-active body {
   border-color: color-mix(in srgb, var(--vb-app-icon-accent) 48%, #ffffff);
   box-shadow:
     0 0 0 3px color-mix(in srgb, var(--vb-app-icon-accent) 22%, transparent),
-    0 0 24px color-mix(in srgb, var(--vb-app-icon-accent) 24%, transparent),
-    0 12px 24px color-mix(in srgb, var(--vb-app-icon-accent) 28%, rgba(15, 23, 42, 0.18));
+    inset 0 1px 0 color-mix(in srgb, #ffffff 30%, transparent),
+    inset 0 -16px 26px color-mix(in srgb, #000000 16%, transparent),
+    0 2px 8px color-mix(in srgb, var(--vb-app-icon-accent) 22%, rgba(15, 23, 42, 0.14));
 }
 
 .vb-shell-taskbar-item:hover,
@@ -550,7 +764,7 @@ html.vb-floating-drag-active body {
   border-color: color-mix(in srgb, var(--vb-app-icon-accent) 46%, #ffffff);
   box-shadow:
     0 0 0 3px color-mix(in srgb, var(--vb-app-icon-accent) 18%, transparent),
-    0 12px 24px color-mix(in srgb, var(--vb-app-icon-accent) 26%, rgba(15, 23, 42, 0.16));
+    0 2px 8px color-mix(in srgb, var(--vb-app-icon-accent) 20%, rgba(15, 23, 42, 0.14));
   outline: none;
 }
 
@@ -638,6 +852,21 @@ html.vb-floating-drag-active body {
     0 16px 34px rgba(127, 29, 29, 0.24);
 }
 
+.vb-shell-taskbar-trash[data-vb-shell-taskbar-trash-mode="favorite"] {
+  border-color: color-mix(in srgb, #f59e0b 48%, transparent);
+  background: #fffbeb;
+  color: #92400e;
+  box-shadow: 0 14px 32px rgba(146, 64, 14, 0.18);
+}
+
+.vb-shell-taskbar-trash[data-vb-shell-taskbar-trash-mode="favorite"][data-vb-shell-taskbar-trash-active="true"] {
+  border-color: #f59e0b;
+  background: #fef3c7;
+  box-shadow:
+    0 0 0 4px rgba(245, 158, 11, 0.16),
+    0 16px 34px rgba(146, 64, 14, 0.24);
+}
+
 .vb-shell-taskbar-trash-icon {
   position: relative;
   width: 18px;
@@ -717,6 +946,25 @@ html.vb-floating-drag-active body {
     right: auto;
     bottom: max(8px, var(--vb-safe-area-bottom));
     transform: none;
+  }
+
+  .vb-shell-taskbar[data-vb-shell-taskbar-mobile-overflow="true"] {
+    --vb-shell-taskbar-account-width: 44px;
+    --vb-shell-taskbar-handle-width: 28px;
+    --vb-shell-taskbar-overflow-width: 44px;
+  }
+
+  .vb-shell-taskbar[data-vb-shell-taskbar-mobile-overflow="true"] .vb-shell-taskbar-drag-handle {
+    flex-basis: var(--vb-shell-taskbar-handle-width);
+    min-width: var(--vb-shell-taskbar-handle-width);
+  }
+
+  .vb-shell-taskbar[data-vb-shell-taskbar-mobile-overflow="true"] .vb-shell-taskbar-drag-handle::before {
+    height: 20px;
+  }
+
+  .vb-shell-taskbar-overflow-panel {
+    border-radius: 16px;
   }
 }
 

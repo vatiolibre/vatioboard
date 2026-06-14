@@ -11,6 +11,16 @@ const BACKEND_AUTH_STATE_EVENT = "vatioboard:backend-auth-state";
 const RETURN_MARGIN_PX = 36;
 const FAB_SIZE_PX = 52;
 const VIEWPORT_MARGIN_PX = 8;
+const REDOCK_ZONE_WIDTH_PX = 280;
+const REDOCK_ZONE_HEIGHT_PX = 136;
+const TASKBAR_AVOID_BOTTOM_VAR = "--vb-shell-taskbar-avoid-bottom";
+const MOBILE_TASKBAR_OVERFLOW_QUERY = "(max-width: 640px)";
+const MOBILE_TASKBAR_VISIBLE_DOCKED_LIMIT = 3;
+const MOBILE_TASKBAR_TWO_APP_MIN_WIDTH = 360;
+const MOBILE_TASKBAR_THREE_APP_MIN_WIDTH = 430;
+const TASKBAR_OVERFLOW_PANEL_ID = "vbShellTaskbarOverflow";
+const TASKBAR_FAVORITE_DRAG_EVENT = "vatio:taskbar-favorite-drag";
+const TASKBAR_FAVORITE_DROP_MARGIN_PX = 24;
 
 // TODO(ts-migration): drag sensors preserve the legacy JS payload shape while
 // the taskbar callers are still mixed JS/TS.
@@ -48,6 +58,17 @@ interface TaskbarOptions {
     toggle?: (options?: Record<string, unknown>) => void;
   } | null;
   storage?: StorageLike | null;
+}
+
+interface TaskbarFavoriteDragDetail {
+  appId?: string;
+  phase?: "start" | "move" | "end" | "cancel";
+  point?: {
+    clientX?: number;
+    clientY?: number;
+    x?: number;
+    y?: number;
+  } | null;
 }
 
 function getWindowState(record: ShellWindowRecord | LegacyTaskbarOptions) {
@@ -150,10 +171,12 @@ function getAppLabel(app: VatioAppManifest) {
   return app.shortTitle || app.title || app.id;
 }
 
+function isLaunchableTaskbarApp(app: VatioAppManifest) {
+  return appControl.isEnabled(app.id) && Boolean(app.route || app.window?.shellWindowId);
+}
+
 function isLaunchableFavoriteApp(app: VatioAppManifest) {
-  return appControl.isFavorite(app.id)
-    && appControl.isEnabled(app.id)
-    && Boolean(app.route || app.window?.shellWindowId);
+  return appControl.isFavorite(app.id) && isLaunchableTaskbarApp(app);
 }
 
 function getFavoriteApps() {
@@ -279,13 +302,19 @@ export function createShellTaskbar({
   const knownWindowIds = new Set(savedState.knownWindowIds);
   const itemPositions = new Map(Object.entries(savedState.positions));
   let taskbarPosition = savedState.taskbar;
+  let recentWindowIds = savedState.knownWindowIds.filter((id) => knownWindowIds.has(id));
   const itemElements = new Map();
   const itemSensors = new Map();
+  const favoriteSensors = new Map();
   const suppressedClicks = new Set();
+  const overflowMediaQuery = typeof globalThis.matchMedia === "function"
+    ? globalThis.matchMedia(MOBILE_TASKBAR_OVERFLOW_QUERY)
+    : null;
 
   const element = document.createElement("nav");
   element.className = "vb-shell-taskbar";
   element.setAttribute("data-vb-shell-taskbar", "");
+  element.setAttribute("data-vb-shell-taskbar-favorite-drop", "false");
   element.setAttribute("aria-label", labels.taskbar || "Shell windows");
   suppressNativeDrag(element);
 
@@ -351,7 +380,43 @@ export function createShellTaskbar({
   const trayElement = document.createElement("div");
   trayElement.className = "vb-shell-taskbar-tray";
   trayElement.setAttribute("data-vb-shell-taskbar-tray", "");
-  element.append(favoritesElement, dragHandle, startButton, accountButton, trayElement);
+
+  const overflowButton = document.createElement("button");
+  overflowButton.type = "button";
+  overflowButton.className = "vb-shell-taskbar-overflow";
+  overflowButton.setAttribute("data-vb-shell-taskbar-overflow", "");
+  overflowButton.setAttribute("aria-label", labels.moreOpenApps || "More open apps");
+  overflowButton.setAttribute("aria-haspopup", "dialog");
+  overflowButton.setAttribute("aria-expanded", "false");
+  overflowButton.setAttribute("aria-controls", TASKBAR_OVERFLOW_PANEL_ID);
+  overflowButton.hidden = true;
+  suppressNativeDrag(overflowButton);
+
+  const overflowCount = document.createElement("span");
+  overflowCount.className = "vb-shell-taskbar-overflow-count";
+  overflowCount.setAttribute("aria-hidden", "true");
+  overflowCount.textContent = "+0";
+  overflowButton.append(overflowCount);
+
+  const overflowLabel = document.createElement("span");
+  overflowLabel.className = "vb-shell-taskbar-label";
+  overflowLabel.textContent = labels.moreOpenApps || "More open apps";
+  overflowButton.append(overflowLabel);
+
+  const overflowPanelElement = document.createElement("section");
+  overflowPanelElement.id = TASKBAR_OVERFLOW_PANEL_ID;
+  overflowPanelElement.className = "vb-shell-taskbar-overflow-panel";
+  overflowPanelElement.setAttribute("data-vb-shell-taskbar-overflow-panel", "");
+  overflowPanelElement.setAttribute("role", "dialog");
+  overflowPanelElement.setAttribute("aria-label", labels.openApps || "Open apps");
+  overflowPanelElement.hidden = true;
+
+  const overflowGridElement = document.createElement("div");
+  overflowGridElement.className = "vb-shell-taskbar-overflow-grid";
+  overflowGridElement.setAttribute("data-vb-shell-taskbar-overflow-grid", "");
+  overflowPanelElement.append(overflowGridElement);
+
+  element.append(startButton, favoritesElement, trayElement, overflowButton, accountButton, dragHandle);
 
   const trashElement = document.createElement("div");
   trashElement.className = "vb-shell-taskbar-trash";
@@ -379,10 +444,18 @@ export function createShellTaskbar({
   let taskbarSensor = null;
   let activeTaskbarDrag = null;
   let activeItemDrag = null;
+  let activeFavoriteDrag = null;
   let dragLayerElement = null;
 
   function saveState() {
     writeTaskbarState(storageTarget, knownWindowIds, itemPositions, taskbarPosition);
+  }
+
+  function getFavoriteCandidateForRecord(record) {
+    if (!appLauncher || !record?.id) return null;
+    const app = getAppForShellWindowId(record.id);
+    if (!app || !isLaunchableTaskbarApp(app) || appControl.isFavorite(app.id)) return null;
+    return app;
   }
 
   function ensureDragLayer() {
@@ -402,13 +475,20 @@ export function createShellTaskbar({
     dragLayerElement = null;
   }
 
-  function createItemGhost(item, rect) {
+  function createItemGhost(item, rect, dragId = "") {
     const layer = ensureDragLayer();
     const ghost = item.cloneNode(true);
     ghost.classList.add("vb-shell-drag-ghost", "is-dragging");
     ghost.classList.remove("is-drag-source");
     ghost.removeAttribute("data-vb-shell-taskbar-item");
-    ghost.setAttribute("data-vb-shell-drag-ghost", item.getAttribute("data-vb-shell-taskbar-item") || "");
+    ghost.removeAttribute("data-vb-shell-taskbar-favorite-app");
+    ghost.setAttribute(
+      "data-vb-shell-drag-ghost",
+      dragId
+        || item.getAttribute("data-vb-shell-taskbar-item")
+        || item.getAttribute("data-vb-shell-taskbar-favorite-app")
+        || "",
+    );
     ghost.setAttribute("aria-hidden", "true");
     suppressNativeDrag(ghost);
     ghost.style.left = `${Math.round(rect.left)}px`;
@@ -424,7 +504,21 @@ export function createShellTaskbar({
     removeDragLayerIfEmpty();
   }
 
-  function prepareTrashTarget() {
+  function setTrashTargetMode(mode = "window") {
+    const isFavorite = mode === "favorite";
+    const label = isFavorite
+      ? labels.removeFavorite || "Remove favorite"
+      : labels.removeFromTaskbar || "Remove";
+    const ariaLabel = isFavorite
+      ? labels.removeFavorite || "Remove favorite"
+      : labels.removeFromTaskbar || "Remove from taskbar";
+    trashElement.setAttribute("data-vb-shell-taskbar-trash-mode", mode);
+    trashElement.setAttribute("aria-label", ariaLabel);
+    trashLabel.textContent = label;
+  }
+
+  function prepareTrashTarget(mode = "window") {
+    setTrashTargetMode(mode);
     const detachedRoot = getDetachedRoot(root);
     if (trashElement.parentElement !== detachedRoot) detachedRoot.append(trashElement);
     trashElement.classList.remove("is-visible");
@@ -466,6 +560,52 @@ export function createShellTaskbar({
     return overTrash;
   }
 
+  function getTaskbarDockPosition() {
+    return element.getAttribute("data-vb-shell-taskbar-position") || "bottom";
+  }
+
+  function isCompactOverflowMode() {
+    return taskbarPosition?.detached !== true
+      && getTaskbarDockPosition() === "bottom"
+      && (overflowMediaQuery?.matches || getViewportSize().width <= 640);
+  }
+
+  function getCompactVisibleDockedLimit() {
+    const { width } = getViewportSize();
+    if (width < MOBILE_TASKBAR_TWO_APP_MIN_WIDTH) return 1;
+    if (width < MOBILE_TASKBAR_THREE_APP_MIN_WIDTH) return 2;
+    return MOBILE_TASKBAR_VISIBLE_DOCKED_LIMIT;
+  }
+
+  function setTaskbarBottomAvoidance(value: number) {
+    document.documentElement.style.setProperty(TASKBAR_AVOID_BOTTOM_VAR, `${Math.max(0, Math.ceil(value))}px`);
+  }
+
+  function clearTaskbarBottomAvoidance() {
+    document.documentElement.style.removeProperty(TASKBAR_AVOID_BOTTOM_VAR);
+  }
+
+  function syncTaskbarBottomAvoidance() {
+    if (
+      destroyed
+      || element.hidden
+      || taskbarPosition?.detached === true
+      || element.classList.contains("is-detached")
+      || element.getAttribute("data-vb-shell-taskbar-floating") === "true"
+      || getTaskbarDockPosition() !== "bottom"
+    ) {
+      setTaskbarBottomAvoidance(0);
+      return;
+    }
+
+    const rect = element.getBoundingClientRect();
+    const viewport = getViewportBounds();
+    const viewportBottom = viewport.top + viewport.height;
+    const height = rect.height || element.offsetHeight || 0;
+    const top = Number.isFinite(rect.top) && (rect.top || height) ? rect.top : viewportBottom - height;
+    setTaskbarBottomAvoidance(Math.max(0, viewportBottom - top));
+  }
+
   function applyTaskbarPosition() {
     if (taskbarPosition?.detached === true) {
       const previous = taskbarPosition;
@@ -487,6 +627,7 @@ export function createShellTaskbar({
     element.style.bottom = "";
     element.style.transform = "";
     element.style.willChange = "";
+    syncTaskbarBottomAvoidance();
   }
 
   function setTaskbarFixedPosition(position, { transform = "none", dragging = false } = {}) {
@@ -499,6 +640,7 @@ export function createShellTaskbar({
     element.style.bottom = "auto";
     element.style.transform = transform;
     element.style.willChange = dragging ? "transform" : "";
+    syncTaskbarBottomAvoidance();
   }
 
   function ensureTaskbarFixedTopLeft() {
@@ -554,6 +696,7 @@ export function createShellTaskbar({
     );
     const itemsChanged = clampDetachedItemsToViewport();
     if (taskbarChanged || itemsChanged) saveState();
+    syncTaskbarBottomAvoidance();
   }
 
   function scheduleViewportClamp() {
@@ -569,8 +712,33 @@ export function createShellTaskbar({
   function forgetWindow(id) {
     if (!id || !knownWindowIds.has(id)) return;
     knownWindowIds.delete(id);
+    recentWindowIds = recentWindowIds.filter((recentId) => recentId !== id);
     itemPositions.delete(id);
     saveState();
+  }
+
+  function touchRecentWindow(id) {
+    if (!id) return;
+    recentWindowIds = [id, ...recentWindowIds.filter((recentId) => recentId !== id)];
+  }
+
+  function sortRecordsByMobilePriority(records) {
+    return records
+      .map((record, index) => {
+        const recentIndex = recentWindowIds.indexOf(record.id);
+        return {
+          record,
+          index,
+          activeRank: record.active ? 0 : 1,
+          recentRank: recentIndex >= 0 ? recentIndex : Number.MAX_SAFE_INTEGER,
+        };
+      })
+      .sort((a, b) => (
+        a.activeRank - b.activeRank
+        || a.recentRank - b.recentRank
+        || a.index - b.index
+      ))
+      .map(({ record }) => record);
   }
 
   function closeWindowFromTaskbarTrash(record) {
@@ -643,12 +811,99 @@ export function createShellTaskbar({
     if (isPointNearRect(point, trayElement.getBoundingClientRect())) return true;
     if (isPointNearRect(point, element.getBoundingClientRect())) return true;
 
-    const position = element.getAttribute("data-vb-shell-taskbar-position") || "bottom";
+    const position = getTaskbarDockPosition();
     const viewport = getViewportSize();
     const edgeDistance = RETURN_MARGIN_PX + FAB_SIZE_PX;
     if (position === "left") return point.clientX <= edgeDistance;
     if (position === "right") return point.clientX >= viewport.width - edgeDistance;
     return point.clientY >= viewport.height - edgeDistance;
+  }
+
+  function normalizeFavoriteDragPoint(detail: TaskbarFavoriteDragDetail) {
+    const x = Number(detail?.point?.clientX ?? detail?.point?.x);
+    const y = Number(detail?.point?.clientY ?? detail?.point?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return makePoint(x, y);
+  }
+
+  function getFavoriteDropApp(appId: string | undefined) {
+    if (!appId) return null;
+    const app = appRegistry.getApp(appId);
+    if (!app || !isLaunchableTaskbarApp(app)) return null;
+    return app;
+  }
+
+  function setFavoriteDropState(state: "false" | "active" | "over") {
+    element.setAttribute("data-vb-shell-taskbar-favorite-drop", state);
+  }
+
+  function isPointOverFavoriteDropTarget(point) {
+    if (!point || destroyed || element.hidden) return false;
+    const rect = element.getBoundingClientRect();
+    const width = rect.width || rect.right - rect.left;
+    const height = rect.height || rect.bottom - rect.top;
+    if (!width || !height) return false;
+    return point.clientX >= rect.left - TASKBAR_FAVORITE_DROP_MARGIN_PX
+      && point.clientX <= rect.right + TASKBAR_FAVORITE_DROP_MARGIN_PX
+      && point.clientY >= rect.top - TASKBAR_FAVORITE_DROP_MARGIN_PX
+      && point.clientY <= rect.bottom + TASKBAR_FAVORITE_DROP_MARGIN_PX;
+  }
+
+  function isPointOverFavoriteTaskbarItemDropTarget(point) {
+    if (!point || destroyed || element.hidden) return false;
+    const favoriteTargets: HTMLElement[] = [startButton];
+    if (!favoritesElement.hidden) favoriteTargets.push(favoritesElement);
+    return favoriteTargets.some((target) => {
+      const rect = target.getBoundingClientRect();
+      const width = rect.width || rect.right - rect.left;
+      const height = rect.height || rect.bottom - rect.top;
+      if (!width || !height) return false;
+      return point.clientX >= rect.left - TASKBAR_FAVORITE_DROP_MARGIN_PX
+        && point.clientX <= rect.right + TASKBAR_FAVORITE_DROP_MARGIN_PX
+        && point.clientY >= rect.top - TASKBAR_FAVORITE_DROP_MARGIN_PX
+        && point.clientY <= rect.bottom + TASKBAR_FAVORITE_DROP_MARGIN_PX;
+    });
+  }
+
+  function handleTaskbarFavoriteDrag(event: Event) {
+    const detail = ((event as CustomEvent<TaskbarFavoriteDragDetail>).detail || {}) as TaskbarFavoriteDragDetail;
+    const phase = detail.phase || "move";
+    const app = getFavoriteDropApp(detail.appId);
+    const point = normalizeFavoriteDragPoint(detail);
+    const over = Boolean(app && point && isPointOverFavoriteDropTarget(point));
+
+    if (phase === "cancel") {
+      setFavoriteDropState("false");
+      return;
+    }
+
+    if (phase === "end") {
+      if (app && over && !appControl.isFavorite(app.id)) {
+        appControl.setFavorite(app.id, true);
+        startMenu?.close?.();
+        render();
+      }
+      setFavoriteDropState("false");
+      return;
+    }
+
+    setFavoriteDropState(over ? "over" : "active");
+  }
+
+  function isPointInTaskbarRedockZone(point, drag) {
+    if (!point) return false;
+    const viewport = getViewportBounds();
+    const position = getTaskbarDockPosition();
+    const width = Math.max(REDOCK_ZONE_WIDTH_PX, (drag?.width || FAB_SIZE_PX) + RETURN_MARGIN_PX);
+    const height = Math.max(REDOCK_ZONE_HEIGHT_PX, (drag?.height || FAB_SIZE_PX) + RETURN_MARGIN_PX);
+    if (position === "left") {
+      return point.clientX <= viewport.left + height;
+    }
+    if (position === "right") {
+      return point.clientX >= viewport.left + viewport.width - height;
+    }
+    return point.clientX <= viewport.left + width
+      && point.clientY >= viewport.top + viewport.height - height;
   }
 
   function beginTaskbarDrag(payload) {
@@ -702,12 +957,19 @@ export function createShellTaskbar({
       cancelAnimationFrame(drag.rafId);
       drag.rafId = 0;
     }
-    setTaskbarFixedPosition({ left: drag.nextLeft, top: drag.nextTop });
-    clampTaskbarToViewport(drag.width, drag.height);
+    const point = payload.point || makePoint(payload.clientX ?? drag.nextLeft, payload.clientY ?? drag.nextTop);
+    if (isPointInTaskbarRedockZone(point, drag)) {
+      taskbarPosition = null;
+      applyTaskbarPosition();
+    } else {
+      setTaskbarFixedPosition({ left: drag.nextLeft, top: drag.nextTop });
+      clampTaskbarToViewport(drag.width, drag.height);
+    }
     element.classList.remove("is-dragging");
     document.documentElement.classList.remove("vb-floating-drag-active");
     element.style.willChange = "";
     saveState();
+    syncTaskbarBottomAvoidance();
     payload.event?.preventDefault?.();
   }
 
@@ -722,6 +984,7 @@ export function createShellTaskbar({
     if (!record || !item || destroyed) return;
     suppressNativeDrag(item);
     prepareTrashTarget();
+    const favoriteCandidate = getFavoriteCandidateForRecord(record);
 
     const saved = itemPositions.get(record.id);
     const rect = item.getBoundingClientRect();
@@ -748,6 +1011,8 @@ export function createShellTaskbar({
       currentTop: position.top,
       width,
       height,
+      favoriteCandidate,
+      overFavoriteDrop: false,
       overTrash: false,
       rafId: 0,
       moved: false,
@@ -757,6 +1022,7 @@ export function createShellTaskbar({
     item.classList.add("is-dragging", "is-drag-source");
     item.setAttribute("data-vb-shell-taskbar-drag-source", "true");
     document.documentElement.classList.add("vb-floating-drag-active");
+    if (favoriteCandidate) setFavoriteDropState("active");
     showTrashTarget();
     payload.event?.preventDefault?.();
   }
@@ -785,6 +1051,12 @@ export function createShellTaskbar({
     drag.lastPoint = makePoint(payload.clientX, payload.clientY);
     drag.moved = true;
     drag.overTrash = updateTrashTarget(drag.lastPoint);
+    drag.overFavoriteDrop = Boolean(
+      drag.favoriteCandidate
+      && !drag.overTrash
+      && isPointOverFavoriteTaskbarItemDropTarget(drag.lastPoint),
+    );
+    if (drag.favoriteCandidate) setFavoriteDropState(drag.overFavoriteDrop ? "over" : "active");
     scheduleItemGhostMove();
     payload.event?.preventDefault?.();
   }
@@ -799,6 +1071,7 @@ export function createShellTaskbar({
     drag.item.removeAttribute("data-vb-shell-taskbar-drag-source");
     removeItemGhost(drag.ghost);
     hideTrashTarget();
+    setFavoriteDropState("false");
     document.documentElement.classList.remove("vb-floating-drag-active");
   }
 
@@ -816,6 +1089,18 @@ export function createShellTaskbar({
     const point = payload.point || drag.lastPoint;
     if (drag.overTrash || isPointOverTrashTarget(point)) {
       closeWindowFromTaskbarTrash(drag.record);
+      render();
+      payload.event?.preventDefault?.();
+      return;
+    }
+
+    if (
+      drag.favoriteCandidate
+      && (drag.overFavoriteDrop || isPointOverFavoriteTaskbarItemDropTarget(point))
+    ) {
+      itemPositions.delete(drag.record.id);
+      saveState();
+      appControl.setFavorite(drag.favoriteCandidate.id, true);
       render();
       payload.event?.preventDefault?.();
       return;
@@ -843,6 +1128,138 @@ export function createShellTaskbar({
     const drag = activeItemDrag;
     activeItemDrag = null;
     cleanupItemDragVisuals(drag);
+  }
+
+  function beginFavoriteDrag(payload) {
+    const { app, item } = payload.context;
+    if (!app || !item || destroyed) return;
+    suppressNativeDrag(item);
+    prepareTrashTarget("favorite");
+    closeOverflowPanel();
+
+    const rect = item.getBoundingClientRect();
+    const width = rect.width || item.offsetWidth || FAB_SIZE_PX;
+    const height = rect.height || item.offsetHeight || FAB_SIZE_PX;
+    const position = clampPositionToViewport({ left: rect.left, top: rect.top }, width, height);
+    const ghost = createItemGhost(item, {
+      left: position.left,
+      top: position.top,
+      width,
+      height,
+    }, app.id);
+
+    activeFavoriteDrag = {
+      app,
+      item,
+      ghost,
+      startLeft: position.left,
+      startTop: position.top,
+      currentLeft: position.left,
+      currentTop: position.top,
+      width,
+      height,
+      overTrash: false,
+      rafId: 0,
+      moved: false,
+      lastPoint: makePoint(payload.clientX, payload.clientY),
+    };
+
+    item.classList.add("is-dragging", "is-drag-source");
+    item.setAttribute("data-vb-shell-taskbar-drag-source", "true");
+    document.documentElement.classList.add("vb-floating-drag-active");
+    showTrashTarget();
+    payload.event?.preventDefault?.();
+  }
+
+  function scheduleFavoriteGhostMove() {
+    const drag = activeFavoriteDrag;
+    if (!drag || drag.rafId) return;
+    drag.rafId = requestAnimationFrame(() => {
+      drag.rafId = 0;
+      if (!activeFavoriteDrag) return;
+      const tx = Math.round(drag.currentLeft - drag.startLeft);
+      const ty = Math.round(drag.currentTop - drag.startTop);
+      drag.ghost.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
+    });
+  }
+
+  function moveFavoriteDrag(payload) {
+    const drag = activeFavoriteDrag;
+    if (!drag) return;
+    const position = clampPositionToViewport({
+      left: drag.startLeft + payload.dx,
+      top: drag.startTop + payload.dy,
+    }, drag.width, drag.height);
+    drag.currentLeft = position.left;
+    drag.currentTop = position.top;
+    drag.lastPoint = makePoint(payload.clientX, payload.clientY);
+    drag.moved = true;
+    drag.overTrash = updateTrashTarget(drag.lastPoint);
+    scheduleFavoriteGhostMove();
+    payload.event?.preventDefault?.();
+  }
+
+  function cleanupFavoriteDragVisuals(drag) {
+    if (!drag) return;
+    if (drag.rafId) {
+      cancelAnimationFrame(drag.rafId);
+      drag.rafId = 0;
+    }
+    drag.item.classList.remove("is-dragging", "is-drag-source");
+    drag.item.removeAttribute("data-vb-shell-taskbar-drag-source");
+    removeItemGhost(drag.ghost);
+    hideTrashTarget();
+    document.documentElement.classList.remove("vb-floating-drag-active");
+  }
+
+  function endFavoriteDrag(payload: LegacyTaskbarOptions = {}) {
+    const drag = activeFavoriteDrag;
+    activeFavoriteDrag = null;
+    if (!drag) return;
+    cleanupFavoriteDragVisuals(drag);
+
+    if (!drag.moved) return;
+
+    suppressedClicks.add(drag.app.id);
+    setTimeout(() => suppressedClicks.delete(drag.app.id), 0);
+
+    const point = payload.point || drag.lastPoint;
+    if (drag.overTrash || isPointOverTrashTarget(point)) {
+      appControl.setFavorite(drag.app.id, false);
+      render();
+      payload.event?.preventDefault?.();
+      return;
+    }
+
+    render();
+    payload.event?.preventDefault?.();
+  }
+
+  function cancelFavoriteDrag(payload: LegacyTaskbarOptions = {}) {
+    if (payload.canceled && activeFavoriteDrag?.moved) {
+      endFavoriteDrag(payload);
+      return;
+    }
+    const drag = activeFavoriteDrag;
+    activeFavoriteDrag = null;
+    cleanupFavoriteDragVisuals(drag);
+  }
+
+  function setupFavoriteSensor(item, app) {
+    const sensor = createDragSensors({
+      source: item,
+      canStart: () => ({ app, item }),
+      onStart: beginFavoriteDrag,
+      onMove: moveFavoriteDrag,
+      onEnd: endFavoriteDrag,
+      onCancel: cancelFavoriteDrag,
+    });
+    favoriteSensors.set(app.id, sensor);
+  }
+
+  function destroyFavoriteSensors() {
+    for (const sensor of favoriteSensors.values()) sensor.destroy();
+    favoriteSensors.clear();
   }
 
   function setupItemSensor(item, record) {
@@ -899,6 +1316,103 @@ export function createShellTaskbar({
     return item;
   }
 
+  function closeOverflowPanel() {
+    overflowPanelElement.hidden = true;
+    overflowButton.setAttribute("aria-expanded", "false");
+    element.setAttribute("data-vb-shell-taskbar-overflow-open", "false");
+  }
+
+  function ensureOverflowPanelParent() {
+    const detachedRoot = getDetachedRoot(root);
+    if (overflowPanelElement.parentElement !== detachedRoot) {
+      detachedRoot.append(overflowPanelElement);
+    }
+  }
+
+  function openOverflowPanel() {
+    if (overflowButton.hidden || destroyed) return;
+    ensureOverflowPanelParent();
+    overflowPanelElement.hidden = false;
+    overflowButton.setAttribute("aria-expanded", "true");
+    element.setAttribute("data-vb-shell-taskbar-overflow-open", "true");
+    startMenu?.close?.();
+  }
+
+  function toggleOverflowPanel() {
+    if (overflowPanelElement.hidden) openOverflowPanel();
+    else closeOverflowPanel();
+  }
+
+  function updateOverflowButton(hiddenCount: number) {
+    const enabled = hiddenCount > 0;
+    overflowButton.hidden = !enabled;
+    overflowCount.textContent = `+${hiddenCount}`;
+    overflowButton.setAttribute(
+      "aria-label",
+      hiddenCount === 1 ? "1 more open app" : `${hiddenCount} more open apps`,
+    );
+    if (!enabled) closeOverflowPanel();
+  }
+
+  function createOverflowPanelButton(record, state) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "vb-shell-taskbar-overflow-item";
+    item.setAttribute("data-vb-shell-taskbar-overflow-item", record.id);
+    item.setAttribute("data-vb-shell-taskbar-state", state);
+    item.setAttribute("data-vb-shell-taskbar-active", record.active ? "true" : "false");
+    suppressNativeDrag(item);
+    applyAppIconTheme(item, getAppForShellWindowId(record.id));
+
+    const label = labels[record.id] || defaultLabel(record);
+    const status = record.active ? "Active" : state === "minimized" ? "Minimized" : "Open";
+    item.setAttribute("aria-label", `${label} ${status}`);
+    item.title = label;
+
+    const icon = icons[record.id] || getToolDefinitionForShellWindow(record.id)?.icon || "";
+    const iconEl = document.createElement("span");
+    iconEl.className = "vb-shell-taskbar-icon";
+    iconEl.setAttribute("aria-hidden", "true");
+    if (icon) {
+      iconEl.innerHTML = icon;
+    } else {
+      iconEl.textContent = getInitial(label);
+    }
+    item.append(iconEl);
+
+    const text = document.createElement("span");
+    text.className = "vb-shell-taskbar-overflow-label";
+    text.textContent = label;
+    item.append(text);
+
+    const statusEl = document.createElement("span");
+    statusEl.className = "vb-shell-taskbar-overflow-status";
+    statusEl.textContent = status;
+    item.append(statusEl);
+
+    item.addEventListener("click", (event) => {
+      event.preventDefault();
+      closeOverflowPanel();
+      handleItemClick(record, event);
+    });
+
+    return item;
+  }
+
+  function renderOverflowPanel(records) {
+    overflowGridElement.replaceChildren();
+    if (records.length === 0) {
+      closeOverflowPanel();
+      return;
+    }
+
+    for (const record of records) {
+      const current = shellManager.getWindow(record.id) || record;
+      const state = getWindowState(current);
+      overflowGridElement.append(createOverflowPanelButton(current, state));
+    }
+  }
+
   function createFavoriteAppButton(app: VatioAppManifest) {
     const item = document.createElement("button");
     item.type = "button";
@@ -937,6 +1451,10 @@ export function createShellTaskbar({
     item.addEventListener("dragstart", (event) => event.preventDefault());
     item.addEventListener("click", (event) => {
       event.preventDefault();
+      if (suppressedClicks.has(app.id)) {
+        event.stopPropagation();
+        return;
+      }
       if (record && running) {
         handleItemClick(record, event);
       } else {
@@ -945,10 +1463,12 @@ export function createShellTaskbar({
       startMenu?.close?.();
     });
 
+    setupFavoriteSensor(item, app);
     return item;
   }
 
   function renderFavoriteApps() {
+    destroyFavoriteSensors();
     favoritesElement.replaceChildren();
     const favoriteApps = appLauncher ? getFavoriteApps() : [];
     favoritesElement.hidden = favoriteApps.length === 0;
@@ -980,13 +1500,14 @@ export function createShellTaskbar({
     for (const item of itemElements.values()) item.remove();
     itemElements.clear();
     if (
-      favoritesElement.parentElement !== element
-      || dragHandle.parentElement !== element
-      || startButton.parentElement !== element
+      startButton.parentElement !== element
+      || favoritesElement.parentElement !== element
       || accountButton.parentElement !== element
       || trayElement.parentElement !== element
+      || overflowButton.parentElement !== element
+      || dragHandle.parentElement !== element
     ) {
-      element.replaceChildren(favoritesElement, dragHandle, startButton, accountButton, trayElement);
+      element.replaceChildren(startButton, favoritesElement, trayElement, overflowButton, accountButton, dragHandle);
     }
     syncAccountState();
     const favoriteApps = renderFavoriteApps();
@@ -996,13 +1517,37 @@ export function createShellTaskbar({
     trayElement.replaceChildren();
 
     const records = getTaskbarWindows(favoriteWindowIds);
-    let dockedCount = 0;
+    const dockedRecords = records.filter((record) => itemPositions.get(record.id)?.detached !== true);
+    const compactOverflowMode = isCompactOverflowMode();
+    const compactVisibleDockedLimit = compactOverflowMode
+      ? getCompactVisibleDockedLimit()
+      : MOBILE_TASKBAR_VISIBLE_DOCKED_LIMIT;
+    const mobileOrderedDockedRecords = compactOverflowMode
+      ? sortRecordsByMobilePriority(dockedRecords)
+      : dockedRecords;
+    const overflowRecords = compactOverflowMode && mobileOrderedDockedRecords.length > compactVisibleDockedLimit
+      ? mobileOrderedDockedRecords.slice(compactVisibleDockedLimit)
+      : [];
+    const visibleDockedRecordIds = new Set(
+      compactOverflowMode && overflowRecords.length > 0
+        ? mobileOrderedDockedRecords
+            .slice(0, compactVisibleDockedLimit)
+            .map((record) => record.id)
+        : dockedRecords.map((record) => record.id),
+    );
+    let renderedDockedCount = 0;
     element.hidden = false;
+    element.setAttribute("data-vb-shell-taskbar-mobile-overflow", overflowRecords.length > 0 ? "true" : "false");
+    updateOverflowButton(overflowRecords.length);
+    renderOverflowPanel(mobileOrderedDockedRecords);
 
     for (const record of records) {
       const state = getWindowState(record);
       const position = itemPositions.get(record.id);
       const isDetached = position?.detached === true;
+      const isVisibleDocked = visibleDockedRecordIds.has(record.id);
+      if (!isDetached && !isVisibleDocked) continue;
+
       const item = createTaskbarItem(record, state, !isDetached);
       itemElements.set(record.id, item);
 
@@ -1012,11 +1557,11 @@ export function createShellTaskbar({
       } else {
         clearDetachedStyle(item);
         trayElement.append(item);
-        dockedCount += 1;
+        renderedDockedCount += 1;
       }
     }
 
-    element.setAttribute("data-vb-shell-taskbar-empty", dockedCount === 0 && favoriteApps.length === 0 ? "true" : "false");
+    element.setAttribute("data-vb-shell-taskbar-empty", renderedDockedCount === 0 && favoriteApps.length === 0 ? "true" : "false");
     applyTaskbarPosition();
   }
 
@@ -1029,28 +1574,56 @@ export function createShellTaskbar({
     item?.focus?.();
   }
 
+  function handleDocumentPointerDown(event: Event) {
+    if (overflowPanelElement.hidden) return;
+    const target = event.target;
+    if (!(target instanceof Node)) return;
+    if (overflowPanelElement.contains(target) || overflowButton.contains(target)) return;
+    closeOverflowPanel();
+  }
+
+  function handleDocumentKeyDown(event: KeyboardEvent) {
+    if (event.key === "Escape") closeOverflowPanel();
+  }
+
+  function handleOverflowModeChange() {
+    render();
+  }
+
   function destroy() {
     if (destroyed) return;
     destroyed = true;
     taskbarSensor?.destroy();
     window.removeEventListener("resize", scheduleViewportClamp);
     window.removeEventListener("orientationchange", scheduleViewportClamp);
+    document.removeEventListener("pointerdown", handleDocumentPointerDown, true);
+    document.removeEventListener("keydown", handleDocumentKeyDown);
     globalThis.visualViewport?.removeEventListener?.("resize", scheduleViewportClamp);
     globalThis.visualViewport?.removeEventListener?.("scroll", scheduleViewportClamp);
+    if (overflowMediaQuery?.removeEventListener) {
+      overflowMediaQuery.removeEventListener("change", handleOverflowModeChange);
+    } else {
+      overflowMediaQuery?.removeListener?.(handleOverflowModeChange);
+    }
     destroyItemSensors();
+    destroyFavoriteSensors();
     endTaskbarDrag();
     cancelItemDrag();
+    cancelFavoriteDrag();
     unsubscribe?.();
     preferenceUnsubscribe?.();
     appControlUnsubscribe?.();
     if (authStateListener) {
       window.removeEventListener(BACKEND_AUTH_STATE_EVENT, authStateListener);
     }
+    window.removeEventListener(TASKBAR_FAVORITE_DRAG_EVENT, handleTaskbarFavoriteDrag as EventListener);
     for (const item of itemElements.values()) item.remove();
     itemElements.clear();
     hideTrashTarget();
     dragLayerElement?.remove();
     dragLayerElement = null;
+    clearTaskbarBottomAvoidance();
+    overflowPanelElement.remove();
     element.remove();
   }
 
@@ -1067,11 +1640,20 @@ export function createShellTaskbar({
   root.appendChild(element);
   window.addEventListener("resize", scheduleViewportClamp);
   window.addEventListener("orientationchange", scheduleViewportClamp);
+  window.addEventListener(TASKBAR_FAVORITE_DRAG_EVENT, handleTaskbarFavoriteDrag as EventListener);
+  document.addEventListener("pointerdown", handleDocumentPointerDown, true);
+  document.addEventListener("keydown", handleDocumentKeyDown);
   globalThis.visualViewport?.addEventListener?.("resize", scheduleViewportClamp);
   globalThis.visualViewport?.addEventListener?.("scroll", scheduleViewportClamp);
+  if (overflowMediaQuery?.addEventListener) {
+    overflowMediaQuery.addEventListener("change", handleOverflowModeChange);
+  } else {
+    overflowMediaQuery?.addListener?.(handleOverflowModeChange);
+  }
   unsubscribe = shellManager.subscribe(({ event, record }) => {
-    if (record && ["opened", "restored", "minimized"].includes(event)) {
+    if (record && ["activated", "opened", "restored", "minimized"].includes(event)) {
       rememberWindow(record.id);
+      touchRecentWindow(record.id);
     } else if (record && ["closed", "unregistered"].includes(event)) {
       forgetWindow(record.id);
     }
@@ -1088,6 +1670,10 @@ export function createShellTaskbar({
     syncAccountState((event as CustomEvent).detail || undefined);
   };
   window.addEventListener(BACKEND_AUTH_STATE_EVENT, authStateListener);
+  overflowButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    toggleOverflowPanel();
+  });
   accountButton.addEventListener("click", (event) => {
     event.preventDefault();
     accountPanel?.open?.({ focus: true, source: "taskbar-account" });

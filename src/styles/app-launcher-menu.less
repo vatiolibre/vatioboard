@@ -374,8 +374,21 @@
   min-width: 0;
 }
 
+.vb-app-launcher-arrange-controls {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.vb-app-launcher-arrange-controls[hidden] {
+  display: none;
+}
+
 .vb-app-launcher-icon-button,
 .vb-app-launcher-lang,
+.vb-app-launcher-arrange-action,
 .vb-app-launcher-page-dot {
   appearance: none;
   border: 1px solid var(--vb-app-launcher-border);
@@ -387,6 +400,7 @@
 }
 
 .app-start-menu-list.vb-app-launcher .vb-app-launcher-icon-button,
+.app-start-menu-list.vb-app-launcher .vb-app-launcher-arrange-action,
 .app-start-menu-list.vb-app-launcher .vb-app-launcher-lang {
   display: inline-grid;
   align-items: center;
@@ -417,6 +431,7 @@
 }
 
 .vb-app-launcher-icon-button svg,
+.vb-app-launcher-arrange-action svg,
 .vb-app-launcher-lang svg {
   width: 20px;
   height: 20px;
@@ -510,8 +525,48 @@
   border: 0;
 }
 
+.vb-app-launcher-pages {
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+.vb-app-launcher-pages[hidden] {
+  display: none;
+}
+
+.vb-app-launcher-page-track {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  height: 100%;
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+}
+
+.vb-app-launcher-page-track[data-vb-app-launcher-page-transition="true"] {
+  transition: transform 240ms cubic-bezier(0.22, 0.8, 0.2, 1);
+}
+
+.vb-app-launcher[data-vb-app-launcher-page-dragging="true"] .vb-app-launcher-page-track {
+  transition: none;
+}
+
+.vb-app-launcher-page {
+  flex: 0 0 100%;
+  min-width: 100%;
+  width: 100%;
+}
+
+.vb-app-launcher-page[aria-hidden="true"] {
+  pointer-events: none;
+}
+
 .vb-app-launcher-grid {
   min-height: 0;
+  height: 100%;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--vb-app-launcher-tile-min, 164px)), 1fr));
   grid-auto-rows: minmax(122px, auto);
@@ -521,6 +576,12 @@
   overscroll-behavior: contain;
   padding: 4px 2px;
   touch-action: pan-y;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vb-app-launcher-page-track[data-vb-app-launcher-page-transition="true"] {
+    transition: none;
+  }
 }
 
 .vb-app-launcher-tile {
@@ -546,6 +607,62 @@
 
 .vb-app-launcher-tile[data-hidden="true"] {
   opacity: 0.64;
+}
+
+.vb-app-launcher-tile.is-drag-source {
+  opacity: 0.36;
+}
+
+.app-start-menu-list.vb-app-launcher[data-vb-app-launcher-reorder="true"] .vb-app-launcher-tile-main {
+  cursor: grab;
+}
+
+.app-start-menu-list.vb-app-launcher[data-vb-app-launcher-reorder-dragging="true"] .vb-app-launcher-tile-main {
+  cursor: grabbing;
+}
+
+.vb-app-launcher-tile[data-vb-app-launcher-reorder-drop]::before {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  top: 10px;
+  bottom: 10px;
+  width: 4px;
+  border-radius: 999px;
+  background: var(--vb-app-launcher-accent);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--vb-app-launcher-accent) 16%, transparent),
+    0 8px 18px color-mix(in srgb, var(--vb-app-launcher-accent) 32%, transparent);
+  pointer-events: none;
+}
+
+.vb-app-launcher-tile[data-vb-app-launcher-reorder-drop="before"]::before {
+  left: -6px;
+}
+
+.vb-app-launcher-tile[data-vb-app-launcher-reorder-drop="after"]::before {
+  right: -6px;
+}
+
+.vb-app-launcher-drag-ghost {
+  position: fixed;
+  z-index: calc(var(--vb-z-shell-start-menu, 1960) + 4);
+  margin: 0;
+  pointer-events: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+  opacity: 0.94;
+  filter: drop-shadow(0 18px 28px rgba(15, 23, 42, 0.22));
+}
+
+.vb-app-launcher-reorder-ghost {
+  opacity: 0.98;
+  transform-origin: 50% 50%;
+  filter:
+    drop-shadow(0 20px 30px rgba(15, 23, 42, 0.24))
+    drop-shadow(0 0 18px color-mix(in srgb, var(--vb-app-icon-accent) 22%, transparent));
 }
 
 .vb-app-launcher-tile-main {
@@ -1043,7 +1160,12 @@
     gap: 6px;
   }
 
+  .vb-app-launcher-arrange-controls {
+    gap: 6px;
+  }
+
   .app-start-menu-list.vb-app-launcher .vb-app-launcher-icon-button,
+  .app-start-menu-list.vb-app-launcher .vb-app-launcher-arrange-action,
   .app-start-menu-list.vb-app-launcher .vb-app-launcher-lang {
     flex-basis: 40px;
     width: 40px;

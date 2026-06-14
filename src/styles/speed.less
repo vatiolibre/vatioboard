@@ -434,7 +434,7 @@ body.speed-page{
     min-height: 0;
     padding-top: clamp(8px, 1.4vw, 14px);
     padding-right: max(8px, env(safe-area-inset-right));
-    padding-bottom: max(20px, env(safe-area-inset-bottom));
+    padding-bottom: max(20px, env(safe-area-inset-bottom), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 10px));
     padding-left: max(8px, env(safe-area-inset-left));
     overflow-y: hidden;
     overscroll-behavior: none;
@@ -2096,7 +2096,7 @@ body.speed-page{
     .speed-main{
         padding-top: 8px;
         padding-right: max(8px, env(safe-area-inset-right));
-        padding-bottom: max(18px, env(safe-area-inset-bottom));
+        padding-bottom: max(18px, env(safe-area-inset-bottom), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 10px));
         padding-left: max(8px, env(safe-area-inset-left));
     }
 
@@ -2498,7 +2498,7 @@ body.speed-page{
     .speed-main{
         align-items: stretch;
         padding-top: 8px;
-        padding-bottom: max(8px, env(safe-area-inset-bottom));
+        padding-bottom: max(8px, env(safe-area-inset-bottom), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));
     }
 
     .speed-shell{

@@ -28,7 +28,7 @@
 .activity-indicator {
   position: fixed;
   left: calc(16px + env(safe-area-inset-left, 0px));
-  bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  bottom: max(calc(84px + env(safe-area-inset-bottom, 0px)), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 10px));
   z-index: var(--vb-z-activity, 1955);
   box-sizing: border-box;
   width: min(360px, calc(100vw - 24px));
@@ -193,7 +193,7 @@
 
 @media (max-width: 520px) {
   .activity-indicator {
-    bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+    bottom: max(calc(76px + env(safe-area-inset-bottom, 0px)), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));
     left: calc(8px + env(safe-area-inset-left, 0px));
     width: min(340px, calc(100vw - 16px));
     max-width: calc(100vw - 16px);

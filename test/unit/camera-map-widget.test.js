@@ -441,7 +441,8 @@ describe("createCameraMapWidget", () => {
     expect(css).toContain("z-index: var(--camera-map-z-approach-panel");
     expect(css).toContain("z-index: var(--camera-map-z-layer-menu");
     expect(css).toContain(".camera-map-overlay--nav:has(.camera-map-layer-menu:not([hidden]))");
-    expect(css).toContain("bottom: calc(72px + env(safe-area-inset-bottom, 0px));");
+    expect(css).toContain("bottom: max(calc(72px + env(safe-area-inset-bottom, 0px)), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));");
+    expect(css).toContain("bottom: max(calc(68px + env(safe-area-inset-bottom, 0px)), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));");
     expect(css).toContain("width: 44px;");
     expect(css).toContain("max-width: 44px;");
     expect(css).toContain("clip: rect(0 0 0 0);");

@@ -124,7 +124,7 @@ body.code-rain-page .code-rain-app {
   pointer-events: none;
   position: absolute;
   right: max(14px, var(--vb-safe-area-right));
-  bottom: calc(max(14px, var(--vb-safe-area-bottom)) + 10px);
+  bottom: max(24px, calc(var(--vb-safe-area-bottom) + 10px), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 10px));
   left: auto;
   z-index: 4;
   overflow: hidden;
@@ -169,7 +169,7 @@ body.code-rain-page .code-rain-app {
 .code-rain-toolbar {
   position: absolute;
   left: max(14px, var(--vb-safe-area-left));
-  bottom: max(14px, var(--vb-safe-area-bottom));
+  bottom: max(14px, var(--vb-safe-area-bottom), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));
   z-index: 5;
   display: flex;
   align-items: center;
@@ -243,7 +243,7 @@ body.code-rain-page .code-rain-app {
   position: absolute;
   top: max(14px, var(--vb-safe-area-top));
   left: max(14px, var(--vb-safe-area-left));
-  bottom: calc(max(14px, var(--vb-safe-area-bottom)) + 66px);
+  bottom: max(80px, calc(var(--vb-safe-area-bottom) + 66px), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 66px));
   z-index: 6;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
@@ -589,7 +589,7 @@ body.code-rain-page .code-rain-app {
 .code-rain-credit {
   position: absolute;
   left: max(12px, var(--vb-safe-area-left));
-  bottom: max(12px, var(--vb-safe-area-bottom));
+  bottom: max(12px, var(--vb-safe-area-bottom), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));
   z-index: 2;
   max-width: calc(100vw - 28px);
   padding: 6px 8px;
@@ -612,7 +612,7 @@ body.code-rain-page .code-rain-app {
   .code-rain-toolbar {
     left: max(10px, var(--vb-safe-area-left));
     right: auto;
-    bottom: max(10px, var(--vb-safe-area-bottom));
+    bottom: max(10px, var(--vb-safe-area-bottom), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));
     max-width: calc(100vw - 20px);
     overflow-x: auto;
     justify-content: flex-start;
@@ -624,7 +624,7 @@ body.code-rain-page .code-rain-app {
 
   .code-rain-status-overlay {
     right: max(10px, var(--vb-safe-area-right));
-    bottom: calc(max(10px, var(--vb-safe-area-bottom)) + 64px);
+    bottom: max(74px, calc(var(--vb-safe-area-bottom) + 64px), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 64px));
     left: max(10px, var(--vb-safe-area-left));
     max-width: none;
     text-align: left;
@@ -638,7 +638,7 @@ body.code-rain-page .code-rain-app {
   .code-rain-panel {
     top: auto;
     right: max(10px, var(--vb-safe-area-right));
-    bottom: calc(max(10px, var(--vb-safe-area-bottom)) + 68px);
+    bottom: max(78px, calc(var(--vb-safe-area-bottom) + 68px), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 68px));
     left: max(10px, var(--vb-safe-area-left));
     width: auto;
     max-height: min(72vh, 620px);
