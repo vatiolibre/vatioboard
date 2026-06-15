@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   calculateDeliveryVinOcrRegion,
@@ -10,11 +10,68 @@ import {
   extractDeliveryVinFromQrPayload,
   findDeliveryVinOcrCandidates,
   isValidDeliveryVinCheckDigit,
+  mapDeliveryVinFrameHintToSourceRegion,
   normalizeDeliveryVin,
+  recognizeDeliveryVinFromImageSource,
   startDeliveryVinOcrScanner,
+  terminateDeliveryVinOcrWorker,
 } from "../../src/apps/delivery-checklist/delivery-checklist-vin-scanner.js";
 
+const tesseractMock = vi.hoisted(() => ({
+  createWorker: vi.fn(),
+  recognize: vi.fn(),
+  setParameters: vi.fn(),
+  terminate: vi.fn(),
+}));
+
+vi.mock("tesseract.js", () => ({
+  OEM: {
+    LSTM_ONLY: "lstm-only",
+  },
+  PSM: {
+    SINGLE_LINE: "single-line",
+  },
+  createWorker: tesseractMock.createWorker,
+}));
+
+function createMockCanvasContext() {
+  return {
+    drawImage: vi.fn(),
+    getImageData: vi.fn((_x, _y, width, height) => ({
+      data: new Uint8ClampedArray(width * height * 4),
+    })),
+    putImageData: vi.fn(),
+    strokeRect: vi.fn(),
+    fillRect: vi.fn(),
+    fillText: vi.fn(),
+    imageSmoothingEnabled: false,
+    imageSmoothingQuality: "low",
+    lineWidth: 1,
+    font: "",
+    textBaseline: "",
+    strokeStyle: "",
+    fillStyle: "",
+  };
+}
+
 describe("delivery checklist VIN scanner helpers", () => {
+  beforeEach(() => {
+    tesseractMock.createWorker.mockReset();
+    tesseractMock.recognize.mockReset();
+    tesseractMock.setParameters.mockReset();
+    tesseractMock.terminate.mockReset();
+    tesseractMock.createWorker.mockResolvedValue({
+      setParameters: tesseractMock.setParameters,
+      recognize: tesseractMock.recognize,
+      terminate: tesseractMock.terminate,
+    });
+  });
+
+  afterEach(async () => {
+    await terminateDeliveryVinOcrWorker();
+    vi.restoreAllMocks();
+  });
+
   it("normalizes VIN values and preserves legacy QR VIN extraction", () => {
     expect(normalizeDeliveryVin(" 7saygaee3rf178432 ")).toBe("7SAYGAEE3RF178432");
     expect(normalizeDeliveryVin("5YJYGDIEOQRF000001")).toBe("5YJYGDERF000001");
@@ -71,9 +128,14 @@ describe("delivery checklist VIN scanner helpers", () => {
       width: 1651,
       height: 194,
       role: "full-band",
+      regionSource: "fallback",
     });
 
     expect(createDeliveryVinOcrSearchRegions(768, 1024).map((region) => region.y)).toEqual([
+      95,
+      136,
+      177,
+      218,
       259,
       300,
       361,
@@ -94,6 +156,7 @@ describe("delivery checklist VIN scanner helpers", () => {
       width: 903,
       height: 173,
       role: "vin-text",
+      regionSource: undefined,
     });
 
     const frameThenSearch = createDeliveryVinOcrRegions(768, 1024, { mode: "frame-then-search" });
@@ -102,6 +165,14 @@ describe("delivery checklist VIN scanner helpers", () => {
     expect(frameThenSearch.map((region) => region.y)).toEqual([
       341,
       341,
+      95,
+      95,
+      136,
+      136,
+      177,
+      177,
+      218,
+      218,
       259,
       259,
       300,
@@ -115,6 +186,97 @@ describe("delivery checklist VIN scanner helpers", () => {
       607,
       607,
     ]);
+  });
+
+  it("maps the visible scanner frame to source pixels for iPhone object-fit cover video", () => {
+    const frameHint = {
+      videoRect: { x: 0, y: 0, width: 374, height: 665 },
+      frameRect: { x: 22, y: 132, width: 329, height: 69 },
+      displaySize: { width: 374, height: 665 },
+      objectFit: "cover",
+    };
+
+    expect(mapDeliveryVinFrameHintToSourceRegion(1080, 1920, frameHint)).toEqual({
+      x: 64,
+      y: 381,
+      width: 950,
+      height: 199,
+      role: "full-band",
+      regionSource: "mapped-frame",
+    });
+
+    const regions = createDeliveryVinOcrRegions(1080, 1920, {
+      mode: "frame-then-search",
+      frameHint,
+    });
+    expect(regions.slice(0, 4).map((region) => region.regionSource)).toEqual([
+      "mapped-frame",
+      "mapped-frame",
+      "mapped-frame-expanded",
+      "mapped-frame-expanded",
+    ]);
+    expect(regions[0]).toMatchObject({
+      role: "vin-text",
+      regionSource: "mapped-frame",
+    });
+  });
+
+  it("emits separated OCR debug overlays for target, search, and combined regions", async () => {
+    const context = createMockCanvasContext();
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(context);
+    tesseractMock.recognize.mockResolvedValue({
+      data: {
+        text: "Tesla 7SAYGAEE3RF178432",
+        confidence: 86,
+      },
+    });
+    const source = document.createElement("canvas");
+    source.width = 800;
+    source.height = 320;
+    const artifacts = [];
+
+    const result = await recognizeDeliveryVinFromImageSource(source, {
+      mode: "frame-then-search",
+      debug: true,
+      debugLabel: "unit-overlays",
+      frameHint: {
+        videoRect: { x: 0, y: 0, width: 400, height: 200 },
+        frameRect: { x: 60, y: 40, width: 280, height: 58 },
+        displaySize: { width: 400, height: 200 },
+        objectFit: "cover",
+      },
+      onDebugArtifact(artifact) {
+        artifacts.push(artifact);
+      },
+    });
+
+    const targetOverlay = artifacts.find((artifact) => artifact.name === "ocr-target-overlay.png");
+    const searchOverlay = artifacts.find((artifact) => artifact.name === "ocr-search-overlay.png");
+    const combinedOverlay = artifacts.find((artifact) => artifact.name === "ocr-region-overlay.png");
+
+    expect(result.vin).toBe("7SAYGAEE3RF178432");
+    expect(targetOverlay).toMatchObject({
+      kind: "source",
+      overlayRole: "target",
+      width: 800,
+      height: 320,
+      regionSources: ["mapped-frame", "mapped-frame-expanded"],
+    });
+    expect(searchOverlay).toMatchObject({
+      kind: "source",
+      overlayRole: "search",
+      width: 800,
+      height: 320,
+      regionSources: ["fallback"],
+    });
+    expect(combinedOverlay).toMatchObject({
+      kind: "source",
+      overlayRole: "combined",
+      width: 800,
+      height: 320,
+    });
+    expect(combinedOverlay.regionSources).toContain("mapped-frame");
+    expect(combinedOverlay.regionSources).toContain("fallback");
   });
 
   it("starts an OCR camera session, captures a frame, and stops tracks", async () => {
@@ -201,5 +363,79 @@ describe("delivery checklist VIN scanner helpers", () => {
       },
       recognize: vi.fn(),
     })).rejects.toThrow("VIN OCR camera permission denied");
+  });
+
+  it("keeps Canvas OCR working when optional OpenCV preprocessing is unavailable", async () => {
+    const context = createMockCanvasContext();
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(context);
+    tesseractMock.recognize.mockResolvedValue({
+      data: {
+        text: "Tesla 7SAYGAEE3RF178432",
+        confidence: 82,
+      },
+    });
+    const source = document.createElement("canvas");
+    source.width = 800;
+    source.height = 320;
+    const reports = [];
+    const frameHint = {
+      videoRect: { x: 0, y: 0, width: 400, height: 200 },
+      frameRect: { x: 60, y: 40, width: 280, height: 58 },
+      displaySize: { width: 400, height: 200 },
+      objectFit: "cover",
+    };
+
+    const result = await recognizeDeliveryVinFromImageSource(source, {
+      mode: "frame",
+      preprocessor: "opencv",
+      debug: true,
+      debugLabel: "unit-opencv-fallback",
+      frameHint,
+      loadOpenCv: async () => {
+        throw new Error("OpenCV unavailable");
+      },
+      onDebugReport(report) {
+        reports.push(report);
+      },
+    });
+
+    expect(result.vin).toBe("7SAYGAEE3RF178432");
+    expect(tesseractMock.recognize).toHaveBeenCalled();
+    expect(reports[0]).toMatchObject({
+      label: "unit-opencv-fallback",
+      preprocessor: "opencv",
+      openCvAvailable: false,
+      selectedVin: "7SAYGAEE3RF178432",
+      frameHint,
+      mappedFrameRegion: expect.objectContaining({
+        regionSource: "mapped-frame",
+      }),
+    });
+    expect(reports[0].attempts[0].region.regionSource).toBe("mapped-frame");
+  });
+
+  it("does not load OpenCV in auto mode when the first Canvas pass succeeds", async () => {
+    const context = createMockCanvasContext();
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(context);
+    tesseractMock.recognize.mockResolvedValue({
+      data: {
+        text: "7SAYGAEE3RF178432",
+        confidence: 90,
+      },
+    });
+    const source = document.createElement("canvas");
+    source.width = 800;
+    source.height = 320;
+    const loadOpenCv = vi.fn();
+
+    const result = await recognizeDeliveryVinFromImageSource(source, {
+      mode: "frame",
+      preprocessor: "auto",
+      loadOpenCv,
+    });
+
+    expect(result.vin).toBe("7SAYGAEE3RF178432");
+    expect(loadOpenCv).not.toHaveBeenCalled();
+    expect(tesseractMock.recognize).toHaveBeenCalledOnce();
   });
 });

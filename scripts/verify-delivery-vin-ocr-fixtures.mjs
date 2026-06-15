@@ -138,10 +138,11 @@ async function createPage(baseUrl, browserWebSocketUrl) {
   return openWebSocket(target.webSocketDebuggerUrl);
 }
 
-function fixtureExpression(fixture) {
+function fixtureExpression(fixture, preprocessor) {
   return `
     (async () => {
       const fixture = ${JSON.stringify(fixture)};
+      const preprocessor = ${JSON.stringify(preprocessor)};
       const mod = await import("/src/apps/delivery-checklist/delivery-checklist-vin-scanner.ts");
       const artifacts = [];
       const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
@@ -152,8 +153,9 @@ function fixtureExpression(fixture) {
       });
       const result = await mod.recognizeDeliveryVinFromImageSource(fixture.url, {
         mode: "frame-then-search",
+        preprocessor,
         debug: true,
-        debugLabel: fixture.id,
+        debugLabel: fixture.id + "-" + preprocessor,
         onProgress(progress) {
           window.__deliveryVinOcrProgress = progress;
         },
@@ -176,6 +178,7 @@ function fixtureExpression(fixture) {
       await mod.terminateDeliveryVinOcrWorker();
       return {
         fixture,
+        preprocessor,
         result: {
           vin: result.vin,
           rawText: result.rawText,
@@ -189,12 +192,12 @@ function fixtureExpression(fixture) {
   `;
 }
 
-async function evaluateFixture(page, fixture) {
+async function evaluateFixture(page, fixture, preprocessor) {
   const evaluation = await page.send("Runtime.evaluate", {
-    expression: fixtureExpression(fixture),
+    expression: fixtureExpression(fixture, preprocessor),
     awaitPromise: true,
     returnByValue: true,
-    timeout: 180000,
+    timeout: preprocessor === "opencv" ? 45000 : 180000,
   });
   if (evaluation.exceptionDetails) {
     throw new Error(evaluation.exceptionDetails.text || "VIN OCR fixture evaluation failed.");
@@ -205,13 +208,15 @@ async function evaluateFixture(page, fixture) {
 async function saveArtifacts(rootDir, fixtureResult) {
   const fixture = fixtureResult.fixture;
   const safeId = String(fixture.id || basename(fixture.url)).replace(/[^a-z0-9_.-]+/gi, "-").toLowerCase();
-  const fixtureDir = join(rootDir, safeId);
+  const safePreprocessor = String(fixtureResult.preprocessor || "unknown").replace(/[^a-z0-9_.-]+/gi, "-").toLowerCase();
+  const fixtureDir = join(rootDir, safeId, safePreprocessor);
   await mkdir(fixtureDir, { recursive: true });
   const artifactManifest = fixtureResult.artifacts.map(({ dataUrl, ...artifact }) => artifact);
   await writeFile(
     join(fixtureDir, "debug.json"),
     JSON.stringify({
       fixture,
+      preprocessor: fixtureResult.preprocessor,
       result: fixtureResult.result,
       artifacts: artifactManifest,
     }, null, 2),
@@ -227,6 +232,7 @@ async function main() {
   const args = parseArgs();
   const saveArtifactsDir = args.get("save-artifacts") || "";
   const saveAllArtifacts = args.has("save-all-artifacts");
+  const withOpenCv = args.has("with-opencv");
   const manifest = JSON.parse(await readFile(MANIFEST_PATH, "utf8"));
 
   const server = await createServer({
@@ -266,24 +272,42 @@ async function main() {
 
     const rows = [];
     const failures = [];
+    let canvasPasses = 0;
+    let openCvPasses = 0;
+    let requiredCount = 0;
     for (const fixture of manifest) {
-      const fixtureResult = await evaluateFixture(page, fixture);
+      const canvasResult = await evaluateFixture(page, fixture, "canvas");
+      const openCvResult = withOpenCv ? await evaluateFixture(page, fixture, "opencv") : null;
       const expected = String(fixture.expectedVin || "");
-      const recognized = String(fixtureResult?.result?.vin || "");
+      const canvasRecognized = String(canvasResult?.result?.vin || "");
+      const openCvRecognized = String(openCvResult?.result?.vin || "");
       const shouldRecognize = fixture.shouldRecognize !== false;
-      const passed = shouldRecognize ? recognized === expected : recognized !== expected;
+      const canvasPassed = shouldRecognize ? canvasRecognized === expected : canvasRecognized !== expected;
+      const openCvPassed = openCvResult
+        ? (shouldRecognize ? openCvRecognized === expected : openCvRecognized !== expected)
+        : true;
+      const passed = canvasPassed && openCvPassed;
+      if (shouldRecognize) {
+        requiredCount += 1;
+        if (canvasPassed) canvasPasses += 1;
+        if (openCvResult && openCvPassed) openCvPasses += 1;
+      }
       rows.push({
         id: fixture.id,
         scenario: fixture.scenario,
         expected,
-        recognized: recognized || "<empty>",
-        attempts: fixtureResult?.result?.attempts || 0,
-        confidence: Math.round(fixtureResult?.result?.confidence || 0),
+        canvas: canvasRecognized || "<empty>",
+        canvasAttempts: canvasResult?.result?.attempts || 0,
+        canvasConfidence: Math.round(canvasResult?.result?.confidence || 0),
+        opencv: openCvResult ? (openCvRecognized || "<empty>") : "<skipped>",
+        opencvAttempts: openCvResult?.result?.attempts || 0,
+        opencvConfidence: Math.round(openCvResult?.result?.confidence || 0),
         passed,
       });
-      if (!passed) failures.push(fixtureResult);
+      if (!passed) failures.push(openCvResult || canvasResult);
       if (saveArtifactsDir && (saveAllArtifacts || !passed)) {
-        await saveArtifacts(saveArtifactsDir, fixtureResult);
+        await saveArtifacts(saveArtifactsDir, canvasResult);
+        if (openCvResult) await saveArtifacts(saveArtifactsDir, openCvResult);
       }
     }
 
@@ -292,7 +316,11 @@ async function main() {
     if (requiredFailures.length) {
       throw new Error(`${requiredFailures.length} required VIN OCR fixture(s) failed.`);
     }
+    if (withOpenCv && openCvPasses < canvasPasses) {
+      throw new Error(`OpenCV preprocessing regressed fixture recognition (${openCvPasses}/${requiredCount}) below Canvas (${canvasPasses}/${requiredCount}).`);
+    }
     console.log(`Delivery VIN OCR fixtures passed: ${rows.filter((row) => row.passed).length}/${rows.length}`);
+    console.log(`Canvas pass rate: ${canvasPasses}/${requiredCount}; OpenCV pass rate: ${withOpenCv ? `${openCvPasses}/${requiredCount}` : "skipped (run with --with-opencv)"}`);
     page.close();
   } finally {
     pageSocket?.close();

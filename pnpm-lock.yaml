@@ -17,6 +17,9 @@ importers:
       '@stanko/dual-range-input':
         specifier: ^1.0.1
         version: 1.0.1
+      '@techstark/opencv-js':
+        specifier: 4.12.0-release.1
+        version: 4.12.0-release.1
       butterchurn:
         specifier: ^2.6.7
         version: 2.6.7
@@ -720,6 +723,9 @@ packages:
 
   '@stanko/dual-range-input@1.0.1':
     resolution: {integrity: sha512-C2mAGg0UHKGUyVhvIpO4Mmk27lpfFXi6fRqIa4vbHj687wLdcBDzcA5yn2pcADQYYmagrjJG/3Ldcl1s3pB3Tg==}
+
+  '@techstark/opencv-js@4.12.0-release.1':
+    resolution: {integrity: sha512-LtTaph9v/HqLPXEg3m1xs2h7QJh10pUpuDT0nj8g77lelWnTwwQrehtd+fXElLOdrkqc4Fea6Z/sJBvEJLYPfw==}
 
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
@@ -2105,6 +2111,8 @@ snapshots:
   '@standard-schema/spec@1.1.0': {}
 
   '@stanko/dual-range-input@1.0.1': {}
+
+  '@techstark/opencv-js@4.12.0-release.1': {}
 
   '@types/chai@5.2.3':
     dependencies:

@@ -662,8 +662,31 @@ describe("delivery checklist app", () => {
     }));
     const root = createRoot();
     const video = root.querySelector("#deliveryVinScannerVideo");
+    const frame = root.querySelector(".delivery-vin-scan-frame");
     video.play = vi.fn(async () => {});
     video.pause = vi.fn();
+    video.getBoundingClientRect = vi.fn(() => ({
+      x: 10,
+      y: 20,
+      width: 374,
+      height: 665,
+      top: 20,
+      left: 10,
+      right: 384,
+      bottom: 685,
+      toJSON: vi.fn(),
+    }));
+    frame.getBoundingClientRect = vi.fn(() => ({
+      x: 32,
+      y: 152,
+      width: 329,
+      height: 69,
+      top: 152,
+      left: 32,
+      right: 361,
+      bottom: 221,
+      toJSON: vi.fn(),
+    }));
     const mounted = mountDeliveryChecklistRoute(createRouteContext({ root, mediaDevices, vinOcrRecognizer }));
 
     document.querySelector("#deliveryReadVinOcr").click();
@@ -678,6 +701,12 @@ describe("delivery checklist app", () => {
       mode: "frame-then-search",
       debug: true,
       debugLabel: "delivery-checklist-camera",
+      frameHint: {
+        videoRect: { x: 10, y: 20, width: 374, height: 665 },
+        frameRect: { x: 32, y: 152, width: 329, height: 69 },
+        displaySize: { width: 374, height: 665 },
+        objectFit: "cover",
+      },
       onProgress: expect.any(Function),
       onDebugArtifact: expect.any(Function),
       onDebugReport: expect.any(Function),
@@ -726,6 +755,46 @@ describe("delivery checklist app", () => {
       failureReason: "No OCR attempt produced a valid VIN.",
     };
     const vinOcrRecognizer = vi.fn(async (_video, options) => {
+      options.onDebugArtifact?.({
+        name: "ocr-region-overlay.png",
+        kind: "source",
+        mimeType: "image/png",
+        blob: new Blob(["combined"], { type: "image/png" }),
+        width: 1920,
+        height: 1080,
+        overlayRole: "combined",
+        regionSources: ["mapped-frame", "fallback"],
+      });
+      options.onDebugArtifact?.({
+        name: "ocr-target-overlay.png",
+        kind: "source",
+        mimeType: "image/png",
+        blob: new Blob(["target"], { type: "image/png" }),
+        width: 1920,
+        height: 1080,
+        overlayRole: "target",
+        regionSources: ["mapped-frame"],
+      });
+      options.onDebugArtifact?.({
+        name: "mapped-frame-text.png",
+        kind: "region",
+        mimeType: "image/png",
+        blob: new Blob(["mapped"], { type: "image/png" }),
+        width: 1200,
+        height: 180,
+        regionIndex: 0,
+        region: { x: 135, y: 443, width: 1651, height: 194, regionSource: "mapped-frame" },
+      });
+      options.onDebugArtifact?.({
+        name: "ocr-search-overlay.png",
+        kind: "source",
+        mimeType: "image/png",
+        blob: new Blob(["search"], { type: "image/png" }),
+        width: 1920,
+        height: 1080,
+        overlayRole: "search",
+        regionSources: ["fallback"],
+      });
       options.onDebugReport?.(debug);
       return {
         vin: "",
@@ -744,13 +813,22 @@ describe("delivery checklist app", () => {
     await flushPromises();
     document.querySelector("#deliveryVinScannerCapture").click();
     await flushPromises();
+    document.querySelector("#deliveryVinOcrWiderScan").click();
+    await flushPromises();
 
     expect(document.querySelector("#deliveryVinScannerSheet").hidden).toBe(false);
     expect(document.querySelector("#deliveryVinOcrDiagnostics").hidden).toBe(false);
     expect(document.querySelector("#deliveryVinOcrCopyDebug")).not.toBeNull();
     expect(document.querySelector("#deliveryVinOcrDownloadDebug")).not.toBeNull();
     expect(document.querySelector("#deliveryVinOcrWiderScan")).not.toBeNull();
+    expect(document.querySelector("#deliveryVinOcrPreview img").alt).toBe("ocr-target-overlay.png");
     expect(document.querySelector("#deliveryStatus").textContent).toContain("No valid VIN");
+    expect(vinOcrRecognizer).toHaveBeenLastCalledWith(video, expect.objectContaining({
+      mode: "search",
+      frameHint: expect.objectContaining({
+        objectFit: "cover",
+      }),
+    }));
 
     mounted.unmount();
   });

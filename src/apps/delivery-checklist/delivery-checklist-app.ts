@@ -51,6 +51,7 @@ import {
   terminateDeliveryVinOcrWorker,
   type DeliveryVinOcrDebugArtifact,
   type DeliveryVinOcrDebugReport,
+  type DeliveryVinOcrFrameHint,
   type DeliveryVinOcrMode,
   type DeliveryVinOcrRecognizer,
   type DeliveryVinScannerSession,
@@ -164,6 +165,7 @@ interface DeliveryChecklistDom {
   photoPreviewCaption: HTMLElement;
   vinScannerSheet: HTMLElement;
   vinScannerVideo: HTMLVideoElement;
+  vinScannerFrame: HTMLElement;
   vinScannerStatus: HTMLElement;
   vinScannerCloseButton: HTMLButtonElement;
   vinScannerCaptureButton: HTMLButtonElement;
@@ -247,6 +249,7 @@ function readDom(root: ParentNode): DeliveryChecklistDom {
     photoPreviewCaption: $(root, "#deliveryPhotoPreviewCaption"),
     vinScannerSheet: $(root, "#deliveryVinScannerSheet"),
     vinScannerVideo: $(root, "#deliveryVinScannerVideo") as HTMLVideoElement,
+    vinScannerFrame: $(root, ".delivery-vin-scan-frame"),
     vinScannerStatus: $(root, "#deliveryVinScannerStatus"),
     vinScannerCloseButton: $(root, "#deliveryVinScannerClose") as HTMLButtonElement,
     vinScannerCaptureButton: $(root, "#deliveryVinScannerCapture") as HTMLButtonElement,
@@ -1004,6 +1007,8 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
         attempt: artifact.attempt,
         variant: artifact.variant,
         region: artifact.region,
+        overlayRole: artifact.overlayRole,
+        regionSources: artifact.regionSources,
         bytes: artifact.blob.size,
       })),
     };
@@ -1019,11 +1024,17 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
       return;
     }
 
-    const previewArtifacts = [
-      ...vinOcrDebugArtifacts.filter((artifact) => artifact.kind === "source").slice(0, 1),
-      ...vinOcrDebugArtifacts.filter((artifact) => artifact.kind === "region").slice(0, 1),
+    const pickArtifact = (name: string) => vinOcrDebugArtifacts.find((artifact) => artifact.name === name);
+    const preferredArtifacts = [
+      pickArtifact("ocr-target-overlay.png"),
+      pickArtifact("mapped-frame-text.png"),
+      pickArtifact("mapped-frame-full.png"),
       ...vinOcrDebugArtifacts.filter((artifact) => artifact.kind === "processed").slice(0, 2),
-    ];
+      pickArtifact("ocr-search-overlay.png"),
+      pickArtifact("source-frame.png"),
+      pickArtifact("ocr-region-overlay.png"),
+    ].filter((artifact): artifact is DeliveryVinOcrDebugArtifact => Boolean(artifact));
+    const previewArtifacts = Array.from(new Set(preferredArtifacts)).slice(0, 4);
     for (const artifact of previewArtifacts) {
       const figure = document.createElement("figure");
       const image = document.createElement("img");
@@ -1078,7 +1089,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     vinScannerSession?.destroy();
     vinScannerSession = null;
     dom.vinScannerSheet.hidden = true;
-    dom.vinScannerStatus.textContent = "Align the VIN text, not the logo, inside the upper frame, then tap Read VIN.";
+    dom.vinScannerStatus.textContent = "Place the VIN text inside the yellow brackets, then tap Read VIN.";
     dom.readVinOcrButton.disabled = false;
     dom.vinScannerCaptureButton.disabled = false;
     dom.vinScannerCaptureButton.textContent = "Read VIN";
@@ -1088,6 +1099,29 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
   function showManualVinEntry(): void {
     dom.manualWindshieldVinWrap.hidden = false;
     dom.manualWindshieldVinInput.focus({ preventScroll: true });
+  }
+
+  function toVinOcrRect(rect: DOMRect): DeliveryVinOcrFrameHint["videoRect"] {
+    return {
+      x: Math.round(rect.x),
+      y: Math.round(rect.y),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+    };
+  }
+
+  function createVinOcrFrameHint(): DeliveryVinOcrFrameHint {
+    const videoRect = dom.vinScannerVideo.getBoundingClientRect();
+    const frameRect = dom.vinScannerFrame.getBoundingClientRect();
+    return {
+      videoRect: toVinOcrRect(videoRect),
+      frameRect: toVinOcrRect(frameRect),
+      displaySize: {
+        width: Math.round(videoRect.width || 0),
+        height: Math.round(videoRect.height || 0),
+      },
+      objectFit: "cover",
+    };
   }
 
   async function openVinScanner(): Promise<void> {
@@ -1107,7 +1141,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
           dom.vinScannerStatus.textContent = `${status}${percent}`;
         },
       });
-      dom.vinScannerStatus.textContent = "Align the VIN text, not the logo, inside the upper frame, then tap Read VIN.";
+      dom.vinScannerStatus.textContent = "Place the VIN text inside the yellow brackets, then tap Read VIN.";
       dom.vinScannerCaptureButton.disabled = false;
     } catch (error) {
       routeContext.logger?.warn("Delivery checklist VIN OCR camera failed.", error);
@@ -1125,8 +1159,10 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     dom.vinScannerCaptureButton.textContent = "Reading...";
     try {
       const artifacts: DeliveryVinOcrDebugArtifact[] = [];
+      const frameHint = createVinOcrFrameHint();
       const result = await vinScannerSession.capture({
         mode,
+        frameHint,
         debug: true,
         debugLabel: "delivery-checklist-camera",
         onDebugArtifact: (artifact) => {
