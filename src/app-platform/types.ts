@@ -324,6 +324,7 @@ export interface VatioQrCameraSessionOptions {
   video: HTMLVideoElement;
   onResult(result: VatioQrScanResult): void;
   onError?(error: unknown): void;
+  calculateScanRegion?: (video: HTMLVideoElement) => VatioQrScanRegion;
   preferredCamera?: VatioQrCameraPreference;
   maxScansPerSecond?: number;
   highlightScanRegion?: boolean;

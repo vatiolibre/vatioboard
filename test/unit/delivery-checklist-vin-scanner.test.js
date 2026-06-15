@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  calculateDeliveryVinScanRegion,
   compareDeliveryWindshieldVin,
   extractDeliveryVinFromQrPayload,
   normalizeDeliveryVin,
@@ -48,6 +49,27 @@ describe("delivery checklist VIN scanner helpers", () => {
     }, "vatiolibre").state).toBe("backend-unavailable");
   });
 
+  it("calculates a large centered VIN QR scan region matching the visible frame", () => {
+    const video = document.createElement("video");
+    Object.defineProperty(video, "videoWidth", {
+      configurable: true,
+      value: 1920,
+    });
+    Object.defineProperty(video, "videoHeight", {
+      configurable: true,
+      value: 1080,
+    });
+
+    expect(calculateDeliveryVinScanRegion(video)).toEqual({
+      x: 507,
+      y: 87,
+      width: 907,
+      height: 907,
+      downScaledWidth: 480,
+      downScaledHeight: 480,
+    });
+  });
+
   it("starts a camera QR session, saves the first VIN result, and stops tracks", async () => {
     const stop = vi.fn();
     const destroy = vi.fn();
@@ -83,8 +105,9 @@ describe("delivery checklist VIN scanner helpers", () => {
       video,
       preferredCamera: "environment",
       maxScansPerSecond: 12,
-      highlightScanRegion: true,
-      highlightCodeOutline: true,
+      calculateScanRegion: calculateDeliveryVinScanRegion,
+      highlightScanRegion: false,
+      highlightCodeOutline: false,
       onResult: expect.any(Function),
       onError: expect.any(Function),
     }));

@@ -560,6 +560,9 @@ describe("delivery checklist app", () => {
     expect(stylesheet).toContain(".delivery-vin-scan-card");
     expect(stylesheet).toContain(".delivery-vin-scanner-sheet");
     expect(stylesheet).toContain(".delivery-vin-video-wrap");
+    expect(stylesheet).toContain(".delivery-vin-scan-frame");
+    expect(stylesheet).toContain("position: relative");
+    expect(stylesheet).not.toContain(".scan-region-highlight");
     expect(stylesheet).not.toContain("#deliveryModelSwitch");
     expect(stylesheet).toContain("env(safe-area-inset-bottom");
     expect(stylesheet).toContain(".delivery-bottom-nav");
@@ -573,6 +576,7 @@ describe("delivery checklist app", () => {
     expect(root.querySelector("main > .delivery-checklist-overview")).toBeNull();
     expect(root.querySelector(".delivery-vin-scan-card")).not.toBeNull();
     expect(root.querySelector("#deliveryVinScannerSheet")).not.toBeNull();
+    expect(root.querySelector(".delivery-vin-video-wrap .delivery-vin-scan-frame")).not.toBeNull();
     root.remove();
   });
 
@@ -659,6 +663,9 @@ describe("delivery checklist app", () => {
     expect(qrScannerService.createCameraSession).toHaveBeenCalledWith(expect.objectContaining({
       video: document.querySelector("#deliveryVinScannerVideo"),
       preferredCamera: "environment",
+      calculateScanRegion: expect.any(Function),
+      highlightScanRegion: false,
+      highlightCodeOutline: false,
       onResult: expect.any(Function),
     }));
     expect(stopScanner).toHaveBeenCalled();

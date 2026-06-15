@@ -50,6 +50,14 @@ describe("browser QR scanner service", () => {
     const video = document.createElement("video");
     const onResult = vi.fn();
     const onError = vi.fn();
+    const calculateScanRegion = vi.fn(() => ({
+      x: 10,
+      y: 12,
+      width: 320,
+      height: 320,
+      downScaledWidth: 320,
+      downScaledHeight: 320,
+    }));
 
     expect(await service.hasCamera()).toBe(true);
     expect(await service.listCameras(true)).toEqual([{ id: "camera-1", label: "Back camera" }]);
@@ -58,6 +66,7 @@ describe("browser QR scanner service", () => {
       video,
       onResult,
       onError,
+      calculateScanRegion,
       preferredCamera: "environment",
       maxScansPerSecond: 8,
       highlightScanRegion: true,
@@ -69,6 +78,7 @@ describe("browser QR scanner service", () => {
       options: {
         preferredCamera: "environment",
         maxScansPerSecond: 8,
+        calculateScanRegion,
         highlightScanRegion: true,
         highlightCodeOutline: true,
         returnDetailedScanResult: true,

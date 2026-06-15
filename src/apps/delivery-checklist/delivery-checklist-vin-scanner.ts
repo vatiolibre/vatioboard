@@ -1,5 +1,6 @@
 import type { DeliveryChecklistVehicleMetadata } from "./delivery-checklist-data.js";
 import type {
+  VatioQrScanRegion,
   VatioQrScanResult,
   VatioQrScannerService,
   VatioQrScannerSession,
@@ -36,6 +37,8 @@ export interface StartDeliveryVinQrScannerOptions {
 }
 
 const VIN_PATTERN = /[A-HJ-NPR-Z0-9]{17}/;
+const DELIVERY_VIN_SCAN_REGION_RATIO = 0.84;
+const DELIVERY_VIN_SCAN_DOWNSCALE_SIZE = 480;
 
 export function normalizeDeliveryVin(value: unknown): string {
   return String(value || "")
@@ -72,6 +75,23 @@ export function compareDeliveryWindshieldVin(
     state: scannedVin === backendVin ? "match" : "mismatch",
     scannedVin,
     backendVin,
+  };
+}
+
+export function calculateDeliveryVinScanRegion(video: HTMLVideoElement): VatioQrScanRegion {
+  const videoWidth = Math.max(0, Math.round(video.videoWidth || 0));
+  const videoHeight = Math.max(0, Math.round(video.videoHeight || 0));
+  const minDimension = Math.min(videoWidth, videoHeight);
+  const size = Math.round(minDimension * DELIVERY_VIN_SCAN_REGION_RATIO);
+  const downScaledSize = Math.max(1, Math.min(DELIVERY_VIN_SCAN_DOWNSCALE_SIZE, size || DELIVERY_VIN_SCAN_DOWNSCALE_SIZE));
+
+  return {
+    x: Math.max(0, Math.round((videoWidth - size) / 2)),
+    y: Math.max(0, Math.round((videoHeight - size) / 2)),
+    width: size,
+    height: size,
+    downScaledWidth: downScaledSize,
+    downScaledHeight: downScaledSize,
   };
 }
 
@@ -116,8 +136,9 @@ export async function startDeliveryVinQrScanner({
       video,
       preferredCamera: "environment",
       maxScansPerSecond: 12,
-      highlightScanRegion: true,
-      highlightCodeOutline: true,
+      calculateScanRegion: calculateDeliveryVinScanRegion,
+      highlightScanRegion: false,
+      highlightCodeOutline: false,
       onResult(result: VatioQrScanResult) {
         if (stopped) return;
         const rawText = result.data;

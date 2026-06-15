@@ -71,6 +71,7 @@ export function createBrowserQrScannerService({
         (result) => options.onResult(normalizeScanResult(result)),
         {
           onDecodeError: options.onError,
+          calculateScanRegion: options.calculateScanRegion,
           preferredCamera: options.preferredCamera || "environment",
           maxScansPerSecond: options.maxScansPerSecond,
           highlightScanRegion: options.highlightScanRegion,

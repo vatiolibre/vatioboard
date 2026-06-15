@@ -196,6 +196,12 @@ const deliveryChecklistTemplate: string = String.raw`
         </div>
         <div class="delivery-vin-video-wrap">
           <video id="deliveryVinScannerVideo" muted playsinline></video>
+          <div class="delivery-vin-scan-frame" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
         </div>
         <button id="deliveryVinScannerFallback" type="button" class="delivery-action-btn">Enter VIN manually</button>
       </div>
