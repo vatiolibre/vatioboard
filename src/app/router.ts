@@ -89,6 +89,7 @@ export function toAppRouteHash(href) {
   if (pathname === "/replay") return `#/replay${search}`;
   if (pathname === "/board") return `#/board${search}`;
   if (pathname === "/apps") return `#/apps${search}`;
+  if (pathname === "/qr-scanner") return `#/qr-scanner${search}`;
 
   return "";
 }

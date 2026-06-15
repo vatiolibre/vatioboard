@@ -150,6 +150,17 @@ export const IconDeliveryChecklist = `
   </svg>
 `;
 
+export const IconQrScanner = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M4.75 8V5.75a1 1 0 0 1 1-1H8M16 4.75h2.25a1 1 0 0 1 1 1V8M19.25 16v2.25a1 1 0 0 1-1 1H16M8 19.25H5.75a1 1 0 0 1-1-1V16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="7.15" y="7.15" width="3.15" height="3.15" rx="0.7" stroke="currentColor" stroke-width="1.45"/>
+    <rect x="13.7" y="7.15" width="3.15" height="3.15" rx="0.7" stroke="currentColor" stroke-width="1.45"/>
+    <rect x="7.15" y="13.7" width="3.15" height="3.15" rx="0.7" stroke="currentColor" stroke-width="1.45"/>
+    <path d="M13.65 13.75h1.25v1.25h-1.25zM16.15 13.75h0M13.65 16.15h0M16.15 16.15h1.25" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M11.85 12h0.3M12 4.25v1.15M12 18.6v1.15M4.25 12h1.15M18.6 12h1.15" stroke="currentColor" stroke-width="1.55" stroke-linecap="round"/>
+  </svg>
+`;
+
 export const IconPen = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path d="M16.05 4.8 19.2 7.95c.47.47.47 1.23 0 1.7l-4.2 4.2-5.05-5.05 4.2-4.2c.47-.47 1.23-.47 1.7 0Z" fill="currentColor" opacity="0.14"/>

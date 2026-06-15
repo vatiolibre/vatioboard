@@ -230,10 +230,11 @@ describe("app launcher start menu", () => {
     const menu = openLauncher(initSharedStartMenu);
     const ids = getLauncherTileIds(menu);
 
-    expect(ids.slice(0, 6)).toEqual([
+    expect(ids.slice(0, 7)).toEqual([
       "vatio.speed",
       "vatio.board",
       "vatio.deliveryChecklist",
+      "vatio.qrScanner",
       "vatio.replay",
       "vatio.accel",
       "vatio.library",

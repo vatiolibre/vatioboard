@@ -14,6 +14,7 @@ import { boardAppManifest } from "../../src/apps/board/manifest.js";
 import { calculatorAppManifest } from "../../src/apps/calculator/manifest.js";
 import { codeRainAppManifest } from "../../src/apps/code-rain/manifest.js";
 import { premiumClockAppManifest } from "../../src/apps/premium-clock/manifest.js";
+import { qrScannerAppManifest } from "../../src/apps/qr-scanner/manifest.js";
 import { speedAppManifest } from "../../src/apps/speed/manifest.js";
 import { getRouteRegistryFromApps } from "../../src/app-platform/adapters/route-registry-adapter.js";
 import {
@@ -239,12 +240,15 @@ describe("VatioBoard OS app platform", () => {
       calculatorAppManifest,
       codeRainAppManifest,
       premiumClockAppManifest,
+      qrScannerAppManifest,
     ]));
     expect(appRegistry.getApp("vatio.speed")).toBe(speedAppManifest);
     expect(appRegistry.getApp("vatio.board")).toBe(boardAppManifest);
     expect(appRegistry.getApp("vatio.calculator")).toBe(calculatorAppManifest);
     expect(appRegistry.getApp("vatio.codeRain")).toBe(codeRainAppManifest);
     expect(appRegistry.getApp("vatio.premiumClock")).toBe(premiumClockAppManifest);
+    expect(appRegistry.getApp("vatio.qrScanner")).toBe(qrScannerAppManifest);
+    expect(appRegistry.getAppsForPermission("media.camera").map((app) => app.id)).toContain("vatio.qrScanner");
   });
 
   it("namespaces app storage by app ID and handles JSON safely", () => {
@@ -846,12 +850,15 @@ describe("VatioBoard OS app platform", () => {
     const routes = getRouteRegistryFromApps();
     expect(routes.find((route) => route.path === "/apps")?.title).toBe("App Manager");
     expect(routes.find((route) => route.path === "/")?.aliases).toContain("/speed");
+    expect(routes.find((route) => route.path === "/qr-scanner")?.title).toBe("QR Scanner");
 
     const startMenuTools = getToolDefinitionsForSurfaceFromApps("start-menu");
     expect(startMenuTools.map((tool) => tool.id)).toEqual(
-      expect.arrayContaining(["route:speed", "route:apps", "calculator"]),
+      expect.arrayContaining(["route:speed", "route:apps", "route:qr-scanner", "calculator"]),
     );
+    expect(getToolDefinitionsForSurfaceFromApps("launcher").map((tool) => tool.id)).toContain("route:qr-scanner");
     expect(getRouteToolDefinitionFromApps("/speed")?.id).toBe("route:speed");
+    expect(getRouteToolDefinitionFromApps("/qr-scanner")?.id).toBe("route:qr-scanner");
     expect(getToolDefinitionForShellWindowFromApps("calculator")?.id).toBe("calculator");
 
     const calculatorWindow = getShellWindowDefinitionFromApps("calculator");
