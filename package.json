@@ -26,6 +26,8 @@
     "test:watch": "vitest",
     "test:unit": "vitest run test/unit",
     "test:smoke": "vitest run test/smoke --exclude test/smoke/spa-gps-background.test.js && vitest run test/smoke/spa-gps-background.test.js",
+    "verify:vin-ocr": "node scripts/verify-delivery-vin-ocr-sample.mjs",
+    "verify:vin-ocr:fixtures": "node scripts/verify-delivery-vin-ocr-fixtures.mjs",
     "verify": "pnpm run typecheck && pnpm run lint && pnpm test && pnpm run build"
   },
   "devDependencies": {
@@ -36,7 +38,7 @@
     "eslint": "^10.1.0",
     "globals": "^17.4.0",
     "jsdom": "^29.0.1",
-    "less": "^4.5.1",
+    "less": "^4.6.6",
     "prettier": "^3.8.1",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.4",
@@ -55,7 +57,8 @@
     "mathjs": "^15.1.0",
     "onnxruntime-web": "1.22.0-dev.20250409-89f8206ba4",
     "piper-tts-web": "1.1.2",
-    "qr-scanner": "^1.4.2"
+    "qr-scanner": "^1.4.2",
+    "tesseract.js": "^7.0.0"
   },
   "engines": {
     "node": ">=24"

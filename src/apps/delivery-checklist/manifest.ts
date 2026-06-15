@@ -28,7 +28,7 @@ export const deliveryChecklistAppManifest = defineAppManifest({
     "settings.write",
     "shell.launchApp",
   ],
-  services: ["auth", "shell", "storage", "i18n", "settings", "qrScanner"],
+  services: ["auth", "shell", "storage", "i18n", "settings"],
   tags: ["tesla", "delivery", "checklist", "local-first"],
   localFirst: true,
   teslaOptimized: true,

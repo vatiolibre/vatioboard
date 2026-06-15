@@ -77,17 +77,17 @@ const deliveryChecklistTemplate: string = String.raw`
         <section id="deliverySetupPanel" class="delivery-setup-card" aria-label="Vehicle setup" hidden>
           <section class="delivery-vin-scan-card" aria-label="Windshield VIN scan">
             <div class="delivery-vin-scan-copy">
-              <h2>Scan windshield VIN</h2>
-              <p>Use the windshield QR code to capture the VIN locally before choosing the setup path.</p>
+              <h2>Read windshield VIN</h2>
+              <p>Use camera OCR to capture the windshield VIN locally before choosing the setup path.</p>
             </div>
             <div id="deliveryVinScanStatus" class="delivery-vin-scan-status" data-state="not-scanned">
               <strong id="deliveryWindshieldVinValue">Not scanned</strong>
               <span id="deliveryWindshieldVinCompare">Scan is optional.</span>
             </div>
             <div class="delivery-vin-scan-actions">
-              <button id="deliveryScanVinQr" type="button" class="delivery-action-btn">
+              <button id="deliveryReadVinOcr" type="button" class="delivery-action-btn">
                 <span class="btn-icon" aria-hidden="true"></span>
-                <span>Scan QR</span>
+                <span>Read VIN</span>
               </button>
               <button id="deliveryEnterVinManual" type="button" class="delivery-action-btn">
                 <span>Enter manually</span>
@@ -189,8 +189,8 @@ const deliveryChecklistTemplate: string = String.raw`
       <div class="delivery-vin-scanner-panel">
         <div class="delivery-vin-scanner-header">
           <div>
-            <h2>Scan windshield VIN</h2>
-            <p id="deliveryVinScannerStatus">Point the camera at the windshield QR code.</p>
+            <h2>Read windshield VIN</h2>
+            <p id="deliveryVinScannerStatus">Align the VIN text, not the logo, inside the upper frame, then tap Read VIN.</p>
           </div>
           <button id="deliveryVinScannerClose" type="button" class="delivery-icon-btn" title="Close scanner" aria-label="Close scanner">&times;</button>
         </div>
@@ -203,7 +203,22 @@ const deliveryChecklistTemplate: string = String.raw`
             <span></span>
           </div>
         </div>
-        <button id="deliveryVinScannerFallback" type="button" class="delivery-action-btn">Enter VIN manually</button>
+        <div class="delivery-vin-scanner-actions">
+          <button id="deliveryVinScannerCapture" type="button" class="delivery-action-btn delivery-nav-primary">Read VIN</button>
+          <button id="deliveryVinScannerFallback" type="button" class="delivery-action-btn">Enter manually</button>
+        </div>
+        <section id="deliveryVinOcrDiagnostics" class="delivery-vin-ocr-diagnostics" aria-label="OCR diagnostics" hidden>
+          <div class="delivery-vin-ocr-diagnostics-copy">
+            <strong>OCR diagnostics</strong>
+            <p>Debug images stay on this device unless you share them. Use these files to see the captured frame, crop, OCR variants, and raw text.</p>
+          </div>
+          <div id="deliveryVinOcrPreview" class="delivery-vin-ocr-preview" aria-label="OCR debug image previews"></div>
+          <div class="delivery-vin-ocr-actions">
+            <button id="deliveryVinOcrWiderScan" type="button" class="delivery-action-btn">Try wider scan</button>
+            <button id="deliveryVinOcrCopyDebug" type="button" class="delivery-action-btn">Copy JSON</button>
+            <button id="deliveryVinOcrDownloadDebug" type="button" class="delivery-action-btn">Download debug files</button>
+          </div>
+        </section>
       </div>
     </div>
   </main>

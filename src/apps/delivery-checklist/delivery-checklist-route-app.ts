@@ -16,7 +16,6 @@ export type DeliveryChecklistRouteMountContext = RouteMountContext & {
   appStorage?: VatioAppRuntime["storage"] | null;
   settingsService?: VatioAppRuntime["services"]["settings"] | null;
   authService?: VatioAppRuntime["services"]["auth"] | null;
-  qrScannerService?: VatioAppRuntime["services"]["qrScanner"] | null;
   translate?: ((key: string, fallback?: string) => string) | null;
   logger?: VatioAppRuntime["logger"] | null;
 };
@@ -41,7 +40,6 @@ export function createDeliveryChecklistRouteMountContext(routeContext: RouteMoun
     appStorage: runtime?.storage || null,
     settingsService: runtime?.services.settings || null,
     authService: runtime?.services.auth || null,
-    qrScannerService: runtime?.services.qrScanner || null,
     translate: runtime ? (key, fallback) => runtime.i18n.t(key, fallback) : null,
     logger: runtime?.logger || null,
   };

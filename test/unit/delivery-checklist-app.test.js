@@ -20,7 +20,13 @@ function createRoot() {
   return root;
 }
 
-function createRouteContext({ root, authService = null, appRuntime = null, qrScannerService = null } = {}) {
+function createRouteContext({
+  root,
+  authService = null,
+  appRuntime = null,
+  mediaDevices = null,
+  vinOcrRecognizer = null,
+} = {}) {
   return {
     root,
     context: {},
@@ -32,7 +38,8 @@ function createRouteContext({ root, authService = null, appRuntime = null, qrSca
     appStorage: null,
     settingsService: null,
     appRuntime,
-    qrScannerService,
+    mediaDevices,
+    vinOcrRecognizer,
     logger: {
       debug: vi.fn(),
       info: vi.fn(),
@@ -313,26 +320,23 @@ describe("delivery checklist app", () => {
     mounted.unmount();
   });
 
-  it("falls back to manual windshield VIN entry when the QR service denies camera access", async () => {
-    const qrScannerService = {
-      hasCamera: vi.fn(),
-      listCameras: vi.fn(),
-      scanImage: vi.fn(),
-      createCameraSession: vi.fn(async () => {
-        throw new Error("QR scanner camera permission denied.");
+  it("falls back to manual windshield VIN entry when camera OCR is unavailable", async () => {
+    const mediaDevices = {
+      getUserMedia: vi.fn(async () => {
+        throw new Error("Camera rejected");
       }),
     };
     const root = createRoot();
-    const mounted = mountDeliveryChecklistRoute(createRouteContext({ root, qrScannerService }));
+    const mounted = mountDeliveryChecklistRoute(createRouteContext({ root, mediaDevices }));
 
     await flushPromises();
-    document.querySelector("#deliveryScanVinQr").click();
+    document.querySelector("#deliveryReadVinOcr").click();
     await flushPromises();
 
-    expect(qrScannerService.createCameraSession).toHaveBeenCalled();
+    expect(mediaDevices.getUserMedia).toHaveBeenCalled();
     expect(document.querySelector("#deliveryVinScannerSheet").hidden).toBe(true);
     expect(document.querySelector("#deliveryManualWindshieldVinWrap").hidden).toBe(false);
-    expect(document.querySelector("#deliveryStatus").textContent).toContain("Camera scan is unavailable");
+    expect(document.querySelector("#deliveryStatus").textContent).toContain("Camera OCR is unavailable");
 
     mounted.unmount();
   });
@@ -561,6 +565,10 @@ describe("delivery checklist app", () => {
     expect(stylesheet).toContain(".delivery-vin-scanner-sheet");
     expect(stylesheet).toContain(".delivery-vin-video-wrap");
     expect(stylesheet).toContain(".delivery-vin-scan-frame");
+    expect(stylesheet).toContain(".delivery-vin-scanner-actions");
+    expect(stylesheet).toContain(".delivery-vin-ocr-diagnostics");
+    expect(stylesheet).toContain(".delivery-vin-ocr-preview");
+    expect(stylesheet).toContain(".delivery-vin-ocr-actions");
     expect(stylesheet).toContain("position: relative");
     expect(stylesheet).not.toContain(".scan-region-highlight");
     expect(stylesheet).not.toContain("#deliveryModelSwitch");
@@ -577,6 +585,8 @@ describe("delivery checklist app", () => {
     expect(root.querySelector(".delivery-vin-scan-card")).not.toBeNull();
     expect(root.querySelector("#deliveryVinScannerSheet")).not.toBeNull();
     expect(root.querySelector(".delivery-vin-video-wrap .delivery-vin-scan-frame")).not.toBeNull();
+    expect(root.querySelector("#deliveryVinScannerCapture")).not.toBeNull();
+    expect(root.querySelector("#deliveryVinOcrDiagnostics")).not.toBeNull();
     root.remove();
   });
 
@@ -637,45 +647,110 @@ describe("delivery checklist app", () => {
     mounted.unmount();
   });
 
-  it("saves a QR-scanned windshield VIN from the scanner sheet", async () => {
-    const stopScanner = vi.fn();
-    const destroyScanner = vi.fn();
-    const qrScannerService = {
-      hasCamera: vi.fn(),
-      listCameras: vi.fn(),
-      scanImage: vi.fn(),
-      createCameraSession: vi.fn(async ({ onResult }) => ({
-        start: vi.fn(async () => {
-          onResult({ data: "qr:5YJYGDEE0RF000001" });
-        }),
-        stop: stopScanner,
-        destroy: destroyScanner,
-        setCamera: vi.fn(),
-        isActive: vi.fn(),
-      })),
+  it("saves an OCR-read windshield VIN from the scanner sheet", async () => {
+    const stopTrack = vi.fn();
+    const stream = {
+      getTracks: vi.fn(() => [{ stop: stopTrack }]),
     };
+    const mediaDevices = {
+      getUserMedia: vi.fn(async () => stream),
+    };
+    const vinOcrRecognizer = vi.fn(async () => ({
+      vin: "7SAYGAEE3RF178432",
+      rawText: "YEZ7SAYGAEE3RF178432",
+      attempts: 1,
+    }));
     const root = createRoot();
-    const mounted = mountDeliveryChecklistRoute(createRouteContext({ root, qrScannerService }));
+    const video = root.querySelector("#deliveryVinScannerVideo");
+    video.play = vi.fn(async () => {});
+    video.pause = vi.fn();
+    const mounted = mountDeliveryChecklistRoute(createRouteContext({ root, mediaDevices, vinOcrRecognizer }));
 
-    document.querySelector("#deliveryScanVinQr").click();
+    document.querySelector("#deliveryReadVinOcr").click();
+    await flushPromises();
+    expect(document.querySelector("#deliveryVinScannerSheet").hidden).toBe(false);
+    expect(mediaDevices.getUserMedia).toHaveBeenCalled();
+
+    document.querySelector("#deliveryVinScannerCapture").click();
     await flushPromises();
 
-    expect(qrScannerService.createCameraSession).toHaveBeenCalledWith(expect.objectContaining({
-      video: document.querySelector("#deliveryVinScannerVideo"),
-      preferredCamera: "environment",
-      calculateScanRegion: expect.any(Function),
-      highlightScanRegion: false,
-      highlightCodeOutline: false,
-      onResult: expect.any(Function),
+    expect(vinOcrRecognizer).toHaveBeenCalledWith(video, expect.objectContaining({
+      mode: "frame-then-search",
+      debug: true,
+      debugLabel: "delivery-checklist-camera",
+      onProgress: expect.any(Function),
+      onDebugArtifact: expect.any(Function),
+      onDebugReport: expect.any(Function),
     }));
-    expect(stopScanner).toHaveBeenCalled();
-    expect(destroyScanner).toHaveBeenCalled();
+    expect(stopTrack).toHaveBeenCalled();
     expect(document.querySelector("#deliveryVinScannerSheet").hidden).toBe(true);
-    expect(document.querySelector("#deliveryWindshieldVinValue").textContent).toBe("5YJYGDEE0RF000001");
+    expect(document.querySelector("#deliveryWindshieldVinValue").textContent).toBe("7SAYGAEE3RF178432");
     expect(readStoredSession().metadata).toMatchObject({
-      windshieldVin: "5YJYGDEE0RF000001",
-      windshieldVinScanSource: "qr",
+      windshieldVin: "7SAYGAEE3RF178432",
+      windshieldVinScanSource: "ocr",
     });
+
+    mounted.unmount();
+  });
+
+  it("shows OCR diagnostics after a failed windshield VIN read", async () => {
+    const stopTrack = vi.fn();
+    const stream = {
+      getTracks: vi.fn(() => [{ stop: stopTrack }]),
+    };
+    const mediaDevices = {
+      getUserMedia: vi.fn(async () => stream),
+    };
+    const debug = {
+      id: "debug-1",
+      label: "delivery-checklist-camera",
+      startedAt: "2026-06-15T00:00:00.000Z",
+      endedAt: "2026-06-15T00:00:01.000Z",
+      mode: "frame-then-search",
+      sourceSize: { width: 1920, height: 1080 },
+      displaySize: { width: 360, height: 210 },
+      regions: [{ x: 135, y: 443, width: 1651, height: 194 }],
+      attempts: [{
+        attempt: 1,
+        regionIndex: 0,
+        region: { x: 135, y: 443, width: 1651, height: 194 },
+        variant: "gray",
+        rawText: "TESLA",
+        confidence: 41,
+        candidates: [],
+        selectedVin: "",
+      }],
+      selectedVin: "",
+      confidence: 0,
+      rawText: "TESLA",
+      failureReason: "No OCR attempt produced a valid VIN.",
+    };
+    const vinOcrRecognizer = vi.fn(async (_video, options) => {
+      options.onDebugReport?.(debug);
+      return {
+        vin: "",
+        rawText: "TESLA",
+        attempts: 1,
+        debug,
+      };
+    });
+    const root = createRoot();
+    const video = root.querySelector("#deliveryVinScannerVideo");
+    video.play = vi.fn(async () => {});
+    video.pause = vi.fn();
+    const mounted = mountDeliveryChecklistRoute(createRouteContext({ root, mediaDevices, vinOcrRecognizer }));
+
+    document.querySelector("#deliveryReadVinOcr").click();
+    await flushPromises();
+    document.querySelector("#deliveryVinScannerCapture").click();
+    await flushPromises();
+
+    expect(document.querySelector("#deliveryVinScannerSheet").hidden).toBe(false);
+    expect(document.querySelector("#deliveryVinOcrDiagnostics").hidden).toBe(false);
+    expect(document.querySelector("#deliveryVinOcrCopyDebug")).not.toBeNull();
+    expect(document.querySelector("#deliveryVinOcrDownloadDebug")).not.toBeNull();
+    expect(document.querySelector("#deliveryVinOcrWiderScan")).not.toBeNull();
+    expect(document.querySelector("#deliveryStatus").textContent).toContain("No valid VIN");
 
     mounted.unmount();
   });

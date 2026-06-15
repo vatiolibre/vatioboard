@@ -50,7 +50,7 @@ export interface DeliveryChecklistVehicleMetadata {
   imageUrl?: string;
   windshieldVin?: string;
   windshieldVinScannedAt?: string;
-  windshieldVinScanSource?: "qr" | "manual";
+  windshieldVinScanSource?: "ocr" | "qr" | "manual";
   source?: "manual" | "vatiolibre";
 }
 

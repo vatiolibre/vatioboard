@@ -1,22 +1,37 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  calculateDeliveryVinScanRegion,
+  calculateDeliveryVinOcrRegion,
   compareDeliveryWindshieldVin,
+  createDeliveryVinOcrRegions,
+  createDeliveryVinOcrSearchRegions,
+  createDeliveryVinTextRegion,
+  extractDeliveryVinFromOcrText,
   extractDeliveryVinFromQrPayload,
+  findDeliveryVinOcrCandidates,
+  isValidDeliveryVinCheckDigit,
   normalizeDeliveryVin,
-  startDeliveryVinQrScanner,
+  startDeliveryVinOcrScanner,
 } from "../../src/apps/delivery-checklist/delivery-checklist-vin-scanner.js";
 
 describe("delivery checklist VIN scanner helpers", () => {
-  it("normalizes VIN values and extracts a windshield VIN from noisy QR payloads", () => {
-    expect(normalizeDeliveryVin(" 5yjygdee0rf000001 ")).toBe("5YJYGDEE0RF000001");
+  it("normalizes VIN values and preserves legacy QR VIN extraction", () => {
+    expect(normalizeDeliveryVin(" 7saygaee3rf178432 ")).toBe("7SAYGAEE3RF178432");
     expect(normalizeDeliveryVin("5YJYGDIEOQRF000001")).toBe("5YJYGDERF000001");
 
     expect(extractDeliveryVinFromQrPayload("tesla://delivery?vin=5yjygdee0rf000001")).toBe("5YJYGDEE0RF000001");
-    expect(extractDeliveryVinFromQrPayload("QR: 7G2CEHED0RA000001; delivery")).toBe("7G2CEHED0RA000001");
     expect(extractDeliveryVinFromQrPayload("not-a-vin")).toBe("");
-    expect(extractDeliveryVinFromQrPayload("5YJYGDIEOQRF000001")).toBe("");
+  });
+
+  it("validates VIN check digits and extracts a valid VIN from noisy OCR text", () => {
+    expect(isValidDeliveryVinCheckDigit("7SAYGAEE3RF178432")).toBe(true);
+    expect(isValidDeliveryVinCheckDigit("7SAYGAEE0RF178432")).toBe(false);
+
+    expect(extractDeliveryVinFromOcrText("YEZ7SAYGAEE3RF178432")).toBe("7SAYGAEE3RF178432");
+    expect(extractDeliveryVinFromOcrText("Tesla 7SAYGAEE3RFI78432")).toBe("7SAYGAEE3RF178432");
+    expect(extractDeliveryVinFromOcrText("5YJYGDEE0RF000001")).toBe("");
+
+    expect(findDeliveryVinOcrCandidates("YEZ7SAYGAEE3RF178432")[0]).toBe("7SAYGAEE3RF178432");
   });
 
   it("compares scanned windshield VINs based on the selected setup mode", () => {
@@ -26,270 +41,165 @@ describe("delivery checklist VIN scanner helpers", () => {
     });
 
     expect(compareDeliveryWindshieldVin({
-      windshieldVin: "5YJYGDEE0RF000001",
-      vin: "7G2CEHED0RA000001",
+      windshieldVin: "7SAYGAEE3RF178432",
+      vin: "5YJYGDEE0RF000001",
     }, "manual")).toMatchObject({
       state: "manual",
-      scannedVin: "5YJYGDEE0RF000001",
-      backendVin: "7G2CEHED0RA000001",
+      scannedVin: "7SAYGAEE3RF178432",
+      backendVin: "5YJYGDEE0RF000001",
     });
 
     expect(compareDeliveryWindshieldVin({
-      windshieldVin: "5YJYGDEE0RF000001",
-      vin: "5yjygdee0rf000001",
+      windshieldVin: "7SAYGAEE3RF178432",
+      vin: "7saygaee3rf178432",
     }, "vatiolibre").state).toBe("match");
 
     expect(compareDeliveryWindshieldVin({
-      windshieldVin: "5YJYGDEE0RF000001",
-      vin: "7G2CEHED0RA000001",
+      windshieldVin: "7SAYGAEE3RF178432",
+      vin: "5YJYGDEE0RF000001",
     }, "vatiolibre").state).toBe("mismatch");
 
     expect(compareDeliveryWindshieldVin({
-      windshieldVin: "5YJYGDEE0RF000001",
+      windshieldVin: "7SAYGAEE3RF178432",
     }, "vatiolibre").state).toBe("backend-unavailable");
   });
 
-  it("calculates a large centered VIN QR scan region matching the visible frame", () => {
-    const video = document.createElement("video");
-    Object.defineProperty(video, "videoWidth", {
-      configurable: true,
-      value: 1920,
-    });
-    Object.defineProperty(video, "videoHeight", {
-      configurable: true,
-      value: 1080,
+  it("calculates wide horizontal OCR scan regions", () => {
+    expect(calculateDeliveryVinOcrRegion(1920, 1080)).toEqual({
+      x: 135,
+      y: 335,
+      width: 1651,
+      height: 194,
+      role: "full-band",
     });
 
-    expect(calculateDeliveryVinScanRegion(video)).toEqual({
-      x: 507,
-      y: 87,
-      width: 907,
-      height: 907,
-      downScaledWidth: 480,
-      downScaledHeight: 480,
+    expect(createDeliveryVinOcrSearchRegions(768, 1024).map((region) => region.y)).toEqual([
+      259,
+      300,
+      361,
+      443,
+      525,
+      607,
+    ]);
+
+    expect(createDeliveryVinTextRegion({
+      x: 90,
+      y: 259,
+      width: 1101,
+      height: 173,
+      role: "full-band",
+    }, 1280)).toEqual({
+      x: 244,
+      y: 259,
+      width: 903,
+      height: 173,
+      role: "vin-text",
     });
+
+    const frameThenSearch = createDeliveryVinOcrRegions(768, 1024, { mode: "frame-then-search" });
+    expect(frameThenSearch[0].role).toBe("vin-text");
+    expect(frameThenSearch[1]).toEqual(calculateDeliveryVinOcrRegion(768, 1024));
+    expect(frameThenSearch.map((region) => region.y)).toEqual([
+      341,
+      341,
+      259,
+      259,
+      300,
+      300,
+      361,
+      361,
+      443,
+      443,
+      525,
+      525,
+      607,
+      607,
+    ]);
   });
 
-  it("starts a camera QR session, saves the first VIN result, and stops tracks", async () => {
-    const stop = vi.fn();
-    const destroy = vi.fn();
-    let onQrResult;
-    const session = {
-      start: vi.fn(async () => {
-        onQrResult({ data: "windshield:5YJYGDEE0RF000001" });
-      }),
-      stop,
-      destroy,
-      setCamera: vi.fn(),
-      isActive: vi.fn(() => true),
+  it("starts an OCR camera session, captures a frame, and stops tracks", async () => {
+    const stopTrack = vi.fn();
+    const stream = {
+      getTracks: vi.fn(() => [{ stop: stopTrack }]),
     };
-    const qrScannerService = {
-      hasCamera: vi.fn(),
-      listCameras: vi.fn(),
-      scanImage: vi.fn(),
-      createCameraSession: vi.fn(async (options) => {
-        onQrResult = options.onResult;
-        return session;
-      }),
+    const mediaDevices = {
+      getUserMedia: vi.fn(async () => stream),
     };
-    const video = document.createElement("video");
-    const onResult = vi.fn();
-
-    const vinSession = await startDeliveryVinQrScanner({
-      video,
-      qrScannerService,
-      onResult,
-    });
-
-    expect(qrScannerService.createCameraSession).toHaveBeenCalledWith(expect.objectContaining({
-      video,
-      preferredCamera: "environment",
-      maxScansPerSecond: 12,
-      calculateScanRegion: calculateDeliveryVinScanRegion,
-      highlightScanRegion: false,
-      highlightCodeOutline: false,
-      onResult: expect.any(Function),
-      onError: expect.any(Function),
+    const permissions = {
+      has: vi.fn(() => true),
+      require: vi.fn(() => true),
+      list: vi.fn(() => ["media.camera"]),
+    };
+    const recognize = vi.fn(async () => ({
+      vin: "7SAYGAEE3RF178432",
+      rawText: "YEZ7SAYGAEE3RF178432",
+      attempts: 1,
     }));
-    expect(session.start).toHaveBeenCalled();
-    expect(onResult).toHaveBeenCalledWith({
-      vin: "5YJYGDEE0RF000001",
-      rawText: "windshield:5YJYGDEE0RF000001",
-    });
-    expect(stop).toHaveBeenCalled();
-    expect(destroy).toHaveBeenCalled();
-
-    vinSession.stop();
-    expect(stop).toHaveBeenCalledTimes(1);
-    expect(destroy).toHaveBeenCalledTimes(1);
-  });
-
-  it("ignores non-VIN QR payloads while keeping the scanner active", async () => {
-    let onQrResult;
-    const session = {
-      start: vi.fn(async () => {
-        onQrResult({ data: "https://vatioboard.com" });
-      }),
-      stop: vi.fn(),
-      destroy: vi.fn(),
-      setCamera: vi.fn(),
-      isActive: vi.fn(() => true),
-    };
-    const qrScannerService = {
-      hasCamera: vi.fn(),
-      listCameras: vi.fn(),
-      scanImage: vi.fn(),
-      createCameraSession: vi.fn(async (options) => {
-        onQrResult = options.onResult;
-        return session;
-      }),
-    };
-    const onResult = vi.fn();
-
-    const vinSession = await startDeliveryVinQrScanner({
-      video: document.createElement("video"),
-      qrScannerService,
-      onResult,
-    });
-
-    expect(onResult).not.toHaveBeenCalled();
-    expect(session.stop).not.toHaveBeenCalled();
-    expect(session.destroy).not.toHaveBeenCalled();
-
-    vinSession.destroy();
-    expect(session.stop).toHaveBeenCalledOnce();
-    expect(session.destroy).toHaveBeenCalledOnce();
-  });
-
-  it("falls back when the QR scanner service is unavailable and reports decoder errors", async () => {
     const video = document.createElement("video");
-    await expect(startDeliveryVinQrScanner({
+    video.play = vi.fn(async () => {});
+    video.pause = vi.fn();
+    const onProgress = vi.fn();
+
+    const session = await startDeliveryVinOcrScanner({
       video,
-      qrScannerService: null,
-      onResult: vi.fn(),
-    })).rejects.toThrow("QR scanner service is not available");
-
-    let onQrError;
-    const onError = vi.fn();
-    const qrScannerService = {
-      hasCamera: vi.fn(),
-      listCameras: vi.fn(),
-      scanImage: vi.fn(),
-      createCameraSession: vi.fn(async (options) => {
-        onQrError = options.onError;
-        return {
-          start: vi.fn(async () => {
-            onQrError(new Error("Camera stream ended"));
-          }),
-          stop: vi.fn(),
-          destroy: vi.fn(),
-          setCamera: vi.fn(),
-          isActive: vi.fn(),
-        };
-      }),
-    };
-
-    const vinSession = await startDeliveryVinQrScanner({
-      video,
-      qrScannerService,
-      onResult: vi.fn(),
-      onError,
+      mediaDevices,
+      permissions,
+      recognize,
+      onProgress,
+    });
+    const result = await session.capture({
+      debug: true,
+      debugLabel: "unit-camera",
+      onDebugArtifact: vi.fn(),
+      onDebugReport: vi.fn(),
     });
 
-    expect(onError).toHaveBeenCalledWith(expect.any(Error));
-    vinSession.destroy();
+    expect(mediaDevices.getUserMedia).toHaveBeenCalledWith({
+      audio: false,
+      video: expect.objectContaining({
+        facingMode: { ideal: "environment" },
+      }),
+    });
+    expect(permissions.require).toHaveBeenCalledWith("media.camera");
+    expect(video.srcObject).toBe(stream);
+    expect(recognize).toHaveBeenCalledWith(video, expect.objectContaining({
+      mode: "frame-then-search",
+      debug: true,
+      debugLabel: "unit-camera",
+      displaySize: expect.objectContaining({
+        width: expect.any(Number),
+        height: expect.any(Number),
+      }),
+      onDebugArtifact: expect.any(Function),
+      onDebugReport: expect.any(Function),
+      onProgress,
+    }));
+    expect(result.vin).toBe("7SAYGAEE3RF178432");
+
+    session.destroy();
+    expect(stopTrack).toHaveBeenCalledOnce();
+    expect(video.pause).toHaveBeenCalledOnce();
+    expect(video.srcObject).toBeNull();
+    expect(session.isActive()).toBe(false);
   });
 
-  it("ignores expected no-QR decode errors from the scanner library", async () => {
-    let onQrError;
-    const onError = vi.fn();
-    const qrScannerService = {
-      hasCamera: vi.fn(),
-      listCameras: vi.fn(),
-      scanImage: vi.fn(),
-      createCameraSession: vi.fn(async (options) => {
-        onQrError = options.onError;
-        return {
-          start: vi.fn(async () => {
-            onQrError("No QR code found");
-          }),
-          stop: vi.fn(),
-          destroy: vi.fn(),
-          setCamera: vi.fn(),
-          isActive: vi.fn(),
-        };
-      }),
-    };
-
-    const vinSession = await startDeliveryVinQrScanner({
+  it("falls back when camera permission or browser media support is unavailable", async () => {
+    await expect(startDeliveryVinOcrScanner({
       video: document.createElement("video"),
-      qrScannerService,
-      onResult: vi.fn(),
-      onError,
-    });
+      mediaDevices: null,
+      permissions: null,
+      recognize: vi.fn(),
+    })).rejects.toThrow("Camera is not available");
 
-    expect(onError).not.toHaveBeenCalled();
-    vinSession.destroy();
-  });
-
-  it("propagates session start failures after cleanup", async () => {
-    const stop = vi.fn();
-    const destroy = vi.fn();
-    const qrScannerService = {
-      hasCamera: vi.fn(),
-      listCameras: vi.fn(),
-      scanImage: vi.fn(),
-      createCameraSession: vi.fn(async () => ({
-        start: vi.fn(async () => {
-          throw new Error("Camera rejected");
-        }),
-        stop,
-        destroy,
-        setCamera: vi.fn(),
-        isActive: vi.fn(),
-      })),
-    };
-
-    await expect(startDeliveryVinQrScanner({
+    await expect(startDeliveryVinOcrScanner({
       video: document.createElement("video"),
-      qrScannerService,
-      onResult: vi.fn(),
-    })).rejects.toThrow("Camera rejected");
-
-    expect(stop).toHaveBeenCalledOnce();
-    expect(destroy).toHaveBeenCalledOnce();
-  });
-
-  it("accepts raw scanner service results with VIN payloads", async () => {
-    let onQrResult;
-    const qrScannerService = {
-      hasCamera: vi.fn(),
-      listCameras: vi.fn(),
-      scanImage: vi.fn(),
-      createCameraSession: vi.fn(async (options) => {
-        onQrResult = options.onResult;
-        return {
-          start: vi.fn(async () => {
-            onQrResult({ data: "QR: 5YJYGDEE0RF000001" });
-          }),
-          stop: vi.fn(),
-          destroy: vi.fn(),
-          setCamera: vi.fn(),
-          isActive: vi.fn(),
-        };
-      }),
-    };
-    const onResult = vi.fn();
-
-    await startDeliveryVinQrScanner({
-      video: document.createElement("video"),
-      qrScannerService,
-      onResult,
-    });
-
-    expect(onResult).toHaveBeenCalledWith({
-      vin: "5YJYGDEE0RF000001",
-      rawText: "QR: 5YJYGDEE0RF000001",
-    });
+      mediaDevices: { getUserMedia: vi.fn() },
+      permissions: {
+        has: vi.fn(() => false),
+        require: vi.fn(() => false),
+        list: vi.fn(() => []),
+      },
+      recognize: vi.fn(),
+    })).rejects.toThrow("VIN OCR camera permission denied");
   });
 });

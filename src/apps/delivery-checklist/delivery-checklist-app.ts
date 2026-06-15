@@ -47,8 +47,14 @@ import {
 import {
   compareDeliveryWindshieldVin,
   normalizeDeliveryVin,
-  startDeliveryVinQrScanner,
+  startDeliveryVinOcrScanner,
+  terminateDeliveryVinOcrWorker,
+  type DeliveryVinOcrDebugArtifact,
+  type DeliveryVinOcrDebugReport,
+  type DeliveryVinOcrMode,
+  type DeliveryVinOcrRecognizer,
   type DeliveryVinScannerSession,
+  type DeliveryWindshieldVinSource,
 } from "./delivery-checklist-vin-scanner.js";
 
 export const DELIVERY_CHECKLIST_ROUTE_APP_ID = "vatio.deliveryChecklist";
@@ -59,7 +65,8 @@ export type DeliveryChecklistRouteMountContext = RouteMountContext & {
   appStorage?: VatioAppRuntime["storage"] | null;
   settingsService?: VatioAppRuntime["services"]["settings"] | null;
   authService?: VatioAppRuntime["services"]["auth"] | null;
-  qrScannerService?: VatioAppRuntime["services"]["qrScanner"] | null;
+  mediaDevices?: Pick<MediaDevices, "getUserMedia"> | null;
+  vinOcrRecognizer?: DeliveryVinOcrRecognizer | null;
   translate?: ((key: string, fallback?: string) => string) | null;
   logger?: VatioAppRuntime["logger"] | null;
 };
@@ -106,7 +113,7 @@ interface DeliveryChecklistDom {
   vinScanStatus: HTMLElement;
   windshieldVinValue: HTMLElement;
   windshieldVinCompare: HTMLElement;
-  scanVinQrButton: HTMLButtonElement;
+  readVinOcrButton: HTMLButtonElement;
   enterVinManualButton: HTMLButtonElement;
   clearWindshieldVinButton: HTMLButtonElement;
   manualWindshieldVinWrap: HTMLElement;
@@ -159,7 +166,13 @@ interface DeliveryChecklistDom {
   vinScannerVideo: HTMLVideoElement;
   vinScannerStatus: HTMLElement;
   vinScannerCloseButton: HTMLButtonElement;
+  vinScannerCaptureButton: HTMLButtonElement;
   vinScannerFallbackButton: HTMLButtonElement;
+  vinOcrDiagnostics: HTMLElement;
+  vinOcrPreview: HTMLElement;
+  vinOcrCopyDebugButton: HTMLButtonElement;
+  vinOcrDownloadDebugButton: HTMLButtonElement;
+  vinOcrWiderScanButton: HTMLButtonElement;
   header: HTMLElement;
   bottomNav: HTMLElement;
 }
@@ -183,7 +196,7 @@ function readDom(root: ParentNode): DeliveryChecklistDom {
     vinScanStatus: $(root, "#deliveryVinScanStatus"),
     windshieldVinValue: $(root, "#deliveryWindshieldVinValue"),
     windshieldVinCompare: $(root, "#deliveryWindshieldVinCompare"),
-    scanVinQrButton: $(root, "#deliveryScanVinQr") as HTMLButtonElement,
+    readVinOcrButton: $(root, "#deliveryReadVinOcr") as HTMLButtonElement,
     enterVinManualButton: $(root, "#deliveryEnterVinManual") as HTMLButtonElement,
     clearWindshieldVinButton: $(root, "#deliveryClearWindshieldVin") as HTMLButtonElement,
     manualWindshieldVinWrap: $(root, "#deliveryManualWindshieldVinWrap"),
@@ -236,7 +249,13 @@ function readDom(root: ParentNode): DeliveryChecklistDom {
     vinScannerVideo: $(root, "#deliveryVinScannerVideo") as HTMLVideoElement,
     vinScannerStatus: $(root, "#deliveryVinScannerStatus"),
     vinScannerCloseButton: $(root, "#deliveryVinScannerClose") as HTMLButtonElement,
+    vinScannerCaptureButton: $(root, "#deliveryVinScannerCapture") as HTMLButtonElement,
     vinScannerFallbackButton: $(root, "#deliveryVinScannerFallback") as HTMLButtonElement,
+    vinOcrDiagnostics: $(root, "#deliveryVinOcrDiagnostics"),
+    vinOcrPreview: $(root, "#deliveryVinOcrPreview"),
+    vinOcrCopyDebugButton: $(root, "#deliveryVinOcrCopyDebug") as HTMLButtonElement,
+    vinOcrDownloadDebugButton: $(root, "#deliveryVinOcrDownloadDebug") as HTMLButtonElement,
+    vinOcrWiderScanButton: $(root, "#deliveryVinOcrWiderScan") as HTMLButtonElement,
     header: $(root, ".delivery-checklist-header"),
     bottomNav: $(root, ".delivery-bottom-nav"),
   };
@@ -408,6 +427,9 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
   let setupMode: SetupMode = getInitialSetupMode(session);
   let vatioLibreRequested = setupMode === "vatiolibre";
   let vinScannerSession: DeliveryVinScannerSession | null = null;
+  let vinOcrDebugReport: DeliveryVinOcrDebugReport | null = null;
+  let vinOcrDebugArtifacts: DeliveryVinOcrDebugArtifact[] = [];
+  let vinOcrPreviewUrls: string[] = [];
   let photoStorageWritable = false;
   let importChoices: DeliveryImportChoice[] = [];
   let autoImportChecked = false;
@@ -638,7 +660,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
 
   function updateWindshieldVin(
     value: string,
-    source: "qr" | "manual",
+    source: DeliveryWindshieldVinSource,
     options: { scannedAt?: string } = {},
   ): void {
     const windshieldVin = normalizeDeliveryVin(value);
@@ -960,12 +982,107 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     dom.photoPreviewCaption.textContent = "";
   }
 
+  function clearVinOcrDebug(): void {
+    for (const url of vinOcrPreviewUrls) URL.revokeObjectURL(url);
+    vinOcrPreviewUrls = [];
+    vinOcrDebugReport = null;
+    vinOcrDebugArtifacts = [];
+    dom.vinOcrDiagnostics.hidden = true;
+    dom.vinOcrPreview.replaceChildren();
+  }
+
+  function createVinOcrDebugPayload() {
+    return {
+      report: vinOcrDebugReport,
+      artifacts: vinOcrDebugArtifacts.map((artifact) => ({
+        name: artifact.name,
+        kind: artifact.kind,
+        mimeType: artifact.mimeType,
+        width: artifact.width,
+        height: artifact.height,
+        regionIndex: artifact.regionIndex,
+        attempt: artifact.attempt,
+        variant: artifact.variant,
+        region: artifact.region,
+        bytes: artifact.blob.size,
+      })),
+    };
+  }
+
+  function renderVinOcrDiagnostics(): void {
+    for (const url of vinOcrPreviewUrls) URL.revokeObjectURL(url);
+    vinOcrPreviewUrls = [];
+    dom.vinOcrPreview.replaceChildren();
+
+    if (!vinOcrDebugReport) {
+      dom.vinOcrDiagnostics.hidden = true;
+      return;
+    }
+
+    const previewArtifacts = [
+      ...vinOcrDebugArtifacts.filter((artifact) => artifact.kind === "source").slice(0, 1),
+      ...vinOcrDebugArtifacts.filter((artifact) => artifact.kind === "region").slice(0, 1),
+      ...vinOcrDebugArtifacts.filter((artifact) => artifact.kind === "processed").slice(0, 2),
+    ];
+    for (const artifact of previewArtifacts) {
+      const figure = document.createElement("figure");
+      const image = document.createElement("img");
+      const caption = document.createElement("figcaption");
+      const url = URL.createObjectURL(artifact.blob);
+      vinOcrPreviewUrls.push(url);
+      image.src = url;
+      image.alt = artifact.name;
+      caption.textContent = artifact.name.replace(/\.png$/i, "");
+      figure.append(image, caption);
+      dom.vinOcrPreview.append(figure);
+    }
+
+    dom.vinOcrDiagnostics.hidden = false;
+  }
+
+  async function copyVinOcrDebugJson(): Promise<void> {
+    if (!vinOcrDebugReport) return;
+    const json = JSON.stringify(createVinOcrDebugPayload(), null, 2);
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable.");
+      await navigator.clipboard.writeText(json);
+      dom.vinScannerStatus.textContent = "OCR debug JSON copied.";
+    } catch {
+      const textarea = document.createElement("textarea");
+      textarea.value = json;
+      textarea.setAttribute("readonly", "true");
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.append(textarea);
+      textarea.select();
+      document.execCommand?.("copy");
+      textarea.remove();
+      dom.vinScannerStatus.textContent = "OCR debug JSON copied.";
+    }
+  }
+
+  function downloadVinOcrDebugArtifacts(): void {
+    if (!vinOcrDebugReport) return;
+    const stamp = vinOcrDebugReport.startedAt.replace(/[^0-9T]/g, "").slice(0, 15) || Date.now().toString();
+    downloadBlob(
+      new Blob([JSON.stringify(createVinOcrDebugPayload(), null, 2)], { type: "application/json" }),
+      `delivery-vin-ocr-${stamp}-debug.json`,
+    );
+    for (const artifact of vinOcrDebugArtifacts) {
+      downloadBlob(artifact.blob, `delivery-vin-ocr-${stamp}-${artifact.name}`);
+    }
+    dom.vinScannerStatus.textContent = "OCR debug files downloaded.";
+  }
+
   function stopVinScanner(): void {
     vinScannerSession?.destroy();
     vinScannerSession = null;
     dom.vinScannerSheet.hidden = true;
-    dom.vinScannerStatus.textContent = "Point the camera at the windshield QR code.";
-    dom.scanVinQrButton.disabled = false;
+    dom.vinScannerStatus.textContent = "Align the VIN text, not the logo, inside the upper frame, then tap Read VIN.";
+    dom.readVinOcrButton.disabled = false;
+    dom.vinScannerCaptureButton.disabled = false;
+    dom.vinScannerCaptureButton.textContent = "Read VIN";
+    clearVinOcrDebug();
   }
 
   function showManualVinEntry(): void {
@@ -977,32 +1094,70 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     stopVinScanner();
     dom.vinScannerSheet.hidden = false;
     dom.vinScannerStatus.textContent = "Starting camera...";
-    dom.scanVinQrButton.disabled = true;
+    dom.readVinOcrButton.disabled = true;
+    dom.vinScannerCaptureButton.disabled = true;
     try {
-      let capturedResult = false;
-      vinScannerSession = await startDeliveryVinQrScanner({
+      vinScannerSession = await startDeliveryVinOcrScanner({
         video: dom.vinScannerVideo,
-        qrScannerService: routeContext.qrScannerService || runtime?.services?.qrScanner || null,
-        onResult: ({ vin }) => {
-          capturedResult = true;
-          updateWindshieldVin(vin, "qr");
-          setStatus(dom, "Windshield VIN scanned and saved locally.", "ok");
-          stopVinScanner();
-        },
-        onError: () => {
-          dom.vinScannerStatus.textContent = "Still looking for the VIN QR code...";
+        permissions: runtime?.permissions || null,
+        mediaDevices: routeContext.mediaDevices || navigator.mediaDevices,
+        recognize: routeContext.vinOcrRecognizer || undefined,
+        onProgress: ({ status, progress }) => {
+          const percent = progress > 0 ? ` ${Math.round(progress * 100)}%` : "";
+          dom.vinScannerStatus.textContent = `${status}${percent}`;
         },
       });
-      if (capturedResult) {
+      dom.vinScannerStatus.textContent = "Align the VIN text, not the logo, inside the upper frame, then tap Read VIN.";
+      dom.vinScannerCaptureButton.disabled = false;
+    } catch (error) {
+      routeContext.logger?.warn("Delivery checklist VIN OCR camera failed.", error);
+      stopVinScanner();
+      showManualVinEntry();
+      setStatus(dom, "Camera OCR is unavailable here. Enter the windshield VIN manually.", "warn");
+    }
+  }
+
+  async function captureVinScanner(mode: DeliveryVinOcrMode = "frame-then-search"): Promise<void> {
+    if (!vinScannerSession) return;
+    clearVinOcrDebug();
+    dom.vinScannerCaptureButton.disabled = true;
+    dom.vinOcrWiderScanButton.disabled = true;
+    dom.vinScannerCaptureButton.textContent = "Reading...";
+    try {
+      const artifacts: DeliveryVinOcrDebugArtifact[] = [];
+      const result = await vinScannerSession.capture({
+        mode,
+        debug: true,
+        debugLabel: "delivery-checklist-camera",
+        onDebugArtifact: (artifact) => {
+          artifacts.push(artifact);
+        },
+        onDebugReport: (report) => {
+          vinOcrDebugReport = report;
+        },
+      });
+      vinOcrDebugArtifacts = artifacts;
+      vinOcrDebugReport = result.debug || vinOcrDebugReport;
+      if (result.vin) {
+        updateWindshieldVin(result.vin, "ocr");
+        setStatus(dom, "Windshield VIN read and saved locally.", "ok");
         stopVinScanner();
         return;
       }
-      dom.vinScannerStatus.textContent = "Point the camera at the windshield QR code.";
+      dom.vinScannerStatus.textContent = "Could not read a valid VIN. Move closer, keep the VIN inside the frame, and try again.";
+      setStatus(dom, "No valid VIN found in the camera frame.", "warn");
+      renderVinOcrDiagnostics();
     } catch (error) {
-      routeContext.logger?.warn("Delivery checklist VIN scanner failed.", error);
-      stopVinScanner();
-      showManualVinEntry();
-      setStatus(dom, "Camera scan is unavailable here. Enter the windshield VIN manually.", "warn");
+      routeContext.logger?.warn("Delivery checklist VIN OCR failed.", error);
+      dom.vinScannerStatus.textContent = "Could not read the VIN. Try again or enter it manually.";
+      setStatus(dom, "VIN OCR failed; manual entry is still available.", "warn");
+      renderVinOcrDiagnostics();
+    } finally {
+      if (vinScannerSession?.isActive()) {
+        dom.vinScannerCaptureButton.disabled = false;
+        dom.vinScannerCaptureButton.textContent = "Read VIN";
+        dom.vinOcrWiderScanButton.disabled = false;
+      }
     }
   }
 
@@ -1658,12 +1813,12 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
   setButtonIcon(dom.exportButton, IconDownload);
   setButtonIcon(dom.applyImportButton, IconUpload);
   setButtonIcon(dom.loginButton, IconLogin);
-  setButtonIcon(dom.scanVinQrButton, IconUpload);
+  setButtonIcon(dom.readVinOcrButton, IconUpload);
   setButtonIcon(dom.copyReportButton, IconSave);
   setButtonIcon(dom.printReportButton, IconDownload);
 
   on(dom.metadataForm, "input", () => updateMetadata(readMetadataForm()));
-  on(dom.scanVinQrButton, "click", () => void openVinScanner());
+  on(dom.readVinOcrButton, "click", () => void openVinScanner());
   on(dom.enterVinManualButton, "click", showManualVinEntry);
   on(dom.clearWindshieldVinButton, "click", clearWindshieldVin);
   on(dom.manualWindshieldVinInput, "input", () => {
@@ -1709,6 +1864,10 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     if (event.target === dom.photoPreview) closePhotoPreview();
   });
   on(dom.vinScannerCloseButton, "click", stopVinScanner);
+  on(dom.vinScannerCaptureButton, "click", () => void captureVinScanner());
+  on(dom.vinOcrCopyDebugButton, "click", () => void copyVinOcrDebugJson());
+  on(dom.vinOcrDownloadDebugButton, "click", downloadVinOcrDebugArtifacts);
+  on(dom.vinOcrWiderScanButton, "click", () => void captureVinScanner("search"));
   on(dom.vinScannerFallbackButton, "click", () => {
     stopVinScanner();
     showManualVinEntry();
@@ -1768,6 +1927,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     unmount() {
       disposed = true;
       stopVinScanner();
+      void terminateDeliveryVinOcrWorker();
       flushPendingNoteSave();
       for (const url of photoPreviewUrls.values()) {
         URL.revokeObjectURL?.(url);

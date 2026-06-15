@@ -1,0 +1,10 @@
+[
+  {
+    "id": "tesla-windshield-sample",
+    "url": "/img/sample-vin.jpeg",
+    "expectedVin": "7SAYGAEE3RF178432",
+    "scenario": "baseline windshield photo",
+    "shouldRecognize": true,
+    "notes": "Original test image from the Delivery Checklist OCR implementation."
+  }
+]
