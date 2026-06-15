@@ -155,6 +155,7 @@ function fixtureExpression(fixture, preprocessor) {
         mode: "frame-then-search",
         preprocessor,
         debug: true,
+        debugImages: "full",
         debugLabel: fixture.id + "-" + preprocessor,
         onProgress(progress) {
           window.__deliveryVinOcrProgress = progress;

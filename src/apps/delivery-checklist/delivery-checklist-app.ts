@@ -47,6 +47,7 @@ import {
 import {
   compareDeliveryWindshieldVin,
   normalizeDeliveryVin,
+  preloadDeliveryVinOcrWorker,
   startDeliveryVinOcrScanner,
   terminateDeliveryVinOcrWorker,
   type DeliveryVinOcrDebugArtifact,
@@ -1130,6 +1131,11 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     dom.vinScannerStatus.textContent = "Starting camera...";
     dom.readVinOcrButton.disabled = true;
     dom.vinScannerCaptureButton.disabled = true;
+    if (!routeContext.vinOcrRecognizer) {
+      void preloadDeliveryVinOcrWorker().catch((error) => {
+        routeContext.logger?.warn("Delivery checklist VIN OCR prewarm failed.", error);
+      });
+    }
     try {
       vinScannerSession = await startDeliveryVinOcrScanner({
         video: dom.vinScannerVideo,
@@ -1164,6 +1170,8 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
         mode,
         frameHint,
         debug: true,
+        debugImages: mode === "search" ? "full" : "minimal",
+        maxAttempts: mode === "search" ? 72 : 18,
         debugLabel: "delivery-checklist-camera",
         onDebugArtifact: (artifact) => {
           artifacts.push(artifact);

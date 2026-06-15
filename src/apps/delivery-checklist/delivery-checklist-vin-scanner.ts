@@ -33,16 +33,18 @@ export type DeliveryVinOcrRegionSource =
   | "mapped-frame"
   | "mapped-frame-expanded"
   | "fallback"
+  | "vision"
   | "opencv";
 
 export type DeliveryVinOcrDebugOverlayRole = "target" | "search" | "combined";
+export type DeliveryVinOcrDebugImages = "none" | "minimal" | "full";
 
 export interface DeliveryVinOcrRegion {
   x: number;
   y: number;
   width: number;
   height: number;
-  role?: "full-band" | "vin-text" | "cv-label" | "cv-text";
+  role?: "full-band" | "vin-text" | "vin-value" | "cv-label" | "cv-text";
   regionSource?: DeliveryVinOcrRegionSource;
 }
 
@@ -139,11 +141,19 @@ export interface DeliveryVinOcrOptions {
   regions?: DeliveryVinOcrRegion[];
   frameHint?: DeliveryVinOcrFrameHint;
   debug?: boolean;
+  debugImages?: DeliveryVinOcrDebugImages;
   debugLabel?: string;
   displaySize?: DeliveryVinOcrSize;
   loadOpenCv?: () => Promise<any>;
+  maxAttempts?: number;
   onDebugArtifact?: (artifact: DeliveryVinOcrDebugArtifact) => void | Promise<void>;
   onDebugReport?: (report: DeliveryVinOcrDebugReport) => void | Promise<void>;
+}
+
+export interface DeliveryVinOcrAttemptPlanEntry {
+  region: DeliveryVinOcrRegion;
+  variant: DeliveryVinOcrCanvasVariant;
+  pass: "fast" | "full-band" | "deep" | "opencv";
 }
 
 export type DeliveryVinOcrRecognizer = (
@@ -198,10 +208,30 @@ const VIN_TRANSLITERATION: Record<string, number> = {
 };
 const VIN_CHECK_WEIGHTS = [8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2];
 const DELIVERY_TESSERACT_BASE = "/vendor/tesseract";
+const VIN_OCR_SUBSTITUTIONS: Record<string, string[]> = {
+  A: ["4"],
+  B: ["8"],
+  D: ["0"],
+  E: ["3"],
+  G: ["6"],
+  L: ["1"],
+  R: ["8"],
+  S: ["5"],
+  T: ["7", "1"],
+  Z: ["7", "2"],
+};
 
 let workerPromise: Promise<any> | null = null;
 let activeProgress: ((progress: DeliveryVinOcrProgress) => void) | null = null;
 let openCvPromise: Promise<any> | null = null;
+
+interface DeliveryVinOcrCanvasSignal {
+  darkRatio: number;
+  lightRatio: number;
+  contrast: number;
+}
+
+const ocrCanvasSignals = new WeakMap<HTMLCanvasElement, DeliveryVinOcrCanvasSignal>();
 
 function rejectAfter(ms: number, message: string): Promise<never> {
   return new Promise((_, reject) => {
@@ -257,14 +287,32 @@ function buildOcrStreams(value: unknown): string[] {
   return Array.from(new Set([compact, correctedDigits, correctedLetters].filter(Boolean)));
 }
 
+function repairDeliveryVinOcrCandidate(candidate: string): string {
+  if (isValidDeliveryVinCheckDigit(candidate)) return candidate;
+  for (let index = 0; index < candidate.length; index += 1) {
+    const character = candidate[index];
+    for (const replacement of VIN_OCR_SUBSTITUTIONS[character] || []) {
+      if (replacement === character) continue;
+      const repaired = `${candidate.slice(0, index)}${replacement}${candidate.slice(index + 1)}`;
+      if (VIN_ALLOWED.test(repaired) && isValidDeliveryVinCheckDigit(repaired)) return repaired;
+    }
+  }
+  return "";
+}
+
 export function findDeliveryVinOcrCandidates(value: unknown): string[] {
   const candidates: string[] = [];
+  const addCandidate = (candidate: string): void => {
+    if (candidate.length === 17 && VIN_ALLOWED.test(candidate) && !candidates.includes(candidate)) {
+      candidates.push(candidate);
+    }
+  };
   for (const stream of buildOcrStreams(value)) {
     for (let index = 0; index <= stream.length - 17; index += 1) {
       const candidate = normalizeDeliveryVin(stream.slice(index, index + 17));
-      if (candidate.length === 17 && VIN_ALLOWED.test(candidate) && !candidates.includes(candidate)) {
-        candidates.push(candidate);
-      }
+      addCandidate(candidate);
+      const repaired = repairDeliveryVinOcrCandidate(candidate);
+      if (repaired) addCandidate(repaired);
     }
   }
   return candidates.sort((a, b) => {
@@ -531,6 +579,165 @@ export function createDeliveryVinTextRegion(
   };
 }
 
+export function createDeliveryVinValueRegion(
+  region: DeliveryVinOcrRegion,
+  sourceWidth: number,
+): DeliveryVinOcrRegion {
+  const leftTrim = Math.round(region.width * 0.19);
+  const rightTrim = Math.round(region.width * 0.025);
+  const x = Math.min(sourceWidth - 1, region.x + leftTrim);
+  const width = Math.max(1, Math.min(sourceWidth - x, region.width - leftTrim - rightTrim));
+  return {
+    x,
+    y: region.y,
+    width,
+    height: region.height,
+    role: "vin-value",
+    regionSource: region.regionSource,
+  };
+}
+
+function regionCenterY(region: DeliveryVinOcrRegion, sourceHeight: number): number {
+  if (!sourceHeight) return 0;
+  return (region.y + (region.height / 2)) / sourceHeight;
+}
+
+function sortVinOcrRegionsForSafariFastPath(
+  regions: DeliveryVinOcrRegion[],
+  sourceHeight: number,
+): DeliveryVinOcrRegion[] {
+  const preferredCenters = [0.32, 0.36, 0.4, 0.42, 0.28, 0.24, 0.2, 0.16, 0.5, 0.58, 0.66];
+  const score = (region: DeliveryVinOcrRegion): number => {
+    const center = regionCenterY(region, sourceHeight);
+    const preferredIndex = preferredCenters
+      .map((preferred, index) => ({ index, distance: Math.abs(center - preferred) }))
+      .sort((left, right) => left.distance - right.distance || left.index - right.index)[0]?.index ?? 99;
+    const sourceBonus = region.regionSource === "fallback" ? 0 : 20;
+    return preferredIndex + sourceBonus;
+  };
+  return [...regions].sort((left, right) => score(left) - score(right) || left.y - right.y || left.x - right.x);
+}
+
+function uniqueVinOcrRegions(regions: DeliveryVinOcrRegion[]): DeliveryVinOcrRegion[] {
+  const keys = new Set<string>();
+  const unique: DeliveryVinOcrRegion[] = [];
+  for (const region of regions) {
+    const key = `${region.x}:${region.y}:${region.width}:${region.height}:${region.role || ""}:${region.regionSource || ""}`;
+    if (keys.has(key)) continue;
+    keys.add(key);
+    unique.push(region);
+  }
+  return unique;
+}
+
+function uniqueVinOcrAttempts(entries: DeliveryVinOcrAttemptPlanEntry[]): DeliveryVinOcrAttemptPlanEntry[] {
+  const keys = new Set<string>();
+  const unique: DeliveryVinOcrAttemptPlanEntry[] = [];
+  for (const entry of entries) {
+    const region = entry.region;
+    const key = `${region.x}:${region.y}:${region.width}:${region.height}:${region.role || ""}:${region.regionSource || ""}:${entry.variant}`;
+    if (keys.has(key)) continue;
+    keys.add(key);
+    unique.push(entry);
+  }
+  return unique;
+}
+
+function createValueRegionsFromFullBands(
+  regions: DeliveryVinOcrRegion[],
+  sourceWidth: number,
+): DeliveryVinOcrRegion[] {
+  return uniqueVinOcrRegions(regions
+    .filter((region) => region.role === "full-band")
+    .map((region) => createDeliveryVinValueRegion(region, sourceWidth)));
+}
+
+export function createDeliveryVinOcrAttemptPlan(
+  regions: DeliveryVinOcrRegion[],
+  sourceWidth: number,
+  sourceHeight: number,
+  preprocessor: DeliveryVinOcrPreprocessor = "canvas",
+): DeliveryVinOcrAttemptPlanEntry[] {
+  if (preprocessor === "opencv") {
+    return regions.flatMap((region) => (["cv-contrast", "cv-adaptive", "cv-morph"] as DeliveryVinOcrCanvasVariant[])
+      .map((variant) => ({ region, variant, pass: "opencv" as const })));
+  }
+
+  const mappedRegions = regions.filter(isMappedFrameRegion);
+  const fallbackRegions = regions.filter((region) => !isMappedFrameRegion(region));
+  const visionRegions = regions.filter((region) => region.regionSource === "vision");
+  const mappedValueRegions = createValueRegionsFromFullBands(mappedRegions, sourceWidth);
+  const fallbackValueRegions = sortVinOcrRegionsForSafariFastPath(
+    createValueRegionsFromFullBands(fallbackRegions, sourceWidth),
+    sourceHeight,
+  );
+  const fallbackTextRegions = sortVinOcrRegionsForSafariFastPath(
+    fallbackRegions.filter((region) => region.role === "vin-text"),
+    sourceHeight,
+  );
+  const mappedTextRegions = mappedRegions.filter((region) => region.role === "vin-text");
+  const fullBandRegions = sortVinOcrRegionsForSafariFastPath(
+    regions.filter((region) => region.role === "full-band"),
+    sourceHeight,
+  );
+  const preferredFullBandRegions = fullBandRegions.slice(0, 4);
+  const visionTextRegions = uniqueVinOcrRegions([
+    ...visionRegions.filter((region) => region.role === "cv-text"),
+    ...visionRegions.filter((region) => region.role === "cv-label"),
+  ]);
+  const fastRegions = uniqueVinOcrRegions([
+    ...mappedValueRegions,
+    ...fallbackValueRegions,
+    ...fallbackTextRegions,
+    ...mappedTextRegions,
+  ]);
+  const deepRegions = uniqueVinOcrRegions([
+    ...visionTextRegions,
+    ...fastRegions,
+    ...fullBandRegions,
+  ]);
+  const fastVariants: DeliveryVinOcrCanvasVariant[] = ["raw-gray", "gray"];
+  const deepVariants: DeliveryVinOcrCanvasVariant[] = [
+    "sharpen",
+    "adaptive-inverted",
+    "binary-inverted",
+    "adaptive",
+    "binary",
+  ];
+  const visionAttempts = ["raw-gray", "sharpen", "gray"].flatMap((variant) =>
+    visionTextRegions.map((region) => ({
+      region,
+      variant: variant as DeliveryVinOcrCanvasVariant,
+      pass: "fast" as const,
+    })),
+  );
+  const preferredFullBandAttempts = ["sharpen", "raw-gray", "gray"].flatMap((variant) =>
+    preferredFullBandRegions.map((region) => ({
+      region,
+      variant: variant as DeliveryVinOcrCanvasVariant,
+      pass: variant === "sharpen" ? "fast" as const : "full-band" as const,
+    })),
+  );
+  const fastAttempts = fastVariants.flatMap((variant) =>
+    fastRegions.map((region) => ({ region, variant, pass: "fast" as const })),
+  );
+  const fullBandAttempts = fullBandRegions.map((region) => ({
+    region,
+    variant: "raw-gray" as DeliveryVinOcrCanvasVariant,
+    pass: "full-band" as const,
+  }));
+  const deepAttempts = deepVariants.flatMap((variant) =>
+    deepRegions.map((region) => ({ region, variant, pass: "deep" as const })),
+  );
+  return uniqueVinOcrAttempts([
+    ...visionAttempts,
+    ...preferredFullBandAttempts,
+    ...fastAttempts,
+    ...fullBandAttempts,
+    ...deepAttempts,
+  ]);
+}
+
 function getCanvasContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) throw new Error("Canvas 2D context is not available.");
@@ -675,6 +882,59 @@ function applyLuminanceToImage(image: ImageData, luminance: Uint8ClampedArray): 
   }
 }
 
+function calculateLuminanceSignal(luminance: Uint8ClampedArray): DeliveryVinOcrCanvasSignal {
+  if (!luminance.length) return { darkRatio: 0, lightRatio: 0, contrast: 0 };
+  let dark = 0;
+  let light = 0;
+  let min = 255;
+  let max = 0;
+  for (const value of luminance) {
+    if (value < 64) dark += 1;
+    if (value > 192) light += 1;
+    if (value < min) min = value;
+    if (value > max) max = value;
+  }
+  return {
+    darkRatio: dark / luminance.length,
+    lightRatio: light / luminance.length,
+    contrast: max - min,
+  };
+}
+
+function shouldCheckOcrCanvasSignal(variant: DeliveryVinOcrCanvasVariant): boolean {
+  return variant === "binary"
+    || variant === "binary-inverted"
+    || variant === "adaptive"
+    || variant === "adaptive-inverted"
+    || variant === "cv-adaptive"
+    || variant === "cv-morph";
+}
+
+function getOcrCanvasSignal(canvas: HTMLCanvasElement): DeliveryVinOcrCanvasSignal {
+  const cached = ocrCanvasSignals.get(canvas);
+  if (cached) return cached;
+  const context = getCanvasContext(canvas);
+  const image = context.getImageData(0, 0, canvas.width, canvas.height);
+  const data = image.data;
+  const luminance = new Uint8ClampedArray(data.length / 4);
+  for (let index = 0; index < data.length; index += 4) {
+    luminance[index / 4] = Math.round((data[index] * 0.299) + (data[index + 1] * 0.587) + (data[index + 2] * 0.114));
+  }
+  const signal = calculateLuminanceSignal(luminance);
+  ocrCanvasSignals.set(canvas, signal);
+  return signal;
+}
+
+function getOcrCanvasSkipReason(canvas: HTMLCanvasElement, variant: DeliveryVinOcrCanvasVariant): string {
+  if (!shouldCheckOcrCanvasSignal(variant)) return "";
+  if (canvas.width < 32 || canvas.height < 32) return "skipped-low-signal: canvas too small";
+  const signal = getOcrCanvasSignal(canvas);
+  if (signal.contrast < 8) return "skipped-low-signal: low contrast";
+  if (signal.darkRatio < 0.0015 && signal.lightRatio > 0.94) return "skipped-low-signal: too sparse";
+  if (signal.darkRatio > 0.985 || signal.lightRatio > 0.995) return "skipped-low-signal: too dense";
+  return "";
+}
+
 async function resolveOpenCvModule(candidate: any): Promise<any> {
   const resolved = await candidate;
   let cv = resolved?.default || resolved?.["module.exports"] || resolved?.cv || resolved;
@@ -766,6 +1026,116 @@ function createOpenCvCanvasFromRegion(
   context.imageSmoothingQuality = "high";
   context.drawImage(canvas, 0, 0, scaled.width, scaled.height);
   return scaled;
+}
+
+function detectVisionVinRegions(
+  source: Exclude<DeliveryVinOcrSource, Blob | string>,
+): DeliveryVinOcrRegion[] {
+  const sourceCanvas = createSourceCanvas(source);
+  const { width, height } = readSourceSize(sourceCanvas);
+  if (width < 160 || height < 120) return [];
+  const context = getCanvasContext(sourceCanvas);
+  const image = context.getImageData(0, 0, width, height);
+  const data = image.data;
+  const luminance = new Uint8ClampedArray(width * height);
+  for (let index = 0; index < data.length; index += 4) {
+    luminance[index / 4] = Math.round((data[index] * 0.299) + (data[index + 1] * 0.587) + (data[index + 2] * 0.114));
+  }
+
+  const histogram = new Uint32Array(256);
+  for (const value of luminance) histogram[value] += 1;
+  const threshold = Math.max(145, Math.min(235, findHistogramPercentile(histogram, luminance.length, 0.86)));
+  const xStart = Math.round(width * 0.03);
+  const xEnd = Math.round(width * 0.97);
+  const rowCounts = new Uint32Array(height);
+  for (let y = 0; y < height; y += 1) {
+    let count = 0;
+    const offset = y * width;
+    for (let x = xStart; x < xEnd; x += 1) {
+      if (luminance[offset + x] >= threshold) count += 1;
+    }
+    rowCounts[y] = count;
+  }
+
+  const minRowBright = Math.max(24, Math.round((xEnd - xStart) * 0.16));
+  const runs: Array<{ start: number; end: number; peak: number }> = [];
+  let runStart = -1;
+  let runPeak = 0;
+  for (let y = 0; y < height; y += 1) {
+    const nearby = (
+      rowCounts[Math.max(0, y - 2)]
+      + rowCounts[Math.max(0, y - 1)]
+      + rowCounts[y]
+      + rowCounts[Math.min(height - 1, y + 1)]
+      + rowCounts[Math.min(height - 1, y + 2)]
+    ) / 5;
+    if (nearby >= minRowBright) {
+      if (runStart < 0) runStart = y;
+      runPeak = Math.max(runPeak, nearby);
+    } else if (runStart >= 0) {
+      runs.push({ start: runStart, end: y - 1, peak: runPeak });
+      runStart = -1;
+      runPeak = 0;
+    }
+  }
+  if (runStart >= 0) runs.push({ start: runStart, end: height - 1, peak: runPeak });
+
+  const candidates: Array<{ region: DeliveryVinOcrRegion; score: number }> = [];
+  for (const run of runs) {
+    const runHeight = run.end - run.start + 1;
+    const centerY = (run.start + (runHeight / 2)) / height;
+    if (runHeight < Math.max(16, height * 0.018) || runHeight > height * 0.26) continue;
+    if (centerY < 0.06 || centerY > 0.72) continue;
+
+    const columnCounts = new Uint32Array(width);
+    for (let y = run.start; y <= run.end; y += 1) {
+      const offset = y * width;
+      for (let x = xStart; x < xEnd; x += 1) {
+        if (luminance[offset + x] >= threshold) columnCounts[x] += 1;
+      }
+    }
+    const minColumnBright = Math.max(2, Math.round(runHeight * 0.12));
+    let left = -1;
+    let right = -1;
+    for (let x = xStart; x < xEnd; x += 1) {
+      if (columnCounts[x] >= minColumnBright) {
+        if (left < 0) left = x;
+        right = x;
+      }
+    }
+    if (left < 0 || right <= left) continue;
+    const labelWidth = right - left + 1;
+    const aspect = labelWidth / Math.max(1, runHeight);
+    const widthRatio = labelWidth / width;
+    if (widthRatio < 0.28 || aspect < 3.0 || aspect > 24) continue;
+
+    const marginX = Math.round(labelWidth * 0.035);
+    const marginY = Math.round(runHeight * 0.36);
+    const region = clampRegionToSource({
+      x: left - marginX,
+      y: run.start - marginY,
+      width: labelWidth + (marginX * 2),
+      height: runHeight + (marginY * 2),
+      role: "cv-label",
+      regionSource: "vision",
+    }, width, height);
+    if (!region) continue;
+
+    const yScore = 1 / (1 + Math.abs(centerY - 0.32) * 4);
+    candidates.push({
+      region,
+      score: (widthRatio * 4) + (run.peak / Math.max(1, xEnd - xStart)) + yScore,
+    });
+  }
+
+  candidates.sort((left, right) => right.score - left.score);
+  const regions: DeliveryVinOcrRegion[] = [];
+  for (const candidate of candidates.slice(0, 2)) {
+    const textRegion = createOpenCvTextRegion(candidate.region, width);
+    if (!regions.some((region) => regionsEqual(region, textRegion))) regions.push(textRegion);
+    if (!regions.some((region) => regionsEqual(region, candidate.region))) regions.push(candidate.region);
+  }
+  return regions;
 }
 
 async function detectOpenCvVinRegions(
@@ -995,6 +1365,7 @@ function createOcrCanvas(
   }
 
   applyLuminanceToImage(image, output);
+  ocrCanvasSignals.set(canvas, calculateLuminanceSignal(output));
   context.putImageData(image, 0, 0);
   return canvas;
 }
@@ -1060,7 +1431,7 @@ function createRegionOverlayCanvas(
   regions.forEach((region, index) => {
     const isMapped = isMappedFrameRegion(region);
     const isExpanded = region.regionSource === "mapped-frame-expanded";
-    const isTextCrop = region.role === "vin-text";
+    const isTextCrop = region.role === "vin-text" || region.role === "vin-value";
     const isFallbackOnly = overlayRole === "search";
     context.save?.();
     context.setLineDash?.(isExpanded ? [baseLineWidth * 3, baseLineWidth * 2] : []);
@@ -1113,6 +1484,11 @@ async function canvasToPngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   throw new Error("Canvas PNG export is not available.");
 }
 
+function getDeliveryVinOcrDebugImages(options: DeliveryVinOcrOptions): DeliveryVinOcrDebugImages {
+  if (!options.debug) return "none";
+  return options.debugImages || "full";
+}
+
 async function emitDebugCanvas(
   options: DeliveryVinOcrOptions,
   details: Omit<DeliveryVinOcrDebugArtifact, "blob" | "width" | "height" | "mimeType">,
@@ -1142,9 +1518,11 @@ function createDebugCandidates(rawText: string): DeliveryVinOcrDebugCandidate[] 
 
 function createDeliveryVinRegionArtifactName(region: DeliveryVinOcrRegion, regionIndex: number): string {
   if (region.regionSource === "mapped-frame") {
+    if (region.role === "vin-value") return "mapped-frame-value.png";
     return region.role === "vin-text" ? "mapped-frame-text.png" : "mapped-frame-full.png";
   }
   if (region.regionSource === "mapped-frame-expanded") {
+    if (region.role === "vin-value") return "mapped-frame-expanded-value.png";
     return region.role === "vin-text" ? "mapped-frame-expanded-text.png" : "mapped-frame-expanded-full.png";
   }
   return `region-${String(regionIndex + 1).padStart(2, "0")}.png`;
@@ -1230,6 +1608,10 @@ async function getTesseractWorker(): Promise<any> {
   return workerPromise;
 }
 
+export async function preloadDeliveryVinOcrWorker(): Promise<void> {
+  await getTesseractWorker();
+}
+
 export async function terminateDeliveryVinOcrWorker(): Promise<void> {
   const worker = await workerPromise?.catch(() => null);
   workerPromise = null;
@@ -1251,9 +1633,17 @@ export async function recognizeDeliveryVinFromImageSource(
     }
   }
 
-  const { width, height } = readSourceSize(resolvedSource);
+  const concreteSource = resolvedSource as Exclude<DeliveryVinOcrSource, Blob | string>;
+  const sourceDisplaySize = options.displaySize || readSourceDisplaySize(concreteSource);
+  const stableSource = concreteSource instanceof HTMLVideoElement
+    ? createSourceCanvas(concreteSource)
+    : concreteSource;
+  const { width, height } = readSourceSize(stableSource);
   const mode: DeliveryVinOcrMode = options.mode || "frame-then-search";
   const regions = [...createDeliveryVinOcrRegions(width, height, { ...options, mode })];
+  for (const region of detectVisionVinRegions(stableSource)) {
+    if (!regions.some((candidate) => regionsEqual(candidate, region))) regions.push(region);
+  }
   if (!regions.length) throw new Error("VIN OCR source has no readable dimensions.");
   const mappedFrameRegion = regions.find((region) =>
     region.regionSource === "mapped-frame" && region.role === "full-band",
@@ -1261,15 +1651,6 @@ export async function recognizeDeliveryVinFromImageSource(
 
   const worker = await getTesseractWorker();
   const preprocessor: DeliveryVinOcrPreprocessor = options.preprocessor || "canvas";
-  const quickCanvasVariants: DeliveryVinOcrCanvasVariant[] = ["raw-gray"];
-  const fallbackCanvasVariants: DeliveryVinOcrCanvasVariant[] = [
-    "sharpen",
-    "adaptive-inverted",
-    "gray",
-    "binary-inverted",
-    "adaptive",
-    "binary",
-  ];
   const openCvVariants: DeliveryVinOcrCanvasVariant[] = ["cv-contrast", "cv-adaptive", "cv-morph"];
   const rawTexts: string[] = [];
   const debugAttempts: DeliveryVinOcrDebugAttempt[] = [];
@@ -1279,28 +1660,30 @@ export async function recognizeDeliveryVinFromImageSource(
   let openCv: any | null | undefined;
   let openCvAvailable = false;
   let attempts = 0;
+  const maxAttempts = Math.max(1, Math.floor(options.maxAttempts || Number.POSITIVE_INFINITY));
   let selectedVin = "";
   let selectedRawText = "";
   let selectedConfidence = 0;
   let failureReason = "";
   activeProgress = options.onProgress || null;
+  const debugImages = getDeliveryVinOcrDebugImages(options);
   options.onProgress?.({ status: "Preparing VIN image", progress: 0 });
 
   try {
-    if (options.debug) {
+    if (debugImages !== "none") {
       const mappedOverlayRegions = regions.filter(isMappedFrameRegion);
       const searchOverlayRegions = regions.filter((region) => !isMappedFrameRegion(region));
       await emitDebugCanvas(options, {
         name: "source-frame.png",
         kind: "source",
-      }, createSourceCanvas(resolvedSource));
+      }, createSourceCanvas(stableSource));
       if (mappedOverlayRegions.length) {
         await emitDebugCanvas(options, {
           name: "ocr-target-overlay.png",
           kind: "source",
           overlayRole: "target",
           regionSources: uniqueDeliveryVinRegionSources(mappedOverlayRegions),
-        }, createRegionOverlayCanvas(resolvedSource, mappedOverlayRegions, "target"));
+        }, createRegionOverlayCanvas(stableSource, mappedOverlayRegions, "target"));
       }
       if (searchOverlayRegions.length) {
         await emitDebugCanvas(options, {
@@ -1308,14 +1691,14 @@ export async function recognizeDeliveryVinFromImageSource(
           kind: "source",
           overlayRole: "search",
           regionSources: uniqueDeliveryVinRegionSources(searchOverlayRegions),
-        }, createRegionOverlayCanvas(resolvedSource, searchOverlayRegions, "search"));
+        }, createRegionOverlayCanvas(stableSource, searchOverlayRegions, "search"));
       }
       await emitDebugCanvas(options, {
         name: "ocr-region-overlay.png",
         kind: "source",
         overlayRole: "combined",
         regionSources: uniqueDeliveryVinRegionSources(regions),
-      }, createRegionOverlayCanvas(resolvedSource, regions, "combined"));
+      }, createRegionOverlayCanvas(stableSource, regions, "combined"));
     }
 
     const ensureOpenCv = async (): Promise<any | null> => {
@@ -1337,42 +1720,45 @@ export async function recognizeDeliveryVinFromImageSource(
     };
 
     const emitRegionArtifact = async (region: DeliveryVinOcrRegion, regionIndex: number): Promise<void> => {
-      if (!options.debug || emittedRegionIndexes.has(regionIndex)) return;
+      if (debugImages === "none" || emittedRegionIndexes.has(regionIndex)) return;
       emittedRegionIndexes.add(regionIndex);
       await emitDebugCanvas(options, {
         name: createDeliveryVinRegionArtifactName(region, regionIndex),
         kind: "region",
         regionIndex,
         region,
-      }, createRegionCanvas(resolvedSource, region));
+      }, createRegionCanvas(stableSource, region));
     };
 
-    const runOcrPass = async (
-      passRegions: DeliveryVinOcrRegion[],
-      passVariants: DeliveryVinOcrCanvasVariant[],
-    ): Promise<void> => {
-      for (const region of passRegions) {
+    const getRegionIndex = (region: DeliveryVinOcrRegion): number => {
+      let regionIndex = regions.findIndex((candidate) => regionsEqual(candidate, region));
+      if (regionIndex < 0) {
+        regions.push(region);
+        regionIndex = regions.length - 1;
+      }
+      return regionIndex;
+    };
+
+    const runOcrAttempts = async (plan: DeliveryVinOcrAttemptPlanEntry[]): Promise<void> => {
+      for (const entry of plan) {
         if (selectedVin) return;
-        let regionIndex = regions.findIndex((candidate) => regionsEqual(candidate, region));
-        if (regionIndex < 0) {
-          regions.push(region);
-          regionIndex = regions.length - 1;
-        }
+        if (attempts >= maxAttempts) return;
+        const { region, variant } = entry;
+        const regionIndex = getRegionIndex(region);
         await emitRegionArtifact(region, regionIndex);
 
-        for (const variant of passVariants) {
-          if (selectedVin) return;
-          let canvas: HTMLCanvasElement | null = null;
-          if (variant.startsWith("cv-")) {
-            const cv = await ensureOpenCv();
-            if (!cv) continue;
-            canvas = await createOpenCvOcrCanvas(cv, resolvedSource, region, variant);
-            if (!canvas) continue;
-          } else {
-            canvas = createOcrCanvas(resolvedSource, region, variant);
-          }
+        let canvas: HTMLCanvasElement | null = null;
+        if (variant.startsWith("cv-")) {
+          const cv = await ensureOpenCv();
+          if (!cv) continue;
+          canvas = await createOpenCvOcrCanvas(cv, stableSource, region, variant);
+          if (!canvas) continue;
+        } else {
+          canvas = createOcrCanvas(stableSource, region, variant);
+        }
 
-          attempts += 1;
+        attempts += 1;
+        if (debugImages === "full") {
           await emitDebugCanvas(options, {
             name: `attempt-${String(attempts).padStart(2, "0")}-${variant}.png`,
             kind: "processed",
@@ -1381,46 +1767,63 @@ export async function recognizeDeliveryVinFromImageSource(
             variant,
             region,
           }, canvas);
-          options.onProgress?.({ status: "Reading windshield VIN", progress: Math.min(0.92, attempts / 96) });
-          try {
-            const result = await worker.recognize(canvas, {}, { text: true });
-            const rawText = String(result?.data?.text || "");
-            const confidence = Number(result?.data?.confidence) || 0;
-            const candidates = createDebugCandidates(rawText);
-            const vin = candidates.find((candidate) => candidate.validCheckDigit)?.vin || "";
-            rawTexts.push(rawText);
-            debugAttempts.push({
-              attempt: attempts,
-              regionIndex,
-              region,
-              variant,
-              rawText,
-              confidence,
-              candidates,
-              selectedVin: vin,
-            });
-            if (vin) {
-              selectedVin = vin;
-              selectedRawText = rawText;
-              selectedConfidence = confidence;
-              return;
-            }
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            failureReason = message || "OCR engine failed.";
-            debugAttempts.push({
-              attempt: attempts,
-              regionIndex,
-              region,
-              variant,
-              rawText: "",
-              confidence: 0,
-              candidates: [],
-              selectedVin: "",
-              error: failureReason,
-            });
+        }
+
+        const skipReason = getOcrCanvasSkipReason(canvas, variant);
+        if (skipReason) {
+          debugAttempts.push({
+            attempt: attempts,
+            regionIndex,
+            region,
+            variant,
+            rawText: "",
+            confidence: 0,
+            candidates: [],
+            selectedVin: "",
+            error: skipReason,
+          });
+          continue;
+        }
+
+        options.onProgress?.({ status: "Reading windshield VIN", progress: Math.min(0.92, attempts / 48) });
+        try {
+          const result = await worker.recognize(canvas, {}, { text: true });
+          const rawText = String(result?.data?.text || "");
+          const confidence = Number(result?.data?.confidence) || 0;
+          const candidates = createDebugCandidates(rawText);
+          const vin = candidates.find((candidate) => candidate.validCheckDigit)?.vin || "";
+          rawTexts.push(rawText);
+          debugAttempts.push({
+            attempt: attempts,
+            regionIndex,
+            region,
+            variant,
+            rawText,
+            confidence,
+            candidates,
+            selectedVin: vin,
+          });
+          if (vin) {
+            selectedVin = vin;
+            selectedRawText = rawText;
+            selectedConfidence = confidence;
             return;
           }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          failureReason = message || "OCR engine failed.";
+          debugAttempts.push({
+            attempt: attempts,
+            regionIndex,
+            region,
+            variant,
+            rawText: "",
+            confidence: 0,
+            candidates: [],
+            selectedVin: "",
+            error: failureReason,
+          });
+          return;
         }
       }
     };
@@ -1428,34 +1831,26 @@ export async function recognizeDeliveryVinFromImageSource(
     const addOpenCvDetectedRegions = async (): Promise<DeliveryVinOcrRegion[]> => {
       const cv = await ensureOpenCv();
       if (!cv) return [];
-      return appendRegions(await detectOpenCvVinRegions(cv, resolvedSource, options));
+      return appendRegions(await detectOpenCvVinRegions(cv, stableSource, options));
     };
 
     if (preprocessor === "opencv") {
       const cvRegions = await addOpenCvDetectedRegions();
       const openCvPassRegions = cvRegions.length ? cvRegions : regions.slice(0, 4);
-      await runOcrPass(openCvPassRegions, openCvVariants);
-      if (!selectedVin) await runOcrPass(regions, [...quickCanvasVariants, ...fallbackCanvasVariants]);
+      await runOcrAttempts(openCvPassRegions.flatMap((region) =>
+        openCvVariants.map((variant) => ({ region, variant, pass: "opencv" as const })),
+      ));
+      if (!selectedVin) await runOcrAttempts(createDeliveryVinOcrAttemptPlan(regions, width, height, "canvas"));
     } else {
-      const mappedRegions = regions.filter((region) => region.regionSource?.startsWith("mapped-frame"));
-      const fallbackRegions = mappedRegions.length
-        ? regions.filter((region) => !region.regionSource?.startsWith("mapped-frame"))
-        : regions;
-      if (mappedRegions.length) {
-        await runOcrPass(mappedRegions, [
-          "raw-gray",
-          "sharpen",
-          "gray",
-          "adaptive-inverted",
-          "binary-inverted",
-        ]);
-      }
-      if (!selectedVin) await runOcrPass(fallbackRegions, quickCanvasVariants);
+      await runOcrAttempts(createDeliveryVinOcrAttemptPlan(regions, width, height, "canvas"));
       if (!selectedVin && preprocessor === "auto") {
         const cvRegions = await addOpenCvDetectedRegions();
-        if (cvRegions.length) await runOcrPass(cvRegions, openCvVariants);
+        if (cvRegions.length) {
+          await runOcrAttempts(cvRegions.flatMap((region) =>
+            openCvVariants.map((variant) => ({ region, variant, pass: "opencv" as const })),
+          ));
+        }
       }
-      if (!selectedVin) await runOcrPass(fallbackRegions, fallbackCanvasVariants);
     }
 
     if (selectedVin) {
@@ -1474,7 +1869,7 @@ export async function recognizeDeliveryVinFromImageSource(
     endedAt: new Date().toISOString(),
     mode,
     sourceSize: { width, height },
-    displaySize: options.displaySize || readSourceDisplaySize(resolvedSource),
+    displaySize: sourceDisplaySize,
     frameHint: options.frameHint,
     mappedFrameRegion,
     regions,
