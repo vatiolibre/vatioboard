@@ -31,6 +31,7 @@ const VALID_PERMISSIONS = new Set<VatioAppPermission>([
   "gps.highAccuracy",
   "storage.app",
   "storage.media",
+  "media.camera",
   "audio.playback",
   "audio.background",
   "cloud.sync",

@@ -416,6 +416,54 @@ function createAuthGateway(
         return null;
       }
     },
+    async getTeslaConnectionStatus(options?: Record<string, unknown>) {
+      if (!canUseAuth()) return null;
+      try {
+        const auth = await import("../shared/backend-auth.js");
+        return typeof auth.getBackendTeslaConnectionStatus === "function"
+          ? auth.getBackendTeslaConnectionStatus(options)
+          : null;
+      } catch (error) {
+        logger?.warn("Backend Tesla connection service is unavailable.", error);
+        return null;
+      }
+    },
+    async listTeslaOrders(options?: Record<string, unknown>) {
+      if (!canUseAuth()) return null;
+      try {
+        const auth = await import("../shared/backend-auth.js");
+        return typeof auth.listBackendTeslaOrders === "function"
+          ? auth.listBackendTeslaOrders(options)
+          : null;
+      } catch (error) {
+        logger?.warn("Backend Tesla orders service is unavailable.", error);
+        return null;
+      }
+    },
+    async listTeslaVehicles(options?: Record<string, unknown>) {
+      if (!canUseAuth()) return null;
+      try {
+        const auth = await import("../shared/backend-auth.js");
+        return typeof auth.listBackendTeslaVehicles === "function"
+          ? auth.listBackendTeslaVehicles(options)
+          : null;
+      } catch (error) {
+        logger?.warn("Backend Tesla vehicles service is unavailable.", error);
+        return null;
+      }
+    },
+    async getTeslaVehicleData(options?: Record<string, unknown>) {
+      if (!canUseAuth()) return null;
+      try {
+        const auth = await import("../shared/backend-auth.js");
+        return typeof auth.getBackendTeslaVehicleData === "function"
+          ? auth.getBackendTeslaVehicleData(options)
+          : null;
+      } catch (error) {
+        logger?.warn("Backend Tesla vehicle data service is unavailable.", error);
+        return null;
+      }
+    },
   };
 }
 

@@ -139,6 +139,17 @@ export const IconBoard = `
   </svg>
 `;
 
+export const IconDeliveryChecklist = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M5.25 8.25h9.1l2.4 2.4h1.5c.62 0 1.16.4 1.35.98l.7 2.12v2.5h-2.1a2.15 2.15 0 0 1-4.3 0H9.85a2.15 2.15 0 0 1-4.3 0H3.7v-4.8l1.55-3.2Z" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M6.25 8.25l-1.05 3h5.55v-3H6.25ZM12.1 8.25v3h4.65" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/>
+    <circle cx="7.7" cy="16.25" r="1.55" stroke="currentColor" stroke-width="1.45"/>
+    <circle cx="16.05" cy="16.25" r="1.55" stroke="currentColor" stroke-width="1.45"/>
+    <path d="M15.1 5.2h5.15M15.1 3.05h3.6M15.1 7.35h3.6" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/>
+    <path d="m4.05 5.8 1.35 1.35 2.45-2.8" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`;
+
 export const IconPen = `
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path d="M16.05 4.8 19.2 7.95c.47.47.47 1.23 0 1.7l-4.2 4.2-5.05-5.05 4.2-4.2c.47-.47 1.23-.47 1.7 0Z" fill="currentColor" opacity="0.14"/>

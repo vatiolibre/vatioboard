@@ -512,6 +512,7 @@ const baseTranslations: TranslationCatalog = {
     appManagerSearch: 'Search apps',
     appManagerSurface: 'Surface',
     appManagerAllSurfaces: 'All surfaces',
+    deliveryChecklist: 'Delivery checklist',
     cloudLibrary: 'Cloud library',
     cloudLibraryLead:
       'Browse prior speed replays, accel runs, editable board documents, and media assets without restoring your whole cloud history into local storage first.',
@@ -1412,6 +1413,7 @@ const baseTranslations: TranslationCatalog = {
     appManagerSearch: 'Buscar apps',
     appManagerSurface: 'Superficie',
     appManagerAllSurfaces: 'Todas',
+    deliveryChecklist: 'Lista de entrega',
     cloudLibrary: 'Biblioteca en la nube',
     cloudLibraryLead:
       'Explora replays de velocidad, corridas de aceleración, documentos editables de la pizarra y archivos multimedia sin restaurar primero todo tu historial en la nube al almacenamiento local.',

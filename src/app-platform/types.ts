@@ -40,6 +40,7 @@ export type VatioAppPermission =
   | "gps.highAccuracy"
   | "storage.app"
   | "storage.media"
+  | "media.camera"
   | "audio.playback"
   | "audio.background"
   | "cloud.sync"
@@ -274,6 +275,10 @@ export interface VatioAppLogger {
 export interface VatioAuthService {
   getSessionState(options?: Record<string, unknown>): Promise<unknown>;
   getFeatureAccessState(options?: Record<string, unknown>): Promise<unknown>;
+  getTeslaConnectionStatus?(options?: Record<string, unknown>): Promise<unknown>;
+  listTeslaOrders?(options?: Record<string, unknown>): Promise<unknown>;
+  listTeslaVehicles?(options?: Record<string, unknown>): Promise<unknown>;
+  getTeslaVehicleData?(options?: Record<string, unknown>): Promise<unknown>;
 }
 
 export interface VatioCloudSyncService {

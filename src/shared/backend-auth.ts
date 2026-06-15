@@ -50,6 +50,10 @@ export const BACKEND_AUTH_SSO_UI_DEFAULTS = Object.freeze({
 
 // Use an allow_guest endpoint first so guest sessions do not trigger a visible 403.
 const SESSION_PROBE_METHOD = "vatiolibre.services.tesla_connection_status";
+export const TESLA_CONNECTION_STATUS_METHOD = SESSION_PROBE_METHOD;
+export const TESLA_ORDERS_ENRICHED_METHOD = "vatiolibre.services.tesla_orders_enriched";
+export const TESLA_VEHICLES_METHOD = "vatiolibre.services.tesla_vehicles";
+export const TESLA_VEHICLE_DATA_METHOD = "vatiolibre.services.tesla_vehicle_data";
 const LOGGED_USER_METHOD = "frappe.auth.get_logged_user";
 const FEATURE_ACCESS_METHOD = "vatiolibre.vatiolibre.feature_access.get_my_feature_access";
 const UPLOAD_MEDIA_ASSET_METHOD = "vatiolibre.vatiolibre.media_assets.upload_my_media_asset";
@@ -1734,6 +1738,148 @@ export async function getBackendSessionState({
       signal,
     }
   );
+}
+
+function normalizeTeslaReadResult({
+  response,
+  data,
+}: {
+  response: Response;
+  data: LegacyBackendOptions;
+}) {
+  const message = getMessage(data) || {};
+  const isGuest = response.status === 401
+    || response.status === 403
+    || Boolean(message?.is_guest);
+  const localOnly = Boolean(message?.local_only);
+  const reason = getText(message?.reason)
+    || (localOnly ? LOCAL_ONLY_REASON : "")
+    || (isGuest ? "guest" : "");
+
+  return {
+    ok: response.ok && !isGuest && message?.ok !== false,
+    status: response.status,
+    data,
+    message,
+    isGuest,
+    authenticated: response.ok && !isGuest,
+    connected: message?.connected === false ? false : (response.ok && !isGuest),
+    needsReconnect: message?.needs_reconnect === true,
+    cached: message?.cached === true,
+    fetchedAt: getText(message?.fetched_at),
+    localOnly,
+    reason,
+  };
+}
+
+export async function getBackendTeslaConnectionStatus({
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+}: LegacyBackendOptions = {}) {
+  if (!isBackendRequestEnabled(config)) {
+    return {
+      ...createLocalOnlyBackendSession(TESLA_CONNECTION_STATUS_METHOD, config),
+      connected: false,
+      needsReconnect: false,
+      cached: false,
+      fetchedAt: "",
+    };
+  }
+
+  const { response, data } = await fetchBackendJson(TESLA_CONNECTION_STATUS_METHOD, {
+    fetchImpl,
+    signal,
+    config,
+  });
+  const result = normalizeTeslaReadResult({ response, data });
+  const message = result.message || {};
+
+  return {
+    ...result,
+    ok: response.ok || result.isGuest,
+    connected: message?.connected === true,
+  };
+}
+
+export async function listBackendTeslaOrders({
+  forceRefresh = false,
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+}: LegacyBackendOptions = {}) {
+  const { response, data } = await fetchBackendMethodJson(TESLA_ORDERS_ENRICHED_METHOD, {
+    args: {
+      force_refresh: forceRefresh ? 1 : 0,
+    },
+    fetchImpl,
+    signal,
+    config,
+  });
+  const result = normalizeTeslaReadResult({ response, data });
+  const message = result.message || {};
+
+  return {
+    ...result,
+    orders: Array.isArray(message?.orders) ? message.orders : [],
+    connected: message?.connected === false ? false : result.connected,
+    enrichedCached: message?._enriched_cached === true,
+  };
+}
+
+export async function listBackendTeslaVehicles({
+  forceRefresh = false,
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+}: LegacyBackendOptions = {}) {
+  const { response, data } = await fetchBackendMethodJson(TESLA_VEHICLES_METHOD, {
+    args: {
+      force_refresh: forceRefresh ? 1 : 0,
+    },
+    fetchImpl,
+    signal,
+    config,
+  });
+  const result = normalizeTeslaReadResult({ response, data });
+  const message = result.message || {};
+
+  return {
+    ...result,
+    vehicles: Array.isArray(message?.vehicles) ? message.vehicles : [],
+    connected: message?.connected === false ? false : result.connected,
+  };
+}
+
+export async function getBackendTeslaVehicleData({
+  vehicleId,
+  skipWake = true,
+  fetchImpl,
+  signal,
+  config = getBackendAuthConfig(),
+}: LegacyBackendOptions = {}) {
+  const normalizedVehicleId = getText(vehicleId);
+  const { response, data } = await fetchBackendMethodJson(TESLA_VEHICLE_DATA_METHOD, {
+    args: {
+      vehicle_id: normalizedVehicleId,
+      skip_wake: skipWake === false ? 0 : 1,
+    },
+    fetchImpl,
+    signal,
+    config,
+  });
+  const result = normalizeTeslaReadResult({ response, data });
+  const message = result.message || {};
+
+  return {
+    ...result,
+    ok: response.ok && !result.isGuest && message?.ok !== false,
+    response: message?.response || null,
+    skippedWake: message?.skipped_wake === true,
+    wakingUp: message?.waking_up === true,
+    vehicleState: getText(message?.vehicle_state),
+    error: getText(message?.error),
+  };
 }
 
 export async function fetchBackendLoggedUser({

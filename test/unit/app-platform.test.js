@@ -150,6 +150,20 @@ describe("VatioBoard OS app platform", () => {
     expect(validation.errors.join("\n")).toContain('service "telepathy" is not supported');
   });
 
+  it("accepts camera media permissions for scanner-style apps", () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    const manifest = makeManifest({
+      id: "test.camera",
+      permissions: ["storage.app", "i18n.read", "media.camera"],
+    });
+    const validation = registry.validateAppManifest(manifest);
+    const permissions = createAppPermissionRuntime(manifest);
+
+    expect(validation.ok).toBe(true);
+    expect(validation.errors).toEqual([]);
+    expect(permissions.require("media.camera")).toBe(true);
+  });
+
   it("imports representative app-owned manifests into the built-in registry", () => {
     expect(BUILTIN_APP_MANIFESTS).toEqual(expect.arrayContaining([
       speedAppManifest,
