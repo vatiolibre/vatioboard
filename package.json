@@ -46,7 +46,6 @@
   "dependencies": {
     "@jaames/iro": "^5.5.2",
     "@stanko/dual-range-input": "^1.0.1",
-    "@zxing/browser": "^0.2.0",
     "butterchurn": "^2.6.7",
     "butterchurn-presets": "^2.4.7",
     "chart.js": "^4.5.1",
@@ -55,7 +54,8 @@
     "maplibre-gl": "^5.20.1",
     "mathjs": "^15.1.0",
     "onnxruntime-web": "1.22.0-dev.20250409-89f8206ba4",
-    "piper-tts-web": "1.1.2"
+    "piper-tts-web": "1.1.2",
+    "qr-scanner": "^1.4.2"
   },
   "engines": {
     "node": ">=24"

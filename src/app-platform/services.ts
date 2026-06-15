@@ -13,6 +13,7 @@ import type {
   VatioAppId,
   VatioAppLogger,
   VatioAppPermissionRuntime,
+  VatioQrScannerService,
   VatioAppServiceId,
   VatioAppServices,
   VatioAppStorage,
@@ -20,6 +21,7 @@ import type {
   VatioSharedSettingsService,
   VatioSharedSettingsSnapshot,
 } from "./types";
+import { createBrowserQrScannerService } from "./qr-scanner-service.js";
 import { createAppSettingsService } from "./settings.js";
 import { sharedSettings } from "./shared-settings.js";
 
@@ -382,6 +384,34 @@ function createTtsGateway(
   };
 }
 
+function createQrScannerGateway(
+  service: VatioQrScannerService,
+  permissions: VatioAppPermissionRuntime,
+  logger?: VatioAppLogger | null,
+): VatioQrScannerService {
+  const canUseCamera = () => canUseService(permissions, logger, "qrScanner", "media.camera");
+
+  return {
+    async hasCamera() {
+      if (!canUseCamera()) return false;
+      return service.hasCamera();
+    },
+    async listCameras(requestLabels = false) {
+      if (!canUseCamera()) return [];
+      return service.listCameras(requestLabels);
+    },
+    async createCameraSession(options) {
+      if (!canUseCamera()) {
+        throw new Error("QR scanner camera permission denied.");
+      }
+      return service.createCameraSession(options);
+    },
+    async scanImage(source, options) {
+      return service.scanImage(source, options);
+    },
+  };
+}
+
 function createAuthGateway(
   permissions: VatioAppPermissionRuntime,
   logger?: VatioAppLogger | null,
@@ -556,6 +586,9 @@ export function createAppServiceGateway({
   const audioRuntime = getContextService<AudioRuntime>(baseContext, "audioRuntime");
   const driveRecordingService = getContextService<DriveRecordingService>(baseContext, "driveRecordingService");
   const drivingAlertService = getContextService<DrivingAlertService>(baseContext, "drivingAlertService");
+  const qrScannerService =
+    getContextService<VatioQrScannerService>(baseContext, "qrScannerService")
+    || createBrowserQrScannerService();
   const ttsService = getContextService<TtsService>(baseContext, "ttsService");
   const declaredServiceSet = new Set(declaredServices);
   const hasService = (service: VatioAppServiceId) => declaredServiceSet.has(service);
@@ -565,6 +598,7 @@ export function createAppServiceGateway({
     audio: hasService("audio") ? createAudioGateway(audioRuntime, permissions, logger) : null,
     driveRecording: hasService("driveRecording") ? createDriveRecordingGateway(driveRecordingService, permissions) : null,
     drivingAlerts: hasService("drivingAlerts") ? createDrivingAlertsGateway(drivingAlertService, permissions, logger) : null,
+    qrScanner: hasService("qrScanner") ? createQrScannerGateway(qrScannerService, permissions, logger) : null,
     tts: hasService("tts") ? createTtsGateway(ttsService, permissions, logger, appId) : null,
     auth: hasService("auth") ? createAuthGateway(permissions, logger) : null,
     cloudSync: hasService("cloudSync") ? createCloudSyncGateway(permissions, logger) : null,

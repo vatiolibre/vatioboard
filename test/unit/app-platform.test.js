@@ -164,6 +164,74 @@ describe("VatioBoard OS app platform", () => {
     expect(permissions.require("media.camera")).toBe(true);
   });
 
+  it("accepts the QR scanner service and warns when camera permission is missing", () => {
+    const registry = createAppRegistry({ logger: { warn: vi.fn() } });
+    const withCamera = registry.validateAppManifest(makeManifest({
+      id: "test.qr",
+      permissions: ["storage.app", "i18n.read", "media.camera"],
+      services: ["storage", "i18n", "qrScanner"],
+    }));
+    const withoutCamera = registry.validateAppManifest(makeManifest({
+      id: "test.qr.no-camera",
+      permissions: ["storage.app", "i18n.read"],
+      services: ["storage", "i18n", "qrScanner"],
+    }));
+
+    expect(withCamera.ok).toBe(true);
+    expect(withCamera.warnings).toEqual([]);
+    expect(withoutCamera.ok).toBe(true);
+    expect(withoutCamera.warnings).toContain('service "qrScanner" requires permission "media.camera".');
+  });
+
+  it("exposes the QR scanner service through a media.camera-gated runtime gateway", async () => {
+    const createCameraSession = vi.fn(async () => ({
+      start: vi.fn(),
+      stop: vi.fn(),
+      destroy: vi.fn(),
+      setCamera: vi.fn(),
+      isActive: vi.fn(() => false),
+    }));
+    const qrScannerService = {
+      hasCamera: vi.fn(async () => true),
+      listCameras: vi.fn(async () => [{ id: "environment", label: "Back camera" }]),
+      createCameraSession,
+      scanImage: vi.fn(async () => ({ data: "qr-data" })),
+    };
+    const runtime = createAppRuntime({
+      manifest: makeManifest({
+        id: "test.qr.runtime",
+        permissions: ["media.camera"],
+        services: ["qrScanner"],
+      }),
+      baseContext: { qrScannerService },
+    });
+    const deniedRuntime = createAppRuntime({
+      manifest: makeManifest({
+        id: "test.qr.denied",
+        permissions: [],
+        services: ["qrScanner"],
+      }),
+      baseContext: { qrScannerService },
+    });
+
+    expect(await runtime.services.qrScanner?.hasCamera()).toBe(true);
+    expect(await runtime.services.qrScanner?.listCameras()).toEqual([{ id: "environment", label: "Back camera" }]);
+    await expect(runtime.services.qrScanner?.scanImage(new Blob(["qr"]))).resolves.toEqual({ data: "qr-data" });
+    await runtime.services.qrScanner?.createCameraSession({
+      video: document.createElement("video"),
+      onResult: vi.fn(),
+    });
+    expect(createCameraSession).toHaveBeenCalled();
+
+    expect(await deniedRuntime.services.qrScanner?.hasCamera()).toBe(false);
+    expect(await deniedRuntime.services.qrScanner?.listCameras()).toEqual([]);
+    await expect(deniedRuntime.services.qrScanner?.createCameraSession({
+      video: document.createElement("video"),
+      onResult: vi.fn(),
+    })).rejects.toThrow("permission denied");
+    await expect(deniedRuntime.services.qrScanner?.scanImage(new Blob(["qr"]))).resolves.toEqual({ data: "qr-data" });
+  });
+
   it("imports representative app-owned manifests into the built-in registry", () => {
     expect(BUILTIN_APP_MANIFESTS).toEqual(expect.arrayContaining([
       speedAppManifest,

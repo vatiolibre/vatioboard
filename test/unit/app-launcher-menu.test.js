@@ -233,10 +233,10 @@ describe("app launcher start menu", () => {
     expect(ids.slice(0, 6)).toEqual([
       "vatio.speed",
       "vatio.board",
+      "vatio.deliveryChecklist",
       "vatio.replay",
       "vatio.accel",
       "vatio.library",
-      "vatio.appManager",
     ]);
     expect(ids.indexOf("vatio.board")).toBeLessThan(ids.indexOf("vatio.calculator"));
   });
@@ -320,7 +320,7 @@ describe("app launcher start menu", () => {
     expect(getLauncherTileIds(menu).slice(0, 3)).toEqual([
       "vatio.speed",
       "vatio.board",
-      "vatio.replay",
+      "vatio.deliveryChecklist",
     ]);
   });
 
@@ -329,16 +329,16 @@ describe("app launcher start menu", () => {
     const menu = openLauncher(initSharedStartMenu);
 
     enterArrangeMode(menu);
-    dragTileAfter(menu, "vatio.board", "vatio.replay");
+    dragTileAfter(menu, "vatio.board", "vatio.deliveryChecklist");
 
     expect(getLauncherTileIds(menu).slice(0, 3)).toEqual([
       "vatio.speed",
-      "vatio.replay",
+      "vatio.deliveryChecklist",
       "vatio.board",
     ]);
     expect(getLauncherLayoutOrder().slice(0, 3)).toEqual([
       "vatio.speed",
-      "vatio.replay",
+      "vatio.deliveryChecklist",
       "vatio.board",
     ]);
 
@@ -348,7 +348,7 @@ describe("app launcher start menu", () => {
     menu.setOpen(true);
     expect(getLauncherTileIds(menu).slice(0, 3)).toEqual([
       "vatio.speed",
-      "vatio.replay",
+      "vatio.deliveryChecklist",
       "vatio.board",
     ]);
 
@@ -356,7 +356,7 @@ describe("app launcher start menu", () => {
     appControl.recordLaunch("vatio.calculator");
     expect(getLauncherTileIds(menu).slice(0, 3)).toEqual([
       "vatio.speed",
-      "vatio.replay",
+      "vatio.deliveryChecklist",
       "vatio.board",
     ]);
   });
@@ -366,10 +366,10 @@ describe("app launcher start menu", () => {
     const menu = openLauncher(initSharedStartMenu);
 
     enterArrangeMode(menu);
-    dragTileAfter(menu, "vatio.board", "vatio.replay");
+    dragTileAfter(menu, "vatio.board", "vatio.deliveryChecklist");
     expect(getLauncherTileIds(menu).slice(0, 3)).toEqual([
       "vatio.speed",
-      "vatio.replay",
+      "vatio.deliveryChecklist",
       "vatio.board",
     ]);
 
@@ -380,7 +380,7 @@ describe("app launcher start menu", () => {
     expect(getLauncherTileIds(menu).slice(0, 3)).toEqual([
       "vatio.speed",
       "vatio.board",
-      "vatio.replay",
+      "vatio.deliveryChecklist",
     ]);
   });
 
@@ -390,7 +390,7 @@ describe("app launcher start menu", () => {
     const search = menu.list.querySelector(".vb-app-launcher-search-input");
 
     enterArrangeMode(menu);
-    dragTileAfter(menu, "vatio.board", "vatio.replay");
+    dragTileAfter(menu, "vatio.board", "vatio.deliveryChecklist");
     menu.list.querySelector("[data-launcher-arrange-done]").click();
 
     openContext(menu, "vatio.board")
@@ -398,7 +398,7 @@ describe("app launcher start menu", () => {
       .click();
 
     expect(appControl.isHiddenFromStartMenu("vatio.board")).toBe(true);
-    expect(getLauncherTileIds(menu).slice(0, 2)).toEqual(["vatio.speed", "vatio.replay"]);
+    expect(getLauncherTileIds(menu).slice(0, 2)).toEqual(["vatio.speed", "vatio.deliveryChecklist"]);
 
     search.value = "board";
     search.dispatchEvent(new Event("input", { bubbles: true }));
@@ -411,7 +411,7 @@ describe("app launcher start menu", () => {
     search.dispatchEvent(new Event("input", { bubbles: true }));
     expect(getLauncherTileIds(menu).slice(0, 3)).toEqual([
       "vatio.speed",
-      "vatio.replay",
+      "vatio.deliveryChecklist",
       "vatio.board",
     ]);
   });
@@ -425,13 +425,13 @@ describe("app launcher start menu", () => {
     window.addEventListener("vatio:taskbar-favorite-drag", handler);
 
     enterArrangeMode(menu);
-    dragTileAfter(menu, "vatio.board", "vatio.replay");
+    dragTileAfter(menu, "vatio.board", "vatio.deliveryChecklist");
 
     window.removeEventListener("vatio:taskbar-favorite-drag", handler);
     expect(events).toEqual([]);
     expect(getLauncherTileIds(menu).slice(0, 3)).toEqual([
       "vatio.speed",
-      "vatio.replay",
+      "vatio.deliveryChecklist",
       "vatio.board",
     ]);
   });

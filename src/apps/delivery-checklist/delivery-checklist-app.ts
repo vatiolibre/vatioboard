@@ -59,6 +59,7 @@ export type DeliveryChecklistRouteMountContext = RouteMountContext & {
   appStorage?: VatioAppRuntime["storage"] | null;
   settingsService?: VatioAppRuntime["services"]["settings"] | null;
   authService?: VatioAppRuntime["services"]["auth"] | null;
+  qrScannerService?: VatioAppRuntime["services"]["qrScanner"] | null;
   translate?: ((key: string, fallback?: string) => string) | null;
   logger?: VatioAppRuntime["logger"] | null;
 };
@@ -960,7 +961,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
   }
 
   function stopVinScanner(): void {
-    vinScannerSession?.stop();
+    vinScannerSession?.destroy();
     vinScannerSession = null;
     dom.vinScannerSheet.hidden = true;
     dom.vinScannerStatus.textContent = "Point the camera at the windshield QR code.";
@@ -973,12 +974,6 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
   }
 
   async function openVinScanner(): Promise<void> {
-    if (runtime?.permissions && !runtime.permissions.require("media.camera")) {
-      showManualVinEntry();
-      setStatus(dom, "Camera permission is disabled for this app. Enter the windshield VIN manually.", "warn");
-      return;
-    }
-
     stopVinScanner();
     dom.vinScannerSheet.hidden = false;
     dom.vinScannerStatus.textContent = "Starting camera...";
@@ -987,6 +982,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
       let capturedResult = false;
       vinScannerSession = await startDeliveryVinQrScanner({
         video: dom.vinScannerVideo,
+        qrScannerService: routeContext.qrScannerService || runtime?.services?.qrScanner || null,
         onResult: ({ vin }) => {
           capturedResult = true;
           updateWindshieldVin(vin, "qr");

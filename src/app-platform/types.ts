@@ -65,6 +65,7 @@ export type VatioAppServiceId =
   | "audio"
   | "driveRecording"
   | "drivingAlerts"
+  | "qrScanner"
   | "auth"
   | "cloudSync"
   | "shell"
@@ -286,6 +287,80 @@ export interface VatioCloudSyncService {
   request(options?: Record<string, unknown>): unknown;
 }
 
+export interface VatioQrPoint {
+  x: number;
+  y: number;
+}
+
+export interface VatioQrScanResult {
+  data: string;
+  cornerPoints?: VatioQrPoint[];
+}
+
+export type VatioQrCameraPreference = "environment" | "user" | string;
+
+export interface VatioQrScanRegion {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  downScaledWidth?: number;
+  downScaledHeight?: number;
+}
+
+export type VatioQrImageSource =
+  | HTMLImageElement
+  | HTMLVideoElement
+  | HTMLCanvasElement
+  | OffscreenCanvas
+  | ImageBitmap
+  | SVGImageElement
+  | File
+  | Blob
+  | URL
+  | string;
+
+export interface VatioQrCameraSessionOptions {
+  video: HTMLVideoElement;
+  onResult(result: VatioQrScanResult): void;
+  onError?(error: unknown): void;
+  preferredCamera?: VatioQrCameraPreference;
+  maxScansPerSecond?: number;
+  highlightScanRegion?: boolean;
+  highlightCodeOutline?: boolean;
+  overlay?: HTMLDivElement;
+}
+
+export interface VatioQrImageScanOptions {
+  scanRegion?: VatioQrScanRegion | null;
+  alsoTryWithoutScanRegion?: boolean;
+}
+
+export interface VatioQrCamera {
+  id: string;
+  label: string;
+}
+
+export interface VatioQrScannerSession {
+  start(): Promise<void>;
+  stop(): void;
+  destroy(): void;
+  setCamera(facingModeOrDeviceId: VatioQrCameraPreference): Promise<void>;
+  hasFlash?(): Promise<boolean>;
+  isFlashOn?(): boolean;
+  turnFlashOn?(): Promise<void>;
+  turnFlashOff?(): Promise<void>;
+  toggleFlash?(): Promise<void>;
+  isActive(): boolean;
+}
+
+export interface VatioQrScannerService {
+  hasCamera(): Promise<boolean>;
+  listCameras(requestLabels?: boolean): Promise<VatioQrCamera[]>;
+  createCameraSession(options: VatioQrCameraSessionOptions): Promise<VatioQrScannerSession>;
+  scanImage(source: VatioQrImageSource, options?: VatioQrImageScanOptions): Promise<VatioQrScanResult>;
+}
+
 export interface VatioAppSettingsService {
   get<T = unknown>(key: string, fallback?: T): string | T | null;
   set(key: string, value: string): boolean;
@@ -336,6 +411,7 @@ export interface VatioAppServices {
   audio: AudioRuntime | null;
   driveRecording: DriveRecordingService | null;
   drivingAlerts: DrivingAlertService | null;
+  qrScanner: VatioQrScannerService | null;
   tts: TtsService | null;
   auth: VatioAuthService | null;
   cloudSync: VatioCloudSyncService | null;

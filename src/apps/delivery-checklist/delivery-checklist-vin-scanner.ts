@@ -1,4 +1,9 @@
 import type { DeliveryChecklistVehicleMetadata } from "./delivery-checklist-data.js";
+import type {
+  VatioQrScanResult,
+  VatioQrScannerService,
+  VatioQrScannerSession,
+} from "../../app-platform/types";
 
 export type DeliveryVinComparisonState =
   | "not-scanned"
@@ -20,36 +25,17 @@ export interface DeliveryVinScanResult {
 
 export interface DeliveryVinScannerSession {
   stop(): void;
+  destroy(): void;
 }
 
 export interface StartDeliveryVinQrScannerOptions {
   video: HTMLVideoElement;
   onResult: (result: DeliveryVinScanResult) => void;
   onError?: (error: unknown) => void;
-  mediaDevices?: Pick<MediaDevices, "getUserMedia"> | null;
-  createReader?: (() => Promise<DeliveryVinQrReader>) | null;
-}
-
-export interface DeliveryVinQrReader {
-  decodeFromVideoElement(video: HTMLVideoElement, callback: (result: unknown, error?: unknown) => void): Promise<DeliveryVinQrControls | unknown> | DeliveryVinQrControls | unknown;
-  reset?: () => void;
-}
-
-export interface DeliveryVinQrControls {
-  stop?: () => void;
+  qrScannerService?: VatioQrScannerService | null;
 }
 
 const VIN_PATTERN = /[A-HJ-NPR-Z0-9]{17}/;
-
-function readResultText(result: unknown): string {
-  if (typeof result === "string") return result;
-  if (result && typeof result === "object") {
-    const source = result as { getText?: () => unknown; text?: unknown };
-    if (typeof source.getText === "function") return String(source.getText() || "");
-    if (typeof source.text === "string") return source.text;
-  }
-  return "";
-}
 
 export function normalizeDeliveryVin(value: unknown): string {
   return String(value || "")
@@ -89,80 +75,70 @@ export function compareDeliveryWindshieldVin(
   };
 }
 
-async function createDefaultQrReader(): Promise<DeliveryVinQrReader> {
-  const module = await import("@zxing/browser");
-  return new module.BrowserQRCodeReader();
+function isExpectedNoQrError(error: unknown): boolean {
+  const message = String(error instanceof Error ? error.message : error || "");
+  return !message || /no qr code found/i.test(message);
+}
+
+function stopAndDestroy(session: VatioQrScannerSession | null): void {
+  try {
+    session?.stop();
+  } finally {
+    session?.destroy();
+  }
 }
 
 export async function startDeliveryVinQrScanner({
   video,
   onResult,
   onError,
-  mediaDevices = globalThis.navigator?.mediaDevices || null,
-  createReader = createDefaultQrReader,
+  qrScannerService = null,
 }: StartDeliveryVinQrScannerOptions): Promise<DeliveryVinScannerSession> {
-  if (!mediaDevices?.getUserMedia) {
-    throw new Error("Camera access is not available in this browser.");
+  if (!qrScannerService) {
+    throw new Error("QR scanner service is not available.");
   }
 
-  const stream = await mediaDevices.getUserMedia({
-    video: {
-      facingMode: { ideal: "environment" },
-    },
-    audio: false,
-  });
   let stopped = false;
-  let reader: DeliveryVinQrReader | null = null;
-  let controls: DeliveryVinQrControls | null = null;
+  let scannerSession: VatioQrScannerSession | null = null;
 
   const stop = () => {
     if (stopped) return;
     stopped = true;
-    try {
-      controls?.stop?.();
-    } catch {
-      // Decoder controls can already be disposed after a successful scan.
-    }
-    try {
-      reader?.reset?.();
-    } catch {
-      // Some browser implementations throw if reset races decode cleanup.
-    }
-    for (const track of stream.getTracks()) {
-      track.stop();
-    }
-    video.pause();
-    video.srcObject = null;
+    stopAndDestroy(scannerSession);
+    scannerSession = null;
   };
 
   video.playsInline = true;
   video.muted = true;
-  video.srcObject = stream;
-  await video.play().catch(() => undefined);
 
   try {
-    reader = await createReader();
-    const decodeControls = await reader.decodeFromVideoElement(video, (result, error) => {
-      if (stopped) return;
-      if (result) {
-        const rawText = readResultText(result);
+    scannerSession = await qrScannerService.createCameraSession({
+      video,
+      preferredCamera: "environment",
+      maxScansPerSecond: 12,
+      highlightScanRegion: true,
+      highlightCodeOutline: true,
+      onResult(result: VatioQrScanResult) {
+        if (stopped) return;
+        const rawText = result.data;
         const vin = extractDeliveryVinFromQrPayload(rawText);
         if (vin) {
           onResult({ vin, rawText });
           stop();
         }
-      } else if (error) {
-        const name = String((error as { name?: unknown })?.name || "");
-        if (name && !/notfound/i.test(name)) onError?.(error);
-      }
+      },
+      onError(error) {
+        if (!isExpectedNoQrError(error)) onError?.(error);
+      },
     });
-    controls = decodeControls && typeof decodeControls === "object"
-      ? decodeControls as DeliveryVinQrControls
-      : null;
+    await scannerSession.start();
   } catch (error) {
     stop();
     throw error;
   }
 
-  return { stop };
+  return {
+    stop,
+    destroy: stop,
+  };
 }

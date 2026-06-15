@@ -53,6 +53,7 @@ const VALID_SERVICES = new Set<VatioAppServiceId>([
   "audio",
   "driveRecording",
   "drivingAlerts",
+  "qrScanner",
   "auth",
   "cloudSync",
   "shell",
@@ -237,6 +238,10 @@ export function validateAppManifest(manifest: VatioAppManifest): VatioAppManifes
 
   if (services.has("tts") && !permissions.has("tts.speak")) {
     warnings.push('service "tts" requires permission "tts.speak".');
+  }
+
+  if (services.has("qrScanner") && !permissions.has("media.camera")) {
+    warnings.push('service "qrScanner" requires permission "media.camera".');
   }
 
   return {

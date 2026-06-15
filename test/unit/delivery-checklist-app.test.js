@@ -20,7 +20,7 @@ function createRoot() {
   return root;
 }
 
-function createRouteContext({ root, authService = null, appRuntime = null } = {}) {
+function createRouteContext({ root, authService = null, appRuntime = null, qrScannerService = null } = {}) {
   return {
     root,
     context: {},
@@ -32,6 +32,7 @@ function createRouteContext({ root, authService = null, appRuntime = null } = {}
     appStorage: null,
     settingsService: null,
     appRuntime,
+    qrScannerService,
     logger: {
       debug: vi.fn(),
       info: vi.fn(),
@@ -312,29 +313,26 @@ describe("delivery checklist app", () => {
     mounted.unmount();
   });
 
-  it("falls back to manual windshield VIN entry when camera permission is unavailable", async () => {
-    const requirePermission = vi.fn(() => false);
+  it("falls back to manual windshield VIN entry when the QR service denies camera access", async () => {
+    const qrScannerService = {
+      hasCamera: vi.fn(),
+      listCameras: vi.fn(),
+      scanImage: vi.fn(),
+      createCameraSession: vi.fn(async () => {
+        throw new Error("QR scanner camera permission denied.");
+      }),
+    };
     const root = createRoot();
-    const mounted = mountDeliveryChecklistRoute(createRouteContext({
-      root,
-      appRuntime: {
-        permissions: {
-          require: requirePermission,
-        },
-        i18n: {
-          apply: vi.fn(),
-        },
-      },
-    }));
+    const mounted = mountDeliveryChecklistRoute(createRouteContext({ root, qrScannerService }));
 
     await flushPromises();
     document.querySelector("#deliveryScanVinQr").click();
     await flushPromises();
 
-    expect(requirePermission).toHaveBeenCalledWith("media.camera");
+    expect(qrScannerService.createCameraSession).toHaveBeenCalled();
     expect(document.querySelector("#deliveryVinScannerSheet").hidden).toBe(true);
     expect(document.querySelector("#deliveryManualWindshieldVinWrap").hidden).toBe(false);
-    expect(document.querySelector("#deliveryStatus").textContent).toContain("Camera permission is disabled");
+    expect(document.querySelector("#deliveryStatus").textContent).toContain("Camera scan is unavailable");
 
     mounted.unmount();
   });
@@ -636,38 +634,35 @@ describe("delivery checklist app", () => {
   });
 
   it("saves a QR-scanned windshield VIN from the scanner sheet", async () => {
-    vi.resetModules();
     const stopScanner = vi.fn();
-    const startScanner = vi.fn(async ({ onResult }) => {
-      onResult({
-        vin: "5YJYGDEE0RF000001",
-        rawText: "qr:5YJYGDEE0RF000001",
-      });
-      return { stop: stopScanner };
-    });
-
-    vi.doMock("../../src/apps/delivery-checklist/delivery-checklist-vin-scanner.js", async () => {
-      const actual = await vi.importActual("../../src/apps/delivery-checklist/delivery-checklist-vin-scanner.js");
-      return {
-        ...actual,
-        startDeliveryVinQrScanner: startScanner,
-      };
-    });
-
-    const [{ default: freshTemplate }, { mountDeliveryChecklistRoute: freshMount }] = await Promise.all([
-      import("../../src/apps/delivery-checklist/delivery-checklist-template.js"),
-      import("../../src/apps/delivery-checklist/delivery-checklist-app.js"),
-    ]);
-    const root = document.createElement("main");
-    root.innerHTML = freshTemplate;
-    document.body.append(root);
-    const mounted = freshMount(createRouteContext({ root }));
+    const destroyScanner = vi.fn();
+    const qrScannerService = {
+      hasCamera: vi.fn(),
+      listCameras: vi.fn(),
+      scanImage: vi.fn(),
+      createCameraSession: vi.fn(async ({ onResult }) => ({
+        start: vi.fn(async () => {
+          onResult({ data: "qr:5YJYGDEE0RF000001" });
+        }),
+        stop: stopScanner,
+        destroy: destroyScanner,
+        setCamera: vi.fn(),
+        isActive: vi.fn(),
+      })),
+    };
+    const root = createRoot();
+    const mounted = mountDeliveryChecklistRoute(createRouteContext({ root, qrScannerService }));
 
     document.querySelector("#deliveryScanVinQr").click();
     await flushPromises();
 
-    expect(startScanner).toHaveBeenCalled();
+    expect(qrScannerService.createCameraSession).toHaveBeenCalledWith(expect.objectContaining({
+      video: document.querySelector("#deliveryVinScannerVideo"),
+      preferredCamera: "environment",
+      onResult: expect.any(Function),
+    }));
     expect(stopScanner).toHaveBeenCalled();
+    expect(destroyScanner).toHaveBeenCalled();
     expect(document.querySelector("#deliveryVinScannerSheet").hidden).toBe(true);
     expect(document.querySelector("#deliveryWindshieldVinValue").textContent).toBe("5YJYGDEE0RF000001");
     expect(readStoredSession().metadata).toMatchObject({
@@ -676,8 +671,6 @@ describe("delivery checklist app", () => {
     });
 
     mounted.unmount();
-    vi.doUnmock("../../src/apps/delivery-checklist/delivery-checklist-vin-scanner.js");
-    vi.resetModules();
   });
 
   it("renders local photo thumbnails and review previews without changing session schema", async () => {
