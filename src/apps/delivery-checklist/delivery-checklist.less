@@ -1313,7 +1313,7 @@
   left: 50%;
   z-index: 2;
   aspect-ratio: 4.8 / 1;
-  inline-size: min(88%, 620px);
+  inline-size: min(55%, 420px);
   block-size: auto;
   max-block-size: min(34%, 140px);
   max-inline-size: calc(100% - 28px);
@@ -1328,8 +1328,8 @@
   }
 
   .delivery-vin-scan-frame {
-    inline-size: min(88cqw, 620px);
-    block-size: min(34cqh, 18cqw, 140px);
+    inline-size: min(55cqw, 420px);
+    block-size: auto;
   }
 }
 
@@ -1823,6 +1823,14 @@
 
   .delivery-vin-scan-frame {
     top: 26%;
+    inline-size: min(55%, 420px);
+  }
+
+  @supports (width: 1cqw) {
+    .delivery-vin-scan-frame {
+      inline-size: min(55cqw, 420px);
+      block-size: auto;
+    }
   }
 
   .delivery-vin-scanner-actions,

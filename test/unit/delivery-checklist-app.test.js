@@ -575,6 +575,11 @@ describe("delivery checklist app", () => {
     expect(stylesheet).toContain(".delivery-vin-scanner-sheet");
     expect(stylesheet).toContain(".delivery-vin-video-wrap");
     expect(stylesheet).toContain(".delivery-vin-scan-frame");
+    expect(stylesheet).toContain("inline-size: min(55%, 420px)");
+    expect(stylesheet).toContain("inline-size: min(55cqw, 420px)");
+    expect(stylesheet).not.toContain("inline-size: min(88%, 620px)");
+    expect(stylesheet).not.toContain("inline-size: min(88cqw, 620px)");
+    expect(stylesheet).toContain("block-size: auto");
     expect(stylesheet).toContain(".delivery-vin-scanner-actions");
     expect(stylesheet).toContain(".delivery-vin-crop-editor");
     expect(stylesheet).toContain(".delivery-vin-crop-wrap");
@@ -716,6 +721,7 @@ describe("delivery checklist app", () => {
     expect(document.querySelector("#deliveryVinScannerSheet").hidden).toBe(false);
     expect(mediaDevices.getUserMedia).toHaveBeenCalled();
     expect(document.querySelector("#deliveryVinScannerCapture").textContent).toBe("Capture frame");
+    expect(document.querySelector("#deliveryVinScannerStatus").textContent).toContain("Step back until the VIN fits");
 
     document.querySelector("#deliveryVinScannerCapture").click();
     await flushPromises();

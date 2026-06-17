@@ -476,6 +476,44 @@ describe("delivery checklist VIN scanner helpers", () => {
     });
   });
 
+  it("maps a smaller mobile VIN target while preserving expanded crop context", () => {
+    const context = createMockCanvasContext();
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(context);
+    const video = document.createElement("video");
+    Object.defineProperty(video, "videoWidth", { configurable: true, value: 1080 });
+    Object.defineProperty(video, "videoHeight", { configurable: true, value: 1920 });
+    const frameHint = {
+      videoRect: { x: 0, y: 0, width: 374, height: 665 },
+      frameRect: { x: 71, y: 142, width: 232, height: 48 },
+      displaySize: { width: 374, height: 665 },
+      objectFit: "cover",
+    };
+
+    expect(mapDeliveryVinFrameHintToSourceRegion(1080, 1920, frameHint)).toEqual({
+      x: 205,
+      y: 410,
+      width: 670,
+      height: 139,
+      role: "full-band",
+      regionSource: "mapped-frame",
+    });
+
+    const snapshot = createDeliveryVinFramedVideoSnapshot(video, frameHint);
+
+    expect(snapshot.sourceRegion).toMatchObject({
+      x: 88,
+      y: 385,
+      width: 904,
+      height: 189,
+      regionSource: "mapped-frame-expanded",
+    });
+    expect(snapshot.canvas.width).toBe(904);
+    expect(snapshot.canvas.height).toBe(189);
+    expect(context.drawImage).toHaveBeenCalledWith(video, 88, 385, 904, 189, 0, 0, 904, 189);
+    expect(snapshot.sourceRegion?.width).toBeGreaterThan(snapshot.frameRegion?.width || 0);
+    expect(snapshot.sourceRegion?.height).toBeGreaterThan(snapshot.frameRegion?.height || 0);
+  });
+
   it("plans Safari-friendly OCR attempts before expensive processed variants", () => {
     const frameHint = {
       videoRect: { x: 0, y: 0, width: 574, height: 323 },

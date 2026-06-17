@@ -89,6 +89,7 @@ type VinScannerMode = "live" | "crop";
 
 const VEHICLE_SETUP_STEP_ID = "vehicle-setup";
 const DELIVERY_VIN_IMAGE_MAX_DIMENSION = 2400;
+const DELIVERY_VIN_LIVE_GUIDANCE = "Step back until the VIN fits inside the smaller yellow brackets, then tap Capture frame.";
 const VEHICLE_SETUP_STEP = {
   id: VEHICLE_SETUP_STEP_ID,
   kind: "setup" as const,
@@ -1179,7 +1180,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     dom.vinScannerSheet.hidden = true;
     setVinScannerMode("live");
     clearVinCropSource();
-    dom.vinScannerStatus.textContent = "Place the VIN text inside the yellow brackets, then tap Capture frame.";
+    dom.vinScannerStatus.textContent = DELIVERY_VIN_LIVE_GUIDANCE;
     dom.readVinOcrButton.disabled = false;
     dom.vinScannerCaptureButton.disabled = false;
     dom.vinScannerCaptureButton.textContent = "Capture frame";
@@ -1376,7 +1377,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
           dom.vinScannerStatus.textContent = `${status}${percent}`;
         },
       });
-      dom.vinScannerStatus.textContent = "Place the VIN text inside the yellow brackets, then tap Capture frame.";
+      dom.vinScannerStatus.textContent = DELIVERY_VIN_LIVE_GUIDANCE;
       dom.vinScannerCaptureButton.disabled = false;
       return true;
     } catch (error) {

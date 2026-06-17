@@ -190,7 +190,7 @@ const deliveryChecklistTemplate: string = String.raw`
         <div class="delivery-vin-scanner-header">
           <div>
             <h2>Read windshield VIN</h2>
-            <p id="deliveryVinScannerStatus">Place the VIN text inside the yellow brackets, then tap Capture frame.</p>
+            <p id="deliveryVinScannerStatus">Step back until the VIN fits inside the smaller yellow brackets, then tap Capture frame.</p>
           </div>
           <button id="deliveryVinScannerClose" type="button" class="delivery-icon-btn" title="Close scanner" aria-label="Close scanner">&times;</button>
         </div>
