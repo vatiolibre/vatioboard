@@ -68,13 +68,13 @@ const deliveryChecklistTemplate: string = String.raw`
       <section class="delivery-section-panel">
         <div class="delivery-section-heading">
           <div>
-            <p id="deliveryStepKicker" class="delivery-step-kicker">Step 1 of 8</p>
+            <p id="deliveryStepKicker" class="delivery-step-kicker">Step 1 of 10</p>
             <h2 id="deliverySectionTitle"></h2>
             <p id="deliverySectionDescription"></p>
           </div>
           <div id="deliveryIssueCount" class="delivery-issue-count">0 issues</div>
         </div>
-        <section id="deliverySetupPanel" class="delivery-setup-card" aria-label="Vehicle setup" hidden>
+        <section id="deliveryVinStepPanel" class="delivery-setup-card delivery-vin-step-card" aria-label="Windshield VIN" hidden>
           <section class="delivery-vin-scan-card" aria-label="Windshield VIN scan">
             <div class="delivery-vin-scan-copy">
               <h2>Read windshield VIN</h2>
@@ -99,7 +99,9 @@ const deliveryChecklistTemplate: string = String.raw`
               <input id="deliveryManualWindshieldVin" type="text" autocomplete="off" spellcheck="false" maxlength="17" placeholder="17-character VIN" />
             </label>
           </section>
+        </section>
 
+        <section id="deliverySetupPanel" class="delivery-setup-card" aria-label="Vehicle details" hidden>
           <div class="delivery-setup-copy">
             <h2>Vehicle details</h2>
             <p>Choose VatioLibre for automatic order details, or keep everything local and fill the checklist manually.</p>
@@ -207,8 +209,6 @@ const deliveryChecklistTemplate: string = String.raw`
         </div>
         <div id="deliveryVinLiveActions" class="delivery-vin-scanner-actions">
           <button id="deliveryVinScannerCapture" type="button" class="delivery-action-btn delivery-nav-primary">Capture frame</button>
-          <button id="deliveryVinScannerUpload" type="button" class="delivery-action-btn">Upload image</button>
-          <button id="deliveryVinScannerFallback" type="button" class="delivery-action-btn">Enter manually</button>
         </div>
         <input id="deliveryVinImageInput" type="file" accept="image/*" hidden />
         <input id="deliveryVinNativeCaptureInput" type="file" accept="image/*" capture="environment" hidden />
@@ -228,9 +228,12 @@ const deliveryChecklistTemplate: string = String.raw`
           <div id="deliveryVinCropActions" class="delivery-vin-crop-actions">
             <button id="deliveryVinCropRead" type="button" class="delivery-action-btn delivery-nav-primary">Read VIN</button>
             <button id="deliveryVinCropRetake" type="button" class="delivery-action-btn">Retake</button>
-            <button id="deliveryVinCropUpload" type="button" class="delivery-action-btn">Upload image</button>
           </div>
         </section>
+        <div id="deliveryVinScannerFallbackActions" class="delivery-vin-scanner-fallback-actions" hidden>
+          <button id="deliveryVinScannerUpload" type="button" class="delivery-action-btn">Upload image</button>
+          <button id="deliveryVinScannerFallback" type="button" class="delivery-action-btn">Enter manually</button>
+        </div>
         <section id="deliveryVinOcrDiagnostics" class="delivery-vin-ocr-diagnostics" aria-label="OCR diagnostics" hidden>
           <div class="delivery-vin-ocr-diagnostics-copy">
             <strong>OCR diagnostics</strong>

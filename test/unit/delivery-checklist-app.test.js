@@ -72,8 +72,15 @@ function completeActiveSection() {
   }
 }
 
+function advancePastVinStep() {
+  if (document.querySelector("#deliverySectionTitle").textContent === "Read windshield VIN") {
+    document.querySelector("#deliveryNextStep").click();
+  }
+}
+
 function advanceToRecords() {
-  if (document.querySelector("#deliverySectionTitle").textContent === "Vehicle setup") {
+  advancePastVinStep();
+  if (document.querySelector("#deliverySectionTitle").textContent === "Vehicle details") {
     const manualButton = document.querySelector("#deliveryUseManual");
     if (manualButton?.getAttribute("aria-pressed") !== "true") {
       manualButton?.click();
@@ -85,13 +92,18 @@ function advanceToRecords() {
 function advanceToFinalReview() {
   let guard = 0;
   while (document.querySelector("#deliverySectionTitle").textContent !== "Final Review" && guard < 20) {
-    if (document.querySelector("#deliverySectionTitle").textContent === "Vehicle setup") {
+    if (document.querySelector("#deliverySectionTitle").textContent === "Read windshield VIN") {
+      document.querySelector("#deliveryNextStep").click();
+      guard += 1;
+      continue;
+    }
+    if (document.querySelector("#deliverySectionTitle").textContent === "Vehicle details") {
       const manualButton = document.querySelector("#deliveryUseManual");
       if (manualButton?.getAttribute("aria-pressed") !== "true") {
         manualButton?.click();
       }
     }
-    if (document.querySelector("#deliverySectionTitle").textContent !== "Vehicle setup") {
+    if (document.querySelector("#deliverySectionTitle").textContent !== "Vehicle details") {
       completeActiveSection();
     }
     document.querySelector("#deliveryNextStep").click();
@@ -129,20 +141,27 @@ describe("delivery checklist app", () => {
     const root = createRoot();
     const mounted = mountDeliveryChecklistRoute(createRouteContext({ root }));
 
-    expect(document.querySelector("#deliverySectionTitle").textContent).toBe("Vehicle setup");
-    expect(document.querySelector("#deliveryStepKicker").textContent).toBe("Step 1 of 9");
+    expect(document.querySelector("#deliverySectionTitle").textContent).toBe("Read windshield VIN");
+    expect(document.querySelector("#deliveryStepKicker").textContent).toBe("Step 1 of 10");
+    expect(document.querySelector("#deliveryVinStepPanel").hidden).toBe(false);
+    expect(document.querySelector("#deliverySetupPanel").hidden).toBe(true);
+    expect(document.querySelector("#deliveryNextStep").textContent).toContain("Next: Vehicle");
+
+    document.querySelector("#deliveryNextStep").click();
+    expect(document.querySelector("#deliverySectionTitle").textContent).toBe("Vehicle details");
+    expect(document.querySelector("#deliveryStepKicker").textContent).toBe("Step 2 of 10");
     expect(document.querySelector("#deliverySetupPanel").hidden).toBe(false);
     expect(document.querySelector("#deliverySetupDetailsPanel").hidden).toBe(true);
     expect(document.querySelector("#deliveryReviewToggle")).toBeNull();
 
     document.querySelector("#deliveryNextStep").click();
-    expect(document.querySelector("#deliverySectionTitle").textContent).toBe("Vehicle setup");
+    expect(document.querySelector("#deliverySectionTitle").textContent).toBe("Vehicle details");
     expect(document.querySelector("#deliveryNextStep").textContent).toContain("Choose setup");
     expect(document.querySelector(".delivery-setup-choice--attention")).not.toBeNull();
 
     advanceToRecords();
     expect(document.querySelector("#deliverySectionTitle").textContent).toBe("Records");
-    expect(document.querySelector("#deliveryStepKicker").textContent).toBe("Step 2 of 9");
+    expect(document.querySelector("#deliveryStepKicker").textContent).toBe("Step 3 of 10");
     expect(document.querySelector("#deliveryUseManual").getAttribute("aria-pressed")).toBe("true");
 
     document.querySelector(".delivery-item-row .delivery-status-control-issue").click();
@@ -210,8 +229,10 @@ describe("delivery checklist app", () => {
     const mounted = mountDeliveryChecklistRoute(createRouteContext({ root }));
 
     document.querySelector("#deliveryNextStep").click();
-    expect(document.querySelector("#deliverySectionTitle").textContent).toBe("Vehicle setup");
-    expect(document.querySelector("#deliveryStatus").textContent).toContain("Choose VatioLibre import");
+    expect(document.querySelector("#deliverySectionTitle").textContent).toBe("Vehicle details");
+    document.querySelector("#deliveryNextStep").click();
+    expect(document.querySelector("#deliverySectionTitle").textContent).toBe("Vehicle details");
+    expect(document.querySelector("#deliveryStatus").textContent).toContain("manual vehicle details");
 
     document.querySelector("#deliveryUseManual").click();
     document.querySelector("#deliveryNextStep").click();
@@ -229,7 +250,7 @@ describe("delivery checklist app", () => {
     expect(document.querySelector("#deliveryNextStep").textContent).toContain("Next: Locked");
     document.querySelector("#deliveryNextStep").click();
     expect(document.querySelector("#deliverySectionTitle").textContent).toBe("Locked Exterior");
-    expect(document.querySelector("#deliveryStepKicker").textContent).toBe("Step 3 of 9");
+    expect(document.querySelector("#deliveryStepKicker").textContent).toBe("Step 4 of 10");
 
     document.querySelector("#deliveryPrevStep").click();
     expect(document.querySelector("#deliverySectionTitle").textContent).toBe("Records");
@@ -337,6 +358,7 @@ describe("delivery checklist app", () => {
     expect(mediaDevices.getUserMedia).toHaveBeenCalled();
     expect(document.querySelector("#deliveryVinScannerSheet").hidden).toBe(false);
     expect(document.querySelector("#deliveryVinScannerCapture").textContent).toBe("Take photo");
+    expect(document.querySelector("#deliveryVinScannerFallbackActions").hidden).toBe(false);
     expect(document.querySelector("#deliveryVinScannerUpload")).not.toBeNull();
     expect(document.querySelector("#deliveryManualWindshieldVinWrap").hidden).toBe(true);
     expect(document.querySelector("#deliveryStatus").textContent).toContain("Camera OCR is unavailable");
@@ -357,10 +379,13 @@ describe("delivery checklist app", () => {
 
     advanceToRecords();
     document.querySelector(".delivery-status-control-issue").click();
+    const vinStep = document.querySelector("[data-section='windshield-vin']");
     const recordsStep = document.querySelector("[data-section='records']");
     const setupStep = document.querySelector("[data-section='vehicle-setup']");
 
-    expect(setupStep.textContent).toContain("Setup");
+    expect(vinStep.textContent).toContain("VIN");
+    expect(vinStep.textContent).toContain("Optional");
+    expect(setupStep.textContent).toContain("Vehicle");
     expect(setupStep.textContent).toContain("Manual");
     expect(recordsStep.textContent).toContain("1/5");
     expect(recordsStep.textContent).toContain("1 issue");
@@ -581,6 +606,7 @@ describe("delivery checklist app", () => {
     expect(stylesheet).not.toContain("inline-size: min(88cqw, 620px)");
     expect(stylesheet).toContain("block-size: auto");
     expect(stylesheet).toContain(".delivery-vin-scanner-actions");
+    expect(stylesheet).toContain(".delivery-vin-scanner-fallback-actions");
     expect(stylesheet).toContain(".delivery-vin-crop-editor");
     expect(stylesheet).toContain(".delivery-vin-crop-wrap");
     expect(stylesheet).toContain(".delivery-vin-crop-actions");
@@ -603,7 +629,9 @@ describe("delivery checklist app", () => {
     expect(root.querySelector(".delivery-checklist-header .delivery-checklist-overview")).not.toBeNull();
     expect(root.querySelector("main > .delivery-checklist-overview")).toBeNull();
     expect(root.querySelector(".delivery-vin-scan-card")).not.toBeNull();
+    expect(root.querySelector("#deliveryVinStepPanel")).not.toBeNull();
     expect(root.querySelector("#deliveryVinScannerSheet")).not.toBeNull();
+    expect(root.querySelector("#deliveryVinScannerFallbackActions").hidden).toBe(true);
     expect(root.querySelector(".delivery-vin-video-wrap .delivery-vin-scan-frame")).not.toBeNull();
     expect(root.querySelector("#deliveryVinScannerCapture")).not.toBeNull();
     expect(root.querySelector("#deliveryVinScannerUpload")).not.toBeNull();
@@ -722,6 +750,7 @@ describe("delivery checklist app", () => {
     expect(mediaDevices.getUserMedia).toHaveBeenCalled();
     expect(document.querySelector("#deliveryVinScannerCapture").textContent).toBe("Capture frame");
     expect(document.querySelector("#deliveryVinScannerStatus").textContent).toContain("Step back until the VIN fits");
+    expect(document.querySelector("#deliveryVinScannerFallbackActions").hidden).toBe(true);
 
     document.querySelector("#deliveryVinScannerCapture").click();
     await flushPromises();
@@ -781,6 +810,7 @@ describe("delivery checklist app", () => {
 
     document.querySelector("#deliveryReadVinOcr").click();
     await flushPromises();
+    expect(document.querySelector("#deliveryVinScannerFallbackActions").hidden).toBe(false);
     document.querySelector("#deliveryVinScannerUpload").click();
     const input = document.querySelector("#deliveryVinImageInput");
     Object.defineProperty(input, "files", {
@@ -925,6 +955,7 @@ describe("delivery checklist app", () => {
 
     expect(document.querySelector("#deliveryVinScannerSheet").hidden).toBe(false);
     expect(document.querySelector("#deliveryVinOcrDiagnostics").hidden).toBe(false);
+    expect(document.querySelector("#deliveryVinScannerFallbackActions").hidden).toBe(false);
     expect(document.querySelector("#deliveryVinOcrCopyDebug")).not.toBeNull();
     expect(document.querySelector("#deliveryVinOcrDownloadDebug")).not.toBeNull();
     expect(document.querySelector("#deliveryVinOcrWiderScan")).not.toBeNull();

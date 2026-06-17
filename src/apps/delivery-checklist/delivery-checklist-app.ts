@@ -83,18 +83,26 @@ export type DeliveryChecklistRouteMountContext = RouteMountContext & {
 };
 
 type ImportChoiceKind = "order" | "vehicle";
-type DeliveryStepKind = "setup" | "checklist";
+type DeliveryStepKind = "vin" | "setup" | "checklist";
 type SetupMode = "choice" | "manual" | "vatiolibre";
 type VinScannerMode = "live" | "crop";
 
+const WINDSHIELD_VIN_STEP_ID = "windshield-vin";
 const VEHICLE_SETUP_STEP_ID = "vehicle-setup";
 const DELIVERY_VIN_IMAGE_MAX_DIMENSION = 2400;
 const DELIVERY_VIN_LIVE_GUIDANCE = "Step back until the VIN fits inside the smaller yellow brackets, then tap Capture frame.";
+const WINDSHIELD_VIN_STEP = {
+  id: WINDSHIELD_VIN_STEP_ID,
+  kind: "vin" as const,
+  title: "Read windshield VIN",
+  shortTitle: "VIN",
+  description: "Capture the windshield VIN first, then choose how to fill vehicle details.",
+};
 const VEHICLE_SETUP_STEP = {
   id: VEHICLE_SETUP_STEP_ID,
   kind: "setup" as const,
-  title: "Vehicle setup",
-  shortTitle: "Setup",
+  title: "Vehicle details",
+  shortTitle: "Vehicle",
   description: "Choose VatioLibre import or a manual local checklist before inspection.",
 };
 
@@ -154,6 +162,7 @@ interface DeliveryChecklistDom {
   importSummary: HTMLElement;
   importSelect: HTMLSelectElement;
   applyImportButton: HTMLButtonElement;
+  vinStepPanel: HTMLElement;
   setupPanel: HTMLElement;
   newSessionButton: HTMLButtonElement;
   loginButton: HTMLButtonElement;
@@ -184,6 +193,7 @@ interface DeliveryChecklistDom {
   vinScannerStatus: HTMLElement;
   vinScannerCloseButton: HTMLButtonElement;
   vinScannerCaptureButton: HTMLButtonElement;
+  vinScannerFallbackActions: HTMLElement;
   vinScannerUploadButton: HTMLButtonElement;
   vinScannerFallbackButton: HTMLButtonElement;
   vinImageInput: HTMLInputElement;
@@ -196,7 +206,6 @@ interface DeliveryChecklistDom {
   vinCropActions: HTMLElement;
   vinCropReadButton: HTMLButtonElement;
   vinCropRetakeButton: HTMLButtonElement;
-  vinCropUploadButton: HTMLButtonElement;
   vinOcrDiagnostics: HTMLElement;
   vinOcrPreview: HTMLElement;
   vinOcrCopyDebugButton: HTMLButtonElement;
@@ -252,6 +261,7 @@ function readDom(root: ParentNode): DeliveryChecklistDom {
     importSummary: $(root, "#deliveryImportSummary"),
     importSelect: $(root, "#deliveryImportSelect") as HTMLSelectElement,
     applyImportButton: $(root, "#deliveryApplyImport") as HTMLButtonElement,
+    vinStepPanel: $(root, "#deliveryVinStepPanel"),
     setupPanel: $(root, "#deliverySetupPanel"),
     newSessionButton: $(root, "#deliveryNewSession") as HTMLButtonElement,
     loginButton: $(root, "#deliveryLogin") as HTMLButtonElement,
@@ -282,6 +292,7 @@ function readDom(root: ParentNode): DeliveryChecklistDom {
     vinScannerStatus: $(root, "#deliveryVinScannerStatus"),
     vinScannerCloseButton: $(root, "#deliveryVinScannerClose") as HTMLButtonElement,
     vinScannerCaptureButton: $(root, "#deliveryVinScannerCapture") as HTMLButtonElement,
+    vinScannerFallbackActions: $(root, "#deliveryVinScannerFallbackActions"),
     vinScannerUploadButton: $(root, "#deliveryVinScannerUpload") as HTMLButtonElement,
     vinScannerFallbackButton: $(root, "#deliveryVinScannerFallback") as HTMLButtonElement,
     vinImageInput: $(root, "#deliveryVinImageInput") as HTMLInputElement,
@@ -294,7 +305,6 @@ function readDom(root: ParentNode): DeliveryChecklistDom {
     vinCropActions: $(root, "#deliveryVinCropActions"),
     vinCropReadButton: $(root, "#deliveryVinCropRead") as HTMLButtonElement,
     vinCropRetakeButton: $(root, "#deliveryVinCropRetake") as HTMLButtonElement,
-    vinCropUploadButton: $(root, "#deliveryVinCropUpload") as HTMLButtonElement,
     vinOcrDiagnostics: $(root, "#deliveryVinOcrDiagnostics"),
     vinOcrPreview: $(root, "#deliveryVinOcrPreview"),
     vinOcrCopyDebugButton: $(root, "#deliveryVinOcrCopyDebug") as HTMLButtonElement,
@@ -467,7 +477,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
   const pendingPhotoLoads = new Set<string>();
 
   let session = repository.getActiveSession() || repository.createSession();
-  let selectedSectionId = VEHICLE_SETUP_STEP_ID;
+  let selectedSectionId = WINDSHIELD_VIN_STEP_ID;
   let setupMode: SetupMode = getInitialSetupMode(session);
   let vatioLibreRequested = setupMode === "vatiolibre";
   let vinScannerSession: DeliveryVinScannerSession | null = null;
@@ -495,17 +505,18 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
   let disposed = false;
 
   function getActiveSectionItems(): DeliveryChecklistItem[] {
-    if (isSetupStep()) return [];
+    if (isVinStep() || isSetupStep()) return [];
     return getChecklistItems(session.modelKey, selectedSectionId);
   }
 
   function getActiveSectionProgress() {
+    if (isVinStep()) return getVinScanProgress();
     if (isSetupStep()) return getSetupProgress();
     return getChecklistProgress(session, getActiveSectionItems());
   }
 
   function getFirstUncheckedItem(): DeliveryChecklistItem | null {
-    if (isSetupStep()) return null;
+    if (isVinStep() || isSetupStep()) return null;
     return getActiveSectionItems().find((item) => normalizeItemState(session.itemState[item.id]).status === "unchecked") || null;
   }
 
@@ -526,13 +537,40 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     };
   }
 
+  function getVinScanProgress() {
+    const complete = normalizeDeliveryVin(session.metadata?.windshieldVin) ? 1 : 0;
+    return {
+      total: 1,
+      complete,
+      passed: complete,
+      issue: compareDeliveryWindshieldVin(session.metadata, setupMode).state === "mismatch" ? 1 : 0,
+      skipped: 0,
+      unchecked: 0,
+      percent: complete ? 100 : 0,
+    };
+  }
+
+  function getVinScanStepStatus(): "pending" | "complete" | "issue" {
+    const comparison = compareDeliveryWindshieldVin(session.metadata, setupMode);
+    if (comparison.state === "mismatch") return "issue";
+    if (comparison.scannedVin) return "complete";
+    return "pending";
+  }
+
+  function getVinScanStepSummary(): string {
+    const comparison = compareDeliveryWindshieldVin(session.metadata, setupMode);
+    if (comparison.state === "mismatch") return "Mismatch";
+    if (comparison.scannedVin) return "Saved";
+    return "Optional";
+  }
+
   function focusSetupChoice(): void {
     dom.setupChoice.classList.remove("delivery-setup-choice--attention");
     void dom.setupChoice.offsetWidth;
     dom.setupChoice.classList.add("delivery-setup-choice--attention");
     scrollIntoGuidedViewport(dom.setupChoice);
     dom.useVatioLibreButton.focus({ preventScroll: true });
-    setStatus(dom, "Choose VatioLibre import or manual local setup before continuing.", "warn");
+    setStatus(dom, "Choose VatioLibre import or manual vehicle details before continuing.", "warn");
   }
 
   function clearNoteSaveTimer(): void {
@@ -563,6 +601,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
 
   function getSteps(): DeliveryGuidedStep[] {
     return [
+      WINDSHIELD_VIN_STEP,
       VEHICLE_SETUP_STEP,
       ...getSections().map((section) => ({
         id: section.id,
@@ -572,6 +611,10 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
         description: section.description,
       })),
     ];
+  }
+
+  function isVinStep(stepId: string = selectedSectionId): boolean {
+    return stepId === WINDSHIELD_VIN_STEP_ID;
   }
 
   function isSetupStep(stepId: string = selectedSectionId): boolean {
@@ -696,7 +739,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     saveCurrentSession(session);
     const steps = getSteps();
     if (!steps.some((section) => section.id === selectedSectionId)) {
-      selectedSectionId = VEHICLE_SETUP_STEP_ID;
+      selectedSectionId = WINDSHIELD_VIN_STEP_ID;
     }
     render();
   }
@@ -906,17 +949,22 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     const steps = getSteps();
     dom.sectionTabs.replaceChildren();
     steps.forEach((section, index) => {
+      const isVin = section.kind === "vin";
       const isSetup = section.kind === "setup";
       const items = getChecklistItems(session.modelKey, section.id);
-      const progress = isSetup
+      const progress = isVin
+        ? getVinScanProgress()
+        : isSetup
         ? getSetupProgress()
         : getChecklistProgress(session, items);
       const button = document.createElement("button");
       button.type = "button";
       button.className = "delivery-section-tab";
       button.dataset.section = section.id;
-      button.dataset.status = isSetup
-        ? "complete"
+      button.dataset.status = isVin
+        ? getVinScanStepStatus()
+        : isSetup
+        ? isSetupComplete() ? "complete" : "pending"
         : progress.issue > 0
         ? "issue"
         : progress.unchecked === 0 && progress.total > 0
@@ -936,14 +984,18 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
       label.textContent = section.shortTitle;
       const count = document.createElement("span");
       count.className = "delivery-step-count";
-      count.textContent = isSetup
+      count.textContent = isVin
+        ? getVinScanStepSummary()
+        : isSetup
         ? progress.complete
           ? getChecklistModelLabel(session.modelKey)
           : "0/1"
         : `${progress.complete}/${progress.total}`;
       const issues = document.createElement("span");
       issues.className = "delivery-step-issues";
-      issues.textContent = isSetup
+      issues.textContent = isVin
+        ? getVinScanStepSummary()
+        : isSetup
         ? setupMode === "choice"
           ? "Choose setup"
           : session.metadata?.source === "vatiolibre"
@@ -966,13 +1018,17 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     const section = getActiveSection();
     if (!section) return;
     selectedSectionId = section.id;
-    const sectionProgress = section.kind === "setup"
+    const sectionProgress = section.kind === "vin"
+      ? getVinScanProgress()
+      : section.kind === "setup"
       ? getSetupProgress()
       : getChecklistProgress(session, getChecklistItems(session.modelKey, section.id));
     dom.stepKicker.textContent = `Step ${getCurrentStepIndex() + 1} of ${sections.length}`;
     dom.sectionTitle.textContent = section.title;
     dom.sectionDescription.textContent = section.description;
-    dom.issueCount.textContent = section.kind === "setup"
+    dom.issueCount.textContent = section.kind === "vin"
+      ? getVinScanStepSummary()
+      : section.kind === "setup"
       ? setupMode === "choice"
         ? "Choose setup"
         : getChecklistModelLabel(session.modelKey)
@@ -1175,10 +1231,15 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     updateVinCropControls();
   }
 
+  function setVinScannerFallbacksVisible(visible: boolean): void {
+    dom.vinScannerFallbackActions.hidden = !visible;
+  }
+
   function stopVinScanner(): void {
     stopVinScannerSession();
     dom.vinScannerSheet.hidden = true;
     setVinScannerMode("live");
+    setVinScannerFallbacksVisible(false);
     clearVinCropSource();
     dom.vinScannerStatus.textContent = DELIVERY_VIN_LIVE_GUIDANCE;
     dom.readVinOcrButton.disabled = false;
@@ -1327,6 +1388,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     vinCropInitialState = { ...initialCrop };
     dom.vinCropZoom.value = String(vinCropState.scale);
     setVinScannerMode("crop");
+    setVinScannerFallbacksVisible(false);
     renderVinCropPreview();
     showVinCropHint();
     dom.vinScannerStatus.textContent = status;
@@ -1336,6 +1398,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     if (!file) return;
     if (!file.type?.startsWith("image/")) {
       dom.vinScannerStatus.textContent = "Choose an image file of the windshield VIN.";
+      setVinScannerFallbacksVisible(true);
       setStatus(dom, "That file is not an image.", "warn");
       return;
     }
@@ -1347,6 +1410,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     } catch (error) {
       routeContext.logger?.warn("Delivery checklist VIN image failed to load.", error);
       dom.vinScannerStatus.textContent = "Could not read that image. Try another photo or enter the VIN manually.";
+      setVinScannerFallbacksVisible(true);
       setStatus(dom, "VIN image could not be loaded.", "warn");
     }
   }
@@ -1363,6 +1427,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
 
   async function startVinScannerCamera(): Promise<boolean> {
     stopVinScannerSession();
+    setVinScannerFallbacksVisible(false);
     dom.vinScannerStatus.textContent = "Starting camera...";
     dom.vinScannerCaptureButton.disabled = true;
     dom.vinScannerCaptureButton.textContent = "Capture frame";
@@ -1386,6 +1451,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
       dom.vinScannerStatus.textContent = "Camera is unavailable here. Upload a VIN photo or enter the VIN manually.";
       dom.vinScannerCaptureButton.textContent = "Take photo";
       dom.vinScannerCaptureButton.disabled = false;
+      setVinScannerFallbacksVisible(true);
       setStatus(dom, "Camera OCR is unavailable here. Upload a VIN photo or enter it manually.", "warn");
       return false;
     }
@@ -1395,6 +1461,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     stopVinScanner();
     dom.vinScannerSheet.hidden = false;
     setVinScannerMode("live");
+    setVinScannerFallbacksVisible(false);
     dom.vinScannerStatus.textContent = "Starting camera...";
     dom.readVinOcrButton.disabled = true;
     dom.vinScannerCaptureButton.disabled = true;
@@ -1419,6 +1486,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     } catch (error) {
       routeContext.logger?.warn("Delivery checklist VIN OCR frame capture failed.", error);
       dom.vinScannerStatus.textContent = "Could not capture the camera frame. Try again, upload a photo, or enter it manually.";
+      setVinScannerFallbacksVisible(true);
       setStatus(dom, "Could not capture the VIN image.", "warn");
     }
   }
@@ -1426,6 +1494,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
   async function retakeVinScannerFrame(): Promise<void> {
     clearVinOcrDebug();
     clearVinCropSource();
+    setVinScannerFallbacksVisible(false);
     setVinScannerMode("live");
     await startVinScannerCamera();
   }
@@ -1473,6 +1542,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
       return;
     }
     clearVinOcrDebug();
+    setVinScannerFallbacksVisible(false);
     dom.vinCropReadButton.disabled = true;
     dom.vinOcrWiderScanButton.disabled = true;
     dom.vinCropReadButton.textContent = "Reading...";
@@ -1513,11 +1583,13 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
         return;
       }
       dom.vinScannerStatus.textContent = "Could not read a valid VIN. Recenter the crop, zoom in, or try a wider scan.";
+      setVinScannerFallbacksVisible(true);
       setStatus(dom, "No valid VIN found in the centered image.", "warn");
       renderVinOcrDiagnostics();
     } catch (error) {
       routeContext.logger?.warn("Delivery checklist VIN OCR failed.", error);
       dom.vinScannerStatus.textContent = "Could not read the VIN. Try again, upload another photo, or enter it manually.";
+      setVinScannerFallbacksVisible(true);
       setStatus(dom, "VIN OCR failed; manual entry is still available.", "warn");
       renderVinOcrDiagnostics();
     } finally {
@@ -1672,9 +1744,12 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
 
   function renderItems(): void {
     dom.checklistItems.replaceChildren();
-    dom.setupPanel.hidden = !isSetupStep();
-    dom.checklistItems.hidden = isSetupStep();
-    if (isSetupStep()) return;
+    const vinStepActive = isVinStep();
+    const setupStepActive = isSetupStep();
+    dom.vinStepPanel.hidden = !vinStepActive;
+    dom.setupPanel.hidden = !setupStepActive;
+    dom.checklistItems.hidden = vinStepActive || setupStepActive;
+    if (vinStepActive || setupStepActive) return;
     for (const item of getChecklistItems(session.modelKey, selectedSectionId)) {
       dom.checklistItems.append(createItemRow(item));
     }
@@ -1847,7 +1922,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
         modelName: getChecklistModelLabel(session.modelKey),
       },
     });
-    selectedSectionId = VEHICLE_SETUP_STEP_ID;
+    selectedSectionId = WINDSHIELD_VIN_STEP_ID;
     session = next;
     setupMode = "choice";
     vatioLibreRequested = false;
@@ -2249,7 +2324,6 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
   on(dom.vinCropResetButton, "click", resetVinCrop);
   on(dom.vinCropReadButton, "click", () => void readVinCrop());
   on(dom.vinCropRetakeButton, "click", () => void retakeVinScannerFrame());
-  on(dom.vinCropUploadButton, "click", () => requestVinImageUpload());
   on(dom.vinOcrCopyDebugButton, "click", () => void copyVinOcrDebugJson());
   on(dom.vinOcrDownloadDebugButton, "click", downloadVinOcrDebugArtifacts);
   on(dom.vinOcrWiderScanButton, "click", () => void readVinCrop("search"));

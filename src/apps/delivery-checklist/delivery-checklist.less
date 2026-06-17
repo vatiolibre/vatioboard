@@ -1342,10 +1342,18 @@
   border-width: 0;
 }
 
-.delivery-vin-scanner-actions {
+.delivery-vin-scanner-actions,
+.delivery-vin-scanner-fallback-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+}
+
+.delivery-vin-scanner-actions {
+  grid-template-columns: 1fr;
+}
+
+.delivery-vin-scanner-fallback-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .delivery-vin-crop-editor {
@@ -1452,7 +1460,7 @@
 
 .delivery-vin-crop-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -1834,6 +1842,7 @@
   }
 
   .delivery-vin-scanner-actions,
+  .delivery-vin-scanner-fallback-actions,
   .delivery-vin-crop-controls,
   .delivery-vin-crop-actions {
     grid-template-columns: 1fr;
@@ -1863,7 +1872,8 @@
     min-height: 150px;
   }
 
-  .delivery-vin-scanner-actions {
+  .delivery-vin-scanner-actions,
+  .delivery-vin-scanner-fallback-actions {
     grid-template-columns: 1fr;
   }
 
