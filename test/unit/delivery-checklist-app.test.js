@@ -122,6 +122,7 @@ describe("delivery checklist app", () => {
     document.body.innerHTML = "";
     localStorage.clear();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("creates a manual offline session, persists an issue note, and generates a report", async () => {
@@ -320,7 +321,7 @@ describe("delivery checklist app", () => {
     mounted.unmount();
   });
 
-  it("falls back to manual windshield VIN entry when camera OCR is unavailable", async () => {
+  it("falls back to upload and manual options when camera OCR is unavailable", async () => {
     const mediaDevices = {
       getUserMedia: vi.fn(async () => {
         throw new Error("Camera rejected");
@@ -334,9 +335,18 @@ describe("delivery checklist app", () => {
     await flushPromises();
 
     expect(mediaDevices.getUserMedia).toHaveBeenCalled();
+    expect(document.querySelector("#deliveryVinScannerSheet").hidden).toBe(false);
+    expect(document.querySelector("#deliveryVinScannerCapture").textContent).toBe("Take photo");
+    expect(document.querySelector("#deliveryVinScannerUpload")).not.toBeNull();
+    expect(document.querySelector("#deliveryManualWindshieldVinWrap").hidden).toBe(true);
+    expect(document.querySelector("#deliveryStatus").textContent).toContain("Camera OCR is unavailable");
+    const nativeInput = document.querySelector("#deliveryVinNativeCaptureInput");
+    nativeInput.click = vi.fn();
+    document.querySelector("#deliveryVinScannerCapture").click();
+    expect(nativeInput.click).toHaveBeenCalled();
+    document.querySelector("#deliveryVinScannerFallback").click();
     expect(document.querySelector("#deliveryVinScannerSheet").hidden).toBe(true);
     expect(document.querySelector("#deliveryManualWindshieldVinWrap").hidden).toBe(false);
-    expect(document.querySelector("#deliveryStatus").textContent).toContain("Camera OCR is unavailable");
 
     mounted.unmount();
   });
@@ -566,6 +576,11 @@ describe("delivery checklist app", () => {
     expect(stylesheet).toContain(".delivery-vin-video-wrap");
     expect(stylesheet).toContain(".delivery-vin-scan-frame");
     expect(stylesheet).toContain(".delivery-vin-scanner-actions");
+    expect(stylesheet).toContain(".delivery-vin-crop-editor");
+    expect(stylesheet).toContain(".delivery-vin-crop-wrap");
+    expect(stylesheet).toContain(".delivery-vin-crop-actions");
+    expect(stylesheet).toContain("touch-action: none");
+    expect(stylesheet).toContain("touch-action: pan-y");
     expect(stylesheet).toContain(".delivery-vin-ocr-diagnostics");
     expect(stylesheet).toContain(".delivery-vin-ocr-preview");
     expect(stylesheet).toContain(".delivery-vin-ocr-actions");
@@ -586,6 +601,12 @@ describe("delivery checklist app", () => {
     expect(root.querySelector("#deliveryVinScannerSheet")).not.toBeNull();
     expect(root.querySelector(".delivery-vin-video-wrap .delivery-vin-scan-frame")).not.toBeNull();
     expect(root.querySelector("#deliveryVinScannerCapture")).not.toBeNull();
+    expect(root.querySelector("#deliveryVinScannerUpload")).not.toBeNull();
+    expect(root.querySelector("#deliveryVinImageInput")).not.toBeNull();
+    expect(root.querySelector("#deliveryVinNativeCaptureInput")).not.toBeNull();
+    expect(root.querySelector("#deliveryVinCropCanvas")).not.toBeNull();
+    expect(root.querySelector("#deliveryVinCropZoom")).not.toBeNull();
+    expect(root.querySelector("#deliveryVinCropRead")).not.toBeNull();
     expect(root.querySelector("#deliveryVinOcrDiagnostics")).not.toBeNull();
     root.remove();
   });
@@ -662,62 +683,148 @@ describe("delivery checklist app", () => {
     }));
     const root = createRoot();
     const video = root.querySelector("#deliveryVinScannerVideo");
-    const frame = root.querySelector(".delivery-vin-scan-frame");
+    Object.defineProperty(video, "videoWidth", { configurable: true, value: 1920 });
+    Object.defineProperty(video, "videoHeight", { configurable: true, value: 1080 });
+    video.getBoundingClientRect = vi.fn(() => ({
+      x: 0,
+      y: 0,
+      width: 574,
+      height: 323,
+      top: 0,
+      left: 0,
+      right: 574,
+      bottom: 323,
+      toJSON: vi.fn(),
+    }));
+    root.querySelector(".delivery-vin-scan-frame").getBoundingClientRect = vi.fn(() => ({
+      x: 44,
+      y: 54,
+      width: 492,
+      height: 76,
+      top: 54,
+      left: 44,
+      right: 536,
+      bottom: 130,
+      toJSON: vi.fn(),
+    }));
     video.play = vi.fn(async () => {});
     video.pause = vi.fn();
-    video.getBoundingClientRect = vi.fn(() => ({
-      x: 10,
-      y: 20,
-      width: 374,
-      height: 665,
-      top: 20,
-      left: 10,
-      right: 384,
-      bottom: 685,
-      toJSON: vi.fn(),
-    }));
-    frame.getBoundingClientRect = vi.fn(() => ({
-      x: 32,
-      y: 152,
-      width: 329,
-      height: 69,
-      top: 152,
-      left: 32,
-      right: 361,
-      bottom: 221,
-      toJSON: vi.fn(),
-    }));
     const mounted = mountDeliveryChecklistRoute(createRouteContext({ root, mediaDevices, vinOcrRecognizer }));
 
     document.querySelector("#deliveryReadVinOcr").click();
     await flushPromises();
     expect(document.querySelector("#deliveryVinScannerSheet").hidden).toBe(false);
     expect(mediaDevices.getUserMedia).toHaveBeenCalled();
+    expect(document.querySelector("#deliveryVinScannerCapture").textContent).toBe("Capture frame");
 
     document.querySelector("#deliveryVinScannerCapture").click();
     await flushPromises();
+    expect(stopTrack).toHaveBeenCalled();
+    expect(document.querySelector("#deliveryVinCropEditor").hidden).toBe(false);
+    expect(document.querySelector("#deliveryVinLivePane").hidden).toBe(true);
+    expect(Number(document.querySelector("#deliveryVinCropZoom").value)).toBeGreaterThan(1);
+    expect(vinOcrRecognizer).not.toHaveBeenCalled();
 
-    expect(vinOcrRecognizer).toHaveBeenCalledWith(video, expect.objectContaining({
-      mode: "frame-then-search",
+    document.querySelector("#deliveryVinCropZoom").value = "1";
+    document.querySelector("#deliveryVinCropZoom").dispatchEvent(new Event("input", { bubbles: true }));
+    document.querySelector("#deliveryVinCropReset").click();
+    expect(Number(document.querySelector("#deliveryVinCropZoom").value)).toBeGreaterThan(1);
+
+    document.querySelector("#deliveryVinCropRead").click();
+    await flushPromises();
+
+    expect(vinOcrRecognizer).toHaveBeenCalledWith(expect.any(HTMLCanvasElement), expect.objectContaining({
+      mode: "frame",
       debug: true,
-      debugLabel: "delivery-checklist-camera",
-      frameHint: {
-        videoRect: { x: 10, y: 20, width: 374, height: 665 },
-        frameRect: { x: 32, y: 152, width: 329, height: 69 },
-        displaySize: { width: 374, height: 665 },
-        objectFit: "cover",
-      },
+      debugLabel: "delivery-checklist-camera-crop",
+      regions: expect.arrayContaining([
+        expect.objectContaining({ role: "vin-text", regionSource: "manual-crop" }),
+        expect.objectContaining({ role: "full-band", regionSource: "manual-crop" }),
+      ]),
       onProgress: expect.any(Function),
       onDebugArtifact: expect.any(Function),
       onDebugReport: expect.any(Function),
     }));
-    expect(stopTrack).toHaveBeenCalled();
     expect(document.querySelector("#deliveryVinScannerSheet").hidden).toBe(true);
     expect(document.querySelector("#deliveryWindshieldVinValue").textContent).toBe("7SAYGAEE3RF178432");
     expect(readStoredSession().metadata).toMatchObject({
       windshieldVin: "7SAYGAEE3RF178432",
       windshieldVinScanSource: "ocr",
     });
+
+    mounted.unmount();
+  });
+
+  it("loads an uploaded VIN image into the crop editor before OCR", async () => {
+    const mediaDevices = {
+      getUserMedia: vi.fn(async () => {
+        throw new Error("Camera unavailable");
+      }),
+    };
+    const source = document.createElement("canvas");
+    source.width = 1600;
+    source.height = 900;
+    vi.stubGlobal("createImageBitmap", vi.fn(async () => source));
+    const vinOcrRecognizer = vi.fn(async () => ({
+      vin: "7SAYGAEE3RF178432",
+      rawText: "7SAYGAEE3RF178432",
+      attempts: 1,
+    }));
+    const root = createRoot();
+    const mounted = mountDeliveryChecklistRoute(createRouteContext({ root, mediaDevices, vinOcrRecognizer }));
+
+    document.querySelector("#deliveryReadVinOcr").click();
+    await flushPromises();
+    document.querySelector("#deliveryVinScannerUpload").click();
+    const input = document.querySelector("#deliveryVinImageInput");
+    Object.defineProperty(input, "files", {
+      configurable: true,
+      value: [new File([new Blob(["vin"])], "vin.png", { type: "image/png" })],
+    });
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    await flushPromises();
+
+    expect(globalThis.createImageBitmap).toHaveBeenCalled();
+    expect(document.querySelector("#deliveryVinCropEditor").hidden).toBe(false);
+    expect(document.querySelector("#deliveryVinLivePane").hidden).toBe(true);
+    const cropCanvas = document.querySelector("#deliveryVinCropCanvas");
+    cropCanvas.getBoundingClientRect = vi.fn(() => ({
+      x: 0,
+      y: 0,
+      width: 480,
+      height: 100,
+      top: 0,
+      left: 0,
+      right: 480,
+      bottom: 100,
+      toJSON: vi.fn(),
+    }));
+    cropCanvas.setPointerCapture = vi.fn();
+    cropCanvas.releasePointerCapture = vi.fn();
+    const pointerDown = new Event("pointerdown", { bubbles: true });
+    Object.assign(pointerDown, { clientX: 20, clientY: 20, pointerId: 1 });
+    const pointerMove = new Event("pointermove", { bubbles: true });
+    Object.assign(pointerMove, { clientX: 44, clientY: 26, pointerId: 1 });
+    const pointerUp = new Event("pointerup", { bubbles: true });
+    Object.assign(pointerUp, { clientX: 44, clientY: 26, pointerId: 1 });
+    cropCanvas.dispatchEvent(pointerDown);
+    cropCanvas.dispatchEvent(pointerMove);
+    cropCanvas.dispatchEvent(pointerUp);
+    const zoom = document.querySelector("#deliveryVinCropZoom");
+    zoom.value = "1.5";
+    zoom.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(cropCanvas.setPointerCapture).toHaveBeenCalledWith(1);
+    expect(zoom.value).toBe("1.5");
+
+    document.querySelector("#deliveryVinCropRead").click();
+    await flushPromises();
+
+    expect(vinOcrRecognizer).toHaveBeenCalledWith(expect.any(HTMLCanvasElement), expect.objectContaining({
+      regions: expect.arrayContaining([
+        expect.objectContaining({ regionSource: "manual-crop" }),
+      ]),
+    }));
+    expect(document.querySelector("#deliveryWindshieldVinValue").textContent).toBe("7SAYGAEE3RF178432");
 
     mounted.unmount();
   });
@@ -732,17 +839,17 @@ describe("delivery checklist app", () => {
     };
     const debug = {
       id: "debug-1",
-      label: "delivery-checklist-camera",
+      label: "delivery-checklist-camera-crop",
       startedAt: "2026-06-15T00:00:00.000Z",
       endedAt: "2026-06-15T00:00:01.000Z",
-      mode: "frame-then-search",
-      sourceSize: { width: 1920, height: 1080 },
-      displaySize: { width: 360, height: 210 },
-      regions: [{ x: 135, y: 443, width: 1651, height: 194 }],
+      mode: "frame",
+      sourceSize: { width: 960, height: 200 },
+      displaySize: { width: 960, height: 200 },
+      regions: [{ x: 0, y: 0, width: 960, height: 200, regionSource: "manual-crop" }],
       attempts: [{
         attempt: 1,
         regionIndex: 0,
-        region: { x: 135, y: 443, width: 1651, height: 194 },
+        region: { x: 0, y: 0, width: 960, height: 200, regionSource: "manual-crop" },
         variant: "gray",
         rawText: "TESLA",
         confidence: 41,
@@ -754,36 +861,26 @@ describe("delivery checklist app", () => {
       rawText: "TESLA",
       failureReason: "No OCR attempt produced a valid VIN.",
     };
-    const vinOcrRecognizer = vi.fn(async (_video, options) => {
+    const vinOcrRecognizer = vi.fn(async (_source, options) => {
       options.onDebugArtifact?.({
         name: "ocr-region-overlay.png",
         kind: "source",
         mimeType: "image/png",
         blob: new Blob(["combined"], { type: "image/png" }),
-        width: 1920,
-        height: 1080,
+        width: 960,
+        height: 200,
         overlayRole: "combined",
-        regionSources: ["mapped-frame", "fallback"],
+        regionSources: ["manual-crop"],
       });
       options.onDebugArtifact?.({
-        name: "ocr-target-overlay.png",
-        kind: "source",
-        mimeType: "image/png",
-        blob: new Blob(["target"], { type: "image/png" }),
-        width: 1920,
-        height: 1080,
-        overlayRole: "target",
-        regionSources: ["mapped-frame"],
-      });
-      options.onDebugArtifact?.({
-        name: "mapped-frame-text.png",
+        name: "manual-crop-text.png",
         kind: "region",
         mimeType: "image/png",
-        blob: new Blob(["mapped"], { type: "image/png" }),
-        width: 1200,
-        height: 180,
+        blob: new Blob(["target"], { type: "image/png" }),
+        width: 960,
+        height: 200,
         regionIndex: 0,
-        region: { x: 135, y: 443, width: 1651, height: 194, regionSource: "mapped-frame" },
+        region: { x: 0, y: 0, width: 960, height: 200, regionSource: "manual-crop" },
       });
       options.onDebugArtifact?.({
         name: "ocr-search-overlay.png",
@@ -805,6 +902,8 @@ describe("delivery checklist app", () => {
     });
     const root = createRoot();
     const video = root.querySelector("#deliveryVinScannerVideo");
+    Object.defineProperty(video, "videoWidth", { configurable: true, value: 1920 });
+    Object.defineProperty(video, "videoHeight", { configurable: true, value: 1080 });
     video.play = vi.fn(async () => {});
     video.pause = vi.fn();
     const mounted = mountDeliveryChecklistRoute(createRouteContext({ root, mediaDevices, vinOcrRecognizer }));
@@ -812,6 +911,8 @@ describe("delivery checklist app", () => {
     document.querySelector("#deliveryReadVinOcr").click();
     await flushPromises();
     document.querySelector("#deliveryVinScannerCapture").click();
+    await flushPromises();
+    document.querySelector("#deliveryVinCropRead").click();
     await flushPromises();
     document.querySelector("#deliveryVinOcrWiderScan").click();
     await flushPromises();
@@ -821,13 +922,10 @@ describe("delivery checklist app", () => {
     expect(document.querySelector("#deliveryVinOcrCopyDebug")).not.toBeNull();
     expect(document.querySelector("#deliveryVinOcrDownloadDebug")).not.toBeNull();
     expect(document.querySelector("#deliveryVinOcrWiderScan")).not.toBeNull();
-    expect(document.querySelector("#deliveryVinOcrPreview img").alt).toBe("ocr-target-overlay.png");
+    expect(document.querySelector("#deliveryVinOcrPreview img").alt).toBe("manual-crop-text.png");
     expect(document.querySelector("#deliveryStatus").textContent).toContain("No valid VIN");
-    expect(vinOcrRecognizer).toHaveBeenLastCalledWith(video, expect.objectContaining({
+    expect(vinOcrRecognizer).toHaveBeenLastCalledWith(expect.any(HTMLCanvasElement), expect.objectContaining({
       mode: "search",
-      frameHint: expect.objectContaining({
-        objectFit: "cover",
-      }),
     }));
 
     mounted.unmount();
@@ -891,7 +989,7 @@ describe("delivery checklist app", () => {
     document.querySelector(".delivery-status-control-issue").click();
     await flushPromises();
     document.querySelector(".delivery-photo-button").click();
-    const input = document.querySelector('input[type="file"]');
+    const input = document.querySelector('input[type="file"]:not(#deliveryVinImageInput):not(#deliveryVinNativeCaptureInput)');
     Object.defineProperty(input, "files", {
       configurable: true,
       value: [new File([blob], "delivery.png", { type: "image/png" })],

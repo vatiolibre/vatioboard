@@ -170,8 +170,10 @@ async function main() {
     const browserWebSocketUrl = await waitForDevTools(child);
     pageSocket = await createPage(baseUrl, browserWebSocketUrl);
     const page = createCdpClient(pageSocket);
+    await page.send("Page.enable");
+    await page.send("Page.navigate", { url: baseUrl });
     await page.send("Runtime.enable");
-    await delay(500);
+    await delay(1000);
 
     const expression = `
       (async () => {

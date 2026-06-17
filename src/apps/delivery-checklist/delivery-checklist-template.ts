@@ -190,23 +190,47 @@ const deliveryChecklistTemplate: string = String.raw`
         <div class="delivery-vin-scanner-header">
           <div>
             <h2>Read windshield VIN</h2>
-            <p id="deliveryVinScannerStatus">Place the VIN text inside the yellow brackets, then tap Read VIN.</p>
+            <p id="deliveryVinScannerStatus">Place the VIN text inside the yellow brackets, then tap Capture frame.</p>
           </div>
           <button id="deliveryVinScannerClose" type="button" class="delivery-icon-btn" title="Close scanner" aria-label="Close scanner">&times;</button>
         </div>
-        <div class="delivery-vin-video-wrap">
-          <video id="deliveryVinScannerVideo" muted playsinline></video>
-          <div class="delivery-vin-scan-frame" aria-hidden="true">
-            <span></span>
-            <span></span>
-            <span></span>
-            <span></span>
+        <div id="deliveryVinLivePane" class="delivery-vin-live-pane">
+          <div class="delivery-vin-video-wrap">
+            <video id="deliveryVinScannerVideo" muted playsinline></video>
+            <div class="delivery-vin-scan-frame" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
           </div>
         </div>
-        <div class="delivery-vin-scanner-actions">
-          <button id="deliveryVinScannerCapture" type="button" class="delivery-action-btn delivery-nav-primary">Read VIN</button>
+        <div id="deliveryVinLiveActions" class="delivery-vin-scanner-actions">
+          <button id="deliveryVinScannerCapture" type="button" class="delivery-action-btn delivery-nav-primary">Capture frame</button>
+          <button id="deliveryVinScannerUpload" type="button" class="delivery-action-btn">Upload image</button>
           <button id="deliveryVinScannerFallback" type="button" class="delivery-action-btn">Enter manually</button>
         </div>
+        <input id="deliveryVinImageInput" type="file" accept="image/*" hidden />
+        <input id="deliveryVinNativeCaptureInput" type="file" accept="image/*" capture="environment" hidden />
+        <section id="deliveryVinCropEditor" class="delivery-vin-crop-editor" aria-label="Center windshield VIN image" hidden>
+          <div class="delivery-vin-crop-wrap">
+            <canvas id="deliveryVinCropCanvas" width="960" height="200" aria-label="Centered VIN image preview"></canvas>
+            <div class="delivery-vin-crop-frame" aria-hidden="true"></div>
+            <div id="deliveryVinCropHint" class="delivery-vin-crop-hint" hidden>Drag to center. Use Zoom to adjust.</div>
+          </div>
+          <div class="delivery-vin-crop-controls">
+            <label class="delivery-vin-zoom-control">
+              <span>Zoom</span>
+              <input id="deliveryVinCropZoom" type="range" min="1" max="2.8" step="0.01" value="1" disabled />
+            </label>
+            <button id="deliveryVinCropReset" type="button" class="delivery-action-btn" disabled>Reset crop</button>
+          </div>
+          <div id="deliveryVinCropActions" class="delivery-vin-crop-actions">
+            <button id="deliveryVinCropRead" type="button" class="delivery-action-btn delivery-nav-primary">Read VIN</button>
+            <button id="deliveryVinCropRetake" type="button" class="delivery-action-btn">Retake</button>
+            <button id="deliveryVinCropUpload" type="button" class="delivery-action-btn">Upload image</button>
+          </div>
+        </section>
         <section id="deliveryVinOcrDiagnostics" class="delivery-vin-ocr-diagnostics" aria-label="OCR diagnostics" hidden>
           <div class="delivery-vin-ocr-diagnostics-copy">
             <strong>OCR diagnostics</strong>

@@ -212,7 +212,7 @@ async function saveArtifacts(rootDir, fixtureResult) {
   const safePreprocessor = String(fixtureResult.preprocessor || "unknown").replace(/[^a-z0-9_.-]+/gi, "-").toLowerCase();
   const fixtureDir = join(rootDir, safeId, safePreprocessor);
   await mkdir(fixtureDir, { recursive: true });
-  const artifactManifest = fixtureResult.artifacts.map(({ dataUrl, ...artifact }) => artifact);
+  const artifactManifest = fixtureResult.artifacts.map(({ dataUrl: _dataUrl, ...artifact }) => artifact);
   await writeFile(
     join(fixtureDir, "debug.json"),
     JSON.stringify({
@@ -268,8 +268,10 @@ async function main() {
     const browserWebSocketUrl = await waitForDevTools(child);
     pageSocket = await createPage(baseUrl, browserWebSocketUrl);
     const page = createCdpClient(pageSocket);
+    await page.send("Page.enable");
+    await page.send("Page.navigate", { url: baseUrl });
     await page.send("Runtime.enable");
-    await delay(500);
+    await delay(1000);
 
     const rows = [];
     const failures = [];

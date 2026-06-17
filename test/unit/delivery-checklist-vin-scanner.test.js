@@ -1,13 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  calculateDeliveryVinCropLayout,
+  calculateDeliveryVinCropStateForSourceRegion,
   calculateDeliveryVinOcrRegion,
+  clampDeliveryVinCropState,
   compareDeliveryWindshieldVin,
+  createDeliveryVinCropCanvas,
+  createDeliveryVinFramedVideoSnapshot,
+  createDeliveryVinManualCropRegions,
   createDeliveryVinOcrAttemptPlan,
   createDeliveryVinOcrRegions,
   createDeliveryVinOcrSearchRegions,
   createDeliveryVinTextRegion,
   createDeliveryVinValueRegion,
+  createDeliveryVinVideoSnapshot,
   extractDeliveryVinFromOcrText,
   extractDeliveryVinFromQrPayload,
   findDeliveryVinOcrCandidates,
@@ -18,6 +25,15 @@ import {
   startDeliveryVinOcrScanner,
   terminateDeliveryVinOcrWorker,
 } from "../../src/apps/delivery-checklist/delivery-checklist-vin-scanner.js";
+import {
+  findConnectedComponents,
+  findTextBands,
+  generateTextLikelihoodMask,
+  createPaddedVinCrop,
+  locateVinRightToLeft,
+  rejectQrLikeComponents,
+  scoreVinCandidateWindow,
+} from "../../src/apps/delivery-checklist/delivery-checklist-vin-locator.js";
 
 const tesseractMock = vi.hoisted(() => ({
   createWorker: vi.fn(),
@@ -56,6 +72,37 @@ function createMockCanvasContext() {
   };
 }
 
+function createSyntheticMask(width, height) {
+  return {
+    width,
+    height,
+    data: new Uint8Array(width * height),
+    variant: "min-channel-high-pass",
+    threshold: 128,
+  };
+}
+
+function fillMaskRect(mask, x, y, width, height) {
+  for (let row = Math.max(0, y); row < Math.min(mask.height, y + height); row += 1) {
+    for (let column = Math.max(0, x); column < Math.min(mask.width, x + width); column += 1) {
+      mask.data[(row * mask.width) + column] = 1;
+    }
+  }
+}
+
+function createSyntheticVinMask({ includeQr = true, irregular = false } = {}) {
+  const mask = createSyntheticMask(260, 72);
+  if (includeQr) fillMaskRect(mask, 12, 19, 30, 30);
+  const top = 18;
+  const pitch = 11;
+  const start = irregular ? 28 : 58;
+  for (let index = 0; index < 17; index += 1) {
+    const x = Math.round(start + index * pitch + (pitch - 4) / 2);
+    fillMaskRect(mask, x, top, irregular && index < 3 ? 8 : 4, 28);
+  }
+  return mask;
+}
+
 describe("delivery checklist VIN scanner helpers", () => {
   beforeEach(() => {
     tesseractMock.createWorker.mockReset();
@@ -89,10 +136,19 @@ describe("delivery checklist VIN scanner helpers", () => {
     expect(extractDeliveryVinFromOcrText("YEZ7SAYGAEE3RF178432")).toBe("7SAYGAEE3RF178432");
     expect(extractDeliveryVinFromOcrText("Tesla 7SAYGAEE3RFI78432")).toBe("7SAYGAEE3RF178432");
     expect(extractDeliveryVinFromOcrText("ZSAYGAEE3RF178432")).toBe("7SAYGAEE3RF178432");
+    expect(extractDeliveryVinFromOcrText("TSAYGAEESRF178432")).toBe("");
+    expect(extractDeliveryVinFromOcrText("TSAYGREESRF178432")).toBe("");
+    expect(extractDeliveryVinFromOcrText("SAVGAEERF178432303")).toBe("");
     expect(extractDeliveryVinFromOcrText("5YJYGDEE0RF000001")).toBe("");
 
     expect(findDeliveryVinOcrCandidates("YEZ7SAYGAEE3RF178432")[0]).toBe("7SAYGAEE3RF178432");
     expect(findDeliveryVinOcrCandidates("ZSAYGAEE3RF178432")[0]).toBe("7SAYGAEE3RF178432");
+    expect(findDeliveryVinOcrCandidates("TSAYGAEESRF178432", {
+      allowComputedCheckDigitRepair: true,
+    })[0]).toBe("7SAYGAEE3RF178432");
+    expect(findDeliveryVinOcrCandidates("TSAYGREESRF178432", {
+      allowComputedCheckDigitRepair: true,
+    })).toEqual([]);
   });
 
   it("compares scanned windshield VINs based on the selected setup mode", () => {
@@ -123,6 +179,89 @@ describe("delivery checklist VIN scanner helpers", () => {
     expect(compareDeliveryWindshieldVin({
       windshieldVin: "7SAYGAEE3RF178432",
     }, "vatiolibre").state).toBe("backend-unavailable");
+  });
+
+  it("generates a neutral text-likelihood mask that suppresses colorful reflections", () => {
+    const width = 12;
+    const height = 4;
+    const data = new Uint8ClampedArray(width * height * 4);
+    for (let pixel = 0; pixel < width * height; pixel += 1) {
+      const offset = pixel * 4;
+      data[offset] = 35;
+      data[offset + 1] = 170;
+      data[offset + 2] = 45;
+      data[offset + 3] = 255;
+    }
+    for (let y = 1; y <= 2; y += 1) {
+      for (let x = 7; x <= 9; x += 1) {
+        const offset = ((y * width) + x) * 4;
+        data[offset] = 230;
+        data[offset + 1] = 232;
+        data[offset + 2] = 226;
+      }
+    }
+
+    const mask = generateTextLikelihoodMask({ width, height, data }, "neutral-bright");
+
+    expect(mask.data[(1 * width) + 8]).toBe(1);
+    expect(mask.data[(1 * width) + 2]).toBe(0);
+  });
+
+  it("selects the horizontal VIN text band from a binary text mask", () => {
+    const mask = createSyntheticMask(180, 80);
+    for (let index = 0; index < 17; index += 1) {
+      fillMaskRect(mask, 20 + index * 8, 30, 3, 22);
+    }
+    fillMaskRect(mask, 16, 4, 4, 4);
+    fillMaskRect(mask, 146, 70, 4, 4);
+
+    const [band] = findTextBands(mask, 2);
+
+    expect(band.y).toBeGreaterThanOrEqual(28);
+    expect(band.y + band.height).toBeLessThanOrEqual(54);
+    expect(band.score).toBeGreaterThan(0);
+  });
+
+  it("rejects QR-like square components before scoring VIN candidates", () => {
+    const mask = createSyntheticVinMask();
+    const [band] = findTextBands(mask, 1);
+    const components = findConnectedComponents(mask, { y: band.y, height: band.height });
+    const rejected = rejectQrLikeComponents(components);
+
+    expect(rejected.length).toBeGreaterThan(0);
+    expect(rejected[0]).toMatchObject({
+      x: 12,
+      width: 30,
+      qrLike: true,
+    });
+  });
+
+  it("scores the regular right-to-left 17-slot candidate above a QR-contaminated window", () => {
+    const mask = createSyntheticVinMask();
+    const [band] = findTextBands(mask, 1);
+    const components = findConnectedComponents(mask, { y: band.y, height: band.height });
+    const [regular] = locateVinRightToLeft(mask, band, 4);
+    const contaminated = scoreVinCandidateWindow(
+      mask,
+      band,
+      { x: 12, width: 17 * 11, pitch: 11, right: 12 + 17 * 11 },
+      components,
+    );
+
+    expect(regular.activeSlots).toBe(17);
+    expect(contaminated.qrPenalty).toBeGreaterThan(0);
+    expect(regular.score).toBeGreaterThan(contaminated.score + 4);
+  });
+
+  it("locates a right-to-left VIN crop that excludes the left QR/DataMatrix block", () => {
+    const mask = createSyntheticVinMask();
+    const [band] = findTextBands(mask, 1);
+    const [candidate] = locateVinRightToLeft(mask, band, 4);
+    const crop = createPaddedVinCrop(mask, band, candidate);
+
+    expect(candidate.activeSlots).toBe(17);
+    expect(crop.x).toBeGreaterThan(42);
+    expect(crop.x + crop.width).toBeGreaterThan(238);
   });
 
   it("calculates wide horizontal OCR scan regions", () => {
@@ -190,6 +329,118 @@ describe("delivery checklist VIN scanner helpers", () => {
       607,
       607,
     ]);
+  });
+
+  it("clamps VIN crop pan and zoom and renders a manual crop canvas", () => {
+    const context = createMockCanvasContext();
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(context);
+    const layout = calculateDeliveryVinCropLayout(2000, 1000, 960, 200, {
+      x: 9999,
+      y: -9999,
+      scale: 2,
+    });
+    const clamped = clampDeliveryVinCropState(2000, 1000, 960, 200, {
+      x: 9999,
+      y: -9999,
+      scale: 3.5,
+    });
+    const source = document.createElement("canvas");
+    source.width = 2000;
+    source.height = 1000;
+    const result = createDeliveryVinCropCanvas(source, {
+      crop: { x: 64, y: -24, scale: 1.4 },
+      width: 960,
+      height: 200,
+    });
+    const regions = createDeliveryVinManualCropRegions(result.canvas.width, result.canvas.height);
+
+    expect(layout).toMatchObject({
+      offsetX: 480,
+      offsetY: -380,
+      scale: 2,
+    });
+    expect(clamped.scale).toBe(2.8);
+    expect(clamped.x).toBeLessThanOrEqual(864);
+    expect(result.canvas.width).toBe(960);
+    expect(result.canvas.height).toBe(200);
+    expect(result.crop).toMatchObject({ x: 64, y: -24, scale: 1.4 });
+    expect(context.drawImage).toHaveBeenCalledWith(source, expect.any(Number), expect.any(Number), expect.any(Number), expect.any(Number));
+    expect(regions).toEqual([
+      { x: 0, y: 0, width: 960, height: 200, role: "vin-text", regionSource: "manual-crop" },
+      { x: 0, y: 0, width: 960, height: 200, role: "full-band", regionSource: "manual-crop" },
+    ]);
+  });
+
+  it("snapshots a video frame into a stable canvas for crop editing", () => {
+    const context = createMockCanvasContext();
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(context);
+    const video = document.createElement("video");
+    Object.defineProperty(video, "videoWidth", { configurable: true, value: 1280 });
+    Object.defineProperty(video, "videoHeight", { configurable: true, value: 720 });
+
+    const snapshot = createDeliveryVinVideoSnapshot(video);
+
+    expect(snapshot.width).toBe(1280);
+    expect(snapshot.height).toBe(720);
+    expect(context.drawImage).toHaveBeenCalledWith(video, 0, 0, 1280, 720);
+  });
+
+  it("snapshots the yellow scanner frame from object-fit cover video into the crop editor alignment", () => {
+    const context = createMockCanvasContext();
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(context);
+    const video = document.createElement("video");
+    Object.defineProperty(video, "videoWidth", { configurable: true, value: 1080 });
+    Object.defineProperty(video, "videoHeight", { configurable: true, value: 1920 });
+    const frameHint = {
+      videoRect: { x: 0, y: 0, width: 374, height: 665 },
+      frameRect: { x: 22, y: 132, width: 329, height: 69 },
+      displaySize: { width: 374, height: 665 },
+      objectFit: "cover",
+    };
+
+    const snapshot = createDeliveryVinFramedVideoSnapshot(video, frameHint);
+
+    expect(snapshot.frameRegion).toEqual({
+      x: 64,
+      y: 381,
+      width: 950,
+      height: 199,
+      role: "full-band",
+      regionSource: "mapped-frame",
+    });
+    expect(snapshot.sourceRegion).toMatchObject({
+      x: 0,
+      y: 368,
+      width: 1080,
+      height: 225,
+      regionSource: "mapped-frame-expanded",
+    });
+    expect(snapshot.canvas.width).toBe(1080);
+    expect(snapshot.canvas.height).toBe(225);
+    expect(context.drawImage).toHaveBeenCalledWith(video, 0, 368, 1080, 225, 0, 0, 1080, 225);
+    expect(snapshot.crop.scale).toBeGreaterThan(1);
+
+    const focusedLayout = calculateDeliveryVinCropLayout(1080, 225, 960, 200, snapshot.crop);
+    const drawScale = Math.max(960 / 1080, 200 / 225) * snapshot.crop.scale;
+    const frameCenterX = focusedLayout.x + ((snapshot.frameRegion.x - snapshot.sourceRegion.x + (snapshot.frameRegion.width / 2)) * drawScale);
+    const frameCenterY = focusedLayout.y + ((snapshot.frameRegion.y - snapshot.sourceRegion.y + (snapshot.frameRegion.height / 2)) * drawScale);
+    expect(frameCenterX).toBeCloseTo(480, 0);
+    expect(frameCenterY).toBeCloseTo(100, 0);
+  });
+
+  it("calculates a crop state that centers a source sub-region in the VIN crop box", () => {
+    const crop = calculateDeliveryVinCropStateForSourceRegion(1080, 225, 960, 200, {
+      x: 64,
+      y: 13,
+      width: 950,
+      height: 199,
+    });
+    const layout = calculateDeliveryVinCropLayout(1080, 225, 960, 200, crop);
+    const drawScale = Math.max(960 / 1080, 200 / 225) * crop.scale;
+
+    expect(crop.scale).toBeGreaterThan(1);
+    expect(layout.x + ((64 + 475) * drawScale)).toBeCloseTo(480, 0);
+    expect(layout.y + ((13 + 99.5) * drawScale)).toBeCloseTo(100, 0);
   });
 
   it("maps the visible scanner frame to source pixels for iPhone object-fit cover video", () => {
@@ -273,6 +524,26 @@ describe("delivery checklist VIN scanner helpers", () => {
     expect(regions.some((region) => region.role === "full-band" && region.regionSource === "fallback")).toBe(true);
     expect(regions.some((region) => region.role === "vin-text" && region.regionSource === "fallback")).toBe(true);
     expect(plan.some((entry) => entry.region.role === "vin-value" && entry.region.regionSource === "fallback")).toBe(true);
+  });
+
+  it("plans deterministic locator crops before fallback OCR regions", () => {
+    const locatorRegion = {
+      x: 54,
+      y: 48,
+      width: 430,
+      height: 70,
+      role: "vin-value",
+      regionSource: "locator",
+    };
+    const fallback = calculateDeliveryVinOcrRegion(960, 200, 0.5);
+    const plan = createDeliveryVinOcrAttemptPlan([fallback, locatorRegion], 960, 200, "canvas");
+
+    expect(plan[0]).toMatchObject({
+      variant: "min-channel-high-pass-gray",
+      pass: "locator",
+      region: locatorRegion,
+    });
+    expect(plan.findIndex((entry) => entry.region.regionSource === "fallback")).toBeGreaterThan(0);
   });
 
   it("emits separated OCR debug overlays for target, search, and combined regions", async () => {
