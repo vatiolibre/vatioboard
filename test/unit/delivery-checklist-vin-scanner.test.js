@@ -34,6 +34,10 @@ import {
   rejectQrLikeComponents,
   scoreVinCandidateWindow,
 } from "../../src/apps/delivery-checklist/delivery-checklist-vin-locator.js";
+import {
+  getDeliveryCameraVideoFitInfo,
+  overlayRectToVideoSourceRect,
+} from "../../src/apps/delivery-checklist/delivery-checklist-camera-roi.js";
 
 const tesseractMock = vi.hoisted(() => ({
   createWorker: vi.fn(),
@@ -88,6 +92,13 @@ function fillMaskRect(mask, x, y, width, height) {
       mask.data[(row * mask.width) + column] = 1;
     }
   }
+}
+
+function expectSourceRectClose(rect, expected) {
+  expect(rect.sx).toBeCloseTo(expected.sx, 3);
+  expect(rect.sy).toBeCloseTo(expected.sy, 3);
+  expect(rect.sw).toBeCloseTo(expected.sw, 3);
+  expect(rect.sh).toBeCloseTo(expected.sh, 3);
 }
 
 function createSyntheticVinMask({ includeQr = true, irregular = false } = {}) {
@@ -476,6 +487,109 @@ describe("delivery checklist VIN scanner helpers", () => {
     });
   });
 
+  it("maps letterboxed object-fit contain video from overlay pixels to source pixels", () => {
+    const mapping = overlayRectToVideoSourceRect({
+      sourceWidth: 1920,
+      sourceHeight: 1080,
+      videoRect: { x: 0, y: 0, width: 400, height: 400 },
+      overlayRect: { x: 100, y: 150, width: 200, height: 50 },
+      objectFit: "contain",
+      objectPosition: "50% 50%",
+    });
+
+    expect(mapping).not.toBeNull();
+    expectSourceRectClose(mapping.sourceRect, {
+      sx: 480,
+      sy: 300,
+      sw: 960,
+      sh: 240,
+    });
+    expect(mapping.fit).toMatchObject({
+      objectFit: "contain",
+      renderedWidth: 400,
+      renderedHeight: 225,
+      offsetY: 87.5,
+    });
+  });
+
+  it("maps fill, object-position, mirrored, and clipped overlay ROI variants", () => {
+    const fillMapping = overlayRectToVideoSourceRect({
+      sourceWidth: 1000,
+      sourceHeight: 500,
+      videoRect: { x: 0, y: 0, width: 400, height: 400 },
+      overlayRect: { x: 100, y: 100, width: 200, height: 100 },
+      objectFit: "fill",
+    });
+    const positionedMapping = overlayRectToVideoSourceRect({
+      sourceWidth: 1000,
+      sourceHeight: 500,
+      videoRect: { x: 0, y: 0, width: 300, height: 300 },
+      overlayRect: { x: 0, y: 120, width: 150, height: 60 },
+      objectFit: "cover",
+      objectPosition: "right bottom",
+    });
+    const mirroredMapping = overlayRectToVideoSourceRect({
+      sourceWidth: 1000,
+      sourceHeight: 500,
+      videoRect: { x: 0, y: 0, width: 500, height: 250 },
+      overlayRect: { x: 50, y: 25, width: 100, height: 50 },
+      objectFit: "cover",
+      mirrored: true,
+    });
+    const clippedMapping = overlayRectToVideoSourceRect({
+      sourceWidth: 1000,
+      sourceHeight: 500,
+      videoRect: { x: 0, y: 0, width: 500, height: 250 },
+      overlayRect: { x: -50, y: 0, width: 150, height: 50 },
+      objectFit: "cover",
+    });
+
+    expectSourceRectClose(fillMapping.sourceRect, {
+      sx: 250,
+      sy: 125,
+      sw: 500,
+      sh: 125,
+    });
+    expectSourceRectClose(positionedMapping.sourceRect, {
+      sx: 500,
+      sy: 200,
+      sw: 250,
+      sh: 100,
+    });
+    expectSourceRectClose(mirroredMapping.sourceRect, {
+      sx: 700,
+      sy: 50,
+      sw: 200,
+      sh: 100,
+    });
+    expectSourceRectClose(clippedMapping.sourceRect, {
+      sx: 0,
+      sy: 0,
+      sw: 200,
+      sh: 100,
+    });
+  });
+
+  it("keeps fit info tied to the capture-time video rect for responsive resizes", () => {
+    const initialFit = getDeliveryCameraVideoFitInfo({
+      sourceWidth: 1280,
+      sourceHeight: 720,
+      videoRect: { x: 0, y: 0, width: 640, height: 360 },
+      objectFit: "cover",
+    });
+    const resizedFit = getDeliveryCameraVideoFitInfo({
+      sourceWidth: 1280,
+      sourceHeight: 720,
+      videoRect: { x: 0, y: 0, width: 360, height: 640 },
+      objectFit: "cover",
+    });
+
+    expect(initialFit.renderedWidth).toBe(640);
+    expect(initialFit.renderedHeight).toBe(360);
+    expect(resizedFit.renderedWidth).toBeCloseTo(1137.778, 3);
+    expect(resizedFit.offsetX).toBeCloseTo(-388.889, 3);
+  });
+
   it("maps a smaller mobile VIN target while preserving expanded crop context", () => {
     const context = createMockCanvasContext();
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(context);
@@ -790,6 +904,8 @@ describe("delivery checklist VIN scanner helpers", () => {
       attempts: 1,
     }));
     const video = document.createElement("video");
+    Object.defineProperty(video, "videoWidth", { configurable: true, value: 1920 });
+    Object.defineProperty(video, "videoHeight", { configurable: true, value: 1080 });
     video.play = vi.fn(async () => {});
     video.pause = vi.fn();
     const onProgress = vi.fn();

@@ -718,6 +718,8 @@ describe("delivery checklist app", () => {
     const video = root.querySelector("#deliveryVinScannerVideo");
     Object.defineProperty(video, "videoWidth", { configurable: true, value: 1920 });
     Object.defineProperty(video, "videoHeight", { configurable: true, value: 1080 });
+    video.style.objectFit = "cover";
+    video.style.objectPosition = "50% 50%";
     video.getBoundingClientRect = vi.fn(() => ({
       x: 0,
       y: 0,
@@ -940,8 +942,44 @@ describe("delivery checklist app", () => {
     const video = root.querySelector("#deliveryVinScannerVideo");
     Object.defineProperty(video, "videoWidth", { configurable: true, value: 1920 });
     Object.defineProperty(video, "videoHeight", { configurable: true, value: 1080 });
+    video.style.objectFit = "cover";
+    video.style.objectPosition = "50% 50%";
+    video.getBoundingClientRect = vi.fn(() => ({
+      x: 0,
+      y: 0,
+      width: 574,
+      height: 323,
+      top: 0,
+      left: 0,
+      right: 574,
+      bottom: 323,
+      toJSON: vi.fn(),
+    }));
+    root.querySelector(".delivery-vin-video-wrap").getBoundingClientRect = vi.fn(() => ({
+      x: 0,
+      y: 0,
+      width: 574,
+      height: 323,
+      top: 0,
+      left: 0,
+      right: 574,
+      bottom: 323,
+      toJSON: vi.fn(),
+    }));
+    root.querySelector(".delivery-vin-scan-frame").getBoundingClientRect = vi.fn(() => ({
+      x: 44,
+      y: 54,
+      width: 492,
+      height: 76,
+      top: 54,
+      left: 44,
+      right: 536,
+      bottom: 130,
+      toJSON: vi.fn(),
+    }));
     video.play = vi.fn(async () => {});
     video.pause = vi.fn();
+    navigator.clipboard.writeText.mockClear();
     const mounted = mountDeliveryChecklistRoute(createRouteContext({ root, mediaDevices, vinOcrRecognizer }));
 
     document.querySelector("#deliveryReadVinOcr").click();
@@ -964,6 +1002,24 @@ describe("delivery checklist app", () => {
     expect(vinOcrRecognizer).toHaveBeenLastCalledWith(expect.any(HTMLCanvasElement), expect.objectContaining({
       mode: "search",
     }));
+    document.querySelector("#deliveryVinOcrCopyDebug").click();
+    await flushPromises();
+    const copiedPayload = JSON.parse(navigator.clipboard.writeText.mock.calls.at(-1)[0]);
+    expect(copiedPayload.cameraRoi.frameHint).toMatchObject({
+      sourceSize: { width: 1920, height: 1080 },
+      objectFit: "cover",
+      objectPosition: "50% 50%",
+      videoRect: { width: 574, height: 323 },
+      frameRect: { x: 44, y: 54, width: 492, height: 76 },
+    });
+    expect(copiedPayload.cameraRoi.mappedFrameRegion).toMatchObject({
+      regionSource: "mapped-frame",
+      role: "full-band",
+    });
+    expect(copiedPayload.cameraRoi.expandedSourceRegion).toMatchObject({
+      regionSource: "mapped-frame-expanded",
+    });
+    expect(copiedPayload.cameraRoi.croppedCanvasSize.width).toBeGreaterThan(0);
 
     mounted.unmount();
   });

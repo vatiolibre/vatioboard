@@ -58,6 +58,7 @@ import {
   startDeliveryVinOcrScanner,
   terminateDeliveryVinOcrWorker,
   type DeliveryVinCropState,
+  type DeliveryVinCameraRoiDebug,
   type DeliveryVinOcrDrawableSource,
   type DeliveryVinOcrDebugArtifact,
   type DeliveryVinOcrDebugReport,
@@ -67,6 +68,7 @@ import {
   type DeliveryVinScannerSession,
   type DeliveryWindshieldVinSource,
 } from "./delivery-checklist-vin-scanner.js";
+import { createDeliveryCameraRoiFrameHint } from "./delivery-checklist-camera-roi.js";
 
 export const DELIVERY_CHECKLIST_ROUTE_APP_ID = "vatio.deliveryChecklist";
 
@@ -188,6 +190,7 @@ interface DeliveryChecklistDom {
   vinScannerSheet: HTMLElement;
   vinScannerLivePane: HTMLElement;
   vinScannerLiveActions: HTMLElement;
+  vinScannerVideoWrap: HTMLElement;
   vinScannerVideo: HTMLVideoElement;
   vinScannerFrame: HTMLElement;
   vinScannerStatus: HTMLElement;
@@ -287,6 +290,7 @@ function readDom(root: ParentNode): DeliveryChecklistDom {
     vinScannerSheet: $(root, "#deliveryVinScannerSheet"),
     vinScannerLivePane: $(root, "#deliveryVinLivePane"),
     vinScannerLiveActions: $(root, "#deliveryVinLiveActions"),
+    vinScannerVideoWrap: $(root, ".delivery-vin-video-wrap"),
     vinScannerVideo: $(root, "#deliveryVinScannerVideo") as HTMLVideoElement,
     vinScannerFrame: $(root, ".delivery-vin-scan-frame"),
     vinScannerStatus: $(root, "#deliveryVinScannerStatus"),
@@ -493,6 +497,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
   };
   let vinCropHintDismissed = false;
   let vinCropHintTimer: number | null = null;
+  let vinCameraRoiDebug: DeliveryVinCameraRoiDebug | null = null;
   let vinOcrDebugReport: DeliveryVinOcrDebugReport | null = null;
   let vinOcrDebugArtifacts: DeliveryVinOcrDebugArtifact[] = [];
   let vinOcrPreviewUrls: string[] = [];
@@ -1094,9 +1099,10 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     dom.photoPreviewCaption.textContent = "";
   }
 
-  function clearVinOcrDebug(): void {
+  function clearVinOcrDebug({ preserveCameraRoi = false } = {}): void {
     for (const url of vinOcrPreviewUrls) URL.revokeObjectURL(url);
     vinOcrPreviewUrls = [];
+    if (!preserveCameraRoi) vinCameraRoiDebug = null;
     vinOcrDebugReport = null;
     vinOcrDebugArtifacts = [];
     dom.vinOcrDiagnostics.hidden = true;
@@ -1106,6 +1112,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
   function createVinOcrDebugPayload() {
     return {
       report: vinOcrDebugReport,
+      cameraRoi: vinCameraRoiDebug,
       artifacts: vinOcrDebugArtifacts.map((artifact) => ({
         name: artifact.name,
         kind: artifact.kind,
@@ -1253,27 +1260,12 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     dom.manualWindshieldVinInput.focus({ preventScroll: true });
   }
 
-  function toVinOcrRect(rect: DOMRect): DeliveryVinOcrFrameHint["videoRect"] {
-    return {
-      x: Math.round(rect.x),
-      y: Math.round(rect.y),
-      width: Math.round(rect.width),
-      height: Math.round(rect.height),
-    };
-  }
-
   function createVinOcrFrameHint(): DeliveryVinOcrFrameHint {
-    const videoRect = dom.vinScannerVideo.getBoundingClientRect();
-    const frameRect = dom.vinScannerFrame.getBoundingClientRect();
-    return {
-      videoRect: toVinOcrRect(videoRect),
-      frameRect: toVinOcrRect(frameRect),
-      displaySize: {
-        width: Math.round(videoRect.width || 0),
-        height: Math.round(videoRect.height || 0),
-      },
-      objectFit: "cover",
-    };
+    return createDeliveryCameraRoiFrameHint(
+      dom.vinScannerVideo,
+      dom.vinScannerVideoWrap,
+      dom.vinScannerFrame,
+    );
   }
 
   function readVinSourceSize(source: DeliveryVinOcrDrawableSource): { width: number; height: number } {
@@ -1481,6 +1473,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     }
     try {
       const snapshot = createDeliveryVinFramedVideoSnapshot(dom.vinScannerVideo, createVinOcrFrameHint());
+      vinCameraRoiDebug = snapshot.cameraRoiDebug;
       stopVinScannerSession();
       showVinCropSource(snapshot.canvas, "Center the VIN text in the crop, then tap Read VIN.", snapshot.crop);
     } catch (error) {
@@ -1541,7 +1534,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
       requestVinImageUpload();
       return;
     }
-    clearVinOcrDebug();
+    clearVinOcrDebug({ preserveCameraRoi: true });
     setVinScannerFallbacksVisible(false);
     dom.vinCropReadButton.disabled = true;
     dom.vinOcrWiderScanButton.disabled = true;

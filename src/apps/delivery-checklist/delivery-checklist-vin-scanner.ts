@@ -7,6 +7,13 @@ import {
   type VinLocatorResult,
   type VinTextMask,
 } from "./delivery-checklist-vin-locator.js";
+import {
+  captureDeliveryCameraSourceRectToCanvas,
+  overlayRectToVideoSourceRect,
+  type DeliveryCameraObjectFit,
+  type DeliveryCameraSourceRect,
+  type DeliveryCameraVideoFitInfo,
+} from "./delivery-checklist-camera-roi.js";
 
 export type DeliveryWindshieldVinSource = "ocr" | "qr" | "manual";
 
@@ -103,6 +110,7 @@ export interface DeliveryVinFramedVideoSnapshotResult {
   crop: DeliveryVinCropState;
   frameRegion: DeliveryVinOcrRegion | null;
   sourceRegion: DeliveryVinOcrRegion | null;
+  cameraRoiDebug: DeliveryVinCameraRoiDebug | null;
 }
 
 export interface DeliveryVinOcrSize {
@@ -178,9 +186,27 @@ export interface DeliveryVinOcrRect {
 
 export interface DeliveryVinOcrFrameHint {
   videoRect: DeliveryVinOcrRect;
+  containerRect?: DeliveryVinOcrRect;
   frameRect: DeliveryVinOcrRect;
   displaySize?: DeliveryVinOcrSize;
-  objectFit: "cover";
+  sourceSize?: DeliveryVinOcrSize;
+  objectFit: DeliveryCameraObjectFit;
+  objectPosition?: string;
+  mirrored?: boolean;
+  devicePixelRatio?: number;
+  orientation?: string;
+  trackSettings?: Record<string, unknown>;
+  mappedSourceRect?: DeliveryCameraSourceRect;
+  unclampedSourceRect?: DeliveryCameraSourceRect;
+  fit?: DeliveryCameraVideoFitInfo;
+}
+
+export interface DeliveryVinCameraRoiDebug {
+  frameHint: DeliveryVinOcrFrameHint;
+  mappedFrameRegion: DeliveryVinOcrRegion | null;
+  expandedSourceRegion: DeliveryVinOcrRegion | null;
+  croppedCanvasSize: DeliveryVinOcrSize;
+  initialCrop: DeliveryVinCropState;
 }
 
 export interface DeliveryVinOcrOptions {
@@ -560,42 +586,53 @@ export function createDeliveryVinFramedVideoSnapshot(
       crop: { x: 0, y: 0, scale: 1 },
       frameRegion: null,
       sourceRegion: null,
+      cameraRoiDebug: frameHint
+        ? {
+          frameHint,
+          mappedFrameRegion: null,
+          expandedSourceRegion: null,
+          croppedCanvasSize: { width, height },
+          initialCrop: { x: 0, y: 0, scale: 1 },
+        }
+        : null,
     };
   }
 
   const sourceRegion = createDeliveryVinFramedSnapshotSourceRegion(frameRegion, width, height);
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, sourceRegion.width);
-  canvas.height = Math.max(1, sourceRegion.height);
-  getCanvasContext(canvas).drawImage(
-    video,
-    sourceRegion.x,
-    sourceRegion.y,
-    sourceRegion.width,
-    sourceRegion.height,
-    0,
-    0,
-    canvas.width,
-    canvas.height,
-  );
+  const canvas = captureDeliveryCameraSourceRectToCanvas(video, {
+    sx: sourceRegion.x,
+    sy: sourceRegion.y,
+    sw: sourceRegion.width,
+    sh: sourceRegion.height,
+  });
   const relativeFrameRegion = {
     x: frameRegion.x - sourceRegion.x,
     y: frameRegion.y - sourceRegion.y,
     width: frameRegion.width,
     height: frameRegion.height,
   };
+  const crop = calculateDeliveryVinCropStateForSourceRegion(
+    canvas.width,
+    canvas.height,
+    DELIVERY_VIN_CROP_CANVAS_WIDTH,
+    DELIVERY_VIN_CROP_CANVAS_HEIGHT,
+    relativeFrameRegion,
+  );
 
   return {
     canvas,
-    crop: calculateDeliveryVinCropStateForSourceRegion(
-      canvas.width,
-      canvas.height,
-      DELIVERY_VIN_CROP_CANVAS_WIDTH,
-      DELIVERY_VIN_CROP_CANVAS_HEIGHT,
-      relativeFrameRegion,
-    ),
+    crop,
     frameRegion,
     sourceRegion,
+    cameraRoiDebug: frameHint
+      ? {
+        frameHint,
+        mappedFrameRegion: frameRegion,
+        expandedSourceRegion: sourceRegion,
+        croppedCanvasSize: { width: canvas.width, height: canvas.height },
+        initialCrop: crop,
+      }
+      : null,
   };
 }
 
@@ -813,30 +850,23 @@ export function mapDeliveryVinFrameHintToSourceRegion(
   frameHint?: DeliveryVinOcrFrameHint,
 ): DeliveryVinOcrRegion | null {
   if (!sourceWidth || !sourceHeight || !frameHint) return null;
-  const video = frameHint.videoRect;
-  const frame = frameHint.frameRect;
-  if (!video.width || !video.height || !frame.width || !frame.height) return null;
-
-  const left = Math.max(video.x, frame.x);
-  const top = Math.max(video.y, frame.y);
-  const right = Math.min(video.x + video.width, frame.x + frame.width);
-  const bottom = Math.min(video.y + video.height, frame.y + frame.height);
-  if (right <= left || bottom <= top) return null;
-
-  const scale = Math.max(video.width / sourceWidth, video.height / sourceHeight);
-  if (!Number.isFinite(scale) || scale <= 0) return null;
-  const renderedWidth = sourceWidth * scale;
-  const renderedHeight = sourceHeight * scale;
-  const offsetX = (video.width - renderedWidth) / 2;
-  const offsetY = (video.height - renderedHeight) / 2;
-  const frameX = left - video.x;
-  const frameY = top - video.y;
+  const mapped = frameHint.mappedSourceRect
+    || overlayRectToVideoSourceRect({
+      sourceWidth,
+      sourceHeight,
+      videoRect: frameHint.videoRect,
+      overlayRect: frameHint.frameRect,
+      objectFit: frameHint.objectFit || "cover",
+      objectPosition: frameHint.objectPosition || "50% 50%",
+      mirrored: Boolean(frameHint.mirrored),
+    })?.sourceRect;
+  if (!mapped) return null;
 
   return clampRegionToSource({
-    x: (frameX - offsetX) / scale,
-    y: (frameY - offsetY) / scale,
-    width: (right - left) / scale,
-    height: (bottom - top) / scale,
+    x: mapped.sx,
+    y: mapped.sy,
+    width: mapped.sw,
+    height: mapped.sh,
     role: "full-band",
     regionSource: "mapped-frame",
   }, sourceWidth, sourceHeight);
@@ -2605,6 +2635,28 @@ function stopStream(stream: MediaStream | null): void {
   }
 }
 
+async function waitForDeliveryVinVideoMetadata(video: HTMLVideoElement, timeoutMs = 2500): Promise<void> {
+  if (video.videoWidth && video.videoHeight) return;
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      video.removeEventListener("loadedmetadata", finish);
+      video.removeEventListener("loadeddata", finish);
+      video.removeEventListener("canplay", finish);
+      video.removeEventListener("playing", finish);
+      resolve();
+    };
+    const timeout = window.setTimeout(finish, timeoutMs);
+    video.addEventListener("loadedmetadata", finish, { once: true });
+    video.addEventListener("loadeddata", finish, { once: true });
+    video.addEventListener("canplay", finish, { once: true });
+    video.addEventListener("playing", finish, { once: true });
+  });
+}
+
 export async function startDeliveryVinOcrScanner({
   video,
   onProgress,
@@ -2637,6 +2689,7 @@ export async function startDeliveryVinOcrScanner({
     video.srcObject = stream;
     const playResult = video.play?.();
     await playResult?.catch?.(() => undefined);
+    await waitForDeliveryVinVideoMetadata(video);
   } catch (error) {
     stopStream(stream);
     throw error;
