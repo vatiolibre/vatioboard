@@ -8,6 +8,7 @@ export * from "./permissions.js";
 export * from "./runtime.js";
 export * from "./app-theme.js";
 export * from "./services.js";
+export * from "./qr-scanner-service.js";
 export * from "./storage.js";
 export * from "./settings.js";
 export * from "./shared-settings.js";

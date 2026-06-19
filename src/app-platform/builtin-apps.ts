@@ -12,6 +12,8 @@ import {
 import { boardAppManifest } from "../apps/board/manifest.js";
 import { calculatorAppManifest } from "../apps/calculator/manifest.js";
 import { codeRainAppManifest } from "../apps/code-rain/manifest.js";
+import { deliveryChecklistAppManifest } from "../apps/delivery-checklist/manifest.js";
+import { qrScannerAppManifest } from "../apps/qr-scanner/manifest.js";
 import { ttsAppManifest } from "../apps/tts/manifest.js";
 import { premiumClockAppManifest } from "../apps/premium-clock/manifest.js";
 import { speedAppManifest } from "../apps/speed/manifest.js";
@@ -43,6 +45,8 @@ const snappingWindowCapabilities = {
 export const BUILTIN_APP_MANIFESTS = [
   speedAppManifest,
   boardAppManifest,
+  deliveryChecklistAppManifest,
+  qrScannerAppManifest,
   // TODO: migrate the remaining centralized built-in manifests into app-owned
   // manifest.ts files as each app is touched.
   defineAppManifest({

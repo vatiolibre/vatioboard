@@ -50,6 +50,7 @@ const appsTemplate = `
         <select data-app-permission-filter aria-label="Permission">
           <option value="all">All permissions</option>
           <option value="gps.read">GPS</option>
+          <option value="media.camera">Camera</option>
           <option value="audio.playback">Audio</option>
           <option value="tts.speak">Voice</option>
           <option value="storage.app">App-private storage</option>

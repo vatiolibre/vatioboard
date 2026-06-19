@@ -1,0 +1,18 @@
+[
+  {
+    "id": "tesla-windshield-sample",
+    "url": "/img/sample-vin.jpeg",
+    "expectedVin": "7SAYGAEE3RF178432",
+    "scenario": "baseline windshield photo",
+    "shouldRecognize": true,
+    "notes": "Original test image from the Delivery Checklist OCR implementation."
+  },
+  {
+    "id": "tesla-windshield-cropped-noise",
+    "url": "/img/sample-vin-cropped-noise.png",
+    "expectedVin": "7SAYGAEE3RF178432",
+    "scenario": "cropped windshield band with QR/DataMatrix and reflection noise",
+    "shouldRecognize": true,
+    "notes": "Noisy cropped windshield sample used to verify right-to-left VIN localization excludes the left QR/DataMatrix block."
+  }
+]

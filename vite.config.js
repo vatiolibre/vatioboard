@@ -28,6 +28,14 @@ const MANUAL_CHUNKS = [
     name: "vendor-charts",
     packages: ["@kurkle/color", "@stanko/dual-range-input", "chart.js"],
   },
+  {
+    name: "vendor-tesseract",
+    packages: ["tesseract.js"],
+  },
+  {
+    name: "vendor-opencv",
+    packages: ["@techstark/opencv-js"],
+  },
 ];
 
 function getManualChunk(id) {
