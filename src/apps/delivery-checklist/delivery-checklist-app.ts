@@ -17,18 +17,25 @@ import {
   buildDeliveryChecklistReport,
   createEmptyItemState,
   createSessionTitle,
+  formatDeliveryChecklistSessionTitle,
+  getDeliveryChecklistIssueWord,
+  getDeliveryChecklistPhotoCountText,
   getChecklistItems,
   getChecklistModelLabel,
   getChecklistProgress,
-  getChecklistSections,
+  getLocalizedChecklistItems,
+  getLocalizedChecklistSections,
   mapTeslaModelCodeToChecklistModelKey,
   normalizeChecklistModelKey,
   normalizeItemState,
   normalizeTeslaOrderForChecklist,
+  translateDeliveryChecklistText,
   type DeliveryChecklistItem,
   type DeliveryChecklistItemState,
   type DeliveryChecklistModelKey,
   type DeliveryChecklistSession,
+  type DeliveryChecklistTranslationParams,
+  type DeliveryChecklistTranslate,
   type DeliveryChecklistVehicleMetadata,
 } from "./delivery-checklist-data.js";
 import {
@@ -94,15 +101,21 @@ const DELIVERY_VIN_LIVE_GUIDANCE = "Step back until the VIN fits inside the smal
 const WINDSHIELD_VIN_STEP = {
   id: WINDSHIELD_VIN_STEP_ID,
   kind: "vin" as const,
+  titleKey: "deliveryChecklist.step.windshieldVin.title",
   title: "Read windshield VIN",
+  shortTitleKey: "deliveryChecklist.step.windshieldVin.shortTitle",
   shortTitle: "VIN",
+  descriptionKey: "deliveryChecklist.step.windshieldVin.description",
   description: "Capture the windshield VIN first, then choose how to fill vehicle details.",
 };
 const VEHICLE_SETUP_STEP = {
   id: VEHICLE_SETUP_STEP_ID,
   kind: "setup" as const,
+  titleKey: "deliveryChecklist.step.vehicleSetup.title",
   title: "Vehicle details",
+  shortTitleKey: "deliveryChecklist.step.vehicleSetup.shortTitle",
   shortTitle: "Vehicle",
+  descriptionKey: "deliveryChecklist.step.vehicleSetup.description",
   description: "Choose VatioLibre import or a manual local checklist before inspection.",
 };
 
@@ -118,8 +131,11 @@ interface DeliveryImportChoice {
 interface DeliveryGuidedStep {
   id: string;
   kind: DeliveryStepKind;
+  titleKey?: string;
   title: string;
+  shortTitleKey?: string;
   shortTitle: string;
+  descriptionKey?: string;
   description: string;
 }
 
@@ -468,6 +484,8 @@ function getInitialSetupMode(targetSession: DeliveryChecklistSession): SetupMode
 export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteMountContext): MountedView {
   const dom = readDom(routeContext.root);
   const runtime = routeContext.appRuntime || null;
+  const translate: DeliveryChecklistTranslate | null = routeContext.translate
+    || (runtime?.i18n ? (key, fallback) => runtime.i18n.t(key, fallback) : null);
   const repository: DeliveryChecklistRepository = createDeliveryChecklistRepository({
     appStorage: routeContext.appStorage || null,
     settingsService: routeContext.settingsService || null,
@@ -506,10 +524,70 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
   let pendingNoteSave = false;
   let noteSaveTimer: number | null = null;
   let disposed = false;
+  let statusTranslation: {
+    key: string;
+    fallback: string;
+    tone: "idle" | "ok" | "warn";
+    params?: DeliveryChecklistTranslationParams | null;
+  } | null = null;
+
+  function tr(
+    key: string,
+    fallback: string,
+    params?: DeliveryChecklistTranslationParams | null,
+  ): string {
+    return translateDeliveryChecklistText(translate, key, fallback, params);
+  }
+
+  function issueWord(count: number): string {
+    return getDeliveryChecklistIssueWord(count, translate);
+  }
+
+  function issueCountText(count: number): string {
+    return tr("deliveryChecklist.issueCount", "{count} {issueWord}", {
+      count,
+      issueWord: issueWord(count),
+    });
+  }
+
+  function photoCountText(count: number): string {
+    return getDeliveryChecklistPhotoCountText(count, translate);
+  }
+
+  function progressCompleteText(complete: number, total: number): string {
+    return tr("deliveryChecklist.progressComplete", "{complete} of {total} complete", { complete, total });
+  }
+
+  function progressShortText(complete: number, total: number): string {
+    return tr("deliveryChecklist.progressShort", "{complete} of {total}", { complete, total });
+  }
+
+  function scannerLiveGuidance(): string {
+    return tr("deliveryChecklist.scanner.liveGuidance", DELIVERY_VIN_LIVE_GUIDANCE);
+  }
+
+  function setTranslatedStatus(
+    key: string,
+    fallback: string,
+    tone: "idle" | "ok" | "warn" = "idle",
+    params?: DeliveryChecklistTranslationParams | null,
+  ): void {
+    statusTranslation = { key, fallback, tone, params };
+    setStatus(dom, tr(key, fallback, params), tone);
+  }
+
+  function renderTranslatedStatus(): void {
+    if (!statusTranslation) return;
+    setStatus(
+      dom,
+      tr(statusTranslation.key, statusTranslation.fallback, statusTranslation.params),
+      statusTranslation.tone,
+    );
+  }
 
   function getActiveSectionItems(): DeliveryChecklistItem[] {
     if (isVinStep() || isSetupStep()) return [];
-    return getChecklistItems(session.modelKey, selectedSectionId);
+    return getLocalizedChecklistItems(session.modelKey, selectedSectionId, translate);
   }
 
   function getActiveSectionProgress() {
@@ -562,9 +640,9 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
 
   function getVinScanStepSummary(): string {
     const comparison = compareDeliveryWindshieldVin(session.metadata, setupMode);
-    if (comparison.state === "mismatch") return "Mismatch";
-    if (comparison.scannedVin) return "Saved";
-    return "Optional";
+    if (comparison.state === "mismatch") return tr("deliveryChecklist.vin.summaryMismatch", "Mismatch");
+    if (comparison.scannedVin) return tr("deliveryChecklist.vin.summarySaved", "Saved");
+    return tr("deliveryChecklist.vin.summaryOptional", "Optional");
   }
 
   function focusSetupChoice(): void {
@@ -573,7 +651,11 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     dom.setupChoice.classList.add("delivery-setup-choice--attention");
     scrollIntoGuidedViewport(dom.setupChoice);
     dom.useVatioLibreButton.focus({ preventScroll: true });
-    setStatus(dom, "Choose VatioLibre import or manual vehicle details before continuing.", "warn");
+    setTranslatedStatus(
+      "deliveryChecklist.status.chooseSetup",
+      "Choose VatioLibre import or manual vehicle details before continuing.",
+      "warn",
+    );
   }
 
   function clearNoteSaveTimer(): void {
@@ -599,13 +681,23 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
   }
 
   function getSections() {
-    return getChecklistSections(session.modelKey);
+    return getLocalizedChecklistSections(session.modelKey, translate);
   }
 
   function getSteps(): DeliveryGuidedStep[] {
     return [
-      WINDSHIELD_VIN_STEP,
-      VEHICLE_SETUP_STEP,
+      {
+        ...WINDSHIELD_VIN_STEP,
+        title: tr(WINDSHIELD_VIN_STEP.titleKey, WINDSHIELD_VIN_STEP.title),
+        shortTitle: tr(WINDSHIELD_VIN_STEP.shortTitleKey, WINDSHIELD_VIN_STEP.shortTitle),
+        description: tr(WINDSHIELD_VIN_STEP.descriptionKey, WINDSHIELD_VIN_STEP.description),
+      },
+      {
+        ...VEHICLE_SETUP_STEP,
+        title: tr(VEHICLE_SETUP_STEP.titleKey, VEHICLE_SETUP_STEP.title),
+        shortTitle: tr(VEHICLE_SETUP_STEP.shortTitleKey, VEHICLE_SETUP_STEP.shortTitle),
+        description: tr(VEHICLE_SETUP_STEP.descriptionKey, VEHICLE_SETUP_STEP.description),
+      },
       ...getSections().map((section) => ({
         id: section.id,
         kind: "checklist" as const,
@@ -720,7 +812,11 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     row.classList.add("delivery-item-row--attention");
     scrollIntoGuidedViewport(row);
     row.focus({ preventScroll: true });
-    setStatus(dom, "Finish the highlighted checklist item before moving on.", "warn");
+    setTranslatedStatus(
+      "deliveryChecklist.status.finishHighlighted",
+      "Finish the highlighted checklist item before moving on.",
+      "warn",
+    );
   }
 
   function saveCurrentSession(nextSession: DeliveryChecklistSession = session): boolean {
@@ -731,7 +827,11 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     };
     const saved = repository.saveSession(session);
     if (!saved) {
-      setStatus(dom, "Could not save locally. Browser storage may be full.", "warn");
+      setTranslatedStatus(
+        "deliveryChecklist.status.saveFailed",
+        "Could not save locally. Browser storage may be full.",
+        "warn",
+      );
     }
     return saved;
   }
@@ -799,7 +899,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     renderOverview();
     renderVinScan();
     renderReview();
-    setStatus(dom, "Windshield VIN scan cleared.", "ok");
+    setTranslatedStatus("deliveryChecklist.status.vinScanCleared", "Windshield VIN scan cleared.", "ok");
   }
 
   function updateItem(itemId: string, state: Partial<DeliveryChecklistItemState>): void {
@@ -876,20 +976,33 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     setInputValue(dom.manualWindshieldVinInput, comparison.scannedVin);
 
     if (!comparison.scannedVin) {
-      dom.windshieldVinValue.textContent = "Not scanned";
-      dom.windshieldVinCompare.textContent = "Scan is optional.";
+      dom.windshieldVinValue.textContent = tr("deliveryChecklist.vin.notScanned", "Not scanned");
+      dom.windshieldVinCompare.textContent = tr("deliveryChecklist.vin.optional", "Scan is optional.");
       return;
     }
 
     dom.windshieldVinValue.textContent = comparison.scannedVin;
     if (comparison.state === "match") {
-      dom.windshieldVinCompare.textContent = "Matches VatioLibre VIN.";
+      dom.windshieldVinCompare.textContent = tr(
+        "deliveryChecklist.vin.matchesVatioLibre",
+        "Matches VatioLibre VIN.",
+      );
     } else if (comparison.state === "mismatch") {
-      dom.windshieldVinCompare.textContent = `Does not match VatioLibre VIN ${comparison.backendVin}.`;
+      dom.windshieldVinCompare.textContent = tr(
+        "deliveryChecklist.vin.mismatch",
+        "Does not match VatioLibre VIN {vin}.",
+        { vin: comparison.backendVin },
+      );
     } else if (comparison.state === "backend-unavailable") {
-      dom.windshieldVinCompare.textContent = "Saved locally. VatioLibre VIN is not available to compare.";
+      dom.windshieldVinCompare.textContent = tr(
+        "deliveryChecklist.vin.backendUnavailable",
+        "Saved locally. VatioLibre VIN is not available to compare.",
+      );
     } else {
-      dom.windshieldVinCompare.textContent = "Saved locally. Manual setup does not compare VINs.";
+      dom.windshieldVinCompare.textContent = tr(
+        "deliveryChecklist.vin.manualOnly",
+        "Saved locally. Manual setup does not compare VINs.",
+      );
     }
   }
 
@@ -904,7 +1017,11 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     dom.setupModelSwitch.hidden = lockImportedModel;
     dom.setupModelLock.hidden = !lockImportedModel;
     dom.setupModelLock.textContent = lockImportedModel
-      ? `${getChecklistModelLabel(session.modelKey)} imported from VatioLibre. Switch to manual setup to change the checklist model.`
+      ? tr(
+        "deliveryChecklist.setup.modelLock",
+        "{model} imported from VatioLibre. Switch to manual setup to change the checklist model.",
+        { model: getChecklistModelLabel(session.modelKey) },
+      )
       : "";
     renderVinScan();
 
@@ -927,10 +1044,10 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
 
     dom.progressRing.style.setProperty("--delivery-progress", `${progress.percent}%`);
     dom.progressPercent.textContent = `${progress.percent}%`;
-    dom.sessionTitle.textContent = session.title || `${getChecklistModelLabel(session.modelKey)} Delivery`;
-    dom.progressText.textContent = `${progress.complete} of ${progress.total} complete`;
-    dom.issueCount.textContent = `${progress.issue} issue${progress.issue === 1 ? "" : "s"}`;
-    dom.railProgress.textContent = `${progress.complete} of ${progress.total}`;
+    dom.sessionTitle.textContent = formatDeliveryChecklistSessionTitle(session, translate);
+    dom.progressText.textContent = progressCompleteText(progress.complete, progress.total);
+    dom.issueCount.textContent = issueCountText(progress.issue);
+    dom.railProgress.textContent = progressShortText(progress.complete, progress.total);
     setInputValue(dom.vinInput, metadata.vin || "");
     setInputValue(dom.orderInput, metadata.orderReference || "");
     setInputValue(dom.pickupInput, metadata.pickupLocation || "");
@@ -945,7 +1062,9 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     dom.vehicleImage.hidden = !metadata.imageUrl;
     if (metadata.imageUrl) dom.vehicleImage.src = metadata.imageUrl;
     dom.vehicleName.textContent = metadata.modelName || getChecklistModelLabel(session.modelKey);
-    dom.vehicleDetails.textContent = details || (metadata.source === "vatiolibre" ? "Imported from VatioLibre" : "");
+    dom.vehicleDetails.textContent = details || (metadata.source === "vatiolibre"
+      ? tr("deliveryChecklist.vehicleImported", "Imported from VatioLibre")
+      : "");
   }
 
   function renderSectionTabs(): void {
@@ -976,7 +1095,18 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
       button.setAttribute("aria-current", section.id === selectedSectionId ? "true" : "false");
       button.setAttribute(
         "aria-label",
-        `${section.title}, step ${index + 1} of ${steps.length}, ${progress.complete} of ${progress.total} complete, ${progress.issue} issues`,
+        tr(
+          "deliveryChecklist.sectionTabAria",
+          "{title}, step {current} of {total}, {complete} of {progressTotal} complete, {issues} issues",
+          {
+            title: section.title,
+            current: index + 1,
+            total: steps.length,
+            complete: progress.complete,
+            progressTotal: progress.total,
+            issues: progress.issue,
+          },
+        ),
       );
 
       const number = document.createElement("span");
@@ -1000,13 +1130,13 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
         ? getVinScanStepSummary()
         : isSetup
         ? setupMode === "choice"
-          ? "Choose setup"
+          ? tr("deliveryChecklist.chooseSetup", "Choose setup")
           : session.metadata?.source === "vatiolibre"
-            ? "Imported"
+            ? tr("deliveryChecklist.imported", "Imported")
             : setupMode === "vatiolibre"
-              ? "VatioLibre"
-              : "Manual"
-        : progress.issue ? `${progress.issue} issue${progress.issue === 1 ? "" : "s"}` : "No issues";
+              ? tr("deliveryChecklist.vatioLibre", "VatioLibre")
+              : tr("deliveryChecklist.manual", "Manual")
+        : progress.issue ? issueCountText(progress.issue) : tr("deliveryChecklist.noIssues", "No issues");
 
       button.append(number, label, count, issues);
       button.addEventListener("click", () => {
@@ -1026,16 +1156,29 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
       : section.kind === "setup"
       ? getSetupProgress()
       : getChecklistProgress(session, getChecklistItems(session.modelKey, section.id));
-    dom.stepKicker.textContent = `Step ${getCurrentStepIndex() + 1} of ${sections.length}`;
+    dom.stepKicker.textContent = tr(
+      "deliveryChecklist.stepKicker",
+      "Step {current} of {total}",
+      { current: getCurrentStepIndex() + 1, total: sections.length },
+    );
     dom.sectionTitle.textContent = section.title;
     dom.sectionDescription.textContent = section.description;
     dom.issueCount.textContent = section.kind === "vin"
       ? getVinScanStepSummary()
       : section.kind === "setup"
       ? setupMode === "choice"
-        ? "Choose setup"
+        ? tr("deliveryChecklist.chooseSetup", "Choose setup")
         : getChecklistModelLabel(session.modelKey)
-      : `${sectionProgress.complete}/${sectionProgress.total} - ${sectionProgress.issue} issue${sectionProgress.issue === 1 ? "" : "s"}`;
+      : tr(
+        "deliveryChecklist.sectionIssueSummary",
+        "{complete}/{total} - {issues} {issueWord}",
+        {
+          complete: sectionProgress.complete,
+          total: sectionProgress.total,
+          issues: sectionProgress.issue,
+          issueWord: issueWord(sectionProgress.issue),
+        },
+      );
     dom.app.dataset.activeStep = selectedSectionId;
   }
 
@@ -1046,7 +1189,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     const url = URL.createObjectURL(record.blob);
     photoPreviewUrls.set(record.id, url);
     photoPreviewMeta.set(record.id, {
-      name: record.name || "Delivery photo",
+      name: record.name || tr("deliveryChecklist.deliveryPhoto", "Delivery photo"),
       size: Number(record.size) || 0,
       type: record.type || "image",
     });
@@ -1072,7 +1215,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
 
   function photoCaption(photoId: string): string {
     const meta = photoPreviewMeta.get(photoId);
-    if (!meta) return "Delivery photo";
+    if (!meta) return tr("deliveryChecklist.deliveryPhoto", "Delivery photo");
     const size = meta.size > 0 ? ` - ${Math.round(meta.size / 1024)} KB` : "";
     return `${meta.name}${size}`;
   }
@@ -1081,7 +1224,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     const url = photoPreviewUrls.get(photoId);
     if (!url) {
       ensurePhotoPreview(photoId);
-      setStatus(dom, "Loading photo preview...", "idle");
+      setTranslatedStatus("deliveryChecklist.loadingPhotoPreview", "Loading photo preview...", "idle");
       return;
     }
     dom.photoPreviewImage.src = url;
@@ -1176,7 +1319,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     try {
       if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable.");
       await navigator.clipboard.writeText(json);
-      dom.vinScannerStatus.textContent = "OCR debug JSON copied.";
+      dom.vinScannerStatus.textContent = tr("deliveryChecklist.status.ocrJsonCopied", "OCR debug JSON copied.");
     } catch {
       const textarea = document.createElement("textarea");
       textarea.value = json;
@@ -1187,7 +1330,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
       textarea.select();
       document.execCommand?.("copy");
       textarea.remove();
-      dom.vinScannerStatus.textContent = "OCR debug JSON copied.";
+      dom.vinScannerStatus.textContent = tr("deliveryChecklist.status.ocrJsonCopied", "OCR debug JSON copied.");
     }
   }
 
@@ -1201,7 +1344,10 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     for (const artifact of vinOcrDebugArtifacts) {
       downloadBlob(artifact.blob, `delivery-vin-ocr-${stamp}-${artifact.name}`);
     }
-    dom.vinScannerStatus.textContent = "OCR debug files downloaded.";
+    dom.vinScannerStatus.textContent = tr(
+      "deliveryChecklist.status.ocrDebugDownloaded",
+      "OCR debug files downloaded.",
+    );
   }
 
   function clearVinCropSource(): void {
@@ -1246,10 +1392,13 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     setVinScannerMode("live");
     setVinScannerFallbacksVisible(false);
     clearVinCropSource();
-    dom.vinScannerStatus.textContent = DELIVERY_VIN_LIVE_GUIDANCE;
+    dom.vinScannerStatus.textContent = scannerLiveGuidance();
     dom.readVinOcrButton.disabled = false;
     dom.vinScannerCaptureButton.disabled = false;
-    dom.vinScannerCaptureButton.textContent = "Capture frame";
+    dom.vinScannerCaptureButton.textContent = tr(
+      "deliveryChecklist.scanner.captureFrame",
+      "Capture frame",
+    );
     clearVinOcrDebug();
   }
 
@@ -1387,21 +1536,34 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
   async function loadVinImageFile(file: File | null | undefined): Promise<void> {
     if (!file) return;
     if (!file.type?.startsWith("image/")) {
-      dom.vinScannerStatus.textContent = "Choose an image file of the windshield VIN.";
+      dom.vinScannerStatus.textContent = tr(
+        "deliveryChecklist.scanner.chooseImage",
+        "Choose an image file of the windshield VIN.",
+      );
       setVinScannerFallbacksVisible(true);
-      setStatus(dom, "That file is not an image.", "warn");
+      setTranslatedStatus("deliveryChecklist.status.fileNotImage", "That file is not an image.", "warn");
       return;
     }
     clearVinOcrDebug();
     try {
       const source = await decodeVinImageFile(file);
       stopVinScannerSession();
-      showVinCropSource(source, "Center the VIN text in the crop, then tap Read VIN.");
+      showVinCropSource(
+        source,
+        tr("deliveryChecklist.scanner.centerThenRead", "Center the VIN text in the crop, then tap Read VIN."),
+      );
     } catch (error) {
       routeContext.logger?.warn("Delivery checklist VIN image failed to load.", error);
-      dom.vinScannerStatus.textContent = "Could not read that image. Try another photo or enter the VIN manually.";
+      dom.vinScannerStatus.textContent = tr(
+        "deliveryChecklist.scanner.imageReadFailed",
+        "Could not read that image. Try another photo or enter the VIN manually.",
+      );
       setVinScannerFallbacksVisible(true);
-      setStatus(dom, "VIN image could not be loaded.", "warn");
+      setTranslatedStatus(
+        "deliveryChecklist.status.vinImageLoadFailed",
+        "VIN image could not be loaded.",
+        "warn",
+      );
     }
   }
 
@@ -1418,9 +1580,12 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
   async function startVinScannerCamera(): Promise<boolean> {
     stopVinScannerSession();
     setVinScannerFallbacksVisible(false);
-    dom.vinScannerStatus.textContent = "Starting camera...";
+    dom.vinScannerStatus.textContent = tr("deliveryChecklist.scanner.startingCamera", "Starting camera...");
     dom.vinScannerCaptureButton.disabled = true;
-    dom.vinScannerCaptureButton.textContent = "Capture frame";
+    dom.vinScannerCaptureButton.textContent = tr(
+      "deliveryChecklist.scanner.captureFrame",
+      "Capture frame",
+    );
     try {
       vinScannerSession = await startDeliveryVinOcrScanner({
         video: dom.vinScannerVideo,
@@ -1432,17 +1597,24 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
           dom.vinScannerStatus.textContent = `${status}${percent}`;
         },
       });
-      dom.vinScannerStatus.textContent = DELIVERY_VIN_LIVE_GUIDANCE;
+      dom.vinScannerStatus.textContent = scannerLiveGuidance();
       dom.vinScannerCaptureButton.disabled = false;
       return true;
     } catch (error) {
       routeContext.logger?.warn("Delivery checklist VIN OCR camera failed.", error);
       stopVinScannerSession();
-      dom.vinScannerStatus.textContent = "Camera is unavailable here. Upload a VIN photo or enter the VIN manually.";
-      dom.vinScannerCaptureButton.textContent = "Take photo";
+      dom.vinScannerStatus.textContent = tr(
+        "deliveryChecklist.scanner.cameraUnavailable",
+        "Camera is unavailable here. Upload a VIN photo or enter the VIN manually.",
+      );
+      dom.vinScannerCaptureButton.textContent = tr("deliveryChecklist.scanner.takePhoto", "Take photo");
       dom.vinScannerCaptureButton.disabled = false;
       setVinScannerFallbacksVisible(true);
-      setStatus(dom, "Camera OCR is unavailable here. Upload a VIN photo or enter it manually.", "warn");
+      setTranslatedStatus(
+        "deliveryChecklist.status.cameraUnavailable",
+        "Camera OCR is unavailable here. Upload a VIN photo or enter it manually.",
+        "warn",
+      );
       return false;
     }
   }
@@ -1452,7 +1624,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     dom.vinScannerSheet.hidden = false;
     setVinScannerMode("live");
     setVinScannerFallbacksVisible(false);
-    dom.vinScannerStatus.textContent = "Starting camera...";
+    dom.vinScannerStatus.textContent = tr("deliveryChecklist.scanner.startingCamera", "Starting camera...");
     dom.readVinOcrButton.disabled = true;
     dom.vinScannerCaptureButton.disabled = true;
     if (!routeContext.vinOcrRecognizer) {
@@ -1473,12 +1645,19 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
       const snapshot = createDeliveryVinFramedVideoSnapshot(dom.vinScannerVideo, createVinOcrFrameHint());
       vinCameraRoiDebug = snapshot.cameraRoiDebug;
       stopVinScannerSession();
-      showVinCropSource(snapshot.canvas, "Center the VIN text in the crop, then tap Read VIN.", snapshot.crop);
+      showVinCropSource(
+        snapshot.canvas,
+        tr("deliveryChecklist.scanner.centerThenRead", "Center the VIN text in the crop, then tap Read VIN."),
+        snapshot.crop,
+      );
     } catch (error) {
       routeContext.logger?.warn("Delivery checklist VIN OCR frame capture failed.", error);
-      dom.vinScannerStatus.textContent = "Could not capture the camera frame. Try again, upload a photo, or enter it manually.";
+      dom.vinScannerStatus.textContent = tr(
+        "deliveryChecklist.scanner.captureFailed",
+        "Could not capture the camera frame. Try again, upload a photo, or enter it manually.",
+      );
       setVinScannerFallbacksVisible(true);
-      setStatus(dom, "Could not capture the VIN image.", "warn");
+      setTranslatedStatus("deliveryChecklist.status.captureFailed", "Could not capture the VIN image.", "warn");
     }
   }
 
@@ -1536,7 +1715,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     setVinScannerFallbacksVisible(false);
     dom.vinCropReadButton.disabled = true;
     dom.vinOcrWiderScanButton.disabled = true;
-    dom.vinCropReadButton.textContent = "Reading...";
+    dom.vinCropReadButton.textContent = tr("deliveryChecklist.scanner.reading", "Reading...");
     try {
       const artifacts: DeliveryVinOcrDebugArtifact[] = [];
       const cropResult = createDeliveryVinCropCanvas(vinCropSource, {
@@ -1569,24 +1748,42 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
       vinOcrDebugReport = result.debug || vinOcrDebugReport;
       if (result.vin) {
         updateWindshieldVin(result.vin, "ocr");
-        setStatus(dom, "Windshield VIN read and saved locally.", "ok");
+        setTranslatedStatus(
+          "deliveryChecklist.status.vinReadSaved",
+          "Windshield VIN read and saved locally.",
+          "ok",
+        );
         stopVinScanner();
         return;
       }
-      dom.vinScannerStatus.textContent = "Could not read a valid VIN. Recenter the crop, zoom in, or try a wider scan.";
+      dom.vinScannerStatus.textContent = tr(
+        "deliveryChecklist.scanner.noValidVin",
+        "Could not read a valid VIN. Recenter the crop, zoom in, or try a wider scan.",
+      );
       setVinScannerFallbacksVisible(true);
-      setStatus(dom, "No valid VIN found in the centered image.", "warn");
+      setTranslatedStatus(
+        "deliveryChecklist.status.noValidVin",
+        "No valid VIN found in the centered image.",
+        "warn",
+      );
       renderVinOcrDiagnostics();
     } catch (error) {
       routeContext.logger?.warn("Delivery checklist VIN OCR failed.", error);
-      dom.vinScannerStatus.textContent = "Could not read the VIN. Try again, upload another photo, or enter it manually.";
+      dom.vinScannerStatus.textContent = tr(
+        "deliveryChecklist.scanner.readFailed",
+        "Could not read the VIN. Try again, upload another photo, or enter it manually.",
+      );
       setVinScannerFallbacksVisible(true);
-      setStatus(dom, "VIN OCR failed; manual entry is still available.", "warn");
+      setTranslatedStatus(
+        "deliveryChecklist.status.vinOcrFailed",
+        "VIN OCR failed; manual entry is still available.",
+        "warn",
+      );
       renderVinOcrDiagnostics();
     } finally {
       if (vinScannerMode === "crop" && vinCropSource) {
         dom.vinCropReadButton.disabled = false;
-        dom.vinCropReadButton.textContent = "Read VIN";
+        dom.vinCropReadButton.textContent = tr("deliveryChecklist.vin.read", "Read VIN");
         dom.vinOcrWiderScanButton.disabled = false;
       }
     }
@@ -1596,7 +1793,10 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     const button = document.createElement("button");
     button.type = "button";
     button.className = compact ? "delivery-photo-thumb delivery-photo-thumb-compact" : "delivery-photo-thumb";
-    button.setAttribute("aria-label", `Open ${photoCaption(photoId)}`);
+    button.setAttribute(
+      "aria-label",
+      tr("deliveryChecklist.openPhoto", "Open {caption}", { caption: photoCaption(photoId) }),
+    );
     const url = photoPreviewUrls.get(photoId);
     if (url) {
       const image = document.createElement("img");
@@ -1606,7 +1806,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
       button.append(image);
     } else {
       const placeholder = document.createElement("span");
-      placeholder.textContent = "Photo";
+      placeholder.textContent = tr("deliveryChecklist.photo", "Photo");
       button.append(placeholder);
       ensurePhotoPreview(photoId);
     }
@@ -1660,19 +1860,19 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     meta.className = "delivery-item-meta";
     if (item.critical) {
       const critical = document.createElement("span");
-      critical.textContent = "Critical";
+      critical.textContent = tr("deliveryChecklist.item.critical", "Critical");
       critical.className = "delivery-item-badge";
       meta.append(critical);
     }
     if (item.requiresUnlocked) {
       const unlocked = document.createElement("span");
-      unlocked.textContent = "Unlocked";
+      unlocked.textContent = tr("deliveryChecklist.item.unlocked", "Unlocked");
       unlocked.className = "delivery-item-badge";
       meta.append(unlocked);
     }
     if (state.photoIds?.length) {
       const photos = document.createElement("span");
-      photos.textContent = `${state.photoIds.length} photo${state.photoIds.length === 1 ? "" : "s"}`;
+      photos.textContent = photoCountText(state.photoIds.length);
       photos.className = "delivery-item-badge";
       meta.append(photos);
     }
@@ -1688,15 +1888,15 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     const controls = document.createElement("div");
     controls.className = "delivery-item-controls";
     controls.append(
-      createStatusButton(item, state, "pass", "Pass"),
-      createStatusButton(item, state, "issue", "Issue"),
-      createStatusButton(item, state, "skip", "Skip"),
+      createStatusButton(item, state, "pass", tr("deliveryChecklist.item.pass", "Pass")),
+      createStatusButton(item, state, "issue", tr("deliveryChecklist.item.issue", "Issue")),
+      createStatusButton(item, state, "skip", tr("deliveryChecklist.item.skip", "Skip")),
     );
 
     const noteButton = document.createElement("button");
     noteButton.type = "button";
     noteButton.className = "delivery-note-toggle";
-    noteButton.textContent = "Note";
+    noteButton.textContent = tr("deliveryChecklist.item.note", "Note");
     noteButton.setAttribute("aria-pressed", expandedNotes.has(item.id) || state.status === "issue" || Boolean(state.note) ? "true" : "false");
     noteButton.addEventListener("click", () => {
       if (expandedNotes.has(item.id)) expandedNotes.delete(item.id);
@@ -1709,7 +1909,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
       const photoButton = document.createElement("button");
       photoButton.type = "button";
       photoButton.className = "delivery-photo-button";
-      photoButton.textContent = "Photo";
+      photoButton.textContent = tr("deliveryChecklist.photo", "Photo");
       photoButton.addEventListener("click", () => attachPhoto(item.id));
       controls.append(photoButton);
     }
@@ -1720,7 +1920,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     noteWrap.hidden = !showNote;
     const note = document.createElement("textarea");
     note.value = state.note || "";
-    note.placeholder = "Add advisor-ready notes";
+    note.placeholder = tr("deliveryChecklist.item.notePlaceholder", "Add advisor-ready notes");
     note.spellcheck = true;
     note.addEventListener("input", () => updateItemNote(item.id, note.value));
     note.addEventListener("blur", flushPendingNoteSave);
@@ -1741,24 +1941,32 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     dom.setupPanel.hidden = !setupStepActive;
     dom.checklistItems.hidden = vinStepActive || setupStepActive;
     if (vinStepActive || setupStepActive) return;
-    for (const item of getChecklistItems(session.modelKey, selectedSectionId)) {
+    for (const item of getLocalizedChecklistItems(session.modelKey, selectedSectionId, translate)) {
       dom.checklistItems.append(createItemRow(item));
     }
   }
 
   function renderReview(): void {
-    const items = getChecklistItems(session.modelKey);
+    const items = getLocalizedChecklistItems(session.modelKey, null, translate);
     const progress = getChecklistProgress(session, items);
     const issues = items.filter((item) => normalizeItemState(session.itemState[item.id]).status === "issue");
     const active = isReviewStep();
     dom.reviewPanel.hidden = !active;
-    dom.reviewSummary.textContent = `${progress.issue} issue${progress.issue === 1 ? "" : "s"} - ${progress.percent}% complete`;
+    dom.reviewSummary.textContent = tr(
+      "deliveryChecklist.review.summary",
+      "{issues} {issueWord} - {percent}% complete",
+      {
+        issues: progress.issue,
+        issueWord: issueWord(progress.issue),
+        percent: progress.percent,
+      },
+    );
     dom.issueList.replaceChildren();
 
     if (issues.length === 0) {
       const empty = document.createElement("p");
       empty.className = "delivery-empty-review";
-      empty.textContent = "No issues marked yet.";
+      empty.textContent = tr("deliveryChecklist.review.noIssues", "No issues marked yet.");
       dom.issueList.append(empty);
     } else {
       for (const item of issues) {
@@ -1768,9 +1976,9 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
         const title = document.createElement("strong");
         title.textContent = item.title;
         const note = document.createElement("p");
-        note.textContent = state.note || "No note yet.";
+        note.textContent = state.note || tr("deliveryChecklist.review.noNote", "No note yet.");
         const photos = document.createElement("span");
-        photos.textContent = `${state.photoIds?.length || 0} photo${state.photoIds?.length === 1 ? "" : "s"}`;
+        photos.textContent = photoCountText(state.photoIds?.length || 0);
         entry.append(title, note, photos);
         const gallery = createPhotoGallery(state.photoIds || [], true);
         if (gallery) entry.append(gallery);
@@ -1792,17 +2000,19 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
 
     dom.prevStepButton.disabled = isFirst;
     dom.prevStepButton.hidden = isFirst;
-    dom.prevStepButton.textContent = previousSection ? `Previous: ${previousSection.shortTitle}` : "Previous";
+    dom.prevStepButton.textContent = previousSection
+      ? tr("deliveryChecklist.previousSection", "Previous: {section}", { section: previousSection.shortTitle })
+      : tr("deliveryChecklist.previous", "Previous");
     dom.prevStepButton.dataset.available = isFirst ? "false" : "true";
     dom.nextStepButton.disabled = isLast && sectionProgress.unchecked === 0;
     dom.nextStepButton.dataset.mode = sectionProgress.unchecked > 0 ? "missing" : "next";
     dom.nextStepButton.textContent = isSetupStep() && !isSetupComplete()
-      ? "Choose setup option"
+      ? tr("deliveryChecklist.chooseSetupOption", "Choose setup option")
       : sectionProgress.unchecked > 0
-      ? `Finish ${sectionProgress.unchecked} missing`
+      ? tr("deliveryChecklist.finishMissing", "Finish {count} missing", { count: sectionProgress.unchecked })
       : nextSection
-        ? `Next: ${nextSection.shortTitle}`
-        : "Review Complete";
+        ? tr("deliveryChecklist.nextSection", "Next: {section}", { section: nextSection.shortTitle })
+        : tr("deliveryChecklist.reviewComplete", "Review Complete");
   }
 
   function render(): void {
@@ -1819,7 +2029,11 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
 
   async function attachPhoto(itemId: string): Promise<void> {
     if (!photoStorageWritable) {
-      setStatus(dom, "Photo storage is unavailable here. Notes still save locally.", "warn");
+      setTranslatedStatus(
+        "deliveryChecklist.status.photoStorageUnavailable",
+        "Photo storage is unavailable here. Notes still save locally.",
+        "warn",
+      );
       return;
     }
 
@@ -1845,7 +2059,11 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
         name: file.name,
       });
       if (!record) {
-        setStatus(dom, "Could not save that photo. The issue note is still local.", "warn");
+        setTranslatedStatus(
+          "deliveryChecklist.status.photoSaveFailed",
+          "Could not save that photo. The issue note is still local.",
+          "warn",
+        );
         return;
       }
       rememberPhotoPreview(record);
@@ -1853,7 +2071,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
       updateItem(itemId, {
         photoIds: [...(state.photoIds || []), record.id],
       });
-      setStatus(dom, "Photo saved locally.", "ok");
+      setTranslatedStatus("deliveryChecklist.status.photoSaved", "Photo saved locally.", "ok");
     }, { once: true });
 
     input.click();
@@ -1893,7 +2111,11 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
         vin: session.metadata?.vin || windshieldVin || "",
       },
     });
-    setStatus(dom, "Manual local setup selected.", "ok");
+    setTranslatedStatus(
+      "deliveryChecklist.status.manualSetupSelected",
+      "Manual local setup selected.",
+      "ok",
+    );
     render();
   }
 
@@ -1919,7 +2141,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     vatioLibreRequested = false;
     importChoices = [];
     autoImportChecked = false;
-    setStatus(dom, "New local checklist started.", "ok");
+    setTranslatedStatus("deliveryChecklist.status.newChecklistStarted", "New local checklist started.", "ok");
     render();
   }
 
@@ -1932,9 +2154,9 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
 
   function buildReportText(): string {
     return [
-      buildDeliveryChecklistReport(session),
+      buildDeliveryChecklistReport(session, { translate }),
       "",
-      "Sources used for checklist structure:",
+      tr("deliveryChecklist.report.sourcesHeader", "Sources used for checklist structure:"),
       ...DELIVERY_CHECKLIST_SOURCE_ATTRIBUTIONS.map((source) => `- ${source.title}: ${source.url}`),
     ].join("\n");
   }
@@ -1954,7 +2176,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     flushPendingNoteSave();
     const data = JSON.stringify(session, null, 2);
     downloadBlob(new Blob([data], { type: "application/json" }), buildExportBaseName("json"));
-    setStatus(dom, "Checklist JSON exported.", "ok");
+    setTranslatedStatus("deliveryChecklist.status.jsonExported", "Checklist JSON exported.", "ok");
   }
 
   function escapePdfString(value: string): string {
@@ -2042,16 +2264,24 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
   function exportText(): void {
     flushPendingNoteSave();
     downloadBlob(new Blob([buildReportText()], { type: "text/plain;charset=utf-8" }), buildExportBaseName("txt"));
-    setStatus(dom, "Checklist text report exported.", "ok");
+    setTranslatedStatus(
+      "deliveryChecklist.status.textExported",
+      "Checklist text report exported.",
+      "ok",
+    );
   }
 
   function exportPdf(): void {
     flushPendingNoteSave();
     downloadBlob(
-      createPdfBlob(session.title || "Tesla Delivery Checklist", buildReportText()),
+      createPdfBlob(formatDeliveryChecklistSessionTitle(session, translate), buildReportText()),
       buildExportBaseName("pdf"),
     );
-    setStatus(dom, "Checklist PDF report exported.", "ok");
+    setTranslatedStatus(
+      "deliveryChecklist.status.pdfExported",
+      "Checklist PDF report exported.",
+      "ok",
+    );
   }
 
   async function copyReport(): Promise<void> {
@@ -2059,12 +2289,16 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     const report = dom.reportText.value || buildReportText();
     try {
       await navigator.clipboard?.writeText(report);
-      setStatus(dom, "Report copied.", "ok");
+      setTranslatedStatus("deliveryChecklist.status.reportCopied", "Report copied.", "ok");
     } catch {
       dom.reportText.focus();
       dom.reportText.select();
       document.execCommand?.("copy");
-      setStatus(dom, "Report selected for copying.", "ok");
+      setTranslatedStatus(
+        "deliveryChecklist.status.reportSelected",
+        "Report selected for copying.",
+        "ok",
+      );
     }
   }
 
@@ -2090,7 +2324,12 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     });
   }
 
-  function showLoginPrompt(summary = "Log in to import from VatioLibre. Manual setup still works offline."): void {
+  function showLoginPrompt(
+    summary = tr(
+      "deliveryChecklist.import.loginPrompt",
+      "Log in to import from VatioLibre. Manual setup still works offline.",
+    ),
+  ): void {
     importChoices = [];
     dom.importPanel.hidden = false;
     dom.importSummary.textContent = summary;
@@ -2129,27 +2368,51 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     vatioLibreRequested = true;
     const auth = routeContext.authService;
     if (!auth?.getTeslaConnectionStatus) {
-      showImportChoices("VatioLibre is not available in this session. Continue manually.", []);
-      setStatus(dom, "Manual checklist mode is active.", "warn");
+      showImportChoices(
+        tr("deliveryChecklist.import.unavailable", "VatioLibre is not available in this session. Continue manually."),
+        [],
+      );
+      setTranslatedStatus(
+        "deliveryChecklist.status.manualModeActive",
+        "Manual checklist mode is active.",
+        "warn",
+      );
       return;
     }
 
     importBusy = true;
     dom.importPanel.hidden = false;
-    dom.importSummary.textContent = "Checking VatioLibre Tesla connection...";
+    dom.importSummary.textContent = tr(
+      "deliveryChecklist.import.checking",
+      "Checking VatioLibre Tesla connection...",
+    );
     dom.importSelect.hidden = true;
     dom.applyImportButton.hidden = true;
     dom.loginButton.hidden = true;
-    setStatus(dom, "Checking VatioLibre Tesla connection...", "idle");
+    setTranslatedStatus(
+      "deliveryChecklist.status.checkingVatioLibre",
+      "Checking VatioLibre Tesla connection...",
+      "idle",
+    );
     try {
       const status = asRecord(await auth.getTeslaConnectionStatus({ force: true }));
       if (status.localOnly || status.isGuest || status.connected === false || status.authenticated === false) {
         if (!status.localOnly && (status.isGuest || status.authenticated === false)) {
           showLoginPrompt();
         } else {
-          showImportChoices("Tesla data is not connected for this VatioLibre session. Continue manually.", []);
+          showImportChoices(
+            tr(
+              "deliveryChecklist.import.notConnected",
+              "Tesla data is not connected for this VatioLibre session. Continue manually.",
+            ),
+            [],
+          );
         }
-        setStatus(dom, "Manual checklist mode is active.", "warn");
+        setTranslatedStatus(
+          "deliveryChecklist.status.manualModeActive",
+          "Manual checklist mode is active.",
+          "warn",
+        );
         return;
       }
 
@@ -2163,8 +2426,14 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
         if (orderChoices.length === 1 && !hasUserVehicleMetadata()) {
           await applyImportChoice(orderChoices[0], { automatic: true });
         } else {
-          showImportChoices("Select an order to prefill the checklist. Nothing syncs back.", orderChoices);
-          setStatus(dom, "VatioLibre orders loaded.", "ok");
+          showImportChoices(
+            tr(
+              "deliveryChecklist.import.selectOrder",
+              "Select an order to prefill the checklist. Nothing syncs back.",
+            ),
+            orderChoices,
+          );
+          setTranslatedStatus("deliveryChecklist.status.ordersLoaded", "VatioLibre orders loaded.", "ok");
         }
         return;
       }
@@ -2179,20 +2448,35 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
       } else {
         showImportChoices(
           vehicleChoices.length
-            ? "Select a vehicle to prefill the checklist. Sleeping vehicles will not be woken."
-            : "No supported Tesla orders or vehicles were found. Continue manually.",
+            ? tr(
+              "deliveryChecklist.import.selectVehicle",
+              "Select a vehicle to prefill the checklist. Sleeping vehicles will not be woken.",
+            )
+            : tr(
+              "deliveryChecklist.import.noneFound",
+              "No supported Tesla orders or vehicles were found. Continue manually.",
+            ),
           vehicleChoices,
         );
-        setStatus(
-          dom,
+        setTranslatedStatus(
+          vehicleChoices.length
+            ? "deliveryChecklist.status.vehiclesLoaded"
+            : "deliveryChecklist.status.noImportableData",
           vehicleChoices.length ? "VatioLibre vehicles loaded." : "No importable Tesla data found.",
           vehicleChoices.length ? "ok" : "warn",
         );
       }
     } catch (error) {
       routeContext.logger?.warn("Delivery checklist import failed.", error);
-      showImportChoices("Could not load VatioLibre Tesla data. Continue manually.", []);
-      setStatus(dom, "Import failed; manual checklist mode is still available.", "warn");
+      showImportChoices(
+        tr("deliveryChecklist.import.failed", "Could not load VatioLibre Tesla data. Continue manually."),
+        [],
+      );
+      setTranslatedStatus(
+        "deliveryChecklist.status.importFailed",
+        "Import failed; manual checklist mode is still available.",
+        "warn",
+      );
     } finally {
       importBusy = false;
     }
@@ -2237,11 +2521,25 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
     });
     showImportChoices(
       automatic
-        ? "Imported the only matching VatioLibre vehicle/order. Nothing syncs back."
-        : "Imported metadata saved locally. You can edit it here.",
+        ? tr(
+          "deliveryChecklist.import.auto",
+          "Imported the only matching VatioLibre vehicle/order. Nothing syncs back.",
+        )
+        : tr(
+          "deliveryChecklist.import.saved",
+          "Imported metadata saved locally. You can edit it here.",
+        ),
       [],
     );
-    setStatus(dom, automatic ? "VatioLibre metadata imported automatically." : "Imported metadata saved locally. You can edit it here.", "ok");
+    setTranslatedStatus(
+      automatic
+        ? "deliveryChecklist.status.metadataImportedAuto"
+        : "deliveryChecklist.status.metadataImported",
+      automatic
+        ? "VatioLibre metadata imported automatically."
+        : "Imported metadata saved locally. You can edit it here.",
+      "ok",
+    );
   }
 
   setButtonIcon(dom.exportButton, IconDownload);
@@ -2264,7 +2562,11 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
       clearWindshieldVin();
     } else if (normalized.length === 17) {
       updateWindshieldVin(normalized, "manual");
-      setStatus(dom, "Windshield VIN saved locally.", "ok");
+      setTranslatedStatus(
+        "deliveryChecklist.status.windshieldVinSaved",
+        "Windshield VIN saved locally.",
+        "ok",
+      );
     }
   });
   on(dom.useManualButton, "click", chooseManualSetup);
@@ -2349,6 +2651,8 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
   const unsubscribeLanguage = runtime?.i18n.subscribe?.((language) => {
     if (dom.langToggle) dom.langToggle.textContent = language.toUpperCase();
     runtime.i18n.apply(routeContext.root);
+    renderTranslatedStatus();
+    render();
   });
   if (unsubscribeLanguage) disposers.push(unsubscribeLanguage);
   if (dom.langToggle) dom.langToggle.textContent = runtime?.i18n.getLanguage?.().toUpperCase?.() || "EN";
@@ -2358,7 +2662,11 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
       photoStorageWritable = snapshot.indexedDbWritable;
       if (!photoStorageWritable) {
         dom.app.dataset.photoStorage = "unavailable";
-        setStatus(dom, "Photo attachments are unavailable here; statuses and notes still save locally.", "warn");
+        setTranslatedStatus(
+          "deliveryChecklist.status.photoAttachmentsUnavailable",
+          "Photo attachments are unavailable here; statuses and notes still save locally.",
+          "warn",
+        );
       }
       renderItems();
       renderReview();
@@ -2369,7 +2677,7 @@ export function createDeliveryChecklistApp(routeContext: DeliveryChecklistRouteM
       renderItems();
     });
 
-  setStatus(dom, "Saved locally in this browser.", "idle");
+  setTranslatedStatus("deliveryChecklist.status.savedLocal", "Saved locally in this browser.", "idle");
   runtime?.i18n.apply(routeContext.root);
   render();
 

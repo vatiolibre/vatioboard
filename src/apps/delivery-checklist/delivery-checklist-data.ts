@@ -75,6 +75,9 @@ export interface DeliveryChecklistProgress {
   percent: number;
 }
 
+export type DeliveryChecklistTranslate = (key: string, fallback?: string) => string;
+export type DeliveryChecklistTranslationParams = Record<string, unknown>;
+
 export const DELIVERY_CHECKLIST_SESSION_VERSION = 1;
 
 export const DELIVERY_CHECKLIST_MODELS: DeliveryChecklistModelOption[] = [
@@ -539,6 +542,112 @@ export function getChecklistSections(modelKey: DeliveryChecklistModelKey): Deliv
   return DELIVERY_CHECKLIST_SECTIONS.filter((section) => availableSectionIds.has(section.id));
 }
 
+function interpolateDeliveryChecklistText(
+  text: string,
+  params?: DeliveryChecklistTranslationParams | null,
+): string {
+  if (!params) return text;
+  return text.replace(/\{(\w+)\}/g, (match, token) => {
+    if (Object.prototype.hasOwnProperty.call(params, token)) {
+      return String(params[token]);
+    }
+    return match;
+  });
+}
+
+export function translateDeliveryChecklistText(
+  translate: DeliveryChecklistTranslate | null | undefined,
+  key: string,
+  fallback: string,
+  params?: DeliveryChecklistTranslationParams | null,
+): string {
+  const raw = translate ? translate(key, fallback) : fallback;
+  return interpolateDeliveryChecklistText(raw || fallback, params);
+}
+
+export function getDeliveryChecklistIssueWord(
+  count: number,
+  translate?: DeliveryChecklistTranslate | null,
+): string {
+  return translateDeliveryChecklistText(
+    translate,
+    count === 1 ? "deliveryChecklist.issueWord.one" : "deliveryChecklist.issueWord.other",
+    count === 1 ? "issue" : "issues",
+  );
+}
+
+export function getDeliveryChecklistPhotoCountText(
+  count: number,
+  translate?: DeliveryChecklistTranslate | null,
+): string {
+  return translateDeliveryChecklistText(
+    translate,
+    count === 1 ? "deliveryChecklist.photoCount.one" : "deliveryChecklist.photoCount.other",
+    count === 1 ? "{count} photo" : "{count} photos",
+    { count },
+  );
+}
+
+export function localizeChecklistSection(
+  section: DeliveryChecklistSection,
+  translate?: DeliveryChecklistTranslate | null,
+): DeliveryChecklistSection {
+  return {
+    ...section,
+    title: translateDeliveryChecklistText(
+      translate,
+      `deliveryChecklist.section.${section.id}.title`,
+      section.title,
+    ),
+    shortTitle: translateDeliveryChecklistText(
+      translate,
+      `deliveryChecklist.section.${section.id}.shortTitle`,
+      section.shortTitle,
+    ),
+    description: translateDeliveryChecklistText(
+      translate,
+      `deliveryChecklist.section.${section.id}.description`,
+      section.description,
+    ),
+  };
+}
+
+export function getLocalizedChecklistSections(
+  modelKey: DeliveryChecklistModelKey,
+  translate?: DeliveryChecklistTranslate | null,
+): DeliveryChecklistSection[] {
+  return getChecklistSections(modelKey).map((section) => localizeChecklistSection(section, translate));
+}
+
+export function localizeChecklistItem(
+  item: DeliveryChecklistItem,
+  translate?: DeliveryChecklistTranslate | null,
+): DeliveryChecklistItem {
+  return {
+    ...item,
+    title: translateDeliveryChecklistText(
+      translate,
+      `deliveryChecklist.item.${item.id}.title`,
+      item.title,
+    ),
+    helper: item.helper
+      ? translateDeliveryChecklistText(
+        translate,
+        `deliveryChecklist.item.${item.id}.helper`,
+        item.helper,
+      )
+      : item.helper,
+  };
+}
+
+export function getLocalizedChecklistItems(
+  modelKey: DeliveryChecklistModelKey,
+  sectionId?: string | null,
+  translate?: DeliveryChecklistTranslate | null,
+): DeliveryChecklistItem[] {
+  return getChecklistItems(modelKey, sectionId).map((item) => localizeChecklistItem(item, translate));
+}
+
 export function createEmptyItemState(
   items: DeliveryChecklistItem[] = DELIVERY_CHECKLIST_ITEMS,
 ): Record<string, DeliveryChecklistItemState> {
@@ -687,46 +796,154 @@ export function createDeliveryChecklistSession({
   };
 }
 
-export function buildDeliveryChecklistReport(session: DeliveryChecklistSession): string {
-  const items = getChecklistItems(session.modelKey);
+export function formatDeliveryChecklistSessionTitle(
+  session: Pick<DeliveryChecklistSession, "modelKey" | "metadata" | "title">,
+  translate?: DeliveryChecklistTranslate | null,
+): string {
+  const meta = session.metadata || {};
+  const modelLabel = meta.modelName || getChecklistModelLabel(session.modelKey);
+  const identifier = meta.orderReference || meta.vin;
+  if (identifier) return `${modelLabel} ${identifier}`;
+  return translateDeliveryChecklistText(
+    translate,
+    "deliveryChecklist.sessionTitle",
+    "{model} Delivery",
+    { model: modelLabel },
+  );
+}
+
+export function buildDeliveryChecklistReport(
+  session: DeliveryChecklistSession,
+  options: { translate?: DeliveryChecklistTranslate | null } = {},
+): string {
+  const translate = options.translate || null;
+  const items = getLocalizedChecklistItems(session.modelKey, null, translate);
   const progress = getChecklistProgress(session, items);
   const issueLines = items
     .filter((item) => normalizeItemStatus(session.itemState[item.id]?.status) === "issue")
     .map((item) => {
       const state = normalizeItemState(session.itemState[item.id]);
       const note = state.note ? ` - ${state.note}` : "";
-      const photos = state.photoIds?.length ? ` (${state.photoIds.length} photo${state.photoIds.length === 1 ? "" : "s"})` : "";
+      const photos = state.photoIds?.length
+        ? ` ${translateDeliveryChecklistText(
+          translate,
+          state.photoIds.length === 1
+            ? "deliveryChecklist.report.photos.one"
+            : "deliveryChecklist.report.photos.other",
+          state.photoIds.length === 1 ? "({count} photo)" : "({count} photos)",
+          { count: state.photoIds.length },
+        )}`
+        : "";
       return `- ${item.title}${note}${photos}`;
     });
 
   const meta = session.metadata || {};
   const normalizedWindshieldVin = normalizeDeliveryVin(meta.windshieldVin);
   const normalizedBackendVin = normalizeDeliveryVin(meta.vin);
-  const windshieldVin = normalizedWindshieldVin ? `Windshield VIN: ${normalizedWindshieldVin}` : "";
+  const windshieldVin = normalizedWindshieldVin
+    ? translateDeliveryChecklistText(
+      translate,
+      "deliveryChecklist.report.windshieldVin",
+      "Windshield VIN: {vin}",
+      { vin: normalizedWindshieldVin },
+    )
+    : "";
   const windshieldVinComparison = (() => {
     if (!normalizedWindshieldVin) return "";
-    if (meta.source !== "vatiolibre") return "Windshield VIN comparison: Manual/local only";
-    if (!normalizedBackendVin) return "Windshield VIN comparison: Backend VIN unavailable";
+    if (meta.source !== "vatiolibre") {
+      return translateDeliveryChecklistText(
+        translate,
+        "deliveryChecklist.report.windshieldVinManual",
+        "Windshield VIN comparison: Manual/local only",
+      );
+    }
+    if (!normalizedBackendVin) {
+      return translateDeliveryChecklistText(
+        translate,
+        "deliveryChecklist.report.windshieldVinUnavailable",
+        "Windshield VIN comparison: Backend VIN unavailable",
+      );
+    }
     return normalizedWindshieldVin === normalizedBackendVin
-      ? "Windshield VIN comparison: Match"
-      : `Windshield VIN comparison: Mismatch (backend ${normalizedBackendVin})`;
+      ? translateDeliveryChecklistText(
+        translate,
+        "deliveryChecklist.report.windshieldVinMatch",
+        "Windshield VIN comparison: Match",
+      )
+      : translateDeliveryChecklistText(
+        translate,
+        "deliveryChecklist.report.windshieldVinMismatch",
+        "Windshield VIN comparison: Mismatch (backend {vin})",
+        { vin: normalizedBackendVin },
+      );
   })();
   const header = [
-    `Tesla Delivery Checklist: ${session.title || getChecklistModelLabel(session.modelKey)}`,
-    `Model: ${meta.modelName || getChecklistModelLabel(session.modelKey)}`,
-    meta.vin ? `VIN: ${meta.vin}` : "",
+    translateDeliveryChecklistText(
+      translate,
+      "deliveryChecklist.report.title",
+      "Tesla Delivery Checklist: {title}",
+      { title: formatDeliveryChecklistSessionTitle(session, translate) },
+    ),
+    translateDeliveryChecklistText(
+      translate,
+      "deliveryChecklist.report.model",
+      "Model: {model}",
+      { model: meta.modelName || getChecklistModelLabel(session.modelKey) },
+    ),
+    meta.vin
+      ? translateDeliveryChecklistText(
+        translate,
+        "deliveryChecklist.report.vin",
+        "VIN: {vin}",
+        { vin: meta.vin },
+      )
+      : "",
     windshieldVin,
     windshieldVinComparison,
-    meta.orderReference ? `Order: ${meta.orderReference}` : "",
-    meta.pickupLocation ? `Pickup: ${meta.pickupLocation}` : "",
-    `Progress: ${progress.complete}/${progress.total} (${progress.percent}%)`,
-    `Issues: ${progress.issue}`,
+    meta.orderReference
+      ? translateDeliveryChecklistText(
+        translate,
+        "deliveryChecklist.report.order",
+        "Order: {order}",
+        { order: meta.orderReference },
+      )
+      : "",
+    meta.pickupLocation
+      ? translateDeliveryChecklistText(
+        translate,
+        "deliveryChecklist.report.pickup",
+        "Pickup: {pickup}",
+        { pickup: meta.pickupLocation },
+      )
+      : "",
+    translateDeliveryChecklistText(
+      translate,
+      "deliveryChecklist.report.progress",
+      "Progress: {complete}/{total} ({percent}%)",
+      { complete: progress.complete, total: progress.total, percent: progress.percent },
+    ),
+    translateDeliveryChecklistText(
+      translate,
+      "deliveryChecklist.report.issues",
+      "Issues: {count}",
+      { count: progress.issue },
+    ),
   ].filter(Boolean);
 
   return [
     ...header,
     "",
-    "Issues",
-    issueLines.length ? issueLines.join("\n") : "No issues marked.",
+    translateDeliveryChecklistText(
+      translate,
+      "deliveryChecklist.report.issuesHeading",
+      "Issues",
+    ),
+    issueLines.length
+      ? issueLines.join("\n")
+      : translateDeliveryChecklistText(
+        translate,
+        "deliveryChecklist.report.noIssues",
+        "No issues marked.",
+      ),
   ].join("\n");
 }

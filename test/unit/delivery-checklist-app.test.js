@@ -12,6 +12,7 @@ import {
   DELIVERY_CHECKLIST_SESSIONS_KEY,
   DELIVERY_CHECKLIST_STORAGE_PREFIX,
 } from "../../src/apps/delivery-checklist/delivery-checklist-storage.js";
+import { deliveryChecklistTranslations } from "../../src/apps/delivery-checklist/delivery-checklist-translations.js";
 
 function createRoot() {
   const root = document.createElement("main");
@@ -55,6 +56,43 @@ async function flushPromises() {
   await Promise.resolve();
   await Promise.resolve();
   await Promise.resolve();
+}
+
+function createI18nRuntime(initialLanguage = "en") {
+  let language = initialLanguage;
+  const listeners = new Set();
+  const translate = (key, fallback) => deliveryChecklistTranslations[language]?.[key] || fallback || key;
+  const apply = (root = document) => {
+    root.querySelectorAll("[data-i18n]").forEach((element) => {
+      element.textContent = translate(element.getAttribute("data-i18n"), element.textContent);
+    });
+    root.querySelectorAll("[data-i18n-aria]").forEach((element) => {
+      element.setAttribute("aria-label", translate(element.getAttribute("data-i18n-aria"), element.getAttribute("aria-label")));
+    });
+    root.querySelectorAll("[data-i18n-title]").forEach((element) => {
+      element.setAttribute("title", translate(element.getAttribute("data-i18n-title"), element.getAttribute("title")));
+    });
+    root.querySelectorAll("[data-i18n-placeholder]").forEach((element) => {
+      element.setAttribute("placeholder", translate(element.getAttribute("data-i18n-placeholder"), element.getAttribute("placeholder")));
+    });
+  };
+
+  return {
+    i18n: {
+      getLanguage: () => language,
+      t: translate,
+      apply,
+      subscribe(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      toggleLanguage() {
+        language = language === "en" ? "es" : "en";
+        for (const listener of listeners) listener(language);
+        return language;
+      },
+    },
+  };
 }
 
 function readStoredSession() {
@@ -220,6 +258,59 @@ describe("delivery checklist app", () => {
     expect(session.metadata.vin).toBe("5YJYGDEE0RF000001");
     expect(document.querySelector("#deliveryReportText").value).toContain("Windshield VIN: 5YJYGDEE0RF000001");
     expect(document.querySelector("#deliveryReportText").value).toContain("Windshield VIN comparison: Manual/local only");
+
+    mounted.unmount();
+  });
+
+  it("switches delivery checklist copy between English and Spanish without remounting", async () => {
+    const root = createRoot();
+    const appRuntime = createI18nRuntime();
+    const mounted = mountDeliveryChecklistRoute(createRouteContext({ root, appRuntime }));
+
+    expect(document.querySelector(".delivery-rail-label").textContent).toBe("Guided flow");
+    expect(document.querySelector("#deliverySectionTitle").textContent).toBe("Read windshield VIN");
+
+    document.querySelector("#deliveryLangToggle").click();
+
+    expect(document.querySelector("#deliveryLangToggle").textContent).toBe("ES");
+    expect(document.querySelector(".delivery-rail-label").textContent).toBe("Flujo guiado");
+    expect(document.querySelector("#deliveryStatus").textContent).toBe("Guardado localmente en este navegador.");
+    expect(document.querySelector("#deliverySectionTitle").textContent).toBe("Leer VIN del parabrisas");
+    expect(document.querySelector("#deliveryStepKicker").textContent).toBe("Paso 1 de 10");
+    expect(document.querySelector("#deliveryNextStep").textContent).toContain("Siguiente: Vehículo");
+    expect(document.querySelector("#deliveryReadVinOcr").textContent).toContain("Leer VIN");
+
+    document.querySelector("#deliveryNextStep").click();
+    expect(document.querySelector("#deliverySectionTitle").textContent).toBe("Detalles del vehículo");
+    expect(document.querySelector("#deliveryUseManual").textContent).toContain("Continuar manualmente");
+
+    document.querySelector("#deliveryUseManual").click();
+    expect(document.querySelector("#deliveryStatus").textContent).toBe("Configuración manual local seleccionada.");
+    document.querySelector("#deliveryNextStep").click();
+    expect(document.querySelector("#deliverySectionTitle").textContent).toBe("Registros");
+    expect(document.querySelector(".delivery-item-row h3").textContent).toContain("El VIN coincide");
+
+    document.querySelector(".delivery-status-control-issue").click();
+    completeActiveSection();
+    let guard = 0;
+    while (document.querySelector(".delivery-checklist-app").dataset.activeStep !== "final-review" && guard < 20) {
+      document.querySelector("#deliveryNextStep").click();
+      completeActiveSection();
+      guard += 1;
+    }
+
+    expect(document.querySelector("#deliverySectionTitle").textContent).toBe("Revisión final");
+    expect(document.querySelector("#deliveryReviewPanel h2").textContent).toBe("Revisión");
+    expect(document.querySelector("#deliveryReviewSummary").textContent).toContain("1 incidencia");
+    expect(document.querySelector("#deliveryReportText").value).toContain("Lista de entrega Tesla:");
+    expect(document.querySelector("#deliveryReportText").value).toContain("Incidencias: 1");
+    expect(document.querySelector("#deliveryReportText").value).toContain("El VIN coincide");
+
+    document.querySelector("#deliveryLangToggle").click();
+    expect(document.querySelector("#deliveryLangToggle").textContent).toBe("EN");
+    expect(document.querySelector("#deliverySectionTitle").textContent).toBe("Final Review");
+    expect(document.querySelector("#deliveryReviewPanel h2").textContent).toBe("Review");
+    expect(document.querySelector("#deliveryReportText").value).toContain("Tesla Delivery Checklist:");
 
     mounted.unmount();
   });

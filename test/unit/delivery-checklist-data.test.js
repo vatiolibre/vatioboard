@@ -6,9 +6,14 @@ import {
   getChecklistItems,
   getChecklistProgress,
   getChecklistSections,
+  getLocalizedChecklistItems,
+  getLocalizedChecklistSections,
   mapTeslaModelCodeToChecklistModelKey,
   normalizeTeslaOrderForChecklist,
 } from "../../src/apps/delivery-checklist/delivery-checklist-data.js";
+import { deliveryChecklistTranslations } from "../../src/apps/delivery-checklist/delivery-checklist-translations.js";
+
+const translateEs = (key, fallback) => deliveryChecklistTranslations.es[key] || fallback || key;
 
 describe("delivery checklist data", () => {
   it("filters stable checklist items by Model 3, Model Y, and Cybertruck", () => {
@@ -39,6 +44,26 @@ describe("delivery checklist data", () => {
       "model-specific",
       "final-review",
     ]);
+  });
+
+  it("localizes sections and items without changing stable IDs or model filtering", () => {
+    const englishSections = getChecklistSections("modely");
+    const spanishSections = getLocalizedChecklistSections("modely", translateEs);
+    const englishItems = getChecklistItems("modely");
+    const spanishItems = getLocalizedChecklistItems("modely", null, translateEs);
+
+    expect(spanishSections.map((section) => section.id)).toEqual(englishSections.map((section) => section.id));
+    expect(spanishSections[0]).toMatchObject({
+      id: "records",
+      title: "Registros",
+      shortTitle: "Registros",
+    });
+    expect(spanishItems.map((item) => item.id)).toEqual(englishItems.map((item) => item.id));
+    expect(spanishItems.find((item) => item.id === "records-vin-match")).toMatchObject({
+      title: "El VIN coincide en la app, documentos, parabrisas y pantalla del vehículo.",
+    });
+    expect(getLocalizedChecklistItems("modely", "model-specific", translateEs).map((item) => item.id)).toContain("modely-hatch");
+    expect(getLocalizedChecklistItems("modely", "model-specific", translateEs).map((item) => item.id)).not.toContain("cybertruck-stainless");
   });
 
   it("counts progress states consistently", () => {
@@ -144,5 +169,32 @@ describe("delivery checklist data", () => {
 
     session.metadata.source = "manual";
     expect(buildDeliveryChecklistReport(session)).toContain("Windshield VIN comparison: Manual/local only");
+  });
+
+  it("generates localized reports while preserving user notes and metadata", () => {
+    const session = createDeliveryChecklistSession({
+      id: "delivery-report-es",
+      modelKey: "modely",
+      metadata: {
+        vin: "VIN123",
+        orderReference: "RN123",
+        pickupLocation: "Tesla Delivery Center",
+      },
+    });
+    session.itemState["records-vin-match"] = {
+      status: "issue",
+      note: "Advisor should confirm.",
+      photoIds: ["photo-1"],
+    };
+
+    const report = buildDeliveryChecklistReport(session, { translate: translateEs });
+
+    expect(report).toContain("Lista de entrega Tesla:");
+    expect(report).toContain("Modelo: Model Y");
+    expect(report).toContain("Pedido: RN123");
+    expect(report).toContain("El VIN coincide en la app");
+    expect(report).toContain("Advisor should confirm.");
+    expect(report).toContain("(1 foto)");
+    expect(report).toContain("Incidencias: 1");
   });
 });

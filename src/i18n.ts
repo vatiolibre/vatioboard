@@ -1,4 +1,5 @@
 import { accelTranslations } from './accel/translations.js';
+import { deliveryChecklistTranslations } from './apps/delivery-checklist/delivery-checklist-translations.js';
 import { loadText, saveText } from './shared/storage.js';
 
 /**
@@ -1816,8 +1817,8 @@ const baseTranslations: TranslationCatalog = {
 };
 
 const translations: TranslationCatalog = {
-  en: { ...baseTranslations.en, ...accelTranslations.en },
-  es: { ...baseTranslations.es, ...accelTranslations.es },
+  en: { ...baseTranslations.en, ...accelTranslations.en, ...deliveryChecklistTranslations.en },
+  es: { ...baseTranslations.es, ...accelTranslations.es, ...deliveryChecklistTranslations.es },
 };
 
 const LANG_KEY = 'vatio_board_lang';

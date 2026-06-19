@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { deliveryChecklistTranslations } from "../../src/apps/delivery-checklist/delivery-checklist-translations.js";
+
 describe("shared i18n", () => {
   let i18n;
 
@@ -32,6 +34,16 @@ describe("shared i18n", () => {
     expect(i18n.t("accelSpeedometer")).toBe("Velocimetro");
     expect(i18n.t("accelOpenBoard")).toBe("Abrir tablero");
     expect(i18n.t("accelFasterBy", { value: "0,5 s" })).toBe("0,5 s mas rapida que la mejor guardada");
+    expect(i18n.t("deliveryChecklist.guidedFlow")).toBe("Flujo guiado");
+    expect(i18n.t("deliveryChecklist.step.windshieldVin.title")).toBe("Leer VIN del parabrisas");
+  });
+
+  it("keeps delivery checklist English and Spanish catalog keys aligned", () => {
+    expect(Object.keys(deliveryChecklistTranslations.es).sort()).toEqual(
+      Object.keys(deliveryChecklistTranslations.en).sort(),
+    );
+    expect(deliveryChecklistTranslations.en).toHaveProperty("deliveryChecklist.item.records-vin-match.title");
+    expect(deliveryChecklistTranslations.es).toHaveProperty("deliveryChecklist.item.records-vin-match.title");
   });
 
   it("toggles language and persists the shared language key", () => {
