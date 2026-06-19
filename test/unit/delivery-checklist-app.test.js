@@ -621,6 +621,16 @@ describe("delivery checklist app", () => {
     expect(stylesheet).toContain("env(safe-area-inset-bottom");
     expect(stylesheet).toContain(".delivery-bottom-nav");
     expect(stylesheet).toContain("scroll-margin-bottom");
+    const getBlocks = (selector) =>
+      Array.from(stylesheet.matchAll(new RegExp(`(?:^|\\n)${selector}\\s*\\{([\\s\\S]*?)\\n\\}`, "g")))
+        .map((match) => match[1]);
+    const checklistMainBlock = getBlocks("\\.delivery-checklist-main").at(0) || "";
+    expect(checklistMainBlock).toContain("display: grid;");
+    expect(checklistMainBlock).toContain("grid-template-columns: minmax(0, 1fr);");
+    const statusBlock = getBlocks("\\.delivery-status").at(-1) || "";
+    expect(statusBlock).toContain("grid-column: 1 / -1;");
+    const guidedLayoutBlock = getBlocks("\\.delivery-guided-layout").at(0) || "";
+    expect(guidedLayoutBlock).toContain("grid-column: 1 / -1;");
     const bottomNavBlock = stylesheet.match(/\.delivery-bottom-nav\s*\{([\s\S]*?)\n\}/)?.[1] || "";
     expect(bottomNavBlock).not.toContain("position: fixed");
     expect(bottomNavBlock).toContain("border-top");

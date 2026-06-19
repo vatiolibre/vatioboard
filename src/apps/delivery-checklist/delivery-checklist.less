@@ -305,6 +305,8 @@
 }
 
 .delivery-checklist-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   width: min(1360px, calc(100% - 24px));
   margin: 0 auto;
   padding: 14px 0 calc(112px + env(safe-area-inset-bottom, 0px));
@@ -694,6 +696,7 @@
 }
 
 .delivery-status {
+  grid-column: 1 / -1;
   min-height: 24px;
   margin: 10px 0;
 }
@@ -755,6 +758,7 @@
 }
 
 .delivery-guided-layout {
+  grid-column: 1 / -1;
   display: grid;
   grid-template-columns: minmax(210px, 0.32fr) minmax(0, 1fr);
   gap: 12px;

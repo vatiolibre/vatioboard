@@ -1,5 +1,3 @@
-import "./delivery-checklist.less";
-
 import {
   IconDownload,
   IconLogin,

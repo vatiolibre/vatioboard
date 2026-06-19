@@ -1,3 +1,5 @@
+import "./delivery-checklist.less";
+
 export {
   DELIVERY_CHECKLIST_APP_ID,
   createDeliveryChecklistRouteMountContext,
