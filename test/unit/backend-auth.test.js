@@ -406,7 +406,8 @@ describe('backend auth controller layout', () => {
       if (requestUrl.includes('frappe.auth.get_logged_user')) {
         return jsonResponse({ message: 'driver@example.com' });
       }
-      if (requestUrl.includes('vatiolibre.services.tesla_connection_status')) {
+      if (requestUrl.includes('vatiolibre.vatiolibre.sso.status')) {
+        expect(options.method).toBe('GET');
         return jsonResponse({ message: { is_guest: !loggedIn } });
       }
       throw new Error(`Unexpected request: ${requestUrl}`);
@@ -455,7 +456,7 @@ describe('backend auth controller layout', () => {
     `;
 
     let loggedIn = true;
-    const fetchImpl = vi.fn(async (url) => {
+    const fetchImpl = vi.fn(async (url, options = {}) => {
       const requestUrl = String(url);
       if (requestUrl.includes('/api/method/logout')) {
         loggedIn = false;
@@ -464,7 +465,8 @@ describe('backend auth controller layout', () => {
       if (requestUrl.includes('frappe.auth.get_logged_user')) {
         return jsonResponse({ message: 'driver@example.com' });
       }
-      if (requestUrl.includes('vatiolibre.services.tesla_connection_status')) {
+      if (requestUrl.includes('vatiolibre.vatiolibre.sso.status')) {
+        expect(options.method).toBe('GET');
         return jsonResponse({ message: { is_guest: !loggedIn } });
       }
       throw new Error(`Unexpected request: ${requestUrl}`);
@@ -842,7 +844,7 @@ describe('backend auth transport helpers', () => {
     clearBackendAccessCache();
     const fetchImpl = vi.fn(async (url) => {
       const requestUrl = String(url);
-      if (requestUrl.includes('tesla_connection_status')) {
+      if (requestUrl.includes('vatiolibre.vatiolibre.sso.status')) {
         return jsonResponse({
           message: {
             is_guest: true,
@@ -880,7 +882,7 @@ describe('backend auth transport helpers', () => {
     clearBackendAccessCache();
     const fetchImpl = vi.fn(async (url) => {
       const requestUrl = String(url);
-      if (requestUrl.includes('tesla_connection_status')) {
+      if (requestUrl.includes('vatiolibre.vatiolibre.sso.status')) {
         return jsonResponse({
           message: {
             is_guest: true,
@@ -1051,7 +1053,7 @@ describe('backend auth transport helpers', () => {
     clearBackendAccessCache();
     const fetchImpl = vi.fn(async (url) => {
       const requestUrl = String(url);
-      if (requestUrl.includes('tesla_connection_status')) {
+      if (requestUrl.includes('vatiolibre.vatiolibre.sso.status')) {
         return jsonResponse({
           message: {
             is_guest: false,
@@ -1406,7 +1408,7 @@ describe('backend auth transport helpers', () => {
 
     const gateFetch = vi.fn(async (url) => {
       const requestUrl = String(url);
-      if (requestUrl.includes('tesla_connection_status')) {
+      if (requestUrl.includes('vatiolibre.vatiolibre.sso.status')) {
         return jsonResponse({
           message: {
             is_guest: false,

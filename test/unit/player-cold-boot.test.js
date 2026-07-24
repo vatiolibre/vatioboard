@@ -191,7 +191,7 @@ function createAuthenticatedPlayerFetch({ assets = [AUDIO_ASSET_1, AUDIO_ASSET_2
   return vi.fn(async (input) => {
     const url = typeof input === "string" ? input : String(input?.url ?? "");
 
-    if (url.includes("/api/method/vatiolibre.services.tesla_connection_status")) {
+    if (url.includes("/api/method/vatiolibre.vatiolibre.sso.status")) {
       return jsonResponse({ message: { connected: false, is_guest: false } });
     }
     if (url.includes("/api/method/frappe.auth.get_logged_user")) {
@@ -250,7 +250,7 @@ function createUnauthenticatedFetch() {
   return vi.fn(async (input) => {
     const url = typeof input === "string" ? input : String(input?.url ?? "");
 
-    if (url.includes("/api/method/vatiolibre.services.tesla_connection_status")) {
+    if (url.includes("/api/method/vatiolibre.vatiolibre.sso.status")) {
       return jsonResponse({ message: { connected: false, is_guest: true } }, 200);
     }
     // All authenticated endpoints return 403
@@ -262,7 +262,7 @@ function createGuestDemoFetch({ demoTracks = [DEMO_TRACK_TITAN] } = {}) {
   return vi.fn(async (input) => {
     const url = typeof input === "string" ? input : String(input?.url ?? "");
 
-    if (url.includes("/api/method/vatiolibre.services.tesla_connection_status")) {
+    if (url.includes("/api/method/vatiolibre.vatiolibre.sso.status")) {
       return jsonResponse({ message: { connected: false, is_guest: true } }, 200);
     }
     if (url.endsWith("/audio/demo/playlist.json")) {
@@ -948,7 +948,7 @@ describe("player cold boot", () => {
     const fetchMock = vi.fn(async (input) => {
       const url = getFetchUrl(input);
 
-      if (url.includes("/api/method/vatiolibre.services.tesla_connection_status")) {
+      if (url.includes("/api/method/vatiolibre.vatiolibre.sso.status")) {
         return sessionProbe.promise;
       }
       if (url.includes("/api/method/frappe.auth.get_logged_user")) {
@@ -1006,7 +1006,7 @@ describe("player cold boot", () => {
     const fetchMock = vi.fn(async (input, init = {}) => {
       const url = getFetchUrl(input);
 
-      if (url.includes("/api/method/vatiolibre.services.tesla_connection_status")) {
+      if (url.includes("/api/method/vatiolibre.vatiolibre.sso.status")) {
         return jsonResponse({ message: { connected: false, is_guest: false } });
       }
       if (url.includes("/api/method/frappe.auth.get_logged_user")) {

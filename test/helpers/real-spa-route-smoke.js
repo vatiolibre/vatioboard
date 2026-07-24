@@ -175,7 +175,7 @@ function installFetchStub() {
       lifecycleMocks.downloadMySyncPayloadRequests.push(url);
       return jsonResponse({ message: { records: [], has_more: false, next_cursor: "" } });
     }
-    if (url.includes("tesla_connection_status")) {
+    if (url.includes("sso.status")) {
       return jsonResponse({ message: { connected: false, is_guest: true } });
     }
     if (url.includes("frappe.auth.get_logged_user")) {
@@ -190,7 +190,7 @@ function installFetchStub() {
         },
       });
     }
-    if (url.includes("pull_my_sync_records")) {
+    if (url.includes("pull_my_sync_changes")) {
       return jsonResponse({ message: { records: [], has_more: false, next_cursor: "" } });
     }
     if (url.includes("list_my_") || url.includes("list_my_board_documents")) {

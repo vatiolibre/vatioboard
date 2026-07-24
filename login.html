@@ -216,12 +216,17 @@
             url: `${config.apiBase}/api/method/frappe.auth.get_logged_user`
           },
           {
+            name: "vatiolibre.vatiolibre.sso.status",
+            url: `${config.apiBase}/api/method/vatiolibre.vatiolibre.sso.status`
+          },
+          {
             name: "vatiolibre.services.tesla_connection_status",
-            url: `${config.apiBase}/api/method/vatiolibre.services.tesla_connection_status`
+            url: `${config.apiBase}/api/method/vatiolibre.services.tesla_connection_status`,
+            method: "POST"
           }
         ]) {
           const response = await fetch(check.url, {
-            method: "GET",
+            method: check.method || "GET",
             credentials: "include"
           });
           checks.push({

@@ -118,7 +118,7 @@ function createAuthenticatedLibraryFetch(handler) {
   return vi.fn(async (input, init) => {
     const url = typeof input === "string" ? input : String(input?.url ?? "");
 
-    if (url.includes("/api/method/vatiolibre.services.tesla_connection_status")) {
+    if (url.includes("/api/method/vatiolibre.vatiolibre.sso.status")) {
       return jsonResponse({ message: { connected: false, is_guest: false } });
     }
     if (url.includes("/api/method/frappe.auth.get_logged_user")) {
@@ -179,7 +179,7 @@ function createGuestLibraryFetch() {
   return vi.fn(async (input) => {
     const url = getFetchUrl(input);
 
-    if (url.includes("/api/method/vatiolibre.services.tesla_connection_status")) {
+    if (url.includes("/api/method/vatiolibre.vatiolibre.sso.status")) {
       return jsonResponse({ message: { connected: false, is_guest: true } }, 200);
     }
     return jsonResponse({ exc_type: "PermissionError" }, 403);
@@ -190,7 +190,7 @@ function createNoSubscriptionLibraryFetch() {
   return vi.fn(async (input) => {
     const url = getFetchUrl(input);
 
-    if (url.includes("/api/method/vatiolibre.services.tesla_connection_status")) {
+    if (url.includes("/api/method/vatiolibre.vatiolibre.sso.status")) {
       return jsonResponse({ message: { connected: false, is_guest: false } }, 200);
     }
     if (url.includes("/api/method/frappe.auth.get_logged_user")) {
@@ -323,7 +323,7 @@ describe("library offline media", () => {
     const fetchMock = vi.fn(async (input, init = {}) => {
       const url = getFetchUrl(input);
 
-      if (url.includes("/api/method/vatiolibre.services.tesla_connection_status")) {
+      if (url.includes("/api/method/vatiolibre.vatiolibre.sso.status")) {
         return loggedOut
           ? jsonResponse({ message: { connected: false, is_guest: true } }, 200)
           : jsonResponse({ message: { connected: false, is_guest: false } });
@@ -778,7 +778,7 @@ describe("library offline media", () => {
   it("preserves cache namespace when logged-user lookup fails but session is authenticated", async () => {
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === "string" ? input : String(input?.url ?? "");
-      if (url.includes("tesla_connection_status")) {
+      if (url.includes("sso.status")) {
         return jsonResponse({ message: { connected: false, is_guest: false } });
       }
       if (url.includes("get_logged_user")) {
@@ -1966,7 +1966,7 @@ describe("library offline media", () => {
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === "string" ? input : String(input?.url ?? "");
 
-      if (url.includes("tesla_connection_status")) {
+      if (url.includes("sso.status")) {
         return jsonResponse({ message: { connected: false, is_guest: false } });
       }
       if (url.includes("get_logged_user")) {
@@ -2046,7 +2046,7 @@ describe("library offline media", () => {
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === "string" ? input : String(input?.url ?? "");
 
-      if (url.includes("tesla_connection_status")) {
+      if (url.includes("sso.status")) {
         return jsonResponse({ message: { connected: false, is_guest: false } });
       }
       if (url.includes("get_logged_user")) {
@@ -2144,7 +2144,7 @@ describe("library offline media", () => {
 
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === "string" ? input : String(input?.url ?? "");
-      if (url.includes("tesla_connection_status")) {
+      if (url.includes("sso.status")) {
         return jsonResponse({ message: { connected: false, is_guest: false } });
       }
       if (url.includes("get_logged_user")) {
@@ -2233,7 +2233,7 @@ describe("library offline media", () => {
 
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === "string" ? input : String(input?.url ?? "");
-      if (url.includes("tesla_connection_status")) {
+      if (url.includes("sso.status")) {
         return jsonResponse({ message: { connected: false, is_guest: false } });
       }
       if (url.includes("get_logged_user")) {
@@ -2322,7 +2322,7 @@ describe("library offline media", () => {
 
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === "string" ? input : String(input?.url ?? "");
-      if (url.includes("tesla_connection_status")) {
+      if (url.includes("sso.status")) {
         // Block the rehydration session call to control timing
         await sessionGate;
         return jsonResponse({ message: { connected: false, is_guest: false } });
@@ -2364,7 +2364,7 @@ describe("library offline media", () => {
     // The logout triggers refreshAuthState which increments authGeneration
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === "string" ? input : String(input?.url ?? "");
-      if (url.includes("tesla_connection_status")) {
+      if (url.includes("sso.status")) {
         // Now returns guest/logged out
         return jsonResponse({ message: { connected: false, is_guest: true } });
       }
@@ -2417,7 +2417,7 @@ describe("library offline media", () => {
 
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === "string" ? input : String(input?.url ?? "");
-      if (url.includes("tesla_connection_status")) {
+      if (url.includes("sso.status")) {
         return jsonResponse({ message: { connected: false, is_guest: false } });
       }
       if (url.includes("get_logged_user")) {
@@ -2507,7 +2507,7 @@ describe("library offline media", () => {
 
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === "string" ? input : String(input?.url ?? "");
-      if (url.includes("tesla_connection_status")) {
+      if (url.includes("sso.status")) {
         return jsonResponse({ message: { connected: false, is_guest: false } });
       }
       if (url.includes("get_logged_user")) {
@@ -2580,7 +2580,7 @@ describe("library offline media", () => {
     // Phase 2: Backend returns but media list returns 401
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === "string" ? input : String(input?.url ?? "");
-      if (url.includes("tesla_connection_status")) {
+      if (url.includes("sso.status")) {
         return jsonResponse({ message: { connected: false, is_guest: false } });
       }
       if (url.includes("get_logged_user")) {
@@ -2646,7 +2646,7 @@ describe("library offline media", () => {
 
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === "string" ? input : String(input?.url ?? "");
-      if (url.includes("tesla_connection_status")) {
+      if (url.includes("sso.status")) {
         // First call from rehydration uses the gate; subsequent calls return immediately
         await sessionGate;
         return jsonResponse({
@@ -2692,7 +2692,7 @@ describe("library offline media", () => {
         return jsonResponse({ message: { exc_type: "AuthenticationError" } }, 401);
       }
       // All other calls succeed normally
-      if (url.includes("tesla_connection_status")) {
+      if (url.includes("sso.status")) {
         return jsonResponse({ message: { connected: false, is_guest: true } });
       }
       return jsonResponse({});
@@ -2738,7 +2738,7 @@ describe("library offline media", () => {
 
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === "string" ? input : String(input?.url ?? "");
-      if (url.includes("tesla_connection_status")) {
+      if (url.includes("sso.status")) {
         await firstSessionGate;
         return jsonResponse({ message: { connected: true, is_guest: false } });
       }
@@ -2778,7 +2778,7 @@ describe("library offline media", () => {
     // This one resolves immediately with unauthenticated session.
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === "string" ? input : String(input?.url ?? "");
-      if (url.includes("tesla_connection_status")) {
+      if (url.includes("sso.status")) {
         return jsonResponse({ message: { connected: false, is_guest: true } });
       }
       return jsonResponse({});
@@ -2829,7 +2829,7 @@ describe("library offline media", () => {
 
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === "string" ? input : String(input?.url ?? "");
-      if (url.includes("tesla_connection_status")) {
+      if (url.includes("sso.status")) {
         return jsonResponse({ message: { connected: true, is_guest: false } });
       }
       if (url.includes("get_logged_user")) {
@@ -2914,7 +2914,7 @@ describe("library offline media", () => {
 
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === "string" ? input : String(input?.url ?? "");
-      if (url.includes("tesla_connection_status")) {
+      if (url.includes("sso.status")) {
         await sessionGate;
         return jsonResponse({ message: { connected: true, is_guest: false } });
       }
@@ -2960,7 +2960,7 @@ describe("library offline media", () => {
     // Page must recover: another auth event should work normally
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === "string" ? input : String(input?.url ?? "");
-      if (url.includes("tesla_connection_status")) {
+      if (url.includes("sso.status")) {
         return jsonResponse({ message: { connected: true, is_guest: false } });
       }
       if (url.includes("get_logged_user")) {
@@ -3029,7 +3029,7 @@ describe("library offline media", () => {
 
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === "string" ? input : String(input?.url ?? "");
-      if (url.includes("tesla_connection_status")) {
+      if (url.includes("sso.status")) {
         return jsonResponse({ message: { connected: true, is_guest: false } });
       }
       if (url.includes("get_logged_user")) {
@@ -3129,7 +3129,7 @@ describe("library offline media", () => {
 
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === "string" ? input : String(input?.url ?? "");
-      if (url.includes("tesla_connection_status")) {
+      if (url.includes("sso.status")) {
         return jsonResponse({ message: { connected: true, is_guest: false } });
       }
       if (url.includes("get_logged_user")) {
@@ -3247,7 +3247,7 @@ describe("library offline media", () => {
 
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === "string" ? input : String(input?.url ?? "");
-      if (url.includes("tesla_connection_status")) {
+      if (url.includes("sso.status")) {
         return jsonResponse({ message: { connected: false, is_guest: false } });
       }
       if (url.includes("get_logged_user")) {

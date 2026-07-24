@@ -25,7 +25,7 @@ function createActiveSubscriberFetch() {
   return vi.fn(async (input) => {
     const url = typeof input === 'string' ? input : String(input?.url ?? '');
 
-    if (url.includes('vatiolibre.services.tesla_connection_status')) {
+    if (url.includes('vatiolibre.vatiolibre.sso.status')) {
       return new Response(JSON.stringify({ message: { is_guest: false } }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -981,7 +981,7 @@ describe('accel.html smoke', () => {
         });
       }
 
-      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_records')) {
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_changes')) {
         return new Response(JSON.stringify({
           message: {
             records: [],
@@ -1045,7 +1045,7 @@ describe('accel.html smoke', () => {
         });
       }
 
-      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_records')) {
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_changes')) {
         return new Response(JSON.stringify({
           message: {
             records: [],
@@ -1150,7 +1150,7 @@ describe('accel.html smoke', () => {
         return downloadPending;
       }
 
-      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_records')) {
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_changes')) {
         return new Response(JSON.stringify({
           message: {
             records: [],
@@ -1241,7 +1241,7 @@ describe('accel.html smoke', () => {
         });
       }
 
-      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_records')) {
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_changes')) {
         return new Response(JSON.stringify({
           message: {
             records: [],
@@ -1304,7 +1304,7 @@ describe('accel.html smoke', () => {
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === 'string' ? input : String(input?.url ?? '');
 
-      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_records')) {
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_changes')) {
         return new Response(JSON.stringify({
           message: {
             records: [],
@@ -1392,7 +1392,7 @@ describe('accel.html smoke', () => {
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === 'string' ? input : String(input?.url ?? '');
 
-      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_records')) {
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_changes')) {
         return new Response(JSON.stringify({
           message: {
             records: [],
@@ -1485,7 +1485,7 @@ describe('accel.html smoke', () => {
         });
       }
 
-      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_records')) {
+      if (url.includes('vatiolibre.vatiolibre.cloud_sync.pull_my_sync_changes')) {
         return new Response(JSON.stringify({
           message: {
             records: [],

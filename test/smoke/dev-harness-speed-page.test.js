@@ -27,7 +27,7 @@ function createGuestFetch() {
       return new Response('', { status: 404 });
     }
 
-    if (url.includes('vatiolibre.services.tesla_connection_status')) {
+    if (url.includes('vatiolibre.vatiolibre.sso.status')) {
       return new Response(JSON.stringify({ message: { is_guest: true } }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -63,7 +63,7 @@ function createActiveSubscriberFetch() {
       return new Response('', { status: 404 });
     }
 
-    if (url.includes('vatiolibre.services.tesla_connection_status')) {
+    if (url.includes('vatiolibre.vatiolibre.sso.status')) {
       return new Response(JSON.stringify({ message: { is_guest: false } }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
