@@ -65,7 +65,7 @@ function createAuthenticatedLibraryFetch(handler) {
   return vi.fn(async (input, options) => {
     const url = typeof input === "string" ? input : String(input?.url ?? "");
 
-    if (url.includes("/api/method/vatiolibre.services.tesla_connection_status")) {
+    if (url.includes("/api/method/vatiolibre.vatiolibre.sso.status")) {
       return jsonResponse({
         message: {
           connected: false,
@@ -106,7 +106,7 @@ describe("library.html smoke", () => {
     window.fetch = vi.fn(async (input) => {
       const url = typeof input === "string" ? input : String(input?.url ?? "");
 
-      if (url.includes("/api/method/vatiolibre.services.tesla_connection_status")) {
+      if (url.includes("/api/method/vatiolibre.vatiolibre.sso.status")) {
         return new Response(JSON.stringify({
           message: {
             connected: false,

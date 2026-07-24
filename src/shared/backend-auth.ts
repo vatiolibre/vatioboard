@@ -48,9 +48,10 @@ export const BACKEND_AUTH_SSO_UI_DEFAULTS = Object.freeze({
   showAuthenticatedCrossOpenActions: false,
 });
 
-// Use an allow_guest endpoint first so guest sessions do not trigger a visible 403.
-const SESSION_PROBE_METHOD = "vatiolibre.services.tesla_connection_status";
-export const TESLA_CONNECTION_STATUS_METHOD = SESSION_PROBE_METHOD;
+// Keep the session probe independent from Tesla so authentication remains
+// available when Tesla contracts or connection state change.
+const SESSION_PROBE_METHOD = "vatiolibre.vatiolibre.sso.status";
+export const TESLA_CONNECTION_STATUS_METHOD = "vatiolibre.services.tesla_connection_status";
 export const TESLA_ORDERS_ENRICHED_METHOD = "vatiolibre.services.tesla_orders_enriched";
 export const TESLA_VEHICLES_METHOD = "vatiolibre.services.tesla_vehicles";
 export const TESLA_VEHICLE_DATA_METHOD = "vatiolibre.services.tesla_vehicle_data";
@@ -1788,6 +1789,7 @@ export async function getBackendTeslaConnectionStatus({
   }
 
   const { response, data } = await fetchBackendJson(TESLA_CONNECTION_STATUS_METHOD, {
+    method: "POST",
     fetchImpl,
     signal,
     config,
@@ -1809,6 +1811,7 @@ export async function listBackendTeslaOrders({
   config = getBackendAuthConfig(),
 }: LegacyBackendOptions = {}) {
   const { response, data } = await fetchBackendMethodJson(TESLA_ORDERS_ENRICHED_METHOD, {
+    method: "POST",
     args: {
       force_refresh: forceRefresh ? 1 : 0,
     },
@@ -1834,6 +1837,7 @@ export async function listBackendTeslaVehicles({
   config = getBackendAuthConfig(),
 }: LegacyBackendOptions = {}) {
   const { response, data } = await fetchBackendMethodJson(TESLA_VEHICLES_METHOD, {
+    method: "POST",
     args: {
       force_refresh: forceRefresh ? 1 : 0,
     },
@@ -1860,6 +1864,7 @@ export async function getBackendTeslaVehicleData({
 }: LegacyBackendOptions = {}) {
   const normalizedVehicleId = getText(vehicleId);
   const { response, data } = await fetchBackendMethodJson(TESLA_VEHICLE_DATA_METHOD, {
+    method: "POST",
     args: {
       vehicle_id: normalizedVehicleId,
       skip_wake: skipWake === false ? 0 : 1,
