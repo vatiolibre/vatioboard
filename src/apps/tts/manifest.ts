@@ -57,6 +57,6 @@ export const ttsAppManifest = defineAppManifest({
       runtime: "https://github.com/microsoft/onnxruntime",
       piperWeb: "https://github.com/Poket-Jony/piper-tts-web",
     },
-    teslaNote: "Piper model/runtime assets are cached through VatioBoard's 5 MB chunked IndexedDB store, but ONNX still loads the selected voice model into memory.",
+    teslaNote: "Piper model/runtime assets are cached through the app's 5 MB chunked IndexedDB store, but ONNX still loads the selected voice model into memory.",
   },
 });

@@ -937,8 +937,8 @@ const view = createRouteView({
   pageName: "code-rain",
   template,
   meta: {
-    title: "Code Rain - VatioBoard",
-    description: "Animated code rain visualizer for VatioBoard with local presets and offline static assets.",
+    title: "Code Rain - VatioLibre",
+    description: "Animated code rain visualizer for VatioLibre with local presets and offline static assets.",
     canonicalPath: "/code-rain",
     bodyClass: "code-rain-page",
   },

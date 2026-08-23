@@ -1672,7 +1672,7 @@ function updateMediaSessionMetadata() {
     metadata: {
       title: track.title || track.original_filename || track.name || "",
       artist: track.artist || track.folder_path || "",
-      album: "VatioBoard",
+      album: "VatioLibre",
       artworkUrl: track.artwork_ref && isArtworkUrl(track.artwork_ref) ? track.artwork_ref : "",
     },
     handlers: {

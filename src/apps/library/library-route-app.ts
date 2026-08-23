@@ -51,9 +51,9 @@ const view = createRouteView({
   pageName: "library",
   template: libraryTemplate,
   meta: {
-    title: "VatioBoard Cloud Library - Recover your saved speed, accel, board, and media data",
+    title: "VatioLibre Saved Library - Recover speed, acceleration, drawings, and media",
     description:
-      "Browse your VatioBoard cloud library across devices with summary-first speed replays, accel runs, editable board documents, and private media assets.",
+      "Browse your private VatioLibre library across devices with summary-first speed replays, acceleration runs, editable drawings, and media assets.",
     canonicalPath: "/library",
     bodyClass: "library-page",
   },

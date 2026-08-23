@@ -51,9 +51,9 @@ const view = createRouteView({
   pageName: "board",
   template: boardTemplate,
   meta: {
-    title: "Vatio Board - Free Drawing Board + Calculator",
+    title: "VatioLibre Drawing Board + Calculator",
     description:
-      "Vatio Board is a fast, full-screen drawing board that works great in Tesla browsers. Draw with pen or eraser, adjust brush size, and save private drawings to VatioLibre.",
+      "VatioLibre Drawing Board is a fast, full-screen tool for Tesla browsers. Draw with pen or eraser, adjust brush size, and optionally synchronize private drawings to your account.",
     canonicalPath: "/board",
     bodyClass: "board-page",
   },

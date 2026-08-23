@@ -263,7 +263,7 @@ export function createAppLauncherMenu({
   const header = createEl("header", "vb-app-launcher-header");
   const brand = createEl("div", "compact-tools-menu-brand app-start-menu-brand vb-app-launcher-brand");
   brand.dataset.i18nTitle = "tagline";
-  brand.title = "Simple full-page drawing board by Vatio Libre";
+  brand.title = "Simple full-page drawing board by VatioLibre";
   brand.innerHTML = `
     <span class="dot" aria-hidden="true"></span>
     <picture class="brand-logo compact-tools-menu-logo" aria-hidden="true">
@@ -271,7 +271,7 @@ export function createAppLauncherMenu({
       <source srcset="/img/vb_logo_light.svg" media="(prefers-color-scheme: light)" />
       <img src="/img/vb_logo_light.svg" alt="" width="757" height="107" decoding="async" />
     </picture>
-    <span class="sr-only" data-i18n="brand">Vatio Board</span>
+    <span class="sr-only" data-i18n="brand">VatioLibre</span>
   `;
 
   const titleBlock = createEl("div", "vb-app-launcher-title-block");

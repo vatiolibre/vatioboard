@@ -1799,7 +1799,7 @@ export function createPlayerShell({
             runtime.updatePlayerMediaSessionMetadata({
               title: track.title || track.original_filename || track.name || "",
               artist: track.artist || track.folder_path || "",
-              album: "VatioBoard",
+              album: "VatioLibre",
               artworkUrl: artUrl,
             });
           }

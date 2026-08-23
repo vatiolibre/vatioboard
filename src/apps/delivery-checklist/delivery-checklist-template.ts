@@ -36,15 +36,15 @@ const deliveryChecklistTemplate: string = String.raw`
         </div>
       </section>
 
-      <div class="brand" data-i18n-title="tagline" title="Simple full-page drawing board by Vatio Libre">
-        <a class="brand-home" href="#/board" data-i18n-aria="openBoard" aria-label="Open Vatio Board">
+      <div class="brand" data-i18n-title="tagline" title="Simple full-page drawing board by VatioLibre">
+        <a class="brand-home" href="#/board" data-i18n-aria="openBoard" aria-label="Open VatioLibre drawing board">
           <span class="dot" aria-hidden="true"></span>
           <picture class="brand-logo" aria-hidden="true">
             <source srcset="/img/vb_logo_dark.svg" media="(prefers-color-scheme: dark)" />
             <source srcset="/img/vb_logo_light.svg" media="(prefers-color-scheme: light)" />
             <img src="/img/vb_logo_light.svg" alt="" width="757" height="107" decoding="async" />
           </picture>
-          <span class="sr-only" data-i18n="brand">Vatio Board</span>
+          <span class="sr-only" data-i18n="brand">VatioLibre</span>
         </a>
         <button id="deliveryLangToggle" type="button" class="lang-toggle" data-i18n-aria="changeLanguage" aria-label="Change language">EN</button>
       </div>

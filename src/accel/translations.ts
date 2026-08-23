@@ -6,7 +6,7 @@ export const accelTranslations = {
     accelPageH1: 'Vatio Accel free browser acceleration timer',
     accelPageLead:
       'Browser-based GPS acceleration timer for 0-60 mph, 60-130 mph, quarter-mile, and metric acceleration testing in Tesla and mobile browsers.',
-    accelTagline: 'Browser acceleration timer by Vatio Libre',
+    accelTagline: 'Browser acceleration timer by VatioLibre',
     accelRoute: 'ACCEL',
     accelToolbar: 'Acceleration tools',
     accelGpsLab: 'GPS Lab',
@@ -213,7 +213,7 @@ export const accelTranslations = {
     accelPageH1: 'Vatio Accel temporizador GPS de aceleracion en navegador',
     accelPageLead:
       'Temporizador GPS de aceleracion en navegador para pruebas 0-60 mph, 60-130 mph, cuarto de milla y aceleracion metrica en Tesla y moviles.',
-    accelTagline: 'Temporizador de aceleracion en navegador por Vatio Libre',
+    accelTagline: 'Temporizador de aceleracion en navegador por VatioLibre',
     accelRoute: 'ACCEL',
     accelToolbar: 'Herramientas de aceleracion',
     accelGpsLab: 'GPS Lab',

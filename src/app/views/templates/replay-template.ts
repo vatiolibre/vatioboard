@@ -8,8 +8,8 @@ const replayTemplate: string = String.raw`
     <div class="app replay-app">
       <header>
         <div class="header-inner replay-header-inner">
-          <div class="brand" data-i18n-title="replayTagline" title="Drive replay by Vatio Libre">
-            <a class="brand-home" href="#/board" data-i18n-aria="openBoard" aria-label="Open Vatio Board">
+          <div class="brand" data-i18n-title="replayTagline" title="Drive replay by VatioLibre">
+            <a class="brand-home" href="#/board" data-i18n-aria="openBoard" aria-label="Open VatioLibre drawing board">
               <span class="dot" aria-hidden="true"></span>
               <picture class="brand-logo" aria-hidden="true">
                 <source srcset="/img/vb_logo_dark.svg" media="(prefers-color-scheme: dark)" />
@@ -22,7 +22,7 @@ const replayTemplate: string = String.raw`
                   decoding="async"
                 />
               </picture>
-              <span class="sr-only">Vatio Board</span>
+              <span class="sr-only">VatioLibre</span>
             </a>
             <button
               id="langToggle"

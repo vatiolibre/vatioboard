@@ -131,7 +131,7 @@ describe("index.html SPA shell", () => {
     await bootSpa();
 
     expectPageSeo({
-      title: "VatioBoard",
+      title: "VatioLibre Driving Tools",
       canonical: "https://vatioboard.com/",
     });
     expect(window.location.hash).toBe("#/");

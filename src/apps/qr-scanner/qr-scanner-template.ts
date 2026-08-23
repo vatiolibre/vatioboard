@@ -8,7 +8,7 @@ const qrScannerTemplate: string = String.raw`
       <p id="qrScannerStatus" class="qr-scanner-status">Ready</p>
       <div class="brand" aria-hidden="true">
         <span class="dot"></span>
-        <span class="brand-wordmark">VatioBoard</span>
+        <span class="brand-wordmark">VatioLibre</span>
       </div>
     </div>
   </header>

@@ -18,7 +18,7 @@ function getPlayerDebugWidget(): PlayerDebugWidget | null {
 
 export function mount(root: HTMLElement, context: PlayerDebugRouteContext): MountedView {
   document.body.classList.add("player-demo-page");
-  document.title = "VatioBoard Audio Player";
+  document.title = "VatioLibre Audio Player";
 
   const view = document.createElement("div");
   view.className = "player-demo";

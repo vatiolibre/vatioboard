@@ -3,7 +3,7 @@ import { defineAppManifest } from "../../app-platform/manifest.js";
 
 export const boardAppManifest = defineAppManifest({
   id: "vatio.board",
-  title: "Vatio Board",
+  title: "VatioLibre Drawing Board",
   shortTitle: "Board",
   description: "Touch-first drawing board with local drafts and optional VatioLibre sync.",
   kind: "core-app",

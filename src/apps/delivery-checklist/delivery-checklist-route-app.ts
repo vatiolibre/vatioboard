@@ -49,7 +49,7 @@ const view = createRouteView({
   pageName: "delivery-checklist",
   template: deliveryChecklistTemplate,
   meta: {
-    title: "Tesla Delivery Checklist - VatioBoard",
+    title: "Tesla Delivery Checklist - VatioLibre",
     description:
       "Local-first Tesla delivery checklist for Model 3, Model Y, and Cybertruck with optional read-only VatioLibre vehicle import.",
     canonicalPath: "/delivery-checklist",

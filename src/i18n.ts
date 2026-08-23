@@ -152,7 +152,7 @@ const baseTranslations: TranslationCatalog = {
     authLogout: 'Log out',
     authContinueWithVatioLibre: 'Continue with VatioLibre',
     authOpenVatioLibre: 'Open VatioLibre',
-    authOpenVatioBoard: 'Open VatioBoard',
+    authOpenVatioBoard: 'Open driving tools',
     authCreateAccount: 'Create account',
     authForgotPassword: 'Forgot password',
     openCalculator: 'Open calculator',
@@ -247,7 +247,7 @@ const baseTranslations: TranslationCatalog = {
     cloudSyncPanelPausedOffline:
       'Sync is paused while this device is offline. Local changes will retry automatically.',
     cloudSyncPanelPausedOwnership:
-      'Another open VatioBoard tab is handling sync. This tab will resume if it becomes active.',
+      'Another open driving-tools tab is handling sync. This tab will resume if it becomes active.',
     cloudSyncPanelPausedLogout:
       'Sync stopped while you sign out.',
     cloudSyncPanelFailed:
@@ -341,9 +341,9 @@ const baseTranslations: TranslationCatalog = {
     cloudLibraryRenameMessage: 'Enter a new title for this board document.',
     libraryBadgeSummaryOnly: 'Summary only',
     libraryBadgePayloadMissing: 'Payload missing',
-    singleTabBlockedTitle: 'VatioBoard is already open in another tab',
+    singleTabBlockedTitle: 'VatioLibre Driving Tools is already open in another tab',
     singleTabBlockedMessage:
-      'Use VatioBoard in a single tab for this browser profile. Close the other tab, then retry here.',
+      'Use VatioLibre Driving Tools in a single tab for this browser profile. Close the other tab, then retry here.',
     singleTabRetry: 'Retry here',
     downloadedPng: 'Downloaded PNG',
     savedLocally: 'Saved locally (not persisted)',
@@ -469,9 +469,9 @@ const baseTranslations: TranslationCatalog = {
       'Still looking for the first GPS fix. Keep location enabled and give the browser a moment.',
     welcomeConsentTitle: 'Welcome!',
     welcomeConsentBody:
-      'VatioBoard can work without your location. Some live driving features, such as speed, route recording, nearby camera alerts, maps, and acceleration tools, work better when you allow location access.\n\nLocation permission is optional. You can continue without it and enable it later from any GPS feature.\n\nBy using VatioBoard, you understand and agree that you are entirely responsible for how you use the application, your device, and any decisions you make while using it. Always follow applicable laws and drive safely.',
+      'VatioLibre Driving Tools can work without your location. Some live driving features, such as speed, route recording, nearby camera alerts, maps, and acceleration tools, work better when you allow location access.\n\nLocation permission is optional. You can continue without it and enable it later from any GPS feature.\n\nBy using VatioLibre Driving Tools, you understand and agree that you are entirely responsible for how you use the application, your device, and any decisions you make while using it. Always follow applicable laws and drive safely.',
     welcomeConsentCheckbox:
-      'I understand and accept that I am entirely responsible for my use of VatioBoard.',
+      'I understand and accept that I am entirely responsible for my use of VatioLibre Driving Tools.',
     welcomeConsentSkipLocation: 'Continue without location',
     welcomeConsentEnableLocation: 'Enable location features',
 
@@ -506,8 +506,8 @@ const baseTranslations: TranslationCatalog = {
     dimensions: 'Dimensions',
 
     // Header/Brand
-    brand: 'Vatio Board',
-    tagline: 'Simple full-page drawing board by Vatio Libre',
+    brand: 'VatioLibre',
+    tagline: 'Simple full-page drawing board by VatioLibre',
     appManager: 'Apps',
     appManagerTitle: 'Apps',
     appManagerSearch: 'Search apps',
@@ -582,7 +582,7 @@ const baseTranslations: TranslationCatalog = {
     mediaPlayerVisualizerUnavailable: 'Visualizer unavailable',
     mediaPlayerFullscreen: 'Fullscreen',
     mediaPlayerExitFullscreen: 'Exit fullscreen',
-    playerPageTitle: 'VatioBoard Audio Player',
+    playerPageTitle: 'VatioLibre Audio Player',
     audioPlayer: 'Audio Player',
     playerRoute: 'PLAYER',
     playerNowPlaying: 'Now Playing',
@@ -644,7 +644,7 @@ const baseTranslations: TranslationCatalog = {
     milkdropPresetShuffle: 'Random preset',
     milkdropOpen: 'Open Milkdrop visualizer',
     poweredBy: 'Powered by',
-    speedTagline: 'Minimal live speedometer by Vatio Libre',
+    speedTagline: 'Minimal live speedometer by VatioLibre',
     speedRoute: 'SPEED',
     speedPageTitle: 'Vatio Speed - Free Live GPS Speedometer for Tesla and Mobile',
     speedPageDescription:
@@ -652,7 +652,7 @@ const baseTranslations: TranslationCatalog = {
     speedPageH1: 'Vatio Speed live GPS speedometer',
     speedPageLead:
       'Live GPS speedometer with analog dial, trip stats, unit switching, altitude tracking, and speed trap alerts for Tesla and mobile browsers.',
-    replayTagline: 'Drive replay by Vatio Libre',
+    replayTagline: 'Drive replay by VatioLibre',
     replayRoute: 'REPLAY',
     replaySessionActive: 'Active session',
     replaySessionSaved: 'Saved session',
@@ -705,7 +705,7 @@ const baseTranslations: TranslationCatalog = {
     libraryDimensions: 'Dimensions',
     libraryCreated: 'Created',
     libraryUpdated: 'Updated',
-    gpsRateTagline: 'Browser geolocation diagnostics by Vatio Libre',
+    gpsRateTagline: 'Browser geolocation diagnostics by VatioLibre',
     gpsRateRoute: 'GPS LAB',
     gpsRateToolbar: 'GPS rate tools',
     gpsRatePageTitle: 'Vatio GPS Rate Lab - Browser Geolocation Sampling Test',
@@ -1052,7 +1052,7 @@ const baseTranslations: TranslationCatalog = {
     authLogout: 'Cerrar sesión',
     authContinueWithVatioLibre: 'Continuar con VatioLibre',
     authOpenVatioLibre: 'Abrir VatioLibre',
-    authOpenVatioBoard: 'Abrir VatioBoard',
+    authOpenVatioBoard: 'Abrir herramientas de conducción',
     authCreateAccount: 'Crear cuenta',
     authForgotPassword: 'Olvidé mi contraseña',
     openCalculator: 'Abrir calculadora',
@@ -1147,7 +1147,7 @@ const baseTranslations: TranslationCatalog = {
     cloudSyncPanelPausedOffline:
       'Sync está en pausa mientras este dispositivo está sin conexión. Los cambios locales se reintentarán automáticamente.',
     cloudSyncPanelPausedOwnership:
-      'Otra pestaña abierta de VatioBoard está manejando el sync. Esta pestaña continuará si queda activa.',
+      'Otra pestaña de herramientas de conducción está manejando la sincronización. Esta pestaña continuará si queda activa.',
     cloudSyncPanelPausedLogout:
       'Sync se detuvo mientras cierras sesión.',
     cloudSyncPanelFailed:
@@ -1241,9 +1241,9 @@ const baseTranslations: TranslationCatalog = {
     cloudLibraryRenameMessage: 'Introduce un nuevo título para este documento del tablero.',
     libraryBadgeSummaryOnly: 'Solo resumen',
     libraryBadgePayloadMissing: 'Datos no disponibles',
-    singleTabBlockedTitle: 'VatioBoard ya está abierto en otra pestaña',
+    singleTabBlockedTitle: 'Las herramientas de conducción VatioLibre ya están abiertas en otra pestaña',
     singleTabBlockedMessage:
-      'Usa VatioBoard en una sola pestaña para este perfil del navegador. Cierra la otra pestaña y luego vuelve a intentar aquí.',
+      'Usa las herramientas de conducción VatioLibre en una sola pestaña para este perfil del navegador. Cierra la otra pestaña y luego vuelve a intentar aquí.',
     singleTabRetry: 'Reintentar aquí',
     downloadedPng: 'PNG descargado',
     savedLocally: 'Guardado no persistente',
@@ -1370,9 +1370,9 @@ const baseTranslations: TranslationCatalog = {
       'Aún buscando la primera señal GPS. Mantén la ubicación activa y dale un momento al navegador.',
     welcomeConsentTitle: '¡Bienvenido!',
     welcomeConsentBody:
-      'VatioBoard puede funcionar sin tu ubicación. Algunas funciones de conducción en vivo, como velocidad, grabación de rutas, alertas de cámaras cercanas, mapas y herramientas de aceleración, funcionan mejor si permites el acceso a la ubicación.\n\nEl permiso de ubicación es opcional. Puedes continuar sin permitirlo y activarlo más tarde desde cualquier función de GPS.\n\nAl usar VatioBoard, entiendes y aceptas que eres totalmente responsable de cómo usas la aplicación, tu dispositivo y cualquier decisión que tomes mientras la usas. Respeta siempre las leyes aplicables y conduce de forma segura.',
+      'Las herramientas de conducción VatioLibre pueden funcionar sin tu ubicación. Algunas funciones de conducción en vivo, como velocidad, grabación de rutas, alertas de cámaras cercanas, mapas y herramientas de aceleración, funcionan mejor si permites el acceso a la ubicación.\n\nEl permiso de ubicación es opcional. Puedes continuar sin permitirlo y activarlo más tarde desde cualquier función de GPS.\n\nAl usar las herramientas de conducción VatioLibre, entiendes y aceptas que eres totalmente responsable de cómo usas la aplicación, tu dispositivo y cualquier decisión que tomes mientras la usas. Respeta siempre las leyes aplicables y conduce de forma segura.',
     welcomeConsentCheckbox:
-      'Entiendo y acepto que soy totalmente responsable de mi uso de VatioBoard.',
+      'Entiendo y acepto que soy totalmente responsable de mi uso de las herramientas de conducción VatioLibre.',
     welcomeConsentSkipLocation: 'Continuar sin ubicación',
     welcomeConsentEnableLocation: 'Activar funciones de ubicación',
 
@@ -1407,8 +1407,8 @@ const baseTranslations: TranslationCatalog = {
     dimensions: 'Dimensiones',
 
     // Header/Brand
-    brand: 'Vatio Board',
-    tagline: 'Pizarra de dibujo simple por Vatio Libre',
+    brand: 'VatioLibre',
+    tagline: 'Pizarra de dibujo simple por VatioLibre',
     appManager: 'Apps',
     appManagerTitle: 'Apps',
     appManagerSearch: 'Buscar apps',
@@ -1483,7 +1483,7 @@ const baseTranslations: TranslationCatalog = {
     mediaPlayerVisualizerUnavailable: 'Visualizador no disponible',
     mediaPlayerFullscreen: 'Pantalla completa',
     mediaPlayerExitFullscreen: 'Salir de pantalla completa',
-    playerPageTitle: 'VatioBoard Reproductor de Audio',
+    playerPageTitle: 'Reproductor de audio VatioLibre',
     audioPlayer: 'Reproductor de Audio',
     playerRoute: 'REPRODUCTOR',
     playerNowPlaying: 'Reproduciendo',
@@ -1545,7 +1545,7 @@ const baseTranslations: TranslationCatalog = {
     milkdropPresetShuffle: 'Preset aleatorio',
     milkdropOpen: 'Abrir visualizador Milkdrop',
     poweredBy: 'Creado por',
-    speedTagline: 'Velocímetro en vivo minimalista por Vatio Libre',
+    speedTagline: 'Velocímetro en vivo minimalista por VatioLibre',
     speedRoute: 'VELOCIDAD',
     speedPageTitle: 'Vatio Speed - Velocímetro GPS en vivo gratis para Tesla y móvil',
     speedPageDescription:
@@ -1553,7 +1553,7 @@ const baseTranslations: TranslationCatalog = {
     speedPageH1: 'Vatio Speed velocímetro GPS en vivo',
     speedPageLead:
       'Velocímetro GPS en vivo con dial analógico, estadísticas de viaje, cambio de unidades, seguimiento de altitud y alertas de radares para navegadores Tesla y móviles.',
-    replayTagline: 'Replay de conducción por Vatio Libre',
+    replayTagline: 'Replay de conducción por VatioLibre',
     replayRoute: 'REPLAY',
     replaySessionActive: 'Sesión activa',
     replaySessionSaved: 'Sesión guardada',
@@ -1606,7 +1606,7 @@ const baseTranslations: TranslationCatalog = {
     libraryDimensions: 'Dimensiones',
     libraryCreated: 'Creado',
     libraryUpdated: 'Actualizado',
-    gpsRateTagline: 'Diagnóstico de geolocalización del navegador por Vatio Libre',
+    gpsRateTagline: 'Diagnóstico de geolocalización del navegador por VatioLibre',
     gpsRateRoute: 'GPS LAB',
     gpsRateToolbar: 'Herramientas de tasa GPS',
     gpsRatePageTitle: 'Vatio GPS Rate Lab - Prueba de muestreo de geolocalización del navegador',

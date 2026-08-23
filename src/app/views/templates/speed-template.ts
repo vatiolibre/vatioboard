@@ -5,15 +5,15 @@ const speedTemplate: string = String.raw`
   <div class="app speed-app">
     <header>
       <div class="header-inner speed-header-inner">
-        <div class="brand" data-i18n-title="speedTagline" title="Minimal live speedometer by Vatio Libre">
-          <a class="brand-home" href="#/board" data-i18n-aria="openBoard" aria-label="Open Vatio Board">
+        <div class="brand" data-i18n-title="speedTagline" title="Minimal live speedometer by VatioLibre">
+          <a class="brand-home" href="#/board" data-i18n-aria="openBoard" aria-label="Open VatioLibre drawing board">
             <span class="dot" aria-hidden="true"></span>
             <picture class="brand-logo" aria-hidden="true">
               <source srcset="/img/vb_logo_dark.svg" media="(prefers-color-scheme: dark)" />
               <source srcset="/img/vb_logo_light.svg" media="(prefers-color-scheme: light)" />
               <img src="/img/vb_logo_light.svg" alt="" width="757" height="107" decoding="async" />
             </picture>
-            <span class="sr-only">Vatio Board</span>
+            <span class="sr-only">VatioLibre</span>
           </a>
           <button id="langToggle" type="button" class="lang-toggle" data-i18n-aria="changeLanguage" aria-label="Change language">EN</button>
         </div>

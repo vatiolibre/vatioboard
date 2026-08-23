@@ -19,7 +19,7 @@ export const calculatorAppManifest = defineAppManifest({
   id: "vatio.calculator",
   title: "Calculator",
   shortTitle: "Calc",
-  description: "Floating calculator for quick arithmetic inside VatioBoard.",
+  description: "Floating calculator for quick arithmetic inside VatioLibre Driving Tools.",
   kind: "tool-app",
   version: "1.0.0",
   icon: IconCalculator,

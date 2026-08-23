@@ -43,7 +43,7 @@ const view = createRouteView({
   pageName: "qr-scanner",
   template: qrScannerTemplate,
   meta: {
-    title: "QR Scanner - VatioBoard",
+    title: "QR Scanner - VatioLibre",
     description: "Minimal local QR scanner for camera and image-based QR reads.",
     canonicalPath: "/qr-scanner",
     bodyClass: "qr-scanner-page",
