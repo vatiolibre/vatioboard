@@ -202,7 +202,6 @@ export async function startAppShell({
     appLauncher,
     accountPanel,
   });
-  window.requestAnimationFrame(() => shellManager.reflowWindowsToWorkArea({ persist: false }));
   const shellKeyboard = installShellKeyboard({ shellManager });
   floatingTools.taskbar = shellTaskbar;
   await appLauncher.restorePersistedShellWindows?.();

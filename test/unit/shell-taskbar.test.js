@@ -124,6 +124,23 @@ describe("shell-taskbar", () => {
     manager.destroy();
   });
 
+  it("reflows windows after mounting and taskbar position changes", () => {
+    const manager = makeManager();
+    const reflow = vi.spyOn(manager, "reflowWindowsToWorkArea");
+    const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+
+    expect(reflow).toHaveBeenCalledWith({ persist: false });
+    reflow.mockClear();
+
+    manager.setShellPreference("taskbarPosition", "left");
+
+    expect(taskbar.getElement().getAttribute("data-vb-shell-taskbar-position")).toBe("left");
+    expect(reflow).toHaveBeenCalledWith({ persist: false });
+
+    taskbar.destroy();
+    manager.destroy();
+  });
+
   it("binds the Start button to the provided shared Start menu API", () => {
     const manager = makeManager();
     const bindTrigger = vi.fn((button) => {
@@ -888,6 +905,8 @@ describe("shell-taskbar", () => {
 
   it("moves the taskbar from the handle with mouse pointer events", () => {
     const { manager, taskbar } = setupCalculatorTaskbar();
+    const reflow = vi.spyOn(manager, "reflowWindowsToWorkArea");
+    reflow.mockClear();
     const element = taskbar.getElement();
     const handle = element.querySelector("[data-vb-shell-taskbar-drag-handle]");
     vi.spyOn(element, "getBoundingClientRect").mockReturnValue(rect({
@@ -904,6 +923,7 @@ describe("shell-taskbar", () => {
 
     expect(element.style.left).toBe("420px");
     expect(element.style.top).toBe("380px");
+    expect(reflow).toHaveBeenCalledWith({ persist: false });
 
     taskbar.destroy();
     manager.destroy();
@@ -929,6 +949,8 @@ describe("shell-taskbar", () => {
     }));
     const manager = makeManager();
     const taskbar = createShellTaskbar({ shellManager: manager, root: document.body });
+    const reflow = vi.spyOn(manager, "reflowWindowsToWorkArea");
+    reflow.mockClear();
     const element = taskbar.getElement();
     const handle = element.querySelector("[data-vb-shell-taskbar-drag-handle]");
     vi.spyOn(element, "getBoundingClientRect").mockReturnValue(rect({
@@ -948,6 +970,7 @@ describe("shell-taskbar", () => {
     expect(element.style.left).toBe("");
     expect(element.style.top).toBe("");
     expect(JSON.parse(localStorage.getItem(TASKBAR_STATE_KEY)).taskbar).toBeNull();
+    expect(reflow).toHaveBeenCalledWith({ persist: false });
 
     taskbar.destroy();
     manager.destroy();

@@ -102,46 +102,33 @@ export function observeShellLayoutMetrics(
   callback: (metrics: ShellLayoutMetrics) => void = () => {},
   options: LayoutMetricsOptions = {},
 ) {
-  let frame = 0;
+  let scheduled = false;
   let stopped = false;
-  const chromeRefreshTimers: number[] = [];
 
   const publish = () => {
-    frame = 0;
+    scheduled = false;
     if (stopped) return;
     const metrics = getShellLayoutMetrics(options);
     applyShellLayoutMetrics(metrics, options.root);
     callback(metrics);
   };
   const schedule = () => {
-    if (stopped || frame) return;
-    if (typeof requestAnimationFrame === "function") frame = requestAnimationFrame(publish);
-    else publish();
+    if (stopped || scheduled) return;
+    scheduled = true;
+    queueMicrotask(publish);
   };
   globalThis.addEventListener?.("resize", schedule);
   globalThis.addEventListener?.("orientationchange", schedule);
   globalThis.visualViewport?.addEventListener?.("resize", schedule);
   globalThis.visualViewport?.addEventListener?.("scroll", schedule);
 
-  // Shell chrome mounts immediately after the manager. Rescan a few times
-  // without observing the whole application subtree (which is intentionally
-  // busy while route views and media lists mount).
-  if (typeof window !== "undefined") {
-    for (const delay of [0, 100, 500]) {
-      chromeRefreshTimers.push(window.setTimeout(() => {
-        schedule();
-      }, delay));
-    }
-  }
   publish();
 
   return () => {
     stopped = true;
-    if (frame && typeof cancelAnimationFrame === "function") cancelAnimationFrame(frame);
     globalThis.removeEventListener?.("resize", schedule);
     globalThis.removeEventListener?.("orientationchange", schedule);
     globalThis.visualViewport?.removeEventListener?.("resize", schedule);
     globalThis.visualViewport?.removeEventListener?.("scroll", schedule);
-    chromeRefreshTimers.forEach((timer) => window.clearTimeout(timer));
   };
 }

@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyShellLayoutMetrics,
   getShellLayoutMetrics,
   getShellViewportProfile,
+  observeShellLayoutMetrics,
 } from "../../src/shared/shell-layout-metrics.js";
 
 describe("shell layout metrics", () => {
@@ -32,5 +33,44 @@ describe("shell layout metrics", () => {
     expect(document.documentElement.style.getPropertyValue("--vb-viewport-width")).toBe("773px");
     expect(document.documentElement.style.getPropertyValue("--vb-work-area-height")).toBe("601px");
     expect(document.documentElement.style.getPropertyValue("--vb-touch-target-min")).toBe("44px");
+  });
+
+  it("coalesces viewport events without animation frames or timers", async () => {
+    const callback = vi.fn();
+    const requestFrame = vi.spyOn(window, "requestAnimationFrame");
+    const setTimeout = vi.spyOn(window, "setTimeout");
+    const cleanup = observeShellLayoutMetrics(callback, {
+      root: document,
+      safeMargin: 0,
+      viewport: { left: 0, top: 0, width: 773, height: 601 },
+    });
+
+    expect(callback).toHaveBeenCalledTimes(1);
+    window.dispatchEvent(new Event("resize"));
+    window.dispatchEvent(new Event("orientationchange"));
+    window.dispatchEvent(new Event("resize"));
+    expect(callback).toHaveBeenCalledTimes(1);
+
+    await Promise.resolve();
+
+    expect(callback).toHaveBeenCalledTimes(2);
+    expect(requestFrame).not.toHaveBeenCalled();
+    expect(setTimeout).not.toHaveBeenCalled();
+
+    cleanup();
+    window.dispatchEvent(new Event("resize"));
+    await Promise.resolve();
+    expect(callback).toHaveBeenCalledTimes(2);
+  });
+
+  it("suppresses a queued publication when observation stops", async () => {
+    const callback = vi.fn();
+    const cleanup = observeShellLayoutMetrics(callback, { root: document });
+
+    window.dispatchEvent(new Event("resize"));
+    cleanup();
+    await Promise.resolve();
+
+    expect(callback).toHaveBeenCalledTimes(1);
   });
 });

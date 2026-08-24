@@ -703,6 +703,11 @@ export function createShellTaskbar({
     clampFloatingSurfaces();
   }
 
+  function reflowWindowsForTaskbar() {
+    if (destroyed) return;
+    shellManager.reflowWindowsToWorkArea({ persist: false });
+  }
+
   function rememberWindow(id) {
     if (!id || knownWindowIds.has(id)) return;
     knownWindowIds.add(id);
@@ -970,6 +975,7 @@ export function createShellTaskbar({
     element.style.willChange = "";
     saveState();
     syncTaskbarBottomAvoidance();
+    reflowWindowsForTaskbar();
     payload.event?.preventDefault?.();
   }
 
@@ -1662,6 +1668,7 @@ export function createShellTaskbar({
   preferenceUnsubscribe = shellManager.subscribeShellPreferences?.((preferences) => {
     element.setAttribute("data-vb-shell-taskbar-position", preferences.taskbarPosition);
     clampFloatingSurfaces();
+    reflowWindowsForTaskbar();
   });
   appControlUnsubscribe = appControl.subscribe?.(() => {
     render();
@@ -1680,6 +1687,7 @@ export function createShellTaskbar({
     startMenu?.close?.();
   });
   render();
+  reflowWindowsForTaskbar();
 
   return {
     destroy,

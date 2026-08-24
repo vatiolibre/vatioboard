@@ -41,6 +41,21 @@ function isFiniteNumber(value: unknown): value is number {
   return Number.isFinite(value);
 }
 
+function getElementSquareSize(element: HTMLElement): number {
+  const clientWidth = Number(element.clientWidth);
+  const clientHeight = Number(element.clientHeight);
+  let rect: DOMRect | null = null;
+
+  if (!(clientWidth > 0) || !(clientHeight > 0)) {
+    rect = element.getBoundingClientRect();
+  }
+
+  const width = clientWidth > 0 ? clientWidth : Number(rect?.width) || 0;
+  const height = clientHeight > 0 ? clientHeight : Number(rect?.height) || 0;
+  const measuredSize = Math.floor(Math.min(width, height));
+  return Number.isFinite(measuredSize) && measuredSize >= MIN_DRAW_SIZE ? measuredSize : 0;
+}
+
 export function createAnalogSpeedometer(options?: AnalogSpeedometerOptions | null): AnalogSpeedometerController {
   if (!options) return createNoopSpeedometer();
 
@@ -86,16 +101,14 @@ export function createAnalogSpeedometer(options?: AnalogSpeedometerOptions | nul
   }
 
   function syncStageSize(): void {
-    const measuredSize = Math.floor(Math.min(stageElement.clientWidth, stageElement.clientHeight));
-    const size = Number.isFinite(measuredSize) && measuredSize >= MIN_DRAW_SIZE ? measuredSize : 0;
+    const size = getElementSquareSize(stageElement);
     stageInnerElement.style.setProperty("--analog-speedometer-size", `${size}px`);
   }
 
   function resize(): void {
     syncStageSize();
 
-    const measuredSize = Math.floor(Math.min(dialCanvas.clientWidth, dialCanvas.clientHeight));
-    const size = Number.isFinite(measuredSize) && measuredSize >= MIN_DRAW_SIZE ? measuredSize : 0;
+    const size = getElementSquareSize(dialCanvas);
     const dpr = window.devicePixelRatio || 1;
 
     if (size === canvasSize && dialCanvas.width === Math.floor(size * dpr)) return;
@@ -335,7 +348,6 @@ export function createAnalogSpeedometer(options?: AnalogSpeedometerOptions | nul
   window.visualViewport?.addEventListener("resize", scheduleResize, { passive: true });
 
   resize();
-  scheduleResize();
 
   return {
     destroy,
