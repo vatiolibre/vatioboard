@@ -2782,3 +2782,84 @@ button:disabled{
         max-height: calc(100dvh - 16px);
     }
 }
+
+html[data-vb-layout-profile="short-landscape"] .accel-app{
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-main{
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    padding: 8px 10px max(8px, calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-shell,
+html[data-vb-layout-profile="short-landscape"] .accel-stage{
+    height: 100%;
+    min-height: 0;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-stage{
+    grid-template-columns: minmax(410px, 1fr) minmax(260px, 300px);
+    align-items: stretch;
+    gap: 8px;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-primary-card{
+    grid-template-rows: minmax(0, 1fr) auto auto;
+    min-height: 0;
+    gap: 8px;
+    padding: 10px;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-primary-stage,
+html[data-vb-layout-profile="short-landscape"] .accel-speedometer-wrap{
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-primary-stage{
+    container-type: size;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-speedometer-wrap{
+    display: grid;
+    place-items: center;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-speedometer-stage{
+    width: min(100cqw, 100cqh);
+    height: min(100cqw, 100cqh);
+    max-width: 100%;
+    max-height: 100%;
+    aspect-ratio: 1 / 1;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-side-panel{
+    height: 100%;
+    min-height: 0;
+    gap: 8px;
+    overflow: hidden;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-trigger-side{
+    min-height: var(--vb-touch-target-min, 44px);
+    padding: 8px 12px;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-side-card{
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-sheet{
+    top: var(--vb-work-area-top, 8px);
+    bottom: auto;
+    max-height: var(--vb-work-area-height, calc(100dvh - 24px));
+    overflow-y: auto;
+}

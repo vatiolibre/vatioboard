@@ -87,7 +87,7 @@
   z-index: var(--vb-z-floating, 1000);
   width: 320px;
   min-width: 320px;
-  min-height: 548px;
+  min-height: min(548px, calc(100dvh - 32px));
   border-radius: var(--calc-radius);
   border: 1px solid var(--calc-border);
   background: var(--calc-surface);
@@ -97,7 +97,7 @@
   font-family: var(--calc-font);
   -webkit-tap-highlight-color: transparent;
 }
-.calc-panel[hidden]{ display:none; }
+.calc-panel[hidden]{ display:none !important; }
 
 .calc-header{
   position: relative;
@@ -706,4 +706,75 @@
 .calc-fab.is-dragging{
   user-select: none;
   -webkit-user-select: none;
+}
+
+/* A wide keypad preserves Tesla-sized controls without exceeding a short work area. */
+.calc-panel[data-vb-shell-layout-mode="short-landscape"]{
+  display: grid;
+  grid-template-columns: minmax(250px, .44fr) minmax(310px, .56fr);
+  grid-template-rows: 46px auto auto minmax(0, 1fr);
+  width: min(620px, var(--vb-work-area-width, calc(100vw - 32px)));
+  height: min(360px, var(--vb-work-area-height, calc(100dvh - 32px)));
+  min-width: 0;
+  min-height: 0;
+  max-width: var(--vb-work-area-width, calc(100vw - 32px));
+  max-height: var(--vb-work-area-height, calc(100dvh - 32px));
+}
+
+.calc-panel[data-vb-shell-layout-mode="short-landscape"] .calc-header{
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.calc-panel[data-vb-shell-layout-mode="short-landscape"] .calc-display{
+  grid-column: 1;
+  grid-row: 2;
+  min-width: 0;
+  padding-top: 4px;
+}
+
+.calc-panel[data-vb-shell-layout-mode="short-landscape"] .calc-utility-row{
+  grid-column: 1;
+  grid-row: 3;
+  padding-bottom: 8px;
+}
+
+.calc-panel[data-vb-shell-layout-mode="short-landscape"] .calc-secondary-keys{
+  grid-column: 1;
+  grid-row: 4;
+  align-content: start;
+  padding: 0 12px 12px;
+}
+
+.calc-panel[data-vb-shell-layout-mode="short-landscape"] .calc-keys{
+  grid-column: 2;
+  grid-row: 2 / 5;
+  min-height: 0;
+  align-content: stretch;
+  grid-template-rows: repeat(5, minmax(44px, 1fr));
+  padding: 10px 12px 12px;
+  border-left: 1px solid var(--calc-border);
+}
+
+.calc-panel[data-vb-shell-layout-mode="short-landscape"] .calc-key{
+  min-width: var(--vb-touch-target-min, 44px);
+  min-height: var(--vb-touch-target-min, 44px);
+  padding-block: 7px;
+}
+
+.calc-panel[data-vb-shell-layout-mode="short-landscape"] .calc-minimize,
+.calc-panel[data-vb-shell-layout-mode="short-landscape"] .calc-close{
+  top: 1px;
+  width: var(--vb-touch-target-min, 44px);
+  height: var(--vb-touch-target-min, 44px);
+}
+
+.calc-panel[data-vb-shell-layout-mode="short-landscape"] .calc-minimize{ right: 50px; }
+.calc-panel[data-vb-shell-layout-mode="short-landscape"] .calc-close{ right: 4px; }
+
+.calc-panel[data-vb-shell-layout-mode="short-landscape"] .calc-history-sheet,
+.calc-panel[data-vb-shell-layout-mode="short-landscape"] .calc-settings-sheet{
+  z-index: 12;
+  max-height: 100%;
+  overflow-y: auto;
 }

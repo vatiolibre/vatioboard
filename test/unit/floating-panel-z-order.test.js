@@ -296,8 +296,8 @@ describe("floating widget z-order", () => {
       resizable: false,
       maximizable: false,
       snap: false,
-      preserveIntrinsicWidth: true,
-      maxWidth: 320,
+      preserveIntrinsicWidth: false,
+      maxWidth: 620,
     });
     expect(manager.getWindow("energy").capabilities).toMatchObject({
       resizable: false,
@@ -313,7 +313,7 @@ describe("floating widget z-order", () => {
       fullscreen: false,
       snap: false,
       preserveIntrinsicWidth: true,
-      maxWidth: 340,
+      maxWidth: 720,
     });
 
     player.destroy();

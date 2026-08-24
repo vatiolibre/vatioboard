@@ -491,3 +491,55 @@ body.apps-page #app-view {
     grid-template-columns: 1fr;
   }
 }
+
+html[data-vb-layout-profile="short-landscape"] body.apps-page #app-view{
+  overflow: hidden;
+}
+
+html[data-vb-layout-profile="short-landscape"] .vb-app-manager{
+  height: 100dvh;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 10px 12px max(84px, calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));
+}
+
+html[data-vb-layout-profile="short-landscape"] .vb-app-manager-header{
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  align-items: center;
+  margin-bottom: 8px;
+  padding: 4px 0 8px;
+  background: color-mix(in srgb, #f8fafc 94%, transparent);
+  backdrop-filter: blur(14px);
+}
+
+html[data-vb-layout-profile="short-landscape"] .vb-app-manager h1{
+  font-size: 22px;
+}
+
+html[data-vb-layout-profile="short-landscape"] .vb-app-manager-toolbar{
+  position: sticky;
+  top: 60px;
+  z-index: 3;
+  grid-template-columns: minmax(220px, 2fr) repeat(2, minmax(130px, 1fr));
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  background: color-mix(in srgb, #f8fafc 94%, transparent);
+  backdrop-filter: blur(14px);
+}
+
+html[data-vb-layout-profile="short-landscape"] .vb-app-manager-search{
+  grid-column: auto;
+}
+
+html[data-vb-layout-profile="short-landscape"] .vb-app-manager-grid{
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+html[data-vb-layout-profile="short-landscape"] .vb-app-manager-card{
+  gap: 8px;
+  padding: 10px;
+}

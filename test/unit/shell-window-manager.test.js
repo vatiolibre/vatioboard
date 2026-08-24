@@ -155,7 +155,7 @@ describe("shell-window-manager", () => {
     manager.destroy();
   });
 
-  it("enforces window minimum size even when the work area is smaller", () => {
+  it("treats window minimum size as a preference when the work area is smaller", () => {
     vi.stubGlobal("innerWidth", 300);
     vi.stubGlobal("innerHeight", 260);
     const manager = createManager();
@@ -174,30 +174,30 @@ describe("shell-window-manager", () => {
 
     const record = manager.openWindow("account");
 
-    expect(record.bounds.width).toBe(320);
-    expect(record.bounds.height).toBe(300);
-    expect(panel.style.width).toBe("320px");
-    expect(panel.style.height).toBe("300px");
-    expect(panel.style.minWidth).toBe("320px");
-    expect(panel.style.minHeight).toBe("300px");
-    expect(Number.parseInt(panel.style.left, 10)).toBeLessThanOrEqual(16);
-    expect(Number.parseInt(panel.style.top, 10)).toBeLessThanOrEqual(16);
+    expect(record.bounds.width).toBe(268);
+    expect(record.bounds.height).toBe(228);
+    expect(panel.style.width).toBe("268px");
+    expect(panel.style.height).toBe("228px");
+    expect(panel.style.minWidth).toBe("268px");
+    expect(panel.style.minHeight).toBe("228px");
+    expect(Number.parseInt(panel.style.left, 10)).toBe(16);
+    expect(Number.parseInt(panel.style.top, 10)).toBe(16);
     manager.destroy();
   });
 
-  it("allows oversized windows to pan within the work area instead of trapping one edge", () => {
+  it("caps oversized windows to the work area", () => {
     const workArea = { left: 16, top: 48, width: 300, height: 220 };
 
     expect(clampBoundsToWorkArea({
       left: 16,
       top: 48,
-      width: 320,
-      height: 528,
+      width: 300,
+      height: 220,
     }, { workArea, forceSize: true, minWidth: 320, minHeight: 528 })).toEqual({
       left: 16,
       top: 48,
-      width: 320,
-      height: 528,
+      width: 300,
+      height: 220,
     });
 
     expect(clampBoundsToWorkArea({
@@ -206,10 +206,10 @@ describe("shell-window-manager", () => {
       width: 320,
       height: 528,
     }, { workArea, forceSize: true, minWidth: 320, minHeight: 528 })).toEqual({
-      left: -4,
-      top: -260,
-      width: 320,
-      height: 528,
+      left: 16,
+      top: 48,
+      width: 300,
+      height: 220,
     });
 
     expect(clampBoundsToWorkArea({
@@ -218,14 +218,14 @@ describe("shell-window-manager", () => {
       width: 320,
       height: 528,
     }, { workArea, forceSize: true, minWidth: 320, minHeight: 528 })).toEqual({
-      left: -4,
-      top: -260,
-      width: 320,
-      height: 528,
+      left: 16,
+      top: 48,
+      width: 300,
+      height: 220,
     });
   });
 
-  it("can prefer the visible bottom edge for oversized windows", () => {
+  it("keeps the full bottom edge visible by shrinking an oversized window", () => {
     vi.stubGlobal("innerWidth", 720);
     vi.stubGlobal("innerHeight", 520);
     const workArea = { left: 16, top: 16, width: 688, height: 412 };
@@ -243,9 +243,9 @@ describe("shell-window-manager", () => {
       preferVisibleBottom: true,
     })).toEqual({
       left: 24,
-      top: -120,
+      top: 16,
       width: 320,
-      height: 548,
+      height: 412,
     });
 
     expect(clampBoundsToWorkArea({
@@ -262,10 +262,64 @@ describe("shell-window-manager", () => {
       visibleBottomInset: 34,
     })).toEqual({
       left: 24,
-      top: -86,
+      top: 16,
       width: 320,
-      height: 548,
+      height: 412,
     });
+  });
+
+  it("uses transient adaptive bounds and restores preferred desktop geometry", () => {
+    const manager = createManager();
+    const panel = createPanel();
+    panel.hidden = false;
+    manager.registerWindow({
+      id: "adaptive",
+      element: panel,
+      bounds: { left: 40, top: 50, width: 320, height: 220 },
+      resolveLayout(metrics) {
+        return {
+          mode: "short-landscape",
+          left: metrics.workArea.left,
+          top: metrics.workArea.top,
+          width: 620,
+          height: 360,
+        };
+      },
+    });
+
+    manager.reflowWindowsToWorkArea({
+      metrics: {
+        viewport: { left: 0, top: 0, width: 773, height: 601 },
+        workArea: { left: 16, top: 64, width: 741, height: 451 },
+        safeArea: { top: 0, right: 0, bottom: 0, left: 0 },
+        reserved: { top: 64, right: 16, bottom: 86, left: 16 },
+        orientation: "landscape",
+        profile: "short-landscape",
+        devicePixelRatio: 1.53,
+      },
+    });
+
+    expect(panel.style.width).toBe("620px");
+    expect(panel.style.height).toBe("360px");
+    expect(panel.dataset.vbShellLayoutMode).toBe("short-landscape");
+    expect(manager.getWindow("adaptive").bounds).toEqual({ left: 40, top: 50, width: 320, height: 220 });
+
+    manager.reflowWindowsToWorkArea({
+      metrics: {
+        viewport: { left: 0, top: 0, width: 1280, height: 900 },
+        workArea: { left: 16, top: 16, width: 1248, height: 868 },
+        safeArea: { top: 0, right: 0, bottom: 0, left: 0 },
+        reserved: { top: 16, right: 16, bottom: 16, left: 16 },
+        orientation: "landscape",
+        profile: "standard",
+        devicePixelRatio: 1,
+      },
+    });
+
+    expect(panel.style.cssText).toContain("left: 40px");
+    expect(panel.style.cssText).toContain("width: 320px");
+    expect(panel.hasAttribute("data-vb-shell-layout-mode")).toBe(false);
+    manager.destroy();
   });
 
   it("resets a window to its default geometry", () => {

@@ -210,8 +210,26 @@ export function createCalculatorWidget(options: CalculatorWidgetOptions = {}): C
       restorable: true,
       maximizable: false,
       snap: false,
-      preserveIntrinsicWidth: true,
-      maxWidth: 320,
+      preserveIntrinsicWidth: false,
+      minWidth: 320,
+      minHeight: 320,
+      maxWidth: 620,
+      maxHeight: 548,
+    },
+    resolveLayout(metrics) {
+      const width = Math.min(620, metrics.workArea.width);
+      const height = Math.min(360, metrics.workArea.height);
+      return {
+        mode: "short-landscape",
+        left: metrics.workArea.left + Math.max(0, metrics.workArea.width - width) / 2,
+        top: metrics.workArea.top + Math.max(0, metrics.workArea.height - height) / 2,
+        width,
+        height,
+        minWidth: Math.min(560, metrics.workArea.width),
+        minHeight: Math.min(320, metrics.workArea.height),
+        maxWidth: metrics.workArea.width,
+        maxHeight: metrics.workArea.height,
+      };
     },
     lifecycle: {
       open: showPanel,

@@ -90,6 +90,41 @@ html.vb-floating-drag-active body {
   z-index: var(--vb-z-shell-fullscreen, 1980);
 }
 
+/* Every adaptive shell window uses the same measured work-area ceiling. */
+[data-vb-shell-layout-mode="short-landscape"] {
+  max-width: var(--vb-work-area-width, calc(100vw - 16px)) !important;
+  max-height: var(--vb-work-area-height, calc(100dvh - 16px)) !important;
+}
+
+[data-vb-shell-layout-mode="short-landscape"].energy-panel,
+[data-vb-shell-layout-mode="short-landscape"].camera-map-panel,
+[data-vb-shell-layout-mode="short-landscape"].tts-panel,
+[data-vb-shell-layout-mode="short-landscape"].speed-alert-window,
+[data-vb-shell-layout-mode="short-landscape"].vb-account-panel {
+  min-width: 0 !important;
+  min-height: 0 !important;
+}
+
+[data-vb-shell-layout-mode="short-landscape"].energy-panel .energy-body,
+[data-vb-shell-layout-mode="short-landscape"].camera-map-panel .camera-map-body,
+[data-vb-shell-layout-mode="short-landscape"].tts-panel .tts-body,
+[data-vb-shell-layout-mode="short-landscape"].speed-alert-window .speed-alert-window-body,
+[data-vb-shell-layout-mode="short-landscape"].vb-account-panel .vb-account-panel-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+[data-vb-shell-layout-mode="short-landscape"] .energy-minimize,
+[data-vb-shell-layout-mode="short-landscape"] .energy-close,
+[data-vb-shell-layout-mode="short-landscape"] .camera-map-action,
+[data-vb-shell-layout-mode="short-landscape"] .camera-map-toolbar-btn,
+[data-vb-shell-layout-mode="short-landscape"] .tts-window-button,
+[data-vb-shell-layout-mode="short-landscape"] .speed-alert-window-close {
+  min-width: var(--vb-touch-target-min, 44px);
+  min-height: var(--vb-touch-target-min, 44px);
+}
+
 [data-vb-shell-snap-preview] {
   outline: 2px solid color-mix(in srgb, var(--calc-accent, #10b981) 48%, transparent);
   outline-offset: 2px;

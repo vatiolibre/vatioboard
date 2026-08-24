@@ -1097,6 +1097,50 @@ button.media-player-audio-canvas-wrap:focus-visible{
     }
 }
 
+html[data-vb-layout-profile="short-landscape"].library-page,
+html[data-vb-layout-profile="short-landscape"] body.library-page{
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+}
+
+html[data-vb-layout-profile="short-landscape"] .library-app{
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+}
+
+html[data-vb-layout-profile="short-landscape"] .library-main{
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    padding: 8px 10px max(8px, calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));
+}
+
+html[data-vb-layout-profile="short-landscape"] .library-controls{
+    flex: 0 0 auto;
+    gap: 8px;
+    padding: 10px;
+}
+
+html[data-vb-layout-profile="short-landscape"] .library-shell{
+    flex: 1 1 auto;
+    grid-template-columns: minmax(270px, .78fr) minmax(0, 1.22fr);
+    min-height: 0;
+    gap: 8px;
+}
+
+html[data-vb-layout-profile="short-landscape"] .library-list-panel,
+html[data-vb-layout-profile="short-landscape"] .library-detail-panel{
+    min-height: 0;
+    max-height: none;
+    padding: 10px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
 .media-player:fullscreen{
     background: #000;
     display: flex;

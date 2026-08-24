@@ -490,6 +490,10 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
   }
 
   function clearPanelFixedHeight() {
+    if (
+      shell.root.dataset.vbShellLayoutMode === "short-landscape"
+      && shell.root.classList.contains("is-content-open")
+    ) return;
     shell.root.style.height = "";
     shell.root.style.maxHeight = "";
   }
@@ -541,6 +545,10 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
   }
 
   function fitContentSheetHeight(area) {
+    if (shell.root.dataset.vbShellLayoutMode === "short-landscape") {
+      shell.root.style.removeProperty(PLAYER_CONTENT_SHEET_HEIGHT_VAR);
+      return;
+    }
     if (!contentSheet?.classList.contains("is-open")) {
       shell.root.style.removeProperty(PLAYER_CONTENT_SHEET_HEIGHT_VAR);
       return;
@@ -560,6 +568,12 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
 
   function fitPanelToAvailableSpace({ persist = false } = {}) {
     if (shell.root.hidden) return;
+
+    if (shell.root.classList.contains("is-content-open")
+      && document.documentElement.dataset.vbLayoutProfile === "short-landscape") {
+      shellManager.reflowWindowsToWorkArea({ persist: false });
+      return;
+    }
 
     clearPanelFixedHeight();
     ensureTopLeftPositioning();
@@ -628,6 +642,7 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
   }
 
   function handleContentOpenChange() {
+    shellManager.reflowWindowsToWorkArea({ persist: false });
     schedulePanelFit({ persist: true });
   }
 
@@ -656,7 +671,31 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
       fullscreen: false,
       snap: false,
       preserveIntrinsicWidth: true,
-      maxWidth: 340,
+      minWidth: 320,
+      maxWidth: 720,
+    },
+    resolveLayout(metrics) {
+      const contentOpen = shell.root.classList.contains("is-content-open");
+      if (!contentOpen) {
+        return {
+          mode: "short-landscape",
+          width: Math.min(340, metrics.workArea.width),
+          maxWidth: Math.min(340, metrics.workArea.width),
+          maxHeight: metrics.workArea.height,
+        };
+      }
+      const width = Math.min(720, metrics.workArea.width);
+      return {
+        mode: "short-landscape",
+        left: metrics.workArea.left + Math.max(0, metrics.workArea.width - width) / 2,
+        top: metrics.workArea.top,
+        width,
+        height: metrics.workArea.height,
+        minWidth: Math.min(620, metrics.workArea.width),
+        minHeight: Math.min(360, metrics.workArea.height),
+        maxWidth: metrics.workArea.width,
+        maxHeight: metrics.workArea.height,
+      };
     },
     lifecycle: {
       open: showPanel,

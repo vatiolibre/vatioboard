@@ -18,6 +18,31 @@ export interface ShellBounds {
   height?: number;
 }
 
+export type ShellViewportProfile = "standard" | "short-landscape" | "portrait";
+
+export interface ShellLayoutMetrics {
+  viewport: ShellBounds & { width: number; height: number };
+  workArea: ShellBounds & { width: number; height: number };
+  safeArea: { top: number; right: number; bottom: number; left: number };
+  reserved: { top: number; right: number; bottom: number; left: number };
+  orientation: "landscape" | "portrait";
+  profile: ShellViewportProfile;
+  devicePixelRatio: number;
+}
+
+export interface ShellAdaptiveWindowLayout extends Partial<ShellBounds> {
+  mode?: string;
+  minWidth?: number | null;
+  minHeight?: number | null;
+  maxWidth?: number | null;
+  maxHeight?: number | null;
+}
+
+export type ShellAdaptiveLayoutResolver = (
+  metrics: ShellLayoutMetrics,
+  record: ShellWindowRecord,
+) => ShellAdaptiveWindowLayout | null | undefined;
+
 export interface ShellSize {
   width: number;
   height: number;
@@ -90,6 +115,7 @@ export interface ShellWindowRecord extends ShellWindowDefinition {
   snap?: ShellSnap | null;
   capabilities: ShellWindowCapabilities;
   lifecycle?: ShellWindowLifecycle;
+  resolveLayout?: ShellAdaptiveLayoutResolver;
   version?: number;
 }
 
@@ -132,6 +158,7 @@ export interface ShellWindowRegistration extends Partial<ShellWindowDefinition> 
   snap?: ShellSnap | null;
   capabilities?: ShellWindowCapabilities;
   lifecycle?: ShellWindowLifecycle;
+  resolveLayout?: ShellAdaptiveLayoutResolver;
   persist?: boolean;
   flush?: boolean;
 }
@@ -187,6 +214,7 @@ export interface ShellRuntime {
   exitFullscreenWindow(id: string, options?: ShellLifecycleOptions): ShellWindowRecord | null;
   toggleFullscreenWindow(id: string, options?: ShellLifecycleOptions): ShellWindowRecord | null;
   restoreShellLayout(options?: ShellLifecycleOptions): ShellWindowRecord[];
+  reflowWindowsToWorkArea(options?: ShellLifecycleOptions & { metrics?: ShellLayoutMetrics }): ShellWindowRecord[];
   persistShellLayout(options?: ShellLifecycleOptions): boolean;
   subscribe(listener: (event: ShellWindowSubscriptionEvent) => void): () => void;
   setShellPreference<K extends keyof ShellPreferences>(key: K, value: ShellPreferences[K]): ShellPreferences[K];

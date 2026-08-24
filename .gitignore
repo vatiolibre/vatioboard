@@ -37,3 +37,8 @@ data-src/nyc/*.csv
 *PROJECT_STRUCTURE.md
 *AGENTS.md
 *.Makefile
+
+# Playwright runtime artifacts (screenshot baselines under test/e2e stay tracked).
+test-results/
+playwright-report/
+blob-report/

@@ -366,3 +366,52 @@
     max-height: 110px;
   }
 }
+
+html[data-vb-layout-profile="short-landscape"] .qr-scanner-app{
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+html[data-vb-layout-profile="short-landscape"] .qr-scanner-header{
+  position: relative;
+  flex: 0 0 auto;
+}
+
+html[data-vb-layout-profile="short-landscape"] .qr-scanner-main{
+  flex: 1 1 auto;
+  width: min(960px, calc(100% - 16px));
+  min-height: 0;
+  overflow: hidden;
+  padding: 8px 0 max(82px, calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));
+}
+
+html[data-vb-layout-profile="short-landscape"] .qr-scanner-panel{
+  grid-template-columns: minmax(300px, 1fr) minmax(260px, .72fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  align-items: stretch;
+}
+
+html[data-vb-layout-profile="short-landscape"] .qr-scanner-preview{
+  grid-column: 1;
+  grid-row: 1 / 3;
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  aspect-ratio: auto;
+}
+
+html[data-vb-layout-profile="short-landscape"] .qr-scanner-control-row,
+html[data-vb-layout-profile="short-landscape"] .qr-scanner-result{
+  grid-column: 2;
+  min-width: 0;
+}
+
+html[data-vb-layout-profile="short-landscape"] .qr-scanner-result{
+  min-height: 0;
+  overflow-y: auto;
+}

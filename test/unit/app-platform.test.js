@@ -865,7 +865,13 @@ describe("VatioBoard OS app platform", () => {
     expect(calculatorWindow).toMatchObject({
       id: "calculator",
       title: "Calculator",
-      capabilities: expect.objectContaining({ draggable: true, maxWidth: 320 }),
+      capabilities: expect.objectContaining({
+        draggable: true,
+        minWidth: 320,
+        minHeight: 320,
+        maxWidth: 620,
+        maxHeight: 548,
+      }),
     });
   });
 });

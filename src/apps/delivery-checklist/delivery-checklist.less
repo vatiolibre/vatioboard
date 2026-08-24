@@ -1900,3 +1900,87 @@
     grid-template-columns: 1fr;
   }
 }
+
+html[data-vb-layout-profile="short-landscape"] .delivery-checklist-app{
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+html[data-vb-layout-profile="short-landscape"] .delivery-checklist-header{
+  position: relative;
+  flex: 0 0 auto;
+}
+
+html[data-vb-layout-profile="short-landscape"] .delivery-checklist-main{
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  padding: 8px 0 max(82px, calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));
+}
+
+html[data-vb-layout-profile="short-landscape"] .delivery-guided-layout,
+html[data-vb-layout-profile="short-landscape"] .delivery-guided-layout:has(.delivery-review-panel:not([hidden])){
+  height: 100%;
+  min-height: 0;
+  grid-template-columns: minmax(190px, .3fr) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 8px;
+}
+
+html[data-vb-layout-profile="short-landscape"] .delivery-step-rail{
+  order: initial;
+  position: relative;
+  top: auto;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+}
+
+html[data-vb-layout-profile="short-landscape"] .delivery-section-tabs{
+  display: grid;
+  overflow-x: hidden;
+  overflow-y: visible;
+}
+
+html[data-vb-layout-profile="short-landscape"] .delivery-section-tab{
+  flex: none;
+}
+
+html[data-vb-layout-profile="short-landscape"] .delivery-section-panel,
+html[data-vb-layout-profile="short-landscape"] .delivery-review-panel{
+  order: initial;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+html[data-vb-layout-profile="short-landscape"] .delivery-review-panel:not([hidden]){
+  position: absolute;
+  inset: 0 0 0 auto;
+  z-index: 5;
+  width: min(360px, 48%);
+}
+
+html[data-vb-layout-profile="short-landscape"] .delivery-vin-scanner-sheet{
+  padding: 8px;
+}
+
+html[data-vb-layout-profile="short-landscape"] .delivery-vin-scanner-panel{
+  width: min(760px, 100%);
+  max-height: 100%;
+}
+
+html[data-vb-layout-profile="short-landscape"] .delivery-vin-live-pane,
+html[data-vb-layout-profile="short-landscape"] .delivery-vin-crop-editor{
+  grid-template-columns: minmax(0, 1fr) minmax(220px, .45fr);
+  align-items: start;
+}
+
+html[data-vb-layout-profile="short-landscape"] .delivery-vin-video-wrap,
+html[data-vb-layout-profile="short-landscape"] .delivery-vin-crop-wrap{
+  min-height: 180px;
+}

@@ -11,8 +11,9 @@ const calculatorWindowCapabilities = {
   snap: false,
   preserveIntrinsicWidth: true,
   minWidth: 320,
-  minHeight: 548,
-  maxWidth: 320,
+  minHeight: 320,
+  maxWidth: 620,
+  maxHeight: 548,
 } as const;
 
 export const calculatorAppManifest = defineAppManifest({

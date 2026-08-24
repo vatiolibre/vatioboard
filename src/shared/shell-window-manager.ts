@@ -2,8 +2,10 @@ import { createShellLayoutStore } from "./shell-layout-store.js";
 import { getBoundsForSnapZone } from "./shell-snap.js";
 import { SHELL_Z_INDEX } from "./shell-layers.js";
 import { clampBoundsToWorkArea, getShellWorkArea, getViewportRect } from "./shell-work-area.js";
+import { getShellLayoutMetrics, observeShellLayoutMetrics } from "./shell-layout-metrics.js";
 import type {
   ShellBounds,
+  ShellLayoutMetrics,
   ShellPreferences,
   ShellRuntime,
   ShellSnapZone,
@@ -113,10 +115,11 @@ function normalizeCapabilities(capabilities: LegacyShellOptions = {}): ShellWind
 }
 
 function getCapabilitySizeConstraints(record: MutableShellWindowRecord | null | undefined) {
-  const minWidth = toNumber(record?.capabilities?.minWidth);
-  const minHeight = toNumber(record?.capabilities?.minHeight);
-  const maxWidth = toNumber(record?.capabilities?.maxWidth);
-  const maxHeight = toNumber(record?.capabilities?.maxHeight);
+  const capabilities = record?.presentationLayout || record?.capabilities;
+  const minWidth = toNumber(capabilities?.minWidth);
+  const minHeight = toNumber(capabilities?.minHeight);
+  const maxWidth = toNumber(capabilities?.maxWidth);
+  const maxHeight = toNumber(capabilities?.maxHeight);
   return {
     minWidth: minWidth !== null && minWidth > 0 ? minWidth : undefined,
     minHeight: minHeight !== null && minHeight > 0 ? minHeight : undefined,
@@ -159,16 +162,18 @@ function applyBounds(element: unknown, bounds: unknown) {
 function applyElementSizeConstraints(record: MutableShellWindowRecord) {
   if (!isElement(record.element)) return;
   const fullscreen = isFullscreenRecord(record);
-  const minWidth = toNumber(record.capabilities?.minWidth);
-  const minHeight = toNumber(record.capabilities?.minHeight);
-  const maxWidth = toNumber(record.capabilities?.maxWidth);
-  const maxHeight = toNumber(record.capabilities?.maxHeight);
+  const capabilities = record.presentationLayout || record.capabilities;
+  const area = getShellWorkArea({ root: record.element.ownerDocument || document });
+  const minWidth = toNumber(capabilities?.minWidth);
+  const minHeight = toNumber(capabilities?.minHeight);
+  const maxWidth = toNumber(capabilities?.maxWidth);
+  const maxHeight = toNumber(capabilities?.maxHeight);
 
   record.element.style.minWidth = !fullscreen && minWidth !== null && minWidth > 0
-    ? `${Math.round(minWidth)}px`
+    ? `${Math.round(Math.min(minWidth, area.width))}px`
     : "";
   record.element.style.minHeight = !fullscreen && minHeight !== null && minHeight > 0
-    ? `${Math.round(minHeight)}px`
+    ? `${Math.round(Math.min(minHeight, area.height))}px`
     : "";
   record.element.style.maxWidth = fullscreen
     ? "none"
@@ -303,6 +308,7 @@ function shallowRecord(record: MutableShellWindowRecord | null | undefined): She
     minimized: record.minimized,
     snap: record.snap,
     capabilities: record.capabilities,
+    resolveLayout: record.resolveLayout,
     lifecycle: record.lifecycle,
     lazy: record.lazy,
     restoreOnBoot: record.restoreOnBoot,
@@ -393,6 +399,7 @@ export function createShellWindowManager(options: LegacyShellOptions = {}): Shel
     Math.max(BASE_Z_INDEX, ...Object.values(layout.windows || {}).map((entry: LegacyShellOptions) => entry?.zIndex || 0))
   );
   let destroyed = false;
+  let cleanupLayoutMetrics = () => {};
   applyShellPreferenceAttributes(root, preferences);
 
   function emit(type: string, detail: LegacyShellOptions = {}) {
@@ -450,6 +457,11 @@ export function createShellWindowManager(options: LegacyShellOptions = {}): Shel
     record.element.setAttribute("data-vb-shell-window-fullscreen", isFullscreenRecord(record) ? "true" : "false");
     record.element.setAttribute("data-vb-floating-panel", "");
     record.element.setAttribute("data-vb-floating-active", record.active ? "true" : "false");
+    if (record.presentationLayout?.mode) {
+      record.element.setAttribute("data-vb-shell-layout-mode", record.presentationLayout.mode);
+    } else {
+      record.element.removeAttribute("data-vb-shell-layout-mode");
+    }
     applyElementSizeConstraints(record);
     record.element.style.zIndex = String(getRecordZIndex(record));
   }
@@ -561,6 +573,7 @@ export function createShellWindowManager(options: LegacyShellOptions = {}): Shel
       snap: config.snap || record.snap || null,
       capabilities: configuredCapabilities,
       lifecycle: sanitizeLifecycle({ ...record.lifecycle, ...config.lifecycle }),
+      resolveLayout: typeof config.resolveLayout === "function" ? config.resolveLayout : record.resolveLayout,
       lazy: config.lazy === true || record.lazy === true,
       restoreOnBoot: config.restoreOnBoot !== undefined ? config.restoreOnBoot !== false : record.restoreOnBoot !== false,
       storageKey: config.storageKey || record.storageKey || null,
@@ -679,6 +692,7 @@ export function createShellWindowManager(options: LegacyShellOptions = {}): Shel
     activateWindow(id, { ...options, persist: false });
     emit("vatioboard:shell-window-opened", { id, record: shallowRecord(record) });
     notify("opened", record);
+    reflowWindowsToWorkArea({ persist: false });
     persist(options);
     return shallowRecord(record);
   }
@@ -762,6 +776,22 @@ export function createShellWindowManager(options: LegacyShellOptions = {}): Shel
     if (!record) return null;
     const next = normalizeBounds(bounds);
     if (!next) return shallowRecord(record);
+    if (record.presentationLayout && options.adaptivePresentation !== false) {
+      const metrics = getShellLayoutMetrics({ root });
+      const constraints = getCapabilitySizeConstraints(record);
+      const sanitizedPresentation = clampBoundsToWorkArea(next, {
+        root,
+        workArea: metrics.workArea,
+        currentBounds: record.presentationBounds,
+        ...constraints,
+      });
+      record.presentationBounds = sanitizedPresentation;
+      applyBounds(record.element, sanitizedPresentation);
+      setWindowAttributes(record);
+      emit("vatioboard:shell-window-layout-changed", { id, record: shallowRecord(record), adaptive: true });
+      notify("layout-changed", record);
+      return shallowRecord(record);
+    }
     const sanitized = sanitizeRecordBounds(record, next, {
       root,
       rawBounds: options.rawBounds === true,
@@ -962,6 +992,69 @@ export function createShellWindowManager(options: LegacyShellOptions = {}): Shel
     return listWindows();
   }
 
+  function reflowWindowsToWorkArea(options: LegacyShellOptions = {}) {
+    const metrics: ShellLayoutMetrics = options.metrics || getShellLayoutMetrics({ root });
+    const isAdaptiveProfile = metrics.profile === "short-landscape";
+
+    for (const record of windows.values()) {
+      if (record.state === "fullscreen") {
+        record.bounds = metrics.viewport;
+        applyBounds(record.element, metrics.viewport);
+        continue;
+      }
+      if (record.state !== "open" || record.element.hidden) continue;
+
+      if (!isAdaptiveProfile) {
+        if (record.presentationBounds || record.presentationLayout) {
+          record.presentationBounds = null;
+          record.presentationLayout = null;
+          const restored = sanitizeRecordBounds(record, record.bounds || record.restoreBounds, {
+            root,
+            workArea: metrics.workArea,
+            fullscreen: false,
+          });
+          if (restored) applyBounds(record.element, restored);
+          setWindowAttributes(record);
+        }
+        continue;
+      }
+
+      const current = record.presentationBounds
+        || getElementBounds(record.element)
+        || record.bounds
+        || record.restoreBounds;
+      let layout: LegacyShellOptions = { mode: "short-landscape" };
+      if (typeof record.resolveLayout === "function") {
+        try {
+          layout = { ...layout, ...(record.resolveLayout(metrics, shallowRecord(record)) || {}) };
+        } catch {
+          // A window-specific layout must not prevent the rest of the shell reflow.
+        }
+      }
+      record.presentationLayout = layout;
+      const constraints = getCapabilitySizeConstraints(record);
+      const requested = {
+        ...current,
+        ...(toNumber(layout.left) !== null ? { left: layout.left } : {}),
+        ...(toNumber(layout.top) !== null ? { top: layout.top } : {}),
+        ...(toNumber(layout.width) !== null ? { width: layout.width } : {}),
+        ...(toNumber(layout.height) !== null ? { height: layout.height } : {}),
+      };
+      const next = clampBoundsToWorkArea(requested, {
+        root,
+        workArea: metrics.workArea,
+        currentBounds: current,
+        forceSize: true,
+        ...constraints,
+      });
+      record.presentationBounds = next;
+      applyBounds(record.element, next);
+      setWindowAttributes(record);
+    }
+    emit("vatioboard:shell-work-area-reflowed", { metrics });
+    return listWindows();
+  }
+
   function persistShellLayout(options: LegacyShellOptions = {}) {
     const nextLayout = {
       ...layout,
@@ -1018,6 +1111,7 @@ export function createShellWindowManager(options: LegacyShellOptions = {}): Shel
 
   function destroy() {
     destroyed = true;
+    cleanupLayoutMetrics();
     for (const cleanup of listenerCleanups.values()) cleanup();
     listenerCleanups.clear();
     subscribers.clear();
@@ -1050,6 +1144,7 @@ export function createShellWindowManager(options: LegacyShellOptions = {}): Shel
     exitFullscreenWindow,
     toggleFullscreenWindow,
     restoreShellLayout,
+    reflowWindowsToWorkArea,
     persistShellLayout,
     subscribe,
     setShellPreference,
@@ -1060,6 +1155,11 @@ export function createShellWindowManager(options: LegacyShellOptions = {}): Shel
       return root;
     },
   };
+
+  cleanupLayoutMetrics = observeShellLayoutMetrics(
+    (metrics) => reflowWindowsToWorkArea({ metrics, persist: false }),
+    { root },
+  );
 
   return api as ShellRuntime;
 }
@@ -1149,6 +1249,10 @@ export function toggleFullscreenWindow(id, options = {}) {
 
 export function restoreShellLayout(options = {}) {
   return getDefaultShellWindowManager().restoreShellLayout(options);
+}
+
+export function reflowWindowsToWorkArea(options = {}) {
+  return getDefaultShellWindowManager().reflowWindowsToWorkArea(options);
 }
 
 export function persistShellLayout(options = {}) {

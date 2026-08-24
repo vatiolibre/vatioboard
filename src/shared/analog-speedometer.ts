@@ -66,6 +66,7 @@ export function createAnalogSpeedometer(options?: AnalogSpeedometerOptions | nul
 
   let canvasSize = 0;
   let resizeObserver: ResizeObserver | null = null;
+  let resizeFrame = 0;
   let model: AnalogSpeedometerRenderModel = {
     value: 0,
     valueText: "0",
@@ -85,8 +86,7 @@ export function createAnalogSpeedometer(options?: AnalogSpeedometerOptions | nul
   }
 
   function syncStageSize(): void {
-    const rect = stageElement.getBoundingClientRect();
-    const measuredSize = Math.floor(Math.min(rect.width, rect.height));
+    const measuredSize = Math.floor(Math.min(stageElement.clientWidth, stageElement.clientHeight));
     const size = Number.isFinite(measuredSize) && measuredSize >= MIN_DRAW_SIZE ? measuredSize : 0;
     stageInnerElement.style.setProperty("--analog-speedometer-size", `${size}px`);
   }
@@ -94,8 +94,7 @@ export function createAnalogSpeedometer(options?: AnalogSpeedometerOptions | nul
   function resize(): void {
     syncStageSize();
 
-    const rect = dialCanvas.getBoundingClientRect();
-    const measuredSize = Math.floor(Math.min(rect.width, rect.height));
+    const measuredSize = Math.floor(Math.min(dialCanvas.clientWidth, dialCanvas.clientHeight));
     const size = Number.isFinite(measuredSize) && measuredSize >= MIN_DRAW_SIZE ? measuredSize : 0;
     const dpr = window.devicePixelRatio || 1;
 
@@ -110,6 +109,14 @@ export function createAnalogSpeedometer(options?: AnalogSpeedometerOptions | nul
     dialContext.setTransform(dpr, 0, 0, dpr, 0, 0);
     needleContext.setTransform(dpr, 0, 0, dpr, 0, 0);
     draw();
+  }
+
+  function scheduleResize(): void {
+    if (resizeFrame) return;
+    resizeFrame = window.requestAnimationFrame(function () {
+      resizeFrame = 0;
+      resize();
+    });
   }
 
   function draw(): void {
@@ -311,16 +318,24 @@ export function createAnalogSpeedometer(options?: AnalogSpeedometerOptions | nul
 
   function destroy(): void {
     if (resizeObserver) resizeObserver.disconnect();
+    if (resizeFrame) window.cancelAnimationFrame(resizeFrame);
+    window.removeEventListener("resize", scheduleResize);
+    window.visualViewport?.removeEventListener("resize", scheduleResize);
   }
 
   if (resizeTarget && typeof ResizeObserver === "function") {
     resizeObserver = new ResizeObserver(function () {
-      resize();
+      scheduleResize();
     });
     resizeObserver.observe(resizeTarget);
+    if (stageInnerElement !== resizeTarget) resizeObserver.observe(stageInnerElement);
   }
 
+  window.addEventListener("resize", scheduleResize, { passive: true });
+  window.visualViewport?.addEventListener("resize", scheduleResize, { passive: true });
+
   resize();
+  scheduleResize();
 
   return {
     destroy,

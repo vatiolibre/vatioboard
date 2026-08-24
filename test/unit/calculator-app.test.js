@@ -216,4 +216,35 @@ describe("Calculator OS app module", () => {
     calculator.destroy();
     shellManager.destroy();
   });
+
+  it("closes from the header button and preserves the live calculator instance", () => {
+    const shellManager = createShellWindowManager({
+      root: document.body,
+      storeOptions: { storage: localStorage, migrateLegacy: false },
+    });
+    const visibilityKey = "test.calculator.visible";
+    const calculator = createCalculatorWidget({
+      mount: document.body,
+      floating: false,
+      persistVisibility: true,
+      restoreVisibility: false,
+      visibilityKey,
+      shellManager,
+    });
+
+    calculator.open();
+    calculator.setExpression("12+30");
+    document.querySelector(".calc-close").click();
+
+    expect(document.querySelector(".calc-panel").hidden).toBe(true);
+    expect(shellManager.getWindow("calculator")?.state).toBe("closed");
+    expect(localStorage.getItem(visibilityKey)).toBe("closed");
+
+    calculator.open();
+    expect(document.querySelector(".calc-panel").hidden).toBe(false);
+    expect(calculator.getExpression()).toBe("12+30");
+
+    calculator.destroy();
+    shellManager.destroy();
+  });
 });

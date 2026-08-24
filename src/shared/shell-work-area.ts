@@ -172,12 +172,16 @@ export function clampBoundsToWorkArea(bounds: LegacyWorkAreaOptions, options: Le
   const minHeight = positiveNumberOr(options.minHeight, 1);
   const maxWidth = Math.max(minWidth, positiveNumberOr(options.maxWidth, area.width));
   const maxHeight = Math.max(minHeight, positiveNumberOr(options.maxHeight, area.height));
-  const widthLimit = Math.min(maxWidth, Math.max(minWidth, area.width));
-  const heightLimit = Math.min(maxHeight, Math.max(minHeight, area.height));
+  // The visible work area is the hard upper bound. App capability minima are
+  // design preferences, not permission to hide controls behind shell chrome.
+  const effectiveMinWidth = Math.min(minWidth, area.width);
+  const effectiveMinHeight = Math.min(minHeight, area.height);
+  const widthLimit = Math.min(maxWidth, area.width);
+  const heightLimit = Math.min(maxHeight, area.height);
   const requestedWidth = numberOr(source.width, numberOr(options.defaultWidth, DEFAULT_WIDTH));
   const requestedHeight = numberOr(source.height, numberOr(options.defaultHeight, DEFAULT_HEIGHT));
-  const width = Math.max(minWidth, Math.min(requestedWidth, widthLimit));
-  const height = Math.max(minHeight, Math.min(requestedHeight, heightLimit));
+  const width = Math.max(effectiveMinWidth, Math.min(requestedWidth, widthLimit));
+  const height = Math.max(effectiveMinHeight, Math.min(requestedHeight, heightLimit));
   const minLeft = width > area.width ? area.left + area.width - width : area.left;
   const minTop = height > area.height ? area.top + area.height - height : area.top;
   const maxLeft = width > area.width ? area.left : area.left + area.width - width;

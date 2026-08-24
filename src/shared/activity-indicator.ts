@@ -38,7 +38,11 @@ const makeActivityLauncherDraggable = makeLauncherDraggable as (options: {
   savePos: (pos: ActivityIndicatorPosition) => void;
   loadPos: () => ActivityIndicatorPosition | null;
 }) => LauncherDragState;
-const clampActivityElementToViewport = clampElementToViewport as (element: HTMLElement) => void;
+const clampActivityElementToViewport = clampElementToViewport as (
+  element: HTMLElement,
+  margin?: number,
+  options?: { useShellWorkArea?: boolean; root?: Document | Element | null },
+) => void;
 
 function loadPos(): ActivityIndicatorPosition | null {
   try {
@@ -239,7 +243,7 @@ export function initActivityIndicator({ mount = document.body }: ActivityIndicat
     list.replaceChildren(fragment);
 
     if (root.style.left && root.style.top) {
-      clampActivityElementToViewport(root);
+      clampActivityElementToViewport(root, 8, { useShellWorkArea: true, root: document });
     }
 
     if (!announce) return;
@@ -281,6 +285,14 @@ export function initActivityIndicator({ mount = document.body }: ActivityIndicat
 
   document.addEventListener("i18n:change", handleI18nChange);
 
+  const handleViewportChange = () => {
+    if (!root.hidden && root.style.left && root.style.top) {
+      clampActivityElementToViewport(root, 8, { useShellWorkArea: true, root: document });
+    }
+  };
+  window.addEventListener("resize", handleViewportChange);
+  window.visualViewport?.addEventListener("resize", handleViewportChange);
+
   mount.appendChild(root);
 
   return {
@@ -289,6 +301,8 @@ export function initActivityIndicator({ mount = document.body }: ActivityIndicat
       clearRenderTimer();
       unsubscribe();
       document.removeEventListener("i18n:change", handleI18nChange);
+      window.removeEventListener("resize", handleViewportChange);
+      window.visualViewport?.removeEventListener("resize", handleViewportChange);
       rootMoved.destroy?.();
       root.remove();
     },

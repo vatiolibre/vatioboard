@@ -25,6 +25,8 @@
     "test": "vitest run test/unit test/frontend-architecture && pnpm run test:smoke",
     "test:watch": "vitest",
     "test:unit": "vitest run test/unit",
+    "test:e2e": "playwright test",
+    "test:e2e:update": "playwright test --update-snapshots",
     "test:smoke": "vitest run test/smoke --exclude test/smoke/spa-gps-background.test.js && vitest run test/smoke/spa-gps-background.test.js",
     "verify:vin-ocr": "node scripts/verify-delivery-vin-ocr-sample.mjs",
     "verify:vin-ocr:fixtures": "node scripts/verify-delivery-vin-ocr-fixtures.mjs",
@@ -32,6 +34,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.62.1",
     "@types/node": "^25.9.1",
     "@typescript-eslint/eslint-plugin": "^8.59.4",
     "@typescript-eslint/parser": "^8.59.4",

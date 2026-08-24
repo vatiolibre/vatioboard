@@ -23,7 +23,7 @@ describe("calculator layout", () => {
     const display = cssBlock(calculatorCss, ".calc-display");
     const history = cssBlock(calculatorCss, ".calc-history-text");
 
-    expect(panel).toContain("min-height: 548px");
+    expect(panel).toContain("min-height: min(548px, calc(100dvh - 32px))");
     expect(panel).toContain("--vb-shell-visible-bottom-inset: 34px");
     expect(header).toContain("min-height: 46px");
     expect(header).toContain("padding: 8px 90px 8px 10px");
@@ -39,6 +39,16 @@ describe("calculator layout", () => {
     expect(history).toContain("min-height: 26px");
     expect(history).toContain("padding: 0 4px 8px");
     expect(history).toContain("white-space: nowrap");
+  });
+
+  it("provides a work-area-bounded two-column short landscape keypad", () => {
+    const calculatorCss = readProjectFile("src/styles/calculator.less");
+    const landscape = cssBlock(calculatorCss, '.calc-panel[data-vb-shell-layout-mode="short-landscape"]');
+    const keypad = cssBlock(calculatorCss, '.calc-panel[data-vb-shell-layout-mode="short-landscape"] .calc-keys');
+
+    expect(landscape).toContain("grid-template-columns: minmax(250px, .44fr) minmax(310px, .56fr)");
+    expect(landscape).toContain("height: min(360px, var(--vb-work-area-height");
+    expect(keypad).toContain("grid-template-rows: repeat(5, minmax(44px, 1fr))");
   });
 
   it("does not start a calculator panel drag from the minimize button", () => {
