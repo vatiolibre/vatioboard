@@ -142,7 +142,7 @@ test("player Browse content becomes a full-height right sidecar", async ({ page 
   });
 });
 
-test("calculator uses a two-column touch keypad inside the work area", async ({ page }, testInfo) => {
+test("calculator uses a unified keypad with vertical side rails", async ({ page }, testInfo) => {
   test.skip(!isTeslaProject(testInfo), "Exact Tesla geometry assertion");
   await openRoute(page, "board");
   await page.evaluate(() => (window as any).__vatioboardFloatingTools.openCalculator());
@@ -150,19 +150,65 @@ test("calculator uses a two-column touch keypad inside the work area", async ({ 
   await expect(calculator).toBeVisible();
   await expect(calculator).toHaveAttribute("data-vb-shell-layout-mode", "short-landscape");
 
-  const [panel, display, keypad, keys, workArea] = await Promise.all([
+  const [panel, display, keypad, utilityRail, secondaryRail, keys, utilityButtons, secondaryButtons, utilityPresentation, workArea] = await Promise.all([
     calculator.boundingBox(),
     calculator.locator(".calc-display").boundingBox(),
     calculator.locator(".calc-keys").boundingBox(),
-    calculator.locator(".calc-key").evaluateAll((elements) => elements.map((element) => {
+    calculator.locator(".calc-utility-row").boundingBox(),
+    calculator.locator(".calc-secondary-keys").boundingBox(),
+    calculator.locator(".calc-keys .calc-key").evaluateAll((elements) => elements.map((element) => {
       const rect = element.getBoundingClientRect();
-      return { width: rect.width, height: rect.height };
+      return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height };
+    })),
+    calculator.locator(".calc-utility-btn").evaluateAll((elements) => elements.map((element) => {
+      const rect = element.getBoundingClientRect();
+      return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height };
+    })),
+    calculator.locator(".calc-secondary-keys .calc-key").evaluateAll((elements) => elements.map((element) => {
+      const rect = element.getBoundingClientRect();
+      return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height };
+    })),
+    calculator.evaluate((element) => ({
+      expressionAlignment: getComputedStyle(element.querySelector(".calc-expr")!).textAlign,
+      historyAlignment: getComputedStyle(element.querySelector(".calc-history-text")!).textAlign,
+      labels: Array.from(element.querySelectorAll<HTMLElement>(".calc-utility-btn-label")).map((label) => ({
+        display: getComputedStyle(label).display,
+        text: label.textContent,
+      })),
+      controls: Array.from(element.querySelectorAll<HTMLButtonElement>(".calc-utility-btn")).map((button) => ({
+        ariaLabel: button.getAttribute("aria-label"),
+        i18nAria: button.getAttribute("data-i18n-aria"),
+      })),
+      iconSizes: Array.from(element.querySelectorAll<SVGElement>(".calc-utility-btn svg")).map((icon) => {
+        const rect = icon.getBoundingClientRect();
+        return { width: rect.width, height: rect.height };
+      }),
     })),
     getWorkArea(page),
   ]);
-  expect(keypad!.x).toBeGreaterThanOrEqual(display!.x + display!.width - 1);
+  const panelCenter = panel!.x + panel!.width / 2;
+  const keypadCenter = keypad!.x + keypad!.width / 2;
+  expect(panel!.width).toBeLessThanOrEqual(520);
+  expect(panel!.height).toBeLessThanOrEqual(440);
+  expect(Math.abs(keypadCenter - panelCenter)).toBeLessThanOrEqual(1);
+  expect(Math.abs(utilityRail!.width - secondaryRail!.width)).toBeLessThanOrEqual(1);
+  expect(utilityRail!.x + utilityRail!.width).toBeLessThanOrEqual(keypad!.x + 1);
+  expect(keypad!.x + keypad!.width).toBeLessThanOrEqual(secondaryRail!.x + 1);
+  expect(display!.x).toBeLessThanOrEqual(utilityRail!.x + 1);
+  expect(display!.x + display!.width).toBeGreaterThanOrEqual(secondaryRail!.x + secondaryRail!.width - 1);
   expect(Math.min(...keys.map((key) => key.height))).toBeGreaterThanOrEqual(44);
   expect(Math.min(...keys.map((key) => key.width))).toBeGreaterThanOrEqual(44);
+  expect(Math.min(...utilityButtons.map((button) => button.height))).toBeGreaterThanOrEqual(44);
+  expect(Math.min(...utilityButtons.map((button) => button.width))).toBeGreaterThanOrEqual(44);
+  expect(Math.min(...secondaryButtons.map((button) => button.height))).toBeGreaterThanOrEqual(44);
+  expect(Math.min(...secondaryButtons.map((button) => button.width))).toBeGreaterThanOrEqual(44);
+  expect(utilityButtons.every((button, index) => index === 0 || button.top > utilityButtons[index - 1].bottom)).toBe(true);
+  expect(secondaryButtons.every((button, index) => index === 0 || button.top > secondaryButtons[index - 1].bottom)).toBe(true);
+  expect(utilityPresentation.expressionAlignment).toBe("center");
+  expect(utilityPresentation.historyAlignment).toBe("center");
+  expect(utilityPresentation.labels.every((label) => label.display === "none" && Boolean(label.text?.trim()))).toBe(true);
+  expect(utilityPresentation.controls.every((control) => Boolean(control.ariaLabel) && Boolean(control.i18nAria))).toBe(true);
+  expect(utilityPresentation.iconSizes.every((icon) => icon.width === 22 && icon.height === 22)).toBe(true);
   expect(panel!.x).toBeGreaterThanOrEqual(workArea.left - 1);
   expect(panel!.y).toBeGreaterThanOrEqual(workArea.top - 1);
   expect(panel!.x + panel!.width).toBeLessThanOrEqual(workArea.left + workArea.width + 1);
@@ -171,6 +217,39 @@ test("calculator uses a two-column touch keypad inside the work area", async ({ 
     animations: "disabled",
     maxDiffPixelRatio: 0.01,
   });
+
+  await calculator.locator(".calc-history-btn").click();
+  await expect(calculator.locator(".calc-history-sheet")).toHaveClass(/is-open/);
+  await calculator.locator(".calc-history-close").click();
+  await expect(calculator.locator(".calc-history-sheet")).not.toHaveClass(/is-open/);
+
+  await calculator.locator(".calc-settings-btn").click();
+  await expect(calculator.locator(".calc-settings-sheet")).toHaveClass(/is-open/);
+  await calculator.locator(".calc-settings-close").click();
+  await expect(calculator.locator(".calc-settings-sheet")).not.toHaveClass(/is-open/);
+
+  await calculator.locator(".calc-energy-btn").click();
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__vatioboardFloatingTools.shellManager.getWindow("energy")?.state
+  ))).toBe("open");
+  await page.evaluate(() => (window as any).__vatioboardFloatingTools.closeEnergy());
+
+  const secondaryKeys = calculator.locator(".calc-secondary-keys .calc-key");
+  const calculatorApi = () => page.evaluate(() => (
+    (window as any).__vatioboardFloatingTools.calcWidget.getExpression()
+  ));
+  await page.evaluate(() => (window as any).__vatioboardFloatingTools.calcWidget.setExpression("9"));
+  await secondaryKeys.nth(0).click();
+  await expect.poll(calculatorApi).toBe("sqrt(9)");
+  await page.evaluate(() => (window as any).__vatioboardFloatingTools.calcWidget.setExpression("3"));
+  await secondaryKeys.nth(1).click();
+  await expect.poll(calculatorApi).toBe("(3)^2");
+  await page.evaluate(() => (window as any).__vatioboardFloatingTools.calcWidget.setExpression("9"));
+  await secondaryKeys.nth(2).click();
+  await expect.poll(calculatorApi).toBe("-9");
+  await page.evaluate(() => (window as any).__vatioboardFloatingTools.calcWidget.setExpression("12"));
+  await secondaryKeys.nth(3).click();
+  await expect.poll(calculatorApi).toBe("1");
 });
 
 test("calculator header close button hides and can reopen the same window", async ({ page }, testInfo) => {
@@ -182,6 +261,10 @@ test("calculator header close button hides and can reopen the same window", asyn
   await page.evaluate(() => (window as any).__vatioboardFloatingTools.openCalculator());
   const calculator = page.locator(".calc-panel");
   await expect(calculator).toBeVisible();
+  if (testInfo.project.name === "desktop") {
+    await expect(calculator.locator(".calc-utility-btn-label").first()).toBeVisible();
+    await expect(calculator.locator(".calc-expr")).toHaveCSS("text-align", "right");
+  }
   await calculator.locator(".calc-close").click();
 
   await expect(calculator).toBeHidden();
@@ -204,6 +287,19 @@ test("Spanish labels fit the light short-landscape theme", async ({ page }, test
     mask: [page.locator("canvas"), page.locator("iframe"), page.locator(".speed-globe")],
     maxDiffPixelRatio: 0.01,
   });
+
+  await page.evaluate(() => (window as any).__vatioboardFloatingTools.openCalculator());
+  const calculator = page.locator(".calc-panel");
+  await expect(calculator).toBeVisible();
+  const localizedUtilities = await calculator.locator(".calc-utility-btn").evaluateAll((buttons) => buttons.map((button) => ({
+    accessibleName: button.getAttribute("aria-label"),
+    labelDisplay: getComputedStyle(button.querySelector(".calc-utility-btn-label")!).display,
+  })));
+  expect(localizedUtilities.every((button) => Boolean(button.accessibleName) && button.labelDisplay === "none")).toBe(true);
+  const overflowAfterCalculator = await page.evaluate(() => (
+    document.documentElement.scrollWidth - document.documentElement.clientWidth
+  ));
+  expect(overflowAfterCalculator).toBeLessThanOrEqual(1);
 });
 
 for (const route of ["board", "accel", "replay", "library", "apps", "delivery-checklist", "qr-scanner", "code-rain"]) {

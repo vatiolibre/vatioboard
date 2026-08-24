@@ -711,10 +711,10 @@
 /* A wide keypad preserves Tesla-sized controls without exceeding a short work area. */
 .calc-panel[data-vb-shell-layout-mode="short-landscape"]{
   display: grid;
-  grid-template-columns: minmax(250px, .44fr) minmax(310px, .56fr);
-  grid-template-rows: 46px auto auto minmax(0, 1fr);
-  width: min(620px, var(--vb-work-area-width, calc(100vw - 32px)));
-  height: min(360px, var(--vb-work-area-height, calc(100dvh - 32px)));
+  grid-template-columns: 72px minmax(0, 1fr) 72px;
+  grid-template-rows: 46px auto minmax(0, 1fr);
+  width: min(520px, var(--vb-work-area-width, calc(100vw - 32px)));
+  height: min(440px, var(--vb-work-area-height, calc(100dvh - 32px)));
   min-width: 0;
   min-height: 0;
   max-width: var(--vb-work-area-width, calc(100vw - 32px));
@@ -727,39 +727,77 @@
 }
 
 .calc-panel[data-vb-shell-layout-mode="short-landscape"] .calc-display{
-  grid-column: 1;
+  grid-column: 1 / -1;
   grid-row: 2;
   min-width: 0;
-  padding-top: 4px;
+  padding: 4px 12px 8px;
+}
+
+.calc-panel[data-vb-shell-layout-mode="short-landscape"] .calc-history-text,
+.calc-panel[data-vb-shell-layout-mode="short-landscape"] .calc-expr{
+  text-align: center;
 }
 
 .calc-panel[data-vb-shell-layout-mode="short-landscape"] .calc-utility-row{
   grid-column: 1;
   grid-row: 3;
-  padding-bottom: 8px;
+  box-sizing: border-box;
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: 56px;
+  align-content: center;
+  gap: 10px;
+  padding: 10px 8px 12px;
+  background: transparent;
+}
+
+.calc-panel[data-vb-shell-layout-mode="short-landscape"] .calc-utility-btn{
+  min-width: var(--vb-touch-target-min, 44px);
+  min-height: var(--vb-touch-target-min, 44px);
+  padding-inline: 0;
+  gap: 0;
+  border-radius: 12px;
+}
+
+.calc-panel[data-vb-shell-layout-mode="short-landscape"] .calc-utility-btn-label{
+  display: none;
+}
+
+.calc-panel[data-vb-shell-layout-mode="short-landscape"] .calc-utility-btn svg{
+  width: 22px;
+  height: 22px;
 }
 
 .calc-panel[data-vb-shell-layout-mode="short-landscape"] .calc-secondary-keys{
-  grid-column: 1;
-  grid-row: 4;
-  align-content: start;
-  padding: 0 12px 12px;
+  grid-column: 3;
+  grid-row: 3;
+  box-sizing: border-box;
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: 56px;
+  align-content: center;
+  gap: 10px;
+  padding: 10px 8px 12px;
 }
 
 .calc-panel[data-vb-shell-layout-mode="short-landscape"] .calc-keys{
   grid-column: 2;
-  grid-row: 2 / 5;
+  grid-row: 3;
   min-height: 0;
   align-content: stretch;
   grid-template-rows: repeat(5, minmax(44px, 1fr));
-  padding: 10px 12px 12px;
-  border-left: 1px solid var(--calc-border);
+  padding: 10px 8px 12px;
+  border-left: 0;
 }
 
 .calc-panel[data-vb-shell-layout-mode="short-landscape"] .calc-key{
   min-width: var(--vb-touch-target-min, 44px);
   min-height: var(--vb-touch-target-min, 44px);
   padding-block: 7px;
+}
+
+.calc-panel[data-vb-shell-layout-mode="short-landscape"] .calc-key-secondary{
+  width: 100%;
+  min-height: var(--vb-touch-target-min, 44px);
+  padding: 0;
 }
 
 .calc-panel[data-vb-shell-layout-mode="short-landscape"] .calc-minimize,

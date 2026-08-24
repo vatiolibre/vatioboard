@@ -217,16 +217,16 @@ export function createCalculatorWidget(options: CalculatorWidgetOptions = {}): C
       maxHeight: 548,
     },
     resolveLayout(metrics) {
-      const width = Math.min(620, metrics.workArea.width);
-      const height = Math.min(360, metrics.workArea.height);
+      const width = Math.min(520, metrics.workArea.width);
+      const height = Math.min(440, metrics.workArea.height);
       return {
         mode: "short-landscape",
         left: metrics.workArea.left + Math.max(0, metrics.workArea.width - width) / 2,
         top: metrics.workArea.top + Math.max(0, metrics.workArea.height - height) / 2,
         width,
         height,
-        minWidth: Math.min(560, metrics.workArea.width),
-        minHeight: Math.min(320, metrics.workArea.height),
+        minWidth: Math.min(480, metrics.workArea.width),
+        minHeight: Math.min(400, metrics.workArea.height),
         maxWidth: metrics.workArea.width,
         maxHeight: metrics.workArea.height,
       };
