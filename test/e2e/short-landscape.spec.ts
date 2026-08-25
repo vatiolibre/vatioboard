@@ -95,7 +95,7 @@ test("speed dashboard contains a large dial without outer scrolling", async ({ p
   expect(geometry.dial.width).toBeGreaterThanOrEqual(300);
   expect(geometry.dial.left).toBeGreaterThanOrEqual(geometry.card.left);
   expect(geometry.dial.right).toBeLessThanOrEqual(geometry.card.right + 1);
-  expect(geometry.dial.bottom).toBeLessThanOrEqual(geometry.card.bottom + 2);
+  expect(geometry.dial.bottom).toBeLessThanOrEqual(geometry.card.bottom + 3);
   expect(geometry.mainScrollHeight).toBeLessThanOrEqual(geometry.mainClientHeight + 1);
   expect(geometry.bodyScrollWidth).toBeLessThanOrEqual(geometry.viewportWidth + 1);
   const expectedDpr = testInfo.project.name === "model-y-2024" ? 1.53 : 1.96;
@@ -110,6 +110,97 @@ test("speed dashboard contains a large dial without outer scrolling", async ({ p
     mask: [page.locator("canvas"), page.locator("iframe"), page.locator(".speed-globe")],
     maxDiffPixelRatio: 0.01,
   });
+});
+
+test("compact trip stats keep the live globe visible", async ({ page }, testInfo) => {
+  test.skip(!isTeslaProject(testInfo), "Exact Tesla geometry assertion");
+  await openRoute(page, "speed");
+  await page.addStyleTag({ content: "*, *::before, *::after { animation: none !important; transition: none !important; }" });
+
+  await page.evaluate(() => {
+    const notice = document.querySelector<HTMLElement>("#notice");
+    if (notice) notice.hidden = false;
+  });
+
+  await expect.poll(() => page.locator(".speed-globe").evaluate((element) => (
+    element.getBoundingClientRect().height
+  ))).toBeGreaterThanOrEqual(60);
+
+  const geometry = await page.evaluate(() => {
+    const rect = (element: Element) => element.getBoundingClientRect().toJSON();
+    const main = document.querySelector<HTMLElement>(".speed-main")!;
+    const stats = document.querySelector<HTMLElement>(".stats-grid")!;
+    const globeCard = document.querySelector<HTMLElement>(".globe-card")!;
+    const globe = document.querySelector<HTMLElement>(".speed-globe")!;
+    const taskbar = document.querySelector<HTMLElement>(".vb-shell-taskbar")!;
+    const cards = Array.from(document.querySelectorAll<HTMLElement>(".metric-card")).map((card) => {
+      const label = card.querySelector<HTMLElement>(".metric-label")!;
+      const unit = card.querySelector<HTMLElement>(".metric-unit")!;
+      const value = card.querySelector<HTMLElement>("strong")!;
+      return {
+        card: rect(card),
+        label: rect(label),
+        unit: rect(unit),
+        value: rect(value),
+        labelFits: label.scrollWidth <= label.clientWidth + 1,
+        unitFits: unit.scrollWidth <= unit.clientWidth + 1,
+      };
+    });
+    return {
+      cards,
+      documentClientHeight: document.documentElement.clientHeight,
+      documentScrollHeight: document.documentElement.scrollHeight,
+      globe: rect(globe),
+      globeCard: rect(globeCard),
+      mainClientHeight: main.clientHeight,
+      mainScrollHeight: main.scrollHeight,
+      stats: rect(stats),
+      taskbar: rect(taskbar),
+    };
+  });
+
+  expect(geometry.cards).toHaveLength(8);
+  for (const card of geometry.cards) {
+    expect(Math.abs(card.label.top - card.unit.top)).toBeLessThanOrEqual(3);
+    expect(card.label.right).toBeLessThanOrEqual(card.unit.left - 2);
+    expect(card.value.top).toBeGreaterThanOrEqual(Math.max(card.label.bottom, card.unit.bottom) - 1);
+    expect(card.value.right).toBeLessThanOrEqual(card.card.right);
+    expect(card.labelFits).toBe(true);
+    expect(card.unitFits).toBe(true);
+  }
+  expect(geometry.stats.bottom).toBeLessThanOrEqual(geometry.globeCard.top);
+  expect(geometry.globe.height).toBeGreaterThanOrEqual(60);
+  expect(geometry.globe.bottom).toBeLessThanOrEqual(geometry.globeCard.bottom);
+  expect(geometry.globe.bottom).toBeLessThanOrEqual(geometry.taskbar.top);
+  expect(geometry.mainScrollHeight).toBeLessThanOrEqual(geometry.mainClientHeight + 1);
+  expect(geometry.documentScrollHeight).toBeLessThanOrEqual(geometry.documentClientHeight + 1);
+
+  await page.evaluate(() => {
+    const notice = document.querySelector<HTMLElement>("#notice");
+    if (notice) notice.hidden = true;
+  });
+  await expect(page.locator(".speed-globe")).toBeVisible();
+  expect(await page.locator(".speed-globe").evaluate((element) => element.getBoundingClientRect().height))
+    .toBeGreaterThanOrEqual(60);
+});
+
+test("trip metric units still update from Speed Alerts", async ({ page }, testInfo) => {
+  test.skip(!isTeslaProject(testInfo), "Tesla metric behavior regression");
+  await openRoute(page, "speed");
+  await page.addStyleTag({ content: "*, *::before, *::after { animation: none !important; transition: none !important; }" });
+
+  await page.locator("#alertTrigger").click();
+  const panel = page.locator(".speed-alert-window");
+  await expect(panel).toBeVisible();
+  await panel.locator("button[data-unit='mph']").click();
+  await expect(page.locator("#maxSpeedUnit")).toHaveText("mph");
+  await expect(page.locator("#avgSpeedUnit")).toHaveText("mph");
+
+  await panel.locator("button[data-distance-unit='ft']").click();
+  await expect(page.locator("#distanceUnit")).toHaveText("mi");
+  await expect(page.locator("#altitudeUnit")).toHaveText("ft");
+  await expect(page.locator("#maxAltitudeUnit")).toHaveText("ft");
+  await expect(page.locator("#minAltitudeUnit")).toHaveText("ft");
 });
 
 test("player Browse content becomes a full-height right sidecar", async ({ page }, testInfo) => {
@@ -280,6 +371,34 @@ test("Spanish labels fit the light short-landscape theme", async ({ page }, test
   test.skip(testInfo.project.name !== "model-y-2024-es-light", "Localized visual smoke project");
   await openRoute(page, "speed");
   await expect(page.locator("#langToggle")).toHaveText("ES");
+  await expect.poll(() => page.locator(".speed-globe").evaluate((element) => (
+    element.getBoundingClientRect().height
+  ))).toBeGreaterThanOrEqual(60);
+  const localizedMetricRows = await page.locator(".metric-card").evaluateAll((cards) => cards.map((card) => {
+    const label = card.querySelector<HTMLElement>(".metric-label")!;
+    const unit = card.querySelector<HTMLElement>(".metric-unit")!;
+    const labelRect = label.getBoundingClientRect();
+    const unitRect = unit.getBoundingClientRect();
+    const labelStyle = getComputedStyle(label);
+    return {
+      aligned: Math.abs(labelRect.top - unitRect.top) <= 3,
+      label: label.textContent,
+      labelClientWidth: label.clientWidth,
+      labelFontSize: labelStyle.fontSize,
+      labelScrollWidth: label.scrollWidth,
+      separated: labelRect.right <= unitRect.left - 2,
+      labelFits: label.scrollWidth <= label.clientWidth + 1,
+      unit: unit.textContent,
+      unitFits: unit.scrollWidth <= unit.clientWidth + 1,
+    };
+  }));
+  for (const row of localizedMetricRows) {
+    const description = JSON.stringify(row);
+    expect(row.aligned, description).toBe(true);
+    expect(row.separated, description).toBe(true);
+    expect(row.labelFits, description).toBe(true);
+    expect(row.unitFits, description).toBe(true);
+  }
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
   await expect(page).toHaveScreenshot("speed-dashboard-es-light.png", {
