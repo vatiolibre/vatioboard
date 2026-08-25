@@ -63,6 +63,8 @@ type DraggableLauncherOptions = {
   dragThresholdPx: number;
   savePos: (position: DragPosition) => void;
   loadPos: () => DragPosition | null;
+  manageResize?: boolean;
+  onDragEnd?: (() => void) | null;
 };
 
 function clamp(n: number, min: number, max: number): number {
@@ -434,6 +436,8 @@ export function makeLauncherDraggable({
   dragThresholdPx,
   savePos,
   loadPos,
+  manageResize = true,
+  onDragEnd = null,
 }: DraggableLauncherOptions): LauncherMovedChecker {
   let pointerDown = false;
   let dragging = false;
@@ -512,6 +516,8 @@ export function makeLauncherDraggable({
 
       clampElementToViewport(launcherEl);
 
+      onDragEnd?.();
+
       savePos({
         ...(loadPos() || {}),
         launcher: { left: launcherEl.style.left, top: launcherEl.style.top },
@@ -586,7 +592,7 @@ export function makeLauncherDraggable({
     });
   }
 
-  window.addEventListener("resize", handleResize);
+  if (manageResize) window.addEventListener("resize", handleResize);
 
   // Return a function for checking if last interaction moved
   const wasMoved = function wasMoved() {
@@ -594,7 +600,7 @@ export function makeLauncherDraggable({
   } as LauncherMovedChecker;
 
   wasMoved.destroy = function destroyLauncherDrag() {
-    window.removeEventListener("resize", handleResize);
+    if (manageResize) window.removeEventListener("resize", handleResize);
   };
 
   return wasMoved;

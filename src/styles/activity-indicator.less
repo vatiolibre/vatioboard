@@ -214,9 +214,9 @@
 
 html[data-vb-layout-profile="short-landscape"] .activity-indicator{
   left: auto;
-  right: max(10px, var(--vb-shell-reserved-right, 10px));
-  top: var(--vb-work-area-top, 70px);
-  bottom: auto;
+  right: env(safe-area-inset-right, 0px);
+  top: auto;
+  bottom: env(safe-area-inset-bottom, 0px);
   width: 54px;
   max-width: 54px;
   padding: 4px;

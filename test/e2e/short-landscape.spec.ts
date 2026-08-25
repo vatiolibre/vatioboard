@@ -144,6 +144,15 @@ test("Waze route fills the viewport edge to edge with an overlaid driving HUD", 
   await expect(page.locator("#wazeRecenter")).toHaveAttribute("aria-label", "Refresh map");
   await expect(page.locator(".waze-hud-actions")).toHaveAttribute("role", "toolbar");
   await expect(page.locator(".waze-toolbar-btn:visible")).toHaveCount(5);
+  await page.evaluate(() => {
+    (window as any).__vatioboardDrivingAlerts?.setManualAlertEnabled?.(true, {
+      fromUserGesture: false,
+      startIfNeeded: true,
+    });
+  });
+  await page.locator("#quickAudioToggle").click();
+  await page.locator("#quickAudioToggle").click();
+  await expect(page.locator(".activity-indicator")).toBeVisible();
 
   const geometry = await page.evaluate(() => {
     const rect = (selector: string) => document.querySelector(selector)?.getBoundingClientRect().toJSON();
@@ -161,6 +170,7 @@ test("Waze route fills the viewport edge to edge with an overlaid driving HUD", 
       hud: rect(".waze-hud"),
       speedPill: rect("#wazeSpeedPill"),
       actions: rect(".waze-hud-actions"),
+      activityIndicator: rect(".activity-indicator"),
       taskbar: rect(".vb-shell-taskbar"),
       controls,
       appPadding: getComputedStyle(app).padding,
@@ -197,6 +207,8 @@ test("Waze route fills the viewport edge to edge with an overlaid driving HUD", 
   expect(geometry.actions.top).toBeGreaterThanOrEqual(0);
   expect(geometry.actions.top).toBeLessThanOrEqual(12);
   expect(geometry.actions.bottom).toBeLessThan(geometry.speedPill.top);
+  expect(geometry.documentClientWidth - geometry.activityIndicator.right).toBeLessThanOrEqual(1);
+  expect(geometry.documentClientHeight - geometry.activityIndicator.bottom).toBeLessThanOrEqual(1);
   for (const control of geometry.controls) {
     expect(control.width).toBeGreaterThanOrEqual(44);
     expect(control.height).toBeGreaterThanOrEqual(44);
@@ -226,6 +238,26 @@ test("Waze route fills the viewport edge to edge with an overlaid driving HUD", 
   await page.locator("#toggleRecording").click();
   await page.locator("#stopRecording").click();
   await expect(page.locator("#stopRecording")).toBeHidden();
+  const initialViewport = page.viewportSize()!;
+  await page.setViewportSize({
+    width: initialViewport.width - 24,
+    height: initialViewport.height - 20,
+  });
+  await expect.poll(() => page.locator(".activity-indicator").evaluate((indicator) => {
+    const bounds = indicator.getBoundingClientRect();
+    return {
+      rightGap: document.documentElement.clientWidth - bounds.right,
+      bottomGap: document.documentElement.clientHeight - bounds.bottom,
+    };
+  })).toEqual({ rightGap: 0, bottomGap: 0 });
+  await page.setViewportSize(initialViewport);
+  await expect.poll(() => page.locator(".activity-indicator").evaluate((indicator) => {
+    const bounds = indicator.getBoundingClientRect();
+    return {
+      rightGap: document.documentElement.clientWidth - bounds.right,
+      bottomGap: document.documentElement.clientHeight - bounds.bottom,
+    };
+  })).toEqual({ rightGap: 0, bottomGap: 0 });
   expect(geometry.documentScrollWidth).toBeLessThanOrEqual(geometry.documentClientWidth + 1);
   expect(geometry.documentScrollHeight).toBeLessThanOrEqual(geometry.documentClientHeight + 1);
   await expect(page).toHaveScreenshot("waze-map.png", {

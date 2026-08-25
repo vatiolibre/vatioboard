@@ -227,6 +227,47 @@ describe("activity indicator", () => {
     expect(css).toContain("z-index: var(--vb-z-activity, 1955)");
   });
 
+  it("ignores legacy auto-saved coordinates and keeps the default CSS corner anchor on resize", () => {
+    indicator.destroy();
+    localStorage.setItem("vatioboard.activity_indicator_pos_v1", JSON.stringify({
+      launcher: { left: "711px", top: "463px" },
+    }));
+    indicator = initActivityIndicator({ mount: document.getElementById("mount") });
+    const root = indicator.root;
+
+    setActivity("speed.alerts", {
+      kind: "speed",
+      route: "#/speed",
+      state: "armed",
+      labelKey: "activitySpeedAlertsArmed",
+    });
+    window.dispatchEvent(new Event("resize"));
+
+    expect(root.style.left).toBe("");
+    expect(root.style.top).toBe("");
+    expect(root.style.right).toBe("");
+    expect(root.style.bottom).toBe("");
+  });
+
+  it("restores only explicitly user-positioned coordinates", () => {
+    indicator.destroy();
+    localStorage.setItem("vatioboard.activity_indicator_pos_v1", JSON.stringify({
+      launcher: { left: "320px", top: "180px", userPositioned: true },
+    }));
+    indicator = initActivityIndicator({ mount: document.getElementById("mount") });
+
+    expect(indicator.root.style.left).toBe("320px");
+    expect(indicator.root.style.top).toBe("180px");
+  });
+
+  it("anchors the compact short-landscape indicator to the viewport bottom-right", () => {
+    const css = readFileSync(resolve(process.cwd(), "src/styles/activity-indicator.less"), "utf8");
+    expect(css).toContain('html[data-vb-layout-profile="short-landscape"] .activity-indicator');
+    expect(css).toContain("right: env(safe-area-inset-right, 0px);");
+    expect(css).toContain("bottom: env(safe-area-inset-bottom, 0px);");
+    expect(css).toContain("top: auto;");
+  });
+
   it("drags within the viewport and persists the indicator position", () => {
     vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
       callback(0);
@@ -277,6 +318,7 @@ describe("activity indicator", () => {
     const stored = JSON.parse(localStorage.getItem("vatioboard.activity_indicator_pos_v1"));
     expect(stored.launcher.left).toBe(root.style.left);
     expect(stored.launcher.top).toBe(root.style.top);
+    expect(stored.launcher.userPositioned).toBe(true);
     expect(Number.parseFloat(root.style.left)).toBeGreaterThanOrEqual(8);
     expect(Number.parseFloat(root.style.top)).toBeGreaterThanOrEqual(8);
   });

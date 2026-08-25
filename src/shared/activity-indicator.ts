@@ -14,6 +14,7 @@ interface ActivityIndicatorPosition {
   launcher?: {
     left?: string;
     top?: string;
+    userPositioned?: boolean;
   };
   [key: string]: unknown;
 }
@@ -37,6 +38,8 @@ const makeActivityLauncherDraggable = makeLauncherDraggable as (options: {
   dragThresholdPx: number;
   savePos: (pos: ActivityIndicatorPosition) => void;
   loadPos: () => ActivityIndicatorPosition | null;
+  manageResize?: boolean;
+  onDragEnd?: (() => void) | null;
 }) => LauncherDragState;
 const clampActivityElementToViewport = clampElementToViewport as (
   element: HTMLElement,
@@ -154,7 +157,8 @@ export function initActivityIndicator({ mount = document.body }: ActivityIndicat
   root.append(list, live);
 
   const pos = loadPos();
-  if (pos?.launcher?.left && pos?.launcher?.top) {
+  let userPositioned = pos?.launcher?.userPositioned === true;
+  if (userPositioned && pos?.launcher?.left && pos?.launcher?.top) {
     root.style.position = "fixed";
     root.style.left = pos.launcher.left;
     root.style.top = pos.launcher.top;
@@ -165,8 +169,17 @@ export function initActivityIndicator({ mount = document.body }: ActivityIndicat
   const rootMoved = makeActivityLauncherDraggable({
     launcherEl: root,
     dragThresholdPx: DRAG_THRESHOLD_PX,
-    savePos,
+    savePos: (nextPosition) => savePos({
+      ...nextPosition,
+      launcher: nextPosition.launcher
+        ? { ...nextPosition.launcher, userPositioned }
+        : nextPosition.launcher,
+    }),
     loadPos,
+    manageResize: false,
+    onDragEnd: () => {
+      userPositioned = true;
+    },
   });
 
   let activities: ActivityRecord[] = [];
@@ -242,8 +255,8 @@ export function initActivityIndicator({ mount = document.body }: ActivityIndicat
 
     list.replaceChildren(fragment);
 
-    if (root.style.left && root.style.top) {
-      clampActivityElementToViewport(root, 8, { useShellWorkArea: true, root: document });
+    if (userPositioned && root.style.left && root.style.top) {
+      clampActivityElementToViewport(root, 8, { useShellWorkArea: false, root: document });
     }
 
     if (!announce) return;
@@ -286,8 +299,19 @@ export function initActivityIndicator({ mount = document.body }: ActivityIndicat
   document.addEventListener("i18n:change", handleI18nChange);
 
   const handleViewportChange = () => {
-    if (!root.hidden && root.style.left && root.style.top) {
-      clampActivityElementToViewport(root, 8, { useShellWorkArea: true, root: document });
+    if (root.hidden) return;
+    if (!userPositioned) {
+      root.style.removeProperty("position");
+      root.style.removeProperty("left");
+      root.style.removeProperty("top");
+      root.style.removeProperty("right");
+      root.style.removeProperty("bottom");
+      root.style.removeProperty("width");
+      root.style.removeProperty("height");
+      return;
+    }
+    if (root.style.left && root.style.top) {
+      clampActivityElementToViewport(root, 8, { useShellWorkArea: false, root: document });
     }
   };
   window.addEventListener("resize", handleViewportChange);
