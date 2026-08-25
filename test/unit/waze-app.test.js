@@ -66,13 +66,20 @@ function createRoot() {
   return root;
 }
 
-function createContext({ drivingAlertService = null, gpsService = null } = {}) {
+function createContext({
+  appRuntime = null,
+  driveRecordingService = null,
+  drivingAlertService = null,
+  gpsService = null,
+} = {}) {
   return {
     root: createRoot(),
     context: {},
     cleanup: createCleanupStack(),
     drivingAlertService,
+    driveRecordingService,
     gpsService,
+    appRuntime,
     translate: (_key, fallback) => fallback,
   };
 }
@@ -102,15 +109,98 @@ describe("Waze route app", () => {
     expect(url).toContain("lon=-73.985700");
   });
 
-  it("uses the Waze mark in both the permission surface and live HUD", () => {
+  it("uses icon-only Waze and driving toolbar controls with accessible names", () => {
     const root = createRoot();
     expect(root.querySelector(".waze-placeholder-icon svg")?.getAttribute("viewBox")).toBe("0 0 640 640");
     expect(root.querySelector(".waze-brand-icon svg")?.getAttribute("viewBox")).toBe("0 0 640 640");
-    expect(root.querySelector("#wazeLocationPrompt")?.textContent.trim()).toBe("Enable");
+    expect(root.querySelector(".waze-hud-actions")?.getAttribute("role")).toBe("toolbar");
+    expect(root.querySelectorAll(".waze-toolbar-btn")).toHaveLength(6);
+    expect(root.querySelector("#wazeLocationPrompt svg")).toBeTruthy();
     expect(root.querySelector("#wazeLocationPrompt")?.getAttribute("aria-label")).toBe("Enable Waze location");
-    expect(root.querySelector("#wazeRecenter")?.textContent.trim()).toBe("Refresh");
+    expect(root.querySelector("#wazeRecenter svg")).toBeTruthy();
     expect(root.querySelector("#wazeRecenter")?.getAttribute("aria-label")).toBe("Refresh map");
+    expect(root.querySelector("#stopRecording")?.hidden).toBe(true);
     root.remove();
+  });
+
+  it("reuses shared alert audio and launches the Speed Alerts window", () => {
+    const setMuted = vi.fn((_muted) => makeAlertSnapshot({
+      preferences: { unit: "mph", audioMuted: true },
+      audio: { muted: true },
+    }));
+    const openApp = vi.fn(() => true);
+    const service = {
+      getSnapshot: vi.fn(() => makeAlertSnapshot({ preferences: { unit: "mph", audioMuted: false } })),
+      start: vi.fn(() => makeAlertSnapshot({ preferences: { unit: "mph", audioMuted: false } })),
+      stop: vi.fn(),
+      subscribe: vi.fn(() => vi.fn()),
+      setMuted,
+      primeAudioFromUserGesture: vi.fn(async () => true),
+    };
+    const context = createContext({
+      drivingAlertService: service,
+      appRuntime: { shell: { openApp } },
+    });
+    const controller = createWazeRouteController(context);
+
+    context.root.querySelector("#quickAudioToggle").click();
+    expect(setMuted).toHaveBeenCalledWith(true, {
+      fromUserGesture: true,
+      startIfNeeded: false,
+    });
+    expect(context.root.querySelector("#quickAudioToggle").classList.contains("is-muted")).toBe(true);
+    expect(context.root.querySelector("#quickAudioToggle").getAttribute("aria-label")).toBe("Unmute alert audio");
+
+    context.root.querySelector("#quickAlertConfig").click();
+    expect(openApp).toHaveBeenCalledWith("vatio.speedAlerts", { focus: true });
+
+    controller.destroy();
+    context.cleanup.run();
+  });
+
+  it("starts, pauses, resumes, and stops a shared route recording", async () => {
+    let snapshot = { state: "idle", sampleCount: 0 };
+    let listener = () => {};
+    const update = (state) => {
+      snapshot = { ...snapshot, state };
+      listener(snapshot);
+      return snapshot;
+    };
+    const unsubscribe = vi.fn();
+    const service = {
+      getSnapshot: vi.fn(() => snapshot),
+      subscribe: vi.fn((nextListener) => {
+        listener = nextListener;
+        listener(snapshot);
+        return unsubscribe;
+      }),
+      startRecording: vi.fn(() => update("recording")),
+      pauseRecording: vi.fn(() => update("paused")),
+      resumeRecording: vi.fn(() => update("recording")),
+      stopRecording: vi.fn(async () => update("idle")),
+    };
+    const context = createContext({ driveRecordingService: service });
+    const controller = createWazeRouteController(context);
+    const toggle = context.root.querySelector("#toggleRecording");
+    const stop = context.root.querySelector("#stopRecording");
+
+    expect(stop.hidden).toBe(true);
+    toggle.click();
+    expect(service.startRecording).toHaveBeenCalledWith({ source: "waze" });
+    expect(toggle.getAttribute("aria-label")).toBe("Pause recording");
+    expect(stop.hidden).toBe(false);
+    toggle.click();
+    expect(service.pauseRecording).toHaveBeenCalledTimes(1);
+    expect(toggle.getAttribute("aria-label")).toBe("Resume recording");
+    toggle.click();
+    expect(service.resumeRecording).toHaveBeenCalledTimes(1);
+    stop.click();
+    await vi.waitFor(() => expect(stop.hidden).toBe(true));
+    expect(service.stopRecording).toHaveBeenCalledTimes(1);
+
+    controller.destroy();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    context.cleanup.run();
   });
 
   it("marks recentering stale only after both time and distance thresholds", () => {

@@ -5,7 +5,12 @@ import {
   markWelcomeLocationChoice,
   shouldDeferWelcomeLocationRequest,
 } from "../../app/welcome-consent.js";
-import type { DrivingAlertSnapshot, GpsSnapshot, NormalizedGpsPosition } from "../../types/services";
+import type {
+  DriveRecordingSnapshot,
+  DrivingAlertSnapshot,
+  GpsSnapshot,
+  NormalizedGpsPosition,
+} from "../../types/services";
 import type { MountedView } from "../../types/route";
 import type { WazeRouteMountContext } from "./waze-route-app";
 
@@ -13,6 +18,7 @@ export const WAZE_EMBED_BASE_URL = "https://embed.waze.com/iframe";
 export const WAZE_REFRESH_MIN_INTERVAL_MS = 300_000;
 export const WAZE_REFRESH_MIN_DISTANCE_M = 300;
 export const WAZE_GPS_CONSUMER_ID = "vatio.waze.route";
+export const WAZE_SPEED_ALERTS_APP_ID = "vatio.speedAlerts";
 
 type AnyRecord = Record<string, any>;
 type WazeCenter = {
@@ -90,6 +96,10 @@ function getElements(root: ParentNode): AnyRecord {
     speedLimitLabel: root.querySelector("#wazeSpeedLimitLabel"),
     speedLimitValue: root.querySelector("#wazeSpeedLimitValue"),
     speedNote: root.querySelector("#wazeSpeedNote"),
+    quickAudioToggle: root.querySelector("#quickAudioToggle"),
+    quickAlertConfig: root.querySelector("#quickAlertConfig"),
+    toggleRecording: root.querySelector("#toggleRecording"),
+    stopRecording: root.querySelector("#stopRecording"),
     locationPrompt: root.querySelector("#wazeLocationPrompt"),
     recenter: root.querySelector("#wazeRecenter"),
   };
@@ -99,6 +109,7 @@ export function createWazeRouteController(routeContext: WazeRouteMountContext) {
   const { cleanup, root } = routeContext;
   const elements = getElements(root);
   const drivingAlerts = routeContext.drivingAlertService || null;
+  const driveRecording = routeContext.driveRecordingService || null;
   const gps = routeContext.gpsService || null;
   const i18n = routeContext.appRuntime?.i18n || null;
   const translate = (key: string, fallback?: string) =>
@@ -111,6 +122,8 @@ export function createWazeRouteController(routeContext: WazeRouteMountContext) {
     speedMs: 0,
     unit: "kmh",
     alertUiState: null,
+    audioMuted: false,
+    recordingSnapshot: driveRecording?.getSnapshot?.() || null,
     gpsStatus: "idle",
     online: navigator.onLine !== false,
     frameLoaded: false,
@@ -118,6 +131,7 @@ export function createWazeRouteController(routeContext: WazeRouteMountContext) {
     center: null,
   };
   let sourceUnsubscribe: (() => void) | null = null;
+  let recordingUnsubscribe: (() => void) | null = null;
   let gpsConsumerCleanup: (() => void) | null = null;
 
   function applyAlertSnapshot(snapshot: DrivingAlertSnapshot | null | undefined) {
@@ -127,8 +141,17 @@ export function createWazeRouteController(routeContext: WazeRouteMountContext) {
     state.speedMs = Number.isFinite(snapshot.currentSpeedMs) ? snapshot.currentSpeedMs : 0;
     state.alertUiState = snapshot.alertUiState || null;
     const preferences = snapshot.preferences as AnyRecord | null;
+    const audio = snapshot.audio as AnyRecord | null;
     if (preferences?.unit === "mph" || preferences?.unit === "kmh") state.unit = preferences.unit;
+    if (typeof preferences?.audioMuted === "boolean") state.audioMuted = preferences.audioMuted;
+    else if (typeof audio?.muted === "boolean") state.audioMuted = audio.muted;
     if (state.position && !elements.frame?.getAttribute("src")) syncEmbed();
+    render();
+  }
+
+  function applyRecordingSnapshot(snapshot: DriveRecordingSnapshot | null | undefined) {
+    if (!snapshot || state.destroyed) return;
+    state.recordingSnapshot = snapshot;
     render();
   }
 
@@ -267,17 +290,47 @@ export function createWazeRouteController(routeContext: WazeRouteMountContext) {
     elements.speedPill.classList.toggle("is-trap-active", Boolean(alertState.trapActive));
   }
 
+  function renderToolbar() {
+    const alertState = (state.alertUiState || {}) as AnyRecord;
+    const recordingState = String(state.recordingSnapshot?.state || "idle");
+    const isRecording = recordingState === "recording";
+    const isPaused = recordingState === "paused";
+    const isFinalizing = recordingState === "finalizing";
+    const hasRecording = isRecording || isPaused || isFinalizing;
+    const recordingLabel = isRecording
+      ? translate("pauseRecording", "Pause recording")
+      : isPaused
+        ? translate("resumeRecording", "Resume recording")
+        : translate("startRecording", "Start recording");
+    const audioLabel = state.audioMuted
+      ? translate("unmuteAlertAudio", "Unmute alert audio")
+      : translate("muteAlertAudio", "Mute alert audio");
+
+    elements.quickAudioToggle.classList.toggle("is-muted", state.audioMuted);
+    elements.quickAudioToggle.setAttribute("aria-pressed", String(!state.audioMuted));
+    elements.quickAudioToggle.setAttribute("aria-label", audioLabel);
+    elements.quickAudioToggle.title = audioLabel;
+    elements.quickAlertConfig.setAttribute("aria-pressed", String(Boolean(alertState.enabled)));
+    elements.toggleRecording.dataset.recordingIcon = isRecording ? "pause" : "record";
+    elements.toggleRecording.setAttribute("aria-pressed", String(isRecording));
+    elements.toggleRecording.setAttribute("aria-label", recordingLabel);
+    elements.toggleRecording.title = recordingLabel;
+    elements.toggleRecording.disabled = isFinalizing || !driveRecording;
+    elements.stopRecording.hidden = !hasRecording;
+    elements.stopRecording.disabled = isFinalizing || !driveRecording;
+  }
+
   function render() {
     if (state.destroyed || !elements.app) return;
     const hasSource = Boolean(elements.frame?.getAttribute("src"));
     const ready = state.online && hasSource && state.frameLoaded && !state.frameLoadPending;
     renderAlertUi();
+    renderToolbar();
     elements.placeholderText.textContent = getPlaceholderText(hasSource);
     elements.placeholder.classList.toggle("is-hidden", ready);
     elements.app.classList.toggle("is-loading", state.frameLoadPending);
     elements.app.classList.toggle("is-ready", ready);
     elements.app.classList.toggle("is-offline", !state.online);
-    elements.locationPrompt.textContent = translate("wazeEnableAction", "Enable");
     elements.locationPrompt.disabled = state.frameLoadPending;
     elements.recenter.disabled = state.frameLoadPending || !state.position || !state.online;
     elements.recenter.classList.toggle(
@@ -297,6 +350,48 @@ export function createWazeRouteController(routeContext: WazeRouteMountContext) {
     window.open(getPermissionUrl(), "_blank", "noopener,noreferrer");
   }
 
+  function handleAudioToggle() {
+    if (!drivingAlerts?.setMuted) return;
+    const nextMuted = !state.audioMuted;
+    const snapshot = drivingAlerts.setMuted(nextMuted, {
+      fromUserGesture: true,
+      startIfNeeded: false,
+    });
+    applyAlertSnapshot(snapshot);
+    if (!nextMuted) void drivingAlerts.primeAudioFromUserGesture?.();
+  }
+
+  function handleAlertConfig() {
+    if (routeContext.appRuntime?.shell.openApp(WAZE_SPEED_ALERTS_APP_ID, { focus: true })) return;
+    window.__vatioboardFloatingTools?.openSpeedAlerts?.();
+  }
+
+  function handleRecordingToggle() {
+    if (!driveRecording) return;
+    const recordingState = String(state.recordingSnapshot?.state || "idle");
+    const snapshot = recordingState === "recording"
+      ? driveRecording.pauseRecording()
+      : recordingState === "paused"
+        ? driveRecording.resumeRecording()
+        : driveRecording.startRecording({ source: "waze" });
+    applyRecordingSnapshot(snapshot);
+  }
+
+  async function handleRecordingStop() {
+    if (!driveRecording || elements.stopRecording.disabled) return;
+    elements.stopRecording.disabled = true;
+    try {
+      applyRecordingSnapshot(await driveRecording.stopRecording());
+    } catch (error) {
+      routeContext.logger?.error("Unable to stop Waze route recording.", error);
+      applyRecordingSnapshot(driveRecording.getSnapshot?.());
+    }
+  }
+
+  cleanup.addEventListener(elements.quickAudioToggle, "click", handleAudioToggle);
+  cleanup.addEventListener(elements.quickAlertConfig, "click", handleAlertConfig);
+  cleanup.addEventListener(elements.toggleRecording, "click", handleRecordingToggle);
+  cleanup.addEventListener(elements.stopRecording, "click", () => void handleRecordingStop());
   cleanup.addEventListener(elements.locationPrompt, "click", handleLocationPrompt);
   cleanup.addEventListener(elements.recenter, "click", () => syncEmbed({ force: true }));
   cleanup.addEventListener(elements.frame, "load", () => {
@@ -319,6 +414,7 @@ export function createWazeRouteController(routeContext: WazeRouteMountContext) {
   }));
 
   i18n?.apply(root);
+  recordingUnsubscribe = driveRecording?.subscribe?.(applyRecordingSnapshot) || null;
   startSource();
   render();
 
@@ -327,6 +423,8 @@ export function createWazeRouteController(routeContext: WazeRouteMountContext) {
     state.destroyed = true;
     sourceUnsubscribe?.();
     sourceUnsubscribe = null;
+    recordingUnsubscribe?.();
+    recordingUnsubscribe = null;
     gpsConsumerCleanup?.();
     gpsConsumerCleanup = null;
     if (state.ownsAlertSession) {

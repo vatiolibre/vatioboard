@@ -14,6 +14,7 @@ export type WazeRouteMountContext = RouteMountContext & {
   appRuntime?: VatioAppRuntime | null;
   appManifest?: VatioAppRuntime["manifest"] | null;
   gpsService?: RouteContext["gpsService"] | null;
+  driveRecordingService?: RouteContext["driveRecordingService"] | null;
   drivingAlertService?: RouteContext["drivingAlertService"] | null;
   translate?: ((key: string, fallback?: string) => string) | null;
   logger?: VatioAppRuntime["logger"] | null;
@@ -45,6 +46,10 @@ export function createWazeRouteMountContext(routeContext: RouteMountContext): Wa
       runtime?.services.gps ||
       context.gpsService ||
       getWindowFallback<RouteContext["gpsService"]>("__vatioboardGpsStore"),
+    driveRecordingService:
+      runtime?.services.driveRecording ||
+      context.driveRecordingService ||
+      getWindowFallback<RouteContext["driveRecordingService"]>("__vatioboardDriveRecording"),
     drivingAlertService:
       runtime?.services.drivingAlerts ||
       context.drivingAlertService ||

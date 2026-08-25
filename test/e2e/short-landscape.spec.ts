@@ -140,16 +140,16 @@ test("Waze route fills the viewport edge to edge with an overlaid driving HUD", 
   await page.locator("#wazeLocationPrompt").click();
   await expect(page.locator("#wazeFrame")).toHaveAttribute("src", /embed\.waze\.com\/iframe/);
   await expect(page.locator(".waze-brand-icon svg")).toBeVisible();
-  await expect(page.locator("#wazeLocationPrompt")).toHaveText("Enable");
   await expect(page.locator("#wazeLocationPrompt")).toHaveAttribute("aria-label", "Enable Waze location");
-  await expect(page.locator("#wazeRecenter")).toHaveText("Refresh");
   await expect(page.locator("#wazeRecenter")).toHaveAttribute("aria-label", "Refresh map");
+  await expect(page.locator(".waze-hud-actions")).toHaveAttribute("role", "toolbar");
+  await expect(page.locator(".waze-toolbar-btn:visible")).toHaveCount(5);
 
   const geometry = await page.evaluate(() => {
     const rect = (selector: string) => document.querySelector(selector)?.getBoundingClientRect().toJSON();
     const app = document.querySelector<HTMLElement>(".waze-app")!;
     const mapShell = document.querySelector<HTMLElement>(".waze-map-shell")!;
-    const controls = Array.from(document.querySelectorAll<HTMLElement>(".waze-hud-actions button")).map((button) => {
+    const controls = Array.from(document.querySelectorAll<HTMLElement>(".waze-hud-actions button:not([hidden])")).map((button) => {
       const bounds = button.getBoundingClientRect();
       return { width: bounds.width, height: bounds.height };
     });
@@ -193,13 +193,39 @@ test("Waze route fills the viewport edge to edge with an overlaid driving HUD", 
   expect(geometry.hud.left).toBeGreaterThanOrEqual(workArea.left);
   expect(geometry.hud.right).toBeLessThanOrEqual(workArea.left + workArea.width);
   expect(geometry.hud.bottom).toBeLessThanOrEqual(workArea.top + workArea.height);
-  expect(geometry.actions.left).toBeGreaterThanOrEqual(geometry.speedPill.right);
-  expect(geometry.actions.left - geometry.speedPill.right).toBeLessThanOrEqual(13);
-  expect(geometry.actions.right).toBeLessThanOrEqual(geometry.app.left + geometry.app.width / 2);
+  expect(Math.abs((geometry.actions.left + geometry.actions.right) / 2 - geometry.app.width / 2)).toBeLessThanOrEqual(1);
+  expect(geometry.actions.top).toBeGreaterThanOrEqual(0);
+  expect(geometry.actions.top).toBeLessThanOrEqual(12);
+  expect(geometry.actions.bottom).toBeLessThan(geometry.speedPill.top);
   for (const control of geometry.controls) {
     expect(control.width).toBeGreaterThanOrEqual(44);
     expect(control.height).toBeGreaterThanOrEqual(44);
   }
+  await page.locator("#quickAlertConfig").click();
+  await expect(page.locator(".speed-alert-window")).toBeVisible();
+  await page.locator(".speed-alert-window-close").click();
+  await expect(page.locator(".speed-alert-window")).toBeHidden();
+  await page.locator("#toggleRecording").click();
+  await expect(page.locator("#toggleRecording")).toHaveAttribute("aria-label", "Pause recording");
+  await expect(page.locator("#stopRecording")).toBeVisible();
+  await expect(page.locator(".waze-toolbar-btn:visible")).toHaveCount(6);
+  const activeToolbar = await page.locator(".waze-hud-actions").evaluate((toolbar) => {
+    const bounds = toolbar.getBoundingClientRect();
+    const controls = Array.from(toolbar.querySelectorAll<HTMLElement>("button:not([hidden])")).map((button) => {
+      const controlBounds = button.getBoundingClientRect();
+      return { width: controlBounds.width, height: controlBounds.height };
+    });
+    return { left: bounds.left, right: bounds.right, controls };
+  });
+  expect(Math.abs((activeToolbar.left + activeToolbar.right) / 2 - geometry.app.width / 2)).toBeLessThanOrEqual(1);
+  expect(activeToolbar.left).toBeGreaterThanOrEqual(0);
+  expect(activeToolbar.right).toBeLessThanOrEqual(geometry.app.width);
+  expect(activeToolbar.controls.every((control) => control.width >= 44 && control.height >= 44)).toBe(true);
+  await page.locator("#toggleRecording").click();
+  await expect(page.locator("#toggleRecording")).toHaveAttribute("aria-label", "Resume recording");
+  await page.locator("#toggleRecording").click();
+  await page.locator("#stopRecording").click();
+  await expect(page.locator("#stopRecording")).toBeHidden();
   expect(geometry.documentScrollWidth).toBeLessThanOrEqual(geometry.documentClientWidth + 1);
   expect(geometry.documentScrollHeight).toBeLessThanOrEqual(geometry.documentClientHeight + 1);
   await expect(page).toHaveScreenshot("waze-map.png", {
@@ -528,10 +554,9 @@ test("Spanish labels fit the light short-landscape theme", async ({ page, contex
   await openRoute(page, "waze");
   await page.locator("#wazeLocationPrompt").click();
   await expect(page.locator("#wazeFrame")).toHaveAttribute("src", /embed\.waze\.com\/iframe/);
-  await expect(page.locator("#wazeLocationPrompt")).toHaveText("Habilitar");
   await expect(page.locator("#wazeLocationPrompt")).toHaveAttribute("aria-label", "Activar ubicacion de Waze");
-  await expect(page.locator("#wazeRecenter")).toHaveText("Actualizar");
   await expect(page.locator("#wazeRecenter")).toHaveAttribute("aria-label", "Actualizar mapa");
+  await expect(page.locator("#quickAlertConfig")).toHaveAttribute("aria-label", "Configurar alertas");
   await expect(page).toHaveScreenshot("waze-map-es-light.png", {
     animations: "disabled",
     maxDiffPixelRatio: 0.01,
