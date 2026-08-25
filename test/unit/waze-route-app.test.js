@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { appRegistry, createAppRuntime } from "../../src/app-platform/index.js";
 import { createWazeRouteMountContext, WAZE_APP_ID } from "../../src/apps/waze/index.js";
+import { IconWaze } from "../../src/icons.js";
 
 function createGpsService() {
   return {
@@ -64,6 +65,8 @@ describe("Waze route OS app module", () => {
       metadata: { networkDependent: true },
     });
     expect(entry.WAZE_APP_ID).toBe(WAZE_APP_ID);
+    expect(manifest.icon).toBe(IconWaze);
+    expect(manifest.icon).toContain('viewBox="0 0 640 640"');
   });
 
   it("resolves scoped GPS and driving-alert gateways from its own runtime", () => {

@@ -102,6 +102,17 @@ describe("Waze route app", () => {
     expect(url).toContain("lon=-73.985700");
   });
 
+  it("uses the Waze mark in both the permission surface and live HUD", () => {
+    const root = createRoot();
+    expect(root.querySelector(".waze-placeholder-icon svg")?.getAttribute("viewBox")).toBe("0 0 640 640");
+    expect(root.querySelector(".waze-brand-icon svg")?.getAttribute("viewBox")).toBe("0 0 640 640");
+    expect(root.querySelector("#wazeLocationPrompt")?.textContent.trim()).toBe("Enable");
+    expect(root.querySelector("#wazeLocationPrompt")?.getAttribute("aria-label")).toBe("Enable Waze location");
+    expect(root.querySelector("#wazeRecenter")?.textContent.trim()).toBe("Refresh");
+    expect(root.querySelector("#wazeRecenter")?.getAttribute("aria-label")).toBe("Refresh map");
+    root.remove();
+  });
+
   it("marks recentering stale only after both time and distance thresholds", () => {
     const center = { latitude: 40.7484, longitude: -73.9857, timestampMs: 1_000_000 };
     expect(shouldRefreshWazeEmbed(center, makePosition({

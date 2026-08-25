@@ -271,16 +271,13 @@ export function createWazeRouteController(routeContext: WazeRouteMountContext) {
     if (state.destroyed || !elements.app) return;
     const hasSource = Boolean(elements.frame?.getAttribute("src"));
     const ready = state.online && hasSource && state.frameLoaded && !state.frameLoadPending;
-    const needsGps = !state.position;
     renderAlertUi();
     elements.placeholderText.textContent = getPlaceholderText(hasSource);
     elements.placeholder.classList.toggle("is-hidden", ready);
     elements.app.classList.toggle("is-loading", state.frameLoadPending);
     elements.app.classList.toggle("is-ready", ready);
     elements.app.classList.toggle("is-offline", !state.online);
-    elements.locationPrompt.textContent = needsGps
-      ? translate("wazeEnableGps", "Enable location")
-      : translate("enableWazeLocation", "Enable Waze location");
+    elements.locationPrompt.textContent = translate("wazeEnableAction", "Enable");
     elements.locationPrompt.disabled = state.frameLoadPending;
     elements.recenter.disabled = state.frameLoadPending || !state.position || !state.online;
     elements.recenter.classList.toggle(

@@ -1,4 +1,4 @@
-import { IconCameraMap } from "../../icons.js";
+import { IconWaze } from "../../icons.js";
 import { defineAppManifest } from "../../app-platform/manifest.js";
 
 export const wazeAppManifest = defineAppManifest({
@@ -8,7 +8,7 @@ export const wazeAppManifest = defineAppManifest({
   description: "Full-work-area Waze live map with shared GPS speed and driving-alert status.",
   kind: "core-app",
   version: "1.0.0",
-  icon: IconCameraMap,
+  icon: IconWaze,
   theme: {
     color: "#1db954",
     color2: "#0ea5e9",

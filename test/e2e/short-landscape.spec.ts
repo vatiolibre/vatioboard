@@ -126,7 +126,7 @@ test("speed dashboard contains a large dial without outer scrolling", async ({ p
   });
 });
 
-test("Waze route fills the shell work area with an overlaid driving HUD", async ({ page, context }, testInfo) => {
+test("Waze route fills the viewport edge to edge with an overlaid driving HUD", async ({ page, context }, testInfo) => {
   test.skip(!isTeslaProject(testInfo), "Exact Tesla geometry assertion");
   await context.grantPermissions(["geolocation"], { origin: "http://127.0.0.1:4175" });
   await context.setGeolocation({ latitude: 40.7484, longitude: -73.9857, accuracy: 5 });
@@ -136,21 +136,36 @@ test("Waze route fills the shell work area with an overlaid driving HUD", async 
     body: "<!doctype html><html><body style='margin:0;background:#dfe9ef'></body></html>",
   }));
   await openRoute(page, "waze");
+  await expect(page.locator(".waze-placeholder-icon svg")).toBeVisible();
   await page.locator("#wazeLocationPrompt").click();
   await expect(page.locator("#wazeFrame")).toHaveAttribute("src", /embed\.waze\.com\/iframe/);
+  await expect(page.locator(".waze-brand-icon svg")).toBeVisible();
+  await expect(page.locator("#wazeLocationPrompt")).toHaveText("Enable");
+  await expect(page.locator("#wazeLocationPrompt")).toHaveAttribute("aria-label", "Enable Waze location");
+  await expect(page.locator("#wazeRecenter")).toHaveText("Refresh");
+  await expect(page.locator("#wazeRecenter")).toHaveAttribute("aria-label", "Refresh map");
 
   const geometry = await page.evaluate(() => {
     const rect = (selector: string) => document.querySelector(selector)?.getBoundingClientRect().toJSON();
+    const app = document.querySelector<HTMLElement>(".waze-app")!;
+    const mapShell = document.querySelector<HTMLElement>(".waze-map-shell")!;
     const controls = Array.from(document.querySelectorAll<HTMLElement>(".waze-hud-actions button")).map((button) => {
       const bounds = button.getBoundingClientRect();
       return { width: bounds.width, height: bounds.height };
     });
     return {
       app: rect(".waze-app"),
+      brandBadge: rect(".waze-brand-icon"),
+      brandIcon: rect(".waze-brand-icon svg"),
       frame: rect("#wazeFrame"),
       hud: rect(".waze-hud"),
+      speedPill: rect("#wazeSpeedPill"),
+      actions: rect(".waze-hud-actions"),
       taskbar: rect(".vb-shell-taskbar"),
       controls,
+      appPadding: getComputedStyle(app).padding,
+      mapBorderWidth: getComputedStyle(mapShell).borderTopWidth,
+      mapBorderRadius: getComputedStyle(mapShell).borderTopLeftRadius,
       documentScrollWidth: document.documentElement.scrollWidth,
       documentClientWidth: document.documentElement.clientWidth,
       documentScrollHeight: document.documentElement.scrollHeight,
@@ -159,16 +174,28 @@ test("Waze route fills the shell work area with an overlaid driving HUD", async 
   });
   const workArea = await getWorkArea(page);
 
-  expect(Math.abs(geometry.app.left - workArea.left)).toBeLessThanOrEqual(1);
-  expect(Math.abs(geometry.app.top - workArea.top)).toBeLessThanOrEqual(1);
-  expect(Math.abs(geometry.app.width - workArea.width)).toBeLessThanOrEqual(1);
-  expect(Math.abs(geometry.app.height - workArea.height)).toBeLessThanOrEqual(1);
-  expect(geometry.frame.width).toBeGreaterThanOrEqual(workArea.width - 12);
-  expect(geometry.frame.height).toBeGreaterThanOrEqual(workArea.height - 12);
-  expect(geometry.app.bottom).toBeLessThanOrEqual(geometry.taskbar.top + 1);
-  expect(geometry.hud.left).toBeGreaterThanOrEqual(geometry.app.left);
-  expect(geometry.hud.right).toBeLessThanOrEqual(geometry.app.right);
-  expect(geometry.hud.bottom).toBeLessThanOrEqual(geometry.app.bottom);
+  expect(Math.abs(geometry.app.left)).toBeLessThanOrEqual(1);
+  expect(Math.abs(geometry.app.top)).toBeLessThanOrEqual(1);
+  expect(Math.abs(geometry.app.width - geometry.documentClientWidth)).toBeLessThanOrEqual(1);
+  expect(Math.abs(geometry.app.height - geometry.documentClientHeight)).toBeLessThanOrEqual(1);
+  expect(Math.abs(geometry.frame.left)).toBeLessThanOrEqual(1);
+  expect(Math.abs(geometry.frame.top)).toBeLessThanOrEqual(1);
+  expect(Math.abs(geometry.frame.width - geometry.documentClientWidth)).toBeLessThanOrEqual(1);
+  expect(Math.abs(geometry.frame.height - geometry.documentClientHeight)).toBeLessThanOrEqual(1);
+  expect(geometry.appPadding).toBe("0px");
+  expect(geometry.mapBorderWidth).toBe("0px");
+  expect(geometry.mapBorderRadius).toBe("0px");
+  expect(geometry.app.bottom).toBeGreaterThanOrEqual(geometry.taskbar.bottom);
+  expect(geometry.brandBadge.width).toBeGreaterThanOrEqual(30);
+  expect(geometry.brandBadge.height).toBeGreaterThanOrEqual(30);
+  expect(geometry.brandIcon.width).toBeGreaterThanOrEqual(18);
+  expect(geometry.brandIcon.height).toBeGreaterThanOrEqual(18);
+  expect(geometry.hud.left).toBeGreaterThanOrEqual(workArea.left);
+  expect(geometry.hud.right).toBeLessThanOrEqual(workArea.left + workArea.width);
+  expect(geometry.hud.bottom).toBeLessThanOrEqual(workArea.top + workArea.height);
+  expect(geometry.actions.left).toBeGreaterThanOrEqual(geometry.speedPill.right);
+  expect(geometry.actions.left - geometry.speedPill.right).toBeLessThanOrEqual(13);
+  expect(geometry.actions.right).toBeLessThanOrEqual(geometry.app.left + geometry.app.width / 2);
   for (const control of geometry.controls) {
     expect(control.width).toBeGreaterThanOrEqual(44);
     expect(control.height).toBeGreaterThanOrEqual(44);
@@ -501,7 +528,10 @@ test("Spanish labels fit the light short-landscape theme", async ({ page, contex
   await openRoute(page, "waze");
   await page.locator("#wazeLocationPrompt").click();
   await expect(page.locator("#wazeFrame")).toHaveAttribute("src", /embed\.waze\.com\/iframe/);
-  await expect(page.locator("#wazeRecenter")).toHaveText("Actualizar mapa");
+  await expect(page.locator("#wazeLocationPrompt")).toHaveText("Habilitar");
+  await expect(page.locator("#wazeLocationPrompt")).toHaveAttribute("aria-label", "Activar ubicacion de Waze");
+  await expect(page.locator("#wazeRecenter")).toHaveText("Actualizar");
+  await expect(page.locator("#wazeRecenter")).toHaveAttribute("aria-label", "Actualizar mapa");
   await expect(page).toHaveScreenshot("waze-map-es-light.png", {
     animations: "disabled",
     maxDiffPixelRatio: 0.01,
