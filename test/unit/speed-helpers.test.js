@@ -2,8 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAlertUiState, normalizeAlertDisplayValue } from '../../src/speed/alerts.js';
 import {
   getMovementThresholdM,
-  getWazeEmbedUrl,
-  getWazeZoomLevel,
   normalizePositionTimestamp,
 } from '../../src/speed/navigation.js';
 import {
@@ -251,18 +249,6 @@ describe('speed extracted helpers', () => {
       nearestTrapSpeedMeta: null,
     });
     expect(trapState.nearestTrapDataset.key).toBe('country:ca');
-  });
-
-  it('derives stable Waze zoom levels and embed URLs', () => {
-    expect(getWazeZoomLevel(2)).toBe(15);
-    expect(getWazeZoomLevel(20 / 3.6)).toBe(14);
-    expect(getWazeZoomLevel(60 / 3.6)).toBe(13);
-    expect(getWazeZoomLevel(120 / 3.6)).toBe(12);
-
-    const url = getWazeEmbedUrl(40.7484, -73.9857, 60 / 3.6);
-    expect(url).toContain('zoom=13');
-    expect(url).toContain('lat=40.748400');
-    expect(url).toContain('lon=-73.985700');
   });
 
   it('normalizes timestamps and movement thresholds safely', () => {

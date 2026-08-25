@@ -63,7 +63,6 @@ import {
   MIN_MOVING_SPEED_MS,
   SPEED_SMOOTHING_SAMPLES,
   UNIT_CONFIG,
-  WAZE_EMBED_BASE_URL,
 } from './constants.js';
 import {
   getTrapAlertPresets,
@@ -76,7 +75,6 @@ import {
   saveAlertTriggerDiscoveredPreference,
   saveAudioMutedPreference,
   saveDistanceUnitPreference,
-  savePrimaryViewPreference,
   saveTrapAlertDistancePreference,
   saveTrapAlertEnabledPreference,
   saveTrapSoundEnabledPreference,
@@ -99,7 +97,6 @@ import {
 } from './runtime.js';
 import {
   createGlobeController,
-  createWazeController,
   getMovementThresholdM,
   haversineDistance,
   normalizePositionTimestamp,
@@ -149,22 +146,9 @@ export function getSpeedElements(root: any): AnyRecord {
     toolbar: queryOne(root, '.speed-toolbar'),
     openReplayQuick: queryOne(root, '#openReplayQuick'),
     quickAlertConfig: queryOne(root, '#quickAlertConfig'),
-    primaryViewButtons: queryAll(root, '.speed-view-btn'),
     speedPrimaryStage: queryOne(root, '#speedPrimaryStage'),
     gaugeStage: queryOne(root, '#gaugeStage'),
     gaugeStageInner: queryOne(root, '.gauge-stage-inner'),
-    wazeStage: queryOne(root, '#wazeStage'),
-    wazeFrame: queryOne(root, '#wazeFrame'),
-    wazePlaceholder: queryOne(root, '#wazePlaceholder'),
-    wazePlaceholderText: queryOne(root, '#wazePlaceholderText'),
-    wazeSpeedPill: queryOne(root, '#wazeSpeedPill'),
-    wazeSpeedValue: queryOne(root, '#wazeSpeedValue'),
-    wazeSpeedUnit: queryOne(root, '#wazeSpeedUnit'),
-    wazeSpeedLimitLabel: queryOne(root, '#wazeSpeedLimitLabel'),
-    wazeSpeedLimitValue: queryOne(root, '#wazeSpeedLimitValue'),
-    wazeSpeedNote: queryOne(root, '#wazeSpeedNote'),
-    wazeLocationPrompt: queryOne(root, '#wazeLocationPrompt'),
-    wazeRecenter: queryOne(root, '#wazeRecenter'),
     alertBackdrop: queryOne(root, '#speedAlertBackdrop'),
     dialCanvas: queryOne(root, '#speedDial'),
     needleCanvas: queryOne(root, '#speedNeedle'),
@@ -382,7 +366,6 @@ const ACTIVE_REPLAY_PERSIST_INTERVAL_MS = 5000;
 const state: AnyRecord = {
   unit: initialPreferences.unit,
   distanceUnit: initialPreferences.distanceUnit,
-  primaryView: initialPreferences.primaryView,
   alertEnabled: initialPreferences.alertEnabled,
   alertLimitMs: initialPreferences.alertLimitMs,
   alertSoundEnabled: initialPreferences.alertSoundEnabled,
@@ -470,11 +453,6 @@ const state: AnyRecord = {
   lastKnownLongitude: null,
   renderFrameId: null,
   lastTextUpdateAt: 0,
-  wazeLoaded: false,
-  wazeLoadPending: false,
-  wazeCenteredAt: null,
-  wazeCenterLatitude: null,
-  wazeCenterLongitude: null,
   globeMap: null,
   globeInitToken: 0,
   globeReady: false,
@@ -541,14 +519,6 @@ function createInactiveGlobeController() {
   };
 }
 
-function createInactiveWazeController() {
-  return {
-    getWazePermissionUrl: () => WAZE_EMBED_BASE_URL,
-    renderWazeUi() {},
-    syncWazeEmbed() {},
-  };
-}
-
 function createInactiveAudioController() {
   return {
     armBackgroundAlertAudio: () => Promise.resolve(false),
@@ -580,7 +550,6 @@ function createInactiveAudioController() {
 let analogSpeedometer: any = createInactiveAnalogSpeedometer();
 let speedRenderer: any = createInactiveSpeedRenderer();
 let globeController: any = createInactiveGlobeController();
-let wazeController: any = createInactiveWazeController();
 let audioController: any = createInactiveAudioController();
 let audioControllerInitialized = false;
 let cameraDatabase: any = null;
@@ -1564,9 +1533,6 @@ function createSpeedRouteControllers() {
     getConfiguredTrapAlertDistanceLabel,
     getTrapAlertPresets,
     formatTrapDistance,
-    renderWazeUi: () => {
-      wazeController?.renderWazeUi();
-    },
     renderGlobeStatus: () => {
       globeController?.renderGlobeStatus();
     },
@@ -1580,16 +1546,6 @@ function createSpeedRouteControllers() {
     elements,
     t,
     renderStatusText: (timestamp) => formatGlobeTimestamp(timestamp, getLang()),
-  });
-
-  wazeController = createWazeController({
-    state,
-    elements,
-    t,
-    getAlertUiState,
-    convertSpeed,
-    hasLiveCoordinateFix: () => globeController.hasLiveCoordinateFix(),
-    getCurrentCoordinates: () => globeController.getCurrentCoordinates(),
   });
 
   if (!audioControllerInitialized) {
@@ -1900,7 +1856,6 @@ function setStatus(kind, params = null) {
   if (elements.status) elements.status.textContent = state.statusText;
   speedRenderer.renderSubStatus();
   globeController.renderGlobeStatus();
-  wazeController.renderWazeUi();
   audioController.syncRuntimePagePresentation();
 }
 
@@ -1925,51 +1880,6 @@ function hideNotice() {
   state.noticeParams = null;
   if (!elements.notice) return;
   elements.notice.hidden = true;
-}
-
-function renderPrimaryView() {
-  if (!elements.gaugeCard) return;
-
-  elements.gaugeCard.dataset.primaryView = state.primaryView;
-  elements.gaugeStage?.setAttribute('aria-hidden', String(state.primaryView !== 'gauge'));
-  elements.wazeStage?.setAttribute('aria-hidden', String(state.primaryView !== 'waze'));
-  elements.gaugeStage?.toggleAttribute('inert', state.primaryView !== 'gauge');
-  elements.wazeStage?.toggleAttribute('inert', state.primaryView !== 'waze');
-
-  if (elements.wazeFrame) {
-    elements.wazeFrame.tabIndex = state.primaryView === 'waze' ? 0 : -1;
-  }
-
-  if (elements.wazeRecenter) {
-    elements.wazeRecenter.tabIndex = state.primaryView === 'waze' ? 0 : -1;
-  }
-
-  if (elements.wazeLocationPrompt) {
-    elements.wazeLocationPrompt.tabIndex = state.primaryView === 'waze' ? 0 : -1;
-  }
-
-  for (const button of elements.primaryViewButtons) {
-    button.setAttribute('aria-pressed', String(button.dataset.primaryView === state.primaryView));
-  }
-
-  wazeController.renderWazeUi();
-}
-
-function setPrimaryView(view) {
-  if (view !== 'gauge' && view !== 'waze') return;
-
-  const viewChanged = state.primaryView !== view;
-  state.primaryView = view;
-  savePrimaryViewPreference(view);
-  renderPrimaryView();
-
-  if (view === 'waze' && (!state.wazeLoaded || !elements.wazeFrame?.getAttribute('src'))) {
-    wazeController.syncWazeEmbed();
-  }
-
-  if (viewChanged) {
-    resizeCanvas();
-  }
 }
 
 function renderQuickAudioControls() {
@@ -2328,10 +2238,8 @@ function clearLiveFixState({ preserveContinuity = false }: AnyRecord = {}) {
     state.lastAccuracyM = null;
     state.lastHeadingDeg = null;
     state.lastHeadingAtMs = 0;
-    wazeController.resetWazeEmbed({ clearFrame: true });
   }
   globeController.clearGlobePosition();
-  wazeController.renderWazeUi();
 }
 
 function resetTripData() {
@@ -2539,14 +2447,6 @@ function handlePosition(position) {
   });
   if (shouldRender) {
     globeController.syncGlobePosition(coords.longitude, coords.latitude);
-    if (
-      state.primaryView === 'waze' &&
-      (!state.wazeLoaded || !elements.wazeFrame?.getAttribute('src'))
-    ) {
-      wazeController.syncWazeEmbed();
-    } else {
-      wazeController.renderWazeUi();
-    }
   }
 
   if (Number.isFinite(coords.altitude)) {
@@ -2938,19 +2838,11 @@ function recheckSpeedRouteRecovery({
 function syncMountedSpeedRouteUi() {
   if (!state.viewMounted) return;
 
-  renderPrimaryView();
   renderMetrics();
   renderRecordingControls();
   speedRenderer.drawGauge();
   globeController.initGlobe();
   resizeCanvas();
-
-  if (
-    state.primaryView === 'waze' &&
-    (!state.wazeLoaded || !elements.wazeFrame?.getAttribute('src'))
-  ) {
-    wazeController.syncWazeEmbed();
-  }
 }
 
 function applySpeedIcons() {
@@ -2979,7 +2871,6 @@ function destroySpeedRouteResources(route = activeSpeedRoute) {
   analogSpeedometer = createInactiveAnalogSpeedometer();
   speedRenderer = createInactiveSpeedRenderer();
   globeController = createInactiveGlobeController();
-  wazeController = createInactiveWazeController();
   if (window.__vatioboardSpeedGetCurrentPosition === getCurrentSpeedPosition) {
     if (appGpsService && window.__vatioboardGpsGetCurrentPosition) {
       window.__vatioboardSpeedGetCurrentPosition = window.__vatioboardGpsGetCurrentPosition;
@@ -3074,7 +2965,6 @@ function syncLanguage() {
   });
   speedRenderer.syncLanguage({
     applyTranslations,
-    renderPrimaryView,
     renderMetrics,
   });
   renderCameraDatabaseStatus();
@@ -3135,26 +3025,6 @@ function bindEvents({ cleanup, signal }: AnyRecord = {}) {
     const button = event.target.closest('button[data-alert-preset]');
     if (!button) return;
     setAlertLimitDisplay(Number(button.dataset.alertPreset), { fromUserGesture: true });
-  });
-
-  for (const button of elements.primaryViewButtons) {
-    cleanup.addEventListener(button, 'click', () => {
-      setPrimaryView(button.dataset.primaryView);
-    });
-  }
-
-  cleanup.addEventListener(elements.wazeLocationPrompt, 'click', () => {
-    window.open(wazeController.getWazePermissionUrl(), '_blank', 'noopener,noreferrer');
-  });
-
-  cleanup.addEventListener(elements.wazeRecenter, 'click', () => {
-    wazeController.syncWazeEmbed({ force: true });
-  });
-
-  cleanup.addEventListener(elements.wazeFrame, 'load', () => {
-    state.wazeLoadPending = false;
-    state.wazeLoaded = Boolean(elements.wazeFrame?.getAttribute('src'));
-    wazeController.renderWazeUi();
   });
 
   for (const button of elements.alertSoundButtons) {
@@ -3274,13 +3144,6 @@ async function init() {
   elements.langToggleButtons.forEach((button) => {
     button.textContent = getLang().toUpperCase();
   });
-
-  for (const button of elements.primaryViewButtons) {
-    button.setAttribute(
-      'aria-pressed',
-      button.dataset.primaryView === state.primaryView ? 'true' : 'false'
-    );
-  }
 
   for (const button of elements.unitButtons) {
     button.setAttribute('aria-pressed', button.dataset.unit === state.unit ? 'true' : 'false');

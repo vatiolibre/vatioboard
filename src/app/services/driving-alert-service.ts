@@ -562,6 +562,7 @@ export function createDrivingAlertService({
     const audio = alertAudio.getSnapshot?.() || {};
     return {
       status: state.status,
+      started: state.started,
       currentSpeedMs: state.currentSpeedMs,
       latestPosition: state.latestPosition ? { ...state.latestPosition } : null,
       alertUiState: state.alertUiState || buildAlertState(),

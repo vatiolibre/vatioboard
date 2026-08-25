@@ -13,8 +13,13 @@ describe("speed shell layout", () => {
     expect(speedCss).toContain('html[data-vb-layout-profile="short-landscape"] .speed-stage');
     expect(speedCss).toContain("grid-template-columns: minmax(0, 1fr) minmax(210px, 260px)");
     expect(speedCss).toContain('html[data-vb-layout-profile="short-landscape"] .gauge-stage-inner');
+    expect(speedCss).toContain("inset: 8px;");
+    expect(speedCss).toContain("calc(100cqh - 16px)");
     expect(speedCss).toContain("height: 100%;");
     expect(speedCss).toContain("aspect-ratio: 1 / 1;");
+    expect(speedCss).not.toContain(".speed-view-switch");
+    expect(speedCss).not.toContain("data-primary-view");
+    expect(speedCss).not.toContain("--speed-primary-stage-top-padding");
   });
 
   it("compacts short-landscape metrics and reserves space for the live globe", () => {

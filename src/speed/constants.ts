@@ -12,11 +12,9 @@ export const STORAGE_CAMERA_APPROACH_HEADING_TOLERANCE_KEY = "vatio_speed_camera
 export const STORAGE_CAMERA_APPROACH_MINIMUM_SPEED_KEY = "vatio_speed_camera_approach_minimum_speed_ms";
 export const STORAGE_AUDIO_MUTED_KEY = "vatio_speed_audio_muted";
 export const STORAGE_ALERT_TRIGGER_DISCOVERED_KEY = "vatio_speed_alert_trigger_discovered";
-export const STORAGE_PRIMARY_VIEW_KEY = "vatio_speed_primary_view";
 
 export type SpeedUnit = "mph" | "kmh";
 export type DistanceUnit = "ft" | "m";
-export type PrimaryView = "gauge" | "waze";
 export type CameraApproachFallbackMode = "legacy-radius" | "heading-only" | "silent";
 
 export interface SpeedUnitConfig {
@@ -85,10 +83,6 @@ export const GLOBE_SATELLITE_ATTRIBUTION = [
   '<a href="https://eox.at" target="_blank" rel="noopener noreferrer">EOX IT Services GmbH</a>',
   "(Contains modified Copernicus Sentinel data 2020)",
 ].join(" ");
-
-export const WAZE_EMBED_BASE_URL = "https://embed.waze.com/iframe";
-export const WAZE_REFRESH_MIN_INTERVAL_MS = 300000;
-export const WAZE_REFRESH_MIN_DISTANCE_M = 300;
 
 export const UNIT_CONFIG = {
   mph: { label: "mph", baseMax: 120, tickStep: 20, factor: 2.2369362920544 },

@@ -46,7 +46,7 @@ test.beforeEach(async ({ page }) => {
 test("selects layout profiles from CSS viewport geometry", async ({ page }, testInfo) => {
   await openRoute(page);
   const profile = await page.locator("html").getAttribute("data-vb-layout-profile");
-  if (isTeslaProject(testInfo)) expect(profile).toBe("short-landscape");
+  if (testInfo.project.name.startsWith("model-y-")) expect(profile).toBe("short-landscape");
   else if (testInfo.project.name === "phone-portrait") expect(profile).toBe("portrait");
   else expect(profile).toBe("standard");
 });
@@ -81,6 +81,7 @@ test("speed dashboard contains a large dial without outer scrolling", async ({ p
       };
     });
     return {
+      alertTrigger: rect(".speed-alert-trigger"),
       card: rect(".gauge-card"),
       dial: rect(".gauge-stage-inner"),
       canvases,
@@ -96,6 +97,19 @@ test("speed dashboard contains a large dial without outer scrolling", async ({ p
   expect(geometry.dial.left).toBeGreaterThanOrEqual(geometry.card.left);
   expect(geometry.dial.right).toBeLessThanOrEqual(geometry.card.right + 1);
   expect(geometry.dial.bottom).toBeLessThanOrEqual(geometry.card.bottom + 3);
+  expect(Math.abs(
+    (geometry.dial.top - geometry.card.top) - (geometry.card.bottom - geometry.dial.bottom)
+  )).toBeLessThanOrEqual(3);
+  const dialCenter = {
+    x: geometry.dial.left + (geometry.dial.width / 2),
+    y: geometry.dial.top + (geometry.dial.height / 2),
+  };
+  expect(
+    dialCenter.x >= geometry.alertTrigger.left
+    && dialCenter.x <= geometry.alertTrigger.right
+    && dialCenter.y >= geometry.alertTrigger.top
+    && dialCenter.y <= geometry.alertTrigger.bottom
+  ).toBe(false);
   expect(geometry.mainScrollHeight).toBeLessThanOrEqual(geometry.mainClientHeight + 1);
   expect(geometry.bodyScrollWidth).toBeLessThanOrEqual(geometry.viewportWidth + 1);
   const expectedDpr = testInfo.project.name === "model-y-2024" ? 1.53 : 1.96;
@@ -108,6 +122,61 @@ test("speed dashboard contains a large dial without outer scrolling", async ({ p
   await expect(page).toHaveScreenshot("speed-dashboard.png", {
     animations: "disabled",
     mask: [page.locator("canvas"), page.locator("iframe"), page.locator(".speed-globe")],
+    maxDiffPixelRatio: 0.01,
+  });
+});
+
+test("Waze route fills the shell work area with an overlaid driving HUD", async ({ page, context }, testInfo) => {
+  test.skip(!isTeslaProject(testInfo), "Exact Tesla geometry assertion");
+  await context.grantPermissions(["geolocation"], { origin: "http://127.0.0.1:4175" });
+  await context.setGeolocation({ latitude: 40.7484, longitude: -73.9857, accuracy: 5 });
+  await page.route("https://embed.waze.com/**", (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html",
+    body: "<!doctype html><html><body style='margin:0;background:#dfe9ef'></body></html>",
+  }));
+  await openRoute(page, "waze");
+  await page.locator("#wazeLocationPrompt").click();
+  await expect(page.locator("#wazeFrame")).toHaveAttribute("src", /embed\.waze\.com\/iframe/);
+
+  const geometry = await page.evaluate(() => {
+    const rect = (selector: string) => document.querySelector(selector)?.getBoundingClientRect().toJSON();
+    const controls = Array.from(document.querySelectorAll<HTMLElement>(".waze-hud-actions button")).map((button) => {
+      const bounds = button.getBoundingClientRect();
+      return { width: bounds.width, height: bounds.height };
+    });
+    return {
+      app: rect(".waze-app"),
+      frame: rect("#wazeFrame"),
+      hud: rect(".waze-hud"),
+      taskbar: rect(".vb-shell-taskbar"),
+      controls,
+      documentScrollWidth: document.documentElement.scrollWidth,
+      documentClientWidth: document.documentElement.clientWidth,
+      documentScrollHeight: document.documentElement.scrollHeight,
+      documentClientHeight: document.documentElement.clientHeight,
+    };
+  });
+  const workArea = await getWorkArea(page);
+
+  expect(Math.abs(geometry.app.left - workArea.left)).toBeLessThanOrEqual(1);
+  expect(Math.abs(geometry.app.top - workArea.top)).toBeLessThanOrEqual(1);
+  expect(Math.abs(geometry.app.width - workArea.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(geometry.app.height - workArea.height)).toBeLessThanOrEqual(1);
+  expect(geometry.frame.width).toBeGreaterThanOrEqual(workArea.width - 12);
+  expect(geometry.frame.height).toBeGreaterThanOrEqual(workArea.height - 12);
+  expect(geometry.app.bottom).toBeLessThanOrEqual(geometry.taskbar.top + 1);
+  expect(geometry.hud.left).toBeGreaterThanOrEqual(geometry.app.left);
+  expect(geometry.hud.right).toBeLessThanOrEqual(geometry.app.right);
+  expect(geometry.hud.bottom).toBeLessThanOrEqual(geometry.app.bottom);
+  for (const control of geometry.controls) {
+    expect(control.width).toBeGreaterThanOrEqual(44);
+    expect(control.height).toBeGreaterThanOrEqual(44);
+  }
+  expect(geometry.documentScrollWidth).toBeLessThanOrEqual(geometry.documentClientWidth + 1);
+  expect(geometry.documentScrollHeight).toBeLessThanOrEqual(geometry.documentClientHeight + 1);
+  await expect(page).toHaveScreenshot("waze-map.png", {
+    animations: "disabled",
     maxDiffPixelRatio: 0.01,
   });
 });
@@ -367,7 +436,7 @@ test("calculator header close button hides and can reopen the same window", asyn
   await expect(calculator).toBeVisible();
 });
 
-test("Spanish labels fit the light short-landscape theme", async ({ page }, testInfo) => {
+test("Spanish labels fit the light short-landscape theme", async ({ page, context }, testInfo) => {
   test.skip(testInfo.project.name !== "model-y-2024-es-light", "Localized visual smoke project");
   await openRoute(page, "speed");
   await expect(page.locator("#langToggle")).toHaveText("ES");
@@ -419,9 +488,27 @@ test("Spanish labels fit the light short-landscape theme", async ({ page }, test
     document.documentElement.scrollWidth - document.documentElement.clientWidth
   ));
   expect(overflowAfterCalculator).toBeLessThanOrEqual(1);
+  await calculator.locator(".calc-close").click();
+  await expect(calculator).toBeHidden();
+
+  await context.grantPermissions(["geolocation"], { origin: "http://127.0.0.1:4175" });
+  await context.setGeolocation({ latitude: 40.7484, longitude: -73.9857, accuracy: 5 });
+  await page.route("https://embed.waze.com/**", (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html",
+    body: "<!doctype html><html><body style='margin:0;background:#dfe9ef'></body></html>",
+  }));
+  await openRoute(page, "waze");
+  await page.locator("#wazeLocationPrompt").click();
+  await expect(page.locator("#wazeFrame")).toHaveAttribute("src", /embed\.waze\.com\/iframe/);
+  await expect(page.locator("#wazeRecenter")).toHaveText("Actualizar mapa");
+  await expect(page).toHaveScreenshot("waze-map-es-light.png", {
+    animations: "disabled",
+    maxDiffPixelRatio: 0.01,
+  });
 });
 
-for (const route of ["board", "accel", "replay", "library", "apps", "delivery-checklist", "qr-scanner", "code-rain"]) {
+for (const route of ["board", "waze", "accel", "replay", "library", "apps", "delivery-checklist", "qr-scanner", "code-rain"]) {
   test(`${route} has no horizontal document overflow`, async ({ page }, testInfo) => {
     test.skip(!isTeslaProject(testInfo), "Tesla route audit");
     await openRoute(page, route);

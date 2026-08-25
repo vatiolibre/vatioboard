@@ -17,6 +17,14 @@ const ROUTE_APPS = [
     viewPath: "../../src/app/views/SpeedView.js",
   },
   {
+    appId: "vatio.waze",
+    appIdExport: "WAZE_APP_ID",
+    contextFactoryExport: "createWazeRouteMountContext",
+    expectedRoute: "/waze",
+    modulePath: "../../src/apps/waze/index.js",
+    viewPath: "../../src/app/views/WazeView.js",
+  },
+  {
     appId: "vatio.board",
     appIdExport: "BOARD_APP_ID",
     contextFactoryExport: "createBoardRouteMountContext",

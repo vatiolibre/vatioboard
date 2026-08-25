@@ -17,6 +17,7 @@ import { qrScannerAppManifest } from "../apps/qr-scanner/manifest.js";
 import { ttsAppManifest } from "../apps/tts/manifest.js";
 import { premiumClockAppManifest } from "../apps/premium-clock/manifest.js";
 import { speedAppManifest } from "../apps/speed/manifest.js";
+import { wazeAppManifest } from "../apps/waze/manifest.js";
 import { defineAppManifest } from "./manifest.js";
 import type { VatioAppManifest } from "./types";
 
@@ -44,6 +45,7 @@ const snappingWindowCapabilities = {
 
 export const BUILTIN_APP_MANIFESTS = [
   speedAppManifest,
+  wazeAppManifest,
   boardAppManifest,
   deliveryChecklistAppManifest,
   qrScannerAppManifest,

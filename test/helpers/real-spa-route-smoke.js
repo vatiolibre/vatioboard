@@ -485,6 +485,10 @@ const routeConfig = {
     bodyClass: "speed-page",
     selector: "#speedValue",
   },
+  "#/waze": {
+    bodyClass: "waze-page",
+    selector: "[data-waze-app] #wazeFrame",
+  },
   "#/replay": {
     bodyClass: "replay-page",
     selector: "#replayShell",

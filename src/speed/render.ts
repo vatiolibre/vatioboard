@@ -154,7 +154,6 @@ export function createSpeedRenderer({
   getConfiguredTrapAlertDistanceLabel,
   getTrapAlertPresets,
   formatTrapDistance,
-  renderWazeUi,
   renderGlobeStatus,
   syncRuntimePagePresentation,
 }) {
@@ -412,11 +411,10 @@ export function createSpeedRenderer({
     elements.minAltitude.textContent = formatAltitude(state.minAltitudeM, state.distanceUnit);
     elements.minAltitudeUnit.textContent = distanceUnitLabel;
     syncAlertUi();
-    renderWazeUi();
     syncRuntimePagePresentation();
   }
 
-  function syncLanguage({ applyTranslations, renderPrimaryView, renderMetrics: rerenderMetrics }) {
+  function syncLanguage({ applyTranslations, renderMetrics: rerenderMetrics }) {
     applyTranslations();
     state.statusText = getStatusText(state.statusKind, state.statusParams, t, state.distanceUnit);
     if (elements.status) elements.status.textContent = state.statusText;
@@ -426,7 +424,6 @@ export function createSpeedRenderer({
     }
 
     renderGlobeStatus();
-    renderPrimaryView();
     rerenderMetrics();
     drawGauge();
   }

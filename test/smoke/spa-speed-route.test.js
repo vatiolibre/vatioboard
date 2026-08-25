@@ -30,15 +30,16 @@ describe("SPA Speed route real-controller smoke", () => {
 
     const { snapshots, targetSnapshots } = await expectRealSpaRouteRemount({
       targetHash: "#/speed",
-      targetSelector: '.gauge-card[data-primary-view="gauge"] #speedValue',
+      targetSelector: ".gauge-card #speedValue",
       sequence: ["#/board", "#/speed", "#/board", "#/speed"],
     });
     const firstSpeed = targetSnapshots[0];
     const secondSpeed = targetSnapshots[1];
     const boardAfterFirstSpeed = snapshots[2];
 
-    expect(document.querySelector("#gaugeStage")?.getAttribute("aria-hidden")).toBe("false");
-    expect(document.querySelector("#wazeStage")?.getAttribute("aria-hidden")).toBe("true");
+    expect(document.querySelector("#gaugeStage")).toBeTruthy();
+    expect(document.querySelector(".speed-view-switch")).toBeNull();
+    expect(document.querySelector("#wazeStage")).toBeNull();
     expect(maplibre.maps).toHaveLength(2);
     expect(maplibre.maps.filter((map) => !map.removed)).toHaveLength(1);
     expect(maplibre.maps[0].remove).toHaveBeenCalledTimes(1);
@@ -98,17 +99,18 @@ describe("SPA Speed route real-controller smoke", () => {
     });
   }, 40000);
 
-  it("restores the Waze primary stage after a remount", async () => {
+  it("ignores the retired primary-view preference and remains gauge-only", async () => {
     localStorage.setItem("vatio_speed_primary_view", "waze");
 
     await expectRealSpaRouteRemount({
       targetHash: "#/speed",
-      targetSelector: '.gauge-card[data-primary-view="waze"] #wazeStage',
+      targetSelector: "#gaugeStage #speedValue",
       sequence: ["#/board", "#/speed", "#/board", "#/speed"],
     });
 
-    expect(document.querySelector("#gaugeStage")?.getAttribute("aria-hidden")).toBe("true");
-    expect(document.querySelector("#wazeStage")?.getAttribute("aria-hidden")).toBe("false");
+    expect(document.querySelector("#gaugeStage")).toBeTruthy();
+    expect(document.querySelector(".speed-view-switch")).toBeNull();
+    expect(document.querySelector("#wazeStage")).toBeNull();
   }, 40000);
 
   it("keeps active recording GPS in the background without route DOM work", async () => {

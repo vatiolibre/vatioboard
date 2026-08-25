@@ -25,13 +25,11 @@ import {
   STORAGE_CAMERA_APPROACH_HEADING_TOLERANCE_KEY,
   STORAGE_CAMERA_APPROACH_MINIMUM_SPEED_KEY,
   STORAGE_DISTANCE_UNIT_KEY,
-  STORAGE_PRIMARY_VIEW_KEY,
   STORAGE_TRAP_ALERT_DISTANCE_KEY,
   STORAGE_TRAP_ALERT_ENABLED_KEY,
   STORAGE_TRAP_SOUND_ENABLED_KEY,
   STORAGE_UNIT_KEY,
   TRAP_ALERT_PRESETS,
-  type PrimaryView,
   type SpeedUnit,
   type TrapAlertPreset,
   UNIT_CONFIG,
@@ -46,7 +44,6 @@ export interface CameraApproachOptions {
 export interface SpeedPreferences {
   unit: SpeedUnit;
   distanceUnit: DistanceUnit;
-  primaryView: PrimaryView;
   alertEnabled: boolean;
   alertLimitMs: number;
   alertSoundEnabled: boolean;
@@ -84,14 +81,6 @@ export function loadDistanceUnitPreference(): DistanceUnit {
 export function saveDistanceUnitPreference(unit: unknown): void {
   saveText(STORAGE_DISTANCE_UNIT_KEY, unit);
   sharedSettings.set('distanceUnit', unit === 'ft' ? 'ft' : unit === 'm' ? 'm' : undefined);
-}
-
-export function loadPrimaryViewPreference(): PrimaryView {
-  return loadText(STORAGE_PRIMARY_VIEW_KEY, '') === 'waze' ? 'waze' : 'gauge';
-}
-
-export function savePrimaryViewPreference(view: unknown): void {
-  saveText(STORAGE_PRIMARY_VIEW_KEY, view);
 }
 
 export function loadAlertEnabledPreference(): boolean {
@@ -244,7 +233,6 @@ export function loadInitialPreferences(): SpeedPreferences {
   return {
     unit,
     distanceUnit,
-    primaryView: loadPrimaryViewPreference(),
     alertEnabled: loadAlertEnabledPreference(),
     alertLimitMs: loadAlertLimitPreference(),
     alertSoundEnabled: loadAlertSoundEnabledPreference(),
