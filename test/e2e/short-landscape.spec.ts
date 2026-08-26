@@ -230,6 +230,255 @@ test("speed dashboard contains a large dial without outer scrolling", async ({ p
   });
 });
 
+test("acceleration dashboard uses a frameless full-size gauge", async ({ page }, testInfo) => {
+  test.skip(!isTeslaProject(testInfo), "Exact Tesla geometry assertion");
+  await openRoute(page, "accel");
+  await page.addStyleTag({ content: "*, *::before, *::after { animation: none !important; transition: none !important; }" });
+
+  await expect.poll(() => page.evaluate(() => {
+    const dial = document.querySelector<HTMLElement>("#liveSpeedGaugeInner");
+    const canvases = Array.from(document.querySelectorAll<HTMLCanvasElement>("#liveSpeedGaugeInner canvas"));
+    if (!dial || dial.getBoundingClientRect().width < 400 || canvases.length !== 2) return false;
+    return canvases.every((canvas) => (
+      Math.abs(canvas.width - Math.floor(canvas.clientWidth * window.devicePixelRatio)) <= 1
+      && Math.abs(canvas.height - Math.floor(canvas.clientHeight * window.devicePixelRatio)) <= 1
+    ));
+  })).toBe(true);
+
+  const geometry = await page.evaluate(() => {
+    const rect = (selector: string) => document.querySelector(selector)?.getBoundingClientRect().toJSON();
+    const intersects = (first: DOMRect, second: DOMRect) => !(
+      first.right <= second.left
+      || first.left >= second.right
+      || first.bottom <= second.top
+      || first.top >= second.bottom
+    );
+    const primaryCard = document.querySelector<HTMLElement>(".accel-primary-card")!;
+    const primaryStage = document.querySelector<HTMLElement>(".accel-primary-stage")!;
+    const gaugeStage = document.querySelector<HTMLElement>(".accel-speedometer-stage")!;
+    const dial = document.querySelector<HTMLElement>("#liveSpeedGaugeInner")!;
+    const setup = document.querySelector<HTMLElement>("#setupTrigger")!;
+    const timer = document.querySelector<HTMLElement>(".accel-live-timer-wrap")!;
+    const progress = document.querySelector<HTMLElement>(".accel-progress-shell")!;
+    const feedback = document.querySelector<HTMLElement>("#actionNotice")!;
+    const reading = document.querySelector<HTMLElement>(".analog-speedometer-reading")!;
+    const results = document.querySelector<HTMLElement>("#resultsTrigger")!;
+    const sideCard = document.querySelector<HTMLElement>(".accel-side-card")!;
+    const main = document.querySelector<HTMLElement>(".accel-main")!;
+    const taskbar = document.querySelector<HTMLElement>(".vb-shell-taskbar")!;
+    const cardStyle = getComputedStyle(primaryCard);
+    const sideStyle = getComputedStyle(sideCard);
+    const feedbackStyle = getComputedStyle(feedback);
+    const canvasGeometry = Array.from(dial.querySelectorAll<HTMLCanvasElement>("canvas")).map((canvas) => ({
+      backingHeight: canvas.height,
+      backingWidth: canvas.width,
+      clientHeight: canvas.clientHeight,
+      clientWidth: canvas.clientWidth,
+    }));
+    const setupRect = setup.getBoundingClientRect();
+    const timerRect = timer.getBoundingClientRect();
+    const progressRect = progress.getBoundingClientRect();
+    const readingRect = reading.getBoundingClientRect();
+
+    return {
+      card: rect(".accel-primary-card"),
+      cardStyle: {
+        backgroundImage: cardStyle.backgroundImage,
+        borderTopWidth: cardStyle.borderTopWidth,
+        borderRadius: cardStyle.borderRadius,
+        boxShadow: cardStyle.boxShadow,
+        beforeContent: getComputedStyle(primaryCard, "::before").content,
+      },
+      canvases: canvasGeometry,
+      devicePixelRatio: window.devicePixelRatio,
+      dial: rect("#liveSpeedGaugeInner"),
+      feedbackDisplay: feedbackStyle.display,
+      feedbackPosition: feedbackStyle.position,
+      gaugeStage: gaugeStage.getBoundingClientRect().toJSON(),
+      mainClientHeight: main.clientHeight,
+      mainScrollHeight: main.scrollHeight,
+      overlayCollisions: {
+        progressTimer: intersects(progressRect, timerRect),
+        setupReading: intersects(setupRect, readingRect),
+        timerReading: intersects(timerRect, readingRect),
+      },
+      overlayPositions: {
+        progress: getComputedStyle(progress).position,
+        setup: getComputedStyle(setup).position,
+        timer: getComputedStyle(timer).position,
+      },
+      primaryStage: primaryStage.getBoundingClientRect().toJSON(),
+      radiusRatio: getComputedStyle(gaugeStage)
+        .getPropertyValue("--analog-speedometer-radius-ratio").trim(),
+      results: results.getBoundingClientRect().toJSON(),
+      setup: setupRect.toJSON(),
+      sideCard: sideCard.getBoundingClientRect().toJSON(),
+      sideStyle: {
+        backgroundImage: sideStyle.backgroundImage,
+        borderTopWidth: sideStyle.borderTopWidth,
+        borderRadius: sideStyle.borderRadius,
+        boxShadow: sideStyle.boxShadow,
+        overflowY: sideStyle.overflowY,
+      },
+      taskbar: taskbar.getBoundingClientRect().toJSON(),
+      timer: timerRect.toJSON(),
+      viewportHeight: document.documentElement.clientHeight,
+      viewportWidth: document.documentElement.clientWidth,
+      bodyScrollWidth: document.body.scrollWidth,
+    };
+  });
+
+  expect(geometry.cardStyle).toMatchObject({
+    backgroundImage: "none",
+    borderTopWidth: "0px",
+    borderRadius: "0px",
+    boxShadow: "none",
+  });
+  expect(["none", "normal"]).toContain(geometry.cardStyle.beforeContent);
+  expect(geometry.sideStyle).toMatchObject({
+    backgroundImage: "none",
+    borderTopWidth: "0px",
+    borderRadius: "0px",
+    boxShadow: "none",
+    overflowY: "hidden",
+  });
+  expect(geometry.radiusRatio).toBe("0.46");
+  expect(geometry.dial.width).toBeGreaterThanOrEqual(400);
+  expect(geometry.dial.width * 0.92).toBeGreaterThanOrEqual(geometry.dial.width * 0.9);
+  expect(Math.abs(geometry.dial.width - Math.min(geometry.gaugeStage.width, geometry.gaugeStage.height)))
+    .toBeLessThanOrEqual(1.5);
+  expect(Math.abs(geometry.gaugeStage.left - geometry.primaryStage.left)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(geometry.gaugeStage.top - geometry.primaryStage.top)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(geometry.primaryStage.left - geometry.card.left)).toBeLessThanOrEqual(2.5);
+  expect(Math.abs(geometry.primaryStage.top - geometry.card.top)).toBeLessThanOrEqual(2.5);
+  expect(geometry.setup.height).toBeGreaterThanOrEqual(44);
+  expect(geometry.results.height).toBeGreaterThanOrEqual(44);
+  expect(geometry.overlayPositions).toEqual({
+    progress: "absolute",
+    setup: "absolute",
+    timer: "absolute",
+  });
+  expect(geometry.overlayCollisions).toEqual({
+    progressTimer: false,
+    setupReading: false,
+    timerReading: false,
+  });
+  expect(geometry.feedbackDisplay).toBe("none");
+  expect(geometry.feedbackPosition).toBe("absolute");
+  expect(geometry.sideCard.bottom).toBeLessThanOrEqual(geometry.taskbar.top + 1);
+  expect(geometry.mainScrollHeight).toBeLessThanOrEqual(geometry.mainClientHeight + 1);
+  expect(geometry.bodyScrollWidth).toBeLessThanOrEqual(geometry.viewportWidth + 1);
+  const expectedDpr = testInfo.project.name === "model-y-2024" ? 1.53 : 1.96;
+  expect(geometry.devicePixelRatio).toBeCloseTo(expectedDpr, 2);
+  for (const canvas of geometry.canvases) {
+    expect(Math.abs(canvas.backingWidth - Math.floor(canvas.clientWidth * geometry.devicePixelRatio)))
+      .toBeLessThanOrEqual(1);
+    expect(Math.abs(canvas.backingHeight - Math.floor(canvas.clientHeight * geometry.devicePixelRatio)))
+      .toBeLessThanOrEqual(1);
+  }
+
+  const stageHeightBeforeFeedback = geometry.primaryStage.height;
+  await page.locator("#actionNotice").evaluate((element) => { element.textContent = "GPS ready"; });
+  await expect(page.locator("#actionNotice")).toBeVisible();
+  await expect.poll(() => page.locator(".accel-primary-stage").evaluate((element) => (
+    element.getBoundingClientRect().height
+  ))).toBe(stageHeightBeforeFeedback);
+  await page.locator("#actionNotice").evaluate((element) => { element.textContent = ""; });
+
+  await page.locator("#setupTrigger").click();
+  await expect(page.locator("#setupPanel")).toBeVisible();
+  await page.locator("#closeSetupPanel").click();
+  await expect(page.locator("#setupPanel")).toBeHidden();
+  await page.locator("#resultsTrigger").click();
+  await expect(page.locator("#resultsPanel")).toBeVisible();
+  await page.locator("#closeResultsPanel").click();
+  await expect(page.locator("#resultsPanel")).toBeHidden();
+
+  const partialScroll = await page.locator("#livePartialsSection").evaluate((section) => {
+    const list = section.querySelector<HTMLElement>("#livePartialsList")!;
+    section.hidden = false;
+    list.innerHTML = Array.from({ length: 18 }, (_, index) => (
+      `<div class="accel-partial-row"><span>Partial ${index + 1}</span><strong>${index}.000 s</strong></div>`
+    )).join("");
+    return {
+      clientHeight: section.clientHeight,
+      overflowY: getComputedStyle(section).overflowY,
+      scrollHeight: section.scrollHeight,
+    };
+  });
+  expect(partialScroll.overflowY).toBe("auto");
+  expect(partialScroll.scrollHeight).toBeGreaterThan(partialScroll.clientHeight);
+  await page.locator("#livePartialsSection").evaluate((section) => {
+    section.hidden = true;
+    section.querySelector<HTMLElement>("#livePartialsList")!.replaceChildren();
+  });
+
+  await expect(page).toHaveScreenshot("accel-dashboard.png", {
+    animations: "disabled",
+    maxDiffPixelRatio: 0.01,
+  });
+  await expect(page.locator(".accel-primary-card")).toHaveScreenshot("accel-gauge-frameless.png", {
+    animations: "disabled",
+    maxDiffPixelRatio: 0.01,
+  });
+});
+
+test("acceleration keeps its regular layout outside short landscape", async ({ page }, testInfo) => {
+  test.skip(!["desktop", "phone-portrait"].includes(testInfo.project.name), "Regular-layout fallback assertion");
+  await openRoute(page, "accel");
+  await expect.poll(() => page.locator(".accel-speedometer-stage").evaluate((stage) => (
+    getComputedStyle(stage).getPropertyValue("--analog-speedometer-radius-ratio").trim()
+  ))).toBe("0.42");
+
+  const layout = await page.evaluate(() => {
+    const stage = document.querySelector<HTMLElement>(".accel-speedometer-stage")!;
+    const progress = document.querySelector<HTMLElement>(".accel-progress-shell")!;
+    return {
+      profile: document.documentElement.dataset.vbLayoutProfile,
+      progressPosition: getComputedStyle(progress).position,
+      radiusRatio: getComputedStyle(stage)
+        .getPropertyValue("--analog-speedometer-radius-ratio").trim(),
+    };
+  });
+
+  expect(layout.profile).toBe(testInfo.project.name === "phone-portrait" ? "portrait" : "standard");
+  expect(layout.progressPosition).toBe("static");
+  expect(layout.radiusRatio).toBe("0.42");
+});
+
+test("Spanish acceleration summaries fit the light short-landscape theme", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "model-y-2024-es-light", "Localized Acceleration visual smoke project");
+  await openRoute(page, "accel");
+
+  const summaries = await page.locator("#setupTrigger, #resultsTrigger").evaluateAll((triggers) => (
+    triggers.map((trigger) => {
+      const label = trigger.querySelector<HTMLElement>(".accel-sheet-trigger-label")!;
+      const value = trigger.querySelector<HTMLElement>(".accel-sheet-trigger-value")!;
+      const meta = trigger.querySelector<HTMLElement>(".accel-sheet-trigger-meta")!;
+      return {
+        accessibleName: trigger.getAttribute("aria-label") || trigger.textContent?.trim(),
+        labelFits: label.scrollWidth <= label.clientWidth + 1,
+        metaContained: meta.getBoundingClientRect().right <= trigger.getBoundingClientRect().right + 1,
+        valueContained: value.getBoundingClientRect().right <= trigger.getBoundingClientRect().right + 1,
+      };
+    })
+  ));
+  for (const summary of summaries) {
+    const description = JSON.stringify(summary);
+    expect(Boolean(summary.accessibleName), description).toBe(true);
+    expect(summary.labelFits, description).toBe(true);
+    expect(summary.metaContained, description).toBe(true);
+    expect(summary.valueContained, description).toBe(true);
+  }
+  expect(await page.evaluate(() => (
+    document.documentElement.scrollWidth - document.documentElement.clientWidth
+  ))).toBeLessThanOrEqual(1);
+  await expect(page).toHaveScreenshot("accel-dashboard-es-light.png", {
+    animations: "disabled",
+    maxDiffPixelRatio: 0.01,
+  });
+});
+
 test("Waze route fills the viewport edge to edge with an overlaid driving HUD", async ({ page, context }, testInfo) => {
   test.skip(!isTeslaProject(testInfo), "Exact Tesla geometry assertion");
   await context.grantPermissions(["geolocation"], { origin: "http://127.0.0.1:4175" });
