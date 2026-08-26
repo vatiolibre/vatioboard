@@ -27,6 +27,22 @@ describe("speed shell layout", () => {
     expect(speedCss).not.toContain("--speed-primary-stage-top-padding");
   });
 
+  it("keeps the short-landscape alert trigger copy vertically contained", () => {
+    const speedCss = readStyle("src/styles/speed.less");
+
+    expect(speedCss).toContain('--speed-floating-control-height: 44px;');
+    expect(speedCss).toContain('html[data-vb-layout-profile="short-landscape"] .speed-alert-trigger');
+    expect(speedCss).toContain('padding: 5px 12px;');
+    expect(speedCss).toContain('html[data-vb-layout-profile="short-landscape"] .speed-alert-trigger-copy');
+    expect(speedCss).toContain('align-content: center;');
+    expect(speedCss).toContain('gap: 1px;');
+    expect(speedCss).toContain('html[data-vb-layout-profile="short-landscape"] .speed-alert-trigger-label');
+    expect(speedCss).toContain('html[data-vb-layout-profile="short-landscape"] .speed-alert-trigger-value');
+    expect(speedCss).toContain('line-height: 1.1;');
+    expect(speedCss).toContain('html[data-vb-layout-profile="short-landscape"] .speed-alert-trigger-hint');
+    expect(speedCss).toContain('+ var(--speed-floating-control-height)');
+  });
+
   it("compacts short-landscape metrics and reserves space for the live globe", () => {
     const speedCss = readStyle("src/styles/speed.less");
 

@@ -69,6 +69,12 @@ test("speed dashboard contains a large dial without outer scrolling", async ({ p
   const geometry = await page.evaluate(() => {
     const rect = (selector: string) => document.querySelector(selector)?.getBoundingClientRect().toJSON();
     const main = document.querySelector(".speed-main") as HTMLElement;
+    const alertTrigger = document.querySelector<HTMLElement>(".speed-alert-trigger")!;
+    const alertLabel = alertTrigger.querySelector<HTMLElement>(".speed-alert-trigger-label")!;
+    const alertValue = alertTrigger.querySelector<HTMLElement>(".speed-alert-trigger-value")!;
+    const alertIcon = alertTrigger.querySelector<HTMLElement>(".speed-alert-trigger-icon")!;
+    const alertChevron = alertTrigger.querySelector<HTMLElement>(".speed-alert-trigger-chevron")!;
+    const alertStyle = getComputedStyle(alertTrigger);
     const canvases = Array.from(document.querySelectorAll<HTMLCanvasElement>(".gauge-stage-inner canvas")).map((canvas) => {
       const bounds = canvas.getBoundingClientRect();
       return {
@@ -82,6 +88,14 @@ test("speed dashboard contains a large dial without outer scrolling", async ({ p
     });
     return {
       alertTrigger: rect(".speed-alert-trigger"),
+      alertTriggerContent: {
+        chevron: alertChevron.getBoundingClientRect().toJSON(),
+        icon: alertIcon.getBoundingClientRect().toJSON(),
+        label: alertLabel.getBoundingClientRect().toJSON(),
+        paddingBottom: alertStyle.paddingBottom,
+        paddingTop: alertStyle.paddingTop,
+        value: alertValue.getBoundingClientRect().toJSON(),
+      },
       card: rect(".gauge-card"),
       cardStyle: (() => {
         const card = document.querySelector<HTMLElement>(".gauge-card")!;
@@ -125,6 +139,61 @@ test("speed dashboard contains a large dial without outer scrolling", async ({ p
   expect(["none", "normal"]).toContain(geometry.cardStyle.beforeContent);
   expect(["none", "normal"]).toContain(geometry.cardStyle.afterContent);
   expect(geometry.radiusRatio).toBe("0.46");
+  expect(geometry.alertTrigger.height).toBeGreaterThanOrEqual(44);
+  expect(geometry.alertTrigger.height).toBeLessThanOrEqual(44.5);
+  expect(geometry.alertTriggerContent.paddingTop).toBe("5px");
+  expect(geometry.alertTriggerContent.paddingBottom).toBe("5px");
+  expect(geometry.alertTriggerContent.label.top - geometry.alertTrigger.top).toBeGreaterThanOrEqual(4);
+  expect(geometry.alertTrigger.bottom - geometry.alertTriggerContent.value.bottom).toBeGreaterThanOrEqual(4);
+  expect(geometry.alertTriggerContent.label.bottom).toBeLessThanOrEqual(geometry.alertTriggerContent.value.top);
+  const alertCenterY = geometry.alertTrigger.top + (geometry.alertTrigger.height / 2);
+  const iconCenterY = geometry.alertTriggerContent.icon.top + (geometry.alertTriggerContent.icon.height / 2);
+  const chevronCenterY = geometry.alertTriggerContent.chevron.top + (geometry.alertTriggerContent.chevron.height / 2);
+  expect(Math.abs(iconCenterY - alertCenterY)).toBeLessThanOrEqual(1);
+  expect(Math.abs(chevronCenterY - alertCenterY)).toBeLessThanOrEqual(1);
+  const alertStateGeometry = await page.evaluate(() => {
+    const card = document.querySelector<HTMLElement>(".gauge-card")!;
+    const trigger = card.querySelector<HTMLElement>(".speed-alert-trigger")!;
+    const label = trigger.querySelector<HTMLElement>(".speed-alert-trigger-label")!;
+    const value = trigger.querySelector<HTMLElement>(".speed-alert-trigger-value")!;
+    const originalClassName = card.className;
+    const originalPressed = trigger.getAttribute("aria-pressed");
+    const originalValue = value.textContent;
+    const states = [
+      { name: "disabled", classes: [], value: "Tap to configure" },
+      { name: "configured", classes: ["is-alert-enabled"], value: "100 km/h" },
+      { name: "trap", classes: ["is-alert-enabled", "is-trap-active"], value: "Trap 500 m" },
+      { name: "near", classes: ["is-alert-enabled", "is-alert-near"], value: "Near 100 km/h" },
+      { name: "overspeed", classes: ["is-alert-enabled", "is-alert-over"], value: "Over 100 km/h" },
+    ];
+
+    try {
+      return states.map((state) => {
+        card.className = ["gauge-card", ...state.classes].join(" ");
+        trigger.setAttribute("aria-pressed", String(state.name !== "disabled"));
+        value.textContent = state.value;
+        const triggerRect = trigger.getBoundingClientRect();
+        const labelRect = label.getBoundingClientRect();
+        const valueRect = value.getBoundingClientRect();
+        return {
+          bottomSpace: triggerRect.bottom - valueRect.bottom,
+          labelValueGap: valueRect.top - labelRect.bottom,
+          name: state.name,
+          topSpace: labelRect.top - triggerRect.top,
+        };
+      });
+    } finally {
+      card.className = originalClassName;
+      if (originalPressed === null) trigger.removeAttribute("aria-pressed");
+      else trigger.setAttribute("aria-pressed", originalPressed);
+      value.textContent = originalValue;
+    }
+  });
+  for (const state of alertStateGeometry) {
+    expect(state.topSpace, state.name).toBeGreaterThanOrEqual(4);
+    expect(state.bottomSpace, state.name).toBeGreaterThanOrEqual(4);
+    expect(state.labelValueGap, state.name).toBeGreaterThanOrEqual(0);
+  }
   expect(Math.abs(geometry.gaugeStage.left - geometry.primaryStage.left)).toBeLessThanOrEqual(2.5);
   expect(Math.abs(geometry.gaugeStage.top - geometry.primaryStage.top)).toBeLessThanOrEqual(2.5);
   expect(Math.abs(geometry.primaryStage.right - geometry.gaugeStage.right)).toBeLessThanOrEqual(2.5);
@@ -600,6 +669,23 @@ test("Spanish labels fit the light short-landscape theme", async ({ page, contex
   }
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
+  const localizedAlertGeometry = await page.locator("#alertTrigger").evaluate((trigger) => {
+    const label = trigger.querySelector<HTMLElement>(".speed-alert-trigger-label")!;
+    const value = trigger.querySelector<HTMLElement>(".speed-alert-trigger-value")!;
+    const triggerRect = trigger.getBoundingClientRect();
+    const labelRect = label.getBoundingClientRect();
+    const valueRect = value.getBoundingClientRect();
+    return {
+      bottomSpace: triggerRect.bottom - valueRect.bottom,
+      labelValueGap: valueRect.top - labelRect.bottom,
+      topSpace: labelRect.top - triggerRect.top,
+      valueFits: value.scrollWidth <= value.clientWidth + 1,
+    };
+  });
+  expect(localizedAlertGeometry.topSpace).toBeGreaterThanOrEqual(4);
+  expect(localizedAlertGeometry.bottomSpace).toBeGreaterThanOrEqual(4);
+  expect(localizedAlertGeometry.labelValueGap).toBeGreaterThanOrEqual(0);
+  expect(localizedAlertGeometry.valueFits).toBe(true);
   await expect(page).toHaveScreenshot("speed-dashboard-es-light.png", {
     animations: "disabled",
     mask: [page.locator("canvas"), page.locator("iframe"), page.locator(".speed-globe")],
