@@ -83,7 +83,23 @@ test("speed dashboard contains a large dial without outer scrolling", async ({ p
     return {
       alertTrigger: rect(".speed-alert-trigger"),
       card: rect(".gauge-card"),
+      cardStyle: (() => {
+        const card = document.querySelector<HTMLElement>(".gauge-card")!;
+        const style = getComputedStyle(card);
+        return {
+          backgroundImage: style.backgroundImage,
+          borderTopWidth: style.borderTopWidth,
+          borderRadius: style.borderRadius,
+          boxShadow: style.boxShadow,
+          beforeContent: getComputedStyle(card, "::before").content,
+          afterContent: getComputedStyle(card, "::after").content,
+        };
+      })(),
       dial: rect(".gauge-stage-inner"),
+      gaugeStage: rect(".gauge-stage"),
+      primaryStage: rect(".speed-primary-stage"),
+      radiusRatio: getComputedStyle(document.querySelector<HTMLElement>(".gauge-stage")!)
+        .getPropertyValue("--analog-speedometer-radius-ratio").trim(),
       canvases,
       devicePixelRatio: window.devicePixelRatio,
       mainClientHeight: main.clientHeight,
@@ -100,6 +116,21 @@ test("speed dashboard contains a large dial without outer scrolling", async ({ p
   expect(Math.abs(
     (geometry.dial.top - geometry.card.top) - (geometry.card.bottom - geometry.dial.bottom)
   )).toBeLessThanOrEqual(3);
+  expect(geometry.cardStyle).toMatchObject({
+    backgroundImage: "none",
+    borderTopWidth: "0px",
+    borderRadius: "0px",
+    boxShadow: "none",
+  });
+  expect(["none", "normal"]).toContain(geometry.cardStyle.beforeContent);
+  expect(["none", "normal"]).toContain(geometry.cardStyle.afterContent);
+  expect(geometry.radiusRatio).toBe("0.46");
+  expect(Math.abs(geometry.gaugeStage.left - geometry.primaryStage.left)).toBeLessThanOrEqual(2.5);
+  expect(Math.abs(geometry.gaugeStage.top - geometry.primaryStage.top)).toBeLessThanOrEqual(2.5);
+  expect(Math.abs(geometry.primaryStage.right - geometry.gaugeStage.right)).toBeLessThanOrEqual(2.5);
+  expect(Math.abs(geometry.primaryStage.bottom - geometry.gaugeStage.bottom)).toBeLessThanOrEqual(2.5);
+  expect(Math.abs(geometry.dial.width - Math.min(geometry.gaugeStage.width, geometry.gaugeStage.height)))
+    .toBeLessThanOrEqual(1.5);
   const dialCenter = {
     x: geometry.dial.left + (geometry.dial.width / 2),
     y: geometry.dial.top + (geometry.dial.height / 2),
@@ -122,6 +153,10 @@ test("speed dashboard contains a large dial without outer scrolling", async ({ p
   await expect(page).toHaveScreenshot("speed-dashboard.png", {
     animations: "disabled",
     mask: [page.locator("canvas"), page.locator("iframe"), page.locator(".speed-globe")],
+    maxDiffPixelRatio: 0.01,
+  });
+  await expect(page.locator(".gauge-card")).toHaveScreenshot("speed-gauge-frameless.png", {
+    animations: "disabled",
     maxDiffPixelRatio: 0.01,
   });
 });
@@ -278,7 +313,10 @@ test("compact trip stats keep the live globe visible", async ({ page }, testInfo
 
   await expect.poll(() => page.locator(".speed-globe").evaluate((element) => (
     element.getBoundingClientRect().height
-  ))).toBeGreaterThanOrEqual(60);
+  ))).toBeGreaterThanOrEqual(176);
+  const initialGlobeHeight = await page.locator(".speed-globe").evaluate((element) => (
+    element.getBoundingClientRect().height
+  ));
 
   const geometry = await page.evaluate(() => {
     const rect = (element: Element) => element.getBoundingClientRect().toJSON();
@@ -306,6 +344,7 @@ test("compact trip stats keep the live globe visible", async ({ page }, testInfo
       documentScrollHeight: document.documentElement.scrollHeight,
       globe: rect(globe),
       globeCard: rect(globeCard),
+      globeHeader: rect(globeCard.querySelector<HTMLElement>(".globe-card-header")!),
       mainClientHeight: main.clientHeight,
       mainScrollHeight: main.scrollHeight,
       stats: rect(stats),
@@ -323,7 +362,11 @@ test("compact trip stats keep the live globe visible", async ({ page }, testInfo
     expect(card.unitFits).toBe(true);
   }
   expect(geometry.stats.bottom).toBeLessThanOrEqual(geometry.globeCard.top);
-  expect(geometry.globe.height).toBeGreaterThanOrEqual(60);
+  expect(geometry.globe.height).toBeGreaterThanOrEqual(176);
+  expect(Math.abs(geometry.globe.top - geometry.globeCard.top)).toBeLessThanOrEqual(1.5);
+  expect(Math.abs(geometry.globe.bottom - geometry.globeCard.bottom)).toBeLessThanOrEqual(1.5);
+  expect(geometry.globeHeader.top).toBeGreaterThanOrEqual(geometry.globe.top);
+  expect(geometry.globeHeader.bottom).toBeLessThanOrEqual(geometry.globe.bottom);
   expect(geometry.globe.bottom).toBeLessThanOrEqual(geometry.globeCard.bottom);
   expect(geometry.globe.bottom).toBeLessThanOrEqual(geometry.taskbar.top);
   expect(geometry.mainScrollHeight).toBeLessThanOrEqual(geometry.mainClientHeight + 1);
@@ -335,7 +378,9 @@ test("compact trip stats keep the live globe visible", async ({ page }, testInfo
   });
   await expect(page.locator(".speed-globe")).toBeVisible();
   expect(await page.locator(".speed-globe").evaluate((element) => element.getBoundingClientRect().height))
-    .toBeGreaterThanOrEqual(60);
+    .toBeGreaterThanOrEqual(176);
+  expect(await page.locator(".speed-globe").evaluate((element) => element.getBoundingClientRect().height))
+    .toBeCloseTo(initialGlobeHeight, 0);
 });
 
 test("trip metric units still update from Speed Alerts", async ({ page }, testInfo) => {
@@ -527,7 +572,7 @@ test("Spanish labels fit the light short-landscape theme", async ({ page, contex
   await expect(page.locator("#langToggle")).toHaveText("ES");
   await expect.poll(() => page.locator(".speed-globe").evaluate((element) => (
     element.getBoundingClientRect().height
-  ))).toBeGreaterThanOrEqual(60);
+  ))).toBeGreaterThanOrEqual(176);
   const localizedMetricRows = await page.locator(".metric-card").evaluateAll((cards) => cards.map((card) => {
     const label = card.querySelector<HTMLElement>(".metric-label")!;
     const unit = card.querySelector<HTMLElement>(".metric-unit")!;

@@ -25,6 +25,15 @@ export function clampNumber(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
+export function getResponsiveGlobeZoom(baseZoom, width, height) {
+  if (!Number.isFinite(baseZoom) || !Number.isFinite(width) || !Number.isFinite(height)) {
+    return baseZoom;
+  }
+  if (width <= 0 || height <= 0 || height >= width) return baseZoom;
+
+  return clampNumber(baseZoom + Math.log2(height / width), -1, baseZoom);
+}
+
 export function toRadians(degrees) {
   return degrees * (Math.PI / 180);
 }
@@ -362,6 +371,12 @@ export function createGlobeController({
     return Number.isFinite(state.lastKnownLatitude) && Number.isFinite(state.lastKnownLongitude);
   }
 
+  function getFittedGlobeZoom(baseZoom) {
+    if (!elements.globeMount) return baseZoom;
+    const rect = elements.globeMount.getBoundingClientRect();
+    return getResponsiveGlobeZoom(baseZoom, rect.width, rect.height);
+  }
+
   function getCurrentCoordinates() {
     if (hasLiveCoordinateFix()) {
       return {
@@ -395,6 +410,21 @@ export function createGlobeController({
     if (rect.width < 1 || rect.height < 1) return;
 
     state.globeMap.resize();
+
+    if (!state.globeReady || isGlobeFollowPaused() || typeof state.globeMap.setZoom !== "function") {
+      return;
+    }
+
+    const baseZoom = hasLiveCoordinateFix() || state.lastPoint
+      ? GLOBE_FOLLOW_ZOOM
+      : GLOBE_DEFAULT_ZOOM;
+    const fittedZoom = getFittedGlobeZoom(baseZoom);
+    const currentZoom = typeof state.globeMap.getZoom === "function"
+      ? state.globeMap.getZoom()
+      : Number.NaN;
+    if (!Number.isFinite(currentZoom) || Math.abs(currentZoom - fittedZoom) > 0.01) {
+      state.globeMap.setZoom(fittedZoom);
+    }
   }
 
   function clearGlobeSolarSyncFrame() {
@@ -514,13 +544,13 @@ export function createGlobeController({
     state.globeCenter = nextCenter;
 
     if (immediate) {
-      state.globeMap.jumpTo({ center: nextCenter, zoom: GLOBE_FOLLOW_ZOOM });
+      state.globeMap.jumpTo({ center: nextCenter, zoom: getFittedGlobeZoom(GLOBE_FOLLOW_ZOOM) });
       return;
     }
 
     state.globeMap.easeTo({
       center: nextCenter,
-      zoom: GLOBE_FOLLOW_ZOOM,
+      zoom: getFittedGlobeZoom(GLOBE_FOLLOW_ZOOM),
       duration: 1400,
       essential: true,
     });
@@ -576,7 +606,7 @@ export function createGlobeController({
 
     state.globeMap.easeTo({
       center: GLOBE_DEFAULT_CENTER as [number, number],
-      zoom: GLOBE_DEFAULT_ZOOM,
+      zoom: getFittedGlobeZoom(GLOBE_DEFAULT_ZOOM),
       duration: 900,
       essential: true,
     });
@@ -599,7 +629,7 @@ export function createGlobeController({
         attributionControl: false,
         interactive: true,
         center: GLOBE_DEFAULT_CENTER as [number, number],
-        zoom: GLOBE_DEFAULT_ZOOM,
+        zoom: getFittedGlobeZoom(GLOBE_DEFAULT_ZOOM),
         style: {
           version: 8,
           projection: {

@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAlertUiState, normalizeAlertDisplayValue } from '../../src/speed/alerts.js';
 import {
+  createGlobeController,
   getMovementThresholdM,
+  getResponsiveGlobeZoom,
   normalizePositionTimestamp,
 } from '../../src/speed/navigation.js';
 import {
@@ -22,6 +24,48 @@ import {
 describe('speed extracted helpers', () => {
   beforeEach(() => {
     localStorage.clear();
+  });
+
+  it('fits globe zoom to short rectangular mounts without enlarging square mounts', () => {
+    expect(getResponsiveGlobeZoom(0.8, 260, 195)).toBeCloseTo(0.38496, 4);
+    expect(getResponsiveGlobeZoom(0.15, 260, 195)).toBeCloseTo(-0.26504, 4);
+    expect(getResponsiveGlobeZoom(0.8, 220, 220)).toBe(0.8);
+    expect(getResponsiveGlobeZoom(0.8, 0, 195)).toBe(0.8);
+  });
+
+  it('refits an actively followed globe on resize but preserves paused user zoom', () => {
+    const globeMount = document.createElement('div');
+    globeMount.getBoundingClientRect = () => ({ width: 260, height: 195 });
+    const map = {
+      getZoom: vi.fn(() => 0.8),
+      resize: vi.fn(),
+      setZoom: vi.fn(),
+    };
+    const state = {
+      globeMap: map,
+      globeReady: true,
+      globeFollowPausedUntil: 0,
+      lastKnownLatitude: 40,
+      lastKnownLongitude: -74,
+      lastPoint: null,
+    };
+    const controller = createGlobeController({
+      state,
+      elements: { globeMount },
+      t: (key) => key,
+      renderStatusText: () => '',
+    });
+
+    controller.resizeGlobe();
+    expect(map.resize).toHaveBeenCalledTimes(1);
+    expect(map.setZoom).toHaveBeenCalledWith(expect.closeTo(0.38496, 4));
+
+    state.globeFollowPausedUntil = Date.now() + 10_000;
+    map.resize.mockClear();
+    map.setZoom.mockClear();
+    controller.resizeGlobe();
+    expect(map.resize).toHaveBeenCalledTimes(1);
+    expect(map.setZoom).not.toHaveBeenCalled();
   });
 
   it('normalizes alert display values to unit steps and limits', () => {

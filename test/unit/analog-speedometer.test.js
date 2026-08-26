@@ -87,6 +87,28 @@ describe("analog speedometer sizing", () => {
     speedometer.destroy();
   });
 
+  it("uses the default dial radius unless a contained larger radius is configured", () => {
+    const defaultFixture = createFixture();
+    setClientSize(defaultFixture.stageElement, 200, 200);
+    setClientSize(defaultFixture.dialCanvas, 200, 200);
+    const defaultContext = defaultFixture.dialCanvas.getContext("2d");
+
+    const defaultSpeedometer = createAnalogSpeedometer(defaultFixture);
+    expect(defaultContext.arc.mock.calls[0][2]).toBeCloseTo(84, 5);
+    defaultSpeedometer.destroy();
+
+    const expandedFixture = createFixture();
+    setClientSize(expandedFixture.stageElement, 200, 200);
+    setClientSize(expandedFixture.dialCanvas, 200, 200);
+    expandedFixture.stageElement.style.setProperty("--analog-speedometer-radius-ratio", "0.46");
+    const expandedContext = expandedFixture.dialCanvas.getContext("2d");
+
+    const expandedSpeedometer = createAnalogSpeedometer(expandedFixture);
+    expect(expandedContext.arc.mock.calls[0][2]).toBeCloseTo(92, 5);
+    expect(expandedContext.arc.mock.calls[0][2] * 2).toBeLessThanOrEqual(200);
+    expandedSpeedometer.destroy();
+  });
+
   it("coalesces real resize events and cancels pending work on destroy", () => {
     const fixture = createFixture();
     setClientSize(fixture.stageElement, 280, 280);

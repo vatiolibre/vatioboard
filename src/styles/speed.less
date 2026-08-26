@@ -2177,8 +2177,10 @@ html[data-vb-layout-profile="short-landscape"] .speed-main{
     min-height: 0;
     align-items: stretch;
     overflow: hidden;
-    padding-top: 8px;
-    padding-bottom: max(8px, calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));
+    padding-top: 4px;
+    padding-right: max(4px, env(safe-area-inset-right));
+    padding-bottom: max(4px, calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 4px));
+    padding-left: max(4px, env(safe-area-inset-left));
 }
 
 html[data-vb-layout-profile="short-landscape"] .notice{
@@ -2199,9 +2201,10 @@ html[data-vb-layout-profile="short-landscape"] .speed-stage{
 }
 
 html[data-vb-layout-profile="short-landscape"] .speed-stage{
+    position: relative;
     grid-template-columns: minmax(0, 1fr) minmax(210px, 260px);
     align-items: stretch;
-    gap: 8px;
+    gap: 6px;
 }
 
 html[data-vb-layout-profile="short-landscape"] .gauge-card{
@@ -2213,6 +2216,21 @@ html[data-vb-layout-profile="short-landscape"] .gauge-card{
     min-width: 0;
     min-height: 0;
     place-items: stretch;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    overflow: visible;
+}
+
+html[data-vb-layout-profile="short-landscape"] .gauge-card::before,
+html[data-vb-layout-profile="short-landscape"] .gauge-card::after{
+    content: none;
+}
+
+html[data-vb-layout-profile="short-landscape"] .gauge-card.is-alert-over{
+    border: 0;
+    box-shadow: none;
 }
 
 html[data-vb-layout-profile="short-landscape"] .speed-primary-stage{
@@ -2227,20 +2245,21 @@ html[data-vb-layout-profile="short-landscape"] .speed-primary-stage{
 
 html[data-vb-layout-profile="short-landscape"] .gauge-stage{
     position: absolute;
-    inset: 8px;
+    inset: 2px;
     width: auto;
     height: auto;
     aspect-ratio: auto;
+    --analog-speedometer-radius-ratio: 0.46;
 }
 
 html[data-vb-layout-profile="short-landscape"] .gauge-stage-inner{
     width: min(
-      calc(100cqw - 16px),
-      calc(100cqh - 16px)
+      calc(100cqw - 4px),
+      calc(100cqh - 4px)
     );
     height: min(
-      calc(100cqw - 16px),
-      calc(100cqh - 16px)
+      calc(100cqw - 4px),
+      calc(100cqh - 4px)
     );
     max-width: 100%;
     max-height: 100%;
@@ -2249,10 +2268,10 @@ html[data-vb-layout-profile="short-landscape"] .gauge-stage-inner{
 }
 
 html[data-vb-layout-profile="short-landscape"] .speed-side-panel{
-    grid-template-rows: auto minmax(112px, 1fr);
+    grid-template-rows: auto minmax(min(176px, 34dvh), 1fr);
     height: 100%;
     min-height: 0;
-    gap: 8px;
+    gap: 6px;
     overflow: hidden;
 }
 
@@ -2310,20 +2329,52 @@ html[data-vb-layout-profile="short-landscape"] .metric-card strong{
 }
 
 html[data-vb-layout-profile="short-landscape"] .globe-card{
-    grid-template-rows: auto minmax(60px, 1fr);
-    gap: 6px;
+    position: relative;
+    display: block;
     min-height: 0;
-    padding: 7px;
+    padding: 0;
     overflow: hidden;
 }
 
 html[data-vb-layout-profile="short-landscape"] .globe-card-header{
+    position: absolute;
+    top: 7px;
+    left: 7px;
+    z-index: 4;
     gap: 2px;
+    max-width: calc(100% - 14px);
+    padding: 5px 7px;
+    border: 1px solid color-mix(in srgb, var(--speed-panel-border) 88%, transparent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--speed-surface-strong) 84%, transparent);
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
 }
 
 html[data-vb-layout-profile="short-landscape"] .speed-globe{
     height: 100%;
-    min-height: 60px;
+    min-height: min(176px, 34dvh);
     max-height: none;
     aspect-ratio: auto;
+    border-radius: inherit;
+}
+
+html[data-vb-layout-profile="short-landscape"] .speed-audio-banner,
+html[data-vb-layout-profile="short-landscape"] .notice{
+    position: absolute;
+    z-index: 6;
+    width: min(480px, calc(100% - 8px));
+    margin: 0;
+}
+
+html[data-vb-layout-profile="short-landscape"] .speed-audio-banner{
+    bottom: 4px;
+    left: 4px;
+}
+
+html[data-vb-layout-profile="short-landscape"] .notice{
+    top: 4px;
+    left: 4px;
+    max-width: 320px;
 }

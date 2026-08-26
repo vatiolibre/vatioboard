@@ -41,6 +41,12 @@ function isFiniteNumber(value: unknown): value is number {
   return Number.isFinite(value);
 }
 
+function getCssNumber(element: Element, name: string, fallback: number, min: number, max: number): number {
+  const parsed = Number.parseFloat(getComputedStyle(element).getPropertyValue(name));
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(parsed, min), max);
+}
+
 function getElementSquareSize(element: HTMLElement): number {
   const clientWidth = Number(element.clientWidth);
   const clientHeight = Number(element.clientHeight);
@@ -137,7 +143,14 @@ export function createAnalogSpeedometer(options?: AnalogSpeedometerOptions | nul
 
     const size = canvasSize;
     const center = size / 2;
-    const radius = size * 0.42;
+    const radiusRatio = getCssNumber(
+      styleSourceElement,
+      "--analog-speedometer-radius-ratio",
+      0.42,
+      0.35,
+      0.47,
+    );
+    const radius = size * radiusRatio;
     const ringRadius = radius * 0.84;
     const startAngle = Math.PI * 0.75;
     const endAngle = Math.PI * 2.25;
