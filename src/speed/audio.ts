@@ -13,6 +13,7 @@ import {
   primeAudioElement,
   silenceAudioElement,
 } from "../shared/audio-channel-retainer.js";
+import { createDrivingAudioCueController } from "../shared/driving-audio-cues.js";
 import {
   acquireBackgroundAudioLease,
   getBackgroundKeepAliveAudio,
@@ -53,15 +54,10 @@ export function createSpeedAudioController({
   trapAlertAudio.preload = "auto";
   trapAlertAudio.playsInline = true;
 
-  const alertAudioEnabledAudio = new Audio(TRAP_SOUND_URL);
-  alertAudioEnabledAudio.loop = false;
-  alertAudioEnabledAudio.preload = "auto";
-  alertAudioEnabledAudio.playsInline = true;
-
-  const startRecordingAudio = new Audio(START_RECORDING_SOUND_URL);
-  startRecordingAudio.loop = false;
-  startRecordingAudio.preload = "auto";
-  startRecordingAudio.playsInline = true;
+  const cueController = createDrivingAudioCueController({
+    alertsArmedUrl: TRAP_SOUND_URL,
+    recordingStartedUrl: START_RECORDING_SOUND_URL,
+  });
 
   const backgroundKeepAliveAudio = getBackgroundKeepAliveAudio();
 
@@ -689,27 +685,12 @@ export function createSpeedAudioController({
     return true;
   }
 
-  function playOneShotAudio(audio) {
-    try {
-      audio.pause();
-      audio.currentTime = 0;
-      activateAudioElement(audio);
-      const playPromise = audio.play();
-      if (playPromise && typeof playPromise.catch === "function") {
-        playPromise.catch(() => {});
-      }
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
   function playAlertAudioEnabledSound() {
-    return playOneShotAudio(alertAudioEnabledAudio);
+    return cueController.playAlertsArmedCue();
   }
 
   function playStartRecordingSound() {
-    return playOneShotAudio(startRecordingAudio);
+    return cueController.playRecordingStartedCue();
   }
 
   function stopAudioElementPlayback(audio) {
@@ -1179,6 +1160,7 @@ export function createSpeedAudioController({
   }
 
   function dispose() {
+    cueController.destroy();
     releaseBackgroundAudioLease(SPEED_RECORDING_BACKGROUND_AUDIO_LEASE);
     releaseBackgroundAudioLease(SPEED_BACKGROUND_AUDIO_LEASE);
     clearMediaSessionClient(SPEED_MEDIA_SESSION_OWNER);

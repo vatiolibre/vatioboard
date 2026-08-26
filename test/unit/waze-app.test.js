@@ -68,6 +68,7 @@ function createRoot() {
 
 function createContext({
   appRuntime = null,
+  audioCueController = null,
   driveRecordingService = null,
   drivingAlertService = null,
   gpsService = null,
@@ -80,6 +81,7 @@ function createContext({
     driveRecordingService,
     gpsService,
     appRuntime,
+    audioCueController,
     translate: (_key, fallback) => fallback,
   };
 }
@@ -158,6 +160,137 @@ describe("Waze route app", () => {
     context.cleanup.run();
   });
 
+  it("arms enabled alert audio and plays its confirmation cue from an unmute gesture", async () => {
+    let snapshot = makeAlertSnapshot({
+      preferences: {
+        unit: "mph",
+        alertEnabled: true,
+        alertLimitMs: 30,
+        alertSoundEnabled: true,
+        audioMuted: true,
+        trapAlertEnabled: false,
+        trapSoundEnabled: true,
+      },
+      audio: {
+        muted: true,
+        primed: false,
+        backgroundAudioArmed: false,
+      },
+    });
+    const setMuted = vi.fn((muted) => {
+      snapshot = {
+        ...snapshot,
+        preferences: { ...snapshot.preferences, audioMuted: muted },
+        audio: { ...snapshot.audio, muted },
+      };
+      return snapshot;
+    });
+    const primeAudioFromUserGesture = vi.fn(async () => {
+      snapshot = {
+        ...snapshot,
+        audio: {
+          ...snapshot.audio,
+          muted: false,
+          primed: true,
+          backgroundAudioArmed: true,
+        },
+      };
+      return true;
+    });
+    const playAlertsArmedCue = vi.fn(() => true);
+    const audioCueController = {
+      destroy: vi.fn(),
+      getSnapshot: vi.fn(() => ({
+        alertsArmedBlocked: false,
+        recordingStartedBlocked: false,
+      })),
+      playAlertsArmedCue,
+      playRecordingStartedCue: vi.fn(() => true),
+    };
+    const service = {
+      getSnapshot: vi.fn(() => snapshot),
+      start: vi.fn(() => snapshot),
+      stop: vi.fn(),
+      subscribe: vi.fn(() => vi.fn()),
+      setMuted,
+      primeAudioFromUserGesture,
+    };
+    const context = createContext({ drivingAlertService: service, audioCueController });
+    const controller = createWazeRouteController(context);
+
+    context.root.querySelector("#quickAudioToggle").click();
+    expect(primeAudioFromUserGesture).toHaveBeenCalledTimes(1);
+    expect(playAlertsArmedCue).toHaveBeenCalledTimes(1);
+    expect(context.root.querySelector("#quickAudioToggle").dataset.audioState).toBe("arming");
+    await vi.waitFor(() => {
+      expect(context.root.querySelector("#quickAudioToggle").dataset.audioState).toBe("armed");
+    });
+
+    controller.destroy();
+    expect(audioCueController.destroy).not.toHaveBeenCalled();
+    context.cleanup.run();
+  });
+
+  it("rearms an enabled unmuted session instead of muting it on the first audio tap", async () => {
+    let snapshot = makeAlertSnapshot({
+      preferences: {
+        unit: "mph",
+        alertEnabled: true,
+        alertLimitMs: 30,
+        alertSoundEnabled: true,
+        audioMuted: false,
+        trapAlertEnabled: false,
+        trapSoundEnabled: true,
+      },
+      audio: {
+        muted: false,
+        primed: false,
+        backgroundAudioArmed: false,
+      },
+    });
+    const setMuted = vi.fn();
+    const primeAudioFromUserGesture = vi.fn(async () => {
+      snapshot = {
+        ...snapshot,
+        audio: { ...snapshot.audio, primed: true, backgroundAudioArmed: true },
+      };
+      return true;
+    });
+    const playAlertsArmedCue = vi.fn(() => true);
+    const context = createContext({
+      audioCueController: {
+        destroy: vi.fn(),
+        getSnapshot: vi.fn(() => ({
+          alertsArmedBlocked: false,
+          recordingStartedBlocked: false,
+        })),
+        playAlertsArmedCue,
+        playRecordingStartedCue: vi.fn(() => true),
+      },
+      drivingAlertService: {
+        getSnapshot: vi.fn(() => snapshot),
+        start: vi.fn(() => snapshot),
+        stop: vi.fn(),
+        subscribe: vi.fn(() => vi.fn()),
+        setMuted,
+        primeAudioFromUserGesture,
+      },
+    });
+    const controller = createWazeRouteController(context);
+    const audioToggle = context.root.querySelector("#quickAudioToggle");
+
+    expect(audioToggle.dataset.audioState).toBe("unarmed");
+    expect(audioToggle.getAttribute("aria-label")).toBe("Enable driving alerts");
+    audioToggle.click();
+    expect(setMuted).not.toHaveBeenCalled();
+    expect(primeAudioFromUserGesture).toHaveBeenCalledTimes(1);
+    expect(playAlertsArmedCue).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(audioToggle.dataset.audioState).toBe("armed"));
+
+    controller.destroy();
+    context.cleanup.run();
+  });
+
   it("starts, pauses, resumes, and stops a shared route recording", async () => {
     let snapshot = { state: "idle", sampleCount: 0 };
     let listener = () => {};
@@ -179,7 +312,17 @@ describe("Waze route app", () => {
       resumeRecording: vi.fn(() => update("recording")),
       stopRecording: vi.fn(async () => update("idle")),
     };
-    const context = createContext({ driveRecordingService: service });
+    const playRecordingStartedCue = vi.fn(() => true);
+    const audioCueController = {
+      destroy: vi.fn(),
+      getSnapshot: vi.fn(() => ({
+        alertsArmedBlocked: false,
+        recordingStartedBlocked: false,
+      })),
+      playAlertsArmedCue: vi.fn(() => true),
+      playRecordingStartedCue,
+    };
+    const context = createContext({ driveRecordingService: service, audioCueController });
     const controller = createWazeRouteController(context);
     const toggle = context.root.querySelector("#toggleRecording");
     const stop = context.root.querySelector("#stopRecording");
@@ -187,6 +330,7 @@ describe("Waze route app", () => {
     expect(stop.hidden).toBe(true);
     toggle.click();
     expect(service.startRecording).toHaveBeenCalledWith({ source: "waze" });
+    expect(playRecordingStartedCue).toHaveBeenCalledTimes(1);
     expect(toggle.getAttribute("aria-label")).toBe("Pause recording");
     expect(stop.hidden).toBe(false);
     toggle.click();
@@ -194,6 +338,7 @@ describe("Waze route app", () => {
     expect(toggle.getAttribute("aria-label")).toBe("Resume recording");
     toggle.click();
     expect(service.resumeRecording).toHaveBeenCalledTimes(1);
+    expect(playRecordingStartedCue).toHaveBeenCalledTimes(1);
     stop.click();
     await vi.waitFor(() => expect(stop.hidden).toBe(true));
     expect(service.stopRecording).toHaveBeenCalledTimes(1);

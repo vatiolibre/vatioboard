@@ -2,6 +2,7 @@ import wazeTemplate from "./waze-template.js";
 import { createRouteView } from "../../app/views/route-view.js";
 import type { MountedView, RouteContext, RouteMountContext } from "../../types/route";
 import type { VatioAppRuntime } from "../../app-platform/types";
+import type { DrivingAudioCueController } from "../../shared/driving-audio-cues";
 
 export const WAZE_APP_ID = "vatio.waze";
 
@@ -18,6 +19,7 @@ export type WazeRouteMountContext = RouteMountContext & {
   drivingAlertService?: RouteContext["drivingAlertService"] | null;
   translate?: ((key: string, fallback?: string) => string) | null;
   logger?: VatioAppRuntime["logger"] | null;
+  audioCueController?: DrivingAudioCueController | null;
 };
 
 function asWazeRouteModule(module: unknown): WazeRouteModule {
