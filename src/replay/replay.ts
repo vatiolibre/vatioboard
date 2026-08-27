@@ -7,7 +7,9 @@ import { applyTranslations, getLang, t, toggleLang } from '../i18n.js';
 import {
   IconClose,
   IconDistance,
+  IconHistory,
   IconPause,
+  IconPages,
   IconPlay,
   IconRestart,
   IconTime,
@@ -61,6 +63,11 @@ const REPLAY_PLAYBACK_RATE_LEGACY_KEY = 'vatio_replay_playback_rate_v1';
 const REPLAY_PLAYBACK_RATE_SETTING_KEY = 'playbackRate';
 const REPLAY_PLAYBACK_RATES = new Set([1, 4, 10, 100, 1000]);
 const GRAPH_SCRUB_INTENT_THRESHOLD_PX = 8;
+const IconCharts = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M4 19V5M4 19h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+    <path d="m7 15 3-4 3 2 4-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  </svg>`;
 
 type AnyRecord = Record<string, any>;
 type RouteLifecycle = {
@@ -106,6 +113,18 @@ export function getReplayElements(root: any): AnyRecord {
     replayRestartIcon: queryOne(root, '#replayRestartIcon'),
     replayApproach: queryOne(root, '#replayApproach'),
     replayApproachIcon: queryOne(root, '#replayApproachIcon'),
+    replayPanelActions: queryAll(root, '[data-replay-open-panel]'),
+    replayPanelCloseButtons: queryAll(root, '[data-replay-close-panel]'),
+    replayPanels: queryAll(root, '[data-replay-panel]'),
+    replayPanelBackdrop: queryOne(root, '#replayPanelBackdrop'),
+    replayMapActions: queryAll(root, '[data-replay-action]'),
+    replayRateToggle: queryOne(root, '#replayRateToggle'),
+    replayMapHudRecorded: queryOne(root, '#replayHudRecorded'),
+    replayMapHudRoute: queryOne(root, '#replayHudRoute'),
+    replayMapHudSpeed: queryOne(root, '#replayHudSpeed'),
+    replayMapStatus: queryOne(root, '#replayMapStatus'),
+    replayMapStatusText: queryOne(root, '#replayMapStatusText'),
+    replayMapRetry: queryOne(root, '#replayMapRetry'),
     replayProgress: queryOne(root, '#replayProgress'),
     replayElapsedValue: queryOne(root, '#replayElapsedValue'),
     replayDurationValue: queryOne(root, '#replayDurationValue'),
@@ -181,17 +200,29 @@ function createInactiveReplayChartsController(): AnyRecord {
 
 function createInactiveReplayMapController(): AnyRecord {
   return {
+    applySession() {
+      return Promise.resolve({ status: 'idle', sessionId: null, routeReady: false, error: null });
+    },
     cancelApproachAnimation() {},
     destroy() {},
+    getSnapshot() {
+      return { status: 'idle', sessionId: null, routeReady: false, error: null };
+    },
     init() {
       return Promise.resolve();
     },
     renderPlaybackFrame() {},
     resize() {},
+    retry() {
+      return Promise.resolve({ status: 'idle', sessionId: null, routeReady: false, error: null });
+    },
     runApproachAnimation() {
       return Promise.resolve();
     },
     setSession() {},
+    subscribe() {
+      return () => {};
+    },
   };
 }
 
@@ -313,6 +344,14 @@ const state: AnyRecord = {
   initialized: false,
   introPlayed: false,
   expandedGraphOpen: false,
+  activePanel: null,
+  rateMenuOpen: false,
+  mapSnapshot: {
+    status: 'idle',
+    sessionId: null,
+    routeReady: false,
+    error: null,
+  },
   expandedGraphFilterStartRatio: 0,
   expandedGraphFilterEndRatio: 1,
   expandedGraphPointerId: null,
@@ -324,11 +363,11 @@ const state: AnyRecord = {
 let replaySelectionPromise: Promise<any> = Promise.resolve();
 let replaySelectionKickoffPromise: Promise<any> = Promise.resolve();
 let replaySelectionRequestVersion = 0;
-let hasHydratedInitialSelection = false;
 let introApproachPromise: Promise<any> | null = null;
 let introApproachToken = 0;
 let recordingsDetailMeasureFrame: number | null = null;
 let pendingReplayRecoveryRecordingId: string | null = null;
+let replayPanelReturnFocus: HTMLElement | null = null;
 
 refreshDerivedState();
 
@@ -572,11 +611,96 @@ function renderSessionState() {
     state.sessionSource === 'active' ? t('replaySessionActive') : t('replaySessionSaved');
 }
 
+function renderReplayMapHud(sample = null) {
+  setElementText(
+    elements.replayMapHudRecorded,
+    state.session ? formatDateTime(state.summary.endedAtMs ?? state.summary.startedAtMs) : '—'
+  );
+  setElementText(elements.replayMapHudRoute, state.summary.routeLabel || '—');
+  setElementText(elements.replayMapHudSpeed, formatSpeed(sample?.speedMs));
+}
+
+function renderReplayMapStatus() {
+  if (!elements.replayMapStatus) return;
+  const snapshot = state.mapSnapshot || {};
+  let message = '';
+  let showRetry = false;
+
+  if (state.session && snapshot.routeReady === false && snapshot.status !== 'loading') {
+    message = t('replayMapEmptyRoute');
+  } else if (snapshot.status === 'loading') {
+    message = t('replayMapLoading');
+  } else if (snapshot.status === 'degraded') {
+    message = t('replayMapDegraded');
+    showRetry = true;
+  } else if (snapshot.status === 'error') {
+    message = t('replayMapError');
+    showRetry = true;
+  }
+
+  elements.replayMapStatus.dataset.status = snapshot.status || 'idle';
+  elements.replayMapStatus.hidden = !message;
+  setElementText(elements.replayMapStatusText, message);
+  if (elements.replayMapRetry) elements.replayMapRetry.hidden = !showRetry;
+}
+
+function renderReplayPanels() {
+  const activePanel = state.activePanel;
+  for (const panel of elements.replayPanels) {
+    panel.dataset.panelOpen = String(panel.dataset.replayPanel === activePanel);
+  }
+  for (const button of elements.replayPanelActions) {
+    button.setAttribute('aria-expanded', String(button.dataset.replayOpenPanel === activePanel));
+  }
+  if (elements.replayPanelBackdrop) {
+    elements.replayPanelBackdrop.hidden = !activePanel || activePanel === 'charts';
+  }
+  document.body.classList.toggle('replay-panel-open', Boolean(activePanel));
+}
+
+function openReplayPanel(panelName) {
+  if (!['recordings', 'charts', 'details'].includes(panelName)) return;
+  replayPanelReturnFocus = document.activeElement instanceof HTMLElement
+    ? document.activeElement
+    : null;
+  state.activePanel = panelName;
+  if (panelName === 'charts') {
+    openExpandedGraph();
+    queueMicrotask(() => focusElement(elements.closeReplayGraphSheet));
+  } else {
+    state.expandedGraphOpen = false;
+    renderExpandedGraphSheet();
+    renderReplayPanels();
+    queueMicrotask(() => {
+      const panel = elements.replayPanels.find((candidate) => candidate.dataset.replayPanel === panelName);
+      focusElement(panel?.querySelector('[data-replay-close-panel]'));
+    });
+  }
+}
+
+function closeReplayPanel() {
+  state.activePanel = null;
+  state.expandedGraphOpen = false;
+  renderExpandedGraphSheet();
+  renderReplayPanels();
+  const returnFocus = replayPanelReturnFocus;
+  replayPanelReturnFocus = null;
+  if (returnFocus?.isConnected) queueMicrotask(() => focusElement(returnFocus));
+}
+
 function renderRateButtons() {
   for (const button of elements.replayRateButtons) {
     const isActive = Number(button.dataset.rate) === state.playbackRate;
     button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
   }
+  if (elements.replayRateToggle) {
+    elements.replayRateToggle.textContent = `${state.playbackRate}×`;
+    elements.replayRateToggle.setAttribute('aria-expanded', String(state.rateMenuOpen));
+  }
+  elements.replayMap?.closest?.('.replay-map-card')?.classList.toggle(
+    'replay-rate-menu-open',
+    state.rateMenuOpen
+  );
 }
 
 function normalizePlaybackRate(value, fallback = null) {
@@ -709,6 +833,9 @@ function renderExpandedGraphSheet() {
     elements.replayGraphSheet.hidden = !shouldOpen;
   }
   document.body.classList.toggle('replay-graph-sheet-open', shouldOpen);
+  if (shouldOpen) state.activePanel = 'charts';
+  else if (state.activePanel === 'charts') state.activePanel = null;
+  renderReplayPanels();
 
   if (!shouldOpen) {
     chartsController.setDetailOpen(false);
@@ -747,6 +874,13 @@ function renderPlaybackButtons() {
   elements.replayPlayPause.setAttribute('aria-label', label);
   elements.replayPlayPause.title = label;
   elements.replayPlayPause.disabled = !hasSession;
+  for (const button of elements.replayMapActions.filter((candidate) => candidate.dataset.replayAction === 'play')) {
+    button.querySelector('.replay-action-icon').innerHTML =
+      state.playing || state.playPending ? IconPause : IconPlay;
+    button.setAttribute('aria-label', label);
+    button.title = label;
+    button.disabled = !hasSession;
+  }
 }
 
 function renderActionIcons() {
@@ -768,6 +902,26 @@ function renderActionIcons() {
     elements.replayApproach.setAttribute('aria-label', approachLabel);
     elements.replayApproach.title = approachLabel;
     elements.replayApproach.disabled = !hasSession;
+  }
+  for (const button of elements.replayMapActions) {
+    const icon = button.querySelector('.replay-action-icon');
+    if (!icon) continue;
+    if (button.dataset.replayAction === 'restart') icon.innerHTML = IconRestart;
+    if (button.dataset.replayAction === 'overview') icon.innerHTML = IconWorld;
+    button.disabled = !hasSession;
+  }
+  const panelIcons = {
+    recordings: IconHistory,
+    charts: IconCharts,
+    details: IconPages,
+  };
+  for (const button of elements.replayPanelActions) {
+    const icon = button.querySelector('.btn-icon');
+    if (icon) icon.innerHTML = panelIcons[button.dataset.replayOpenPanel] || '';
+  }
+  for (const button of elements.replayPanelCloseButtons) {
+    const icon = button.querySelector('.btn-icon');
+    if (icon) icon.innerHTML = IconClose;
   }
 }
 
@@ -792,6 +946,7 @@ function renderStaticSummary() {
   } else {
     setElementText(elements.replayAltitudeRangeValue, '—');
   }
+  renderReplayMapHud(getReplaySampleAtElapsedMs(state.session, state.elapsedMs));
 }
 
 function renderHighlights() {
@@ -995,24 +1150,26 @@ function renderPlaybackProgressScale(sample) {
 function renderPlaybackFrame() {
   if (!state.session) {
     updateGraphPlayback(null);
+    renderReplayMapHud(null);
     return;
   }
 
   const sample = getReplaySampleAtElapsedMs(state.session, state.elapsedMs);
   if (!sample) {
     updateGraphPlayback(null);
+    renderReplayMapHud(null);
     return;
   }
 
-  const playedCoordinates = getReplayPlayedCoordinates(state.session, state.elapsedMs);
   renderPlaybackProgressScale(sample);
   setElementText(elements.replayElapsedValue, getPlaybackProgressCurrentLabel(sample));
   setElementText(elements.replayDurationValue, getPlaybackProgressTotalLabel());
   updateGraphPlayback(sample);
+  renderReplayMapHud(sample);
 
   mapController.renderPlaybackFrame({
     sample,
-    playedCoordinates,
+    playedCoordinates: () => getReplayPlayedCoordinates(state.session, state.elapsedMs),
   });
 }
 
@@ -1066,6 +1223,12 @@ function createReplayMapRouteController(routeElements = elements) {
   mapController = createReplayMapController({
     element: routeElements.replayMap,
     session: state.session,
+    fitOnFirstLoad: true,
+    approachMode: 'overview',
+    onStatusChange(snapshot) {
+      state.mapSnapshot = snapshot;
+      renderReplayMapStatus();
+    },
   });
 }
 
@@ -1128,6 +1291,8 @@ function syncMountedReplayRouteUi() {
   renderRecordings();
   renderStaticSummary();
   renderHighlights();
+  renderReplayPanels();
+  renderReplayMapStatus();
   renderGraphs();
   renderPlaybackFrame();
   queueRecordingDetailOverflowSync();
@@ -1135,6 +1300,20 @@ function syncMountedReplayRouteUi() {
   initReplayMapForSession();
   mapController.setSession(state.session, { resetCamera: false });
   mapController.resize();
+}
+
+function getReplaySelectionFingerprint(session) {
+  const samples = Array.isArray(session?.samples) ? session.samples : [];
+  const first = samples[0];
+  const last = samples[samples.length - 1];
+  return [
+    session?.id ?? '',
+    samples.length,
+    first?.timestampMs ?? '',
+    last?.timestampMs ?? '',
+    last?.latitude ?? '',
+    last?.longitude ?? '',
+  ].join(':');
 }
 
 async function mountReplayController(routeContext: AnyRecord = {}) {
@@ -1188,7 +1367,7 @@ function unmountReplayController() {
   const route = activeReplayRoute;
   stopPlayback();
   cancelReplayApproach({ markPlayed: true });
-  closeExpandedGraph();
+  closeReplayPanel();
   if (recordingsDetailMeasureFrame !== null) {
     window.cancelAnimationFrame(recordingsDetailMeasureFrame);
     recordingsDetailMeasureFrame = null;
@@ -1197,6 +1376,7 @@ function unmountReplayController() {
   replayRouteGeneration += 1;
   replaySelectionRequestVersion += 1;
   document.body.classList.remove('replay-graph-sheet-open');
+  document.body.classList.remove('replay-panel-open');
   destroyReplayRouteResources(route);
   if (route?.ownsCleanup) {
     route.cleanup?.run?.();
@@ -1241,12 +1421,6 @@ async function startPlayback() {
 
   state.playPending = true;
   renderPlaybackButtons();
-
-  if (introApproachPromise) {
-    await introApproachPromise;
-  } else if (!state.introPlayed) {
-    await runReplayApproach();
-  }
 
   if (!state.playPending) return;
 
@@ -1298,16 +1472,22 @@ function scrubExpandedGraph(metricKey, clientX) {
 
 function openExpandedGraph() {
   if (!state.session) return;
+  state.activePanel = 'charts';
   state.expandedGraphOpen = true;
   renderGraphs();
 }
 
 function closeExpandedGraph() {
+  if (state.activePanel === 'charts') state.activePanel = null;
   state.expandedGraphOpen = false;
   state.expandedGraphPointerId = null;
   state.expandedGraphPointerScrubKey = '';
   state.expandedGraphScrubActive = false;
   renderExpandedGraphSheet();
+  renderReplayPanels();
+  const returnFocus = replayPanelReturnFocus;
+  replayPanelReturnFocus = null;
+  if (returnFocus?.isConnected) queueMicrotask(() => focusElement(returnFocus));
 }
 
 function setExpandedGraphRange(startRatio, endRatio) {
@@ -1357,16 +1537,23 @@ function renderSessionStateView() {
 }
 
 function applyReplaySelectionState(selection) {
+  const previousFingerprint = getReplaySelectionFingerprint(state.session);
+  const nextFingerprint = getReplaySelectionFingerprint(selection.session);
+  const sameTelemetry = Boolean(nextFingerprint && nextFingerprint === previousFingerprint);
   state.records = selection.records;
   state.sessionSource = selection.source;
   state.session = selection.session;
   state.selectedRecordingId = selection.selectedRecordingId ?? selection.session?.id ?? null;
-  state.elapsedMs = 0;
-  state.introPlayed = false;
-  state.expandedGraphOpen = false;
-  state.expandedGraphPointerId = null;
-  state.expandedGraphPointerScrubKey = '';
-  state.expandedGraphScrubActive = false;
+  if (!sameTelemetry) {
+    stopPlayback();
+    state.elapsedMs = 0;
+    state.introPlayed = true;
+    state.activePanel = null;
+    state.expandedGraphOpen = false;
+    state.expandedGraphPointerId = null;
+    state.expandedGraphPointerScrubKey = '';
+    state.expandedGraphScrubActive = false;
+  }
   refreshDerivedState();
 
   renderSessionStateView();
@@ -1379,12 +1566,12 @@ function applyReplaySelectionState(selection) {
   renderActionIcons();
   renderAxisButtons();
   renderPlaybackFrame();
+  renderReplayPanels();
 
-  initReplayMapForSession();
-  mapController.setSession(state.session, {
-    resetCamera: hasHydratedInitialSelection,
+  void mapController.applySession(state.session, {
+    resetCamera: !sameTelemetry,
+    preservePlayback: sameTelemetry,
   });
-  hasHydratedInitialSelection = true;
 }
 
 async function refreshReplaySelectionTelemetry({
@@ -1415,7 +1602,8 @@ async function applyReplaySelection(recordingId, { requestId = replaySelectionRe
     typeof requestedRecordingId === 'string' && requestedRecordingId.trim()
       ? requestedRecordingId.trim()
       : null;
-  const selection = await getReplaySelection(requestedRecordingId);
+  let telemetryRestoreAttempted = false;
+  let selection = await getReplaySelection(requestedRecordingId);
   if (!isLatestReplaySelectionRequest(requestId)) return false;
 
   const requestedRecordExists = normalizedRequestedRecordingId
@@ -1440,10 +1628,27 @@ async function applyReplaySelection(recordingId, { requestId = replaySelectionRe
 
   pendingReplayRecoveryRecordingId = null;
   const restoreRecordingId = normalizedRequestedRecordingId ?? selection.session?.id ?? null;
+  if (restoreRecordingId && selection.session && !isReplayPayloadComplete(selection.session)) {
+    telemetryRestoreAttempted = true;
+    state.mapSnapshot = {
+      status: 'loading',
+      sessionId: restoreRecordingId,
+      routeReady: false,
+      error: null,
+    };
+    renderReplayMapStatus();
+    const restored = await ensureReplayTelemetry(restoreRecordingId, { session: selection.session });
+    if (!isLatestReplaySelectionRequest(requestId)) return false;
+    if (restored?.restored) {
+      selection = await getReplaySelection(restoreRecordingId);
+      if (!isLatestReplaySelectionRequest(requestId)) return false;
+    }
+  }
   applyReplaySelectionState(selection);
 
   if (
     restoreRecordingId
+    && !telemetryRestoreAttempted
     && !(selection.session && isReplayPayloadComplete(selection.session))
   ) {
     void refreshReplaySelectionTelemetry({
@@ -1509,6 +1714,7 @@ function syncLanguage() {
   renderHighlights();
   renderGraphs();
   renderPlaybackFrame();
+  renderReplayMapStatus();
 }
 
 function bindEvents({
@@ -1549,15 +1755,44 @@ function bindEvents({
     });
   }
 
+  for (const button of routeElements.replayPanelActions) {
+    cleanup.addEventListener(button, 'click', () => {
+      const panelName = button.dataset.replayOpenPanel;
+      if (state.activePanel === panelName) closeReplayPanel();
+      else openReplayPanel(panelName);
+    });
+  }
+
+  for (const button of routeElements.replayPanelCloseButtons) {
+    cleanup.addEventListener(button, 'click', closeReplayPanel);
+  }
+  cleanup.addEventListener(routeElements.replayPanelBackdrop, 'click', closeReplayPanel);
+
   cleanup.addEventListener(routeElements.replayPlayPause, 'click', togglePlayback);
+
+  for (const button of routeElements.replayMapActions) {
+    cleanup.addEventListener(button, 'click', () => {
+      if (button.dataset.replayAction === 'play') togglePlayback();
+      if (button.dataset.replayAction === 'restart') resetPlayback();
+      if (button.dataset.replayAction === 'overview') void runReplayApproach({ force: true });
+    });
+  }
 
   cleanup.addEventListener(routeElements.replayRestart, 'click', () => {
     resetPlayback();
   });
 
-  cleanup.addEventListener(routeElements.replayApproach, 'click', async () => {
-    stopPlayback();
-    await runReplayApproach({ force: true });
+  cleanup.addEventListener(routeElements.replayApproach, 'click', () => {
+    void runReplayApproach({ force: true });
+  });
+
+  cleanup.addEventListener(routeElements.replayMapRetry, 'click', () => {
+    void mapController.retry();
+  });
+
+  cleanup.addEventListener(routeElements.replayRateToggle, 'click', () => {
+    state.rateMenuOpen = !state.rateMenuOpen;
+    renderRateButtons();
   });
 
   cleanup.addEventListener(routeElements.closeReplayGraphSheet, 'click', closeExpandedGraph);
@@ -1614,30 +1849,16 @@ function bindEvents({
     const button = event.target.closest('button[data-recording-id]');
     if (!button) return;
     stopPlayback();
-    const nextRecord = state.records.find((record) => record.id === button.dataset.recordingId) ?? null;
-    if (nextRecord?.session && !isReplayPayloadComplete(nextRecord.session)) {
-      replaySelectionKickoffPromise = new Promise<void>((resolve) => {
-        let settled = false;
-        const resolveOnce = () => {
-          if (settled) return;
-          settled = true;
-          resolve();
-        };
-
-        void ensureReplayTelemetry(button.dataset.recordingId, {
-          session: nextRecord.session,
-          onPayloadDownloadStart: resolveOnce,
-        }).finally(resolveOnce);
-      });
-    } else {
-      replaySelectionKickoffPromise = Promise.resolve();
-    }
+    replaySelectionKickoffPromise = Promise.resolve();
     await requestReplaySelection(button.dataset.recordingId);
+    closeReplayPanel();
   });
 
   for (const button of routeElements.replayRateButtons) {
     cleanup.addEventListener(button, 'click', () => {
       setPlaybackRate(Number(button.dataset.rate));
+      state.rateMenuOpen = false;
+      renderRateButtons();
     });
   }
 
@@ -1725,8 +1946,8 @@ function bindEvents({
 
   cleanup.addEventListener(document, 'keydown', (event) => {
     if (event.target.closest('.player-panel')) return;
-    if (event.key === 'Escape' && state.expandedGraphOpen) {
-      closeExpandedGraph();
+    if (event.key === 'Escape' && (state.expandedGraphOpen || state.activePanel)) {
+      closeReplayPanel();
     }
   });
 
@@ -1864,9 +2085,6 @@ async function init() {
       maybeFallbackMissingReplaySelection();
     }
     state.initialized = true;
-    if (state.viewMounted) {
-      void runReplayApproach();
-    }
   } finally {
     if (state.initialSelectionPending) {
       state.initialSelectionPending = false;

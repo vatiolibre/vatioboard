@@ -70,6 +70,42 @@ const replayTemplate: string = String.raw`
                   </button>
                 </section>
 
+                <section class="replay-panel-actions" role="group" aria-label="Replay panels" data-i18n-aria="replayPanels">
+                  <button
+                    id="replayOpenRecordings"
+                    type="button"
+                    class="replay-toolbar-icon-btn replay-panel-action"
+                    data-replay-open-panel="recordings"
+                    aria-label="Recordings"
+                    title="Recordings"
+                    data-i18n-aria="replayRecordings"
+                    data-i18n-title="replayRecordings"
+                    aria-expanded="false"
+                  ><span class="btn-icon" aria-hidden="true"></span></button>
+                  <button
+                    id="replayOpenCharts"
+                    type="button"
+                    class="replay-toolbar-icon-btn replay-panel-action"
+                    data-replay-open-panel="charts"
+                    aria-label="Charts"
+                    title="Charts"
+                    data-i18n-aria="replayCharts"
+                    data-i18n-title="replayCharts"
+                    aria-expanded="false"
+                  ><span class="btn-icon" aria-hidden="true"></span></button>
+                  <button
+                    id="replayOpenDetails"
+                    type="button"
+                    class="replay-toolbar-icon-btn replay-panel-action"
+                    data-replay-open-panel="details"
+                    aria-label="Details"
+                    title="Details"
+                    data-i18n-aria="replayDetails"
+                    data-i18n-title="replayDetails"
+                    aria-expanded="false"
+                  ><span class="btn-icon" aria-hidden="true"></span></button>
+                </section>
+
                 <button
                   id="replayPlayPause"
                   type="button"
@@ -111,13 +147,15 @@ const replayTemplate: string = String.raw`
               </div>
             </div>
 
-            <span
+            <button
               id="replaySessionChip"
+              type="button"
               class="status replay-session-chip"
               aria-live="polite"
+              aria-expanded="false"
+              data-replay-open-panel="recordings"
               data-i18n="replaySessionActive"
-              >Active session</span
-            >
+            >Active session</button>
           </div>
 
           <span class="route-chip" aria-hidden="true" data-i18n="replayRoute">REPLAY</span>
@@ -207,6 +245,29 @@ const replayTemplate: string = String.raw`
             <article class="replay-card replay-map-card">
               <div id="replayMap" class="replay-map"></div>
 
+              <section class="replay-map-hud" aria-live="polite">
+                <span id="replayHudRecorded" class="replay-map-hud-recorded">—</span>
+                <strong id="replayHudRoute" class="replay-map-hud-route">—</strong>
+                <span id="replayHudSpeed" class="replay-map-hud-speed">—</span>
+              </section>
+
+              <section id="replayMapStatus" class="replay-map-status" role="status" aria-live="polite" data-status="idle" hidden>
+                <span id="replayMapStatusText" class="replay-map-status-text"></span>
+                <button id="replayMapRetry" class="replay-map-retry" type="button" data-i18n="retry" hidden>Retry</button>
+              </section>
+
+              <div class="replay-map-transport-actions" aria-label="Replay controls" data-i18n-aria="replayControls">
+                <button type="button" class="replay-map-action replay-map-play" data-replay-action="play" aria-label="Play">
+                  <span class="replay-action-icon" aria-hidden="true"></span>
+                </button>
+                <button type="button" class="replay-map-action" data-replay-action="restart" aria-label="Restart" data-i18n-aria="replayRestart">
+                  <span class="replay-action-icon" aria-hidden="true"></span>
+                </button>
+                <button type="button" class="replay-map-action" data-replay-action="overview" aria-label="Route overview" data-i18n-aria="replayApproach">
+                  <span class="replay-action-icon" aria-hidden="true"></span>
+                </button>
+              </div>
+
               <div class="replay-transport-row">
                 <div class="replay-progress-wrap">
                   <input
@@ -224,7 +285,8 @@ const replayTemplate: string = String.raw`
                       <span id="replayElapsedValue">00:00</span>
                       <span id="replayDurationValue">00:00</span>
                     </div>
-                    <section class="replay-rate-group" role="group" aria-label="Replay speed">
+                    <button id="replayRateToggle" class="replay-rate-toggle" type="button" aria-expanded="false" aria-label="Playback speed" data-i18n-aria="replayPlaybackSpeed">1000×</button>
+                    <section class="replay-rate-group" role="group" aria-label="Replay speed" data-i18n-aria="replayPlaybackSpeed">
                       <button type="button" class="replay-rate-btn" data-rate="1">1x</button>
                       <button type="button" class="replay-rate-btn" data-rate="4">4x</button>
                       <button type="button" class="replay-rate-btn" data-rate="10">10x</button>
@@ -235,7 +297,11 @@ const replayTemplate: string = String.raw`
                 </div>
               </div>
 
-              <section class="replay-recordings-section">
+              <section class="replay-recordings-section" data-replay-panel="recordings">
+                <header class="replay-panel-header">
+                  <strong data-i18n="replayRecordings">Recordings</strong>
+                  <button class="replay-panel-close" type="button" data-replay-close-panel aria-label="Close" data-i18n-aria="close"><span class="btn-icon" aria-hidden="true"></span></button>
+                </header>
                 <section
                   id="replayRecordingsList"
                   class="replay-recordings-list"
@@ -244,8 +310,12 @@ const replayTemplate: string = String.raw`
               </section>
             </article>
 
-            <aside class="replay-side-panel" aria-label="Replay details">
+            <aside class="replay-side-panel" aria-label="Replay details" data-replay-panel="details">
               <article class="replay-card replay-details-card">
+                <header class="replay-panel-header">
+                  <strong data-i18n="replayDetails">Details</strong>
+                  <button class="replay-panel-close" type="button" data-replay-close-panel aria-label="Close" data-i18n-aria="close"><span class="btn-icon" aria-hidden="true"></span></button>
+                </header>
                 <section class="replay-summary-grid" aria-label="Replay summary metrics">
                   <article class="replay-metric">
                     <span class="replay-metric-label" data-i18n="replayRecordedAt">Recorded</span>
@@ -291,6 +361,7 @@ const replayTemplate: string = String.raw`
               </article>
             </aside>
           </section>
+          <button id="replayPanelBackdrop" class="replay-panel-backdrop" type="button" aria-label="Close" data-i18n-aria="close" hidden></button>
         </section>
       </main>
     </div>

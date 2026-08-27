@@ -24,7 +24,7 @@ describe("replay scroll policy", () => {
     expect(replayCss).toContain("overscroll-behavior: contain;");
   });
 
-  it("keeps the replay shell bounded and scrolls only panel lists", () => {
+  it("keeps the desktop replay shell bounded and scrolls only panel lists", () => {
     const replayCss = readStyle("src/styles/replay.less");
 
     expect(replayCss).toContain(".replay-shell{\n    width: 100%;\n    flex: 1 1 auto;");
@@ -43,18 +43,19 @@ describe("replay scroll policy", () => {
     expect(replayCss).toContain("touch-action: pan-y;");
   });
 
-  it("keeps Tesla and mobile breakpoints compact instead of stacking graph rows", () => {
+  it("uses a map-first short-landscape surface with overlay panels", () => {
     const replayCss = readStyle("src/styles/replay.less");
+    const replayTemplate = readStyle("src/app/views/templates/replay-template.ts");
 
-    expect(replayCss).toContain("@media (max-width: 1080px)");
-    expect(replayCss).toContain(
-      "grid-template-columns: minmax(0, 1fr) minmax(270px, 0.82fr);"
-    );
-    expect(replayCss).toContain("grid-template-columns: repeat(3, minmax(0, 1fr));");
-    expect(replayCss).not.toContain(".replay-graphs-grid{\n        grid-template-columns: 1fr;");
-    expect(replayCss).toContain("height: clamp(66px, 9vh, 104px) !important;");
-    expect(replayCss).toContain("@media (max-height: 720px)");
-    expect(replayCss).toContain("height: clamp(48px, 8vh, 84px) !important;");
+    expect(replayCss).toContain('html[data-vb-layout-profile="short-landscape"]');
+    expect(replayCss).toContain(".replay-graphs-card{\n        display: none;");
+    expect(replayCss).toContain(".replay-map{\n        position: absolute;\n        inset: 0;");
+    expect(replayCss).toContain('.replay-recordings-section[data-panel-open="true"]');
+    expect(replayCss).toContain('.replay-side-panel[data-panel-open="true"]');
+    expect(replayCss).toContain(".replay-map-transport-actions{");
+    expect(replayTemplate).toContain('data-replay-open-panel="recordings"');
+    expect(replayTemplate).toContain('data-replay-open-panel="charts"');
+    expect(replayTemplate).toContain('data-replay-open-panel="details"');
   });
 
   it("uses one compact details card and removes replay copy rows", () => {

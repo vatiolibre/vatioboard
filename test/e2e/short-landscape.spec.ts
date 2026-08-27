@@ -35,6 +35,34 @@ async function getWorkArea(page: Page) {
   });
 }
 
+async function seedReplaySession(page: Page, sampleCount = 240) {
+  await page.evaluate(async (count) => {
+    const modulePath = "/src/replay/session.ts";
+    const replay = await import(modulePath);
+    const startedAtMs = Date.UTC(2026, 7, 27, 12, 0, 0);
+    let session = replay.createReplaySession({
+      id: "tesla-replay-fixture",
+      startedAtMs,
+      unit: "kmh",
+      distanceUnit: "m",
+      recordingState: "stopped",
+    });
+    for (let index = 0; index < count; index += 1) {
+      session = replay.appendReplaySample(session, {
+        timestampMs: startedAtMs + (index * 1000),
+        latitude: 40.80 + (index * 0.00012),
+        longitude: -73.99 + (index * 0.0001),
+        speedMs: 8 + (index % 10),
+        altitudeM: 10 + (index * 0.05),
+        headingDeg: 34,
+        totalDistanceM: index * 12,
+      });
+    }
+    await replay.saveActiveReplaySession(session);
+    localStorage.setItem("vatio_replay_playback_rate_v1", "1");
+  }, sampleCount);
+}
+
 function isTeslaProject(testInfo: TestInfo) {
   return ["model-y-2024", "model-y-2026"].includes(testInfo.project.name);
 }
@@ -421,6 +449,93 @@ test("acceleration dashboard uses a frameless full-size gauge", async ({ page },
     animations: "disabled",
     maxDiffPixelRatio: 0.01,
   });
+});
+
+test("replay is map-first and playback advances without waiting for camera animation", async ({ page }, testInfo) => {
+  test.skip(!isTeslaProject(testInfo), "Exact Tesla geometry assertion");
+  const transparentTile = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3MxZ5wAAAABJRU5ErkJggg==",
+    "base64"
+  );
+  await page.route(/(tiles\.maps\.eox\.at|services\.arcgisonline\.com)/, (route) =>
+    route.fulfill({ status: 200, contentType: "image/png", body: transparentTile })
+  );
+  await openRoute(page, "board");
+  await seedReplaySession(page);
+
+  await openRoute(page, "replay");
+  await expect(page.locator("#replayShell")).toBeVisible();
+  await expect(page.locator("#replayMap canvas")).toBeVisible();
+
+  const geometry = await page.evaluate(() => {
+    const map = document.querySelector<HTMLElement>("#replayMap")!;
+    const stage = document.querySelector<HTMLElement>(".replay-stage")!;
+    const mapRect = map.getBoundingClientRect();
+    const stageRect = stage.getBoundingClientRect();
+    return {
+      map: mapRect.toJSON(),
+      stage: stageRect.toJSON(),
+      graphsDisplay: getComputedStyle(document.querySelector<HTMLElement>(".replay-graphs-card")!).display,
+      detailsDisplay: getComputedStyle(document.querySelector<HTMLElement>(".replay-side-panel")!).display,
+      recordingsDisplay: getComputedStyle(document.querySelector<HTMLElement>(".replay-recordings-section")!).display,
+      bodyScrollWidth: document.body.scrollWidth,
+      bodyScrollHeight: document.body.scrollHeight,
+      viewportWidth: document.documentElement.clientWidth,
+      viewportHeight: document.documentElement.clientHeight,
+      controls: Array.from(document.querySelectorAll<HTMLElement>(".replay-panel-action,.replay-map-action,.replay-rate-toggle"))
+        .filter((element) => getComputedStyle(element).display !== "none")
+        .map((element) => element.getBoundingClientRect().toJSON()),
+    };
+  });
+
+  expect(geometry.graphsDisplay).toBe("none");
+  expect(geometry.detailsDisplay).toBe("none");
+  expect(geometry.recordingsDisplay).toBe("none");
+  expect(Math.abs(geometry.map.left - geometry.stage.left)).toBeLessThanOrEqual(1);
+  expect(Math.abs(geometry.map.top - geometry.stage.top)).toBeLessThanOrEqual(1);
+  expect(Math.abs(geometry.map.right - geometry.stage.right)).toBeLessThanOrEqual(1);
+  expect(Math.abs(geometry.map.bottom - geometry.stage.bottom)).toBeLessThanOrEqual(1);
+  expect(geometry.bodyScrollWidth).toBeLessThanOrEqual(geometry.viewportWidth + 1);
+  expect(geometry.bodyScrollHeight).toBeLessThanOrEqual(geometry.viewportHeight + 1);
+  for (const control of geometry.controls) {
+    expect(control.width).toBeGreaterThanOrEqual(44);
+    expect(control.height).toBeGreaterThanOrEqual(44);
+  }
+
+  await page.locator('[data-replay-action="play"]').click();
+  await expect(page.locator('[data-replay-action="play"]')).toHaveAttribute("aria-label", "Pause");
+  await expect.poll(async () => Number(await page.locator("#replayProgress").inputValue())).toBeGreaterThan(0);
+
+  await page.locator("#replayOpenRecordings").click();
+  await expect(page.locator('.replay-recordings-section[data-panel-open="true"]')).toBeVisible();
+  await expect(page.locator("#replayPanelBackdrop")).toBeVisible();
+  await page.locator(".replay-recordings-section [data-replay-close-panel]").click();
+  await expect(page.locator(".replay-recordings-section")).not.toBeVisible();
+
+  await page.locator("#replayOpenDetails").click();
+  await expect(page.locator('.replay-side-panel[data-panel-open="true"]')).toBeVisible();
+  const details = await page.locator(".replay-side-panel").boundingBox();
+  const workArea = await getWorkArea(page);
+  expect(details).not.toBeNull();
+  expect(details!.x + details!.width).toBeLessThanOrEqual(workArea.left + workArea.width + 1);
+  expect(details!.y + details!.height).toBeLessThanOrEqual(workArea.top + workArea.height + 1);
+});
+
+test("Spanish Replay controls fit the light Tesla layout", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "model-y-2024-es-light", "Localized Replay smoke project");
+  await openRoute(page, "board");
+  await seedReplaySession(page, 8);
+  await openRoute(page, "replay");
+  await expect(page.locator("#replayShell")).toBeVisible();
+  await expect(page.locator("#replayOpenRecordings")).toHaveAttribute("aria-label", "Grabaciones");
+  await expect(page.locator("#replayOpenCharts")).toHaveAttribute("aria-label", "Gráficos");
+  await expect(page.locator("#replayOpenDetails")).toHaveAttribute("aria-label", "Detalles");
+  await expect(page.locator('[data-replay-action="overview"]')).toHaveAttribute(
+    "aria-label",
+    "Vista general de la ruta"
+  );
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth))
+    .toBeLessThanOrEqual(1);
 });
 
 test("acceleration keeps its regular layout outside short landscape", async ({ page }, testInfo) => {

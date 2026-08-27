@@ -49,6 +49,58 @@ interface ReplayMapSetSessionOptions {
   preservePlayback?: boolean;
 }
 
+export type ReplayMapStatus = "idle" | "loading" | "ready" | "degraded" | "error";
+
+export interface ReplayMapSnapshot {
+  status: ReplayMapStatus;
+  sessionId: string | null;
+  routeReady: boolean;
+  error: unknown;
+}
+
+const PLAYED_ROUTE_UPDATE_INTERVAL_MS = 50;
+
+function clamp(value: number, minimum: number, maximum: number) {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+export function getReplayMapPadding(element, transportElement = null): ReplayMapPadding {
+  const rect = element?.getBoundingClientRect?.();
+  const width = Math.max(1, Number(element?.clientWidth) || Number(rect?.width) || 320);
+  const height = Math.max(1, Number(element?.clientHeight) || Number(rect?.height) || 240);
+  const transportRect = transportElement?.getBoundingClientRect?.();
+  const transportHeight = Math.max(0, Number(transportElement?.clientHeight) || Number(transportRect?.height) || 0);
+  const edge = clamp(Math.min(width, height) * 0.05, 12, 28);
+  const horizontalBudget = width * 0.48;
+  const verticalBudget = height * 0.48;
+  const left = Math.min(edge, horizontalBudget / 2);
+  const right = Math.min(edge, Math.max(0, horizontalBudget - left));
+  const top = Math.min(edge, verticalBudget / 2);
+  const requestedBottom = Math.max(edge, transportHeight + 16);
+  const bottom = Math.min(requestedBottom, Math.max(0, verticalBudget - top));
+
+  return {
+    top: Math.round(top),
+    right: Math.round(right),
+    bottom: Math.round(bottom),
+    left: Math.round(left),
+  };
+}
+
+function getSessionFingerprint(session) {
+  const samples = Array.isArray(session?.samples) ? session.samples : [];
+  const first = samples[0];
+  const last = samples[samples.length - 1];
+  return [
+    session?.id ?? "",
+    samples.length,
+    first?.timestampMs ?? "",
+    last?.timestampMs ?? "",
+    last?.latitude ?? "",
+    last?.longitude ?? "",
+  ].join(":");
+}
+
 function getEmptyFeatureCollection() {
   return {
     type: "FeatureCollection",
@@ -116,20 +168,56 @@ function debugReplayMapSources(payload) {
 export function createReplayMapController({
   element,
   session,
+  onStatusChange = null,
+  fitOnFirstLoad = false,
+  approachMode = "cinematic",
 }) {
   let map = null;
   let ready = false;
   let activeSession = session;
+  let activeSessionFingerprint = getSessionFingerprint(session);
   let playbackState = {
     sample: null,
     playedCoordinates: [],
   };
-  let shouldAutoFitOnReady = true;
+  let pendingFit = Boolean(session) && fitOnFirstLoad;
+  let hasFittedActiveSession = false;
+  let userMovedCamera = false;
   let readyPromise = null;
   let resolveReadyPromise = null;
   let approachToken = 0;
   let approachActive = false;
   let initToken = 0;
+  let loadTimeoutId: number | null = null;
+  let resizeObserver = null;
+  let destroyed = false;
+  let lastPlayedRouteUpdateAt = 0;
+  let lastPlayedSampleIndex = -1;
+  const statusListeners = new Set<(snapshot: ReplayMapSnapshot) => void>();
+  let snapshot: ReplayMapSnapshot = {
+    status: "idle",
+    sessionId: session?.id ?? null,
+    routeReady: getReplayPathCoordinates(session).length >= 2,
+    error: null,
+  };
+
+  function publishStatus(status: ReplayMapStatus, error: unknown = null) {
+    snapshot = {
+      status,
+      sessionId: activeSession?.id ?? null,
+      routeReady: getReplayPathCoordinates(activeSession).length >= 2,
+      error,
+    };
+    onStatusChange?.(snapshot);
+    for (const listener of statusListeners) listener(snapshot);
+  }
+
+  function subscribe(listener) {
+    if (typeof listener !== "function") return () => {};
+    statusListeners.add(listener);
+    listener(snapshot);
+    return () => statusListeners.delete(listener);
+  }
 
   function createReadyPromise() {
     readyPromise = new Promise((resolve) => {
@@ -170,15 +258,19 @@ export function createReplayMapController({
     }
   }
 
-  function updateSources(playback = playbackState) {
+  function updateSources(playback = playbackState, {
+    route = true,
+    played = true,
+    point = true,
+  } = {}) {
     if (!map || !ready) return;
 
     const routeSource = map.getSource(REPLAY_SOURCE_ID);
     const playedSource = map.getSource(REPLAY_PLAYED_SOURCE_ID);
     const pointSource = map.getSource(REPLAY_POINT_SOURCE_ID);
-    const routeData = getLineFeatureCollection(getReplayPathCoordinates(activeSession));
-    const playedData = getLineFeatureCollection(playback.playedCoordinates);
-    const pointData = getPointFeatureCollection(playback.sample);
+    const routeData = route ? getLineFeatureCollection(getReplayPathCoordinates(activeSession)) : null;
+    const playedData = played ? getLineFeatureCollection(playback.playedCoordinates) : null;
+    const pointData = point ? getPointFeatureCollection(playback.sample) : null;
 
     debugReplayMapSources({
       routeData,
@@ -186,15 +278,15 @@ export function createReplayMapController({
       pointData,
     });
 
-    if (routeSource && typeof routeSource.setData === "function") {
+    if (routeData && routeSource && typeof routeSource.setData === "function") {
       routeSource.setData(routeData);
     }
 
-    if (playedSource && typeof playedSource.setData === "function") {
+    if (playedData && playedSource && typeof playedSource.setData === "function") {
       playedSource.setData(playedData);
     }
 
-    if (pointSource && typeof pointSource.setData === "function") {
+    if (pointData && pointSource && typeof pointSource.setData === "function") {
       pointSource.setData(pointData);
     }
   }
@@ -210,7 +302,10 @@ export function createReplayMapController({
   }
 
   function fitRoute(options: ReplayMapFitOptions = {}) {
-    if (!map || !ready) return;
+    if (!map || !ready) {
+      pendingFit = true;
+      return false;
+    }
 
     const bounds = getReplayBounds(activeSession);
     if (!bounds) {
@@ -224,19 +319,26 @@ export function createReplayMapController({
           essential: true,
         });
       }
-      return;
+      pendingFit = false;
+      hasFittedActiveSession = true;
+      return true;
     }
 
     if (typeof map.fitBounds === "function") {
       map.fitBounds(bounds, {
-        padding: options.padding ?? { top: 84, right: 84, bottom: 140, left: 84 },
+        padding: options.padding ?? getReplayMapPadding(
+          element,
+          element?.closest?.(".replay-map-card")?.querySelector?.(".replay-transport-row")
+        ),
         pitch: options.pitch ?? 46,
         bearing: options.bearing ?? 10,
         maxZoom: options.maxZoom ?? 15.5,
         duration: options.duration ?? 0,
         essential: true,
       } as any);
-      return;
+      pendingFit = false;
+      hasFittedActiveSession = true;
+      return true;
     }
 
     if (typeof map.easeTo === "function") {
@@ -249,6 +351,9 @@ export function createReplayMapController({
         essential: true,
       });
     }
+    pendingFit = false;
+    hasFittedActiveSession = true;
+    return true;
   }
 
   function resetCamera() {
@@ -275,58 +380,51 @@ export function createReplayMapController({
     approachToken = runToken;
     approachActive = true;
 
-    const bounds = getReplayBounds(activeSession);
-    if (!bounds) {
-      approachActive = false;
-      resetCamera();
-      return;
-    }
-
     stopMapMotion();
 
     try {
-      if (typeof map.jumpTo === "function") {
-        map.jumpTo({
+      if (approachMode === "cinematic") {
+        const bounds = getReplayBounds(activeSession);
+        if (!bounds) {
+          resetCamera();
+          return;
+        }
+        map.jumpTo?.({
           center: [0, 18],
           zoom: 0.35,
           pitch: 0,
           bearing: -14,
         });
-      }
-
-      const midpoint = getSessionMidpoint();
-
-      if (typeof map.easeTo === "function") {
-        map.easeTo({
-          center: midpoint,
+        map.easeTo?.({
+          center: getSessionMidpoint(),
           zoom: 1.3,
           pitch: 8,
           bearing: -6,
           duration: 1600,
           essential: true,
         });
+        await new Promise((resolve) => window.setTimeout(resolve, 1600));
+        if (runToken !== approachToken || !map || !ready || !activeSession) return;
+        fitRoute({
+          duration: options.finalDuration ?? 2200,
+          pitch: options.finalPitch ?? 56,
+          bearing: options.finalBearing ?? 12,
+          maxZoom: options.finalMaxZoom ?? 13,
+          padding: options.finalPadding,
+        });
+        await new Promise((resolve) => window.setTimeout(resolve, options.finalDuration ?? 2200));
+        if (runToken !== approachToken || !map || !ready) return;
+        collapseReplayAttributionControl(element);
+        return;
       }
 
-      await new Promise((resolve) => {
-        window.setTimeout(resolve, 1600);
-      });
-
-      if (runToken !== approachToken || !map || !ready || !activeSession) return;
-
       fitRoute({
-        duration: options.finalDuration ?? 2200,
-        pitch: options.finalPitch ?? 56,
+        duration: options.finalDuration ?? 320,
+        pitch: options.finalPitch ?? 46,
         bearing: options.finalBearing ?? 12,
-        maxZoom: options.finalMaxZoom ?? 13,
+        maxZoom: options.finalMaxZoom ?? 15.5,
         padding: options.finalPadding,
       });
-
-      await new Promise((resolve) => {
-        window.setTimeout(resolve, options.finalDuration ?? 2200);
-      });
-
-      if (runToken !== approachToken || !map || !ready) return;
-
       collapseReplayAttributionControl(element);
     } finally {
       if (runToken === approachToken) {
@@ -335,17 +433,42 @@ export function createReplayMapController({
     }
   }
 
-  function renderPlaybackFrame({ sample = null, playedCoordinates = [] }: { sample?: any; playedCoordinates?: any[] } = {}) {
+  function renderPlaybackFrame({ sample = null, playedCoordinates = [] }: { sample?: any; playedCoordinates?: any[] | (() => any[]) } = {}) {
+    const now = typeof performance?.now === "function" ? performance.now() : Date.now();
+    const explicitSampleIndex = Number(sample?.sampleIndex);
+    const sampleIndex = Number.isFinite(explicitSampleIndex)
+      ? explicitSampleIndex
+      : Array.isArray(playedCoordinates)
+        ? playedCoordinates.length - 1
+        : Number.NaN;
+    const shouldUpdatePlayed = Number.isFinite(sampleIndex)
+      && sampleIndex !== lastPlayedSampleIndex
+      && (
+        now - lastPlayedRouteUpdateAt >= PLAYED_ROUTE_UPDATE_INTERVAL_MS
+        || sampleIndex === 0
+        || sampleIndex >= (activeSession?.samples?.length ?? 1) - 1
+      );
+    if (shouldUpdatePlayed) {
+      lastPlayedRouteUpdateAt = now;
+      lastPlayedSampleIndex = sampleIndex;
+    }
     playbackState = {
       sample,
-      playedCoordinates: Array.isArray(playedCoordinates) ? playedCoordinates : [],
+      playedCoordinates: shouldUpdatePlayed
+        ? typeof playedCoordinates === "function"
+          ? playedCoordinates()
+          : Array.isArray(playedCoordinates)
+            ? playedCoordinates
+            : []
+        : playbackState.playedCoordinates,
     };
-    updateSources(playbackState);
+    updateSources(playbackState, { route: false, played: shouldUpdatePlayed, point: true });
   }
 
   function resize() {
     if (!map || typeof map.resize !== "function") return;
     map.resize();
+    if (pendingFit && !userMovedCamera) fitRoute({ duration: 0 });
     syncMapVignetteMode();
     collapseReplayAttributionControl(element);
   }
@@ -353,22 +476,41 @@ export function createReplayMapController({
   function setSession(nextSession, options: ReplayMapSetSessionOptions = {}) {
     const shouldResetCamera = options.resetCamera !== false;
     const shouldPreservePlayback = options.preservePlayback === true;
-    const sessionChanged = nextSession !== activeSession;
+    const nextFingerprint = getSessionFingerprint(nextSession);
+    const sessionChanged = nextFingerprint !== activeSessionFingerprint;
     cancelApproachAnimation();
     activeSession = nextSession;
+    activeSessionFingerprint = nextFingerprint;
     if (sessionChanged && !shouldPreservePlayback) {
       playbackState = {
         sample: null,
         playedCoordinates: [],
       };
+      lastPlayedSampleIndex = -1;
+      lastPlayedRouteUpdateAt = 0;
     }
-    shouldAutoFitOnReady = shouldResetCamera;
+    if (sessionChanged) {
+      userMovedCamera = false;
+      hasFittedActiveSession = false;
+    }
+    pendingFit = shouldResetCamera || (fitOnFirstLoad && !hasFittedActiveSession);
+    publishStatus(ready ? snapshot.status === "degraded" ? "degraded" : "ready" : "loading");
 
     if (!ready) return;
     updateSources();
-    if (shouldResetCamera) {
+    if (pendingFit) {
       resetCamera();
     }
+  }
+
+  async function applySession(nextSession, options: ReplayMapSetSessionOptions = {}) {
+    setSession(nextSession, options);
+    await init();
+    if (destroyed) return snapshot;
+    resize();
+    updateSources();
+    if (pendingFit && !userMovedCamera) resetCamera();
+    return snapshot;
   }
 
   async function init() {
@@ -378,6 +520,8 @@ export function createReplayMapController({
 
     const token = initToken + 1;
     initToken = token;
+    destroyed = false;
+    publishStatus("loading");
     createReadyPromise();
 
     try {
@@ -595,10 +739,13 @@ export function createReplayMapController({
       syncMapVignetteMode();
 
       map.on("load", () => {
+        if (loadTimeoutId !== null) window.clearTimeout(loadTimeoutId);
+        loadTimeoutId = null;
         ready = true;
         updateSolarLayers();
         updateSources();
-        if (shouldAutoFitOnReady) {
+        publishStatus("ready");
+        if (pendingFit || (fitOnFirstLoad && !hasFittedActiveSession)) {
           resetCamera();
         }
         syncMapVignetteMode();
@@ -619,20 +766,92 @@ export function createReplayMapController({
         syncMapVignetteMode();
         collapseReplayAttributionControl(element);
       });
+
+      map.on("movestart", (event) => {
+        if (event?.originalEvent) userMovedCamera = true;
+      });
+
+      map.on("error", (event) => {
+        const sourceId = event?.sourceId || event?.source?.id || "";
+        if (
+          sourceId === REPLAY_BASE_SATELLITE_SOURCE_ID
+          || sourceId === REPLAY_DETAIL_SATELLITE_SOURCE_ID
+        ) {
+          if (ready) publishStatus("degraded", event?.error ?? null);
+          return;
+        }
+        if (!ready) {
+          publishStatus("error", event?.error ?? event ?? null);
+          resolveReady();
+        }
+      });
+
+      element.addEventListener?.("webglcontextlost", handleWebGlContextLost);
+
+      if (!resizeObserver && typeof ResizeObserver === "function") {
+        resizeObserver = new ResizeObserver(() => resize());
+        resizeObserver.observe(element);
+      }
+
+      loadTimeoutId = window.setTimeout(() => {
+        loadTimeoutId = null;
+        if (token !== initToken || ready || destroyed) return;
+        publishStatus("error", new Error("Replay map initialization timed out."));
+        resolveReady();
+      }, 10000);
     } catch (error) {
       console.error("Failed to initialize replay map", error);
       ready = false;
+      publishStatus("error", error);
       resolveReady();
     }
 
     return readyPromise ?? Promise.resolve();
   }
 
-  function destroy() {
+  function handleWebGlContextLost(event) {
+    event?.preventDefault?.();
+    ready = false;
+    publishStatus("error", new Error("Replay map WebGL context was lost."));
+    resolveReady();
+  }
+
+  async function retry() {
+    const currentSession = activeSession;
+    const currentPlayback = playbackState;
     initToken += 1;
+    if (loadTimeoutId !== null) window.clearTimeout(loadTimeoutId);
+    loadTimeoutId = null;
+    cancelApproachAnimation();
+    element?.removeEventListener?.("webglcontextlost", handleWebGlContextLost);
+    map?.remove?.();
+    map = null;
+    ready = false;
+    readyPromise = null;
+    resolveReadyPromise = null;
+    activeSession = currentSession;
+    playbackState = currentPlayback;
+    pendingFit = true;
+    hasFittedActiveSession = false;
+    publishStatus("loading");
+    await init();
+    return snapshot;
+  }
+
+  function destroy() {
+    destroyed = true;
+    initToken += 1;
+    if (loadTimeoutId !== null) window.clearTimeout(loadTimeoutId);
+    loadTimeoutId = null;
     cancelApproachAnimation();
     resolveReady();
-    if (!map) return;
+    resizeObserver?.disconnect?.();
+    resizeObserver = null;
+    element?.removeEventListener?.("webglcontextlost", handleWebGlContextLost);
+    if (!map) {
+      publishStatus("idle");
+      return;
+    }
     if (typeof map.remove === "function") {
       map.remove();
     }
@@ -641,17 +860,23 @@ export function createReplayMapController({
     ready = false;
     readyPromise = null;
     resolveReadyPromise = null;
+    statusListeners.clear();
+    publishStatus("idle");
   }
 
   return {
     cancelApproachAnimation,
     destroy,
     fitRoute,
+    getSnapshot: () => snapshot,
     init,
+    applySession,
     renderPlaybackFrame,
     resetCamera,
     resize,
+    retry,
     runApproachAnimation,
     setSession,
+    subscribe,
   };
 }

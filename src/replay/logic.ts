@@ -89,7 +89,28 @@ export function getReplaySummary(session) {
 
 export function getReplayPathCoordinates(session) {
   if (!session || !Array.isArray(session.samples)) return [];
-  return session.samples.map((sample) => [sample.longitude, sample.latitude]);
+  const coordinates = [];
+
+  for (const sample of session.samples) {
+    const longitude = Number(sample?.longitude);
+    const latitude = Number(sample?.latitude);
+    if (
+      !Number.isFinite(longitude)
+      || !Number.isFinite(latitude)
+      || longitude < -180
+      || longitude > 180
+      || latitude < -90
+      || latitude > 90
+    ) {
+      continue;
+    }
+
+    const previous = coordinates[coordinates.length - 1];
+    if (previous?.[0] === longitude && previous?.[1] === latitude) continue;
+    coordinates.push([longitude, latitude]);
+  }
+
+  return coordinates;
 }
 
 function getSampleDistanceM(sample) {
@@ -191,13 +212,22 @@ export function getReplaySampleAtElapsedMs(session, elapsedMs) {
     };
   }
 
-  for (let index = 1; index < session.samples.length; index += 1) {
-    const right = session.samples[index];
-    const left = session.samples[index - 1];
-
-    if (targetTimestampMs > right.timestampMs) {
-      continue;
+  let low = 1;
+  let high = session.samples.length - 1;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (targetTimestampMs > session.samples[middle].timestampMs) {
+      low = middle + 1;
+    } else {
+      high = middle;
     }
+  }
+
+  const index = low;
+  const right = session.samples[index];
+  const left = session.samples[index - 1];
+
+  if (right && left && targetTimestampMs <= right.timestampMs) {
 
     const spanMs = Math.max(1, right.timestampMs - left.timestampMs);
     const ratio = Math.min(Math.max((targetTimestampMs - left.timestampMs) / spanMs, 0), 1);
@@ -245,15 +275,24 @@ export function getReplaySampleAtDistanceM(session, distanceM) {
     };
   }
 
-  for (let index = 1; index < session.samples.length; index += 1) {
-    const right = session.samples[index];
-    const left = session.samples[index - 1];
-    const leftDistanceM = getSampleDistanceM(left);
-    const rightDistanceM = getSampleDistanceM(right);
-
-    if (clampedDistanceM > rightDistanceM) {
-      continue;
+  let low = 1;
+  let high = session.samples.length - 1;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (clampedDistanceM > getSampleDistanceM(session.samples[middle])) {
+      low = middle + 1;
+    } else {
+      high = middle;
     }
+  }
+
+  const index = low;
+  const right = session.samples[index];
+  const left = session.samples[index - 1];
+  const leftDistanceM = getSampleDistanceM(left);
+  const rightDistanceM = getSampleDistanceM(right);
+
+  if (right && left && clampedDistanceM <= rightDistanceM) {
 
     const spanDistanceM = rightDistanceM - leftDistanceM;
     const ratio =
@@ -298,14 +337,27 @@ export function getReplayPlayedCoordinates(session, elapsedMs) {
   if (!sample) return [];
 
   const coordinates = [];
+  const lastCompleteIndex = Math.max(0, Number(sample.sampleIndex) - 1);
 
-  for (let index = 0; index < session.samples.length; index += 1) {
+  for (let index = 0; index <= lastCompleteIndex; index += 1) {
     const current = session.samples[index];
-    if (current.timestampMs >= sample.timestampMs) break;
-    coordinates.push([current.longitude, current.latitude]);
+    const longitude = Number(current?.longitude);
+    const latitude = Number(current?.latitude);
+    if (
+      !Number.isFinite(longitude)
+      || !Number.isFinite(latitude)
+      || longitude < -180
+      || longitude > 180
+      || latitude < -90
+      || latitude > 90
+    ) continue;
+    const previous = coordinates[coordinates.length - 1];
+    if (previous?.[0] === longitude && previous?.[1] === latitude) continue;
+    coordinates.push([longitude, latitude]);
   }
-
-  coordinates.push([sample.longitude, sample.latitude]);
+  if (Number.isFinite(sample.longitude) && Number.isFinite(sample.latitude)) {
+    coordinates.push([sample.longitude, sample.latitude]);
+  }
   return coordinates;
 }
 

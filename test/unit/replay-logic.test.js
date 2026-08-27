@@ -8,6 +8,7 @@ import {
   getReplayGraphCursorX,
   getReplayHighlights,
   getReplayPlayedCoordinates,
+  getReplayPathCoordinates,
   getReplaySampleAtDistanceM,
   getReplaySampleAtElapsedMs,
   getReplaySummary,
@@ -888,6 +889,21 @@ describe('replay helpers', () => {
       [-74, 40],
       [-71, 43],
     ]);
+  });
+
+  it('filters invalid and duplicate GPS points without changing source telemetry', () => {
+    const samples = [
+      createSample({ latitude: 40, longitude: -74 }),
+      createSample({ latitude: 40, longitude: -74, timestampMs: 2000 }),
+      createSample({ latitude: 120, longitude: -74, timestampMs: 3000 }),
+      createSample({ latitude: 41, longitude: -73, timestampMs: 4000 }),
+    ];
+
+    expect(getReplayPathCoordinates({ samples })).toEqual([
+      [-74, 40],
+      [-73, 41],
+    ]);
+    expect(samples).toHaveLength(4);
   });
 
   it('interpolates replay samples from traveled distance for distance-mode scrubbing', () => {

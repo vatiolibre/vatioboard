@@ -302,14 +302,15 @@ describe('replay.html smoke', () => {
     expect(document.getElementById('replayProgress').max).toBe('3000');
     expect(document.querySelectorAll('.replay-rate-btn')).toHaveLength(5);
     await settleDeferredImports();
-    expect(fakeMaps[0]?.fitBounds).not.toHaveBeenCalled();
-    expect(fakeMaps[0]?.jumpTo).toHaveBeenCalledTimes(1);
+    expect(fakeMaps[0]?.fitBounds).toHaveBeenCalledTimes(1);
+    expect(fakeMaps[0]?.jumpTo).not.toHaveBeenCalled();
     expect(fakeMaps[0]?.resize).toHaveBeenCalledTimes(1);
 
     document.getElementById('replayApproach').click();
     await flushTasks();
 
-    expect(fakeMaps[0]?.jumpTo).toHaveBeenCalledTimes(1);
+    expect(fakeMaps[0]?.fitBounds).toHaveBeenCalledTimes(2);
+    expect(fakeMaps[0]?.jumpTo).not.toHaveBeenCalled();
 
     document.getElementById('replayAxisDistance').click();
     await flushTasks();
@@ -330,7 +331,7 @@ describe('replay.html smoke', () => {
     await flushTasks();
 
     expect(document.getElementById('replayElapsedValue').textContent).toBe('80 m');
-    expect(fakeMaps[0]?.stop).toHaveBeenCalledTimes(2);
+    expect(fakeMaps[0]?.stop).toHaveBeenCalledTimes(1);
 
     document.getElementById('replayRestart').click();
     await flushTasks();
@@ -339,12 +340,14 @@ describe('replay.html smoke', () => {
 
     fakeMaps[0]?.stop.mockClear();
     fakeMaps[0]?.jumpTo.mockClear();
+    fakeMaps[0]?.fitBounds.mockClear();
 
     document.getElementById('replayApproach').click();
     await flushTasks();
 
     expect(fakeMaps[0]?.stop).toHaveBeenCalledTimes(1);
-    expect(fakeMaps[0]?.jumpTo).toHaveBeenCalledTimes(1);
+    expect(fakeMaps[0]?.jumpTo).not.toHaveBeenCalled();
+    expect(fakeMaps[0]?.fitBounds).toHaveBeenCalledTimes(1);
   }, 40000);
 
   it('falls back to the first local session when a requested replay is missing in degraded storage', async () => {
@@ -426,19 +429,21 @@ describe('replay.html smoke', () => {
     expect(document.getElementById('replayGraphSheet').hidden).toBe(true);
   });
 
-  it('cancels the intro when the user switches recordings mid-approach', async () => {
+  it('fits the selected recording without starting a blocking intro', async () => {
     const replayPage = await import('../../src/replay/dev-harness.js');
     await replayPage.initPromise;
     await flushTasks();
     await settleDeferredImports();
 
-    expect(fakeMaps[0]?.stop).toHaveBeenCalledTimes(1);
+    const initialFitCount = fakeMaps[0]?.fitBounds.mock.calls.length ?? 0;
+    expect(fakeMaps[0]?.jumpTo).not.toHaveBeenCalled();
 
     document.querySelector('button[data-recording-id="saved-session"]').click();
     await replayPage.waitForReplaySelection();
     await flushTasks();
 
-    expect(fakeMaps[0]?.stop).toHaveBeenCalledTimes(2);
+    expect(fakeMaps[0]?.fitBounds.mock.calls.length).toBeGreaterThan(initialFitCount);
+    expect(fakeMaps[0]?.jumpTo).not.toHaveBeenCalled();
     expect(document.getElementById('replaySessionChip').textContent).toBe('Saved session');
   });
 
