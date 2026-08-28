@@ -51,4 +51,20 @@ describe("acceleration shell layout", () => {
 
     expect(analogCss).toContain("--analog-speedometer-radius-ratio: 0.42;");
   });
+
+  it("turns short-landscape results into focused work-area views", () => {
+    const accelCss = readStyle("src/styles/accel.less");
+    const template = readStyle("src/app/views/templates/accel-template.ts");
+
+    expect(accelCss).toContain("grid-template-rows: 52px minmax(0, 1fr);");
+    expect(accelCss).toContain("width: var(--vb-work-area-width, 100vw);");
+    expect(accelCss).toContain("height: var(--vb-work-area-height, 100dvh);");
+    expect(accelCss).toContain('[data-accel-result-view="summary"]');
+    expect(accelCss).toContain('[data-accel-result-view="map"]');
+    expect(accelCss).toContain('[data-accel-result-view="details"]');
+    expect(accelCss).toContain('[data-accel-result-view="history"]');
+    expect(accelCss).toContain("grid-template-columns: minmax(0, 1fr) 240px;");
+    expect(template).toContain('data-accel-result-chart-metric="speedMs"');
+    expect(template).toContain('id="resultTechnicalDataToggle"');
+  });
 });

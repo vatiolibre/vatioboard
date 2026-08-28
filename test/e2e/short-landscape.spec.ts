@@ -63,6 +63,66 @@ async function seedReplaySession(page: Page, sampleCount = 240) {
   }, sampleCount);
 }
 
+async function seedAccelerationResult(page: Page) {
+  await page.evaluate(async () => {
+    const { saveRuns } = await import("/src/accel/storage.ts");
+    const mphToMs = 0.44704;
+    const points = Array.from({ length: 61 }, (_, index) => ({
+      elapsedMs: index * 100,
+      speedMs: index * mphToMs,
+      distanceM: index * 1.8,
+      altitudeM: 100 + index * 0.04,
+      headingDeg: 12 + index * 0.2,
+      accuracyM: 4,
+    }));
+    await saveRuns([{
+      id: "tesla-accel-result",
+      savedAtMs: Date.UTC(2026, 7, 28, 12, 30, 0),
+      presetId: "0-60-mph",
+      presetSignature: "0-60-mph",
+      comparisonSignature: "launch-4",
+      presetKind: "speed",
+      standingStart: true,
+      startSpeedMs: 0,
+      targetSpeedMs: 60 * mphToMs,
+      displayUnit: "mph",
+      distanceDisplay: "ft",
+      elapsedMs: 6000,
+      speedTrace: points,
+      sampleLog: points.map((point, index) => ({
+        ...point,
+        index,
+        deltaMs: index ? 100 : 0,
+        effectiveHz: 10,
+        elapsedFromStartMs: point.elapsedMs,
+        distanceFromStartM: point.distanceM,
+        rawSpeedMs: point.speedMs,
+        derivedSpeedMs: point.speedMs,
+        latitude: 40.7484 + index * 0.00003,
+        longitude: -73.9857 + index * 0.00004,
+        stage: "running",
+      })),
+      partials: Array.from({ length: 18 }, (_, index) => ({
+        id: `partial-${index}`,
+        kind: "speed",
+        labelKey: "accelPreset0to60",
+        startSpeedMs: 0,
+        targetSpeedMs: Math.min(60, (index + 1) * 3) * mphToMs,
+        elapsedMs: Math.min(6000, (index + 1) * 300),
+      })),
+      finishSpeedMs: 60 * mphToMs,
+      rolloutApplied: false,
+      launchThresholdMs: 0.5 * mphToMs,
+      averageAccuracyM: 4,
+      averageHz: 10,
+      slopePercent: 0.4,
+      elevationDeltaM: 2.4,
+      qualityGrade: "good",
+      notes: "Synthetic Tesla fixture",
+    }]);
+  });
+}
+
 function isTeslaProject(testInfo: TestInfo) {
   return ["model-y-2024", "model-y-2026"].includes(testInfo.project.name);
 }
@@ -449,6 +509,80 @@ test("acceleration dashboard uses a frameless full-size gauge", async ({ page },
     animations: "disabled",
     maxDiffPixelRatio: 0.01,
   });
+});
+
+test("acceleration results use focused short-landscape workspaces", async ({ page }, testInfo) => {
+  test.skip(!isTeslaProject(testInfo), "Exact Tesla geometry assertion");
+  test.setTimeout(180_000);
+  await openRoute(page, "board");
+  await seedAccelerationResult(page);
+  await openRoute(page, "accel");
+  await expect(page.locator("#accelToolbarResults")).toBeEnabled();
+  await page.locator("#accelToolbarResults").click();
+
+  const panel = page.locator("#resultsPanel");
+  await expect(panel).toBeVisible();
+  await expect(panel).toHaveAttribute("data-accel-result-view", "summary");
+  await expect(panel).toHaveAttribute("role", "region");
+  await expect(panel).not.toHaveAttribute("aria-modal", "true");
+  await expect(page.locator(".accel-shell")).toHaveAttribute("inert", "");
+  await expect.poll(() => page.locator("#resultGraphCanvas").evaluate((canvas) => {
+    const rect = canvas.getBoundingClientRect();
+    return rect.width >= 480 && rect.height >= 220;
+  })).toBe(true);
+
+  const geometry = await page.evaluate(() => {
+    const rect = (selector: string) => document.querySelector<HTMLElement>(selector)!
+      .getBoundingClientRect().toJSON();
+    const partials = document.querySelector<HTMLElement>("#resultPartialsList")!;
+    return {
+      graph: rect("#resultGraphCanvas"),
+      panel: rect("#resultsPanel"),
+      partialsClientHeight: partials.clientHeight,
+      partialsOverflowY: getComputedStyle(partials).overflowY,
+      partialsScrollHeight: partials.scrollHeight,
+      pageOverflow: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+    };
+  });
+  const workArea = await getWorkArea(page);
+  expect(geometry.panel.left).toBeCloseTo(workArea.left, 0);
+  expect(geometry.panel.top).toBeCloseTo(workArea.top, 0);
+  expect(geometry.panel.width).toBeCloseTo(workArea.width, 0);
+  expect(geometry.panel.height).toBeCloseTo(workArea.height, 0);
+  expect(geometry.graph.width).toBeGreaterThanOrEqual(480);
+  expect(geometry.graph.height).toBeGreaterThanOrEqual(220);
+  expect(geometry.partialsOverflowY).toBe("auto");
+  expect(geometry.partialsScrollHeight).toBeGreaterThan(geometry.partialsClientHeight);
+  expect(geometry.pageOverflow).toBeLessThanOrEqual(1);
+
+  await page.locator('[data-accel-result-view-action="map"]').click();
+  await expect(panel).toHaveAttribute("data-accel-result-view", "map");
+  await expect(page.locator("#resultReplayMap")).toBeVisible();
+  await expect.poll(() => page.locator("#resultReplayMap").evaluate((map) => {
+    const rect = map.getBoundingClientRect();
+    return rect.width > 600 && rect.height > 300;
+  })).toBe(true);
+
+  await page.locator('[data-accel-result-view-action="charts"]').click();
+  await expect(page.locator("#resultReplayChartSheet")).toBeVisible();
+  await expect(page.locator(".accel-replay-chart-stage:visible")).toHaveCount(1);
+  await page.locator('[data-accel-result-chart-metric="altitudeM"]').click();
+  await expect(page.locator("#resultReplaySheetAltitudeStage")).toBeVisible();
+  await expect(page.locator(".accel-replay-chart-stage:visible")).toHaveCount(1);
+  await page.locator("#closeResultReplayChartSheet").click();
+
+  await page.locator('[data-accel-result-view-action="details"]').click();
+  await expect(page.locator("#debugRawTableBody tr")).toHaveCount(0);
+  await page.locator("#resultTechnicalDataToggle").click();
+  await expect.poll(() => page.locator("#debugRawTableBody tr").count()).toBeGreaterThan(0);
+  await page.locator('[data-accel-result-view-action="history"]').click();
+  await expect(page.locator(".accel-history-card")).toBeVisible();
+  await page.locator('[data-history-action="load"]').click();
+  await expect(panel).toHaveAttribute("data-accel-result-view", "summary");
+
+  await page.locator("#closeResultsPanel").click();
+  await expect(panel).toBeHidden();
+  await expect(page.locator(".accel-shell")).not.toHaveAttribute("inert", "");
 });
 
 test("replay is map-first and playback advances without waiting for camera animation", async ({ page }, testInfo) => {

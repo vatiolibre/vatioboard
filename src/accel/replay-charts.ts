@@ -469,7 +469,13 @@ export function createAccelReplayChartsController({
     renderKey = "";
   }
 
-  function renderSource(source, axisMode = "time", startRatio = 0, endRatio = 1) {
+  function renderSource(
+    source,
+    axisMode = "time",
+    startRatio = 0,
+    endRatio = 1,
+    selectedMetricKey = null
+  ) {
     activeSource = source;
     activeAxisMode = axisMode === "distance" ? "distance" : "time";
     const axisRange = getAxisRange(1, startRatio, endRatio);
@@ -490,6 +496,7 @@ export function createAccelReplayChartsController({
       activeRangeEndRatio,
       getSpeedUnit(),
       getDistanceUnit(),
+      selectedMetricKey || "all",
     ].join(":");
     if (renderKey === nextRenderKey && (activeCharts.speedMs || activeCharts.altitudeM || activeCharts.headingDeg)) {
       return;
@@ -498,9 +505,15 @@ export function createAccelReplayChartsController({
     destroy();
     renderKey = nextRenderKey;
 
-    activeCharts.speedMs = createMetricChart("speedMs", elements.replayDetailSpeedCanvas);
-    activeCharts.altitudeM = createMetricChart("altitudeM", elements.replayDetailAltitudeCanvas);
-    activeCharts.headingDeg = createMetricChart("headingDeg", elements.replayDetailHeadingCanvas);
+    if (!selectedMetricKey || selectedMetricKey === "speedMs") {
+      activeCharts.speedMs = createMetricChart("speedMs", elements.replayDetailSpeedCanvas);
+    }
+    if (!selectedMetricKey || selectedMetricKey === "altitudeM") {
+      activeCharts.altitudeM = createMetricChart("altitudeM", elements.replayDetailAltitudeCanvas);
+    }
+    if (!selectedMetricKey || selectedMetricKey === "headingDeg") {
+      activeCharts.headingDeg = createMetricChart("headingDeg", elements.replayDetailHeadingCanvas);
+    }
   }
 
   function getPlaybackCursorValue(frame) {

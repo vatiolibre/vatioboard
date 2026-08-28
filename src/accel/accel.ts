@@ -131,6 +131,8 @@ const ACCEL_SELECTED_PRESET_SETTING_KEY = 'selectedPresetId';
 const ACCEL_CHART_SCRUB_INTENT_THRESHOLD_PX = 8;
 
 type AnyRecord = Record<string, any>;
+type AccelResultWorkspaceView = 'summary' | 'map' | 'charts' | 'details' | 'history';
+type AccelResultChartMetric = 'speedMs' | 'altitudeM' | 'headingDeg';
 type RouteLifecycle = {
   mount: (routeContext?: AnyRecord) => unknown;
   unmount: () => void;
@@ -209,6 +211,8 @@ export const initPromise = (function () {
     };
 
     return {
+      app: queryOne('.accel-app'),
+      liveShell: queryOne('.accel-shell'),
       langToggle: byId('langToggle'),
       langToggleButtons: queryAll('[data-lang-toggle], #langToggle'),
       pageDescriptionMeta: root ? document.querySelector('meta[name="description"]') : null,
@@ -231,6 +235,7 @@ export const initPromise = (function () {
       resultsPanel: byId('resultsPanel'),
       closeResultsPanel: byId('closeResultsPanel'),
       resultsPanelStatus: byId('resultsPanelStatus'),
+      resultViewButtons: queryAll('[data-accel-result-view-action]'),
       permissionValue: byId('permissionValue'),
       gpsReadyValue: byId('gpsReadyValue'),
       latestAccuracyValue: byId('latestAccuracyValue'),
@@ -291,6 +296,9 @@ export const initPromise = (function () {
       resultReplayChartsBtn: byId('resultReplayChartsBtn'),
       resultReplayMapShell: byId('resultReplayMapShell'),
       resultReplayMap: byId('resultReplayMap'),
+      resultReplayMapStatus: byId('resultReplayMapStatus'),
+      resultReplayMapStatusText: byId('resultReplayMapStatusText'),
+      resultReplayMapRetry: byId('resultReplayMapRetry'),
       resultReplayChartSheet: byId('resultReplayChartSheet'),
       resultReplayChartSheetBackdrop: byId('resultReplayChartSheetBackdrop'),
       closeResultReplayChartSheet: byId('closeResultReplayChartSheet'),
@@ -310,6 +318,7 @@ export const initPromise = (function () {
       resultReplaySheetHeadingStage: byId('resultReplaySheetHeadingStage'),
       resultReplaySheetHeadingValue: byId('resultReplaySheetHeadingValue'),
       resultReplaySheetHeadingCanvas: byId('resultReplaySheetHeadingCanvas'),
+      resultChartMetricButtons: queryAll('[data-accel-result-chart-metric]'),
       resultGraphTimeValue: byId('resultGraphTimeValue'),
       resultGraphSpeedValue: byId('resultGraphSpeedValue'),
       resultGraphDistanceValue: byId('resultGraphDistanceValue'),
@@ -324,6 +333,8 @@ export const initPromise = (function () {
       debugGraphEmptyState: byId('debugGraphEmptyState'),
       debugGraphTableWrap: byId('debugGraphTableWrap'),
       debugGraphTableBody: byId('debugGraphTableBody'),
+      resultTechnicalDataToggle: byId('resultTechnicalDataToggle'),
+      resultTechnicalDataContent: byId('resultTechnicalDataContent'),
       resultPartialsSection: byId('resultPartialsSection'),
       resultPartialsList: byId('resultPartialsList'),
       resultPresetValue: byId('resultPresetValue'),
@@ -407,6 +418,9 @@ export const initPromise = (function () {
     run: null,
     latestResult: null,
     selectedResultId: '',
+    resultWorkspaceView: 'summary' as AccelResultWorkspaceView,
+    resultChartMetric: 'speedMs' as AccelResultChartMetric,
+    technicalDataExpanded: false,
     replay: {
       axisMode: 'time',
       engaged: false,
@@ -512,10 +526,13 @@ export const initPromise = (function () {
       clear: function () {},
       destroy: function () {},
       init: function () { return Promise.resolve(); },
+      getSnapshot: function () { return { status: 'idle', routeReady: false, error: null }; },
       renderPlaybackFrame: function () {},
       resize: function () {},
+      retry: function () { return Promise.resolve(); },
       runApproachAnimation: function () { return Promise.resolve(); },
       setSource: function () {},
+      subscribe: function () { return function () {}; },
     };
   }
 
@@ -599,6 +616,11 @@ export const initPromise = (function () {
     replayMap = createAccelReplayMapController({
       element: elements.resultReplayMap,
     });
+    activeAccelRoute?.cleanup?.add?.(
+      replayMap.subscribe(function () {
+        renderReplayMapStatus();
+      })
+    );
   }
 
   function ensureAccelChartRouteControllers() {
@@ -835,6 +857,10 @@ export const initPromise = (function () {
     return sharedT(key, params);
   }
 
+  function isShortLandscapeLayout() {
+    return document.documentElement.dataset.vbLayoutProfile === 'short-landscape';
+  }
+
   function applyTranslations() {
     document.title = t('accelPageTitle');
     if (elements.pageDescriptionMeta)
@@ -876,6 +902,7 @@ export const initPromise = (function () {
       togglePanel('setup', elements.setupTrigger);
     });
     add(elements.resultsTrigger, 'click', function () {
+      if (state.openPanel !== 'results') state.resultWorkspaceView = 'summary';
       togglePanel('results', elements.resultsTrigger);
     });
     add(elements.toolbarSetup, 'click', function () {
@@ -883,6 +910,7 @@ export const initPromise = (function () {
     });
     add(elements.toolbarResults, 'click', function () {
       if (!getDisplayedResult()) return;
+      if (state.openPanel !== 'results') state.resultWorkspaceView = 'summary';
       togglePanel('results', elements.toolbarResults);
     });
     add(elements.closeSetupPanel, 'click', function () {
@@ -909,12 +937,20 @@ export const initPromise = (function () {
     add(elements.runNotes, 'input', handleNotesInput);
     add(elements.clearHistory, 'click', handleClearHistory);
     add(elements.historyList, 'click', handleHistoryClick);
+    elements.resultViewButtons.forEach(function (button) {
+      add(button, 'click', handleResultWorkspaceViewClick);
+    });
+    elements.resultChartMetricButtons.forEach(function (button) {
+      add(button, 'click', handleResultChartMetricClick);
+    });
+    add(elements.resultTechnicalDataToggle, 'click', handleTechnicalDataToggle);
     add(elements.resultReplayToggle, 'click', handleReplayToggle);
     add(elements.resultReplayRestart, 'click', handleReplayRestart);
     add(elements.resultReplayProgress, 'input', handleReplayProgressInput);
     add(elements.resultReplayAxisTime, 'click', handleReplayAxisClick);
     add(elements.resultReplayAxisDistance, 'click', handleReplayAxisClick);
     add(elements.resultReplayChartsBtn, 'click', handleReplayChartsOpen);
+    add(elements.resultReplayMapRetry, 'click', handleReplayMapRetry);
     add(elements.closeResultReplayChartSheet, 'click', handleReplayChartsClose);
     add(elements.resultReplayChartSheetBackdrop, 'click', handleReplayChartsClose);
     add(elements.resultReplaySheetAxisTime, 'click', handleReplayAxisClick);
@@ -1963,6 +1999,62 @@ export const initPromise = (function () {
     renderAll();
   }
 
+  function setResultWorkspaceView(nextView: AccelResultWorkspaceView, options: AnyRecord = {}) {
+    var allowedViews: AccelResultWorkspaceView[] = [
+      'summary',
+      'map',
+      'charts',
+      'details',
+      'history',
+    ];
+    var normalizedView: AccelResultWorkspaceView = allowedViews.includes(nextView)
+      ? nextView
+      : 'summary';
+
+    if (normalizedView === 'charts') {
+      var result = getDisplayedResult();
+      if (!ensureReplaySource(result)) return;
+      state.resultWorkspaceView = normalizedView;
+      setReplayChartSheetOpen(true);
+      void ensureAccelChartRouteControllers().then(function (loaded) {
+        if (loaded && state.viewMounted && state.resultWorkspaceView === 'charts') {
+          renderResultCard();
+        }
+      });
+    } else {
+      state.resultWorkspaceView = normalizedView;
+      if (state.replay.chartSheetOpen) setReplayChartSheetOpen(false);
+    }
+
+    renderSheetUi();
+    renderAll();
+    if (options.focus !== false) {
+      var button = elements.resultViewButtons.find(function (candidate) {
+        return candidate.getAttribute('data-accel-result-view-action') === normalizedView;
+      });
+      focusElement(button);
+    }
+  }
+
+  function handleResultWorkspaceViewClick(event) {
+    var nextView = event.currentTarget.getAttribute('data-accel-result-view-action');
+    setResultWorkspaceView(nextView as AccelResultWorkspaceView, { focus: false });
+  }
+
+  function handleResultChartMetricClick(event) {
+    var metric = event.currentTarget.getAttribute('data-accel-result-chart-metric');
+    if (metric !== 'speedMs' && metric !== 'altitudeM' && metric !== 'headingDeg') return;
+    if (state.resultChartMetric === metric) return;
+    state.resultChartMetric = metric as AccelResultChartMetric;
+    replayCharts.destroy();
+    renderResultCard();
+  }
+
+  function handleTechnicalDataToggle() {
+    state.technicalDataExpanded = !state.technicalDataExpanded;
+    renderAll();
+  }
+
   function handleHistoryClick(event) {
     var button = event.target.closest('[data-history-action][data-run-id]');
     if (!button) return;
@@ -1975,6 +2067,7 @@ export const initPromise = (function () {
     if (action === 'load') {
       pauseReplayPlayback();
       selectResult(runId);
+      state.resultWorkspaceView = 'summary';
       openPanel('results');
       scrollResultsPanelToTop();
       setActionNotice('accelResultLoadedNotice');
@@ -1985,6 +2078,7 @@ export const initPromise = (function () {
     if (action === 'replay') {
       void (async function () {
         selectResult(runId);
+        state.resultWorkspaceView = isShortLandscapeLayout() ? 'map' : 'summary';
         openPanel('results');
         scrollResultsPanelToTop();
         renderAll();
@@ -2063,6 +2157,14 @@ export const initPromise = (function () {
     renderResultCard();
   }
 
+  function handleReplayMapRetry() {
+    if (!replayMap?.retry) return;
+    void replayMap.retry().finally(function () {
+      if (state.viewMounted) renderResultCard();
+    });
+    renderReplayMapStatus({ status: 'loading', routeReady: true, error: null });
+  }
+
   function handleReplayProgressInput() {
     pauseReplayPlayback();
     cancelReplayMapApproach({ markPlayed: true });
@@ -2120,6 +2222,7 @@ export const initPromise = (function () {
     var result = getDisplayedResult();
     var source = ensureReplaySource(result);
     if (!source) return;
+    if (isShortLandscapeLayout()) state.resultWorkspaceView = 'charts';
     void ensureAccelChartRouteControllers().then(function (loaded) {
       if (loaded && state.replay.chartSheetOpen && state.viewMounted) renderResultCard();
     });
@@ -2129,7 +2232,11 @@ export const initPromise = (function () {
 
   function handleReplayChartsClose() {
     setReplayChartSheetOpen(false);
+    if (isShortLandscapeLayout() && state.resultWorkspaceView === 'charts') {
+      state.resultWorkspaceView = 'summary';
+    }
     renderResultCard();
+    renderSheetUi();
   }
 
   function handleReplayChartFilterInput() {
@@ -2470,7 +2577,10 @@ export const initPromise = (function () {
     state.replay.playPending = true;
     renderResultCard();
 
-    if (replayMapIntroPromise) {
+    if (isShortLandscapeLayout()) {
+      cancelReplayMapApproach({ markPlayed: true });
+      replayMap.fitRoute?.();
+    } else if (replayMapIntroPromise) {
       await replayMapIntroPromise;
     } else if (!state.replay.introPlayed) {
       await runReplayMapApproach(result, source);
@@ -2918,6 +3028,7 @@ export const initPromise = (function () {
     if (state.runs.length > MAX_RUNS) state.runs = state.runs.slice(0, MAX_RUNS);
     resetReplayState({ preserveAxisMode: true });
     state.selectedResultId = result.id;
+    state.resultWorkspaceView = 'summary';
     saveRuns();
     queueRunForCloudSync(result);
     enrichRunPlaces(result.id);
@@ -3010,6 +3121,8 @@ export const initPromise = (function () {
   function renderSheetUi() {
     var setupOpen = state.openPanel === 'setup';
     var resultsOpen = state.openPanel === 'results';
+    var shortLandscape = isShortLandscapeLayout();
+    var resultWorkspaceOpen = resultsOpen && shortLandscape;
     var hasResults = Boolean(getDisplayedResult());
     var setupSummary = getSetupSummary();
     var resultsSummary = getResultsSummary();
@@ -3031,9 +3144,47 @@ export const initPromise = (function () {
     elements.toolbarResults.setAttribute('aria-pressed', String(resultsOpen));
     elements.toolbarResults.disabled = !hasResults;
 
-    elements.sheetBackdrop.hidden = !(setupOpen || resultsOpen);
+    elements.sheetBackdrop.hidden = !(setupOpen || (resultsOpen && !shortLandscape));
     elements.setupPanel.hidden = !setupOpen;
     elements.resultsPanel.hidden = !resultsOpen;
+
+    if (elements.app) elements.app.dataset.accelView = resultWorkspaceOpen ? 'results' : 'live';
+    if (elements.resultsPanel) {
+      elements.resultsPanel.dataset.accelResultView = state.resultWorkspaceView;
+      elements.resultsPanel.setAttribute('role', resultWorkspaceOpen ? 'region' : 'dialog');
+      if (resultWorkspaceOpen) elements.resultsPanel.removeAttribute('aria-modal');
+      else elements.resultsPanel.setAttribute('aria-modal', 'true');
+    }
+    if (elements.liveShell) {
+      elements.liveShell.inert = resultWorkspaceOpen;
+      if (resultWorkspaceOpen) elements.liveShell.setAttribute('aria-hidden', 'true');
+      else elements.liveShell.removeAttribute('aria-hidden');
+    }
+    elements.resultViewButtons.forEach(function (button) {
+      button.setAttribute(
+        'aria-pressed',
+        String(button.getAttribute('data-accel-result-view-action') === state.resultWorkspaceView)
+      );
+    });
+    elements.resultChartMetricButtons.forEach(function (button) {
+      button.setAttribute(
+        'aria-pressed',
+        String(button.getAttribute('data-accel-result-chart-metric') === state.resultChartMetric)
+      );
+    });
+    if (elements.resultReplayChartSheet) {
+      elements.resultReplayChartSheet.dataset.accelResultChartMetric = state.resultChartMetric;
+    }
+    if (elements.resultTechnicalDataToggle) {
+      elements.resultTechnicalDataToggle.setAttribute(
+        'aria-expanded',
+        String(state.technicalDataExpanded)
+      );
+    }
+    if (elements.resultTechnicalDataContent) {
+      elements.resultTechnicalDataContent.hidden =
+        shortLandscape && !state.technicalDataExpanded;
+    }
 
     document.body.classList.toggle('accel-sheet-open', setupOpen || resultsOpen);
     if (resultsOpen) {
@@ -3344,17 +3495,32 @@ export const initPromise = (function () {
       replaySource,
       axisMode,
       state.replay.chartFilterStartRatio,
-      state.replay.chartFilterEndRatio
+      state.replay.chartFilterEndRatio,
+      isShortLandscapeLayout() ? state.resultChartMetric : null
     );
 
     var showAltitude =
       replayCharts.hasMetricData('altitudeM') || replaySourceHasMetricData(replaySource, 'altitudeM');
     var showHeading =
       replayCharts.hasMetricData('headingDeg') || replaySourceHasMetricData(replaySource, 'headingDeg');
-    if (elements.resultReplaySheetAltitudeStage)
-      elements.resultReplaySheetAltitudeStage.hidden = !showAltitude;
-    if (elements.resultReplaySheetHeadingStage)
-      elements.resultReplaySheetHeadingStage.hidden = !showHeading;
+    var singleChart = isShortLandscapeLayout();
+    if (elements.resultReplaySheetSpeedStage) {
+      elements.resultReplaySheetSpeedStage.hidden =
+        singleChart && state.resultChartMetric !== 'speedMs';
+    }
+    if (elements.resultReplaySheetAltitudeStage) {
+      elements.resultReplaySheetAltitudeStage.hidden =
+        !showAltitude || (singleChart && state.resultChartMetric !== 'altitudeM');
+    }
+    if (elements.resultReplaySheetHeadingStage) {
+      elements.resultReplaySheetHeadingStage.hidden =
+        !showHeading || (singleChart && state.resultChartMetric !== 'headingDeg');
+    }
+    elements.resultChartMetricButtons.forEach(function (button) {
+      var metric = button.getAttribute('data-accel-result-chart-metric');
+      button.disabled =
+        (metric === 'altitudeM' && !showAltitude) || (metric === 'headingDeg' && !showHeading);
+    });
 
     elements.resultReplaySheetSpeedValue.textContent =
       displayPoint && isFiniteNumber(displayPoint.speedMs)
@@ -3454,6 +3620,10 @@ export const initPromise = (function () {
   }
 
   function renderResultGraph(result, replaySource, replayPoint) {
+    if (isShortLandscapeLayout() && state.resultWorkspaceView !== 'summary') {
+      resultGraph.destroy();
+      return;
+    }
     var axisMode = getReplayAxisModeForSource(replaySource);
     if (elements.resultGraphMeta) {
       elements.resultGraphMeta.textContent =
@@ -3523,16 +3693,27 @@ export const initPromise = (function () {
   function renderReplayMap(result, replaySource, replayPoint) {
     if (!elements.resultReplayMapShell || !elements.resultReplayMap) return;
 
+    var mapViewActive = !isShortLandscapeLayout() || state.resultWorkspaceView === 'map';
+    var mapViewRequested = Boolean(state.openPanel === 'results' && mapViewActive && result);
     var hasReplayMap = Boolean(
-      state.openPanel === 'results' && result && replaySource && replaySource.hasGeoPath
+      mapViewRequested &&
+        replaySource &&
+        replaySource.hasGeoPath
     );
 
-    elements.resultReplayMapShell.hidden = !hasReplayMap;
+    elements.resultReplayMapShell.hidden = isShortLandscapeLayout()
+      ? !mapViewRequested
+      : !hasReplayMap;
 
     if (!hasReplayMap) {
       cancelReplayMapResize();
       replayMapRenderToken += 1;
       replayMap.clear();
+      renderReplayMapStatus(
+        mapViewRequested
+          ? { status: 'empty', routeReady: false, error: null }
+          : { status: 'idle', routeReady: false, error: null }
+      );
       return;
     }
 
@@ -3541,6 +3722,7 @@ export const initPromise = (function () {
       resetCamera: state.replay.introPlayed,
     });
     requestReplayMapResize();
+    renderReplayMapStatus();
 
     var displayPoint = replayPoint || getReplayDisplayPoint(replaySource);
     var mapDisplayPoint = getAccelReplayMapDisplayFrame(
@@ -3567,6 +3749,7 @@ export const initPromise = (function () {
       if (
         renderToken !== replayMapRenderToken ||
         state.openPanel !== 'results' ||
+        (isShortLandscapeLayout() && state.resultWorkspaceView !== 'map') ||
         !state.replay.source ||
         state.replay.sourceResultId !== result.id
       ) {
@@ -3574,11 +3757,34 @@ export const initPromise = (function () {
       }
 
       replayMap.resize?.();
+      renderReplayMapStatus();
       replayMap.renderPlaybackFrame(replaySource, mapDisplayPoint, mapPlaybackElapsedMs);
       if (!state.replay.introPlayed) {
-        void runReplayMapApproach(result, replaySource);
+        if (isShortLandscapeLayout()) {
+          replayMap.fitRoute?.();
+          state.replay.introPlayed = true;
+        } else {
+          void runReplayMapApproach(result, replaySource);
+        }
       }
     });
+  }
+
+  function renderReplayMapStatus(snapshot = replayMap?.getSnapshot?.()) {
+    if (!elements.resultReplayMapStatus || !elements.resultReplayMapStatusText) return;
+    var status = snapshot?.status || 'idle';
+    var messageKey = '';
+    if (status === 'loading') messageKey = 'accelMapLoading';
+    else if (status === 'degraded') messageKey = 'accelMapDegraded';
+    else if (status === 'error') messageKey = 'accelMapError';
+    else if (status === 'empty') messageKey = 'accelMapEmpty';
+
+    elements.resultReplayMapStatus.hidden = !messageKey;
+    elements.resultReplayMapStatus.dataset.state = status;
+    elements.resultReplayMapStatusText.textContent = messageKey ? t(messageKey) : '';
+    if (elements.resultReplayMapRetry) {
+      elements.resultReplayMapRetry.hidden = status !== 'degraded' && status !== 'error';
+    }
   }
 
   function buildResultGraphData(result) {
@@ -3590,6 +3796,13 @@ export const initPromise = (function () {
   }
 
   function renderDebugTables() {
+    if (isShortLandscapeLayout() && !state.technicalDataExpanded) {
+      if (elements.debugRawTableBody) elements.debugRawTableBody.innerHTML = '';
+      if (elements.debugGraphTableBody) elements.debugGraphTableBody.innerHTML = '';
+      if (elements.debugRawTableWrap) elements.debugRawTableWrap.hidden = true;
+      if (elements.debugGraphTableWrap) elements.debugGraphTableWrap.hidden = true;
+      return;
+    }
     renderDebugRawTable();
     renderDebugGraphTable();
   }

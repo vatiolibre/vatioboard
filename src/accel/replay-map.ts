@@ -97,11 +97,14 @@ export function createAccelReplayMapController({ element }) {
     clear,
     destroy,
     fitRoute: baseController.fitRoute,
+    getSnapshot: baseController.getSnapshot,
     init: baseController.init,
     renderPlaybackFrame,
     resetCamera: baseController.resetCamera,
     resize,
+    retry: baseController.retry,
     runApproachAnimation,
     setSource,
+    subscribe: baseController.subscribe,
   };
 }

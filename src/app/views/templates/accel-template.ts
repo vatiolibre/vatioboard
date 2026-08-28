@@ -559,6 +559,27 @@ const accelTemplate: string = String.raw`
                 </span>
               </p>
             </header>
+            <nav
+              class="accel-result-view-nav"
+              aria-label="Result views"
+              data-i18n-aria="accelResultViews"
+            >
+              <button type="button" class="accel-result-view-btn" data-accel-result-view-action="summary" data-i18n-aria="accelResultSummary" data-i18n-title="accelResultSummary" aria-label="Summary" title="Summary" aria-pressed="true">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 19V9m5 10V5m5 14v-7m5 7V3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              </button>
+              <button type="button" class="accel-result-view-btn" data-accel-result-view-action="map" data-i18n-aria="accelResultMap" data-i18n-title="accelResultMap" aria-label="Map" title="Map" aria-pressed="false">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 3v15m6-12v15" stroke="currentColor" stroke-width="1.6"/></svg>
+              </button>
+              <button type="button" class="accel-result-view-btn" data-accel-result-view-action="charts" data-i18n-aria="accelResultCharts" data-i18n-title="accelResultCharts" aria-label="Charts" title="Charts" aria-pressed="false">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 19V5m0 14h16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="m7 15 4-5 3 3 5-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <button type="button" class="accel-result-view-btn" data-accel-result-view-action="details" data-i18n-aria="accelResultDetails" data-i18n-title="accelResultDetails" aria-label="Details" title="Details" aria-pressed="false">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="M12 11v6m0-10h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              </button>
+              <button type="button" class="accel-result-view-btn" data-accel-result-view-action="history" data-i18n-aria="accelResultHistory" data-i18n-title="accelResultHistory" aria-label="History" title="History" aria-pressed="false">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 3v5h5m4-1v5l3 2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </nav>
             <button
               id="closeResultsPanel"
               type="button"
@@ -577,7 +598,7 @@ const accelTemplate: string = String.raw`
           </div>
 
           <div class="accel-sheet-body">
-            <section class="accel-sheet-section" aria-label="Latest result">
+            <section class="accel-sheet-section accel-result-latest-section" aria-label="Latest result">
               <div id="resultEmptyState" class="accel-empty-copy" data-i18n="accelNoResult">
                 Arm and complete a run to see the result here.
               </div>
@@ -700,6 +721,10 @@ const accelTemplate: string = String.raw`
                       data-i18n-aria="accelReplayMapAria"
                       aria-label="Acceleration replay map"
                     ></div>
+                    <div id="resultReplayMapStatus" class="accel-result-map-status" hidden role="status">
+                      <span id="resultReplayMapStatusText" data-i18n="accelMapLoading">Loading route map…</span>
+                      <button id="resultReplayMapRetry" type="button" class="accel-action-btn" hidden data-i18n="retry">Retry</button>
+                    </div>
                   </div>
 
                   <div
@@ -826,7 +851,7 @@ const accelTemplate: string = String.raw`
               </div>
             </section>
 
-            <section class="accel-sheet-section">
+            <section class="accel-sheet-section accel-result-details-section">
               <header class="accel-card-head">
                 <span class="accel-card-kicker" data-i18n="accelDiagnostics">Diagnostics</span>
                 <p class="accel-card-lead" data-i18n="accelDiagnosticsLead">
@@ -870,6 +895,20 @@ const accelTemplate: string = String.raw`
               </div>
             </section>
 
+            <section class="accel-technical-data-control">
+              <button
+                id="resultTechnicalDataToggle"
+                type="button"
+                class="accel-action-btn accel-technical-data-toggle"
+                aria-expanded="false"
+                aria-controls="resultTechnicalDataContent"
+              >
+                <span data-i18n="accelTechnicalData">Technical data</span>
+                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m6 8 4 4 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </section>
+
+            <div id="resultTechnicalDataContent" class="accel-technical-data-content">
             <section id="debugRawSection" class="accel-sheet-section" hidden>
               <header class="accel-card-head">
                 <span class="accel-card-kicker">Debug</span>
@@ -931,6 +970,7 @@ const accelTemplate: string = String.raw`
                 </table>
               </div>
             </section>
+            </div>
 
             <section class="accel-sheet-section accel-history-card">
               <header class="accel-card-head accel-history-head">
@@ -1017,6 +1057,12 @@ const accelTemplate: string = String.raw`
                     >Distance</span
                   >
                 </button>
+              </div>
+
+              <div class="accel-result-chart-metric-tabs" role="group" aria-label="Chart metric" data-i18n-aria="accelChartMetric">
+                <button type="button" class="accel-result-chart-metric-btn" data-accel-result-chart-metric="speedMs" data-i18n="speed" aria-pressed="true">Speed</button>
+                <button type="button" class="accel-result-chart-metric-btn" data-accel-result-chart-metric="altitudeM" data-i18n="altitude" aria-pressed="false">Altitude</button>
+                <button type="button" class="accel-result-chart-metric-btn" data-accel-result-chart-metric="headingDeg" data-i18n="heading" aria-pressed="false">Heading</button>
               </div>
 
               <button
