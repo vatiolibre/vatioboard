@@ -7,21 +7,19 @@
   --waze-hud-border: rgba(255, 255, 255, 0.2);
 }
 
-html.waze-page,
-body.waze-page{
+#app-view[data-vb-route="waze"]{
+  position: fixed;
+  inset: 0;
   width: 100%;
   height: 100%;
   overflow: hidden;
   overscroll-behavior: none;
-}
-
-body.waze-page{
   background: #07101c;
   user-select: none;
   -webkit-user-select: none;
 }
 
-body.waze-page #app-view > .waze-app{
+#app-view[data-vb-route="waze"] > .waze-app{
   position: fixed;
   inset: 0;
   z-index: 0;

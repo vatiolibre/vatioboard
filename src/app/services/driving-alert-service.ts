@@ -119,6 +119,7 @@ export function createDrivingAlertService({
 }: DrivingAlertServiceOptions = {}): DrivingAlertService {
   const initialPreferences = loadInitialPreferences();
   const listeners = new Set<(snapshot: DrivingAlertSnapshot) => void>();
+  const consumers = new Map<string, { count: number; options: LegacyDrivingAlertRecord }>();
   const state: LegacyDrivingAlertRecord = {
     status: "idle",
     started: false,
@@ -422,7 +423,7 @@ export function createDrivingAlertService({
     gpsConsumerCleanup = null;
   }
 
-  function start({ reason: _reason = "start" }: LegacyDrivingAlertRecord = {}) {
+  function activate({ reason: _reason = "start" }: LegacyDrivingAlertRecord = {}) {
     if (destroyed) return getSnapshot();
     state.started = true;
     ensureGpsSubscription();
@@ -435,7 +436,7 @@ export function createDrivingAlertService({
     return getSnapshot();
   }
 
-  function stop({ reason: _reason = "stop" }: LegacyDrivingAlertRecord = {}) {
+  function deactivate() {
     state.started = false;
     state.audioControlActive = false;
     releaseGpsSubscription();
@@ -447,10 +448,48 @@ export function createDrivingAlertService({
     return getSnapshot();
   }
 
+  function acquireConsumer(consumerId: string, options: LegacyDrivingAlertRecord = {}) {
+    const id = String(consumerId || "").trim();
+    if (!id || destroyed) return () => {};
+    const existing = consumers.get(id);
+    consumers.set(id, {
+      count: (existing?.count || 0) + 1,
+      options: { ...existing?.options, ...options },
+    });
+    activate({ reason: options.reason || `consumer:${id}` });
+
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const current = consumers.get(id);
+      if (current && current.count > 1) {
+        consumers.set(id, { ...current, count: current.count - 1 });
+      } else {
+        consumers.delete(id);
+      }
+      if (consumers.size === 0 && !hasActiveAlertFeature()) {
+        deactivate();
+      } else {
+        emit();
+      }
+    };
+  }
+
+  function start({ reason: _reason = "start" }: LegacyDrivingAlertRecord = {}) {
+    return activate({ reason: _reason });
+  }
+
+  function stop({ reason: _reason = "stop" }: LegacyDrivingAlertRecord = {}) {
+    return deactivate();
+  }
+
   function updatePreference(mutator: () => void, { fromUserGesture = false, startIfNeeded = true }: LegacyDrivingAlertRecord = {}) {
     mutator();
     if (startIfNeeded && hasActiveAlertFeature()) start({ reason: "alert-preference" });
-    else if (startIfNeeded && state.started && !hasActiveAlertFeature()) stop({ reason: "alerts-disabled" });
+    else if (startIfNeeded && state.started && !hasActiveAlertFeature() && consumers.size === 0) {
+      stop({ reason: "alerts-disabled" });
+    }
     syncAudio({ fromUserGesture });
     emit();
     return getSnapshot();
@@ -563,6 +602,7 @@ export function createDrivingAlertService({
     return {
       status: state.status,
       started: state.started,
+      consumers: Array.from(consumers.keys()).sort(),
       currentSpeedMs: state.currentSpeedMs,
       latestPosition: state.latestPosition ? { ...state.latestPosition } : null,
       alertUiState: state.alertUiState || buildAlertState(),
@@ -593,6 +633,7 @@ export function createDrivingAlertService({
 
   function destroy() {
     destroyed = true;
+    consumers.clear();
     releaseGpsSubscription();
     alertAudio.destroy?.();
     ownedCameraDatabase?.destroy?.();
@@ -604,6 +645,7 @@ export function createDrivingAlertService({
   state.status = computeStatus();
 
   return {
+    acquireConsumer,
     destroy,
     getSnapshot,
     primeAudioFromUserGesture,

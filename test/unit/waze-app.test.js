@@ -364,14 +364,15 @@ describe("Waze route app", () => {
     }))).toBe(true);
   });
 
-  it("renders the shared alert snapshot and stops only a route-owned alert session", () => {
-    const stopped = vi.fn();
+  it("renders the shared alert snapshot and releases only its alert consumer lease", () => {
+    const releaseConsumer = vi.fn();
     const initial = makeAlertSnapshot({ started: false, status: "idle", latestPosition: null });
     const started = makeAlertSnapshot();
     const service = {
       getSnapshot: vi.fn(() => initial),
+      acquireConsumer: vi.fn(() => releaseConsumer),
       start: vi.fn(() => started),
-      stop: stopped,
+      stop: vi.fn(),
       subscribe: vi.fn((listener) => {
         listener(started);
         return vi.fn();
@@ -380,14 +381,19 @@ describe("Waze route app", () => {
     const context = createContext({ drivingAlertService: service });
     const controller = createWazeRouteController(context);
 
-    expect(service.start).toHaveBeenCalledWith({ fromUserGesture: false, reason: "waze-route" });
+    expect(service.acquireConsumer).toHaveBeenCalledWith("vatio.waze.route", {
+      fromUserGesture: false,
+      reason: "waze-route",
+    });
+    expect(service.start).not.toHaveBeenCalled();
     expect(context.root.querySelector("#wazeFrame").src).toContain("embed.waze.com/iframe");
     expect(context.root.querySelector("#wazeSpeedValue").textContent).toBe("22");
     expect(context.root.querySelector("#wazeSpeedUnit").textContent).toBe("mph");
     expect(context.root.querySelector("#wazeSpeedLimitValue").textContent).toBe("30 mph");
 
     controller.destroy();
-    expect(stopped).toHaveBeenCalledWith({ reason: "waze-route-unmount" });
+    expect(releaseConsumer).toHaveBeenCalledTimes(1);
+    expect(service.stop).not.toHaveBeenCalled();
     context.cleanup.run();
   });
 

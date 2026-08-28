@@ -72,7 +72,7 @@ describe("accel scroll policy", () => {
     expect(speedCss).toContain("overscroll-behavior: contain;");
     expect(speedCss).toContain("touch-action: pan-y;");
 
-    expect(replayCss).toContain("html.replay-page,\nbody.replay-page");
+    expect(replayCss).toContain('#app-view[data-vb-route="replay"]');
     expect(replayCss).toContain("overflow: hidden;");
     expect(replayCss).toContain("overscroll-behavior: none;");
     expect(replayCss).toContain(".replay-recordings-list{\n    position: relative;");

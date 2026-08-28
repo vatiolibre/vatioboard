@@ -90,6 +90,11 @@ vi.mock('../../src/replay/replay.js', () => ({
   unmountReplayRoute: vi.fn(),
 }));
 
+vi.mock('../../src/apps/waze/waze-app.js', () => ({
+  mountWazeRoute: vi.fn((routeContext) => routeState.mount('waze', routeContext)),
+  unmountWazeRoute: vi.fn(),
+}));
+
 vi.mock('../../src/accel/accel.js', () => ({
   initPromise: Promise.resolve(),
   mountAccelRoute: vi.fn((routeContext) => routeState.mount('accel', routeContext)),
@@ -112,6 +117,7 @@ const routeViews = {
   '#/board': () => import('../../src/app/views/BoardView.js'),
   '#/speed': () => import('../../src/app/views/SpeedView.js'),
   '#/replay': () => import('../../src/app/views/ReplayView.js'),
+  '#/waze': () => import('../../src/app/views/WazeView.js'),
   '#/accel': () => import('../../src/app/views/AccelView.js'),
   '#/library': () => import('../../src/app/views/LibraryView.js'),
 };
@@ -130,12 +136,12 @@ async function bootRouteHarness() {
   const { createShellWindowManager } = await import('../../src/shared/shell-window-manager.js');
   const { createShellTaskbar } = await import('../../src/shared/shell-taskbar.js');
   const persistentLayer = document.getElementById('app-persistent-layer');
-  const floatingTools = initFloatingTools({ mount: persistentLayer });
-  const startMenu = initSharedStartMenu({ floatingTools, mount: persistentLayer });
   routeState.shellManager = createShellWindowManager({
     root: persistentLayer,
     storeOptions: { storage: localStorage, migrateLegacy: false },
   });
+  const floatingTools = initFloatingTools({ mount: persistentLayer, shellManager: routeState.shellManager });
+  const startMenu = initSharedStartMenu({ floatingTools, mount: persistentLayer });
   routeState.shellTaskbar = createShellTaskbar({
     shellManager: routeState.shellManager,
     root: persistentLayer,
@@ -167,6 +173,7 @@ const routeSelectors = {
   board: '#pad',
   speed: '#speedValue',
   replay: '#replayShell',
+  waze: '[data-waze-app]',
   accel: '#armRun',
   library: '#libraryList',
 };
@@ -175,6 +182,7 @@ const routeBodyClasses = {
   board: 'board-page',
   speed: 'speed-page',
   replay: 'replay-page',
+  waze: 'waze-page',
   accel: 'accel-page',
   library: 'library-page',
 };
@@ -182,6 +190,7 @@ const routeBodyClasses = {
 async function expectRouteUsable(name) {
   const root = currentRouteRoot();
   expect(root.children.length).toBeGreaterThan(0);
+  expect(root.dataset.vbRoute).toBe(name);
   expect(root.querySelector(routeSelectors[name])).toBeTruthy();
   expect(document.body.classList.contains(routeBodyClasses[name])).toBe(true);
 
@@ -220,10 +229,12 @@ describe('SPA route remount regression coverage', () => {
   it.each([
     ['#/board', '#/speed', 'speed'],
     ['#/board', '#/replay', 'replay'],
+    ['#/board', '#/waze', 'waze'],
     ['#/board', '#/accel', 'accel'],
     ['#/board', '#/library', 'library'],
     ['#/board', '#/speed', 'speed', '#/board', 'board', '#/speed', 'speed'],
     ['#/board', '#/replay', 'replay', '#/board', 'board', '#/replay', 'replay'],
+    ['#/board', '#/waze', 'waze', '#/board', 'board', '#/waze', 'waze'],
     ['#/board', '#/accel', 'accel', '#/board', 'board', '#/accel', 'accel'],
     ['#/board', '#/library', 'library', '#/board', 'board', '#/library', 'library'],
   ])('keeps route DOM usable through %s -> %s remount cycle', async (...sequence) => {
@@ -231,15 +242,28 @@ describe('SPA route remount regression coverage', () => {
     await navigateHash(sequence[0]);
     await expectRouteUsable('board');
 
+    const calculator = document.querySelector('.calc-panel');
+    const energy = document.querySelector('.energy-panel');
+    routeState.shellManager.openWindow('calculator');
+    routeState.shellManager.openWindow('energy');
+    calculator.querySelector('.calc-expr').value = '42';
+
     for (let index = 1; index < sequence.length; index += 2) {
       const hash = sequence[index];
       const expectedRoute = sequence[index + 1];
       await navigateHash(hash);
       await expectRouteUsable(expectedRoute);
+      expect(document.querySelector('.calc-panel')).toBe(calculator);
+      expect(document.querySelector('.energy-panel')).toBe(energy);
+      expect(calculator.hidden).toBe(false);
+      expect(energy.hidden).toBe(false);
+      expect(calculator.querySelector('.calc-expr').value).toBe('42');
+      expect(routeState.shellManager.getWindow('calculator').state).toBe('open');
+      expect(routeState.shellManager.getWindow('energy').state).toBe('open');
     }
 
     const finalRoute = sequence.at(-1);
-    const previousRouteNames = ['board', 'speed', 'replay', 'accel', 'library'].filter(
+    const previousRouteNames = ['board', 'speed', 'replay', 'waze', 'accel', 'library'].filter(
       (name) => name !== finalRoute
     );
     for (const previousRoute of previousRouteNames) {

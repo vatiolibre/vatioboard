@@ -86,6 +86,7 @@ export interface GpsService {
 export interface DrivingAlertSnapshot {
   status: string;
   started?: boolean;
+  consumers?: string[];
   currentSpeedMs: number;
   latestPosition: NormalizedGpsPosition | null;
   alertUiState: unknown;
@@ -95,6 +96,10 @@ export interface DrivingAlertSnapshot {
 }
 
 export interface DrivingAlertService {
+  acquireConsumer?(
+    consumerId: string,
+    options?: { fromUserGesture?: boolean; reason?: string },
+  ): Unsubscribe;
   start(options?: { fromUserGesture?: boolean; reason?: string }): DrivingAlertSnapshot;
   stop(options?: { reason?: string }): DrivingAlertSnapshot;
   subscribe(listener: (snapshot: DrivingAlertSnapshot) => void): Unsubscribe;

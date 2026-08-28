@@ -122,7 +122,6 @@ export function createWazeRouteController(routeContext: WazeRouteMountContext) {
   const state: AnyRecord = {
     destroyed: false,
     sourceStarted: false,
-    ownsAlertSession: false,
     position: null,
     speedMs: 0,
     unit: "kmh",
@@ -140,6 +139,7 @@ export function createWazeRouteController(routeContext: WazeRouteMountContext) {
     center: null,
   };
   let sourceUnsubscribe: (() => void) | null = null;
+  let alertConsumerCleanup: (() => void) | null = null;
   let recordingUnsubscribe: (() => void) | null = null;
   let gpsConsumerCleanup: (() => void) | null = null;
   const ownsAudioCueController = !routeContext.audioCueController;
@@ -198,13 +198,20 @@ export function createWazeRouteController(routeContext: WazeRouteMountContext) {
 
     state.sourceStarted = true;
     if (drivingAlerts) {
-      const snapshot = alertSessionStarted
-        ? existingAlertSnapshot
-        : drivingAlerts.start?.({
+      if (drivingAlerts.acquireConsumer) {
+        alertConsumerCleanup = drivingAlerts.acquireConsumer(WAZE_GPS_CONSUMER_ID, {
           fromUserGesture,
           reason: fromUserGesture ? "waze-route-user" : "waze-route",
         });
-      state.ownsAlertSession = !alertSessionStarted && snapshot?.started === true;
+      }
+      const snapshot = drivingAlerts.acquireConsumer
+        ? drivingAlerts.getSnapshot?.()
+        : alertSessionStarted
+          ? existingAlertSnapshot
+          : drivingAlerts.start?.({
+              fromUserGesture,
+              reason: fromUserGesture ? "waze-route-user" : "waze-route",
+            });
       applyAlertSnapshot(snapshot || existingAlertSnapshot);
       sourceUnsubscribe = drivingAlerts.subscribe?.(applyAlertSnapshot) || null;
       return;
@@ -547,11 +554,10 @@ export function createWazeRouteController(routeContext: WazeRouteMountContext) {
     sourceUnsubscribe = null;
     recordingUnsubscribe?.();
     recordingUnsubscribe = null;
+    alertConsumerCleanup?.();
+    alertConsumerCleanup = null;
     gpsConsumerCleanup?.();
     gpsConsumerCleanup = null;
-    if (state.ownsAlertSession) {
-      drivingAlerts?.stop?.({ reason: "waze-route-unmount" });
-    }
     if (ownsAudioCueController) audioCues.destroy();
     elements.frame?.removeAttribute("src");
   }

@@ -151,6 +151,14 @@ export function createRouteView({
         pageName,
       };
 
+      const previousRouteScope = root.getAttribute("data-vb-route");
+      if (pageName) root.setAttribute("data-vb-route", pageName);
+      cleanup.add(() => {
+        if (!pageName || root.getAttribute("data-vb-route") !== pageName) return;
+        if (previousRouteScope === null) root.removeAttribute("data-vb-route");
+        else root.setAttribute("data-vb-route", previousRouteScope);
+      });
+
       function getOwnedRouteNodes() {
         return routeNodes.filter((node) =>
           node.parentNode === root

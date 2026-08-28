@@ -120,6 +120,46 @@ describe("createDrivingAlertService", () => {
     expect(service.getSnapshot().audio.overspeedAudible).toBe(true);
   });
 
+  it("keeps shared alerts active until the final route consumer releases its lease", () => {
+    const gpsService = createGpsServiceDouble();
+    const audioController = createAudioControllerDouble();
+    const service = createDrivingAlertService({ gpsService, audioController });
+    service.setManualAlertEnabled(false, { startIfNeeded: false });
+    service.setTrapAlertEnabled(false, { startIfNeeded: false });
+
+    const releaseWaze = service.acquireConsumer("vatio.waze.route", { reason: "waze-route" });
+    const releaseHud = service.acquireConsumer("vatio.shell.activity", { reason: "activity" });
+
+    expect(service.getSnapshot()).toMatchObject({
+      started: true,
+      consumers: ["vatio.shell.activity", "vatio.waze.route"],
+    });
+    expect(gpsService.startConsumer).toHaveBeenCalledTimes(1);
+
+    releaseWaze();
+    expect(service.getSnapshot()).toMatchObject({
+      started: true,
+      consumers: ["vatio.shell.activity"],
+    });
+
+    releaseHud();
+    expect(service.getSnapshot()).toMatchObject({ started: false, consumers: [] });
+    expect(gpsService.startConsumer.mock.results[0].value).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not stop an armed background alert when its route consumer leaves", () => {
+    const service = createDrivingAlertService({
+      gpsService: createGpsServiceDouble(),
+      audioController: createAudioControllerDouble(),
+    });
+    service.setManualAlertEnabled(true);
+    const releaseWaze = service.acquireConsumer("vatio.waze.route");
+
+    releaseWaze();
+
+    expect(service.getSnapshot()).toMatchObject({ started: true, consumers: [] });
+  });
+
   it("loads cached/static camera datasets and emits trap proximity alerts", async () => {
     const gpsService = createGpsServiceDouble();
     const audioController = createAudioControllerDouble();

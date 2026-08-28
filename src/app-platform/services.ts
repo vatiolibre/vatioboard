@@ -191,6 +191,12 @@ function createDrivingAlertsGateway(
 
   return {
     ...service,
+    acquireConsumer: service.acquireConsumer
+      ? (consumerId, options) => {
+          if (!canUseAlerts()) return () => {};
+          return service.acquireConsumer?.(consumerId, options) ?? (() => {});
+        }
+      : undefined,
     start(options) {
       if (!canUseAlerts()) return deniedSnapshot();
       return service.start(options);

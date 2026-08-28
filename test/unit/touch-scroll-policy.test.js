@@ -112,7 +112,7 @@ describe("touch scroll policy", () => {
 
     expect(libraryCss).toContain("html.library-page #app,\nhtml.library-page #app-view,\nbody.library-page #app,\nbody.library-page #app-view");
     expect(libraryCss).toContain("touch-action: pan-y pinch-zoom;");
-    expect(replayCss).toContain("body.replay-page #app,\nbody.replay-page #app-view,\nbody.replay-page .replay-app");
+    expect(replayCss).toContain('#app-view[data-vb-route="replay"] .replay-app');
     expect(replayCss).toContain("touch-action: auto;");
     expect(accelCss).toContain("body.accel-page #app,\nbody.accel-page #app-view,\nbody.accel-page .accel-app");
     expect(accelCss).toContain("touch-action: auto;");

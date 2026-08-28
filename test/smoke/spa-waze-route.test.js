@@ -20,13 +20,15 @@ describe("SPA Waze route real-controller smoke", () => {
 
     expect(targetSnapshots[0].activeWatchCount).toBe(1);
     expect(targetSnapshots[1].activeWatchCount).toBe(1);
-    expect(snapshots[2].activeWatchCount).toBe(0);
+    expect(snapshots[2].activeWatchCount).toBe(1);
     expect(snapshots[2].activeRafCount).toBe(0);
+    expect(window.__vatioboardDrivingAlerts?.getSnapshot().started).toBe(true);
     expect(document.querySelectorAll("[data-waze-app]")).toHaveLength(1);
 
     const board = await navigateRealSpaSmoke("#/board");
-    expect(board.activeWatchCount).toBe(0);
+    expect(board.activeWatchCount).toBe(1);
     expect(board.activeRafCount).toBe(0);
+    expect(window.__vatioboardDrivingAlerts?.getSnapshot().consumers).not.toContain("vatio.waze.route");
     expect(document.querySelector("[data-waze-app]")).toBeNull();
   }, 40000);
 
@@ -57,6 +59,7 @@ describe("SPA Waze route real-controller smoke", () => {
     expect(getRealSpaResourceSnapshot().activeWatchCount).toBe(1);
 
     const board = await navigateRealSpaSmoke("#/board");
-    expect(board.activeWatchCount).toBe(0);
+    expect(board.activeWatchCount).toBe(1);
+    expect(window.__vatioboardDrivingAlerts?.getSnapshot().consumers).not.toContain("vatio.waze.route");
   }, 40000);
 });

@@ -47,6 +47,7 @@ describe("createRouteView", () => {
     document.body.classList.add("route-sheet-open");
 
     expect(root.querySelector("#route-panel")?.textContent).toBe("Route panel");
+    expect(root.getAttribute("data-vb-route")).toBe("test");
     expect(document.title).toBe("Route Title");
     expect(document.querySelector('meta[name="description"]')?.getAttribute("content")).toBe(
       "Route description",
@@ -62,6 +63,7 @@ describe("createRouteView", () => {
     mounted.unmount();
 
     expect(root.children).toHaveLength(0);
+    expect(root.hasAttribute("data-vb-route")).toBe(false);
     expect(document.documentElement.classList.contains("route-page")).toBe(false);
     expect(document.documentElement.classList.contains("route-sheet-open")).toBe(false);
     expect(document.body.classList.contains("route-page")).toBe(false);
@@ -174,6 +176,7 @@ describe("createRouteView", () => {
     await mountedPromise;
 
     expect(root.querySelector("#next-route")?.textContent).toBe("Next route");
+    expect(root.hasAttribute("data-vb-route")).toBe(false);
     expect(controller.mountRoute).not.toHaveBeenCalled();
     expect(controller.unmountRoute).not.toHaveBeenCalled();
   });

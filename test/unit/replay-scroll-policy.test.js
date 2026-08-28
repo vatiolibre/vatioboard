@@ -11,12 +11,12 @@ describe("replay scroll policy", () => {
     const replayCss = readStyle("src/styles/replay.less");
 
     expect(replayCss).toContain('@import "./board.less";');
-    expect(replayCss).toContain("html.replay-page,\nbody.replay-page");
+    expect(replayCss).toContain('#app-view[data-vb-route="replay"]');
     expect(replayCss).toContain("height: 100%;");
     expect(replayCss).toContain("overflow: hidden;");
     expect(replayCss).toContain("overscroll-behavior: none;");
 
-    expect(replayCss).toContain("body.replay-page #app,\nbody.replay-page #app-view,\nbody.replay-page .replay-app");
+    expect(replayCss).toContain('#app-view[data-vb-route="replay"] .replay-app');
     expect(replayCss).toContain("height: 100dvh;");
     expect(replayCss).toContain("min-height: 0;");
     expect(replayCss).toContain("flex: 1 1 auto;");
@@ -87,14 +87,14 @@ describe("replay scroll policy", () => {
     expect(replayCss).toContain("backdrop-filter: blur(12px);");
   });
 
-  it("does not use broad Replay touch-action resets and keeps floating drag protected", () => {
+  it("scopes Replay touch policy away from persistent shell surfaces", () => {
     const replayCss = readStyle("src/styles/replay.less");
 
     expect(replayCss).not.toContain("body.replay-page *");
     expect(replayCss).not.toContain("body.replay-page button");
-    expect(replayCss).toContain("body.replay-page .vb-floating-drag-handle");
-    expect(replayCss).toContain("body.replay-page .vb-shell-taskbar");
-    expect(replayCss).toContain("body.replay-page .milkdrop-resize-handle");
-    expect(replayCss).toContain("touch-action: none;");
+    expect(replayCss).not.toContain("body.replay-page .vb-floating-drag-handle");
+    expect(replayCss).not.toContain("body.replay-page .vb-shell-taskbar");
+    expect(replayCss).not.toContain("body.replay-page .milkdrop-resize-handle");
+    expect(replayCss).toContain('#app-view[data-vb-route="replay"]');
   });
 });

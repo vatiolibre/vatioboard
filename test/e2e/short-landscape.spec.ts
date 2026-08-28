@@ -734,6 +734,106 @@ test("Waze route fills the viewport edge to edge with an overlaid driving HUD", 
   });
 });
 
+test("persistent shell tools and background driving state survive Waze and Replay navigation", async ({ page }, testInfo) => {
+  test.skip(!isTeslaProject(testInfo), "Tesla shell continuity coverage");
+  await page.route("https://embed.waze.com/**", (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html",
+    body: "<!doctype html><html><body style='margin:0;background:#dfe9ef'></body></html>",
+  }));
+  await openRoute(page, "board");
+
+  await page.evaluate(() => {
+    const shellWindow = (window as any).__vatioboardFloatingTools;
+    shellWindow.openCalculator();
+    (window as any).__vatioboardPlayerWidget.open();
+  });
+  await expect(page.locator(".calc-panel")).toBeVisible();
+  await expect(page.locator(".player-panel")).toBeVisible();
+  await page.locator(".calc-keys .calc-key", { hasText: "7" }).click();
+
+  const openLauncherApp = async (appId: string, panelSelector: string) => {
+    const launcher = page.locator("#appStartMenuList");
+    if (!(await launcher.isVisible())) {
+      await page.locator("[data-vb-shell-start-button]").click();
+    }
+    await expect(launcher).toBeVisible();
+    const tile = page.locator(`.vb-app-launcher-tile-main[data-app-id='${appId}']`);
+    const pageIndex = await tile.evaluate((element) => (
+      element.closest<HTMLElement>("[data-vb-app-launcher-page]")?.dataset.page || "0"
+    ));
+    await launcher.locator(`.vb-app-launcher-page-dot[data-page='${pageIndex}']`).click();
+    await expect(tile).toBeVisible();
+    await tile.click();
+    await expect(page.locator(panelSelector)).toBeVisible();
+  };
+  await openLauncherApp("vatio.premiumClock", ".premium-clock-panel");
+  await openLauncherApp("vatio.tts", ".tts-panel");
+  await page.locator("[data-tts-text]").fill("Continue speaking across applications");
+
+  await page.evaluate(() => {
+    const identities = [
+      [".calc-panel", "calculator"],
+      [".player-panel", "player"],
+      [".premium-clock-panel", "clock"],
+      [".tts-panel", "tts"],
+    ];
+    for (const [selector, identity] of identities) {
+      document.querySelector<HTMLElement>(selector)!.dataset.continuityIdentity = identity;
+    }
+    (window as any).__vatioboardDriveRecording.startRecording({ source: "continuity-test" });
+    (window as any).__vatioboardDrivingAlerts.setManualAlertEnabled(true, {
+      fromUserGesture: false,
+      startIfNeeded: true,
+    });
+  });
+
+  const assertContinuity = async (route: string) => {
+    await page.evaluate((nextRoute) => {
+      window.location.hash = `#/${nextRoute}`;
+    }, route);
+    await expect(page.locator("#app-view")).toHaveAttribute("data-vb-route", route);
+    for (const [selector, identity] of [
+      [".calc-panel", "calculator"],
+      [".player-panel", "player"],
+      [".premium-clock-panel", "clock"],
+      [".tts-panel", "tts"],
+    ]) {
+      await expect(page.locator(selector)).toHaveAttribute("data-continuity-identity", identity);
+      await expect(page.locator(selector)).toBeVisible();
+    }
+    const state = await page.evaluate(() => ({
+      alert: (window as any).__vatioboardDrivingAlerts.getSnapshot(),
+      calculator: (window as any).__vatioboardFloatingTools.shellManager.getWindow("calculator")?.state,
+      clock: (window as any).__vatioboardFloatingTools.shellManager.getWindow("premium-clock")?.state,
+      player: (window as any).__vatioboardFloatingTools.shellManager.getWindow("player")?.state,
+      recording: (window as any).__vatioboardDriveRecording.getSnapshot(),
+      tts: (window as any).__vatioboardFloatingTools.shellManager.getWindow("tts")?.state,
+    }));
+    expect(state.alert.started).toBe(true);
+    expect(state.recording.state).toBe("recording");
+    expect(state.calculator).toBe("open");
+    expect(state.clock).toBe("open");
+    expect(state.player).toBe("open");
+    expect(state.tts).toBe("open");
+    await expect(page.locator(".calc-expr")).toHaveValue("7");
+    await expect(page.locator("[data-tts-text]")).toHaveValue("Continue speaking across applications");
+  };
+
+  for (const route of ["speed", "accel", "waze", "replay", "board"]) {
+    await assertContinuity(route);
+  }
+
+  const finalAlertSnapshot = await page.evaluate(() => {
+    const alerts = (window as any).__vatioboardDrivingAlerts;
+    const snapshot = alerts.getSnapshot();
+    void (window as any).__vatioboardDriveRecording.stopRecording();
+    alerts.setManualAlertEnabled(false, { startIfNeeded: true });
+    return snapshot;
+  });
+  expect(finalAlertSnapshot.consumers).not.toContain("vatio.waze.route");
+});
+
 test("compact trip stats keep the live globe visible", async ({ page }, testInfo) => {
   test.skip(!isTeslaProject(testInfo), "Exact Tesla geometry assertion");
   await openRoute(page, "speed");

@@ -1,3 +1,5 @@
+import { getRouteConfig } from "./route-registry.js";
+
 const ROUTE_CHANGE_EVENT = "vatioboard:routechange";
 const ROUTE_VISIBLE_EVENT = "vatioboard:route-visible";
 
@@ -79,19 +81,9 @@ export function toAppRouteHash(href) {
   if (url.origin !== window.location.origin) return "";
   if (url.hash.startsWith("#/")) return parseAppHash(url.hash).hash;
 
-  const pathname = url.pathname.replace(/\/+$/, "") || "/";
-  const search = url.search || "";
-
-  if (pathname === "/") return `#/${search}`;
-  if (pathname === "/speed") return `#/speed${search}`;
-  if (pathname === "/library") return `#/library${search}`;
-  if (pathname === "/accel") return `#/accel${search}`;
-  if (pathname === "/replay") return `#/replay${search}`;
-  if (pathname === "/board") return `#/board${search}`;
-  if (pathname === "/apps") return `#/apps${search}`;
-  if (pathname === "/qr-scanner") return `#/qr-scanner${search}`;
-
-  return "";
+  const pathname = normalizePath(url.pathname);
+  if (!getRouteConfig(pathname)) return "";
+  return `#${pathname}${url.search || ""}`;
 }
 
 export function canNavigateAway(fromRoute = activeRoute) {

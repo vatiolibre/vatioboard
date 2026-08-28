@@ -46,12 +46,18 @@
     }
 }
 
-html.replay-page,
-body.replay-page{
+#app-view[data-vb-route="replay"]{
     height: 100%;
     min-height: 100%;
     overflow: hidden;
     overscroll-behavior: none;
+    background:
+      linear-gradient(180deg, var(--replay-page-sheen), transparent 22%),
+      linear-gradient(180deg, var(--replay-page-top) 0%, var(--replay-page-bottom) 100%);
+    color: var(--btn-fg);
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
 }
 
 .replay-app,
@@ -68,29 +74,8 @@ body.replay-page{
     display: none !important;
 }
 
-body.replay-page{
-    background:
-      linear-gradient(180deg, var(--replay-page-sheen), transparent 22%),
-      linear-gradient(180deg, var(--replay-page-top) 0%, var(--replay-page-bottom) 100%);
-    color: var(--btn-fg);
-    user-select: none;
-    -webkit-user-select: none;
-    -webkit-touch-callout: none;
-}
-
-body.replay-page.replay-graph-sheet-open{
-    overflow: hidden;
-}
-
-body.replay-page .vb-floating-drag-handle,
-body.replay-page .vb-shell-taskbar,
-body.replay-page .milkdrop-resize-handle{
-    touch-action: none;
-}
-
-body.replay-page #app,
-body.replay-page #app-view,
-body.replay-page .replay-app{
+#app-view[data-vb-route="replay"],
+#app-view[data-vb-route="replay"] .replay-app{
     height: 100vh;
     height: 100dvh;
     min-height: 0;
@@ -1318,17 +1303,15 @@ body.replay-page .replay-app{
 }
 
 @media (max-width: 799.98px){
-    html.replay-page,
-    body.replay-page{
+    #app-view[data-vb-route="replay"]{
         height: 100%;
         min-height: 100%;
         overflow: hidden;
         overscroll-behavior: none;
     }
 
-    body.replay-page #app,
-    body.replay-page #app-view,
-    body.replay-page .replay-app{
+    #app-view[data-vb-route="replay"],
+    #app-view[data-vb-route="replay"] .replay-app{
         height: 100vh;
         height: 100dvh;
         min-height: 0;
