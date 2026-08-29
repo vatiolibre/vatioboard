@@ -233,6 +233,7 @@ export const initPromise = (function () {
       closeSetupPanel: byId('closeSetupPanel'),
       setupPanelStatus: byId('setupPanelStatus'),
       resultsPanel: byId('resultsPanel'),
+      resultsPanelBody: queryOne('#resultsPanel > .accel-sheet-body'),
       closeResultsPanel: byId('closeResultsPanel'),
       resultsPanelStatus: byId('resultsPanelStatus'),
       resultViewButtons: queryAll('[data-accel-result-view-action]'),
@@ -1193,6 +1194,7 @@ export const initPromise = (function () {
   function teardownPanel(panelName) {
     if (panelName !== 'results') return;
     pauseReplayPlayback();
+    state.technicalDataExpanded = false;
     resetReplayMapIntroState();
     cancelReplayMapResize();
     replayMapRenderToken += 1;
@@ -1213,6 +1215,7 @@ export const initPromise = (function () {
     renderSheetUi();
     if (panelName === 'results') {
       renderResultCard();
+      resetResultWorkspaceScroll(state.resultWorkspaceView);
     }
 
     var focusTarget = panelName === 'setup' ? elements.closeSetupPanel : elements.closeResultsPanel;
@@ -2011,6 +2014,8 @@ export const initPromise = (function () {
       ? nextView
       : 'summary';
 
+    if (normalizedView !== 'details') state.technicalDataExpanded = false;
+
     if (normalizedView === 'charts') {
       var result = getDisplayedResult();
       if (!ensureReplaySource(result)) return;
@@ -2028,12 +2033,26 @@ export const initPromise = (function () {
 
     renderSheetUi();
     renderAll();
+    resetResultWorkspaceScroll(normalizedView);
     if (options.focus !== false) {
       var button = elements.resultViewButtons.find(function (candidate) {
         return candidate.getAttribute('data-accel-result-view-action') === normalizedView;
       });
       focusElement(button);
     }
+  }
+
+  function resetResultWorkspaceScroll(view: AccelResultWorkspaceView) {
+    if (!isShortLandscapeLayout()) return;
+
+    queueMicrotask(function () {
+      if (!state.viewMounted || state.resultWorkspaceView !== view) return;
+      if (elements.resultsPanelBody) elements.resultsPanelBody.scrollTop = 0;
+      if (view === 'summary' && elements.resultPartialsList) {
+        elements.resultPartialsList.scrollTop = 0;
+      }
+      if (view === 'history' && elements.historyList) elements.historyList.scrollTop = 0;
+    });
   }
 
   function handleResultWorkspaceViewClick(event) {
@@ -2072,6 +2091,7 @@ export const initPromise = (function () {
       scrollResultsPanelToTop();
       setActionNotice('accelResultLoadedNotice');
       renderAll();
+      resetResultWorkspaceScroll('summary');
       return;
     }
 
@@ -2082,6 +2102,7 @@ export const initPromise = (function () {
         openPanel('results');
         scrollResultsPanelToTop();
         renderAll();
+        resetResultWorkspaceScroll(state.resultWorkspaceView);
         if (await ensureSelectedResultTelemetry(runId, { selectionSnapshotId: runId })) {
           renderAll();
         }
@@ -4079,7 +4100,15 @@ export const initPromise = (function () {
       if (run.notes) html += '<span class="accel-history-note">' + escapeHtml(run.notes) + '</span>';
       html += '</button>';
       html +=
-        '<button type="button" class="accel-delete-btn accel-history-delete" data-history-action="delete" data-run-id="' +
+        '<div class="accel-history-actions"><button type="button" class="accel-action-btn accel-history-replay" data-history-action="replay" data-run-id="' +
+        escapeHtml(run.id) +
+        '" aria-label="' +
+        escapeHtml(t('accelReplay')) +
+        '" title="' +
+        escapeHtml(t('accelReplay')) +
+        '">' +
+        escapeHtml(t('accelReplay')) +
+        '</button><button type="button" class="accel-delete-btn accel-history-delete" data-history-action="delete" data-run-id="' +
         escapeHtml(run.id) +
         '" aria-label="' +
         escapeHtml(t('accelDelete')) +
@@ -4087,7 +4116,7 @@ export const initPromise = (function () {
         escapeHtml(t('accelDelete')) +
         '">' +
         escapeHtml(t('accelDelete')) +
-        '</button>';
+        '</button></div>';
       html += '</article>';
     }
 

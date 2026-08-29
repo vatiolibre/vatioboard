@@ -64,6 +64,10 @@ describe("acceleration shell layout", () => {
     expect(accelCss).toContain('[data-accel-result-view="details"]');
     expect(accelCss).toContain('[data-accel-result-view="history"]');
     expect(accelCss).toContain("grid-template-columns: minmax(0, 1fr) 240px;");
+    expect(accelCss).toContain("grid-auto-rows: max-content;");
+    expect(accelCss).toContain("scrollbar-gutter: stable;");
+    expect(accelCss).toContain("grid-template-columns: minmax(0, 1fr) 76px;");
+    expect(accelCss).toContain("grid-template-rows: 48px 48px minmax(0, 1fr);");
     expect(template).toContain('data-accel-result-chart-metric="speedMs"');
     expect(template).toContain('id="resultTechnicalDataToggle"');
   });

@@ -75,7 +75,7 @@ async function seedAccelerationResult(page: Page) {
       headingDeg: 12 + index * 0.2,
       accuracyM: 4,
     }));
-    await saveRuns([{
+    const run = {
       id: "tesla-accel-result",
       savedAtMs: Date.UTC(2026, 7, 28, 12, 30, 0),
       presetId: "0-60-mph",
@@ -118,8 +118,20 @@ async function seedAccelerationResult(page: Page) {
       slopePercent: 0.4,
       elevationDeltaM: 2.4,
       qualityGrade: "good",
-      notes: "Synthetic Tesla fixture",
-    }]);
+      warningKeys: [
+        "accelWarningAccuracy",
+        "accelWarningSparse",
+        "accelWarningStale",
+        "accelWarningDerived",
+      ],
+      notes: "Synthetic Tesla fixture with enough detail to exercise bounded scrolling and compact history rows.",
+    };
+    await saveRuns(Array.from({ length: 12 }, (_, index) => ({
+      ...run,
+      id: `tesla-accel-result-${index}`,
+      savedAtMs: run.savedAtMs - (index * 86_400_000),
+      elapsedMs: run.elapsedMs + (index * 23),
+    })));
   });
 }
 
@@ -512,8 +524,15 @@ test("acceleration dashboard uses a frameless full-size gauge", async ({ page },
 });
 
 test("acceleration results use focused short-landscape workspaces", async ({ page }, testInfo) => {
-  test.skip(!isTeslaProject(testInfo), "Exact Tesla geometry assertion");
-  test.setTimeout(180_000);
+  test.skip(!testInfo.project.name.startsWith("model-y-"), "Exact Tesla geometry assertion");
+  test.setTimeout(240_000);
+  const transparentTile = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3MxZ5wAAAABJRU5ErkJggg==",
+    "base64"
+  );
+  await page.route(/(tiles\.maps\.eox\.at|services\.arcgisonline\.com)/, (route) =>
+    route.fulfill({ status: 200, contentType: "image/png", body: transparentTile })
+  );
   await openRoute(page, "board");
   await seedAccelerationResult(page);
   await openRoute(page, "accel");
@@ -555,6 +574,18 @@ test("acceleration results use focused short-landscape workspaces", async ({ pag
   expect(geometry.partialsScrollHeight).toBeGreaterThan(geometry.partialsClientHeight);
   expect(geometry.pageOverflow).toBeLessThanOrEqual(1);
 
+  const partialRows = page.locator("#resultPartialsList .accel-partial-row");
+  await expect(partialRows).toHaveCount(18);
+  const firstPartialBounds = await partialRows.nth(0).boundingBox();
+  const secondPartialBounds = await partialRows.nth(1).boundingBox();
+  expect(firstPartialBounds).not.toBeNull();
+  expect(secondPartialBounds).not.toBeNull();
+  expect(secondPartialBounds!.y).toBeGreaterThanOrEqual(
+    firstPartialBounds!.y + firstPartialBounds!.height - 1
+  );
+  await partialRows.last().scrollIntoViewIfNeeded();
+  await expect(partialRows.last()).toBeVisible();
+
   await page.locator('[data-accel-result-view-action="map"]').click();
   await expect(panel).toHaveAttribute("data-accel-result-view", "map");
   await expect(page.locator("#resultReplayMap")).toBeVisible();
@@ -562,10 +593,32 @@ test("acceleration results use focused short-landscape workspaces", async ({ pag
     const rect = map.getBoundingClientRect();
     return rect.width > 600 && rect.height > 300;
   })).toBe(true);
+  const mapGeometry = await page.evaluate(() => {
+    const map = document.querySelector<HTMLElement>("#resultReplayMap")!.getBoundingClientRect();
+    const controls = document.querySelector<HTMLElement>("#resultReplayControls")!.getBoundingClientRect();
+    return { map: map.toJSON(), controls: controls.toJSON() };
+  });
+  expect(mapGeometry.controls.left).toBeGreaterThanOrEqual(mapGeometry.map.left);
+  expect(mapGeometry.controls.right).toBeLessThanOrEqual(mapGeometry.map.right);
+  expect(mapGeometry.controls.bottom).toBeLessThanOrEqual(mapGeometry.map.bottom);
 
   await page.locator('[data-accel-result-view-action="charts"]').click();
   await expect(page.locator("#resultReplayChartSheet")).toBeVisible();
   await expect(page.locator(".accel-replay-chart-stage:visible")).toHaveCount(1);
+  const chartGeometry = await page.evaluate(() => {
+    const rect = (selector: string) => document.querySelector<HTMLElement>(selector)!
+      .getBoundingClientRect().toJSON();
+    return {
+      sheet: rect("#resultReplayChartSheet"),
+      header: rect(".accel-replay-chart-sheet-header"),
+      filter: rect(".accel-replay-filter-group"),
+      stage: rect(".accel-replay-chart-stage:not([hidden])"),
+    };
+  });
+  expect(chartGeometry.header.top).toBeGreaterThanOrEqual(chartGeometry.sheet.top);
+  expect(chartGeometry.filter.top).toBeGreaterThanOrEqual(chartGeometry.header.bottom);
+  expect(chartGeometry.stage.top).toBeGreaterThanOrEqual(chartGeometry.filter.bottom);
+  expect(chartGeometry.stage.bottom).toBeLessThanOrEqual(chartGeometry.sheet.bottom);
   await page.locator('[data-accel-result-chart-metric="altitudeM"]').click();
   await expect(page.locator("#resultReplaySheetAltitudeStage")).toBeVisible();
   await expect(page.locator(".accel-replay-chart-stage:visible")).toHaveCount(1);
@@ -573,11 +626,28 @@ test("acceleration results use focused short-landscape workspaces", async ({ pag
 
   await page.locator('[data-accel-result-view-action="details"]').click();
   await expect(page.locator("#debugRawTableBody tr")).toHaveCount(0);
+  await expect.poll(() => page.locator("#resultsPanel > .accel-sheet-body").evaluate((body) => ({
+    overflowY: getComputedStyle(body).overflowY,
+    canScroll: body.scrollHeight > body.clientHeight,
+  }))).toEqual({ overflowY: "auto", canScroll: true });
+  await page.locator("#resultTechnicalDataToggle").scrollIntoViewIfNeeded();
+  await expect(page.locator("#resultTechnicalDataToggle")).toBeVisible();
   await page.locator("#resultTechnicalDataToggle").click();
   await expect.poll(() => page.locator("#debugRawTableBody tr").count()).toBeGreaterThan(0);
+  await expect(page.locator("#debugRawTableWrap")).toHaveCSS("overflow", "auto");
   await page.locator('[data-accel-result-view-action="history"]').click();
   await expect(page.locator(".accel-history-card")).toBeVisible();
-  await page.locator('[data-history-action="load"]').click();
+  const historyRows = page.locator("#historyList .accel-history-item");
+  await expect(historyRows).toHaveCount(12);
+  await expect.poll(() => page.locator("#historyList").evaluate((list) => ({
+    overflowY: getComputedStyle(list).overflowY,
+    canScroll: list.scrollHeight > list.clientHeight,
+  }))).toEqual({ overflowY: "auto", canScroll: true });
+  await expect(historyRows.first().locator('[data-history-action="replay"]')).toBeVisible();
+  await expect(historyRows.first().locator('[data-history-action="replay"]')).toHaveJSProperty("offsetHeight", 44);
+  await historyRows.last().scrollIntoViewIfNeeded();
+  await expect(historyRows.last()).toBeVisible();
+  await historyRows.first().locator('[data-history-action="load"]').click();
   await expect(panel).toHaveAttribute("data-accel-result-view", "summary");
 
   await page.locator("#closeResultsPanel").click();

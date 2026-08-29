@@ -2390,6 +2390,20 @@ body.accel-page .accel-result-graph-canvas{
     text-transform: uppercase;
 }
 
+.accel-history-actions{
+    display: grid;
+    align-content: center;
+    gap: 6px;
+}
+
+.accel-history-replay{
+    min-width: 68px;
+    min-height: 40px;
+    padding: 8px 10px;
+    font-size: 11px;
+    font-weight: 800;
+}
+
 .accel-delete-btn{
     min-height: 40px;
     padding: 8px 12px;
@@ -3233,6 +3247,11 @@ html[data-vb-layout-profile="short-landscape"] .accel-sheet-results .accel-sheet
     scrollbar-gutter: auto;
 }
 
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results,
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results *{
+    box-sizing: border-box;
+}
+
 html[data-vb-layout-profile="short-landscape"] .accel-sheet-results .accel-sheet-section{
     padding: 0;
     border: 0;
@@ -3407,6 +3426,23 @@ html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-r
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
+    grid-auto-rows: max-content;
+    align-content: start;
+    padding-right: 3px;
+    scrollbar-gutter: stable;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="summary"] .accel-partial-row{
+    min-height: 30px;
+    padding: 6px 2px 4px;
+    gap: 6px;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="summary"] .accel-partial-label,
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="summary"] .accel-partial-value{
+    line-height: 1.2;
 }
 
 html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="map"] .accel-result-latest-section,
@@ -3416,6 +3452,11 @@ html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-r
     width: 100%;
     height: 100%;
     min-height: 0;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="map"] .accel-result-graph-shell{
+    position: relative;
+    overflow: hidden;
 }
 
 html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="map"] .accel-result-primary-bar,
@@ -3441,6 +3482,8 @@ html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-r
 
 html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="map"] .accel-result-map-shell{
     position: relative;
+    isolation: isolate;
+    overflow: hidden;
 }
 
 html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="map"] .accel-result-map{
@@ -3486,6 +3529,7 @@ html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-r
     grid-template-columns: minmax(0, auto) minmax(220px, 1fr);
     align-items: center;
     gap: 8px;
+    width: auto;
     padding: 6px 8px;
     border: 1px solid var(--accel-border);
     border-radius: 16px;
@@ -3494,14 +3538,23 @@ html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-r
     -webkit-backdrop-filter: blur(10px);
 }
 
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="map"] .accel-replay-toolbar,
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="map"] .accel-replay-progress-row{
+    min-width: 0;
+}
+
 html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="details"] .accel-sheet-body{
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     align-content: start;
     gap: 8px;
-    padding: 4px;
+    padding: 4px 8px 12px 4px;
     overflow-y: auto;
     overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    scroll-padding-block: 8px 16px;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
 }
 
 html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="details"] .accel-result-primary-bar,
@@ -3518,6 +3571,7 @@ html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-r
 html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="details"] #resultContent{
     display: grid;
     gap: 8px;
+    align-content: start;
 }
 
 html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="details"] .accel-result-details-section{
@@ -3573,6 +3627,95 @@ html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-r
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
+    grid-auto-rows: max-content;
+    align-content: start;
+    padding-right: 4px;
+    scrollbar-gutter: stable;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="history"] .accel-history-head{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="history"] .accel-history-head-copy{
+    gap: 2px;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="history"] .accel-history-head > .accel-action-btn{
+    width: auto;
+    min-width: 88px;
+    min-height: 44px;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="history"] .accel-history-item{
+    grid-template-columns: minmax(0, 1fr) 76px;
+    gap: 6px;
+    align-items: stretch;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="history"] .accel-history-btn{
+    grid-template-columns: minmax(0, 1fr) minmax(110px, 0.42fr);
+    align-content: center;
+    min-height: 86px;
+    padding: 8px 10px;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="history"] .accel-history-note{
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    line-height: 1.25;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="history"] .accel-history-actions{
+    display: grid;
+    grid-template-rows: repeat(2, minmax(44px, 1fr));
+    gap: 4px;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="history"] .accel-history-replay,
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="history"] .accel-history-delete{
+    width: 76px;
+    min-width: 76px;
+    min-height: 44px;
+    padding: 4px;
+    font-size: 10px;
+    line-height: 1.1;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="history"] .accel-history-delete{
+    justify-self: stretch;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="summary"] .accel-partials-list,
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="details"] .accel-sheet-body,
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="history"] .accel-history-list,
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results .accel-debug-table-wrap{
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--accel-accent) 58%, var(--accel-border)) transparent;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="summary"] .accel-partials-list::-webkit-scrollbar,
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="details"] .accel-sheet-body::-webkit-scrollbar,
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="history"] .accel-history-list::-webkit-scrollbar,
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results .accel-debug-table-wrap::-webkit-scrollbar{
+    width: 6px;
+    height: 6px;
+}
+
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="summary"] .accel-partials-list::-webkit-scrollbar-thumb,
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="details"] .accel-sheet-body::-webkit-scrollbar-thumb,
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results[data-accel-result-view="history"] .accel-history-list::-webkit-scrollbar-thumb,
+html[data-vb-layout-profile="short-landscape"] .accel-sheet-results .accel-debug-table-wrap::-webkit-scrollbar-thumb{
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accel-accent) 58%, var(--accel-border));
 }
 
 html[data-vb-layout-profile="short-landscape"] .accel-replay-chart-sheet{
@@ -3581,6 +3724,8 @@ html[data-vb-layout-profile="short-landscape"] .accel-replay-chart-sheet{
     width: var(--vb-work-area-width, 100vw);
     height: var(--vb-work-area-height, 100dvh);
     padding: 4px;
+    overflow: hidden;
+    box-sizing: border-box;
 }
 
 html[data-vb-layout-profile="short-landscape"] .accel-replay-chart-sheet-backdrop{
@@ -3588,7 +3733,7 @@ html[data-vb-layout-profile="short-landscape"] .accel-replay-chart-sheet-backdro
 }
 
 html[data-vb-layout-profile="short-landscape"] .accel-replay-chart-sheet-panel{
-    grid-template-rows: 48px 42px minmax(0, 1fr);
+    grid-template-rows: 48px 48px minmax(0, 1fr);
     gap: 4px;
     padding: 0;
     border: 0;
