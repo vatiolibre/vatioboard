@@ -161,6 +161,15 @@ test("calculator is work-area clamped with fixed primary controls", async ({ pag
       const rect = key.getBoundingClientRect();
       return { width: rect.width, height: rect.height };
     });
+    const primaryKeys = Array.from(panel.querySelectorAll<HTMLElement>(".calc-keys > .calc-key:not(.zero)")).map((key) => {
+      const rect = key.getBoundingClientRect();
+      return { width: rect.width, height: rect.height };
+    });
+    const display = panel.querySelector<HTMLElement>(".calc-display")!.getBoundingClientRect();
+    const expression = panel.querySelector<HTMLElement>(".calc-expr")!.getBoundingClientRect();
+    const utility = panel.querySelector<HTMLElement>(".calc-utility-row")!.getBoundingClientRect();
+    const secondary = panel.querySelector<HTMLElement>(".calc-secondary-keys")!.getBoundingClientRect();
+    const history = panel.querySelector<HTMLElement>(".calc-history-text")!;
     return {
       bounds,
       workArea: {
@@ -169,15 +178,33 @@ test("calculator is work-area clamped with fixed primary controls", async ({ pag
         width: number("--vb-work-area-width"),
         height: number("--vb-work-area-height"),
       },
+      display: { width: display.width, height: display.height },
+      expression: { width: expression.width, height: expression.height },
+      utility: { top: utility.top, bottom: utility.bottom },
+      secondary: { top: secondary.top, bottom: secondary.bottom },
+      historyFontSize: getComputedStyle(history).fontSize,
       keys,
+      primaryKeys,
     };
   });
   expect(geometry.bounds.left).toBeGreaterThanOrEqual(geometry.workArea.left - 1);
   expect(geometry.bounds.top).toBeGreaterThanOrEqual(geometry.workArea.top - 1);
   expect(geometry.bounds.right).toBeLessThanOrEqual(geometry.workArea.left + geometry.workArea.width + 1);
   expect(geometry.bounds.bottom).toBeLessThanOrEqual(geometry.workArea.top + geometry.workArea.height + 1);
+  expect(geometry.bounds.height).toBeLessThanOrEqual(557);
+  expect(geometry.display.height).toBeGreaterThanOrEqual(64);
+  expect(geometry.display.height).toBeLessThanOrEqual(73);
+  expect(geometry.expression.height).toBeGreaterThanOrEqual(44);
+  expect(geometry.secondary.top - geometry.utility.bottom).toBeGreaterThanOrEqual(3);
+  expect(geometry.secondary.top - geometry.utility.bottom).toBeLessThanOrEqual(5);
+  expect(geometry.historyFontSize).toBe("13px");
   for (const key of geometry.keys) {
     expect(key.width).toBeGreaterThanOrEqual(44);
     expect(key.height).toBeGreaterThanOrEqual(44);
+    expect(key.height).toBeLessThanOrEqual(65);
+  }
+  for (const key of geometry.primaryKeys) {
+    expect(key.width / key.height).toBeGreaterThanOrEqual(1.08);
+    expect(key.width / key.height).toBeLessThanOrEqual(1.65);
   }
 });

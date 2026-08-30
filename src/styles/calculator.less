@@ -820,11 +820,13 @@
 /* Narrow portrait keeps the established vertical keypad, but budgets every
    row explicitly so touch targets never collapse inside the work area. */
 .calc-panel[data-vb-shell-layout-mode="portrait"]{
+  --calc-portrait-key-height: clamp(44px, 16vw, 64px);
+  --calc-portrait-display-height: clamp(64px, 18vw, 72px);
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 44px auto 44px 44px minmax(0, 1fr);
+  grid-template-rows: 44px var(--calc-portrait-display-height) 44px 4px 44px auto;
   width: min(360px, var(--vb-work-area-width, 100vw));
-  height: var(--vb-work-area-height, 100dvh);
+  height: auto;
   min-width: 0;
   min-height: 0;
   max-width: var(--vb-work-area-width, 100vw);
@@ -850,20 +852,26 @@
 
 .calc-panel[data-vb-shell-layout-mode="portrait"] .calc-display{
   grid-row: 2;
+  display: grid;
+  grid-template-rows: 14px minmax(44px, 1fr);
   min-height: 0;
   padding: 2px 8px 4px;
 }
 
 .calc-panel[data-vb-shell-layout-mode="portrait"] .calc-history-text{
-  height: 18px;
-  min-height: 18px;
+  height: 14px;
+  min-height: 14px;
   padding: 0 4px;
-  line-height: 18px;
+  font-size: 13px;
+  line-height: 14px;
 }
 
 .calc-panel[data-vb-shell-layout-mode="portrait"] .calc-expr{
+  height: 100%;
   min-height: 44px;
-  padding-block: 6px;
+  padding-block: 4px;
+  font-size: clamp(22px, 7vw, 28px);
+  line-height: 1.1;
 }
 
 .calc-panel[data-vb-shell-layout-mode="portrait"] .calc-utility-row{
@@ -880,7 +888,7 @@
 }
 
 .calc-panel[data-vb-shell-layout-mode="portrait"] .calc-secondary-keys{
-  grid-row: 4;
+  grid-row: 5;
   gap: 4px;
   padding: 0 8px;
 }
@@ -890,8 +898,8 @@
 }
 
 .calc-panel[data-vb-shell-layout-mode="portrait"] .calc-keys{
-  grid-row: 5;
-  grid-template-rows: repeat(5, minmax(44px, 1fr));
+  grid-row: 6;
+  grid-template-rows: repeat(5, var(--calc-portrait-key-height));
   gap: 4px;
   min-height: 0;
   padding: 4px 8px 8px;

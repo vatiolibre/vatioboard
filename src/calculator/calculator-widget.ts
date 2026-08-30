@@ -220,12 +220,18 @@ export function createCalculatorWidget(options: CalculatorWidgetOptions = {}): C
     resolveLayout(metrics) {
       if (metrics.profile === "portrait" && metrics.workArea.width <= 600) {
         const width = Math.min(360, metrics.workArea.width);
+        const keyHeight = Math.min(64, Math.max(44, metrics.viewport.width * 0.16));
+        const displayHeight = Math.min(72, Math.max(64, metrics.viewport.width * 0.18));
+        const height = Math.min(
+          metrics.workArea.height,
+          Math.ceil(164 + displayHeight + (keyHeight * 5)),
+        );
         return {
           mode: "portrait",
           left: metrics.workArea.left + Math.max(0, metrics.workArea.width - width) / 2,
           top: metrics.workArea.top,
           width,
-          height: metrics.workArea.height,
+          height,
           minWidth: Math.min(320, metrics.workArea.width),
           minHeight: Math.min(400, metrics.workArea.height),
           maxWidth: metrics.workArea.width,

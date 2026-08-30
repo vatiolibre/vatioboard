@@ -94,6 +94,39 @@ describe("calculator layout", () => {
     expect(keypad).toContain("border-left: 0");
   });
 
+  it("uses compact near-square keypad rows and a larger display in portrait", () => {
+    const calculatorCss = readProjectFile("src/styles/calculator.less");
+    const calculatorWidget = readProjectFile("src/calculator/calculator-widget.ts");
+    const portrait = cssBlock(calculatorCss, '.calc-panel[data-vb-shell-layout-mode="portrait"]');
+    const display = cssBlock(
+      calculatorCss,
+      '.calc-panel[data-vb-shell-layout-mode="portrait"] .calc-display',
+    );
+    const expression = cssBlock(
+      calculatorCss,
+      '.calc-panel[data-vb-shell-layout-mode="portrait"] .calc-expr',
+    );
+    const history = cssBlock(
+      calculatorCss,
+      '.calc-panel[data-vb-shell-layout-mode="portrait"] .calc-history-text',
+    );
+    const keypad = cssBlock(
+      calculatorCss,
+      '.calc-panel[data-vb-shell-layout-mode="portrait"] .calc-keys',
+    );
+
+    expect(portrait).toContain("--calc-portrait-key-height: clamp(44px, 16vw, 64px)");
+    expect(portrait).toContain("--calc-portrait-display-height: clamp(64px, 18vw, 72px)");
+    expect(portrait).toContain("grid-template-rows: 44px var(--calc-portrait-display-height) 44px 4px 44px auto");
+    expect(portrait).toContain("height: auto");
+    expect(display).toContain("grid-template-rows: 14px minmax(44px, 1fr)");
+    expect(history).toContain("font-size: 13px");
+    expect(expression).toContain("font-size: clamp(22px, 7vw, 28px)");
+    expect(keypad).toContain("grid-template-rows: repeat(5, var(--calc-portrait-key-height))");
+    expect(calculatorWidget).toContain("const displayHeight = Math.min(72, Math.max(64, metrics.viewport.width * 0.18))");
+    expect(calculatorWidget).toContain("Math.ceil(164 + displayHeight + (keyHeight * 5))");
+  });
+
   it("does not start a calculator panel drag from the minimize button", () => {
     const dragSource = readProjectFile("src/calculator/widget/drag.ts");
 
