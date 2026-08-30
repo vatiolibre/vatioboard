@@ -277,6 +277,7 @@ describe("shell-window-manager", () => {
       element: panel,
       bounds: { left: 40, top: 50, width: 320, height: 220 },
       resolveLayout(metrics) {
+        if (metrics.profile === "standard") return null;
         return {
           mode: "short-landscape",
           left: metrics.workArea.left,

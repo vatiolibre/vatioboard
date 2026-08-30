@@ -63,6 +63,7 @@ function installLinkInterceptor() {
 }
 
 function shouldPreloadRoutes() {
+  if (import.meta.env.DEV) return false;
   const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
   if (connection?.saveData) return false;
   if (["slow-2g", "2g"].includes(connection?.effectiveType)) return false;

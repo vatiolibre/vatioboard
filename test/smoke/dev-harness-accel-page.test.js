@@ -827,7 +827,7 @@ describe('accel.html smoke', () => {
       '[data-history-action="load"][data-run-id="run-1"]'
     );
     expect(historyButton).toBeTruthy();
-    expect(document.querySelector('[data-history-action="replay"]')).toBeNull();
+    expect(document.querySelector('[data-history-action="replay"]')).toBeTruthy();
     expect(document.getElementById('historyList').textContent).toContain(
       '6312 Hilltop Ct Fort Lee NJ -> 123 Anderson Ave'
     );

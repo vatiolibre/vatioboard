@@ -453,7 +453,10 @@ describe("shell window integration", () => {
     const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
     const calc = createCalculatorWidget({ floating: false, restoreVisibility: false, shellManager: manager });
     manager.openWindow("calculator");
-    manager.updateWindowBounds("calculator", { left: 123, top: 77, width: 320, height: 240 }, { flush: true });
+    manager.updateWindowBounds("calculator", { left: 123, top: 77, width: 320, height: 240 }, {
+      flush: true,
+      adaptivePresentation: false,
+    });
     calc.destroy();
     manager.destroy();
 
@@ -464,8 +467,8 @@ describe("shell window integration", () => {
 
     const panel = document.querySelector(".calc-panel");
     expect(panel.hidden).toBe(false);
-    expect(panel.style.left).toBe("123px");
-    expect(panel.style.top).toBe("77px");
+    expect(nextManager.getWindow("calculator")?.bounds).toMatchObject({ left: 123, top: 77 });
+    expect(panel.dataset.vbShellLayoutMode).toBe("short-landscape");
 
     nextCalc.destroy();
     nextManager.destroy();

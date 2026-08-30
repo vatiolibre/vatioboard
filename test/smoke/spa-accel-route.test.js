@@ -140,6 +140,11 @@ describe("SPA Accel route real-controller smoke", () => {
     historyButton.click();
     await settleRealSpaSmoke();
     expect(document.getElementById("resultsPanel")?.hidden).toBe(false);
+    expect(document.getElementById("resultsPanel")?.dataset.accelResultView).toBe("summary");
+    expect(charts.charts.filter((chart) => !chart.destroyed).length).toBeGreaterThan(0);
+
+    document.querySelector('[data-accel-result-view-action="map"]')?.click();
+    await settleRealSpaSmoke();
     expect(maplibre.maps.filter((map) => !map.removed)).toHaveLength(1);
     const accelMap = maplibre.maps.find((map) => !map.removed);
     const routeSource = accelMap?.sources.get("replay-route-full");
@@ -149,11 +154,9 @@ describe("SPA Accel route real-controller smoke", () => {
     expect(routeData.features[0].geometry.coordinates).toHaveLength(3);
     expect(routeData.features[0].geometry.coordinates[0]).toEqual([-73.9857, 40.7484]);
     expect(pointData.features[0].geometry.coordinates).toEqual([-73.9857, 40.7484]);
-    expect(charts.charts.filter((chart) => !chart.destroyed).length).toBeGreaterThan(0);
-
-    document.getElementById("resultReplayChartsBtn")?.click();
+    document.querySelector('[data-accel-result-view-action="charts"]')?.click();
     await settleRealSpaSmoke();
-    expect(document.body.classList.contains("accel-replay-chart-sheet-open")).toBe(true);
+    expect(document.getElementById("resultsPanel")?.dataset.accelResultView).toBe("charts");
     expect(charts.charts.filter((chart) => !chart.destroyed).length).toBeLessThanOrEqual(4);
 
     const boardAfterResults = await navigateRealSpaSmoke("#/board");

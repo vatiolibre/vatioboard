@@ -18,7 +18,7 @@ export interface ShellBounds {
   height?: number;
 }
 
-export type ShellViewportProfile = "standard" | "short-landscape" | "portrait";
+export type ShellViewportProfile = "standard" | "short-landscape" | "wide-landscape" | "portrait";
 
 export interface ShellLayoutMetrics {
   viewport: ShellBounds & { width: number; height: number };

@@ -43,11 +43,11 @@ describe("replay scroll policy", () => {
     expect(replayCss).toContain("touch-action: pan-y;");
   });
 
-  it("uses a map-first short-landscape surface with overlay panels", () => {
+  it("uses a universal map-first surface with overlay panels", () => {
     const replayCss = readStyle("src/styles/replay.less");
     const replayTemplate = readStyle("src/app/views/templates/replay-template.ts");
 
-    expect(replayCss).toContain('html[data-vb-layout-profile="short-landscape"]');
+    expect(replayCss).toContain('html{\n    .replay-main{');
     expect(replayCss).toContain(".replay-graphs-card{\n        display: none;");
     expect(replayCss).toContain(".replay-map{\n        position: absolute;\n        inset: 0;");
     expect(replayCss).toContain('.replay-recordings-section[data-panel-open="true"]');

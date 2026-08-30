@@ -14,6 +14,7 @@ import {
   registerFloatingPanel,
 } from "../shared/floating-layer-manager.js";
 import { getDefaultShellWindowManager } from "../shared/shell-window-manager.js";
+import { isFocusedLandscapeProfile } from "../shared/shell-layout-metrics.js";
 import type { ShellLifecycleOptions, ShellRuntime } from "../types/shell";
 
 const CALCULATOR_WINDOW_ID = "calculator";
@@ -217,6 +218,7 @@ export function createCalculatorWidget(options: CalculatorWidgetOptions = {}): C
       maxHeight: 548,
     },
     resolveLayout(metrics) {
+      if (!isFocusedLandscapeProfile(metrics.profile)) return null;
       const width = Math.min(520, metrics.workArea.width);
       const height = Math.min(440, metrics.workArea.height);
       return {

@@ -106,6 +106,51 @@ body.apps-page #app-view {
   margin: 0 auto 14px;
 }
 
+.vb-app-manager-filter-disclosure {
+  grid-column: auto;
+  position: relative;
+  min-width: 0;
+}
+
+.vb-app-manager-filter-disclosure > summary,
+.vb-app-manager-card-details > summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  font-weight: 800;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.vb-app-manager-filter-disclosure > summary {
+  display: flex;
+  min-width: 88px;
+  justify-content: center;
+  border: 1px solid rgba(15, 23, 42, .14);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.vb-app-manager-filter-grid {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 8;
+  width: min(620px, calc(100vw - 28px));
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(15, 23, 42, .14);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 18px 44px rgba(15, 23, 42, .2);
+}
+
+.vb-app-manager-filter-disclosure:not([open]) > .vb-app-manager-filter-grid {
+  display: none !important;
+}
+
 .vb-app-manager-search,
 .vb-app-manager-filter {
   display: block;
@@ -257,6 +302,12 @@ body.apps-page #app-view {
 .vb-app-manager-diagnostics {
   display: grid;
   gap: 6px;
+}
+
+.vb-app-manager-card-details-body {
+  display: grid;
+  gap: 8px;
+  padding-top: 4px;
 }
 
 .vb-app-manager-line {
@@ -492,11 +543,11 @@ body.apps-page #app-view {
   }
 }
 
-html[data-vb-layout-profile="short-landscape"] body.apps-page #app-view{
+html:is([data-vb-layout-profile="short-landscape"], [data-vb-layout-profile="wide-landscape"]) body.apps-page #app-view{
   overflow: hidden;
 }
 
-html[data-vb-layout-profile="short-landscape"] .vb-app-manager{
+html:is([data-vb-layout-profile="short-landscape"], [data-vb-layout-profile="wide-landscape"]) .vb-app-manager{
   height: 100dvh;
   min-height: 0;
   overflow-y: auto;
@@ -504,7 +555,7 @@ html[data-vb-layout-profile="short-landscape"] .vb-app-manager{
   padding: 10px 12px max(84px, calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));
 }
 
-html[data-vb-layout-profile="short-landscape"] .vb-app-manager-header{
+html:is([data-vb-layout-profile="short-landscape"], [data-vb-layout-profile="wide-landscape"]) .vb-app-manager-header{
   position: sticky;
   top: 0;
   z-index: 4;
@@ -512,34 +563,150 @@ html[data-vb-layout-profile="short-landscape"] .vb-app-manager-header{
   margin-bottom: 8px;
   padding: 4px 0 8px;
   background: color-mix(in srgb, #f8fafc 94%, transparent);
-  backdrop-filter: blur(14px);
 }
 
-html[data-vb-layout-profile="short-landscape"] .vb-app-manager h1{
+html:is([data-vb-layout-profile="short-landscape"], [data-vb-layout-profile="wide-landscape"]) .vb-app-manager h1{
   font-size: 22px;
 }
 
-html[data-vb-layout-profile="short-landscape"] .vb-app-manager-toolbar{
+html:is([data-vb-layout-profile="short-landscape"], [data-vb-layout-profile="wide-landscape"]) .vb-app-manager-toolbar{
   position: sticky;
   top: 60px;
   z-index: 3;
-  grid-template-columns: minmax(220px, 2fr) repeat(2, minmax(130px, 1fr));
+  grid-template-columns: minmax(220px, 1fr) auto;
   margin-bottom: 8px;
   padding-bottom: 8px;
   background: color-mix(in srgb, #f8fafc 94%, transparent);
-  backdrop-filter: blur(14px);
 }
 
-html[data-vb-layout-profile="short-landscape"] .vb-app-manager-search{
+html:is([data-vb-layout-profile="short-landscape"], [data-vb-layout-profile="wide-landscape"]) .vb-app-manager-search{
   grid-column: auto;
 }
 
-html[data-vb-layout-profile="short-landscape"] .vb-app-manager-grid{
+html:is([data-vb-layout-profile="short-landscape"], [data-vb-layout-profile="wide-landscape"]) .vb-app-manager-grid{
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
-html[data-vb-layout-profile="short-landscape"] .vb-app-manager-card{
+html:is([data-vb-layout-profile="short-landscape"], [data-vb-layout-profile="wide-landscape"]) .vb-app-manager-card{
   gap: 8px;
   padding: 10px;
+}
+
+@media (max-width: 620px) {
+  .vb-app-manager {
+    padding: 8px 10px max(84px, calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));
+  }
+
+  .vb-app-manager-header {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    align-items: center;
+    margin-bottom: 6px;
+    padding: 4px 0;
+    background: color-mix(in srgb, #f8fafc 94%, transparent);
+  }
+
+  .vb-app-manager h1 {
+    font-size: 22px;
+  }
+
+  .vb-app-manager-toolbar {
+    position: sticky;
+    top: 54px;
+    z-index: 3;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    background: color-mix(in srgb, #f8fafc 94%, transparent);
+  }
+
+  .vb-app-manager-search {
+    grid-column: 1;
+  }
+
+  .vb-app-manager-filter-disclosure {
+    grid-column: 2;
+    position: relative;
+  }
+
+  .vb-app-manager-filter-disclosure > summary {
+    display: flex;
+    min-width: 82px;
+    justify-content: center;
+    border: 1px solid rgba(15, 23, 42, .14);
+    border-radius: 8px;
+    background: #fff;
+  }
+
+  .vb-app-manager-filter-disclosure:not([open]) > .vb-app-manager-filter-grid {
+    display: none !important;
+  }
+
+  .vb-app-manager-filter-grid {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 8;
+    width: min(300px, calc(100vw - 20px));
+    max-height: min(70dvh, 520px);
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    padding: 8px;
+    border: 1px solid rgba(15, 23, 42, .14);
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 18px 44px rgba(15, 23, 42, .2);
+    overflow-y: auto;
+  }
+
+  .vb-app-manager-grid {
+    gap: 8px;
+  }
+
+  .vb-app-manager-card {
+    gap: 8px;
+    padding: 10px;
+    box-shadow: none;
+  }
+
+  .vb-app-manager-badges .vb-app-manager-chip:nth-child(n + 4),
+  .vb-app-manager-surfaces {
+    display: none;
+  }
+
+  .vb-app-manager-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .vb-app-manager-actions > * {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 620px) and (prefers-color-scheme: dark) {
+  .vb-app-manager-header,
+  .vb-app-manager-toolbar {
+    background: color-mix(in srgb, #0f172a 94%, transparent);
+  }
+
+  .vb-app-manager-filter-disclosure > summary,
+  .vb-app-manager-filter-grid {
+    border-color: rgba(148, 163, 184, .22);
+    background: #111827;
+    color: #e5e7eb;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .vb-app-manager-filter-disclosure > summary,
+  .vb-app-manager-filter-grid {
+    border-color: rgba(148, 163, 184, .22);
+    background: #111827;
+    color: #e5e7eb;
+  }
 }

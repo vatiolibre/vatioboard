@@ -18,6 +18,8 @@ export default defineConfig({
   projects: [
     { name: "model-y-2024", use: { viewport: { width: 773, height: 601 }, deviceScaleFactor: 1.53 } },
     { name: "model-y-2026", use: { viewport: { width: 804, height: 638 }, deviceScaleFactor: 1.96 } },
+    { name: "model-y-2024-expanded", use: { viewport: { width: 1256, height: 706 }, deviceScaleFactor: 1.53 } },
+    { name: "model-y-2026-expanded", use: { viewport: { width: 1307, height: 747 }, deviceScaleFactor: 1.93 } },
     {
       name: "model-y-2024-es-light",
       use: {
@@ -28,7 +30,9 @@ export default defineConfig({
       },
     },
     { name: "phone-portrait", use: { viewport: { width: 430, height: 932 }, deviceScaleFactor: 2 } },
+    { name: "phone-landscape", use: { viewport: { width: 932, height: 430 }, deviceScaleFactor: 2 } },
     { name: "desktop", use: { viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 } },
+    { name: "desktop-large", use: { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 } },
   ],
   webServer: {
     command: "pnpm exec vite --host 127.0.0.1 --port 4175",

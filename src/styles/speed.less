@@ -432,10 +432,10 @@ body.speed-page{
     align-items: flex-start;
     justify-content: center;
     min-height: 0;
-    padding-top: clamp(8px, 1.4vw, 14px);
-    padding-right: max(8px, env(safe-area-inset-right));
+    padding-top: 4px;
+    padding-right: max(4px, env(safe-area-inset-right));
     padding-bottom: max(20px, env(safe-area-inset-bottom), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 10px));
-    padding-left: max(8px, env(safe-area-inset-left));
+    padding-left: max(4px, env(safe-area-inset-left));
     overflow-y: hidden;
     overscroll-behavior: none;
 }
@@ -453,7 +453,7 @@ body.speed-page{
 
 .speed-stage{
     display: grid;
-    gap: 14px;
+    gap: 6px;
 }
 
 .speed-side-panel{
@@ -559,42 +559,19 @@ body.speed-page{
     --speed-mobile-stage-max-height: 560px;
     --speed-mobile-stage-height-offset: 220px;
     position: relative;
-    border: 1px solid var(--speed-panel-border);
-    border-radius: calc(var(--radius) + 8px);
-    background:
-      linear-gradient(180deg, color-mix(in srgb, var(--speed-surface-strong) 100%, transparent), color-mix(in srgb, var(--speed-surface) 100%, transparent));
-    box-shadow:
-      var(--speed-panel-shadow),
-      inset 0 0 0 1px var(--inner-ring);
-    overflow: hidden;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    overflow: visible;
 }
 
 .gauge-card::before{
-    content:"";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background:
-      linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--inner-highlight) 90%, transparent),
-        transparent 24%
-      ),
-      linear-gradient(
-        130deg,
-        rgba(255, 255, 255, 0.42),
-        transparent 40%
-      );
+    content: none;
 }
 
 .gauge-card::after{
-    content:"";
-    position:absolute;
-    inset: 18px;
-    border-radius: calc(var(--radius) + 2px);
-    border: 1px solid color-mix(in srgb, var(--speed-panel-border) 82%, transparent);
-    pointer-events: none;
-    opacity: 0.7;
+    content: none;
 }
 
 .speed-alert-trigger{
@@ -791,7 +768,7 @@ body.speed-page{
     isolation: isolate;
 }
 
-.gauge-stage{
+.gauge-stage.analog-speedometer-stage{
     position: absolute;
     inset: 0;
     margin: 0;
@@ -800,7 +777,7 @@ body.speed-page{
     place-items: center;
 }
 
-.gauge-stage-inner{
+.gauge-stage-inner.analog-speedometer-inner{
     position: relative;
     width: var(--speed-gauge-stage-size, 100%);
     height: var(--speed-gauge-stage-size, 100%);
@@ -1320,11 +1297,8 @@ body.speed-page{
 }
 
 .gauge-card.is-alert-over{
-    border-color: color-mix(in srgb, var(--speed-alert) 36%, var(--speed-panel-border));
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--speed-alert) 12%, transparent),
-      var(--speed-panel-shadow),
-      inset 0 0 0 1px var(--inner-ring);
+    border: 0;
+    box-shadow: none;
 }
 
 .gauge-card.is-alert-over .speed-alert-trigger{
@@ -2166,13 +2140,13 @@ body.speed-page{
 }
 
 /* Viewport-driven Tesla-style landscape: the dial is block-size constrained. */
-html[data-vb-layout-profile="short-landscape"] .speed-app{
+.speed-app{
     height: 100dvh;
     min-height: 0;
     overflow: hidden;
 }
 
-html[data-vb-layout-profile="short-landscape"] .speed-main{
+.speed-main{
     flex: 1 1 auto;
     min-height: 0;
     align-items: stretch;
@@ -2183,31 +2157,31 @@ html[data-vb-layout-profile="short-landscape"] .speed-main{
     padding-left: max(4px, env(safe-area-inset-left));
 }
 
-html[data-vb-layout-profile="short-landscape"] .notice{
+.notice{
     gap: 8px;
     padding: 8px 10px;
 }
 
-html[data-vb-layout-profile="short-landscape"] .notice button{
+.notice button{
     min-height: 44px;
     padding: 8px 10px;
     white-space: nowrap;
 }
 
-html[data-vb-layout-profile="short-landscape"] .speed-shell,
-html[data-vb-layout-profile="short-landscape"] .speed-stage{
+.speed-shell,
+.speed-stage{
     height: 100%;
     min-height: 0;
 }
 
-html[data-vb-layout-profile="short-landscape"] .speed-stage{
+.speed-stage{
     position: relative;
     grid-template-columns: minmax(0, 1fr) minmax(210px, 260px);
     align-items: stretch;
     gap: 6px;
 }
 
-html[data-vb-layout-profile="short-landscape"] .gauge-card{
+.gauge-card{
     --speed-floating-control-offset: 4px;
     --speed-floating-control-height: 44px;
     --speed-primary-stage-side-padding: 8px;
@@ -2223,34 +2197,34 @@ html[data-vb-layout-profile="short-landscape"] .gauge-card{
     overflow: visible;
 }
 
-html[data-vb-layout-profile="short-landscape"] .gauge-card::before,
-html[data-vb-layout-profile="short-landscape"] .gauge-card::after{
+.gauge-card::before,
+.gauge-card::after{
     content: none;
 }
 
-html[data-vb-layout-profile="short-landscape"] .gauge-card.is-alert-over{
+.gauge-card.is-alert-over{
     border: 0;
     box-shadow: none;
 }
 
-html[data-vb-layout-profile="short-landscape"] .speed-alert-trigger{
+.speed-alert-trigger{
     padding: 5px 12px;
 }
 
-html[data-vb-layout-profile="short-landscape"] .speed-alert-trigger-copy{
+.speed-alert-trigger-copy{
     align-content: center;
     gap: 1px;
 }
 
-html[data-vb-layout-profile="short-landscape"] .speed-alert-trigger-label{
+.speed-alert-trigger-label{
     line-height: 1;
 }
 
-html[data-vb-layout-profile="short-landscape"] .speed-alert-trigger-value{
+.speed-alert-trigger-value{
     line-height: 1.1;
 }
 
-html[data-vb-layout-profile="short-landscape"] .speed-alert-trigger-hint{
+.speed-alert-trigger-hint{
     top: calc(
       var(--speed-floating-control-offset)
       + var(--speed-floating-control-height)
@@ -2259,7 +2233,7 @@ html[data-vb-layout-profile="short-landscape"] .speed-alert-trigger-hint{
     right: var(--speed-floating-control-offset);
 }
 
-html[data-vb-layout-profile="short-landscape"] .speed-primary-stage{
+.speed-primary-stage{
     width: 100%;
     height: 100%;
     min-width: 0;
@@ -2269,7 +2243,7 @@ html[data-vb-layout-profile="short-landscape"] .speed-primary-stage{
     container-type: size;
 }
 
-html[data-vb-layout-profile="short-landscape"] .gauge-stage{
+.gauge-stage.analog-speedometer-stage{
     position: absolute;
     inset: 2px;
     width: auto;
@@ -2278,7 +2252,7 @@ html[data-vb-layout-profile="short-landscape"] .gauge-stage{
     --analog-speedometer-radius-ratio: 0.46;
 }
 
-html[data-vb-layout-profile="short-landscape"] .gauge-stage-inner{
+.gauge-stage-inner.analog-speedometer-inner{
     width: min(
       calc(100cqw - 4px),
       calc(100cqh - 4px)
@@ -2293,7 +2267,7 @@ html[data-vb-layout-profile="short-landscape"] .gauge-stage-inner{
     place-self: center;
 }
 
-html[data-vb-layout-profile="short-landscape"] .speed-side-panel{
+.speed-side-panel{
     grid-template-rows: auto minmax(min(176px, 34dvh), 1fr);
     height: 100%;
     min-height: 0;
@@ -2301,12 +2275,12 @@ html[data-vb-layout-profile="short-landscape"] .speed-side-panel{
     overflow: hidden;
 }
 
-html[data-vb-layout-profile="short-landscape"] .stats-grid{
+.stats-grid{
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
 }
 
-html[data-vb-layout-profile="short-landscape"] .metric-card{
+.metric-card{
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-rows: auto minmax(0, 1fr);
     column-gap: 4px;
@@ -2315,7 +2289,7 @@ html[data-vb-layout-profile="short-landscape"] .metric-card{
     padding: 6px 8px;
 }
 
-html[data-vb-layout-profile="short-landscape"] .metric-label{
+.metric-label{
     grid-column: 1;
     grid-row: 1;
     min-width: 0;
@@ -2327,7 +2301,7 @@ html[data-vb-layout-profile="short-landscape"] .metric-label{
     white-space: nowrap;
 }
 
-html[data-vb-layout-profile="short-landscape"] .metric-unit{
+.metric-unit{
     grid-column: 2;
     grid-row: 1;
     align-self: center;
@@ -2337,24 +2311,24 @@ html[data-vb-layout-profile="short-landscape"] .metric-unit{
     white-space: nowrap;
 }
 
-html[data-vb-layout-profile="short-landscape"] .metric-card:has(#nearestTrapUnit) .metric-label{
+.metric-card:has(#nearestTrapUnit) .metric-label{
     font-size: 8px;
     letter-spacing: 0;
 }
 
-html[data-vb-layout-profile="short-landscape"] #nearestTrapUnit{
+#nearestTrapUnit{
     font-size: 8px;
     letter-spacing: -0.01em;
 }
 
-html[data-vb-layout-profile="short-landscape"] .metric-card strong{
+.metric-card strong{
     grid-column: 1 / -1;
     grid-row: 2;
     min-width: 0;
     font-size: clamp(21px, 3.2vw, 26px);
 }
 
-html[data-vb-layout-profile="short-landscape"] .globe-card{
+.globe-card{
     position: relative;
     display: block;
     min-height: 0;
@@ -2362,7 +2336,7 @@ html[data-vb-layout-profile="short-landscape"] .globe-card{
     overflow: hidden;
 }
 
-html[data-vb-layout-profile="short-landscape"] .globe-card-header{
+.globe-card-header{
     position: absolute;
     top: 7px;
     left: 7px;
@@ -2378,7 +2352,7 @@ html[data-vb-layout-profile="short-landscape"] .globe-card-header{
     -webkit-backdrop-filter: blur(10px);
 }
 
-html[data-vb-layout-profile="short-landscape"] .speed-globe{
+.speed-globe{
     height: 100%;
     min-height: min(176px, 34dvh);
     max-height: none;
@@ -2386,21 +2360,161 @@ html[data-vb-layout-profile="short-landscape"] .speed-globe{
     border-radius: inherit;
 }
 
-html[data-vb-layout-profile="short-landscape"] .speed-audio-banner,
-html[data-vb-layout-profile="short-landscape"] .notice{
+.speed-audio-banner,
+.notice{
     position: absolute;
     z-index: 6;
     width: min(480px, calc(100% - 8px));
     margin: 0;
 }
 
-html[data-vb-layout-profile="short-landscape"] .speed-audio-banner{
+.speed-audio-banner{
     bottom: 4px;
     left: 4px;
 }
 
-html[data-vb-layout-profile="short-landscape"] .notice{
+.notice{
     top: 4px;
     left: 4px;
     max-width: 320px;
+}
+
+/* Universal frameless portrait composition. */
+html[data-vb-layout-profile="portrait"] .speed-app{
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+}
+
+html[data-vb-layout-profile="portrait"] .speed-main{
+    align-items: stretch;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 4px max(4px, env(safe-area-inset-right))
+      max(8px, calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px))
+      max(4px, env(safe-area-inset-left));
+    scroll-padding-bottom: max(84px, calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 12px));
+}
+
+html[data-vb-layout-profile="portrait"] .speed-stage{
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+}
+
+html[data-vb-layout-profile="portrait"] .gauge-card{
+    --speed-floating-control-offset: 4px;
+    --speed-floating-control-height: 44px;
+    --speed-primary-stage-side-padding: 2px;
+    --speed-primary-stage-bottom-padding: 2px;
+    display: grid;
+    min-height: 0;
+    place-items: stretch;
+}
+
+html[data-vb-layout-profile="portrait"] .speed-primary-stage{
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    max-width: min(100%, 520px);
+    aspect-ratio: 1 / 1;
+    container-type: inline-size;
+}
+
+html[data-vb-layout-profile="portrait"] .gauge-stage{
+    inset: 2px;
+    --analog-speedometer-radius-ratio: 0.46;
+}
+
+html[data-vb-layout-profile="portrait"] .speed-alert-trigger{
+    min-width: min(168px, calc(100% - 8px));
+    height: 44px;
+    min-height: 44px;
+    padding: 5px 10px;
+}
+
+html[data-vb-layout-profile="portrait"] .speed-alert-trigger-copy{
+    align-content: center;
+    gap: 1px;
+}
+
+html[data-vb-layout-profile="portrait"] .speed-alert-trigger-label{
+    line-height: 1;
+}
+
+html[data-vb-layout-profile="portrait"] .speed-alert-trigger-value{
+    line-height: 1.1;
+}
+
+html[data-vb-layout-profile="portrait"] .speed-alert-trigger-hint{
+    top: 56px;
+    right: 4px;
+}
+
+html[data-vb-layout-profile="portrait"] .speed-side-panel{
+    gap: 6px;
+}
+
+html[data-vb-layout-profile="portrait"] .stats-grid{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+}
+
+html[data-vb-layout-profile="portrait"] .metric-card{
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr);
+    column-gap: 4px;
+    row-gap: 3px;
+    min-height: 64px;
+    padding: 7px 9px;
+}
+
+html[data-vb-layout-profile="portrait"] .metric-label{
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+html[data-vb-layout-profile="portrait"] .metric-unit{
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+    font-size: 9px;
+    white-space: nowrap;
+}
+
+html[data-vb-layout-profile="portrait"] .metric-card strong{
+    grid-column: 1 / -1;
+    grid-row: 2;
+    font-size: clamp(23px, 8vw, 30px);
+}
+
+html[data-vb-layout-profile="portrait"] .globe-card{
+    position: relative;
+    display: block;
+    min-height: 240px;
+    padding: 0;
+    overflow: hidden;
+}
+
+html[data-vb-layout-profile="portrait"] .globe-card-header{
+    position: absolute;
+    top: 7px;
+    left: 7px;
+    z-index: 4;
+    max-width: calc(100% - 14px);
+    padding: 5px 7px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--speed-surface-strong) 84%, transparent);
+    backdrop-filter: blur(10px);
+}
+
+html[data-vb-layout-profile="portrait"] .speed-globe{
+    height: 240px;
+    min-height: 240px;
+    max-height: none;
+    aspect-ratio: auto;
 }

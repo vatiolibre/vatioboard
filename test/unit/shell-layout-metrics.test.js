@@ -3,6 +3,7 @@ import {
   applyShellLayoutMetrics,
   getShellLayoutMetrics,
   getShellViewportProfile,
+  isFocusedLandscapeProfile,
   observeShellLayoutMetrics,
 } from "../../src/shared/shell-layout-metrics.js";
 
@@ -15,8 +16,23 @@ describe("shell layout metrics", () => {
   it("classifies both Tesla viewports without consulting DPR", () => {
     expect(getShellViewportProfile(773, 601)).toBe("short-landscape");
     expect(getShellViewportProfile(804, 638)).toBe("short-landscape");
+    expect(getShellViewportProfile(1256, 706)).toBe("wide-landscape");
+    expect(getShellViewportProfile(1307, 747)).toBe("wide-landscape");
+    expect(getShellViewportProfile(932, 430)).toBe("short-landscape");
     expect(getShellViewportProfile(430, 932)).toBe("portrait");
     expect(getShellViewportProfile(1280, 800)).toBe("standard");
+    expect(isFocusedLandscapeProfile("short-landscape")).toBe(true);
+    expect(isFocusedLandscapeProfile("wide-landscape")).toBe(true);
+    expect(isFocusedLandscapeProfile("portrait")).toBe(false);
+  });
+
+  it("classifies from the usable work area", () => {
+    const metrics = getShellLayoutMetrics({
+      root: document,
+      safeMargin: 0,
+      viewport: { left: 0, top: 0, width: 1307, height: 747 },
+    });
+    expect(metrics.profile).toBe("wide-landscape");
   });
 
   it("publishes viewport and work-area CSS variables", () => {
@@ -39,13 +55,15 @@ describe("shell layout metrics", () => {
     const callback = vi.fn();
     const requestFrame = vi.spyOn(window, "requestAnimationFrame");
     const setTimeout = vi.spyOn(window, "setTimeout");
+    const viewport = { left: 0, top: 0, width: 773, height: 601 };
     const cleanup = observeShellLayoutMetrics(callback, {
       root: document,
       safeMargin: 0,
-      viewport: { left: 0, top: 0, width: 773, height: 601 },
+      viewport,
     });
 
     expect(callback).toHaveBeenCalledTimes(1);
+    viewport.width = 774;
     window.dispatchEvent(new Event("resize"));
     window.dispatchEvent(new Event("orientationchange"));
     window.dispatchEvent(new Event("resize"));

@@ -260,9 +260,9 @@ describe("activity indicator", () => {
     expect(indicator.root.style.top).toBe("180px");
   });
 
-  it("anchors the compact short-landscape indicator to the viewport bottom-right", () => {
+  it("anchors the compact universal indicator to the viewport bottom-right", () => {
     const css = readFileSync(resolve(process.cwd(), "src/styles/activity-indicator.less"), "utf8");
-    expect(css).toContain('html[data-vb-layout-profile="short-landscape"] .activity-indicator');
+    expect(css).toContain('.activity-indicator{\n  left: auto;');
     expect(css).toContain("right: env(safe-area-inset-right, 0px);");
     expect(css).toContain("bottom: env(safe-area-inset-bottom, 0px);");
     expect(css).toContain("top: auto;");

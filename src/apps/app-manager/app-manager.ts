@@ -386,6 +386,16 @@ function createAppCard({
   }
   lifecycleDetails.append(lifecycleSummary, lifecycleList);
 
+  const secondaryDetails = document.createElement("details");
+  secondaryDetails.className = "vb-app-manager-card-details";
+  const secondarySummary = document.createElement("summary");
+  secondarySummary.dataset.i18n = "appManagerDetails";
+  secondarySummary.textContent = "Details";
+  const secondaryBody = document.createElement("div");
+  secondaryBody.className = "vb-app-manager-card-details-body";
+  secondaryBody.append(diagnostics, details, storageDetails, lifecycleDetails);
+  secondaryDetails.append(secondarySummary, secondaryBody);
+
   const actions = document.createElement("div");
   actions.className = "vb-app-manager-actions";
   const launchButton = createButton(getPrimaryLaunchText(app), "vb-app-manager-launch");
@@ -472,11 +482,12 @@ function createAppCard({
     const protectedNote = document.createElement("p");
     protectedNote.className = "vb-app-manager-note";
     protectedNote.textContent = "Protected system app; disabling, hiding, and critical permission revocation are blocked.";
-    card.append(header, badges, surfaces, diagnostics, protectedNote, details, storageDetails, lifecycleDetails, actions);
+    secondaryBody.prepend(protectedNote);
+    card.append(header, badges, surfaces, secondaryDetails, actions);
     return card;
   }
 
-  card.append(header, badges, surfaces, diagnostics, details, storageDetails, lifecycleDetails, actions);
+  card.append(header, badges, surfaces, secondaryDetails, actions);
   return card;
 }
 

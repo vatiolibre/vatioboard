@@ -858,8 +858,8 @@ export const initPromise = (function () {
     return sharedT(key, params);
   }
 
-  function isShortLandscapeLayout() {
-    return document.documentElement.dataset.vbLayoutProfile === 'short-landscape';
+  function usesFocusedResultsWorkspace() {
+    return Boolean(elements.resultViewButtons?.length);
   }
 
   function applyTranslations() {
@@ -2043,7 +2043,7 @@ export const initPromise = (function () {
   }
 
   function resetResultWorkspaceScroll(view: AccelResultWorkspaceView) {
-    if (!isShortLandscapeLayout()) return;
+    if (!usesFocusedResultsWorkspace()) return;
 
     queueMicrotask(function () {
       if (!state.viewMounted || state.resultWorkspaceView !== view) return;
@@ -2098,7 +2098,7 @@ export const initPromise = (function () {
     if (action === 'replay') {
       void (async function () {
         selectResult(runId);
-        state.resultWorkspaceView = isShortLandscapeLayout() ? 'map' : 'summary';
+        state.resultWorkspaceView = usesFocusedResultsWorkspace() ? 'map' : 'summary';
         openPanel('results');
         scrollResultsPanelToTop();
         renderAll();
@@ -2243,7 +2243,7 @@ export const initPromise = (function () {
     var result = getDisplayedResult();
     var source = ensureReplaySource(result);
     if (!source) return;
-    if (isShortLandscapeLayout()) state.resultWorkspaceView = 'charts';
+    if (usesFocusedResultsWorkspace()) state.resultWorkspaceView = 'charts';
     void ensureAccelChartRouteControllers().then(function (loaded) {
       if (loaded && state.replay.chartSheetOpen && state.viewMounted) renderResultCard();
     });
@@ -2253,7 +2253,7 @@ export const initPromise = (function () {
 
   function handleReplayChartsClose() {
     setReplayChartSheetOpen(false);
-    if (isShortLandscapeLayout() && state.resultWorkspaceView === 'charts') {
+    if (usesFocusedResultsWorkspace() && state.resultWorkspaceView === 'charts') {
       state.resultWorkspaceView = 'summary';
     }
     renderResultCard();
@@ -2598,7 +2598,7 @@ export const initPromise = (function () {
     state.replay.playPending = true;
     renderResultCard();
 
-    if (isShortLandscapeLayout()) {
+    if (usesFocusedResultsWorkspace()) {
       cancelReplayMapApproach({ markPlayed: true });
       replayMap.fitRoute?.();
     } else if (replayMapIntroPromise) {
@@ -3142,7 +3142,7 @@ export const initPromise = (function () {
   function renderSheetUi() {
     var setupOpen = state.openPanel === 'setup';
     var resultsOpen = state.openPanel === 'results';
-    var shortLandscape = isShortLandscapeLayout();
+    var shortLandscape = usesFocusedResultsWorkspace();
     var resultWorkspaceOpen = resultsOpen && shortLandscape;
     var hasResults = Boolean(getDisplayedResult());
     var setupSummary = getSetupSummary();
@@ -3517,14 +3517,14 @@ export const initPromise = (function () {
       axisMode,
       state.replay.chartFilterStartRatio,
       state.replay.chartFilterEndRatio,
-      isShortLandscapeLayout() ? state.resultChartMetric : null
+      usesFocusedResultsWorkspace() ? state.resultChartMetric : null
     );
 
     var showAltitude =
       replayCharts.hasMetricData('altitudeM') || replaySourceHasMetricData(replaySource, 'altitudeM');
     var showHeading =
       replayCharts.hasMetricData('headingDeg') || replaySourceHasMetricData(replaySource, 'headingDeg');
-    var singleChart = isShortLandscapeLayout();
+    var singleChart = usesFocusedResultsWorkspace();
     if (elements.resultReplaySheetSpeedStage) {
       elements.resultReplaySheetSpeedStage.hidden =
         singleChart && state.resultChartMetric !== 'speedMs';
@@ -3641,7 +3641,7 @@ export const initPromise = (function () {
   }
 
   function renderResultGraph(result, replaySource, replayPoint) {
-    if (isShortLandscapeLayout() && state.resultWorkspaceView !== 'summary') {
+    if (usesFocusedResultsWorkspace() && state.resultWorkspaceView !== 'summary') {
       resultGraph.destroy();
       return;
     }
@@ -3714,7 +3714,7 @@ export const initPromise = (function () {
   function renderReplayMap(result, replaySource, replayPoint) {
     if (!elements.resultReplayMapShell || !elements.resultReplayMap) return;
 
-    var mapViewActive = !isShortLandscapeLayout() || state.resultWorkspaceView === 'map';
+    var mapViewActive = !usesFocusedResultsWorkspace() || state.resultWorkspaceView === 'map';
     var mapViewRequested = Boolean(state.openPanel === 'results' && mapViewActive && result);
     var hasReplayMap = Boolean(
       mapViewRequested &&
@@ -3722,7 +3722,7 @@ export const initPromise = (function () {
         replaySource.hasGeoPath
     );
 
-    elements.resultReplayMapShell.hidden = isShortLandscapeLayout()
+    elements.resultReplayMapShell.hidden = usesFocusedResultsWorkspace()
       ? !mapViewRequested
       : !hasReplayMap;
 
@@ -3770,7 +3770,7 @@ export const initPromise = (function () {
       if (
         renderToken !== replayMapRenderToken ||
         state.openPanel !== 'results' ||
-        (isShortLandscapeLayout() && state.resultWorkspaceView !== 'map') ||
+        (usesFocusedResultsWorkspace() && state.resultWorkspaceView !== 'map') ||
         !state.replay.source ||
         state.replay.sourceResultId !== result.id
       ) {
@@ -3781,7 +3781,7 @@ export const initPromise = (function () {
       renderReplayMapStatus();
       replayMap.renderPlaybackFrame(replaySource, mapDisplayPoint, mapPlaybackElapsedMs);
       if (!state.replay.introPlayed) {
-        if (isShortLandscapeLayout()) {
+        if (usesFocusedResultsWorkspace()) {
           replayMap.fitRoute?.();
           state.replay.introPlayed = true;
         } else {
@@ -3817,7 +3817,7 @@ export const initPromise = (function () {
   }
 
   function renderDebugTables() {
-    if (isShortLandscapeLayout() && !state.technicalDataExpanded) {
+    if (usesFocusedResultsWorkspace() && !state.technicalDataExpanded) {
       if (elements.debugRawTableBody) elements.debugRawTableBody.innerHTML = '';
       if (elements.debugGraphTableBody) elements.debugGraphTableBody.innerHTML = '';
       if (elements.debugRawTableWrap) elements.debugRawTableWrap.hidden = true;

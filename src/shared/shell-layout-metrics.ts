@@ -46,9 +46,15 @@ function readSafeAreaInsets(doc: Document | null) {
 }
 
 export function getShellViewportProfile(width: number, height: number): ShellViewportProfile {
-  if (width >= 700 && height <= 700 && width > height) return "short-landscape";
   if (height > width) return "portrait";
+  if (width > height && height <= 760) {
+    return width >= 1000 ? "wide-landscape" : "short-landscape";
+  }
   return "standard";
+}
+
+export function isFocusedLandscapeProfile(profile: string | null | undefined) {
+  return profile === "short-landscape" || profile === "wide-landscape";
 }
 
 export function getShellLayoutMetrics(options: LayoutMetricsOptions = {}): ShellLayoutMetrics {
@@ -73,7 +79,7 @@ export function getShellLayoutMetrics(options: LayoutMetricsOptions = {}): Shell
       left: Math.max(0, workArea.left - viewport.left),
     },
     orientation: viewport.width > viewport.height ? "landscape" : "portrait",
-    profile: getShellViewportProfile(viewport.width, viewport.height),
+    profile: getShellViewportProfile(workArea.width, workArea.height),
     devicePixelRatio: Number(globalThis.devicePixelRatio) || 1,
   };
 }
@@ -104,11 +110,33 @@ export function observeShellLayoutMetrics(
 ) {
   let scheduled = false;
   let stopped = false;
+  let lastSignature = "";
+
+  const getSignature = (metrics: ShellLayoutMetrics) => [
+    metrics.viewport.left,
+    metrics.viewport.top,
+    metrics.viewport.width,
+    metrics.viewport.height,
+    metrics.workArea.left,
+    metrics.workArea.top,
+    metrics.workArea.width,
+    metrics.workArea.height,
+    metrics.safeArea.top,
+    metrics.safeArea.right,
+    metrics.safeArea.bottom,
+    metrics.safeArea.left,
+    metrics.profile,
+    metrics.orientation,
+    metrics.devicePixelRatio,
+  ].join(":");
 
   const publish = () => {
     scheduled = false;
     if (stopped) return;
     const metrics = getShellLayoutMetrics(options);
+    const signature = getSignature(metrics);
+    if (signature === lastSignature) return;
+    lastSignature = signature;
     applyShellLayoutMetrics(metrics, options.root);
     callback(metrics);
   };

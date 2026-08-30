@@ -2,7 +2,11 @@ import { createShellLayoutStore } from "./shell-layout-store.js";
 import { getBoundsForSnapZone } from "./shell-snap.js";
 import { SHELL_Z_INDEX } from "./shell-layers.js";
 import { clampBoundsToWorkArea, getShellWorkArea, getViewportRect } from "./shell-work-area.js";
-import { getShellLayoutMetrics, observeShellLayoutMetrics } from "./shell-layout-metrics.js";
+import {
+  getShellLayoutMetrics,
+  isFocusedLandscapeProfile,
+  observeShellLayoutMetrics,
+} from "./shell-layout-metrics.js";
 import type {
   ShellBounds,
   ShellLayoutMetrics,
@@ -994,7 +998,8 @@ export function createShellWindowManager(options: LegacyShellOptions = {}): Shel
 
   function reflowWindowsToWorkArea(options: LegacyShellOptions = {}) {
     const metrics: ShellLayoutMetrics = options.metrics || getShellLayoutMetrics({ root });
-    const isAdaptiveProfile = metrics.profile === "short-landscape";
+    const usesGenericPresentation = metrics.profile === "portrait"
+      || (metrics.profile === "short-landscape" && metrics.viewport.width < 1000);
 
     for (const record of windows.values()) {
       if (record.state === "fullscreen") {
@@ -1004,7 +1009,17 @@ export function createShellWindowManager(options: LegacyShellOptions = {}): Shel
       }
       if (record.state !== "open" || record.element.hidden) continue;
 
-      if (!isAdaptiveProfile) {
+      let resolvedLayout: LegacyShellOptions | null = null;
+      const hasLayoutResolver = typeof record.resolveLayout === "function";
+      if (hasLayoutResolver) {
+        try {
+          resolvedLayout = record.resolveLayout(metrics, shallowRecord(record)) || null;
+        } catch {
+          // A window-specific layout must not prevent the rest of the shell reflow.
+        }
+      }
+
+      if ((hasLayoutResolver && !resolvedLayout) || (!usesGenericPresentation && !resolvedLayout)) {
         if (record.presentationBounds || record.presentationLayout) {
           record.presentationBounds = null;
           record.presentationLayout = null;
@@ -1023,14 +1038,20 @@ export function createShellWindowManager(options: LegacyShellOptions = {}): Shel
         || getElementBounds(record.element)
         || record.bounds
         || record.restoreBounds;
-      let layout: LegacyShellOptions = { mode: "short-landscape" };
-      if (typeof record.resolveLayout === "function") {
-        try {
-          layout = { ...layout, ...(record.resolveLayout(metrics, shallowRecord(record)) || {}) };
-        } catch {
-          // A window-specific layout must not prevent the rest of the shell reflow.
-        }
-      }
+      const layout: LegacyShellOptions = {
+        mode: isFocusedLandscapeProfile(metrics.profile) ? "short-landscape" : metrics.profile,
+        minWidth: record.capabilities?.minWidth,
+        minHeight: record.capabilities?.minHeight,
+        maxWidth: Math.min(
+          toNumber(record.capabilities?.maxWidth) || metrics.workArea.width,
+          metrics.workArea.width,
+        ),
+        maxHeight: Math.min(
+          toNumber(record.capabilities?.maxHeight) || metrics.workArea.height,
+          metrics.workArea.height,
+        ),
+        ...(resolvedLayout || {}),
+      };
       record.presentationLayout = layout;
       const constraints = getCapabilitySizeConstraints(record);
       const requested = {

@@ -36,6 +36,7 @@ import {
 } from "../shared/floating-layer-manager.js";
 import { getDefaultShellWindowManager } from "../shared/shell-window-manager.js";
 import { getShellWorkArea } from "../shared/shell-work-area.js";
+import { isFocusedLandscapeProfile } from "../shared/shell-layout-metrics.js";
 import type { ShellAppRuntimeManager } from "../app-platform/types";
 import type { ShellLifecycleOptions, ShellRuntime } from "../types/shell";
 
@@ -570,8 +571,8 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
     if (shell.root.hidden) return;
 
     if (shell.root.classList.contains("is-content-open")
-      && document.documentElement.dataset.vbLayoutProfile === "short-landscape") {
-      shellManager.reflowWindowsToWorkArea({ persist: false });
+      && isFocusedLandscapeProfile(document.documentElement.dataset.vbLayoutProfile)) {
+      clearPanelFixedHeight();
       return;
     }
 
@@ -675,6 +676,7 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
       maxWidth: 720,
     },
     resolveLayout(metrics) {
+      if (!isFocusedLandscapeProfile(metrics.profile)) return null;
       const contentOpen = shell.root.classList.contains("is-content-open");
       if (!contentOpen) {
         return {

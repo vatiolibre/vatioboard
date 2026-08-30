@@ -146,10 +146,30 @@ test.beforeEach(async ({ page }) => {
 test("selects layout profiles from CSS viewport geometry", async ({ page }, testInfo) => {
   await openRoute(page);
   const profile = await page.locator("html").getAttribute("data-vb-layout-profile");
-  if (testInfo.project.name.startsWith("model-y-")) expect(profile).toBe("short-landscape");
+  if (testInfo.project.name.endsWith("-expanded")) expect(profile).toBe("wide-landscape");
+  else if (["model-y-2024", "model-y-2026", "model-y-2024-es-light", "phone-landscape"].includes(testInfo.project.name)) expect(profile).toBe("short-landscape");
   else if (testInfo.project.name === "phone-portrait") expect(profile).toBe("portrait");
+  else if (testInfo.project.name === "desktop") expect(profile).toBe("wide-landscape");
   else expect(profile).toBe("standard");
 });
+
+for (const route of ["speed", "accel", "replay", "waze", "apps", "qr-scanner"]) {
+  test(`${route} remains bounded on expanded Tesla and phone landscape`, async ({ page }, testInfo) => {
+    test.skip(
+      !["model-y-2024-expanded", "model-y-2026-expanded", "phone-landscape"].includes(testInfo.project.name),
+      "Expanded responsive geometry audit",
+    );
+    await openRoute(page, route);
+    const geometry = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+      routeWidth: document.querySelector<HTMLElement>("#app-view")?.getBoundingClientRect().width || 0,
+      viewportWidth: window.visualViewport?.width || window.innerWidth,
+    }));
+    expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth + 1);
+    expect(geometry.routeWidth).toBeLessThanOrEqual(geometry.viewportWidth + 1);
+  });
+}
 
 test("speed dashboard contains a large dial without outer scrolling", async ({ page }, testInfo) => {
   test.skip(!isTeslaProject(testInfo), "Exact Tesla geometry assertion");
