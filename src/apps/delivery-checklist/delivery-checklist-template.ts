@@ -1,7 +1,7 @@
 const deliveryChecklistTemplate: string = String.raw`
 <h1 class="sr-only" data-i18n="deliveryChecklist">Tesla delivery checklist</h1>
 <div class="delivery-checklist-app">
-  <header class="delivery-checklist-header">
+  <header class="delivery-checklist-header" data-vb-route-header>
     <div class="delivery-checklist-header-inner">
       <div class="delivery-checklist-toolbar" role="toolbar" data-vb-shell-toolbar data-i18n-aria="deliveryChecklist.tools" aria-label="Delivery checklist tools">
         <div class="delivery-toolbar-strip">
@@ -65,7 +65,7 @@ const deliveryChecklistTemplate: string = String.raw`
         <nav id="deliverySectionTabs" class="delivery-section-tabs" data-i18n-aria="deliveryChecklist.checklistSections" aria-label="Checklist sections"></nav>
       </aside>
 
-      <section class="delivery-section-panel">
+      <section class="delivery-section-panel" data-vb-scroll-region>
         <div class="delivery-section-heading">
           <div>
             <p id="deliveryStepKicker" class="delivery-step-kicker">Step 1 of 10</p>
@@ -163,7 +163,7 @@ const deliveryChecklistTemplate: string = String.raw`
         </nav>
       </section>
 
-      <aside id="deliveryReviewPanel" class="delivery-review-panel" hidden>
+      <aside id="deliveryReviewPanel" class="delivery-review-panel" data-vb-scroll-region hidden>
         <div class="delivery-review-header">
           <div>
             <h2 data-i18n="deliveryChecklist.review.title">Review</h2>

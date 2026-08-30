@@ -5,6 +5,7 @@ import { createCleanupStack } from '../app/view-cleanup.js';
 import { applyTranslations, getLang, t, toggleLang } from '../i18n.js';
 import { createAnalogSpeedometer } from '../shared/analog-speedometer.js';
 import { ACTIVITY_OPEN_EVENT } from '../shared/activity-state.js';
+import { FOCUSED_VIEW_CHANGE_EVENT } from '../shared/focused-workspace.js';
 import { initBackendAuthControllers } from '../shared/backend-auth.js';
 import { initCloudSyncStatusIndicator } from '../shared/cloud-sync-status-indicator.js';
 import { initFloatingTools } from '../shared/floating-tools.js';
@@ -2546,6 +2547,19 @@ function resizeCanvas() {
   globeController.resizeGlobe();
 }
 
+function isGlobeSurfaceVisible() {
+  const panel = elements.globeMount?.closest?.('[data-vb-focused-view-panel]');
+  if (!elements.globeMount || panel?.hidden) return false;
+  const rect = elements.globeMount.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
+function ensureVisibleGlobe() {
+  if (!isGlobeSurfaceVisible()) return;
+  globeController.initGlobe();
+  queueMicrotask(() => globeController.resizeGlobe());
+}
+
 function renderFrame(now) {
   if (isSpaRuntime && !state.viewMounted) {
     state.renderFrameId = null;
@@ -2841,7 +2855,7 @@ function syncMountedSpeedRouteUi() {
   renderMetrics();
   renderRecordingControls();
   speedRenderer.drawGauge();
-  globeController.initGlobe();
+  ensureVisibleGlobe();
   resizeCanvas();
 }
 
@@ -3096,6 +3110,12 @@ function bindEvents({ cleanup, signal }: AnyRecord = {}) {
     },
     { passive: true }
   );
+
+  cleanup.addEventListener(elements.speedApp, FOCUSED_VIEW_CHANGE_EVENT, (event) => {
+    const detail = event.detail || {};
+    if (detail.activeView === 'globe' || detail.focused === false) ensureVisibleGlobe();
+    if (detail.activeView === 'gauge' || detail.focused === false) analogSpeedometer.resize();
+  });
 
   cleanup.addEventListener(window, 'resize', resizeCanvas, { passive: true });
   cleanup.addEventListener(window, 'orientationchange', resizeCanvas, { passive: true });

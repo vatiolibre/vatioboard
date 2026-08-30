@@ -23,6 +23,77 @@ body,
   --vb-z-floating-fullscreen: var(--vb-z-shell-fullscreen);
 }
 
+/* Route pages never own document scrolling. Long data is contained by an
+   explicitly labelled region inside a focused workspace. */
+html,
+body,
+#app,
+#app-view {
+  height: var(--vb-viewport-height, 100dvh);
+  min-height: 0;
+  max-height: var(--vb-viewport-height, 100dvh);
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+[data-vb-focused-workspace] {
+  min-width: 0;
+  min-height: 0;
+}
+
+[data-vb-focused-view-nav] {
+  display: none;
+}
+
+[data-vb-scroll-region] {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+  #app-view,
+  #app-view > * {
+    height: var(--vb-viewport-height, 100dvh);
+    min-height: 0;
+    max-height: var(--vb-viewport-height, 100dvh);
+    overflow: hidden !important;
+  }
+
+  [data-vb-focused-workspace][data-vb-focused-mode="true"] {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  [data-vb-focused-workspace][data-vb-focused-mode="true"] > [data-vb-focused-view-nav] {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    min-height: 44px;
+  }
+
+  [data-vb-focused-view-target] {
+    min-width: 44px;
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  [data-vb-focused-view-panel] {
+    min-width: 0;
+    min-height: 0;
+  }
+
+  [data-vb-focused-view-panel][hidden] {
+    display: none !important;
+  }
+}
+
 html,
 body {
   margin: 0;
@@ -105,6 +176,22 @@ html.vb-floating-drag-active body {
 [data-vb-shell-layout-mode="short-landscape"] {
   max-width: var(--vb-work-area-width, calc(100vw - 16px)) !important;
   max-height: var(--vb-work-area-height, calc(100dvh - 16px)) !important;
+}
+
+[data-vb-shell-layout-mode="portrait"] {
+  max-width: var(--vb-work-area-width, calc(100vw - 8px)) !important;
+  max-height: var(--vb-work-area-height, calc(100dvh - 8px)) !important;
+}
+
+[data-vb-shell-layout-mode="portrait"] .player-content-sheet,
+[data-vb-shell-layout-mode="portrait"] .energy-body,
+[data-vb-shell-layout-mode="portrait"] .camera-map-body,
+[data-vb-shell-layout-mode="portrait"] .tts-body,
+[data-vb-shell-layout-mode="portrait"] .speed-alert-window-body,
+[data-vb-shell-layout-mode="portrait"] .vb-account-panel-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 [data-vb-shell-layout-mode="short-landscape"].energy-panel,

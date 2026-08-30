@@ -21,6 +21,7 @@ describe("shell layout metrics", () => {
     expect(getShellViewportProfile(932, 430)).toBe("short-landscape");
     expect(getShellViewportProfile(430, 932)).toBe("portrait");
     expect(getShellViewportProfile(1280, 800)).toBe("standard");
+    expect(getShellViewportProfile(390, 300, "portrait")).toBe("portrait");
     expect(isFocusedLandscapeProfile("short-landscape")).toBe(true);
     expect(isFocusedLandscapeProfile("wide-landscape")).toBe(true);
     expect(isFocusedLandscapeProfile("portrait")).toBe(false);

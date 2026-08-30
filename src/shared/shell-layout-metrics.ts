@@ -5,9 +5,13 @@ type LayoutMetricsOptions = {
   root?: Document | Element | null;
   safeMargin?: number;
   viewport?: Record<string, unknown>;
+  orientation?: "landscape" | "portrait";
 };
 
-const safeAreaCache = new WeakMap<Document, { top: number; right: number; bottom: number; left: number }>();
+const safeAreaCache = new WeakMap<Document, {
+  signature: string;
+  insets: { top: number; right: number; bottom: number; left: number };
+}>();
 
 function getDocument(root?: Document | Element | null) {
   if (typeof Document !== "undefined" && root instanceof Document) return root;
@@ -18,8 +22,18 @@ function readSafeAreaInsets(doc: Document | null) {
   if (!doc?.body || typeof getComputedStyle !== "function") {
     return { top: 0, right: 0, bottom: 0, left: 0 };
   }
+  const visualViewport = globalThis.visualViewport;
+  const signature = [
+    globalThis.innerWidth,
+    globalThis.innerHeight,
+    visualViewport?.width,
+    visualViewport?.height,
+    visualViewport?.offsetLeft,
+    visualViewport?.offsetTop,
+    globalThis.matchMedia?.("(orientation: portrait)").matches,
+  ].join(":");
   const cached = safeAreaCache.get(doc);
-  if (cached) return cached;
+  if (cached?.signature === signature) return cached.insets;
   const probe = doc.createElement("div");
   probe.setAttribute("aria-hidden", "true");
   probe.style.cssText = [
@@ -41,13 +55,18 @@ function readSafeAreaInsets(doc: Document | null) {
     left: number(style.paddingLeft),
   };
   probe.remove();
-  safeAreaCache.set(doc, insets);
+  safeAreaCache.set(doc, { signature, insets });
   return insets;
 }
 
-export function getShellViewportProfile(width: number, height: number): ShellViewportProfile {
-  if (height > width) return "portrait";
-  if (width > height && height <= 760) {
+export function getShellViewportProfile(
+  width: number,
+  height: number,
+  orientation?: "landscape" | "portrait",
+): ShellViewportProfile {
+  const resolvedOrientation = orientation || (height > width ? "portrait" : "landscape");
+  if (resolvedOrientation === "portrait") return "portrait";
+  if (height <= 760) {
     return width >= 1000 ? "wide-landscape" : "short-landscape";
   }
   return "standard";
@@ -59,12 +78,24 @@ export function isFocusedLandscapeProfile(profile: string | null | undefined) {
 
 export function getShellLayoutMetrics(options: LayoutMetricsOptions = {}): ShellLayoutMetrics {
   const viewport = getViewportRect(options.viewport || {});
+  const safeArea = readSafeAreaInsets(getDocument(options.root));
+  const safeViewport = {
+    left: viewport.left + safeArea.left,
+    top: viewport.top + safeArea.top,
+    width: Math.max(1, viewport.width - safeArea.left - safeArea.right),
+    height: Math.max(1, viewport.height - safeArea.top - safeArea.bottom),
+  };
   const workArea = getShellWorkArea({
     root: options.root,
-    viewport,
+    viewport: safeViewport,
     safeMargin: options.safeMargin,
   });
-  const safeArea = readSafeAreaInsets(getDocument(options.root));
+  const orientation = options.orientation
+    || (globalThis.matchMedia?.("(orientation: portrait)").matches
+      ? "portrait"
+      : globalThis.matchMedia?.("(orientation: landscape)").matches
+        ? "landscape"
+        : viewport.width > viewport.height ? "landscape" : "portrait");
   const viewportRight = viewport.left + viewport.width;
   const viewportBottom = viewport.top + viewport.height;
 
@@ -78,8 +109,8 @@ export function getShellLayoutMetrics(options: LayoutMetricsOptions = {}): Shell
       bottom: Math.max(0, viewportBottom - (workArea.top + workArea.height)),
       left: Math.max(0, workArea.left - viewport.left),
     },
-    orientation: viewport.width > viewport.height ? "landscape" : "portrait",
-    profile: getShellViewportProfile(workArea.width, workArea.height),
+    orientation,
+    profile: getShellViewportProfile(workArea.width, workArea.height, orientation),
     devicePixelRatio: Number(globalThis.devicePixelRatio) || 1,
   };
 }
@@ -91,8 +122,14 @@ export function applyShellLayoutMetrics(metrics: ShellLayoutMetrics, root?: Docu
   const px = (value: number) => `${Math.max(0, Math.round(value * 100) / 100)}px`;
   target.dataset.vbLayoutProfile = metrics.profile;
   target.dataset.vbLayoutOrientation = metrics.orientation;
+  target.style.setProperty("--vb-viewport-left", px(metrics.viewport.left || 0));
+  target.style.setProperty("--vb-viewport-top", px(metrics.viewport.top || 0));
   target.style.setProperty("--vb-viewport-width", px(metrics.viewport.width));
   target.style.setProperty("--vb-viewport-height", px(metrics.viewport.height));
+  target.style.setProperty("--vb-safe-area-top", px(metrics.safeArea.top));
+  target.style.setProperty("--vb-safe-area-right", px(metrics.safeArea.right));
+  target.style.setProperty("--vb-safe-area-bottom", px(metrics.safeArea.bottom));
+  target.style.setProperty("--vb-safe-area-left", px(metrics.safeArea.left));
   target.style.setProperty("--vb-work-area-left", px(metrics.workArea.left));
   target.style.setProperty("--vb-work-area-top", px(metrics.workArea.top));
   target.style.setProperty("--vb-work-area-width", px(metrics.workArea.width));

@@ -762,12 +762,13 @@ test("Spanish Replay controls fit the light Tesla layout", async ({ page }, test
     .toBeLessThanOrEqual(1);
 });
 
-test("acceleration keeps its regular layout outside short landscape", async ({ page }, testInfo) => {
-  test.skip(!["desktop", "phone-portrait"].includes(testInfo.project.name), "Regular-layout fallback assertion");
+test("acceleration selects its desktop or focused portrait geometry", async ({ page }, testInfo) => {
+  test.skip(!["desktop", "phone-portrait"].includes(testInfo.project.name), "Non-Tesla responsive assertion");
   await openRoute(page, "accel");
+  const expectedRadius = testInfo.project.name === "phone-portrait" ? "0.46" : "0.42";
   await expect.poll(() => page.locator(".accel-speedometer-stage").evaluate((stage) => (
     getComputedStyle(stage).getPropertyValue("--analog-speedometer-radius-ratio").trim()
-  ))).toBe("0.42");
+  ))).toBe(expectedRadius);
 
   const layout = await page.evaluate(() => {
     const stage = document.querySelector<HTMLElement>(".accel-speedometer-stage")!;
@@ -781,8 +782,12 @@ test("acceleration keeps its regular layout outside short landscape", async ({ p
   });
 
   expect(layout.profile).toBe(testInfo.project.name === "phone-portrait" ? "portrait" : "standard");
-  expect(layout.progressPosition).toBe("static");
-  expect(layout.radiusRatio).toBe("0.42");
+  expect(layout.progressPosition).toBe(testInfo.project.name === "phone-portrait" ? "absolute" : "static");
+  expect(layout.radiusRatio).toBe(expectedRadius);
+  if (testInfo.project.name === "phone-portrait") {
+    await expect(page.locator(".accel-focused-nav")).toBeVisible();
+    await expect(page.locator("#accelGaugePanel")).toBeVisible();
+  }
 });
 
 test("Spanish acceleration summaries fit the light short-landscape theme", async ({ page }, testInfo) => {

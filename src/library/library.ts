@@ -130,6 +130,7 @@ export function getLibraryElements(root: any): AnyRecord {
     listEmpty: queryOne(root, "#libraryListEmpty"),
     listPanel: queryOne(root, "#libraryList"),
     loadMoreButton: queryOne(root, "#libraryLoadMore"),
+    detailViewTab: queryOne(root, "#libraryDetailViewTab"),
     detailEmpty: queryOne(root, "#libraryDetailEmpty"),
     detailCard: queryOne(root, "#libraryDetailCard"),
     detailPreview: queryOne(root, "#libraryDetailPreview"),
@@ -2745,6 +2746,7 @@ function bindEvents({ elements: routeElements = elements, cleanup, signal }: Any
     const button = event.target?.closest?.("button[data-library-record-name]");
     if (!button || !routeElements.listPanel?.contains(button)) return;
     selectLibraryListItem(button.dataset.libraryRecordName);
+    routeElements.detailViewTab?.click?.();
   });
 
   cleanup.addEventListener(routeElements.actionOpen, "click", () => {

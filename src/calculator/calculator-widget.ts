@@ -218,6 +218,20 @@ export function createCalculatorWidget(options: CalculatorWidgetOptions = {}): C
       maxHeight: 548,
     },
     resolveLayout(metrics) {
+      if (metrics.profile === "portrait" && metrics.workArea.width <= 600) {
+        const width = Math.min(360, metrics.workArea.width);
+        return {
+          mode: "portrait",
+          left: metrics.workArea.left + Math.max(0, metrics.workArea.width - width) / 2,
+          top: metrics.workArea.top,
+          width,
+          height: metrics.workArea.height,
+          minWidth: Math.min(320, metrics.workArea.width),
+          minHeight: Math.min(400, metrics.workArea.height),
+          maxWidth: metrics.workArea.width,
+          maxHeight: metrics.workArea.height,
+        };
+      }
       if (!isFocusedLandscapeProfile(metrics.profile)) return null;
       const width = Math.min(520, metrics.workArea.width);
       const height = Math.min(440, metrics.workArea.height);

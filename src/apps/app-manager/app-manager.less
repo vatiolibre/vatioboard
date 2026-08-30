@@ -521,6 +521,83 @@ body.apps-page #app-view {
   }
 }
 
+@media (max-width: 600px) and (orientation: portrait) {
+  html[data-vb-layout-profile="portrait"] body.apps-page #app-view {
+    overflow: hidden;
+  }
+
+  html[data-vb-layout-profile="portrait"] .vb-app-manager {
+    display: grid;
+    grid-template-rows: 52px 50px minmax(0, 1fr);
+    gap: 4px;
+    height: var(--vb-viewport-height, 100dvh);
+    min-height: 0;
+    padding: 4px 6px max(4px, calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 4px));
+    overflow: hidden;
+  }
+
+  html[data-vb-layout-profile="portrait"] .vb-app-manager-header,
+  html[data-vb-layout-profile="portrait"] .vb-app-manager-toolbar {
+    position: relative;
+    top: auto;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+  }
+
+  html[data-vb-layout-profile="portrait"] .vb-app-manager-header {
+    align-items: center;
+  }
+
+  html[data-vb-layout-profile="portrait"] .vb-app-manager-eyebrow {
+    display: none;
+  }
+
+  html[data-vb-layout-profile="portrait"] .vb-app-manager-count {
+    min-height: 44px;
+    max-width: 52%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  html[data-vb-layout-profile="portrait"] .vb-app-manager-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px;
+    background: transparent;
+  }
+
+  html[data-vb-layout-profile="portrait"] .vb-app-manager-search input,
+  html[data-vb-layout-profile="portrait"] .vb-app-manager-filter-disclosure > summary {
+    min-height: 44px;
+  }
+
+  html[data-vb-layout-profile="portrait"] .vb-app-manager-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+    margin: 0;
+    padding: 0 2px 8px 0;
+    overflow-y: auto;
+    align-content: start;
+  }
+
+  html[data-vb-layout-profile="portrait"] .vb-app-manager-card {
+    gap: 7px;
+    padding: 9px;
+    box-shadow: none;
+  }
+
+  html[data-vb-layout-profile="portrait"] .vb-app-manager-button,
+  html[data-vb-layout-profile="portrait"] .vb-app-manager-toggle,
+  html[data-vb-layout-profile="portrait"] .vb-app-manager-mini-button,
+  html[data-vb-layout-profile="portrait"] .vb-app-manager-launch,
+  html[data-vb-layout-profile="portrait"] .vb-app-manager-card-details > summary {
+    min-height: 44px;
+  }
+}
+
 @media (max-width: 620px) {
   .vb-app-manager {
     padding-inline: max(10px, var(--vb-safe-area-left)) max(10px, var(--vb-safe-area-right));
@@ -550,8 +627,7 @@ html:is([data-vb-layout-profile="short-landscape"], [data-vb-layout-profile="wid
 html:is([data-vb-layout-profile="short-landscape"], [data-vb-layout-profile="wide-landscape"]) .vb-app-manager{
   height: 100dvh;
   min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
   padding: 10px 12px max(84px, calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));
 }
 
@@ -591,6 +667,29 @@ html:is([data-vb-layout-profile="short-landscape"], [data-vb-layout-profile="wid
 html:is([data-vb-layout-profile="short-landscape"], [data-vb-layout-profile="wide-landscape"]) .vb-app-manager-card{
   gap: 8px;
   padding: 10px;
+}
+
+/* The manager owns a fixed workspace at every size. Only its app collection
+   scrolls; search, filters, and the app count remain spatially stable. */
+body.apps-page .vb-app-manager{
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  height: var(--vb-viewport-height, 100dvh);
+  min-height: 0;
+  overflow: hidden;
+}
+
+body.apps-page .vb-app-manager-header,
+body.apps-page .vb-app-manager-toolbar{
+  position: relative;
+  top: auto;
+}
+
+body.apps-page .vb-app-manager-grid{
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 @media (max-width: 620px) {

@@ -3,7 +3,7 @@ const speedTemplate: string = String.raw`
   <p class="sr-only" data-i18n="speedPageLead">Live GPS speedometer with analog dial, trip stats, unit switching, altitude tracking, and speed trap alerts for Tesla and mobile browsers.</p>
 
   <div class="app speed-app">
-    <header>
+    <header data-vb-route-header>
       <div class="header-inner speed-header-inner">
         <div class="brand" data-i18n-title="speedTagline" title="Minimal live speedometer by VatioLibre">
           <a class="brand-home" href="#/board" data-i18n-aria="openBoard" aria-label="Open VatioLibre drawing board">
@@ -100,10 +100,51 @@ const speedTemplate: string = String.raw`
       </div>
     </header>
 
-    <main class="speed-main">
+    <main
+      class="speed-main"
+      data-vb-focused-workspace
+      data-vb-focused-default="gauge"
+    >
+      <div
+        class="speed-focused-nav"
+        data-vb-focused-view-nav
+        role="tablist"
+        data-i18n-aria="viewMode"
+        aria-label="View mode"
+      >
+        <button
+          type="button"
+          role="tab"
+          class="speed-focused-tab"
+          data-vb-focused-view-target="gauge"
+          aria-controls="speedGaugePanel"
+          data-i18n="speedometer"
+        >Speedometer</button>
+        <button
+          type="button"
+          role="tab"
+          class="speed-focused-tab"
+          data-vb-focused-view-target="stats"
+          aria-controls="speedStatsPanel"
+          data-i18n="tripStats"
+        >Trip stats</button>
+        <button
+          type="button"
+          role="tab"
+          class="speed-focused-tab"
+          data-vb-focused-view-target="globe"
+          aria-controls="speedGlobePanel"
+          data-i18n="liveGlobe"
+        >Live globe</button>
+      </div>
       <section class="speed-shell" data-i18n-aria="liveAnalogSpeedometer" aria-label="Live analog speedometer">
         <div class="speed-stage">
-          <div class="gauge-card">
+          <div
+            id="speedGaugePanel"
+            class="gauge-card"
+            role="tabpanel"
+            data-vb-focused-view-panel="gauge"
+          >
             <button
               id="alertTrigger"
               class="speed-alert-trigger"
@@ -149,7 +190,14 @@ const speedTemplate: string = String.raw`
           </div>
 
           <div class="speed-side-panel">
-            <div class="stats-grid" data-i18n-aria="tripStats" aria-label="Trip stats">
+            <div
+              id="speedStatsPanel"
+              class="stats-grid"
+              role="tabpanel"
+              data-vb-focused-view-panel="stats"
+              data-i18n-aria="tripStats"
+              aria-label="Trip stats"
+            >
               <article class="metric-card">
                 <span class="metric-label" data-i18n="max">Max</span>
                 <strong id="maxSpeed">0</strong>
@@ -199,7 +247,14 @@ const speedTemplate: string = String.raw`
               </article>
             </div>
 
-            <article class="globe-card" data-i18n-aria="currentLocationGlobe" aria-label="Current location globe">
+            <article
+              id="speedGlobePanel"
+              class="globe-card"
+              role="tabpanel"
+              data-vb-focused-view-panel="globe"
+              data-i18n-aria="currentLocationGlobe"
+              aria-label="Current location globe"
+            >
               <div class="globe-card-header">
                 <span class="globe-card-kicker" data-i18n="liveGlobe">Live globe</span>
                 <p id="globeStatus" class="globe-card-status" data-i18n="requestingGps">Requesting GPS...</p>

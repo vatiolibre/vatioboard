@@ -1,7 +1,7 @@
 const libraryTemplate: string = String.raw`
 <h1 class="sr-only" data-i18n="cloudLibrary">Cloud library</h1>
     <div class="library-app">
-      <header class="library-header">
+      <header class="library-header" data-vb-route-header>
         <div class="header-inner library-header-inner">
           <div class="brand" data-i18n-title="tagline" title="Simple full-page drawing board by VatioLibre">
             <a class="brand-home" href="#/board" data-i18n-aria="openBoard" aria-label="Open VatioLibre drawing board">
@@ -123,8 +123,12 @@ const libraryTemplate: string = String.raw`
           Activate subscription
         </button>
 
-        <section class="library-shell">
-          <section class="library-list-panel" aria-live="polite">
+        <section class="library-shell" data-vb-focused-workspace data-vb-focused-default="list">
+          <div class="library-focused-nav" data-vb-focused-view-nav role="tablist" aria-label="Library view">
+            <button type="button" role="tab" class="library-focused-tab" data-vb-focused-view-target="list" aria-controls="libraryListView" data-i18n="cloudLibraryBackToList">Back to list</button>
+            <button id="libraryDetailViewTab" type="button" role="tab" class="library-focused-tab" data-vb-focused-view-target="detail" aria-controls="libraryDetailView" data-i18n="cloudLibraryDetails">Details</button>
+          </div>
+          <section id="libraryListView" class="library-list-panel" role="tabpanel" data-vb-focused-view-panel="list" data-vb-scroll-region aria-live="polite">
             <div id="libraryListEmpty" class="library-list-empty" data-i18n="cloudLibraryLoading">
               Loading cloud library...
             </div>
@@ -134,7 +138,7 @@ const libraryTemplate: string = String.raw`
             </button>
           </section>
 
-          <section class="library-detail-panel">
+          <section id="libraryDetailView" class="library-detail-panel" role="tabpanel" data-vb-focused-view-panel="detail" data-vb-scroll-region>
             <div id="libraryDetailEmpty" class="library-detail-empty" data-i18n="cloudLibrarySelectPrompt">
               Select a cloud record to inspect it here.
             </div>

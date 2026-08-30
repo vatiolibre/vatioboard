@@ -2518,3 +2518,261 @@ html[data-vb-layout-profile="portrait"] .speed-globe{
     max-height: none;
     aspect-ratio: auto;
 }
+
+/* Narrow portrait uses focused, non-scrolling surfaces. */
+@media (max-width: 600px) and (orientation: portrait){
+    html[data-vb-layout-profile="portrait"] .speed-app{
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto minmax(0, 1fr);
+        width: 100%;
+        max-width: 100%;
+        height: var(--vb-viewport-height, 100dvh);
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    html[data-vb-layout-profile="portrait"] .speed-app > header{
+        position: relative;
+        min-height: 52px;
+    }
+
+    html[data-vb-layout-profile="portrait"] .speed-header-inner{
+        display: flex;
+        width: 100%;
+        min-height: 52px;
+        padding: 4px max(4px, var(--vb-safe-area-right)) 4px max(4px, var(--vb-safe-area-left));
+        flex-wrap: nowrap;
+        justify-content: center;
+        overflow: hidden;
+    }
+
+    /* Cloud state remains available from Account; keeping it in this six-action
+       driving toolbar would force the route wider than a 320px viewport. */
+    html[data-vb-layout-profile="portrait"] .speed-header-inner .cloud-sync-indicator{
+        display: none;
+    }
+
+    html[data-vb-layout-profile="portrait"] .speed-header-inner > .brand,
+    html[data-vb-layout-profile="portrait"] .speed-header-inner > .route-chip{
+        display: none;
+    }
+
+    html[data-vb-layout-profile="portrait"] .speed-toolbar{
+        --speed-toolbar-touch-size: 44px;
+        --speed-toolbar-hit-width: 44px;
+        --speed-toolbar-icon-size: 18px;
+        display: flex;
+        grid-column: auto;
+        width: auto;
+        min-width: 0;
+        flex: 0 1 auto;
+        flex-wrap: nowrap;
+        justify-content: center;
+        gap: 0;
+        overflow: hidden;
+    }
+
+    html[data-vb-layout-profile="portrait"] .toolbar-recording-quick{
+        display: grid;
+        grid-template-columns: repeat(6, 44px);
+        width: auto;
+        max-width: 100%;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+    html[data-vb-layout-profile="portrait"] .toolbar-recording-btn{
+        width: 44px;
+        min-width: 44px;
+        height: 44px;
+        min-height: 44px;
+    }
+
+    html[data-vb-layout-profile="portrait"] .speed-main{
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: 48px minmax(0, 1fr);
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+        height: 100%;
+        min-height: 0;
+        padding: 0 4px max(4px, calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 4px));
+        overflow: hidden;
+        touch-action: manipulation;
+    }
+
+    html[data-vb-layout-profile="portrait"] .speed-focused-nav{
+        width: 100%;
+        min-width: 0;
+        position: relative;
+        z-index: 8;
+        gap: 2px;
+        padding: 2px 0;
+        border-bottom: 1px solid var(--speed-panel-border);
+        background: color-mix(in srgb, var(--speed-surface-strong) 90%, transparent);
+    }
+
+    html[data-vb-layout-profile="portrait"] .speed-focused-tab{
+        min-width: 0;
+        min-height: 44px;
+        padding: 0 5px;
+        border: 0;
+        border-radius: 9px;
+        background: transparent;
+        color: var(--muted);
+        font-size: clamp(10px, 3vw, 12px);
+        font-weight: 850;
+        line-height: 1.05;
+        white-space: nowrap;
+    }
+
+    html[data-vb-layout-profile="portrait"] .speed-focused-tab[aria-selected="true"]{
+        background: var(--btn-active-bg);
+        color: var(--btn-active-fg);
+    }
+
+    html[data-vb-layout-profile="portrait"] .speed-shell,
+    html[data-vb-layout-profile="portrait"] .speed-stage{
+        width: 100%;
+        min-width: 0;
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    html[data-vb-layout-profile="portrait"] .speed-stage{
+        display: grid;
+        grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+        gap: 0;
+    }
+
+    html[data-vb-layout-profile="portrait"] .gauge-card,
+    html[data-vb-layout-profile="portrait"] .speed-side-panel{
+        grid-area: 1 / 1;
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+    }
+
+    html[data-vb-layout-profile="portrait"] .gauge-card{
+        place-items: stretch;
+        overflow: hidden;
+    }
+
+    html[data-vb-layout-profile="portrait"] .speed-primary-stage{
+        width: 100%;
+        height: 100%;
+        max-width: none;
+        aspect-ratio: auto;
+        container-type: size;
+    }
+
+    html[data-vb-layout-profile="portrait"] .gauge-stage.analog-speedometer-stage{
+        inset: 2px;
+    }
+
+    html[data-vb-layout-profile="portrait"] .gauge-stage-inner.analog-speedometer-inner{
+        width: min(calc(100cqw - 4px), calc(100cqh - 4px));
+        height: min(calc(100cqw - 4px), calc(100cqh - 4px));
+        max-width: 100%;
+        max-height: 100%;
+        place-self: center;
+    }
+
+    html[data-vb-layout-profile="portrait"] .speed-side-panel{
+        display: grid;
+        grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+        gap: 0;
+        overflow: hidden;
+    }
+
+    html[data-vb-layout-profile="portrait"] .stats-grid,
+    html[data-vb-layout-profile="portrait"] .globe-card{
+        grid-area: 1 / 1;
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+    }
+
+    html[data-vb-layout-profile="portrait"] .stats-grid{
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-rows: repeat(4, minmax(0, 1fr));
+        align-content: stretch;
+        gap: 6px;
+        padding: 4px;
+        overflow: hidden;
+    }
+
+    html[data-vb-layout-profile="portrait"] .metric-card{
+        min-height: 0;
+        padding: 6px 8px;
+        overflow: hidden;
+    }
+
+    html[data-vb-layout-profile="portrait"] .metric-card strong{
+        align-self: center;
+        font-size: clamp(22px, 8vw, 32px);
+    }
+
+    html[data-vb-layout-profile="portrait"] .globe-card,
+    html[data-vb-layout-profile="portrait"] .speed-globe{
+        height: 100%;
+        min-height: 0;
+        max-height: none;
+        border-radius: 0;
+    }
+
+    html[data-vb-layout-profile="portrait"] .speed-alert-trigger{
+        top: 4px;
+        right: 4px;
+        min-width: min(156px, calc(100% - 8px));
+        z-index: 5;
+    }
+
+    html[data-vb-layout-profile="portrait"] .notice{
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        left: 4px;
+        z-index: 10;
+        display: flex;
+        width: auto;
+        max-width: none;
+        min-height: 52px;
+        padding: 4px 5px 4px 10px;
+        flex-direction: row;
+        align-items: center;
+    }
+
+    html[data-vb-layout-profile="portrait"] .notice[hidden]{
+        display: none !important;
+    }
+
+    html[data-vb-layout-profile="portrait"] .notice p{
+        min-width: 0;
+        font-size: 12px;
+        line-height: 1.2;
+    }
+
+    html[data-vb-layout-profile="portrait"] .notice button{
+        width: auto;
+        min-width: 76px;
+        min-height: 44px;
+        flex: 0 0 auto;
+    }
+
+    html[data-vb-layout-profile="portrait"] .speed-audio-banner{
+        position: absolute;
+        right: 4px;
+        bottom: 4px;
+        left: 4px;
+        z-index: 11;
+        width: auto;
+        max-width: none;
+        max-height: min(46%, 250px);
+        margin: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+}

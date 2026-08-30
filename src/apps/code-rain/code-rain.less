@@ -676,3 +676,44 @@ body.code-rain-page .code-rain-app {
     gap: 6px;
   }
 }
+
+@media (max-width: 600px) and (orientation: portrait) {
+  html[data-vb-layout-profile="portrait"] .code-rain-app,
+  html[data-vb-layout-profile="portrait"] .code-rain-stage {
+    width: var(--vb-viewport-width, 100vw);
+    height: var(--vb-viewport-height, 100dvh);
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  html[data-vb-layout-profile="portrait"] .code-rain-toolbar {
+    right: auto;
+    left: max(4px, var(--vb-safe-area-left));
+    bottom: max(4px, calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 4px));
+    max-width: calc(100% - max(8px, var(--vb-safe-area-left)) - max(8px, var(--vb-safe-area-right)));
+    overflow: hidden;
+  }
+
+  html[data-vb-layout-profile="portrait"] .code-rain-icon-button {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+
+  html[data-vb-layout-profile="portrait"] .code-rain-panel {
+    top: max(4px, var(--vb-safe-area-top));
+    right: max(4px, var(--vb-safe-area-right));
+    bottom: max(56px, calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 56px));
+    left: max(4px, var(--vb-safe-area-left));
+    width: auto;
+    max-height: none;
+    overflow: hidden;
+  }
+
+  html[data-vb-layout-profile="portrait"] .code-rain-panel__body {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}

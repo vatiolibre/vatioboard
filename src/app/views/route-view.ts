@@ -1,4 +1,5 @@
 import { createCleanupStack } from "../view-cleanup.js";
+import { initFocusedWorkspaces } from "../../shared/focused-workspace.js";
 import type { MountedView, RouteContext, RouteMountContext } from "../../types/route";
 
 interface RouteMeta {
@@ -179,6 +180,8 @@ export function createRouteView({
       const templateElement = getTemplate(pageName, template);
       root.replaceChildren(templateElement.content.cloneNode(true));
       routeNodes = Array.from(root.childNodes);
+      const focusedWorkspaces = initFocusedWorkspaces(root);
+      cleanup.add(() => focusedWorkspaces.destroy());
       if (signal?.addEventListener) {
         const handleAbort = () => {
           cleanup.run();

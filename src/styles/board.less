@@ -1099,3 +1099,130 @@ html.has-iro .rgb-fallback{
 html.has-iro .color-popup-card{
   padding-top: 10px;
 }
+
+@media (max-width: 600px) and (orientation: portrait){
+  html[data-vb-layout-profile="portrait"] body.board-page .app{
+    display: grid;
+    grid-template-rows: 52px minmax(0, 1fr);
+    height: var(--vb-viewport-height, 100dvh);
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  html[data-vb-layout-profile="portrait"] body.board-page header{
+    position: relative;
+    min-height: 52px;
+  }
+
+  html[data-vb-layout-profile="portrait"] body.board-page .header-inner{
+    display: flex;
+    min-height: 52px;
+    padding: 4px;
+    flex-wrap: nowrap;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  html[data-vb-layout-profile="portrait"] body.board-page .header-inner > .brand{
+    display: none;
+  }
+
+  html[data-vb-layout-profile="portrait"] body.board-page .toolbar{
+    display: contents;
+  }
+
+  html[data-vb-layout-profile="portrait"] body.board-page .board-action-strip{
+    display: grid;
+    grid-template-columns: repeat(7, 44px);
+    width: min-content;
+    max-width: 100%;
+    min-height: 44px;
+    gap: 0;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  html[data-vb-layout-profile="portrait"] body.board-page .board-action-btn{
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+  }
+
+  html[data-vb-layout-profile="portrait"] body.board-page main,
+  html[data-vb-layout-profile="portrait"] body.board-page .canvas-shell,
+  html[data-vb-layout-profile="portrait"] body.board-page .canvas-frame{
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  html[data-vb-layout-profile="portrait"] body.board-page .canvas-shell{
+    padding-bottom: max(4px, calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 4px));
+  }
+
+  html[data-vb-layout-profile="portrait"] body.board-page .size-label{
+    position: fixed;
+    z-index: 12;
+    top: 56px;
+    right: 4px;
+    left: 4px;
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    width: auto;
+    min-width: 0;
+    min-height: 48px;
+    padding: 2px 6px 2px 2px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(12px);
+  }
+
+  html[data-vb-layout-profile="portrait"] body.board-page .size-preview{
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+
+  html[data-vb-layout-profile="portrait"] body.board-page .tool-buttons{
+    position: fixed;
+    z-index: 13;
+    right: max(4px, var(--vb-safe-area-right));
+    bottom: max(4px, calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 4px));
+    display: grid;
+    grid-template-columns: repeat(3, 44px);
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(12px);
+  }
+
+  html[data-vb-layout-profile="portrait"] body.board-page .tool-buttons button{
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+  }
+
+  html[data-vb-layout-profile="portrait"] body.board-page .tool-buttons button > span:last-child{
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+
+  html[data-vb-layout-profile="portrait"] body.board-page .color-popup-card{
+    max-height: calc(var(--vb-work-area-height, 100dvh) - 8px);
+    overflow-y: auto;
+  }
+}

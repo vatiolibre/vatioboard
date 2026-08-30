@@ -5,7 +5,7 @@ const boardTemplate: string = String.raw`
   </p>
 
   <div class="app">
-    <header>
+    <header data-vb-route-header>
       <div class="header-inner">
         <div class="brand" data-i18n-title="tagline" title="Simple full-page drawing board by VatioLibre">
           <span class="dot" aria-hidden="true"></span>

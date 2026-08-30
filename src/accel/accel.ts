@@ -3,6 +3,7 @@ import '../styles/accel.less';
 import '../styles/cloud-sync-status.less';
 import '../styles/backend-auth.less';
 import { createCleanupStack } from '../app/view-cleanup.js';
+import { FOCUSED_VIEW_CHANGE_EVENT } from '../shared/focused-workspace.js';
 import {
   markWelcomeLocationChoice,
   shouldDeferWelcomeLocationRequest,
@@ -968,6 +969,12 @@ export const initPromise = (function () {
       void restoreAfterPageShow(event);
     });
     add(window, 'resize', handleWindowResize);
+    add(elements.app, FOCUSED_VIEW_CHANGE_EVENT, function (event) {
+      var detail = event?.detail || {};
+      if (detail.activeView === 'gauge' || detail.focused === false) {
+        liveSpeedometer.resize();
+      }
+    });
     add(window, SINGLE_TAB_OWNERSHIP_EVENT, handleSingleTabOwnershipChange);
     add(window, CLOUD_SYNC_APPLIED_EVENT, function (event) {
       if (event?.detail?.entityType !== CLOUD_SYNC_ENTITY_TYPES.accelRun) return;

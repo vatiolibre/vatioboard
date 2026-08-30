@@ -1097,6 +1097,154 @@ button.media-player-audio-canvas-wrap:focus-visible{
     }
 }
 
+@media (max-width: 600px) and (orientation: portrait){
+    html[data-vb-layout-profile="portrait"] .library-app{
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        height: var(--vb-viewport-height, 100dvh);
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    html[data-vb-layout-profile="portrait"] .library-header{
+        position: relative;
+        min-height: 52px;
+    }
+
+    html[data-vb-layout-profile="portrait"] .library-header-inner{
+        display: flex;
+        min-height: 52px;
+        padding: 4px;
+        flex-wrap: nowrap;
+        justify-content: center;
+    }
+
+    html[data-vb-layout-profile="portrait"] .library-header-inner > .brand,
+    html[data-vb-layout-profile="portrait"] .library-header-inner > .route-chip{
+        display: none;
+    }
+
+    html[data-vb-layout-profile="portrait"] .library-toolbar{
+        grid-column: auto;
+        width: auto;
+        flex: 0 0 auto;
+    }
+
+    html[data-vb-layout-profile="portrait"] .library-toolbar-strip{
+        --library-toolbar-size: 44px;
+        --library-toolbar-hit-width: 44px;
+    }
+
+    html[data-vb-layout-profile="portrait"] .library-main{
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        height: 100%;
+        min-height: 0;
+        padding: 4px 4px max(4px, calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 4px));
+        overflow: hidden;
+    }
+
+    html[data-vb-layout-profile="portrait"] .library-controls{
+        display: grid;
+        grid-template-rows: 44px 44px;
+        gap: 4px;
+        padding: 0 0 4px;
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+    }
+
+    html[data-vb-layout-profile="portrait"] .library-tabs{
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-auto-columns: auto;
+        gap: 2px;
+        overflow: hidden;
+    }
+
+    html[data-vb-layout-profile="portrait"] .library-tab{
+        min-width: 44px;
+        min-height: 44px;
+        padding: 0;
+        border-radius: 9px;
+    }
+
+    html[data-vb-layout-profile="portrait"] .library-tab > span:last-child{
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+    }
+
+    html[data-vb-layout-profile="portrait"] .library-search-form{
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(104px, .42fr);
+        gap: 4px;
+    }
+
+    html[data-vb-layout-profile="portrait"] .library-search-form input,
+    html[data-vb-layout-profile="portrait"] .library-search-form select{
+        min-height: 44px;
+    }
+
+    html[data-vb-layout-profile="portrait"] .library-status,
+    html[data-vb-layout-profile="portrait"] .library-subscription-cta{
+        position: absolute;
+        z-index: 12;
+        top: 56px;
+        right: 6px;
+        left: 6px;
+        margin: 0;
+    }
+
+    html[data-vb-layout-profile="portrait"] .library-shell{
+        grid-template: 48px minmax(0, 1fr) / minmax(0, 1fr);
+        height: 100%;
+        min-height: 0;
+        gap: 0;
+        overflow: hidden;
+    }
+
+    html[data-vb-layout-profile="portrait"] .library-focused-nav{
+        gap: 2px;
+        padding: 2px;
+        border-bottom: 1px solid var(--library-border);
+    }
+
+    html[data-vb-layout-profile="portrait"] .library-focused-tab{
+        min-height: 44px;
+        border: 0;
+        border-radius: 9px;
+        background: transparent;
+        color: var(--library-muted);
+        font-weight: 850;
+    }
+
+    html[data-vb-layout-profile="portrait"] .library-focused-tab[aria-selected="true"]{
+        background: var(--btn-active-bg);
+        color: var(--btn-active-fg);
+    }
+
+    html[data-vb-layout-profile="portrait"] .library-list-panel,
+    html[data-vb-layout-profile="portrait"] .library-detail-panel{
+        grid-area: 2 / 1;
+        height: 100%;
+        min-height: 0;
+        max-height: none;
+        padding: 8px;
+        overflow-y: auto;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+    }
+
+    html[data-vb-layout-profile="portrait"] .library-detail-card{
+        min-height: 0;
+    }
+}
+
 html:is([data-vb-layout-profile="short-landscape"], [data-vb-layout-profile="wide-landscape"]).library-page,
 html:is([data-vb-layout-profile="short-landscape"], [data-vb-layout-profile="wide-landscape"]) body.library-page{
     height: 100%;

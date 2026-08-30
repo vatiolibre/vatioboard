@@ -3950,3 +3950,155 @@ html[data-vb-layout-profile="portrait"] .accel-result-chart-metric-tabs{
     grid-row: 2;
     min-width: 0;
 }
+
+@media (max-width: 600px) and (orientation: portrait){
+    html[data-vb-layout-profile="portrait"] .accel-app{
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto minmax(0, 1fr);
+        width: 100%;
+        max-width: 100%;
+        height: var(--vb-viewport-height, 100dvh);
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    html[data-vb-layout-profile="portrait"] .accel-app > header{
+        position: relative;
+        min-height: 52px;
+    }
+
+    html[data-vb-layout-profile="portrait"] .accel-header-inner{
+        display: flex;
+        width: 100%;
+        min-height: 52px;
+        padding: 4px max(4px, var(--vb-safe-area-right)) 4px max(4px, var(--vb-safe-area-left));
+        flex-wrap: nowrap;
+        justify-content: center;
+        overflow: hidden;
+    }
+
+    html[data-vb-layout-profile="portrait"] .accel-header-inner > .brand,
+    html[data-vb-layout-profile="portrait"] .accel-header-inner > .route-chip{
+        display: none;
+    }
+
+    html[data-vb-layout-profile="portrait"] .accel-toolbar{
+        display: flex;
+        width: auto;
+        flex: 0 1 auto;
+        justify-content: center;
+        overflow: hidden;
+    }
+
+    html[data-vb-layout-profile="portrait"] .accel-toolbar-strip{
+        --accel-toolbar-size: 44px;
+        --accel-toolbar-hit-width: 44px;
+        --accel-toolbar-icon-size: 18px;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+    html[data-vb-layout-profile="portrait"] .accel-main{
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: 48px minmax(0, 1fr);
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
+        padding: 0 4px max(4px, calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 4px));
+        touch-action: manipulation;
+    }
+
+    html[data-vb-layout-profile="portrait"] .accel-focused-nav{
+        width: 100%;
+        min-width: 0;
+        position: relative;
+        z-index: 8;
+        gap: 2px;
+        padding: 2px 0;
+        border-bottom: 1px solid var(--accel-border);
+        background: color-mix(in srgb, var(--accel-surface-strong) 90%, transparent);
+    }
+
+    html[data-vb-layout-profile="portrait"] .accel-focused-tab{
+        min-width: 0;
+        min-height: 44px;
+        padding: 0 8px;
+        border: 0;
+        border-radius: 9px;
+        background: transparent;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 850;
+    }
+
+    html[data-vb-layout-profile="portrait"] .accel-focused-tab[aria-selected="true"]{
+        background: var(--btn-active-bg);
+        color: var(--btn-active-fg);
+    }
+
+    html[data-vb-layout-profile="portrait"] .accel-shell,
+    html[data-vb-layout-profile="portrait"] .accel-stage{
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    html[data-vb-layout-profile="portrait"] .accel-stage{
+        display: grid;
+        grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+        gap: 0;
+    }
+
+    html[data-vb-layout-profile="portrait"] .accel-primary-card,
+    html[data-vb-layout-profile="portrait"] .accel-side-panel{
+        grid-area: 1 / 1;
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+    }
+
+    html[data-vb-layout-profile="portrait"] .accel-primary-card{
+        min-height: 0;
+        aspect-ratio: auto;
+        overflow: hidden;
+    }
+
+    html[data-vb-layout-profile="portrait"] .accel-speedometer-stage.analog-speedometer-stage{
+        --analog-speedometer-radius-ratio: 0.46;
+    }
+
+    html[data-vb-layout-profile="portrait"] .accel-side-panel{
+        display: grid;
+        grid-template-rows: 56px minmax(0, 1fr);
+        gap: 4px;
+        overflow: hidden;
+    }
+
+    html[data-vb-layout-profile="portrait"] .accel-side-card{
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    html[data-vb-layout-profile="portrait"] .accel-live-partials{
+        min-height: 0;
+        max-height: none;
+        overflow-y: auto;
+    }
+
+    html[data-vb-layout-profile="portrait"] .accel-sheet,
+    html[data-vb-layout-profile="portrait"] .accel-replay-chart-sheet-panel{
+        top: max(4px, var(--vb-safe-area-top));
+        right: max(4px, var(--vb-safe-area-right));
+        bottom: max(4px, calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 4px));
+        left: max(4px, var(--vb-safe-area-left));
+        width: auto;
+        height: auto;
+        max-height: none;
+        overflow: hidden;
+    }
+}

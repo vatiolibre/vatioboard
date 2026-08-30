@@ -1956,6 +1956,68 @@ html{
 }
 
 @media (max-width: 600px) and (orientation: portrait){
+    .replay-app{
+        display: grid;
+        grid-template-rows: 52px minmax(0, 1fr);
+        height: var(--vb-viewport-height, 100dvh);
+        min-height: 0;
+    }
+
+    .replay-app > header{
+        position: relative;
+        min-height: 52px;
+    }
+
+    .replay-header-inner{
+        display: flex;
+        min-height: 52px;
+        padding: 4px;
+        flex-wrap: nowrap;
+        justify-content: center;
+        overflow: hidden;
+    }
+
+    .replay-header-inner > .brand,
+    .replay-header-inner > .route-chip{
+        display: none;
+    }
+
+    .replay-toolbar{
+        display: flex;
+        grid-column: auto;
+        width: auto;
+        flex: 0 1 auto;
+        overflow: hidden;
+    }
+
+    .replay-toolbar-right,
+    .replay-toolbar-strip{
+        flex-wrap: nowrap;
+        overflow: hidden;
+    }
+
+    .replay-toolbar-strip{
+        --replay-toolbar-size: 44px;
+        --replay-toolbar-hit-width: 44px;
+    }
+
+    .replay-session-chip{
+        min-width: 44px;
+        min-height: 44px;
+        max-width: 112px;
+        margin-left: 4px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .replay-main{
+        height: 100%;
+        min-height: 0;
+        padding: 4px 4px max(4px, calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 4px));
+        overflow: hidden;
+    }
+
     .replay-map-hud{
         top: 8px;
         left: 8px;

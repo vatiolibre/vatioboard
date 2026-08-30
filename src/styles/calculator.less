@@ -816,3 +816,95 @@
   max-height: 100%;
   overflow-y: auto;
 }
+
+/* Narrow portrait keeps the established vertical keypad, but budgets every
+   row explicitly so touch targets never collapse inside the work area. */
+.calc-panel[data-vb-shell-layout-mode="portrait"]{
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 44px auto 44px 44px minmax(0, 1fr);
+  width: min(360px, var(--vb-work-area-width, 100vw));
+  height: var(--vb-work-area-height, 100dvh);
+  min-width: 0;
+  min-height: 0;
+  max-width: var(--vb-work-area-width, 100vw);
+  max-height: var(--vb-work-area-height, 100dvh);
+}
+
+.calc-panel[data-vb-shell-layout-mode="portrait"] .calc-header{
+  grid-row: 1;
+  min-height: 44px;
+  padding-block: 4px;
+}
+
+.calc-panel[data-vb-shell-layout-mode="portrait"] .calc-minimize,
+.calc-panel[data-vb-shell-layout-mode="portrait"] .calc-close{
+  top: 0;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+}
+
+.calc-panel[data-vb-shell-layout-mode="portrait"] .calc-minimize{ right: 48px; }
+.calc-panel[data-vb-shell-layout-mode="portrait"] .calc-close{ right: 2px; }
+
+.calc-panel[data-vb-shell-layout-mode="portrait"] .calc-display{
+  grid-row: 2;
+  min-height: 0;
+  padding: 2px 8px 4px;
+}
+
+.calc-panel[data-vb-shell-layout-mode="portrait"] .calc-history-text{
+  height: 18px;
+  min-height: 18px;
+  padding: 0 4px;
+  line-height: 18px;
+}
+
+.calc-panel[data-vb-shell-layout-mode="portrait"] .calc-expr{
+  min-height: 44px;
+  padding-block: 6px;
+}
+
+.calc-panel[data-vb-shell-layout-mode="portrait"] .calc-utility-row{
+  grid-row: 3;
+  gap: 4px;
+  padding: 0 8px;
+  background: transparent;
+}
+
+.calc-panel[data-vb-shell-layout-mode="portrait"] .calc-utility-btn,
+.calc-panel[data-vb-shell-layout-mode="portrait"] .calc-key{
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.calc-panel[data-vb-shell-layout-mode="portrait"] .calc-secondary-keys{
+  grid-row: 4;
+  gap: 4px;
+  padding: 0 8px;
+}
+
+.calc-panel[data-vb-shell-layout-mode="portrait"] .calc-key-secondary{
+  padding-block: 0;
+}
+
+.calc-panel[data-vb-shell-layout-mode="portrait"] .calc-keys{
+  grid-row: 5;
+  grid-template-rows: repeat(5, minmax(44px, 1fr));
+  gap: 4px;
+  min-height: 0;
+  padding: 4px 8px 8px;
+}
+
+.calc-panel[data-vb-shell-layout-mode="portrait"] .calc-key{
+  padding-block: 4px;
+}
+
+.calc-panel[data-vb-shell-layout-mode="portrait"] .calc-history-sheet,
+.calc-panel[data-vb-shell-layout-mode="portrait"] .calc-settings-sheet{
+  z-index: 12;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}

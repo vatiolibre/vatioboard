@@ -1,6 +1,6 @@
 const qrScannerTemplate: string = String.raw`
 <div class="qr-scanner-app" data-qr-scanner-app data-state="idle">
-  <header class="qr-scanner-header">
+  <header class="qr-scanner-header" data-vb-route-header>
     <div class="qr-scanner-header-inner">
       <div class="qr-scanner-toolbar" aria-label="QR scanner actions">
         <button id="qrScannerCopy" class="qr-scanner-action qr-scanner-action-secondary" type="button" hidden>Copy</button>
@@ -33,7 +33,7 @@ const qrScannerTemplate: string = String.raw`
         </label>
       </div>
 
-      <section id="qrScannerResultPanel" class="qr-scanner-result" aria-live="polite" hidden>
+      <section id="qrScannerResultPanel" class="qr-scanner-result" data-vb-scroll-region aria-live="polite" hidden>
         <div class="qr-scanner-result-header">
           <h2>Result</h2>
           <a id="qrScannerOpen" class="qr-scanner-open" href="#" target="_blank" rel="noopener noreferrer" hidden>Open link</a>

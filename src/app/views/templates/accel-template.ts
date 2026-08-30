@@ -6,7 +6,7 @@ const accelTemplate: string = String.raw`
     </p>
 
     <div class="app accel-app">
-      <header>
+      <header data-vb-route-header>
         <div class="header-inner accel-header-inner">
           <div
             class="brand"
@@ -96,10 +96,37 @@ const accelTemplate: string = String.raw`
         </div>
       </header>
 
-      <main class="accel-main">
+      <main
+        class="accel-main"
+        data-vb-focused-workspace
+        data-vb-focused-default="gauge"
+      >
+        <div class="accel-focused-nav" data-vb-focused-view-nav role="tablist" aria-label="Acceleration view">
+          <button
+            type="button"
+            role="tab"
+            class="accel-focused-tab"
+            data-vb-focused-view-target="gauge"
+            aria-controls="accelGaugePanel"
+            data-i18n="accelCurrentSpeed"
+          >Current speed</button>
+          <button
+            type="button"
+            role="tab"
+            class="accel-focused-tab"
+            data-vb-focused-view-target="status"
+            aria-controls="accelStatusPanel"
+            data-i18n="accelStatusPanel"
+          >Status panel</button>
+        </div>
         <section class="accel-shell">
           <div class="accel-stage">
-            <article class="accel-card accel-primary-card accel-gauge-card">
+            <article
+              id="accelGaugePanel"
+              class="accel-card accel-primary-card accel-gauge-card"
+              role="tabpanel"
+              data-vb-focused-view-panel="gauge"
+            >
               <button
                 id="setupTrigger"
                 type="button"
@@ -166,7 +193,12 @@ const accelTemplate: string = String.raw`
               <p id="actionNotice" class="accel-feedback" aria-live="polite"></p>
             </article>
 
-            <div class="accel-side-panel">
+            <div
+              id="accelStatusPanel"
+              class="accel-side-panel"
+              role="tabpanel"
+              data-vb-focused-view-panel="status"
+            >
               <button
                 id="resultsTrigger"
                 type="button"
@@ -229,7 +261,7 @@ const accelTemplate: string = String.raw`
                   </div>
                 </div>
 
-                <section id="livePartialsSection" class="accel-live-partials" hidden>
+                <section id="livePartialsSection" class="accel-live-partials" data-vb-scroll-region hidden>
                   <div class="accel-section-title" data-i18n="accelPartials">Partials</div>
                   <div id="livePartialsList" class="accel-partials-list"></div>
                 </section>

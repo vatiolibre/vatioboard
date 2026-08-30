@@ -65,7 +65,7 @@ const appsTemplate = `
         </div>
       </details>
     </div>
-    <div class="vb-app-manager-grid" data-app-list></div>
+    <div class="vb-app-manager-grid" data-app-list data-vb-scroll-region></div>
   </section>
 `;
 

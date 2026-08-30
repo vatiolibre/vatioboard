@@ -6,7 +6,7 @@ const replayTemplate: string = String.raw`
     </p>
 
     <div class="app replay-app">
-      <header>
+      <header data-vb-route-header>
         <div class="header-inner replay-header-inner">
           <div class="brand" data-i18n-title="replayTagline" title="Drive replay by VatioLibre">
             <a class="brand-home" href="#/board" data-i18n-aria="openBoard" aria-label="Open VatioLibre drawing board">
@@ -305,6 +305,7 @@ const replayTemplate: string = String.raw`
                 <section
                   id="replayRecordingsList"
                   class="replay-recordings-list"
+                  data-vb-scroll-region
                   aria-label="Replay recordings"
                 ></section>
               </section>
@@ -356,6 +357,7 @@ const replayTemplate: string = String.raw`
                 <section
                   id="replayHighlightsList"
                   class="replay-highlights-list"
+                  data-vb-scroll-region
                   aria-label="Replay highlights"
                 ></section>
               </article>

@@ -42,3 +42,38 @@ jobs:
 
       - name: Build
         run: pnpm run build
+
+  mobile-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Enable Corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.3.0 --activate
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Install mobile browsers
+        run: pnpm exec playwright install --with-deps chromium webkit
+
+      - name: Mobile scrollless geometry
+        run: >-
+          pnpm exec playwright test test/e2e/mobile-scrollless.spec.ts
+          --project=iphone-compact
+          --project=iphone-se
+          --project=iphone-mini
+          --project=iphone-standard
+          --project=iphone-pro-max
+          --project=iphone-se-webkit
+          --project=iphone-standard-webkit
