@@ -91,6 +91,10 @@ test("Speed exposes scrollless Gauge, Stats, and Globe views", async ({ page }) 
 
   await page.locator('[data-vb-focused-view-target="globe"]').click();
   await expect(globePanel).toBeVisible();
+  await expect(globePanel.locator(".globe-card-kicker")).toHaveCount(0);
+  await expect(page.locator('[data-vb-focused-view-target="globe"]')).toHaveText("Live globe");
+  await expect(globePanel).toHaveAttribute("aria-label", "Current location globe");
+  await expect(globePanel.locator("#globeStatus")).toBeVisible();
   const globe = await page.locator("#speedGlobe").boundingBox();
   expect(globe).not.toBeNull();
   expect(globe!.height).toBeGreaterThan(220);

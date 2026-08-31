@@ -68,6 +68,37 @@ describe('speed extracted helpers', () => {
     expect(map.setZoom).not.toHaveBeenCalled();
   });
 
+  it('renders requesting, timestamp, retry, and unavailable globe status without a visual title', () => {
+    const globeStatus = document.createElement('p');
+    const state = {
+      globeError: null,
+      lastPositionTimestamp: Number.NaN,
+      statusText: 'Requesting GPS...',
+    };
+    const controller = createGlobeController({
+      state,
+      elements: { globeStatus },
+      t: (key) => key === 'globeUnavailable' ? 'Globe unavailable' : key,
+      renderStatusText: (timestamp) => `Position ${timestamp}`,
+    });
+
+    controller.renderGlobeStatus();
+    expect(globeStatus.textContent).toBe('Requesting GPS...');
+
+    state.lastPositionTimestamp = 123;
+    controller.renderGlobeStatus();
+    expect(globeStatus.textContent).toBe('Position 123');
+
+    state.lastPositionTimestamp = Number.NaN;
+    state.statusText = 'Retry location';
+    controller.renderGlobeStatus();
+    expect(globeStatus.textContent).toBe('Retry location');
+
+    state.globeError = new Error('map failed');
+    controller.renderGlobeStatus();
+    expect(globeStatus.textContent).toBe('Globe unavailable');
+  });
+
   it('normalizes alert display values to unit steps and limits', () => {
     expect(normalizeAlertDisplayValue(67, 'mph')).toBe(65);
     expect(normalizeAlertDisplayValue(9, 'mph')).toBe(10);

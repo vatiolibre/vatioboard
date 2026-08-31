@@ -1,12 +1,32 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import speedTemplate from "../../src/app/views/templates/speed-template.js";
+import { applyTranslations, setLang } from "../../src/i18n.js";
 
 function readStyle(path) {
   return readFileSync(resolve(process.cwd(), path), "utf8");
 }
 
 describe("speed shell layout", () => {
+  it("removes the redundant globe kicker while preserving navigation and accessibility labels", () => {
+    document.body.innerHTML = speedTemplate;
+
+    const globeTab = document.querySelector('[data-vb-focused-view-target="globe"]');
+    const globeCard = document.querySelector(".globe-card");
+
+    expect(document.querySelector(".globe-card-kicker")).toBeNull();
+    expect(globeTab?.getAttribute("data-i18n")).toBe("liveGlobe");
+    expect(globeCard?.getAttribute("data-i18n-aria")).toBe("currentLocationGlobe");
+    expect(document.querySelector("#globeStatus")).not.toBeNull();
+
+    setLang("es");
+    applyTranslations();
+    expect(globeTab?.textContent).toBe("Globo en vivo");
+    expect(globeCard?.getAttribute("aria-label")).toBe("Globo de ubicación actual");
+    setLang("en");
+  });
+
   it("sizes the universal frameless speed dial from available block space", () => {
     const speedCss = readStyle("src/styles/speed.less");
 
@@ -56,6 +76,8 @@ describe("speed shell layout", () => {
     expect(speedCss).toContain('.metric-card strong{');
     expect(speedCss).toContain("grid-column: 1 / -1;");
     expect(speedCss).toContain('.globe-card-header{');
+    expect(speedCss).toContain("white-space: nowrap;");
+    expect(speedCss).not.toContain('.globe-card-kicker{');
     expect(speedCss).toContain("min-height: min(176px, 34dvh);");
     expect(speedCss).toContain('.speed-audio-banner,');
   });

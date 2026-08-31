@@ -256,7 +256,6 @@ const speedTemplate: string = String.raw`
               aria-label="Current location globe"
             >
               <div class="globe-card-header">
-                <span class="globe-card-kicker" data-i18n="liveGlobe">Live globe</span>
                 <p id="globeStatus" class="globe-card-status" data-i18n="requestingGps">Requesting GPS...</p>
               </div>
               <div id="speedGlobe" class="speed-globe" aria-hidden="true"></div>

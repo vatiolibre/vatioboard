@@ -153,6 +153,41 @@ test("selects layout profiles from CSS viewport geometry", async ({ page }, test
   else expect(profile).toBe("standard");
 });
 
+test("Speed globe keeps status and accessibility without a redundant card title", async ({ page }, testInfo) => {
+  await openRoute(page, "speed");
+  const globeCard = page.locator(".globe-card");
+  const globeStatus = globeCard.locator("#globeStatus");
+
+  if (!(await globeCard.isVisible())) {
+    await page.locator('[data-vb-focused-view-target="globe"]').click();
+  }
+
+  await expect(globeCard.locator(".globe-card-kicker")).toHaveCount(0);
+  await expect(globeCard).toBeVisible();
+  await expect(globeCard).toHaveAttribute(
+    "aria-label",
+    testInfo.project.name === "model-y-2024-es-light"
+      ? "Globo de ubicación actual"
+      : "Current location globe",
+  );
+  await expect(globeStatus).toBeVisible();
+
+  const containment = await globeCard.evaluate((card) => {
+    const cardRect = card.getBoundingClientRect();
+    const headerRect = card.querySelector<HTMLElement>(".globe-card-header")!.getBoundingClientRect();
+    const status = card.querySelector<HTMLElement>("#globeStatus")!;
+    return {
+      contained: headerRect.left >= cardRect.left
+        && headerRect.top >= cardRect.top
+        && headerRect.right <= cardRect.right
+        && headerRect.bottom <= cardRect.bottom,
+      statusFits: status.scrollWidth <= status.clientWidth + 1,
+    };
+  });
+  expect(containment.contained).toBe(true);
+  expect(containment.statusFits).toBe(true);
+});
+
 for (const route of ["speed", "accel", "replay", "waze", "apps", "qr-scanner"]) {
   test(`${route} remains bounded on expanded Tesla and phone landscape`, async ({ page }, testInfo) => {
     test.skip(
@@ -1076,6 +1111,12 @@ test("compact trip stats keep the live globe visible", async ({ page }, testInfo
   await expect.poll(() => page.locator(".speed-globe").evaluate((element) => (
     element.getBoundingClientRect().height
   ))).toBeGreaterThanOrEqual(176);
+  await expect(page.locator(".globe-card-kicker")).toHaveCount(0);
+  await expect(page.locator(".globe-card")).toHaveAttribute("aria-label", "Current location globe");
+  const statusFits = await page.locator("#globeStatus").evaluate((status) => (
+    status.scrollWidth <= status.clientWidth + 1
+  ));
+  expect(statusFits).toBe(true);
   const initialGlobeHeight = await page.locator(".speed-globe").evaluate((element) => (
     element.getBoundingClientRect().height
   ));
