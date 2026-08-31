@@ -52,6 +52,21 @@ describe("acceleration shell layout", () => {
     expect(analogCss).toContain("--analog-speedometer-radius-ratio: 0.42;");
   });
 
+  it("owns the shared gauge palette with equally specific light and dark selectors", () => {
+    const accelCss = readStyle("src/styles/accel.less");
+    const gaugeSelector = ".accel-speedometer-stage.analog-speedometer-stage{";
+    const paletteStart = accelCss.indexOf(gaugeSelector);
+    const paletteEnd = accelCss.indexOf(".accel-speedometer-stage .analog-speedometer-substatus", paletteStart);
+    const palette = accelCss.slice(paletteStart, paletteEnd);
+
+    expect(palette.match(/\.accel-speedometer-stage\.analog-speedometer-stage\{/g)).toHaveLength(2);
+    expect(palette).toContain("--analog-speedometer-accent: var(--accel-accent);");
+    expect(palette).toContain("--analog-speedometer-marker: var(--accel-highlight);");
+    expect(palette).toContain("--analog-speedometer-tick: color-mix(in srgb, var(--accel-muted) 88%, transparent);");
+    expect(palette).toContain("--analog-speedometer-dial-highlight: rgba(255, 255, 255, 0.04);");
+    expect(palette).not.toMatch(/--speed-(?:accent|alert-marker|surface|tick|track|needle|pivot|dial|gauge-glow)/);
+  });
+
   it("turns results into universal focused work-area views", () => {
     const accelCss = readStyle("src/styles/accel.less");
     const template = readStyle("src/app/views/templates/accel-template.ts");

@@ -139,6 +139,85 @@ function isTeslaProject(testInfo: TestInfo) {
   return ["model-y-2024", "model-y-2026"].includes(testInfo.project.name);
 }
 
+async function sampleDialAppearance(
+  page: Page,
+  route: "accel" | "speed",
+  selectors: { canvas: string; stage: string; text: string[] },
+) {
+  await openRoute(page, route);
+  await expect.poll(() => page.locator(selectors.canvas).evaluate((canvas: HTMLCanvasElement) => (
+    canvas.width > 0
+    && canvas.height > 0
+    && canvas.clientWidth > 0
+    && Math.abs(canvas.clientWidth - canvas.clientHeight) <= 1
+  ))).toBe(true);
+
+  return page.evaluate(({ canvasSelector, stageSelector, textSelectors }) => {
+    type Rgba = [number, number, number, number];
+    const canvas = document.querySelector<HTMLCanvasElement>(canvasSelector)!;
+    const stage = document.querySelector<HTMLElement>(stageSelector)!;
+    const context = canvas.getContext("2d", { willReadFrequently: true })!;
+    const center = Array.from(context.getImageData(
+      Math.floor(canvas.width / 2),
+      Math.floor(canvas.height / 2),
+      1,
+      1,
+    ).data) as Rgba;
+    const decodeCssColor = (color: string): Rgba => {
+      const probe = document.createElement("canvas");
+      probe.width = 1;
+      probe.height = 1;
+      const probeContext = probe.getContext("2d", { willReadFrequently: true })!;
+      probeContext.clearRect(0, 0, 1, 1);
+      probeContext.fillStyle = color;
+      probeContext.fillRect(0, 0, 1, 1);
+      return Array.from(probeContext.getImageData(0, 0, 1, 1).data) as Rgba;
+    };
+    const composite = (foreground: Rgba, background: Rgba): Rgba => {
+      const alpha = foreground[3] / 255;
+      return [
+        Math.round((foreground[0] * alpha) + (background[0] * (1 - alpha))),
+        Math.round((foreground[1] * alpha) + (background[1] * (1 - alpha))),
+        Math.round((foreground[2] * alpha) + (background[2] * (1 - alpha))),
+        255,
+      ];
+    };
+    const luminance = (color: Rgba) => {
+      const channel = (value: number) => {
+        const srgb = value / 255;
+        return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+      };
+      return (0.2126 * channel(color[0])) + (0.7152 * channel(color[1])) + (0.0722 * channel(color[2]));
+    };
+    const contrast = (foreground: Rgba) => {
+      const foregroundLuminance = luminance(composite(foreground, center));
+      const backgroundLuminance = luminance(center);
+      return (Math.max(foregroundLuminance, backgroundLuminance) + 0.05)
+        / (Math.min(foregroundLuminance, backgroundLuminance) + 0.05);
+    };
+    const stageStyle = getComputedStyle(stage);
+    const textContrasts = textSelectors.map((selector) => {
+      const element = document.querySelector<HTMLElement>(selector)!;
+      return contrast(decodeCssColor(getComputedStyle(element).color));
+    });
+
+    return {
+      center,
+      centerLuminance: luminance(center),
+      isDark: matchMedia("(prefers-color-scheme: dark)").matches,
+      palette: {
+        accent: stageStyle.getPropertyValue("--analog-speedometer-accent").trim(),
+        marker: stageStyle.getPropertyValue("--analog-speedometer-marker").trim(),
+      },
+      textContrasts,
+    };
+  }, {
+    canvasSelector: selectors.canvas,
+    stageSelector: selectors.stage,
+    textSelectors: selectors.text,
+  });
+}
+
 test.beforeEach(async ({ page }) => {
   await preparePage(page);
 });
@@ -576,6 +655,41 @@ test("acceleration dashboard uses a frameless full-size gauge", async ({ page },
     animations: "disabled",
     maxDiffPixelRatio: 0.01,
   });
+});
+
+test("Acceleration dial palette remains readable and comparable to Speed", async ({ page }, testInfo) => {
+  test.skip(
+    !["model-y-2024", "model-y-2024-es-light"].includes(testInfo.project.name),
+    "The palette is viewport-independent; exercise one dark and one light rendering",
+  );
+  const acceleration = await sampleDialAppearance(page, "accel", {
+    canvas: "#liveSpeedDial",
+    stage: "#liveSpeedGaugeStage",
+    text: [
+      "#liveSpeedValue",
+      "#liveSpeedGaugeStage .analog-speedometer-kicker",
+      "#liveSpeedUnit",
+      "#liveSpeedSubstatus",
+    ],
+  });
+  const speed = await sampleDialAppearance(page, "speed", {
+    canvas: "#speedDial",
+    stage: "#gaugeStage",
+    text: ["#speedValue"],
+  });
+
+  expect(acceleration.textContrasts[0]).toBeGreaterThanOrEqual(7);
+  expect(acceleration.palette.accent).not.toBe(acceleration.palette.marker);
+
+  if (acceleration.isDark) {
+    for (const contrast of acceleration.textContrasts.slice(1)) {
+      expect(contrast).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(Math.max(...acceleration.center.slice(0, 3))).toBeLessThan(96);
+    expect(Math.abs(acceleration.centerLuminance - speed.centerLuminance)).toBeLessThanOrEqual(0.04);
+  } else {
+    expect(Math.min(...acceleration.center.slice(0, 3))).toBeGreaterThan(200);
+  }
 });
 
 test("acceleration results use focused short-landscape workspaces", async ({ page }, testInfo) => {
