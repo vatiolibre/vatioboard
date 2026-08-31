@@ -32,6 +32,59 @@ describe("CalcCore", () => {
     ]);
   });
 
+  it("normalizes binary floating-point artifacts before persisting results", async () => {
+    const core = new CalcCore();
+
+    core.setExpr("40-31.37");
+    expect(await core.evaluate()).toEqual({ ok: true, result: "8.63" });
+    expect(core.expr).toBe("8.63");
+    expect(core.lastResult).toBe("8.63");
+    expect(JSON.parse(localStorage.getItem(STATE_KEY))).toMatchObject({
+      expr: "8.63",
+      lastResult: "8.63",
+    });
+    expect(JSON.parse(localStorage.getItem(HISTORY_KEY))[0]).toEqual({
+      expr: "40-31.37",
+      result: "8.63",
+    });
+  });
+
+  it.each([
+    ["0.1+0.2", 8, "0.3"],
+    ["1.005", 2, "1.01"],
+    ["1/3", 0, "0"],
+    ["1/3", 2, "0.33"],
+    ["1/3", 8, "0.33333333"],
+    ["1/3", 10, "0.3333333333"],
+    ["-0.0000000001", 8, "0"],
+    ["sqrt(2)", 8, "1.41421356"],
+    ["100+10%", 8, "110"],
+  ])("normalizes %s at %i decimal places", async (expression, decimals, expected) => {
+    const core = new CalcCore();
+    core.setExpr(expression);
+
+    expect(await core.evaluate(decimals)).toEqual({ ok: true, result: expected });
+  });
+
+  it("clamps result precision and uses the normalized result for chaining", async () => {
+    const core = new CalcCore();
+
+    core.setExpr("1/3");
+    expect(await core.evaluate(99)).toEqual({ ok: true, result: "0.3333333333" });
+    core.append("+1");
+    expect(await core.evaluate(2)).toEqual({ ok: true, result: "1.33" });
+  });
+
+  it("preserves established non-finite and non-real result strings", async () => {
+    const core = new CalcCore();
+
+    core.setExpr("1/0");
+    expect(await core.evaluate(2)).toEqual({ ok: true, result: "Infinity" });
+
+    core.setExpr("sqrt(-1)");
+    expect(await core.evaluate(2)).toEqual({ ok: true, result: "i" });
+  });
+
   it("applies unary and binary percent rules", async () => {
     const core = new CalcCore();
 

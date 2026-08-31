@@ -9,6 +9,7 @@ import { buildKeypad } from "./widget/keypad.js";
 import { clampElementToViewport, makePanelDraggable, makeLauncherDraggable } from "./widget/drag.js";
 import { initSettingsSheet } from "./widget/settings-sheet.js";
 import { toRaw, toDisplay, mapCursorPosition } from "./widget/number-format.js";
+import { normalizeCalculatorResult } from "./result-normalization.js";
 import { IconCalculator } from "../icons.js";
 import {
   registerFloatingPanel,
@@ -332,8 +333,11 @@ export function createCalculatorWidget(options: CalculatorWidgetOptions = {}): C
 
   function render({ keepEnd = false, force = false } = {}) {
     const rawExpr = core.expr ?? "";
+    const normalizedExpr = rawExpr === core.lastResult
+      ? normalizeCalculatorResult(rawExpr, settings.decimals)
+      : rawExpr;
 
-    const displayExpr = toDisplay(rawExpr, settings);
+    const displayExpr = toDisplay(normalizedExpr, settings);
 
     if (exprInput.value !== displayExpr) {
       const oldCursorPos = exprInput.selectionStart ?? 0;
@@ -448,7 +452,7 @@ export function createCalculatorWidget(options: CalculatorWidgetOptions = {}): C
     try {
       core.setExpr(toRaw(exprInput.value, settings));
 
-      const res = await core.evaluate();
+      const res = await core.evaluate(settings.decimals);
       isEditing = false;
       render({ keepEnd: false, force: true }); // left side stays visible
 

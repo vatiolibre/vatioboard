@@ -1,6 +1,7 @@
 import { loadState, saveState, addToHistory } from "./storage.js";
 import { create, all } from "mathjs";
 import { t } from "../i18n.js";
+import { normalizeCalculatorResult } from "./result-normalization.js";
 const math = create(all);
 const translate = t as (key: string, params?: Record<string, unknown>) => string;
 
@@ -175,7 +176,7 @@ export class CalcCore {
     return open > close ? ")" : "(";
   }
 
-  async evaluate(): Promise<CalcEvaluationResult> {
+  async evaluate(decimalPlaces = 8): Promise<CalcEvaluationResult> {
     if (this.expr === this.lastResult && this.lastExpr) {
       this.expr = this.lastExpr;
       this.status = "";
@@ -195,7 +196,7 @@ export class CalcCore {
       const prepared = applyPercentRules(safe);
 
       // Use bundled mathjs instance (already configured at module scope)
-      const result = math.evaluate(prepared).toString();
+      const result = normalizeCalculatorResult(math.evaluate(prepared), decimalPlaces);
 
       this.lastExpr = this.expr;
       this.status = raw;

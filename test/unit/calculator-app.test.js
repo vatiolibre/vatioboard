@@ -217,6 +217,72 @@ describe("Calculator OS app module", () => {
     shellManager.destroy();
   });
 
+  it("renders, reports, and restores normalized localized results", async () => {
+    const shellManager = createShellWindowManager({
+      root: document.body,
+      storeOptions: { storage: localStorage, migrateLegacy: false },
+    });
+    const onResult = vi.fn();
+    const calculator = createCalculatorWidget({
+      mount: document.body,
+      floating: false,
+      restoreVisibility: false,
+      shellManager,
+      onResult,
+      settingsStore: {
+        loadSettings: () => ({ decimals: 2, thousandSeparator: "." }),
+        saveSettings: vi.fn(),
+      },
+    });
+
+    calculator.setExpression("1234.5+0.005");
+    document.querySelector(".calc-key.eq").click();
+
+    await vi.waitFor(() => expect(onResult).toHaveBeenCalledWith("1234.51"));
+    expect(calculator.getExpression()).toBe("1234.51");
+    expect(document.querySelector(".calc-expr").value).toBe("1.234,51");
+
+    document.querySelector(".calc-history-btn").click();
+    expect(document.querySelector(".calc-history-item-result").textContent).toBe("1.234,51");
+
+    calculator.destroy();
+    shellManager.destroy();
+  });
+
+  it("formats legacy floating-point artifacts without migrating stored history", () => {
+    localStorage.setItem("embeddable_calc_state_v1", JSON.stringify({
+      expr: "8.629999999999999",
+      lastExpr: "40-31.37",
+      lastResult: "8.629999999999999",
+      status: "40-31.37",
+    }));
+    localStorage.setItem("embeddable_calc_history_v1", JSON.stringify([
+      { expr: "40-31.37", result: "8.629999999999999" },
+    ]));
+    const shellManager = createShellWindowManager({
+      root: document.body,
+      storeOptions: { storage: localStorage, migrateLegacy: false },
+    });
+    const calculator = createCalculatorWidget({
+      mount: document.body,
+      floating: false,
+      restoreVisibility: false,
+      shellManager,
+    });
+
+    expect(document.querySelector(".calc-expr").value).toBe("8.63");
+    document.querySelector(".calc-history-btn").click();
+    expect(document.querySelector(".calc-history-item-result").textContent).toBe("8.63");
+    expect(JSON.parse(localStorage.getItem("embeddable_calc_history_v1"))[0].result)
+      .toBe("8.629999999999999");
+
+    document.querySelector(".calc-history-item").click();
+    expect(calculator.getExpression()).toBe("8.63");
+
+    calculator.destroy();
+    shellManager.destroy();
+  });
+
   it("closes from the header button and preserves the live calculator instance", () => {
     const shellManager = createShellWindowManager({
       root: document.body,

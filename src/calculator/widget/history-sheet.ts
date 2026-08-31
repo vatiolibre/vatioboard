@@ -1,10 +1,14 @@
 import { el } from "../dom.js";
 import { toDisplay } from "./number-format.js";
+import { normalizeCalculatorResult } from "../result-normalization.js";
 
 const HISTORY_RESULT_MAX_LEN = 10;
 
 function formatHistoryResult(value, settings, maxLen = HISTORY_RESULT_MAX_LEN) {
-  const formatted = toDisplay(value, settings);
+  const formatted = toDisplay(
+    normalizeCalculatorResult(value, settings.decimals),
+    settings,
+  );
   if (formatted.length <= maxLen) return formatted;
   return formatted.slice(0, maxLen);
 }
@@ -73,7 +77,7 @@ export function initHistorySheet({
       );
 
       row.addEventListener("click", () => {
-        core.setExpr(item.result);
+        core.setExpr(normalizeCalculatorResult(item.result, settings.decimals));
         core.status = item.expr;
         render();
         setHistorySheetOpen(false);

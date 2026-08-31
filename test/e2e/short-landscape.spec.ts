@@ -1302,6 +1302,16 @@ test("calculator uses a unified keypad with vertical side rails", async ({ page 
   await page.evaluate(() => (window as any).__vatioboardFloatingTools.calcWidget.setExpression("12"));
   await secondaryKeys.nth(3).click();
   await expect.poll(calculatorApi).toBe("1");
+
+  await page.evaluate(() => (
+    (window as any).__vatioboardFloatingTools.calcWidget.setExpression("40-31.37")
+  ));
+  await calculator.locator(".calc-key.eq").click();
+  await expect.poll(calculatorApi).toBe("8.63");
+  await expect(calculator.locator(".calc-expr")).toHaveValue("8.63");
+
+  await calculator.locator(".calc-history-btn").click();
+  await expect(calculator.locator(".calc-history-item-result").first()).toHaveText("8.63");
 });
 
 test("calculator header close button hides and can reopen the same window", async ({ page }, testInfo) => {

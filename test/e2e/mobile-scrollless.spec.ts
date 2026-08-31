@@ -207,4 +207,10 @@ test("calculator is work-area clamped with fixed primary controls", async ({ pag
     expect(key.width / key.height).toBeGreaterThanOrEqual(1.08);
     expect(key.width / key.height).toBeLessThanOrEqual(1.65);
   }
+
+  await page.evaluate(() => (
+    (window as any).__vatioboardFloatingTools.calcWidget.setExpression("40-31.37")
+  ));
+  await calculator.locator(".calc-key.eq").click();
+  await expect(calculator.locator(".calc-expr")).toHaveValue("8.63");
 });
