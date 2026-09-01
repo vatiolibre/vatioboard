@@ -1170,6 +1170,115 @@ test("Waze route fills the viewport edge to edge with an overlaid driving HUD", 
   });
 });
 
+test("Clock modes remain work-area bounded and touch friendly", async ({ page }, testInfo) => {
+  test.skip(["desktop", "desktop-large"].includes(testInfo.project.name), "Responsive Clock presentation coverage");
+  await openRoute(page, "board");
+  await page.locator("[data-vb-shell-start-button]").click();
+  const tile = page.locator(".vb-app-launcher-tile-main[data-app-id='vatio.premiumClock']");
+  const pageIndex = await tile.evaluate((element) => (
+    element.closest<HTMLElement>("[data-vb-app-launcher-page]")?.dataset.page || "0"
+  ));
+  await page.locator(`.vb-app-launcher-page-dot[data-page='${pageIndex}']`).click();
+  await tile.click();
+  const panel = page.locator(".premium-clock-panel");
+  await expect(panel).toBeVisible();
+
+  const glassSurface = await panel.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      backgroundColor: style.backgroundColor,
+      boxShadow: style.boxShadow,
+    };
+  });
+  expect(glassSurface.backgroundColor).toBe("rgba(0, 0, 0, 0)");
+  expect(glassSurface.boxShadow).toBe("none");
+
+  const workArea = await getWorkArea(page);
+  for (const mode of ["clock", "timer", "stopwatch", "alarms", "world"]) {
+    await panel.locator(`[data-premium-clock-mode-button='${mode}']`).dispatchEvent("click");
+    const geometry = await panel.evaluate((element) => {
+      const panelBounds = element.getBoundingClientRect();
+      const visibleControls = Array.from(element.querySelectorAll<HTMLElement>(
+        ".premium-clock-control, .premium-clock-mode, .premium-clock-actions button, .premium-clock-alarm-add",
+      )).filter((control) => {
+        const style = getComputedStyle(control);
+        return style.display !== "none" && style.visibility !== "hidden" && control.getClientRects().length > 0;
+      }).map((control) => {
+        const bounds = control.getBoundingClientRect();
+        return { width: bounds.width, height: bounds.height };
+      });
+      return {
+        panel: {
+          left: panelBounds.left,
+          top: panelBounds.top,
+          right: panelBounds.right,
+          bottom: panelBounds.bottom,
+          scrollHeight: element.scrollHeight,
+          clientHeight: element.clientHeight,
+        },
+        controls: visibleControls,
+      };
+    });
+    expect(geometry.panel.left).toBeGreaterThanOrEqual(workArea.left - 1);
+    expect(geometry.panel.top).toBeGreaterThanOrEqual(workArea.top - 1);
+    expect(geometry.panel.right).toBeLessThanOrEqual(workArea.left + workArea.width + 1);
+    expect(geometry.panel.bottom).toBeLessThanOrEqual(workArea.top + workArea.height + 1);
+    expect(geometry.panel.scrollHeight).toBeLessThanOrEqual(geometry.panel.clientHeight + 2);
+    expect(geometry.controls.every((control) => control.width >= 44 && control.height >= 44)).toBe(true);
+  }
+
+  await expect(panel.locator("select")).toHaveCount(0);
+  await panel.locator("[data-premium-clock-mode-button='alarms']").click();
+  await panel.locator("[data-premium-clock-alarm-add]").click();
+  const alarmGeometry = await panel.locator(".premium-clock-alarm").evaluate((alarm) => {
+    const bounds = alarm.getBoundingClientRect();
+    return {
+      height: bounds.height,
+      borderRadius: getComputedStyle(alarm).borderRadius,
+    };
+  });
+  expect(alarmGeometry.height).toBeLessThanOrEqual(53);
+  expect(alarmGeometry.borderRadius).toBe("14px");
+
+  await panel.locator("[data-premium-clock-mode-button='world']").click();
+  await expect(panel.locator(".premium-clock-world")).toHaveCount(4);
+  const selectedWorldPalette = await panel.locator(".premium-clock-world--active").evaluate((city) => ({
+    backgroundImage: getComputedStyle(city).backgroundImage,
+    city: getComputedStyle(city.querySelector("strong")!).color,
+    date: getComputedStyle(city.querySelector("em")!).color,
+    time: getComputedStyle(city.querySelector("b")!).color,
+  }));
+  const darkScheme = await page.evaluate(() => matchMedia("(prefers-color-scheme: dark)").matches);
+  if (darkScheme) {
+    expect(selectedWorldPalette.backgroundImage).toContain("linear-gradient");
+    expect(selectedWorldPalette.city).toBe("rgb(248, 250, 252)");
+    expect(selectedWorldPalette.date).toBe("rgb(214, 226, 234)");
+    expect(selectedWorldPalette.time).toBe("rgb(248, 250, 252)");
+  } else {
+    expect(selectedWorldPalette.city).toBe("rgb(17, 24, 39)");
+    expect(selectedWorldPalette.time).toBe("rgb(17, 24, 39)");
+  }
+  const worldGeometry = await panel.evaluate((element) => {
+    const panelBounds = element.getBoundingClientRect();
+    const rows = Array.from(element.querySelectorAll<HTMLElement>(".premium-clock-world")).map((row) => {
+      const bounds = row.getBoundingClientRect();
+      return { top: bounds.top, bottom: bounds.bottom, height: bounds.height };
+    });
+    const face = element.querySelector<HTMLElement>(".premium-clock-face");
+    return {
+      panelBottom: panelBounds.bottom,
+      rows,
+      faceDisplay: face ? getComputedStyle(face).display : "none",
+    };
+  });
+  expect(worldGeometry.rows.every((row) => row.height >= 44 && row.bottom <= worldGeometry.panelBottom + 1)).toBe(true);
+  if (testInfo.project.name === "phone-portrait") expect(worldGeometry.faceDisplay).toBe("none");
+
+  await panel.locator("[aria-label='Close clock']").click();
+  await expect(panel).toBeHidden();
+  await expect(panel).toHaveAttribute("data-vb-shell-window-state", "closed");
+});
+
 test("persistent shell tools and background driving state survive Waze and Replay navigation", async ({ page }, testInfo) => {
   test.skip(!isTeslaProject(testInfo), "Tesla shell continuity coverage");
   await page.route("https://embed.waze.com/**", (route) => route.fulfill({

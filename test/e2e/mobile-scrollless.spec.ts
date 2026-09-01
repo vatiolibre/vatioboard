@@ -236,3 +236,47 @@ test("calculator is work-area clamped with fixed primary controls", async ({ pag
   await calculator.locator(".calc-key.eq").click();
   await expect(calculator.locator(".calc-expr")).toHaveValue("8.63");
 });
+
+test("Clock blocks double-tap zoom and cannot unlock page scrolling", async ({ page }, testInfo) => {
+  test.skip(
+    !["iphone-compact", "iphone-se-webkit"].includes(testInfo.project.name),
+    "Representative Chromium and WebKit touch regression coverage",
+  );
+  await openRoute(page, "board");
+  await page.locator("[data-vb-shell-start-button]").click();
+  const tile = page.locator(".vb-app-launcher-tile-main[data-app-id='vatio.premiumClock']");
+  const pageIndex = await tile.evaluate((element) => (
+    element.closest<HTMLElement>("[data-vb-app-launcher-page]")?.dataset.page || "0"
+  ));
+  await page.locator(`.vb-app-launcher-page-dot[data-page='${pageIndex}']`).click();
+  await tile.click();
+
+  const panel = page.locator(".premium-clock-panel");
+  await expect(panel).toBeVisible();
+  const interaction = await panel.evaluate((element) => {
+    const doubleClick = new MouseEvent("dblclick", { bubbles: true, cancelable: true });
+    element.dispatchEvent(doubleClick);
+    window.scrollTo(0, 1000);
+    document.documentElement.scrollTop = 1000;
+    document.body.scrollTop = 1000;
+    const close = element.querySelector<HTMLElement>("[aria-label='Close clock']");
+    return {
+      doubleClickPrevented: doubleClick.defaultPrevented,
+      panelOverscroll: getComputedStyle(element).overscrollBehavior,
+      closeTouchAction: close ? getComputedStyle(close).touchAction : "",
+      windowScrollY: window.scrollY,
+      documentScrollTop: document.documentElement.scrollTop,
+      bodyScrollTop: document.body.scrollTop,
+    };
+  });
+  expect(interaction.doubleClickPrevented).toBe(true);
+  expect(interaction.panelOverscroll).toBe("none");
+  expect(interaction.closeTouchAction).toBe("manipulation");
+  expect(interaction.windowScrollY).toBe(0);
+  expect(interaction.documentScrollTop).toBe(0);
+  expect(interaction.bodyScrollTop).toBe(0);
+  await expectScrolllessRoute(page);
+
+  await panel.locator("[aria-label='Close clock']").click();
+  await expect(panel).toBeHidden();
+});

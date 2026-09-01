@@ -10,6 +10,7 @@
   --premium-clock-progress: 0deg;
   --premium-clock-surface: rgba(15, 23, 42, 0.68);
   --premium-clock-surface-strong: rgba(8, 13, 20, 0.84);
+  --premium-clock-glass-surface: rgba(8, 13, 20, 0.42);
   --premium-clock-border: rgba(226, 232, 240, 0.22);
   --premium-clock-text: #f8fafc;
   --premium-clock-muted: #aeb9c8;
@@ -37,7 +38,7 @@
 .premium-clock-panel[hidden],
 .premium-clock-details[hidden],
 .premium-clock-pane[hidden] {
-  display: none;
+  display: none !important;
 }
 
 .premium-clock-panel[data-premium-clock-mode="clock"] .premium-clock-details {
@@ -56,10 +57,10 @@
 .premium-clock-control {
   display: grid;
   place-items: center;
-  width: 34px;
-  min-width: 34px;
-  height: 34px;
-  min-height: 34px;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
   padding: 0;
   border: 1px solid color-mix(in srgb, var(--premium-clock-border) 96%, transparent);
   border-radius: 999px;
@@ -334,11 +335,12 @@
 .premium-clock-actions button,
 .premium-clock-adjuster button,
 .premium-clock-alarm button,
+.premium-clock-alarm-add,
 .premium-clock-world {
   display: grid;
   place-items: center;
   min-width: 0;
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 6px;
   border: 1px solid transparent;
   border-radius: 999px;
@@ -356,6 +358,18 @@
 .premium-clock-mode {
   font-size: 0.66rem;
   white-space: nowrap;
+}
+
+.premium-clock-mode__icon {
+  display: none;
+  width: 22px;
+  height: 22px;
+}
+
+.premium-clock-mode__icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .premium-clock-mode[aria-pressed="true"],
@@ -407,6 +421,60 @@
   gap: 6px;
 }
 
+.premium-clock-alarm-list {
+  grid-auto-rows: 52px;
+  align-content: start;
+}
+
+.premium-clock-alarm-setup {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 6px;
+  align-items: end;
+}
+
+.premium-clock-alarm-time-control {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 3px;
+}
+
+.premium-clock-alarm-time-control .vb-settings-control-label {
+  padding-inline: 4px;
+  color: var(--premium-clock-muted);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+}
+
+.premium-clock-alarm-time-control .vb-settings-select-trigger {
+  width: 100%;
+  min-width: 0;
+  color: var(--premium-clock-text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.premium-clock-alarm-separator {
+  display: grid;
+  place-items: center;
+  min-height: 44px;
+  color: var(--premium-clock-muted);
+  font-size: 1.25rem;
+  font-weight: 850;
+}
+
+.premium-clock-alarm-add {
+  grid-column: 1 / -1;
+  padding: 0 14px;
+  border: 1px solid rgba(226, 232, 240, 0.18);
+  border-radius: 12px;
+  color: var(--premium-clock-text);
+  background: rgba(255, 255, 255, 0.1);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 820;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
 .premium-clock-empty {
   margin: 0;
   padding: 10px;
@@ -418,13 +486,15 @@
 
 .premium-clock-alarm {
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 7px;
   align-items: center;
-  min-height: 44px;
-  padding: 5px 6px 5px 12px;
+  align-self: start;
+  height: 52px;
+  min-height: 52px;
+  padding: 4px 4px 4px 12px;
   border: 1px solid rgba(226, 232, 240, 0.12);
-  border-radius: 999px;
+  border-radius: 14px;
   color: var(--premium-clock-muted);
   background: rgba(255, 255, 255, 0.055);
 }
@@ -436,14 +506,44 @@
   font-variant-numeric: tabular-nums;
 }
 
-.premium-clock-alarm span {
-  font-size: 0.76rem;
-  font-weight: 760;
+.premium-clock-alarm-toggle-mount {
+  display: grid;
+  place-items: center;
 }
 
-.premium-clock-alarm button {
-  min-height: 34px;
-  padding: 0 10px;
+.premium-clock-alarm-switch {
+  display: block;
+  min-height: 44px;
+}
+
+.premium-clock-alarm-switch .vb-settings-control-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.premium-clock-alarm-remove {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  color: var(--premium-clock-muted);
+  background: transparent;
+}
+
+.premium-clock-alarm-remove svg {
+  width: 20px;
+  height: 20px;
 }
 
 .premium-clock-world {
@@ -498,10 +598,33 @@
   white-space: nowrap;
 }
 
+.premium-clock-world__copy {
+  min-width: 0;
+}
+
 .premium-clock-world b {
   color: var(--premium-clock-text);
   font-size: 0.9rem;
   font-variant-numeric: tabular-nums;
+}
+
+/* Board routes define a global button[aria-pressed] surface. Keep the Clock's
+   selected city palette route-independent and readable in the dark glass. */
+.premium-clock-panel .premium-clock-world.premium-clock-world--active,
+.premium-clock-panel .premium-clock-world[aria-pressed="true"] {
+  border-color: rgba(52, 211, 153, 0.52);
+  color: #f8fafc;
+  background: linear-gradient(135deg, rgba(6, 78, 59, 0.92), rgba(15, 23, 42, 0.9));
+}
+
+.premium-clock-panel .premium-clock-world.premium-clock-world--active :is(strong, b),
+.premium-clock-panel .premium-clock-world[aria-pressed="true"] :is(strong, b) {
+  color: #f8fafc;
+}
+
+.premium-clock-panel .premium-clock-world.premium-clock-world--active em,
+.premium-clock-panel .premium-clock-world[aria-pressed="true"] em {
+  color: #d6e2ea;
 }
 
 .premium-clock-notice {
@@ -538,7 +661,8 @@
 }
 
 .premium-clock-notice__actions button {
-  min-height: 34px;
+  min-width: 44px;
+  min-height: 44px;
   padding: 0 11px;
   border: 1px solid rgba(255, 247, 237, 0.22);
   border-radius: 999px;
@@ -574,6 +698,7 @@
   .premium-clock-panel {
     --premium-clock-surface: rgba(255, 255, 255, 0.78);
     --premium-clock-surface-strong: rgba(255, 255, 255, 0.94);
+    --premium-clock-glass-surface: rgba(255, 255, 255, 0.5);
     --premium-clock-border: rgba(15, 23, 42, 0.14);
     --premium-clock-text: #111827;
     --premium-clock-muted: rgba(17, 24, 39, 0.62);
@@ -703,6 +828,23 @@
     background: rgba(16, 185, 129, 0.12);
   }
 
+  .premium-clock-panel .premium-clock-world.premium-clock-world--active,
+  .premium-clock-panel .premium-clock-world[aria-pressed="true"] {
+    border-color: rgba(5, 150, 105, 0.38);
+    color: #111827;
+    background: rgba(16, 185, 129, 0.16);
+  }
+
+  .premium-clock-panel .premium-clock-world.premium-clock-world--active :is(strong, b),
+  .premium-clock-panel .premium-clock-world[aria-pressed="true"] :is(strong, b) {
+    color: #111827;
+  }
+
+  .premium-clock-panel .premium-clock-world.premium-clock-world--active em,
+  .premium-clock-panel .premium-clock-world[aria-pressed="true"] em {
+    color: rgba(17, 24, 39, 0.72);
+  }
+
   .premium-clock-adjuster output {
     color: var(--premium-clock-text);
   }
@@ -771,5 +913,421 @@
   .premium-clock-modes {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     border-radius: 18px;
+  }
+}
+
+/* Work-area-bound Clock workspace used by Tesla, expanded landscape, and phones. */
+.premium-clock-panel:is(
+  [data-vb-shell-layout-mode="short-landscape"],
+  [data-vb-shell-layout-mode="portrait"]
+) {
+  right: auto;
+  bottom: auto;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  min-height: 0;
+  padding: 4px;
+  overflow: hidden;
+  overscroll-behavior: none;
+  border: 1px solid transparent;
+  border-radius: 20px;
+  background: transparent;
+  box-shadow: none;
+  container-type: size;
+}
+
+.premium-clock-panel:is(
+  [data-vb-shell-layout-mode="short-landscape"],
+  [data-vb-shell-layout-mode="portrait"]
+)[data-vb-shell-window-active="true"] {
+  box-shadow: none;
+}
+
+.premium-clock-panel:is(
+  [data-vb-shell-layout-mode="short-landscape"],
+  [data-vb-shell-layout-mode="portrait"]
+) :is(button, [role="button"], [role="switch"], .vb-settings-select-trigger) {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.premium-clock-panel:is(
+  [data-vb-shell-layout-mode="short-landscape"],
+  [data-vb-shell-layout-mode="portrait"]
+) .premium-clock-controls {
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.premium-clock-panel:is(
+  [data-vb-shell-layout-mode="short-landscape"],
+  [data-vb-shell-layout-mode="portrait"]
+) .premium-clock-control {
+  border-radius: 12px;
+  background: var(--premium-clock-glass-surface);
+  box-shadow: none;
+  backdrop-filter: blur(14px) saturate(1.08);
+  -webkit-backdrop-filter: blur(14px) saturate(1.08);
+}
+
+.premium-clock-panel:is(
+  [data-vb-shell-layout-mode="short-landscape"],
+  [data-vb-shell-layout-mode="portrait"]
+) .premium-clock-modes {
+  z-index: 5;
+  grid-template-columns: repeat(5, minmax(44px, 1fr));
+  gap: 2px;
+  width: auto;
+  min-width: 0;
+  height: 48px;
+  margin: 0;
+  padding: 2px;
+  border-radius: 14px;
+  background: var(--premium-clock-glass-surface);
+  box-shadow: none;
+  backdrop-filter: blur(14px) saturate(1.08);
+  -webkit-backdrop-filter: blur(14px) saturate(1.08);
+}
+
+.premium-clock-panel:is(
+  [data-vb-shell-layout-mode="short-landscape"],
+  [data-vb-shell-layout-mode="portrait"]
+) .premium-clock-mode {
+  min-height: 44px;
+  padding: 0 6px;
+  border-radius: 11px;
+}
+
+.premium-clock-panel:is(
+  [data-vb-shell-layout-mode="short-landscape"],
+  [data-vb-shell-layout-mode="portrait"]
+) .premium-clock-workspace {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+.premium-clock-panel:is(
+  [data-vb-shell-layout-mode="short-landscape"],
+  [data-vb-shell-layout-mode="portrait"]
+) .premium-clock-drag-zone,
+.premium-clock-panel:is(
+  [data-vb-shell-layout-mode="short-landscape"],
+  [data-vb-shell-layout-mode="portrait"]
+) .premium-clock-details,
+.premium-clock-panel:is(
+  [data-vb-shell-layout-mode="short-landscape"],
+  [data-vb-shell-layout-mode="portrait"]
+) .premium-clock-pane {
+  min-width: 0;
+  min-height: 0;
+}
+
+.premium-clock-panel:is(
+  [data-vb-shell-layout-mode="short-landscape"],
+  [data-vb-shell-layout-mode="portrait"]
+) .premium-clock-drag-zone {
+  height: 100%;
+  padding: 0;
+  overflow: hidden;
+}
+
+.premium-clock-panel:is(
+  [data-vb-shell-layout-mode="short-landscape"],
+  [data-vb-shell-layout-mode="portrait"]
+) .premium-clock-face {
+  width: auto;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.premium-clock-panel:is(
+  [data-vb-shell-layout-mode="short-landscape"],
+  [data-vb-shell-layout-mode="portrait"]
+) .premium-clock-meta {
+  min-width: 0;
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: 14px;
+  background: var(--premium-clock-glass-surface);
+  box-shadow: none;
+  backdrop-filter: blur(14px) saturate(1.08);
+  -webkit-backdrop-filter: blur(14px) saturate(1.08);
+}
+
+.premium-clock-panel:is(
+  [data-vb-shell-layout-mode="short-landscape"],
+  [data-vb-shell-layout-mode="portrait"]
+) .premium-clock-meta strong {
+  font-size: clamp(1.34rem, 4.2cqh, 1.8rem);
+}
+
+.premium-clock-panel:is(
+  [data-vb-shell-layout-mode="short-landscape"],
+  [data-vb-shell-layout-mode="portrait"]
+) .premium-clock-details {
+  width: auto;
+  height: 100%;
+  margin: 0;
+  padding: 6px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--premium-clock-glass-surface);
+  box-shadow: none;
+  backdrop-filter: blur(14px) saturate(1.08);
+  -webkit-backdrop-filter: blur(14px) saturate(1.08);
+}
+
+.premium-clock-panel:is(
+  [data-vb-shell-layout-mode="short-landscape"],
+  [data-vb-shell-layout-mode="portrait"]
+) .premium-clock-pane {
+  height: 100%;
+  overflow: hidden;
+}
+
+.premium-clock-panel:is(
+  [data-vb-shell-layout-mode="short-landscape"],
+  [data-vb-shell-layout-mode="portrait"]
+) .premium-clock-pane[data-premium-clock-pane="timer"],
+.premium-clock-panel:is(
+  [data-vb-shell-layout-mode="short-landscape"],
+  [data-vb-shell-layout-mode="portrait"]
+) .premium-clock-pane[data-premium-clock-pane="stopwatch"] {
+  align-content: center;
+}
+
+.premium-clock-panel:is(
+  [data-vb-shell-layout-mode="short-landscape"],
+  [data-vb-shell-layout-mode="portrait"]
+) .premium-clock-pane[data-premium-clock-pane="alarms"] {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.premium-clock-panel:is(
+  [data-vb-shell-layout-mode="short-landscape"],
+  [data-vb-shell-layout-mode="portrait"]
+) .premium-clock-alarm-list {
+  grid-auto-rows: 52px;
+  align-content: start;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+.premium-clock-panel:is(
+  [data-vb-shell-layout-mode="short-landscape"],
+  [data-vb-shell-layout-mode="portrait"]
+) .premium-clock-world-list {
+  grid-template-rows: repeat(4, minmax(44px, 1fr));
+  height: 100%;
+  min-height: 0;
+  gap: 4px;
+}
+
+.premium-clock-panel:is(
+  [data-vb-shell-layout-mode="short-landscape"],
+  [data-vb-shell-layout-mode="portrait"]
+) .premium-clock-world {
+  min-height: 44px;
+  height: 100%;
+  padding-block: 3px;
+  border-radius: 12px;
+}
+
+.premium-clock-panel:is(
+  [data-vb-shell-layout-mode="short-landscape"],
+  [data-vb-shell-layout-mode="portrait"]
+) .premium-clock-notice {
+  position: absolute;
+  z-index: 9;
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+  width: auto;
+  max-width: none;
+  min-height: 52px;
+  margin: 0;
+  border-radius: 14px;
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="short-landscape"] {
+  grid-template-rows: 48px minmax(0, 1fr);
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="short-landscape"] .premium-clock-controls {
+  position: static;
+  grid-row: 1;
+  grid-column: 1;
+  align-self: center;
+  justify-self: end;
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="short-landscape"] .premium-clock-modes {
+  grid-row: 1;
+  grid-column: 1;
+  padding-right: 98px;
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="short-landscape"] .premium-clock-workspace {
+  display: grid;
+  grid-row: 2;
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 0.82fr);
+  gap: 6px;
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="short-landscape"] .premium-clock-drag-zone {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 4px;
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="short-landscape"] .premium-clock-face {
+  justify-self: center;
+  height: 100%;
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="short-landscape"] .premium-clock-meta {
+  justify-self: center;
+  width: min(260px, 100%);
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="short-landscape"][data-premium-clock-mode="clock"] .premium-clock-workspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="short-landscape"][data-premium-clock-mode="clock"] .premium-clock-drag-zone {
+  width: min(390px, 100%);
+  justify-self: center;
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="portrait"] {
+  grid-template-rows: 44px 48px minmax(0, 1fr);
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="portrait"] .premium-clock-controls {
+  position: static;
+  grid-row: 1;
+  align-self: center;
+  justify-self: end;
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="portrait"] .premium-clock-modes {
+  grid-row: 2;
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="portrait"] .premium-clock-mode__icon {
+  display: block;
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="portrait"] .premium-clock-mode__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="portrait"] .premium-clock-workspace {
+  display: grid;
+  grid-row: 3;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 4px;
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="portrait"] .premium-clock-drag-zone {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 4px;
+  height: min(190px, 46cqh);
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="portrait"]:is(
+  [data-premium-clock-mode="timer"],
+  [data-premium-clock-mode="stopwatch"]
+) .premium-clock-drag-zone {
+  height: clamp(150px, calc(100cqh - 200px), 340px);
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="portrait"][data-premium-clock-mode="alarms"] .premium-clock-drag-zone {
+  height: clamp(140px, 35cqh, 240px);
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="portrait"][data-premium-clock-mode="alarms"] :is(
+  .premium-clock-meta__label,
+  .premium-clock-meta span:last-child
+) {
+  display: none;
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="portrait"] .premium-clock-face {
+  justify-self: center;
+  height: 100%;
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="portrait"] .premium-clock-meta {
+  justify-self: center;
+  width: min(250px, 100%);
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="portrait"] .premium-clock-details {
+  min-height: 0;
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="portrait"][data-premium-clock-mode="clock"] .premium-clock-workspace {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="portrait"][data-premium-clock-mode="clock"] .premium-clock-drag-zone {
+  height: 100%;
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="portrait"][data-premium-clock-mode="world"] .premium-clock-drag-zone {
+  height: auto;
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="portrait"][data-premium-clock-mode="world"] .premium-clock-face {
+  display: none;
+}
+
+.premium-clock-panel[data-vb-shell-layout-mode="portrait"][data-premium-clock-mode="world"] .premium-clock-meta {
+  min-height: 56px;
+}
+
+@container (max-height: 330px) {
+  .premium-clock-panel[data-vb-shell-layout-mode="short-landscape"] .premium-clock-mode__icon {
+    display: block;
+  }
+
+  .premium-clock-panel[data-vb-shell-layout-mode="short-landscape"] .premium-clock-mode__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .premium-clock-panel[data-vb-shell-layout-mode="short-landscape"] .premium-clock-meta {
+    padding-block: 3px;
+  }
+
+  .premium-clock-panel[data-vb-shell-layout-mode="short-landscape"] .premium-clock-world__dial {
+    width: 28px;
+    height: 28px;
   }
 }
