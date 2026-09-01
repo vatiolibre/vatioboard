@@ -53,6 +53,7 @@ export interface SegmentedControlController {
   focus(): void;
   getValue(): string;
   setValue(value: string): void;
+  setOptions(options: SettingsControlOption[]): void;
   setDisabled(disabled: boolean): void;
   setLabel(label: string, labelKey?: string): void;
   destroy(): void;
@@ -163,6 +164,7 @@ export function createSegmentedControl(options: SegmentedControlOptions): Segmen
   group.setAttribute("role", "radiogroup");
   group.setAttribute("aria-labelledby", label.id);
   let currentValue = String(options.value);
+  let currentOptions = [...options.options];
   let disabled = Boolean(options.disabled);
   const buttons: HTMLButtonElement[] = [];
 
@@ -185,18 +187,29 @@ export function createSegmentedControl(options: SegmentedControlOptions): Segmen
     if (changed) options.onChange?.(currentValue, event);
   };
 
-  for (const option of options.options) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = joinClasses("vb-settings-segmented-option", options.classNames?.option);
-    button.setAttribute("role", "radio");
-    button.dataset.value = String(option.value);
-    button.dataset.optionDisabled = String(Boolean(option.disabled));
-    setDataAttribute(button, options.optionDataAttribute, String(option.value));
-    setTranslatedText(button, option.label, option.labelKey);
-    buttons.push(button);
-    group.append(button);
-  }
+  const buildOptions = () => {
+    const fragment = document.createDocumentFragment();
+    buttons.splice(0, buttons.length);
+    for (const option of currentOptions) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = joinClasses("vb-settings-segmented-option", options.classNames?.option);
+      button.setAttribute("role", "radio");
+      button.dataset.value = String(option.value);
+      button.dataset.optionDisabled = String(Boolean(option.disabled));
+      setDataAttribute(button, options.optionDataAttribute, String(option.value));
+      setTranslatedText(button, option.label, option.labelKey);
+      buttons.push(button);
+      fragment.append(button);
+    }
+    group.replaceChildren(fragment);
+    if (!buttons.some((button) => button.dataset.value === currentValue)) {
+      currentValue = buttons.find((button) => button.dataset.optionDisabled !== "true")?.dataset.value
+        || buttons[0]?.dataset.value
+        || "";
+    }
+    update();
+  };
 
   const moveFocus = (direction: number, event: KeyboardEvent) => {
     const enabled = buttons.filter((button) => !button.disabled);
@@ -227,7 +240,7 @@ export function createSegmentedControl(options: SegmentedControlOptions): Segmen
   group.addEventListener("keydown", handleKeydown);
   element.append(label, group);
   element.classList.toggle("is-disabled", disabled);
-  update();
+  buildOptions();
 
   return {
     element,
@@ -241,6 +254,10 @@ export function createSegmentedControl(options: SegmentedControlOptions): Segmen
     setValue(value) {
       if (buttons.some((button) => button.dataset.value === String(value))) currentValue = String(value);
       update();
+    },
+    setOptions(nextOptions) {
+      currentOptions = [...nextOptions];
+      buildOptions();
     },
     setDisabled(nextDisabled) {
       disabled = Boolean(nextDisabled);
@@ -443,7 +460,11 @@ export function createSelectControl(options: SelectControlOptions): SelectContro
       event.preventDefault();
       open();
       if (event.key === "ArrowUp") focusSelected("last");
-    } else if (event.key === "Escape") close({ restoreFocus: true });
+    } else if (event.key === "Escape" && !menu.hidden) {
+      event.preventDefault();
+      event.stopPropagation();
+      close({ restoreFocus: true });
+    }
     else handleTypeahead(event);
   };
   const handleMenuClick = (event: MouseEvent) => {
@@ -453,6 +474,7 @@ export function createSelectControl(options: SelectControlOptions): SelectContro
   const handleMenuKeydown = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
       event.preventDefault();
+      event.stopPropagation();
       close({ restoreFocus: true });
     } else if (event.key === "Tab") close();
     else if (event.key === "ArrowDown") moveOptionFocus(1, event);

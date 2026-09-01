@@ -57,6 +57,25 @@ describe("shared settings controls", () => {
     control.buttons[1].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
     expect(control.getValue()).toBe("km");
     expect(onChange).toHaveBeenCalledWith("km", expect.any(KeyboardEvent));
+
+    onChange.mockClear();
+    control.setOptions([
+      { value: "km", label: "Kilometres" },
+      { value: "mi", label: "Miles" },
+      { value: "nm", label: "Nautical miles", disabled: true },
+    ]);
+    expect(control.getValue()).toBe("km");
+    expect(control.buttons.map((button) => button.textContent)).toEqual([
+      "Kilometres",
+      "Miles",
+      "Nautical miles",
+    ]);
+    expect(control.buttons[2].disabled).toBe(true);
+    expect(onChange).not.toHaveBeenCalled();
+
+    control.setOptions([{ value: "mi", label: "Miles" }]);
+    expect(control.getValue()).toBe("mi");
+    expect(onChange).not.toHaveBeenCalled();
     control.destroy();
   });
 
@@ -104,6 +123,15 @@ describe("shared settings controls", () => {
     expect(onChange).toHaveBeenCalledTimes(1);
     control.trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "6", bubbles: true }));
     expect(document.activeElement.textContent).toContain("60 km/h");
+    const outerEscape = vi.fn();
+    document.addEventListener("keydown", outerEscape);
+    control.menu.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(control.menu.hidden).toBe(true);
+    expect(document.activeElement).toBe(control.trigger);
+    expect(outerEscape).not.toHaveBeenCalled();
+    document.removeEventListener("keydown", outerEscape);
+
+    control.open();
     document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
     expect(control.menu.hidden).toBe(true);
 

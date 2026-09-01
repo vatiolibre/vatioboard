@@ -28,6 +28,288 @@
       linear-gradient(180deg, #06111d 0%, #02060b 100%);
 }
 
+/* Compact shared-control setup workspace foundation. */
+.accel-sheet-setup{
+    top: calc(var(--vb-work-area-top, 0px) + 4px);
+    right: auto;
+    bottom: auto;
+    left: calc(var(--vb-work-area-left, 0px) + (var(--vb-work-area-width, 100vw) / 2));
+    grid-template-rows: 52px minmax(0, 1fr);
+    gap: 0;
+    width: min(620px, calc(var(--vb-work-area-width, 100vw) - 8px));
+    height: min(440px, calc(var(--vb-work-area-height, 100dvh) - 8px));
+    max-width: calc(var(--vb-work-area-width, 100vw) - 8px);
+    max-height: calc(var(--vb-work-area-height, 100dvh) - 8px);
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--accel-border) 88%, transparent);
+    border-radius: 18px;
+    background: color-mix(in srgb, var(--accel-surface-strong) 97%, transparent);
+    box-shadow: 0 22px 52px rgba(15, 23, 42, 0.24);
+    transform: translateX(-50%);
+}
+
+.accel-sheet-setup .accel-sheet-top{
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-height: 52px;
+    padding: 4px 4px 4px 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--accel-border) 64%, transparent);
+}
+
+.accel-sheet-setup .accel-sheet-title{
+    margin: 0;
+    font-size: 20px;
+    line-height: 1;
+    letter-spacing: -0.02em;
+}
+
+.accel-sheet-setup .accel-sheet-close-icon{
+    position: static;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    margin-left: auto;
+    border-radius: 12px;
+}
+
+.accel-sheet-setup .accel-sheet-body{
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto auto;
+    align-content: start;
+    align-items: start;
+    gap: 10px 16px;
+    min-height: 0;
+    padding: 12px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    -webkit-overflow-scrolling: touch;
+}
+
+.accel-setup-column{
+    display: grid;
+    align-content: start;
+    gap: 8px;
+    min-width: 0;
+}
+
+.accel-setup-control-mount[hidden],
+.accel-custom-panel[hidden],
+.accel-advanced-panel[hidden]{
+    display: none !important;
+}
+
+.accel-setup-shared-control{
+    --vb-settings-accent: var(--accel-accent);
+    --vb-settings-surface: var(--accel-surface-strong);
+    --vb-settings-control-bg: var(--btn-bg);
+    --vb-settings-border: var(--accel-border);
+    --vb-settings-text: var(--btn-fg);
+    --vb-settings-muted: var(--accel-muted);
+    width: 100%;
+}
+
+.accel-setup-preset-control{
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+}
+
+.accel-setup-preset-control .vb-settings-select-trigger{
+    width: 100%;
+    min-width: 0;
+}
+
+.accel-sheet-setup .accel-custom-panel{
+    margin: 2px 0 0;
+    padding: 8px 0 0;
+    border-top: 1px solid color-mix(in srgb, var(--accel-border) 58%, transparent);
+}
+
+.accel-sheet-setup .accel-custom-grid{
+    gap: 8px;
+}
+
+.accel-input-with-unit{
+    position: relative;
+    display: grid !important;
+    min-width: 0;
+    color: inherit !important;
+    font: inherit !important;
+    letter-spacing: normal !important;
+    text-transform: none !important;
+}
+
+.accel-sheet-setup .accel-input-with-unit input{
+    min-height: 44px;
+    padding-right: 54px;
+}
+
+.accel-sheet-setup .accel-input-unit{
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    color: var(--accel-muted);
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1;
+    pointer-events: none;
+    transform: translateY(-50%);
+}
+
+.accel-setup-readiness{
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 10px repeat(4, minmax(0, 1fr));
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 5px 10px;
+    overflow: hidden;
+    border-top: 1px solid color-mix(in srgb, var(--accel-border) 58%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--accel-border) 58%, transparent);
+}
+
+.accel-readiness-dot{
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accel-highlight);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accel-highlight) 14%, transparent);
+}
+
+.accel-setup-readiness[data-tone="ready"] .accel-readiness-dot{
+    background: var(--accel-accent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accel-accent) 14%, transparent);
+}
+
+.accel-setup-readiness[data-tone="blocked"] .accel-readiness-dot{
+    background: var(--accel-danger);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accel-danger) 14%, transparent);
+}
+
+.accel-readiness-item{
+    display: grid;
+    min-width: 0;
+    gap: 1px;
+}
+
+.accel-readiness-item > span{
+    overflow: hidden;
+    color: var(--accel-muted);
+    font-size: 9px;
+    font-weight: 750;
+    line-height: 1.05;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.accel-readiness-item > strong{
+    overflow: hidden;
+    color: var(--btn-fg);
+    font-size: 12px;
+    line-height: 1.1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.accel-advanced-control{
+    display: grid;
+    min-width: 0;
+    border-top: 1px solid color-mix(in srgb, var(--accel-border) 58%, transparent);
+}
+
+.accel-advanced-toggle{
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) 10px;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 4px;
+    border: 0;
+    background: transparent;
+    color: var(--btn-fg);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 800;
+    text-align: left;
+}
+
+.accel-advanced-toggle:focus-visible{
+    outline: 2px solid color-mix(in srgb, var(--accel-accent) 72%, transparent);
+    outline-offset: 2px;
+}
+
+.accel-advanced-summary{
+    overflow: hidden;
+    color: var(--accel-muted);
+    font-size: 11px;
+    font-weight: 700;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.accel-advanced-chevron{
+    width: 8px;
+    height: 8px;
+    border: solid currentColor;
+    border-width: 0 2px 2px 0;
+    transform: translateY(-2px) rotate(45deg);
+    transition: transform 160ms ease;
+}
+
+.accel-advanced-toggle[aria-expanded="true"] .accel-advanced-chevron{
+    transform: translateY(2px) rotate(225deg);
+}
+
+.accel-advanced-panel{
+    display: grid;
+    gap: 10px;
+    padding: 8px 0 2px;
+}
+
+.accel-sheet-setup .accel-advanced-panel .accel-field textarea{
+    min-height: 64px;
+    max-height: 112px;
+    resize: vertical;
+}
+
+@media (max-width: 559px){
+    .accel-sheet-setup{
+        left: calc(var(--vb-work-area-left, 0px) + 4px);
+        width: calc(var(--vb-work-area-width, 100vw) - 8px);
+        transform: none;
+    }
+
+    .accel-sheet-setup .accel-sheet-body{
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto;
+        gap: 10px;
+        padding: 10px;
+    }
+
+    .accel-setup-readiness{
+        grid-column: 1;
+        gap: 5px;
+        padding-inline: 7px;
+    }
+
+    .accel-readiness-item > span{
+        font-size: 8px;
+    }
+
+    .accel-readiness-item > strong{
+        font-size: 11px;
+    }
+}
+
 @media (prefers-color-scheme: dark){
     :root{
         --accel-accent: #34d399;
@@ -4110,5 +4392,104 @@ html[data-vb-layout-profile="portrait"] .accel-result-chart-metric-tabs{
         height: auto;
         max-height: none;
         overflow: hidden;
+    }
+}
+
+/* Final setup geometry overrides legacy sheet media rules above. */
+.accel-sheet-setup{
+    top: calc(var(--vb-work-area-top, 0px) + 4px);
+    right: auto;
+    bottom: auto;
+    left: calc(var(--vb-work-area-left, 0px) + (var(--vb-work-area-width, 100vw) / 2));
+    grid-template-rows: 52px minmax(0, 1fr);
+    gap: 0;
+    width: min(620px, calc(var(--vb-work-area-width, 100vw) - 8px));
+    height: min(440px, calc(var(--vb-work-area-height, 100dvh) - 8px));
+    max-width: calc(var(--vb-work-area-width, 100vw) - 8px);
+    max-height: calc(var(--vb-work-area-height, 100dvh) - 8px);
+    padding: 0;
+    overflow: hidden;
+    border-radius: 18px;
+    transform: translateX(-50%);
+}
+
+.accel-sheet-setup .accel-sheet-top{
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-height: 52px;
+    padding: 4px 4px 4px 12px;
+    border-bottom: 1px solid color-mix(in srgb, var(--accel-border) 64%, transparent);
+}
+
+.accel-sheet-setup .accel-sheet-title{
+    margin: 0;
+    font-size: 20px;
+    line-height: 1;
+    letter-spacing: -0.02em;
+}
+
+.accel-sheet-setup .accel-sheet-close-icon{
+    position: static;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    margin-left: auto;
+    border-radius: 12px;
+}
+
+.accel-sheet-setup .accel-sheet-body{
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto auto;
+    align-content: start;
+    align-items: start;
+    gap: 10px 16px;
+    min-height: 0;
+    padding: 12px;
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
+.accel-sheet-setup .accel-custom-panel{
+    margin: 2px 0 0;
+    padding: 8px 0 0;
+    border-top: 1px solid color-mix(in srgb, var(--accel-border) 58%, transparent);
+    border-radius: 0;
+    background: none;
+}
+
+.accel-sheet-setup .accel-custom-grid{
+    gap: 8px;
+}
+
+.accel-sheet-setup .accel-input-with-unit input{
+    min-height: 44px;
+    padding: 8px 54px 8px 10px;
+}
+
+.accel-sheet-setup .accel-advanced-panel .accel-field textarea{
+    min-height: 64px;
+    max-height: 112px;
+}
+
+@media (max-width: 559px){
+    .accel-sheet-setup{
+        top: calc(var(--vb-work-area-top, 0px) + 4px);
+        right: auto;
+        bottom: auto;
+        left: calc(var(--vb-work-area-left, 0px) + 4px);
+        width: calc(var(--vb-work-area-width, 100vw) - 8px);
+        height: calc(var(--vb-work-area-height, 100dvh) - 8px);
+        max-height: calc(var(--vb-work-area-height, 100dvh) - 8px);
+        transform: none;
+    }
+
+    .accel-sheet-setup .accel-sheet-body{
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto;
+        gap: 10px;
+        padding: 10px;
     }
 }

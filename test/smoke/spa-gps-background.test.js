@@ -513,7 +513,6 @@ describe('SPA GPS background runtime', () => {
     await navigateHash('#/accel');
     await settleAsyncWork();
 
-    expect(getNumericText(document.getElementById('statusSpeedValue'))).toBeGreaterThan(0);
     expect(
       getNumericText(document.getElementById('diagnosticSamplesValue'))
     ).toBeGreaterThanOrEqual(1);
@@ -1304,7 +1303,6 @@ describe('SPA GPS background runtime', () => {
     await settleAsyncWork();
 
     expect(nativeWatchPosition).toHaveBeenCalledTimes(1);
-    expect(getNumericText(document.getElementById('statusSpeedValue'))).toBeGreaterThan(0);
     expect(
       getNumericText(document.getElementById('diagnosticSamplesValue'))
     ).toBeGreaterThanOrEqual(1);

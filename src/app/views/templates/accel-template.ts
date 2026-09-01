@@ -283,9 +283,8 @@ const accelTemplate: string = String.raw`
         >
           <div class="accel-sheet-top">
             <div class="accel-sheet-copy">
-              <span class="accel-card-kicker" data-i18n="accelSetup">Setup</span>
               <h2 id="setupPanelTitle" class="accel-sheet-title" data-i18n="accelSetup">Setup</h2>
-              <p id="setupPanelStatus" class="accel-card-lead">—</p>
+              <p id="setupPanelStatus" class="sr-only" aria-live="polite">—</p>
             </div>
             <button
               id="closeSetupPanel"
@@ -305,246 +304,95 @@ const accelTemplate: string = String.raw`
           </div>
 
           <div class="accel-sheet-body">
-            <section class="accel-sheet-section">
-              <header class="accel-card-head">
-                <span class="accel-card-kicker" data-i18n="accelTestSelector">Test selector</span>
-                <p class="accel-card-lead" data-i18n="accelTestLead">
-                  Standing-start, rolling-start, and distance presets.
-                </p>
-              </header>
-
-              <div id="presetGrid" class="accel-preset-grid"></div>
+            <div class="accel-setup-column accel-setup-primary">
+              <div id="presetGrid" class="accel-setup-control-mount"></div>
 
               <div id="customRangePanel" class="accel-custom-panel" hidden>
-                <div class="accel-section-title" data-i18n="accelCustomRange">
-                  Custom speed range
-                </div>
-
                 <div class="accel-custom-grid">
                   <label class="accel-field" for="customStartInput">
                     <span data-i18n="accelStartSpeed">Start speed</span>
-                    <input
-                      id="customStartInput"
-                      type="number"
-                      min="0"
-                      step="0.1"
-                      inputmode="decimal"
-                    />
+                    <span class="accel-input-with-unit">
+                      <input
+                        id="customStartInput"
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        inputmode="decimal"
+                      />
+                      <span id="customStartUnit" class="accel-input-unit">mph</span>
+                    </span>
                   </label>
 
                   <label class="accel-field" for="customEndInput">
                     <span data-i18n="accelEndSpeed">End speed</span>
-                    <input
-                      id="customEndInput"
-                      type="number"
-                      min="0"
-                      step="0.1"
-                      inputmode="decimal"
-                    />
+                    <span class="accel-input-with-unit">
+                      <input
+                        id="customEndInput"
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        inputmode="decimal"
+                      />
+                      <span id="customEndUnit" class="accel-input-unit">mph</span>
+                    </span>
                   </label>
                 </div>
 
                 <p id="customRangeNotice" class="accel-inline-note"></p>
               </div>
-            </section>
+            </div>
 
-            <section class="accel-sheet-section">
-              <header class="accel-card-head">
-                <span class="accel-card-kicker" data-i18n="units">Units</span>
-                <p class="accel-card-lead" data-i18n="accelUnitsLead">
-                  Choose how speed, distance, altitude, and accuracy are shown.
-                </p>
-              </header>
+            <div class="accel-setup-column accel-setup-secondary">
+              <div id="speedUnitControlMount" class="accel-setup-control-mount"></div>
+              <div id="distanceUnitControlMount" class="accel-setup-control-mount"></div>
+              <div id="rolloutControlMount" class="accel-setup-control-mount"></div>
 
-              <div class="accel-controls-stack">
-                <div>
-                  <div class="accel-section-title" data-i18n="speed">Speed</div>
-                  <div
-                    class="accel-segmented accel-units-grid"
-                    role="group"
-                    aria-label="Speed units"
-                    data-i18n-aria="speed"
-                  >
-                    <button
-                      id="speedUnitMph"
-                      type="button"
-                      class="accel-segment-btn accel-unit-btn"
-                      data-unit="mph"
-                    >
-                      <span class="accel-unit-btn-title">mph</span>
-                      <span class="accel-unit-btn-meta" data-i18n="accelImperialTests"
-                        >Imperial tests</span
-                      >
-                    </button>
-                    <button
-                      id="speedUnitKmh"
-                      type="button"
-                      class="accel-segment-btn accel-unit-btn"
-                      data-unit="kmh"
-                    >
-                      <span class="accel-unit-btn-title">km/h</span>
-                      <span class="accel-unit-btn-meta" data-i18n="accelMetricTests"
-                        >Metric tests</span
-                      >
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <div class="accel-section-title" data-i18n="accelDistanceAltitude">
-                    Distance + altitude
-                  </div>
-                  <div
-                    class="accel-segmented accel-units-grid"
-                    role="group"
-                    aria-label="Distance and altitude units"
-                    data-i18n-aria="accelDistanceAltitude"
-                  >
-                    <button
-                      id="distanceUnitFt"
-                      type="button"
-                      class="accel-segment-btn accel-unit-btn"
-                      data-unit="ft"
-                    >
-                      <span class="accel-unit-btn-title">ft</span>
-                      <span class="accel-unit-btn-meta" data-i18n="accelMileDistanceTests"
-                        >Mile-based distances</span
-                      >
-                    </button>
-                    <button
-                      id="distanceUnitM"
-                      type="button"
-                      class="accel-segment-btn accel-unit-btn"
-                      data-unit="m"
-                    >
-                      <span class="accel-unit-btn-title">m</span>
-                      <span class="accel-unit-btn-meta" data-i18n="accelMetricDistanceTests"
-                        >Metric distances</span
-                      >
-                    </button>
-                  </div>
+              <div class="accel-advanced-control">
+                <button
+                  id="accelAdvancedToggle"
+                  type="button"
+                  class="accel-advanced-toggle"
+                  aria-expanded="false"
+                  aria-controls="accelAdvancedPanel"
+                >
+                  <span data-i18n="accelAdvanced">Advanced</span>
+                  <span id="accelAdvancedSummary" class="accel-advanced-summary">—</span>
+                  <span class="accel-advanced-chevron" aria-hidden="true"></span>
+                </button>
+                <div id="accelAdvancedPanel" class="accel-advanced-panel" hidden>
+                  <div id="launchThresholdControlMount" class="accel-setup-control-mount"></div>
+                  <label class="accel-field" for="runNotes">
+                    <span data-i18n="accelNotes">Run notes</span>
+                    <textarea
+                      id="runNotes"
+                      rows="3"
+                      data-i18n-placeholder="accelNotesPlaceholder"
+                      placeholder="Example: 90% SOC, flat road"
+                    ></textarea>
+                  </label>
                 </div>
               </div>
-            </section>
+            </div>
 
-            <section class="accel-sheet-section">
-              <header class="accel-card-head">
-                <span class="accel-card-kicker" data-i18n="accelControls">Controls</span>
-                <p class="accel-card-lead" data-i18n="accelControlsLead">
-                  Arm the run, choose rollout, and store quick notes locally.
-                </p>
-              </header>
-
-              <div class="accel-controls-stack">
-                <div>
-                  <div class="accel-section-title" data-i18n="accelRollout">Rollout</div>
-                  <div class="accel-segmented" role="group" aria-label="Rollout toggle">
-                    <button
-                      id="rolloutOff"
-                      type="button"
-                      class="accel-segment-btn"
-                      data-rollout="off"
-                      data-i18n="accelOff"
-                    >
-                      Off
-                    </button>
-                    <button
-                      id="rolloutOn"
-                      type="button"
-                      class="accel-segment-btn"
-                      data-rollout="on"
-                      data-i18n="accelRolloutOneFoot"
-                    >
-                      1 ft
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <div class="accel-section-title" data-i18n="accelLaunchThreshold">
-                    Launch threshold
-                  </div>
-                  <div class="accel-segmented" role="group" aria-label="Launch threshold">
-                    <button
-                      id="launchThresholdHalf"
-                      type="button"
-                      class="accel-segment-btn"
-                      data-threshold="0.5"
-                      data-i18n="accelLaunchThresholdHalf"
-                    >
-                      0.5 mph
-                    </button>
-                    <button
-                      id="launchThresholdOne"
-                      type="button"
-                      class="accel-segment-btn"
-                      data-threshold="1"
-                      data-i18n="accelLaunchThresholdOne"
-                    >
-                      1.0 mph
-                    </button>
-                  </div>
-                </div>
-
-                <label class="accel-field" for="runNotes">
-                  <span data-i18n="accelNotes">Run notes</span>
-                  <textarea
-                    id="runNotes"
-                    rows="3"
-                    data-i18n-placeholder="accelNotesPlaceholder"
-                    placeholder="Example: 90% SOC, flat road"
-                  ></textarea>
-                </label>
-              </div>
-            </section>
-
-            <section class="accel-sheet-section">
-              <header class="accel-card-head">
-                <span class="accel-card-kicker" data-i18n="accelStatusPanel">Status panel</span>
-                <p class="accel-card-lead" data-i18n="accelStatusLead">
-                  Live browser GPS readiness and signal quality.
-                </p>
-              </header>
-
-              <div class="accel-status-grid">
-                <div class="accel-metric">
-                  <span class="accel-metric-label" data-i18n="permission">Permission</span>
-                  <strong id="permissionValue" class="accel-metric-value">—</strong>
-                </div>
-                <div class="accel-metric">
-                  <span class="accel-metric-label" data-i18n="accelGpsReady">GPS ready</span>
-                  <strong id="gpsReadyValue" class="accel-metric-value">—</strong>
-                </div>
-                <div class="accel-metric">
-                  <span class="accel-metric-label" data-i18n="accelLatestAccuracy"
-                    >Latest accuracy</span
-                  >
-                  <strong id="latestAccuracyValue" class="accel-metric-value">—</strong>
-                </div>
-                <div class="accel-metric">
-                  <span class="accel-metric-label" data-i18n="accelObservedHz">Observed Hz</span>
-                  <strong id="observedHzValue" class="accel-metric-value">—</strong>
-                </div>
-                <div class="accel-metric">
-                  <span class="accel-metric-label" data-i18n="accelCurrentSpeed"
-                    >Current speed</span
-                  >
-                  <strong id="statusSpeedValue" class="accel-metric-value">—</strong>
-                </div>
-                <div class="accel-metric">
-                  <span class="accel-metric-label" data-i18n="heading">Heading</span>
-                  <strong id="statusHeadingValue" class="accel-metric-value">—</strong>
-                </div>
-                <div class="accel-metric">
-                  <span class="accel-metric-label" data-i18n="altitude">Altitude</span>
-                  <strong id="statusAltitudeValue" class="accel-metric-value">—</strong>
-                </div>
-                <div class="accel-metric">
-                  <span class="accel-metric-label" data-i18n="accelSpeedSource">Speed source</span>
-                  <strong id="speedSourceValue" class="accel-metric-value">—</strong>
-                </div>
-              </div>
-            </section>
+            <div class="accel-setup-readiness" data-i18n-aria="accelStatusPanel" aria-label="Status panel">
+              <span class="accel-readiness-dot" aria-hidden="true"></span>
+              <span class="accel-readiness-item">
+                <span data-i18n="permission">Permission</span>
+                <strong id="permissionValue">—</strong>
+              </span>
+              <span class="accel-readiness-item">
+                <span data-i18n="accelGpsReady">GPS ready</span>
+                <strong id="gpsReadyValue">—</strong>
+              </span>
+              <span class="accel-readiness-item">
+                <span data-i18n="accelLatestAccuracy">Latest accuracy</span>
+                <strong id="latestAccuracyValue">—</strong>
+              </span>
+              <span class="accel-readiness-item">
+                <span data-i18n="accelObservedHz">Observed Hz</span>
+                <strong id="observedHzValue">—</strong>
+              </span>
+            </div>
           </div>
         </section>
 

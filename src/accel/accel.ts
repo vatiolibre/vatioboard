@@ -39,6 +39,11 @@ import { formatRouteString } from '../shared/route-string.js';
 import { hasStoredValue } from '../shared/storage.js';
 import { applyButtonIcon } from '../shared/tools-menu.js';
 import {
+  createSegmentedControl,
+  createSelectControl,
+  createSettingsSwitch,
+} from '../shared/ui/settings-controls.js';
+import {
   hasConfiguredUnitPreferences,
   markUnitBootstrapManualSelection,
   maybeInitializeUnitsFromCountry,
@@ -242,24 +247,22 @@ export const initPromise = (function () {
       gpsReadyValue: byId('gpsReadyValue'),
       latestAccuracyValue: byId('latestAccuracyValue'),
       observedHzValue: byId('observedHzValue'),
-      statusSpeedValue: byId('statusSpeedValue'),
-      statusHeadingValue: byId('statusHeadingValue'),
-      statusAltitudeValue: byId('statusAltitudeValue'),
-      speedSourceValue: byId('speedSourceValue'),
       presetGrid: byId('presetGrid'),
       customRangePanel: byId('customRangePanel'),
       customStartInput: byId('customStartInput'),
       customEndInput: byId('customEndInput'),
-      speedUnitMph: byId('speedUnitMph'),
-      speedUnitKmh: byId('speedUnitKmh'),
-      distanceUnitFt: byId('distanceUnitFt'),
-      distanceUnitM: byId('distanceUnitM'),
+      customStartUnit: byId('customStartUnit'),
+      customEndUnit: byId('customEndUnit'),
+      speedUnitControlMount: byId('speedUnitControlMount'),
+      distanceUnitControlMount: byId('distanceUnitControlMount'),
+      rolloutControlMount: byId('rolloutControlMount'),
+      launchThresholdControlMount: byId('launchThresholdControlMount'),
       customRangeNotice: byId('customRangeNotice'),
       armRun: byId('armRun'),
-      rolloutOff: byId('rolloutOff'),
-      rolloutOn: byId('rolloutOn'),
-      launchThresholdHalf: byId('launchThresholdHalf'),
-      launchThresholdOne: byId('launchThresholdOne'),
+      setupReadiness: queryOne('.accel-setup-readiness'),
+      advancedToggle: byId('accelAdvancedToggle'),
+      advancedSummary: byId('accelAdvancedSummary'),
+      advancedPanel: byId('accelAdvancedPanel'),
       runNotes: byId('runNotes'),
       actionNotice: byId('actionNotice'),
       liveElapsedValue: byId('liveElapsedValue'),
@@ -398,6 +401,7 @@ export const initPromise = (function () {
   var runPlaceEnrichmentIds = new Set();
 
   var replayChartFilterController: AnyRecord | null = null;
+  var setupControls: AnyRecord | null = null;
   var accelChartControllersReady = false;
   var accelChartControllersLoadPromise: Promise<boolean> | null = null;
   var liveSpeedometer: AnyRecord = createInactiveSpeedometer();
@@ -444,6 +448,7 @@ export const initPromise = (function () {
       chartFilterEndRatio: 1,
     },
     openPanel: null,
+    setupAdvancedOpen: false,
     lastPanelTrigger: null,
     actionNoticeTimerId: null,
   };
@@ -787,13 +792,90 @@ export const initPromise = (function () {
     return accelInitPromise;
   }
 
+  function destroyAccelSetupControls() {
+    if (!setupControls) return;
+    setupControls.preset?.destroy?.();
+    setupControls.speedUnit?.destroy?.();
+    setupControls.distanceUnit?.destroy?.();
+    setupControls.rollout?.destroy?.();
+    setupControls.threshold?.destroy?.();
+    setupControls = null;
+  }
+
+  function createAccelSetupControls() {
+    destroyAccelSetupControls();
+    if (!elements.presetGrid) return;
+
+    var preset = createSelectControl({
+      label: t('accelTestSelector'),
+      labelKey: 'accelTestSelector',
+      value: state.settings.selectedPresetId,
+      options: [],
+      classNames: { root: 'accel-setup-shared-control accel-setup-preset-control' },
+      onChange: handlePresetValue,
+    });
+    var speedUnit = createSegmentedControl({
+      label: t('speed'),
+      labelKey: 'speed',
+      value: state.settings.speedUnit,
+      options: [
+        { value: 'mph', label: 'mph' },
+        { value: 'kmh', label: 'km/h' },
+      ],
+      optionDataAttribute: 'unit',
+      classNames: { root: 'accel-setup-shared-control' },
+      onChange: handleSpeedUnitValue,
+    });
+    var distanceUnit = createSegmentedControl({
+      label: t('accelDistanceAltitude'),
+      labelKey: 'accelDistanceAltitude',
+      value: state.settings.distanceUnit,
+      options: [
+        { value: 'ft', label: 'ft' },
+        { value: 'm', label: 'm' },
+      ],
+      optionDataAttribute: 'unit',
+      classNames: { root: 'accel-setup-shared-control' },
+      onChange: handleDistanceUnitValue,
+    });
+    var rollout = createSettingsSwitch({
+      label: t('accelRolloutOn'),
+      labelKey: 'accelRolloutOn',
+      checked: state.settings.rolloutEnabled,
+      classNames: { root: 'accel-setup-shared-control' },
+      onChange: handleRolloutValue,
+    });
+    var threshold = createSegmentedControl({
+      label: t('accelLaunchThreshold'),
+      labelKey: 'accelLaunchThreshold',
+      value: isSameNumber(state.settings.launchThresholdMs, 1 * MPH_TO_MS) ? '1' : '0.5',
+      options: [],
+      optionDataAttribute: 'threshold',
+      classNames: { root: 'accel-setup-shared-control' },
+      onChange: handleThresholdValue,
+    });
+
+    elements.presetGrid.append(preset.element);
+    elements.speedUnitControlMount.append(speedUnit.element);
+    elements.distanceUnitControlMount.append(distanceUnit.element);
+    elements.rolloutControlMount.append(rollout.element);
+    elements.launchThresholdControlMount.append(threshold.element);
+
+    speedUnit.buttons[0].id = 'speedUnitMph';
+    speedUnit.buttons[1].id = 'speedUnitKmh';
+    distanceUnit.buttons[0].id = 'distanceUnitFt';
+    distanceUnit.buttons[1].id = 'distanceUnitM';
+
+    setupControls = { preset, speedUnit, distanceUnit, rollout, threshold };
+    renderSetupControls();
+  }
+
   function syncMountedAccelRouteUi() {
     if (!state.viewMounted) return;
 
     applyTranslations();
     elements.runNotes.value = state.settings.notes;
-    renderPresetButtons();
-    renderControlSelections();
+    renderSetupControls();
     liveSpeedometer.resize();
     handleWindowResize();
     renderAll();
@@ -924,18 +1006,10 @@ export const initPromise = (function () {
     add(elements.sheetBackdrop, 'click', function () {
       closePanel();
     });
-    add(elements.presetGrid, 'click', handlePresetClick);
     add(elements.customStartInput, 'input', handleCustomInput);
     add(elements.customEndInput, 'input', handleCustomInput);
-    add(elements.speedUnitMph, 'click', handleSpeedUnitClick);
-    add(elements.speedUnitKmh, 'click', handleSpeedUnitClick);
-    add(elements.distanceUnitFt, 'click', handleDistanceUnitClick);
-    add(elements.distanceUnitM, 'click', handleDistanceUnitClick);
     add(elements.armRun, 'click', handleRunPrimaryAction);
-    add(elements.rolloutOff, 'click', handleRolloutClick);
-    add(elements.rolloutOn, 'click', handleRolloutClick);
-    add(elements.launchThresholdHalf, 'click', handleThresholdClick);
-    add(elements.launchThresholdOne, 'click', handleThresholdClick);
+    add(elements.advancedToggle, 'click', handleAdvancedToggle);
     add(elements.runNotes, 'input', handleNotesInput);
     add(elements.clearHistory, 'click', handleClearHistory);
     add(elements.historyList, 'click', handleHistoryClick);
@@ -1118,6 +1192,7 @@ export const initPromise = (function () {
   }
 
   function handleWindowResize() {
+    setupControls?.preset?.close?.();
     requestResultGraphRefresh();
     queueResultLocationOverflowSync();
     queueHistoryDetailOverflowSync();
@@ -1138,7 +1213,7 @@ export const initPromise = (function () {
   function handleLangToggle() {
     toggleLang();
     applyTranslations();
-    renderPresetButtons();
+    renderSetupControls();
     renderAll();
     publishAccelActivity();
   }
@@ -1199,6 +1274,10 @@ export const initPromise = (function () {
   }
 
   function teardownPanel(panelName) {
+    if (panelName === 'setup') {
+      setupControls?.preset?.close?.();
+      return;
+    }
     if (panelName !== 'results') return;
     pauseReplayPlayback();
     state.technicalDataExpanded = false;
@@ -1216,6 +1295,7 @@ export const initPromise = (function () {
     }
     state.openPanel = panelName;
     state.lastPanelTrigger = triggerElement || null;
+    if (panelName === 'setup') state.setupAdvancedOpen = false;
     if (panelName === 'results' && elements.resultsPanel) {
       resultGraph.noteResultsPanelWidth();
     }
@@ -1376,8 +1456,7 @@ export const initPromise = (function () {
     state.settings.distanceUnit = nextDistanceUnit;
     syncSelectedPresetForUnits();
     saveSettings();
-    renderControlSelections();
-    renderPresetButtons();
+    renderSetupControls();
     renderAll();
     return true;
   }
@@ -1587,15 +1666,6 @@ export const initPromise = (function () {
     return t(presetOrRun.labelKey || presetKeyFromId(presetOrRun.presetId));
   }
 
-  function getPresetMetaLabel(presetOrRun) {
-    if (!presetOrRun) return t('accelUnavailable');
-    if (presetOrRun.id === 'custom' || presetOrRun.presetId === 'custom')
-      return t('accelCustomRange');
-    if (presetOrRun.type === 'distance' || presetOrRun.presetKind === 'distance')
-      return t('accelDistanceTest');
-    return presetOrRun.standingStart ? t('accelStandingStart') : t('accelRollingStart');
-  }
-
   function getAccelActivityDetail(run) {
     var preset = run?.preset;
     if (!preset) return {};
@@ -1631,62 +1701,73 @@ export const initPromise = (function () {
     });
   }
 
-  function renderPresetButtons() {
-    var html = '';
+  function renderSetupControls() {
+    if (!setupControls) return;
     var selectedId = resolvePresetIdForUnits(
       state.settings.selectedPresetId,
       state.settings.speedUnit,
       state.settings.distanceUnit
     );
     var availablePresets = getAvailablePresetDefinitions();
-
-    for (var index = 0; index < availablePresets.length; index += 1) {
-      var preset = availablePresets[index];
-      var pressed = preset.id === selectedId ? 'true' : 'false';
-      var presetCopy = copyPreset(preset);
-      html +=
-        '<button type="button" class="accel-preset-btn" data-preset-id="' +
-        escapeHtml(preset.id) +
-        '" aria-pressed="' +
-        pressed +
-        '">';
-      html +=
-        '<span class="accel-preset-title">' + escapeHtml(getPresetLabel(presetCopy)) + '</span>';
-      html +=
-        '<span class="accel-preset-meta">' + escapeHtml(getPresetMetaLabel(presetCopy)) + '</span>';
-      html += '</button>';
+    var presetOptions = availablePresets.map(function (preset) {
+      return {
+        value: preset.id,
+        label: getPresetLabel(copyPreset(preset)),
+        labelKey: preset.labelKey,
+      };
+    });
+    var presetOptionsSignature = JSON.stringify(
+      presetOptions.map(function (option) { return [option.value, option.label]; })
+    );
+    if (setupControls.presetOptionsSignature !== presetOptionsSignature) {
+      setupControls.preset.setOptions(presetOptions);
+      setupControls.presetOptionsSignature = presetOptionsSignature;
     }
+    setupControls.preset.setLabel(t('accelTestSelector'), 'accelTestSelector');
+    setupControls.preset.setValue(selectedId);
 
-    elements.presetGrid.innerHTML = html;
     elements.customRangePanel.hidden = selectedId !== 'custom';
-    elements.customStartInput.value = formatInputSpeedValue(state.settings.customStart);
-    elements.customEndInput.value = formatInputSpeedValue(state.settings.customEnd);
-  }
+    if (document.activeElement !== elements.customStartInput) {
+      elements.customStartInput.value = formatInputSpeedValue(state.settings.customStart);
+    }
+    if (document.activeElement !== elements.customEndInput) {
+      elements.customEndInput.value = formatInputSpeedValue(state.settings.customEnd);
+    }
+    var speedUnitLabel = getSpeedUnitLabel(state.settings.speedUnit);
+    elements.customStartUnit.textContent = speedUnitLabel;
+    elements.customEndUnit.textContent = speedUnitLabel;
 
-  function renderControlSelections() {
-    var rolloutPressed = state.settings.rolloutEnabled;
-    elements.rolloutOff.setAttribute('aria-pressed', String(!rolloutPressed));
-    elements.rolloutOn.setAttribute('aria-pressed', String(rolloutPressed));
-    elements.launchThresholdHalf.setAttribute(
-      'aria-pressed',
-      String(isSameNumber(state.settings.launchThresholdMs, 0.5 * MPH_TO_MS))
-    );
-    elements.launchThresholdOne.setAttribute(
-      'aria-pressed',
-      String(isSameNumber(state.settings.launchThresholdMs, 1 * MPH_TO_MS))
-    );
-    elements.speedUnitMph.setAttribute('aria-pressed', String(state.settings.speedUnit === 'mph'));
-    elements.speedUnitKmh.setAttribute('aria-pressed', String(state.settings.speedUnit === 'kmh'));
-    elements.distanceUnitFt.setAttribute(
-      'aria-pressed',
-      String(state.settings.distanceUnit === 'ft')
-    );
-    elements.distanceUnitM.setAttribute(
-      'aria-pressed',
-      String(state.settings.distanceUnit === 'm')
-    );
-    elements.launchThresholdHalf.textContent = formatThresholdOptionLabel(0.5 * MPH_TO_MS);
-    elements.launchThresholdOne.textContent = formatThresholdOptionLabel(1 * MPH_TO_MS);
+    setupControls.speedUnit.setLabel(t('speed'), 'speed');
+    setupControls.speedUnit.setValue(state.settings.speedUnit);
+    setupControls.distanceUnit.setLabel(t('accelDistanceAltitude'), 'accelDistanceAltitude');
+    setupControls.distanceUnit.setValue(state.settings.distanceUnit);
+
+    var selectedPreset = getSelectedPreset();
+    elements.rolloutControlMount.hidden = !selectedPreset.standingStart;
+    setupControls.rollout.setLabel(t('accelRolloutOn'), 'accelRolloutOn');
+    setupControls.rollout.setChecked(state.settings.rolloutEnabled);
+
+    var thresholdValue = isSameNumber(state.settings.launchThresholdMs, 1 * MPH_TO_MS) ? '1' : '0.5';
+    var thresholdOptions = [
+      { value: '0.5', label: formatThresholdOptionLabel(0.5 * MPH_TO_MS) },
+      { value: '1', label: formatThresholdOptionLabel(1 * MPH_TO_MS) },
+    ];
+    var thresholdSignature = thresholdOptions.map(function (option) { return option.label; }).join('|');
+    if (setupControls.thresholdOptionsSignature !== thresholdSignature) {
+      setupControls.threshold.setOptions(thresholdOptions);
+      setupControls.thresholdOptionsSignature = thresholdSignature;
+      setupControls.threshold.buttons[0].id = 'launchThresholdHalf';
+      setupControls.threshold.buttons[1].id = 'launchThresholdOne';
+    }
+    setupControls.threshold.setLabel(t('accelLaunchThreshold'), 'accelLaunchThreshold');
+    setupControls.threshold.setValue(thresholdValue);
+
+    elements.advancedToggle.setAttribute('aria-expanded', String(state.setupAdvancedOpen));
+    elements.advancedPanel.hidden = !state.setupAdvancedOpen;
+    elements.advancedSummary.textContent =
+      formatThresholdOptionLabel(state.settings.launchThresholdMs) +
+      ' · ' +
+      (state.settings.notes.trim() ? t('accelNotesAdded') : t('accelNoNotes'));
 
     if (state.settings.selectedPresetId === 'custom' && !isCustomRangeValid()) {
       elements.customRangeNotice.textContent = t('accelCustomInvalid');
@@ -1739,6 +1820,7 @@ export const initPromise = (function () {
   function destroyAccelRouteResources(route: AnyRecord | null = activeAccelRoute) {
     if (!route || route.destroyed) return;
     route.destroyed = true;
+    destroyAccelSetupControls();
     route.syncIndicator?.destroy?.();
     replayChartFilterController?.destroy?.();
     replayChartFilterController = null;
@@ -1771,6 +1853,7 @@ export const initPromise = (function () {
     };
     activeAccelRoute = route;
     elements = getAccelElements(routeContext.root || document);
+    createAccelSetupControls();
     createAccelLiveRouteControllers();
     route.syncIndicator = initCloudSyncStatusIndicator({
       mount: elements.toolbar,
@@ -1855,14 +1938,9 @@ export const initPromise = (function () {
     }
   }
 
-  function handlePresetClick(event) {
-    var button = event.target.closest('[data-preset-id]');
-    if (!button) return;
-
-    state.settings.selectedPresetId = button.getAttribute('data-preset-id');
+  function handlePresetValue(nextPresetId) {
+    state.settings.selectedPresetId = nextPresetId;
     saveSettings();
-    renderPresetButtons();
-    renderControlSelections();
     renderAll();
   }
 
@@ -1870,13 +1948,11 @@ export const initPromise = (function () {
     state.settings.customStart = normalizeCustomSpeedInput(elements.customStartInput.value, 0);
     state.settings.customEnd = normalizeCustomSpeedInput(elements.customEndInput.value, 0);
     saveSettings();
-    renderControlSelections();
     renderAll();
   }
 
-  function handleSpeedUnitClick(event) {
-    var button = event.currentTarget;
-    var nextUnit = normalizeSpeedUnit(button.getAttribute('data-unit'));
+  function handleSpeedUnitValue(value) {
+    var nextUnit = normalizeSpeedUnit(value);
     if (nextUnit === state.settings.speedUnit) return;
 
     state.settings.customStart = convertSpeedInputValue(
@@ -1893,43 +1969,41 @@ export const initPromise = (function () {
     markUnitBootstrapManualSelection({ speedUnit: nextUnit });
     syncSelectedPresetForUnits();
     saveSettings();
-    renderControlSelections();
-    renderPresetButtons();
     renderAll();
   }
 
-  function handleDistanceUnitClick(event) {
-    var button = event.currentTarget;
-    var nextUnit = normalizeDistanceUnit(button.getAttribute('data-unit'));
+  function handleDistanceUnitValue(value) {
+    var nextUnit = normalizeDistanceUnit(value);
     if (nextUnit === state.settings.distanceUnit) return;
 
     state.settings.distanceUnit = nextUnit;
     markUnitBootstrapManualSelection({ distanceUnit: nextUnit });
     syncSelectedPresetForUnits();
     saveSettings();
-    renderControlSelections();
-    renderPresetButtons();
     renderAll();
   }
 
-  function handleRolloutClick(event) {
-    state.settings.rolloutEnabled = event.currentTarget.getAttribute('data-rollout') === 'on';
+  function handleRolloutValue(checked) {
+    state.settings.rolloutEnabled = Boolean(checked);
     saveSettings();
-    renderControlSelections();
     renderAll();
   }
 
-  function handleThresholdClick(event) {
-    state.settings.launchThresholdMs =
-      event.currentTarget.getAttribute('data-threshold') === '1' ? 1 * MPH_TO_MS : 0.5 * MPH_TO_MS;
+  function handleThresholdValue(value) {
+    state.settings.launchThresholdMs = value === '1' ? 1 * MPH_TO_MS : 0.5 * MPH_TO_MS;
     saveSettings();
-    renderControlSelections();
     renderAll();
+  }
+
+  function handleAdvancedToggle() {
+    state.setupAdvancedOpen = !state.setupAdvancedOpen;
+    renderSetupControls();
   }
 
   function handleNotesInput() {
     state.settings.notes = elements.runNotes.value || '';
     saveSettings();
+    renderSetupControls();
   }
 
   function isRunActive(run) {
@@ -3068,7 +3142,7 @@ export const initPromise = (function () {
 
   function renderAll() {
     if (isSpaRuntime && !state.viewMounted) return;
-    renderControlSelections();
+    renderSetupControls();
     renderControlState();
     renderStatusPanel();
     renderLivePanel();
@@ -3102,7 +3176,6 @@ export const initPromise = (function () {
   }
 
   function renderStatusPanel() {
-    var speedUnit = state.settings.speedUnit;
     var permissionLabel = getPermissionLabel(state.permissionState);
     var ready = isGpsReady();
     var liveQuality = isRunActive(state.run)
@@ -3131,19 +3204,11 @@ export const initPromise = (function () {
     elements.gpsReadyValue.textContent = readyLabel;
     elements.latestAccuracyValue.textContent = accuracyLabel;
     elements.observedHzValue.textContent = formatHz(liveQuality ? liveQuality.averageHz : null);
-    elements.statusSpeedValue.textContent = formatSpeedValue(
-      state.latestSample ? state.latestSample.speedMs : null,
-      speedUnit
-    );
-    elements.statusHeadingValue.textContent = formatHeading(
-      state.latestSample ? state.latestSample.headingDeg : null
-    );
-    elements.statusAltitudeValue.textContent = formatDistanceMeasurement(
-      state.latestSample ? state.latestSample.altitudeM : null
-    );
-    elements.speedSourceValue.textContent = getSpeedSourceLabel(
-      state.latestSample ? state.latestSample.speedSource : null
-    );
+    elements.setupReadiness.dataset.tone = ready
+      ? 'ready'
+      : state.permissionState === 'denied'
+        ? 'blocked'
+        : 'waiting';
   }
 
   function renderSheetUi() {

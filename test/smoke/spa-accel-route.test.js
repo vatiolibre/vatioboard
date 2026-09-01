@@ -109,7 +109,7 @@ describe("SPA Accel route real-controller smoke", () => {
 
     const { snapshots, targetSnapshots } = await expectRealSpaRouteRemount({
       targetHash: "#/accel",
-      targetSelector: "#presetGrid .accel-preset-btn",
+      targetSelector: "#presetGrid .vb-settings-select-trigger",
       sequence: ["#/board", "#/accel", "#/board", "#/accel"],
     });
     const firstAccel = targetSnapshots[0];
@@ -117,7 +117,7 @@ describe("SPA Accel route real-controller smoke", () => {
     const boardAfterFirstAccel = snapshots[2];
 
     expect(document.querySelector("#liveSpeedDial")?.width).toBeGreaterThan(0);
-    expect(document.querySelectorAll("#presetGrid .accel-preset-btn").length).toBeGreaterThan(1);
+    expect(document.querySelectorAll(".vb-settings-select-menu [role='option']").length).toBeGreaterThan(1);
     expect(boardAfterFirstAccel.activeWatchCount).toBe(0);
     expect(boardAfterFirstAccel.activeIntervalCount).toBe(0);
     expect(boardAfterFirstAccel.activeRafCount).toBe(0);

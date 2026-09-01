@@ -621,6 +621,64 @@ test("acceleration dashboard uses a frameless full-size gauge", async ({ page },
 
   await page.locator("#setupTrigger").click();
   await expect(page.locator("#setupPanel")).toBeVisible();
+  const setupGeometry = await page.locator("#setupPanel").evaluate((panel) => {
+    const rect = panel.getBoundingClientRect();
+    const body = panel.querySelector<HTMLElement>(".accel-sheet-body")!;
+    const header = panel.querySelector<HTMLElement>(".accel-sheet-top")!;
+    const controls = Array.from(panel.querySelectorAll<HTMLElement>(
+      "button, .vb-settings-switch-row, .vb-settings-select-trigger"
+    )).filter((control) => !control.closest("[hidden]"));
+    const rootStyle = getComputedStyle(document.documentElement);
+    const work = {
+      left: Number.parseFloat(rootStyle.getPropertyValue("--vb-work-area-left")) || 0,
+      top: Number.parseFloat(rootStyle.getPropertyValue("--vb-work-area-top")) || 0,
+      width: Number.parseFloat(rootStyle.getPropertyValue("--vb-work-area-width")) || innerWidth,
+      height: Number.parseFloat(rootStyle.getPropertyValue("--vb-work-area-height")) || innerHeight,
+    };
+    return {
+      bodyClientHeight: body.clientHeight,
+      bodyScrollHeight: body.scrollHeight,
+      headerHeight: header.getBoundingClientRect().height,
+      panel: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
+      targetSizes: controls.map((control) => {
+        const controlRect = control.getBoundingClientRect();
+        return { width: controlRect.width, height: controlRect.height };
+      }),
+      titleCount: panel.querySelectorAll("#setupPanelTitle").length,
+      nativeSelectCount: panel.querySelectorAll("select").length,
+      work,
+    };
+  });
+  expect(setupGeometry.titleCount).toBe(1);
+  expect(setupGeometry.nativeSelectCount).toBe(0);
+  expect(setupGeometry.headerHeight).toBeGreaterThanOrEqual(52);
+  expect(setupGeometry.bodyScrollHeight).toBeLessThanOrEqual(setupGeometry.bodyClientHeight + 1);
+  expect(setupGeometry.panel.left).toBeGreaterThanOrEqual(setupGeometry.work.left);
+  expect(setupGeometry.panel.top).toBeGreaterThanOrEqual(setupGeometry.work.top);
+  expect(setupGeometry.panel.right).toBeLessThanOrEqual(setupGeometry.work.left + setupGeometry.work.width + 1);
+  expect(setupGeometry.panel.bottom).toBeLessThanOrEqual(setupGeometry.work.top + setupGeometry.work.height + 1);
+  for (const target of setupGeometry.targetSizes) {
+    expect(target.width).toBeGreaterThanOrEqual(44);
+    expect(target.height).toBeGreaterThanOrEqual(44);
+  }
+
+  const presetTrigger = page.locator("#presetGrid .vb-settings-select-trigger");
+  const presetMenuId = await presetTrigger.getAttribute("aria-controls");
+  await presetTrigger.click();
+  const presetMenu = page.locator(`#${presetMenuId}`);
+  await expect(presetMenu).toBeVisible();
+  const menuRect = await presetMenu.evaluate((menu) => menu.getBoundingClientRect().toJSON());
+  expect(menuRect.left).toBeGreaterThanOrEqual(setupGeometry.work.left);
+  expect(menuRect.top).toBeGreaterThanOrEqual(setupGeometry.work.top);
+  expect(menuRect.right).toBeLessThanOrEqual(setupGeometry.work.left + setupGeometry.work.width + 1);
+  expect(menuRect.bottom).toBeLessThanOrEqual(setupGeometry.work.top + setupGeometry.work.height + 1);
+  await page.keyboard.press("Escape");
+  await expect(presetMenu).toBeHidden();
+
+  await page.locator("#accelAdvancedToggle").click();
+  await expect(page.locator("#accelAdvancedPanel")).toBeVisible();
+  await page.locator("#accelAdvancedToggle").click();
+  await expect(page.locator("#accelAdvancedPanel")).toBeHidden();
   await page.locator("#closeSetupPanel").click();
   await expect(page.locator("#setupPanel")).toBeHidden();
   await page.locator("#resultsTrigger").click();

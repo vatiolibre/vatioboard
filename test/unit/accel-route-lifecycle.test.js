@@ -63,7 +63,7 @@ async function settleAccelTasks(iterations = 12) {
 }
 
 function selectedPreset() {
-  return document.querySelector(".accel-preset-btn[aria-pressed='true']")?.dataset.presetId || "";
+  return document.querySelector(".vb-settings-select-menu [role='option'][aria-selected='true']")?.dataset.value || "";
 }
 
 async function mountAccelWithRuntime({ legacyPreset = "", runtimePreset = "" } = {}) {
@@ -162,5 +162,61 @@ describe("Accel route lifecycle", () => {
     expect(localStorage.getItem(ACCEL_RUNTIME_PRESET_KEY)).toBeNull();
 
     mounted.unmount();
+  }, 40000);
+
+  it("uses compact shared controls without changing Accel setting behavior", async () => {
+    const { mounted } = await mountAccelWithRuntime();
+    document.getElementById("accelToolbarSetup").click();
+    await settleAccelTasks(2);
+
+    const panel = document.getElementById("setupPanel");
+    expect(panel.hidden).toBe(false);
+    expect(panel.querySelectorAll("#setupPanelTitle")).toHaveLength(1);
+    expect(document.querySelector("select")).toBeNull();
+    expect(panel.querySelector("#setupPanelStatus").classList.contains("sr-only")).toBe(true);
+
+    const rolloutMount = panel.querySelector("#rolloutControlMount");
+    const rollout = rolloutMount.querySelector("[role='switch']");
+    expect(rolloutMount.hidden).toBe(false);
+    rollout.click();
+    expect(rollout.checked).toBe(true);
+
+    const presetTrigger = panel.querySelector("#presetGrid .vb-settings-select-trigger");
+    presetTrigger.click();
+    document.querySelector(".vb-settings-select-menu [data-value='60-130-mph']").click();
+    await settleAccelTasks(2);
+    expect(selectedPreset()).toBe("60-130-mph");
+    expect(rolloutMount.hidden).toBe(true);
+
+    panel.querySelector("#speedUnitKmh").click();
+    await settleAccelTasks(2);
+    expect(selectedPreset()).toBe("100-200-kmh");
+
+    presetTrigger.click();
+    document.querySelector(".vb-settings-select-menu [data-value='0-100-kmh']").click();
+    await settleAccelTasks(2);
+    expect(rolloutMount.hidden).toBe(false);
+    expect(rollout.checked).toBe(true);
+
+    const advancedToggle = panel.querySelector("#accelAdvancedToggle");
+    const advancedPanel = panel.querySelector("#accelAdvancedPanel");
+    expect(advancedPanel.hidden).toBe(true);
+    advancedToggle.click();
+    expect(advancedPanel.hidden).toBe(false);
+    expect(advancedToggle.getAttribute("aria-expanded")).toBe("true");
+
+    const notes = panel.querySelector("#runNotes");
+    notes.value = "Dry road";
+    notes.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(panel.querySelector("#accelAdvancedSummary").textContent).toContain("Notes added");
+
+    presetTrigger.click();
+    expect(document.querySelector(".vb-settings-select-menu").hidden).toBe(false);
+    panel.querySelector("#closeSetupPanel").click();
+    expect(document.querySelector(".vb-settings-select-menu").hidden).toBe(true);
+
+    const menu = document.querySelector(".vb-settings-select-menu");
+    mounted.unmount();
+    expect(menu.isConnected).toBe(false);
   }, 40000);
 });

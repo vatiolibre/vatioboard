@@ -52,6 +52,22 @@ describe("acceleration shell layout", () => {
     expect(analogCss).toContain("--analog-speedometer-radius-ratio: 0.42;");
   });
 
+  it("uses a compact work-area setup sheet with shared controls", () => {
+    const accelCss = readStyle("src/styles/accel.less");
+    const template = readStyle("src/app/views/templates/accel-template.ts");
+
+    expect(accelCss).toContain("width: min(620px, calc(var(--vb-work-area-width, 100vw) - 8px));");
+    expect(accelCss).toContain("height: min(440px, calc(var(--vb-work-area-height, 100dvh) - 8px));");
+    expect(accelCss).toContain("grid-template-rows: 52px minmax(0, 1fr);");
+    expect(accelCss).toContain("grid-template-columns: repeat(2, minmax(0, 1fr));");
+    expect(accelCss).toContain(".accel-setup-readiness{");
+    expect(template).toContain('id="speedUnitControlMount"');
+    expect(template).toContain('id="rolloutControlMount"');
+    expect(template).toContain('id="accelAdvancedPanel"');
+    expect(template).not.toContain('<select');
+    expect(template).not.toContain('id="statusSpeedValue"');
+  });
+
   it("owns the shared gauge palette with equally specific light and dark selectors", () => {
     const accelCss = readStyle("src/styles/accel.less");
     const gaugeSelector = ".accel-speedometer-stage.analog-speedometer-stage{";

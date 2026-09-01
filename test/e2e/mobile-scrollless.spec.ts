@@ -122,6 +122,24 @@ test("Acceleration and Library switch focused panels without moving the page", a
   await expect(page.locator("#accelGaugePanel")).toBeHidden();
   await expectScrolllessRoute(page);
 
+  await page.locator("#accelToolbarSetup").click();
+  const setup = page.locator("#setupPanel");
+  await expect(setup).toBeVisible();
+  await expect(setup.locator("select")).toHaveCount(0);
+  const setupScroll = await setup.locator(".accel-sheet-body").evaluate((body) => ({
+    clientHeight: body.clientHeight,
+    scrollHeight: body.scrollHeight,
+  }));
+  expect(setupScroll.scrollHeight).toBeLessThanOrEqual(setupScroll.clientHeight + 1);
+  for (const control of await setup.locator("button, .vb-settings-switch-row").all()) {
+    if (!(await control.isVisible())) continue;
+    const box = await control.boundingBox();
+    expect(box!.width).toBeGreaterThanOrEqual(44);
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+  }
+  await setup.locator("#closeSetupPanel").click();
+  await expect(setup).toBeHidden();
+
   await openRoute(page, "library");
   await expect(page.locator("#libraryListView")).toBeVisible();
   await page.locator("#libraryDetailViewTab").click();
