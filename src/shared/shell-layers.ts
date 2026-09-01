@@ -5,6 +5,7 @@ export interface ShellZIndexLayers {
   activity: number;
   startMenu: number;
   fullscreen: number;
+  popover: number;
   modal: number;
 }
 
@@ -15,5 +16,6 @@ export const SHELL_Z_INDEX: Readonly<ShellZIndexLayers> = Object.freeze({
   activity: 1955,
   startMenu: 1960,
   fullscreen: 1980,
+  popover: 1990,
   modal: 2000,
 });

@@ -270,6 +270,8 @@ export function createEnergyCalculatorWidget(options: EnergyCalculatorWidgetOpti
     settingsCloseBtn: refs.settingsCloseBtn,
     unitBtns: refs.unitBtns,
     thousandsToggle: refs.thousandsToggle,
+    distanceUnitControl: refs.distanceUnitControl,
+    thousandsControl: refs.thousandsControl,
     onUnitChange: () => {
       // Reset price to 0 when switching units (simple mode)
       values.price = "0";
@@ -341,6 +343,8 @@ export function createEnergyCalculatorWidget(options: EnergyCalculatorWidgetOpti
 
   // i18n refresh
   function refreshI18n() {
+    refs.distanceUnitControl.setLabel(t("distanceUnit"), "distanceUnit");
+    refs.thousandsControl.setLabel(t("thousandSeparator"), "thousandSeparator");
     simpleApi.updateUnitUI();
     multiApi.refreshI18n();
     simpleApi.calculate();
@@ -438,6 +442,8 @@ export function createEnergyCalculatorWidget(options: EnergyCalculatorWidgetOpti
       cleanupLayer();
       document.removeEventListener("i18n:change", refreshI18n);
       if (button) button.removeEventListener("click", toggle);
+      refs.distanceUnitControl.destroy();
+      refs.thousandsControl.destroy();
       panel.remove();
     },
     isOpen: () => !panel.hidden,

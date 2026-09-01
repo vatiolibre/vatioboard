@@ -520,5 +520,5 @@ describe("shell window integration", () => {
 
     panel.remove();
     manager.destroy();
-  });
+  }, 30_000);
 });

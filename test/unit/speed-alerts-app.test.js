@@ -212,7 +212,7 @@ describe("Speed Alerts OS app module", () => {
     });
     launcher.openApp(SPEED_ALERTS_APP_ID);
 
-    document.querySelector(".speed-alert-window-primary").click();
+    document.querySelector(".speed-alert-window-manual-switch").click();
 
     expect(runtimeDrivingAlerts.setManualAlertEnabled).toHaveBeenCalledWith(true, expect.objectContaining({ fromUserGesture: true }));
     expect(injectedDrivingAlerts.setManualAlertEnabled).not.toHaveBeenCalled();
@@ -233,7 +233,7 @@ describe("Speed Alerts OS app module", () => {
     });
     launcher.openApp(SPEED_ALERTS_APP_ID);
 
-    document.querySelector(".speed-alert-window-primary").click();
+    document.querySelector(".speed-alert-window-manual-switch").click();
 
     expect(gpsService.startConsumer).toHaveBeenCalledWith("speed-alerts", expect.objectContaining({
       enableHighAccuracy: true,
@@ -330,7 +330,7 @@ describe("Speed Alerts OS app module", () => {
     });
     launcher.openApp(SPEED_ALERTS_APP_ID);
 
-    document.querySelectorAll(".speed-alert-window-primary")[1].click();
+    document.querySelector(".speed-alert-window-enable-audio").click();
 
     expect(drivingAlertService.primeAudioFromUserGesture).toHaveBeenCalledTimes(1);
 
@@ -359,9 +359,9 @@ describe("Speed Alerts OS app module", () => {
     });
     launcher.openApp(SPEED_ALERTS_APP_ID);
 
-    document.querySelector(".speed-alert-window-primary").click();
-    document.querySelector(".speed-alert-window-section--compact .speed-alert-window-secondary").click();
-    document.querySelector("button[data-trap-alert='off']").click();
+    document.querySelector(".speed-alert-window-manual-switch").click();
+    document.querySelector(".speed-alert-window-audio-switch").click();
+    document.querySelector(".speed-alert-window-trap-switch").click();
 
     expect(drivingAlertService.setManualAlertEnabled).toHaveBeenCalledWith(false, expect.objectContaining({ fromUserGesture: true }));
     expect(drivingAlertService.setMuted).toHaveBeenCalledWith(true, expect.objectContaining({ fromUserGesture: true }));
@@ -407,8 +407,8 @@ describe("Speed Alerts OS app module", () => {
     });
     launcher.openApp(SPEED_ALERTS_APP_ID);
 
-    document.querySelector("button[data-alert-sound='off']").click();
-    document.querySelector("button[data-trap-alert='off']").click();
+    document.querySelector(".speed-alert-window-alert-sound-switch").click();
+    document.querySelector(".speed-alert-window-trap-switch").click();
     document.querySelector("button[data-unit='mph']").click();
 
     const runtimeSettings = JSON.parse(
@@ -471,7 +471,7 @@ describe("Speed Alerts OS app module", () => {
     });
     shellManager.openWindow("speed-alerts");
 
-    document.querySelector(".speed-alert-window-section--compact .speed-alert-window-secondary").click();
+    document.querySelector(".speed-alert-window-audio-switch").click();
 
     expect(localStorage.getItem(`vatioboard.app.${SPEED_ALERTS_APP_ID}.settings.${SPEED_ALERTS_SETTINGS_KEY}`)).toBeNull();
     expect(localStorage.getItem("vatio_speed_audio_muted")).toBe("true");

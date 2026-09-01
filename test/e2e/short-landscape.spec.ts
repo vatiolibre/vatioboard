@@ -1319,6 +1319,69 @@ test("trip metric units still update from Speed Alerts", async ({ page }, testIn
   await expect(page.locator("#minAltitudeUnit")).toHaveText("ft");
 });
 
+test("Speed Alerts uses Tesla-safe shared controls and a clamped custom listbox", async ({ page }, testInfo) => {
+  await openRoute(page, "speed");
+  await page.evaluate(() => (window as any).__vatioboardFloatingTools.openSpeedAlerts());
+  const panel = page.locator(".speed-alert-window");
+  await expect(panel).toBeVisible();
+  await expect(panel.locator("select")).toHaveCount(0);
+
+  const targets = panel.locator([
+    ".speed-alert-window-manual-control",
+    ".speed-alert-window-limit-select",
+    ".speed-alert-window-use-current",
+    ".speed-alert-window-trap-control",
+    ".speed-alert-window-trap-distance-select",
+    "button[data-unit='kmh']",
+  ].join(","));
+  const targetCount = await targets.count();
+  for (let index = 0; index < targetCount; index += 1) {
+    const box = await targets.nth(index).boundingBox();
+    expect(box?.width).toBeGreaterThanOrEqual(44);
+    expect(box?.height).toBeGreaterThanOrEqual(44);
+  }
+
+  if (["model-y-2024", "model-y-2024-es-light"].includes(testInfo.project.name)) {
+    await expect(panel).toHaveScreenshot("speed-alert-settings-shared-controls.png", {
+      animations: "disabled",
+      mask: [panel.locator(".speed-alert-window-status"), panel.locator(".speed-alert-window-camera-summary")],
+      maxDiffPixelRatio: 0.02,
+    });
+  }
+
+  const enableAudio = panel.locator(".speed-alert-window-enable-audio:not([hidden])");
+  if (await enableAudio.count()) {
+    await enableAudio.scrollIntoViewIfNeeded();
+    await expect(enableAudio).toBeVisible();
+  }
+  const limitSelect = panel.locator(".speed-alert-window-limit-select");
+  await limitSelect.scrollIntoViewIfNeeded();
+  await limitSelect.click();
+  const menu = page.locator(".vb-settings-select-menu:not([hidden])");
+  await expect(menu).toBeVisible();
+  const [menuBox, workArea, layerId, panelBox] = await Promise.all([
+    menu.boundingBox(),
+    getWorkArea(page),
+    menu.evaluate((element) => element.parentElement?.id),
+    panel.boundingBox(),
+  ]);
+  expect(layerId).toBe("app-persistent-layer");
+  expect(menuBox!.x).toBeGreaterThanOrEqual(workArea.left - 1);
+  expect(menuBox!.y).toBeGreaterThanOrEqual(workArea.top - 1);
+  expect(menuBox!.x + menuBox!.width).toBeLessThanOrEqual(workArea.left + workArea.width + 1);
+  expect(menuBox!.y + menuBox!.height).toBeLessThanOrEqual(workArea.top + workArea.height + 1);
+  expect(panelBox!.x).toBeGreaterThanOrEqual(workArea.left - 1);
+  expect(panelBox!.y).toBeGreaterThanOrEqual(workArea.top - 1);
+  expect(panelBox!.x + panelBox!.width).toBeLessThanOrEqual(workArea.left + workArea.width + 1);
+  expect(panelBox!.y + panelBox!.height).toBeLessThanOrEqual(workArea.top + workArea.height + 1);
+
+  const finalOption = menu.locator(".speed-alert-window-limit-option").last();
+  await finalOption.scrollIntoViewIfNeeded();
+  await expect(finalOption).toBeVisible();
+  await finalOption.click();
+  await expect(menu).toBeHidden();
+});
+
 test("player Browse content becomes a full-height right sidecar", async ({ page }, testInfo) => {
   test.skip(!isTeslaProject(testInfo), "Exact Tesla geometry assertion");
   await openRoute(page, "speed");

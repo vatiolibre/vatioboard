@@ -32,6 +32,8 @@ export function initSettingsSheet({
   settingsCloseBtn,
   unitBtns,
   thousandsToggle,
+  distanceUnitControl,
+  thousandsControl,
   onUnitChange,
   onThousandsChange,
   onOpen,
@@ -66,11 +68,13 @@ export function initSettingsSheet({
 
   function syncForm() {
     // Unit buttons
+    distanceUnitControl?.setValue?.(tripSettings.unit);
     unitBtns.forEach((btn) => {
       btn.classList.toggle('is-active', btn.dataset.unit === tripSettings.unit);
     });
     // Thousands toggle
-    thousandsToggle.checked = (formatSettings.thousandSeparator ?? '') !== '';
+    thousandsControl?.setChecked?.((formatSettings.thousandSeparator ?? '') !== '');
+    if (!thousandsControl) thousandsToggle.checked = (formatSettings.thousandSeparator ?? '') !== '';
   }
 
   // Prevent drag from capturing settings button clicks

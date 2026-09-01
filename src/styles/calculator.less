@@ -493,17 +493,6 @@
   color: var(--calc-text);
   font-weight: 600;
 }
-.calc-settings-thousands{
-  width: 100%;
-  border: 1px solid var(--calc-border);
-  border-radius: 10px;
-  padding: 8px 10px;
-  background: var(--calc-display-bg);
-  color: var(--calc-text);
-  font-size: 13px;
-  font-family: var(--calc-font);
-  outline: none;
-}
 .calc-settings-stepper{
   display: inline-flex;
   align-items: center;
@@ -528,42 +517,6 @@
   text-align: center;
   font-weight: 700;
   color: var(--calc-text);
-}
-.calc-settings-switch{
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  width: 44px;
-  height: 24px;
-}
-.calc-settings-thousands{
-  appearance: none;
-  -webkit-appearance: none;
-  width: 44px;
-  height: 24px;
-  margin: 0;
-  border: 1px solid var(--calc-border);
-  border-radius: 999px;
-  background: var(--calc-display-bg);
-  cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease;
-}
-.calc-settings-slider{
-  position: absolute;
-  left: 3px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--calc-text);
-  pointer-events: none;
-  transition: transform 0.2s ease;
-}
-.calc-settings-thousands:checked{
-  background: color-mix(in srgb, var(--calc-accent) 15%, var(--calc-display-bg));
-  border-color: color-mix(in srgb, var(--calc-accent) 30%, var(--calc-border));
-}
-.calc-settings-thousands:checked + .calc-settings-slider{
-  transform: translateX(20px);
 }
 .calc-history-item{
   display: flex;

@@ -1,5 +1,6 @@
 import { el } from "../dom.js";
 import { IconHistory, IconSettings, IconClose, IconEnergy, IconMinimize } from "../../icons.js";
+import { createSettingsSwitch } from "../../shared/ui/settings-controls.js";
 
 type TranslateFn = (key: string, params?: Record<string, unknown>) => string;
 
@@ -60,6 +61,14 @@ export function buildPanel({ t, isTouchLike, showEnergyTool = false }: PanelOpti
     ariaKey: "settings",
     label: t("settings"),
     labelKey: "settings",
+  });
+  const settingsThousandsControl = createSettingsSwitch({
+    label: t("thousandSeparator"),
+    labelKey: "thousandSeparator",
+    classNames: {
+      root: "calc-settings-row calc-settings-row-inline",
+      input: "calc-settings-thousands",
+    },
   });
 
   const panel = el(
@@ -163,20 +172,7 @@ export function buildPanel({ t, isTouchLike, showEnergyTool = false }: PanelOpti
             el("button", { class: "calc-settings-decimals-plus", type: "button" }, "+")
           )
         ),
-        el(
-          "label",
-          { class: "calc-settings-row calc-settings-row-inline" },
-          el("span", { class: "calc-settings-label", "data-i18n": "thousandSeparator" }, t("thousandSeparator")),
-          el(
-            "span",
-            { class: "calc-settings-switch" },
-            el("input", {
-              class: "calc-settings-thousands",
-              type: "checkbox",
-            }),
-            el("span", { class: "calc-settings-slider", "aria-hidden": "true" })
-          )
-        )
+        settingsThousandsControl.element
       )
     ),
     el("div", { class: "calc-keys" })
@@ -219,6 +215,7 @@ export function buildPanel({ t, isTouchLike, showEnergyTool = false }: PanelOpti
     settingsDecimalsPlus: panel.querySelector<HTMLButtonElement>(".calc-settings-decimals-plus"),
     settingsDecimalsValue: panel.querySelector<HTMLElement>(".calc-settings-decimals-value"),
     settingsThousandsToggle: panel.querySelector<HTMLInputElement>(".calc-settings-thousands"),
+    settingsThousandsControl,
     minimizeBtn: panel.querySelector<HTMLButtonElement>(".calc-minimize"),
     closeBtn: panel.querySelector<HTMLButtonElement>(".calc-close"),
     keys: panel.querySelector<HTMLElement>(".calc-keys"),

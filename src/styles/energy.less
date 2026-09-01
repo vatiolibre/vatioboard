@@ -555,48 +555,6 @@
   color: #062018;
 }
 
-/* Thousands separator switch (same as calculator) */
-.energy-settings-switch {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  width: 44px;
-  height: 24px;
-}
-
-.energy-settings-thousands {
-  appearance: none;
-  -webkit-appearance: none;
-  width: 44px;
-  height: 24px;
-  margin: 0;
-  border: 1px solid var(--calc-border);
-  border-radius: 999px;
-  background: var(--calc-display-bg);
-  cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease;
-}
-
-.energy-settings-slider {
-  position: absolute;
-  left: 3px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--calc-text);
-  pointer-events: none;
-  transition: transform 0.2s ease;
-}
-
-.energy-settings-thousands:checked {
-  background: color-mix(in srgb, var(--calc-accent) 15%, var(--calc-display-bg));
-  border-color: color-mix(in srgb, var(--calc-accent) 30%, var(--calc-border));
-}
-
-.energy-settings-thousands:checked + .energy-settings-slider {
-  transform: translateX(20px);
-}
-
 /* Dragging state */
 .energy-panel.is-dragging {
   user-select: none;

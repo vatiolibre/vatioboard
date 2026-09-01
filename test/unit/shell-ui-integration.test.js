@@ -826,11 +826,14 @@ describe("shell UI integration", () => {
     expect(appCss).toContain("--vb-z-activity: 1955");
     expect(appCss).toContain("--vb-z-shell-start-menu: 1960");
     expect(appCss).toContain("--vb-z-shell-fullscreen: 1980");
+    expect(appCss).toContain("--vb-z-popover: 1990");
     expect(SHELL_Z_INDEX.windowMax).toBeLessThan(SHELL_Z_INDEX.taskbar);
     expect(SHELL_Z_INDEX.taskbar).toBeLessThan(SHELL_Z_INDEX.activity);
     expect(SHELL_Z_INDEX.activity).toBeLessThan(SHELL_Z_INDEX.startMenu);
     expect(SHELL_Z_INDEX.startMenu).toBeLessThan(SHELL_Z_INDEX.fullscreen);
     expect(SHELL_Z_INDEX.fullscreen).toBeLessThan(SHELL_Z_INDEX.modal);
+    expect(SHELL_Z_INDEX.windowMax).toBeLessThan(SHELL_Z_INDEX.popover);
+    expect(SHELL_Z_INDEX.popover).toBeLessThan(SHELL_Z_INDEX.modal);
     expect(getCssBlock(appCss, ".vb-shell-taskbar")).toContain("z-index: var(--vb-z-shell-taskbar, 1950)");
     expect(getCssBlock(appCss, ".vb-shell-taskbar.is-detached")).toContain("z-index: var(--vb-z-shell-taskbar, 1950)");
     expect(getCssBlock(appCss, ".vb-shell-taskbar-item.is-detached")).toContain("z-index: var(--vb-z-shell-taskbar, 1950)");

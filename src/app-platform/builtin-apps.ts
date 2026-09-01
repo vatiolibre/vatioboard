@@ -330,7 +330,7 @@ export const BUILTIN_APP_MANIFESTS = [
     window: {
       shellWindowId: "speed-alerts",
       mode: "floating",
-      defaultBounds: { left: 48, top: 120, width: 430, height: 620 },
+      defaultBounds: { left: 48, top: 120, width: 430, height: 540 },
       capabilities: {
         draggable: true,
         resizable: true,
@@ -338,7 +338,7 @@ export const BUILTIN_APP_MANIFESTS = [
         closable: true,
         restorable: true,
         minWidth: 320,
-        minHeight: 420,
+        minHeight: 320,
       },
       restoreOnBoot: true,
       lazy: false,

@@ -1,0 +1,226 @@
+.vb-settings-control {
+  --vb-settings-accent: var(--calc-accent, var(--speed-alert-accent, #10b981));
+  --vb-settings-surface: var(--calc-surface, var(--speed-alert-surface-strong, var(--surface, #ffffff)));
+  --vb-settings-control-bg: var(--calc-display-bg, var(--btn-bg, rgba(17, 24, 39, 0.06)));
+  --vb-settings-border: var(--calc-border, var(--speed-alert-border, var(--border, rgba(17, 24, 39, 0.12))));
+  --vb-settings-text: var(--calc-text, var(--speed-alert-text, var(--btn-fg, #111827)));
+  --vb-settings-muted: var(--calc-muted, var(--speed-alert-muted, var(--muted, #64748b)));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: var(--vb-touch-target-min, 44px);
+  color: var(--vb-settings-text);
+  font: inherit;
+}
+
+.vb-settings-control-label {
+  min-width: 0;
+  color: var(--vb-settings-text);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.vb-settings-control.is-disabled {
+  opacity: 0.48;
+}
+
+.vb-settings-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 44px;
+  height: 28px;
+  flex: 0 0 auto;
+}
+
+.vb-settings-switch-input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 44px;
+  height: 28px;
+  margin: 0;
+  border: 1px solid var(--vb-settings-border);
+  border-radius: 999px;
+  background: var(--vb-settings-control-bg);
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease;
+}
+
+.vb-settings-switch-thumb {
+  position: absolute;
+  left: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--vb-settings-muted);
+  pointer-events: none;
+  transition: transform 0.16s ease, background 0.16s ease;
+}
+
+.vb-settings-switch-input:checked {
+  border-color: color-mix(in srgb, var(--vb-settings-accent) 52%, var(--vb-settings-border));
+  background: color-mix(in srgb, var(--vb-settings-accent) 26%, var(--vb-settings-control-bg));
+}
+
+.vb-settings-switch-input:checked + .vb-settings-switch-thumb {
+  background: var(--vb-settings-accent);
+  transform: translateX(16px);
+}
+
+.vb-settings-switch-input:focus-visible,
+.vb-settings-segmented-option:focus-visible,
+.vb-settings-select-trigger:focus-visible,
+.vb-settings-select-option:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--vb-settings-accent) 76%, transparent);
+  outline-offset: 2px;
+}
+
+.vb-settings-segmented {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(44px, 1fr);
+  gap: 3px;
+  min-width: 132px;
+  padding: 3px;
+  border: 1px solid var(--vb-settings-border);
+  border-radius: 10px;
+  background: var(--vb-settings-control-bg);
+}
+
+.vb-settings-segmented-option,
+.vb-settings-select-trigger,
+.vb-settings-select-option {
+  min-height: var(--vb-touch-target-min, 44px);
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vb-settings-segmented-option {
+  min-width: 44px;
+  padding: 0 12px;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--vb-settings-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.vb-settings-segmented-option.is-active {
+  background: var(--vb-settings-accent);
+  color: #062018;
+}
+
+.vb-settings-select-trigger {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 12px;
+  align-items: center;
+  gap: 10px;
+  min-width: 150px;
+  padding: 0 12px;
+  border: 1px solid var(--vb-settings-border);
+  border-radius: 10px;
+  background: var(--vb-settings-control-bg);
+  color: var(--vb-settings-text);
+  text-align: left;
+}
+
+.vb-settings-select-value {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vb-settings-select-chevron {
+  width: 8px;
+  height: 8px;
+  border: solid currentColor;
+  border-width: 0 2px 2px 0;
+  opacity: 0.68;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 0.16s ease;
+}
+
+.vb-settings-select-row.is-open .vb-settings-select-chevron {
+  transform: translateY(2px) rotate(225deg);
+}
+
+.vb-settings-select-menu {
+  position: fixed;
+  z-index: var(--vb-z-popover, 1990);
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 5px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  border: 1px solid var(--vb-settings-border, var(--border, rgba(17, 24, 39, 0.12)));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--vb-settings-surface, var(--surface, #fff)) 96%, transparent);
+  color: var(--vb-settings-text, var(--btn-fg, #111827));
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.26);
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  pointer-events: auto;
+  backdrop-filter: blur(18px) saturate(1.08);
+  -webkit-backdrop-filter: blur(18px) saturate(1.08);
+}
+
+.vb-settings-select-menu[hidden] {
+  display: none !important;
+}
+
+.vb-settings-select-option {
+  width: 100%;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  text-align: left;
+}
+
+.vb-settings-select-option:hover,
+.vb-settings-select-option:focus-visible {
+  background: color-mix(in srgb, var(--vb-settings-accent, #10b981) 12%, transparent);
+}
+
+.vb-settings-select-option.is-active {
+  background: color-mix(in srgb, var(--vb-settings-accent, #10b981) 20%, transparent);
+  color: color-mix(in srgb, var(--vb-settings-accent, #10b981) 74%, currentColor);
+}
+
+.vb-settings-select-option.is-active::after {
+  content: "✓";
+  float: right;
+  margin-left: 10px;
+  color: var(--vb-settings-accent, #10b981);
+}
+
+.vb-settings-control button:disabled,
+.vb-settings-switch-input:disabled,
+.vb-settings-select-option:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
+@media (max-width: 430px) {
+  .vb-settings-control {
+    gap: 8px;
+  }
+
+  .vb-settings-select-trigger {
+    min-width: 132px;
+  }
+}

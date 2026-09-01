@@ -4,6 +4,10 @@
  */
 
 import { el } from "../../calculator/dom.js";
+import {
+  createSegmentedControl,
+  createSettingsSwitch,
+} from "../../shared/ui/settings-controls.js";
 import { t } from "../../i18n.js";
 import { IconSettings, IconClose, IconMinimize } from "../../icons.js";
 
@@ -64,6 +68,29 @@ function makeToolbarButton({
  * @returns {Object} Referencias a todos los elementos del panel
  */
 export function buildPanel({ t: translate = t }: BuildPanelOptions = {}) {
+  const distanceUnitControl = createSegmentedControl({
+    label: translate("distanceUnit"),
+    labelKey: "distanceUnit",
+    value: "km",
+    options: [
+      { value: "km", label: "km" },
+      { value: "mi", label: "mi" },
+    ],
+    optionDataAttribute: "unit",
+    classNames: {
+      root: "energy-settings-row energy-settings-row-box",
+      control: "energy-unit-toggle",
+      option: "energy-unit-btn",
+    },
+  });
+  const thousandsControl = createSettingsSwitch({
+    label: translate("thousandSeparator"),
+    labelKey: "thousandSeparator",
+    classNames: {
+      root: "energy-settings-row",
+      input: "energy-settings-thousands",
+    },
+  });
   const panel = el(
     "section",
     {
@@ -339,41 +366,8 @@ export function buildPanel({ t: translate = t }: BuildPanelOptions = {}) {
       el(
         "div",
         { class: "energy-settings-body" },
-        // Unit toggle (km/mi)
-        el(
-          "div",
-          { class: "energy-settings-row energy-settings-row-box" },
-          el("span", { class: "energy-settings-label", "data-i18n": "distanceUnit" }, translate("distanceUnit")),
-          el(
-            "div",
-            { class: "energy-unit-toggle" },
-            el("button", {
-              class: "energy-unit-btn",
-              type: "button",
-              "data-unit": "km",
-            }, "km"),
-            el("button", {
-              class: "energy-unit-btn",
-              type: "button",
-              "data-unit": "mi",
-            }, "mi")
-          )
-        ),
-        // Thousand separator toggle
-        el(
-          "label",
-          { class: "energy-settings-row" },
-          el("span", { class: "energy-settings-label", "data-i18n": "thousandSeparator" }, translate("thousandSeparator")),
-          el(
-            "span",
-            { class: "energy-settings-switch" },
-            el("input", {
-              class: "energy-settings-thousands",
-              type: "checkbox",
-            }),
-            el("span", { class: "energy-settings-slider", "aria-hidden": "true" })
-          )
-        )
+        distanceUnitControl.element,
+        thousandsControl.element
       )
     ),
     // Confirm modal
@@ -413,6 +407,8 @@ export function buildPanel({ t: translate = t }: BuildPanelOptions = {}) {
     settingsCloseBtn: panel.querySelector<HTMLButtonElement>(".energy-settings-close"),
     unitBtns: panel.querySelectorAll<HTMLButtonElement>(".energy-unit-btn"),
     thousandsToggle: panel.querySelector<HTMLInputElement>(".energy-settings-thousands"),
+    distanceUnitControl,
+    thousandsControl,
 
     // Mode switch
     modeBtns: panel.querySelectorAll<HTMLButtonElement>(".energy-mode-btn"),

@@ -4,6 +4,13 @@ import { createDrivingAlertService } from "../app/services/driving-alert-service
 import { clampElementToViewport, makePanelDraggable } from "../calculator/widget/drag.js";
 import { registerFloatingPanel } from "../shared/floating-layer-manager.js";
 import { getDefaultShellWindowManager } from "../shared/shell-window-manager.js";
+import { isFocusedLandscapeProfile } from "../shared/shell-layout-metrics.js";
+import {
+  createSegmentedControl,
+  createSelectControl,
+  createSettingsSwitch,
+  type SettingsControlOption,
+} from "../shared/ui/settings-controls.js";
 import {
   ALERT_CONFIG,
   DEFAULT_ALERT_LIMIT_MS,
@@ -45,7 +52,7 @@ const DEFAULT_BOUNDS = {
   left: 24,
   top: 86,
   width: 430,
-  height: 620,
+  height: 540,
 };
 
 function createElement(tagName, attrs = {}, children = []) {
@@ -93,17 +100,6 @@ function createActionButton({
   if (text) {
     button.append(createElement("span", { text }));
   }
-  return button;
-}
-
-function createSegmentedButton(label, value, key, className) {
-  const button = createElement("button", {
-    type: "button",
-    class: className,
-    text: label,
-    "aria-pressed": "false",
-  });
-  button.dataset[key] = String(value);
   return button;
 }
 
@@ -228,7 +224,25 @@ function getAudioStatusText(snapshot: AnyRecord = {}) {
   return t("speedAlertsAudioNeedsTap");
 }
 
-function buildPanel() {
+function getSpeedLimitOptions(unit: string): SettingsControlOption[] {
+  const normalizedUnit = UNIT_CONFIG[unit] ? unit : "kmh";
+  const config = ALERT_CONFIG[normalizedUnit];
+  const result: SettingsControlOption[] = [];
+  for (let value = config.min; value <= config.max; value += config.step) {
+    result.push({ value: String(value), label: `${value} ${UNIT_CONFIG[normalizedUnit].label}` });
+  }
+  return result;
+}
+
+function getTrapDistanceOptions(distanceUnit: string): SettingsControlOption[] {
+  const normalizedUnit = DISTANCE_UNIT_CONFIG[distanceUnit] ? distanceUnit : "m";
+  return TRAP_ALERT_PRESETS[normalizedUnit].map((preset) => ({
+    value: String(preset.meters),
+    label: preset.label,
+  }));
+}
+
+function buildPanel(actions: AnyRecord = {}) {
   const titleId = "speed-alerts-title";
   const title = createElement("strong", {
     id: titleId,
@@ -243,7 +257,6 @@ function buildPanel() {
     "aria-live": "polite",
     text: t("off"),
   });
-
   const closeBtn = createActionButton({
     className: "speed-alert-window-action speed-alert-window-close",
     label: t("closeSpeedAlerts"),
@@ -256,98 +269,93 @@ function buildPanel() {
     labelKey: "minimizeSpeedAlerts",
     icon: IconMinimize,
   });
-
   const header = createElement("div", { class: "speed-alert-window-header" }, [
-    createElement("div", { class: "speed-alert-window-heading" }, [
-      title,
-    ]),
+    createElement("div", { class: "speed-alert-window-heading" }, [title]),
     statusChip,
     createElement("div", { class: "speed-alert-window-actions" }, [minimizeBtn, closeBtn]),
   ]);
 
-  const manualToggle = createElement("button", {
-    type: "button",
-    class: "speed-alert-window-primary",
-    text: t("turnOn"),
-    "aria-pressed": "false",
+  const manualControl = createSettingsSwitch({
+    label: t("manualSpeed"),
+    labelKey: "manualSpeed",
+    classNames: {
+      root: "speed-alert-window-control speed-alert-window-manual-control",
+      input: "speed-alert-window-manual-switch",
+    },
+    onChange: actions.onManualEnabledChange,
+  });
+  const speedLimitControl = createSelectControl({
+    label: t("alertSpeedLimit"),
+    labelKey: "alertSpeedLimit",
+    value: "100",
+    options: getSpeedLimitOptions("kmh"),
+    classNames: {
+      root: "speed-alert-window-control speed-alert-window-limit-control",
+      control: "speed-alert-window-limit-select",
+      option: "speed-alert-window-limit-option",
+    },
+    onChange: actions.onSpeedLimitChange,
   });
   const useCurrent = createElement("button", {
     type: "button",
-    class: "speed-alert-window-secondary",
-    text: t("useCurrentSpeed"),
+    class: "speed-alert-window-secondary speed-alert-window-use-current",
+    text: t("useCurrent"),
+    "aria-label": t("useCurrentSpeed"),
+    "data-i18n-aria": "useCurrentSpeed",
   });
-  const decrease = createElement("button", {
-    type: "button",
-    class: "speed-alert-window-step",
-    text: "-",
-    "aria-label": t("decreaseSpeedAlert"),
+  useCurrent.dataset.i18n = "useCurrent";
+  const alertSoundControl = createSettingsSwitch({
+    label: t("overspeedSound"),
+    labelKey: "overspeedSound",
+    classNames: {
+      root: "speed-alert-window-control speed-alert-window-alert-sound-control",
+      input: "speed-alert-window-alert-sound-switch",
+    },
+    onChange: actions.onAlertSoundChange,
   });
-  const increase = createElement("button", {
-    type: "button",
-    class: "speed-alert-window-step",
-    text: "+",
-    "aria-label": t("increaseSpeedAlert"),
-  });
-  const limitValue = createElement("span", { class: "speed-alert-window-limit-value", text: "100" });
-  const limitUnit = createElement("span", { class: "speed-alert-window-limit-unit", text: "km/h" });
-  const speedPresets = createElement("div", {
-    class: "speed-alert-window-presets",
-    role: "group",
-    "aria-label": t("quickSpeedAlertPresets"),
-  });
-  const alertSoundButtons = createElement("div", {
-    class: "speed-alert-window-segmented",
-    role: "group",
-    "aria-label": t("overspeedSound"),
-  }, [
-    createSegmentedButton(t("off"), "off", "alertSound", "speed-alert-window-segment"),
-    createSegmentedButton(t("on"), "on", "alertSound", "speed-alert-window-segment"),
-  ]);
-
   const manualSection = createElement("section", {
-    class: "speed-alert-window-section",
+    class: "speed-alert-window-section speed-alert-window-manual-section",
     "aria-label": t("speedAlertSettings"),
   }, [
-    createElement("span", { class: "speed-alert-window-section-title", text: t("manualSpeed") }),
-    createElement("div", { class: "speed-alert-window-button-row" }, [manualToggle, useCurrent]),
-    createElement("div", {
-      class: "speed-alert-window-stepper",
-      role: "group",
-      "aria-label": t("setAlertSpeedLimit"),
-    }, [
-      decrease,
-      createElement("div", { class: "speed-alert-window-limit" }, [limitValue, limitUnit]),
-      increase,
+    manualControl.element,
+    createElement("div", { class: "speed-alert-window-select-action" }, [
+      speedLimitControl.element,
+      useCurrent,
     ]),
-    speedPresets,
-    createElement("div", { class: "speed-alert-window-setting" }, [
-      createElement("span", { class: "speed-alert-window-label", text: t("overspeedSound") }),
-      alertSoundButtons,
-    ]),
+    alertSoundControl.element,
     createElement("p", { class: "speed-alert-window-note", text: t("nearbyTrapOverrides") }),
   ]);
 
-  const trapAlertButtons = createElement("div", {
-    class: "speed-alert-window-segmented",
-    role: "group",
-    "aria-label": t("trapAlerts"),
-  }, [
-    createSegmentedButton(t("off"), "off", "trapAlert", "speed-alert-window-segment"),
-    createSegmentedButton(t("on"), "on", "trapAlert", "speed-alert-window-segment"),
-  ]);
-  const trapDistancePresets = createElement("div", {
-    class: "speed-alert-window-presets",
-    role: "group",
-    "aria-label": t("trapAlertDistancePresets"),
+  const trapAlertControl = createSettingsSwitch({
+    label: t("trapAlerts"),
+    labelKey: "trapAlerts",
+    classNames: {
+      root: "speed-alert-window-control speed-alert-window-trap-control",
+      input: "speed-alert-window-trap-switch",
+    },
+    onChange: actions.onTrapAlertChange,
   });
-  const trapSoundButtons = createElement("div", {
-    class: "speed-alert-window-segmented",
-    role: "group",
-    "aria-label": t("trapSound"),
-  }, [
-    createSegmentedButton(t("off"), "off", "trapSound", "speed-alert-window-segment"),
-    createSegmentedButton(t("on"), "on", "trapSound", "speed-alert-window-segment"),
-  ]);
+  const trapDistanceControl = createSelectControl({
+    label: t("alertDistance"),
+    labelKey: "alertDistance",
+    value: "500",
+    options: getTrapDistanceOptions("m"),
+    classNames: {
+      root: "speed-alert-window-control speed-alert-window-trap-distance-control",
+      control: "speed-alert-window-trap-distance-select",
+      option: "speed-alert-window-trap-distance-option",
+    },
+    onChange: actions.onTrapDistanceChange,
+  });
+  const trapSoundControl = createSettingsSwitch({
+    label: t("trapSound"),
+    labelKey: "trapSound",
+    classNames: {
+      root: "speed-alert-window-control speed-alert-window-trap-sound-control",
+      input: "speed-alert-window-trap-sound-switch",
+    },
+    onChange: actions.onTrapSoundChange,
+  });
   const nearestTrap = createElement("p", { class: "speed-alert-window-note", text: t("speedAlertsNoNearbyCamera") });
   const cameraApproach = createElement("p", { class: "speed-alert-window-note", text: "" });
   const cameraDatabaseStatus = createElement("p", {
@@ -359,30 +367,21 @@ function buildPanel() {
     class: "speed-alert-window-map",
   }, [
     createElement("span", { class: "speed-alert-window-icon", html: IconCameraMap, "aria-hidden": "true" }),
-    createElement("span", { text: t("openCameraMap") }),
+    createElement("span", { text: t("openCameraMap"), "data-i18n": "openCameraMap" }),
   ]);
-
   const cameraSection = createElement("section", {
     class: "speed-alert-window-section",
     "aria-label": t("trapAlertSettings"),
   }, [
-    createElement("span", { class: "speed-alert-window-section-title", text: t("trapAlerts") }),
-    createElement("div", { class: "speed-alert-window-setting" }, [
-      createElement("span", { class: "speed-alert-window-label", text: t("trapAlerts") }),
-      trapAlertButtons,
-    ]),
-    createElement("div", { class: "speed-alert-window-setting speed-alert-window-setting--stack" }, [
-      createElement("span", { class: "speed-alert-window-label", text: t("alertDistance") }),
-      trapDistancePresets,
-    ]),
-    createElement("div", { class: "speed-alert-window-setting" }, [
-      createElement("span", { class: "speed-alert-window-label", text: t("trapSound") }),
-      trapSoundButtons,
-    ]),
-    nearestTrap,
-    cameraApproach,
-    createElement("div", { class: "speed-alert-window-camera-row" }, [
+    trapAlertControl.element,
+    trapDistanceControl.element,
+    trapSoundControl.element,
+    createElement("div", { class: "speed-alert-window-camera-summary" }, [
+      nearestTrap,
+      cameraApproach,
       cameraDatabaseStatus,
+    ]),
+    createElement("div", { class: "speed-alert-window-camera-row" }, [
       openCameraMap,
       createElement("a", {
         class: "speed-alert-window-attribution",
@@ -390,71 +389,65 @@ function buildPanel() {
         target: "_blank",
         rel: "noopener noreferrer",
         text: t("cameraDatabaseAttribution"),
+        "data-i18n": "cameraDatabaseAttribution",
       }),
     ]),
   ]);
 
-  const muteToggle = createElement("button", {
-    type: "button",
-    class: "speed-alert-window-secondary",
-    text: t("muteAlertAudio"),
-    "aria-pressed": "false",
+  const audioControl = createSettingsSwitch({
+    label: t("alertAudio"),
+    labelKey: "alertAudio",
+    classNames: {
+      root: "speed-alert-window-control speed-alert-window-audio-control",
+      input: "speed-alert-window-audio-switch",
+    },
+    onChange: actions.onAudioChange,
   });
   const primeAudio = createElement("button", {
     type: "button",
-    class: "speed-alert-window-primary",
+    class: "speed-alert-window-primary speed-alert-window-enable-audio",
     text: t("enableDrivingAlerts"),
+    "data-i18n": "enableDrivingAlerts",
   });
   const audioStatus = createElement("p", {
     class: "speed-alert-window-note",
     text: t("speedAlertsAudioNeedsTap"),
   });
-
   const audioSection = createElement("section", {
     class: "speed-alert-window-section speed-alert-window-section--compact",
     "aria-label": t("audio"),
-  }, [
-    createElement("span", { class: "speed-alert-window-section-title", text: t("audio") }),
-    createElement("div", { class: "speed-alert-window-button-row" }, [muteToggle, primeAudio]),
-    audioStatus,
-  ]);
+  }, [audioControl.element, primeAudio, audioStatus]);
 
-  const unitButtons = createElement("div", {
-    class: "speed-alert-window-segmented",
-    role: "group",
-    "aria-label": t("speedUnit"),
-  }, [
-    createSegmentedButton("km/h", "kmh", "unit", "speed-alert-window-segment"),
-    createSegmentedButton("mph", "mph", "unit", "speed-alert-window-segment"),
-  ]);
-  const distanceUnitButtons = createElement("div", {
-    class: "speed-alert-window-segmented",
-    role: "group",
-    "aria-label": t("distanceUnit"),
-  }, [
-    createSegmentedButton("m", "m", "distanceUnit", "speed-alert-window-segment"),
-    createSegmentedButton("ft", "ft", "distanceUnit", "speed-alert-window-segment"),
-  ]);
-
+  const speedUnitControl = createSegmentedControl({
+    label: t("speedUnit"),
+    labelKey: "speedUnit",
+    value: "kmh",
+    options: [{ value: "kmh", label: "km/h" }, { value: "mph", label: "mph" }],
+    optionDataAttribute: "unit",
+    classNames: {
+      root: "speed-alert-window-control speed-alert-window-speed-unit-control",
+      control: "speed-alert-window-segmented",
+      option: "speed-alert-window-segment",
+    },
+    onChange: actions.onSpeedUnitChange,
+  });
+  const distanceUnitControl = createSegmentedControl({
+    label: t("distanceUnit"),
+    labelKey: "distanceUnit",
+    value: "m",
+    options: [{ value: "m", label: "m" }, { value: "ft", label: "ft" }],
+    optionDataAttribute: "distance-unit",
+    classNames: {
+      root: "speed-alert-window-control speed-alert-window-distance-unit-control",
+      control: "speed-alert-window-segmented",
+      option: "speed-alert-window-segment",
+    },
+    onChange: actions.onDistanceUnitChange,
+  });
   const unitsSection = createElement("section", {
     class: "speed-alert-window-section speed-alert-window-units",
     "aria-label": t("units"),
-  }, [
-    createElement("span", { class: "speed-alert-window-section-title", text: t("units") }),
-    createElement("div", { class: "speed-alert-window-setting" }, [
-      createElement("span", { class: "speed-alert-window-label", text: t("speed") }),
-      unitButtons,
-    ]),
-    createElement("div", { class: "speed-alert-window-setting" }, [
-      createElement("span", { class: "speed-alert-window-label", text: t("distance") }),
-      distanceUnitButtons,
-    ]),
-  ]);
-
-  const footer = createElement("p", {
-    class: "speed-alert-window-footer",
-    text: t("speedAlertsLocalFirst"),
-  });
+  }, [speedUnitControl.element, distanceUnitControl.element]);
 
   const resizeHandle = createElement("button", {
     type: "button",
@@ -462,7 +455,6 @@ function buildPanel() {
     "aria-label": t("resizeSpeedAlerts"),
     title: t("resizeSpeedAlerts"),
   });
-
   const panel = createElement("section", {
     class: "speed-alert-window",
     hidden: true,
@@ -471,41 +463,34 @@ function buildPanel() {
   }, [
     header,
     createElement("div", { class: "speed-alert-window-body" }, [
-      manualSection,
-      cameraSection,
-      audioSection,
-      unitsSection,
-      footer,
+      createElement("div", { class: "speed-alert-window-column" }, [manualSection, unitsSection]),
+      createElement("div", { class: "speed-alert-window-column" }, [cameraSection, audioSection]),
     ]),
     resizeHandle,
   ]);
 
   return {
-    alertSoundButtons,
+    alertSoundControl,
+    audioControl,
     audioStatus,
     cameraApproach,
     cameraDatabaseStatus,
     closeBtn,
-    minimizeBtn,
-    decrease,
-    distanceUnitButtons,
+    distanceUnitControl,
     header,
-    increase,
-    limitUnit,
-    limitValue,
-    manualToggle,
-    muteToggle,
+    manualControl,
+    minimizeBtn,
     nearestTrap,
     openCameraMap,
     panel,
     primeAudio,
     resizeHandle,
-    speedPresets,
+    speedLimitControl,
+    speedUnitControl,
     statusChip,
-    trapAlertButtons,
-    trapDistancePresets,
-    trapSoundButtons,
-    unitButtons,
+    trapAlertControl,
+    trapDistanceControl,
+    trapSoundControl,
     useCurrent,
   };
 }
@@ -551,9 +536,22 @@ export function createSpeedAlertPanel(options: AnyRecord = {}): SpeedAlertPanelA
     ? null
     : createDrivingAlertService({ gpsService });
   const service = drivingAlertService || ownedService;
-  const refs = buildPanel();
-  const { panel } = refs;
   let latestSnapshot = service.getSnapshot?.() || {};
+  const refs = buildPanel({
+    onManualEnabledChange: (checked) => service.setManualAlertEnabled?.(checked, { fromUserGesture: true }),
+    onSpeedLimitChange: (value) => setManualLimitDisplay(Number(value)),
+    onAlertSoundChange: (checked) => service.setAlertSoundEnabled?.(checked, { fromUserGesture: true }),
+    onTrapAlertChange: (checked) => service.setTrapAlertEnabled?.(checked, { fromUserGesture: true }),
+    onTrapDistanceChange: (value) => {
+      service.setTrapAlertDistanceM?.(Number(value), { fromUserGesture: true });
+      service.setTrapAlertEnabled?.(true, { fromUserGesture: true });
+    },
+    onTrapSoundChange: (checked) => service.setTrapSoundEnabled?.(checked, { fromUserGesture: true }),
+    onAudioChange: (checked) => service.setMuted?.(!checked, { fromUserGesture: true }),
+    onSpeedUnitChange: (unit) => service.setUnits?.({ unit }),
+    onDistanceUnitChange: (distanceUnit) => service.setUnits?.({ distanceUnit }),
+  });
+  const { panel } = refs;
   let cleanupLayer = () => {};
   let unsubscribeService = () => {};
   let destroyed = false;
@@ -566,7 +564,18 @@ export function createSpeedAlertPanel(options: AnyRecord = {}): SpeedAlertPanelA
   let resizeLastY = 0;
   let resizeRafId = 0;
   let resizing = false;
-  const handleI18nChange = () => syncFromService(service.getSnapshot?.() || latestSnapshot);
+  const handleI18nChange = () => {
+    refs.manualControl.setLabel(t("manualSpeed"), "manualSpeed");
+    refs.speedLimitControl.setLabel(t("alertSpeedLimit"), "alertSpeedLimit");
+    refs.alertSoundControl.setLabel(t("overspeedSound"), "overspeedSound");
+    refs.trapAlertControl.setLabel(t("trapAlerts"), "trapAlerts");
+    refs.trapDistanceControl.setLabel(t("alertDistance"), "alertDistance");
+    refs.trapSoundControl.setLabel(t("trapSound"), "trapSound");
+    refs.audioControl.setLabel(t("alertAudio"), "alertAudio");
+    refs.speedUnitControl.setLabel(t("speedUnit"), "speedUnit");
+    refs.distanceUnitControl.setLabel(t("distanceUnit"), "distanceUnit");
+    syncFromService(service.getSnapshot?.() || latestSnapshot);
+  };
 
   applyInitialBounds(panel, shellManager);
 
@@ -637,51 +646,6 @@ export function createSpeedAlertPanel(options: AnyRecord = {}): SpeedAlertPanelA
     applyPanelResize(bounds.width + deltaWidth, bounds.height + deltaHeight, { flush: true });
   }
 
-  function renderSpeedPresets(unit, currentValue) {
-    if (refs.speedPresets.dataset.unit !== unit) {
-      const fragment = document.createDocumentFragment();
-      for (const preset of ALERT_CONFIG[unit].presets) {
-        fragment.append(createSegmentedButton(
-          `${preset} ${UNIT_CONFIG[unit].label}`,
-          preset,
-          "alertPreset",
-          "speed-alert-window-preset",
-        ));
-      }
-      refs.speedPresets.replaceChildren(fragment);
-      refs.speedPresets.dataset.unit = unit;
-    }
-    for (const button of refs.speedPresets.querySelectorAll("button[data-alert-preset]")) {
-      button.setAttribute("aria-pressed", String(Number(button.dataset.alertPreset) === currentValue));
-    }
-  }
-
-  function renderTrapDistancePresets(distanceUnit, currentDistance) {
-    if (refs.trapDistancePresets.dataset.unit !== distanceUnit) {
-      const fragment = document.createDocumentFragment();
-      for (const preset of TRAP_ALERT_PRESETS[distanceUnit]) {
-        fragment.append(createSegmentedButton(
-          preset.label,
-          preset.meters,
-          "trapDistance",
-          "speed-alert-window-preset",
-        ));
-      }
-      refs.trapDistancePresets.replaceChildren(fragment);
-      refs.trapDistancePresets.dataset.unit = distanceUnit;
-    }
-    for (const button of refs.trapDistancePresets.querySelectorAll("button[data-trap-distance]")) {
-      button.setAttribute("aria-pressed", String(Math.abs(Number(button.dataset.trapDistance) - currentDistance) < 1));
-    }
-  }
-
-  function setSegmentedPressed(container, key, value) {
-    const attr = key.replace(/[A-Z]/g, (match) => `-${match.toLowerCase()}`);
-    for (const button of container.querySelectorAll(`button[data-${attr}]`)) {
-      button.setAttribute("aria-pressed", String(button.dataset[key] === String(value)));
-    }
-  }
-
   function syncFromService(snapshot = service.getSnapshot?.() || latestSnapshot) {
     latestSnapshot = snapshot || {};
     const preferences = latestSnapshot.preferences || {};
@@ -706,25 +670,29 @@ export function createSpeedAlertPanel(options: AnyRecord = {}): SpeedAlertPanelA
 
     refs.statusChip.textContent = getStatusLabel(latestSnapshot);
     refs.statusChip.dataset.status = latestSnapshot.status || "idle";
-    refs.manualToggle.textContent = manualActive ? t("turnOff") : t("turnOn");
-    refs.manualToggle.setAttribute("aria-pressed", String(manualActive));
+    refs.manualControl.setChecked(manualActive);
     refs.useCurrent.disabled = !canUseCurrentSpeed;
-    refs.limitValue.textContent = String(currentLimitDisplay);
-    refs.limitUnit.textContent = UNIT_CONFIG[unit].label;
-    refs.decrease.disabled = currentLimitDisplay <= ALERT_CONFIG[unit].min;
-    refs.increase.disabled = currentLimitDisplay >= ALERT_CONFIG[unit].max;
-    renderSpeedPresets(unit, normalizedLimit);
+    if (refs.speedLimitControl.element.dataset.optionUnit !== unit) {
+      refs.speedLimitControl.setOptions(getSpeedLimitOptions(unit));
+      refs.speedLimitControl.element.dataset.optionUnit = unit;
+    }
+    refs.speedLimitControl.setValue(String(normalizedLimit));
+    refs.alertSoundControl.setChecked(Boolean(preferences.alertSoundEnabled));
+    refs.trapAlertControl.setChecked(Boolean(preferences.trapAlertEnabled));
+    if (refs.trapDistanceControl.element.dataset.optionUnit !== distanceUnit) {
+      refs.trapDistanceControl.setOptions(getTrapDistanceOptions(distanceUnit));
+      refs.trapDistanceControl.element.dataset.optionUnit = distanceUnit;
+    }
+    refs.trapDistanceControl.setValue(String(trapDistanceM));
+    refs.trapSoundControl.setChecked(Boolean(preferences.trapSoundEnabled));
+    refs.speedUnitControl.setValue(unit);
+    refs.distanceUnitControl.setValue(distanceUnit);
 
-    setSegmentedPressed(refs.alertSoundButtons, "alertSound", preferences.alertSoundEnabled ? "on" : "off");
-    setSegmentedPressed(refs.trapAlertButtons, "trapAlert", preferences.trapAlertEnabled ? "on" : "off");
-    renderTrapDistancePresets(distanceUnit, trapDistanceM);
-    setSegmentedPressed(refs.trapSoundButtons, "trapSound", preferences.trapSoundEnabled ? "on" : "off");
-    setSegmentedPressed(refs.unitButtons, "unit", unit);
-    setSegmentedPressed(refs.distanceUnitButtons, "distanceUnit", distanceUnit);
-
-    refs.muteToggle.textContent = preferences.audioMuted || audio.muted ? t("unmuteAlertAudio") : t("muteAlertAudio");
-    refs.muteToggle.setAttribute("aria-pressed", String(Boolean(preferences.audioMuted || audio.muted)));
-    refs.primeAudio.disabled = Boolean(preferences.audioMuted || audio.backgroundAudioArmed);
+    const audioEnabled = !(preferences.audioMuted || audio.muted);
+    const audioReady = Boolean(audio.backgroundAudioArmed || audio.primed);
+    refs.audioControl.setChecked(audioEnabled);
+    refs.primeAudio.hidden = !audioEnabled || audioReady;
+    refs.primeAudio.disabled = Boolean(audio.backgroundAudioArmPending || audio.pending);
     refs.audioStatus.textContent = getAudioStatusText(latestSnapshot);
 
     if (Number.isFinite(nearestDistance)) {
@@ -755,16 +723,20 @@ export function createSpeedAlertPanel(options: AnyRecord = {}): SpeedAlertPanelA
     syncFromService();
     if (panel.style.left && panel.style.top) clampElementToViewport(panel);
     if (focus) {
-      window.setTimeout(() => refs.manualToggle.focus({ preventScroll: true }), 0);
+      window.setTimeout(() => refs.manualControl.focus(), 0);
     }
   }
 
   function hidePanel({ persist = true } = {}) {
+    refs.speedLimitControl.close();
+    refs.trapDistanceControl.close();
     panel.hidden = true;
     if (persist) saveVisibility(false);
   }
 
   function minimizePanel() {
+    refs.speedLimitControl.close();
+    refs.trapDistanceControl.close();
     panel.hidden = true;
   }
 
@@ -806,17 +778,6 @@ export function createSpeedAlertPanel(options: AnyRecord = {}): SpeedAlertPanelA
     if (enable) service.setManualAlertEnabled?.(true, { fromUserGesture: true });
   }
 
-  function adjustManualLimit(direction) {
-    const preferences = latestSnapshot.preferences || {};
-    const unit = UNIT_CONFIG[preferences.unit] ? preferences.unit : "kmh";
-    const limitMs = Number.isFinite(preferences.alertLimitMs) ? preferences.alertLimitMs : DEFAULT_ALERT_LIMIT_MS;
-    const currentValue = normalizeAlertDisplayValue(
-      getAlertLimitDisplayValue(limitMs, unit, convertSpeed),
-      unit,
-    );
-    setManualLimitDisplay(currentValue + direction * ALERT_CONFIG[unit].step);
-  }
-
   function addEventListeners() {
     refs.minimizeBtn.addEventListener("pointerdown", (event) => event.stopPropagation());
     refs.minimizeBtn.addEventListener("click", (event) => {
@@ -828,59 +789,10 @@ export function createSpeedAlertPanel(options: AnyRecord = {}): SpeedAlertPanelA
       event.stopPropagation();
       close();
     });
-    refs.manualToggle.addEventListener("click", () => {
-      const preferences = latestSnapshot.preferences || {};
-      service.setManualAlertEnabled?.(
-        !isManualAlertActive(preferences.alertEnabled, preferences.alertLimitMs),
-        { fromUserGesture: true },
-      );
-    });
     refs.useCurrent.addEventListener("click", () => {
       const preferences = latestSnapshot.preferences || {};
       const unit = UNIT_CONFIG[preferences.unit] ? preferences.unit : "kmh";
       setManualLimitDisplay(Math.round(convertSpeed(latestSnapshot.currentSpeedMs || 0, unit)));
-    });
-    refs.decrease.addEventListener("click", () => adjustManualLimit(-1));
-    refs.increase.addEventListener("click", () => adjustManualLimit(1));
-    refs.speedPresets.addEventListener("click", (event) => {
-      const button = event.target.closest("button[data-alert-preset]");
-      if (!button) return;
-      setManualLimitDisplay(Number(button.dataset.alertPreset));
-    });
-    refs.alertSoundButtons.addEventListener("click", (event) => {
-      const button = event.target.closest("button[data-alert-sound]");
-      if (!button) return;
-      service.setAlertSoundEnabled?.(button.dataset.alertSound === "on", { fromUserGesture: true });
-    });
-    refs.trapAlertButtons.addEventListener("click", (event) => {
-      const button = event.target.closest("button[data-trap-alert]");
-      if (!button) return;
-      service.setTrapAlertEnabled?.(button.dataset.trapAlert === "on", { fromUserGesture: true });
-    });
-    refs.trapDistancePresets.addEventListener("click", (event) => {
-      const button = event.target.closest("button[data-trap-distance]");
-      if (!button) return;
-      service.setTrapAlertDistanceM?.(Number(button.dataset.trapDistance), { fromUserGesture: true });
-      service.setTrapAlertEnabled?.(true, { fromUserGesture: true });
-    });
-    refs.trapSoundButtons.addEventListener("click", (event) => {
-      const button = event.target.closest("button[data-trap-sound]");
-      if (!button) return;
-      service.setTrapSoundEnabled?.(button.dataset.trapSound === "on", { fromUserGesture: true });
-    });
-    refs.unitButtons.addEventListener("click", (event) => {
-      const button = event.target.closest("button[data-unit]");
-      if (!button) return;
-      service.setUnits?.({ unit: button.dataset.unit });
-    });
-    refs.distanceUnitButtons.addEventListener("click", (event) => {
-      const button = event.target.closest("button[data-distance-unit]");
-      if (!button) return;
-      service.setUnits?.({ distanceUnit: button.dataset.distanceUnit });
-    });
-    refs.muteToggle.addEventListener("click", () => {
-      const preferences = latestSnapshot.preferences || {};
-      service.setMuted?.(!preferences.audioMuted, { fromUserGesture: true });
     });
     refs.primeAudio.addEventListener("click", () => {
       service.primeAudioFromUserGesture?.();
@@ -952,6 +864,39 @@ export function createSpeedAlertPanel(options: AnyRecord = {}): SpeedAlertPanelA
       closable: true,
       restorable: true,
     },
+    resolveLayout(metrics) {
+      if (isFocusedLandscapeProfile(metrics.profile)) {
+        const width = Math.min(560, metrics.workArea.width);
+        const height = Math.min(420, metrics.workArea.height);
+        return {
+          mode: "short-landscape",
+          left: metrics.workArea.left + Math.max(0, metrics.workArea.width - width) / 2,
+          top: metrics.workArea.top + Math.max(0, metrics.workArea.height - height) / 2,
+          width,
+          height,
+          minWidth: Math.min(320, metrics.workArea.width),
+          minHeight: Math.min(320, metrics.workArea.height),
+          maxWidth: metrics.workArea.width,
+          maxHeight: metrics.workArea.height,
+        };
+      }
+      if (metrics.profile === "portrait") {
+        const width = metrics.workArea.width;
+        const height = metrics.workArea.height;
+        return {
+          mode: "portrait",
+          left: metrics.workArea.left,
+          top: metrics.workArea.top,
+          width,
+          height,
+          minWidth: Math.min(320, width),
+          minHeight: Math.min(320, height),
+          maxWidth: width,
+          maxHeight: height,
+        };
+      }
+      return null;
+    },
     lifecycle: {
       open: showPanel,
       close: hidePanel,
@@ -990,6 +935,15 @@ export function createSpeedAlertPanel(options: AnyRecord = {}): SpeedAlertPanelA
       document.removeEventListener("i18n:change", handleI18nChange);
       endHandleResize();
       unsubscribeService();
+      refs.manualControl.destroy();
+      refs.speedLimitControl.destroy();
+      refs.alertSoundControl.destroy();
+      refs.trapAlertControl.destroy();
+      refs.trapDistanceControl.destroy();
+      refs.trapSoundControl.destroy();
+      refs.audioControl.destroy();
+      refs.speedUnitControl.destroy();
+      refs.distanceUnitControl.destroy();
       cleanupLayer();
       ownedService?.destroy?.();
       panel.remove();

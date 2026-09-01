@@ -14,6 +14,7 @@ export function initSettingsSheet({
   settingsDecimalsPlus,
   settingsDecimalsValue,
   settingsThousandsToggle,
+  settingsThousandsControl,
   saveSettings,
   onChange,
   onOpen,
@@ -45,7 +46,10 @@ export function initSettingsSheet({
 
   function syncForm() {
     settingsDecimalsValue.textContent = String(settings.decimals ?? "");
-    settingsThousandsToggle.checked = (settings.thousandSeparator ?? "") !== "";
+    settingsThousandsControl?.setChecked?.((settings.thousandSeparator ?? "") !== "");
+    if (!settingsThousandsControl) {
+      settingsThousandsToggle.checked = (settings.thousandSeparator ?? "") !== "";
+    }
   }
 
   function updateSettings(partial) {

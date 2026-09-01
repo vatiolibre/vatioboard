@@ -175,6 +175,7 @@ export function createCalculatorWidget(options: CalculatorWidgetOptions = {}): C
     settingsDecimalsPlus,
     settingsDecimalsValue,
     settingsThousandsToggle,
+    settingsThousandsControl,
     minimizeBtn,
     closeBtn,
     keys,
@@ -317,6 +318,7 @@ export function createCalculatorWidget(options: CalculatorWidgetOptions = {}): C
     settingsDecimalsPlus,
     settingsDecimalsValue,
     settingsThousandsToggle,
+    settingsThousandsControl,
     saveSettings: saveCalculatorSettings,
     onOpen: () => historyApi?.setHistorySheetOpen(false),
     onChange: () => {
@@ -326,6 +328,7 @@ export function createCalculatorWidget(options: CalculatorWidgetOptions = {}): C
   });
 
   function refreshCalculatorI18n() {
+    settingsThousandsControl.setLabel(translateCalculator("thousandSeparator"), "thousandSeparator");
     historyApi?.refreshHistoryList();
   }
 
@@ -574,6 +577,7 @@ export function createCalculatorWidget(options: CalculatorWidgetOptions = {}): C
       launcherMoved?.destroy?.();
       document.removeEventListener("i18n:change", refreshCalculatorI18n);
       if (button) button.removeEventListener("click", toggle);
+      settingsThousandsControl.destroy();
       panel.remove();
       launcher?.remove();
     },
