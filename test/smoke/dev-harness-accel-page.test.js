@@ -403,6 +403,18 @@ describe('accel.html smoke', () => {
     expect(document.querySelector('#closeResultsPanel.accel-sheet-close-icon svg')).toBeTruthy();
     expect(document.getElementById('accelToolbarResults').disabled).toBe(true);
     expect(document.getElementById('accelToolsMenuList')).toBeNull();
+    for (const mountId of [
+      'presetGrid',
+      'speedUnitControlMount',
+      'distanceUnitControlMount',
+      'rolloutControlMount',
+      'launchThresholdControlMount',
+    ]) {
+      expect(document.getElementById(mountId)?.childElementCount).toBeGreaterThan(0);
+    }
+    expect(document.querySelectorAll('#speedUnitMph')).toHaveLength(1);
+    expect(document.querySelectorAll('#distanceUnitFt')).toHaveLength(1);
+    expect(document.querySelector('#setupPanel select')).toBeNull();
     document.getElementById('accelToolbarSetup').click();
     await flushTasks();
     expect(document.getElementById('setupPanel').hidden).toBe(false);
