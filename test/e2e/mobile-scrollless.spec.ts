@@ -13,8 +13,25 @@ const transparentTile = Buffer.from(
 );
 
 async function prepare(page: Page) {
-  await page.route(/(tiles\.maps\.eox\.at|services\.arcgisonline\.com|tile\.openstreetmap\.org|basemaps\.cartocdn\.com)/, (route) =>
+  await page.route(/(tiles\.maps\.eox\.at|services\.arcgisonline\.com|tile\.openstreetmap\.org)/, (route) =>
     route.fulfill({ status: 200, contentType: "image/png", body: transparentTile }));
+  await page.route("https://tiles.openfreemap.org/**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.startsWith("/styles/")) {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ version: 8, sources: {}, layers: [{ id: "background", type: "background" }] }),
+      });
+    }
+    if (url.pathname.endsWith(".json")) {
+      return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+    }
+    if (url.pathname.endsWith(".png")) {
+      return route.fulfill({ status: 200, contentType: "image/png", body: transparentTile });
+    }
+    return route.fulfill({ status: 200, contentType: "application/x-protobuf", body: Buffer.from([]) });
+  });
   await page.route("https://embed.waze.com/**", (route) => route.fulfill({
     status: 200,
     contentType: "text/html",
@@ -235,6 +252,36 @@ test("calculator is work-area clamped with fixed primary controls", async ({ pag
   ));
   await calculator.locator(".calc-key.eq").click();
   await expect(calculator.locator(".calc-expr")).toHaveValue("8.63");
+});
+
+test("Camera Map loads an attributed OpenFreeMap style inside the shell work area", async ({ page }) => {
+  await openRoute(page, "board");
+  await page.evaluate(() => (window as any).__vatioboardFloatingTools.openCameraMap());
+  const panel = page.locator(".camera-map-panel");
+
+  await expect(panel).toBeVisible();
+  await expect(panel.locator(".maplibregl-canvas")).toBeVisible();
+  await expect(panel.locator(".camera-map-attribution"))
+    .toHaveText("OpenFreeMap © OpenMapTiles Data from OpenStreetMap");
+  const geometry = await panel.evaluate((element) => {
+    const rootStyle = getComputedStyle(document.documentElement);
+    const number = (name: string) => Number.parseFloat(rootStyle.getPropertyValue(name)) || 0;
+    const bounds = element.getBoundingClientRect();
+    return {
+      bounds,
+      workArea: {
+        left: number("--vb-work-area-left"),
+        top: number("--vb-work-area-top"),
+        width: number("--vb-work-area-width"),
+        height: number("--vb-work-area-height"),
+      },
+    };
+  });
+  expect(geometry.bounds.left).toBeGreaterThanOrEqual(geometry.workArea.left - 1);
+  expect(geometry.bounds.top).toBeGreaterThanOrEqual(geometry.workArea.top - 1);
+  expect(geometry.bounds.right).toBeLessThanOrEqual(geometry.workArea.left + geometry.workArea.width + 1);
+  expect(geometry.bounds.bottom).toBeLessThanOrEqual(geometry.workArea.top + geometry.workArea.height + 1);
+  await expectScrolllessRoute(page);
 });
 
 test("Clock blocks double-tap zoom and cannot unlock page scrolling", async ({ page }, testInfo) => {

@@ -38,10 +38,11 @@ import {
   CAMERA_MAP_BASEMAP_STORAGE_KEY,
   CAMERA_MAP_BASEMAPS,
   CAMERA_MAP_COLOR_SCHEME_QUERY,
-  createCameraMapStyle,
   getDefaultCameraMapBasemapId,
   getCameraMapBasemap,
   isCameraMapBasemapId,
+  loadCameraMapStyle,
+  normalizeCameraMapBasemapId,
 } from "./camera-map-layers.js";
 import {
   loadCameraApproachOptionsPreference,
@@ -1434,11 +1435,15 @@ export function createCameraMapWidget(options: AnyRecord = {}) {
   }
 
   const storedBasemapId = loadCameraMapBasemapPreference();
+  const normalizedStoredBasemapId = normalizeCameraMapBasemapId(storedBasemapId);
   let hasUserBasemapPreference = isCameraMapBasemapId(storedBasemapId);
+  if (hasUserBasemapPreference && normalizedStoredBasemapId !== storedBasemapId) {
+    saveCameraMapBasemapPreference(normalizedStoredBasemapId);
+  }
   let hasUserFollowPreference = hasCameraMapPreference("follow");
   let hasUserOrientationPreference = hasCameraMapPreference("orientation");
   let activeBasemap = getCameraMapBasemap(hasUserBasemapPreference
-    ? storedBasemapId
+    ? normalizedStoredBasemapId
     : getDefaultCameraMapBasemapId());
   const initialNavigationDefaultMode = ["drive", "browse", "auto"].includes(navigationDefaultMode)
     ? navigationDefaultMode
@@ -1983,7 +1988,7 @@ export function createCameraMapWidget(options: AnyRecord = {}) {
 
     const handleColorSchemeChange = () => {
       if (destroyed || hasUserBasemapPreference) return;
-      switchBasemap(getDefaultCameraMapBasemapId(), { persist: false });
+      void switchBasemap(getDefaultCameraMapBasemapId(), { persist: false });
     };
 
     if (typeof colorSchemeMediaQuery.addEventListener === "function") {
@@ -3101,7 +3106,7 @@ export function createCameraMapWidget(options: AnyRecord = {}) {
     resizeMap();
   }
 
-  function switchBasemap(nextBasemapId, { persist = true } = {}) {
+  async function switchBasemap(nextBasemapId, { persist = true } = {}) {
     const nextBasemap = getCameraMapBasemap(nextBasemapId);
     if (nextBasemap.id === activeBasemap.id) {
       updateBasemapUi(nextBasemap);
@@ -3126,13 +3131,17 @@ export function createCameraMapWidget(options: AnyRecord = {}) {
     }
 
     basemapSwitchInProgress = true;
-    onceMapEvent("style.load", () => restoreCameraLayersAfterStyle(version, view));
 
     try {
-      map.setStyle(createCameraMapStyle(nextBasemap), { diff: false });
+      const style = await loadCameraMapStyle(nextBasemap);
+      if (destroyed || version !== basemapStyleVersion || !map) return;
+      onceMapEvent("style.load", () => restoreCameraLayersAfterStyle(version, view));
+      map.setStyle(style, { diff: false });
     } catch (error) {
-      basemapSwitchInProgress = false;
-      updateStatus({ status: "unavailable", error });
+      if (version === basemapStyleVersion) {
+        basemapSwitchInProgress = false;
+        updateStatus({ status: "unavailable", error });
+      }
     }
   }
 
@@ -3142,13 +3151,13 @@ export function createCameraMapWidget(options: AnyRecord = {}) {
     if (layerId === CAMERA_MAP_BASEMAP_AUTO_ID) {
       hasUserBasemapPreference = false;
       clearCameraMapBasemapPreference();
-      switchBasemap(getDefaultCameraMapBasemapId(), { persist: false });
+      void switchBasemap(getDefaultCameraMapBasemapId(), { persist: false });
       layerButton.focus();
       return;
     }
 
     hasUserBasemapPreference = true;
-    switchBasemap(layerId);
+    void switchBasemap(layerId);
     layerButton.focus();
   }
 
@@ -3203,7 +3212,18 @@ export function createCameraMapWidget(options: AnyRecord = {}) {
 
     initPromise = (async () => {
       try {
-        maplibregl = await loadMapLibre();
+        const mapLibrePromise = loadMapLibre();
+        let styleBasemap;
+        let style;
+        let loadedMapLibre;
+        do {
+          styleBasemap = activeBasemap;
+          [loadedMapLibre, style] = await Promise.all([
+            mapLibrePromise,
+            loadCameraMapStyle(styleBasemap),
+          ]);
+        } while (!destroyed && styleBasemap.id !== activeBasemap.id);
+        maplibregl = loadedMapLibre;
         if (destroyed || panel.hidden || map) {
           resolveReady();
           return;
@@ -3216,7 +3236,7 @@ export function createCameraMapWidget(options: AnyRecord = {}) {
           attributionControl: false,
           center: initialView.center,
           zoom: initialView.zoom,
-          style: createCameraMapStyle(activeBasemap),
+          style,
         });
 
         if (maplibregl.NavigationControl) {

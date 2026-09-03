@@ -1838,3 +1838,32 @@ test("automatic profile transitions preserve calculator desktop bounds", async (
   await page.setViewportSize({ width: 773, height: 601 });
   await expect(calculator).toHaveAttribute("data-vb-shell-layout-mode", "short-landscape");
 });
+
+test("Camera Map loads OpenFreeMap inside both Tesla work areas", async ({ page }, testInfo) => {
+  test.skip(!isTeslaProject(testInfo), "Tesla Camera Map audit");
+  await page.route("https://tiles.openfreemap.org/styles/**", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      version: 8,
+      sources: {},
+      layers: [{ id: "openfreemap-test-background", type: "background" }],
+    }),
+  }));
+  await openRoute(page, "board");
+  await page.evaluate(() => (window as any).__vatioboardFloatingTools.openCameraMap());
+  const panel = page.locator(".camera-map-panel");
+
+  await expect(panel).toBeVisible();
+  await expect(panel.locator(".maplibregl-canvas")).toBeVisible();
+  await expect(panel.locator(".camera-map-attribution"))
+    .toHaveText("OpenFreeMap © OpenMapTiles Data from OpenStreetMap");
+  const [bounds, workArea] = await Promise.all([
+    panel.evaluate((element) => element.getBoundingClientRect().toJSON()),
+    getWorkArea(page),
+  ]);
+  expect(bounds.left).toBeGreaterThanOrEqual(workArea.left - 1);
+  expect(bounds.top).toBeGreaterThanOrEqual(workArea.top - 1);
+  expect(bounds.right).toBeLessThanOrEqual(workArea.left + workArea.width + 1);
+  expect(bounds.bottom).toBeLessThanOrEqual(workArea.top + workArea.height + 1);
+});

@@ -3,6 +3,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const cameraMapLessPath = `${process.cwd()}/src/styles/camera-map.less`;
 
+function createOpenFreeMapStyle(styleUrl = "https://tiles.openfreemap.org/styles/liberty") {
+  const styleId = styleUrl.split("/").at(-1) || "liberty";
+  return {
+    version: 8,
+    glyphs: "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
+    sources: {
+      openmaptiles: {
+        type: "vector",
+        url: "https://tiles.openfreemap.org/planet",
+      },
+    },
+    layers: [
+      { id: `openfreemap-${styleId}-background`, type: "background" },
+      { id: `openfreemap-${styleId}-roads`, type: "line", source: "openmaptiles", "source-layer": "transportation" },
+    ],
+  };
+}
+
 const mapLibreDouble = vi.hoisted(() => {
   const maps = [];
   const popups = [];
@@ -347,6 +365,19 @@ describe("createCameraMapWidget", () => {
       skippedCountries: [],
       status: { status: "ready", featureCount: 1 },
     }));
+    window.fetch = vi.fn(async (input) => {
+      const url = typeof input === "string" ? input : String(input?.url || input);
+      if (url.startsWith("https://tiles.openfreemap.org/styles/")) {
+        return new Response(JSON.stringify(createOpenFreeMapStyle(url)), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response("{}", {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
     vi.resetModules();
     ({ loadMapLibre } = await import("../../src/shared/maplibre-loader.js"));
     ({ createShellWindowManager } = await import("../../src/shared/shell-window-manager.js"));
@@ -568,10 +599,10 @@ describe("createCameraMapWidget", () => {
     expect(Array.from(layerMenu.querySelectorAll(".camera-map-layer-option[data-layer-id]")).map((option) => option.dataset.layerId))
       .toEqual([
         "auto",
-        "carto-voyager",
+        "openfreemap-liberty",
         "osm-standard",
-        "carto-positron",
-        "carto-dark-matter",
+        "openfreemap-positron",
+        "openfreemap-dark",
         "opentopomap",
         "esri-world-imagery",
       ]);
@@ -644,9 +675,14 @@ describe("createCameraMapWidget", () => {
         label: expect.any(String),
         attribution: expect.any(String),
       });
-      expect(basemap.tiles).toEqual(expect.arrayContaining([expect.any(String)]));
       expect(basemap.attribution.trim()).not.toBe("");
-      expect(basemap.tiles.join(" ")).not.toMatch(disallowedProviders);
+      if (basemap.kind === "vector-style") {
+        expect(basemap.styleUrl).toMatch(/^https:\/\/tiles\.openfreemap\.org\/styles\//);
+        expect(basemap.styleUrl).not.toMatch(disallowedProviders);
+      } else {
+        expect(basemap.tiles).toEqual(expect.arrayContaining([expect.any(String)]));
+        expect(basemap.tiles.join(" ")).not.toMatch(disallowedProviders);
+      }
     }
   });
 
@@ -655,8 +691,11 @@ describe("createCameraMapWidget", () => {
     const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
     const map = await openAndLoad(widget);
 
-    expect(map.options.style.sources["camera-map-basemap"].tiles[0]).toContain("basemaps.cartocdn.com");
-    expect(map.options.style.sources["camera-map-basemap"].tiles[0]).toContain("voyager");
+    expect(map.options.style.layers.map((layer) => layer.id)).toContain("openfreemap-liberty-background");
+    expect(window.fetch).toHaveBeenCalledWith("https://tiles.openfreemap.org/styles/liberty", expect.objectContaining({
+      credentials: "omit",
+      headers: { Accept: "application/json" },
+    }));
     expect(getLayerButton().dataset.layerId).toBe("auto");
 
     widget.destroy();
@@ -1668,7 +1707,7 @@ describe("createCameraMapWidget", () => {
 
     const map = await openAndLoad(widget);
 
-    expect(map.options.style.sources["camera-map-basemap"].tiles[0]).toContain("dark_all");
+    expect(map.options.style.layers.map((layer) => layer.id)).toContain("openfreemap-dark-background");
 
     widget.destroy();
     manager.destroy();
@@ -1689,15 +1728,14 @@ describe("createCameraMapWidget", () => {
     map.setStyle.mockClear();
     dataSourceDouble.loadViewport.mockClear();
     colorScheme.setMatches(true);
+    await flushTimers();
 
     expect(layerButton.dataset.layerId).toBe("auto");
     expect(localStorage.getItem(CAMERA_MAP_BASEMAP_STORAGE_KEY)).toBeNull();
     expect(map.setStyle).toHaveBeenCalledWith(expect.objectContaining({
-      sources: expect.objectContaining({
-        "camera-map-basemap": expect.objectContaining({
-          tiles: ["https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"],
-        }),
-      }),
+      layers: expect.arrayContaining([
+        expect.objectContaining({ id: "openfreemap-dark-background" }),
+      ]),
     }), { diff: false });
     expect(dataSourceDouble.loadViewport).not.toHaveBeenCalled();
 
@@ -1706,6 +1744,7 @@ describe("createCameraMapWidget", () => {
 
     map.setStyle.mockClear();
     chooseLayer("opentopomap");
+    await flushTimers();
 
     expect(localStorage.getItem(CAMERA_MAP_BASEMAP_STORAGE_KEY)).toBe("opentopomap");
 
@@ -1738,15 +1777,14 @@ describe("createCameraMapWidget", () => {
 
     map.setStyle.mockClear();
     chooseLayer("auto");
+    await flushTimers();
 
     expect(layerButton.dataset.layerId).toBe("auto");
     expect(localStorage.getItem(CAMERA_MAP_BASEMAP_STORAGE_KEY)).toBeNull();
     expect(map.setStyle).toHaveBeenCalledWith(expect.objectContaining({
-      sources: expect.objectContaining({
-        "camera-map-basemap": expect.objectContaining({
-          tiles: ["https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"],
-        }),
-      }),
+      layers: expect.arrayContaining([
+        expect.objectContaining({ id: "openfreemap-liberty-background" }),
+      ]),
     }), { diff: false });
 
     fireMapEvent(map, "style.load");
@@ -1754,14 +1792,13 @@ describe("createCameraMapWidget", () => {
 
     map.setStyle.mockClear();
     colorScheme.setMatches(true);
+    await flushTimers();
 
     expect(layerButton.dataset.layerId).toBe("auto");
     expect(map.setStyle).toHaveBeenCalledWith(expect.objectContaining({
-      sources: expect.objectContaining({
-        "camera-map-basemap": expect.objectContaining({
-          tiles: ["https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"],
-        }),
-      }),
+      layers: expect.arrayContaining([
+        expect.objectContaining({ id: "openfreemap-dark-background" }),
+      ]),
     }), { diff: false });
 
     widget.destroy();
@@ -1906,17 +1943,17 @@ describe("createCameraMapWidget", () => {
     const map = await openAndLoad(widget);
 
     dataSourceDouble.loadViewport.mockClear();
-    chooseLayer("opentopomap");
+    chooseLayer("openfreemap-dark");
+    await flushTimers();
 
-    expect(localStorage.getItem(CAMERA_MAP_BASEMAP_STORAGE_KEY)).toBe("opentopomap");
+    expect(localStorage.getItem(CAMERA_MAP_BASEMAP_STORAGE_KEY)).toBe("openfreemap-dark");
     expect(map.setStyle).toHaveBeenCalledWith(expect.objectContaining({
-      sources: expect.objectContaining({
-        "camera-map-basemap": expect.objectContaining({
-          tiles: ["https://tile.opentopomap.org/{z}/{x}/{y}.png"],
-        }),
-      }),
+      layers: expect.arrayContaining([
+        expect.objectContaining({ id: "openfreemap-dark-background" }),
+        expect.objectContaining({ id: "openfreemap-dark-roads" }),
+      ]),
     }), { diff: false });
-    expect(document.querySelector(".camera-map-attribution").textContent).toBe("cameraMapAttributionOpenTopo");
+    expect(document.querySelector(".camera-map-attribution").textContent).toBe("cameraMapAttributionOpenFreeMap");
     expect(dataSourceDouble.loadViewport).not.toHaveBeenCalled();
 
     fireMapEvent(map, "style.load");
@@ -1925,7 +1962,7 @@ describe("createCameraMapWidget", () => {
     const cameraSource = map.getSource("camera-map-cameras");
     const userSource = map.getSource("camera-map-user-position");
     const layerIds = map.layers.map((layer) => layer.id);
-    const basemapIndex = layerIds.indexOf("camera-map-basemap-layer");
+    const basemapIndex = layerIds.indexOf("openfreemap-dark-roads");
     const cameraLayerIds = layerIds.filter((id) =>
       id.startsWith("camera-map-camera-")
       || id.startsWith("camera-map-selected-approach")
@@ -1965,6 +2002,85 @@ describe("createCameraMapWidget", () => {
     expect(new Set(cameraLayerIds).size).toBe(cameraLayerIds.length);
     expect(cameraLayerIds.every((id) => layerIds.indexOf(id) > basemapIndex)).toBe(true);
     expect(dataSourceDouble.loadViewport).not.toHaveBeenCalled();
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("applies only the latest asynchronously loaded basemap", async () => {
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    const map = await openAndLoad(widget);
+    let resolvePositron;
+    let resolveDark;
+    window.fetch = vi.fn((input) => {
+      const url = typeof input === "string" ? input : String(input?.url || input);
+      return new Promise((resolve) => {
+        if (url.endsWith("/positron")) resolvePositron = resolve;
+        if (url.endsWith("/dark")) resolveDark = resolve;
+      });
+    });
+    map.setStyle.mockClear();
+
+    chooseLayer("openfreemap-positron");
+    chooseLayer("openfreemap-dark");
+    resolveDark(new Response(JSON.stringify(createOpenFreeMapStyle("https://tiles.openfreemap.org/styles/dark")), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    await flushTimers();
+
+    expect(map.setStyle).toHaveBeenCalledTimes(1);
+    expect(map.setStyle).toHaveBeenLastCalledWith(expect.objectContaining({
+      layers: expect.arrayContaining([
+        expect.objectContaining({ id: "openfreemap-dark-background" }),
+      ]),
+    }), { diff: false });
+
+    resolvePositron(new Response(JSON.stringify(createOpenFreeMapStyle("https://tiles.openfreemap.org/styles/positron")), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    await flushTimers();
+
+    expect(map.setStyle).toHaveBeenCalledTimes(1);
+    expect(localStorage.getItem("vatioboard:camera-map:basemap")).toBe("openfreemap-dark");
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("uses a basemap selected while the initial style is still loading", async () => {
+    let resolveLiberty;
+    let resolveDark;
+    window.fetch = vi.fn((input) => {
+      const url = typeof input === "string" ? input : String(input?.url || input);
+      return new Promise((resolve) => {
+        if (url.endsWith("/liberty")) resolveLiberty = resolve;
+        if (url.endsWith("/dark")) resolveDark = resolve;
+      });
+    });
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+
+    widget.open();
+    await flushTimers();
+    chooseLayer("openfreemap-dark");
+    resolveLiberty(new Response(JSON.stringify(createOpenFreeMapStyle("https://tiles.openfreemap.org/styles/liberty")), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    await flushTimers();
+    resolveDark(new Response(JSON.stringify(createOpenFreeMapStyle("https://tiles.openfreemap.org/styles/dark")), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    await flushTimers();
+
+    expect(mapLibreDouble.maps).toHaveLength(1);
+    expect(mapLibreDouble.maps[0].options.style.layers.map((layer) => layer.id))
+      .toContain("openfreemap-dark-background");
+    expect(getLayerButton().dataset.layerId).toBe("openfreemap-dark");
 
     widget.destroy();
     manager.destroy();
@@ -2034,11 +2150,12 @@ describe("createCameraMapWidget", () => {
     const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
     const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
 
-    expect(getLayerButton().dataset.layerId).toBe("carto-dark-matter");
+    expect(getLayerButton().dataset.layerId).toBe("openfreemap-dark");
+    expect(localStorage.getItem(CAMERA_MAP_BASEMAP_STORAGE_KEY)).toBe("openfreemap-dark");
 
     const map = await openAndLoad(widget);
 
-    expect(map.options.style.sources["camera-map-basemap"].tiles[0]).toContain("dark_all");
+    expect(map.options.style.layers.map((layer) => layer.id)).toContain("openfreemap-dark-background");
 
     widget.destroy();
     manager.destroy();
