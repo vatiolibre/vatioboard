@@ -435,6 +435,7 @@ export interface VatioRunningApp {
 }
 
 export interface VatioShellWindowRestoreOptions {
+  appIds?: readonly VatioAppId[];
   layout?: ShellLayoutSnapshot | null;
   states?: readonly ShellWindowState[];
 }

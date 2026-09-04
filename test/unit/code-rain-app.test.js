@@ -171,7 +171,7 @@ function createPointerTestEvent(type, init = {}) {
 describe("Code Rain app", () => {
   beforeEach(() => {
     resetRouteAppTestDom();
-    window.location.hash = "#/code-rain?version=operator&effect=image&camera=true&url=https://example.com/nope.jpg&fallSpeed=0.8";
+    window.history.replaceState({}, "", "/code-rain?version=operator&effect=image&camera=true&url=https://example.com/nope.jpg&fallSpeed=0.8");
   });
 
   afterEach(() => {
@@ -192,7 +192,7 @@ describe("Code Rain app", () => {
       runtime,
       manifest,
       path: "/code-rain",
-      hash: window.location.hash,
+      url: `${window.location.pathname}${window.location.search}`,
     }));
 
     const frame = root.querySelector("[data-code-rain-frame]");
@@ -232,7 +232,7 @@ describe("Code Rain app", () => {
       runtime,
       manifest,
       path: "/code-rain",
-      hash: "#/code-rain",
+      url: "/code-rain",
     }));
 
     const initialSrc = new URL(root.querySelector("[data-code-rain-frame]").getAttribute("src"), window.location.origin);
@@ -287,7 +287,7 @@ describe("Code Rain app", () => {
       fallSpeed: "1.25",
       version: "3d",
     });
-    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("#/code-rain?"));
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("/code-rain?"));
     expect(writeText.mock.calls[0][0]).toContain("fallSpeed=1.25");
     expect(writeText.mock.calls[0][0]).toContain("effect=mirror");
   });
@@ -304,7 +304,7 @@ describe("Code Rain app", () => {
         runtime,
         manifest,
         path: "/code-rain",
-        hash: "#/code-rain",
+        url: "/code-rain",
       }));
 
       const app = root.querySelector("[data-code-rain-app]");
@@ -363,7 +363,7 @@ describe("Code Rain app", () => {
         runtime,
         manifest,
         path: "/code-rain",
-        hash: "#/code-rain",
+        url: "/code-rain",
       }));
 
       const app = root.querySelector("[data-code-rain-app]");
@@ -431,7 +431,7 @@ describe("Code Rain app", () => {
         runtime,
         manifest,
         path: "/code-rain",
-        hash: "#/code-rain",
+        url: "/code-rain",
       }));
 
       const app = root.querySelector("[data-code-rain-app]");

@@ -6,14 +6,15 @@ import type {
   VatioAppRuntime,
   VatioBackgroundServiceManager,
 } from "../app-platform/types";
+import type { RecoveryCoordinator } from "../shared/recovery-coordinator";
 
 export type RoutePath = string;
-export type AppRouteHash = string;
+export type AppRouteUrl = string;
 
 export interface ParsedAppRoute {
   path: RoutePath;
   query: URLSearchParams;
-  hash: AppRouteHash;
+  url: AppRouteUrl;
   requestedPath?: string;
 }
 
@@ -49,6 +50,7 @@ export interface RuntimeContext {
   drivingAlertService: DrivingAlertService;
   gpsService: GpsService;
   ttsService?: TtsService;
+  recoveryCoordinator?: RecoveryCoordinator;
   shellManager?: ShellRuntime;
   shellAppRuntimeManager?: ShellAppRuntimeManager;
   backgroundServiceManager?: VatioBackgroundServiceManager;

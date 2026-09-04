@@ -1,6 +1,9 @@
 {
   "name": "VatioLibre Driving Tools",
   "short_name": "VL Driving Tools",
+  "id": "/",
+  "scope": "/",
+  "start_url": "/",
   "icons": [
     {
       "src": "/web-app-manifest-192x192.png",

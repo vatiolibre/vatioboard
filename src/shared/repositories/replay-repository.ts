@@ -365,5 +365,5 @@ export async function openReplayFromCloud(name: string): Promise<string> {
     // Keep direct-open flow independent from background persistence.
   });
 
-  return `/#/replay?record=${encodeRecordName(recordingId)}&cloudRecord=${encodeRecordName(name)}`;
+  return `/replay?record=${encodeRecordName(recordingId)}&cloudRecord=${encodeRecordName(name)}`;
 }

@@ -573,14 +573,10 @@ let spaSpeedReadyResolve: any = null;
 
 const DRIVING_AUDIO_PROMPT_POINTER_CLICK_SUPPRESS_MS = 800;
 
-function getSpaRouteHash() {
-  return String(window.location.hash || '#/');
-}
-
 function shouldWaitForSpaSpeedRouteReady() {
   if (!isSpaRuntime) return false;
-  const hash = getSpaRouteHash();
-  return hash === '#/' || hash.startsWith('#/speed');
+  const path = String(window.location.pathname || '/').replace(/\/+$/, '') || '/';
+  return path === '/' || path === '/speed';
 }
 
 function resolveSpaSpeedRouteReady() {
@@ -3009,7 +3005,7 @@ function bindEvents({ cleanup, signal }: AnyRecord = {}) {
       toggleLang();
     });
   });
-  bindMenuNavigation(elements.openReplayQuick, '#/replay', cleanup);
+  bindMenuNavigation(elements.openReplayQuick, '/replay', cleanup);
   cleanup.addEventListener(elements.retryGps, 'click', () => restartTrip({ fromUserGesture: true }));
   cleanup.addEventListener(elements.resetTrip, 'click', () => restartTrip({ fromUserGesture: true }));
   cleanup.addEventListener(elements.toggleRecording, 'click', () => {

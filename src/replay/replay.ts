@@ -61,6 +61,7 @@ const isSpaRuntime = Boolean(window.__vatioboardSpa);
 const DEFAULT_REPLAY_PLAYBACK_RATE = 1000;
 const REPLAY_PLAYBACK_RATE_LEGACY_KEY = 'vatio_replay_playback_rate_v1';
 const REPLAY_PLAYBACK_RATE_SETTING_KEY = 'playbackRate';
+const REPLAY_RECOVERY_STORAGE_KEY = 'vatio_replay_route_state_v1';
 const REPLAY_PLAYBACK_RATES = new Set([1, 4, 10, 100, 1000]);
 const GRAPH_SCRUB_INTENT_THRESHOLD_PX = 8;
 const IconCharts = `
@@ -368,6 +369,49 @@ let introApproachToken = 0;
 let recordingsDetailMeasureFrame: number | null = null;
 let pendingReplayRecoveryRecordingId: string | null = null;
 let replayPanelReturnFocus: HTMLElement | null = null;
+let pendingReplayRecovery: AnyRecord | null = null;
+
+function loadReplayRecoveryState() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(REPLAY_RECOVERY_STORAGE_KEY) || 'null');
+    return parsed && typeof parsed === 'object' && parsed.version === 1 ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistReplayRecoveryState() {
+  try {
+    window.localStorage.setItem(REPLAY_RECOVERY_STORAGE_KEY, JSON.stringify({
+      version: 1,
+      selectedRecordingId: state.selectedRecordingId || null,
+      elapsedMs: Math.max(0, Number(state.elapsedMs) || 0),
+      dashboardAxis: state.dashboardAxis === 'distance' ? 'distance' : 'time',
+      activePanel: ['recordings', 'charts', 'details'].includes(state.activePanel)
+        ? state.activePanel
+        : null,
+      updatedAtMs: Date.now(),
+    }));
+  } catch {
+    // Route recovery is best effort when storage is unavailable.
+  }
+}
+
+function applyPendingReplayRecovery() {
+  const recovery = pendingReplayRecovery;
+  if (!recovery || recovery.selectedRecordingId !== state.selectedRecordingId) return;
+  state.dashboardAxis = recovery.dashboardAxis === 'distance' ? 'distance' : 'time';
+  state.elapsedMs = Math.min(
+    Math.max(0, Number(recovery.elapsedMs) || 0),
+    Math.max(0, Number(state.summary.durationMs) || 0),
+  );
+  state.activePanel = ['recordings', 'charts', 'details'].includes(recovery.activePanel)
+    ? recovery.activePanel
+    : null;
+  state.expandedGraphOpen = state.activePanel === 'charts';
+  pendingReplayRecovery = null;
+  syncMountedReplayRouteUi();
+}
 
 refreshDerivedState();
 
@@ -1345,6 +1389,14 @@ async function mountReplayController(routeContext: AnyRecord = {}) {
   cleanup.add(() => {
     destroyReplayRouteResources(route);
   });
+  const recoveryCoordinator = routeContext.recoveryCoordinator || routeContext.context?.recoveryCoordinator;
+  const unregisterRecovery = recoveryCoordinator?.register?.({
+    id: 'replay-route',
+    flush: persistReplayRecoveryState,
+  });
+  if (unregisterRecovery) cleanup.add(unregisterRecovery);
+
+  pendingReplayRecovery = loadReplayRecoveryState();
 
   if (!isSpaRuntime && !standaloneBackendAuthInitialized) {
     standaloneBackendAuthInitialized = true;
@@ -1365,6 +1417,7 @@ function unmountReplayController() {
   if (!state.viewMounted && !activeReplayRoute) return;
 
   const route = activeReplayRoute;
+  persistReplayRecoveryState();
   stopPlayback();
   cancelReplayApproach({ markPlayed: true });
   closeReplayPanel();
@@ -1447,6 +1500,7 @@ function setPlaybackRate(rate) {
   writeLegacyPlaybackRate(normalizedRate);
   mirrorPlaybackRateToRuntime(normalizedRate);
   renderRateButtons();
+  persistReplayRecoveryState();
 }
 
 function setPlaybackFromExpandedAxisValue(axisValue) {
@@ -1460,6 +1514,7 @@ function setPlaybackFromExpandedAxisValue(axisValue) {
   }
 
   renderPlaybackFrame();
+  persistReplayRecoveryState();
 }
 
 function scrubExpandedGraph(metricKey, clientX) {
@@ -1511,6 +1566,7 @@ function setDashboardAxis(axis) {
   renderAxisButtons();
   renderGraphs();
   renderPlaybackFrame();
+  persistReplayRecoveryState();
 }
 
 function resetPlayback({ refitMap = true } = {}) {
@@ -1518,6 +1574,7 @@ function resetPlayback({ refitMap = true } = {}) {
   cancelReplayApproach({ markPlayed: true });
   state.elapsedMs = 0;
   renderPlaybackFrame();
+  persistReplayRecoveryState();
 
   if (refitMap) {
     mapController.resetCamera();
@@ -1733,7 +1790,7 @@ function bindEvents({
   });
 
   cleanup.addEventListener(routeElements.replayOpenSpeed, 'click', () => {
-    navigateToAppRoute('#/speed');
+    navigateToAppRoute('/');
   });
 
   cleanup.addEventListener(window, ROUTE_VISIBLE_EVENT, (event) => {
@@ -1810,6 +1867,7 @@ function bindEvents({
       state.elapsedMs = axisValue;
     }
     renderPlaybackFrame();
+    persistReplayRecoveryState();
   });
 
   cleanup.addEventListener(routeElements.replayFilterStart, 'input', (event) => {
@@ -2055,7 +2113,7 @@ async function init() {
 
   try {
     const urlParams = getCurrentAppRouteQuery();
-    const initialRecordingId = urlParams.get('record');
+    const initialRecordingId = urlParams.get('record') || pendingReplayRecovery?.selectedRecordingId || null;
     const initialCloudRecordName = urlParams.get('cloudRecord');
     if (initialRecordingId && initialCloudRecordName) {
       registerLinkedReplayCloudRecord(initialRecordingId, initialCloudRecordName);
@@ -2073,6 +2131,7 @@ async function init() {
 
     try {
       await requestReplaySelection(initialRecordingId, { settleMicrotasks: 0 });
+      applyPendingReplayRecovery();
     } finally {
       clearTimeout(selectionSafetyTimeoutId);
       state.initialSelectionPending = false;

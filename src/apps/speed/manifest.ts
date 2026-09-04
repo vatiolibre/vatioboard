@@ -43,6 +43,5 @@ export const speedAppManifest = defineAppManifest({
   status: "stable",
   metadata: {
     legacyToolId: "route:speed",
-    legacyHref: "#/speed",
   },
 });

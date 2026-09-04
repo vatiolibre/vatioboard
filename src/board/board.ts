@@ -181,7 +181,7 @@ bindToggle(openCalcBtn, calcWidget);
 
 bindToggle(openEnergyBtn, energyWidget);
 
-bindNavigation(openSpeedBtn, "#/speed");
+bindNavigation(openSpeedBtn, "/");
 
   return (function(){
     const canvas = byId("pad");

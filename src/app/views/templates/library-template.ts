@@ -4,7 +4,7 @@ const libraryTemplate: string = String.raw`
       <header class="library-header" data-vb-route-header>
         <div class="header-inner library-header-inner">
           <div class="brand" data-i18n-title="tagline" title="Simple full-page drawing board by VatioLibre">
-            <a class="brand-home" href="#/board" data-i18n-aria="openBoard" aria-label="Open VatioLibre drawing board">
+            <a class="brand-home" href="/board" data-i18n-aria="openBoard" aria-label="Open VatioLibre drawing board">
               <span class="dot" aria-hidden="true"></span>
               <picture class="brand-logo" aria-hidden="true">
                 <source srcset="/img/vb_logo_dark.svg" media="(prefers-color-scheme: dark)" />

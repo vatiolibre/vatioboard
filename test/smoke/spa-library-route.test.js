@@ -6,9 +6,9 @@ describe("SPA Library route real-controller smoke", () => {
 
   it("stays usable after Board remount cycles", async () => {
     const { finalSnapshot, snapshots, targetSnapshots } = await expectRealSpaRouteRemount({
-      targetHash: "#/library",
+      targetHash: "/library",
       targetSelector: "#libraryList",
-      sequence: ["#/board", "#/library", "#/replay", "#/accel", "#/board", "#/library"],
+      sequence: ["/board", "/library", "/replay", "/accel", "/board", "/library"],
     });
     const firstLibrary = targetSnapshots[0];
     const secondLibrary = targetSnapshots[1];
@@ -29,9 +29,9 @@ describe("SPA Library route real-controller smoke", () => {
 
   it("keeps the mixed Speed to Library to Replay to Accel to Board route chain stable", async () => {
     const { finalSnapshot } = await expectRealSpaRouteRemount({
-      targetHash: "#/board",
+      targetHash: "/board",
       targetSelector: "#pad",
-      sequence: ["#/board", "#/speed", "#/library", "#/replay", "#/accel", "#/board"],
+      sequence: ["/board", "/", "/library", "/replay", "/accel", "/board"],
     });
 
     expect(finalSnapshot.activeWatchCount).toBe(0);

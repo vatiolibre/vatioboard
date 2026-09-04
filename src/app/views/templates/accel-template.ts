@@ -13,7 +13,7 @@ const accelTemplate: string = String.raw`
             data-i18n-title="accelTagline"
             title="Browser acceleration timer by VatioLibre"
           >
-            <a class="brand-home" href="#/board" aria-label="Open VatioLibre drawing board">
+            <a class="brand-home" href="/board" aria-label="Open VatioLibre drawing board">
               <span class="dot" aria-hidden="true"></span>
               <picture class="brand-logo" aria-hidden="true">
                 <source srcset="/img/vb_logo_dark.svg" media="(prefers-color-scheme: dark)" />

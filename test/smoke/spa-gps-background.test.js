@@ -37,9 +37,9 @@ async function waitForAsyncCondition(condition, iterations = 40) {
   return Boolean(condition());
 }
 
-async function navigateHash(hash) {
-  window.location.hash = hash;
-  window.dispatchEvent(new HashChangeEvent('hashchange'));
+async function navigatePath(path) {
+  const { navigateToAppRoute } = await import('../../src/app/router.js');
+  navigateToAppRoute(path);
   await settleAsyncWork();
 }
 
@@ -435,7 +435,7 @@ describe('SPA GPS background runtime', () => {
     });
     await settleAsyncWork();
 
-    await navigateHash('#/accel');
+    await navigatePath('/accel');
     await import('../../src/accel/accel.js').then((module) => module.initPromise);
     await settleAsyncWork();
     const accelWatcherSubscribed = await waitForAsyncCondition(
@@ -483,7 +483,7 @@ describe('SPA GPS background runtime', () => {
     ).toBe(true);
 
     window.confirm.mockClear();
-    await navigateHash('#/board');
+    await navigatePath('/board');
 
     expect(window.confirm).not.toHaveBeenCalled();
     expect(document.querySelector('[data-activity-id="speed.recording"]')).toBeTruthy();
@@ -510,14 +510,14 @@ describe('SPA GPS background runtime', () => {
     expect(accelGpsCallbackCount).toBeGreaterThan(1);
     expect(accelGpsErrors).toEqual([]);
 
-    await navigateHash('#/accel');
+    await navigatePath('/accel');
     await settleAsyncWork();
 
     expect(
       getNumericText(document.getElementById('diagnosticSamplesValue'))
     ).toBeGreaterThanOrEqual(1);
 
-    await navigateHash('#/');
+    await navigatePath('/');
     document.getElementById('stopRecording').click();
     await settleAsyncWork(40);
 
@@ -1169,7 +1169,7 @@ describe('SPA GPS background runtime', () => {
       )
     ).toBe(true);
 
-    await navigateHash('#/board');
+    await navigatePath('/board');
     emitGeolocationSuccess({
       timestamp: 321000,
       coords: {
@@ -1181,7 +1181,7 @@ describe('SPA GPS background runtime', () => {
     audioSystem.releaseBackgroundAudioLease(audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE);
     await settleAsyncWork();
 
-    await navigateHash('#/speed');
+    await navigatePath('/');
     await settleAsyncWork(40);
 
     const prompt = document.getElementById('drivingAudioPrompt');
@@ -1233,11 +1233,11 @@ describe('SPA GPS background runtime', () => {
       });
       await settleAsyncWork();
 
-      await navigateHash('#/board');
+      await navigatePath('/board');
       audioSystem.releaseBackgroundAudioLease(audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE);
       await vi.advanceTimersByTimeAsync(13000);
 
-      await navigateHash('#/speed');
+      await navigatePath('/');
       await vi.advanceTimersByTimeAsync(2500);
       await settleAsyncWork();
 
@@ -1259,7 +1259,7 @@ describe('SPA GPS background runtime', () => {
     await import('../../src/app/main.js');
     await settleAsyncWork();
 
-    await navigateHash('#/accel');
+    await navigatePath('/accel');
     await import('../../src/accel/accel.js').then((module) => module.initPromise);
     await settleAsyncWork();
 
@@ -1282,7 +1282,7 @@ describe('SPA GPS background runtime', () => {
     expect(document.querySelector('[data-activity-id="accel.run"]')).toBeTruthy();
 
     window.confirm.mockClear();
-    await navigateHash('#/board');
+    await navigatePath('/board');
 
     expect(window.confirm).not.toHaveBeenCalled();
     expect(document.querySelector('[data-activity-id="accel.run"]')).toBeTruthy();
@@ -1299,7 +1299,7 @@ describe('SPA GPS background runtime', () => {
     });
     await settleAsyncWork();
 
-    await navigateHash('#/accel');
+    await navigatePath('/accel');
     await settleAsyncWork();
 
     expect(nativeWatchPosition).toHaveBeenCalledTimes(1);
@@ -1312,7 +1312,7 @@ describe('SPA GPS background runtime', () => {
     expect(document.querySelector('[data-activity-id="accel.run"]')).toBeFalsy();
 
     const clearCallsBeforeIdleUnmount = nativeClearWatch.mock.calls.length;
-    await navigateHash('#/board');
+    await navigatePath('/board');
 
     expect(nativeClearWatch.mock.calls.length).toBeGreaterThan(clearCallsBeforeIdleUnmount);
   }, SPA_GPS_BACKGROUND_SMOKE_TIMEOUT_MS);

@@ -1,6 +1,6 @@
 import type {
   AppRoute,
-  AppRouteHash,
+  AppRouteUrl,
   CleanupStack,
   MountedView,
   ParsedAppRoute,
@@ -55,7 +55,7 @@ import type {
 
 type RouteFoundation =
   | RoutePath
-  | AppRouteHash
+  | AppRouteUrl
   | ParsedAppRoute
   | AppRoute
   | RouteConfig

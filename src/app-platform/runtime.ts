@@ -14,7 +14,7 @@ import type {
 } from "./types";
 
 function routeHref(route: string) {
-  return route.startsWith("#/") ? route : `#${route.startsWith("/") ? route : `/${route}`}`;
+  return route.startsWith("/") ? route : `/${route}`;
 }
 
 export function createAppRuntime({

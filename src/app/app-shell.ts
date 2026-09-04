@@ -23,7 +23,7 @@ import {
   createBackgroundServiceManager,
   createShellAppRuntimeManager,
 } from "../app-platform/index.js";
-import { createHashRouter, emitRouteVisible, navigateToAppRoute } from "./router.js";
+import { createHistoryRouter, emitRouteVisible, navigateToAppRoute } from "./router.js";
 import { routes } from "./routes.js";
 import { createRuntimeContext } from "./runtime-context.js";
 import { showWelcomeConsentIfNeeded } from "./welcome-consent.js";
@@ -35,9 +35,44 @@ interface AppShellStartOptions {
   persistentLayer?: HTMLElement | null;
 }
 
-interface HashRouterRuntime {
+interface HistoryRouterRuntime {
   getRoute(): AppRoute | null;
   destroy(): void;
+}
+
+const CLOCK_SESSION_KEYS = [
+  "vatioboard.app.vatio.premiumClock.session.v1",
+  "premium_clock_session_v1",
+] as const;
+const CLOCK_ALARM_KEYS = [
+  "vatioboard.app.vatio.premiumClock.alarms.v1",
+  "premium_clock_alarms_v1",
+] as const;
+
+function readFirstStoredJson(keys: readonly string[]) {
+  for (const key of keys) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw) return JSON.parse(raw) as unknown;
+    } catch {
+      // Recovery remains best effort when a stored value is unavailable or invalid.
+    }
+  }
+  return null;
+}
+
+function hasRecoverableClockActivity() {
+  const session = readFirstStoredJson(CLOCK_SESSION_KEYS) as Record<string, unknown> | null;
+  const alarms = readFirstStoredJson(CLOCK_ALARM_KEYS);
+  return Boolean(
+    session?.timerState === "running"
+    || session?.stopwatchState === "running"
+    || session?.activeAlert
+    || (Array.isArray(session?.snoozedAlarms) && session.snoozedAlarms.length > 0)
+    || (Array.isArray(alarms) && alarms.some((alarm) => (
+      alarm && typeof alarm === "object" && (alarm as Record<string, unknown>).enabled === true
+    )))
+  );
 }
 
 const createShellPlayerWidget = createPlayerApp as (options: Record<string, unknown>) => unknown;
@@ -46,7 +81,7 @@ const installShellKeyboard = installShellKeyboardShortcuts as (options: {
 }) => { uninstall(): void };
 
 function installLinkInterceptor() {
-  document.addEventListener("click", (event) => {
+  const onClick = (event: MouseEvent) => {
     const target = event.target instanceof Element ? event.target : null;
     const anchor = target?.closest?.("a[href]") as HTMLAnchorElement | null;
     if (!anchor || event.defaultPrevented) return;
@@ -55,11 +90,13 @@ function installLinkInterceptor() {
 
     const href = anchor.getAttribute("href");
     if (!href) return;
-    if (!href.startsWith("/") && !href.startsWith("#/")) return;
+    if (!href.startsWith("/")) return;
 
     const handled = navigateToAppRoute(href);
     if (handled) event.preventDefault();
-  });
+  };
+  document.addEventListener("click", onClick);
+  return () => document.removeEventListener("click", onClick);
 }
 
 function shouldPreloadRoutes() {
@@ -97,12 +134,10 @@ function installShellLayoutPersistenceFlush(shellManager: ShellRuntime) {
   };
 
   window.addEventListener("pagehide", flush);
-  window.addEventListener("beforeunload", flush);
   document.addEventListener("visibilitychange", flushWhenHidden);
 
   return () => {
     window.removeEventListener("pagehide", flush);
-    window.removeEventListener("beforeunload", flush);
     document.removeEventListener("visibilitychange", flushWhenHidden);
   };
 }
@@ -118,6 +153,7 @@ export async function startAppShell({
   window.__vatioboardSpa = true;
 
   const context = createRuntimeContext();
+  window.__vatioboardRecovery = context.recoveryCoordinator;
   context.gpsService.installGlobalShim();
   window.__vatioboardGpsStore = context.gpsService;
   window.__vatioboardGpsGetCurrentPosition = () => context.gpsService.getCurrentPosition?.() || null;
@@ -129,6 +165,12 @@ export async function startAppShell({
   initBackendAuthControllers();
 
   const shellManager = getDefaultShellWindowManager({ root: persistentLayer }) as ShellRuntime;
+  const unregisterShellRecovery = context.recoveryCoordinator?.register({
+    id: "shell-layout",
+    flush: () => {
+      shellManager.persistShellLayout({ flush: true });
+    },
+  });
   const uninstallShellLayoutPersistenceFlush = installShellLayoutPersistenceFlush(shellManager);
   context.shellManager = shellManager;
   const welcomeConsent = showWelcomeConsentIfNeeded({ gpsService: context.gpsService });
@@ -140,7 +182,7 @@ export async function startAppShell({
   });
   void ensureSingleTabOwnership();
   startCloudSyncLoop();
-  let router: HashRouterRuntime | null = null;
+  let router: HistoryRouterRuntime | null = null;
   const shellAppRuntimeManager = createShellAppRuntimeManager({
     shellManager,
     baseContext: context as unknown as Record<string, unknown>,
@@ -171,7 +213,7 @@ export async function startAppShell({
     const currentRoute = router?.getRoute?.();
     const currentApp = currentRoute?.path ? appRegistry.getAppByRoute(currentRoute.path) : null;
     if (currentApp?.id === state.appId) {
-      navigateToAppRoute("#/speed", { replace: true });
+      navigateToAppRoute("/", { replace: true });
     }
   });
   const playerWidget = createShellPlayerWidget({
@@ -206,15 +248,23 @@ export async function startAppShell({
   const shellKeyboard = installShellKeyboard({ shellManager });
   floatingTools.taskbar = shellTaskbar;
   await appLauncher.restorePersistedShellWindows?.();
+  if (hasRecoverableClockActivity()) {
+    await appLauncher.restorePersistedShellWindows?.({
+      appIds: ["vatio.premiumClock"],
+      states: ["closed", "hidden"],
+    });
+  }
   shellManager.restoreShellLayout();
+  await context.recoveryCoordinator?.hydrate();
+  await context.recoveryCoordinator?.reconcile();
 
-  installLinkInterceptor();
+  const uninstallLinkInterceptor = installLinkInterceptor();
 
   let activeView: MountedView | null = null;
   let activeRouteController: AbortController | null = null;
   let routeVersion = 0;
 
-  router = createHashRouter({
+  router = createHistoryRouter({
     routes,
     async onRouteChange(route) {
       const version = routeVersion + 1;
@@ -231,7 +281,7 @@ export async function startAppShell({
 
       const appManifest = appRegistry.getAppByRoute(route.requestedPath || route.path);
       if (appManifest && !appControl.isEnabled(appManifest.id)) {
-        navigateToAppRoute("#/speed", { replace: true });
+        navigateToAppRoute("/", { replace: true });
         return;
       }
 
@@ -284,13 +334,15 @@ export async function startAppShell({
       };
       emitRouteVisible(route);
     },
-  }) as HashRouterRuntime;
+  }) as HistoryRouterRuntime;
 
   window.__vatioboardRouter = router;
   const originalRouterDestroy = router.destroy;
   router.destroy = () => {
     shellKeyboard.uninstall();
+    uninstallLinkInterceptor();
     uninstallShellLayoutPersistenceFlush();
+    unregisterShellRecovery?.();
     shellTaskbar.destroy();
     accountPanel.destroy();
     unsubscribeAppControl?.();
@@ -299,6 +351,8 @@ export async function startAppShell({
     context.drivingAlertService?.destroy?.();
     context.driveRecordingService?.destroy?.();
     context.gpsService.destroy?.();
+    void context.recoveryCoordinator?.destroy();
+    if (window.__vatioboardRecovery === context.recoveryCoordinator) delete window.__vatioboardRecovery;
     const gpsProvider = window.__vatioboardGpsGetCurrentPosition;
     if (window.__vatioboardGpsStore === context.gpsService) delete window.__vatioboardGpsStore;
     if (window.__vatioboardSpeedGetCurrentPosition === gpsProvider) {

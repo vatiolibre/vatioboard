@@ -576,7 +576,7 @@ function getDefaultSsoRedirectTo(target: string, config: BackendAuthConfig = get
     return `${getVatioLibreOrigin(config)}/fleet`;
   }
 
-  return `${getBoardFrontendOrigin(config)}/#/board`;
+  return `${getBoardFrontendOrigin(config)}/board`;
 }
 
 function hasUnsafeSsoRedirectChars(value: string) {
@@ -627,9 +627,8 @@ function getCurrentBoardRedirectTo({ config = getBackendAuthConfig(), location =
 
   const path = String(location?.pathname || "/") || "/";
   const search = String(location?.search || "");
-  const hash = String(location?.hash || "");
-  const route = `${path}${search}${hash}` || "/#/board";
-  return normalizeSsoRedirectTo(route === "/" ? "/#/board" : route, "board", config);
+  const route = `${path}${search}` || "/board";
+  return normalizeSsoRedirectTo(route === "/" ? "/board" : route, "board", config);
 }
 
 export function getVatioLibreOrigin(config: BackendAuthConfig = getBackendAuthConfig()) {

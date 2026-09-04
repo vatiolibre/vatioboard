@@ -35,7 +35,7 @@ describe("speed runtime", () => {
       labelKey: "activitySpeedRecording",
       detailKey: "activitySpeedRecordingKeepAliveActive",
       sampleCount: 4,
-      route: "#/speed",
+      route: "/",
     });
   });
 
@@ -62,7 +62,7 @@ describe("speed runtime", () => {
       state: "armed",
       labelKey: "activitySpeedAlertsArmed",
       detailKey: "activitySpeedAlertsReady",
-      route: "#/speed",
+      route: "/",
     });
   });
 

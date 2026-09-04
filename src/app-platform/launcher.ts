@@ -17,7 +17,7 @@ import type {
 } from "./types";
 
 function routeHref(route: string) {
-  return route.startsWith("#/") ? route : `#${route.startsWith("/") ? route : `/${route}`}`;
+  return route.startsWith("/") ? route : `/${route}`;
 }
 
 const shellWindowEntryLoads = new WeakMap<ShellRuntime, Map<VatioAppId, Promise<boolean>>>();
@@ -166,7 +166,9 @@ export function createAppLauncher({
     const layout = options.layout || readShellLayout();
     const windows = layout?.windows || {};
     const restorableStates = new Set(options.states || Array.from(RESTORABLE_SHELL_WINDOW_STATES));
+    const restorableAppIds = options.appIds ? new Set(options.appIds) : null;
     const candidates = getInstalledApps().filter((manifest) => {
+      if (restorableAppIds && !restorableAppIds.has(manifest.id)) return false;
       const shellWindowId = manifest.window?.shellWindowId;
       if (!shellWindowId) return false;
       const stored = windows[shellWindowId];

@@ -114,12 +114,12 @@ async function settle(iterations = 12) {
 }
 
 const routeViews = {
-  '#/board': () => import('../../src/app/views/BoardView.js'),
-  '#/speed': () => import('../../src/app/views/SpeedView.js'),
-  '#/replay': () => import('../../src/app/views/ReplayView.js'),
-  '#/waze': () => import('../../src/app/views/WazeView.js'),
-  '#/accel': () => import('../../src/app/views/AccelView.js'),
-  '#/library': () => import('../../src/app/views/LibraryView.js'),
+  '/board': () => import('../../src/app/views/BoardView.js'),
+  '/': () => import('../../src/app/views/SpeedView.js'),
+  '/replay': () => import('../../src/app/views/ReplayView.js'),
+  '/waze': () => import('../../src/app/views/WazeView.js'),
+  '/accel': () => import('../../src/app/views/AccelView.js'),
+  '/library': () => import('../../src/app/views/LibraryView.js'),
 };
 
 let activeView = null;
@@ -129,7 +129,7 @@ async function bootRouteHarness() {
   document.head.innerHTML = '<meta name="description" content="Route test">';
   document.body.innerHTML = '<main id="app-view" aria-live="polite"></main><div id="app-persistent-layer"></div>';
   window.__vatioboardSpa = true;
-  window.history.replaceState({}, '', 'https://vatioboard.com/#/board');
+  window.history.replaceState({}, '', 'https://vatioboard.com/board');
 
   const { initFloatingTools } = await import('../../src/shared/floating-tools.js');
   const { initSharedStartMenu } = await import('../../src/shared/start-menu.js');
@@ -149,15 +149,15 @@ async function bootRouteHarness() {
   });
 }
 
-async function navigateHash(hash) {
+async function navigatePath(path) {
   activeRouteController?.abort();
   activeView?.unmount?.();
   activeView = null;
   activeRouteController = new AbortController();
-  window.location.hash = hash;
-  const loaded = await routeViews[hash]();
+  window.history.pushState({}, '', path);
+  const loaded = await routeViews[path]();
   activeView = await loaded.mount(currentRouteRoot(), {
-    route: { path: hash.replace(/^#/, '') },
+    route: { path, url: path, query: new URLSearchParams() },
     routeSignal: activeRouteController.signal,
     navigate: vi.fn(),
     emitRouteVisible: vi.fn(),
@@ -227,19 +227,19 @@ describe('SPA route remount regression coverage', () => {
   });
 
   it.each([
-    ['#/board', '#/speed', 'speed'],
-    ['#/board', '#/replay', 'replay'],
-    ['#/board', '#/waze', 'waze'],
-    ['#/board', '#/accel', 'accel'],
-    ['#/board', '#/library', 'library'],
-    ['#/board', '#/speed', 'speed', '#/board', 'board', '#/speed', 'speed'],
-    ['#/board', '#/replay', 'replay', '#/board', 'board', '#/replay', 'replay'],
-    ['#/board', '#/waze', 'waze', '#/board', 'board', '#/waze', 'waze'],
-    ['#/board', '#/accel', 'accel', '#/board', 'board', '#/accel', 'accel'],
-    ['#/board', '#/library', 'library', '#/board', 'board', '#/library', 'library'],
+    ['/board', '/', 'speed'],
+    ['/board', '/replay', 'replay'],
+    ['/board', '/waze', 'waze'],
+    ['/board', '/accel', 'accel'],
+    ['/board', '/library', 'library'],
+    ['/board', '/', 'speed', '/board', 'board', '/', 'speed'],
+    ['/board', '/replay', 'replay', '/board', 'board', '/replay', 'replay'],
+    ['/board', '/waze', 'waze', '/board', 'board', '/waze', 'waze'],
+    ['/board', '/accel', 'accel', '/board', 'board', '/accel', 'accel'],
+    ['/board', '/library', 'library', '/board', 'board', '/library', 'library'],
   ])('keeps route DOM usable through %s -> %s remount cycle', async (...sequence) => {
     await bootRouteHarness();
-    await navigateHash(sequence[0]);
+    await navigatePath(sequence[0]);
     await expectRouteUsable('board');
 
     const calculator = document.querySelector('.calc-panel');
@@ -249,9 +249,9 @@ describe('SPA route remount regression coverage', () => {
     calculator.querySelector('.calc-expr').value = '42';
 
     for (let index = 1; index < sequence.length; index += 2) {
-      const hash = sequence[index];
+      const path = sequence[index];
       const expectedRoute = sequence[index + 1];
-      await navigateHash(hash);
+      await navigatePath(path);
       await expectRouteUsable(expectedRoute);
       expect(document.querySelector('.calc-panel')).toBe(calculator);
       expect(document.querySelector('.energy-panel')).toBe(energy);

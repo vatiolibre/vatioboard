@@ -73,7 +73,7 @@ describe('replay repository', () => {
     );
 
     await expect(openReplayFromCloud('SYNC-REPLAY-1')).resolves.toBe(
-      '/#/replay?record=remote-replay-1&cloudRecord=SYNC-REPLAY-1'
+      '/replay?record=remote-replay-1&cloudRecord=SYNC-REPLAY-1'
     );
 
     await expect(getReplaySelection('remote-replay-1')).resolves.toMatchObject({

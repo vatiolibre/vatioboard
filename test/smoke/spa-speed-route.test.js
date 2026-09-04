@@ -29,9 +29,9 @@ describe("SPA Speed route real-controller smoke", () => {
     const { maplibre } = getRealSpaSmokeMocks();
 
     const { snapshots, targetSnapshots } = await expectRealSpaRouteRemount({
-      targetHash: "#/speed",
+      targetHash: "/",
       targetSelector: ".gauge-card #speedValue",
-      sequence: ["#/board", "#/speed", "#/board", "#/speed"],
+      sequence: ["/board", "/", "/board", "/"],
     });
     const firstSpeed = targetSnapshots[0];
     const secondSpeed = targetSnapshots[1];
@@ -66,7 +66,7 @@ describe("SPA Speed route real-controller smoke", () => {
     const speedAlerts = document.querySelector(".speed-alert-window");
     expect(speedAlerts?.hidden).toBe(false);
     expect(speedAlerts?.getAttribute("data-vb-shell-window")).toBe("speed-alerts");
-    const boardAfterAlert = await navigateRealSpaSmoke("#/board");
+    const boardAfterAlert = await navigateRealSpaSmoke("/board");
     expect(boardAfterAlert.activeWatchCount).toBe(0);
     expect(boardAfterAlert.activeRafCount).toBe(0);
     expect(boardAfterAlert.activeMapCount).toBe(0);
@@ -79,9 +79,9 @@ describe("SPA Speed route real-controller smoke", () => {
     storeWelcomeConsent("skipped");
 
     const { finalSnapshot } = await expectRealSpaRouteRemount({
-      targetHash: "#/speed",
+      targetHash: "/",
       targetSelector: "#speedValue",
-      sequence: ["#/board", "#/speed"],
+      sequence: ["/board", "/"],
     });
 
     expect(finalSnapshot.activeWatchCount).toBe(0);
@@ -103,9 +103,9 @@ describe("SPA Speed route real-controller smoke", () => {
     localStorage.setItem("vatio_speed_primary_view", "waze");
 
     await expectRealSpaRouteRemount({
-      targetHash: "#/speed",
+      targetHash: "/",
       targetSelector: "#gaugeStage #speedValue",
-      sequence: ["#/board", "#/speed", "#/board", "#/speed"],
+      sequence: ["/board", "/", "/board", "/"],
     });
 
     expect(document.querySelector("#gaugeStage")).toBeTruthy();
@@ -115,9 +115,9 @@ describe("SPA Speed route real-controller smoke", () => {
 
   it("keeps active recording GPS in the background without route DOM work", async () => {
     await expectRealSpaRouteRemount({
-      targetHash: "#/speed",
+      targetHash: "/",
       targetSelector: "#speedValue",
-      sequence: ["#/board", "#/speed"],
+      sequence: ["/board", "/"],
     });
 
     document.getElementById("toggleRecording")?.click();
@@ -135,7 +135,7 @@ describe("SPA Speed route real-controller smoke", () => {
     });
     await settleRealSpaSmoke();
 
-    const boardWhileRecording = await navigateRealSpaSmoke("#/board");
+    const boardWhileRecording = await navigateRealSpaSmoke("/board");
     expect(boardWhileRecording.activeWatchCount).toBe(1);
     expect(boardWhileRecording.activeRafCount).toBe(0);
     expect(boardWhileRecording.activeMapCount).toBe(0);
@@ -157,12 +157,12 @@ describe("SPA Speed route real-controller smoke", () => {
     expect(document.body.classList.contains("board-page")).toBe(true);
     expect(document.getElementById("speedValue")).toBeNull();
 
-    const speedAgain = await navigateRealSpaSmoke("#/speed");
+    const speedAgain = await navigateRealSpaSmoke("/");
     expect(speedAgain.activeWatchCount).toBe(1);
     document.getElementById("stopRecording")?.click();
     await settleRealSpaSmoke();
 
-    const boardAfterStop = await navigateRealSpaSmoke("#/board");
+    const boardAfterStop = await navigateRealSpaSmoke("/board");
     expect(boardAfterStop.activeWatchCount).toBe(0);
   }, 40000);
 });

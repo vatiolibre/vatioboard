@@ -6,9 +6,9 @@ describe("SPA Apps route smoke", () => {
 
   it("lists installed VatioBoard OS apps", async () => {
     await expectRealSpaRouteRemount({
-      targetHash: "#/apps",
+      targetHash: "/apps",
       targetSelector: "[data-vb-app-manager] [data-app-list] [data-app-id='vatio.speed']",
-      sequence: ["#/board", "#/apps"],
+      sequence: ["/board", "/apps"],
     });
 
     expect(document.querySelector("[data-app-id='vatio.appManager']")).toBeTruthy();

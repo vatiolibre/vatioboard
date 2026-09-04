@@ -13,9 +13,9 @@ describe("SPA Waze route real-controller smoke", () => {
 
   it("remounts without leaking its route-owned driving resources", async () => {
     const { snapshots, targetSnapshots } = await expectRealSpaRouteRemount({
-      targetHash: "#/waze",
+      targetHash: "/waze",
       targetSelector: "[data-waze-app] #wazeFrame",
-      sequence: ["#/board", "#/waze", "#/board", "#/waze"],
+      sequence: ["/board", "/waze", "/board", "/waze"],
     });
 
     expect(targetSnapshots[0].activeWatchCount).toBe(1);
@@ -25,7 +25,7 @@ describe("SPA Waze route real-controller smoke", () => {
     expect(window.__vatioboardDrivingAlerts?.getSnapshot().started).toBe(true);
     expect(document.querySelectorAll("[data-waze-app]")).toHaveLength(1);
 
-    const board = await navigateRealSpaSmoke("#/board");
+    const board = await navigateRealSpaSmoke("/board");
     expect(board.activeWatchCount).toBe(1);
     expect(board.activeRafCount).toBe(0);
     expect(window.__vatioboardDrivingAlerts?.getSnapshot().consumers).not.toContain("vatio.waze.route");
@@ -34,9 +34,9 @@ describe("SPA Waze route real-controller smoke", () => {
 
   it("centers the iframe from shared GPS and updates the compact HUD", async () => {
     await expectRealSpaRouteRemount({
-      targetHash: "#/waze",
+      targetHash: "/waze",
       targetSelector: "[data-waze-app] #wazeFrame",
-      sequence: ["#/board", "#/waze"],
+      sequence: ["/board", "/waze"],
     });
     navigator.geolocation.success?.({
       timestamp: Date.now(),
@@ -58,7 +58,7 @@ describe("SPA Waze route real-controller smoke", () => {
     expect(document.getElementById("wazeSpeedUnit")?.textContent).toBe("km/h");
     expect(getRealSpaResourceSnapshot().activeWatchCount).toBe(1);
 
-    const board = await navigateRealSpaSmoke("#/board");
+    const board = await navigateRealSpaSmoke("/board");
     expect(board.activeWatchCount).toBe(1);
     expect(window.__vatioboardDrivingAlerts?.getSnapshot().consumers).not.toContain("vatio.waze.route");
   }, 40000);

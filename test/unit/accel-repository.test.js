@@ -63,7 +63,7 @@ describe('accel repository', () => {
       '../../src/shared/repositories/accel-repository.js'
     );
 
-    await expect(openAccelFromCloud('SYNC-ACCEL-1')).resolves.toBe('/#/accel?run=run-1');
+    await expect(openAccelFromCloud('SYNC-ACCEL-1')).resolves.toBe('/accel?run=run-1');
     await expect(getAccelSelection('run-1')).resolves.toMatchObject({
       selectedResultId: 'run-1',
       run: {

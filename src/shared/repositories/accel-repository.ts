@@ -274,5 +274,5 @@ export async function openAccelFromCloud(name: string): Promise<string> {
     // Keep direct-open flow independent from background persistence.
   });
 
-  return `/#/accel?run=${encodeRecordName(runId)}`;
+  return `/accel?run=${encodeRecordName(runId)}`;
 }

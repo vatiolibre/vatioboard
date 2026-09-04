@@ -321,7 +321,7 @@ export function createDrivingAlertService({
     setActivity("speed.alerts", {
       kind: "speed",
       order: 11,
-      route: "#/speed",
+      route: "/",
       openLabelKey: "activityOpenSpeedAlerts",
       state: stateName,
       labelKey,

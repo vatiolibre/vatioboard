@@ -108,9 +108,9 @@ describe("SPA Accel route real-controller smoke", () => {
     const { charts, maplibre } = getRealSpaSmokeMocks();
 
     const { snapshots, targetSnapshots } = await expectRealSpaRouteRemount({
-      targetHash: "#/accel",
+      targetHash: "/accel",
       targetSelector: "#presetGrid .vb-settings-select-trigger",
-      sequence: ["#/board", "#/accel", "#/board", "#/accel"],
+      sequence: ["/board", "/accel", "/board", "/accel"],
     });
     const firstAccel = targetSnapshots[0];
     const secondAccel = targetSnapshots[1];
@@ -159,7 +159,7 @@ describe("SPA Accel route real-controller smoke", () => {
     expect(document.getElementById("resultsPanel")?.dataset.accelResultView).toBe("charts");
     expect(charts.charts.filter((chart) => !chart.destroyed).length).toBeLessThanOrEqual(4);
 
-    const boardAfterResults = await navigateRealSpaSmoke("#/board");
+    const boardAfterResults = await navigateRealSpaSmoke("/board");
     expect(boardAfterResults.activeWatchCount).toBe(0);
     expect(boardAfterResults.activeIntervalCount).toBe(0);
     expect(boardAfterResults.activeRafCount).toBe(0);
@@ -172,9 +172,9 @@ describe("SPA Accel route real-controller smoke", () => {
 
   it("keeps an active run subscribed in the background without route DOM resources", async () => {
     await expectRealSpaRouteRemount({
-      targetHash: "#/accel",
+      targetHash: "/accel",
       targetSelector: "#armRun",
-      sequence: ["#/board", "#/accel"],
+      sequence: ["/board", "/accel"],
     });
 
     navigator.geolocation.success?.({
@@ -195,7 +195,7 @@ describe("SPA Accel route real-controller smoke", () => {
     armRun?.click();
     await settleRealSpaSmoke();
 
-    const boardWhileActive = await navigateRealSpaSmoke("#/board");
+    const boardWhileActive = await navigateRealSpaSmoke("/board");
     expect(boardWhileActive.activeWatchCount).toBe(1);
     expect(boardWhileActive.activeIntervalCount).toBe(0);
     expect(boardWhileActive.activeMapCount).toBe(0);
@@ -204,12 +204,12 @@ describe("SPA Accel route real-controller smoke", () => {
     expect(document.body.classList.contains("accel-sheet-open")).toBe(false);
     expect(document.body.classList.contains("accel-replay-chart-sheet-open")).toBe(false);
 
-    const accelAgain = await navigateRealSpaSmoke("#/accel");
+    const accelAgain = await navigateRealSpaSmoke("/accel");
     expect(accelAgain.activeWatchCount).toBe(1);
     document.getElementById("armRun")?.click();
     await settleRealSpaSmoke();
 
-    const boardAfterCancel = await navigateRealSpaSmoke("#/board");
+    const boardAfterCancel = await navigateRealSpaSmoke("/board");
     expect(boardAfterCancel.activeWatchCount).toBe(0);
   }, 40000);
 });

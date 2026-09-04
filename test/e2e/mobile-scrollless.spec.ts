@@ -45,7 +45,8 @@ async function prepare(page: Page) {
 }
 
 async function openRoute(page: Page, route: string) {
-  await page.goto(`/#/${route}`, { waitUntil: "domcontentloaded" });
+  const path = route === "speed" ? "/" : `/${route}`;
+  await page.goto(path, { waitUntil: "domcontentloaded" });
   await expect.poll(() => page.locator("#app-view").getAttribute("data-vb-route"), {
     timeout: 30_000,
   }).toBe(route);

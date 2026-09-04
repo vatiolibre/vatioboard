@@ -1,6 +1,41 @@
 import { defineConfig } from "vite";
 import { resolve } from "path";
 
+const SPA_ROUTE_PATHS = new Set([
+  "/",
+  "/accel",
+  "/apps",
+  "/board",
+  "/code-rain",
+  "/delivery-checklist",
+  "/library",
+  "/qr-scanner",
+  "/replay",
+  "/speed",
+  "/waze",
+]);
+
+function rewriteCleanAppRoute(request, _response, next) {
+  if (!request.url || request.method !== "GET") return next();
+  const url = new URL(request.url, "http://vatioboard.local");
+  const pathname = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, "") : "/";
+  if (!SPA_ROUTE_PATHS.has(pathname) || pathname === "/") return next();
+  request.url = `/index.html${url.search}`;
+  next();
+}
+
+function cleanAppRoutePlugin() {
+  return {
+    name: "vatioboard-clean-app-routes",
+    configureServer(server) {
+      server.middlewares.use(rewriteCleanAppRoute);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(rewriteCleanAppRoute);
+    },
+  };
+}
+
 const MANUAL_CHUNKS = [
   {
     name: "vendor-maplibre",
@@ -53,6 +88,7 @@ function getManualChunk(id) {
 
 export default defineConfig({
   base: "/",
+  plugins: [cleanAppRoutePlugin()],
   resolve: {
     alias: [
       {

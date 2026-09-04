@@ -6,9 +6,9 @@ describe("SPA Board route real-controller smoke", () => {
 
   it("stays usable through mixed SPA route changes", async () => {
     await expectRealSpaRouteRemount({
-      targetHash: "#/board",
+      targetHash: "/board",
       targetSelector: "#pad",
-      sequence: ["#/board", "#/speed", "#/library", "#/replay", "#/accel", "#/board"],
+      sequence: ["/board", "/", "/library", "/replay", "/accel", "/board"],
     });
   }, 40000);
 });

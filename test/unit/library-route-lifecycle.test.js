@@ -46,8 +46,8 @@ function selectedTab() {
   return document.querySelector(".library-tab[aria-selected='true']")?.dataset.tab || "";
 }
 
-async function mountLibraryWithRuntime({ hash = "#/library", runtimeTab = "" } = {}) {
-  window.history.replaceState({}, "", `https://vatioboard.com/${hash}`);
+async function mountLibraryWithRuntime({ path = "/library", runtimeTab = "" } = {}) {
+  window.history.replaceState({}, "", `https://vatioboard.com${path}`);
   const { appRegistry, createAppRuntime } = await import("../../src/app-platform/index.js");
   const { mount } = await import("../../src/app/views/LibraryView.js");
   const manifest = appRegistry.getApp("vatio.library");
@@ -79,7 +79,7 @@ describe("Library route lifecycle", () => {
 
   it("keeps the route query tab canonical while mirroring to runtime settings", async () => {
     const { mounted } = await mountLibraryWithRuntime({
-      hash: "#/library?tab=speed",
+      path: "/library?tab=speed",
       runtimeTab: "media",
     });
 
@@ -91,7 +91,7 @@ describe("Library route lifecycle", () => {
 
   it("seeds the active tab from runtime settings only when no route query tab exists", async () => {
     const { mounted } = await mountLibraryWithRuntime({
-      hash: "#/library",
+      path: "/library",
       runtimeTab: "media",
     });
 
@@ -102,7 +102,7 @@ describe("Library route lifecycle", () => {
   }, 40000);
 
   it("preserves direct route callers without runtime settings", async () => {
-    window.history.replaceState({}, "", "https://vatioboard.com/#/library?tab=board_documents");
+    window.history.replaceState({}, "", "https://vatioboard.com/library?tab=board_documents");
     const { mount } = await import("../../src/app/views/LibraryView.js");
     const root = document.getElementById("root");
 

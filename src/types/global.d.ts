@@ -5,6 +5,7 @@ type VatioBoardDrivingAlertService = import("./services").DrivingAlertService;
 type VatioBoardGpsService = import("./services").GpsService;
 type VatioBoardGpsPosition = import("./services").NormalizedGpsPosition;
 type VatioBoardShellRuntime = import("./shell").ShellRuntime;
+type VatioBoardRecoveryCoordinator = import("../shared/recovery-coordinator").RecoveryCoordinator;
 
 type VatioBoardRouter = {
   getRoute(): VatioBoardAppRoute | null;
@@ -83,6 +84,7 @@ interface Window {
   __vatioboardGpsGetCurrentPosition?: () => VatioBoardGpsPosition | null;
   __vatioboardGpsStore?: VatioBoardGpsService;
   __vatioboardPlayerWidget?: unknown;
+  __vatioboardRecovery?: VatioBoardRecoveryCoordinator;
   __vatioboardRouter?: VatioBoardRouter;
   __vatioboardRuntimeContext?: Partial<VatioBoardRuntimeContext> | Record<string, unknown>;
   __vatioboardShell?: VatioBoardShellRuntime;

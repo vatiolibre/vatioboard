@@ -3,6 +3,7 @@ import { createDriveRecordingService } from "./services/drive-recording-service.
 import { createDrivingAlertService } from "./services/driving-alert-service.js";
 import { createGpsService } from "./services/gps-service.js";
 import { createTtsService } from "./services/tts-service.js";
+import { createRecoveryCoordinator } from "../shared/recovery-coordinator.js";
 import type {
   AudioRuntime,
   DriveRecordingService,
@@ -24,12 +25,14 @@ export function createRuntimeContext(): RuntimeContext {
   const driveRecordingService = buildDriveRecordingService({ gpsStore: gpsService });
   const drivingAlertService = buildDrivingAlertService({ gpsService });
   const ttsService = createTtsService() as TtsService;
+  const recoveryCoordinator = createRecoveryCoordinator();
 
   return {
     audioRuntime: audioRuntime as unknown as AudioRuntime,
     driveRecordingService,
     drivingAlertService,
     gpsService,
+    recoveryCoordinator,
     ttsService,
   };
 }

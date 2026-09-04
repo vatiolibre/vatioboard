@@ -73,7 +73,7 @@ describe("Replay route OS app module", () => {
     const mounted = await modules.mount(root, {
       appRuntime: runtime,
       appManifest: manifest,
-      route: { path: "/replay", hash: "#/replay", query: new URLSearchParams(), requestedPath: "/replay" },
+      route: { path: "/replay", url: "/replay", query: new URLSearchParams(), requestedPath: "/replay" },
       routeSignal: new AbortController().signal,
       navigate: vi.fn(() => true),
       emitRouteVisible: vi.fn(),

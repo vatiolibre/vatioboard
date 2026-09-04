@@ -26,6 +26,8 @@ export const PREMIUM_CLOCK_WINDOW_ID = "premium-clock";
 const POSITION_STORAGE_KEY = "premium_clock_pos_v1";
 const ALARMS_STORAGE_KEY = "alarms.v1";
 const FALLBACK_ALARMS_STORAGE_KEY = "premium_clock_alarms_v1";
+const SESSION_STORAGE_KEY = "session.v1";
+const FALLBACK_SESSION_STORAGE_KEY = "premium_clock_session_v1";
 const DRAG_THRESHOLD_PX = 6;
 const DEFAULT_TIMER_DURATION_MS = 5 * 60 * 1000;
 const ALARM_AUDIO_SRC = "/audio/alarm-clock.m4a";
@@ -93,6 +95,24 @@ type SnoozedAlarm = {
   alarmId: string;
   fireAtMs: number;
   label: string;
+};
+
+type ClockSession = {
+  version: 1;
+  mode: ClockMode;
+  timerDurationMs: number;
+  timerRemainingMs: number;
+  timerStartedAt: number;
+  timerState: TimerState;
+  stopwatchElapsedMs: number;
+  stopwatchStartedAt: number;
+  stopwatchState: StopwatchState;
+  selectedWorldIndex: number;
+  snoozedAlarms: SnoozedAlarm[];
+  activeAlert: ActiveAlert | null;
+  activeNotice: string;
+  lastAlarmCheckMs: number;
+  firedAlarmKeys: string[];
 };
 
 export function resolvePremiumClockLayout(metrics: ShellLayoutMetrics): ShellAdaptiveWindowLayout | null {
@@ -223,6 +243,39 @@ function saveAlarms(runtime: VatioAppRuntime | null, alarms: Alarm[]) {
   } catch {
     // Alarm persistence is non-critical.
   }
+}
+
+function loadClockSession(runtime: VatioAppRuntime | null): Partial<ClockSession> | null {
+  const stored = runtime?.storage.getJson<unknown>(SESSION_STORAGE_KEY, null);
+  if (isRecord(stored)) return stored as Partial<ClockSession>;
+  try {
+    const raw = localStorage.getItem(FALLBACK_SESSION_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return isRecord(parsed) ? parsed as Partial<ClockSession> : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveClockSession(runtime: VatioAppRuntime | null, session: ClockSession) {
+  if (runtime?.storage.setJson(SESSION_STORAGE_KEY, session)) return;
+  try {
+    localStorage.setItem(FALLBACK_SESSION_STORAGE_KEY, JSON.stringify(session));
+  } catch {
+    // Clock recovery is best effort when persistent storage is unavailable.
+  }
+}
+
+function isClockMode(value: unknown): value is ClockMode {
+  return MODES.some((entry) => entry.id === value);
+}
+
+function isTimerState(value: unknown): value is TimerState {
+  return value === "idle" || value === "running" || value === "paused" || value === "complete";
+}
+
+function isStopwatchState(value: unknown): value is StopwatchState {
+  return value === "idle" || value === "running" || value === "paused";
 }
 
 function button({
@@ -539,32 +592,51 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
     alarmList,
     worldList,
   } = view;
-
-  let mode: ClockMode = "clock";
-  let timerDurationMs = DEFAULT_TIMER_DURATION_MS;
-  let timerRemainingMs = DEFAULT_TIMER_DURATION_MS;
-  let timerStartedAt = 0;
-  let timerState: TimerState = "idle";
-  let stopwatchElapsedMs = 0;
-  let stopwatchStartedAt = 0;
-  let stopwatchState: StopwatchState = "idle";
+  const recoveredSession = loadClockSession(runtime);
+  const recoveredTimerDuration = Math.max(60_000, Number(recoveredSession?.timerDurationMs) || DEFAULT_TIMER_DURATION_MS);
+  let mode: ClockMode = isClockMode(recoveredSession?.mode) ? recoveredSession.mode : "clock";
+  let timerDurationMs = recoveredTimerDuration;
+  const recoveredTimerRemaining = Number(recoveredSession?.timerRemainingMs);
+  let timerRemainingMs = Math.max(0, Math.min(
+    recoveredTimerDuration,
+    Number.isFinite(recoveredTimerRemaining) ? recoveredTimerRemaining : recoveredTimerDuration,
+  ));
+  let timerStartedAt = Math.max(0, Number(recoveredSession?.timerStartedAt) || 0);
+  let timerState: TimerState = isTimerState(recoveredSession?.timerState) ? recoveredSession.timerState : "idle";
+  let stopwatchElapsedMs = Math.max(0, Number(recoveredSession?.stopwatchElapsedMs) || 0);
+  let stopwatchStartedAt = Math.max(0, Number(recoveredSession?.stopwatchStartedAt) || 0);
+  let stopwatchState: StopwatchState = isStopwatchState(recoveredSession?.stopwatchState)
+    ? recoveredSession.stopwatchState
+    : "idle";
   let alarmDraftHour = 7;
   let alarmDraftMinute = 30;
-  let selectedWorldIndex = 0;
-  let activeNotice = "";
-  let activeAlert: ActiveAlert | null = null;
+  let selectedWorldIndex = clampInteger(recoveredSession?.selectedWorldIndex, 0, WORLD_CLOCKS.length - 1);
+  let activeNotice = typeof recoveredSession?.activeNotice === "string" ? recoveredSession.activeNotice : "";
+  let activeAlert: ActiveAlert | null = isRecord(recoveredSession?.activeAlert)
+    && (recoveredSession.activeAlert.kind === "alarm" || recoveredSession.activeAlert.kind === "timer")
+    ? recoveredSession.activeAlert as ActiveAlert
+    : null;
   let alarmAudio: HTMLAudioElement | null = null;
   let alarmAudioUnlocked = false;
   let alarmAudioBlocked = false;
   let alarms = loadAlarms(runtime);
-  let snoozedAlarms: SnoozedAlarm[] = [];
+  let snoozedAlarms: SnoozedAlarm[] = Array.isArray(recoveredSession?.snoozedAlarms)
+    ? recoveredSession.snoozedAlarms.filter((entry): entry is SnoozedAlarm => (
+      isRecord(entry)
+      && typeof entry.alarmId === "string"
+      && typeof entry.label === "string"
+      && Number.isFinite(entry.fireAtMs)
+    ))
+    : [];
   let speechPointer: { x: number; y: number; pointerId: number } | null = null;
   let clockTtsWarmupId: number | null = null;
   let clockTtsVoiceWarmupPromise: Promise<unknown> | null = null;
   let clockTtsSpeechWarmupPromise: Promise<unknown> | null = null;
   let clockTtsPreparedMinuteKey = "";
   let clockTtsPreparingMinuteKey = "";
-  const firedAlarmKeys = new Set<string>();
+  const firedAlarmKeys = new Set<string>(Array.isArray(recoveredSession?.firedAlarmKeys)
+    ? recoveredSession.firedAlarmKeys.filter((key): key is string => typeof key === "string").slice(-128)
+    : []);
   const alarmSwitches: SettingsSwitchController[] = [];
   const worldRows: Array<{
     button: HTMLButtonElement;
@@ -575,7 +647,7 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
   let hourControl: SelectControlController | null = null;
   let minuteControl: SelectControlController | null = null;
   let backgroundCheckId: number | null = null;
-  let lastAlarmCheckMs = Date.now() - 60_000;
+  let lastAlarmCheckMs = Math.max(0, Number(recoveredSession?.lastAlarmCheckMs) || Date.now() - 60_000);
   let destroyed = false;
 
   const storedPosition = loadPos();
@@ -588,6 +660,35 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
   }
 
   let tickerId: number | null = null;
+
+  function persistSession() {
+    saveClockSession(runtime, {
+      version: 1,
+      mode,
+      timerDurationMs,
+      timerRemainingMs: getTimerRemaining(),
+      timerStartedAt: timerState === "running" ? Date.now() : timerStartedAt,
+      timerState,
+      stopwatchElapsedMs: getStopwatchElapsed(),
+      stopwatchStartedAt: stopwatchState === "running" ? Date.now() : stopwatchStartedAt,
+      stopwatchState,
+      selectedWorldIndex,
+      snoozedAlarms,
+      activeAlert,
+      activeNotice,
+      lastAlarmCheckMs,
+      firedAlarmKeys: Array.from(firedAlarmKeys).slice(-128),
+    });
+  }
+  const unregisterRecovery = window.__vatioboardRecovery?.register({
+    id: PREMIUM_CLOCK_APP_ID,
+    flush: persistSession,
+    reconcile() {
+      const changed = reconcileTemporalState();
+      if (!panel.hidden || changed) render({ reconcile: false });
+      persistSession();
+    },
+  }) || (() => {});
 
   function getStopwatchElapsed(nowMs = Date.now()) {
     return stopwatchElapsedMs + (stopwatchState === "running" ? nowMs - stopwatchStartedAt : 0);
@@ -602,6 +703,7 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
     panel.dataset.premiumClockMode = mode;
     workspace.setAttribute("aria-labelledby", `premium-clock-mode-${mode}`);
     render();
+    persistSession();
   }
 
   function getAlarmAudio() {
@@ -677,6 +779,7 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
       delete notice.dataset.premiumClockAlert;
     }
     panel.classList.add("premium-clock-panel--notice");
+    persistSession();
   }
 
   function clearNotice() {
@@ -689,6 +792,7 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
     delete notice.dataset.premiumClockAlert;
     panel.classList.remove("premium-clock-panel--notice");
     stopAlarmSound();
+    persistSession();
   }
 
   function clearVoiceNotice() {
@@ -707,6 +811,7 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
       },
     ];
     clearNotice();
+    persistSession();
   }
 
   function preloadClockTtsVoice() {
@@ -838,6 +943,7 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
         onChange(checked) {
           alarms = alarms.map((entry) => entry.id === alarm.id ? { ...entry, enabled: checked } : entry);
           persistAlarms();
+          persistSession();
           renderAlarms();
           scheduleBackgroundCheck(0);
         },
@@ -903,6 +1009,7 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
     timerState = "complete";
     timerRemainingMs = 0;
     showNotice("Timer complete", { kind: "timer" });
+    persistSession();
     return true;
   }
 
@@ -918,6 +1025,7 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
       label: dueAlarm.label,
     });
     setMode("alarms");
+    persistSession();
     return true;
   }
 
@@ -957,6 +1065,7 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
       label: alarmLabel(next.alarm),
     });
     setMode("alarms");
+    persistSession();
     return true;
   }
 
@@ -1102,6 +1211,7 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
   }
 
   function hidePanel() {
+    persistSession();
     panel.hidden = true;
     stopTicker();
     hourControl?.close();
@@ -1235,6 +1345,7 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
     if (target.closest("[data-premium-clock-alert-stop]")) {
       clearNotice();
       render();
+      persistSession();
       return;
     }
     if (target.closest("[data-premium-clock-alert-snooze]")) {
@@ -1319,6 +1430,7 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
       clearNotice();
       render();
       scheduleBackgroundCheck(0);
+      persistSession();
       return;
     }
 
@@ -1328,6 +1440,7 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
       clearNotice();
       render();
       scheduleBackgroundCheck(0);
+      persistSession();
       return;
     }
 
@@ -1341,6 +1454,7 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
       }
       render();
       scheduleBackgroundCheck(0);
+      persistSession();
       return;
     }
 
@@ -1349,6 +1463,7 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
       stopwatchElapsedMs = 0;
       render();
       scheduleBackgroundCheck(0);
+      persistSession();
       return;
     }
 
@@ -1363,6 +1478,7 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
         },
       ];
       persistAlarms();
+      persistSession();
       clearNotice();
       renderAlarms();
       render();
@@ -1375,6 +1491,7 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
       const id = removeAlarm.getAttribute("data-premium-clock-alarm-remove");
       alarms = alarms.filter((alarm) => alarm.id !== id);
       persistAlarms();
+      persistSession();
       renderAlarms();
       render();
       scheduleBackgroundCheck(0);
@@ -1385,6 +1502,7 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
     if (worldButton) {
       selectedWorldIndex = clampInteger(worldButton.getAttribute("data-premium-clock-world-index"), 0, WORLD_CLOCKS.length - 1);
       render();
+      persistSession();
     }
   });
 
@@ -1413,7 +1531,8 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
   alarmMinuteControlMount.append(minuteControl.element);
   buildWorldClocks();
   renderAlarms();
-  setMode("clock");
+  setMode(mode);
+  if (activeNotice) showNotice(activeNotice, activeAlert);
   scheduleBackgroundCheck(0);
 
   if (restoreVisibility) open({ persist: false });
@@ -1429,6 +1548,8 @@ export function createPremiumClockApp(options: PremiumClockAppOptions = {}): Pre
       stopTicker();
       stopBackgroundCheck();
       stopAlarmSound();
+      persistSession();
+      unregisterRecovery();
       if (clockTtsWarmupId !== null) window.clearTimeout(clockTtsWarmupId);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("pageshow", handleTemporalResume);

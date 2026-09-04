@@ -382,9 +382,7 @@ function stateToParams(state: CodeRainState) {
 function getRouteQuery(routeContext: RouteMountContext) {
   const routeQuery = routeContext.context.route?.query;
   if (routeQuery) return routeQuery;
-  const hash = window.location.hash || "";
-  const queryIndex = hash.indexOf("?");
-  return new URLSearchParams(queryIndex === -1 ? "" : hash.slice(queryIndex + 1));
+  return new URLSearchParams(window.location.search);
 }
 
 function resolveCodeRainRuntime(routeContext: RouteMountContext): VatioAppRuntime | null {
@@ -845,7 +843,9 @@ function mountCodeRain(routeContext: RouteMountContext): MountedView {
   routeContext.cleanup.addEventListener(routeContext.root.querySelector('[data-code-rain-action="share"]'), "click", () => {
     const params = stateToParams(state);
     const url = new URL(window.location.href);
-    url.hash = `/code-rain?${params.toString()}`;
+    url.pathname = "/code-rain";
+    url.search = params.toString();
+    url.hash = "";
     const copy = navigator.clipboard?.writeText?.(url.href);
     if (!copy) {
       showStatus("Link ready");

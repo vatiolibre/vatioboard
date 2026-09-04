@@ -1692,7 +1692,7 @@ export const initPromise = (function () {
     setActivity(ACCEL_ACTIVITY_ID, {
       kind: 'accel',
       order: 20,
-      route: '#/accel',
+      route: '/accel',
       state: isRunning ? 'running' : run.stage,
       labelKey: isRunning ? 'activityAccelRunning' : 'activityAccelArmed',
       sampleCount: Number.isFinite(run.sampleCount) ? run.sampleCount : 0,

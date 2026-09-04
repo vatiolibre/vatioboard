@@ -89,7 +89,7 @@ describe("Accel route OS app module", () => {
     const mounted = await modules.mount(root, {
       appRuntime: runtime,
       appManifest: manifest,
-      route: { path: "/accel", hash: "#/accel", query: new URLSearchParams(), requestedPath: "/accel" },
+      route: { path: "/accel", url: "/accel", query: new URLSearchParams(), requestedPath: "/accel" },
       routeSignal: new AbortController().signal,
       navigate: vi.fn(() => true),
       emitRouteVisible: vi.fn(),

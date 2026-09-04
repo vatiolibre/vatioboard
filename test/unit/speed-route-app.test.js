@@ -123,7 +123,7 @@ describe("Speed route OS app module", () => {
     const mounted = await modules.mount(root, {
       appRuntime: runtime,
       appManifest: manifest,
-      route: { path: "/", hash: "#/speed", query: new URLSearchParams(), requestedPath: "/speed" },
+      route: { path: "/", url: "/", query: new URLSearchParams(), requestedPath: "/speed" },
       routeSignal: new AbortController().signal,
       navigate: vi.fn(() => true),
       emitRouteVisible: vi.fn(),

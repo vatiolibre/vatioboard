@@ -78,7 +78,7 @@ describe("activity indicator", () => {
     setActivity("speed.recording", {
       kind: "speed",
       order: 10,
-      route: "#/speed",
+      route: "/",
       state: "recording",
       labelKey: "activitySpeedRecording",
       sampleCount: 3,
@@ -97,7 +97,7 @@ describe("activity indicator", () => {
   it("renders simultaneous speed and acceleration activities", () => {
     setActivity("speed.recording", {
       kind: "speed",
-      route: "#/speed",
+      route: "/",
       state: "recording",
       labelKey: "activitySpeedRecording",
       sampleCount: 7,
@@ -105,7 +105,7 @@ describe("activity indicator", () => {
     setActivity("accel.run", {
       kind: "accel",
       order: 20,
-      route: "#/accel",
+      route: "/accel",
       state: "armed",
       labelKey: "activityAccelArmed",
       detailKey: "accelPreset0to60",
@@ -124,7 +124,7 @@ describe("activity indicator", () => {
     setActivity("speed.recording", {
       kind: "speed",
       order: 10,
-      route: "#/speed",
+      route: "/",
       state: "recording",
       labelKey: "activitySpeedRecording",
       sampleCount: 7,
@@ -132,7 +132,7 @@ describe("activity indicator", () => {
     setActivity("speed.alerts", {
       kind: "speed",
       order: 11,
-      route: "#/speed",
+      route: "/",
       state: "armed",
       labelKey: "activitySpeedAlertsArmed",
       detailKey: "activitySpeedAlertsReady",
@@ -152,7 +152,7 @@ describe("activity indicator", () => {
   it("shows speed alert arming and suppressed states", () => {
     setActivity("speed.alerts", {
       kind: "speed",
-      route: "#/speed",
+      route: "/",
       state: "arming",
       labelKey: "activitySpeedAlertsArming",
       detailKey: "activitySpeedAlertsReady",
@@ -165,7 +165,7 @@ describe("activity indicator", () => {
 
     setActivity("speed.alerts", {
       kind: "speed",
-      route: "#/speed",
+      route: "/",
       state: "suppressed",
       labelKey: "activitySpeedAlertsSuppressed",
       detailKey: "activitySpeedAlertsTapToRearm",
@@ -181,13 +181,13 @@ describe("activity indicator", () => {
   it("routes each activity row to its owning view", () => {
     setActivity("speed.recording", {
       kind: "speed",
-      route: "#/speed",
+      route: "/",
       state: "recording",
       labelKey: "activitySpeedRecording",
     });
     setActivity("accel.run", {
       kind: "accel",
-      route: "#/accel",
+      route: "/accel",
       state: "running",
       labelKey: "activityAccelRunning",
       detailKey: "accelPreset0to60",
@@ -196,14 +196,14 @@ describe("activity indicator", () => {
     document.querySelector('[data-activity-id="speed.recording"]').click();
     document.querySelector('[data-activity-id="accel.run"]').click();
 
-    expect(routerMock.navigateToAppRoute).toHaveBeenNthCalledWith(1, "#/speed");
-    expect(routerMock.navigateToAppRoute).toHaveBeenNthCalledWith(2, "#/accel");
+    expect(routerMock.navigateToAppRoute).toHaveBeenNthCalledWith(1, "/");
+    expect(routerMock.navigateToAppRoute).toHaveBeenNthCalledWith(2, "/accel");
   });
 
   it("routes the speed alert row to the Speed view", () => {
     setActivity("speed.alerts", {
       kind: "speed",
-      route: "#/speed",
+      route: "/",
       state: "blocked",
       labelKey: "activitySpeedAlertsBlocked",
       detailKey: "activitySpeedAlertsUserAction",
@@ -212,7 +212,7 @@ describe("activity indicator", () => {
 
     document.querySelector('[data-activity-id="speed.alerts"]').click();
 
-    expect(routerMock.navigateToAppRoute).toHaveBeenCalledWith("#/speed");
+    expect(routerMock.navigateToAppRoute).toHaveBeenCalledWith("/");
   });
 
   it("uses the shell activity layer above normal windows and below start menu/fullscreen/modal", () => {
@@ -237,7 +237,7 @@ describe("activity indicator", () => {
 
     setActivity("speed.alerts", {
       kind: "speed",
-      route: "#/speed",
+      route: "/",
       state: "armed",
       labelKey: "activitySpeedAlertsArmed",
     });
@@ -287,7 +287,7 @@ describe("activity indicator", () => {
     });
     setActivity("speed.recording", {
       kind: "speed",
-      route: "#/speed",
+      route: "/",
       state: "recording",
       labelKey: "activitySpeedRecording",
     });

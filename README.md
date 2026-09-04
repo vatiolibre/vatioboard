@@ -1,6 +1,6 @@
 # VatioBoard
 
-VatioBoard is a local-first Vite 7 SPA of touch-first browser tools for Tesla-sized screens, mobile, and desktop. The production app runs through `index.html` and hash routes, while built-in apps are moving to a manifest-driven internal VatioBoard OS platform with route apps, shell-window apps, background services, scoped runtime services, permissions, and app-private storage.
+VatioBoard is a local-first Vite 7 SPA of touch-first browser tools for Tesla-sized screens, mobile, and desktop. The production app runs through `index.html` and clean History API routes, while built-in apps are moving to a manifest-driven internal VatioBoard OS platform with route apps, shell-window apps, background services, scoped runtime services, permissions, and app-private storage.
 
 - Production site: https://www.vatioboard.com
 - Repository: https://github.com/vatiolibre/vatioboard
@@ -29,14 +29,14 @@ pnpm run verify
 
 | Route       | App           | Purpose                                                                                 |
 | ----------- | ------------- | --------------------------------------------------------------------------------------- |
-| `#/speed`   | Vatio Speed   | GPS speedometer, drive recording, overspeed alerts, and local/static speed-camera data. |
-| `#/board`   | Board         | Drawing canvas with calculator and EV trip cost widgets.                                |
-| `#/library` | Cloud Library | Local/cloud media, records, and VatioLibre account-aware library tools.                 |
-| `#/replay`  | Drive Replay  | Local and synced route/session replay with map and charts.                              |
-| `#/accel`   | Vatio Accel   | GPS acceleration runs, run history, and replay views.                                   |
-| `#/apps`    | App Manager   | Internal VatioBoard OS app inventory, diagnostics, permissions, and controls.           |
+| `/` or `/speed` | Vatio Speed   | GPS speedometer, drive recording, overspeed alerts, and local/static speed-camera data. |
+| `/board`        | Board         | Drawing canvas with calculator and EV trip cost widgets.                                |
+| `/library`      | Cloud Library | Local/cloud media, records, and VatioLibre account-aware library tools.                 |
+| `/replay`       | Drive Replay  | Local and synced route/session replay with map and charts.                              |
+| `/accel`        | Vatio Accel   | GPS acceleration runs, run history, and replay views.                                   |
+| `/apps`         | App Manager   | Internal VatioBoard OS app inventory, diagnostics, permissions, and controls.           |
 
-`#/` currently opens the Speed app, and `#/speed` is its explicit route alias.
+`/` opens the Speed app, and `/speed` is its explicit route alias. Legacy hash routes are not supported.
 
 ## Legacy Harnesses
 
@@ -124,7 +124,7 @@ Shared backend auth lives in `src/shared/backend-auth.ts`. Production frontend h
 
 ## Testing
 
-The repo has unit, frontend-architecture, and smoke coverage. Product smoke tests boot `index.html` and navigate SPA hash routes with mocked browser APIs. Legacy standalone smoke tests use `dev-harness-*` filenames and cover harness-only behavior.
+The repo has unit, frontend-architecture, and smoke coverage. Product smoke tests boot `index.html` and navigate clean SPA routes with mocked browser APIs. Legacy standalone smoke tests use `dev-harness-*` filenames and cover harness-only behavior.
 
 CI runs Node 24 with pnpm 11.3.0, then typecheck, lint, tests, and build through `.github/workflows/ci.yml`.
 

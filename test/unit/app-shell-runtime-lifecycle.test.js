@@ -61,7 +61,7 @@ describe("app shell route app runtime lifecycle", () => {
     const route = {
       path: "/",
       requestedPath: "/",
-      hash: "#/",
+      url: "/",
       query: new URLSearchParams(),
       config: routeConfig,
     };
@@ -164,7 +164,7 @@ describe("app shell route app runtime lifecycle", () => {
       routes: [],
     }));
     vi.doMock("../../src/app/router.js", () => ({
-      createHashRouter: vi.fn(({ onRouteChange }) => {
+      createHistoryRouter: vi.fn(({ onRouteChange }) => {
         state.routeChangeResult = onRouteChange(route).catch((error) => error);
         return {
           destroy: vi.fn(),

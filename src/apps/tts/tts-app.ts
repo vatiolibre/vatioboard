@@ -69,6 +69,7 @@ interface TtsPreferences {
   piperVoice?: PiperVoiceId;
   lang?: TtsLangId;
   volume?: number;
+  resumeRequested?: boolean;
 }
 
 interface TtsView {
@@ -172,6 +173,7 @@ function loadPreferences(runtime: VatioAppRuntime | null): Required<TtsPreferenc
     piperVoice: storedPiperVoice || DEFAULT_PIPER_VOICE,
     lang: safeLang,
     volume: clampVolume(stored?.volume),
+    resumeRequested: stored?.resumeRequested === true,
   };
   if (!stored) savePreferences(runtime, preferences);
   return preferences;
@@ -404,6 +406,7 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
   let lang: TtsLangId = preferences.lang;
   let piperVoice: PiperVoiceId = preferences.piperVoice;
   let volume = preferences.volume;
+  let resumeRequested = preferences.resumeRequested;
   const ttsService = runtime?.services.tts || null;
   let modelReady = ttsService?.getSnapshot().loadedVoice === piperVoice;
   let loadingPromise: Promise<void> | null = null;
@@ -426,6 +429,7 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
       piperVoice,
       lang,
       volume,
+      resumeRequested,
     });
   }
 
@@ -595,6 +599,7 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
       setStatus("Text needed", "Add a short sentence first");
       return;
     }
+    resumeRequested = true;
     persist();
     const requestedSettings = getVoiceSettings();
     setButtonBusy(loadButton, true);
@@ -615,6 +620,8 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
         && requestedSettings.voice === piperVoice;
       const seconds = Math.max(0.1, message.durationMs / 1000);
       setStatus("Speech complete", `${formatBytes(message.size)} WAV in ${seconds.toFixed(1)}s; audio ${message.audioSeconds.toFixed(1)}s`);
+      resumeRequested = false;
+      persist();
       renderDiagnostics("speech generated");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Speech generation failed";
@@ -719,6 +726,7 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
     setButtonBusy(speakButton, true);
   } else {
     unsubscribeTts = ttsService.subscribe(syncTtsSnapshot);
+    if (resumeRequested) setStatus("Speech interrupted", "Tap Speak to resume");
   }
   panel.hidden = !restoreVisibility;
 
@@ -814,6 +822,8 @@ export function createTtsApp(options: TtsAppOptions = {}): TtsAppApi {
     persist();
   });
   stopButton.addEventListener("click", () => {
+    resumeRequested = false;
+    persist();
     if (generating || loadingPromise) {
       ttsService?.cancel({ reason: "Generation stopped" });
       modelReady = false;

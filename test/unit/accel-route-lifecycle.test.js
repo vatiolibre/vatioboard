@@ -67,7 +67,7 @@ function selectedPreset() {
 }
 
 async function mountAccelWithRuntime({ legacyPreset = "", runtimePreset = "" } = {}) {
-  window.history.replaceState({}, "", "https://vatioboard.com/#/accel");
+  window.history.replaceState({}, "", "https://vatioboard.com/accel");
   if (legacyPreset) {
     localStorage.setItem(
       ACCEL_SETTINGS_KEY,
@@ -148,7 +148,7 @@ describe("Accel route lifecycle", () => {
         distanceUnit: "ft",
       })
     );
-    window.history.replaceState({}, "", "https://vatioboard.com/#/accel");
+    window.history.replaceState({}, "", "https://vatioboard.com/accel");
     const { mount } = await import("../../src/app/views/AccelView.js");
     const root = document.getElementById("root");
 

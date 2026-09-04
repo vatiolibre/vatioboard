@@ -110,8 +110,7 @@ function normalizeRoutePath(path: string) {
 function getCurrentRoutePath() {
   const routePath = window.__vatioboardRouter?.getRoute?.()?.path;
   if (routePath) return normalizeRoutePath(routePath);
-  const hash = window.location.hash || "#/";
-  return normalizeRoutePath(hash.slice(1).split("?", 1)[0] || "/");
+  return normalizeRoutePath(window.location.pathname || "/");
 }
 
 function isLaunchableApp(app: VatioAppManifest) {

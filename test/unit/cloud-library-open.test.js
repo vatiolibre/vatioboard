@@ -26,12 +26,12 @@ describe("cloud library open helpers", () => {
 
   it('delegates replay opens to the replay repository', async () => {
     mockState.openReplayFromCloud.mockResolvedValue(
-      '/#/replay?record=local-replay-1&cloudRecord=SYNC-REPLAY-1'
+      '/replay?record=local-replay-1&cloudRecord=SYNC-REPLAY-1'
     );
 
     const { openCloudReplaySession } = await import('../../src/shared/cloud-library-open.js');
     await expect(openCloudReplaySession('SYNC-REPLAY-1')).resolves.toBe(
-      '/#/replay?record=local-replay-1&cloudRecord=SYNC-REPLAY-1'
+      '/replay?record=local-replay-1&cloudRecord=SYNC-REPLAY-1'
     );
 
     expect(mockState.openReplayFromCloud).toHaveBeenCalledWith('SYNC-REPLAY-1');
@@ -49,10 +49,10 @@ describe("cloud library open helpers", () => {
   });
 
   it('delegates accel opens to the accel repository', async () => {
-    mockState.openAccelFromCloud.mockResolvedValue('/#/accel?run=local-run-1');
+    mockState.openAccelFromCloud.mockResolvedValue('/accel?run=local-run-1');
 
     const { openCloudAccelRun } = await import('../../src/shared/cloud-library-open.js');
-    await expect(openCloudAccelRun('SYNC-ACCEL-1')).resolves.toBe('/#/accel?run=local-run-1');
+    await expect(openCloudAccelRun('SYNC-ACCEL-1')).resolves.toBe('/accel?run=local-run-1');
 
     expect(mockState.openAccelFromCloud).toHaveBeenCalledWith('SYNC-ACCEL-1');
   });

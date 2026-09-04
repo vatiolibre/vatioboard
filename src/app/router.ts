@@ -1,15 +1,20 @@
 import { getRouteConfig } from "./route-registry.js";
+import type { AppRoute, RouteConfig } from "../types/route";
 
 const ROUTE_CHANGE_EVENT = "vatioboard:routechange";
 const ROUTE_VISIBLE_EVENT = "vatioboard:route-visible";
+const HISTORY_INDEX_KEY = "__vatioboardRouteIndex";
 
-let activeRoute = null;
-let activeRouteHash = "";
-let routeChangeHandler = null;
-let restoringHash = false;
-let pendingRouteHash = "";
+type RouteChangeSource = "initial" | "navigate" | "popstate";
 
-function normalizePath(path) {
+let activeRoute: AppRoute | null = null;
+let activeRouteUrl = "";
+let routeChangeHandler: ((source?: RouteChangeSource, targetIndex?: number | null) => Promise<void>) | null = null;
+let restoringHistory = false;
+let pendingRouteUrl = "";
+let activeHistoryIndex = 0;
+
+function normalizePath(path: string) {
   const value = String(path || "").trim();
   if (!value || value === "/") return "/";
   const withSlash = value.startsWith("/") ? value : `/${value}`;
@@ -21,57 +26,46 @@ function createQuery(search = "") {
   return new URLSearchParams(raw.startsWith("?") ? raw.slice(1) : raw);
 }
 
-export function parseAppHash(hash = window.location.hash) {
-  let raw = String(hash || "").replace(/^#/, "");
-  if (!raw || raw === "/") {
-    return {
-      path: "/",
-      query: new URLSearchParams(),
-      hash: "#/",
-    };
-  }
-
-  if (!raw.startsWith("/")) raw = `/${raw}`;
-  const queryIndex = raw.indexOf("?");
-  const path = normalizePath(queryIndex === -1 ? raw : raw.slice(0, queryIndex));
-  const query = createQuery(queryIndex === -1 ? "" : raw.slice(queryIndex + 1));
+function createRouteUrl(path: string, query: URLSearchParams) {
   const queryString = query.toString();
+  return `${normalizePath(path)}${queryString ? `?${queryString}` : ""}`;
+}
 
+function getHistoryIndex(state: unknown): number | null {
+  if (!state || typeof state !== "object") return null;
+  const value = (state as Record<string, unknown>)[HISTORY_INDEX_KEY];
+  return Number.isInteger(value) ? Number(value) : null;
+}
+
+function withHistoryIndex(state: unknown, index: number) {
+  const existing = state && typeof state === "object" ? state as Record<string, unknown> : {};
+  return { ...existing, [HISTORY_INDEX_KEY]: index };
+}
+
+export function parseAppLocation(location: Pick<Location, "pathname" | "search"> = window.location) {
+  const path = normalizePath(location.pathname || "/");
+  const query = createQuery(location.search);
   return {
     path,
     query,
-    hash: `#${path}${queryString ? `?${queryString}` : ""}`,
+    url: createRouteUrl(path, query),
   };
 }
 
 export function getCurrentAppRoute() {
-  if (window.location.hash) {
-    const route = parseAppHash(window.location.hash);
-    const searchQuery = new URLSearchParams(window.location.search);
-    for (const [key, value] of searchQuery.entries()) {
-      if (!route.query.has(key)) route.query.set(key, value);
-    }
-    return route;
-  }
-
-  return {
-    path: "",
-    query: new URLSearchParams(window.location.search),
-    hash: "",
-  };
+  return parseAppLocation(window.location);
 }
 
 export function getCurrentAppRouteQuery() {
   return getCurrentAppRoute().query;
 }
 
-export function toAppRouteHash(href) {
+export function toAppRouteUrl(href: string) {
   const value = String(href || "").trim();
   if (!value) return "";
+  if (value.startsWith("#")) return "";
 
-  if (value.startsWith("#/")) return parseAppHash(value).hash;
-
-  let url;
+  let url: URL;
   try {
     url = new URL(value, window.location.origin);
   } catch {
@@ -79,11 +73,11 @@ export function toAppRouteHash(href) {
   }
 
   if (url.origin !== window.location.origin) return "";
-  if (url.hash.startsWith("#/")) return parseAppHash(url.hash).hash;
-
+  if (url.hash) return "";
   const pathname = normalizePath(url.pathname);
-  if (!getRouteConfig(pathname)) return "";
-  return `#${pathname}${url.search || ""}`;
+  const config = getRouteConfig(pathname);
+  if (!config) return "";
+  return `${config.path}${url.search || ""}`;
 }
 
 export function canNavigateAway(fromRoute = activeRoute) {
@@ -96,9 +90,9 @@ export function canNavigateAway(fromRoute = activeRoute) {
   return true;
 }
 
-export function navigateToAppRoute(href, { replace = false } = {}) {
-  const hash = toAppRouteHash(href);
-  if (!hash) {
+export function navigateToAppRoute(href: string, { replace = false } = {}) {
+  const routeUrl = toAppRouteUrl(href);
+  if (!routeUrl) {
     window.location.href = href;
     return false;
   }
@@ -106,17 +100,18 @@ export function navigateToAppRoute(href, { replace = false } = {}) {
   if (!canNavigateAway(activeRoute)) return false;
 
   if (replace) {
-    window.location.replace(hash);
-  } else if (window.location.hash === hash) {
-    routeChangeHandler?.();
-  } else {
-    window.location.hash = hash;
+    window.history.replaceState(withHistoryIndex(window.history.state, activeHistoryIndex), "", routeUrl);
+  } else if (activeRouteUrl !== routeUrl) {
+    activeHistoryIndex += 1;
+    window.history.pushState(withHistoryIndex({}, activeHistoryIndex), "", routeUrl);
   }
+
+  void routeChangeHandler?.("navigate", activeHistoryIndex);
   return true;
 }
 
-export function replaceAppRouteQuery(nextQuery = {}) {
-  const route = parseAppHash(window.location.hash || "#/");
+export function replaceAppRouteQuery(nextQuery: Record<string, unknown> = {}) {
+  const route = parseAppLocation(window.location);
   const query = new URLSearchParams(route.query);
 
   for (const [key, value] of Object.entries(nextQuery)) {
@@ -127,21 +122,17 @@ export function replaceAppRouteQuery(nextQuery = {}) {
     }
   }
 
-  const queryString = query.toString();
-
-  if (!window.location.hash) {
-    const url = new URL(window.location.href);
-    url.search = queryString;
-    window.history.replaceState({}, "", url);
-    return;
+  const config = getRouteConfig(route.path);
+  const nextUrl = createRouteUrl(config?.path || route.path, query);
+  window.history.replaceState(withHistoryIndex(window.history.state, activeHistoryIndex), "", nextUrl);
+  activeRouteUrl = nextUrl;
+  if (activeRoute) {
+    activeRoute.query = query;
+    activeRoute.url = nextUrl;
   }
-
-  const nextHash = `#${route.path}${queryString ? `?${queryString}` : ""}`;
-  window.history.replaceState({}, "", `${window.location.pathname}${window.location.search}${nextHash}`);
-  activeRouteHash = nextHash;
 }
 
-export function emitRouteVisible(route) {
+export function emitRouteVisible(route: AppRoute) {
   window.dispatchEvent(
     new CustomEvent(ROUTE_VISIBLE_EVENT, {
       detail: route,
@@ -149,60 +140,97 @@ export function emitRouteVisible(route) {
   );
 }
 
-export function createHashRouter({ routes, onRouteChange }) {
-  routeChangeHandler = async () => {
-    if (restoringHash) {
-      restoringHash = false;
+export function createHistoryRouter({
+  routes,
+  onRouteChange,
+}: {
+  routes: readonly RouteConfig[];
+  onRouteChange: (route: AppRoute) => Promise<void> | void;
+}) {
+  routeChangeHandler = async (source = "navigate", targetIndex = null) => {
+    if (restoringHistory) {
+      restoringHistory = false;
       return;
     }
 
-    const nextRoute = parseAppHash(window.location.hash || "#/");
-    if (activeRoute && nextRoute.hash === activeRouteHash) return;
-    if (pendingRouteHash === nextRoute.hash) return;
-
-    if (activeRoute && nextRoute.hash !== activeRouteHash && !canNavigateAway(activeRoute)) {
-      restoringHash = true;
-      window.location.hash = activeRouteHash || "#/";
-      return;
-    }
-
-    const routeConfig = routes.find((route) => route.path === nextRoute.path)
-      || routes.find((route) => route.aliases?.includes(nextRoute.path))
+    const requestedRoute = parseAppLocation(window.location);
+    const routeConfig = routes.find((route) => route.path === requestedRoute.path)
+      || routes.find((route) => route.aliases?.includes(requestedRoute.path))
       || routes.find((route) => route.path === "/");
+    if (!routeConfig) return;
 
-    const resolvedRoute = {
-      ...nextRoute,
-      path: routeConfig?.path || nextRoute.path,
-      requestedPath: nextRoute.path,
+    const canonicalUrl = createRouteUrl(routeConfig.path, requestedRoute.query);
+    if (activeRoute && canonicalUrl === activeRouteUrl) return;
+    if (pendingRouteUrl === canonicalUrl) return;
+
+    if (source === "popstate" && activeRoute && !canNavigateAway(activeRoute)) {
+      if (targetIndex !== null && targetIndex !== activeHistoryIndex) {
+        restoringHistory = true;
+        window.history.go(activeHistoryIndex - targetIndex);
+      } else {
+        window.history.pushState(
+          withHistoryIndex({}, activeHistoryIndex),
+          "",
+          activeRouteUrl || createRouteUrl(activeRoute.path, activeRoute.query),
+        );
+      }
+      return;
+    }
+
+    if (canonicalUrl !== requestedRoute.url || window.location.hash) {
+      window.history.replaceState(
+        withHistoryIndex(window.history.state, targetIndex ?? activeHistoryIndex),
+        "",
+        canonicalUrl,
+      );
+    }
+
+    if (targetIndex !== null) activeHistoryIndex = targetIndex;
+    const resolvedRoute: AppRoute = {
+      ...requestedRoute,
+      url: canonicalUrl,
+      path: routeConfig.path,
+      requestedPath: requestedRoute.path,
       config: routeConfig,
       navigate: navigateToAppRoute,
       replace: (href) => navigateToAppRoute(href, { replace: true }),
     };
 
     activeRoute = resolvedRoute;
-    activeRouteHash = nextRoute.hash;
-    pendingRouteHash = nextRoute.hash;
+    activeRouteUrl = canonicalUrl;
+    pendingRouteUrl = canonicalUrl;
     window.dispatchEvent(new CustomEvent(ROUTE_CHANGE_EVENT, { detail: resolvedRoute }));
     try {
       await onRouteChange(resolvedRoute);
     } finally {
-      if (pendingRouteHash === nextRoute.hash) pendingRouteHash = "";
+      if (pendingRouteUrl === canonicalUrl) pendingRouteUrl = "";
     }
   };
 
-  if (!window.location.hash) {
-    window.history.replaceState({}, "", `${window.location.pathname}${window.location.search}#/`);
-  }
+  activeHistoryIndex = getHistoryIndex(window.history.state) ?? 0;
+  const initialRoute = parseAppLocation(window.location);
+  window.history.replaceState(
+    withHistoryIndex(window.history.state, activeHistoryIndex),
+    "",
+    initialRoute.url,
+  );
+  if ("scrollRestoration" in window.history) window.history.scrollRestoration = "manual";
 
-  window.addEventListener("hashchange", routeChangeHandler);
-  void routeChangeHandler();
+  const onPopState = (event: PopStateEvent) => {
+    void routeChangeHandler?.("popstate", getHistoryIndex(event.state));
+  };
+
+  window.addEventListener("popstate", onPopState);
+  void routeChangeHandler("initial", activeHistoryIndex);
 
   return {
     getRoute: () => activeRoute,
     destroy() {
-      window.removeEventListener("hashchange", routeChangeHandler);
+      window.removeEventListener("popstate", onPopState);
       routeChangeHandler = null;
-      pendingRouteHash = "";
+      pendingRouteUrl = "";
+      activeRoute = null;
+      activeRouteUrl = "";
     },
   };
 }

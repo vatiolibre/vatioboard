@@ -16,6 +16,7 @@
     "dev": "vite",
     "prebuild": "pnpm run prepare:geo",
     "build": "vite build",
+    "postbuild": "node scripts/create-spa-fallback.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",

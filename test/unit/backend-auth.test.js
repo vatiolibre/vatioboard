@@ -141,24 +141,24 @@ describe('backend auth SSO helpers', () => {
   it('builds the VatioLibre-backed board SSO URL', () => {
     const url = new URL(getSsoStartUrl(
       'board',
-      'https://vatioboard.com/#/board',
+      'https://vatioboard.com/board',
       PROD_CONFIG
     ));
 
     expect(url.origin).toBe('https://api.vatioboard.com');
     expect(url.pathname).toBe('/api/method/vatiolibre.vatiolibre.sso.start');
     expect(url.searchParams.get('target')).toBe('board');
-    expect(url.searchParams.get('redirect_to')).toBe('https://vatioboard.com/#/board');
+    expect(url.searchParams.get('redirect_to')).toBe('https://vatioboard.com/board');
   });
 
-  it('preserves hash routes in redirect_to', () => {
+  it('preserves clean routes in redirect_to', () => {
     const url = new URL(getSsoStartUrl(
       'board',
-      'https://vatioboard.com/#/library',
+      'https://vatioboard.com/library',
       PROD_CONFIG
     ));
 
-    expect(url.searchParams.get('redirect_to')).toBe('https://vatioboard.com/#/library');
+    expect(url.searchParams.get('redirect_to')).toBe('https://vatioboard.com/library');
   });
 
   it('builds the VatioLibre target SSO URL for the development API host', () => {
@@ -194,18 +194,18 @@ describe('backend auth SSO helpers', () => {
 
   it('does not construct SSO URLs for unsafe redirect targets', () => {
     expect(getSsoStartUrl('board', 'javascript:alert(1)', PROD_CONFIG)).toBe('');
-    expect(getSsoStartUrl('board', '//evil.example/#/board', PROD_CONFIG)).toBe('');
-    expect(getSsoStartUrl('board', 'https://evil.example/#/board', PROD_CONFIG)).toBe('');
-    expect(getSsoStartUrl('libre', 'https://vatioboard.com/#/board', PROD_CONFIG)).toBe('');
+    expect(getSsoStartUrl('board', '//evil.example/board', PROD_CONFIG)).toBe('');
+    expect(getSsoStartUrl('board', 'https://evil.example/board', PROD_CONFIG)).toBe('');
+    expect(getSsoStartUrl('libre', 'https://vatioboard.com/board', PROD_CONFIG)).toBe('');
   });
 
   it('uses top-level navigation for SSO starts', () => {
     const location = {
-      href: 'https://vatioboard.com/#/board',
+      href: 'https://vatioboard.com/board',
       assign: vi.fn(),
     };
 
-    expect(startSso('board', 'https://vatioboard.com/#/board', {
+    expect(startSso('board', 'https://vatioboard.com/board', {
       config: PROD_CONFIG,
       location,
     })).toBe(true);
@@ -217,7 +217,7 @@ describe('backend auth SSO helpers', () => {
 
   it('opens VatioLibre through the dev SSO bridge with the fleet redirect', () => {
     const location = {
-      href: 'https://dev.vatioboard.com/#/board',
+      href: 'https://dev.vatioboard.com/board',
       assign: vi.fn(),
     };
 
@@ -235,7 +235,7 @@ describe('backend auth SSO helpers', () => {
 
   it('starts subscription SSO with top-level navigation', () => {
     const location = {
-      href: 'https://dev.vatioboard.com/#/board',
+      href: 'https://dev.vatioboard.com/board',
       assign: vi.fn(),
     };
 
@@ -513,9 +513,9 @@ describe('backend auth controller layout', () => {
 
     const location = {
       assign: vi.fn(),
-      hash: '#/library',
-      href: 'https://vatioboard.com/#/library',
-      pathname: '/',
+      hash: '',
+      href: 'https://vatioboard.com/library',
+      pathname: '/library',
       search: '',
     };
     const config = {
@@ -547,7 +547,7 @@ describe('backend auth controller layout', () => {
     let url = new URL(location.assign.mock.calls.at(-1)[0]);
     expect(url.pathname).toBe('/api/method/vatiolibre.vatiolibre.sso.start');
     expect(url.searchParams.get('target')).toBe('board');
-    expect(url.searchParams.get('redirect_to')).toBe('https://vatioboard.com/#/library');
+    expect(url.searchParams.get('redirect_to')).toBe('https://vatioboard.com/library');
 
     form.querySelector('[data-backend-auth-open-libre]').click();
     url = new URL(location.assign.mock.calls.at(-1)[0]);
@@ -557,7 +557,7 @@ describe('backend auth controller layout', () => {
     form.querySelector('[data-backend-auth-open-board]').click();
     url = new URL(location.assign.mock.calls.at(-1)[0]);
     expect(url.searchParams.get('target')).toBe('board');
-    expect(url.searchParams.get('redirect_to')).toBe('https://vatioboard.com/#/library');
+    expect(url.searchParams.get('redirect_to')).toBe('https://vatioboard.com/library');
 
     controller.destroy();
   });

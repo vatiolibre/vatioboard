@@ -80,6 +80,12 @@ async function bootSpa() {
   }
 }
 
+async function navigateSpa(path) {
+  const { navigateToAppRoute } = await import("../../src/app/router.js");
+  navigateToAppRoute(path);
+  for (let index = 0; index < 8; index += 1) await flushTasks();
+}
+
 function seedWelcomeConsent(locationChoice = "enabled") {
   localStorage.setItem(
     WELCOME_CONSENT_KEY,
@@ -127,14 +133,15 @@ describe("index.html SPA shell", () => {
     localStorage.clear();
   });
 
-  it("boots the hash-routed app with Speed as the default route", async () => {
+  it("boots the clean-URL app with Speed as the default route", async () => {
     await bootSpa();
 
     expectPageSeo({
       title: "VatioLibre Driving Tools",
       canonical: "https://vatioboard.com/",
     });
-    expect(window.location.hash).toBe("#/");
+    expect(window.location.pathname).toBe("/");
+    expect(window.location.hash).toBe("");
     expect(document.getElementById("app-view")).toBeTruthy();
     expect(document.getElementById("app-persistent-layer")).toBeTruthy();
     expect(document.querySelector("[data-mock-view='speed']")).toBeTruthy();
@@ -177,15 +184,11 @@ describe("index.html SPA shell", () => {
     expect(nativeWatchPosition).not.toHaveBeenCalled();
   }, 40000);
 
-  it("switches hash routes without reloading the document", async () => {
+  it("switches clean routes without reloading the document", async () => {
     await bootSpa();
     const originalBody = document.body;
 
-    window.location.hash = "#/library?tab=media";
-    window.dispatchEvent(new HashChangeEvent("hashchange"));
-    for (let index = 0; index < 8; index += 1) {
-      await flushTasks();
-    }
+    await navigateSpa("/library?tab=media");
 
     expect(document.body).toBe(originalBody);
     expect(document.querySelector("[data-mock-view='library']")).toBeTruthy();
@@ -194,11 +197,7 @@ describe("index.html SPA shell", () => {
       routeState.events.indexOf("mount:library"),
     );
 
-    window.location.hash = "#/accel";
-    window.dispatchEvent(new HashChangeEvent("hashchange"));
-    for (let index = 0; index < 8; index += 1) {
-      await flushTasks();
-    }
+    await navigateSpa("/accel");
 
     expect(document.querySelector("[data-mock-view='accel']")).toBeTruthy();
     expect(routeState.unmounted).toContain("library");
@@ -215,11 +214,7 @@ describe("index.html SPA shell", () => {
     await import("../../src/app/main.js");
     await flushTasks();
 
-    window.location.hash = "#/library";
-    window.dispatchEvent(new HashChangeEvent("hashchange"));
-    for (let index = 0; index < 8; index += 1) {
-      await flushTasks();
-    }
+    await navigateSpa("/library");
 
     expect(document.querySelector("[data-mock-view='library']")).toBeTruthy();
     expect(routeState.mounted).toEqual(["library"]);
@@ -320,11 +315,7 @@ describe("index.html SPA shell", () => {
     expect(localStorage.getItem("vatioboard.energy_panel.visible_v1")).toBe("open");
     expect(localStorage.getItem("vatioboard.speed_alerts_panel.visible_v1")).toBe("open");
 
-    window.location.hash = "#/library";
-    window.dispatchEvent(new HashChangeEvent("hashchange"));
-    for (let index = 0; index < 8; index += 1) {
-      await flushTasks();
-    }
+    await navigateSpa("/library");
 
     expect(document.querySelector("[data-mock-view='library']")).toBeTruthy();
     expect(persistentLayer.querySelector(".calc-panel")).toBe(calcPanel);

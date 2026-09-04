@@ -70,7 +70,7 @@ function selectedRate() {
 }
 
 async function mountReplayWithRuntime({ legacyRate = "", runtimeRate = "" } = {}) {
-  window.history.replaceState({}, "", "https://vatioboard.com/#/replay");
+  window.history.replaceState({}, "", "https://vatioboard.com/replay");
   if (legacyRate) localStorage.setItem(REPLAY_PLAYBACK_RATE_LEGACY_KEY, legacyRate);
   const { appRegistry, createAppRuntime } = await import("../../src/app-platform/index.js");
   const { mount } = await import("../../src/app/views/ReplayView.js");
@@ -125,7 +125,7 @@ describe("Replay route lifecycle", () => {
 
   it("preserves direct route callers without runtime settings", async () => {
     localStorage.setItem(REPLAY_PLAYBACK_RATE_LEGACY_KEY, "10");
-    window.history.replaceState({}, "", "https://vatioboard.com/#/replay");
+    window.history.replaceState({}, "", "https://vatioboard.com/replay");
     const { mount } = await import("../../src/app/views/ReplayView.js");
     const root = document.getElementById("root");
 

@@ -144,5 +144,4 @@ Route apps are remounted during navigation. Cleanup is not optional.
 - Runtime services are gated by both `permissions` and `services`.
 - App-private storage uses `runtime.storage` and stays under `vatioboard.app.<appId>.`.
 - Unmount removes route DOM, listeners, timers, maps/charts, and async work.
-- A smoke test covers the hash route if the app is user-facing.
-
+- A smoke test covers direct loading and History API navigation for the clean path if the app is user-facing.

@@ -25,10 +25,8 @@ const VALID_TOOL_SURFACES = new Set<ToolSurface>([
   "launcher",
 ]);
 
-function routeHref(route: string, app: VatioAppManifest) {
-  const legacyHref = app.metadata.legacyHref;
-  if (typeof legacyHref === "string" && legacyHref) return legacyHref;
-  return route === "/" ? "#/" : `#${route}`;
+function routeHref(route: string, _app: VatioAppManifest) {
+  return route;
 }
 
 function getLegacyToolId(app: VatioAppManifest) {

@@ -271,7 +271,7 @@ function createSpeedRuntime() {
     setActivity(SPEED_RECORDING_ACTIVITY_ID, {
       kind: "speed",
       order: 10,
-      route: "#/speed",
+      route: "/",
       labelKey: "activitySpeedRecording",
       sampleCount: actual.sampleCount,
       startedAtMs: actual.startedAtMs,
@@ -345,7 +345,7 @@ function createSpeedRuntime() {
     setActivity(SPEED_ALERTS_ACTIVITY_ID, {
       kind: "speed",
       order: 11,
-      route: "#/speed",
+      route: "/",
       openLabelKey: "activityOpenSpeedAlerts",
       ...model,
     });

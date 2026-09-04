@@ -6,7 +6,7 @@ const speedTemplate: string = String.raw`
     <header data-vb-route-header>
       <div class="header-inner speed-header-inner">
         <div class="brand" data-i18n-title="speedTagline" title="Minimal live speedometer by VatioLibre">
-          <a class="brand-home" href="#/board" data-i18n-aria="openBoard" aria-label="Open VatioLibre drawing board">
+          <a class="brand-home" href="/board" data-i18n-aria="openBoard" aria-label="Open VatioLibre drawing board">
             <span class="dot" aria-hidden="true"></span>
             <picture class="brand-logo" aria-hidden="true">
               <source srcset="/img/vb_logo_dark.svg" media="(prefers-color-scheme: dark)" />

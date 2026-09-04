@@ -47,7 +47,7 @@ describe("Board route OS app module", () => {
       modules,
       appId: "vatio.board",
       path: "/board",
-      hash: "#/board",
+      url: "/board",
     });
 
     const boardRouteContext = boardRouteMocks.mountBoardRoute.mock.calls[0][0];

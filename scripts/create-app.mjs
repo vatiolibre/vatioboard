@@ -466,7 +466,7 @@ function printNextSteps({ type, name, camel }) {
   console.log("  2. Add the manifest to BUILTIN_APP_MANIFESTS in the desired order.");
   console.log("  3. Add an i18n key if the app title needs translation.");
   console.log("  4. Add manifest, launch, storage, permission, service, and cleanup tests.");
-  if (type === "route") console.log(`  5. Visit #/${name} after registration.`);
+  if (type === "route") console.log(`  5. Visit /${name} after registration.`);
   if (type === "window") console.log(`  5. Open vatio.${camel} through the launcher after registration.`);
   if (type === "background") console.log(`  5. Start vatio.${camel} through createBackgroundServiceManager() after registration.`);
   console.log("  6. Run pnpm run verify.");

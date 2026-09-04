@@ -32,11 +32,11 @@ export function createRouteTestRoot() {
   return root;
 }
 
-export function createRouteMountContext({ runtime, manifest, path, hash = `#${path}`, requestedPath = path } = {}) {
+export function createRouteMountContext({ runtime, manifest, path, url = path, requestedPath = path } = {}) {
   return {
     appRuntime: runtime,
     appManifest: manifest,
-    route: { path, hash, query: new URLSearchParams(hash.split("?")[1] || ""), requestedPath },
+    route: { path, url, query: new URLSearchParams(url.split("?")[1] || ""), requestedPath },
     routeSignal: new AbortController().signal,
     navigate: vi.fn(() => true),
     emitRouteVisible: vi.fn(),
@@ -68,7 +68,7 @@ export async function mountRouteAppWithRuntime({
   appId,
   baseContext = {},
   path,
-  hash = `#${path}`,
+  url = path,
   requestedPath = path,
 }) {
   const manifest = modules.appRegistry.getApp(appId);
@@ -78,7 +78,7 @@ export async function mountRouteAppWithRuntime({
     runtime,
     manifest,
     path,
-    hash,
+    url,
     requestedPath,
   }));
 

@@ -19,6 +19,22 @@ function setInert(element: HTMLElement, inert: boolean) {
   else element.removeAttribute("inert");
 }
 
+function readPersistedView(key: string) {
+  try {
+    return localStorage.getItem(key) || "";
+  } catch {
+    return "";
+  }
+}
+
+function persistView(key: string, view: string) {
+  try {
+    localStorage.setItem(key, view);
+  } catch {
+    // Focused-view recovery is a convenience when storage is unavailable.
+  }
+}
+
 export function initFocusedWorkspaces(root: ParentNode = document) {
   const workspaces = Array.from(
     root.querySelectorAll<HTMLElement>("[data-vb-focused-workspace]"),
@@ -29,7 +45,8 @@ export function initFocusedWorkspaces(root: ParentNode = document) {
   let stopped = false;
   let scheduled = false;
 
-  const records = workspaces.map((workspace) => {
+  const routeScope = root instanceof Element ? root.getAttribute("data-vb-route") || "route" : "route";
+  const records = workspaces.map((workspace, workspaceIndex) => {
     const buttons = Array.from(
       workspace.querySelectorAll<HTMLButtonElement>("[data-vb-focused-view-target]"),
     );
@@ -40,7 +57,11 @@ export function initFocusedWorkspaces(root: ParentNode = document) {
       || buttons[0]?.dataset.vbFocusedViewTarget
       || panels[0]?.dataset.vbFocusedViewPanel
       || "";
-    let activeView = workspace.dataset.vbFocusedActive || defaultView;
+    const persistenceKey = `vatioboard.focused-view.v1:${workspace.dataset.vbFocusedPersistKey || `${routeScope}:${workspaceIndex}`}`;
+    const persistedView = readPersistedView(persistenceKey);
+    let activeView = workspace.dataset.vbFocusedActive
+      || (panels.some((panel) => panel.dataset.vbFocusedViewPanel === persistedView) ? persistedView : "")
+      || defaultView;
 
     const apply = (focused = isNarrowPortraitViewport(), emit = true) => {
       workspace.dataset.vbFocusedMode = focused ? "true" : "false";
@@ -68,6 +89,7 @@ export function initFocusedWorkspaces(root: ParentNode = document) {
     const select = (view: string, { focus = false } = {}) => {
       if (!view || !panels.some((panel) => panel.dataset.vbFocusedViewPanel === view)) return;
       activeView = view;
+      persistView(persistenceKey, activeView);
       apply(isNarrowPortraitViewport());
       if (focus) buttons.find((button) => button.dataset.vbFocusedViewTarget === view)?.focus();
     };

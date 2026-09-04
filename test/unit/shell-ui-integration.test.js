@@ -100,7 +100,7 @@ async function loadAppShellWithMocks() {
     routes: [],
   }));
   vi.doMock("../../src/app/router.js", () => ({
-    createHashRouter: vi.fn(() => ({ getRoute: vi.fn(), destroy: vi.fn() })),
+    createHistoryRouter: vi.fn(() => ({ getRoute: vi.fn(), destroy: vi.fn() })),
     emitRouteVisible: vi.fn(),
     navigateToAppRoute: vi.fn(() => false),
   }));

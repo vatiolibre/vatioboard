@@ -47,7 +47,7 @@ describe("Library route OS app module", () => {
       modules,
       appId: "vatio.library",
       path: "/library",
-      hash: "#/library",
+      url: "/library",
     });
 
     const libraryRouteContext = libraryRouteMocks.mountLibraryRoute.mock.calls[0][0];

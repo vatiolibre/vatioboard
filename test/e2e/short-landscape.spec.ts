@@ -17,7 +17,8 @@ async function preparePage(page: Page) {
 
 async function openRoute(page: Page, route = "speed") {
   // Map/media embeds may keep the page load event pending; the SPA mounts on DOMContentLoaded.
-  await page.goto(`/#/${route}`, { waitUntil: "domcontentloaded" });
+  const path = route === "speed" ? "/" : `/${route}`;
+  await page.goto(path, { waitUntil: "domcontentloaded" });
   await expect(page.locator("#app-view > *").first()).toBeVisible();
   await expect(page.locator(".vb-shell-taskbar")).toBeVisible();
 }
@@ -1335,7 +1336,9 @@ test("persistent shell tools and background driving state survive Waze and Repla
 
   const assertContinuity = async (route: string) => {
     await page.evaluate((nextRoute) => {
-      window.location.hash = `#/${nextRoute}`;
+      const path = nextRoute === "speed" ? "/" : `/${nextRoute}`;
+      window.history.pushState({}, "", path);
+      window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
     }, route);
     await expect(page.locator("#app-view")).toHaveAttribute("data-vb-route", route);
     for (const [selector, identity] of [

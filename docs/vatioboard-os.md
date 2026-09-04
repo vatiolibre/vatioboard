@@ -104,7 +104,7 @@ vatioboard.os.appControl.v1
 
 The control plane tracks enabled state, pin/favorite/hidden state, launch metadata, permission grants/revocations, and storage policy metadata. Protected apps and protected critical permissions cannot be disabled or revoked when doing so would break the shell.
 
-App Manager is available at `#/apps`. It lists manifests, runtime state, background service state, permission controls, app-private storage usage, and launch/open/close actions.
+App Manager is available at `/apps`. It lists manifests, runtime state, background service state, permission controls, app-private storage usage, and launch/open/close actions.
 
 Permission revocation is a runtime boundary, not an automatic kill switch. For example, revoking audio permission blocks future calls through `runtime.services.audio`, but it does not necessarily stop an already-running shared audio flow unless the app explicitly stops it.
 

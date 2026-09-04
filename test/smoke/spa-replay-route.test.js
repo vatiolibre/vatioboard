@@ -52,9 +52,9 @@ describe("SPA Replay route real-controller smoke", () => {
     const { charts, maplibre } = getRealSpaSmokeMocks();
 
     const { snapshots, targetSnapshots } = await expectRealSpaRouteRemount({
-      targetHash: "#/replay",
+      targetHash: "/replay",
       targetSelector: "#replayShell:not([hidden]) #replayMap",
-      sequence: ["#/board", "#/replay", "#/board", "#/replay"],
+      sequence: ["/board", "/replay", "/board", "/replay"],
     });
     const firstReplay = targetSnapshots[0];
     const secondReplay = targetSnapshots[1];
@@ -88,7 +88,7 @@ describe("SPA Replay route real-controller smoke", () => {
     await settleRealSpaSmoke();
     expect(getRealSpaSmokeMocks().lifecycle.activeRafIds.size).toBeGreaterThan(0);
 
-    const boardAfterGraph = await navigateRealSpaSmoke("#/board");
+    const boardAfterGraph = await navigateRealSpaSmoke("/board");
     expect(boardAfterGraph.activeMapCount).toBe(0);
     expect(boardAfterGraph.activeChartCount).toBe(0);
     expect(boardAfterGraph.activeRafCount).toBe(0);

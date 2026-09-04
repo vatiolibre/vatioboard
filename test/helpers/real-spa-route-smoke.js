@@ -466,65 +466,65 @@ function seedWelcomeConsent(locationChoice = "enabled") {
   );
 }
 
-async function bootSpa(hash = "#/board") {
+async function bootSpa(path = "/board") {
   await bootHtmlPage("index.html");
   seedWelcomeConsent();
   expect(document.getElementById("app-view"), "index.html should provide #app-view").toBeTruthy();
-  window.history.replaceState({}, "", `https://vatioboard.com/${hash}`);
+  window.history.replaceState({}, "", `https://vatioboard.com${path}`);
   const { startAppShell } = await import("../../src/app/app-shell.js");
   await startAppShell();
-  await waitForRoute(hash);
+  await waitForRoute(path);
 }
 
 const routeConfig = {
-  "#/board": {
+  "/board": {
     bodyClass: "board-page",
     selector: "#pad",
   },
-  "#/speed": {
+  "/": {
     bodyClass: "speed-page",
     selector: "#speedValue",
   },
-  "#/waze": {
+  "/waze": {
     bodyClass: "waze-page",
     selector: "[data-waze-app] #wazeFrame",
   },
-  "#/replay": {
+  "/replay": {
     bodyClass: "replay-page",
     selector: "#replayShell",
   },
-  "#/accel": {
+  "/accel": {
     bodyClass: "accel-page",
     selector: "#armRun",
   },
-  "#/library": {
+  "/library": {
     bodyClass: "library-page",
     selector: "#libraryList",
   },
-  "#/apps": {
+  "/apps": {
     bodyClass: "apps-page",
     selector: "[data-vb-app-manager]",
   },
 };
 
-async function navigate(hash) {
-  window.location.hash = hash;
-  window.dispatchEvent(new HashChangeEvent("hashchange"));
-  await waitForRoute(hash);
+async function navigate(path) {
+  const { navigateToAppRoute } = await import("../../src/app/router.js");
+  navigateToAppRoute(path);
+  await waitForRoute(path);
 }
 
-export async function navigateRealSpaSmoke(hash) {
-  await navigate(hash);
-  await expectRouteUsable(hash);
+export async function navigateRealSpaSmoke(path) {
+  await navigate(path);
+  await expectRouteUsable(path);
   return {
-    hash,
+    hash: path,
     ...getRealSpaResourceSnapshot(),
   };
 }
 
-async function waitForRoute(hash) {
-  const selector = routeConfig[hash]?.selector;
-  if (!selector) throw new Error(`Unknown route hash ${hash}`);
+async function waitForRoute(path) {
+  const selector = routeConfig[path]?.selector;
+  if (!selector) throw new Error(`Unknown route path ${path}`);
 
   for (let attempt = 0; attempt < 40; attempt += 1) {
     await settle(4);
@@ -534,7 +534,7 @@ async function waitForRoute(hash) {
   const rootHtml = document.getElementById("app-view")?.innerHTML;
   expect(
     document.querySelector(selector),
-    `Expected ${selector} for ${hash}. app-view: ${rootHtml ? rootHtml.slice(0, 500) : "<empty or missing>"}`
+    `Expected ${selector} for ${path}. app-view: ${rootHtml ? rootHtml.slice(0, 500) : "<empty or missing>"}`
   ).toBeTruthy();
 }
 
@@ -578,13 +578,13 @@ async function expectPersistentShellReady() {
   window.__vatioboardStartMenu?.close?.();
 }
 
-async function expectRouteUsable(hash) {
-  const config = routeConfig[hash];
+async function expectRouteUsable(path) {
+  const config = routeConfig[path];
   expect(document.querySelector(config.selector)).toBeTruthy();
   expect(document.body.classList.contains(config.bodyClass)).toBe(true);
 
   for (const [otherHash, otherConfig] of Object.entries(routeConfig)) {
-    if (otherHash === hash) continue;
+    if (otherHash === path) continue;
     expect(document.body.classList.contains(otherConfig.bodyClass)).toBe(false);
   }
 
@@ -596,14 +596,14 @@ export async function expectRealSpaRouteRemount({
   targetSelector,
   sequence,
 }) {
-  await bootSpa("#/board");
-  await expectRouteUsable("#/board");
+  await bootSpa("/board");
+  await expectRouteUsable("/board");
   const snapshots = [{
-    hash: "#/board",
+    hash: "/board",
     ...getRealSpaResourceSnapshot(),
   }];
 
-  const routeSequence = sequence || ["#/board", targetHash, "#/board", targetHash];
+  const routeSequence = sequence || ["/board", targetHash, "/board", targetHash];
 
   for (const hash of routeSequence.slice(1)) {
     await navigate(hash);
