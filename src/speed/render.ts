@@ -1,5 +1,6 @@
 import { DISTANCE_UNIT_CONFIG, UNIT_CONFIG } from "./constants.js";
 import { loadUnitPreference } from "./preferences.js";
+import { createTripStatsModel } from "../shared/trip-stats.js";
 
 export function tf(translate, key, values = {}) {
   return translate(key).replace(/\{(\w+)\}/g, (_, token) => String(values[token] ?? ""));
@@ -383,33 +384,39 @@ export function createSpeedRenderer({
   }
 
   function renderMetrics(syncAlertUi) {
-    const currentSpeed = Math.round(convertSpeed(state.currentSpeedMs, state.unit));
-    const maxSpeed = Math.round(convertSpeed(state.maxSpeedMs, state.unit));
-    const averageSpeed = Math.round(getAverageSpeedMs(state.totalDistanceM, state.startTime));
-    const distance = getDistanceDisplay(state.totalDistanceM, state.distanceUnit);
-    const nearestTrap = formatTrapDistance(state.nearestTrapDistanceM, state.distanceUnit, t("away"));
-    const unitLabel = UNIT_CONFIG[state.unit].label;
-    const distanceUnitLabel = DISTANCE_UNIT_CONFIG[state.distanceUnit].label;
+    const metrics = createTripStatsModel({
+      currentSpeedMs: state.currentSpeedMs,
+      maxSpeedMs: state.maxSpeedMs,
+      totalDistanceM: state.totalDistanceM,
+      startedAtMs: state.startTime,
+      currentAltitudeM: state.currentAltitudeM,
+      maxAltitudeM: state.maxAltitudeM,
+      minAltitudeM: state.minAltitudeM,
+      nearestCameraDistanceM: state.nearestTrapDistanceM,
+      speedUnit: state.unit,
+      distanceUnit: state.distanceUnit,
+    });
+    const nearestTrap = Number.isFinite(state.nearestTrapDistanceM)
+      ? metrics.nearestCamera
+      : formatTrapDistance(state.nearestTrapDistanceM, state.distanceUnit, t("away"));
 
-    elements.speedValue.textContent = String(currentSpeed);
-    elements.speedUnit.textContent = unitLabel;
-    elements.maxSpeed.textContent = String(maxSpeed);
-    elements.maxSpeedUnit.textContent = unitLabel;
-    elements.avgSpeed.textContent = String(averageSpeed);
-    elements.avgSpeedUnit.textContent = unitLabel;
-    elements.distanceValue.textContent = distance.value;
-    elements.distanceUnit.textContent = distance.unit;
+    elements.speedValue.textContent = metrics.currentSpeed.value;
+    elements.speedUnit.textContent = metrics.currentSpeed.unit;
+    elements.maxSpeed.textContent = metrics.maxSpeed.value;
+    elements.maxSpeedUnit.textContent = metrics.maxSpeed.unit;
+    elements.avgSpeed.textContent = metrics.averageSpeed.value;
+    elements.avgSpeedUnit.textContent = metrics.averageSpeed.unit;
+    elements.distanceValue.textContent = metrics.distance.value;
+    elements.distanceUnit.textContent = metrics.distance.unit;
     elements.nearestTrapDistance.textContent = nearestTrap.value;
     elements.nearestTrapUnit.textContent = nearestTrap.unit;
-    elements.durationValue.textContent = formatDuration(
-      Number.isFinite(state.startTime) ? Date.now() - state.startTime : 0,
-    );
-    elements.altitudeValue.textContent = formatAltitude(state.currentAltitudeM, state.distanceUnit);
-    elements.altitudeUnit.textContent = distanceUnitLabel;
-    elements.maxAltitude.textContent = formatAltitude(state.maxAltitudeM, state.distanceUnit);
-    elements.maxAltitudeUnit.textContent = distanceUnitLabel;
-    elements.minAltitude.textContent = formatAltitude(state.minAltitudeM, state.distanceUnit);
-    elements.minAltitudeUnit.textContent = distanceUnitLabel;
+    elements.durationValue.textContent = metrics.duration.value;
+    elements.altitudeValue.textContent = metrics.altitude.value;
+    elements.altitudeUnit.textContent = metrics.altitude.unit;
+    elements.maxAltitude.textContent = metrics.maxAltitude.value;
+    elements.maxAltitudeUnit.textContent = metrics.maxAltitude.unit;
+    elements.minAltitude.textContent = metrics.minAltitude.value;
+    elements.minAltitudeUnit.textContent = metrics.minAltitude.unit;
     syncAlertUi();
     syncRuntimePagePresentation();
   }

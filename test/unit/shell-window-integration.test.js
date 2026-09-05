@@ -441,10 +441,10 @@ describe("shell window integration", () => {
 
     expect(document.querySelectorAll(".floating-dock")).toHaveLength(0);
     expect(document.querySelectorAll(".calc-panel")).toHaveLength(1);
-    expect(document.querySelectorAll(".camera-map-panel")).toHaveLength(1);
+    expect(document.querySelectorAll(".camera-map-panel")).toHaveLength(0);
     expect(document.querySelectorAll(".energy-panel")).toHaveLength(1);
     expect(document.querySelectorAll(".speed-alert-window")).toHaveLength(1);
-    expect(manager.listWindows().filter((record) => ["calculator", "camera-map", "energy", "speed-alerts"].includes(record.id))).toHaveLength(4);
+    expect(manager.listWindows().filter((record) => ["calculator", "energy", "speed-alerts"].includes(record.id))).toHaveLength(3);
     manager.destroy();
   });
 
@@ -474,7 +474,7 @@ describe("shell window integration", () => {
     nextManager.destroy();
   });
 
-  it("floating tools open calculator through the shell manager without a legacy dock", async () => {
+  it("floating tools keep persistent windows without recreating the removed Camera Map window", async () => {
     const { createShellWindowManager, initFloatingTools } = await loadModules();
     const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
     const gpsService = {
@@ -487,18 +487,14 @@ describe("shell window integration", () => {
 
     expect(document.querySelector(".floating-dock")).toBeNull();
     tools.openCalculator();
-    tools.openCameraMap();
     tools.openSpeedAlerts();
 
     expect(manager.getWindow("calculator").state).toBe("open");
-    expect(manager.getWindow("camera-map").state).toBe("open");
+    expect(manager.getWindow("camera-map")).toBeNull();
     expect(manager.getWindow("speed-alerts").state).toBe("open");
     expect(document.querySelector(".calc-panel").hidden).toBe(false);
-    expect(document.querySelector(".camera-map-panel").hidden).toBe(false);
+    expect(document.querySelector(".camera-map-panel")).toBeNull();
     expect(document.querySelector(".speed-alert-window").hidden).toBe(false);
-    expect(gpsService.startConsumer).toHaveBeenCalledWith("camera-map", expect.objectContaining({
-      enableHighAccuracy: true,
-    }));
     expect(gpsService.startConsumer).not.toHaveBeenCalledWith("speed-alerts", expect.anything());
     expect(drivingAlertService.subscribe).toHaveBeenCalled();
     manager.destroy();

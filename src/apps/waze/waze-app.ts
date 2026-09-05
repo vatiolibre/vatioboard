@@ -1,23 +1,12 @@
 import "./waze.less";
+import "../../shared/driving-hud.less";
 
 import { t as globalTranslate } from "../../i18n.js";
-import {
-  markWelcomeLocationChoice,
-  shouldDeferWelcomeLocationRequest,
-} from "../../app/welcome-consent.js";
-import type {
-  DriveRecordingSnapshot,
-  DrivingAlertSnapshot,
-  GpsSnapshot,
-  NormalizedGpsPosition,
-} from "../../types/services";
+import { shouldDeferWelcomeLocationRequest } from "../../app/welcome-consent.js";
+import { createDrivingHud } from "../../shared/driving-hud.js";
+import type { NormalizedGpsPosition } from "../../types/services";
 import type { MountedView } from "../../types/route";
 import type { WazeRouteMountContext } from "./waze-route-app";
-import { createDrivingAudioCueController } from "../../shared/driving-audio-cues.js";
-import {
-  START_RECORDING_SOUND_URL,
-  TRAP_SOUND_URL,
-} from "../../speed/constants.js";
 
 export const WAZE_EMBED_BASE_URL = "https://embed.waze.com/iframe";
 export const WAZE_REFRESH_MIN_INTERVAL_MS = 300_000;
@@ -25,11 +14,18 @@ export const WAZE_REFRESH_MIN_DISTANCE_M = 300;
 export const WAZE_GPS_CONSUMER_ID = "vatio.waze.route";
 export const WAZE_SPEED_ALERTS_APP_ID = "vatio.speedAlerts";
 
-type AnyRecord = Record<string, any>;
 type WazeCenter = {
   latitude: number;
   longitude: number;
   timestampMs: number;
+};
+
+type WazeElements = {
+  app: HTMLElement;
+  frame: HTMLIFrameElement;
+  hudMount: HTMLElement;
+  placeholder: HTMLElement;
+  placeholderText: HTMLElement;
 };
 
 export function getWazeZoomLevel(speedMs: number): number {
@@ -77,177 +73,70 @@ export function shouldRefreshWazeEmbed(
   return getWazeDistanceM(center, position) >= WAZE_REFRESH_MIN_DISTANCE_M;
 }
 
-function interpolate(value: string, params: Record<string, unknown>): string {
-  return value.replace(/\{(\w+)\}/g, (_match, key) => String(params[key] ?? `{${key}}`));
+function requireElement<T extends Element>(root: ParentNode, selector: string): T {
+  const element = root.querySelector<T>(selector);
+  if (!element) throw new Error(`Waze route is missing ${selector}`);
+  return element;
 }
 
-function getUnitLabel(unit: string): string {
-  return unit === "mph" ? "mph" : "km/h";
-}
-
-function convertSpeed(speedMs: number, unit: string): number {
-  return speedMs * (unit === "mph" ? 2.2369362920544 : 3.6);
-}
-
-function getElements(root: ParentNode): AnyRecord {
+function getElements(root: ParentNode): WazeElements {
   return {
-    app: root.querySelector("[data-waze-app]"),
-    frame: root.querySelector("#wazeFrame"),
-    placeholder: root.querySelector("#wazePlaceholder"),
-    placeholderText: root.querySelector("#wazePlaceholderText"),
-    speedPill: root.querySelector("#wazeSpeedPill"),
-    speedValue: root.querySelector("#wazeSpeedValue"),
-    speedUnit: root.querySelector("#wazeSpeedUnit"),
-    speedLimitLabel: root.querySelector("#wazeSpeedLimitLabel"),
-    speedLimitValue: root.querySelector("#wazeSpeedLimitValue"),
-    speedNote: root.querySelector("#wazeSpeedNote"),
-    quickAudioToggle: root.querySelector("#quickAudioToggle"),
-    quickAlertConfig: root.querySelector("#quickAlertConfig"),
-    toggleRecording: root.querySelector("#toggleRecording"),
-    stopRecording: root.querySelector("#stopRecording"),
-    locationPrompt: root.querySelector("#wazeLocationPrompt"),
-    recenter: root.querySelector("#wazeRecenter"),
+    app: requireElement(root, "[data-waze-app]"),
+    frame: requireElement(root, "#wazeFrame"),
+    hudMount: requireElement(root, "#wazeDrivingHud"),
+    placeholder: requireElement(root, "#wazePlaceholder"),
+    placeholderText: requireElement(root, "#wazePlaceholderText"),
   };
+}
+
+function applyLegacyWazeHooks(mount: HTMLElement, translate: (key: string, fallback?: string) => string) {
+  const hook = (selector: string, id: string, classes: string[] = []) => {
+    const element = requireElement<HTMLElement>(mount, selector);
+    element.id = id;
+    element.classList.add(...classes);
+    return element;
+  };
+  hook(".driving-status-pill", "wazeSpeedPill");
+  hook("[data-driving-speed]", "wazeSpeedValue");
+  hook("[data-driving-speed-unit]", "wazeSpeedUnit");
+  hook("[data-driving-limit-label]", "wazeSpeedLimitLabel");
+  hook("[data-driving-limit]", "wazeSpeedLimitValue");
+  const actions = hook(".driving-actions", "wazeDrivingActions", ["waze-hud-actions"]);
+  actions.setAttribute("aria-label", translate("wazeDrivingControls", "Waze driving controls"));
+  hook("[data-driving-action='audio']", "quickAudioToggle", ["waze-toolbar-btn", "waze-toolbar-btn-audio"]);
+  hook("[data-driving-action='alerts']", "quickAlertConfig", ["waze-toolbar-btn", "waze-toolbar-btn-alerts"]);
+  hook("[data-driving-action='record']", "toggleRecording", ["waze-toolbar-btn", "waze-toolbar-btn-recording"]);
+  hook("[data-driving-action='stop']", "stopRecording", ["waze-toolbar-btn", "waze-toolbar-btn-stop"]);
+  const location = hook("[data-driving-action='location']", "wazeLocationPrompt", ["waze-toolbar-btn", "waze-location-prompt"]);
+  location.setAttribute("aria-label", translate("enableWazeLocation", "Enable Waze location"));
+  location.title = location.getAttribute("aria-label") || "";
+  const recenter = hook("[data-driving-action='recenter']", "wazeRecenter", ["waze-toolbar-btn", "waze-recenter"]);
+  recenter.setAttribute("aria-label", translate("recenterMap", "Refresh map"));
+  recenter.title = recenter.getAttribute("aria-label") || "";
 }
 
 export function createWazeRouteController(routeContext: WazeRouteMountContext) {
   const { cleanup, root } = routeContext;
   const elements = getElements(root);
-  const drivingAlerts = routeContext.drivingAlertService || null;
-  const driveRecording = routeContext.driveRecordingService || null;
-  const gps = routeContext.gpsService || null;
-  const i18n = routeContext.appRuntime?.i18n || null;
   const translate = (key: string, fallback?: string) =>
     routeContext.translate?.(key, fallback) || globalTranslate(key) || fallback || key;
-  const state: AnyRecord = {
+  const state = {
     destroyed: false,
-    sourceStarted: false,
-    position: null,
-    speedMs: 0,
-    unit: "kmh",
-    alertUiState: null,
-    alertPreferences: null,
-    alertAudio: null,
-    audioMuted: false,
-    alertAudioActivationPending: false,
-    cueAudio: null,
-    recordingSnapshot: driveRecording?.getSnapshot?.() || null,
-    gpsStatus: "idle",
+    position: null as NormalizedGpsPosition | null,
     online: navigator.onLine !== false,
     frameLoaded: false,
     frameLoadPending: false,
-    center: null,
+    center: null as WazeCenter | null,
   };
-  let sourceUnsubscribe: (() => void) | null = null;
-  let alertConsumerCleanup: (() => void) | null = null;
-  let recordingUnsubscribe: (() => void) | null = null;
-  let gpsConsumerCleanup: (() => void) | null = null;
-  const ownsAudioCueController = !routeContext.audioCueController;
-  const audioCues = routeContext.audioCueController || createDrivingAudioCueController({
-    alertsArmedUrl: TRAP_SOUND_URL,
-    recordingStartedUrl: START_RECORDING_SOUND_URL,
-    onStateChange: (snapshot) => {
-      state.cueAudio = snapshot;
-      render();
-    },
-  });
-  state.cueAudio = audioCues.getSnapshot();
 
-  function applyAlertSnapshot(snapshot: DrivingAlertSnapshot | null | undefined) {
-    if (!snapshot || state.destroyed) return;
-    state.gpsStatus = snapshot.status || state.gpsStatus;
-    state.position = snapshot.latestPosition || state.position;
-    state.speedMs = Number.isFinite(snapshot.currentSpeedMs) ? snapshot.currentSpeedMs : 0;
-    state.alertUiState = snapshot.alertUiState || null;
-    const preferences = snapshot.preferences as AnyRecord | null;
-    const audio = snapshot.audio as AnyRecord | null;
-    state.alertPreferences = preferences;
-    state.alertAudio = audio;
-    if (preferences?.unit === "mph" || preferences?.unit === "kmh") state.unit = preferences.unit;
-    if (typeof preferences?.audioMuted === "boolean") state.audioMuted = preferences.audioMuted;
-    else if (typeof audio?.muted === "boolean") state.audioMuted = audio.muted;
-    if (state.position && !elements.frame?.getAttribute("src")) syncEmbed();
-    render();
-  }
-
-  function applyRecordingSnapshot(snapshot: DriveRecordingSnapshot | null | undefined) {
-    if (!snapshot || state.destroyed) return;
-    state.recordingSnapshot = snapshot;
-    render();
-  }
-
-  function applyGpsSnapshot(snapshot: GpsSnapshot | null | undefined) {
-    if (!snapshot || state.destroyed) return;
-    state.gpsStatus = snapshot.status || "idle";
-    if (snapshot.normalized) {
-      state.position = snapshot.normalized;
-      state.speedMs = snapshot.normalized.stale ? 0 : Number(snapshot.normalized.speedMs || 0);
-    }
-    if (state.position && !elements.frame?.getAttribute("src")) syncEmbed();
-    render();
-  }
-
-  function startSource({ fromUserGesture = false } = {}) {
-    if (state.sourceStarted || state.destroyed) return;
-    const existingAlertSnapshot = drivingAlerts?.getSnapshot?.() || null;
-    const alertSessionStarted = existingAlertSnapshot?.started === true;
-    if (shouldDeferWelcomeLocationRequest() && !fromUserGesture && !alertSessionStarted) {
-      render();
-      return;
-    }
-
-    state.sourceStarted = true;
-    if (drivingAlerts) {
-      if (drivingAlerts.acquireConsumer) {
-        alertConsumerCleanup = drivingAlerts.acquireConsumer(WAZE_GPS_CONSUMER_ID, {
-          fromUserGesture,
-          reason: fromUserGesture ? "waze-route-user" : "waze-route",
-        });
-      }
-      const snapshot = drivingAlerts.acquireConsumer
-        ? drivingAlerts.getSnapshot?.()
-        : alertSessionStarted
-          ? existingAlertSnapshot
-          : drivingAlerts.start?.({
-              fromUserGesture,
-              reason: fromUserGesture ? "waze-route-user" : "waze-route",
-            });
-      applyAlertSnapshot(snapshot || existingAlertSnapshot);
-      sourceUnsubscribe = drivingAlerts.subscribe?.(applyAlertSnapshot) || null;
-      return;
-    }
-
-    if (gps) {
-      gpsConsumerCleanup = gps.startConsumer?.(WAZE_GPS_CONSUMER_ID, {
-        enableHighAccuracy: true,
-        reason: "waze-route",
-      }) || null;
-      sourceUnsubscribe = gps.subscribe?.(applyGpsSnapshot) || null;
-      const current = gps.getCurrentPosition?.();
-      if (current) {
-        applyGpsSnapshot({
-          ...gps.getSnapshot(),
-          normalized: current,
-        });
-      }
-      return;
-    }
-
-    state.gpsStatus = "unsupported";
-    render();
-  }
-
-  function getPermissionUrl(): string {
-    const existing = elements.frame?.getAttribute("src");
-    if (existing) return existing;
-    if (state.position) {
-      return getWazeEmbedUrl(state.position.latitude, state.position.longitude, state.speedMs);
-    }
-    return `${WAZE_EMBED_BASE_URL}?zoom=13&lat=40.7484&lon=-73.9857&ct=livemap`;
+  function currentSpeedMs(): number {
+    const alertSpeed = routeContext.drivingAlertService?.getSnapshot?.()?.currentSpeedMs;
+    if (Number.isFinite(alertSpeed)) return Number(alertSpeed);
+    return state.position?.stale ? 0 : Number(state.position?.speedMs || 0);
   }
 
   function syncEmbed({ force = false } = {}) {
-    if (!elements.frame || !state.position || !state.online || state.frameLoadPending) {
+    if (!state.position || !state.online || state.frameLoadPending) {
       render();
       return;
     }
@@ -256,313 +145,114 @@ export function createWazeRouteController(routeContext: WazeRouteMountContext) {
       render();
       return;
     }
-    const position = state.position as NormalizedGpsPosition;
     state.frameLoadPending = true;
     state.frameLoaded = false;
     state.center = {
-      latitude: position.latitude,
-      longitude: position.longitude,
-      timestampMs: Number(position.timestampMs || position.receivedAtMs || Date.now()),
-    } satisfies WazeCenter;
-    elements.frame.src = getWazeEmbedUrl(position.latitude, position.longitude, state.speedMs);
+      latitude: state.position.latitude,
+      longitude: state.position.longitude,
+      timestampMs: Number(state.position.timestampMs || state.position.receivedAtMs || Date.now()),
+    };
+    elements.frame.src = getWazeEmbedUrl(
+      state.position.latitude,
+      state.position.longitude,
+      currentSpeedMs(),
+    );
     render();
+  }
+
+  function applyPosition(position: NormalizedGpsPosition | null) {
+    if (state.destroyed) return;
+    state.position = position;
+    if (position && !elements.frame.getAttribute("src")) syncEmbed();
+    else render();
   }
 
   function getPlaceholderText(hasSource: boolean): string {
     if (!state.online) return translate("wazeOffline", "Waze map requires an internet connection.");
-    if (shouldDeferWelcomeLocationRequest() && !state.sourceStarted) {
+    if (shouldDeferWelcomeLocationRequest() && !state.position) {
       return translate("wazeLocationRequired", "Enable location to center the Waze map.");
     }
     if (state.frameLoadPending) return translate("loadingWazeMap", "Loading Waze live map...");
-    if (state.gpsStatus === "unsupported") {
-      return translate("wazeGpsUnsupported", "GPS is not available in this browser.");
-    }
-    if (state.gpsStatus === "error") {
-      return translate("wazeGpsUnavailable", "Location is unavailable. Tap Enable location to retry.");
-    }
     if (hasSource) return translate("enableWazeLocation", "Enable Waze location");
     return translate("liveMapWaitingGps", "Waiting for GPS to center the live map.");
   }
 
-  function renderAlertUi() {
-    const alertState = (state.alertUiState || {}) as AnyRecord;
-    const unitLabel = getUnitLabel(state.unit);
-    const currentSpeed = Math.round(convertSpeed(Number(state.speedMs || 0), state.unit));
-    const enabled = Boolean(alertState.enabled);
-    const limitLabel = enabled ? translate("speedLimit", "Limit") : translate("alerts", "Alerts");
-    const limitValue = enabled && Number.isFinite(alertState.limitDisplayValue)
-      ? `${alertState.limitDisplayValue} ${unitLabel}`
-      : translate("off", "Off");
-    let note = "";
-    if (alertState.over) {
-      note = interpolate(translate("alertOverShort", "Over by {delta}"), {
-        delta: `${alertState.deltaDisplayValue} ${unitLabel}`,
-      });
-    } else if (alertState.near) {
-      note = translate("nearLimit", "Near limit");
-    } else if (alertState.source === "trap") {
-      note = translate("trapCompact", "Trap");
-    } else if (alertState.source === "manual") {
-      note = translate("manualCompact", "Manual alert");
-    }
-
-    elements.speedValue.textContent = String(currentSpeed);
-    elements.speedUnit.textContent = unitLabel;
-    elements.speedLimitLabel.textContent = limitLabel;
-    elements.speedLimitValue.textContent = limitValue;
-    elements.speedNote.hidden = !note;
-    elements.speedNote.textContent = note;
-    elements.speedPill.classList.toggle("has-limit", enabled);
-    elements.speedPill.classList.toggle("is-alert-near", Boolean(alertState.near));
-    elements.speedPill.classList.toggle("is-alert-over", Boolean(alertState.over));
-    elements.speedPill.classList.toggle("is-trap-active", Boolean(alertState.trapActive));
-  }
-
-  function hasEnabledAlertAudioFeature(): boolean {
-    const preferences = (state.alertPreferences || {}) as AnyRecord;
-    const manualAudio = Boolean(
-      preferences.alertEnabled
-      && Number(preferences.alertLimitMs) > 0
-      && preferences.alertSoundEnabled
-    );
-    const trapAudio = Boolean(preferences.trapAlertEnabled && preferences.trapSoundEnabled);
-    return manualAudio || trapAudio;
-  }
-
-  function isAlertAudioArmed(): boolean {
-    if (state.audioMuted) return false;
-    if (!hasEnabledAlertAudioFeature()) return false;
-    const audio = (state.alertAudio || {}) as AnyRecord;
-    return Boolean(audio.primed && audio.backgroundAudioArmed);
-  }
-
-  function renderToolbar() {
-    const alertState = (state.alertUiState || {}) as AnyRecord;
-    const recordingState = String(state.recordingSnapshot?.state || "idle");
-    const isRecording = recordingState === "recording";
-    const isPaused = recordingState === "paused";
-    const isFinalizing = recordingState === "finalizing";
-    const hasRecording = isRecording || isPaused || isFinalizing;
-    const recordingLabel = isRecording
-      ? translate("pauseRecording", "Pause recording")
-      : isPaused
-        ? translate("resumeRecording", "Resume recording")
-        : translate("startRecording", "Start recording");
-    const alertAudio = (state.alertAudio || {}) as AnyRecord;
-    const cueAudio = (state.cueAudio || {}) as AnyRecord;
-    const audioBlocked = Boolean(alertAudio.blocked || cueAudio.alertsArmedBlocked);
-    const audioArming = Boolean(
-      state.alertAudioActivationPending
-      || alertAudio.pending
-      || alertAudio.backgroundAudioArmPending
-    );
-    const audioArmed = isAlertAudioArmed();
-    const audioReady = !state.audioMuted && !hasEnabledAlertAudioFeature();
-    const audioState = state.audioMuted
-      ? "muted"
-      : audioBlocked
-        ? "blocked"
-        : audioArming
-          ? "arming"
-          : audioArmed
-            ? "armed"
-            : audioReady
-              ? "ready"
-              : "unarmed";
-    const audioLabel = state.audioMuted
-      ? translate("unmuteAlertAudio", "Unmute alert audio")
-      : audioBlocked
-        ? translate("activitySpeedAlertsTapToRearm", "Tap to rearm")
-        : audioArming
-          ? translate("activitySpeedAlertsArming", "Arming alerts")
-          : audioArmed
-            ? translate("muteAlertAudio", "Mute alert audio")
-            : audioReady
-              ? translate("muteAlertAudio", "Mute alert audio")
-              : translate("enableDrivingAlerts", "Enable driving alerts");
-
-    elements.quickAudioToggle.classList.toggle("is-muted", state.audioMuted);
-    elements.quickAudioToggle.classList.toggle("is-audio-blocked", audioBlocked);
-    elements.quickAudioToggle.classList.toggle("is-audio-arming", audioArming);
-    elements.quickAudioToggle.classList.toggle("is-audio-armed", audioArmed);
-    elements.quickAudioToggle.dataset.audioState = audioState;
-    elements.quickAudioToggle.setAttribute("aria-pressed", String(!state.audioMuted));
-    elements.quickAudioToggle.setAttribute("aria-label", audioLabel);
-    elements.quickAudioToggle.title = audioLabel;
-    elements.quickAlertConfig.setAttribute("aria-pressed", String(Boolean(alertState.enabled)));
-    elements.toggleRecording.dataset.recordingIcon = isRecording ? "pause" : "record";
-    elements.toggleRecording.setAttribute("aria-pressed", String(isRecording));
-    elements.toggleRecording.setAttribute("aria-label", recordingLabel);
-    elements.toggleRecording.title = recordingLabel;
-    elements.toggleRecording.classList.toggle(
-      "is-audio-blocked",
-      Boolean(cueAudio.recordingStartedBlocked),
-    );
-    elements.toggleRecording.disabled = isFinalizing || !driveRecording;
-    elements.stopRecording.hidden = !hasRecording;
-    elements.stopRecording.disabled = isFinalizing || !driveRecording;
-  }
-
-  function ensureAlertAudioFromUserGesture({ playConfirmation = false } = {}): boolean {
-    if (!drivingAlerts?.primeAudioFromUserGesture || state.audioMuted) return false;
-    if (!hasEnabledAlertAudioFeature()) return false;
-    const audio = (state.alertAudio || {}) as AnyRecord;
-    if (
-      state.alertAudioActivationPending
-      || audio.backgroundAudioArmPending
-      || (audio.primed && audio.backgroundAudioArmed)
-    ) {
-      return false;
-    }
-
-    state.alertAudioActivationPending = true;
-    if (playConfirmation) audioCues.playAlertsArmedCue();
-    let primePromise: Promise<boolean>;
-    try {
-      primePromise = Promise.resolve(drivingAlerts.primeAudioFromUserGesture());
-    } catch {
-      state.alertAudioActivationPending = false;
-      render();
-      return false;
-    }
-    void primePromise.catch(() => false).finally(() => {
-      state.alertAudioActivationPending = false;
-      const snapshot = drivingAlerts.getSnapshot?.();
-      if (snapshot) applyAlertSnapshot(snapshot);
-      else render();
-    });
-    render();
-    return true;
-  }
-
   function render() {
-    if (state.destroyed || !elements.app) return;
-    const hasSource = Boolean(elements.frame?.getAttribute("src"));
+    if (state.destroyed) return;
+    const hasSource = Boolean(elements.frame.getAttribute("src"));
     const ready = state.online && hasSource && state.frameLoaded && !state.frameLoadPending;
-    renderAlertUi();
-    renderToolbar();
     elements.placeholderText.textContent = getPlaceholderText(hasSource);
     elements.placeholder.classList.toggle("is-hidden", ready);
     elements.app.classList.toggle("is-loading", state.frameLoadPending);
     elements.app.classList.toggle("is-ready", ready);
     elements.app.classList.toggle("is-offline", !state.online);
-    elements.locationPrompt.disabled = state.frameLoadPending;
-    elements.recenter.disabled = state.frameLoadPending || !state.position || !state.online;
-    elements.recenter.classList.toggle(
-      "is-stale",
-      shouldRefreshWazeEmbed(state.center, state.position),
-    );
+    const recenter = root.querySelector<HTMLButtonElement>("#wazeRecenter");
+    if (recenter) {
+      recenter.disabled = state.frameLoadPending || !state.position || !state.online;
+      recenter.classList.toggle("is-stale", shouldRefreshWazeEmbed(state.center, state.position));
+    }
     elements.frame.title = translate("wazeMap", "Waze map");
   }
 
-  function handleLocationPrompt() {
-    ensureAlertAudioFromUserGesture();
-    if (!state.position) {
-      markWelcomeLocationChoice("enabled");
-      state.sourceStarted = false;
-      startSource({ fromUserGesture: true });
-      return;
-    }
-    window.open(getPermissionUrl(), "_blank", "noopener,noreferrer");
-  }
-
-  function handleAudioToggle() {
-    if (!drivingAlerts?.setMuted) return;
-    if (!state.audioMuted && hasEnabledAlertAudioFeature() && !isAlertAudioArmed()) {
-      ensureAlertAudioFromUserGesture({ playConfirmation: true });
-      return;
-    }
-    const nextMuted = !state.audioMuted;
-    const snapshot = drivingAlerts.setMuted(nextMuted, {
-      fromUserGesture: true,
-      startIfNeeded: false,
-    });
-    applyAlertSnapshot(snapshot);
-    if (!nextMuted) ensureAlertAudioFromUserGesture({ playConfirmation: true });
-  }
-
-  function handleAlertConfig() {
-    ensureAlertAudioFromUserGesture({ playConfirmation: true });
-    if (routeContext.appRuntime?.shell.openApp(WAZE_SPEED_ALERTS_APP_ID, { focus: true })) return;
-    window.__vatioboardFloatingTools?.openSpeedAlerts?.();
-  }
-
-  function handleRecordingToggle() {
-    if (!driveRecording) return;
-    ensureAlertAudioFromUserGesture();
-    const recordingState = String(state.recordingSnapshot?.state || "idle");
-    const snapshot = recordingState === "recording"
-      ? driveRecording.pauseRecording()
-      : recordingState === "paused"
-        ? driveRecording.resumeRecording()
-        : driveRecording.startRecording({ source: "waze" });
-    if (recordingState === "idle" && snapshot?.state === "recording") {
-      audioCues.playRecordingStartedCue();
-    }
-    applyRecordingSnapshot(snapshot);
-  }
-
-  async function handleRecordingStop() {
-    if (!driveRecording || elements.stopRecording.disabled) return;
-    ensureAlertAudioFromUserGesture();
-    elements.stopRecording.disabled = true;
-    try {
-      applyRecordingSnapshot(await driveRecording.stopRecording());
-    } catch (error) {
-      routeContext.logger?.error("Unable to stop Waze route recording.", error);
-      applyRecordingSnapshot(driveRecording.getSnapshot?.());
-    }
-  }
-
-  cleanup.addEventListener(elements.quickAudioToggle, "click", handleAudioToggle);
-  cleanup.addEventListener(elements.quickAlertConfig, "click", handleAlertConfig);
-  cleanup.addEventListener(elements.toggleRecording, "click", handleRecordingToggle);
-  cleanup.addEventListener(elements.stopRecording, "click", () => void handleRecordingStop());
-  cleanup.addEventListener(elements.locationPrompt, "click", handleLocationPrompt);
-  cleanup.addEventListener(elements.recenter, "click", () => {
-    ensureAlertAudioFromUserGesture();
-    syncEmbed({ force: true });
+  const hud = createDrivingHud({
+    mount: elements.hudMount,
+    consumerId: WAZE_GPS_CONSUMER_ID,
+    recordingSource: "waze",
+    drivingAlerts: routeContext.drivingAlertService,
+    driveRecording: routeContext.driveRecordingService,
+    gps: routeContext.gpsService,
+    translate,
+    audioCueController: routeContext.audioCueController,
+    onPosition: applyPosition,
+    onLocationRequest: () => {
+      const position = hud.getPosition();
+      if (position) applyPosition(position);
+    },
+    onRecenter: () => syncEmbed({ force: true }),
+    onOpenAlertSettings: () => {
+      if (routeContext.appRuntime?.shell.openApp(WAZE_SPEED_ALERTS_APP_ID, { focus: true })) return;
+      window.__vatioboardFloatingTools?.openSpeedAlerts?.();
+    },
   });
+  applyLegacyWazeHooks(elements.hudMount, translate);
+
   cleanup.addEventListener(elements.frame, "load", () => {
     state.frameLoadPending = false;
-    state.frameLoaded = Boolean(elements.frame?.getAttribute("src"));
+    state.frameLoaded = Boolean(elements.frame.getAttribute("src"));
     render();
   });
   cleanup.addEventListener(window, "online", () => {
     state.online = true;
-    if (state.position && !elements.frame?.getAttribute("src")) syncEmbed();
+    if (state.position && !elements.frame.getAttribute("src")) syncEmbed();
     else render();
   });
   cleanup.addEventListener(window, "offline", () => {
     state.online = false;
     render();
   });
-  cleanup.add(i18n?.subscribe(() => {
-    i18n.apply(root);
+  cleanup.add(routeContext.appRuntime?.i18n?.subscribe(() => {
+    routeContext.appRuntime?.i18n.apply(root);
+    hud.render();
     render();
   }));
 
-  i18n?.apply(root);
-  recordingUnsubscribe = driveRecording?.subscribe?.(applyRecordingSnapshot) || null;
-  startSource();
+  routeContext.appRuntime?.i18n?.apply(root);
+  applyPosition(hud.getPosition());
   render();
 
   function destroy() {
     if (state.destroyed) return;
     state.destroyed = true;
-    sourceUnsubscribe?.();
-    sourceUnsubscribe = null;
-    recordingUnsubscribe?.();
-    recordingUnsubscribe = null;
-    alertConsumerCleanup?.();
-    alertConsumerCleanup = null;
-    gpsConsumerCleanup?.();
-    gpsConsumerCleanup = null;
-    if (ownsAudioCueController) audioCues.destroy();
-    elements.frame?.removeAttribute("src");
+    hud.destroy();
+    elements.frame.removeAttribute("src");
   }
 
-  return { destroy, render, startSource, syncEmbed };
+  return {
+    destroy,
+    render,
+    startSource: (options: { fromUserGesture?: boolean } = {}) => hud.startSource(options.fromUserGesture),
+    syncEmbed,
+  };
 }
 
 let activeController: ReturnType<typeof createWazeRouteController> | null = null;

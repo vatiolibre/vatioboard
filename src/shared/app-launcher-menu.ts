@@ -233,7 +233,6 @@ function suppressNativeDrag(element: HTMLElement) {
 function getLegacyFloatingToolLaunchers(shellWindowId: string) {
   if (shellWindowId === "calculator") return ["openCalculator", "toggleCalculator"];
   if (shellWindowId === "energy") return ["openEnergy", "toggleEnergy"];
-  if (shellWindowId === "camera-map") return ["openCameraMap", "toggleCameraMap"];
   if (shellWindowId === "speed-alerts") return ["openSpeedAlerts", "toggleSpeedAlerts"];
   return [];
 }

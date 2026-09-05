@@ -232,13 +232,13 @@ describe("app launcher start menu", () => {
 
     expect(ids.slice(0, 8)).toEqual([
       "vatio.speed",
+      "vatio.map",
       "vatio.waze",
       "vatio.board",
       "vatio.deliveryChecklist",
       "vatio.qrScanner",
       "vatio.replay",
       "vatio.accel",
-      "vatio.library",
     ]);
     expect(ids.indexOf("vatio.board")).toBeLessThan(ids.indexOf("vatio.calculator"));
   });
@@ -321,8 +321,8 @@ describe("app launcher start menu", () => {
     expect(search.value).toBe("");
     expect(getLauncherTileIds(menu).slice(0, 3)).toEqual([
       "vatio.speed",
+      "vatio.map",
       "vatio.waze",
-      "vatio.board",
     ]);
   });
 
@@ -331,17 +331,17 @@ describe("app launcher start menu", () => {
     const menu = openLauncher(initSharedStartMenu);
 
     enterArrangeMode(menu);
-    dragTileAfter(menu, "vatio.waze", "vatio.board");
+    dragTileAfter(menu, "vatio.map", "vatio.waze");
 
     expect(getLauncherTileIds(menu).slice(0, 3)).toEqual([
       "vatio.speed",
-      "vatio.board",
       "vatio.waze",
+      "vatio.map",
     ]);
     expect(getLauncherLayoutOrder().slice(0, 3)).toEqual([
       "vatio.speed",
-      "vatio.board",
       "vatio.waze",
+      "vatio.map",
     ]);
 
     menu.list.querySelector("[data-launcher-arrange-done]").click();
@@ -350,16 +350,16 @@ describe("app launcher start menu", () => {
     menu.setOpen(true);
     expect(getLauncherTileIds(menu).slice(0, 3)).toEqual([
       "vatio.speed",
-      "vatio.board",
       "vatio.waze",
+      "vatio.map",
     ]);
 
     runWindowTimeouts();
     appControl.recordLaunch("vatio.calculator");
     expect(getLauncherTileIds(menu).slice(0, 3)).toEqual([
       "vatio.speed",
-      "vatio.board",
       "vatio.waze",
+      "vatio.map",
     ]);
   });
 
@@ -368,11 +368,11 @@ describe("app launcher start menu", () => {
     const menu = openLauncher(initSharedStartMenu);
 
     enterArrangeMode(menu);
-    dragTileAfter(menu, "vatio.waze", "vatio.board");
+    dragTileAfter(menu, "vatio.map", "vatio.waze");
     expect(getLauncherTileIds(menu).slice(0, 3)).toEqual([
       "vatio.speed",
-      "vatio.board",
       "vatio.waze",
+      "vatio.map",
     ]);
 
     menu.list.querySelector("[data-launcher-arrange-reset]").click();
@@ -381,8 +381,8 @@ describe("app launcher start menu", () => {
     expect(menu.list.getAttribute("data-vb-app-launcher-reorder")).toBe("true");
     expect(getLauncherTileIds(menu).slice(0, 3)).toEqual([
       "vatio.speed",
+      "vatio.map",
       "vatio.waze",
-      "vatio.board",
     ]);
   });
 
@@ -392,7 +392,7 @@ describe("app launcher start menu", () => {
     const search = menu.list.querySelector(".vb-app-launcher-search-input");
 
     enterArrangeMode(menu);
-    dragTileAfter(menu, "vatio.waze", "vatio.board");
+    dragTileAfter(menu, "vatio.map", "vatio.waze");
     menu.list.querySelector("[data-launcher-arrange-done]").click();
 
     openContext(menu, "vatio.board")
@@ -400,7 +400,7 @@ describe("app launcher start menu", () => {
       .click();
 
     expect(appControl.isHiddenFromStartMenu("vatio.board")).toBe(true);
-    expect(getLauncherTileIds(menu).slice(0, 2)).toEqual(["vatio.speed", "vatio.waze"]);
+    expect(getLauncherTileIds(menu).slice(0, 3)).toEqual(["vatio.speed", "vatio.waze", "vatio.map"]);
 
     search.value = "board";
     search.dispatchEvent(new Event("input", { bubbles: true }));
@@ -413,8 +413,8 @@ describe("app launcher start menu", () => {
     search.dispatchEvent(new Event("input", { bubbles: true }));
     expect(getLauncherTileIds(menu).slice(0, 3)).toEqual([
       "vatio.speed",
-      "vatio.board",
       "vatio.waze",
+      "vatio.map",
     ]);
   });
 
@@ -427,14 +427,14 @@ describe("app launcher start menu", () => {
     window.addEventListener("vatio:taskbar-favorite-drag", handler);
 
     enterArrangeMode(menu);
-    dragTileAfter(menu, "vatio.waze", "vatio.board");
+    dragTileAfter(menu, "vatio.map", "vatio.waze");
 
     window.removeEventListener("vatio:taskbar-favorite-drag", handler);
     expect(events).toEqual([]);
     expect(getLauncherTileIds(menu).slice(0, 3)).toEqual([
       "vatio.speed",
-      "vatio.board",
       "vatio.waze",
+      "vatio.map",
     ]);
   });
 
@@ -515,7 +515,7 @@ describe("app launcher start menu", () => {
 
     const track = menu.list.querySelector("[data-vb-app-launcher-page-track]");
     const firstPage = menu.list.querySelector(".vb-app-launcher-page[data-page='0']");
-    const firstPageButton = firstPage.querySelector("[data-app-id='vatio.board'] .vb-app-launcher-tile-main");
+    const firstPageButton = firstPage.querySelector("[data-app-id='vatio.speed'] .vb-app-launcher-tile-main");
     const secondDot = menu.list.querySelector(".vb-app-launcher-page-dot[data-page='1']");
 
     secondDot.click();

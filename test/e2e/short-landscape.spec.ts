@@ -268,7 +268,7 @@ test("Speed globe keeps status and accessibility without a redundant card title"
   expect(containment.statusFits).toBe(true);
 });
 
-for (const route of ["speed", "accel", "replay", "waze", "apps", "qr-scanner"]) {
+for (const route of ["speed", "accel", "replay", "map", "waze", "apps", "qr-scanner"]) {
   test(`${route} remains bounded on expanded Tesla and phone landscape`, async ({ page }, testInfo) => {
     test.skip(
       !["model-y-2024-expanded", "model-y-2026-expanded", "phone-landscape"].includes(testInfo.project.name),
@@ -1044,11 +1044,11 @@ test("Waze route fills the viewport edge to edge with an overlaid driving HUD", 
   await expect(page.locator(".waze-placeholder-icon svg")).toBeVisible();
   await page.locator("#wazeLocationPrompt").click();
   await expect(page.locator("#wazeFrame")).toHaveAttribute("src", /embed\.waze\.com\/iframe/);
-  await expect(page.locator(".waze-brand-icon svg")).toBeVisible();
+  await expect(page.locator(".driving-hud")).toBeVisible();
   await expect(page.locator("#wazeLocationPrompt")).toHaveAttribute("aria-label", "Enable Waze location");
   await expect(page.locator("#wazeRecenter")).toHaveAttribute("aria-label", "Refresh map");
   await expect(page.locator(".waze-hud-actions")).toHaveAttribute("role", "toolbar");
-  await expect(page.locator(".waze-toolbar-btn:visible")).toHaveCount(5);
+  await expect(page.locator(".waze-toolbar-btn:visible")).toHaveCount(4);
   await page.evaluate(() => {
     (window as any).__vatioboardDrivingAlerts?.setManualAlertEnabled?.(true, {
       fromUserGesture: false,
@@ -1069,10 +1069,8 @@ test("Waze route fills the viewport edge to edge with an overlaid driving HUD", 
     });
     return {
       app: rect(".waze-app"),
-      brandBadge: rect(".waze-brand-icon"),
-      brandIcon: rect(".waze-brand-icon svg"),
       frame: rect("#wazeFrame"),
-      hud: rect(".waze-hud"),
+      hud: rect("#wazeSpeedPill"),
       speedPill: rect("#wazeSpeedPill"),
       actions: rect(".waze-hud-actions"),
       activityIndicator: rect(".activity-indicator"),
@@ -1101,10 +1099,6 @@ test("Waze route fills the viewport edge to edge with an overlaid driving HUD", 
   expect(geometry.mapBorderWidth).toBe("0px");
   expect(geometry.mapBorderRadius).toBe("0px");
   expect(geometry.app.bottom).toBeGreaterThanOrEqual(geometry.taskbar.bottom);
-  expect(geometry.brandBadge.width).toBeGreaterThanOrEqual(30);
-  expect(geometry.brandBadge.height).toBeGreaterThanOrEqual(30);
-  expect(geometry.brandIcon.width).toBeGreaterThanOrEqual(18);
-  expect(geometry.brandIcon.height).toBeGreaterThanOrEqual(18);
   expect(geometry.hud.left).toBeGreaterThanOrEqual(workArea.left);
   expect(geometry.hud.right).toBeLessThanOrEqual(workArea.left + workArea.width);
   expect(geometry.hud.bottom).toBeLessThanOrEqual(workArea.top + workArea.height);
@@ -1125,7 +1119,7 @@ test("Waze route fills the viewport edge to edge with an overlaid driving HUD", 
   await page.locator("#toggleRecording").click();
   await expect(page.locator("#toggleRecording")).toHaveAttribute("aria-label", "Pause recording");
   await expect(page.locator("#stopRecording")).toBeVisible();
-  await expect(page.locator(".waze-toolbar-btn:visible")).toHaveCount(6);
+  await expect(page.locator(".waze-toolbar-btn:visible")).toHaveCount(5);
   const activeToolbar = await page.locator(".waze-hud-actions").evaluate((toolbar) => {
     const bounds = toolbar.getBoundingClientRect();
     const controls = Array.from(toolbar.querySelectorAll<HTMLElement>("button:not([hidden])")).map((button) => {
@@ -1282,6 +1276,15 @@ test("Clock modes remain work-area bounded and touch friendly", async ({ page },
 
 test("persistent shell tools and background driving state survive Waze and Replay navigation", async ({ page }, testInfo) => {
   test.skip(!isTeslaProject(testInfo), "Tesla shell continuity coverage");
+  await page.route("https://tiles.openfreemap.org/styles/**", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      version: 8,
+      sources: {},
+      layers: [{ id: "openfreemap-test-background", type: "background" }],
+    }),
+  }));
   await page.route("https://embed.waze.com/**", (route) => route.fulfill({
     status: 200,
     contentType: "text/html",
@@ -1327,12 +1330,28 @@ test("persistent shell tools and background driving state survive Waze and Repla
     for (const [selector, identity] of identities) {
       document.querySelector<HTMLElement>(selector)!.dataset.continuityIdentity = identity;
     }
-    (window as any).__vatioboardDriveRecording.startRecording({ source: "continuity-test" });
     (window as any).__vatioboardDrivingAlerts.setManualAlertEnabled(true, {
       fromUserGesture: false,
       startIfNeeded: true,
     });
   });
+
+  await page.evaluate(() => {
+    window.history.pushState({}, "", "/map");
+    window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+  });
+  await expect(page.locator("#app-view")).toHaveAttribute("data-vb-route", "map");
+  const recordButton = page.locator("[data-driving-action='record']");
+  await recordButton.focus();
+  await page.keyboard.press("Enter");
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__vatioboardDriveRecording.getSnapshot()
+  ))).toMatchObject({ state: "recording", keepAliveArmed: true });
+  await page.evaluate(() => {
+    window.history.pushState({}, "", "/board");
+    window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+  });
+  await expect(page.locator("#app-view")).toHaveAttribute("data-vb-route", "board");
 
   const assertContinuity = async (route: string) => {
     await page.evaluate((nextRoute) => {
@@ -1360,6 +1379,7 @@ test("persistent shell tools and background driving state survive Waze and Repla
     }));
     expect(state.alert.started).toBe(true);
     expect(state.recording.state).toBe("recording");
+    expect(state.recording.keepAliveIntended).toBe(true);
     expect(state.calculator).toBe("open");
     expect(state.clock).toBe("open");
     expect(state.player).toBe("open");
@@ -1368,7 +1388,7 @@ test("persistent shell tools and background driving state survive Waze and Repla
     await expect(page.locator("[data-tts-text]")).toHaveValue("Continue speaking across applications");
   };
 
-  for (const route of ["speed", "accel", "waze", "replay", "board"]) {
+  for (const route of ["speed", "accel", "map", "waze", "replay", "board"]) {
     await assertContinuity(route);
   }
 
@@ -1817,7 +1837,7 @@ test("Spanish labels fit the light short-landscape theme", async ({ page, contex
   });
 });
 
-for (const route of ["board", "waze", "accel", "replay", "library", "apps", "delivery-checklist", "qr-scanner", "code-rain"]) {
+for (const route of ["board", "map", "waze", "accel", "replay", "library", "apps", "delivery-checklist", "qr-scanner", "code-rain"]) {
   test(`${route} has no horizontal document overflow`, async ({ page }, testInfo) => {
     test.skip(!isTeslaProject(testInfo), "Tesla route audit");
     await openRoute(page, route);
@@ -1842,8 +1862,8 @@ test("automatic profile transitions preserve calculator desktop bounds", async (
   await expect(calculator).toHaveAttribute("data-vb-shell-layout-mode", "short-landscape");
 });
 
-test("Camera Map loads OpenFreeMap inside both Tesla work areas", async ({ page }, testInfo) => {
-  test.skip(!isTeslaProject(testInfo), "Tesla Camera Map audit");
+test("Map loads OpenFreeMap edge to edge in both Tesla viewports", async ({ page }, testInfo) => {
+  test.skip(!isTeslaProject(testInfo), "Tesla Map audit");
   await page.route("https://tiles.openfreemap.org/styles/**", (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
@@ -1853,8 +1873,7 @@ test("Camera Map loads OpenFreeMap inside both Tesla work areas", async ({ page 
       layers: [{ id: "openfreemap-test-background", type: "background" }],
     }),
   }));
-  await openRoute(page, "board");
-  await page.evaluate(() => (window as any).__vatioboardFloatingTools.openCameraMap());
+  await openRoute(page, "map");
   const panel = page.locator(".camera-map-panel");
 
   await expect(panel).toBeVisible();
@@ -1865,8 +1884,55 @@ test("Camera Map loads OpenFreeMap inside both Tesla work areas", async ({ page 
     panel.evaluate((element) => element.getBoundingClientRect().toJSON()),
     getWorkArea(page),
   ]);
-  expect(bounds.left).toBeGreaterThanOrEqual(workArea.left - 1);
-  expect(bounds.top).toBeGreaterThanOrEqual(workArea.top - 1);
-  expect(bounds.right).toBeLessThanOrEqual(workArea.left + workArea.width + 1);
-  expect(bounds.bottom).toBeLessThanOrEqual(workArea.top + workArea.height + 1);
+  expect(bounds.left).toBeLessThanOrEqual(1);
+  expect(bounds.top).toBeLessThanOrEqual(1);
+  expect(bounds.right).toBeGreaterThanOrEqual(workArea.left + workArea.width - 1);
+  expect(bounds.bottom).toBeGreaterThanOrEqual(workArea.top + workArea.height - 1);
+});
+
+test("Map recording keeps shared GPS and keep-alive active across app navigation", async ({ page }, testInfo) => {
+  test.skip(!isTeslaProject(testInfo), "Tesla Map recording continuity");
+  await page.route("https://tiles.openfreemap.org/styles/**", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      version: 8,
+      sources: {},
+      layers: [{ id: "openfreemap-test-background", type: "background" }],
+    }),
+  }));
+  await openRoute(page, "map");
+  await page.locator("[data-driving-action='record']").click();
+
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__vatioboardDriveRecording.getSnapshot()
+  ))).toMatchObject({
+    state: "recording",
+    keepAliveIntended: true,
+    keepAliveArmed: true,
+  });
+
+  await page.evaluate(() => {
+    window.history.pushState({}, "", "/board");
+    window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+  });
+  await expect(page.locator("#app-view")).toHaveAttribute("data-vb-route", "board");
+  const away = await page.evaluate(() => ({
+    gps: (window as any).__vatioboardGpsStore.getSnapshot(),
+    recording: (window as any).__vatioboardDriveRecording.getSnapshot(),
+  }));
+  expect(away.recording).toMatchObject({
+    state: "recording",
+    keepAliveIntended: true,
+    keepAliveArmed: true,
+  });
+  expect(away.gps.consumers).toContain("speed-recording");
+
+  await page.evaluate(() => {
+    window.history.pushState({}, "", "/map");
+    window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+  });
+  await expect(page.locator("#app-view")).toHaveAttribute("data-vb-route", "map");
+  await expect(page.locator("[data-driving-action='record']")).toHaveAttribute("aria-pressed", "true");
+  await page.locator("[data-driving-action='stop']").click();
 });

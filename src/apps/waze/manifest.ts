@@ -18,7 +18,7 @@ export const wazeAppManifest = defineAppManifest({
   route: "/waze",
   entry: () => import("./index.js"),
   surfaces: ["main-route", "start-menu", "launcher"],
-  order: 15,
+  order: 16,
   permissions: [
     "gps.read",
     "gps.highAccuracy",

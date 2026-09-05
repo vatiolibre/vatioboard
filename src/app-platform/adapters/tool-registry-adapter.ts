@@ -12,7 +12,6 @@ const LEGACY_TOOL_IDS = {
   appManager: "route:apps",
   calculator: "calculator",
   energy: "energy",
-  cameraMap: "camera-map",
   speedAlerts: "speed-alerts",
   player: "player",
   milkdrop: "milkdrop",

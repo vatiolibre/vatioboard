@@ -21,9 +21,6 @@ type VatioBoardFloatingTools = {
   openEnergy?(): unknown;
   closeEnergy?(): unknown;
   toggleEnergy?(): unknown;
-  openCameraMap?(): unknown;
-  closeCameraMap?(): unknown;
-  toggleCameraMap?(): unknown;
   openSpeedAlerts?(): unknown;
   closeSpeedAlerts?(): unknown;
   toggleSpeedAlerts?(): unknown;

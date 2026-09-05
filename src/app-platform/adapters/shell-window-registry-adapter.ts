@@ -5,7 +5,6 @@ import type { VatioAppManifest } from "../types";
 const LEGACY_SHELL_WINDOW_IDS = {
   calculator: "calculator",
   energy: "energy",
-  cameraMap: "camera-map",
   speedAlerts: "speed-alerts",
   player: "player",
   milkdrop: "milkdrop",

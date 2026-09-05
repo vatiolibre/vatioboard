@@ -22,9 +22,10 @@ describe("typed shell architecture contracts", () => {
     const registry = readProjectFile("src/shared/shell-window-registry.ts");
     const floatingLayer = readProjectFile("src/shared/floating-layer-manager.ts");
 
-    for (const id of ["calculator", "energy", "camera-map", "speed-alerts", "player", "milkdrop"]) {
-      expect(registry, id).toContain(`id: SHELL_WINDOW_IDS.${id === "camera-map" ? "cameraMap" : id === "speed-alerts" ? "speedAlerts" : id}`);
+    for (const id of ["calculator", "energy", "speed-alerts", "player", "milkdrop"]) {
+      expect(registry, id).toContain(`id: SHELL_WINDOW_IDS.${id === "speed-alerts" ? "speedAlerts" : id}`);
     }
+    expect(registry).not.toContain("SHELL_WINDOW_IDS.cameraMap");
     expect(registry).toContain("satisfies readonly ShellWindowDefinition[]");
     expect(floatingLayer).toContain("getShellWindowDefinition");
   });

@@ -126,7 +126,7 @@ test("Speed exposes scrollless Gauge, Stats, and Globe views", async ({ page }) 
 });
 
 test("registered routes keep page scrolling locked", async ({ page }) => {
-  for (const route of ["accel", "replay", "waze", "board", "library", "apps", "delivery-checklist", "qr-scanner", "code-rain"]) {
+  for (const route of ["accel", "replay", "map", "waze", "board", "library", "apps", "delivery-checklist", "qr-scanner", "code-rain"]) {
     await openRoute(page, route);
     await expectScrolllessRoute(page);
   }
@@ -255,9 +255,8 @@ test("calculator is work-area clamped with fixed primary controls", async ({ pag
   await expect(calculator.locator(".calc-expr")).toHaveValue("8.63");
 });
 
-test("Camera Map loads an attributed OpenFreeMap style inside the shell work area", async ({ page }) => {
-  await openRoute(page, "board");
-  await page.evaluate(() => (window as any).__vatioboardFloatingTools.openCameraMap());
+test("Map loads an attributed OpenFreeMap style edge to edge", async ({ page }) => {
+  await openRoute(page, "map");
   const panel = page.locator(".camera-map-panel");
 
   await expect(panel).toBeVisible();
@@ -278,10 +277,10 @@ test("Camera Map loads an attributed OpenFreeMap style inside the shell work are
       },
     };
   });
-  expect(geometry.bounds.left).toBeGreaterThanOrEqual(geometry.workArea.left - 1);
-  expect(geometry.bounds.top).toBeGreaterThanOrEqual(geometry.workArea.top - 1);
-  expect(geometry.bounds.right).toBeLessThanOrEqual(geometry.workArea.left + geometry.workArea.width + 1);
-  expect(geometry.bounds.bottom).toBeLessThanOrEqual(geometry.workArea.top + geometry.workArea.height + 1);
+  expect(geometry.bounds.left).toBeLessThanOrEqual(1);
+  expect(geometry.bounds.top).toBeLessThanOrEqual(1);
+  expect(geometry.bounds.right).toBeGreaterThanOrEqual(geometry.workArea.left + geometry.workArea.width - 1);
+  expect(geometry.bounds.bottom).toBeGreaterThanOrEqual(geometry.workArea.top + geometry.workArea.height - 1);
   await expectScrolllessRoute(page);
 });
 

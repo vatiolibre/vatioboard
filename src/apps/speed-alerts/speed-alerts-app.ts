@@ -43,8 +43,7 @@ import type { ShellAppRuntimeManager, VatioAppRuntime } from "../../app-platform
 
 export const SPEED_ALERTS_APP_ID = "vatio.speedAlerts";
 export const SPEED_ALERTS_SETTINGS_KEY = "preferences";
-const CAMERA_MAP_APP_ID = "vatio.cameraMap";
-const CAMERA_MAP_WINDOW_ID = "camera-map";
+const CAMERA_MAP_APP_ID = "vatio.map";
 
 const LEGACY_SPEED_ALERT_KEYS = [
   STORAGE_UNIT_KEY,
@@ -257,16 +256,14 @@ function createSpeedAlertsDrivingAlertService({
 
 function createCameraMapLauncher({
   runtime,
-  shellManager,
   onOpenCameraMap,
-}: Pick<SpeedAlertsAppOptions, "shellManager" | "onOpenCameraMap"> & {
+}: Pick<SpeedAlertsAppOptions, "onOpenCameraMap"> & {
   runtime: VatioAppRuntime | null;
 }) {
   if (typeof onOpenCameraMap === "function") return onOpenCameraMap;
   return () => {
     if (runtime?.shell.openApp(CAMERA_MAP_APP_ID)) return true;
-    if (shellManager?.openWindow?.(CAMERA_MAP_WINDOW_ID)) return true;
-    return window.__vatioboardFloatingTools?.openCameraMap?.();
+    return false;
   };
 }
 
@@ -284,7 +281,6 @@ export function createSpeedAlertsApp(options: SpeedAlertsAppOptions = {}): Speed
     drivingAlertService: service,
     onOpenCameraMap: createCameraMapLauncher({
       runtime,
-      shellManager: options.shellManager,
       onOpenCameraMap: options.onOpenCameraMap,
     }),
   });

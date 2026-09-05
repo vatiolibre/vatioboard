@@ -14,7 +14,7 @@ describe("Camera Map basemap styles", () => {
       CAMERA_MAP_BASEMAPS,
       DEFAULT_CAMERA_MAP_BASEMAP_ID,
       DEFAULT_CAMERA_MAP_DARK_BASEMAP_ID,
-    } = await import("../../src/speed/camera-map-layers.js");
+    } = await import("../../src/apps/map/map-layers.js");
     const vectorStyles = CAMERA_MAP_BASEMAPS.filter((basemap) => basemap.kind === "vector-style");
 
     expect(DEFAULT_CAMERA_MAP_BASEMAP_ID).toBe("openfreemap-liberty");
@@ -31,7 +31,7 @@ describe("Camera Map basemap styles", () => {
       getCameraMapBasemap,
       isCameraMapBasemapId,
       normalizeCameraMapBasemapId,
-    } = await import("../../src/speed/camera-map-layers.js");
+    } = await import("../../src/apps/map/map-layers.js");
 
     expect(normalizeCameraMapBasemapId("carto-voyager")).toBe("openfreemap-liberty");
     expect(normalizeCameraMapBasemapId("carto-positron")).toBe("openfreemap-positron");
@@ -42,7 +42,7 @@ describe("Camera Map basemap styles", () => {
   });
 
   it("guards nullable numeric filters without mutating the provider style", async () => {
-    const { sanitizeOpenFreeMapStyle } = await import("../../src/speed/camera-map-layers.js");
+    const { sanitizeOpenFreeMapStyle } = await import("../../src/apps/map/map-layers.js");
     const style = {
       version: 8,
       sources: {},
@@ -64,6 +64,31 @@ describe("Camera Map basemap styles", () => {
     expect(sanitized.layers[0].filter[2]).toEqual(["==", ["get", "class"], "park"]);
   });
 
+  it("falls back to the existing fill color when OpenFreeMap references an unpublished sprite", async () => {
+    const { sanitizeOpenFreeMapStyle } = await import("../../src/apps/map/map-layers.js");
+    const style = {
+      version: 8,
+      sources: {},
+      layers: [{
+        id: "landcover_wood",
+        type: "fill",
+        paint: {
+          "fill-color": "rgb(32,32,32)",
+          "fill-opacity": 0.4,
+          "fill-pattern": "wood-pattern",
+        },
+      }],
+    };
+
+    const sanitized = sanitizeOpenFreeMapStyle(style);
+
+    expect(style.layers[0].paint["fill-pattern"]).toBe("wood-pattern");
+    expect(sanitized.layers[0].paint).toEqual({
+      "fill-color": "rgb(32,32,32)",
+      "fill-opacity": 0.4,
+    });
+  });
+
   it("fetches and caches pristine style documents while returning independent clones", async () => {
     const providerStyle = {
       version: 8,
@@ -75,7 +100,7 @@ describe("Camera Map basemap styles", () => {
       headers: { "Content-Type": "application/json" },
     }));
     vi.stubGlobal("fetch", fetchMock);
-    const { loadCameraMapStyle } = await import("../../src/speed/camera-map-layers.js");
+    const { loadCameraMapStyle } = await import("../../src/apps/map/map-layers.js");
 
     const first = await loadCameraMapStyle("openfreemap-liberty");
     first.layers[0].id = "mutated";
@@ -95,7 +120,7 @@ describe("Camera Map basemap styles", () => {
       status: 200,
       headers: { "Content-Type": "application/json" },
     })));
-    const { loadCameraMapStyle } = await import("../../src/speed/camera-map-layers.js");
+    const { loadCameraMapStyle } = await import("../../src/apps/map/map-layers.js");
 
     await expect(loadCameraMapStyle("openfreemap-dark"))
       .resolves.toBe("https://tiles.openfreemap.org/styles/dark");
@@ -104,7 +129,7 @@ describe("Camera Map basemap styles", () => {
   it("keeps raster alternatives synchronous with the existing style contract", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    const { loadCameraMapStyle } = await import("../../src/speed/camera-map-layers.js");
+    const { loadCameraMapStyle } = await import("../../src/apps/map/map-layers.js");
 
     const style = await loadCameraMapStyle("opentopomap");
 

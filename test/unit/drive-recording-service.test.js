@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createDriveRecordingService } from "../../src/app/services/drive-recording-service.js";
+import {
+  createDriveRecordingService,
+  DRIVE_RECORDING_BACKGROUND_AUDIO_LEASE,
+} from "../../src/app/services/drive-recording-service.js";
+import { getBackgroundKeepAliveAudio, hasBackgroundAudioLease } from "../../src/shared/audio-system.js";
 
 function createGpsStoreDouble() {
   const listeners = new Set();
@@ -137,5 +141,58 @@ describe("createDriveRecordingService", () => {
       pendingCloudSync: true,
       localOnly: true,
     });
+  });
+
+  it("retains the shared GPS consumer with the Speed keep-alive pattern while recording", async () => {
+    const keepAliveAudio = getBackgroundKeepAliveAudio();
+    Object.defineProperty(keepAliveAudio, "paused", { configurable: true, value: false });
+    const gpsStore = createGpsStoreDouble();
+    const service = createDriveRecordingService({
+      gpsStore,
+      replayRepository: createRepositoryDouble(),
+      now: () => 5000,
+    });
+
+    service.startRecording({ source: "map", fromUserGesture: true });
+    await service.rearmKeepAlive({ fromUserGesture: true });
+
+    expect(hasBackgroundAudioLease(DRIVE_RECORDING_BACKGROUND_AUDIO_LEASE)).toBe(true);
+    expect(service.getSnapshot()).toMatchObject({
+      state: "recording",
+      keepAliveIntended: true,
+      keepAliveArmed: true,
+      keepAliveBlocked: false,
+    });
+
+    service.pauseRecording();
+    expect(hasBackgroundAudioLease(DRIVE_RECORDING_BACKGROUND_AUDIO_LEASE)).toBe(false);
+    expect(gpsStore.startConsumer.mock.results[0].value).toHaveBeenCalledTimes(1);
+    service.destroy();
+    Object.defineProperty(keepAliveAudio, "paused", { configurable: true, value: true });
+  });
+
+  it("tracks altitude and Speed-compatible trip statistics", async () => {
+    let currentTime = 1000;
+    const gpsStore = createGpsStoreDouble();
+    const service = createDriveRecordingService({
+      gpsStore,
+      replayRepository: createRepositoryDouble(),
+      now: () => currentTime,
+    });
+    service.startRecording({ source: "map", fromUserGesture: true });
+    gpsStore.emit({ latitude: 40.7, longitude: -73.9, speedMs: 5, altitudeM: 20, timestampMs: 1000 });
+    gpsStore.emit({ latitude: 40.701, longitude: -73.9, speedMs: 10, altitudeM: 8, timestampMs: 2000 });
+    currentTime = 11_000;
+
+    expect(service.getSnapshot()).toMatchObject({
+      durationMs: 10_000,
+      currentAltitudeM: 8,
+      maxAltitudeM: 20,
+      minAltitudeM: 8,
+      maxSpeedMs: 10,
+    });
+    expect(service.getSnapshot().averageSpeedMs).toBeGreaterThan(0);
+    await service.stopRecording();
+    service.destroy();
   });
 });

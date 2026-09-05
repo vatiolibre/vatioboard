@@ -14,7 +14,6 @@ export function defineShellWindow<const T extends ShellWindowDefinition>(definit
 // Compatibility contract emitted by the app-platform manifest adapter:
 // id: SHELL_WINDOW_IDS.calculator
 // id: SHELL_WINDOW_IDS.energy
-// id: SHELL_WINDOW_IDS.cameraMap
 // id: SHELL_WINDOW_IDS.speedAlerts
 // id: SHELL_WINDOW_IDS.player
 // id: SHELL_WINDOW_IDS.milkdrop

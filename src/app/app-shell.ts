@@ -5,6 +5,7 @@ import "../shared/ui/confirm-dialog.less";
 import "../styles/welcome-consent.less";
 
 import { createPlayerApp } from "../apps/player/index.js";
+import { migrateCameraMapToMapApp } from "../apps/map/map-migration.js";
 import { initBackendAuthControllers } from "../shared/backend-auth.js";
 import { startCloudSyncLoop } from "../shared/cloud-sync.js";
 import { initActivityIndicator } from "../shared/activity-indicator.js";
@@ -151,6 +152,7 @@ export async function startAppShell({
   }
 
   window.__vatioboardSpa = true;
+  migrateCameraMapToMapApp();
 
   const context = createRuntimeContext();
   window.__vatioboardRecovery = context.recoveryCoordinator;

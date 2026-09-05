@@ -1,5 +1,6 @@
 import { IconCameraMap, IconClose, IconMinimize } from "../icons.js";
 import { t } from "../i18n.js";
+import { navigateToAppRoute } from "../app/router.js";
 import { createDrivingAlertService } from "../app/services/driving-alert-service.js";
 import { clampElementToViewport, makePanelDraggable } from "../calculator/widget/drag.js";
 import { registerFloatingPanel } from "../shared/floating-layer-manager.js";
@@ -766,7 +767,7 @@ export function createSpeedAlertPanel(options: AnyRecord = {}): SpeedAlertPanelA
       onOpenCameraMap();
       return;
     }
-    window.__vatioboardFloatingTools?.openCameraMap?.();
+    navigateToAppRoute("/map");
   }
 
   function setManualLimitDisplay(value, { enable = true } = {}) {

@@ -195,7 +195,7 @@ vi.mock("../../src/shared/maplibre-loader.js", () => ({
   loadMapLibre: vi.fn(() => Promise.resolve(mapLibreDouble.module)),
 }));
 
-vi.mock("../../src/speed/camera-map-data-source.js", async (importOriginal) => {
+vi.mock("../../src/apps/map/map-data-source.js", async (importOriginal) => {
   const actual = await importOriginal();
   return {
     ...actual,
@@ -381,7 +381,7 @@ describe("createCameraMapWidget", () => {
     vi.resetModules();
     ({ loadMapLibre } = await import("../../src/shared/maplibre-loader.js"));
     ({ createShellWindowManager } = await import("../../src/shared/shell-window-manager.js"));
-    ({ createCameraMapWidget } = await import("../../src/speed/camera-map-widget.js"));
+    ({ createCameraMapWidget } = await import("../../src/apps/map/map-renderer.js"));
   });
 
   afterEach(() => {
@@ -437,6 +437,9 @@ describe("createCameraMapWidget", () => {
     expect(navOverlay.contains(document.querySelector(".camera-map-layer-menu"))).toBe(true);
     expect(bottomOverlay.contains(document.querySelector(".camera-map-attribution"))).toBe(true);
     expect(bottomOverlay.contains(document.querySelector(".camera-map-privacy"))).toBe(true);
+    expect(document.querySelector(".camera-map-attribution").tagName).toBe("DETAILS");
+    expect(document.querySelector(".camera-map-attribution-link").textContent)
+      .toBe("cameraMapAttributionOpenFreeMap");
     expect(document.querySelector(".camera-map-toolbar")).toBeNull();
     expect(document.querySelector(".camera-map-footer")).toBeNull();
     expect(document.querySelector(".camera-map-layer-select")).toBeNull();
@@ -451,6 +454,23 @@ describe("createCameraMapWidget", () => {
       "camera-map-action camera-map-minimize",
       "camera-map-action camera-map-close",
     ]);
+
+    widget.destroy();
+    manager.destroy();
+  });
+
+  it("collapses attribution to an accessible info control after five seconds", async () => {
+    const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
+    const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
+    await openAndLoad(widget);
+    const attribution = document.querySelector(".camera-map-attribution");
+
+    expect(attribution.open).toBe(true);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(attribution.open).toBe(false);
+    attribution.querySelector("summary").click();
+    expect(attribution.open).toBe(true);
+    expect(attribution.querySelector("a").textContent).toBe("cameraMapAttributionOpenFreeMap");
 
     widget.destroy();
     manager.destroy();
@@ -490,7 +510,7 @@ describe("createCameraMapWidget", () => {
   });
 
   it("builds approach line features from camera approach metadata", async () => {
-    const { buildCameraApproachFeatureCollection } = await import("../../src/speed/camera-map-widget.js");
+    const { buildCameraApproachFeatureCollection } = await import("../../src/apps/map/map-renderer.js");
     const collection = buildCameraApproachFeatureCollection([
       {
         type: "Feature",
@@ -528,7 +548,7 @@ describe("createCameraMapWidget", () => {
   });
 
   it("builds focused selected/current approach visuals with fallback support", async () => {
-    const { buildSelectedCameraApproachFeatureCollection } = await import("../../src/speed/camera-map-widget.js");
+    const { buildSelectedCameraApproachFeatureCollection } = await import("../../src/apps/map/map-renderer.js");
     const noCorridor = buildSelectedCameraApproachFeatureCollection({
       type: "Feature",
       id: "camera-no-corridor",
@@ -665,7 +685,7 @@ describe("createCameraMapWidget", () => {
   });
 
   it("configures only attributed legal basemap providers", async () => {
-    const { CAMERA_MAP_BASEMAPS } = await import("../../src/speed/camera-map-layers.js");
+    const { CAMERA_MAP_BASEMAPS } = await import("../../src/apps/map/map-layers.js");
     const disallowedProviders = /google|gstatic|apple|waze|mapbox/i;
 
     expect(CAMERA_MAP_BASEMAPS.length).toBeGreaterThan(0);
@@ -716,6 +736,8 @@ describe("createCameraMapWidget", () => {
       "camera-map-user-heading-arrow",
     ]));
     expect(map.getLayer("camera-map-user-heading-arrow").filter).toEqual(["==", ["get", "headingAvailable"], true]);
+    expect(map.getLayer("camera-map-user-heading-arrow").layout["text-font"]).toEqual(["Noto Sans Regular"]);
+    expect(map.getLayer("camera-map-camera-cluster-count").layout["text-font"]).toEqual(["Noto Sans Bold"]);
 
     widget.destroy();
     manager.destroy();
@@ -1714,7 +1736,7 @@ describe("createCameraMapWidget", () => {
   });
 
   it("tracks browser sunrise and sunset theme changes until the user picks a basemap", async () => {
-    const { CAMERA_MAP_BASEMAP_STORAGE_KEY } = await import("../../src/speed/camera-map-layers.js");
+    const { CAMERA_MAP_BASEMAP_STORAGE_KEY } = await import("../../src/apps/map/map-layers.js");
     const colorScheme = createColorSchemeMatchMedia(false);
     globalThis.matchMedia = colorScheme.matchMedia;
     const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
@@ -1764,7 +1786,7 @@ describe("createCameraMapWidget", () => {
   });
 
   it("selecting Auto clears the stored basemap and restores theme-based switching", async () => {
-    const { CAMERA_MAP_BASEMAP_STORAGE_KEY } = await import("../../src/speed/camera-map-layers.js");
+    const { CAMERA_MAP_BASEMAP_STORAGE_KEY } = await import("../../src/apps/map/map-layers.js");
     const colorScheme = createColorSchemeMatchMedia(false);
     globalThis.matchMedia = colorScheme.matchMedia;
     localStorage.setItem(CAMERA_MAP_BASEMAP_STORAGE_KEY, "opentopomap");
@@ -1937,7 +1959,7 @@ describe("createCameraMapWidget", () => {
   });
 
   it("switches basemaps without reloading camera data and reattaches camera layers above the basemap", async () => {
-    const { CAMERA_MAP_BASEMAP_STORAGE_KEY } = await import("../../src/speed/camera-map-layers.js");
+    const { CAMERA_MAP_BASEMAP_STORAGE_KEY } = await import("../../src/apps/map/map-layers.js");
     const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
     const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
     const map = await openAndLoad(widget);
@@ -2094,7 +2116,7 @@ describe("createCameraMapWidget", () => {
 
     widget.setProjectionMode("globe");
 
-    expect(map.setProjection).toHaveBeenCalledWith("globe");
+    expect(map.setProjection).toHaveBeenCalledWith({ type: "globe" });
     expect(map.getSource("camera-map-cameras")).not.toBeNull();
     expect(map.getSource("camera-map-user-position")).not.toBeNull();
     expect(map.getLayer("camera-map-user-dot")).not.toBeNull();
@@ -2145,7 +2167,7 @@ describe("createCameraMapWidget", () => {
   });
 
   it("restores the selected basemap from storage", async () => {
-    const { CAMERA_MAP_BASEMAP_STORAGE_KEY } = await import("../../src/speed/camera-map-layers.js");
+    const { CAMERA_MAP_BASEMAP_STORAGE_KEY } = await import("../../src/apps/map/map-layers.js");
     localStorage.setItem(CAMERA_MAP_BASEMAP_STORAGE_KEY, "carto-dark-matter");
     const manager = createShellWindowManager({ storeOptions: { storage: localStorage, migrateLegacy: false } });
     const widget = createCameraMapWidget({ shellManager: manager, restoreVisibility: false });
@@ -2469,7 +2491,7 @@ describe("createCameraMapWidget", () => {
   });
 
   it("formats explicit popup speed limits in km/h", async () => {
-    const { buildPopupHtml } = await import("../../src/speed/camera-map-widget.js");
+    const { buildPopupHtml } = await import("../../src/apps/map/map-renderer.js");
 
     const html = buildPopupHtml({
       properties: {
@@ -2484,7 +2506,7 @@ describe("createCameraMapWidget", () => {
   });
 
   it("formats explicit popup speed limits in mph", async () => {
-    const { buildPopupHtml } = await import("../../src/speed/camera-map-widget.js");
+    const { buildPopupHtml } = await import("../../src/apps/map/map-renderer.js");
 
     const html = buildPopupHtml({
       properties: {
@@ -2500,7 +2522,7 @@ describe("createCameraMapWidget", () => {
   });
 
   it("formats inferred popup speed limits and road distance with active units", async () => {
-    const { buildPopupHtml } = await import("../../src/speed/camera-map-widget.js");
+    const { buildPopupHtml } = await import("../../src/apps/map/map-renderer.js");
 
     const html = buildPopupHtml({
       properties: {
@@ -2517,7 +2539,7 @@ describe("createCameraMapWidget", () => {
   });
 
   it("renders unknown popup speed status", async () => {
-    const { buildPopupHtml } = await import("../../src/speed/camera-map-widget.js");
+    const { buildPopupHtml } = await import("../../src/apps/map/map-renderer.js");
 
     expect(buildPopupHtml({
       properties: {
@@ -2529,7 +2551,7 @@ describe("createCameraMapWidget", () => {
   });
 
   it("uses the current stored speed unit when popup options do not pass a unit", async () => {
-    const { buildPopupHtml } = await import("../../src/speed/camera-map-widget.js");
+    const { buildPopupHtml } = await import("../../src/apps/map/map-renderer.js");
     localStorage.setItem(
       "vatio_unit_bootstrap_v1",
       JSON.stringify({
@@ -2555,7 +2577,7 @@ describe("createCameraMapWidget", () => {
   });
 
   it("shows compact official/local source labels in popup HTML", async () => {
-    const { buildPopupHtml } = await import("../../src/speed/camera-map-widget.js");
+    const { buildPopupHtml } = await import("../../src/apps/map/map-renderer.js");
 
     const html = buildPopupHtml({
       properties: {
@@ -2572,7 +2594,7 @@ describe("createCameraMapWidget", () => {
   });
 
   it("explains camera approach operation in popup HTML", async () => {
-    const { buildPopupHtml } = await import("../../src/speed/camera-map-widget.js");
+    const { buildPopupHtml } = await import("../../src/apps/map/map-renderer.js");
 
     const html = buildPopupHtml({
       id: "camera-approach",
@@ -2642,7 +2664,7 @@ describe("createCameraMapWidget", () => {
   });
 
   it("explains no-corridor fallback behavior in popup HTML", async () => {
-    const { buildPopupHtml } = await import("../../src/speed/camera-map-widget.js");
+    const { buildPopupHtml } = await import("../../src/apps/map/map-renderer.js");
 
     const html = buildPopupHtml({
       id: "camera-no-corridor",
@@ -2663,7 +2685,7 @@ describe("createCameraMapWidget", () => {
   });
 
   it("reports unresolved corridor details without pretending no corridors exist", async () => {
-    const { buildPopupHtml } = await import("../../src/speed/camera-map-widget.js");
+    const { buildPopupHtml } = await import("../../src/apps/map/map-renderer.js");
 
     const html = buildPopupHtml({
       id: "camera-summary",
@@ -2683,7 +2705,7 @@ describe("createCameraMapWidget", () => {
   });
 
   it("builds bounded camera review payloads for copying", async () => {
-    const { createCameraReviewPayload } = await import("../../src/speed/camera-map-widget.js");
+    const { createCameraReviewPayload } = await import("../../src/apps/map/map-renderer.js");
 
     const payload = createCameraReviewPayload({
       id: "camera-review",

@@ -1,6 +1,5 @@
 import {
   IconAccel,
-  IconCameraMap,
   IconEnergy,
   IconMedia,
   IconMusic,
@@ -18,6 +17,7 @@ import { ttsAppManifest } from "../apps/tts/manifest.js";
 import { premiumClockAppManifest } from "../apps/premium-clock/manifest.js";
 import { speedAppManifest } from "../apps/speed/manifest.js";
 import { wazeAppManifest } from "../apps/waze/manifest.js";
+import { mapAppManifest } from "../apps/map/manifest.js";
 import { defineAppManifest } from "./manifest.js";
 import type { VatioAppManifest } from "./types";
 
@@ -45,6 +45,7 @@ const snappingWindowCapabilities = {
 
 export const BUILTIN_APP_MANIFESTS = [
   speedAppManifest,
+  mapAppManifest,
   wazeAppManifest,
   boardAppManifest,
   deliveryChecklistAppManifest,
@@ -242,57 +243,6 @@ export const BUILTIN_APP_MANIFESTS = [
     status: "stable",
     metadata: {
       legacyToolId: "energy",
-      legacyToolSurfaces: ["floating-tools"],
-      legacyShellKind: "tool",
-    },
-  }),
-  defineAppManifest({
-    id: "vatio.cameraMap",
-    title: "Camera Map",
-    shortTitle: "Camera Map",
-    description: "Floating camera map with GPS-follow and local camera data.",
-    kind: "tool-app",
-    version: "1.0.0",
-    icon: IconCameraMap,
-    theme: {
-      color: "#2563eb",
-      color2: "#60a5fa",
-    },
-    i18nKey: "cameraMapTitle",
-    entry: () => import("../apps/camera-map/index.js"),
-    surfaces: ["shell-window", "start-menu", "taskbar", "launcher"],
-    order: 80,
-    permissions: [
-      "gps.read",
-      "gps.highAccuracy",
-      "storage.app",
-      "network.backend",
-      "i18n.read",
-      "shell.window",
-      "settings.read",
-      "settings.write",
-    ],
-    services: ["gps", "shell", "storage", "i18n", "settings"],
-    window: {
-      shellWindowId: "camera-map",
-      mode: "floating",
-      defaultBounds: { left: 40, top: 96, width: 560, height: 460 },
-      capabilities: {
-        ...snappingWindowCapabilities,
-        minWidth: 420,
-        minHeight: 460,
-        snapZones: ["left", "right", "top", "bottom", "center", "top-left", "top-right", "bottom-left", "bottom-right"],
-      },
-      restoreOnBoot: true,
-      lazy: true,
-    },
-    tags: ["tool", "gps", "map"],
-    localFirst: true,
-    teslaOptimized: true,
-    offlineCapable: true,
-    status: "beta",
-    metadata: {
-      legacyToolId: "camera-map",
       legacyToolSurfaces: ["floating-tools"],
       legacyShellKind: "tool",
     },

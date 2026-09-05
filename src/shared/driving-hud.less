@@ -1,0 +1,135 @@
+.driving-hud {
+  display: contents;
+  --driving-hud-bg: rgba(7, 17, 31, 0.78);
+  --driving-hud-border: rgba(255, 255, 255, 0.22);
+  --driving-hud-text: #fff;
+}
+
+.driving-status-pill,
+.driving-actions {
+  pointer-events: auto;
+  color: var(--driving-hud-text);
+  border: 1px solid var(--driving-hud-border);
+  background: var(--driving-hud-bg);
+  box-shadow: 0 14px 34px rgba(2, 8, 23, 0.3);
+  backdrop-filter: blur(14px) saturate(135%);
+  -webkit-backdrop-filter: blur(14px) saturate(135%);
+}
+
+.driving-status-pill {
+  position: absolute;
+  left: max(12px, var(--vb-shell-reserved-left, 0px));
+  bottom: max(12px, calc(var(--vb-shell-reserved-bottom, 0px) + 8px));
+  z-index: 5;
+  display: grid;
+  gap: 5px;
+  box-sizing: border-box;
+  min-width: 174px;
+  max-width: min(250px, calc(100vw - 24px));
+  padding: 11px 14px;
+  border-radius: 20px;
+}
+
+.driving-status-pill::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  border-radius: 20px 0 0 20px;
+  background: #10b981;
+}
+
+.driving-status-pill.is-alert-near::before { background: #f59e0b; }
+.driving-status-pill.is-alert-over::before { background: #ff6b47; }
+
+.driving-status-heading,
+.driving-limit-row,
+.driving-camera-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.driving-speed-reading { display: flex; align-items: baseline; gap: 7px; }
+.driving-speed-reading strong { font-size: clamp(38px, 6vw, 54px); line-height: .95; }
+.driving-speed-reading span { font-size: 16px; font-weight: 900; }
+.driving-limit-row,
+.driving-camera-row { padding-top: 6px; border-top: 1px solid rgba(255,255,255,.16); }
+
+.driving-trip-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 12px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(255,255,255,.16);
+}
+
+.driving-trip-stats > span { display: grid; min-width: 0; }
+.driving-trip-stats small { color: rgba(255,255,255,.68); font-size: 8px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+.driving-trip-stats strong { overflow: hidden; font-size: 12px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+
+.driving-keep-alive {
+  min-height: 36px;
+  padding: 5px 9px;
+  border: 1px solid rgba(251,113,133,.6);
+  border-radius: 10px;
+  background: rgba(127,29,29,.72);
+  color: #fff;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 900;
+}
+.driving-keep-alive[hidden] { display: none; }
+
+.driving-actions {
+  position: absolute;
+  top: max(12px, var(--vb-shell-reserved-top, 0px));
+  left: 50%;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  border-radius: 18px;
+  transform: translateX(-50%);
+}
+
+.driving-actions button {
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 56px;
+  min-width: 44px;
+  height: 52px;
+  padding: 0;
+  border: 0;
+  border-right: 1px solid rgba(255,255,255,.12);
+  background: transparent;
+  color: inherit;
+  touch-action: manipulation;
+}
+
+.driving-actions button:last-child { border-right: 0; }
+.driving-actions button:hover,
+.driving-actions button:focus-visible { background: rgba(255,255,255,.14); outline: none; }
+.driving-actions button[aria-pressed="true"] { background: rgba(16,185,129,.84); }
+.driving-actions button.is-blocked { color: #fb7185; }
+.driving-actions button:disabled { opacity: .45; }
+.driving-actions svg { width: 23px; height: 23px; }
+.driving-actions .driving-icon-off,
+.driving-actions .driving-icon-pause { display: none; }
+.driving-actions button.is-muted .driving-icon-on,
+.driving-actions button[data-recording-state="recording"] .driving-icon-record { display: none; }
+.driving-actions button.is-muted .driving-icon-off,
+.driving-actions button[data-recording-state="recording"] .driving-icon-pause { display: grid; }
+
+@media (max-width: 520px) {
+  .driving-actions { top: max(8px, var(--vb-shell-reserved-top, 0px)); }
+  .driving-actions button { width: 48px; height: 48px; }
+  .driving-status-pill { min-width: 154px; padding: 9px 12px; }
+  .driving-speed-reading strong { font-size: 38px; }
+}

@@ -16,6 +16,7 @@ import { codeRainAppManifest } from "../../src/apps/code-rain/manifest.js";
 import { premiumClockAppManifest } from "../../src/apps/premium-clock/manifest.js";
 import { qrScannerAppManifest } from "../../src/apps/qr-scanner/manifest.js";
 import { speedAppManifest } from "../../src/apps/speed/manifest.js";
+import { mapAppManifest } from "../../src/apps/map/manifest.js";
 import { wazeAppManifest } from "../../src/apps/waze/manifest.js";
 import { getRouteRegistryFromApps } from "../../src/app-platform/adapters/route-registry-adapter.js";
 import {
@@ -237,6 +238,7 @@ describe("VatioBoard OS app platform", () => {
   it("imports representative app-owned manifests into the built-in registry", () => {
     expect(BUILTIN_APP_MANIFESTS).toEqual(expect.arrayContaining([
       speedAppManifest,
+      mapAppManifest,
       wazeAppManifest,
       boardAppManifest,
       calculatorAppManifest,
@@ -245,6 +247,8 @@ describe("VatioBoard OS app platform", () => {
       qrScannerAppManifest,
     ]));
     expect(appRegistry.getApp("vatio.speed")).toBe(speedAppManifest);
+    expect(appRegistry.getApp("vatio.map")).toBe(mapAppManifest);
+    expect(appRegistry.getApp("vatio.cameraMap")).toBeNull();
     expect(appRegistry.getApp("vatio.waze")).toBe(wazeAppManifest);
     expect(appRegistry.getApp("vatio.board")).toBe(boardAppManifest);
     expect(appRegistry.getApp("vatio.calculator")).toBe(calculatorAppManifest);
@@ -853,6 +857,7 @@ describe("VatioBoard OS app platform", () => {
     const routes = getRouteRegistryFromApps();
     expect(routes.find((route) => route.path === "/apps")?.title).toBe("App Manager");
     expect(routes.find((route) => route.path === "/")?.aliases).toContain("/speed");
+    expect(routes.find((route) => route.path === "/map")?.title).toBe("Map");
     expect(routes.find((route) => route.path === "/waze")?.title).toBe("Waze Map");
     expect(routes.find((route) => route.path === "/qr-scanner")?.title).toBe("QR Scanner");
 

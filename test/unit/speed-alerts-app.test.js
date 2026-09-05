@@ -11,7 +11,6 @@ import {
   SPEED_ALERTS_SETTINGS_KEY,
   createSpeedAlertsApp,
 } from "../../src/apps/speed-alerts/index.js";
-import { CAMERA_MAP_APP_ID } from "../../src/apps/camera-map/index.js";
 import { createSpeedAlertPanel } from "../../src/speed/speed-alert-panel.js";
 import { createShellWindowManager } from "../../src/shared/shell-window-manager.js";
 import { initFloatingTools } from "../../src/shared/floating-tools.js";
@@ -160,6 +159,7 @@ function createShellHarness(baseContext = {}) {
 describe("Speed Alerts OS app module", () => {
   beforeEach(() => {
     localStorage.clear();
+    window.history.replaceState({}, "", "/");
     document.body.innerHTML = "";
     delete window.__vatioboardFloatingTools;
     delete window.__vatioboardStartMenu;
@@ -298,7 +298,7 @@ describe("Speed Alerts OS app module", () => {
     shellManager.destroy();
   });
 
-  it("keeps Speed Alerts-to-Camera Map launch behavior working", () => {
+  it("navigates from Speed Alerts to the full-screen Map route", () => {
     const { shellManager, shellAppRuntimeManager } = createShellHarness({
       drivingAlertService: createDrivingAlertServiceStub(),
     });
@@ -311,9 +311,9 @@ describe("Speed Alerts OS app module", () => {
     floatingTools.openSpeedAlerts();
     document.querySelector(".speed-alert-window-map").click();
 
-    expect(shellManager.getWindow("camera-map")?.state).toBe("open");
-    expect(document.querySelector(".camera-map-panel")?.hidden).toBe(false);
-    expect(shellAppRuntimeManager.getRuntime(CAMERA_MAP_APP_ID)?.lifecycle.getState()).toBe("active");
+    expect(window.location.pathname).toBe("/map");
+    expect(shellManager.getWindow("camera-map")).toBeNull();
+    expect(document.querySelector("[data-vb-shell-window='camera-map']")).toBeNull();
 
     shellAppRuntimeManager.destroy();
     shellManager.destroy();

@@ -4,7 +4,7 @@ import {
   compactTrapsToCameraFeatures,
   createCameraMapDataSource,
   resolveCameraApproachDetails,
-} from "../../src/speed/camera-map-data-source.js";
+} from "../../src/apps/map/map-data-source.js";
 
 function createMemoryStore(seed = {}) {
   const values = new Map(Object.entries(seed));
@@ -115,6 +115,32 @@ describe("camera map data source", () => {
     expect(result.features).toHaveLength(1);
     expect(fetchImpl.mock.calls.map((call) => String(call[0]))).toContain("/geo/cameras/countries/us.json");
     expect(fetchImpl.mock.calls.map((call) => String(call[0]))).not.toContain("/geo/cameras/countries/co.json");
+  });
+
+  it("treats a successfully loaded viewport with no cameras as ready", async () => {
+    const payload = countryPayload("us", [[-73.9, 40.7, 48, 1]]);
+    const rootManifest = manifest({
+      us: countryEntry("us", payload.traps, { bbox: [-80, 35, -70, 45] }),
+    });
+    const fetchImpl = vi.fn(async (url) => {
+      if (String(url).endsWith("manifest.json")) return jsonResponse(rootManifest);
+      if (String(url).endsWith("us.json")) return jsonResponse(payload);
+      return new Response("", { status: 404 });
+    });
+    const dataSource = createCameraMapDataSource({ store: createMemoryStore(), fetchImpl });
+
+    const result = await dataSource.loadViewport({
+      bounds: [-79, 36, -78, 37],
+      zoom: 8,
+    });
+
+    expect(result.features).toEqual([]);
+    expect(result.status).toMatchObject({
+      status: "ready",
+      featureCount: 0,
+      offline: false,
+      error: null,
+    });
   });
 
   it("loads only visible tiles for tiled countries", async () => {

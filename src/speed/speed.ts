@@ -341,7 +341,7 @@ function getOrInitFloatingTools() {
 }
 
 function openCameraMapPanel() {
-  getOrInitFloatingTools()?.openCameraMap?.();
+  navigateToAppRoute('/map');
 }
 
 function markAlertTriggerDiscovered() {

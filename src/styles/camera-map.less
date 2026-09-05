@@ -153,7 +153,8 @@
 .camera-map-action:focus-visible,
 .camera-map-toolbar-btn:focus-visible,
 .camera-map-layer-button:focus-visible,
-.camera-map-attribution:focus-visible {
+.camera-map-attribution-summary:focus-visible,
+.camera-map-attribution-link:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px var(--camera-map-overlay-focus);
 }
@@ -233,7 +234,7 @@
 .camera-map-overlay--bottom {
   bottom: max(calc(10px + env(safe-area-inset-bottom, 0px)), calc(var(--vb-shell-taskbar-avoid-bottom, 0px) + 8px));
   align-items: flex-end;
-  justify-content: space-between;
+  justify-content: flex-end;
   padding-right: 42px;
 }
 
@@ -591,13 +592,60 @@
 }
 
 .camera-map-attribution {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 1 auto;
   max-width: min(72%, 620px);
+  margin-left: auto;
+  padding: 0;
+  overflow: hidden;
   text-decoration: none;
 }
 
-.camera-map-attribution:hover,
-.camera-map-attribution:focus-visible {
+.camera-map-attribution-summary {
+  display: grid;
+  flex: 0 0 30px;
+  width: 30px;
+  min-height: 30px;
+  place-items: center;
+  box-sizing: border-box;
+  cursor: pointer;
+  list-style: none;
   color: var(--camera-map-overlay-text);
+  font: 900 16px/1 ui-serif, Georgia, serif;
+}
+
+.camera-map-attribution-summary::-webkit-details-marker {
+  display: none;
+}
+
+.camera-map-attribution-summary::before {
+  content: "i";
+}
+
+.camera-map-attribution-link {
+  min-width: 0;
+  padding: 6px 8px 6px 0;
+  overflow: hidden;
+  color: inherit;
+  text-overflow: ellipsis;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.camera-map-attribution:not([open]) .camera-map-attribution-link {
+  display: none;
+}
+
+.camera-map-attribution-summary:hover,
+.camera-map-attribution-summary:focus-visible,
+.camera-map-attribution-link:hover,
+.camera-map-attribution-link:focus-visible {
+  color: var(--camera-map-overlay-text);
+}
+
+.camera-map-attribution-link:hover,
+.camera-map-attribution-link:focus-visible {
   text-decoration: underline;
 }
 
@@ -749,6 +797,8 @@
   font-weight: 800;
 }
 
+.camera-map-details-sheet { display: none; }
+
 @media (max-width: 640px), (pointer: coarse) {
   .camera-map-panel {
     right: 6px;
@@ -836,4 +886,26 @@
   .camera-map-privacy {
     white-space: normal;
   }
+
+  .camera-map-panel[data-camera-map-mode="route"] .camera-map-details-sheet {
+    position: absolute;
+    right: 8px;
+    bottom: max(8px, calc(var(--vb-shell-reserved-bottom, 0px) + 8px));
+    left: 8px;
+    z-index: 12;
+    display: block;
+    max-height: min(54dvh, 430px);
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,.22);
+    border-radius: 20px;
+    background: rgba(248,250,252,.97);
+    color: #111827;
+    box-shadow: 0 20px 48px rgba(2,8,23,.42);
+  }
+
+  .camera-map-panel[data-camera-map-mode="route"] .camera-map-details-sheet[hidden] { display: none; }
+  .camera-map-details-sheet header { display: flex; align-items: center; justify-content: space-between; min-height: 48px; padding: 0 8px 0 15px; border-bottom: 1px solid rgba(15,23,42,.14); }
+  .camera-map-details-close { width: 42px; height: 42px; border: 0; background: transparent; color: #111827; font: 800 28px/1 system-ui, sans-serif; }
+  .camera-map-details-body { max-height: calc(min(54dvh, 430px) - 49px); overflow: auto; padding: 12px 15px max(14px, env(safe-area-inset-bottom, 0px)); }
+  .camera-map-details-body .camera-map-popup { min-width: 0; max-width: none; }
 }

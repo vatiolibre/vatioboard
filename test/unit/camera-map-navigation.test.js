@@ -8,7 +8,7 @@ import {
   normalizeLivePosition,
   shouldUpdateBearing,
   smoothHeading,
-} from "../../src/speed/camera-map-navigation.js";
+} from "../../src/apps/map/map-navigation.js";
 
 describe("camera map navigation helpers", () => {
   it("normalizes headingDeg and course aliases from Speed GPS samples", () => {

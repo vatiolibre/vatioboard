@@ -112,17 +112,20 @@ describe("Waze route app", () => {
   });
 
   it("uses icon-only Waze and driving toolbar controls with accessible names", () => {
-    const root = createRoot();
-    expect(root.querySelector(".waze-placeholder-icon svg")?.getAttribute("viewBox")).toBe("0 0 640 640");
-    expect(root.querySelector(".waze-brand-icon svg")?.getAttribute("viewBox")).toBe("0 0 640 640");
-    expect(root.querySelector(".waze-hud-actions")?.getAttribute("role")).toBe("toolbar");
-    expect(root.querySelectorAll(".waze-toolbar-btn")).toHaveLength(6);
-    expect(root.querySelector("#wazeLocationPrompt svg")).toBeTruthy();
-    expect(root.querySelector("#wazeLocationPrompt")?.getAttribute("aria-label")).toBe("Enable Waze location");
-    expect(root.querySelector("#wazeRecenter svg")).toBeTruthy();
-    expect(root.querySelector("#wazeRecenter")?.getAttribute("aria-label")).toBe("Refresh map");
-    expect(root.querySelector("#stopRecording")?.hidden).toBe(true);
-    root.remove();
+    const context = createContext();
+    const controller = createWazeRouteController(context);
+    expect(context.root.querySelector(".waze-placeholder-icon svg")?.getAttribute("viewBox")).toBe("0 0 640 640");
+    expect(context.root.querySelector(".driving-hud")).toBeTruthy();
+    expect(context.root.querySelector(".waze-brand-icon")).toBeNull();
+    expect(context.root.querySelector(".waze-hud-actions")?.getAttribute("role")).toBe("toolbar");
+    expect(context.root.querySelectorAll(".waze-toolbar-btn")).toHaveLength(6);
+    expect(context.root.querySelector("#wazeLocationPrompt svg")).toBeTruthy();
+    expect(context.root.querySelector("#wazeLocationPrompt")?.getAttribute("aria-label")).toBe("Enable Waze location");
+    expect(context.root.querySelector("#wazeRecenter svg")).toBeTruthy();
+    expect(context.root.querySelector("#wazeRecenter")?.getAttribute("aria-label")).toBe("Refresh map");
+    expect(context.root.querySelector("#stopRecording")?.hidden).toBe(true);
+    controller.destroy();
+    context.cleanup.run();
   });
 
   it("reuses shared alert audio and launches the Speed Alerts window", () => {
@@ -329,7 +332,7 @@ describe("Waze route app", () => {
 
     expect(stop.hidden).toBe(true);
     toggle.click();
-    expect(service.startRecording).toHaveBeenCalledWith({ source: "waze" });
+    expect(service.startRecording).toHaveBeenCalledWith({ source: "waze", fromUserGesture: true });
     expect(playRecordingStartedCue).toHaveBeenCalledTimes(1);
     expect(toggle.getAttribute("aria-label")).toBe("Pause recording");
     expect(stop.hidden).toBe(false);

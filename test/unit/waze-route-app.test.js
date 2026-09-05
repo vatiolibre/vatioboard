@@ -73,7 +73,7 @@ describe("Waze route OS app module", () => {
     expect(manifest).toMatchObject({
       id: "vatio.waze",
       route: "/waze",
-      order: 15,
+      order: 16,
       localFirst: false,
       teslaOptimized: true,
       offlineCapable: false,

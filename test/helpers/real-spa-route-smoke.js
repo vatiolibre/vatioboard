@@ -489,6 +489,10 @@ const routeConfig = {
     bodyClass: "waze-page",
     selector: "[data-waze-app] #wazeFrame",
   },
+  "/map": {
+    bodyClass: "map-page",
+    selector: "[data-map-app] .camera-map-container",
+  },
   "/replay": {
     bodyClass: "replay-page",
     selector: "#replayShell",

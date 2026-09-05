@@ -5,6 +5,16 @@ import {
   saveActiveReplaySession,
 } from "../../replay/session.js";
 import { distanceMeters } from "../../shared/geo-heading.js";
+import {
+  acquireBackgroundAudioLease,
+  getBackgroundKeepAliveAudio,
+  isBackgroundAudioLeaseActive,
+  releaseBackgroundAudioLease,
+} from "../../shared/audio-system.js";
+import {
+  clearMediaSessionClient,
+  updateMediaSessionClient,
+} from "../../shared/media-session-adapter.js";
 import type {
   DriveRecordingService,
   DriveRecordingSnapshot,
@@ -13,6 +23,9 @@ import type {
 } from "../../types/services";
 
 const RECORDING_CONSUMER_ID = "speed-recording";
+export const DRIVE_RECORDING_BACKGROUND_AUDIO_LEASE = "drive-recording";
+const DRIVE_RECORDING_MEDIA_SESSION_OWNER = "drive-recording";
+const DRIVE_RECORDING_MEDIA_SESSION_PRIORITY = 5;
 
 // TODO(ts-migration): replay repository/session payloads remain JS-owned.
 type LegacyRecordingRecord = Record<string, any>;
@@ -31,7 +44,10 @@ function getDefaultUnits() {
   };
 }
 
-function createSnapshot(state: LegacyRecordingRecord): DriveRecordingSnapshot {
+function createSnapshot(state: LegacyRecordingRecord, nowMs = Date.now()): DriveRecordingSnapshot {
+  const durationMs = state.startedAtMs === null
+    ? 0
+    : Math.max(0, (state.recordingState === "idle" ? state.endedAtMs : nowMs) - state.startedAtMs);
   return {
     state: state.recordingState,
     sessionId: state.session?.id || "",
@@ -40,11 +56,21 @@ function createSnapshot(state: LegacyRecordingRecord): DriveRecordingSnapshot {
     totalDistanceM: state.totalDistanceM,
     currentSpeedMs: state.currentSpeedMs,
     maxSpeedMs: state.maxSpeedMs,
+    averageSpeedMs: durationMs > 0 ? state.totalDistanceM / (durationMs / 1000) : 0,
+    durationMs,
+    currentAltitudeM: state.currentAltitudeM,
+    maxAltitudeM: state.maxAltitudeM,
+    minAltitudeM: state.minAltitudeM,
     lastPosition: state.lastPosition,
     lastHeadingDeg: state.lastHeadingDeg,
     lastPersistedAtMs: state.lastPersistedAtMs,
     localOnly: true,
     pendingCloudSync: state.pendingCloudSync,
+    keepAliveIntended: state.keepAliveIntended,
+    keepAliveArmed: state.keepAliveArmed && isBackgroundAudioLeaseActive(DRIVE_RECORDING_BACKGROUND_AUDIO_LEASE),
+    keepAlivePending: state.keepAlivePending,
+    keepAliveSuppressed: state.keepAliveSuppressed,
+    keepAliveBlocked: state.keepAliveBlocked,
   };
 }
 
@@ -105,14 +131,120 @@ export function createDriveRecordingService({
     totalDistanceM: 0,
     currentSpeedMs: 0,
     maxSpeedMs: 0,
+    currentAltitudeM: null,
+    maxAltitudeM: null,
+    minAltitudeM: null,
     lastPosition: null,
     lastHeadingDeg: null,
     lastPersistedAtMs: 0,
     pendingCloudSync: false,
+    endedAtMs: null,
+    keepAliveIntended: false,
+    keepAliveArmed: false,
+    keepAlivePending: false,
+    keepAliveSuppressed: false,
+    keepAliveBlocked: false,
+    keepAliveRevision: 0,
   };
   let gpsConsumerCleanup: (() => void) | null = null;
   let gpsUnsubscribe: (() => void) | null = null;
   let destroyed = false;
+  let keepAlivePromise: Promise<boolean> | null = null;
+  const keepAliveAudio = getBackgroundKeepAliveAudio();
+
+  function updateMediaSession() {
+    const recording = state.recordingState === "recording";
+    updateMediaSessionClient(DRIVE_RECORDING_MEDIA_SESSION_OWNER, {
+      active: recording,
+      priority: DRIVE_RECORDING_MEDIA_SESSION_PRIORITY,
+      playbackState: recording ? "playing" : "none",
+      metadata: recording ? {
+        title: "Drive recording",
+        artist: "VatioBoard",
+        album: "GPS recording active",
+      } : null,
+      handlers: recording ? {
+        play: () => { void rearmKeepAlive({ fromUserGesture: true, reason: "media-session-play" }); },
+        // Tesla may emit pause/stop when another app opens. Keep recording ownership intact.
+        pause: () => { void persistNow(); },
+        stop: () => { void persistNow(); },
+      } : null,
+    });
+  }
+
+  function disarmKeepAlive() {
+    state.keepAliveRevision += 1;
+    state.keepAliveIntended = false;
+    state.keepAliveArmed = false;
+    state.keepAlivePending = false;
+    state.keepAliveSuppressed = false;
+    state.keepAliveBlocked = false;
+    keepAlivePromise = null;
+    releaseBackgroundAudioLease(DRIVE_RECORDING_BACKGROUND_AUDIO_LEASE);
+    updateMediaSession();
+  }
+
+  async function rearmKeepAlive({ fromUserGesture = false }: LegacyRecordingRecord = {}) {
+    if (destroyed || state.recordingState !== "recording") return false;
+    state.keepAliveIntended = true;
+    if (fromUserGesture) {
+      state.keepAliveSuppressed = false;
+      state.keepAliveBlocked = false;
+    }
+    if (isBackgroundAudioLeaseActive(DRIVE_RECORDING_BACKGROUND_AUDIO_LEASE)) {
+      state.keepAliveArmed = true;
+      state.keepAliveSuppressed = false;
+      state.keepAliveBlocked = false;
+      emit();
+      return true;
+    }
+    if (state.keepAlivePending) return keepAlivePromise ?? false;
+    const revision = ++state.keepAliveRevision;
+    state.keepAlivePending = true;
+    emit();
+    keepAlivePromise = acquireBackgroundAudioLease(DRIVE_RECORDING_BACKGROUND_AUDIO_LEASE, {
+      shouldContinue: () => !destroyed
+        && state.recordingState === "recording"
+        && state.keepAliveIntended
+        && revision === state.keepAliveRevision,
+    }).then(Boolean, () => false);
+    try {
+      const armed = await keepAlivePromise;
+      if (revision !== state.keepAliveRevision || state.recordingState !== "recording") {
+        releaseBackgroundAudioLease(DRIVE_RECORDING_BACKGROUND_AUDIO_LEASE);
+        return false;
+      }
+      state.keepAliveArmed = armed && isBackgroundAudioLeaseActive(DRIVE_RECORDING_BACKGROUND_AUDIO_LEASE);
+      state.keepAliveSuppressed = !state.keepAliveArmed;
+      state.keepAliveBlocked = !state.keepAliveArmed;
+      if (!state.keepAliveArmed) releaseBackgroundAudioLease(DRIVE_RECORDING_BACKGROUND_AUDIO_LEASE);
+      return state.keepAliveArmed;
+    } finally {
+      state.keepAlivePending = false;
+      keepAlivePromise = null;
+      updateMediaSession();
+      emit();
+    }
+  }
+
+  function handleKeepAliveInterruption() {
+    if (destroyed || state.recordingState !== "recording" || state.keepAlivePending) return;
+    if (isBackgroundAudioLeaseActive(DRIVE_RECORDING_BACKGROUND_AUDIO_LEASE)) return;
+    state.keepAliveArmed = false;
+    state.keepAliveSuppressed = true;
+    emit();
+  }
+
+  function persistForLifecycle() {
+    if (state.recordingState !== "recording") return;
+    void persistNow();
+    handleKeepAliveInterruption();
+  }
+
+  keepAliveAudio.addEventListener("pause", handleKeepAliveInterruption);
+  keepAliveAudio.addEventListener("ended", handleKeepAliveInterruption);
+  document.addEventListener("visibilitychange", persistForLifecycle);
+  window.addEventListener("pagehide", persistForLifecycle);
 
   function emit() {
     const snapshot = getSnapshot();
@@ -170,6 +302,11 @@ export function createDriveRecordingService({
     }
     state.currentSpeedMs = position.speedMs || 0;
     state.maxSpeedMs = Math.max(state.maxSpeedMs, state.currentSpeedMs);
+    state.currentAltitudeM = Number.isFinite(Number(position.altitudeM)) ? Number(position.altitudeM) : null;
+    if (state.currentAltitudeM !== null) {
+      state.maxAltitudeM = state.maxAltitudeM === null ? state.currentAltitudeM : Math.max(state.maxAltitudeM, state.currentAltitudeM);
+      state.minAltitudeM = state.minAltitudeM === null ? state.currentAltitudeM : Math.min(state.minAltitudeM, state.currentAltitudeM);
+    }
     state.lastPosition = position;
     state.lastHeadingDeg = position.headingDeg;
     state.session = repository.appendReplaySample(
@@ -203,7 +340,7 @@ export function createDriveRecordingService({
     appendPosition(normalizeGpsPosition(snapshotOrPosition));
   }
 
-  function startRecording({ source = "speed" }: LegacyRecordingRecord = {}) {
+  function startRecording({ source = "speed", fromUserGesture = false }: LegacyRecordingRecord = {}) {
     if (destroyed) return getSnapshot();
     if (state.recordingState === "recording") return getSnapshot();
     const nextUnits = units();
@@ -218,7 +355,11 @@ export function createDriveRecordingService({
       state.sampleCount = 0;
       state.totalDistanceM = 0;
       state.maxSpeedMs = 0;
+      state.currentAltitudeM = null;
+      state.maxAltitudeM = null;
+      state.minAltitudeM = null;
       state.startedAtMs = now();
+      state.endedAtMs = null;
     } else {
       state.session = {
         ...state.session,
@@ -227,6 +368,8 @@ export function createDriveRecordingService({
       state.startedAtMs ||= now();
     }
     ensureGpsSubscription();
+    void rearmKeepAlive({ fromUserGesture, reason: `${source}-recording-start` });
+    updateMediaSession();
     const currentPosition = normalizeGpsPosition(gpsStore?.getCurrentPosition?.());
     if (currentPosition) appendPosition(currentPosition);
     void persistNow();
@@ -237,6 +380,8 @@ export function createDriveRecordingService({
   function pauseRecording() {
     if (state.recordingState !== "recording") return getSnapshot();
     state.recordingState = "paused";
+    disarmKeepAlive();
+    releaseGpsSubscription();
     if (state.session) state.session = { ...state.session, recordingState: "paused" };
     void persistNow();
     emit();
@@ -245,15 +390,17 @@ export function createDriveRecordingService({
 
   function resumeRecording() {
     if (state.recordingState === "recording") return getSnapshot();
-    return startRecording({ source: "resume" });
+    return startRecording({ source: "resume", fromUserGesture: true });
   }
 
   async function stopRecording() {
     if (state.recordingState === "idle" && state.sampleCount === 0) return getSnapshot();
     state.recordingState = "finalizing";
+    state.endedAtMs = state.lastPosition?.timestampMs || now();
+    disarmKeepAlive();
     emit();
     releaseGpsSubscription();
-    const endedAtMs = state.lastPosition?.timestampMs || now();
+    const endedAtMs = state.endedAtMs;
     try {
       state.session = await repository.archiveReplaySession(state.session, {
         endedAtMs,
@@ -278,7 +425,7 @@ export function createDriveRecordingService({
   }
 
   function getSnapshot() {
-    return createSnapshot(state);
+    return createSnapshot(state, now());
   }
 
   function getCurrentSession() {
@@ -287,7 +434,13 @@ export function createDriveRecordingService({
 
   function destroy() {
     destroyed = true;
+    disarmKeepAlive();
     releaseGpsSubscription();
+    keepAliveAudio.removeEventListener("pause", handleKeepAliveInterruption);
+    keepAliveAudio.removeEventListener("ended", handleKeepAliveInterruption);
+    document.removeEventListener("visibilitychange", persistForLifecycle);
+    window.removeEventListener("pagehide", persistForLifecycle);
+    clearMediaSessionClient(DRIVE_RECORDING_MEDIA_SESSION_OWNER);
     listeners.clear();
   }
 
@@ -300,6 +453,7 @@ export function createDriveRecordingService({
     getSnapshot,
     getCurrentSession,
     persistNow,
+    rearmKeepAlive,
     destroy,
   };
 }

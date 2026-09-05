@@ -125,15 +125,25 @@ export interface DriveRecordingSnapshot {
   totalDistanceM: number;
   currentSpeedMs: number;
   maxSpeedMs: number;
+  averageSpeedMs: number;
+  durationMs: number;
+  currentAltitudeM: number | null;
+  maxAltitudeM: number | null;
+  minAltitudeM: number | null;
   lastPosition: NormalizedGpsPosition | null;
   lastHeadingDeg: number | null;
   lastPersistedAtMs: number;
   localOnly: boolean;
   pendingCloudSync: boolean;
+  keepAliveIntended: boolean;
+  keepAliveArmed: boolean;
+  keepAlivePending: boolean;
+  keepAliveSuppressed: boolean;
+  keepAliveBlocked: boolean;
 }
 
 export interface DriveRecordingService {
-  startRecording(options?: { source?: string }): DriveRecordingSnapshot;
+  startRecording(options?: { source?: string; fromUserGesture?: boolean }): DriveRecordingSnapshot;
   pauseRecording(): DriveRecordingSnapshot;
   resumeRecording(): DriveRecordingSnapshot;
   stopRecording(): Promise<DriveRecordingSnapshot>;
@@ -141,6 +151,7 @@ export interface DriveRecordingService {
   getSnapshot(): DriveRecordingSnapshot;
   getCurrentSession(): unknown;
   persistNow(): Promise<unknown>;
+  rearmKeepAlive?(options?: { fromUserGesture?: boolean; reason?: string }): Promise<boolean> | boolean;
   destroy(): void;
 }
 

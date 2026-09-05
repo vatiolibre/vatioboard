@@ -1,0 +1,47 @@
+import { IconCameraMap } from "../../icons.js";
+import { defineAppManifest } from "../../app-platform/manifest.js";
+
+export const mapAppManifest = defineAppManifest({
+  id: "vatio.map",
+  title: "Map",
+  shortTitle: "Map",
+  description: "Full-screen MapLibre driving map with local speed-camera data.",
+  kind: "core-app",
+  version: "1.0.0",
+  icon: IconCameraMap,
+  theme: {
+    color: "#0ea5e9",
+    color2: "#10b981",
+    foreground: "#ffffff",
+  },
+  i18nKey: "mapAppTitle",
+  route: "/map",
+  entry: () => import("./index.js"),
+  surfaces: ["main-route", "start-menu", "launcher"],
+  order: 15,
+  permissions: [
+    "gps.read",
+    "gps.highAccuracy",
+    "audio.playback",
+    "audio.background",
+    "alerts.speed",
+    "driveRecording.read",
+    "driveRecording.write",
+    "storage.app",
+    "network.backend",
+    "i18n.read",
+    "settings.read",
+    "settings.write",
+    "shell.launchApp",
+  ],
+  services: ["gps", "audio", "driveRecording", "drivingAlerts", "shell", "storage", "i18n", "settings"],
+  tags: ["driving", "gps", "map", "cameras", "navigation"],
+  localFirst: true,
+  teslaOptimized: true,
+  offlineCapable: true,
+  status: "beta",
+  metadata: {
+    legacyToolId: "route:map",
+    networkDependentBasemaps: true,
+  },
+});
