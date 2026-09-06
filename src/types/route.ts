@@ -1,4 +1,4 @@
-import type { DriveRecordingService, DrivingAlertService, GpsService, TtsService } from "./services";
+import type { DriveRecordingService, DrivingAlertService, DrivingTelemetryService, GpsService, TtsService } from "./services";
 import type { ShellRuntime } from "./shell";
 import type {
   ShellAppRuntimeManager,
@@ -48,6 +48,7 @@ export interface RuntimeContext {
   audioRuntime: unknown;
   driveRecordingService: DriveRecordingService;
   drivingAlertService: DrivingAlertService;
+  drivingTelemetryService: DrivingTelemetryService;
   gpsService: GpsService;
   ttsService?: TtsService;
   recoveryCoordinator?: RecoveryCoordinator;

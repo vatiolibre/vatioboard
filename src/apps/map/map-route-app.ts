@@ -14,7 +14,9 @@ export type MapRouteMountContext = RouteMountContext & {
   appRuntime: VatioAppRuntime | null;
   gpsService: RouteContext["gpsService"] | null;
   driveRecordingService: RouteContext["driveRecordingService"] | null;
+  drivingTelemetryService: RouteContext["drivingTelemetryService"] | null;
   drivingAlertService: RouteContext["drivingAlertService"] | null;
+  sharedSettingsService: VatioAppRuntime["services"]["sharedSettings"] | null;
   translate: (key: string, fallback?: string) => string;
 };
 
@@ -31,7 +33,9 @@ export function createMapRouteMountContext(routeContext: RouteMountContext): Map
     appRuntime: runtime,
     gpsService: runtime?.services.gps || routeContext.context.gpsService || getWindowFallback("__vatioboardGpsStore"),
     driveRecordingService: runtime?.services.driveRecording || routeContext.context.driveRecordingService || getWindowFallback("__vatioboardDriveRecording"),
+    drivingTelemetryService: runtime?.services.drivingTelemetry || routeContext.context.drivingTelemetryService || getWindowFallback("__vatioboardDrivingTelemetry"),
     drivingAlertService: runtime?.services.drivingAlerts || routeContext.context.drivingAlertService || getWindowFallback("__vatioboardDrivingAlerts"),
+    sharedSettingsService: runtime?.services.sharedSettings || null,
     translate: runtime
       ? (key, fallback) => runtime.i18n.t(key, fallback)
       : (key, fallback) => fallback || key,

@@ -157,6 +157,15 @@ function normalizeDistanceUnit(unit, fallback = 'm') {
   return unit === 'ft' ? 'ft' : unit === 'm' ? 'm' : fallback;
 }
 
+function normalizeTripDistanceUnit(unit, distanceUnit = 'm') {
+  if (unit === 'mi' || unit === 'km') return unit;
+  return distanceUnit === 'ft' ? 'mi' : 'km';
+}
+
+function normalizeReplaySource(source, fallback = 'speed') {
+  return source === 'map' || source === 'speed' ? source : fallback;
+}
+
 function normalizeRecordingState(state, fallback = 'recording') {
   if (state === 'paused') return 'paused';
   if (state === 'stopped') return 'stopped';
@@ -200,9 +209,10 @@ export function createReplaySession(options: ReplayOptionBag = {}) {
   return {
     id: normalizeReplayId(options.id, fallbackTimestamp),
     version: REPLAY_SCHEMA_VERSION,
-    source: 'speed',
+    source: normalizeReplaySource(options.source),
     unit: normalizeSpeedUnit(options.unit),
     distanceUnit: normalizeDistanceUnit(options.distanceUnit),
+    tripDistanceUnit: normalizeTripDistanceUnit(options.tripDistanceUnit, options.distanceUnit),
     recordingState: normalizeRecordingState(options.recordingState),
     startedAtMs,
     startDistanceM: null,
@@ -602,9 +612,10 @@ export function normalizeReplaySession(session) {
   return {
     id: normalizeReplayId(session.id, session.startedAtMs ?? lastSample?.timestampMs ?? Date.now()),
     version: REPLAY_SCHEMA_VERSION,
-    source: 'speed',
+    source: normalizeReplaySource(session.source),
     unit: normalizeSpeedUnit(session.unit),
     distanceUnit: normalizeDistanceUnit(session.distanceUnit),
+    tripDistanceUnit: normalizeTripDistanceUnit(session.tripDistanceUnit, session.distanceUnit),
     recordingState: normalizeRecordingState(session.recordingState),
     startedAtMs: isFiniteNumber(session.startedAtMs)
       ? session.startedAtMs
@@ -769,6 +780,7 @@ export function appendReplaySample(session, sample, options: ReplayOptionBag = {
         ...currentSession,
         unit: normalizeSpeedUnit(options.unit, currentSession.unit),
         distanceUnit: normalizeDistanceUnit(options.distanceUnit, currentSession.distanceUnit),
+        tripDistanceUnit: normalizeTripDistanceUnit(options.tripDistanceUnit, options.distanceUnit ?? currentSession.distanceUnit),
         recordingState: normalizeRecordingState(
           options.recordingState,
           currentSession.recordingState
@@ -784,6 +796,7 @@ export function appendReplaySample(session, sample, options: ReplayOptionBag = {
       ...currentSession,
       unit: normalizeSpeedUnit(options.unit, currentSession.unit),
       distanceUnit: normalizeDistanceUnit(options.distanceUnit, currentSession.distanceUnit),
+      tripDistanceUnit: normalizeTripDistanceUnit(options.tripDistanceUnit, options.distanceUnit ?? currentSession.distanceUnit),
       recordingState: normalizeRecordingState(
         options.recordingState,
         currentSession.recordingState
@@ -815,6 +828,7 @@ export function appendReplaySample(session, sample, options: ReplayOptionBag = {
     ...currentSession,
     unit: normalizeSpeedUnit(options.unit, currentSession.unit),
     distanceUnit: normalizeDistanceUnit(options.distanceUnit, currentSession.distanceUnit),
+    tripDistanceUnit: normalizeTripDistanceUnit(options.tripDistanceUnit, options.distanceUnit ?? currentSession.distanceUnit),
     recordingState: normalizeRecordingState(options.recordingState, currentSession.recordingState),
     startedAtMs: currentSession.startedAtMs ?? normalizedSample.timestampMs,
     firstSample,

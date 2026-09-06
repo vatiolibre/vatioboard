@@ -31,6 +31,25 @@ describe("shared trip statistics", () => {
     expect(stats.nearestCamera).toEqual({ value: "787", unit: "ft" });
   });
 
+  it("keeps imperial short and trip distance contracts separate", () => {
+    const stats = createTripStatsModel({
+      totalDistanceM: 1609.344,
+      currentAltitudeM: 100,
+      nearestCameraDistanceM: 240,
+      currentSpeedMs: 5,
+      averageSpeedMs: 5,
+      speedUnit: "mph",
+      distanceUnit: "ft",
+      tripDistanceUnit: "mi",
+    });
+
+    expect(stats.currentSpeed).toEqual({ value: "11", unit: "mph" });
+    expect(stats.averageSpeed).toEqual({ value: "11", unit: "mph" });
+    expect(stats.distance).toEqual({ value: "1.0", unit: "mi" });
+    expect(stats.altitude).toEqual({ value: "328", unit: "ft" });
+    expect(stats.nearestCamera).toEqual({ value: "787", unit: "ft" });
+  });
+
   it("formats long recordings with hours", () => {
     expect(formatTripDuration(3_661_000)).toBe("1:01:01");
   });

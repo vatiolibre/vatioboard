@@ -3,6 +3,7 @@ import type {
   AudioRuntime,
   DriveRecordingService,
   DrivingAlertService,
+  DrivingTelemetryService,
   GpsService,
   TtsService,
   Unsubscribe,
@@ -48,6 +49,8 @@ export type VatioAppPermission =
   | "alerts.speed"
   | "driveRecording.read"
   | "driveRecording.write"
+  | "drivingTelemetry.read"
+  | "drivingTelemetry.write"
   | "shell.window"
   | "shell.launchApp"
   | "network.backend"
@@ -64,6 +67,7 @@ export type VatioAppServiceId =
   | "gps"
   | "audio"
   | "driveRecording"
+  | "drivingTelemetry"
   | "drivingAlerts"
   | "qrScanner"
   | "auth"
@@ -411,6 +415,7 @@ export interface VatioAppServices {
   gps: GpsService | null;
   audio: AudioRuntime | null;
   driveRecording: DriveRecordingService | null;
+  drivingTelemetry: DrivingTelemetryService | null;
   drivingAlerts: DrivingAlertService | null;
   qrScanner: VatioQrScannerService | null;
   tts: TtsService | null;

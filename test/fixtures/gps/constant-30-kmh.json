@@ -1,0 +1,8 @@
+{
+  "name": "constant-30-kmh",
+  "samples": [
+    { "offsetMs": 0, "coords": { "latitude": 40.700000, "longitude": -73.900000, "accuracy": 4, "speed": 8.333333 } },
+    { "offsetMs": 1000, "coords": { "latitude": 40.700075, "longitude": -73.900000, "accuracy": 4, "speed": 8.333333 } },
+    { "offsetMs": 2000, "coords": { "latitude": 40.700150, "longitude": -73.900000, "accuracy": 4, "speed": 8.333333 } }
+  ]
+}

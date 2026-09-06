@@ -113,6 +113,7 @@ export function createGpsService({ geolocation = navigator.geolocation }: GpsSer
   const subscribers = new Map<number, GpsSubscriber>();
   const consumers = new Map<string, { options: GpsConsumerOptions }>();
   const listeners = new Set<(snapshot: GpsSnapshot) => void>();
+  const positionListeners = new Set<(position: NormalizedGpsPosition) => void>();
   const originalWatchPosition = geolocation?.watchPosition;
   const originalClearWatch = geolocation?.clearWatch;
   const nativeWatchPosition = originalWatchPosition?.bind(geolocation);
@@ -135,6 +136,7 @@ export function createGpsService({ geolocation = navigator.geolocation }: GpsSer
   let previousNormalized = snapshot.normalized || null;
   let lastHeadingDeg = normalizeHeading(snapshot.normalized?.headingDeg);
   let lastHeadingAtMs = Number(snapshot.normalized?.receivedAtMs || 0);
+  let nextSampleSequence = Math.max(1, Number(snapshot.normalized?.sampleSequence || 0) + 1);
 
   function getConsumers() {
     return Array.from(consumers.keys());
@@ -188,6 +190,7 @@ export function createGpsService({ geolocation = navigator.geolocation }: GpsSer
     }
     const headingFresh = lastHeadingDeg !== null && now - lastHeadingAtMs <= 5000;
     return {
+      sampleSequence: nextSampleSequence++,
       latitude,
       longitude,
       accuracy: Number.isFinite(Number(coords.accuracy)) ? Number(coords.accuracy) : null,
@@ -246,6 +249,15 @@ export function createGpsService({ geolocation = navigator.geolocation }: GpsSer
       window.dispatchEvent(new CustomEvent("vatioboard:gps-position", {
         detail: normalized,
       }));
+    }
+    if (normalized) {
+      for (const listener of positionListeners) {
+        try {
+          listener(normalized);
+        } catch {
+          // Position listener isolation.
+        }
+      }
     }
     debugGps("position", {
       rawTimestampMs: getFiniteNumber(position?.timestamp),
@@ -428,6 +440,12 @@ export function createGpsService({ geolocation = navigator.geolocation }: GpsSer
     };
   }
 
+  function subscribePositions(listener: (position: NormalizedGpsPosition) => void) {
+    if (typeof listener !== "function") return () => {};
+    positionListeners.add(listener);
+    return () => positionListeners.delete(listener);
+  }
+
   function getSnapshot() {
     const now = Date.now();
     const normalized = getDynamicNormalized(now);
@@ -453,6 +471,7 @@ export function createGpsService({ geolocation = navigator.geolocation }: GpsSer
     nativeWatchId = null;
     nativeWatchHighAccuracy = false;
     listeners.clear();
+    positionListeners.clear();
     persistAndEmit({ status: geolocation ? "idle" : "unsupported" });
     if (geolocation?.__vatioboardGpsServiceShim && geolocation.watchPosition === watchPosition) {
       try {
@@ -487,6 +506,7 @@ export function createGpsService({ geolocation = navigator.geolocation }: GpsSer
     startConsumer,
     stopConsumer,
     subscribe,
+    subscribePositions,
     getSnapshot,
     getCurrentPosition,
     requestHighAccuracy,

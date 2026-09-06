@@ -103,6 +103,28 @@ describe("createGpsService", () => {
     }
   });
 
+  it("emits each physical fix once on the position-only stream", () => {
+    const geolocation = createGeolocationDouble();
+    const service = createGpsService({ geolocation });
+    const positions = [];
+    service.subscribePositions((position) => positions.push(position));
+
+    service.startConsumer("telemetry");
+    service.startConsumer("alerts");
+    expect(positions).toHaveLength(0);
+
+    emitPosition(geolocation, { timestamp: Date.now() });
+    expect(positions).toHaveLength(1);
+    expect(positions[0].sampleSequence).toBe(1);
+
+    service.stopConsumer("alerts");
+    expect(positions).toHaveLength(1);
+
+    emitPosition(geolocation, { timestamp: Date.now() });
+    expect(positions).toHaveLength(2);
+    expect(positions[1].sampleSequence).toBe(2);
+  });
+
   it("derives heading from movement when browser heading is missing", () => {
     const geolocation = createGeolocationDouble();
     const service = createGpsService({ geolocation });

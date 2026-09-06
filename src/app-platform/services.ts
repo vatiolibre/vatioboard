@@ -4,6 +4,8 @@ import type {
   DriveRecordingService,
   DrivingAlertService,
   DrivingAlertSnapshot,
+  DrivingTelemetryService,
+  DrivingTelemetrySnapshot,
   GpsConsumerOptions,
   GpsService,
   TtsService,
@@ -78,6 +80,26 @@ const DENIED_DRIVING_ALERT_SNAPSHOT: DrivingAlertSnapshot = {
   alertUiState: null,
   audio: null,
   preferences: null,
+};
+
+const DENIED_DRIVING_TELEMETRY_SNAPSHOT: DrivingTelemetrySnapshot = {
+  status: "idle",
+  tripId: "permission-denied",
+  startedAtMs: null,
+  elapsedMs: 0,
+  currentSpeedMs: 0,
+  maxSpeedMs: 0,
+  averageSpeedMs: 0,
+  totalDistanceM: 0,
+  currentAltitudeM: null,
+  minAltitudeM: null,
+  maxAltitudeM: null,
+  headingDeg: null,
+  accuracyM: null,
+  lastPosition: null,
+  sampleCount: 0,
+  lastGpsSampleSequence: null,
+  lastFixAtMs: null,
 };
 
 const DENIED_TTS_SNAPSHOT: TtsSnapshot = {
@@ -175,6 +197,47 @@ function createDriveRecordingGateway(
     persistNow() {
       if (!permissions.require("driveRecording.write")) return Promise.resolve(null);
       return service.persistNow();
+    },
+  };
+}
+
+function createDrivingTelemetryGateway(
+  service: DrivingTelemetryService | null,
+  permissions: VatioAppPermissionRuntime,
+): DrivingTelemetryService | null {
+  if (!service) return null;
+  if (!permissions.has("drivingTelemetry.read") && !permissions.has("drivingTelemetry.write")) return null;
+
+  const deniedSnapshot = () => ({ ...DENIED_DRIVING_TELEMETRY_SNAPSHOT });
+  const readSnapshot = () => permissions.require("drivingTelemetry.read")
+    ? service.getSnapshot()
+    : deniedSnapshot();
+
+  return {
+    ...service,
+    getSnapshot() {
+      return readSnapshot();
+    },
+    subscribe(listener) {
+      if (!permissions.require("drivingTelemetry.read")) return () => {};
+      return service.subscribe(listener);
+    },
+    subscribeSamples(listener) {
+      if (!permissions.require("drivingTelemetry.read")) return () => {};
+      return service.subscribeSamples(listener);
+    },
+    start(options) {
+      if (!permissions.require("drivingTelemetry.write")) return readSnapshot();
+      const snapshot = service.start(options);
+      return permissions.has("drivingTelemetry.read") ? snapshot : deniedSnapshot();
+    },
+    resetTrip(options) {
+      if (!permissions.require("drivingTelemetry.write")) return readSnapshot();
+      const snapshot = service.resetTrip(options);
+      return permissions.has("drivingTelemetry.read") ? snapshot : deniedSnapshot();
+    },
+    destroy() {
+      // The app gateway must never destroy the shell-owned service.
     },
   };
 }
@@ -592,6 +655,7 @@ export function createAppServiceGateway({
   const audioRuntime = getContextService<AudioRuntime>(baseContext, "audioRuntime");
   const driveRecordingService = getContextService<DriveRecordingService>(baseContext, "driveRecordingService");
   const drivingAlertService = getContextService<DrivingAlertService>(baseContext, "drivingAlertService");
+  const drivingTelemetryService = getContextService<DrivingTelemetryService>(baseContext, "drivingTelemetryService");
   const qrScannerService =
     getContextService<VatioQrScannerService>(baseContext, "qrScannerService")
     || createBrowserQrScannerService();
@@ -603,6 +667,7 @@ export function createAppServiceGateway({
     gps: hasService("gps") ? createGpsGateway(gpsService, permissions) : null,
     audio: hasService("audio") ? createAudioGateway(audioRuntime, permissions, logger) : null,
     driveRecording: hasService("driveRecording") ? createDriveRecordingGateway(driveRecordingService, permissions) : null,
+    drivingTelemetry: hasService("drivingTelemetry") ? createDrivingTelemetryGateway(drivingTelemetryService, permissions) : null,
     drivingAlerts: hasService("drivingAlerts") ? createDrivingAlertsGateway(drivingAlertService, permissions, logger) : null,
     qrScanner: hasService("qrScanner") ? createQrScannerGateway(qrScannerService, permissions, logger) : null,
     tts: hasService("tts") ? createTtsGateway(ttsService, permissions, logger, appId) : null,

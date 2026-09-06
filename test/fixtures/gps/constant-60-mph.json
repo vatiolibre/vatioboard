@@ -1,0 +1,8 @@
+{
+  "name": "constant-60-mph",
+  "samples": [
+    { "offsetMs": 0, "coords": { "latitude": 40.700000, "longitude": -73.900000, "accuracy": 4, "speed": 26.8224 } },
+    { "offsetMs": 1000, "coords": { "latitude": 40.700241, "longitude": -73.900000, "accuracy": 4, "speed": 26.8224 } },
+    { "offsetMs": 2000, "coords": { "latitude": 40.700482, "longitude": -73.900000, "accuracy": 4, "speed": 26.8224 } }
+  ]
+}

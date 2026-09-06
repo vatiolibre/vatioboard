@@ -92,6 +92,49 @@ function createRecordingService() {
   };
 }
 
+function createTelemetryService() {
+  const snapshot = {
+    status: "active",
+    tripId: "canonical-trip",
+    startedAtMs: 1_000,
+    elapsedMs: 61_000,
+    currentSpeedMs: 10,
+    maxSpeedMs: 20,
+    averageSpeedMs: 5,
+    totalDistanceM: 1609.344,
+    currentAltitudeM: 100,
+    maxAltitudeM: 120,
+    minAltitudeM: 80,
+    headingDeg: 90,
+    accuracyM: 5,
+    lastPosition: {
+      sampleSequence: 7,
+      latitude: 40.7,
+      longitude: -73.9,
+      accuracy: 5,
+      altitudeM: 100,
+      speedMs: 10,
+      headingDeg: 90,
+      timestampMs: 2_000,
+      receivedAtMs: 2_000,
+      stale: false,
+    },
+    sampleCount: 7,
+    lastGpsSampleSequence: 7,
+    lastFixAtMs: 2_000,
+  };
+  return {
+    start: vi.fn(() => snapshot),
+    resetTrip: vi.fn(() => snapshot),
+    getSnapshot: vi.fn(() => snapshot),
+    subscribe: vi.fn((listener) => {
+      listener(snapshot);
+      return vi.fn();
+    }),
+    subscribeSamples: vi.fn(() => vi.fn()),
+  };
+}
+
 describe("neutral driving HUD", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -121,7 +164,8 @@ describe("neutral driving HUD", () => {
     expect(mount.querySelector("[data-driving-speed]").textContent).toBe("36");
     expect(mount.querySelector("[data-driving-limit]").textContent).toBe("100 km/h");
     expect(mount.querySelector("[data-driving-camera-distance]").textContent).toBe("240 m");
-    expect(mount.querySelectorAll(".driving-actions button")).toHaveLength(6);
+    expect(mount.querySelectorAll(".driving-actions button")).toHaveLength(7);
+    expect(mount.querySelector("[data-driving-action='reset']")).not.toBeNull();
     expect(mount.querySelector("[data-driving-action='location']").hidden).toBe(true);
     expect(mount.querySelector("[data-driving-action='recenter']").hidden).toBe(false);
 
@@ -158,6 +202,31 @@ describe("neutral driving HUD", () => {
     hud.destroy();
     expect(alerts.stop).toBeUndefined();
     expect(alerts.release).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders canonical telemetry with distinct imperial units and delegates trip reset", () => {
+    const telemetry = createTelemetryService();
+    const sharedSettings = {
+      getAll: vi.fn(() => ({ speedUnit: "mph", distanceUnit: "ft", tripDistanceUnit: "mi" })),
+      subscribe: vi.fn(() => vi.fn()),
+    };
+    const hud = createDrivingHud({
+      mount: document.getElementById("mount"),
+      consumerId: "vatio.map.route",
+      recordingSource: "map",
+      drivingTelemetry: telemetry,
+      sharedSettings,
+    });
+
+    expect(document.querySelector("[data-driving-speed]").textContent).toBe("22");
+    expect(document.querySelector("[data-driving-stat='maxSpeed']").textContent).toBe("45 mph");
+    expect(document.querySelector("[data-driving-stat='averageSpeed']").textContent).toBe("11 mph");
+    expect(document.querySelector("[data-driving-stat='distance']").textContent).toBe("1.0 mi");
+    expect(document.querySelector("[data-driving-stat='altitude']").textContent).toBe("328 ft");
+
+    document.querySelector("[data-driving-action='reset']").click();
+    expect(telemetry.resetTrip).toHaveBeenCalledTimes(1);
+    hud.destroy();
   });
 
   it("shows Enable Location instead of a duplicate Recenter control before GPS is available", () => {

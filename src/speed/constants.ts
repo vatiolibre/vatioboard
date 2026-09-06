@@ -116,11 +116,13 @@ export const TRAP_ALERT_PRESETS: Record<DistanceUnit, TrapAlertPreset[]> = {
   ],
 };
 
-export const SPEED_SMOOTHING_SAMPLES = 5;
-export const MIN_MOVING_SPEED_MS = 0.8;
-export const MIN_DISTANCE_NOISE_FLOOR_M = 4;
-export const MAX_ACCURACY_INFLUENCE_M = 18;
-export const MAX_PLAUSIBLE_SPEED_MS = 120;
+export {
+  SPEED_SMOOTHING_SAMPLES,
+  MIN_MOVING_SPEED_MS,
+  MIN_DISTANCE_NOISE_FLOOR_M,
+  MAX_ACCURACY_INFLUENCE_M,
+  MAX_PLAUSIBLE_SPEED_MS,
+} from "../shared/driving-telemetry-rules.js";
 export const MIN_VALID_EPOCH_MS = Date.UTC(2000, 0, 1);
 
 export const GEO_ERROR_CODE = {

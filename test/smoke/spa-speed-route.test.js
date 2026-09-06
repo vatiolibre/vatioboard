@@ -43,7 +43,7 @@ describe("SPA Speed route real-controller smoke", () => {
     expect(maplibre.maps).toHaveLength(2);
     expect(maplibre.maps.filter((map) => !map.removed)).toHaveLength(1);
     expect(maplibre.maps[0].remove).toHaveBeenCalledTimes(1);
-    expect(boardAfterFirstSpeed.activeWatchCount).toBe(0);
+    expect(boardAfterFirstSpeed.activeWatchCount).toBe(1);
     expect(boardAfterFirstSpeed.activeRafCount).toBe(0);
     expect(boardAfterFirstSpeed.activeResizeObserverCount).toBe(0);
     expect(secondSpeed.activeWatchCount).toBe(1);
@@ -67,7 +67,7 @@ describe("SPA Speed route real-controller smoke", () => {
     expect(speedAlerts?.hidden).toBe(false);
     expect(speedAlerts?.getAttribute("data-vb-shell-window")).toBe("speed-alerts");
     const boardAfterAlert = await navigateRealSpaSmoke("/board");
-    expect(boardAfterAlert.activeWatchCount).toBe(0);
+    expect(boardAfterAlert.activeWatchCount).toBe(1);
     expect(boardAfterAlert.activeRafCount).toBe(0);
     expect(boardAfterAlert.activeMapCount).toBe(0);
     expect(boardAfterAlert.activeResizeObserverCount).toBe(0);
@@ -163,6 +163,6 @@ describe("SPA Speed route real-controller smoke", () => {
     await settleRealSpaSmoke();
 
     const boardAfterStop = await navigateRealSpaSmoke("/board");
-    expect(boardAfterStop.activeWatchCount).toBe(0);
+    expect(boardAfterStop.activeWatchCount).toBe(1);
   }, 40000);
 });

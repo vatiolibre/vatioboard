@@ -28,7 +28,8 @@ import { shouldPlayOverspeedSound } from "./alerts.js";
 import { capitalizeText, escapeSvgText, getDistanceDisplay, truncateText } from "./render.js";
 
 export const SPEED_BACKGROUND_AUDIO_LEASE = "speed-alerts";
-export const SPEED_RECORDING_BACKGROUND_AUDIO_LEASE = "speed-recording";
+// Compatibility export: recording keep-alive is now owned by DriveRecordingService.
+export const SPEED_RECORDING_BACKGROUND_AUDIO_LEASE = "drive-recording";
 const SPEED_MEDIA_SESSION_OWNER = "speed";
 // Keep Speed below the audible player runtime so transport controls remain player-owned.
 const SPEED_MEDIA_SESSION_PRIORITY = 5;

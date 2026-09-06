@@ -58,7 +58,7 @@ function createRuntime() {
       t: vi.fn((_key, fallback) => fallback),
     },
     logger: { debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
-    services: { settings: null },
+    services: { settings: null, sharedSettings: null },
     shell: { openApp: vi.fn(() => true) },
   };
 }
@@ -78,7 +78,9 @@ function mountMap() {
     appRuntime,
     gpsService: null,
     driveRecordingService: null,
+    drivingTelemetryService: null,
     drivingAlertService: null,
+    sharedSettingsService: null,
     translate: (_key, fallback) => fallback,
   });
   return { appRuntime, cleanup, root, view };
@@ -129,6 +131,43 @@ describe("full-screen Map app", () => {
     expect(mocks.widget.getSessionState).toHaveBeenCalledTimes(1);
     expect(mocks.widget.destroy).toHaveBeenCalledTimes(1);
     expect(mocks.hud.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses telemetry as the renderer's single typed position source", () => {
+    const telemetry = {
+      getSnapshot: vi.fn(() => ({ lastPosition: { latitude: 40.7, longitude: -73.9 } })),
+    };
+    const root = document.createElement("div");
+    root.innerHTML = mapTemplate;
+    document.body.append(root);
+    const cleanup = createCleanupStack();
+    const appRuntime = createRuntime();
+    mountMapRoute({
+      root,
+      cleanup,
+      signal: new AbortController().signal,
+      context: {},
+      pageName: "map",
+      appRuntime,
+      gpsService: { id: "gps" },
+      driveRecordingService: null,
+      drivingTelemetryService: telemetry,
+      drivingAlertService: null,
+      sharedSettingsService: null,
+      translate: (_key, fallback) => fallback,
+    });
+
+    expect(mocks.createMapRenderer).toHaveBeenCalledWith(expect.objectContaining({
+      gpsService: null,
+      externalPositionSource: true,
+    }));
+    expect(mocks.createDrivingHud).toHaveBeenCalledWith(expect.objectContaining({
+      drivingTelemetry: telemetry,
+    }));
+    const hudOptions = mocks.createDrivingHud.mock.calls.at(-1)[0];
+    const position = { sampleSequence: 3, latitude: 40.7, longitude: -73.9 };
+    hudOptions.onPosition(position);
+    expect(mocks.widget.updatePosition).toHaveBeenLastCalledWith(position, { source: "telemetry" });
   });
 
   it("switches 2D, 3D, and globe presentation without remounting the map", () => {

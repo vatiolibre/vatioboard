@@ -1,5 +1,8 @@
 export type DrivingSpeedUnit = "kmh" | "mph";
-export type DrivingDistanceUnit = "m" | "mi";
+export type DrivingShortDistanceUnit = "m" | "ft";
+export type DrivingTripDistanceUnit = "km" | "mi";
+/** @deprecated Use the short and trip distance unit types separately. */
+export type DrivingDistanceUnit = DrivingShortDistanceUnit | DrivingTripDistanceUnit;
 
 export interface TripStatsInput {
   currentSpeedMs?: number | null;
@@ -14,6 +17,7 @@ export interface TripStatsInput {
   nearestCameraDistanceM?: number | null;
   speedUnit?: DrivingSpeedUnit;
   distanceUnit?: DrivingDistanceUnit;
+  tripDistanceUnit?: DrivingTripDistanceUnit;
   nowMs?: number;
 }
 
@@ -56,7 +60,7 @@ export function formatTripDuration(durationMs: number): string {
     : `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-export function formatTripDistance(distanceM: unknown, unit: DrivingDistanceUnit): TripMetric {
+export function formatTripDistance(distanceM: unknown, unit: DrivingTripDistanceUnit): TripMetric {
   const meters = Math.max(0, finite(distanceM));
   if (unit === "mi") {
     const miles = meters / 1609.344;
@@ -67,30 +71,40 @@ export function formatTripDistance(distanceM: unknown, unit: DrivingDistanceUnit
   return { value: kilometers < 10 ? kilometers.toFixed(1) : String(Math.round(kilometers)), unit: "km" };
 }
 
-export function formatProximityDistance(distanceM: unknown, unit: DrivingDistanceUnit): TripMetric {
+export function formatProximityDistance(distanceM: unknown, unit: DrivingShortDistanceUnit): TripMetric {
   const meters = Number(distanceM);
   if (!Number.isFinite(meters)) return { value: "—", unit: "" };
-  if (unit === "m") return formatTripDistance(meters, unit);
+  if (unit === "m") {
+    if (meters < 1000) return { value: String(Math.round(Math.max(0, meters))), unit: "m" };
+    return formatTripDistance(meters, "km");
+  }
   const feet = Math.max(0, meters) * 3.2808398950131;
   if (feet < 5280) return { value: String(Math.round(feet)), unit: "ft" };
-  return formatTripDistance(meters, unit);
+  return formatTripDistance(meters, "mi");
 }
 
-function altitude(valueM: unknown, unit: DrivingDistanceUnit): TripMetric {
+function altitude(valueM: unknown, unit: DrivingShortDistanceUnit): TripMetric {
   if (valueM === null || valueM === undefined || valueM === "") {
-    return { value: "—", unit: unit === "mi" ? "ft" : "m" };
+    return { value: "—", unit: unit === "ft" ? "ft" : "m" };
   }
   const value = Number(valueM);
-  if (!Number.isFinite(value)) return { value: "—", unit: unit === "mi" ? "ft" : "m" };
+  if (!Number.isFinite(value)) return { value: "—", unit: unit === "ft" ? "ft" : "m" };
   return {
-    value: String(Math.round(value * (unit === "mi" ? 3.2808398950131 : 1))),
-    unit: unit === "mi" ? "ft" : "m",
+    value: String(Math.round(value * (unit === "ft" ? 3.2808398950131 : 1))),
+    unit: unit === "ft" ? "ft" : "m",
   };
 }
 
 export function createTripStatsModel(input: TripStatsInput = {}): TripStatsModel {
   const speedUnit = input.speedUnit === "mph" ? "mph" : "kmh";
-  const distanceUnit = input.distanceUnit === "mi" ? "mi" : "m";
+  // Accept the historical distanceUnit="mi" input while callers migrate to the
+  // explicit short-distance and trip-distance fields.
+  const distanceUnit: DrivingShortDistanceUnit = input.distanceUnit === "ft" || input.distanceUnit === "mi" ? "ft" : "m";
+  const tripDistanceUnit: DrivingTripDistanceUnit = input.tripDistanceUnit === "mi"
+    || input.distanceUnit === "ft"
+    || input.distanceUnit === "mi"
+    ? "mi"
+    : "km";
   const durationMs = Number.isFinite(Number(input.durationMs))
     ? Math.max(0, Number(input.durationMs))
     : Number.isFinite(Number(input.startedAtMs))
@@ -105,7 +119,7 @@ export function createTripStatsModel(input: TripStatsInput = {}): TripStatsModel
     currentSpeed: speed(input.currentSpeedMs, speedUnit),
     maxSpeed: speed(input.maxSpeedMs, speedUnit),
     averageSpeed: speed(averageSpeedMs, speedUnit),
-    distance: formatTripDistance(input.totalDistanceM, distanceUnit),
+    distance: formatTripDistance(input.totalDistanceM, tripDistanceUnit),
     nearestCamera: input.nearestCameraDistanceM !== null
       && input.nearestCameraDistanceM !== undefined
       && Number.isFinite(Number(input.nearestCameraDistanceM))

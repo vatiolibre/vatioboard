@@ -160,6 +160,7 @@ export async function startAppShell({
   window.__vatioboardGpsStore = context.gpsService;
   window.__vatioboardGpsGetCurrentPosition = () => context.gpsService.getCurrentPosition?.() || null;
   window.__vatioboardDriveRecording = context.driveRecordingService;
+  window.__vatioboardDrivingTelemetry = context.drivingTelemetryService;
   window.__vatioboardDrivingAlerts = context.drivingAlertService;
   // Deprecated compatibility alias for older Camera Map/Speed integrations.
   window.__vatioboardSpeedGetCurrentPosition = window.__vatioboardGpsGetCurrentPosition;
@@ -352,6 +353,7 @@ export async function startAppShell({
     shellAppRuntimeManager.destroy();
     context.drivingAlertService?.destroy?.();
     context.driveRecordingService?.destroy?.();
+    context.drivingTelemetryService?.destroy?.();
     context.gpsService.destroy?.();
     void context.recoveryCoordinator?.destroy();
     if (window.__vatioboardRecovery === context.recoveryCoordinator) delete window.__vatioboardRecovery;
@@ -363,6 +365,9 @@ export async function startAppShell({
     if (window.__vatioboardGpsGetCurrentPosition === gpsProvider) delete window.__vatioboardGpsGetCurrentPosition;
     if (window.__vatioboardDriveRecording === context.driveRecordingService) {
       delete window.__vatioboardDriveRecording;
+    }
+    if (window.__vatioboardDrivingTelemetry === context.drivingTelemetryService) {
+      delete window.__vatioboardDrivingTelemetry;
     }
     if (window.__vatioboardDrivingAlerts === context.drivingAlertService) {
       delete window.__vatioboardDrivingAlerts;

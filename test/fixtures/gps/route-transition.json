@@ -1,0 +1,10 @@
+{
+  "name": "route-transition",
+  "samples": [
+    { "offsetMs": 0, "coords": { "latitude": 40.700000, "longitude": -73.900000, "accuracy": 4, "speed": 10 } },
+    { "offsetMs": 1000, "coords": { "latitude": 40.700090, "longitude": -73.900000, "accuracy": 4, "speed": 10 } },
+    { "offsetMs": 2000, "coords": { "latitude": 40.700180, "longitude": -73.900000, "accuracy": 4, "speed": 10 } },
+    { "offsetMs": 3000, "coords": { "latitude": 40.700270, "longitude": -73.900000, "accuracy": 4, "speed": 10 } },
+    { "offsetMs": 4000, "coords": { "latitude": 40.700360, "longitude": -73.900000, "accuracy": 4, "speed": 10 } }
+  ]
+}

@@ -29,9 +29,11 @@ import { clearActivity, setActivity } from "../../shared/activity-state.js";
 import type {
   DrivingAlertService,
   DrivingAlertSnapshot,
+  DrivingTelemetryService,
   GpsService,
   NormalizedGpsPosition,
 } from "../../types/services";
+import type { VatioSharedSettingsService } from "../../app-platform/types";
 import { createDrivingAudioAlertController } from "./driving-audio-alert-controller.js";
 
 // TODO(ts-migration): speed camera DB and alert UI payloads are still JS-owned.
@@ -39,6 +41,8 @@ type LegacyDrivingAlertRecord = Record<string, any>;
 
 interface DrivingAlertServiceOptions {
   gpsService?: GpsService | null;
+  telemetryService?: DrivingTelemetryService | null;
+  sharedSettings?: VatioSharedSettingsService | null;
   cameraDatabase?: LegacyDrivingAlertRecord | null;
   audioController?: LegacyDrivingAlertRecord | null;
   now?: () => number;
@@ -77,6 +81,7 @@ function normalizeGpsSnapshot(snapshotOrPosition: LegacyDrivingAlertRecord | Nor
   const position = (candidate?.normalized || snapshotOrPosition) as LegacyDrivingAlertRecord | NormalizedGpsPosition | null | undefined;
   if (!position || !isFiniteLatLon(position)) return null;
   return {
+    sampleSequence: Number.isFinite(Number(position.sampleSequence)) ? Number(position.sampleSequence) : 0,
     latitude: Number(position.latitude),
     longitude: Number(position.longitude),
     accuracy: Number.isFinite(Number(position.accuracy)) ? Number(position.accuracy) : null,
@@ -113,6 +118,8 @@ function getTrapAlertDistanceLabel(distanceM, distanceUnit) {
 
 export function createDrivingAlertService({
   gpsService,
+  telemetryService = null,
+  sharedSettings = null,
   cameraDatabase = null,
   audioController = null,
   now = () => Date.now(),
@@ -150,6 +157,8 @@ export function createDrivingAlertService({
   };
   let gpsConsumerCleanup: (() => void) | null = null;
   let gpsUnsubscribe: (() => void) | null = null;
+  let telemetryUnsubscribe: (() => void) | null = null;
+  let sharedSettingsUnsubscribe: (() => void) | null = null;
   let destroyed = false;
   let ownedCameraDatabase = null;
   const alertAudio = audioController || createDrivingAudioAlertController({
@@ -406,6 +415,20 @@ export function createDrivingAlertService({
   }
 
   function ensureGpsSubscription() {
+    if (telemetryService) {
+      if (telemetryUnsubscribe) return;
+      telemetryService.start({ reason: "driving-alerts" });
+      telemetryUnsubscribe = telemetryService.subscribeSamples((sample) => {
+        const telemetry = telemetryService.getSnapshot();
+        if (!telemetry.lastPosition) return;
+        handleGpsSnapshot({
+          ...telemetry.lastPosition,
+          speedMs: sample.processedSpeedMs,
+          headingDeg: sample.headingDeg,
+        });
+      });
+      return;
+    }
     if (gpsConsumerCleanup || !gpsService) return;
     gpsConsumerCleanup = gpsService.startConsumer?.(ALERT_CONSUMER_ID, {
       enableHighAccuracy: true,
@@ -417,6 +440,8 @@ export function createDrivingAlertService({
   }
 
   function releaseGpsSubscription() {
+    telemetryUnsubscribe?.();
+    telemetryUnsubscribe = null;
     gpsUnsubscribe?.();
     gpsUnsubscribe = null;
     gpsConsumerCleanup?.();
@@ -427,7 +452,14 @@ export function createDrivingAlertService({
     if (destroyed) return getSnapshot();
     state.started = true;
     ensureGpsSubscription();
-    const currentPosition = gpsService?.getCurrentPosition?.();
+    const telemetrySnapshot = telemetryService?.getSnapshot?.();
+    const currentPosition = telemetrySnapshot?.lastPosition
+      ? {
+        ...telemetrySnapshot.lastPosition,
+        speedMs: telemetrySnapshot.currentSpeedMs,
+        headingDeg: telemetrySnapshot.headingDeg,
+      }
+      : gpsService?.getCurrentPosition?.();
     if (currentPosition) handleGpsSnapshot(currentPosition);
     else {
       syncAudio();
@@ -635,6 +667,8 @@ export function createDrivingAlertService({
     destroyed = true;
     consumers.clear();
     releaseGpsSubscription();
+    sharedSettingsUnsubscribe?.();
+    sharedSettingsUnsubscribe = null;
     alertAudio.destroy?.();
     ownedCameraDatabase?.destroy?.();
     clearActivity("speed.alerts");
@@ -643,6 +677,22 @@ export function createDrivingAlertService({
 
   state.alertUiState = buildAlertState();
   state.status = computeStatus();
+  sharedSettingsUnsubscribe = sharedSettings?.subscribe((settings) => {
+    let changed = false;
+    if ((settings.speedUnit === "mph" || settings.speedUnit === "kmh") && settings.speedUnit !== state.unit) {
+      state.unit = settings.speedUnit;
+      changed = true;
+    }
+    if ((settings.distanceUnit === "ft" || settings.distanceUnit === "m") && settings.distanceUnit !== state.distanceUnit) {
+      state.distanceUnit = settings.distanceUnit;
+      state.trapAlertDistanceM = normalizeTrapAlertDistance(state.trapAlertDistanceM, state.distanceUnit);
+      changed = true;
+    }
+    if (changed) {
+      syncAudio();
+      emit();
+    }
+  }) || null;
 
   return {
     acquireConsumer,

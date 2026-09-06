@@ -1445,6 +1445,7 @@ export function createCameraMapWidget(options: AnyRecord = {}) {
     settingsStore = null,
     initialSessionState = null,
     overlayProviders = [],
+    externalPositionSource = false,
   } = options;
 
   function loadCameraMapBasemapPreference() {
@@ -1607,6 +1608,7 @@ export function createCameraMapWidget(options: AnyRecord = {}) {
   let speedPositionListenerActive = false;
   let gpsConsumerCleanup = null;
   let gpsSnapshotUnsubscribe = null;
+  let lastTelemetrySampleSequence = null;
   let cleanupWebglContextEvents = () => {};
 
   const providers = Array.isArray(overlayProviders)
@@ -3042,6 +3044,7 @@ export function createCameraMapWidget(options: AnyRecord = {}) {
   }
 
   function startSpeedPositionEvents() {
+    if (externalPositionSource) return;
     if (speedPositionListenerActive) return;
     speedPositionListenerActive = true;
     gpsConsumerCleanup = gpsService?.startConsumer?.("camera-map", {
@@ -3214,6 +3217,17 @@ export function createCameraMapWidget(options: AnyRecord = {}) {
         followPaused,
       });
       return null;
+    }
+    if (
+      source === "telemetry"
+      && Number.isFinite(position.sampleSequence)
+      && lastTelemetrySampleSequence !== null
+      && position.sampleSequence <= lastTelemetrySampleSequence
+    ) {
+      return currentLivePosition;
+    }
+    if (source === "telemetry" && Number.isFinite(position.sampleSequence)) {
+      lastTelemetrySampleSequence = position.sampleSequence;
     }
 
     const headingState = shouldShowHeading(position, previousLivePosition, lastHeadingState, now);
@@ -3413,6 +3427,7 @@ export function createCameraMapWidget(options: AnyRecord = {}) {
   }
 
   function startPositionPolling() {
+    if (externalPositionSource) return;
     if (destroyed || panel.hidden) return;
     const now = Date.now();
     updatePosition(readCurrentOrCachedPosition(now), { now, source: "poll" });

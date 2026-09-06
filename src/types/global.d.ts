@@ -2,6 +2,7 @@ type VatioBoardAppRoute = import("./route").AppRoute;
 type VatioBoardRuntimeContext = import("./route").RuntimeContext;
 type VatioBoardDriveRecordingService = import("./services").DriveRecordingService;
 type VatioBoardDrivingAlertService = import("./services").DrivingAlertService;
+type VatioBoardDrivingTelemetryService = import("./services").DrivingTelemetryService;
 type VatioBoardGpsService = import("./services").GpsService;
 type VatioBoardGpsPosition = import("./services").NormalizedGpsPosition;
 type VatioBoardShellRuntime = import("./shell").ShellRuntime;
@@ -77,6 +78,7 @@ interface Window {
   __vatioboardCanLeaveAccel?: () => boolean;
   __vatioboardDriveRecording?: VatioBoardDriveRecordingService;
   __vatioboardDrivingAlerts?: VatioBoardDrivingAlertService;
+  __vatioboardDrivingTelemetry?: VatioBoardDrivingTelemetryService;
   __vatioboardFloatingTools?: VatioBoardFloatingTools;
   __vatioboardGpsGetCurrentPosition?: () => VatioBoardGpsPosition | null;
   __vatioboardGpsStore?: VatioBoardGpsService;

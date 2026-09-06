@@ -39,6 +39,8 @@ const VALID_PERMISSIONS = new Set<VatioAppPermission>([
   "alerts.speed",
   "driveRecording.read",
   "driveRecording.write",
+  "drivingTelemetry.read",
+  "drivingTelemetry.write",
   "shell.window",
   "shell.launchApp",
   "network.backend",
@@ -52,6 +54,7 @@ const VALID_SERVICES = new Set<VatioAppServiceId>([
   "gps",
   "audio",
   "driveRecording",
+  "drivingTelemetry",
   "drivingAlerts",
   "qrScanner",
   "auth",
@@ -192,6 +195,9 @@ export function validateAppManifest(manifest: VatioAppManifest): VatioAppManifes
 
   if (manifest.permissions.includes("driveRecording.write") && !manifest.permissions.includes("driveRecording.read")) {
     warnings.push("driveRecording.write is declared without driveRecording.read.");
+  }
+  if (manifest.permissions.includes("drivingTelemetry.write") && !manifest.permissions.includes("drivingTelemetry.read")) {
+    warnings.push("drivingTelemetry.write is declared without drivingTelemetry.read.");
   }
 
   const permissions = new Set(manifest.permissions || []);

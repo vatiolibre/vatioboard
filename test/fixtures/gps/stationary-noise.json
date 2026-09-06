@@ -1,0 +1,8 @@
+{
+  "name": "stationary-noise",
+  "samples": [
+    { "offsetMs": 0, "coords": { "latitude": 40.700000, "longitude": -73.900000, "accuracy": 5, "speed": 0 } },
+    { "offsetMs": 1000, "coords": { "latitude": 40.700004, "longitude": -73.900003, "accuracy": 6, "speed": 0 } },
+    { "offsetMs": 2000, "coords": { "latitude": 40.699997, "longitude": -73.899999, "accuracy": 5, "speed": null } }
+  ]
+}

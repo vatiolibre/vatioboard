@@ -232,6 +232,7 @@ export function normalizeLivePosition(input: any, now = Date.now()) {
   const speedMs = finiteNumber(coords.speedMs ?? coords.speed ?? input?.speedMs ?? input?.speed);
   const accuracy = finiteNumber(coords.accuracy ?? input?.accuracy);
   return {
+    sampleSequence: finiteNumber(input?.sampleSequence ?? coords.sampleSequence),
     latitude,
     longitude,
     accuracy: accuracy !== null && accuracy >= 0 ? accuracy : null,

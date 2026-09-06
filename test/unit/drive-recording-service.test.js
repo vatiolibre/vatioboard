@@ -39,6 +39,7 @@ function createRepositoryDouble() {
       sampleCount: (session.sampleCount || 0) + 1,
       recordingState: options.recordingState || session.recordingState,
     })),
+    loadActiveReplaySession: vi.fn(async () => null),
     saveActiveReplaySession: vi.fn(async (session) => session),
     archiveReplaySession: vi.fn(async (session, options = {}) => ({
       ...session,
@@ -48,7 +49,145 @@ function createRepositoryDouble() {
   };
 }
 
+function createTelemetryDouble() {
+  const sampleListeners = new Set();
+  let snapshot = {
+    lastPosition: null,
+    lastGpsSampleSequence: null,
+    currentSpeedMs: 0,
+    totalDistanceM: 0,
+    currentAltitudeM: null,
+    headingDeg: null,
+    accuracyM: null,
+  };
+  return {
+    start: vi.fn(() => snapshot),
+    subscribeSamples: vi.fn((listener) => {
+      sampleListeners.add(listener);
+      return () => sampleListeners.delete(listener);
+    }),
+    getSnapshot: vi.fn(() => snapshot),
+    emit(sample) {
+      snapshot = {
+        ...snapshot,
+        lastGpsSampleSequence: sample.gpsSampleSequence,
+        currentSpeedMs: sample.processedSpeedMs,
+        totalDistanceM: sample.totalDistanceM,
+        currentAltitudeM: sample.altitudeM,
+        headingDeg: sample.headingDeg,
+        accuracyM: sample.accuracyM,
+        lastPosition: {
+          sampleSequence: sample.gpsSampleSequence,
+          latitude: sample.latitude,
+          longitude: sample.longitude,
+          accuracy: sample.accuracyM,
+          altitudeM: sample.altitudeM,
+          speedMs: sample.processedSpeedMs,
+          headingDeg: sample.headingDeg,
+          timestampMs: sample.timestampMs,
+          receivedAtMs: sample.timestampMs,
+          stale: false,
+        },
+      };
+      for (const listener of sampleListeners) listener(sample);
+    },
+  };
+}
+
 describe("createDriveRecordingService", () => {
+  it("persists canonical telemetry samples once without coordinate accumulation", () => {
+    const gpsStore = createGpsStoreDouble();
+    const telemetryService = createTelemetryDouble();
+    const replayRepository = createRepositoryDouble();
+    const service = createDriveRecordingService({ gpsStore, telemetryService, replayRepository });
+    service.startRecording({ source: "map" });
+    const sample = {
+      gpsSampleSequence: 7,
+      timestampMs: 7000,
+      latitude: 40.7,
+      longitude: -73.9,
+      processedSpeedMs: 12,
+      distanceDeltaM: 9,
+      totalDistanceM: 109,
+      altitudeM: 14,
+      headingDeg: 90,
+      accuracyM: 4,
+    };
+    telemetryService.emit(sample);
+    telemetryService.emit(sample);
+
+    expect(gpsStore.startConsumer).not.toHaveBeenCalled();
+    expect(replayRepository.appendReplaySample).toHaveBeenCalledTimes(1);
+    expect(replayRepository.appendReplaySample).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ speedMs: 12, totalDistanceM: 109 }),
+      expect.objectContaining({ distanceUnit: "m", tripDistanceUnit: "km" }),
+    );
+    expect(service.getSnapshot()).toMatchObject({ sampleCount: 1, currentSpeedMs: 12 });
+    service.destroy();
+  });
+
+  it("keeps replay distance monotonic when telemetry is reset during recording", () => {
+    const telemetryService = createTelemetryDouble();
+    const replayRepository = createRepositoryDouble();
+    const service = createDriveRecordingService({ telemetryService, replayRepository });
+    service.startRecording();
+    const base = {
+      timestampMs: 1000,
+      latitude: 40.7,
+      longitude: -73.9,
+      processedSpeedMs: 8,
+      distanceDeltaM: 10,
+      altitudeM: null,
+      headingDeg: null,
+      accuracyM: 4,
+    };
+    telemetryService.emit({ ...base, gpsSampleSequence: 1, totalDistanceM: 100 });
+    telemetryService.emit({ ...base, gpsSampleSequence: 2, timestampMs: 2000, totalDistanceM: 0 });
+    telemetryService.emit({ ...base, gpsSampleSequence: 3, timestampMs: 3000, totalDistanceM: 10 });
+
+    const totals = replayRepository.appendReplaySample.mock.calls.map(([, sample]) => sample.totalDistanceM);
+    expect(totals).toEqual([100, 100, 110]);
+    service.destroy();
+  });
+
+  it("recovers an active recording and resumes from canonical telemetry", async () => {
+    const telemetryService = createTelemetryDouble();
+    const replayRepository = createRepositoryDouble();
+    replayRepository.loadActiveReplaySession.mockResolvedValue({
+      id: "recovered",
+      recordingState: "recording",
+      startedAtMs: 1000,
+      startDistanceM: 50,
+      totalDistanceM: 20,
+      sampleCount: 2,
+      maxSpeedMs: 9,
+      minAltitudeM: 4,
+      maxAltitudeM: 12,
+      samples: [],
+      lastSample: {
+        timestampMs: 2000,
+        latitude: 40.7,
+        longitude: -73.9,
+        speedMs: 8,
+        altitudeM: 10,
+        headingDeg: 90,
+      },
+    });
+    const service = createDriveRecordingService({ telemetryService, replayRepository });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(service.getSnapshot()).toMatchObject({
+      state: "recording",
+      sessionId: "recovered",
+      sampleCount: 2,
+      totalDistanceM: 20,
+    });
+    expect(telemetryService.start).toHaveBeenCalledWith({ reason: "drive-recording" });
+    service.destroy();
+  });
+
   it("starts a GPS recording consumer and appends samples without DOM access", async () => {
     const gpsStore = createGpsStoreDouble();
     const replayRepository = createRepositoryDouble();

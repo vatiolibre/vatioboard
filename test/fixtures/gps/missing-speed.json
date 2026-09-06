@@ -1,0 +1,7 @@
+{
+  "name": "missing-speed",
+  "samples": [
+    { "offsetMs": 0, "coords": { "latitude": 40.700000, "longitude": -73.900000, "accuracy": 4, "speed": null } },
+    { "offsetMs": 1000, "coords": { "latitude": 40.700090, "longitude": -73.900000, "accuracy": 4, "speed": null } }
+  ]
+}

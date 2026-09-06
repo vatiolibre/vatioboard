@@ -374,6 +374,60 @@ describe("VatioBoard OS app platform", () => {
     expect(withDeclaredService.i18n.t("brand", "Fallback Brand")).toEqual(expect.any(String));
   });
 
+  it("gates telemetry snapshots and mutations with separate read and write permissions", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const snapshot = {
+      status: "active",
+      tripId: "private-trip",
+      startedAtMs: 1,
+      elapsedMs: 1000,
+      currentSpeedMs: 10,
+      maxSpeedMs: 10,
+      averageSpeedMs: 5,
+      totalDistanceM: 5,
+      currentAltitudeM: null,
+      minAltitudeM: null,
+      maxAltitudeM: null,
+      headingDeg: null,
+      accuracyM: 4,
+      lastPosition: null,
+      sampleCount: 2,
+      lastGpsSampleSequence: 2,
+      lastFixAtMs: 1000,
+    };
+    const drivingTelemetryService = {
+      getSnapshot: vi.fn(() => snapshot),
+      start: vi.fn(() => snapshot),
+      resetTrip: vi.fn(() => snapshot),
+      subscribe: vi.fn(() => vi.fn()),
+      subscribeSamples: vi.fn(() => vi.fn()),
+      destroy: vi.fn(),
+    };
+    const readOnly = createAppRuntime({
+      manifest: makeManifest({
+        id: "test.telemetry.read",
+        permissions: ["drivingTelemetry.read"],
+        services: ["drivingTelemetry"],
+      }),
+      baseContext: { drivingTelemetryService },
+    }).services.drivingTelemetry;
+    expect(readOnly.getSnapshot()).toBe(snapshot);
+    expect(readOnly.start()).toBe(snapshot);
+    expect(drivingTelemetryService.start).not.toHaveBeenCalled();
+
+    const writeOnly = createAppRuntime({
+      manifest: makeManifest({
+        id: "test.telemetry.write",
+        permissions: ["drivingTelemetry.write"],
+        services: ["drivingTelemetry"],
+      }),
+      baseContext: { drivingTelemetryService },
+    }).services.drivingTelemetry;
+    expect(writeOnly.getSnapshot()).toMatchObject({ tripId: "permission-denied", sampleCount: 0 });
+    expect(writeOnly.start()).toMatchObject({ tripId: "permission-denied", sampleCount: 0 });
+    expect(drivingTelemetryService.start).toHaveBeenCalledTimes(1);
+  });
+
   it("requires shell service declaration as well as shell permissions before launching apps", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const launcher = {

@@ -16,6 +16,7 @@ export type SpeedRouteMountContext = RouteMountContext & {
   appStorage?: VatioAppRuntime["storage"] | null;
   gpsService?: RouteContext["gpsService"] | null;
   driveRecordingService?: RouteContext["driveRecordingService"] | null;
+  drivingTelemetryService?: RouteContext["drivingTelemetryService"] | null;
   drivingAlertService?: RouteContext["drivingAlertService"] | null;
   settingsService?: VatioAppRuntime["services"]["settings"] | null;
   cloudSyncService?: VatioAppRuntime["services"]["cloudSync"] | null;
@@ -52,6 +53,10 @@ export function createSpeedRouteMountContext(routeContext: RouteMountContext): S
     runtime?.services.drivingAlerts ||
     context.drivingAlertService ||
     getWindowFallback<RouteContext["drivingAlertService"]>("__vatioboardDrivingAlerts");
+  const drivingTelemetryService =
+    runtime?.services.drivingTelemetry ||
+    context.drivingTelemetryService ||
+    getWindowFallback<RouteContext["drivingTelemetryService"]>("__vatioboardDrivingTelemetry");
 
   return {
     ...routeContext,
@@ -60,6 +65,7 @@ export function createSpeedRouteMountContext(routeContext: RouteMountContext): S
     appStorage: runtime?.storage || null,
     gpsService,
     driveRecordingService,
+    drivingTelemetryService,
     drivingAlertService,
     settingsService: runtime?.services.settings || null,
     cloudSyncService: runtime?.services.cloudSync || null,

@@ -65,4 +65,60 @@ describe("SPA Map route real-controller smoke", () => {
     expect(document.querySelector("[data-map-app]")?.dataset.mapPresentation).toBe("3d");
     expect(maplibre.maps.filter((map) => !map.removed)).toHaveLength(1);
   }, 40000);
+
+  it("keeps one canonical trip through Map, Board, Speed, and back to Map", async () => {
+    await expectRealSpaRouteRemount({
+      targetHash: "/map",
+      targetSelector: "[data-map-app] .camera-map-container",
+      sequence: ["/board", "/map"],
+    });
+
+    const emit = (timestamp, latitude, longitude, speed, altitude) => {
+      navigator.geolocation.success?.({
+        timestamp,
+        coords: {
+          latitude,
+          longitude,
+          speed,
+          accuracy: 5,
+          altitude,
+          heading: 90,
+        },
+      });
+    };
+    const startedAt = Date.now();
+    emit(startedAt, 40.7484, -73.9857, 10, 10);
+    await settleRealSpaSmoke();
+    const first = window.__vatioboardDrivingTelemetry.getSnapshot();
+    expect(first.sampleCount).toBe(1);
+    expect(document.querySelector("[data-driving-speed]")?.textContent).toBe("36");
+
+    await navigateRealSpaSmoke("/board");
+    emit(startedAt + 1_000, 40.7485, -73.9856, 20, 20);
+    await settleRealSpaSmoke();
+    const background = window.__vatioboardDrivingTelemetry.getSnapshot();
+    expect(background.tripId).toBe(first.tripId);
+    expect(background.sampleCount).toBe(2);
+    expect(background.totalDistanceM).toBeGreaterThan(0);
+
+    await navigateRealSpaSmoke("/");
+    expect(document.getElementById("maxSpeed")?.textContent).toBe("54");
+    expect(document.getElementById("altitudeValue")?.textContent).toBe("20");
+    emit(startedAt + 2_000, 40.7486, -73.9855, 30, 30);
+    await settleRealSpaSmoke();
+    const speed = window.__vatioboardDrivingTelemetry.getSnapshot();
+    expect(speed.tripId).toBe(first.tripId);
+    expect(speed.sampleCount).toBe(3);
+    expect(document.getElementById("maxSpeed")?.textContent).toBe("72");
+
+    await navigateRealSpaSmoke("/map");
+    const final = window.__vatioboardDrivingTelemetry.getSnapshot();
+    expect(final.tripId).toBe(first.tripId);
+    expect(final.sampleCount).toBe(3);
+    expect(final.totalDistanceM).toBe(speed.totalDistanceM);
+    expect(document.querySelector("[data-driving-speed]")?.textContent).toBe("72");
+    expect(document.querySelector("[data-driving-stat='maxSpeed']")?.textContent).toBe("72 km/h");
+    expect(document.querySelector("[data-driving-stat='altitude']")?.textContent).toBe("30 m");
+    expect(getRealSpaResourceSnapshot().activeWatchCount).toBe(1);
+  }, 60000);
 });

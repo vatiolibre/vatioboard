@@ -1,0 +1,10 @@
+{
+  "name": "acceleration-stop",
+  "samples": [
+    { "offsetMs": 0, "coords": { "latitude": 40.700000, "longitude": -73.900000, "accuracy": 4, "speed": 0 } },
+    { "offsetMs": 1000, "coords": { "latitude": 40.700025, "longitude": -73.900000, "accuracy": 4, "speed": 3 } },
+    { "offsetMs": 2000, "coords": { "latitude": 40.700095, "longitude": -73.900000, "accuracy": 4, "speed": 8 } },
+    { "offsetMs": 3000, "coords": { "latitude": 40.700230, "longitude": -73.900000, "accuracy": 4, "speed": 15 } },
+    { "offsetMs": 4000, "coords": { "latitude": 40.700230, "longitude": -73.900000, "accuracy": 4, "speed": 0 } }
+  ]
+}

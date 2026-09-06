@@ -70,7 +70,9 @@ export function mountMapRoute(context: MapRouteMountContext): MountedView {
     routeMode: true,
     restoreVisibility: false,
     persistVisibility: false,
-    gpsService: context.gpsService,
+    gpsService: context.drivingTelemetryService ? null : context.gpsService,
+    getCurrentPosition: () => context.drivingTelemetryService?.getSnapshot().lastPosition || null,
+    externalPositionSource: Boolean(context.drivingTelemetryService),
     settingsStore: createMapSettingsStore(appRuntime),
     navigationDefaultMode: "auto",
     initialSessionState: mapSessionState,
@@ -101,6 +103,8 @@ export function mountMapRoute(context: MapRouteMountContext): MountedView {
     recordingSource: "map",
     drivingAlerts: context.drivingAlertService,
     driveRecording: context.driveRecordingService,
+    drivingTelemetry: context.drivingTelemetryService,
+    sharedSettings: context.sharedSettingsService,
     gps: context.gpsService,
     translate,
     getContext: () => {
@@ -114,7 +118,7 @@ export function mountMapRoute(context: MapRouteMountContext): MountedView {
         cameraState: decision?.state || null,
       };
     },
-    onPosition: (position) => widget.updatePosition?.(position),
+    onPosition: (position) => widget.updatePosition?.(position, { source: "telemetry" }),
     onLocationRequest: () => widget.focusCurrentLocation?.(),
     onRecenter: () => widget.resumeFollow?.() || widget.focusCurrentLocation?.(),
     onOpenAlertSettings: () => {

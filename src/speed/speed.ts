@@ -23,12 +23,11 @@ import {
 } from '../shared/route-boundary.js';
 import { applyButtonIcon } from '../shared/tools-menu.js';
 import {
-  deriveHeadingFromPositions,
-  normalizeHeading,
-} from '../shared/geo-heading.js';
+  createDrivingTelemetryReducerState,
+  reduceDrivingTelemetryPosition,
+} from '../app/services/driving-telemetry-reducer.js';
 import {
   hasConfiguredUnitPreferences,
-  markUnitBootstrapManualSelection,
   maybeInitializeUnitsFromCountry,
 } from '../shared/unit-bootstrap.js';
 import '../styles/backend-auth.less';
@@ -60,9 +59,6 @@ import {
   DEFAULT_ALERT_LIMIT_MS,
   DISTANCE_UNIT_CONFIG,
   GEO_ERROR_CODE,
-  MAX_PLAUSIBLE_SPEED_MS,
-  MIN_MOVING_SPEED_MS,
-  SPEED_SMOOTHING_SAMPLES,
   UNIT_CONFIG,
 } from './constants.js';
 import {
@@ -98,8 +94,6 @@ import {
 } from './runtime.js';
 import {
   createGlobeController,
-  getMovementThresholdM,
-  haversineDistance,
   normalizePositionTimestamp,
 } from './navigation.js';
 import {
@@ -223,6 +217,13 @@ let speedRouteGeneration = 0;
 let standaloneCleanup = null;
 let standaloneBackendAuthInitialized = false;
 let appGpsService = null;
+let appDrivingTelemetryService: any = null;
+let drivingTelemetryUnsubscribe: any = null;
+let drivingTelemetrySampleUnsubscribe: any = null;
+let appDriveRecordingService: any = null;
+let driveRecordingUnsubscribe: any = null;
+let standaloneTelemetrySampleSequence = 0;
+let standaloneTelemetryState = createDrivingTelemetryReducerState(`standalone-${Date.now()}`);
 
 var speedRouteLifecycle: any;
 
@@ -293,6 +294,15 @@ function openCloudSyncLauncher() {
 }
 
 function getCurrentSpeedPosition() {
+  const telemetry = appDrivingTelemetryService?.getSnapshot?.();
+  if (telemetry?.lastPosition) {
+    return {
+      ...telemetry.lastPosition,
+      speedMs: telemetry.currentSpeedMs,
+      heading: telemetry.headingDeg,
+      headingDeg: telemetry.headingDeg,
+    };
+  }
   const appGpsPosition = appGpsService?.getCurrentPosition?.();
   if (appGpsPosition) return appGpsPosition;
   if (!Number.isFinite(state.lastKnownLatitude) || !Number.isFinite(state.lastKnownLongitude)) {
@@ -738,7 +748,9 @@ function applyDrivingAlertSnapshot(snapshot: AnyRecord = {}) {
     }
     state.alertAudioControlActive = Boolean(preferences.audioControlActive);
 
-    if (Number.isFinite(snapshot.currentSpeedMs)) state.currentSpeedMs = snapshot.currentSpeedMs;
+    if (!appDrivingTelemetryService && Number.isFinite(snapshot.currentSpeedMs)) {
+      state.currentSpeedMs = snapshot.currentSpeedMs;
+    }
     state.nearestTrapId = snapshot.nearestTrapId ?? null;
     state.nearestTrapDistanceM = Number.isFinite(snapshot.nearestTrapDistanceM)
       ? snapshot.nearestTrapDistanceM
@@ -789,6 +801,106 @@ function bindDrivingAlertService(service) {
   if (!appDrivingAlertService) return;
   drivingAlertUnsubscribe = appDrivingAlertService.subscribe?.(applyDrivingAlertSnapshot) || null;
   syncDrivingAlertServiceState();
+}
+
+function applyDrivingTelemetrySnapshot(snapshot: AnyRecord = {}) {
+  if (!snapshot || typeof snapshot !== 'object') return;
+  state.startTime = Number.isFinite(snapshot.startedAtMs) ? snapshot.startedAtMs : null;
+  state.currentSpeedMs = Number.isFinite(snapshot.currentSpeedMs) ? snapshot.currentSpeedMs : 0;
+  state.maxSpeedMs = Number.isFinite(snapshot.maxSpeedMs) ? snapshot.maxSpeedMs : 0;
+  state.totalDistanceM = Number.isFinite(snapshot.totalDistanceM) ? snapshot.totalDistanceM : 0;
+  state.currentAltitudeM = Number.isFinite(snapshot.currentAltitudeM) ? snapshot.currentAltitudeM : null;
+  state.maxAltitudeM = Number.isFinite(snapshot.maxAltitudeM) ? snapshot.maxAltitudeM : null;
+  state.minAltitudeM = Number.isFinite(snapshot.minAltitudeM) ? snapshot.minAltitudeM : null;
+  state.lastAccuracyM = Number.isFinite(snapshot.accuracyM) ? snapshot.accuracyM : null;
+  state.lastHeadingDeg = Number.isFinite(snapshot.headingDeg) ? snapshot.headingDeg : null;
+  state.lastHeadingAtMs = Number.isFinite(snapshot.lastFixAtMs) ? snapshot.lastFixAtMs : 0;
+  state.lastFixAt = Number.isFinite(snapshot.lastFixAtMs) ? snapshot.lastFixAtMs : 0;
+  state.lastPositionTimestamp = Number.isFinite(snapshot.lastPosition?.timestampMs)
+    ? snapshot.lastPosition.timestampMs
+    : null;
+  state.lastKnownLatitude = Number.isFinite(snapshot.lastPosition?.latitude)
+    ? snapshot.lastPosition.latitude
+    : null;
+  state.lastKnownLongitude = Number.isFinite(snapshot.lastPosition?.longitude)
+    ? snapshot.lastPosition.longitude
+    : null;
+  state.statusKind = snapshot.status === 'active' ? 'accuracy' : snapshot.status === 'error' ? 'error' : 'waiting';
+  state.statusParams = snapshot.status === 'active' ? { accuracyM: snapshot.accuracyM } : null;
+
+  if (state.viewMounted) {
+    renderMetrics();
+    renderRecordingControls();
+  }
+}
+
+function handleDrivingTelemetrySample(sample: AnyRecord) {
+  const snapshot = appDrivingTelemetryService?.getSnapshot?.();
+  if (!snapshot?.lastPosition) return;
+  const position = snapshot.lastPosition;
+  const previousPoint = state.lastPoint
+    ? {
+      latitude: state.lastPoint.latitude,
+      longitude: state.lastPoint.longitude,
+      timestampMs: state.lastPoint.timestampMs ?? state.lastPoint.timestamp,
+    }
+    : null;
+  state.lastPoint = {
+    latitude: position.latitude,
+    longitude: position.longitude,
+    timestamp: sample.timestampMs,
+    timestampMs: sample.timestampMs,
+  };
+  applyDrivingTelemetrySnapshot(snapshot);
+  void ensureCameraArtifactsForPoint(position.longitude, position.latitude);
+  updateNearestTrapState(position.longitude, position.latitude, {
+    headingDeg: sample.headingDeg,
+    speedMs: sample.processedSpeedMs,
+    timestampMs: sample.timestampMs,
+    accuracyM: sample.accuracyM,
+    previousPosition: previousPoint,
+  });
+  if (state.viewMounted) {
+    hideNotice();
+    globeController.syncGlobePosition(position.longitude, position.latitude);
+    setStatus('accuracy', { accuracyM: sample.accuracyM });
+    renderMetrics();
+  }
+  dispatchSpeedPositionUpdate();
+  audioController.maybeRecoverSuppressedBackgroundAudio();
+}
+
+function bindDrivingTelemetryService(service) {
+  drivingTelemetryUnsubscribe?.();
+  drivingTelemetrySampleUnsubscribe?.();
+  drivingTelemetryUnsubscribe = null;
+  drivingTelemetrySampleUnsubscribe = null;
+  appDrivingTelemetryService = service || null;
+  if (!appDrivingTelemetryService) return;
+  drivingTelemetryUnsubscribe = appDrivingTelemetryService.subscribe?.(applyDrivingTelemetrySnapshot) || null;
+  drivingTelemetrySampleUnsubscribe = appDrivingTelemetryService.subscribeSamples?.(handleDrivingTelemetrySample) || null;
+}
+
+function applyDriveRecordingSnapshot(snapshot: AnyRecord = {}) {
+  if (!snapshot || typeof snapshot !== 'object') return;
+  state.recordingState = snapshot.state === 'idle' ? 'stopped' : snapshot.state;
+  state.recordingKeepAliveIntended = Boolean(snapshot.keepAliveIntended);
+  state.recordingKeepAliveArmed = Boolean(snapshot.keepAliveArmed);
+  state.recordingKeepAlivePending = Boolean(snapshot.keepAlivePending);
+  state.recordingKeepAliveSuppressed = Boolean(snapshot.keepAliveSuppressed);
+  state.recordingKeepAliveBlocked = Boolean(snapshot.keepAliveBlocked);
+  const session = appDriveRecordingService?.getCurrentSession?.();
+  if (session) state.replaySession = session;
+  if (state.viewMounted) renderRecordingControls();
+  publishSpeedRecordingActivity();
+}
+
+function bindDriveRecordingService(service) {
+  driveRecordingUnsubscribe?.();
+  driveRecordingUnsubscribe = null;
+  appDriveRecordingService = service || null;
+  if (!appDriveRecordingService) return;
+  driveRecordingUnsubscribe = appDriveRecordingService.subscribe?.(applyDriveRecordingSnapshot) || null;
 }
 
 function hasEnabledAlertAudioFeature() {
@@ -1140,6 +1252,7 @@ function enqueueReplaySessionPersist() {
 
 function persistReplaySessionNow() {
   clearReplayPersistTimer();
+  if (appDriveRecordingService) return appDriveRecordingService.persistNow?.() || Promise.resolve(null);
   return enqueueReplaySessionPersist();
 }
 
@@ -1174,7 +1287,7 @@ function syncDistanceUnitButtons() {
 
 function applyUnitsConfiguration(
   { unit = state.unit, distanceUnit = state.distanceUnit } = {},
-  { persist = true, manual = persist } = {}
+  { persist = true } = {}
 ) {
   let unitChanged = false;
   let distanceChanged = false;
@@ -1203,13 +1316,6 @@ function applyUnitsConfiguration(
     return false;
   }
 
-  if (manual) {
-    markUnitBootstrapManualSelection({
-      speedUnit: unitChanged ? state.unit : undefined,
-      distanceUnit: distanceChanged ? state.distanceUnit : undefined,
-    });
-  }
-
   syncUnitButtons();
   syncDistanceUnitButtons();
   if (!syncingDrivingAlertSnapshot) {
@@ -1236,7 +1342,6 @@ function maybeApplyAutoConfiguredUnits(countryCode) {
     },
     {
       persist: false,
-      manual: false,
     }
   );
 }
@@ -1570,7 +1675,9 @@ function renderMetrics() {
 function renderRecordingControls() {
   if (!elements.toggleRecording || !elements.stopRecording) return;
 
-  const hasSamples = hasReplaySamples(state.replaySession, 1);
+  const hasSamples = appDriveRecordingService
+    ? Number(appDriveRecordingService.getSnapshot?.().sampleCount || 0) > 0
+    : hasReplaySamples(state.replaySession, 1);
   const toggleLabel =
     state.recordingState === 'recording'
       ? t('pauseRecording')
@@ -1656,6 +1763,15 @@ function toggleRecording() {
 }
 
 function startRecordingSession({ fromUserGesture = false } = {}) {
+  if (appDriveRecordingService) {
+    const snapshot = appDriveRecordingService.getSnapshot?.();
+    if (snapshot?.state === 'paused') appDriveRecordingService.resumeRecording?.();
+    else appDriveRecordingService.startRecording?.({ source: 'speed', fromUserGesture });
+    if (fromUserGesture && snapshot?.state === 'idle') audioController.playStartRecordingSound();
+    applyDriveRecordingSnapshot(appDriveRecordingService.getSnapshot?.());
+    syncRecordingKeepAliveWithRecordingState({ fromUserGesture });
+    return;
+  }
   if (state.recordingState === 'recording') {
     syncRecordingKeepAliveWithRecordingState({ fromUserGesture });
     return;
@@ -1679,6 +1795,12 @@ function startRecordingSession({ fromUserGesture = false } = {}) {
 }
 
 function pauseRecordingSession({ fromUserGesture = false } = {}) {
+  if (appDriveRecordingService) {
+    appDriveRecordingService.pauseRecording?.();
+    applyDriveRecordingSnapshot(appDriveRecordingService.getSnapshot?.());
+    syncRecordingKeepAliveWithRecordingState({ fromUserGesture });
+    return;
+  }
   if (state.recordingState !== 'recording') return;
   setRecordingState('paused');
   syncRecordingKeepAliveWithRecordingState({ fromUserGesture });
@@ -1686,6 +1808,13 @@ function pauseRecordingSession({ fromUserGesture = false } = {}) {
 }
 
 function stopRecordingSession({ fromUserGesture = false } = {}) {
+  if (appDriveRecordingService) {
+    void appDriveRecordingService.stopRecording?.().then?.((snapshot) => {
+      applyDriveRecordingSnapshot(snapshot);
+      syncRecordingKeepAliveWithRecordingState({ fromUserGesture });
+    });
+    return;
+  }
   resetReplaySession({
     archiveCurrent: true,
     endedAtMs: Number.isFinite(state.lastPositionTimestamp)
@@ -2236,16 +2365,36 @@ function clearLiveFixState({ preserveContinuity = false }: AnyRecord = {}) {
     state.lastHeadingDeg = null;
     state.lastHeadingAtMs = 0;
   }
+  if (!appDrivingTelemetryService) {
+    standaloneTelemetryState = {
+      ...standaloneTelemetryState,
+      currentSpeedMs: 0,
+      recentSpeeds: [],
+      lastFixAtMs: null,
+      ...(preserveContinuity ? {} : {
+        accuracyM: null,
+        headingDeg: null,
+        headingAtMs: 0,
+        lastAcceptedPoint: null,
+        lastPosition: null,
+      }),
+    };
+  }
   globeController.clearGlobePosition();
 }
 
 function resetTripData() {
-  resetReplaySession({
-    endedAtMs: Number.isFinite(state.lastPositionTimestamp)
-      ? state.lastPositionTimestamp
-      : Date.now(),
-    recordingState: state.recordingState,
-  });
+  if (appDrivingTelemetryService) {
+    appDrivingTelemetryService.resetTrip?.();
+  } else {
+    standaloneTelemetryState = createDrivingTelemetryReducerState(`standalone-${Date.now()}`);
+    resetReplaySession({
+      endedAtMs: Number.isFinite(state.lastPositionTimestamp)
+        ? state.lastPositionTimestamp
+        : Date.now(),
+      recordingState: state.recordingState,
+    });
+  }
   state.startTime = null;
   state.currentSpeedMs = 0;
   state.displayedSpeedMs = 0;
@@ -2279,11 +2428,11 @@ function resetTripData() {
 }
 
 function stopTracking({ disarmBackgroundAudio = false }: AnyRecord = {}) {
-  if (state.watchId !== null) {
+  if (state.watchId !== null && state.watchId !== 'telemetry') {
     navigator.geolocation.clearWatch(state.watchId);
     state.watchId = null;
   }
-  clearLiveFixState();
+  if (!appDrivingTelemetryService) clearLiveFixState();
   if (disarmBackgroundAudio) {
     audioController.suppressRecordingKeepAliveAudio();
     audioController.suppressBackgroundAudioRuntime();
@@ -2296,6 +2445,16 @@ function stopTracking({ disarmBackgroundAudio = false }: AnyRecord = {}) {
 function startTracking({ fromUserGesture = false }: AnyRecord = {}) {
   if (isSpaRuntime && !state.viewMounted) return;
   if (fromUserGesture) markWelcomeLocationChoice('enabled');
+
+  if (appDrivingTelemetryService) {
+    state.trackingStartedAt = Date.now();
+    state.watchId = 'telemetry';
+    appDrivingTelemetryService.start?.({ reason: fromUserGesture ? 'speed-route-user' : 'speed-route' });
+    applyDrivingTelemetrySnapshot(appDrivingTelemetryService.getSnapshot?.());
+    if (fromUserGesture) audioController.handleUserGestureAudioActivation();
+    publishSpeedRecordingActivity();
+    return;
+  }
 
   if (!('geolocation' in navigator)) {
     clearLiveFixState();
@@ -2360,79 +2519,45 @@ function handlePosition(position) {
   const shouldRender = state.viewMounted === true;
   if (shouldRender) hideNotice();
   const normalizedTimestamp = normalizePositionTimestamp(position.timestamp);
-
-  if (!Number.isFinite(state.startTime)) {
-    state.startTime = normalizedTimestamp;
-  }
-
   const coords = position.coords;
-  const currentAccuracyM = Number.isFinite(coords.accuracy) ? coords.accuracy : null;
-  state.lastKnownLatitude = coords.latitude;
-  state.lastKnownLongitude = coords.longitude;
-  const nextPoint = {
+  const receivedAtMs = Date.now();
+  const previousPoint = standaloneTelemetryState.lastAcceptedPoint;
+  const reduction = reduceDrivingTelemetryPosition(standaloneTelemetryState, {
+    sampleSequence: ++standaloneTelemetrySampleSequence,
     latitude: coords.latitude,
     longitude: coords.longitude,
-    timestamp: normalizedTimestamp,
+    accuracy: Number.isFinite(coords.accuracy) ? coords.accuracy : null,
+    altitudeM: Number.isFinite(coords.altitude) ? coords.altitude : null,
+    altitudeAccuracyM: Number.isFinite(coords.altitudeAccuracy) ? coords.altitudeAccuracy : null,
+    speedMs: Number.isFinite(coords.speed) && coords.speed >= 0 ? coords.speed : null,
+    heading: Number.isFinite(coords.heading) ? coords.heading : null,
+    headingDeg: Number.isFinite(coords.heading) ? coords.heading : null,
+    fixTimestampMs: Number.isFinite(position.timestamp) ? position.timestamp : null,
     timestampMs: normalizedTimestamp,
-  };
-  const previousPoint = state.lastPoint
-    ? {
-      latitude: state.lastPoint.latitude,
-      longitude: state.lastPoint.longitude,
-      timestampMs: state.lastPoint.timestamp,
-    }
-    : null;
-
-  let speedMs = Number.isFinite(coords.speed) && coords.speed >= 0 ? coords.speed : null;
-
-  if (state.lastPoint) {
-    const elapsedSeconds = Math.max((nextPoint.timestamp - state.lastPoint.timestamp) / 1000, 0.25);
-    const distanceM = haversineDistance(state.lastPoint, nextPoint);
-    const fallbackSpeedMs = distanceM / elapsedSeconds;
-    const plausibleDistanceM = elapsedSeconds * MAX_PLAUSIBLE_SPEED_MS;
-    const movementThresholdM = getMovementThresholdM(currentAccuracyM, state.lastAccuracyM);
-    const hasReportedMotion = Number.isFinite(speedMs) && speedMs >= MIN_MOVING_SPEED_MS;
-    const hasMeaningfulMovement =
-      distanceM >= movementThresholdM && fallbackSpeedMs >= MIN_MOVING_SPEED_MS;
-
-    if (distanceM <= plausibleDistanceM && (hasReportedMotion || hasMeaningfulMovement)) {
-      state.totalDistanceM += distanceM;
-      if (speedMs === null) {
-        speedMs = fallbackSpeedMs;
-      }
-      state.lastPoint = nextPoint;
-    }
-  } else {
-    state.lastPoint = nextPoint;
-  }
-
-  if (!Number.isFinite(speedMs) || speedMs < 0) speedMs = 0;
-
-  state.recentSpeeds.push(speedMs);
-  if (state.recentSpeeds.length > SPEED_SMOOTHING_SAMPLES) {
-    state.recentSpeeds.shift();
-  }
-
-  state.currentSpeedMs =
-    state.recentSpeeds.reduce((sum, sample) => sum + sample, 0) / state.recentSpeeds.length;
-  state.maxSpeedMs = Math.max(state.maxSpeedMs, state.currentSpeedMs);
-  state.lastAccuracyM = currentAccuracyM;
-  state.lastFixAt = Date.now();
+    receivedAtMs,
+    stale: false,
+  });
+  if (!reduction.sample) return;
+  standaloneTelemetryState = reduction.state;
+  const sample = reduction.sample;
+  state.startTime = standaloneTelemetryState.startedAtMs;
+  state.currentSpeedMs = standaloneTelemetryState.currentSpeedMs;
+  state.maxSpeedMs = standaloneTelemetryState.maxSpeedMs;
+  state.totalDistanceM = standaloneTelemetryState.totalDistanceM;
+  state.currentAltitudeM = standaloneTelemetryState.currentAltitudeM;
+  state.maxAltitudeM = standaloneTelemetryState.maxAltitudeM;
+  state.minAltitudeM = standaloneTelemetryState.minAltitudeM;
+  state.lastPoint = standaloneTelemetryState.lastAcceptedPoint;
+  state.recentSpeeds = standaloneTelemetryState.recentSpeeds;
+  state.lastAccuracyM = standaloneTelemetryState.accuracyM;
+  state.lastFixAt = standaloneTelemetryState.lastFixAtMs;
   state.lastPositionTimestamp = normalizedTimestamp;
-  const gpsHeading = normalizeHeading(coords.heading);
-  const derivedHeading = gpsHeading === null && state.currentSpeedMs >= MIN_MOVING_SPEED_MS
-    ? deriveHeadingFromPositions(previousPoint, nextPoint)
-    : null;
-  const nextHeading = gpsHeading ?? derivedHeading;
-  if (nextHeading !== null) {
-    state.lastHeadingDeg = nextHeading;
-    state.lastHeadingAtMs = state.lastFixAt;
-  }
-  const freshSampleHeadingDeg = Number.isFinite(state.lastHeadingDeg)
-    && state.lastHeadingAtMs > 0
-    && state.lastFixAt - state.lastHeadingAtMs <= SPEED_HEADING_TTL_MS
-    ? state.lastHeadingDeg
-    : null;
+  state.lastKnownLatitude = coords.latitude;
+  state.lastKnownLongitude = coords.longitude;
+  state.lastHeadingDeg = standaloneTelemetryState.headingDeg;
+  state.lastHeadingAtMs = standaloneTelemetryState.headingAtMs;
+  const currentAccuracyM = sample.accuracyM;
+  const freshSampleHeadingDeg = sample.headingDeg;
 
   void ensureCameraArtifactsForPoint(coords.longitude, coords.latitude);
   updateNearestTrapState(coords.longitude, coords.latitude, {
@@ -2446,15 +2571,7 @@ function handlePosition(position) {
     globeController.syncGlobePosition(coords.longitude, coords.latitude);
   }
 
-  if (Number.isFinite(coords.altitude)) {
-    state.currentAltitudeM = coords.altitude;
-    state.maxAltitudeM =
-      state.maxAltitudeM === null ? coords.altitude : Math.max(state.maxAltitudeM, coords.altitude);
-    state.minAltitudeM =
-      state.minAltitudeM === null ? coords.altitude : Math.min(state.minAltitudeM, coords.altitude);
-  }
-
-  if (state.recordingState === 'recording') {
+  if (state.recordingState === 'recording' && !appDriveRecordingService) {
     state.replaySession = appendReplaySample(
       state.replaySession,
       {
@@ -2867,6 +2984,12 @@ function destroySpeedRouteResources(route = activeSpeedRoute) {
   route.syncIndicator?.destroy?.();
   drivingAlertUnsubscribe?.();
   drivingAlertUnsubscribe = null;
+  drivingTelemetryUnsubscribe?.();
+  drivingTelemetrySampleUnsubscribe?.();
+  driveRecordingUnsubscribe?.();
+  drivingTelemetryUnsubscribe = null;
+  drivingTelemetrySampleUnsubscribe = null;
+  driveRecordingUnsubscribe = null;
   cameraDatabase?.abortPending?.();
   analogSpeedometer.destroy?.();
   state.globeInitToken += 1;
@@ -2898,6 +3021,8 @@ function mountSpeedController(routeContext: AnyRecord = {}) {
   if (routeContext.signal?.aborted) return Promise.resolve();
   unmountSpeedController();
   appGpsService = routeContext.gpsService || window.__vatioboardGpsStore || appGpsService;
+  bindDrivingTelemetryService(routeContext.drivingTelemetryService || window.__vatioboardDrivingTelemetry || appDrivingTelemetryService);
+  bindDriveRecordingService(routeContext.driveRecordingService || window.__vatioboardDriveRecording || appDriveRecordingService);
   bindDrivingAlertService(routeContext.drivingAlertService || window.__vatioboardDrivingAlerts || appDrivingAlertService);
   const ownsCleanup = !routeContext.cleanup;
   const cleanup = routeContext.cleanup || createCleanupStack();
@@ -2911,7 +3036,7 @@ function mountSpeedController(routeContext: AnyRecord = {}) {
   speedRouteGeneration = route.generation;
   activeSpeedRoute = route;
   Object.assign(elements, getSpeedElements(routeContext.root || document));
-  window.__vatioboardSpeedGetCurrentPosition = appGpsService && window.__vatioboardGpsGetCurrentPosition
+  window.__vatioboardSpeedGetCurrentPosition = !appDrivingTelemetryService && appGpsService && window.__vatioboardGpsGetCurrentPosition
     ? window.__vatioboardGpsGetCurrentPosition
     : getCurrentSpeedPosition;
   createSpeedRouteControllers();
@@ -2946,7 +3071,7 @@ function unmountSpeedController() {
   if (!state.viewMounted && !activeSpeedRoute) return;
 
   const route = activeSpeedRoute;
-  const keepTrackingInBackground = state.recordingState === 'recording';
+  const keepTrackingInBackground = Boolean(appDrivingTelemetryService) || state.recordingState === 'recording';
   state.viewMounted = false;
   speedRouteGeneration += 1;
   void persistReplaySessionNow();
@@ -3153,7 +3278,7 @@ async function init() {
     return;
   }
 
-  await hydrateReplaySession();
+  if (!appDriveRecordingService) await hydrateReplaySession();
   await persistReplaySessionNow();
   updatePageMeta();
 

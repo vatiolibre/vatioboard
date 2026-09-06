@@ -34,7 +34,7 @@ describe("SPA Library route real-controller smoke", () => {
       sequence: ["/board", "/", "/library", "/replay", "/accel", "/board"],
     });
 
-    expect(finalSnapshot.activeWatchCount).toBe(0);
+    expect(finalSnapshot.activeWatchCount).toBe(1);
     expect(finalSnapshot.activeIntervalCount).toBe(0);
     expect(finalSnapshot.activeRafCount).toBe(0);
     expect(finalSnapshot.activeResizeObserverCount).toBe(0);

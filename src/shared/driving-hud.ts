@@ -3,6 +3,7 @@ import {
   IconMuted,
   IconPause,
   IconSettings,
+  IconRestart,
   IconVolume,
 } from "../icons.js";
 import { markWelcomeLocationChoice, shouldDeferWelcomeLocationRequest } from "../app/welcome-consent.js";
@@ -17,10 +18,13 @@ import type {
   DriveRecordingSnapshot,
   DrivingAlertService,
   DrivingAlertSnapshot,
+  DrivingTelemetryService,
+  DrivingTelemetrySnapshot,
   GpsService,
   GpsSnapshot,
   NormalizedGpsPosition,
 } from "../types/services";
+import type { VatioSharedSettingsService, VatioSharedSettingsSnapshot } from "../app-platform/types";
 
 type Translate = (key: string, fallback?: string) => string;
 
@@ -35,6 +39,8 @@ export interface DrivingHudOptions {
   recordingSource: string;
   drivingAlerts?: DrivingAlertService | null;
   driveRecording?: DriveRecordingService | null;
+  drivingTelemetry?: DrivingTelemetryService | null;
+  sharedSettings?: VatioSharedSettingsService | null;
   gps?: GpsService | null;
   translate?: Translate;
   getContext?: () => DrivingHudContext | null;
@@ -53,12 +59,16 @@ export function createDrivingHud(options: DrivingHudOptions) {
   const translate = options.translate || ((key: string, fallback?: string) => fallback || key);
   const alerts = options.drivingAlerts || null;
   const recording = options.driveRecording || null;
+  const telemetry = options.drivingTelemetry || null;
+  const sharedSettings = options.sharedSettings || null;
   const gps = options.gps || null;
   const state: {
     destroyed: boolean;
     sourceStarted: boolean;
     alert: DrivingAlertSnapshot | null;
     recording: DriveRecordingSnapshot | null;
+    telemetry: DrivingTelemetrySnapshot | null;
+    settings: VatioSharedSettingsSnapshot;
     gps: GpsSnapshot | null;
     cue: Record<string, unknown>;
     audioPending: boolean;
@@ -67,6 +77,8 @@ export function createDrivingHud(options: DrivingHudOptions) {
     sourceStarted: false,
     alert: alerts?.getSnapshot?.() || null,
     recording: recording?.getSnapshot?.() || null,
+    telemetry: telemetry?.getSnapshot?.() || null,
+    settings: sharedSettings?.getAll?.() || {},
     gps: gps?.getSnapshot?.() || null,
     cue: {},
     audioPending: false,
@@ -98,6 +110,7 @@ export function createDrivingHud(options: DrivingHudOptions) {
         <button type="button" data-driving-action="alerts" aria-label="${translate("configureAlerts", "Configure alerts")}"><span aria-hidden="true">${IconSettings}</span></button>
         <button type="button" data-driving-action="record" aria-pressed="false"><span class="driving-icon-record" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="6.5" fill="currentColor"/></svg></span><span class="driving-icon-pause" aria-hidden="true">${IconPause}</span></button>
         <button type="button" data-driving-action="stop" hidden aria-label="${translate("stopRecording", "Stop recording")}"><span aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="2" fill="currentColor"/></svg></span></button>
+        <button type="button" data-driving-action="reset" aria-label="${translate("resetTrip", "Reset trip")}"><span aria-hidden="true">${IconRestart}</span></button>
         <button type="button" data-driving-action="location" aria-label="${translate("enableLocation", "Enable location")}"><span aria-hidden="true">${IconGpsLab}</span></button>
         <button type="button" data-driving-action="recenter" aria-label="${translate("cameraMapRecenter", "Center on my location")}"><span aria-hidden="true">${IconGpsLab}</span></button>
       </div>
@@ -109,6 +122,7 @@ export function createDrivingHud(options: DrivingHudOptions) {
   const alertButton = action("alerts");
   const recordButton = action("record");
   const stopButton = action("stop");
+  const resetButton = action("reset");
   const locationButton = action("location");
   const recenterButton = action("recenter");
   const ownsCueController = !options.audioCueController;
@@ -125,6 +139,9 @@ export function createDrivingHud(options: DrivingHudOptions) {
   let releaseConsumer: (() => void) | null = null;
   let unsubscribeSource: (() => void) | null = null;
   let unsubscribeRecording: (() => void) | null = null;
+  let unsubscribeTelemetry: (() => void) | null = null;
+  let unsubscribeTelemetrySamples: (() => void) | null = null;
+  let unsubscribeSettings: (() => void) | null = null;
   let statsTimerId: number | null = null;
 
   function renderMetric(name: keyof TripStatsModel, model: TripStatsModel) {
@@ -135,7 +152,7 @@ export function createDrivingHud(options: DrivingHudOptions) {
   }
 
   function getPosition(): NormalizedGpsPosition | null {
-    return state.alert?.latestPosition || state.gps?.normalized || null;
+    return state.telemetry?.lastPosition || state.alert?.latestPosition || state.gps?.normalized || null;
   }
 
   function startSource(fromUserGesture = false) {
@@ -145,6 +162,20 @@ export function createDrivingHud(options: DrivingHudOptions) {
       return;
     }
     state.sourceStarted = true;
+    if (telemetry) {
+      state.telemetry = telemetry.start({ reason: `${options.recordingSource}-route` });
+      unsubscribeTelemetry = telemetry.subscribe((snapshot) => {
+        if (state.destroyed) return;
+        state.telemetry = snapshot;
+        render();
+      });
+      unsubscribeTelemetrySamples = telemetry.subscribeSamples(() => {
+        if (state.destroyed) return;
+        state.telemetry = telemetry.getSnapshot();
+        options.onPosition?.(state.telemetry.lastPosition);
+      });
+      options.onPosition?.(state.telemetry.lastPosition);
+    }
     if (alerts) {
       const reason = fromUserGesture
         ? `${options.recordingSource}-route-user`
@@ -159,14 +190,14 @@ export function createDrivingHud(options: DrivingHudOptions) {
         : existingSnapshot?.started === true
           ? existingSnapshot
           : alerts.start({ fromUserGesture, reason });
-      options.onPosition?.(state.alert?.latestPosition || null);
+      if (!telemetry) options.onPosition?.(state.alert?.latestPosition || null);
       unsubscribeSource = alerts.subscribe((snapshot) => {
         if (state.destroyed) return;
         state.alert = snapshot;
-        options.onPosition?.(snapshot.latestPosition || null);
+        if (!telemetry) options.onPosition?.(snapshot.latestPosition || null);
         render();
       });
-    } else if (gps) {
+    } else if (gps && !telemetry) {
       releaseConsumer = gps.startConsumer(options.consumerId, {
         enableHighAccuracy: true,
         reason: `${options.recordingSource}-route`,
@@ -187,8 +218,9 @@ export function createDrivingHud(options: DrivingHudOptions) {
     const alertPrefs = (state.alert?.preferences || {}) as Record<string, unknown>;
     const alertUi = (state.alert?.alertUiState || {}) as Record<string, unknown>;
     const alertAudio = (state.alert?.audio || {}) as Record<string, unknown>;
-    const unit = alertPrefs.unit === "mph" ? "mph" : "kmh";
-    const distanceUnit = alertPrefs.distanceUnit === "mi" ? "mi" : "m";
+    const unit = state.settings.speedUnit === "mph" || alertPrefs.unit === "mph" ? "mph" : "kmh";
+    const distanceUnit = state.settings.distanceUnit === "ft" || alertPrefs.distanceUnit === "ft" ? "ft" : "m";
+    const tripDistanceUnit = state.settings.tripDistanceUnit === "mi" || distanceUnit === "ft" ? "mi" : "km";
     const muted = alertPrefs.audioMuted === true || alertAudio.muted === true;
     const manualAudioEnabled = alertPrefs.alertEnabled === true
       && Number(alertPrefs.alertLimitMs) > 0
@@ -215,7 +247,7 @@ export function createDrivingHud(options: DrivingHudOptions) {
               ? "unarmed"
               : "ready";
     const position = getPosition();
-    const speed = Number(state.alert?.currentSpeedMs ?? position?.speedMs ?? 0);
+    const speed = Number(state.telemetry?.currentSpeedMs ?? state.alert?.currentSpeedMs ?? position?.speedMs ?? 0);
     root.querySelector<HTMLElement>("[data-driving-speed]")!.textContent = String(speedValue(Number.isFinite(speed) ? speed : 0, unit));
     root.querySelector<HTMLElement>("[data-driving-speed-unit]")!.textContent = unit === "mph" ? "mph" : "km/h";
     const enabled = alertUi.enabled === true;
@@ -238,23 +270,25 @@ export function createDrivingHud(options: DrivingHudOptions) {
     if (!cameraRow.hidden) {
       const nearestCamera = createTripStatsModel({
         nearestCameraDistanceM: cameraDistance,
-        distanceUnit: distanceUnit === "mi" ? "mi" : "m",
+        distanceUnit,
+        tripDistanceUnit,
       }).nearestCamera;
       root.querySelector<HTMLElement>("[data-driving-camera-distance]")!.textContent = `${nearestCamera.value} ${nearestCamera.unit}`.trim();
     }
     const stats = createTripStatsModel({
       currentSpeedMs: speed,
-      maxSpeedMs: state.recording?.maxSpeedMs,
-      averageSpeedMs: state.recording?.averageSpeedMs,
-      totalDistanceM: state.recording?.totalDistanceM,
-      durationMs: state.recording?.durationMs,
-      startedAtMs: state.recording?.startedAtMs,
-      currentAltitudeM: state.recording?.currentAltitudeM ?? position?.altitudeM,
-      maxAltitudeM: state.recording?.maxAltitudeM,
-      minAltitudeM: state.recording?.minAltitudeM,
+      maxSpeedMs: state.telemetry?.maxSpeedMs ?? state.recording?.maxSpeedMs,
+      averageSpeedMs: state.telemetry?.averageSpeedMs ?? state.recording?.averageSpeedMs,
+      totalDistanceM: state.telemetry?.totalDistanceM ?? state.recording?.totalDistanceM,
+      durationMs: state.telemetry?.elapsedMs ?? state.recording?.durationMs,
+      startedAtMs: state.telemetry?.startedAtMs ?? state.recording?.startedAtMs,
+      currentAltitudeM: state.telemetry?.currentAltitudeM ?? state.recording?.currentAltitudeM ?? position?.altitudeM,
+      maxAltitudeM: state.telemetry?.maxAltitudeM ?? state.recording?.maxAltitudeM,
+      minAltitudeM: state.telemetry?.minAltitudeM ?? state.recording?.minAltitudeM,
       nearestCameraDistanceM: cameraDistance,
       speedUnit: unit,
-      distanceUnit: distanceUnit === "mi" ? "mi" : "m",
+      distanceUnit,
+      tripDistanceUnit,
     });
     for (const name of ["maxSpeed", "averageSpeed", "distance", "duration", "altitude", "maxAltitude", "minAltitude"] as const) {
       renderMetric(name, stats);
@@ -370,6 +404,10 @@ export function createDrivingHud(options: DrivingHudOptions) {
   });
   recordButton.addEventListener("click", handleRecord);
   stopButton.addEventListener("click", () => void handleStop());
+  resetButton.addEventListener("click", () => {
+    state.telemetry = telemetry?.resetTrip() || state.telemetry;
+    render();
+  });
   root.querySelector<HTMLButtonElement>("[data-driving-keep-alive]")!.addEventListener("click", () => {
     void recording?.rearmKeepAlive?.({ fromUserGesture: true, reason: `${options.recordingSource}-hud-rearm` });
   });
@@ -381,6 +419,11 @@ export function createDrivingHud(options: DrivingHudOptions) {
   unsubscribeRecording = recording?.subscribe((snapshot) => {
     if (state.destroyed) return;
     state.recording = snapshot;
+    render();
+  }) || null;
+  unsubscribeSettings = sharedSettings?.subscribe((settings) => {
+    if (state.destroyed) return;
+    state.settings = settings;
     render();
   }) || null;
 
@@ -399,6 +442,9 @@ export function createDrivingHud(options: DrivingHudOptions) {
       state.destroyed = true;
       unsubscribeSource?.();
       unsubscribeRecording?.();
+      unsubscribeTelemetry?.();
+      unsubscribeTelemetrySamples?.();
+      unsubscribeSettings?.();
       releaseConsumer?.();
       if (statsTimerId !== null) window.clearInterval(statsTimerId);
       if (ownsCueController) cueController.destroy();

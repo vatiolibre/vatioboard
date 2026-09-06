@@ -1,0 +1,8 @@
+{
+  "name": "poor-accuracy",
+  "samples": [
+    { "offsetMs": 0, "coords": { "latitude": 40.700000, "longitude": -73.900000, "accuracy": 35, "speed": 0 } },
+    { "offsetMs": 1000, "coords": { "latitude": 40.700050, "longitude": -73.900000, "accuracy": 45, "speed": null } },
+    { "offsetMs": 2000, "coords": { "latitude": 40.700180, "longitude": -73.900000, "accuracy": 30, "speed": null } }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "name": "urban-noise",
+  "samples": [
+    { "offsetMs": 0, "coords": { "latitude": 40.700000, "longitude": -73.900000, "accuracy": 12, "speed": 6, "heading": 0 } },
+    { "offsetMs": 1000, "coords": { "latitude": 40.700052, "longitude": -73.900010, "accuracy": 18, "speed": 6, "heading": null } },
+    { "offsetMs": 2000, "coords": { "latitude": 40.700105, "longitude": -73.899995, "accuracy": 9, "speed": null, "heading": null } },
+    { "offsetMs": 3000, "coords": { "latitude": 40.700160, "longitude": -73.900005, "accuracy": 14, "speed": 6, "heading": 2 } }
+  ]
+}

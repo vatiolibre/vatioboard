@@ -25,6 +25,8 @@ export interface GpsPositionSnapshot extends GpsCoordinates {
 }
 
 export interface NormalizedGpsPosition {
+  /** Monotonically increasing identity assigned to each successful native GPS callback. */
+  sampleSequence: number;
   latitude: number;
   longitude: number;
   accuracy: number | null;
@@ -75,11 +77,62 @@ export interface GpsService {
   startConsumer(consumerId: string, options?: GpsConsumerOptions): Unsubscribe;
   stopConsumer(consumerId: string): void;
   subscribe(listener: (snapshot: GpsSnapshot) => void): Unsubscribe;
+  subscribePositions(listener: (position: NormalizedGpsPosition) => void): Unsubscribe;
   getSnapshot(): GpsSnapshot;
   getCurrentPosition(): NormalizedGpsPosition | null;
   requestHighAccuracy(reason?: string): Unsubscribe;
   releaseHighAccuracy(reason?: string): void;
   installGlobalShim(): boolean;
+  destroy(): void;
+}
+
+export type DrivingTelemetryStatus =
+  | "idle"
+  | "starting"
+  | "active"
+  | "degraded"
+  | "stale"
+  | "error";
+
+export interface DrivingTelemetrySample {
+  gpsSampleSequence: number;
+  timestampMs: number;
+  latitude: number;
+  longitude: number;
+  processedSpeedMs: number;
+  distanceDeltaM: number;
+  totalDistanceM: number;
+  altitudeM: number | null;
+  headingDeg: number | null;
+  accuracyM: number | null;
+}
+
+export interface DrivingTelemetrySnapshot {
+  status: DrivingTelemetryStatus;
+  tripId: string;
+  startedAtMs: number | null;
+  elapsedMs: number;
+  currentSpeedMs: number;
+  maxSpeedMs: number;
+  averageSpeedMs: number;
+  totalDistanceM: number;
+  currentAltitudeM: number | null;
+  minAltitudeM: number | null;
+  maxAltitudeM: number | null;
+  headingDeg: number | null;
+  accuracyM: number | null;
+  lastPosition: NormalizedGpsPosition | null;
+  sampleCount: number;
+  lastGpsSampleSequence: number | null;
+  lastFixAtMs: number | null;
+}
+
+export interface DrivingTelemetryService {
+  start(options?: { reason?: string }): DrivingTelemetrySnapshot;
+  resetTrip(options?: { atMs?: number }): DrivingTelemetrySnapshot;
+  getSnapshot(): DrivingTelemetrySnapshot;
+  subscribe(listener: (snapshot: DrivingTelemetrySnapshot) => void): Unsubscribe;
+  subscribeSamples(listener: (sample: DrivingTelemetrySample) => void): Unsubscribe;
   destroy(): void;
 }
 
