@@ -110,11 +110,6 @@ export function mountMapRoute(context: MapRouteMountContext): MountedView {
     getContext: () => {
       const decision = widget.getApproachSnapshot?.()?.decision || null;
       return {
-        nearestCameraDistanceM: decision?.distanceM !== null
-          && decision?.distanceM !== undefined
-          && Number.isFinite(Number(decision.distanceM))
-          ? Number(decision.distanceM)
-          : null,
         cameraState: decision?.state || null,
       };
     },

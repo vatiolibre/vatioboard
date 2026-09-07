@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createDrivingHud } from "../../src/shared/driving-hud.js";
 
-function createAlertService(overrides = {}) {
+function createAlertService(overrides = {}, snapshotOverrides = {}) {
   let snapshot = {
     started: true,
     status: "active",
@@ -29,6 +29,7 @@ function createAlertService(overrides = {}) {
       over: false,
     },
     audio: { muted: false, primed: true, backgroundAudioArmed: true },
+    ...snapshotOverrides,
   };
   const listeners = new Set();
   const release = vi.fn();
@@ -226,6 +227,50 @@ describe("neutral driving HUD", () => {
 
     document.querySelector("[data-driving-action='reset']").click();
     expect(telemetry.resetTrip).toHaveBeenCalledTimes(1);
+    hud.destroy();
+  });
+
+  it("keeps canonical nearest-camera proximity independent of viewport context", () => {
+    let viewportDistanceM = null;
+    const alerts = createAlertService({}, { nearestTrapDistanceM: 3379 });
+    const sharedSettings = {
+      getAll: vi.fn(() => ({ speedUnit: "mph", distanceUnit: "ft", tripDistanceUnit: "mi" })),
+      subscribe: vi.fn(() => vi.fn()),
+    };
+    const hud = createDrivingHud({
+      mount: document.getElementById("mount"),
+      consumerId: "vatio.map.route",
+      recordingSource: "map",
+      drivingAlerts: alerts,
+      sharedSettings,
+      getContext: () => ({ nearestCameraDistanceM: viewportDistanceM, cameraState: null }),
+    });
+    const row = document.querySelector("[data-driving-camera-row]");
+    const distance = document.querySelector("[data-driving-camera-distance]");
+
+    expect(row.hidden).toBe(false);
+    expect(distance.textContent).toBe("2.1 mi");
+    viewportDistanceM = 25;
+    hud.render();
+    expect(distance.textContent).toBe("2.1 mi");
+    viewportDistanceM = null;
+    hud.render();
+    expect(distance.textContent).toBe("2.1 mi");
+    hud.destroy();
+  });
+
+  it("treats canonical missing camera data as authoritative", () => {
+    const alerts = createAlertService({}, { nearestTrapDistanceM: null });
+    const hud = createDrivingHud({
+      mount: document.getElementById("mount"),
+      consumerId: "vatio.map.route",
+      recordingSource: "map",
+      drivingAlerts: alerts,
+      getContext: () => ({ nearestCameraDistanceM: 240, cameraState: "ahead" }),
+    });
+
+    expect(document.querySelector("[data-driving-camera-row]").hidden).toBe(true);
+    expect(document.querySelector("[data-driving-camera-distance]").textContent).toBe("");
     hud.destroy();
   });
 

@@ -262,7 +262,13 @@ export function createDrivingHud(options: DrivingHudOptions) {
 
     const context = options.getContext?.() || null;
     const cameraRow = root.querySelector<HTMLElement>("[data-driving-camera-row]")!;
-    const rawCameraDistance = context?.nearestCameraDistanceM;
+    const hasCanonicalCameraDistance = Boolean(
+      state.alert
+      && Object.prototype.hasOwnProperty.call(state.alert, "nearestTrapDistanceM")
+    );
+    const rawCameraDistance = hasCanonicalCameraDistance
+      ? state.alert?.nearestTrapDistanceM
+      : context?.nearestCameraDistanceM;
     const cameraDistance = rawCameraDistance === null || rawCameraDistance === undefined
       ? Number.NaN
       : Number(rawCameraDistance);
@@ -274,6 +280,8 @@ export function createDrivingHud(options: DrivingHudOptions) {
         tripDistanceUnit,
       }).nearestCamera;
       root.querySelector<HTMLElement>("[data-driving-camera-distance]")!.textContent = `${nearestCamera.value} ${nearestCamera.unit}`.trim();
+    } else {
+      root.querySelector<HTMLElement>("[data-driving-camera-distance]")!.textContent = "";
     }
     const stats = createTripStatsModel({
       currentSpeedMs: speed,

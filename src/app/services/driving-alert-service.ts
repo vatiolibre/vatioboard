@@ -253,14 +253,14 @@ export function createDrivingAlertService({
 
   function syncNearestTrap() {
     const position = state.latestPosition;
-    if (!position || !state.trapAlertEnabled) {
+    if (!position) {
       state.nearestTrapId = null;
       state.nearestTrapDistanceM = null;
       state.nearestTrapSpeedKph = null;
       state.nearestTrapSpeedMeta = null;
       state.cameraApproachState = "none";
       state.cameraApproachConfidence = "none";
-      state.cameraApproachReason = "trap-alert-disabled";
+      state.cameraApproachReason = "no-position";
       state.cameraApproachDetails = null;
       return;
     }
@@ -363,7 +363,7 @@ export function createDrivingAlertService({
   }
 
   function ensureCameraArtifactsForPosition(position) {
-    if (!state.trapAlertEnabled || !position || !isFiniteLatLon(position)) return;
+    if (!position || !isFiniteLatLon(position)) return;
     const loadKey = `${position.longitude.toFixed(3)},${position.latitude.toFixed(3)}`;
     if (loadKey === state.lastCameraLoadKey && hasLoadedCameraData()) return;
     state.lastCameraLoadKey = loadKey;
@@ -556,16 +556,7 @@ export function createDrivingAlertService({
   function setTrapAlertEnabled(value: unknown, options: LegacyDrivingAlertRecord = {}) {
     return updatePreference(() => {
       state.trapAlertEnabled = Boolean(value);
-      if (!state.trapAlertEnabled) {
-        state.nearestTrapId = null;
-        state.nearestTrapDistanceM = null;
-        state.nearestTrapSpeedKph = null;
-        state.nearestTrapSpeedMeta = null;
-        state.cameraApproachState = "none";
-        state.cameraApproachConfidence = "none";
-        state.cameraApproachReason = "trap-alert-disabled";
-        state.cameraApproachDetails = null;
-      }
+      syncNearestTrap();
       saveTrapAlertEnabledPreference(state.trapAlertEnabled);
     }, options);
   }
@@ -580,6 +571,7 @@ export function createDrivingAlertService({
   function setTrapAlertDistanceM(value: unknown, options: LegacyDrivingAlertRecord = {}) {
     return updatePreference(() => {
       state.trapAlertDistanceM = normalizeTrapAlertDistance(Number(value), state.distanceUnit);
+      syncNearestTrap();
       saveTrapAlertDistancePreference(state.trapAlertDistanceM);
     }, options);
   }

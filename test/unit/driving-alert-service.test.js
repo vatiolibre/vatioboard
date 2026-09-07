@@ -193,6 +193,91 @@ describe("createDrivingAlertService", () => {
     }));
   });
 
+  it("exposes the reported-coordinate camera beyond the active alert radius without alerting", async () => {
+    const gpsService = createGpsServiceDouble();
+    const audioController = createAudioControllerDouble();
+    const cameraDatabase = createCameraDatabaseDouble({
+      traps: [[-73.9314, 40.866197, 50, "fort-lee-camera"]],
+    });
+    const service = createDrivingAlertService({ gpsService, cameraDatabase, audioController });
+
+    service.setManualAlertEnabled(false);
+    service.setTrapAlertEnabled(true);
+    service.setTrapAlertDistanceM(500);
+    service.acquireConsumer("vatio.speed.route", { reason: "speed-route" });
+    gpsService.emit({
+      latitude: 40.866197,
+      longitude: -73.97158,
+      speedMs: 8,
+      accuracy: 4,
+      timestampMs: 1000,
+      receivedAtMs: 1000,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const snapshot = service.getSnapshot();
+    expect(snapshot.nearestTrapDistanceM).toBeGreaterThan(3370);
+    expect(snapshot.nearestTrapDistanceM).toBeLessThan(3390);
+    expect(snapshot.alertUiState.trapActive).toBe(false);
+    expect(snapshot.audio.trapAudible).toBe(false);
+    expect(snapshot.cameraApproachReason).toBe("no-candidate-within-alert-distance");
+  });
+
+  it("keeps camera awareness available while trap alerts are disabled", async () => {
+    const gpsService = createGpsServiceDouble();
+    const audioController = createAudioControllerDouble();
+    const cameraDatabase = createCameraDatabaseDouble({
+      traps: [[-73.9314, 40.866197, 50, "fort-lee-camera"]],
+    });
+    const service = createDrivingAlertService({ gpsService, cameraDatabase, audioController });
+
+    service.setManualAlertEnabled(false);
+    service.setTrapAlertEnabled(false);
+    service.acquireConsumer("vatio.map.route", { reason: "map-route" });
+    gpsService.emit({
+      latitude: 40.866197,
+      longitude: -73.97158,
+      speedMs: 8,
+      accuracy: 4,
+      timestampMs: 1000,
+      receivedAtMs: 1000,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const snapshot = service.getSnapshot();
+    expect(cameraDatabase.loadForLocation).toHaveBeenCalledTimes(1);
+    expect(snapshot.preferences.trapAlertEnabled).toBe(false);
+    expect(snapshot.nearestTrapDistanceM).toBeGreaterThan(3370);
+    expect(snapshot.alertUiState.trapActive).toBe(false);
+    expect(snapshot.audio.trapAudible).toBe(false);
+  });
+
+  it("keeps canonical nearest-camera distance null when no dataset has a camera", async () => {
+    const gpsService = createGpsServiceDouble();
+    const cameraDatabase = createCameraDatabaseDouble({ traps: [] });
+    const service = createDrivingAlertService({
+      gpsService,
+      cameraDatabase,
+      audioController: createAudioControllerDouble(),
+    });
+
+    service.setTrapAlertEnabled(false);
+    service.acquireConsumer("vatio.map.route", { reason: "map-route" });
+    gpsService.emit({
+      latitude: 40.866197,
+      longitude: -73.97158,
+      speedMs: 0,
+      timestampMs: 1000,
+      receivedAtMs: 1000,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(service.getSnapshot().nearestTrapDistanceM).toBeNull();
+  });
+
   it("keeps unknown camera speed null and does not turn it into a zero-speed overspeed limit", async () => {
     const gpsService = createGpsServiceDouble();
     const audioController = createAudioControllerDouble();

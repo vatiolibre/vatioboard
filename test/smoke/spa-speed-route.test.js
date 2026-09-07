@@ -113,6 +113,23 @@ describe("SPA Speed route real-controller smoke", () => {
     expect(document.querySelector("#wazeStage")).toBeNull();
   }, 40000);
 
+  it("holds camera awareness only while the Speed route is mounted", async () => {
+    await expectRealSpaRouteRemount({
+      targetHash: "/",
+      targetSelector: "#speedValue",
+      sequence: ["/board", "/"],
+    });
+
+    expect(window.__vatioboardDrivingAlerts?.getSnapshot().consumers).toContain(
+      "vatio.speed.route",
+    );
+
+    await navigateRealSpaSmoke("/board");
+    expect(window.__vatioboardDrivingAlerts?.getSnapshot().consumers).not.toContain(
+      "vatio.speed.route",
+    );
+  }, 40000);
+
   it("keeps active recording GPS in the background without route DOM work", async () => {
     await expectRealSpaRouteRemount({
       targetHash: "/",

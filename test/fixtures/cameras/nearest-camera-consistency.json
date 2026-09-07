@@ -1,0 +1,20 @@
+{
+  "name": "Fort Lee vehicle camera awareness outside alert radius",
+  "vehicle": {
+    "latitude": 40.866197,
+    "longitude": -73.97158,
+    "accuracy": 5,
+    "altitude": null,
+    "altitudeAccuracy": null,
+    "heading": 90,
+    "speed": 10
+  },
+  "camera": {
+    "latitude": 40.866197,
+    "longitude": -73.9314,
+    "speedKph": 50,
+    "id": "fort-lee-camera"
+  },
+  "expectedDistanceM": 3379,
+  "expectedImperialLabel": "2.1 mi"
+}

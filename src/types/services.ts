@@ -136,12 +136,31 @@ export interface DrivingTelemetryService {
   destroy(): void;
 }
 
+export type DrivingCameraApproachState =
+  | "none"
+  | "approaching"
+  | "near-not-approaching"
+  | "legacy-radius"
+  | "unknown-heading"
+  | "missing-metadata";
+
+export type DrivingCameraApproachConfidence = "none" | "low" | "medium" | "high";
+
 export interface DrivingAlertSnapshot {
   status: string;
   started?: boolean;
   consumers?: string[];
   currentSpeedMs: number;
   latestPosition: NormalizedGpsPosition | null;
+  nearestTrapId: string | number | null;
+  nearestTrapDistanceM: number | null;
+  nearestTrapSpeedKph: number | null;
+  nearestTrapSpeedMeta: Record<string, unknown> | null;
+  cameraApproachState: DrivingCameraApproachState;
+  cameraApproachConfidence: DrivingCameraApproachConfidence;
+  cameraApproachReason: string;
+  cameraApproachDetails: Record<string, unknown> | null;
+  cameraDatabaseStatus: Record<string, unknown>;
   alertUiState: unknown;
   audio: unknown;
   preferences: unknown;

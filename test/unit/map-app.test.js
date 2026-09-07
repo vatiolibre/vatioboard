@@ -125,6 +125,9 @@ describe("full-screen Map app", () => {
       consumerId: "vatio.map.route",
       recordingSource: "map",
     }));
+    const hudOptions = mocks.createDrivingHud.mock.calls.at(-1)[0];
+    expect(hudOptions.getContext()).toEqual({ cameraState: "ahead" });
+    expect(hudOptions.getContext()).not.toHaveProperty("nearestCameraDistanceM");
     expect(document.querySelector("[data-map-app]")?.dataset.mapStatus).toBe("ready");
 
     view.unmount();

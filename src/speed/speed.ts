@@ -582,6 +582,7 @@ let spaSpeedReadyPromise: Promise<any> | null = null;
 let spaSpeedReadyResolve: any = null;
 
 const DRIVING_AUDIO_PROMPT_POINTER_CLICK_SUPPRESS_MS = 800;
+const SPEED_DRIVING_ALERT_CONSUMER_ID = 'vatio.speed.route';
 
 function shouldWaitForSpaSpeedRouteReady() {
   if (!isSpaRuntime) return false;
@@ -803,6 +804,18 @@ function bindDrivingAlertService(service) {
   syncDrivingAlertServiceState();
 }
 
+function acquireSpeedDrivingAlertConsumer({ fromUserGesture = false }: AnyRecord = {}) {
+  const route = activeSpeedRoute;
+  if (!route || route.destroyed || route.releaseDrivingAlertConsumer || !appDrivingAlertService) return;
+  route.releaseDrivingAlertConsumer = appDrivingAlertService.acquireConsumer?.(
+    SPEED_DRIVING_ALERT_CONSUMER_ID,
+    {
+      fromUserGesture,
+      reason: fromUserGesture ? 'speed-route-user' : 'speed-route',
+    },
+  ) || null;
+}
+
 function applyDrivingTelemetrySnapshot(snapshot: AnyRecord = {}) {
   if (!snapshot || typeof snapshot !== 'object') return;
   state.startTime = Number.isFinite(snapshot.startedAtMs) ? snapshot.startedAtMs : null;
@@ -852,14 +865,16 @@ function handleDrivingTelemetrySample(sample: AnyRecord) {
     timestampMs: sample.timestampMs,
   };
   applyDrivingTelemetrySnapshot(snapshot);
-  void ensureCameraArtifactsForPoint(position.longitude, position.latitude);
-  updateNearestTrapState(position.longitude, position.latitude, {
-    headingDeg: sample.headingDeg,
-    speedMs: sample.processedSpeedMs,
-    timestampMs: sample.timestampMs,
-    accuracyM: sample.accuracyM,
-    previousPosition: previousPoint,
-  });
+  if (!appDrivingAlertService) {
+    void ensureCameraArtifactsForPoint(position.longitude, position.latitude);
+    updateNearestTrapState(position.longitude, position.latitude, {
+      headingDeg: sample.headingDeg,
+      speedMs: sample.processedSpeedMs,
+      timestampMs: sample.timestampMs,
+      accuracyM: sample.accuracyM,
+      previousPosition: previousPoint,
+    });
+  }
   if (state.viewMounted) {
     hideNotice();
     globeController.syncGlobePosition(position.longitude, position.latitude);
@@ -1858,6 +1873,7 @@ function buildApproachPosition(longitude, latitude, overrides: AnyRecord = {}) {
 }
 
 function updateNearestTrapState(longitude, latitude, options: AnyRecord = {}) {
+  if (appDrivingAlertService) return;
   const datasets = Array.isArray(state.trapDatasets) ? state.trapDatasets : [];
   const candidateDatasets = datasets.length > 0
     ? datasets
@@ -1931,6 +1947,7 @@ function isCameraTrapDataReady() {
 }
 
 function ensureCameraArtifactsForPoint(longitude, latitude, countryCode = '') {
+  if (appDrivingAlertService) return Promise.resolve(null);
   if (!state.trapAlertEnabled) return Promise.resolve(null);
   if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) return Promise.resolve(null);
 
@@ -2233,7 +2250,7 @@ function setTrapAlertEnabled(enabled, options: AnyRecord = {}) {
 
   if (!enabled) {
     state.lastTrapSoundedId = null;
-    clearNearestTrapState('trap-alert-disabled');
+    if (!appDrivingAlertService) clearNearestTrapState('trap-alert-disabled');
   }
 
   saveTrapAlertEnabledPreference(enabled);
@@ -2345,14 +2362,16 @@ function clearLiveFixState({ preserveContinuity = false }: AnyRecord = {}) {
   state.currentSpeedMs = 0;
   state.displayedSpeedMs = 0;
   state.currentAltitudeM = null;
-  state.nearestTrapId = null;
-  state.nearestTrapDistanceM = null;
-  state.nearestTrapSpeedKph = null;
-  state.nearestTrapSpeedMeta = null;
-  state.cameraApproachState = 'none';
-  state.cameraApproachConfidence = 'none';
-  state.cameraApproachReason = 'gps-reset';
-  state.cameraApproachDetails = null;
+  if (!appDrivingAlertService) {
+    state.nearestTrapId = null;
+    state.nearestTrapDistanceM = null;
+    state.nearestTrapSpeedKph = null;
+    state.nearestTrapSpeedMeta = null;
+    state.cameraApproachState = 'none';
+    state.cameraApproachConfidence = 'none';
+    state.cameraApproachReason = 'gps-reset';
+    state.cameraApproachDetails = null;
+  }
   state.recentSpeeds = [];
   state.lastFixAt = 0;
   state.lastPositionTimestamp = null;
@@ -2404,14 +2423,16 @@ function resetTripData() {
   state.maxAltitudeM = null;
   state.minAltitudeM = null;
   state.lastPoint = null;
-  state.nearestTrapId = null;
-  state.nearestTrapDistanceM = null;
-  state.nearestTrapSpeedKph = null;
-  state.nearestTrapSpeedMeta = null;
-  state.cameraApproachState = 'none';
-  state.cameraApproachConfidence = 'none';
-  state.cameraApproachReason = 'session-reset';
-  state.cameraApproachDetails = null;
+  if (!appDrivingAlertService) {
+    state.nearestTrapId = null;
+    state.nearestTrapDistanceM = null;
+    state.nearestTrapSpeedKph = null;
+    state.nearestTrapSpeedMeta = null;
+    state.cameraApproachState = 'none';
+    state.cameraApproachConfidence = 'none';
+    state.cameraApproachReason = 'session-reset';
+    state.cameraApproachDetails = null;
+  }
   state.lastTrapSoundedId = null;
   state.recentSpeeds = [];
   state.lastAccuracyM = null;
@@ -2445,6 +2466,7 @@ function stopTracking({ disarmBackgroundAudio = false }: AnyRecord = {}) {
 function startTracking({ fromUserGesture = false }: AnyRecord = {}) {
   if (isSpaRuntime && !state.viewMounted) return;
   if (fromUserGesture) markWelcomeLocationChoice('enabled');
+  acquireSpeedDrivingAlertConsumer({ fromUserGesture });
 
   if (appDrivingTelemetryService) {
     state.trackingStartedAt = Date.now();
@@ -2984,6 +3006,8 @@ function destroySpeedRouteResources(route = activeSpeedRoute) {
   route.syncIndicator?.destroy?.();
   drivingAlertUnsubscribe?.();
   drivingAlertUnsubscribe = null;
+  route.releaseDrivingAlertConsumer?.();
+  route.releaseDrivingAlertConsumer = null;
   drivingTelemetryUnsubscribe?.();
   drivingTelemetrySampleUnsubscribe?.();
   driveRecordingUnsubscribe?.();
@@ -3035,6 +3059,9 @@ function mountSpeedController(routeContext: AnyRecord = {}) {
   };
   speedRouteGeneration = route.generation;
   activeSpeedRoute = route;
+  if (!shouldDeferWelcomeLocationRequest() || state.watchId !== null) {
+    acquireSpeedDrivingAlertConsumer();
+  }
   Object.assign(elements, getSpeedElements(routeContext.root || document));
   window.__vatioboardSpeedGetCurrentPosition = !appDrivingTelemetryService && appGpsService && window.__vatioboardGpsGetCurrentPosition
     ? window.__vatioboardGpsGetCurrentPosition
