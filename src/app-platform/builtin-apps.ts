@@ -326,6 +326,7 @@ export const BUILTIN_APP_MANIFESTS = [
       "storage.app",
       "storage.media",
       "network.backend",
+      "network.external",
       "auth.session",
       "i18n.read",
       "shell.window",

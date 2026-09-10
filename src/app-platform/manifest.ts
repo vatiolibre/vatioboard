@@ -44,6 +44,7 @@ const VALID_PERMISSIONS = new Set<VatioAppPermission>([
   "shell.window",
   "shell.launchApp",
   "network.backend",
+  "network.external",
   "i18n.read",
   "settings.read",
   "settings.write",

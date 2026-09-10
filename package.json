@@ -18,6 +18,12 @@
     "build": "vite build",
     "postbuild": "node scripts/create-spa-fallback.mjs",
     "preview": "vite preview",
+    "radio:dev": "wrangler dev --config workers/radio-media/wrangler.dev.jsonc",
+    "radio:test": "vitest run --config workers/radio-media/vitest.config.ts",
+    "radio:typecheck": "tsc --project workers/radio-media/tsconfig.json",
+    "radio:deploy:dev": "wrangler deploy --config workers/radio-media/wrangler.dev.jsonc",
+    "radio:deploy": "wrangler deploy --config workers/radio-media/wrangler.jsonc",
+    "radio:types": "wrangler types --config workers/radio-media/wrangler.jsonc workers/radio-media/worker-configuration.d.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -31,7 +37,7 @@
     "test:smoke": "vitest run test/smoke --exclude test/smoke/spa-gps-background.test.js && vitest run test/smoke/spa-gps-background.test.js",
     "verify:vin-ocr": "node scripts/verify-delivery-vin-ocr-sample.mjs",
     "verify:vin-ocr:fixtures": "node scripts/verify-delivery-vin-ocr-fixtures.mjs",
-    "verify": "pnpm run typecheck && pnpm run lint && pnpm test && pnpm run build"
+    "verify": "pnpm run typecheck && pnpm run radio:typecheck && pnpm run lint && pnpm run radio:test && pnpm test && pnpm run build"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -47,7 +53,8 @@
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.4",
     "vite": "^7.2.4",
-    "vitest": "^4.1.2"
+    "vitest": "^4.1.2",
+    "wrangler": "^4.129.1"
   },
   "dependencies": {
     "@jaames/iro": "^5.5.2",

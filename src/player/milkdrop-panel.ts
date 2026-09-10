@@ -181,6 +181,8 @@ function rectsOverlap(a: RectLike | null | undefined, b: RectLike | null | undef
 
 function isSafeSource() {
   const el = runtime.getAudioElement();
+  const state = runtime.getState();
+  if (state.isLive) return state.analysisEligible === true;
   if (!el?.src) return true;
   return isVisualizerSafeSource(el.currentSrc || el.src);
 }

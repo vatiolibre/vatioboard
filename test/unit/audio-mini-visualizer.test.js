@@ -201,6 +201,42 @@ describe("createMiniAudioVisualizer", () => {
     destroyVisualizerGraphForElement(media);
   });
 
+  it("keeps radio direct-to-relay playback on one graph with live spectrum and scope samples", async () => {
+    const frameCallbacks = [];
+    window.requestAnimationFrame = vi.fn((callback) => {
+      frameCallbacks.push(callback);
+      return frameCallbacks.length;
+    });
+    globalThis.requestAnimationFrame = window.requestAnimationFrame;
+    fakeAnalyser.getByteFrequencyData.mockImplementation((buffer) => buffer.fill(72));
+    fakeAnalyser.getByteTimeDomainData.mockImplementation((buffer) => buffer.fill(164));
+
+    const mount = document.createElement("div");
+    Object.defineProperty(mount, "getBoundingClientRect", {
+      value: () => ({ width: 240, height: 72 }),
+    });
+    document.body.append(mount);
+    const media = document.createElement("audio");
+    media.crossOrigin = "anonymous";
+    media.src = "https://station.example/live.mp3";
+    const controller = createMiniAudioVisualizer({ mediaElement: media, mount, mode: "spectrum" });
+
+    await expect(controller.start()).resolves.toBe(true);
+    frameCallbacks.shift()();
+    expect(fakeAnalyser.getByteFrequencyData).toHaveBeenCalled();
+    expect(fakeCanvasContext.rects.some((rect) => rect.height > 0)).toBe(true);
+
+    media.src = "https://radio-media.vatioboard.com/v1/stations/11111111-1111-4111-8111-111111111111/stream";
+    controller.setMode("scope");
+    frameCallbacks.shift()();
+    expect(fakeAnalyser.getByteTimeDomainData).toHaveBeenCalled();
+    expect(fakeAudioContext.createMediaElementSource).toHaveBeenCalledTimes(1);
+    expect(fakeAudioContext.createMediaElementSource).toHaveBeenCalledWith(media);
+
+    controller.destroy();
+    destroyVisualizerGraphForElement(media);
+  });
+
   it("force-destroys a shared media graph when the media element is replaced", async () => {
     const mount = document.createElement("div");
     Object.defineProperty(mount, "getBoundingClientRect", {

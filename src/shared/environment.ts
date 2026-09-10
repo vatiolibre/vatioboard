@@ -17,6 +17,7 @@ const DEV_API_BASE = "https://api.dev.vatioboard.com";
 export interface EnvironmentConfig {
   frontendOrigin: string;
   apiBase: string;
+  radioMediaBase: string;
   isProduction: boolean;
   isLocalhost: boolean;
   backendEnabled: boolean;
@@ -58,10 +59,18 @@ export function getEnvironmentConfig(
   const isProduction = PROD_HOSTS.has(host);
   const isLocal = isLocalhost(host);
   const backendEnabledOverride = getBackendEnabledOverride(env);
+  const configuredRadioMediaBase = String(env?.VITE_VATIOBOARD_RADIO_MEDIA_BASE || "").trim();
+  const radioMediaBase = configuredRadioMediaBase
+    || (isProduction
+      ? "https://radio-media.vatioboard.com"
+      : isLocal
+        ? "http://localhost:8787"
+        : "");
 
   return {
     frontendOrigin: String(location?.origin || ""),
     apiBase: isProduction ? PROD_API_BASE : DEV_API_BASE,
+    radioMediaBase,
     isProduction,
     isLocalhost: isLocal,
     backendEnabled: backendEnabledOverride ?? !isLocal,

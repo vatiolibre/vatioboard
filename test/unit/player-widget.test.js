@@ -10,7 +10,40 @@ vi.mock("../../src/i18n.js", () => ({
 }));
 
 vi.mock("../../src/shared/environment.js", () => ({
-  getEnvironmentConfig: () => ({ apiBase: "https://api.vatioboard.com" }),
+  getEnvironmentConfig: () => ({
+    apiBase: "https://api.vatioboard.com",
+    radioMediaBase: "https://radio-media.vatioboard.com",
+  }),
+}));
+
+const radioMocks = vi.hoisted(() => ({
+  getPopularStations: vi.fn(),
+  searchStations: vi.fn(),
+  hasExternalAccess: vi.fn(() => true),
+  getValidBase: vi.fn(() => "https://radio-media.vatioboard.com"),
+}));
+
+vi.mock("../../src/shared/radio-browser.js", () => ({
+  hasRadioExternalNetworkAccess: radioMocks.hasExternalAccess,
+  getValidRadioMediaBase: radioMocks.getValidBase,
+  radioBrowser: {
+    getPopularStations: radioMocks.getPopularStations,
+    searchStations: radioMocks.searchStations,
+  },
+  radioStationToTrack: (station) => ({
+    name: `radio:${station.stationuuid}`,
+    title: station.name,
+    artist: station.countrycode,
+    artwork_ref: `https://radio-media.vatioboard.com/v1/stations/${station.stationuuid}/logo`,
+    media_kind: "radio",
+    station_uuid: station.stationuuid,
+    countrycode: station.countrycode,
+    language: station.language,
+    codec: station.codec,
+    bitrate: station.bitrate,
+    hls: station.hls,
+    url_resolved: station.url_resolved,
+  }),
 }));
 
 const runtimeMock = {
@@ -43,6 +76,7 @@ const runtimeMock = {
   cycleRepeat: vi.fn(),
   playCatalogTrack: vi.fn().mockResolvedValue(undefined),
   playLibraryTrackNow: vi.fn().mockResolvedValue(undefined),
+  playTrackNow: vi.fn().mockResolvedValue(true),
   setQueue: vi.fn(),
   restoreSession: vi.fn().mockResolvedValue(undefined),
   primeAudio: vi.fn().mockResolvedValue(true),
@@ -277,6 +311,16 @@ describe("createPlayerWidget", () => {
     runtimeMock.stopPlayback.mockImplementation(() => {});
     runtimeMock.updatePlayerMediaSessionMetadata.mockReset();
     runtimeMock.updatePlayerMediaSessionMetadata.mockImplementation(() => {});
+    runtimeMock.playTrackNow.mockReset();
+    runtimeMock.playTrackNow.mockResolvedValue(true);
+    radioMocks.getPopularStations.mockReset();
+    radioMocks.getPopularStations.mockResolvedValue([]);
+    radioMocks.searchStations.mockReset();
+    radioMocks.searchStations.mockResolvedValue([]);
+    radioMocks.hasExternalAccess.mockReset();
+    radioMocks.hasExternalAccess.mockReturnValue(true);
+    radioMocks.getValidBase.mockReset();
+    radioMocks.getValidBase.mockReturnValue("https://radio-media.vatioboard.com");
     catalogMock.loadAudioCatalog.mockResolvedValue({ tracks: [], total: 0 });
     catalogMock.syncAudioCatalog.mockResolvedValue(false);
     playlistMock.loadPlaylists.mockResolvedValue({ playlists: [], total: 0 });
@@ -309,6 +353,8 @@ describe("createPlayerWidget", () => {
     // Clean up any mounted elements
     document.querySelectorAll(".player-panel, .player-fab").forEach((el) => el.remove());
     vi.unstubAllGlobals();
+    delete window.AudioContext;
+    delete globalThis.AudioContext;
   });
 
   // ── open / close / toggle ────────────────────────────────────
@@ -881,6 +927,130 @@ describe("createPlayerWidget", () => {
     widget.destroy();
   });
 
+  it("adds Radio to tab keyboard navigation and loads popular stations on demand", async () => {
+    const station = {
+      stationuuid: "11111111-1111-4111-8111-111111111111",
+      name: "Test Radio",
+      url_resolved: "https://stream.example.com/live.mp3",
+      has_favicon: true,
+      countrycode: "US",
+      language: "English",
+      tags: ["jazz", "instrumental", "night", "extra"],
+      codec: "MP3",
+      bitrate: 128,
+      hls: 0,
+      lastcheckok: 1,
+    };
+    radioMocks.getPopularStations.mockResolvedValue([station]);
+    Object.defineProperty(window, "AudioContext", {
+      configurable: true,
+      value: class { state = "running"; },
+    });
+
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    const panel = document.querySelector(".player-panel");
+    const playlistTab = panel.querySelector(".player-content-tab-playlists");
+    const radioTab = panel.querySelector(".player-content-tab-radio");
+    expect(panel.querySelectorAll("[role=tab]")).toHaveLength(4);
+
+    playlistTab.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    await flushMicrotasks();
+    expect(radioTab.getAttribute("aria-selected")).toBe("true");
+    expect(radioMocks.getPopularStations).toHaveBeenCalledTimes(1);
+
+    const row = panel.querySelector(".player-radio-item");
+    expect(row.dataset.stationUuid).toBe(station.stationuuid);
+    expect(row.querySelector(".player-radio-item-tags").textContent).toBe("jazz · instrumental · night");
+    expect(row.querySelector("img").src).toContain(`/v1/stations/${station.stationuuid}/logo`);
+    row.querySelector(".player-radio-play-btn").click();
+    expect(runtimeMock.playTrackNow).toHaveBeenCalledWith(expect.objectContaining({
+      media_kind: "radio",
+      station_uuid: station.stationuuid,
+    }));
+    expect(runtimeMock.setQueue).not.toHaveBeenCalled();
+    widget.destroy();
+  });
+
+  it("submits radio search explicitly and renders empty and directory failure states", async () => {
+    Object.defineProperty(window, "AudioContext", {
+      configurable: true,
+      value: class { state = "running"; },
+    });
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    const panel = document.querySelector(".player-panel");
+    panel.querySelector(".player-content-tab-radio").click();
+    await flushMicrotasks();
+
+    const name = panel.querySelector(".player-radio-search input[name=name]");
+    const country = panel.querySelector(".player-radio-search input[name=country]");
+    const tag = panel.querySelector(".player-radio-search input[name=tag]");
+    name.value = "Jazz FM";
+    country.value = "US";
+    tag.value = "jazz";
+    name.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(radioMocks.searchStations).not.toHaveBeenCalled();
+
+    panel.querySelector(".player-radio-search").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flushMicrotasks();
+    expect(radioMocks.searchStations).toHaveBeenCalledWith({ name: "Jazz FM", country: "US", tag: "jazz" });
+    expect(panel.querySelector(".player-radio-status").textContent).toBe("playerRadioEmpty");
+
+    radioMocks.searchStations.mockRejectedValueOnce(new Error("offline"));
+    panel.querySelector(".player-radio-search").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flushMicrotasks();
+    expect(panel.querySelector(".player-radio-status").textContent).toBe("playerRadioMirrorFailure");
+    widget.destroy();
+  });
+
+  it("disables Radio with clear permission and Web Audio compatibility messages", async () => {
+    radioMocks.hasExternalAccess.mockReturnValue(false);
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    const panel = document.querySelector(".player-panel");
+    panel.querySelector(".player-content-tab-radio").click();
+    expect(panel.querySelector(".player-radio-status").textContent).toBe("playerRadioPermissionDenied");
+    expect(radioMocks.getPopularStations).not.toHaveBeenCalled();
+    widget.destroy();
+
+    radioMocks.hasExternalAccess.mockReturnValue(true);
+    Object.defineProperty(window, "AudioContext", { configurable: true, value: undefined });
+    const secondWidget = createPlayerWidget({ floating: false });
+    secondWidget.open();
+    const secondPanel = document.querySelector(".player-panel");
+    secondPanel.querySelector(".player-content-tab-radio").click();
+    expect(secondPanel.querySelector(".player-radio-status").textContent).toBe("playerRadioWebAudioRequired");
+    secondWidget.destroy();
+
+    Object.defineProperty(window, "AudioContext", { configurable: true, value: class {} });
+    radioMocks.getValidBase.mockReturnValue("");
+    const thirdWidget = createPlayerWidget({ floating: false });
+    thirdWidget.open();
+    const thirdPanel = document.querySelector(".player-panel");
+    thirdPanel.querySelector(".player-content-tab-radio").click();
+    expect(thirdPanel.querySelector(".player-radio-status").textContent).toBe("playerRadioConfigurationMissing");
+    thirdWidget.destroy();
+  });
+
+  it("isolates wheel scrolling inside the Radio pane", () => {
+    Object.defineProperty(window, "AudioContext", { configurable: true, value: class {} });
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    const panel = document.querySelector(".player-panel");
+    panel.querySelector(".player-content-tab-radio").click();
+    const pane = panel.querySelector(".player-content-pane-radio");
+    Object.defineProperties(pane, {
+      scrollHeight: { configurable: true, value: 500 },
+      clientHeight: { configurable: true, value: 100 },
+    });
+    const wheel = new WheelEvent("wheel", { deltaY: 40, bubbles: true, cancelable: true });
+    pane.dispatchEvent(wheel);
+    expect(pane.scrollTop).toBe(40);
+    expect(wheel.defaultPrevented).toBe(true);
+    widget.destroy();
+  });
+
   // ── setTracks ────────────────────────────────────────────────
 
   it("setTracks populates queue list when queue is open", () => {
@@ -942,6 +1112,27 @@ describe("createPlayerWidget", () => {
     expect(panel.querySelector(".player-progress")).toBeTruthy();
     expect(panel.querySelector(".player-volume")).toBeTruthy();
 
+    widget.destroy();
+  });
+
+  it("renders live radio without seek controls and exposes transport/error states", () => {
+    runtimeMock.getState.mockReturnValue(makeRuntimeState({
+      currentTrack: { name: "radio:one", title: "Live One", media_kind: "radio", station_uuid: "one" },
+      sourceType: "live",
+      sourceTransport: "radio-relay",
+      isLive: true,
+      seekable: false,
+      analysisEligible: true,
+      connectionState: "unavailable",
+      error: "unsupported-hls",
+    }));
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    const panel = document.querySelector(".player-panel");
+    expect(panel.querySelector(".player-progress").hidden).toBe(true);
+    expect(panel.querySelector(".player-time-current").textContent).toBe("LIVE");
+    expect(panel.querySelector(".player-source-badge").textContent).toBe("LIVE · RELAY");
+    expect(panel.querySelector(".player-error").textContent).toBe("playerRadioHlsUnsupported");
     widget.destroy();
   });
 

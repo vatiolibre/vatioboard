@@ -85,6 +85,7 @@ vi.mock("../../src/shared/storage.js", () => ({
 import { createMilkdropPanel } from "../../src/player/milkdrop-panel.js";
 import butterchurn from "butterchurn";
 import * as audioRuntime from "../../src/shared/audio-runtime.js";
+import { isVisualizerSafeSource } from "../../src/shared/audio-visualizer.js";
 import { loadText, saveText } from "../../src/shared/storage.js";
 import { createShellWindowManager } from "../../src/shared/shell-window-manager.js";
 
@@ -145,6 +146,7 @@ describe("createMilkdropPanel", () => {
     loadText.mockImplementation((key, fallback = "") => fallback);
     saveText.mockClear();
     butterchurn.createVisualizer.mockClear();
+    isVisualizerSafeSource.mockReturnValue(true);
     mockAudioElement.removeAttribute("src");
     localStorage.clear();
   });
@@ -176,6 +178,28 @@ describe("createMilkdropPanel", () => {
   function getLatestVisualizer() {
     return butterchurn.createVisualizer.mock.results.at(-1)?.value;
   }
+
+  it("uses the runtime descriptor for analyser-eligible radio streams", async () => {
+    mockAudioElement.src = "https://arbitrary-station.example/live.mp3";
+    isVisualizerSafeSource.mockReturnValue(false);
+    audioRuntime.getState.mockReturnValue({
+      ...defaultAudioState,
+      currentTrack: { name: "radio:test", media_kind: "radio" },
+      sourceType: "live",
+      sourceTransport: "radio-direct-cors",
+      isLive: true,
+      analysisEligible: true,
+      playing: true,
+      paused: false,
+    });
+    window.requestAnimationFrame = vi.fn(() => 1);
+
+    const panel = createMilkdropPanel({ mount });
+    await panel.open();
+    expect(butterchurn.createVisualizer).toHaveBeenCalledTimes(1);
+    expect(isVisualizerSafeSource).not.toHaveBeenCalled();
+    panel.destroy();
+  });
 
   it("creates a panel instance with expected API", () => {
     const panel = createMilkdropPanel({ mount });

@@ -48,6 +48,7 @@ function supportsMetadata(): boolean {
 const DEFAULT_OWNER = "default";
 const mediaSessionClients = new Map<string, MediaSessionClient>();
 let mediaSessionClientSequence = 0;
+let platformPositionStateActive = false;
 
 const FALLBACK_ARTWORK: MediaImage[] = [
   { src: "/favicon-96x96.png", sizes: "96x96", type: "image/png" },
@@ -163,7 +164,17 @@ function applyPlatformMediaSessionPositionState({
       position: Math.min(position, duration),
       playbackRate,
     });
+    platformPositionStateActive = true;
   } catch { /* ignore */ }
+}
+
+function clearPlatformMediaSessionPositionState(): void {
+  if (!platformPositionStateActive || !supported()) return;
+  if (typeof navigator.mediaSession.setPositionState !== "function") return;
+  try {
+    navigator.mediaSession.setPositionState();
+  } catch { /* ignore */ }
+  platformPositionStateActive = false;
 }
 
 function applyPlatformMediaSessionActionHandlers(handlers: MediaSessionHandlers | null = {}): void {
@@ -186,6 +197,7 @@ function applyMediaSessionClients(): void {
     applyPlatformMediaSessionPlaybackState("none");
     applyPlatformMediaSessionMetadata(null);
     applyPlatformMediaSessionActionHandlers(null);
+    clearPlatformMediaSessionPositionState();
     return;
   }
 
@@ -195,6 +207,8 @@ function applyMediaSessionClients(): void {
 
   if (topClient.positionState) {
     applyPlatformMediaSessionPositionState(topClient.positionState);
+  } else {
+    clearPlatformMediaSessionPositionState();
   }
 }
 

@@ -20,9 +20,10 @@
  * Never persists blobs, object URLs, or signed/expiring playback URLs.
  */
 
-const STORAGE_KEY = "vatioboard_player_session_v2";
+const STORAGE_KEY = "vatioboard_player_session_v3";
+const V2_STORAGE_KEY = "vatioboard_player_session_v2";
 const LEGACY_STORAGE_KEY = "vatioboard_player_session_v1";
-const SESSION_VERSION = 2;
+const SESSION_VERSION = 3;
 
 export type PlayerRepeatMode = "off" | "all" | "one";
 
@@ -43,6 +44,12 @@ export interface PlayerQueueEntry {
   file_extension: string;
   folder_path: string;
   src: string;
+  station_uuid: string;
+  countrycode: string;
+  language: string;
+  codec: string;
+  bitrate: number | null;
+  hls: 0 | 1;
 }
 
 export interface PlayerSession {
@@ -88,7 +95,10 @@ const DEFAULTS: Readonly<PlayerSession> = Object.freeze({
 export function loadPlayerSession(): PlayerSession {
   try {
     const parsed = readStoredSession(STORAGE_KEY);
-    if (parsed) return normalizeV2Session(parsed);
+    if (parsed) return normalizeSession(parsed);
+
+    const v2 = readStoredSession(V2_STORAGE_KEY);
+    if (v2) return normalizeSession(v2);
 
     const legacy = readStoredSession(LEGACY_STORAGE_KEY);
     if (legacy) return normalizeLegacySession(legacy);
@@ -106,8 +116,11 @@ export function loadPlayerSession(): PlayerSession {
 export function savePlayerSession(state: Partial<PlayerSession>): void {
   try {
     const current = loadPlayerSession();
-    const merged = normalizeV2Session({ ...current, ...state });
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(serializeV2Session(merged)));
+    const merged = normalizeSession({ ...current, ...state });
+    const serialized = JSON.stringify(serializeSession(merged));
+    localStorage.setItem(STORAGE_KEY, serialized);
+    // Transitional mirror for an older open tab while the schema rolls to v3.
+    localStorage.setItem(V2_STORAGE_KEY, serialized);
   } catch {
     // localStorage unavailable in private/incognito
   }
@@ -119,6 +132,7 @@ export function savePlayerSession(state: Partial<PlayerSession>): void {
 export function clearPlayerSession(): void {
   try {
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(V2_STORAGE_KEY);
     localStorage.removeItem(LEGACY_STORAGE_KEY);
   } catch { /* ignore */ }
 }
@@ -133,12 +147,16 @@ function cloneDefaults(): PlayerSession {
 }
 
 function readStoredSession(key: string): Record<string, unknown> | null {
-  const raw = localStorage.getItem(key);
-  if (!raw) return null;
-  return JSON.parse(raw);
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
-function normalizeV2Session(parsed: Record<string, unknown>): PlayerSession {
+function normalizeSession(parsed: Record<string, unknown>): PlayerSession {
   const queueEntries = normalizeQueueEntries(parsed.queueEntries);
   const playedEntries = normalizeQueueEntries(parsed.playedEntries);
   const currentIndex = normalizeIndex(parsed.currentIndex, queueEntries.length);
@@ -156,7 +174,7 @@ function normalizeV2Session(parsed: Record<string, unknown>): PlayerSession {
     currentEntryId,
     currentIndex,
     currentTrackName,
-    currentTime: clampTime(parsed.currentTime),
+    currentTime: queueEntries[currentIndex]?.media_kind === "radio" ? 0 : clampTime(parsed.currentTime),
     paused: parsed.paused !== false,
     volume: clampVolume(parsed.volume),
     muted: Boolean(parsed.muted),
@@ -185,6 +203,12 @@ function normalizeLegacySession(parsed: Record<string, unknown>): PlayerSession 
     file_extension: "",
     folder_path: "",
     src: "",
+    station_uuid: "",
+    countrycode: "",
+    language: "",
+    codec: "",
+    bitrate: null,
+    hls: 0 as const,
   }));
   const currentTrackName = str(parsed.currentTrackName);
   const currentIndex = Math.max(0, queueEntries.findIndex((entry) => entry.name === currentTrackName));
@@ -208,14 +232,16 @@ function normalizeLegacySession(parsed: Record<string, unknown>): PlayerSession 
   };
 }
 
-function serializeV2Session(state: Partial<PlayerSession>): PersistedPlayerSession {
+function serializeSession(state: Partial<PlayerSession>): PersistedPlayerSession {
   return {
     version: SESSION_VERSION,
     queueEntries: normalizeQueueEntries(state.queueEntries),
     playedEntries: normalizeQueueEntries(state.playedEntries),
     currentEntryId: str(state.currentEntryId),
     currentIndex: normalizeIndex(state.currentIndex, state.queueEntries?.length ?? 0),
-    currentTime: clampTime(state.currentTime),
+    currentTime: state.queueEntries?.[state.currentIndex ?? -1]?.media_kind === "radio"
+      ? 0
+      : clampTime(state.currentTime),
     paused: state.paused !== false,
     volume: clampVolume(state.volume),
     muted: Boolean(state.muted),
@@ -257,6 +283,12 @@ function normalizeQueueEntry(entry: unknown): PlayerQueueEntry | null {
     file_extension: str(record.file_extension),
     folder_path: str(record.folder_path),
     src: sanitizeStableSrc(record.src),
+    station_uuid: str(record.station_uuid),
+    countrycode: str(record.countrycode),
+    language: str(record.language),
+    codec: str(record.codec),
+    bitrate: numOrNull(record.bitrate),
+    hls: Number(record.hls) === 1 ? 1 : 0,
   };
 }
 

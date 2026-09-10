@@ -50,6 +50,15 @@ export interface Track {
   _offline: boolean;
   /** Whether this is a demo track. */
   _demo: boolean;
+  /** Stable Radio Browser identity for live radio entries. */
+  station_uuid?: string;
+  countrycode?: string;
+  language?: string;
+  codec?: string;
+  bitrate?: number | null;
+  hls?: 0 | 1;
+  /** Ephemeral resolved stream URL; never persisted. */
+  url_resolved?: string;
 }
 
 export interface RawTrackLike {
@@ -86,6 +95,13 @@ export interface RawTrackLike {
   preview_image_url?: unknown;
   image_url?: unknown;
   _offline?: unknown;
+  station_uuid?: unknown;
+  countrycode?: unknown;
+  language?: unknown;
+  codec?: unknown;
+  bitrate?: unknown;
+  hls?: unknown;
+  url_resolved?: unknown;
   [key: string]: unknown;
 }
 
@@ -146,6 +162,7 @@ export function normalizeTrack(raw: RawTrackLike | null | undefined): Track | nu
 
   const name = str(raw.name);
   const isDemo = name.startsWith("demo:");
+  const mediaKind = str(raw.media_kind) || (isDemo ? "audio" : "other");
 
   // Title: explicit > metadata > snapshot > filename-derived > name
   const title =
@@ -178,7 +195,7 @@ export function normalizeTrack(raw: RawTrackLike | null | undefined): Track | nu
     str(raw.image_url) ||
     EMPTY;
 
-  return {
+  const normalized: Track = {
     name,
     title,
     artist,
@@ -187,7 +204,7 @@ export function normalizeTrack(raw: RawTrackLike | null | undefined): Track | nu
     duration,
     track_number,
     artwork_ref,
-    media_kind: str(raw.media_kind) || (isDemo ? "audio" : "other"),
+    media_kind: mediaKind,
     original_filename: str(raw.original_filename),
     content_hash: str(raw.content_hash) || str(raw.snapshot_content_hash),
     mime_type: str(raw.mime_type),
@@ -203,6 +220,16 @@ export function normalizeTrack(raw: RawTrackLike | null | undefined): Track | nu
     _offline: Boolean(raw._offline),
     _demo: isDemo,
   };
+  if (mediaKind === "radio") {
+    normalized.station_uuid = str(raw.station_uuid) || undefined;
+    normalized.countrycode = str(raw.countrycode) || undefined;
+    normalized.language = str(raw.language) || undefined;
+    normalized.codec = str(raw.codec) || undefined;
+    normalized.bitrate = numOrNull(raw.bitrate);
+    normalized.hls = Number(raw.hls) === 1 ? 1 : 0;
+    normalized.url_resolved = str(raw.url_resolved) || undefined;
+  }
+  return normalized;
 }
 
 /**

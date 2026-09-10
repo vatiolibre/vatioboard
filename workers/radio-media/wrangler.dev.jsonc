@@ -1,0 +1,24 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "vatioboard-radio-media-dev",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": true,
+  "preview_urls": true,
+  "vars": {
+    "ALLOWED_ORIGINS": "https://dev.vatioboard.com,http://localhost:5174,http://127.0.0.1:5174",
+    "SELF_HOSTNAME": "radio-media.dev.vatioboard.com"
+  },
+  "ratelimits": [
+    {
+      "name": "STREAM_STARTS",
+      "namespace_id": "1101",
+      "simple": { "limit": 20, "period": 60 }
+    },
+    {
+      "name": "LOGO_REQUESTS",
+      "namespace_id": "1102",
+      "simple": { "limit": 120, "period": 60 }
+    }
+  ]
+}

@@ -14,6 +14,7 @@ import { hasStoredValue, loadText, saveText } from "../../shared/storage.js";
 import type { AudioRuntime } from "../../types/services";
 import type { ShellRuntime } from "../../types/shell";
 import type { ShellAppRuntimeManager, VatioAppRuntime } from "../../app-platform/types";
+import { setRadioExternalNetworkAccessCheck } from "../../shared/radio-browser.js";
 
 export const PLAYER_APP_ID = "vatio.player";
 export const PLAYER_VISUALIZER_VISIBLE_SETTING_KEY = "visualizerVisible";
@@ -93,6 +94,9 @@ function primeRuntimeAudioBoundary(runtime: VatioAppRuntime | null, audioRuntime
 
 export function createPlayerApp(options: PlayerAppOptions = {}): PlayerAppApi {
   const runtime = resolvePlayerRuntime(options);
+  setRadioExternalNetworkAccessCheck(runtime
+    ? () => runtime.permissions.require("network.external")
+    : null);
   primeRuntimeAudioBoundary(runtime, options.audioRuntime || null);
   const widget = createPlayerWidget({
     ...options,

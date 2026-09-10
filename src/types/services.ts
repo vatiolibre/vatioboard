@@ -237,7 +237,13 @@ export interface AudioRuntimeState {
   repeat: "off" | "all" | "one";
   shuffle: boolean;
   backgroundMode: boolean;
-  sourceType: "blob" | "remote" | null;
+  sourceType: "blob" | "remote" | "live" | null;
+  sourceTransport: "local" | "backend" | "radio-direct-cors" | "radio-relay" | null;
+  isLive: boolean;
+  seekable: boolean;
+  cacheable: boolean;
+  analysisEligible: boolean;
+  connectionState: "idle" | "connecting" | "playing" | "reconnecting" | "unavailable";
   currentTrack: unknown;
   loading: boolean;
   error: unknown;
@@ -255,6 +261,7 @@ export interface AudioRuntime {
   play(options?: unknown): Promise<boolean> | boolean;
   pause(options?: unknown): void;
   stopPlayback(options?: unknown): void;
+  playTrackNow?(track: unknown): Promise<boolean> | boolean;
 }
 
 export type TtsPriority = "critical" | "driving" | "system" | "info";

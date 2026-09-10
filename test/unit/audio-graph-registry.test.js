@@ -102,6 +102,22 @@ describe("audio-graph-registry", () => {
       expect(fakeAudioContext.createMediaElementSource).toHaveBeenCalledTimes(1);
     });
 
+    it("shares one radio media source between mini and Milkdrop consumers across relay fallback", async () => {
+      mediaElement.crossOrigin = "anonymous";
+      mediaElement.src = "https://station.example/live.mp3";
+      const [miniGraph, milkdropGraph] = await Promise.all([
+        acquireGraph(mediaElement),
+        acquireGraph(mediaElement),
+      ]);
+      expect(miniGraph).toBe(milkdropGraph);
+      expect(fakeAudioContext.createMediaElementSource).toHaveBeenCalledTimes(1);
+
+      mediaElement.src = "https://radio-media.vatioboard.com/v1/stations/11111111-1111-4111-8111-111111111111/stream";
+      const fallbackGraph = await acquireGraph(mediaElement);
+      expect(fallbackGraph).toBe(miniGraph);
+      expect(fakeAudioContext.createMediaElementSource).toHaveBeenCalledTimes(1);
+    });
+
     it("cancels an in-flight graph when the media element is destroyed", async () => {
       let resumeContext;
       fakeAudioContext.state = "suspended";

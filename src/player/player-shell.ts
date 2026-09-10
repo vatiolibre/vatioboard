@@ -25,6 +25,13 @@ import { loadPlaylists, loadPlaylistDetail } from "../shared/playlist-loader.js"
 import { isAudioAsset } from "../shared/audio-catalog.js";
 import { normalizeTrack } from "../shared/track-model.js";
 import {
+  hasRadioExternalNetworkAccess,
+  getValidRadioMediaBase,
+  radioBrowser,
+  radioStationToTrack,
+  type RadioBrowserStation,
+} from "../shared/radio-browser.js";
+import {
   pinMediaBlob,
   pinMediaFromResponse,
   unpinMediaBlob,
@@ -60,6 +67,12 @@ const IconMilkdrop = `
     <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
   </svg>
 `;
+const IconRadio = `
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M5 10.5h14v9H5zM8 10.5l8-6M8.5 14.5h7M9 17h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="17" cy="15" r="1.2" fill="currentColor"/>
+  </svg>
+`;
 
 function updateRangeVisualFill(input) {
   if (!(input instanceof HTMLInputElement)) return;
@@ -92,7 +105,8 @@ function getVisualizerModeLabel(mode) {
     : t("mediaPlayerVisualizerSpectrum");
 }
 
-function isSafeVisualizerElement(audioElement) {
+function isSafeVisualizerElement(audioElement, stateSnapshot = null) {
+  if (stateSnapshot?.isLive) return stateSnapshot.analysisEligible === true;
   if (!audioElement?.src) return true;
   return isVisualizerSafeSource(audioElement.currentSrc || audioElement.src);
 }
@@ -450,8 +464,9 @@ export function createPlayerShell({
   const queueTabBtn = makeTabBtn("queue", IconQueue, t("playerQueue"));
   const libraryTabBtn = makeTabBtn("library", IconLibrary, t("playerLibrary"));
   const playlistTabBtn = makeTabBtn("playlists", IconPlaylist, t("playerPlaylists"));
+  const radioTabBtn = makeTabBtn("radio", IconRadio, t("playerRadio"));
 
-  contentTabs.append(queueTabBtn, libraryTabBtn, playlistTabBtn);
+  contentTabs.append(queueTabBtn, libraryTabBtn, playlistTabBtn, radioTabBtn);
 
   const contentCloseBtn = document.createElement("button");
   contentCloseBtn.type = "button";
@@ -481,6 +496,12 @@ export function createPlayerShell({
   playlistPane.hidden = true;
   playlistPane.setAttribute("role", "tabpanel");
   playlistPane.setAttribute("aria-hidden", "true");
+
+  const radioPane = document.createElement("section");
+  radioPane.className = "player-content-pane player-content-pane-radio";
+  radioPane.hidden = true;
+  radioPane.setAttribute("role", "tabpanel");
+  radioPane.setAttribute("aria-hidden", "true");
 
   const queueSheetHeader = document.createElement("div");
   queueSheetHeader.className = "player-content-pane-toolbar player-queue-toolbar";
@@ -553,7 +574,38 @@ export function createPlayerShell({
   playlistListUl.setAttribute("role", "list");
 
   playlistPane.append(playlistSheetHeader, playlistListUl);
-  contentPaneStack.append(queuePane, libraryPane, playlistPane);
+
+  const radioSearchForm = document.createElement("form");
+  radioSearchForm.className = "player-radio-search";
+  const radioNameInput = document.createElement("input");
+  radioNameInput.type = "search";
+  radioNameInput.name = "name";
+  radioNameInput.placeholder = t("playerRadioStationName");
+  radioNameInput.setAttribute("aria-label", t("playerRadioStationName"));
+  const radioCountryInput = document.createElement("input");
+  radioCountryInput.type = "search";
+  radioCountryInput.name = "country";
+  radioCountryInput.placeholder = t("playerRadioCountry");
+  radioCountryInput.setAttribute("aria-label", t("playerRadioCountry"));
+  const radioTagInput = document.createElement("input");
+  radioTagInput.type = "search";
+  radioTagInput.name = "tag";
+  radioTagInput.placeholder = t("playerRadioTag");
+  radioTagInput.setAttribute("aria-label", t("playerRadioTag"));
+  const radioSearchBtn = document.createElement("button");
+  radioSearchBtn.type = "submit";
+  radioSearchBtn.textContent = t("playerRadioSearch");
+  radioSearchForm.append(radioNameInput, radioCountryInput, radioTagInput, radioSearchBtn);
+
+  const radioStatus = document.createElement("div");
+  radioStatus.className = "player-radio-status";
+  radioStatus.setAttribute("role", "status");
+  const radioListUl = document.createElement("ul");
+  radioListUl.className = "player-radio-list";
+  radioListUl.setAttribute("role", "list");
+  radioPane.append(radioSearchForm, radioStatus, radioListUl);
+
+  contentPaneStack.append(queuePane, libraryPane, playlistPane, radioPane);
   contentSheet.append(contentSheetHeader, contentPaneStack);
 
   // ── Assembly ───────────────────────────────────────────────────
@@ -570,6 +622,12 @@ export function createPlayerShell({
   let contentOpen = false;
   let activeContentTab = "queue";
   let queueOpen = false;
+  let radioOpen = false;
+  let radioLoaded = false;
+  let radioLoading = false;
+  let radioStations: RadioBrowserStation[] = [];
+  let radioError = "";
+  let radioRequestToken = 0;
   let queueFilter = "";
   let lastRenderedQueueSignature = "";
   let queueSaveStatusTimer = 0;
@@ -600,22 +658,25 @@ export function createPlayerShell({
   let _gestureUnlocked = !_needsGestureGate;
 
   // ── Integrated content sheet toggle ────────────────────────────
-  const CONTENT_TABS = new Set(["queue", "library", "playlists"]);
+  const CONTENT_TABS = new Set(["queue", "library", "playlists", "radio"]);
   const tabButtons = {
     queue: queueTabBtn,
     library: libraryTabBtn,
     playlists: playlistTabBtn,
+    radio: radioTabBtn,
   };
   const tabPanes = {
     queue: queuePane,
     library: libraryPane,
     playlists: playlistPane,
+    radio: radioPane,
   };
 
   function syncContentSheet({ render = true } = {}) {
     queueOpen = contentOpen && activeContentTab === "queue";
     libraryOpen = contentOpen && activeContentTab === "library";
     playlistOpen = contentOpen && activeContentTab === "playlists";
+    radioOpen = contentOpen && activeContentTab === "radio";
 
     root.classList.toggle("is-content-open", contentOpen);
     contentSheet.classList.toggle("is-open", contentOpen);
@@ -641,6 +702,9 @@ export function createPlayerShell({
         renderLibraryList(libraryFilter);
       } else if (playlistOpen && !playlistDetailView) {
         renderPlaylistList();
+      } else if (radioOpen) {
+        renderRadioList();
+        if (!radioLoaded && !radioLoading) void loadPopularRadioStations();
       }
     }
 
@@ -721,9 +785,10 @@ export function createPlayerShell({
   queueTabBtn.addEventListener("keydown", (e) => handleContentTabKeydown(e, "queue"));
   libraryTabBtn.addEventListener("keydown", (e) => handleContentTabKeydown(e, "library"));
   playlistTabBtn.addEventListener("keydown", (e) => handleContentTabKeydown(e, "playlists"));
+  radioTabBtn.addEventListener("keydown", (e) => handleContentTabKeydown(e, "radio"));
 
   function handleContentTabKeydown(e, currentTab) {
-    const order = ["queue", "library", "playlists"];
+    const order = ["queue", "library", "playlists", "radio"];
     const index = order.indexOf(currentTab);
     if (index === -1) return;
     let nextTab = "";
@@ -737,6 +802,116 @@ export function createPlayerShell({
     setActiveContentTab(nextTab);
     tabButtons[nextTab]?.focus?.();
   }
+
+  function getRadioDisabledMessage() {
+    if (!hasRadioExternalNetworkAccess()) return t("playerRadioPermissionDenied");
+    if (!getValidRadioMediaBase()) return t("playerRadioConfigurationMissing");
+    const AudioContextCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextCtor) return t("playerRadioWebAudioRequired");
+    return "";
+  }
+
+  async function requestRadioStations(request: () => Promise<RadioBrowserStation[]>) {
+    const disabledMessage = getRadioDisabledMessage();
+    if (disabledMessage) {
+      radioError = disabledMessage;
+      radioLoaded = true;
+      renderRadioList();
+      return;
+    }
+    const token = ++radioRequestToken;
+    radioLoading = true;
+    radioError = "";
+    renderRadioList();
+    try {
+      const stations = await request();
+      if (token !== radioRequestToken) return;
+      radioStations = stations;
+      radioLoaded = true;
+    } catch (error) {
+      if (token !== radioRequestToken) return;
+      radioStations = [];
+      radioLoaded = true;
+      radioError = error instanceof Error && error.message === "radio-network-permission-denied"
+        ? t("playerRadioPermissionDenied")
+        : t("playerRadioMirrorFailure");
+    } finally {
+      if (token === radioRequestToken) {
+        radioLoading = false;
+        renderRadioList();
+      }
+    }
+  }
+
+  function loadPopularRadioStations() {
+    return requestRadioStations(() => radioBrowser.getPopularStations());
+  }
+
+  function renderRadioList() {
+    radioListUl.innerHTML = "";
+    const disabledMessage = getRadioDisabledMessage();
+    const message = disabledMessage || radioError;
+    radioSearchForm.hidden = Boolean(disabledMessage);
+    radioSearchForm.querySelectorAll("input, button").forEach((control: HTMLInputElement | HTMLButtonElement) => {
+      control.disabled = radioLoading;
+    });
+    radioStatus.textContent = radioLoading
+      ? t("playerRadioLoading")
+      : message || (radioLoaded && radioStations.length === 0 ? t("playerRadioEmpty") : "");
+    radioStatus.hidden = !radioStatus.textContent;
+    if (radioLoading || message) return;
+
+    for (const station of radioStations) {
+      const li = document.createElement("li");
+      li.className = "player-radio-item";
+      li.dataset.stationUuid = station.stationuuid;
+
+      const artwork = document.createElement("img");
+      artwork.className = "player-radio-artwork";
+      artwork.alt = "";
+      artwork.loading = "lazy";
+      const radioTrack = radioStationToTrack(station);
+      artwork.src = String(radioTrack.artwork_ref || "");
+
+      const details = document.createElement("div");
+      details.className = "player-radio-item-info";
+      const stationName = document.createElement("span");
+      stationName.className = "player-radio-item-name";
+      stationName.textContent = station.name;
+      const stationMeta = document.createElement("span");
+      stationMeta.className = "player-radio-item-meta";
+      const technical = [station.countrycode, station.language, station.codec,
+        station.bitrate ? `${station.bitrate} kbps` : ""].filter(Boolean);
+      stationMeta.textContent = technical.join(" · ");
+      const tags = document.createElement("span");
+      tags.className = "player-radio-item-tags";
+      tags.textContent = station.tags.slice(0, 3).join(" · ");
+      tags.hidden = !tags.textContent;
+      details.append(stationName, stationMeta, tags);
+
+      const playStationBtn = document.createElement("button");
+      playStationBtn.type = "button";
+      playStationBtn.className = "player-radio-play-btn";
+      playStationBtn.textContent = station.hls === 1 ? t("playerRadioHlsUnsupported") : t("playerRadioPlay");
+      playStationBtn.disabled = station.hls === 1;
+      playStationBtn.addEventListener("click", () => {
+        _gestureUnlocked = true;
+        primeAudioContext();
+        void runtime.playTrackNow(radioTrack);
+      });
+      li.append(artwork, details, playStationBtn);
+      radioListUl.append(li);
+    }
+  }
+
+  radioSearchForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void requestRadioStations(() => radioBrowser.searchStations({
+      name: radioNameInput.value,
+      country: radioCountryInput.value,
+      tag: radioTagInput.value,
+    }));
+  });
 
   // Clear queue button
   queueSheetClearBtn.addEventListener("click", () => {
@@ -771,7 +946,7 @@ export function createPlayerShell({
     if (queueSaveBtn.disabled) return;
 
     const initialState = runtime.getState();
-    const initialSaveable = initialState.queue.filter((tr) => tr.name && !tr._demo);
+    const initialSaveable = initialState.queue.filter((tr) => tr.name && !tr._demo && tr.media_kind !== "radio");
     if (initialSaveable.length === 0) return;
 
     const title = await showPromptDialog({
@@ -788,7 +963,7 @@ export function createPlayerShell({
     if (!trimmedTitle) return;
 
     const currentState = runtime.getState();
-    const saveable = currentState.queue.filter((tr) => tr.name && !tr._demo);
+    const saveable = currentState.queue.filter((tr) => tr.name && !tr._demo && tr.media_kind !== "radio");
     if (saveable.length === 0) return;
 
     clearQueueSaveStatusTimer();
@@ -1523,11 +1698,11 @@ export function createPlayerShell({
       : getVisualizerModeLabel(visualizerMode);
   }
 
-  function getOrCreateVisualizer() {
+  function getOrCreateVisualizer(stateSnapshot = runtime.getState()) {
     if (!visualizerVisible || visualizerFailed) return null;
 
     const audioElement = getRuntimeAudioElement();
-    if (!audioElement || !isSafeVisualizerElement(audioElement)) return null;
+    if (!audioElement || !isSafeVisualizerElement(audioElement, stateSnapshot)) return null;
 
     if (visualizerController && visualizerMediaElement === audioElement) {
       return visualizerController;
@@ -1569,7 +1744,7 @@ export function createPlayerShell({
         && stateSnapshot.sourceType
         && audioElement?.src,
     );
-    const sourceSafe = isSafeVisualizerElement(audioElement);
+    const sourceSafe = isSafeVisualizerElement(audioElement, stateSnapshot);
     syncVisualizerUi({ sourceSafe });
     if (!hasPlayableSource) {
       stopVisualizer();
@@ -1591,7 +1766,7 @@ export function createPlayerShell({
       return;
     }
 
-    const controller = getOrCreateVisualizer();
+    const controller = getOrCreateVisualizer(stateSnapshot);
     if (!controller) return;
 
     controller.setMode(visualizerMode);
@@ -1754,8 +1929,15 @@ export function createPlayerShell({
     playBtn.setAttribute("aria-label", s.playing ? t("mediaPlayerPause") : t("mediaPlayerPlay"));
 
     // Progress
+    progressSection.classList.toggle("is-live", Boolean(s.isLive));
+    progressBar.hidden = Boolean(s.isLive);
+    timeTotal.hidden = Boolean(s.isLive);
     if (!seeking) {
-      if (Number.isFinite(s.duration) && s.duration > 0) {
+      if (s.isLive) {
+        progressBar.value = "0";
+        timeCurrent.textContent = "LIVE";
+        timeTotal.textContent = "";
+      } else if (Number.isFinite(s.duration) && s.duration > 0) {
         progressBar.value = String(Math.round((s.currentTime / s.duration) * PROGRESS_MAX));
         timeCurrent.textContent = formatTime(s.currentTime);
         timeTotal.textContent = formatTime(s.duration);
@@ -1812,6 +1994,14 @@ export function createPlayerShell({
       sourceBadge.textContent = t("playerOffline");
       sourceBadge.hidden = false;
       sourceBadge.className = "player-source-badge offline";
+    } else if (s.sourceTransport === "radio-direct-cors") {
+      sourceBadge.textContent = "LIVE · DIRECT";
+      sourceBadge.hidden = false;
+      sourceBadge.className = "player-source-badge live direct";
+    } else if (s.sourceTransport === "radio-relay") {
+      sourceBadge.textContent = "LIVE · RELAY";
+      sourceBadge.hidden = false;
+      sourceBadge.className = "player-source-badge live relay";
     } else if (s.sourceType === "remote") {
       sourceBadge.textContent = t("playerRemote");
       sourceBadge.hidden = false;
@@ -1842,7 +2032,13 @@ export function createPlayerShell({
     if (s.error) {
       errorMsg.textContent = s.error === "unavailable"
         ? t("playerTrackUnavailable")
-        : t("playerPlaybackError");
+        : s.error === "station-unavailable"
+          ? t("playerRadioStationUnavailable")
+          : s.error === "unsupported-hls"
+            ? t("playerRadioHlsUnsupported")
+          : s.error === "radio-relay-failed"
+            ? t("playerRadioRelayFailure")
+            : t("playerPlaybackError");
       errorMsg.hidden = false;
     } else {
       errorMsg.hidden = true;
@@ -1913,7 +2109,7 @@ export function createPlayerShell({
 
       const badge = document.createElement("span");
       badge.className = "player-queue-item-badge";
-      if (track._offline) {
+      if (track._offline && track.media_kind !== "radio") {
         badge.classList.add("offline");
         badge.title = t("playerOffline");
       }
@@ -1951,7 +2147,7 @@ export function createPlayerShell({
   function updateOfflineBadges(queue) {
     const newOffline = new Set();
     for (const track of queue) {
-      if (track._offline) newOffline.add(track.name);
+      if (track._offline && track.media_kind !== "radio") newOffline.add(track.name);
     }
     if (newOffline.size === 0) return;
 

@@ -63,6 +63,12 @@ const DENIED_AUDIO_STATE: AudioRuntimeState = {
   shuffle: false,
   backgroundMode: false,
   sourceType: null,
+  sourceTransport: null,
+  isLive: false,
+  seekable: true,
+  cacheable: false,
+  analysisEligible: false,
+  connectionState: "idle",
   currentTrack: null,
   loading: false,
   error: "permission-denied",
@@ -391,6 +397,12 @@ function createAudioGateway(
       if (!canUseAudio()) return;
       service.stopPlayback(options);
     },
+    playTrackNow: service.playTrackNow
+      ? (track) => {
+          if (!canUseAudio()) return false;
+          return service.playTrackNow?.(track) ?? false;
+        }
+      : undefined,
   };
 }
 
